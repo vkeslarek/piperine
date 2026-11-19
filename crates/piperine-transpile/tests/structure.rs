@@ -260,6 +260,33 @@ fn a_disabled_cap_writes_infinity() {
 }
 
 #[test]
+fn an_executed_cap_that_is_not_finite_and_positive_is_e0509() {
+    // §14.10.2 rule 5 and its Resolution: an executed `bound_step(dt)` with `dt` not finite or
+    // `dt <= 0` is `E0509`. `bound_step(bad) when v(a, gnd) > 0.5;`, one body per `bad`: with
+    // `a = 1.0` the call is executed and faults for 0, a negative step and `+∞`; with `a = 0.25`
+    // it is not executed, caps nothing (`+∞`) and does not fault, whatever its value.
+    for bad in [0.0, -1.0e-9, f64::INFINITY] {
+        let ir = Switching::ir(BranchKind::Flow, |b| {
+            let (step, when) = (Switching::ex(b).real(bad), Switching::compare(b, BinaryOp::Gt, 0.5));
+            let cap = b.stmt(Stmt::BoundStep { site: 0, value: step, when: Some(when) });
+            Written { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..Written::default() }
+        });
+        let device = Device::of(ir);
+        let fault = device.run("cap:0", &[&Bytes::real(1.0)]).expect_err("an executed cap that is not valid");
+        assert_eq!(fault.code, 509, "step {bad}: {fault}");
+        assert!(fault.message.contains("E0509") && fault.message.contains("bound_step"), "step {bad}: {fault}");
+        assert_eq!(device.run("cap:0", &[&Bytes::real(0.25)]).expect("not executed"), [f64::INFINITY], "step {bad}");
+    }
+    let unguarded = Switching::ir(BranchKind::Flow, |b| {
+        let step = Switching::ex(b).real(f64::INFINITY);
+        let cap = b.stmt(Stmt::BoundStep { site: 0, value: step, when: None });
+        Written { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..Written::default() }
+    });
+    let fault = Device::of(unguarded).run("cap:0", &[]).expect_err("an unguarded bound_step(inf) is executed");
+    assert_eq!(fault.code, 509, "{fault}");
+}
+
+#[test]
 fn a_param_change_fires_its_event() {
     // `on tol.changed() { .. }`: the event function `event:0` reads the param `tol` and its
     // `CHANGED` byte and writes the event pin's `CHANGED` byte: nonzero exactly when the param's

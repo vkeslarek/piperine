@@ -290,11 +290,16 @@ impl<'a> AnalogPrinter<'a> {
         if guard.is_some() {
             body.push("// §14.10.2: a `bound_step` not executed at this solution caps nothing: +∞ (abi.md, the `CAP` watch)".to_string());
             body.push(format!(
-                "let value_ = if Self::cap{site}_when_block::<f64>({}) {{ {call} }} else {{ f64::INFINITY }};",
+                "let executed_ = Self::cap{site}_when_block::<f64>({});",
                 self.block_args(&when_reads)
             ));
+            body.push(format!("let value_ = if executed_ {{ {call} }} else {{ f64::INFINITY }};"));
+            body.push("if executed_ {".to_string());
+            body.push(self.step_check(origin));
+            body.push("}".to_string());
         } else {
             body.push(format!("let value_ = {call};"));
+            body.push(self.step_check(origin));
         }
         for (j, w) in f.writes.iter().enumerate() {
             match w {
@@ -312,6 +317,17 @@ impl<'a> AnalogPrinter<'a> {
         let mut text = t.finish();
         text.pop();
         Ok(text)
+    }
+
+    /// The line that faults `E0509` when an executed `bound_step` at `origin` asks for a step that
+    /// is not finite and positive (§14.10.2 rule 5 and its Resolution). `+∞` written by the
+    /// author is such a step; the `+∞` the cap function writes for a call not executed never
+    /// reaches this check, it is only the solver's encoding of "no cap" (abi.md, the `CAP` watch).
+    fn step_check(&self, origin: &Origin) -> String {
+        let at = format!("{}:{}:{}", origin.file, origin.line, origin.col);
+        format!(
+            "if !(value_.is_finite() && value_ > 0.0) {{ return Err(Fault::new(509, format!(\"E0509: `bound_step` at {{}}: the step {{}} is not finite and positive\", {at:?}, value_))); }}"
+        )
     }
 
     /// `<param>_check_block` and `<param>_check`, for function `k` of the plan, which runs

@@ -270,9 +270,11 @@ fn an_invalid_ttol_or_etol_fails_the_analysis_with_e0510() {
 
 #[test]
 fn an_invalid_step_cap_fails_the_analysis_with_e0509() {
-    // SCX-03 AC 9 (§17.2 rule 5 and its resolution): a step cap not finite and positive, and not
-    // `+∞`: `+∞` is a `bound_step` not executed at this solution and caps nothing (abi.md, the
-    // `CAP` row; analog-structure AS-01 AC 5)
+    // SCX-03 AC 9 (§17.2 rule 5 and its resolution): a step cap the watch holds that is not
+    // finite and positive. At the solver `+∞` is the internal encoding of a `bound_step` not
+    // executed at this solution and caps nothing (abi.md, the `CAP` row); an executed
+    // `bound_step(inf)` never reaches the watch, the generated code faults it as E0509 first
+    // (`source_environment::a_non_positive_bound_step_is_e0509`).
     for bad in [0.0, -1.0e-9, f64::NAN, f64::NEG_INFINITY] {
         let err = failing(|b, top| {
             b.device(capped(), "cc", &[("cap", ParamValue::Real(bad))], &[Port::Node(top)]);
@@ -286,5 +288,5 @@ fn an_invalid_step_cap_fails_the_analysis_with_e0509() {
     let infinite = failing(|b, top| {
         b.device(capped(), "cc", &[("cap", ParamValue::Real(f64::INFINITY))], &[Port::Node(top)]);
     });
-    assert_eq!(infinite, "", "+∞ caps nothing");
+    assert_eq!(infinite, "", "the watch encodes `not executed` as +∞: it caps nothing");
 }
