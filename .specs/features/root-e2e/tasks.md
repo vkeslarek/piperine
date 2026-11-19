@@ -699,9 +699,9 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] No row of `mixed` is `pending`; `mixed` is in `SETTLED_CHAPTERS` of both guards
-- [ ] Gate check passes: Build, with `cargo test --test book_mixed`
-- [ ] Test count: written in the commit body
+- [x] No row of `mixed` is `pending`; `mixed` is in `SETTLED_CHAPTERS` of both guards
+- [x] Gate check passes: Build, with `cargo test --test book_mixed`
+- [x] Test count: written in the commit body
 
 **Tests**: integration
 **Gate**: build

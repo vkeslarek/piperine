@@ -103,21 +103,21 @@ block	digital#15	2525e0948e3c847b	shown	-	-	-
 block	digital#16	988cde23155f6def	refused	piperine/book_digital::the_irq_line_is_refused_for_its_resolved_wire	L21	-
 block	digital#17	0a1172a93cd7e3f5	refused	piperine/book_digital::the_flip_flop_is_refused_for_its_generic_module	L30	-
 block	digital#18	de17375fb290bada	run	piperine/book_digital::a_pipeline_in_one_reaction_reads_every_register_before_the_edge	-	-
-block	mixed#1	8f2566e772665b48	pending	-	-	-
-block	mixed#2	05e4a50ddb334346	pending	-	-	-
+block	mixed#1	8f2566e772665b48	run	piperine/book_mixed::the_cycle_counter_counts_the_located_crossings_of_the_sine	-	-
+block	mixed#2	05e4a50ddb334346	run	piperine/book_mixed::the_cycle_counter_counts_the_located_crossings_of_the_sine	-	-
 block	mixed#3	5558eb3502685c8b	shown	-	-	-
 block	mixed#4	deaaff1240929f70	shown	-	-	-
 block	mixed#5	fcb6886bd9a6e240	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run cycles.msl --analysis transient --stop 3e-3 --print-step 1e-3 --print count --stream pulse
-block	mixed#6	3506ea56c1ecbede	pending	-	-	-
-block	mixed#7	b8f749b42f07ef6c	pending	-	-	-
-block	mixed#8	8935565a31a621e1	pending	-	-	-
+block	mixed#6	3506ea56c1ecbede	refused	piperine/book_mixed::the_comparator_without_hysteresis_is_refused_for_its_event_read_as_a_bool	L51	-
+block	mixed#7	b8f749b42f07ef6c	run	piperine/book_mixed::the_digital_to_analog_converter_drives_half_the_supply_for_unknown	-	-
+block	mixed#8	8935565a31a621e1	run	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	-	-
 block	mixed#9	e24b2a769fbf036d	shown	-	-	-
-block	mixed#10	dcd6e04b0acbdb87	pending	-	-	-
+block	mixed#10	dcd6e04b0acbdb87	refused	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	L52	-
 block	mixed#11	d9f0417b5399de0c	shown	-	-	-
 block	mixed#12	063828848af5ddc2	shown	-	-	-
 block	mixed#13	0e299217e2c4d640	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop
-block	mixed#14	f7cd53dd5486e87b	pending	-	-	-
-block	mixed#15	ea28fe2bc18e8e9d	pending	-	-	-
+block	mixed#14	f7cd53dd5486e87b	run	piperine/book_mixed::the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero	-	-
+block	mixed#15	ea28fe2bc18e8e9d	refused	piperine/book_mixed::the_sar_adc_is_refused_for_the_field_access_on_its_converter	L36	-
 block	packages#1	4d5e7db8c23bc8e3	shown	-	-	-
 block	packages#2	3ec48f5cf74f6fa3	pending	-	-	-
 block	packages#3	57d2aaeee2a2ed05	pending	-	-	-
@@ -357,27 +357,27 @@ claim	digital~54ec441d	54ec441dcbd16b9b	holds	piperine/book_digital::e0434_a_dig
 claim	digital~4bd60d1d	4bd60d1dc68d0e9c	holds	piperine/book_digital::e0350_an_instance_is_not_placed_inside_a_reaction	-	E0350
 claim	digital~5c44f01d	5c44f01dcf9af364	holds	piperine/book_digital::e0501_a_clock_with_no_delay_never_goes_quiet	-	E0501
 claim	digital~6b910006	6b9100060e366b8e	holds	piperine/book_digital::e0501_a_clock_with_no_delay_never_goes_quiet	-	Add after 0.5 / f.
-claim	mixed~ba1dc599	ba1dc599f52173f5	pending	-	-	EdgeCounter's reaction runs, emits the record and commits count.
-claim	mixed~e784c042	e784c042961833ba	pending	-	-	Look at how it treats an unknown input: d.known() gives three cases, and the model drives half the supply for "don't know".
-claim	mixed~f53cc3cb	f53cc3cbe6006a49	pending	-	-	That is the choice E0150 forces every analog reader to make. transition turns the stepped level into a ramp of duration tr, so the output has a real edge.
-claim	mixed~a32dcb77	a32dcb774c3fa3fa	pending	-	-	emit!("loop", …) is the window into the loop: one record per period with the sample, the error and the duty just decided. duty = d prints the new value; duty = duty would print the old one.
-claim	mixed~827e671b	827e671b8ff913ea	pending	-	-	What happens in between, how fast the loop settles and whether it rings, is what the stream is for.
-claim	mixed~68328637	68328637ec256860	pending	-	-	Read the duty field down the lines: it climbs by 0.0033 per period at first and settles near 0.28, while the Buck.vout column of the table rises to 3.3.
-claim	mixed~8ab17f2d	8ab17f2de7c73869	pending	-	-	The equation. x has one branch, so KCL gives c · dv(x)/dt = (v(vin) − fb) / r.
-claim	mixed~22d4126e	22d4126e2fe09366	pending	-	-	Two things the examples here use are not compiled yet and are refused with P0001: the math methods of f64 such as sin (the sine sources) and the settle event (the converter's check).
-claim	mixed~42ab6e1d	42ab6e1dc13757db	pending	-	-	E0250
-claim	mixed~54ec481d	54ec481dcbd17267	pending	-	-	E0430
-claim	mixed~4bcf1b1d	4bcf1b1dc68707b8	pending	-	-	E0336
-claim	mixed~4bc81b1d	4bc81b1dc680e90a	pending	-	-	E0316
-claim	mixed~39a9371d	39a9371dbc03a3e6	pending	-	-	E0150
-claim	mixed~54d4401d	54d4401dcbbcd2ee	pending	-	-	E0442
-claim	mixed~fa428686	fa4286868655967a	pending	-	-	For "when the voltage reaches…" use above.
-claim	mixed~4bd60d1d	4bd60d1dc68d0e9c	pending	-	-	E0350
-claim	mixed~98e4dc1b	98e4dc1b05705b28	pending	-	-	on every(0.0, 10u) { … } written inside another reaction, or every called in a fn
-claim	mixed~6430a6c6	6430a6c6b34f7e9e	pending	-	-	Name them in the module body: let tick = every(0.0, 10u);
-claim	mixed~5c44ed1d	5c44ed1dcf9aee4b	pending	-	-	E0504
-claim	mixed~90621efb	90621efb95052987	pending	-	-	Predict what the pulse stream does near each zero crossing, then restore the hysteresis and choose the smallest value that gives one pulse per cycle.
-claim	mixed~41a87153	41a87153c3517456	pending	-	-	In the buck, raise ki to 20m and look at the loop stream: does duty still settle, or does it swing around 0.28? (It swings: the loop now reacts faster than the LC filter can follow.)
+claim	mixed~ba1dc599	ba1dc599f52173f5	holds	piperine/book_mixed::the_cycle_counter_counts_the_located_crossings_of_the_sine	-	EdgeCounter's reaction runs, emits the record and commits count.
+claim	mixed~e784c042	e784c042961833ba	holds	piperine/book_mixed::the_digital_to_analog_converter_drives_half_the_supply_for_unknown	-	Look at how it treats an unknown input: d.known() gives three cases, and the model drives half the supply for "don't know".
+claim	mixed~f53cc3cb	f53cc3cbe6006a49	holds	piperine/book_mixed::the_digital_to_analog_converter_drives_half_the_supply_for_unknown	-	That is the choice E0150 forces every analog reader to make. transition turns the stepped level into a ramp of duration tr, so the output has a real edge.
+claim	mixed~a32dcb77	a32dcb774c3fa3fa	holds	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	-	emit!("loop", …) is the window into the loop: one record per period with the sample, the error and the duty just decided. duty = d prints the new value; duty = duty would print the old one.
+claim	mixed~827e671b	827e671b8ff913ea	prose	-	-	What happens in between, how fast the loop settles and whether it rings, is what the stream is for.
+claim	mixed~68328637	68328637ec256860	diverges	piperine/book_mixed::the_buck_start_up_does_not_climb_by_0_0033_per_period_today	D4	Read the duty field down the lines: it climbs by 0.0033 per period at first and settles near 0.28, while the Buck.vout column of the table rises to 3.3.
+claim	mixed~8ab17f2d	8ab17f2de7c73869	holds	piperine/book_mixed::the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero	-	The equation. x has one branch, so KCL gives c · dv(x)/dt = (v(vin) − fb) / r.
+claim	mixed~22d4126e	22d4126e2fe09366	disputed	piperine/book_mixed::the_math_methods_run_and_the_settle_event_does_not	D2	Two things the examples here use are not compiled yet and are refused with P0001: the math methods of f64 such as sin (the sine sources) and the settle event (the converter's check).
+claim	mixed~42ab6e1d	42ab6e1dc13757db	holds	piperine/book_mixed::e0250_a_node_cannot_go_to_a_bit_port	-	E0250
+claim	mixed~54ec481d	54ec481dcbd17267	holds	piperine/book_mixed::e0430_a_comparison_is_a_bool_and_the_crossing_is_the_event	-	E0430
+claim	mixed~4bcf1b1d	4bcf1b1dc68707b8	holds	piperine/book_mixed::e0336_a_definition_cannot_read_a_probe	-	E0336
+claim	mixed~4bc81b1d	4bc81b1dc680e90a	holds	piperine/book_mixed::e0316_an_in_port_takes_a_digital_expression_only	-	E0316
+claim	mixed~39a9371d	39a9371dbc03a3e6	holds	piperine/book_mixed::e0150_an_unknown_switch_control_is_read_with_high	-	E0150
+claim	mixed~54d4401d	54d4401dcbbcd2ee	holds	piperine/book_mixed::e0442_at_takes_a_discrete_time	-	E0442
+claim	mixed~fa428686	fa4286868655967a	holds	piperine/book_mixed::e0430_a_comparison_is_a_bool_and_the_crossing_is_the_event	-	For "when the voltage reaches…" use above.
+claim	mixed~4bd60d1d	4bd60d1dc68d0e9c	holds	piperine/book_mixed::e0350_every_is_not_placed_in_a_fn_and_a_named_tick_runs	-	E0350
+claim	mixed~98e4dc1b	98e4dc1b05705b28	diverges	piperine/book_mixed::an_every_written_inside_a_reaction_is_e0404_not_e0350	D1	on every(0.0, 10u) { … } written inside another reaction, or every called in a fn
+claim	mixed~6430a6c6	6430a6c6b34f7e9e	holds	piperine/book_mixed::e0350_every_is_not_placed_in_a_fn_and_a_named_tick_runs	-	Name them in the module body: let tick = every(0.0, 10u);
+claim	mixed~5c44ed1d	5c44ed1dcf9aee4b	holds	piperine/book_mixed::e0504_the_step_after_a_jump_that_does_not_converge_names_the_carrier	-	E0504
+claim	mixed~90621efb	90621efb95052987	prose	-	-	Predict what the pulse stream does near each zero crossing, then restore the hysteresis and choose the smallest value that gives one pulse per cycle.
+claim	mixed~41a87153	41a87153c3517456	holds	piperine/book_mixed::a_faster_integral_gain_makes_the_buck_loop_swing	-	In the buck, raise ki to 20m and look at the loop stream: does duty still settle, or does it swing around 0.28? (It swings: the loop now reacts faster than the LC filter can follow.)
 claim	packages~5018120b	5018120b8c105ac6	pending	-	-	Having neither, or both, is E0161.
 claim	packages~77a1260e	77a1260eccb8ed3d	pending	-	-	Any other table or key is E0171.
 claim	packages~62e1271f	62e1271f5b6318b0	pending	-	-	A crate reaches another crate only through a dependency named in its manifest.
@@ -573,14 +573,14 @@ claim	digital~7f3906df	7f3906df50f3b177	holds	piperine/book_digital::the_debounc
 claim	digital~0727161d	0727161d5312720a	holds	piperine/book_digital::the_pwm_latches_its_duty_word_at_the_wrap	-	With a 1 MHz clock the PWM runs at 10 kHz, and the cycle stream has one record per period carrying the duty word that period will use.
 claim	digital~5351d4c4	5351d4c47aab4109	holds	piperine/book_digital::a_press_released_before_the_fourth_sample_gives_no_flip	-	Change the bench of the debouncer so that button goes high at 2.0 ms and low again at 4.0 ms.
 claim	digital~28c24505	28c245050d08caea	holds	piperine/book_digital::a_press_released_before_the_fourth_sample_gives_no_flip	-	Write down the run column of the state stream up to 6.5 ms, and say whether a flip record appears. (run reads 0, 0, 0, 1, 2, 0, 0: the samples at 2.5 and 3.5 ms extend the run, the low sample at 4.5 ms resets it.
-claim	mixed~b52d3509	b52d3509740fe8a8	pending	-	-	With a threshold of 0 V and 0.2 V of hysteresis, the comparator goes high when the sine rises through +0.1 V, which first happens 15.9 µs into each period:
-claim	mixed~306eca43	306eca43738de5b0	pending	-	-	It prints three record lines from CycleCounter.ctr, with n=1, n=2 and n=3, about 15.9 µs into each millisecond. --print-step 1e-3 keeps the table to one row per millisecond, and --print count to the one signal that matters, so its last row shows CycleCounter.count at 3.
-claim	mixed~758eca03	758eca03356a7662	pending	-	-	A buck converter steps 12 V down to 3.3 V by switching: a high-side switch connects an inductor to the input for a fraction d of each period, and the output settles near d · 12 V.
-claim	mixed~3bce4014	3bce401452e45841	pending	-	-	At the end the error is zero and the duty sits where 12 V times the duty, less the small drop in the switch, equals 3.3 V: about 0.28.
-claim	mixed~9d07c4b9	9d07c4b9576fd829	pending	-	-	It checks, at every time point after start-up, that the output stays within 50 mV of the target:
-claim	mixed~ac0aefe3	ac0aefe3b2ca4ca9	pending	-	-	Its = 0.0 holds it at 0 V through the transient's operating point.
-claim	mixed~fef5c97a	fef5c97a04840342	pending	-	-	A full-size digitally controlled buck converter (12 V in, 200 MHz digital PWM, PID, ADC, comparators and a supervisor) starts from its .msl and regulates at 0.8 V within 3 mV with its loop closed, and the piperine command runs it (chapter 16).
-claim	mixed~a879bf2a	a879bf2aa5b759ac	pending	-	-	In the cycle counter, set hyst: 0.0 and add a small 50 kHz ripple to the source (a second Vsin in series).
+claim	mixed~b52d3509	b52d3509740fe8a8	holds	piperine/book_mixed::the_cycle_counter_counts_the_located_crossings_of_the_sine	-	With a threshold of 0 V and 0.2 V of hysteresis, the comparator goes high when the sine rises through +0.1 V, which first happens 15.9 µs into each period:
+claim	mixed~306eca43	306eca43738de5b0	holds	piperine/book_mixed::the_cycle_counter_counts_the_located_crossings_of_the_sine	-	It prints three record lines from CycleCounter.ctr, with n=1, n=2 and n=3, about 15.9 µs into each millisecond. --print-step 1e-3 keeps the table to one row per millisecond, and --print count to the one signal that matters, so its last row shows CycleCounter.count at 3.
+claim	mixed~758eca03	758eca03356a7662	holds	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	-	A buck converter steps 12 V down to 3.3 V by switching: a high-side switch connects an inductor to the input for a fraction d of each period, and the output settles near d · 12 V.
+claim	mixed~3bce4014	3bce401452e45841	holds	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	-	At the end the error is zero and the duty sits where 12 V times the duty, less the small drop in the switch, equals 3.3 V: about 0.28.
+claim	mixed~9d07c4b9	9d07c4b9576fd829	refused	mixed#10	L52	It checks, at every time point after start-up, that the output stays within 50 mV of the target:
+claim	mixed~ac0aefe3	ac0aefe3b2ca4ca9	holds	piperine/book_mixed::the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero	-	Its = 0.0 holds it at 0 V through the transient's operating point.
+claim	mixed~fef5c97a	fef5c97a04840342	binary	piperine-cli/buck::startup_ends_with_the_reference_at_128	-	A full-size digitally controlled buck converter (12 V in, 200 MHz digital PWM, PID, ADC, comparators and a supervisor) starts from its .msl and regulates at 0.8 V within 3 mV with its loop closed, and the piperine command runs it (chapter 16).
+claim	mixed~a879bf2a	a879bf2aa5b759ac	prose	-	-	In the cycle counter, set hyst: 0.0 and add a small 50 kHz ripple to the source (a second Vsin in series).
 claim	errors~2b0048e8	2b0048e8bba634bb	holds	piperine/book_errors::without_an_initial_value_the_output_sits_at_zero_volts	-	What does vout do before the first clock edge, and which line decided that? (It sits at 0 V: held is unknown, and known_or(0.0) said what unknown means.)
 claim	compiler~05f756b4	05f756b4750e40ff	pending	-	-	Its operating point puts mid at 7.5 V, the same number ngspice prints for the same circuit.
 claim	cli~a717f995	a717f9954de38412	pending	-	-	This is the file it wrote, as it is: Step.vin flat at 1 V, Step.vout rising towards it with the time constant of 1 µs.
