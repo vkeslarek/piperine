@@ -87,9 +87,9 @@ pub(super) struct Checker<'d> {
     pub(super) event_slot: Option<ExprId>,
     /// Set while the guard of an event, the right operand of `ev && guard`, is typed.
     pub(super) in_guard: bool,
-    /// Set while the value of a commit is typed: an `Event` there is committed (`E0441`), not
-    /// read as a `bool`.
-    pub(super) committing: bool,
+    /// The events read as a `bool` (§13 rules 2 and 9): the expressions of type `Event` that
+    /// stand in a guard or a reaction body and are typed `bool`.
+    pub(super) event_reads: BTreeSet<ExprId>,
     /// Bindings whose value could not be typed: a read of one is silent, so one mistake is
     /// one diagnostic.
     pub(super) poisoned: BTreeSet<DeclId>,
@@ -136,7 +136,7 @@ impl<'d> Checker<'d> {
             context: Context::Module,
             event_slot: None,
             in_guard: false,
-            committing: false,
+            event_reads: BTreeSet::new(),
             poisoned: BTreeSet::new(),
             fn_where: false,
             fn_value_at: None,
@@ -176,7 +176,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, widths: self.widths, written: self.written, continuous, emits })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, written: self.written, continuous, emits })
     }
 
     /// Run `body` with `context` as the place being checked, then restore the one outside.
@@ -203,16 +203,15 @@ impl<'d> Checker<'d> {
             return;
         }
         self.reach(module);
-        let (owner, context, event_slot, in_guard, committing, fn_where, fn_value_at) = (self.owner, self.context, self.event_slot, self.in_guard, self.committing, self.fn_where, self.fn_value_at);
+        let (owner, context, event_slot, in_guard, fn_where, fn_value_at) = (self.owner, self.context, self.event_slot, self.in_guard, self.fn_where, self.fn_value_at);
         let (book, lets_open, placing) = (std::mem::take(&mut self.book), std::mem::take(&mut self.lets_open), std::mem::take(&mut self.placing));
         self.context = Context::Module;
         self.event_slot = None;
         self.in_guard = false;
-        self.committing = false;
         self.fn_where = false;
         self.fn_value_at = None;
         self.declaration(module);
-        (self.owner, self.context, self.event_slot, self.in_guard, self.committing, self.fn_where, self.fn_value_at) = (owner, context, event_slot, in_guard, committing, fn_where, fn_value_at);
+        (self.owner, self.context, self.event_slot, self.in_guard, self.fn_where, self.fn_value_at) = (owner, context, event_slot, in_guard, fn_where, fn_value_at);
         (self.book, self.lets_open, self.placing) = (book, lets_open, placing);
     }
 

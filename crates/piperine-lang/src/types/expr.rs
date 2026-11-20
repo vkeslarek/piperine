@@ -118,8 +118,12 @@ impl Checker<'_> {
             if let Some(found) = found
                 && found != *expected
             {
-                let (expected_name, found_name) = (expected.name(self.design), found.name(self.design));
-                self.mismatch_coded(file, node.span, code, &expected_name, &found_name);
+                if self.event_reads.contains(&expr) {
+                    self.event_where_another_type_is_expected(expr, expected);
+                } else {
+                    let (expected_name, found_name) = (expected.name(self.design), found.name(self.design));
+                    self.mismatch_coded(file, node.span, code, &expected_name, &found_name);
+                }
             }
             self.exprs[expr.index()] = Some(expected.clone());
         })
@@ -146,9 +150,9 @@ impl Checker<'_> {
     pub(super) fn infer(&mut self, expr: ExprId) -> Option<Ty> {
         stack::deep(|| {
             let in_event_position = self.event_slot == Some(expr);
-            let ty = self.infer_kind(expr);
+            let mut ty = self.infer_kind(expr);
             if ty == Some(Ty::Event) && !in_event_position {
-                self.event_out_of_place(expr);
+                ty = Some(self.event_out_of_place(expr));
             }
             self.exprs[expr.index()] = ty.clone();
             ty
@@ -190,10 +194,7 @@ impl Checker<'_> {
                 match self.infer(*operand) {
                     Some(t) if t.is_integer() => Some(t),
                     Some(Ty::Bool) | None => Some(Ty::Bool),
-                    Some(Ty::Event) => {
-                        self.negated_event(expr);
-                        None
-                    }
+                    Some(Ty::Event) => self.negated_event(expr, *operand),
                     Some(other) => {
                         let span = self.design.expr_node(*operand).span;
                         self.mismatch(file, span, &Ty::Bool, &other);

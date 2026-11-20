@@ -147,6 +147,7 @@ pub struct Types<'d> {
     pub(super) somes: BTreeSet<ExprId>,
     pub(super) carriers: BTreeMap<DeclId, Ty>,
     pub(super) builtins: BTreeMap<ExprId, Builtin>,
+    pub(super) event_reads: BTreeSet<ExprId>,
     pub(super) widths: BTreeMap<ExprId, u32>,
     pub(super) written: BTreeMap<TypeId, Ty>,
     pub(super) continuous: BTreeSet<ExprId>,
@@ -155,7 +156,7 @@ pub struct Types<'d> {
 
 impl PartialEq for Types<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.bindings == other.bindings && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins && self.widths == other.widths && self.written == other.written && self.continuous == other.continuous && self.emits == other.emits
+        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.bindings == other.bindings && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins && self.event_reads == other.event_reads && self.widths == other.widths && self.written == other.written && self.continuous == other.continuous && self.emits == other.emits
     }
 }
 
@@ -207,6 +208,12 @@ impl<'d> Types<'d> {
     /// resolved to the stdlib's own item.
     pub fn builtin(&self, expr: ExprId) -> Option<Builtin> {
         self.builtins.get(&expr).copied()
+    }
+
+    /// Whether `expr`, an `Event` in a guard or a reaction body, is read as a `bool` that says
+    /// whether it fired in the microstep (§13 rules 2 and 9). Its type is `bool`.
+    pub fn event_read(&self, expr: ExprId) -> bool {
+        self.event_reads.contains(&expr)
     }
 
     /// The level count a `T::WIDTH` path of the reachable set reads (§2, §22.1): 1 for `bool`, `N`

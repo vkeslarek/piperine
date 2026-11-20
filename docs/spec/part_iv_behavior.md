@@ -582,6 +582,12 @@ of `&&` whose left operand is an `Event`.
 
 > **Resolution.** §13 rule 14 gives `settle || ev` a meaning instead of rejecting it.
 
+> **Resolution.** §13 rule 2 reads an event as a `bool` in the value of a commit too: in a reaction
+> `on up || dn { q <- up; }`, the `Comparator` of this section, commits whether `up` fired in this
+> microstep onto a carrier of `bool`. §13 rule 8's "never committed" is
+> an `Event` committed where a type other than `bool` is expected (`E0441`): the commit holds the
+> `bool` that rule 2 reads, never an `Event`.
+
 **Dynamic semantics**
 
 - **§13 rule 1** *Static:* `a || b` has type `Event` when both operands do. `ev && c` has type

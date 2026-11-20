@@ -3,8 +3,9 @@
 //! head of an `on`, a body `let`, the result of a module, the value of a function, an operand of
 //! `||` or `&&` in one of these) and the heads of the reactions of a `digital` block.
 //!
-//! An `Event` has no `Repr`. Written where only a value may stand it is `E0441`; read as a `bool`
-//! it is `P0001` (the elaborator has no read of it yet, part IV §13 rule 2).
+//! An `Event` has no `Repr`. Written where only a value may stand it is `E0441`; in a guard and in
+//! a reaction body it reads as a `bool` that says whether it fired in the microstep (part IV §13
+//! rules 2 and 9), recorded as an event read for the elaborator.
 
 use crate::pom::{Arg, BehaviorKind, DeclId, DeclKind, ExprId};
 
@@ -18,17 +19,47 @@ impl Checker<'_> {
         self.infer(expr)
     }
 
-    /// An `Event` typed where `expr` stands: `E0441` where only a value may stand, `P0001` where
-    /// it would be read as a `bool` (a guard).
-    pub(super) fn event_out_of_place(&mut self, expr: ExprId) {
+    /// An `Event` typed where `expr` stands, outside an event position: where an event is read
+    /// (a guard or a reaction body) it is a `bool` (§13 rules 2 and 9), anywhere else it is
+    /// `E0441`. The type the expression then has is returned.
+    pub(super) fn event_out_of_place(&mut self, expr: ExprId) -> Ty {
+        if self.reads_events() {
+            self.event_read_as_bool(expr)
+        } else {
+            self.event_outside_a_position(expr);
+            Ty::Event
+        }
+    }
+
+    /// Whether an `Event` stands for a `bool` here: inside a guard (§13 rule 9) and in a
+    /// reaction body (§13 rule 2).
+    fn reads_events(&self) -> bool {
+        self.in_guard || self.context == Context::Reaction
+    }
+
+    /// `expr`, an `Event`, read as a `bool`: whether it fired in this microstep (§13 rule 2). The
+    /// read is recorded for the elaborator (`Types::event_read`).
+    pub(super) fn event_read_as_bool(&mut self, expr: ExprId) -> Ty {
+        self.event_reads.insert(expr);
+        Ty::Bool
+    }
+
+    /// `E0441` for an `Event` that stands where no event may and no read makes it a `bool`: it is
+    /// never carried or stored (§13 rule 8).
+    fn event_outside_a_position(&mut self, expr: ExprId) {
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
-        if self.in_guard || (self.context == Context::Reaction && !self.committing) {
-            self.unsupported(file, node.span, "an event read as a `bool`");
-        } else {
-            let message = "an `Event` value outside an event position, a guard or a reaction body: an event is never committed, carried or stored (§13 rule 8)".to_string();
-            self.coded(file, "E0441", node.span, message, "an `Event` outside an event position");
-        }
+        let message = "an `Event` value outside an event position, a guard or a reaction body: an event is never carried or stored (§13 rule 8)".to_string();
+        self.coded(file, "E0441", node.span, message, "an `Event` outside an event position");
+    }
+
+    /// `E0441` for an event read where a type other than `bool` is expected, a commit onto a
+    /// carrier of another type (§13 rule 8; the read of §13 rule 2 is a `bool` only).
+    pub(super) fn event_where_another_type_is_expected(&mut self, expr: ExprId, expected: &Ty) {
+        let node = self.design.expr_node(expr).clone();
+        let file = self.file_of_expr(expr);
+        let message = format!("an `Event` where a `{}` is expected: an event reads as a `bool` only, it is never carried or stored (§13 rules 2 and 8)", expected.name(self.design));
+        self.coded(file, "E0441", node.span, message, "an `Event` where a value is expected");
     }
 
     /// `settle`: the core `Event` value of §14.9 (§13 rule 10). It has no operand to check; where
@@ -93,16 +124,20 @@ impl Checker<'_> {
         }
     }
 
-    /// `!` on an `Event`: `E0440` (§13 rule 1); inside a guard it would read the event as a `bool`.
-    pub(super) fn negated_event(&mut self, whole: ExprId) {
+    /// `!` on an `Event`, `operand` the event: inside a guard or a reaction body the event reads
+    /// as a `bool` and `!` is the ordinary one (§13 rules 2 and 9); anywhere else `E0440` (§13
+    /// rule 1).
+    pub(super) fn negated_event(&mut self, whole: ExprId, operand: ExprId) -> Option<Ty> {
+        if self.reads_events() {
+            self.event_read_as_bool(operand);
+            self.exprs[operand.index()] = Some(Ty::Bool);
+            return Some(Ty::Bool);
+        }
         let file = self.file_of_expr(whole);
         let span = self.design.expr_node(whole).span;
-        if self.in_guard {
-            self.unsupported(file, span, "an event read as a `bool`");
-        } else {
-            let message = "`!` applied to an `Event` outside a guard or a reaction body: `!` applies to a `bool` (§13 rule 1)".to_string();
-            self.coded(file, "E0440", span, message, "`!` on an `Event`");
-        }
+        let message = "`!` applied to an `Event` outside a guard or a reaction body: `!` applies to a `bool` (§13 rule 1)".to_string();
+        self.coded(file, "E0440", span, message, "`!` on an `Event`");
+        None
     }
 
     /// `c.changed()`, `c.rise()` and `c.fall()` on a discrete carrier: an `Event`. `changed` on a

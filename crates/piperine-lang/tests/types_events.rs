@@ -282,13 +282,14 @@ digital for Top {\n    on clk.rise() && cnt > 3 {\n        let next = cnt + 1;\n
 #[test]
 fn a_commit_of_another_type_is_e0432() {
     // DIG-05 AC 8 (§12.1.9): the committed expression has the value type of its target. An `Event`
-    // committed is `E0441` (§13 rule 8); a commit outside a reaction body is outside the subset.
+    // committed where a type other than `bool` is expected is `E0441` (§13 rules 2 and 8, design D2;
+    // onto a `bool` it is read, `an_event_committed_onto_a_bool_carrier_reads_as_a_bool`).
     for (body, at, code) in [
         ("count <- true;", "true", "E0432"),
         ("count <- 1.5;", "1.5", "E0432"),
         ("count <- wide;", "wide", "E0432"),
-        ("flag <- clk.rise();", "clk.rise()", "E0441"),
-        ("flag <- clk.rise() || clk.fall();", "clk.rise() || clk.fall()", "E0441"),
+        ("count <- clk.rise();", "clk.rise()", "E0441"),
+        ("count <- clk.rise() || clk.fall();", "clk.rise() || clk.fall()", "E0441"),
     ] {
         let src = format!("module Top(in clk: Bit, in wide: Bit<u12>, out count: Bit<u9> = 0, out flag: Bit = false) {{ }}\ndigital for Top {{ on clk.rise() {{ {body} }} }}");
         let d = diagnostics(&src);
@@ -554,4 +555,61 @@ fn cross_takes_ttol_and_etol_by_position_and_by_name() {
         let d = diagnostics(&src);
         assert_eq!(codes(&d), [code], "{head}");
     }
+}
+
+/// `Top` with one reaction on `head` whose body is `body`, over a `bool` carrier `q` and an `f64`
+/// carrier `x`.
+fn with_body(head: &str, body: &str) -> String {
+    format!("module Top(in clk: Bit, in en: Bit, out q: Bit, out x: Bit<f64>) {{ }}\ndigital for Top {{\non {head} {{ {body} }}\n}}")
+}
+
+#[test]
+fn an_event_reads_as_a_bool_in_a_reaction_body() {
+    // UE-01 AC 1, §13 rule 2: an event used as a `bool` inside a reaction says whether it fired in
+    // the microstep: `if clk.rise() { .. }`, `!ev`, `en && ev`, an event not in the head, a `let`
+    // bound event. Each read is recorded and typed `bool`.
+    for body in [
+        "if clk.rise() { q <- true; }",
+        "if !clk.fall() { q <- true; }",
+        "if en && clk.rise() { q <- true; }",
+        "if clk.rise() && en { q <- true; }",
+        "if clk.rise() || clk.fall() { q <- true; }",
+    ] {
+        let src = with_body("clk.changed()", body);
+        let design = design_of(&src);
+        let types = checked(&design, &src);
+        let reads: Vec<ExprId> = (0..design.expr_count()).map(|i| ExprId(i as u32)).filter(|e| in_top(&design, *e) && types.event_read(*e)).collect();
+        assert!(!reads.is_empty(), "{body}: an event read is recorded");
+        assert!(reads.iter().all(|e| types.ty(*e) == Some(&Ty::Bool)), "{body}: a read is typed bool: {reads:?}");
+    }
+    let src = with_body("clk.changed()", "let up = clk.rise(); if up { q <- true; }");
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    let reads = exprs_reading(&design, &types, &src, "clk.rise()");
+    assert!(reads.iter().all(|e| types.event_read(*e) && types.ty(*e) == Some(&Ty::Bool)), "the value of a body `let` is read as a bool: {reads:?}");
+}
+
+#[test]
+fn an_event_committed_onto_a_bool_carrier_reads_as_a_bool() {
+    // UE-02 AC 5, §13 rule 2 and design D2: `on up || dn { q <- up; }` commits whether `up` fired
+    // in this microstep, as the `Comparator` of §13 does. The event is read, typed `bool`.
+    let src = "module Top(in clk: Bit, in en: Bit, out q: Bit) { let up = clk.rise(); let dn = clk.fall(); }\ndigital for Top { on up || dn { q <- up; } }";
+    let design = design_of(src);
+    let types = checked(&design, src);
+    let committed: Vec<ExprId> = exprs_reading(&design, &types, src, "up").into_iter().filter(|e| types.event_read(*e)).collect();
+    assert_eq!(committed.len(), 1, "the commit's value is the one event read");
+    assert_eq!(types.ty(committed[0]), Some(&Ty::Bool));
+}
+
+#[test]
+fn an_event_where_another_type_is_expected_is_e0441() {
+    // UE-02 AC 4, §13 rules 2 and 8: an event read is a `bool`; a commit onto a carrier of another
+    // type is `E0441` at the event, and so is a read stored or carried outside any reaction.
+    let src = with_body("clk.rise()", "x <- clk.rise();");
+    let d = diagnostics(&src);
+    assert_eq!(codes(&d), ["E0441"], "{:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    assert_eq!(snippet(&src, &d[0]), "clk.rise()");
+    let src = "module Top(in clk: Bit, out q: Bit) { q = clk.rise(); }";
+    let d = diagnostics(src);
+    assert_eq!((codes(&d), snippet(src, &d[0])), (vec!["E0441".to_string()], "clk.rise()"));
 }

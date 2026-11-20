@@ -1776,3 +1776,18 @@ fn there_is_no_slice_and_no_borrow_in_the_grammar() {
     let h5 = section(&appendix_h(), "## H.5");
     assert!(!h5.contains('&'), "H.5 lends nothing: {h5}");
 }
+
+#[test]
+fn the_commit_of_an_event_read_as_a_bool_is_stated() {
+    // UE-02 AC 5, design D2: §13 rule 2 reads an event as a `bool` in the value of a commit, so
+    // the spec's own `Comparator` (`q <- up`) is well typed; rule 8's "never committed" is an
+    // `Event` where a type other than `bool` is expected.
+    let behavior = flat(&spec("part_iv_behavior.md"));
+    for fact in [
+        "§13 rule 2 reads an event as a `bool` in the value of a commit too",
+        "`on up || dn { q <- up; }`, the `Comparator` of this section, commits whether `up` fired in this",
+        "an `Event` committed where a type other than `bool` is expected (`E0441`)",
+    ] {
+        assert!(behavior.contains(fact), "§13 lacks \"{fact}\"");
+    }
+}
