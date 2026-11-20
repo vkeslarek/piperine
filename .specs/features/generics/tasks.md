@@ -223,8 +223,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_run_fails_on_an_unreached_error_with_the_check_diagnostic` passes under `**Run apisession**`
-- [ ] Gate check passes: Full
+- [x] `a_run_fails_on_an_unreached_error_with_the_check_diagnostic` passes under `**Run apisession**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

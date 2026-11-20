@@ -139,11 +139,12 @@ fn check_renders_every_diagnostic_and_exits_1() {
 }
 
 #[test]
-fn check_without_a_run_says_type_checking_needs_one() {
-    // CLI-14 AC 4: a project with no run is parsed and resolved only, and the line says so
+fn check_without_a_run_types_the_whole_package() {
+    // GN-08 AC 2 (S3; CLI-14 AC 4 moved): a project with no run is type-checked whole, so the line
+    // no longer says type checking needs a run
     let out = piperine_in(&fixture("no_run"), &["check"]);
     assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
-    assert_eq!(text(&out.stdout), "ok: no_run (2 crates, 0 runs; type checking needs a run)\n");
+    assert_eq!(text(&out.stdout), "ok: no_run (2 crates, 0 runs)\n");
 }
 
 #[test]

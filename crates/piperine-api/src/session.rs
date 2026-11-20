@@ -359,14 +359,18 @@ impl Session {
         &self.context
     }
 
-    /// The stages before a backend: the design of `spec` read, its top chosen, type-checked and
-    /// elaborated. `open` and `Project::check` run the same code, so a check finds what a run
-    /// would.
+    /// The stages before a backend: the design of `spec` read, every item type-checked, its top
+    /// chosen, checked and elaborated. `open` and `Project::check` run the same code, so a check
+    /// finds what a run would.
     pub(crate) fn elaborate(project: &Project, spec: &RunSpec) -> Result<(Arc<Ir>, String), Failure> {
         let design = project.design(spec)?;
         if !design.diagnostics().is_empty() {
             let found = design.diagnostics().to_vec();
             return Err(Failure::Diagnostics { stage: "parse", design: Box::new(design), found });
+        }
+        // every item is typed, reached from the top or not (S3, GN-09): a run fails as a check does
+        if let Err(found) = Types::check_model(&design) {
+            return Err(Session::diagnosed("typeck", design, found));
         }
         let top = Session::top_of(&design, spec)?;
         if let Err(found) = Types::check(&design, &top) {
