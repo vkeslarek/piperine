@@ -627,6 +627,8 @@ impl Keys {
                 Analysis::Dc { sweep: sweep.value.clone(), from: from.value, to: to.value, step: step.value }
             }
             "ac" | "noise" => {
+                // The article the analysis name takes in a message: "an `ac` run", "a `noise` run".
+                let article = if analysis.value == "ac" { "an" } else { "a" };
                 let grid = match (&self.per_decade, &self.points) {
                     (Some(n), None) if n.value > 0 => Grid::PerDecade(n.value),
                     (None, Some(n)) if n.value > 0 => Grid::Points(n.value),
@@ -634,11 +636,11 @@ impl Keys {
                         return Err(fault(n.at, format!("run `{name}`: `per_decade` or `points` must be greater than 0"), "not greater than 0"));
                     }
                     (Some(_), Some(p)) => {
-                        let message = format!("run `{name}`: a `{}` run gives exactly one of `per_decade` and `points`, not both", analysis.value);
+                        let message = format!("run `{name}`: {article} `{}` run gives exactly one of `per_decade` and `points`, not both", analysis.value);
                         return Err(fault(p.at.or(self.name_at), message, "both grids"));
                     }
                     (None, None) => {
-                        let message = format!("run `{name}`: a `{}` run gives exactly one of `per_decade` and `points`", analysis.value);
+                        let message = format!("run `{name}`: {article} `{}` run gives exactly one of `per_decade` and `points`", analysis.value);
                         return Err(fault(self.name_at, message, "no grid"));
                     }
                 };
