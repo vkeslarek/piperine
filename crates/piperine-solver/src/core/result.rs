@@ -452,6 +452,12 @@ pub struct NoiseAnalysisResult {
     pub frequencies: Vec<f64>,
     pub out_noise_sq: Vec<f64>,
     pub integrated_noise: f64,
+    /// The band total of the output noise, V or A RMS, as ngspice's `onoise_total`: the root of
+    /// the sum, over the sources, of each source's power-law integral
+    /// ([`Integrator::power_law`](piperine_analog_solver::math::integration::Integrator::power_law))
+    /// of its density at the output. ngspice integrates source by source (`Nintegrate` in
+    /// `DIOnoise`, `N_INTEG`), and the sum of those is not the integral of the sum.
+    pub output_total: f64,
     pub contributions: Vec<NoiseContribution>,
 }
 

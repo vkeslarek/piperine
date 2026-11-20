@@ -8,6 +8,7 @@
 //! source travel on [`NoiseAnalysisOptions`], and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
 use piperine_analog_solver::device::Ambient;
+use piperine_analog_solver::math::integration::Integrator;
 use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, NodeIdentifier};
 use crate::analyses::Context;
 use crate::analyses::ac::AcSweepAnalysisOptions;
@@ -185,7 +186,9 @@ impl<'a> NoiseSolver<'a> {
         let integrated_noise = self.integrate_noise(&frequencies, &out_noise_sq);
 
         let mut contributions = Vec::new();
+        let mut output_power = 0.0;
         for ((element, source), (kind, psd)) in psd_map {
+            output_power += Integrator::power_law(&frequencies, &psd);
             let mut integrated_sq = 0.0;
             if frequencies.len() > 1 {
                 for i in 0..frequencies.len() - 1 {
@@ -205,12 +208,15 @@ impl<'a> NoiseSolver<'a> {
         Ok(NoiseAnalysisResult {
             frequencies,
             integrated_noise,
+            output_total: output_power.sqrt(),
             out_noise_sq,
             contributions,
         })
     }
 
-    /// Appends `val` to the PSD series of `key` at frequency index `i`.
+    /// Adds `val` to the PSD series of `key` at frequency index `i`: a second input of the same
+    /// key at one frequency (two inputs sharing a name) sums into that value, so a series holds
+    /// one value per frequency and stays aligned with the sweep (design D7, H2).
     fn record(
         psd_map: &mut HashMap<(String, String), (NoiseKind, Vec<f64>)>,
         key: (String, String),
@@ -219,15 +225,14 @@ impl<'a> NoiseSolver<'a> {
         i: usize,
         count: usize,
     ) {
-        let entry = psd_map.entry(key).or_insert_with(|| {
-            let mut vec = Vec::with_capacity(count);
-            vec.resize(i, 0.0);
-            (kind, vec)
-        });
+        let entry = psd_map.entry(key).or_insert_with(|| (kind, Vec::with_capacity(count)));
         while entry.1.len() < i {
             entry.1.push(0.0);
         }
-        entry.1.push(val);
+        match entry.1.get_mut(i) {
+            Some(already) => *already += val,
+            None => entry.1.push(val),
+        }
     }
 
     /// The noise columns of a circuit of devices at `f_hz`, each with its
@@ -363,6 +368,9 @@ impl<'a> NoiseSolver<'a> {
 
     /// Integrates noise power spectral density to get RMS noise voltage.
     ///
+    /// This is the trapezoid over the grid; the band total ngspice reports is
+    /// [`NoiseAnalysisResult::output_total`], by the power-law rule.
+    ///
     /// Trapezoidal integration through the shared [`Integrator`]:
     ///   P_total = ∫ PSD(f) df
     ///   V_rms = √P_total
@@ -374,6 +382,6 @@ impl<'a> NoiseSolver<'a> {
     /// # Returns
     /// Integrated RMS noise voltage (V)
     fn integrate_noise(&self, freqs: &[f64], psd: &[f64]) -> f64 {
-        piperine_analog_solver::math::integration::Integrator::trapezoid(freqs, psd).sqrt()
+        Integrator::trapezoid(freqs, psd).sqrt()
     }
 }

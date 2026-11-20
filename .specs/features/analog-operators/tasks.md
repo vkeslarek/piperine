@@ -249,9 +249,9 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `the_band_total_integrates_the_density_as_ngspice_does` and `two_inputs_sharing_a_name_sum_into_one_series` pass
-- [ ] `Run abinoise` passes unedited
-- [ ] Gate check passes: `Run report`, `Run abinoise`
+- [x] `the_band_total_integrates_the_density_as_ngspice_does` and `two_inputs_sharing_a_name_sum_into_one_series` pass
+- [x] `Run abinoise` passes unedited
+- [x] Gate check passes: `Run report`, `Run abinoise`
 
 **Tests**: integration
 **Gate**: quick
