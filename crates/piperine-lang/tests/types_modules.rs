@@ -152,9 +152,10 @@ fn a_node_of_another_nature_is_e0251() {
     assert_eq!(codes_of(&d), ["E0251"]);
     assert_eq!(snippet(&src, &d[0]), "t");
 
-    // A value where a node is wanted is a plain mismatch.
+    // A value where a node is wanted is `E0315` (§8.1.11), proved by
+    // `an_expression_on_a_carrier_port_that_is_not_in_is_e0315`; no longer a plain mismatch.
     let (src, d) = diagnostics("module Top(a: E) { let r1 = Resistor { r: 1.0 }(a, 1.0); }");
-    assert_eq!(codes_of(&d), ["E0180"]);
+    assert_eq!(codes_of(&d), ["E0315"]);
     assert_eq!(snippet(&src, &d[0]), "1.0");
 }
 
@@ -247,4 +248,16 @@ fn a_where_over_its_own_and_earlier_params_is_accepted() {
     let src = format!("{NATURES}module Top() {{ a: f64 = 1.0; c: f64 = 2.0 where c > a && c > 0.0; }}");
     let design = design_of(&src);
     Types::check(&design, "Top").expect("a where over its own and earlier params");
+}
+
+#[test]
+fn an_expression_on_a_carrier_port_that_is_not_in_is_e0315() {
+    // §8.1.11 (`E0315`): an expression connected to a node port, which is no `in` port of a
+    // discrete nature, names the port; a node and `gnd` stay accepted.
+    for args in ["2.0 * v(a), gnd", "a, 1.0", "true, gnd"] {
+        let (src, d) = diagnostics(&format!("module Top(a: E) {{ let r1 = Resistor {{ r: 1k }}({args}); }}\nanalog for Top {{ }}"));
+        assert_eq!(codes_of(&d), ["E0315"], "{args}");
+        assert!(d[0].diagnostic.message.contains("`p`") || d[0].diagnostic.message.contains("`n`"), "{}", d[0].diagnostic.message);
+        assert!(["2.0 * v(a)", "1.0", "true"].contains(&snippet(&src, &d[0])), "{}", snippet(&src, &d[0]));
+    }
 }

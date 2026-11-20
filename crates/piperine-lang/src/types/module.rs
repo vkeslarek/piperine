@@ -249,7 +249,7 @@ impl Checker<'_> {
                 Some(Ty::Carrier { value, .. }) => self.connect_carrier(arg.value, dir, &value),
                 Some(expected @ Ty::Node(_)) => {
                     let Some(found) = self.infer(arg.value) else { continue };
-                    self.connect(arg.value, &expected, &found);
+                    self.connect(arg.value, port_decl, &expected, &found);
                 }
                 // A value input: any expression of its type, a probe included (§8.1.13).
                 Some(value) => {
@@ -264,8 +264,10 @@ impl Checker<'_> {
         }
     }
 
-    /// One node argument: the nature of its port, or `gnd`.
-    fn connect(&mut self, arg: ExprId, port: &Ty, found: &Ty) {
+    /// One node argument to the port `port_decl`: the nature of its port, or `gnd`. A value (an
+    /// expression that is not a node) at a continuous carrier port is `E0315` naming the port:
+    /// only an `in` port takes an expression, and a node port is never one (§8.1.11).
+    fn connect(&mut self, arg: ExprId, port_decl: DeclId, port: &Ty, found: &Ty) {
         let file = self.file_of_expr(arg);
         let span = self.design.expr_node(arg).span;
         // A discrete carrier read as a value is typed by what it holds; the declaration tells.
@@ -280,6 +282,11 @@ impl Checker<'_> {
             (Ty::Node(_), Ty::Node(_)) => {
                 let message = format!("expected {}, found {}", port.name(self.design), found.name(self.design));
                 self.coded(file, "E0251", span, format!("a node of another nature is connected: {message}"), &message);
+            }
+            (Ty::Node(_), _) => {
+                let name = self.design.decl_data(port_decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                let message = format!("an expression of type {} is connected to the node port `{name}`: only an `in` port of a discrete nature takes an expression (§8.1.11)", found.name(self.design));
+                self.coded(file, "E0315", span, message, "expression at a node port");
             }
             _ => self.mismatch(file, span, port, found),
         }
