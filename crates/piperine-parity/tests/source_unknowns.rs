@@ -300,3 +300,30 @@ fn an_unknown_if_in_a_cross_argument_merges() {
     assert!((known[0] - 0.3e-6).abs() <= 1e-12, "at 0.3 us: {known:?}");
     assert_eq!(hits("MaybeBench"), Vec::<f64>::new());
 }
+
+/// The records of the 4 ns transient of `top` of `file`, decoded as the host decodes them.
+fn records_of(file: &str, top: &str) -> (Seen, Vec<Record>) {
+    let built = build(&project(file), top);
+    let streams = Streams::of(built.ir.clone());
+    let seen = built.run(4e-9, 0.5e-9);
+    let records = seen.all().iter().filter_map(|o| streams.decode(o)).map(|r| r.unwrap_or_else(|f| panic!("{f}"))).collect();
+    (seen, records)
+}
+
+#[test]
+fn an_if_whose_arms_commit_is_the_value_of_a_commit_and_of_an_emit_field() {
+    // §3.3.3: `v <- if d { w <- 1; 5 } else { w <- 2; 5 }` with `d` unknown makes both paths'
+    // commits: `v` is 5 on each, so it is known 5; `w` is 1 or 2, so it is unknown. The same in
+    // an emit field: `x = if d { z <- 3; 7 } else { z <- 3; 7 }` commits `z` 3 and writes `x` 7,
+    // known, in a record that is no maybe (the `emit!` itself is reached under known control,
+    // only the value of its field decides on `d`). The generated source must compile at all: two
+    // calls on one `Commits` cannot be nested
+    let (seen, records) = records_of("hoisted.msl", "HoistBench");
+    let changes = |name: &str| transient(&seen, &format!("HoistBench.{name}"));
+    assert_eq!(changes("v"), vec![(NS / 2, byte(5))]);
+    assert_eq!(changes("w"), vec![(NS / 2, UNKNOWN.to_vec())]);
+    assert_eq!(changes("z"), vec![(NS / 2, byte(3))]);
+    let seen_records = stream(&records, "seen");
+    assert_eq!(seen_records.len(), 4);
+    assert!(seen_records.iter().all(|r| !r.maybe && r.fields == [("x".to_string(), Field::Int(7))]), "{seen_records:?}");
+}

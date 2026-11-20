@@ -1110,6 +1110,14 @@ impl<'a> ValuePrinter<'a> {
                     done.push(statement);
                     done.len() - 1
                 };
+                if value.contains("commits_") || after.contains("commits_") {
+                    // an `if` whose arms commit or emit is `commits_.branch(..)`, which borrows
+                    // `commits_` mutably: as an argument of `commits_.commit(..)` it would borrow
+                    // it twice. The arguments are evaluated first, in the order they print
+                    let (value, after) = (Self::indent(&value), Self::indent(&after));
+                    let call = format!("commits_.commit({index}, value_, after_);");
+                    return Ok(format!("{{\n    let value_ =\n{value};\n    let after_ =\n{after};\n    {call}\n}}"));
+                }
                 Ok(format!("commits_.commit({index}, {value}, {after});"))
             }
         }
@@ -1138,6 +1146,7 @@ impl<'a> ValuePrinter<'a> {
             return Err(unsupported(&format!("emit! to stream `{}`, whose fields no pin holds", declared.name)));
         };
         let stream_name = declared.name.as_str();
+        let mut evaluated = Vec::new();
         let mut writes = Vec::new();
         let mut texts = Vec::new();
         for f in fields {
@@ -1146,7 +1155,14 @@ impl<'a> ValuePrinter<'a> {
                     let (Some((offset, _)), Some(declared)) = (layout.fields.get(*field as usize), declared.fields.get(*field as usize)) else {
                         return Err(unsupported(&format!("emit! of field {field} of stream `{}`, out of range", declared.name)));
                     };
-                    let value = self.typed(*value, &ValueType::Flagged(Box::new(declared.ty.clone())))?.at(Prec::Atom);
+                    let mut value = self.typed(*value, &ValueType::Flagged(Box::new(declared.ty.clone())))?.at(Prec::Atom);
+                    if value.contains("commits_") {
+                        // a value that commits or emits is `commits_.branch(..)`: evaluated before
+                        // the record's own `commits_` calls, so that two never borrow it at once
+                        let name = format!("field{field}_");
+                        evaluated.push(format!("let {name} =\n{};", Self::indent(&value)));
+                        value = name;
+                    }
                     writes.push(format!("{value}.write(&mut record_[{offset}..]); // {}", declared.name));
                     if declared.name == "finish" && stream_name == "sim" {
                         // a `finish` that is unknown, or reached under unknown control, never ends
@@ -1164,10 +1180,9 @@ impl<'a> ValuePrinter<'a> {
             done.len() - 1
         };
         let text = if texts.is_empty() { String::new() } else { format!("; its text {} stays in the IR", texts.join(", ")) };
-        let mut lines = vec![
-            format!("// emit! to stream `{}` @ {}:{}:{}{text}", declared.name, origin.file, origin.line, origin.col),
-            format!("let mut record_ = [0u8; {}];", layout.size),
-        ];
+        let mut lines = vec![format!("// emit! to stream `{}` @ {}:{}:{}{text}", declared.name, origin.file, origin.line, origin.col)];
+        lines.extend(evaluated);
+        lines.push(format!("let mut record_ = [0u8; {}];", layout.size));
         lines.extend(writes);
         // the record's own `maybe` (§19 rule 1): whether the code is on a path taken under unknown
         // control; `record_with_maybe` knows where it is, to keep it when a merge panics
