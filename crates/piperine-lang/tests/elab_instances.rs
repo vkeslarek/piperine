@@ -103,14 +103,14 @@ fn signals_are_nodes_and_ports_bind_the_parents() {
 }
 
 #[test]
-fn a_childs_own_signal_is_gnd_in_the_authored_child_and_real_in_the_instance_table() {
-    // M1 amendment (ELAB-03): `Child::nodes` has no terminal for "the child's own node", so the
-    // authored view pads it with `Ground`; the instance table carries the real node.
+fn a_childs_own_signal_is_own_in_the_authored_child_and_real_in_the_instance_table() {
+    // S4 closed by `analog-structure` T35 (AS-16; it was `gnd` padding, ELAB-03's M1 amendment): the
+    // authored view names the child's own node `own2`; the instance table carries the real node.
     let src = format!("{LEAF}module Top() {{ signal s: Electrical; let l = Leaf {{ }}(s, gnd); }}");
     let ir = Elab::ir(&src, "Top");
     let child = &ir.top().body().children()[0];
     assert_eq!(child.nodes.len(), 3, "one slot per node of the child's body");
-    assert_eq!(child.nodes[2], piperine_ir::Terminal::Ground, "the own signal is padded with ground");
+    assert_eq!(child.nodes[2], piperine_ir::Terminal::Own(2), "the own signal is the child's own node");
     assert_eq!(ir.instance_at("Top.l").unwrap().node(2).map(|n| n.path().to_string()), Some("Top.l.inner".to_string()));
 }
 

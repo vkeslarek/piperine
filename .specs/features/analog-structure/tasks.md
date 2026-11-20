@@ -957,9 +957,9 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `Run elabstruct`: `a_childs_own_signal_is_bound_to_own_in_the_authored_child`, `a_design_with_own_terminals_passes_check`
-- [ ] Gate check passes: Full (`Run elabstruct`, `cargo test -p piperine-lang`, `Run twins`, `Run tgolden`)
-- [ ] Test count: the 2 tests named above, and no existing test removed or edited
+- [x] Tests with exactly these names pass in `Run elabstruct`: `a_childs_own_signal_is_bound_to_own_in_the_authored_child`, `a_design_with_own_terminals_passes_check`
+- [x] Gate check passes: Full (`Run elabstruct`, `cargo test -p piperine-lang`, `Run twins`, `Run tgolden`)
+- [x] Test count: the 2 tests named above, and no existing test removed or edited
 
 **Tests**: integration
 **Gate**: full

@@ -6,7 +6,7 @@
 
 use std::collections::BTreeSet;
 
-use piperine_ir::{Child, ChildValue, Constant, Terminal};
+use piperine_ir::{Child, ChildValue, Constant, NodeRole, Terminal};
 
 use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
@@ -36,17 +36,23 @@ pub(super) struct ChildPlan {
 
 impl Elaboration<'_, '_> {
     /// Gives every authored child the node slots of its body that are no port, now that every body is
-    /// built: `Ir::check` asks for one slot per node of the child's body.
+    /// built (`Ir::check` asks for one slot per node of the child's body): each names the child's own
+    /// node, `Terminal::Own(k)` with `k` the node's index in the child's body, so the authored tree
+    /// shows the child's signals and never ground where a node exists (S4, AS-16). A node of the
+    /// child that is no signal (one it reaches into a grandchild) has no `Own`: its slot is ground.
     pub(super) fn pad_child_nodes(&mut self) {
-        let counts: std::collections::BTreeMap<piperine_ir::BodyId, usize> = self.plans.values().map(|plan| (plan.body, plan.nodes.len())).collect();
+        let nodes: std::collections::BTreeMap<piperine_ir::BodyId, Vec<NodeRole>> = self.plans.values().map(|plan| (plan.body, plan.nodes.iter().map(|n| n.role).collect())).collect();
         let slots: Vec<(piperine_ir::BodyId, u32, Vec<Terminal>)> = self
             .plans
             .values()
             .flat_map(|plan| {
                 plan.children.iter().enumerate().filter_map(|(index, child)| {
-                    let mut nodes = child.terminals.clone();
-                    nodes.resize(*counts.get(&child.body)?, Terminal::Ground);
-                    Some((plan.body, index as u32, nodes))
+                    let roles = nodes.get(&child.body)?;
+                    let mut slots = child.terminals.clone();
+                    for (slot, role) in roles.iter().enumerate().skip(slots.len()) {
+                        slots.push(if *role == NodeRole::Signal { Terminal::Own(slot as u32) } else { Terminal::Ground });
+                    }
+                    Some((plan.body, index as u32, slots))
                 })
             })
             .collect();
@@ -173,13 +179,7 @@ impl Elaboration<'_, '_> {
         let (_, body) = self.request_body(module, &key_values)?;
         let params = given.iter().filter_map(|(index, value, _)| value.map(|v| (*index, v))).collect();
         let origin = self.locator.origin(file, node.span);
-        // SPEC_DEVIATION: `Child::nodes` must bind one terminal per node of the child's body
-        // (`Ir::check`), and `Terminal` has no "the child's own node". A node of the child that is
-        // no port (a signal, an ammeter's inside node, a node a hoisted frame brings) is not
-        // connected to anything of the parent, so its slot is padded with `Ground` once the child's
-        // body is built (`pad_child_nodes`), when its nodes are known.
-        // Reason: the authored tree is a view; the instance table (`InstanceSpec::nodes`) is the
-        // one backends bind from and holds the child's own node there.
+        // The slots of the child's own nodes are added once every body is built (`pad_child_nodes`).
         let child = Child { name: name.clone(), body, nodes: terminals.clone(), params, origin };
         // The authored child shows the carriers it connects (ir-rust "Left for msl-digital").
         if !carriers.is_empty() {

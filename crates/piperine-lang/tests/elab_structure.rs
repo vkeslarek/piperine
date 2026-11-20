@@ -448,3 +448,32 @@ fn a_param_value_let_that_reads_a_probe_is_e0321() {
         assert!(message.contains(reads), "{let_}: it says what the let reads ({reads}): {message}");
     }
 }
+
+/// The node slots of the authored child `name` of the body `body`.
+fn child_slots(ir: &Ir, body: &str, name: &str) -> Vec<piperine_ir::Terminal> {
+    let body = ir.bodies().find(|b| b.name() == body).expect("the body");
+    body.children().iter().find(|c| c.name == name).expect("the child").nodes.clone()
+}
+
+#[test]
+fn a_childs_own_signal_is_bound_to_own_in_the_authored_child() {
+    // AS-16 AC 1 (S4, Q1): `Leaf` has the port `a` (slot 0, the parent's `s`) and its own `signal x`
+    // (slot 1): the authored child names its own node `own1`, never ground.
+    let ir = Elab::ir("module Leaf(a: Electrical) { signal x: Electrical; }\nmodule Top() { signal s: Electrical; let leaf = Leaf(s); }", "Top");
+    assert_eq!(child_slots(&ir, "Top", "leaf"), [piperine_ir::Terminal::Node(0), piperine_ir::Terminal::Own(1)]);
+    // A node the child's body gains from a hoisted placement is its own too: the slot after the signal.
+    let ir = Elab::ir("module Gate(x: f64) { signal y: Electrical; }\nanalog for Gate { v(y) +> x; }\nmodule Leaf(a: Electrical) { signal x: Electrical; let g = Gate(1.0); }\nmodule Top() { signal s: Electrical; let leaf = Leaf(s); }", "Top");
+    let slots = child_slots(&ir, "Top", "leaf");
+    assert_eq!(slots[0], piperine_ir::Terminal::Node(0));
+    assert!(slots[1..].iter().enumerate().all(|(i, t)| *t == piperine_ir::Terminal::Own(i as u32 + 1)), "every slot after the port is own: {slots:?}");
+}
+
+#[test]
+fn a_design_with_own_terminals_passes_check() {
+    // AS-16 AC 2 and 3: the IR of a design whose child has an own signal passes `Ir::check`, and its
+    // printed text shows the own node by name where it showed ground.
+    let ir = Elab::ir("module Leaf(a: Electrical) { signal x: Electrical; }\nmodule Top() { signal s: Electrical; let leaf = Leaf(s); }", "Top");
+    assert_eq!(ir.check(), vec![], "the check passes");
+    let text = ir.to_string();
+    assert!(text.contains("child leaf: Leaf  nodes (s, own:x)"), "{text}");
+}

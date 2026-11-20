@@ -68,10 +68,10 @@ body Buck
   carrier oc: bool signal
   carrier sink_oc: bool signal
   child osc: Osc  nodes ()  params (f = f_clk)  carriers (clk)
-  child supply: Supply  nodes (vin, gnd)  params (vin = vin_nom, rs = rs_in)
-  child power: PowerStage  nodes (vin, vout, isense, isense_n, gnd, gnd)  params (l = l, dcr = dcr, cout = cout, esr = esr, cin = cin, ron = ron, tpd = t_driver)  carriers (hs_cmd, ls_cmd)
+  child supply: Supply  nodes (vin, own:src)  params (vin = vin_nom, rs = rs_in)
+  child power: PowerStage  nodes (vin, vout, isense, isense_n, own:sw, own:lx)  params (l = l, dcr = dcr, cout = cout, esr = esr, cin = cin, ron = ron, tpd = t_driver)  carriers (hs_cmd, ls_cmd)
   child load: Load  nodes (vout)  params (r_base = r_load, r_step = r_step, tr = t_step, i_inject = i_inject)  carriers (load_step, inject)
-  child meas: Sensing  nodes (vin, vout, isense, isense_n, gnd, gnd)  params ()  carriers (sample, code, done, vin_ok, oc, sink_oc)
+  child meas: Sensing  nodes (vin, vout, isense, isense_n, own:fb, own:vin_div)  params ()  carriers (sample, code, done, vin_ok, oc, sink_oc)
   child ctl: Controller  nodes ()  params ()  carriers (clk, en, sp_wr, sp_data, code, done, vin_ok, oc, sink_oc, hs_cmd, ls_cmd, sample, pgood, fault, mode)
 body Capacitor
   param c: f64 where (c > 0.0)
@@ -302,8 +302,8 @@ body PowerStage
   child ls: PowerSwitch  nodes (sw, gnd)  params (ron = ron)  carriers (ls_gate)
   child ind: Inductor  nodes (sw, lx)  params (l = l, dcr = dcr)
   child shunt: CurrentSense  nodes (lx, vout, isense, isense_n)  params ()
-  child c_out: Capacitor  nodes (vout, gnd, gnd)  params (c = cout, esr = esr)
-  child c_in: Capacitor  nodes (vin, gnd, gnd)  params (c = cin, esr = esr_in)
+  child c_out: Capacitor  nodes (vout, gnd, own:mid)  params (c = cout, esr = esr)
+  child c_in: Capacitor  nodes (vin, gnd, own:mid)  params (c = cin, esr = esr_in)
 body PowerSwitch
   param ron: f64 = 0.02 where (ron > 0.0)
   param roff: f64 = 1000000.0 where (roff > ron)
