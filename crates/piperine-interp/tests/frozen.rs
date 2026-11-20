@@ -662,7 +662,8 @@ fn each_composite_values_form_is_refused_by_name() {
     });
     assert_eq!(ranged, ["a for loop"]);
 
-    // `fn early(x) -> f64 { return x }` called from the block (T4)
+    // `fn early(x) -> f64 { return x }` called from the block (T4), and the same function named
+    // and called through its value (T5)
     let returned = Composite::refused(|b| {
         let result = Switching::ex(b).local(0);
         let exit = Composite::run(b, Expr::Return(Some(result)), ValueType::F64);
@@ -674,4 +675,13 @@ fn each_composite_values_form_is_refused_by_name() {
         (vec![], vec![b.stmt(Stmt::Expr(call))])
     });
     assert_eq!(returned, ["return"]);
+    let through_a_value = Composite::refused(|b| {
+        let read = Switching::ex(b).local(0);
+        let identity = Composite::function(b, "identity", read);
+        let reference = b.expr(Expr::FunctionRef(identity), ValueType::Fn(vec![ValueType::F64], Box::new(ValueType::F64)), Switching::at());
+        let argument = Switching::ex(b).real(1.0);
+        let call = b.expr(Expr::CallValue { callee: reference, args: vec![argument] }, ValueType::F64, Switching::at());
+        (vec![], vec![b.stmt(Stmt::Expr(call))])
+    });
+    assert_eq!(through_a_value, ["a function value", "a call through a function value"]);
 }

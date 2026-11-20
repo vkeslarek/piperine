@@ -835,6 +835,12 @@ impl<'a> Printer<'a> {
                     next.extend([text(" ".into()), Piece::Expr(*value)]);
                 }
             }
+            Expr::FunctionRef(function) => next.push(text(self.ir.functions.get(function.index()).map_or("<bad function>".to_string(), |f| Printer::name(&f.name)))),
+            Expr::CallValue { callee, args } => {
+                next.extend([Piece::Expr(*callee), text("(".into())]);
+                Printer::list(next, args);
+                next.push(text(")".into()));
+            }
             Expr::Unwrap { is, value, message } => {
                 let name = if message.is_some() { "expect" } else { "unwrap" };
                 next.extend([text(format!("{name}(")), Piece::Expr(*is), text(", ".into()), Piece::Expr(*value)]);
@@ -938,6 +944,11 @@ impl<'a> Printer<'a> {
             Expr::While { .. } | Expr::ForRange { .. } => Some(ValueType::Unit),
             // A diverging form fits any type, and a loop is typed by its breaks: both write theirs.
             Expr::Loop { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) => None,
+            Expr::FunctionRef(function) => ir.functions.get(function.index()).map(|f| ValueType::Fn(f.params.iter().map(|p| p.ty.clone()).collect(), Box::new(f.ret.clone()))),
+            Expr::CallValue { callee, .. } => match ty(callee)? {
+                ValueType::Fn(_, ret) => Some(*ret),
+                _ => None,
+            },
         }
     }
 
@@ -1140,6 +1151,8 @@ impl<'a> Printer<'a> {
             Expr::Break(value) => format!("break {}", opt(value)),
             Expr::Continue => "continue".to_string(),
             Expr::Return(value) => format!("return {}", opt(value)),
+            Expr::FunctionRef(function) => format!("function_ref fn {}", function.0),
+            Expr::CallValue { callee, args } => format!("call_value {} ({})", e(callee), ids(args)),
         }
     }
 

@@ -501,11 +501,16 @@ impl<'a> Checker<'a> {
             }
             Expr::Math { args, .. } => exprs.extend(args),
             Expr::Closure { body, .. } => exprs.push(*body),
-            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) => {
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. } => {
                 for &s in kind.statements() {
                     self.stmt_id(item, origin, s);
                 }
                 exprs.extend(kind.operands());
+            }
+            Expr::FunctionRef(function) => {
+                if function.index() >= ir.functions.len() {
+                    self.report(item.to_string(), origin.clone(), format!("function id {} out of range ({} functions)", function.0, ir.functions.len()));
+                }
             }
             Expr::Limit { x, f, seed, .. } => {
                 exprs.extend([*x, *f]);
@@ -866,7 +871,7 @@ impl<'a> Checker<'a> {
                 Expr::Call { args, .. } | Expr::Math { args, .. } => stack_e.extend(args),
                 Expr::Method { receiver, args, .. } => stack_e.extend([*receiver].into_iter().chain(args.iter().copied())),
                 Expr::Closure { body, .. } => stack_e.push(*body),
-                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) => {
+                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } => {
                     stack_s.extend(data.kind.statements());
                     stack_e.extend(data.kind.operands());
                 }
@@ -888,7 +893,7 @@ impl<'a> Checker<'a> {
             let (found, _) = self.reach(&[], &roots);
             roots.clear();
             for e in found {
-                if let Some(Expr::Call { function, .. }) = ir.exprs.get(e.index()).map(|d| &d.kind)
+                if let Some(Expr::Call { function, .. } | Expr::FunctionRef(function)) = ir.exprs.get(e.index()).map(|d| &d.kind)
                     && called.insert(*function)
                     && let Some(f) = ir.functions.get(function.index())
                 {
@@ -1142,6 +1147,8 @@ impl<'a> Checker<'a> {
 
     fn code(&mut self) {
         let ir = self.ir;
+        // The functions the `analog` blocks call, directly.
+        let mut analog_calls: BTreeSet<FunctionId> = BTreeSet::new();
         for body in &ir.bodies {
             let owner = |analog: bool, item: String| Owner {
                 item,
@@ -1189,6 +1196,7 @@ impl<'a> Checker<'a> {
                     self.walk(&mut w, Task::Stmt(stmt, Ctx::top(), true));
                 }
                 self.site_uses(&w);
+                analog_calls.extend(w.calls);
             }
             for drive in &body.drives {
                 let name = body.carriers.get(drive.carrier as usize).map_or("<bad carrier>", |c| c.name.as_str());
@@ -1273,26 +1281,33 @@ impl<'a> Checker<'a> {
             self.walk(&mut w, Task::Expr(function.body, Ctx::top()));
             graph.push(w.calls);
         }
-        self.recursion(&graph);
+        self.recursion(&graph, &analog_calls);
     }
 
-    /// Every function that reaches itself through calls.
-    fn recursion(&mut self, graph: &[BTreeSet<FunctionId>]) {
-        for (i, function) in self.ir.functions.iter().enumerate() {
+    /// Every function that reaches itself through calls and is reached from an `analog` body
+    /// (`analog_calls`, the functions that code calls, directly). Recursion elsewhere is allowed
+    /// (§3 rule 12): the elaborator unrolls the recursion `analog` reaches, since a solve needs
+    /// a bounded contribution.
+    fn recursion(&mut self, graph: &[BTreeSet<FunctionId>], analog_calls: &BTreeSet<FunctionId>) {
+        let reaches = |from: Vec<usize>| -> BTreeSet<usize> {
             let mut seen: BTreeSet<usize> = BTreeSet::new();
-            let mut stack: Vec<usize> = graph[i].iter().map(|f| f.index()).collect();
-            let mut recursive = false;
+            let mut stack = from;
             while let Some(f) = stack.pop() {
-                if f == i {
-                    recursive = true;
-                    break;
-                }
                 if f < graph.len() && seen.insert(f) {
                     stack.extend(graph[f].iter().map(|g| g.index()));
                 }
             }
-            if recursive {
-                self.report(format!("function {}", function.name), function.origin.clone(), format!("function {} calls itself, directly or through other functions", function.name));
+            seen
+        };
+        let from_analog = reaches(analog_calls.iter().map(|f| f.index()).collect());
+        for (i, function) in self.ir.functions.iter().enumerate() {
+            let recursive = reaches(graph[i].iter().map(|f| f.index()).collect()).contains(&i);
+            if recursive && from_analog.contains(&i) {
+                self.report(
+                    format!("function {}", function.name),
+                    function.origin.clone(),
+                    format!("function {} calls itself, directly or through other functions, and `analog` reaches it (§3 rule 12)", function.name),
+                );
             }
         }
     }
@@ -1915,6 +1930,34 @@ impl<'a> Checker<'a> {
                     }
                 }
                 next.extend(value.iter().map(|v| Task::Expr(*v, ctx)));
+            }
+            Expr::FunctionRef(function) => {
+                if let Some(f) = self.ir.functions.get(function.index()) {
+                    w.calls.insert(*function);
+                    if first {
+                        let want = ValueType::Fn(f.params.iter().map(|p| p.ty.clone()).collect(), Box::new(f.ret.clone()));
+                        self.own(w, &origin, ty, &want);
+                    }
+                }
+            }
+            Expr::CallValue { callee, args } => {
+                if first {
+                    match self.ty(*callee) {
+                        Some(ValueType::Fn(params, ret)) => {
+                            self.own(w, &origin, ty, ret);
+                            if params.len() != args.len() {
+                                self.wrong(w, origin.clone(), format!("calls a function value with {} args, it takes {}", args.len(), params.len()));
+                            }
+                            for (a, p) in args.iter().zip(params) {
+                                self.want(w, *a, p, "argument of a call through a function value");
+                            }
+                        }
+                        Some(other) => self.wrong(w, origin.clone(), format!("the callee of a call through a value must have a function type, found {other}")),
+                        None => {}
+                    }
+                }
+                next.push(Task::Expr(*callee, ctx));
+                next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
             }
             Expr::IsKnown(value) | Expr::High(value) => {
                 if first {

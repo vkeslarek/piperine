@@ -488,6 +488,10 @@ pub enum Expr {
     /// `return` or `return value` in a function body: the value has the function's result type.
     /// It fits any expected type.
     Return(Option<ExprId>),
+    /// A function used as a value (§1.5.10): the name of a function, of type `Fn`.
+    FunctionRef(FunctionId),
+    /// `callee(args)` where `callee` is a value of type `Fn`, not a named function.
+    CallValue { callee: ExprId, args: Vec<ExprId> },
 }
 
 impl Expr {
@@ -496,7 +500,7 @@ impl Expr {
     pub fn operands(&self) -> Vec<ExprId> {
         match self {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown => Vec::new(),
-            Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::ParamPrevious(_) | Expr::Derivative(_) | Expr::Fired(_) | Expr::Continue => Vec::new(),
+            Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::ParamPrevious(_) | Expr::Derivative(_) | Expr::Fired(_) | Expr::Continue | Expr::FunctionRef(_) => Vec::new(),
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::LevelCast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => vec![*expr],
             Expr::Binary { lhs: a, rhs: b, .. } | Expr::KnownOr { value: a, default: b } | Expr::Unwrap { is: a, value: b, .. } | Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => vec![*a, *b],
             Expr::If { cond, then, otherwise } => vec![*cond, *then, *otherwise],
@@ -510,6 +514,7 @@ impl Expr {
             Expr::While { cond, .. } => vec![*cond],
             Expr::ForRange { low, high, .. } => vec![*low, *high],
             Expr::Break(value) | Expr::Return(value) => value.iter().copied().collect(),
+            Expr::CallValue { callee, args } => [*callee].into_iter().chain(args.iter().copied()).collect(),
         }
     }
 

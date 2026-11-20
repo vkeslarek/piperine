@@ -1,16 +1,21 @@
-//! Scope: the control forms of the IR (composite-values phase A, CV-01 to CV-03): a mutable local
-//! and its assignment, `loop`/`while`/`for`, `break` and `continue`, and `return`. Each form is
-//! built by hand, checked (valid and refused), printed, and walked by the dependency analysis,
-//! whose fixed point (a loop's later iteration) is what these tests pin.
+//! Scope: the control forms of the IR (composite-values phase A, CV-01 to CV-07): a mutable local
+//! and its assignment, `loop`/`while`/`for`, `break` and `continue`, `return`, function values and
+//! recursion. Each form is built by hand, checked (valid and refused), printed, and walked by the
+//! dependency analysis, whose fixed points (a loop's later iteration, a recursive function's
+//! result) are what these tests pin.
 
 #[path = "support/digital.rs"]
 #[allow(dead_code)]
 mod digital;
+#[path = "support/devices.rs"]
+#[allow(dead_code)]
+mod devices;
 
+use devices::Ex;
 use digital::{Buck, Dx, Ty};
 use piperine_ir::{
-    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Broken, CarrierRole, Constant, Deps, Expr, ExprId, FunctionId, FunctionSpec, InstanceSpec, Ir, IrBuilder, Local, NodeRef,
-    NodeRole, Operator, Origin, Place, QuantityRole, Stmt, StmtId, Target, Terminal, ValueType,
+    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Broken, CarrierRole, Constant, Deps, Env, Expr, ExprId, FunctionId, FunctionSpec, InstanceSpec, Ir, IrBuilder, Local, NodeRef,
+    NodeRole, Operator, Origin, Param, Place, QuantityRole, Real, Stmt, StmtId, Target, Terminal, ValueType,
 };
 
 const FILE: &str = "control.msl";
@@ -79,6 +84,11 @@ impl Shape {
         });
         let top = b.instance(InstanceSpec { path: "Shape".into(), name: "Shape".into(), body, parent: None, nodes: vec![NodeRef::Ground, NodeRef::Ground], params: vec![], origin: Shape::origin() });
         b.finish(top)
+    }
+
+    /// `temperature()`.
+    fn temperature(b: &mut IrBuilder, line: u32) -> ExprId {
+        Ex::new(b, FILE, line, 5).env(Env::Temperature)
     }
 
     /// `v(p, n)`.
@@ -416,4 +426,136 @@ fn a_return_outside_a_function_is_refused() {
     let hits = Entries::with(&broken, "`return` outside a function");
     assert_eq!(hits.len(), 1, "{broken:?}");
     assert_eq!(hits[0].origin.line, 2);
+}
+
+// ---- T5: function values and recursion (CV-06, CV-07) -----------------------------------------------
+
+#[test]
+fn a_function_value_is_called_through_its_reference() {
+    // `let f = scale; f(v(p, n))` where `fn scale(x: f64) -> f64 { x * temperature() }`: the call
+    // through the value reads the probe and what `scale` reads, the temperature.
+    let ir = Shape::ir(|b| {
+        let scale = {
+            let mut x = Shape::dx(b, 9);
+            let (read, temperature) = (x.local(0, ValueType::F64), Shape::temperature(b, 9));
+            let body = Shape::dx(b, 9).bin(BinaryOp::Mul, read, temperature, ValueType::F64);
+            Shape::function(b, "scale", body)
+        };
+        let reference = Shape::expr(b, Expr::FunctionRef(scale), ValueType::Fn(vec![ValueType::F64], Box::new(ValueType::F64)), 2);
+        let probe = Shape::probe(b, 3);
+        let call = Shape::expr(b, Expr::CallValue { callee: reference, args: vec![probe] }, ValueType::F64, 3);
+        Written { locals: vec![], stmts: vec![], value: call }
+    });
+    assert_eq!(ir.check(), vec![], "a function value is called through its reference");
+    assert!(ir.to_string().contains("scale(probe(p, n))"), "the call prints as source:\n{ir}");
+    assert_eq!(Shape::reads(&ir), Deps { nodes: vec![0, 1], env: vec![Env::Temperature], ..Deps::default() });
+
+    // The reference has the function's own type, and the call takes its arguments.
+    let ir = Shape::ir(|b| {
+        let scale = {
+            let read = Shape::dx(b, 9).local(0, ValueType::F64);
+            Shape::function(b, "scale", read)
+        };
+        let reference = Shape::expr(b, Expr::FunctionRef(scale), ValueType::Fn(vec![ValueType::Bool], Box::new(ValueType::F64)), 2);
+        let call = Shape::expr(b, Expr::CallValue { callee: reference, args: vec![] }, ValueType::F64, 3);
+        Written { locals: vec![], stmts: vec![], value: call }
+    });
+    let broken = ir.check();
+    assert_eq!(Entries::with(&broken, "expression is typed fn(bool) -> f64, its form gives fn(f64) -> f64").len(), 1, "{broken:?}");
+    assert_eq!(Entries::with(&broken, "calls a function value with 0 args, it takes 1").len(), 1, "{broken:?}");
+}
+
+/// `fn name(x) = if x > 0.0 { name(x - 1.0) + temperature() } else { x }`: the function is
+/// recursive and reads what the recursion reaches.
+struct Counting;
+
+impl Counting {
+    /// The function `name`, which must be function `me` of the design (the first one added):
+    /// its body calls itself by that id.
+    fn function(b: &mut IrBuilder, name: &str, me: FunctionId) -> FunctionId {
+        let mut x = Shape::dx(b, 9);
+        let (read, zero, one) = (x.local(0, ValueType::F64), x.real(0.0), x.real(1.0));
+        let positive = x.bin(BinaryOp::Gt, read, zero, ValueType::Bool);
+        let below = x.bin(BinaryOp::Sub, read, one, ValueType::F64);
+        let again = x.call(me, vec![below], ValueType::F64);
+        let temperature = Shape::temperature(b, 9);
+        let sum = Shape::dx(b, 9).bin(BinaryOp::Add, again, temperature, ValueType::F64);
+        let body = Shape::dx(b, 9).if_(positive, sum, read, ValueType::F64);
+        Shape::function(b, name, body)
+    }
+}
+
+#[test]
+fn recursion_is_accepted_outside_analog() {
+    // A param's `where` calls the recursive function; the `analog` block does not (§3 rule 12).
+    let mut b = IrBuilder::new();
+    let electrical = Buck::electrical(&mut b);
+    let count = Counting::function(&mut b, "count", FunctionId(0));
+    let check = {
+        let mut x = Shape::dx(&mut b, 3);
+        let (p, zero) = (x.param(0, ValueType::F64), x.real(0.0));
+        let called = x.call(count, vec![p], ValueType::F64);
+        x.bin(BinaryOp::Gt, called, zero, ValueType::Bool)
+    };
+    let value = Shape::dx(&mut b, 4).real(0.0);
+    let contribute = b.stmt(Stmt::Contribute { branch: 0, quantity: QuantityRole::Flow, addends: vec![Addend { operator: Operator::Direct, negated: false, value }] });
+    let port = |name: &str| BodyNode { name: name.into(), nature: electrical, role: NodeRole::Port, init: None, origin: Shape::origin() };
+    let tolerance = Param { name: "n".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(3.0))), check: Some(check), structural: false, origin: Shape::origin() };
+    let body = b.body(BodySpec {
+        name: "Shape".into(),
+        origin: Shape::origin(),
+        params: vec![tolerance],
+        nodes: vec![port("p"), port("n")],
+        branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
+        limits: vec![],
+        stims: vec![],
+        locals: vec![],
+        analog: Some(vec![contribute]),
+        children: vec![],
+    });
+    let top = b.instance(InstanceSpec {
+        path: "Shape".into(),
+        name: "Shape".into(),
+        body,
+        parent: None,
+        nodes: vec![NodeRef::Ground, NodeRef::Ground],
+        params: vec![Constant::Real(Real::new(3.0))],
+        origin: Shape::origin(),
+    });
+    let ir = b.finish(top);
+    assert_eq!(ir.check(), vec![], "a recursion the `analog` block does not reach is accepted");
+    // The walk reaches its fixed point: the recursion's own reads, the temperature and the param.
+    let shape = ir.instance_at("Shape").expect("placed").body();
+    assert_eq!(shape.dependencies(Target::Check(0)), Deps { params: vec![0], env: vec![Env::Temperature], ..Deps::default() });
+}
+
+#[test]
+fn recursion_reached_from_analog_is_refused() {
+    // The same recursive function, called from the contribution: §3 rule 12 has the elaborator
+    // unroll it, so the IR never carries it. Directly, and through a second function.
+    let ir = Shape::ir(|b| {
+        let count = Counting::function(b, "count", FunctionId(0));
+        let probe = Shape::probe(b, 3);
+        let call = Shape::dx(b, 3).call(count, vec![probe], ValueType::F64);
+        Written { locals: vec![], stmts: vec![], value: call }
+    });
+    let broken = ir.check();
+    let hits = Entries::with(&broken, "calls itself");
+    assert_eq!(hits.len(), 1, "{broken:?}");
+    assert_eq!(hits[0].item, "function count");
+    assert!(hits[0].what.contains("`analog` reaches it"), "the entry says why: {}", hits[0].what);
+
+    // `outer` is not recursive but calls the recursive function: only `count` is named.
+    let ir = Shape::ir(|b| {
+        let count = Counting::function(b, "count", FunctionId(0));
+        let read = Shape::dx(b, 8).local(0, ValueType::F64);
+        let inner = Shape::dx(b, 8).call(count, vec![read], ValueType::F64);
+        let outer = Shape::function(b, "outer", inner);
+        let probe = Shape::probe(b, 3);
+        let call = Shape::dx(b, 3).call(outer, vec![probe], ValueType::F64);
+        Written { locals: vec![], stmts: vec![], value: call }
+    });
+    let broken = ir.check();
+    let items: Vec<&str> = Entries::with(&broken, "calls itself").iter().map(|entry| entry.item.as_str()).collect();
+    assert_eq!(items, vec!["function count"], "{broken:?}");
 }

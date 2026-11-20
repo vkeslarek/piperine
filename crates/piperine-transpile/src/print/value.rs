@@ -508,7 +508,7 @@ impl<'a> ValuePrinter<'a> {
             | Expr::ParamPrevious(_)
             | Expr::Fired(_)
             | Expr::Previous(_) => {}
-            control @ (Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_)) => {
+            control @ (Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. }) => {
                 out.extend(control.operands());
                 for s in control.statements() {
                     out.extend(ir.stmt(*s).operands());
@@ -789,6 +789,8 @@ impl<'a> ValuePrinter<'a> {
             Expr::Break(_) => Err(self.unsupported(e, "`break`")),
             Expr::Continue => Err(self.unsupported(e, "`continue`")),
             Expr::Return(_) => Err(self.unsupported(e, "`return`")),
+            Expr::FunctionRef(_) => Err(self.unsupported(e, "a function value")),
+            Expr::CallValue { .. } => Err(self.unsupported(e, "a call through a function value")),
         }
     }
 

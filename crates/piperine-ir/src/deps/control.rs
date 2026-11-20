@@ -1,6 +1,6 @@
-//! The dependency walk over mutation, loops and exits (composite-values CV-01 to CV-03): the
-//! methods of [`Walk`] that give an assignment, a loop, a `break` and a `return` their abstract
-//! value.
+//! The dependency walk over mutation, loops, exits and recursion (composite-values CV-01 to
+//! CV-03, CV-07): the methods of [`Walk`] that give an assignment, a loop, a `break`, a `return`
+//! and a recursive call their abstract value.
 //!
 //! The lattice stays finite, so every fixed point here ends:
 //!
@@ -10,7 +10,8 @@
 //!   so a read late in the body sees an assignment made later in it on the next iteration; the
 //!   bounds of a range, the condition of a `while` and the conditions a `break` or `continue`
 //!   sits under then reach every local the loop assigned, since they decide how often it ran;
-//! - a **`return`** joins its value into the function's result.
+//! - a **recursive call** reads the function's result so far, and the walk of the function that
+//!   began the recursion repeats until that result holds still (§3 rule 12).
 
 use std::collections::BTreeSet;
 
@@ -239,14 +240,32 @@ impl<'a> Walk<'a> {
     }
 
     /// The walk of `function`'s body, called at `at` with `args`, ended (its value on the stack):
-    /// the result is that value joined with what its `return`s carried.
-    pub(super) fn leave_call(&mut self, at: ExprId, function: FunctionId, args: Vec<Value>) {
+    /// the result is that value joined with what its `return`s carried. A recursion inside it read
+    /// an approximation, so while the result still grows the body is walked again; a result that
+    /// holds still is final (§3 rule 12: the lattice is finite and the join monotone).
+    pub(super) fn leave_call(&mut self, at: ExprId, function: FunctionId, args: Vec<Value>, next: &mut Vec<Task>) {
         let mut result = self.pop();
         if let Some(returned) = self.scopes.pop().and_then(|scope| scope.returned) {
             result.join(&returned);
         }
         self.calls.pop();
+        if self.recursing.contains(&function) {
+            let known = self.approximate.get(&function).cloned().unwrap_or_else(Value::constant);
+            let mut grown = known.clone();
+            grown.join(&result);
+            if grown != known {
+                self.approximate.insert(function, grown);
+                self.start_call(at, function, args, next);
+                return;
+            }
+            self.recursing.remove(&function);
+            self.approximate.remove(&function);
+            result = grown;
+        }
         self.called(at, &args, &result);
-        self.returns.insert((function, args), result);
+        // A result read while an approximation was in use may be too small: it is not kept.
+        if self.recursing.is_empty() {
+            self.returns.insert((function, args), result);
+        }
     }
 }

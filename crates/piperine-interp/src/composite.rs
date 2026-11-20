@@ -12,17 +12,17 @@ use piperine_ir::{Body, EventSource, Expr, ExprId, Stmt, StmtId};
 pub(crate) struct CompositeForms<'a> {
     body: Body<'a>,
     /// The forms met so far, by their position in `CompositeForms::NAMES`.
-    met: [bool; 7],
+    met: [bool; 9],
 }
 
 impl<'a> CompositeForms<'a> {
     /// The name of each form, in the order the refusal lists them.
-    const NAMES: [&'static str; 7] =
-        ["an assignment", "a loop", "a while loop", "a for loop", "break", "continue", "return"];
+    const NAMES: [&'static str; 9] =
+        ["an assignment", "a loop", "a while loop", "a for loop", "break", "continue", "return", "a function value", "a call through a function value"];
 
     /// The forms `body` holds, each once, in a fixed order.
     pub(crate) fn of(body: Body<'a>) -> Vec<&'static str> {
-        let mut forms = CompositeForms { body, met: [false; 7] };
+        let mut forms = CompositeForms { body, met: [false; 9] };
         forms.walk();
         Self::NAMES.into_iter().zip(forms.met).filter_map(|(name, met)| met.then_some(name)).collect()
     }
@@ -73,7 +73,7 @@ impl<'a> CompositeForms<'a> {
             if let Some(position) = Self::position(kind) {
                 self.met[position] = true;
             }
-            if let Expr::Call { function, .. } = kind
+            if let Expr::Call { function, .. } | Expr::FunctionRef(function) = kind
                 && seen_functions.insert(*function)
             {
                 exprs.push(ir.function(*function).body());
@@ -92,6 +92,8 @@ impl<'a> CompositeForms<'a> {
             Expr::Break(_) => Some(4),
             Expr::Continue => Some(5),
             Expr::Return(_) => Some(6),
+            Expr::FunctionRef(_) => Some(7),
+            Expr::CallValue { .. } => Some(8),
             _ => None,
         }
     }

@@ -35,14 +35,16 @@
 //! a meaning to (a local read before its `let`, a cycle); on an IR that fails
 //! it the walk panics with the origin, never answers a default.
 //!
-//! Mutation, loops and `return` (`control.rs`) stay inside the finite lattice: an assignment
+//! Mutation, loops and recursion (`control.rs`) stay inside the finite lattice: an assignment
 //! joins the assigned value into the local's, a loop's body is walked again until no local
-//! changes, and a `return` joins its value into the function's result. A loop's trip count and
-//! the conditions its exits sit under reach every local the loop assigns.
+//! changes, and a recursive call reads the function's result so far, which the function's own
+//! walk grows until it holds still. A loop's trip count and the conditions its exits sit under
+//! reach every local the loop assigns, and a function value is walked as a call whose
+//! arguments are unknown.
 
 mod control;
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::OnceLock;
 
 use crate::handle::Body;
@@ -444,6 +446,11 @@ struct Walk<'a> {
     enclosing: Vec<Value>,
     /// The loops being walked, innermost last.
     frames: Vec<LoopFrame>,
+    /// The functions a recursive call met while their own body was being walked: each is walked
+    /// again until its result holds still.
+    recursing: HashSet<FunctionId>,
+    /// The result of each function in `recursing` so far (absent until the first walk ends).
+    approximate: HashMap<FunctionId, Value>,
 }
 
 impl<'a> Walk<'a> {
@@ -465,6 +472,8 @@ impl<'a> Walk<'a> {
             held: HashMap::new(),
             enclosing: Vec::new(),
             frames: Vec::new(),
+            recursing: HashSet::new(),
+            approximate: HashMap::new(),
         };
         let owner = format!("body {}", data.name);
         let checks = data
@@ -682,7 +691,7 @@ impl<'a> Walk<'a> {
                     }
                 }
                 Task::Restore(outside) => self.restore(outside),
-                Task::Return { at, function, args } => self.leave_call(at, function, args),
+                Task::Return { at, function, args } => self.leave_call(at, function, args, &mut next),
                 Task::Assign { local, op, at } => self.assign(local, op, at),
                 Task::LoopBounds(id) => self.loop_bounds(id),
                 Task::LoopCondition(id) => self.loop_condition(id),
@@ -890,6 +899,13 @@ impl<'a> Walk<'a> {
                 next.push(Task::Yield { at: id, valued: value.is_some() });
                 return;
             }
+            // A function used as a value reads what its body reads, for arguments nothing is known of.
+            Expr::FunctionRef(function) => {
+                let unknown = Value::of(Sources::default(), Class::Nonlinear);
+                let arguments = vec![unknown; ir.functions[function.index()].params.len()];
+                return self.enter(id, *function, arguments, next);
+            }
+            Expr::CallValue { callee, args } => next.extend([Task::Expr(*callee)].into_iter().chain(args.iter().map(|&a| Task::Expr(a)))),
             Expr::Closure { body, .. } => {
                 // The parameters end with the closure.
                 let outside = self.scope().locals.clone();
@@ -954,6 +970,10 @@ impl<'a> Walk<'a> {
                 let values = self.pop_n(args.len());
                 Value::nonlinear(&values)
             }
+            Expr::CallValue { args, .. } => {
+                let values = self.pop_n(1 + args.len());
+                Value::nonlinear(&values)
+            }
             Expr::Cast { .. } | Expr::IsKnown(_) | Expr::High(_) | Expr::LevelCast { .. } => {
                 let value = self.pop();
                 Value::nonlinear([&value])
@@ -993,7 +1013,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };
@@ -1015,15 +1035,25 @@ impl<'a> Walk<'a> {
     /// Enters `function`, called at `at` with `args`: its body is walked in a scope of its own,
     /// its parameters (its first locals) bound to the arguments; `Return` leaves it.
     fn enter(&mut self, at: ExprId, function: FunctionId, args: Vec<Value>, next: &mut Vec<Task>) {
-        let ir = self.ir;
         if let Some(callee) = self.returns.get(&(function, args.clone())).cloned() {
             self.called(at, &args, &callee);
             return;
         }
-        let data = &ir.functions[function.index()];
         if self.calls.contains(&function) {
-            self.refuse(at, &format!("recursive call of {}", data.name));
+            // A recursive call reads the result known so far (§3 rule 12): the walk of the
+            // function that began it grows that result until it holds still (`leave_call`).
+            self.recursing.insert(function);
+            let known = self.approximate.get(&function).cloned().unwrap_or_else(Value::constant);
+            self.called(at, &args, &known);
+            return;
         }
+        self.start_call(at, function, args, next);
+    }
+
+    /// Walks the body of `function`, called at `at` with `args`, in a scope of its own.
+    fn start_call(&mut self, at: ExprId, function: FunctionId, args: Vec<Value>, next: &mut Vec<Task>) {
+        let ir = self.ir;
+        let data = &ir.functions[function.index()];
         let mut callee = Scope::new(format!("function {}", data.name), false, data.locals.len());
         if args.len() != data.params.len() || args.len() > callee.locals.len() {
             self.refuse(at, &format!("call of {} with {} args, it takes {}", data.name, args.len(), data.params.len()));

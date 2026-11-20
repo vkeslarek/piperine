@@ -331,6 +331,8 @@ impl<'a> Walk<'a> {
             Expr::Break(_) => "Break",
             Expr::Continue => "Continue",
             Expr::Return(_) => "Return",
+            Expr::FunctionRef(_) => "FunctionRef",
+            Expr::CallValue { .. } => "CallValue",
         }
     }
 
