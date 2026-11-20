@@ -22,7 +22,7 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 3 silent, 2 broken, 49 loud (L1 to L59 less the nine `msl-fixes` and the one `host-ii` closed, in six tables) plus
+**Counts.** 3 silent, 2 broken, 47 loud (L1 to L59 less the nine `msl-fixes`, the one `host-ii` and the two `unknown-semantics` closed, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 9 unproven.
 
@@ -30,7 +30,7 @@ change of the IR or the ABI.
 | ------- | --- |
 | §2 Broken | B3, B4 |
 | §3 Silent (read this first) | S3, S4, S6 |
-| §4 Loud | L1–L59 (L11, L14, L15, L17, L41, L46, L48, L54, L55, L56 closed) |
+| §4 Loud | L1–L59 (L11, L14, L15, L17, L18, L19, L41, L46, L48, L54, L55, L56 closed) |
 | §5 Spec holes and disagreements | G1–G6 (the buck's), X1, X2, X5, X6 (X3, X4, X7, X8, X9 decided by `host-ii`) |
 | §6 Solver, numerics, performance | V12, V13, V16 |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`) |
@@ -114,9 +114,9 @@ quotes the text after `P0001:` unless another code is shown.
 | - | ------- | ---- | ------------------ | ---- |
 | L1 | `struct` values, struct expressions, field access | §1, §2 | `struct item used as a type`, `struct expression`, `field access` | L, with L2–L4 |
 | L2 | tuples outside `let (a, b) = (x, y);` | §1 | `tuple expression`, `tuple type` | |
-| L3 | arrays, indexing, slices, `&` | §1, H.5 | `array type`, `array expression`, `index expression`, `reference type` | |
+| L3 | arrays, indexing, slices, `&` (an index that may be unknown merges every element it may name, §3.3.3: `unknown-semantics` US-04 AC 12 travels with this row) | §1, H.5 | `array type`, `array expression`, `index expression`, `reference type` | |
 | L4 | enums with a payload, `#[repr(uN)]`, an explicit discriminant, generic enums, an enum of one variant as a carrier | §2 rules 2, 5 | `enum Tx with a variant with a payload`, `with a #[repr] attribute` | |
-| L5 | `let mut`, assignment, `for`, `while`, `loop`, `break`, `return` | §0.4, §11 rule 12, §12.1.11 | `let mut binding`, `assignment`, `for loop`, `while loop` | M |
+| L5 | `let mut`, assignment, `for`, `while`, `loop`, `break`, `return` (a loop under unknown control is bounded at 64 iterations and merged exit by exit, §3.3.3, §3.3.16, Appendix C.2: `unknown-semantics` US-04 AC 11 travels with this row) | §0.4, §11 rule 12, §12.1.11 | `let mut binding`, `assignment`, `for loop`, `while loop` | M |
 | L6 | `match` arm guards, range patterns, bindings in or-patterns; `if let` other than `Some(p)` | §0.4 | `a match arm guard`, `range pattern in a match arm` | S |
 | L7 | generic functions, `self` parameters, `impl` on a value type, user traits | §3 rule 9, §3.1 | `generic function`, `generic parameter used as a type` | L, with L30 |
 | L8 | `impl` on a nature (other than the stdlib's `impl Bit`); a function that takes a carrier or a node and probes it (a handle) | §3.1, §3 rule 7 | `method mv`; `E0450: a probe is allowed in an analog block and a module body only` | M |
@@ -125,8 +125,6 @@ quotes the text after `P0001:` unless another code is shown.
 | L12 | `extern "C" fn`, `#[derivative]` | §3 rules 2, 10, 11 | `extern function` | M |
 | L13 | `f16`, `f32`, `f128`; integers wider than 64 bits | §1 rule 5 | `type f32`; `integer type u128` | M |
 | L16 | every row of H.5, H.6, H.7 (arrays, ranges, iterators); the `Option` and `bool` rows of H.3 and H.4 run | H.5–H.7 | `E0161: no method .. on ..` | with L3 |
-| L18 | `Unknown` as an initial value; `x.level(k)`; `merge`, `same`, `cast`, `logic`, `matches_bits` | §3.3.1, §3.3.4, §22.1 | `this literal in a carrier's initial value`; `method level`; `built-in Repr::WIDTH` | M |
-| L19 | **Unknown control is a fault, not a merge.** An `if`, a `match` or a guard whose condition is unknown stops the run: `fault 3 in Top at tick 0: the condition of an if is unknown`. So `maybe = true` is never written. Refused at elaboration: a math function, a contribution or a `known_or` default of a value that may be unknown | §3.3.3, §1 rule 13, §19 rule 1 | run-time fault | L |
 | L20 | a param named like a function it calls (`vt` and `vt()`). The previous file said the generated Rust failed to compile; the type checker now stops it first. As in Rust the local shadows the function, so the refusal is right and only its code is generic | §3.5.4 | `call of this declaration` | S |
 
 ### 4.2 Carriers (Part II §4–§7)
@@ -136,7 +134,7 @@ quotes the text after `P0001:` unless another code is shown.
 | L21 | natures with `resolve`: `Wire`, `Tri`, `SumNet`; `others()`; relaxation of loops | §4 rule 2, §5.2.2, §8.2.3 | `resolved nature Wire` | L |
 | L22 | a discrete nature the project declares (`nature Byte { value: u8 }`) | §4 rule 1 | `discrete nature Byte` | S |
 | L23 | signal-flow natures (`VSignal`) | §6 rule 2 | `signal-flow nature VSignal` | M |
-| L24 | arrays of carriers (`[Bit; 8]`, `[Electrical; 4]`); element and field commits (`bits[3] <- true`) and definitions | §5.1.4, §12.1 | `array type`; `an element or field commit` | L, with L3 |
+| L24 | arrays of carriers (`[Bit; 8]`, `[Electrical; 4]`); element and field commits (`bits[3] <- true`) and definitions (an index that may be unknown merges every element it may name, §3.3.3: `unknown-semantics` US-04 AC 12 travels with this row) | §5.1.4, §12.1 | `array type`; `an element or field commit` | L, with L3 |
 | L25 | bundles: a `struct` of carriers, `flip`, bundle literals, `impl` on a bundle | §7 | `struct item used as a type`, `flip type` | L |
 | L26 | `p.inflow()`; `changed()` on a param | §6 rule 5, §5.3.1 | `method inflow`; `method changed on f64` | M |
 | L27 | an initial value that reads a param (`signal s: Bit<f64> = k0;`, `signal a: Electrical = v0;`) | §5.1.5, §6 rule 6 | `a carrier's initial value that reads a param` | S |
@@ -347,7 +345,7 @@ does not count.
 | Part | Runs | Biggest holes |
 | ---- | ---- | ------------- |
 | I §1–§2 values, `Repr` | 35 % | composites, payload enums, floats other than `f64`, widths over 64 |
-| I §3–§3.3 functions, calls, unknown values | 35 % | generics, `impl`, traits, handles, loops, the merge (L19), `level` |
+| I §3–§3.3 functions, calls, unknown values | 35 % | generics, `impl`, traits, handles, loops, arrays and composites; the merge and the level reads run |
 | I §3.4–§3.6 files, crates, packages | 95 % | the check of unreached items (S3) |
 | II §4–§5 natures, discrete carriers | 40 % | `resolve`, arrays, user discrete natures, `Unknown` initial values |
 | II §6 nodes, probes | 70 % | signal-flow, `inflow`, a child's nodes |
@@ -388,7 +386,7 @@ E0456 E0610 E0612 E0613 E0614 E0701 E0702 E0703 E0704 E0705 E0706 E0807 E0808 E0
   checker stops it first (`types/call.rs:54`, there since `295b5ab8`). Now L20.
 - `examples/buck/GAPS.md` G3 (a method on a carrier left unresolved) was already closed by
   `msl-digital`: it is a `P0001` naming the method (L15, since closed).
-- Every other entry is kept: S4, B3, B4, L19, L37, §4.7, G1 to G6, the solver points (now V1 to V11), U1 to
+- Every other entry is kept: S4, B3, B4, L37, §4.7, G1 to G6, the solver points (now V1 to V11), U1 to
   U3.
 
 **Clusters one feature would close.** Sizes are rough; the order is the user's.
@@ -401,7 +399,7 @@ E0456 E0610 E0612 E0613 E0614 E0701 E0702 E0703 E0704 E0705 E0706 E0807 E0808 E0
 | Composite values | L1 to L6, L16 (H.5 to H.7), L24, L57 | L |
 | Generics and generation | L7, L30, L31, L32, S3 for generic items: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
 | Resolved nets and bundles | L21, L22, L23, L25: `Wire`, `Tribuf`, `Tran`, `Bidir` | L |
-| Unknown semantics | L18, L19, S6 (ABI), L51, L52, L53, L8 | L |
+| Unknown semantics | S6 (ABI), L51, L52, L53, L8 (L18 and L19 closed by `unknown-semantics`) | L |
 | Host II (delivered in part by `host-ii`) | H1, H3, H6, H9, L39, then B4 (Python) | L |
 | Speed | V12, V13, V16, PSS on the device ABI | L |
 | Foreign models | L12, L33 | L |

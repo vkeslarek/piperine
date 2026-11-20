@@ -272,13 +272,14 @@ fn gaps_drops_what_msl_fixes_closed() {
     for kept in ["### S3.", "### S4.", "### S6.", "### B3.", "### B4."] {
         assert!(gaps.contains(kept), "GAPS.md keeps {kept}");
     }
-    // the counts follow, as `host-ii` moved them: 3 silent, 2 broken
-    assert!(gaps.contains("3 silent, 2 broken, 49 loud"), "the counts of §9 follow");
+    // the counts follow, as `host-ii` moved them and `unknown-semantics` (L18, L19) after it:
+    // 3 silent, 2 broken
+    assert!(gaps.contains("3 silent, 2 broken, 47 loud"), "the counts of §9 follow");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
     assert_eq!(rows("## 3. Silent", "## 4."), 3, "three silent entries");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 49, "forty-nine loud rows");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 47, "forty-seven loud rows");
 }
 
 #[test]
@@ -329,5 +330,36 @@ fn abi_states_commits_under_unknown_control() {
     let rule = abi[at..].split("\n---").next().expect("a rule").split_whitespace().collect::<Vec<_>>().join(" ");
     for fact in ["merged, level by level, with the bytes the net holds at that point of the C2 order", "transport (C3, §12.1.4) does not remove the pending commits", "turns them into `MERGE` commits"] {
         assert!(rule.contains(fact), "C7 lacks \"{fact}\"");
+    }
+}
+
+#[test]
+fn gaps_drops_l18_and_l19() {
+    // US-07 AC 1 (C42): `unknown-semantics` closed L18 (`Unknown` as an initial value, `level`,
+    // `merge`, `same`, `cast`, `logic`, `matches_bits`) and L19 (unknown control is a merge, not a
+    // fault): neither is a row, and no instruction file calls the merge a gap; S6 and G6 (one flag
+    // per value, an ABI change) stay
+    let gaps = read("GAPS.md");
+    for closed in ["L18", "L19"] {
+        assert!(!gaps.lines().any(|l| l.starts_with(&format!("| {closed} |"))), "{closed} is still a row");
+    }
+    assert!(!gaps.contains("Unknown control is a fault, not a merge"), "the fault of an unknown `if` is still listed");
+    assert!(gaps.contains("### S6. Unknown integers are one flag per value"), "S6 stays");
+    assert!(gaps.contains("- **G6 \u{2014} unknown integers are per value** (S6)."), "G6 stays");
+    let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("GAPS.md has a section 9");
+    let row = coverage.lines().find(|l| l.starts_with("| I §3–§3.3 ")).expect("the coverage row of §3.3");
+    assert!(!row.contains("L19") && !row.contains("`level`"), "the coverage row still lists the merge and `level` as gaps: {row}");
+}
+
+#[test]
+fn gaps_carries_the_unknown_index_merge_to_composite_values() {
+    // US-04 AC 11, 12 (C31): the loops and the arrays do not exist yet, so their merge criteria
+    // travel with the rows that will add them: L5 (loops, bound 64) and L3 and L24 (an index that
+    // may be unknown)
+    let gaps = read("GAPS.md");
+    let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("a row {id}")).to_string();
+    assert!(row("L5").contains("64 iterations") && row("L5").contains("US-04 AC 11"), "L5 carries the loop bound");
+    for id in ["L3", "L24"] {
+        assert!(row(id).contains("merges every element it may name") && row(id).contains("US-04 AC 12"), "{id} carries the index merge");
     }
 }

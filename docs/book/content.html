@@ -888,7 +888,33 @@ time         AdderTop.b  AdderTop.clk  AdderTop.sum  AdderTop.add.a
   <p>An unknown value prints as <code>x</code>. One look at the line names the input nobody drives. The table that follows shows the same at the end of the run: <code>sum</code> is <code>x</code> at 3&nbsp;µs.</p>
 </div>
 
-<p>A second flavor of the same tool: a record reached under an unknown condition is written with <code>maybe = true</code>. If the adder also had <code>if a &gt; b { emit!("bigger", a = a); }</code>, that record would appear here marked <code>maybe</code>: the model cannot tell whether <code>a &gt; b</code>, and it says so instead of guessing.</p>
+<p>A second flavor of the same tool: a record reached under an unknown condition is written with <code>maybe = true</code>. The model cannot tell whether <code>a &gt; b</code> when <code>b</code> is unknown, so it takes both paths and says so on the record instead of guessing. Add this to <code>monitor.msl</code>:</p>
+
+<!-- cli-file: monitor.msl -->
+<pre data-lang="msl">module Peek(in clk: Bit, in a: Bit<u8>, in b: Bit<u8>) {}
+digital for Peek {
+    on clk.rise() { if a > b { emit!("bigger", a = a); } }
+}
+
+module PeekTop(in b: Bit<u8>) {
+    signal clk: Bit;
+    let osc = Osc(clk);
+    let peek = Peek(clk, 3, b);
+}</pre>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+<pre data-lang="sh">piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream bigger</pre>
+<pre data-lang="text" data-cli-output="piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream bigger">run monitor: transient, top PeekTop, backend rust
+@5.000000e-7 PeekTop.peek bigger a=3 maybe=true
+@1.500000e-6 PeekTop.peek bigger a=3 maybe=true
+@2.500000e-6 PeekTop.peek bigger a=3 maybe=true
+
+time         PeekTop.b  PeekTop.clk  PeekTop.peek.a
+0.000000e0   x          false        3
+3.000000e-6  x          false        3</pre>
+  <p>Each rising edge writes a record, marked <code>maybe=true</code>, because <code>a &gt; b</code> was unknown: the run does not stop and does not pick a branch. A <code>fatal</code> record that is <code>maybe</code> does not end the run either, and a check that is <code>maybe</code> is judged as unknown.</p>
+</div>
 
 <h3>Analog code has no unknowns</h3>
 
@@ -2044,7 +2070,7 @@ stream Press.db.flip
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
-  <p>Save the file as <code>debounce.msl</code> and ask for the interesting stream only. Two things in it are not compiled yet, a param of an integer type (<code>n: u8</code>) and a <code>known_or</code> whose default may itself be unknown, so today the command refuses the file at the first one and runs nothing:</p>
+  <p>Save the file as <code>debounce.msl</code> and ask for the interesting stream only. One thing in it is not compiled yet, a param of an integer type (<code>n: u8</code>), so today the command refuses the file there and runs nothing:</p>
 <pre data-lang="sh">piperine run debounce.msl --analysis transient --stop 7e-3 --stream flip</pre>
 <pre data-lang="text" data-cli-output="piperine run debounce.msl --analysis transient --stop 7e-3 --stream flip" data-cli-stream="stderr" data-cli-lines="1-3">P0001
 
@@ -2212,7 +2238,7 @@ digital for MacPipe {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Digital MSL runs from source, and the <code>piperine</code> command runs it. A <code>digital</code> block is type checked, elaborated and compiled to Rust (chapter 15); its reactions, commits, events, unknown values and <code>emit!</code> records run on the solver and are tested against the rules above. Two forms of this chapter are not compiled yet and are refused with P0001: a param of an integer type, such as <code>n: u8</code>, and a <code>known_or</code> whose default may itself be unknown. That stops the debouncer and the PWM for now, as their "Run it" boxes show; the counter runs. A transient of a design with no analog node runs to its stop like any other and gives its table.</p>
+  <p>Digital MSL runs from source, and the <code>piperine</code> command runs it. A <code>digital</code> block is type checked, elaborated and compiled to Rust (chapter 15); its reactions, commits, events, unknown values and <code>emit!</code> records run on the solver and are tested against the rules above. One form of this chapter is not compiled yet and is refused with P0001: a param of an integer type, such as <code>n: u8</code>. That stops the debouncer and the PWM for now, as their "Run it" boxes show; the counter runs. A transient of a design with no analog node runs to its stop like any other and gives its table.</p>
 </div>
 
 <div class="callout mistake">
@@ -3817,7 +3843,7 @@ fn terms_block&lt;R: Real&gt;(p: R, n: R, r: R) -&gt; [R; 1] {
     [b0_flow_]
 }</pre>
 
-<p>The block is generic over a number type: run with plain floats it gives the current, run with dual numbers it gives the current and its derivatives, which is the Jacobian. Digital code reads the same way: a reaction is a function whose commits go out together when it ends, and an <code>if</code> on a value that may be unknown stops with a fault naming that <code>if</code> in your source.</p>
+<p>The block is generic over a number type: run with plain floats it gives the current, run with dual numbers it gives the current and its derivatives, which is the Jacobian. Digital code reads the same way: a reaction is a function whose commits go out together when it ends, and an <code>if</code> on a value that may be unknown runs both arms and merges what they commit.</p>
 
 <h3>What comes next</h3>
 
