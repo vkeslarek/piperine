@@ -38,20 +38,34 @@ impl Ctx {
     }
 
     /// The diagnostic of an `on` written in this context: a statement of the wrong kind, except an
-    /// `on` whose event is a call of an event module (`on every(..) { .. }`) in a reaction, which is
-    /// that module placed in a reaction body (`E0350`, §8.3.4).
+    /// `on` whose event expression holds a call of an event module (`on every(..) { .. }`,
+    /// `on every(..) && en { .. }`, `on (every(..)) { .. }`) in a reaction, which is that module
+    /// placed in a reaction body (`E0350`, §8.3.4).
     fn nested_reaction(self, reaction: &Reaction, span: Span) -> Diagnostic {
-        let placed = match (&reaction.event.kind, self) {
-            (ExprKind::Call { callee, .. }, Ctx::Reaction) => match &callee.kind {
-                ExprKind::Path(path) if path.segments.len() == 1 => Some(path.segments[0].ident.name.as_str()),
-                _ => None,
-            },
+        let placed = match self {
+            Ctx::Reaction => Self::called_module(&reaction.event),
             _ => None,
         };
         match placed {
             Some(name) => Diagnostic::new("E0350", format!("`{name}` is placed in a reaction body: it places no instance (§8.3.4)"), span, "placement in a reaction body")
                 .with_help("a reaction is a top-level item of a `digital` block; a reaction body holds commits and `emit!`"),
             None => misplaced(self, "`on`", span, "a reaction belongs in a `digital` block", "a reaction is a top-level item of a `digital` block"),
+        }
+    }
+}
+
+impl Ctx {
+    /// The name of the first one-segment call in an event expression, looking through parentheses,
+    /// unary and binary operators: the call of an event module the event places.
+    fn called_module(event: &Expr) -> Option<&str> {
+        match &event.kind {
+            ExprKind::Call { callee, .. } => match &callee.kind {
+                ExprKind::Path(path) if path.segments.len() == 1 => Some(path.segments[0].ident.name.as_str()),
+                _ => None,
+            },
+            ExprKind::Paren(inner) | ExprKind::Unary { expr: inner, .. } => Self::called_module(inner),
+            ExprKind::Binary { lhs, rhs, .. } => Self::called_module(lhs).or_else(|| Self::called_module(rhs)),
+            _ => None,
         }
     }
 }

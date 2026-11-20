@@ -267,6 +267,16 @@ fn an_on_every_inside_a_reaction_is_a_placement_in_a_reaction_body_e0350() {
     assert_eq!(found, [("E0350", Span::new(at, at + "on every(0.0, 10u) { }".len()))], "{found:?}");
     let src = "digital for M { on at(1u) { on clk.rise() { } } }";
     assert!(codes(src).iter().all(|(code, _)| *code == "E0404"), "{:?}", codes(src));
+    // the call anywhere in the event expression places the module: a conjunct, a parenthesis
+    for event in ["every(0.0, 10u) && en", "en && every(0.0, 10u)", "(every(0.0, 10u))"] {
+        let src = format!("digital for M {{ on at(1u) {{ on {event} {{ }} }} }}");
+        let found = codes(&src);
+        let at = src.find("on every").or_else(|| src.find("on en")).or_else(|| src.find("on (")).expect("fixture holds its statement");
+        let end = at + format!("on {event} {{ }}").len();
+        assert_eq!(found, [("E0350", Span::new(at, end))], "{src}: {found:?}");
+    }
+    let src = "digital for M { on at(1u) { on a && b { } } }";
+    assert!(codes(src).iter().all(|(code, _)| *code == "E0404"), "{:?}", codes(src));
 }
 
 #[test]
