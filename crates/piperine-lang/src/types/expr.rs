@@ -514,9 +514,8 @@ impl Checker<'_> {
                     DeclKind::Signal(s) => self.read_type(decl, s.ty),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {
                         let local = self.locals.get(&decl).cloned();
-                        if local.is_none() && self.lets_open.contains(&decl) {
-                            self.self_read(file, node.span, decl);
-                            return None;
+                        if local.is_none() && self.lets_open.contains_key(&decl) {
+                            return self.self_read(file, node.span, decl);
                         }
                         if local.is_none() && !self.poisoned.contains(&decl) {
                             let what = if self.fn_where { "a value parameter in the `where` of a `fn`" } else { "a name whose type is unknown" };

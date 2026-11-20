@@ -241,9 +241,8 @@ fn a_let_that_reads_itself_is_e0332_or_e0353() {
         assert_eq!((snippet(&src, &d[0]), d[0].diagnostic.span().start), ("y", src.find(arg).unwrap() + 1), "{body}");
     }
     // A cycle through a result that reads only its own carriers is legal (`let y = idt(f(y))`,
-    // §8.3.5); it needs the type of a `let` before its value is typed and is outside the subset.
+    // §8.3.5): it types (the feedback test lives in `types_structure.rs`, analog-structure T25,
+    // which lifted the `P0001` this row asserted).
     let src = "module integ(x: f64) -> f64 {\n    signal s: Bit<f64> = 0.0;\n    s.known_or(0.0)\n}\nmodule Top() { let y = integ(y); }";
-    let d = diagnostics(src);
-    assert_eq!(codes(&d), ["P0001"]);
-    assert!(d[0].diagnostic.message.contains("feedback"), "{}", d[0].diagnostic.message);
+    checked(&design_of(src), src);
 }

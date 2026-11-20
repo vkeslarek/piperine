@@ -125,7 +125,7 @@ impl Checker<'_> {
             self.infer_event_position(data.value);
             return;
         };
-        self.lets_open.insert(*binding);
+        self.lets_open.insert(*binding, data.value);
         let ty = self.infer_event_position(data.value);
         self.lets_open.remove(binding);
         match ty {

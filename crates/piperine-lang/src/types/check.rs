@@ -73,8 +73,9 @@ pub(super) struct Checker<'d> {
     pub(super) book: DriveBook,
     /// The `emit!` sites seen so far.
     pub(super) records: Records,
-    /// The bindings of the module-body `let`s whose values are being typed.
-    pub(super) lets_open: BTreeSet<DeclId>,
+    /// The bindings of the module-body `let`s whose values are being typed, each with its value (a
+    /// read of one is a feedback, `Checker::self_read`).
+    pub(super) lets_open: BTreeMap<DeclId, ExprId>,
     /// The placements whose arguments are being typed, innermost last: the module, or `None` for
     /// a core module.
     pub(super) placing: Vec<Option<DeclId>>,
@@ -126,7 +127,7 @@ impl<'d> Checker<'d> {
             continuity: Continuity::new(design),
             book: DriveBook::default(),
             records: Records::default(),
-            lets_open: BTreeSet::new(),
+            lets_open: BTreeMap::new(),
             placing: Vec::new(),
             owner: None,
             context: Context::Module,

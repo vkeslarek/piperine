@@ -10,7 +10,7 @@ use crate::msl::{Diagnostic, Span};
 use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, ModuleData, NatureKind, Resolution, StmtId};
 
 use super::check::Checker;
-use super::{Builtin, Ty};
+use super::{Builtin, Callee, Ty};
 
 /// The values the value inputs of a placement stand for while a result is read: each input is the
 /// expression the caller wrote, read in the caller's own frame.
@@ -232,20 +232,48 @@ impl Checker<'_> {
         self.value_inputs(module).into_iter().any(|input| self.reads_decl(result, input, &mut Vec::new()))
     }
 
-    /// A read of the module-body `let` `binding` while its own value is typed: `E0332`, or `E0353`
-    /// through a result with a direct dependence on its input. A feedback that is legal (§8.3.5) needs
-    /// the type of a `let` before its value is typed and is outside the subset.
-    pub(super) fn self_read(&mut self, file: FileId, span: Span, binding: DeclId) {
+    /// A read of the module-body `let` `binding` while its own value is typed (§8.2.16, §8.3.5):
+    /// `E0332` outside a placement; inside one, `E0353` when every result on the cycle has a direct
+    /// dependence (a core module's result always has one, §8.3.6), else the type of a feedback
+    /// through an unknown: the declared result type of the placement the `let` is bound to.
+    pub(super) fn self_read(&mut self, file: FileId, span: Span, binding: DeclId) -> Option<Ty> {
         let name = self.design.decl_data(binding).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-        let direct = self.placing.iter().any(|p| p.is_none_or(|m| self.result_depends_directly(m)));
         if self.placing.is_empty() {
             self.coded(file, "E0332", span, format!("the `let` `{name}` reads its own name (§8.2.16)"), "a `let` that reads itself");
-        } else if direct {
-            let message = format!("the `let` `{name}` reads itself through a result that depends directly on its input: a feedback cycle with no unknown in it (§8.3.5)");
+        } else if self.placing.iter().all(|p| p.is_none_or(|m| self.result_depends_directly(m))) {
+            let cycle = self.cycle_names(&name);
+            let message = format!("the `let` `{name}` reads itself through results that all depend directly on their input: the cycle {cycle} has no unknown in it (§8.3.5)");
             self.coded(file, "E0353", span, message, "a cycle with no unknown");
+        } else if let Some(ty) = self.feedback_type(binding) {
+            return Some(ty);
         } else {
-            self.unsupported(file, span, &format!("the feedback of `{name}` through an instance"));
+            self.unsupported(file, span, &format!("the feedback of `{name}` through an instance whose value is not a placement of a module with a result"));
         }
         self.poisoned.insert(binding);
+        None
+    }
+
+    /// The names of the cycle `let` -> the placed modules -> `let`, as `y -> twice -> y`.
+    fn cycle_names(&self, binding: &str) -> String {
+        let mut names = vec![binding.to_string()];
+        names.extend(self.placing.iter().map(|p| p.map_or("a core module".to_string(), |m| self.design.decl_data(m).name.as_ref().map_or(String::new(), |n| n.text.clone()))));
+        names.push(binding.to_string());
+        names.join(" -> ")
+    }
+
+    /// The type of the `let` `binding` that feeds back through an unknown: the declared result type of
+    /// the placement that is the whole of its value (parentheses aside). `None` for a value that only
+    /// contains the placement, or a core module, whose result type waits for its arguments.
+    fn feedback_type(&mut self, binding: DeclId) -> Option<Ty> {
+        let mut value = self.lets_open.get(&binding).copied()?;
+        while let ExprKind::Paren(inner) = &self.design.expr_node(value).kind {
+            value = *inner;
+        }
+        let module = match self.callees.get(&value) {
+            Some(Callee::Module(module)) => *module,
+            _ => return None,
+        };
+        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return None };
+        self.lower_type(data.ret?)
     }
 }
