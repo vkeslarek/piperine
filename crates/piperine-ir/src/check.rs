@@ -29,9 +29,11 @@ use crate::contributions::Contributions;
 use crate::ids::{ExprId, FunctionId, StmtId};
 use crate::model::{
     BinaryOp, BodyData, BranchKind, CarrierRole, Child, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, NodeRef, NodeRole, Origin, Place, QuantityRole, ReachedItem, Stmt, Terminal, UnaryOp,
-    ValueType,
+    TypeKind, ValueType,
 };
 use crate::typing::Typing;
+
+mod aggregates;
 
 /// One broken invariant: the item, where it was written, and what is wrong.
 #[derive(Debug, Clone, PartialEq)]
@@ -50,6 +52,7 @@ impl Ir {
         checker.structure();
         checker.paths();
         checker.types();
+        checker.type_arena();
         checker.code();
         checker.discrete();
         checker.out
@@ -789,14 +792,14 @@ impl<'a> Checker<'a> {
             }
         }
         for (item, origin, ty) in found {
-            if let Some(what) = Checker::malformed(&ty) {
+            if let Some(what) = self.malformed(&ty) {
                 self.report(item, origin, what);
             }
         }
     }
 
-    /// What is wrong with `ty`, read through function types.
-    fn malformed(ty: &ValueType) -> Option<String> {
+    /// What is wrong with `ty`, read through function types and aggregate parts.
+    fn malformed(&self, ty: &ValueType) -> Option<String> {
         let mut stack = vec![ty];
         while let Some(t) = stack.pop() {
             match t {
@@ -810,6 +813,33 @@ impl<'a> Checker<'a> {
                 ValueType::Fn(params, ret) => {
                     stack.extend(params);
                     stack.push(ret);
+                }
+                ValueType::Struct(id) | ValueType::Enum(id) if id.index() >= self.ir.types.len() => {
+                    return Some(format!("type {t} names a type outside the arena ({} types)", self.ir.types.len()));
+                }
+                ValueType::Struct(id) if !matches!(self.ir.types[id.index()].kind, TypeKind::Struct { .. }) => {
+                    return Some(format!("type {t} names an enum as a struct"));
+                }
+                ValueType::Enum(id) if !matches!(self.ir.types[id.index()].kind, TypeKind::Enum { .. }) => {
+                    return Some(format!("type {t} names a struct as an enum"));
+                }
+                ValueType::Tuple(parts) => {
+                    if parts.iter().any(|p| matches!(p, ValueType::Slice(_))) {
+                        return Some(format!("type {t} holds a slice: a slice is a function parameter only"));
+                    }
+                    stack.extend(parts);
+                }
+                ValueType::Array(element, _) | ValueType::Option(element) => {
+                    if matches!(**element, ValueType::Slice(_)) {
+                        return Some(format!("type {t} holds a slice: a slice is a function parameter only"));
+                    }
+                    stack.push(element);
+                }
+                ValueType::Slice(element) => {
+                    if matches!(**element, ValueType::Slice(_)) {
+                        return Some(format!("type {t} holds a slice: a slice is a function parameter only"));
+                    }
+                    stack.push(element);
                 }
                 _ => {}
             }

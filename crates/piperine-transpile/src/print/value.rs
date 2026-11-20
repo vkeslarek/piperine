@@ -606,6 +606,10 @@ impl<'a> ValuePrinter<'a> {
                 Ok(format!("rt::Flagged<{inner}>"))
             }
             ValueType::Fn(params, ret) => self.function_type(params, ret, path),
+            // The aggregate types print as Rust items from T34 (`print/types.rs`); until then they are refused by name.
+            ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Slice(_) | ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Option(_) => {
+                Err(Error::Unsupported { form: format!("the aggregate type {ty}"), path: path.to_string(), origin: self.origin.clone() })
+            }
         }
     }
 

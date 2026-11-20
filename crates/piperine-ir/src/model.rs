@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::deps::DepsMemo;
-use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
+use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
 use crate::real::Real;
 
 /// A source position, printed `file:line:col`.
@@ -36,6 +36,10 @@ pub struct Ir {
     /// The authored paths of the nodes a merge removed, each with the node that stands for it now.
     #[serde(default)]
     pub(crate) aliases: Vec<NodeAlias>,
+    /// The source structs and enums the values of the design are typed by: `ValueType::Struct` and
+    /// `ValueType::Enum` name an entry.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) types: Vec<TypeData>,
 }
 
 /// The authored path of a node that a merge (a fixed zero-potential branch) removed from the arena,
@@ -778,6 +782,76 @@ pub enum ValueType {
     /// A value that may be unknown (§3.3): the type of a carrier read and of everything computed
     /// from one. The inner type is `bool`, `f64` or an integer type.
     Flagged(Box<ValueType>),
+    /// A tuple `(A, B, ..)`: its fields, lowest first.
+    Tuple(Vec<ValueType>),
+    /// An array `[T; N]`: the element type and the length.
+    Array(Box<ValueType>, u64),
+    /// A slice `&[T]`: a function parameter only (a view of an array or a part of one).
+    Slice(Box<ValueType>),
+    /// A source struct, named by its entry of the type arena.
+    Struct(TypeId),
+    /// A source enum, named by its entry of the type arena.
+    Enum(TypeId),
+    /// An `Option<T>` held as one value: a field, an element, an item, a carrier.
+    Option(Box<ValueType>),
+}
+
+/// How the fields of a struct or a variant are written in the source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FieldsForm {
+    /// `{ x: f64, y: f64 }`: the fields have names.
+    Named,
+    /// `(f64, f64)`: the fields are numbered, `0`, `1`, ...
+    Tuple,
+    /// No fields.
+    Unit,
+}
+
+/// The traits of Appendix H.8 a source type derives, one flag each.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Derives {
+    pub clone: bool,
+    pub copy: bool,
+    pub partial_eq: bool,
+    pub eq: bool,
+    pub partial_ord: bool,
+    pub ord: bool,
+    pub default: bool,
+    pub debug: bool,
+    pub hash: bool,
+    /// `Repr` (§2): the type crosses the device ABI.
+    pub repr: bool,
+}
+
+/// One source struct or enum: its name, where it was written, and its fields or variants.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TypeData {
+    /// The bare name, `Pair`.
+    pub name: String,
+    /// The path of the declaration in the source, `bus::Pair`.
+    pub path: String,
+    pub origin: Origin,
+    pub kind: TypeKind,
+    pub derives: Derives,
+}
+
+/// The shape of a source type.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum TypeKind {
+    /// A struct and its fields, named or numbered (the names of a tuple struct are `0`, `1`, ..).
+    Struct { form: FieldsForm, fields: Vec<(String, ValueType)> },
+    /// An enum: the width of its tag in levels (§2 rule 5) and its variants.
+    Enum { tag_levels: u32, variants: Vec<VariantData> },
+}
+
+/// One variant of an enum.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VariantData {
+    pub name: String,
+    /// The tag value of the variant (§1.3.7).
+    pub discriminant: i128,
+    pub form: FieldsForm,
+    pub fields: Vec<(String, ValueType)>,
 }
 
 impl ValueType {

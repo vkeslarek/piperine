@@ -1,15 +1,25 @@
 //! Reading: `Copy` handles that pair a borrow of the [`Ir`] with an id.
 
 use crate::real::Real;
-use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
+use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
 use crate::model::{
     BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Event, Expr, FunctionData, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
-    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ValueType,
+    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, TypeData, ValueType,
 };
 use crate::contributions::{Contribution, Contributions};
 use crate::statements::Statements;
 
 impl Ir {
+    /// A source struct or enum of the type arena.
+    pub fn type_data(&self, id: TypeId) -> &TypeData {
+        &self.types[id.index()]
+    }
+
+    /// The type arena, in id order.
+    pub fn types(&self) -> &[TypeData] {
+        &self.types
+    }
+
     /// The kind of an expression. An id out of range panics; `Ir::check` is the gate that makes
     /// that unreachable.
     pub fn expr(&self, id: ExprId) -> &Expr {

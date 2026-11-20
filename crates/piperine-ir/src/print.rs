@@ -32,8 +32,8 @@ use std::fmt::{self, Display, Write};
 
 use crate::ids::{ExprId, StmtId};
 use crate::model::{
-    BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, ChildValue, Constant, EmitField, Env, EventSource, Expr, ExprData, FunctionData, InstanceData, Ir,
-    LevelPart, Local, MathFn, Method, NodeRef, Operator, Origin, Param, Place, Projection, Quantity, QuantityRole, Stmt, Stream, Terminal,
+    BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, ChildValue, Constant, EmitField, Env, EventSource, Expr, ExprData, FieldsForm, FunctionData, InstanceData, Ir,
+    LevelPart, Local, MathFn, Method, NodeRef, Operator, Origin, Param, Place, Projection, Quantity, QuantityRole, Stmt, Stream, Terminal, TypeData, TypeKind,
     UnaryOp, ValueType,
 };
 use crate::real::Real;
@@ -83,6 +83,15 @@ impl Display for ValueType {
             ValueType::UInt(n) => write!(f, "u{n}"),
             ValueType::Int(n) => write!(f, "i{n}"),
             ValueType::Flagged(inner) => write!(f, "flagged<{inner}>"),
+            ValueType::Tuple(parts) if parts.len() == 1 => write!(f, "({},)", parts[0]),
+            ValueType::Tuple(parts) => {
+                let parts: Vec<String> = parts.iter().map(ToString::to_string).collect();
+                write!(f, "({})", parts.join(", "))
+            }
+            ValueType::Array(element, length) => write!(f, "[{element}; {length}]"),
+            ValueType::Slice(element) => write!(f, "&[{element}]"),
+            ValueType::Struct(id) | ValueType::Enum(id) => write!(f, "t{}", id.0),
+            ValueType::Option(inner) => write!(f, "Option<{inner}>"),
         }
     }
 }
@@ -199,6 +208,8 @@ impl<'a> Printer<'a> {
             })
             .collect();
         self.items(natures);
+        let types = ir.types.iter().enumerate().map(|(i, data)| self.chunk(|p| p.type_item(i, data))).collect();
+        self.items(types);
         let bodies = ir.bodies.iter().map(|body| self.chunk(|p| p.body(body))).collect();
         self.items(bodies);
         let functions = ir.functions.iter().map(|function| self.chunk(|p| p.function(function))).collect();
@@ -232,6 +243,32 @@ impl<'a> Printer<'a> {
         if !self.structural {
             self.arenas();
         }
+    }
+
+    /// The fields of a struct or a variant: `{ x: f64 }`, `(f64, bool)`, or nothing.
+    fn fields_text(form: FieldsForm, fields: &[(String, ValueType)]) -> String {
+        match form {
+            FieldsForm::Unit => String::new(),
+            FieldsForm::Tuple => format!("({})", fields.iter().map(|(_, ty)| ty.to_string()).collect::<Vec<_>>().join(", ")),
+            FieldsForm::Named => format!(" {{ {} }}", fields.iter().map(|(name, ty)| format!("{}: {ty}", Printer::name(name))).collect::<Vec<_>>().join(", ")),
+        }
+    }
+
+    /// One entry of the type arena: `type t0 = struct P { x: f64 }  path m::P  derive Clone, Copy`.
+    fn type_item(&mut self, index: usize, data: &TypeData) {
+        let shape = match &data.kind {
+            TypeKind::Struct { form, fields } => format!("struct {}{}", Printer::name(&data.name), Printer::fields_text(*form, fields)),
+            TypeKind::Enum { tag_levels, variants } => {
+                let variants: Vec<String> = variants.iter().map(|v| format!("{}{} = {}", Printer::name(&v.name), Printer::fields_text(v.form, &v.fields), v.discriminant)).collect();
+                format!("enum {} [tag {tag_levels}] {{ {} }}", Printer::name(&data.name), variants.join(", "))
+            }
+        };
+        let d = data.derives;
+        let flags = [("Clone", d.clone), ("Copy", d.copy), ("PartialEq", d.partial_eq), ("Eq", d.eq), ("PartialOrd", d.partial_ord), ("Ord", d.ord), ("Default", d.default), ("Debug", d.debug), ("Hash", d.hash), ("Repr", d.repr)];
+        let derived: Vec<&str> = flags.iter().filter(|(_, on)| *on).map(|(name, _)| *name).collect();
+        let derive = if derived.is_empty() { String::new() } else { format!("  derive {}", derived.join(", ")) };
+        let at = self.at(&data.origin);
+        self.line(0, &format!("type t{index} = {shape}  path {}{derive}{at}", Printer::name(&data.path)));
     }
 
     /// The locals table of an owner: index order in the full text, sorted in the structural form.
