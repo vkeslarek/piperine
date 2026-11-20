@@ -149,7 +149,7 @@ block	errors#2	290db49dc81491b3	diverges	piperine/book_errors::the_ambiguous_nam
 block	errors#3	d48482453090553f	refused	piperine/book_errors::the_worked_sample_hold_is_refused_with_its_three_codes	-	-
 block	errors#4	d6f143186449ee41	shown	-	-	-
 block	pom#1	e6a2cd05f83340b4	shown	-	-	-
-block	pom#2	14322fa939347053	pending	-	-	-
+block	pom#2	14322fa939347053	run	piperine/book_pom::front_runs_with_its_analog_and_digital_events	-	-
 block	pom#3	349bd80a32a83f03	shown	-	-	-
 block	abi#1	c715b5183a7012a9	shown	-	-	-
 block	abi#2	30c3504b382a7487	pending	-	-	-
@@ -448,13 +448,13 @@ claim	errors~5c44ed1d	5c44ed1dcf9aee4b	holds	piperine/book_errors::e0504_is_a_st
 claim	errors~5c44ec1d	5c44ec1dcf9aec98	holds	piperine/book_errors::e0505_is_an_operating_point_that_does_not_converge	-	E0505
 claim	errors~5c44ee1d	5c44ee1dcf9aeffe	holds	piperine/book_errors::e0507_is_a_non_finite_value_in_a_solve	-	E0507
 claim	errors~5c44e91d	5c44e91dcf9ae77f	holds	piperine/book_errors::e0508_is_a_transient_step_that_cannot_be_completed_at_the_smallest_step	-	E0508
-claim	pom~d65bb809	d65bb809f4a91366	pending	-	-	Always builds. build() returns a Design however broken the input.
-claim	pom~3bce7c96	3bce7c96fa16a3f6	pending	-	-	A generation for over 8 cells gives 8 instances to walk.
-claim	pom~f5af2797	f5af2797cce9fc1b	pending	-	-	It gives one for with one placement inside, as written.
-claim	pom~27751c3c	27751c3c3fa969ac	pending	-	-	build() fails on a syntax error.
-claim	pom~806e9e4f	806e9e4f3ddce5e9	pending	-	-	It always returns a Design.
-claim	pom~dfd54aa0	dfd54aa057b9f194	pending	-	-	Check diagnostics() before you trust the answers.
-claim	pom~20d38737	20d38737f0fea9cc	pending	-	-	An E0432 or E0417 comes from a later stage.
+claim	pom~d65bb809	d65bb809f4a91366	holds	piperine/book_pom::building_always_gives_a_design_and_a_syntax_error_goes_to_its_diagnostics	-	Always builds. build() returns a Design however broken the input.
+claim	pom~3bce7c96	3bce7c96fa16a3f6	holds	piperine/book_pom::a_generation_for_over_eight_cells_stays_one_for_with_one_placement	-	A generation for over 8 cells gives 8 instances to walk.
+claim	pom~f5af2797	f5af2797cce9fc1b	holds	piperine/book_pom::a_generation_for_over_eight_cells_stays_one_for_with_one_placement	-	It gives one for with one placement inside, as written.
+claim	pom~27751c3c	27751c3c3fa969ac	holds	piperine/book_pom::building_always_gives_a_design_and_a_syntax_error_goes_to_its_diagnostics	-	build() fails on a syntax error.
+claim	pom~806e9e4f	806e9e4f3ddce5e9	holds	piperine/book_pom::building_always_gives_a_design_and_a_syntax_error_goes_to_its_diagnostics	-	It always returns a Design.
+claim	pom~dfd54aa0	dfd54aa057b9f194	holds	piperine/book_pom::building_always_gives_a_design_and_a_syntax_error_goes_to_its_diagnostics	-	Check diagnostics() before you trust the answers.
+claim	pom~20d38737	20d38737f0fea9cc	holds	piperine/book_pom::a_type_error_is_not_the_object_models_to_report	-	An E0432 or E0417 comes from a later stage.
 claim	abi~5856e308	5856e308decfdc14	pending	-	-	A call returns OK, FAULT (with a message), RESHAPE (these param values need a different shape) or FINISH (a reaction ends the analysis at its instant).
 claim	abi~978c8986	978c8986b77bf2f9	pending	-	-	No macro is involved: a generic function produces the C thunks.
 claim	abi~e42ad9e5	e42ad9e55b310b40	pending	-	-	It runs its own clock up to there, or stops earlier at its first output, because that output may come back to it.
