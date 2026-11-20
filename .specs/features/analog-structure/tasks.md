@@ -886,12 +886,12 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Creates the target `crates/piperine-parity/tests/source_params.rs` (`//!` header: param values, initial values and param history run from source on the Rust backend)
-- [ ] Test with exactly this name passes in `Run sparams`: `a_body_let_as_a_param_value_sets_the_corner`
-- [ ] Tests with exactly these names pass in `Run elabstruct`: `a_param_value_let_may_read_another_let`, `a_param_value_let_that_reads_a_probe_is_e0321`
-- [ ] Test with exactly this name passes in `Run apibind`: `a_set_of_r_recomputes_the_capacitance_it_derives`
-- [ ] Gate check passes: Full (`Run sparams`, `Run elabstruct`, `Run apibind`, `cargo test -p piperine-lang`, `Run twins`, `Run tgolden`)
-- [ ] Test count: the 4 tests named above, and no existing test removed or edited
+- [x] Creates the target `crates/piperine-parity/tests/source_params.rs` (`//!` header: param values, initial values and param history run from source on the Rust backend)
+- [x] Test with exactly this name passes in `Run sparams`: `a_body_let_as_a_param_value_sets_the_corner`
+- [x] Tests with exactly these names pass in `Run elabstruct`: `a_param_value_let_may_read_another_let`, `a_param_value_let_that_reads_a_probe_is_e0321`
+- [x] Test with exactly this name passes in `Run apibind`: `a_set_of_r_recomputes_the_capacitance_it_derives`
+- [x] Gate check passes: Full (`Run sparams`, `Run elabstruct`, `Run apibind`, `cargo test -p piperine-lang`, `Run twins`, `Run tgolden`)
+- [x] Test count: the 4 tests named above, and no existing test removed or edited
 
 **Tests**: e2e
 **Gate**: full

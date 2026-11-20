@@ -118,23 +118,7 @@ impl Elaboration<'_, '_> {
     /// The value a module-body `let` binding stands for: the whole value of an identifier
     /// pattern, the matching component of a tuple pattern over a tuple expression.
     pub(super) fn body_let_value(&self, binding: DeclId) -> Option<ExprId> {
-        let data = self.design.decl_data(binding);
-        let DeclKind::Binding(b) = &data.kind else { return None };
-        if b.origin != crate::pom::BindingOrigin::BodyLet {
-            return None;
-        }
-        let DeclKind::Let(l) = &self.design.decl_data(data.parent?).kind else { return None };
-        match &self.design.pat_node(l.pat).kind {
-            PatKind::Ident { binding: bound, sub: None, .. } if *bound == binding => Some(l.value),
-            PatKind::Tuple(items) => {
-                let at = items.iter().position(|p| matches!(&self.design.pat_node(*p).kind, PatKind::Ident { binding: bound, sub: None, .. } if *bound == binding))?;
-                match &self.design.expr_node(self.peel_parens(l.value)).kind {
-                    ExprKind::Tuple(values) if values.len() == items.len() => Some(values[at]),
-                    _ => None,
-                }
-            }
-            _ => None,
-        }
+        super::consts::ConstEval::body_let_value(self.design, binding)
     }
 
     /// A read of a module-body `let`: the result of the placement it binds, else its value

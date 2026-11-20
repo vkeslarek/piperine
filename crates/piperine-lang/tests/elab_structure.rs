@@ -421,3 +421,30 @@ fn the_water_model_waits_for_generics() {
     assert!(Elab::codes(&found).iter().all(|c| c == "P0001"), "{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
     assert!(found.iter().any(|d| d.diagnostic.message.contains("generic")), "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
 }
+
+#[test]
+fn a_param_value_let_may_read_another_let() {
+    // AS-12 AC 2 (§8.1.19): `b` reads `a`, which reads the param `r`: the placement's param value is the
+    // chain over `r`, an expression the host's derive plan recomputes (`ChildValue::Expr`), and the
+    // instance holds its value for r = 2.0: b = (2.0 * 3.0) + 1.0 = 7.0.
+    let src = "module Leaf() { c: f64 = 1.0; }\nmodule Top() { r: f64 = 2.0; let a = r * 3.0; let b = a + 1.0; let leaf = Leaf { c: b }(); }";
+    let ir = Elab::ir(src, "Top");
+    let top = ir.bodies().find(|b| b.name() == "Top").expect("the body Top");
+    assert!(matches!(top.child_params(0), [(0, piperine_ir::ChildValue::Expr(_))]), "the value is an expression over the param: {:?}", top.child_params(0));
+    let leaf = ir.instances().find(|i| i.path() == "Top.leaf").expect("the instance Top.leaf");
+    assert_eq!(leaf.params(), [piperine_ir::Constant::Real(piperine_ir::Real::new(7.0))], "the instance holds the value for r = 2.0");
+}
+
+#[test]
+fn a_param_value_let_that_reads_a_probe_is_e0321() {
+    // AS-12 AC 3 (§8.1.19): a `let` used as a param value that reads a probe, a carrier or the environment
+    // has no value at elaboration: `E0321` at the use, naming the `let`.
+    for (let_, reads) in [("let p = v(a);", "a probe"), ("let p = temperature();", "a call that is not a function"), ("let p = k.known_or(0.0);", "a carrier")] {
+        let src = format!("module Leaf() {{ c: f64 = 1.0; }}\nmodule Mid(a: Electrical) {{ signal k: Bit<f64>; {let_} let leaf = Leaf {{ c: p }}(); }}\nmodule Top() {{ signal a: Electrical; let m = Mid(a); }}");
+        let err = Elab::run(&src, "Top").expect_err("the value has no constant");
+        assert_eq!(Elab::codes(&err), ["E0321"], "{let_}: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        let message = &err[0].diagnostic.message;
+        assert!(message.contains("the `let` `p`"), "{let_}: it names the let: {message}");
+        assert!(message.contains(reads), "{let_}: it says what the let reads ({reads}): {message}");
+    }
+}

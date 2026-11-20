@@ -127,11 +127,13 @@ pub struct ConstEval<'d, 't> {
     evaluations: usize,
     locals: BTreeMap<DeclId, Folded>,
     depth: usize,
+    /// The module-body `let`s being evaluated, innermost last: a read of one of them is a cycle.
+    open_lets: Vec<DeclId>,
 }
 
 impl<'d, 't> ConstEval<'d, 't> {
     pub fn new(design: &'d Design, types: &'t Types<'d>) -> Self {
-        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0 }
+        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new() }
     }
 
     /// How many `const` items this evaluator has folded, each counted once however many times
@@ -266,9 +268,62 @@ impl<'d, 't> ConstEval<'d, 't> {
             DeclKind::Param(_) => bindings.get(decl).map(Folded::Known).ok_or(ConstFault::UnboundParam { expr, param: decl }),
             // A unit variant is its tag (§2 rule 5).
             DeclKind::Variant(_) => EnumLayout::variant_tag(self.design, decl).map(|tag| Folded::Known(Constant::Int(tag))).ok_or(ConstFault::Unsupported { expr, what: "a variant outside its enum".to_string() }),
-            DeclKind::FnParam(_) | DeclKind::Binding(_) => self.locals.get(&decl).copied().ok_or(ConstFault::Dynamic { expr, what: "a name with no value yet".to_string() }),
+            DeclKind::FnParam(_) | DeclKind::Binding(_) => match self.locals.get(&decl).copied() {
+                Some(value) => Ok(value),
+                None => self.body_let(expr, decl, bindings),
+            },
+            DeclKind::Port(_) | DeclKind::Signal(_) if self.types.carrier(decl).is_some() => Err(ConstFault::Dynamic { expr, what: "a carrier".to_string() }),
             DeclKind::Port(_) | DeclKind::Signal(_) => Err(ConstFault::Dynamic { expr, what: "a node".to_string() }),
             _ => Err(ConstFault::Unsupported { expr, what: "this name in a const expression".to_string() }),
+        }
+    }
+
+    /// The value of the module-body `let` name `decl` read at `expr`: its value expression evaluated
+    /// over the same params (§8.1.19), so a param value may name a `let` that computes it. A `let`
+    /// that reads a carrier, a probe, the environment or the result of an instance has no constant
+    /// value: the fault names the `let`. A `let` that reads itself is one too.
+    fn body_let(&mut self, expr: ExprId, decl: DeclId, bindings: &Bindings) -> Result<Folded, ConstFault> {
+        let Some(value) = Self::body_let_value(self.design, decl) else {
+            return Err(ConstFault::Dynamic { expr, what: "a name with no value yet".to_string() });
+        };
+        let name = self.design.decl_data(decl).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        if self.open_lets.contains(&decl) {
+            return Err(ConstFault::Dynamic { expr, what: format!("the `let` `{name}`, which reads itself") });
+        }
+        self.open_lets.push(decl);
+        let outer = std::mem::take(&mut self.locals);
+        let result = self.folded(value, bindings);
+        self.locals = outer;
+        self.open_lets.pop();
+        result.map_err(|fault| match fault {
+            ConstFault::Dynamic { what, .. } => ConstFault::Dynamic { expr, what: format!("the `let` `{name}`, which reads {what}") },
+            other => other,
+        })
+    }
+
+    /// The value a module-body `let` binding stands for: the whole value of an identifier pattern,
+    /// the matching component of a tuple pattern over a tuple expression.
+    pub(super) fn body_let_value(design: &Design, binding: DeclId) -> Option<ExprId> {
+        let data = design.decl_data(binding);
+        let DeclKind::Binding(b) = &data.kind else { return None };
+        if b.origin != crate::pom::BindingOrigin::BodyLet {
+            return None;
+        }
+        let DeclKind::Let(l) = &design.decl_data(data.parent?).kind else { return None };
+        match &design.pat_node(l.pat).kind {
+            PatKind::Ident { binding: bound, sub: None, .. } if *bound == binding => Some(l.value),
+            PatKind::Tuple(items) => {
+                let at = items.iter().position(|p| matches!(&design.pat_node(*p).kind, PatKind::Ident { binding: bound, sub: None, .. } if *bound == binding))?;
+                let mut whole = l.value;
+                while let ExprKind::Paren(inner) = &design.expr_node(whole).kind {
+                    whole = *inner;
+                }
+                match &design.expr_node(whole).kind {
+                    ExprKind::Tuple(values) if values.len() == items.len() => Some(values[at]),
+                    _ => None,
+                }
+            }
+            _ => None,
         }
     }
 
@@ -508,7 +563,12 @@ impl<'d, 't> ConstEval<'d, 't> {
             return self.logic(expr, args);
         }
         let Some(Callee::Function(function)) = self.types.callee(expr) else {
-            return Err(ConstFault::Dynamic { expr, what: "a call that is not a function".to_string() });
+            let what = match &self.design.expr_node(expr).kind {
+                ExprKind::Call { class: crate::pom::CallClass::Probe, .. } => "a probe",
+                ExprKind::Call { class: crate::pom::CallClass::Instance { .. }, .. } => "the result of an instance",
+                _ => "a call that is not a function",
+            };
+            return Err(ConstFault::Dynamic { expr, what: what.to_string() });
         };
         let mut values = Vec::new();
         for arg in args {

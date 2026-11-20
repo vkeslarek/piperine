@@ -87,3 +87,41 @@ fn a_before_run_binding_of_a_plain_param_is_still_the_hosts_write() {
     let table = run(vec![("Top.l.scale".into(), 2.0)]);
     close(real(&table.rows[1][1]), 1.0 / 3.0, "scale = 2");
 }
+
+/// `Load` takes its `scale` from a body `let` of `Top` over the plain param `k` (AS-12 AC 4): the
+/// host's `set` of `k` recomputes what the `let` gives the child.
+const DERIVED: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+pub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }
+analog for Vsource { v(p, n) +> dc; }
+pub module Load(a: Electrical, b: Electrical) { scale: f64 = 1.0; }
+analog for Load { i(a, b) +> v(a, b) * scale / 1k; }
+module Top() {
+    k: f64 = 1.0;
+    signal s: Electrical;
+    signal c: Electrical;
+    let derived = k * 3.0;
+    let v1 = Vsource(s, gnd) { dc: 1.0 };
+    let r2 = Resistor(s, c) { r: 1k };
+    let l = Load(c, gnd) { scale: derived };
+}
+";
+
+#[test]
+fn a_set_of_r_recomputes_the_capacitance_it_derives() {
+    // AS-12 AC 4 (host-ii X9): `l.scale` is the body `let` `derived` = 3 * k. A divider of 1 kOhm over
+    // a load of conductance scale / 1 kOhm gives v(c) = 1 V / (1 + scale): 0.25 V at k = 1 (scale 3), and
+    // after the host binds `Top.k` = 2 the child's scale is recomputed to 6: v(c) = 1 / 7.
+    let run_derived = |params: Vec<(String, f64)>| {
+        let dir = tempfile::tempdir().expect("tmp");
+        let file = dir.path().join("bench.msl");
+        std::fs::write(&file, DERIVED).expect("write");
+        let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides { analysis: Some("op".into()), backend: Some("rust".into()), top: Some("Top".into()), print: vec!["c".into()], params, ..Overrides::default() };
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+        session.run(Rc::new(RefCell::new(Kept))).unwrap_or_else(|f| panic!("{f}"))
+    };
+    close(real(&run_derived(vec![]).rows[0][1]), 0.25, "k = 1");
+    close(real(&run_derived(vec![("Top.k".into(), 2.0)]).rows[0][1]), 1.0 / 7.0, "k = 2");
+}

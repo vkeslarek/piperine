@@ -1,0 +1,37 @@
+//! Param values, initial values and param history (analog-structure AS-12, AS-14, AS-15): a body
+//! `let` that computes a child's param, a node or a carrier that starts at a param's value, and the
+//! change of a param as an event. Every module is written from the spec text (Part III §8.1).
+
+/// Ideal resistor.
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// Ideal capacitor.
+module Capacitor(p: Electrical, n: Electrical) {
+    c: f64 where c > 0.0;
+}
+analog for Capacitor { i(p, n) +> c * ddt(v(p, n)); }
+
+/// A potential held at `volts` with a unit AC stimulus on top.
+module AcLevel(p: Electrical) { volts: f64 = 0.0; }
+analog for AcLevel { v(p, gnd) +> volts + ac_stim(1.0); }
+
+// -- AS-12 AC 1: a body `let` as a param value
+
+/// A first-order low-pass whose corner `fc` sets the capacitance: `c = 1 / (2 pi r fc)`.
+module CornerFilter(a: Electrical, b: Electrical) {
+    r: f64 = 1k;
+    fc: f64 = 1k;
+    let c = 1.0 / (2.0 * 3.141592653589793 * r * fc);
+    let series = Resistor { r }(a, b);
+    let shunt = Capacitor { c }(b, gnd);
+}
+
+module CornerBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let source = AcLevel { volts: 0.0 }(a);
+    let filter = CornerFilter(a, o);
+}
