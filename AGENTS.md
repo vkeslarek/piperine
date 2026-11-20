@@ -106,7 +106,7 @@ violates any of them is not ready.
 
 ## Test placement
 
-A target lives in the crate it exercises (MD-28); the root `tests/` holds no Rust target.
+A target lives in the crate it exercises (MD-28); the root `tests/` holds the integrated tests only: `tests/book/` (one target per Book chapter and its inventory), `tests/scenarios.rs` and `tests/e2e/` (MD-72).
 Do not maintain a file list anywhere — enumerate with `ls crates/*/tests/*.rs` and read
 each target's `//!` scope header. `crates/piperine-lang/tests/suite_hygiene.rs` enforces
 the mechanical half of the rule.

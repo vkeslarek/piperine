@@ -1104,9 +1104,9 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] `docs.rs` gains `the_roadmap_and_state_record_root_e2e`
-- [ ] Gate check passes: Build
-- [ ] Test count: 1 new test
+- [x] `docs.rs` gains `the_roadmap_and_state_record_root_e2e`
+- [x] Gate check passes: Build
+- [x] Test count: 1 new test
 
 **Tests**: integration
 **Gate**: build

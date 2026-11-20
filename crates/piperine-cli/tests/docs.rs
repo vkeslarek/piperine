@@ -133,6 +133,32 @@ fn gaps_drops_what_root_e2e_closed() {
 }
 
 #[test]
+fn the_roadmap_and_state_record_root_e2e() {
+    // root-e2e RE-04 AC 2 and 3 (T43): the roadmap marks queue items 4 and 4b delivered and the lane
+    // `root-e2e` delivered; STATE.md holds MD-72 naming the book targets, the inventory and `tests/e2e/`
+    // and amending MD-28; the instruction files say the root holds the integrated tests
+    let roadmap = read("ROADMAP.md");
+    let queue = roadmap.split("## Queue after ir-rust").nth(1).expect("ROADMAP.md has the queue");
+    for item in ["4. ", "4b. "] {
+        let line = queue.lines().find(|l| l.starts_with(item)).unwrap_or_else(|| panic!("the queue has item {item}"));
+        assert!(line.starts_with(&format!("{item}\u{2705} **Delivered")) && line.contains("root-e2e"), "item {item} is delivered: {line}");
+    }
+    assert!(roadmap.lines().any(|l| l.starts_with("| B next | `root-e2e`") && l.ends_with("| delivered |")), "the lane table says delivered");
+    let state = read(".specs/STATE.md");
+    let at = state.find("### MD-72:").expect("STATE.md holds MD-72");
+    let decision = state[at..].split("\n---").next().expect("a decision");
+    for name in ["`tests/book/`", "`tests/book/inventory.tsv`", "`tests/e2e/`", "`tests/scenarios.rs`", "MD-28"] {
+        assert!(decision.contains(name), "MD-72 names {name}");
+    }
+    for file in ["AGENTS.md", "CLAUDE.md"] {
+        let text = read(file);
+        assert!(text.contains("tests/book/") && text.contains("tests/e2e/") && text.contains("tests/scenarios.rs"), "{file} says the root holds the integrated tests");
+        assert!(!text.contains("holds no Rust target"), "{file} still says the root holds no Rust target");
+    }
+    assert!(read("CLAUDE.md").contains("`tests/e2e/twins/*.cir`"), "CLAUDE.md's parity row names tests/e2e/");
+}
+
+#[test]
 fn the_roadmap_lists_the_host_follow_ups() {
     // HII-23 AC 2: the roadmap records `host-ii` as delivered and lists the follow-ups: the host
     // follow-up feature (what needs new solver mechanisms) and `root-e2e`

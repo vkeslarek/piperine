@@ -92,7 +92,7 @@ compile). Never pass `--workspace`: `piperine-lang-server` does not build.
 | `piperine-lang-server` | LSP server. **Outside the default build and deferred** (user, 2026-11-16): it still targets the retired front end and is not edited. |
 | `piperine-plan` | What the two backends of an `Ir` share (MD-63): `BodyPlan` (a body's ABI shape and the table of what each function computes: `FunctionPlan`, `Mode`, `Source`, `Target`, `Term`) and `Netlist::circuit`, the design's instance table bound to whatever implements `Modules`. Depends on `piperine-ir`, `piperine-abi`, `piperine-solver`. |
 | `piperine-transpile` | The compiled backend (MD-63): `Transpiler::new` checks and plans an `Ir`; the IR is printed as one readable Rust source, built by `rustc` into a `cdylib` exporting `piperine_abi_1`, cached by hash and loaded. Generated code links only `piperine-abi` and the embedded runtime `rt`. |
-| `piperine-parity` | The parity harness and the runner of MSL from source (`publish = false`): runs ngspice on `tests/ngspice/*.cir` at test time and compares the MSL twins under one `ToleranceContract`; `Project` takes a crate graph from disk to a compiled circuit, which the `buck_*` targets use to run `examples/buck` from its `.msl`. |
+| `piperine-parity` | The parity harness and the runner of MSL from source (`publish = false`): runs ngspice on `tests/e2e/twins/*.cir` at test time and compares the MSL twins under one `ToleranceContract` (`tests/e2e/` holds each twin with its command and expected output; `tests/scenarios.rs` runs them); `Project` takes a crate graph from disk to a compiled circuit, which the `buck_*` targets use to run `examples/buck` from its `.msl`. |
 
 The root package `piperine` is the shell over `piperine-api` (`pub use piperine_api::*`, so a Rust
 host writes `use piperine::…`); it builds, and its integrated tests are queue item 4 of `ROADMAP.md`.
@@ -158,9 +158,10 @@ no list here — the tree is the list, and a guard keeps it honest.
 - **Enumerate**: `ls crates/*/tests/*.rs`, or `cargo test`
   (each `Running tests/<name>.rs` line is one target). Every target opens with a
   `//!` header saying what it covers — read that first.
-- **Placement rule (MD-28)**: a target lives in the crate it exercises; root
-  `tests/` holds no Rust target. Integration tests are
-  grouped by functionality, one concern per target.
+- **Placement rule (MD-28, amended by MD-72)**: a target lives in the crate it exercises; the root
+  `tests/` holds the integrated tests only: `tests/book/` (one target per Book chapter, through
+  `piperine::`, with `inventory.tsv`), `tests/scenarios.rs` (the ngspice scenarios) and `tests/e2e/`
+  (their fixtures). Integration tests are grouped by functionality, one concern per target.
 - **The enforcing guard**: `crates/piperine-lang/tests/suite_hygiene.rs` walks the repo's own sources
   and fails on switched-off test code, `#[ignore]`d tests, unregistered
   ```` ```ignore ```` doc fences, a target with no `//!` scope header, file-scope

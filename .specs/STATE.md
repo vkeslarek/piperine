@@ -1533,6 +1533,35 @@ writes), `crates/piperine-cli`, `docs/book`.
 
 ---
 
+### MD-72: the root package holds the integrated tests
+
+`root-e2e` (2026-11-19). The Book and the ngspice scenarios are held at the root.
+
+1. **The root `tests/` holds the integrated tests.** `tests/book/` has one target per Book chapter
+   (`book_<chapter>`, declared as `[[test]]` in the root manifest), run through `piperine::` for every
+   model, claim and scenario. `tests/book/inventory.tsv` is the registry of every Book block and every
+   value sentence, each with its verdict (`run`, `refused`, `holds`, `binary`, `prose`, `shown`,
+   `fragment`, `unraised`) and the test that holds it. Two guards (`inventory_guard.rs`,
+   `claims_guard.rs`) hold it to the Book: a Book edit updates its rows, and no row is `pending`,
+   `diverges` or `disputed`.
+2. **`tests/e2e/` is the one home of the ngspice scenarios.** Each twin is `tests/e2e/twins/<name>.{msl,cir,command,stdout}`
+   (plus `devices.msl`); `tests/scenarios.rs` runs each through `piperine::` against ngspice under the
+   single `ToleranceContract`, and `piperine-parity` stays the harness. The binary's own output stays held
+   in `piperine-cli`, where cargo builds it.
+3. **A Book claim the binary does not meet is classified by cause**: fixed in the code, `refused` or
+   `unraised` under an owner feature in `GAPS.md` section 11, or, for a sentence the code rightly
+   contradicts, corrected in the Book (the buck start-up, user 2026-11-19: the first tick acts inside the
+   operating point, as part V section 16 step 4 says).
+
+It amends MD-28's "root `tests/` holds no Rust target" and extends MD-31 and MD-65.
+
+**Scope:** `tests/book/`, `tests/scenarios.rs`, `tests/e2e/`, `crates/piperine-parity`,
+`crates/piperine-cli/tests/book.rs`, `docs/book`, `GAPS.md` section 11.
+**Status:** Accepted (2026-11-19), from the approved `.specs/features/root-e2e/design.md`.
+**Number:** `MD-70` is `unknown-semantics`, `MD-71` is `analog-structure`; `MD-72` is the next free one after them.
+
+---
+
 ## Handoff Snapshot
 
 ### Feature - `solver-abi-integration` (2026-11-15)
