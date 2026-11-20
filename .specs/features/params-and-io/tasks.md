@@ -194,10 +194,10 @@ T44
 
 **Done when**:
 
-- [ ] The `**Build**` line is green at `HEAD` before any change (red stops the feature)
-- [ ] The Handoff names, for each of `E0244`, `E0354`, `E0906`, the source that reaches it and today's code
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Build
+- [x] The `**Build**` line is green at `HEAD` before any change (red stops the feature)
+- [x] The Handoff names, for each of `E0244`, `E0354`, `E0906`, the source that reaches it and today's code
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Build
 
 **Tests**: none
 **Gate**: build
@@ -1540,7 +1540,7 @@ Proof: run docs | test gaps_section_10_lists_exactly_the_owned_codes ... ok
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** Planning (2026-11-20): the user was away and asked for the most reasonable default on every open point ("Eu gostaria que engatilhasse até o 12"); the defaults are design.md D1 to D25 and the spec amendments A1 to A6.
+**Settled mid-build:** Planning (2026-11-20): the user was away and asked for the most reasonable default on every open point ("Eu gostaria que engatilhasse até o 12"); the defaults are design.md D1 to D25 and the spec amendments A1 to A6. T1 re-read (2026-11-20, `HEAD` 79fd5ca9, Build green): `E0244` - the source `module Child(p: Electrical) { signal hidden: Electrical; }` placed as `let c = Child(x);` in `Step`, with `analog for Step { i(x) +> v(c.hidden); }` (also `v(m.c.hidden)` and `i(m.c.hidden) +> 1.0`) is `E0343` "`hidden` is not `pub` in module `Child`" from the name resolver (`pom/resolve/members.rs:84`), before the checker runs; with `pub` it is accepted; `v(c.p)` and `i(c.p) +> 1.0` on a child's port are accepted, so no form reaches `E0244` today and T12 raises it where the resolver's `E0343` names a probe or contribution operand (the same form, a different code at that position). `E0354` - a continuous result read where probes are not allowed (`module Step() { signal a: Electrical; let g = ddt(v(a)); q: f64 = g; }`) is `P0001` "a name whose type is unknown" at `g`; an `Event` read outside an event position (`i(a) +> g + e;` with `let e = cross(v(a));`) is already `E0441` (§13 rule 8) and `if e` is `P0001` "an event read as a `bool`"; T13 gives the first form `E0354`. `E0906` - `let x = Unknown;` in a module body and in a reaction is `P0001` "`Unknown` literal where no carried type is expected"; T14 gives it `E0906`. Formatter: `piperine fmt --check` would change 10 of 10 files of `crates/piperine-lang/std/`, 9 of 9 files of `examples/buck` (8 under `src/`, `benches/startup.msl`) and 18 of 18 `rust` fences of Appendices D (6), E (7) and F (5); `tests/e2e/buck` is not a copy of `examples/buck` (`src/lib.msl` and `Piperine.toml` differ, and it lacks `control`, `dpwm`, `power`, `sense` and the benches). Nothing in T1 contradicts design.md.
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 
