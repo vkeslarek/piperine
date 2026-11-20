@@ -25,6 +25,7 @@ use piperine_transpile::{Compiled, Settings, Transpiler};
 
 use crate::backend::Backend;
 use crate::failure::Failure;
+use crate::noise::NoiseProbe;
 use crate::held::Held;
 use crate::host::{HostAction, TimedChange, TimedSet};
 use crate::metadata::Metadata;
@@ -69,6 +70,8 @@ pub struct Session {
     context: Context,
     /// The source and the node of a `tf` or `pz` run, resolved against the design.
     transfer: Option<Transfer>,
+    /// The output and input a `noise` run resolved at open.
+    noise: Option<NoiseProbe>,
     /// The params a `sens` run differentiates by, resolved against the design, in the order given.
     wrt: Vec<ParamPath>,
     /// The host's drives due after the start of the transient, in the order given.
@@ -185,6 +188,10 @@ impl Session {
         let mut context = Session::context_of(&spec.options);
         let nodeset = Session::nodeset_of(&ir, spec)?;
         let (transfer, wrt) = Session::small_signal_of(&ir, spec, &probes)?;
+        let noise = match &spec.analysis {
+            Analysis::Noise { output, input, .. } => Some(NoiseProbe::resolve(&ir, ir.top().path(), output, input.as_deref())?),
+            _ => None,
+        };
         let netlist = Session::netlist_of(&ir, &spec.options);
         let (mut circuit, compiled) = match backend {
             Backend::Interp => {
@@ -218,7 +225,7 @@ impl Session {
         for (path, _, value) in &params {
             Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, path, *value)?;
         }
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, wrt, actions: Vec::new(), timed_sets: Vec::new(), params: table })
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, noise, wrt, actions: Vec::new(), timed_sets: Vec::new(), params: table })
     }
 
     /// Sets `path` to `value` on `circuit` and, through `table`, every param derived from it, in
@@ -379,6 +386,11 @@ impl Session {
             Ok(ir) => Ok((Arc::new(ir), top)),
             Err(found) => Err(Session::diagnosed("elaborate", design, found)),
         }
+    }
+
+    /// What a `noise` run measures and refers to, resolved at open; `None` for any other analysis.
+    pub fn noise_probe(&self) -> Option<&NoiseProbe> {
+        self.noise.as_ref()
     }
 
     /// The top module's name.

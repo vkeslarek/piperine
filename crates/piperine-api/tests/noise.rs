@@ -40,3 +40,46 @@ fn the_output_and_input_flags_win_over_the_keys() {
     let merged = table.merged(&flags).expect("merge");
     assert!(matches!(merged.analysis, Analysis::Noise { ref output, input: Some(ref input), .. } if output == "b" && input == "v2"));
 }
+
+mod resolution {
+    //! The output and input of a noise run, resolved when the session opens (before anything
+    //! compiles), against the AC RC twin.
+    use std::path::{Path, PathBuf};
+
+    use piperine_api::{Failure, Overrides, Project, Session};
+    use piperine_transpile::Settings;
+
+    /// Opens a noise run of the AC RC twin with `output` and `input`.
+    fn open(output: &str, input: Option<&str>) -> Result<Session, Failure> {
+        let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/ac_rc.msl");
+        let project = Project::file(&path).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides {
+            analysis: Some("noise".into()),
+            output: Some(output.into()),
+            input: input.map(str::to_string),
+            from: Some(1.0),
+            to: Some(1e6),
+            per_decade: Some(5),
+            backend: Some("interp".into()),
+            ..Overrides::default()
+        };
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        let settings = Settings { rustc: None, cache: std::env::temp_dir() };
+        Session::open(&project, &spec, &settings)
+    }
+
+    #[test]
+    fn an_output_or_input_that_names_nothing_is_e0801() {
+        // AO-05 AC 5: an output node, a `v(a, b)` leg, an `i(..)` instance and an input that
+        // match nothing, and an input with no `ac_stim` (the resistor), are each E0801.
+        let probe = open("out", Some("v1")).expect("the output node and the source");
+        assert_eq!(probe.noise_probe().and_then(|p| p.input.as_deref()), Some("AcRc.v1"));
+        for (output, input) in [("nowhere", None), ("v(out, nowhere)", None), ("i(nobody)", None), ("out", Some("nobody")), ("out", Some("r1"))] {
+            match open(output, input) {
+                Err(Failure::Host { code, .. }) => assert_eq!(code, "E0801", "{output} {input:?}"),
+                Err(other) => panic!("{output} {input:?}: {other}"),
+                Ok(_) => panic!("{output} {input:?} opened"),
+            }
+        }
+    }
+}

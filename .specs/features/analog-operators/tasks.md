@@ -440,8 +440,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `an_output_or_input_that_names_nothing_is_e0801` passes
-- [ ] Gate check passes: `Run apinoise`
+- [x] `an_output_or_input_that_names_nothing_is_e0801` passes
+- [x] Gate check passes: `Run apinoise`
 
 **Tests**: integration
 **Gate**: quick
