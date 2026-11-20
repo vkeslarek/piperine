@@ -267,6 +267,15 @@ fn an_unknown_guard_runs_the_reaction_as_a_maybe() {
 }
 
 #[test]
+fn two_commits_under_an_unknown_guard_merge_exactly() {
+    // §3.3.3, §13 rule 1: `settles` holds 7 and a reaction on an unknown guard commits it 5 and
+    // then 7. The second commit replaces the first, so the reaction's effect is `7`, and the merge
+    // with not running it is `merge(7, 7)` = 7 known: nothing changes. Merging each commit on
+    // its own (`merge(5, 7)` unknown, then merged again) would leave it unknown
+    assert_eq!(guarded("settles"), Vec::<(i64, Vec<u8>)>::new());
+}
+
+#[test]
 fn a_known_false_guard_does_not_run() {
     // §13 rule 1: a guard that is known false stops the event, so the reaction does not run and
     // `blocked`, which held 1, never changes

@@ -16,9 +16,10 @@
 //! **Unknown control.** An `if` on a condition that may be unknown is the merge of §3.3.3: when
 //! its arms commit or emit it is `commits_.branch(c, |commits_| { A }, |commits_| { B })`, which
 //! runs both arms as paths of the reaction's `Commits` and joins what they committed, and a
-//! reaction holding one builds `rt::Commits::controlled(&CARRIERS_, resolution_)`, `CARRIERS_`
-//! being the carrier each statement commits to and `resolution_` the session's tick, so that two
-//! delays that round to one tick are one key of the join. A commit's delay that is unknown
+//! reaction holding one, or running on a guard that may be unknown, builds
+//! `rt::Commits::controlled(&CARRIERS_, resolution_)`, `CARRIERS_` being the carrier each
+//! statement commits to and `resolution_` the session's tick, so that two delays that round to one
+//! tick are one key of the join. A commit's delay that is unknown
 //! commits `Unknown` at the next microstep (`Commits::commit`, RS-11 AC 6). A `finish` is told to
 //! `Commits::finish`, and the reaction returns `Commits::flow`.
 //!
@@ -119,10 +120,11 @@ impl<'a> DigitalPrinter<'a> {
         // it knows it ran for sure when an event of its head fired with a guard that is known (or
         // none), and otherwise runs its body as a path joined with not running it
         let definite = self.definite(&values, plan)?;
-        // a reaction that joins paths keys its commits by due instant: it reads the session's tick,
-        // and the carrier each of its statements commits to
+        // a reaction that joins paths, or runs as a maybe, keys its commits by due instant: it
+        // reads the session's tick, and the carrier each of its statements commits to, so two
+        // commits to one carrier merge exactly (§3.3.3, §13 rule 1)
         let resolution = self.names.read_name(Source::Resolution);
-        let carriers = values.branches().then(|| {
+        let carriers = (values.branches() || definite.is_some()).then(|| {
             values.read(&resolution);
             let table: Vec<String> = committed.iter().map(|s| match s.target {
                 Target::Carrier(c) => format!("Some({c})"),

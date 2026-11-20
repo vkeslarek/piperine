@@ -465,10 +465,23 @@ impl Digital {
             .collect()
     }
 
-    /// Adds the `GLOBAL` `RESOLUTION` pin when a reaction of `body` decides on a value that may
-    /// be unknown (`Body::decides_on_unknown`): its commits are keyed by when they come due.
+    /// Whether event `e` of `body` has a guard that may be unknown (§13 rule 1).
+    fn guard_may_be_unknown(body: Body<'_>, e: u32) -> bool {
+        body.events().get(e as usize).and_then(|event| event.guard).is_some_and(|g| matches!(body.ir().expr_type(g), ValueType::Flagged(_)))
+    }
+
+    /// Whether reaction `k` of `body` keys its commits by due instant, so it reads the session's
+    /// tick: it decides on a value that may be unknown (§3.3.3), or an event of its head has a
+    /// guard that may be unknown and it runs as a maybe (§13 rule 1).
+    fn keys_commits_by_due(body: Body<'_>, k: u32) -> bool {
+        let head = &body.reactions()[k as usize].on;
+        head.iter().any(|e| Self::guard_may_be_unknown(body, *e)) || body.decides_on_unknown(Query::Reaction(k))
+    }
+
+    /// Adds the `GLOBAL` `RESOLUTION` pin when a reaction of `body` keys its commits by due
+    /// instant (`Digital::keys_commits_by_due`).
     pub(crate) fn resolution_pin(s: &mut ShapeBuf, body: Body<'_>) -> Option<u32> {
-        let decides = (0..body.reactions().len() as u32).any(|k| body.decides_on_unknown(Query::Reaction(k)));
+        let decides = (0..body.reactions().len() as u32).any(|k| Self::keys_commits_by_due(body, k));
         decides.then(|| s.pin(PinSpec { origin: &Self::at(body.origin()), global: global::RESOLUTION, ..PinSpec::discrete("resolution", role::GLOBAL, &F64) }))
     }
 
@@ -590,22 +603,21 @@ impl Digital {
     /// control needs on top of it. A guard that may be unknown (§13 rule 1) makes the reaction
     /// run as a maybe, so it reads the guard's sources, to recompute it, and whether each event
     /// of its head fired, to know whether it ran for sure. A decision on a value that may be
-    /// unknown (§3.3.3) reads the `RESOLUTION` pin, to key its commits by due instant.
+    /// unknown (§3.3.3) and a guard that may be unknown both read the `RESOLUTION` pin: the
+    /// commits of a maybe run are keyed by due instant, so two commits to one carrier merge
+    /// exactly (§13 rule 1).
     fn reaction_reads(body: Body<'_>, k: u32) -> ReadSet {
         let mut set = ReadSet::target(body, Query::Reaction(k));
         let head = &body.reactions()[k as usize].on;
-        let flagged = |e: u32| {
-            body.events().get(e as usize).and_then(|event| event.guard).is_some_and(|g| matches!(body.ir().expr_type(g), ValueType::Flagged(_)))
-        };
-        if head.iter().any(|e| flagged(*e)) {
+        if head.iter().any(|e| Self::guard_may_be_unknown(body, *e)) {
             for e in head {
-                if flagged(*e) {
+                if Self::guard_may_be_unknown(body, *e) {
                     set.union(&ReadSet::target(body, Query::Guard(*e)));
                 }
                 set.0.insert(Source::Fired(*e));
             }
         }
-        if body.decides_on_unknown(Query::Reaction(k)) {
+        if Self::keys_commits_by_due(body, k) {
             set.0.insert(Source::Resolution);
         }
         set

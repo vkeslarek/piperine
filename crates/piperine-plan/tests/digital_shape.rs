@@ -868,11 +868,13 @@ fn a_reaction_on_a_flagged_guard_reads_the_guard_and_fired() {
     let (ir, body) = Alone::design(|b| Merging::guarded(b, "Maybe", Some(true)));
     let plan = BodyPlan::new(ir.body(body));
     let shape = plan.shape().shape();
-    assert_eq!(plan.reactions()[0].reads, [Source::Carrier(1), Source::Fired(0)]);
+    // and the `RESOLUTION` pin, last: the commits of the maybe run are keyed by due instant, so two
+    // commits to one carrier merge exactly (§3.3.3, §13 rule 1)
+    assert_eq!(plan.reactions()[0].reads, [Source::Carrier(1), Source::Fired(0), Source::Resolution]);
     let (en, event) = (Find::pin(shape, "en"), Find::pin(shape, "event:0"));
+    let resolution = Find::pin(shape, "resolution");
     let (on, reads, _) = Find::reaction(shape, "reaction:0");
-    assert_eq!((on, reads), (vec![event], vec![pin(en, part::VALUE), pin(event, part::CHANGED)]));
-    assert!(!has_pin(shape, "resolution"), "a guard needs no `RESOLUTION` pin");
+    assert_eq!((on, reads), (vec![event], vec![pin(en, part::VALUE), pin(event, part::CHANGED), pin(resolution, part::VALUE)]));
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 
     // a guard that is a known `bool`, and no guard, leave the reads the reaction had: it reads
