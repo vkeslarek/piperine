@@ -33,3 +33,5 @@ Not fixed here, listed for the user: none. No sentence of the spec itself looks 
 T35 (diagnostics): the compiler#3 listing positions are corrected in the Book to `devices.msl:4:1` and `8:34` (the binary's), asserted in `book_compiler`. The `E0163` secondary label is given for a top-of-namespace `use` clash only; the block-level clash (a `use` inside a block) keeps its primary label alone.
 
 T36 (values and records): the buck row is not a code divergence. The code follows part V §16 (step 4: a commit the analog side reads starts another round of the operating point, and `every(0.0, T)` fires at (0, 1)); the Book's start-up from 0 V contradicts the spec. Left `disputed` for the user, with the test asserting today's values.
+
+T37 (analog): none. No kind (1) row has the area analog.
