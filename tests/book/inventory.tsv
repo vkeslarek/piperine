@@ -362,7 +362,7 @@ claim	mixed~e784c042	e784c042961833ba	holds	piperine/book_mixed::the_digital_to_
 claim	mixed~f53cc3cb	f53cc3cbe6006a49	holds	piperine/book_mixed::the_digital_to_analog_converter_drives_half_the_supply_for_unknown	-	That is the choice E0150 forces every analog reader to make. transition turns the stepped level into a ramp of duration tr, so the output has a real edge.
 claim	mixed~a32dcb77	a32dcb774c3fa3fa	holds	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	-	emit!("loop", …) is the window into the loop: one record per period with the sample, the error and the duty just decided. duty = d prints the new value; duty = duty would print the old one.
 claim	mixed~827e671b	827e671b8ff913ea	prose	-	-	What happens in between, how fast the loop settles and whether it rings, is what the stream is for.
-claim	mixed~68328637	68328637ec256860	diverges	piperine/book_mixed::the_buck_start_up_does_not_climb_by_0_0033_per_period_today	D4	Read the duty field down the lines: it climbs by 0.0033 per period at first and settles near 0.28, while the Buck.vout column of the table rises to 3.3.
+claim	mixed~68328637	68328637ec256860	disputed	piperine/book_mixed::the_buck_start_up_follows_the_operating_point_round_not_the_books_climb	D4	Read the duty field down the lines: it climbs by 0.0033 per period at first and settles near 0.28, while the Buck.vout column of the table rises to 3.3.
 claim	mixed~8ab17f2d	8ab17f2de7c73869	holds	piperine/book_mixed::the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero	-	The equation. x has one branch, so KCL gives c · dv(x)/dt = (v(vin) − fb) / r.
 claim	mixed~22d4126e	22d4126e2fe09366	disputed	piperine/book_mixed::the_math_methods_run_and_the_settle_event_does_not	D2	Two things the examples here use are not compiled yet and are refused with P0001: the math methods of f64 such as sin (the sine sources) and the settle event (the converter's check).
 claim	mixed~42ab6e1d	42ab6e1dc13757db	holds	piperine/book_mixed::e0250_a_node_cannot_go_to_a_bit_port	-	E0250
@@ -472,7 +472,7 @@ claim	solver~dbaf149d	dbaf149df95de26e	holds	piperine/book_solver::an_instant_th
 claim	compiler~696ad77d	696ad77df2130b34	holds	piperine/book_compiler::the_intermediate_form_prints_in_a_stable_form	-	It is an object model, not a text format, but it prints in a stable form for reading and for tests.
 claim	compiler~0f9a1fec	0f9a1fec1e2a5725	holds	piperine/book_compiler::every_circuit_of_the_comparison_table_has_a_twin_and_a_scenario_test	-	Every circuit the path runs has a twin written for ngspice, and a test runs both and compares every printed number.
 claim	compiler~a16be3e7	a16be3e7c5d562a6	holds	piperine/book_compiler::the_reverse_bias_sweep_goes_down_to_minus_20_volts	-	Diode under reverse bias to −20 V
-claim	compiler~e9ad112c	e9ad112ccaebd130	disputed	piperine/book_compiler::the_reverse_sweep_agrees_with_ngspice_inside_the_floor_not_to_the_digits_the_book_prints	D5	5.9 × 10−21 A
+claim	compiler~dc42a66e	dc42a66e1f72fcca	holds	piperine/book_compiler::the_reverse_sweep_worst_difference_is_the_one_the_book_prints	-	5.0 × 10−20 A
 claim	compiler~79f44db1	79f44db163622a6c	holds	piperine/book_compiler::a_compiler_code_says_what_the_chapter_says	-	P0001
 claim	compiler~79f450b1	79f450b163622f85	holds	piperine/book_compiler::a_compiler_code_says_what_the_chapter_says	-	P0002
 claim	compiler~79f44fb1	79f44fb163622dd2	holds	piperine/book_compiler::a_compiler_code_says_what_the_chapter_says	-	P0003

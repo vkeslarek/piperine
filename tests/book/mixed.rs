@@ -181,14 +181,15 @@ fn the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28() {
 }
 
 #[test]
-fn the_buck_start_up_does_not_climb_by_0_0033_per_period_today() {
-    // mixed~68328637: "Read the duty field down the lines: it climbs by 0.0033 per period at first and
-    // settles near 0.28, while the Buck.vout column of the table rises to 3.3". The first record is the
-    // Book's (t = 0, vout 0, err 3.300, duty 0.0033) and the end is the Book's (above), but the run starts
-    // from an operating point where the controller's first `hs <- true` has already been applied: the
-    // output is 11.8 V, the second record (10 us) reads vout 11.6 V, err -8.3 V and a duty of 0 (clamped),
-    // not 0.0066, and the table's first row is 11.8 V, not 0 (D1; Phase 9: the operating point is the
-    // initial state, reactions at t = 0 follow it)
+fn the_buck_start_up_follows_the_operating_point_round_not_the_books_climb() {
+    // mixed~68328637 (disputed, for the user): "Read the duty field down the lines: it climbs by 0.0033 per
+    // period at first and settles near 0.28, while the Buck.vout column of the table rises to 3.3". The first
+    // record is the Book's (t = 0, vout 0, err 3.300, duty 0.0033) and the end is the Book's (above). But
+    // the tick fires at (0, 1), inside the operating point's instant (part V section 16 step 4, part IV
+    // section 13 rule 4): its `hs <- true` is committed at (0, 2), the `RSwitch` reads it, and the
+    // equilibrium is solved again with the switch closed, so the transient starts from 11.8 V: the second
+    // record (10 us) reads vout 11.6 V, err -8.3 V and a duty of 0 (clamped), not 0.0066. The spec says
+    // what the code does and the Book says another thing; the user decides which one moves
     let chapter = Chapter::read();
     let model = chapter.marked("buck.msl", "mixed#8");
     let records = Buck::loop_records(&model);

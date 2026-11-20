@@ -14,6 +14,7 @@ mod support {
     pub mod faulty;
     pub mod inventory;
     pub mod model;
+    pub mod printed;
     pub mod records;
     pub mod refusal;
 }
@@ -31,6 +32,7 @@ use piperine_transpile::Settings;
 use support::chapter::Chapter;
 use support::faulty::Faulty;
 use support::model::Model;
+use support::printed::Printed;
 use support::refusal::Refusal;
 
 /// The divider of the chapter, laid out as the chapter says: `divider.msl` is the block, `devices.msl`
@@ -233,17 +235,15 @@ fn the_reverse_bias_sweep_goes_down_to_minus_20_volts() {
 }
 
 #[test]
-fn the_reverse_sweep_agrees_with_ngspice_inside_the_floor_not_to_the_digits_the_book_prints() {
-    // compiler~e9ad112c (disputed) "5.9 × 10−21 A": the table gives the worst difference of the reverse-bias
-    // sweep from ngspice. The sweep stays inside the 1 pA floor of the chapter's tolerance, which is what
-    // the section claims; the worst difference itself is 4.98e-20 A at the time of writing (GAPS.md section 11
-    // gives it), not the 5.9e-21 A the Book prints.
+fn the_reverse_sweep_worst_difference_is_the_one_the_book_prints() {
+    // compiler~dc42a66e "5.0 × 10−20 A": the table gives the worst difference of the reverse-bias sweep
+    // from ngspice, measured with the harness; it stays inside the 1 pA floor of the chapter's tolerance
     let twin = Corpus::of_repository().twin("diode_rev");
     let ran = Circuit::model(&twin).run(Circuit::overrides(&twin)).unwrap_or_else(|failure| panic!("{failure}"));
     let Reference::Golden(golden) = Ngspice::from_environment().run("diode_rev") else { return };
     let wanted = golden.real("diode_rev_sweep");
     assert_eq!(wanted.len(), ran.table.rows.len(), "one row per sweep value");
     let worst = wanted.iter().enumerate().map(|(row, (_, current))| (current - ran.real(row, "i(DiodeRev.v1)")).abs()).fold(0.0, f64::max);
-    println!("WORST {worst:e}");
+    Printed::holds("5.0e-20", worst, "the worst difference of the reverse-bias sweep, in amperes");
     assert!(worst <= ToleranceContract::DC_CURRENT.floor(), "the worst difference {worst:e} A is inside the floor");
 }

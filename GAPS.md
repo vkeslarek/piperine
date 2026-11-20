@@ -481,7 +481,7 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | mixed#10 | L52 | `unknown-semantics-events` | `digital for Buck` with `on settle` is `P0001`: built-in `settle`; the converter without it runs (mixed#8) |
 | mixed#15 | L36 | `analog-structure` | `i(dac.core) +> ..` on a public node of a child is `P0001` (field access); the chapter's `Comparator` in it is `E0441` |
 | mixed~22d4126e | D2 | `user` | `sin` and the other math methods run (the sine sources of the chapter); `settle` is `P0001` as written |
-| mixed~68328637 | D4 | `root-e2e` | the run starts from an operating point where the first `hs <- true` is already applied: the output is 11.8 V, the second record has vout 11.6 V, err -8.3 and duty 0, not 0.0066; the end (3.3 V, duty 0.28) is the Book's |
+| mixed~68328637 | D4 | `user` | the run starts from an operating point where the first `hs <- true` is already applied: the output is 11.8 V, the second record has vout 11.6 V, err -8.3 and duty 0, not 0.0066; the end (3.3 V, duty 0.28) is the Book's |
 | mixed~9d07c4b9 | L52 | `unknown-semantics-events` | the check on `settle` is refused with mixed#10 |
 | packages#12 | L57 | `composite-values` | `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` is `P0001`, a reference type; `include_str!` itself is accepted in a `const` |
 | packages~64f2121d | L57 | `composite-values` | `E0610` is not raised: `include_str!` in a module body is `P0001`, `include_str!` is not supported yet |
@@ -496,5 +496,4 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function need a generic module: `P0001` |
 | cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
 | cheatsheet#10 | L57 | `composite-values` | with its `emit!` the card is `E0900` (a statement among items); without it `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` a reference type |
-| compiler~e9ad112c | D5 | `user` | the reverse-bias sweep differs from ngspice by 4.98e-20 A at worst (inside the 1 pA floor), where the table prints 5.9e-21 A |
 | cli~0549bfb1 | D6 | `root-e2e` | `--nodeset` (and the `nodeset` key) on an `ac` or a `transient` run is accepted and ignored: the table is the one the run gives with no seed, no `P0010` |
