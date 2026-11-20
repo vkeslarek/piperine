@@ -611,3 +611,23 @@ fn known_or_with_an_unknown_default_gives_that_default() {
         fields(&[("held", Field::Real(4.0)), ("taken", Field::Real(9.0)), ("both_unknown", Field::Unknown), ("unknown_flag", Field::Bool(false))])
     );
 }
+
+#[test]
+fn a_function_that_emits_runs_in_a_value_position_of_a_reaction() {
+    // §19 rule 10: a `fn` that emits is callable wherever `emit!` is, in a value position too:
+    // `sure <- heard()` commits its 7 and writes its record under known control (no maybe);
+    // `if d { unsure <- heard(); }` with `d` unknown merges 7 with the 1 held, unknown, and the
+    // record it writes says `maybe`; `u && ping()` with `u` unknown is unknown and runs `ping`
+    // under the merge, so `pinged` is a maybe record. Per rising edge (0.5, 1.5, 2.5, 3.5 ns):
+    // `heard` is written twice (known path, unknown path), `pinged` once
+    let (seen, records) = records_of("emitting_fn.msl", "CallsBench");
+    assert_eq!(transient(&seen, "CallsBench.sure"), vec![(NS / 2, byte(7))]);
+    assert_eq!(transient(&seen, "CallsBench.unsure"), vec![(NS / 2, UNKNOWN.to_vec())]);
+    let heard = stream(&records, "heard");
+    assert_eq!(heard.len(), 8);
+    assert_eq!(heard.iter().filter(|r| r.maybe).count(), 4, "the record under the unknown `if` is a maybe");
+    let pinged = stream(&records, "pinged");
+    assert_eq!(pinged.len(), 4);
+    assert!(pinged.iter().all(|r| r.maybe), "the right operand runs under the merge");
+    assert_eq!(named(&records, "both", "r"), Field::Unknown);
+}

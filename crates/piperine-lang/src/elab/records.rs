@@ -6,7 +6,7 @@
 //! to the literals the call gives and its other params to locals of the reaction holding the
 //! arguments. A `&str` field that is no literal after inlining is `P0001`.
 
-use piperine_ir::{EmitField, Stmt, Stream, StreamField, StmtId as LoweredStmt};
+use piperine_ir::{EmitField, Expr, ExprId as LoweredExpr, Origin, Stmt, Stream, StreamField, StmtId as LoweredStmt, ValueType};
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
@@ -94,15 +94,38 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    /// A call of `function`, which reaches `emit!`, inlined where it stands: each `&str` param
-    /// bound to its text, each other param to a local holding its argument, then the body's
-    /// statements. `false` after a diagnostic.
+    /// A call of `function`, which reaches `emit!`, inlined where it stands as statements of
+    /// `out`; its value, if any, ends them as an expression statement. `false` after a
+    /// diagnostic.
     fn inline_emitting(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, function: DeclId, args: &[ExprId]) -> bool {
+        let Some((stmts, value)) = self.inline_emitting_parts(scope, function, args) else { return false };
+        out.extend(stmts);
+        if let Some(value) = value {
+            out.push(self.stmt(Stmt::Expr(value)));
+        }
+        true
+    }
+
+    /// A call of `function`, which reaches `emit!`, in a value position (`q <- noisy()`,
+    /// `u && noisy()`): inlined as a block whose statements are the call's, so the `emit!` runs
+    /// in the reaction where the call stands (§19 rule 10), and whose value is the function's.
+    /// `None` after a diagnostic.
+    pub(super) fn inline_emitting_value(&mut self, scope: &mut Scope, function: DeclId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
+        let (stmts, value) = self.inline_emitting_parts(scope, function, args)?;
+        let ty = value.map_or(ValueType::Unit, |v| self.type_of(v));
+        Some(self.emit(Expr::Block { stmts, value }, ty, origin))
+    }
+
+    /// The statements and the value of the body of `function` inlined for a call with `args`:
+    /// each `&str` param bound to its text, each other param to a local holding its argument,
+    /// then the body's statements. `None` after a diagnostic.
+    fn inline_emitting_parts(&mut self, scope: &mut Scope, function: DeclId, args: &[ExprId]) -> Option<(Vec<LoweredStmt>, Option<LoweredExpr>)> {
         let data = self.design.decl_data(function).clone();
-        let DeclKind::Fn(f) = &data.kind else { return false };
-        let Some(body) = f.body.clone() else { return false };
+        let DeclKind::Fn(f) = &data.kind else { return None };
+        let body = f.body.clone()?;
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_))).collect();
+        let mut out = Vec::new();
         let mut ok = true;
         for (param, arg) in params.iter().zip(args) {
             let param_name = self.design.decl_data(*param).name.as_ref().map_or_else(String::new, |n| n.text.clone());
@@ -130,13 +153,10 @@ impl Elaboration<'_, '_> {
             out.push(self.stmt(Stmt::Let { local, init: value }));
         }
         if !ok {
-            return false;
+            return None;
         }
-        let Some((stmts, value)) = self.lower_statements(scope, &body.stmts) else { return false };
+        let (stmts, value) = self.lower_statements(scope, &body.stmts)?;
         out.extend(stmts);
-        if let Some(value) = value {
-            out.push(self.stmt(Stmt::Expr(value)));
-        }
-        true
+        Some((out, value))
     }
 }

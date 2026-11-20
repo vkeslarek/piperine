@@ -337,6 +337,8 @@ impl Elaboration<'_, '_> {
         let span = self.design.expr_node(expr).span;
         match (class, self.types.callee(expr)) {
             (CallClass::Probe, _) => self.lower_probe(scope, expr, ty, origin),
+            // A function that emits is no IR function: its call is inlined where it stands (§19 rule 10).
+            (_, Some(Callee::Function(function))) if self.types.emits(function).is_some() => self.inline_emitting_value(scope, function, args, origin),
             (_, Some(Callee::Function(function))) => {
                 let lowered = self.lower_arguments(scope, expr, function)?;
                 let pattern: Vec<Flag> = lowered.iter().map(|a| self.flag(*a)).collect();

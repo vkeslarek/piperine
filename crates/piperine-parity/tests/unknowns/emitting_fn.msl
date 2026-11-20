@@ -1,0 +1,34 @@
+//! A function that emits and returns a value, called in a value position of a reaction (MSL §19
+//! rule 10): the call is inlined where it stands, so its `emit!` runs in the reaction, under
+//! known and under unknown control. `d` and `u` are never driven, so they stay unknown; a 1 GHz
+//! oscillator gives the rising edges (0.5 ns, 1.5 ns, ...).
+
+/// A free-running oscillator, its first change at half a period.
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// Writes a record and gives 7.
+fn heard() -> u8 { emit!("heard", n = 7); 7 }
+
+/// Writes a record and gives true.
+fn ping() -> bool { emit!("pinged", v = true); true }
+
+/// `sure` takes the value of an emitting call under known control; `unsure` under an unknown
+/// `if`; `both` is the value of an emitting right operand of `&&` over an unknown left one.
+module Calls(in clk: Bit, in d: Bit, in u: Bit, out sure: Bit<u8> = 1, out unsure: Bit<u8> = 1) {}
+digital for Calls {
+    on clk.rise() {
+        sure <- heard();
+        if d { unsure <- heard(); }
+        emit!("both", r = u && ping());
+    }
+}
+
+module CallsBench() {
+    signal clk: Bit; signal d: Bit; signal u: Bit;
+    signal sure: Bit<u8>; signal unsure: Bit<u8>;
+    let osc = Osc(clk) { f: 1G };
+    let calls = Calls(clk, d, u, sure, unsure);
+}
