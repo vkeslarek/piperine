@@ -280,8 +280,12 @@ impl Elaboration<'_, '_> {
                     None
                 }
             },
-            // A module-body `let` of an event (`let tick = at(..); tick`): its value, in place.
+            // A module-body `let` of an event (`let tick = at(..); tick`): its value, in place;
+            // and `settle`, the event of the settle phase (§13 rules 10, 14, 17).
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Builtin(id)) if id.info().name == "settle" => {
+                    Some(vec![Disjunct { source: EventSource::Settle, discrete: Vec::new(), continuous: Vec::new(), origin }])
+                }
                 Some(Resolution::Decl(decl)) if self.body_let_value(decl).is_some() => {
                     let value = self.body_let_value(decl)?;
                     self.disjuncts(scope, value)

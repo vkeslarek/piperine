@@ -443,6 +443,26 @@ fn a_split_head_over_an_emitting_body_is_one_reaction() {
 }
 
 #[test]
+fn settle_lowers_to_the_settle_event_source() {
+    // §13 rules 10, 14, 17 (unknown-semantics-events UE-03): `settle` is `EventSource::Settle`,
+    // alone, guarded (`settle && g`) and in a disjunction (`settle || ev`, one reaction on both).
+    use piperine_ir::EventSource;
+    let src = "module M(in x: Bit, in en: Bit, out q: Bit) { }\ndigital for M {\n on settle { q <- true; }\n on settle && en.high() { q <- false; }\n on settle || x.changed() { q <- true; }\n}";
+    let ir = Elab::ir(src, "M");
+    let read = Read { ir: &ir };
+    let m = read.body("M");
+    let events = m.events();
+    assert_eq!(events.len(), 4, "one event per disjunct: {:?}", events.iter().map(|e| &e.source).collect::<Vec<_>>());
+    assert_eq!((&events[0].source, events[0].guard), (&EventSource::Settle, None), "`settle` alone is unguarded");
+    assert_eq!(events[1].source, EventSource::Settle);
+    assert!(events[1].guard.is_some(), "`settle && en.high()` keeps its guard on the event");
+    assert_eq!(events[2].source, EventSource::Settle, "a disjunction adds one event per disjunct, in source order");
+    assert!(matches!(events[3].source, EventSource::Changed(_)));
+    let heads: Vec<Vec<u32>> = m.reactions().iter().map(|r| r.on.clone()).collect();
+    assert_eq!(heads, [vec![0], vec![1], vec![2, 3]], "the reaction of a disjunction listens to both events");
+}
+
+#[test]
 fn a_head_the_ir_cannot_hold_is_p0001() {
     // DIG-09 AC 9, C83. (A split head over a body that emits is one reaction since FIX-13:
     // `a_split_head_over_an_emitting_body_is_one_reaction`.)

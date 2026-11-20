@@ -88,18 +88,49 @@ fn event_expressions_are_typed() {
     let d = diagnostics(src);
     assert_eq!((codes(&d), snippet(src, &d[0])), (vec!["E0230".to_string()], "p.changed()"));
 
-    // Out of the subset: `settle`. (A tolerance given to `cross` types since `msl-fixes` T7, see
+    // `settle` is an `Event` since unknown-semantics-events T5 (`settle_is_an_event_in_every_event_position`).
+    // (A tolerance given to `cross` types since `msl-fixes` T7, see
     // `cross_takes_ttol_and_etol_by_position_and_by_name`.)
-    for (head, at, names) in [("settle", "settle", "`settle`")] {
-        let src = with_heads(&[head]);
-        let d = diagnostics(&src);
-        assert_eq!(codes(&d), ["P0001"], "{head}");
-        assert!(d[0].diagnostic.message.contains(names), "{head}: {}", d[0].diagnostic.message);
-        assert_eq!(snippet(&src, &d[0]), at, "{head}");
-    }
     // No tolerance, or tolerances that are `None`, is the event the `Cross` node has.
     let src = with_heads(&["cross(v(p))", "cross(v(p), None, None)"]);
     checked(&design_of(&src), &src);
+}
+
+#[test]
+fn settle_is_an_event_in_every_event_position() {
+    // §13 rule 10: `settle` is a core `Event` value; §13 rule 14: it combines with `&&` and `||`
+    // like any event. It replaces the `P0001` "built-in `settle`" this test pinned (L52,
+    // unknown-semantics-events UE-03).
+    let heads = ["settle", "settle && en.high()", "settle || clk.rise()", "clk.rise() || settle", "(settle || clk.changed()) && en.high()"];
+    let src = with_heads(&heads);
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    for head in heads {
+        let found = exprs_reading(&design, &types, &src, head);
+        assert!(!found.is_empty() && found.iter().all(|e| types.ty(*e) == Some(&Ty::Event)), "{head}: {found:?}");
+    }
+    // a body `let` is an event position, and the name it binds stands in a head
+    let src = "module Top(in clk: Bit, in en: Bit) { let s = settle; let t = s || clk.fall(); }";
+    let design = design_of(src);
+    let types = checked(&design, src);
+    for name in ["s", "t"] {
+        assert_eq!(types.local(binding(&design, name)), Some(&Ty::Event), "{name}");
+    }
+}
+
+#[test]
+fn settle_outside_an_event_position_is_e0441() {
+    // §13 rule 8, rule 10: `settle` is an `Event` and is never carried, stored or passed
+    let cases: [(&str, &str); 3] = [
+        ("module Top(in clk: Bit, out q: Bit) { q = settle; }", "settle"),
+        ("module Top(in clk: Bit) { }\nanalog for Top { let x = settle; }", "settle"),
+        ("fn pick(e: bool) -> bool { e }\nmodule Top(in clk: Bit) { let y = pick(settle); }", "settle"),
+    ];
+    for (src, at) in cases {
+        let d = diagnostics(src);
+        assert_eq!(codes(&d), ["E0441"], "{src}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(snippet(src, &d[0]), at, "{src}");
+    }
 }
 
 #[test]

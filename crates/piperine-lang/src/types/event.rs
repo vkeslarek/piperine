@@ -31,6 +31,14 @@ impl Checker<'_> {
         }
     }
 
+    /// `settle`: the core `Event` value of §14.9 (§13 rule 10). It has no operand to check; where
+    /// it stands is judged by `infer` like any `Event`: `E0441` outside an event position, a
+    /// guard or a reaction body (§13 rule 8), and combined with `&&` and `||` like any event
+    /// (§13 rule 14) by `logical`.
+    pub(super) fn settle_event(&self) -> Ty {
+        Ty::Event
+    }
+
     /// `a || b` and `a && b`. `a || b` is an `Event` when both operands are, and `ev && guard`
     /// is an `Event` when `ev` is and `guard` is a `bool`; such an `Event` is judged where it
     /// stands, like any other. Otherwise both operands are `bool`.

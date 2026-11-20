@@ -253,10 +253,10 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `settle_is_an_event_in_every_event_position` and `settle_outside_an_event_position_is_e0441` pass under `**Run typesevents**`
-- [ ] `settle_lowers_to_the_settle_event_source` passes under `**Run elabdigital**`
-- [ ] Code clarity: the checker and elaborator additions are methods with `///` docs citing §13 rules 10, 14, 17; no free function
-- [ ] Gate check passes: Full
+- [x] `settle_is_an_event_in_every_event_position` and `settle_outside_an_event_position_is_e0441` pass under `**Run typesevents**`
+- [x] `settle_lowers_to_the_settle_event_source` passes under `**Run elabdigital**`
+- [x] Code clarity: the checker and elaborator additions are methods with `///` docs citing §13 rules 10, 14, 17; no free function
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

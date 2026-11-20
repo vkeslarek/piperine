@@ -22,11 +22,13 @@ struct Row {
 
 // `analysis` of another kind, `bound_step` and `freq` left this table when FIX-09 to FIX-11 typed
 // them (`types_analog::freq_analysis_kinds_and_bound_step_type`).
+// `settle` left this table when unknown-semantics-events T5 typed it (an `Event`: head positions in
+// `types_events::settle_is_an_event_in_every_event_position`, `E0441` elsewhere in
+// `types_events::settle_outside_an_event_position_is_e0441`).
 const ROWS: &[Row] = &[
     Row { construct: "index", source: "module Top() { }\nanalog for Top { let x = 1.0; let y = x[0]; }", names: "index expression" },
     Row { construct: "closure that is not a limit function", source: "module Top() { }\nanalog for Top { let f = |x: f64| x; }", names: "closure" },
     Row { construct: "struct as a parameter type", source: "struct S { a: f64 }\nfn f(s: S) -> f64 { 1.0 }\nmodule Top() { }\nanalog for Top { let x = f(1.0); }", names: "`struct` item used as a type" },
-    Row { construct: "settle", source: "module Top() { }\nanalog for Top { let x = settle; }", names: "`settle`" },
     Row { construct: "f32", source: "module Top() { }\nanalog for Top { let x: f32 = 1.0; }", names: "`f32`" },
     Row { construct: "Float<N>", source: "module Top() { }\nanalog for Top { let x: Float<32> = 1.0; }", names: "`Float`" },
     Row { construct: "string literal", source: "module Top() { }\nanalog for Top { let x = \"a\"; }", names: "string literal" },
@@ -48,7 +50,6 @@ const ROWS: &[Row] = &[
     Row { construct: "closure in a module body", source: "module Top() { let f = |x: f64| x; }", names: "closure" },
     Row { construct: "discrete nature", source: "nature B { value: bool }\nmodule Top(a: B) { }", names: "discrete nature `B`" },
     Row { construct: "bundle", source: "struct Bn { a: E }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
-    Row { construct: "settle as a head", source: "module Top() { }\ndigital for Top { on settle { } }", names: "`settle`" },
     Row { construct: "generation in a digital block", source: "module Top() { }\ndigital for Top { if true { } }", names: "generation" },
     Row { construct: "string `let` with an annotation", source: "module Top() { }\nanalog for Top { let x: &str = \"a\"; }", names: "string literal" },
     Row { construct: "include_str!", source: "module Top() { }\nanalog for Top { let x = include_str!(\"a.txt\"); }", names: "`include_str!`" },

@@ -542,6 +542,7 @@ impl Checker<'_> {
                 }
             }
             Resolution::Builtin(id) if id.info().kind == BuiltinKind::Node => Some(Ty::AnyNode),
+            Resolution::Builtin(id) if id.info().kind == BuiltinKind::Event => Some(self.settle_event()),
             Resolution::Builtin(id) if id.info().name == "None" => {
                 let message = "`None` has no type here: write it where an `Option<T>` is expected";
                 self.report(file, Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, "`Option` of what?"));
