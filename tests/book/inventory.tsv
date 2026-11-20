@@ -152,9 +152,9 @@ block	pom#1	e6a2cd05f83340b4	shown	-	-	-
 block	pom#2	14322fa939347053	run	piperine/book_pom::front_runs_with_its_analog_and_digital_events	-	-
 block	pom#3	349bd80a32a83f03	shown	-	-	-
 block	abi#1	c715b5183a7012a9	shown	-	-	-
-block	abi#2	30c3504b382a7487	pending	-	-	-
+block	abi#2	30c3504b382a7487	run	piperine/book_abi::two_resistors_of_one_shape_divide_a_source_by_their_values	-	-
 block	abi#3	051cb6db57f75a67	shown	-	-	-
-block	abi#4	7f56c990874e7013	pending	-	-	-
+block	abi#4	7f56c990874e7013	run	piperine/book_abi::the_flip_flop_starts_low_and_takes_its_input_at_the_rising_edge	-	-
 block	abi#5	97e83a277ec19321	shown	-	-	-
 block	abi#6	4a8e6d160cd528e0	shown	-	-	-
 block	compiler#1	07f51b3645a3ebce	pending	-	-	-
@@ -455,10 +455,10 @@ claim	pom~27751c3c	27751c3c3fa969ac	holds	piperine/book_pom::building_always_giv
 claim	pom~806e9e4f	806e9e4f3ddce5e9	holds	piperine/book_pom::building_always_gives_a_design_and_a_syntax_error_goes_to_its_diagnostics	-	It always returns a Design.
 claim	pom~dfd54aa0	dfd54aa057b9f194	holds	piperine/book_pom::building_always_gives_a_design_and_a_syntax_error_goes_to_its_diagnostics	-	Check diagnostics() before you trust the answers.
 claim	pom~20d38737	20d38737f0fea9cc	holds	piperine/book_pom::a_type_error_is_not_the_object_models_to_report	-	An E0432 or E0417 comes from a later stage.
-claim	abi~5856e308	5856e308decfdc14	pending	-	-	A call returns OK, FAULT (with a message), RESHAPE (these param values need a different shape) or FINISH (a reaction ends the analysis at its instant).
-claim	abi~978c8986	978c8986b77bf2f9	pending	-	-	No macro is involved: a generic function produces the C thunks.
-claim	abi~e42ad9e5	e42ad9e55b310b40	pending	-	-	It runs its own clock up to there, or stops earlier at its first output, because that output may come back to it.
-claim	abi~09170599	09170599d8835780	pending	-	-	A time at which the analog solver produces an accepted solution and runs the time-point procedure.
+claim	abi~5856e308	5856e308decfdc14	prose	-	-	A call returns OK, FAULT (with a message), RESHAPE (these param values need a different shape) or FINISH (a reaction ends the analysis at its instant).
+claim	abi~978c8986	978c8986b77bf2f9	prose	-	-	No macro is involved: a generic function produces the C thunks.
+claim	abi~e42ad9e5	e42ad9e55b310b40	prose	-	-	It runs its own clock up to there, or stops earlier at its first output, because that output may come back to it.
+claim	abi~09170599	09170599d8835780	prose	-	-	A time at which the analog solver produces an accepted solution and runs the time-point procedure.
 claim	solver~fe59ce49	fe59ce49a19424cb	pending	-	-	This chapter explains what it does with them, so that you can predict what a simulation will do and read what it reports.
 claim	solver~83cb975b	83cb975b79c20f2c	pending	-	-	The analog and digital solvers never call each other: everything that crosses between them is an event the owner carries.
 claim	solver~73d81a62	73d81a62e1d21515	pending	-	-	When plain Newton fails, the solver makes the problem easier and walks back.
