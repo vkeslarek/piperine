@@ -128,6 +128,9 @@ impl Checker<'_> {
         self.lets_open.insert(*binding, data.value);
         let ty = self.infer_event_position(data.value);
         self.lets_open.remove(binding);
+        if let Some(closure) = self.closure_expr(data.value) {
+            self.closure_locals.insert(*binding, closure);
+        }
         match ty {
             Some(Ty::Str) => {
                 self.unsupported(file, pat.span, "a string literal bound by a `let`");

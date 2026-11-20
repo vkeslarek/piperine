@@ -8,6 +8,8 @@ use crate::msl::lexer;
 use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, FnParamData, GenericArgNode, GenericArgsNode, LitKind, NatureKind, PathId, Reflect, Resolution, TypeId, TypeKind};
 
 use super::continuity::Continuity;
+use super::class::FunctionClass;
+use super::closures::ClosureInfo;
 use super::definition::DriveBook;
 use super::flow::{ExitFrame, Flow};
 use super::record::Records;
@@ -106,6 +108,14 @@ pub(super) struct Checker<'d> {
     pub(super) deferred: BTreeMap<DeclId, usize>,
     /// The control state of the body being checked.
     pub(super) flow: Flow,
+    /// The captures and the function class of each closure typed so far.
+    pub(super) closures: BTreeMap<ExprId, ClosureInfo>,
+    /// The closure each local is bound to by `let` (the local's value is that closure).
+    pub(super) closure_locals: BTreeMap<DeclId, ExprId>,
+    /// The locals bound to a closure whose parameters wait for the first call to be typed.
+    pub(super) pending_closures: BTreeMap<DeclId, ExprId>,
+    /// The function class of each function whose class is known.
+    pub(super) classes: BTreeMap<DeclId, FunctionClass>,
     /// The type the context expects of one call, handed down by `check_as` just before the call
     /// is typed: the result type of a call that is generic over its result (`logic`, `cast`).
     pub(super) call_expected: Option<(ExprId, Ty)>,
@@ -151,6 +161,10 @@ impl<'d> Checker<'d> {
             mutable: BTreeSet::new(),
             deferred: BTreeMap::new(),
             flow: Flow::default(),
+            closures: BTreeMap::new(),
+            closure_locals: BTreeMap::new(),
+            pending_closures: BTreeMap::new(),
+            classes: BTreeMap::new(),
             call_expected: None,
             queued: BTreeSet::new(),
             checked: BTreeSet::new(),
@@ -239,6 +253,7 @@ impl<'d> Checker<'d> {
             DeclKind::Const(_) => self.constant(decl),
             other => self.unsupported_decl(decl, Unsupported::item(other)),
         }
+        self.report_uncalled_closures();
     }
 
     // ---- reporting -------------------------------------------------------------------------

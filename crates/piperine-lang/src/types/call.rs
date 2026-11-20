@@ -53,7 +53,7 @@ impl Checker<'_> {
             Some(Resolution::Builtin(id)) => self.core_call(expr, id, args),
             Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
                 DeclKind::Fn(_) => self.function_call(expr, *callee, decl, args),
-                DeclKind::FnParam(_) | DeclKind::Binding(_) => self.indirect_call(expr, args),
+                DeclKind::FnParam(_) | DeclKind::Binding(_) => self.local_call(expr, decl, args),
                 _ => {
                     self.unsupported(file, node.span, "call of this declaration");
                     None
@@ -89,19 +89,14 @@ impl Checker<'_> {
             })
             .collect();
         self.bind_arguments(expr, &name, &params, required, args, &named)?;
-        Some(ret)
-    }
-
-    /// A call of a parameter or a local whose type is `fn(..) -> R`: there is no named function
-    /// to record as its callee, so the form is outside the subset.
-    fn indirect_call(&mut self, expr: ExprId, args: &[Arg]) -> Option<Ty> {
-        let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
-        self.unsupported(file, span, "call of a function value (a parameter or a local)");
-        for arg in args {
-            self.infer(arg.value);
+        // a parameter of function type is a function pointer: a closure that captures is refused
+        let slots = self.bindings.get(&expr).cloned().unwrap_or_default();
+        for (slot, param) in slots.iter().zip(&params) {
+            if let (Some(arg), Ty::Fn(..)) = (slot, param) {
+                self.refuse_capturing_pointer(*arg);
+            }
         }
-        None
+        Some(ret)
     }
 
     /// §3.2: binds the arguments of a call of `name` to its parameters. The first `required`
@@ -333,12 +328,7 @@ impl Checker<'_> {
     /// A closure passed where `expected` is the declared type of the parameter. Anywhere else
     /// it is `P0001`: the subset has no type variable to infer its parameters with.
     pub(super) fn closure(&mut self, expr: ExprId, expected: &Ty) -> Option<Ty> {
-        let node = self.design.expr_node(expr).clone();
-        let file = self.file_of_expr(expr);
-        let Ty::Fn(declared, result) = expected else {
-            self.unsupported(file, node.span, "closure outside an argument whose parameter has a function type");
-            return None;
-        };
+        let Ty::Fn(declared, result) = expected else { return self.closure_value(expr) };
         self.closure_typed(expr, declared, Some(result))?;
         Some(expected.clone())
     }
@@ -392,6 +382,7 @@ impl Checker<'_> {
         self.context = outer;
         let found = self.settle_result(file, node.span, found?, returned);
         self.exprs[expr.index()] = Some(Ty::Fn(declared.to_vec(), Box::new(found.clone())));
+        self.record_closure(expr);
         Some(found)
     }
 

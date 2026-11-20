@@ -288,3 +288,66 @@ fn a_non_exhaustive_match_or_refutable_let_is_e0184() {
     // §1.7.6: the `else` block of a `let … else` must not complete
     assert_refused(&source("", "let o: Option<u8> = None; let Some(x) = o else { let z = 1; };"), "E0185", "can complete");
 }
+
+// ---- T16: closures anywhere -----------------------------------------------------------------------
+
+const ELECTRICAL: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n";
+
+#[test]
+fn closures_type_check_where_rust_allows_them() {
+    // §1.5.14, §3 rule 3: a closure bound by `let` and called, with its parameter types written, found
+    // from the first call, or from a `return`; returned in a block; passed to a row of H.4.
+    let body = "let k = 2.0;\n\
+                let f = |x: f64| x * k;\n\
+                let a = f(1.0);\n\
+                let g = |x| x + 1.0;\n\
+                let b = g(2.0);\n\
+                let h = |x: u8, y: u8| -> u8 { x + y };\n\
+                let c = h(1, 2);\n\
+                let blk = { let m = 3.0; |x: f64| x * m };\n\
+                let d = blk(1.0);\n\
+                let o: Option<u8> = Some(1);\n\
+                let e = o.map(|v| v + 1);\n\
+                let early = |x: f64| -> f64 { if x > 1.0 { return 1.0; } x };\n\
+                let r = early(2.0);\n\
+                let unit = || 4.0;\n\
+                let s = unit() + a + b + d + r;";
+    assert_clean(&source("", body));
+    // `limit` takes a closure: `limit(v(p), |a, b| a)`
+    assert_clean(&format!("{ELECTRICAL}module Top(p: E) {{ }}\nanalog for Top {{ let y = limit(v(p), |a, b| a); }}"));
+    // a closure may be passed to a parameter of function type
+    assert_clean(&source("fn apply(f: fn(f64) -> f64, x: f64) -> f64 { f(x) }", "let y = apply(|x: f64| x + 1.0, 2.0);"));
+    // a call is typed from the closure's own signature
+    assert_refused(&source("", "let f = |x: f64| x; let y = f(true);"), "P0002", "expected `f64`");
+    // a parameter with no written type and no call is `E0181`; so is one with no `let` to find a call
+    assert_refused(&source("", "let g = |x| x;"), "E0181", "never called");
+    let used = outcome(&source("", "let g = |x| x; let h = g;"));
+    assert!(!used.is_empty() && used.iter().all(|d| d.0 == "E0181"), "{used:?}");
+    // the closure's value is the `Fn` type, so a mismatching annotation is a mismatch
+    assert_refused(&source("", "let f: u8 = |x: f64| x;"), "P0002", "expected `u8`");
+}
+
+#[test]
+fn a_closure_called_outside_its_class_is_e0122() {
+    // §3 table: a solve-reading closure (it reads `now()`) is not callable in a const context, an
+    // emitting one (it reaches `emit!`) not in a module body.
+    let solve = "module Top() { r: f64 = { let f = |x: f64| x + now(); f(1.0) }; }";
+    assert_refused(solve, "E0122", "solve-reading");
+    let emit = "module Top() { let f = |x: f64| { emit!(\"trace\", v = x); x }; let y = f(1.0); }";
+    assert_refused(emit, "E0122", "emitting");
+    // the same closures are callable in `analog`
+    assert_clean(&source("", "let f = |x: f64| x + now(); let y = f(1.0);"));
+    // a function the closure calls gives it its class
+    let through = "fn tick() -> f64 { now() }\nmodule Top() { r: f64 = { let f = || tick(); f() }; }";
+    assert_refused(through, "E0122", "solve-reading");
+}
+
+#[test]
+fn a_closure_with_an_excluded_form_in_a_fn_is_e0121() {
+    // §3 rule 6: a closure inside a function follows the function's rule; the parser reports it as
+    // `E0121`, never `E0404`.
+    let design = support::build("fn f() -> f64 { let g = || { q <- 1.0; }; 1.0 }");
+    let codes = support::codes(&design);
+    assert!(codes.contains(&"E0121".to_string()), "{codes:?}");
+    assert!(!codes.contains(&"E0404".to_string()), "{codes:?}");
+}

@@ -206,14 +206,16 @@ fn a_recursive_function_is_typed_from_its_signature() {
 }
 
 #[test]
-fn a_closure_outside_an_argument_is_p0001() {
-    let (src, d) = diagnostics(FUNCTIONS, "let f = |x: f64| x;");
-    assert_eq!(codes_of(&d), ["P0001"]);
-    assert_eq!(snippet(&src, &d[0]), "|x: f64| x");
-    // An argument whose parameter is not a function type does not take a closure either.
+fn a_closure_takes_its_parameter_types_from_where_it_stands() {
+    // §1.5.14: written parameters type the closure wherever it stands (T16); one with no written
+    // type and no expected function type is `E0181`, and a closure where a plain value is expected
+    // is a mismatch.
     let (src, d) = diagnostics(FUNCTIONS, "let a = half(|x| x);");
-    assert_eq!(codes_of(&d), ["P0001"]);
+    assert_eq!(codes_of(&d), ["E0181"]);
     assert_eq!(snippet(&src, &d[0]), "|x| x");
+    let (src, d) = diagnostics(FUNCTIONS, "let a = half(|x: f64| x);");
+    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(snippet(&src, &d[0]), "|x: f64| x");
 }
 
 #[test]
@@ -274,11 +276,6 @@ fn a_function_is_a_value_only_as_an_argument() {
     let (src, d) = diagnostics("fn lim(n: f64, o: f64) -> f64 { n }", "let x = limit(1.0, if true { lim } else { lim });");
     assert_eq!(codes_of(&d), ["P0001", "P0001"]);
     assert_eq!(snippet(&src, &d[0]), "lim");
-
-    // A call whose callee is not a named function or built-in has no callee to record: refused.
-    let (src, d) = diagnostics("fn run(f: fn(f64) -> f64, x: f64) -> f64 { f(x) }", "let y = run(|a| a, 1.0);");
-    assert_eq!(codes_of(&d), ["P0001"]);
-    assert_eq!(snippet(&src, &d[0]), "f(x)");
 }
 
 #[test]

@@ -223,10 +223,7 @@ impl Checker<'_> {
             ExprKind::Match { .. } => self.match_expr(expr, None),
             ExprKind::MethodCall { .. } => self.method_call(expr),
             ExprKind::Field { .. } => self.field_read(expr),
-            ExprKind::Closure { .. } => {
-                self.unsupported(file, node.span, "closure outside an argument whose parameter has a function type");
-                None
-            }
+            ExprKind::Closure { .. } => self.closure_value(expr),
             ExprKind::Emit { stream, fields } => self.emit(expr, stream, fields),
             ExprKind::Struct { class: StructClass::Template(_), .. } => {
                 self.unsupported(file, node.span, "module template `Name { .. }` outside a placement");
@@ -539,6 +536,11 @@ impl Checker<'_> {
                         if self.read_before_assignment(file, node.span, decl) {
                             return local;
                         }
+                        if self.pending_closures.contains_key(&decl) {
+                            let message = "a closure whose parameters have no written type is typed by its first call: call it before using it as a value (§1.4.4)".to_string();
+                            self.coded(file, "E0181", node.span, message, "parameter type unknown");
+                            return None;
+                        }
                         if local.is_none() && self.lets_open.contains_key(&decl) {
                             return self.self_read(file, node.span, decl);
                         }
@@ -668,9 +670,21 @@ impl Checker<'_> {
             },
             None => None,
         };
+        if annotated.is_none()
+            && let Some(init) = init
+            && let Some(closure) = self.closure_expr(init)
+            && self.has_open_parameter(closure)
+            && closure == init
+        {
+            self.defer_closure(*binding, closure);
+            return;
+        }
         let bound = match (annotated, init) {
             (Some(t), Some(init)) => {
                 self.check(init, &t);
+                if matches!(t, Ty::Fn(..)) {
+                    self.refuse_capturing_pointer(init);
+                }
                 Some(t)
             }
             (None, Some(init)) => self.infer(init),
@@ -682,6 +696,9 @@ impl Checker<'_> {
                 return;
             }
         };
+        if let Some(closure) = init.and_then(|i| self.closure_expr(i)) {
+            self.closure_locals.insert(*binding, closure);
+        }
         match bound {
             Some(Ty::Str) => {
                 self.unsupported(file, span, "a string literal bound by a `let`");

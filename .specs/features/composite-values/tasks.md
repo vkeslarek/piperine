@@ -512,8 +512,8 @@ T63
 
 **Done when**:
 
-- [ ] `closures_type_check_where_rust_allows_them`, `a_closure_called_outside_its_class_is_e0122` and `a_closure_with_an_excluded_form_in_a_fn_is_e0121` pass under `**Run typesctl**`
-- [ ] Gate check passes: Quick
+- [x] `closures_type_check_where_rust_allows_them`, `a_closure_called_outside_its_class_is_e0122` and `a_closure_with_an_excluded_form_in_a_fn_is_e0121` pass under `**Run typesctl**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

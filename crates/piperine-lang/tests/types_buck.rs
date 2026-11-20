@@ -23,7 +23,6 @@ const ROWS: &[Row] = &[
     Row { construct: "an array", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let a = [1.0, 2.0]; } }", names: "array expression" },
     Row { construct: "an array type", source: "module Top() { signal s: [Bit; 4]; }", names: "array type" },
     Row { construct: "an index", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let a = clk; let b = a[0]; } }", names: "index expression" },
-    Row { construct: "a closure that is not a limit function", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let f = |x: f64| x; } }", names: "closure" },
     Row { construct: "a user trait and impl", source: "trait Tr { fn get(self) -> f64; }\nimpl Tr for f64 { fn get(self) -> f64 { self } }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let y = 1.0.get(); } }", names: "method `get`" },
     Row { construct: "a generic module", source: "module G<N: Nature>(a: N) { }\nmodule Top(a: Electrical) { let g = G(a); }", names: "generic module" },
     Row { construct: "a generic function", source: "fn g<T>(x: f64) -> f64 { x }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let x = g(1.0); } }", names: "generic function" },

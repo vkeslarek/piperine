@@ -13,6 +13,8 @@ mod call;
 mod carrier;
 mod catalogue;
 mod check;
+mod class;
+mod closures;
 mod compound;
 mod continuity;
 mod control;
