@@ -228,8 +228,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `the_power_law_integral_is_exact_on_power_laws` passes, with each closed form written beside its assertion
-- [ ] Gate check passes: `Run numerics`
+- [x] `the_power_law_integral_is_exact_on_power_laws` passes, with each closed form written beside its assertion
+- [x] Gate check passes: `Run numerics`
 
 **Tests**: integration
 **Gate**: quick
