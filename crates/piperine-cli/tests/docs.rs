@@ -148,6 +148,23 @@ fn gaps_drops_what_root_e2e_closed() {
 }
 
 #[test]
+fn gaps_narrows_what_buck_scenarios_ran() {
+    // buck-scenarios BS-10 AC 2: U3 keeps only S1 at 3.3 V and S1b and names `buck-scenarios` for S2 to
+    // S10, and H1 no longer says the buck's scenarios have no host (it keeps what is delivered and what
+    // is left)
+    let gaps = read("GAPS.md");
+    let u3 = gaps.split("- **U3.").nth(1).and_then(|s| s.split("- **U4.").next()).expect("GAPS.md has an entry U3");
+    assert!(u3.contains("S2 to S10") && u3.contains("`buck-scenarios`"), "U3 says S2 to S10 run: {u3}");
+    assert!(u3.contains("S1 at 3.3 V") && u3.contains("S1b"), "U3 keeps S1 at 3.3 V and S1b: {u3}");
+    assert!(!u3.contains("S1 to S9") && !u3.contains("need H1"), "U3 no longer needs H1: {u3}");
+    let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("a row {id}")).to_string();
+    let h1 = row("H1");
+    assert!(!h1.contains("S1 to S9") && !h1.contains("have no host yet"), "H1 still says the scenarios have no host: {h1}");
+    assert!(h1.contains("S2 to S10") && h1.contains("`buck-scenarios`"), "H1 says S2 to S10 run on the Rust host: {h1}");
+    assert!(h1.contains("`Session::drive`") && h1.contains("`force` and `release`"), "H1 keeps what is delivered and what is left: {h1}");
+}
+
+#[test]
 fn the_roadmap_and_state_record_root_e2e() {
     // root-e2e RE-04 AC 2 and 3 (T43): the roadmap marks queue items 4 and 4b delivered and the lane
     // `root-e2e` delivered; STATE.md holds MD-72 naming the book targets, the inventory and `tests/e2e/`

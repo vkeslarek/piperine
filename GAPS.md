@@ -50,7 +50,7 @@ change of the IR or the ABI.
 | type check and elaboration | a **subset**: `bool`, `UInt<N>`/`Int<N>` up to 64 bits, `f64`, unit enums, `Option` and its methods (H.3), plain functions, continuous natures with a flow, `Bit<T>` of a scalar or unit enum, modules with `f64`/`bool` params and `where`, definitions with `after`, an `analog` block whose contributions sit under `if`/`match` (switch branches), `ddt` anywhere, modules with a result, a value input or a node (hoisted), feedback through them, `inst.name`, `p.inflow()`, a body `let` as a param value, an initial value over params, `changed` and `prev` of a param, reactions with `if`/`match`/`if let`, `at`, `cross`, `changed`, `prev`. Everything else is `P0001` by name (§4) |
 | backends | IR → Rust → `rustc` → device library: everything the checker accepts. The interpreter is frozen at the M1 analog subset (R1) |
 | analyses from a host | `op`, `dc` (one sweep), `ac`, `transient`; on both backends for the 7 ngspice twins |
-| digital and mixed-signal | on the Rust backend only: `examples/buck` whole, closed loop at 0.8 V (`buck_closed_loop`, `buck_long`) |
+| digital and mixed-signal | on the Rust backend only: `examples/buck` whole, closed loop at 0.8 V (`buck_closed_loop`, `buck_long`), scenarios S2 to S10 on the Rust host (`buck_scenarios`) |
 | stdlib that runs | `known`, `known_or`, `is_known`, `rise`, `fall`, `high`, `init`, `every`, `vt`, `pnjlim`, `fetlim`, `deltalim`, `above`, `last_crossing`, `transition`, `D2A`, `A2D`, `Never`, `State`, `log`, `require`, `cover`, `target`, the six constants. About 28 of the 75 names of the §22 index |
 | command line and host library | `check`, `build`, `run`, `test`, `new`, `clean`, `fmt`; tables, record lines, CSV, JSON Lines, SVG; `--param` before a run; a transient keeps rows, not steps: `piperine run startup` in `examples/buck` prints the whole 600 µs start |
 | language server | **does not build**, deferred by the user |
@@ -277,7 +277,7 @@ adjoint and PSS (`core/circuit.rs:111` to `:172`); the host exposes four analyse
 
 | # | Missing | Spec | Size |
 | - | ------- | ---- | ---- |
-| H1 | **No host sequences from the command line**, and from the library only what a Rust host does: `Session::drive` of a top `in` port and `Session::set_at` (a param set at a time) are delivered, and the command line takes neither (decision X8: a bench in MSL is its stimulus), and Python is B4. Left: `force` and `release`, a wait for an event, a read at an instant. The buck's scenarios S1 to S9 have no host yet (`buck-scenarios`) | §23.1 rules 1–4, 8, 11 | L |
+| H1 | **No host sequences from the command line**, and from the library only what a Rust host does: `Session::drive` of a top `in` port and `Session::set_at` (a param set at a time) are delivered, and the command line takes neither (decision X8: a bench in MSL is its stimulus), and Python is B4. Left: `force` and `release`, a wait for an event, a read at an instant. The buck's scenarios S2 to S10 run on the Rust host (`buck-scenarios`) | §23.1 rules 1–4, 8, 11 | L |
 | H2 | Analyses beyond `op`, `dc`, `ac`, `transient`, `tf`, `pz`, `sens`, `pss` (delivered by `host-ii`): `Noise` (also blocked by L45), S-parameters, Fourier and distortion, more than one sweep axis | §11.1, §16.3 | M each, on the device ABI |
 | H3 | Session options: `reltol`, `abstol`, `vntol`, `trtol`, `temp`, `resolution`, `maxrounds`, `maxmicro`, `max_steps` and `nodeset` are run keys (delivered). Left: `ttol` (each `cross` carries its own default), `tnom` (waits for `simparam`, L47) | §23 table | S |
 | H4 | Metadata: `piperine info` and `Session::metadata` list params, ports and streams (delivered), and `--print Top.r1.r` reads a param back. Left: the public items and sites; an operating-point variable (`--print Top.g.id` is `E0801`); the flow of a branch that is not a potential source in `transient`, `ac`, `pss` and `sens` (H14) | §21 table, rule 6 | S |
@@ -306,8 +306,10 @@ adjoint and PSS (`core/circuit.rs:111` to `:172`); the host exposes four analyse
   (`diode_iv`, `tran_rc`) sit near the tolerance floor.
 - **U2. No oracle for digital or mixed-signal behavior.** The interpreter cannot run them; they
   are tested against the spec's own expected values and `examples/buck/SPEC.md` only.
-- **U3. The buck's closed loop is proven at one operating point**: 0.8 V, Vin 12 V, 6.6 Ω,
-  600 µs. Scenarios S1 to S9 of its SPEC §10 need H1.
+- **U3. The buck's scenarios S2 to S10 run on the Rust host** (`buck-scenarios`:
+  `tests/buck_scenarios.rs` over `tests/e2e/buck/`). Only S1 at 3.3 V and S1b stay unrun: the start is
+  proven at one operating point (0.8 V, Vin 12 V, 6.6 Ω, 600 µs by `buck_long`), and each 3.3 V
+  scenario run checks its own start only as a precondition.
 - **U4. The galleries (Appendices D, E, F: 18 fences) are parsed and resolved only**
   (`std_galleries`); none is type-checked, elaborated or run. Most use a refused form.
 - **U6. Rules of Part V with no test that names them**: record order within a microstep (§19

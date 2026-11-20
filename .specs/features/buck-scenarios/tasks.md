@@ -453,14 +453,16 @@ T13 → T15
 
 **Done when**:
 
-- [ ] The new test fails before the edit and passes after it; every other `docs.rs` test passes
-- [ ] Gate check passes: `Run docs` and the Build line
-- [ ] Test count: 1 new test
+- [x] The new test fails before the edit and passes after it; every other `docs.rs` test passes
+- [x] Gate check passes: `Run docs` and the Build line
+- [x] Test count: 1 new test
 
 **Tests**: integration
 **Gate**: build
 
 **Commit**: `docs(gaps): U3 keeps only S1 at 3.3 V and S1b`
+
+**Status**: Complete
 
 ---
 
