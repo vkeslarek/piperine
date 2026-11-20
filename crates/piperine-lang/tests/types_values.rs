@@ -259,26 +259,6 @@ fn the_std_pnjlim_checks_clean() {
 }
 
 #[test]
-fn a_function_is_a_value_only_as_an_argument() {
-    let items = "fn h(a: f64, b: f64) -> f64 { a }\nfn apply(f: fn(f64, f64) -> f64, x: f64) -> f64 { x }";
-    // As an argument whose parameter has a function type, it checks.
-    local_types(items, "let r = apply(h, 2.0);", &["r"]);
-
-    // Anywhere else it is outside the subset.
-    let (src, d) = diagnostics(items, "let f = h;");
-    assert_eq!(codes_of(&d), ["P0001"]);
-    assert_eq!(snippet(&src, &d[0]), "h");
-
-    // Not through an `if`: the function chosen there is no named function at the argument.
-    let (src, d) = diagnostics(items, "let r = apply(if true { h } else { h }, 2.0);");
-    assert_eq!(codes_of(&d), ["P0001", "P0001"]);
-    assert_eq!(snippet(&src, &d[0]), "h");
-    let (src, d) = diagnostics("fn lim(n: f64, o: f64) -> f64 { n }", "let x = limit(1.0, if true { lim } else { lim });");
-    assert_eq!(codes_of(&d), ["P0001", "P0001"]);
-    assert_eq!(snippet(&src, &d[0]), "lim");
-}
-
-#[test]
 fn an_unsupported_form_does_not_hide_an_independent_error() {
     // A refused annotation still has its initializer checked.
     let (src, d) = diagnostics("", "let x: f32 = 1.0 + true;");

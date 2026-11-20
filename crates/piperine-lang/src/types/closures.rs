@@ -198,6 +198,22 @@ impl Checker<'_> {
         Some(*result)
     }
 
+    /// Whether `expr` is written as a function value: a closure, the name of a function, or a local
+    /// bound to a closure (§1.2.10).
+    pub(super) fn is_function_value(&self, expr: ExprId) -> bool {
+        if self.closure_expr(expr).is_some() {
+            return true;
+        }
+        match &self.design.expr_node(expr).kind {
+            ExprKind::Paren(inner) => self.is_function_value(*inner),
+            ExprKind::Path(_) => match self.callee_resolution(expr) {
+                Some(Resolution::Decl(decl)) => matches!(self.design.decl_data(decl).kind, DeclKind::Fn(_)) || self.closure_locals.contains_key(&decl),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     /// Whether `expr` is a closure that captures something: no function pointer (§1.2.10).
     pub(super) fn is_capturing_closure(&self, expr: ExprId) -> bool {
         let closure = match &self.design.expr_node(expr).kind {

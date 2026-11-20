@@ -19,14 +19,12 @@ impl Checker<'_> {
         self.check_as(expr, expected, "P0002");
     }
 
-    /// `check` of an argument written directly: the one place a function may stand as a value,
-    /// for a parameter of function type. Through an `if` or a block it is no named function.
+    /// `check` of an argument: an `Option<T>` parameter takes a `T` as `Some` of it (§3.2.3).
     pub(super) fn check_argument(&mut self, expr: ExprId, expected: &Ty) {
         if let Ty::Option(inner) = expected {
             self.option_argument(expr, expected, inner);
             return;
         }
-        self.fn_value_at = Some(expr);
         self.check(expr, expected);
     }
 
@@ -48,7 +46,6 @@ impl Checker<'_> {
                 }
                 ExprKind::Block(block) => self.statements_as(&block.stmts, Some(expected), code),
                 ExprKind::Closure { .. } => self.closure(expr, expected),
-                ExprKind::Path(_) if matches!(expected, Ty::Fn(..)) && self.fn_value_at == Some(expr) && self.function_named(expr).is_some() => self.function_value(expr),
                 ExprKind::If { cond, then, else_: Some(else_) } => {
                     self.condition(*cond);
                     let before = self.flow.assigned.clone();
@@ -139,8 +136,7 @@ impl Checker<'_> {
         }
     }
 
-    /// A function passed as an argument whose parameter has a function type: reached, typed from
-    /// its signature.
+    /// A function's name used as a value: reached, typed from its signature.
     fn function_value(&mut self, expr: ExprId) -> Option<Ty> {
         let decl = self.function_named(expr)?;
         self.reach(decl);
@@ -557,10 +553,8 @@ impl Checker<'_> {
                             None
                         }
                     },
-                    DeclKind::Fn(_) => {
-                        self.unsupported(file, node.span, "function used as a value outside an argument whose parameter has a function type");
-                        None
-                    }
+                    // §1.2.10: a function's name is a value of type `fn(T..) -> U`
+                    DeclKind::Fn(_) => self.function_value(expr),
                     other => {
                         self.unsupported(file, node.span, &format!("{} used as a value", Unsupported::item(&other)));
                         None

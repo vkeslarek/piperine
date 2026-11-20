@@ -533,8 +533,8 @@ T63
 
 **Done when**:
 
-- [ ] `a_function_name_is_a_function_value`, `a_non_capturing_closure_is_a_function_pointer`, `a_capturing_closure_is_not_a_function_pointer` and `a_function_value_is_not_carried_e0112` pass under `**Run typesctl**`
-- [ ] Gate check passes: Quick
+- [x] `a_function_name_is_a_function_value`, `a_non_capturing_closure_is_a_function_pointer`, `a_capturing_closure_is_not_a_function_pointer` and `a_function_value_is_not_carried_e0112` pass under `**Run typesctl**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

@@ -98,9 +98,6 @@ pub(super) struct Checker<'d> {
     pub(super) poisoned: BTreeSet<DeclId>,
     /// Set while the `where` of a `fn` is checked: its parameters are not in scope (§3 rule 8).
     pub(super) fn_where: bool,
-    /// The one expression that may be a function used as a value: an argument written
-    /// directly where the parameter has a function type.
-    pub(super) fn_value_at: Option<ExprId>,
     /// The locals declared with `mut` (§1.7.7).
     pub(super) mutable: BTreeSet<DeclId>,
     /// The locals declared without a value (`let x;`, §1.7.5), each with the loop depth it is
@@ -157,7 +154,6 @@ impl<'d> Checker<'d> {
             committing: false,
             poisoned: BTreeSet::new(),
             fn_where: false,
-            fn_value_at: None,
             mutable: BTreeSet::new(),
             deferred: BTreeMap::new(),
             flow: Flow::default(),
@@ -228,16 +224,15 @@ impl<'d> Checker<'d> {
             return;
         }
         self.reach(module);
-        let (owner, context, event_slot, in_guard, committing, fn_where, fn_value_at) = (self.owner, self.context, self.event_slot, self.in_guard, self.committing, self.fn_where, self.fn_value_at);
+        let (owner, context, event_slot, in_guard, committing, fn_where) = (self.owner, self.context, self.event_slot, self.in_guard, self.committing, self.fn_where);
         let (book, lets_open, placing, flow) = (std::mem::take(&mut self.book), std::mem::take(&mut self.lets_open), std::mem::take(&mut self.placing), std::mem::take(&mut self.flow));
         self.context = Context::Module;
         self.event_slot = None;
         self.in_guard = false;
         self.committing = false;
         self.fn_where = false;
-        self.fn_value_at = None;
         self.declaration(module);
-        (self.owner, self.context, self.event_slot, self.in_guard, self.committing, self.fn_where, self.fn_value_at) = (owner, context, event_slot, in_guard, committing, fn_where, fn_value_at);
+        (self.owner, self.context, self.event_slot, self.in_guard, self.committing, self.fn_where) = (owner, context, event_slot, in_guard, committing, fn_where);
         (self.book, self.lets_open, self.placing, self.flow) = (book, lets_open, placing, flow);
     }
 

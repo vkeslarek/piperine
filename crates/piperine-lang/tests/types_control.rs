@@ -5,7 +5,7 @@
 #[path = "support/pom.rs"]
 mod support;
 
-use piperine_lang::pom::{Design, DesignDiagnostic, ExprId, ExprKind};
+use piperine_lang::pom::{Design, DesignDiagnostic, ExprId, ExprKind, Reflect};
 use piperine_lang::types::{Ty, Types};
 
 /// A design of `Top` with `items` before it and `body` as its analog block.
@@ -350,4 +350,61 @@ fn a_closure_with_an_excluded_form_in_a_fn_is_e0121() {
     let codes = support::codes(&design);
     assert!(codes.contains(&"E0121".to_string()), "{codes:?}");
     assert!(!codes.contains(&"E0404".to_string()), "{codes:?}");
+}
+
+// ---- T17: function values ---------------------------------------------------------------------------------
+
+const APPLY: &str = "fn h(a: f64, b: f64) -> f64 { a }\nfn apply(f: fn(f64) -> f64, x: f64) -> f64 { f(x) }\nfn twice(g: fn(f64, f64) -> f64, x: f64) -> f64 { g(x, x) }";
+
+/// The type of the local named `name` in the analog block of `Top`.
+fn local_type(src: &str, name: &str) -> Ty {
+    let design = design_of(src);
+    let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("{:?}\n{src}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
+    let binding = design.decls().into_iter().find(|d| d.name() == Some(name) && matches!(d.kind(), piperine_lang::pom::DeclKind::Binding(_))).unwrap_or_else(|| panic!("no `{name}`"));
+    types.local(binding.id()).unwrap_or_else(|| panic!("no type for `{name}`")).clone()
+}
+
+#[test]
+fn a_function_name_is_a_function_value() {
+    // §1.2.10: a function's name is a value of type `fn(T..) -> U`, bound, called, passed and chosen.
+    let src = source(APPLY, "let f = h; let r = f(1.0, 2.0); let t = twice(h, 1.0); let u = twice(if true { h } else { h }, 1.0);");
+    assert_eq!(local_type(&src, "f"), Ty::Fn(vec![Ty::F64, Ty::F64], Box::new(Ty::F64)));
+    assert_eq!(local_type(&src, "r"), Ty::F64);
+    // a call through the value is typed from its signature
+    assert_refused(&source(APPLY, "let f = h; let r = f(1.0);"), "P0002", "expected 2 argument(s)");
+    // a function of another signature is no `fn(f64) -> f64`
+    assert_refused(&source(APPLY, "let r = apply(h, 1.0);"), "P0002", "expected `fn(f64) -> f64`");
+    // a parameter of function type is called
+    assert_clean(&source("fn run(f: fn(f64) -> f64, x: f64) -> f64 { f(x) }", "let y = run(|a: f64| a, 1.0);"));
+}
+
+#[test]
+fn a_non_capturing_closure_is_a_function_pointer() {
+    // §1.2.10: a closure that captures nothing is accepted where a function pointer is expected.
+    assert_clean(&source(APPLY, "let y = apply(|x: f64| x + 1.0, 2.0);"));
+    assert_clean(&source(APPLY, "let c = |x: f64| x + 1.0; let y = apply(c, 2.0);"));
+    assert_clean(&source(APPLY, "let g: fn(f64) -> f64 = |x: f64| x * 2.0; let y = g(1.0);"));
+}
+
+#[test]
+fn a_capturing_closure_is_not_a_function_pointer() {
+    // §1.2.10: a closure that captures is no function pointer, as in Rust.
+    assert_refused(&source(APPLY, "let k = 2.0; let y = apply(|x: f64| x * k, 1.0);"), "P0001", "captures");
+    assert_refused(&source(APPLY, "let k = 2.0; let c = |x: f64| x * k; let y = apply(c, 1.0);"), "P0001", "captures");
+    assert_refused(&source("", "let k = 2.0; let g: fn(f64) -> f64 = |x: f64| x * k;"), "P0001", "captures");
+}
+
+#[test]
+fn a_function_value_is_not_carried_e0112() {
+    // §1 rule 9: a function value or a closure has no `Repr`: not as the type of a carrier, not as
+    // the value committed to one.
+    let in_type = "module Top(out q: Bit<fn(f64) -> f64>) { }";
+    let design = Design::builder().source("top.msl", in_type).build();
+    let found = Types::check(&design, "Top").err().unwrap_or_default();
+    assert!(found.iter().any(|d| d.diagnostic.code == "E0112"), "{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+    let committed = "fn id(x: f64) -> f64 { x }\nmodule Top(in clk: Bit, out q: Bit<f64> = 0.0) { }\ndigital for Top { on clk.rise() { q <- id; let f = |x: f64| x; q <- f; } }";
+    let design = Design::builder().source("top.msl", committed).build();
+    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let found = Types::check(&design, "Top").err().unwrap_or_default();
+    assert_eq!(found.iter().filter(|d| d.diagnostic.code == "E0112").count(), 2, "{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
 }
