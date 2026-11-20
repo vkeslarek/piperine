@@ -294,6 +294,29 @@ fn settle_records_carry_the_last_microstep_index() {
 }
 
 #[test]
+fn a_record_from_the_settle_phase_is_stamped_with_the_last_microstep() {
+    // §19 rules 7 and 8: a record from the settle phase carries the time point's `t` and the index
+    // of its last microstep. It is observed where it is made and is no settle commit (§15 S1), so
+    // `on settle { emit!(..) }` neither fails nor waits for the next time point. A rising clock makes
+    // the instant run microsteps 0 and 1, so the record is at `(t, 1)`.
+    let mut d = engine(vec![
+        ("sr", settle_recorder(), vec![("log", "log")]),
+        ("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
+    ]);
+    d.start().unwrap();
+    instant(&mut d, Tick(0));
+    d.host_commit(net(&d, "clk"), 0, &LOW, Tick(1)).unwrap();
+    d.host_commit(net(&d, "clk"), 0, &HIGH, Tick(2)).unwrap();
+    instant(&mut d, Tick(1));
+    d.drain_observations();
+    d.run_instant(Tick(2), &[], Horizon::uniform(Tick(10 * NS)), Mode { is_static: false, settle: true }).expect("a record is no settle commit");
+    let seen = d.drain_observations();
+    let records: Vec<&Observation> = seen.iter().filter(|o| matches!(o, Observation::Record { .. })).collect();
+    assert_eq!(records, [&Observation::Record { stream: "sr.log".into(), reaction: 0, statement: 0, at: (Tick(2), 1), bytes: vec![7, 1] }], "{seen:?}");
+    assert_eq!(d.next_due(), None, "the record applied as the instant exited: nothing stays due at this tick");
+}
+
+#[test]
 fn an_instant_reports_boundary_fired_and_final() {
     // C33: the sampler reads its sample; `out` is read by the analog side; the stub finishes
     let plan = bind_by_name_with(

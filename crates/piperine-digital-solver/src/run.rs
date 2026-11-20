@@ -585,7 +585,16 @@ fn call_reaction(
                 return status::FAULT;
             }
         };
-        if job.on_settle && due == Due::NextMicrostep {
+        let net = match pins[s.pin as usize] {
+            Binding::Net(n) => Some(n),
+            _ => None,
+        };
+        let record = net
+            .filter(|n| nets[n.0 as usize].record)
+            .map(|_| format!("{path}.{}", pin_names[s.pin as usize]));
+        // a record is observed where it is made, `(t, n)` (§19 rules 7, 8): it is no settle commit,
+        // which is a change of state due at the next time point (§15 S1)
+        if job.on_settle && due == Due::NextMicrostep && record.is_none() {
             failure = Some(DigitalError::Unsupported { what: "settle commit" });
             return status::FAULT;
         }
@@ -594,13 +603,6 @@ fn call_reaction(
             Due::At(t) => Some((t, 0)),
             Due::Never => None,
         };
-        let net = match pins[s.pin as usize] {
-            Binding::Net(n) => Some(n),
-            _ => None,
-        };
-        let record = net
-            .filter(|n| nets[n.0 as usize].record)
-            .map(|_| format!("{path}.{}", pin_names[s.pin as usize]));
         made.push(Planned {
             statement: c.statement,
             offset: c.offset,

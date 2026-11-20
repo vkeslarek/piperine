@@ -283,6 +283,11 @@ impl Digital {
         }
         let ran = run_reactions(&mut self.plan, &self.store, samples, &ambient, &mut self.queue, &mut self.obs, here, &mut self.call, Phase::Settle)?;
         phase.finish = ran.finish;
+        // what the phase left for the instant, its records, applies as the instant exits, as at the
+        // end of the loop: a record left queued would be a commit due at this tick forever
+        for s in self.apply_due((at, last + 1))? {
+            check_canonical(&self.plan, &self.store, s.net, at, &self.writer_name(s.last))?;
+        }
         self.obs.flush();
         Ok(phase)
     }

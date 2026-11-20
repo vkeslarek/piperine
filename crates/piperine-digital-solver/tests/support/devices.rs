@@ -469,6 +469,45 @@ pub fn recorder() -> Handle {
     make::<Recorder>(&RECORDER, "recorder")
 }
 
+// ─── Settle recorder ────────────────────────────────────────────────────────
+
+/// `on settle { emit!(..) }`: one record when the settle phase runs.
+///
+/// pins: log=0 (PORT BYTE, RECORD); settle=1 (GLOBAL SETTLE event)
+/// reaction 0: on [settle] writes [S0 {log}]; commits `[7, known]`, no delay
+pub struct SettleRecorder;
+static SETTLE_RECORDER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static SETTLE_RECORDER: OnceLock<Module> = OnceLock::new();
+
+fn settle_recorder_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let log = s.pin(PinSpec { flags: pin_flag::RECORD, ..PinSpec::discrete("log", role::PORT, &BYTE) });
+    let settle = s.pin(PinSpec { global: global::SETTLE, ..PinSpec::event("settle", role::GLOBAL) });
+    s.reaction(ReactionSpec { name: "emit", on: vec![settle], writes: vec![statement(log, 2, 0)], ..ReactionSpec::default() });
+    s.freeze()
+}
+
+impl Device for SettleRecorder {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&SETTLE_RECORDER_SHAPE, settle_recorder_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((SettleRecorder, Arc::clone(shared(&SETTLE_RECORDER_SHAPE, settle_recorder_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("settle_recorder", true);
+        cx.commit(0, &[7, 1], 0.0)?;
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn settle_recorder() -> Handle {
+    make::<SettleRecorder>(&SETTLE_RECORDER, "settle_recorder")
+}
+
 // ─── Checked ────────────────────────────────────────────────────────────────
 
 /// A parameter with a `where r > 0` check, and a setup function that asks for another
