@@ -1,6 +1,5 @@
 # code	owner feature	construct (requirement or GAPS id)
 E0102	composite-values	CV-14 AC 2 (T43); PI-12 AC 1 checks it
-E0105	params-and-io	PI-12 AC 2, raised here
 E0110	composite-values	L1, L4 (`derive(Repr)`)
 E0111	composite-values	L4 (`#[repr(uN)]`)
 E0122	params-and-io	PI-12 AC 3 (named functions), raised here

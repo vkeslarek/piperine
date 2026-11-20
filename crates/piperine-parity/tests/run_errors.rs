@@ -4,10 +4,14 @@
 //! wrote (instance paths and pins), identically on the interpreter and the Rust backend. No
 //! ngspice binary is involved.
 
+use std::cell::RefCell;
 use std::path::Path;
+use std::rc::Rc;
 
+use piperine_api::{Failure, Overrides, Project, Record, RecordSink, Session};
 use piperine_parity::backend::Backend;
 use piperine_parity::bench::Bench;
+use piperine_parity::host::HostRun;
 use piperine_solver::prelude::Context;
 
 /// The error text of the operating point of `tests/run_errors/<name>.msl` on `backend`.
@@ -55,5 +59,54 @@ fn a_nan_contribution_from_source_is_e0507() {
         let text = operating_point_error("nan", backend);
         assert!(text.contains("E0507"), "{}: {text}", backend.name());
         assert!(text.contains("Nan.x1"), "{}: names the instance: {text}", backend.name());
+    }
+}
+
+/// The failure the host library gives for the operating point of `tests/run_errors/<name>.msl` on
+/// `backend`: the file opened as a project, as `piperine run` does.
+fn host_failure(name: &str, backend: Backend) -> Failure {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/run_errors").join(format!("{name}.msl"));
+    let project = Project::file(&path).unwrap_or_else(|f| panic!("{name}: project: {f}"));
+    let overrides = Overrides { analysis: Some("op".to_string()), backend: Some(backend.name().to_string()), ..Overrides::default() };
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{name}: request: {f}"));
+    let mut session = Session::open(&project, &spec, &HostRun::settings()).unwrap_or_else(|f| panic!("{name}: open: {f}"));
+    session.run(Rc::new(RefCell::new(Ignore))).expect_err("the run of this design must fail")
+}
+
+/// A sink that keeps nothing: these runs fail before they record.
+struct Ignore;
+
+impl RecordSink for Ignore {
+    fn record(&mut self, _: &Record) {}
+}
+
+/// PI-12 AC 2 (Part I §1 rule 11): an integer division by zero under known control fails the run
+/// `E0105` naming the operation, the instance and the time.
+#[test]
+fn a_division_by_zero_under_known_control_fails_the_run_with_e0105() {
+    // The interpreter refuses `Int` arithmetic and `unwrap` by name (codegen context R1), so a panic
+    // of the model's own values is the compiled backend's.
+    for backend in [Backend::Rust] {
+        let failure = host_failure("divide", backend);
+        let text = failure.to_string();
+        assert!(matches!(failure, Failure::Host { code: "E0105", .. }), "{}: {text}", backend.name());
+        assert!(text.contains("integer division by zero"), "{}: the operation: {text}", backend.name());
+        assert!(text.contains("Divide.x1"), "{}: the instance: {text}", backend.name());
+        assert!(text.contains("t = 0e0 s"), "{}: the time: {text}", backend.name());
+    }
+}
+
+/// PI-12 AC 2 (Part I §1 rule 11): an `unwrap` of `None` under known control is `E0105` too.
+#[test]
+fn an_unwrap_of_none_under_known_control_fails_the_run_with_e0105() {
+    // The interpreter refuses `Int` arithmetic and `unwrap` by name (codegen context R1), so a panic
+    // of the model's own values is the compiled backend's.
+    for backend in [Backend::Rust] {
+        let failure = host_failure("unwrap", backend);
+        let text = failure.to_string();
+        assert!(matches!(failure, Failure::Host { code: "E0105", .. }), "{}: {text}", backend.name());
+        assert!(text.contains("Option::unwrap()"), "{}: the operation: {text}", backend.name());
+        assert!(text.contains("Unwrap.x1"), "{}: the instance: {text}", backend.name());
+        assert!(text.contains("t = 0e0 s"), "{}: the time: {text}", backend.name());
     }
 }

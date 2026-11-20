@@ -46,6 +46,65 @@ impl Failure {
     }
 }
 
+/// What a model panic under known control looks like in the text of a solver fault: the panic's own
+/// message, the instance that ran it and, when the fault is the digital engine's, its tick (the
+/// one decoding place of a device fault, design D19).
+struct PanicFault {
+    /// The panic's message, without the `panic: ` the ABI's thunk puts before it.
+    operation: String,
+    /// The path of the instance whose function panicked.
+    instance: String,
+    /// The tick of a digital fault, which the analog engine's fault does not carry.
+    tick: Option<String>,
+}
+
+impl PanicFault {
+    /// The marker the ABI's thunk writes before the text of a panic (`piperine-abi` `thunk.rs`).
+    const MARKER: &'static str = "panic: ";
+
+    /// The panic `text` carries, or `None` when the fault is not a model panic.
+    fn read(text: &str) -> Option<PanicFault> {
+        let (before, after) = text.split_once(Self::MARKER)?;
+        let operation = after.lines().next().unwrap_or(after).trim().to_string();
+        let instance = Self::between(before, "instance `", "`").or_else(|| Self::between(before, "in `", "`")).unwrap_or_else(|| "an unknown instance".to_string());
+        let tick = Self::between(before, " at tick ", ":");
+        Some(PanicFault { operation, instance, tick })
+    }
+
+    /// The text of `text` after the first `start` up to the next `end`.
+    fn between(text: &str, start: &str, end: &str) -> Option<String> {
+        let rest = text.split_once(start)?.1;
+        Some(rest.split_once(end)?.0.to_string())
+    }
+
+    /// A spec code the panic's message starts with (`E0705: ..`), and the message without it.
+    fn leading_code(&self) -> Option<(&'static str, &str)> {
+        // `E0705` joins this list in the task that makes `table_model` raise it (a code a source
+        // spells is a code it raises, and the guard of codes owns it until then).
+        const CODES: [&str; 1] = ["E0105"];
+        let code = CODES.iter().find(|code| self.operation.starts_with(&format!("{code}: ")))?;
+        Some((code, &self.operation[code.len() + 2..]))
+    }
+}
+
+impl Failure {
+    /// The failure of `analysis`, which stopped with the solver's `error`. A device fault that is a
+    /// model panic under known control is `E0105` naming the operation, the instance and the time;
+    /// a panic whose message starts with a spec code keeps that code (design D19). `time` is the
+    /// simulated time the run had reached, when the analysis has one; a digital fault gives its
+    /// own tick. Any other error is the solver's, as it was.
+    pub fn from_fault(analysis: &'static str, error: piperine_solver::prelude::Error, time: Option<f64>) -> Failure {
+        let Some(panic) = PanicFault::read(&error.to_string()) else { return Failure::Solver { analysis, error } };
+        let (code, operation) = panic.leading_code().unwrap_or(("E0105", panic.operation.as_str()));
+        let at = match (&panic.tick, time) {
+            (Some(tick), _) => format!("tick {tick}"),
+            (None, Some(seconds)) => format!("t = {seconds:e} s"),
+            (None, None) => format!("the {analysis} analysis"),
+        };
+        Failure::Host { code, message: format!("a model panicked under known control in `{}` at {at}: {operation}", panic.instance) }
+    }
+}
+
 impl std::fmt::Display for Failure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
