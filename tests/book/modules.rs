@@ -307,7 +307,11 @@ fn e0304_is_not_raised_a_generic_ladder_is_refused_before_its_where_is_checked()
     // is not raised
     let chapter = Chapter::read();
     let zero = "module Empty() { signal vin: Electrical; pub signal vout: Electrical; pub let lad = Ladder::<0>(vin, vout) { r: 1k, c: 1n }; }\n";
-    let model = chapter.wrapped("empty.msl", "", "modules#1", zero);
+    // the whole-model check (S3) refuses the listing's own `LadderTop` for the same placement, so the model is
+    // the listing up to it: the `Empty` placement is the one refusal
+    let block = chapter.text("modules#1");
+    let (listing, _) = block.split_once("module LadderTop()").expect("modules#1 ends with LadderTop");
+    let model = Model::written("empty.msl", &format!("{listing}\n{zero}"));
     let given = Refusal::of(model.run(Faulty::operating_point_of("Empty")), "modules~4bcb9f1d");
     assert_eq!(given, [("P0001".to_string(), "generic module is not supported yet".to_string())]);
 }
