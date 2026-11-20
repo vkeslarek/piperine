@@ -1058,10 +1058,10 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] `inventory_guard.rs` holds `no_block_row_is_pending` and `no_row_diverges`; `claims_guard.rs` holds `no_claim_row_is_pending`; `settled_chapters_have_no_pending_row` and `settled_chapters_have_no_pending_claim` are gone
-- [ ] A planted `pending`, `diverges` or `disputed` row fails the new tests (asserted inside them)
-- [ ] Gate check passes: Quick (`Run inventory`, `Run claims`)
-- [ ] Test count: 3 new, 2 removed
+- [x] `inventory_guard.rs` holds `no_block_row_is_pending` and `no_row_diverges`; `claims_guard.rs` holds `no_claim_row_is_pending`; `settled_chapters_have_no_pending_row` and `settled_chapters_have_no_pending_claim` are gone
+- [x] A planted `pending`, `diverges` or `disputed` row fails the new tests (asserted inside them)
+- [x] Gate check passes: Quick (`Run inventory`, `Run claims`)
+- [x] Test count: 3 new, 2 removed
 
 **Tests**: integration
 **Gate**: quick

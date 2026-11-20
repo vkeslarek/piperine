@@ -19,10 +19,6 @@ use support::book::{BlockId, Book, Fingerprint};
 use support::gaps::Gaps;
 use support::inventory::{Coverage, Inventory, Kind, Row, Verdict};
 
-/// The chapters whose rows a chapter task has settled: none of their rows may be `pending`. A chapter
-/// task adds its chapter here; the closing task replaces the registry with the strict rules.
-const SETTLED_CHAPTERS: [&str; 18] = ["errors", "welcome", "from-rust", "values", "natures", "modules", "analog", "digital", "mixed", "packages", "core-std", "cheatsheet", "pom", "abi", "compiler", "solver", "structure", "cli"];
-
 /// The inventory rules, each a method that returns what breaks it, one line per offence, so a
 /// failure names the block and a test can hold the rule on planted input.
 struct Guard<'a> {
@@ -30,7 +26,6 @@ struct Guard<'a> {
     inventory: &'a Inventory,
     coverage: &'a Coverage,
     gaps: &'a Gaps,
-    settled: &'a [&'a str],
 }
 
 impl Guard<'_> {
@@ -202,10 +197,16 @@ impl Guard<'_> {
         assert!(offences.is_empty(), "{rule}:\n  {}", offences.join("\n  "));
     }
 
-    /// A settled chapter has no `pending` block row.
-    fn pending_in_settled_chapters(&self) -> Vec<String> {
-        let in_settled = |row: &&Row| self.settled.iter().any(|chapter| BlockId::parse(&row.id).is_some_and(|id| id.chapter == *chapter));
-        self.inventory.blocks().into_iter().filter(|row| row.verdict == Verdict::Pending).filter(in_settled).map(|row| format!("{}: the chapter is settled and the row is still pending", row.id)).collect()
+    /// No block row is `pending`: every block of the Book is settled.
+    fn pending_rows(&self) -> Vec<String> {
+        self.inventory.blocks().into_iter().filter(|row| row.verdict == Verdict::Pending).map(|row| format!("{}: the block is still pending", row.id)).collect()
+    }
+
+    /// No row, of a block or of a sentence, `diverges` or is `disputed`: at close the code gives what
+    /// the Book states, or the construct is `refused` or `unraised` under an owner.
+    fn divergent_rows(&self) -> Vec<String> {
+        let divergent = self.inventory.rows().iter().filter(|row| matches!(row.verdict, Verdict::Diverges | Verdict::Disputed));
+        divergent.map(|row| format!("{}: the row `{}`; the code or the Book moves, or the row is reclassified under an owner", row.id, row.verdict.word())).collect()
     }
 }
 
@@ -223,9 +224,9 @@ impl Tree {
         Tree { book: Book::read(), inventory: Inventory::read(), coverage: Coverage::of_repository(), gaps: Gaps::read() }
     }
 
-    /// The rules over this tree, with the chapters the registry settles.
+    /// The rules over this tree, 
     fn guard(&self) -> Guard<'_> {
-        Guard { book: &self.book, inventory: &self.inventory, coverage: &self.coverage, gaps: &self.gaps, settled: &SETTLED_CHAPTERS }
+        Guard { book: &self.book, inventory: &self.inventory, coverage: &self.coverage, gaps: &self.gaps }
     }
 }
 
@@ -315,9 +316,35 @@ fn refused_rows_and_gaps_section_11_agree() {
 }
 
 #[test]
-fn settled_chapters_have_no_pending_row() {
-    // RE-01 AC 4: a chapter its task settled keeps no row pending
-    Guard::expect_none("settled chapters have no pending row", Tree::read().guard().pending_in_settled_chapters());
+fn no_block_row_is_pending() {
+    // RE-01 AC 4: at close every block row has a verdict; a planted `pending` row fails the rule
+    Guard::expect_none("no block row is pending", Tree::read().guard().pending_rows());
+    let book = Planted::book();
+    let tests = Planted::tests();
+    let coverage = Coverage::at(tests.path());
+    let gaps = Planted::gaps();
+    let mut rows = Planted::rows(&book);
+    rows[0].verdict = Verdict::Pending;
+    let inventory = Planted::inventory(&rows);
+    let found = Guard { book: &book, inventory: &inventory, coverage: &coverage, gaps: &gaps }.pending_rows();
+    assert_eq!(found, vec!["demo#1: the block is still pending"]);
+}
+
+#[test]
+fn no_row_diverges() {
+    // RE-02 AC 1 and RE-03 AC 1: no row of the inventory `diverges` or is `disputed`; a planted one of each fails
+    Guard::expect_none("no row diverges or is disputed", Tree::read().guard().divergent_rows());
+    let book = Planted::book();
+    let tests = Planted::tests();
+    let coverage = Coverage::at(tests.path());
+    let gaps = Planted::gaps();
+    let mut rows = Planted::rows(&book);
+    rows[0].verdict = Verdict::Diverges;
+    rows[3].verdict = Verdict::Disputed;
+    let inventory = Planted::inventory(&rows);
+    let found = Guard { book: &book, inventory: &inventory, coverage: &coverage, gaps: &gaps }.divergent_rows();
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert!(found[0].starts_with("demo#1: the row `diverges`") && found[1].starts_with("demo#4: the row `disputed`"), "{found:?}");
 }
 
 #[test]
@@ -410,8 +437,8 @@ fn the_guard_names_a_block_without_a_row_and_a_row_naming_no_test() {
     let clean = Planted::rows(&book);
     let inventory = Planted::inventory(&clean);
     let gaps = Planted::gaps();
-    let guard = Guard { book: &book, inventory: &inventory, coverage: &coverage, gaps: &gaps, settled: &["demo"] };
-    for offences in [guard.rows_against_blocks(), guard.tests_that_do_not_exist(), guard.verdicts_that_do_not_fit(), guard.run_tests_that_do_not_run(), guard.refusals_that_are_not_expected(), guard.models_split_across_tests(), guard.pending_in_settled_chapters(), guard.section_eleven_disagreements()] {
+    let guard = Guard { book: &book, inventory: &inventory, coverage: &coverage, gaps: &gaps };
+    for offences in [guard.rows_against_blocks(), guard.tests_that_do_not_exist(), guard.verdicts_that_do_not_fit(), guard.run_tests_that_do_not_run(), guard.refusals_that_are_not_expected(), guard.models_split_across_tests(), guard.pending_rows(), guard.divergent_rows(), guard.section_eleven_disagreements()] {
         assert!(offences.is_empty(), "a clean planted tree breaks no rule: {offences:?}");
     }
 
@@ -422,7 +449,7 @@ fn the_guard_names_a_block_without_a_row_and_a_row_naming_no_test() {
     };
     let judged = |rows: &[Row], rule: &dyn Fn(&Guard) -> Vec<String>| {
         let inventory = Planted::inventory(rows);
-        rule(&Guard { book: &book, inventory: &inventory, coverage: &coverage, gaps: &gaps, settled: &["demo"] })
+        rule(&Guard { book: &book, inventory: &inventory, coverage: &coverage, gaps: &gaps })
     };
 
     let without = broken(&|rows| {
@@ -475,10 +502,6 @@ fn the_guard_names_a_block_without_a_row_and_a_row_naming_no_test() {
     let split = broken(&|rows| rows[4].covered_by = "piperine/book_demo::refuses_demo".to_string());
     let found = judged(&split, &|guard| guard.models_split_across_tests());
     assert_eq!(found, vec!["m.msl: the blocks demo#4, demo#5 join one model but name different tests"]);
-
-    let pending = broken(&|rows| rows[0].verdict = Verdict::Pending);
-    let found = judged(&pending, &|guard| guard.pending_in_settled_chapters());
-    assert_eq!(found, vec!["demo#1: the chapter is settled and the row is still pending"]);
 }
 
 #[test]
@@ -490,7 +513,7 @@ fn the_gaps_guard_names_a_missing_and_an_extra_row() {
     let coverage = Coverage::at(tests.path());
     let clean = Planted::rows(&book);
     let inventory = Planted::inventory(&clean);
-    let judged = |inventory: &Inventory, gaps: &Gaps| Guard { book: &book, inventory, coverage: &coverage, gaps, settled: &[] }.section_eleven_disagreements();
+    let judged = |inventory: &Inventory, gaps: &Gaps| Guard { book: &book, inventory, coverage: &coverage, gaps }.section_eleven_disagreements();
     let section = |lines: &str| Gaps::from_text(&format!("| L7 | a generic module | §8 | x | L |\n\n## 11. The Book against the binary\n\n| Book | Gap | Owner | Today |\n| ---- | --- | ----- | ----- |\n{lines}"));
 
     assert!(judged(&inventory, &Planted::gaps()).is_empty(), "the planted section agrees with the planted inventory");
@@ -539,10 +562,10 @@ fn the_owner_and_disputed_rules_name_what_they_break() {
     let inventory = Planted::inventory(&rows);
 
     let owned = Gaps::from_text("| L7 | a generic module | §8 | x | L |\n\n## 11. The Book against the binary\n\n| Book | Gap | Owner | Today |\n| ---- | --- | ----- | ----- |\n| demo#3 | L7 | `generics` | refused |\n");
-    let guard = Guard { book: &book, inventory: &inventory, coverage: &coverage, gaps: &owned, settled: &[] };
+    let guard = Guard { book: &book, inventory: &inventory, coverage: &coverage, gaps: &owned };
     assert!(guard.owners_without_a_spec(features.path()).is_empty(), "an owner with a spec is accepted");
     let nobody = Gaps::from_text("| L7 | a generic module | §8 | x | L |\n\n## 11. The Book against the binary\n\n| Book | Gap | Owner | Today |\n| ---- | --- | ----- | ----- |\n| demo#3 | L7 | `nobody` | refused |\n");
-    let guard = Guard { book: &book, inventory: &inventory, coverage: &coverage, gaps: &nobody, settled: &[] };
+    let guard = Guard { book: &book, inventory: &inventory, coverage: &coverage, gaps: &nobody };
     let found = guard.owners_without_a_spec(features.path());
     assert_eq!(found.len(), 1, "{found:?}");
     assert!(found[0].starts_with("demo#3: section 11 names the owner `nobody`, which has no spec"), "{found:?}");
@@ -550,7 +573,7 @@ fn the_owner_and_disputed_rules_name_what_they_break() {
     let mut disputed = rows.clone();
     disputed[0].verdict = Verdict::Disputed;
     let inventory = Planted::inventory(&disputed);
-    let guard = Guard { book: &book, inventory: &inventory, coverage: &coverage, gaps: &owned, settled: &[] };
+    let guard = Guard { book: &book, inventory: &inventory, coverage: &coverage, gaps: &owned };
     let found = guard.disputed_rows_that_are_not_listed("nothing is listed here");
     assert_eq!(found, vec![format!("{}: a `disputed` row is listed for the user; add it to divergences.md", disputed[0].id)]);
     assert!(guard.disputed_rows_that_are_not_listed(&format!("| {} | listed |", disputed[0].id)).is_empty());

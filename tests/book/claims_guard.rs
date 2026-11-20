@@ -15,10 +15,6 @@ mod support {
 use support::book::{Book, Sentence};
 use support::inventory::{Coverage, Inventory, Kind, Row, Verdict};
 
-/// The chapters whose claim rows a chapter task has settled: none of their rows may be `pending`. A
-/// chapter task adds its chapter here; the closing task replaces the registry with the strict rules.
-const SETTLED_CHAPTERS: [&str; 18] = ["errors", "welcome", "from-rust", "values", "natures", "modules", "analog", "digital", "mixed", "packages", "core-std", "cheatsheet", "pom", "abi", "compiler", "solver", "structure", "cli"];
-
 /// Decides whether a sentence of the Book states a value, a record or an outcome. The three lists
 /// are data: a sentence is flagged when it holds an error code, a number with a unit or a count,
 /// or a verb of outcome. The detector is a heuristic: a flag needs a row (a `prose` row says the
@@ -92,7 +88,6 @@ struct ClaimGuard<'a> {
     book: &'a Book,
     inventory: &'a Inventory,
     coverage: &'a Coverage,
-    settled: &'a [&'a str],
 }
 
 impl ClaimGuard<'_> {
@@ -192,10 +187,9 @@ impl ClaimGuard<'_> {
         offences
     }
 
-    /// A settled chapter has no `pending` claim row.
-    fn pending_in_settled_chapters(&self) -> Vec<String> {
-        let in_settled = |row: &&Row| self.settled.iter().any(|chapter| row.id.split_once('~').is_some_and(|(of, _)| of == *chapter));
-        self.inventory.claims().into_iter().filter(|row| row.verdict == Verdict::Pending).filter(in_settled).map(|row| format!("{}: the chapter is settled and the claim is still pending", row.id)).collect()
+    /// No claim row is `pending`: every sentence that states a value, a record or an outcome is settled.
+    fn pending_claims(&self) -> Vec<String> {
+        self.inventory.claims().into_iter().filter(|row| row.verdict == Verdict::Pending).map(|row| format!("{}: the claim is still pending", row.id)).collect()
     }
 
     /// Fails listing `offences`, one per line, under the rule `rule`.
@@ -219,7 +213,7 @@ impl Tree {
 
     /// The rules over this tree, with the chapters the registry settles.
     fn guard(&self) -> ClaimGuard<'_> {
-        ClaimGuard { book: &self.book, inventory: &self.inventory, coverage: &self.coverage, settled: &SETTLED_CHAPTERS }
+        ClaimGuard { book: &self.book, inventory: &self.inventory, coverage: &self.coverage }
     }
 }
 
@@ -251,9 +245,9 @@ fn binary_claims_name_command_line_tests() {
 }
 
 #[test]
-fn settled_chapters_have_no_pending_claim() {
-    // RE-03 AC 2: a chapter its task settled keeps no claim pending
-    ClaimGuard::expect_none("settled chapters have no pending claim", Tree::read().guard().pending_in_settled_chapters());
+fn no_claim_row_is_pending() {
+    // RE-03 AC 2: at close every claim row has a verdict, in every chapter
+    ClaimGuard::expect_none("no claim row is pending", Tree::read().guard().pending_claims());
 }
 
 #[test]
@@ -324,14 +318,14 @@ fn the_claim_guard_names_a_sentence_without_a_row() {
     let first_id = first[0].id.clone();
     let tests = Planted::tests(&first_id);
     let coverage = Coverage::at(tests.path());
-    let judged = |rows: &[Row], settled: &[&str], rule: &dyn Fn(&ClaimGuard) -> Vec<String>| {
+    let judged = |rows: &[Row], rule: &dyn Fn(&ClaimGuard) -> Vec<String>| {
         let inventory = Planted::inventory(rows);
-        rule(&ClaimGuard { book: &book, inventory: &inventory, coverage: &coverage, settled })
+        rule(&ClaimGuard { book: &book, inventory: &inventory, coverage: &coverage })
     };
 
-    let found = judged(&first, &[], &|guard| guard.sentences_without_a_row());
+    let found = judged(&first, &|guard| guard.sentences_without_a_row());
     assert!(found.is_empty(), "a complete planted inventory breaks no rule: {found:?}");
-    let found = judged(&first[1..], &[], &|guard| guard.sentences_without_a_row());
+    let found = judged(&first[1..], &|guard| guard.sentences_without_a_row());
     assert_eq!(found.len(), 1, "{found:?}");
     assert!(found[0].starts_with(&format!("{first_id}: the sentence has no claim row; add\nclaim\t{first_id}\t")), "the offence names the claim and prints its row: {}", found[0]);
 
@@ -339,7 +333,7 @@ fn the_claim_guard_names_a_sentence_without_a_row() {
     lost.push(Row { id: "demo~00000000".to_string(), fingerprint: "0000000000000000".to_string(), ..first[0].clone() });
     lost.push(Row { id: "nowhere~00000000".to_string(), ..first[0].clone() });
     lost[1].verdict = Verdict::Run;
-    let found = judged(&lost, &[], &|guard| guard.rows_that_are_no_sentence());
+    let found = judged(&lost, &|guard| guard.rows_that_are_no_sentence());
     assert_eq!(found.len(), 3, "{found:?}");
     assert!(found.iter().any(|line| line.starts_with("demo~00000000: the chapter no longer has this sentence")), "{found:?}");
     assert!(found.iter().any(|line| line.starts_with("nowhere~00000000: the row names no chapter")), "{found:?}");
@@ -354,7 +348,7 @@ fn the_claim_guard_names_a_sentence_without_a_row() {
     asserted[2].covered_by = "piperine-cli/cli::prints".to_string();
     asserted[3].verdict = Verdict::Disputed;
     asserted[3].covered_by = "piperine/book_demo::no_such_test".to_string();
-    let found = judged(&asserted, &[], &|guard| guard.asserted_claims_without_a_citing_test());
+    let found = judged(&asserted, &|guard| guard.asserted_claims_without_a_citing_test());
     assert_eq!(found.len(), 3, "{found:?}");
     assert!(found[0].contains("never cites the claim") && found[0].starts_with(&asserted[1].id), "{found:?}");
     assert!(found[1].contains("names a root test") && found[1].starts_with(&asserted[2].id), "{found:?}");
@@ -367,7 +361,7 @@ fn the_claim_guard_names_a_sentence_without_a_row() {
     binary[1].covered_by = "piperine/book_demo::cites".to_string();
     binary[2].verdict = Verdict::Binary;
     binary[2].covered_by = "piperine-cli/cli::no_such_test".to_string();
-    let found = judged(&binary, &[], &|guard| guard.binary_claims_without_a_command_line_test());
+    let found = judged(&binary, &|guard| guard.binary_claims_without_a_command_line_test());
     assert_eq!(found.len(), 2, "{found:?}");
     assert!(found[0].starts_with(&binary[1].id) && found[1].starts_with(&binary[2].id), "{found:?}");
 
@@ -378,7 +372,7 @@ fn the_claim_guard_names_a_sentence_without_a_row() {
     refused[1].covered_by = "demo#2".to_string();
     let block = Row { kind: Kind::Block, id: "demo#1".to_string(), verdict: Verdict::Refused, ..first[0].clone() };
     refused.push(block);
-    let found = judged(&refused, &[], &|guard| guard.refused_claims_without_a_refusal());
+    let found = judged(&refused, &|guard| guard.refused_claims_without_a_refusal());
     assert_eq!(found.len(), 1, "{found:?}");
     assert!(found[0].starts_with(&refused[1].id), "{found:?}");
 
@@ -387,11 +381,11 @@ fn the_claim_guard_names_a_sentence_without_a_row() {
     by_test[0].covered_by = "piperine/book_demo::cites".to_string();
     by_test[1].verdict = Verdict::Refused;
     by_test[1].covered_by = "piperine/book_demo::forgets".to_string();
-    let found = judged(&by_test, &[], &|guard| guard.refused_claims_without_a_refusal());
+    let found = judged(&by_test, &|guard| guard.refused_claims_without_a_refusal());
     assert_eq!(found.len(), 1, "a block-less refusal names a root test that cites it: {found:?}");
     assert!(found[0].starts_with(&by_test[1].id) && found[0].contains("never cites the claim"), "{found:?}");
 
-    let found = judged(&first, &["demo"], &|guard| guard.pending_in_settled_chapters());
+    let found = judged(&first, &|guard| guard.pending_claims());
     assert_eq!(found.len(), 4, "{found:?}");
-    assert!(found[0].starts_with(&first_id) && found[0].ends_with("the chapter is settled and the claim is still pending"), "{found:?}");
+    assert!(found[0].starts_with(&first_id) && found[0].ends_with("the claim is still pending"), "{found:?}");
 }
