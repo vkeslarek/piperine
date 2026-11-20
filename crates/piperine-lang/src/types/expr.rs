@@ -42,16 +42,16 @@ impl Checker<'_> {
             // block or of the arms of an `if` is where a mismatch is reported.
             let found = match &node.kind {
                 ExprKind::Paren(inner) => {
-                    self.check(*inner, expected);
+                    self.check_as(*inner, expected, code);
                     Some(expected.clone())
                 }
-                ExprKind::Block(block) => self.statements(&block.stmts, Some(expected)),
+                ExprKind::Block(block) => self.statements_as(&block.stmts, Some(expected), code),
                 ExprKind::Closure { .. } => self.closure(expr, expected),
                 ExprKind::Path(_) if matches!(expected, Ty::Fn(..)) && self.fn_value_at == Some(expr) && self.function_named(expr).is_some() => self.function_value(expr),
                 ExprKind::If { cond, then, else_: Some(else_) } => {
                     self.condition(*cond);
-                    self.statements(&then.stmts, Some(expected));
-                    self.check(*else_, expected);
+                    self.statements_as(&then.stmts, Some(expected), code);
+                    self.check_as(*else_, expected, code);
                     Some(expected.clone())
                 }
                 // `100` where an `f64` is required: an integer literal never converts (§1 rule 7).
@@ -557,6 +557,11 @@ impl Checker<'_> {
     /// that of its last expression without a `;`, else `()`. With an `expected` type the last
     /// expression is checked against it.
     pub(super) fn statements(&mut self, stmts: &[StmtId], expected: Option<&Ty>) -> Option<Ty> {
+        self.statements_as(stmts, expected, "P0002")
+    }
+
+    /// `statements`, where a mismatch of the block's value carries `code` (see `check_as`).
+    fn statements_as(&mut self, stmts: &[StmtId], expected: Option<&Ty>, code: &'static str) -> Option<Ty> {
         let mut value = Some(Ty::Unit);
         for (i, stmt) in stmts.iter().enumerate() {
             let last = i + 1 == stmts.len();
@@ -575,7 +580,7 @@ impl Checker<'_> {
                     if last && !semi {
                         match expected {
                             Some(expected) => {
-                                self.check(*expr, expected);
+                                self.check_as(*expr, expected, code);
                                 value = Some(expected.clone());
                             }
                             None => value = self.infer(*expr),

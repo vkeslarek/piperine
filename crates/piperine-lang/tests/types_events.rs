@@ -279,6 +279,13 @@ fn an_operand_of_another_type_in_a_commit_is_e0432() {
     assert_eq!(snippet(src, &d[0]), "1.5");
     let src = "module Top(in clk: Bit, out count: Bit<u9> = 0) { }\ndigital for Top { on clk.rise() { count <- count + 1; } }";
     checked_top(src, "Top");
+    // through a parenthesis, an `if` and a block the rule keeps its code
+    for (value, operand) in [("(count + 1.5)", "1.5"), ("if true { count + 1.5 } else { count }", "1.5"), ("if true { count } else { count + 1.5 }", "1.5"), ("{ count + 1.5 }", "1.5")] {
+        let src = format!("module Top(in clk: Bit, out count: Bit<u9> = 0) {{ }}\ndigital for Top {{ on clk.rise() {{ count <- {value}; }} }}");
+        let d = diagnostics(&src);
+        assert_eq!(codes(&d), ["E0432"], "{value}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(snippet(&src, &d[0]), operand, "{value}");
+    }
 }
 
 #[test]
