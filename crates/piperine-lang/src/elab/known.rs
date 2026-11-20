@@ -14,10 +14,11 @@
 //! | a call | the result of the variant its argument pattern selects |
 //!
 //! `&&` and `||` decide control, so the IR takes them over known operands only. With an operand
-//! that may be unknown they are the bitwise `&` and `|`, which §3.3.12 gives the same table; the
-//! right operand then runs whatever the left gives, so one that can panic or emit is refused.
-//! An `if` on a value that may be unknown is lowered as written: the generated code decides it,
-//! and faults when it is unknown (`ir-rust` RS-11 AC 5).
+//! that may be unknown they are the bitwise `&` and `|`, which §3.3.12 gives the same table; a
+//! right operand that can panic or emit is not run whatever the left gives: the form is the `if`
+//! it means. An `if` on a value that may be unknown is lowered as written: the generated code
+//! runs both arms and merges them (§3.3.3), a panic of an arm making the merge unknown
+//! (§1 rule 13).
 
 use piperine_ir::{Expr, ExprId as LoweredExpr, Origin, ValueType};
 
@@ -71,7 +72,7 @@ impl Elaboration<'_, '_> {
     /// whatever the left operand gives. It can when it holds, written in it, in a `match` arm or
     /// in the body of a function it calls (followed transitively): an integer `/` or `%`, a shift
     /// by a signed amount that does not fold to one `>= 0`, an integer `clamp` whose bounds do
-    /// not fold to `lo <= hi` (`rt::int` panics on each), or a call of a function that emits.
+    /// not fold to `lo <= hi` (`rt::int` panics on each), an `emit!` or a call of a function that emits.
     /// `None` when it can run unconditionally.
     pub(super) fn partial(&mut self, expr: ExprId) -> Option<&'static str> {
         let mut stack = vec![expr];
@@ -80,6 +81,7 @@ impl Elaboration<'_, '_> {
             let kind = self.design.expr_node(e).kind.clone();
             let integer = |x: ExprId| self.types.ty(x).is_some_and(|t| t.is_integer());
             match &kind {
+                ExprKind::Emit { .. } => return Some("an `emit!`"),
                 ExprKind::Binary { op: BinOp::Div | BinOp::Rem, .. } if integer(e) => return Some("an integer `/` or `%`"),
                 ExprKind::Binary { op: BinOp::Shl | BinOp::Shr, rhs, .. } if matches!(self.types.ty(*rhs), Some(Ty::Int(_))) => {
                     if !matches!(self.consts.value(*rhs, &Bindings::new()), Ok(Constant::Int(n)) if n >= 0) {
@@ -115,6 +117,19 @@ impl Elaboration<'_, '_> {
             stack.extend(crate::pom::expr_children(&kind, self.design));
         }
         None
+    }
+
+    /// `lhs && rhs` (`conjunction`) or `lhs || rhs` whose right operand `partial` reports, as the
+    /// `if` it means: `if lhs { rhs } else { false }` and `if lhs { true } else { rhs }`. Over an
+    /// unknown `lhs` the generated code runs both arms and merges them, which gives
+    /// `unknown && false == false` and `unknown || true == true` (§3.3.12) and makes a panic of
+    /// `rhs` an unknown, never a fault (§1 rule 13); the right operand is no longer run when the
+    /// left decides.
+    pub(super) fn lower_short_circuit_as_if(&mut self, conjunction: bool, lhs: LoweredExpr, rhs: LoweredExpr, base: ValueType, origin: Origin) -> LoweredExpr {
+        let decided = self.emit(Expr::Bool(!conjunction), ValueType::Bool, origin.clone());
+        let (then, otherwise) = if conjunction { (rhs, decided) } else { (decided, rhs) };
+        let ty = self.flags(&[lhs, then, otherwise]).wrap(base);
+        self.emit(Expr::If { cond: lhs, then, otherwise }, ty, origin)
     }
 
     /// `x.known_or(d)`, `x.is_known()`, `x.high()` (§3.3.4): known values whatever `x` holds.

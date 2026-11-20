@@ -348,42 +348,39 @@ fn a_short_circuit_over_a_flagged_operand_becomes_bitwise() {
 }
 
 #[test]
-fn a_partial_right_operand_under_a_flagged_short_circuit_is_p0001() {
-    // DIG-08 AC 7: as `&`, the right operand runs whatever the left gives; one that can panic
-    // (an integer `/` or `%`) is refused, at the operand.
-    for (body, at) in [
-        ("let c: bool = Unknown; let r = c && (x / n > 1); r.known_or(false)", "(x / n > 1)"),
-        ("let c: bool = Unknown; let r = c || (x % n == 0); r.known_or(false)", "(x % n == 0)"),
+fn a_partial_right_operand_under_a_flagged_short_circuit_is_an_if() {
+    // DIG-08 AC 7, replaced by US-04 AC 8 (§3.3.12): the right operand of `&&`/`||` over a value
+    // that may be unknown no longer runs whatever the left gives when it can panic, so it lowers
+    // to the `if` it means, `c && r` as `if c { r } else { false }` and `c || r` as
+    // `if c { true } else { r }`, and elaborates (no `P0001`).
+    for (body, shape) in [
+        ("let c: bool = Unknown; let r = c && (x / n > 1); r.known_or(false)", "let r = if c { ((x / n) > 1u8) } else { false }"),
+        ("let c: bool = Unknown; let r = c || (x % n == 0); r.known_or(false)", "let r = if c { true } else { ((x % n) == 0u8) }"),
     ] {
         let src = reaching(&format!("fn f(x: u8, n: u8) -> bool {{ {body} }}"), &["f(1, 2)"]);
-        let err = Elab::run(&src, "Top").expect_err(at);
-        assert_eq!(Elab::codes(&err), ["P0001"], "{at}");
-        let span = err[0].diagnostic.span();
-        assert_eq!(&src[span.start..span.end], at);
-        assert!(err[0].diagnostic.message.contains("integer `/` or `%`"), "{}", err[0].diagnostic.message);
+        let ir = Elab::ir(&src, "Top");
+        let text = Read { ir: &ir }.function_text("f");
+        assert!(text.contains(shape), "{body}: {text}");
     }
     // The operand can panic where it is not written: in a function it calls (transitively, two
     // calls deep), in a `match` arm, by a shift whose signed amount may be negative, or by an
-    // integer `clamp` whose bounds may cross (`rt::int` panics on each). Each is refused at the
-    // operand, naming why (verification F2).
+    // integer `clamp` whose bounds may cross (`rt::int` panics on each): each is an `if` too
+    // (verification F2).
     let helpers = "fn g(n: u8) -> bool { 10 / n > 1 }\n\
                    fn h(n: u8) -> bool { g(n) }\n";
-    for (signature, body, at, why) in [
-        ("x: u8, n: u8", "c && g(n)", "g(n)", "integer `/` or `%`"),
-        ("x: u8, n: u8", "c || h(n)", "h(n)", "integer `/` or `%`"),
-        ("x: u8, n: u8", "c && match n { 0 => true, _ => 10 / n > 1 }", "match n { 0 => true, _ => 10 / n > 1 }", "integer `/` or `%`"),
-        ("x: u8, s: i8", "c && ((x >> s) > 0)", "((x >> s) > 0)", "a shift by a signed amount"),
-        ("x: u8, s: i8", "c || ((x << -1) > 0)", "((x << -1) > 0)", "a shift by a signed amount"),
-        ("x: u8, lo: u8", "c && (x.clamp(lo, 5) > 0)", "(x.clamp(lo, 5) > 0)", "an integer `clamp`"),
-        ("x: u8, lo: u8", "c && (x.clamp(5, 1) > 0)", "(x.clamp(5, 1) > 0)", "an integer `clamp`"),
+    for (signature, body) in [
+        ("x: u8, n: u8", "c && g(n)"),
+        ("x: u8, n: u8", "c || h(n)"),
+        ("x: u8, n: u8", "c && match n { 0 => true, _ => 10 / n > 1 }"),
+        ("x: u8, s: i8", "c && ((x >> s) > 0)"),
+        ("x: u8, s: i8", "c || ((x << -1) > 0)"),
+        ("x: u8, lo: u8", "c && (x.clamp(lo, 5) > 0)"),
+        ("x: u8, lo: u8", "c && (x.clamp(5, 1) > 0)"),
     ] {
         let function = format!("{helpers}fn f({signature}) -> bool {{ let c: bool = Unknown; let r = {body}; r.known_or(false) }}");
-        let src = reaching(&function, &["f(1, 2)"]);
-        let err = Elab::run(&src, "Top").expect_err(at);
-        assert_eq!(Elab::codes(&err), ["P0001"], "{at}");
-        let span = err[0].diagnostic.span();
-        assert_eq!(&src[span.start..span.end], at);
-        assert!(err[0].diagnostic.message.contains(why), "{at}: {}", err[0].diagnostic.message);
+        let ir = Elab::ir(&reaching(&function, &["f(1, 2)"]), "Top");
+        let text = Read { ir: &ir }.function_text("f");
+        assert!(text.contains("let r = if c {"), "{body}: {text}");
     }
     // What cannot panic stays bitwise: a shift by an amount that folds to one `>= 0` (a literal
     // is `i32`), an integer `clamp` with bounds that fold in order, a call of a function that

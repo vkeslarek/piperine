@@ -215,6 +215,7 @@ impl Elaboration<'_, '_> {
                 // The right operand of `&&`/`||` runs only when the left does not decide: it is
                 // conditional exactly like an `if` arm.
                 let short_circuit = matches!(op, BinOp::And | BinOp::Or);
+                let right = *rhs;
                 let lhs = self.lower_expr(scope, *lhs);
                 scope.nesting += u32::from(short_circuit);
                 let rhs = self.lower_expr(scope, *rhs);
@@ -223,16 +224,12 @@ impl Elaboration<'_, '_> {
                 let flag = self.flags(&[lhs, rhs]);
                 let op = match (Self::binary_op(*op), flag) {
                     // §3.3.12: over a value that may be unknown, `&&` and `||` give the table of
-                    // `&` and `|`; the IR's short-circuit forms take known operands only.
+                    // `&` and `|`; the IR's short-circuit forms take known operands only. A right
+                    // operand that can panic or emit must not run whatever the left gives, so it
+                    // is an `if` and the generated code merges it (§3.3.3, §1 rule 13).
                     (op @ (BinaryOp::And | BinaryOp::Or), Flag::Flagged) => {
-                        let right = match &node.kind {
-                            ExprKind::Binary { rhs, .. } => *rhs,
-                            _ => expr,
-                        };
-                        if let Some(why) = self.partial(right) {
-                            let span = self.design.expr_node(right).span;
-                            self.unsupported(file, span, &format!("{why} on the right of an `&&` or `||` whose operand may be unknown"));
-                            return None;
+                        if self.partial(right).is_some() {
+                            return Some(self.lower_short_circuit_as_if(op == BinaryOp::And, lhs, rhs, ty, origin));
                         }
                         if op == BinaryOp::And { BinaryOp::BitAnd } else { BinaryOp::BitOr }
                     }

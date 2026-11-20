@@ -538,3 +538,27 @@ fn matches_bits_follows_its_table() {
         ])
     );
 }
+
+#[test]
+fn short_circuit_operands_follow_the_merge() {
+    // US-04 AC 8, §3.3.12, §1 rule 13: with `u` unknown, `u && false` is false and `u || true` is
+    // true, `u && true` and `u || false` are unknown, and a right operand that panics (`10 / 0`)
+    // makes the merge unknown, no fault; a known left operand that decides never runs the right
+    // one (`f && 10 / 0` is false, `t || 10 / 0` is true), and a known one that does not gives
+    // the right operand's value.
+    let (_, records) = records_of("short_circuit.msl", "ShortCircuitBench");
+    assert_eq!(
+        constant_fields(&records, "and"),
+        fields(&[("decided", Field::Bool(false)), ("unknown", Field::Unknown), ("panics", Field::Unknown), ("skipped", Field::Bool(false)), ("run", Field::Bool(true))])
+    );
+    assert_eq!(
+        constant_fields(&records, "or"),
+        fields(&[("decided", Field::Bool(true)), ("unknown", Field::Unknown), ("panics", Field::Unknown), ("skipped", Field::Bool(true)), ("run", Field::Bool(false))])
+    );
+    // A right operand that emits runs under the merge: its record exists and says `maybe`, and
+    // the values are the same table.
+    assert_eq!(constant_fields(&records, "emits"), fields(&[("unknown_and", Field::Unknown), ("unknown_or", Field::Unknown)]));
+    let ran = stream(&records, "ran");
+    assert_eq!(ran.len(), 8, "two emitting right operands per rising edge: {ran:?}");
+    assert!(ran.iter().all(|r| r.maybe), "reached under unknown control");
+}
