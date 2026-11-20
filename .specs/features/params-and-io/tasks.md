@@ -425,11 +425,11 @@ T44
 
 **Done when**:
 
-- [ ] `an_attribute_a1_does_not_list_is_e0904`, `a_listed_attribute_on_the_wrong_item_is_e0904` pass under `**Run typesstructure**`
-- [ ] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
-- [ ] Every stdlib, gallery and Book source still checks (no shipped source carries an unlisted attribute); `**Run stdgalleries**` passes
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `an_attribute_a1_does_not_list_is_e0904`, `a_listed_attribute_on_the_wrong_item_is_e0904` pass under `**Run typesstructure**`
+- [x] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
+- [x] Every stdlib, gallery and Book source still checks (no shipped source carries an unlisted attribute); `**Run stdgalleries**` passes
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

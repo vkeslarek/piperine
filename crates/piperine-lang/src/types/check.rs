@@ -160,6 +160,7 @@ impl<'d> Checker<'d> {
 
     /// Check `top` and everything it reaches: the table, or the diagnostics in source order.
     pub(super) fn run(mut self, top: DeclId) -> Result<Types<'d>, Vec<DesignDiagnostic>> {
+        self.check_attributes();
         self.reach(top);
         while let Some(decl) = self.queue.pop_front() {
             self.declaration(decl);

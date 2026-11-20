@@ -8,6 +8,7 @@
 //! The result is a table or the reasons there is none, never both.
 
 mod analog;
+mod attributes;
 mod call;
 mod carrier;
 mod catalogue;
