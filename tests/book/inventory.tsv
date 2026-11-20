@@ -211,6 +211,16 @@ block	cli#45	1c66b4b4d5d7a1e2	shown	-	-	-
 block	cli#46	47b905ff64d8b849	shown	-	-	-
 block	cli#47	0864d88b35e61a2b	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run startup
 block	cli#48	0d76250cc10f06b4	shown	-	-	-
+block	simulation#1	3bc4e9693928f3de	run	piperine/book_simulation::the_divider_rests_at_four_fifths_of_its_source_and_the_source_delivers_1_ma	-	-
+block	simulation#2	4f09c3cb5927442c	shown	-	-	-
+block	simulation#3	075f2bf64f79c2a7	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run divider.msl --analysis op
+block	simulation#4	46325a63d4934d47	refused	piperine/book_simulation::a_circuit_with_no_operating_point_stops_with_e0505_naming_its_unknowns	-	-
+block	simulation#5	46c98d81de37db71	shown	-	-	-
+block	simulation#6	e1321167a89c888b	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run stuck.msl --analysis op
+block	simulation#7	5068c25da271a189	shown	-	-	-
+block	simulation#8	bb39a1d477539ba8	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run divider.msl --analysis transient --stop 40e-6 --print b --print-step 10e-6
+block	simulation#9	e9f2e26422078619	shown	-	-	-
+block	simulation#10	93d9904c6f268314	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run divider.msl --analysis ac --from 1e3 --to 1e6 --per-decade 1 --print b
 block	cheatsheet#1	35f08adcbe452e09	run	piperine/book_cheatsheet::the_nature_card_is_the_standard_librarys	-	-
 block	cheatsheet#2	383dda9a42c27bf9	refused	piperine/book_cheatsheet::the_module_card_is_refused_for_its_const_generic	L30	-
 block	cheatsheet#3	4191faccce1565bc	refused	piperine/book_cheatsheet::the_body_items_card_is_refused_for_its_generation	L31	-
@@ -550,6 +560,57 @@ claim	structure~b45cc292	b45cc292b6849768	holds	piperine/book_structure::the_int
 claim	structure~f9cbf76a	f9cbf76a7374932d	holds	piperine/book_structure::the_compiled_backend_compiles_once_and_keeps_the_result_in_its_cache	-	It prints the design as Rust, compiles it once with rustc, keeps the result in a cache and loads it.
 claim	structure~58f974e3	58f974e3566763f4	binary	piperine-cli/commands::check_renders_every_diagnostic_and_exits_1	-	Until it is, piperine check gives the same diagnostics on the command line.
 claim	structure~00d9ae38	00d9ae382cd12fca	holds	piperine/book_structure::analog_and_digital_meet_only_in_the_owner_of_time	-	Everything that crosses between analog and digital is an event the owner of time carries.
+claim	simulation~d78d9147	d78d9147423aad1b	holds	piperine/book_simulation::the_divider_rests_at_four_fifths_of_its_source_and_the_source_delivers_1_ma	-	Everything below runs on one file: a 5 V source, two resistors that divide it, and a capacitor on the middle node.
+claim	simulation~d2ecd8c7	d2ecd8c7a343d083	holds	piperine/book_simulation::the_divider_rests_at_four_fifths_of_its_source_and_the_source_delivers_1_ma	-	Four fifths of 5 V, as the divider rule says.
+claim	simulation~5345ca14	5345ca140a12386b	holds	piperine/book_simulation::the_divider_rests_at_four_fifths_of_its_source_and_the_source_delivers_1_ma	-	The third unknown, the current through v1, is −1 mA: add i(v1) to the run's print list to see it.
+claim	simulation~dbd60847	dbd6084707cb4503	prose	-	-	The answers fill the matrix, the matrix is solved, and the result is the next guess.
+claim	simulation~2e9367d7	2e9367d7153fbdcf	prose	-	-	With the defaults a 4 V node may still move by about 4 mV; a node near 0 V by 1 µV.
+claim	simulation~ff5a5276	ff5a52765f2951ab	prose	-	-	If a step fails, the conductance is raised again and lowered more gently.
+claim	simulation~8e10cd25	8e10cd25ec61b27a	prose	-	-	A stage that fails is retried with a smaller increase.
+claim	simulation~69743e37	69743e379b66c312	holds	piperine/book_simulation::a_circuit_with_no_operating_point_stops_with_e0505_naming_its_unknowns	-	If the direct attempt and both rescues fail, the run stops with E0505 and names the unknowns that would not settle.
+claim	simulation~d3db4907	d3db4907e08f62bb	holds	piperine/book_simulation::a_circuit_with_no_operating_point_stops_with_e0505_naming_its_unknowns	-	This circuit has no operating point at all: a device that pushes current out above 0.5 V and pulls it in below.
+claim	simulation~c00d7d3c	c00d7d3cdc37af09	holds	piperine/book_simulation::a_circuit_with_no_operating_point_stops_with_e0505_naming_its_unknowns	-	The number in the middle is the bound: one solve is allowed 500 iterations.
+claim	simulation~324fd7cd	324fd7cda8ed0b75	prose	-	-	Chapter 14 gives the bound on those rounds and the error that names the nets when they never agree.
+claim	simulation~354e500b	354e500bc9e64ef4	prose	-	-	Everything returns to the checkpoint taken before it, and the step is tried again at one eighth of its size.
+claim	simulation~2bcf7be9	2bcf7be9e06567f9	prose	-	-	A step in which Newton fails is treated the same way.
+claim	simulation~f65fc805	f65fc80584500466	holds	piperine/book_simulation::a_transient_starts_at_a_thousandth_of_its_stop_and_no_step_exceeds_a_hundredth	-	The first step of a run is one thousandth of stop, and no step is longer than one hundredth of stop, unless the run gives max_step: then max_step is both the first step and the longest.
+claim	simulation~30614142	306141422d356873	holds	piperine/book_simulation::a_transient_starts_at_a_thousandth_of_its_stop_and_no_step_exceeds_a_hundredth	-	The node b starts at 0 V, because its declaration says so, and charges toward 4 V.
+claim	simulation~ffb969ab	ffb969abace6ca9f	holds	piperine/book_simulation::a_transient_starts_at_a_thousandth_of_its_stop_and_no_step_exceeds_a_hundredth	-	Without --print-step the table has one row per accepted step, 112 rows for this run, and those are the dots of the next figure.
+claim	simulation~0225bb03	0225bb03c5325c42	holds	piperine/book_simulation::a_transient_starts_at_a_thousandth_of_its_stop_and_no_step_exceeds_a_hundredth	-	The first step is 40 ns, a thousandth of the 40 µs.
+claim	simulation~700ac9f6	700ac9f610abc834	holds	piperine/book_simulation::a_transient_starts_at_a_thousandth_of_its_stop_and_no_step_exceeds_a_hundredth	-	The steps then grow as the controller finds the curve easy, and from about 3.6 µs on they sit at 400 ns, a hundredth of stop: for this gentle curve it is the cap, not the error, that sets the step.
+claim	simulation~17c534dc	17c534dc719861b2	holds	piperine/book_errors::e0504_is_a_step_after_a_digital_change_that_does_not_converge	-	At the smallest step there is nothing shorter to try: a Newton failure there ends the run with E0508, or with E0504 when the step is the one right after a digital change, which then names the carrier that changed.
+claim	simulation~9ad7af02	9ad7af0265d53fa0	holds	piperine/book_simulation::the_crossing_is_reported_where_the_node_passes_2_v_to_the_accuracy_of_the_waveform	-	It must fire at the moment the voltage passes 2 V, and the solver's steps do not know that moment in advance.
+claim	simulation~5c11b6a4	5c11b6a495fd1e61	prose	-	-	It estimates the crossing time from the points it has, returns to the checkpoint, and takes a shorter step that ends on the estimate.
+claim	simulation~9ed04be9	9ed04be96fb38ada	holds	piperine/book_simulation::the_crossing_is_reported_where_the_node_passes_2_v_to_the_accuracy_of_the_waveform	-	The 0.32 ns between them is not an error of the locating: it is the accuracy of the waveform itself, which was computed to reltol.
+claim	simulation~dc329233	dc32923307259275	prose	-	-	It stops before the first instant that touches the analog side, and puts itself back as it was just before it.
+claim	simulation~cc86bbe8	cc86bbe86bdaa03d	prose	-	-	If Newton fails or the error is too large, both sides return to the checkpoint and the loop starts again with a shorter step.
+claim	simulation~2ad380c7	2ad380c73d3f08c4	prose	-	-	A loop of commits with no delay never gets there; chapter 14 gives the bound and the error.
+claim	simulation~c61ba427	c61ba427e90316f5	prose	-	-	An AC analysis answers a different question: if a small sine wave is added at the input, how large is it, and how late, at the output?
+claim	simulation~c86d7533	c86d7533a31612df	holds	piperine/book_simulation::the_small_signal_of_the_source_is_read_by_an_ac_run_alone	-	The signal comes from the sources that declare one: the ac_stim(1.0, 0.0) in Vsource is 1 V at phase 0, and it is ignored by every other analysis.
+claim	simulation~45de0dd4	45de0dd4036ce89c	prose	-	-	If the question is "what happens with a real 1 V swing", it is a transient question.
+claim	simulation~fb66666b	fb66666b5672fa9e	prose	-	-	A noise analysis asks how much of all that arrives at one output, and which device is to blame.
+claim	simulation~f96c2adc	f96c2adcf7944573	prose	-	-	The circuit is linearized at the operating point, and at each frequency every noise source reaches the output through a gain of its own.
+claim	simulation~e29202af	e29202af5f9e25cc	prose	-	-	It switches at 500 kHz, so its analog waveforms have something to show every 2 µs.
+claim	simulation~9033add9	9033add9f5ba6833	prose	-	-	But its controller runs on a 200 MHz clock, and the reactions on that clock can reach the gate drivers, so today every clock edge is a landing: one every 2.5 ns.
+claim	simulation~eb0ab9b1	eb0ab9b17c16b6d7	prose	-	-	After each landing the step grows back by at most 1.5 times per step, and the next edge arrives before it has grown far.
+claim	simulation~0f0316da	0f0316daf5a91f46	prose	-	-	The run settles at roughly three steps per clock edge, about 128 000 accepted steps per 100 µs with an average step under a nanosecond, and never comes near its own max_step of 10 ns.
+claim	simulation~5437d48e	5437d48e7e30d6d7	prose	-	-	A run that fails to converge at 1e-3 rarely converges at 1e-6.
+claim	simulation~10069752	10069752c180c584	holds	piperine/book_simulation::a_transient_out_of_attempts_says_where_it_was_and_how_small_its_step_had_become	-	The budget of attempts after which a transient gives up and says so.
+claim	simulation~b707c0fc	b707c0fc3a86e21e	holds	piperine/book_simulation::the_crossing_is_reported_where_the_node_passes_2_v_to_the_accuracy_of_the_waveform	-	0.32 ns early
+claim	simulation~fe78b35e	fe78b35ed40cda5a	holds	piperine/book_simulation::max_step_is_the_first_step_and_the_longest	-	0.22 ns late
+claim	simulation~e14946a7	e14946a7a2527082	holds	piperine/book_simulation::the_crossing_is_reported_where_the_node_passes_2_v_to_the_accuracy_of_the_waveform	-	0.005 ns early
+claim	simulation~5c44f21d	5c44f21dcf9af6ca	holds	piperine/book_errors::e0503_is_a_singular_solve_that_names_the_node_or_the_branches	-	E0503
+claim	simulation~5c44ec1d	5c44ec1dcf9aec98	holds	piperine/book_simulation::a_circuit_with_no_operating_point_stops_with_e0505_naming_its_unknowns	-	E0505
+claim	simulation~5c44ee1d	5c44ee1dcf9aeffe	holds	piperine/book_errors::e0507_is_a_non_finite_value_in_a_solve	-	E0507
+claim	simulation~5c44ed1d	5c44ed1dcf9aee4b	holds	piperine/book_errors::e0504_is_a_step_after_a_digital_change_that_does_not_converge	-	E0504
+claim	simulation~5c44e91d	5c44e91dcf9ae77f	holds	piperine/book_errors::e0508_is_a_transient_step_that_cannot_be_completed_at_the_smallest_step	-	E0508
+claim	simulation~b60b4693	b60b46939c93cf34	prose	-	-	The time it gives: something in an analog block jumps there.
+claim	simulation~5c44f01d	5c44f01dcf9af364	holds	piperine/book_errors::e0501_is_microsteps_that_never_go_quiet	-	E0501
+claim	simulation~5c44ef1d	5c44ef1dcf9af1b1	holds	piperine/book_solver::an_operating_point_that_never_settles_stops_after_20_rounds_with_e0506_naming_its_nets	-	E0506
+claim	simulation~d967a27c	d967a27c16dba34f	holds	piperine/book_simulation::a_transient_out_of_attempts_says_where_it_was_and_how_small_its_step_had_become	-	One more message has no code: a transient that uses up max_steps stops and prints where it was, how small its step had become and how many attempts were accepted and rejected.
+claim	simulation~885dd92c	885dd92cfc1d4455	holds	piperine/book_simulation::a_transient_starts_at_a_thousandth_of_its_stop_and_no_step_exceeds_a_hundredth	-	Find the 40 ns first step and the 400 ns steps in the time column.
+claim	simulation~eca3157d	eca3157d52247a87	holds	piperine/book_simulation::a_longer_stop_scales_both_bounds_and_the_error_control_sets_the_steps	-	What are the first step and the largest step now, and how many rows cover the first 40 µs, where the curve does all its bending? (400 ns and 4 µs: both scale with stop.
+claim	simulation~445b2b41	445b2b413d788619	holds	piperine/book_simulation::a_longer_stop_scales_both_bounds_and_the_error_control_sets_the_steps	-	The first 40 µs now have 41 rows instead of 112.
 claim	cheatsheet~a9561024	a956102475bf9f2b	holds	piperine/book_cheatsheet::a_name_of_yours_hides_the_library_but_not_the_core	-	Yours hides both, except a core name (E0457).
 claim	welcome~37aa8247	37aa824721bf86c4	holds	piperine/book_welcome::the_rc_project_holds_its_operating_point_and_its_netlist	-	At rest no current flows, so the output sits at the source's 1 V.
 claim	welcome~937d7801	937d7801efa02527	holds	piperine/book_welcome::the_rc_step_charges_as_the_book_says	-	The second run is a transient of 5 µs, printed every microsecond:

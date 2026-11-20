@@ -297,13 +297,13 @@ fn the_book_says_transient() {
 #[test]
 fn the_cli_chapter_sits_between_compiler_and_cheatsheet() {
     // CLI-19 AC 1: the chapter `cli`, titled `The command line`, after `compiler` and before
-    // `cheatsheet`; between it and the cheat sheet stands `structure` (the Book's order, settled
-    // mid-build: the command line 16, how Piperine is organized 17, the cheat sheet 18); the
-    // chapter numbers are consecutive from 1
+    // `cheatsheet`; between it and the cheat sheet stand `structure` and `simulation` (the Book's
+    // order: the command line 16, how Piperine is organized 17, inside a simulation 18, the cheat
+    // sheet 19); the chapter numbers are consecutive from 1
     let html = content();
     let ids = chapter_ids(&html);
-    let tail: Vec<&str> = ids.iter().rev().take(4).rev().map(String::as_str).collect();
-    assert_eq!(tail, ["compiler", "cli", "structure", "cheatsheet"], "{ids:?}");
+    let tail: Vec<&str> = ids.iter().rev().take(5).rev().map(String::as_str).collect();
+    assert_eq!(tail, ["compiler", "cli", "structure", "simulation", "cheatsheet"], "{ids:?}");
     assert!(chapter(&html, "cli").contains("<h2>The command line</h2>"), "the title");
     let numbers: Vec<usize> = html
         .split("<p class=\"ch-num\">Chapter ")
@@ -311,7 +311,7 @@ fn the_cli_chapter_sits_between_compiler_and_cheatsheet() {
         .map(|s| s.split_once('<').expect("the label closes").0.parse().expect("a chapter number"))
         .collect();
     assert_eq!(numbers, (1..=ids.len()).collect::<Vec<_>>(), "chapter numbers are consecutive from 1");
-    assert_eq!(ids.len(), 18, "{ids:?}");
+    assert_eq!(ids.len(), 19, "{ids:?}");
 }
 
 #[test]

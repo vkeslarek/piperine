@@ -131,6 +131,10 @@ name = "book_structure"
 path = "tests/book/structure.rs"
 
 [[test]]
+name = "book_simulation"
+path = "tests/book/simulation.rs"
+
+[[test]]
 name = "book_cli"
 path = "tests/book/cli.rs"
 

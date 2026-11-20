@@ -176,6 +176,29 @@ blockquote.pull code{font-size:.8em}
 figure.plot{margin:4px 0 22px;padding:10px;background:#fff;border:1px solid var(--line);border-radius:8px}
 figure.plot svg{display:block;width:100%;height:auto}
 
+/* ---- drawn figures: inline SVG that follows the theme (strokes and fills come from the tokens) ---- */
+figure.fig{margin:6px 0 24px;padding:14px 14px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);overflow-x:auto}
+figure.fig svg{display:block;width:100%;min-width:560px;height:auto;font-family:var(--f-ui)}
+figure.fig figcaption{font:13.5px/1.5 var(--f-ui);color:var(--muted);margin-top:10px;max-width:var(--measure)}
+.fig text{fill:var(--fg);font-size:13px}
+.fig text.mu{fill:var(--muted)}
+.fig text.sm{font-size:11.5px}
+.fig text.hd{font:600 13px var(--f-display)}
+.fig text.mono{font-family:var(--f-mono);font-size:12px}
+.fig text.t-ana{fill:var(--ana)}.fig text.t-dig{fill:var(--dig)}.fig text.t-acc{fill:var(--accent)}.fig text.t-er{fill:var(--er)}
+.fig .ln{stroke:var(--fg);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.fig .ax{stroke:var(--muted);fill:none;stroke-width:1}
+.fig .gr{stroke:var(--line);fill:none;stroke-width:1}
+.fig .da{stroke-dasharray:4 4}
+.fig .s-ana{stroke:var(--ana)}.fig .s-dig{stroke:var(--dig)}.fig .s-acc{stroke:var(--accent)}.fig .s-er{stroke:var(--er)}.fig .s-mu{stroke:var(--muted)}
+.fig .w2{stroke-width:2.2}
+.fig .f-ana{fill:var(--ana)}.fig .f-dig{fill:var(--dig)}.fig .f-acc{fill:var(--accent)}.fig .f-er{fill:var(--er)}.fig .f-fg{fill:var(--fg)}.fig .f-mu{fill:var(--muted)}.fig .f-bg{fill:var(--surface)}
+.fig .box{fill:var(--code-bg);stroke:var(--line);stroke-width:1}
+.fig .box-ana{fill:none;stroke:var(--ana);stroke-width:1.4}
+.fig .box-dig{fill:none;stroke:var(--dig);stroke-width:1.4}
+.fig .box-acc{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.2}
+.fig .box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.2}
+
 .colophon{max-width:760px;margin-top:72px;padding-top:18px;border-top:1px solid var(--line);font:13.5px/1.6 var(--f-ui);color:var(--muted)}
 </style>
 

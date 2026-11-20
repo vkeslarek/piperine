@@ -1,4 +1,4 @@
-//! Scope: chapter 18 of the Book, "Cheat sheet" (feature `root-e2e`, RE-02 and RE-03): the natures, the
+//! Scope: chapter 19 of the Book, "Cheat sheet" (feature `root-e2e`, RE-02 and RE-03): the natures, the
 //! analog block and the module with its params and signals as the sheet writes them (the first two run
 //! or are refused with the form they show), the body items, the digital block, the debug prints, the
 //! templates, the extern module and the file items (each refused today, asserted refused with its

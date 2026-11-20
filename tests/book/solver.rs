@@ -46,7 +46,7 @@ fn the_two_sides_of_the_solver_never_depend_on_each_other() {
 
 #[test]
 fn an_operating_point_that_never_settles_stops_after_20_rounds_with_e0506_naming_its_nets() {
-    // solver~53123473 "After 20 rounds that still change something the solver stops with E0506 and names
+    // simulation~5c44ef1d "E0506"; solver~53123473 "After 20 rounds that still change something the solver stops with E0506 and names
     // the nets that kept moving, rather than return a wrong answer.": a comparator that inverts the
     // level it reads never settles
     let source = format!("{}digital for Top {{ on above(v(n) - 0.5) {{ d <- false; }} on above(0.5 - v(n)) {{ d <- true; }} }}\n", Crossing::ANALOG);

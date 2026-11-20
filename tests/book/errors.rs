@@ -422,7 +422,7 @@ const CIRCUIT_PARTS: &str = "module R(p: Electrical, n: Electrical) { r: f64 = 1
 
 #[test]
 fn e0501_is_microsteps_that_never_go_quiet() {
-    // errors~5c44f01d: "E0501: The microsteps at one time never go quiet" (a feedback loop of commits
+    // errors~5c44f01d and simulation~5c44f01d: "E0501: The microsteps at one time never go quiet" (a feedback loop of commits
     // with no delay); the report names the instance and the instant
     let source = "module Top() { signal a: Bit = false; }\ndigital for Top { on at(1u) { a <- true; } on a.changed() { a <- !a; } }\n";
     let faulty = Faulty::running("errors~5c44f01d", source, Faulty::transient_of_top(3e-6, None));
@@ -432,7 +432,7 @@ fn e0501_is_microsteps_that_never_go_quiet() {
 
 #[test]
 fn e0503_is_a_singular_solve_that_names_the_node_or_the_branches() {
-    // errors~5c44f21d: "E0503: A solve is singular; the report names the node or branches" (a node
+    // errors~5c44f21d and simulation~5c44f21d: "E0503: A solve is singular; the report names the node or branches" (a node
     // with no DC path, or a loop of voltage sources)
     let floating = format!("{CIRCUIT_PARTS}module Isrc(p: Electrical, n: Electrical) {{ dc: f64 = 1m; }}\nanalog for Isrc {{ i(p, n) +> dc; }}\nmodule Top() {{ signal a: Electrical; let s = Isrc(a, gnd); }}\n");
     let node = Faulty::elaborating("errors~5c44f21d", &floating, "Top");
@@ -444,8 +444,11 @@ fn e0503_is_a_singular_solve_that_names_the_node_or_the_branches() {
 
 #[test]
 fn e0504_is_a_step_after_a_digital_change_that_does_not_converge() {
-    // errors~5c44ed1d: "E0504: The step after a digital change does not converge" (an ideal edge into
-    // a circuit with no solution after it): the report names the carrier whose delivery the step reads
+    // errors~5c44ed1d and simulation~5c44ed1d: "E0504: The step after a digital change does not converge" (an ideal edge into
+    // a circuit with no solution after it): the report names the carrier whose delivery the step reads;
+    // simulation~17c534dc "... a Newton failure there ends the run with E0508, or with E0504 when the step
+    // is the one right after a digital change, which then names the carrier that changed" (the E0508 half
+    // is the test of that code, below)
     let source = format!("{CIRCUIT_PARTS}module Chatter(p: Electrical, n: Electrical, in go: Bit) {{ }}\nanalog for Chatter {{ i(p, n) +> if go.high() {{ if v(p, n) > 0.5 {{ 1e-3 }} else {{ -1e-3 }} }} else {{ 0.0 }}; }}\nmodule Top() {{ signal n: Electrical; signal go: Bit = false; let r1 = R(n, gnd); let c = Chatter(n, gnd, go); }}\ndigital for Top {{ on at(5e-7) {{ go <- true; }} }}\n");
     let faulty = Faulty::running("errors~5c44ed1d", &source, Faulty::transient_of_top(2e-6, Some(1e-8)));
     let run = faulty.first("E0504");
@@ -463,7 +466,7 @@ fn e0505_is_an_operating_point_that_does_not_converge() {
 
 #[test]
 fn e0507_is_a_non_finite_value_in_a_solve() {
-    // errors~5c44ee1d: "E0507: A non-finite value in a solve" (a division by a quantity that reached
+    // errors~5c44ee1d and simulation~5c44ee1d: "E0507: A non-finite value in a solve" (a division by a quantity that reached
     // zero): the report names the instance
     let source = format!("{CIRCUIT_PARTS}module D(p: Electrical, n: Electrical) {{ }}\nanalog for D {{ i(p, n) +> 1.0 / v(p, n); }}\nmodule Top() {{ signal a: Electrical; let s = V(a, gnd) {{ dc: 0.0 }}; let d = D(a, gnd); }}\n");
     let faulty = Faulty::elaborating("errors~5c44ee1d", &source, "Top");
@@ -472,7 +475,7 @@ fn e0507_is_a_non_finite_value_in_a_solve() {
 
 #[test]
 fn e0508_is_a_transient_step_that_cannot_be_completed_at_the_smallest_step() {
-    // errors~5c44e91d: "E0508: A transient step cannot be completed at the smallest step" (a
+    // errors~5c44e91d and simulation~5c44e91d: "E0508: A transient step cannot be completed at the smallest step" (a
     // discontinuity in an `analog` expression): the report names the instant
     let source = format!("{CIRCUIT_PARTS}module Chatter(p: Electrical, n: Electrical) {{ from_time: f64 = 1e-6; }}\nanalog for Chatter {{ i(p, n) +> if now() > from_time {{ if v(p, n) > 0.5 {{ 1e-3 }} else {{ -1e-3 }} }} else {{ 0.0 }}; }}\nmodule Top() {{ signal n: Electrical; let r1 = R(n, gnd); let c = Chatter(n, gnd); }}\n");
     let faulty = Faulty::running("errors~5c44e91d", &source, Faulty::transient_of_top(2e-6, Some(1e-8)));
