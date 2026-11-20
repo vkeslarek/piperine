@@ -25,7 +25,7 @@ use super::body::ModulePlan;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use piperine_ir::Terminal;
-use crate::pom::{DeclId, DeclKind, Design, ExprId, ExprKind, Resolution, StmtId, StmtKind, UnOp};
+use crate::pom::{Arm, DeclId, DeclKind, Design, ExprId, ExprKind, PatId, PatKind, Resolution, StmtId, StmtKind, UnOp};
 use crate::types::Types;
 
 /// A body to lower: a module and the values of its key params, one text per key param in the
@@ -193,13 +193,18 @@ impl ContributionWalk<'_, '_, '_> {
                     self.conditions.pop();
                 }
             },
-            ExprKind::Match { scrutinee, arms } => {
-                self.conditions.push(scrutinee);
-                for arm in arms {
-                    self.expression(arm.body);
+            // A scrutinee over the key params folds like an `if` condition (§11 rule 3): only the
+            // arm it selects is written.
+            ExprKind::Match { scrutinee, arms } => match self.elaboration.folded_arm(&self.keys, scrutinee, &arms) {
+                Some(selected) => self.expression(arms[selected].body),
+                None => {
+                    self.conditions.push(scrutinee);
+                    for arm in arms {
+                        self.expression(arm.body);
+                    }
+                    self.conditions.pop();
                 }
-                self.conditions.pop();
-            }
+            },
             _ => {}
         });
     }
@@ -384,6 +389,94 @@ impl Elaboration<'_, '_> {
         }
         match self.consts.value(cond, keys) {
             Ok(Constant::Bool(holds)) => Some(holds),
+            _ => None,
+        }
+    }
+}
+
+impl Elaboration<'_, '_> {
+    /// The position of the arm a `match` on `scrutinee` selects when the scrutinee reads only the
+    /// key params `keys` binds and constants (§11 rule 3: a selector over params only is fixed at
+    /// elaboration, an `if` and a `match` alike). `None` when the scrutinee is not such a value,
+    /// an arm has a guard or a pattern that binds, or no arm matches: the `match` is then lowered
+    /// as written, a run-time selector.
+    pub(super) fn folded_arm(&mut self, keys: &Bindings, scrutinee: ExprId, arms: &[Arm]) -> Option<usize> {
+        if keys.is_empty() {
+            return None;
+        }
+        let reads = ParamReads::new(self.design, self.types).of(scrutinee)?;
+        if !reads.iter().all(|param| keys.get(*param).is_some()) {
+            return None;
+        }
+        let subject = self.consts.value(scrutinee, keys).ok()?;
+        for (position, arm) in arms.iter().enumerate() {
+            if arm.guard.is_some() {
+                return None;
+            }
+            if self.constant_pattern_holds(keys, arm.pat, subject)? {
+                return Some(position);
+            }
+        }
+        None
+    }
+
+    /// Whether the pattern `pat` accepts the constant `subject`; `None` for a pattern that binds
+    /// or destructures, which no fold can decide.
+    fn constant_pattern_holds(&mut self, keys: &Bindings, pat: PatId, subject: Constant) -> Option<bool> {
+        match self.design.pat_node(pat).kind.clone() {
+            PatKind::Wild => Some(true),
+            PatKind::Lit(expr) => Some(self.consts.value(expr, keys).ok()? == subject),
+            PatKind::Path(path) => {
+                let res = self.design.path_node(path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
+                Some(self.named_constant(res)? == subject)
+            }
+            PatKind::Ident { res, sub: None, .. } => Some(self.named_constant(res)? == subject),
+            PatKind::Or(alternatives) => {
+                let mut holds = false;
+                for alternative in alternatives {
+                    holds |= self.constant_pattern_holds(keys, alternative, subject)?;
+                }
+                Some(holds)
+            }
+            PatKind::Range { lo, hi, inclusive } => {
+                let above = match lo {
+                    Some(lo) => Self::at_least(subject, self.consts.value(lo, keys).ok()?)?,
+                    None => true,
+                };
+                let below = match hi {
+                    Some(hi) => Self::at_most(subject, self.consts.value(hi, keys).ok()?, inclusive)?,
+                    None => true,
+                };
+                Some(above && below)
+            }
+            _ => None,
+        }
+    }
+
+    /// The value of a `const` or a unit variant a pattern names (its tag); `None` for any other name.
+    fn named_constant(&mut self, res: Resolution) -> Option<Constant> {
+        let Resolution::Decl(decl) = res else { return None };
+        match self.design.decl_data(decl).kind {
+            DeclKind::Const(_) => self.consts.constant(decl).ok(),
+            DeclKind::Variant(_) => super::compound::EnumLayout::variant_tag(self.design, decl).map(Constant::Int),
+            _ => None,
+        }
+    }
+
+    /// `subject >= bound` for two integers or two reals.
+    fn at_least(subject: Constant, bound: Constant) -> Option<bool> {
+        match (subject, bound) {
+            (Constant::Int(a), Constant::Int(b)) => Some(a >= b),
+            (Constant::Real(a), Constant::Real(b)) => Some(a.get() >= b.get()),
+            _ => None,
+        }
+    }
+
+    /// `subject <= bound` (`<` when not `inclusive`) for two integers or two reals.
+    fn at_most(subject: Constant, bound: Constant, inclusive: bool) -> Option<bool> {
+        match (subject, bound) {
+            (Constant::Int(a), Constant::Int(b)) => Some(if inclusive { a <= b } else { a < b }),
+            (Constant::Real(a), Constant::Real(b)) => Some(if inclusive { a.get() <= b.get() } else { a.get() < b.get() }),
             _ => None,
         }
     }

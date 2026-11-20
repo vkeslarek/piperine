@@ -357,6 +357,8 @@ impl Elaboration<'_, '_> {
                 let flagged = self.flag(operand).wrap(ty.clone());
                 Some(self.emit(Expr::Cast { expr: operand, to: ty }, flagged, origin))
             }
+            // A scrutinee over the key params folds: only the arm it selects is lowered (`structural.rs`).
+            ExprKind::Match { scrutinee, arms } if let Some(selected) = self.folded_arm(&scope.keys.clone(), *scrutinee, arms) => self.lower_expr(scope, arms[selected].body),
             ExprKind::Match { scrutinee, arms } => self.lower_match(scope, *scrutinee, arms, ty, origin),
             ExprKind::Closure { params, body, .. } => {
                 let mut locals = Vec::new();

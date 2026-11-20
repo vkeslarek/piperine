@@ -161,6 +161,34 @@ fn params_only_selectors_fix_the_kind_and_mark_the_params_structural() {
 }
 
 #[test]
+fn a_match_on_a_param_picks_its_arm_and_makes_the_param_structural() {
+    // AS-02 AC 3 (§11 rule 3: the selector is the conjunction of the conditions of the `if` AND
+    // `match` arms): a `match` on a param fixes the kind like an `if`, the param is structural and
+    // only the selected arm is lowered. `true` selects the potential arm, `false` the flow arm.
+    let mode = "module Sw(a: Electrical, b: Electrical) { mode: bool = true; }\nanalog for Sw { match mode { true => { v(a, b) +> 1.0; } _ => { i(a, b) +> 0.0; } } }\n";
+    for (value, kind) in [(true, BranchKind::Potential), (false, BranchKind::Flow)] {
+        let src = format!("{mode}module Top() {{ signal s: Electrical; let m = Sw {{ mode: {value} }}(s, gnd); }}");
+        let ir = Elab::ir(&src, "Top");
+        let variant = ir.bodies().find(|b| b.name().starts_with("Sw~mode=")).expect("a body of the variant");
+        assert_eq!(variant.branches().iter().map(|b| b.kind).collect::<Vec<_>>(), [kind], "mode = {value}");
+        assert!(variant.params()[0].structural, "`mode` is structural");
+        assert_eq!(variant.contributions().len(), 1, "only the selected arm is lowered");
+        assert!(variant.contributions()[0].conditions.is_empty(), "the folded match is no condition");
+    }
+}
+
+#[test]
+fn a_match_on_a_probe_stays_a_run_time_selector() {
+    // §11 rule 3 / rule 5: a `match` on a probe chooses between the flow contributions of a branch
+    // with no potential contribution at run time; nothing folds and both arms are lowered under
+    // their conditions.
+    let ir = Device::ir("match v(p) > 0.5 { true => { i(p, n) +> 1.0; } _ => { i(p, n) +> 2.0; } }");
+    let body = ir.bodies().find(|b| b.name() == "M").expect("M");
+    assert_eq!(body.contributions().len(), 2, "both arms are lowered");
+    assert!(body.contributions().iter().all(|c| !c.conditions.is_empty()), "each arm sits under its condition");
+}
+
+#[test]
 fn two_instances_with_different_key_values_get_two_bodies() {
     // One body per distinct value of the key params: two values, two bodies, in request order after
     // every unkeyed body; the same value twice shares one body.
