@@ -313,8 +313,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `a_flow_output_reads_amperes_per_root_hertz` and `a_differential_output_reads_the_pair` pass
-- [ ] Gate check passes: `Run report`, `Run abinoise`, then `cargo test -p piperine-solver`
+- [x] `a_flow_output_reads_amperes_per_root_hertz` and `a_differential_output_reads_the_pair` pass
+- [x] Gate check passes: `Run report`, `Run abinoise`, then `cargo test -p piperine-solver`
 
 **Tests**: integration
 **Gate**: full

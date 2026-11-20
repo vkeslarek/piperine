@@ -22,7 +22,7 @@ use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ShapeBuf, ShapeRef, 
 use piperine_abi::thunk::module;
 use piperine_solver::abi::{ParamValue, Port};
 use piperine_solver::prelude::{
-    AcSweepAnalysisOptions, CircuitBuilder, Context, NodeIdentifier, NoiseAnalysisOptions, NoiseAnalysisResult, Tolerances,
+    AcSweepAnalysisOptions, BranchIdentifier, CircuitBuilder, Context, FlowOutput, NodeIdentifier, NoiseAnalysisOptions, NoiseAnalysisResult, Tolerances,
 };
 
 /// The options of a sweep from `start` to `stop` Hz over `steps` log-spaced points, output `out`.
@@ -32,6 +32,7 @@ fn options(out: NodeIdentifier, start: f64, stop: f64, steps: usize) -> NoiseAna
         output_node: out,
         reference_node: NodeIdentifier::Gnd,
         input_source_name: None,
+        output_flow: None,
     }
 }
 
@@ -237,4 +238,95 @@ fn an_input_with_no_stimulus_is_refused_by_name() {
     assert!(err.contains("r1") && err.contains("stimulus"), "{err}");
     let err = rc_with_current_input(Some("nope"), 3).err().expect("no such instance");
     assert!(err.contains("nope"), "{err}");
+}
+
+// ─── Flow and differential outputs ──────────────────────────────────────────
+
+/// A noisy 1 kΩ resistor `r1` from `top` to ground with a 0 V source `v1` across it, so the
+/// resistor's whole noise current goes through the source. Runs from 1 kHz to 100 kHz over 5
+/// points with the flow output `flow`.
+fn shorted_resistor_run(flow: FlowOutput) -> NoiseAnalysisResult {
+    let mut b = CircuitBuilder::new("short");
+    let gnd = b.ground();
+    let top = b.node("top");
+    add_vsrc(&mut b, "v1", 0.0, &top, &gnd);
+    b.device(resistor_noisy(), "r1", &[("r", ParamValue::Real(1.0e3))], &[Port::Node(top.clone()), Port::Node(gnd.clone())]);
+    let mut circuit = b.build().expect("build");
+    let mut noise_options = options(node_id(&top), 1.0e3, 1.0e5, 5);
+    noise_options.output_flow = Some(flow);
+    circuit.noise(noise_options, Context::default()).expect("noise").solve().expect("solve")
+}
+
+#[test]
+fn a_flow_output_reads_amperes_per_root_hertz() {
+    // The 0 V source holds v(top) = 0, so the resistor's noise current 4kT/R A²/Hz flows whole
+    // through the source (branch `f` of `v1`) and through the resistor's own term `i`
+    // (value = v/r + noise, v = 0): both read √(4kT/R) A/√Hz at every frequency.
+    let expected = (4.0 * K_B * Tolerances::default().temperature / 1.0e3).sqrt();
+    for flow in [FlowOutput::Branch(BranchIdentifier::new("v1", "f")), FlowOutput::Term { instance: "r1".into(), term: "i".into() }] {
+        let result = shorted_resistor_run(flow.clone());
+        for (i, density) in result.out_noise_sq.iter().enumerate() {
+            let amperes = density.sqrt();
+            assert!((amperes - expected).abs() <= 1.0e-9 * expected, "{flow:?} point {i}: {amperes:e} against {expected:e}");
+        }
+    }
+}
+
+/// The three-resistor loop ground–R1–a–R2–b–R3–ground (1 kΩ, 2 kΩ, 3 kΩ), noisy, from 1 kHz to
+/// 100 kHz over `steps` points, with `configure` applied to its options.
+fn resistor_loop_run(steps: usize, configure: impl FnOnce(&mut NoiseAnalysisOptions, &[NodeIdentifier; 2])) -> NoiseAnalysisResult {
+    let mut b = CircuitBuilder::new("loop");
+    let gnd = b.ground();
+    let (a, node_b) = (b.node("a"), b.node("b"));
+    for (path, r, p, n) in [("r1", 1.0e3, &gnd, &a), ("r2", 2.0e3, &a, &node_b), ("r3", 3.0e3, &node_b, &gnd)] {
+        b.device(resistor_noisy(), path, &[("r", ParamValue::Real(r))], &[Port::Node(p.clone()), Port::Node(n.clone())]);
+    }
+    let mut circuit = b.build().expect("build");
+    let nodes = [node_id(&a), node_id(&node_b)];
+    let mut noise_options = options(nodes[0].clone(), 1.0e3, 1.0e5, steps);
+    configure(&mut noise_options, &nodes);
+    circuit.noise(noise_options, Context::default()).expect("noise").solve().expect("solve")
+}
+
+#[test]
+fn a_term_output_adds_its_direct_noise_to_the_circuit_path() {
+    // The current of R2's term `i` in the loop below is `G2·(v(a) − v(b)) + n2`. With G = 1/R and
+    // det = G1·G2 + G1·G3 + G2·G3, the transfers of the three noise currents (each entering the
+    // loop at the term's far node, R2's own with its direct partial 1 added) are
+    //   R1: G2·G3/det,  R2: 1 − G2·(G1 + G3)/det = G1·G3/det,  R3: G1·G2/det.
+    // A wrong relative sign of the direct partial would give R2: (det + G2·(G1 + G3))/det.
+    let g = [1.0e-3, 0.5e-3, 1.0 / 3.0e3];
+    let det = g[0] * g[1] + g[0] * g[2] + g[1] * g[2];
+    let transfers = [g[1] * g[2] / det, g[0] * g[2] / det, g[0] * g[1] / det];
+    let expected: f64 =
+        (0..3).map(|k| 4.0 * K_B * Tolerances::default().temperature * g[k] * transfers[k] * transfers[k]).sum();
+    let result = resistor_loop_run(3, |o, _| o.output_flow = Some(FlowOutput::Term { instance: "r2".into(), term: "i".into() }));
+    for (i, got) in result.out_noise_sq.iter().enumerate() {
+        assert!((got - expected).abs() <= 1.0e-9 * expected, "point {i}: {got:e} against {expected:e}");
+    }
+}
+
+#[test]
+fn a_differential_output_reads_the_pair() {
+    // A loop ground–R1–a–R2–b–R3–ground (1 kΩ, 2 kΩ, 3 kΩ), output v(a) − v(b). With G = 1/R and
+    // Y = [[G1+G2, −G2], [−G2, G2+G3]] over (a, b), det = (G1+G2)(G2+G3) − G2², each resistor's
+    // noise current (density 4kT·G) enters the loop as e1 = (1, 0), e2 = (1, −1), e3 = (0, 1)
+    // and Y⁻¹ = [[G2+G3, G2], [G2, G1+G2]]/det gives the transfers to v(a) − v(b):
+    //   R1: G3/det,  R2: (G1+G3)/det,  R3: −G1/det.
+    // The single-ended v(a) has the transfers (G2+G3)/det, G3/det and G2/det instead.
+    let resistances = [1.0e3, 2.0e3, 3.0e3];
+    let g: Vec<f64> = resistances.iter().map(|r| 1.0 / r).collect();
+    let det = (g[0] + g[1]) * (g[1] + g[2]) - g[1] * g[1];
+    let thermal = 4.0 * K_B * Tolerances::default().temperature;
+    let density = |transfers: [f64; 3]| (0..3).map(|k| thermal * g[k] * (transfers[k] / det).powi(2)).sum::<f64>();
+    let differential = density([g[2], g[0] + g[2], -g[0]]);
+    let single_ended = density([g[1] + g[2], g[2], g[1]]);
+    assert!((differential - single_ended).abs() > 0.05 * single_ended, "the two outputs must differ");
+
+    let result = resistor_loop_run(3, |o, nodes| o.reference_node = nodes[1].clone());
+    for (i, got) in result.out_noise_sq.iter().enumerate() {
+        assert!((got - differential).abs() <= 1.0e-9 * differential, "point {i}: {got:e} against {differential:e}");
+    }
+    let alone = resistor_loop_run(3, |_, _| {});
+    assert!((alone.out_noise_sq[0] - single_ended).abs() <= 1.0e-9 * single_ended, "{:e} against {single_ended:e}", alone.out_noise_sq[0]);
 }

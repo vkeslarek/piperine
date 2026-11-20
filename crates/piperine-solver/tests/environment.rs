@@ -315,6 +315,7 @@ fn a_noise_operating_point_carries_the_noise_flag() {
         output_node: mid,
         reference_node: piperine_solver::prelude::NodeIdentifier::Gnd,
         input_source_name: None,
+        output_flow: None,
     };
     circuit.noise(options, Context::default()).expect("noise");
     assert_eq!(FLAGS.with(|f| f.borrow().clone()), vec![[false, false, false, true]]);

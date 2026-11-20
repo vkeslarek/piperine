@@ -9,7 +9,7 @@
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
 use piperine_analog_solver::device::Ambient;
 use piperine_analog_solver::math::integration::Integrator;
-use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, NodeIdentifier};
+use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
 use crate::analyses::Context;
 use crate::analyses::ac::AcSweepAnalysisOptions;
 use crate::analyses::dc::DcSolver;
@@ -53,6 +53,46 @@ pub struct NoiseAnalysisOptions {
     /// carries the input-referred noise (`inoise`). An instance with no `STIM` input is refused
     /// when the solver is built.
     pub input_source_name: Option<String>,
+    /// A flow output: when present it replaces the `output_node`/`reference_node` pair, and
+    /// `onoise` reads in A/√Hz.
+    pub output_flow: Option<FlowOutput>,
+}
+
+/// A flow (current) output of the noise analysis.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FlowOutput {
+    /// The current of a branch unknown (a potential contribution's private flow pin): the
+    /// adjoint's unit sits at that unknown.
+    Branch(BranchIdentifier),
+    /// The value of one term of an instance, for a flow contribution with no potential branch:
+    /// the term's linearization is the adjoint's right side, and its direct partials against
+    /// the noise inputs add to each source's transfer.
+    Term {
+        /// The path of the instance.
+        instance: String,
+        /// The name of the term.
+        term: String,
+    },
+}
+
+/// The output of a noise run, resolved against the circuit.
+enum OutputTarget {
+    /// `v(out) − v(reference)`: a unit at `out`, its negative at `reference`.
+    Potential { out: AnalogReference, reference: AnalogReference },
+    /// The current of a branch unknown.
+    Branch(AnalogReference),
+    /// A term's value.
+    Term { instance: String, term: String },
+}
+
+/// The output as a linear functional of the small-signal solution at one frequency: it reads
+/// `Σ_j u_j·x_j + Σ_k h_k·n_k` over the unknowns `x` and the noise inputs `n` of its instance.
+struct OutputFunctional {
+    /// The coefficient of each unknown: the adjoint system's right side.
+    unknowns: Vec<(AnalogReference, Complex<f64>)>,
+    /// The instance whose noise inputs the output reads directly, and the coefficient of each
+    /// input by position (empty unless the output is a term).
+    direct: Option<(String, Vec<(usize, Complex<f64>)>)>,
 }
 
 
@@ -98,8 +138,7 @@ pub struct NoiseSolver<'a> {
     pub dc_point: DcAnalysisResult,
     pub symbolic_matrix: FaerSymbolicMatrix,
     pub options: NoiseAnalysisOptions,
-    pub out_ref: AnalogReference,
-    pub ref_ref: AnalogReference,
+    output: OutputTarget,
 }
 
 impl<'a> NoiseSolver<'a> {
@@ -128,7 +167,7 @@ impl<'a> NoiseSolver<'a> {
 
         let dc_point = DcSolver::under(circuit, context.clone(), piperine_abi::raw::global::NOISE)?.solve()?;
 
-        let (out_ref, ref_ref) = Self::resolve_nodes(circuit, &options)?;
+        let output = Self::resolve_output(circuit, &dc_point, &options, &context)?;
         if let Some(path) = &options.input_source_name {
             Self::require_stimulus(circuit, &dc_point, path, &options, &context)?;
         }
@@ -143,8 +182,7 @@ impl<'a> NoiseSolver<'a> {
             dc_point,
             symbolic_matrix,
             options,
-            out_ref,
-            ref_ref,
+            output,
         })
     }
 
@@ -174,11 +212,12 @@ impl<'a> NoiseSolver<'a> {
 
         for (i, &f) in frequencies.iter().enumerate() {
             let stamps = Self::assemble_linearized(self.circuit, &self.dc_point, f, &self.context)?;
-            let adjoint_sol = self.solve_adjoint_system(stamps)?;
+            let functional = self.output_functional(f)?;
+            let adjoint_sol = self.solve_adjoint_system(stamps, &functional)?;
 
             // Output density `Σ |H·b|²·PSD` over the assembly's noise columns.
             let mut step_density = 0.0;
-            let columns = self.device_columns(f, &adjoint_sol)?;
+            let columns = self.device_columns(f, &adjoint_sol, &functional)?;
             for (element, source, kind, val) in columns {
                 step_density += val;
                 Self::record(&mut psd_map, (element, source), kind, val, i, frequencies.len());
@@ -254,11 +293,15 @@ impl<'a> NoiseSolver<'a> {
     }
 
     /// The noise columns of a circuit of devices at `f_hz`, each with its
-    /// contribution `|H·b|²·PSD` to the output: `(instance, input, kind, value)`.
+    /// contribution `|T|²·PSD` to the output: `(instance, input, kind, value)`, where the
+    /// transfer is `T = h − z·b` for the adjoint solution `z` and the injection `b` of the
+    /// column (a noise injection enters the system as `A·x = −b·n`, design D10), and `h` is the
+    /// output's direct coefficient on that input (nonzero only for a term output).
     fn device_columns(
         &mut self,
         f_hz: f64,
         adjoint: &Array1<Complex<f64>>,
+        functional: &OutputFunctional,
     ) -> crate::core::result::Result<Vec<(String, String, NoiseKind, f64)>> {
         let op = crate::analyses::ac::operating_vector(self.circuit, &self.dc_point);
         let amb = Ambient {
@@ -271,9 +314,16 @@ impl<'a> NoiseSolver<'a> {
         let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
         let mut out = Vec::new();
         for column in bound.analog.noise_sources(&op, amb)? {
-            let h_b = column.rows.iter().fold(Complex::new(0.0, 0.0), |sum, (r, b)| {
+            let through_circuit = column.rows.iter().fold(Complex::new(0.0, 0.0), |sum, (r, b)| {
                 sum + r.idx().map_or(Complex::new(0.0, 0.0), |i| adjoint[i]) * *b
             });
+            let direct = functional
+                .direct
+                .as_ref()
+                .filter(|(instance, _)| *instance == column.instance)
+                .and_then(|(_, inputs)| inputs.iter().find(|(input, _)| *input == column.input))
+                .map_or(Complex::new(0.0, 0.0), |(_, h)| *h);
+            let transfer = direct - through_circuit;
             let (element, source) = column.name.rsplit_once('.').unwrap_or(("", column.name.as_str()));
             let kind = match source {
                 s if s.contains("thermal") => NoiseKind::Thermal,
@@ -281,7 +331,7 @@ impl<'a> NoiseSolver<'a> {
                 s if s.contains("flicker") => NoiseKind::Flicker,
                 _ => NoiseKind::Other,
             };
-            out.push((element.to_string(), source.to_string(), kind, h_b.norm_sqr() * column.psd));
+            out.push((element.to_string(), source.to_string(), kind, transfer.norm_sqr() * column.psd));
         }
         Ok(out)
     }
@@ -348,7 +398,8 @@ impl<'a> NoiseSolver<'a> {
     ///
     /// # Algorithm
     /// 1. Build transposed system: swap row/col indices of all stamps
-    /// 2. Apply unit current at output: I_out = +1, I_ref = -1
+    /// 2. Apply the output functional as the right side: I_out = +1, I_ref = -1 for a node
+    ///    pair, a unit at a branch's flow unknown, the term's partials for a term output
     /// 3. Solve: [Y^T] × Z = I_unit
     /// 4. Result Z contains transfer impedances to output
     ///
@@ -360,6 +411,7 @@ impl<'a> NoiseSolver<'a> {
     fn solve_adjoint_system(
         &self,
         stamps: Vec<Stamp<AnalogReference, Complex<f64>>>,
+        functional: &OutputFunctional,
     ) -> crate::core::result::Result<Array1<Complex<f64>>> {
         let mut system = FaerSparseLinearSystem::new(self.symbolic_matrix.size());
 
@@ -369,10 +421,7 @@ impl<'a> NoiseSolver<'a> {
             }
         }
 
-        system.apply_stamps(vec![
-            Stamp::Rhs(self.out_ref.clone(), Complex::new(1.0, 0.0)),
-            Stamp::Rhs(self.ref_ref.clone(), Complex::new(-1.0, 0.0)),
-        ]);
+        system.apply_stamps(functional.unknowns.iter().map(|(r, u)| Stamp::Rhs(r.clone(), *u)).collect());
 
         system.solve_with_backend(&self.symbolic_matrix)
     }
@@ -406,6 +455,57 @@ impl<'a> NoiseSolver<'a> {
         };
         let bound = circuit.abi.as_mut().expect("a circuit of devices");
         Ok(bound.analog.assemble_ac(&op, amb)?.0)
+    }
+
+    /// Resolves the options' output against the circuit: a flow output when `output_flow` is
+    /// given (a branch must be in the netlist, a term must be in its instance: both are refused
+    /// by name), else the `output_node`/`reference_node` pair.
+    fn resolve_output(
+        circuit: &mut CircuitInstance,
+        dc_point: &DcAnalysisResult,
+        options: &NoiseAnalysisOptions,
+        context: &Context,
+    ) -> crate::core::result::Result<OutputTarget> {
+        let refuse = |detail: String| {
+            piperine_analog_solver::error::Error::simple(piperine_analog_solver::error::SolverDomain::Noise, detail)
+        };
+        match &options.output_flow {
+            None => {
+                let (out, reference) = Self::resolve_nodes(circuit, options)?;
+                Ok(OutputTarget::Potential { out, reference })
+            }
+            Some(FlowOutput::Branch(branch)) => circuit
+                .netlist()
+                .reference_for(&AnalogVariable::Branch(branch.clone()))
+                .map(|reference| OutputTarget::Branch(reference.clone()))
+                .ok_or_else(|| refuse(format!("output branch `{branch:?}` not found"))),
+            Some(FlowOutput::Term { instance, term }) => {
+                let (op, amb) = Self::small_signal_point(circuit, dc_point, options.sweep_options.start_frequency, context);
+                let bound = circuit.abi.as_mut().expect("a circuit of devices");
+                bound.analog.term_linearization(&op, amb, instance, term)?;
+                Ok(OutputTarget::Term { instance: instance.clone(), term: term.clone() })
+            }
+        }
+    }
+
+    /// The output as a functional of the solution at `f_hz`.
+    fn output_functional(&mut self, f_hz: f64) -> crate::core::result::Result<OutputFunctional> {
+        match &self.output {
+            OutputTarget::Potential { out, reference } => Ok(OutputFunctional {
+                unknowns: vec![(out.clone(), Complex::new(1.0, 0.0)), (reference.clone(), Complex::new(-1.0, 0.0))],
+                direct: None,
+            }),
+            OutputTarget::Branch(branch) => {
+                Ok(OutputFunctional { unknowns: vec![(branch.clone(), Complex::new(1.0, 0.0))], direct: None })
+            }
+            OutputTarget::Term { instance, term } => {
+                let (instance, term) = (instance.clone(), term.clone());
+                let (op, amb) = Self::small_signal_point(self.circuit, &self.dc_point, f_hz, &self.context);
+                let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+                let linearization = bound.analog.term_linearization(&op, amb, &instance, &term)?;
+                Ok(OutputFunctional { unknowns: linearization.unknowns, direct: Some((instance, linearization.noise)) })
+            }
+        }
     }
 
     /// Resolves output and reference node identifiers to circuit references.
