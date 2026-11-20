@@ -26,11 +26,12 @@ impl<'d> Elaborator<'d> {
         Elaborator { design }
     }
 
-    /// Elaborate `top`, a module of the root crate whose ports, if any, are discrete.
+    /// Elaborate `top`, a module of the root crate.
     ///
     /// The front-end and type-check diagnostics come back unchanged; an unknown top is one
-    /// diagnostic naming it, and so is a top with a continuous port (a node of a top has nothing
-    /// to connect to). A discrete port of the top is a net the host drives (§5.2.3).
+    /// diagnostic naming it, and so is a top with a value input (`E0811`). A discrete port of the
+    /// top is a net the host drives (§5.2.3), and a node port is driven by the host source the IR
+    /// gains for it (§8.1.14, `host_sources.rs`).
     pub fn run(self, top: &str) -> Result<Ir, Vec<DesignDiagnostic>> {
         self.run_with(top, &Overrides::none())
     }
@@ -121,7 +122,7 @@ impl<'d, 't> Elaboration<'d, 't> {
     }
 
     fn run(mut self, top: DeclId) -> Result<Ir, Vec<DesignDiagnostic>> {
-        if self.top_has_a_port(top) {
+        if self.refuse_value_inputs(top) {
             return Err(self.diagnostics);
         }
         // A module with a result or a value input gets no body: it is hoisted into each body that
@@ -171,20 +172,6 @@ impl<'d, 't> Elaboration<'d, 't> {
                 diagnostic: Diagnostic::new("P0004", format!("internal error: elaboration produced an ill-formed IR: {} ({} at {})", b.what, b.item, b.origin), span, "this is a bug in the elaborator, not in the model"),
             })
             .collect())
-    }
-
-    /// `P0001` and `true` when the top has a continuous port: a node or a value input. A discrete
-    /// port is a net of the top (DIG-09 AC 5).
-    fn top_has_a_port(&mut self, top: DeclId) -> bool {
-        let data = self.design.decl_data(top);
-        let continuous = data.children.iter().find(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Port(_)) && self.types.carrier(**c).is_none());
-        if let Some(port) = continuous {
-            let name = data.name.as_ref().map_or("", |n| n.text.as_str());
-            let port = self.design.decl_data(*port).name.as_ref().map_or("", |n| n.text.as_str());
-            let (file, span) = (data.file, data.name.as_ref().map_or(data.span, |n| n.span));
-            self.report(file, Diagnostic::new("P0001", format!("top module `{name}` has the continuous port `{port}`, which is not supported yet"), span, "a top module's ports are discrete carriers"));
-        }
-        continuous.is_some()
     }
 
     pub(super) fn report(&mut self, file: FileId, diagnostic: Diagnostic) {

@@ -1,5 +1,5 @@
 //! Scope: the entry point of `piperine_lang::elab` (ELAB-01): `Elaborator::run` returns the
-//! front-end and type-check diagnostics unchanged and no `Ir`, refuses an unknown or ported top
+//! front-end and type-check diagnostics unchanged and no `Ir`, refuses an unknown top
 //! with one diagnostic naming it, and returns a checked `Ir` for a clean top. The M1 corpus (the
 //! six twins of `tests/e2e/twins/`) elaborates with no diagnostic to the IR pinned in
 //! `tests/fixtures/elab/*.txt`; elaboration is deterministic, leaves the design unchanged, and
@@ -49,21 +49,11 @@ fn front_end_diagnostics_are_returned_without_an_ir() {
 }
 
 #[test]
-fn an_unknown_or_ported_top_is_one_diagnostic() {
+fn an_unknown_top_is_one_diagnostic() {
     let design = Elab::design("module Top() { }");
     let err = Elaborator::new(&design).run("Missing").expect_err("no such module");
     assert_eq!(err.len(), 1);
     assert!(err[0].diagnostic.message.contains("Missing"), "{}", err[0].diagnostic.message);
-
-    let src = "module Top(a: Electrical) { }";
-    let design = Elab::design(src);
-    assert!(design.diagnostics().is_empty(), "{:?}", Elab::codes(design.diagnostics()));
-    let err = Elaborator::new(&design).run("Top").expect_err("a top with a port");
-    assert_eq!(err.len(), 1);
-    assert_eq!(err[0].diagnostic.code, "P0001");
-    assert!(err[0].diagnostic.message.contains("Top"), "{}", err[0].diagnostic.message);
-    let span = err[0].diagnostic.span();
-    assert_eq!(&src[span.start..span.end], "Top", "the diagnostic sits on the module's name");
 }
 
 #[test]
@@ -187,4 +177,65 @@ fn every_diagnostic_has_code_span_and_path() {
             assert!(d.diagnostic.message.contains(path), "{code}: `{}` names no `{path}`", d.diagnostic.message);
         }
     }
+}
+
+/// An RC whose input is the top's node port (PI-07), over the twins' devices.
+struct RcTop;
+
+impl RcTop {
+    const SOURCE: &'static str = "mod devices;\nuse devices::*;\nmodule Top(vin: Electrical) {\n    signal r#out: Electrical;\n    let r1 = Resistor { r: 1000.0 }(vin, r#out);\n    let c1 = Capacitor { c: 1e-9 }(r#out, gnd);\n}\n";
+
+    fn design() -> Design {
+        let devices = Disk::read(&["..", "..", "tests", "e2e", "twins", "devices.msl"]);
+        let design = Design::builder().source("top.msl", Self::SOURCE).source("devices.msl", devices).build();
+        assert!(design.diagnostics().is_empty(), "{:?}", Elab::codes(design.diagnostics()));
+        design
+    }
+}
+
+#[test]
+fn a_top_node_port_gets_one_host_source_instance() {
+    // PI-07 AC 1-4, design D8: one instance of the IR body `HostSource` per node port, at
+    // `<top>.<port>.source`, its node the port's node `Top.vin`; the body is a potential source to
+    // `gnd` with the params of one segment and an `ac_stim` site
+    let design = RcTop::design();
+    let ir = Elaborator::new(&design).run("Top").unwrap_or_else(|d| panic!("{d:?}"));
+    assert!(ir.check().is_empty(), "{:?}", ir.check());
+    let sources: Vec<_> = ir.instances().filter(|i| i.body().name() == "HostSource").collect();
+    assert_eq!(sources.len(), 1, "one source per node port");
+    let source = &sources[0];
+    assert_eq!(source.path(), "Top.vin.source");
+    assert_eq!(source.parent().map(|p| p.path()), Some("Top"));
+    assert_eq!(source.node(0).map(|n| n.path()), Some("Top.vin"));
+    let names: Vec<&str> = source.body().params().iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names, ["mag", "phase", "t0", "v0", "t1", "v1"]);
+    assert_eq!(source.body().stims().len(), 1, "the AC stimulus is one site");
+    assert_eq!(source.body().contributions().len(), 1, "the potential across the port and gnd");
+    assert_eq!(ir.top().node(0).map(|n| n.path()), Some("Top.vin"), "the top's port is a node of the design");
+    // a top with no node port gets none
+    let plain = Elab::ir("module Top() { }", "Top");
+    assert!(plain.instances().all(|i| i.body().name() != "HostSource"));
+}
+
+#[test]
+fn a_top_value_input_is_e0811() {
+    // PI-07 AC 6, §23.1 rule 1: a value input has no host source; E0811 names it, at its name
+    let src = "module Top(x: f64) { }";
+    let err = Elab::run(src, "Top").expect_err("a value input on the top");
+    assert_eq!(Elab::codes(&err), ["E0811"]);
+    assert!(err[0].diagnostic.message.contains("`x`"), "{}", err[0].diagnostic.message);
+    let span = err[0].diagnostic.span();
+    assert_eq!(&src[span.start..span.end], "x");
+}
+
+#[test]
+fn the_pom_keeps_a_top_with_node_ports_as_written() {
+    // MD-25, PI-07: the source instance is IR only; the POM is the declarations as written
+    let design = RcTop::design();
+    let before = design.dump();
+    let ir = Elaborator::new(&design).run("Top").expect("elaborates");
+    assert!(ir.instances().any(|i| i.path() == "Top.vin.source"));
+    assert_eq!(design.dump(), before, "elaboration leaves the POM as it was");
+    assert!(before.contains(" vin "), "the authored port is there");
+    assert!(!before.contains("HostSource") && !before.contains(" source "), "no source in the POM:\n{before}");
 }

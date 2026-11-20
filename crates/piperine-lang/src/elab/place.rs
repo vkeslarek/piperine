@@ -2,7 +2,8 @@
 //! of a module, bound to the parent's nodes and nets and to param values; the tree is walked in
 //! pre-order, children in source order. Every signal of every instance is one node of the design,
 //! named by path; a port is not a node, it is bound to the parent's node or to ground (§21 rules 1
-//! and 3). The discrete twin: every signal carrier of every instance is one net, named by path,
+//! and 3), except a node port of the top, which is a node of the design for the host to drive
+//! (§8.1.14, `host_sources.rs`). The discrete twin: every signal carrier of every instance is one net, named by path,
 //! a carrier port is bound to the parent's net, and a discrete port of the top is a net of the
 //! top (DIG-09 AC 4 and 5).
 
@@ -11,6 +12,7 @@ use piperine_ir::{CarrierRole, Constant, InstanceId, Reach, ReachedItem, Instanc
 use super::body::{ModulePlan, ParamPlan};
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
+use super::host_sources::{HostPort, HostSources};
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, ExprId, FileId};
 use piperine_ir::NodeRole;
@@ -39,6 +41,8 @@ struct Placed {
     instance: InstanceId,
     nodes: Vec<NodeRef>,
     nets: Vec<NetId>,
+    /// The node the top's placement made for each of its node ports (§8.1.14); empty below the top.
+    host_ports: Vec<HostPort>,
 }
 
 /// The instance whose children are being placed: what they bind to.
@@ -58,7 +62,10 @@ impl Elaboration<'_, '_> {
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let span = data.name.as_ref().map_or(data.span, |n| n.span);
         let placing = Placing { module: top, path: name.clone(), name, parent: None, ports: Vec::new(), carrier_ports: Vec::new(), given: Vec::new(), file: data.file, span, origin: self.locator.decl(top) };
-        self.place(placing, &mut Vec::new()).map(|placed| placed.instance)
+        let path = placing.path.clone();
+        let placed = self.place(placing, &mut Vec::new())?;
+        HostSources::new(&mut self.ir).place(placed.instance, &path, &placed.host_ports);
+        Some(placed.instance)
     }
 
     /// Place `placing`, then its children. `stack` holds the modules being placed above it.
@@ -76,9 +83,20 @@ impl Elaboration<'_, '_> {
         let declared_by = self.ir.next_instance_id();
         let mut ports = placing.ports.iter().copied();
         let mut nodes = Vec::new();
+        let mut host_ports = Vec::new();
         for node in &plan.nodes {
             match node.role {
-                NodeRole::Port => nodes.push(ports.next().unwrap_or(NodeRef::Ground)),
+                // The top has no parent to bind a port: its node is the design's own, driven by
+                // the host (§8.1.14). An open port of a child is ground.
+                NodeRole::Port => match ports.next() {
+                    Some(bound) => nodes.push(bound),
+                    None if placing.parent.is_none() => {
+                        let id = self.ir.node(NodeSpec { path: format!("{}.{}", placing.path, node.name), nature: node.nature, declared_by, init: node.init, origin: node.origin.clone() });
+                        host_ports.push(HostPort { name: node.name.clone(), node: id, nature: node.nature, origin: node.origin.clone() });
+                        nodes.push(NodeRef::Node(id));
+                    }
+                    None => nodes.push(NodeRef::Ground),
+                },
                 NodeRole::Signal => {
                     let id = self.ir.node(NodeSpec { path: format!("{}.{}", placing.path, node.name), nature: node.nature, declared_by, init: node.init, origin: node.origin.clone() });
                     nodes.push(NodeRef::Node(id));
@@ -101,7 +119,7 @@ impl Elaboration<'_, '_> {
             }
         }
         stack.pop();
-        Some(Placed { instance, nodes, nets })
+        Some(Placed { instance, nodes, nets, host_ports })
     }
 
     /// Binds each node and carrier `instance` reads of its child number `child` (`inst.name`, a

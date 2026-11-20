@@ -111,6 +111,25 @@ impl Amended {
         });
     }
 
+    /// The shape of the elaborator's host source (PI-07): `v(p, gnd) +> now() + ac_stim(1.0);`
+    fn host_source(b: &mut IrBuilder) {
+        let mut x = Dx::new(b, Amended::F, 30, 10);
+        let o = x.origin();
+        let now = x.b.expr(Expr::Env(Env::Time), ValueType::F64, o.clone());
+        let mag = x.real(1.0);
+        let stim = x.b.expr(Expr::Stim { site: 0, mag, phase: None }, ValueType::F64, o);
+        let value = x.bin(BinaryOp::Add, now, stim, ValueType::F64);
+        let stmt = b.stmt(Stmt::Contribute { branch: 0, quantity: QuantityRole::Potential, addends: vec![Addend { operator: Operator::Direct, negated: false, value }] });
+        let el = Buck::electrical(b);
+        b.body(BodySpec {
+            nodes: vec![BodyNode { name: "p".into(), nature: el, role: NodeRole::Port, init: None, origin: Amended::at(1) }],
+            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Ground, kind: BranchKind::Potential }],
+            stims: vec![Site { name: "ac".into(), origin: Amended::at(30), enabled: None }],
+            analog: Some(vec![stmt]),
+            ..Buck::spec("HostSource", Amended::F, 29)
+        });
+    }
+
     /// `v(p, n) +> ddt(i(p, n));`
     fn inductor(b: &mut IrBuilder) {
         let x = Dx::new(b, Amended::F, 12, 10);
@@ -634,4 +653,19 @@ fn an_analog_body_without_new_forms_still_runs_on_the_interpreter() {
     assert_eq!(ir.check(), vec![], "the design itself is well formed");
     let interpreter = Interpreter::new(Arc::new(ir)).expect("a body of the M1 subset is accepted");
     assert!(interpreter.module(resistor).is_some(), "the resistor has a module");
+}
+
+#[test]
+fn a_host_source_body_is_rejected_by_name() {
+    // PI-07, design R2: the host source reads the clock, which the frozen interpreter does not
+    // run; it is refused naming the body and the form, never run wrongly
+    let mut b = IrBuilder::new();
+    Amended::host_source(&mut b);
+    let top_body = b.body(Buck::spec("Top", "top.msl", 1));
+    let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: top_body, parent: None, nodes: vec![], params: vec![], origin: Origin { file: "top.msl".into(), line: 1, col: 1 } });
+    let ir = b.finish(top);
+    assert_eq!(ir.check(), vec![], "the design itself is well formed");
+    let Err(rejected) = Interpreter::new(Arc::new(ir)) else { panic!("a host source was accepted") };
+    let named: Vec<&str> = rejected.entries.iter().map(|e| e.what.split_once(": ").map_or(e.what.as_str(), |(head, _)| head)).collect();
+    assert_eq!(named, ["body HostSource holds now()"]);
 }

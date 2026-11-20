@@ -564,10 +564,10 @@ T44
 
 **Done when**:
 
-- [ ] `a_top_node_port_gets_one_host_source_instance`, `a_top_value_input_is_e0811`, `the_pom_keeps_a_top_with_node_ports_as_written` pass under `**Run elabentry**`
-- [ ] The interpreter refuses a `HostSource` body by name if it cannot run it (design.md R2)
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `a_top_node_port_gets_one_host_source_instance`, `a_top_value_input_is_e0811`, `the_pom_keeps_a_top_with_node_ports_as_written` pass under `**Run elabentry**`
+- [x] The interpreter refuses a `HostSource` body by name if it cannot run it (design.md R2)
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

@@ -184,17 +184,12 @@ fn a_top_with_discrete_in_ports_runs_with_them_unknown() {
 }
 
 #[test]
-fn a_top_with_a_continuous_port_is_the_front_ends_diagnostic() {
-    // spec edge 6: an `Electrical` port of the top has nothing to connect to
+fn a_top_with_a_node_port_is_refused_by_the_interpreter_naming_the_host_source() {
+    // PI-07 (D8, R2): a node port of the top elaborates (the IR gains the host source), and the
+    // frozen interpreter, which does not run the clock the source reads, refuses it by name
     let text = format!("{DEVICES}\nmodule Top(a: Electrical) {{\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n}}\n");
     match open(&text, &flags("op", "interp", Some("Top")), &unused()) {
-        Err(Failure::Diagnostics { stage, found, .. }) => {
-            assert_eq!(stage, "elaborate");
-            assert_eq!(found.len(), 1, "{found:?}");
-            assert_eq!(found[0].diagnostic.code, "P0001", "{found:?}");
-            assert!(found[0].diagnostic.message.contains("port"), "{}", found[0].diagnostic.message);
-        }
-        Err(other) => panic!("the front end's diagnostic, found {other}"),
-        Ok(_) => panic!("a continuous port of the top is refused"),
+        Err(failure) => assert!(failure.to_string().contains("HostSource"), "{failure}"),
+        Ok(_) => panic!("the interpreter ran a host source"),
     }
 }

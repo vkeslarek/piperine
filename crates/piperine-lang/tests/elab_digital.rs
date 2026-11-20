@@ -138,14 +138,13 @@ fn a_top_with_discrete_ports_gets_one_net_per_port() {
     assert_eq!(read.net_paths(), ["Top.en", "Top.pgood", "Top.s"]);
     assert_eq!(read.nets_of("Top"), ["Top.en", "Top.pgood", "Top.s"]);
     assert!(ir.nets().all(|n| n.declared_by().path() == "Top"));
-    // A continuous port on the top has nothing to connect to: `P0001` at the module's name,
-    // naming the port.
-    let src = "module Top(in en: Bit, p: Electrical) { }";
-    let err = Elab::run(src, "Top").expect_err("a continuous port on the top");
-    assert_eq!(Elab::codes(&err), ["P0001"]);
+    // A value input on the top has no host source: `E0811` at its name (§23.1 rule 1).
+    let src = "module Top(in en: Bit, p: f64) { }";
+    let err = Elab::run(src, "Top").expect_err("a value input on the top");
+    assert_eq!(Elab::codes(&err), ["E0811"]);
     assert!(err[0].diagnostic.message.contains("`p`"), "{}", err[0].diagnostic.message);
     let span = err[0].diagnostic.span();
-    assert_eq!(&src[span.start..span.end], "Top");
+    assert_eq!(&src[span.start..span.end], "p");
 }
 
 #[test]

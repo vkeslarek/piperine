@@ -24,6 +24,7 @@ mod elaborator;
 mod analog;
 mod functions;
 mod hoist;
+mod host_sources;
 mod inflow;
 mod intrinsics;
 mod known;
@@ -41,4 +42,5 @@ mod variants;
 
 pub use consts::{Bindings, ConstEval, ConstFault, Folded};
 pub use elaborator::Elaborator;
+pub use host_sources::HostSourceParam;
 pub use structural::Overrides;
