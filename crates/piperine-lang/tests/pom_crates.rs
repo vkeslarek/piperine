@@ -551,6 +551,24 @@ fn a_use_path_that_names_a_local_and_a_dependency_is_e0163() {
 }
 
 #[test]
+fn an_e0163_labels_the_local_item_it_clashes_with() {
+    // errors#2 of the Book (chapter 2, "a secondary label"): the diagnostic points at the local item
+    // as well as at the `use` path; an import that renames another item is not the item
+    let util = "pub const K: u32 = 1;\n";
+    let app = "mod util { pub const K: u32 = 5; }\nuse util::K;\n";
+    let design = two(app, util, "util", None);
+    let d = &design.diagnostics()[0].diagnostic;
+    let text = design.files()[design.diagnostics()[0].file.index()].text();
+    assert_eq!(d.secondary.len(), 1, "{:?}", d.secondary);
+    let (span, label) = &d.secondary[0];
+    assert_eq!(&text[span.range()], "mod util { pub const K: u32 = 5; }");
+    assert_eq!(label, "the local item `util`");
+    let renamed = two("mod inner { pub const K: u32 = 5; }\nuse inner as util;\nuse util::K;\n", util, "util", None);
+    assert_eq!(codes(&renamed), ["E0163"]);
+    assert!(renamed.diagnostics()[0].diagnostic.secondary.is_empty(), "an import that renames `inner` is not a local item called `util`");
+}
+
+#[test]
 fn only_a_type_namespace_local_clashes_with_a_dependency() {
     let util = "pub const K: u32 = 1;\n";
     // A local value item does not hide the crate: `util::K` and `use util::K` reach the dependency.

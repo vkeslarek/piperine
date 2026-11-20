@@ -93,19 +93,20 @@ impl Checker<'_> {
                     Some(expected.clone())
                 }
                 // An operator whose result has its operands' type passes the expected integer type
-                // down to both; a shift passes it to its left operand only.
+                // down to both, with the rule's code (`count <- count + 1.0` is `E0432`); a shift
+                // passes it to its left operand only.
                 ExprKind::Binary { op: BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor, lhs, rhs } if expected.is_integer() => {
-                    self.check(*lhs, expected);
-                    self.check(*rhs, expected);
+                    self.check_as(*lhs, expected, code);
+                    self.check_as(*rhs, expected, code);
                     Some(expected.clone())
                 }
                 ExprKind::Binary { op: BinOp::Shl | BinOp::Shr, lhs, rhs } if expected.is_integer() => {
-                    self.check(*lhs, expected);
+                    self.check_as(*lhs, expected, code);
                     self.shift_amount(*rhs);
                     Some(expected.clone())
                 }
                 ExprKind::Unary { op: UnOp::Not, expr: operand } if expected.is_integer() => {
-                    self.check(*operand, expected);
+                    self.check_as(*operand, expected, code);
                     Some(expected.clone())
                 }
                 _ => self.infer(expr),

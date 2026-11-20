@@ -300,10 +300,23 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
         any().filter(|t: &Token| matches!(t, Token::Kw(Kw::On))).rewind().ignored().boxed(),
         statement_with_arrow().boxed(),
         select! { Token::Ident(s) if s == "bound_step" => () }.then(punct(Punct::LParen)).rewind().ignored().boxed(),
+        select! { Token::Ident(s) if s == "emit" => () }.then(punct(Punct::Not)).rewind().ignored().boxed(),
     ]);
     let stray = starts_behavior
         .ignore_then(expr::stmt(h))
         .validate(|s, e, emitter| {
+            if matches!(&s.kind, StmtKind::Expr { expr, .. } if matches!(expr.kind, ExprKind::Emit { .. })) {
+                // an `emit!` statement: the output runs when behavior runs (§19 rule 10)
+                emitter.emit(Rich::custom(
+                    s.span.0,
+                    Custom {
+                        code: "E0601",
+                        message: "`emit!` is written in a reaction, in `analog` or in a `fn` only (§19 rule 10)".into(),
+                        help: Some("output runs when behavior runs: put it in a reaction, `on init() { emit!(..); }`".into()),
+                    },
+                ));
+                return ModuleItem { meta: Meta::default(), public: false, kind: ModuleItemKind::Error, span: Loc(e.span()) };
+            }
             let what = match &s.kind {
                 StmtKind::Commit { .. } => "a commit (`<-`)",
                 StmtKind::Contribution { .. } => "a contribution (`+>`)",

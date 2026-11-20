@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::msl::Span;
+use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, DefinitionData, ExprId, ExprKind, Resolution};
 
 use super::check::Checker;
@@ -189,7 +189,7 @@ impl Checker<'_> {
             let names: Vec<String> = cycle.iter().map(|d| format!("`{}`", self.design.decl_data(*d).name.as_ref().map_or("", |n| n.text.as_str()))).collect();
             let file = self.design.decl_data(*target).file;
             let message = format!("undelayed definitions of {} depend on each other: a loop through one-driver carriers (§8.2.3)", names.join(", "));
-            self.coded(file, "E0339", *span, message, "a loop of definitions");
+            self.report_distinct(file, Diagnostic::new("E0339", message, *span, "a loop of definitions"));
         }
     }
 }

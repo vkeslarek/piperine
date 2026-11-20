@@ -178,6 +178,17 @@ fn now_and_analysis_static_are_typed() {
 }
 
 #[test]
+fn an_e0150_carries_a_help_line_naming_the_flag_reads() {
+    // errors#1 of the Book (chapter 2): the diagnostic has a code, a message naming the carrier, a
+    // primary label and a help line that names `known()`, `known_or(d)` and `high()`
+    let src = "module Top(in c: Bit<f64>, p: Electrical) { }\nanalog for Top { v(p) +> c; }";
+    let d = diagnostics(src);
+    assert_eq!(codes(&d), ["E0150"]);
+    let help = d[0].diagnostic.help.as_deref().expect("a help line");
+    assert!(help.contains("`known()`") && help.contains("`known_or(d)`") && help.contains("`high()`"), "{help}");
+}
+
+#[test]
 fn an_analog_read_of_a_carrier_outside_the_flag_reads_is_e0150() {
     // DIG-06 AC 6 (part I §3.3.5): an `analog` block reads a discrete carrier through `known`,
     // `known_or`, `is_known` or `high` only; a bare read, one through a `let`, one through a value

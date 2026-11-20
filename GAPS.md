@@ -428,12 +428,9 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
-| errors#1 | D1 | `root-e2e` | `E0150` gives no help line |
-| errors#2 | D1 | `root-e2e` | `E0163` gives no secondary label on `mod util;` |
 | errors~54e5381d | L40 | `analog-structure` | `E0414` is not raised: a contribution under an `if` is `P0001` on both branches |
 | welcome~5b11a01a | D2 | `user` | the math methods such as `sin` run; the other items of the sentence are `P0001` as written |
 | from-rust#1 | L6 | `composite-values` | reached from a top, `range_of` is `P0001` (a range pattern in a `match` arm; the enum has no `#[derive(Repr)]`) and `mean` is `P0001` (a reference type) |
-| from-rust~64ee8d1d | D1 | `root-e2e` | `emit!("hello");` in a module body is `E0900` (a syntax error), not `E0601` |
 | values#2 | L53 | `unknown-semantics-events` | `handshake`, a `fn` that returns `Event`, is `P0001`: method `rise` on this receiver is not supported yet |
 | values~c389077a | L53 | `unknown-semantics-events` | the class of a function that returns `Event` does not run (`handshake`); the pure, `now()` and `emit!` classes do |
 | values#15 | L12 | `foreign-models` | an `extern "C" fn` with its `#[derivative]` is `P0001`: `extern` function is not supported yet |
@@ -480,14 +477,11 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | digital~a0ca3f9d | L28 | `params-and-io` | the check does not run as the Book places it: `limit: u8` and `cycles: u32` are refused with digital#14 |
 | digital~e35078c8 | L28 | `params-and-io` | the two forms are refused as the sentence says (digital#7) |
 | digital~d1d69398 | L28 | `params-and-io` | the debouncer and the PWM are refused (digital#7, digital#11); the counter runs |
-| digital~ce04e7a4 | D1 | `root-e2e` | the latch without `after` is two `E0338` (an initial value and an undelayed definition), not `E0339`: the loop is not reported |
-| digital~54ec4a1d | D1 | `root-e2e` | `count <- count + 1.0` is `P0002` (a `u8` plus an `f64`), not `E0432`; `count <- 1.0` is `E0432` |
 | mixed#6 | L51 | `unknown-semantics-events` | `Comparator`'s `on up \|\| dn { q <- up; }` is `E0441`, an `Event` committed, where the Book reads `up` as a `bool` |
 | mixed#10 | L52 | `unknown-semantics-events` | `digital for Buck` with `on settle` is `P0001`: built-in `settle`; the converter without it runs (mixed#8) |
 | mixed#15 | L36 | `analog-structure` | `i(dac.core) +> ..` on a public node of a child is `P0001` (field access); the chapter's `Comparator` in it is `E0441` |
 | mixed~22d4126e | D2 | `user` | `sin` and the other math methods run (the sine sources of the chapter); `settle` is `P0001` as written |
 | mixed~68328637 | D4 | `root-e2e` | the run starts from an operating point where the first `hs <- true` is already applied: the output is 11.8 V, the second record has vout 11.6 V, err -8.3 and duty 0, not 0.0066; the end (3.3 V, duty 0.28) is the Book's |
-| mixed~98e4dc1b | D1 | `root-e2e` | an `on every(..)` inside a reaction is `E0404` (`on` in a reaction), not `E0350`; `every` in a `fn` is `E0350` |
 | mixed~9d07c4b9 | L52 | `unknown-semantics-events` | the check on `settle` is refused with mixed#10 |
 | packages#12 | L57 | `composite-values` | `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` is `P0001`, a reference type; `include_str!` itself is accepted in a `const` |
 | packages~64f2121d | L57 | `composite-values` | `E0610` is not raised: `include_str!` in a module body is `P0001`, `include_str!` is not supported yet |

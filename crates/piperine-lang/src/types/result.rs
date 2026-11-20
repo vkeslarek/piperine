@@ -6,7 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::msl::Span;
+use crate::msl::{Diagnostic, Span};
 use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, ModuleData, NatureKind, Resolution, StmtId};
 
 use super::check::Checker;
@@ -118,7 +118,8 @@ impl Checker<'_> {
                     }
                     let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
                     let message = format!("an `analog` block reads the discrete carrier `{name}` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
-                    self.coded(here.1, "E0150", here.0, message, "a discrete carrier read in `analog`");
+                    let help = "read it through `known()`, `known_or(d)`, or `high()` for a `Bit`";
+                    self.report(here.1, Diagnostic::new("E0150", message, here.0, "a discrete carrier read in `analog`").with_help(help));
                 } else if let Some((arg, parent)) = frames[frame].inputs.get(&decl).copied() {
                     self.carrier_reads_in(arg, parent, frames, Some(here), followed, reported);
                 } else if let Some(init) = self.binding_init(decl)

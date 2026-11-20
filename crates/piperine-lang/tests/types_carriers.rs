@@ -369,6 +369,15 @@ fn a_loop_of_definitions_is_e0339() {
     checked(&design_of(src), src);
 }
 
+#[test]
+fn a_loop_of_definitions_is_reported_beside_an_initial_value() {
+    // digital~ce04e7a4 of the Book (chapter 7, part III §8.2.3): the latch with initial values and
+    // no `after` is two `E0338` and the loop, `E0339`, at the first definition
+    let src = "module Top(in s: Bit, in r: Bit, out q: Bit = false, out qn: Bit = true) { q = !(r | qn); qn = !(s | q); }";
+    let d = diagnostics(src);
+    assert_eq!(codes(&d), ["E0338", "E0339", "E0338"], "{:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+}
+
 // ---- carrier ports at a placement (T11) ----
 
 /// The buck's `Controller` and `PowerStage` over children that keep only what the placement reads:

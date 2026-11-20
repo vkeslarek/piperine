@@ -195,14 +195,13 @@ fn e0604_a_field_name_is_used_twice() {
 }
 
 #[test]
-fn e0601_an_emit_in_a_module_body_is_a_syntax_error_today() {
-    // from-rust~64ee8d1d (diverges): "E0601 emit!(\"hello\"); in a module body: Output runs when behavior
-    // runs. Put it in a reaction". The tool gives `E0900` for that line (the grammar has no statement
-    // in a module body); `E0601` is given to a module-body `let` that holds an `emit!`. Listed in GAPS.md
-    // section 11: Phase 9 makes the line `E0601`
+fn e0601_an_emit_in_a_module_body_is_misplaced_output() {
+    // from-rust~64ee8d1d: "E0601 emit!(\"hello\"); in a module body: Output runs when behavior runs. Put it
+    // in a reaction": the statement is `E0601`, the same code a module-body `let` that holds an `emit!` gets
     let faulty = Faulty::elaborating("from-rust~64ee8d1d", "module Top() { emit!(\"hello\"); }\n", "Top");
-    assert_eq!(faulty.given.iter().map(|reported| reported.code.as_str()).collect::<Vec<_>>(), ["E0900"], "the Book says E0601");
-    assert_eq!(faulty.first("E0900").message, "unexpected `!`, expected an operator, `::` or `:`");
+    assert_eq!(faulty.given.iter().map(|reported| reported.code.as_str()).collect::<Vec<_>>(), ["E0601"]);
+    assert_eq!(faulty.first("E0601").message, "`emit!` is written in a reaction, in `analog` or in a `fn` only (§19 rule 10)");
+    assert!(faulty.first("E0601").help.as_deref().is_some_and(|help| help.contains("put it in a reaction")), "the Book's fix is a help line");
     let held = Faulty::elaborating("from-rust~64ee8d1d", "module Top() { let x = emit!(\"hello\"); }\n", "Top");
     assert_eq!(held.first("E0601").message, "`emit!` is written in a reaction, in `analog` or in a `fn` only (§19 rule 10)");
 }

@@ -158,7 +158,8 @@ fn the_rust_backend_prints_one_source_file_and_loads_the_library_it_builds() {
     assert_eq!(built.of_the_design("libdesign.so").len(), 1, "and the library compiled from it, beside it");
     let source = std::fs::read_to_string(sources[0]).expect("the generated source");
     assert!(source.contains("use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};"), "the library is loaded through the device ABI");
-    assert!(source.contains("// Resistor.analog @ devices.msl:"), "every item names the MSL it came from");
+    assert!(source.contains("// Resistor.analog @ devices.msl:4:1"), "every item names the MSL it came from, as the listing of compiler#3 says");
+    assert!(source.contains("// contribution to i(p, n), branch b0 @ devices.msl:8:34"), "and the position of the contribution inside it");
     assert!(source.contains("fn terms_block<R: Real>(p: R, n: R, r: R) -> [R; 1] {"), "the block is generic over a number type");
     assert!(source.contains("let b0_flow_ = (p - n) / r;"), "the current of the resistor, over any number type");
     assert!(source.contains("Self::terms_block(Dual::<2>::seeded(") && source.contains("Dual::<2>::constant(r)"), "run with dual numbers it also gives the derivatives");

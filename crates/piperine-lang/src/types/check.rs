@@ -204,6 +204,13 @@ impl<'d> Checker<'d> {
         }
     }
 
+    /// Reports `diagnostic` whatever else is already reported at its span: a finding about a
+    /// relation between constructs (a loop of definitions) is not the same finding as one about
+    /// the construct at the span where it is shown.
+    pub(super) fn report_distinct(&mut self, file: FileId, diagnostic: Diagnostic) {
+        self.diagnostics.push(DesignDiagnostic { file, diagnostic });
+    }
+
     pub(super) fn file_of_expr(&self, expr: ExprId) -> FileId {
         self.design.decl_data(self.design.expr_node(expr).owner).file
     }

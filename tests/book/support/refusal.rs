@@ -16,6 +16,8 @@ pub struct Reported {
     pub primary_span: Range<usize>,
     pub primary_label: String,
     pub secondary_labels: Vec<String>,
+    /// The byte range each secondary label points at, in the order of `secondary_labels`.
+    pub secondary_spans: Vec<Range<usize>>,
     pub help: Option<String>,
 }
 
@@ -28,6 +30,7 @@ impl Reported {
             primary_span: diagnostic.primary.0.start..diagnostic.primary.0.end,
             primary_label: diagnostic.primary.1.clone(),
             secondary_labels: diagnostic.secondary.iter().map(|(_, label)| label.clone()).collect(),
+            secondary_spans: diagnostic.secondary.iter().map(|(span, _)| span.start..span.end).collect(),
             help: diagnostic.help.clone(),
         }
     }
@@ -35,6 +38,11 @@ impl Reported {
     /// The text of `source` the primary label points at.
     pub fn primary_text<'a>(&self, source: &'a str) -> &'a str {
         &source[self.primary_span.clone()]
+    }
+
+    /// The text of `source` the secondary label `index` points at.
+    pub fn secondary_text<'a>(&self, source: &'a str, index: usize) -> &'a str {
+        &source[self.secondary_spans[index].clone()]
     }
 }
 
@@ -45,7 +53,7 @@ impl Refusal {
     /// Every diagnostic `failure` carries, in the order the tool reports them. A failure with no
     /// span (`Host`, a solver error) is one diagnostic with an empty span.
     pub fn reported(failure: &Failure) -> Vec<Reported> {
-        let spanless = |code: String, message: String| Reported { code, message, primary_span: 0..0, primary_label: String::new(), secondary_labels: Vec::new(), help: None };
+        let spanless = |code: String, message: String| Reported { code, message, primary_span: 0..0, primary_label: String::new(), secondary_labels: Vec::new(), secondary_spans: Vec::new(), help: None };
         match failure {
             Failure::Package(errors) => errors.iter().map(|error| Reported::of(&error.diagnostic)).collect(),
             Failure::Diagnostics { found, .. } => found.iter().map(|found| Reported::of(&found.diagnostic)).collect(),

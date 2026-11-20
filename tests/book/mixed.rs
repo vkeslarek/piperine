@@ -318,13 +318,12 @@ fn e0350_every_is_not_placed_in_a_fn_and_a_named_tick_runs() {
 }
 
 #[test]
-fn an_every_written_inside_a_reaction_is_e0404_not_e0350() {
+fn an_every_written_inside_a_reaction_is_e0350() {
     // mixed~98e4dc1b: "on every(0.0, 10u) { ... } written inside another reaction, or every called in a fn"
-    // (the code of the row is E0350): the first form is `E0404`, `on` in a reaction, a syntax error, not
-    // `E0350` (D1; Phase 9 gives the Book's code); the second is `E0350` (the test above)
+    // (the code of the row is E0350): both forms are `E0350`, the first a placement in a reaction body
     let faulty = Faulty::running("mixed~98e4dc1b", "module Top() { signal vin: Electrical; }\ndigital for Top { on at(1u) { on every(0.0, 10u) { } } }\n", Commands::transient("Top", 1e-6, None));
-    assert_eq!(faulty.first("E0404").message, "`on` in a reaction");
-    assert!(faulty.given.iter().all(|reported| reported.code != "E0350"), "E0350 is not given for this form");
+    assert_eq!(faulty.first("E0350").message, "`every` is placed in a reaction body: it places no instance (§8.3.4)");
+    assert!(faulty.given.iter().all(|reported| reported.code != "E0404"), "E0404 is not given for this form");
 }
 
 #[test]

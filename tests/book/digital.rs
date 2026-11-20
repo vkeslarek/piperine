@@ -231,19 +231,18 @@ fn e0339_a_loop_of_definitions_needs_a_delay() {
 }
 
 #[test]
-fn without_its_delay_the_book_latch_gives_e0338_and_not_the_loop_error() {
+fn without_its_delay_the_book_latch_is_a_loop_e0339() {
     // digital~ce04e7a4: "Without the after, the two definitions would form a loop with no delay in it, which
-    // is an elaboration error (E0339)": the latch of digital#5 with its `after tpd` removed is two `E0338`
-    // today (an initial value next to an undelayed definition, which the latch's `= false` and `= true`
-    // are) and no `E0339`, the loop being checked after the initial values: the Book's code is not given
-    // (D1; Phase 9 reports the loop too)
+    // is an elaboration error (E0339)": the latch of digital#5 with its `after tpd` removed gives the loop,
+    // beside an `E0338` for each initial value that sits under an undelayed definition
     let chapter = Chapter::read();
     let latch = Edit::replace(&chapter.text("digital#5"), " after tpd", "");
     let source = format!("{latch}\nmodule Top() {{ signal s: Bit = false; signal r: Bit = false; signal q: Bit; signal qn: Bit; let l = SrLatch(s, r, q, qn); }}\n");
     let faulty = Faulty::elaborating("digital~ce04e7a4", &source, "Top");
-    let codes: Vec<&str> = faulty.given.iter().map(|reported| reported.code.as_str()).collect();
-    assert_eq!(codes, ["E0338", "E0338"], "one for `q`, one for `qn`");
-    assert!(faulty.given.iter().all(|reported| reported.code != "E0339"), "E0339 is not given");
+    let mut codes: Vec<&str> = faulty.given.iter().map(|reported| reported.code.as_str()).collect();
+    codes.sort_unstable();
+    assert_eq!(codes, ["E0338", "E0338", "E0339"], "the loop, and one initial value for `q` and one for `qn`");
+    assert!(faulty.first("E0339").message.contains("`q`, `qn`"), "{}", faulty.first("E0339").message);
 }
 
 #[test]
@@ -533,14 +532,12 @@ fn e0338_an_undelayed_definition_has_no_initial_value() {
 }
 
 #[test]
-fn e0432_a_commit_of_another_type_is_a_mismatch_at_the_addition_today() {
+fn e0432_a_commit_of_another_type_is_a_mismatch() {
     // digital~54ec4a1d: "E0432 count <- count + 1.0;": "The committed type must be the carrier's. count is
-    // a u8: commit count + 1". `E0432` is what the checker gives for a commit whose value has another type
-    // (`count <- 1.0`), but the Book's own example fails earlier, at `count + 1.0` (a `u8` plus an `f64`), with
-    // `P0002`: the code is not the Book's (D1; Phase 9 gives the Book's code)
+    // a u8: commit count + 1": the operand `1.0` is the mismatch, with the Book's code
     let book = Faulty::running("digital~54ec4a1d", "module Top() { signal count: Bit<u8> = 0; }\ndigital for Top { on at(1u) { count <- count + 1.0; } }\n", Commands::transient_of("Top", 1e-6));
-    assert_eq!(book.first("P0002").message, "mismatched types: expected `u8`, found `f64`");
-    assert!(book.given.iter().all(|reported| reported.code != "E0432"), "the Book's code is not given");
+    assert_eq!(book.first("E0432").message, "mismatched types: expected `u8`, found `f64`");
+    assert!(book.given.iter().all(|reported| reported.code != "P0002"), "the Book's code, not the plain mismatch");
     let commit = Faulty::running("digital~54ec4a1d", "module Top() { signal count: Bit<u8> = 0; }\ndigital for Top { on at(1u) { count <- 1.0; } }\n", Commands::transient_of("Top", 1e-6));
     assert_eq!(commit.first("E0432").message, "mismatched types: expected `u8`, found `f64`");
 }

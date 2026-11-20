@@ -3808,9 +3808,9 @@ module Divider() {
 
 <p>The generated Rust stays on disk next to the library, formatted, and is meant to be read. Every item names the MSL it came from, your names stay as you wrote them, and names the compiler makes up end in <code>_</code>, so they never collide with yours. Here is the resistor's analog block:</p>
 
-<pre data-lang="rust">// Resistor.analog @ devices.msl:5:1
+<pre data-lang="rust">// Resistor.analog @ devices.msl:4:1
 fn terms_block&lt;R: Real&gt;(p: R, n: R, r: R) -&gt; [R; 1] {
-    // contribution to i(p, n), branch b0 @ devices.msl:8:32
+    // contribution to i(p, n), branch b0 @ devices.msl:8:34
     let b0_flow_ = (p - n) / r;
     [b0_flow_]
 }</pre>

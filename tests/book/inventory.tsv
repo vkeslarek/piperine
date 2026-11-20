@@ -144,8 +144,8 @@ block	core-std#8	6994862452a71c4a	refused	piperine/book_core_std::the_register_w
 block	core-std#9	8df4b148eabfdf77	run	piperine/book_core_std::the_probe_writes_a_check_and_a_log_record	-	-
 block	core-std#10	631aa175ce2fb38e	refused	piperine/book_core_std::the_watchdog_is_refused_for_its_integer_param	L28	-
 block	core-std#11	8e7f72e7c63ab65b	run	piperine/book_core_std::a_crates_own_vt_replaces_the_library_one	-	-
-block	errors#1	02c79bb77a2f9f83	diverges	piperine/book_errors::the_discrete_read_diagnostic_has_the_parts_the_book_shows	D1	-
-block	errors#2	290db49dc81491b3	diverges	piperine/book_errors::the_ambiguous_name_diagnostic_has_the_parts_the_book_shows	D1	-
+block	errors#1	02c79bb77a2f9f83	holds	piperine/book_errors::the_discrete_read_diagnostic_has_the_parts_the_book_shows	-	-
+block	errors#2	290db49dc81491b3	holds	piperine/book_errors::the_ambiguous_name_diagnostic_has_the_parts_the_book_shows	-	-
 block	errors#3	d48482453090553f	refused	piperine/book_errors::the_worked_sample_hold_is_refused_with_its_three_codes	-	-
 block	errors#4	d6f143186449ee41	shown	-	-	-
 block	pom#1	e6a2cd05f83340b4	shown	-	-	-
@@ -159,7 +159,7 @@ block	abi#5	97e83a277ec19321	shown	-	-	-
 block	abi#6	4a8e6d160cd528e0	shown	-	-	-
 block	compiler#1	07f51b3645a3ebce	run	piperine/book_compiler::the_divider_puts_mid_at_7_5_volts_and_ngspice_prints_the_same	-	-
 block	compiler#2	a8029e9e14f098ed	run	piperine/book_compiler::the_diode_with_a_limited_junction_settles_where_the_junction_equation_says	-	-
-block	compiler#3	17700775a142241f	shown	-	-	-
+block	compiler#3	835ad43867b51f3a	shown	-	-	-
 block	cli#1	a85641490b6e3b0b	shown	-	-	-
 block	cli#2	eea02ab5185142c6	shown	-	-	-
 block	cli#3	868bc58888b0542d	run	piperine/book_cli::the_rc_project_of_the_chapter_runs_its_operating_point_and_its_step_response	-	-
@@ -253,7 +253,7 @@ claim	from-rust~95095180	950951807bc5b336	holds	piperine/book_from_rust::only_tw
 claim	from-rust~80317c1d	80317c1de450c090	holds	piperine/book_from_rust::e0901_there_is_no_println	-	E0901
 claim	from-rust~64ee8a1d	64ee8a1dd48326bc	holds	piperine/book_from_rust::e0602_an_emit_has_no_format_string	-	E0602
 claim	from-rust~64ee881d	64ee881dd4832356	holds	piperine/book_from_rust::e0604_a_field_name_is_used_twice	-	E0604
-claim	from-rust~64ee8d1d	64ee8d1dd4832bd5	diverges	piperine/book_from_rust::e0601_an_emit_in_a_module_body_is_a_syntax_error_today	D1	E0601
+claim	from-rust~64ee8d1d	64ee8d1dd4832bd5	holds	piperine/book_from_rust::e0601_an_emit_in_a_module_body_is_misplaced_output	-	E0601
 claim	from-rust~399f441d	399f441dbbfb6578	holds	piperine/book_from_rust::e0101_there_are_no_mutable_references	-	E0101
 claim	from-rust~39acbe1d	39acbe1dbc06bf22	holds	piperine/book_from_rust::e0143_there_are_no_default_arguments	-	E0143
 claim	from-rust~39a5d01d	39a5d01dbc00bf0a	holds	piperine/book_from_rust::e0161_there_are_no_heap_types	-	E0161
@@ -334,7 +334,7 @@ claim	analog~5c44f21d	5c44f21dcf9af6ca	holds	piperine/book_analog::e0503_a_node_
 claim	analog~5c44ee1d	5c44ee1dcf9aeffe	holds	piperine/book_analog::e0507_a_non_finite_contribution_is_a_run_error_naming_it	-	E0507
 claim	digital~cc20763d	cc20763dd236a652	holds	piperine/book_digital::the_emit_prints_the_same_first_in_the_middle_or_last	-	Put the emit! first, last or in the middle: it prints the same thing, because nothing changes while a reaction runs.
 claim	digital~d8ecede0	d8ecede05cd0aedc	holds	piperine/book_digital::the_counter_raises_full_exactly_while_the_count_is_255	-	This is the habit to build: one emit!("state", …) at the top of a clocked reaction gives you the whole history of the block, one row per edge.
-claim	digital~ce04e7a4	ce04e7a4b3292c54	diverges	piperine/book_digital::without_its_delay_the_book_latch_gives_e0338_and_not_the_loop_error	D1	Without the after, the two definitions would form a loop with no delay in it, which is an elaboration error (E0339).
+claim	digital~ce04e7a4	ce04e7a4b3292c54	holds	piperine/book_digital::without_its_delay_the_book_latch_is_a_loop_e0339	-	Without the after, the two definitions would form a loop with no delay in it, which is an elaboration error (E0339).
 claim	digital~27b7fac4	27b7fac4902807bb	holds	piperine/book_digital::a_reaction_at_a_time_runs_when_time_reaches_it	-	time reaches t
 claim	digital~4f9a5b9e	4f9a5b9e1d856b11	holds	piperine/book_digital::e0430_a_bit_is_a_level_not_an_event	-	A plain bool alone is not an event (E0430): on enable { … } has no "when".
 claim	digital~688ab093	688ab0930720ecc0	refused	digital#7	L28	Two things in it are not compiled yet, a param of an integer type (n: u8) and a known_or whose default may itself be unknown, so today the command refuses the file at the first one and runs nothing:
@@ -352,7 +352,7 @@ claim	digital~54ec481d	54ec481dcbd17267	holds	piperine/book_digital::e0430_a_bit
 claim	digital~42ae751d	42ae751dc1399997	holds	piperine/book_digital::e0221_one_carrier_is_driven_one_way	-	E0221
 claim	digital~4bcf191d	4bcf191dc6870452	holds	piperine/book_digital::e0338_an_undelayed_definition_has_no_initial_value	-	E0338
 claim	digital~4bcf1a1d	4bcf1a1dc6870605	holds	piperine/book_digital::e0339_a_loop_of_definitions_needs_a_delay	-	E0339
-claim	digital~54ec4a1d	54ec4a1dcbd175cd	diverges	piperine/book_digital::e0432_a_commit_of_another_type_is_a_mismatch_at_the_addition_today	D1	E0432
+claim	digital~54ec4a1d	54ec4a1dcbd175cd	holds	piperine/book_digital::e0432_a_commit_of_another_type_is_a_mismatch	-	E0432
 claim	digital~54ec441d	54ec441dcbd16b9b	holds	piperine/book_digital::e0434_a_digital_block_holds_only_reactions	-	E0434
 claim	digital~4bd60d1d	4bd60d1dc68d0e9c	holds	piperine/book_digital::e0350_an_instance_is_not_placed_inside_a_reaction	-	E0350
 claim	digital~5c44f01d	5c44f01dcf9af364	holds	piperine/book_digital::e0501_a_clock_with_no_delay_never_goes_quiet	-	E0501
@@ -373,7 +373,7 @@ claim	mixed~39a9371d	39a9371dbc03a3e6	holds	piperine/book_mixed::e0150_an_unknow
 claim	mixed~54d4401d	54d4401dcbbcd2ee	holds	piperine/book_mixed::e0442_at_takes_a_discrete_time	-	E0442
 claim	mixed~fa428686	fa4286868655967a	holds	piperine/book_mixed::e0430_a_comparison_is_a_bool_and_the_crossing_is_the_event	-	For "when the voltage reaches…" use above.
 claim	mixed~4bd60d1d	4bd60d1dc68d0e9c	holds	piperine/book_mixed::e0350_every_is_not_placed_in_a_fn_and_a_named_tick_runs	-	E0350
-claim	mixed~98e4dc1b	98e4dc1b05705b28	diverges	piperine/book_mixed::an_every_written_inside_a_reaction_is_e0404_not_e0350	D1	on every(0.0, 10u) { … } written inside another reaction, or every called in a fn
+claim	mixed~98e4dc1b	98e4dc1b05705b28	holds	piperine/book_mixed::an_every_written_inside_a_reaction_is_e0350	-	on every(0.0, 10u) { … } written inside another reaction, or every called in a fn
 claim	mixed~6430a6c6	6430a6c6b34f7e9e	holds	piperine/book_mixed::e0350_every_is_not_placed_in_a_fn_and_a_named_tick_runs	-	Name them in the module body: let tick = every(0.0, 10u);
 claim	mixed~5c44ed1d	5c44ed1dcf9aee4b	holds	piperine/book_mixed::e0504_the_step_after_a_jump_that_does_not_converge_names_the_carrier	-	E0504
 claim	mixed~90621efb	90621efb95052987	prose	-	-	Predict what the pulse stream does near each zero crossing, then restore the hysteresis and choose the smallest value that gives one pulse per cycle.

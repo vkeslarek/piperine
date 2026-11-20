@@ -11,12 +11,12 @@ Size: 8 cause (1) rows, 3 stale sentences, 1 reclassified to (2). The largest ar
 
 | Row | Sentence (short) | What the code gives | Cause | Area | Owner or status |
 | --- | ---------------- | ------------------- | ----- | ---- | --------------- |
-| errors#1 | the `E0150` diagnostic shows a help line | no help line | (1) | T35 diagnostics | fixed in T35 |
-| errors#2 | the `E0163` diagnostic shows a secondary label on `mod util;` | no secondary label | (1) | T35 diagnostics | fixed in T35 |
-| from-rust~64ee8d1d | `emit!` in a module body is `E0601` | `E0900` | (1) | T35 diagnostics | fixed in T35 |
-| digital~ce04e7a4 | a latch without `after` is a loop, `E0339` | two `E0338`, no `E0339` | (1) | T35 diagnostics | fixed in T35 |
-| digital~54ec4a1d | `count <- count + 1.0` is `E0432` | `P0002` at the addition | (1) | T35 diagnostics | fixed in T35 |
-| mixed~98e4dc1b | `on every` inside a reaction is `E0350` | `E0404` | (1) | T35 diagnostics | fixed in T35 |
+| errors#1 | the `E0150` diagnostic shows a help line | no help line | (1) | T35 diagnostics | fixed in T35 (`holds`) |
+| errors#2 | the `E0163` diagnostic shows a secondary label on `mod util;` | no secondary label | (1) | T35 diagnostics | fixed in T35 (`holds`) |
+| from-rust~64ee8d1d | `emit!` in a module body is `E0601` | `E0900` | (1) | T35 diagnostics | fixed in T35 (`holds`) |
+| digital~ce04e7a4 | a latch without `after` is a loop, `E0339` | two `E0338`, no `E0339` | (1) | T35 diagnostics | fixed in T35 (`holds`) |
+| digital~54ec4a1d | `count <- count + 1.0` is `E0432` | `P0002` at the addition | (1) | T35 diagnostics | fixed in T35 (`holds`) |
+| mixed~98e4dc1b | `on every` inside a reaction is `E0350` | `E0404` | (1) | T35 diagnostics | fixed in T35 (`holds`) |
 | mixed~68328637 | the buck start-up climbs by 0.0033 per period from `vout` near 0 | the operating point applies the first `hs <- true` commit: 11.8 V, duty 0 | (1) | T36 values and records | fixed in T36 |
 | cli~0549bfb1 | a `nodeset` on `ac` or `transient` is `P0010` | accepted and ignored | (1) | T40 host and command line | the spec and host-ii F6 say `nodeset` applies to every analysis: the Book sentence is corrected, and the code is verified to seed the operating point of both |
 | modules~1faf8c12 | `m` and `dtemp` are bound like any param | `E0320`, no param `m` | (2) | none | `refused` under L29, owner `params-and-io` |
@@ -29,3 +29,5 @@ Also in scope of Phase 9 (not rows): the line numbers of the listing of compiler
 (today "ended before its stop", T40).
 
 Not fixed here, listed for the user: none. No sentence of the spec itself looks wrong.
+
+T35 (diagnostics): the compiler#3 listing positions are corrected in the Book to `devices.msl:4:1` and `8:34` (the binary's), asserted in `book_compiler`. The `E0163` secondary label is given for a top-of-namespace `use` clash only; the block-level clash (a `use` inside a block) keeps its primary label alone.

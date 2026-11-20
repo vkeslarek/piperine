@@ -270,6 +270,18 @@ fn a_commit_of_another_type_is_e0432() {
 }
 
 #[test]
+fn an_operand_of_another_type_in_a_commit_is_e0432() {
+    // digital~54ec4a1d of the Book (chapter 7, §12.1.9): `count <- count + 1.5` on an integer carrier
+    // is `E0432` at the operand that is not the carrier's type, not the plain mismatch `P0002`
+    let src = "module Top(in clk: Bit, out count: Bit<u9> = 0) { }\ndigital for Top { on clk.rise() { count <- count + 1.5; } }";
+    let d = diagnostics(src);
+    assert_eq!(codes(&d), ["E0432"], "{:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    assert_eq!(snippet(src, &d[0]), "1.5");
+    let src = "module Top(in clk: Bit, out count: Bit<u9> = 0) { }\ndigital for Top { on clk.rise() { count <- count + 1; } }";
+    checked_top(src, "Top");
+}
+
+#[test]
 fn a_delay_that_is_not_f64_is_e0433() {
     // DIG-05 AC 9 (§12.1.13, §8.2.22): the delay of a commit, and of a definition, is an `f64`.
     let src = "module Top(in clk: Bit, in d: Bit, out q: Bit = false) { }\ndigital for Top { on clk.rise() { q <- d after 5; } }";

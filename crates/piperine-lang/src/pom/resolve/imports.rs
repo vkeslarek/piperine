@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::super::body::{PathSegment, TypeKind};
+use super::super::body::{PathNode, PathSegment, TypeKind};
 use super::super::builtin::builtin_member;
 use super::super::decl::{DeclKind, GenericParamData};
 use super::super::design::Design;
@@ -157,9 +157,30 @@ impl Ctx<'_> {
     /// item or import of the namespace (§3.5 rule 5)? `visiting` holds the import being read, so
     /// it does not clash with itself.
     pub(super) fn use_clash(&self, ns: DeclId, segments: &[PathSegment], visiting: &mut Vec<Visit>) -> bool {
-        let Some(head) = segments.first() else { return false };
-        let name = head.name.text.as_str();
-        !matches!(name, "crate" | "self" | "super") && self.deps[self.crate_of(ns)].contains_key(name) && self.ns_item(ns, name, Prefer::Head, Some(ns), visiting).is_some()
+        self.clashing_item(ns, segments, visiting).is_some()
+    }
+
+    /// The item or import of `ns` that the first segment of a `use` path names besides a dependency
+    /// of its crate (§3.5 rule 5): the other half of an `E0163`, `None` when there is no clash.
+    pub(super) fn clashing_item(&self, ns: DeclId, segments: &[PathSegment], visiting: &mut Vec<Visit>) -> Option<DeclId> {
+        let name = segments.first()?.name.text.as_str();
+        if matches!(name, "crate" | "self" | "super") || !self.deps[self.crate_of(ns)].contains_key(name) {
+            return None;
+        }
+        self.ns_item(ns, name, Prefer::Head, Some(ns), visiting).map(|(item, _visible)| item)
+    }
+
+    /// The `E0163` of a `use` path in `ns` whose first segment clashes with `local`: when `local` is
+    /// an item the namespace itself declares under that name, in the same file, a secondary label
+    /// points at it (an import that renames another item is not the item: no label).
+    pub(super) fn clash_diagnostic(&self, ns: DeclId, local: DeclId, node: &PathNode) -> Diagnostic {
+        let diagnostic = path_diagnostic(self.design, &node.segments, node.span, WalkError::CrateClash { at: 0 });
+        let item = self.design.decl_data(local);
+        let same_file = item.file == self.design.decl_data(ns).file;
+        match &item.name {
+            Some(name) if same_file && item.parent == Some(ns) && node.segments.first().is_some_and(|head| head.name.text == name.text) => diagnostic.with_label(item.span, format!("the local item `{}`", name.text)),
+            _ => diagnostic,
+        }
     }
 
     /// Is `name` bound in `ns` by an explicit `use` that reported `E0163`? Such a name is an
@@ -464,9 +485,9 @@ impl Ctx<'_> {
             let entries = entries.chain(table.globs.iter().enumerate().map(|(i, e)| (e, Visit { namespace: *ns, glob: true, index: i })));
             for (entry, own) in entries {
                 let node = self.design.path_node(entry.path);
-                if self.use_clash(*ns, &node.segments, &mut vec![own]) {
+                if let Some(local) = self.clashing_item(*ns, &node.segments, &mut vec![own]) {
                     let file = self.design.decl_data(entry.use_decl).file;
-                    out.diagnostics.push((file, path_diagnostic(self.design, &node.segments, node.span, WalkError::CrateClash { at: 0 })));
+                    out.diagnostics.push((file, self.clash_diagnostic(*ns, local, node)));
                     continue;
                 }
                 let walked = self.walk(&node.segments, *ns, import_prefer(own.glob), &mut Vec::new(), &mut |this, name, prefer, visiting| this.scope_lookup(*ns, name, prefer, visiting));

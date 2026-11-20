@@ -257,6 +257,29 @@ fn statements_of_the_wrong_block_kind_report_e0404() {
 }
 
 #[test]
+fn an_on_every_inside_a_reaction_is_a_placement_in_a_reaction_body_e0350() {
+    // mixed~98e4dc1b of the Book (chapter 9, part III §8.3.4): `on every(..) { .. }` written inside
+    // another reaction places the event module `every` there (E0350); any other `on` in a reaction
+    // stays E0404
+    let src = "digital for M { on at(1u) { on every(0.0, 10u) { } } }";
+    let found = codes(src);
+    let at = src.find("on every(0.0, 10u) { }").expect("fixture holds its statement");
+    assert_eq!(found, [("E0350", Span::new(at, at + "on every(0.0, 10u) { }".len()))], "{found:?}");
+    let src = "digital for M { on at(1u) { on clk.rise() { } } }";
+    assert!(codes(src).iter().all(|(code, _)| *code == "E0404"), "{:?}", codes(src));
+}
+
+#[test]
+fn an_emit_statement_in_a_module_body_reports_e0601() {
+    // from-rust~64ee8d1d of the Book (chapter 14, part VI §19 rule 10): `emit!` written where only
+    // items go is E0601 at the statement, not a syntax error; the items after it still parse
+    let src = "module M() { emit!(\"hello\"); let x = 1.0; }";
+    let found = codes(src);
+    let at = src.find("emit!(\"hello\");").expect("fixture holds its statement");
+    assert_eq!(found, [("E0601", Span::new(at, at + "emit!(\"hello\");".len()))], "{found:?}");
+}
+
+#[test]
 fn a_statement_outside_a_reaction_in_digital_reports_e0434() {
     let found = codes("digital for M { q <- 1; on e { } }");
     assert_eq!(found, [("E0434", Span::new(16, 23))]);

@@ -69,8 +69,7 @@ fn the_worked_sample_hold_is_refused_with_its_three_codes() {
 #[test]
 fn the_discrete_read_diagnostic_has_the_parts_the_book_shows() {
     // errors#1 (the rendering of E0150): a code, a message, the primary label on the carrier `held`
-    // and, in the Book, a help line naming `known()`, `known_or(d)` and `high()`. The tool gives
-    // no help line today: a missing part, listed in GAPS.md section 11 (Phase 9 adds it)
+    // and a help line naming `known()`, `known_or(d)` and `high()`
     let chapter = Chapter::read();
     let model = chapter.lone("sample_hold.msl", &["errors#3"]).with_source("sample_hold.msl", SAMPLE_HOLD_BENCH);
     let source = model.text_of("sample_hold.msl");
@@ -79,15 +78,14 @@ fn the_discrete_read_diagnostic_has_the_parts_the_book_shows() {
     assert_eq!(read.primary_text(&source), "held", "the label points at the carrier");
     assert_eq!(read.primary_label, "a discrete carrier read in `analog`");
     assert!(read.message.contains("reads the discrete carrier `held`"), "{}", read.message);
-    assert_eq!(read.help, None, "errors#1 diverges: the Book shows a help line, the tool gives none");
+    let help = read.help.as_deref().expect("errors#1: the Book shows a help line");
+    assert!(help.contains("`known()`") && help.contains("`known_or(d)`") && help.contains("`high()`"), "{help}");
 }
 
 #[test]
 fn the_ambiguous_name_diagnostic_has_the_parts_the_book_shows() {
     // errors#2 (the rendering of E0163): a code, a message naming `util`, a primary label on the
-    // ambiguous path and, in the Book, a secondary label on `mod util;` ("the local namespace") and
-    // a help line. The tool gives the primary label and the help line, and no secondary label: a
-    // missing part, listed in GAPS.md section 11 (Phase 9 adds it)
+    // ambiguous path, a secondary label on `mod util;` ("the local namespace") and a help line
     let model = AmbiguousPackage::model();
     let source = model.text_of("src/lib.msl");
     let given = Refusal::reported_by(model.of_run("op").run(Overrides::default()), "errors#2");
@@ -96,7 +94,8 @@ fn the_ambiguous_name_diagnostic_has_the_parts_the_book_shows() {
     assert_eq!(ambiguous.primary_text(&source), "util::cells::Cell", "the label points at the path, not at its first segment");
     assert_eq!(ambiguous.primary_label, "ambiguous name");
     assert!(ambiguous.help.as_deref().is_some_and(|help| help.contains("package = \"util\"") && help.contains("crate::util")), "{:?}", ambiguous.help);
-    assert!(ambiguous.secondary_labels.is_empty(), "errors#2 diverges: the Book shows a secondary label on `mod util;`, the tool gives none");
+    assert_eq!(ambiguous.secondary_labels.len(), 1, "errors#2: the Book shows a secondary label: {:?}", ambiguous.secondary_labels);
+    assert_eq!(ambiguous.secondary_text(&source, 0), "mod util;", "the secondary label points at the local item");
 }
 
 /// A fixed model of the worked example: the three lines the Book gives, with a source on `vin` so the

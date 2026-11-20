@@ -36,6 +36,24 @@ impl Ctx {
             Ctx::Other => "this block",
         }
     }
+
+    /// The diagnostic of an `on` written in this context: a statement of the wrong kind, except an
+    /// `on` whose event is a call of an event module (`on every(..) { .. }`) in a reaction, which is
+    /// that module placed in a reaction body (`E0350`, §8.3.4).
+    fn nested_reaction(self, reaction: &Reaction, span: Span) -> Diagnostic {
+        let placed = match (&reaction.event.kind, self) {
+            (ExprKind::Call { callee, .. }, Ctx::Reaction) => match &callee.kind {
+                ExprKind::Path(path) if path.segments.len() == 1 => Some(path.segments[0].ident.name.as_str()),
+                _ => None,
+            },
+            _ => None,
+        };
+        match placed {
+            Some(name) => Diagnostic::new("E0350", format!("`{name}` is placed in a reaction body: it places no instance (§8.3.4)"), span, "placement in a reaction body")
+                .with_help("a reaction is a top-level item of a `digital` block; a reaction body holds commits and `emit!`"),
+            None => misplaced(self, "`on`", span, "a reaction belongs in a `digital` block", "a reaction is a top-level item of a `digital` block"),
+        }
+    }
 }
 
 /// Context diagnostics of a parsed file, in source order.
@@ -325,13 +343,7 @@ fn stmt(s: &Stmt, ctx: Ctx, out: &mut Vec<Diagnostic>) {
             }
         }
         StmtKind::Reaction(r) => {
-            out.push(misplaced(
-                ctx,
-                "`on`",
-                span,
-                "a reaction belongs in a `digital` block",
-                "a reaction is a top-level item of a `digital` block",
-            ));
+            out.push(ctx.nested_reaction(r, span));
             expr(&r.event, ctx, out);
             block(&r.body, ctx, out);
         }
