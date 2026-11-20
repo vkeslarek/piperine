@@ -14,7 +14,6 @@ E0133	generics	L8 (handles)
 E0134	generics	L7 (traits)
 E0180	params-and-io	PI-06 AC 1, 3, raised here
 E0181	composite-values	inference (T16; raised on its branch)
-E0182	params-and-io	PI-06 AC 5, raised here
 E0183	composite-values	moves and assignment (T11, T44)
 E0184	composite-values	patterns (T14, T15)
 E0185	composite-values	control flow (T12, T13)

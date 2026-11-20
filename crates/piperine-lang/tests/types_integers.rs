@@ -296,7 +296,8 @@ fn as_goes_between_integers_and_f64() {
     assert_eq!(got, [Ty::UInt(9), Ty::F64, Ty::UInt(1)]);
 
     let (src, d) = diagnostics("", "let x = 1.0; let b = x as bool;");
-    assert_eq!(codes(&d), ["P0002"]);
+    // §1.4.5: `f64` to `bool` is no row of the table, so `E0182` (it was `P0002`).
+    assert_eq!(codes(&d), ["E0182"]);
     assert_eq!(snippet(&src, &d[0]), "x");
 }
 

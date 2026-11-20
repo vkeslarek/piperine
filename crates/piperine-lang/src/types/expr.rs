@@ -344,7 +344,7 @@ impl Checker<'_> {
     }
 
     /// `expr as T`: between any two of the integer types and `f64`, and from `bool` to an integer
-    /// type (§1 rule 1); anything else is a plain mismatch.
+    /// type (§1 rule 1); any other pair is `E0182` naming both types (§1.4.5).
     fn cast(&mut self, operand: ExprId, ty: crate::pom::TypeId) -> Option<Ty> {
         let target = self.lower_type(ty);
         let source = self.infer(operand);
@@ -355,8 +355,8 @@ impl Checker<'_> {
         {
             let file = self.file_of_expr(operand);
             let span = self.design.expr_node(operand).span;
-            let found = source.name(self.design);
-            self.mismatch_text(file, span, &format!("a value `as` converts to `{}`", target.name(self.design)), &found);
+            let (found, wanted) = (source.name(self.design), target.name(self.design));
+            self.coded(file, "E0182", span, format!("no `as` conversion from `{found}` to `{wanted}`"), &format!("`{found}` does not convert `as` `{wanted}`"));
         }
         Some(target)
     }

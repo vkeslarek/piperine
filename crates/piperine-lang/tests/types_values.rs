@@ -492,3 +492,13 @@ fn a_method_outside_h2_on_f64_is_e0161() {
     assert!(message.contains("cbrt") && message.contains("`f64`"), "{message}");
     assert_eq!(snippet(&src, &d[0]), "cbrt");
 }
+
+#[test]
+fn an_as_between_types_without_a_row_is_e0182() {
+    // §1.4.5: an `as` between two types that are not a row of the table is `E0182`, naming both types.
+    let (src, d) = diagnostics("", "let a = true as f64; let b = 1.5 as bool;");
+    assert_eq!(codes_of(&d), ["E0182", "E0182"], "{src}");
+    assert!(d[0].diagnostic.message.contains("`bool`") && d[0].diagnostic.message.contains("`f64`"), "{}", d[0].diagnostic.message);
+    assert!(d[1].diagnostic.message.contains("`f64`") && d[1].diagnostic.message.contains("`bool`"), "{}", d[1].diagnostic.message);
+    assert_eq!(snippet(&src, &d[1]), "1.5");
+}
