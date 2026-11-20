@@ -188,3 +188,19 @@ fn integ_holds_its_result_at_ic_at_the_operating_point() {
     // AS-04 AC 4: with `ic` given an equilibrium solve holds the result at `ic`: v(o) = 0.5.
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("hold", "v(o)", Coordinate::OperatingPoint), 0.5, operating_point("HoldBench"));
 }
+
+#[test]
+fn slew_bounds_the_rate_and_tracks_at_the_operating_point() {
+    // AS-09 AC 6 (Q3, Part VII §22.2.10): `slew(v(inp), 1M, 1M)` follows a 0 to 1 V step at 1 us at
+    // the bound of 1 V/us: 0 V before 1 us, `(t - 1 us) * 1e6` V on the ramp, 1 V from 2 us. The step
+    // has a 0.1 us edge (10 V/us): the reaction `above(dx - r)` sees the rate run past the bound while
+    // the edge rises, and the output leaves the input there. An ideal step is taken whole within one
+    // solver step, before the reaction can run (a precision gap of the criterion's "step"). At an
+    // operating point `ddt` is 0 and the mode is `Track`, so the result is `v(inp)`.
+    let waveform = transient("SlewBench", 3e-6, 0.01e-6);
+    for (time, wanted) in [(0.5e-6, 0.0), (0.9e-6, 0.0), (1.25e-6, 0.25), (1.5e-6, 0.5), (1.75e-6, 0.75), (2.5e-6, 1.0), (3.0e-6, 1.0)] {
+        let actual = waveform.at(time).unwrap_or_else(|| panic!("no point at {time} s"));
+        ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("slew", "v(o)", Coordinate::Time(time)), wanted, actual);
+    }
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("slew hold", "v(o)", Coordinate::OperatingPoint), 0.7, operating_point("SlewHoldBench"));
+}

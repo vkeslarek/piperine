@@ -159,3 +159,27 @@ module HoldBench() {
     let load = Resistor { r: 1k }(o, gnd);
 }
 analog for HoldBench { v(o) +> Integ(1.0, 0.5, None); }
+
+// -- AS-09 AC 6 (Q3): the stdlib `slew` (Part VII §22.2.10) runs
+
+/// 0 V until 1 us, then 1 V reached over 0.1 us (10 V/us): a step with an edge, which `slew` can see
+/// run away from its bound (`above(dx - r)`): an ideal step is taken whole within one solver step, before
+/// any reaction can bound it.
+module StepAtOneMicrosecond(p: Electrical) {}
+analog for StepAtOneMicrosecond { v(p, gnd) +> if now() < 1u { 0.0 } else { ((now() - 1u) / 0.1u).min(1.0) }; }
+
+module SlewBench() {
+    signal inp: Electrical;
+    signal o: Electrical;
+    let source = StepAtOneMicrosecond(inp);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for SlewBench { v(o) +> slew(v(inp), 1M, 1M); }
+
+module SlewHoldBench() {
+    signal inp: Electrical;
+    signal o: Electrical;
+    let source = Level { volts: 0.7 }(inp);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for SlewHoldBench { v(o) +> slew(v(inp), 1M, 1M); }
