@@ -1,6 +1,6 @@
 //! Scope: the elaborator's side of `unknown-semantics` (part I §3.3, §22.1): `ConstEval` folds a
 //! value that may be unknown by the level rules of §3.3.2, §3.3.3 and §3.3.12, `T::WIDTH` is the
-//! level count of a `Repr` type.
+//! level count of a `Repr` type, and `Unknown` where it decides structure is `E0151` (§3.3.8).
 //! Each expected value is written from the rule it cites, one source expression per row.
 
 #[path = "support/elab.rs"]
@@ -158,4 +158,26 @@ fn a_real_that_is_nan_merges_with_itself() {
         Ok(Constant::Real(r)) => assert!(r.get().is_nan(), "{r:?}"),
         other => panic!("{other:?}"),
     }
+}
+
+/// The diagnostics of elaborating `Top` of `src`, which must be refused.
+fn refused(src: &str) -> Vec<piperine_lang::pom::DesignDiagnostic> {
+    Elab::run(src, "Top").expect_err("elaboration refuses a structure decided by `Unknown`")
+}
+
+#[test]
+fn unknown_deciding_structure_is_e0151() {
+    // §3.3.8: a `where` condition and a param default fix structure, so a value that may be
+    // unknown cannot decide them: `E0151` naming the decision, at the expression
+    let src = "module Leaf() { r: f64 where Unknown; }\nmodule Top() { let r1 = Leaf { r: 1.0 }(); }";
+    let err = refused(src);
+    assert_eq!(Elab::codes(&err), ["E0151"]);
+    assert!(err[0].diagnostic.message.contains("a `where` condition"), "names the decision: {}", err[0].diagnostic.message);
+    let span = err[0].diagnostic.span();
+    assert_eq!(&src[span.start..span.end], "Unknown");
+
+    let src = "module Top() { r: f64 = Unknown; }";
+    let err = refused(src);
+    assert_eq!(Elab::codes(&err), ["E0151"]);
+    assert!(err[0].diagnostic.message.contains("a param default"), "names the decision: {}", err[0].diagnostic.message);
 }

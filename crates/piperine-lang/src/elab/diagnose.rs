@@ -8,7 +8,10 @@ impl Elaboration<'_, '_> {
     /// Report `fault`, found while folding `position` (`"a param default"`, `"a node's initial
     /// value"`): a read of a param is `P0001` (a value that depends on another param is M2),
     /// anything that needs a run is `E0321`, a form the evaluator does not fold is `P0001`, a panic
-    /// (an integer division by zero) is `E0104` (§1 rule 11).
+    /// (an integer division by zero) is `E0104` (§1 rule 11), and a value that is unknown is
+    /// `E0151` (§3.3.8): every position that reaches here is one `Unknown` cannot take, a `where`
+    /// condition, a param value or default, a nature's `abstol`. A position that takes an unknown
+    /// (a carrier's initial value, a `const` read) folds it before it asks.
     pub(super) fn const_fault(&mut self, fault: &ConstFault, position: &str) {
         let (file, span) = match fault {
             ConstFault::NoValue { decl } => {
@@ -30,7 +33,10 @@ impl Elaboration<'_, '_> {
             }
             ConstFault::Unsupported { what, .. } => self.unsupported(file, span, &format!("{what} in {position}")),
             ConstFault::NoValue { .. } => self.unsupported(file, span, &format!("a `const` without a value in {position}")),
-            ConstFault::Unknown { .. } => self.unsupported(file, span, &format!("a value that may be unknown in {position}")),
+            ConstFault::Unknown { .. } => {
+                let message = format!("{position} is unknown: a value that may be unknown cannot decide structure (§3.3.8)");
+                self.report(file, Diagnostic::new("E0151", message, span, "unknown here"));
+            }
             ConstFault::Panic { what, .. } => {
                 let message = format!("{position} panics while it is evaluated at elaboration: {what}");
                 self.report(file, Diagnostic::new("E0104", message, span, "panics"));
