@@ -7,6 +7,7 @@ use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind
 use super::carrier::flag_builtin;
 use super::catalogue::{Catalogue, Lookup};
 use super::check::{Checker, Context};
+use super::flow::ExitFrame;
 use super::unsupported::Unsupported;
 use super::{Builtin, Callee, Method, Ty};
 
@@ -377,18 +378,33 @@ impl Checker<'_> {
             self.mismatch(file, span, result, written);
         }
         let outer = std::mem::replace(&mut self.context, Context::Function);
-        let enclosing = self.flow.enter_body();
-        let found = match result.or(written.as_ref().map(|(_, ty)| ty)) {
+        let given = result.or(written.as_ref().map(|(_, ty)| ty));
+        let enclosing = self.flow.enter_body(ExitFrame::new(given.cloned(), given.is_none()));
+        let found = match given {
             Some(result) => {
                 self.check(*body, result);
                 Some(result.clone())
             }
             None => self.infer(*body),
         };
-        self.flow.leave_body(enclosing);
+        let returned = self.flow.leave_body(enclosing).and_then(|frame| frame.returned);
         self.context = outer;
-        let found = found?;
+        let found = self.settle_result(file, node.span, found?, returned);
         self.exprs[expr.index()] = Some(Ty::Fn(declared.to_vec(), Box::new(found.clone())));
         Some(found)
+    }
+
+    /// The result type of a closure whose result was inferred: its body's, or, when the body
+    /// never completes, the type of its first `return`; a `return` of another type than the body's
+    /// is a mismatch.
+    fn settle_result(&mut self, file: crate::pom::FileId, span: crate::msl::Span, body: Ty, returned: Option<Ty>) -> Ty {
+        match returned {
+            Some(returned) if body == Ty::Never => returned,
+            Some(returned) if body != returned => {
+                self.mismatch(file, span, &returned, &body);
+                returned
+            }
+            _ => body,
+        }
     }
 }

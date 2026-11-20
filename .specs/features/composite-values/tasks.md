@@ -449,8 +449,8 @@ T63
 
 **Done when**:
 
-- [ ] `return_and_question_mark_type_check` and `return_outside_a_function_is_e0185` pass under `**Run typesctl**`
-- [ ] Gate check passes: Quick
+- [x] `return_and_question_mark_type_check` and `return_outside_a_function_is_e0185` pass under `**Run typesctl**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

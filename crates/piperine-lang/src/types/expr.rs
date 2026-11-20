@@ -213,6 +213,8 @@ impl Checker<'_> {
             ExprKind::For { pat, iter, body } => self.for_loop(*iter, *pat, body),
             ExprKind::Break(value) => self.break_expr(expr, *value),
             ExprKind::Continue => self.continue_expr(expr),
+            ExprKind::Return(value) => self.return_expr(expr, *value),
+            ExprKind::Try(operand) => self.try_expr(expr, *operand),
             ExprKind::Cast { expr: operand, ty } => self.cast(*operand, *ty),
             ExprKind::Binary { op, lhs, rhs } => self.binary(expr, *op, *lhs, *rhs),
             ExprKind::Block(block) => self.statements(&block.stmts, None),

@@ -5,11 +5,11 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::msl::{Diagnostic, Span};
 use crate::msl::lexer;
-use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, FnParamData, GenericArgNode, GenericArgsNode, LitKind, NatureKind, PathId, Reflect, Resolution, StmtKind, TypeId, TypeKind};
+use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, FnParamData, GenericArgNode, GenericArgsNode, LitKind, NatureKind, PathId, Reflect, Resolution, TypeId, TypeKind};
 
 use super::continuity::Continuity;
 use super::definition::DriveBook;
-use super::flow::Flow;
+use super::flow::{ExitFrame, Flow};
 use super::record::Records;
 use super::unsupported::Unsupported;
 use super::{Builtin, Callee, Method, Ty, Types};
@@ -506,6 +506,7 @@ impl<'d> Checker<'d> {
             }
         }
         self.context = Context::Function;
+        self.flow.exit = Some(ExitFrame::new(parts.ret.clone(), false));
         match (&f.body, parts.ret) {
             (Some(body), Some(ret)) => self.function_body(body, &ret, data.file),
             (Some(body), None) => {
@@ -517,23 +518,14 @@ impl<'d> Checker<'d> {
     }
 
     /// The statements of a body against the declared result. A missing result is reported
-    /// whatever else the body got wrong, since it is its own mistake; only when the last
-    /// statement is a `return`, refused as outside the subset and standing where the value
-    /// would be, is it a consequence of that refusal and left out.
+    /// whatever else the body got wrong, since it is its own mistake.
     fn function_body(&mut self, body: &BlockNode, ret: &Ty, file: FileId) {
         if let Some(found) = self.statements(&body.stmts, Some(ret))
             && found != *ret
             && found != Ty::Never
-            && !self.ends_in_return(body)
         {
             self.mismatch(file, body.span, ret, &found);
         }
-    }
-
-    /// Whether the last statement of `body` is a `return`.
-    fn ends_in_return(&self, body: &BlockNode) -> bool {
-        let Some(last) = body.stmts.last() else { return false };
-        matches!(&self.design.stmt_node(*last).kind, StmtKind::Expr { expr, .. } if matches!(self.design.expr_node(*expr).kind, ExprKind::Return(_)))
     }
 
     /// A module of the reachable set: its params, nodes and placements, then its analog blocks.

@@ -75,6 +75,29 @@ pub(super) struct Flow {
     pub(super) assigned: Assigned,
     /// The loops the expression being checked is inside, innermost last (§1.8.10).
     pub(super) loops: Vec<LoopFrame>,
+    /// The function or closure whose result the next `return` gives (§1.8.11); `None` outside
+    /// one.
+    pub(super) exit: Option<ExitFrame>,
+}
+
+/// The function or closure being checked, as a `return` and a `?` see it.
+#[derive(Debug, Clone)]
+pub(super) struct ExitFrame {
+    /// The result type it declares; `None` when its signature had a diagnostic, or when a closure
+    /// has none written and none expected (`inferred`).
+    pub(super) result: Option<Ty>,
+    /// Whether the result is still to be found from the body: a closure with no written type.
+    pub(super) inferred: bool,
+    /// The type of the first `return value` met while the result is inferred.
+    pub(super) returned: Option<Ty>,
+}
+
+impl ExitFrame {
+    /// A function or closure with the declared `result`; with none, `inferred` says whether the
+    /// body is to give it.
+    pub(super) fn new(result: Option<Ty>, inferred: bool) -> Self {
+        ExitFrame { result, inferred, returned: None }
+    }
 }
 
 /// One loop being checked: what a `break` or a `continue` in it may do.
@@ -98,17 +121,18 @@ impl LoopFrame {
 }
 
 impl Flow {
-    /// The state a nested body (a function or a closure) starts from: what is assigned so far,
-    /// and no loop, since `break` and `continue` do not cross it (§1.8.12). Gives the state of
+    /// The state a closure body starts from: what is assigned so far, no loop (`break` and
+    /// `continue` do not cross it, §1.8.12) and its own result for `return`. Gives the state of
     /// the enclosing body to hand back to `leave_body`.
-    pub(super) fn enter_body(&mut self) -> Flow {
-        let inner = Flow { assigned: self.assigned.clone(), loops: Vec::new() };
+    pub(super) fn enter_body(&mut self, exit: ExitFrame) -> Flow {
+        let inner = Flow { assigned: self.assigned.clone(), loops: Vec::new(), exit: Some(exit) };
         std::mem::replace(self, inner)
     }
 
-    /// Back to the enclosing body: what the nested one assigned or exited is dropped.
-    pub(super) fn leave_body(&mut self, outer: Flow) {
-        *self = outer;
+    /// Back to the enclosing body: what the nested one assigned is dropped. Gives the nested
+    /// body's exit frame, with what its `return`s found.
+    pub(super) fn leave_body(&mut self, outer: Flow) -> Option<ExitFrame> {
+        std::mem::replace(self, outer).exit
     }
 
     /// Ends the branch just checked: the state it reached, with the state of the point the next
@@ -120,6 +144,6 @@ impl Flow {
 
 impl Default for Flow {
     fn default() -> Self {
-        Flow { assigned: Assigned::start(), loops: Vec::new() }
+        Flow { assigned: Assigned::start(), loops: Vec::new(), exit: None }
     }
 }

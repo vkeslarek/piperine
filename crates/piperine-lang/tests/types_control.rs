@@ -158,3 +158,35 @@ fn break_or_continue_outside_a_loop_is_e0185() {
     // a refutable pattern in a `for` is `E0184` (§1.6.11)
     assert_refused(&source("", "for 3 in 0..2 { }"), "E0184", "irrefutable");
 }
+
+// ---- T13: `return` and `?` ------------------------------------------------------------------
+
+#[test]
+fn return_and_question_mark_type_check() {
+    // §1.8.11: `return value` has the result type, `return` alone `()`; the value of the body is the
+    // result when no `return` runs. §1.5.16: `return` fits any required type.
+    let items = "fn early(x: f64) -> f64 { if x > 1.0 { return 1.0; } x }\n\
+                 fn unit(x: f64) { if x > 1.0 { return; } }\n\
+                 fn both(x: f64) -> f64 { let y = if x > 0.0 { x } else { return 0.0 }; y }\n\
+                 fn each(x: f64) -> f64 { match x > 0.0 { true => return 1.0, false => 2.0 } }\n\
+                 fn in_loop(x: u8) -> u8 { let mut i = 0u8; while i < 9 { if i == x { return i; } i += 1; } 0 }";
+    assert_clean(&source(items, "let a = early(1.0); unit(1.0); let b = both(1.0); let c = each(1.0); let d = in_loop(2);"));
+    // §1.5.15: `e?` is the `T` of an `Option<T>`, in a function whose result is an `Option`
+    let option = "fn first(a: Option<u8>, b: Option<u8>) -> Option<u8> { let x = a?; let y = b?; Some(x + y) }\n\
+                  fn chained(a: Option<u8>) -> Option<u8> { Some(a? + 1) }";
+    assert_clean(&source(option, "let s = first(Some(1), None); let t = chained(Some(1));"));
+    // a `return` of the wrong type, and a missing value, are mismatches
+    assert_refused(&source("fn f(x: f64) -> f64 { return true; }", "let y = f(1.0);"), "P0002", "expected `f64`");
+    assert_refused(&source("fn f(x: f64) -> f64 { return; }", "let y = f(1.0);"), "P0002", "expected `f64`");
+    // the operand of `?` is an `Option`
+    assert_refused(&source("fn f(a: u8) -> Option<u8> { let x = a?; Some(x) }", "let y = f(1);"), "P0002", "an `Option`");
+}
+
+#[test]
+fn return_outside_a_function_is_e0185() {
+    // §1.8.11, §1.5.15: `return` and `?` belong to a function or a closure.
+    assert_refused(&source("", "return;"), "E0185", "`return` outside a function or a closure");
+    assert_refused(&source("", "let o: Option<u8> = Some(1); let x = o?;"), "E0185", "`?` outside a function or a closure");
+    // `?` in a function whose result is not an `Option`
+    assert_refused(&source("fn f(o: Option<u8>) -> u8 { let x = o?; x }", "let y = f(Some(1));"), "E0185", "not an `Option`");
+}
