@@ -1,6 +1,6 @@
 # unknown-semantics proofs
 
-**HEAD**: e7d2c5d2
+**HEAD**: 5d5fcec5
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 62 pass, 0 fail
@@ -75,201 +75,201 @@
 `Run sourceunknowns` - exit 0
 
 ```
-   Compiling py_literal v0.4.0
-   Compiling npyz v0.8.4
-   Compiling faer v0.23.2
-   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-lang)
-   Compiling git2 v0.21.0
-   Compiling piperine-analog-solver v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-analog-solver)
-   Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-solver)
-   Compiling piperine-project v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-project)
-   Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-plan)
-   Compiling piperine-transpile v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-transpile)
-   Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-interp)
-   Compiling piperine-api v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-api)
-   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-parity)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 07s
-     Running tests/source_unknowns.rs (/var/tmp/piperine-target-c/debug/deps/source_unknowns-d7db02659d9d6160)
+test merge_of_a_value_with_itself_is_that_value ... ok
+test merge_of_different_values_is_unknown_and_commutative ... ok
+test equal_known_commits_stay_known ... ok
+test merge_of_equal_known_values_is_that_value ... ok
+test same_compares_flags_and_values ... ok
+test short_circuit_operands_follow_the_merge ... ok
+test two_commits_under_an_unknown_guard_merge_exactly ... ok
+test neither_arm_committing_commits_nothing ... ok
+test one_arm_committing_merges_with_the_value_then ... ok
+test the_pfd3_reaction_keeps_state_unknown_until_a_known_commit ... ok
+
+test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 33.95s
+
+    Finished `test` profile [unoptimized] target(s) in 0.25s
+     Running tests/source_unknowns.rs (/var/tmp/piperine-target-c/debug/deps/source_unknowns-4723441ecc38021e)
 ```
 
 `Run elabunknowns` - exit 0
 
 ```
+test width_is_the_level_count_of_each_repr_type ... ok
+test a_real_that_is_nan_merges_with_itself ... ok
+test unknown_folds_by_the_level_rules ... ok
+test unknown_deciding_structure_is_e0151 ... ok
+test analog_reading_a_maybe_unknown_value_is_e0150 ... ok
 test no_analog_refusal_of_an_unknown_is_p0001 ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.98s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.96s
 
-   Compiling cc v1.2.65
-   Compiling serde v1.0.228
    Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-ir)
-   Compiling psm v0.1.32
-   Compiling stacker v0.1.25
-   Compiling chumsky v0.13.0
    Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-plan)
-   Compiling piperine-transpile v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-transpile)
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-lang)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 28.77s
-     Running tests/elab_unknowns.rs (/var/tmp/piperine-target-c/debug/deps/elab_unknowns-f26fae9486903861)
+   Compiling piperine-transpile v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-transpile)
+    Finished `test` profile [unoptimized] target(s) in 23.89s
+     Running tests/elab_unknowns.rs (/var/tmp/piperine-target-c/debug/deps/elab_unknowns-483f53e85698518c)
 ```
 
 `Run typesunknowns` - exit 0
 
 ```
-test cast_between_widths_is_e0701 ... ok
-test width_is_typed_u32_on_a_concrete_type ... ok
-test level_on_a_value_without_repr_is_refused ... ok
 test a_project_function_named_like_an_intrinsic_is_an_ordinary_function ... ok
 test level_is_typed_on_every_repr_type ... ok
 test the_intrinsics_are_typed_at_the_concrete_type ... ok
+test width_is_typed_u32_on_a_concrete_type ... ok
+test level_on_a_value_without_repr_is_refused ... ok
+test cast_between_widths_is_e0701 ... ok
 test a_function_that_reads_its_parameter_bare_is_not_flag_total ... ok
 test a_bad_pattern_is_e0702 ... ok
 test a_flag_total_function_may_take_a_carrier_in_analog ... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.70s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-lang)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.61s
-     Running tests/types_unknowns.rs (/var/tmp/piperine-target-c/debug/deps/types_unknowns-6401ec60b7e7dbf6)
+    Finished `test` profile [unoptimized] target(s) in 0.45s
+     Running tests/types_unknowns.rs (/var/tmp/piperine-target-c/debug/deps/types_unknowns-ab8a4e7b58f8b925)
 ```
 
 `Run spectext` - exit 0
 
 ```
 test time_point_runs_the_procedure ... ok
-test every_error_code_is_defined_exactly_once ... ok
-test value_blocks_may_hold_contributions_and_commits ... ok
 test gnd_and_the_implicit_params_are_core_names ... ok
-test s3_states_the_intrinsic_contract ... ok
-test s36_defines_the_package_codes ... ok
 test tran_in_fences_is_the_module ... ok
+test s36_defines_the_package_codes ... ok
+test s3_states_the_intrinsic_contract ... ok
+test every_error_code_is_defined_exactly_once ... ok
 test zero_bytes_are_the_unknown_value ... ok
+test every_method_called_in_a_spec_fence_is_catalogued ... ok
 test no_spec_text_says_stimulus_is_host_only ... ok
 
-test result: ok. 88 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test result: ok. 88 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
 
    Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-lang)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.11s
-     Running tests/spec_text.rs (/var/tmp/piperine-target-c/debug/deps/spec_text-b62cdc0a876d2a27)
+    Finished `test` profile [unoptimized] target(s) in 0.84s
+     Running tests/spec_text.rs (/var/tmp/piperine-target-c/debug/deps/spec_text-909ae6bbf798e8b5)
 ```
 
 `Run docs` - exit 0
 
 ```
-test gaps_drops_what_host_ii_closed ... ok
+test gaps_drops_what_closed_and_lists_what_is_left ... ok
+test the_roadmap_marks_the_cli_item_done ... ok
 test state_records_the_cli_decision ... ok
-test gaps_says_a_host_run_is_bounded ... ok
-test gaps_drops_what_msl_fixes_closed ... ok
+test the_roadmap_lists_the_host_follow_ups ... ok
+test the_roadmap_lists_what_the_long_run_leaves ... ok
+test gaps_drops_what_host_ii_closed ... ok
+test state_records_the_unknown_semantics_decision ... ok
+test state_records_the_derived_param_decision ... ok
+test the_instruction_files_say_the_host_crates_build ... ok
+test the_roadmap_and_state_record_msl_fixes ... ok
 
 test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-   Compiling clap_lex v1.1.0
-   Compiling anstyle v1.0.14
-   Compiling strsim v0.11.1
-   Compiling clap_builder v4.6.0
-   Compiling clap v4.6.1
-   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-cli)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.92s
-     Running tests/docs.rs (/var/tmp/piperine-target-c/debug/deps/docs-7e405e0698d57fd4)
+    Finished `test` profile [unoptimized] target(s) in 0.13s
+     Running tests/docs.rs (/var/tmp/piperine-target-c/debug/deps/docs-a5e77d72b1cc2f1e)
 ```
 
 `Run clirun` - exit 0
 
 ```
 test the_project_flag_uses_that_directory_and_never_searches ... ok
+test a_closed_stdout_ends_with_exit_1_and_no_panic ... ok
 test records_stay_when_the_analysis_fails ... ok
-test a_maybe_record_prints_maybe_and_a_known_one_does_not ... ok
 test run_prints_the_fatal_line_and_exits_1 ... ok
+test records_come_before_the_table ... ok
 test run_prints_header_records_blank_line_and_table ... ok
 test a_digital_only_transient_runs_to_its_stop_for_table_csv_and_plot ... ok
 test a_first_compile_is_announced_on_stderr ... ok
 test a_fatal_run_prints_its_msg_and_exits_1 ... ok
 test stdout_is_the_same_from_two_caches_and_two_directories ... ok
 
-test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.76s
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.87s
 
-   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-cli)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.53s
-     Running tests/run.rs (/var/tmp/piperine-target-c/debug/deps/run-8bc9482a472d21be)
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running tests/run.rs (/var/tmp/piperine-target-c/debug/deps/run-ef7b05ca62e6bd9b)
 ```
 
 `Run book` - exit 0
 
 ```
+test blinky_runs_to_its_stop_in_the_book ... ok
 test the_cycle_counter_prints_three_pulses ... ok
 test the_plot_in_the_chapter_is_the_file_the_binary_writes ... ok
 test the_chapter_runs_each_new_analysis ... ok
 test every_cli_listing_of_the_book_is_what_the_binary_prints has been running for over 60 seconds
 test the_buck_block_is_what_the_binary_prints has been running for over 60 seconds
 test the_rc_output_blocks_are_what_the_binary_prints has been running for over 60 seconds
-test the_rc_output_blocks_are_what_the_binary_prints ... ok
-test the_buck_block_is_what_the_binary_prints ... ok
 test every_cli_listing_of_the_book_is_what_the_binary_prints ... ok
+test the_buck_block_is_what_the_binary_prints ... ok
+test the_rc_output_blocks_are_what_the_binary_prints ... ok
 
-test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 136.91s
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 129.98s
 
-   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-cli)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.59s
-     Running tests/book.rs (/var/tmp/piperine-target-c/debug/deps/book-41913a260b16a2a6)
+    Finished `test` profile [unoptimized] target(s) in 0.13s
+     Running tests/book.rs (/var/tmp/piperine-target-c/debug/deps/book-f38e47a15c9a1081)
 ```
 
 `Run instant` - exit 0
 
 ```
-test a_settled_change_is_one_observation ... ok
 test a_settle_commit_with_no_delay_is_refused ... ok
-test an_instant_reports_boundary_fired_and_final ... ok
+test a_settled_change_is_one_observation ... ok
 test previous_is_the_value_before_the_microstep ... ok
+test a_merge_commit_the_layout_cannot_merge_is_a_run_error_naming_the_net ... ok
 test start_commits_inits_and_fires_start ... ok
+test a_plan_with_no_code_applies_host_commits_only ... ok
 test two_commits_to_one_net_settle_to_one_write ... ok
 test start_at_commits_init_at_its_tick ... ok
 test the_traced_instant_of_section_15_1 ... ok
 test an_instant_that_never_goes_quiet_is_e0501_naming_the_nets ... ok
 
-test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-   Compiling piperine-digital-solver v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-digital-solver)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.12s
-     Running tests/instant.rs (/var/tmp/piperine-target-c/debug/deps/instant-83dcbd0edb3478f5)
+    Finished `test` profile [unoptimized] target(s) in 0.10s
+     Running tests/instant.rs (/var/tmp/piperine-target-c/debug/deps/instant-cf6184e72773bc7c)
 ```
 
 `Run queue` - exit 0
 
 ```
-test a_maybe_commit_converts_the_pending_it_would_remove ... ok
-test a_maybe_replace_converts_every_pending_commit_of_the_statement ... ok
 test a_queue_rewind_restores_its_pending_commits ... ok
 test a_rewind_undoes_a_conversion ... ok
+test a_maybe_replace_converts_every_pending_commit_of_the_statement ... ok
 test commits_apply_in_made_statement_call_order ... ok
-test disjoint_byte_ranges_of_one_statement_do_not_remove_each_other ... ok
-test next_due_is_the_earliest_instant ... ok
-test replace_removes_every_pending_commit_of_the_statement ... ok
+test a_host_commit_is_never_transported ... ok
+test a_maybe_commit_converts_the_pending_it_would_remove ... ok
 test transport_removes_later_commits_of_the_same_statement_only ... ok
+test replace_removes_every_pending_commit_of_the_statement ... ok
+test next_due_is_the_earliest_instant ... ok
+test disjoint_byte_ranges_of_one_statement_do_not_remove_each_other ... ok
 
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 
-   Compiling piperine-digital-solver v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-digital-solver)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.50s
-     Running tests/queue.rs (/var/tmp/piperine-target-c/debug/deps/queue-0b6a1fe806b0f37a)
+    Finished `test` profile [unoptimized] target(s) in 0.09s
+     Running tests/queue.rs (/var/tmp/piperine-target-c/debug/deps/queue-867b2535f21de770)
 ```
 
 `Run rt` - exit 0
 
 ```
 test rt::int::tests::a_shift_by_the_width_or_more_is_the_truncated_result ... ok
-test rt::real::tests::each_row_has_the_value_of_rusts_method ... ok
+test rt::real::tests::f64_is_a_real ... ok
 test rt::int::tests::integer_rows_wrap_saturate_and_test_overflow ... ok
+test rt::real::tests::the_differentiable_rows_agree_with_finite_differences ... ok
+test rt::real::tests::min_max_clamp_and_floor_carry_the_tangent_of_the_value_chosen ... ok
+test rt::real::tests::the_piecewise_rows_have_derivative_zero_or_one ... ok
+test rt::real::tests::each_row_has_the_value_of_rusts_method ... ok
 test rt::int::tests::arithmetic_wraps_at_every_width ... ok
 
-test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 22 filtered out; finished in 0.04s
+test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 22 filtered out; finished in 0.05s
 
-   Compiling piperine-analog-solver v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-analog-solver)
-   Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-ir)
-   Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-solver)
-   Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-plan)
    Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-interp)
    Compiling piperine-transpile v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-transpile)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.54s
-     Running unittests src/lib.rs (/var/tmp/piperine-target-c/debug/deps/piperine_transpile-bdd7d4b19e375c91)
+    Finished `test` profile [unoptimized] target(s) in 4.66s
+     Running unittests src/lib.rs (/var/tmp/piperine-target-c/debug/deps/piperine_transpile-6d48b28f4fb0a670)
 ```
 
 `Run reaction` - exit 0
@@ -277,18 +277,18 @@ test result: ok. 37 passed; 0 failed; 0 ignored; 0 measured; 22 filtered out; fi
 ```
 running 7 tests
 test reactions_and_drives_read_the_environment_as_analog_code_does ... ok
-test an_unknown_condition_merges_both_arms ... ok
-test a_known_or_over_an_unwritten_input_gives_the_default ... ok
-test an_unknown_delay_commits_unknown_at_the_next_microstep ... ok
 test a_reaction_commits_in_source_order ... ok
-test level_merge_same_and_recast_compute_their_tables ... ok
+test a_known_or_over_an_unwritten_input_gives_the_default ... ok
 test a_panic_in_compiled_code_is_a_fault_and_the_instance_survives ... ok
+test level_merge_same_and_recast_compute_their_tables ... ok
+test an_unknown_delay_commits_unknown_at_the_next_microstep ... ok
+test an_unknown_condition_merges_both_arms ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.49s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.29s
 
    Compiling piperine-transpile v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-transpile)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.67s
-     Running tests/reaction.rs (/var/tmp/piperine-target-c/debug/deps/reaction-35dbe52112d75494)
+    Finished `test` profile [unoptimized] target(s) in 0.63s
+     Running tests/reaction.rs (/var/tmp/piperine-target-c/debug/deps/reaction-762b225443b4d4ef)
 ```
 
 `Run abilayouts` - exit 0
@@ -296,134 +296,131 @@ test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ```
 running 6 tests
 test a_valueless_field_with_value_bytes_is_not_canonical ... ok
+test shipped_layouts_have_their_stated_fields ... ok
 test merge_keeps_equal_known_fields_and_clears_the_rest ... ok
 test layout_equality_ignores_names ... ok
 test merge_refuses_a_field_without_a_known_byte ... ok
 test merge_works_element_by_element_over_an_array_field ... ok
-test shipped_layouts_have_their_stated_fields ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-   Compiling piperine-abi v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-abi)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.48s
-     Running tests/layouts.rs (/var/tmp/piperine-target-c/debug/deps/layouts-8766a4c58fc70f77)
+    Finished `test` profile [unoptimized] target(s) in 0.05s
+     Running tests/layouts.rs (/var/tmp/piperine-target-c/debug/deps/layouts-76eb62529b0e07fa)
 ```
 
 `Run abicaller` - exit 0
 
 ```
 running 7 tests
-test a_commit_with_flags_reaches_the_owner ... ok
 test dropping_a_handle_destroys_the_instance ... ok
+test a_commit_with_flags_reaches_the_owner ... ok
 test a_shared_handle_is_one_instance_destroyed_with_its_last_share ... ok
 test a_host_without_commit_with_is_a_named_fault ... ok
 test handle_builds_the_frames_and_returns_results ... ok
-test handle_is_send ... ok
 test handle_reports_fault_and_reshape_as_errors ... ok
+test handle_is_send ... ok
 
 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-   Compiling piperine-abi v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-abi)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.70s
-     Running tests/caller.rs (/var/tmp/piperine-target-c/debug/deps/caller-d10dd34d76f13724)
+    Finished `test` profile [unoptimized] target(s) in 0.05s
+     Running tests/caller.rs (/var/tmp/piperine-target-c/debug/deps/caller-7e19d0200214589c)
 ```
 
 `Run irdigital` - exit 0
 
 ```
 test a_carrier_initial_value_outside_its_type_is_an_entry ... ok
-test a_defective_digital_body_gives_one_entry_per_defect ... ok
-test the_unknown_nodes_type_print_and_check ... ok
+test analog_reads_a_carrier_through_level_and_same_only ... ok
 test carriers_and_drives_print ... ok
-test unknown_values_and_their_reads_print ... ok
-test integers_and_their_operators_print ... ok
-test the_m1_prints_are_unchanged ... ok
 test events_and_reactions_print ... ok
+test the_unknown_nodes_type_print_and_check ... ok
+test unknown_values_and_their_reads_print ... ok
+test the_m1_prints_are_unchanged ... ok
+test integers_and_their_operators_print ... ok
 test the_buck_slice_bodies_pass_check_and_print_as_their_golden_texts ... ok
 
 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
    Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-ir)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.80s
-     Running tests/digital.rs (/var/tmp/piperine-target-c/debug/deps/digital-00f1b28ac249b265)
+    Finished `test` profile [unoptimized] target(s) in 2.41s
+     Running tests/digital.rs (/var/tmp/piperine-target-c/debug/deps/digital-b1250f05f42d82d3)
 ```
 
 `Run interp` - exit 0
 
 ```
-   Compiling raw-cpuid v11.6.0
-   Compiling gemm-common v0.18.2
-   Compiling private-gemm-x86 v0.1.20
-   Compiling gemm-f32 v0.18.2
-   Compiling gemm-c64 v0.18.2
-   Compiling gemm-c32 v0.18.2
-   Compiling gemm-f64 v0.18.2
-   Compiling gemm v0.18.2
-   Compiling faer v0.23.2
+running 4 tests
+test a_body_with_an_amended_form_is_rejected_by_name ... ok
+test a_digital_body_is_rejected_by_name ... ok
+test the_unknown_nodes_are_refused_by_name ... ok
+test the_interpreter_refuses_each_new_form_by_name ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
    Compiling piperine-analog-solver v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-analog-solver)
    Compiling piperine-solver v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-solver)
    Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-plan)
    Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-interp)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 40.46s
-     Running tests/frozen.rs (/var/tmp/piperine-target-c/debug/deps/frozen-d42f67d2cd3fa5e6)
+    Finished `test` profile [unoptimized] target(s) in 10.56s
+     Running tests/frozen.rs (/var/tmp/piperine-target-c/debug/deps/frozen-1902f3691d3ff8e6)
 ```
 
 `Run planshape` - exit 0
 
 ```
-test an_analog_read_of_a_carrier_is_a_read_of_terms ... ok
-test only_a_literal_positive_delay_is_later ... ok
-test a_probing_reaction_reads_the_continuous_pin ... ok
-test a_reaction_on_a_flagged_guard_reads_the_guard_and_fired ... ok
-test a_drive_is_a_discrete_function ... ok
-test an_if_lists_its_then_statement_before_its_else ... ok
-test a_reaction_lists_its_events_reads_and_statements ... ok
+test a_cross_event_is_a_watch_with_partials ... ok
+test every_record_layout_ends_with_maybe ... ok
+test a_reaction_with_an_unknown_decision_reads_the_resolution ... ok
+test an_event_is_an_event_pin_and_its_function ... ok
 test carriers_are_discrete_pins_with_a_known_byte ... ok
+test only_a_literal_positive_delay_is_later ... ok
+test a_drive_is_a_discrete_function ... ok
 test every_buck_slice_shape_validates ... ok
+test a_reaction_lists_its_events_reads_and_statements ... ok
 
-test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
    Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-plan)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.98s
-     Running tests/digital_shape.rs (/var/tmp/piperine-target-c/debug/deps/digital_shape-66d2cce13250b6a3)
+    Finished `test` profile [unoptimized] target(s) in 0.74s
+     Running tests/digital_shape.rs (/var/tmp/piperine-target-c/debug/deps/digital_shape-f16ca75f355e66eb)
 ```
 
 `Run records` - exit 0
 
 ```
-test a_run_ended_by_finish_gives_its_rows_to_the_instant ... ok
-test a_design_without_emit_gives_no_record ... ok
-test a_failed_require_is_one_checks_record_with_pass_false ... ok
+test a_digital_only_run_without_finish_reaches_its_stop ... ok
+test a_reserved_stream_keeps_its_name_and_its_site ... ok
+test records_arrive_in_time_order ... ok
 test maybe_is_decoded_beside_the_fields ... ok
 test an_unknown_field_is_unknown ... ok
-test a_reserved_stream_keeps_its_name_and_its_site ... ok
 test a_text_field_is_the_sources_literal ... ok
+test a_failed_require_is_one_checks_record_with_pass_false ... ok
 test an_emit_gives_one_record_with_time_instance_stream_and_fields ... ok
+test a_run_ended_by_finish_gives_its_rows_to_the_instant ... ok
 test keep_matches_a_stream_name_or_its_full_path ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.84s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.01s
 
-   Compiling piperine-api v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-api)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.36s
-     Running tests/records.rs (/var/tmp/piperine-target-c/debug/deps/records-f979e268bc118f92)
+    Finished `test` profile [unoptimized] target(s) in 0.11s
+     Running tests/records.rs (/var/tmp/piperine-target-c/debug/deps/records-636b5e3d604fb760)
 ```
 
 `Run verdict` - exit 0
 
 ```
-test verdict::tests::a_fatal_record_fails_the_verdict_with_its_message ... ok
 test verdict::tests::a_maybe_check_fails_as_unknown ... ok
-test verdict::tests::a_record_of_another_stream_never_decides ... ok
-test verdict::tests::a_negative_margin_does_not_fail ... ok
-test verdict::tests::a_verdict_counts_checks_and_keeps_only_the_failed_as_they_arrive ... ok
+test verdict::tests::a_fatal_record_fails_the_verdict_with_its_message ... ok
+test verdict::tests::a_finish_record_does_not_fail_the_verdict ... ok
 test verdict::tests::a_maybe_fatal_is_not_fatal ... ok
+test verdict::tests::a_negative_margin_does_not_fail ... ok
+test verdict::tests::a_record_of_another_stream_never_decides ... ok
+test verdict::tests::a_verdict_counts_checks_and_keeps_only_the_failed_as_they_arrive ... ok
 test verdict::tests::an_unknown_pass_fails ... ok
-test verdict::tests::the_last_record_of_each_target_is_kept_in_first_seen_order ... ok
 test verdict::tests::no_false_and_no_unknown_pass_is_a_pass ... ok
+test verdict::tests::the_last_record_of_each_target_is_kept_in_first_seen_order ... ok
 
 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 64 filtered out; finished in 0.00s
 
-   Compiling piperine-api v0.2.0 (/home/keslarek/Git/piperine-unknown-semantics/crates/piperine-api)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.99s
-     Running unittests src/lib.rs (/var/tmp/piperine-target-c/debug/deps/piperine_api-11b594ce687597f8)
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running unittests src/lib.rs (/var/tmp/piperine-target-c/debug/deps/piperine_api-267fdcea6096b5f4)
 ```
