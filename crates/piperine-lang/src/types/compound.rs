@@ -85,7 +85,7 @@ impl Checker<'_> {
         let [arg] = args else {
             let span = self.design.expr_node(expr).span;
             let message = format!("`Some` takes 1 argument, found {}", args.len());
-            self.report(file, Diagnostic::new("P0002", format!("mismatched types: {message}"), span, message));
+            self.report(file, Diagnostic::new("E0180", format!("mismatched types: {message}"), span, message));
             return None;
         };
         match inner {

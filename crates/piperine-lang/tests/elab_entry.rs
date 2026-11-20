@@ -45,7 +45,7 @@ fn front_end_diagnostics_are_returned_without_an_ir() {
     let design = Elab::design("module Top() { x: f64 = true; }");
     assert!(design.diagnostics().is_empty(), "{:?}", Elab::codes(design.diagnostics()));
     let err = Elaborator::new(&design).run("Top").expect_err("a bool default of an f64 param");
-    assert_eq!(Elab::codes(&err), ["P0002"]);
+    assert_eq!(Elab::codes(&err), ["E0180"]);
 }
 
 #[test]

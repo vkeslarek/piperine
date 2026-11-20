@@ -38,7 +38,7 @@ struct Plant {
 impl Plant {
     const ALL: [Plant; 3] = [
         Plant { stage: "parse", source: "module Broken() {\n    signal a Electrical;\n}\n", code: "E0900", covered: "Electrical" },
-        Plant { stage: "typeck", source: "module Broken() {\n    signal a: Electrical;\n    x: f64 = true;\n}\n", code: "P0002", covered: "true" },
+        Plant { stage: "typeck", source: "module Broken() {\n    signal a: Electrical;\n    x: f64 = true;\n}\n", code: "E0180", covered: "true" },
         Plant {
             stage: "elaborate",
             source: "module Broken() {\n    signal a: Electrical;\n    let c = Cap { c: -1.0 }(a, gnd);\n}\nmodule Cap(p: Electrical, n: Electrical) { c: f64 where c >= 0.0; }\nanalog for Cap { i(p, n) +> ddt(c * v(p, n)); }\n",

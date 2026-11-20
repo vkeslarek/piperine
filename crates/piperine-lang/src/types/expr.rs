@@ -1,5 +1,5 @@
 //! Value expressions: `check` against an expected type where the position gives one, `infer`
-//! otherwise. A mismatch is one `P0002` at the expression and the expression then takes the
+//! otherwise. A mismatch is one `E0180` at the expression and the expression then takes the
 //! expected type, so one mistake is one diagnostic.
 
 use crate::msl::lexer;
@@ -15,7 +15,7 @@ impl Checker<'_> {
     /// Check `expr` against `expected`. A mismatch is one diagnostic; the expression then takes
     /// the expected type.
     pub(super) fn check(&mut self, expr: ExprId, expected: &Ty) {
-        self.check_as(expr, expected, "P0002");
+        self.check_as(expr, expected, "E0180");
     }
 
     /// `check` of an argument written directly: the one place a function may stand as a value,
@@ -30,7 +30,7 @@ impl Checker<'_> {
     }
 
     /// `check`, where a mismatch of `expr` itself carries `code` (a rule of the specification
-    /// with a code of its own, `E0318` for a `where`) instead of the plain `P0002`.
+    /// with a code of its own, `E0318` for a `where`) instead of the plain `E0180`.
     pub(super) fn check_as(&mut self, expr: ExprId, expected: &Ty, code: &'static str) {
         stack::deep(|| {
             let node = self.design.expr_node(expr).clone();
@@ -546,7 +546,7 @@ impl Checker<'_> {
             Resolution::Builtin(id) if id.info().kind == BuiltinKind::Event => Some(self.settle_event()),
             Resolution::Builtin(id) if id.info().name == "None" => {
                 let message = "`None` has no type here: write it where an `Option<T>` is expected";
-                self.report(file, Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, "`Option` of what?"));
+                self.report(file, Diagnostic::new("E0180", format!("mismatched types: {message}"), node.span, "`Option` of what?"));
                 None
             }
             Resolution::Builtin(id) => match self.width_read(expr) {
@@ -574,7 +574,7 @@ impl Checker<'_> {
     /// that of its last expression without a `;`, else `()`. With an `expected` type the last
     /// expression is checked against it.
     pub(super) fn statements(&mut self, stmts: &[StmtId], expected: Option<&Ty>) -> Option<Ty> {
-        self.statements_as(stmts, expected, "P0002")
+        self.statements_as(stmts, expected, "E0180")
     }
 
     /// `statements`, where a mismatch of the block's value carries `code` (see `check_as`).

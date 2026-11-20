@@ -644,3 +644,14 @@ fn blinky_runs_to_its_stop_in_the_book() {
     assert_eq!(cells.first(), Some(&"3.000000e-6"), "the table ends at the stop: {last}");
     assert_eq!(cells.last(), Some(&"3"), "the counter has counted three edges: {last}");
 }
+
+#[test]
+fn no_book_listing_prints_p0002() {
+    // PI-06 (X5): a type mismatch carries the code its spec row names (`E0180`), so the plain
+    // `P0002` is no code of the tool: no block and no code span of the Book prints it.
+    let html = content();
+    let printing: Vec<usize> = blocks(&html).iter().filter(|block| block.text.contains("P0002")).map(|block| block.at).collect();
+    assert!(printing.is_empty(), "blocks of the Book print P0002 at {printing:?}");
+    let spans: Vec<String> = code_spans(&html).into_iter().filter(|span| span.contains("P0002")).collect();
+    assert!(spans.is_empty(), "code spans of the Book name P0002: {spans:?}");
+}

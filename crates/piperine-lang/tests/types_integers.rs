@@ -103,7 +103,7 @@ fn a_literal_takes_the_expected_integer_type_else_i32() {
 
     // A suffix of another type than the position's is a plain mismatch, never a conversion.
     let (src, d) = diagnostics("", "let a: u8 = 3u9;");
-    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(codes(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "3u9");
     assert!(d[0].diagnostic.message.contains("u8") && d[0].diagnostic.message.contains("u9"), "{}", d[0].diagnostic.message);
 }
@@ -250,7 +250,7 @@ fn mixed_integer_operands_are_p0002() {
         ("let a: u9 = 1; let c = a * 2.0;", "2.0"),
     ] {
         let (src, d) = diagnostics("", body);
-        assert_eq!(codes(&d), ["P0002"], "{src}");
+        assert_eq!(codes(&d), ["E0180"], "{src}");
         assert_eq!(snippet(&src, &d[0]), at, "{src}");
     }
     let (_, d) = diagnostics("", "let a: u9 = 1; let b: u12 = 2; let c = a + b;");
@@ -271,7 +271,7 @@ fn a_shift_takes_any_integer_amount() {
     assert_eq!(types.literal(literal(&design, &src, "9")), Some(&Ty::UInt(10)), "the other operand of `&`");
 
     let (src, d) = diagnostics("", "let x: u10 = 3; let a = x << true;");
-    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(codes(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "true");
     let (_, d) = diagnostics("", "let x = 1.0; let a = x << 2;");
     assert_eq!(codes(&d), ["P0001"]);
@@ -325,7 +325,7 @@ fn min_max_clamp_and_floor_are_typed() {
     assert_eq!(codes(&d), ["E0161"]);
     assert_eq!(snippet(&src, &d[0]), "floor");
     let (src, d) = diagnostics("", "let d: u8 = 2; let b: u9 = 3; let a = d.min(b);");
-    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(codes(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "b");
 }
 
@@ -461,7 +461,7 @@ fn every_h1_row_types_with_its_signature() {
     }
     // `pow` takes a `u32`: an `i32` exponent is a mismatch.
     let (src, d) = diagnostics("", "let x: u8 = 2; let e: i32 = 3; let r = x.pow(e);");
-    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(codes(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "e");
 }
 

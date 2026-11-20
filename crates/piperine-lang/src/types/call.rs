@@ -361,7 +361,7 @@ impl Checker<'_> {
         let ExprKind::Closure { params, ret, body, .. } = &node.kind else { return None };
         if params.len() != declared.len() {
             let message = format!("expected a closure of {} parameter(s), found {}", declared.len(), params.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, message));
+            self.report(file, crate::msl::Diagnostic::new("E0180", format!("mismatched types: {message}"), node.span, message));
             return None;
         }
         for (param, ty) in params.iter().zip(declared) {

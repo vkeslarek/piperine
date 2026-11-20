@@ -54,7 +54,7 @@ fn literals_are_f64_or_bool() {
 
     // An unsuffixed integer literal where `f64` is required is a type error, not a coercion.
     let (src, d) = diagnostics("", "let x: f64 = 100;");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "100");
 }
 
@@ -73,7 +73,7 @@ fn operators_type_as_rust_types_them() {
     // Each operator refuses the other type.
     for body in ["let x = 1.0 + true;", "let x = true && 1.0;", "let x = !1.0;", "let x = -true;", "let x = 1.0 < true;"] {
         let (_, d) = diagnostics("", body);
-        assert_eq!(codes_of(&d), ["P0002"], "{body}");
+        assert_eq!(codes_of(&d), ["E0180"], "{body}");
     }
 }
 
@@ -84,7 +84,7 @@ fn if_and_block_take_their_value_type() {
 
     // The arms of an `if` have one type.
     let (src, d) = diagnostics("", "let x = if true { 1.0 } else { false };");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "false");
 }
 
@@ -97,7 +97,7 @@ fn a_let_takes_its_initializer_type() {
 #[test]
 fn a_mismatch_names_both_types() {
     let (src, d) = diagnostics("", "let a = 1.0; let x: f64 = if a > 0.0 { a } else { true };");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "true");
     let message = &d[0].diagnostic.message;
     assert!(message.contains("f64") && message.contains("bool"), "{message}");
@@ -170,7 +170,7 @@ fn a_call_takes_its_declared_result() {
 
     // Each argument is checked against its parameter, and the count is checked.
     let (src, d) = diagnostics(FUNCTIONS, "let a = half(true);");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "true");
     // A wrong count is `E0141` (§3.2.6), no longer the plain mismatch.
     let (_, d) = diagnostics(FUNCTIONS, "let a = half(1.0, 2.0);");
@@ -190,15 +190,15 @@ fn a_closure_takes_its_types_from_the_parameter() {
 
     // The body is checked against the declared result.
     let (src, d) = diagnostics(FUNCTIONS, "let r = apply(|a, b| a > b, 2.0);");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "a > b");
     // A parameter type written in the closure must be the declared one.
     let (src, d) = diagnostics(FUNCTIONS, "let r = apply(|a: bool, b| b, 2.0);");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "bool");
     // And so must the parameter count.
     let (_, d) = diagnostics(FUNCTIONS, "let r = apply(|a| a, 2.0);");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
 }
 
 #[test]
@@ -293,28 +293,28 @@ fn a_function_is_a_value_only_as_an_argument() {
 fn an_unsupported_form_does_not_hide_an_independent_error() {
     // A refused annotation still has its initializer checked.
     let (src, d) = diagnostics("", "let x: f32 = 1.0 + true;");
-    assert_eq!(codes_of(&d), ["P0001", "P0002"]);
+    assert_eq!(codes_of(&d), ["P0001", "E0180"]);
     assert_eq!(snippet(&src, &d[1]), "true");
 
     // A generic function is refused and its body is checked as well.
     let (src, d) = diagnostics("fn g<T>(x: f64) -> f64 { x + true }", "let x = g(1.0);");
-    assert_eq!(codes_of(&d), ["P0001", "P0002"]);
+    assert_eq!(codes_of(&d), ["P0001", "E0180"]);
     assert!(d[0].diagnostic.message.contains("generic function"));
     assert_eq!(snippet(&src, &d[1]), "true");
 
     // A body that ends in a statement lacks its result whatever else it got wrong.
     let (src, d) = diagnostics("fn f(a: f64) -> f64 { let y = a + true; }", "let z = f(1.0);");
-    assert_eq!(codes_of(&d), ["P0002", "P0002"]);
+    assert_eq!(codes_of(&d), ["E0180", "E0180"]);
     assert_eq!(snippet(&src, &d[0]), "{ let y = a + true; }");
     assert_eq!(snippet(&src, &d[1]), "true");
 
     // A last statement that is not itself refused leaves the missing result its own error,
     // whatever it holds that is refused.
     let (src, d) = diagnostics("fn f(a: f64) -> f64 { let y = \"s\"; }", "let z = f(1.0);");
-    assert_eq!(codes_of(&d), ["P0002", "P0001"]);
+    assert_eq!(codes_of(&d), ["E0180", "P0001"]);
     assert_eq!(snippet(&src, &d[0]), "{ let y = \"s\"; }");
     let (src, d) = diagnostics("fn f(a: f64) -> f64 { a % 2.0; }", "let z = f(1.0);");
-    assert_eq!(codes_of(&d), ["P0002", "P0001"]);
+    assert_eq!(codes_of(&d), ["E0180", "P0001"]);
     assert_eq!(snippet(&src, &d[0]), "{ a % 2.0; }");
     assert_eq!(snippet(&src, &d[1]), "a % 2.0");
 
@@ -324,11 +324,11 @@ fn an_unsupported_form_does_not_hide_an_independent_error() {
 }
 
 #[test]
-fn comparing_an_enum_without_partial_ord_is_p0002() {
+fn comparing_an_enum_without_partial_ord_is_e0180() {
     // FIX-07 AC 2: `<`, `<=`, `>` and `>=` over an enum that does not derive `PartialOrd`.
     for op in ["<", "<=", ">", ">="] {
         let (src, d) = diagnostics("#[derive(Repr, PartialEq)]\nenum Md { Lo, Hi }", &format!("let x = Md::Lo {op} Md::Hi;"));
-        assert_eq!(codes_of(&d), ["P0002"], "{op}");
+        assert_eq!(codes_of(&d), ["E0180"], "{op}");
         assert_eq!(snippet(&src, &d[0]), "Md::Lo", "{op}");
         assert!(d[0].diagnostic.message.contains("a type that derives `PartialOrd`"), "{}", d[0].diagnostic.message);
     }
@@ -403,7 +403,7 @@ fn a_named_argument_that_is_not_optional_or_bound_is_e0140() {
 #[test]
 fn a_wrong_argument_count_is_e0141() {
     // FIX-06 AC 6: too few positional arguments for the required parameters, or more arguments
-    // than parameters, is E0141 naming the call, not P0002.
+    // than parameters, is E0141 naming the call, not the plain mismatch.
     for call in ["f()", "f(1.0, 2.0, 3.0, 4.0)"] {
         let (src, d) = diagnostics(OPTIONALS, &format!("let r = {call};"));
         assert_eq!(codes_of(&d), ["E0141"], "{call}");
@@ -479,7 +479,7 @@ fn every_h2_row_types_with_its_signature() {
     }
     // `powi` takes an `i32`: an `f64` exponent is a mismatch.
     let (src, d) = diagnostics("", "let x = 0.5; let r = x.powi(2.0);");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "2.0");
 }
 
@@ -518,4 +518,15 @@ fn a_call_through_a_function_value_with_the_wrong_arity_is_e0141() {
     let (src, d) = diagnostics("", "let x = 0.5; let r = x.abs(1.0, 2.0);");
     assert_eq!(codes_of(&d), ["E0141"], "{src}");
     assert!(d[0].diagnostic.message.contains("expected 0 argument(s), found 2"), "{}", d[0].diagnostic.message);
+}
+
+#[test]
+fn a_mismatch_no_row_names_is_e0180_naming_both_types() {
+    // Part I `E0180`: an expression whose type is not the one its position requires, and the
+    // diagnostic names both types (PI-06 AC 1); the provisional `P0002` no longer exists.
+    let (src, d) = diagnostics("fn half(a: f64) -> f64 { a / 2.0 }", "let a = half(true); let b: bool = 1.0;");
+    assert_eq!(codes_of(&d), ["E0180", "E0180"], "{src}");
+    assert_eq!(d[0].diagnostic.message, "mismatched types: expected `f64`, found `bool`");
+    assert_eq!(snippet(&src, &d[0]), "true");
+    assert_eq!(d[1].diagnostic.message, "mismatched types: expected `bool`, found `f64`");
 }

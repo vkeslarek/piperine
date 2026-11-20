@@ -260,15 +260,15 @@ impl<'d> Checker<'d> {
         self.unsupported(file, span, what);
     }
 
-    /// `P0002`: a plain type mismatch at `span`, naming both types.
+    /// `E0180`: a plain type mismatch at `span`, naming both types.
     pub(super) fn mismatch(&mut self, file: FileId, span: Span, expected: &Ty, found: &Ty) {
         let (expected, found) = (expected.name(self.design), found.name(self.design));
         self.mismatch_text(file, span, &expected, &found);
     }
 
-    /// `P0002` with the two types already written out.
+    /// `E0180` with the two types already written out.
     pub(super) fn mismatch_text(&mut self, file: FileId, span: Span, expected: &str, found: &str) {
-        self.mismatch_coded(file, span, "P0002", expected, found);
+        self.mismatch_coded(file, span, "E0180", expected, found);
     }
 
     /// A mismatch under the code of the rule that was broken.

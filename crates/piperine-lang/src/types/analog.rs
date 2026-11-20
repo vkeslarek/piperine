@@ -88,7 +88,7 @@ impl Checker<'_> {
         }
         if args.is_empty() || args.len() > 2 {
             let message = format!("a probe takes 1 or 2 nodes, found {}", args.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, message));
+            self.report(file, crate::msl::Diagnostic::new("E0180", format!("mismatched types: {message}"), node.span, message));
             return None;
         }
         let mut natures = Vec::new();
@@ -222,7 +222,7 @@ impl Checker<'_> {
         let (min, max) = (sig.required.len(), sig.required.len() + sig.optional.len());
         if args.len() < min || args.len() > max {
             let message = format!("`{}` takes {min} to {max} argument(s), found {}", id.name(), args.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, message));
+            self.report(file, crate::msl::Diagnostic::new("E0180", format!("mismatched types: {message}"), node.span, message));
             return None;
         }
         let params: Vec<Ty> = sig.required.iter().chain(sig.optional).map(|p| p.ty()).collect();
@@ -253,7 +253,7 @@ impl Checker<'_> {
         let span = self.design.expr_node(expr).span;
         let [arg] = args else {
             let message = format!("`analysis` takes 1 argument, found {}", args.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), span, message));
+            self.report(file, crate::msl::Diagnostic::new("E0180", format!("mismatched types: {message}"), span, message));
             return None;
         };
         let kind = match &self.design.expr_node(arg.value).kind {

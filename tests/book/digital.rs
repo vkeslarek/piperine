@@ -536,7 +536,7 @@ fn e0432_a_commit_of_another_type_is_a_mismatch() {
     // a u8: commit count + 1": the operand `1.0` is the mismatch, with the Book's code
     let book = Faulty::running("digital~54ec4a1d", "module Top() { signal count: Bit<u8> = 0; }\ndigital for Top { on at(1u) { count <- count + 1.0; } }\n", Commands::transient_of("Top", 1e-6));
     assert_eq!(book.first("E0432").message, "mismatched types: expected `u8`, found `f64`");
-    assert!(book.given.iter().all(|reported| reported.code != "P0002"), "the Book's code, not the plain mismatch");
+    assert!(book.given.iter().all(|reported| reported.code != "E0180"), "the Book's code, not the plain mismatch");
     let commit = Faulty::running("digital~54ec4a1d", "module Top() { signal count: Bit<u8> = 0; }\ndigital for Top { on at(1u) { count <- 1.0; } }\n", Commands::transient_of("Top", 1e-6));
     assert_eq!(commit.first("E0432").message, "mismatched types: expected `u8`, found `f64`");
 }

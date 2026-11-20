@@ -126,7 +126,7 @@ fn trailing_option_inputs_may_be_left_out() {
     // An argument of the wrong type is a mismatch at the argument.
     let src = "module Top(in k: Bit<f64>) { let a = transition(k, true); }";
     let d = diagnostics(src);
-    assert_eq!((codes(&d), snippet(src, &d[0])), (vec!["P0002".to_string()], "true"));
+    assert_eq!((codes(&d), snippet(src, &d[0])), (vec!["E0180".to_string()], "true"));
 }
 
 #[test]

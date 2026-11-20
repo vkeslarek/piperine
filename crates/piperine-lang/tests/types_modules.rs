@@ -59,7 +59,7 @@ fn params_are_f64_or_bool() {
 #[test]
 fn a_default_of_the_wrong_type_is_rejected() {
     let (src, d) = diagnostics("module Top() { a: f64 = true; }");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "true");
     let message = &d[0].diagnostic.message;
     assert!(message.contains("f64") && message.contains("bool"), "{message}");
@@ -125,7 +125,7 @@ fn a_placement_checks_nodes_count_and_params() {
 
     // A param of the wrong type: at the value.
     let (src, d) = diagnostics("module Top(a: E, b: E) { let r1 = Resistor { r: true }(a, b); }");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "true");
 
     // Too few and too many connections are `E0312`, at the placement.
@@ -154,7 +154,7 @@ fn a_node_of_another_nature_is_e0251() {
 
     // A value where a node is wanted is a plain mismatch.
     let (src, d) = diagnostics("module Top(a: E) { let r1 = Resistor { r: 1.0 }(a, 1.0); }");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "1.0");
 }
 
@@ -174,7 +174,7 @@ fn a_where_on_a_module_or_fn_is_bool() {
     }
     // A `fn` `where` that is not `bool` is a plain mismatch (the specification gives it no code).
     let (src, d) = diagnostics("fn f(x: f64) -> f64 where 1.0 { x }\nmodule Top() { }\nanalog for Top { let y = f(1.0); }");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "1.0");
 
     // A `bool` const condition on each checks.

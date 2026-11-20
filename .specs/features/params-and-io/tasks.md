@@ -285,13 +285,13 @@ T44
 
 **Done when**:
 
-- [ ] `a_mismatch_no_row_names_is_e0180_naming_both_types` passes under `**Run typesvalues**`
-- [ ] `no_source_spells_p0002` passes under `**Run speccodes**`
-- [ ] `no_book_listing_prints_p0002` passes under `**Run clibook**`
-- [ ] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
-- [ ] `tests/book/inventory.tsv` rows that printed `P0002` are corrected in place; `**Run bookinventory**` passes
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `a_mismatch_no_row_names_is_e0180_naming_both_types` passes under `**Run typesvalues**`
+- [x] `no_source_spells_p0002` passes under `**Run speccodes**`
+- [x] `no_book_listing_prints_p0002` passes under `**Run clibook**`
+- [x] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
+- [x] `tests/book/inventory.tsv` rows that printed `P0002` are corrected in place; `**Run bookinventory**` passes
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

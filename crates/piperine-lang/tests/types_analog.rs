@@ -111,12 +111,12 @@ fn ddt_ac_stim_and_environment_are_f64() {
     assert!(t.iter().all(|t| *t == Ty::F64), "{t:?}");
 
     let (src, d) = diagnostics("", "let x = ddt(true);");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "true");
     let (_, d) = diagnostics("", "let x = ac_stim();");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     let (_, d) = diagnostics("", "let x = temperature(1.0);");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
 
     // A core primitive with no row of the subset is refused by name, one `P0001` each.
     // (`analysis(Dc)`, `analysis(Transient)`, `analysis(Ac)`, `bound_step` and `freq` left this
@@ -138,10 +138,10 @@ fn limit_checks_its_input_function_and_seed() {
 
     // The input function has the type `fn(f64, f64) -> f64`.
     let (src, d) = diagnostics(items, "let x = limit(v(a), |new| new);");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "|new| new");
     let (src, d) = diagnostics(items, "let x = limit(v(a), lim3);");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "lim3");
     // The seed and the input are `f64`.
     let (src, d) = diagnostics(items, "let x = limit(v(a), lim, true);");
@@ -193,12 +193,12 @@ fn freq_analysis_kinds_and_bound_step_type() {
     assert_eq!(t, [Ty::F64, Ty::Bool, Ty::Bool, Ty::Bool, Ty::Bool]);
 
     let (src, d) = diagnostics("", "bound_step(true);");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "true");
     let (_, d) = diagnostics("", "bound_step();");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     let (_, d) = diagnostics("", "let f = freq(1.0);");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     // an argument that is no kind of analysis is still refused by name
     let (_, d) = diagnostics("", "let x = analysis(Some);");
     assert_eq!(codes_of(&d), ["P0001"]);

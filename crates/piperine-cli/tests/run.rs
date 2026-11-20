@@ -313,7 +313,7 @@ fn a_type_error_is_rendered_with_its_stage_and_exits_1() {
     // exit 1. `type_error/src/lib.msl` puts a real where a `bool` is declared, at line 2.
     let out = piperine_in(&fixture("type_error"), shared_cache(), &["run", "main"]);
     let err = failed(&out, 1);
-    assert!(err.contains("P0002"), "the code:\n{err}");
+    assert!(err.contains("E0180"), "the code:\n{err}");
     assert!(err.contains("lib.msl:2:"), "the file and the line:\n{err}");
     assert!(err.contains("flag: bool = 1.5;"), "the excerpt:\n{err}");
     assert!(err.contains("error: typeck failed with 1 diagnostic(s)"), "the stage:\n{err}");

@@ -155,7 +155,7 @@ fn the_flag_reads_are_typed() {
     assert_eq!((codes(&d), d[0].diagnostic.message.contains("`high` on `u9`")), (vec!["P0001".to_string()], true), "{}", d[0].diagnostic.message);
     let src = "module Top(in c: Bit<u9>) { let a = c.known_or(true); }";
     let d = diagnostics(src);
-    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(codes(&d), ["E0180"]);
     assert_eq!(snippet(src, &d[0]), "true");
 
     // §3.3.7: a project's own `high` is not the stdlib's. It is `P0001` at its use, whether the

@@ -83,12 +83,12 @@ fn copy_of(source: &Path, name: &str) -> (tempfile::TempDir, PathBuf) {
 fn check_runs_every_stage_and_no_backend() {
     // CLI-14 AC 1: parse, type-check and elaborate every run, invoking no backend. The three
     // runs of `broken_benches` fail in three different stages, and all three are reported:
-    // a syntax error (E0900, parse), a type error (P0002, typeck) and a `where` clause that is
+    // a syntax error (E0900, parse), a type error (E0180, typeck) and a `where` clause that is
     // false for a param (E0317, elaborate). The stage lines name each.
     let out = piperine_in(&fixture("broken_benches"), &["check"]);
     let err = text(&out.stderr);
     assert_eq!(out.status.code(), Some(1), "{err}");
-    for needle in ["E0900", "syntax.msl:1", "error: parse failed", "P0002", "types.msl:2", "error: typeck failed", "E0317", "values.msl:6", "error: elaborate failed"] {
+    for needle in ["E0900", "syntax.msl:1", "error: parse failed", "E0180", "types.msl:2", "error: typeck failed", "E0317", "values.msl:6", "error: elaborate failed"] {
         assert!(err.contains(needle), "`{needle}` missing from\n{err}");
     }
     // no backend: a compiler that does not exist and an empty cache, and the good project
@@ -130,7 +130,7 @@ fn check_renders_every_diagnostic_and_exits_1() {
     let err = text(&out.stderr);
     assert_eq!(out.status.code(), Some(1), "{err}");
     assert_eq!(text(&out.stdout), "", "no ok line");
-    assert!(err.contains("P0002") && err.contains(&format!("step.msl:{line}:")), "{err}");
+    assert!(err.contains("E0180") && err.contains(&format!("step.msl:{line}:")), "{err}");
     assert_eq!(err.matches("error: typeck failed").count(), 1, "one report for two runs:\n{err}");
     // the broken fixture's three runs print three reports, none dropped
     let out = piperine_in(&fixture("broken_benches"), &["check"]);
@@ -149,7 +149,7 @@ fn check_without_a_run_says_type_checking_needs_one() {
 #[test]
 fn check_takes_a_lone_file() {
     // CLI-14 AC 5: `check <file>.msl` checks that file's crate with the top rule of a session
-    // (the one module without ports is the top); a type error in it is exit 1 with P0002
+    // (the one module without ports is the top); a type error in it is exit 1 with E0180
     let tmp = tempfile::tempdir().expect("tmp");
     let good = tmp.path().join("lone.msl");
     std::fs::copy(fixture("two_runs").join("src/lib.msl"), &good).expect("a copy");
@@ -161,7 +161,7 @@ fn check_takes_a_lone_file() {
     let out = piperine_in(tmp.path(), &["check", "bad.msl"]);
     assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
     assert_eq!(text(&out.stdout), "");
-    assert!(text(&out.stderr).contains("P0002") && text(&out.stderr).contains("bad.msl:2"), "{}", text(&out.stderr));
+    assert!(text(&out.stderr).contains("E0180") && text(&out.stderr).contains("bad.msl:2"), "{}", text(&out.stderr));
 }
 
 // ---- build (CLI-15) -------------------------------------------------------------------------
@@ -245,7 +245,7 @@ fn build_goes_on_after_a_failing_run_and_exits_1() {
     assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
     assert_eq!(text(&out.stdout), "built good: interp, nothing to compile\nbuilt also_good: interp, nothing to compile\n");
     let err = text(&out.stderr);
-    assert!(err.contains("P0002") && err.contains("bad.msl:2") && err.contains("error: typeck failed"), "{err}");
+    assert!(err.contains("E0180") && err.contains("bad.msl:2") && err.contains("error: typeck failed"), "{err}");
 }
 
 // ---- test (CLI-08, CLI-16) ------------------------------------------------------------------
@@ -352,7 +352,7 @@ fn a_run_that_does_not_complete_is_a_fail() {
     let out = piperine_in(&fixture("type_error"), &["test"]);
     assert_eq!(out.status.code(), Some(1));
     assert_eq!(text(&out.stdout), "FAIL main (did not run)\n1 runs, 0 passed, 1 failed\n");
-    assert!(text(&out.stderr).contains("P0002"), "{}", text(&out.stderr));
+    assert!(text(&out.stderr).contains("E0180"), "{}", text(&out.stderr));
 }
 
 #[test]

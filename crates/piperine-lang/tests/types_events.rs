@@ -146,7 +146,7 @@ fn a_bool_head_is_e0430() {
     // An `||` of an event and a `bool` is a mismatch of its operand.
     let src = with_heads(&["clk.rise() || en"]);
     let d = diagnostics(&src);
-    assert_eq!((codes(&d), snippet(&src, &d[0])), (vec!["P0002".to_string()], "en"));
+    assert_eq!((codes(&d), snippet(&src, &d[0])), (vec!["E0180".to_string()], "en"));
 }
 
 #[test]
@@ -304,7 +304,7 @@ fn a_commit_of_another_type_is_e0432() {
 #[test]
 fn an_operand_of_another_type_in_a_commit_is_e0432() {
     // digital~54ec4a1d of the Book (chapter 7, §12.1.9): `count <- count + 1.5` on an integer carrier
-    // is `E0432` at the operand that is not the carrier's type, not the plain mismatch `P0002`
+    // is `E0432` at the operand that is not the carrier's type, not the plain mismatch `E0180`
     let src = "module Top(in clk: Bit, out count: Bit<u9> = 0) { }\ndigital for Top { on clk.rise() { count <- count + 1.5; } }";
     let d = diagnostics(src);
     assert_eq!(codes(&d), ["E0432"], "{:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
@@ -550,7 +550,7 @@ fn cross_takes_ttol_and_etol_by_position_and_by_name() {
     }
     // A name that is no parameter, one bound twice, `e` by name, and a count the row cannot take
     // (the plain mismatch of a core primitive's own count).
-    for (head, code) in [("cross(v(p), atol: 1u)", "E0140"), ("cross(v(p), 1p, ttol: 2p)", "E0140"), ("cross(v(p), e: 1.0)", "E0140"), ("cross(v(p), 1p, 1u, 2u)", "P0002"), ("cross()", "P0002")] {
+    for (head, code) in [("cross(v(p), atol: 1u)", "E0140"), ("cross(v(p), 1p, ttol: 2p)", "E0140"), ("cross(v(p), e: 1.0)", "E0140"), ("cross(v(p), 1p, 1u, 2u)", "E0180"), ("cross()", "E0180")] {
         let src = with_heads(&[head]);
         let d = diagnostics(&src);
         assert_eq!(codes(&d), [code], "{head}");

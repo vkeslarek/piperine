@@ -196,3 +196,11 @@ fn every_owned_code_names_its_owner_and_construct() {
         assert!(seen.insert(entry.code.clone()), "{} is listed twice", entry.code);
     }
 }
+
+#[test]
+fn no_source_spells_p0002() {
+    // PI-06 (X5): every mismatch carries the code its spec row names, so the provisional
+    // `P0002` is spelled outside a comment in no source file.
+    let spellings = SourceSpellings::from_crates();
+    assert!(!spellings.raises("P0002"), "sources that still spell P0002: {:?}", spellings.sites_of("P0002"));
+}
