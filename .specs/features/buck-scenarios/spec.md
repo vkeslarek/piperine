@@ -194,7 +194,7 @@ parallel threads of one target.
 
 1. WHILE the converter is current-limited, from the first rise of `buck.ctl.cut` to the entry into `Hiccup`, the system SHALL keep `buck.ctl.cut` high in every row (every period is cut).
 2. WHILE the converter is current-limited the system SHALL keep the inductor current at or below 7.6 A (7.5 A plus SPEC §10.1's reaction bound).
-3. WHEN `load_step` rises at 1.25 ms THEN the system SHALL show `mode` = `Hiccup` with `fault` = `OverCurrent` first between 16 µs and 20 µs after the edge.
+3. WHEN `load_step` rises at 1.25 ms THEN the system SHALL show `mode` = `Hiccup` with `fault` = `OverCurrent` first between 26.5 µs and 30.5 µs after the edge, and 16.5 µs ± 20 ns after the start of the first cut period.
 4. WHEN the ADC code first leaves `reference ± reference/16` after the overload THEN the system SHALL show `pgood` low no later than 8 µs after.
 5. WHILE the converter is in `Hiccup` the system SHALL keep both gate commands low in every row.
 6. WHEN the converter has entered `Hiccup` THEN the system SHALL show `mode` = `SoftStart` first exactly 2.000 ms (1000 samples) later, within one grid row, with `load_step` still high.

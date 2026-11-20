@@ -900,11 +900,17 @@ fn s5_inductor_current_stays_at_or_below_7_6_a() {
 }
 
 #[test]
-fn s5_hiccup_with_over_current_16_to_20_us_after_the_step() {
-    // BS-05 AC 3, SPEC §10 S5: Hiccup with OverCurrent within 16 to 20 us of the edge
+fn s5_hiccup_with_over_current_26_5_to_30_5_us_after_the_step() {
+    // BS-05 AC 3, SPEC §10 S5 and §10.1: Hiccup with OverCurrent 26.5 to 30.5 us after the edge
     let delay = FaultsFamily::over_current_entry() - FaultsFamily::OVERLOAD;
-    eprintln!("S5: Hiccup with OverCurrent {:.3} us after the step (16 us to 20 us)", delay * 1e6);
-    assert!((16e-6..=20e-6).contains(&delay), "Hiccup {delay:e} s after the step");
+    eprintln!("S5: Hiccup with OverCurrent {:.3} us after the step (26.5 us to 30.5 us)", delay * 1e6);
+    assert!((26.5e-6..=30.5e-6).contains(&delay), "Hiccup {delay:e} s after the step");
+    // the mechanism, SPEC §10.1: `cut` rises at the wrap that ends the first cut period, 2 us after
+    // its start, and Hiccup is 8 periods and the 500 ns conversion after that start: 16.5 us
+    let first_cut_start = FaultsFamily::waves().cut().first_time(1, FaultsFamily::OVERLOAD).expect("cut never rises after the overload") - 2e-6;
+    let after_start = FaultsFamily::over_current_entry() - first_cut_start;
+    eprintln!("S5: Hiccup {:.4} us after the start of the first cut period (16.5 us +- 20 ns)", after_start * 1e6);
+    assert!((after_start - 16.5e-6).abs() <= 20e-9, "Hiccup {after_start:e} s after the first cut period starts");
 }
 
 #[test]

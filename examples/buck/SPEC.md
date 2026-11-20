@@ -394,7 +394,7 @@ criteria; the model column is the averaged-model prediction.
 | S2b | Setpoint down | from 5.0 V, write 8 (1.0 V) | ramp of 1.28 ms; within ±1 % of 1.0 V at 1.38 ms ±0.05 ms; inductor current goes negative (≈ −0.6 A, FCCM sinking) without hitting the −3 A limit; no OVP | 1.38 ms (1.284 ms without dead time), −0.62 A |
 | S3 | Load step | 0.5 A → 4.5 A → 0.5 A, 1 A/µs | deviation ≤ 165 mV (5 %) each way; back within ±1 % in ≤ 200 µs; `pgood` stays high; no current limit | 150 mV / 155 mV, 174 / 178 µs |
 | S4 | Line step | 12 V → 16 V → 12 V in 10 µs, 2 A load | deviation ≤ 165 mV; back within ±1 % in ≤ 200 µs; no fault | +151 / −153 mV |
-| S5 | Overcurrent | load step to 0.3 Ω (11 A demand) | high side cut at 7.5 A every period; `fault` = OverCurrent and `mode` = Hiccup within 16 to 20 µs; `pgood` low within 8 µs of the deviation; retry every 2 ms + soft-start while the overload stays; a retry after the overload is removed reaches Regulate and clears `fault` | hand estimate |
+| S5 | Overcurrent | load step to 0.3 Ω (11 A demand) | high side cut at 7.5 A every period; `fault` = OverCurrent and `mode` = Hiccup 16.5 µs after the start of the first cut period, 26.5 to 30.5 µs after the step; `pgood` low within 8 µs of the deviation; retry every 2 ms + soft-start while the overload stays; a retry after the overload is removed reaches Regulate and clears `fault` | 28.5 µs (first cut period 12 µs after the step); 22.5 µs at best with the duty at its 90 % clamp from the first period after the step |
 | S6 | Over-voltage | inject 5 A into the output (back-drive) | the sink limit holds the low-side current at −3 A; Vout rises at ≈ 7 mV/µs; `fault` = OverVoltage once Vout > 3.81 V (≈ 80 to 120 µs); both switches off | hand estimate |
 | S7 | Brown-out | Vin ramps 12 V → 7.5 V → 12 V | `mode` = Off below 8.0 V, both switches off, `pgood` low, `fault` unchanged; soft-start again above 8.5 V | — |
 | S8 | Disable | `en` falls in Regulate | both switches off at the next sample; `pgood` low; Vout decays through the load | — |
@@ -440,6 +440,16 @@ commit and one grid row. A fault that needs two consecutive samples (the OVP of 
 **Current-limit reaction.** The inductor current may exceed a limit of §8.2 and §8.3 by at most
 **0.1 A**: the cut takes one 5 ns clock, 10 ns of driver delay and 5 ns of channel ramp (§5.3), 20 ns
 at a slope of at most 3.4 A/µs, which is 0.068 A.
+
+**Overcurrent timing (S5).** `Hiccup` comes at the `done` strobe after the 8th cut period:
+8 × 2 µs + 500 ns = 16.5 µs after the start of the first cut period. Before it, the inductor current
+climbs from 0.5 A to the 7.5 A limit under the loop of §6.2: the step's edge is at a period start, the
+duty word first moves in the period 4 µs after it (one sample to see the droop, one of computational
+delay, §9) and rises to ≈ 68 % by +8 µs; the current gains 0.75, 1.8, 2.1 and 2.0 A in the periods
+from +4 µs, and its peak reaches 7.5 A in the period that starts at +12 µs. `Hiccup` is then at
+28.5 µs; the bench allows one period either way, 26.5 to 30.5 µs, the resolution at which the first
+cut lands. Even with the duty at its 90 % clamp from the first period after the edge, the first cut
+period starts at +6 µs: no run can be faster than 22.5 µs.
 
 **Disable decay (S8).** After `en` falls and both switches are off, Vout decays through the load
 and the divider with the time constant (6.6 Ω ∥ 40 kΩ) · 220 µF = **1.452 ms**; the measured

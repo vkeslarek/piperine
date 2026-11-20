@@ -615,8 +615,8 @@ Proof: run scenarios | test s5_every_period_is_cut_until_hiccup ... ok
 **C49** - The inductor current stays at or below 7.6 A while current-limited. (BS-05, AC 2; T11)
 Proof: run scenarios | test s5_inductor_current_stays_at_or_below_7_6_a ... ok
 
-**C50** - `Hiccup` with `OverCurrent` first appears 16 µs to 20 µs after the load step. (BS-05, AC 3; T11)
-Proof: run scenarios | test s5_hiccup_with_over_current_16_to_20_us_after_the_step ... ok
+**C50** - `Hiccup` with `OverCurrent` first appears 26.5 µs to 30.5 µs after the load step. (BS-05, AC 3; T11)
+Proof: run scenarios | test s5_hiccup_with_over_current_26_5_to_30_5_us_after_the_step ... ok
 
 **C51** - `pgood` is low no later than 8 µs after the first ADC code outside `reference ± reference/16`. (BS-05, AC 4; T11)
 Proof: run scenarios | test s5_pgood_falls_within_8_us_of_the_deviation ... ok

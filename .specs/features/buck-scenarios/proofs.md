@@ -56,7 +56,7 @@
 | C47 | `run scenarios / test faults_regulates_at_3_3_v_with_pgood_before_its_first_stimulus ... ok` | pass |
 | C48 | `run scenarios / test s5_every_period_is_cut_until_hiccup ... ok` | pass |
 | C49 | `run scenarios / test s5_inductor_current_stays_at_or_below_7_6_a ... ok` | pass |
-| C50 | `run scenarios / test s5_hiccup_with_over_current_16_to_20_us_after_the_step ... ok` | **fail** |
+| C50 | `run scenarios / test s5_hiccup_with_over_current_26_5_to_30_5_us_after_the_step ... ok` | **fail** |
 | C51 | `run scenarios / test s5_pgood_falls_within_8_us_of_the_deviation ... ok` | pass |
 | C52 | `run scenarios / test s5_both_switches_stay_off_in_hiccup ... ok` | pass |
 | C53 | `run scenarios / test s5_retry_comes_2_ms_after_the_hiccup_with_the_overload_on ... ok` | pass |
