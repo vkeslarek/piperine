@@ -660,8 +660,8 @@ T63
 
 **Done when**:
 
-- [ ] `closures_run_and_capture_by_value`, `a_closure_in_analog_is_differentiated_through` and `a_function_value_calls_the_named_function` pass under `**Run srcctl**`
-- [ ] Gate check passes: Full
+- [x] `closures_run_and_capture_by_value`, `a_closure_in_analog_is_differentiated_through` and `a_function_value_calls_the_named_function` pass under `**Run srcctl**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

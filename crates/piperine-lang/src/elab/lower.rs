@@ -90,11 +90,14 @@ pub(super) struct Scope {
     /// What a `return` of the function being lowered gives (`returns.rs`); `None` outside a function
     /// whose body returns early.
     pub(super) result: Option<FunctionResult>,
+    /// The function each local bound to a function's name stands for: a call through the local with
+    /// an argument that may be unknown calls the flagged variant of it (`closures.rs`).
+    pub(super) fn_targets: BTreeMap<DeclId, DeclId>,
 }
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), may_be_unknown: false, loops: Vec::new(), result: None }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), may_be_unknown: false, loops: Vec::new(), result: None, fn_targets: BTreeMap::new() }
     }
 }
 
@@ -389,22 +392,7 @@ impl Elaboration<'_, '_> {
             // A scrutinee over the key params folds: only the arm it selects is lowered (`structural.rs`).
             ExprKind::Match { scrutinee, arms } if let Some(selected) = self.folded_arm(&scope.keys.clone(), &self.placement_chain(scope.frame), *scrutinee, arms) => self.lower_expr(scope, arms[selected].body),
             ExprKind::Match { scrutinee, arms } => self.lower_match(scope, *scrutinee, arms, ty, origin),
-            ExprKind::Closure { params, body, .. } => {
-                let mut locals = Vec::new();
-                for param in params {
-                    match self.design.pat_node(param.pat).kind.clone() {
-                        PatKind::Ident { binding, sub: None, .. } => locals.push(self.bind_local(scope, binding)?),
-                        _ => {
-                            self.unsupported(file, node.span, "a closure parameter that is not a name");
-                            return None;
-                        }
-                    }
-                }
-                scope.nesting += 1;
-                let body = self.lower_expr(scope, *body);
-                scope.nesting -= 1;
-                Some(self.emit(Expr::Closure { params: locals, body: body? }, ty, origin))
-            }
+            ExprKind::Closure { params, body, .. } => self.lower_closure(scope, expr, params, *body, origin),
             other => {
                 self.unsupported(file, node.span, crate::types::unsupported::Unsupported::expr(other));
                 None
@@ -435,6 +423,7 @@ impl Elaboration<'_, '_> {
             }
             // Typed by `types::intrinsic`, lowered by its §22.1 contract (`intrinsics.rs`).
             (_, Some(Callee::Intrinsic(intrinsic))) => self.lower_intrinsic(scope, expr, intrinsic, args, ty, origin),
+            (_, None) if let Some(decl) = self.called_local(scope, expr) => self.lower_value_call(scope, expr, decl, args, origin),
             (_, None) => {
                 self.unsupported(scope.file, span, "a call the type checker did not resolve");
                 None
@@ -554,6 +543,9 @@ impl Elaboration<'_, '_> {
             PatKind::Ident { binding, sub: None, .. } if matches!(self.types.local(binding), Some(Ty::Option(_))) => self.lower_option_let(scope, out, binding, init),
             PatKind::Ident { binding, sub: None, .. } => {
                 let local = self.bind_local(scope, binding);
+                if let Some(function) = self.named_function(init) {
+                    scope.fn_targets.insert(binding, function);
+                }
                 scope.let_sources.insert(binding, init);
                 let name = self.design.decl_data(binding).name.as_ref().map(|n| n.text.clone());
                 scope.limit_name = name.map(|n| (self.peel_parens(init), n));
@@ -708,6 +700,7 @@ impl Elaboration<'_, '_> {
                     None
                 }
             },
+            DeclKind::Fn(_) => self.lower_function_value(scope, decl, ty, node.span, origin),
             _ => {
                 self.unsupported(scope.file, node.span, "this name as a value");
                 None

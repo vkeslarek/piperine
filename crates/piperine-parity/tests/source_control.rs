@@ -385,3 +385,47 @@ fn refutable_patterns_run_in_if_let_while_let_and_let_else() {
     ];
     assert_eq!(got, wanted);
 }
+
+#[test]
+fn closures_run_and_capture_by_value() {
+    // CV-05 AC 1 (§1.5.14, §3 rule 3): a closure bound by `let` and called runs; it captures by
+    // value where it is written, so `k = 10` after it does not reach it; a non-capturing closure
+    // is a function pointer (CV-06 AC 2).
+    let add = |x: u8, y: u8| x + y;
+    let mut k = 3u8;
+    let plus_k = move |x: u8| x + k;
+    k = 10;
+    let twice = |f: fn(u8) -> u8, x: u8| f(f(x));
+    let committed = first_commits("closures.msl", &["a", "b", "c", "g"]);
+    assert_eq!(committed, vec![byte(add(3, 4)), byte(plus_k(1)), byte(k), byte(twice(|x| x + 100, 1))]);
+}
+
+#[test]
+fn a_function_value_calls_the_named_function() {
+    // CV-06 AC 1 (§1.5.10): `let f = double; f(21)` and `apply(double, 5)` call `double`.
+    let double = |x: u8| x * 2;
+    let committed = first_commits("closures.msl", &["d", "e"]);
+    assert_eq!(committed, vec![byte(double(21)), byte(double(5))]);
+}
+
+#[test]
+fn a_closure_in_analog_is_differentiated_through() {
+    // CV-05 AC 3 (§3 rule 1): a closure called in `analog` is differentiated as a direct call, and
+    // so is a function value: v^3 at 1.5 V is 3.375 and its partial 3 v^2 = 6.75, as the
+    // written-out product's.
+    let (value, partial) = (1.5f64.powi(3), 3.0 * 1.5f64.powi(2));
+    let at = operating_point("closures.msl", "ClosureBench", &["o", "p"]);
+    for (k, got) in at.iter().enumerate() {
+        assert!((got - value).abs() <= SOLVE * value, "node {k}: v^3 is {value}, the operating point has {got}");
+    }
+    let mut running = project("closures.msl").compile("ClosureBench").unwrap_or_else(|r| panic!("{r}"));
+    let mut ac = running.circuit.ac(Context::default()).expect("ac");
+    let sweep = ac.solve_sweep(AcSweepAnalysisOptions { start_frequency: 1e3, stop_frequency: 1e5, steps: 3, logarithmic: true }).unwrap_or_else(|e| panic!("the sweep does not solve: {e}"));
+    for name in ["o", "p"] {
+        let node = NodeIdentifier::Anonymous(running.ir.node_at(&format!("ClosureBench.{name}")).expect("a node").id().index());
+        for step in sweep.iter() {
+            let gain = step.get_node(&node).expect("v").norm();
+            assert!((gain - partial).abs() <= 1e-6 * partial, "{name}: the partial is 3 v^2 = {partial}, the AC gain is {gain}");
+        }
+    }
+}
