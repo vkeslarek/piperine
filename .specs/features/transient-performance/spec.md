@@ -1,5 +1,7 @@
 # Transient Performance Specification
 
+**Approved by the user**: 2026-11-20 - "Ok! Coloca em uma spec e priorizamos depois da análise de gaps". The plan is accepted as written; it is scheduled after ROADMAP item 13 (`spec-closure`, the gap analysis), when the user prioritizes the backlog. Decision points 1 to 5 of the planner's report (multi-rate absorbed with the 300 000-step gate, the §15.2 amendment, the stale §15.2 "Before the solve" paragraph, the stop-on-parity-move rule, the deferred extras) stay open for that prioritization.
+
 **Approved**: 2026-11-20 - under the user's standing AFK rule (2026-11-19: "Tu sempre assume o default mais razoável e depois me conta pois vou ficar afk"). The user asked for the feature directly on 2026-11-20: "quero uma feature de melhora de performance". The defaults D1 to D12 below are the planner's and are the user's to correct; none of them is the user's own answer.
 
 **Absorbs** `multi-rate` (spec approved by the user 2026-11-18, never designed). Its requirements MR-01 to MR-08 map to TP-01 to TP-03, TP-06, TP-09 and TP-10 here; its answers Q1 (option B), Q2 (C) and Q4 (A) are kept as the user gave them; its Q3 gate (135 000 steps) is replaced, because the measurement shows it cannot be met (D6).
