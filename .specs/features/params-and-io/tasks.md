@@ -541,10 +541,10 @@ T44
 
 **Done when**:
 
-- [ ] `the_host_drives_a_tops_node_ports_e0810_e0811` passes under `**Run spectext**`
-- [ ] The guard sees `E0810` and `E0811` as spec codes; they are raised by T17 and T18, so they enter `code_owners.tsv` under `params-and-io` here and leave it there
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `the_host_drives_a_tops_node_ports_e0810_e0811` passes under `**Run spectext**`
+- [x] The guard sees `E0810` and `E0811` as spec codes; they are raised by T17 and T18, so they enter `code_owners.tsv` under `params-and-io` here and leave it there
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

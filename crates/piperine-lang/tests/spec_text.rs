@@ -1792,3 +1792,30 @@ fn the_commit_of_an_event_read_as_a_bool_is_stated() {
         assert!(behavior.contains(fact), "§13 lacks \"{fact}\"");
     }
 }
+
+#[test]
+fn the_host_drives_a_tops_node_ports_e0810_e0811() {
+    // PI-07 AC 8, D10: §8.1.14 and §23.1 rule 1 state the host source, and §23.1's errors table
+    // carries E0810 (host) and E0811 (elaboration)
+    let structure = flat(&spec("part_iii_structure.md"));
+    for fact in ["The host drives each node port with a host source, a potential source to `gnd`", "(`E0810` when a run has none)", "a value input of the top is refused (`E0811`)"] {
+        assert!(structure.contains(fact), "§8.1.14 lacks \"{fact}\"");
+    }
+    let host = spec("part_viii_host.md");
+    let flat_host = flat(&host);
+    for fact in [
+        "It drives each node port of the top with one **host source**",
+        "a DC value, an optional AC stimulus (magnitude and phase) and a piecewise-linear waveform",
+        "A run needs a host source for every node port of the top (`E0810`)",
+        "A value input of the top has no host source and is refused at elaboration (`E0811`)",
+    ] {
+        assert!(flat_host.contains(fact), "§23.1 lacks \"{fact}\"");
+    }
+    let quoted = flat_host.replace("> ", "");
+    assert!(quoted.contains("a host change of its value at a time is a jump there"), "the Resolution lacks the jump");
+    let rows = table_rows(&section(&host, "### 23.1 "));
+    for (code, phase) in [("`E0810`", "host"), ("`E0811`", "elaboration")] {
+        let row = rows.iter().find(|r| r[0] == code).unwrap_or_else(|| panic!("§23.1's errors table lacks {code}"));
+        assert_eq!(row[2], phase, "{code}'s phase");
+    }
+}
