@@ -1,0 +1,12 @@
+//! Host scenarios of an example (MD-73): a scenario package under `tests/e2e/<example>/` is run
+//! by a Rust host that schedules its stimulus and judges what the run printed.
+//!
+//! - `column`: [`NamedColumn`], a table column found by its label or a dotted suffix of it.
+//! - `trace`: [`Trace`], one real column measured over a window.
+//! - `discrete`: [`DiscreteTrace`], one discrete column read over a window.
+//! - `stimulus`: [`Stimulus`] and [`Ramp`], the host's schedule for one run.
+//! - `run`: [`ScenarioRun`] and [`ScenarioBatch`], runs of a package executed once each, at once.
+
+pub mod column;
+
+pub use column::NamedColumn;

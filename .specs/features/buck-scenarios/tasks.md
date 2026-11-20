@@ -119,15 +119,17 @@ T13 → T15
 
 **Done when**:
 
-- [ ] A label equal to the name and a label ending in `.name` are both found; two matching labels panic naming both
-- [ ] `a_missing_column_panics_naming_the_name_and_the_columns` asserts the panic text through `std::panic::catch_unwind` (no `should_panic`)
-- [ ] Gate check passes: `cargo test -p piperine-parity --lib scenario::`
-- [ ] Test count: 3 new tests
+- [x] A label equal to the name and a label ending in `.name` are both found; two matching labels panic naming both
+- [x] `a_missing_column_panics_naming_the_name_and_the_columns` asserts the panic text through `std::panic::catch_unwind` (no `should_panic`)
+- [x] Gate check passes: `cargo test -p piperine-parity --lib scenario::`
+- [x] Test count: 3 new tests
 
 **Tests**: unit
 **Gate**: quick
 
 **Commit**: `feat(parity): NamedColumn finds a table column by label or suffix`
+
+**Status**: Complete
 
 ---
 
