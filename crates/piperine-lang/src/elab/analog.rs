@@ -313,13 +313,16 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_terminal(&mut self, scope: &Scope, arg: ExprId) -> Option<Terminal> {
         let node = self.design.expr_node(arg).clone();
         let file = self.design.decl_data(node.owner).file;
+        if let ExprKind::Field { .. } = &node.kind {
+            return self.reached_terminal(scope, arg);
+        }
         let ExprKind::Path(path) = &node.kind else {
             self.unsupported(file, node.span, "a node argument that is not a name");
             return None;
         };
         match self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
-            Resolution::Decl(decl) => match self.frames.get(scope.frame).and_then(|f| f.nodes.get(&decl)) {
-                Some(terminal) => Some(*terminal),
+            Resolution::Decl(decl) => match self.frame_node(scope.frame, decl) {
+                Some(terminal) => Some(terminal),
                 None => {
                     self.unsupported(file, node.span, "a name that is not a node of this module");
                     None

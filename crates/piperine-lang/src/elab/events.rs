@@ -392,11 +392,14 @@ impl Elaboration<'_, '_> {
     /// The carrier of the body a receiver names, in the frame of `scope`.
     pub(super) fn carrier_of(&mut self, scope: &Scope, expr: ExprId) -> Option<u32> {
         let node = self.design.expr_node(self.peel_parens(expr)).clone();
+        if let ExprKind::Field { .. } = &node.kind {
+            return self.reached_carrier(scope, self.peel_parens(expr));
+        }
         if let ExprKind::Path(path) = &node.kind
             && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
-            && let Some(index) = self.frames.get(scope.frame).and_then(|f| f.carriers.get(&decl))
+            && let Some(index) = self.frame_carrier(scope.frame, decl)
         {
-            return Some(*index);
+            return Some(index);
         }
         self.unsupported(scope.file, node.span, "a receiver that is not a carrier of this module");
         None

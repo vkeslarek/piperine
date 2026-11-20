@@ -3,7 +3,7 @@
 use crate::real::Real;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 use crate::model::{
-    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Event, Expr, FunctionData, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach,
+    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Event, Expr, FunctionData, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
     NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ValueType,
 };
 use crate::contributions::{Contribution, Contributions};
@@ -228,6 +228,14 @@ impl<'a> Body<'a> {
     /// carrier, or `None` for an open port. Empty for a child with none recorded, or out of range.
     pub fn child_carriers(&self, child: usize) -> &'a [Option<u32>] {
         self.data().child_carriers.get(child).map_or(&[], Vec::as_slice)
+    }
+
+    /// Whether a parent body reads carrier `c` of this body as `inst.name` (a `Reach` into a child
+    /// that places this body): the carrier is then met on a net, as a port is.
+    pub fn is_reached(&self, c: u32) -> bool {
+        self.ir.bodies.iter().any(|parent| {
+            parent.reaches.iter().any(|r| matches!(r.item, ReachedItem::Carrier { child_carrier, .. } if child_carrier == c) && parent.children.get(r.child as usize).is_some_and(|child| child.body == self.id))
+        })
     }
 
     /// The discrete carriers, ports first, then signals.

@@ -333,7 +333,8 @@ impl Digital {
         match body.carriers().get(c as usize).map(|x| x.role) {
             // A reached carrier is a read-only view of a child's: a `PORT` pin, as an `in` port.
             Some(CarrierRole::In | CarrierRole::Out | CarrierRole::Reached) => true,
-            Some(CarrierRole::Signal) => (0..body.children().len()).any(|k| body.child_carriers(k).contains(&Some(c))),
+            // A `signal` is met on a net when a child's carrier port is bound to it or a parent reads it (`inst.name`).
+            Some(CarrierRole::Signal) => (0..body.children().len()).any(|k| body.child_carriers(k).contains(&Some(c))) || body.is_reached(c),
             None => false,
         }
     }

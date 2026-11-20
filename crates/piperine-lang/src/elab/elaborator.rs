@@ -79,6 +79,10 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) structure: Structure,
     /// The frames of the body being lowered: frame 0 is its own module.
     pub(super) frames: Vec<Frame>,
+    /// The index each placement of the body being lowered takes among its children (`reach.rs`).
+    pub(super) child_indices: BTreeMap<crate::pom::ExprId, u32>,
+    /// The reach frame of each child a body reads: by the frame that reads it and the placement.
+    pub(super) reach_frames: BTreeMap<(usize, crate::pom::ExprId), usize>,
     pub(super) diagnostics: Vec<DesignDiagnostic>,
 }
 
@@ -104,6 +108,8 @@ impl<'d, 't> Elaboration<'d, 't> {
             body_variants: BodyVariants::default(),
             structure: Structure::default(),
             frames: Vec::new(),
+            child_indices: BTreeMap::new(),
+            reach_frames: BTreeMap::new(),
             diagnostics: Vec::new(),
         }
     }

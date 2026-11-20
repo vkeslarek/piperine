@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use piperine_ir::{BodyId, BodyNode, Carrier, CarrierRole, ChildValue, Constant, Derivative, Drive, Event, Hoisted, Reaction, Stream, Terminal, ValueType};
+use piperine_ir::{BodyId, BodyNode, Carrier, CarrierRole, ChildValue, Constant, Derivative, Drive, Event, Hoisted, Reach, Reaction, Stream, Terminal, ValueType};
 
 use super::body::NodePlan;
 use super::consts::{Bindings, Folded};
@@ -36,6 +36,8 @@ pub(super) struct Structure {
     pub(super) child_carriers: Vec<(u32, Vec<Option<u32>>)>,
     /// The param values of children that read the parent's params: (child, param, value).
     pub(super) child_params: Vec<(u32, u32, ChildValue)>,
+    /// The `pub` nodes and carriers of children the body reads (`reach.rs`).
+    pub(super) reaches: Vec<Reach>,
 }
 
 /// The module whose names an expression of the body reads, and what those names are in the body.
@@ -65,12 +67,14 @@ pub(super) struct Frame {
     pub(super) failed: BTreeSet<ExprId>,
     /// The derivative site of each `ddt` call read in the frame (`derivatives.rs`): one call, one site.
     pub(super) derivatives: BTreeMap<ExprId, u32>,
+    /// For a reach frame (`reach.rs`), the index of the child it stands for in the body's children.
+    pub(super) child: Option<u32>,
 }
 
 impl Frame {
     /// The frame of the body's own module.
     pub(super) fn root(module: DeclId) -> Frame {
-        Frame { module, parent: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new() }
+        Frame { module, parent: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), child: None }
     }
 }
 
@@ -173,6 +177,9 @@ impl Elaboration<'_, '_> {
         }
         for (child, param, value) in structure.child_params {
             self.ir.child_param(body, child, param, value);
+        }
+        for reach in structure.reaches {
+            self.ir.reach(body, reach);
         }
     }
 }

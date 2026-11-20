@@ -77,7 +77,7 @@ impl Elaboration<'_, '_> {
     /// The values the key params of `module` take at the placement written with `fields`: the value
     /// written, evaluated over the key params of the placing body (`scope.keys`), else the default.
     /// `None` after a diagnostic (`E0319` for a key param with neither).
-    fn child_key_values(&mut self, scope: &Scope, module: DeclId, fields: &[FieldInit], file: FileId, span: crate::msl::Span) -> Option<Bindings> {
+    pub(super) fn child_key_values(&mut self, scope: &Scope, module: DeclId, fields: &[FieldInit], file: FileId, span: crate::msl::Span) -> Option<Bindings> {
         let mut values = Bindings::new();
         let plans = self.param_plans.get(&module).cloned().unwrap_or_default();
         for key in self.keys.of(module).to_vec() {
@@ -126,6 +126,12 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             match self.lower_terminal(scope, arg.value) {
+                // A reached node is bound after its child is placed, which a sibling placed before
+                // it could not read.
+                Some(Terminal::Node(at)) if self.structure.nodes[at as usize].1.role == piperine_ir::NodeRole::Reached => {
+                    self.unsupported(scope.file, self.design.expr_node(arg.value).span, "a node of a child connected to another placement");
+                    ok = false;
+                }
                 Some(terminal) => terminals.push(terminal),
                 None => ok = false,
             }

@@ -43,6 +43,8 @@ pub(super) struct ModulePlan {
     /// Every carrier of the body, in its order: each is bound to one net per instance.
     pub(super) carriers: Vec<Carrier>,
     pub(super) children: Vec<ChildPlan>,
+    /// The nodes and carriers of children the body reads: placement binds each once the child is placed.
+    pub(super) reaches: Vec<piperine_ir::Reach>,
 }
 
 impl Elaboration<'_, '_> {
@@ -80,6 +82,7 @@ impl Elaboration<'_, '_> {
         scope.keys = keys.clone();
         self.structure = Structure::default();
         self.frames = vec![Frame::root(module)];
+        self.index_children(module);
         let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
         for (index, param) in params.iter().enumerate() {
             scope.params.insert(*param, index as u32);
@@ -105,6 +108,7 @@ impl Elaboration<'_, '_> {
         let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&scope, module).into_iter().unzip();
         self.lower_digital(&scope, module);
         let carriers = self.structure.carriers.clone();
+        let reaches = self.structure.reaches.clone();
         let merged = scope.merged.clone();
         let (node_specs, node_plans): (Vec<BodyNode>, Vec<NodePlan>) = std::mem::take(&mut self.structure.nodes).into_iter().unzip();
         let body = self.ir.body(BodySpec {
@@ -124,7 +128,7 @@ impl Elaboration<'_, '_> {
         for (plus, minus) in &merged {
             self.ir.merge(body, Merge { plus: *plus, minus: *minus });
         }
-        self.plans.insert(key, ModulePlan { body, nodes: node_plans, merges: merged, carriers, children: child_plans });
+        self.plans.insert(key, ModulePlan { body, nodes: node_plans, merges: merged, carriers, children: child_plans, reaches });
     }
 
     /// The param `param` of `module` as the body has it: its type, its `where` lowered over the

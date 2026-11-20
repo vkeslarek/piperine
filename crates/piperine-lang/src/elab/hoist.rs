@@ -270,6 +270,11 @@ impl Elaboration<'_, '_> {
         // A frame the lowering of an earlier frame hoists lazily joins the walk.
         let mut frame = 1;
         while frame < self.frames.len() {
+            // A reach frame (`reach.rs`) names a placed child, whose `analog` block is its own body's.
+            if self.frames[frame].child.is_some() {
+                frame += 1;
+                continue;
+            }
             let module = self.frames[frame].module;
             let outer = std::mem::replace(&mut scope.frame, frame);
             let lowered = self.lower_analog(scope, module);

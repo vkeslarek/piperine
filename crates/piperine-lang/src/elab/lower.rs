@@ -223,6 +223,7 @@ impl Elaboration<'_, '_> {
             },
             ExprKind::Paren(inner) => self.lower_expr(scope, *inner),
             ExprKind::Path(_) => self.lower_path(scope, expr, ty, origin),
+            ExprKind::Field { .. } => self.lower_field(scope, expr, ty, origin),
             ExprKind::Unary { op, expr: operand } => {
                 let op = match op {
                     UnOp::Neg => UnaryOp::Neg,
@@ -628,7 +629,7 @@ impl Elaboration<'_, '_> {
                     None
                 }
             },
-            DeclKind::Port(_) | DeclKind::Signal(_) => match (self.frames.get(scope.frame).and_then(|f| f.carriers.get(&decl)).copied(), self.input_of(scope, decl)) {
+            DeclKind::Port(_) | DeclKind::Signal(_) => match (self.frame_carrier(scope.frame, decl), self.input_of(scope, decl)) {
                 // A read of a carrier may be unknown (§3.3): its type is flagged.
                 (Some(index), _) => Some(self.carrier_read(index, origin)),
                 // A value input of a hoisted module: the caller's expression, in the caller's frame.

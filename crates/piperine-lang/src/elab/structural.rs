@@ -282,6 +282,13 @@ impl Elaboration<'_, '_> {
                 }
             }
         }
+        // A param of a child that the parent reads through `inst.name` is fixed by the placement.
+        for (module, param) in self.params_read_through_reaches() {
+            if modules.contains(&module) {
+                let order = self.params_of(module);
+                self.keys.add(module, param, &order);
+            }
+        }
         // A param read by the value a placement gives a key param of its child is a key too.
         let mut changed = true;
         while changed {

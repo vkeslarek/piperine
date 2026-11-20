@@ -840,10 +840,10 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Creates the target `crates/piperine-parity/tests/source_reach.rs` (`//!` header: `inst.name` and `inflow()` run from source on the Rust backend)
-- [ ] Tests with exactly these names pass in `Run sreach`: `the_parent_probes_a_pub_node_of_its_child`, `the_parent_loads_a_pub_node_of_its_child`, `the_parent_reads_a_pub_carrier_of_its_child`, `the_parent_reads_a_pub_param_and_a_pub_let_of_its_child`
-- [ ] Gate check passes: Full (`Run sreach`, `cargo test -p piperine-lang`, `Run twins`, `Run tgolden`)
-- [ ] Test count: the 4 tests named above, and no existing test removed or edited
+- [x] Creates the target `crates/piperine-parity/tests/source_reach.rs` (`//!` header: `inst.name` and `inflow()` run from source on the Rust backend)
+- [x] Tests with exactly these names pass in `Run sreach`: `the_parent_probes_a_pub_node_of_its_child`, `the_parent_loads_a_pub_node_of_its_child`, `the_parent_reads_a_pub_carrier_of_its_child`, `the_parent_reads_a_pub_param_and_a_pub_let_of_its_child`
+- [x] Gate check passes: Full (`Run sreach`, `cargo test -p piperine-lang`, `Run twins`, `Run tgolden`)
+- [x] Test count: the 4 tests named above, and no existing test removed or edited
 
 **Tests**: e2e
 **Gate**: full

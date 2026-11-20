@@ -1,0 +1,77 @@
+//! `inst.name` and `inflow()` (analog-structure AS-11, AS-13): a parent reads and loads the `pub`
+//! items of its children, and a module measures the flow into one of its ports. Every module is
+//! written from the spec text (Part III §8.2.8, §6 rule 5).
+
+/// Ideal resistor.
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// A potential held at `volts`.
+module Level(p: Electrical) { volts: f64 = 0.0; }
+analog for Level { v(p, gnd) +> volts; }
+
+// -- AS-11 AC 1 and 2: a `pub` node of a child
+
+/// Drives its `pub` node `mid` at half of `a`.
+module Half(a: Electrical) { pub signal mid: Electrical; }
+analog for Half { v(mid) +> 0.5 * v(a); }
+
+module ProbeBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let source = Level { volts: 2.0 }(a);
+    let c = Half(a);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for ProbeBench { v(o) +> v(c.mid); }
+
+/// A resistor of 1 kOhm from `a` to its `pub` node `mid`.
+module Series(a: Electrical) { pub signal mid: Electrical; }
+analog for Series { i(a, mid) +> v(a, mid) / 1k; }
+
+module LoadBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let source = Level { volts: 2.0 }(a);
+    let c = Series(a);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for LoadBench {
+    i(c.mid, gnd) +> v(c.mid) / 1k;
+    v(o) +> v(c.mid);
+}
+
+// -- AS-11 AC 3: a `pub` carrier of a child
+
+/// A `pub` carrier that is 1.0 until 1 us and 3.0 after.
+module Counter(a: Electrical) { pub signal state: Bit<f64> = 1.0; }
+digital for Counter { on at(1u) { state <- 3.0; } }
+
+module CarrierReadBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let source = Level { volts: 0.0 }(a);
+    let c = Counter(a);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for CarrierReadBench { v(o) +> c.state.known_or(0.0); }
+
+// -- AS-11 AC 4: a `pub` param and a `pub` let of a child
+
+/// A `pub` param and a `pub` name for three times it.
+module Gain(a: Electrical) {
+    pub r: f64 = 2.0;
+    pub let e = r * 3.0;
+}
+
+module ParamBench() {
+    k: f64 = 4.0;
+    signal a: Electrical;
+    signal o: Electrical;
+    let source = Level { volts: 0.0 }(a);
+    let c = Gain { r: k }(a);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for ParamBench { v(o) +> c.r + c.e; }
