@@ -432,7 +432,7 @@ fn level_with_a_known_index_is_known() {
 #[test]
 fn level_out_of_range_is_a_panic_naming_k() {
     // US-02 AC 4, §1 rule 11: `x.level(8)` of a `u8` is a run fault, whose message names the
-    // level and the count
+    // level, the count and the expression (`levels.msl` line 30, where `x.level(8)` stands)
     let built = build(&project("levels.msl"), "OutsideBench");
     let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| built.run(2e-9, 0.5e-9)));
     let message = match run {
@@ -440,6 +440,7 @@ fn level_out_of_range_is_a_panic_naming_k() {
         Err(payload) => payload.downcast_ref::<String>().cloned().unwrap_or_default(),
     };
     assert!(message.contains("level 8") && message.contains("out of range"), "{message}");
+    assert!(message.contains("levels.msl:30:"), "names the origin of `x.level(8)`: {message}");
 }
 
 #[test]
@@ -508,6 +509,8 @@ fn cast_keeps_each_level_and_its_flag() {
     // and a tag the enum has is its variant (`Mode::Run` is 1)
     let (_, records) = records_of("contracts.msl", "ContractsBench");
     assert_eq!(named(&records, "cast", "signed"), Field::Int(5));
+    // 200 = 1100 1000 as an `i8` is -56: the bits are reinterpreted, not the value converted
+    assert_eq!(named(&records, "cast", "wrapped"), Field::Int(-56));
     assert_eq!(named(&records, "cast", "unsigned"), Field::Int(5));
     assert_eq!(named(&records, "cast", "unknown"), Field::Unknown);
     assert_eq!(named(&records, "cast", "mode"), Field::Bool(true));
@@ -519,6 +522,8 @@ fn cast_to_a_tag_with_no_variant_is_unknown() {
     // `Unknown` and `known_or` gives the default `Mode::Idle`
     let (_, records) = records_of("contracts.msl", "ContractsBench");
     assert_eq!(named(&records, "cast", "missing"), Field::Bool(true));
+    // and the cast itself is unknown, not a known `Idle`
+    assert_eq!(named(&records, "cast", "absent"), Field::Bool(true));
 }
 
 #[test]
