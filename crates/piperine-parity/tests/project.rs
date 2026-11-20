@@ -57,3 +57,16 @@ fn a_diagnostic_is_returned_with_its_stage() {
     assert_eq!(refused.stage, "typeck", "{refused}");
     assert!(refused.diagnostics.iter().any(|d| d.diagnostic.code == "P0003"), "{refused}");
 }
+
+#[test]
+fn the_source_runner_checks_the_whole_model() {
+    // GN-09: `Divider` is clean and `broken` is called by nothing, yet the runner refuses it at the
+    // type check as a host does; the same top without the function elaborates
+    let refused = match project("unreached.msl").elaborate("Divider") {
+        Ok(_) => panic!("an unreached type error elaborated"),
+        Err(r) => r,
+    };
+    assert_eq!(refused.stage, "typeck", "{refused}");
+    assert_eq!(refused.diagnostics.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["P0002"]);
+    assert!(project("bench.msl").elaborate("Divider").is_ok());
+}

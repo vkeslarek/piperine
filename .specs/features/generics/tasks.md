@@ -244,8 +244,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `the_source_runner_checks_the_whole_model` passes under `**Run parityproject**`
-- [ ] Gate check passes: Full
+- [x] `the_source_runner_checks_the_whole_model` passes under `**Run parityproject**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

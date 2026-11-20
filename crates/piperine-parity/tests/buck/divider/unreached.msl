@@ -1,0 +1,14 @@
+//! The `bench.msl` divider with a function nothing calls and a type error in it (`tests/project.rs`,
+//! the whole-model check): the top is clean, the model is not.
+use devices::{Resistor, Vsource};
+
+module Divider() {
+    signal vin: Electrical;
+    signal mid: Electrical;
+    let v1 = Vsource { dc: 10.0 }(vin, gnd);
+    let r1 = Resistor { r: 1k }(vin, mid);
+    let r2 = Resistor { r: 3k }(mid, gnd);
+}
+
+
+fn broken(x: f64) -> bool { x + 1.0 }

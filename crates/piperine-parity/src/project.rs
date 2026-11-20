@@ -97,6 +97,8 @@ impl Project {
     /// `top`, a module of the root crate, type-checked and elaborated.
     pub fn elaborate(&self, top: &str) -> Result<Ir, Rejection> {
         let design = self.design()?;
+        // every item is typed, reached from the top or not, as `Session::elaborate` does (S3, GN-09)
+        Types::check_model(&design).map_err(|found| Self::diagnosed("typeck", found))?;
         Types::check(&design, top).map_err(|found| Self::diagnosed("typeck", found))?;
         Elaborator::new(&design).run(top).map_err(|found| Self::diagnosed("elaborate", found))
     }
