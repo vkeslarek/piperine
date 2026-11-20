@@ -180,7 +180,7 @@ fn tran_rc_with_a_scaled_derivative() {
     }
 }
 
-/// The RC charge of a capacitor that starts at 2 V: `CapIc` (§16 H7, `tests/ngspice/uic_rc.msl`)
+/// The RC charge of a capacitor that starts at 2 V: `CapIc` (§16 H7, `tests/e2e/twins/uic_rc.msl`)
 /// against ngspice's `uic` run with `IC=2.0`, on the Rust backend (the interpreter refuses the
 /// `analysis` environment reads, T15).
 #[test]

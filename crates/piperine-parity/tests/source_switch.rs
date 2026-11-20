@@ -168,7 +168,7 @@ fn a_limit_under_an_untaken_branch_neither_vetoes_nor_moves() {
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("stubborn off", "v(a)", Coordinate::OperatingPoint), 1.0, off);
 }
 
-/// The drop across `tests/ngspice/rdiode.cir`'s junction (5 V behind 1 kOhm into a diode of `is` 1e-14 at
+/// The drop across `tests/e2e/twins/rdiode.cir`'s junction (5 V behind 1 kOhm into a diode of `is` 1e-14 at
 /// 27 C, `gmin` 1e-12): the root of `(5 - v) / 1k = is (exp(v / vt) - 1) + gmin v`, by bisection, so it
 /// is written from the circuit and not read from the model under test.
 fn rdiode_drop() -> f64 {
