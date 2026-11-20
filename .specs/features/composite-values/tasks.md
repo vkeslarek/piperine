@@ -470,8 +470,8 @@ T63
 
 **Done when**:
 
-- [ ] `guards_ranges_or_bindings_and_at_type_check`, `alternatives_binding_differently_are_e0184` and `an_integer_match_covered_by_ranges_is_exhaustive` pass under `**Run typesctl**`
-- [ ] Gate check passes: Quick
+- [x] `guards_ranges_or_bindings_and_at_type_check`, `alternatives_binding_differently_are_e0184` and `an_integer_match_covered_by_ranges_is_exhaustive` pass under `**Run typesctl**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

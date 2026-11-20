@@ -264,10 +264,9 @@ fn match_is_typed_over_enums_bools_integers_and_options() {
     assert_eq!(types.literal(lit), Some(&Ty::UInt(9)));
 
     // §1 rule 14: a name that resolves to a constant is a path pattern and binds nothing; a name
-    // that resolves to nothing would bind, which a `match` arm of the subset does not do.
-    let (src, d) = diagnostics("", "let k: u2 = 1; let i = match k { x => 1.0 };");
-    assert_eq!(codes(&d), ["P0001"], "{src}");
-    assert_eq!(snippet(&src, &d[0]), "x");
+    // that resolves to nothing binds, at any depth (§1.6.2).
+    let src = source("", "let k: u2 = 1; let i = match k { x => 1.0 };");
+    checked(&design_of(&src), &src);
 
     // Arms of different types, and a pattern of another type, are mismatches.
     let (src, d) = diagnostics("", "let b = match true { true => 1.0, false => false };");

@@ -39,7 +39,6 @@ const ROWS: &[Row] = &[
     Row { construct: "reference type", source: "module Top() { }\nanalog for Top { let x: &f64 = 1.0; }", names: "reference type" },
     Row { construct: "struct", source: "struct S { a: f64 }\nmodule Top() { }\nanalog for Top { let s = S { a: 1.0 }; }", names: "struct expression" },
     Row { construct: "generation if", source: "module Top(a: E) { if true { let r = Resistor { r: 1.0 }(a, gnd); } }", names: "generation" },
-    Row { construct: "match", source: "module Top() { }\nanalog for Top { let x = 1.0; let y = match x { _ => 1.0 }; }", names: "`match` expression" },
     Row { construct: "struct with an impl (its methods are never reached)", source: "struct S { a: f64 }\nimpl S { fn get(self) -> f64 { 1.0 } }\nmodule Top() { }\nanalog for Top { let s = S { a: 1.0 }; let x = s.get(); }", names: "struct expression" },
     Row { construct: "generic function", source: "fn g<T>(x: f64) -> f64 { x }\nmodule Top() { }\nanalog for Top { let x = g(1.0); }", names: "generic function" },
     Row { construct: "generic module", source: "module G<N: Nature>(a: N) { }\nmodule Top(a: E) { let g = G(a); }", names: "generic module" },

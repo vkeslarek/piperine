@@ -309,10 +309,6 @@ fn an_unsupported_form_does_not_hide_an_independent_error() {
     assert_eq!(codes_of(&d), ["P0002", "P0001"]);
     assert_eq!(snippet(&src, &d[0]), "{ a % 2.0; }");
     assert_eq!(snippet(&src, &d[1]), "a % 2.0");
-
-    // A refused `return` stands where the value would be: no missing result besides it.
-    let (_, d) = diagnostics("fn f(a: f64) -> f64 { return a; }", "let z = f(1.0);");
-    assert_eq!(codes_of(&d), ["P0001"]);
 }
 
 #[test]

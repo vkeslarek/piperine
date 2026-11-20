@@ -190,3 +190,57 @@ fn return_outside_a_function_is_e0185() {
     // `?` in a function whose result is not an `Option`
     assert_refused(&source("fn f(o: Option<u8>) -> u8 { let x = o?; x }", "let y = f(Some(1));"), "E0185", "not an `Option`");
 }
+
+// ---- T14: guards, range patterns, or-bindings and `@` ------------------------------------------
+
+#[test]
+fn guards_ranges_or_bindings_and_at_type_check() {
+    // §1.6.4, §1.6.8, §1.6.2, §1.8.3: ranges over integers and floats (closed, half-open, open),
+    // or-patterns whose alternatives bind the same names, `name @ p`, and a guard that sees the
+    // names of its pattern.
+    let items = "const LIMIT: u8 = 100;\n\
+                 fn classify(code: u8) -> u8 { match code { 0 => 1, 1..=9 => 2, 10 | 11 => 3, n @ 12..=15 => n, n if n > LIMIT => n, 16..LIMIT => 4, _ => 0 } }\n\
+                 fn floats(x: f64) -> u8 { match x { 0.0..=1.0 => 1, 2.0.. => 2, ..=-1.0 => 3, _ => 0 } }\n\
+                 fn payload(o: Option<u8>) -> u8 { match o { Some(n @ 1..=3) | Some(n @ 7..=9) => n, Some(0) | None => 0, Some(n) => n } }\n\
+                 fn named(n: u8) -> u8 { match n { whole => whole + 1 } }";
+    assert_clean(&source(items, "let a = classify(1); let b = floats(1.0); let c = payload(None); let d = named(2);"));
+    // a guard is a `bool`
+    assert_refused(&source("fn f(n: u8) -> u8 { match n { x if x => 1, _ => 0 } }", "let y = f(1);"), "P0002", "expected `bool`");
+    // a range over an enum is a plain mismatch (D6)
+    let en = "#[derive(Repr)]\nenum Mode { A, B }\nfn f(m: Mode) -> u8 { match m { Mode::A..=Mode::B => 1, _ => 0 } }";
+    assert_refused(&source(en, "let y = f(Mode::A);"), "P0002", "range pattern");
+}
+
+#[test]
+fn alternatives_binding_differently_are_e0184() {
+    let f = |arms: &str| source(&format!("fn f(o: Option<u8>) -> u8 {{ match o {{ {arms} }} }}"), "let y = f(None);");
+    // §1.6.8: one alternative binds `n`, the other nothing; or each binds another name
+    assert_refused(&f("Some(n) | None => 0, _ => 1,"), "E0184", "bind different names");
+    assert_refused(&f("Some(a @ 1..=3) | Some(b @ 4..=9) => 0, _ => 1,"), "E0184", "bind different names");
+    // §1.6.10: a name bound twice in one pattern
+    assert_refused(&f("n @ Some(n) => 0, _ => 1,"), "E0184", "bound twice");
+    // §1.6.4: an empty range pattern
+    assert_refused(&f("Some(5..=1) => 0, _ => 1,"), "E0184", "empty range");
+    assert_refused(&f("Some(3..3) => 0, _ => 1,"), "E0184", "empty range");
+}
+
+#[test]
+fn an_integer_match_covered_by_ranges_is_exhaustive() {
+    // §1.8.6: for an integer type every value of its range, by literals and ranges, at any width up
+    // to 64; a guarded arm covers nothing.
+    let items = "fn a(x: u8) -> u8 { match x { 0..=127 => 1, 128..=255 => 2 } }\n\
+                 fn b(x: i8) -> u8 { match x { ..=-1 => 1, 0 => 2, 1.. => 3 } }\n\
+                 fn c(x: u64) -> u8 { match x { 0..=9 => 1, 10.. => 2 } }\n\
+                 fn d(x: i16) -> u8 { match x { -32768..=0 | 1..=32767 => 1 } }\n\
+                 fn e(x: i64) -> u8 { match x { ..=0 => 1, 1.. => 2 } }\n\
+                 fn g(x: u32) -> u8 { match x { 0..=4294967295 => 1 } }\n\
+                 fn h(x: u8) -> u8 { match x { n if n > 3 => 1, _ => 2 } }";
+    assert_clean(&source(items, "let r = a(1) + b(1) + c(1) + d(1) + e(1) + g(1) + h(1);"));
+    // one value short of the type's range is not exhaustive
+    let short = source("fn a(x: u8) -> u8 { match x { 0..=254 => 1 } }", "let y = a(1);");
+    let found = outcome(&short);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].1.contains("255"), "{found:?}");
+    let guarded = source("fn a(x: u8) -> u8 { match x { 0..=255 if true => 1 } }", "let y = a(1);");
+    assert_eq!(outcome(&guarded).len(), 1, "a guarded arm covers nothing");
+}
