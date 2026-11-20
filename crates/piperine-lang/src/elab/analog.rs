@@ -163,7 +163,7 @@ impl Elaboration<'_, '_> {
                 scope.limits.push(Site { name, origin: origin.clone() });
                 let mut lowered = Vec::new();
                 for arg in args {
-                    lowered.push(self.lower_expr(scope, *arg));
+                    lowered.push(self.lower_expr(scope, *arg).and_then(|v| self.known_in_analog(scope.file, *arg, v, "an argument of `limit`")));
                 }
                 let mut lowered = lowered.into_iter();
                 let (x, f, seed) = (lowered.next()??, lowered.next()??, lowered.next().flatten());
@@ -174,7 +174,7 @@ impl Elaboration<'_, '_> {
                 scope.stims.push(Site { name: "ac".to_string(), origin: origin.clone() });
                 let mut lowered = Vec::new();
                 for arg in args {
-                    lowered.push(self.lower_expr(scope, *arg));
+                    lowered.push(self.lower_expr(scope, *arg).and_then(|v| self.known_in_analog(scope.file, *arg, v, "an argument of `ac_stim`")));
                 }
                 let mut lowered = lowered.into_iter();
                 let (mag, phase) = (lowered.next()??, lowered.next().flatten());

@@ -181,3 +181,47 @@ fn unknown_deciding_structure_is_e0151() {
     assert_eq!(Elab::codes(&err), ["E0151"]);
     assert!(err[0].diagnostic.message.contains("a param default"), "names the decision: {}", err[0].diagnostic.message);
 }
+
+/// One `analog` statement of `Amp` over `const U`, an unknown real, and `Top` placing it.
+fn analog_source(statement: &str) -> String {
+    format!("const U: f64 = Unknown;\nmodule Amp(p: Electrical) {{ }}\nanalog for Amp {{ {statement} }}\nmodule Top() {{ signal s: Electrical; let a = Amp(s); }}")
+}
+
+/// The statements of `analog` that read the unknown `U` through each form the elaborator takes a
+/// known real in, with the text the diagnostic points at.
+const ANALOG_FORMS: [(&str, &str); 5] = [
+    ("v(p) +> U;", "U"),
+    ("v(p) +> U.sqrt();", "U.sqrt()"),
+    ("v(p) +> 1.0.known_or(U);", "1.0.known_or(U)"),
+    ("i(p) +> ddt(U);", "U"),
+    ("v(p) +> ac_stim(U);", "U"),
+];
+
+#[test]
+fn analog_reading_a_maybe_unknown_value_is_e0150() {
+    // §3.3.5: `analog` computes with known reals, so a value that may be unknown in a
+    // contribution, a `known_or` default, a math function or the argument of `ddt` or `ac_stim`
+    // is `E0150` naming its source `U`, at the leaf
+    for (statement, at) in ANALOG_FORMS {
+        let src = analog_source(statement);
+        let err = refused(&src);
+        assert_eq!(Elab::codes(&err), ["E0150"], "{statement}");
+        let span = err[0].diagnostic.span();
+        assert_eq!(&src[span.start..span.end], at, "{statement}");
+        assert!(err[0].diagnostic.message.contains("`U`"), "names the source: {statement}: {}", err[0].diagnostic.message);
+    }
+}
+
+#[test]
+fn no_analog_refusal_of_an_unknown_is_p0001() {
+    // US-06 AC 3: the backstops of the elaborator in `analog` are never the placeholder `P0001`;
+    // a known value through the same forms elaborates
+    for (statement, _) in ANALOG_FORMS {
+        let err = refused(&analog_source(statement));
+        assert!(Elab::codes(&err).iter().all(|c| c != "P0001"), "{statement}: {:?}", Elab::codes(&err));
+    }
+    for statement in ["v(p) +> 1.0;", "v(p) +> 2.0.sqrt();", "v(p) +> 1.0.known_or(2.0);", "i(p) +> ddt(1.0);", "v(p) +> ac_stim(1.0);"] {
+        let src = analog_source(statement).replace("const U: f64 = Unknown;\n", "");
+        Elab::ir(&src, "Top");
+    }
+}

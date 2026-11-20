@@ -28,7 +28,8 @@ use super::lower::Scope;
 use piperine_ir::Constant;
 
 use super::consts::Bindings;
-use crate::pom::{BinOp, DeclKind, ExprId, ExprKind};
+use crate::msl::Diagnostic;
+use crate::pom::{BinOp, DeclKind, ExprId, ExprKind, FileId, Resolution};
 use crate::types::{Builtin, Callee, Method, Ty};
 
 /// Whether a value may be unknown.
@@ -118,6 +119,39 @@ impl Elaboration<'_, '_> {
             stack.extend(crate::pom::expr_children(&kind, self.design));
         }
         None
+    }
+
+    /// `value`, the lowering of `expr` where `analog` takes `role` (a contribution, an argument of
+    /// `ddt`, `limit` or `ac_stim`), when it is known: the solver computes with known reals
+    /// (§3.3.5). A value that may be unknown is `E0150` naming its source. The checker reports a
+    /// carrier read first; what reaches here is a `const` holding `Unknown`, or `Unknown` itself.
+    pub(super) fn known_in_analog(&mut self, file: FileId, expr: ExprId, value: LoweredExpr, role: &str) -> Option<LoweredExpr> {
+        if self.flag(value) == Flag::Plain {
+            return Some(value);
+        }
+        let span = self.design.expr_node(expr).span;
+        let source = self.unknown_source(expr);
+        let message = format!("`analog` takes {role}, which may be unknown through {source}: it has no unknowns (§3.3.5)");
+        self.report(file, Diagnostic::new("E0150", message, span, "may be unknown"));
+        None
+    }
+
+    /// The first `const` that `expr` reads, in backticks, else the literal `Unknown`: where the
+    /// value that may be unknown comes from.
+    fn unknown_source(&self, expr: ExprId) -> String {
+        let mut stack = vec![expr];
+        while let Some(e) = stack.pop() {
+            let kind = &self.design.expr_node(e).kind;
+            if let ExprKind::Path(path) = kind
+                && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
+                && matches!(self.design.decl_data(decl).kind, DeclKind::Const(_))
+                && let Some(name) = &self.design.decl_data(decl).name
+            {
+                return format!("`{}`", name.text);
+            }
+            stack.extend(crate::pom::expr_children(kind, self.design).into_iter().rev());
+        }
+        "`Unknown`".to_string()
     }
 
     /// `lhs && rhs` (`conjunction`) or `lhs || rhs` whose right operand `partial` reports, as the
