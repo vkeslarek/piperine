@@ -292,8 +292,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `the_input_referred_density_divides_by_the_transfer_from_the_input` and `an_input_with_no_stimulus_is_refused_by_name` pass
-- [ ] Gate check passes: `Run report`, `Run abinoise`
+- [x] `the_input_referred_density_divides_by_the_transfer_from_the_input` and `an_input_with_no_stimulus_is_refused_by_name` pass
+- [x] Gate check passes: `Run report`, `Run abinoise`
 
 **Tests**: integration
 **Gate**: quick

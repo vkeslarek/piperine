@@ -185,3 +185,56 @@ fn two_inputs_sharing_a_name_sum_into_one_series() {
         assert!((value - expected).abs() <= 1.0e-9 * expected, "{value:e} against {expected:e} at {f} Hz");
     }
 }
+
+// ─── Input-referred noise ───────────────────────────────────────────────────
+
+/// A 1 kΩ noisy resistor in parallel with a capacitor of 1.5915 nF (pole at 100 kHz) from `out`
+/// to ground, an AC current source `iin` injecting 1 A into `out`. Returns the circuit builder's
+/// result for a noise run from 1 kHz to 1 MHz over `steps` points with `input` as the input.
+fn rc_with_current_input(input: Option<&str>, steps: usize) -> Result<NoiseAnalysisResult, String> {
+    let mut b = CircuitBuilder::new("rc");
+    let gnd = b.ground();
+    let out = b.node("out");
+    b.device(abi_devices::current_ac(), "iin", &[("i", ParamValue::Real(1.0))], &[Port::Node(out.clone())]);
+    b.device(resistor_noisy(), "r1", &[("r", ParamValue::Real(1.0e3))], &[Port::Node(out.clone()), Port::Node(gnd.clone())]);
+    abi_devices::add_capacitor(&mut b, "c1", 1.5915494309189535e-9, &out, &gnd);
+    let mut circuit = b.build().expect("build");
+    let mut noise_options = options(node_id(&out), 1.0e3, 1.0e6, steps);
+    noise_options.input_source_name = input.map(str::to_string);
+    let mut solver = circuit.noise(noise_options, Context::default()).map_err(|e| e.to_string())?;
+    solver.solve().map_err(|e| e.to_string())
+}
+
+#[test]
+fn the_input_referred_density_divides_by_the_transfer_from_the_input() {
+    // The transfer from the input current to v(out) is Z = R/(1 + jωRC), and the resistor's
+    // current density 4kT/R gives onoise² = 4kT/R·|Z|², so inoise² = onoise²/|Z|² = 4kT/R A²/Hz at
+    // every frequency, flat, and its band total is √(4kT/R·(f_last − f_first)).
+    let (r, c) = (1.0e3, 1.5915494309189535e-9);
+    let result = rc_with_current_input(Some("iin"), 7).expect("noise");
+    let current_density = 4.0 * K_B * Tolerances::default().temperature / r;
+    let input_noise_sq = result.input_noise_sq.as_ref().expect("an input gives inoise");
+    for (i, f) in result.frequencies.iter().enumerate() {
+        let z_sq = r * r / (1.0 + (2.0 * std::f64::consts::PI * f * r * c).powi(2));
+        let expected_out = current_density * z_sq;
+        assert!((result.out_noise_sq[i] - expected_out).abs() <= 1.0e-9 * expected_out, "onoise² at {f} Hz");
+        assert!((input_noise_sq[i] - current_density).abs() <= 1.0e-9 * current_density, "inoise² at {f} Hz");
+    }
+    let width = result.frequencies[6] - result.frequencies[0];
+    let expected_total = (current_density * width).sqrt();
+    let total = result.input_total.expect("an input gives inoise_total");
+    assert!((total - expected_total).abs() <= 1.0e-9 * expected_total, "{total:e} against {expected_total:e}");
+
+    // Without an input the result has no input-referred quantity.
+    let alone = rc_with_current_input(None, 7).expect("noise");
+    assert!(alone.input_noise_sq.is_none() && alone.input_total.is_none());
+}
+
+#[test]
+fn an_input_with_no_stimulus_is_refused_by_name() {
+    // `r1` writes no `STIM` input, so no transfer exists to refer the noise to.
+    let err = rc_with_current_input(Some("r1"), 3).err().expect("no stimulus");
+    assert!(err.contains("r1") && err.contains("stimulus"), "{err}");
+    let err = rc_with_current_input(Some("nope"), 3).err().expect("no such instance");
+    assert!(err.contains("nope"), "{err}");
+}

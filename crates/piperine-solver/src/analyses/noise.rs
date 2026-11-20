@@ -49,6 +49,9 @@ pub struct NoiseAnalysisOptions {
     pub sweep_options: AcSweepAnalysisOptions,
     pub output_node: NodeIdentifier,
     pub reference_node: NodeIdentifier,
+    /// The path of the instance whose `STIM` inputs are the analysis input: with it the result
+    /// carries the input-referred noise (`inoise`). An instance with no `STIM` input is refused
+    /// when the solver is built.
     pub input_source_name: Option<String>,
 }
 
@@ -126,6 +129,9 @@ impl<'a> NoiseSolver<'a> {
         let dc_point = DcSolver::under(circuit, context.clone(), piperine_abi::raw::global::NOISE)?.solve()?;
 
         let (out_ref, ref_ref) = Self::resolve_nodes(circuit, &options)?;
+        if let Some(path) = &options.input_source_name {
+            Self::require_stimulus(circuit, &dc_point, path, &options, &context)?;
+        }
         let size = circuit.netlist().max_index().map(|i| i + 1).unwrap_or(0);
 
         let symbolic_stamps = Self::assemble_linearized(circuit, &dc_point, 1.0, &context)?;
@@ -163,6 +169,8 @@ impl<'a> NoiseSolver<'a> {
         let frequencies = self.options.sweep_options.generate_frequencies();
         let mut out_noise_sq = Vec::with_capacity(frequencies.len());
         let mut psd_map: HashMap<(String, String), (NoiseKind, Vec<f64>)> = HashMap::new();
+        // |H_in|² at each frequency, with an input: the power gain from it to the output.
+        let mut input_gain_sq = Vec::with_capacity(frequencies.len());
 
         for (i, &f) in frequencies.iter().enumerate() {
             let stamps = Self::assemble_linearized(self.circuit, &self.dc_point, f, &self.context)?;
@@ -176,6 +184,9 @@ impl<'a> NoiseSolver<'a> {
                 Self::record(&mut psd_map, (element, source), kind, val, i, frequencies.len());
             }
             out_noise_sq.push(step_density);
+            if self.options.input_source_name.is_some() {
+                input_gain_sq.push(self.input_gain_sq(f, &adjoint_sol)?);
+            }
             for (_, entry) in psd_map.iter_mut() {
                 if entry.1.len() == i {
                     entry.1.push(0.0);
@@ -186,9 +197,13 @@ impl<'a> NoiseSolver<'a> {
         let integrated_noise = self.integrate_noise(&frequencies, &out_noise_sq);
 
         let mut contributions = Vec::new();
-        let mut output_power = 0.0;
+        let (mut output_power, mut input_power) = (0.0, 0.0);
         for ((element, source), (kind, psd)) in psd_map {
             output_power += Integrator::power_law(&frequencies, &psd);
+            if !input_gain_sq.is_empty() {
+                let referred: Vec<f64> = psd.iter().zip(&input_gain_sq).map(|(n, gain)| n / gain).collect();
+                input_power += Integrator::power_law(&frequencies, &referred);
+            }
             let mut integrated_sq = 0.0;
             if frequencies.len() > 1 {
                 for i in 0..frequencies.len() - 1 {
@@ -209,6 +224,9 @@ impl<'a> NoiseSolver<'a> {
             frequencies,
             integrated_noise,
             output_total: output_power.sqrt(),
+            input_noise_sq: (!input_gain_sq.is_empty())
+                .then(|| out_noise_sq.iter().zip(&input_gain_sq).map(|(n, gain)| n / gain).collect()),
+            input_total: (!input_gain_sq.is_empty()).then(|| input_power.sqrt()),
             out_noise_sq,
             contributions,
         })
@@ -266,6 +284,59 @@ impl<'a> NoiseSolver<'a> {
             out.push((element.to_string(), source.to_string(), kind, h_b.norm_sqr() * column.psd));
         }
         Ok(out)
+    }
+
+    /// The operating point as the assembly's solution vector, and the ambient at `f_hz`.
+    fn small_signal_point(circuit: &CircuitInstance, dc_point: &DcAnalysisResult, f_hz: f64, context: &Context) -> (Vec<f64>, Ambient) {
+        let op = crate::analyses::ac::operating_vector(circuit, dc_point);
+        let amb = Ambient { time: 0.0, freq: f_hz, is_static: false, gmin: context.tolerances.gmin, source_scale: 1.0 };
+        (op, amb)
+    }
+
+    /// Refuses an input instance that has no `STIM` input, naming it (a noise run's input must
+    /// stimulate something: its transfer to the output is what `inoise` divides by).
+    fn require_stimulus(
+        circuit: &mut CircuitInstance,
+        dc_point: &DcAnalysisResult,
+        path: &str,
+        options: &NoiseAnalysisOptions,
+        context: &Context,
+    ) -> crate::core::result::Result<()> {
+        let (op, amb) = Self::small_signal_point(circuit, dc_point, options.sweep_options.start_frequency, context);
+        let bound = circuit.abi.as_mut().expect("a circuit of devices");
+        if bound.analog.stimulus_columns(&op, amb, path)?.is_empty() {
+            return Err(piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Noise,
+                format!("input `{path}` has no small-signal stimulus (`ac_stim`): there is no transfer to refer the noise to"),
+            ));
+        }
+        Ok(())
+    }
+
+    /// `|H_in|²` at `f_hz`: the power gain from the input instance to the output, with the
+    /// adjoint solution `z` of the output. Each `STIM` input `s` of the instance excites at unit
+    /// magnitude and its own phase `φ_s` (design D11), so `H_in = Σ_s (z·g_s)·e^{jφ_s}`. An
+    /// input with no transfer to the output has no input-referred noise: it fails naming the
+    /// input and the frequency.
+    fn input_gain_sq(&mut self, f_hz: f64, adjoint: &Array1<Complex<f64>>) -> crate::core::result::Result<f64> {
+        let path = self.options.input_source_name.clone().expect("an input instance");
+        let (op, amb) = Self::small_signal_point(self.circuit, &self.dc_point, f_hz, &self.context);
+        let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+        let mut transfer = Complex::new(0.0, 0.0);
+        for column in bound.analog.stimulus_columns(&op, amb, &path)? {
+            let from_column = column.rows.iter().fold(Complex::new(0.0, 0.0), |sum, (r, g)| {
+                sum + r.idx().map_or(Complex::new(0.0, 0.0), |i| adjoint[i]) * *g
+            });
+            transfer += from_column * Complex::from_polar(1.0, column.phase);
+        }
+        let gain_sq = transfer.norm_sqr();
+        if gain_sq == 0.0 {
+            return Err(piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Noise,
+                format!("input `{path}` has no transfer to the output at {f_hz:e} Hz"),
+            ));
+        }
+        Ok(gain_sq)
     }
 
     /// Solves the adjoint system to find noise transfer functions.

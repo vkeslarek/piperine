@@ -458,6 +458,12 @@ pub struct NoiseAnalysisResult {
     /// of its density at the output. ngspice integrates source by source (`Nintegrate` in
     /// `DIOnoise`, `N_INTEG`), and the sum of those is not the integral of the sum.
     pub output_total: f64,
+    /// With an input instance: the output density referred to the input, `out_noise_sq / |H_in|²`
+    /// at each frequency (A²/Hz or V²/Hz of the input's own quantity).
+    pub input_noise_sq: Option<Vec<f64>>,
+    /// With an input instance: the band total of the input-referred noise, `inoise_total`, by the
+    /// same per-source power-law rule as [`output_total`](Self::output_total).
+    pub input_total: Option<f64>,
     pub contributions: Vec<NoiseContribution>,
 }
 
