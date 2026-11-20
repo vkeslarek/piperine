@@ -1624,6 +1624,23 @@ It amends MD-28's "root `tests/` holds no Rust target" and extends MD-31 and MD-
 **Status:** Accepted (2026-11-19), from the approved `.specs/features/root-e2e/design.md`.
 **Number:** `MD-70` is `unknown-semantics`, `MD-71` is `analog-structure`; `MD-72` is the next free one after them.
 
+### MD-73: a host scenario of an example is a package under `tests/e2e/<example>/`
+
+`buck-scenarios` (2026-11-20, proposed while the user was away; renumber at merge if another lane took 73).
+
+1. **The scenario package.** `tests/e2e/<example>/` holds a `Piperine.toml` with a path dependency on the
+   example and a crate root whose top exposes the example's `in` ports as its own. Each `[run.<family>]` names
+   what is sampled (`print`, `print_step`) and emitted (`streams`); the example's own manifest is not touched.
+2. **The stimulus is the Rust host's** (`Session::drive`, `Session::set_at`), one mechanism for every scenario,
+   because a timed `set` is not expressible in a bench (X8).
+3. **The harness types live in `piperine-parity::scenario`** (`Stimulus`, `Trace`, `DiscreteTrace`,
+   `ScenarioRun`, `ScenarioBatch`, `CheckTally`), each with inline unit tests.
+4. **One root target per example** (`tests/<example>_scenarios.rs`) runs every family once, all at once, and
+   stores each result so a failure is reported, never re-run.
+
+**Scope:** `tests/e2e/buck/`, `tests/buck_scenarios.rs`, `crates/piperine-parity/src/scenario/`.
+**Status:** Proposed (2026-11-20), from `.specs/features/buck-scenarios/design.md`.
+
 ---
 
 ## Handoff Snapshot

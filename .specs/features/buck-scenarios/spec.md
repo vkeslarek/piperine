@@ -41,9 +41,9 @@ default the planner took; each is reported to the user and each can be overturne
 
 | # | Question | Default taken | Why |
 | - | -------- | ------------- | --- |
-| D1 | Where the scenario runs live | A scenario package `tests/e2e/buck/` (`Piperine.toml`, `benches/scenarios.msl`) with a path dependency on `examples/buck` | MD-72 makes `tests/e2e/` the one home of scenarios. Adding runs to `examples/buck/Piperine.toml` would change CLI-08's two-run list and the Book's "2 runs, 2 passed", and make `piperine test` there cost about an hour |
+| D1 | Where the scenario runs live | A scenario package `tests/e2e/buck/` (`Piperine.toml`, `src/lib.msl` holding the top `Bench`) with a path dependency on `examples/buck` | MD-72 makes `tests/e2e/` the one home of scenarios. Adding runs to `examples/buck/Piperine.toml` would change CLI-08's two-run list and the Book's "2 runs, 2 passed", and make `piperine test` there cost about an hour |
 | D2 | Where the stimulus lives | In the Rust host test, through `Session::drive` and `Session::set_at`; the bench holds none | S4, S7 and S9 change `vin_nom` and `r_load` during a run, which no MSL bench can do (X8). One mechanism for every scenario keeps each timeline beside the windows it measures |
-| D3 | What the bench and the run tables describe | The bench places `Buck` under a top `Bench` whose `in` ports are `Buck`'s; each run table names what is sampled (`print`, on a 10 ns `print_step`) and emitted (`streams = ["checks"]`); the host's `Recorder` samples | The user's rule: "the bench describes what is sampled/emitted, sampling is host-side" |
+| D3 | What the bench and the run tables describe | The bench is the top `Bench`, in `src/lib.msl` (the crate root `piperine-project` requires); it places `Buck` and takes `Buck`'s five `in` ports as its own; each run table names what is sampled (`print`, on a 10 ns `print_step`) and emitted (`streams = ["checks"]`); the host's `Recorder` samples | The user's rule: "the bench describes what is sampled/emitted, sampling is host-side" |
 | D4 | How the runs are shared | Five runs, one per family: `setpoint` (S2, S2b), `load_line` (S3, S4, S8), `faults` (S5, S6), `brownout` (S7), `steady_state` (S9). One test target holds all five; each family runs once, and the five run in parallel threads | A 3.3 V start costs 1.25 ms of simulated time; sharing it cuts the CPU time, and parallel families cut the wall time to the longest run |
 | D5 | A "ramp" of Vin | A staircase of `set_at` on `buck.vin_nom` in 0.1 V steps: S4 and S9 line steps take 10 µs (0.25 µs per step for 4 V); S7's brown-out falls and rises at 50 mV/µs (0.1 V every 2 µs) and holds 7.5 V for 60 µs | The supply is an ideal source behind 20 mΩ (SPEC §2) with no slew; SPEC gives S4's 10 µs and no S7 rate |
 | D6 | S4's 2 A load | `buck.r_load` set to 1.65 Ω (3.3 V / 2 A) 200 µs before the line step, and back to 6.6 Ω 150 µs before S8 | SPEC §10 S4 says "2 A load"; `r_load` is a non-structural param |
@@ -89,8 +89,8 @@ parallel threads of one target.
 | `load_line` | S3, S4, S8 | 2.92 ms | 3.3 M | 11 to 15 min |
 | `faults` | S5, S6 | 4.70 ms | 5.3 M | 17 to 24 min |
 | `brownout` | S7 | 1.52 ms | 1.7 M | 6 to 8 min |
-| `steady_state` | S9 | 4.07 ms | 4.6 M | 15 to 20 min |
-| **Target** | S2 to S10 | 16.61 ms (CPU) | 18.7 M | 17 to 24 min wall |
+| `steady_state` | S9 | 4.05 ms | 4.6 M | 15 to 20 min |
+| **Target** | S2 to S10 | 16.59 ms (CPU) | 18.7 M | 17 to 24 min wall |
 
 ---
 
@@ -105,11 +105,11 @@ parallel threads of one target.
 **Acceptance Criteria**:
 
 1. The system SHALL hold the package `tests/e2e/buck/` whose `Piperine.toml` depends on `examples/buck` by path and declares exactly the runs `brownout`, `faults`, `load_line`, `setpoint` and `steady_state`.
-2. The system SHALL give each scenario run the bench `benches/scenarios.msl`, the top `Bench`, a transient with `max_step = 1e-8`, `print_step = 1e-8`, `streams = ["checks"]` and `max_steps = 15000000`, and the print list `buck.vout`, `buck.vin`, `buck.isense`, `buck.ctl.reference`, `buck.code`, `mode`, `fault`, `pgood`, `buck.hs_cmd`, `buck.ls_cmd`, `buck.oc`, `buck.sink_oc`, `buck.ctl.cut`.
+2. The system SHALL give each scenario run the top `Bench` of the package's crate `src/lib.msl`, a transient with `max_step = 1e-8`, `print_step = 1e-8`, `streams = ["checks"]` and `max_steps = 15000000`, and the print list `buck.vout`, `buck.vin`, `buck.isense`, `buck.ctl.reference`, `buck.code`, `mode`, `fault`, `pgood`, `buck.hs_cmd`, `buck.ls_cmd`, `buck.oc`, `buck.sink_oc`, `buck.ctl.cut`.
 3. WHEN a host opens any scenario run THEN the system SHALL accept a drive at time 0 of each of `en`, `sp_wr`, `sp_data`, `load_step` and `inject`, and a timed set of `buck.vin_nom`, `buck.r_load` and `buck.r_step`.
 4. WHEN the scenario package is checked THEN the system SHALL elaborate every run with no diagnostic.
 5. The system SHALL keep `examples/buck/Piperine.toml` with exactly its two runs `idle` and `startup`.
-6. WHEN a scenario run has been opened THEN `tests/e2e/buck/` SHALL hold only `Piperine.toml` and `benches/scenarios.msl` (no lock file, no build output).
+6. WHEN a scenario run has been opened THEN `tests/e2e/buck/` SHALL hold only `Piperine.toml` and `src/lib.msl` (no lock file, no build output).
 
 **Independent Test**: open `tests/e2e/buck` with `Project::at`, check it, open one run and drive its ports.
 
