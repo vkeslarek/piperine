@@ -307,13 +307,13 @@ fn gaps_drops_what_msl_fixes_closed() {
     }
     // the counts follow, as `host-ii` moved them, `unknown-semantics` (L18, L19) after it and
     // `analog-structure` (nine loud rows and S4) after that, `composite-values` phase A (L5, L6, L10)
-    // last: 2 silent, 2 broken, 38 loud
-    assert!(gaps.contains("2 silent, 2 broken, 38 loud"), "the counts of §9 follow");
+    // last: 2 silent, 2 broken, 39 loud
+    assert!(gaps.contains("2 silent, 2 broken, 39 loud"), "the counts of §9 follow");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
     assert_eq!(rows("## 3. Silent", "## 4."), 2, "two silent entries");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 38, "thirty-eight loud rows");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 39, "thirty-nine loud rows");
 }
 
 #[test]
@@ -486,18 +486,18 @@ fn gaps_drops_what_composite_values_phase_a_closed() {
     }
     let l9 = row("L9");
     assert!(l9.contains("capturing closure") && l9.contains("`generics`") && !l9.contains("function name passed as a value"), "L9 is the generics part only: {l9}");
-    // the rows that stay point at gaps that stay: the Book's from-rust#1 and analog#2 refusals moved off L6 and L9
+    // the rows that stay point at gaps that stay: the Book's types#17 and analog#2 refusals moved off L6 and L9
     let book = gaps.split("## 11. The Book against the binary").nth(1).expect("section 11");
     for stale in ["| L5 |", "| L6 |", "| L10 |"] {
         assert!(!book.contains(stale), "section 11 still names {stale}");
     }
-    assert!(book.contains("| from-rust#1 | L4 |") && book.contains("| analog#2 | L58 |"), "the two rows follow their remaining refusals");
+    assert!(book.contains("| types#17 | L4 |") && book.contains("| analog#2 | L58 |"), "the two rows follow their remaining refusals");
     // section 9: the rows of I §1-§2 and I §3-§3.3 no longer list the loops as a hole
     let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("section 9");
     let functions = coverage.lines().find(|l| l.starts_with("| I §3–§3.3 ")).expect("the coverage row of §3.3");
     assert!(functions.contains("loops, recursion, closures") && functions.contains("run") && !functions.contains("handles, loops"), "{functions}");
     let values = coverage.lines().find(|l| l.starts_with("| I §1–§2 ")).expect("the coverage row of §1 and §2");
     assert!(values.contains("`let mut`, assignment and patterns run"), "{values}");
-    // the counts follow: 38 loud
-    assert!(gaps.contains("38 loud"), "the loud count is 38");
+    // the counts follow: 39 loud
+    assert!(gaps.contains("39 loud"), "the loud count is 39");
 }

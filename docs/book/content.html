@@ -694,7 +694,7 @@ fn sum_below(n: u32) -> u32 {
 <div class="callout status">
   <p class="callout-label">Status</p>
   <p>Running today: <code>bool</code>, integers of up to 64 bits, <code>f64</code>, constants, functions, <code>let</code> and blocks, <code>if</code>, and <code>match</code> over literals. Everything the four files above use is in that list.</p>
-  <p>Parsed and checked, and not run yet: <code>let mut</code>, assignment and loops, <code>return</code>, a function that calls itself, an item declared inside a block, <code>%</code> on floats, floats other than <code>f64</code>, and integers wider than 64 bits. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
+  <p>Parsed and checked, and not run yet: an item declared inside a block, <code>%</code> on floats, floats other than <code>f64</code>, and integers wider than 64 bits. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
 </div>
 
 <div class="callout mistake">
@@ -1088,7 +1088,7 @@ fn mean(xs: &[f64]) -> f64 {
 <div class="callout status">
   <p class="callout-label">Status</p>
   <p>Running today: <code>Option</code> as a local, a parameter and a constant, with its methods, <code>match</code> and <code>if let</code>; optional parameters; a tuple pattern in a <code>let</code>; enums without fields that derive <code>Repr</code>, matched and compared; the constants of an <code>impl</code> and its functions that take no <code>self</code>; <code>use</code> and <code>pub</code>. Everything the three files above use is in that list.</p>
-  <p>Parsed and checked, and not run yet: tuples as values, arrays, slices and <code>&amp;</code>, structs, an enum with fields, with a number given to a variant or without <code>Repr</code>, a function that yields an <code>Option</code>, range patterns, <code>@</code>, a condition on an arm, <code>let … else</code>, and methods that take <code>self</code>. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
+  <p>Parsed and checked, and not run yet: tuples as values, arrays, slices and <code>&amp;</code>, structs, an enum with fields, with a number given to a variant or without <code>Repr</code>, and methods that take <code>self</code>. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
 </div>
 
 <div class="callout mistake">
@@ -1405,7 +1405,7 @@ fn clean(v: f64) -> f64 { corrected(v, remove_offset) }</pre>
 <div class="callout status">
   <p class="callout-label">Status</p>
   <p>Running today: the generic types the language brings, such as <code>Option&lt;f64&gt;</code> and <code>Bit&lt;u8&gt;</code>, and a closure written directly as the argument of <code>map</code> or <code>and_then</code>. Everything <code>clip.msl</code> uses is in that list.</p>
-  <p>Parsed and checked, and not run yet: the methods of a trait, generic functions, generic structs, const parameters, generic modules, a closure kept in a local, and a function passed as a value. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above. Every other listing of this chapter is correct MSL that waits for those forms. One check is also still missing: an <code>impl</code> is not yet compared with the trait it provides, so a missing or an extra item is found only where it is used.</p>
+  <p>Parsed and checked, and not run yet: the methods of a trait, generic functions, generic structs, const parameters and generic modules. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above. Every other listing of this chapter is correct MSL that waits for those forms. One check is also still missing: an <code>impl</code> is not yet compared with the trait it provides, so a missing or an extra item is found only where it is used.</p>
 </div>
 
 <div class="callout mistake">

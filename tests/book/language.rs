@@ -105,7 +105,8 @@ fn nothing_converts_by_itself_and_a_condition_is_a_bool() {
     let too_large = ValueFile::refused("language~03460845", "", "let a: u8 = 300; emit!(\"r\", a = a);");
     assert_eq!(too_large.first("E0909").message, "`300` is out of range: an integer literal beyond the range of `u8`");
     let partial = ValueFile::refused("language~03460845", "", "let x = 3u8; let y = match x { 0 => 1.0, 1 => 2.0 }; emit!(\"r\", y = y);");
-    assert!(partial.first("P0002").message.contains("a `match` that misses some"), "the arms cover every value: {}", partial.first("P0002").message);
+    // E0184 since composite-values T14: the exhaustiveness check names a pattern the arms miss (§1.8.6)
+    assert!(partial.first("E0184").message.contains("is not exhaustive"), "the arms cover every value: {}", partial.first("E0184").message);
 }
 
 #[test]
@@ -182,35 +183,29 @@ fn a_fault_ends_the_analysis_or_the_build_and_a_non_finite_value_ends_the_solve(
 }
 
 #[test]
-fn the_loop_still_on_the_way_is_refused_where_the_solver_reaches_it() {
-    // language#13 (refused): the chapter's `sum_below`, a local that is updated, an assignment and a loop
-    // (GAPS.md L5). A function nothing reaches is accepted (GAPS.md S3); one the top reaches is `P0001`. When
-    // it runs this test fails and the row moves to `run`
+fn the_sum_below_listing_waits_on_the_type_of_a_literal_from_its_use() {
+    // language#13 (refused): the chapter's `sum_below`, a local that is updated, an assignment and a loop: they
+    // run since composite-values T11 to T20, but `let mut total = 0` then `total += k` with `k: u32` is a
+    // literal whose type the later use fixes (§1.4.4), which the checker does not do (GAPS.md L63): it types
+    // the bare literal `i32` and reports the mismatch. A function nothing reaches is accepted (GAPS.md S3).
+    // When the binary infers it this test fails and the row moves to `run`
     let chapter = Chapter::read();
     let overrides = || Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2e-6), ..Overrides::default() };
     let top = |statements: &str| format!("module Top() {{ }}\ndigital for Top {{ on at(1u) {{ {statements} }} }}\n");
     let reaching = || chapter.wrapped("sum.msl", "", "language#13", &top("emit!(\"r\", s = sum_below(4));")).run(overrides());
-    Refusal::expect(reaching(), "language#13", "P0001", "`let mut` binding is not supported yet");
-    Refusal::expect(reaching(), "language#13", "P0001", "`for` loop is not supported yet");
+    Refusal::expect(reaching(), "language#13", "P0002", "mismatched types: expected `i32`, found `u32`");
     let unreached = chapter.wrapped("sum.msl", "", "language#13", &top("emit!(\"r\", s = 1);")).run(overrides());
     assert!(unreached.is_ok(), "a function nothing reaches is accepted");
 }
 
 #[test]
 fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
-    // language~0da752e7 "Parsed and checked, and not run yet: let mut, assignment and loops, return, a function
-    // that calls itself, an item declared inside a block, % on floats, floats other than f64, and integers
-    // wider than 64 bits"; language~5628120b "A model that uses one of them is stopped before the run with the
+    // language~56bbb0e9 "Parsed and checked, and not run yet: an item declared inside a block, % on floats,
+    // floats other than f64, and integers wider than 64 bits"; language~5628120b "A model that uses one of them is stopped before the run with the
     // code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones
     // above": the forms of the status box, each on the smallest model (when one of them runs, this test fails
     // and the box loses it)
     for (items, statements, named) in [
-        ("", "let mut x = 5; x = 6; emit!(\"r\", x = x);", "`let mut` binding is not supported yet"),
-        ("", "let x = 5; x = 6; emit!(\"r\", x = x);", "assignment is not supported yet"),
-        ("", "let mut s = 0; for i in 0..4 { s += i; } emit!(\"r\", s = s);", "`for` loop is not supported yet"),
-        ("", "let mut n = 0; while n < 3 { n += 1; } emit!(\"r\", n = n);", "`while` loop is not supported yet"),
-        ("fn sign(x: f64) -> f64 { if x < 0.0 { return -1.0; } 1.0 }", "emit!(\"r\", s = sign(-3.0));", "`return` is not supported yet"),
-        ("fn fact(n: u32) -> u32 { if n == 0 { 1 } else { n * fact(n - 1) } }", "emit!(\"r\", f = fact(5));", "a function that calls itself is not supported yet"),
         ("", "const K: f64 = 4.0; emit!(\"r\", y = K);", "item inside a block is not supported yet"),
         ("", "let p = 7.5 % 2.0; emit!(\"r\", p = p);", "operator `%` is not supported yet"),
         ("", "let x: f32 = 1.5; emit!(\"r\", x = x);", "type `f32` is not supported yet"),
@@ -219,6 +214,9 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
         let faulty = ValueFile::refused("language~5628120b", items, statements);
         assert!(faulty.given.iter().any(|reported| reported.code == "P0001" && reported.message == named), "{statements}: {:?}", faulty.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
     }
+    // an assignment to a local declared without `mut` is the error E0183 (§1.5.12), no longer a form that waits
+    let immutable = ValueFile::refused("language~5628120b", "", "let x = 5; x = 6; emit!(\"r\", x = x);");
+    assert!(immutable.given.iter().any(|reported| reported.code == "E0183"), "{:?}", immutable.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
 }
 
 #[test]

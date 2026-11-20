@@ -97,7 +97,8 @@ fn a_match_that_misses_a_variant_stops_the_build() {
     // types~79f450b1 (P0002): the `match` of `levels.msl` with a variant `Over` added
     let source = Chapter::read().text("types#8").replace("enum Level { Low, Between, High }", "enum Level { Low, Between, High, Over }");
     let faulty = Faulty::elaborating("types~545f1643", &source, "Levels");
-    assert_eq!(faulty.first("P0002").message, "mismatched types: expected `a `match` covering every value of `enum `Level```, found `a `match` that misses some`");
+    // E0184 since composite-values T14: the exhaustiveness check names a pattern the arms miss (§1.8.6)
+    assert_eq!(faulty.first("E0184").message, "a `match` over `enum `Level`` is not exhaustive: `Level::Over` is not covered (§1.8.6)");
     // the first row of the table: an `Option<f64>` is not an `f64`
     let added = ValueFile::refused("types~79f450b1", "", "let limit: Option<f64> = Some(3.3); let x = limit + 1.0; emit!(\"r\", x = x);");
     assert_eq!(added.first("P0002").message, "mismatched types: expected `f64`, found `Option<f64>`");
@@ -156,11 +157,6 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
         ("#[derive(Clone, Copy, PartialEq, Repr)] enum Cmd { Idle, Set(u8) }", "let c = Cmd::Idle; emit!(\"r\", y = c == Cmd::Idle);", "enum `Cmd` with a variant with a payload (`Set`) is not supported yet"),
         ("#[derive(Clone, Copy, PartialEq, Repr)] enum Op { Add = 0b00, Sub = 0b01 }", "let o = Op::Sub; emit!(\"r\", y = o == Op::Sub);", "enum `Op` with an explicit discriminant (`Add`) is not supported yet"),
         ("#[derive(Clone, Copy, PartialEq)] enum Lv { Low, High }", "let a = Lv::Low; emit!(\"r\", y = a == Lv::Low);", "enum `Lv` without `#[derive(Repr)]` is not supported yet"),
-        ("fn some(v: f64) -> Option<f64> { if v > 0.0 { Some(v) } else { None } }", "emit!(\"r\", y = some(1.0).is_some());", "this form of an `Option` value is not supported yet"),
-        ("", "let x = 3u8; let y = match x { 0..=9 => 1, _ => 2 }; emit!(\"r\", y = y);", "range pattern in a `match` arm is not supported yet"),
-        ("", "let c = 5u8; let v = match c { n @ 4 => n, _ => 0 }; emit!(\"r\", v = v);", "`@` pattern in a `match` arm is not supported yet"),
-        ("", "let c = 5u8; let v = match c { 0 => 1, n if n > 4 => 2, _ => 0 }; emit!(\"r\", v = v);", "a `match` arm guard is not supported yet"),
-        ("fn first(o: Option<u8>) -> u8 { let Some(n) = o else { return 0; }; n }", "emit!(\"r\", f = first(None));", "`let ... else` is not supported yet"),
         (level, "emit!(\"r\", y = Z::B.next() == Z::A);", "method `next` on `enum `Z`` is not supported yet"),
     ] {
         let items = if statements.contains(".next()") { format!("{items}\nimpl Z {{ fn next(self) -> Z {{ match self {{ Z::A => Z::B, Z::B => Z::A }} }} }}") } else { items.to_string() };
@@ -180,14 +176,14 @@ fn e0161_an_enum_has_no_other_variant() {
 #[test]
 fn the_forms_still_on_the_way_are_refused_where_the_solver_reaches_them() {
     // types#17 (refused): the chapter's `range_of` and `mean`, the example of its part on what runs today. A function nothing reaches is accepted
-    // (GAPS.md S3); one the top reaches is `P0001`: the enum has no `#[derive(Repr)]`, a `match` arm holds a
-    // range pattern (L6), `&[f64]` is a reference type (L3). When one of them runs this test fails and the
-    // row moves to `run`
+    // (GAPS.md S3); one the top reaches is `P0001`: the enum has no `#[derive(Repr)]`, `&[f64]` is a reference
+    // type (L3); the range pattern of a `match` arm (L6) is accepted since composite-values T14. When one of
+    // them runs this test fails and the row moves to `run`
     let chapter = Chapter::read();
     let reaching = |call: &str| chapter.wrapped("carry.msl", "", "types#17", &format!("module Top() {{ }}\ndigital for Top {{ on at(1u) {{ {call} }} }}\n"));
     let overrides = || Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2e-6), ..Overrides::default() };
     let range = Refusal::of(reaching("let z = range_of(3);").run(overrides()), "types#17");
-    assert!(range.contains(&("P0001".to_string(), "range pattern in a `match` arm is not supported yet".to_string())), "{range:?}");
+    assert!(!range.iter().any(|(_, message)| message.contains("range pattern")), "a range pattern is accepted: {range:?}");
     assert!(range.contains(&("P0001".to_string(), "enum `Range` without `#[derive(Repr)]` is not supported yet".to_string())), "{range:?}");
     Refusal::expect(reaching("let z = mean(&[1.0, 2.0]);").run(overrides()), "types#17", "P0001", "reference type is not supported yet");
 }

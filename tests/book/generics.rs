@@ -87,7 +87,7 @@ fn the_generic_listings_are_refused_where_a_top_reaches_them() {
     // generics#2 (refused, L7): `pick`, `larger` and `overdrive`, with generics#3, their calls, a fragment of
     // it; generics#4 (refused, L1): the generic struct `Window` and its method; generics#5 (refused, L7): the
     // const parameter of `dot`, `mean_of` and `widened`; generics#9 (refused, L9): `at_middle`, which takes any
-    // function, and `corrected`, which takes a function by its type. When one of them runs this test fails and
+    // function (generic); `corrected`, which takes a function by its type, runs. When one of them runs this test fails and
     // its row moves to `run`
     let chapter = Chapter::read();
     let receiver = chapter.text("generics#1");
@@ -102,7 +102,8 @@ fn the_generic_listings_are_refused_where_a_top_reaches_them() {
     Refusal::expect(Reached::run("generics#5", "", "emit!(\"r\", s = dot([1.0, 2.0], [3.0, 4.0]));"), "generics#5", "P0001", "array type is not supported yet");
     Refusal::expect(Reached::run("generics#5", "", "emit!(\"r\", s = mean_of([1.0, 2.0]));"), "generics#5", "P0001", "generic parameter used as a value is not supported yet");
     Refusal::expect(Reached::run("generics#9", "", "emit!(\"r\", s = mid_ramp(1M));"), "generics#9", "P0001", "generic function is not supported yet");
-    Refusal::expect(Reached::run("generics#9", "", "emit!(\"r\", s = clean(1.0));"), "generics#9", "P0001", "call of a function value (a parameter or a local) is not supported yet");
+    // a call of a function value runs since composite-values T5 and T23; the generic function that takes one stays refused
+    assert!(Reached::run("generics#9", "", "emit!(\"r\", s = clean(1.0));").is_ok(), "generics#9: `clean` calls a function value and runs");
 }
 
 #[test]
@@ -116,8 +117,6 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
         ("fn same<T: Copy>(x: T) -> T { x }", "emit!(\"r\", y = same(1.0));", "generic function is not supported yet"),
         ("#[derive(Clone, Copy)] struct Pair<T: Copy> { a: T, b: T }", "let p = Pair { a: 1.0, b: 2.0 }; emit!(\"r\", y = p.a);", "struct expression is not supported yet"),
         ("fn width<const N: usize>() -> usize { N }", "emit!(\"r\", y = width::<4>());", "generic parameter used as a value is not supported yet"),
-        ("", "let gain = 2.0; let f = |v: f64| v * gain; emit!(\"r\", y = 1);", "closure outside an argument whose parameter has a function type is not supported yet"),
-        ("fn twice(x: f64) -> f64 { 2.0 * x }\nfn apply(f: fn(f64) -> f64, x: f64) -> f64 { f(x) }", "emit!(\"r\", y = apply(twice, 2.0));", "call of a function value (a parameter or a local) is not supported yet"),
     ] {
         let faulty = ValueFile::refused("generics~5628120b", items, statements);
         assert!(faulty.given.iter().any(|reported| reported.code == "P0001" && reported.message == named), "{statements}: {:?}", faulty.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
