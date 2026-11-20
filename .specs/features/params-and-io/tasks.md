@@ -635,9 +635,9 @@ T44
 
 **Done when**:
 
-- [ ] `run_of_a_top_with_a_node_port_is_e0810` passes under `**Run clirun**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `run_of_a_top_with_a_node_port_is_e0810` passes under `**Run clirun**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

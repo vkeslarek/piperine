@@ -502,7 +502,7 @@ fn a_maybe_record_prints_maybe_and_a_known_one_does_not() {
 #[test]
 fn run_of_a_top_with_a_node_port_is_e0810() {
     // PI-07 AC 5, X8, §23.1 rule 1: no manifest key drives a port, so `piperine run` of a top
-    // with a node port has no host source for it: E0810 naming the port, exit 1, and nothing on
+    // with a node port has no host source for it: E0810 naming the port, exit 1, and no table on
     // standard output (the P0001 "continuous port" of the elaborator is gone)
     let files = written(&[("bench.msl", "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\n\nmodule Top(vin: Electrical) {\n    let r1 = Resistor(vin, gnd) { r: 1k };\n}\n")]);
     let file = files.path().join("bench.msl");
@@ -511,5 +511,5 @@ fn run_of_a_top_with_a_node_port_is_e0810() {
     assert!(err.contains("E0810"), "{err}");
     assert!(err.contains("`vin`"), "the port is named:\n{err}");
     assert!(!err.contains("P0001"), "{err}");
-    assert!(out.stdout.is_empty(), "{}", text(&out.stdout));
+    assert_eq!(text(&out.stdout).trim_end(), "run bench: op, top Top, backend rust", "only the header, no table");
 }
