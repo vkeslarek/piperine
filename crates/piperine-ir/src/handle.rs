@@ -24,6 +24,11 @@ impl Ir {
         &self.exprs[id.index()].origin
     }
 
+    /// Every expression of the design, in the order they were added.
+    pub fn expressions(&self) -> impl Iterator<Item = &Expr> {
+        self.exprs.iter().map(|data| &data.kind)
+    }
+
     pub fn stmt(&self, id: StmtId) -> &Stmt {
         &self.stmts[id.index()]
     }

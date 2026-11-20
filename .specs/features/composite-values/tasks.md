@@ -344,8 +344,8 @@ T63
 
 **Done when**:
 
-- [ ] `known_control_prints_plain_rust_and_runs` passes under `**Run tctl**`
-- [ ] Gate check passes: Full
+- [x] `known_control_prints_plain_rust_and_runs` passes under `**Run tctl**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

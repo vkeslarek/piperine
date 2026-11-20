@@ -4,6 +4,7 @@
 
 pub mod analog;
 pub mod contribution;
+pub mod control;
 pub mod cross;
 pub mod derive;
 pub mod derivative;
