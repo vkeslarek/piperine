@@ -86,6 +86,9 @@ pub struct Checkpoint {
     call: u32,
     running: bool,
     suspended: Option<(Tick, u32)>,
+    /// The settle commits held when it was taken: a restore brings them back, so a rejected step
+    /// keeps them for the retried time point and a landing it made is taken back (§15 S5).
+    settle_commits: SettleCommits,
 }
 
 /// A place of the engine to rewind to without a copy of its state (HYG-14): the journal
@@ -101,6 +104,9 @@ pub struct Mark {
     call: u32,
     running: bool,
     suspended: Option<(Tick, u32)>,
+    /// The settle commits held when it was taken: a restore brings them back, so a rejected step
+    /// keeps them for the retried time point and a landing it made is taken back (§15 S5).
+    settle_commits: SettleCommits,
 }
 
 impl Checkpoint {
@@ -323,6 +329,7 @@ impl Digital {
             call: self.call,
             running: self.running,
             suspended: self.suspended,
+            settle_commits: self.settle_commits.clone(),
         }
     }
 
@@ -338,6 +345,7 @@ impl Digital {
             call: self.call,
             running: self.running,
             suspended: self.suspended,
+            settle_commits: self.settle_commits.clone(),
         }
     }
 
@@ -352,6 +360,7 @@ impl Digital {
         self.call = mark.call;
         self.running = mark.running;
         self.suspended = mark.suspended;
+        self.settle_commits = mark.settle_commits.clone();
     }
 
     /// Ends the newest open mark; the journals empty with the outermost.
@@ -383,6 +392,7 @@ impl Digital {
         self.call = cp.call;
         self.running = cp.running;
         self.suspended = cp.suspended;
+        self.settle_commits = cp.settle_commits.clone();
     }
 
     /// Checks a host write to a `PARAM` or `GLOBAL` net before it is committed (abi.md P6): the

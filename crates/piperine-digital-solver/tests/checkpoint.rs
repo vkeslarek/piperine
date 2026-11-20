@@ -275,3 +275,63 @@ fn a_mark_journals_only_the_nets_that_changed() {
     assert_eq!(d.next_due(), None);
     d.release(mark);
 }
+
+/// A `settler` design whose `out` the analog side reads and whose commit has no delay.
+fn settler_engine() -> Digital {
+    let plan = bind_by_name_with(vec![("s", settler(), vec![("out", "out")])], Resolution::default(), |nets| {
+        nets.iter_mut().find(|n| n.name == "out").unwrap().analog_reads = true;
+    })
+    .expect("binds");
+    Digital::new(plan, DigitalLimits::default())
+}
+
+/// The settle phase of the instant at tick 0, which makes the held commit.
+fn settle_instant(d: &mut Digital) {
+    d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), Mode { is_static: false, settle: true }).expect("the instant runs");
+}
+
+#[test]
+fn a_restore_brings_back_the_held_settle_commits() {
+    // §15 S5: a step rejected after a settle commit was made restores the checkpoint taken after
+    // it, which holds the commit for the retried time point; one taken before it holds none
+    let mut d = settler_engine();
+    d.start().unwrap();
+    let before = d.checkpoint();
+    settle_instant(&mut d);
+    let held = d.checkpoint();
+    assert!(d.holds_settle_commits());
+    d.drop_settle_commits();
+    assert!(!d.holds_settle_commits());
+    d.restore(&held);
+    assert!(d.holds_settle_commits(), "the commit is held again");
+    d.land_settle_commits(Tick(5));
+    instant(&mut d, Tick(5));
+    assert_eq!(d.read(net(&d, "out")), HIGH, "and lands as it would have");
+    d.restore(&before);
+    assert!(!d.holds_settle_commits(), "a checkpoint from before the commit holds none");
+    // the journal mark of the owner protocol does the same
+    let mut d = settler_engine();
+    d.start().unwrap();
+    settle_instant(&mut d);
+    let mark = d.mark();
+    d.drop_settle_commits();
+    d.rewind(&mark);
+    assert!(d.holds_settle_commits(), "a rewind brings the held commits back");
+    d.release(mark);
+}
+
+#[test]
+fn a_restore_takes_back_a_landing() {
+    // §15 S5: a step that landed the commits and was rejected takes the landing back: the commit is
+    // held again and nothing is due at the time point
+    let mut d = settler_engine();
+    d.start().unwrap();
+    settle_instant(&mut d);
+    let cp = d.checkpoint();
+    d.land_settle_commits(Tick(5));
+    assert_eq!(d.next_due(), Some(Tick(5)));
+    d.restore(&cp);
+    assert!(d.holds_settle_commits(), "held again");
+    assert_eq!(d.next_due(), None, "no commit is due at the time point");
+    assert_eq!(d.checkpoint(), cp);
+}
