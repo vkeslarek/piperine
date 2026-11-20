@@ -247,7 +247,9 @@ fn the_status_paragraph_lists_what_is_still_refused_and_one_item_runs() {
     p0001(row, "module G<T: Repr>() {}\nmodule Top() { let g = G::<f64>(); }\n", "generic module is not supported yet");
     p0001(row, "module Top() { n: u8 = 3; }\n", "param of type `u8` is not supported yet");
     p0001(row, "module Top() { signal w: Wire; }\n", "resolved nature `Wire` is not supported yet");
-    p0001(row, "module Top() { }\ndigital for Top { on settle { } }\n", "built-in `settle` is not supported yet");
+    // the `settle` event is compiled since unknown-semantics-events T5 (L52): the sentence's prose is left for T21
+    let settle = Model::written("settle.msl", "module Top() { }\ndigital for Top { on settle { } }\n");
+    settle.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: `on settle` is refused: {failure}"));
     let sin = Model::written("sin.msl", "module Top() { signal p: Electrical; x: f64 = 1.0; }\nanalog for Top { v(p) +> x.sin(); }\n");
     let ran = sin.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: `sin` is refused again: {failure}"));
     Printed::holds("8.414710e-1", ran.signal("Top.p"), "sin(1.0) runs");

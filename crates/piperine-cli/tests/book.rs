@@ -528,11 +528,12 @@ fn the_cycle_counter_prints_three_pulses() {
 
 #[test]
 fn the_clipper_refusal_no_longer_names_sin() {
-    // CAT-05 AC 3: the clipper's refusal names `settle` and `limexp`, not `sin` or `bound_step`,
-    // and the page's prose around it does not wait for them either.
+    // CAT-05 AC 3: the clipper's refusal names `limexp`, not `settle` (compiled since
+    // unknown-semantics-events T5), `sin` or `bound_step`, and the page's prose around it does not wait
+    // for them either.
     let out = run_listing("piperine run clipper.msl");
-    assert!(out.contains("`settle`") && out.contains("limexp"), "{out}");
-    for gone in ["`sin`", "method sin", "bound_step"] {
+    assert!(out.contains("limexp"), "{out}");
+    for gone in ["`settle`", "`sin`", "method sin", "bound_step"] {
         assert!(!out.contains(gone), "the refusal still names {gone}: {out}");
     }
     let html = content();

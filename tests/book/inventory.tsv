@@ -113,11 +113,11 @@ block	modules#12	7d514f590b39e281	refused	piperine/book_modules::a_function_that
 block	modules#13	306ed28d3083ab43	fragment	modules#12	-	-
 block	modules#14	25696a4b4e2cdf58	refused	piperine/book_modules::the_extern_osdi_module_is_refused	L33	-
 block	analog#1	86764b71680a9fd9	run	piperine/book_analog::a_capacitor_is_open_and_an_inductor_is_a_short_at_the_operating_point	-	-
-block	analog#2	bf3cc4ac19e90181	refused	piperine/book_analog::the_clipper_is_refused_for_limexp_and_settle	L9	-
-block	analog#3	6395ae5e780ffca4	refused	piperine/book_analog::the_clipper_is_refused_for_limexp_and_settle	L52	-
+block	analog#2	bf3cc4ac19e90181	refused	piperine/book_analog::the_clipper_is_refused_for_limexp	L9	-
+block	analog#3	6395ae5e780ffca4	refused	piperine/book_analog::the_clipper_is_refused_for_limexp	L9	-
 block	analog#4	f44e0e6d9f174a31	shown	-	-	-
 block	analog#5	f0d9aa24342fc413	shown	-	-	-
-block	analog#6	ac0f7586ee6e5a16	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run clipper.msl --analysis transient --stop 2e-3 --print vin --print vout --stream clip --plot clipper.svg
+block	analog#6	a2255f2e88bc2fe9	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run clipper.msl --analysis transient --stop 2e-3 --print vin --print vout --stream clip --plot clipper.svg
 block	analog#7	2dcf8ccdabaf5fbf	refused	piperine/book_analog::the_diode_with_a_trace_is_refused	L49	-
 block	analog#8	c75a64c2f73e0062	shown	-	-	-
 block	analog#9	618d2c0b12b5a698	run	piperine/book_analog::the_switch_shorts_its_nodes_while_its_control_is_high	-	-
@@ -150,10 +150,10 @@ block	mixed#6	3506ea56c1ecbede	refused	piperine/book_mixed::the_comparator_witho
 block	mixed#7	b8f749b42f07ef6c	run	piperine/book_mixed::the_digital_to_analog_converter_drives_half_the_supply_for_unknown	-	-
 block	mixed#8	8935565a31a621e1	run	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	-	-
 block	mixed#9	e34a5f2d8cee81d3	shown	-	-	-
-block	mixed#10	dcd6e04b0acbdb87	refused	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	L52	-
+block	mixed#10	dcd6e04b0acbdb87	run	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	-	-
 block	mixed#11	d9f0417b5399de0c	shown	-	-	-
 block	mixed#12	063828848af5ddc2	shown	-	-	-
-block	mixed#13	0e299217e2c4d640	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop
+block	mixed#13	49074140a71dede7	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop
 block	mixed#14	f7cd53dd5486e87b	run	piperine/book_mixed::the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero	-	-
 block	mixed#15	ea28fe2bc18e8e9d	refused	piperine/book_mixed::the_sar_adc_is_refused_at_its_comparator_and_its_field_access_runs	L51	-
 block	packages#1	4d5e7db8c23bc8e3	shown	-	-	-
@@ -260,9 +260,9 @@ block	cheatsheet#1	35f08adcbe452e09	run	piperine/book_cheatsheet::the_nature_car
 block	cheatsheet#2	383dda9a42c27bf9	refused	piperine/book_cheatsheet::the_module_card_is_refused_for_its_const_generic	L30	-
 block	cheatsheet#3	4191faccce1565bc	refused	piperine/book_cheatsheet::the_body_items_card_is_refused_for_its_generation	L31	-
 block	cheatsheet#4	dbde27824bc2538e	run	piperine/book_cheatsheet::the_analog_card_runs	-	-
-block	cheatsheet#5	15061b41d46dacbf	refused	piperine/book_cheatsheet::the_digital_card_is_refused_for_its_settle_reaction	L52	-
+block	cheatsheet#5	61d8b738cee24c41	run	piperine/book_cheatsheet::the_digital_card_runs	-	-
 block	cheatsheet#6	6cf0d43b3a0501ec	fragment	mixed#7	-	-
-block	cheatsheet#7	8bb8999b182e071e	refused	piperine/book_cheatsheet::the_debug_prints_card_is_refused_for_settle_and_the_analog_trace	L49	-
+block	cheatsheet#7	8bb8999b182e071e	refused	piperine/book_cheatsheet::the_debug_prints_card_is_refused_for_the_analog_trace	L49	-
 block	cheatsheet#8	c2d75bfd6e731da6	refused	piperine/book_cheatsheet::the_template_card_is_refused_for_its_generic_module_and_its_placements	L32	-
 block	cheatsheet#9	ea8278e7ba785b91	refused	piperine/book_cheatsheet::the_extern_card_is_refused	L33	-
 block	cheatsheet#10	922342b0e4390458	refused	piperine/book_cheatsheet::the_files_card_is_refused_for_its_table_and_its_statement	L57	-
@@ -413,7 +413,7 @@ claim	modules~4bcf211d	4bcf211dc68711ea	holds	piperine/book_modules::e0330_one_n
 claim	modules~54e1b71d	54e1b71dcbc8277f	holds	piperine/book_modules::e0401_a_module_and_its_behavior_live_in_one_file	-	E0401
 claim	modules~4bcb9f1d	4bcb9f1dc683ff2d	unraised	piperine/book_modules::e0304_is_not_raised_a_generic_ladder_is_refused_before_its_where_is_checked	L30	E0304
 claim	analog~8f90421c	8f90421cf10f758d	holds	piperine/book_analog::the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation	-	The clip stream answers a sharper question, "when does the clipping start, and how high is the input then?".
-claim	analog~773a3851	773a3851ccd5ff87	refused	analog#3	L52	Today the command stops at the source, with those three diagnostics, and runs nothing:
+claim	analog~773a3851	773a3851ccd5ff87	refused	analog#3	L9	Today the command stops at the source, with those three diagnostics, and runs nothing:
 claim	analog~139c67b5	139c67b5de8bbf3a	refused	analog#7	L49	This emit! runs when the code around it runs, and analog runs at every evaluation: every Newton iteration of every step, including iterations and whole steps that the solver later rejects.
 claim	analog~b103eeb0	b103eeb07178680c	refused	analog#7	L49	The piperine command prints the records of reactions; a trace from analog is not among the lines it shows.
 claim	analog~c91537fe	c91537fe5beade7a	holds	piperine/book_analog::e0414_a_branch_that_switches_kind_on_a_probe_is_refused	-	A choice of kind that depends on a probe is an error (E0414), because the solver would have to change the equations while it is solving them.
@@ -462,7 +462,7 @@ claim	mixed~a450dbb4	a450dbb4cc438a05	holds	piperine/book_mixed::the_buck_starts
 claim	mixed~67cd15b4	67cd15b419b2cffc	holds	piperine/book_mixed::the_buck_starts_from_the_operating_point_with_the_first_tick_applied	-	Once it drops under 3.3 V the error turns positive and each period adds ki · err to the duty.
 claim	mixed~c38f7ab4	c38f7ab4130aa59c	holds	piperine/book_mixed::the_buck_starts_from_the_operating_point_with_the_first_tick_applied	-	Read the duty field down the lines: it stays at 0 while the output falls from the 11.8 V of the operating point, then climbs and settles near 0.28, while the Buck.vout column of the table starts at 11.8 and falls to 3.3.
 claim	mixed~8ab17f2d	8ab17f2de7c73869	holds	piperine/book_mixed::the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero	-	The equation. x has one branch, so KCL gives c · dv(x)/dt = (v(vin) − fb) / r.
-claim	mixed~a6b3f8ed	a6b3f8ed884f8aa2	holds	piperine/book_mixed::the_math_methods_run_and_the_settle_event_does_not	-	One thing the examples here use is not compiled yet and is refused with P0001: the settle event (the converter's check).
+claim	mixed~a6b3f8ed	a6b3f8ed884f8aa2	holds	piperine/book_mixed::the_math_methods_and_the_settle_event_run	-	One thing the examples here use is not compiled yet and is refused with P0001: the settle event (the converter's check).
 claim	mixed~42ab6e1d	42ab6e1dc13757db	holds	piperine/book_mixed::e0250_a_node_cannot_go_to_a_bit_port	-	E0250
 claim	mixed~54ec481d	54ec481dcbd17267	holds	piperine/book_mixed::e0430_a_comparison_is_a_bool_and_the_crossing_is_the_event	-	E0430
 claim	mixed~4bcf1b1d	4bcf1b1dc68707b8	holds	piperine/book_mixed::e0336_a_definition_cannot_read_a_probe	-	E0336
@@ -778,7 +778,7 @@ claim	mixed~b52d3509	b52d3509740fe8a8	holds	piperine/book_mixed::the_cycle_count
 claim	mixed~306eca43	306eca43738de5b0	holds	piperine/book_mixed::the_cycle_counter_counts_the_located_crossings_of_the_sine	-	It prints three record lines from CycleCounter.ctr, with n=1, n=2 and n=3, about 15.9 µs into each millisecond. --print-step 1e-3 keeps the table to one row per millisecond, and --print count to the one signal that matters, so its last row shows CycleCounter.count at 3.
 claim	mixed~758eca03	758eca03356a7662	holds	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	-	A buck converter steps 12 V down to 3.3 V by switching: a high-side switch connects an inductor to the input for a fraction d of each period, and the output settles near d · 12 V.
 claim	mixed~3bce4014	3bce401452e45841	holds	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	-	At the end the error is zero and the duty sits where 12 V times the duty, less the small drop in the switch, equals 3.3 V: about 0.28.
-claim	mixed~9d07c4b9	9d07c4b9576fd829	refused	mixed#10	L52	It checks, at every time point after start-up, that the output stays within 50 mV of the target:
+claim	mixed~9d07c4b9	9d07c4b9576fd829	holds	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	-	It checks, at every time point after start-up, that the output stays within 50 mV of the target:
 claim	mixed~ac0aefe3	ac0aefe3b2ca4ca9	holds	piperine/book_mixed::the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero	-	Its = 0.0 holds it at 0 V through the transient's operating point.
 claim	mixed~e5a35079	e5a35079f65c79a7	binary	piperine-cli/buck::startup_ends_within_3_mv_of_0_8_volts	-	A full-size digitally controlled buck converter (12 V in, 200 MHz digital PWM, PID, ADC, comparators and a supervisor) starts from its .msl and regulates at 0.8 V within 3 mV with its loop closed, and the piperine command runs it (chapter 15).
 claim	mixed~a879bf2a	a879bf2aa5b759ac	prose	-	-	In the cycle counter, set hyst: 0.0 and add a small 50 kHz ripple to the source (a second Vsin in series).

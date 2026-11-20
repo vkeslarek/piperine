@@ -112,18 +112,17 @@ fn a_capacitor_is_open_and_an_inductor_is_a_short_at_the_operating_point() {
 }
 
 #[test]
-fn the_clipper_is_refused_for_limexp_and_settle() {
+fn the_clipper_is_refused_for_limexp() {
     // analog#2 and analog#3 (refused): the clipper's devices and its two reactions, one file
     // (`clipper.msl`); analog~773a3851 "Today the command stops at the source, with those three
-    // diagnostics, and runs nothing" (refused with it). The
-    // `settle` event is `P0001` (L52), and `limexp`, written with a closure, is two `P0001` (L9)
+    // diagnostics, and runs nothing" (refused with it; the prose is left for T21). The `settle` event
+    // runs since unknown-semantics-events T5 (L52), and `limexp`, written with a closure, is two
+    // `P0001` (L9)
     let chapter = Chapter::read();
     let model = Clipper::book(&chapter);
     let given = Refusal::of(model.run(Commands::clipper()), "analog#3");
-    assert_eq!(given.len(), 3, "the three diagnostics of the listing: {given:?}");
-    assert!(given.iter().all(|(code, _)| code == "P0001"), "{given:?}");
-    assert_eq!(given.iter().filter(|(_, message)| message == "binding inside a module is not supported yet").count(), 2, "the two closure parameters of `limexp`");
-    Refusal::expect(model.run(Commands::clipper()), "analog#3", "P0001", "built-in `settle` is not supported yet");
+    assert_eq!(given.len(), 2, "the two diagnostics of the listing: {given:?}");
+    assert!(given.iter().all(|(code, message)| code == "P0001" && message == "binding inside a module is not supported yet"), "the two closure parameters of `limexp`: {given:?}");
     let devices = Refusal::of(chapter.marked("clipper.msl", "analog#2").run(Faulty::operating_point_of("Clipper")), "analog#2");
     assert_eq!(devices.len(), 2, "the devices alone: the two parameters of the `limexp` closure: {devices:?}");
     Refusal::expect(chapter.marked("clipper.msl", "analog#2").run(Faulty::operating_point_of("Clipper")), "analog#2", "P0001", "binding inside a module is not supported yet");

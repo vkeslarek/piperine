@@ -276,11 +276,11 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `every_cli_listing_of_the_book_is_what_the_binary_prints` and `the_buck_block_is_what_the_binary_prints` pass under `**Run clibook**`
-- [ ] `cargo test -p piperine --test book_welcome --test book_cheatsheet --test book_analog --test book_mixed` passes
-- [ ] `every_block_of_the_book_has_one_row` and `refused_rows_and_gaps_section_11_agree` pass under `**Run bookinventory**`
-- [ ] Code clarity: test helpers stay methods of the support types; each moved assertion cites its Book row
-- [ ] Gate check passes: Build
+- [x] `every_cli_listing_of_the_book_is_what_the_binary_prints` and `the_buck_block_is_what_the_binary_prints` pass under `**Run clibook**`
+- [x] `cargo test -p piperine --test book_welcome --test book_cheatsheet --test book_analog --test book_mixed` passes
+- [x] `every_block_of_the_book_has_one_row` and `refused_rows_and_gaps_section_11_agree` pass under `**Run bookinventory**`
+- [x] Code clarity: test helpers stay methods of the support types; each moved assertion cites its Book row
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build
@@ -1014,6 +1014,7 @@ Proof: run bookinventory | test refused_rows_and_gaps_section_11_agree ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** Planning (2026-11-20): the user was away and asked for the most reasonable default on every open point ("always take the most reasonable default and tell later"); the defaults are design.md D1 to D19.
+**Settled B1 (T1 to T6, 2026-11-20, user AFK):** (1) between T1 and T3 the plan and the transpile printer failed loud or planned nothing for `EventSource::Settle` so each commit builds; T2 and T3 replaced them. (2) the interpreter names `settle` among its `amended_forms`. (3) the `SETTLE` pin is the last pin of a body (after the derivative abstol pins), so no existing shape moves. (4) `fired_reactions` and `run_reactions` take a `Phase` (`Microstep` or `Settle`); the two call sites of `tests/reactions.rs` pass `Phase::Microstep`. (5) beyond the tasks: a commit to a RECORD pin in the settle phase is no settle commit and applies as the instant exits (found by the Book buck check, §19 rules 7 and 8; commit `fix(digital-solver): a record from the settle phase is no settle commit`, with its tests). (6) refusal pins superseded by acceptance tests and named in the T5 commit body: the `settle` rows of `types_events`, `types_buck`, `types_subset`, `elab_unlowered`. (7) Book: the cheat card of cheatsheet#5 commits its pulse to `q` (a `Bit`), not to the node `p` the check probes (E0222 otherwise); the buck listing of mixed#13 holds the whole 1217-line output, the page shows lines 1 to 12; tests renamed (`the_clipper_is_refused_for_limexp`, `the_digital_card_runs`, `the_debug_prints_card_is_refused_for_the_analog_trace`, `the_math_methods_and_the_settle_event_run`) and their inventory rows and the GAPS section 11 rows follow (analog#3 and analog~773a3851 re-pointed to L9, mixed#10, mixed~9d07c4b9 and cheatsheet#5 left). (8) prose left stale for T21 and T22 as the task says: the welcome status sentence, analog~773a3851 ("three diagnostics"), the clipper and buck "not compiled yet" sentences, mixed~a6b3f8ed. (9) the buck check holds: no failing `regulated` record from 10 ms to 12 ms (D16 not triggered). (10) commits end with the trailer tasks.md prescribes (Claude Opus 5.5).
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 

@@ -112,13 +112,14 @@ fn the_cycle_counter_counts_the_located_crossings_of_the_sine() {
 }
 
 #[test]
-fn the_math_methods_run_and_the_settle_event_does_not() {
+fn the_math_methods_and_the_settle_event_run() {
     // mixed~a6b3f8ed: "One thing the examples here use is not compiled yet and is refused with P0001: the
     // settle event (the converter's check). The math methods of f64 such as sin (the sine sources) run":
-    // the sine source runs (the cycle counter above), the `settle` check is `P0001` (mixed#10)
+    // the sine source runs (the cycle counter above) and so does the `settle` check (mixed#10): the event
+    // runs since unknown-semantics-events T5 (L52); the sentence's prose is left for T22
     let chapter = Chapter::read();
     CycleCounter::model(&chapter).run(Commands::cycles()).unwrap_or_else(|failure| panic!("`sin` runs: {failure}"));
-    Refusal::expect(chapter.marked("buck.msl", "mixed#10").run(Commands::buck()), "mixed~a6b3f8ed", "P0001", "built-in `settle` is not supported yet");
+    chapter.marked("buck.msl", "mixed#10").run(Commands::buck()).unwrap_or_else(|failure| panic!("the `settle` check runs (mixed#10): {failure}"));
 }
 
 #[test]
@@ -156,15 +157,15 @@ fn the_digital_to_analog_converter_drives_half_the_supply_for_unknown() {
 fn the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28() {
     // mixed#8 (run): the converter, the controller and the load, without the `digital for Buck` check
     // ("Leave the `digital for Buck` block out and the converter runs, loop records and all"); mixed#10
-    // (refused): with it the file is `P0001`, the `settle` event (L52); mixed~9d07c4b9 "It checks, at every
-    // time point after start-up, that the output stays within 50 mV of the target" (refused with it);
+    // (run): with it the file runs, the `settle` event is compiled (L52); mixed~9d07c4b9 "It checks, at every
+    // time point after start-up, that the output stays within 50 mV of the target" (run with it);
     // mixed~758eca03 "A buck converter steps 12 V down to 3.3 V ... the output settles near d . 12 V";
     // mixed~a32dcb77 "emit!(\"loop\", ...) is the window into the loop: one record per period with the sample,
     // the error and the duty just decided. duty = d prints the new value"; mixed~3bce4014 "At the end the error
     // is zero and the duty sits where 12 V times the duty, less the small drop in the switch, equals 3.3 V:
     // about 0.28"
     let chapter = Chapter::read();
-    Refusal::expect(chapter.marked("buck.msl", "mixed#10").run(Commands::buck()), "mixed#10", "P0001", "built-in `settle` is not supported yet");
+    chapter.marked("buck.msl", "mixed#10").run(Commands::buck()).unwrap_or_else(|failure| panic!("mixed#10, the converter with its `settle` check: {failure}"));
     let records = Buck::loop_records(&chapter.marked("buck.msl", "mixed#8"));
     assert_eq!(records.len(), 1201, "one record per switching period of 10 us over 12 ms, the first at 0");
     assert!((records[1].0 - 1e-5).abs() < 1e-12 && (records[1200].0 - 12e-3).abs() < 1e-9, "the periods");
