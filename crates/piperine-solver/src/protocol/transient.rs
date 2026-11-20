@@ -21,7 +21,7 @@
 use piperine_analog_solver::error::{Error, Result, SolverDomain};
 
 use super::host::Waiter;
-use super::sides::{Advance, AnalogSide, AnalysisKind, Attempt, DiscreteSide, Horizon, InstantMode, Restart, Tick};
+use super::sides::{Advance, AnalogSide, AnalysisKind, Attempt, DiscreteSide, Horizon, InstantMode, Outcome, Restart, Tick};
 use super::sink::{Delivery, Sink};
 use super::step::{StepObserver, observe};
 
@@ -79,6 +79,9 @@ pub struct Protocol<D: DiscreteSide, A: AnalogSide> {
     pub(super) waiters: Vec<(u32, Waiter)>,
     /// The host's observer of accepted steps.
     pub(super) observer: Option<Box<dyn StepObserver>>,
+    /// A settle commit was delivered to the analog side: the step that arrives at the next time
+    /// point is exempt from the truncation test, until one is accepted (§15 S3).
+    pub(super) exempt_next: bool,
 }
 
 /// The three marks of one checkpoint.
@@ -103,6 +106,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             samples: Vec::new(),
             waiters: Vec::new(),
             observer: None,
+            exempt_next: false,
         }
     }
 
@@ -204,6 +208,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         self.now_tick = tick;
         self.started = true;
         self.finished = None;
+        self.exempt_next = false;
         self.samples = samples;
     }
 
@@ -228,6 +233,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         }
         self.in_transient = true;
         let ended = self.transient_loop(stop);
+        self.drop_settle_commits_at_stop();
         self.delivery.flush_all();
         self.in_transient = false;
         ended
@@ -296,7 +302,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
 
             // Steps 3 and 4: one analog attempt to t_c.
             let samples = if unknowns {
-                let exempt = !matches!(advanced, Advance::Reached);
+                let exempt = !matches!(advanced, Advance::Reached) || self.exempt_next;
                 let attempt = self.analog.attempt(t_c, exempt).map_err(|e| at(t_c, e))?;
                 let analog = &mut self.analog;
                 self.delivery.keep_traces(AnalysisKind::Transient, |out| analog.drain_traces(out));
@@ -337,6 +343,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                 // Step 5: accept, fire the crossings at (t_c, 0).
                 let accepted = self.analog.accept().map_err(|e| at(t_c, e))?;
                 rejections = 0;
+                self.exempt_next = false;
                 for net in &accepted.fired {
                     self.discrete.fire(*net, tick_c).map_err(|e| at(t_c, e))?;
                 }
@@ -348,11 +355,13 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             let mode = InstantMode { is_static: false, settle };
             let crossing = if unknowns { tick_c } else { stop_tick };
             let limit = Horizon { stop: stop_tick, crossing };
+            self.land_settle_commits(tick_c, settle);
             let outcome = self.run_whole_instant(tick_c, &samples, limit, mode).map_err(|e| at(t_c, e))?;
             if unknowns && !outcome.boundary.is_empty() {
                 let restart = if outcome.host_param_write { Restart::IntegratorSmall } else { Restart::Integrator };
                 self.analog.deliver(&outcome.boundary, restart);
             }
+            self.deliver_settle_boundary(unknowns, &outcome);
             // Step 6.
             self.collect(AnalysisKind::Transient);
             self.delivery.flush(t_c);
@@ -366,5 +375,33 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             }
         }
         Ok(Ended::StopTime)
+    }
+}
+
+impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
+    /// §15 S1: the accepted instant `tick` lands the settle commits the last time point held, due
+    /// at its microstep 0. Only an instant that is a time point (`settle`) lands them: a forced
+    /// landing that is not one runs on the old value (S4; abi.md R6), as does every instant the
+    /// step skipped.
+    fn land_settle_commits(&mut self, tick: Tick, time_point: bool) {
+        if time_point {
+            self.discrete.land_settle_commits(tick);
+        }
+    }
+
+    /// §15 S2 and S3: the settle commits the instant held reach the analog side now, so the solve
+    /// that arrives at the next time point reads them; the integrator restarts from them, and that
+    /// arriving step is exempt from the truncation test (`exempt_next`).
+    fn deliver_settle_boundary(&mut self, unknowns: bool, outcome: &Outcome) {
+        if unknowns && !outcome.settle_boundary.is_empty() {
+            self.analog.deliver(&outcome.settle_boundary, Restart::Integrator);
+            self.exempt_next = true;
+        }
+    }
+
+    /// §15 S6: a settle commit made at the stop time is dropped, and no step follows to read it.
+    fn drop_settle_commits_at_stop(&mut self) {
+        self.discrete.drop_settle_commits();
+        self.exempt_next = false;
     }
 }

@@ -70,6 +70,10 @@ pub struct Outcome {
     /// the waiters, queues their writes at this tick (the next microstep) and
     /// calls `run_instant` again at the same tick to continue it (abi.md R7).
     pub host_events: Vec<u32>,
+    /// The values the analog side reads that the settle commits held by the instant will give: the
+    /// solve that arrives at the next time point reads them (§15 S2). Not yet applied on the
+    /// discrete side, so no `boundary` entry repeats them.
+    pub settle_boundary: Vec<Boundary>,
 }
 
 /// The discrete side's answer to a host write checked on a shadow (abi.md P6).
@@ -178,6 +182,11 @@ pub trait DiscreteSide {
     /// reach, `limit.stop` otherwise. An `IRREVERSIBLE` reaction never runs its
     /// own clock past its bound.
     fn run_instant(&mut self, at: Tick, samples: &[f64], limit: Horizon, mode: InstantMode) -> Result<Outcome>;
+    /// Makes the settle commits the last settle phases held due at microstep 0 of `tick`, the next
+    /// time point the owner accepted (§15 S1), or the next sweep point (S6).
+    fn land_settle_commits(&mut self, tick: Tick);
+    /// Forgets the held settle commits: the stop time or the last sweep point was reached (§15 S6).
+    fn drop_settle_commits(&mut self);
     /// A mark to `restore` to. It may journal what changes from here instead of copying the
     /// state, so it is taken `&mut` and ended with `release` once the step is accepted or undone.
     fn mark(&mut self) -> Self::Mark;

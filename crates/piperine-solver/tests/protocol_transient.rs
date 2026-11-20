@@ -541,3 +541,113 @@ fn the_proposal_sees_the_next_due_time() {
     let (_, a) = p.into_sides();
     assert_eq!(a.next_dues, [None, None], "nothing queued: no next time point");
 }
+
+/// The settle boundary of the commits an instant held: slot 3 will read `[1, 1]` (§15 S2).
+fn settle_outcome() -> Outcome {
+    Outcome { settle_boundary: vec![boundary()], ..Outcome::default() }
+}
+
+/// The calls of the settle commit protocol and of the instants, in order.
+fn settle_calls(log: &Log) -> Vec<Call> {
+    calls(log, |c| {
+        matches!(c, Call::LandSettleCommits(_) | Call::DropSettleCommits | Call::RunInstant { .. } | Call::Attempt { .. } | Call::DiscreteRestore(_))
+    })
+}
+
+#[test]
+fn a_settle_commit_lands_at_the_next_time_point() {
+    // §15 S1: the instant at tick 2 makes a settle commit (it lands nothing: none was held); the next accepted time point, tick 4,
+    // lands it before it runs; the first instant lands nothing it did not hold
+    let (log, mut d, mut a) = sides();
+    a.proposals.extend([1.0, 2.0]);
+    d.instants.push_back(settle_outcome());
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    assert_eq!(p.transient(2.0).unwrap(), Ended::StopTime);
+    let at = |tick| Call::RunInstant { at: tick, samples: vec![], limit: horizon(4, tick), mode: InstantMode { is_static: false, settle: true } };
+    assert_eq!(
+        settle_calls(&log),
+        [
+            Call::Attempt { to: 1.0, exempt: false },
+            Call::LandSettleCommits(2),
+            at(2),
+            Call::Attempt { to: 2.0, exempt: true },
+            Call::LandSettleCommits(4),
+            at(4),
+            Call::DropSettleCommits,
+        ],
+        "each time point lands what the one before held, before its instant runs"
+    );
+}
+
+#[test]
+fn the_step_after_a_settle_commit_is_exempt_and_restarts() {
+    // §15 S2, S3: the commit reaches the analog side with a restart; the step that arrives at the
+    // next time point is exempt from the truncation test, and the one after it is not
+    let (log, mut d, mut a) = sides();
+    a.proposals.extend([1.0, 2.0, 3.0]);
+    d.instants.push_back(settle_outcome());
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    p.transient(3.0).unwrap();
+    assert_eq!(
+        attempts(&log),
+        [
+            Call::Attempt { to: 1.0, exempt: false },
+            Call::Attempt { to: 2.0, exempt: true },
+            Call::Attempt { to: 3.0, exempt: false },
+        ]
+    );
+    assert_eq!(calls(&log, |c| matches!(c, Call::Deliver(..))), [Call::Deliver(vec![boundary()], Restart::Integrator)]);
+}
+
+#[test]
+fn an_event_time_before_the_next_time_point_reads_the_old_value() {
+    // §15 S4: a forced landing that is not a time point (an `IRREVERSIBLE` reaction) lands nothing:
+    // the commit stays held until the time point
+    let (log, mut d, mut a) = sides();
+    a.proposals.extend([1.0, 2.0]);
+    d.instants.push_back(settle_outcome());
+    d.advances.extend([Advance::Reached, Advance::Landing { tick: 3, time_point: false }]);
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    p.transient(2.0).unwrap();
+    let lands = calls(&log, |c| matches!(c, Call::LandSettleCommits(_)));
+    // tick 2 (a time point: it lands what was held before it, nothing), tick 3 (not a time point) lands nothing, tick 4 lands
+    assert_eq!(lands, [Call::LandSettleCommits(2), Call::LandSettleCommits(4)], "{:?}", settle_calls(&log));
+}
+
+#[test]
+fn a_rejected_step_moves_the_settle_commit() {
+    // §15 S5: the step to the next time point is rejected: both sides restore, nothing lands, and
+    // the retried step (still exempt) lands it at the time point it finally reaches
+    let (log, mut d, mut a) = sides();
+    a.proposals.extend([1.0, 2.0, 2.0]);
+    a.attempts.extend([Attempt::Converged, Attempt::Rejected, Attempt::Converged]);
+    d.instants.push_back(settle_outcome());
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    p.transient(2.0).unwrap();
+    assert_eq!(
+        attempts(&log),
+        [
+            Call::Attempt { to: 1.0, exempt: false },
+            Call::Attempt { to: 2.0, exempt: true },
+            Call::Attempt { to: 2.0, exempt: true },
+        ]
+    );
+    let order = settle_calls(&log);
+    let restore = order.iter().position(|c| matches!(c, Call::DiscreteRestore(_))).expect("the rejection restored");
+    let land = order.iter().rposition(|c| matches!(c, Call::LandSettleCommits(4))).expect("landed at 4");
+    assert!(restore < land, "nothing lands before the retried step is accepted: {order:?}");
+    assert_eq!(order.iter().filter(|c| matches!(c, Call::LandSettleCommits(4))).count(), 1, "{order:?}");
+}
+
+#[test]
+fn a_settle_commit_at_the_stop_time_is_dropped() {
+    // §15 S6: the commit made at the stop time has no time point to land at: it is dropped
+    let (log, mut d, mut a) = sides();
+    a.proposals.push_back(1.0);
+    d.instants.push_back(settle_outcome());
+    let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
+    assert_eq!(p.transient(1.0).unwrap(), Ended::StopTime);
+    let order = settle_calls(&log);
+    assert_eq!(order.last(), Some(&Call::DropSettleCommits), "{order:?}");
+    assert_eq!(order.iter().filter(|c| matches!(c, Call::LandSettleCommits(_))).count(), 1, "only the stop's own landing: {order:?}");
+}
