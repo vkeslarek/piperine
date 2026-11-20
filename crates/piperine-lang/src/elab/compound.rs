@@ -480,7 +480,10 @@ impl Elaboration<'_, '_> {
                         let Some(val) = self.zero(&payload, origin) else { return unsupported(self) };
                         Some(Pair { is, val, literal: Some(false) })
                     }
-                    (None, None) => match self.body_let_value(decl) {
+                    // A body `let` or a `const` of `Option` type reads its initializer where it is
+                    // read: it holds only literals and consts, so every read has the same levels
+                    // (§3.3.9)
+                    (None, None) => match self.body_let_value(decl).or_else(|| self.const_value(decl)) {
                         Some(value) => self.lower_option(scope, value),
                         None => unsupported(self),
                     },
@@ -550,6 +553,15 @@ impl Elaboration<'_, '_> {
                 _ => unsupported(self),
             },
             _ => unsupported(self),
+        }
+    }
+
+    /// The initializer of the `const` item `decl`; `None` for any other declaration or a `const`
+    /// without a value.
+    fn const_value(&self, decl: DeclId) -> Option<ExprId> {
+        match &self.design.decl_data(decl).kind {
+            DeclKind::Const(data) => data.value,
+            _ => None,
         }
     }
 

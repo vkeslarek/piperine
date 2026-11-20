@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use piperine_ir::{BinaryOp, Branch, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Method as IrMethod, Origin, Site, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
 
 use super::compound::EnumLayout;
-use super::consts::Bindings;
+use super::consts::{Bindings, Folded};
 use super::known::Flag;
 use super::elaborator::Elaboration;
 use crate::msl::Span;
@@ -178,8 +178,9 @@ impl Elaboration<'_, '_> {
             return None;
         };
         if ty.is_integer() && self.constant_form(expr) {
-            return match self.consts.value(expr, &Bindings::new()) {
-                Ok(value) => Some(self.constant_expr(value, ty, origin)),
+            return match self.consts.folded(expr, &Bindings::new()) {
+                Ok(Folded::Known(value)) => Some(self.constant_expr(value, ty, origin)),
+                Ok(Folded::Unknown) => Some(self.unknown_expr(ty, origin)),
                 Err(fault) => {
                     self.const_fault(&fault, "a constant expression");
                     None
@@ -187,7 +188,7 @@ impl Elaboration<'_, '_> {
             };
         }
         match &node.kind {
-            ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Unknown) => Some(self.emit(Expr::Unknown, Flag::Flagged.wrap(ty), origin)),
+            ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Unknown) => Some(self.unknown_expr(ty, origin)),
             ExprKind::Lit(_) => match self.consts.value(expr, &Bindings::new()) {
                 Ok(value) => Some(self.constant_expr(value, ty, origin)),
                 Err(fault) => {
@@ -540,6 +541,11 @@ impl Elaboration<'_, '_> {
         }
     }
 
+    /// The literal `Unknown` of type `ty`: a value with every level unknown, so flagged (§3.3.1).
+    fn unknown_expr(&mut self, ty: ValueType, origin: Origin) -> LoweredExpr {
+        self.emit(Expr::Unknown, Flag::Flagged.wrap(ty), origin)
+    }
+
     /// A name: a `const` (folded), a param of the body (a read), a local.
     fn lower_path(&mut self, scope: &mut Scope, expr: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let node = self.design.expr_node(expr).clone();
@@ -550,8 +556,9 @@ impl Elaboration<'_, '_> {
             return None;
         };
         match &self.design.decl_data(decl).kind {
-            DeclKind::Const(_) => match self.consts.constant(decl) {
-                Ok(value) => Some(self.constant_expr(value, ty, origin)),
+            DeclKind::Const(_) => match self.consts.folded_constant(decl) {
+                Ok(Folded::Known(value)) => Some(self.constant_expr(value, ty, origin)),
+                Ok(Folded::Unknown) => Some(self.unknown_expr(ty, origin)),
                 Err(fault) => {
                     self.const_fault(&fault, "a `const`");
                     None

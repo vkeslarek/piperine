@@ -327,3 +327,48 @@ fn an_if_whose_arms_commit_is_the_value_of_a_commit_and_of_an_emit_field() {
     assert_eq!(seen_records.len(), 4);
     assert!(seen_records.iter().all(|r| !r.maybe && r.fields == [("x".to_string(), Field::Int(7))]), "{seen_records:?}");
 }
+
+#[test]
+fn an_unknown_initial_value_starts_every_level_unknown() {
+    // US-01 AC 1: `signal s: Bit<u8> = Unknown;` starts with every level unknown, so at every
+    // rising edge `s.is_known()` is false and `s.known_or(9)` is the default
+    let (_, records) = records_of("unknown_values.msl", "UnknownBench");
+    let probes = stream(&records, "probe");
+    assert_eq!(probes.len(), 4);
+    for record in probes {
+        assert_eq!(record.fields, [("known".to_string(), Field::Bool(false)), ("value".to_string(), Field::Int(9))]);
+    }
+}
+
+#[test]
+fn an_unknown_initial_value_fires_no_change_at_zero() {
+    // US-01 AC 2, §3.3 "changes": unknown to unknown is no change, so `on s.changed()` never
+    // runs for a carrier that starts unknown and is never written
+    let (_, records) = records_of("unknown_values.msl", "UnknownBench");
+    assert_eq!(stream(&records, "changed").len(), 0);
+}
+
+#[test]
+fn a_const_holding_unknown_reads_unknown_everywhere() {
+    // US-01 AC 3, §3.3.9: `const Z: Option<bool> = Some(Unknown)` is `Some` of an unknown value,
+    // and `const W: u8 = Unknown` an unknown one; every read gives the same unknown levels
+    let (_, records) = records_of("unknown_values.msl", "UnknownBench");
+    let consts = stream(&records, "consts");
+    assert_eq!(consts.len(), 4);
+    let expected = [
+        ("some".to_string(), Field::Bool(true)),
+        ("z".to_string(), Field::Unknown),
+        ("z_known".to_string(), Field::Bool(false)),
+        ("w".to_string(), Field::Unknown),
+        ("w_known".to_string(), Field::Bool(false)),
+    ];
+    assert!(consts.iter().all(|r| r.fields == expected), "{consts:?}");
+}
+
+#[test]
+fn committing_unknown_makes_every_level_unknown() {
+    // US-01 AC 5: `q <- Unknown;` makes every level of `q`, which held 5, unknown at the
+    // microstep the commit applies: the first rising edge (0.5 ns)
+    let (seen, _) = records_of("unknown_values.msl", "UnknownBench");
+    assert_eq!(transient(&seen, "UnknownBench.q"), vec![(NS / 2, UNKNOWN.to_vec())]);
+}

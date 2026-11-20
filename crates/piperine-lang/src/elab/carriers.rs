@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use piperine_ir::{BodyId, Carrier, CarrierRole, ChildValue, Constant, Drive, Event, Reaction, Stream, ValueType};
 
-use super::consts::Bindings;
+use super::consts::{Bindings, Folded};
 use super::elaborator::Elaboration;
 use crate::pom::{DeclId, DeclKind, Dir, ExprId};
 use crate::types::Ty;
@@ -108,7 +108,7 @@ impl Elaboration<'_, '_> {
         };
         let ty = self.carried_type(decl)?;
         let init = match init {
-            Some(expr) => Some(self.carrier_init(expr)?),
+            Some(expr) => self.carrier_init(expr)?,
             None => None,
         };
         let name = format!("{}{name}", self.frames[frame].prefix);
@@ -116,10 +116,13 @@ impl Elaboration<'_, '_> {
     }
 
     /// The initial value of a carrier, folded: a constant expression over literals and `const`s
-    /// (§5.2.3). One that reads a param is `P0001` (a value per instance is a host concern).
-    fn carrier_init(&mut self, expr: ExprId) -> Option<Constant> {
-        match self.consts.value(expr, &Bindings::new()) {
-            Ok(value) => Some(value),
+    /// (§5.2.3). One that reads a param is `P0001` (a value per instance is a host concern). The
+    /// outer `None` is a diagnostic; the inner one is an initial value that is `Unknown`, which
+    /// is the same as none: every level unknown at `(0, 0)` and no `changed()` there (§3.3).
+    fn carrier_init(&mut self, expr: ExprId) -> Option<Option<Constant>> {
+        match self.consts.folded(expr, &Bindings::new()) {
+            Ok(Folded::Known(value)) => Some(Some(value)),
+            Ok(Folded::Unknown) => Some(None),
             Err(fault) => {
                 self.const_fault(&fault, "a carrier's initial value");
                 None
