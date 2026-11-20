@@ -208,6 +208,7 @@ impl Elaboration<'_, '_> {
                 Some(self.previous(carrier, origin))
             }
             // The checker reports an event read as a `bool` first (part IV §13 rule 2).
+            Builtin::Inflow => self.lower_inflow(scope, recv, origin),
             Builtin::Changed | Builtin::Rise | Builtin::Fall => {
                 self.unsupported(scope.file, span, "an event read as a `bool`");
                 None

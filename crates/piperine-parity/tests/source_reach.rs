@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::project::Project;
 use piperine_parity::waveform::Waveform;
-use piperine_solver::prelude::{Context, NodeIdentifier};
+use piperine_solver::prelude::{AcSweepAnalysisOptions, Context, NodeIdentifier};
 
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/digital.rs"]
@@ -39,6 +39,15 @@ fn operating_point(top: &str) -> f64 {
     let mut running = project().compile(top).unwrap_or_else(|r| panic!("{r}"));
     let out = node(&running.ir, top, "o");
     running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves").get_node(&out).expect("v(o)")
+}
+
+/// `|v(o)|` of the bench `top` at each frequency of a sweep of `steps` points from `start` to `stop`.
+fn ac_magnitudes(top: &str, start: f64, stop: f64, steps: usize) -> Vec<(f64, f64)> {
+    let mut running = project().compile(top).unwrap_or_else(|r| panic!("{r}"));
+    let out = node(&running.ir, top, "o");
+    let mut ac = running.circuit.ac(Context::default()).expect("ac");
+    let sweep = ac.solve_sweep(AcSweepAnalysisOptions { start_frequency: start, stop_frequency: stop, steps, logarithmic: true }).unwrap_or_else(|e| panic!("the sweep does not solve: {e}"));
+    sweep.iter().map(|step| (step.frequency, step.get_node(&out).expect("v(o)").norm())).collect()
 }
 
 /// `v(o)` of the bench `top` over a transient to `stop` with the step cap `step`, as a waveform.
@@ -80,4 +89,35 @@ fn the_parent_reads_a_pub_param_and_a_pub_let_of_its_child() {
     // AS-11 AC 4 (§8.2.25): the placement gives `r` = k = 4.0; the child's `let e = r * 3.0` is
     // evaluated in the reader's context: 12.0. `v(o)` = `c.r + c.e` = 4 + 12 = 16.0 V.
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("param and let", "v(o)", Coordinate::OperatingPoint), 16.0, operating_point("ParamBench"));
+}
+
+#[test]
+fn inflow_sums_the_flows_of_the_modules_branches_at_the_port() {
+    // AS-13 AC 1: `Meter` draws 1 mA at `p` (`i(p, gnd) +> 1m`) and `v(p, n) / 1k` from `p` to `n`;
+    // with p = 2 V and n = 1 V that is 1 mA more, so `p.inflow()` = 2 mA and `v(o)` = 1k * 2 mA = 2.0 V.
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("meter", "v(o)", Coordinate::OperatingPoint), 2.0, operating_point("MeterBench"));
+}
+
+#[test]
+fn inflow_includes_a_childs_branch_on_the_port() {
+    // AS-13 AC 2 (G.59): `Outer` draws 1 mA at `p` itself and its child `Sink` draws 2 mA on the same
+    // port, so `p.inflow()` = 3 mA and `v(o)` = 1k * 3 mA = 3.0 V.
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("child", "v(o)", Coordinate::OperatingPoint), 3.0, operating_point("ChildBench"));
+}
+
+#[test]
+fn inflow_is_differentiated_in_ac() {
+    // AS-13 AC 3: `Ohmic` draws `v(p) / 1k`, so `p.inflow()` = v(p) / 1k and `v(o)` = 1k * v(p) / 1k =
+    // v(p): with a unit AC stimulus at `p`, |v(o)| = 1.0 at every frequency.
+    for (frequency, magnitude) in ac_magnitudes("InflowAcBench", 1e3, 1e6, 4) {
+        ToleranceContract::AC_MAGNITUDE.assert(&Point::new("inflow ac", "|v(o)|", Coordinate::Frequency(frequency)), 1.0, magnitude);
+    }
+}
+
+#[test]
+fn inflow_of_a_port_held_at_zero_is_not_merged_away() {
+    // AS-13 and §11 rule 3: `Short` holds `p` at 0 V, a zero-potential branch that would merge `p` with
+    // ground; the flow `p.inflow()` measures is the 2 V / 1 kOhm = 2 mA the feed resistor delivers, so
+    // `v(o)` = 1k * 2 mA = 2.0 V. The merge may not remove the branch whose flow is read.
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("short", "v(o)", Coordinate::OperatingPoint), 2.0, operating_point("ShortBench"));
 }

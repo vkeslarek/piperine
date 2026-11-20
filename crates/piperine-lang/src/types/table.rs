@@ -109,6 +109,8 @@ pub enum Builtin {
     Rise,
     /// `c.fall() -> Event` on a `Bit`.
     Fall,
+    /// `p.inflow() -> f64`: the flow entering the module at its port `p` (§6 rule 5).
+    Inflow,
 }
 
 /// Whether an expression reads a probe, `now()`, `freq()`, `gmin()`, `source_scale()` or

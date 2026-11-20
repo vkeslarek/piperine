@@ -75,3 +75,81 @@ module ParamBench() {
     let load = Resistor { r: 1k }(o, gnd);
 }
 analog for ParamBench { v(o) +> c.r + c.e; }
+
+// -- AS-13: `p.inflow()`
+
+/// A potential held at `volts` with a unit AC stimulus on top.
+module AcLevel(p: Electrical) { volts: f64 = 0.0; }
+analog for AcLevel { v(p, gnd) +> volts + ac_stim(1.0); }
+
+/// Draws 1 mA at `p` and `v(p, n) / 1k` from `p` to `n`; `o` is held at 1 kOhm times the flow at `p`.
+module Meter(p: Electrical, n: Electrical, o: Electrical) {}
+analog for Meter {
+    i(p, gnd) +> 1m;
+    i(p, n) +> v(p, n) / 1k;
+    v(o) +> p.inflow() * 1k;
+}
+
+module MeterBench() {
+    signal p: Electrical;
+    signal n: Electrical;
+    signal o: Electrical;
+    let high = Level { volts: 2.0 }(p);
+    let low = Level { volts: 1.0 }(n);
+    let meter = Meter(p, n, o);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+
+/// Draws 2 mA at `p`.
+module Sink(p: Electrical) {}
+analog for Sink { i(p, gnd) +> 2m; }
+
+/// Draws 1 mA at `p` itself and 2 mA through its child `Sink`.
+module Outer(p: Electrical, o: Electrical) {
+    let sink = Sink(p);
+}
+analog for Outer {
+    i(p, gnd) +> 1m;
+    v(o) +> p.inflow() * 1k;
+}
+
+module ChildBench() {
+    signal p: Electrical;
+    signal o: Electrical;
+    let source = Level { volts: 1.0 }(p);
+    let outer = Outer(p, o);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+
+/// Draws `v(p) / 1k` at `p`; `o` is held at 1 kOhm times the flow at `p`.
+module Ohmic(p: Electrical, o: Electrical) {}
+analog for Ohmic {
+    i(p, gnd) +> v(p) / 1k;
+    v(o) +> p.inflow() * 1k;
+}
+
+module InflowAcBench() {
+    signal p: Electrical;
+    signal o: Electrical;
+    let source = AcLevel { volts: 0.0 }(p);
+    let ohmic = Ohmic(p, o);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+
+/// Holds `p` at 0 V (a zero-potential branch the merge of §11 rule 3 would fold into ground) and
+/// reads the flow that does it.
+module Short(p: Electrical, o: Electrical) {}
+analog for Short {
+    v(p) +> 0.0;
+    v(o) +> p.inflow() * 1k;
+}
+
+module ShortBench() {
+    signal a: Electrical;
+    signal p: Electrical;
+    signal o: Electrical;
+    let supply = Level { volts: 2.0 }(a);
+    let feed = Resistor { r: 1k }(a, p);
+    let short = Short(p, o);
+    let load = Resistor { r: 1k }(o, gnd);
+}

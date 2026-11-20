@@ -221,7 +221,7 @@ impl Checker<'_> {
             Builtin::IsKnown | Builtin::High => (vec![], Ty::Bool),
             // §22.1: level `k` of the value, `k: u32`; known when `k` is (§3.3.14).
             Builtin::Level => (vec![Ty::UInt(32)], Ty::Option(Box::new(Ty::Bool))),
-            Builtin::Changed | Builtin::Prev | Builtin::Rise | Builtin::Fall => return None,
+            Builtin::Changed | Builtin::Prev | Builtin::Rise | Builtin::Fall | Builtin::Inflow => return None,
         };
         if self.apply(expr, &params, args).is_none() {
             return Some(None);

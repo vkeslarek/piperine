@@ -38,6 +38,8 @@ pub(super) struct Structure {
     pub(super) child_params: Vec<(u32, u32, ChildValue)>,
     /// The `pub` nodes and carriers of children the body reads (`reach.rs`).
     pub(super) reaches: Vec<Reach>,
+    /// The `p.inflow()` ammeters of the body (`inflow.rs`).
+    pub(super) inflows: Vec<piperine_ir::Inflow>,
 }
 
 /// The module whose names an expression of the body reads, and what those names are in the body.
@@ -180,6 +182,9 @@ impl Elaboration<'_, '_> {
         }
         for reach in structure.reaches {
             self.ir.reach(body, reach);
+        }
+        for inflow in structure.inflows {
+            self.ir.inflow(body, inflow);
         }
     }
 }

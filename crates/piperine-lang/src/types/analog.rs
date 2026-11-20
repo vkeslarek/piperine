@@ -26,6 +26,36 @@ impl Checker<'_> {
         self.check_as(rhs, &Ty::F64, "E0417");
     }
 
+    /// `p.inflow()` (part III §6 rule 5): the flow entering the module at its port `p`, of a nature
+    /// with `flow`, an `f64`. Anything else is `E0243`; it is a value, so on the left of `+>` it is
+    /// `E0410` (`contribution`).
+    pub(super) fn inflow_read(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> Option<Ty> {
+        let node = self.design.expr_node(expr).clone();
+        let file = self.file_of_expr(expr);
+        if matches!(self.context, Context::Function | Context::Const) {
+            self.coded(file, "E0450", node.span, "`inflow()` is allowed in an `analog` block and a module body only".to_string(), "core primitive out of place");
+        }
+        self.apply(expr, &[], args)?;
+        let measured = match self.declared_port(recv) {
+            Some((decl, Ty::Node(nature))) => matches!(self.design.decl_data(decl).kind, DeclKind::Port(_)) && self.nature_has_flow(nature),
+            _ => false,
+        };
+        if !measured {
+            let message = "`inflow()` applies to a port of a nature with `flow`: it measures the flow entering the module there (§6 rule 5)".to_string();
+            self.coded(file, "E0243", node.span, message, "not a port of a nature with `flow`");
+            self.infer(recv);
+            return None;
+        }
+        self.infer(recv);
+        self.builtins.insert(expr, super::Builtin::Inflow);
+        Some(Ty::F64)
+    }
+
+    /// Whether the nature `nature` declares a flow quantity.
+    fn nature_has_flow(&self, nature: crate::pom::DeclId) -> bool {
+        self.design.decl_data(nature).children.iter().any(|c| matches!(&self.design.decl_data(*c).kind, DeclKind::Quantity(q) if q.role == QuantityRole::Flow))
+    }
+
     /// A probe `v(a)`, `v(a, b)`, `potential(a, b)` or `flow(a, b)`: its nodes have one nature
     /// (`E0240`). Read as a value only a potential is in the subset; a flow probe is a target.
     pub(super) fn probe(&mut self, expr: ExprId, target: bool) -> Option<Ty> {

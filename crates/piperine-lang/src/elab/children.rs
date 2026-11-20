@@ -21,6 +21,8 @@ use crate::types::Callee;
 pub(super) struct ChildPlan {
     pub(super) name: String,
     pub(super) module: DeclId,
+    /// The body the child places: the variant of the module its key params select.
+    pub(super) body: piperine_ir::BodyId,
     pub(super) terminals: Vec<Terminal>,
     /// What each carrier port of the child's body is bound to, in port order: a carrier of the
     /// parent's body.
@@ -33,6 +35,26 @@ pub(super) struct ChildPlan {
 }
 
 impl Elaboration<'_, '_> {
+    /// Gives every authored child the node slots of its body that are no port, now that every body is
+    /// built: `Ir::check` asks for one slot per node of the child's body.
+    pub(super) fn pad_child_nodes(&mut self) {
+        let counts: std::collections::BTreeMap<piperine_ir::BodyId, usize> = self.plans.values().map(|plan| (plan.body, plan.nodes.len())).collect();
+        let slots: Vec<(piperine_ir::BodyId, u32, Vec<Terminal>)> = self
+            .plans
+            .values()
+            .flat_map(|plan| {
+                plan.children.iter().enumerate().filter_map(|(index, child)| {
+                    let mut nodes = child.terminals.clone();
+                    nodes.resize(*counts.get(&child.body)?, Terminal::Ground);
+                    Some((plan.body, index as u32, nodes))
+                })
+            })
+            .collect();
+        for (body, child, nodes) in slots {
+            self.ir.set_child_nodes(body, child, nodes);
+        }
+    }
+
     /// The placements of `module` in source order, each as the `Child` of its body and the plan
     /// placement reads. A placement of a module the type checker did not reach is skipped: it
     /// was refused already.
@@ -152,19 +174,18 @@ impl Elaboration<'_, '_> {
         let params = given.iter().filter_map(|(index, value, _)| value.map(|v| (*index, v))).collect();
         let origin = self.locator.origin(file, node.span);
         // SPEC_DEVIATION: `Child::nodes` must bind one terminal per node of the child's body
-        // (`Ir::check`), and `Terminal` has no "the child's own node". A signal of the child is
-        // not connected to anything of the parent, so its slot is padded with `Ground`.
+        // (`Ir::check`), and `Terminal` has no "the child's own node". A node of the child that is
+        // no port (a signal, an ammeter's inside node, a node a hoisted frame brings) is not
+        // connected to anything of the parent, so its slot is padded with `Ground` once the child's
+        // body is built (`pad_child_nodes`), when its nodes are known.
         // Reason: the authored tree is a view; the instance table (`InstanceSpec::nodes`) is the
-        // one backends bind from and holds the child's own node there. No M1 device has a signal.
-        let own_signals = self.design.decl_data(module).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Signal(_)) && self.types.carrier(**c).is_none()).count();
-        let mut slots = terminals.clone();
-        slots.extend(std::iter::repeat_n(Terminal::Ground, own_signals));
-        let child = Child { name: name.clone(), body, nodes: slots, params, origin };
+        // one backends bind from and holds the child's own node there.
+        let child = Child { name: name.clone(), body, nodes: terminals.clone(), params, origin };
         // The authored child shows the carriers it connects (ir-rust "Left for msl-digital").
         if !carriers.is_empty() {
             self.structure.child_carriers.push((index, carriers.clone()));
         }
-        Some((child, ChildPlan { name, module, terminals, carriers, given, call }))
+        Some((child, ChildPlan { name, module, body, terminals, carriers, given, call }))
     }
 
     /// The carrier of the parent an argument at the carrier port `port` of the placement

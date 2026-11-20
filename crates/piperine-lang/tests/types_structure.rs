@@ -141,3 +141,23 @@ fn a_commit_to_a_childs_carrier_is_e0222() {
         assert!(found[0].diagnostic.message.contains("carrier of an instance"), "{body}: {}", found[0].diagnostic.message);
     }
 }
+
+#[test]
+fn inflow_of_a_node_that_is_not_a_port_is_e0243() {
+    // AS-13 AC 4 (§6 rule 5): `inflow()` measures the flow entering the module at a port of a nature with
+    // `flow`; an internal node `x` is no port: `E0243` at the call.
+    let src = "module Top(a: Electrical) { signal x: Electrical; }\nanalog for Top { v(a) +> x.inflow(); }";
+    let found = diagnostics(src);
+    let codes: Vec<&str> = found.iter().map(|d| &*d.diagnostic.code).collect();
+    assert_eq!(codes, ["E0243"], "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    assert_eq!(&src[found[0].diagnostic.span().range()], "x.inflow()", "the error is at the call");
+}
+
+#[test]
+fn inflow_on_the_left_of_a_contribution_is_e0410() {
+    // AS-13 AC 5: `p.inflow()` is a value, not a branch quantity: on the left of `+>` it is `E0410`.
+    let src = "module Top(a: Electrical) {}\nanalog for Top { a.inflow() +> 1.0; }";
+    let found = diagnostics(src);
+    let codes: Vec<&str> = found.iter().map(|d| &*d.diagnostic.code).collect();
+    assert_eq!(codes, ["E0410"], "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+}

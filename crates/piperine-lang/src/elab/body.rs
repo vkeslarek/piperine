@@ -94,12 +94,16 @@ impl Elaboration<'_, '_> {
             }
         }
         self.lower_nodes(module);
+        let ammeters = self.lower_ammeters(&mut scope, module);
         scope.merged = self.merged_branches(&scope, module);
         self.lower_carriers(0, module);
         self.lower_definitions(&scope, module);
         self.hoist_placements(&scope);
         scope.addend_lets = self.addend_only_ddt_lets(&scope, module);
         let mut analog = self.lower_analog(&mut scope, module);
+        if !ammeters.is_empty() {
+            analog.get_or_insert_with(Vec::new).splice(0..0, ammeters);
+        }
         if let Some(hoisted) = self.lower_hoisted_analog(&mut scope) {
             analog.get_or_insert_with(Vec::new).extend(hoisted);
         }

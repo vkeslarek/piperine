@@ -72,7 +72,6 @@ const ROWS: &[Row] = &[
     Row { construct: "delay", source: "module Top(a: E) { }\nanalog for Top { let x = delay(v(a), 1.0); }", names: "`delay`" },
     Row { construct: "noise", source: "module Top() { }\nanalog for Top { let x = noise(1.0); }", names: "`noise`" },
     Row { construct: "simparam", source: "module Top() { }\nanalog for Top { let x = simparam(1.0); }", names: "`simparam`" },
-    Row { construct: "inflow", source: "module Top(a: E) { }\nanalog for Top { let x = a.inflow(); }", names: "inflow" },
     Row { construct: "flow probe read as a value", source: "module Top(a: E) { }\nanalog for Top { let x = i(a); }", names: "flow probe" },
     Row { construct: "trait", source: "trait Tr { fn get(self) -> f64; }\nimpl Tr for f64 { fn get(self) -> f64 { self } }\nmodule Top() { }\nanalog for Top { let y = 1.0.get(); }", names: "method `get`" },
 ];

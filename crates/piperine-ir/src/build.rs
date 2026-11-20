@@ -8,7 +8,7 @@ use crate::deps::DepsMemo;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 use crate::model::{
     BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, Derivative, Drive, Event, Expr, ExprData, FunctionData, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
-    Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ValueType,
+    Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, Terminal, ValueType,
 };
 
 /// The parts of a body, in the order a handle lists them.
@@ -229,6 +229,15 @@ impl IrBuilder {
             lists.resize(child as usize + 1, Vec::new());
         }
         lists[child as usize] = carriers;
+    }
+
+    /// Replaces the node slots of child number `child` of `body`: the terminals it connects, then one
+    /// slot per node of the child's own that is no port. A child's own nodes are known once its body
+    /// is built, which is after its parent's.
+    pub fn set_child_nodes(&mut self, body: BodyId, child: u32, nodes: Vec<Terminal>) {
+        if let Some(slot) = self.body_data(body).children.get_mut(child as usize) {
+            slot.nodes = nodes;
+        }
     }
 
     /// Adds a derivative site to `body`: returns its index, the identity `Expr::Derivative`

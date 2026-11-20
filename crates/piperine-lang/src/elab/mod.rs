@@ -23,6 +23,7 @@ mod elaborator;
 mod analog;
 mod functions;
 mod hoist;
+mod inflow;
 mod intrinsics;
 mod known;
 mod lower;

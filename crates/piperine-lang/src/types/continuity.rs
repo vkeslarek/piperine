@@ -100,6 +100,8 @@ impl Checker<'_> {
         let node = self.design.expr_node(expr).clone();
         match &node.kind {
             ExprKind::Call { class: CallClass::Probe, .. } => return true,
+            // `p.inflow()` is a probe of the ammeter branch (§6 rule 5).
+            ExprKind::MethodCall { res: Resolution::Builtin(id), .. } if id.info().name == "inflow" => return true,
             ExprKind::Path(path) => {
                 return match self.design.path_node(*path).segments.last().map(|s| s.res) {
                     Some(Resolution::Decl(d)) => match self.continuity.inits.get(&d).copied() {

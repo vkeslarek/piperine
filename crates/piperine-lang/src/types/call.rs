@@ -211,6 +211,7 @@ impl Checker<'_> {
                 "changed" => Some(Builtin::Changed),
                 // `level` of a carrier or a value the POM resolved to the language's own row
                 "level" => Some(Builtin::Level),
+                "inflow" => return self.inflow_read(expr, *recv, args),
                 _ => {
                     self.unsupported(file, node.span, &format!("method `{name}`"));
                     return None;

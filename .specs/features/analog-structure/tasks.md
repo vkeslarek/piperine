@@ -863,10 +863,10 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `Run sreach`: `inflow_sums_the_flows_of_the_modules_branches_at_the_port`, `inflow_includes_a_childs_branch_on_the_port`, `inflow_is_differentiated_in_ac`
-- [ ] Tests with exactly these names pass in `Run typestruct`: `inflow_of_a_node_that_is_not_a_port_is_e0243`, `inflow_on_the_left_of_a_contribution_is_e0410`
-- [ ] Gate check passes: Full (`Run sreach`, `Run typestruct`, `cargo test -p piperine-lang`, `Run twins`, `Run tgolden`)
-- [ ] Test count: the 5 tests named above, and no existing test removed
+- [x] Tests with exactly these names pass in `Run sreach`: `inflow_sums_the_flows_of_the_modules_branches_at_the_port`, `inflow_includes_a_childs_branch_on_the_port`, `inflow_is_differentiated_in_ac`
+- [x] Tests with exactly these names pass in `Run typestruct`: `inflow_of_a_node_that_is_not_a_port_is_e0243`, `inflow_on_the_left_of_a_contribution_is_e0410`
+- [x] Gate check passes: Full (`Run sreach`, `Run typestruct`, `cargo test -p piperine-lang`, `Run twins`, `Run tgolden`)
+- [x] Test count: the 5 tests named above, and no existing test removed
 
 **Tests**: e2e
 **Gate**: full
