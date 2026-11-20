@@ -23,7 +23,7 @@ runs, because they need host stimulus during a run. `host-ii` delivered that sti
 
 | Feature | Reason |
 | ------- | ------ |
-| S1 (start-up) and S1b (UVLO start-up) | Not in the U3 scope the user set (S2 to S9). S1 at 0.8 V is held by `buck_long` and `piperine-cli/tests/buck.rs`; each 3.3 V run here checks its own start only as a precondition (BS-03 AC 1) |
+| S1 (start-up) and S1b (UVLO start-up) | Not in the U3 scope the user set (S2 to S9); `GAPS.md` U3 keeps them. S1 at 0.8 V is held by `buck_long` and `piperine-cli/tests/buck.rs`; each 3.3 V run here checks its own start only as a precondition (BS-03 AC 1) |
 | A Python host | User, 2026-11-18: Rust first, Python later (`python-host`, B4) |
 | Host sequences from the command line | Decision X8: the command line takes no host stimulus; a scenario run from `piperine run` drives nothing |
 | `force`, `release`, a wait for an event, a read at an instant (rest of H1) | `host-iii`; the scenarios schedule every stimulus at a time fixed by SPEC's own timing |
@@ -279,7 +279,7 @@ parallel threads of one target.
 4. The SPEC SHALL hold a §10.1 "How the bench measures" that defines the stimulus shapes, the settling time, the deviation, the sample-time resolutions (2.02 µs for the next sample, 4.52 µs for two consecutive samples), the current-limit reaction bound (0.1 A) and S8's decay bound (± 2 %), each with its derivation.
 5. The SPEC SHALL name the cleared fault code `Clear` wherever it names it.
 
-**Independent Test**: `buck_supervisor` holds the hiccup length; `grep` holds the SPEC text.
+**Independent Test**: `buck_supervisor` holds the hiccup length; `crates/piperine-cli/tests/docs.rs` reads the SPEC text.
 
 ---
 
@@ -291,10 +291,10 @@ parallel threads of one target.
 
 **Acceptance Criteria**:
 
-1. The `examples/buck/README.md` SHALL point at `tests/buck_scenarios.rs` and `tests/e2e/buck/` for S2 to S10 and SHALL NOT say that no host exists.
-2. The `GAPS.md` SHALL mark U3 closed by `buck-scenarios` and SHALL NOT say that the buck's scenarios have no host.
+1. The `examples/buck/README.md` SHALL point at `tests/buck_scenarios.rs` and `tests/e2e/buck/` for S2 to S10, and SHALL NOT say that `piperine-api` has no drives, waits or mid-run `set` or that no host offers the scenarios' stimulus; its Python sketch keeps "No such host exists yet" (Python is B4).
+2. The `GAPS.md` SHALL narrow U3 to what stays unrun (S1 at 3.3 V and S1b) and name `buck-scenarios` for S2 to S10, and its H1 row SHALL NOT say that the buck's scenarios have no host.
 
-**Independent Test**: `grep` over the two files.
+**Independent Test**: `crates/piperine-cli/tests/docs.rs` reads the two files as text.
 
 ---
 
