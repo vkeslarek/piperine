@@ -3,11 +3,11 @@
 
 use crate::pom::{BinOp, DeclKind, ExprKind, PatKind, StmtKind, TypeKind, UnOp};
 
-pub(super) struct Unsupported;
+pub(crate) struct Unsupported;
 
 impl Unsupported {
     /// The name the specification gives an expression form.
-    pub(super) fn expr(kind: &ExprKind) -> &'static str {
+    pub(crate) fn expr(kind: &ExprKind) -> &'static str {
         match kind {
             ExprKind::Lit(_) => "literal",
             ExprKind::Path(_) => "path expression",

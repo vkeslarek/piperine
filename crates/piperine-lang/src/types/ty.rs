@@ -37,6 +37,9 @@ pub enum Ty {
     Event,
     /// `&str`, the type of a string literal. It has no `Repr` and no `let`.
     Str,
+    /// The type of an expression that never completes: `return`, `break`, `continue` and a
+    /// `loop` with no `break` (§1.5.16). It fits any required type.
+    Never,
 }
 
 impl Ty {
@@ -110,6 +113,7 @@ impl Ty {
             }
             Ty::Event => "Event".to_string(),
             Ty::Str => "&str".to_string(),
+            Ty::Never => "!".to_string(),
             Ty::Module(module) => match &design.decl_data(*module).name {
                 Some(n) => format!("module `{}`", n.text),
                 None => "module".to_string(),

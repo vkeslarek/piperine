@@ -64,6 +64,7 @@ impl Checker<'_> {
                     Some(expected.clone())
                 }
                 ExprKind::Match { .. } => self.match_expr(expr, Some(expected)),
+                ExprKind::Loop { body } => self.loop_expr(body, Some(expected)),
                 // `Unknown` where a carried type is expected (§3.3.1: of any `Repr` type). `analog`
                 // computes with known reals (§3.3.5): there it is refused by name.
                 ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Unknown) && expected.has_repr() && self.context != Context::Analog => Some(expected.clone()),
@@ -121,6 +122,7 @@ impl Checker<'_> {
             };
             if let Some(found) = found
                 && found != *expected
+                && found != Ty::Never
             {
                 let (expected_name, found_name) = (expected.name(self.design), found.name(self.design));
                 self.mismatch_coded(file, node.span, code, &expected_name, &found_name);
@@ -206,6 +208,11 @@ impl Checker<'_> {
                 }
             }
             ExprKind::Assign { op, lhs, rhs } => self.assignment(expr, *op, *lhs, *rhs),
+            ExprKind::While { cond, body } => self.while_loop(*cond, body),
+            ExprKind::Loop { body } => self.loop_expr(body, None),
+            ExprKind::For { pat, iter, body } => self.for_loop(*iter, *pat, body),
+            ExprKind::Break(value) => self.break_expr(expr, *value),
+            ExprKind::Continue => self.continue_expr(expr),
             ExprKind::Cast { expr: operand, ty } => self.cast(*operand, *ty),
             ExprKind::Binary { op, lhs, rhs } => self.binary(expr, *op, *lhs, *rhs),
             ExprKind::Block(block) => self.statements(&block.stmts, None),
@@ -328,7 +335,7 @@ impl Checker<'_> {
 
     /// `(lhs, rhs)`, or `(rhs, lhs)` when only `lhs` is a bare integer literal: the order in which
     /// two operands of one type are typed.
-    fn literal_last(&self, lhs: ExprId, rhs: ExprId) -> (ExprId, ExprId) {
+    pub(super) fn literal_last(&self, lhs: ExprId, rhs: ExprId) -> (ExprId, ExprId) {
         let bare = |this: &Self, e: ExprId| this.integer_literal_text(e).is_some_and(|t| lexer::int_suffix_text(&t).is_empty());
         if bare(self, lhs) && !bare(self, rhs) { (rhs, lhs) } else { (lhs, rhs) }
     }
@@ -383,6 +390,8 @@ impl Checker<'_> {
                 let then_ty = self.statements(&then.stmts, None);
                 let after_then = self.flow.end_branch(&before);
                 let (found, after_else) = match (else_, then_ty) {
+                    // a `then` that never completes takes the type of the `else`
+                    (Some(else_), Some(Ty::Never)) => (self.infer(else_), self.flow.end_branch(&before)),
                     (Some(else_), Some(t)) => {
                         self.check(else_, &t);
                         (Some(t), self.flow.end_branch(&before))
@@ -391,6 +400,7 @@ impl Checker<'_> {
                         self.infer(else_);
                         (None, self.flow.end_branch(&before))
                     }
+                    (None, Some(Ty::Never)) => (Some(Ty::Unit), before.clone()),
                     (None, Some(t)) if t != Ty::Unit => {
                         let file = self.file_of_expr(cond);
                         self.mismatch(file, then.span, &Ty::Unit, &t);
@@ -590,6 +600,8 @@ impl Checker<'_> {
     /// `statements`, where a mismatch of the block's value carries `code` (see `check_as`).
     fn statements_as(&mut self, stmts: &[StmtId], expected: Option<&Ty>, code: &'static str) -> Option<Ty> {
         let mut value = Some(Ty::Unit);
+        // Whether a statement never completes: a block with no final expression is then `!`.
+        let mut diverged = false;
         for (i, stmt) in stmts.iter().enumerate() {
             let last = i + 1 == stmts.len();
             value = Some(Ty::Unit);
@@ -613,7 +625,7 @@ impl Checker<'_> {
                             None => value = self.infer(*expr),
                         }
                     } else {
-                        self.infer(*expr);
+                        diverged |= self.infer(*expr) == Some(Ty::Never);
                     }
                 }
                 StmtKind::Empty => {}
@@ -624,7 +636,7 @@ impl Checker<'_> {
                 }
             }
         }
-        value
+        if diverged && value == Some(Ty::Unit) { Some(Ty::Never) } else { value }
     }
 
     /// `let x = init;`, `let x: T = init;`, `let mut x = init;`, and `let x;` or `let x: T;` (§1.7.5):
@@ -663,7 +675,7 @@ impl Checker<'_> {
             }
             (None, Some(init)) => self.infer(init),
             (annotated, None) => {
-                self.deferred.insert(*binding, self.flow.loop_depth);
+                self.deferred.insert(*binding, self.flow.loops.len());
                 if let Some(t) = annotated {
                     self.locals.insert(*binding, t);
                 }

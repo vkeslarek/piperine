@@ -118,3 +118,43 @@ fn let_mut_in_a_module_body_is_e0331() {
     let design = support::build("module Top() { let mut x = 1.0; }");
     assert!(support::codes(&design).contains(&"E0331".to_string()), "{:?}", support::codes(&design));
 }
+
+// ---- T12: loops -----------------------------------------------------------------------------
+
+#[test]
+fn every_loop_form_type_checks() {
+    // §1.8.7 to §1.8.10: `while`, `while let`, `loop` with `break` and `break value`, `for` over
+    // a range, `continue`.
+    assert_clean(&source("", "let mut i = 0u8; while i < 3 { i += 1; }"));
+    assert_clean(&source("", "let o: Option<u8> = Some(1); let mut k = 0u8; while let Some(x) = o { k += x; }"));
+    assert_clean(&source("", "let mut j = 0; loop { j += 1; if j > 2 { break; } }"));
+    assert_clean(&source("", "for i in 0..3 { continue; } for i in 0u8..=3 { let y = i + 1; }"));
+    assert_clean(&source("", "let mut s = 0u8; for mut i in 0u8..4 { i += 1; s += i; } for _ in 0..2 { s += 1; }"));
+    // `loop` takes the type of its `break` values (§1.8.8), from the position or from the break
+    assert_clean(&source("", "let v: u8 = loop { break 7; }; let w = loop { break 2.0; }; let z = w + 1.0;"));
+    assert_clean(&source("", "let u = loop { break; }; let t: () = u;"));
+    // a `loop` with no `break` never completes, so it fits any type (§1.5.16)
+    assert_clean(&source("fn spin() -> f64 { loop { } }", "let x = spin();"));
+    // `while` and `for` are `()`; a deferred local assigned before a `loop` breaks is assigned after it
+    assert_clean(&source("", "let x: f64; loop { x = 1.0; break; } let y = x;"));
+    // `break` and `continue` leave the innermost loop of a nested pair
+    assert_clean(&source("", "let mut n = 0; while n < 3 { n += 1; for i in 0..2 { if i == 1 { break; } continue; } }"));
+    // a mismatching `break` value, an integer range over floats, a non-bool condition
+    assert_refused(&source("", "let v = loop { if true { break 1u8; } break 2u16; };"), "P0002", "expected `u8`");
+    assert_refused(&source("", "for i in 0.0..1.0 { }"), "P0002", "an integer type");
+    assert_refused(&source("", "while 1 { }"), "P0002", "expected `bool`");
+}
+
+#[test]
+fn break_or_continue_outside_a_loop_is_e0185() {
+    // §1.8.10, §1.8.12: outside a loop, with a value outside a `loop`, and across a closure.
+    assert_refused(&source("", "break;"), "E0185", "`break` outside a loop");
+    assert_refused(&source("", "continue;"), "E0185", "`continue` outside a loop");
+    assert_refused(&source("", "while true { break 1; }"), "E0185", "`break` with a value outside a `loop`");
+    assert_refused(&source("", "for i in 0..2 { break 1; }"), "E0185", "`break` with a value outside a `loop`");
+    assert_refused(&source("fn f() -> f64 { break; 1.0 }", "let x = f();"), "E0185", "`break` outside a loop");
+    // assigning an immutable deferred local from a `while` body may assign it twice (§1.7.5)
+    assert_refused(&source("", "let x: f64; while true { x = 1.0; }"), "E0183", "may be assigned twice");
+    // a refutable pattern in a `for` is `E0184` (§1.6.11)
+    assert_refused(&source("", "for 3 in 0..2 { }"), "E0184", "irrefutable");
+}

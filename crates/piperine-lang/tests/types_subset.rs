@@ -51,11 +51,6 @@ const ROWS: &[Row] = &[
     Row { construct: "generation in a digital block", source: "module Top() { }\ndigital for Top { if true { } }", names: "generation" },
     Row { construct: "string `let` with an annotation", source: "module Top() { }\nanalog for Top { let x: &str = \"a\"; }", names: "string literal" },
     Row { construct: "include_str!", source: "module Top() { }\nanalog for Top { let x = include_str!(\"a.txt\"); }", names: "`include_str!`" },
-    Row { construct: "while", source: "module Top() { }\nanalog for Top { while true { } }", names: "`while` loop" },
-    Row { construct: "loop", source: "module Top() { }\nanalog for Top { loop { } }", names: "`loop`" },
-    Row { construct: "for", source: "module Top() { }\nanalog for Top { for i in 0..3 { } }", names: "`for` loop" },
-    Row { construct: "break", source: "module Top() { }\nanalog for Top { break; }", names: "`break`" },
-    Row { construct: "continue", source: "module Top() { }\nanalog for Top { continue; }", names: "`continue`" },
     Row { construct: "return", source: "fn f() -> f64 { return 1.0; }\nmodule Top() { }\nanalog for Top { let x = f(); }", names: "`return`" },
     Row { construct: "let else", source: "module Top() { }\nanalog for Top { let x = 1.0 else { return; }; }", names: "`let ... else`" },
     Row { construct: "try", source: "module Top() { }\nanalog for Top { let x = 1.0?; }", names: "`?` expression" },
@@ -123,7 +118,7 @@ fn unreached_items_are_not_reported() {
     assert_eq!(types.reached().len(), 2, "only Top and Resistor are reached");
 
     // The same names, reached, are refused.
-    let reached = format!("{HEAD}fn loops(x: f64) -> f64 {{ let mut y = x; while y > 0.0 {{ y = y - 1.0; }} y }}\nmodule Top() {{ }}\nanalog for Top {{ let x = loops(1.0); }}");
+    let reached = format!("{HEAD}fn loops(x: f64) -> f64 {{ let a = [x, x]; x }}\nmodule Top() {{ }}\nanalog for Top {{ let x = loops(1.0); }}");
     let design: Design = support::build(&reached);
     assert!(Types::check(&design, "Top").is_err());
 }

@@ -377,6 +377,7 @@ impl Checker<'_> {
             self.mismatch(file, span, result, written);
         }
         let outer = std::mem::replace(&mut self.context, Context::Function);
+        let enclosing = self.flow.enter_body();
         let found = match result.or(written.as_ref().map(|(_, ty)| ty)) {
             Some(result) => {
                 self.check(*body, result);
@@ -384,6 +385,7 @@ impl Checker<'_> {
             }
             None => self.infer(*body),
         };
+        self.flow.leave_body(enclosing);
         self.context = outer;
         let found = found?;
         self.exprs[expr.index()] = Some(Ty::Fn(declared.to_vec(), Box::new(found.clone())));

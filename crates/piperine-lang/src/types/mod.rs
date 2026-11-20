@@ -22,6 +22,7 @@ mod expr;
 mod flag_total;
 mod flow;
 mod intrinsic;
+mod loops;
 mod module;
 mod reach;
 mod reaction;
@@ -29,7 +30,7 @@ mod record;
 mod result;
 mod table;
 mod ty;
-mod unsupported;
+pub(crate) mod unsupported;
 
 pub use intrinsic::Intrinsic;
 pub use table::{Builtin, Callee, Continuity, Method, Types};

@@ -147,7 +147,7 @@ impl Catalogue {
                     _ => Lookup::Absent,
                 };
             }
-            Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str => return Lookup::Uncatalogued,
+            Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str | Ty::Never => return Lookup::Uncatalogued,
         };
         match rows.iter().find(|r| r.name == name && (!r.signed_only || matches!(recv, Ty::Int(_)))) {
             Some(r) => Lookup::Row(r.method, r.params.iter().map(|a| a.ty(recv)).collect(), r.result.ty(recv)),

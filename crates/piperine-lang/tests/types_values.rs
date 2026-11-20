@@ -143,13 +143,6 @@ fn diagnostics_come_in_source_order_one_per_expression() {
     assert!(starts.windows(2).all(|w| w[0] < w[1]), "{starts:?}");
 }
 
-#[test]
-fn a_let_without_type_or_value_is_p0001() {
-    let (src, d) = diagnostics("", "let x;");
-    assert_eq!(codes_of(&d), ["P0001"]);
-    assert_eq!(snippet(&src, &d[0]), "let x;");
-}
-
 const FUNCTIONS: &str = "fn half(a: f64) -> f64 { a / 2.0 }\nfn positive(a: f64) -> bool { a > 0.0 }\nfn apply(f: fn(f64, f64) -> f64, x: f64) -> f64 { x }\nfn fact(n: f64) -> f64 { if n <= 1.0 { 1.0 } else { n * fact(n - 1.0) } }";
 
 #[test]

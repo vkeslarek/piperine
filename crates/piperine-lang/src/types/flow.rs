@@ -6,6 +6,8 @@ use std::collections::BTreeSet;
 
 use crate::pom::DeclId;
 
+use super::Ty;
+
 /// Which locals declared without a value (`let x;`) are assigned at one point of a body.
 #[derive(Debug, Clone, Default)]
 pub(super) struct Assigned {
@@ -40,6 +42,11 @@ impl Assigned {
         self.possible.insert(local);
     }
 
+    /// Marks the point as one no path reaches (after `return`, `break` and `continue`).
+    pub(super) fn diverge(&mut self) {
+        self.definite = None;
+    }
+
     /// The state of a point no path reaches: the identity of `meet`.
     fn unreachable() -> Self {
         Assigned { definite: None, possible: BTreeSet::new() }
@@ -66,11 +73,44 @@ impl Assigned {
 pub(super) struct Flow {
     /// Which deferred locals are assigned at the expression being checked.
     pub(super) assigned: Assigned,
-    /// How many loops the expression being checked is inside.
-    pub(super) loop_depth: usize,
+    /// The loops the expression being checked is inside, innermost last (§1.8.10).
+    pub(super) loops: Vec<LoopFrame>,
+}
+
+/// One loop being checked: what a `break` or a `continue` in it may do.
+#[derive(Debug, Clone)]
+pub(super) struct LoopFrame {
+    /// Whether it is a `loop`, the one loop whose `break` carries a value (§1.8.10).
+    pub(super) valued: bool,
+    /// The type the loop's `break` values have: given by the position, else the first `break`'s.
+    pub(super) value: Option<Ty>,
+    /// Whether a `break` was met.
+    pub(super) broke: bool,
+    /// The assignment state at each `break`.
+    pub(super) exits: Vec<Assigned>,
+}
+
+impl LoopFrame {
+    /// A loop whose `break` values are expected to have the type `value`, when it is known.
+    pub(super) fn new(valued: bool, value: Option<Ty>) -> Self {
+        LoopFrame { valued, value, broke: false, exits: Vec::new() }
+    }
 }
 
 impl Flow {
+    /// The state a nested body (a function or a closure) starts from: what is assigned so far,
+    /// and no loop, since `break` and `continue` do not cross it (§1.8.12). Gives the state of
+    /// the enclosing body to hand back to `leave_body`.
+    pub(super) fn enter_body(&mut self) -> Flow {
+        let inner = Flow { assigned: self.assigned.clone(), loops: Vec::new() };
+        std::mem::replace(self, inner)
+    }
+
+    /// Back to the enclosing body: what the nested one assigned or exited is dropped.
+    pub(super) fn leave_body(&mut self, outer: Flow) {
+        *self = outer;
+    }
+
     /// Ends the branch just checked: the state it reached, with the state of the point the next
     /// branch starts from (`before`) restored.
     pub(super) fn end_branch(&mut self, before: &Assigned) -> Assigned {
@@ -80,6 +120,6 @@ impl Flow {
 
 impl Default for Flow {
     fn default() -> Self {
-        Flow { assigned: Assigned::start(), loop_depth: 0 }
+        Flow { assigned: Assigned::start(), loops: Vec::new() }
     }
 }

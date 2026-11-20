@@ -107,7 +107,7 @@ impl ValueTypes<'_> {
                 let params: Option<Vec<ValueType>> = params.iter().map(|p| self.of(p)).collect();
                 Some(ValueType::Fn(params?, Box::new(self.of(ret)?)))
             }
-            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Option(_) | Ty::Tuple(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str => None,
+            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Option(_) | Ty::Tuple(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str | Ty::Never => None,
         }
     }
 }
@@ -376,8 +376,8 @@ impl Elaboration<'_, '_> {
                 scope.nesting -= 1;
                 Some(self.emit(Expr::Closure { params: locals, body: body? }, ty, origin))
             }
-            _ => {
-                self.unsupported(file, node.span, "this expression form");
+            other => {
+                self.unsupported(file, node.span, crate::types::unsupported::Unsupported::expr(other));
                 None
             }
         }

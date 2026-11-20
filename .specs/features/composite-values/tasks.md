@@ -428,8 +428,8 @@ T63
 
 **Done when**:
 
-- [ ] `every_loop_form_type_checks` and `break_or_continue_outside_a_loop_is_e0185` pass under `**Run typesctl**`
-- [ ] Gate check passes: Quick
+- [x] `every_loop_form_type_checks` and `break_or_continue_outside_a_loop_is_e0185` pass under `**Run typesctl**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

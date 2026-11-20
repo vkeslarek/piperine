@@ -88,30 +88,43 @@ impl Checker<'_> {
     fn arm_types(&mut self, arms: &[Arm], expected: Option<&Ty>, before: &Assigned, after_arms: &mut Vec<Assigned>) -> Option<Ty> {
         let ty = match expected {
             Some(t) => t.clone(),
-            None => {
-                let first = arms.iter().position(|a| !self.integer_literal_waits(a.body) && !self.is_none_literal(a.body)).unwrap_or(0);
-                let Some(arm) = arms.get(first) else { return Some(Ty::Unit) };
-                let t = self.infer(arm.body);
-                after_arms.push(self.flow.end_branch(before));
-                for (i, arm) in arms.iter().enumerate() {
-                    if i != first {
-                        match &t {
-                            Some(t) => self.check(arm.body, t),
-                            None => {
-                                self.infer(arm.body);
-                            }
-                        }
-                        after_arms.push(self.flow.end_branch(before));
-                    }
-                }
-                return t;
-            }
+            None => return self.inferred_arms(arms, before, after_arms),
         };
         for arm in arms {
             self.check(arm.body, &ty);
             after_arms.push(self.flow.end_branch(before));
         }
         Some(ty)
+    }
+
+    /// The type of the arms when the position gives none: the first arm that does not wait for
+    /// another's type and does not diverge gives it, and the others are checked against it. All
+    /// arms diverging is `!`.
+    fn inferred_arms(&mut self, arms: &[Arm], before: &Assigned, after_arms: &mut Vec<Assigned>) -> Option<Ty> {
+        let first = arms.iter().position(|a| !self.integer_literal_waits(a.body) && !self.is_none_literal(a.body)).unwrap_or(0);
+        if arms.is_empty() {
+            return Some(Ty::Unit);
+        }
+        let order = std::iter::once(first).chain((0..arms.len()).filter(|i| *i != first));
+        // `None`: no arm has given a type yet; `Some(None)`: the one that did had a diagnostic.
+        let mut typed: Option<Option<Ty>> = None;
+        for i in order {
+            let body = arms[i].body;
+            match &typed {
+                None => {
+                    let t = self.infer(body);
+                    if t != Some(Ty::Never) {
+                        typed = Some(t);
+                    }
+                }
+                Some(Some(t)) => self.check(body, &t.clone()),
+                Some(None) => {
+                    self.infer(body);
+                }
+            }
+            after_arms.push(self.flow.end_branch(before));
+        }
+        typed.unwrap_or(Some(Ty::Never))
     }
 
     /// Whether `covered` holds every value of `scrut`.

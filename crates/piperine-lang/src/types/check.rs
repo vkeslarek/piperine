@@ -523,6 +523,7 @@ impl<'d> Checker<'d> {
     fn function_body(&mut self, body: &BlockNode, ret: &Ty, file: FileId) {
         if let Some(found) = self.statements(&body.stmts, Some(ret))
             && found != *ret
+            && found != Ty::Never
             && !self.ends_in_return(body)
         {
             self.mismatch(file, body.span, ret, &found);

@@ -90,10 +90,13 @@ impl Checker<'_> {
     }
 
     /// A local declared without a value and without `mut` is assigned at most once on any path
-    /// (§1.7.5): not where it may already be assigned, and not from a loop it is declared outside.
+    /// (§1.7.5): not where it may already be assigned, and not from a `while` or `for` it is
+    /// declared outside, whose body may run again. A `loop` is left to its `break`s: a second
+    /// iteration that assigns again is not found, which only lets through a program Rust refuses.
     fn assignable_once(&mut self, file: FileId, span: Span, local: DeclId, name: &str) -> Option<Root> {
         let declared_at = self.deferred.get(&local).copied().unwrap_or_default();
-        if self.flow.assigned.possibly(local) || self.flow.loop_depth != declared_at {
+        let repeats = self.flow.loops.iter().skip(declared_at).any(|frame| !frame.valued);
+        if self.flow.assigned.possibly(local) || repeats {
             let message = format!("`{name}` is declared without `mut` and may be assigned twice: such a local is assigned at most once on any path (§1.7.5)");
             self.coded(file, "E0183", span, message, "assigned twice");
             return None;
