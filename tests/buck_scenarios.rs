@@ -1202,7 +1202,8 @@ struct SteadyStatePlan {
 
 impl SteadyStatePlan {
     /// Time after a window or a step before the next window starts: 450 µs, about 4 time constants
-    /// of the loop's slowest closed-loop pair, so the ramp's tracking lag is under a code (§10.1).
+    /// of the loop's slowest closed-loop pair; the worst ramp's 9.2-code tracking lag (corner 8)
+    /// needs 3.6 of them to fall under a quarter code (§10.1).
     const SETTLE: f64 = 450e-6;
     /// How long a supply ramp takes. SPEC §10.1's 10 µs line step is S4's, at 2 A; at full load and
     /// 5.0 V a 9 V to 12 V step in 10 µs sends the inductor current to the 7.5 A limit for eight

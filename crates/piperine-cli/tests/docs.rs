@@ -466,7 +466,7 @@ fn the_buck_spec_holds_the_bench_bounds() {
     assert!(s2b.contains("within ±1 % of 1.0 V at 1.38 ms ±0.05 ms"), "{s2b}");
     // AC 4: §10.1 defines the stimulus shapes, the measurements and the bounds with their derivations
     let section = &spec[spec.find("### 10.1 How the bench measures").expect("SPEC has §10.1")..spec.find("## 11.").expect("§11 follows §10.1")];
-    for held in ["Setpoint write", "staircase", "Line step", "Brown-out", "Settling time", "Deviation", "10 ns", "2.02 µs", "4.52 µs", "0.1 A", "3.4 A/µs", "±2 %", "1.452 ms", "≈"] {
+    for held in ["Setpoint write", "staircase", "Line step", "Brown-out", "Settling time", "Deviation", "10 ns", "2.02 µs", "4.52 µs", "0.1 A", "3.4 A/µs", "±2 %", "1.452 ms", "450 µs", "9.2 codes", "≈"] {
         assert!(section.contains(held), "§10.1 holds `{held}`");
     }
     // AC 5: the cleared fault code is `Clear`, never `None`
