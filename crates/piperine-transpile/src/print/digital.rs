@@ -106,6 +106,7 @@ impl<'a> DigitalPrinter<'a> {
             | Source::Crossed(_)
             | Source::Timer(_)
             | Source::Fired(_)
+            | Source::Settle
             | Source::ParamChanged(_) => format!("let {name} = {cx}.bool({i});"),
             Source::Node(_) | Source::Derivative(_) | Source::Temperature | Source::Gmin | Source::SourceScale | Source::Time | Source::Freq | Source::Resolution => {
                 format!("let {name} = {cx}.f64({i});")

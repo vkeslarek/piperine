@@ -139,6 +139,10 @@ pub enum Source {
     /// decides on a value that may be unknown reads it, to key its commits by the instant they
     /// come due (§3.3.3, abi.md C1).
     Resolution,
+    /// The `CHANGED` byte of the `GLOBAL` `SETTLE` pin: whether the settle phase of this
+    /// instant is running (§15 step 4). The event function of each `settle` event reads it
+    /// (§13 rule 17).
+    Settle,
 }
 
 impl Source {
@@ -312,6 +316,9 @@ pub struct Pins {
     /// The private `abstol` pin `d<k>.abstol` of each derivative site that gives one, after the
     /// tolerance pins; `None` for a site with the default tolerance.
     pub derivative_abstols: Vec<Option<u32>>,
+    /// The `GLOBAL` `SETTLE` pin, after the derivative abstol pins, when the body has a `settle`
+    /// event (§13 rule 17): the engine fires it in the settle phase (§15 step 4).
+    pub settle: Option<u32>,
 }
 
 /// The pins of a drive with `after` (RS-12 AC 5).
@@ -525,6 +532,7 @@ impl BodyPlan {
         let tolerances = Digital::tolerance_pins(&mut s, body);
         let resolution = Digital::resolution_pin(&mut s, body);
         let derivative_abstols = Digital::derivative_abstol_pins(&mut s, body);
+        let settle = Digital::settle_pin(&mut s, body);
         let watches = Digital::watches(&mut s, body, &events, &crossed, &tolerances);
         let caps = Digital::cap_watches(&mut s, body);
         let pins = Pins {
@@ -547,6 +555,7 @@ impl BodyPlan {
             caps,
             resolution,
             derivative_abstols,
+            settle,
         };
 
         // Terms, branch by branch.
@@ -785,6 +794,7 @@ impl BodyPlan {
             Source::Analysis(kind) => value(cell::PIN, pins.analysis.iter().find(|(k, _)| *k == kind).map_or(GROUND, |(_, pin)| *pin)),
             Source::Fired(k) => at(cell::PIN, pins.events.get(k as usize).copied().unwrap_or(GROUND), part::CHANGED),
             Source::Resolution => value(cell::PIN, pins.resolution.unwrap_or(GROUND)),
+            Source::Settle => at(cell::PIN, pins.settle.unwrap_or(GROUND), part::CHANGED),
         }
     }
 

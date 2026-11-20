@@ -186,9 +186,9 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `a_settle_event_reads_the_global_settle_pin` and `a_body_without_settle_has_no_settle_pin` pass under `**Run planshape**`
-- [ ] Code clarity: `settle_pin` and `Source::Settle` doc-commented; no free function; the data path from event to pin readable in one place
-- [ ] Gate check passes: Full
+- [x] `a_settle_event_reads_the_global_settle_pin` and `a_body_without_settle_has_no_settle_pin` pass under `**Run planshape**`
+- [x] Code clarity: `settle_pin` and `Source::Settle` doc-commented; no free function; the data path from event to pin readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

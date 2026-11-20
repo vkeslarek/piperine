@@ -923,3 +923,62 @@ fn a_reaction_with_an_unknown_decision_reads_the_resolution() {
     assert!(!has_pin(shape, "resolution"));
     assert_eq!(shape.pins.len(), 4, "go, en, q and the event pin");
 }
+
+/// Bodies with a `settle` event (§13 rule 17): an `in ready: Bit` and an `out q: Bit`.
+struct Settling;
+
+impl Settling {
+    const F: &'static str = "settling.msl";
+
+    /// `on settle { q <- true; }`, or `on settle && ready.high() { q <- true; }` when `guarded`.
+    fn body(b: &mut IrBuilder, guarded: bool) -> BodyId {
+        let body = b.body(Buck::spec("Settling", Settling::F, 1));
+        b.carrier(body, Buck::carrier("ready", ValueType::Bool, CarrierRole::In, None, Settling::F, 1, 14));
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Settling::F, 1, 28));
+        let mut x = Dx::new(b, Settling::F, 2, 20);
+        let ready = x.carrier(0, ValueType::Bool);
+        let guard = guarded.then(|| x.high(ready));
+        let event = b.event(body, Event { source: EventSource::Settle, guard, origin: Buck::origin(Settling::F, 2, 8) });
+        let yes = Dx::new(b, Settling::F, 3, 14).boolean(true);
+        let commit = Dx::new(b, Settling::F, 3, 9).commit(1, yes, None);
+        Buck::reaction(b, body, vec![event], vec![commit], vec![], Settling::F, 2);
+        body
+    }
+}
+
+#[test]
+fn a_settle_event_reads_the_global_settle_pin() {
+    // §13 rule 17, design D5: the event function of `settle` reads the `CHANGED` byte of the
+    // `GLOBAL` `SETTLE` pin (abi.md §4) and writes the event's own pin; a guard adds its reads
+    let (ir, body) = Alone::design(|b| Settling::body(b, false));
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let settle = Find::pin(shape, "settle");
+    let view = shape.pins.get(settle as usize).expect("the settle pin");
+    assert_eq!((view.kind, view.role, view.global), (kind::EVENT, role::GLOBAL, global::SETTLE));
+    let event = Find::pin(shape, "event:0");
+    let (reads, writes, _) = Find::function(shape, "event:0");
+    assert_eq!(reads, [pin(settle, part::CHANGED)], "an unguarded settle reads the settle pin alone");
+    assert_eq!(writes, [pin(event, part::CHANGED)]);
+    assert_eq!(plan.functions()[0].reads, [Source::Settle]);
+    assert_eq!(Find::reaction(shape, "reaction:0").0, vec![event], "the reaction listens to the event pin, never to SETTLE");
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+
+    let (ir, body) = Alone::design(|b| Settling::body(b, true));
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (ready, settle) = (Find::pin(shape, "ready"), Find::pin(shape, "settle"));
+    let (reads, _, _) = Find::function(shape, "event:0");
+    assert_eq!(reads, [pin(ready, part::VALUE), pin(settle, part::CHANGED)], "§13 rule 1: the guard is read in the same microstep");
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+}
+
+#[test]
+fn a_body_without_settle_has_no_settle_pin() {
+    // abi.md §4: a `GLOBAL` pin exists only for a body that asks for it
+    for make in [Buck::dff, Buck::osc] {
+        let (ir, body) = Alone::design(make);
+        let plan = BodyPlan::new(ir.body(body));
+        assert!(!has_pin(plan.shape().shape(), "settle"));
+    }
+}
