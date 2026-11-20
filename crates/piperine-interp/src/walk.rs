@@ -333,6 +333,15 @@ impl<'a> Walk<'a> {
             Expr::Return(_) => "Return",
             Expr::FunctionRef(_) => "FunctionRef",
             Expr::CallValue { .. } => "CallValue",
+            Expr::Tuple(_) => "Tuple",
+            Expr::Array(_) => "Array",
+            Expr::ArrayRepeat { .. } => "ArrayRepeat",
+            Expr::StructOf { .. } => "StructOf",
+            Expr::VariantOf { .. } => "VariantOf",
+            Expr::Field { .. } => "Field",
+            Expr::Index { .. } => "Index",
+            Expr::SliceOf { .. } => "SliceOf",
+            Expr::Length(_) => "Length",
         }
     }
 

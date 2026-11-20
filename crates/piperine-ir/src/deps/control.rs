@@ -89,8 +89,18 @@ impl<'a> Walk<'a> {
 
     /// `local = value` or `local op= value` at `at`, the value on the stack: the local's value
     /// joins the assigned one, and the conditions the assignment sits under inside this owner.
-    pub(super) fn assign(&mut self, local: u32, op: Option<BinaryOp>, at: ExprId) {
-        let assigned = self.pop();
+    /// A place with projections (`s.f`, `a[i]`) writes part of the local: the old value stays joined
+    /// in, and what the index expressions (`indices` of them, above the value on the stack) read
+    /// joins the assigned value, for they choose which part changes.
+    pub(super) fn assign(&mut self, local: u32, op: Option<BinaryOp>, at: ExprId, indices: usize) {
+        let chosen = self.pop_n(indices);
+        let mut assigned = self.pop();
+        for index in &chosen {
+            assigned.sources.join(&index.sources);
+            if index.class != Class::Constant {
+                assigned.class = Class::Nonlinear;
+            }
+        }
         let old = match self.scope().locals.get(local as usize) {
             Some(Some(value)) => value.clone(),
             Some(None) => self.refuse(at, &format!("local {local} assigned before its `let`")),

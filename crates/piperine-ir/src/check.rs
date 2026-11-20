@@ -53,6 +53,7 @@ impl Ir {
         checker.paths();
         checker.types();
         checker.type_arena();
+        checker.slice_positions();
         checker.code();
         checker.discrete();
         checker.out
@@ -504,7 +505,7 @@ impl<'a> Checker<'a> {
             }
             Expr::Math { args, .. } => exprs.extend(args),
             Expr::Closure { body, .. } => exprs.push(*body),
-            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. } => {
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) => {
                 for &s in kind.statements() {
                     self.stmt_id(item, origin, s);
                 }
@@ -901,7 +902,7 @@ impl<'a> Checker<'a> {
                 Expr::Call { args, .. } | Expr::Math { args, .. } => stack_e.extend(args),
                 Expr::Method { receiver, args, .. } => stack_e.extend([*receiver].into_iter().chain(args.iter().copied())),
                 Expr::Closure { body, .. } => stack_e.push(*body),
-                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } => {
+                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) => {
                     stack_s.extend(data.kind.statements());
                     stack_e.extend(data.kind.operands());
                 }
@@ -1398,6 +1399,7 @@ impl<'a> Checker<'a> {
             Stmt::Assign { place, op, value } => {
                 self.assignment(w, &origin, place, *op, *value);
                 next.push(Task::Expr(*value, ctx));
+                next.extend(place.index_operands().map(|index| Task::Expr(index, ctx)));
             }
             Stmt::BoundStep { value, when, .. } => {
                 if !top || !w.owner.analog {
@@ -1989,6 +1991,9 @@ impl<'a> Checker<'a> {
                 next.push(Task::Expr(*callee, ctx));
                 next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
             }
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) => {
+                self.aggregate_form(w, id, first, ctx, next);
+            }
             Expr::IsKnown(value) | Expr::High(value) => {
                 if first {
                     let high = matches!(data.kind, Expr::High(_));
@@ -2011,10 +2016,7 @@ impl<'a> Checker<'a> {
         if !w.owner.mutable.get(place.local as usize).copied().unwrap_or(false) {
             self.wrong(w, origin.clone(), format!("assignment to local {}, which is not `mutable`", place.local));
         }
-        if !place.path.is_empty() {
-            self.wrong(w, origin.clone(), format!("a field of local {} of type {target}, which has no fields", place.local));
-            return;
-        }
+        let Some(target) = self.place_type(w, origin, place, target) else { return };
         match op {
             None => self.want(w, value, &target, "the value of an assignment"),
             Some(op) => {

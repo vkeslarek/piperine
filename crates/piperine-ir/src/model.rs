@@ -496,6 +496,25 @@ pub enum Expr {
     FunctionRef(FunctionId),
     /// `callee(args)` where `callee` is a value of type `Fn`, not a named function.
     CallValue { callee: ExprId, args: Vec<ExprId> },
+    /// `(a, b, ..)`: a tuple of the operands, lowest field first. Its type is `Tuple`.
+    Tuple(Vec<ExprId>),
+    /// `[a, b, ..]`: an array of the operands, all of one type. Its type is `Array`.
+    Array(Vec<ExprId>),
+    /// `[element; count]`: `count` copies of one value (§1.5.25).
+    ArrayRepeat { element: ExprId, count: u64 },
+    /// `S { x: a, y: b }` or `S(a, b)`: a struct of the arena, its fields in declaration order.
+    StructOf { ty: TypeId, fields: Vec<ExprId> },
+    /// A variant of an enum of the arena with its fields in declaration order.
+    VariantOf { ty: TypeId, variant: u32, fields: Vec<ExprId> },
+    /// `expr.field`, `expr.0`: field `index` of a struct or a tuple.
+    Field { expr: ExprId, index: u32 },
+    /// `expr[index]`: an element of an array or a slice; `index` has an integer type.
+    Index { expr: ExprId, index: ExprId },
+    /// `expr[low..high]`, `expr[low..=high]`: a part of an array or a slice. It is a view: it
+    /// stands only as a call argument or as a method receiver.
+    SliceOf { expr: ExprId, low: Option<ExprId>, high: Option<ExprId>, inclusive: bool },
+    /// `expr.len()`: the length of an array or a slice, a `UInt<64>`.
+    Length(ExprId),
 }
 
 impl Expr {
@@ -519,6 +538,11 @@ impl Expr {
             Expr::ForRange { low, high, .. } => vec![*low, *high],
             Expr::Break(value) | Expr::Return(value) => value.iter().copied().collect(),
             Expr::CallValue { callee, args } => [*callee].into_iter().chain(args.iter().copied()).collect(),
+            Expr::Tuple(parts) | Expr::Array(parts) | Expr::StructOf { fields: parts, .. } | Expr::VariantOf { fields: parts, .. } => parts.clone(),
+            Expr::ArrayRepeat { element, .. } => vec![*element],
+            Expr::Field { expr, .. } | Expr::Length(expr) => vec![*expr],
+            Expr::Index { expr, index } => vec![*expr, *index],
+            Expr::SliceOf { expr, low, high, .. } => [*expr].into_iter().chain(*low).chain(*high).collect(),
         }
     }
 
@@ -572,6 +596,18 @@ pub struct Place {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Projection {
     Field(u32),
+    /// `[index]`: an element of an array, the index an expression of an integer type.
+    Index(ExprId),
+}
+
+impl Place {
+    /// The index expressions of the place's projections, outermost first.
+    pub fn index_operands(&self) -> impl Iterator<Item = ExprId> + '_ {
+        self.path.iter().filter_map(|step| match step {
+            Projection::Index(index) => Some(*index),
+            Projection::Field(_) => None,
+        })
+    }
 }
 
 impl Stmt {
@@ -581,7 +617,7 @@ impl Stmt {
         match self {
             Stmt::Let { init, .. } => vec![*init],
             Stmt::Expr(e) => vec![*e],
-            Stmt::Assign { value, .. } => vec![*value],
+            Stmt::Assign { place, value, .. } => [*value].into_iter().chain(place.index_operands()).collect(),
             Stmt::Contribute { addends, .. } => addends.iter().map(|a| a.value).collect(),
             Stmt::Commit { value, after, .. } => [*value].into_iter().chain(*after).collect(),
             Stmt::BoundStep { value, when, .. } => [*value].into_iter().chain(*when).collect(),

@@ -12,17 +12,35 @@ use piperine_ir::{Body, EventSource, Expr, ExprId, Stmt, StmtId};
 pub(crate) struct CompositeForms<'a> {
     body: Body<'a>,
     /// The forms met so far, by their position in `CompositeForms::NAMES`.
-    met: [bool; 9],
+    met: [bool; 18],
 }
 
 impl<'a> CompositeForms<'a> {
     /// The name of each form, in the order the refusal lists them.
-    const NAMES: [&'static str; 9] =
-        ["an assignment", "a loop", "a while loop", "a for loop", "break", "continue", "return", "a function value", "a call through a function value"];
+    const NAMES: [&'static str; 18] = [
+        "an assignment",
+        "a loop",
+        "a while loop",
+        "a for loop",
+        "break",
+        "continue",
+        "return",
+        "a function value",
+        "a call through a function value",
+        "a tuple",
+        "an array",
+        "an array repeat",
+        "a struct expression",
+        "a variant expression",
+        "a field read",
+        "an element read",
+        "a slice",
+        "a length read",
+    ];
 
     /// The forms `body` holds, each once, in a fixed order.
     pub(crate) fn of(body: Body<'a>) -> Vec<&'static str> {
-        let mut forms = CompositeForms { body, met: [false; 9] };
+        let mut forms = CompositeForms { body, met: [false; 18] };
         forms.walk();
         Self::NAMES.into_iter().zip(forms.met).filter_map(|(name, met)| met.then_some(name)).collect()
     }
@@ -94,6 +112,15 @@ impl<'a> CompositeForms<'a> {
             Expr::Return(_) => Some(6),
             Expr::FunctionRef(_) => Some(7),
             Expr::CallValue { .. } => Some(8),
+            Expr::Tuple(_) => Some(9),
+            Expr::Array(_) => Some(10),
+            Expr::ArrayRepeat { .. } => Some(11),
+            Expr::StructOf { .. } => Some(12),
+            Expr::VariantOf { .. } => Some(13),
+            Expr::Field { .. } => Some(14),
+            Expr::Index { .. } => Some(15),
+            Expr::SliceOf { .. } => Some(16),
+            Expr::Length(_) => Some(17),
             _ => None,
         }
     }

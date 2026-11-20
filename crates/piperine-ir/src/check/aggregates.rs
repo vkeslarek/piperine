@@ -4,8 +4,10 @@
 
 use std::collections::BTreeSet;
 
-use super::Checker;
-use crate::model::{Derives, FieldsForm, TypeData, TypeKind, ValueType};
+use super::{Checker, Ctx, Task, Walk};
+use crate::ids::ExprId;
+use crate::model::{Derives, Expr, FieldsForm, Place, Projection, TypeData, TypeKind, ValueType};
+use crate::typing::Typing;
 
 impl Checker<'_> {
     /// Checks each entry of the type arena, then the arena's containment as a whole.
@@ -120,3 +122,184 @@ impl Checker<'_> {
         }
     }
 }
+
+impl Checker<'_> {
+    /// The field types and the tag-independent shape of struct `ty`, `None` when it is not a struct.
+    fn struct_fields(&self, ty: crate::ids::TypeId) -> Option<Vec<ValueType>> {
+        match &self.ir.types.get(ty.index())?.kind {
+            TypeKind::Struct { fields, .. } => Some(fields.iter().map(|(_, ty)| ty.clone()).collect()),
+            TypeKind::Enum { .. } => None,
+        }
+    }
+
+    /// Each of `parts` is a `want`-typed value (a field, an element); names `what` otherwise.
+    fn parts_have_types(&mut self, w: &Walk, parts: &[ExprId], want: &[ValueType], what: &str) {
+        if parts.len() != want.len() {
+            let origin = parts.first().map_or_else(Checker::unknown, |p| self.expr_origin(*p));
+            self.wrong(w, origin, format!("{what} takes {} parts, found {}", want.len(), parts.len()));
+            return;
+        }
+        for (part, ty) in parts.iter().zip(want) {
+            self.want(w, *part, ty, what);
+        }
+    }
+
+    /// The checks of one aggregate expression (when `first`), then the walk of its operands.
+    pub(super) fn aggregate_form(&mut self, w: &mut Walk, id: ExprId, first: bool, ctx: Ctx, next: &mut Vec<Task>) {
+        let data = &self.ir.exprs[id.index()];
+        let (kind, ty, origin) = (&data.kind, &data.ty, data.origin.clone());
+        if first {
+            match kind {
+                Expr::Tuple(parts) => {
+                    let types: Option<Vec<ValueType>> = parts.iter().map(|p| self.ty(*p).cloned()).collect();
+                    if let Some(types) = types {
+                        self.own(w, &origin, ty, &ValueType::Tuple(types));
+                    }
+                }
+                Expr::Array(parts) => match ty {
+                    ValueType::Array(element, length) => {
+                        if *length != parts.len() as u64 {
+                            self.wrong(w, origin.clone(), format!("an array of {length} elements is written with {}", parts.len()));
+                        }
+                        let wanted = vec![(**element).clone(); parts.len()];
+                        self.parts_have_types(w, parts, &wanted, "an element of an array");
+                    }
+                    other => self.wrong(w, origin.clone(), format!("an array expression is typed {other}, an array type is required")),
+                },
+                Expr::ArrayRepeat { element, count } => {
+                    if let Some(element_ty) = self.ty(*element) {
+                        self.own(w, &origin, ty, &ValueType::Array(Box::new(element_ty.clone()), *count));
+                    }
+                }
+                Expr::StructOf { ty: id, fields } => match self.struct_fields(*id) {
+                    Some(wanted) => {
+                        self.own(w, &origin, ty, &ValueType::Struct(*id));
+                        self.parts_have_types(w, fields, &wanted, "a field of a struct expression");
+                    }
+                    None => self.wrong(w, origin.clone(), format!("struct expression names type t{}, which is not a struct of the arena", id.0)),
+                },
+                Expr::VariantOf { ty: id, variant, fields } => match self.ir.types.get(id.index()).map(|t| &t.kind) {
+                    Some(TypeKind::Enum { variants, .. }) => match variants.get(*variant as usize) {
+                        Some(v) => {
+                            let wanted: Vec<ValueType> = v.fields.iter().map(|(_, ty)| ty.clone()).collect();
+                            self.own(w, &origin, ty, &ValueType::Enum(*id));
+                            self.parts_have_types(w, fields, &wanted, "a field of a variant");
+                        }
+                        None => self.wrong(w, origin.clone(), format!("variant {variant} out of range of enum t{}", id.0)),
+                    },
+                    _ => self.wrong(w, origin.clone(), format!("variant expression names type t{}, which is not an enum of the arena", id.0)),
+                },
+                Expr::Field { expr, index } => {
+                    if let Some(base) = self.ty(*expr) {
+                        match self.field_type(base, *index) {
+                            Some(field) => self.own(w, &origin, ty, &field),
+                            None => self.wrong(w, origin.clone(), format!("field {index} of a value of type {base}, which has no such field")),
+                        }
+                    }
+                }
+                Expr::Index { expr, index } => {
+                    self.integer_index(w, *index, "an index");
+                    if let Some(base) = self.ty(*expr) {
+                        match Checker::element_type(base) {
+                            Some(element) => self.own(w, &origin, ty, element),
+                            None => self.wrong(w, origin.clone(), format!("an index applied to a value of type {base}, which is not an array or a slice")),
+                        }
+                    }
+                }
+                Expr::SliceOf { expr, low, high, .. } => {
+                    for bound in low.iter().chain(high) {
+                        self.integer_index(w, *bound, "a slice bound");
+                    }
+                    if let Some(base) = self.ty(*expr) {
+                        match Checker::element_type(base) {
+                            Some(element) => self.own(w, &origin, ty, &ValueType::Slice(Box::new(element.clone()))),
+                            None => self.wrong(w, origin.clone(), format!("a slice of a value of type {base}, which is not an array or a slice")),
+                        }
+                    }
+                }
+                Expr::Length(expr) => {
+                    if let Some(base) = self.ty(*expr) {
+                        if Checker::element_type(base).is_none() {
+                            self.wrong(w, origin.clone(), format!("`len` of a value of type {base}, which is not an array or a slice"));
+                        }
+                    }
+                    self.own(w, &origin, ty, &ValueType::UInt(64));
+                }
+                _ => {}
+            }
+        }
+        next.extend(kind.operands().into_iter().map(|operand| Task::Expr(operand, ctx)));
+    }
+
+    /// The element type of an array or a slice.
+    fn element_type(ty: &ValueType) -> Option<&ValueType> {
+        match ty {
+            ValueType::Array(element, _) | ValueType::Slice(element) => Some(element),
+            _ => None,
+        }
+    }
+
+    /// An index or a slice bound has an integer type.
+    fn integer_index(&mut self, w: &Walk, index: ExprId, what: &str) {
+        if let Some(ty) = self.ty(index) {
+            if !Typing::base(ty).is_integer() {
+                let origin = self.expr_origin(index);
+                self.wrong(w, origin, format!("{what} must have an integer type, found {ty}"));
+            }
+        }
+    }
+
+    /// The type of field `index` of a struct or a tuple.
+    fn field_type(&self, base: &ValueType, index: u32) -> Option<ValueType> {
+        match base {
+            ValueType::Tuple(parts) => parts.get(index as usize).cloned(),
+            ValueType::Struct(id) => self.struct_fields(*id)?.get(index as usize).cloned(),
+            _ => None,
+        }
+    }
+
+    /// The type `place` reaches inside a local of type `target`: a field of a struct or a tuple, an
+    /// element of an array (an index of an integer type). A step that does not fit is named.
+    pub(super) fn place_type(&mut self, w: &Walk, origin: &crate::model::Origin, place: &Place, target: ValueType) -> Option<ValueType> {
+        let mut current = target;
+        for step in &place.path {
+            let reached = match step {
+                Projection::Field(k) => self.field_type(&current, *k),
+                Projection::Index(index) => {
+                    self.integer_index(w, *index, "an index");
+                    match &current {
+                        ValueType::Array(element, _) => Some((**element).clone()),
+                        _ => None,
+                    }
+                }
+            };
+            match reached {
+                Some(next) => current = next,
+                None => {
+                    self.wrong(w, origin.clone(), format!("a projection of local {} reaches into a value of type {current}, which has no such part", place.local));
+                    return None;
+                }
+            }
+        }
+        Some(current)
+    }
+
+    /// A slice is a view: it stands only as a call argument or a method receiver (`len` is one).
+    pub(super) fn slice_positions(&mut self) {
+        let ir = self.ir;
+        let is_slice = |id: &ExprId| matches!(ir.exprs.get(id.index()).map(|e| &e.kind), Some(Expr::SliceOf { .. }));
+        for (i, data) in ir.exprs.iter().enumerate() {
+            let views_allowed = matches!(data.kind, Expr::Call { .. } | Expr::CallValue { .. } | Expr::Method { .. } | Expr::Length(_));
+            if !views_allowed && data.kind.operands().iter().any(is_slice) {
+                self.report(format!("expr {i}"), data.origin.clone(), "a slice stands only as a call argument or a method receiver".to_string());
+            }
+        }
+        for (i, stmt) in ir.stmts.iter().enumerate() {
+            if stmt.operands().iter().any(is_slice) {
+                let first = stmt.operands().into_iter().find(is_slice).map_or_else(Checker::unknown, |e| self.expr_origin(e));
+                self.report(format!("stmt {i}"), first, "a slice stands only as a call argument or a method receiver".to_string());
+            }
+        }
+    }
+}
+

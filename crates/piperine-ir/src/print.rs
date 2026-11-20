@@ -30,7 +30,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display, Write};
 
-use crate::ids::{ExprId, StmtId};
+use crate::ids::{ExprId, StmtId, TypeId};
 use crate::model::{
     BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, ChildValue, Constant, EmitField, Env, EventSource, Expr, ExprData, FieldsForm, FunctionData, InstanceData, Ir,
     LevelPart, Local, MathFn, Method, NodeRef, Operator, Origin, Param, Place, Projection, Quantity, QuantityRole, Stmt, Stream, Terminal, TypeData, TypeKind,
@@ -269,6 +269,20 @@ impl<'a> Printer<'a> {
         let derive = if derived.is_empty() { String::new() } else { format!("  derive {}", derived.join(", ")) };
         let at = self.at(&data.origin);
         self.line(0, &format!("type t{index} = {shape}  path {}{derive}{at}", Printer::name(&data.path)));
+    }
+
+    /// The name of a type of the arena, `<bad type>` for an id outside it.
+    fn type_name(&self, ty: TypeId) -> String {
+        self.ir.types.get(ty.index()).map_or("<bad type>".to_string(), |data| Printer::name(&data.name))
+    }
+
+    /// `Enum::Variant`, `<bad variant>` for one outside the enum.
+    fn variant_name(&self, ty: TypeId, variant: u32) -> String {
+        let name = match self.ir.types.get(ty.index()).map(|data| &data.kind) {
+            Some(TypeKind::Enum { variants, .. }) => variants.get(variant as usize).map(|v| Printer::name(&v.name)),
+            _ => None,
+        };
+        format!("{}::{}", self.type_name(ty), name.unwrap_or_else(|| "<bad variant>".to_string()))
     }
 
     /// The locals table of an owner: index order in the full text, sorted in the structural form.
@@ -587,10 +601,16 @@ impl<'a> Printer<'a> {
         scope.carriers.get(i as usize).map_or(format!("<bad carrier {i}>"), |c| Printer::name(&c.name))
     }
 
-    /// An assignment target: the local, then `.k` for each field projection.
-    fn place(scope: Scope<'_>, place: &Place) -> String {
-        let fields: String = place.path.iter().map(|Projection::Field(k)| format!(".{k}")).collect();
-        format!("{}{fields}", Printer::local(scope, place.local))
+    /// An assignment target as pieces: the local, then `.k` for a field and `[index]` for an element.
+    fn place(scope: Scope<'_>, place: &Place) -> Vec<Piece> {
+        let mut pieces = vec![Piece::Text(Printer::local(scope, place.local))];
+        for step in &place.path {
+            match step {
+                Projection::Field(k) => pieces.push(Piece::Text(format!(".{k}"))),
+                Projection::Index(index) => pieces.extend([Piece::Text("[".into()), Piece::Expr(*index), Piece::Text("]".into())]),
+            }
+        }
+        pieces
     }
 
     fn local(scope: Scope<'_>, i: u32) -> String {
@@ -646,7 +666,8 @@ impl<'a> Printer<'a> {
             Stmt::Expr(e) => next.push(Piece::Expr(*e)),
             Stmt::Assign { place, op, value } => {
                 let op = op.map_or(String::new(), |op| Printer::binary_op(op).to_string());
-                next.push(Piece::Text(format!("{} {op}= ", Printer::place(scope, place))));
+                next.extend(Printer::place(scope, place));
+                next.push(Piece::Text(format!(" {op}= ")));
                 next.push(Piece::Expr(*value));
             }
             Stmt::BoundStep { value, when, .. } => {
@@ -787,6 +808,37 @@ impl<'a> Printer<'a> {
                 Printer::list(next, args);
                 next.push(text(")".into()));
             }
+            Expr::Tuple(parts) => {
+                next.push(text("(".into()));
+                Printer::list(next, parts);
+                next.push(text(if parts.len() == 1 { ",)" } else { ")" }.into()));
+            }
+            Expr::Array(parts) => {
+                next.push(text("[".into()));
+                Printer::list(next, parts);
+                next.push(text("]".into()));
+            }
+            Expr::ArrayRepeat { element, count } => next.extend([text("[".into()), Piece::Expr(*element), text(format!("; {count}]"))]),
+            Expr::StructOf { ty, fields } => {
+                next.push(text(format!("{}(", self.type_name(*ty))));
+                Printer::list(next, fields);
+                next.push(text(")".into()));
+            }
+            Expr::VariantOf { ty, variant, fields } => {
+                next.push(text(format!("{}(", self.variant_name(*ty, *variant))));
+                Printer::list(next, fields);
+                next.push(text(")".into()));
+            }
+            Expr::Field { expr, index } => next.extend([Piece::Expr(*expr), text(format!(".{index}"))]),
+            Expr::Index { expr, index } => next.extend([Piece::Expr(*expr), text("[".into()), Piece::Expr(*index), text("]".into())]),
+            Expr::SliceOf { expr, low, high, inclusive } => {
+                next.extend([Piece::Expr(*expr), text("[".into())]);
+                next.extend(low.map(Piece::Expr));
+                next.push(text(if *inclusive { "..=" } else { ".." }.into()));
+                next.extend(high.map(Piece::Expr));
+                next.push(text("]".into()));
+            }
+            Expr::Length(expr) => next.extend([Piece::Expr(*expr), text(".len()".into())]),
             Expr::Math { f, args } => {
                 next.push(text(format!("{}(", Printer::math_name(*f))));
                 Printer::list(next, args);
@@ -986,6 +1038,9 @@ impl<'a> Printer<'a> {
                 ValueType::Fn(_, ret) => Some(*ret),
                 _ => None,
             },
+            // The aggregate forms are typed by their arena entry: the structural form writes the type.
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } => None,
+            Expr::Length(_) => Some(ValueType::UInt(64)),
         }
     }
 
@@ -1190,6 +1245,15 @@ impl<'a> Printer<'a> {
             Expr::Return(value) => format!("return {}", opt(value)),
             Expr::FunctionRef(function) => format!("function_ref fn {}", function.0),
             Expr::CallValue { callee, args } => format!("call_value {} ({})", e(callee), ids(args)),
+            Expr::Tuple(parts) => format!("tuple ({})", ids(parts)),
+            Expr::Array(parts) => format!("array ({})", ids(parts)),
+            Expr::ArrayRepeat { element, count } => format!("array_repeat {} x{count}", e(element)),
+            Expr::StructOf { ty, fields } => format!("struct_of t{} ({})", ty.0, ids(fields)),
+            Expr::VariantOf { ty, variant, fields } => format!("variant_of t{} v{variant} ({})", ty.0, ids(fields)),
+            Expr::Field { expr, index } => format!("field {} .{index}", e(expr)),
+            Expr::Index { expr, index } => format!("index {} {}", e(expr), e(index)),
+            Expr::SliceOf { expr, low, high, inclusive } => format!("slice_of {} {} {}{}", e(expr), opt(low), opt(high), if *inclusive { " inclusive" } else { "" }),
+            Expr::Length(expr) => format!("length {}", e(expr)),
         }
     }
 
@@ -1204,7 +1268,14 @@ impl<'a> Printer<'a> {
             Stmt::Let { local, init } => format!("let {local} e{}", init.0),
             Stmt::Expr(e) => format!("expr e{}", e.0),
             Stmt::Assign { place, op, value } => {
-                let fields: String = place.path.iter().map(|Projection::Field(k)| format!(".{k}")).collect();
+                let fields: String = place
+                    .path
+                    .iter()
+                    .map(|step| match step {
+                        Projection::Field(k) => format!(".{k}"),
+                        Projection::Index(index) => format!("[e{}]", index.0),
+                    })
+                    .collect();
                 let op = op.map_or("-".to_string(), |op| Printer::binary_name(op).to_string());
                 format!("assign {}{fields} {op} e{}", place.local, value.0)
             }

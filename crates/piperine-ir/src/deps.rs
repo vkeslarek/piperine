@@ -402,7 +402,7 @@ enum Task {
     /// A callee's body has been walked (its value on the stack): leave its scope.
     Return { at: ExprId, function: FunctionId, args: Vec<Value> },
     /// The value of an assignment is on the stack: join it into the local.
-    Assign { local: u32, op: Option<BinaryOp>, at: ExprId },
+    Assign { local: u32, op: Option<BinaryOp>, at: ExprId, indices: usize },
     /// The bounds of a `for` range are on the stack: the loop variable and the trip count.
     LoopBounds(ExprId),
     /// The condition of a `while` is on the stack: it decides the trip count.
@@ -692,7 +692,7 @@ impl<'a> Walk<'a> {
                 }
                 Task::Restore(outside) => self.restore(outside),
                 Task::Return { at, function, args } => self.leave_call(at, function, args, &mut next),
-                Task::Assign { local, op, at } => self.assign(local, op, at),
+                Task::Assign { local, op, at, indices } => self.assign(local, op, at, indices),
                 Task::LoopBounds(id) => self.loop_bounds(id),
                 Task::LoopCondition(id) => self.loop_condition(id),
                 Task::LoopPass { id, before } => self.loop_pass(id, before, &mut next),
@@ -709,7 +709,12 @@ impl<'a> Walk<'a> {
         match &ir.stmts[id.index()] {
             Stmt::Let { local, init } => next.extend([Task::Expr(*init), Task::Bind(*local, *init)]),
             Stmt::Expr(e) => next.extend([Task::Expr(*e), Task::Discard]),
-            Stmt::Assign { place, op, value } => next.extend([Task::Expr(*value), Task::Assign { local: place.local, op: *op, at: *value }]),
+            Stmt::Assign { place, op, value } => {
+                next.push(Task::Expr(*value));
+                let indices: Vec<ExprId> = place.index_operands().collect();
+                next.extend(indices.iter().map(|&index| Task::Expr(index)));
+                next.push(Task::Assign { local: place.local, op: *op, at: *value, indices: indices.len() });
+            }
             Stmt::BoundStep { site, value, when } => {
                 next.extend([Task::Expr(*value), Task::Cap(*site)]);
                 // What decides whether the call runs is read by the same site.
@@ -884,6 +889,10 @@ impl<'a> Walk<'a> {
                 next.push(Task::Restore(outside));
             }
             Expr::Call { args, .. } | Expr::Math { args, .. } => next.extend(args.iter().map(|&a| Task::Expr(a))),
+            // An aggregate is one abstract value: what its parts read (`finish`).
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) => {
+                next.extend(ir.exprs[id.index()].kind.operands().into_iter().map(Task::Expr));
+            }
             Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } => return self.begin_loop(id, next),
             Expr::Break(value) => {
                 next.extend(value.iter().map(|&v| Task::Expr(v)));
@@ -984,6 +993,11 @@ impl<'a> Walk<'a> {
             }
             Expr::Method { args, .. } => {
                 let values = self.pop_n(1 + args.len());
+                Value::nonlinear(&values)
+            }
+            // An aggregate and each of its projections read everything its parts read.
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) => {
+                let values = self.pop_n(ir.exprs[id.index()].kind.operands().len());
                 Value::nonlinear(&values)
             }
             Expr::Closure { .. } => {

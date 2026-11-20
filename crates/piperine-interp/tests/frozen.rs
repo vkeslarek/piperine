@@ -12,6 +12,7 @@ use piperine_ir::{
     Inflow, InstanceSpec, Ir, LevelPart, IrBuilder, Local, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, Place, QuantityRole, Reach, ReachedItem, Site, Stmt, Stream,
     StreamField, StmtId, Terminal, ValueType,
 };
+use piperine_ir::{Derives, FieldsForm, TypeData, TypeKind, VariantData};
 use piperine_ir::Method as M;
 
 #[allow(dead_code)]
@@ -684,4 +685,41 @@ fn each_composite_values_form_is_refused_by_name() {
         (vec![], vec![b.stmt(Stmt::Expr(call))])
     });
     assert_eq!(through_a_value, ["a function value", "a call through a function value"]);
+
+    // `let t = (1.0, 2.0); let a = [t.0; 2]; a[0]; a.len(); a[0..1]` and the struct and variant
+    // expressions (T31): each form is named, in the order of the list.
+    let aggregates = Composite::refused(|b| {
+        let (one, two) = (Switching::ex(b).real(1.0), Switching::ex(b).real(2.0));
+        let pair = ValueType::Tuple(vec![ValueType::F64, ValueType::F64]);
+        let tuple = b.expr(Expr::Tuple(vec![one, two]), pair, Switching::at());
+        let field = b.expr(Expr::Field { expr: tuple, index: 0 }, ValueType::F64, Switching::at());
+        let array_type = ValueType::Array(Box::new(ValueType::F64), 2);
+        let repeated = b.expr(Expr::ArrayRepeat { element: field, count: 2 }, array_type.clone(), Switching::at());
+        let listed = b.expr(Expr::Array(vec![one, two]), array_type, Switching::at());
+        let zero = Dx::new(b, "composite.msl", 2, 5).int(0, Ty::u(8));
+        let element = b.expr(Expr::Index { expr: listed, index: zero }, ValueType::F64, Switching::at());
+        let view = b.expr(Expr::SliceOf { expr: repeated, low: None, high: None, inclusive: false }, ValueType::Slice(Box::new(ValueType::F64)), Switching::at());
+        let length = b.expr(Expr::Length(view), ValueType::UInt(64), Switching::at());
+        let shape = b.type_data(TypeData {
+            name: "S".into(),
+            path: "S".into(),
+            origin: Switching::at(),
+            kind: TypeKind::Struct { form: FieldsForm::Tuple, fields: vec![("0".into(), ValueType::F64)] },
+            derives: Derives::default(),
+        });
+        let built = b.expr(Expr::StructOf { ty: shape, fields: vec![element] }, ValueType::Struct(shape), Switching::at());
+        let choice = b.type_data(TypeData {
+            name: "E".into(),
+            path: "E".into(),
+            origin: Switching::at(),
+            kind: TypeKind::Enum { tag_levels: 1, variants: vec![VariantData { name: "A".into(), discriminant: 0, form: FieldsForm::Unit, fields: vec![] }] },
+            derives: Derives::default(),
+        });
+        let variant = b.expr(Expr::VariantOf { ty: choice, variant: 0, fields: vec![] }, ValueType::Enum(choice), Switching::at());
+        (vec![], [length, built, variant].into_iter().map(|e| b.stmt(Stmt::Expr(e))).collect())
+    });
+    assert_eq!(
+        aggregates,
+        ["a tuple", "an array", "an array repeat", "a struct expression", "a variant expression", "a field read", "an element read", "a slice", "a length read"]
+    );
 }
