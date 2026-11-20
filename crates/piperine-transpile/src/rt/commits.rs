@@ -164,6 +164,10 @@ impl Paths {
                 if !groups[at].statements.iter().any(|(statement, _)| *statement == entry.statement) {
                     groups[at].statements.push((entry.statement, entry.after));
                 }
+                let entry = match groups[at].last[side].take() {
+                    Some(earlier) => entry.following(earlier),
+                    None => entry,
+                };
                 groups[at].last[side] = Some(entry);
             }
         }
@@ -209,6 +213,20 @@ impl Paths {
 }
 
 impl Entry {
+    /// This commit as the path's one commit of its key, after `earlier`, the path's commit of
+    /// the same key before it. A plain commit replaces `earlier`. A `MERGE` commit (the one-armed
+    /// effect of an inner join) is a merge with "the value the carrier would hold then", which on
+    /// this path is what `earlier` committed: the two merge here, and keep `MERGE` only when
+    /// `earlier` still waits for the carrier's own value (§3.3.3).
+    fn following(mut self, earlier: Entry) -> Entry {
+        if self.flags & commit_flag::MERGE == 0 {
+            return self;
+        }
+        self.bytes = earlier.merged_with(&self);
+        self.flags = (self.flags & !commit_flag::MERGE) | (earlier.flags & commit_flag::MERGE);
+        self
+    }
+
     /// The bytes of this commit merged with those of `other`, a commit of the same key. Only a
     /// commit of a value has a merge, and only those have keys.
     fn merged_with(&self, other: &Entry) -> Vec<u8> {
@@ -514,6 +532,28 @@ pub(crate) mod tests {
         assert_eq!(c.branch(u(), |_| byte(5), |_| byte(5)), byte(5));
         assert_eq!(c.branch(u(), |_| byte(5), |_| byte(6)), u());
         assert_eq!(c.branch(k(true), |_| byte(5), |_| byte(6)), byte(5));
+    }
+
+    #[test]
+    fn a_nested_merge_commit_merges_with_the_earlier_commit_of_its_path() {
+        // §3.3.3: inside a path, an inner join's one-armed commit is merged with what the path
+        // committed to the carrier before it, not with the world alone: `if d { q <- 3;
+        // if e { q <- 5; } }` over a held 5 is merge(merge(3, 5), 5), unknown
+        let mut c = controlled();
+        c.branch(u(), |c| { c.commit(0, byte(3), k(0.0)); c.branch(u(), |c| c.commit(0, byte(5), k(0.0)), |_| ()); }, |_| ());
+        assert_eq!(flushed(c), [(0, vec![0, 0], 0.0, MAYBE | MERGE)]);
+        // the same with the outer commit in the else arm
+        let mut c = controlled();
+        c.branch(u(), |_| (), |c| { c.commit(0, byte(3), k(0.0)); c.branch(u(), |c| c.commit(0, byte(5), k(0.0)), |_| ()); });
+        assert_eq!(flushed(c), [(0, vec![0, 0], 0.0, MAYBE | MERGE)]);
+        // and under a guard that may not hold
+        let mut c = controlled();
+        c.run(false, |c| { c.commit(0, byte(3), k(0.0)); c.branch(u(), |c| c.commit(0, byte(5), k(0.0)), |_| ()); });
+        assert_eq!(flushed(c), [(0, vec![0, 0], 0.0, MAYBE | MERGE)]);
+        // equal values stay known: the inner merge of 5 with the earlier 5 is 5
+        let mut c = controlled();
+        c.branch(u(), |c| { c.commit(0, byte(5), k(0.0)); c.branch(u(), |c| c.commit(0, byte(5), k(0.0)), |_| ()); }, |_| ());
+        assert_eq!(flushed(c), [(0, vec![5, 1], 0.0, MAYBE | MERGE)]);
     }
 
     #[test]

@@ -39,16 +39,39 @@ digital for Forms {
     }
 }
 
-/// A `match` on an unknown scrutinee takes every arm, the wildcard included.
+/// A `match` on an unknown scrutinee takes every arm, the wildcard included: `differ` is 1 in
+/// the two literal arms, so only the wildcard's 2 makes it unknown.
 module Matching(in clk: Bit, in sel: Bit<u8>, out differ: Bit<u8> = 0, out equal: Bit<u8> = 0) {}
 digital for Matching {
     on clk.rise() {
         match sel {
             0 => { differ <- 1; equal <- 4; }
-            1 => { differ <- 2; equal <- 4; }
-            _ => { differ <- 3; equal <- 4; }
+            1 => { differ <- 1; equal <- 4; }
+            _ => { differ <- 2; equal <- 4; }
         }
     }
+}
+
+/// A one-armed `if` nested in a path that already committed the carrier: the inner commit is
+/// merged with what the path made before it (3), then with the held value (5), so each carrier
+/// goes unknown, in the then arm, the else arm and under a guard that may not hold.
+module Nested(in clk: Bit, in d: Bit, in e: Bit, in en: Bit,
+              out held: Bit<u8> = 5, out other: Bit<u8> = 5, out guarded: Bit<u8> = 5) {}
+digital for Nested {
+    on clk.rise() {
+        if d { held <- 3; if e { held <- 5; } }
+        if d { } else { other <- 3; if e { other <- 5; } }
+    }
+    on clk.rise() && en { guarded <- 3; if e { guarded <- 5; } }
+}
+
+/// Another reaction's commit in the same microstep: the first reaction commits 4 to `q` (held 1)
+/// and the second's one-armed commit of 4 merges with that 4, the value `q` holds then, not
+/// with the 1 it held before the microstep.
+module Pair(in clk: Bit, in d: Bit, out q: Bit<u8> = 1) {}
+digital for Pair {
+    on clk.rise() { q <- 4; }
+    on clk.rise() { if d { q <- 4; } }
 }
 
 /// An arm that divides by zero panics: under an unknown condition that is no fault, and the
@@ -109,7 +132,7 @@ digital for Pfd3 {
 }
 
 module Merges() {
-    signal clk: Bit; signal d: Bit; signal sel: Bit<u8>; signal t: Bit<f64>;
+    signal clk: Bit; signal d: Bit; signal e: Bit; signal en: Bit; signal sel: Bit<u8>; signal t: Bit<f64>;
     signal differ: Bit<u8>; signal equal: Bit<u8>; signal before: Bit<u8>;
     signal changes: Bit<u8>; signal keeps: Bit<u8>;
     signal idle: Bit<u8>;
@@ -121,6 +144,8 @@ module Merges() {
     signal differ_let: Bit<u8>; signal differ_function: Bit<u8>; signal differ_definition: Bit<u8>;
     signal late_q: Bit<u8>; signal ticks_q: Bit<u8>;
     signal edges: Bit<u8>; signal state: Bit<i2>;
+    signal nested_held: Bit<u8>; signal nested_other: Bit<u8>; signal nested_guarded: Bit<u8>;
+    signal pair_q: Bit<u8>;
     let osc = Osc(clk) { f: 1G };
     let arms = Arms(clk, d, differ, equal, before);
     let one_arm = OneArm(clk, d, changes, keeps);
@@ -133,6 +158,8 @@ module Merges() {
     let late = Late(clk, d, t, late_q);
     let ticks = Ticks(clk, d, ticks_q);
     let pfd3 = Pfd3(clk, edges, state);
+    let nested = Nested(clk, d, e, en, nested_held, nested_other, nested_guarded);
+    let pair = Pair(clk, d, pair_q);
 }
 
 /// A node held at 1 V, so the run has an analog side.

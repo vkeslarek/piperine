@@ -118,11 +118,31 @@ fn an_if_expression_and_an_if_statement_commit_the_same() {
 
 #[test]
 fn an_unknown_match_merges_every_arm() {
-    // US-04 AC 6: an unknown scrutinee takes every arm, the wildcard included. `differ` is 1, 2
-    // or 3 by arm: unknown. `equal` is 4 in every arm: known 4
+    // US-04 AC 6: an unknown scrutinee takes every arm, the wildcard included. `differ` is 1, 1
+    // and 2 by arm: unknown only because the wildcard's 2 is merged in. `equal` is 4 in every
+    // arm: known 4
     let seen = merges();
     assert_eq!(changes(&seen, "match_differ"), vec![(NS / 2, UNKNOWN.to_vec())]);
     assert_eq!(changes(&seen, "match_equal"), vec![(NS / 2, byte(4))]);
+}
+
+#[test]
+fn a_nested_one_armed_commit_merges_with_the_path_before_it() {
+    // §3.3.3: `if d { held <- 3; if e { held <- 5; } }` over a held 5 is merge(merge(3, 5), 5),
+    // unknown; the else form and the form under a guard that may not hold are the same
+    let seen = merges();
+    for name in ["nested_held", "nested_other", "nested_guarded"] {
+        assert_eq!(changes(&seen, name), vec![(NS / 2, UNKNOWN.to_vec())], "{name}");
+    }
+}
+
+#[test]
+fn a_merge_commit_meets_another_reactions_commit_of_the_same_microstep() {
+    // §3.3.3, "the value the carrier would hold then": the first reaction commits 4 to `q`
+    // (held 1), the second's `if d { q <- 4 }` merges with that 4, so `q` takes 4, known; merged
+    // with the 1 held before the microstep it would be unknown
+    let seen = merges();
+    assert_eq!(changes(&seen, "pair_q"), vec![(NS / 2, byte(4))]);
 }
 
 #[test]
