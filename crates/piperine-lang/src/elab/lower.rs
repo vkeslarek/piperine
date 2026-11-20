@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use piperine_ir::{BinaryOp, Branch, Condition, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Method as IrMethod, Origin, Site, Stmt, StmtId as LoweredStmt, Terminal, UnaryOp, ValueType};
 
 use super::compound::EnumLayout;
+use super::control::LoopFrame;
 use super::consts::{Bindings, Folded};
 use super::known::Flag;
 use super::elaborator::Elaboration;
@@ -82,11 +83,13 @@ pub(super) struct Scope {
     /// an argument that may be. A `let mut` there is flagged, so an assignment under an unknown
     /// decision can merge (`control.rs`).
     pub(super) may_be_unknown: bool,
+    /// The loops the code being lowered sits in, innermost last (`control.rs`).
+    pub(super) loops: Vec<LoopFrame>,
 }
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), may_be_unknown: false }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), may_be_unknown: false, loops: Vec::new() }
     }
 }
 
@@ -178,7 +181,9 @@ impl Elaboration<'_, '_> {
     pub(super) fn stmt(&mut self, stmt: Stmt) -> LoweredStmt {
         let continuous = stmt.operands().iter().any(|e| self.continuous(*e));
         self.stmt_continuous.push(continuous);
-        self.ir.stmt(stmt)
+        let id = self.ir.stmt(stmt.clone());
+        self.divergences.note_statement(id, &stmt);
+        id
     }
 
     /// The type of an expression already added.
@@ -197,7 +202,11 @@ impl Elaboration<'_, '_> {
         let node = self.design.expr_node(expr).clone();
         let file = self.design.decl_data(node.owner).file;
         let origin = self.expr_origin(expr);
-        let ty = self.types.ty(expr).and_then(|t| self.value_type(t));
+        // `!` is no value: a diverging expression is `()` until its position gives it a type (`exits.rs`).
+        let ty = match self.types.ty(expr) {
+            Some(Ty::Never) => Some(ValueType::Unit),
+            other => other.and_then(|t| self.value_type(t)),
+        };
         let Some(ty) = ty else {
             let what = match self.types.ty(expr) {
                 Some(Ty::Enum(_)) => "a value of an enum of one variant, whose tag has no level",
@@ -302,9 +311,12 @@ impl Elaboration<'_, '_> {
                 scope.guards.pop();
                 Self::leave_arm(scope, arm);
                 let (cond, then, otherwise) = (cond?, then?, otherwise?);
+                let (then, otherwise) = (self.fit_to(then, &ty), self.fit_to(otherwise, &ty));
                 // A condition that may be unknown is kept: the generated code decides it.
                 let ty = self.flags(&[cond, then, otherwise]).wrap(ty);
-                Some(self.emit(Expr::If { cond, then, otherwise }, ty, origin))
+                let whole = self.emit(Expr::If { cond, then, otherwise }, ty, origin);
+                self.note_branch(whole, cond, then, otherwise);
+                Some(whole)
             }
             ExprKind::Block(block) => {
                 scope.block_depth += 1;
@@ -313,6 +325,11 @@ impl Elaboration<'_, '_> {
                 lowered
             }
             ExprKind::Assign { .. } => self.lower_assignment_expr(scope, expr, origin),
+            ExprKind::While { cond, body } => self.lower_while(scope, *cond, body, origin),
+            ExprKind::Loop { body } => self.lower_loop(scope, body, ty, origin),
+            ExprKind::For { pat, iter, body } => self.lower_for(scope, *pat, *iter, body, origin),
+            ExprKind::Break(value) => self.lower_break(scope, *value, node.span, origin),
+            ExprKind::Continue => Some(self.lower_continue(origin)),
             ExprKind::Call { args, class, .. } => self.lower_call(scope, expr, &args.iter().map(|a| a.value).collect::<Vec<_>>(), *class, ty, origin),
             ExprKind::MethodCall { recv, args, .. } if self.types.builtin(expr).is_some() => {
                 let builtin = self.types.builtin(expr)?;
@@ -479,7 +496,9 @@ impl Elaboration<'_, '_> {
             (true, Some(value)) => Some(value),
             (_, value) => {
                 let ty = value.map_or(ValueType::Unit, |v| self.type_of(v));
-                Some(self.emit(Expr::Block { stmts, value }, ty, origin))
+                let block = self.emit(Expr::Block { stmts: stmts.clone(), value }, ty, origin);
+                self.note_block(block, &stmts, value);
+                Some(block)
             }
         }
     }
@@ -537,8 +556,7 @@ impl Elaboration<'_, '_> {
                         // A local is what its initializer is: flagged when that may be unknown; a
                         // `let mut` of code that may see unknowns is flagged whatever it starts as.
                         let target = scope.locals[local as usize].ty.clone();
-                        let init = if scope.locals[local as usize].mutable { self.coerced_to(scope, out, init, &target) } else { Some(init) };
-                        let Some(init) = init else { return false };
+                        let init = if scope.locals[local as usize].mutable { self.coerced_to(scope, init, &target) } else { init };
                         let mutable = scope.locals[local as usize].mutable;
                         let ty = self.type_of(init);
                         scope.locals[local as usize].ty = ty;

@@ -106,16 +106,12 @@ fn m_dtemp_or_extern_at_a_placement_is_p0001() {
 }
 
 #[test]
-fn a_for_loop_in_a_digital_block_is_p0001() {
-    // A `digital` block is lowered from msl-digital T30 on; a form still refused inside one is the
-    // `for` loop of DIG-07 AC 1.
-    let row = Row {
-        form: "for loop in a digital block",
-        src: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { for k in 0..3 { } } }",
-        names: "`for` loop",
-        at: "for k in 0..3 { }",
-    };
-    row.check();
+fn a_for_loop_in_a_digital_block_lowers() {
+    // Replaces `a_for_loop_in_a_digital_block_is_p0001` (composite-values T20, CV-02 AC 1): a
+    // `for` over a range lowers in a reaction, as the IR's own `for`.
+    let src = "module Top(in clk: Bit, out q: Bit<u8>) { }\ndigital for Top { on clk.rise() { let mut s = 0u8; for k in 0..3u8 { s += k; } q <- s; } }";
+    let ir = Elab::ir(src, "Top");
+    assert!(ir.print_structural().contains("for k in 0u8..3u8"), "{}", ir.print_structural());
 }
 
 #[test]

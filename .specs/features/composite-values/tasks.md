@@ -597,8 +597,8 @@ T63
 
 **Done when**:
 
-- [ ] `every_loop_form_gives_rusts_values`, `a_commit_in_a_reaction_loop_is_one_statement_last_write_winning`, `an_analog_loop_without_contribution_is_differentiated_through` and `an_empty_range_runs_zero_times_in_analog_too` pass under `**Run srcctl**`
-- [ ] Gate check passes: Full
+- [x] `every_loop_form_gives_rusts_values`, `a_commit_in_a_reaction_loop_is_one_statement_last_write_winning`, `an_analog_loop_without_contribution_is_differentiated_through` and `an_empty_range_runs_zero_times_in_analog_too` pass under `**Run srcctl**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

@@ -8,6 +8,7 @@ use piperine_ir::{BodyId, Ir, IrBuilder, NatureId, ValueType};
 use super::body::{ModulePlan, ParamPlan};
 use super::carriers::{Frame, Structure};
 use super::consts::{Bindings, ConstEval};
+use super::exits::Divergences;
 use super::origin::Locator;
 use super::structural::{BodyKey, BodyVariants, KeyParams, Overrides};
 use super::variants::Variants;
@@ -87,6 +88,8 @@ pub(super) struct Elaboration<'d, 't> {
     /// The ammeter branch of each port whose `inflow()` the body being lowered reads (`inflow.rs`).
     pub(super) ammeters: BTreeMap<crate::pom::DeclId, u32>,
     pub(super) reach_frames: BTreeMap<(usize, crate::pom::ExprId), usize>,
+    /// The diverging expressions lowered so far (`exits.rs`).
+    pub(super) divergences: Divergences,
     pub(super) diagnostics: Vec<DesignDiagnostic>,
 }
 
@@ -116,6 +119,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             body_keys: Bindings::new(),
             ammeters: BTreeMap::new(),
             reach_frames: BTreeMap::new(),
+            divergences: Divergences::default(),
             diagnostics: Vec::new(),
         }
     }

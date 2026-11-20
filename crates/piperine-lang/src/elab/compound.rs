@@ -41,10 +41,10 @@ enum Subject {
 
 /// An `Option` value as the IR holds it: its flag and its payload. `literal` is the flag when
 /// the source wrote `None` or `Some(..)`.
-struct Pair {
-    is: LoweredExpr,
-    val: LoweredExpr,
-    literal: Option<bool>,
+pub(super) struct Pair {
+    pub(super) is: LoweredExpr,
+    pub(super) val: LoweredExpr,
+    pub(super) literal: Option<bool>,
 }
 
 /// The tag of an enum: its width and its variants in declaration order.
@@ -274,7 +274,7 @@ impl Elaboration<'_, '_> {
             let own = Self::enter_arm(scope, test, true);
             scope.guards.push(ArmCondition::MatchArm { scrutinee, earlier: arms[..k].iter().map(|a| a.pat).collect(), pat: (!last).then_some(arm.pat) });
             match self.arm_body(scope, subject, arm) {
-                Some(body) => bodies.push(body),
+                Some(body) => bodies.push(self.fit_to(body, base)),
                 None => ok = false,
             }
             scope.guards.pop();
@@ -481,7 +481,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The pair an `Option` expression lowers to. `None` after a diagnostic.
-    fn lower_option(&mut self, scope: &mut Scope, expr: ExprId) -> Option<Pair> {
+    pub(super) fn lower_option(&mut self, scope: &mut Scope, expr: ExprId) -> Option<Pair> {
         let node = self.design.expr_node(expr).clone();
         let origin = self.expr_origin(expr);
         let (file, span) = (scope.file, node.span);
@@ -893,13 +893,14 @@ impl Elaboration<'_, '_> {
         scope.guards.pop();
         Self::leave_arm(scope, arm);
         let (then, otherwise) = (then?, otherwise?);
+        let (then, otherwise) = (self.fit_to(then, &base), self.fit_to(otherwise, &base));
         let ty = self.flags(&[pair.is, then, otherwise]).wrap(base);
         Some(self.emit(Expr::If { cond: pair.is, then, otherwise }, ty, origin))
     }
 
     /// The binding of `Some(p)`: `Some(Some(decl))` for a name, `Some(None)` for `_`; `None`
     /// after a diagnostic.
-    fn some_binding(&mut self, file: FileId, pat: PatId) -> Option<Option<DeclId>> {
+    pub(super) fn some_binding(&mut self, file: FileId, pat: PatId) -> Option<Option<DeclId>> {
         let node = self.design.pat_node(pat).clone();
         let inner = match &node.kind {
             PatKind::TupleStruct { pats, .. } if pats.len() == 1 => pats[0],
@@ -920,7 +921,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The block `stmts` with `let binding = value;` before its statements.
-    fn bound_block(&mut self, scope: &mut Scope, binding: Option<DeclId>, value: LoweredExpr, stmts: &[crate::pom::StmtId], span: crate::msl::Span) -> Option<LoweredExpr> {
+    pub(super) fn bound_block(&mut self, scope: &mut Scope, binding: Option<DeclId>, value: LoweredExpr, stmts: &[crate::pom::StmtId], span: crate::msl::Span) -> Option<LoweredExpr> {
         let origin = self.locator.origin(scope.file, span);
         let mut lowered = Vec::new();
         if let Some(binding) = binding {

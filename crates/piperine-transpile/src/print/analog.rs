@@ -223,6 +223,8 @@ impl<'a> AnalogPrinter<'a> {
                 // an assignment is kept for the later reads of the local it writes (§1.5.12); its
                 // operands, and for a compound one the local itself, feed the earlier statements
                 Stmt::Assign { place, .. } => needed.contains(&place.local) || roots(*id),
+                // a loop, an `if` or a block that assigns a local kept later is kept as one
+                Stmt::Expr(written) => self.ir.written_locals(*written).iter().any(|local| needed.contains(local)) || roots(*id),
                 _ => roots(*id),
             };
             if !keep {

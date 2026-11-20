@@ -30,6 +30,10 @@ struct Leaf {
 impl Elaboration<'_, '_> {
     /// A contribution statement `lhs +> rhs`, appended to `out`; `false` after a diagnostic.
     pub(super) fn lower_contribution(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, lhs: ExprId, rhs: ExprId, span: Span) -> bool {
+        if !scope.loops.is_empty() {
+            self.unsupported(scope.file, span, "a contribution inside a loop");
+            return false;
+        }
         let Some((role, plus, minus)) = self.contribution_target(scope, lhs) else { return false };
         if plus == minus {
             let at = self.design.expr_node(lhs).span;

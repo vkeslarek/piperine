@@ -20,6 +20,7 @@ mod derivatives;
 mod diagnose;
 mod drives;
 mod events;
+mod exits;
 mod elaborator;
 mod analog;
 mod functions;

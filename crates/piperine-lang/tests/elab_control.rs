@@ -51,3 +51,33 @@ fn let_mut_lowers_to_mutable_locals_and_assignments() {
     let text = function_text(&ir, "pick");
     assert!(text.contains("r = 1") && text.contains("r = 2"), "{text}");
 }
+
+/// A design whose `Top` has the reaction `body` on a clock `clk`.
+fn reacting(items: &str, body: &str) -> String {
+    format!("{items}\nmodule Top(in clk: Bit, out q: Bit<u8>) {{ }}\ndigital for Top {{ on clk.rise() {{ {body} }} }}")
+}
+
+#[test]
+fn loops_lower_to_the_loops_of_the_ir() {
+    // §1.8.7 to §1.8.12: every form stays the IR's own loop in a function, where no decision may
+    // be unknown; `break value` gives the loop its value's type.
+    let items = "fn work(n: u8) -> u8 {\n\
+                 let mut s = 0u8; let mut i = 0u8;\n\
+                 while i < n { s += i; i += 1; }\n\
+                 let first = loop { if s > 3 { break s; } s += 1; };\n\
+                 for k in 0..n { if k == 2 { continue; } s += k; }\n\
+                 for k in 1..=n { s += k; }\n\
+                 first + s }";
+    let ir = Elab::ir(&reaching(items, &["work(5)"]), "Top");
+    let text = function_text(&ir, "work");
+    for printed in ["while (i < n)", "loop {", "break s", "continue", "for k in 0u8..n", "for k in 1u8..=n"] {
+        assert!(text.contains(printed), "`{printed}` in:\n{text}");
+    }
+
+    // In a reaction, whose values may be unknown, a `for` that leaves early is the `while` that
+    // counts a mutable local, taking the next value before the body so `continue` still counts.
+    let body = "let mut hit = 0u8; for k in 0..9u8 { if k > 3 { hit = k; break; } } q <- hit;";
+    let ir = Elab::ir(&reacting("", body), "Top");
+    let text = ir.print_structural();
+    assert!(text.contains("while") && !text.contains("for k in"), "{text}");
+}

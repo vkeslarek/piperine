@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use piperine_parity::project::Project;
-use piperine_solver::prelude::{Context, NodeIdentifier};
+use piperine_solver::prelude::{AcSweepAnalysisOptions, Context, NodeIdentifier};
 
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/digital.rs"]
@@ -147,4 +147,82 @@ fn let_mut_and_every_compound_operator_give_rusts_values() {
     for (k, want) in analog.iter().enumerate() {
         assert!((currents[k] - want).abs() <= SOLVE * want.abs().max(1.0), "analog node {k}: {want:?}, the operating point has {:?}", currents[k]);
     }
+}
+
+/// A `u16` carrier value: two bytes little-endian, the known byte, one byte of padding (abi.md §3.1).
+fn word(v: u16) -> Vec<u8> {
+    let mut bytes = v.to_le_bytes().to_vec();
+    bytes.extend([1, 0]);
+    bytes
+}
+
+#[test]
+fn every_loop_form_gives_rusts_values() {
+    // CV-02 AC 1 (§1.8.7 to §1.8.12): `while`, `while let`, `loop` with `break value`, `for` over
+    // `a..b` and `a..=b` with `continue` and `break`, nested; each in a function and in the
+    // reaction itself, bit for bit.
+    let names = ["w", "l", "o", "inc", "m", "d", "nest", "rw", "rl", "ro", "rm", "rd"];
+    let committed = first_commits("loops.msl", &names);
+    let sum_to = |n: u16| (0..n).sum::<u16>();
+    let first_square_over = |limit: u16| (0u16..).find(|k| k * k > limit).expect("a square over");
+    let odd_sum = |n: u8| (0..n).filter(|k| k % 2 == 1).map(u16::from).sum::<u16>();
+    let first_multiple = |step: u8, over: u8| (1..32u8).map(|k| k * step).find(|m| *m > over).unwrap_or(0);
+    let nested = |n: u8| (0..n).flat_map(|a| (0..a).map(move |b| u16::from(a * b))).sum::<u16>();
+    let wanted = [
+        word(sum_to(10)),
+        word(first_square_over(50)),
+        word(odd_sum(9)),
+        word((1..=6u16).sum()),
+        byte(first_multiple(3, 20)),
+        word((0..5u16).sum()),
+        word(nested(5)),
+        word(sum_to(10)),
+        word(first_square_over(50)),
+        word(odd_sum(9)),
+        byte(first_multiple(3, 20)),
+        word((0..5u16).sum()),
+    ];
+    for (k, name) in names.iter().enumerate() {
+        assert_eq!(committed[k], wanted[k], "{name} is the value Rust gives");
+    }
+}
+
+#[test]
+fn a_commit_in_a_reaction_loop_is_one_statement_last_write_winning() {
+    // CV-02 AC 5 (§12.1.14, §12.1.2): a commit in a loop is one statement run several times; the
+    // writes of one instant to one carrier leave the last one, a single change.
+    let seen = build(&project("loops.msl"), "CommitBench").run(10e-9, 1e-9);
+    for (name, last) in [("last", 3u8), ("picked", 20), ("counted", 3)] {
+        let changes = transient(&seen, &format!("CommitBench.{name}"));
+        assert_eq!(changes, vec![(5 * NS / 2, byte(last))], "{name}: one change, to the last value written");
+    }
+}
+
+#[test]
+fn an_analog_loop_without_contribution_is_differentiated_through() {
+    // CV-02 AC 4 (§11 rule 5): `let mut y = v(a); for _ in 0..3 { y = y * v(a); }` is v^4: at
+    // v = 1.5 the operating point is v^4 and the AC gain is its partial 4 v^3, the same numbers
+    // as the written-out product's.
+    let (v, value, partial) = (1.5f64, 1.5f64.powi(4), 4.0 * 1.5f64.powi(3));
+    for top in ["LoopedBench", "WrittenBench"] {
+        let at = operating_point("loops.msl", top, &["o"]);
+        assert!((at[0] - value).abs() <= SOLVE * value, "{top}: v^4 at {v} V is {value}, the operating point has {}", at[0]);
+        let mut running = project("loops.msl").compile(top).unwrap_or_else(|r| panic!("{r}"));
+        let node = NodeIdentifier::Anonymous(running.ir.node_at(&format!("{top}.o")).expect("a node").id().index());
+        let mut ac = running.circuit.ac(Context::default()).expect("ac");
+        let sweep = ac.solve_sweep(AcSweepAnalysisOptions { start_frequency: 1e3, stop_frequency: 1e5, steps: 3, logarithmic: true }).unwrap_or_else(|e| panic!("the sweep does not solve: {e}"));
+        for step in sweep.iter() {
+            let gain = step.get_node(&node).expect("v(o)").norm();
+            assert!((gain - partial).abs() <= 1e-6 * partial, "{top}: the partial is 4 v^3 = {partial}, the AC gain is {gain}");
+        }
+    }
+}
+
+#[test]
+fn an_empty_range_runs_zero_times_in_analog_too() {
+    // CV-02 (§1.8.9): `0..0` and `0..count` with `count = 0` run the body zero times, as does
+    // `while false`: the locals keep their values.
+    let at = operating_point("loops.msl", "EmptyBench", &["o", "p"]);
+    assert!((at[0] - 2.0).abs() <= SOLVE * 2.0, "`for _ in 0..0` keeps y: {}", at[0]);
+    assert!((at[1] - 3.0).abs() <= SOLVE * 3.0, "an empty param range and `while false` keep z: {}", at[1]);
 }

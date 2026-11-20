@@ -6,16 +6,22 @@
 //! flagged whatever it starts as: an assignment under an unknown decision merges the written
 //! value with the old one (§3.3.3), which may be unknown. Code with no unknown keeps plain locals.
 
-use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Place, Stmt, StmtId as LoweredStmt, ValueType};
+use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, Local, Origin, Place, Stmt, StmtId as LoweredStmt, ValueType};
 
 use super::elaborator::Elaboration;
 use super::known::Flag;
 use super::lower::Scope;
-use crate::pom::{DeclKind, ExprId, ExprKind, FileId, PatId, PatKind, Resolution};
+use crate::pom::{BlockNode, DeclId, DeclKind, ExprId, ExprKind, FileId, PatId, PatKind, Resolution};
+
+/// One loop the code being lowered sits in.
+pub(super) struct LoopFrame {
+    /// The type of the loop's value: what its `break` values have, `()` for a `while` and a `for`.
+    pub(super) value: ValueType,
+}
 
 impl Elaboration<'_, '_> {
     /// Whether the source wrote `let mut` (or `mut` in a pattern) for `binding`.
-    pub(super) fn declared_mutable(&self, binding: crate::pom::DeclId) -> bool {
+    pub(super) fn declared_mutable(&self, binding: DeclId) -> bool {
         let DeclKind::Binding(data) = &self.design.decl_data(binding).kind else { return false };
         matches!(&self.design.pat_node(data.pat).kind, PatKind::Ident { mutable: true, binding: named, .. } if *named == binding)
     }
@@ -30,21 +36,23 @@ impl Elaboration<'_, '_> {
         if scope.may_be_unknown { Flag::Flagged.wrap(base) } else { base }
     }
 
-    /// `value` as a value of `target`'s flag: unchanged when both agree, `merge(v, v)` over a
-    /// temporary when `target` may be unknown and `value` may not. `None` after a diagnostic is not
-    /// needed here: a value that may be unknown never reaches a plain target (`assignable`).
-    pub(super) fn coerced_to(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, value: LoweredExpr, target: &ValueType) -> Option<LoweredExpr> {
+    /// `value` as a value of `target`'s flag: unchanged when both agree or `target` is plain,
+    /// `{ let t = value; merge(t, t) }` when `target` may be unknown and `value` may not (a known
+    /// value merged with itself is that value, §3.3.3, typed as one that may be unknown). A value
+    /// that may be unknown never reaches a plain target: callers refuse it first.
+    pub(super) fn coerced_to(&mut self, scope: &mut Scope, value: LoweredExpr, target: &ValueType) -> LoweredExpr {
         let (want, have) = (Flag::of(target), self.flag(value));
         if want == have || want == Flag::Plain {
-            return Some(value);
+            return value;
         }
         let origin = self.expr_origins[value.index()].clone();
         let ty = self.type_of(value);
         let temporary = scope.locals.len() as u32;
         scope.locals.push(Local { name: format!("coerce${temporary}"), ty: ty.clone(), mutable: false });
-        out.push(self.stmt(Stmt::Let { local: temporary, init: value }));
+        let bind = self.stmt(Stmt::Let { local: temporary, init: value });
         let (a, b) = (self.emit(Expr::Local(temporary), ty.clone(), origin.clone()), self.emit(Expr::Local(temporary), ty.clone(), origin.clone()));
-        Some(self.emit(Expr::Merge { a, b }, Flag::Flagged.wrap(ty), origin))
+        let merged = self.emit(Expr::Merge { a, b }, Flag::Flagged.wrap(ty.clone()), origin.clone());
+        self.emit(Expr::Block { stmts: vec![bind], value: Some(merged) }, Flag::Flagged.wrap(ty), origin)
     }
 
     /// `let x;` (§1.7.5): a local with no value yet. The checker proves it is assigned before it is
@@ -85,7 +93,7 @@ impl Elaboration<'_, '_> {
             self.unsupported(scope.file, node.span, "an assignment of a value that may be unknown to a local that cannot hold one");
             return false;
         }
-        let Some(value) = self.coerced_to(scope, out, value, &target) else { return false };
+        let value = self.coerced_to(scope, value, &target);
         let op = op.map(Self::binary_op);
         out.push(self.stmt(Stmt::Assign { place: Place { local, path: Vec::new() }, op, value }));
         true
@@ -120,5 +128,168 @@ impl Elaboration<'_, '_> {
                 None
             }
         }
+    }
+}
+
+// ---- loops and the exits that leave them (§1.8.7 to §1.8.12) ------------------------------
+
+impl Elaboration<'_, '_> {
+    /// `while cond { body }`, whose condition is read before every iteration: type `()`.
+    pub(super) fn lower_while(&mut self, scope: &mut Scope, cond: ExprId, body: &BlockNode, origin: Origin) -> Option<LoweredExpr> {
+        if let ExprKind::Let { pat, expr } = self.design.expr_node(cond).kind.clone() {
+            return self.lower_while_let(scope, pat, expr, body, origin);
+        }
+        let cond = self.lower_expr(scope, cond)?;
+        let body = self.lower_loop_body(scope, body, ValueType::Unit)?;
+        Some(self.emit(Expr::While { cond, body }, ValueType::Unit, origin))
+    }
+
+    /// `while let Some(p) = o { body }` as `loop { if o.is { let p = o.val; body } else { break } }`,
+    /// `o` read again at each iteration.
+    fn lower_while_let(&mut self, scope: &mut Scope, pat: PatId, scrutinee: ExprId, body: &BlockNode, origin: Origin) -> Option<LoweredExpr> {
+        scope.loops.push(LoopFrame { value: ValueType::Unit });
+        let looped = self.lower_while_let_body(scope, pat, scrutinee, body, &origin);
+        scope.loops.pop();
+        let body = looped?;
+        Some(self.emit(Expr::Loop { body }, ValueType::Unit, origin))
+    }
+
+    /// The one statement of the loop of a `while let`: the `if` that runs the body or leaves.
+    fn lower_while_let_body(&mut self, scope: &mut Scope, pat: PatId, scrutinee: ExprId, body: &BlockNode, origin: &Origin) -> Option<Vec<LoweredStmt>> {
+        let pair = self.lower_option(scope, scrutinee)?;
+        let binding = self.some_binding(scope.file, pat)?;
+        let then = self.bound_block(scope, binding, pair.val, &body.stmts, body.span)?;
+        let then = self.fit_to(then, &ValueType::Unit);
+        let leave = self.emit_exit(Expr::Break(None), origin.clone());
+        let ty = self.flag(pair.is).wrap(ValueType::Unit);
+        let step = self.emit(Expr::If { cond: pair.is, then, otherwise: leave }, ty, origin.clone());
+        Some(vec![self.stmt(Stmt::Expr(step))])
+    }
+
+    /// The statements of a loop body, lowered with the frame of a loop whose value has type
+    /// `value` pushed (`break` reads it).
+    fn lower_loop_body(&mut self, scope: &mut Scope, body: &BlockNode, value: ValueType) -> Option<Vec<LoweredStmt>> {
+        scope.loops.push(LoopFrame { value });
+        let lowered = self.lower_statements(scope, &body.stmts);
+        scope.loops.pop();
+        let (mut stmts, tail) = lowered?;
+        if let Some(tail) = tail {
+            stmts.push(self.stmt(Stmt::Expr(tail)));
+        }
+        Some(stmts)
+    }
+
+    /// `loop { body }`: its value is what its `break`s carry, of the type the checker gave
+    /// (`base`), and may be unknown where the code may see unknowns.
+    pub(super) fn lower_loop(&mut self, scope: &mut Scope, body: &BlockNode, base: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        let ty = if base == ValueType::Unit { base } else { Self::mutable_type(scope, base) };
+        let body = self.lower_loop_body(scope, body, ty.clone())?;
+        Some(self.emit(Expr::Loop { body }, ty, origin))
+    }
+
+    /// `for k in low..high { body }` (or `..=`) over an integer range. It stays a `ForRange`
+    /// unless its bounds may be unknown or its body leaves early in code that may see unknowns:
+    /// then it is the `while` that counts a mutable local, which the generated code can merge.
+    pub(super) fn lower_for(&mut self, scope: &mut Scope, pat: PatId, iter: ExprId, body: &BlockNode, origin: Origin) -> Option<LoweredExpr> {
+        let node = self.design.expr_node(self.peel_parens(iter)).clone();
+        let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = node.kind else {
+            self.unsupported(scope.file, node.span, "a `for` over anything but an integer range");
+            return None;
+        };
+        let (low, high) = (self.lower_expr(scope, lo)?, self.lower_expr(scope, hi)?);
+        let variable = self.for_variable(scope, pat)?;
+        let counted = self.flags(&[low, high]) == Flag::Flagged || (scope.may_be_unknown && self.leaves_early(body));
+        if counted && inclusive {
+            self.unsupported(scope.file, body.span, "a `for` over `a..=b` whose bounds may be unknown or whose body leaves early");
+            return None;
+        }
+        if counted {
+            return self.lower_counting_loop(scope, variable, (low, high), body, origin);
+        }
+        scope.locals[variable as usize].ty = self.type_of(low);
+        let body = self.lower_loop_body(scope, body, ValueType::Unit)?;
+        Some(self.emit(Expr::ForRange { local: variable, low, high, inclusive, reverse: false, body }, ValueType::Unit, origin))
+    }
+
+    /// The local the pattern of a `for` binds: a name, or a fresh local for `_`.
+    fn for_variable(&mut self, scope: &mut Scope, pat: PatId) -> Option<u32> {
+        let node = self.design.pat_node(pat).clone();
+        match node.kind {
+            PatKind::Ident { binding, sub: None, .. } => self.bind_local(scope, binding),
+            PatKind::Wild => {
+                scope.locals.push(Local { name: "_".to_string(), ty: ValueType::Unit, mutable: false });
+                Some(scope.locals.len() as u32 - 1)
+            }
+            _ => {
+                self.unsupported(scope.file, node.span, "a `for` pattern that is not a name");
+                None
+            }
+        }
+    }
+
+    /// Whether `body` holds a `break`, a `continue` or a `return` (one of an inner loop counts).
+    fn leaves_early(&self, body: &BlockNode) -> bool {
+        let mut inside = Vec::new();
+        for expr in crate::pom::block_exprs(self.design, body) {
+            crate::pom::preorder(self.design, expr, &mut inside);
+        }
+        inside.iter().any(|e| matches!(self.design.expr_node(*e).kind, ExprKind::Break(_) | ExprKind::Continue | ExprKind::Return(_)))
+    }
+
+    /// `for k in low..high { body }` as `{ let end = high; let mut next = low; while next < end { let k = next; next += 1; body } }`
+    /// (`..=` is refused: its last step would overflow a bound at the type's maximum). The next
+    /// value is taken before the body, so a `continue` still counts.
+    fn lower_counting_loop(&mut self, scope: &mut Scope, variable: u32, (low, high): (LoweredExpr, LoweredExpr), body: &BlockNode, origin: Origin) -> Option<LoweredExpr> {
+        let base = match self.type_of(low) {
+            ValueType::Flagged(inner) => *inner,
+            other => other,
+        };
+        let counter_ty = Self::mutable_type(scope, base.clone());
+        let end_ty = self.type_of(high);
+        let (end, next) = (scope.locals.len() as u32, scope.locals.len() as u32 + 1);
+        scope.locals.push(Local { name: format!("for$end{end}"), ty: end_ty.clone(), mutable: false });
+        scope.locals.push(Local { name: format!("for$next{next}"), ty: counter_ty.clone(), mutable: true });
+        let low = self.coerced_to(scope, low, &counter_ty);
+        let bind_end = self.stmt(Stmt::Let { local: end, init: high });
+        let bind_next = self.stmt(Stmt::Let { local: next, init: low });
+        let read = |this: &mut Self, local: u32, ty: &ValueType| this.emit(Expr::Local(local), ty.clone(), origin.clone());
+        let (counter, bound) = (read(self, next, &counter_ty), read(self, end, &end_ty));
+        let test_ty = self.flags(&[counter, bound]).wrap(ValueType::Bool);
+        let cond = self.emit(Expr::Binary { op: BinaryOp::Lt, lhs: counter, rhs: bound }, test_ty, origin.clone());
+        let current = read(self, next, &counter_ty);
+        scope.locals[variable as usize].ty = counter_ty.clone();
+        let take = self.stmt(Stmt::Let { local: variable, init: current });
+        let one = self.emit(Expr::Int(1), base, origin.clone());
+        let step = self.stmt(Stmt::Assign { place: Place { local: next, path: Vec::new() }, op: Some(BinaryOp::Add), value: one });
+        let mut rest = self.lower_loop_body(scope, body, ValueType::Unit)?;
+        rest.splice(0..0, [take, step]);
+        let looped = self.emit(Expr::While { cond, body: rest }, ValueType::Unit, origin.clone());
+        Some(self.emit(Expr::Block { stmts: vec![bind_end, bind_next], value: Some(looped) }, ValueType::Unit, origin))
+    }
+
+    /// `break` or `break value`: leaves the innermost loop. A value is coerced to the loop's type
+    /// (flagged where the loop's is); it never has one a plain loop cannot hold.
+    pub(super) fn lower_break(&mut self, scope: &mut Scope, value: Option<ExprId>, span: crate::msl::Span, origin: Origin) -> Option<LoweredExpr> {
+        let Some(wanted) = scope.loops.last().map(|frame| frame.value.clone()) else {
+            self.unsupported(scope.file, span, "a `break` outside a loop");
+            return None;
+        };
+        let value = match value {
+            Some(value) => {
+                let lowered = self.lower_expr(scope, value)?;
+                if self.flag(lowered) == Flag::Flagged && Flag::of(&wanted) == Flag::Plain {
+                    self.unsupported(scope.file, self.design.expr_node(value).span, "a `break` value that may be unknown out of a loop that cannot hold one");
+                    return None;
+                }
+                Some(self.coerced_to(scope, lowered, &wanted))
+            }
+            None => None,
+        };
+        Some(self.emit_exit(Expr::Break(value), origin))
+    }
+
+    /// `continue`: starts the innermost loop's next iteration.
+    pub(super) fn lower_continue(&mut self, origin: Origin) -> LoweredExpr {
+        self.emit_exit(Expr::Continue, origin)
     }
 }
