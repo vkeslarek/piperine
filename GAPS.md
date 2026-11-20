@@ -213,7 +213,7 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 
 ### 4.8 Diagnostics that are loud and say too little
 
-- **64 of the spec's 180 error codes appear nowhere in the source** (list in §10). Most belong to
+- **68 of the spec's 189 error codes are raised nowhere in the source** (list in §10). Most belong to
   a refused construct; `E0102` and `E0105` do not.
 - `P0001` says "outside the M1 subset" for forms the spec defines.
 
@@ -357,14 +357,16 @@ does not count.
 
 ## 10. Reference lists
 
-**Error codes of the spec that no source file mentions (61 of 180).** `E0503`, `E0504`, `E0505`,
-`E0507` and `E0508` are raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`),
-spelled as enum names and rendered by `as_str`, which a count of string literals misses (an earlier
-list gave `E0504` and `E0507` as unraised, wrongly). `E0804` to `E0806` are raised by `host.rs` and `E0803` by `session.rs`.
-`E0102 E0105 E0110 E0111 E0122 E0123 E0124 E0126 E0127 E0131 E0132 E0133 E0134 E0151 E0203 E0204
-E0205 E0224 E0242 E0244 E0260 E0261 E0262 E0264 E0313 E0315 E0322 E0333 E0340 E0342 E0351
-E0354 E0360 E0361 E0362 E0371 E0372 E0373 E0374 E0413 E0416 E0451 E0452 E0453 E0454
-E0456 E0610 E0612 E0613 E0614 E0701 E0702 E0703 E0704 E0705 E0706 E0807 E0808 E0809 E0904 E0906`
+**Error codes of the spec that no source file mentions (68 of 189).** A code counts as mentioned when it is spelled
+outside a comment in `crates/*/src` (a literal, or an enum variant's `as_str`); `E0375` is named in a doc
+comment only (`pom/builtin.rs`), so it is on the list. `E0503`, `E0504`, `E0505`, `E0507` and `E0508` are
+raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`). `E0803` to `E0806` are raised
+by `session.rs` and `host.rs`; `E0701` and `E0702` by the elaborator.
+`E0102 E0105 E0110 E0111 E0122 E0123 E0124 E0126 E0127 E0131 E0132 E0133 E0134 E0180
+E0181 E0182 E0183 E0184 E0185 E0186 E0187 E0188 E0203 E0204 E0205 E0224 E0242 E0244
+E0260 E0261 E0262 E0264 E0313 E0315 E0322 E0333 E0340 E0342 E0351 E0354 E0360 E0361
+E0362 E0371 E0372 E0373 E0374 E0375 E0413 E0416 E0451 E0452 E0453 E0454 E0456 E0610
+E0612 E0613 E0614 E0703 E0704 E0705 E0706 E0807 E0808 E0809 E0904 E0906`
 
 **Entries of the previous file that changed.**
 
