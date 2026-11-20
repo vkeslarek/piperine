@@ -10,7 +10,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 **Design**: `.specs/features/buck-scenarios/design.md`
 **Status**: Draft
-**Approved**: 2026-11-20 - under the user's standing AFK rule; dispatched B1 (T1-T8) - Sonnet worker.
+**Approved**: 2026-11-20 - under the user's standing AFK rule; dispatched B1 (T1-T8) - Sonnet worker. B1 done (edc0c973). B2 (phases 3-5, T9-T15) - Sonnet worker, 2026-11-20.
 **Build**: `cargo build -p piperine -p piperine-parity -p piperine-api -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape`
 **Run harness**: `cargo test -p piperine-parity --lib scenario::`
 **Run scenarios**: `cargo test -p piperine --test buck_scenarios -- --nocapture`
