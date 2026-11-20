@@ -229,6 +229,12 @@ pub trait AnalogSide {
     fn equilibrium(&mut self) -> Result<Accepted>;
     fn mark(&self) -> Self::Mark;
     fn restore(&mut self, mark: &Self::Mark);
+    /// Takes back the last `accept` and puts the side back as `mark` found it, so the same step
+    /// can be attempted again after a delivery (§15.2 rule 4). A side whose `accept` keeps nothing
+    /// beyond what `restore` undoes needs no more than the default.
+    fn retake(&mut self, mark: &Self::Mark) {
+        self.restore(mark);
+    }
     /// Moves the trace records of the attempts since the last drain into `out`.
     fn drain_traces(&mut self, out: &mut Vec<Observation>);
     /// The solution as it stands, indexed as `AnalogReference::idx` (empty: the side does not

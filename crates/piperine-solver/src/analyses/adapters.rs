@@ -429,6 +429,11 @@ impl AnalogSide for TransientSide<'_, '_> {
         self.tran.device_restore(mark);
     }
 
+    fn retake(&mut self, mark: &DeviceMark) {
+        self.tran.device_unaccept(&mut self.run);
+        self.tran.device_restore(mark);
+    }
+
     fn drain_traces(&mut self, out: &mut Vec<Observation>) {
         let time = self.run.attempted();
         traces(self.tran.device_bound(), time, out);

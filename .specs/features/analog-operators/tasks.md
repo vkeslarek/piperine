@@ -355,9 +355,9 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `a_crossing_made_by_a_jump_retakes_the_step`, `a_step_that_reads_no_jump_never_retakes` and `endless_retakes_fail_with_e0504` pass
-- [ ] every `buck_*` target of `piperine-parity`, `Run twins` and every `protocol_*` target of `piperine-solver` pass unedited (a target that moves stops the task)
-- [ ] Gate check passes: `Run retake`, then `cargo test -p piperine-solver`, then Full
+- [x] `a_crossing_made_by_a_jump_retakes_the_step`, `a_step_that_reads_no_jump_never_retakes` and `endless_retakes_fail_with_e0504` pass
+- [x] every `buck_*` target of `piperine-parity`, `Run twins` and every `protocol_*` target of `piperine-solver` pass unedited (a target that moves stops the task)
+- [x] Gate check passes: `Run retake`, then `cargo test -p piperine-solver`, then Full
 
 **Tests**: integration
 **Gate**: full

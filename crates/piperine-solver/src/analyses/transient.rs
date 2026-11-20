@@ -448,6 +448,7 @@ struct StepAssessment {
 /// size, and the acceptance bookkeeping the phase methods read and
 /// advance. Owned by [`TransientSolver::solve`]; the phase methods take it
 /// as an explicit parameter.
+#[derive(Clone)]
 struct TimeLoop {
     current_time: f64,
     dt: f64,
@@ -950,6 +951,23 @@ pub(crate) struct DeviceRun {
     /// The controller's step when the current step was first retaken toward a crossing: the
     /// step after the landing starts from it, not from the landing's short step.
     retaken: Option<f64>,
+    /// What the last acceptance changed, until the next one: a step retaken after its crossings
+    /// changed what `analog` reads takes it back (§15.2 rule 4).
+    undo: Option<AcceptUndo>,
+}
+
+/// What `device_accept` changes in the run, kept so `device_unaccept` can put it back: the time
+/// loop, the step controller's memory and the bookkeeping beside them.
+struct AcceptUndo {
+    st: TimeLoop,
+    prev_h: f64,
+    uic_hold: bool,
+    steps: usize,
+    cap: f64,
+    retaken: Option<f64>,
+    delivered: Vec<String>,
+    last_dt: f64,
+    stepper: piperine_analog_solver::convergence::StepperMemory,
 }
 
 /// The attempts of one step that went past a crossing (§17.3): the accepted time the step
@@ -1120,6 +1138,7 @@ impl TransientSolver<'_> {
             locates,
             located: None,
             retaken: None,
+            undo: None,
         };
         let (start, stop) = (self.options.start_time, self.options.stop_time);
         let hooks = self.host.clone();
@@ -1622,6 +1641,17 @@ impl TransientSolver<'_> {
     pub(crate) fn device_accept(&mut self, run: &mut DeviceRun) -> crate::core::result::Result<crate::protocol::Accepted> {
         let PendingStep { prediction, snapshot, milne, post_set_step, over_error_at_floor } =
             run.pending.take().expect("accept follows a converged attempt");
+        run.undo = Some(AcceptUndo {
+            st: run.st.clone(),
+            prev_h: self.system.prev_h,
+            uic_hold: self.system.uic_hold,
+            steps: run.steps.len(),
+            cap: run.cap,
+            retaken: run.retaken,
+            delivered: run.delivered.clone(),
+            last_dt: run.last_dt,
+            stepper: self.plan.stepper().memory(),
+        });
         let StepPrediction { t_next, dt_actual, dt_proposed, .. } = prediction;
         let st = &mut run.st;
         st.steps_accepted += 1;
@@ -1656,6 +1686,22 @@ impl TransientSolver<'_> {
         run.delivered.clear();
         run.last_dt = dt_actual;
         Ok(accepted)
+    }
+
+    /// Takes back the last `device_accept`: the time loop, the controller and the recorded step
+    /// are as the attempt found them, so the same step can be attempted again (§15.2 rule 4).
+    /// The solution history and the assembly come back with `device_restore`.
+    pub(crate) fn device_unaccept(&mut self, run: &mut DeviceRun) {
+        let undo = run.undo.take().expect("a retake follows an acceptance");
+        run.st = undo.st;
+        self.system.prev_h = undo.prev_h;
+        self.system.uic_hold = undo.uic_hold;
+        run.steps.truncate(undo.steps);
+        run.cap = undo.cap;
+        run.retaken = undo.retaken;
+        run.delivered = undo.delivered;
+        run.last_dt = undo.last_dt;
+        self.plan.stepper_mut().resume(&undo.stepper);
     }
 
     /// The analog copy takes the boundary; after a jump the next step starts
