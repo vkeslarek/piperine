@@ -450,7 +450,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The known zero of `ty`: the payload of `None`.
-    fn zero(&mut self, ty: &ValueType, origin: Origin) -> Option<LoweredExpr> {
+    pub(super) fn zero(&mut self, ty: &ValueType, origin: Origin) -> Option<LoweredExpr> {
         let kind = match ty {
             ValueType::F64 => Expr::Real(piperine_ir::Real::new(0.0)),
             ValueType::Bool => Expr::Bool(false),
@@ -824,6 +824,11 @@ impl Elaboration<'_, '_> {
 
     /// `let o = e;` of type `Option<T>`: the flag to the local `o.is`, the payload to `o.val`.
     pub(super) fn lower_option_let(&mut self, scope: &mut Scope, out: &mut Vec<StmtId>, binding: DeclId, init: ExprId) -> bool {
+        if self.declared_mutable(binding) {
+            let span = self.design.decl_data(binding).span;
+            self.unsupported(scope.file, span, "a `let mut` of an `Option`");
+            return false;
+        }
         let name = self.design.decl_data(binding).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let Some(pair) = self.lower_option(scope, init) else { return false };
         let is = scope.locals.len() as u32;

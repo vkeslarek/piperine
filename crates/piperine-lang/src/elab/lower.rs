@@ -78,11 +78,15 @@ pub(super) struct Scope {
     /// The initializer of each local a plain `let` bound: a condition that reads the local reads
     /// what it holds (`selectors.rs`).
     pub(super) local_inits: BTreeMap<u32, LoweredExpr>,
+    /// Whether a value of this code may be unknown (§3.3): a reaction, or a function variant with
+    /// an argument that may be. A `let mut` there is flagged, so an assignment under an unknown
+    /// decision can merge (`control.rs`).
+    pub(super) may_be_unknown: bool,
 }
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new() }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), may_be_unknown: false }
     }
 }
 
@@ -308,6 +312,7 @@ impl Elaboration<'_, '_> {
                 scope.block_depth -= 1;
                 lowered
             }
+            ExprKind::Assign { .. } => self.lower_assignment_expr(scope, expr, origin),
             ExprKind::Call { args, class, .. } => self.lower_call(scope, expr, &args.iter().map(|a| a.value).collect::<Vec<_>>(), *class, ty, origin),
             ExprKind::MethodCall { recv, args, .. } if self.types.builtin(expr).is_some() => {
                 let builtin = self.types.builtin(expr)?;
@@ -457,8 +462,10 @@ impl Elaboration<'_, '_> {
             self.unsupported(file, span, "a name whose type is not a value type");
             return None;
         };
+        let mutable = self.declared_mutable(binding);
+        let ty = if mutable { Self::mutable_type(scope, ty) } else { ty };
         let index = scope.locals.len() as u32;
-        scope.locals.push(Local { name, ty, mutable: false });
+        scope.locals.push(Local { name, ty, mutable });
         scope.local_index.insert(binding, index);
         Some(index)
     }
@@ -488,6 +495,10 @@ impl Elaboration<'_, '_> {
             let file = self.design.decl_data(node.owner).file;
             match &node.kind {
                 StmtKind::Let { pat, init: Some(init), else_: None, .. } => ok &= self.lower_let(scope, &mut out, *pat, *init, file, node.span),
+                // `let x;`: a local first assigned later (§1.7.5, `control.rs`).
+                StmtKind::Let { pat, init: None, else_: None, .. } => ok &= self.lower_deferred_let(scope, &mut out, *pat, file, node.span),
+                // `place = value;` and `place op= value;` (§1.5.12, `control.rs`).
+                StmtKind::Expr { expr, .. } if matches!(self.design.expr_node(*expr).kind, ExprKind::Assign { .. }) => ok &= self.lower_assignment(scope, &mut out, *expr),
                 // `emit!` and a call of a function that emits are statements (`records.rs`).
                 StmtKind::Expr { expr, .. } if let Some(lowered) = self.lower_record_statement(scope, &mut out, *expr) => ok &= lowered,
                 // `bound_step(dt);` is a statement of the analog block (`analog.rs`).
@@ -523,9 +534,17 @@ impl Elaboration<'_, '_> {
                 scope.limit_name = None;
                 match (local, init) {
                     (Some(local), Some(init)) => {
-                        // A local is what its initializer is: flagged when that may be unknown.
-                        scope.locals[local as usize].ty = self.type_of(init);
-                        scope.local_inits.insert(local, init);
+                        // A local is what its initializer is: flagged when that may be unknown; a
+                        // `let mut` of code that may see unknowns is flagged whatever it starts as.
+                        let target = scope.locals[local as usize].ty.clone();
+                        let init = if scope.locals[local as usize].mutable { self.coerced_to(scope, out, init, &target) } else { Some(init) };
+                        let Some(init) = init else { return false };
+                        let mutable = scope.locals[local as usize].mutable;
+                        let ty = self.type_of(init);
+                        scope.locals[local as usize].ty = ty;
+                        if !mutable {
+                            scope.local_inits.insert(local, init);
+                        }
                         out.push(self.stmt(Stmt::Let { local, init }));
                         true
                     }
@@ -540,7 +559,7 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    fn binary_op(op: BinOp) -> BinaryOp {
+    pub(super) fn binary_op(op: BinOp) -> BinaryOp {
         match op {
             BinOp::Add => BinaryOp::Add,
             BinOp::Sub => BinaryOp::Sub,

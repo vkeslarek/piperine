@@ -575,9 +575,9 @@ T63
 
 **Done when**:
 
-- [ ] `let_mut_lowers_to_mutable_locals_and_assignments` passes under `**Run elabctl**`
-- [ ] `let_mut_and_every_compound_operator_give_rusts_values` passes under `**Run srcctl**`
-- [ ] Gate check passes: Full
+- [x] `let_mut_lowers_to_mutable_locals_and_assignments` passes under `**Run elabctl**`
+- [x] `let_mut_and_every_compound_operator_give_rusts_values` passes under `**Run srcctl**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

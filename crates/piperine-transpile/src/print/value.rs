@@ -1166,7 +1166,8 @@ impl<'a> ValuePrinter<'a> {
                     Some(ty) => self.expr_as(*init, ty)?,
                     None => self.expr(*init)?,
                 };
-                let keyword = if self.mutable.get(*local as usize).copied().unwrap_or(false) { "let mut" } else { "let" };
+                // a deferred `let x;` starts at a placeholder its first assignment overwrites
+                let keyword = if self.mutable.get(*local as usize).copied().unwrap_or(false) { "#[allow(unused_assignments)] let mut" } else { "let" };
                 // a function value has no type of its own to infer: the local is the `&dyn Fn` it holds
                 let annotation = match self.local_types.get(*local as usize) {
                     Some(ty @ ValueType::Fn(..)) => format!(": {}", self.rust_type(ty, &self.path)?),

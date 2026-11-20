@@ -1,0 +1,53 @@
+//! Scope: mutation, loops, exits, patterns and function values lowered by `piperine_lang::elab`
+//! (feature `composite-values`, CV-01 to CV-07; docs/spec Part I §1.5 to §1.8, §3). Each test
+//! elaborates a design of `Top` and reads the IR it gives: the locals, the statements and the
+//! codes of what is refused. Run-time values are proven from source in `piperine-parity`'s
+//! `source_control`.
+
+#[path = "support/elab.rs"]
+#[allow(dead_code)]
+mod support;
+
+use piperine_ir::Ir;
+use support::Elab;
+
+/// A design of `Top` with `items` before it, calling each of `calls` from its `analog` block.
+fn reaching(items: &str, calls: &[&str]) -> String {
+    let lets: Vec<String> = calls.iter().enumerate().map(|(k, call)| format!("let x{k} = {call};")).collect();
+    format!("{items}\nmodule Top() {{ }}\nanalog for Top {{ {} }}", lets.join(" "))
+}
+
+/// The text of the function named `name` in the structural print.
+fn function_text(ir: &Ir, name: &str) -> String {
+    let text = ir.print_structural();
+    let head = format!("fn {name}(");
+    let start = text.find(&head).unwrap_or_else(|| panic!("no `{head}` in:\n{text}"));
+    let rest = &text[start..];
+    let end = rest[1..].find("\nfn ").or_else(|| rest[1..].find("\ninstance ")).map_or(rest.len(), |at| at + 1);
+    rest[..end].to_string()
+}
+
+#[test]
+fn let_mut_lowers_to_mutable_locals_and_assignments() {
+    // §1.5.12: `let mut` is a mutable local, `x = e` and `x op= e` assign it; a plain `let` and a
+    // parameter stay immutable. The IR passes its own check.
+    let items = "fn work(a: f64) -> f64 { let mut x = a; x = x + 1.0; x += 2.0; x *= 3.0; let y = x; y }";
+    let ir = Elab::ir(&reaching(items, &["work(1.0)"]), "Top");
+    let function = ir.functions().find(|f| f.name() == "work").expect("work");
+    let flags: Vec<(String, bool)> = function.locals().iter().map(|l| (l.name.clone(), l.mutable)).collect();
+    assert_eq!(flags, vec![("a".to_string(), false), ("x".to_string(), true), ("y".to_string(), false)]);
+    let text = function_text(&ir, "work");
+    for printed in ["x = (x + 1", "x += 2", "x *= 3"] {
+        assert!(text.contains(printed), "`{printed}` in:\n{text}");
+    }
+
+    // §1.7.5: `let x;` is a local first assigned later; it is assignable in the IR though the
+    // source wrote no `mut`.
+    let items = "fn pick(c: bool) -> u8 { let r: u8; if c { r = 1; } else { r = 2; } r }";
+    let ir = Elab::ir(&reaching(items, &["pick(true)"]), "Top");
+    let function = ir.functions().find(|f| f.name() == "pick").expect("pick");
+    let flags: Vec<(String, bool)> = function.locals().iter().map(|l| (l.name.clone(), l.mutable)).collect();
+    assert_eq!(flags, vec![("c".to_string(), false), ("r".to_string(), true)]);
+    let text = function_text(&ir, "pick");
+    assert!(text.contains("r = 1") && text.contains("r = 2"), "{text}");
+}

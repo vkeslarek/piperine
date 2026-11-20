@@ -14,6 +14,7 @@ mod carriers;
 mod children;
 mod compound;
 mod consts;
+mod control;
 mod contribute;
 mod derivatives;
 mod diagnose;

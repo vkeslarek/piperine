@@ -21,6 +21,8 @@ impl Elaboration<'_, '_> {
         let mut scope = Scope::new(data.file);
         // `freq()` in a function is the caller's `freq_`: the sweep's in an analog caller, 0 in a reaction.
         scope.analog = true;
+        // A variant with an argument that may be unknown may see unknown decisions inside.
+        scope.may_be_unknown = pattern.contains(&Flag::Flagged);
         let mut params = Vec::new();
         let mut ok = true;
         let declared = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)));

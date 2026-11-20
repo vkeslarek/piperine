@@ -220,6 +220,9 @@ impl<'a> AnalogPrinter<'a> {
             let stmt = self.ir.stmt(*id);
             let keep = match stmt {
                 Stmt::Let { local, .. } => needed.contains(local),
+                // an assignment is kept for the later reads of the local it writes (§1.5.12); its
+                // operands, and for a compound one the local itself, feed the earlier statements
+                Stmt::Assign { place, .. } => needed.contains(&place.local) || roots(*id),
                 _ => roots(*id),
             };
             if !keep {
