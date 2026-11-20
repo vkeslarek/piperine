@@ -96,6 +96,72 @@ impl Depth {
     }
 }
 
+/// Indices and slice bounds checked against a length (§1.5.25): outside the length, a panic naming
+/// the index and where the access was written. An index that may be unknown names any element, so a
+/// read merges the elements and a write merges the value into each (§3.3.13).
+pub struct Index;
+
+impl Index {
+    /// The position `index` names in `length` elements; outside them the panic naming the index and `origin`.
+    pub fn of(index: i128, length: usize, origin: &str) -> usize {
+        if index < 0 || index as u128 >= length as u128 {
+            Panic::raise(format!("{origin}: the index {index} is out of range for a length of {length}"));
+        }
+        index as usize
+    }
+
+    /// `elements[index]` for a known index.
+    pub fn at<T: Copy>(elements: &[T], index: i128, origin: &str) -> T {
+        elements[Index::of(index, elements.len(), origin)]
+    }
+
+    /// `elements[index]` where the index may be unknown (`None`): the merge of every element it may name.
+    pub fn read<T: Merge + Copy>(elements: &[T], index: Option<i128>, origin: &str) -> T {
+        match index {
+            Some(index) => Index::at(elements, index, origin),
+            None => match elements.split_first() {
+                Some((first, rest)) => rest.iter().fold(*first, |merged, element| merged.merge(*element)),
+                None => Panic::raise(format!("{origin}: an index into no elements")),
+            },
+        }
+    }
+
+    /// `elements[index] = value` where the index may be unknown (`None`): every element it may name
+    /// becomes the merge of what it held and `value`.
+    pub fn write<T: Merge + Copy>(elements: &mut [T], index: Option<i128>, value: T, origin: &str) {
+        match index {
+            Some(index) => elements[Index::of(index, elements.len(), origin)] = value,
+            None => {
+                if elements.is_empty() {
+                    Panic::raise(format!("{origin}: an index into no elements"));
+                }
+                for element in elements.iter_mut() {
+                    *element = element.merge(value);
+                }
+            }
+        }
+    }
+
+    /// `&elements[low..high]` (`..=` when `inclusive`): a start past the end, or a bound outside the
+    /// length, is the panic naming the bound and `origin`.
+    pub fn slice<'a, T>(elements: &'a [T], low: Option<i128>, high: Option<i128>, inclusive: bool, origin: &str) -> &'a [T] {
+        let length = elements.len() as i128;
+        let start = low.unwrap_or(0);
+        let end = match high {
+            Some(high) if inclusive => high + 1,
+            Some(high) => high,
+            None => length,
+        };
+        if start < 0 || end > length {
+            Panic::raise(format!("{origin}: the slice {start}..{end} is out of range for a length of {length}"));
+        }
+        if start > end {
+            Panic::raise(format!("{origin}: the slice starts at {start}, past its end {end}"));
+        }
+        &elements[start as usize..end as usize]
+    }
+}
+
 /// What one iteration of a loop under unknown control does, or what a part of an iteration does
 /// so far (§3.3.3). `S` is the tuple of locals the loop writes, `B` the value a `break` carries and
 /// `R` the value a `return` carries.
@@ -318,7 +384,7 @@ impl Flagged<bool> {
 mod tests {
     use std::cell::Cell;
 
-    use super::{Attempt, Decision, Depth, Panic, Step, Trips, Unrolled};
+    use super::{Attempt, Decision, Depth, Index, Panic, Step, Trips, Unrolled};
     use crate::rt::flag::Flagged;
     use crate::rt::int::UInt;
 
@@ -331,6 +397,41 @@ mod tests {
 
     fn u<T: Copy + Default>() -> Flagged<T> {
         Flagged::unknown()
+    }
+
+    #[test]
+    fn an_index_out_of_range_panics_naming_it() {
+        // §1.5.25: an index at or past the length, a negative one, and a slice bound past the length
+        // or a start past the end, each a panic naming the index and where it was written
+        let elements = [10u8, 20, 30];
+        assert_eq!(Index::at(&elements, 2, "a.msl:3:5"), 30);
+        let message = |body: fn() -> u8| {
+            let payload = std::panic::catch_unwind(body).expect_err("the access panics");
+            payload.downcast_ref::<String>().cloned().expect("a text payload")
+        };
+        assert_eq!(message(|| Index::at(&[10u8, 20, 30], 3, "a.msl:3:5")), "a.msl:3:5: the index 3 is out of range for a length of 3");
+        assert_eq!(message(|| Index::at(&[10u8, 20, 30], -1, "a.msl:4:5")), "a.msl:4:5: the index -1 is out of range for a length of 3");
+        assert_eq!(Index::slice(&elements, Some(1), None, false, "a.msl:5:5"), &[20, 30]);
+        assert_eq!(Index::slice(&elements, Some(0), Some(1), true, "a.msl:5:5"), &[10, 20]);
+        assert_eq!(message(|| Index::slice(&[10u8, 20, 30], Some(0), Some(3), true, "a.msl:6:5").len() as u8), "a.msl:6:5: the slice 0..4 is out of range for a length of 3");
+        assert_eq!(message(|| Index::slice(&[10u8, 20, 30], Some(2), Some(1), false, "a.msl:7:5").len() as u8), "a.msl:7:5: the slice starts at 2, past its end 1");
+    }
+
+    #[test]
+    fn an_unknown_index_merges_the_elements_it_may_name() {
+        // §3.3.13: an unknown index may name any element: a read is the merge of all of them (known
+        // only where they agree), a write merges the value into each
+        let n = |v: u64| -> U8 { k(UInt::<8>::new(v)) };
+        let elements = [n(1), n(1), n(2)];
+        assert_eq!(Index::read(&elements, Some(2), "a.msl:1:1"), n(2));
+        assert_eq!(Index::read(&elements, None, "a.msl:1:1"), u());
+        assert_eq!(Index::read(&[n(3), n(3)], None, "a.msl:1:1"), n(3));
+        let mut written = [n(1), n(1), n(2)];
+        Index::write(&mut written, None, n(1), "a.msl:2:1");
+        assert_eq!(written, [n(1), n(1), u()], "equal levels stay known, the rest become unknown");
+        let mut known = [n(1), n(1)];
+        Index::write(&mut known, Some(1), n(9), "a.msl:3:1");
+        assert_eq!(known, [n(1), n(9)]);
     }
 
     #[test]

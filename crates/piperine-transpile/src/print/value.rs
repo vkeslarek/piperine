@@ -79,7 +79,7 @@ impl Piece {
 pub struct ValuePrinter<'a> {
     pub(super) ir: &'a Ir,
     /// The owner's IR path, prefixed to an expression's id in an error: `fn pnjlim`.
-    path: String,
+    pub(super) path: String,
     /// The printed name of each local of the owner, by index.
     locals: Vec<String>,
     /// The type of each local of the owner, by index.
@@ -747,6 +747,7 @@ impl<'a> ValuePrinter<'a> {
                 let sign = if *op == UnaryOp::Neg { "-" } else { "!" };
                 Ok(Piece::new(format!("{sign}{operand}"), Prec::Unary))
             }
+            Expr::Binary { op, lhs, rhs } if self.is_aggregate_operand(*lhs) => self.aggregate_comparison(e, *op, *lhs, *rhs),
             Expr::Binary { op, lhs, rhs } => self.binary(e, *op, *lhs, *rhs),
             Expr::If { cond, then, otherwise } => self.if_else(e, *cond, *then, *otherwise),
             Expr::Block { stmts, value } => {
@@ -852,8 +853,7 @@ impl<'a> ValuePrinter<'a> {
             Expr::Return(value) => self.return_from_function(e, *value),
             Expr::FunctionRef(function) => self.function_value(*function),
             Expr::CallValue { callee, args } => self.call_value(e, *callee, args),
-            // Printed from T35 (`print/aggregate.rs`); refused by name until then.
-            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => Err(self.unsupported(e, "an aggregate expression")),
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => self.aggregate(e),
         }
     }
 

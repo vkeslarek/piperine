@@ -65,11 +65,16 @@ impl<'a> ValuePrinter<'a> {
     /// `Flagged` and `Real` have the operators but no `op=` forms (§1.5.12).
     pub(super) fn assign(&self, place: &Place, op: Option<BinaryOp>, value: ExprId) -> Result<String, Error> {
         if !place.path.is_empty() {
-            return Err(self.unsupported(value, "an assignment to a field of a local"));
+            return self.assign_through(place, op, value);
         }
         let (Some(name), Some(ty)) = (self.local(place.local), self.local_types.get(place.local as usize)) else {
             return Err(self.unsupported(value, "an assignment to a local out of range"));
         };
+        self.assign_to(name, ty, op, value)
+    }
+
+    /// `target = value;` or `target = target op value;`, `target` a Rust place of type `ty`.
+    pub(super) fn assign_to(&self, name: &str, ty: &ValueType, op: Option<BinaryOp>, value: ExprId) -> Result<String, Error> {
         let Some(op) = op else {
             return Ok(format!("{name} = {};", self.expr_as(value, ty)?));
         };
