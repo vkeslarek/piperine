@@ -329,7 +329,7 @@ Every id of `GAPS.md` (audit of 2026-11-17) has one owning feature. Specs only f
 | Feature | Gaps | Size | Waits on |
 | --- | --- | --- | --- |
 | `analog-structure` | L26, L27, L34–L38, L40, L42, L50, S4 | L (~30–35) | msl-fixes; host-ii (`set_at`, X9); generics and params-and-io for the stdlib `idt`, `Water`, §18 `Diode`; **delivered** (MD-71) |
-| `analog-operators` | L43, L44, L45, L47 (`simparam`, `tnom`), L49, H2 (noise analysis), U7 | L (~25) | msl-fixes; host-ii; analog-structure (AS-07) |
+| `analog-operators` | L43, L44, L45, L47 (`simparam`, `tnom`), L49, L60, H2 (noise analysis), U7 | L (44 tasks, 7 batches) | msl-fixes; host-ii; analog-structure (AS-07); **planned** (2026-11-20): B1–B3 (solver, host) run now, B4–B7 (IR, front end, plan, printer, twins) after composite-values and generics phases A–B |
 | `composite-values` | L1–L6, L9, L10, L13, L16 (H.5–H.7, `normal`), L24, the enum variant names | L (~95, phases A–D) | msl-fixes; generics A for `Fn`; unknown-semantics for unknown loops |
 | `generics` | L4 (generic enums), L7, L8, L29–L32, L58 (generics group), S3, X6 | L (~114, phases A–E) | composite-values A–C; order CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E |
 | `unknown-semantics` | L18, L19 | L (~26) | msl-fixes S1 |
