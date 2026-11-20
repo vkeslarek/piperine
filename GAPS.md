@@ -22,14 +22,14 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 2 silent, 2 broken, 41 loud (L1 to L62 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics` and the nine `analog-structure` closed, in six tables) plus
+**Counts.** 3 silent, 2 broken, 41 loud (L1 to L62 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics` and the nine `analog-structure` closed, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 9 unproven.
 
 | Section | Ids |
 | ------- | --- |
 | §2 Broken | B3, B4 |
-| §3 Silent (read this first) | S3, S6 |
+| §3 Silent (read this first) | S3, S6, S7 |
 | §4 Loud | L1–L62 (L11, L14, L15, L17, L18, L19, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50 closed) |
 | §5 Spec holes and disagreements | G1–G6 (the buck's), X1, X2, X5, X6 (X3, X4, X7, X8, X9 decided by `host-ii`) |
 | §6 Solver, numerics, performance | V12, V13, V16 |
@@ -92,6 +92,24 @@ change of the IR or the ABI.
   gives 0. `x & 0` and `b && false` are right. Ruled provisional on 2026-11-15 (`ir-rust` F-B4);
   listed here because the result differs from the spec text with no diagnostic. Per-level flags
   change the ABI's one known byte per value.
+
+### S7. Value semantics: the front end still accepts what the spec removed — size M (`value-semantics`)
+
+- **What.** The spec was amended on 2026-11-20 (Appendix G.71, decisions V1 to V7): data are values
+  and always copy, every local may be assigned, and there is no reference, slice, move, `Clone`,
+  `Copy`, `mut`, `ref` or `move`. The implementation is the earlier language. The parser accepts
+  `&T`, `&x`, `*x`, `&p`, `ref`, `mut`, `move` and `&'static str`; it reports `&self`, `&&x` and a
+  `mut` parameter as `E0900` where B.3.6 now says `E0101` and `E0903`; it raises `E0331`, which the
+  spec retired, for `let mut` in a module body. `Clone` and `Copy` resolve in a derive and in a
+  bound where H.8 rule 1 says `E0161`. `resolve` is typed `fn(&[T]) -> T` where §4 rule 8 takes
+  `[T; N]`. Appendix H's rows are by value in the spec and by borrow in the catalogue.
+- **Where it shows.** `crates/piperine-lang/std/*.msl` and the Part VII fences that are excerpts of
+  it keep the earlier spelling (§22's Resolution says how to read it); `examples/buck/src` derives
+  `Clone, Copy`. `msl_errors.rs` names the three B.3.6 rows and the one code that are ahead of the
+  parser (`ROWS_AHEAD_OF_THE_PARSER`, `FIXTURES_BEHIND_THE_SPEC`, `RETIRED_AHEAD_OF_THE_PARSER`).
+- **Impact.** A model written to the spec is refused where it assigns a `let` without `mut`
+  (`P0001`, as every assignment is until `composite-values` lands), and a model written with the
+  removed forms is accepted. Plan: `.specs/features/value-semantics/`.
 
 ---
 
@@ -213,8 +231,8 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 
 ### 4.8 Diagnostics that are loud and say too little
 
-- **68 of the spec's 189 error codes are raised nowhere in the source** (list in §10). Most belong to
-  a refused construct; `E0102` and `E0105` do not.
+- **67 of the spec's 187 error codes are raised nowhere in the source** (list in §10). Most belong to
+  a refused construct; `E0105` does not. `E0331` is raised and no longer in the spec (S7).
 - `P0001` says "outside the M1 subset" for forms the spec defines.
 
 | ID | Gap | Where | Size |
@@ -359,12 +377,12 @@ does not count.
 
 ## 10. Reference lists
 
-**Error codes of the spec that no source file mentions (68 of 189).** A code counts as mentioned when it is spelled
+**Error codes of the spec that no source file mentions (67 of 187).** A code counts as mentioned when it is spelled
 outside a comment in `crates/*/src` (a literal, or an enum variant's `as_str`); `E0375` is named in a doc
 comment only (`pom/builtin.rs`), so it is on the list. `E0503`, `E0504`, `E0505`, `E0507` and `E0508` are
 raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`). `E0803` to `E0806` are raised
 by `session.rs` and `host.rs`; `E0701` and `E0702` by the elaborator.
-`E0102 E0105 E0110 E0111 E0122 E0123 E0124 E0126 E0127 E0131 E0132 E0133 E0134 E0180
+`E0105 E0110 E0111 E0122 E0123 E0124 E0126 E0127 E0131 E0132 E0133 E0134 E0180
 E0181 E0182 E0183 E0184 E0185 E0186 E0187 E0188 E0203 E0204 E0205 E0224 E0242 E0244
 E0260 E0261 E0262 E0264 E0313 E0315 E0322 E0333 E0340 E0342 E0351 E0354 E0360 E0361
 E0362 E0371 E0372 E0373 E0374 E0375 E0413 E0416 E0451 E0452 E0453 E0454 E0456 E0610

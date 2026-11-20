@@ -124,7 +124,7 @@ A construct used outside the positions marked here is an elaboration error, repo
 
 Notes:
 
-1. Inside a block or a `fn`, an immutable `let` and `let mut` are value-level locals (§8.2). They are allowed wherever statements are.
+1. Inside a block or a `fn`, a `let` declares a value-level local, and every local may be assigned again (§1.5.12). A body `let` of a module is not a local (§8.2.12). Locals are allowed wherever statements are.
 2. A reaction reads a body `let` that names an instance. It does not place one (§8.3.4).
 3. `nature`, `module`, `analog for` and `digital for` are items at namespace scope: a file or an inline `mod`. A block may sit in any namespace of its module's file (§3.4.3).
 4. `after` is allowed on a definition and on a commit, nowhere else.
@@ -197,7 +197,7 @@ item           ::= nature_decl | module_decl | behavior_block | value_item
 nature_decl    ::= attrs 'pub'? 'nature' IDENT generics? '{' nature_field ( ',' nature_field )* ','? '}'
 nature_field   ::= attrs ( 'potential' | 'flow' ) ':' IDENT ( '{' ( IDENT ':' expr ',' )* '}' )?
                  | attrs 'value' ':' type
-                 | attrs 'resolve' ':' expr                                           // a fn(&[T]) -> T
+                 | attrs 'resolve' ':' expr                                           // a fn with one const parameter N: ([T; N]) -> T (§4 rule 8)
 struct_field   ::= attrs 'pub'? dir? IDENT ':' ( type | sigtype )               // carrier fields make a bundle
 impl_block     ::= 'impl' generics? path generic_args? ( 'for' path generic_args? )? '{' impl_item* '}'
 impl_item      ::= attrs 'pub'? ( fn_decl | const_item )
@@ -241,7 +241,7 @@ place          ::= path ( '[' expr ']' | '.' IDENT )*                           
 // ---- built-in ! forms -------------------------------------------------------------------------
 
 emit           ::= 'emit' '!' '(' STRING ( ',' IDENT '=' expr )* ','? ')'       // an expression of type ()
-include_str    ::= 'include_str' '!' '(' STRING ')'                            // a const expression of type &'static str
+include_str    ::= 'include_str' '!' '(' STRING ')'                            // a const expression of type str
 
 // ---- attributes -------------------------------------------------------------------------------
 
@@ -328,6 +328,8 @@ The grammar of B.3.2 and B.3.7 is complete: a form it does not derive is a parse
 
 > **Note (informative).** Each form of the table is part of Rust. A reader who knows Rust will look for them; the third column says what to write.
 
+> **Resolution.** The rows of references and of the three markers are the forms pure value semantics removes (§1.4.6, G.71). Each is reported under the code its token class already has: `E0101` for a form §1 rule 2 leaves out, `E0903` for a reserved word no production accepts.
+
 | Form | Reported as | Write instead |
 | --- | --- | --- |
 | type aliases (`type T = f64;`) | `E0903` | write the type out |
@@ -338,8 +340,9 @@ The grammar of B.3.2 and B.3.7 is complete: a form it does not derive is a parse
 | qualified paths (`<T as Tr>::X`) | `E0900` | a path through the type: `T::X` |
 | restricted visibility (`pub(crate)`, `pub(super)`) | `E0900` | `pub` or no visibility |
 | loop labels (`'a: loop`, `break 'a`) | `E0905` | restructure the loop |
-| `&self` and `&mut self` receivers | `E0900` | `self` |
-| `mut` and pattern parameters (`mut x: u8`, `(a, b): (u8, u8)`) | `E0900` | a plain name, then `let` |
+| references and borrows (`&T`, `&mut T`, `&x`, `&&x`, `*x`, a `&p` pattern, `&self`, `&mut self`) | `E0101` | the value itself: every value is copied where it is used (§1.4.6); a method takes `self` and returns what it changed (§3.1.10) |
+| pattern parameters (`(a, b): (u8, u8)`) | `E0900` | a plain name, then `let` |
+| the markers `mut`, `ref` and `move` (`let mut x`, `ref x`, a `move` closure) | `E0903` | the plain form: every local may be assigned (§1.5.12), a pattern binds a copy (§1.6.9), a closure captures by value (§1.5.14) |
 | half-open range patterns (`..x`) | `E0900` | `..=x` or a guard |
 | a leading `::` in a path or a `use` (`::a::b`) | `E0900` | a path from a name in scope |
 | inner attributes (`#![..]`) | `E0900` | an outer attribute on the item |
@@ -347,14 +350,13 @@ The grammar of B.3.2 and B.3.7 is complete: a form it does not derive is a parse
 | raw-pointer types (`*const T`, `*mut T`) | `E0900` | a value or an array |
 | named function-pointer parameters (`fn(x: f64) -> f64`) | `E0900` | the types only: `fn(f64) -> f64` |
 | attributes and doc comments on a parameter, a generic parameter or a struct-literal field (`fn f(#[a] x: f64)`) | `E0900` | the attribute or comment on the item |
-| double borrows (`&&x`) | `E0900` | one borrow: `&x` |
 | `union` items | `E0900` | a `struct` or an `enum` |
 | `extern` blocks | `E0900` | an `extern "C" fn` item |
 | `extern crate` items | `E0900` | a dependency named under `[dependencies]` of the manifest |
 
 Two forms that look absent are part of the language:
 
-- function-pointer types `fn(T, ..) -> U`, the type §4 rule 8 names;
+- function-pointer types `fn(T, ..) -> U` (§1.2.10);
 - a negative literal as a const generic argument (`Int< -1 >`, `Int<{ -1 }>`; `Int<-1>` is reported at the `<-` token).
 
 A front end cannot reject struct-update syntax in a template (§8.4) or a blocking write, `wait` or `sleep` (§12.2) at parse: the grammar has no production for them, so they are ordinary syntax errors.
@@ -401,8 +403,7 @@ generic_arg    ::= type | literal | '-' literal | block
 
 type           ::= path
                  | '(' ')' | '(' type ',' ( type ',' )* ')' | '(' type ')'
-                 | '[' type ';' expr ']' | '[' type ']'
-                 | '&' STATIC_LIFETIME? type                                    // STATIC_LIFETIME: the token 'static
+                 | '[' type ';' expr ']'
                  | 'fn' '(' ( type ',' )* ')' ( '->' type )?
                  | '_'
 
@@ -410,15 +411,14 @@ type           ::= path
 
 pat            ::= '|'? pat1 ( '|' pat1 )*
 pat1           ::= '_'
-                 | '..'                                                         // inside a tuple, tuple-struct or slice pattern
-                 | ( 'ref'? 'mut'? ) IDENT ( '@' pat1 )?
+                 | '..'                                                         // inside a tuple, tuple-struct or array pattern
+                 | IDENT ( '@' pat1 )?
                  | pat_bound ( '..' pat_bound? | '..=' pat_bound )?            // alone: a literal or a path pattern
                  | '..=' pat_bound
                  | path '(' ( pat ',' )* ')'
                  | path '{' ( IDENT ( ':' pat )? ',' )* '..'? '}'
                  | '(' ( pat ',' )* ')'
                  | '[' ( pat ',' )* ']'
-                 | '&' pat1
 pat_bound      ::= '-'? ( INT_LITERAL | FLOAT_LITERAL ) | STRING | 'true' | 'false' | path
 
 // ---- statements -----------------------------------------------------------------------------
@@ -447,7 +447,7 @@ shift_expr     ::= add_expr ( ( '<<' | '>>' ) add_expr )*
 add_expr       ::= mul_expr ( ( '+' | '-' ) mul_expr )*
 mul_expr       ::= cast_expr ( ( '*' | '/' | '%' ) cast_expr )*
 cast_expr      ::= unary_expr ( 'as' type )*
-unary_expr     ::= ( '-' | '!' | '*' | '&' ) unary_expr | postfix_expr
+unary_expr     ::= ( '-' | '!' ) unary_expr | postfix_expr
 postfix_expr   ::= primary postfix*
 postfix        ::= '.' IDENT                                                   // a field
                  | '.' INT_LITERAL                                             // a tuple index
@@ -468,7 +468,7 @@ primary        ::= literal
                  | emit | include_str                                          // B.3.2
 literal        ::= INT_LITERAL | FLOAT_LITERAL | STRING | 'true' | 'false' | 'Unknown'
 struct_expr    ::= path generic_args? '{' ( IDENT ( ':' expr )? ',' )* '}'
-closure        ::= 'move'? ( '||' | '|' ( closure_param ',' )* '|' ) ( expr | '->' type block )
+closure        ::= ( '||' | '|' ( closure_param ',' )* '|' ) ( expr | '->' type block )
 closure_param  ::= pat1 ( ':' type )?
 block_expr     ::= block | if_expr | match_expr | while_expr | loop_expr | for_expr
 if_expr        ::= 'if' cond block ( 'else' ( if_expr | block ) )?
@@ -489,7 +489,7 @@ Reading the value grammar:
 5. A `block_expr` at the start of a statement is the whole statement: `{ a } - b;` is a block and then the statement `-b;`. Parenthesize a block that is an operand.
 6. The operand of `return` and `break`, and the body of a closure without `-> type`, extend as far to the right as an `expr` can.
 7. `>=`, `>>` and `>>=` are formed as A.10 rule 2 says. `t.0.1` is two tuple indexes.
-8. At the start of an operand `||` opens a closure without parameters. `&&x` is not two borrows (B.3.6).
+8. At the start of an operand `||` opens a closure without parameters. A `&`, `&&` or `*` at the start of an operand is not an operator: it is a reference form (B.3.6).
 9. `(e)` is a parenthesized expression, `(e,)` a tuple of one field. `(T)` is the type `T`, `(T,)` a tuple type. `(p)` is the pattern `p`.
 10. In a `stmt`, the `;` after an expression may be left out only before the `}` that closes the block: the expression is then the value of the block (§1.7.1).
 11. `signal` and `on` are items of a module body and of a `digital` block (B.3.2), never statements; written in another block they are reported by §10 rule 8.

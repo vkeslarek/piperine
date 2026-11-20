@@ -11,8 +11,8 @@ Error codes of this appendix: `E09xx`.
 ## A.1 Source text and tokens
 
 The lexer turns source text into a sequence of tokens. A token is an identifier (A.7), a
-keyword (this section), a literal (A.2, A.3, A.8), a doc comment (A.4), the lifetime `'static`,
-or a punctuation token (A.5, A.10).
+keyword (this section), a literal (A.2, A.3, A.8), a doc comment (A.4) or a
+punctuation token (A.5, A.10).
 
 **Static semantics**
 
@@ -38,8 +38,8 @@ or a punctuation token (A.5, A.10).
 | value keywords with a second use | `in` (port direction, beside `for … in`), `extern` (`extern` modules, beside `extern "C" fn`) | everywhere |
 | contextual keywords | `analog`, `digital` | only before `for` or `<` at item position |
 | contextual keywords | `potential`, `flow`, `value`, `resolve` | only as a field name inside a `nature` declaration |
-| value keywords | `as` `break` `const` `continue` `crate` `else` `enum` `extern` `false` `fn` `for` `if` `impl` `in` `let` `loop` `match` `mod` `move` `mut` `pub` `ref` `return` `self` `Self` `struct` `super` `trait` `true` `use` `where` `while` | everywhere |
-| reserved words | `abstract` `async` `await` `become` `box` `do` `dyn` `final` `gen` `macro` `override` `priv` `static` `try` `type` `typeof` `unsafe` `unsized` `virtual` `yield` | everywhere; no production accepts one |
+| value keywords | `as` `break` `const` `continue` `crate` `else` `enum` `extern` `false` `fn` `for` `if` `impl` `in` `let` `loop` `match` `mod` `pub` `return` `self` `Self` `struct` `super` `trait` `true` `use` `where` `while` | everywhere |
+| reserved words | `abstract` `async` `await` `become` `box` `do` `dyn` `final` `gen` `macro` `move` `mut` `override` `priv` `ref` `static` `try` `type` `typeof` `unsafe` `unsized` `virtual` `yield` | everywhere; no production accepts one |
 
 The **added keywords** are the seven words of the first row: the keywords of the mixed-signal
 constructs. The value keywords are the keywords of the value language ([Part I](part_i_values.md)).
@@ -59,7 +59,11 @@ constructs. The value keywords are the keywords of the value language ([Part I](
 > **Resolution.** The reserved words name constructs the language does not have (`unsafe`,
 > `async`, `await`, `dyn`, `static`, `type`) or are kept free for later use. Using one where no
 > production accepts it is a parse error (`E0903`); so is a value keyword outside its
-> productions, such as `mut` anywhere but in a binding pattern.
+> productions. `mut`, `ref` and `move` are reserved words because the language has no
+> reference and no binding that cannot be assigned ([§1](part_i_values.md#1-value-types)
+> rule 2): `let mut x`, `ref x` and `move |x| …` are each `E0903` at the word, and
+> [B.3.6](appendix_b_grammar.md#b36-forms-that-are-not-part-of-the-language) says what to
+> write.
 
 > **Note (informative).** The value keywords and the reserved words together are the strict and
 > reserved keywords of Rust, edition 2024, so no MSL identifier is a Rust keyword.
@@ -78,8 +82,9 @@ module Gate() {
 }
 ```
 
-> **Resolution.** Only the lifetime `'static` is accepted, and only in `&'static str`. Any
-> other lifetime token is an error. `char` is not a value type
+> **Resolution.** No lifetime token is accepted, `'static` included: the language has no
+> reference for one to bound, and a string is the value type `str`
+> ([§1.2.9](part_i_values.md#12-composite-types)). `char` is not a value type
 > ([§1](part_i_values.md#1-value-types)): character literals, byte literals and byte strings
 > are errors ([G.61](appendix_g_scope.md)).
 
@@ -229,7 +234,7 @@ rl: f64 = 1T;
 | `E0902` | a malformed SI literal: a suffix with an exponent, with a type suffix, or on a non-decimal literal | parse |
 | `E0903` | a keyword used as an identifier, or a keyword or reserved word where no production accepts it | parse |
 | `E0904` | an attribute that A.1 does not list, or a listed attribute on the wrong kind of item | elaboration |
-| `E0905` | a token of a dropped class: a character or byte literal, a byte string, a lifetime other than `'static` | parse |
+| `E0905` | a token of a dropped class: a character or byte literal, a byte string, a lifetime | parse |
 | `E0906` | `Unknown` where the inferred type does not implement `Repr`, or where no type can be inferred | elaboration |
 | `E0907` | `+>` or `<-` inside an expression, where no statement form accepts it. A well-formed `contribution` or `commit` in a block of the wrong kind is `E0404` | parse |
 | `E0908` | `Unknown` used as a binding, item or field name | parse |
@@ -339,7 +344,7 @@ number of `#`. `LINE_CONTINUATION` is a `\` directly followed by a line end.
 
 *String literals*
 
-10. A string literal has the type `&'static str`
+10. A string literal has the type `str`
     ([§1.2.9](part_i_values.md#12-composite-types)). Its value is a sequence of Unicode
     scalar values.
 11. In a string between plain quotes, an escape stands for one character: `\n` line feed, `\r`
@@ -405,8 +410,8 @@ let r = r#"a "quoted" word"#;
 
 | Tokens | Use |
 | --- | --- |
-| `+` `-` `*` `/` `%` | arithmetic ([§1.5](part_i_values.md#15-expressions)); `-` also negates, `*` also dereferences, `+` also joins bounds |
-| `&` `\|` `^` `!` `<<` `>>` | bitwise and logical operators; `&` also borrows, `\|` also separates pattern alternatives and delimits closure parameters, `!` also marks `emit!` and `include_str!` |
+| `+` `-` `*` `/` `%` | arithmetic ([§1.5](part_i_values.md#15-expressions)); `-` also negates, `+` also joins bounds |
+| `&` `\|` `^` `!` `<<` `>>` | bitwise and logical operators; `\|` also separates pattern alternatives and delimits closure parameters, `!` also marks `emit!` and `include_str!` |
 | `&&` `\|\|` | lazy boolean operators; `\|\|` also opens a closure without parameters |
 | `==` `!=` `<` `>` `<=` `>=` | comparison; `<` and `>` also delimit generic lists |
 | `=` `+=` `-=` `*=` `/=` `%=` `&=` `\|=` `^=` `<<=` `>>=` | assignment; `=` also binds in `let`, `const`, defaults and definitions |

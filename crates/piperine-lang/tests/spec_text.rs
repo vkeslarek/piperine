@@ -74,8 +74,9 @@ const REMOVED_FORMS: [&str; 21] = [
     "qualified paths",
     "restricted visibility",
     "loop labels",
-    "`&self` and `&mut self` receivers",
-    "`mut` and pattern parameters",
+    "references and borrows",
+    "pattern parameters",
+    "the markers `mut`, `ref` and `move`",
     "half-open range patterns",
     "a leading `::`",
     "inner attributes",
@@ -86,7 +87,6 @@ const REMOVED_FORMS: [&str; 21] = [
     "`extern crate` items",
     "named function-pointer parameters",
     "attributes and doc comments on a parameter",
-    "double borrows",
 ];
 
 fn b36() -> String {
@@ -164,9 +164,19 @@ fn every_error_code_is_defined_exactly_once() {
     for (_, text) in all_specs() {
         mentioned.extend(codes_in(&text));
     }
-    let undefined: Vec<_> = mentioned.iter().filter(|c| !defs.contains_key(*c)).collect();
+    let undefined: Vec<_> = mentioned.iter().filter(|c| !defs.contains_key(*c) && !RETIRED_CODES.contains(&c.as_str())).collect();
     assert!(undefined.is_empty(), "codes mentioned and never defined: {undefined:?}");
+    // A retired code (§0.2: numbers are not reused) is named only where its retirement is stated.
+    let flat_specs = all_specs().iter().map(|(_, text)| flat(text)).collect::<Vec<_>>().join(" ");
+    for code in RETIRED_CODES {
+        assert!(!defs.contains_key(code), "{code} is retired and still has a defining row");
+        assert!(flat_specs.contains(&format!("`{code}` is retired")), "the retirement of {code} is stated");
+    }
 }
+
+/// The codes value semantics retired (Appendix G.71): each is named by the Resolution that
+/// retires it and by G.71, and by no defining row.
+const RETIRED_CODES: [&str; 2] = ["E0102", "E0331"];
 
 #[test]
 fn b1_still_counts_65_constructs() {
@@ -227,7 +237,7 @@ fn appendix_h_has_every_group() {
         "## H.2 Float types",
         "## H.3 `bool`",
         "## H.4 `Option`",
-        "## H.5 Arrays and slices",
+        "## H.5 Arrays",
         "## H.6 Ranges",
         "## H.7 Iterator adaptors",
         "## H.8 Traits",
@@ -360,14 +370,19 @@ fn one_line(text: &str) -> String {
 }
 
 #[test]
-fn shared_borrow_of_any_argument_is_allowed() {
-    // POL-06 AC 1: §1 rule 2 and the E0102 row.
+fn no_reference_form_is_part_of_the_language() {
+    // Value semantics (G.71, V1): §1 rule 2 leaves every reference out, `E0101` reports one at
+    // parse and `E0102` is retired. This replaces the POL-06 AC 1 guard of the borrowed argument.
     let part = spec("part_i_values.md");
     let rule2 = one_line(part.split("- **§1 rule 2.**").nth(1).unwrap().split("- **§1 rule 3.**").next().unwrap());
-    assert!(rule2.contains("and of any value as a call argument"), "{rule2}");
-    let row = part.lines().find(|l| l.starts_with("| `E0102`")).expect("E0102 row");
-    assert!(row.contains("or of any value as a call argument"), "{row}");
-    assert!(row.contains("`&` other than"), "{row}");
+    for needle in ["references and pointers of every kind", "the markers `mut`, `ref` and `move`", "`&` is the bitwise operator only"] {
+        assert!(rule2.contains(needle), "{needle}: {rule2}");
+    }
+    assert!(!part.lines().any(|l| l.starts_with("| `E0102`")), "E0102 has no defining row");
+    assert!(one_line(&part).contains("`E0102` is retired"), "the retirement is stated");
+    let row = part.lines().find(|l| l.starts_with("| `E0101`")).expect("E0101 row");
+    assert!(row.contains("a reference or a pointer in a type, an expression or a pattern"), "{row}");
+    assert!(row.ends_with("| parse |"), "{row}");
 }
 
 #[test]
@@ -377,7 +392,7 @@ fn identifier_pattern_rule_is_stated() {
     let rule = one_line(part.split("- **§1 rule 14.**").nth(1).expect("§1 rule 14").split("\n\n").next().unwrap());
     for needle in [
         "plain identifier pattern",
-        "no `mut`, `ref` or `@`",
+        "with no `@`",
         "a constant, a unit variant or a unit struct",
         "is a path to that item and binds nothing",
     ] {
@@ -1649,4 +1664,115 @@ fn appendix_c_lists_the_loop_bound_among_the_defaults() {
     let text = spec("appendix_c_implementation.md");
     let rows = table_rows(&section(&text, "### C.2.1 "));
     assert!(rows.iter().any(|r| r[..] == ["loop iterations under unknown control", "64", "§3.3.16"]), "{rows:?}");
+}
+
+// ---- value semantics: G.71 and V1 to V7 ----
+
+/// What each value-semantics decision cites as its deciding sections: substrings of the `Where` cell.
+const VALUE_DECISIONS: [(&str, &[&str]); 7] = [
+    ("V1", &["§1 rule 2", "§1.4.6"]),
+    ("V2", &["§1.5.12", "A.1"]),
+    ("V3", &["§1.4.6", "H.8 rule 1"]),
+    ("V4", &["§1.2.5", "§1.5.9", "§4 rule 8"]),
+    ("V5", &["§1.2.9"]),
+    ("V6", &["§3.1.10"]),
+    ("V7", &["§1.4.7"]),
+];
+
+#[test]
+fn appendix_g_records_the_value_decisions() {
+    // V1 to V7 are closed rows of the decision table; G.71 is the item, with status Implementation.
+    let g = spec("appendix_g_scope.md");
+    let closed = section(&g, "### Closed in this specification");
+    let rows = table_rows(&closed);
+    for (id, cited) in VALUE_DECISIONS {
+        let row = rows.iter().find(|r| r[0] == id).unwrap_or_else(|| panic!("no row for {id}"));
+        assert_eq!(row.len(), 4, "{id}: Item, Question, Decision, Where: {row:?}");
+        assert!(!row[1].is_empty() && !row[2].is_empty(), "{id}: {row:?}");
+        for c in cited {
+            assert!(row[3].contains(c), "{id} cites {c}: {}", row[3]);
+        }
+    }
+    assert_eq!(rows.iter().filter(|r| r[0].starts_with('V')).count(), 7);
+    assert!(one_line(&closed).contains("V1 to V7 number the decisions of value semantics"));
+    assert_eq!(g_summary_status("71"), "Implementation");
+    let g71 = g_entry("71");
+    for needle in ["**Status: Implementation.**", "Two codes are retired: `E0102` (§1) and `E0331` (§8.2)", "still written in the earlier spelling"] {
+        assert!(g71.contains(needle), "{needle}: {g71}");
+    }
+}
+
+#[test]
+fn every_value_copies_and_hardware_has_identity() {
+    // V1, V3, V7: §1.4.6 and §1.4.7 state the split, and the Resolution names what was removed.
+    let part = one_line(&spec("part_i_values.md"));
+    for needle in [
+        "- **§1.4.6** A value is **copied** wherever it is used.",
+        "there is no trait and no derive that grants it, and no type that lacks it",
+        "- **§1.4.7** Hardware is not a value.",
+        "a carrier changes only by a definition, a commit (`<-`) or a contribution (`+>`)",
+        "the traits `Clone` and `Copy`, their derives and the method `clone()`",
+    ] {
+        assert!(part.contains(needle), "{needle}");
+    }
+    let h8 = section(&appendix_h(), "## H.8");
+    let traits = first_cell_names(&h8);
+    assert!(!traits.contains("Clone") && !traits.contains("Copy"), "H.8 lists neither: {traits:?}");
+    assert!(one_line(&h8).contains("it does not resolve (`E0161`)"), "H.8 rule 1 gives the general rule");
+    assert!(spec("part_i_values.md").contains("pub trait Repr {"), "`Repr` has no supertrait");
+}
+
+#[test]
+fn every_local_is_a_place_and_no_parameter_is() {
+    // V2, V6: §1.5.12, §1.7.7 and §3.1.10; `mut`, `ref` and `move` are reserved words.
+    let part = one_line(&spec("part_i_values.md"));
+    for needle in [
+        "A **place** is a local, a field of a place, or an element of a place.",
+        "Every local is a place: no marker makes it one.",
+        "a parameter of a function or of a closure, `self` included, and a name a closure captures are not places",
+        "- **§1.7.7** Every local may be assigned again, with a value of its type",
+        "- **§3.1.10** On a value type, `self` is a copy of the receiver",
+        "There is no other receiver form and no shorthand for that assignment.",
+    ] {
+        assert!(part.contains(needle), "{needle}");
+    }
+    let a = spec("appendix_a_lexical.md");
+    let reserved = a.lines().find(|l| l.starts_with("| reserved words |")).expect("the reserved-words row");
+    let value = a.lines().find(|l| l.starts_with("| value keywords | `as`")).expect("the value-keywords row");
+    for word in ["`move`", "`mut`", "`ref`"] {
+        assert!(reserved.contains(word), "{word} is reserved: {reserved}");
+        assert!(!value.contains(word), "{word} is no value keyword: {value}");
+    }
+    let iii = spec("part_iii_structure.md");
+    assert!(!iii.lines().any(|l| l.starts_with("| `E0331`")), "E0331 has no defining row");
+    assert!(one_line(&iii).contains("`E0331` is retired"), "the retirement is stated");
+}
+
+#[test]
+fn there_is_no_slice_and_no_borrow_in_the_grammar() {
+    // V1, V4, V5: the productions of B.3.7 and §1.2, the rules that stand in place, `resolve`.
+    let b = spec("appendix_b_grammar.md");
+    let i = spec("part_i_values.md");
+    for text in [&b, &i] {
+        assert!(!text.contains("STATIC_LIFETIME"), "no lifetime in a production");
+        assert!(!text.contains("| '&' pat1"), "no `&p` pattern");
+        assert!(!text.contains("'ref'? 'mut'?"), "no `ref` or `mut` binding");
+        assert!(!text.contains("| '[' type ']'"), "no slice type");
+    }
+    assert!(b.contains("unary_expr     ::= ( '-' | '!' ) unary_expr | postfix_expr"), "no prefix `&` or `*`");
+    assert!(b.contains("closure        ::= ( '||' |"), "no `move` before a closure");
+    let part = one_line(&i);
+    for needle in [
+        "there is no slice type",
+        "- **§1.2.6** There is no reference type.",
+        "is the array of the elements `a` to `b - 1`, of type `[T; b - a]`; its bounds are const expressions",
+        "- **§1.2.9** `str` is the type of a string: a sequence of Unicode scalar values. It is a value type without `Repr`.",
+        "- **§1.6.9** A name a pattern binds holds a copy of the part it matched",
+    ] {
+        assert!(part.contains(needle), "{needle}");
+    }
+    let ii = one_line(&spec("part_ii_carriers.md"));
+    assert!(ii.contains("`fn f<const N: usize>(drives: [T; N]) -> T`"), "§4 rule 8 takes an array");
+    let h5 = section(&appendix_h(), "## H.5");
+    assert!(!h5.contains('&'), "H.5 lends nothing: {h5}");
 }

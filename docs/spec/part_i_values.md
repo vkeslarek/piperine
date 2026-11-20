@@ -6,15 +6,17 @@ full: the types ([§1](#1-value-types) to [§1.4](#14-typing-inference-and-conve
 expressions, patterns, statements and control flow ([§1.5](#15-expressions) to
 [§1.8](#18-control-flow)), the layout on levels ([§2](#2-repr)), and the items: functions,
 `impl`, calls, names, crates, traits, generics and constants ([§3](#3-functions) to
-[§3.9](#39-constants)). Its design is that of Rust's value language
-([§0.4](index.md#04-a-complete-specification)); its rules are stated here.
+[§3.9](#39-constants)). Its syntax is that of Rust's value language
+([§0.4](index.md#04-a-complete-specification)); its rules are stated here. The first of them
+is that data are values: a value is copied wherever it is used, and nothing in the value
+language refers to another value ([§1.4.6](#14-typing-inference-and-conversion)).
 
 Error codes of this part: `E01xx`.
 
 **Terms defined here:** value, value type, level, `Repr`, function class, closure, handle,
 known, unknown, known flag, merge, flag-total function, panic, optional parameters, namespace
 module, prelude, crate, crate root, dependency name, package, manifest, dependency,
-lockfile, move, place, irrefutable pattern, refutable pattern, const expression.
+lockfile, copy, identity, place, local, irrefutable pattern, refutable pattern, const expression.
 
 ## 1. Value types
 
@@ -26,7 +28,7 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
 | boolean | `bool` |  |
 | integer | `UInt<N>`, `Int<N>` (`u1` … `u128`, `i1` … `i128`) | any width, a const expression (`UInt<{A + 1}>`); arithmetic wraps |
 | float | `Float<N>`, `N` in {16, 32, 64, 128} (`f16` … `f128`) | IEEE 754; analog code computes in `f64` |
-| string | `&'static str` | literals only; never carried ([§1.2.9](#12-composite-types)) |
+| string | `str` | the text of a literal; never carried ([§1.2.9](#12-composite-types)) |
 | composite | `()`, tuples, `[T; N]`, `struct`, `enum`, `Option<T>` | [§1.2](#12-composite-types), [§1.3](#13-structs-and-enums) |
 
 **Static semantics**
@@ -35,10 +37,12 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
   ([§1.4.5](#14-typing-inference-and-conversion)). `checked_*` reports an overflow and
   `saturating_*` clamps it. The methods a model may call are those of
   [Appendix H](appendix_h_library.md), each with its meaning stated there.
-- **§1 rule 2.** These are left out, because a model is fixed at elaboration: mutable
-  references, heap types, `unsafe`, threads, `async`, `dyn`. `&` appears only as a shared,
-  read-only borrow: of an array, slice or string in a function parameter, and of any value as
-  a call argument (`(0.1..=10.0).contains(&n)`).
+- **§1 rule 2.** These are left out, because a model is fixed at elaboration and its data are
+  values ([§1.4.6](#14-typing-inference-and-conversion)): references and pointers of every
+  kind (`&T`, `&mut T`, `&x`, `*x`, a `&p` pattern, `&self`), lifetimes, the markers `mut`,
+  `ref` and `move`, heap types, `unsafe`, threads, `async`, `dyn`. `&` is the bitwise operator
+  only ([§1.5.3](#15-expressions)) and `*` the multiplication only: no type, expression or
+  pattern makes a reference or reads through one.
 - **§1 rule 3.** Constants are `const` items. The prelude has `Q`, `K_B`, `EPS0`, `PI`, `E`
   and `inf` (table below): they are `pub const` items of `std::constants`, re-exported by the
   prelude.
@@ -52,8 +56,8 @@ A **value type** is one of the kinds below. Only a type that implements `Repr`
 - **§1 rule 7.** An integer literal has an integer type and a float literal a float type
   ([§1.4.2](#14-typing-inference-and-conversion)). Neither converts implicitly ([§3.2.3](#32-parameters-and-calls)). A literal out of
   its type's range is `E0909` ([A.2](appendix_a_lexical.md#a2-si-suffixed-reals) rule 8).
-- **§1 rule 8.** A string exists only as a literal, a `const`, or an argument. It has no
-  `Repr`.
+- **§1 rule 8.** Every string is the text of a literal: no operation builds a new one. A
+  string has no `Repr`.
 - **§1 rule 9.** `Event` ([§13](part_iv_behavior.md#13-events)), `Analysis`
   ([§11.1](part_iv_behavior.md#111-one-block-every-analysis)), closures
   ([§3](#3-functions) rule 3) and templates
@@ -108,7 +112,7 @@ pub const inf: f64 = 1.0 / 0.0;
   ([§17.1](part_v_execution.md#171-convergence)).
 - **§1 rule 13.** A panic on a path taken under unknown control ([§3.3.3](#33-unknown-values))
   is not an error. Every effect of that merge becomes unknown.
-- **§1 rule 14.** A plain identifier pattern, with no `mut`, `ref` or `@`, whose name resolves
+- **§1 rule 14.** A plain identifier pattern, with no `@`, whose name resolves
   to a constant, a unit variant or a unit struct is a path to that item and binds nothing.
   Any other identifier pattern binds a new name ([§1.6.2](#16-patterns)).
 
@@ -125,11 +129,14 @@ pub const inf: f64 = 1.0 / 0.0;
 
 | Code | Condition | Phase |
 | --- | --- | --- |
-| `E0101` | a syntactic form left out by rule 2: a mutable reference, `unsafe`, `async`, `dyn`. A heap type or a thread API is a path that does not resolve (`E0161`) | parse |
-| `E0102` | `&` other than a shared borrow of an array, slice or string in a function parameter, or of any value as a call argument | elaboration |
+| `E0101` | a syntactic form left out by rule 2: a reference or a pointer in a type, an expression or a pattern (`&T`, `&mut T`, `&x`, `*x`, `&p`, `&self`), `unsafe`, `async`, `dyn`. The markers `mut`, `ref` and `move` are reserved words (`E0903`, [A.1](appendix_a_lexical.md#a1-source-text-and-tokens)) and a lifetime is a token of a dropped class (`E0905`, [A.6](appendix_a_lexical.md)). A heap type or a thread API is a path that does not resolve (`E0161`) | parse |
 | `E0103` | an integer width that is not a const expression `>= 1`, or a float width outside {16, 32, 64, 128} | elaboration |
 | `E0104` | a panic while evaluating a const expression, a param default, a `where` or generation | elaboration |
 | `E0105` | a panic under known control during a run | run |
+
+> **Resolution.** `E0102` is retired. It reported a `&` outside the positions where earlier
+> revisions allowed a borrow. No position allows one now: a `&` that is not the bitwise
+> operator is a form left out by rule 2 (`E0101`), found at parse.
 
 ### 1.1 Scalar types
 
@@ -174,8 +181,7 @@ The scalar types are `bool`, the integer types and the float types.
 ```
 type           ::= path
                  | '(' ')' | '(' type ',' ( type ',' )* ')' | '(' type ')'
-                 | '[' type ';' expr ']' | '[' type ']'
-                 | '&' STATIC_LIFETIME? type                                    // STATIC_LIFETIME: the token 'static
+                 | '[' type ';' expr ']'
                  | 'fn' '(' ( type ',' )* ')' ( '->' type )?
                  | '_'
 ```
@@ -191,27 +197,27 @@ type           ::= path
   an integer type, known and not negative. The length is part of the type: `[f64; 2]` and
   `[f64; 3]` are different types.
 - **§1.2.4** An array expression is a list `[a, b, c]`, whose elements have one type, or a
-  repetition `[x; N]`, which evaluates `x` once and holds `N` copies of it. In `[x; N]` the
-  type of `x` implements `Copy` and `N` is a const expression.
-- **§1.2.5** A slice type `[T]` is a run of elements of type `T` whose length is not part of
-  the type. A slice exists only behind a borrow, as `&[T]`. A borrow of an array, `&[T; N]`,
-  is accepted where a `&[T]` is required and views all `N` elements.
-- **§1.2.6** A borrow type `&T` is a read-only view of a value of type `T`. Borrows are written
-  only where [§1](#1-value-types) rule 2 allows; the library also yields them (`iter`,
-  `first`, `get`, the parameter of a `filter` closure). A borrow is read through in four
-  places, without any operator: a field access or tuple index, an index, the receiver of a
-  method call, and an operand of an arithmetic, bitwise, shift or comparison operator whose
-  type behind the borrow is scalar. Anywhere else `*r` reads the value of the borrow `r`.
-- **§1.2.7** `*r` requires the type behind the borrow to implement `Copy`, and yields a copy.
-  A borrow implements `Copy`. No borrow is stored in a field, a constant or a carrier, with
-  the one exception of `&'static str` in a `const`.
+  repetition `[x; N]`, which evaluates `x` once and holds `N` copies of it. In `[x; N]`,
+  `N` is a const expression.
+- **§1.2.5** Every run of elements is an array, and its length is part of its type: there is
+  no slice type. A function over arrays of any length takes the length as a const parameter,
+  `fn sum<const N: usize>(xs: [f64; N]) -> f64` ([§3.8](#38-generics-and-bounds)). A part of
+  an array is an array too: `e[a..b]` ([§1.5.9](#15-expressions)).
+- **§1.2.6** There is no reference type. A parameter, a field, a local, a constant and a
+  result each hold a value of their type, never a view of another value. The library yields
+  values as well: `iter` yields each element, and `first`, `last` and `get` an `Option` of the
+  element ([Appendix H](appendix_h_library.md), H.5).
+- **§1.2.7** An array, a tuple, a struct and an enum are passed, returned and assigned whole,
+  as one value ([§1.4.6](#14-typing-inference-and-conversion)). A string, a function pointer
+  and a closure are values in the same way; none of the three has `Repr`
+  ([§1](#1-value-types) rules 8 and 9).
 - **§1.2.8** `Option<T>` is the enum with the variants `None` and `Some(T)`
   ([§1.3](#13-structs-and-enums)). `Option`, `Some` and `None` are prelude names.
-- **§1.2.9** `str` is the type of a string: a sequence of Unicode scalar values. It exists
-  only behind a borrow. Every string is a literal or a `const`, so `&str` and `&'static str`
-  are the same type; `'static` is the only lifetime and has no other use. Two strings are
-  compared with `==` and `!=`, which compare their scalar values in order
-  ([§1](#1-value-types) rule 8).
+- **§1.2.9** `str` is the type of a string: a sequence of Unicode scalar values. It is a
+  value type without `Repr`. Every string is the text of a literal
+  ([§1](#1-value-types) rule 8), so its length is fixed at elaboration and is not part of the
+  type. Two strings are compared with `==` and `!=`, which compare their scalar values in
+  order. There is no lifetime in the language.
 - **§1.2.10** A function-pointer type `fn(T1, T2) -> U` is the type of a value that names a
   function. The name of a `fn` item used as a value has this type, and so does a closure that
   captures nothing. The parameter types are written without names. A call through such a
@@ -227,11 +233,15 @@ type           ::= path
 - **§1.2.13** `Self` names the type an `impl` or a `trait` is about
   ([§3.7](#37-traits)).
 
-> **Resolution.** Rule 1.2.6 names the four places where a borrow is transparent, so that
-> `x.s > a.s` and `roots[n]` read through `&Logic` and `&[(f64, f64); N]` as the examples of
-> [§22](part_vii_stdlib.md#22-standard-library) do. Rule 1.2.5 is a view of the same elements,
-> not a conversion of a value, so [§3.2.3](#32-parameters-and-calls) stays the only implicit
-> conversion.
+> **Resolution.** Rules 1.2.5 to 1.2.7 replace the borrow rules of earlier revisions. Six
+> special cases go with them: the slice type `[T]`, which existed only behind a borrow; the
+> borrow type `&T`, written in two positions and yielded by four library methods; the four
+> places where a borrow was read through without an operator; `*r` everywhere else; the
+> acceptance of `&[T; N]` where a `&[T]` was required; and the lifetime `'static`, with the
+> exception that let `&'static str` alone be stored in a `const`. One rule stands in their
+> place: every type of the table of [§1](#1-value-types) is a value type, and a value is
+> copied ([§1.4.6](#14-typing-inference-and-conversion)). [§3.2.3](#32-parameters-and-calls)
+> stays the only implicit conversion ([G.71](appendix_g_scope.md)).
 
 **Dynamic semantics**
 
@@ -309,10 +319,10 @@ struct_expr    ::= path generic_args? '{' ( IDENT ( ':' expr )? ',' )* '}'
 **Examples**
 
 ```rust
-#[derive(Clone, Copy, PartialEq)]
+#[derive(PartialEq)]
 struct Point { x: f64, y: f64 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(PartialEq)]
 enum Shape { Dot, Circle(f64), Rect { w: f64, h: f64 } }
 
 fn area(s: Shape) -> f64 {
@@ -362,24 +372,37 @@ fn origin() -> Point { Point { x: 0.0, y: 0.0 } }
 | an enum without fields | an integer type | the discriminant of the variant (§1.3.7), modulo `2^N` for a target of `N` bits |
 | a type | the same type | the value |
 
-- **§1.4.6** A value type implements `Copy` when it is `bool`, an integer type, a float type,
-  `()`, a borrow, a function pointer, a tuple or an array of `Copy` types, an `Option` of a
-  `Copy` type, a struct or an enum that derives or implements `Copy`
-  ([Appendix H](appendix_h_library.md), H.8), or a closure whose captures are all `Copy`.
-- **§1.4.7** Reading a variable, a field or an element of a `Copy` type copies the value.
-  Reading a variable of another type **moves** it: the variable **MUST NOT** be read again
-  (`E0183`). A field or an element of a type that is not `Copy` cannot be moved out of its
-  struct, tuple or array; destructure the whole value with a pattern
-  ([§1.6](#16-patterns)).
+- **§1.4.6** A value is **copied** wherever it is used. Reading a variable, a field or an
+  element, passing an argument, returning a result, binding a name in a pattern, capturing in
+  a closure, committing to a carrier and emitting a field each yield a **copy**: a value equal
+  to the one read, which stays as it was and may be read again. No two names share a value, so
+  assigning one never changes another. This holds for every value type; there is no trait and
+  no derive that grants it, and no type that lacks it. An implementation **MAY** avoid a copy
+  wherever no model can observe the difference.
+- **§1.4.7** Hardware is not a value. A carrier, a node, an instance and a bundle each have an
+  **identity**: a port, a connection and a handle ([§3.1](#31-impl)) name the same carrier,
+  never a copy of it. State that outlives a block or is shared between blocks lives in
+  carriers only, and a carrier changes only by a definition, a commit (`<-`) or a contribution
+  (`+>`), each at the time its rule gives ([§5.2](part_ii_carriers.md#52-drives),
+  [§12.1](part_iv_behavior.md#121-reactions), [§11](part_iv_behavior.md#11-analog)). Reading
+  a carrier yields a value: a copy of what the carrier holds at that read
+  ([§5.1](part_ii_carriers.md#51-declaring-and-reading)).
 - **§1.4.8** A type is checked against a required type by equality. Two types are equal when
   they are the same scalar type, the same struct, enum, nature or module with equal generic
   arguments, or the same composite form with equal parts. Const arguments and array lengths
   are compared by value, at each instantiation ([§3.8.9](#38-generics-and-bounds)).
 
 > **Resolution.** The enum row of the table makes `Op::Sub as u8` the discriminant.
-> The float-to-integer row is total: no conversion panics. Rules 1.4.6 and 1.4.7 give every
-> carried type the property `Repr` requires ([§2](#2-repr)), and make a value without `Copy`
-> usable once.
+> The float-to-integer row is total: no conversion panics.
+
+> **Resolution.** Rules 1.4.6 and 1.4.7 are the language's whole answer to "by value or by
+> reference": data are values and always copy; hardware is reached by identity and changes
+> only at a defined time. Earlier revisions had a third kind between the two, a `Copy`
+> property that some types had and others lacked, with a *move* for the rest. Removed with
+> it: the traits `Clone` and `Copy`, their derives and the method `clone()`; the move of a
+> value without `Copy` and the error for reading it again; the rule that a field of such a
+> type could not be read out of its struct; and the `Copy` requirements of `[x; N]`, of `*r`
+> and of `Repr` ([G.71](appendix_g_scope.md)).
 
 **Errors**
 
@@ -388,7 +411,7 @@ fn origin() -> Point { Point { x: 0.0, y: 0.0 } }
 | `E0180` | an expression whose type is not the type its position requires, or operands whose types an operator does not accept ([§1.5](#15-expressions)) | elaboration |
 | `E0181` | a type that cannot be inferred: a local, a closure parameter or a generic argument that its body does not fix (§1.4.4), or `_` in the signature of an item (§1.2.12) | elaboration |
 | `E0182` | an `as` between two types that are not a row of §1.4.5 | elaboration |
-| `E0183` | a variable read after it was moved (§1.4.7) or before it was assigned ([§1.7.5](#17-statements-and-blocks)); an assignment to something that is not a mutable place ([§1.5.12](#15-expressions)) | elaboration |
+| `E0183` | a variable read before it was assigned ([§1.7.5](#17-statements-and-blocks)); an assignment to something that is not a place ([§1.5.12](#15-expressions)) | elaboration |
 
 **Examples**
 
@@ -417,7 +440,7 @@ The table gives the operators from the tightest binding to the loosest.
 | --- | --- | --- |
 | 1 | a literal, a path, `( )`, `[ ]`, a block, `if`, `match`, a loop, a struct expression, `emit!`, `include_str!` | — |
 | 2 | postfix: `.name`, `.0`, `.name(args)`, `(args)`, `[index]`, `?` | left to right |
-| 3 | prefix: `-`, `!`, `*`, `&` | — |
+| 3 | prefix: `-`, `!` | — |
 | 4 | `as` | left to right |
 | 5 | `*`, `/`, `%` | left to right |
 | 6 | `+`, `-` | left to right |
@@ -454,9 +477,11 @@ The table gives the operators from the tightest binding to the loosest.
   function pointer, §1.2.10), a unit struct, a variant, a param, a carrier (a read,
   [§5.1](part_ii_carriers.md#51-declaring-and-reading)) or an associated constant `T::C`.
 - **§1.5.9** A field access `e.name`, a tuple index `e.0` and an index `e[i]` read one part of
-  a value. In `e[i]`, `e` is an array or a slice and `i` has any integer type. `e[a..b]`, with
-  a range as the index, is the slice of those elements; it is used only as a borrowed call
-  argument or as the receiver of a method.
+  a value. In `e[i]`, `e` is an array and `i` has any integer type. `e[a..b]`, with a range
+  as the index, is the array of the elements `a` to `b - 1`, of type `[T; b - a]`; its bounds
+  are const expressions. The other range forms index alike: `e[a..=b]`, and `e[..b]`,
+  `e[a..]` and `e[..]`, where a bound left out is 0 or the length. A range index is not a
+  place.
 - **§1.5.10** A call and a method call follow [§3.2](#32-parameters-and-calls). A method
   `e.f(args)` is looked up on the type of `e`: first the functions of the `impl` blocks of
   that type that take `self`, then the methods of [Appendix H](appendix_h_library.md) for
@@ -468,18 +493,23 @@ The table gives the operators from the tightest binding to the loosest.
   value of a range type, which no source text can name; its methods are those of
   [Appendix H](appendix_h_library.md), H.6, and `a..b` and `a..=b` over an integer type are
   iterators (H.7).
-- **§1.5.12** An assignment `place = value` has the type `()`. A **place** is a local declared
-  with `mut`, a field of a place, or an element of a place. A carrier, a param, a `const`, a
-  function parameter and a local without `mut` are not places. `place op= value` is
-  `place = place op value` for the operators of level 15, with `place` evaluated once.
+- **§1.5.12** An assignment `place = value` has the type `()`. A **place** is a local, a field
+  of a place, or an element of a place. A **local** is a name bound by a `let`, or by the
+  pattern of a `match` arm, of an `if let`, of a `while let` or of a `for`. Every local is a
+  place: no marker makes it one. A carrier, a param, a `const`, a body `let` of a module
+  ([§8.2.12](part_iii_structure.md#82-the-body)), a parameter of a function or of a closure,
+  `self` included, and a name a closure captures are not places. Assigning a place replaces
+  its value and changes no other name ([§1.4.6](#14-typing-inference-and-conversion)).
+  `place op= value` is `place = place op value` for the operators of level 15, with `place`
+  evaluated once.
 - **§1.5.13** A block `{ … }` is an expression ([§1.7](#17-statements-and-blocks)); so are
   `if`, `match` and the loops ([§1.8](#18-control-flow)).
 - **§1.5.14** A closure is `|a, b| expr` or `|a: T, b: U| -> R { … }`
   ([§3](#3-functions) rule 3). A parameter is an irrefutable pattern with an optional type; a
   return type, when written, is followed by a block. A closure may read the locals, the
   parameters and the `self` of the body that contains it: each is captured by value where the
-  closure is written. The keyword `move` may precede a closure and changes nothing. A closure
-  **MUST NOT** call itself.
+  closure is written, so the closure holds a copy and a later assignment of the local does
+  not reach it. A closure **MUST NOT** call itself.
 - **§1.5.15** `e?` takes an `Option<T>` and is allowed only in a function or a closure whose
   result type is an `Option`. It yields the `T` of a `Some`.
 - **§1.5.16** `return`, `break` and `continue` are expressions that never produce a value:
@@ -546,15 +576,14 @@ names to parts of the value.
 ```
 pat            ::= '|'? pat1 ( '|' pat1 )*
 pat1           ::= '_'
-                 | '..'                                                         // inside a tuple, tuple-struct or slice pattern
-                 | ( 'ref'? 'mut'? ) IDENT ( '@' pat1 )?
+                 | '..'                                                         // inside a tuple, tuple-struct or array pattern
+                 | IDENT ( '@' pat1 )?
                  | pat_bound ( '..' pat_bound? | '..=' pat_bound )?            // alone: a literal or a path pattern
                  | '..=' pat_bound
                  | path '(' ( pat ',' )* ')'
                  | path '{' ( IDENT ( ':' pat )? ',' )* '..'? '}'
                  | '(' ( pat ',' )* ')'
                  | '[' ( pat ',' )* ']'
-                 | '&' pat1
 pat_bound      ::= '-'? ( INT_LITERAL | FLOAT_LITERAL ) | STRING | 'true' | 'false' | path
 ```
 
@@ -562,9 +591,8 @@ pat_bound      ::= '-'? ( INT_LITERAL | FLOAT_LITERAL ) | STRING | 'true' | 'fal
 
 - **§1.6.1** `_` matches any value and binds nothing.
 - **§1.6.2** An identifier pattern `x` matches any value and binds `x` to it, unless
-  [§1](#1-value-types) rule 14 makes it a path. `mut x` binds a local that may be assigned.
-  `ref x` binds a borrow of the value in place of the value. `x @ p` matches when `p` matches
-  and binds `x` to the whole value.
+  [§1](#1-value-types) rule 14 makes it a path. `x @ p` matches when `p` matches and binds `x`
+  to the whole value.
 - **§1.6.3** A literal pattern is an integer, a float, a string, `true` or `false`; a number
   may carry a `-`. It matches the value that `==` finds equal to it. `Unknown` is not a
   pattern.
@@ -578,19 +606,20 @@ pat_bound      ::= '-'? ( INT_LITERAL | FLOAT_LITERAL ) | STRING | 'true' | 'fal
   struct pattern `Point { x, y: p }` match when every sub-pattern matches its field. In a
   struct pattern `x` alone stands for `x: x`; the pattern names every field or ends with `..`.
   In a tuple or tuple-struct pattern one `..` stands for the fields not written.
-- **§1.6.7** A slice pattern `[p, q]`, `[first, .., last]` or `[first, rest @ ..]` matches an
-  array or a slice. Without `..` it matches a value of exactly that many elements. With `..`,
-  written at most once, it matches a value of at least the elements written, and `name @ ..`
-  binds the slice of the others.
+- **§1.6.7** An array pattern `[p, q]`, `[first, .., last]` or `[first, rest @ ..]` matches an
+  array `[T; N]`. Without `..` it has exactly `N` sub-patterns. With `..`, written at most
+  once, it has `k <= N` sub-patterns, and `name @ ..` binds the array of the elements not
+  written, of type `[T; N - k]`. A pattern with another number of sub-patterns is a pattern of
+  another type (§1.6.12).
 - **§1.6.8** An or-pattern `p | q` matches when one alternative matches. Every alternative
   binds the same names, each with one type.
-- **§1.6.9** `&p` matches a borrow whose value `p` matches. A pattern other than `&p`, `_` and
-  a binding, when it meets a borrow, matches the value behind it, and the names it binds are
-  borrows.
+- **§1.6.9** A name a pattern binds holds a copy of the part it matched
+  ([§1.4.6](#14-typing-inference-and-conversion)). The value matched is not changed and may be
+  used again.
 - **§1.6.10** A pattern binds a name at most once.
 - **§1.6.11** A pattern is **irrefutable** when it matches every value of its type, and
-  **refutable** otherwise. `_`, a binding, a tuple or struct pattern of irrefutable parts, and
-  a slice pattern of irrefutable parts whose length is the array's are irrefutable. A `let`
+  **refutable** otherwise. `_`, a binding, and a tuple, struct or array pattern of irrefutable
+  parts are irrefutable. A `let`
   without `else`, a `for`, a closure parameter and a `let` of a module body take an
   irrefutable pattern.
 - **§1.6.12** The type of every pattern is fixed by the value it is matched against; a
@@ -650,13 +679,13 @@ stmt           ::= ';'
   which may have another type, and hides the earlier one.
 - **§1.7.4** `let pat: T = expr;` requires `expr` to have the type `T`.
 - **§1.7.5** `let x;` and `let x: T;` declare a variable without a value. It **MUST** be
-  assigned on every path before it is read (`E0183`). Without `mut` it is assigned at most
-  once on any path.
+  assigned on every path before it is read (`E0183`).
 - **§1.7.6** `let pat = expr else { … };` takes a refutable pattern. When the pattern does not
   match, the `else` block runs; that block **MUST NOT** complete: it ends in `return`,
   `break`, `continue` or a `loop` without `break`.
-- **§1.7.7** A local is immutable unless its pattern binds it with `mut`
-  ([§1.5.12](#15-expressions)).
+- **§1.7.7** Every local may be assigned again, with a value of its type
+  ([§1.5.12](#15-expressions)). An assignment keeps the variable; a later `let` of the same
+  name declares a new one (§1.7.3).
 - **§1.7.8** `expr;` evaluates the expression and drops its value. An `if`, a `match`, a loop
   or a block written as a statement needs no `;`; its type is then `()`, unless it is the
   final expression of its block.
@@ -676,11 +705,11 @@ stmt           ::= ';'
 **Examples**
 
 ```rust,fragment
-let mut acc = 0.0;
+let acc = 0.0;
 let n = 3;
 let n = n as f64;             // a new `n`, of type f64
 let Some(first) = taps.first() else { return 0.0; };
-acc += *first * n;
+acc += first * n;             // the same `acc`, assigned again
 ```
 
 ### 1.8 Control flow
@@ -714,8 +743,7 @@ for_expr       ::= 'for' pat1 'in' expr block                                  /
 - **§1.8.6** A `match` **MUST** be exhaustive: every value of the type of `e` matches the
   pattern of some arm without a guard. For an enum that means every variant; for `bool`, both
   values; for an integer type, every value of its range, by literals and ranges; for a float,
-  a string, an array of unknown length or any type whose values the patterns cannot list, a
-  final `_` or a binding. An arm no value can reach is not an error.
+  a string or any type whose values the patterns cannot list, a final `_` or a binding. An arm no value can reach is not an error.
 - **§1.8.7** `while c { … }` has the type `()`. `c` is a `bool`.
 - **§1.8.8** `loop { … }` repeats until a `break`. Its type is the type of the values its
   `break`s give, and `()` when they give none.
@@ -759,7 +787,7 @@ fn classify(x: f64) -> i32 {
 }
 
 fn first_set(bits: [bool; 8]) -> Option<u8> {
-    let mut k = 0u8;
+    let k = 0u8;
     while k < 8 {
         if bits[k] { return Some(k); }
         k += 1;
@@ -768,7 +796,7 @@ fn first_set(bits: [bool; 8]) -> Option<u8> {
 }
 
 fn sum_to(n: u32) -> u32 {
-    let mut acc = 0;
+    let acc = 0;
     for k in 0..=n { acc += k; }
     acc
 }
@@ -781,7 +809,7 @@ fn sum_to(n: u32) -> u32 {
 ([§3.3](#33-unknown-values)).
 
 ```rust
-pub trait Repr: Copy {
+pub trait Repr {
     const WIDTH: u32;                                   // levels occupied
     fn encode(self) -> [bool; Self::WIDTH];
     fn decode(levels: [bool; Self::WIDTH]) -> Option<Self>;
@@ -844,13 +872,13 @@ pub trait Repr: Copy {
 **Examples**
 
 ```rust
-#[derive(Repr, Clone, Copy, PartialEq)]
+#[derive(Repr, PartialEq)]
 enum Tx { Idle, Start, Data { n: u3 }, Stop }      // 2-level tag + 3-level payload
 
-#[derive(Repr, Clone, Copy, PartialEq)] #[repr(u2)]
+#[derive(Repr, PartialEq)] #[repr(u2)]
 enum Op { Add = 0b00, Sub = 0b01, And = 0b10, Or = 0b11 }
 
-#[derive(Repr, Clone, Copy, PartialEq)]
+#[derive(Repr, PartialEq)]
 enum Pam4 { L0, L1, L2, L3 }                        // a PAM4 symbol is a value; its voltage is analog
 ```
 
@@ -982,7 +1010,9 @@ impl_item      ::= attrs 'pub'? ( fn_decl | const_item )
 | a bundle ([§7](part_ii_carriers.md#7-bundles)) | the bundle | events and queries over several carriers |
 
 A **handle** is a read-only reference to one carrier or bundle, bound at elaboration. It is
-the `self` of an `impl` on a nature or bundle, and any function parameter of such a type.
+the `self` of an `impl` on a nature or bundle, and any function parameter of such a type. It
+names hardware by its identity ([§1.4.7](#14-typing-inference-and-conversion)); it is the
+only reference a function holds, and it is not a value.
 
 - **§3.1.1** On a nature or a bundle, `self` is a handle that reads, never a copy.
 - **§3.1.2** Generic names follow `impl`; bounds come from the declaration
@@ -1001,6 +1031,11 @@ the `self` of an `impl` on a nature or bundle, and any function parameter of suc
 - **§3.1.8** An `impl` on a nature with a defaulted type argument and no argument list is the
   `impl` of the default: `impl Bit` is `impl Bit<bool>`.
 - **§3.1.9** `impl Trait for Type` is accepted for a value type only.
+- **§3.1.10** On a value type, `self` is a copy of the receiver
+  ([§1.4.6](#14-typing-inference-and-conversion)) and, like every parameter, not a place
+  ([§1.5.12](#15-expressions)). A method that changes a value returns the new one, and the
+  caller assigns it: `s = s.step(x);`. There is no other receiver form and no shorthand for
+  that assignment.
 
 > **Resolution.** `level` is added to the names of rule 3: it is a method of every `Repr`
 > value, and so of every carrier read ([Appendix B.1](appendix_b_grammar.md)).
@@ -1012,6 +1047,11 @@ the `self` of an `impl` on a nature or bundle, and any function parameter of suc
 
 > **Resolution.** Rules 5–9 define the handle and the lookup order, which the design uses
 > (`clk.rise()`, `ipk.max(x)`, `w.s`) without stating.
+
+> **Resolution.** Rule 10 gives a method no way to change its receiver in place. A parameter
+> that could be assigned would make `fn bump(self) { self.count += 1; }` legal and silent: the
+> copy changes and the caller's value does not. The assignment is `E0183`, and the method
+> returns the new value.
 
 **Errors**
 
@@ -1214,7 +1254,7 @@ and hides the unknown. A model that wants that writes it: `if c.known_or(false) 
 
 ```rust,fragment
 on fref.rise() || fvco.rise() {          // state has no initial value here
-    let mut s = state;                   // s: i2, all levels unknown
+    let s = state;                       // s: i2, all levels unknown
     if fref.rise() && s < 1 { s += 1; }  // condition unknown: s = merge(s, s + 1) = unknown
     state <- s;                          // stays unknown until something resets it
 }
@@ -1559,7 +1599,6 @@ trait Area {
     fn is_empty(self) -> bool { self.area() == 0.0 }
 }
 
-#[derive(Clone, Copy)]
 struct Square { side: f64 }
 
 impl Area for Square {
@@ -1567,7 +1606,7 @@ impl Area for Square {
     fn area(self) -> f64 { self.side * self.side }
 }
 
-fn total<T: Area + Copy, const N: usize>(shapes: &[T; N]) -> f64 {
+fn total<T: Area, const N: usize>(shapes: [T; N]) -> f64 {
     shapes.iter().map(|s| s.area()).sum()
 }
 ```
@@ -1594,7 +1633,7 @@ generic_arg    ::= type | literal | '-' literal | block
 - **§3.8.1** A `fn`, a `struct`, an `enum`, a `trait`, an `impl`, a `nature` and a `module` may
   have a generic parameter list. A parameter is a type parameter, `T`, or a const parameter,
   `const N: u32`. There are no lifetime parameters.
-- **§3.8.2** A type parameter may have bounds, `T: Repr + Copy`, and a default, `T = bool`. It
+- **§3.8.2** A type parameter may have bounds, `T: Repr + PartialEq`, and a default, `T = bool`. It
   stands for a value type, or for a nature when it is bound by `Nature`
   ([§4](part_ii_carriers.md#4-natures) rule 11), or for a module when it is bound by `Fn(P)`
   ([§8.4](part_iii_structure.md#84-templates-and-swappable-modules)).
@@ -1634,15 +1673,14 @@ generic_arg    ::= type | literal | '-' literal | block
 **Examples**
 
 ```rust
-#[derive(Clone, Copy)]
-struct Pair<T: Copy> { a: T, b: T }
+struct Pair<T> { a: T, b: T }
 
-fn swap<T: Copy>(p: Pair<T>) -> Pair<T> { Pair { a: p.b, b: p.a } }
+fn swap<T>(p: Pair<T>) -> Pair<T> { Pair { a: p.b, b: p.a } }
 
 fn apply<F: Fn(f64) -> f64>(f: F, x: f64) -> f64 { f(x) }
 
 fn widen<const N: usize>(xs: [f64; N]) -> [f64; N + 1] {
-    let mut wide = [0.0; N + 1];
+    let wide = [0.0; N + 1];
     for k in 0..N { wide[k] = xs[k]; }
     wide
 }
@@ -1690,7 +1728,7 @@ const_item     ::= 'const' IDENT ':' type ( '=' expr )? ';'
 
 | Code | Condition | Phase |
 | --- | --- | --- |
-| `E0188` | the initializer of a `const`, an array length or a const argument that is not a const expression (§3.9.2, §3.9.3); a `const fn` whose body holds a form rule 3 forbids; a `const` without a value outside a trait; a constant that depends on itself | elaboration |
+| `E0188` | the initializer of a `const`, an array length, a bound of a range index ([§1.5.9](#15-expressions)) or a const argument that is not a const expression (§3.9.2, §3.9.3); a `const fn` whose body holds a form rule 3 forbids; a `const` without a value outside a trait; a constant that depends on itself | elaboration |
 | [§1](#1-value-types) | a panic while a const expression is evaluated (`E0104`) | elaboration |
 
 **Examples**

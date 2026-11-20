@@ -21,7 +21,7 @@ carrier, change, node, branch, probe, `gnd`, signal-flow node, bundle, view.
 nature_decl    ::= attrs 'pub'? 'nature' IDENT generics? '{' nature_field ( ',' nature_field )* ','? '}'
 nature_field   ::= attrs ( 'potential' | 'flow' ) ':' IDENT ( '{' ( IDENT ':' expr ',' )* '}' )?
                  | attrs 'value' ':' type
-                 | attrs 'resolve' ':' expr                                           // a fn(&[T]) -> T
+                 | attrs 'resolve' ':' expr                                           // a fn with one const parameter N: ([T; N]) -> T (rule 8)
 ```
 
 **Static semantics**
@@ -33,7 +33,7 @@ nature** declares `potential`.
 | --- | --- | --- | --- | --- |
 | declared | `nature N { value: T }` | `nature N { value: T, resolve: f }` | `nature N { potential: …, flow: … }` | `nature N { potential: … }` |
 | holds | a `T: Repr`, level by level | the same | a real potential and flow; complex in small-signal analyses | a real potential |
-| drivers combine | one driver | `f(&[T]) -> T` over all drives | flows sum to zero (KCL) | one driver |
+| drivers combine | one driver | `f([T; N]) -> T` over all `N` drives | flows sum to zero (KCL) | one driver |
 | port direction | `in` or `out` | none | none | none |
 | computed by | the event engine | the event engine | the analog solver | the analog solver |
 | written by | `=`, `<-` | `=`, `<-` | `+>` | `+>` |
@@ -44,7 +44,7 @@ nature** declares `potential`.
   connect ([§6.1](#61-crossing-between-kinds)).
 - **§4 rule 2.** `resolve` is a function of the drives, which it receives in the order of
   their instance paths. The result is a function of the source even when `f` is not exactly
-  associative, as a floating-point sum is not. It is called with an empty slice for a carrier
+  associative, as a floating-point sum is not. It is called with an empty array for a carrier
   nobody drives. High impedance, strengths, wired logic and summing nets are value types and
   `resolve` functions in the stdlib ([§22.3](part_vii_stdlib.md#223-resolved-nets)), not
   language features.
@@ -63,15 +63,16 @@ nature** declares `potential`.
   with `potential` and `flow`. `resolve` requires `value`; `flow` requires `potential`.
 - **§4 rule 7.** The type of `value` **MUST** implement `Repr`
   ([§2](part_i_values.md#2-repr)).
-- **§4 rule 8.** `resolve` is a const expression of type `fn(&[T]) -> T`, where `T` is the
-  `value` type. The function **MUST** be of class pure
+- **§4 rule 8.** `resolve` names a function with one const parameter and the signature
+  `fn f<const N: usize>(drives: [T; N]) -> T`, where `T` is the `value` type. The drives are
+  an array, passed by value like any other
+  ([§1.4.6](part_i_values.md#14-typing-inference-and-conversion)); elaboration instantiates
+  the function with `N` the number of drives a call receives
+  ([§8.2.3](part_iii_structure.md#82-the-body)). The function **MUST** be of class pure
   ([§3](part_i_values.md#3-functions)).
 
-  The type is written with the function-pointer form of the language:
-
   ```rust
-  fn first(xs: &[f64]) -> f64 { xs[0] }
-  const RESOLVE: fn(&[f64]) -> f64 = first;
+  fn first<const N: usize>(xs: [f64; N]) -> f64 { xs[0] }
   ```
 - **§4 rule 9.** A **nature quantity** is the `IDENT` after `potential:` or `flow:` with its
   attribute block. The attributes are closed:
@@ -129,7 +130,7 @@ nature** declares `potential`.
 | --- | --- | --- |
 | `E0201` | a nature that repeats a field, mixes discrete and continuous fields, or lacks `value` or `potential` | elaboration |
 | [§2](part_i_values.md#2-repr) | a `value` type that does not implement `Repr` (`E0112`) | elaboration |
-| `E0203` | a `resolve` that is not a pure function of type `fn(&[T]) -> T` | elaboration |
+| `E0203` | a `resolve` that is not a pure function with one const parameter `N: usize` and the signature `fn([T; N]) -> T` | elaboration |
 | `E0204` | a quantity attribute other than `access`, `units`, `abstol`; one of the wrong type; an `abstol` that is not positive | elaboration |
 | `E0205` | the two `access` names of one nature are equal | elaboration |
 | `E0206` | a probe that the nature of its first argument does not declare | elaboration |

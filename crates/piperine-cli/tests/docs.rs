@@ -139,12 +139,12 @@ fn gaps_drops_what_root_e2e_closed() {
     assert!(row("H16").contains("`dt_min`") && row("H16").contains("Owner: `host-analyses`"), "H16: {}", row("H16"));
     assert!(row("H17").contains("`--stream <name>`") && row("H17").contains("Owner: `host-analyses`"), "H17: {}", row("H17"));
     assert!(row("H18").contains("`E0171`") && row("H18").contains("Owner: `cli-packages`"), "H18: {}", row("H18"));
-    let unraised = gaps.split("**Error codes of the spec that no source file mentions").nth(1).and_then(|s| s.split("`E0102").nth(1)).and_then(|s| s.split('`').next()).expect("section 10 lists the unraised codes");
+    let unraised = gaps.split("**Error codes of the spec that no source file mentions").nth(1).and_then(|s| s.split("`E0105").nth(1)).and_then(|s| s.split('`').next()).expect("section 10 lists the unraised codes");
     let listed: Vec<&str> = unraised.split_whitespace().collect();
     for raised in ["E0503", "E0504", "E0505", "E0507", "E0508", "E0803", "E0804", "E0805", "E0806"] {
         assert!(!listed.contains(&raised), "{raised} is raised and is listed as unraised");
     }
-    assert!(listed.contains(&"E0105") && listed.contains(&"E0906"), "the list keeps the codes nothing raises");
+    assert!(listed.contains(&"E0110") && listed.contains(&"E0906"), "the list keeps the codes nothing raises");
 }
 
 #[test]
@@ -302,14 +302,15 @@ fn gaps_drops_what_msl_fixes_closed() {
     assert!(!row("L58").contains("db10") && !row("L58").contains("absdelta") && row("L58").contains("`limexp`") && row("L58").contains("`normal`"), "L58: {}", row("L58"));
     // (`### S2.` was kept here until `host-ii` closed it: `gaps_drops_what_host_ii_closed`)
     // (`### S4.` was kept here until `analog-structure` closed it, T35: `gaps_drops_what_analog_structure_closed`)
-    for kept in ["### S3.", "### S6.", "### B3.", "### B4."] {
+    for kept in ["### S3.", "### S6.", "### S7.", "### B3.", "### B4."] {
         assert!(gaps.contains(kept), "GAPS.md keeps {kept}");
     }
     // the counts follow, as `host-ii` moved them, `unknown-semantics` (L18, L19) after it and
-    // `analog-structure` (nine loud rows and S4) after that: 2 silent, 2 broken, 41 loud
-    assert!(gaps.contains("2 silent, 2 broken, 41 loud"), "the counts of §9 follow");
+    // `analog-structure` (nine loud rows and S4) after that: 2 silent, 2 broken, 41 loud; the
+    // value-semantics amendment of the spec then added S7 (the front end is the earlier language)
+    assert!(gaps.contains("3 silent, 2 broken, 41 loud"), "the counts of §9 follow");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
-    assert_eq!(rows("## 3. Silent", "## 4."), 2, "two silent entries");
+    assert_eq!(rows("## 3. Silent", "## 4."), 3, "three silent entries");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
     assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 41, "forty-one loud rows");

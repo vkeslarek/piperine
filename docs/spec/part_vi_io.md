@@ -45,8 +45,8 @@ named field.
 14. A site reached from `analog` that writes `sim` or `checks` is `E0603` (rule 4). The check
     follows calls: `require(…)` in `analog`, or in a `fn` called from `analog`, is that error.
 15. On the reserved streams, a field the host interprets has the type the stdlib gives it
-    (§22.6): on `sim`, `finish: bool`, `failed: bool`, `msg: &str`; on `checks`, `kind: &str`,
-    `name: &str`, `pass: bool`, `margin: f64`. Other fields are free.
+    (§22.6): on `sim`, `finish: bool`, `failed: bool`, `msg: str`; on `checks`, `kind: str`,
+    `name: str`, `pass: bool`, `margin: f64`. Other fields are free.
 
 > **Resolution.** Rule 11's reservation of `maybe`, rule 12 and rule 15 are stated here.
 
@@ -145,13 +145,13 @@ Fields are typed and formatting them is the host's business. There is no format-
 
 Files are read at elaboration into `const`s; a run never reads a file.
 
-`include_str!(path)` is the text of a file, of type `&'static str`. The stdlib parsers are
+`include_str!(path)` is the text of a file, of type `str`. The stdlib parsers are
 `const fn`s over that text (§22.6).
 
 **Syntax**
 
 ```
-include_str    ::= 'include_str' '!' '(' STRING ')'                            // a const expression of type &'static str
+include_str    ::= 'include_str' '!' '(' STRING ')'                            // a const expression of type str
 ```
 
 `include_str!` is the second built-in `!` form (Appendix A.1).
@@ -191,7 +191,7 @@ const IV:  [(f64, f64); 64] = parse_table(include_str!("diode_iv.tbl"));   // wh
 const ROM: [u32; 1024]      = parse_hex(include_str!("boot.hex"));         // $readmemh format
 
 module MeasuredDiode(a: Electrical, k: Electrical) {}
-analog for MeasuredDiode { i(a, k) +> table_model(v(a, k), &IV, "3E"); }   // cubic, error outside
+analog for MeasuredDiode { i(a, k) +> table_model(v(a, k), IV, "3E"); }   // cubic, error outside
 
 module BootRom(in addr: Bit<u10>, out data: Bit<u32>) {
     signal mem: [Bit<u32>; 1024] = ROM;

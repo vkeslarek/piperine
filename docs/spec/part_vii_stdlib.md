@@ -35,6 +35,8 @@ The **standard library** is the crate `std`, shipped with the implementation; it
 | `parse_table` | §22.6.4 | reads the characters of a `str` |
 | `parse_hex` | §22.6.4 | reads the characters of a `str` |
 
+> **Resolution.** The source files of `std` are still written in the spelling of earlier revisions, and the fences of this part, which are excerpts of them, with it: `&str` for `str`, a `&[T]` parameter for an array `[T; N]` with a const parameter `N`, `&x` for the argument `x`, `*x` for `x`, `let mut` for `let`, and `Clone` and `Copy` in a derive. Each is read as the form after "for"; the rules are those of Part I (§1.4.6). [G.71](appendix_g_scope.md) tracks the rewrite of both.
+
 > **Resolution.** An implementation **MAY** implement an item natively when the result is observably equal to the definition: same values, same events, same time points, same records.
 
 > **Resolution.** The natures `Bit` (§4), `Electrical`, `Thermal` and `VSignal` (§4) and the module `Short` (§11) are prelude items. Their defining text is in the sections cited; they are not repeated here.
@@ -353,7 +355,7 @@ pub module noise_table<const N: usize>(name: Option<&str>) -> f64 {
 3. `psd` is read only where the source is a source (§16.2). `flicker_noise` is never evaluated at `freq() == 0`.
 4. The implicit param `m` multiplies noise power (§8.5).
 
-> **Resolution.** `table` is a param, since `&` is a function-parameter form (§1 rule 2). The definition is `noise(table_model(freq(), &table, "1C"), name)`: linear interpolation, the end values held outside the table (VAMS 4.6.4.3).
+> **Resolution.** `table` is a param, an array passed to `table_model` by value (§1.4.6). The definition is `noise(table_model(freq(), table, "1C"), name)`: linear interpolation, the end values held outside the table (VAMS 4.6.4.3).
 
 | Result | Equilibrium solve | Transient step | Jump solve | Small-signal sweep |
 | --- | --- | --- | --- | --- |
@@ -1028,7 +1030,7 @@ pub nature Wire { value: Logic, resolve: Logic::wired }
 | several of the greatest strength, same level | that level, that strength |
 | several of the greatest strength, levels differ | level unknown, that strength |
 
-1. The result does not depend on the order of the drives. `wired(&[x, x])` equals `x`.
+1. The result does not depend on the order of the drives. `wired([x, x])` equals `x`.
 2. An unknown strength makes the comparison unknown. The arms are then merged (§3.3.3).
 3. A `Wire` takes any number of drives. Any module that sees it **MAY** hold one (§5.2).
 4. A `Wire` port has no direction (§4). A driver is added by passing the `Wire` to one more port.

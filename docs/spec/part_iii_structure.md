@@ -116,7 +116,7 @@ A param is written `name: Type [= default] [where condition];` in the body.
 | --- | --- |
 | no default: required | `r: f64;` |
 | `Option`: may be left out (§3.2) | `rs: Option<f64>;` |
-| `where`: a boolean over this param and earlier ones | `n: f64 = 1.0 where (0.1..=10.0).contains(&n);` `vmax: f64 where vmax > vmin;` |
+| `where`: a boolean over this param and earlier ones | `n: f64 = 1.0 where (0.1..=10.0).contains(n);` `vmax: f64 where vmax > vmin;` |
 
 A **const context** is a position evaluated at elaboration: a `const` item, a const generic
 argument, a generation range or condition, an array length, a param default and a `where` condition.
@@ -260,8 +260,8 @@ a result that does.
 
 - **§8.2.11** Ports, params, signals and `let` names of one module share one namespace. A name
   **MUST** be unique in it, across generation arms too.
-- **§8.2.12** A body `let` **MUST NOT** bind `mut`. `let mut` is a value-level local of a block or
-  a function.
+- **§8.2.12** A body `let` names an expression of the module. It is not a local and not a place
+  (§1.5.12): assigning it is `E0183`. A local is declared by a `let` inside a block or a function.
 - **§8.2.13** A `let` with a pattern names each component: `let (r, f) = (…);` names two
   expressions.
 - **§8.2.14** A `let` whose expression is the placement of a module without a result names the
@@ -402,7 +402,7 @@ a result that does.
 - **§8.2.32** A carrier driven by a definition is constant during every solve, like any discrete
   carrier (§5.1). Its change, when `analog` reads it, is a jump (§15.2).
 
-> **Resolution.** Relaxation step 1 defines "not driving" as absent from the slice passed to
+> **Resolution.** Relaxation step 1 defines "not driving" as absent from the array passed to
 > `resolve`, which is nature-independent. Step 2 defines "together" as evaluation from the previous
 > pass's values, so the outcome does not depend on an evaluation order.
 
@@ -414,7 +414,7 @@ a result that does.
 | Code | Condition | Phase |
 | --- | --- | --- |
 | `E0330` | a name declared twice in one module (§8.2.11) | elaboration |
-| `E0331` | `let mut` in a module body | parse |
+| §1.5 | an assignment to a body `let` (`E0183`, §8.2.12) | elaboration |
 | `E0332` | a `let` reads itself outside §8.3.5 (§8.2.16) | elaboration |
 | `E0333` | the name of an instance without a result used as a value (§8.2.14) | elaboration |
 | `E0335` | two definitions share a level (§8.2.20) | elaboration |
@@ -428,6 +428,10 @@ a result that does.
 | `E0343` | `inst.name` names an item that is not `pub` (§8.2.8) | elaboration |
 | §5.2 | a definition target this module may not drive (§8.2.10): a second drive of a one-driver carrier (`E0220`), any other target (`E0222`); a carrier with both a definition and commits in one module (`E0221`) | elaboration |
 | — | a loop of resolved drives that does not settle is not an error: its levels are unknown and a `log` record is written (§8.2.3) | run |
+
+> **Resolution.** `E0331` is retired. It reported `let mut` in a module body, when `mut` marked the
+> locals that could be assigned. `mut` is now a reserved word in every position (`E0903`, A.1), and
+> an assignment to a body `let` is `E0183`.
 
 **Examples**
 
