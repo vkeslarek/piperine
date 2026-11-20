@@ -1,5 +1,5 @@
-//! Analog loops that cannot stay loops are unrolled at elaboration
-//! (part IV §11 rule 12, part III §8.3.4).
+//! Analog loops and recursions that cannot stay what they are are expanded at elaboration
+//! (part IV §11 rule 12, part III §8.3.4, part I §3 rule 12).
 //!
 //! * A loop in an `analog` block that holds a contribution or a placement is its unrolling: the
 //!   trip count is folded by `ConstEval` over the params and constants of the frame (and the loop
@@ -8,19 +8,27 @@
 //!   instance, hoisted by the existing rule and numbered in unrolled order (D16). A trip count that
 //!   does not fold is `E0416` for a contribution and `E0351` for a placement. A loop that holds
 //!   neither stays a loop in the IR.
+//! * A call from an `analog` block of a function that reaches a call cycle is expanded where it
+//!   stands, its parameters bound to the constants its arguments fold to, so each decision the
+//!   recursion hangs on folds and only the arm it selects is lowered. A decision that does not fold,
+//!   or a depth past 1 024, is `E0126` naming the function: the IR never holds a recursion reached
+//!   from `analog`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use piperine_ir::{Constant, Stmt, StmtId as LoweredStmt};
+use piperine_ir::{Constant, Expr, ExprId as LoweredExpr, Local, Origin, Stmt, StmtId as LoweredStmt};
 
 use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arm, BlockNode, DeclId, DeclKind, ExprId, ExprKind, PatKind, StmtKind};
+use crate::types::{Callee, Ty};
 
-/// The most iterations one loop is unrolled into (Q5, §1 rule 11).
+/// The most iterations one loop is unrolled into, and the deepest call an expansion follows
+/// (Q5, §1 rule 11).
 const TRIPS: i128 = 1 << 24;
+const DEPTH: usize = 1024;
 
 /// What an analog loop holds that cannot stay a loop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,6 +55,24 @@ impl Held {
             Held::Placement => "a placement",
         }
     }
+}
+
+/// One recursive call being expanded: the function, and how many decisions that did not fold the
+/// code sat under when its expansion began.
+pub(super) struct Expansion {
+    /// The function whose body is being lowered in place.
+    function: DeclId,
+    /// `Scope::decisions` at the call.
+    decisions: u32,
+}
+
+/// The functions on a call cycle, and the functions that reach one: asked often, answered once.
+#[derive(Default)]
+pub(super) struct CallCycles {
+    /// Whether a function can call itself, directly or through others.
+    cyclic: BTreeMap<DeclId, bool>,
+    /// Whether a function is, or calls, one on a cycle.
+    reaching: BTreeMap<DeclId, bool>,
 }
 
 impl Elaboration<'_, '_> {
@@ -236,5 +262,141 @@ impl Elaboration<'_, '_> {
     /// the bindings of the unrolling; `None` when nothing is bound.
     fn unrolled_bindings(&self, scope: &Scope) -> Option<Bindings> {
         (!scope.unrolled.is_empty()).then(|| self.frame_bindings(scope.frame).overlaid(&scope.unrolled))
+    }
+
+    // ---- recursion ---------------------------------------------------------------------------
+
+    /// The functions `function`'s body calls by name.
+    fn callees(&self, function: DeclId) -> Vec<DeclId> {
+        let DeclKind::Fn(f) = &self.design.decl_data(function).kind else { return Vec::new() };
+        let Some(body) = &f.body else { return Vec::new() };
+        let mut found = Vec::new();
+        for expr in self.body_exprs(body) {
+            if matches!(self.design.expr_node(expr).kind, ExprKind::Call { .. })
+                && let Some(Callee::Function(callee)) = self.types.callee(expr)
+                && !found.contains(&callee)
+            {
+                found.push(callee);
+            }
+        }
+        found
+    }
+
+    /// Whether `function` can call itself, directly or through others.
+    fn on_cycle(&mut self, function: DeclId) -> bool {
+        if let Some(known) = self.cycles.cyclic.get(&function) {
+            return *known;
+        }
+        let mut seen = BTreeSet::new();
+        let mut open = self.callees(function);
+        let mut cyclic = false;
+        while let Some(next) = open.pop() {
+            if next == function {
+                cyclic = true;
+                break;
+            }
+            if seen.insert(next) {
+                open.extend(self.callees(next));
+            }
+        }
+        self.cycles.cyclic.insert(function, cyclic);
+        cyclic
+    }
+
+    /// Whether `function` is on a call cycle or calls a function that is: the functions an `analog`
+    /// block must expand rather than call (§3 rule 12).
+    pub(super) fn reaches_recursion(&mut self, function: DeclId) -> bool {
+        if let Some(known) = self.cycles.reaching.get(&function) {
+            return *known;
+        }
+        let mut seen = BTreeSet::from([function]);
+        let mut open = vec![function];
+        let mut reaches = false;
+        while let Some(next) = open.pop() {
+            if self.on_cycle(next) {
+                reaches = true;
+                break;
+            }
+            for callee in self.callees(next) {
+                if seen.insert(callee) {
+                    open.push(callee);
+                }
+            }
+        }
+        self.cycles.reaching.insert(function, reaches);
+        reaches
+    }
+
+    /// `E0126`: the recursion of `function` cannot be expanded; `why` says what stops it.
+    fn unfoldable_recursion(&mut self, scope: &Scope, function: DeclId, span: Span, why: &str) {
+        let name = self.design.decl_data(function).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let message = format!("the recursion of `{name}` reached from `analog` cannot be unrolled: {why} (§3 rule 12)");
+        self.report(scope.file, Diagnostic::new("E0126", message, span, "recursion does not fold"));
+    }
+
+    /// A call of `function`, which is or reaches a recursion, from an `analog` block: its body lowered
+    /// in place as a block, each parameter a local holding its argument and, when the argument
+    /// folds, bound to that constant too, so the decisions of the body fold. `None` after a
+    /// diagnostic.
+    pub(super) fn lower_expanded_call(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId, origin: Origin) -> Option<LoweredExpr> {
+        let span = self.design.expr_node(expr).span;
+        let data = self.design.decl_data(function).clone();
+        let DeclKind::Fn(f) = &data.kind else { return None };
+        let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let Some(body) = f.body.clone() else {
+            self.unsupported(scope.file, span, "a recursion through a function without a body");
+            return None;
+        };
+        if self.calls_option_function(expr).is_some() || self.expands_forms_it_cannot(&body) {
+            self.unsupported(scope.file, span, "a recursion reached from `analog` whose function returns early or returns an `Option`");
+            return None;
+        }
+        if scope.expanding.len() >= DEPTH {
+            self.unfoldable_recursion(scope, function, span, "it is deeper than 1 024 calls");
+            return None;
+        }
+        if scope.expanding.iter().any(|open| open.function == function && scope.decisions > open.decisions) {
+            self.unfoldable_recursion(scope, function, span, "a decision it hangs on does not fold");
+            return None;
+        }
+        let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_))).collect();
+        if params.iter().any(|p| matches!(self.types.local(*p), Some(Ty::Option(_)))) {
+            self.unsupported(scope.file, span, "a recursion reached from `analog` with an `Option` parameter");
+            return None;
+        }
+        // The arguments are read where the call stands, before any parameter is rebound.
+        let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
+        let slots = self.types.binding(expr).map(<[_]>::to_vec).unwrap_or_default();
+        let folded: Vec<Option<Constant>> = slots.iter().map(|slot| slot.and_then(|arg| self.consts.value(arg, &bindings).ok())).collect();
+        let arguments = self.lower_arguments(scope, expr, function)?;
+        let (saved_locals, saved_unrolled) = (scope.local_index.clone(), scope.unrolled.clone());
+        let mut stmts = Vec::new();
+        for (k, param) in params.iter().enumerate() {
+            let parameter = self.design.decl_data(*param).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+            let init = *arguments.get(k)?;
+            let local = scope.locals.len() as u32;
+            let ty = self.type_of(init);
+            scope.locals.push(Local { name: format!("{name}.{parameter}"), ty, mutable: false });
+            scope.local_index.insert(*param, local);
+            scope.unrolled.unbind(*param);
+            if let Some(Some(value)) = folded.get(k) {
+                scope.unrolled.bind(*param, *value);
+            }
+            stmts.push(self.stmt(Stmt::Let { local, init }));
+        }
+        scope.expanding.push(Expansion { function, decisions: scope.decisions });
+        let lowered = crate::stack::deep(|| self.lower_statements(scope, &body.stmts));
+        scope.expanding.pop();
+        scope.local_index = saved_locals;
+        scope.unrolled = saved_unrolled;
+        let (inner, value) = lowered?;
+        stmts.extend(inner);
+        let ty = value.map_or(piperine_ir::ValueType::Unit, |v| self.type_of(v));
+        Some(self.emit(Expr::Block { stmts, value }, ty, origin))
+    }
+
+    /// Whether `body` holds an exit an expansion cannot place: `return` or `?`.
+    fn expands_forms_it_cannot(&self, body: &BlockNode) -> bool {
+        self.body_exprs(body).iter().any(|e| matches!(self.design.expr_node(*e).kind, ExprKind::Return(_) | ExprKind::Try(_)))
     }
 }

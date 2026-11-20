@@ -164,3 +164,48 @@ fn a_contributing_analog_loop_without_a_constant_trip_count_is_e0416() {
     let refused = Elab::run(&src, "Top").expect_err("a placement in a loop over a probe");
     assert_eq!(Elab::codes(&refused), ["E0351"]);
 }
+
+/// A design of `Top` whose `analog` block contributes `call` to its node.
+fn analog_calling(items: &str, call: &str) -> String {
+    format!("{items}\nmodule Top() {{ signal o: Electrical; signal a: Electrical; }}\nanalog for Top {{ i(o) +> {call}; }}")
+}
+
+#[test]
+fn a_recursion_reached_from_analog_is_unrolled() {
+    // §3 rule 12 (CV-07 AC 2): the depth is decided by constants, so the recursion is expanded where
+    // it is called; the IR holds no function that calls itself (its own check passes).
+    let items = "fn tri(n: u8, x: f64) -> f64 { if n == 0 { 0.0 } else { x + tri(n - 1, x) } }";
+    let ir = Elab::ir(&analog_calling(items, "tri(3, v(a))"), "Top");
+    let text = ir.print_structural();
+    assert!(ir.functions().all(|f| f.name() != "tri"), "{text}");
+    // `tri(3)` expands `tri(3)`, `tri(2)`, `tri(1)` and `tri(0)`, whose `n == 0` folds to the base case.
+    assert_eq!(text.matches("let tri.n").count(), 4, "{text}");
+    assert!(text.contains("(1u8 - 1u8); let tri.x = tri.x; 0.0 }"), "the last level is the base case:\n{text}");
+
+    // Through a function that is not itself recursive.
+    let items = "fn tri(n: u8, x: f64) -> f64 { if n == 0 { 0.0 } else { x + tri(n - 1, x) } }\nfn twice(x: f64) -> f64 { tri(2, x) + tri(2, x) }";
+    let ir = Elab::ir(&analog_calling(items, "twice(v(a))"), "Top");
+    assert!(ir.functions().all(|f| f.name() != "tri" && f.name() != "twice"), "{}", ir.print_structural());
+
+    // A recursion no analog block reaches stays a recursion of the IR (D12).
+    let items = "fn tri(n: u8, x: f64) -> f64 { if n == 0 { 0.0 } else { x + tri(n - 1, x) } }";
+    let src = format!("{items}\nmodule Top(in clk: Bit, out q: Bit<u8>) {{ }}\ndigital for Top {{ on clk.rise() {{ q <- tri(3, 1.0) as u8; }} }}");
+    let ir = Elab::ir(&src, "Top");
+    assert!(ir.functions().any(|f| f.name() == "tri"));
+}
+
+#[test]
+fn an_unfoldable_recursion_from_analog_is_e0126() {
+    // §3 rule 12 (CV-07 AC 3): the depth reads a probe, so the decision does not fold; the error names
+    // the function.
+    let items = "fn tri(n: u8, x: f64) -> f64 { if n == 0 { 0.0 } else { x + tri(n - 1, x) } }";
+    let refused = Elab::run(&analog_calling(items, "tri(v(a) as u8, v(a))"), "Top").expect_err("a depth from a probe");
+    assert_eq!(Elab::codes(&refused), ["E0126"]);
+    assert!(refused[0].diagnostic.message.contains("`tri`"), "{:?}", refused[0].diagnostic.message);
+
+    // A recursion with no decision at all runs past 1 024 calls.
+    let items = "fn forever(x: f64) -> f64 { forever(x) }";
+    let refused = Elab::run(&analog_calling(items, "forever(v(a))"), "Top").expect_err("no end");
+    assert_eq!(Elab::codes(&refused), ["E0126"]);
+    assert!(refused[0].diagnostic.message.contains("`forever`"), "{:?}", refused[0].diagnostic.message);
+}

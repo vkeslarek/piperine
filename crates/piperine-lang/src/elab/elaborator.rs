@@ -11,6 +11,7 @@ use super::consts::{Bindings, ConstEval};
 use super::exits::Divergences;
 use super::origin::Locator;
 use super::structural::{BodyKey, BodyVariants, KeyParams, Overrides};
+use super::unroll::CallCycles;
 use super::variants::Variants;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, Design, DesignDiagnostic, FileId};
@@ -95,6 +96,8 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) unrolled_names: BTreeMap<(usize, DeclId), u32>,
     /// The placements inside a loop, by module (`unroll.rs`).
     pub(super) looped: BTreeMap<DeclId, std::collections::BTreeSet<crate::pom::ExprId>>,
+    /// The functions on a call cycle (`unroll.rs`).
+    pub(super) cycles: CallCycles,
     pub(super) diagnostics: Vec<DesignDiagnostic>,
 }
 
@@ -127,6 +130,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             divergences: Divergences::default(),
             unrolled_names: BTreeMap::new(),
             looped: BTreeMap::new(),
+            cycles: CallCycles::default(),
             diagnostics: Vec::new(),
         }
     }

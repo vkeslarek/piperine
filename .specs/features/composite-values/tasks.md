@@ -723,8 +723,8 @@ T63
 
 **Done when**:
 
-- [ ] `a_recursion_reached_from_analog_is_unrolled` and `an_unfoldable_recursion_from_analog_is_e0126` pass under `**Run elabctl**`
-- [ ] Gate check passes: Full
+- [x] `a_recursion_reached_from_analog_is_unrolled` and `an_unfoldable_recursion_from_analog_is_e0126` pass under `**Run elabctl**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

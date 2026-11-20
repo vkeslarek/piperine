@@ -15,6 +15,7 @@ use super::control::LoopFrame;
 use super::returns::FunctionResult;
 use super::variants::Half;
 use super::consts::{Bindings, Folded};
+use super::unroll::Expansion;
 use super::known::Flag;
 use super::elaborator::Elaboration;
 use super::selectors::{ArmCondition, ContributionRecord};
@@ -94,15 +95,19 @@ pub(super) struct Scope {
     /// an argument that may be unknown calls the flagged variant of it (`closures.rs`).
     pub(super) fn_targets: BTreeMap<DeclId, DeclId>,
     /// The constant each loop variable of the unrolled analog loops the code sits in, and each
-    /// stands for (`unroll.rs`).
+    /// parameter of the unrolled recursive calls it sits in, stands for (`unroll.rs`).
     pub(super) unrolled: Bindings,
     /// Whether the code being lowered is a statement of an `analog` block, not a function's body.
     pub(super) in_analog_block: bool,
+    /// How many `if` and `match` decisions that did not fold the code being lowered sits under.
+    pub(super) decisions: u32,
+    /// The recursive calls being expanded, outermost first (`unroll.rs`).
+    pub(super) expanding: Vec<Expansion>,
 }
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), may_be_unknown: false, loops: Vec::new(), result: None, fn_targets: BTreeMap::new(), unrolled: Bindings::new(), in_analog_block: false }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), may_be_unknown: false, loops: Vec::new(), result: None, fn_targets: BTreeMap::new(), unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new() }
     }
 }
 
@@ -310,6 +315,7 @@ impl Elaboration<'_, '_> {
             ExprKind::If { cond, then, else_ } => {
                 let source = *cond;
                 let cond = self.lower_expr(scope, *cond);
+                scope.decisions += 1;
                 let arm = Self::enter_arm(scope, cond, true);
                 scope.guards.push(ArmCondition::If { condition: source, holds: true });
                 let then = self.lower_block(scope, file, &then.stmts, node.span);
@@ -323,6 +329,7 @@ impl Elaboration<'_, '_> {
                 };
                 scope.guards.pop();
                 Self::leave_arm(scope, arm);
+                scope.decisions -= 1;
                 let (cond, then, otherwise) = (cond?, then?, otherwise?);
                 let (then, otherwise) = (self.fit_to(then, &ty), self.fit_to(otherwise, &ty));
                 // A condition that may be unknown is kept: the generated code decides it.
@@ -396,7 +403,12 @@ impl Elaboration<'_, '_> {
             }
             // A scrutinee over the key params folds: only the arm it selects is lowered (`structural.rs`).
             ExprKind::Match { scrutinee, arms } if let Some(selected) = self.folded_selection(scope, *scrutinee, arms) => self.lower_expr(scope, arms[selected].body),
-            ExprKind::Match { scrutinee, arms } => self.lower_match(scope, *scrutinee, arms, ty, origin),
+            ExprKind::Match { scrutinee, arms } => {
+                scope.decisions += 1;
+                let lowered = self.lower_match(scope, *scrutinee, arms, ty, origin);
+                scope.decisions -= 1;
+                lowered
+            }
             ExprKind::Closure { params, body, .. } => self.lower_closure(scope, expr, params, *body, origin),
             other => {
                 self.unsupported(file, node.span, crate::types::unsupported::Unsupported::expr(other));
@@ -413,6 +425,8 @@ impl Elaboration<'_, '_> {
             (CallClass::Probe, _) => self.lower_probe(scope, expr, ty, origin),
             // A function that emits is no IR function: its call is inlined where it stands (§19 rule 10).
             (_, Some(Callee::Function(function))) if self.types.emits(function).is_some() => self.inline_emitting_value(scope, function, args, origin),
+            // A recursion reached from an `analog` block is expanded where it is called (§3 rule 12, `unroll.rs`).
+            (_, Some(Callee::Function(function))) if scope.in_analog_block && self.reaches_recursion(function) => self.lower_expanded_call(scope, expr, function, origin),
             (_, Some(Callee::Function(function))) => {
                 let lowered = self.lower_arguments(scope, expr, function)?;
                 let pattern: Vec<Flag> = lowered.iter().map(|a| self.flag(*a)).collect();
@@ -687,7 +701,8 @@ impl Elaboration<'_, '_> {
                     None
                 }
             },
-            // The loop variable of an unrolled analog loop is the constant of this iteration (`unroll.rs`).
+            // The loop variable of an unrolled analog loop and the parameter of an expanded recursion
+            // are the constant of this iteration or call (`unroll.rs`).
             DeclKind::FnParam(_) | DeclKind::Binding(_) if let Some(value) = scope.unrolled.get(decl) => Some(self.constant_expr(value, ty, origin)),
             DeclKind::FnParam(_) | DeclKind::Binding(_) => match scope.local_index.get(&decl) {
                 Some(index) => {
