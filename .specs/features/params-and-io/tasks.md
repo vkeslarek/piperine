@@ -311,9 +311,9 @@ T44
 
 **Done when**:
 
-- [ ] `a_param_hiding_a_function_is_e0180_with_a_note_at_the_function` passes under `**Run typesvalues**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `a_param_hiding_a_function_is_e0180_with_a_note_at_the_function` passes under `**Run typesvalues**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

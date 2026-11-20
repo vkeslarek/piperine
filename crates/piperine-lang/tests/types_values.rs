@@ -530,3 +530,21 @@ fn a_mismatch_no_row_names_is_e0180_naming_both_types() {
     assert_eq!(snippet(&src, &d[0]), "true");
     assert_eq!(d[1].diagnostic.message, "mismatched types: expected `bool`, found `f64`");
 }
+
+#[test]
+fn a_param_hiding_a_function_is_e0180_with_a_note_at_the_function() {
+    // Part I §3.5.4 (L20): a callee that is a param or a `let` of the module and not a
+    // function, with a function of that name in an enclosing namespace, is `E0180` "expected a
+    // function, found `<type>`" with a note at the function's declaration.
+    for hider in ["half: f64 = 1.0;", "let half = 1.0;"] {
+        let src = format!("fn half(a: f64) -> f64 {{ a / 2.0 }}\nmodule Top() {{ {hider} }}\nanalog for Top {{ let a = half(2.0); }}");
+        let design = design_of(&src);
+        let d = Types::check(&design, "Top").expect_err("expected diagnostics");
+        assert_eq!(codes_of(&d), ["E0180"], "{hider}\n{src}");
+        assert_eq!(d[0].diagnostic.message, "expected a function, found `f64`", "{hider}");
+        assert_eq!(snippet(&src, &d[0]), "half", "{hider}");
+        let (note, _) = &d[0].diagnostic.secondary[0];
+        assert_eq!(&src[note.range()], "half", "{hider}: the note stands at the declaration of the function");
+        assert!(note.range().start < src.find("module Top").unwrap(), "{hider}: the note is on the `fn`");
+    }
+}

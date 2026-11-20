@@ -54,6 +54,7 @@ impl Checker<'_> {
             Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
                 DeclKind::Fn(_) => self.function_call(expr, *callee, decl, args),
                 DeclKind::FnParam(_) | DeclKind::Binding(_) => self.indirect_call(expr, *callee, args),
+                DeclKind::Param(_) | DeclKind::Const(_) | DeclKind::Let(_) if self.hidden_function(decl).is_some() => self.hidden_function_call(expr, *callee, decl, args),
                 _ => {
                     self.unsupported(file, node.span, "call of this declaration");
                     None
@@ -94,15 +95,24 @@ impl Checker<'_> {
 
     /// A call of a parameter or a local whose type is `fn(..) -> R`: there is no named function
     /// to record as its callee, so a call with the right count is outside the subset; one with
-    /// the wrong count is `E0141` (Part I §3.2.6).
+    /// the wrong count is `E0141` (Part I §3.2.6), and a local that hides a function is `E0180`.
     fn indirect_call(&mut self, expr: ExprId, callee: ExprId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
-        if let Some(Ty::Fn(params, _)) = self.infer(callee)
-            && params.len() != args.len()
-        {
-            self.arity_mismatch(file, span, params.len(), args);
-            return None;
+        match self.infer(callee) {
+            Some(Ty::Fn(params, _)) if params.len() != args.len() => {
+                self.arity_mismatch(file, span, params.len(), args);
+                return None;
+            }
+            // A local that is no function and hides the function of its name (§3.5.4).
+            Some(ty) if !matches!(ty, Ty::Fn(..)) => {
+                if let Some(Resolution::Decl(hider)) = self.callee_resolution(callee)
+                    && self.hidden_function(hider).is_some()
+                {
+                    return self.hidden_function_call(expr, callee, hider, args);
+                }
+            }
+            _ => {}
         }
         self.unsupported(file, span, "call of a function value (a parameter or a local)");
         for arg in args {
@@ -170,6 +180,48 @@ impl Checker<'_> {
         }
         self.bindings.insert(expr, slots);
         Some(())
+    }
+
+    /// The function of the name of `hider` (a param, a `let` or a `const` that is not a function)
+    /// that `hider` hides: a `fn` of that name among the children of an enclosing namespace
+    /// (Part I §3.5.4).
+    fn hidden_function(&self, hider: DeclId) -> Option<DeclId> {
+        let name = &self.design.decl_data(hider).name.as_ref()?.text;
+        let mut scope = self.design.decl_data(hider).parent;
+        while let Some(namespace) = scope {
+            let data = self.design.decl_data(namespace);
+            let hidden = data.children.iter().copied().find(|child| {
+                let child_data = self.design.decl_data(*child);
+                matches!(child_data.kind, DeclKind::Fn(_)) && child_data.name.as_ref().is_some_and(|candidate| candidate.text == *name)
+            });
+            if hidden.is_some() {
+                return hidden;
+            }
+            scope = data.parent;
+        }
+        None
+    }
+
+    /// `E0180` "expected a function, found `<type>`" for a call whose callee is a value that
+    /// hides the function of its name, with a note at that function's declaration (Part I
+    /// §3.5.4, L20). The arguments are still inferred, so the one mistake is one diagnostic.
+    fn hidden_function_call(&mut self, expr: ExprId, callee: ExprId, hider: DeclId, args: &[Arg]) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(callee).span;
+        let found = self.infer(callee).map_or_else(|| "a value".to_string(), |ty| ty.name(self.design));
+        let name = self.design.decl_data(hider).name.as_ref().map_or_else(String::new, |name| name.text.clone());
+        let mut diagnostic = crate::msl::Diagnostic::new("E0180", format!("expected a function, found `{found}`"), span, format!("`{name}` is a `{found}` here, not the function"));
+        if let Some(function) = self.hidden_function(hider) {
+            let declaration = self.design.decl_data(function);
+            if declaration.file == file {
+                diagnostic = diagnostic.with_label(declaration.name.as_ref().map_or(declaration.span, |name| name.span), format!("the function `{name}` is hidden by the {} of the same name", Unsupported::item(&self.design.decl_data(hider).kind)));
+            }
+        }
+        self.report(file, diagnostic);
+        for arg in args {
+            self.infer(arg.value);
+        }
+        None
     }
 
     /// `E0141` (Part I §3.2.6): a call with `expected` positional arguments that has the
