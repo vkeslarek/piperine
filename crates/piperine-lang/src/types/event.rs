@@ -21,12 +21,15 @@ impl Checker<'_> {
 
     /// An `Event` typed where `expr` stands, outside an event position: where an event is read
     /// (a guard or a reaction body) it is a `bool` (§13 rules 2 and 9), anywhere else it is
-    /// `E0441`. The type the expression then has is returned.
+    /// `E0441` (`E0354` when it is the Event result of a placement, §8.3.10). The type the
+    /// expression then has is returned.
     pub(super) fn event_out_of_place(&mut self, expr: ExprId) -> Ty {
         if self.reads_events() {
             self.event_read_as_bool(expr)
         } else {
-            self.event_outside_a_position(expr);
+            if !self.event_result_out_of_place(expr) {
+                self.event_outside_a_position(expr);
+            }
             Ty::Event
         }
     }

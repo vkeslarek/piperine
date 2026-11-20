@@ -472,10 +472,10 @@ T44
 
 **Done when**:
 
-- [ ] `a_continuous_result_read_where_probes_are_not_allowed_is_e0354`, `an_event_result_outside_an_event_position_is_e0354` pass under `**Run typesresults**`
-- [ ] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `a_continuous_result_read_where_probes_are_not_allowed_is_e0354`, `an_event_result_outside_an_event_position_is_e0354` pass under `**Run typesresults**`
+- [x] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

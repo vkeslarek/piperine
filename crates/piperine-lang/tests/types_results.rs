@@ -94,10 +94,11 @@ fn a_placement_has_its_result_type() {
     let inner = exprs_reading(&design, &types, &src, "twice(2.0)");
     let twice = design.module("twice").expect("twice").decl().id();
     assert_eq!((types.ty(inner[0]), types.callee(inner[0])), (Some(&Ty::F64), Some(Callee::Module(twice))));
-    // A result placed in an event position outside one is an `Event` out of place.
+    // A result placed in an event position outside one is `E0354` (§8.3.10), proved by
+    // `an_event_result_outside_an_event_position_is_e0354`; it was `E0441`.
     let src = format!("module ev(x: f64) -> Event {{ cross(x) }}\nmodule Top(p: Electrical) {{ }}\nanalog for Top {{ let e = ev(v(p)); }}");
     let d = diagnostics(&src);
-    assert_eq!((codes(&d), snippet(&src, &d[0])), (vec!["E0441".to_string()], "ev(v(p))"));
+    assert_eq!((codes(&d), snippet(&src, &d[0])), (vec!["E0354".to_string()], "ev(v(p))"));
 }
 
 #[test]
@@ -245,4 +246,27 @@ fn a_let_that_reads_itself_is_e0332_or_e0353() {
     // which lifted the `P0001` this row asserted).
     let src = "module integ(x: f64) -> f64 {\n    signal s: Bit<f64> = 0.0;\n    s.known_or(0.0)\n}\nmodule Top() { let y = integ(y); }";
     checked(&design_of(src), src);
+}
+
+#[test]
+fn a_continuous_result_read_where_probes_are_not_allowed_is_e0354() {
+    // §8.3.10 (`E0354`): a continuous result read in a param default, where no probe may be written,
+    // names the result; it was `P0001`. A discrete result is read there without a code.
+    let src = "module Top() { signal a: Electrical; let g = ddt(v(a)); q: f64 = g; }";
+    let d = diagnostics(src);
+    assert_eq!((codes(&d), snippet(src, &d[0])), (vec!["E0354".to_string()], "g"));
+    assert!(d[0].diagnostic.message.contains("`g`"), "{}", d[0].diagnostic.message);
+}
+
+#[test]
+fn an_event_result_outside_an_event_position_is_e0354() {
+    // §8.3.10 (`E0354`): the `Event` result of a placement read where only a value may stand. An
+    // core `cross` written there is not a result: it keeps its own code `E0443`.
+    for body in ["analog for Top { let e = ev(v(p)); }", "analog for Top { i(p) +> ev(v(p)); }"] {
+        let src = format!("module ev(x: f64) -> Event {{ cross(x) }}\nmodule Top(p: Electrical) {{ }}\n{body}");
+        let d = diagnostics(&src);
+        assert_eq!((codes(&d), snippet(&src, &d[0])), (vec!["E0354".to_string()], "ev(v(p))"), "{body}");
+    }
+    let src = "module Top(p: Electrical) { }\nanalog for Top { let e = cross(v(p)); }";
+    assert_eq!(codes(&diagnostics(src)), ["E0443"]);
 }

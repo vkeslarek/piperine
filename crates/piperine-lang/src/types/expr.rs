@@ -519,6 +519,9 @@ impl Checker<'_> {
                         if local.is_none() && self.lets_open.contains_key(&decl) {
                             return self.self_read(file, node.span, decl);
                         }
+                        if local.is_none() && self.continuous_result_in_const(file, node.span, decl) {
+                            return None;
+                        }
                         if let Some(Ty::Module(module)) = &local {
                             return self.instance_as_value(file, node.span, decl, *module);
                         }

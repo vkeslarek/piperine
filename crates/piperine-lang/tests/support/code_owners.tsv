@@ -30,7 +30,6 @@ E0322	generics	L31 (generation)
 E0340	generics	L31
 E0342	generics	L31
 E0351	composite-values	L5 (loops)
-E0354	params-and-io	PI-12 AC 11, raised here
 E0360	generics	L32 (`Fn(P)`)
 E0361	params-and-io	PI-04 AC 3 (`generics` extends it to other template values), raised here
 E0362	generics	L32
