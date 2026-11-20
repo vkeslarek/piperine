@@ -392,7 +392,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
     /// §15 S2 and S3: the settle commits the instant held reach the analog side now, so the solve
     /// that arrives at the next time point reads them; the integrator restarts from them, and that
     /// arriving step is exempt from the truncation test (`exempt_next`).
-    fn deliver_settle_boundary(&mut self, unknowns: bool, outcome: &Outcome) {
+    pub(super) fn deliver_settle_boundary(&mut self, unknowns: bool, outcome: &Outcome) {
         if unknowns && !outcome.settle_boundary.is_empty() {
             self.analog.deliver(&outcome.settle_boundary, Restart::Integrator);
             self.exempt_next = true;
@@ -401,7 +401,6 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
 
     /// §15 S6: a settle commit made at the stop time is dropped, and no step follows to read it.
     fn drop_settle_commits_at_stop(&mut self) {
-        self.discrete.drop_settle_commits();
-        self.exempt_next = false;
+        self.end_sweep();
     }
 }

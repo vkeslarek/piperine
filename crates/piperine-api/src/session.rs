@@ -523,7 +523,8 @@ impl Session {
                     Session::set_param(&mut self.params, self.compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, swept, value)?;
                     let result = circuit
                         .dc(self.context.clone())
-                        .and_then(|mut dc| dc.solve())
+                        // the settle commits of a point land at the next one (§15 S6)
+                        .and_then(|dc| dc.followed_by_another_point(k + 1 < count).solve())
                         .map_err(|error| Failure::Solver { analysis: "dc", error })?;
                     let held = self.held_params(&circuit, &[]);
                     let net = |path: &str| Session::discrete(&circuit, path).or_else(|| Session::held_bytes(&held, path));

@@ -178,7 +178,9 @@ impl Digital {
     }
 
     /// An analysis from initial values (abi.md §9): zero the store, drop the queue, commit every
-    /// `init` at (0, 0) and fire `START`. No device is called; the first instant applies them.
+    /// `init` at (0, 0) and fire `START`. No device is called; the first instant applies them. The
+    /// held settle commits stay: those of the previous sweep point land at this point (§15 S6),
+    /// and the owner drops them at a sweep's end (`drop_settle_commits`).
     pub fn start(&mut self) -> Result<(), DigitalError> {
         self.start_at(Tick(0))
     }
@@ -191,7 +193,6 @@ impl Digital {
         self.obs = Obs::new();
         self.dirty = DirtySet::all(&self.plan);
         self.now = tick;
-        self.settle_commits = SettleCommits::default();
         self.call = 0;
         self.running = true;
         self.suspended = None;
