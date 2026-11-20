@@ -298,15 +298,14 @@ fn e0404_is_a_statement_in_the_wrong_kind_of_block() {
 }
 
 #[test]
-fn e0414_is_not_raised_a_branch_that_switches_kind_is_refused_as_p0001() {
-    // errors~54e5381d (unraised): "E0414: A branch switches kind on a probe". No source raises E0414
-    // (GAPS.md section 10): a contribution under an `if` is `P0001` (L40), on both branches. When the
-    // code is raised this test fails and the row becomes `holds`
+fn e0414_a_branch_that_switches_kind_on_a_probe_is_refused() {
+    // errors~54e5381d: "E0414: A branch switches kind on a probe", raised since `analog-structure`: a
+    // contribution to a branch with a potential contribution under an `if` that reads a probe
     let source = "module Top() { signal p: Electrical; }\nanalog for Top { if v(p) > 0.5 { v(p) +> 1.0; } else { i(p) +> 1.0; } }\n";
     let faulty = Faulty::elaborating("errors~54e5381d", source, "Top");
     let codes: Vec<&str> = faulty.given.iter().map(|reported| reported.code.as_str()).collect();
-    assert_eq!(codes, ["P0001", "P0001"], "no E0414: {codes:?}");
-    assert_eq!(faulty.first("P0001").message, "a contribution under an `if` or in a closure is not supported yet");
+    assert_eq!(codes, ["E0414", "E0414"], "{codes:?}");
+    assert!(faulty.first("E0414").message.contains("reads the probe of (p, gnd)"), "{}", faulty.first("E0414").message);
 }
 
 #[test]

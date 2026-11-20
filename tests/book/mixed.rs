@@ -250,18 +250,19 @@ fn the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero() {
 }
 
 #[test]
-fn the_sar_adc_is_refused_for_the_field_access_on_its_converter() {
+fn the_sar_adc_is_refused_at_its_comparator_and_its_field_access_runs() {
     // mixed#15 (refused): `SarAdc` and its `analog for SarAdc { i(dac.core) +> ... }` on a public node of its
-    // DAC (`field access`, L36); with the pieces the chapter does not show written by the test (a sample-hold,
-    // `Dac8`, `SarLogic`) and the chapter's own `Comparator` (mixed#6), which is refused too
+    // DAC elaborates since `analog-structure` (L36); what is left is the chapter's own `Comparator` (mixed#6,
+    // `E0441`, L51), with the pieces the chapter does not show written by the test (a sample-hold, `Dac8`,
+    // `SarLogic`)
     let chapter = Chapter::read();
     let pieces = "module SampleHold(vin: Electrical, vout: Electrical, in clk: Bit) { signal held: Bit<f64> = 0.0; }\ndigital for SampleHold { on clk.rise() { held <- v(vin); } }\nanalog for SampleHold { v(vout) +> held.known_or(0.0); }\nmodule Dac8(in code: Bit<u8>, vout: Electrical) { pub signal core: Electrical; }\nanalog for Dac8 { v(core) +> 0.5; v(vout) +> v(core); }\nmodule SarLogic(in clk: Bit, in start: Bit, in cmp: Bit, out code: Bit<u8> = 0, out done: Bit = false) {}\n";
     let after = "module Top(in clk: Bit, in start: Bit) { signal vin: Electrical; signal code: Bit<u8>; signal done: Bit; let a = SarAdc(vin, clk, start, code, done); }\n";
     let before = format!("{}\n{pieces}", chapter.text("mixed#6"));
     let model = chapter.wrapped("sar.msl", &before, "mixed#15", after);
     let given = Refusal::of(model.run(Faulty::operating_point_of("Top")), "mixed#15");
-    assert!(given.iter().any(|(code, message)| code == "E0441" && message.starts_with("an `Event` value outside an event position")), "the comparator: {given:?}");
-    Refusal::expect(model.run(Faulty::operating_point_of("Top")), "mixed#15", "P0001", "field access is not supported yet");
+    assert!(given.iter().all(|(_, message)| !message.contains("field access")), "the field access on the converter runs: {given:?}");
+    Refusal::expect(model.run(Faulty::operating_point_of("Top")), "mixed#15", "E0441", "an `Event` value outside an event position, a guard or a reaction body: an event is never committed, carried or stored (§13 rule 8)");
 }
 
 #[test]

@@ -407,7 +407,6 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
-| errors~54e5381d | L40 | `analog-structure` | `E0414` is not raised: a contribution under an `if` is `P0001` on both branches |
 | from-rust#1 | L6 | `composite-values` | reached from a top, `range_of` is `P0001` (a range pattern in a `match` arm; the enum has no `#[derive(Repr)]`) and `mean` is `P0001` (a reference type) |
 | values#2 | L53 | `unknown-semantics-events` | `handshake`, a `fn` that returns `Event`, is `P0001`: method `rise` on this receiver is not supported yet |
 | values~c389077a | L53 | `unknown-semantics-events` | the class of a function that returns `Event` does not run (`handshake`); the pure, `now()` and `emit!` classes do |
@@ -437,13 +436,10 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | analog#2 | L9 | `composite-values` | the devices are `P0001` twice: `limexp` is written with a closure, `limit(x, \|new, old\| ..)`, and its two parameters are a binding inside a module |
 | analog#3 | L52 | `unknown-semantics-events` | `on settle` is `P0001`: built-in `settle`; with the `limexp` closure the command gives the three diagnostics of the listing and runs nothing |
 | analog#7 | L49 | `analog-operators` | `emit!("newton", ..)` in an `analog` block is `P0001`, next to the `limexp` closure |
-| analog#9 | L40 | `analog-structure` | the switch's contribution under an `if` is `P0001` on both branches |
 | analog#11 | L45 | `analog-operators` | `noise(..)` is `P0001`: core primitive `noise` |
 | analog~773a3851 | L52 | `unknown-semantics-events` | the command stops at the source with the three diagnostics, as the sentence says: held with analog#3 |
 | analog~139c67b5 | L49 | `analog-operators` | a trace from `analog` is refused with analog#7: no record per Newton iteration exists |
 | analog~b103eeb0 | L49 | `analog-operators` | no trace line reaches the command: the `emit!` in `analog` is refused with analog#7 |
-| analog~c91537fe | L40 | `analog-structure` | `E0414` is not raised: a contribution under an `if` on a probe is `P0001` on both branches |
-| analog~54e5381d | L40 | `analog-structure` | `E0414` is not raised: the same refusal as analog~c91537fe |
 | digital#6 | L51 | `unknown-semantics-events` | `Pfd3` is `P0001`: `let mut`, assignment, an event read as a `bool` (`fref.rise() && s < 1`) and the names whose type follows from them |
 | digital#7 | L28 | `params-and-io` | `param of type u8 is not supported yet` on `n: u8`; with the param written as a literal, `known_or(clean)` is `P0001` too (a `known_or` default that may be unknown, L59) |
 | digital#11 | L28 | `params-and-io` | `param of type u8 is not supported yet` on `period: u8` |
@@ -457,7 +453,7 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | digital~d1d69398 | L28 | `params-and-io` | the debouncer and the PWM are refused (digital#7, digital#11); the counter runs |
 | mixed#6 | L51 | `unknown-semantics-events` | `Comparator`'s `on up \|\| dn { q <- up; }` is `E0441`, an `Event` committed, where the Book reads `up` as a `bool` |
 | mixed#10 | L52 | `unknown-semantics-events` | `digital for Buck` with `on settle` is `P0001`: built-in `settle`; the converter without it runs (mixed#8) |
-| mixed#15 | L36 | `analog-structure` | `i(dac.core) +> ..` on a public node of a child is `P0001` (field access); the chapter's `Comparator` in it is `E0441` |
+| mixed#15 | L51 | `unknown-semantics-events` | the chapter's `Comparator` in it is `E0441` (as in mixed#6); the `i(dac.core) +> ..` on a public node of a child runs |
 | mixed~9d07c4b9 | L52 | `unknown-semantics-events` | the check on `settle` is refused with mixed#10 |
 | packages#12 | L57 | `composite-values` | `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` is `P0001`, a reference type; `include_str!` itself is accepted in a `const` |
 | packages~64f2121d | L57 | `composite-values` | `E0610` is not raised: `include_str!` in a module body is `P0001`, `include_str!` is not supported yet |

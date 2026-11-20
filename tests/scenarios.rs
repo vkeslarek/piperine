@@ -21,8 +21,8 @@ use piperine_solver::prelude::{Context, NodeIdentifier, TransientAnalysisOptions
 use piperine_transpile::Settings;
 
 /// The twins only the Rust backend runs: their source reads `now()`, which the interpreter refuses
-/// (the same list `piperine-cli/tests/twins.rs` holds the binary to).
-const COMPILED_ONLY: [&str; 4] = ["pss_rc", "tran_jump", "tran_corner", "tran_floor"];
+/// (the same list `piperine-cli/tests/twins.rs` holds the binary to); `uic_rc` and `diode_rs` read `analysis(..)`.
+const COMPILED_ONLY: [&str; 6] = ["pss_rc", "tran_jump", "tran_corner", "tran_floor", "uic_rc", "diode_rs"];
 
 /// A sink that keeps nothing: a scenario reads the table.
 struct Ignore;
@@ -434,6 +434,11 @@ fn diode_series() {
 }
 
 #[test]
+fn diode_rs() {
+    Scenario::of("diode_rs").hold(&Comparison::OperatingPoint { nodes: &["vin", "a"] });
+}
+
+#[test]
 fn diode_iv() {
     Scenario::of("diode_iv").hold(&Comparison::DcSweep { export: "diode_iv_sweep", rows: 37 });
 }
@@ -451,6 +456,11 @@ fn ac_rc() {
 #[test]
 fn tran_rc() {
     Scenario::of("tran_rc").hold(&Comparison::Transient { export: "tran_rc_tran", rows: 100, node: "out" });
+}
+
+#[test]
+fn uic_rc() {
+    Scenario::of("uic_rc").hold(&Comparison::Transient { export: "uic_rc_tran", rows: 100, node: "out" });
 }
 
 #[test]

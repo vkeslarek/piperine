@@ -269,6 +269,6 @@ fn an_initial_value_over_a_param_follows_its_binding() {
     assert_eq!(value(&emitted(top, vec![])), 2.5, "the default");
     assert_eq!(value(&emitted(top, vec![("Top.k0".into(), 4.0)])), 4.0, "after --param Top.k0=4.0");
     // and from (0, 0): the record at 0 reads the same value, not one reached later
-    let at_zero = top.replace("on at(0.5m)", "on at(0)");
+    let at_zero = top.replace("on at(0.5m)", "on at(0.0)");
     assert_eq!(value(&emitted(&at_zero, vec![("Top.k0".into(), 4.0)])), 4.0, "at (0, 0)");
 }

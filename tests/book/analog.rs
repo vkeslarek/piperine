@@ -195,12 +195,17 @@ fn the_diode_with_a_trace_is_refused() {
 }
 
 #[test]
-fn the_switch_is_refused_for_the_contribution_under_an_if() {
-    // analog#9 (refused): the ideal switch, `if ctl.high() { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; }`: a
-    // contribution under an `if` is `P0001` on both branches (L40)
+fn the_switch_shorts_its_nodes_while_its_control_is_high() {
+    // analog#9 (run since `analog-structure`): the ideal switch, `if ctl.high() { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; }`,
+    // behind 1 kOhm from 1 V: with its control high it shorts `a` to ground (v(a) = 0), with it low it is open
+    // (no flow, v(a) = 1 V)
     let chapter = Chapter::read();
-    let model = chapter.wrapped("switch.msl", "", "analog#9", "module Top(in c: Bit) { signal a: Electrical; signal b: Electrical; let s = Switch(a, b, c); }\n");
-    Refusal::expect(model.run(Commands::operating_point()), "analog#9", "P0001", "a contribution under an `if` or in a closure is not supported yet");
+    let top = |ctl: &str| format!("module Top() {{ signal s: Electrical; signal a: Electrical; signal c: Bit = {ctl}; let v1 = Vdc(s) {{ dc: 1.0 }}; let r = R(s, a) {{ r: 1k }}; let sw = Switch(a, gnd, c); }}\n");
+    for (ctl, volts) in [("true", 0.0), ("false", 1.0)] {
+        let model = chapter.wrapped("switch.msl", Bench::PARTS, "analog#9", &top(ctl));
+        let ran = model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
+        assert!((ran.signal("Top.a") - volts).abs() < 1e-6, "control {ctl}: v(a) = {:e}, wanted {volts}", ran.signal("Top.a"));
+    }
 }
 
 #[test]
@@ -306,15 +311,14 @@ fn e0150_an_unknown_carrier_is_read_with_high() {
 }
 
 #[test]
-fn e0414_is_not_raised_a_branch_that_switches_kind_is_refused_as_p0001() {
+fn e0414_a_branch_that_switches_kind_on_a_probe_is_refused() {
     // analog~54e5381d and analog~c91537fe: "E0414 if v(a, b) > 0.0 { v(a, b) +> 0.0; } else { i(a, b) +> 0.0;
-    // }": "A choice of kind that depends on a probe is an error (E0414)". `E0414` is named by the spec and
-    // no source raises it (GAPS.md section 10, L40): a contribution under an `if` is `P0001` on both
-    // branches
+    // }": "A choice of kind that depends on a probe is an error (E0414)": raised since `analog-structure`, at
+    // each contribution under the selector, naming the branch and the probe
     let source = format!("{}analog for Top {{ if v(a, b) > 0.0 {{ v(a, b) +> 0.0; }} else {{ i(a, b) +> 0.0; }} }}\n", Bench::EMPTY_TOP);
     let faulty = Faulty::elaborating("analog~54e5381d", &source, "Top");
-    assert_eq!(faulty.given.len(), 2, "one `P0001` per branch");
-    assert!(faulty.given.iter().all(|reported| reported.code == "P0001" && reported.message == "a contribution under an `if` or in a closure is not supported yet"), "{:?}", faulty.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
+    assert_eq!(faulty.given.len(), 2, "one `E0414` per contribution");
+    assert!(faulty.given.iter().all(|reported| reported.code == "E0414" && reported.message.contains("the branch (a, b) reads the probe of (a, b)")), "{:?}", faulty.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
 }
 
 #[test]

@@ -1,0 +1,5 @@
+run diode_rs: op, top DiodeRsBench, backend rust
+
+signal            value
+DiodeRsBench.vin  5.000000e0
+DiodeRsBench.a    1.082222e0

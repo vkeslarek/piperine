@@ -85,7 +85,7 @@ block	analog#5	f0d9aa24342fc413	shown	-	-	-
 block	analog#6	ac0f7586ee6e5a16	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run clipper.msl --analysis transient --stop 2e-3 --print vin --print vout --stream clip --plot clipper.svg
 block	analog#7	2dcf8ccdabaf5fbf	refused	piperine/book_analog::the_diode_with_a_trace_is_refused	L49	-
 block	analog#8	c75a64c2f73e0062	shown	-	-	-
-block	analog#9	618d2c0b12b5a698	refused	piperine/book_analog::the_switch_is_refused_for_the_contribution_under_an_if	L40	-
+block	analog#9	618d2c0b12b5a698	run	piperine/book_analog::the_switch_shorts_its_nodes_while_its_control_is_high	-	-
 block	analog#10	680ede3e2ac2fe51	run	piperine/book_analog::the_nullor_drives_its_output_to_a_virtual_short_and_coupled_inductors_couple	-	-
 block	analog#11	35b144b2c97d9575	refused	piperine/book_analog::the_noise_source_is_refused	L45	-
 block	digital#1	b6a2c3d854639e4c	run	piperine/book_digital::the_counter_raises_full_exactly_while_the_count_is_255	-	-
@@ -120,7 +120,7 @@ block	mixed#11	d9f0417b5399de0c	shown	-	-	-
 block	mixed#12	063828848af5ddc2	shown	-	-	-
 block	mixed#13	0e299217e2c4d640	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop
 block	mixed#14	f7cd53dd5486e87b	run	piperine/book_mixed::the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero	-	-
-block	mixed#15	ea28fe2bc18e8e9d	refused	piperine/book_mixed::the_sar_adc_is_refused_for_the_field_access_on_its_converter	L36	-
+block	mixed#15	ea28fe2bc18e8e9d	refused	piperine/book_mixed::the_sar_adc_is_refused_at_its_comparator_and_its_field_access_runs	L51	-
 block	packages#1	4d5e7db8c23bc8e3	shown	-	-	-
 block	packages#2	3ec48f5cf74f6fa3	run	piperine/book_packages::the_lowpass_project_runs_as_the_book_assembles_it	-	-
 block	packages#3	57d2aaeee2a2ed05	run	piperine/book_packages::the_lowpass_project_runs_as_the_book_assembles_it	-	-
@@ -324,13 +324,13 @@ claim	analog~8f90421c	8f90421cf10f758d	holds	piperine/book_analog::the_clipper_c
 claim	analog~773a3851	773a3851ccd5ff87	refused	analog#3	L52	Today the command stops at the source, with those three diagnostics, and runs nothing:
 claim	analog~139c67b5	139c67b5de8bbf3a	refused	analog#7	L49	This emit! runs when the code around it runs, and analog runs at every evaluation: every Newton iteration of every step, including iterations and whole steps that the solver later rejects.
 claim	analog~b103eeb0	b103eeb07178680c	refused	analog#7	L49	The piperine command prints the records of reactions; a trace from analog is not among the lines it shows.
-claim	analog~c91537fe	c91537fe5beade7a	unraised	piperine/book_analog::e0414_is_not_raised_a_branch_that_switches_kind_is_refused_as_p0001	L40	A choice of kind that depends on a probe is an error (E0414), because the solver would have to change the equations while it is solving them.
+claim	analog~c91537fe	c91537fe5beade7a	holds	piperine/book_analog::e0414_a_branch_that_switches_kind_on_a_probe_is_refused	-	A choice of kind that depends on a probe is an error (E0414), because the solver would have to change the equations while it is solving them.
 claim	analog~54e53c1d	54e53c1dcbcb3f55	holds	piperine/book_analog::e0410_a_contribution_writes_a_probe_of_a_branch	-	E0410
 claim	analog~54e5351d	54e5351dcbcb3370	holds	piperine/book_analog::e0417_a_contribution_is_an_f64_and_the_fix_runs	-	E0417
 claim	analog~ecb4300e	ecb4300e3bafde8f	holds	piperine/book_analog::e0417_a_contribution_is_an_f64_and_the_fix_runs	-	Write 1.0, or an SI literal such as 1m.
 claim	analog~54e1b21d	54e1b21dcbc81f00	holds	piperine/book_analog::e0404_a_commit_belongs_in_a_reaction	-	E0404
 claim	analog~39a9371d	39a9371dbc03a3e6	holds	piperine/book_analog::e0150_an_unknown_carrier_is_read_with_high	-	E0150
-claim	analog~54e5381d	54e5381dcbcb3889	unraised	piperine/book_analog::e0414_is_not_raised_a_branch_that_switches_kind_is_refused_as_p0001	L40	E0414
+claim	analog~54e5381d	54e5381dcbcb3889	holds	piperine/book_analog::e0414_a_branch_that_switches_kind_on_a_probe_is_refused	-	E0414
 claim	analog~42a7e91d	42a7e91dc1344005	holds	piperine/book_analog::e0241_a_branch_joins_two_different_nodes	-	E0241
 claim	analog~64ee8b1d	64ee8b1dd483286f	holds	piperine/book_analog::e0603_checks_are_decided_by_reactions	-	E0603
 claim	analog~5c44f21d	5c44f21dcf9af6ca	holds	piperine/book_analog::e0503_a_node_only_capacitors_touch_is_singular_at_dc	-	E0503
@@ -432,7 +432,7 @@ claim	errors~4bcf1b1d	4bcf1b1dc68707b8	holds	piperine/book_errors::e0336_is_a_de
 claim	errors~4bcf1a1d	4bcf1a1dc6870605	holds	piperine/book_errors::e0339_is_a_combinational_loop_through_one_driver_carriers	-	E0339
 claim	errors~4bd60d1d	4bd60d1dc68d0e9c	holds	piperine/book_errors::e0350_is_an_instance_placed_where_none_is_placed	-	E0350
 claim	errors~54e1b21d	54e1b21dcbc81f00	holds	piperine/book_errors::e0404_is_a_statement_in_the_wrong_kind_of_block	-	E0404
-claim	errors~54e5381d	54e5381dcbcb3889	unraised	piperine/book_errors::e0414_is_not_raised_a_branch_that_switches_kind_is_refused_as_p0001	L40	E0414
+claim	errors~54e5381d	54e5381dcbcb3889	holds	piperine/book_errors::e0414_a_branch_that_switches_kind_on_a_probe_is_refused	-	E0414
 claim	errors~54ec481d	54ec481dcbd17267	holds	piperine/book_errors::e0430_is_a_head_of_on_that_is_not_an_event	-	E0430
 claim	errors~39a2cc1d	39a2cc1dbbfe8267	holds	piperine/book_errors::e0171_is_a_manifest_key_the_format_does_not_allow	-	E0171
 claim	errors~39a2c81d	39a2c81dbbfe7b9b	holds	piperine/book_errors::e0175_is_a_package_without_a_crate_root	-	E0175
