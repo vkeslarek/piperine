@@ -765,8 +765,8 @@ T63
 
 **Done when**:
 
-- [ ] `section_1_rule_11_states_the_loop_and_depth_bounds` passes under `**Run spectext**`
-- [ ] Gate check passes: Quick
+- [x] `section_1_rule_11_states_the_loop_and_depth_bounds` passes under `**Run spectext**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

@@ -1650,3 +1650,17 @@ fn appendix_c_lists_the_loop_bound_among_the_defaults() {
     let rows = table_rows(&section(&text, "### C.2.1 "));
     assert!(rows.iter().any(|r| r[..] == ["loop iterations under unknown control", "64", "§3.3.16"]), "{rows:?}");
 }
+
+#[test]
+fn section_1_rule_11_states_the_loop_and_depth_bounds() {
+    // Q5 (CV-07 AC 4, CV-36 AC 2): a loop of more than 2^24 iterations and a call nested more than
+    // 1 024 deep are panics (§1 rule 11), and C.2.1 lists both bounds among the defaults.
+    let rule = flat(&spec("part_i_values.md"));
+    for fact in ["One loop that runs more than 2^24 iterations in one evaluation", "a call nested more than 1 024 deep, are panics of this kind"] {
+        assert!(rule.contains(fact), "§1 rule 11 lacks \"{fact}\"");
+    }
+    let rows = table_rows(&section(&spec("appendix_c_implementation.md"), "### C.2.1 "));
+    for expected in [["iterations of one loop in one evaluation", "2^24 (16 777 216); the next iteration is a panic", "§1 rule 11"], ["call depth", "1 024; the next nested call is a panic", "§1 rule 11"]] {
+        assert!(rows.iter().any(|r| r[..] == expected), "C.2.1 lacks {expected:?}: {rows:?}");
+    }
+}

@@ -91,6 +91,8 @@ How the Piperine solver meets Part V. Every number is a default the host may cha
 | time resolution (tick) | 1 fs | §15 |
 | microsteps per instant | 1000 | §15: a loop that never goes quiet is an error |
 | loop iterations under unknown control | 64 | §3.3.16 |
+| iterations of one loop in one evaluation | 2^24 (16 777 216); the next iteration is a panic | §1 rule 11 |
+| call depth | 1 024; the next nested call is a panic | §1 rule 11 |
 | relaxation passes per loop | drive count + 1 | §8.2.3 |
 | mixed rounds of an operating point | 20 | §16 step 4 |
 | `reltol` | 1e-3 | §17.1 |

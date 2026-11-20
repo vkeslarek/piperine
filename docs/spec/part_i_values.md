@@ -102,7 +102,8 @@ pub const inf: f64 = 1.0 / 0.0;
 - **§1 rule 11.** A value-level failure is a **panic**: an out-of-range index, an integer
   division by zero, `unwrap` on `None`, an explicit `panic` path of a standard method. During
   elaboration it is an elaboration error. During a run it fails the analysis, naming the
-  instance and the instant.
+  instance and the instant. One loop that runs more than 2^24 iterations in one evaluation, and a
+  call nested more than 1 024 deep, are panics of this kind (Appendix C.2.1 lists both bounds).
 - **§1 rule 12.** A float division by zero does not panic. It yields an infinity or a NaN, as
   IEEE 754 defines. A non-finite value that reaches a solve fails it
   ([§17.1](part_v_execution.md#171-convergence)).
