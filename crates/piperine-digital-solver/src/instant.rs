@@ -197,6 +197,7 @@ impl Digital {
                 &mut self.obs,
                 here,
                 &mut self.call,
+                &mut self.settle_commits,
                 Phase::Microstep,
             )?;
             out.finish |= ran.finish;
@@ -250,6 +251,7 @@ impl Digital {
 
         out.boundary = boundary.into_iter().map(|n| (n, self.store.value(n).to_vec())).collect();
         out.fired = fired.into_iter().collect();
+        out.settle_boundary = self.settle_commits.boundary(|net| self.plan.nets[net.0 as usize].analog_reads, &self.store);
         Ok(Stepped::Done(out))
     }
 
@@ -281,7 +283,7 @@ impl Digital {
                 phase.boundary.insert(id);
             }
         }
-        let ran = run_reactions(&mut self.plan, &self.store, samples, &ambient, &mut self.queue, &mut self.obs, here, &mut self.call, Phase::Settle)?;
+        let ran = run_reactions(&mut self.plan, &self.store, samples, &ambient, &mut self.queue, &mut self.obs, here, &mut self.call, &mut self.settle_commits, Phase::Settle)?;
         phase.finish = ran.finish;
         // what the phase left for the instant, its records, applies as the instant exits, as at the
         // end of the loop: a record left queued would be a commit due at this tick forever

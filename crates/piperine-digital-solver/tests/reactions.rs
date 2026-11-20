@@ -14,6 +14,7 @@ use piperine_digital_solver::net::NetId;
 use piperine_digital_solver::observe::{Obs, Observation};
 use piperine_digital_solver::plan::DigitalPlan;
 use piperine_digital_solver::queue::Queue;
+use piperine_digital_solver::settle::SettleCommits;
 use piperine_digital_solver::run::{Ambient, DirtySet, Fired, Phase, fire_net, run_reactions, write_net};
 use piperine_digital_solver::store::Store;
 use piperine_digital_solver::tick::{Resolution, Tick};
@@ -55,7 +56,7 @@ impl Env {
 
     fn react(&mut self) -> Result<Fired, DigitalError> {
         let amb = Ambient::at(AT.0, 1e-15);
-        let r = run_reactions(&mut self.plan, &self.store, &[], &amb, &mut self.queue, &mut self.obs, AT, &mut self.calls, Phase::Microstep);
+        let r = run_reactions(&mut self.plan, &self.store, &[], &amb, &mut self.queue, &mut self.obs, AT, &mut self.calls, &mut SettleCommits::default(), Phase::Microstep);
         self.obs.flush();
         r
     }
@@ -196,7 +197,7 @@ fn a_later_commit_below_its_bound_is_a_fault() {
     let id = net_named(&plan, "o.e0");
     fire_net(&plan, &mut store, &mut dirty, &mut obs, id, AT);
     let amb = Ambient::at(AT.0, 1e-6);
-    run_reactions(&mut plan, &store, &[], &amb, &mut queue, &mut obs, AT, &mut calls, Phase::Microstep).expect("no LATER, no bound");
+    run_reactions(&mut plan, &store, &[], &amb, &mut queue, &mut obs, AT, &mut calls, &mut SettleCommits::default(), Phase::Microstep).expect("no LATER, no bound");
 }
 
 #[test]

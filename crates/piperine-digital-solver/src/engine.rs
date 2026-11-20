@@ -9,6 +9,7 @@ use piperine_abi::raw::pin_flag;
 use crate::plan::{Binding, DigitalPlan, NetWriter};
 use crate::queue::{Pending, Queue, QueueMark, Writer};
 use crate::run::{Ambient, DirtySet, run_cone, write_net};
+use crate::settle::SettleCommits;
 use crate::store::{Store, StoreMark};
 use crate::tick::Tick;
 use crate::error::DigitalError;
@@ -68,6 +69,9 @@ pub struct Outcome {
     /// not empty the instant is suspended: host commits made now are due at its next microstep,
     /// and the next `run_instant` at the same tick continues it (abi.md §5 R7).
     pub host_events: Vec<NetId>,
+    /// The nets the analog side reads and the bytes the held settle commits will give them: the
+    /// solve that arrives at the next time point reads these (§15 S2).
+    pub settle_boundary: Vec<(NetId, Vec<u8>)>,
 }
 
 /// The engine's state at one point: the store, the queue, how many observations existed, and the
@@ -117,6 +121,8 @@ pub struct Digital {
     pub(crate) dirty: DirtySet,
     /// The tick of the last instant entered.
     pub(crate) now: Tick,
+    /// The commits of the settle phase held for the next time point (§15 S1).
+    pub(crate) settle_commits: SettleCommits,
     /// Numbers the commits of a microstep (abi.md §6 C2).
     pub(crate) call: u32,
     pub(crate) running: bool,
@@ -142,6 +148,7 @@ impl Digital {
             obs: Obs::new(),
             dirty,
             now: Tick(0),
+            settle_commits: SettleCommits::default(),
             call: 0,
             running: false,
             waited: Vec::new(),
@@ -178,6 +185,7 @@ impl Digital {
         self.obs = Obs::new();
         self.dirty = DirtySet::all(&self.plan);
         self.now = tick;
+        self.settle_commits = SettleCommits::default();
         self.call = 0;
         self.running = true;
         self.suspended = None;
@@ -273,6 +281,23 @@ impl Digital {
         if !self.waited.contains(&net) {
             self.waited.push(net);
         }
+    }
+
+    /// Makes the held settle commits due at microstep 0 of `tick`, the next time point (§15 S1, S6),
+    /// where `changed()` fires for what they change. The owner calls it when it accepts that time
+    /// point, before it runs the instant.
+    pub fn land_settle_commits(&mut self, tick: Tick) {
+        self.settle_commits.land(tick, &mut self.queue);
+    }
+
+    /// Forgets the held settle commits: the stop time was reached or the last sweep point ran (§15 S6).
+    pub fn drop_settle_commits(&mut self) {
+        self.settle_commits.drop_all();
+    }
+
+    /// Whether a settle commit is held, waiting for the next time point.
+    pub fn holds_settle_commits(&self) -> bool {
+        !self.settle_commits.is_empty()
     }
 
     /// Fires event net `net`: a commit due at microstep 0 of `at` (abi.md §6 C6).

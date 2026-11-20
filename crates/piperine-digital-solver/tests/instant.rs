@@ -198,27 +198,73 @@ fn a_quiet_commit_does_not_start_a_microstep() {
     assert_eq!(out.microsteps, 1, "a quiet commit starts no microstep");
 }
 
+const SETTLING: Mode = Mode { is_static: false, settle: true };
+
+/// A `settler` design whose `out` the analog side reads, with its `delay` set to `delay` seconds.
+fn settler_engine(delay: f64) -> Digital {
+    let plan = bind_by_name_with(vec![("s", settler(), vec![("out", "out")])], Resolution::default(), |nets| {
+        nets.iter_mut().find(|n| n.name == "s.delay").unwrap().init = delay.to_le_bytes().to_vec();
+        nets.iter_mut().find(|n| n.name == "out").unwrap().analog_reads = true;
+    })
+    .expect("binds");
+    Digital::new(plan, DigitalLimits::default())
+}
+
 #[test]
-fn a_settle_commit_with_no_delay_is_refused() {
-    // C29
-    let mut d = engine(vec![("s", settler(), vec![("out", "out")])]);
+fn a_settle_commit_is_held_until_it_is_landed() {
+    // §15 S1: a commit from the settle phase with no advancing delay is held, not queued and not
+    // refused; the instant reports what the analog side will read (S2)
+    let mut d = settler_engine(0.0);
     d.start().unwrap();
-    match d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), Mode { is_static: false, settle: true }) {
-        Err(DigitalError::Unsupported { what }) => assert!(what.contains("settle"), "{what}"),
-        other => panic!("expected an unsupported error, got {other:?}"),
-    }
-    // no settle phase, no reaction, no error
-    let mut d = engine(vec![("s", settler(), vec![("out", "out")])]);
+    let out = d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), SETTLING).expect("a settle commit is held");
+    assert!(d.holds_settle_commits(), "held");
+    assert_eq!(d.next_due(), None, "it is due at no instant until it lands");
+    assert_eq!(d.read(net(&d, "out")), [0, 0], "the net keeps its unset value (S4)");
+    assert_eq!(out.settle_boundary, vec![(net(&d, "out"), HIGH.to_vec())], "the boundary the next solve reads (S2)");
+    // without a settle phase no reaction runs and nothing is held
+    let mut d = settler_engine(0.0);
     d.start().unwrap();
     d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), Mode::default()).expect("SETTLE never fired");
-    // a delay that advances is a commit like any other
-    let plan = bind_by_name_with(vec![("s", settler(), vec![("out", "out")])], Resolution::default(), |nets| {
-        nets.iter_mut().find(|n| n.name == "s.delay").unwrap().init = 1e-9f64.to_le_bytes().to_vec();
-    })
-    .unwrap();
-    let mut d = Digital::new(plan, DigitalLimits::default());
+    assert!(!d.holds_settle_commits());
+}
+
+#[test]
+fn a_landed_settle_commit_fires_changed_at_microstep_0() {
+    // §15 S1: landed at the next time point the commit is due at (t_next, 0), where it changes the net
+    let mut d = settler_engine(0.0);
     d.start().unwrap();
-    d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), Mode { is_static: false, settle: true }).expect("a delayed settle commit");
+    d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), SETTLING).unwrap();
+    d.land_settle_commits(Tick(5));
+    assert!(!d.holds_settle_commits(), "landed commits are no longer held");
+    assert_eq!(d.next_due(), Some(Tick(5)), "due at the time point");
+    d.drain_observations();
+    d.run_instant(Tick(5), &[], Horizon::uniform(Tick(10)), Mode::default()).unwrap();
+    assert_eq!(d.read(net(&d, "out")), HIGH, "the commit applied");
+    let seen = d.drain_observations();
+    assert!(seen.contains(&Observation::Change { net: "out".into(), at: (Tick(5), 0), bytes: HIGH.to_vec() }), "changed at (t_next, 0): {seen:?}");
+}
+
+#[test]
+fn a_dropped_settle_commit_never_applies() {
+    // §15 S6: at the stop time the held commits are dropped
+    let mut d = settler_engine(0.0);
+    d.start().unwrap();
+    d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), SETTLING).unwrap();
+    d.drop_settle_commits();
+    assert!(!d.holds_settle_commits());
+    d.land_settle_commits(Tick(5));
+    assert_eq!(d.next_due(), None, "nothing to land");
+    assert_eq!(d.read(net(&d, "out")), [0, 0], "it never applied");
+}
+
+#[test]
+fn a_settle_commit_with_an_advancing_delay_is_an_ordinary_commit() {
+    // §15 S7: a delay that advances time is queued at its time, never held
+    let mut d = settler_engine(1e-9);
+    d.start().unwrap();
+    let out = d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), SETTLING).expect("a delayed settle commit");
+    assert!(!d.holds_settle_commits());
+    assert!(out.settle_boundary.is_empty());
     assert_eq!(d.next_due(), Some(Tick(NS)));
 }
 
@@ -257,15 +303,13 @@ fn a_guarded_settle_event_fires_in_the_settle_phase() {
 #[test]
 fn a_reaction_in_the_settle_phase_is_on_settle_whatever_its_head() {
     // §13 rule 14, D4: the reaction listens to the private event pin `seen`, not to `SETTLE`, yet it
-    // runs in the settle phase, so a commit with no advancing delay is a settle commit (S1, held
-    // from T7; refused until then)
+    // runs in the settle phase, so a commit with no advancing delay is a settle commit (S1): held
     let mut d = settle_event_engine(0.0, vec![]);
     d.start().unwrap();
     d.host_commit(net(&d, "en"), 0, &HIGH, Tick(0)).unwrap();
-    match d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), Mode { is_static: false, settle: true }) {
-        Err(DigitalError::Unsupported { what }) => assert!(what.contains("settle"), "{what}"),
-        other => panic!("expected the settle commit to be refused, got {other:?}"),
-    }
+    d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), SETTLING).expect("the commit is held");
+    assert!(d.holds_settle_commits(), "held, not applied and not refused");
+    assert_eq!(d.next_due(), None);
 }
 
 #[test]
