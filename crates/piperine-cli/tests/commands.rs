@@ -769,3 +769,34 @@ fn test_passes_a_run_ended_by_finish() {
     assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
     assert_eq!(text(&out.stdout), "PASS finish (1 checks)\n1 runs, 1 passed, 0 failed\n");
 }
+
+/// The code lines of a failed command's standard error, one per diagnostic.
+fn code_lines(out: &Output) -> Vec<String> {
+    text(&out.stderr).lines().filter(|l| l.len() == 5 && l.starts_with(['E', 'P'])).map(str::to_string).collect()
+}
+
+#[test]
+fn check_reports_one_error_per_unreached_item_kind() {
+    // GN-08 AC 1, 2: a library with no `[run]` and a variant with one; the `fn`, the module, the
+    // behavior block, the `const` and the `impl` function each fail with the code they have when
+    // reached (`P0002`), and nothing reaches any of them
+    for name in ["unreached_errors", "unreached_errors_run"] {
+        let out = piperine_in(&fixture(name), &["check"]);
+        assert_eq!(out.status.code(), Some(1), "{name}: {}", text(&out.stderr));
+        assert_eq!(text(&out.stdout), "", "{name}");
+        assert_eq!(code_lines(&out), ["P0002"; 5], "{name}: one diagnostic per item kind: {}", text(&out.stderr));
+    }
+}
+
+#[test]
+fn build_and_run_fail_with_the_check_diagnostic() {
+    // GN-09 AC 1: `build` and `run` fail with the diagnostics `check` prints, text and all
+    let fixture = fixture("unreached_errors_run");
+    let checked = piperine_on(&fixture, "interp", &["check"]);
+    assert_eq!(code_lines(&checked), ["P0002"; 5]);
+    for command in ["build", "run"] {
+        let out = piperine_on(&fixture, "interp", &[command, "main"]);
+        assert_eq!(out.status.code(), Some(1), "{command}: {}", text(&out.stderr));
+        assert_eq!(text(&out.stderr), text(&checked.stderr), "{command} prints what check prints");
+    }
+}

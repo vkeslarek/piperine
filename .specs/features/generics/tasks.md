@@ -265,8 +265,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `check_reports_one_error_per_unreached_item_kind` and `build_and_run_fail_with_the_check_diagnostic` pass under `**Run clicommands**`
-- [ ] Gate check passes: Full
+- [x] `check_reports_one_error_per_unreached_item_kind` and `build_and_run_fail_with_the_check_diagnostic` pass under `**Run clicommands**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1437,7 +1437,7 @@ Proof: run tgen | test instance_names_compile_and_nested_arguments_spell_apart .
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none yet. Planning (2026-11-20): the user was away and asked for the most reasonable default on every open point ("Tu sempre assume o default mais razoável e depois me conta"); the defaults are design.md D1 to D17.
+**Settled mid-build:** (B1, 2026-11-20, user AFK, default taken) the whole-model check skips generic items (an item or an enclosing item with a `<..>` list) and trait functions until the generic forms land: a generic body stays refused `P0001` when reached, and GAPS S3 keeps it (T6). Planning (2026-11-20): the user was away and asked for the most reasonable default on every open point ("Tu sempre assume o default mais razoável e depois me conta"); the defaults are design.md D1 to D17.
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 

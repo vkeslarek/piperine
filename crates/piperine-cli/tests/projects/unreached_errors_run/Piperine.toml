@@ -1,0 +1,6 @@
+[package]
+name = "unreached_errors_run"
+version = "0.1.0"
+
+[run.main]
+analysis = "op"
