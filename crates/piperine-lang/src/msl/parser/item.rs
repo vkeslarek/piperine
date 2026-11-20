@@ -470,7 +470,18 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
         })
         .boxed();
 
+    // An `emit!` statement at the file's top: `E0601`, as in a module body.
+    let stray_emit = select! { Token::Ident(s) if s == "emit" => () }
+        .then(punct(Punct::Not))
+        .rewind()
+        .ignore_then(expr::stmt(h))
+        .validate(|statement, _, emitter| {
+            emitter.emit(msl::misplaced_emit(statement.span.0));
+            ItemKind::Error
+        })
+        .boxed();
     let kind = first_of(vec![
+        stray_emit,
         fn_decl(h).map(ItemKind::Fn).boxed(),
         const_item(h).map(|c| ItemKind::Const(c)).boxed(),
         struct_decl.boxed(),

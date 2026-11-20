@@ -398,6 +398,9 @@ fn e0601_is_an_emit_outside_a_reaction_analog_or_fn() {
     // errors~64ee8d1d: "E0601: `emit!` outside a reaction, `analog` or a `fn`"
     let faulty = Faulty::elaborating("errors~64ee8d1d", "module Top() { let x = emit!(\"s\", f = 1.0); }\n", "Top");
     assert_eq!(faulty.pointed_at("E0601"), "emit!(\"s\", f = 1.0)");
+    // written at the top of a file, among the items, it is the same code
+    let top = Faulty::elaborating("errors~64ee8d1d", "emit!(\"s\", f = 1.0);\nmodule Top() { }\n", "Top");
+    assert_eq!(top.pointed_at("E0601"), "emit!(\"s\", f = 1.0);");
 }
 
 #[test]

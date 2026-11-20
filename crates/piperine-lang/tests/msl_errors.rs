@@ -280,6 +280,16 @@ fn an_emit_statement_in_a_module_body_reports_e0601() {
 }
 
 #[test]
+fn an_emit_statement_at_the_top_of_a_file_reports_e0601() {
+    // part VI §19 rule 10 holds for every position: written among the file's items it is E0601 as
+    // in a module body, and the items after it still parse
+    let src = "emit!(\"hello\");\nmodule M() { }";
+    let found = codes(src);
+    let at = src.find("emit!(\"hello\");").expect("fixture holds its statement");
+    assert_eq!(found, [("E0601", Span::new(at, at + "emit!(\"hello\");".len()))], "{found:?}");
+}
+
+#[test]
 fn a_statement_outside_a_reaction_in_digital_reports_e0434() {
     let found = codes("digital for M { q <- 1; on e { } }");
     assert_eq!(found, [("E0434", Span::new(16, 23))]);

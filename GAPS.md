@@ -485,7 +485,7 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | cheatsheet#7 | L49 | `analog-operators` | `on settle` is `P0001` (L52) and the `emit!("newton", ..)` in `analog` is `P0001` (L49) |
 | cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function need a generic module: `P0001` |
 | cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
-| cheatsheet#10 | L57 | `composite-values` | with its `emit!` the card is `E0900` (a statement among items); without it `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` a reference type |
+| cheatsheet#10 | L57 | `composite-values` | with its `emit!` the card is `E0601` (a statement among items); without it `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` a reference type |
 
 Three observations the root tests made are no Book row, so they are not above: they are entries of §7,
 each with its owner. A run has no key or flag for `dt_min` (H16, `host-analyses`); a `--stream` named like

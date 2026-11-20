@@ -158,7 +158,7 @@ fn the_extern_card_is_refused() {
 fn the_files_card_is_refused_for_its_table_and_its_statement() {
     // cheatsheet#10 (refused): `mod logic;`, two `use` lines, `const IV: [(f64, f64); 64] =
     // parse_table(include_str!("iv.tbl"));` and `emit!("log", ..)` among the items. The `emit!` is a
-    // statement, so the file as the sheet writes it is `E0900` (a syntax error); without that last line, in
+    // statement among the items, so the file as the sheet writes it is `E0601` (§19 rule 10); without that last line, in
     // a package that has the files and the dependency it names, and a top that reads the table (the checker
     // reaches only what the top reaches), `parse_table` is a generic function and `&IV` a reference, `P0001`
     // (L57)
@@ -177,7 +177,7 @@ fn the_files_card_is_refused_for_its_table_and_its_statement() {
             .with_source("src/iv.tbl", &(0..64).map(|row| format!("{} {}\n", row, row)).collect::<String>())
     };
     let whole = Refusal::of(package(format!("{card}\nmodule Top() {{ }}\n")).run(Overrides::default()), "cheatsheet#10");
-    assert!(whole.iter().any(|(code, message)| code == "E0900" && message == "unexpected identifier `emit`, expected item"), "{whole:?}");
+    assert!(whole.iter().any(|(code, message)| code == "E0601" && message == "`emit!` is written in a reaction, in `analog` or in a `fn` only (§19 rule 10)"), "{whole:?}");
     let reading = "module Top() { signal a: Electrical; }\nanalog for Top { v(a) +> table_model(v(a), &IV, \"3E\"); }\n";
     let items_only = package(format!("{items}\n{reading}"));
     let given = Refusal::of(items_only.run(Overrides::default()), "cheatsheet#10");

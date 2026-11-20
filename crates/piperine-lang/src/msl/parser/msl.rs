@@ -307,14 +307,7 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
         .validate(|s, e, emitter| {
             if matches!(&s.kind, StmtKind::Expr { expr, .. } if matches!(expr.kind, ExprKind::Emit { .. })) {
                 // an `emit!` statement: the output runs when behavior runs (§19 rule 10)
-                emitter.emit(Rich::custom(
-                    s.span.0,
-                    Custom {
-                        code: "E0601",
-                        message: "`emit!` is written in a reaction, in `analog` or in a `fn` only (§19 rule 10)".into(),
-                        help: Some("output runs when behavior runs: put it in a reaction, `on init() { emit!(..); }`".into()),
-                    },
-                ));
+                emitter.emit(misplaced_emit(s.span.0));
                 return ModuleItem { meta: Meta::default(), public: false, kind: ModuleItemKind::Error, span: Loc(e.span()) };
             }
             let what = match &s.kind {
@@ -343,6 +336,19 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
         true,
         |span| ModuleItem { meta: Meta::default(), public: false, kind: ModuleItemKind::Error, span: Loc(span) },
         unless,
+    )
+}
+
+/// The `E0601` of an `emit!` statement written where only items go (a module body or the file's top):
+/// the output runs when behavior runs (§19 rule 10).
+pub(crate) fn misplaced_emit<'a>(span: Span) -> Err<'a> {
+    Rich::custom(
+        span,
+        Custom {
+            code: "E0601",
+            message: "`emit!` is written in a reaction, in `analog` or in a `fn` only (§19 rule 10)".into(),
+            help: Some("output runs when behavior runs: put it in a reaction, `on init() { emit!(..); }`".into()),
+        },
     )
 }
 
