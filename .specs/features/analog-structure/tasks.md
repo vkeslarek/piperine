@@ -889,7 +889,7 @@ T35 → T36
 - [x] Creates the target `crates/piperine-parity/tests/source_params.rs` (`//!` header: param values, initial values and param history run from source on the Rust backend)
 - [x] Test with exactly this name passes in `Run sparams`: `a_body_let_as_a_param_value_sets_the_corner`
 - [x] Tests with exactly these names pass in `Run elabstruct`: `a_param_value_let_may_read_another_let`, `a_param_value_let_that_reads_a_probe_is_e0321`
-- [x] Test with exactly this name passes in `Run apibind`: `a_set_of_r_recomputes_the_capacitance_it_derives`
+- [x] Test with exactly this name passes in `Run apibind`: `a_binding_of_k_recomputes_the_scale_a_body_let_derives`
 - [x] Gate check passes: Full (`Run sparams`, `Run elabstruct`, `Run apibind`, `cargo test -p piperine-lang`, `Run twins`, `Run tgolden`)
 - [x] Test count: the 4 tests named above, and no existing test removed or edited
 
@@ -1177,7 +1177,7 @@ Proof: run elabstruct | test a_param_value_let_may_read_another_let ... ok
 Proof: run elabstruct | test a_param_value_let_that_reads_a_probe_is_e0321 ... ok
 
 **C60** - WHERE `host-ii` X9 has merged, a host `set` of `r` recomputes the child's `c`. (AS-12, AC 4; T32)
-Proof: run apibind | test a_set_of_r_recomputes_the_capacitance_it_derives ... ok
+Proof: run apibind | test a_binding_of_k_recomputes_the_scale_a_body_let_derives ... ok
 
 **C61** - `v(m) +> p.inflow() * 1k;` gives `1k · (1 mA + v(p, n)/1 kΩ)`. (AS-13, AC 1; T31)
 Proof: run sreach | test inflow_sums_the_flows_of_the_modules_branches_at_the_port ... ok

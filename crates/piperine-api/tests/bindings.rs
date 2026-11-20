@@ -132,7 +132,7 @@ module Top() {
 ";
 
 #[test]
-fn a_set_of_r_recomputes_the_capacitance_it_derives() {
+fn a_binding_of_k_recomputes_the_scale_a_body_let_derives() {
     // AS-12 AC 4 (host-ii X9): `l.scale` is the body `let` `derived` = 3 * k. A divider of 1 kOhm over
     // a load of conductance scale / 1 kOhm gives v(c) = 1 V / (1 + scale): 0.25 V at k = 1 (scale 3), and
     // after the host binds `Top.k` = 2 the child's scale is recomputed to 6: v(c) = 1 / 7.

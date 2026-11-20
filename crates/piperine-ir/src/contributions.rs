@@ -52,6 +52,7 @@ pub(crate) struct Contributions<'a> {
 }
 
 impl<'a> Contributions<'a> {
+    /// A walk over the statements of `ir`.
     pub(crate) fn new(ir: &'a Ir) -> Self {
         Contributions { ir }
     }
