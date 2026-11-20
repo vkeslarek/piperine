@@ -113,7 +113,7 @@ block	modules#12	7d514f590b39e281	refused	piperine/book_modules::a_function_that
 block	modules#13	306ed28d3083ab43	fragment	modules#12	-	-
 block	modules#14	25696a4b4e2cdf58	refused	piperine/book_modules::the_extern_osdi_module_is_refused	L33	-
 block	analog#1	86764b71680a9fd9	run	piperine/book_analog::a_capacitor_is_open_and_an_inductor_is_a_short_at_the_operating_point	-	-
-block	analog#2	bf3cc4ac19e90181	refused	piperine/book_analog::the_clipper_is_refused_for_limexp_and_settle	L9	-
+block	analog#2	bf3cc4ac19e90181	refused	piperine/book_analog::the_clipper_is_refused_for_limexp_and_settle	L58	-
 block	analog#3	6395ae5e780ffca4	refused	piperine/book_analog::the_clipper_is_refused_for_limexp_and_settle	L52	-
 block	analog#4	f44e0e6d9f174a31	shown	-	-	-
 block	analog#5	f0d9aa24342fc413	shown	-	-	-

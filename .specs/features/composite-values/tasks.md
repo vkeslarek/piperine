@@ -786,9 +786,9 @@ T63
 
 **Done when**:
 
-- [ ] `gaps_drops_what_composite_values_phase_a_closed` passes under `**Run docs**`
-- [ ] `the_fences_composite_values_lifted_are_checked` passes under `**Run galleries**` for the phase A fences
-- [ ] Gate check passes: Build
+- [x] `gaps_drops_what_composite_values_phase_a_closed` passes under `**Run docs**`
+- [x] `the_fences_composite_values_lifted_are_checked` passes under `**Run galleries**` for the phase A fences
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build

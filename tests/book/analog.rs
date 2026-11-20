@@ -116,7 +116,7 @@ fn the_clipper_is_refused_for_limexp_and_settle() {
     // analog#2 and analog#3 (refused): the clipper's devices and its two reactions, one file
     // (`clipper.msl`); analog~773a3851 "Today the command stops at the source, with those three
     // diagnostics, and runs nothing" (refused with it). The
-    // `settle` event is `P0001` (L52), and `limexp`, written with a closure, is two `P0001` (L9)
+    // `settle` event is `P0001` (L52), and `limexp`, written with a closure, is two `P0001` (L58)
     let chapter = Chapter::read();
     let model = Clipper::book(&chapter);
     let given = Refusal::of(model.run(Commands::clipper()), "analog#3");

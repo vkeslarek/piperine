@@ -22,7 +22,7 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 2 silent, 2 broken, 41 loud (L1 to L62 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics` and the nine `analog-structure` closed, in six tables) plus
+**Counts.** 2 silent, 2 broken, 38 loud (L1 to L62 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure` and the three `composite-values` phase A (L5, L6, L10) closed, L9 narrowed to its `generics` part, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 9 unproven.
 
@@ -30,7 +30,7 @@ change of the IR or the ABI.
 | ------- | --- |
 | §2 Broken | B3, B4 |
 | §3 Silent (read this first) | S3, S6 |
-| §4 Loud | L1–L62 (L11, L14, L15, L17, L18, L19, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50 closed) |
+| §4 Loud | L1–L62 (L11, L14, L15, L17, L18, L19, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10 closed; L9 narrowed) |
 | §5 Spec holes and disagreements | G1–G6 (the buck's), X1, X2, X5, X6 (X3, X4, X7, X8, X9 decided by `host-ii`) |
 | §6 Solver, numerics, performance | V12, V13, V16 |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`) |
@@ -110,12 +110,9 @@ quotes the text after `P0001:` unless another code is shown.
 | L2 | tuples outside `let (a, b) = (x, y);` | §1 | `tuple expression`, `tuple type` | |
 | L3 | arrays, indexing, slices, `&` (an index that may be unknown merges every element it may name, §3.3.3: `unknown-semantics` US-04 AC 12 travels with this row) | §1, H.5 | `array type`, `array expression`, `index expression`, `reference type` | |
 | L4 | enums with a payload, `#[repr(uN)]`, an explicit discriminant, generic enums, an enum of one variant as a carrier | §2 rules 2, 5 | `enum Tx with a variant with a payload`, `with a #[repr] attribute` | |
-| L5 | `let mut`, assignment, `for`, `while`, `loop`, `break`, `return` (a loop under unknown control is bounded at 64 iterations and merged exit by exit, §3.3.3, §3.3.16, Appendix C.2: `unknown-semantics` US-04 AC 11 travels with this row) | §0.4, §11 rule 12, §12.1.11 | `let mut binding`, `assignment`, `for loop`, `while loop` | M |
-| L6 | `match` arm guards, range patterns, bindings in or-patterns; `if let` other than `Some(p)` | §0.4 | `a match arm guard`, `range pattern in a match arm` | S |
 | L7 | generic functions, `self` parameters, `impl` on a value type, user traits | §3 rule 9, §3.1 | `generic function`, `generic parameter used as a type` | L, with L30 |
 | L8 | `impl` on a nature (other than the stdlib's `impl Bit`); a function that takes a carrier or a node and probes it (a handle) | §3.1, §3 rule 7 | `method mv`; `E0450: a probe is allowed in an analog block and a module body only` | M |
-| L9 | closures other than the argument of `limit`; a function name passed as a value (`limit(x, limvds)`) | §3 rule 3, §14.7.1 | `closure outside an argument whose parameter has a function type`; `this name as a value` | S |
-| L10 | recursion | §3 rule 12 | `a function that calls itself` | S |
+| L9 | a capturing closure passed to a user `fn` parameter (it needs an `Fn` bound: `generics` GN-01) | §3 rule 3 | `P0001` naming the form | with L7 |
 | L12 | `extern "C" fn`, `#[derivative]` | §3 rules 2, 10, 11 | `extern function` | M |
 | L13 | `f16`, `f32`, `f128`; integers wider than 64 bits | §1 rule 5 | `type f32`; `integer type u128` | M |
 | L16 | every row of H.5, H.6, H.7 (arrays, ranges, iterators); the `Option` and `bool` rows of H.3 and H.4 run | H.5–H.7 | `E0161: no method .. on ..` | with L3 |
@@ -334,8 +331,8 @@ does not count.
 
 | Part | Runs | Biggest holes |
 | ---- | ---- | ------------- |
-| I §1–§2 values, `Repr` | 35 % | composites, payload enums, floats other than `f64`, widths over 64 |
-| I §3–§3.3 functions, calls, unknown values | 35 % | generics, `impl`, traits, handles, loops, arrays and composites; the merge and the level reads run |
+| I §1–§2 values, `Repr` | 40 % | composites, payload enums, floats other than `f64`, widths over 64; `let mut`, assignment and patterns run |
+| I §3–§3.3 functions, calls, unknown values | 45 % | generics, `impl`, traits, handles, arrays and composites; loops, recursion, closures, function values, the merge and the level reads run |
 | I §3.4–§3.6 files, crates, packages | 95 % | the check of unreached items (S3) |
 | II §4–§5 natures, discrete carriers | 40 % | `resolve`, arrays, user discrete natures, `Unknown` initial values |
 | II §6 nodes, probes | 85 % | signal-flow |
@@ -388,7 +385,7 @@ E0612 E0613 E0614 E0703 E0704 E0705 E0706 E0807 E0808 E0809 E0904 E0906`
 | `set` and params | H5, L28, L29, H4 | M |
 | Analog structure (delivered, MD-71) | what is left of L40: the stdlib `idt` and `Water` after `generics`, the §18 `Diode` after `params-and-io` | S |
 | Analog operators | L43, L44, L45, L49, H2 (`Noise`) | M to L |
-| Composite values | L1 to L6, L16 (H.5 to H.7), L24, L57 | L |
+| Composite values | L1 to L4, L16 (H.5 to H.7), L24, L57 (phase A closed L5, L6, L10 and the part of L9 that is not `generics`) | L |
 | Generics and generation | L7, L30, L31, L32, S3 for generic items: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
 | Resolved nets and bundles | L21, L22, L23, L25: `Wire`, `Tribuf`, `Tran`, `Bidir` | L |
 | Unknown semantics | S6 (ABI), L51, L52, L53, L8 (L18 and L19 closed by `unknown-semantics`) | L |
@@ -411,13 +408,12 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
-| language#13 | L5 | `composite-values` | reached from a top, `sum_below` is `P0001`: a `let mut` binding and a `for` loop |
 | types#6 | L2 | `composite-values` | reached from a top, `span` is `P0001`: `ordered` yields a tuple (a tuple type, a tuple expression) |
 | types#7 | L3 | `composite-values` | reached from a top, `smoothed` is `P0001` (an array type) and `mean` is `P0001` (a reference type) |
 | types#11 | L4 | `composite-values` | reached from a top, `area` is `P0001`: the enum `Shape` has variants with a payload |
 | types#12 | L1 | `composite-values` | reached from a top, `scaled` is `P0001`: a struct expression and a field access |
 | types#16 | L7 | `generics` | reached from a top, `reads_high` is `P0001`: the method `switches_at` of an `impl` on the enum `Family` |
-| types#17 | L6 | `composite-values` | reached from a top, `range_of` is `P0001` (a range pattern in a `match` arm; the enum has no `#[derive(Repr)]`) and `mean` is `P0001` (a reference type) |
+| types#17 | L4 | `composite-values` | reached from a top, `range_of` is `P0001` (the enum has no `#[derive(Repr)]`; its range pattern is accepted) and `mean` is `P0001` (a reference type, L3) |
 | generics#1 | L7 | `generics` | the trait `Receiver` and its `impl`s are accepted and `Family::LEVELS` is read; a method (`switches_at`, the default `reads_high`) is `P0001` |
 | generics~872b633d | L7 | `generics` | a default body of a trait does not run: the method `reads_high` on `Family` is `P0001` |
 | generics#2 | L7 | `generics` | reached from a top, `pick`, `larger` and `overdrive` are `P0001`: a generic function |
@@ -449,14 +445,14 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | modules~4bcf201d | D3 | `params-and-io` | `E0333` is not raised: an instance used as a value is `P0002`, mismatched types |
 | modules~4bd9131d | L31 | `generics` | `E0340` is not raised: a `for` in a body is `P0001`, generation is refused |
 | modules~4bcb9f1d | L30 | `generics` | `E0304` is not raised: `Ladder::<0>` is `P0001`, the generic module is refused |
-| analog#2 | L9 | `composite-values` | the devices are `P0001` twice: `limexp` is written with a closure, `limit(x, \|new, old\| ..)`, and its two parameters are a binding inside a module |
+| analog#2 | L58 | `composite-values` | the devices are `P0001` twice: `limexp` is written with a closure, `limit(x, \|new, old\| ..)`, and its two parameters are a binding inside a module |
 | analog#3 | L52 | `unknown-semantics-events` | `on settle` is `P0001`: built-in `settle`; with the `limexp` closure the command gives the three diagnostics of the listing and runs nothing |
 | analog#7 | L49 | `analog-operators` | `emit!("newton", ..)` in an `analog` block is `P0001`, next to the `limexp` closure |
 | analog#11 | L45 | `analog-operators` | `noise(..)` is `P0001`: core primitive `noise` |
 | analog~773a3851 | L52 | `unknown-semantics-events` | the command stops at the source with the three diagnostics, as the sentence says: held with analog#3 |
 | analog~139c67b5 | L49 | `analog-operators` | a trace from `analog` is refused with analog#7: no record per Newton iteration exists |
 | analog~b103eeb0 | L49 | `analog-operators` | no trace line reaches the command: the `emit!` in `analog` is refused with analog#7 |
-| digital#6 | L51 | `unknown-semantics-events` | `Pfd3` is `P0001`: `let mut`, assignment, an event read as a `bool` (`fref.rise() && s < 1`) and the names whose type follows from them |
+| digital#6 | L51 | `unknown-semantics-events` | `Pfd3` is `P0001`: an event read as a `bool` (`fref.rise() && s < 1`) and the names whose type follows from it |
 | digital#7 | L28 | `params-and-io` | `param of type u8 is not supported yet` on `n: u8`; with the param written as a literal, `known_or(clean)` is `P0001` too (a `known_or` default that may be unknown, L59) |
 | digital#11 | L28 | `params-and-io` | `param of type u8 is not supported yet` on `period: u8` |
 | digital#14 | L28 | `params-and-io` | `PwmCheck` is `P0001` twice: `limit: u8` and `cycles: u32` |

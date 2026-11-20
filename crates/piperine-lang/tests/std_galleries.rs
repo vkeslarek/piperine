@@ -353,3 +353,45 @@ fn every_gallery_lists_a_std_item() {
         assert!(!row.std_items.is_empty(), "{} lists no std item", row.section);
     }
 }
+
+/// The gallery fences that write a form `composite-values` phase A lifted, with the text of the
+/// form: a `for` in a reaction (E.3) and a guarded arm of a `match` (E.4).
+const PHASE_A_FENCES: [(&str, &str); 2] = [("E.3", "for k in 1..N"), ("E.4", "_ if !baud_tick")];
+
+/// How the type checker named the forms phase A lifted, before CV-01 to CV-07 (`types/unsupported.rs`).
+const LIFTED_FORMS: [&str; 7] = ["assignment", "`while` loop", "`loop`", "`for` loop", "`let mut` binding", "a match arm guard", "range pattern"];
+
+/// The modules `text` declares, by name.
+fn declared_modules(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|line| line.strip_prefix("module "))
+        .filter_map(|rest| rest.split(|c: char| !(c.is_alphanumeric() || c == '_')).next())
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn the_fences_composite_values_lifted_are_checked() {
+    // CV-37 AC 2: a gallery fence that writes a form of phase A is held to the type checker, each of its
+    // modules as the top: none of its refusals names a form `composite-values` lifted. (E.3 is stopped by
+    // its const generics first, `generics` L30; E.4 reaches its guarded arm and stops at the payload enum,
+    // phase B.)
+    let mut held = Vec::new();
+    for g in galleries() {
+        let Some((_, form)) = PHASE_A_FENCES.iter().find(|(section, _)| *section == g.section) else { continue };
+        assert!(g.block.text.contains(form), "{}: the fence no longer writes `{form}`", g.section);
+        let text = assemble(&g.block.text, fixtures_of(&g.section));
+        let design = build(&text);
+        for module in declared_modules(&text) {
+            let Err(refused) = piperine_lang::types::Types::check(&design, &module) else { continue };
+            for diagnostic in refused {
+                let message = diagnostic.diagnostic.message;
+                for lifted in LIFTED_FORMS {
+                    assert!(!message.contains(lifted), "{} as `{module}`: the checker still refuses {lifted}: {message}", g.section);
+                }
+            }
+        }
+        held.push(g.section);
+    }
+    assert_eq!(held, ["E.3", "E.4"], "both fences are held");
+}

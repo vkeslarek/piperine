@@ -306,13 +306,14 @@ fn gaps_drops_what_msl_fixes_closed() {
         assert!(gaps.contains(kept), "GAPS.md keeps {kept}");
     }
     // the counts follow, as `host-ii` moved them, `unknown-semantics` (L18, L19) after it and
-    // `analog-structure` (nine loud rows and S4) after that: 2 silent, 2 broken, 41 loud
-    assert!(gaps.contains("2 silent, 2 broken, 41 loud"), "the counts of §9 follow");
+    // `analog-structure` (nine loud rows and S4) after that, `composite-values` phase A (L5, L6, L10)
+    // last: 2 silent, 2 broken, 38 loud
+    assert!(gaps.contains("2 silent, 2 broken, 38 loud"), "the counts of §9 follow");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
     assert_eq!(rows("## 3. Silent", "## 4."), 2, "two silent entries");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 41, "forty-one loud rows");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 38, "thirty-eight loud rows");
 }
 
 #[test]
@@ -386,12 +387,12 @@ fn gaps_drops_l18_and_l19() {
 
 #[test]
 fn gaps_carries_the_unknown_index_merge_to_composite_values() {
-    // US-04 AC 11, 12 (C31): the loops and the arrays do not exist yet, so their merge criteria
-    // travel with the rows that will add them: L5 (loops, bound 64) and L3 and L24 (an index that
-    // may be unknown)
+    // US-04 AC 12 (C31): the arrays do not exist yet, so their merge criterion travels with the rows
+    // that will add them: L3 and L24 (an index that may be unknown). The loop bound of US-04 AC 11 left
+    // with L5 when composite-values phase A added the loops: Appendix C.2 holds it
+    // (`spec_text::appendix_c_states_the_loop_bound_under_unknown_control`).
     let gaps = read("GAPS.md");
     let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("a row {id}")).to_string();
-    assert!(row("L5").contains("64 iterations") && row("L5").contains("US-04 AC 11"), "L5 carries the loop bound");
     for id in ["L3", "L24"] {
         assert!(row(id).contains("merges every element it may name") && row(id).contains("US-04 AC 12"), "{id} carries the index merge");
     }
@@ -409,7 +410,7 @@ fn gaps_drops_what_analog_structure_closed() {
     let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("GAPS.md has the row {id}")).to_string();
     assert!(!row("L58").contains("`slew`"), "L58 no longer lists slew: {}", row("L58"));
     assert!(row("L60").contains("slew") && row("L60").contains("analog-operators"), "L60 records the ideal step and its owner: {}", row("L60"));
-    // the cluster is delivered and the counts follow: 2 silent, 2 broken, 41 loud (checked above)
+    // the cluster is delivered and the counts follow: 2 silent, 2 broken (the loud count is held by `gaps_drops_what_msl_fixes_closed`)
     assert!(gaps.contains("| Analog structure (delivered, MD-71) |"), "the cluster is marked delivered");
 }
 
@@ -472,4 +473,31 @@ fn the_buck_spec_holds_the_bench_bounds() {
     // AC 5: the cleared fault code is `Clear`, never `None`
     assert!(spec.contains("(`Clear`, `OverCurrent`, `OverVoltage`)"), "§8.5 names `Clear`");
     assert!(!spec.contains("`None`"), "the SPEC no longer names the cleared fault code `None`");
+}
+
+#[test]
+fn gaps_drops_what_composite_values_phase_a_closed() {
+    // composite-values CV-37 AC 1 (T29): L5, L6 and L10 leave `GAPS.md`; L9 is left only for the part that
+    // waits on `generics` (a capturing closure passed to a user `fn`); section 9 and section 11 follow
+    let gaps = read("GAPS.md");
+    let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("GAPS.md has the row {id}")).to_string();
+    for id in ["L5", "L6", "L10"] {
+        assert!(!gaps.contains(&format!("| {id} |")), "GAPS.md still has the row {id}");
+    }
+    let l9 = row("L9");
+    assert!(l9.contains("capturing closure") && l9.contains("`generics`") && !l9.contains("function name passed as a value"), "L9 is the generics part only: {l9}");
+    // the rows that stay point at gaps that stay: the Book's from-rust#1 and analog#2 refusals moved off L6 and L9
+    let book = gaps.split("## 11. The Book against the binary").nth(1).expect("section 11");
+    for stale in ["| L5 |", "| L6 |", "| L10 |"] {
+        assert!(!book.contains(stale), "section 11 still names {stale}");
+    }
+    assert!(book.contains("| from-rust#1 | L4 |") && book.contains("| analog#2 | L58 |"), "the two rows follow their remaining refusals");
+    // section 9: the rows of I §1-§2 and I §3-§3.3 no longer list the loops as a hole
+    let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("section 9");
+    let functions = coverage.lines().find(|l| l.starts_with("| I §3–§3.3 ")).expect("the coverage row of §3.3");
+    assert!(functions.contains("loops, recursion, closures") && functions.contains("run") && !functions.contains("handles, loops"), "{functions}");
+    let values = coverage.lines().find(|l| l.starts_with("| I §1–§2 ")).expect("the coverage row of §1 and §2");
+    assert!(values.contains("`let mut`, assignment and patterns run"), "{values}");
+    // the counts follow: 38 loud
+    assert!(gaps.contains("38 loud"), "the loud count is 38");
 }
