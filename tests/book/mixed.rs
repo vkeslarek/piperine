@@ -180,24 +180,35 @@ fn the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28() {
 }
 
 #[test]
-fn the_buck_start_up_follows_the_operating_point_round_not_the_books_climb() {
-    // mixed~68328637 (disputed, for the user): "Read the duty field down the lines: it climbs by 0.0033 per
-    // period at first and settles near 0.28, while the Buck.vout column of the table rises to 3.3". The first
-    // record is the Book's (t = 0, vout 0, err 3.300, duty 0.0033) and the end is the Book's (above). But
-    // the tick fires at (0, 1), inside the operating point's instant (part V section 16 step 4, part IV
-    // section 13 rule 4): its `hs <- true` is committed at (0, 2), the `RSwitch` reads it, and the
-    // equilibrium is solved again with the switch closed, so the transient starts from 11.8 V: the second
-    // record (10 us) reads vout 11.6 V, err -8.3 V and a duty of 0 (clamped), not 0.0066. The spec says
-    // what the code does and the Book says another thing; the user decides which one moves
+fn the_buck_starts_from_the_operating_point_with_the_first_tick_applied() {
+    // mixed~b62fd2ca "It is what a SPICE .op gives with the switch on: the output rests near 11.8 V, not at 0,
+    // and the transient starts from there"; mixed~a450dbb4 "The next sample reads 11.56 V, the error is
+    // negative, and the clamp holds the duty at 0 while the output falls through the filter"; mixed~67cd15b4
+    // "Once it drops under 3.3 V the error turns positive and each period adds ki . err to the duty";
+    // mixed~c38f7ab4 "Read the duty field down the lines: it stays at 0 while the output falls from the 11.8 V
+    // of the operating point, then climbs and settles near 0.28, while the Buck.vout column of the table
+    // starts at 11.8 and falls to 3.3". The tick fires at (0, 1), inside the operating point's instant (part V
+    // section 16 step 4): its `hs <- true` is committed at (0, 2), the `RSwitch` reads it, and the equilibrium
+    // is solved again with the switch closed, so the transient starts from 11.8 V. The first record is the
+    // sample before that commit (vout 0, err 3.3, duty 0.0033)
     let chapter = Chapter::read();
     let model = chapter.marked("buck.msl", "mixed#8");
     let records = Buck::loop_records(&model);
     Printed::holds("3.299960e0", records[0].2, "the first error, the Book's 3.300");
     Printed::holds("3.299960e-3", records[0].3, "the first duty, the Book's 0.0033");
-    assert!((records[1].1 - 11.56).abs() < 0.05 && (records[1].2 + 8.26).abs() < 0.05, "10 us: vout and err today: {:?}", records[1]);
-    assert_eq!(records[1].3, 0.0, "the duty of the second record, which the Book says is 0.0066");
+    assert!((records[1].1 - 11.56).abs() < 0.05 && (records[1].2 + 8.26).abs() < 0.05, "10 us: vout and err: {:?}", records[1]);
+    assert!((records[2].1 - 10.79).abs() < 0.05 && (records[2].2 + 7.49).abs() < 0.05, "20 us: vout and err: {:?}", records[2]);
+    assert!(records[1].3 == 0.0 && records[2].3 == 0.0, "the clamp holds the duty at 0: {:?} {:?}", records[1], records[2]);
+    let first_positive = records.iter().skip(1).position(|record| record.3 > 0.0).expect("the duty leaves 0") + 1;
+    assert!((records[first_positive].0 - 70e-6).abs() < 1e-9, "the duty leaves 0 at 70 us: {:?}", records[first_positive]);
+    assert!((records[first_positive].1 - 2.0).abs() < 0.05 && (records[first_positive].3 - 0.0013).abs() < 1e-4, "vout under 3.3 V, the duty ki . err: {:?}", records[first_positive]);
+    for pair in records[first_positive - 1..].windows(2).take(50) {
+        assert!((pair[1].3 - (pair[0].3 + 1e-3 * pair[1].2)).abs() < 1e-12, "each period adds ki . err to the duty: {pair:?}");
+    }
+    let settled = records.iter().find(|record| record.0 > 1e-3 && record.2.abs() < 1e-3).expect("the error closes");
+    assert!((settled.0 - 7e-3).abs() < 1e-3, "the error is under 1 mV at about 7 ms: {settled:?}");
     let ran = model.run(Commands::buck()).unwrap_or_else(|failure| panic!("{failure}"));
-    assert!((ran.real(0, "Buck.vout") - 11.82).abs() < 0.05, "the table's first row, which the Book has near 0: {}", ran.real(0, "Buck.vout"));
+    assert!((ran.real(0, "Buck.vout") - 11.82).abs() < 0.05, "the table's first row is the operating point: {}", ran.real(0, "Buck.vout"));
     assert!((ran.real(ran.table.rows.len() - 1, "Buck.vout") - 3.3).abs() < 1e-3, "the column ends at 3.3");
 }
 

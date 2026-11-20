@@ -2468,12 +2468,14 @@ module Buck() {
 <pre data-lang="text">stream Buck.ctl.loop
   instant         fields
   (0, 1)          t = 0        vout = 0.000   err = 3.300   duty = 0.0033
-  (10 µs, 0)      t = 1.0e-5   vout ≈ 0.000   err ≈ 3.300   duty ≈ 0.0066
-  (20 µs, 0)      t = 2.0e-5   vout ≈ 0.000   err ≈ 3.300   duty ≈ 0.0099
+  (10 µs, 0)      t = 1.0e-5   vout ≈ 11.56   err ≈ -8.26   duty = 0
+  (20 µs, 0)      t = 2.0e-5   vout ≈ 10.79   err ≈ -7.49   duty = 0
+  …                            the output falls, the duty waits at 0
+  (70 µs, 0)      t = 7.0e-5   vout ≈ 2.00    err ≈ 1.30    duty ≈ 0.0013
   …                            the duty climbs, the output follows
-  (≈ 8 ms, 0)                  vout ≈ 3.300   err ≈ 0.000   duty ≈ 0.28</pre>
+  (≈ 7 ms, 0)                  vout ≈ 3.300   err ≈ 0.000   duty ≈ 0.28</pre>
 
-<p>You can check the ends of it by hand. At the start the output is zero, so each period adds <code>ki · 3.3</code> = 0.0033 to the duty. At the end the error is zero and the duty sits where 12&nbsp;V times the duty, less the small drop in the switch, equals 3.3&nbsp;V: about 0.28. What happens in between, how fast the loop settles and whether it rings, is what the stream is for. Plot <code>vout</code> against <code>t</code> from the records and you have the loop's step response without touching a waveform viewer.</p>
+<p>The first line is the only one that reads zero, and that is the sample before the first tick acts. The tick at time 0 fires inside the operating point, the solve that finds where the circuit rests before the transient starts, so its <code>hs &lt;- true</code> is already applied when that solve ends. It is what a SPICE <code>.op</code> gives with the switch on: the output rests near 11.8&nbsp;V, not at 0, and the transient starts from there. The next sample reads 11.56&nbsp;V, the error is negative, and the clamp holds the duty at 0 while the output falls through the filter. Once it drops under 3.3&nbsp;V the error turns positive and each period adds <code>ki · err</code> to the duty. At the end the error is zero and the duty sits where 12&nbsp;V times the duty, less the small drop in the switch, equals 3.3&nbsp;V: about 0.28. What happens in between, how fast the loop settles and whether it rings, is what the stream is for. Plot <code>vout</code> against <code>t</code> from the records and you have the loop's step response without touching a waveform viewer.</p>
 
 <p>With the print in place, the acceptance test is one more reaction in the top. It checks, at every time point after start-up, that the output stays within 50&nbsp;mV of the target:</p>
 
@@ -2488,7 +2490,7 @@ module Buck() {
   <p class="callout-label">Run it</p>
   <p>Save the converter, with the <code>digital for Buck</code> check, as <code>buck.msl</code>. First watch the loop start, one record per switching period:</p>
 <pre data-lang="sh">piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop</pre>
-  <p>Read the <code>duty</code> field down the lines: it climbs by 0.0033 per period at first and settles near 0.28, while the <code>Buck.vout</code> column of the table rises to 3.3. Then draw it, and keep the records for a script:</p>
+  <p>Read the <code>duty</code> field down the lines: it stays at 0 while the output falls from the 11.8&nbsp;V of the operating point, then climbs and settles near 0.28, while the <code>Buck.vout</code> column of the table starts at 11.8 and falls to 3.3. Then draw it, and keep the records for a script:</p>
 <pre data-lang="sh">piperine run buck.msl --analysis transient --stop 12e-3 --print vout --plot startup.svg --records loop.jsonl</pre>
   <p>The plot draws the rows of the run. This command has no <code>--print-step</code>, so there is a row for every accepted step and the switching ripple is visible on <code>vout</code>; add <code>--print-step 1e-3</code> and the plot would draw only the table's rows, one per millisecond. All of this waits for one event: the check's <code>settle</code> is not compiled yet, so today both commands refuse the file and run nothing. Leave the <code>digital for Buck</code> block out and the converter runs, loop records and all.</p>
 <pre data-lang="text" data-cli-output="piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop" data-cli-stream="stderr" data-cli-lines="1-3">P0001

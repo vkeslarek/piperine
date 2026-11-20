@@ -111,7 +111,7 @@ block	mixed#5	fcb6886bd9a6e240	held	piperine-cli/book::every_cli_listing_of_the_
 block	mixed#6	3506ea56c1ecbede	refused	piperine/book_mixed::the_comparator_without_hysteresis_is_refused_for_its_event_read_as_a_bool	L51	-
 block	mixed#7	b8f749b42f07ef6c	run	piperine/book_mixed::the_digital_to_analog_converter_drives_half_the_supply_for_unknown	-	-
 block	mixed#8	8935565a31a621e1	run	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	-	-
-block	mixed#9	e24b2a769fbf036d	shown	-	-	-
+block	mixed#9	e34a5f2d8cee81d3	shown	-	-	-
 block	mixed#10	dcd6e04b0acbdb87	refused	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	L52	-
 block	mixed#11	d9f0417b5399de0c	shown	-	-	-
 block	mixed#12	063828848af5ddc2	shown	-	-	-
@@ -362,7 +362,10 @@ claim	mixed~e784c042	e784c042961833ba	holds	piperine/book_mixed::the_digital_to_
 claim	mixed~f53cc3cb	f53cc3cbe6006a49	holds	piperine/book_mixed::the_digital_to_analog_converter_drives_half_the_supply_for_unknown	-	That is the choice E0150 forces every analog reader to make. transition turns the stepped level into a ramp of duration tr, so the output has a real edge.
 claim	mixed~a32dcb77	a32dcb774c3fa3fa	holds	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	-	emit!("loop", …) is the window into the loop: one record per period with the sample, the error and the duty just decided. duty = d prints the new value; duty = duty would print the old one.
 claim	mixed~827e671b	827e671b8ff913ea	prose	-	-	What happens in between, how fast the loop settles and whether it rings, is what the stream is for.
-claim	mixed~68328637	68328637ec256860	disputed	piperine/book_mixed::the_buck_start_up_follows_the_operating_point_round_not_the_books_climb	D4	Read the duty field down the lines: it climbs by 0.0033 per period at first and settles near 0.28, while the Buck.vout column of the table rises to 3.3.
+claim	mixed~b62fd2ca	b62fd2ca34fcaf5c	holds	piperine/book_mixed::the_buck_starts_from_the_operating_point_with_the_first_tick_applied	-	It is what a SPICE .op gives with the switch on: the output rests near 11.8 V, not at 0, and the transient starts from there.
+claim	mixed~a450dbb4	a450dbb4cc438a05	holds	piperine/book_mixed::the_buck_starts_from_the_operating_point_with_the_first_tick_applied	-	The next sample reads 11.56 V, the error is negative, and the clamp holds the duty at 0 while the output falls through the filter.
+claim	mixed~67cd15b4	67cd15b419b2cffc	holds	piperine/book_mixed::the_buck_starts_from_the_operating_point_with_the_first_tick_applied	-	Once it drops under 3.3 V the error turns positive and each period adds ki · err to the duty.
+claim	mixed~c38f7ab4	c38f7ab4130aa59c	holds	piperine/book_mixed::the_buck_starts_from_the_operating_point_with_the_first_tick_applied	-	Read the duty field down the lines: it stays at 0 while the output falls from the 11.8 V of the operating point, then climbs and settles near 0.28, while the Buck.vout column of the table starts at 11.8 and falls to 3.3.
 claim	mixed~8ab17f2d	8ab17f2de7c73869	holds	piperine/book_mixed::the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero	-	The equation. x has one branch, so KCL gives c · dv(x)/dt = (v(vin) − fb) / r.
 claim	mixed~a6b3f8ed	a6b3f8ed884f8aa2	holds	piperine/book_mixed::the_math_methods_run_and_the_settle_event_does_not	-	One thing the examples here use is not compiled yet and is refused with P0001: the settle event (the converter's check).
 claim	mixed~42ab6e1d	42ab6e1dc13757db	holds	piperine/book_mixed::e0250_a_node_cannot_go_to_a_bit_port	-	E0250
