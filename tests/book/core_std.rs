@@ -279,11 +279,9 @@ fn e0161_the_inherited_library_is_a_closed_list() {
 }
 
 #[test]
-fn e0702_is_not_raised_logic_is_refused_as_a_generic_function() {
-    // core-std~6e04c51d: "E0702 logic(\"10z1\")": a pattern holds only 0, 1 and x. `E0702` is named by the spec
-    // and no source raises it (GAPS.md section 10, L18): `logic` is a generic function of the standard
-    // library, `P0001`
+fn e0702_is_raised_for_a_logic_pattern_with_z() {
+    // core-std~6e04c51d: "E0702 logic(\"10z1\")": a pattern holds only 0, 1 and x. `logic` is typed by its
+    // contract (L18 closed by `unknown-semantics`), so the checker raises `E0702` at the pattern
     let faulty = Faulty::elaborating("core-std~6e04c51d", "module Top() { signal a: Bit<u4> = logic(\"10z1\"); }\n", "Top");
-    assert_eq!(faulty.first("P0001").message, "generic function is not supported yet");
-    assert!(faulty.given.iter().all(|reported| reported.code != "E0702"), "E0702 is not raised");
+    faulty.first("E0702");
 }

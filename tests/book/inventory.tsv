@@ -50,8 +50,11 @@ block	values#10	cb2da746f6a4b2ff	run	piperine/book_values::the_monitor_file_runs
 block	values#11	54c55c5b3fa29637	shown	-	-	-
 block	values#12	2a136951b87674b7	shown	-	-	-
 block	values#13	8add454648a8f9d1	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream lost
-block	values#14	c53149988f4a97fe	run	piperine/book_values::analog_reads_a_digital_carrier_through_known_or	-	-
-block	values#15	fb8add290ef4024e	refused	piperine/book_values::an_extern_function_is_refused_with_or_without_its_derivative	L12	-
+block	values#14	9eac127d78767dd3	run	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	-
+block	values#15	1603ad6f91dfd9c0	shown	-	-	-
+block	values#16	0a8fa3c98f5068bc	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream bigger
+block	values#17	c53149988f4a97fe	run	piperine/book_values::analog_reads_a_digital_carrier_through_known_or	-	-
+block	values#18	fb8add290ef4024e	refused	piperine/book_values::an_extern_function_is_refused_with_or_without_its_derivative	L12	-
 block	natures#1	67bc373d6833923e	run	piperine/book_natures::the_book_shows_the_natures_the_standard_library_gives	-	-
 block	natures#2	6b0d8fdbd0ef2ae9	refused	piperine/book_natures::signals_of_every_family_are_refused_for_the_arrays_and_the_wire	L24	-
 block	natures#3	e27df4c2a9cfd359	refused	piperine/book_natures::the_open_drain_line_is_refused_while_resolved_natures_are_not_compiled	L21	-
@@ -91,7 +94,7 @@ block	digital#3	a594897648f9a3c9	run	piperine/book_digital::the_counter_raises_f
 block	digital#4	47d868a14e955d28	shown	-	-	-
 block	digital#5	8edf6a5eb1554578	run	piperine/book_digital::the_set_reset_latch_needs_no_reaction	-	-
 block	digital#6	83147f960628b266	refused	piperine/book_digital::the_phase_detector_is_refused_for_let_mut_and_events_read_as_bools	L51	-
-block	digital#7	522e2b665ccc0283	refused	piperine/book_digital::the_debouncer_is_refused_for_its_integer_param_and_its_known_or_default	L28	-
+block	digital#7	522e2b665ccc0283	refused	piperine/book_digital::the_debouncer_is_refused_for_its_integer_param_alone	L28	-
 block	digital#8	af80f7bef2680656	shown	-	-	-
 block	digital#9	21242d386fccfbe6	shown	-	-	-
 block	digital#10	5cb609119c0d8c84	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run debounce.msl --analysis transient --stop 7e-3 --stream flip
@@ -337,7 +340,7 @@ claim	digital~d8ecede0	d8ecede05cd0aedc	holds	piperine/book_digital::the_counter
 claim	digital~ce04e7a4	ce04e7a4b3292c54	holds	piperine/book_digital::without_its_delay_the_book_latch_is_a_loop_e0339	-	Without the after, the two definitions would form a loop with no delay in it, which is an elaboration error (E0339).
 claim	digital~27b7fac4	27b7fac4902807bb	holds	piperine/book_digital::a_reaction_at_a_time_runs_when_time_reaches_it	-	time reaches t
 claim	digital~4f9a5b9e	4f9a5b9e1d856b11	holds	piperine/book_digital::e0430_a_bit_is_a_level_not_an_event	-	A plain bool alone is not an event (E0430): on enable { … } has no "when".
-claim	digital~688ab093	688ab0930720ecc0	refused	digital#7	L28	Two things in it are not compiled yet, a param of an integer type (n: u8) and a known_or whose default may itself be unknown, so today the command refuses the file at the first one and runs nothing:
+claim	digital~bc5825b1	bc5825b163fa731c	refused	digital#7	L28	One thing in it is not compiled yet, a param of an integer type (n: u8), so today the command refuses the file there and runs nothing:
 claim	digital~6733ba9f	6733ba9f0625bee0	holds	piperine/book_digital::the_debouncer_flips_once_at_the_fourth_clean_sample	-	Once it runs, it prints one record line: the output flipped once, at the fourth clean sample, @5.500000e-3 Press.db flip t=5.500000e-3 to=true.
 claim	digital~107c5906	107c59067f2d20c4	holds	piperine/book_digital::the_pwm_latches_its_duty_word_at_the_wrap	-	A counter that wraps every period clocks, and an output that is high while the count is below a duty word.
 claim	digital~bdd2508f	bdd2508ffe81a52d	refused	digital#11	L28	Its period is a param of an integer type, which the compiler does not take yet, so today the command refuses the file and runs nothing:
@@ -345,7 +348,7 @@ claim	digital~aa0c04f9	aa0c04f9964a57d6	holds	piperine/book_digital::require_wri
 claim	digital~cbe38eff	cbe38efffaa5194f	holds	piperine/book_digital::the_library_declares_the_monitors_and_never_runs	-	The library also has ready-made monitors built this way, such as Never(clk, bad) and Setup(clk, d) { ts: 100p }; chapter 10 lists them.
 claim	digital~a0ca3f9d	a0ca3f9d281ae3ad	refused	digital#14	L28	With the check placed in the bench, piperine run pwm.msl --analysis transient --stop 3e-3 prints each failing checks record as it is written (add --all-checks to see the passing ones too) and stops by itself at the twentieth cycle.
 claim	digital~4830dc9c	4830dc9cb816631d	binary	piperine-cli/commands::test_runs_every_run_or_the_named_ones	-	It runs every run of the project and prints one PASS or FAIL line each, with the failing check records under a FAIL.
-claim	digital~e35078c8	e35078c8dc5ec619	refused	digital#7	L28	Two forms of this chapter are not compiled yet and are refused with P0001: a param of an integer type, such as n: u8, and a known_or whose default may itself be unknown.
+claim	digital~d7032a06	d7032a064db5f1dd	refused	digital#7	L28	One form of this chapter is not compiled yet and is refused with P0001: a param of an integer type, such as n: u8.
 claim	digital~d1d69398	d1d693985725b6c2	refused	digital#7	L28	That stops the debouncer and the PWM for now, as their "Run it" boxes show; the counter runs.
 claim	digital~6406776a	6406776ac0039900	holds	piperine/book_digital::the_counter_raises_full_exactly_while_the_count_is_255	-	A transient of a design with no analog node runs to its stop like any other and gives its table.
 claim	digital~54ec481d	54ec481dcbd17267	holds	piperine/book_digital::e0430_a_bit_is_a_level_not_an_event	-	E0430
@@ -402,7 +405,7 @@ claim	core-std~39983c1d	39983c1dbbf53932	holds	piperine/book_core_std::e0125_onl
 claim	core-std~64ee8b1d	64ee8b1dd483286f	holds	piperine/book_core_std::e0603_the_reserved_streams_take_records_from_reactions_only	-	E0603
 claim	core-std~64ee891d	64ee891dd4832509	holds	piperine/book_core_std::e0605_a_reserved_stream_field_has_a_fixed_type	-	E0605
 claim	core-std~39a5d01d	39a5d01dbc00bf0a	holds	piperine/book_core_std::e0161_the_inherited_library_is_a_closed_list	-	E0161
-claim	core-std~6e04c51d	6e04c51dd9c78a87	unraised	piperine/book_core_std::e0702_is_not_raised_logic_is_refused_as_a_generic_function	L18	E0702
+claim	core-std~6e04c51d	6e04c51dd9c78a87	holds	piperine/book_core_std::e0702_is_raised_for_a_logic_pattern_with_z	-	E0702
 claim	errors~ed0997b0	ed0997b0b111f69a	prose	-	-	An error belongs to one of five phases: package (reading manifests and dependencies), parse, elaboration (names, types, params, the netlist), run (an analysis fails, naming the instance and the instant) and host (a host request is refused, and the analysis goes on).
 claim	errors~1f3eeee4	1f3eeee41c6df4bc	holds	piperine/book_errors::e0310_is_found_on_the_bare_port_of_the_worked_example	-	E0310 on clk: Bit.
 claim	errors~d6787e9a	d6787e9a56d74451	holds	piperine/book_errors::e0430_is_found_on_the_head_of_the_worked_example_s_reaction	-	E0430 on on clk.
@@ -482,7 +485,6 @@ claim	compiler~79f44fb1	79f44fb163622dd2	holds	piperine/book_compiler::a_compile
 claim	compiler~79f44ab1	79f44ab163622553	prose	-	-	P0004
 claim	compiler~931761f9	931761f9a0e69952	holds	piperine/book_compiler::the_rust_backend_prints_one_source_file_and_loads_the_library_it_builds	-	The Rust backend prints the whole design as one Rust source file, compiles it with the rustc it finds on the machine, and loads the library through the device ABI.
 claim	compiler~13572839	13572839026b148b	holds	piperine/book_compiler::the_rust_backend_prints_one_source_file_and_loads_the_library_it_builds	-	The block is generic over a number type: run with plain floats it gives the current, run with dual numbers it gives the current and its derivatives, which is the Jacobian.
-claim	compiler~b03dc2fa	b03dc2faaa022c6b	holds	piperine/book_compiler::a_digital_if_on_an_unknown_value_stops_with_a_fault_naming_that_if	-	Digital code reads the same way: a reaction is a function whose commits go out together when it ends, and an if on a value that may be unknown stops with a fault naming that if in your source.
 claim	cli~3da257ec	3da257ec8712dccb	prose	-	-	By the end of this chapter you know every command of piperine, every key of a run table and the flag that overrides it, how results and emit! records are printed and saved, and what each exit code and each of the tool's own error codes means.
 claim	cli~31fc7600	31fc76008c425d67	binary	piperine-cli/run::run_prints_header_records_blank_line_and_table	-	Runs one run of the project, or a lone file, and prints records and results.
 claim	cli~3cd92481	3cd92481b801b639	binary	piperine-cli/usage::help_lists_the_commands_and_version_prints_the_version	-	piperine --help lists them, and piperine --version prints the version.

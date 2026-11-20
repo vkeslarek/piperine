@@ -259,21 +259,20 @@ fn the_phase_detector_is_refused_for_let_mut_and_events_read_as_bools() {
 }
 
 #[test]
-fn the_debouncer_is_refused_for_its_integer_param_and_its_known_or_default() {
+fn the_debouncer_is_refused_for_its_integer_param_alone() {
     // digital#7 (refused): the debouncer's file (`debounce.msl`); digital#10 holds its listing;
-    // digital~688ab093 "Two things in it are not compiled yet, a param of an integer type (n: u8) and a
-    // known_or whose default may itself be unknown, so today the command refuses the file at the first
-    // one and runs nothing"; digital~e35078c8 (the same two forms); digital~d1d69398 "That stops the
-    // debouncer and the PWM for now ...; the counter runs" (the counter: the test of digital#1). The first
-    // is `P0001` (L28); with the param written as a literal the second is `P0001` (L59)
+    // digital~bc5825b1 "One thing in it is not compiled yet, a param of an integer type (n: u8), so today
+    // the command refuses the file there and runs nothing"; digital~d7032a06 (the same form);
+    // digital~d1d69398 "That stops the debouncer and the PWM for now ...; the counter runs" (the counter:
+    // the test of digital#1). The form is `P0001` (L28); with the param written as a literal the file
+    // runs: a `known_or` default that may be unknown is compiled (`unknown-semantics`)
     let chapter = Chapter::read();
     let overrides = Overrides { analysis: Some("transient".to_string()), stop: Some(7e-3), streams: vec!["flip".to_string()], ..Overrides::default() };
     let model = chapter.marked("debounce.msl", "digital#7");
     Refusal::expect(model.run(overrides.clone()), "digital#7", "P0001", "param of type `u8` is not supported yet");
     let text = chapter.text("digital#7");
     let literal = Edit::replace(&Edit::replace(&Edit::replace(&text, "    n: u8 = 4 where n >= 1;\n", ""), "run + 1 >= n", "run + 1 >= 4"), " { n: 4 }", "");
-    let given = Refusal::of(Model::written("debounce.msl", &literal).run(overrides), "digital#7");
-    assert_eq!(given, [("P0001".to_string(), "a `known_or` default that may be unknown is not supported yet".to_string())], "the second form");
+    Model::written("debounce.msl", &literal).run(overrides).unwrap_or_else(|failure| panic!("the file runs with `n` as a literal: {failure:#}"));
 }
 
 #[test]

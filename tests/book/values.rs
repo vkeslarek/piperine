@@ -156,7 +156,7 @@ fn optional_arguments_may_be_left_out_or_named() {
 
 #[test]
 fn the_monitor_file_runs_its_window_monitor_and_its_adder() {
-    // values#6 and values#10 (run: the two parts of monitor.msl), values#5 is the enum of values#6;
+    // values#6, values#10 and values#14 (run: the three parts of monitor.msl), values#5 is the enum of values#6;
     // values~d0e86096 "This file watches a node and reports, on every clock edge, whether its voltage is
     // under, inside or over a window"; values~8ad56d03 "The source is a ramp of 1 V/µs, so the node walks
     // through all three zones"; values~6ecca079 "The clock rises at 0.5, 1.5 and 2.5 µs, where the ramp is
@@ -184,6 +184,17 @@ fn the_monitor_file_runs_its_window_monitor_and_its_adder() {
     Printed::holds("5.000000e-7", lost[0].time, "the first clock edge");
     assert_eq!((Fields::of(lost[0], "a"), Fields::of(lost[0], "b")), (&Field::Int(3), &Field::Unknown), "a is the constant 3, b is unknown");
     assert_eq!(adder.table.rows[1][adder.table.columns.iter().position(|name| name == "AdderTop.sum").expect("the table shows sum")], piperine::Cell::Unknown, "sum is unknown at 3 us");
+    // values#14 (PeekTop): `if a > b` with b unknown takes both paths, and each record of the arm says
+    // `maybe`; the listing prints `maybe=true` on the three rising edges
+    let peek = chapter.marked("monitor.msl", "values#14").run(Transient::of("PeekTop", 3e-6)).unwrap_or_else(|failure| panic!("{failure}"));
+    let bigger = peek.stream("bigger");
+    assert_eq!(bigger.len(), 3, "one record per rising edge: {:?}", peek.records);
+    for (record, instant) in bigger.iter().zip(["5.000000e-7", "1.500000e-6", "2.500000e-6"]) {
+        assert_eq!(record.instance, "PeekTop.peek");
+        assert!(record.maybe, "a record under an unknown condition is a maybe");
+        Printed::holds(instant, record.time, "the clock edge");
+        assert_eq!(Fields::of(record, "a"), &Field::Int(3));
+    }
 }
 
 #[test]
@@ -201,17 +212,17 @@ fn the_flag_is_read_with_known_known_or_and_is_known() {
 
 #[test]
 fn analog_reads_a_digital_carrier_through_known_or() {
-    // values#14 (run): the sample-and-hold of the Book, with a source on its input and a clock edge at
+    // values#17 (run): the sample-and-hold of the Book, with a source on its input and a clock edge at
     // 1 us; values~267f8cfe "Writing v(vout) + held; instead is error E0150, and the diagnostic names
     // the carrier" and values~39a9371d (E0150 in the table)
     let chapter = Chapter::read();
     let after = "module Source(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Source { v(p, n) +> dc; }\nmodule Top() { signal a: Electrical; signal b: Electrical; signal c: Bit = false; let s = Source(a, gnd); let h = SampleHold(a, b, c); }\ndigital for Top { on at(1u) { c <- true; } }\n";
-    let model = chapter.wrapped("sample_hold.msl", "", "values#14", after);
+    let model = chapter.wrapped("sample_hold.msl", "", "values#17", after);
     let ran = model.run(Transient::of("Top", 3e-6)).unwrap_or_else(|failure| panic!("the sample-and-hold fails: {failure}"));
     let last = ran.table.rows.len() - 1;
     assert_eq!(ran.real(0, "Top.b"), 0.0, "before the first edge vout sits at 0 V: held starts at 0.0");
     assert_eq!(ran.real(last, "Top.b"), 1.0, "after the edge vout holds vin");
-    let raw = chapter.text("values#14").replace("held.known_or(0.0)", "held");
+    let raw = chapter.text("values#17").replace("held.known_or(0.0)", "held");
     let faulty = Faulty::elaborating("values~267f8cfe", &format!("{raw}{after}"), "Top");
     assert!(faulty.first("E0150").message.contains("the discrete carrier `held`"), "{}", faulty.first("E0150").message);
 }
@@ -255,14 +266,14 @@ fn e0142_a_positional_argument_cannot_follow_a_named_one() {
 
 #[test]
 fn an_extern_function_is_refused_with_or_without_its_derivative() {
-    // values#15 (refused): `#[derivative(erfcx_dx)] extern "C" fn erfcx` and its derivative; values~3998361d
+    // values#18 (refused): `#[derivative(erfcx_dx)] extern "C" fn erfcx` and its derivative; values~3998361d
     // (unraised): "E0123 extern \"C\" fn erfcx(x: f64) -> f64; called in analog: Add #[derivative]". No
     // source raises E0123 (GAPS.md section 10): an `extern` function is `P0001` (L12), with the
     // derivative the Book asks for or without. When it runs this test fails and the rows move
     let chapter = Chapter::read();
     let analog = "module Top() { signal p: Electrical; }\nanalog for Top { v(p) +> erfcx(1.0); }\n";
     let overrides = || Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() };
-    Refusal::expect(chapter.wrapped("foreign.msl", "", "values#15", analog).run(overrides()), "values#15", "P0001", "`extern` function is not supported yet");
+    Refusal::expect(chapter.wrapped("foreign.msl", "", "values#18", analog).run(overrides()), "values#18", "P0001", "`extern` function is not supported yet");
     let bare = Refusal::of(Model::written("bare.msl", &format!("extern \"C\" fn erfcx(x: f64) -> f64;\n{analog}")).run(overrides()), "values~3998361d");
     assert!(bare.iter().all(|(code, _)| code != "E0123") && bare.contains(&("P0001".to_string(), "`extern` function is not supported yet".to_string())), "no E0123: {bare:?}");
 }

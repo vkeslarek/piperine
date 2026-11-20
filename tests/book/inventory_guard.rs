@@ -232,12 +232,12 @@ impl Tree {
 
 #[test]
 fn the_book_reads_every_block() {
-    // RE-01 AC 1: the Book has 18 chapters and 214 code blocks (a mermaid diagram is not one), 99 of
+    // RE-01 AC 1: the Book has 18 chapters and 217 code blocks (a mermaid diagram is not one), 100 of
     // them `msl`; every block has a distinct id that reads back, and every chapter has prose
     let book = Book::read();
     assert_eq!(book.chapters().len(), 18, "the chapters of the Book: {:?}", book.chapters());
-    assert_eq!(book.blocks().len(), 214, "the code blocks of the Book");
-    assert_eq!(book.blocks().iter().filter(|block| block.language() == "msl").count(), 99, "the `msl` blocks of the Book");
+    assert_eq!(book.blocks().len(), 217, "the code blocks of the Book");
+    assert_eq!(book.blocks().iter().filter(|block| block.language() == "msl").count(), 100, "the `msl` blocks of the Book");
     let mut seen = Vec::new();
     for block in book.blocks() {
         let id = block.id().to_string();

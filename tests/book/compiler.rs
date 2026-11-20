@@ -182,14 +182,15 @@ fn a_compiler_code_says_what_the_chapter_says() {
 }
 
 #[test]
-fn a_digital_if_on_an_unknown_value_stops_with_a_fault_naming_that_if() {
-    // compiler~b03dc2fa "Digital code reads the same way: a reaction is a function whose commits go out
-    // together when it ends, and an if on a value that may be unknown stops with a fault naming that if in
-    // your source."
-    let source = "module Top(out q: Bit) { signal d: Bit; }\ndigital for Top { on at(1u) { if d { q <- true; } } }\n";
-    let failure = Model::written("m.msl", source).run(Faulty::transient_of_top(3e-6, None)).err().expect("the run stops");
-    let said = format!("{failure:#}");
-    assert!(said.contains("m.msl:2:31: the condition of an `if` is unknown"), "the fault names the `if` at its line and column: {said}");
+fn a_digital_if_on_an_unknown_value_runs_both_arms_and_merges_what_they_commit() {
+    // compiler chapter, "Digital code reads the same way: a reaction is a function whose commits go out
+    // together when it ends, and an if on a value that may be unknown runs both arms and merges what they
+    // commit." (`d` is unknown: one arm commits `true` to `q`, the other commits nothing, so `q` is
+    // `true` merged with its prior `false` and reads unknown; the run does not stop)
+    let source = "module Top() { signal d: Bit; signal q: Bit = false; }\ndigital for Top { on at(1u) { if d { q <- true; } } }\n";
+    let ran = Model::written("m.msl", source).run(Faulty::transient_of_top(3e-6, None)).unwrap_or_else(|failure| panic!("{failure:#}"));
+    let column = ran.table.columns.iter().position(|name| name == "Top.q").expect("the table shows q");
+    assert_eq!(ran.table.rows.last().expect("a last row")[column], Cell::Unknown, "q merges its two arms");
 }
 
 #[test]

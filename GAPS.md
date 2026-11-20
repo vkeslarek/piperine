@@ -423,7 +423,7 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | from-rust#1 | L6 | `composite-values` | reached from a top, `range_of` is `P0001` (a range pattern in a `match` arm; the enum has no `#[derive(Repr)]`) and `mean` is `P0001` (a reference type) |
 | values#2 | L53 | `unknown-semantics-events` | `handshake`, a `fn` that returns `Event`, is `P0001`: method `rise` on this receiver is not supported yet |
 | values~c389077a | L53 | `unknown-semantics-events` | the class of a function that returns `Event` does not run (`handshake`); the pure, `now()` and `emit!` classes do |
-| values#15 | L12 | `foreign-models` | an `extern "C" fn` with its `#[derivative]` is `P0001`: `extern` function is not supported yet |
+| values#18 | L12 | `foreign-models` | an `extern "C" fn` with its `#[derivative]` is `P0001`: `extern` function is not supported yet |
 | values~3998361d | L12 | `foreign-models` | `E0123` is not raised: an `extern` function called in `analog` is `P0001` with or without the derivative |
 | natures#2 | L24 | `composite-values` | `[Bit; 8]` is `P0001` (array type), `signal sda: Wire` is `P0001` (resolved nature `Wire`) and `logic("10xx")` reaches a generic function of the standard library (`P0001`); the other lines are accepted |
 | natures#3 | L21 | `resolved-nets` | `alarm.msl` is twelve `P0001`: the `Wire` ports, `changed()` and field access on a `Wire`, the `struct` of `Logic` in `nets.msl` |
@@ -462,10 +462,10 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | digital#14 | L28 | `params-and-io` | `PwmCheck` is `P0001` twice: `limit: u8` and `cycles: u32` |
 | digital#16 | L21 | `resolved-nets` | `IrqSource`, `IrqController` and `Board` are `P0001`: the resolved nature `Wire`, `.v` on it, the `Logic` struct |
 | digital#17 | L30 | `generics` | `Dff<T: Repr>` placed as `Dff::<u8>` is `P0001`: generic module |
-| digital~688ab093 | L28 | `params-and-io` | the debouncer is refused at `n: u8` and, past it, at the `known_or` default: both forms as the sentence says |
+| digital~bc5825b1 | L28 | `params-and-io` | the debouncer is refused at `n: u8`, as the sentence says |
 | digital~bdd2508f | L28 | `params-and-io` | the PWM is refused at `period: u8`, as the sentence says: held with digital#11 |
 | digital~a0ca3f9d | L28 | `params-and-io` | the check does not run as the Book places it: `limit: u8` and `cycles: u32` are refused with digital#14 |
-| digital~e35078c8 | L28 | `params-and-io` | the two forms are refused as the sentence says (digital#7) |
+| digital~d7032a06 | L28 | `params-and-io` | the form is refused as the sentence says (digital#7) |
 | digital~d1d69398 | L28 | `params-and-io` | the debouncer and the PWM are refused (digital#7, digital#11); the counter runs |
 | mixed#6 | L51 | `unknown-semantics-events` | `Comparator`'s `on up \|\| dn { q <- up; }` is `E0441`, an `Event` committed, where the Book reads `up` as a `bool` |
 | mixed#10 | L52 | `unknown-semantics-events` | `digital for Buck` with `on settle` is `P0001`: built-in `settle`; the converter without it runs (mixed#8) |
@@ -476,7 +476,6 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | core-std#6 | L21 | `resolved-nets` | `IrqSource` and `Board` are `P0001`: the resolved nature `Wire`, and `.v`/`Logic` behind it |
 | core-std#8 | L30 | `generics` | `Reg` placing `Setup(clk, d) { ts: 100p }` is `P0001`: `Setup<T: Repr>` is a generic module |
 | core-std#10 | L28 | `params-and-io` | `Watchdog` is `P0001` on `limit: u16`; with the param written as a literal the watchdog runs and ends the run at the fourth edge |
-| core-std~6e04c51d | L18 | `unknown-semantics` | `E0702` is not raised: `logic("10z1")` is `P0001`, a generic function of the standard library |
 | cheatsheet#2 | L30 | `generics` | `module M<const N: usize>(..)` placed as `M::<2>` is `P0001`: generic module |
 | cheatsheet#3 | L31 | `generics` | the `for k in 0..N { .. }` of the body items is `P0001`: generation in a module body; the instance, the named expression and the definitions around it are accepted |
 | cheatsheet#5 | L52 | `unknown-semantics-events` | `on settle { require(..) }` is `P0001`: built-in `settle` |
