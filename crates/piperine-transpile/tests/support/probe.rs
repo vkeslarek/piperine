@@ -18,7 +18,7 @@ pub mod real;
 #[allow(unused_imports)]
 pub use control::{Depth, Index, Outcome, Panic, Step, Trips, Unrolled};
 #[allow(unused_imports)]
-pub use flag::Flagged;
+pub use flag::{Flagged, LevelWords};
 #[allow(unused_imports)]
 pub use int::{Int, UInt, Unwrap};
 #[allow(unused_imports)]
