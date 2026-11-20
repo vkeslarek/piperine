@@ -66,12 +66,13 @@ pub struct Ramp {
 }
 
 impl Ramp {
-    /// The `(time, value)` of each set: with `n = round(|to - from| / step)`, point `k` (1 to `n`)
+    /// The `(time, value)` of each set: with `n = max(1, round(|to - from| / step))`, point `k` (1 to `n`)
     /// is at `start + k * duration / n` with the value `from + k * (to - from) / n`. The last
-    /// point is exactly `start + duration` and exactly `to`, whatever the rounding of the others.
+    /// point is exactly `start + duration` and exactly `to`, whatever the rounding of the others. A ramp shorter than half a step is one set, so it still
+    /// reaches its target.
     pub fn points(&self) -> Vec<(f64, f64)> {
         assert!(self.step > 0.0, "a ramp needs a positive step, got {:e}", self.step);
-        let count = ((self.to - self.from).abs() / self.step).round() as usize;
+        let count = (((self.to - self.from).abs() / self.step).round() as usize).max(1);
         (1..=count)
             .map(|k| {
                 if k == count {
@@ -159,6 +160,9 @@ mod tests {
         assert!((down[0].0 - (1.25e-3 + 2e-6)).abs() < 1e-15 && (down[0].1 - 11.9).abs() < 1e-12);
         assert_eq!(down[44], (1.25e-3 + 90e-6, 7.5));
         assert!(down.windows(2).all(|pair| (pair[1].0 - pair[0].0 - 2e-6).abs() < 1e-15 && pair[1].1 < pair[0].1));
+        // 12 -> 12.04 V is under half a step: one set, still at the end on the target
+        let sliver = Ramp { from: 12.0, to: 12.04, start: 1e-3, duration: 5e-6, step: 0.1 }.points();
+        assert_eq!(sliver, vec![(1e-3 + 5e-6, 12.04)]);
     }
 
     #[test]
