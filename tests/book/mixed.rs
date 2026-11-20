@@ -113,13 +113,12 @@ fn the_cycle_counter_counts_the_located_crossings_of_the_sine() {
 
 #[test]
 fn the_math_methods_run_and_the_settle_event_does_not() {
-    // mixed~22d4126e: "Two things the examples here use are not compiled yet and are refused with P0001: the
-    // math methods of f64 such as sin (the sine sources) and the settle event (the converter's check)": the
-    // sine source runs (the cycle counter above), the `settle` check is `P0001` (mixed#10). The first half is
-    // the same stale sentence as welcome~5b11a01a (D2: the code outran the Book)
+    // mixed~a6b3f8ed: "One thing the examples here use is not compiled yet and is refused with P0001: the
+    // settle event (the converter's check). The math methods of f64 such as sin (the sine sources) run":
+    // the sine source runs (the cycle counter above), the `settle` check is `P0001` (mixed#10)
     let chapter = Chapter::read();
     CycleCounter::model(&chapter).run(Commands::cycles()).unwrap_or_else(|failure| panic!("`sin` runs: {failure}"));
-    Refusal::expect(chapter.marked("buck.msl", "mixed#10").run(Commands::buck()), "mixed~22d4126e", "P0001", "built-in `settle` is not supported yet");
+    Refusal::expect(chapter.marked("buck.msl", "mixed#10").run(Commands::buck()), "mixed~a6b3f8ed", "P0001", "built-in `settle` is not supported yet");
 }
 
 #[test]

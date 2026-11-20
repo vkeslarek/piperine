@@ -2560,7 +2560,7 @@ analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Mixed-signal designs run from source as compiled Rust, on the same solver that runs analog MSL. A full-size digitally controlled buck converter (12&nbsp;V in, 200&nbsp;MHz digital PWM, PID, ADC, comparators and a supervisor) starts from its <code>.msl</code> and regulates at 0.8&nbsp;V within 3&nbsp;mV with its loop closed, and the <code>piperine</code> command runs it (chapter 16). The front end parses and resolves every complete file of this chapter. Two things the examples here use are not compiled yet and are refused with P0001: the math methods of <code>f64</code> such as <code>sin</code> (the sine sources) and the <code>settle</code> event (the converter's check).</p>
+  <p>Mixed-signal designs run from source as compiled Rust, on the same solver that runs analog MSL. A full-size digitally controlled buck converter (12&nbsp;V in, 200&nbsp;MHz digital PWM, PID, ADC, comparators and a supervisor) starts from its <code>.msl</code> and regulates at 0.8&nbsp;V within 3&nbsp;mV with its loop closed, and the <code>piperine</code> command runs it (chapter 16). The front end parses and resolves every complete file of this chapter. One thing the examples here use is not compiled yet and is refused with P0001: the <code>settle</code> event (the converter's check). The math methods of <code>f64</code> such as <code>sin</code> (the sine sources) run.</p>
 </div>
 
 <div class="callout mistake">

@@ -21,7 +21,7 @@ Size: 8 cause (1) rows, 3 stale sentences, 1 reclassified to (2). The largest ar
 | cli~0549bfb1 | a `nodeset` on `ac` or `transient` is `P0010` | accepted and ignored | (1) | T40 host and command line | the spec and host-ii F6 say `nodeset` applies to every analysis: the Book sentence is corrected, and the code is verified to seed the operating point of both |
 | modules~1faf8c12 | `m` and `dtemp` are bound like any param | `E0320`, no param `m` | (2) | none | `refused` under L29, owner `params-and-io` |
 | welcome~5b11a01a | `sin` and the math methods are refused with `P0001` | `sin` runs | stale Book | T40 | the Book is corrected to the binary; the row becomes `holds` |
-| mixed~22d4126e | the math methods such as `sin` are refused with `P0001` | `sin` runs, `settle` is `P0001` | stale Book | T38 | the Book is corrected to the binary; the row becomes `holds` |
+| mixed~22d4126e (now mixed~a6b3f8ed) | the math methods such as `sin` are refused with `P0001` | `sin` runs, `settle` is `P0001` | stale Book | T38 | the Book is corrected; `holds` (fixed in T38) |
 | compiler~e9ad112c (now compiler~dc42a66e) | worst reverse-bias difference 5.9e-21 A | 4.98e-20 A measured (inside the 1 pA floor) | stale Book | T36 | the Book prints 5.0e-20 A; `holds` (fixed in T36) |
 
 Also in scope of Phase 9 (not rows): the line numbers of the listing of compiler#3 (`devices.msl:5:1` and
@@ -35,3 +35,5 @@ T35 (diagnostics): the compiler#3 listing positions are corrected in the Book to
 T36 (values and records): the buck row is not a code divergence. The code follows part V §16 (step 4: a commit the analog side reads starts another round of the operating point, and `every(0.0, T)` fires at (0, 1)); the Book's start-up from 0 V contradicts the spec. Left `disputed` for the user, with the test asserting today's values.
 
 T37 (analog): none. No kind (1) row has the area analog.
+
+T38 (digital and mixed): the four digital and mixed rows with a diagnostic (digital~ce04e7a4, digital~54ec4a1d, mixed~98e4dc1b) were fixed in T35 with the other diagnostics; the stale `sin` sentence of chapter 9 is corrected here.

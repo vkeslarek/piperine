@@ -480,7 +480,6 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | mixed#6 | L51 | `unknown-semantics-events` | `Comparator`'s `on up \|\| dn { q <- up; }` is `E0441`, an `Event` committed, where the Book reads `up` as a `bool` |
 | mixed#10 | L52 | `unknown-semantics-events` | `digital for Buck` with `on settle` is `P0001`: built-in `settle`; the converter without it runs (mixed#8) |
 | mixed#15 | L36 | `analog-structure` | `i(dac.core) +> ..` on a public node of a child is `P0001` (field access); the chapter's `Comparator` in it is `E0441` |
-| mixed~22d4126e | D2 | `user` | `sin` and the other math methods run (the sine sources of the chapter); `settle` is `P0001` as written |
 | mixed~68328637 | D4 | `user` | the run starts from an operating point where the first `hs <- true` is already applied: the output is 11.8 V, the second record has vout 11.6 V, err -8.3 and duty 0, not 0.0066; the end (3.3 V, duty 0.28) is the Book's |
 | mixed~9d07c4b9 | L52 | `unknown-semantics-events` | the check on `settle` is refused with mixed#10 |
 | packages#12 | L57 | `composite-values` | `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` is `P0001`, a reference type; `include_str!` itself is accepted in a `const` |

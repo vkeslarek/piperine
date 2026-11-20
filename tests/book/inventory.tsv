@@ -364,7 +364,7 @@ claim	mixed~a32dcb77	a32dcb774c3fa3fa	holds	piperine/book_mixed::the_buck_contro
 claim	mixed~827e671b	827e671b8ff913ea	prose	-	-	What happens in between, how fast the loop settles and whether it rings, is what the stream is for.
 claim	mixed~68328637	68328637ec256860	disputed	piperine/book_mixed::the_buck_start_up_follows_the_operating_point_round_not_the_books_climb	D4	Read the duty field down the lines: it climbs by 0.0033 per period at first and settles near 0.28, while the Buck.vout column of the table rises to 3.3.
 claim	mixed~8ab17f2d	8ab17f2de7c73869	holds	piperine/book_mixed::the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero	-	The equation. x has one branch, so KCL gives c · dv(x)/dt = (v(vin) − fb) / r.
-claim	mixed~22d4126e	22d4126e2fe09366	disputed	piperine/book_mixed::the_math_methods_run_and_the_settle_event_does_not	D2	Two things the examples here use are not compiled yet and are refused with P0001: the math methods of f64 such as sin (the sine sources) and the settle event (the converter's check).
+claim	mixed~a6b3f8ed	a6b3f8ed884f8aa2	holds	piperine/book_mixed::the_math_methods_run_and_the_settle_event_does_not	-	One thing the examples here use is not compiled yet and is refused with P0001: the settle event (the converter's check).
 claim	mixed~42ab6e1d	42ab6e1dc13757db	holds	piperine/book_mixed::e0250_a_node_cannot_go_to_a_bit_port	-	E0250
 claim	mixed~54ec481d	54ec481dcbd17267	holds	piperine/book_mixed::e0430_a_comparison_is_a_bool_and_the_crossing_is_the_event	-	E0430
 claim	mixed~4bcf1b1d	4bcf1b1dc68707b8	holds	piperine/book_mixed::e0336_a_definition_cannot_read_a_probe	-	E0336
