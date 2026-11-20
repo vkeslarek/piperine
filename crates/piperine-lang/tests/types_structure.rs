@@ -56,3 +56,40 @@ fn a_cycle_with_a_direct_dependence_at_every_result_is_e0353() {
         assert!(found[0].diagnostic.message.contains(cycle), "{body}: the message names `{cycle}`: {}", found[0].diagnostic.message);
     }
 }
+
+/// A module that drives its `out` carrier with a definition reading its value input `x` (§8.2.5).
+const HOLD: &str = "module Hold(x: f64, out q: Bit<f64>) { q = x; }\n";
+
+#[test]
+fn a_continuous_argument_read_by_a_callee_definition_is_e0336() {
+    // AS-08 AC 4 (§8.3.9, §8.2.5): `Hold` reads its value input `x` in the definition `q = x`, which is
+    // a discrete expression; a probe passed as `x` is read there as if written in the definition, so
+    // `E0336` at the call, naming the input `x`. The same input read through a `let` of the callee is
+    // the same read.
+    for (items, call) in [
+        (HOLD, "Hold(v(a), q)"),
+        ("module Hold(x: f64, out q: Bit<f64>) { let y = x * 2.0; q = y; }\n", "Hold(v(a), q)"),
+        (HOLD, "Hold(now(), q)"),
+    ] {
+        let src = format!("{items}module Top(a: Electrical) {{ signal q: Bit<f64>; let h = {call}; }}");
+        let found = diagnostics(&src);
+        let codes: Vec<&str> = found.iter().map(|d| &*d.diagnostic.code).collect();
+        assert_eq!(codes, ["E0336"], "{call}: {:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(&src[found[0].diagnostic.span().range()], call, "the error is at the call");
+        assert!(found[0].diagnostic.message.contains("`x`"), "{call}: it names the input: {}", found[0].diagnostic.message);
+    }
+}
+
+#[test]
+fn a_discrete_argument_read_by_a_callee_definition_is_accepted() {
+    // AS-08 AC 4, the other side: a literal, a param or a carrier read is discrete, so a definition may
+    // read it; and a continuous argument for an input that only an `analog` block reads is no
+    // definition's read (the `analog` rule, `E0150`, is not this one).
+    for call in ["Hold(2.0, q)", "Hold(k * 2.0, q)", "Hold(c.known_or(0.0), q)"] {
+        let src = format!("{HOLD}module Top(a: Electrical, in c: Bit<f64>) {{ k: f64 = 1.0; signal q: Bit<f64>; let h = {call}; }}");
+        let design = design_of(&src);
+        Types::check(&design, "Top").unwrap_or_else(|d| panic!("{call}: {:?}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+    }
+    let src = "module Probe(x: f64, p: Electrical) { }\nanalog for Probe { v(p) +> x; }\nmodule Top(a: Electrical) { let h = Probe(v(a), a); }";
+    Types::check(&design_of(src), "Top").unwrap_or_else(|d| panic!("{:?}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+}

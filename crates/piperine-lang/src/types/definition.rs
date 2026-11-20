@@ -130,6 +130,24 @@ impl Checker<'_> {
         }
     }
 
+    /// A continuous argument for the value input `input` of `module`, which a definition of `module`
+    /// reads, directly or through a `let` (§8.3.9): each read is checked as if the caller's expression
+    /// were written there, and a definition is discrete (§8.2.5), so it is `E0336` at the call `call`
+    /// naming the input. A discrete argument, or an input only an `analog` block reads, is accepted.
+    pub(super) fn definition_value_input(&mut self, call: ExprId, module: DeclId, input: DeclId, arg: ExprId) {
+        let read_by_a_definition = self.design.decl_data(module).children.clone().into_iter().any(|child| match &self.design.decl_data(child).kind {
+            DeclKind::Definition(definition) => [Some(definition.value), definition.after].into_iter().flatten().any(|expr| self.reads_decl(expr, input, &mut Vec::new())),
+            _ => false,
+        });
+        if !read_by_a_definition || !self.continuous(arg) {
+            return;
+        }
+        let name = |decl: DeclId| self.design.decl_data(decl).name.as_ref().map_or(String::new(), |n| n.text.clone());
+        let message = format!("the argument for the value input `{}` of `{}` is continuous (it reads a probe, `now()`, `freq()`, `gmin()`, `source_scale()` or `analysis(Static)`) and a definition of `{}` reads it: a definition is a discrete expression (§8.3.9, §8.2.5)", name(input), name(module), name(module));
+        let (file, span) = (self.file_of_expr(call), self.design.expr_node(call).span);
+        self.coded(file, "E0336", span, message, "a continuous argument read by a definition");
+    }
+
     /// Whether a port or a signal declares an initial value.
     pub(super) fn has_initial(&self, carrier: DeclId) -> bool {
         match &self.design.decl_data(carrier).kind {

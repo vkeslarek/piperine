@@ -202,7 +202,7 @@ impl Checker<'_> {
     }
 
     /// Whether `expr` reads the declaration `target`, directly or through a `let`.
-    fn reads_decl(&self, expr: ExprId, target: DeclId, followed: &mut Vec<ExprId>) -> bool {
+    pub(super) fn reads_decl(&self, expr: ExprId, target: DeclId, followed: &mut Vec<ExprId>) -> bool {
         let node = self.design.expr_node(expr);
         if let ExprKind::Path(path) = &node.kind
             && let Some(Resolution::Decl(d)) = self.design.path_node(*path).segments.last().map(|s| s.res)
