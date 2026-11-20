@@ -396,3 +396,42 @@ fn bound_step_under_an_if_is_p0001() {
         assert_eq!(steps[0].is_some(), guarded, "{body}");
     }
 }
+
+/// A nature `Heat` whose quantities carry `potential_attrs` and `flow_attrs`, reached by a top through a signal.
+fn nature_source(potential_attrs: &str, flow_attrs: &str) -> String {
+    format!("nature Heat {{ potential: Energy {{ {potential_attrs} }}, flow: Power {{ {flow_attrs} }} }}\nmodule Leaf(t: Heat) {{ }}\nmodule Top() {{ signal t: Heat; let l = Leaf(t); }}")
+}
+
+#[test]
+fn a_quantity_attribute_outside_the_three_is_e0204() {
+    // Part II §4 rule 9: only `access`, `units` and `abstol` are quantity attributes; each has a
+    // type (an identifier, a string literal, a const `f64`).
+    for (potential, flow, wanted) in [
+        ("access: joules, color: 1", "access: pwr", "`color`"),
+        ("access: 1.0", "access: pwr", "`access`"),
+        ("access: joules, units: 2.0", "access: pwr", "`units`"),
+        ("access: joules, abstol: true", "access: pwr", "`abstol`"),
+    ] {
+        let err = Elab::run(&nature_source(potential, flow), "Top").expect_err(wanted);
+        assert_eq!(Elab::codes(&err), ["E0204"], "{potential}: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert!(err[0].diagnostic.message.contains(wanted), "{}", err[0].diagnostic.message);
+    }
+}
+
+#[test]
+fn a_non_positive_abstol_is_e0204() {
+    // Part II §4 rule 9: an `abstol` is `> 0`; zero and a negative value are `E0204`.
+    for abstol in ["0.0", "-1.0"] {
+        let err = Elab::run(&nature_source(&format!("access: joules, abstol: {abstol}"), "access: pwr"), "Top").expect_err(abstol);
+        assert_eq!(Elab::codes(&err), ["E0204"], "{abstol}");
+        assert!(err[0].diagnostic.message.contains("`abstol`") && err[0].diagnostic.message.contains("greater than zero"), "{}", err[0].diagnostic.message);
+    }
+}
+
+#[test]
+fn equal_access_names_are_e0205() {
+    // Part II §4 rule 10: the two `access` names of one nature differ.
+    let err = Elab::run(&nature_source("access: same", "access: same"), "Top").expect_err("equal access names");
+    assert_eq!(Elab::codes(&err), ["E0205"]);
+    assert!(err[0].diagnostic.message.contains("`same`") && err[0].diagnostic.message.contains("`Heat`"), "{}", err[0].diagnostic.message);
+}
