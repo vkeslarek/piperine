@@ -1,6 +1,6 @@
 # Buck Scenarios Specification
 
-**Approved**: pending - the user is away; the planner took every default below (see "Decisions taken (user AFK)").
+**Approved**: 2026-11-20 - under the user's standing AFK rule ("assume o default mais razoável e depois me conta"); defaults D1-D14 to be reviewed by the user.
 
 ROADMAP execution item 6, lane B (`buck-scenarios`). Closes `GAPS.md` U3 and the buck's part of H1.
 
