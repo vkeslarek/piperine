@@ -223,6 +223,10 @@ impl Checker<'_> {
                 return None;
             }
         };
+        // `r.changed()` and `r.prev()` on a param (§5.3.1): the param's history, not a carrier's.
+        if matches!(name, "changed" | "prev") && self.param_receiver(*recv).is_some() {
+            return self.param_history(expr, name == "changed", *recv, args);
+        }
         if builtin == Some(Builtin::Prev) {
             return self.prev_read(expr, *recv, args);
         }

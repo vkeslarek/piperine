@@ -31,6 +31,31 @@ impl Checker<'_> {
         }
     }
 
+    /// The param `recv` names (through parentheses) and its type: a param of the module being
+    /// checked, `f64` or `bool`.
+    pub(super) fn param_receiver(&mut self, recv: ExprId) -> Option<(DeclId, Ty)> {
+        match &self.design.expr_node(recv).kind {
+            ExprKind::Paren(inner) => self.param_receiver(*inner),
+            ExprKind::Path(path) => {
+                let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else { return None };
+                let DeclKind::Param(p) = self.design.decl_data(decl).kind.clone() else { return None };
+                self.lower_type(p.ty).map(|ty| (decl, ty))
+            }
+            _ => None,
+        }
+    }
+
+    /// `r.changed()` (an `Event`: the param changed by a host `set`) or `r.prev()` (the param's value
+    /// before its latest `set`, its own value before any) on the param `recv` (§5.3.1). A param is
+    /// known, so `prev()` has the param's type and is not flagged.
+    pub(super) fn param_history(&mut self, expr: ExprId, changed: bool, recv: ExprId, args: &[crate::pom::Arg]) -> Option<Ty> {
+        let (_, ty) = self.param_receiver(recv)?;
+        self.apply(expr, &[], args)?;
+        self.infer(recv);
+        self.builtins.insert(expr, if changed { super::Builtin::Changed } else { super::Builtin::Prev });
+        Some(if changed { Ty::Event } else { ty })
+    }
+
     /// Whether `item` is a port, a signal, a param or a `let` name of a module: what `inst.name`
     /// may name.
     pub(super) fn is_child_item(&self, item: DeclId) -> bool {

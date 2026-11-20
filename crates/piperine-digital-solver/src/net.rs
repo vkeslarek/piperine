@@ -32,6 +32,9 @@ pub struct NetSpec {
     pub crossing: bool,
     /// A host write during a run is refused (P5).
     pub structural: bool,
+    /// A param's pin: what it holds when an analysis starts is its value, not a change, so `CHANGED`
+    /// is false and `PREVIOUS` is the value until the first `set` during the run (§5.3.1).
+    pub param: bool,
     /// The first commit at (0, 0); empty for none.
     pub init: Vec<u8>,
 }
@@ -50,6 +53,7 @@ impl NetSpec {
             analog_reads: false,
             crossing: false,
             structural: false,
+            param: false,
             init: Vec::new(),
         }
     }

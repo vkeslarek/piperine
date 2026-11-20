@@ -153,7 +153,12 @@ impl DiscreteSide for DigitalSide {
     fn start(&mut self, at: Tick) -> Result<()> {
         self.digital.start_at(DigitalTick(at)).map_err(digital_error)?;
         for (net, bytes) in &self.on_start {
-            self.digital.host_commit(*net, 0, bytes, DigitalTick(at)).map_err(digital_error)?;
+            // A param bound before the run holds that value from the start: it is no change (§5.3.1).
+            if self.digital.plan().nets[net.0 as usize].param {
+                self.digital.seed_param(*net, bytes);
+            } else {
+                self.digital.host_commit(*net, 0, bytes, DigitalTick(at)).map_err(digital_error)?;
+            }
         }
         Ok(())
     }

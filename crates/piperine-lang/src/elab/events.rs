@@ -221,6 +221,7 @@ impl Elaboration<'_, '_> {
                 Some(all)
             }
             ExprKind::MethodCall { recv, .. } => match self.types.builtin(expr) {
+                Some(Builtin::Changed) if let Some(param) = self.param_of(scope, *recv) => Some(vec![Disjunct { source: EventSource::ParamChanged(param), discrete: Vec::new(), continuous: Vec::new(), origin }]),
                 Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) => {
                     let carrier = self.carrier_of(scope, *recv)?;
                     let discrete = match edge {
@@ -387,6 +388,17 @@ impl Elaboration<'_, '_> {
             },
             _ => false,
         }
+    }
+
+    /// The index among the params of the body of the param a receiver names, when it is one of the
+    /// body's own (frame 0): `r.changed()` and `r.prev()` read its pin (§5.3.1).
+    pub(super) fn param_of(&self, scope: &Scope, expr: ExprId) -> Option<u32> {
+        let ExprKind::Path(path) = &self.design.expr_node(self.peel_parens(expr)).kind else { return None };
+        let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else { return None };
+        if scope.frame != 0 || !matches!(self.design.decl_data(decl).kind, DeclKind::Param(_)) {
+            return None;
+        }
+        scope.params.get(&decl).copied()
     }
 
     /// The carrier of the body a receiver names, in the frame of `scope`.

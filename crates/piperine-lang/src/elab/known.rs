@@ -203,6 +203,7 @@ impl Elaboration<'_, '_> {
                 self.unsupported(scope.file, span, "`level` read as a value rather than as an `Option`");
                 None
             }
+            Builtin::Prev if let Some(param) = self.param_of(scope, recv) => Some(self.emit(Expr::ParamPrevious(param), base, origin)),
             Builtin::Prev => {
                 let carrier = self.carrier_of(scope, recv)?;
                 Some(self.previous(carrier, origin))

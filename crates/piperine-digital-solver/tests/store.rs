@@ -168,3 +168,17 @@ fn a_store_rewind_restores_every_written_net() {
     s.write(BIT, 0, &LOW);
     assert_eq!(s.journal_len(), 0, "no mark open: nothing is journaled");
 }
+
+#[test]
+fn a_seed_is_a_value_that_was_never_a_change() {
+    // Feature `analog-structure` AS-14 (§5.3.1): a param's start value is its value from the start:
+    // `PREVIOUS` holds the same bytes, `CHANGED` is false, and a later write is a change from it.
+    let mut s = store();
+    s.seed(REAL, &real(2.0, 1));
+    assert_eq!(s.value(REAL), real(2.0, 1));
+    assert_eq!(s.previous(REAL), real(2.0, 1), "PREVIOUS is the seed itself");
+    assert!(!s.changed(REAL), "a seed is no change");
+    assert!(s.write(REAL, 0, &real(5.0, 1)));
+    assert!(s.changed(REAL));
+    assert_eq!(s.previous(REAL), real(2.0, 1), "the write keeps the seed as its past");
+}

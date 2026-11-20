@@ -161,3 +161,15 @@ fn inflow_on_the_left_of_a_contribution_is_e0410() {
     let codes: Vec<&str> = found.iter().map(|d| &*d.diagnostic.code).collect();
     assert_eq!(codes, ["E0410"], "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
 }
+
+#[test]
+fn changed_and_prev_of_a_param_type_as_an_event_and_the_params_type() {
+    // AS-14 (§5.3.1): `r.changed()` is an `Event`, an event position takes it, and `r.prev()` is the
+    // param's own type: an `f64`, not flagged, so an `analog` block may add it to a probe.
+    let src = "module Top(a: Electrical) { r: f64 = 2.0; }\nanalog for Top { v(a) +> r.prev(); }\ndigital for Top { on r.changed() { emit!(\"c\", p = r.prev()); } }";
+    let design = design_of(src);
+    let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("{:?}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+    let typed_as = |text: &str| -> Vec<Option<Ty>> { (0..design.expr_count()).map(|i| ExprId(i as u32)).filter(|e| src.get(design.expr_node(*e).span.range()) == Some(text) && types.ty(*e).is_some()).map(|e| types.ty(e).cloned()).collect() };
+    assert!(typed_as("r.changed()").iter().all(|t| *t == Some(Ty::Event)), "an event");
+    assert!(!typed_as("r.prev()").is_empty() && typed_as("r.prev()").iter().all(|t| *t == Some(Ty::F64)), "the param's type");
+}

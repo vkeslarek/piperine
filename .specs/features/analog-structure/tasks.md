@@ -911,9 +911,9 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `Run apibind`: `a_timed_set_fires_changed_once_at_its_time`, `prev_of_a_param_reads_its_own_value_then_the_value_before_a_set`, `a_binding_before_the_run_fires_no_changed`
-- [ ] Gate check passes: Full (`Run apibind`, `cargo test -p piperine-lang`, `Run twins`, `Run tgolden`)
-- [ ] Test count: the 3 tests named above, and no existing test removed
+- [x] Tests with exactly these names pass in `Run apibind`: `a_timed_set_fires_changed_once_at_its_time`, `prev_of_a_param_reads_its_own_value_then_the_value_before_a_set`, `a_binding_before_the_run_fires_no_changed`
+- [x] Gate check passes: Full (`Run apibind`, `cargo test -p piperine-lang`, `Run twins`, `Run tgolden`)
+- [x] Test count: the 3 tests named above, and no existing test removed
 
 **Tests**: e2e
 **Gate**: full

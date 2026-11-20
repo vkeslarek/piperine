@@ -125,3 +125,90 @@ fn a_set_of_r_recomputes_the_capacitance_it_derives() {
     close(real(&run_derived(vec![]).rows[0][1]), 0.25, "k = 1");
     close(real(&run_derived(vec![("Top.k".into(), 2.0)]).rows[0][1]), 1.0 / 7.0, "k = 2");
 }
+
+/// A module `Watch` whose param `r` is read by three reactions: `changed` records the instant `r`
+/// changed, `before` and `after` record `r.prev()` and `r` at 0.5 ms and at 2 ms (AS-14, §5.3.1).
+const WATCHED: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+pub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }
+analog for Vsource { v(p, n) +> dc; }
+module Watch() { r: f64 = 2.0; }
+digital for Watch {
+    on r.changed() { emit!(\"changed\", t = now()); }
+    on at(0.5m) { emit!(\"before\", prev = r.prev(), value = r); }
+    on at(2m) { emit!(\"after\", prev = r.prev(), value = r); }
+}
+module Top() {
+    signal a: Electrical;
+    let v1 = Vsource(a, gnd) { dc: 1.0 };
+    let r1 = Resistor(a, gnd) { r: 1k };
+    let w = Watch();
+}
+";
+
+/// What a 3 ms transient of `WATCHED` records, as (stream, fields), after `params` bound before the run
+/// and a timed `set_at` of `Top.w.r` when `timed` gives (value, instant).
+fn watched(params: Vec<(String, f64)>, timed: Option<(f64, f64)>) -> Vec<(f64, String, Vec<(String, piperine_api::Field)>)> {
+    #[derive(Default)]
+    struct All(Vec<piperine_api::Record>);
+    impl RecordSink for All {
+        fn record(&mut self, record: &Record) {
+            self.0.push(record.clone());
+        }
+    }
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("bench.msl");
+    std::fs::write(&file, WATCHED).expect("write");
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let overrides = Overrides { analysis: Some("transient".into()), stop: Some(3e-3), max_step: Some(1e-4), backend: Some("rust".into()), top: Some("Top".into()), params, ..Overrides::default() };
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    if let Some((value, at)) = timed {
+        session.set_at("Top.w.r", value, at).unwrap_or_else(|f| panic!("{f}"));
+    }
+    let kept = Rc::new(RefCell::new(All::default()));
+    session.run(kept.clone()).unwrap_or_else(|f| panic!("{f}"));
+    let records = kept.borrow().0.iter().map(|r| (r.time, r.stream.clone(), r.fields.clone())).collect();
+    records
+}
+
+/// The value of the field `name` of a record's fields.
+fn field(fields: &[(String, piperine_api::Field)], name: &str) -> f64 {
+    match fields.iter().find(|(n, _)| n == name) {
+        Some((_, piperine_api::Field::Real(v))) => *v,
+        other => panic!("a real field `{name}`, found {other:?}"),
+    }
+}
+
+#[test]
+fn a_timed_set_fires_changed_once_at_its_time() {
+    // AS-14 AC 1: `set_at("Top.w.r", 5.0, 1 ms)`: `on r.changed()` fires once, at 1 ms, and not at the
+    // start of the run.
+    let records = watched(vec![], Some((5.0, 1e-3)));
+    let changed: Vec<f64> = records.iter().filter(|(_, stream, _)| stream == "changed").map(|(time, _, fields)| {
+        assert!((field(fields, "t") - *time).abs() <= 1e-9, "the record carries its own instant");
+        *time
+    }).collect();
+    assert_eq!(changed.len(), 1, "one change: {records:?}");
+    assert!((changed[0] - 1e-3).abs() <= 1e-9, "at 1 ms, got {}", changed[0]);
+}
+
+#[test]
+fn prev_of_a_param_reads_its_own_value_then_the_value_before_a_set() {
+    // AS-14 AC 2: at 0.5 ms, before any `set`, `r.prev()` is the param's own value (2.0 = r); at 2 ms,
+    // after the `set` to 5.0 at 1 ms, it is the value before the set (2.0) while `r` is 5.0.
+    let records = watched(vec![], Some((5.0, 1e-3)));
+    let at = |stream: &str| records.iter().find(|(_, s, _)| s == stream).map(|(_, _, fields)| (field(fields, "prev"), field(fields, "value"))).unwrap_or_else(|| panic!("no `{stream}` record in {records:?}"));
+    assert_eq!(at("before"), (2.0, 2.0), "before any set: its own value");
+    assert_eq!(at("after"), (2.0, 5.0), "after the set: the value before it");
+}
+
+#[test]
+fn a_binding_before_the_run_fires_no_changed() {
+    // AS-14 AC 3: `--param Top.w.r=7` is a binding before the run, not a change: no `changed` record,
+    // and `r.prev()` at 0.5 ms is the bound value 7.0, its own value, as `r` is.
+    let records = watched(vec![("Top.w.r".into(), 7.0)], None);
+    assert!(records.iter().all(|(_, stream, _)| stream != "changed"), "no change fires: {records:?}");
+    let before = records.iter().find(|(_, s, _)| s == "before").map(|(_, _, f)| (field(f, "prev"), field(f, "value"))).expect("a `before` record");
+    assert_eq!(before, (7.0, 7.0), "the bound value is the param's own");
+}

@@ -185,6 +185,11 @@ impl Digital {
             if net.init.is_empty() {
                 continue;
             }
+            // A param's initial value is its value from the start, not a change (§5.3.1).
+            if net.param {
+                self.store.seed(NetId(i as u32), &net.init);
+                continue;
+            }
             self.call += 1;
             let pending = Pending {
                 net: NetId(i as u32),
@@ -215,6 +220,13 @@ impl Digital {
             (None, true) => Some(self.now),
             (None, false) => None,
         }
+    }
+
+    /// Gives the param pin `net` the value `bytes` as the value it holds from the start of the run,
+    /// which a `set` before the run is (§5.3.1): no change, `PREVIOUS` the same bytes. Only for a
+    /// param net, before the first instant.
+    pub fn seed_param(&mut self, net: NetId, bytes: &[u8]) {
+        self.store.seed(net, bytes);
     }
 
     /// A commit by the host, due at microstep 0 of `at` (abi.md §6 C6); while the instant `at` is

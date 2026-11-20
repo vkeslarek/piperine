@@ -240,6 +240,17 @@ impl Store {
         true
     }
 
+    /// Gives `net` the value `bytes` as the value it had from the start: `PREVIOUS` is the same
+    /// bytes and nothing is stamped as a change. For the initial value of a param, which is no change.
+    pub fn seed(&mut self, net: NetId, bytes: &[u8]) {
+        self.journal_net(net.0 as usize);
+        let n = &mut self.nets[net.0 as usize];
+        n.value.bytes_mut()[..bytes.len()].copy_from_slice(bytes);
+        if !n.quiet {
+            n.previous.bytes_mut()[..bytes.len()].copy_from_slice(bytes);
+        }
+    }
+
     /// The saved state of `net`.
     pub fn save_net(&self, net: NetId) -> NetState {
         NetState(self.net(net).clone())

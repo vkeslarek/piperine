@@ -538,6 +538,7 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
                             if nets.specs[n].init.is_empty() {
                                 nets.specs[n].init = seed.unwrap_or_default();
                             }
+                            nets.specs[n].param = true;
                             params.insert((path.to_string(), pname.to_string()), NetId(n as u32));
                             Some(n)
                         }
