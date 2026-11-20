@@ -522,6 +522,7 @@ impl Elaboration<'_, '_> {
             match &node.kind {
                 StmtKind::Let { pat, init: Some(init), else_: None, .. } => ok &= self.lower_let(scope, &mut out, *pat, *init, file, node.span),
                 // `let x;`: a local first assigned later (§1.7.5, `control.rs`).
+                StmtKind::Let { pat, init: Some(init), else_: Some(otherwise), .. } => ok &= self.lower_let_else(scope, &mut out, *pat, *init, otherwise, file),
                 StmtKind::Let { pat, init: None, else_: None, .. } => ok &= self.lower_deferred_let(scope, &mut out, *pat, file, node.span),
                 // `place = value;` and `place op= value;` (§1.5.12, `control.rs`).
                 StmtKind::Expr { expr, .. } if matches!(self.design.expr_node(*expr).kind, ExprKind::Assign { .. }) => ok &= self.lower_assignment(scope, &mut out, *expr),

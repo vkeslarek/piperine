@@ -278,3 +278,110 @@ fn the_question_mark_on_none_returns_none() {
         assert_eq!(committed[k], wanted[k], "{name} is the value Rust gives");
     }
 }
+
+/// The commits of `patterns.msl`'s `Rows`, one `u8` each, in the order of `names`.
+fn pattern_rows(names: &[&str]) -> Vec<u8> {
+    first_commits("patterns.msl", names).into_iter().map(|bytes| bytes[0]).collect()
+}
+
+#[test]
+fn a_match_guard_takes_the_arm_only_when_true() {
+    // CV-04 AC 1 (§1.6.5): the arm is taken when its pattern matches and its guard holds; a guard
+    // that fails falls through to the later arms, as Rust.
+    let class = |x: i16| match x {
+        n if n < 0 => 0u8,
+        0 => 1,
+        n if n % 2 == 0 => 2,
+        _ => 3,
+    };
+    assert_eq!(pattern_rows(&["g0", "g1", "g2", "g3"]), vec![class(-3), class(0), class(4), class(5)]);
+    // a guard on a name binds it in the reaction's own match
+    let local = |n: u8| match n {
+        n if n > 5 => n + 1,
+        0..=5 => 0,
+        _ => 99,
+    };
+    assert_eq!(pattern_rows(&["t0"]), vec![local(7)]);
+}
+
+#[test]
+fn range_patterns_match_as_rust() {
+    // CV-04 AC 2 (§1.6.4): `a..=b`, `a..b` and `a..` over integers and floats, bounds included
+    // or excluded as written.
+    let range = |x: u8| match x {
+        0..=9 => 1u8,
+        10..100 => 2,
+        100.. => 3,
+    };
+    let real = |x: f64| match x {
+        0.0..=1.0 => 1u8,
+        -1.0..0.0 => 0,
+        _ => 2,
+    };
+    let got = pattern_rows(&["r0", "r1", "r2", "r3", "r4", "r5", "q0", "q1", "q2", "q3"]);
+    let wanted: Vec<u8> = [0u8, 9, 10, 99, 100, 255].into_iter().map(range).chain([0.5, -0.5, 2.0, 1.0].into_iter().map(real)).collect();
+    assert_eq!(got, wanted);
+}
+
+#[test]
+fn or_patterns_and_at_bindings_bind_as_rust() {
+    // CV-04 AC 3 (§1.6.6, §1.6.7): `1 | 2 | 3`, `n @ 6..=9`, `n @ (1 | 2)` and `Some(n @ 1..=5)`
+    // bind the matched value as Rust does.
+    let or = |x: u8| match x {
+        1 | 2 | 3 => 10u8,
+        4 | 5 => 20,
+        n @ 6..=9 => n,
+        _ => 0,
+    };
+    let at = |x: u8| match x {
+        n @ (1 | 2) => n * 10,
+        n @ 3..=5 => n,
+        _ => 0u8,
+    };
+    let option = |o: Option<u8>| match o {
+        Some(n @ 1..=5) => n,
+        Some(n) if n > 100 => 100u8,
+        Some(_) => 50,
+        None => 0,
+    };
+    let got = pattern_rows(&["o0", "o1", "o2", "o3", "a0", "a1", "a2", "p0", "p1", "p2", "p3"]);
+    let wanted = vec![or(2), or(5), or(7), or(0), at(2), at(4), at(9), option(Some(3)), option(Some(200)), option(Some(50)), option(None)];
+    assert_eq!(got, wanted);
+}
+
+#[test]
+fn refutable_patterns_run_in_if_let_while_let_and_let_else() {
+    // CV-04 AC 4 (§1.6.9, §1.7.6, §1.8.6): `if let`, `while let` and `let ... else` with literal,
+    // range, `Some` and nested patterns run as Rust; a `let ... else` that fails runs its block.
+    let if_let = |o: Option<u8>| if let Some(v) = o { v + 1 } else { 0 };
+    let if_let_range = |x: u8| if let n @ 3..=5 = x { n * 2 } else { 0 };
+    let if_let_option_range = |o: Option<u8>| if let Some(1..=3) = o { 1u8 } else { 0 };
+    let let_else = |o: Option<u8>| -> u8 {
+        let Some(v) = o else { return 77 };
+        v * 2
+    };
+    let small_sum = |limit: u8| {
+        let (mut i, mut sum) = (0u8, 0u8);
+        while let Some(v @ 0..=4) = (i < limit).then_some(i) {
+            sum += v;
+            i += 1;
+        }
+        sum
+    };
+    let got = pattern_rows(&["l0", "l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9", "w0", "t1"]);
+    let wanted = vec![
+        if_let(Some(4)),
+        if_let(None),
+        if_let_range(4),
+        if_let_range(6),
+        if_let_option_range(Some(2)),
+        if_let_option_range(Some(9)),
+        if_let_option_range(None),
+        let_else(Some(5)),
+        let_else(None),
+        small_sum(10),
+        small_sum(3),
+        7, // `if let Some(n @ 6..=8) = Some(7)` gives `got = 7`
+    ];
+    assert_eq!(got, wanted);
+}

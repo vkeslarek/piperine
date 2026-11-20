@@ -144,28 +144,6 @@ impl Elaboration<'_, '_> {
         Some(self.emit(Expr::While { cond, body }, ValueType::Unit, origin))
     }
 
-    /// `while let Some(p) = o { body }` as `loop { if o.is { let p = o.val; body } else { break } }`,
-    /// `o` read again at each iteration.
-    fn lower_while_let(&mut self, scope: &mut Scope, pat: PatId, scrutinee: ExprId, body: &BlockNode, origin: Origin) -> Option<LoweredExpr> {
-        scope.loops.push(LoopFrame { value: ValueType::Unit });
-        let looped = self.lower_while_let_body(scope, pat, scrutinee, body, &origin);
-        scope.loops.pop();
-        let body = looped?;
-        Some(self.emit(Expr::Loop { body }, ValueType::Unit, origin))
-    }
-
-    /// The one statement of the loop of a `while let`: the `if` that runs the body or leaves.
-    fn lower_while_let_body(&mut self, scope: &mut Scope, pat: PatId, scrutinee: ExprId, body: &BlockNode, origin: &Origin) -> Option<Vec<LoweredStmt>> {
-        let pair = self.lower_option(scope, scrutinee)?;
-        let binding = self.some_binding(scope.file, pat)?;
-        let then = self.bound_block(scope, binding, pair.val, &body.stmts, body.span)?;
-        let then = self.fit_to(then, &ValueType::Unit);
-        let leave = self.emit_exit(Expr::Break(None), origin.clone());
-        let ty = self.flag(pair.is).wrap(ValueType::Unit);
-        let step = self.emit(Expr::If { cond: pair.is, then, otherwise: leave }, ty, origin.clone());
-        Some(vec![self.stmt(Stmt::Expr(step))])
-    }
-
     /// The statements of a loop body, lowered with the frame of a loop whose value has type
     /// `value` pushed (`break` reads it).
     fn lower_loop_body(&mut self, scope: &mut Scope, body: &BlockNode, value: ValueType) -> Option<Vec<LoweredStmt>> {

@@ -31,6 +31,7 @@ mod known;
 mod lower;
 mod nature;
 mod origin;
+mod patterns;
 mod place;
 mod reach;
 mod reactions;

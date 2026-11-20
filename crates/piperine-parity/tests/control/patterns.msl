@@ -1,0 +1,55 @@
+//! Guards, range patterns, or-patterns with names, `@` and refutable patterns in `if let`,
+//! `while let` and `let ... else` (CV-04). Each function is called from a reaction that commits the
+//! results; the expected values are computed by Rust in `source_control.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn guard_class(x: i16) -> u8 { match x { n if n < 0 => 0, 0 => 1, n if n % 2 == 0 => 2, _ => 3 } }
+fn range_class(x: u8) -> u8 { match x { 0..=9 => 1, 10..100 => 2, 100.. => 3 } }
+fn real_class(x: f64) -> u8 { match x { 0.0..=1.0 => 1, -1.0..0.0 => 0, _ => 2 } }
+fn or_class(x: u8) -> u8 { match x { 1 | 2 | 3 => 10, 4 | 5 => 20, n @ 6..=9 => n, _ => 0 } }
+fn at_class(x: u8) -> u8 { match x { n @ (1 | 2) => n * 10, n @ 3..=5 => n, _ => 0 } }
+fn option_class(o: Option<u8>) -> u8 { match o { Some(n @ 1..=5) => n, Some(n) if n > 100 => 100, Some(_) => 50, None => 0 } }
+fn if_let(o: Option<u8>) -> u8 { if let Some(v) = o { v + 1 } else { 0 } }
+fn if_let_range(x: u8) -> u8 { if let n @ 3..=5 = x { n * 2 } else { 0 } }
+fn if_let_option_range(o: Option<u8>) -> u8 { if let Some(1..=3) = o { 1 } else { 0 } }
+fn let_else(o: Option<u8>) -> u8 { let Some(v) = o else { return 77; }; v * 2 }
+fn small_sum(limit: u8) -> u8 {
+    let mut i = 0u8;
+    let mut sum = 0u8;
+    while let Some(v @ 0..=4) = (i < limit).then_some(i) { sum += v; i += 1; }
+    sum
+}
+
+module Rows(in clk: Bit, out g0: Bit<u8>, out g1: Bit<u8>, out g2: Bit<u8>, out g3: Bit<u8>, out r0: Bit<u8>, out r1: Bit<u8>, out r2: Bit<u8>, out r3: Bit<u8>, out r4: Bit<u8>, out r5: Bit<u8>, out q0: Bit<u8>, out q1: Bit<u8>, out q2: Bit<u8>, out q3: Bit<u8>, out o0: Bit<u8>, out o1: Bit<u8>, out o2: Bit<u8>, out o3: Bit<u8>, out a0: Bit<u8>, out a1: Bit<u8>, out a2: Bit<u8>, out p0: Bit<u8>, out p1: Bit<u8>, out p2: Bit<u8>, out p3: Bit<u8>, out l0: Bit<u8>, out l1: Bit<u8>, out l2: Bit<u8>, out l3: Bit<u8>, out l4: Bit<u8>, out l5: Bit<u8>, out l6: Bit<u8>, out l7: Bit<u8>, out l8: Bit<u8>, out l9: Bit<u8>, out w0: Bit<u8>, out t0: Bit<u8>, out t1: Bit<u8>) {}
+digital for Rows {
+    on clk.rise() {
+        g0 <- guard_class(-3); g1 <- guard_class(0); g2 <- guard_class(4); g3 <- guard_class(5);
+        r0 <- range_class(0); r1 <- range_class(9); r2 <- range_class(10); r3 <- range_class(99); r4 <- range_class(100); r5 <- range_class(255);
+        q0 <- real_class(0.5); q1 <- real_class(-0.5); q2 <- real_class(2.0); q3 <- real_class(1.0);
+        o0 <- or_class(2); o1 <- or_class(5); o2 <- or_class(7); o3 <- or_class(0);
+        a0 <- at_class(2); a1 <- at_class(4); a2 <- at_class(9);
+        p0 <- option_class(Some(3)); p1 <- option_class(Some(200)); p2 <- option_class(Some(50)); p3 <- option_class(None);
+        l0 <- if_let(Some(4)); l1 <- if_let(None);
+        l2 <- if_let_range(4); l3 <- if_let_range(6);
+        l4 <- if_let_option_range(Some(2)); l5 <- if_let_option_range(Some(9)); l6 <- if_let_option_range(None);
+        l7 <- let_else(Some(5)); l8 <- let_else(None);
+        l9 <- small_sum(10);
+        w0 <- small_sum(3);
+        // The same patterns on the locals of the reaction itself.
+        let local = 7u8;
+        t0 <- match local { n if n > 5 => n + 1, 0..=5 => 0, _ => 99 };
+        let found = (local < 9).then_some(local);
+        let mut got = 0u8;
+        if let Some(n @ 6..=8) = found { got = n; }
+        t1 <- got;
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal g0: Bit<u8>; signal g1: Bit<u8>; signal g2: Bit<u8>; signal g3: Bit<u8>; signal r0: Bit<u8>; signal r1: Bit<u8>; signal r2: Bit<u8>; signal r3: Bit<u8>; signal r4: Bit<u8>; signal r5: Bit<u8>; signal q0: Bit<u8>; signal q1: Bit<u8>; signal q2: Bit<u8>; signal q3: Bit<u8>; signal o0: Bit<u8>; signal o1: Bit<u8>; signal o2: Bit<u8>; signal o3: Bit<u8>; signal a0: Bit<u8>; signal a1: Bit<u8>; signal a2: Bit<u8>; signal p0: Bit<u8>; signal p1: Bit<u8>; signal p2: Bit<u8>; signal p3: Bit<u8>; signal l0: Bit<u8>; signal l1: Bit<u8>; signal l2: Bit<u8>; signal l3: Bit<u8>; signal l4: Bit<u8>; signal l5: Bit<u8>; signal l6: Bit<u8>; signal l7: Bit<u8>; signal l8: Bit<u8>; signal l9: Bit<u8>; signal w0: Bit<u8>; signal t0: Bit<u8>; signal t1: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, g0, g1, g2, g3, r0, r1, r2, r3, r4, r5, q0, q1, q2, q3, o0, o1, o2, o3, a0, a1, a2, p0, p1, p2, p3, l0, l1, l2, l3, l4, l5, l6, l7, l8, l9, w0, t0, t1);
+}

@@ -639,8 +639,8 @@ T63
 
 **Done when**:
 
-- [ ] `a_match_guard_takes_the_arm_only_when_true`, `range_patterns_match_as_rust`, `or_patterns_and_at_bindings_bind_as_rust` and `refutable_patterns_run_in_if_let_while_let_and_let_else` pass under `**Run srcctl**`
-- [ ] Gate check passes: Full
+- [x] `a_match_guard_takes_the_arm_only_when_true`, `range_patterns_match_as_rust`, `or_patterns_and_at_bindings_bind_as_rust` and `refutable_patterns_run_in_if_let_while_let_and_let_else` pass under `**Run srcctl**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
