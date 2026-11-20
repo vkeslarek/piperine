@@ -13,11 +13,29 @@ use std::sync::OnceLock;
 use piperine_api::{Cell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
 use piperine_transpile::Settings;
 
+/// A record sink that keeps every record it is given.
 struct Kept(Vec<Record>);
 
 impl RecordSink for Kept {
     fn record(&mut self, record: &Record) {
         self.0.push(record.clone());
+    }
+}
+
+impl Kept {
+    /// The run of `source` that keeps only the record streams `streams` name (all of them when empty).
+    fn run_streams(source: &str, stop: f64, print_step: Option<f64>, streams: Vec<String>) -> Result<(Table, Vec<Record>), Failure> {
+        let dir = tempfile::tempdir().expect("tmp");
+        let file = dir.path().join("blinky.msl");
+        std::fs::write(&file, source).expect("write");
+        let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides { backend: Some("rust".into()), analysis: Some("transient".into()), top: Some("Blinky".into()), stop: Some(stop), print_step, print: vec!["clk".into(), "count".into()], streams, ..Overrides::default() };
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+        let kept = Rc::new(RefCell::new(Kept(Vec::new())));
+        let table = session.run(kept.clone())?;
+        let records = kept.borrow().0.clone();
+        Ok((table, records))
     }
 }
 
@@ -37,22 +55,7 @@ fn run(stop: f64, print_step: Option<f64>) -> Result<(Table, Vec<Record>), Failu
 }
 
 fn run_source(source: &str, stop: f64, print_step: Option<f64>) -> Result<(Table, Vec<Record>), Failure> {
-    run_streams(source, stop, print_step, Vec::new())
-}
-
-/// The run of `source` that keeps only the record streams `streams` name (all of them when empty).
-fn run_streams(source: &str, stop: f64, print_step: Option<f64>, streams: Vec<String>) -> Result<(Table, Vec<Record>), Failure> {
-    let dir = tempfile::tempdir().expect("tmp");
-    let file = dir.path().join("blinky.msl");
-    std::fs::write(&file, source).expect("write");
-    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
-    let overrides = Overrides { backend: Some("rust".into()), analysis: Some("transient".into()), top: Some("Blinky".into()), stop: Some(stop), print_step, print: vec!["clk".into(), "count".into()], streams, ..Overrides::default() };
-    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
-    let kept = Rc::new(RefCell::new(Kept(Vec::new())));
-    let table = session.run(kept.clone())?;
-    let records = kept.borrow().0.clone();
-    Ok((table, records))
+    Kept::run_streams(source, stop, print_step, Vec::new())
 }
 
 #[test]
@@ -99,7 +102,7 @@ fn a_finish_ends_the_run_ok_when_the_sim_stream_is_not_kept() {
     // stream kept, the `sim` record that carries the finish is not delivered, and the run still
     // ends at 2 us ok and not "ended before its stop"
     let source = BLINKY.replace("    let ctr = Counter(clk, count);\n", "    let ctr = Counter(clk, count);\n    let stop = Stopper();\n") + FINISHING;
-    let (table, records) = run_streams(&source, 5e-6, None, vec!["edge".into()]).unwrap_or_else(|f| panic!("{f}"));
+    let (table, records) = Kept::run_streams(&source, 5e-6, None, vec!["edge".into()]).unwrap_or_else(|f| panic!("{f}"));
     let last = table.rows.last().expect("a table with rows");
     let Cell::Real(ended) = last[0] else { panic!("a time: {last:?}") };
     assert!((ended - 2e-6).abs() <= 1e-12, "the table ends at the finish instant: {last:?}");
