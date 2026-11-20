@@ -189,12 +189,14 @@ fn analog_source(statement: &str) -> String {
 
 /// The statements of `analog` that read the unknown `U` through each form the elaborator takes a
 /// known real in, with the text the diagnostic points at.
-const ANALOG_FORMS: [(&str, &str); 5] = [
+const ANALOG_FORMS: [(&str, &str); 7] = [
     ("v(p) +> U;", "U"),
     ("v(p) +> U.sqrt();", "U.sqrt()"),
     ("v(p) +> 1.0.known_or(U);", "1.0.known_or(U)"),
     ("i(p) +> ddt(U);", "U"),
     ("v(p) +> ac_stim(U);", "U"),
+    ("v(p) +> limit(U, |n, o| n);", "U"),
+    ("v(p) +> Unknown;", "Unknown"),
 ];
 
 #[test]
@@ -208,7 +210,8 @@ fn analog_reading_a_maybe_unknown_value_is_e0150() {
         assert_eq!(Elab::codes(&err), ["E0150"], "{statement}");
         let span = err[0].diagnostic.span();
         assert_eq!(&src[span.start..span.end], at, "{statement}");
-        assert!(err[0].diagnostic.message.contains("`U`"), "names the source: {statement}: {}", err[0].diagnostic.message);
+        let source = if at == "Unknown" { "`Unknown`" } else { "`U`" };
+        assert!(err[0].diagnostic.message.contains(source), "names the source: {statement}: {}", err[0].diagnostic.message);
     }
 }
 
@@ -220,7 +223,7 @@ fn no_analog_refusal_of_an_unknown_is_p0001() {
         let err = refused(&analog_source(statement));
         assert!(Elab::codes(&err).iter().all(|c| c != "P0001"), "{statement}: {:?}", Elab::codes(&err));
     }
-    for statement in ["v(p) +> 1.0;", "v(p) +> 2.0.sqrt();", "v(p) +> 1.0.known_or(2.0);", "i(p) +> ddt(1.0);", "v(p) +> ac_stim(1.0);"] {
+    for statement in ["v(p) +> 1.0;", "v(p) +> 2.0.sqrt();", "v(p) +> 1.0.known_or(2.0);", "i(p) +> ddt(1.0);", "v(p) +> ac_stim(1.0);", "v(p) +> limit(1.0, |n, o| n);"] {
         let src = analog_source(statement).replace("const U: f64 = Unknown;\n", "");
         Elab::ir(&src, "Top");
     }

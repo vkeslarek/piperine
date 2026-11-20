@@ -409,7 +409,8 @@ impl Checker<'_> {
             LitKind::Int(text) => self.integer_literal(file, span, text, None, false),
             LitKind::Str { .. } => Some(Ty::Str),
             LitKind::Unknown if self.context == Context::Analog => {
-                self.unsupported(file, span, "`Unknown` literal in an `analog` block");
+                let message = "`analog` takes known reals, and the literal `Unknown` is unknown: it has no unknowns (§3.3.5)".to_string();
+                self.coded(file, "E0150", span, message, "may be unknown");
                 None
             }
             LitKind::Unknown => {
