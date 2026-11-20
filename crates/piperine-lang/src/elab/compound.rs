@@ -257,6 +257,14 @@ impl Elaboration<'_, '_> {
         // of the `if` chain this lowers to (§11, `Body::contributions`).
         let enclosing = scope.conditions.len();
         for (k, arm) in arms.iter().enumerate() {
+            // The checker accepts a guard (§1.8.3); lowering it comes with the pattern tests (T22),
+            // and until then an arm with one is refused, never lowered as if it had none.
+            if let Some(guard) = arm.guard {
+                let span = self.design.expr_node(guard).span;
+                self.unsupported(scope.file, span, "a `match` arm guard");
+                ok = false;
+                continue;
+            }
             let last = k + 1 == arms.len();
             let test = if last { None } else { self.pattern_test(scope, subject, arm.pat) };
             let everything = !last && test.is_none() && self.matches_all(arm.pat);

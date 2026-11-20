@@ -203,3 +203,16 @@ fn a_contribution_under_control_flow_lowers_where_it_was_written() {
         assert_eq!(body.contributions().len(), 1, "{form}");
     }
 }
+
+#[test]
+fn a_match_arm_guard_the_checker_accepts_is_refused_by_name_until_it_is_lowered() {
+    // composite-values T14 widened the checker (§1.8.3: a guard); lowering one is T22. Until then the
+    // elaborator refuses it, never lowering the arm as if it had none.
+    let row = Row {
+        form: "a match arm guard",
+        src: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let n = 3u8; let y = match n { 3 if n > 2 => 1u8, _ => 0u8 }; } }",
+        names: "a `match` arm guard",
+        at: "n > 2",
+    };
+    row.check();
+}
