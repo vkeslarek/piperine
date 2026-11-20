@@ -243,6 +243,7 @@ impl<'d, 't> ConstEval<'d, 't> {
             Constant::Real(r) => Ok(r.get()),
             Constant::Bool(_) => Err(ConstFault::Unsupported { expr, what: "a `bool` where an `f64` is required".to_string() }),
             Constant::Int(_) => Err(ConstFault::Unsupported { expr, what: "an integer where an `f64` is required".to_string() }),
+            Constant::Aggregate(_) => Err(ConstFault::Unsupported { expr, what: "a composite value where an `f64` is required".to_string() }),
         }
     }
 
@@ -251,6 +252,7 @@ impl<'d, 't> ConstEval<'d, 't> {
             Constant::Bool(b) => Ok(b),
             Constant::Real(_) => Err(ConstFault::Unsupported { expr, what: "an `f64` where a `bool` is required".to_string() }),
             Constant::Int(_) => Err(ConstFault::Unsupported { expr, what: "an integer where a `bool` is required".to_string() }),
+            Constant::Aggregate(_) => Err(ConstFault::Unsupported { expr, what: "a composite value where a `bool` is required".to_string() }),
         }
     }
 
@@ -538,7 +540,7 @@ impl<'d, 't> ConstEval<'d, 't> {
                 (Some(width), Constant::Int(v)) => width.wrap(v),
                 (Some(width), Constant::Real(r)) => width.saturate(r.get()),
                 (Some(width), Constant::Bool(b)) => width.wrap(i128::from(b)),
-                (None, _) => return Err(ConstFault::Unsupported { expr, what: "this cast".to_string() }),
+                (None, _) | (Some(_), Constant::Aggregate(_)) => return Err(ConstFault::Unsupported { expr, what: "this cast".to_string() }),
             },
             (None, _) => return Err(ConstFault::Unsupported { expr, what: "this cast".to_string() }),
         };

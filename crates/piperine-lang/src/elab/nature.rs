@@ -72,6 +72,7 @@ impl Elaboration<'_, '_> {
                     Ok(Constant::Real(value)) => abstol = value,
                     Ok(Constant::Bool(_)) => self.unsupported(data.file, self.design.expr_node(attr.value).span, "a `bool` abstol"),
                     Ok(Constant::Int(_)) => self.unsupported(data.file, self.design.expr_node(attr.value).span, "an integer abstol"),
+                    Ok(Constant::Aggregate(_)) => self.unsupported(data.file, self.design.expr_node(attr.value).span, "a composite abstol"),
                     Err(fault) => self.const_fault(&fault, "an `abstol`"),
                 },
                 _ => {}

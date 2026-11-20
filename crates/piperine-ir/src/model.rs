@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::deps::DepsMemo;
-use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
+use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
 use crate::real::Real;
 
 /// A source position, printed `file:line:col`.
@@ -40,6 +40,9 @@ pub struct Ir {
     /// `ValueType::Enum` name an entry.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) types: Vec<TypeData>,
+    /// The composite constants: `Constant::Aggregate` names an entry.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) aggregates: Vec<AggregateData>,
 }
 
 /// The authored path of a node that a merge (a fixed zero-potential branch) removed from the arena,
@@ -926,6 +929,22 @@ pub enum Constant {
     Bool(bool),
     /// An integer; its width and sign are the type of the param or carrier it initializes.
     Int(i128),
+    /// A composite value (a tuple, an array, a struct, an enum variant, an `Option`): an entry of
+    /// the arena of composite constants. The handle keeps `Constant` `Copy`.
+    Aggregate(AggregateId),
+}
+
+/// One composite constant: its type and its parts in declaration order (§1.5.25). A part is
+/// itself a `Constant`, so aggregates nest through `Constant::Aggregate`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AggregateData {
+    /// The type of the value: a tuple, an array, a struct, an enum or an `Option`.
+    pub ty: ValueType,
+    /// The variant of an enum value; `None` for every other type.
+    pub variant: Option<u32>,
+    /// The fields, the elements, or the fields of the variant. An `Option` has none (`None`) or
+    /// one (`Some`).
+    pub parts: Vec<Constant>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

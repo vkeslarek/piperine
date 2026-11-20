@@ -14,7 +14,7 @@ mod devices;
 mod shape;
 
 use digital::Ty;
-use piperine_ir::{BinaryOp, Derives, Expr, ExprId, FieldsForm, FunctionId, FunctionSpec, Ir, IrBuilder, LevelPart, Local, Origin, Place, Projection, Stmt, StmtId, TypeData, TypeId, TypeKind, ValueType, VariantData};
+use piperine_ir::{AggregateData, AggregateId, BinaryOp, Constant, Derives, Expr, ExprId, FieldsForm, FunctionId, FunctionSpec, Ir, IrBuilder, LevelPart, Local, Origin, Param, Place, Projection, Real, Stmt, StmtId, TypeData, TypeId, TypeKind, ValueType, VariantData};
 use shape::{Entries, FILE, Shape, Written};
 
 /// The builders of the type arena's entries.
@@ -371,5 +371,59 @@ fn aggregate_forms_the_derives_do_not_allow_are_refused() {
         ("derive PartialEq requires every field to implement it (H.8 rule 6)", 1),
     ] {
         assert_eq!(Entries::with(&broken, phrase).len(), count, "`{phrase}` in {broken:#?}");
+    }
+}
+
+// ---- T33: composite constants (CV-18, CV-20) -------------------------------------------------------------------
+
+/// Composite constants of one design: a param whose default is a struct that holds a struct and an array.
+struct Constants;
+
+impl Constants {
+    /// `Pair { a: 1.5, b: true }` (agg0), `[1, 2, 3]` (agg1) and `Line { pair, taps }` (agg2) as the
+    /// default of the param `line`; `mutate` changes the last one before it is added.
+    fn ir(mutate: impl FnOnce(&mut AggregateData)) -> Ir {
+        Shape::ir_with_params(|b| {
+            let pair = Forms::pair(b);
+            let taps = ValueType::Array(Box::new(ValueType::UInt(8)), 3);
+            let line = Types::named(b, "Line", 4, &[("pair", ValueType::Struct(pair)), ("taps", taps.clone())], Derives::default());
+            let made_pair = b.aggregate(AggregateData { ty: ValueType::Struct(pair), variant: None, parts: vec![Constant::Real(Real::new(1.5)), Constant::Bool(true)] });
+            let made_taps = b.aggregate(AggregateData { ty: taps, variant: None, parts: vec![Constant::Int(1), Constant::Int(2), Constant::Int(3)] });
+            let mut data = AggregateData { ty: ValueType::Struct(line), variant: None, parts: vec![Constant::Aggregate(made_pair), Constant::Aggregate(made_taps)] };
+            mutate(&mut data);
+            let made_line = b.aggregate(data);
+            let param = Param { name: "line".into(), ty: ValueType::Struct(line), default: Some(Constant::Aggregate(made_line)), check: None, structural: false, origin: Types::origin(6) };
+            let value = Shape::dx(b, 40).real(0.0);
+            (Written { locals: vec![], stmts: vec![], value }, vec![param])
+        })
+    }
+}
+
+#[test]
+fn composite_constants_check_print_and_round_trip() {
+    // §1.5.25: a struct constant holding another and an array, as a param default; it checks, prints
+    // spelled out, survives a JSON round trip, and each way of breaking it is named.
+    let ir = Constants::ir(|_| {});
+    assert_eq!(ir.check(), vec![], "a well-formed composite constant checks");
+    assert_eq!(ir.aggregates().len(), 3);
+    let text = ir.to_string();
+    for line in ["aggregate agg0: t0 = Pair(1.5, true)", "aggregate agg1: [u8; 3] = [1, 2, 3]", "aggregate agg2: t1 = Line(Pair(1.5, true), [1, 2, 3])"] {
+        assert!(text.contains(line), "the printed IR holds `{line}`:\n{text}");
+    }
+    let json = serde_json::to_string(&ir).expect("serialize");
+    let back: Ir = serde_json::from_str(&json).expect("deserialize");
+    assert_eq!(back, ir, "a JSON round trip gives an equal IR");
+    assert_eq!(back.to_string(), text);
+
+    let cases: Vec<(Ir, &str)> = vec![
+        (Constants::ir(|data| data.parts.truncate(1)), "the constant of type t1 has 2 parts, found 1"),
+        (Constants::ir(|data| data.parts[1] = Constant::Bool(true)), "part 1 of a composite constant is true, not a value of [u8; 3]"),
+        (Constants::ir(|data| data.variant = Some(0)), "only an enum constant names a variant"),
+        (Constants::ir(|data| data.parts[0] = Constant::Aggregate(AggregateId(2))), "a composite constant contains itself"),
+        (Constants::ir(|data| data.ty = ValueType::Struct(TypeId(0))), "the default of param line"),
+    ];
+    for (broken, phrase) in cases {
+        let found = broken.check();
+        assert!(!Entries::with(&found, phrase).is_empty(), "`{phrase}` in {found:#?}");
     }
 }

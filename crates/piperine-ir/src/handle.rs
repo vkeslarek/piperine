@@ -1,10 +1,10 @@
 //! Reading: `Copy` handles that pair a borrow of the [`Ir`] with an id.
 
 use crate::real::Real;
-use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
+use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId, AggregateId};
 use crate::model::{
     BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Event, Expr, FunctionData, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
-    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, TypeData, ValueType,
+    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, TypeData, ValueType, AggregateData,
 };
 use crate::contributions::{Contribution, Contributions};
 use crate::statements::Statements;
@@ -13,6 +13,16 @@ impl Ir {
     /// A source struct or enum of the type arena.
     pub fn type_data(&self, id: TypeId) -> &TypeData {
         &self.types[id.index()]
+    }
+
+    /// A composite constant.
+    pub fn aggregate(&self, id: AggregateId) -> &AggregateData {
+        &self.aggregates[id.index()]
+    }
+
+    /// The composite constants, in id order.
+    pub fn aggregates(&self) -> &[AggregateData] {
+        &self.aggregates
     }
 
     /// The type arena, in id order.

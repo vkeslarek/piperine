@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 
 use crate::real::Real;
 use crate::deps::DepsMemo;
-use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
-use crate::model::{NodeAlias, 
+use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
+use crate::model::{AggregateData, NodeAlias, 
     BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, Derivative, Drive, Event, Expr, ExprData, FunctionData, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
     Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, Terminal, TypeData, ValueType,
 };
@@ -124,6 +124,8 @@ pub struct IrBuilder {
     aliases: Vec<NodeAlias>,
     /// The source structs and enums, by `TypeId`.
     types: Vec<TypeData>,
+    /// The composite constants, by `AggregateId`.
+    aggregates: Vec<AggregateData>,
     /// The merges `merge_nodes` asked for, applied by `finish`.
     union: NodeUnion,
 }
@@ -137,6 +139,12 @@ impl IrBuilder {
     pub fn type_data(&mut self, data: TypeData) -> TypeId {
         self.types.push(data);
         TypeId((self.types.len() - 1) as u32)
+    }
+
+    /// Adds a composite constant; `Constant::Aggregate` names it by the id.
+    pub fn aggregate(&mut self, data: AggregateData) -> AggregateId {
+        self.aggregates.push(data);
+        AggregateId((self.aggregates.len() - 1) as u32)
     }
 
     pub fn nature(&mut self, name: &str, potential: Quantity, flow: Option<Quantity>) -> NatureId {
@@ -470,6 +478,7 @@ impl IrBuilder {
             nets: self.nets,
             aliases: self.aliases,
             types: self.types,
+            aggregates: self.aggregates,
         }
     }
 }

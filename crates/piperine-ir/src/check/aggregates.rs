@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use super::traits::Trait;
 use super::{Checker, Ctx, Task, Walk};
 use crate::ids::ExprId;
-use crate::model::{BinaryOp, Derives, Expr, FieldsForm, LevelPart, Place, Projection, TypeData, TypeKind, ValueType};
+use crate::model::{AggregateData, BinaryOp, Constant, Derives, Expr, FieldsForm, LevelPart, Place, Projection, TypeData, TypeKind, ValueType};
 use crate::typing::Typing;
 
 impl Checker<'_> {
@@ -399,3 +399,100 @@ impl Checker<'_> {
     }
 }
 
+
+impl Checker<'_> {
+    /// Each composite constant agrees with its own type (§1.5.25), and none holds itself.
+    pub(super) fn aggregate_constants(&mut self) {
+        let ir = self.ir;
+        for (index, data) in ir.aggregates.iter().enumerate() {
+            let item = format!("aggregate agg{index}");
+            let origin = Checker::unknown();
+            if let Some(what) = self.malformed(&data.ty) {
+                self.report(item.clone(), origin.clone(), what);
+                continue;
+            }
+            if let Some(what) = self.aggregate_mismatch(data) {
+                self.report(item.clone(), origin.clone(), what);
+            }
+            if self.constant_holds_itself(index) {
+                self.report(item, origin, "a composite constant contains itself".to_string());
+            }
+        }
+    }
+
+    /// What is wrong with the parts of `data` against its type, `None` when they fit.
+    fn aggregate_mismatch(&self, data: &AggregateData) -> Option<String> {
+        let (wanted, variant): (Vec<ValueType>, Option<u32>) = match &data.ty {
+            ValueType::Tuple(parts) => (parts.clone(), None),
+            ValueType::Array(element, length) => (vec![(**element).clone(); *length as usize], None),
+            ValueType::Struct(id) => (self.struct_fields(*id)?, None),
+            ValueType::Enum(id) => {
+                let Some(TypeKind::Enum { variants, .. }) = self.ir.types.get(id.index()).map(|t| &t.kind) else { return Some("an enum constant of a non-enum type".to_string()) };
+                let chosen = data.variant?;
+                match variants.get(chosen as usize) {
+                    Some(v) => (v.fields.iter().map(|(_, ty)| ty.clone()).collect(), Some(chosen)),
+                    None => return Some(format!("variant {chosen} out of range of enum t{}", id.0)),
+                }
+            }
+            ValueType::Option(inner) if data.parts.len() <= 1 => (vec![(**inner).clone(); data.parts.len()], None),
+            ValueType::Option(_) => return Some("an Option constant holds at most one part".to_string()),
+            other => return Some(format!("a composite constant of type {other}, which is not an aggregate type")),
+        };
+        if matches!(data.ty, ValueType::Enum(_)) && variant.is_none() {
+            return Some("an enum constant names its variant".to_string());
+        }
+        if !matches!(data.ty, ValueType::Enum(_)) && data.variant.is_some() {
+            return Some("only an enum constant names a variant".to_string());
+        }
+        if wanted.len() != data.parts.len() {
+            return Some(format!("the constant of type {} has {} parts, found {}", data.ty, wanted.len(), data.parts.len()));
+        }
+        wanted.iter().zip(&data.parts).enumerate().find(|(_, (ty, part))| !self.holds(ty, **part)).map(|(i, (ty, part))| format!("part {i} of a composite constant is {part}, not a value of {ty}"))
+    }
+
+    /// Whether the constant at `start` reaches itself through its parts.
+    fn constant_holds_itself(&self, start: usize) -> bool {
+        let mut visited: BTreeSet<usize> = BTreeSet::new();
+        let mut stack: Vec<usize> = vec![start];
+        while let Some(index) = stack.pop() {
+            for part in &self.ir.aggregates[index].parts {
+                if let Constant::Aggregate(id) = part {
+                    if id.index() == start {
+                        return true;
+                    }
+                    if id.index() < self.ir.aggregates.len() && visited.insert(id.index()) {
+                        stack.push(id.index());
+                    }
+                }
+            }
+        }
+        false
+    }
+}
+
+impl Checker<'_> {
+    /// A param default or an instance's param value that is a composite, or of a composite type, is a
+    /// value of the param's type (scalar params keep the checks they always had).
+    pub(super) fn composite_params(&mut self) {
+        let ir = self.ir;
+        let composite = |ty: &ValueType, value: &Constant| Checker::is_aggregate(ty) || matches!(value, Constant::Aggregate(_));
+        for body in &ir.bodies {
+            let item = format!("body {}", body.name);
+            for param in &body.params {
+                if let Some(default) = &param.default {
+                    if composite(&param.ty, default) && !self.holds(&param.ty, *default) {
+                        self.report(item.clone(), param.origin.clone(), format!("the default of param {} is {default}, not a value of {}", param.name, param.ty));
+                    }
+                }
+            }
+        }
+        for instance in &ir.instances {
+            let Some(body) = ir.bodies.get(instance.body.index()) else { continue };
+            for (param, value) in body.params.iter().zip(&instance.params) {
+                if composite(&param.ty, value) && !self.holds(&param.ty, *value) {
+                    self.report(format!("instance {}", instance.path), instance.origin.clone(), format!("param {} is bound to {value}, not a value of {}", param.name, param.ty));
+                }
+            }
+        }
+    }
+}

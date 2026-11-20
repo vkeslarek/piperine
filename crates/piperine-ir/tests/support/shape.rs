@@ -4,7 +4,7 @@
 
 use super::devices::Ex;
 use super::digital::{Buck, Dx};
-use piperine_ir::{Addend, BodyNode, BodySpec, Branch, BranchKind, Broken, Deps, Env, Expr, ExprId, FunctionId, FunctionSpec, InstanceSpec, Ir, IrBuilder, Local, NodeRef, NodeRole, Operator, Origin, QuantityRole, Place, Stmt, StmtId, Target, Terminal, ValueType, BinaryOp};
+use piperine_ir::{Addend, BodyNode, BodySpec, Branch, BranchKind, Broken, Deps, Env, Expr, ExprId, FunctionId, FunctionSpec, InstanceSpec, Ir, IrBuilder, Local, NodeRef, NodeRole, Operator, Origin, QuantityRole, Place, Stmt, StmtId, Target, Terminal, ValueType, BinaryOp, Constant, Param};
 
 pub const FILE: &str = "control.msl";
 
@@ -53,15 +53,22 @@ impl Shape {
     /// The design: `write` builds the locals, the statements and the value; functions are added
     /// to the builder by `write` itself.
     pub fn ir(write: impl FnOnce(&mut IrBuilder) -> Written) -> Ir {
+        Shape::ir_with_params(|b| (write(b), vec![]))
+    }
+
+    /// `ir` for a body that has params: `write` also returns them (they may name constants it adds
+    /// to the builder), and the top instance binds each to its default (`Constant::Bool(false)`
+    /// when it has none).
+    pub fn ir_with_params(write: impl FnOnce(&mut IrBuilder) -> (Written, Vec<Param>)) -> Ir {
         let mut b = IrBuilder::new();
         let electrical = Buck::electrical(&mut b);
-        let Written { locals, mut stmts, value } = write(&mut b);
+        let (Written { locals, mut stmts, value }, params) = write(&mut b);
         stmts.push(b.stmt(Stmt::Contribute { branch: 0, quantity: QuantityRole::Flow, addends: vec![Addend { operator: Operator::Direct, negated: false, value }] }));
         let port = |name: &str| BodyNode { name: name.into(), nature: electrical, role: NodeRole::Port, init: None, origin: Shape::origin() };
         let body = b.body(BodySpec {
             name: "Shape".into(),
             origin: Shape::origin(),
-            params: vec![],
+            params: params.clone(),
             nodes: vec![port("p"), port("n")],
             branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
             limits: vec![],
@@ -70,7 +77,7 @@ impl Shape {
             analog: Some(stmts),
             children: vec![],
         });
-        let top = b.instance(InstanceSpec { path: "Shape".into(), name: "Shape".into(), body, parent: None, nodes: vec![NodeRef::Ground, NodeRef::Ground], params: vec![], origin: Shape::origin() });
+        let top = b.instance(InstanceSpec { path: "Shape".into(), name: "Shape".into(), body, parent: None, nodes: vec![NodeRef::Ground, NodeRef::Ground], params: params.iter().map(|p| p.default.unwrap_or(Constant::Bool(false))).collect(), origin: Shape::origin() });
         b.finish(top)
     }
 

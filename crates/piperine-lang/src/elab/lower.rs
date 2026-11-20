@@ -644,6 +644,9 @@ impl Elaboration<'_, '_> {
             Constant::Real(r) => self.emit(Expr::Real(r), ValueType::F64, origin),
             Constant::Bool(b) => self.emit(Expr::Bool(b), ValueType::Bool, origin),
             Constant::Int(v) => self.emit(Expr::Int(v), ty, origin),
+            // The const evaluator builds no composite constant before the aggregate lowering; a
+            // composite folded value reaching here would be a lowering bug, never user input.
+            Constant::Aggregate(id) => panic!("the composite constant agg{} reached constant_expr before the aggregate lowering exists", id.0),
         }
     }
 

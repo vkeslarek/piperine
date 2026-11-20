@@ -41,6 +41,10 @@ pub struct NetId(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct TypeId(pub u32);
 
+/// A composite constant of the design: an entry of the arena of aggregate constants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct AggregateId(pub u32);
+
 impl NatureId {
     pub fn index(self) -> usize {
         self.0 as usize
@@ -90,6 +94,12 @@ impl NetId {
 }
 
 impl TypeId {
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl AggregateId {
     pub fn index(self) -> usize {
         self.0 as usize
     }

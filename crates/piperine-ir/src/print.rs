@@ -30,7 +30,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display, Write};
 
-use crate::ids::{ExprId, StmtId, TypeId};
+use crate::ids::{AggregateId, ExprId, StmtId, TypeId};
 use crate::model::{
     BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, ChildValue, Constant, EmitField, Env, EventSource, Expr, ExprData, FieldsForm, FunctionData, InstanceData, Ir,
     LevelPart, Local, MathFn, Method, NodeRef, Operator, Origin, Param, Place, Projection, Quantity, QuantityRole, Stmt, Stream, Terminal, TypeData, TypeKind,
@@ -102,6 +102,7 @@ impl Display for Constant {
             Constant::Real(r) => f.write_str(&Printer::real(*r)),
             Constant::Bool(b) => write!(f, "{b}"),
             Constant::Int(v) => write!(f, "{v}"),
+            Constant::Aggregate(id) => write!(f, "agg{}", id.0),
         }
     }
 }
@@ -210,6 +211,8 @@ impl<'a> Printer<'a> {
         self.items(natures);
         let types = ir.types.iter().enumerate().map(|(i, data)| self.chunk(|p| p.type_item(i, data))).collect();
         self.items(types);
+        let aggregates = ir.aggregates.iter().enumerate().map(|(i, data)| self.chunk(|p| p.line(0, &format!("aggregate agg{i}: {} = {}", data.ty, p.constant(&Constant::Aggregate(AggregateId(i as u32)), 0))))).collect();
+        self.items(aggregates);
         let bodies = ir.bodies.iter().map(|body| self.chunk(|p| p.body(body))).collect();
         self.items(bodies);
         let functions = ir.functions.iter().map(|function| self.chunk(|p| p.function(function))).collect();
@@ -269,6 +272,37 @@ impl<'a> Printer<'a> {
         let derive = if derived.is_empty() { String::new() } else { format!("  derive {}", derived.join(", ")) };
         let at = self.at(&data.origin);
         self.line(0, &format!("type t{index} = {shape}  path {}{derive}{at}", Printer::name(&data.path)));
+    }
+
+    /// A constant as source: a scalar as `Display` writes it, a composite value spelled out through
+    /// its type (`Pair(1.0, true)`, `Tx::Data(3)`, `[1, 2]`, `Some(1.0)`); `depth` ends a cycle.
+    fn constant(&self, value: &Constant, depth: usize) -> String {
+        let Constant::Aggregate(id) = value else { return Printer::scalar(value) };
+        let Some(data) = self.ir.aggregates.get(id.index()) else { return format!("<bad aggregate {}>", id.0) };
+        if depth > 32 {
+            return "..".to_string();
+        }
+        let parts: Vec<String> = data.parts.iter().map(|part| self.constant(part, depth + 1)).collect();
+        let list = parts.join(", ");
+        match &data.ty {
+            ValueType::Tuple(_) if parts.len() == 1 => format!("({list},)"),
+            ValueType::Tuple(_) => format!("({list})"),
+            ValueType::Array(..) => format!("[{list}]"),
+            ValueType::Struct(ty) => format!("{}({list})", self.type_name(*ty)),
+            ValueType::Enum(ty) => format!("{}({list})", self.variant_name(*ty, data.variant.unwrap_or(u32::MAX))),
+            ValueType::Option(_) if parts.is_empty() => "None".to_string(),
+            _ => format!("Some({list})"),
+        }
+    }
+
+    /// A scalar constant as source.
+    fn scalar(value: &Constant) -> String {
+        match value {
+            Constant::Real(r) => Printer::real(*r),
+            Constant::Bool(b) => b.to_string(),
+            Constant::Int(v) => v.to_string(),
+            Constant::Aggregate(id) => format!("agg{}", id.0),
+        }
     }
 
     /// The name of a type of the arena, `<bad type>` for an id outside it.

@@ -137,6 +137,8 @@ impl Params {
                             Constant::Real(r) => r.get(),
                             Constant::Bool(b) => f64::from(u8::from(*b)),
                             Constant::Int(v) => *v as f64,
+                            // The elaborator folds no composite param value yet; the host table gains cells for them in phase B's API task.
+                            Constant::Aggregate(id) => panic!("param {} holds the composite constant agg{}, which the scalar host table has no cell for", param.name, id.0),
                         };
                         (param.name.clone(), param.ty.clone(), value)
                     })

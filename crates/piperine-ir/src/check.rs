@@ -54,6 +54,8 @@ impl Ir {
         checker.paths();
         checker.types();
         checker.type_arena();
+        checker.aggregate_constants();
+        checker.composite_params();
         checker.slice_positions();
         checker.code();
         checker.discrete();
@@ -161,8 +163,9 @@ impl<'a> Checker<'a> {
 
     /// Whether `value` is a value of the scalar type `ty`: a `bool` for `bool`, a real for `f64`,
     /// an integer within the `N`-bit range for `UInt<N>`/`Int<N>`.
-    fn holds(ty: &ValueType, value: Constant) -> bool {
+    fn holds(&self, ty: &ValueType, value: Constant) -> bool {
         match (ty, value) {
+            (_, Constant::Aggregate(id)) => self.ir.aggregates.get(id.index()).is_some_and(|data| data.ty == *ty),
             (ValueType::Bool, Constant::Bool(_)) | (ValueType::F64, Constant::Real(_)) => true,
             (ValueType::UInt(_) | ValueType::Int(_), Constant::Int(v)) => {
                 ty.integer_range().is_some_and(|(lo, hi)| (lo..=hi).contains(&v))
@@ -430,7 +433,7 @@ impl<'a> Checker<'a> {
                     self.report(item.clone(), child.origin.clone(), format!("child {}: param {} is set twice", child.name, param.name));
                 }
                 match value {
-                    ChildValue::Const(c) if !Self::holds(&param.ty, *c) => {
+                    ChildValue::Const(c) if !self.holds(&param.ty, *c) => {
                         self.report(item.clone(), child.origin.clone(), format!("child {}: the value {c} of param {} is not a value of its type {}", child.name, param.name, param.ty));
                     }
                     ChildValue::Const(_) => {}
@@ -766,7 +769,7 @@ impl<'a> Checker<'a> {
                 if !Typing::scalar(&c.ty) {
                     self.report(format!("{item} carrier {}", c.name), c.origin.clone(), format!("a carrier holds `bool`, `f64` or an integer type, found {}", c.ty));
                 } else if let Some(init) = c.init
-                    && !Self::holds(&c.ty, init)
+                    && !self.holds(&c.ty, init)
                 {
                     self.report(
                         format!("{item} carrier {}", c.name),

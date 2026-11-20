@@ -417,6 +417,8 @@ impl BodyPlan {
                 Some(Constant::Bool(b)) => vec![u8::from(b), 1],
                 // An integer param has a carrier's layout and bytes (`digital.rs`).
                 Some(c @ Constant::Int(_)) => CarrierLayout::bytes(&p.ty, c).unwrap_or_default(),
+                // The elaborator folds no composite value yet; the plan lays one out from T55.
+                Some(Constant::Aggregate(id)) => panic!("param {} defaults to the composite constant agg{}, which has no layout yet", p.name, id.0),
                 None => Vec::new(),
             })
             .collect();
