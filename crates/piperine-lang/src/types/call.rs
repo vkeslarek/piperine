@@ -2,7 +2,8 @@
 //! after each argument is checked against its parameter; a closure takes its parameter types
 //! from the function type of the parameter it is passed to.
 
-use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, LitKind, PatKind, Resolution};
+use crate::msl::Span;
+use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, FileId, LitKind, PatKind, Resolution};
 
 use super::carrier::flag_builtin;
 use super::catalogue::{Catalogue, Lookup};
@@ -52,7 +53,7 @@ impl Checker<'_> {
             Some(Resolution::Builtin(id)) => self.core_call(expr, id, args),
             Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
                 DeclKind::Fn(_) => self.function_call(expr, *callee, decl, args),
-                DeclKind::FnParam(_) | DeclKind::Binding(_) => self.indirect_call(expr, args),
+                DeclKind::FnParam(_) | DeclKind::Binding(_) => self.indirect_call(expr, *callee, args),
                 _ => {
                     self.unsupported(file, node.span, "call of this declaration");
                     None
@@ -92,10 +93,17 @@ impl Checker<'_> {
     }
 
     /// A call of a parameter or a local whose type is `fn(..) -> R`: there is no named function
-    /// to record as its callee, so the form is outside the subset.
-    fn indirect_call(&mut self, expr: ExprId, args: &[Arg]) -> Option<Ty> {
+    /// to record as its callee, so a call with the right count is outside the subset; one with
+    /// the wrong count is `E0141` (Part I §3.2.6).
+    fn indirect_call(&mut self, expr: ExprId, callee: ExprId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
+        if let Some(Ty::Fn(params, _)) = self.infer(callee)
+            && params.len() != args.len()
+        {
+            self.arity_mismatch(file, span, params.len(), args);
+            return None;
+        }
         self.unsupported(file, span, "call of a function value (a parameter or a local)");
         for arg in args {
             self.infer(arg.value);
@@ -164,17 +172,23 @@ impl Checker<'_> {
         Some(())
     }
 
+    /// `E0141` (Part I §3.2.6): a call with `expected` positional arguments that has the
+    /// arguments of `args`. Every argument is still inferred, so one wrong count is one diagnostic.
+    fn arity_mismatch(&mut self, file: FileId, span: Span, expected: usize, args: &[Arg]) {
+        let found = args.len();
+        self.coded(file, "E0141", span, format!("expected {expected} argument(s), found {found}"), "wrong number of arguments");
+        for arg in args {
+            self.infer(arg.value);
+        }
+    }
+
     /// Check each argument against its parameter, in order. Only a function call binds by name
     /// (`bind_arguments`); the callers of this one take positional arguments.
     pub(super) fn apply(&mut self, expr: ExprId, params: &[Ty], args: &[Arg]) -> Option<()> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
         if args.len() != params.len() {
-            let message = format!("expected {} argument(s), found {}", params.len(), args.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), span, message));
-            for arg in args {
-                self.infer(arg.value);
-            }
+            self.arity_mismatch(file, span, params.len(), args);
             return None;
         }
         for (arg, ty) in args.iter().zip(params) {
@@ -282,11 +296,7 @@ impl Checker<'_> {
             _ => Ty::Unit,
         };
         if args.len() != 1 {
-            let message = format!("expected 1 argument(s), found {}", args.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, message));
-            for arg in args {
-                self.infer(arg.value);
-            }
+            self.arity_mismatch(file, node.span, 1, args);
             return None;
         }
         let value = args[0].value;

@@ -263,9 +263,9 @@ T44
 
 **Done when**:
 
-- [ ] `a_call_through_a_function_value_with_the_wrong_arity_is_e0141` passes under `**Run typesvalues**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `a_call_through_a_function_value_with_the_wrong_arity_is_e0141` passes under `**Run typesvalues**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

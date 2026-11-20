@@ -176,8 +176,8 @@ fn a_compiler_code_says_what_the_chapter_says() {
     let generic = "module Gen<const N: u32>() { }\nmodule Top() { let g = Gen::<2>(); }\n";
     let given = Refusal::of(Model::written("m.msl", generic).run(Faulty::operating_point_of("Top")), "compiler~79f44db1");
     assert!(given.iter().any(|(code, message)| code == "P0001" && message.contains("not supported yet")), "P0001 names the construct it cannot run: {given:?}");
-    let arguments = "module Top() { signal a: Electrical; }\nanalog for Top { i(a, gnd) +> (2.0).powf(); }\n";
-    Refusal::expect(Model::written("m.msl", arguments).run(Faulty::operating_point_of("Top")), "compiler~79f450b1", "P0002", "mismatched types: expected 1 argument(s), found 0");
+    let arguments = "module Top() { signal a: Electrical; }\nanalog for Top { i(a, gnd) +> (2.0).powf(true); }\n";
+    Refusal::expect(Model::written("m.msl", arguments).run(Faulty::operating_point_of("Top")), "compiler~79f450b1", "P0002", "mismatched types: expected `f64`, found `bool`");
     Refusal::expect(Model::written("m.msl", "module Top() { }\n").run(Faulty::operating_point_of("Nope")), "compiler~79f44fb1", "P0003", "`Nope` is not a module of the root crate");
 }
 

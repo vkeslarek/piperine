@@ -248,8 +248,9 @@ fn catalogue_methods_on_f64_are_f64() {
     assert_eq!(t, [Ty::F64]);
 
     // A method takes no argument; a bool receiver has no `exp` row (`E0161`: H.3 is complete).
+    // The count is `E0141` (§3.2.6), the code that replaces the plain mismatch for it (spec.md PI-06 AC 2).
     let (_, d) = diagnostics("fn p(a: f64) -> f64 { a.exp(1.0) }", "let x = p(1.0);");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0141"]);
     let (_, d) = diagnostics("fn p(a: bool) -> f64 { a.exp() }", "let x = p(true);");
     assert_eq!(codes_of(&d), ["E0161"]);
 }
@@ -501,4 +502,20 @@ fn an_as_between_types_without_a_row_is_e0182() {
     assert!(d[0].diagnostic.message.contains("`bool`") && d[0].diagnostic.message.contains("`f64`"), "{}", d[0].diagnostic.message);
     assert!(d[1].diagnostic.message.contains("`f64`") && d[1].diagnostic.message.contains("`bool`"), "{}", d[1].diagnostic.message);
     assert_eq!(snippet(&src, &d[1]), "1.5");
+}
+
+#[test]
+fn a_call_through_a_function_value_with_the_wrong_arity_is_e0141() {
+    // §3.2.6: the count of a call through a function value is `E0141` naming the expected and
+    // found counts (PI-06 AC 2); a method call and a probe count the same way.
+    let items = "fn through(f: fn(f64, f64) -> f64) -> f64 { f(1.0) }";
+    let src = source(items, "let a = through(|x, y| x + y);");
+    let design = design_of(&src);
+    let d = Types::check(&design, "Top").expect_err("expected diagnostics");
+    assert_eq!(codes_of(&d), ["E0141"], "{src}");
+    assert!(d[0].diagnostic.message.contains("expected 2 argument(s), found 1"), "{}", d[0].diagnostic.message);
+    assert_eq!(snippet(&src, &d[0]), "f(1.0)");
+    let (src, d) = diagnostics("", "let x = 0.5; let r = x.abs(1.0, 2.0);");
+    assert_eq!(codes_of(&d), ["E0141"], "{src}");
+    assert!(d[0].diagnostic.message.contains("expected 0 argument(s), found 2"), "{}", d[0].diagnostic.message);
 }
