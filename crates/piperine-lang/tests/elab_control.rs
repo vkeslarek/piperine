@@ -106,3 +106,61 @@ fn a_function_value_called_with_an_unknown_is_the_flagged_variant_or_p0001() {
     assert_eq!(Elab::codes(&refused), ["P0001"]);
     assert!(refused[0].diagnostic.message.contains("a call through a function value"), "{:?}", refused[0].diagnostic.message);
 }
+
+/// `Lag` of AS-09: a result that reads its own node, hoisted into each body that places it.
+const LAG: &str = "module Lag(x: f64) -> f64 { tau: f64 = 1m; signal y: State; potential(y) }\nanalog for Lag { flow(y) +> tau * ddt(potential(y)) + potential(y) - x; }\n";
+
+#[test]
+fn an_analog_loop_that_contributes_or_places_is_unrolled() {
+    // §11 rule 12 (CV-02 AC 2): a loop that contributes, with a constant trip count, is its unrolling;
+    // the loop variable is its constant in each iteration. The IR holds no loop.
+    let src = "module Top() { signal o: Electrical; signal a: Electrical; }\nanalog for Top { for k in 0..3u8 { i(o) +> (k as f64) * v(a); } }";
+    let ir = Elab::ir(src, "Top");
+    let text = ir.print_structural();
+    assert_eq!(text.matches(" +> ").count(), 3, "{text}");
+    assert!(!text.contains("for k in"), "{text}");
+    for k in 0..3 {
+        assert!(text.contains(&format!("(({k}u8 as f64) * probe(a, gnd))")), "iteration {k} reads its own constant:\n{text}");
+    }
+
+    // §8.3.4 (CV-02 AC 2): each iteration's placement is a distinct instance, named by the hoisting
+    // rule in unrolled order, and its argument reads that iteration's loop variable.
+    let src = format!("{LAG}module Top() {{ signal a: Electrical; signal o: Electrical; }}\nanalog for Top {{ for k in 0..3u8 {{ i(o) +> Lag(v(a) * (k as f64)); }} }}");
+    let ir = Elab::ir(&src, "Top");
+    let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
+    let names: Vec<&str> = top.nodes().iter().map(|n| n.name.as_str()).collect();
+    assert_eq!(names, ["a", "o", "Lag$0.y", "Lag$1.y", "Lag$2.y"], "one node per iteration");
+    assert_eq!(top.hoisted().iter().map(|h| h.name.as_str()).collect::<Vec<_>>(), ["Lag$0", "Lag$1", "Lag$2"]);
+    let text = ir.print_structural();
+    for k in 0..3 {
+        assert!(text.contains(&format!("(probe(a, gnd) * ({k}u8 as f64))")), "instance {k} takes its iteration's argument:\n{text}");
+    }
+
+    // A nested loop: the inner trip count reads the outer variable; 0 + 1 + 2 iterations.
+    let src = "module Top() { signal o: Electrical; }\nanalog for Top { for j in 0..3u8 { for k in 0..j { i(o) +> 1.0; } } }";
+    let ir = Elab::ir(src, "Top");
+    assert_eq!(ir.print_structural().matches(" +> ").count(), 3);
+
+    // An empty range contributes nothing (edge case).
+    let src = "module Top() { signal o: Electrical; }\nanalog for Top { for k in 2..2u8 { i(o) +> 1.0; } i(o) +> 2.0; }";
+    assert_eq!(Elab::ir(src, "Top").print_structural().matches(" +> ").count(), 1);
+}
+
+#[test]
+fn a_contributing_analog_loop_without_a_constant_trip_count_is_e0416() {
+    // §11 rule 12 (CV-02 AC 3): a trip count that reads a probe, and a `while`, are not constants.
+    let src = "module Top() { signal o: Electrical; }\nanalog for Top { for k in 0..(v(o) as u8) { i(o) +> 1.0; } }";
+    let refused = Elab::run(src, "Top").expect_err("a probe is no trip count");
+    assert_eq!(Elab::codes(&refused), ["E0416"]);
+    let src = "module Top() { signal o: Electrical; }\nanalog for Top { let mut n = 0u8; while n < 3 { i(o) +> 1.0; n += 1; } }";
+    let refused = Elab::run(src, "Top").expect_err("a while has no trip count");
+    assert_eq!(Elab::codes(&refused), ["E0416"]);
+
+    // §8.3.4: the same for a placement is E0351.
+    let src = format!("{LAG}module Top() {{ signal a: Electrical; signal o: Electrical; }}\nanalog for Top {{ for k in 0..(v(a) as u8) {{ i(o) +> Lag(v(a)); }} }}");
+    let refused = Elab::run(&src, "Top").expect_err("a placement in a loop over a probe");
+    assert_eq!(Elab::codes(&refused), ["E0416"], "a contribution in the body is named first");
+    let src = format!("{LAG}module Top() {{ signal a: Electrical; signal o: Electrical; }}\nanalog for Top {{ for k in 0..(v(a) as u8) {{ let y = Lag(v(a)); }} }}");
+    let refused = Elab::run(&src, "Top").expect_err("a placement in a loop over a probe");
+    assert_eq!(Elab::codes(&refused), ["E0351"]);
+}

@@ -41,6 +41,7 @@ mod records;
 mod selectors;
 mod structural;
 mod unlowered;
+mod unroll;
 mod variants;
 
 pub use consts::{Bindings, ConstEval, ConstFault, Folded};

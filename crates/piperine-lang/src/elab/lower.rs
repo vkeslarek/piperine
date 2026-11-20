@@ -93,11 +93,16 @@ pub(super) struct Scope {
     /// The function each local bound to a function's name stands for: a call through the local with
     /// an argument that may be unknown calls the flagged variant of it (`closures.rs`).
     pub(super) fn_targets: BTreeMap<DeclId, DeclId>,
+    /// The constant each loop variable of the unrolled analog loops the code sits in, and each
+    /// stands for (`unroll.rs`).
+    pub(super) unrolled: Bindings,
+    /// Whether the code being lowered is a statement of an `analog` block, not a function's body.
+    pub(super) in_analog_block: bool,
 }
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), may_be_unknown: false, loops: Vec::new(), result: None, fn_targets: BTreeMap::new() }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), may_be_unknown: false, loops: Vec::new(), result: None, fn_targets: BTreeMap::new(), unrolled: Bindings::new(), in_analog_block: false }
     }
 }
 
@@ -293,7 +298,7 @@ impl Elaboration<'_, '_> {
             ExprKind::If { cond, then, else_ } if matches!(self.design.expr_node(*cond).kind, ExprKind::Let { .. }) => self.lower_if_let(scope, *cond, then, *else_, ty, origin),
             // A condition that reads only key params and constants is folded: only the arm it
             // selects is lowered (`structural.rs`, §11 rule 3).
-            ExprKind::If { cond, then, else_ } if let Some(holds) = self.folded_condition(&scope.keys.clone(), &self.placement_chain(scope.frame), *cond) => {
+            ExprKind::If { cond, then, else_ } if let Some(holds) = self.folded_decision(scope, *cond) => {
                 if holds {
                     return self.lower_block(scope, file, &then.stmts, node.span);
                 }
@@ -390,7 +395,7 @@ impl Elaboration<'_, '_> {
                 Some(self.emit(Expr::Cast { expr: operand, to: ty }, flagged, origin))
             }
             // A scrutinee over the key params folds: only the arm it selects is lowered (`structural.rs`).
-            ExprKind::Match { scrutinee, arms } if let Some(selected) = self.folded_arm(&scope.keys.clone(), &self.placement_chain(scope.frame), *scrutinee, arms) => self.lower_expr(scope, arms[selected].body),
+            ExprKind::Match { scrutinee, arms } if let Some(selected) = self.folded_selection(scope, *scrutinee, arms) => self.lower_expr(scope, arms[selected].body),
             ExprKind::Match { scrutinee, arms } => self.lower_match(scope, *scrutinee, arms, ty, origin),
             ExprKind::Closure { params, body, .. } => self.lower_closure(scope, expr, params, *body, origin),
             other => {
@@ -515,6 +520,8 @@ impl Elaboration<'_, '_> {
                 StmtKind::Let { pat, init: None, else_: None, .. } => ok &= self.lower_deferred_let(scope, &mut out, *pat, file, node.span),
                 // `place = value;` and `place op= value;` (§1.5.12, `control.rs`).
                 StmtKind::Expr { expr, .. } if matches!(self.design.expr_node(*expr).kind, ExprKind::Assign { .. }) => ok &= self.lower_assignment(scope, &mut out, *expr),
+                // A loop of an `analog` block that contributes or places is its unrolling (`unroll.rs`).
+                StmtKind::Expr { expr, .. } if let Some(lowered) = self.lower_analog_loop(scope, &mut out, *expr) => ok &= lowered,
                 // `emit!` and a call of a function that emits are statements (`records.rs`).
                 StmtKind::Expr { expr, .. } if let Some(lowered) = self.lower_record_statement(scope, &mut out, *expr) => ok &= lowered,
                 // `bound_step(dt);` is a statement of the analog block (`analog.rs`).
@@ -680,6 +687,8 @@ impl Elaboration<'_, '_> {
                     None
                 }
             },
+            // The loop variable of an unrolled analog loop is the constant of this iteration (`unroll.rs`).
+            DeclKind::FnParam(_) | DeclKind::Binding(_) if let Some(value) = scope.unrolled.get(decl) => Some(self.constant_expr(value, ty, origin)),
             DeclKind::FnParam(_) | DeclKind::Binding(_) => match scope.local_index.get(&decl) {
                 Some(index) => {
                     let ty = scope.locals[*index as usize].ty.clone();

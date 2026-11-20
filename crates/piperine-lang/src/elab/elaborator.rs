@@ -90,6 +90,11 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) reach_frames: BTreeMap<(usize, crate::pom::ExprId), usize>,
     /// The diverging expressions lowered so far (`exits.rs`).
     pub(super) divergences: Divergences,
+    /// How many placements of a module an unrolled loop has hoisted so far, by the frame that
+    /// places them (`unroll.rs`).
+    pub(super) unrolled_names: BTreeMap<(usize, DeclId), u32>,
+    /// The placements inside a loop, by module (`unroll.rs`).
+    pub(super) looped: BTreeMap<DeclId, std::collections::BTreeSet<crate::pom::ExprId>>,
     pub(super) diagnostics: Vec<DesignDiagnostic>,
 }
 
@@ -120,6 +125,8 @@ impl<'d, 't> Elaboration<'d, 't> {
             ammeters: BTreeMap::new(),
             reach_frames: BTreeMap::new(),
             divergences: Divergences::default(),
+            unrolled_names: BTreeMap::new(),
+            looped: BTreeMap::new(),
             diagnostics: Vec::new(),
         }
     }

@@ -278,6 +278,9 @@ impl ContributionWalk<'_, '_, '_> {
                     self.conditions.pop();
                 }
             },
+            // A loop that contributes is unrolled (`unroll.rs`): its contributions are written once,
+            // whatever the trip count, and the kind of a branch does not depend on it.
+            ExprKind::For { body, .. } | ExprKind::While { body, .. } | ExprKind::Loop { body } => self.statements(&body.stmts),
             _ => {}
         });
     }
@@ -563,7 +566,7 @@ impl Elaboration<'_, '_> {
 
     /// Whether the pattern `pat` accepts the constant `subject`; `None` for a pattern that binds
     /// or destructures, which no fold can decide.
-    fn constant_pattern_holds(&mut self, keys: &Bindings, pat: PatId, subject: Constant) -> Option<bool> {
+    pub(super) fn constant_pattern_holds(&mut self, keys: &Bindings, pat: PatId, subject: Constant) -> Option<bool> {
         match self.design.pat_node(pat).kind.clone() {
             PatKind::Wild => Some(true),
             PatKind::Lit(expr) => Some(self.consts.value(expr, keys).ok()? == subject),

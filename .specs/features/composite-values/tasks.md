@@ -702,8 +702,8 @@ T63
 
 **Done when**:
 
-- [ ] `an_analog_loop_that_contributes_or_places_is_unrolled` and `a_contributing_analog_loop_without_a_constant_trip_count_is_e0416` pass under `**Run elabctl**`
-- [ ] Gate check passes: Full
+- [x] `an_analog_loop_that_contributes_or_places_is_unrolled` and `a_contributing_analog_loop_without_a_constant_trip_count_is_e0416` pass under `**Run elabctl**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

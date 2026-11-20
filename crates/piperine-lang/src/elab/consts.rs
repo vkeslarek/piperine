@@ -58,6 +58,18 @@ impl Bindings {
     pub fn get(&self, param: DeclId) -> Option<Constant> {
         self.values.get(&param).copied()
     }
+
+    /// These bindings with those of `other` added: `other` wins where both bind a name.
+    pub(super) fn overlaid(&self, other: &Bindings) -> Bindings {
+        let mut merged = self.clone();
+        merged.values.extend(other.values.iter().map(|(decl, value)| (*decl, *value)));
+        merged
+    }
+
+    /// Forgets the value of `decl`; the value it had, if any.
+    pub(super) fn unbind(&mut self, decl: DeclId) -> Option<Constant> {
+        self.values.remove(&decl)
+    }
 }
 
 /// What an expression folds to: a known value, or `Unknown` (§3.3). One flag per value, as the
@@ -268,9 +280,12 @@ impl<'d, 't> ConstEval<'d, 't> {
             DeclKind::Param(_) => bindings.get(decl).map(Folded::Known).ok_or(ConstFault::UnboundParam { expr, param: decl }),
             // A unit variant is its tag (§2 rule 5).
             DeclKind::Variant(_) => EnumLayout::variant_tag(self.design, decl).map(|tag| Folded::Known(Constant::Int(tag))).ok_or(ConstFault::Unsupported { expr, what: "a variant outside its enum".to_string() }),
-            DeclKind::FnParam(_) | DeclKind::Binding(_) => match self.locals.get(&decl).copied() {
-                Some(value) => Ok(value),
-                None => self.body_let(expr, decl, bindings),
+            DeclKind::FnParam(_) | DeclKind::Binding(_) => match (self.locals.get(&decl).copied(), bindings.get(decl)) {
+                (Some(value), _) => Ok(value),
+                // the loop variable of an unrolled analog loop, or the parameter of an unrolled
+                // recursion, bound to its constant for this iteration or call (`unroll.rs`)
+                (None, Some(value)) => Ok(Folded::Known(value)),
+                (None, None) => self.body_let(expr, decl, bindings),
             },
             // A value input the caller binds to a constant (`structural.rs`, a selector through an input).
             DeclKind::Port(_) if let Some(value) = bindings.get(decl) => Ok(Folded::Known(value)),
