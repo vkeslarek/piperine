@@ -208,10 +208,10 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `a_settle_event_function_fires_on_the_settle_pin_and_its_guard` passes under `**Run reaction**`
-- [ ] `cargo test -p piperine-transpile --test golden` unchanged
-- [ ] Code clarity: the new arm is one dispatch arm into a named method with a `///` doc; no free function
-- [ ] Gate check passes: Full
+- [x] `a_settle_event_function_fires_on_the_settle_pin_and_its_guard` passes under `**Run reaction**`
+- [x] `cargo test -p piperine-transpile --test golden` unchanged
+- [x] Code clarity: the new arm is one dispatch arm into a named method with a `///` doc; no free function
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
