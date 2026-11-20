@@ -37,3 +37,5 @@ T36 (values and records): the buck row is not a code divergence. The code follow
 T37 (analog): none. No kind (1) row has the area analog.
 
 T38 (digital and mixed): the four digital and mixed rows with a diagnostic (digital~ce04e7a4, digital~54ec4a1d, mixed~98e4dc1b) were fixed in T35 with the other diagnostics; the stale `sin` sentence of chapter 9 is corrected here.
+
+T39 (packages and the library): none. No kind (1) row has the area.
