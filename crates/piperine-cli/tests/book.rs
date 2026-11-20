@@ -605,6 +605,28 @@ fn the_chapter_runs_each_new_analysis() {
 }
 
 #[test]
+fn a_plot_draws_a_curve_and_a_legend_per_real_signal_and_a_lane_per_digital_one() {
+    // Book chapter 16 (root-e2e, cli~1369f2e0): "Every printed real signal is a curve on one shared axis, with a
+    // legend; every digital signal is a step trace in a lane of its own below": a node that follows a bit
+    // gives one curve, one lane and a legend naming both
+    let dir = tempfile::tempdir().expect("tmp");
+    let design = "module Top() { signal n: Electrical; signal d: Bit = false; }\nanalog for Top { v(n) +> transition(if d.high() { 1.0 } else { 0.0 }); }\ndigital for Top { on at(1u) { d <- true; } }\n";
+    write(dir.path(), "plot.msl", design);
+    let out = Command::new(binary())
+        .args(["run", "plot.msl", "--analysis", "transient", "--stop", "3e-6", "--print-step", "1e-6", "--print", "n", "--print", "d", "--plot", "out.svg"])
+        .current_dir(dir.path())
+        .env("PIPERINE_CACHE_DIR", shared_cache())
+        .env_remove("PIPERINE_BACKEND")
+        .output()
+        .expect("run piperine");
+    assert_eq!(out.status.code(), Some(0), "stderr:\n{}", String::from_utf8_lossy(&out.stderr));
+    let svg = std::fs::read_to_string(dir.path().join("out.svg")).expect("the plot was written");
+    assert_eq!(svg.matches("<path class=\"series\" data-signal=\"Top.n\"").count(), 1, "one curve for the real signal: {svg}");
+    assert_eq!(svg.matches("<path class=\"lane\" data-signal=\"Top.d\"").count(), 1, "one step trace in a lane for the digital signal: {svg}");
+    assert!(svg.contains("class=\"legend-label\" ") && svg.contains(">Top.n</text>") && svg.contains(">Top.d</text>"), "a legend names both: {svg}");
+}
+
+#[test]
 fn blinky_runs_to_its_stop_in_the_book() {
     // HII-17 AC 4 and HII-22 AC 3: the Book's `Blinky`, a design with no analog node, prints its
     // three records and a table that ends at the stop, 3 us, with the counter at 3, exit 0 (a

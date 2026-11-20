@@ -162,8 +162,8 @@ block	compiler#2	a8029e9e14f098ed	run	piperine/book_compiler::the_diode_with_a_l
 block	compiler#3	17700775a142241f	shown	-	-	-
 block	cli#1	a85641490b6e3b0b	shown	-	-	-
 block	cli#2	eea02ab5185142c6	shown	-	-	-
-block	cli#3	868bc58888b0542d	pending	-	-	-
-block	cli#4	d9f8271864d5fc75	pending	-	-	-
+block	cli#3	868bc58888b0542d	run	piperine/book_cli::the_rc_project_of_the_chapter_runs_its_operating_point_and_its_step_response	-	-
+block	cli#4	d9f8271864d5fc75	run	piperine/book_cli::the_rc_project_of_the_chapter_runs_its_operating_point_and_its_step_response	-	-
 block	cli#5	d6f143186449ee41	shown	-	-	-
 block	cli#6	ce2024c93bab4e57	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine check
 block	cli#7	7e489d47792513aa	shown	-	-	-
@@ -172,7 +172,7 @@ block	cli#9	6453f41a4d8b393f	shown	-	-	-
 block	cli#10	746a63656a5dd3f1	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run op
 block	cli#11	07afedaa203e6a9a	shown	-	-	-
 block	cli#12	dc51665e9993af1f	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run step
-block	cli#13	dacd881b1ad9357c	pending	-	-	-
+block	cli#13	dacd881b1ad9357c	fragment	cli#4	-	-
 block	cli#14	7084fe3eeadf26a4	shown	-	-	-
 block	cli#15	dc51665e9993af1f	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run step
 block	cli#16	8769e4c74279e487	shown	-	-	-
@@ -184,7 +184,7 @@ block	cli#21	8b15e412ca28bb81	held	piperine-cli/book::every_cli_listing_of_the_b
 block	cli#22	4b2f8ba871dc6c7b	shown	-	-	-
 block	cli#23	782d3ee8c19d905a	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run step --plot step.svg
 block	cli#24	679a171ff3c48353	shown	-	-	-
-block	cli#25	946893d6ad060d7a	pending	-	-	-
+block	cli#25	946893d6ad060d7a	run	piperine/book_cli::the_lowpass_runs_with_a_seed_and_tight_tolerances_and_gives_the_divider	-	-
 block	cli#26	df2c9313b8e7ca36	shown	-	-	-
 block	cli#27	35c6811ae9a1acbf	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run lowpass.msl --analysis op --reltol 1e-9 --vntol 1e-12 --nodeset vout=5 --print vout
 block	cli#28	dc009e0043efaa59	shown	-	-	-
@@ -193,7 +193,7 @@ block	cli#30	58babde9a43db329	shown	-	-	-
 block	cli#31	b9e6402a46bc8cba	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run lowpass.msl --analysis pz --input v1 --output vout
 block	cli#32	e354bb98bbeafcb8	shown	-	-	-
 block	cli#33	6ed13dce1aa870b0	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run lowpass.msl --analysis sens --wrt r1.r --wrt r2.r --print vout
-block	cli#34	9403e3dca69cfba2	pending	-	-	-
+block	cli#34	9403e3dca69cfba2	run	piperine/book_cli::the_square_wave_rc_closes_its_orbit_over_one_period	-	-
 block	cli#35	1fd702085fa6cc7d	shown	-	-	-
 block	cli#36	cb3d189aeab45f6a	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run pulse.msl --analysis pss --period 4e-6 --tstab 8e-6 --max-step 1e-9 --print-step 1e-6 --print vout
 block	cli#37	e8e019a529e3ef4a	shown	-	-	-
@@ -203,7 +203,7 @@ block	cli#40	00774e3a8eaf4965	shown	-	-	-
 block	cli#41	f9036105c777939d	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine build
 block	cli#42	2525e0948e3c847b	shown	-	-	-
 block	cli#43	10b7a1389fbd7646	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine test
-block	cli#44	fb7b83ae02e8b060	pending	-	-	-
+block	cli#44	fb7b83ae02e8b060	run	piperine/book_cli::the_buck_bench_of_the_chapter_is_the_example_and_starts_with_the_supervisor_off	-	-
 block	cli#45	1c66b4b4d5d7a1e2	shown	-	-	-
 block	cli#46	47b905ff64d8b849	shown	-	-	-
 block	cli#47	0864d88b35e61a2b	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run startup
@@ -480,66 +480,66 @@ claim	compiler~79f44ab1	79f44ab163622553	prose	-	-	P0004
 claim	compiler~931761f9	931761f9a0e69952	holds	piperine/book_compiler::the_rust_backend_prints_one_source_file_and_loads_the_library_it_builds	-	The Rust backend prints the whole design as one Rust source file, compiles it with the rustc it finds on the machine, and loads the library through the device ABI.
 claim	compiler~13572839	13572839026b148b	holds	piperine/book_compiler::the_rust_backend_prints_one_source_file_and_loads_the_library_it_builds	-	The block is generic over a number type: run with plain floats it gives the current, run with dual numbers it gives the current and its derivatives, which is the Jacobian.
 claim	compiler~b03dc2fa	b03dc2faaa022c6b	holds	piperine/book_compiler::a_digital_if_on_an_unknown_value_stops_with_a_fault_naming_that_if	-	Digital code reads the same way: a reaction is a function whose commits go out together when it ends, and an if on a value that may be unknown stops with a fault naming that if in your source.
-claim	cli~3da257ec	3da257ec8712dccb	pending	-	-	By the end of this chapter you know every command of piperine, every key of a run table and the flag that overrides it, how results and emit! records are printed and saved, and what each exit code and each of the tool's own error codes means.
-claim	cli~31fc7600	31fc76008c425d67	pending	-	-	Runs one run of the project, or a lone file, and prints records and results.
-claim	cli~3cd92481	3cd92481b801b639	pending	-	-	piperine --help lists them, and piperine --version prints the version.
-claim	cli~4142e137	4142e137421d7b9b	pending	-	-	With no manifest, a command that needs a project fails with E0170.
-claim	cli~a1e67f93	a1e67f93c24c5973	pending	-	-	If there is no such module, or more than one, the run fails with P0011 and the candidates are listed.
-claim	cli~381401c6	381401c6dcb8cdfa	pending	-	-	Numbers are TOML numbers: write 10e-6, not 10u.
-claim	cli~4b2ad568	4b2ad568f362a83e	pending	-	-	The solver still runs from 0; steps before it are computed and not kept.
-claim	cli~1f56976d	1f56976d6a623433	pending	-	-	A failing check always prints.
-claim	cli~253dec67	253dec671e5d8ab7	pending	-	-	The most rounds an operating point may take before it fails, 20 by default.
-claim	cli~b9333d20	b9333d20287d051e	pending	-	-	The most microsteps one instant of the digital engine may take before it fails.
-claim	cli~7e41462d	7e41462ddbbc4446	pending	-	-	The budget of attempts a transient may make before it fails naming it, 2000000 by default.
-claim	cli~07125ec2	07125ec2469557fb	pending	-	-	With none or several, or a name that is no run, the command lists the run names and exits with status 2.
-claim	cli~e7ed5598	e7ed5598320294e0	pending	-	-	Always in this order: a header line, run <name>: <analysis>, top <Top>, backend <backend>; the record lines, each printed as its record is written; one empty line; the table.
-claim	cli~57fa9eec	57fa9eecbe35f7a4	pending	-	-	If anything fails before the analysis starts, nothing is printed here at all, only the error.
-claim	cli~5037c701	5037c701b7f81875	pending	-	-	If the analysis fails midway, the records already printed stay and no table follows.
-claim	cli~24bdf414	24bdf414e5f014de	pending	-	-	one per printed signal
-claim	cli~d26b56cd	d26b56cdd3e3862b	pending	-	-	A point of a sweep has no time to stamp a record with, so a dc run of a design that writes records is refused with P0010; run op at each value instead
-claim	cli~868f4e5f	868f4e5fbf23b874	pending	-	-	A long run with many unknowns would hold a great deal if it kept every step, so it does not: a run writes each row of its table as the solver reaches it and keeps none of the steps, which makes the memory of a run the size of its table, however long the run is. from trims the start of that table: the solver integrates from 0 as always, and the table starts at from.
-claim	cli~5f073732	5f073732127f44de	pending	-	-	Records are not affected; every one prints.
-claim	cli~418fd42b	418fd42bace6e7c2	pending	-	-	The buck converter at the end of this chapter prints its whole start on a grid, with no from at all.
-claim	cli~22d81a5c	22d81a5ce853a7be	pending	-	-	A node gives its voltage, a digital signal its value, and i(<instance>) the current through an instance such as a source.
-claim	cli~59441d1b	59441d1b334f69bb	pending	-	-	The same input gives the same characters every time: nothing on this output depends on the clock, on your directories or on what was cached.
-claim	cli~54e71d59	54e71d594a8b199c	pending	-	-	Every emit! executed by a reaction prints one line, the moment the record is written:
-claim	cli~21724a6d	21724a6d333e646c	pending	-	-	The two reserved streams, sim and checks, print like any other, with one exception: a checks record whose pass is true is not printed unless you give --all-checks (or all_checks = true in the run table), because a monitor that checks every clock edge would bury everything else.
-claim	cli~8c30079b	8c30079b67304417	pending	-	-	A failing check, or one whose pass is unknown, always prints.
-claim	cli~37f6ca25	37f6ca2522c00d39	pending	-	-	A design with no emit! prints no record line.
-claim	cli~18bf4b5d	18bf4b5dd9fa2dee	pending	-	-	At one instant the records come in the order the solver delivers them, not necessarily the order of the statements: here the check, written second, prints first.
-claim	cli~c1b61958	c1b6195819b959a2	pending	-	-	In place of the table the command prints wrote <file> (<n> rows).
-claim	cli~cee54a4e	cee54a4e944f8b0d	pending	-	-	--plot file.svg writes one SVG picture and prints wrote <file> after the table.
-claim	cli~1369f2e0	1369f2e09ffb5fcd	pending	-	-	Every printed real signal is a curve on one shared axis, with a legend; every digital signal is a step trace in a lane of its own below.
-claim	cli~67917c72	67917c72ad43e0eb	pending	-	-	The plot draws the rows of the run's table: its six printed points, one per row.
-claim	cli~fe2da74d	fe2da74da596992b	pending	-	-	A path that names nothing is E0801.
-claim	cli~9685ce4d	9685ce4dd6dc4b31	pending	-	-	A value the design refuses, such as one that fails the param's where, is E0802: no analysis runs.
-claim	cli~d3235913	d3235913bd437f0b	pending	-	-	Tolerances, the temperature and the bounds the solver gives up at are keys of a run too, each with its flag (table above).
-claim	cli~44b8ab83	44b8ab83717ab274	pending	-	-	They carry the names ngspice gives its .options, in lowercase.
-claim	cli~0549bfb1	0549bfb1723239f9	pending	-	-	An analysis that takes its own operating point inside the solver, ac and transient, has no door for a seed, and a nodeset on it is a P0010 error rather than a silent no-op.
-claim	cli~bdc8428b	bdc8428b7c761681	pending	-	-	A transient that needs more attempts than max_steps fails naming the budget; raise it and the same run succeeds.
-claim	cli~fc253bca	fc253bca1a1515a3	pending	-	-	The source is named by its instance, v1 or in full, Lowpass.v1; a source that is not a voltage source is a P0010 error.
-claim	cli~1c685364	1c6853643ba9f52d	pending	-	-	sens gives the derivative of each printed signal with respect to each param named by wrt, at the operating point:
-claim	cli~21c5d5e3	21c5d5e3675cf082	pending	-	-	piperine info [<run>] elaborates the top of a run and prints what a host can read of it, simulating and compiling nothing: the params with their type, value, where condition and whether they are structural; the ports; and the record streams.
-claim	cli~e4cb970e	e4cb970ee526f394	pending	-	-	A design that does not elaborate gets the diagnostics piperine check prints, and exit 1.
-claim	cli~bc9ef575	bc9ef5755c6ae5ca	pending	-	-	piperine new <name> creates the directory <name> with Piperine.toml, src/lib.msl, benches/step.msl and .gitignore, and prints created <name>.
-claim	cli~00319f47	00319f47e195c786	pending	-	-	It prints one line per run:
-claim	cli~3c91ac79	3c91ac7934517bca	pending	-	-	It prints no table and no other record.
-claim	cli~906cefdd	906cefdd790b38f5	pending	-	-	The model called fatal: the run ended at that instant and fails with the message.
-claim	cli~3bb4a4a0	3bb4a4a09bb88bb3	pending	-	-	A target is an objective that reports and never fails.
-claim	cli~f6eae41a	f6eae41adfb0e423	pending	-	-	After the line of a run, piperine test prints one line per target, target <name> margin=<value>, holding the last margin the run wrote, in the order the targets first wrote one; a negative margin is shown and does not turn the run red.
-claim	cli~9ed0890c	9ed0890c5c21c733	pending	-	-	A require is the constraint that fails.
-claim	cli~e088bcbe	e088bcbe98a367f4	pending	-	-	piperine fmt rewrites in place every .msl file under src/ and benches/ whose layout differs from the standard one, and prints formatted <path> for each; given file names, it formats those only.
-claim	cli~41e380a0	41e380a08f6e1a12	pending	-	-	Every comment you wrote is kept, in its place. piperine fmt --check writes nothing, prints would format <path> for each file that differs and fails if there is one, which is the line for a CI job.
-claim	cli~8ba7a6de	8ba7a6de4a6d1eac	pending	-	-	piperine clean removes the project's target directory and prints removed target, or nothing to remove.
-claim	cli~00f6bb32	00f6bb321c17dd38	pending	-	-	It can, because the run writes each row of the table as the solver reaches it and keeps none of the converter's steps (each one would hold every unknown of the circuit), so the memory stays constant however long the start.
-claim	cli~79f0c8b1	79f0c8b1635f1296	pending	-	-	P0010
-claim	cli~5d988a44	5d988a442289cdf4	pending	-	-	stop = "5u"
-claim	cli~79f0c9b1	79f0c9b1635f1449	pending	-	-	P0011
-claim	cli~771ae31d	771ae31ddf0bbd0b	pending	-	-	E0801
-claim	cli~b47893cf	b47893cf294b3cf6	pending	-	-	--print vuot, --stream tripp, --param r9.r=1k
-claim	cli~771ae41d	771ae41ddf0bbebe	pending	-	-	E0802
-claim	cli~a6b80de0	a6b80de009e7ed71	pending	-	-	The design refuses the value: the param's where r > 0.0 fails.
-claim	cli~39a2cb1d	39a2cb1dbbfe80b4	pending	-	-	E0170
+claim	cli~3da257ec	3da257ec8712dccb	prose	-	-	By the end of this chapter you know every command of piperine, every key of a run table and the flag that overrides it, how results and emit! records are printed and saved, and what each exit code and each of the tool's own error codes means.
+claim	cli~31fc7600	31fc76008c425d67	binary	piperine-cli/run::run_prints_header_records_blank_line_and_table	-	Runs one run of the project, or a lone file, and prints records and results.
+claim	cli~3cd92481	3cd92481b801b639	binary	piperine-cli/usage::help_lists_exactly_the_eight_commands	-	piperine --help lists them, and piperine --version prints the version.
+claim	cli~4142e137	4142e137421d7b9b	binary	piperine-cli/run::no_manifest_is_e0170_and_exit_1	-	With no manifest, a command that needs a project fails with E0170.
+claim	cli~a1e67f93	a1e67f93c24c5973	holds	piperine/book_cli::a_bench_with_no_top_or_with_several_is_p0011_and_the_candidates_are_listed	-	If there is no such module, or more than one, the run fails with P0011 and the candidates are listed.
+claim	cli~381401c6	381401c6dcb8cdfa	holds	piperine/book_cli::each_mistake_of_the_run_table_is_p0010	-	Numbers are TOML numbers: write 10e-6, not 10u.
+claim	cli~4b2ad568	4b2ad568f362a83e	holds	piperine/book_cli::from_trims_the_table_and_leaves_the_solver_and_the_records_alone	-	The solver still runs from 0; steps before it are computed and not kept.
+claim	cli~1f56976d	1f56976d6a623433	binary	piperine-cli/options::a_passing_check_is_hidden_a_failing_one_shown_and_all_checks_shows_both	-	A failing check always prints.
+claim	cli~253dec67	253dec671e5d8ab7	holds	piperine/book_cli::the_bounds_of_the_solver_have_the_defaults_and_the_keys_the_chapter_gives	-	The most rounds an operating point may take before it fails, 20 by default.
+claim	cli~b9333d20	b9333d20287d051e	holds	piperine/book_cli::the_bounds_of_the_solver_have_the_defaults_and_the_keys_the_chapter_gives	-	The most microsteps one instant of the digital engine may take before it fails.
+claim	cli~7e41462d	7e41462ddbbc4446	holds	piperine/book_cli::the_bounds_of_the_solver_have_the_defaults_and_the_keys_the_chapter_gives	-	The budget of attempts a transient may make before it fails naming it, 2000000 by default.
+claim	cli~07125ec2	07125ec2469557fb	binary	piperine-cli/run::no_name_with_no_run_or_several_lists_them_and_exits_2	-	With none or several, or a name that is no run, the command lists the run names and exits with status 2.
+claim	cli~e7ed5598	e7ed5598320294e0	binary	piperine-cli/run::run_prints_header_records_blank_line_and_table	-	Always in this order: a header line, run <name>: <analysis>, top <Top>, backend <backend>; the record lines, each printed as its record is written; one empty line; the table.
+claim	cli~57fa9eec	57fa9eecbe35f7a4	binary	piperine-cli/run::a_failure_before_the_analysis_prints_nothing_on_stdout	-	If anything fails before the analysis starts, nothing is printed here at all, only the error.
+claim	cli~5037c701	5037c701b7f81875	binary	piperine-cli/run::records_stay_when_the_analysis_fails	-	If the analysis fails midway, the records already printed stay and no table follows.
+claim	cli~24bdf414	24bdf414e5f014de	holds	piperine/book_cli::the_rc_project_of_the_chapter_runs_its_operating_point_and_its_step_response	-	one per printed signal
+claim	cli~d26b56cd	d26b56cdd3e3862b	holds	piperine/book_cli::a_dc_run_of_a_design_that_writes_records_is_p0010	-	A point of a sweep has no time to stamp a record with, so a dc run of a design that writes records is refused with P0010; run op at each value instead
+claim	cli~868f4e5f	868f4e5fbf23b874	holds	piperine/book_cli::from_trims_the_table_and_leaves_the_solver_and_the_records_alone	-	A long run with many unknowns would hold a great deal if it kept every step, so it does not: a run writes each row of its table as the solver reaches it and keeps none of the steps, which makes the memory of a run the size of its table, however long the run is. from trims the start of that table: the solver integrates from 0 as always, and the table starts at from.
+claim	cli~5f073732	5f073732127f44de	holds	piperine/book_cli::from_trims_the_table_and_leaves_the_solver_and_the_records_alone	-	Records are not affected; every one prints.
+claim	cli~418fd42b	418fd42bace6e7c2	binary	piperine-cli/buck::startup_prints_the_whole_start_on_its_grid	-	The buck converter at the end of this chapter prints its whole start on a grid, with no from at all.
+claim	cli~22d81a5c	22d81a5ce853a7be	holds	piperine/book_cli::a_node_gives_its_voltage_a_digital_signal_its_value_and_an_instance_its_current	-	A node gives its voltage, a digital signal its value, and i(<instance>) the current through an instance such as a source.
+claim	cli~59441d1b	59441d1b334f69bb	binary	piperine-cli/run::stdout_is_the_same_from_two_caches_and_two_directories	-	The same input gives the same characters every time: nothing on this output depends on the clock, on your directories or on what was cached.
+claim	cli~54e71d59	54e71d594a8b199c	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	Every emit! executed by a reaction prints one line, the moment the record is written:
+claim	cli~21724a6d	21724a6d333e646c	binary	piperine-cli/options::a_passing_check_is_hidden_a_failing_one_shown_and_all_checks_shows_both	-	The two reserved streams, sim and checks, print like any other, with one exception: a checks record whose pass is true is not printed unless you give --all-checks (or all_checks = true in the run table), because a monitor that checks every clock edge would bury everything else.
+claim	cli~8c30079b	8c30079b67304417	binary	piperine-cli/options::a_passing_check_is_hidden_a_failing_one_shown_and_all_checks_shows_both	-	A failing check, or one whose pass is unknown, always prints.
+claim	cli~37f6ca25	37f6ca2522c00d39	holds	piperine/book_cli::a_design_with_no_emit_prints_no_record_line	-	A design with no emit! prints no record line.
+claim	cli~18bf4b5d	18bf4b5dd9fa2dee	holds	piperine/book_cli::the_records_of_one_instant_come_in_the_order_the_solver_delivers_them	-	At one instant the records come in the order the solver delivers them, not necessarily the order of the statements: here the check, written second, prints first.
+claim	cli~c1b61958	c1b6195819b959a2	binary	piperine-cli/options::csv_writes_the_table_and_prints_wrote	-	In place of the table the command prints wrote <file> (<n> rows).
+claim	cli~cee54a4e	cee54a4e944f8b0d	binary	piperine-cli/options::plot_writes_an_svg_and_prints_wrote	-	--plot file.svg writes one SVG picture and prints wrote <file> after the table.
+claim	cli~1369f2e0	1369f2e09ffb5fcd	binary	piperine-cli/book::a_plot_draws_a_curve_and_a_legend_per_real_signal_and_a_lane_per_digital_one	-	Every printed real signal is a curve on one shared axis, with a legend; every digital signal is a step trace in a lane of its own below.
+claim	cli~67917c72	67917c72ad43e0eb	binary	piperine-cli/options::a_plot_of_a_gridded_run_draws_its_rows	-	The plot draws the rows of the run's table: its six printed points, one per row.
+claim	cli~fe2da74d	fe2da74da596992b	holds	piperine/book_cli::a_path_that_names_nothing_is_e0801_before_any_analysis	-	A path that names nothing is E0801.
+claim	cli~9685ce4d	9685ce4dd6dc4b31	holds	piperine/book_cli::a_value_the_design_refuses_is_e0802_and_no_analysis_runs	-	A value the design refuses, such as one that fails the param's where, is E0802: no analysis runs.
+claim	cli~d3235913	d3235913bd437f0b	holds	piperine/book_cli::the_options_carry_the_names_ngspice_gives_its_options_in_lowercase	-	Tolerances, the temperature and the bounds the solver gives up at are keys of a run too, each with its flag (table above).
+claim	cli~44b8ab83	44b8ab83717ab274	holds	piperine/book_cli::the_options_carry_the_names_ngspice_gives_its_options_in_lowercase	-	They carry the names ngspice gives its .options, in lowercase.
+claim	cli~0549bfb1	0549bfb1723239f9	diverges	piperine/book_cli::a_nodeset_on_ac_or_transient_is_accepted_where_the_book_says_p0010	D6	An analysis that takes its own operating point inside the solver, ac and transient, has no door for a seed, and a nodeset on it is a P0010 error rather than a silent no-op.
+claim	cli~bdc8428b	bdc8428b7c761681	holds	piperine/book_cli::the_bounds_of_the_solver_have_the_defaults_and_the_keys_the_chapter_gives	-	A transient that needs more attempts than max_steps fails naming the budget; raise it and the same run succeeds.
+claim	cli~fc253bca	fc253bca1a1515a3	holds	piperine/book_cli::tf_names_its_source_by_instance_or_in_full_and_refuses_what_is_no_voltage_source	-	The source is named by its instance, v1 or in full, Lowpass.v1; a source that is not a voltage source is a P0010 error.
+claim	cli~1c685364	1c6853643ba9f52d	holds	piperine/book_cli::sens_gives_the_derivative_of_each_printed_signal_with_respect_to_each_param	-	sens gives the derivative of each printed signal with respect to each param named by wrt, at the operating point:
+claim	cli~21c5d5e3	21c5d5e3675cf082	binary	piperine-cli/info::info_prints_params_ports_and_streams	-	piperine info [<run>] elaborates the top of a run and prints what a host can read of it, simulating and compiling nothing: the params with their type, value, where condition and whether they are structural; the ports; and the record streams.
+claim	cli~e4cb970e	e4cb970ee526f394	binary	piperine-cli/info::info_of_a_broken_design_prints_diagnostics_and_exits_1	-	A design that does not elaborate gets the diagnostics piperine check prints, and exit 1.
+claim	cli~bc9ef575	bc9ef5755c6ae5ca	binary	piperine-cli/commands::new_creates_the_four_files_and_says_created	-	piperine new <name> creates the directory <name> with Piperine.toml, src/lib.msl, benches/step.msl and .gitignore, and prints created <name>.
+claim	cli~00319f47	00319f47e195c786	binary	piperine-cli/commands::build_prints_one_line_per_run	-	It prints one line per run:
+claim	cli~3c91ac79	3c91ac7934517bca	binary	piperine-cli/commands::test_prints_no_table_and_no_other_record	-	It prints no table and no other record.
+claim	cli~906cefdd	906cefdd790b38f5	binary	piperine-cli/commands::test_prints_fail_fatal_with_the_msg	-	The model called fatal: the run ended at that instant and fails with the message.
+claim	cli~3bb4a4a0	3bb4a4a09bb88bb3	binary	piperine-cli/commands::test_prints_target_margins_after_the_run_line	-	A target is an objective that reports and never fails.
+claim	cli~f6eae41a	f6eae41adfb0e423	binary	piperine-cli/commands::test_prints_target_margins_after_the_run_line	-	After the line of a run, piperine test prints one line per target, target <name> margin=<value>, holding the last margin the run wrote, in the order the targets first wrote one; a negative margin is shown and does not turn the run red.
+claim	cli~9ed0890c	9ed0890c5c21c733	binary	piperine-cli/commands::test_prints_fail_and_the_failing_records	-	A require is the constraint that fails.
+claim	cli~e088bcbe	e088bcbe98a367f4	binary	piperine-cli/commands::fmt_rewrites_what_differs_and_names_it	-	piperine fmt rewrites in place every .msl file under src/ and benches/ whose layout differs from the standard one, and prints formatted <path> for each; given file names, it formats those only.
+claim	cli~41e380a0	41e380a08f6e1a12	binary	piperine-cli/commands::fmt_check_writes_nothing_and_exits_1_on_a_difference	-	Every comment you wrote is kept, in its place. piperine fmt --check writes nothing, prints would format <path> for each file that differs and fails if there is one, which is the line for a CI job.
+claim	cli~8ba7a6de	8ba7a6de4a6d1eac	binary	piperine-cli/commands::clean_removes_the_target_directory	-	piperine clean removes the project's target directory and prints removed target, or nothing to remove.
+claim	cli~00f6bb32	00f6bb321c17dd38	prose	-	-	It can, because the run writes each row of the table as the solver reaches it and keeps none of the converter's steps (each one would hold every unknown of the circuit), so the memory stays constant however long the start.
+claim	cli~79f0c8b1	79f0c8b1635f1296	holds	piperine/book_cli::each_mistake_of_the_run_table_is_p0010	-	P0010
+claim	cli~5d988a44	5d988a442289cdf4	holds	piperine/book_cli::each_mistake_of_the_run_table_is_p0010	-	stop = "5u"
+claim	cli~79f0c9b1	79f0c9b1635f1449	holds	piperine/book_cli::a_bench_with_no_top_or_with_several_is_p0011_and_the_candidates_are_listed	-	P0011
+claim	cli~771ae31d	771ae31ddf0bbd0b	holds	piperine/book_cli::a_path_that_names_nothing_is_e0801_before_any_analysis	-	E0801
+claim	cli~b47893cf	b47893cf294b3cf6	holds	piperine/book_cli::a_path_that_names_nothing_is_e0801_before_any_analysis	-	--print vuot, --stream tripp, --param r9.r=1k
+claim	cli~771ae41d	771ae41ddf0bbebe	holds	piperine/book_cli::a_value_the_design_refuses_is_e0802_and_no_analysis_runs	-	E0802
+claim	cli~a6b80de0	a6b80de009e7ed71	holds	piperine/book_cli::a_value_the_design_refuses_is_e0802_and_no_analysis_runs	-	The design refuses the value: the param's where r > 0.0 fails.
+claim	cli~39a2cb1d	39a2cb1dbbfe80b4	binary	piperine-cli/run::no_manifest_is_e0170_and_exit_1	-	E0170
 claim	structure~e6791845	e679184513f3ee4f	prose	-	-	It reads the command line, calls piperine-api and lays out the text; every rule of what a run prints and judges lives in the library.
 claim	structure~b45cc292	b45cc292b6849768	holds	piperine/book_structure::the_intermediate_form_crate_knows_neither_the_language_nor_the_solver	-	It knows neither the language nor the solver, and prints in a stable form for reading.
 claim	structure~f9cbf76a	f9cbf76a7374932d	holds	piperine/book_structure::the_compiled_backend_compiles_once_and_keeps_the_result_in_its_cache	-	It prints the design as Rust, compiles it once with rustc, keeps the result in a cache and loads it.
@@ -579,16 +579,16 @@ claim	mixed~758eca03	758eca03356a7662	holds	piperine/book_mixed::the_buck_contro
 claim	mixed~3bce4014	3bce401452e45841	holds	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	-	At the end the error is zero and the duty sits where 12 V times the duty, less the small drop in the switch, equals 3.3 V: about 0.28.
 claim	mixed~9d07c4b9	9d07c4b9576fd829	refused	mixed#10	L52	It checks, at every time point after start-up, that the output stays within 50 mV of the target:
 claim	mixed~ac0aefe3	ac0aefe3b2ca4ca9	holds	piperine/book_mixed::the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero	-	Its = 0.0 holds it at 0 V through the transient's operating point.
-claim	mixed~fef5c97a	fef5c97a04840342	binary	piperine-cli/buck::startup_ends_with_the_reference_at_128	-	A full-size digitally controlled buck converter (12 V in, 200 MHz digital PWM, PID, ADC, comparators and a supervisor) starts from its .msl and regulates at 0.8 V within 3 mV with its loop closed, and the piperine command runs it (chapter 16).
+claim	mixed~fef5c97a	fef5c97a04840342	binary	piperine-cli/buck::startup_ends_within_3_mv_of_0_8_volts	-	A full-size digitally controlled buck converter (12 V in, 200 MHz digital PWM, PID, ADC, comparators and a supervisor) starts from its .msl and regulates at 0.8 V within 3 mV with its loop closed, and the piperine command runs it (chapter 16).
 claim	mixed~a879bf2a	a879bf2aa5b759ac	prose	-	-	In the cycle counter, set hyst: 0.0 and add a small 50 kHz ripple to the source (a second Vsin in series).
 claim	errors~2b0048e8	2b0048e8bba634bb	holds	piperine/book_errors::without_an_initial_value_the_output_sits_at_zero_volts	-	What does vout do before the first clock edge, and which line decided that? (It sits at 0 V: held is unknown, and known_or(0.0) said what unknown means.)
 claim	compiler~05f756b4	05f756b4750e40ff	holds	piperine/book_compiler::the_divider_puts_mid_at_7_5_volts_and_ngspice_prints_the_same	-	Its operating point puts mid at 7.5 V, the same number ngspice prints for the same circuit.
-claim	cli~a717f995	a717f9954de38412	pending	-	-	This is the file it wrote, as it is: Step.vin flat at 1 V, Step.vout rising towards it with the time constant of 1 µs.
-claim	cli~662c11ca	662c11cac0eb42a8	pending	-	-	Raising r1 by one ohm lowers the output by 1.875 mV, and raising r2 by one ohm raises it by 0.625 mV: the output is 10·R2/(R1+R2), and the numbers are its two partial derivatives.
-claim	cli~3d1453da	3d1453dac50df26b	pending	-	-	The same commands run a full-size design: a digitally controlled buck converter that steps 12 V down to 0.8 V, with an analog power stage, a 200 MHz digital PWM, an ADC, a fixed-point PID, a soft start and a supervisor, all in MSL.
-claim	cli~6acf516c	6acf516c01fb6a39	pending	-	-	Then it simulates 600 µs of a circuit switching at 500 kHz with a 200 MHz clock, a couple of minutes on a laptop.
-claim	cli~9c4b6fcf	9c4b6fcf8e2fe12f	pending	-	-	The table has 1 201 rows, one per 0.5 µs from time 0 to 600 µs; the listing shows the first five, where the supervisor is still off, the reference is 0 and the output is at its initial rest.
-claim	cli~6153ef01	6153ef017a7d0cbd	pending	-	-	The last row, at 600 µs, reads reference 128, the code of 0.8 V; mode 2, regulation, after off and soft start; and an output within 3 mV of 0.8 V (0.8025).
-claim	cli~5010f432	5010f43297534039	pending	-	-	There are no record lines, yet the converter checks itself at every clock: its PWM carries a monitor that writes a checks record at every edge of the 200 MHz clock, saying the two power switches are never on together.
-claim	cli~7656eb9c	7656eb9c4b8bde20	pending	-	-	In the project of chapter 1, add a run [run.bode] that sweeps the filter from 1 kHz to 10 MHz with 10 points per decade and plots it. (The source needs a small-signal stimulus: v(p, n) + dc + ac_stim(1.0, 0.0);, chapter 6.
-claim	cli~e1afdf04	e1afdf0449b3645f	pending	-	-	The table needs analysis = "ac", from = 1e3, to = 1e7, per_decade = 10, print = ["vout"] and plot = "bode.svg".) At which frequency should mag(Step.vout) read 0.707 and phase(Step.vout) read −45? (At 1 / (2π · r · c) = 159 kHz.)
+claim	cli~a717f995	a717f9954de38412	binary	piperine-cli/book::the_plot_in_the_chapter_is_the_file_the_binary_writes	-	This is the file it wrote, as it is: Step.vin flat at 1 V, Step.vout rising towards it with the time constant of 1 µs.
+claim	cli~662c11ca	662c11cac0eb42a8	holds	piperine/book_cli::sens_gives_the_derivative_of_each_printed_signal_with_respect_to_each_param	-	Raising r1 by one ohm lowers the output by 1.875 mV, and raising r2 by one ohm raises it by 0.625 mV: the output is 10·R2/(R1+R2), and the numbers are its two partial derivatives.
+claim	cli~3d1453da	3d1453dac50df26b	prose	-	-	The same commands run a full-size design: a digitally controlled buck converter that steps 12 V down to 0.8 V, with an analog power stage, a 200 MHz digital PWM, an ADC, a fixed-point PID, a soft start and a supervisor, all in MSL.
+claim	cli~6acf516c	6acf516c01fb6a39	prose	-	-	Then it simulates 600 µs of a circuit switching at 500 kHz with a 200 MHz clock, a couple of minutes on a laptop.
+claim	cli~9c4b6fcf	9c4b6fcf8e2fe12f	binary	piperine-cli/book::the_buck_block_is_what_the_binary_prints	-	The table has 1 201 rows, one per 0.5 µs from time 0 to 600 µs; the listing shows the first five, where the supervisor is still off, the reference is 0 and the output is at its initial rest.
+claim	cli~6153ef01	6153ef017a7d0cbd	binary	piperine-cli/buck::startup_ends_within_3_mv_of_0_8_volts	-	The last row, at 600 µs, reads reference 128, the code of 0.8 V; mode 2, regulation, after off and soft start; and an output within 3 mV of 0.8 V (0.8025).
+claim	cli~5010f432	5010f43297534039	binary	piperine-cli/buck::startup_prints_no_failed_check	-	There are no record lines, yet the converter checks itself at every clock: its PWM carries a monitor that writes a checks record at every edge of the 200 MHz clock, saying the two power switches are never on together.
+claim	cli~7656eb9c	7656eb9c4b8bde20	holds	piperine/book_cli::the_bode_exercise_reads_0_707_and_minus_45_degrees_at_159_kilohertz	-	In the project of chapter 1, add a run [run.bode] that sweeps the filter from 1 kHz to 10 MHz with 10 points per decade and plots it. (The source needs a small-signal stimulus: v(p, n) + dc + ac_stim(1.0, 0.0);, chapter 6.
+claim	cli~e1afdf04	e1afdf0449b3645f	holds	piperine/book_cli::the_bode_exercise_reads_0_707_and_minus_45_degrees_at_159_kilohertz	-	The table needs analysis = "ac", from = 1e3, to = 1e7, per_decade = 10, print = ["vout"] and plot = "bode.svg".) At which frequency should mag(Step.vout) read 0.707 and phase(Step.vout) read −45? (At 1 / (2π · r · c) = 159 kHz.)

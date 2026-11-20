@@ -75,6 +75,17 @@ fn startup_ends_with_the_reference_at_128() {
 }
 
 #[test]
+fn startup_ends_within_3_mv_of_0_8_volts() {
+    // Book chapter 16, "an output within 3 mV of 0.8 V (0.8025)" in the last row of `startup`, and chapter 8,
+    // "regulates at 0.8 V within 3 mV": the end of the start is tighter than the 10 mV of SPEC section 2 that
+    // `startup_ends_with_the_reference_at_128` holds. The run is the shared one of this target
+    let (header, rows) = table(startup());
+    let vout: f64 = column(&header, &rows, "Startup.buck.vout").last().expect("a row").parse().expect("a number");
+    assert!((vout - 0.8).abs() <= 3e-3, "vout at the end: {vout}");
+    assert_eq!(format!("{vout:.4}"), "0.8025", "the Book prints the value it reads");
+}
+
+#[test]
 fn startup_prints_the_whole_start_on_its_grid() {
     // LR-13: with no `from`, `startup` prints the whole start, 0 to 600 us, on its 0.5 us grid:
     // 1 201 rows, the time of row k being k * 0.5e-6

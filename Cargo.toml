@@ -130,6 +130,10 @@ path = "tests/book/solver.rs"
 name = "book_structure"
 path = "tests/book/structure.rs"
 
+[[test]]
+name = "book_cli"
+path = "tests/book/cli.rs"
+
 # A dev/test build of this workspace links ~50 test binaries, and full
 # debuginfo is what makes that expensive: every `rust-lld` invocation peaked
 # at ~1.1 GB and several run in parallel, so a one-crate change relinking the
