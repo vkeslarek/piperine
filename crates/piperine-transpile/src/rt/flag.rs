@@ -349,6 +349,152 @@ impl Merge for () {
     fn unknown() {}
 }
 
+/// The written-local tuples of a merged `if` or loop merge field by field (§3.3.3: the effects of
+/// a path are its value and each local it writes). One impl per arity, 1 to 12, written out: no
+/// macro (AGENTS.md rule 5).
+impl<A: Merge> Merge for (A,) {
+    /// One field: its merge.
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0),)
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(),)
+    }
+}
+
+impl<A: Merge, B: Merge> Merge for (A, B) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge> Merge for (A, B, C) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge> Merge for (A, B, C, D) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge, E: Merge> Merge for (A, B, C, D, E) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3), self.4.merge(other.4))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown(), E::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge, E: Merge, F: Merge> Merge for (A, B, C, D, E, F) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3), self.4.merge(other.4), self.5.merge(other.5))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown(), E::unknown(), F::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge, E: Merge, F: Merge, G: Merge> Merge for (A, B, C, D, E, F, G) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3), self.4.merge(other.4), self.5.merge(other.5), self.6.merge(other.6))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown(), E::unknown(), F::unknown(), G::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge, E: Merge, F: Merge, G: Merge, H: Merge> Merge for (A, B, C, D, E, F, G, H) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3), self.4.merge(other.4), self.5.merge(other.5), self.6.merge(other.6), self.7.merge(other.7))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown(), E::unknown(), F::unknown(), G::unknown(), H::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge, E: Merge, F: Merge, G: Merge, H: Merge, I: Merge> Merge for (A, B, C, D, E, F, G, H, I) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3), self.4.merge(other.4), self.5.merge(other.5), self.6.merge(other.6), self.7.merge(other.7), self.8.merge(other.8))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown(), E::unknown(), F::unknown(), G::unknown(), H::unknown(), I::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge, E: Merge, F: Merge, G: Merge, H: Merge, I: Merge, J: Merge> Merge for (A, B, C, D, E, F, G, H, I, J) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3), self.4.merge(other.4), self.5.merge(other.5), self.6.merge(other.6), self.7.merge(other.7), self.8.merge(other.8), self.9.merge(other.9))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown(), E::unknown(), F::unknown(), G::unknown(), H::unknown(), I::unknown(), J::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge, E: Merge, F: Merge, G: Merge, H: Merge, I: Merge, J: Merge, K: Merge> Merge for (A, B, C, D, E, F, G, H, I, J, K) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3), self.4.merge(other.4), self.5.merge(other.5), self.6.merge(other.6), self.7.merge(other.7), self.8.merge(other.8), self.9.merge(other.9), self.10.merge(other.10))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown(), E::unknown(), F::unknown(), G::unknown(), H::unknown(), I::unknown(), J::unknown(), K::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge, E: Merge, F: Merge, G: Merge, H: Merge, I: Merge, J: Merge, K: Merge, L: Merge> Merge for (A, B, C, D, E, F, G, H, I, J, K, L) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3), self.4.merge(other.4), self.5.merge(other.5), self.6.merge(other.6), self.7.merge(other.7), self.8.merge(other.8), self.9.merge(other.9), self.10.merge(other.10), self.11.merge(other.11))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown(), E::unknown(), F::unknown(), G::unknown(), H::unknown(), I::unknown(), J::unknown(), K::unknown(), L::unknown())
+    }
+}
+
 impl<T: Carried> Flagged<T> {
     /// `same(a, b)` (§22.1.4): every level has the same flag and, where known, the same value.
     /// Always known, so a plain `bool`; two unknown values are the same, unlike `==` (§3.3.10).
@@ -864,5 +1010,21 @@ mod tests {
             drop(commits);
         });
         assert_eq!(made, [], "a dropped `Commits`, as after a fault, commits nothing");
+    }
+
+    #[test]
+    fn tuples_merge_field_by_field() {
+        // §3.3.3: the effects of a path are each local it writes; two tuples merge as each of their
+        // fields does. Arity 1, 2 and 12 here; the impls of the others are the same text
+        let (five, six): (Flagged<UInt<8>>, Flagged<UInt<8>>) = (k(UInt::new(5)), k(UInt::new(6)));
+        let unknown = Flagged::<UInt<8>>::unknown();
+        assert_eq!((five,).merge((five,)), (five,));
+        assert_eq!((five,).merge((six,)), (unknown,));
+        assert_eq!((five, five).merge((five, six)), (five, unknown));
+        let a = (five, five, five, five, five, five, five, five, five, five, five, five);
+        let b = (five, six, five, six, five, six, five, six, five, six, five, six);
+        let merged = a.merge(b);
+        assert_eq!(merged, (five, unknown, five, unknown, five, unknown, five, unknown, five, unknown, five, unknown));
+        assert_eq!(<(Flagged<UInt<8>>, Flagged<bool>)>::unknown(), (unknown, Flagged::<bool>::unknown()));
     }
 }

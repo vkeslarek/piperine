@@ -323,8 +323,8 @@ T63
 
 **Done when**:
 
-- [ ] `rt::control::tests::unrolled_merges_exit_by_exit` and `rt::control::tests::unrolled_cuts_at_sixty_four` and `rt::flag::tests::tuples_merge_field_by_field` pass under `**Run rt**`
-- [ ] Gate check passes: Quick
+- [x] `rt::control::tests::unrolled_merges_exit_by_exit` and `rt::control::tests::unrolled_cuts_at_sixty_four` and `rt::flag::tests::tuples_merge_field_by_field` pass under `**Run rt**`
+- [x] Gate check passes: Quick
 
 **Tests**: unit
 **Gate**: quick

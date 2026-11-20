@@ -36,6 +36,7 @@ pub mod int;
 pub mod real;
 
 pub use commits::Commits;
+pub use control::{Depth, Outcome, Panic, Step, Trips, Unrolled};
 pub use flag::Flagged;
 pub use int::{Int, UInt, Unwrap};
 pub use real::{Dual, Real};
