@@ -281,7 +281,7 @@ fn an_on_every_inside_a_reaction_is_a_placement_in_a_reaction_body_e0350() {
 
 #[test]
 fn an_emit_statement_in_a_module_body_reports_e0601() {
-    // language~64ee8d1d of the Book (chapter 14, part VI §19 rule 10): `emit!` written where only
+    // values~64ee8d1d of the Book (chapter 5, part VI §19 rule 10): `emit!` written where only
     // items go is E0601 at the statement, not a syntax error; the items after it still parse
     let src = "module M() { emit!(\"hello\"); let x = 1.0; }";
     let found = codes(src);

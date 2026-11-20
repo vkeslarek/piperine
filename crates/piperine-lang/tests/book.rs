@@ -56,7 +56,7 @@ fn the_book_source_is_in_docs_book() {
         assert!(book_dir().join(file).is_file(), "docs/book/{file} exists");
     }
     let ids = chapter_ids(&content());
-    for id in ["welcome", "language", "values", "natures", "modules", "analog", "digital", "mixed", "packages", "errors", "pom", "cheatsheet"] {
+    for id in ["welcome", "language", "types", "generics", "values", "natures", "modules", "analog", "digital", "mixed", "packages", "errors", "pom", "cheatsheet"] {
         assert!(ids.iter().any(|c| c == id), "the Book keeps its chapter `{id}`: {ids:?}");
     }
 }
@@ -287,7 +287,7 @@ fn the_book_says_transient() {
         assert!(!text.contains("analysis(Tran)"), "block {n} ({lang}) writes `analysis(Tran)`: the analysis kind is `Transient`");
     }
     assert!(!html.contains("analysis(Tran)"), "no span or paragraph writes `analysis(Tran)` either");
-    // The list of analysis kinds in chapter 6 names the kind, not the pass-gate module.
+    // The list of analysis kinds in chapter 8 names the kind, not the pass-gate module.
     assert!(!html.contains("<code>Dc</code>, <code>Tran</code>"), "the analysis kinds are Dc, Transient, Ac and Noise");
     assert!(html.contains("<code>Dc</code>, <code>Transient</code>"), "the analysis kinds name `Transient`");
 }
@@ -298,8 +298,8 @@ fn the_book_says_transient() {
 fn the_cli_chapter_closes_the_fundamentals_before_the_cheat_sheet() {
     // CLI-19 AC 1: the chapter `cli`, titled `The command line`, belongs to Part 1 of the Book, after
     // `errors` and before `cheatsheet`, which closes the part; Part 2 follows with `pom`, `abi`, `solver`,
-    // `compiler` and `structure` (the Book's order: reading errors 12, the command line 13, the cheat
-    // sheet 14, then the object model 15 to how Piperine is organized 19); the chapter numbers are
+    // `compiler` and `structure` (the Book's order: reading errors 14, the command line 15, the cheat
+    // sheet 16, then the object model 17 to how Piperine is organized 21); the chapter numbers are
     // consecutive from 1
     let html = content();
     let ids = chapter_ids(&html);
@@ -312,14 +312,15 @@ fn the_cli_chapter_closes_the_fundamentals_before_the_cheat_sheet() {
         .map(|s| s.split_once('<').expect("the label closes").0.parse().expect("a chapter number"))
         .collect();
     assert_eq!(numbers, (1..=ids.len()).collect::<Vec<_>>(), "chapter numbers are consecutive from 1");
-    assert_eq!(ids.len(), 19, "{ids:?}");
+    assert_eq!(ids.len(), 21, "{ids:?}");
 }
 
 #[test]
 fn the_book_has_two_parts_and_the_second_starts_at_the_object_model() {
     // The Book is two parts, each opened by a `<div class="part">` that names it: Part 1, Fundamentals,
     // before the first chapter, and Part 2, In depth, right before `pom`; `simulation` follows `mixed`
-    // in Part 1, and the chapter of the language rules is `language`, the second
+    // in Part 1, and the value language takes the chapters `language`, `types` and `generics`, the second to
+    // the fourth, before `values` shows where a value meets hardware
     let html = content();
     let parts: Vec<(&str, &str)> = html
         .split("<div class=\"part\" id=\"")
@@ -337,10 +338,10 @@ fn the_book_has_two_parts_and_the_second_starts_at_the_object_model() {
     assert!(first < at("welcome"), "Part 1 opens the Book");
     assert!(at("cheatsheet") < second && second < at("pom"), "Part 2 opens right before the object model");
     let ids = chapter_ids(&html);
-    assert_eq!(&ids[..2], ["welcome", "language"], "{ids:?}");
+    assert_eq!(&ids[..5], ["welcome", "language", "types", "generics", "values"], "{ids:?}");
     let mixed = ids.iter().position(|c| c == "mixed").expect("a chapter `mixed`");
     assert_eq!(ids.get(mixed + 1).map(String::as_str), Some("simulation"), "{ids:?}");
-    assert!(ids.iter().position(|c| c == "pom").expect("a chapter `pom`") == 14, "the object model is chapter 15: {ids:?}");
+    assert!(ids.iter().position(|c| c == "pom").expect("a chapter `pom`") == 16, "the object model is chapter 17: {ids:?}");
 }
 
 #[test]
@@ -403,7 +404,7 @@ fn the_compiler_chapter_says_the_command_line_exists() {
     let next = html.split("<h3>What comes next</h3>").nth(1).expect("a part `What comes next`");
     let text = plain(next.split("<h3>").next().unwrap_or(next));
     assert!(!text.to_lowercase().contains("command line"), "what comes next still mentions the command line: {text}");
-    assert!(text.contains("Chapter 13"), "what comes next points at the chapter that runs a design: {text}");
+    assert!(text.contains("Chapter 15"), "what comes next points at the chapter that runs a design: {text}");
 }
 
 #[test]

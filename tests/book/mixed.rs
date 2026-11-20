@@ -1,4 +1,4 @@
-//! Scope: chapter 8 of the Book, "Mixed-signal" (feature `root-e2e`, RE-02 and RE-03): the cycle
+//! Scope: chapter 10 of the Book, "Mixed-signal" (feature `root-e2e`, RE-02 and RE-03): the cycle
 //! counter through its comparator with hysteresis, the `D2A` converter, the delta-sigma modulator, the
 //! buck converter's control loop (its `settle` check, the comparator without hysteresis and the SAR
 //! ADC are refused today, asserted refused with their diagnostics), and each mistake of the chapter's
@@ -235,7 +235,7 @@ fn the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero() {
     // bit high 65 % of the clocks; mixed~ac0aefe3 "Its = 0.0 holds it at 0 V through the transient's
     // operating point": the transient runs, where a Dc solve is singular and names `x` (the Book's step 6)
     let chapter = Chapter::read();
-    let clock = chapter.text("language#13");
+    let clock = chapter.text("values#1");
     let clock = clock.split_once("/// Counts rising edges").expect("the clock comes first").0;
     let after = format!("{SOURCE}module Top() {{ signal vin: Electrical; signal clk: Bit; signal bit: Bit; let s = Vdc(vin) {{ dc: 0.3 }}; let m = DeltaSigma1(vin, clk, bit); let o = Osc(clk) {{ f: 1M }}; }}\n{clock}");
     let model = chapter.wrapped("delta_sigma.msl", "", "mixed#14", &after);

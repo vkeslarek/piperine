@@ -1,4 +1,4 @@
-//! Scope: chapter 17 of the Book, "The solver" (feature `root-e2e`, RE-02 and RE-03): the statements the chapter
+//! Scope: chapter 19 of the Book, "The solver" (feature `root-e2e`, RE-02 and RE-03): the statements the chapter
 //! makes about what the solver does and reports, asserted through `piperine::` on the smallest design
 //! that shows each (an instant that never goes quiet, an operating point that never settles, a step
 //! that lands on a digital instant, a loop of undelayed definitions) and on the manifests of the two

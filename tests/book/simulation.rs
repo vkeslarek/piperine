@@ -1,10 +1,10 @@
-//! Scope: chapter 9 of the Book, "Inside a simulation": the chapter's one circuit, `divider.msl`, run
+//! Scope: chapter 11 of the Book, "Inside a simulation": the chapter's one circuit, `divider.msl`, run
 //! through `piperine::` for every number the chapter states of it (its operating point, the first and
 //! the longest step of its transient, what `max_step` and `reltol` change, where its crossing is
 //! reported, its small-signal response), the circuit with no operating point the chapter shows refused,
 //! and a transient that runs out of attempts. The sentences that tell how the algorithms work (Newton,
 //! the two rescues, the two stages of a step, the turn-taking of the two sides) are `prose` rows: no
-//! value of a run states them. The run errors the chapter's last table names are held where chapter 12
+//! value of a run states them. The run errors the chapter's last table names are held where chapter 14
 //! holds them, in `book_errors`. Each test opens with the inventory ids it holds, from
 //! `tests/book/inventory.tsv`.
 

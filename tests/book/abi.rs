@@ -1,4 +1,4 @@
-//! Scope: chapter 16 of the Book, "Device ABI" (feature `root-e2e`, RE-02 and RE-03): the resistor and
+//! Scope: chapter 18 of the Book, "Device ABI" (feature `root-e2e`, RE-02 and RE-03): the resistor and
 //! the D flip-flop the chapter shows in MSL, compiled and run through `piperine::`, with the values the
 //! chapter states about them (two resistors of 1 kOhm and 2 kOhm share one shape, the flip-flop's output
 //! starts low and takes its input at the rising edge). The four sentences that describe the interface

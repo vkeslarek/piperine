@@ -1,4 +1,4 @@
-//! Scope: chapter 13 of the Book, "The command line" (feature `root-e2e`, RE-02 and RE-03): the RC project
+//! Scope: chapter 15 of the Book, "The command line" (feature `root-e2e`, RE-02 and RE-03): the RC project
 //! the chapter prints file for file, the lowpass and the square-wave RC it saves, and the buck bench, run
 //! through `piperine::` with the keys and flags the chapter gives; the values and records a run gives (the
 //! `from` trim, the shapes of the tables, the derivatives of `sens`, the Bode exercise), the refusals the
@@ -370,7 +370,7 @@ fn the_square_wave_rc_closes_its_orbit_over_one_period() {
 
 #[test]
 fn the_bode_exercise_reads_0_707_and_minus_45_degrees_at_159_kilohertz() {
-    // cli~7656eb9c "In the project of chapter 1, add a run [run.bode] that sweeps the filter from 1 kHz to
+    // cli~76428b9c "In the project of chapter 1, add a run [run.bode] that sweeps the filter from 1 kHz to
     // 10 MHz with 10 points per decade and plots it. (The source needs a small-signal stimulus ...)";
     // cli~e1afdf04 "The table needs analysis = "ac", from = 1e3, to = 1e7, per_decade = 10, print = ["vout"]
     // and plot = "bode.svg".) At which frequency should mag(Step.vout) read 0.707 and phase(Step.vout) read

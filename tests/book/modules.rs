@@ -1,4 +1,4 @@
-//! Scope: chapter 5 of the Book, "Modules and hierarchy" (feature `root-e2e`, RE-02 and RE-03): the
+//! Scope: chapter 7 of the Book, "Modules and hierarchy" (feature `root-e2e`, RE-02 and RE-03): the
 //! switched-capacitor integrator that runs, the library integrator the chapter shows, the generic
 //! ladder, the module that returns a value, the memory bank, the template and the extern module (all
 //! refused today, asserted refused with their diagnostics), and each sentence and mistake of the

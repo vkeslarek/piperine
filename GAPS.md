@@ -406,15 +406,27 @@ One row per block or sentence of the Book that the binary refuses (`refused`), d
 (`diverges`), never raises (`unraised`) or that the spec contradicts (`disputed`), under the id of the
 gap above that explains it. `Book` is the row's id in `tests/book/inventory.tsv`; `tests/book/inventory_guard.rs`
 holds this section equal to the inventory. A faulty model the Book teaches (the worked `SampleHold` of
-chapter 12) is refused by design and has no row. `Owner` is the feature that closes the row: `root-e2e`
+chapter 14) is refused by design and has no row. `Owner` is the feature that closes the row: `root-e2e`
 for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
-| language#20 | L6 | `composite-values` | reached from a top, `range_of` is `P0001` (a range pattern in a `match` arm; the enum has no `#[derive(Repr)]`) and `mean` is `P0001` (a reference type) |
-| values#2 | L53 | `unknown-semantics-events` | `handshake`, a `fn` that returns `Event`, is `P0001`: method `rise` on this receiver is not supported yet |
+| language#13 | L5 | `composite-values` | reached from a top, `sum_below` is `P0001`: a `let mut` binding and a `for` loop |
+| types#6 | L2 | `composite-values` | reached from a top, `span` is `P0001`: `ordered` yields a tuple (a tuple type, a tuple expression) |
+| types#7 | L3 | `composite-values` | reached from a top, `smoothed` is `P0001` (an array type) and `mean` is `P0001` (a reference type) |
+| types#11 | L4 | `composite-values` | reached from a top, `area` is `P0001`: the enum `Shape` has variants with a payload |
+| types#12 | L1 | `composite-values` | reached from a top, `scaled` is `P0001`: a struct expression and a field access |
+| types#16 | L7 | `generics` | reached from a top, `reads_high` is `P0001`: the method `switches_at` of an `impl` on the enum `Family` |
+| types#17 | L6 | `composite-values` | reached from a top, `range_of` is `P0001` (a range pattern in a `match` arm; the enum has no `#[derive(Repr)]`) and `mean` is `P0001` (a reference type) |
+| generics#1 | L7 | `generics` | the trait `Receiver` and its `impl`s are accepted and `Family::LEVELS` is read; a method (`switches_at`, the default `reads_high`) is `P0001` |
+| generics~872b633d | L7 | `generics` | a default body of a trait does not run: the method `reads_high` on `Family` is `P0001` |
+| generics#2 | L7 | `generics` | reached from a top, `pick`, `larger` and `overdrive` are `P0001`: a generic function |
+| generics#4 | L1 | `composite-values` | reached from a top, `in_tolerance` is `P0001`: a struct expression of the generic struct `Window` |
+| generics#5 | L7 | `generics` | reached from a top, `dot` and `mean_of` are `P0001`: a generic function with a const parameter, over an array type |
+| generics#9 | L9 | `composite-values` | reached from a top, `mid_ramp` is `P0001` (a generic function with an `Fn` bound) and `clean` is `P0001` (a call of a function value) |
+| values#8 | L53 | `unknown-semantics-events` | `handshake`, a `fn` that returns `Event`, is `P0001`: method `rise` on this receiver is not supported yet |
 | values~c389077a | L53 | `unknown-semantics-events` | the class of a function that returns `Event` does not run (`handshake`); the pure, `now()` and `emit!` classes do |
-| values#18 | L12 | `foreign-models` | an `extern "C" fn` with its `#[derivative]` is `P0001`: `extern` function is not supported yet |
+| values#22 | L12 | `foreign-models` | an `extern "C" fn` with its `#[derivative]` is `P0001`: `extern` function is not supported yet |
 | values~3998361d | L12 | `foreign-models` | `E0123` is not raised: an `extern` function called in `analog` is `P0001` with or without the derivative |
 | natures#2 | L24 | `composite-values` | `[Bit; 8]` is `P0001` (array type), `signal sda: Wire` is `P0001` (resolved nature `Wire`) and `logic("10xx")` reaches a generic function of the standard library (`P0001`); the other lines are accepted |
 | natures#3 | L21 | `resolved-nets` | `alarm.msl` is twelve `P0001`: the `Wire` ports, `changed()` and field access on a `Wire`, the `struct` of `Logic` in `nets.msl` |

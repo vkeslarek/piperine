@@ -1,4 +1,4 @@
-//! Scope: chapter 10 of the Book, "Files, modules and packages" (feature `root-e2e`, RE-02 and RE-03):
+//! Scope: chapter 12 of the Book, "Files, modules and packages" (feature `root-e2e`, RE-02 and RE-03):
 //! the `lowpass` project assembled from the chapter's four files, the crate root of the bigger `adc`
 //! project, the `use` that is ambiguous between a local namespace and a dependency and its two ways out,
 //! the `include_str!` table (refused today, asserted refused), the rules that split a crate over files

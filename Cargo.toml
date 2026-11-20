@@ -75,6 +75,14 @@ name = "book_language"
 path = "tests/book/language.rs"
 
 [[test]]
+name = "book_types"
+path = "tests/book/types.rs"
+
+[[test]]
+name = "book_generics"
+path = "tests/book/generics.rs"
+
+[[test]]
 name = "book_values"
 path = "tests/book/values.rs"
 

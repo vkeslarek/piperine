@@ -1,12 +1,10 @@
-//! Scope: chapter 2 of the Book, "The language rules" (feature `root-e2e`, RE-02 and RE-03): the four
-//! files of the value language (`literals.msl`, `arith.msl`, `flow.msl`, `items.msl`) run through
+//! Scope: chapter 2 of the Book, "Language basics" (feature `root-e2e`, RE-02 and RE-03): the four
+//! files of the chapter (`literals.msl`, `arith.msl`, `flow.msl`, `functions.msl`) run through
 //! `piperine::` and give the values their comments state, the rules the chapter states in prose (a
-//! literal's type, no implicit conversion, `as`, faults, the order of items) are asserted on the
-//! smallest model that shows each, the blinky model states what the chapter says of it (its three
-//! records, its instance path, its parameter, its delayed commit), the forms the status box lists as
-//! not run yet are asserted refused, `emit!` with a text field runs, and each mistake of the chapter's
-//! table gets the code the chapter names. Each test opens with the inventory ids it holds, from
-//! `tests/book/inventory.tsv`.
+//! literal's type, no implicit conversion, `as`, faults, the order of items, the prelude's constants) are
+//! asserted on the smallest model that shows each, the forms the status box lists as not run yet are
+//! asserted refused, and each mistake of the chapter's table gets the code the chapter names. Each test
+//! opens with the inventory ids it holds, from `tests/book/inventory.tsv`.
 
 #[allow(dead_code)] // the support modules are shared by every Book target; this one uses part of each
 #[path = "support"]
@@ -16,99 +14,28 @@ mod support {
     pub mod faulty;
     pub mod inventory;
     pub mod model;
+    pub mod printed;
     pub mod records;
     pub mod refusal;
+    pub mod value_file;
 }
 
-use piperine::{Field, Overrides, Record};
-use piperine_parity::golden::PrintedNumber;
+use piperine::Overrides;
 use support::chapter::Chapter;
 use support::faulty::Faulty;
 use support::model::Model;
+use support::printed::Printed;
 use support::records::Fields;
 use support::refusal::Refusal;
-
-/// A number as the Book prints it: the printed digits are the resolution of the comparison.
-struct Printed;
-
-impl Printed {
-    /// Asserts that `x` rounds to the number the Book prints as `printed` (`5.000000e-7`).
-    fn holds(printed: &str, x: f64, what: &str) {
-        let number = PrintedNumber::parse(printed).unwrap_or_else(|| panic!("`{printed}` is a printed number"));
-        assert!(number.rounds_from(x), "{what}: the Book prints {printed}, the run gives {x:e}");
-    }
-}
-
-/// The Book's blinky, in the file the Book names `blinky.msl`.
-struct Blinky;
-
-impl Blinky {
-    /// The model: the blocks the Book marks `blinky.msl`.
-    fn model() -> Model {
-        Chapter::read().marked("blinky.msl", "language#13")
-    }
-
-    /// The overrides of `piperine run blinky.msl --analysis transient --stop 3e-6`, with `extra`
-    /// changes applied.
-    fn transient(extra: impl FnOnce(&mut Overrides)) -> Overrides {
-        let mut overrides = Overrides { analysis: Some("transient".to_string()), stop: Some(3e-6), ..Overrides::default() };
-        extra(&mut overrides);
-        overrides
-    }
-}
-
-/// The oscillator and the probe the toggling claims run: `Osc` of blinky with a probe on its clock.
-const OSCILLATOR: &str = "module Osc(out clk: Bit = false) { f: f64 = 1M where f > 0.0; }\ndigital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }\nmodule Probe(in clk: Bit) { }\ndigital for Probe { on clk.changed() { emit!(\"toggle\", t = now(), level = clk); } }\n";
-
-/// One file of the value language: the single record its reaction writes at 1 us.
-struct ValueFile;
-
-impl ValueFile {
-    /// The overrides of `piperine run <file> --analysis transient --stop 2e-6`.
-    fn transient() -> Overrides {
-        Overrides { analysis: Some("transient".to_string()), stop: Some(2e-6), ..Overrides::default() }
-    }
-
-    /// The one record of the stream `stream` of the run `result`, written at 1 us. Panics with the failure
-    /// when the run failed.
-    fn only(result: Result<support::model::Ran, piperine::Failure>, stream: &str) -> Record {
-        let ran = result.unwrap_or_else(|failure| panic!("the file fails: {failure}"));
-        let records = ran.stream(stream);
-        assert_eq!(records.len(), 1, "the reaction on `at(1u)` fires once: {:?}", ran.records);
-        Printed::holds("1.000000e-6", records[0].time, "the instant of the record");
-        records[0].clone()
-    }
-
-    /// The one record of the stream `r` written by `statements` in a reaction at 1 us, after `items`.
-    fn written(items: &str, statements: &str) -> Record {
-        let source = format!("{items}\nmodule Top() {{}}\ndigital for Top {{ on at(1u) {{ {statements} }} }}\n");
-        let ran = Model::written("rule.msl", &source).run(Self::transient()).unwrap_or_else(|failure| panic!("{source}\nfails: {failure}"));
-        let records = ran.stream("r");
-        assert_eq!(records.len(), 1, "{:?}", ran.records);
-        records[0].clone()
-    }
-
-    /// The diagnostics of `statements` in a reaction at 1 us, after `items`, held under the row `row`.
-    fn refused(row: &str, items: &str, statements: &str) -> Faulty {
-        Faulty::elaborating(row, &format!("{items}\nmodule Top() {{}}\ndigital for Top {{ on at(1u) {{ {statements} }} }}\n"), "Top")
-    }
-
-    /// Asserts that the field `name` of `record` is the integer `value`.
-    fn int(record: &Record, name: &str, value: i128) {
-        assert_eq!(Fields::of(record, name), &Field::Int(value), "the field `{name}`");
-    }
-
-    /// Asserts that the field `name` of `record` is the bool `value`.
-    fn flag(record: &Record, name: &str, value: bool) {
-        assert_eq!(Fields::of(record, name), &Field::Bool(value), "the field `{name}`");
-    }
-}
+use support::value_file::ValueFile;
 
 #[test]
 fn the_literal_forms_have_the_values_their_comments_give() {
-    // language#1 (run, `literals.msl`) with its listing language#3; language~2bf57b76 "module Literals() {} is
-    // a piece of hardware with no ports and nothing inside, and on at(1u) { .. } is a reaction to the event
-    // \"the time is 1 us\", which fires once" (one record, at 1 us: `ValueFile::only`); language~afc884b8 "A
+    // language#1 (run, `literals.msl`) with its listing language#3; language~11fe9817 "digital for Name { on
+    // at(1u) { .. } } holds statements that run once, one microsecond into a transient" and values~2bf57b76
+    // "module Literals() {} is a piece of hardware with no ports and nothing inside, and on at(1u) { .. } is a
+    // reaction to the event \"the time is 1 us\", which fires once" (one record, at 1 us: `ValueFile::only`);
+    // language~afc884b8 "A
     // let may leave the type out. let r = 4.7k; has the type of its right side" (`r * c` is float arithmetic)
     let record = ValueFile::only(Chapter::read().marked("literals.msl", "language#1").run(ValueFile::transient()), "literals");
     ValueFile::int(&record, "count", 1000);
@@ -154,12 +81,18 @@ fn arithmetic_keeps_the_low_bits_and_as_converts_without_failing() {
     let widths = ValueFile::written("", "let duty: u3 = 5; let code: u10 = 1000; emit!(\"r\", duty = duty + 3, code = code + 24);");
     ValueFile::int(&widths, "duty", 0);
     ValueFile::int(&widths, "code", 0);
+    // language~84715108 "In arith.msl, change a + 10 to a + 100 and predict wrapped before you run" (94), and
+    // the ratio the same exercise asks for: 4000 / 750
+    let tried = ValueFile::written("fn parallel(a: f64, b: f64) -> f64 { a * b / (a + b) }\nfn series(a: f64, b: f64) -> f64 { a + b }", "let a: u8 = 250; emit!(\"r\", wrapped = a + 100, ratio = series(1k, 3k) / parallel(1k, 3k));");
+    ValueFile::int(&tried, "wrapped", 94);
+    Printed::holds("5.333333e0", Fields::real(&tried, "ratio"), "series over parallel");
 }
 
 #[test]
 fn nothing_converts_by_itself_and_a_condition_is_a_bool() {
     // The chapter's rule 3 of "Types" ("1 + 1.0 is a type error, and so is passing a u8 where a u16 is asked
-    // for") and "The condition of an if is a bool and nothing else"; language~03460845 "A literal too large
+    // for"), which is the first row of the chapter's table of mistakes, language~79f450b1 (P0002), and "The
+    // condition of an if is a bool and nothing else"; language~03460845 "A literal too large
     // for its type is the error E0909, found before the run"
     for (statements, expected, found) in [
         ("let x = 1 + 1.0; emit!(\"r\", x = x);", "f64", "an integer literal"),
@@ -176,13 +109,13 @@ fn nothing_converts_by_itself_and_a_condition_is_a_bool() {
 }
 
 #[test]
-fn blocks_ifs_matches_and_patterns_are_expressions_with_one_value() {
+fn blocks_ifs_and_matches_are_expressions_with_one_value() {
     // language#7 (run, `flow.msl`) with its listing language#9; language~fb958b67 "let names a value. let x =
     // expr; evaluates the expression and gives the result a name, visible from that statement to the end of
     // the block" (the second `level` hides the first; a name of an inner block ends with it); language~b76ed779
     // "So { let s = x * 10.0; s + 1.0 } is a number"
     let record = ValueFile::only(Chapter::read().marked("flow.msl", "language#7").run(ValueFile::transient()), "flow");
-    for (name, printed) in [("level", "3.600000e0"), ("step", "1.000000e0"), ("top", "3.300000e0"), ("margin", "-3.000000e-1")] {
+    for (name, printed) in [("level", "3.600000e0"), ("step", "1.000000e0")] {
         Printed::holds(printed, Fields::real(&record, name), name);
     }
     ValueFile::int(&record, "code", 36);
@@ -196,22 +129,37 @@ fn blocks_ifs_matches_and_patterns_are_expressions_with_one_value() {
 }
 
 #[test]
-fn constants_an_enum_and_functions_with_an_optional_parameter() {
-    // language#10 (run, `items.msl`) with its listing language#12; language~a52c9d86 "Running today: bool,
-    // integers of up to 64 bits, f64, enums without fields that derive Repr, Option, constants, functions with
-    // optional parameters, let and blocks, if, match and if let, and a tuple pattern in a let" (this file and
-    // the three before it are those forms, and each runs)
-    let record = ValueFile::only(Chapter::read().marked("items.msl", "language#10").run(ValueFile::transient()), "items");
-    ValueFile::flag(&record, "high", true);
-    ValueFile::int(&record, "weight", 2);
-    for (name, printed) in [("plain", "4.900000e-1"), ("scaled", "4.900000e2"), ("named", "4.900000e2")] {
+fn constants_and_functions_compute_before_and_during_the_run() {
+    // language#10 (run, `functions.msl`) with its listing language#12; language~49c521bb "Running today: bool,
+    // integers of up to 64 bits, f64, constants, functions, let and blocks, if, and match over literals" (this
+    // file and the three before it are those forms, and each runs)
+    let record = ValueFile::only(Chapter::read().marked("functions.msl", "language#10").run(ValueFile::transient()), "functions");
+    for (name, printed) in [("high", "2.310000e0"), ("rp", "7.500000e2"), ("vt", "2.585200e-2"), ("margin", "4.900000e-1")] {
         Printed::holds(printed, Fields::real(&record, name), name);
     }
+    ValueFile::flag(&record, "valid", true);
+    ValueFile::flag(&record, "between", false);
     // "Items may be written in any order: a function may call one declared further down, and a constant may
     // use a later constant"; 64-bit integers wrap at 64 bits
     let ordered = ValueFile::written("const H: f64 = 2.0 * V;\nconst V: f64 = 3.3;\nfn first() -> f64 { second() }\nfn second() -> f64 { H }", "let big: u64 = 18446744073709551615; emit!(\"r\", h = first(), big = big + 2);");
     Printed::holds("6.600000e0", Fields::real(&ordered, "h"), "a constant computed from a later one, through two functions");
     ValueFile::int(&ordered, "big", 1);
+    // "A function with no -> yields ()": it runs for what it writes
+    let unit = Model::written("unit.msl", "fn say(x: f64) { emit!(\"said\", x = x); }\nmodule Top() {}\ndigital for Top { on at(1u) { say(2.0); } }\n").run(ValueFile::transient()).unwrap_or_else(|failure| panic!("{failure}"));
+    assert_eq!(unit.stream("said").len(), 1, "{:?}", unit.records);
+}
+
+#[test]
+fn the_prelude_gives_its_constants() {
+    // language~9273ae3d: "The prelude gives you the constants Q, K_B, EPS0, PI, E and inf"
+    let c = ValueFile::written("", "emit!(\"r\", q = Q, kb = K_B, eps0 = EPS0, pi = PI, e = E, i = inf);");
+    let real = |name: &str| Fields::real(&c, name);
+    Printed::holds("1.602177e-19", real("q"), "Q");
+    Printed::holds("1.380649e-23", real("kb"), "K_B");
+    Printed::holds("8.854188e-12", real("eps0"), "EPS0");
+    Printed::holds("3.141593e0", real("pi"), "PI");
+    Printed::holds("2.718282e0", real("e"), "E");
+    assert!(real("i").is_infinite() && real("i") > 0.0, "inf");
 }
 
 #[test]
@@ -234,197 +182,43 @@ fn a_fault_ends_the_analysis_or_the_build_and_a_non_finite_value_ends_the_solve(
 }
 
 #[test]
-fn the_forms_still_on_the_way_are_refused_where_the_solver_reaches_them() {
-    // language#20 (refused): the chapter's `range_of` and `mean`. A function nothing reaches is accepted
-    // (GAPS.md S3); one the top reaches is `P0001`: the enum has no `#[derive(Repr)]`, a `match` arm holds a
-    // range pattern (L6), `&[f64]` is a reference type (L3). When one of them runs this test fails and the
-    // row moves to `run`
+fn the_loop_still_on_the_way_is_refused_where_the_solver_reaches_it() {
+    // language#13 (refused): the chapter's `sum_below`, a local that is updated, an assignment and a loop
+    // (GAPS.md L5). A function nothing reaches is accepted (GAPS.md S3); one the top reaches is `P0001`. When
+    // it runs this test fails and the row moves to `run`
     let chapter = Chapter::read();
-    let reaching = |call: &str| chapter.wrapped("carry.msl", "", "language#20", &format!("module Top() {{ }}\ndigital for Top {{ on at(1u) {{ {call} }} }}\n"));
     let overrides = || Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2e-6), ..Overrides::default() };
-    let range = Refusal::of(reaching("let z = range_of(3);").run(overrides()), "language#20");
-    assert!(range.contains(&("P0001".to_string(), "range pattern in a `match` arm is not supported yet".to_string())), "{range:?}");
-    assert!(range.contains(&("P0001".to_string(), "enum `Range` without `#[derive(Repr)]` is not supported yet".to_string())), "{range:?}");
-    Refusal::expect(reaching("let z = mean(&[1.0, 2.0]);").run(overrides()), "language#20", "P0001", "reference type is not supported yet");
+    let top = |statements: &str| format!("module Top() {{ }}\ndigital for Top {{ on at(1u) {{ {statements} }} }}\n");
+    let reaching = || chapter.wrapped("sum.msl", "", "language#13", &top("emit!(\"r\", s = sum_below(4));")).run(overrides());
+    Refusal::expect(reaching(), "language#13", "P0001", "`let mut` binding is not supported yet");
+    Refusal::expect(reaching(), "language#13", "P0001", "`for` loop is not supported yet");
+    let unreached = chapter.wrapped("sum.msl", "", "language#13", &top("emit!(\"r\", s = 1);")).run(overrides());
+    assert!(unreached.is_ok(), "a function nothing reaches is accepted");
 }
 
 #[test]
 fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
-    // language~5628120b "A model that uses one of them is stopped before the run with the code P0001 and a
-    // message that names the form, so nothing is ever computed by a rule other than the ones above": the forms
-    // of the status box, each on the smallest model (when one of them runs, this test fails and the box loses it)
+    // language~0da752e7 "Parsed and checked, and not run yet: let mut, assignment and loops, return, a function
+    // that calls itself, an item declared inside a block, % on floats, floats other than f64, and integers
+    // wider than 64 bits"; language~5628120b "A model that uses one of them is stopped before the run with the
+    // code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones
+    // above": the forms of the status box, each on the smallest model (when one of them runs, this test fails
+    // and the box loses it)
     for (items, statements, named) in [
-        ("struct P { x: f64 }", "let p = P { x: 1.0 }; emit!(\"r\", x = p.x);", "struct expression is not supported yet"),
-        ("", "let a = [1.0, 2.0]; emit!(\"r\", x = a[0]);", "array expression is not supported yet"),
         ("", "let mut x = 5; x = 6; emit!(\"r\", x = x);", "`let mut` binding is not supported yet"),
         ("", "let x = 5; x = 6; emit!(\"r\", x = x);", "assignment is not supported yet"),
         ("", "let mut s = 0; for i in 0..4 { s += i; } emit!(\"r\", s = s);", "`for` loop is not supported yet"),
-        ("", "let x = 3u8; let y = match x { 0..=9 => 1, _ => 2 }; emit!(\"r\", y = y);", "range pattern in a `match` arm is not supported yet"),
+        ("", "let mut n = 0; while n < 3 { n += 1; } emit!(\"r\", n = n);", "`while` loop is not supported yet"),
+        ("fn sign(x: f64) -> f64 { if x < 0.0 { return -1.0; } 1.0 }", "emit!(\"r\", s = sign(-3.0));", "`return` is not supported yet"),
+        ("fn fact(n: u32) -> u32 { if n == 0 { 1 } else { n * fact(n - 1) } }", "emit!(\"r\", f = fact(5));", "a function that calls itself is not supported yet"),
+        ("", "const K: f64 = 4.0; emit!(\"r\", y = K);", "item inside a block is not supported yet"),
         ("", "let p = 7.5 % 2.0; emit!(\"r\", p = p);", "operator `%` is not supported yet"),
-        ("#[derive(Clone, Copy, PartialEq, Repr)] enum Z { A, B }\nimpl Z { fn next(self) -> Z { match self { Z::A => Z::B, Z::B => Z::A } } }", "emit!(\"r\", y = Z::B.next() == Z::A);", "method `next` on `enum `Z`` is not supported yet"),
-        ("fn same<T: Copy>(x: T) -> T { x }", "emit!(\"r\", y = same(1.0));", "generic function is not supported yet"),
         ("", "let x: f32 = 1.5; emit!(\"r\", x = x);", "type `f32` is not supported yet"),
+        ("", "let x: u128 = 1; emit!(\"r\", x = x);", "integer type `u128` is not supported yet"),
     ] {
         let faulty = ValueFile::refused("language~5628120b", items, statements);
         assert!(faulty.given.iter().any(|reported| reported.code == "P0001" && reported.message == named), "{statements}: {:?}", faulty.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
     }
-}
-
-#[test]
-fn blinky_counts_three_rising_edges_in_three_microseconds() {
-    // language#13 (the blinky of the book, `blinky.msl`); language~82576d99 "A let in a module body
-    // places hardware. let ctr = Counter(clk, count); is an instance named ctr"; the records of
-    // language#14 and language#16 (language~4938c15f "The first three lines after the header are the
-    // three records of the table above" is the binary's, held with the listing)
-    let ran = Blinky::model().run(Blinky::transient(|_| {})).unwrap_or_else(|failure| panic!("blinky fails: {failure}"));
-    let edges = ran.stream("edge");
-    assert_eq!(edges.len(), 3, "{:?}", ran.records);
-    for (record, (instant, count)) in edges.iter().zip([("5.000000e-7", 0), ("1.500000e-6", 1), ("2.500000e-6", 2)]) {
-        assert_eq!(record.instance, "Blinky.ctr", "the instance is named ctr, under the top");
-        Printed::holds(instant, record.time, "the instant of the edge");
-        assert_eq!(record.fields, [("t".to_string(), record.fields[0].1.clone()), ("count".to_string(), Field::Int(count))], "count shows the value before the edge");
-        assert!(matches!(record.fields[0].1, Field::Real(t) if (t - record.time).abs() < 1e-12), "t is the instant: {:?}", record.fields);
-    }
-    let table = &ran.table;
-    assert_eq!(table.columns, ["time", "Blinky.clk", "Blinky.count"]);
-    assert_eq!(table.rows.len(), 2, "a row for the start and one for the stop");
-    assert_eq!(table.rows[1][2], piperine::Cell::Int(3), "three rising edges by 3 us");
-    let printed = Blinky::transient(|overrides| {
-        overrides.print_step = Some(1e-6);
-        overrides.print = vec!["count".to_string()];
-    });
-    let every_microsecond = Blinky::model().run(printed).unwrap_or_else(|failure| panic!("blinky fails: {failure}"));
-    let counts: Vec<piperine::Cell> = every_microsecond.table.rows.iter().map(|row| row[1].clone()).collect();
-    assert_eq!(counts, [piperine::Cell::Int(0), piperine::Cell::Int(1), piperine::Cell::Int(2), piperine::Cell::Int(3)], "--print-step: a row every microsecond");
-}
-
-#[test]
-fn a_param_has_a_default_a_check_and_a_binding_but_no_assignment() {
-    // language~a0e60609 "A param is declared like a field. f: f64 = 1M where f > 0.0; has a default
-    // and a check"; language~9703ccd2 "There is no assignment to it anywhere: the placement Osc(clk) {
-    // f: 1M } binds it by name"
-    let overrides = || Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(1e-6), ..Overrides::default() };
-    let probe = "digital for Probe { on clk.rise() { emit!(\"rise\", t = now()); } }\nmodule Top() { signal clk: Bit; let osc = Osc(clk) { f: 4M }; let probe = Probe(clk); }\n";
-    let rises = |placement: &str| {
-        let source = format!("{OSCILLATOR}{}", probe.replace("{ f: 4M }", placement));
-        Model::written("param.msl", &source).run(overrides()).unwrap_or_else(|failure| panic!("{failure}")).records.iter().filter(|record| record.stream == "rise").map(|record| record.time).collect::<Vec<f64>>()
-    };
-    Printed::holds("5.000000e-7", rises("")[0], "the default f = 1M rises at half a period");
-    Printed::holds("1.250000e-7", rises("{ f: 4M }")[0], "the binding f: 4M rises at 0.125 us");
-    let checked = Faulty::elaborating("language~a0e60609", &format!("{OSCILLATOR}module Top() {{ signal clk: Bit; let osc = Osc(clk) {{ f: 0.0 }}; }}\n"), "Top");
-    assert_eq!(checked.first("E0317").message, "the `where` of the param `Top.osc.f` is false for the value 0.0");
-    let assigned = Faulty::elaborating("language~9703ccd2", "module Osc(out clk: Bit = false) { f: f64 = 1M where f > 0.0; f = 2.0; }\nmodule Top() { signal clk: Bit; let o = Osc(clk); }\n", "Top");
-    assert_eq!(assigned.first("E0222").message, "the target of a definition is a param, which this module may not drive (§8.2.10)");
-}
-
-#[test]
-fn after_schedules_the_new_value_a_delay_later_and_each_toggle_fires_the_reaction_again() {
-    // language~8414e064 "With after d the new value arrives d seconds later: the oscillator toggles
-    // itself every half period, and each toggle is the change that fires the reaction again"; the
-    // chapter's next paragraph: the first value is a change at time zero, the clock rises at 0.5 us
-    let source = format!("{OSCILLATOR}module Top() {{ signal clk: Bit; let osc = Osc(clk) {{ f: 1M }}; let probe = Probe(clk); }}\n");
-    let overrides = Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2.2e-6), ..Overrides::default() };
-    let ran = Model::written("toggle.msl", &source).run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
-    let toggles: Vec<(f64, Field)> = ran.stream("toggle").iter().map(|record| (record.time, record.fields[1].1.clone())).collect();
-    let instants: Vec<&str> = vec!["0.000000e0", "5.000000e-7", "1.000000e-6", "1.500000e-6", "2.000000e-6"];
-    assert_eq!(toggles.len(), instants.len(), "a toggle at time zero and one every half period: {toggles:?}");
-    for ((time, _), printed) in toggles.iter().zip(&instants) {
-        Printed::holds(printed, *time, "the instant of a toggle");
-    }
-    let levels: Vec<&Field> = toggles.iter().map(|(_, level)| level).collect();
-    assert_eq!(levels, [&Field::Bool(false), &Field::Bool(true), &Field::Bool(false), &Field::Bool(true), &Field::Bool(false)], "the clock starts low and rises first at 0.5 us");
-}
-
-#[test]
-fn a_message_with_values_is_a_record_with_a_text_field() {
-    // language#19 (run): "A message with values in it is simply a record with a text field":
-    // `emit!("log", msg = "overrange", vin = v(inp));` writes `msg` as text and `vin` as the node's voltage
-    let chapter = Chapter::read();
-    let before = "module Source(p: Electrical, n: Electrical) { dc: f64 = 3.0; }\nanalog for Source { v(p, n) +> dc; }\nmodule Top() {\n    signal inp: Electrical;\n    let s = Source(inp, gnd);\n}\ndigital for Top { on at(1u) {\n";
-    let model = chapter.wrapped("log.msl", before, "language#19", "} }\n");
-    let overrides = Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2e-6), ..Overrides::default() };
-    let ran = model.run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
-    let logs = ran.stream("log");
-    assert_eq!(logs.len(), 1, "{:?}", ran.records);
-    assert_eq!(logs[0].fields[0], ("msg".to_string(), Field::Text("overrange".to_string())));
-    assert!(matches!(&logs[0].fields[1], (name, Field::Real(vin)) if name == "vin" && (vin - 3.0).abs() < 1e-9), "{:?}", logs[0].fields);
-}
-
-#[test]
-fn only_two_built_in_bang_forms_exist() {
-    // language~95095180: "macro_rules!, println!, format!: Only two built-in ! forms: emit! for
-    // output and include_str! for data (E0901)": `println!` and `format!` are `E0901`, `macro_rules!` too
-    for source in ["fn f() { println!(\"x\"); }\nmodule Top() {}\n", "fn f() { let s = format!(\"x\"); }\nmodule Top() {}\n", "macro_rules! m { () => {} }\nmodule Top() {}\n"] {
-        let faulty = Faulty::elaborating("language~95095180", source, "Top");
-        assert_eq!(faulty.first("E0901").message, "macros are not part of the language", "{source}");
-    }
-}
-
-/// The counter of the Book's blinky with its reaction's body replaced by `body`, on a top that
-/// places it: the faulty models of the chapter's table.
-struct CounterWith;
-
-impl CounterWith {
-    /// The model whose counter reacts to `clk.rise()` with `body`.
-    fn source(body: &str) -> String {
-        format!("module Counter(in clk: Bit, out count: Bit<u8> = 0) {{}}\ndigital for Counter {{ on clk.rise() {{ {body} }} }}\nmodule Top() {{ signal clk: Bit; signal count: Bit<u8>; let c = Counter(clk, count); }}\n")
-    }
-}
-
-#[test]
-fn e0901_there_is_no_println() {
-    // language~80317c1d: "E0901 println!(\"count = {}\", count);": not a built-in form
-    let faulty = Faulty::elaborating("language~80317c1d", &CounterWith::source("println!(\"count = {}\", count);"), "Top");
-    assert_eq!(faulty.pointed_at("E0901"), "println!(\"count = {}\", count)");
-}
-
-#[test]
-fn e0602_an_emit_has_no_format_string() {
-    // language~64ee8a1d: "E0602 emit!(\"edge {}\", count);": there is no format string, and a field needs a name
-    let faulty = Faulty::elaborating("language~64ee8a1d", &CounterWith::source("emit!(\"edge {}\", count);"), "Top");
-    assert_eq!(faulty.pointed_at("E0602"), "count");
-    assert_eq!(faulty.first("E0602").message, "a field is not `name = value` in `emit!`");
-}
-
-#[test]
-fn e0604_a_field_name_is_used_twice() {
-    // language~64ee881d: "E0604 emit!(\"edge\", t = now(), t = count);": a field name is used twice
-    let faulty = Faulty::elaborating("language~64ee881d", &CounterWith::source("emit!(\"edge\", t = now(), t = count);"), "Top");
-    assert_eq!(faulty.first("E0604").message, "the field `t` is written twice in one `emit!` (§19 rule 11)");
-}
-
-#[test]
-fn e0601_an_emit_in_a_module_body_is_misplaced_output() {
-    // language~64ee8d1d: "E0601 emit!(\"hello\"); in a module body: Output runs when behavior runs. Put it
-    // in a reaction": the statement is `E0601`, the same code a module-body `let` that holds an `emit!` gets
-    let faulty = Faulty::elaborating("language~64ee8d1d", "module Top() { emit!(\"hello\"); }\n", "Top");
-    assert_eq!(faulty.given.iter().map(|reported| reported.code.as_str()).collect::<Vec<_>>(), ["E0601"]);
-    assert_eq!(faulty.first("E0601").message, "`emit!` is written in a reaction, in `analog` or in a `fn` only (§19 rule 10)");
-    assert!(faulty.first("E0601").help.as_deref().is_some_and(|help| help.contains("put it in a reaction")), "the Book's fix is a help line");
-    let held = Faulty::elaborating("language~64ee8d1d", "module Top() { let x = emit!(\"hello\"); }\n", "Top");
-    assert_eq!(held.first("E0601").message, "`emit!` is written in a reaction, in `analog` or in a `fn` only (§19 rule 10)");
-}
-
-#[test]
-fn e0101_there_are_no_mutable_references() {
-    // language~399f441d: "E0101 fn bump(c: &mut u8) { *c += 1; }": no mutable references
-    let faulty = Faulty::elaborating("language~399f441d", "fn bump(c: &mut u8) { *c += 1; }\nmodule Top() { }\n", "Top");
-    assert_eq!(faulty.first("E0101").message, "a mutable reference is not part of the language");
-}
-
-#[test]
-fn e0143_there_are_no_default_arguments() {
-    // language~39acbe1d: "E0143 fn gain(x: f64, k: f64 = 2.0) -> f64": no default arguments
-    let faulty = Faulty::elaborating("language~39acbe1d", "fn gain(x: f64, k: f64 = 2.0) -> f64 { x * k }\nmodule Top() { }\n", "Top");
-    assert_eq!(faulty.pointed_at("E0143"), "= 2.0");
-}
-
-#[test]
-fn e0161_there_are_no_heap_types() {
-    // language~39a5d01d: "E0161 let xs: Vec<f64> = Vec::new();": no heap types, so the path does not resolve
-    let source = "module Top() { }\ndigital for Top { on at(1u) { let xs: Vec<f64> = Vec::new(); } }\n";
-    let faulty = Faulty::elaborating("language~39a5d01d", source, "Top");
-    assert_eq!(faulty.first("E0161").message, "cannot find `Vec` in this scope");
 }
 
 #[test]

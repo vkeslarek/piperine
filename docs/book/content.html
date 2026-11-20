@@ -163,7 +163,7 @@ time         Step.vin    Step.vout
 
 <p>That is a capacitor charging through a resistor: 63&nbsp;% after one time constant <code>r · c</code> = 1&nbsp;µs, 86&nbsp;% after two. The line that starts with <code>@</code> is the bench talking: its monitor saw the output pass 0.5&nbsp;V at 693.1&nbsp;ns. The theory puts it at 1&nbsp;µs&nbsp;·&nbsp;ln&nbsp;2 = 693.147&nbsp;ns; the solver locates the crossing to within its time tolerance, here 0.04&nbsp;ns early. The numbers in the table are the solver's too, so they agree with 1&nbsp;−&nbsp;e<sup>−t/τ</sup> to about four digits, not to the last one. You will learn to write such lines in a moment.</p>
 
-<p>The first time a design runs, the command compiles it, and says so on a separate line that is not part of the result. Later runs of an unchanged design start at once. Chapter 13 is the full reference of the command; from here on, every chapter tells you how to run its example.</p>
+<p>The first time a design runs, the command compiles it, and says so on a separate line that is not part of the result. Later runs of an unchanged design start at once. Chapter 15 is the full reference of the command; from here on, every chapter tells you how to run its example.</p>
 
 <h3>Reading the project</h3>
 
@@ -234,7 +234,7 @@ time         Step.vin    Step.vout
 4.000000e-6  1.000000e0  9.816886e-1
 5.000000e-6  1.000000e0  9.932653e-1</pre>
 
-<p>Both records belong to the same instant, and they come in the order the solver hands them over, which here puts the check first. The filter is for your eyes only: a records file (chapter 13) keeps every record, and <code>piperine test</code> counts every check, passing or not.</p>
+<p>Both records belong to the same instant, and they come in the order the solver hands them over, which here puts the check first. The filter is for your eyes only: a records file (chapter 15) keeps every record, and <code>piperine test</code> counts every check, passing or not.</p>
 
 <p>When a design prints more than you want to read, keep one stream:</p>
 
@@ -248,7 +248,7 @@ time         Step.vin    Step.vout
 <li><strong>It goes where behavior goes.</strong> <code>emit!</code> is allowed in a reaction and in an <code>analog</code> block, and in a function called from one of them. It is not allowed in a module body.</li>
 </ol>
 
-<p>Chapter 2 gives every rule of <code>emit!</code>, and chapter 6 shows what it does inside <code>analog</code>, where the second rule is different on purpose.</p>
+<p>Chapter 5 gives every rule of <code>emit!</code>, and chapter 8 shows what it does inside <code>analog</code>, where the second rule is different on purpose.</p>
 
 <h3>A second bench: a source that steps</h3>
 
@@ -346,7 +346,7 @@ print_step = 1e-6</pre>
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 15) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 16 and 17). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run from source as compiled Rust: a full-size digitally controlled buck converter starts and regulates with its loop closed (chapter 18). So a file with a <code>digital</code> block, like <code>Monitor</code> above, runs today. The <code>piperine</code> command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself. Parts of the language beyond that are still refused by name with P0001: in analog, noise, <code>idt</code> and <code>delay</code>; elsewhere, generic modules, params of an integer type, resolved natures such as <code>Wire</code> and the <code>settle</code> event. When a chapter's example needs one of them, its "Run it" box says so and shows the refusal. This book describes the language as specified.</p>
+  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 17) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 18 and 19). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run from source as compiled Rust: a full-size digitally controlled buck converter starts and regulates with its loop closed (chapter 20). So a file with a <code>digital</code> block, like <code>Monitor</code> above, runs today. The <code>piperine</code> command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself. Parts of the language beyond that are still refused by name with P0001: in analog, noise, <code>idt</code> and <code>delay</code>; elsewhere, generic modules, params of an integer type, resolved natures such as <code>Wire</code> and the <code>settle</code> event. When a chapter's example needs one of them, its "Run it" box says so and shows the refusal. This book describes the language as specified.</p>
 </div>
 
 <div class="callout mistake">
@@ -371,16 +371,28 @@ print_step = 1e-6</pre>
 <!-- ===================================================== 2 -->
 <section id="language" class="chapter">
 <p class="ch-num">Chapter 2</p>
-<h2>The language rules</h2>
+<h2>Language basics</h2>
 
 <div class="callout goal">
   <p class="callout-label">Goal</p>
-  <p>By the end of this chapter you can read any MSL source: you know how its text is split into words and numbers, what type every expression has, how statements, patterns and functions behave, what a model may not do, and where a computation stops and hardware begins.</p>
+  <p>By the end of this chapter you can read and write the expressions and functions of an MSL source: you know how its text is split into words and numbers, what type an expression has, what arithmetic does at its limits, how blocks, <code>if</code> and <code>match</code> yield values, and how constants and functions are declared.</p>
 </div>
 
-<p>MSL has two layers. The <strong>value language</strong> computes: numbers, flags, your own types, functions. Nothing in it has time. The <strong>hardware constructs</strong> describe what exists over time: modules, the signals between them, and the behavior that drives those signals. This chapter states the rules of the first layer in full, then shows where the second begins. The chapters that follow take the hardware constructs one at a time.</p>
+<p>MSL has two layers. The <strong>value language</strong> computes: numbers, flags, your own types, functions. Nothing in it has time. The <strong>hardware constructs</strong> describe what exists over time: modules, the signals between them, and the behavior that drives those signals.</p>
 
-<p>Each rule comes with a file you can run. The examples share one scaffold, which chapter 1 introduced: a module without ports, and a reaction that runs once, one microsecond into a transient, and writes what it computed with <code>emit!</code>. Read the statements inside the reaction; the scaffold is explained at the end of the chapter.</p>
+<p>The value language takes three chapters, and each builds on the one before it. This chapter has the ground rules: text, numbers, types, operators, statements and functions. Chapter 3 adds the types you build from those, and the patterns that take them apart. Chapter 4 adds traits and generics, which let one piece of code serve many types and sizes. Chapter 5 then shows where a value meets hardware, and the rest of the book takes the hardware constructs one at a time.</p>
+
+<h3>How to read the examples</h3>
+
+<p>Each rule comes with a file you can run. The files share one scaffold, which chapter 1 introduced, and three facts about it are enough for now:</p>
+
+<ul>
+<li><code>module Name() {}</code> declares a piece of hardware with no ports, so that the file has something to run.</li>
+<li><code>digital for Name { on at(1u) { … } }</code> holds statements that run once, one microsecond into a transient.</li>
+<li><code>emit!("name", field = value, …)</code> writes one <strong>record</strong> with the fields you name. The command prints it as a line that starts with <code>@</code>.</li>
+</ul>
+
+<p>Read the statements between the braces of <code>on at(1u)</code>. Chapter 5 explains the scaffold itself.</p>
 
 <h3>Source text</h3>
 
@@ -415,7 +427,7 @@ print_step = 1e-6</pre>
 <tr><td>scaled float</td><td><code>4.7k</code> <code>10n</code> <code>1M</code></td><td>An SI suffix multiplies by a power of ten. The result is always a float.</td></tr>
 <tr><td>boolean</td><td><code>true</code> <code>false</code></td><td></td></tr>
 <tr><td>string</td><td><code>"overrange"</code></td><td>Text for names and messages. Strings are constants: there is no string arithmetic.</td></tr>
-<tr><td>unknown</td><td><code>Unknown</code></td><td>The value of a signal nothing has driven yet. Chapter 3 is about it.</td></tr>
+<tr><td>unknown</td><td><code>Unknown</code></td><td>The value of a signal nothing has driven yet. Chapter 5 is about it.</td></tr>
 </tbody></table></div>
 
 <p>The SI suffixes are the ones on a schematic, and they are case-sensitive: <code>m</code> is milli and <code>M</code> is mega.</p>
@@ -464,7 +476,7 @@ time
 
 <h3>Types</h3>
 
-<p>Every expression has exactly one type, and the type is fixed before anything runs. These are the types of values:</p>
+<p>Every expression has exactly one type, and the type is fixed before anything runs. These are the types the language starts from:</p>
 
 <div class="table-wrap"><table>
 <thead><tr><th>Kind</th><th>Types</th><th>Values</th></tr></thead>
@@ -474,10 +486,10 @@ time
 <tr><td>signed integer</td><td><code>i1</code> … <code>i128</code></td><td><code>iN</code> holds −2<sup>N−1</sup> to 2<sup>N−1</sup> − 1, in two's complement.</td></tr>
 <tr><td>float</td><td><code>f64</code>, and <code>f16</code>, <code>f32</code>, <code>f128</code></td><td>IEEE 754 numbers, with infinities and NaN. Analog code computes in <code>f64</code>.</td></tr>
 <tr><td>string</td><td><code>&'static str</code></td><td>A literal text. It is never carried by a signal.</td></tr>
-<tr><td>optional</td><td><code>Option&lt;T&gt;</code></td><td><code>Some(x)</code>, holding a <code>T</code>, or <code>None</code>.</td></tr>
-<tr><td>composite</td><td>tuples <code>(T, U)</code>, arrays <code>[T; N]</code>, <code>struct</code>, <code>enum</code></td><td>Several values as one. An array's length is part of its type. Chapter 3 declares your own.</td></tr>
 <tr><td>unit</td><td><code>()</code></td><td>One value, <code>()</code>: the type of a block that computes nothing.</td></tr>
 </tbody></table></div>
+
+<p><code>usize</code> is another name for <code>u64</code>, on every machine: it is the type of a count or of a position in a table, and a result never depends on the computer that runs the model. Chapter 3 adds the types built from these: tuples, arrays, <code>Option</code>, and the structs and enums you declare.</p>
 
 <p>Four rules decide the type of what you write.</p>
 
@@ -558,7 +570,7 @@ digital for Arith {
 time
 0.000000e0
 2.000000e-6</pre>
-  <p>Every field is the value its comment predicts. The methods a number has, such as <code>abs</code>, <code>min</code>, <code>sqrt</code>, <code>exp</code> and <code>checked_add</code>, are a fixed list; chapter 11 has it.</p>
+  <p>Every field is the value its comment predicts. The methods a number has, such as <code>abs</code>, <code>min</code>, <code>sqrt</code>, <code>exp</code> and <code>checked_add</code>, are a fixed list; chapter 13 has it.</p>
 </div>
 
 <h3>Statements, blocks and control flow</h3>
@@ -571,22 +583,7 @@ time
 <li><strong><code>if</code> and <code>match</code> are expressions too.</strong> Each branch is a block, the branches have one type, and the whole has the value of the branch that ran. An <code>if</code> used for its value needs its <code>else</code>. The condition of an <code>if</code> is a <code>bool</code> and nothing else: a number is not a condition.</li>
 </ol>
 
-<p><code>match</code> compares one value against a list of <strong>patterns</strong>, top to bottom, and runs the first arm that fits. The arms must cover every value the type has. If they do not, the model is not accepted, so a case added to a type later cannot be forgotten silently.</p>
-
-<div class="table-wrap"><table>
-<thead><tr><th>Pattern</th><th>Fits</th><th>Names it introduces</th></tr></thead>
-<tbody>
-<tr><td><code>_</code></td><td>anything</td><td>none</td></tr>
-<tr><td><code>x</code></td><td>anything</td><td><code>x</code>, the value</td></tr>
-<tr><td><code>0</code>, <code>true</code>, <code>2.5</code></td><td>that value</td><td>none</td></tr>
-<tr><td><code>1 | 2</code></td><td>either alternative</td><td>none</td></tr>
-<tr><td><code>0..=9</code></td><td>a value in the range, ends included</td><td>none</td></tr>
-<tr><td><code>Level::High</code>, <code>None</code></td><td>that variant of an enum</td><td>none</td></tr>
-<tr><td><code>Some(v)</code></td><td>an <code>Option</code> that holds a value</td><td><code>v</code>, the value inside</td></tr>
-<tr><td><code>(a, b)</code></td><td>a tuple, part by part</td><td>what the parts introduce</td></tr>
-</tbody></table></div>
-
-<p>A pattern is also what stands on the left of a <code>let</code>, as long as it fits every value: <code>let (lo, hi) = (0.8, 2.0);</code> names both parts at once. <code>if let Some(v) = limit { … } else { … }</code> runs its first block when the pattern fits, with <code>v</code> named inside it, and its <code>else</code> block otherwise.</p>
+<p><code>match</code> compares one value against a list of <strong>patterns</strong>, top to bottom, and runs the first arm that fits. In this chapter a pattern is a literal, several literals joined with <code>|</code>, or <code>_</code>, which fits anything. The arms must cover every value the type has. If they do not, the model is not accepted, so a case cannot be forgotten silently. Chapter 3 adds the patterns that take a value apart.</p>
 
 <!-- cli-file: flow.msl -->
 <pre data-lang="msl">module Flow() {}
@@ -602,15 +599,8 @@ digital for Flow {
             1 | 2 => 0.5,                           // either value
             _ => 1.0,                               // every other value
         };
-        let limit: Option<f64> = Some(3.3);
-        let top = match limit {
-            Some(v) => v,                           // binds the payload to `v`
-            None => 5.0,
-        };
-        let margin = if let Some(v) = limit { v - level } else { 0.0 };
-        let (lo, hi) = (0.8, 2.0);                  // a pattern on the left of `let`
-        emit!("flow", level = level, code = code, grade = grade, step = step,
-              top = top, margin = margin, inside = level > lo && level < hi);
+        let inside = level > 0.8 && level < 2.0;
+        emit!("flow", level = level, code = code, grade = grade, step = step, inside = inside);
     }
 }</pre>
 
@@ -618,58 +608,253 @@ digital for Flow {
   <p class="callout-label">Run it</p>
 <pre data-lang="sh">piperine run flow.msl --analysis transient --stop 2e-6</pre>
 <pre data-lang="text" data-cli-output="piperine run flow.msl --analysis transient --stop 2e-6" data-cli-lines="1-2">run flow: transient, top Flow, backend rust
-@1.000000e-6 Flow flow level=3.600000e0 code=36 grade=2 step=1.000000e0 top=3.300000e0 margin=-3.000000e-1 inside=false
+@1.000000e-6 Flow flow level=3.600000e0 code=36 grade=2 step=1.000000e0 inside=false
 
 time
 0.000000e0
 2.000000e-6</pre>
 </div>
 
-<p>A local is fixed once it is named. Where a body needs a variable it updates, the language has <code>let mut</code>, assignment (<code>x = x + 1;</code>, <code>x += 1;</code>) and the loops <code>for i in 0..n</code>, <code>while</code> and <code>loop</code> with <code>break</code> and <code>continue</code>. Whether a loop's count must be known before the run depends on where the loop stands: in a function called from a reaction it need not be, and where a loop describes hardware or equations (chapters 5 and 6) it must. Only locals can be assigned this way: a signal is never assigned, it is driven, and that is the subject of the last part of this chapter.</p>
+<p>A local is fixed once it is named. Where a body needs a variable it updates, the language has <code>let mut</code>, assignment (<code>x = x + 1;</code>, <code>x += 1;</code>) and the loops <code>for i in 0..n</code>, <code>while</code> and <code>loop</code> with <code>break</code> and <code>continue</code>. Whether a loop's count must be known before the run depends on where the loop stands: in a function called from a reaction it need not be, and where a loop describes hardware or equations (chapters 7 and 8) it must. Only locals can be assigned this way: a signal is never assigned, it is driven, and that is the subject of chapter 5.</p>
 
-<h3>Items: constants, types and functions</h3>
+<h3>Constants and functions</h3>
 
-<p>An <strong>item</strong> is a declaration at the top level of a file. Items may be written in any order: a function may call one declared further down, and a constant may use a later constant.</p>
+<p>An <strong>item</strong> is a declaration, most often at the top level of a file. Items may be written in any order: a function may call one declared further down, and a constant may use a later constant. This chapter needs two kinds of item.</p>
 
-<div class="table-wrap"><table>
-<thead><tr><th>Item</th><th>Declares</th></tr></thead>
-<tbody>
-<tr><td><code>const NAME: T = expr;</code></td><td>A value computed before the run. Its type is always written.</td></tr>
-<tr><td><code>enum Name { A, B }</code></td><td>A type with a fixed list of variants, named <code>Name::A</code>.</td></tr>
-<tr><td><code>struct Name { x: T, y: U }</code></td><td>A type with named fields, built as <code>Name { x: 1.0, y: 2 }</code> and read as <code>p.x</code>.</td></tr>
-<tr><td><code>fn name(a: T, b: U) -&gt; R { … }</code></td><td>A function: parameters with their types, the type of the result, and a body.</td></tr>
-<tr><td><code>impl Name { … }</code></td><td>Functions that belong to a type. One whose first parameter is <code>self</code> is called as a method, <code>x.name()</code>.</td></tr>
-<tr><td><code>trait Name { … }</code></td><td>A set of functions several types may provide.</td></tr>
-<tr><td><code>mod name;</code> and <code>use path::Name;</code></td><td>A file brought in as a namespace, and a short name for an item of another namespace. Chapter 10.</td></tr>
-<tr><td><code>module</code>, <code>nature</code>, <code>analog for</code>, <code>digital for</code></td><td>Hardware. The rest of the book.</td></tr>
-</tbody></table></div>
+<p>A <strong>constant</strong>, <code>const NAME: T = expr;</code>, names a value that is computed before the run. Its type is always written, and its value may use literals, operators, other constants and the functions of this chapter. A use of a constant is a copy of its value.</p>
 
-<p>An item is visible in the file that declares it and in the namespaces nested in that file; <code>pub</code> makes it visible from outside (chapter 10). A <strong>function</strong> is computation and nothing more: it reads its arguments and yields a result. It keeps no state between calls, writes no signal and places no hardware. Arguments are passed in order. Trailing parameters of type <code>Option&lt;T&gt;</code> may be left out, in which case the function sees <code>None</code>, or passed by name to skip the ones before them. There is no second function of the same name with other parameters, and a signature has no default values.</p>
+<p>A <strong>function</strong>, <code>fn name(a: T, b: U) -&gt; R { … }</code>, names a computation. Its header gives each parameter with its type and, after <code>-&gt;</code>, the type of the result. Four rules describe it:</p>
 
-<!-- cli-file: items.msl -->
+<ol class="steps">
+<li><strong>The result is the last expression of the body</strong>, written without a semicolon, as in any block. <code>return value;</code> leaves the function early with that result. A function with no <code>-&gt;</code> yields <code>()</code>.</li>
+<li><strong>Arguments are passed in order, each of the type its parameter states.</strong> There is no second function of the same name with other parameters, and a parameter has no default value. Chapter 3 shows the one way to make a parameter optional.</li>
+<li><strong>A function is computation and nothing more.</strong> It reads its arguments and yields a result. It keeps no state between calls, writes no signal and places no hardware, so the same arguments always give the same result.</li>
+<li><strong>A function may call any function, itself included.</strong></li>
+</ol>
+
+<!-- cli-file: functions.msl -->
 <pre data-lang="msl">/// The supply every threshold is a fraction of.
 const VDD: f64 = 3.3;
 const HIGH: f64 = 0.7 * VDD;            // a constant may be computed from another
 const LOW: f64 = 0.3 * VDD;
 
+/// The two resistances `a` and `b` in parallel.
+fn parallel(a: f64, b: f64) -> f64 { a * b / (a + b) }
+
+/// The thermal voltage at `t` kelvin.
+fn thermal_voltage(t: f64) -> f64 { K_B * t / Q }
+
+/// The distance from `v` to the nearest threshold.
+fn margin(v: f64) -> f64 {
+    let nearest = if v >= HIGH { v - HIGH } else { LOW - v };
+    nearest                             // the last expression is the result
+}
+
+/// True when `v` is a valid logic level.
+fn is_valid(v: f64) -> bool { margin(v) >= 0.0 }
+
+module Functions() {}
+
+digital for Functions {
+    on at(1u) {
+        emit!("functions", high = HIGH, rp = parallel(1k, 3k), vt = thermal_voltage(300.0),
+              margin = margin(2.8), valid = is_valid(2.8), between = is_valid(1.5));
+    }
+}</pre>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+<pre data-lang="sh">piperine run functions.msl --analysis transient --stop 2e-6</pre>
+<pre data-lang="text" data-cli-output="piperine run functions.msl --analysis transient --stop 2e-6" data-cli-lines="1-2">run functions: transient, top Functions, backend rust
+@1.000000e-6 Functions functions high=2.310000e0 rp=7.500000e2 vt=2.585200e-2 margin=4.900000e-1 valid=true between=false
+
+time
+0.000000e0
+2.000000e-6</pre>
+  <p>The high threshold is 0.7 × 3.3 = 2.31, so 2.8 is a valid level with a margin of 0.49, and 1.5 lies between the thresholds. <code>is_valid</code> calls <code>margin</code>, which is declared above it; the other order would do as well.</p>
+</div>
+
+<p><code>K_B</code> and <code>Q</code> come with the language. The prelude gives you the constants <code>Q</code>, <code>K_B</code>, <code>EPS0</code>, <code>PI</code>, <code>E</code> and <code>inf</code>. Chapter 13 lists them with their values, next to the methods a number has.</p>
+
+<h3>When a computation cannot continue</h3>
+
+<p>A computation that cannot continue is a <strong>fault</strong>. Integer division by zero is one; chapter 3 adds two, an index outside its array and <code>unwrap()</code> on a <code>None</code>. A fault in a constant or a param default is reported when the design is built. A fault during a run ends the analysis and names the instance and the time.</p>
+
+<h3>What the compiler runs today</h3>
+
+<p>The rules of this chapter are the language. The compiler does not yet run every form they describe. This function is correct MSL, and it uses three forms that are still on the way: a local that is updated, an assignment and a loop.</p>
+
+<pre data-lang="msl">/// The sum of the whole numbers below `n`.
+fn sum_below(n: u32) -> u32 {
+    let mut total = 0;
+    for k in 0..n { total += k; }
+    total
+}</pre>
+
+<div class="callout status">
+  <p class="callout-label">Status</p>
+  <p>Running today: <code>bool</code>, integers of up to 64 bits, <code>f64</code>, constants, functions, <code>let</code> and blocks, <code>if</code>, and <code>match</code> over literals. Everything the four files above use is in that list.</p>
+  <p>Parsed and checked, and not run yet: <code>let mut</code>, assignment and loops, <code>return</code>, a function that calls itself, an item declared inside a block, <code>%</code> on floats, floats other than <code>f64</code>, and integers wider than 64 bits. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
+</div>
+
+<div class="callout mistake">
+  <p class="callout-label">Common mistakes</p>
+  <div class="table-wrap"><table class="codes">
+  <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
+  <tbody>
+  <tr><td>P0002</td><td><code>let x = 1 + 1.0;</code></td><td>An integer and a float never mix by themselves. Write both as floats, <code>1.0 + 1.0</code>, or convert: <code>n as f64 + 1.0</code>.</td></tr>
+  <tr><td>E0909</td><td><code>let a: u8 = 300;</code></td><td>The literal does not fit the type. Write a value the type holds, or a wider type.</td></tr>
+  <tr><td>E0905</td><td><code>let c = 'a';</code></td><td>There is no character type. Use a string, <code>"a"</code>, or the number you mean.</td></tr>
+  <tr><td>E0903</td><td><code>let module = 2;</code></td><td>A keyword is not a name. Choose another, or write <code>r#module</code>.</td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>In <code>arith.msl</code>, change <code>a + 10</code> to <code>a + 100</code> and predict <code>wrapped</code> before you run. (94: 350 does not fit eight bits, and 350 − 256 is 94.) Then, in <code>functions.msl</code>, add a function <code>series(a: f64, b: f64) -&gt; f64</code> and emit <code>series(1k, 3k) / parallel(1k, 3k)</code>. (The ratio is 4000 / 750, about 5.33.)</p>
+</div>
+</section>
+<!-- ===================================================== 3 -->
+<section id="types" class="chapter">
+<p class="ch-num">Chapter 3</p>
+<h2>Your own types</h2>
+
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you can say that a value may be absent with <code>Option</code>, group values into tuples and arrays, declare enums and structs of your own, take any of them apart with a pattern, and give a type its own constants and functions with <code>impl</code>.</p>
+</div>
+
+<p>Chapter 2 computed with numbers and flags. A model soon needs more: a result that may be missing, two results at once, a table of coefficients, a state with a name, a reading with its validity. This chapter builds those types from the ones of chapter 2, one at a time, and then shows the two tools that work on all of them: patterns, which take a value apart, and <code>impl</code>, which gives a type its own functions.</p>
+
+<h3>A value that may be absent: <code>Option</code></h3>
+
+<p>Some values do not always exist: a limit the user may leave unset, the time of a crossing that may never happen. MSL has no null and does not ask you to reserve a number such as −1 for "nothing". The type says it: an <code>Option&lt;T&gt;</code> is either <code>Some(x)</code>, holding an <code>x</code> of type <code>T</code>, or <code>None</code>.</p>
+
+<p>An <code>Option&lt;f64&gt;</code> is not an <code>f64</code>, so it cannot be added or compared by accident. You get to the value inside in one of three ways:</p>
+
+<ul>
+<li><strong>With a method.</strong> <code>o.unwrap_or(d)</code> is the value inside, or <code>d</code> when there is none. <code>o.is_some()</code> and <code>o.is_none()</code> are <code>bool</code>. <code>o.unwrap()</code> is the value inside and a fault on <code>None</code>: use it only where a <code>None</code> would be a defect of the model.</li>
+<li><strong>With <code>match</code>.</strong> The arm <code>Some(v) =&gt; …</code> runs when there is a value and names it <code>v</code>; the arm <code>None =&gt; …</code> runs otherwise. Both arms must be there.</li>
+<li><strong>With <code>if let</code>.</strong> <code>if let Some(v) = o { … } else { … }</code> runs its first block when there is a value, with <code>v</code> named inside it, and its <code>else</code> block otherwise.</li>
+</ul>
+
+<!-- cli-file: option.msl -->
+<pre data-lang="msl">/// The reading held to `limit`, or 0.0 when there is no reading.
+fn held(reading: Option<f64>, limit: f64) -> f64 {
+    match reading {
+        Some(v) => v.min(limit),                    // binds the value inside to `v`
+        None => 0.0,
+    }
+}
+
+module Absent() {}
+
+digital for Absent {
+    on at(1u) {
+        let slope = 1M;                             // a ramp of 1 V per microsecond
+        let rising: Option<f64> = if slope > 0.0 { Some(1.5 / slope) } else { None };
+        let never: Option<f64> = None;
+        let late = if let Some(t) = rising { t > 1u } else { false };
+        let (lo, hi) = (0.8, 2.0);                  // a tuple pattern names both parts
+        emit!("absent", found = rising.is_some(), when = rising.unwrap_or(0.0), late = late,
+              fallback = never.unwrap_or(-1.0), held = held(Some(5.0), 3.3), nothing = held(never, 3.3),
+              inside = lo < 1.5 && 1.5 < hi);
+    }
+}</pre>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+<pre data-lang="sh">piperine run option.msl --analysis transient --stop 2e-6</pre>
+<pre data-lang="text" data-cli-output="piperine run option.msl --analysis transient --stop 2e-6" data-cli-lines="1-2">run option: transient, top Absent, backend rust
+@1.000000e-6 Absent absent found=true when=1.500000e-6 late=true fallback=-1.000000e0 held=3.300000e0 nothing=0.000000e0 inside=true
+
+time
+0.000000e0
+2.000000e-6</pre>
+  <p>The ramp reaches 1.5&nbsp;V at 1.5&nbsp;µs, which is later than 1&nbsp;µs. <code>never</code> has no value, so <code>unwrap_or(-1.0)</code> yields the fallback and <code>held</code> takes its <code>None</code> arm.</p>
+</div>
+
+<h3>Optional parameters</h3>
+
+<p><code>Option</code> is also how a function gets a parameter the caller may leave out. Trailing parameters of type <code>Option&lt;T&gt;</code> may be left out, in which case the function sees <code>None</code>, or passed by name to skip the ones before them. Passing a plain <code>T</code> wraps it in <code>Some</code>, the one implicit conversion in the language:</p>
+
+<pre data-lang="msl">/// Scales `x`; the gain is 2.0 unless given, and the result may be clamped.
+fn scale(x: f64, k: Option<f64>, limit: Option<f64>) -> f64 {
+    let y = x * k.unwrap_or(2.0);
+    match limit { Some(l) => y.clamp(-l, l), None => y }
+}</pre>
+
+<pre data-lang="msl">scale(v)                    // k and limit left out
+scale(v, 3.0)               // k = Some(3.0)
+scale(v, limit: 1.0)        // skips k by naming limit</pre>
+
+<p>The function decides what <code>None</code> means, usually with <code>unwrap_or</code>. The library uses this everywhere: <code>idt(x)</code> is an integrator, <code>idt(x, 1.0)</code> one with an initial condition, and <code>idt(x, 1.0, reset: rst)</code> one with a reset too.</p>
+
+<h3>Tuples</h3>
+
+<p>A <strong>tuple</strong> groups a fixed number of values, each with its own type. <code>(1.5, true)</code> is a value of the type <code>(f64, bool)</code>. Its parts are read by position, <code>pair.0</code> and <code>pair.1</code>, or named all at once by a tuple on the left of a <code>let</code>, as <code>let (lo, hi) = (0.8, 2.0);</code> did above. The common use is a function with two results:</p>
+
+<pre data-lang="msl">/// The smaller and the larger of two values, in that order.
+fn ordered(a: f64, b: f64) -> (f64, f64) {
+    if a <= b { (a, b) } else { (b, a) }
+}
+
+/// The distance between two values, whichever is larger.
+fn span(a: f64, b: f64) -> f64 {
+    let (lo, hi) = ordered(a, b);
+    hi - lo
+}</pre>
+
+<p>Two tuple types are the same type when their parts are, in order. A tuple of one part is written <code>(x,)</code>, and <code>()</code>, the unit of chapter 2, is the tuple of none. When the parts deserve names, declare a struct instead.</p>
+
+<h3>Arrays</h3>
+
+<p>An <strong>array</strong> holds a fixed number of values of one type. Its type is <code>[T; N]</code>, and the length <code>N</code> is part of the type: <code>[f64; 2]</code> and <code>[f64; 3]</code> are different types, and no array grows or shrinks during a run.</p>
+
+<pre data-lang="msl">/// The coefficients of a three-tap smoothing filter.
+const TAPS: [f64; 3] = [0.25, 0.5, 0.25];
+
+/// The filter's output for the last three samples, oldest first.
+fn smoothed(x: [f64; 3]) -> f64 {
+    let mut sum = 0.0;
+    for k in 0..3 { sum += TAPS[k] * x[k]; }
+    sum
+}
+
+/// The mean of a table of any length.
+fn mean(xs: &[f64]) -> f64 {
+    let total: f64 = xs.iter().sum();
+    total / xs.len() as f64
+}</pre>
+
+<ul>
+<li><strong>Writing one.</strong> <code>[0.25, 0.5, 0.25]</code> lists the elements, which have one type. <code>[0.0; 16]</code> repeats one value sixteen times.</li>
+<li><strong>Reading one.</strong> <code>x[k]</code> is the element at position <code>k</code>, counted from 0. A position outside the array is a fault. <code>x.len()</code> is the length, and <code>for v in x { … }</code> visits every element in order.</li>
+<li><strong>Any length.</strong> A function that should accept a table of any length takes a <strong>slice</strong>, <code>&amp;[f64]</code>, and is called with <code>&amp;table</code>. The <code>&amp;</code> lends the table for reading; a later part of this chapter comes back to it.</li>
+</ul>
+
+<p>The methods of arrays and slices, such as <code>iter</code>, <code>sum</code>, <code>map</code> and <code>contains</code>, are a fixed list; chapter 13 has it.</p>
+
+<h3>Enums</h3>
+
+<p>An <strong>enum</strong> is a type with a fixed list of <strong>variants</strong>, each with a name. A value of the enum is exactly one of them. It is the right type for a state, a mode or a classification, where a number would let through values that mean nothing.</p>
+
+<!-- cli-file: levels.msl -->
+<pre data-lang="msl">/// The supply every threshold is a fraction of.
+const VDD: f64 = 3.3;
+
 /// What a receiver makes of a voltage.
-#[derive(Clone, Copy, PartialEq, Repr)]
+#[derive(Clone, Copy, PartialEq, PartialOrd, Repr)]
 enum Level { Low, Between, High }
 
 /// Classifies `v` against the two thresholds.
 fn level_of(v: f64) -> Level {
-    if v >= HIGH { Level::High } else if v <= LOW { Level::Low } else { Level::Between }
+    if v >= 0.7 * VDD { Level::High } else if v <= 0.3 * VDD { Level::Low } else { Level::Between }
 }
 
-/// The margin to the nearest threshold, scaled by `k` when it is given.
-fn margin(v: f64, k: Option<f64>) -> f64 {
-    let nearest = if v >= HIGH { v - HIGH } else { LOW - v };
-    nearest * k.unwrap_or(1.0)          // the last expression is the result
-}
+module Levels() {}
 
-module Items() {}
-
-digital for Items {
+digital for Levels {
     on at(1u) {
         let seen = level_of(2.8);
         let weight = match seen {
@@ -677,33 +862,175 @@ digital for Items {
             Level::Between => 1,
             Level::High => 2,
         };
-        emit!("items", high = seen == Level::High, weight = weight,
-              plain = margin(2.8), scaled = margin(2.8, 1k), named = margin(2.8, k: 1k));
+        emit!("levels", seen = seen, high = seen == Level::High,
+              above = seen > Level::Between, weight = weight);
     }
 }</pre>
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
-<pre data-lang="sh">piperine run items.msl --analysis transient --stop 2e-6</pre>
-<pre data-lang="text" data-cli-output="piperine run items.msl --analysis transient --stop 2e-6" data-cli-lines="1-2">run items: transient, top Items, backend rust
-@1.000000e-6 Items items high=true weight=2 plain=4.900000e-1 scaled=4.900000e2 named=4.900000e2
+<pre data-lang="sh">piperine run levels.msl --analysis transient --stop 2e-6</pre>
+<pre data-lang="text" data-cli-output="piperine run levels.msl --analysis transient --stop 2e-6" data-cli-lines="1-2">run levels: transient, top Levels, backend rust
+@1.000000e-6 Levels levels seen=2 high=true above=true weight=2
 
 time
 0.000000e0
 2.000000e-6</pre>
-  <p>The high threshold is 0.7 × 3.3 = 2.31, so 2.8 is <code>High</code> with a margin of 0.49. The <code>match</code> on <code>seen</code> has no <code>_</code> arm: it lists the three variants, and that is every value a <code>Level</code> has.</p>
+  <p>The high threshold is 0.7 × 3.3 = 2.31, so 2.8 is <code>High</code>. The command prints an enum field as the number of its variant, counted from 0 in the order of the declaration, so <code>seen=2</code> is <code>High</code>.</p>
 </div>
 
-<p>The line <code>#[derive(Clone, Copy, PartialEq, Repr)]</code> is an <strong>attribute</strong>: it asks the compiler to write standard behavior for the type that follows. Each name in the list is a trait:</p>
+<p>Three things in this file are new:</p>
+
+<ul>
+<li><strong>A variant is named through its enum</strong>, <code>Level::High</code>. A file that uses the variants often may write <code>use Level::*;</code> once and then name them bare.</li>
+<li><strong>The <code>match</code> has no <code>_</code> arm.</strong> It lists the three variants, and that is every value a <code>Level</code> has. Add a fourth variant later and this <code>match</code> stops the build until it has an arm for it, so a new case cannot be forgotten silently.</li>
+<li><strong>The line above the enum is an attribute.</strong> <code>#[derive(…)]</code> asks the compiler to write standard behavior for the type that follows: <code>Clone</code> and <code>Copy</code> let its values be copied like numbers, <code>PartialEq</code> gives it <code>==</code> and <code>!=</code>, <code>PartialOrd</code> gives it <code>&lt;</code> and <code>&gt;</code> in the order of the declaration, and <code>Repr</code> gives it a layout in bits, which a signal needs to carry it. So <code>Low &lt; Between &lt; High</code> here. Each of these names is a trait; chapter 4 says what that means.</li>
+</ul>
+
+<p>A variant may also hold values, and then the enum says which case it is <em>and</em> carries the data of that case. <code>Option&lt;T&gt;</code> is exactly such an enum, with the variants <code>None</code> and <code>Some(T)</code>. Fields are positional, as in <code>Circle(f64)</code>, or named, as in <code>Rect { w: f64, h: f64 }</code>, and a <code>match</code> names them as it takes the value apart:</p>
+
+<pre data-lang="msl">/// The outline of a pad on a layout.
+#[derive(Clone, Copy, PartialEq)]
+enum Shape { Dot, Circle(f64), Rect { w: f64, h: f64 } }
+
+/// The area a shape covers.
+fn area(s: Shape) -> f64 {
+    match s {
+        Shape::Dot => 0.0,
+        Shape::Circle(r) => PI * r * r,
+        Shape::Rect { w, h } => w * h,
+    }
+}</pre>
+
+<p>When no variant has a field, each may be given the number that stands for it, <code>enum Op { Add = 0b00, Sub = 0b01, Halt = 0b11 }</code>, which fixes how a signal encodes the enum. Without one, the variants count from 0.</p>
+
+<h3>Structs</h3>
+
+<p>A <strong>struct</strong> is a type with named fields: several values that belong together and travel as one.</p>
+
+<pre data-lang="msl">/// One sample of a converter: the voltage it saw and whether it was in range.
+#[derive(Clone, Copy, PartialEq)]
+struct Reading { volts: f64, valid: bool }
+
+/// A voltage, kept apart from every other `f64` by its type.
+#[derive(Clone, Copy)]
+struct Volts(f64);
+
+/// The reading scaled by `k`, valid when the source was.
+fn scaled(r: Reading, k: f64) -> Reading {
+    let volts = r.volts * k;
+    Reading { volts, valid: r.valid }
+}</pre>
+
+<ul>
+<li><strong>Building one.</strong> <code>Reading { volts: 1.2, valid: true }</code> names every field once, in any order. A local with the name of the field may stand alone: <code>Reading { volts, valid: r.valid }</code>.</li>
+<li><strong>Reading one.</strong> <code>r.volts</code> is the field. Fields are not assigned one at a time from outside: a function that changes a reading builds a new one, as <code>scaled</code> does.</li>
+<li><strong>Each declaration is a type of its own.</strong> Two structs with the same fields are still different types, so a <code>Reading</code> is never taken for another pair of a number and a flag.</li>
+<li><strong>Positional fields.</strong> <code>struct Volts(f64);</code> has one field without a name, built as <code>Volts(1.2)</code> and read as <code>v.0</code>. It makes a distinct type out of a plain number.</li>
+</ul>
+
+<p>A struct whose fields are signals instead of values is a bundle of wires, which chapter 6 covers. This chapter's structs hold values only.</p>
+
+<h3>Patterns</h3>
+
+<p>You have used patterns three times already: in the arms of a <code>match</code>, after <code>if let</code>, and on the left of a <code>let</code>. A <strong>pattern</strong> describes a shape a value may have. It fits a value or it does not, and when it fits it gives names to the parts you want. This is the full list:</p>
 
 <div class="table-wrap"><table>
-<thead><tr><th>Trait</th><th>What a type gains</th></tr></thead>
+<thead><tr><th>Pattern</th><th>Fits</th><th>Names it introduces</th></tr></thead>
 <tbody>
-<tr><td><code>Clone</code>, <code>Copy</code></td><td>Its values are copied wherever they are used. Derive both on every plain data type.</td></tr>
-<tr><td><code>PartialEq</code></td><td><code>==</code> and <code>!=</code>.</td></tr>
-<tr><td><code>PartialOrd</code></td><td><code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>.</td></tr>
-<tr><td><code>Repr</code></td><td>A layout as bits, which is what allows a signal to carry the type. Chapter 3.</td></tr>
+<tr><td><code>_</code></td><td>anything</td><td>none</td></tr>
+<tr><td><code>x</code></td><td>anything</td><td><code>x</code>, the value</td></tr>
+<tr><td><code>0</code>, <code>true</code>, <code>2.5</code>, <code>"idle"</code></td><td>that value</td><td>none</td></tr>
+<tr><td><code>1 | 2</code></td><td>either alternative</td><td>none</td></tr>
+<tr><td><code>0..=9</code>, <code>0..10</code>, <code>10..</code></td><td>a value in the range: through 9, below 10, from 10 up</td><td>none</td></tr>
+<tr><td><code>n @ 0..=9</code></td><td>what the pattern after <code>@</code> fits</td><td><code>n</code>, the whole value</td></tr>
+<tr><td><code>Level::High</code>, <code>None</code>, a constant</td><td>that variant, or the value of the constant</td><td>none</td></tr>
+<tr><td><code>Some(v)</code>, <code>Shape::Circle(r)</code></td><td>that variant, when its fields fit</td><td>what the fields introduce</td></tr>
+<tr><td><code>Reading { volts, .. }</code></td><td>a struct, field by field; <code>..</code> stands for the fields not written</td><td>what the fields introduce</td></tr>
+<tr><td><code>(a, b)</code></td><td>a tuple, part by part</td><td>what the parts introduce</td></tr>
+<tr><td><code>[first, .., last]</code></td><td>an array or a slice, element by element</td><td>what the elements introduce</td></tr>
 </tbody></table></div>
+
+<p>Patterns nest: <code>Some((lo, hi))</code> fits an optional pair and names both parts. Where a pattern stands decides what it must cover:</p>
+
+<ul>
+<li><strong>In a <code>match</code></strong>, the arms are tried top to bottom, the first that fits runs, and together they must cover every value of the type. An arm may add a condition, <code>n if n &gt; 4 =&gt; …</code>, which is tried after the pattern fits.</li>
+<li><strong>In a <code>let</code></strong>, the pattern must fit every value, because there is nothing else to run: <code>let (lo, hi) = pair;</code> and <code>let Reading { volts, .. } = r;</code> always fit. <code>let Some(v) = o else { return 0.0; };</code> takes a pattern that may not fit, and its <code>else</code> block must leave the function.</li>
+<li><strong>In an <code>if let</code></strong>, the pattern may or may not fit, and the <code>else</code> block is what runs when it does not.</li>
+</ul>
+
+<h3>Functions that belong to a type: <code>impl</code></h3>
+
+<p>An <code>impl</code> block attaches constants and functions to a type you declared, so that what belongs to the type is found under its name.</p>
+
+<!-- cli-file: family.msl -->
+<pre data-lang="msl">/// A logic family.
+#[derive(Clone, Copy, PartialEq, Repr)]
+enum Family { Cmos, Ttl }
+
+impl Family {
+    /// The family a design uses unless it says otherwise.
+    const DEFAULT: Family = Family::Cmos;
+
+    /// The family a supply of `vdd` volts belongs to.
+    fn of_supply(vdd: f64) -> Family {
+        if vdd > 4.0 { Family::Ttl } else { Self::DEFAULT }     // `Self` is the type of the `impl`
+    }
+
+    /// The voltage at which a receiver of the family `f` switches, on a supply of `vdd` volts.
+    fn threshold(f: Family, vdd: f64) -> f64 {
+        match f {
+            Family::Cmos => 0.5 * vdd,
+            Family::Ttl => 1.4,
+        }
+    }
+}
+
+module Families() {}
+
+digital for Families {
+    on at(1u) {
+        let family = Family::of_supply(5.0);
+        emit!("family", ttl = family == Family::Ttl, switch = Family::threshold(family, 5.0),
+              default_switch = Family::threshold(Family::DEFAULT, 3.3));
+    }
+}</pre>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+<pre data-lang="sh">piperine run family.msl --analysis transient --stop 2e-6</pre>
+<pre data-lang="text" data-cli-output="piperine run family.msl --analysis transient --stop 2e-6" data-cli-lines="1-2">run family: transient, top Families, backend rust
+@1.000000e-6 Families family ttl=true switch=1.400000e0 default_switch=1.650000e0
+
+time
+0.000000e0
+2.000000e-6</pre>
+</div>
+
+<p><code>Family::DEFAULT</code> is an <strong>associated constant</strong> and <code>Family::of_supply</code> an <strong>associated function</strong>: each is named through the type, with <code>::</code>, the way a variant is. Inside the block, <code>Self</code> is another name for the type.</p>
+
+<p>A function of an <code>impl</code> whose first parameter is the bare word <code>self</code> is a <strong>method</strong>. <code>self</code> is the value the method is called on, and the call is written after that value, with a dot:</p>
+
+<pre data-lang="msl">impl Family {
+    /// The voltage at which a receiver of this family switches, on a supply of `vdd` volts.
+    fn switches_at(self, vdd: f64) -> f64 {
+        match self {
+            Family::Cmos => 0.5 * vdd,
+            Family::Ttl => 1.4,
+        }
+    }
+}
+
+/// True when `v` reads as high for the family `f`.
+fn reads_high(f: Family, v: f64, vdd: f64) -> bool { v > f.switches_at(vdd) }</pre>
+
+<p><code>f.switches_at(vdd)</code> and <code>Family::switches_at(f, vdd)</code> are the same call; the first reads in the order the data flows. A type may have several <code>impl</code> blocks. Two limits apply: the built-in types take no <code>impl</code> of yours, because their methods are a fixed list (chapter 13), and a <code>module</code> takes none either, because a module is hardware and what its blocks share is written in its body (chapter 7).</p>
+
+<h3>Paths and visibility</h3>
+
+<p>A name with <code>::</code> in it is a <strong>path</strong>: <code>Level::High</code> is the variant <code>High</code> of <code>Level</code>, and <code>Family::DEFAULT</code> a constant of <code>Family</code>. The same notation reaches into a namespace, as in <code>std::constants::PI</code>. <code>use path;</code> gives the last name of a path a short name in the file that writes it.</p>
+
+<p>Visibility has two levels. An item is visible in the file that declares it and in the namespaces nested in that file; the word <code>pub</code> in front of it makes it visible from outside. The same word in front of a field of a struct or a function of an <code>impl</code> does the same for that field or function, so a type can show its name and keep its fields to itself. Nothing lies between the two levels. A one-file model needs no <code>pub</code> at all; chapter 12 takes up files, namespaces and packages.</p>
 
 <h3>Values are copied, never shared</h3>
 
@@ -716,23 +1043,6 @@ time
 <li><strong>A type without <code>Copy</code> is used once.</strong> If you declare a struct and do not derive <code>Copy</code>, reading a variable of that type hands the value over, and the variable cannot be read again. Deriving <code>Clone</code> and <code>Copy</code> removes the question, and every type a signal carries has them.</li>
 <li><strong><code>&amp;</code> lends a value for reading.</strong> A function that takes a table of numbers writes its parameter as <code>&amp;[f64]</code> and is called with <code>&amp;table</code>. The function may read through it and nothing else; nothing can be stored or changed through a <code>&amp;</code>.</li>
 </ul>
-
-<p>A computation that cannot continue is a <strong>fault</strong>: an integer division by zero, an index outside its array, <code>unwrap()</code> on a <code>None</code>. A fault in a constant or a param default is reported when the design is built. A fault during a run ends the analysis and names the instance and the time.</p>
-
-<h3>Traits and generics</h3>
-
-<p>A <strong>trait</strong> names something a type can do. The language has a few of its own: the derivable ones of the table above, <code>Repr</code> for types a signal can carry, and <code>Nature</code> for kinds of signal (chapter 4). A project may declare more with <code>trait Name { fn f(self) -&gt; R; }</code> and provide them for a type with <code>impl Name for Type { … }</code>.</p>
-
-<p>A <strong>generic</strong> item is written once for a family of types or sizes. Its parameters stand in angle brackets after its name:</p>
-
-<ul>
-<li>a type parameter, with the traits it must have: <code>&lt;T: Repr&gt;</code>;</li>
-<li>a constant parameter, a size known before the run: <code>&lt;const N: usize&gt;</code>.</li>
-</ul>
-
-<p>A use supplies them the same way, as in <code>Bit&lt;u8&gt;</code>, a digital signal that carries a <code>u8</code>, or <code>Option&lt;f64&gt;</code>. Everything generic is resolved when the design is built: each use with its own arguments is checked as if it had been written out by hand, and nothing generic is left at run time. A requirement on a type parameter is written in the brackets. The word <code>where</code> after a function or module header has one meaning only: a condition on its constants and params that must be true, such as <code>where N &gt;= 1</code> or <code>where r &gt; 0.0</code>.</p>
-
-<p>You will meet generics first from the using side: <code>Bit&lt;T&gt;</code> and <code>Option&lt;T&gt;</code> throughout the book, and modules with a size from chapter 5 on.</p>
 
 <h3>What a model may not do</h3>
 
@@ -752,7 +1062,382 @@ time
 <tr><td>Visibility levels between private and public</td><td><code>pub</code> or nothing.</td></tr>
 </tbody></table></div>
 
-<p>The methods of the built-in types are a closed list, given in chapter 11. A method that the list does not name does not resolve.</p>
+<p>The methods of the built-in types are a closed list, given in chapter 13. A method that the list does not name does not resolve.</p>
+
+<h3>What the compiler runs today</h3>
+
+<p>The rules of this chapter are the language. The compiler does not yet run every form they describe. This function pair is correct MSL, and it uses three forms that are still on the way: an enum that derives no <code>Repr</code>, a range pattern, and a borrowed table of numbers.</p>
+
+<pre data-lang="msl">#[derive(Clone, Copy, PartialEq)]
+enum Range { Low, Mid, High }
+
+/// Which third of 0..=255 a code falls in.
+fn range_of(code: u8) -> Range {
+    match code {
+        0..=84 => Range::Low,
+        85..=169 => Range::Mid,
+        _ => Range::High,
+    }
+}
+
+fn mean(xs: &[f64]) -> f64 {
+    let total: f64 = xs.iter().sum();
+    total / xs.len() as f64
+}</pre>
+
+<div class="callout status">
+  <p class="callout-label">Status</p>
+  <p>Running today: <code>Option</code> as a local, a parameter and a constant, with its methods, <code>match</code> and <code>if let</code>; optional parameters; a tuple pattern in a <code>let</code>; enums without fields that derive <code>Repr</code>, matched and compared; the constants of an <code>impl</code> and its functions that take no <code>self</code>; <code>use</code> and <code>pub</code>. Everything the three files above use is in that list.</p>
+  <p>Parsed and checked, and not run yet: tuples as values, arrays, slices and <code>&amp;</code>, structs, an enum with fields, with a number given to a variant or without <code>Repr</code>, a function that yields an <code>Option</code>, range patterns, <code>@</code>, a condition on an arm, <code>let … else</code>, and methods that take <code>self</code>. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
+</div>
+
+<div class="callout mistake">
+  <p class="callout-label">Common mistakes</p>
+  <div class="table-wrap"><table class="codes">
+  <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
+  <tbody>
+  <tr><td>P0002</td><td><code>let limit: Option&lt;f64&gt; = Some(3.3); let x = limit + 1.0;</code></td><td>An <code>Option&lt;f64&gt;</code> is not an <code>f64</code>. Say what <code>None</code> means: <code>limit.unwrap_or(0.0) + 1.0</code>.</td></tr>
+  <tr><td>P0002</td><td>a <code>match</code> on a <code>Level</code> with no arm for <code>Level::Between</code></td><td>The arms cover every value. Add the arm, or a last arm <code>_ =&gt; …</code> for all the rest.</td></tr>
+  <tr><td>E0143</td><td><code>fn scale(x: f64, k: f64 = 2.0)</code></td><td>No default arguments. <code>k: Option&lt;f64&gt;</code> and <code>k.unwrap_or(2.0)</code>.</td></tr>
+  <tr><td>E0140</td><td><code>scale(v, gain: 3.0)</code></td><td>A named argument must name an optional parameter. It is called <code>k</code>.</td></tr>
+  <tr><td>E0142</td><td><code>scale(v, limit: 1.0, 3.0)</code></td><td>A positional argument cannot follow a named one. <code>scale(v, 3.0, limit: 1.0)</code>.</td></tr>
+  <tr><td>E0101</td><td><code>fn bump(c: &amp;mut u8) { *c += 1; }</code></td><td>No mutable references. Return the new value: <code>fn bump(c: u8) -&gt; u8 { c + 1 }</code></td></tr>
+  <tr><td>E0161</td><td><code>let xs: Vec&lt;f64&gt; = Vec::new();</code></td><td>No heap types, so the path does not resolve. Use an array: <code>[f64; 8]</code>.</td></tr>
+  <tr><td>E0161</td><td><code>Level::Mid</code></td><td>The enum has no such variant, so the path does not resolve. Check the declaration.</td></tr>
+  </tbody></table></div>
+  <p>One mistake has no special code because it is a plain type error: <code>r: f64 = 100</code>. An integer literal is never an <code>f64</code>; write <code>100.0</code>.</p>
+</div>
+
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>In <code>levels.msl</code>, add a variant <code>Over</code> after <code>High</code> and run the file without touching the <code>match</code>. Read the message: it names the type whose values the arms no longer cover. Then add the arm. Next, in <code>option.msl</code>, change <code>slope</code> to <code>0.0</code> and predict <code>found</code>, <code>when</code> and <code>late</code> before you run. (<code>false</code>, 0 and <code>false</code>: <code>rising</code> is now <code>None</code>.)</p>
+</div>
+</section>
+<!-- ===================================================== 4 -->
+<section id="generics" class="chapter">
+<p class="ch-num">Chapter 4</p>
+<h2>Traits and generics</h2>
+
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you can declare a trait and provide it for a type, write a function or a type once for a whole family of types or sizes, say what such a family must be able to do, pass a function to another function, and explain what the compiler builds from all of it.</p>
+</div>
+
+<p>Hardware repeats itself with small differences: a register is the same circuit for 8 bits or for an enum, a filter is the same loop for 3 taps or for 64, a comparison is the same test for volts or for codes. Writing each case by hand is how copies drift apart. This chapter has the three tools that remove the copies. A <strong>trait</strong> names something several types can do. A <strong>generic</strong> item is written once with a placeholder, for a type or for a size. A <strong>closure</strong> is a small function written where it is needed and passed along like a value.</p>
+
+<p>You have used all three from the outside already. <code>Option&lt;f64&gt;</code> is a generic type with <code>f64</code> in its placeholder, <code>#[derive(PartialEq)]</code> provides a trait, and a signal of type <code>Bit&lt;u8&gt;</code> is a generic kind of wire. This chapter shows the inside.</p>
+
+<h3>Traits: what a type can do</h3>
+
+<p>A <strong>trait</strong> is a named list of functions and constants. A type <strong>implements</strong> the trait by providing them. The trait itself computes nothing: it is the agreement between code that needs a capability and the types that have it.</p>
+
+<pre data-lang="msl">/// Something that turns a voltage into a logic level.
+trait Receiver {
+    /// How many levels the receiver tells apart.
+    const LEVELS: u32;
+
+    /// The voltage at which it switches, on a supply of `vdd` volts.
+    fn switches_at(self, vdd: f64) -> f64;
+
+    /// True when `v` reads as high. A type may keep this body or give its own.
+    fn reads_high(self, v: f64, vdd: f64) -> bool { v > self.switches_at(vdd) }
+}
+
+/// A logic family.
+#[derive(Clone, Copy, PartialEq, Repr)]
+enum Family { Cmos, Ttl }
+
+impl Receiver for Family {
+    const LEVELS: u32 = 2;
+    fn switches_at(self, vdd: f64) -> f64 {
+        match self {
+            Family::Cmos => 0.5 * vdd,
+            Family::Ttl => 1.4,
+        }
+    }
+}
+
+/// A receiver that switches at a fixed fraction of its supply.
+#[derive(Clone, Copy)]
+struct Ratio { fraction: f64 }
+
+impl Receiver for Ratio {
+    const LEVELS: u32 = 2;
+    fn switches_at(self, vdd: f64) -> f64 { self.fraction * vdd }
+}</pre>
+
+<p>Read it in three steps.</p>
+
+<ol class="steps">
+<li><strong>The trait lists what is required.</strong> An item that ends in <code>;</code> has no body: every type that implements the trait must give one. An item with a body, like <code>reads_high</code>, is a <strong>default</strong>: a type gets it as written unless it gives its own.</li>
+<li><strong><code>impl Receiver for Family</code> provides the trait for one type.</strong> It gives every item that has no default, with the signature the trait states. It may not add an item the trait does not list.</li>
+<li><strong>The functions are then methods of the type.</strong> <code>Family::Ttl.reads_high(2.0, 5.0)</code> uses the default body, which calls the <code>switches_at</code> of <code>Family</code>. The constant is read through the type: <code>Family::LEVELS</code>.</li>
+</ol>
+
+<p>Inside a trait and inside an <code>impl</code>, <code>Self</code> is the type the trait is implemented for. A trait may require another: <code>trait Receiver: Copy { … }</code> says that every receiver can also be copied, and lets the trait's own bodies rely on that.</p>
+
+<p>Three rules keep a design the same wherever it is compiled:</p>
+
+<ul>
+<li><strong>One implementation per pair.</strong> A trait is implemented at most once for a type.</li>
+<li><strong>Written next to one of the two.</strong> <code>impl Tr for T</code> stands in the crate that declares the trait or in the crate that declares the type, never in a third. (A crate is one tree of source files; chapter 12.)</li>
+<li><strong>A trait is not a type.</strong> There is no variable "of type <code>Receiver</code>" that could hold a <code>Family</code> now and a <code>Ratio</code> later. A trait is named in three places only: after <code>impl</code>, inside <code>#[derive(…)]</code>, and as a requirement on a generic parameter, which the next part introduces. When a value must be one of several kinds while the model runs, the type for that is an enum.</li>
+</ul>
+
+<h3>The traits the language brings</h3>
+
+<p>A few traits come with the language, and the compiler writes most of them for you. That is what <code>#[derive(…)]</code> has been doing since chapter 3: each name in its list is a trait, and the attribute asks for the standard implementation.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Trait</th><th>What a type gains</th><th>How a type gets it</th></tr></thead>
+<tbody>
+<tr><td><code>Clone</code>, <code>Copy</code></td><td>Its values are copied wherever they are used. Derive both on every plain data type.</td><td>derived</td></tr>
+<tr><td><code>PartialEq</code></td><td><code>==</code> and <code>!=</code>.</td><td>derived, or written</td></tr>
+<tr><td><code>PartialOrd</code></td><td><code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>: variants in the order declared, fields first to last.</td><td>derived, or written</td></tr>
+<tr><td><code>Default</code></td><td><code>T::default()</code>: zero, <code>false</code>, <code>None</code>, and for a struct the default of each field.</td><td>derived on a struct</td></tr>
+<tr><td><code>Repr</code></td><td>A layout as bits, which is what allows a signal to carry the type. Chapter 5.</td><td>derived, or written for a special encoding</td></tr>
+<tr><td><code>Nature</code></td><td>Marks a kind of signal. Chapter 6.</td><td>by declaring a <code>nature</code></td></tr>
+<tr><td><code>Fn(A, B) -&gt; R</code></td><td>Can be called with those arguments. The last part of this chapter.</td><td>every function and closure has it</td></tr>
+</tbody></table></div>
+
+<p>The built-in types have what fits them: numbers and <code>bool</code> have every trait of the first five rows, and an <code>Option&lt;T&gt;</code>, a tuple or an array has each of them when its parts do.</p>
+
+<h3>Generic functions</h3>
+
+<p>A <strong>generic function</strong> has one or more <strong>type parameters</strong>, written in angle brackets after its name. Inside the function the parameter stands for a type the caller chooses.</p>
+
+<pre data-lang="msl">/// One of two values, chosen by `sel`: a two-way multiplexer for any type.
+fn pick<T>(sel: bool, a: T, b: T) -> T { if sel { a } else { b } }
+
+/// The larger of two values, for any type that can be ordered and copied.
+fn larger<T: PartialOrd + Copy>(a: T, b: T) -> T { if a > b { a } else { b } }
+
+/// How far `v` lies above the switching point of any receiver.
+fn overdrive<R: Receiver>(r: R, v: f64, vdd: f64) -> f64 { v - r.switches_at(vdd) }</pre>
+
+<p><code>pick</code> asks nothing of <code>T</code>: it only moves values of that type around, so any type will do. The other two need more, and they say so with a <strong>bound</strong>.</p>
+
+<ul>
+<li><strong>A bound is a trait after a colon.</strong> <code>T: PartialOrd + Copy</code> reads "any type <code>T</code> that implements <code>PartialOrd</code> and <code>Copy</code>". Several traits are joined with <code>+</code>.</li>
+<li><strong>The bound is all the body may use.</strong> Inside <code>larger</code>, <code>a &gt; b</code> is allowed because of <code>PartialOrd</code>, and using <code>a</code> a second time because of <code>Copy</code>. <code>a + b</code> would be an error in the function itself, whatever types callers have in mind, because nothing says a <code>T</code> can be added.</li>
+<li><strong>The bound is what every caller must meet.</strong> <code>overdrive</code> accepts a <code>Family</code> and a <code>Ratio</code>, because both implement <code>Receiver</code>, and no other type.</li>
+</ul>
+
+<p>A call does not usually name the type. The compiler reads it from the arguments:</p>
+
+<pre data-lang="msl">let v = pick(en, 3.3, 0.0);                     // T is f64
+let level = pick(en, Family::Cmos, Family::Ttl);    // T is Family
+let top = larger(3u8, 200);                     // T is u8, and 200 is a u8 too
+let over = overdrive(Family::Cmos, 2.8, 3.3);   // R is Family
+let wide = larger::<u16>(3, 200);               // the type, written out</pre>
+
+<p>Both arguments of <code>pick</code> have the one type <code>T</code>, so <code>pick(en, 3.3, 0)</code> is a type error: a float and an integer are two types. When nothing decides a parameter, or to say it for the reader, the arguments are written after <code>::</code> as in the last line. The <code>::</code> is there so that <code>&lt;</code> is not read as a comparison.</p>
+
+<h3>Generic types</h3>
+
+<p>A struct or an enum takes parameters the same way, and then stands for a family of types.</p>
+
+<pre data-lang="msl">/// A closed range of any ordered type.
+#[derive(Clone, Copy)]
+struct Window<T: PartialOrd + Copy> { lo: T, hi: T }
+
+impl<T> Window<T> {
+    /// True when `x` lies in the window, ends included.
+    fn holds(self, x: T) -> bool { self.lo <= x && x <= self.hi }
+}
+
+/// True when the supply `vdd` is inside its tolerance.
+fn in_tolerance(vdd: f64) -> bool {
+    let allowed = Window { lo: 3.0, hi: 3.6 };  // a Window<f64>
+    allowed.holds(vdd)
+}</pre>
+
+<ul>
+<li><strong>A use fills the parameter.</strong> <code>Window&lt;f64&gt;</code> is a range of voltages and <code>Window&lt;u8&gt;</code> a range of codes. They are two different types that share one declaration. In an expression the compiler finds the argument from the fields, as in <code>Window { lo: 3.0, hi: 3.6 }</code>.</li>
+<li><strong>The bounds are stated once, on the declaration.</strong> An <code>impl</code> for the generic type repeats the names of the parameters, <code>impl&lt;T&gt; Window&lt;T&gt;</code>, and the bounds come with them.</li>
+<li><strong>An <code>impl</code> may also cover many types at once.</strong> <code>impl&lt;T: Receiver&gt; Describe for T { … }</code> provides the trait <code>Describe</code> for every type that implements <code>Receiver</code>.</li>
+</ul>
+
+<p><code>Option</code> is declared exactly this way, <code>enum Option&lt;T&gt; { None, Some(T) }</code>, which is why one declaration serves <code>Option&lt;f64&gt;</code>, <code>Option&lt;Level&gt;</code> and every other. A parameter may have a default, used when a use leaves it out: the digital wire is declared with <code>T = bool</code>, so <code>Bit</code> alone means <code>Bit&lt;bool&gt;</code>.</p>
+
+<h3>Sizes as parameters: const generics</h3>
+
+<p>A parameter may also stand for a <em>number</em> that is known before the run. It is written <code>const N: usize</code>, and it is what lets one function serve tables of every length, with the length still part of each type.</p>
+
+<pre data-lang="msl">/// The sum of the products of two tables of one length.
+fn dot<const N: usize>(a: [f64; N], b: [f64; N]) -> f64 {
+    let mut sum = 0.0;
+    for k in 0..N { sum += a[k] * b[k]; }
+    sum
+}
+
+/// The mean of a table, which may not be empty.
+fn mean_of<const N: usize>(xs: [f64; N]) -> f64 where N >= 1 {
+    let mut sum = 0.0;
+    for x in xs { sum += x; }
+    sum / N as f64
+}
+
+/// The table with one more element, 0.0, at its end.
+fn widened<const N: usize>(xs: [f64; N]) -> [f64; N + 1] {
+    let mut wide = [0.0; N + 1];
+    for k in 0..N { wide[k] = xs[k]; }
+    wide
+}</pre>
+
+<ul>
+<li><strong><code>N</code> is a constant inside the item.</strong> It may size an array, bound a loop and take part in arithmetic, as <code>N as f64</code> does.</li>
+<li><strong>The types carry the check.</strong> <code>dot</code> takes two tables of the <em>same</em> <code>N</code>. Calling it with a table of three and a table of four is a type error, found before the run, so no length test is needed in the body.</li>
+<li><strong>A use states the number or lets it be read.</strong> <code>dot([1.0, 2.0], [3.0, 4.0])</code> has <code>N</code> = 2 from its arguments. Written out, an argument is a literal or a single name, <code>mean_of::&lt;4&gt;(xs)</code>, and any other expression goes in braces, <code>Fifo&lt;u8, { DEPTH + 1 }&gt;</code>.</li>
+<li><strong>A const parameter is an integer or a <code>bool</code>.</strong> Type and const parameters mix freely: <code>struct Fifo&lt;T: Copy, const DEPTH: usize&gt; { slots: [T; DEPTH], count: usize }</code>.</li>
+</ul>
+
+<h3><code>where</code>: a condition on the numbers</h3>
+
+<p>The header of <code>mean_of</code> ends in <code>where N &gt;= 1</code>. A <code>where</code> clause is a condition over the const parameters of the item, checked each time the item is used with new arguments. <code>mean_of</code> of an empty table is refused when the design is built, instead of dividing by zero during a run.</p>
+
+<p><code>where</code> has this one meaning everywhere in the language: a condition that must be true. On a function or a module it is about constants and params, as in <code>where N &gt;= 1</code>; on a single param it is about that param, as in <code>r: f64 = 1k where r &gt; 0.0</code> (chapter 7). A requirement on a <em>type</em> is never written there. It is a bound, and its place is in the angle brackets.</p>
+
+<h3>What the compiler builds from a generic item</h3>
+
+<p>A generic item is a recipe, and nothing of it exists until it is used. When the design is built, the compiler makes one concrete copy for each distinct list of arguments an item is used with. Take a design that contains these four calls:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>The design calls</th><th>The compiler builds</th></tr></thead>
+<tbody>
+<tr><td><code>pick(en, 3.3, 0.0)</code></td><td><code>pick</code> with <code>T</code> = <code>f64</code></td></tr>
+<tr><td><code>pick(en, Family::Cmos, Family::Ttl)</code></td><td><code>pick</code> with <code>T</code> = <code>Family</code></td></tr>
+<tr><td><code>pick(sel, vdd, 0.0)</code></td><td>nothing new: <code>T</code> = <code>f64</code> exists already</td></tr>
+<tr><td><code>dot(taps, samples)</code> with tables of 3</td><td><code>dot</code> with <code>N</code> = 3, whose loop has exactly three turns</td></tr>
+</tbody></table></div>
+
+<p>Four consequences follow, and they are what you see as a user:</p>
+
+<ol class="steps">
+<li><strong>Each copy is checked as if you had written it by hand.</strong> The bounds are checked at the use, and so is every <code>where</code>. An error is reported when the design is built and points at the use that caused it, never at a later moment of the run.</li>
+<li><strong>Equal arguments are the same thing.</strong> Two uses with the same arguments share one copy, and <code>Window&lt;f64&gt;</code> written in two files is one type. <code>Window&lt;f64&gt;</code> and <code>Window&lt;u8&gt;</code> are different types, and <code>[f64; 3]</code> and <code>[f64; 4]</code> too.</li>
+<li><strong>Nothing generic is left when the run starts.</strong> There is no lookup of a type or of a method while the model runs, so a generic function costs what the hand-written copy would cost. A size is a plain number by then: the loop of <code>dot</code> for three taps is three multiplications and three additions.</li>
+<li><strong>A design that never uses an item never builds it.</strong> A library may offer a generic module for every width without any cost to the designs that place only one.</li>
+</ol>
+
+<p>This is also why a trait is not a type. Every call of a trait's function is tied to one concrete type when the design is built, so the compiler always knows which body runs.</p>
+
+<h3>Generic hardware</h3>
+
+<p>The hardware constructs take parameters in the same brackets, with the same rules, and the chapters that introduce them use the forms of this one:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Construct</th><th>Written</th><th>Means</th></tr></thead>
+<tbody>
+<tr><td>a kind of signal</td><td><code>nature Bit&lt;T: Repr = bool&gt;</code></td><td>A digital wire that carries any type with a layout in bits: <code>Bit</code>, <code>Bit&lt;u8&gt;</code>, <code>Bit&lt;Family&gt;</code>. Chapter 6.</td></tr>
+<tr><td>a module over a type</td><td><code>module Dff&lt;T: Repr&gt;(in clk: Bit, in d: Bit&lt;T&gt;, out q: Bit&lt;T&gt;)</code></td><td>One register for every type a wire can carry. Chapter 9.</td></tr>
+<tr><td>a module over a size</td><td><code>module Ladder&lt;const N: usize&gt;(a: Electrical, b: Electrical) where N &gt;= 1</code></td><td>A netlist with <code>N</code> sections, placed as <code>Ladder::&lt;4&gt;(x, y)</code>. Chapter 7.</td></tr>
+</tbody></table></div>
+
+<p>A generic module is built the way a generic function is: one concrete module for each list of arguments the design places, fixed before the run. The object model keeps the generic module as you wrote it (chapter 17).</p>
+
+<h3>Closures and function values</h3>
+
+<p>A function can be handed to another function. The shortest way to write one for that purpose is a <strong>closure</strong>: the parameters between two bars, then an expression. <code>|v| v * gain</code> is a function of one argument <code>v</code>, and it may read the names around it, here <code>gain</code>.</p>
+
+<!-- cli-file: clip.msl -->
+<pre data-lang="msl">/// The reading held to `limit`, or 0.0 when there is no reading.
+fn held(reading: Option<f64>, limit: f64) -> f64 {
+    reading.map(|v| v.min(limit)).unwrap_or(0.0)        // the closure reads `limit` from around it
+}
+
+module Clip() {}
+
+digital for Clip {
+    on at(1u) {
+        let gain = 2.0;
+        let seen: Option<f64> = Some(2.1);
+        let never: Option<f64> = None;
+        let amplified = seen.map(|v| v * gain);         // Some(4.2)
+        let shifted = seen.and_then(|v| Some(v - 0.1)); // the closure itself yields an Option
+        emit!("clip", amplified = amplified.unwrap_or(0.0), held = held(amplified, 3.3),
+              shifted = shifted.unwrap_or(0.0), nothing = held(never, 3.3));
+    }
+}</pre>
+
+<div class="callout run">
+  <p class="callout-label">Run it</p>
+<pre data-lang="sh">piperine run clip.msl --analysis transient --stop 2e-6</pre>
+<pre data-lang="text" data-cli-output="piperine run clip.msl --analysis transient --stop 2e-6" data-cli-lines="1-2">run clip: transient, top Clip, backend rust
+@1.000000e-6 Clip clip amplified=4.200000e0 held=3.300000e0 shifted=2.000000e0 nothing=0.000000e0
+
+time
+0.000000e0
+2.000000e-6</pre>
+  <p><code>map</code> is a method of <code>Option</code> that takes a function: on <code>Some(x)</code> it calls the function with <code>x</code> and wraps the result in <code>Some</code>, and on <code>None</code> it calls nothing. So 2.1 is doubled to 4.2, then held to the limit of 3.3, and the <code>None</code> passes through both steps untouched.</p>
+</div>
+
+<p>Four rules describe a closure:</p>
+
+<ul>
+<li><strong>It captures by copy.</strong> A closure takes a copy of each outer name it reads, at the moment it is written. Nothing it does can change those names, and a later change of them does not reach it.</li>
+<li><strong>Its parameter types are usually read from where it is passed.</strong> They may be written, <code>|v: f64| v * gain</code>, and a body of several statements goes in braces.</li>
+<li><strong>It is computation, like a function.</strong> A closure writes no signal and places no hardware.</li>
+<li><strong>It is called by position.</strong> A call through a function value takes its arguments in order; the named and optional arguments of chapter 3 belong to functions called by their name.</li>
+</ul>
+
+<p>To <em>accept</em> a function, a parameter needs a type, and there are two. Every closure has a type of its own that cannot be written down, so the general form is a generic parameter with a bound that says how it is called: <code>F: Fn(f64) -&gt; f64</code> reads "any function or closure that takes an <code>f64</code> and yields an <code>f64</code>". The second is the <strong>function type</strong> <code>fn(f64) -&gt; f64</code>, written without a generic parameter. It accepts the name of a function, and a closure that reads nothing from around it.</p>
+
+<pre data-lang="msl">/// The value of `f` at the middle of the window `lo ..= hi`.
+fn at_middle<F: Fn(f64) -> f64>(f: F, lo: f64, hi: f64) -> f64 { f(0.5 * (lo + hi)) }
+
+/// The reading after the correction `fix`.
+fn corrected(v: f64, fix: fn(f64) -> f64) -> f64 { fix(v) }
+
+/// Removes the offset of the converter.
+fn remove_offset(v: f64) -> f64 { v - 0.012 }
+
+/// A ramp of `slope` volts per second, sampled at the middle of the first microsecond.
+fn mid_ramp(slope: f64) -> f64 { at_middle(|t| slope * t, 0.0, 1u) }
+
+/// A reading with the converter's offset removed.
+fn clean(v: f64) -> f64 { corrected(v, remove_offset) }</pre>
+
+<p>The library takes functions in the same two ways: <code>map</code> and <code>and_then</code> above, the iteration methods of arrays (chapter 13), and <code>limit</code>, with which an analog model holds back the change of a voltage from one iteration of the solver to the next (chapter 8).</p>
+
+<h3>What the compiler runs today</h3>
+
+<div class="callout status">
+  <p class="callout-label">Status</p>
+  <p>Running today: the generic types the language brings, such as <code>Option&lt;f64&gt;</code> and <code>Bit&lt;u8&gt;</code>, and a closure written directly as the argument of <code>map</code> or <code>and_then</code>. Everything <code>clip.msl</code> uses is in that list.</p>
+  <p>Parsed and checked, and not run yet: the methods of a trait, generic functions, generic structs, const parameters, generic modules, a closure kept in a local, and a function passed as a value. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above. Every other listing of this chapter is correct MSL that waits for those forms. One check is also still missing: an <code>impl</code> is not yet compared with the trait it provides, so a missing or an extra item is found only where it is used.</p>
+</div>
+
+<div class="callout mistake">
+  <p class="callout-label">Common mistakes</p>
+  <div class="table-wrap"><table class="codes">
+  <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
+  <tbody>
+  <tr><td>E0900</td><td><code>fn over&lt;R&gt;(r: R) -&gt; f64 where R: Receiver</code></td><td><code>where</code> holds a condition on constants, not a bound. Put the bound in the brackets: <code>fn over&lt;R: Receiver&gt;(r: R)</code>.</td></tr>
+  <tr><td>E0900</td><td><code>fn over(r: impl Receiver) -&gt; f64</code></td><td>A trait is not a type. Name a parameter for it: <code>fn over&lt;R: Receiver&gt;(r: R)</code>.</td></tr>
+  <tr><td>E0101</td><td><code>fn over(r: &amp;dyn Receiver) -&gt; f64</code></td><td>No value picks its type during the run. Use a generic parameter, or an enum of the kinds you have.</td></tr>
+  <tr><td>E0900</td><td><code>&lt;Family as Receiver&gt;::LEVELS</code></td><td>An item of a trait is reached through the type: <code>Family::LEVELS</code>.</td></tr>
+  <tr><td>E0905</td><td><code>fn first&lt;'a&gt;(xs: &amp;'a [f64]) -&gt; f64</code></td><td>There are no lifetime parameters: nothing outlives the call it is lent to. Write <code>fn first(xs: &amp;[f64]) -&gt; f64</code>.</td></tr>
+  <tr><td>E0903</td><td><code>type Volts = f64;</code></td><td>There are no type aliases. For a distinct type write a struct, <code>struct Volts(f64);</code>, or use the type itself.</td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>In <code>clip.msl</code>, change <code>gain</code> to <code>1.0</code> and predict <code>amplified</code> and <code>held</code> before you run. (Both 2.1: the reading is below the limit, so <code>min</code> leaves it.) Then read <code>larger</code> again and say why <code>larger(3u8, 2.5)</code> cannot be accepted. (Both arguments have the one type <code>T</code>, and a <code>u8</code> and an <code>f64</code> are two types.) Last, write the header of a function that takes a table of any length and any ordered type and yields its largest element. (<code>fn largest&lt;T: PartialOrd + Copy, const N: usize&gt;(xs: [T; N]) -&gt; T where N &gt;= 1</code>.)</p>
+</div>
+</section>
+<!-- ===================================================== 5 -->
+<section id="values" class="chapter">
+<p class="ch-num">Chapter 5</p>
+<h2>Values in hardware</h2>
+
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you can say where a computation stops and hardware begins, report what a model does with <code>emit!</code>, make a type of your own travel on a signal, and explain what an <em>unknown</em> value is, where it comes from and how to catch one.</p>
+</div>
+
+<p>A <strong>value</strong> is data with no time: a number, a flag, an enum, a struct. Chapters 2 to 4 gave the rules of values. Everything a model computes with is a value; what it <em>connects to</em> is hardware, which exists for the whole simulation. This chapter stands on the line between the two: how a value is driven onto a signal, how it is reported, which types a signal can carry, and what a signal holds before anything has driven it.</p>
 
 <h3>Where values meet hardware</h3>
 
@@ -859,7 +1544,7 @@ time         Blinky.count
 
 <p>The fields are your choice, with three limits: field names within one <code>emit!</code> are distinct, a field of one name has the same type everywhere a stream is written, and the name <code>maybe</code> is taken. The simulator sets <code>maybe = true</code> on a record that was reached under an unknown condition, for example inside an <code>if</code> whose test was unknown. Such a record says "this may have happened", and a host never counts it as a fact.</p>
 
-<p>Two stream names are reserved and global: <code>sim</code> and <code>checks</code>. You do not write to them directly. The standard library does it for you: <code>finish()</code> ends the analysis, and <code>require(name, pass)</code> records a check the host judges. Both are ordinary functions over <code>emit!</code>, and chapter 7 uses them. For a plain message there is <code>log(Severity::Info, "text")</code>, which writes to the instance's <code>log</code> stream.</p>
+<p>Two stream names are reserved and global: <code>sim</code> and <code>checks</code>. You do not write to them directly. The standard library does it for you: <code>finish()</code> ends the analysis, and <code>require(name, pass)</code> records a check the host judges. Both are ordinary functions over <code>emit!</code>, and chapter 9 uses them. For a plain message there is <code>log(Severity::Info, "text")</code>, which writes to the instance's <code>log</code> stream.</p>
 
 <div class="callout good">
   <p class="callout-label">Good to know</p>
@@ -873,110 +1558,24 @@ time         Blinky.count
 <div class="table-wrap"><table>
 <thead><tr><th>#</th><th>Concept</th><th>In one sentence</th><th>Chapter</th></tr></thead>
 <tbody>
-<tr><td>1</td><td>value and <code>fn</code></td><td>Data with no time. A function keeps no state, writes no carrier and places no instance.</td><td>3</td></tr>
-<tr><td>2</td><td><code>nature</code></td><td>Says what a carrier holds and how several drivers of it combine.</td><td>4</td></tr>
-<tr><td>3</td><td>carrier</td><td>A signal or port that exists over time. You connect it by passing it to a port.</td><td>4</td></tr>
-<tr><td>4</td><td>drive</td><td>What one module writes to one carrier. The carrier's value combines all its drives.</td><td>4, 7</td></tr>
-<tr><td>5</td><td>param</td><td>A value fixed during a solve. The model reads it; the host sets it.</td><td>5</td></tr>
-<tr><td>6</td><td><code>module</code></td><td>Ports, params and a netlist, fixed at elaboration. Calling a module places an instance.</td><td>5</td></tr>
-<tr><td>7</td><td><code>let</code></td><td>Names an expression. It is evaluated wherever the name is read.</td><td>5</td></tr>
-<tr><td>8</td><td><code>analog for M</code></td><td><code>probe +> x</code> adds to a branch's flow or potential at every Newton iteration.</td><td>6</td></tr>
-<tr><td>9</td><td><code>digital for M</code></td><td>A reaction <code>on ev { q <- x; }</code> runs once when <code>ev</code> fires; its commits apply at the next microstep.</td><td>7</td></tr>
-<tr><td>10</td><td>event</td><td>A value of type <code>Event</code> that fires at instants: <code>changed</code>, <code>at</code>, <code>cross</code>, <code>settle</code>, combined with <code>||</code> and <code>&&</code>.</td><td>7</td></tr>
-<tr><td>11</td><td>instant</td><td><code>(t, n)</code>: at one time, microsteps run until nothing is pending, with the analog side solved in between.</td><td>8</td></tr>
+<tr><td>1</td><td>value and <code>fn</code></td><td>Data with no time. A function keeps no state, writes no carrier and places no instance.</td><td>2 to 4</td></tr>
+<tr><td>2</td><td><code>nature</code></td><td>Says what a carrier holds and how several drivers of it combine.</td><td>6</td></tr>
+<tr><td>3</td><td>carrier</td><td>A signal or port that exists over time. You connect it by passing it to a port.</td><td>6</td></tr>
+<tr><td>4</td><td>drive</td><td>What one module writes to one carrier. The carrier's value combines all its drives.</td><td>6, 9</td></tr>
+<tr><td>5</td><td>param</td><td>A value fixed during a solve. The model reads it; the host sets it.</td><td>7</td></tr>
+<tr><td>6</td><td><code>module</code></td><td>Ports, params and a netlist, fixed at elaboration. Calling a module places an instance.</td><td>7</td></tr>
+<tr><td>7</td><td><code>let</code> in a module body</td><td>Names an expression. It is evaluated wherever the name is read; a <code>let</code> inside a block, as in chapter 2, is evaluated once, where it stands.</td><td>7</td></tr>
+<tr><td>8</td><td><code>analog for M</code></td><td><code>probe +> x</code> adds to a branch's flow or potential at every Newton iteration.</td><td>8</td></tr>
+<tr><td>9</td><td><code>digital for M</code></td><td>A reaction <code>on ev { q <- x; }</code> runs once when <code>ev</code> fires; its commits apply at the next microstep.</td><td>9</td></tr>
+<tr><td>10</td><td>event</td><td>A value of type <code>Event</code> that fires at instants: <code>changed</code>, <code>at</code>, <code>cross</code>, <code>settle</code>, combined with <code>||</code> and <code>&&</code>.</td><td>9</td></tr>
+<tr><td>11</td><td>instant</td><td><code>(t, n)</code>: at one time, microsteps run until nothing is pending, with the analog side solved in between.</td><td>10</td></tr>
 </tbody></table></div>
 
 <p>Three symbols write to something, and each belongs to one layer. <code>=</code> names a value, in a <code>let</code>, or defines what a signal always equals, in a module body. <code>&lt;-</code> schedules a new value for a digital signal, in a reaction. <code>+&gt;</code> adds a contribution to an analog branch, in an <code>analog</code> block.</p>
 
-<h3>What the compiler runs today</h3>
+<h3>Where a function may be called</h3>
 
-<p>The rules of this chapter are the language. The compiler does not yet run every form they describe. This function pair is correct MSL, and it uses three forms that are still on the way: an enum that derives no <code>Repr</code>, a range pattern, and a borrowed table of numbers.</p>
-
-<pre data-lang="msl">#[derive(Clone, Copy, PartialEq)]
-enum Range { Low, Mid, High }
-
-/// Which third of 0..=255 a code falls in.
-fn range_of(code: u8) -> Range {
-    match code {
-        0..=84 => Range::Low,
-        85..=169 => Range::Mid,
-        _ => Range::High,
-    }
-}
-
-fn mean(xs: &[f64]) -> f64 {
-    let total: f64 = xs.iter().sum();
-    total / xs.len() as f64
-}</pre>
-
-<div class="callout status">
-  <p class="callout-label">Status</p>
-  <p>Running today: <code>bool</code>, integers of up to 64 bits, <code>f64</code>, enums without fields that derive <code>Repr</code>, <code>Option</code>, constants, functions with optional parameters, <code>let</code> and blocks, <code>if</code>, <code>match</code> and <code>if let</code>, and a tuple pattern in a <code>let</code>. Everything the four files above use is in that list.</p>
-  <p>Parsed and checked, and not run yet: structs, arrays and tables, <code>let mut</code>, assignment and loops, range patterns, <code>%</code> on floats, methods and traits you declare, generic functions, and floats other than <code>f64</code>. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
-</div>
-
-<div class="callout mistake">
-  <p class="callout-label">Common mistakes</p>
-  <div class="table-wrap"><table class="codes">
-  <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
-  <tbody>
-  <tr><td>E0901</td><td><code>println!("count = {}", count);</code></td><td>Not a built-in form. <code>emit!("dbg", count = count);</code></td></tr>
-  <tr><td>E0602</td><td><code>emit!("edge {}", count);</code></td><td>There is no format string, and a field needs a name: <code>emit!("edge", count = count);</code></td></tr>
-  <tr><td>E0604</td><td><code>emit!("edge", t = now(), t = count);</code></td><td>A field name is used twice. Rename one.</td></tr>
-  <tr><td>E0601</td><td><code>emit!("hello");</code> in a module body</td><td>Output runs when behavior runs. Put it in a reaction: <code>on init() { emit!("hello"); }</code></td></tr>
-  <tr><td>E0101</td><td><code>fn bump(c: &amp;mut u8) { *c += 1; }</code></td><td>No mutable references. Return the new value: <code>fn bump(c: u8) -&gt; u8 { c + 1 }</code></td></tr>
-  <tr><td>E0143</td><td><code>fn gain(x: f64, k: f64 = 2.0) -&gt; f64</code></td><td>No default arguments. <code>k: Option&lt;f64&gt;</code>, then <code>k.unwrap_or(2.0)</code> (chapter 3).</td></tr>
-  <tr><td>E0161</td><td><code>let xs: Vec&lt;f64&gt; = Vec::new();</code></td><td>No heap types, so the path does not resolve. Use an array: <code>[f64; 8]</code>.</td></tr>
-  <tr><td>E0909</td><td><code>let a: u8 = 300;</code></td><td>The literal does not fit the type. Write a value the type holds, or a wider type.</td></tr>
-  <tr><td>E0905</td><td><code>let c = 'a';</code></td><td>There is no character type. Use a string, <code>"a"</code>, or the number you mean.</td></tr>
-  <tr><td>E0903</td><td><code>let module = 2;</code></td><td>A keyword is not a name. Choose another, or write <code>r#module</code>.</td></tr>
-  </tbody></table></div>
-</div>
-
-<div class="callout try">
-  <p class="callout-label">Try it</p>
-  <p>In <code>arith.msl</code>, change <code>a + 10</code> to <code>a + 100</code> and predict <code>wrapped</code> before you run. (94: 350 does not fit eight bits, and 350 − 256 is 94.) Then, in <code>Counter</code>, move the <code>emit!</code> line above the commit. What changes in the stream? (Nothing: both lines read the values from before the edge.) Last, add a field <code>half = count &gt;= 128</code> and predict the time of the first record where it is true. (The 129th rising edge, at 128.5&nbsp;µs.)</p>
-</div>
-</section>
-
-<!-- ===================================================== 3 -->
-<section id="values" class="chapter">
-<p class="ch-num">Chapter 3</p>
-<h2>Values and functions</h2>
-
-<div class="callout goal">
-  <p class="callout-label">Goal</p>
-  <p>By the end of this chapter you can declare your own value types, write the helper functions a model computes with, and explain what an <em>unknown</em> value is, where it comes from and how to catch one with <code>emit!</code>.</p>
-</div>
-
-<p>A <strong>value</strong> is data with no time: a number, a flag, an enum, a struct. Everything a model computes with is a value; what it <em>connects to</em> is a carrier (next chapter). Chapter 2 gave the rules of values; this chapter puts them to work on the three things a model author adds: types of your own, helper functions, and the handling of unknown values.</p>
-
-<h3>Types</h3>
-
-<div class="table-wrap"><table>
-<thead><tr><th>Kind</th><th>Types</th><th>Notes</th></tr></thead>
-<tbody>
-<tr><td>boolean</td><td><code>bool</code></td><td></td></tr>
-<tr><td>integer</td><td><code>u1</code> … <code>u128</code>, <code>i1</code> … <code>i128</code></td><td>Any width, even <code>u3</code> or <code>UInt&lt;{A + 1}&gt;</code>. Arithmetic always wraps.</td></tr>
-<tr><td>float</td><td><code>f16</code>, <code>f32</code>, <code>f64</code>, <code>f128</code></td><td>IEEE 754. Analog code computes in <code>f64</code>.</td></tr>
-<tr><td>string</td><td><code>&'static str</code></td><td>Literals only. Never carried by a signal.</td></tr>
-<tr><td>composite</td><td>arrays, tuples, <code>struct</code>, <code>enum</code>, <code>Option&lt;T&gt;</code></td><td>Several values as one (chapter 2).</td></tr>
-</tbody></table></div>
-
-<p>Three properties of numbers matter in practice. Read them in this block of statements:</p>
-
-<pre data-lang="msl">let a: u8 = 250;
-let b = a + 10;            // 4: integers wrap modulo 2^N, in every build, with no panic
-let duty: u3 = 5;          // any width: a 3-bit value, 0 to 7
-let r = 4.7k;              // an SI suffix makes an f64: 4700.0
-let n = 3;                 // a plain literal is an integer
-let x = r * n as f64;      // integers and reals never mix by themselves: convert with `as`</pre>
-
-<p>First, integers come in <strong>any width</strong>, because hardware does: a 3-bit duty word is a <code>u3</code>, and a 10-bit ADC code a <code>u10</code>. Second, integer arithmetic <strong>wraps</strong> the way a register does, in every build; no build setting changes what a sum is. Third, <code>usize</code> is <code>u64</code> on every machine, so a result never depends on the computer running it. The prelude gives you the constants <code>Q</code>, <code>K_B</code>, <code>EPS0</code>, <code>PI</code>, <code>E</code> and <code>inf</code>.</p>
-
-<h3>Functions</h3>
-
-<p>A function is computation without time. It keeps no state, writes no carrier and places no instance. Its header names each parameter with its type and, after <code>-&gt;</code>, the type of the result; the last expression of its body is that result:</p>
+<p>A function has no time of its own, but its body may touch things that do: it may probe a voltage, read the clock of the simulation, or write a record. Here are a function that touches none of them, and one that yields an event:</p>
 
 <pre data-lang="msl">/// The current of an ideal junction at a voltage `vd`.
 pub fn diode_current(vd: f64, is: f64, nvt: f64) -> f64 { is * ((vd / nvt).exp() - 1.0) }
@@ -988,33 +1587,19 @@ pub fn handshake(req: Bit, ack: Bit) -> Event { req.rise() && ack }</pre>
 
 <div class="callout good">
   <p class="callout-label">Good to know</p>
-  <p>Anything with state is a module, never a function. <code>fn f(x: f64) -> f64 { ddt(x) }</code> is an error, because <code>ddt</code> remembers the past; write <code>module f(x: f64) -> f64 { ddt(x) }</code>. Chapter 5 shows modules that return values.</p>
+  <p>Anything with state is a module, never a function. <code>fn f(x: f64) -> f64 { ddt(x) }</code> is an error, because <code>ddt</code> remembers the past; write <code>module f(x: f64) -> f64 { ddt(x) }</code>. Chapter 7 shows modules that return values.</p>
 </div>
 
-<h3>Optional parameters</h3>
+<h3>Types a signal can carry: <code>Repr</code></h3>
 
-<p>There are no default arguments and no overloading. Instead, trailing parameters of type <code>Option&lt;T&gt;</code> may be left out, or passed by name to skip earlier ones. Passing a plain <code>T</code> wraps it in <code>Some</code>, the one implicit conversion in the language:</p>
-
-<pre data-lang="msl">/// Scales `x`; the gain is 2.0 unless given, and the result may be clamped.
-fn scale(x: f64, k: Option<f64>, limit: Option<f64>) -> f64 {
-    let y = x * k.unwrap_or(2.0);
-    match limit { Some(l) => y.clamp(-l, l), None => y }
-}</pre>
-
-<pre data-lang="msl">scale(v)                    // k and limit left out
-scale(v, 3.0)               // k = Some(3.0)
-scale(v, limit: 1.0)        // skips k by naming limit</pre>
-
-<p>The library uses this everywhere: <code>idt(x)</code> is an integrator, <code>idt(x, 1.0)</code> one with an initial condition, and <code>idt(x, 1.0, reset: rst)</code> one with a reset too.</p>
-
-<h3>Your own types, and <code>Repr</code></h3>
-
-<p>An <code>enum</code> is a type with a fixed list of variants, and a <code>struct</code> a type with named fields. For hardware one more property matters: only a type that implements <code>Repr</code> can be <em>carried by a signal</em>. <code>Repr</code> lays a value out as a row of boolean <strong>levels</strong>, the bits a wire would carry. Primitives have it built in; your own types derive it:</p>
+<p>A signal is hardware, and what travels on it is bits. Only a type that implements the trait <code>Repr</code> can be <em>carried by a signal</em>. <code>Repr</code> lays a value out as a row of boolean <strong>levels</strong>, the bits a wire would carry. Primitives have it built in; your own types derive it:</p>
 
 <pre data-lang="msl">#[derive(Repr, Clone, Copy, PartialEq)]
 enum Zone { Under, Ok, Over }</pre>
 
 <p>A derived struct puts its fields side by side, first field lowest. A derived enum lays out a tag, then the widest payload. One-hot or Gray encodings are a hand-written <code>impl Repr</code>.</p>
+
+<p>A digital signal names the type it carries in angle brackets: <code>Bit&lt;Zone&gt;</code> is a wire for a <code>Zone</code>, <code>Bit&lt;u8&gt;</code> a wire for eight bits, and <code>Bit</code> alone a wire for a <code>bool</code>.</p>
 
 <h3>A complete example: a window monitor</h3>
 
@@ -1076,7 +1661,7 @@ module MonitorTop() {
   (1.5 µs, 0)    t = 1.5e-6   v ≈ 1.5   from = Under   to = Ok
   (2.5 µs, 0)    t = 2.5e-6   v ≈ 2.5   from = Ok      to = Over</pre>
 
-<p>The values of <code>v</code> are "near" on purpose. A reaction that runs on a clock edge reads the analog solution the solver had just before the edge, as a real sampler does. Chapter 8 makes that precise.</p>
+<p>The values of <code>v</code> are "near" on purpose. A reaction that runs on a clock edge reads the analog solution the solver had just before the edge, as a real sampler does. Chapter 10 makes that precise.</p>
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
@@ -1307,26 +1892,27 @@ extern "C" fn erfcx_dx(x: f64) -> f64;</pre>
   <div class="table-wrap"><table class="codes">
   <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
   <tbody>
+  <tr><td>E0901</td><td><code>println!("count = {}", count);</code></td><td>Not a built-in form. <code>emit!("dbg", count = count);</code></td></tr>
+  <tr><td>E0602</td><td><code>emit!("edge {}", count);</code></td><td>There is no format string, and a field needs a name: <code>emit!("edge", count = count);</code></td></tr>
+  <tr><td>E0604</td><td><code>emit!("edge", t = now(), t = count);</code></td><td>A field name is used twice. Rename one.</td></tr>
+  <tr><td>E0601</td><td><code>emit!("hello");</code> in a module body</td><td>Output runs when behavior runs. Put it in a reaction: <code>on init() { emit!("hello"); }</code></td></tr>
   <tr><td>E0150</td><td><code>v(vout) +&gt; held;</code></td><td><code>analog</code> reads a digital carrier raw. Say what unknown means: <code>held.known_or(0.0)</code>.</td></tr>
   <tr><td>E0112</td><td><code>out zone: Bit&lt;Zone&gt;</code> with <code>Zone</code> not deriving <code>Repr</code></td><td>A carried type needs a layout. Add <code>#[derive(Repr)]</code> to the enum.</td></tr>
   <tr><td>E0350</td><td><code>fn slope(x: f64) -&gt; f64 { ddt(x) }</code></td><td><code>ddt</code> is an instance with memory, and a <code>fn</code> has none. Make it a <code>module slope(x: f64) -&gt; f64</code>.</td></tr>
-  <tr><td>E0143</td><td><code>fn scale(x: f64, k: f64 = 2.0)</code></td><td>No default arguments. <code>k: Option&lt;f64&gt;</code> and <code>k.unwrap_or(2.0)</code>.</td></tr>
-  <tr><td>E0140</td><td><code>scale(v, gain: 3.0)</code></td><td>A named argument must name an optional parameter. It is called <code>k</code>.</td></tr>
-  <tr><td>E0142</td><td><code>scale(v, limit: 1.0, 3.0)</code></td><td>A positional argument cannot follow a named one. <code>scale(v, 3.0, limit: 1.0)</code>.</td></tr>
   <tr><td>E0123</td><td><code>extern "C" fn erfcx(x: f64) -&gt; f64;</code> called in <code>analog</code></td><td>Add <code>#[derivative(erfcx_dx)]</code> so the solver has a Jacobian.</td></tr>
   </tbody></table></div>
-  <p>One mistake has no special code because it is a plain type error: <code>r: f64 = 100</code>. An integer literal is never an <code>f64</code>; write <code>100.0</code>.</p>
 </div>
 
 <div class="callout try">
   <p class="callout-label">Try it</p>
+  <p>In <code>Counter</code>, move the <code>emit!</code> line above the commit. What changes in the stream? (Nothing: both lines read the values from before the edge.) Then add a field <code>half = count &gt;= 128</code> and predict the time of the first record where it is true. (The 129th rising edge, at 128.5&nbsp;µs.)</p>
   <p>In <code>Adder</code>, replace <code>a + b</code> with <code>a &amp; b</code> and change the constant <code>3</code> to <code>0</code>, leaving <code>b</code> undriven. Does the <code>lost</code> record still appear? (No: <code>0 &amp; unknown</code> is 0 on every level, so <code>sum</code> stays known.) Then put the <code>3</code> back and say which levels of <code>sum</code> are unknown. (The two lowest: the levels where <code>a</code> is 1.)</p>
 </div>
 </section>
 
-<!-- ===================================================== 4 -->
+<!-- ===================================================== 6 -->
 <section id="natures" class="chapter">
-<p class="ch-num">Chapter 4</p>
+<p class="ch-num">Chapter 6</p>
 <h2>Natures and carriers</h2>
 
 <div class="callout goal">
@@ -1384,7 +1970,7 @@ signal sda:   Wire;                      // resolved: any number of drivers
 signal mid:   Electrical;                // an internal node
 signal vout:  Electrical = 0.0;          // where Newton starts; held there as a transient begins</pre>
 
-<p>A discrete signal with no initial value starts <em>unknown</em> and stays so until something commits to it. That is the honest model of a register at power-up, and chapter 3 showed how to catch it. On a node, <code>= 0.0</code> is where the solver begins its search for the operating point, and a transient analysis starts from that value.</p>
+<p>A discrete signal with no initial value starts <em>unknown</em> and stays so until something commits to it. That is the honest model of a register at power-up, and chapter 5 showed how to catch it. On a node, <code>= 0.0</code> is where the solver begins its search for the operating point, and a transient analysis starts from that value.</p>
 
 <p>An array of carriers costs what you write into it: storage for an element exists from its first commit, so <code>[Bit&lt;u8&gt;; 1 << 32]</code> is fine as a memory.</p>
 
@@ -1649,7 +2235,7 @@ digital<T> for Slice<T> {
 
 <h3>Analog and digital never touch directly</h3>
 
-<p>A <code>Bit</code> is never connected to an <code>Electrical</code> node, and no converter is ever inserted for you. Between modules you place one explicitly: <code>D2A</code>, <code>A2D</code> or <code>Bidir</code> from the standard library. <em>Inside</em> one module, behavior crosses freely: <code>analog</code> reads digital carriers, and reactions probe voltages, as <code>Step</code> and <code>WindowMonitor</code> already did. Chapter 8 is about this.</p>
+<p>A <code>Bit</code> is never connected to an <code>Electrical</code> node, and no converter is ever inserted for you. Between modules you place one explicitly: <code>D2A</code>, <code>A2D</code> or <code>Bidir</code> from the standard library. <em>Inside</em> one module, behavior crosses freely: <code>analog</code> reads digital carriers, and reactions probe voltages, as <code>Step</code> and <code>WindowMonitor</code> already did. Chapter 10 is about this.</p>
 
 <div class="callout mistake">
   <p class="callout-label">Common mistakes</p>
@@ -1672,9 +2258,9 @@ digital<T> for Slice<T> {
 </div>
 </section>
 
-<!-- ===================================================== 5 -->
+<!-- ===================================================== 7 -->
 <section id="modules" class="chapter">
-<p class="ch-num">Chapter 5</p>
+<p class="ch-num">Chapter 7</p>
 <h2>Modules and hierarchy</h2>
 
 <div class="callout goal">
@@ -1854,7 +2440,7 @@ analog for PiAw { v(y) +> (kp * v(e) + xi).clamp(lo, hi); }</pre>
 
 <h3>Structure without behavior</h3>
 
-<p>Many useful modules have no behavior block at all. Here is a switched-capacitor integrator that is only a netlist of smaller parts. Chapter 6 walks through what the solver does with it.</p>
+<p>Many useful modules have no behavior block at all. Here is a switched-capacitor integrator that is only a netlist of smaller parts. Chapter 8 walks through what the solver does with it.</p>
 
 <pre data-lang="msl">module RSwitch(a: Electrical, b: Electrical, in ctl: Bit) { ron: f64 = 100.0; roff: f64 = 1G; }
 analog for RSwitch { i(a, b) +> v(a, b) / if ctl.high() { ron } else { roff }; }
@@ -1959,9 +2545,9 @@ extern "osdi" module Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Elect
 </div>
 </section>
 
-<!-- ===================================================== 6 -->
+<!-- ===================================================== 8 -->
 <section id="analog" class="chapter">
-<p class="ch-num">Chapter 6</p>
+<p class="ch-num">Chapter 8</p>
 <h2>Analog behavior</h2>
 
 <div class="callout goal">
@@ -2179,7 +2765,7 @@ analog for Coupled {
 
 <h3>The operators</h3>
 
-<p>These are the tools of the trade. Most are library modules that return a value (chapter 5), so each use is an instance with its own state.</p>
+<p>These are the tools of the trade. Most are library modules that return a value (chapter 7), so each use is an instance with its own state.</p>
 
 <div class="table-wrap"><table>
 <thead><tr><th>Name</th><th>What it gives</th><th>Kind</th></tr></thead>
@@ -2198,7 +2784,7 @@ analog for Coupled {
 
 <h3>One block, every analysis</h3>
 
-<p>You do not write separate DC and AC models. One <code>analog</code> block serves <code>Dc</code>, <code>Transient</code>, <code>Ac</code> and <code>Noise</code>. In an equilibrium solve (a DC point, or the operating point every other analysis starts from) <code>ddt</code> is zero, so a capacitor is open and an inductor is a short, with nothing written by you. <code>analysis(Static)</code> is true during such a solve, which lets a model hold a state at its initial condition there, as <code>idt</code> does in chapter 5. For small-signal analyses the block is linearized around the operating point with <code>ddt(x)</code> read as <code>jω·x</code>:</p>
+<p>You do not write separate DC and AC models. One <code>analog</code> block serves <code>Dc</code>, <code>Transient</code>, <code>Ac</code> and <code>Noise</code>. In an equilibrium solve (a DC point, or the operating point every other analysis starts from) <code>ddt</code> is zero, so a capacitor is open and an inductor is a short, with nothing written by you. <code>analysis(Static)</code> is true during such a solve, which lets a model hold a state at its initial condition there, as <code>idt</code> does in chapter 7. For small-signal analyses the block is linearized around the operating point with <code>ddt(x)</code> read as <code>jω·x</code>:</p>
 
 <div class="table-wrap"><table>
 <thead><tr><th>Construct</th><th>At the operating point</th><th>In the AC sweep</th></tr></thead>
@@ -2220,7 +2806,7 @@ i(mid, b) +> -n;          // fully correlated</pre>
 
 <h3>Walkthrough: the switched-capacitor integrator</h3>
 
-<p>Go back to <code>ScIntegrator</code> in chapter 5. It has no <code>analog</code> block of its own: all branches belong to its children. Here is what the solver sees.</p>
+<p>Go back to <code>ScIntegrator</code> in chapter 7. It has no <code>analog</code> block of its own: all branches belong to its children. Here is what the solver sees.</p>
 
 <ol class="steps">
 <li><strong>Operating point.</strong> Both clock phases start low, so all four switches are at <code>roff</code> and the capacitors carry no current. <code>y</code> and <code>vg</code> reach ground through <code>s3</code> and <code>s4</code>; <code>x</code> sits at <code>v(vin)/2</code> between <code>s1</code> and <code>s2</code>. No node floats. That is what a finite <code>roff</code> buys.</li>
@@ -2254,9 +2840,9 @@ i(mid, b) +> -n;          // fully correlated</pre>
 </div>
 </section>
 
-<!-- ===================================================== 7 -->
+<!-- ===================================================== 9 -->
 <section id="digital" class="chapter">
-<p class="ch-num">Chapter 7</p>
+<p class="ch-num">Chapter 9</p>
 <h2>Digital behavior</h2>
 
 <div class="callout goal">
@@ -2294,7 +2880,7 @@ digital for Counter {
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
-  <p>The counter needs a clock. Put it in a file <code>count.msl</code> with the <code>Osc</code> of chapter 2 and a three-line bench:</p>
+  <p>The counter needs a clock. Put it in a file <code>count.msl</code> with the <code>Osc</code> of chapter 5 and a three-line bench:</p>
 <pre data-lang="msl">module Count() {
     signal clk: Bit;
     signal count: Bit<u8>;
@@ -2545,7 +3131,7 @@ digital for PwmCheck {
     }
 }</pre>
 
-<p>Place it beside the generator in <code>PwmBench</code> with <code>let chk = PwmCheck(clk, wrap, pwm);</code>. A check is an ordinary reaction: it runs when its event fires and reads what any reaction reads. The library also has ready-made monitors built this way, such as <code>Never(clk, bad)</code> and <code>Setup(clk, d) { ts: 100p }</code>; chapter 11 lists them.</p>
+<p>Place it beside the generator in <code>PwmBench</code> with <code>let chk = PwmCheck(clk, wrap, pwm);</code>. A check is an ordinary reaction: it runs when its event fires and reads what any reaction reads. The library also has ready-made monitors built this way, such as <code>Never(clk, bad)</code> and <code>Setup(clk, d) { ts: 100p }</code>; chapter 13 lists them.</p>
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
@@ -2556,7 +3142,7 @@ digital for PwmCheck {
 
 <h3>Many drivers: resolved nets</h3>
 
-<p>Open-drain lines, tristate buses and wired logic are not language features. They are a nature with a <code>resolve</code> function (chapter 4). A clocked reader of such a line looks like any other reaction; it reads the resolved value:</p>
+<p>Open-drain lines, tristate buses and wired logic are not language features. They are a nature with a <code>resolve</code> function (chapter 6). A clocked reader of such a line looks like any other reaction; it reads the resolved value:</p>
 
 <pre data-lang="msl">module IrqSource(in req: Bit, irq_n: Wire) { irq_n = if req { Logic::strong(false) } else { Logic::Z }; }
 
@@ -2607,7 +3193,7 @@ digital for MacPipe {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Digital MSL runs from source, and the <code>piperine</code> command runs it. A <code>digital</code> block is type checked, elaborated and compiled to Rust (chapter 18); its reactions, commits, events, unknown values and <code>emit!</code> records run on the solver and are tested against the rules above. One form of this chapter is not compiled yet and is refused with P0001: a param of an integer type, such as <code>n: u8</code>. That stops the debouncer and the PWM for now, as their "Run it" boxes show; the counter runs. A transient of a design with no analog node runs to its stop like any other and gives its table.</p>
+  <p>Digital MSL runs from source, and the <code>piperine</code> command runs it. A <code>digital</code> block is type checked, elaborated and compiled to Rust (chapter 20); its reactions, commits, events, unknown values and <code>emit!</code> records run on the solver and are tested against the rules above. One form of this chapter is not compiled yet and is refused with P0001: a param of an integer type, such as <code>n: u8</code>. That stops the debouncer and the PWM for now, as their "Run it" boxes show; the counter runs. A transient of a design with no analog node runs to its stop like any other and gives its table.</p>
 </div>
 
 <div class="callout mistake">
@@ -2632,9 +3218,9 @@ digital for MacPipe {
 </div>
 </section>
 
-<!-- ===================================================== 8 -->
+<!-- ===================================================== 10 -->
 <section id="mixed" class="chapter">
-<p class="ch-num">Chapter 8</p>
+<p class="ch-num">Chapter 10</p>
 <h2>Mixed-signal</h2>
 
 <div class="callout goal">
@@ -2957,7 +3543,7 @@ analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Mixed-signal designs run from source as compiled Rust, on the same solver that runs analog MSL. A full-size digitally controlled buck converter (12&nbsp;V in, 200&nbsp;MHz digital PWM, PID, ADC, comparators and a supervisor) starts from its <code>.msl</code> and regulates at 0.8&nbsp;V within 3&nbsp;mV with its loop closed, and the <code>piperine</code> command runs it (chapter 13). The front end parses and resolves every complete file of this chapter. One thing the examples here use is not compiled yet and is refused with P0001: the <code>settle</code> event (the converter's check). The math methods of <code>f64</code> such as <code>sin</code> (the sine sources) run.</p>
+  <p>Mixed-signal designs run from source as compiled Rust, on the same solver that runs analog MSL. A full-size digitally controlled buck converter (12&nbsp;V in, 200&nbsp;MHz digital PWM, PID, ADC, comparators and a supervisor) starts from its <code>.msl</code> and regulates at 0.8&nbsp;V within 3&nbsp;mV with its loop closed, and the <code>piperine</code> command runs it (chapter 15). The front end parses and resolves every complete file of this chapter. One thing the examples here use is not compiled yet and is refused with P0001: the <code>settle</code> event (the converter's check). The math methods of <code>f64</code> such as <code>sin</code> (the sine sources) run.</p>
 </div>
 
 <div class="callout mistake">
@@ -2982,9 +3568,9 @@ analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's
 </div>
 </section>
 
-<!-- ===================================================== 9 -->
+<!-- ===================================================== 11 -->
 <section id="simulation" class="chapter">
-<p class="ch-num">Chapter 9</p>
+<p class="ch-num">Chapter 11</p>
 <h2>Inside a simulation</h2>
 
 <div class="callout goal">
@@ -2992,7 +3578,7 @@ analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's
   <p>By the end of this chapter you can say what the solver is doing at any moment of a run: how a circuit becomes equations, how those equations are solved at rest and over time, how the analog and digital sides take turns, and why a given run is fast, slow or stuck. You do not need to know how to build a solver. You need to know what yours is doing with your model.</p>
 </div>
 
-<p>You have now written analog, digital and mixed models. This chapter shows what the simulator does with them, slowly, with a picture for every idea and one small circuit that is run from the first section to the last. Chapter 17, in Part 2, is the reference for the same ground: each rule of the solver in a few lines, and every option of a run with its default. Read chapter 17 when you want the rule; read this one when you want to see why the rule is there.</p>
+<p>You have now written analog, digital and mixed models. This chapter shows what the simulator does with them, slowly, with a picture for every idea and one small circuit that is run from the first section to the last. Chapter 19, in Part 2, is the reference for the same ground: each rule of the solver in a few lines, and every option of a run with its default. Read chapter 19 when you want the rule; read this one when you want to see why the rule is there.</p>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" class="fig"><defs>
 <marker id="ar-fg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-fg"/></marker>
@@ -3215,7 +3801,7 @@ Divider.b  4.000000e0</pre>
 
 <p>That is Newton's method, and it is the engine under every analysis in this chapter. In each iteration every device is asked two things at the current guess: its current, and how fast that current changes with each voltage (the slope of its curve). The compiler derived those slopes from your model's expressions; you never write them. The answers fill the matrix, the matrix is solved, and the result is the next guess.</p>
 
-<p>Near the solution Newton is very fast: each iteration roughly doubles the number of correct digits. Far from it, a tangent can point almost anywhere, as the first guess in the figure shows. Two things keep that under control. The solver starts each solve from the best guess it has, usually the previous solution. And a model of a junction can <em>limit</em> its own step with <code>limit</code> or <code>limexp</code> (chapter 6), so that one wild tangent does not throw the voltage to a place where the exponential overflows.</p>
+<p>Near the solution Newton is very fast: each iteration roughly doubles the number of correct digits. Far from it, a tangent can point almost anywhere, as the first guess in the figure shows. Two things keep that under control. The solver starts each solve from the best guess it has, usually the previous solution. And a model of a junction can <em>limit</em> its own step with <code>limit</code> or <code>limexp</code> (chapter 8), so that one wild tangent does not throw the voltage to a place where the exponential overflows.</p>
 
 <h4>When is it done?</h4>
 
@@ -3314,7 +3900,7 @@ Divider.b  4.000000e0</pre>
 <li><strong>Source stepping.</strong> If that is not enough, every source is switched off, where the answer is simply zero everywhere, and the sources are turned up in stages to full strength. A stage that fails is retried with a smaller increase.</li>
 </ol>
 
-<p>These are the same two rescues ngspice uses, in the same order. Both are invisible when they work: you get the operating point of your circuit, not of the easier one. A model can see them happen through <code>gmin()</code> and <code>source_scale()</code> (chapter 16), which is how a junction model follows the ramp.</p>
+<p>These are the same two rescues ngspice uses, in the same order. Both are invisible when they work: you get the operating point of your circuit, not of the easier one. A model can see them happen through <code>gmin()</code> and <code>source_scale()</code> (chapter 18), which is how a junction model follows the ramp.</p>
 
 <p>If the direct attempt and both rescues fail, the run stops with <code>E0505</code> and names the unknowns that would not settle. This circuit has no operating point at all: a device that pushes current out above 0.5&nbsp;V and pulls it in below.</p>
 
@@ -3350,9 +3936,9 @@ module Stuck() {
 <pre data-lang="text" data-cli-output="piperine run stuck.msl --analysis op" data-cli-stream="stderr" data-cli-cache="empty" data-cli-lines="2">compiling run `stuck` (top Stuck) with rustc
 error: the op analysis failed: Newton: E0505: Newton failed to converge after 500 iterations: node of Stuck.r1.p, Stuck.c1.p</pre>
 
-<p>Read it from the right. <strong>The names at the end are where to look</strong>: the node that <code>r1.p</code> and <code>c1.p</code> share never passed the two tests. The number in the middle is the bound: one solve is allowed 500 iterations. The code says which kind of failure it was. The cure is in the model, almost never in the tolerances: here the step in <code>Chatter</code> has no slope for Newton to follow. Chapter 12 lists the run errors and the usual cause of each.</p>
+<p>Read it from the right. <strong>The names at the end are where to look</strong>: the node that <code>r1.p</code> and <code>c1.p</code> share never passed the two tests. The number in the middle is the bound: one solve is allowed 500 iterations. The code says which kind of failure it was. The cure is in the model, almost never in the tolerances: here the step in <code>Chatter</code> has no slope for Newton to follow. Chapter 14 lists the run errors and the usual cause of each.</p>
 
-<p>A design with digital parts adds one loop around all of this: solve the analog side, let the digital side react to that solution, and if a reaction changed something an analog model reads, solve again. Chapter 17 gives the bound on those rounds and the error that names the nets when they never agree.</p>
+<p>A design with digital parts adds one loop around all of this: solve the analog side, let the digital side react to that solution, and if a reaction changed something an analog model reads, solve again. Chapter 19 gives the bound on those rounds and the error that names the nets when they never agree.</p>
 
 <h3>Moving through time</h3>
 
@@ -3906,7 +4492,7 @@ time         Divider.b
 <figcaption>Inside one instant. All the reactions of a microstep read the same snapshot, so their order does not matter; what they commit becomes visible in the next microstep.</figcaption>
 </figure>
 
-<p>The rule that keeps this orderly: a commit made in one microstep is seen in the next, never in the same one. Every reaction of a microstep reads the same picture of the world, so the order in which they run cannot matter. The instant ends when a microstep leaves nothing due. A loop of commits with no delay never gets there; chapter 17 gives the bound and the error.</p>
+<p>The rule that keeps this orderly: a commit made in one microstep is seen in the next, never in the same one. Every reaction of a microstep reads the same picture of the world, so the order in which they run cannot matter. The instant ends when a microstep leaves nothing due. A loop of commits with no delay never gets there; chapter 19 gives the bound and the error.</p>
 
 <p>When the instant belongs to a time point, <code>settle</code> fires once at the very end, after everything has gone quiet. That is why <code>on settle</code> is the place to print or to check: it sees the analog solution and the final digital values of that moment, and nothing half-done.</p>
 
@@ -4025,7 +4611,7 @@ freq        mag(Divider.b)  phase(Divider.b)
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>The solver has this analysis. The <code>piperine</code> command does not offer it yet: its analyses are the eight of chapter 13.</p>
+  <p>The solver has this analysis. The <code>piperine</code> command does not offer it yet: its analyses are the eight of chapter 15.</p>
 </div>
 
 <h3>What this means for you</h3>
@@ -4078,7 +4664,7 @@ freq        mag(Divider.b)  phase(Divider.b)
 <figcaption>Ten nanoseconds of a converter driven by a 200&#8239;MHz clock. Orange dots are steps that end on a clock edge because the edge is a landing; blue dots are the steps in between. The step count follows the clock, not the waveform.</figcaption>
 </figure>
 
-<p>The buck converter of chapter 13 is the worked case. It switches at 500&nbsp;kHz, so its analog waveforms have something to show every 2&nbsp;µs. But its controller runs on a 200&nbsp;MHz clock, and the reactions on that clock can reach the gate drivers, so today every clock edge is a landing: one every 2.5&nbsp;ns. Measured on the first 100&nbsp;µs of its <code>startup</code> run, that is about 40&nbsp;000 landings. Only a few hundred of those edges change anything the power stage reads. After each landing the step grows back by at most 1.5 times per step, and the next edge arrives before it has grown far. The run settles at roughly three steps per clock edge, about 128&nbsp;000 accepted steps per 100&nbsp;µs with an average step under a nanosecond, and never comes near its own <code>max_step</code> of 10&nbsp;ns.</p>
+<p>The buck converter of chapter 15 is the worked case. It switches at 500&nbsp;kHz, so its analog waveforms have something to show every 2&nbsp;µs. But its controller runs on a 200&nbsp;MHz clock, and the reactions on that clock can reach the gate drivers, so today every clock edge is a landing: one every 2.5&nbsp;ns. Measured on the first 100&nbsp;µs of its <code>startup</code> run, that is about 40&nbsp;000 landings. Only a few hundred of those edges change anything the power stage reads. After each landing the step grows back by at most 1.5 times per step, and the next edge arrives before it has grown far. The run settles at roughly three steps per clock edge, about 128&nbsp;000 accepted steps per 100&nbsp;µs with an average step under a nanosecond, and never comes near its own <code>max_step</code> of 10&nbsp;ns.</p>
 
 <p>What you can do about it today, in order of effect:</p>
 
@@ -4137,9 +4723,9 @@ freq        mag(Divider.b)  phase(Divider.b)
 
 </section>
 
-<!-- ===================================================== 10 -->
+<!-- ===================================================== 12 -->
 <section id="packages" class="chapter">
-<p class="ch-num">Chapter 10</p>
+<p class="ch-num">Chapter 12</p>
 <h2>Files, modules and packages</h2>
 
 <div class="callout goal">
@@ -4332,7 +4918,7 @@ analog for MeasuredDiode { i(a, k) +> table_model(v(a, k), &IV, "3E"); }   // cu
 
 <h3>The standard library and the prelude</h3>
 
-<p><code>std</code> is a crate that ships inside Piperine. Every crate depends on it, no manifest names it, and no dependency may be called <code>std</code>. The <strong>prelude</strong>, the <code>pub</code> items of <code>std::prelude</code>, is implied in every file, which is why <code>Bit</code>, <code>Electrical</code>, <code>idt</code> and <code>above</code> need no <code>use</code>. A handful of <strong>core names</strong> need nothing at all: <code>gnd</code>, <code>Nature</code>, <code>m</code>, <code>dtemp</code>, <code>str</code> and the core primitives like <code>ddt</code> and <code>cross</code>. Chapter 11 tours both.</p>
+<p><code>std</code> is a crate that ships inside Piperine. Every crate depends on it, no manifest names it, and no dependency may be called <code>std</code>. The <strong>prelude</strong>, the <code>pub</code> items of <code>std::prelude</code>, is implied in every file, which is why <code>Bit</code>, <code>Electrical</code>, <code>idt</code> and <code>above</code> need no <code>use</code>. A handful of <strong>core names</strong> need nothing at all: <code>gnd</code>, <code>Nature</code>, <code>m</code>, <code>dtemp</code>, <code>str</code> and the core primitives like <code>ddt</code> and <code>cross</code>. Chapter 13 tours both.</p>
 
 <h3>When names collide</h3>
 
@@ -4382,9 +4968,9 @@ utilx = { path = "../util", package = "util" }    # now `utilx::cells::Cell`</pr
 </div>
 </section>
 
-<!-- ===================================================== 11 -->
+<!-- ===================================================== 13 -->
 <section id="core-std" class="chapter">
-<p class="ch-num">Chapter 11</p>
+<p class="ch-num">Chapter 13</p>
 <h2>Core and standard library</h2>
 
 <div class="callout goal">
@@ -4680,13 +5266,13 @@ digital for Watchdog {
 
 <div class="callout try">
   <p class="callout-label">Try it</p>
-  <p>Without looking at the tables: which library module turns a stepped <code>Bit&lt;f64&gt;</code> level into a ramp, which one tells you how long ago a signal last changed, and which one checks that two commands are never high together? (<code>transition</code>, <code>since</code> and <code>Never</code>.) Then place a <code>Watchdog</code> in the <code>Press</code> bench of chapter 7 with <code>limit: 3</code>, its <code>busy</code> port on <code>button</code>, and say at which clock edge the run ends if the button is held down. (The fourth edge with the button down: the first three count, the fourth finds <code>run</code> at 3.)</p>
+  <p>Without looking at the tables: which library module turns a stepped <code>Bit&lt;f64&gt;</code> level into a ramp, which one tells you how long ago a signal last changed, and which one checks that two commands are never high together? (<code>transition</code>, <code>since</code> and <code>Never</code>.) Then place a <code>Watchdog</code> in the <code>Press</code> bench of chapter 9 with <code>limit: 3</code>, its <code>busy</code> port on <code>button</code>, and say at which clock edge the run ends if the button is held down. (The fourth edge with the button down: the first three count, the fourth finds <code>run</code> at 3.)</p>
 </div>
 </section>
 
-<!-- ===================================================== 12 -->
+<!-- ===================================================== 14 -->
 <section id="errors" class="chapter">
-<p class="ch-num">Chapter 12</p>
+<p class="ch-num">Chapter 14</p>
 <h2>Reading errors</h2>
 
 <div class="callout goal">
@@ -4725,7 +5311,7 @@ digital for Watchdog {
 
 <h3>A worked example: three errors in one file</h3>
 
-<p>Here is a first attempt at the sample-and-hold of chapter 3, written the way a newcomer would. It parses, so the listing below is legal syntax, and it has three mistakes that elaboration finds.</p>
+<p>Here is a first attempt at the sample-and-hold of chapter 5, written the way a newcomer would. It parses, so the listing below is legal syntax, and it has three mistakes that elaboration finds.</p>
 
 <pre data-lang="msl">module SampleHold(vin: Electrical, vout: Electrical, clk: Bit) {
     signal held: Bit<f64> = 0.0;
@@ -4794,7 +5380,7 @@ analog for SampleHold {
 <tr><td>E0404</td><td>A statement in the wrong kind of block, like <code><-</code> in <code>analog</code>.</td><td>Move it.</td></tr>
 <tr><td>E0414</td><td>A branch switches kind on a probe.</td><td>Switch on a param or digital carrier.</td></tr>
 <tr><td>E0430</td><td>The head of <code>on</code> is not an <code>Event</code>.</td><td><code>s.changed()</code>, <code>clk.rise()</code>, or a guard <code>ev && c</code>.</td></tr>
-<tr><td>E0171</td><td>A manifest key the format does not allow.</td><td>See chapter 10.</td></tr>
+<tr><td>E0171</td><td>A manifest key the format does not allow.</td><td>See chapter 12.</td></tr>
 <tr><td>E0175</td><td>A package without <code>src/lib.msl</code>.</td><td>Create the crate root.</td></tr>
 <tr><td>E0250</td><td>A digital carrier connected to an analog port, or the reverse.</td><td>Place a converter: <code>A2D</code>, <code>D2A</code>.</td></tr>
 <tr><td>E0310</td><td>A <code>Bit</code> port with no <code>in</code> or <code>out</code>, or a direction where none belongs.</td><td>Add or remove the direction.</td></tr>
@@ -4827,9 +5413,9 @@ analog for SampleHold {
 </div>
 </section>
 
-<!-- ===================================================== 13 -->
+<!-- ===================================================== 15 -->
 <section id="cli" class="chapter">
-<p class="ch-num">Chapter 13</p>
+<p class="ch-num">Chapter 15</p>
 <h2>The command line</h2>
 
 <div class="callout goal">
@@ -5438,7 +6024,7 @@ PASS step (1 checks)
 
 <h3>A bigger project: the buck converter</h3>
 
-<p>The RC project is a toy. The same commands run a full-size design: a digitally controlled buck converter that steps 12&nbsp;V down to 0.8&nbsp;V, with an analog power stage, a 200&nbsp;MHz digital PWM, an ADC, a fixed-point PID, a soft start and a supervisor, all in MSL. It is the bigger sibling of the converter of chapter 8, and a package like any other: the library <code>buck</code> under <code>src/</code>, one bench file, and two runs.</p>
+<p>The RC project is a toy. The same commands run a full-size design: a digitally controlled buck converter that steps 12&nbsp;V down to 0.8&nbsp;V, with an analog power stage, a 200&nbsp;MHz digital PWM, an ADC, a fixed-point PID, a soft start and a supervisor, all in MSL. It is the bigger sibling of the converter of chapter 10, and a package like any other: the library <code>buck</code> under <code>src/</code>, one bench file, and two runs.</p>
 
 <p>The bench, <code>benches/startup.msl</code>, plays the host that brings the converter up: it writes the setpoint, then raises <code>en</code>. A second bench in the same file holds <code>en</code> low.</p>
 
@@ -6734,7 +7320,7 @@ time         Startup.buck.ctl.reference  Startup.mode  Startup.buck.vout
 <tr><td>2</td><td>The command line is wrong: an unknown command or flag, a flag given twice, a run name that does not exist, no <code>--analysis</code> for a lone file.</td></tr>
 </tbody></table></div>
 
-<p>Errors in your sources are the codes of chapter 12, rendered the same way: code, message, file, line and the source excerpt, followed by the stage that failed. The tool adds two codes of its own for the run request, and uses two host codes when a path or a value is refused:</p>
+<p>Errors in your sources are the codes of chapter 14, rendered the same way: code, message, file, line and the source excerpt, followed by the stage that failed. The tool adds two codes of its own for the run request, and uses two host codes when a path or a value is refused:</p>
 
 <div class="callout mistake">
   <p class="callout-label">Common mistakes</p>
@@ -6759,21 +7345,21 @@ time         Startup.buck.ctl.reference  Startup.mode  Startup.buck.vout
 
 <div class="callout good">
   <p class="callout-label">Good to know</p>
-  <p>The command line does four analyses and one top at a time, with the stimulus written in the bench. Sweeps over many runs, Monte Carlo, optimization and stimulus decided while a run is going are a host program's work, in Rust, on the same library the command is built on (chapter 19).</p>
+  <p>The command line does four analyses and one top at a time, with the stimulus written in the bench. Sweeps over many runs, Monte Carlo, optimization and stimulus decided while a run is going are a host program's work, in Rust, on the same library the command is built on (chapter 21).</p>
 </div>
 
 <div class="callout try">
   <p class="callout-label">Try it</p>
-  <p>In the project of chapter 1, add a run <code>[run.bode]</code> that sweeps the filter from 1&nbsp;kHz to 10&nbsp;MHz with 10 points per decade and plots it. (The source needs a small-signal stimulus: <code>v(p, n) +> dc + ac_stim(1.0, 0.0);</code>, chapter 6. The table needs <code>analysis = "ac"</code>, <code>from = 1e3</code>, <code>to = 1e7</code>, <code>per_decade = 10</code>, <code>print = ["vout"]</code> and <code>plot = "bode.svg"</code>.) At which frequency should <code>mag(Step.vout)</code> read 0.707 and <code>phase(Step.vout)</code> read −45? (At 1 / (2π · r · c) = 159&nbsp;kHz.)</p>
+  <p>In the project of chapter 1, add a run <code>[run.bode]</code> that sweeps the filter from 1&nbsp;kHz to 10&nbsp;MHz with 10 points per decade and plots it. (The source needs a small-signal stimulus: <code>v(p, n) +> dc + ac_stim(1.0, 0.0);</code>, chapter 8. The table needs <code>analysis = "ac"</code>, <code>from = 1e3</code>, <code>to = 1e7</code>, <code>per_decade = 10</code>, <code>print = ["vout"]</code> and <code>plot = "bode.svg"</code>.) At which frequency should <code>mag(Step.vout)</code> read 0.707 and <code>phase(Step.vout)</code> read −45? (At 1 / (2π · r · c) = 159&nbsp;kHz.)</p>
 </div>
 </section>
 
-<!-- ===================================================== 14 -->
+<!-- ===================================================== 16 -->
 <section id="cheatsheet" class="chapter">
-<p class="ch-num">Chapter 14</p>
+<p class="ch-num">Chapter 16</p>
 <h2>Cheat sheet</h2>
 
-<p>One screen of syntax. The rules behind each form are in chapter 2 and in the chapter named beside it.</p>
+<p>One screen of syntax. The rules of the value language are in chapters 2 to 4, and each hardware form has its own chapter.</p>
 
 <div class="cheat">
 <div class="cheat-card"><h4>Nature</h4>
@@ -6847,7 +7433,7 @@ extern "osdi" module Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Elect
 <div class="cheat-card"><h4>Where names come from</h4>
 <p><strong>Core</strong>, no import: <code>gnd</code> <code>Nature</code> <code>m</code> <code>dtemp</code> <code>str</code>, the probes, <code>ddt</code> <code>delay</code> <code>limit</code> <code>noise</code> <code>cross</code> <code>at</code>, <code>bound_step</code>, <code>emit!</code> <code>include_str!</code>.</p>
 <p><strong>Library</strong>, implied by <code>std::prelude</code>: <code>std::constants</code> <code>std::carriers</code> <code>std::values</code> <code>std::analog</code> <code>std::nets</code> <code>std::convert</code> <code>std::monitor</code> <code>std::io</code>.</p>
-<p>Yours hides both, except a core name (E0457). Chapter 11.</p></div>
+<p>Yours hides both, except a core name (E0457). Chapter 13.</p></div>
 
 <div class="cheat-card"><h4>Files and data</h4>
 <pre data-lang="msl">mod logic;                  // logic.msl or logic/mod.msl
@@ -6903,9 +7489,9 @@ print = ["vout"]</pre>
 <div class="part-lead">How Piperine works underneath: the object model, the device ABI, the solver and its options, the compiler, and the crates. Most models are written without opening this part.</div>
 </div>
 
-<!-- ===================================================== 15 -->
+<!-- ===================================================== 17 -->
 <section id="pom" class="chapter">
-<p class="ch-num">Chapter 15</p>
+<p class="ch-num">Chapter 17</p>
 <h2>The object model</h2>
 
 <div class="callout goal">
@@ -6981,7 +7567,7 @@ assert_eq!(front.port("q").unwrap().writers().len(), 1); // the commit `q <- d;`
 <li><strong>No mutation.</strong> Edit the source and build again.</li>
 </ul>
 
-<p>With packages, a design is built over a graph of crates, each kept as authored, and names resolve across crates by the rules of chapter 10.</p>
+<p>With packages, a design is built over a graph of crates, each kept as authored, and names resolve across crates by the rules of chapter 12.</p>
 
 <div class="callout mistake">
   <p class="callout-label">Common mistakes</p>
@@ -7002,9 +7588,9 @@ assert_eq!(front.port("q").unwrap().writers().len(), 1); // the commit `q <- d;`
 
 </section>
 
-<!-- ===================================================== 16 -->
+<!-- ===================================================== 18 -->
 <section id="abi" class="chapter">
-<p class="ch-num">Chapter 16</p>
+<p class="ch-num">Chapter 18</p>
 <h2>Device ABI</h2>
 
 <p>Everything the solver simulates is a <strong>device</strong>, and every device meets the solver through one binary interface, the <strong>device ABI</strong>. A resistor compiled from MSL, a BSIM model compiled to OSDI, an AVR microcontroller emulator, the IR interpreter running a model nobody compiled: the solver calls all of them the same way. You never write against it when you write MSL; the compiler does. This chapter is for when you want to know what your module becomes, or to plug in a device that was not written in MSL.</p>
@@ -7213,18 +7799,18 @@ fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
 
 </section>
 
-<!-- ===================================================== 17 -->
+<!-- ===================================================== 19 -->
 <section id="solver" class="chapter">
-<p class="ch-num">Chapter 17</p>
+<p class="ch-num">Chapter 19</p>
 <h2>The solver</h2>
 
-<p>The solver is the part of Piperine that turns devices into numbers. It knows physics and time, not the language: it never sees an MSL expression, only devices that speak the ABI of chapter 16. This chapter explains what it does with them, so that you can predict what a simulation will do and read what it reports.</p>
+<p>The solver is the part of Piperine that turns devices into numbers. It knows physics and time, not the language: it never sees an MSL expression, only devices that speak the ABI of chapter 18. This chapter explains what it does with them, so that you can predict what a simulation will do and read what it reports.</p>
 
-<p>It is also the reference for running it: each analysis with the keys it reads and a command that runs it, and every option of a run with its default, its range and what it changes. Chapter 9 walks through the same ground slowly, with a picture for every idea and one circuit that is run from start to end. Chapter 13 is the reference of the command itself: projects, run tables, output files.</p>
+<p>It is also the reference for running it: each analysis with the keys it reads and a command that runs it, and every option of a run with its default, its range and what it changes. Chapter 11 walks through the same ground slowly, with a picture for every idea and one circuit that is run from start to end. Chapter 15 is the reference of the command itself: projects, run tables, output files.</p>
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Built. The solver runs every analysis below on devices that use the ABI, with numbers bit-for-bit equal to the solver it replaced, whose results were validated against ngspice. Analog MSL designs run on it through the compiler of chapter 18, and crossings are located inside a step to the tolerances below.</p>
+  <p>Built. The solver runs every analysis below on devices that use the ABI, with numbers bit-for-bit equal to the solver it replaced, whose results were validated against ngspice. Analog MSL designs run on it through the compiler of chapter 20, and crossings are located inside a step to the tolerances below.</p>
 </div>
 
 <h3>Three parts, one boundary</h3>
@@ -7306,7 +7892,7 @@ Filter.v1.dc  Filter.vout
 2.500000e0    2.500000e0
 5.000000e0    5.000000e0</pre>
 
-<p><strong>AC.</strong> <code>from</code> and <code>to</code> are frequencies in hertz. The grid is logarithmic with <code>per_decade</code> points per decade, or linear with <code>points</code> points in all; a run gives exactly one of the two. The stimulus is whatever the design marks with <code>ac_stim</code> (chapter 6).</p>
+<p><strong>AC.</strong> <code>from</code> and <code>to</code> are frequencies in hertz. The grid is logarithmic with <code>per_decade</code> points per decade, or linear with <code>points</code> points in all; a run gives exactly one of the two. The stimulus is whatever the design marks with <code>ac_stim</code> (chapter 8).</p>
 
 <pre data-lang="sh">piperine run filter.msl --analysis ac --from 10 --to 1e4 --per-decade 1 --print vout</pre>
 <pre data-lang="text" data-cli-output="piperine run filter.msl --analysis ac --from 10 --to 1e4 --per-decade 1 --print vout">run filter: ac, top Filter, backend rust
@@ -7357,7 +7943,7 @@ param         d(Filter.vout)
 Filter.v1.dc  1.000000e0
 Filter.r1.r   0.000000e0</pre>
 
-<p><strong>Periodic steady state.</strong> <code>period</code> is the period of the drive. The solver first runs a transient of length <code>tstab</code>, then repeats one period until the state at its end equals the state at its start; the table is one period of that orbit. It needs a circuit with a periodic source, and chapter 13 runs one.</p>
+<p><strong>Periodic steady state.</strong> <code>period</code> is the period of the drive. The solver first runs a transient of length <code>tstab</code>, then repeats one period until the state at its end equals the state at its start; the table is one period of that orbit. It needs a circuit with a periodic source, and chapter 15 runs one.</p>
 
 <h3>Finding the operating point</h3>
 
@@ -7441,7 +8027,7 @@ reltol   = 1e-4</pre>
 <tr><td><code>tstab</code></td><td><code>pss</code></td><td>0</td><td>≥ 0</td><td>The length of the transient that runs before the first period is tried.</td></tr>
 </tbody></table></div>
 
-<p>The shortest step is fixed at one femtosecond. A step that fails at that length ends the run with E0508, or E0504 when the step follows a digital change (chapter 12). This is what a run that exhausts a small budget prints:</p>
+<p>The shortest step is fixed at one femtosecond. A step that fails at that length ends the run with E0508, or E0504 when the step follows a digital change (chapter 14). This is what a run that exhausts a small budget prints:</p>
 
 <pre data-lang="sh">piperine run filter.msl --analysis transient --stop 5e-3 --max-steps 20 --print vout</pre>
 <pre data-lang="text" data-cli-output="piperine run filter.msl --analysis transient --stop 5e-3 --max-steps 20 --print vout" data-cli-stream="stderr" data-cli-cache="empty" data-cli-lines="2-3">compiling run `filter` (top Filter) with rustc
@@ -7487,7 +8073,7 @@ Caused by: Transient: exceeded the 20 step budget at t = 5.528574e-4 s of 5.0000
 <tr><td><code>wrt</code></td><td><code>sens</code></td><td>one or more param paths</td><td>The params to differentiate by.</td></tr>
 </tbody></table></div>
 
-<p>The remaining keys of a run choose the design and the output, and have nothing to do with the solver: <code>bench</code>, <code>top</code>, <code>params</code>, <code>print</code>, <code>streams</code>, <code>csv</code>, <code>records</code>, <code>plot</code>, <code>all_checks</code> and <code>backend</code>. Chapter 13 documents each with an example.</p>
+<p>The remaining keys of a run choose the design and the output, and have nothing to do with the solver: <code>bench</code>, <code>top</code>, <code>params</code>, <code>print</code>, <code>streams</code>, <code>csv</code>, <code>records</code>, <code>plot</code>, <code>all_checks</code> and <code>backend</code>. Chapter 15 documents each with an example.</p>
 
 <h4>What is fixed</h4>
 
@@ -7504,9 +8090,9 @@ Caused by: Transient: exceeded the 20 step budget at t = 5.528574e-4 s of 5.0000
 <tr><td>rescue of an operating point</td><td>gmin stepping, then source stepping</td><td>Nowhere. Both are tried, in that order, whenever the direct solve fails.</td></tr>
 </tbody></table></div>
 
-<p><code>reltol</code>, <code>vntol</code>, <code>abstol</code>, <code>gmin</code> and <code>trtol</code> have ngspice's defaults with ngspice's meanings. Matching ngspice is a design goal: on the same circuit the two simulators are expected to agree to within these tolerances, and the test suite runs MSL circuits side by side with ngspice to hold that (chapter 18). A crossing that falls in the step right after a jump is the one exception to locating: it fires at that step's end.</p>
+<p><code>reltol</code>, <code>vntol</code>, <code>abstol</code>, <code>gmin</code> and <code>trtol</code> have ngspice's defaults with ngspice's meanings. Matching ngspice is a design goal: on the same circuit the two simulators are expected to agree to within these tolerances, and the test suite runs MSL circuits side by side with ngspice to hold that (chapter 20). A crossing that falls in the step right after a jump is the one exception to locating: it fires at that step's end.</p>
 
-<p>Choosing among these options is the subject of "What the knobs actually do" in chapter 9, which measures what each one costs and buys on one circuit. The short version: for more accuracy lower <code>reltol</code>; use <code>max_step</code> only when something narrow is being stepped over; and treat <code>print_step</code> as a display setting.</p>
+<p>Choosing among these options is the subject of "What the knobs actually do" in chapter 11, which measures what each one costs and buys on one circuit. The short version: for more accuracy lower <code>reltol</code>; use <code>max_step</code> only when something narrow is being stepped over; and treat <code>print_step</code> as a display setting.</p>
 
 <h3>The digital side</h3>
 
@@ -7529,16 +8115,16 @@ Caused by: Transient: exceeded the 20 step budget at t = 5.528574e-4 s of 5.0000
 
 </section>
 
-<!-- ===================================================== 18 -->
+<!-- ===================================================== 20 -->
 <section id="compiler" class="chapter">
-<p class="ch-num">Chapter 18</p>
+<p class="ch-num">Chapter 20</p>
 <h2>From source to solver</h2>
 
-<p>The compiler is what connects the two halves of this book: the language of Part 1 and the solver of chapters 16 and 17. It reads your MSL, checks it, flattens the design into an intermediate form and hands the solver one device per instance. This chapter follows a source file down that path, so you know what each stage checks and where an error comes from.</p>
+<p>The compiler is what connects the two halves of this book: the language of Part 1 and the solver of chapters 18 and 19. It reads your MSL, checks it, flattens the design into an intermediate form and hands the solver one device per instance. This chapter follows a source file down that path, so you know what each stage checks and where an error comes from.</p>
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Built for analog circuits, with two backends. Resistors, capacitors, voltage and current sources and a diode with junction limiting run end to end from source, under operating point, DC sweep, AC and transient, through the interpreter and as compiled Rust, and every result is compared with ngspice on both. The Rust backend also runs digital and mixed-signal models from source: type checking and elaboration take definitions, carriers, events, reactions, commits, enums, <code>match</code> and unknown values into the intermediate form, and a full buck converter runs with its loop closed. The interpreter stays analog only. The <code>piperine</code> command line drives all of it: <code>piperine run</code> takes a project or a lone file from source to results in one command (chapter 13).</p>
+  <p>Built for analog circuits, with two backends. Resistors, capacitors, voltage and current sources and a diode with junction limiting run end to end from source, under operating point, DC sweep, AC and transient, through the interpreter and as compiled Rust, and every result is compared with ngspice on both. The Rust backend also runs digital and mixed-signal models from source: type checking and elaboration take definitions, carriers, events, reactions, commits, enums, <code>match</code> and unknown values into the intermediate form, and a full buck converter runs with its loop closed. The interpreter stays analog only. The <code>piperine</code> command line drives all of it: <code>piperine run</code> takes a project or a lone file from source to results in one command (chapter 15).</p>
 </div>
 
 <h3>The stages</h3>
@@ -7556,7 +8142,7 @@ flowchart LR
 </pre>
 
 <ol>
-<li><strong>Parse and resolve.</strong> The source becomes the object model of chapter 15. Names are resolved; nothing is computed yet.</li>
+<li><strong>Parse and resolve.</strong> The source becomes the object model of chapter 17. Names are resolved; nothing is computed yet.</li>
 <li><strong>Type check.</strong> Every expression gets a type, every call gets the right number and kind of arguments, and every construct is checked against where it may appear: <code>ddt</code> and <code>limit</code> only inside <code>analog</code>, a <code>where</code> clause only on what it constrains.</li>
 <li><strong>Elaborate.</strong> Starting from the top module, parameters are folded to numbers, instances are walked, and each distinct combination of a module and its compile-time values becomes one <em>body</em>. Functions stay functions: nothing is inlined in full. The <code>where</code> checks on parameters run here, with the real values.</li>
 <li><strong>Intermediate form.</strong> The result is a flat table of instances, each pointing at a body, plus the bodies themselves. It is an object model, not a text format, but it prints in a stable form for reading and for tests. Each body knows which reads its contributions depend on, which fixes the shape of the Jacobian before any number is computed.</li>
@@ -7606,7 +8192,7 @@ module Divider() {
 
 <h3>Compiler errors</h3>
 
-<p>Errors the language defines keep their codes from chapter 12. Four more belong to the compiler itself:</p>
+<p>Errors the language defines keep their codes from chapter 14. Four more belong to the compiler itself:</p>
 
 <table>
 <tr><th>Code</th><th>Meaning</th></tr>
@@ -7625,7 +8211,7 @@ module Divider() {
 <li><strong>The Rust backend</strong> prints the whole design as one Rust source file, compiles it with the <code>rustc</code> it finds on the machine, and loads the library through the device ABI. It covers analog, digital and mixed forms. A design is compiled once and cached by a hash of everything that went into it, so a second run starts at once and nothing is compiled while a simulation runs. The cache entry is checked against its recorded hash before it is loaded.</li>
 </ul>
 
-<p>Both backends compute the same function, function by function, to the last bit; the ngspice comparisons run on both. A host picks one: on the command line, <code>--backend</code> (<code>rust</code> by default, chapter 13); the test suite picks with <code>PIPERINE_BACKEND</code> (<code>interp</code> or <code>rust</code>) and runs both when it is unset.</p>
+<p>Both backends compute the same function, function by function, to the last bit; the ngspice comparisons run on both. A host picks one: on the command line, <code>--backend</code> (<code>rust</code> by default, chapter 15); the test suite picks with <code>PIPERINE_BACKEND</code> (<code>interp</code> or <code>rust</code>) and runs both when it is unset.</p>
 
 <h3>Reading what runs</h3>
 
@@ -7642,12 +8228,12 @@ fn terms_block&lt;R: Real&gt;(p: R, n: R, r: R) -&gt; [R; 1] {
 
 <h3>What comes next</h3>
 
-<p>One integrated test for every example of this book, run through the same entry point you use, and a single home for end-to-end scenarios compared with ngspice. Chapter 13 shows how you run a design today: the <code>piperine</code> command.</p>
+<p>One integrated test for every example of this book, run through the same entry point you use, and a single home for end-to-end scenarios compared with ngspice. Chapter 15 shows how you run a design today: the <code>piperine</code> command.</p>
 </section>
 
-<!-- ===================================================== 19 -->
+<!-- ===================================================== 21 -->
 <section id="structure" class="chapter">
-<p class="ch-num">Chapter 19</p>
+<p class="ch-num">Chapter 21</p>
 <h2>How Piperine is organized</h2>
 
 <p>Piperine is a set of Rust crates, each with one job. Your source goes down through them in a straight line, from text to numbers, and no crate knows about the ones above it: the solver never sees MSL, and the language never sees the solver. This chapter names the crates so that you know where a piece of behavior lives.</p>
@@ -7673,21 +8259,21 @@ flowchart TD
 <div class="table-wrap"><table>
 <thead><tr><th>Crate</th><th>What it does</th></tr></thead>
 <tbody>
-<tr><td><code>piperine-cli</code></td><td>The <code>piperine</code> command of chapter 13 and its seven commands. It reads the command line, calls <code>piperine-api</code> and lays out the text; every rule of what a run prints and judges lives in the library.</td></tr>
+<tr><td><code>piperine-cli</code></td><td>The <code>piperine</code> command of chapter 15 and its seven commands. It reads the command line, calls <code>piperine-api</code> and lays out the text; every rule of what a run prints and judges lives in the library.</td></tr>
 <tr><td><code>piperine-api</code></td><td>The library a Rust program uses to drive Piperine, small on purpose: a <code>Project</code> found from its <code>Piperine.toml</code>, the runs it describes, a <code>Session</code> that compiles one run's top and runs its analysis, and the result as a table of values and the records your models emit. The command line is built on it.</td></tr>
 <tr><td><code>piperine-project</code></td><td>Reads <code>Piperine.toml</code>, finds the crates your project depends on and pins them in the lockfile.</td></tr>
-<tr><td><code>piperine-lang</code></td><td>The language. It parses your files, builds the object model of chapter 15 with every name resolved, checks types and places, and elaborates the design: parameters folded, instances walked, one body per variant. It also holds the formatter behind <code>piperine fmt</code>, which keeps every comment.</td></tr>
+<tr><td><code>piperine-lang</code></td><td>The language. It parses your files, builds the object model of chapter 17 with every name resolved, checks types and places, and elaborates the design: parameters folded, instances walked, one body per variant. It also holds the formatter behind <code>piperine fmt</code>, which keeps every comment.</td></tr>
 <tr><td><code>piperine-ir</code></td><td>The elaborated design as an object model of its own: the bodies, the flat table of instances, the nets. It knows neither the language nor the solver, and prints in a stable form for reading.</td></tr>
 <tr><td><code>piperine-plan</code></td><td>Turns each body into the shape the solver expects: its pins, terms, functions and the order of their reads. Both backends use the same plan, so they cannot disagree on it.</td></tr>
 <tr><td><code>piperine-interp</code></td><td>The reference backend. It walks a body at every call and computes values with their derivatives. It needs no compiler, and every other backend is checked against it.</td></tr>
 <tr><td><code>piperine-transpile</code></td><td>The compiled backend. It prints the design as Rust, compiles it once with <code>rustc</code>, keeps the result in a cache and loads it. The generated source stays on disk for you to read.</td></tr>
-<tr><td><code>piperine-abi</code></td><td>The device interface of chapter 16: what a device is, how the solver calls it and what it may read and write. It depends on nothing else, so any device, compiled from MSL or not, plugs in the same way.</td></tr>
-<tr><td><code>piperine-solver</code></td><td>Owns time and events, runs the analyses of chapter 17 and alternates between the two sides below.</td></tr>
+<tr><td><code>piperine-abi</code></td><td>The device interface of chapter 18: what a device is, how the solver calls it and what it may read and write. It depends on nothing else, so any device, compiled from MSL or not, plugs in the same way.</td></tr>
+<tr><td><code>piperine-solver</code></td><td>Owns time and events, runs the analyses of chapter 19 and alternates between the two sides below.</td></tr>
 <tr><td><code>piperine-analog-solver</code></td><td>The continuous side: Newton iterations, linear algebra, TR-BDF2 integration and the location of crossings. It knows nothing digital.</td></tr>
 <tr><td><code>piperine-digital-solver</code></td><td>The discrete side: nets, the commit queue, instants and microsteps. It knows nothing analog.</td></tr>
 </tbody></table></div>
 
-<p>One more crate is in the tree and not built yet: a language server that will put the diagnostics of chapter 12 into your editor as you type. Until it is, <code>piperine check</code> gives the same diagnostics on the command line.</p>
+<p>One more crate is in the tree and not built yet: a language server that will put the diagnostics of chapter 14 into your editor as you type. Until it is, <code>piperine check</code> gives the same diagnostics on the command line.</p>
 
 <h3>Three rules that hold it together</h3>
 

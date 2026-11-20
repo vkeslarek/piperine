@@ -1,4 +1,4 @@
-//! Scope: chapter 6 of the Book, "Analog behavior" (feature `root-e2e`, RE-02 and RE-03): the capacitor
+//! Scope: chapter 8 of the Book, "Analog behavior" (feature `root-e2e`, RE-02 and RE-03): the capacitor
 //! and the inductor, the Nullor and the coupled inductors, the clipper (its `limexp` and its `settle`
 //! are refused today, asserted refused with their diagnostics, and its numbers are held on the same
 //! circuit written with a bare `exp`), the traced diode, the switch and the noise source (refused),

@@ -1,4 +1,4 @@
-//! Scope: chapter 4 of the Book, "Natures and carriers" (feature `root-e2e`, RE-02 and RE-03): the
+//! Scope: chapter 6 of the Book, "Natures and carriers" (feature `root-e2e`, RE-02 and RE-03): the
 //! natures the standard library gives, the signal declarations, a resistor that heats itself, the
 //! open-drain line and the bundle the Book builds (both refused today, asserted refused with their
 //! diagnostics), an `out` port that gives the initial value, and the mistakes of the chapter's table,

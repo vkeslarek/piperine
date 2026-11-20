@@ -1,4 +1,4 @@
-//! Scope: chapter 7 of the Book, "Digital behavior" (feature `root-e2e`, RE-02 and RE-03): the counter
+//! Scope: chapter 9 of the Book, "Digital behavior" (feature `root-e2e`, RE-02 and RE-03): the counter
 //! and its 257 `state` records, the set-reset latch, the multiply-accumulate pipeline, the debouncer
 //! and the PWM (their integer params are refused today, asserted refused; their numbers are held on the
 //! same designs with the param written as a literal), the checks and `finish()`, the monitors, and the
@@ -40,14 +40,14 @@ impl Edit {
     }
 }
 
-/// The clock of chapter 2 that the counter, the pipeline and the benches of this chapter use.
+/// The clock of chapter 5 that the counter, the pipeline and the benches of this chapter use.
 struct Oscillator;
 
 impl Oscillator {
-    /// The `Osc` module and its behavior, the part of the chapter 2 listing before its counter.
+    /// The `Osc` module and its behavior, the part of the chapter 5 listing before its counter.
     fn text(chapter: &Chapter) -> String {
-        let listing = chapter.text("language#13");
-        let (clock, _) = listing.split_once("/// Counts rising edges").expect("the listing of chapter 2 declares the clock first");
+        let listing = chapter.text("values#1");
+        let (clock, _) = listing.split_once("/// Counts rising edges").expect("the listing of chapter 5 declares the clock first");
         assert!(clock.contains("module Osc"), "{clock}");
         clock.to_string()
     }
@@ -167,7 +167,7 @@ impl Counter {
 
 #[test]
 fn the_counter_raises_full_exactly_while_the_count_is_255() {
-    // digital#1 and digital#3 (run): the counter and its bench with the clock of chapter 2; digital#2 (the
+    // digital#1 and digital#3 (run): the counter and its bench with the clock of chapter 5; digital#2 (the
     // listing of the stream, shown); digital~d8ecede0 "one emit!(\"state\", ...) at the top of a clocked
     // reaction gives you the whole history of the block, one row per edge"; digital~6406776a "A transient
     // of a design with no analog node runs to its stop like any other and gives its table". The 257 records
@@ -407,9 +407,9 @@ fn require_writes_to_checks_and_an_unknown_pass_is_unknown() {
 
 #[test]
 fn the_library_declares_the_monitors_and_never_runs() {
-    // digital~dbdf002b: "The library also has ready-made monitors built this way, such as Never(clk, bad)
+    // digital~5f53905d: "The library also has ready-made monitors built this way, such as Never(clk, bad)
     // and Setup(clk, d) { ts: 100p }": `std/monitor.msl` declares both, and `Never` is one `require` per
-    // rising edge (`Setup` is generic, which the compiler refuses: chapter 11, core-std)
+    // rising edge (`Setup` is generic, which the compiler refuses: chapter 13, core-std)
     let library = StandardLibrary::normalized(&["monitor.msl"]);
     assert!(library.contains("module Never(in clk: Bit, in bad: Bit)"), "Never is declared");
     assert!(library.contains("module Setup<T: Repr>(in clk: Bit, in d: Bit<T>"), "Setup is declared");
@@ -456,7 +456,7 @@ fn the_flip_flop_is_refused_for_its_generic_module() {
 struct Pipeline;
 
 impl Pipeline {
-    /// The bench: the clock of chapter 2, inputs 3 and -4 held valid.
+    /// The bench: the clock of chapter 5, inputs 3 and -4 held valid.
     const BENCH: &'static str = "module Top() { signal clk: Bit; signal a: Bit<i16> = 3; signal b: Bit<i16> = -4; signal v: Bit = true; signal acc: Bit<i40>; signal vo: Bit;\n    let o = Osc(clk) { f: 1M }; let m = MacPipe(clk, a, b, v, acc, vo); }\n";
 
     /// The model of the Book's pipeline, its three stage lines in the order the Book writes them
@@ -560,7 +560,7 @@ fn e0350_an_instance_is_not_placed_inside_a_reaction() {
 #[test]
 fn e0501_a_clock_with_no_delay_never_goes_quiet() {
     // digital~5c44f01d and digital~6b910006: "E0501 on clk.changed() { clk <- !clk; }": a run error, with no
-    // delay the microsteps at one time never go quiet. "Add after 0.5 / f": the Osc of chapter 2 runs
+    // delay the microsteps at one time never go quiet. "Add after 0.5 / f": the Osc of chapter 5 runs
     let source = "module Top() { signal clk: Bit; }\ndigital for Top { on clk.changed() { clk <- !clk; } on at(1n) { clk <- true; } }\n";
     let given = Refusal::of(Model::written("spin.msl", source).run(Commands::transient_of("Top", 1e-6)), "digital~5c44f01d");
     assert_eq!(given.len(), 1, "{given:?}");

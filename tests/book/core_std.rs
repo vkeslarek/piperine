@@ -1,4 +1,4 @@
-//! Scope: chapter 11 of the Book, "Core and standard library" (feature `root-e2e`, RE-02 and RE-03): the
+//! Scope: chapter 13 of the Book, "Core and standard library" (feature `root-e2e`, RE-02 and RE-03): the
 //! tour modules that run (`Tour`, `VT_300K`, `Rc`, `Latch`, `DacRamp`, `Pad`, `Probe`, a crate's own
 //! `vt`), the ones refused today (the resolved line, `Reg` with its `Setup`, the watchdog's integer
 //! param, asserted refused with their diagnostics), the statements the chapter makes about the core, the
@@ -176,7 +176,7 @@ fn the_watchdog_ends_the_run_at_the_fourth_edge_with_the_button_held() {
     let watchdog = chapter.text("core-std#10");
     assert!(watchdog.contains("    limit: u16 = 1000;\n") && watchdog.contains("run >= limit"), "the Book's text");
     let watchdog = watchdog.replace("    limit: u16 = 1000;\n", "").replace("run >= limit", "run >= 3");
-    let clock = chapter.text("language#13");
+    let clock = chapter.text("values#1");
     let clock = clock.split_once("/// Counts rising edges").expect("the clock comes first").0;
     let source = format!("{watchdog}\n{clock}\nmodule Top() {{ signal clk: Bit; signal busy: Bit = true; let o = Osc(clk) {{ f: 1M }}; let w = Watchdog(clk, busy); }}\n");
     let ran = Model::written("watchdog.msl", &source).run(Commands::transient(10e-6, None)).unwrap_or_else(|failure| panic!("{failure}"));
