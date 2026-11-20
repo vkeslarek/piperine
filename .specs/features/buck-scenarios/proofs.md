@@ -28,7 +28,7 @@
 | C19 | `run scenarios / test s2_overshoot_is_at_most_15_mv ... ok` | pass |
 | C20 | `run scenarios / test s2_pgood_stays_high ... ok` | pass |
 | C21 | `run scenarios / test s2b_reference_reaches_160_codes_1_28_ms_after_the_write ... ok` | pass |
-| C22 | `run scenarios / test s2b_vout_settles_into_1_v_within_1_percent_at_1_29_ms ... ok` | **fail** |
+| C22 | `run scenarios / test s2b_vout_settles_into_1_v_within_1_percent_at_1_38_ms ... ok` | **fail** |
 | C23 | `run scenarios / test s2b_inductor_current_goes_negative ... ok` | pass |
 | C24 | `run scenarios / test s2b_sink_limit_never_trips ... ok` | pass |
 | C25 | `run scenarios / test s2b_no_over_voltage_fault ... ok` | pass |

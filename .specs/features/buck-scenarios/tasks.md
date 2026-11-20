@@ -531,8 +531,8 @@ Proof: run scenarios | test s2_pgood_stays_high ... ok
 **C21** - After the write of 8 the reference first reads 160 codes 1.28 ms ± 2 µs later. (BS-03, AC 6; T9)
 Proof: run scenarios | test s2b_reference_reaches_160_codes_1_28_ms_after_the_write ... ok
 
-**C22** - `vout` settles into 1.0 V ± 1 % at 1.29 ms ± 0.05 ms after the write. (BS-03, AC 7; T9)
-Proof: run scenarios | test s2b_vout_settles_into_1_v_within_1_percent_at_1_29_ms ... ok
+**C22** - `vout` settles into 1.0 V ± 1 % at 1.38 ms ± 0.05 ms after the write. (BS-03, AC 7; T9)
+Proof: run scenarios | test s2b_vout_settles_into_1_v_within_1_percent_at_1_38_ms ... ok
 
 **C23** - The inductor current goes below 0 A during S2b, its minimum printed. (BS-03, AC 8; T9)
 Proof: run scenarios | test s2b_inductor_current_goes_negative ... ok

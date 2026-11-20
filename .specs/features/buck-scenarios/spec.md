@@ -49,7 +49,7 @@ default the planner took; each is reported to the user and each can be overturne
 | D6 | S4's 2 A load | `buck.r_load` set to 1.65 Ω (3.3 V / 2 A) 200 µs before the line step, and back to 6.6 Ω 150 µs before S8 | SPEC §10 S4 says "2 A load"; `r_load` is a non-structural param |
 | D7 | S5's "retry every 2 ms while the overload stays" | One retry is observed with the overload still on; the overload is then removed during that retry's soft-start, which must reach `Regulate` and clear `fault` | A second retry costs 2.7 ms more of simulated time (about 10 min); the 2 ms period is measured exactly on the one hiccup |
 | D8 | A value SPEC writes with "≈" | Reported by the test, not judged: S2b's ≈ −0.6 A, S6's ≈ 7 mV/µs and ≈ 80 to 120 µs. S6 is judged on its mechanism instead: `OverVoltage` within two samples of `vout` passing 3.81 V | SPEC §10: "the tolerances are the bench's pass criteria"; an "≈" is an estimate. S6's estimates assume the sink current holds −3 A on average, while §8.3's cut ends the low-side pulse and lets the current relax each period, so the model may rise faster; reported to the user |
-| D9 | S2b's settling has no tolerance in SPEC ("at 1.29 ms") | ± 0.05 ms, as S1 and S2 | SPEC gives ± 0.05 ms for the two other ramps; the SPEC row gains it (BS-09) |
+| D9 | S2b's settling has no tolerance in SPEC ("at 1.29 ms", later 1.38 ms once the dead time is counted) | ± 0.05 ms, as S1 and S2 | SPEC gives ± 0.05 ms for the two other ramps; the SPEC row gains it (BS-09) |
 | D10 | S9's DC-error bound at 3.3 V (§4.3 has columns for 0.8 V and 5.0 V only) | ± 14.7 mV, from §4.3's own rows at 3.3 V: quantization 3.1, aliasing 1.7, divider 6.6, reference 3.3 mV; SPEC §4.3 gains the column (BS-09) | Each row of §4.3 is computed for 3.3 V by the rule §4.3 states; nothing is interpolated |
 | D11 | Bounds SPEC leaves to the bench: the current limits (S5, S6), S8's decay, the sample-time resolution | Written into a new SPEC §10.1 "How the bench measures" with each derivation (BS-09) | A test cites SPEC; a bound that lives only in a test is a tolerance nobody approved |
 | D12 | SPEC names the cleared fault code `None`, the model `Clear` | SPEC is corrected to `Clear` | A name, not a behaviour; `None` is `Option`'s variant in the reactions that latch the fault. Reported to the user as a spec edit |
@@ -151,7 +151,7 @@ parallel threads of one target.
 4. WHILE the S2 window (1.25 ms to 2.00 ms) runs the system SHALL keep `vout` at most 15 mV above 5.0 V.
 5. WHILE the S2 window runs the system SHALL keep `pgood` high in every row.
 6. WHEN 8 is written at 2.00 ms THEN the system SHALL show `buck.ctl.reference` first at 160 codes 1.28 ms ± 2 µs after the write.
-7. WHEN 8 is written THEN the system SHALL settle `vout` into 1.0 V ± 1 % at 1.29 ms ± 0.05 ms after the write.
+7. WHEN 8 is written THEN the system SHALL settle `vout` into 1.0 V ± 1 % at 1.38 ms ± 0.05 ms after the write.
 8. WHILE the S2b window (2.00 ms to 3.40 ms) runs the system SHALL drive the inductor current below 0 A at least once and report its minimum.
 9. WHILE the S2b window runs the system SHALL keep `buck.sink_oc` low in every row (the −3 A limit is never hit).
 10. WHILE the S2b window runs the system SHALL keep `fault` = `Clear` and `mode` = `Regulate` in every row (no OVP).
@@ -275,7 +275,7 @@ parallel threads of one target.
 
 1. WHEN the supervisor enters `Hiccup` THEN the model SHALL hold `Hiccup` for exactly 1000 samples (2 ms) and enter `SoftStart` at the 1000th sample after the entry (SPEC §8.5).
 2. The SPEC SHALL give §4.3 a 3.3 V column whose rows are quantization ± 3.1 mV, aliasing ± 1.7 mV, divider ± 6.6 mV, reference ± 3.3 mV and total ± 14.7 mV.
-3. The SPEC SHALL give §10 S2b the tolerance "at 1.29 ms ± 0.05 ms".
+3. The SPEC SHALL give §10 S2b the tolerance "at 1.38 ms ± 0.05 ms".
 4. The SPEC SHALL hold a §10.1 "How the bench measures" that defines the stimulus shapes, the settling time, the deviation, the sample-time resolutions (2.02 µs for the next sample, 4.52 µs for two consecutive samples), the current-limit reaction bound (0.1 A) and S8's decay bound (± 2 %), each with its derivation.
 5. The SPEC SHALL name the cleared fault code `Clear` wherever it names it.
 

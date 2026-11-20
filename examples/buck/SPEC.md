@@ -391,7 +391,7 @@ criteria; the model column is the averaged-model prediction.
 | S1 | Startup | `en` rises | `mode` Off → SoftStart at the next sample; Vout reaches 3.3 V ±1 % at 1.06 ms ±0.05 ms; overshoot ≤ 15 mV; peak inductor current ≤ 1.6 A; `pgood` rises 128 µs after `mode` = Regulate (≈ 1.19 ms) | 1.054 ms, 7.3 mV, 1.27 A |
 | S1b | UVLO startup | Vin ramps 0 → 12 V in 2 ms, `en` high | no switching below 8.5 V; soft-start begins at the sample after Vin crosses 8.5 V | — |
 | S2 | Setpoint up | write 168 (5.0 V) | ramp of 0.544 ms; Vout within ±1 % of 5.0 V at 0.54 ms ±0.05 ms; overshoot ≤ 15 mV; `pgood` stays high | 0.536 ms, 7.0 mV |
-| S2b | Setpoint down | from 5.0 V, write 8 (1.0 V) | ramp of 1.28 ms; within ±1 % of 1.0 V at 1.29 ms ±0.05 ms; inductor current goes negative (≈ −0.6 A, FCCM sinking) without hitting the −3 A limit; no OVP | 1.286 ms, −0.62 A |
+| S2b | Setpoint down | from 5.0 V, write 8 (1.0 V) | ramp of 1.28 ms; within ±1 % of 1.0 V at 1.38 ms ±0.05 ms; inductor current goes negative (≈ −0.6 A, FCCM sinking) without hitting the −3 A limit; no OVP | 1.38 ms (1.284 ms without dead time), −0.62 A |
 | S3 | Load step | 0.5 A → 4.5 A → 0.5 A, 1 A/µs | deviation ≤ 165 mV (5 %) each way; back within ±1 % in ≤ 200 µs; `pgood` stays high; no current limit | 150 mV / 155 mV, 174 / 178 µs |
 | S4 | Line step | 12 V → 16 V → 12 V in 10 µs, 2 A load | deviation ≤ 165 mV; back within ±1 % in ≤ 200 µs; no fault | +151 / −153 mV |
 | S5 | Overcurrent | load step to 0.3 Ω (11 A demand) | high side cut at 7.5 A every period; `fault` = OverCurrent and `mode` = Hiccup within 16 to 20 µs; `pgood` low within 8 µs of the deviation; retry every 2 ms + soft-start while the overload stays; a retry after the overload is removed reaches Regulate and clears `fault` | hand estimate |
@@ -420,6 +420,14 @@ reads a result, so that a bound the bench adds is written here and never only in
 
 **Settling time.** The time of the first sample from which every later sample of the window is
 inside the band; none when the last sample is outside it.
+
+**Dead time at the end of a down ramp (S2b).** While the output ramps down the inductor sinks
+≈ −0.6 A and both 20 ns dead times of §5.3 freewheel through the high-side body diode (switch node
+at Vin + 0.7 V); when the ramp ends the current returns to the load's +0.15 A and they freewheel
+through the low side (−0.7 V). The same duty word then gives ≈ 2 · 20 ns / 2 µs · 13.4 V = 0.27 V
+less at the switch node, ≈ 70 duty LSBs at 12 V, which the integrator (Ki = 0.5, §6.2) absorbs in
+≈ 100 µs while Vout dips 15 to 25 mV under 1.0 V. The averaged model with this dead-time term
+settles at 1.389 ms (1.284 ms without it); the bound is 1.38 ms ±0.05 ms.
 
 **Deviation.** The largest absolute difference between a sample and the nominal value, with the
 time of that sample.

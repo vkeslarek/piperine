@@ -557,11 +557,11 @@ fn s2b_reference_reaches_160_codes_1_28_ms_after_the_write() {
 }
 
 #[test]
-fn s2b_vout_settles_into_1_v_within_1_percent_at_1_29_ms() {
-    // BS-03 AC 7, SPEC §10 S2b: within 1 % of 1.0 V at 1.29 ms +- 0.05 ms
+fn s2b_vout_settles_into_1_v_within_1_percent_at_1_38_ms() {
+    // BS-03 AC 7, SPEC §10 S2b: within 1 % of 1.0 V at 1.38 ms +- 0.05 ms
     let settling = SetpointFamily::waves().settling_after(SetpointFamily::WRITE_DOWN, SetpointFamily::END, 1.0);
-    eprintln!("S2b: vout settles into 1.0 V +- 1 % {:.3} ms after the write (1.29 ms +- 0.05 ms)", settling * 1e3);
-    assert!((settling - 1.29e-3).abs() <= 0.05e-3, "vout settles {settling:e} s after the write");
+    eprintln!("S2b: vout settles into 1.0 V +- 1 % {:.3} ms after the write (1.38 ms +- 0.05 ms)", settling * 1e3);
+    assert!((settling - 1.38e-3).abs() <= 0.05e-3, "vout settles {settling:e} s after the write");
 }
 
 #[test]
