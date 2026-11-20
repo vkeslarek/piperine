@@ -329,3 +329,29 @@ fn tnom_at_or_below_absolute_zero_is_p0010() {
     assert_eq!(out.status.code(), Some(1));
     assert!(text(&out.stderr).contains("P0010") && text(&out.stderr).contains("`tnom`"), "{}", text(&out.stderr));
 }
+
+#[test]
+fn simparam_flag_is_repeatable_and_a_non_number_is_p0010() {
+    // AO-07 AC 5: `--simparam <name>=<value>` repeats, and a run that gives two succeeds like one
+    // that gives none (the divider reads no session parameter); a value that is no number is
+    // refused as a usage error, as `--param` and `--nodeset` are, and nothing runs.
+    let dir = tempfile::tempdir().expect("tmp");
+    let divider = twin("divider.msl");
+    let divider = divider.to_str().expect("path");
+    let plain = stdout_of(&piperine_in(dir.path(), &["run", divider, "--analysis", "op"]));
+    let given = stdout_of(&piperine_in(dir.path(), &["run", divider, "--analysis", "op", "--simparam", "gain=2", "--simparam", "bias=0.5"]));
+    assert_eq!(plain, given);
+    let bad = piperine_in(dir.path(), &["run", divider, "--analysis", "op", "--simparam", "gain=two"]);
+    assert_eq!(bad.status.code(), Some(2));
+    assert!(text(&bad.stderr).contains("--simparam"), "{}", text(&bad.stderr));
+    assert_eq!(text(&bad.stdout), "");
+}
+
+#[test]
+fn a_simparam_entry_naming_an_option_is_p0010() {
+    // AO-07 AC 5 (D13): `--simparam reltol=1e-3` is a P0010 naming the entry, exit code 1.
+    let dir = tempfile::tempdir().expect("tmp");
+    let out = piperine_in(dir.path(), &["run", twin("divider.msl").to_str().expect("path"), "--analysis", "op", "--simparam", "reltol=1e-3"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(text(&out.stderr).contains("P0010") && text(&out.stderr).contains("reltol"), "{}", text(&out.stderr));
+}

@@ -135,6 +135,7 @@ const COMMANDS: &[CommandRow] = &[
             ArgRow { id: "maxmicro", kind: ArgKind::Count { value: "N" }, help: "the bound on the microsteps of one instant" },
             ArgRow { id: "max-steps", kind: ArgKind::Count { value: "N" }, help: "the budget of attempts a transient may make (default 2000000)" },
             ArgRow { id: "nodeset", kind: ArgKind::Param, help: "seed an operating point's first iterate: <node>=<value> (repeatable)" },
+            ArgRow { id: "simparam", kind: ArgKind::Param, help: "set a session parameter a design reads with simparam(): <name>=<value> (repeatable)" },
             ArgRow { id: "input", kind: ArgKind::Text { value: "SOURCE" }, help: "tf, pz: the voltage source that excites" },
             ArgRow { id: "output", kind: ArgKind::Text { value: "NODE" }, help: "tf, pz: the node that is measured" },
             ArgRow { id: "wrt", kind: ArgKind::Texts { value: "PARAM" }, help: "sens: a param to differentiate by (repeatable)" },
@@ -291,6 +292,7 @@ impl Cli {
             period: real("period"),
             tstab: real("tstab"),
             nodeset: m.get_many::<(String, f64)>("nodeset").map(|v| v.cloned().collect()).unwrap_or_default(),
+            simparam: m.get_many::<(String, f64)>("simparam").map(|v| v.cloned().collect()).unwrap_or_default(),
         }
     }
 
@@ -374,7 +376,7 @@ mod tests {
         // those and `--project` exists (`--help` is clap's, added when the command is built)
         let flags = [
             "bench", "top", "analysis", "stop", "max-step", "print-step", "sweep", "from", "to", "step", "per-decade", "points", "print", "stream", "param", "backend", "csv", "records", "plot", "all-checks",
-            "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "max-steps", "nodeset", "input", "output", "wrt", "period", "tstab", "tnom",
+            "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "max-steps", "nodeset", "input", "output", "wrt", "period", "tstab", "tnom", "simparam",
         ];
         let command = Cli::command();
         let run = command.find_subcommand("run").expect("a `run` command");
@@ -430,6 +432,7 @@ mod tests {
             period: Some(1e-3),
             tstab: Some(5e-3),
             nodeset: vec![("Top.a".into(), 1.5), ("Top.b".into(), 0.0)],
+            simparam: vec![],
         };
         assert_eq!(overrides, want);
         // a flag not given leaves its field alone, and a bad value is a usage error

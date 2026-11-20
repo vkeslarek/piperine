@@ -289,3 +289,36 @@ fn tnom_at_or_below_absolute_zero_is_p0010() {
         assert!(message.contains("P0010") && message.contains("`tnom`"), "{message}");
     }
 }
+
+/// The runs of a manifest with the one run `[run.a]` of `keys` (`analysis = "op"` is given).
+fn manifest_run(keys: &str) -> Result<piperine_api::RunSpec, Vec<Failure>> {
+    let text = format!("[run.a]\nanalysis = \"op\"\n{keys}");
+    piperine_api::RunSpec::read(&text, Path::new("Piperine.toml")).map(|runs| runs.into_iter().next().expect("one run"))
+}
+
+#[test]
+fn simparam_flag_is_repeatable_and_a_non_number_is_p0010() {
+    // AO-07 AC 5: the table `simparam = { gain = 2, bias = 0.5 }` gives entries in source order; a
+    // flag entry of the same name wins and one of a new name is added after them; a value that is
+    // not a number is a P0010.
+    let table = manifest_run("simparam = { gain = 2, bias = 0.5 }\n").unwrap_or_else(|f| panic!("{f:?}"));
+    assert_eq!(table.options.session_parameters, [("gain".to_string(), 2.0), ("bias".to_string(), 0.5)]);
+    let flags = Overrides { simparam: vec![("gain".into(), 9.0), ("extra".into(), 1.0)], ..Overrides::default() };
+    let merged = table.merged(&flags).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(merged.options.session_parameters, [("gain".to_string(), 9.0), ("bias".to_string(), 0.5), ("extra".to_string(), 1.0)]);
+    let faults = manifest_run("simparam = { gain = \"two\" }\n").expect_err("a string is no number");
+    assert!(format!("{faults:?}").contains("P0010"), "{faults:?}");
+}
+
+#[test]
+fn a_simparam_entry_naming_an_option_is_p0010() {
+    // AO-07 AC 5 (D13): `reltol`, `abstol`, `vntol`, `trtol`, `temp` and `tnom` have their own
+    // keys, so a `simparam` entry of one of those names is a P0010 naming it, from the table or a flag.
+    for name in ["reltol", "abstol", "vntol", "trtol", "temp", "tnom"] {
+        let faults = manifest_run(&format!("simparam = {{ {name} = 1 }}\n")).expect_err(name);
+        assert!(format!("{faults:?}").contains("P0010") && format!("{faults:?}").contains(name), "{name}: {faults:?}");
+        let flags = Overrides { analysis: Some("op".into()), simparam: vec![(name.into(), 1.0)], ..Overrides::default() };
+        let fault = piperine_api::RunSpec::from_flags("a", &flags).expect_err(name);
+        assert!(format!("{fault:?}").contains("P0010"), "{name}: {fault:?}");
+    }
+}

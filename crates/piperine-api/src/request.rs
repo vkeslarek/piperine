@@ -110,6 +110,9 @@ pub struct Options {
     /// The node values that seed the first Newton iterate of an operating point: a path and a
     /// value each, in the order given.
     pub nodeset: Vec<(String, f64)>,
+    /// The session parameters a design reads with `simparam("name")`, in the order given: a name
+    /// and a value each (the key `simparam`, the flag `--simparam`).
+    pub session_parameters: Vec<(String, f64)>,
 }
 
 /// The settings the command line gives, one per key of a run table; `None` (or empty) leaves
@@ -160,6 +163,8 @@ pub struct Overrides {
     pub tstab: Option<f64>,
     /// `--nodeset <path>=<value>`: an entry replaces the table's entry of the same path.
     pub nodeset: Vec<(String, f64)>,
+    /// `--simparam <name>=<value>`, repeatable: an entry replaces the table's entry of the same name.
+    pub simparam: Vec<(String, f64)>,
 }
 
 /// One run request, validated.
@@ -246,7 +251,11 @@ struct Keys {
     period: Option<Given<f64>>,
     tstab: Option<Given<f64>>,
     nodeset: Vec<(String, f64)>,
+    simparam: Vec<(String, f64)>,
 }
+
+/// The names `simparam` may not set: each has its own key (a solver option or the temperatures).
+const OPTION_NAMES: [&str; 6] = ["reltol", "abstol", "vntol", "trtol", "temp", "tnom"];
 
 /// The lowest temperature, degrees Celsius: `temp` must be above it.
 const ABSOLUTE_ZERO: f64 = -273.15;
@@ -256,10 +265,10 @@ type Value<'i> = Spanned<DeValue<'i>>;
 
 /// The keys of a run table, in the order CLI-03 AC 1 lists them, then the session options of
 /// HII-01.
-const RUN_KEYS: [&str; 36] = [
+const RUN_KEYS: [&str; 37] = [
     "bench", "top", "analysis", "stop", "max_step", "print_step", "sweep", "from", "to", "step", "per_decade", "points", "print", "streams",
     "params", "backend", "csv", "records", "plot", "all_checks", "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds",
-    "maxmicro", "nodeset", "max_steps", "input", "output", "wrt", "period", "tstab", "tnom",
+    "maxmicro", "nodeset", "max_steps", "input", "output", "wrt", "period", "tstab", "tnom", "simparam",
 ];
 
 /// The keys whose meaning belongs to an analysis; each analysis reads the ones `reads` lists.
@@ -422,6 +431,13 @@ impl Source {
                     keys.nodeset.push((path.get_ref().to_string(), n));
                 }
             }
+            "simparam" => {
+                let table = v.as_table().ok_or_else(|| wrong("a table of names and numbers"))?;
+                for (entry, n) in entries(table) {
+                    let Some(n) = number(n.get_ref()) else { return Err(wrong("a table of names and numbers")) };
+                    keys.simparam.push((entry.get_ref().to_string(), n));
+                }
+            }
             _ => {
                 let message = format!("unknown key `{name}` in a run: a run takes {}", RUN_KEYS.join(", "));
                 return Err(self.fault(Some(span(key.span())), message, "not a key of a run"));
@@ -484,6 +500,12 @@ impl Keys {
         }
         if !o.streams.is_empty() {
             self.streams = o.streams.clone();
+        }
+        for (entry, value) in &o.simparam {
+            match self.simparam.iter_mut().find(|(n, _)| n == entry) {
+                Some(found) => found.1 = *value,
+                None => self.simparam.push((entry.clone(), *value)),
+            }
         }
         self.params.extend(o.params.iter().cloned());
         self
@@ -583,6 +605,10 @@ impl Keys {
             if let Some(Given { value: 0, at }) = given {
                 return Err(fault(*at, format!("run `{name}`: `{key}` must be a whole number of at least 1, found 0"), "less than 1"));
             }
+        }
+        if let Some((entry, _)) = self.simparam.iter().find(|(entry, _)| OPTION_NAMES.contains(&entry.as_str())) {
+            let message = format!("run `{name}`: `simparam` may not set `{entry}`: it has its own key and flag");
+            return Err(fault(self.name_at, message, "an option's name"));
         }
         let parsed = match analysis.value.as_str() {
             "op" => Analysis::Op,
@@ -706,6 +732,7 @@ impl Keys {
                 maxmicro: self.maxmicro.as_ref().map(|g| g.value),
                 max_steps: self.max_steps.as_ref().map(|g| g.value),
                 nodeset: self.nodeset.clone(),
+                session_parameters: self.simparam.clone(),
             },
             keys: self,
             source,
@@ -851,7 +878,7 @@ points = 5
         assert_eq!(runs[3].analysis, Analysis::Ac { from: 1e3, to: 5e3, grid: Grid::Points(5) });
         // the nineteen keys of CLI-03 AC 1, `all_checks` (CLI-06 AC 7) and the nine session options
         // of HII-01 and `max_steps` (HII-01 amendment), no more
-        assert_eq!(RUN_KEYS.len(), 36);
+        assert_eq!(RUN_KEYS.len(), 37);
         // a manifest with no run table has no run
         assert_eq!(read("").map(|r| r.len()).ok(), Some(0));
     }
@@ -1040,6 +1067,7 @@ points = 5
             maxmicro: Some(500),
             max_steps: Some(4_000_000),
             nodeset: vec![("Top.a".into(), 1.5), ("Top.b".into(), 0.0)],
+            session_parameters: vec![],
         }
     }
 

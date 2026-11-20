@@ -524,8 +524,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `simparam_flag_is_repeatable_and_a_non_number_is_p0010` and `a_simparam_entry_naming_an_option_is_p0010` pass
-- [ ] Gate check passes: `Run apioptions`, `Run clioptions`
+- [x] `simparam_flag_is_repeatable_and_a_non_number_is_p0010` and `a_simparam_entry_naming_an_option_is_p0010` pass
+- [x] Gate check passes: `Run apioptions`, `Run clioptions`
 
 **Tests**: integration
 **Gate**: quick
