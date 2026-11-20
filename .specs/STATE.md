@@ -1641,6 +1641,34 @@ It amends MD-28's "root `tests/` holds no Rust target" and extends MD-31 and MD-
 **Scope:** `tests/e2e/buck/`, `tests/buck_scenarios.rs`, `crates/piperine-parity/src/scenario/`.
 **Status:** Proposed (2026-11-20), from `.specs/features/buck-scenarios/design.md`.
 
+### MD-74: `settle` runs as section 15 says: held settle commits landed by the owner; an event read as a `bool` is `fired(k)`
+
+`unknown-semantics-events` (2026-11-20, written at T23 while the user was away; completed at T31). The
+number: `unknown-semantics` holds MD-70, `analog-structure` MD-71, `root-e2e` MD-72 and `buck-scenarios`
+MD-73 (which `composite-values` had reserved), so this is the next free one, MD-74; the second feature to
+merge renumbers.
+
+1. **`settle` is an event with a pin of its own.** It fires once per time point, after the instant has
+   gone quiet (section 13 rule 17, section 15 step 4); the plan appends a `SETTLE` pin after the
+   derivative abstol pins, so no existing shape moves. A commit made in the settle phase is held by the
+   digital solver and landed by the owner at the next instant (S1 to S7); a commit to a record pin in
+   that phase is no settle commit and applies as the instant exits.
+2. **An event read as a `bool` is `fired(k)`.** Outside an event position, in a guard or a reaction body,
+   an event expression types `bool` and lowers to `fired(j)` of a body event `j` (section 13 rules 2 and
+   9); an event read where another type is expected is `E0441`.
+3. **`limexp` runs from the standard library.** A closure's parameters are bindings the module item walk
+   skips (they are typed with their closure), so `limexp` checks and lowers like any module with a
+   result; it is one `limit` instance per use, its argument moves by at most 1.0 per iteration and its
+   derivative is `limexp` (section 22.2.4 rules 3 to 5).
+4. **Parity measured, never tuned.** The `limexp` diode agrees with `diode_series.cir` under `DC_VOLTAGE`,
+   and the Book's clipper (`tran_clipper.cir`, ngspice given the harness's own step cap) agrees under
+   `TRAN_VOLTAGE`; no tolerance moved. The Book's buck holds its `regulated` check from 10 ms on (largest
+   deviation 9.4 mV against 50 mV).
+
+**Scope:** `crates/piperine-{ir,plan,transpile,digital-solver,solver,lang}`, the Book's chapters 8 and 10.
+**Status:** Batches B1 to B4 delivered (T1 to T23); B5 (event functions, L51 and L53) waits for
+`composite-values` and `generics`.
+
 ---
 
 ## Handoff Snapshot

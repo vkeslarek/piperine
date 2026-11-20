@@ -333,7 +333,7 @@ Every id of `GAPS.md` (audit of 2026-11-17) has one owning feature. Specs only f
 | `composite-values` | L1–L6, L9, L10, L13, L16 (H.5–H.7, `normal`), L24, the enum variant names | L (~95, phases A–D) | msl-fixes; generics A for `Fn`; unknown-semantics for unknown loops |
 | `generics` | L4 (generic enums), L7, L8, L29–L32, L58 (generics group), S3, X6 | L (~114, phases A–E) | composite-values A–C; order CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E |
 | `unknown-semantics` | L18, L19 | L (~26) | msl-fixes S1 |
-| `unknown-semantics-events` | L51, L52, L53, `limexp`, the Book's clipper and chapter-8 buck | L (31, B1–B5; planned in `.specs/features/unknown-semantics-events/`) | unknown-semantics (merged); B1–B4 none; B5 composite-values A–B and generics A–B (L8) |
+| `unknown-semantics-events` | L51, L52, L53, `limexp`, the Book's clipper and chapter-8 buck | L (31, B1–B5; planned in `.specs/features/unknown-semantics-events/`) | unknown-semantics (merged); B1–B4 delivered (T1–T23: `settle`, an event read as a `bool`, `limexp`, the Book's clipper and buck, MD-74); B5 (L51, L53) waits for composite-values A–B and generics A–B (L8) |
 | `unknown-semantics-per-level` | S6, G6 (re-opens the 2026-11-15 ruling) | S–L by the answer | unknown-semantics |
 | `resolved-nets` | L21, L22, L23, L58 (resolved-net group), the Book's alarm | L (~30, 3 phases) | phase 1 none; then composite-values, unknown-semantics, generics |
 | `resolved-nets-bundles` | L25 | M (~15) | composite-values, generics, resolved-nets |
