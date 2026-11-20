@@ -52,6 +52,12 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-off
 .rail nav a:hover{color:var(--fg);background:var(--surface)}
 .rail nav a[aria-current="true"]{color:var(--fg);background:var(--surface);box-shadow:inset 0 0 0 1px var(--line)}
 .rail nav a[aria-current="true"] .n{color:var(--accent)}
+.rail nav li.part-row{margin-top:18px}
+.rail nav li.part-row:first-child{margin-top:0}
+.rail nav li.part-row a{display:block;padding:4px 10px 6px;color:var(--fg)}
+.rail nav li.part-row a:hover{background:none;color:var(--accent)}
+.rail nav li.part-row .p{display:block;font:500 11px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.rail nav li.part-row .pt{display:block;font:600 14.5px var(--f-display)}
 .rail .foot{margin-top:28px;padding-top:16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);line-height:1.5}
 
 /* ---- phone top bar ---- */
@@ -72,6 +78,9 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-off
   .topbar .menu a .n{font:500 12px var(--f-mono);color:var(--muted);padding-top:2px}
   .topbar .menu a[aria-current="true"]{background:var(--surface)}
   .topbar .menu a[aria-current="true"] .n{color:var(--accent)}
+  .topbar .menu li.part-row a{display:block;padding:12px 10px 4px}
+  .topbar .menu li.part-row .p{font:500 11px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-right:8px}
+  .topbar .menu li.part-row .pt{font:600 15px var(--f-display)}
 }
 
 /* ---- reading column ---- */
@@ -85,6 +94,13 @@ main{min-width:0;padding-block:40px 120px}
 .masthead .meta span{display:inline-flex;gap:6px;align-items:center}
 .masthead .meta code{font:500 12.5px var(--f-mono);color:var(--fg)}
 
+/* parts: the Book's two halves, each opened by a divider */
+.part{max-width:760px;margin-top:72px;padding:26px 0 22px;border-top:3px solid var(--accent);border-bottom:1px solid var(--line);scroll-margin-top:16px}
+.masthead + .part{margin-top:28px}
+@media (max-width:920px){.part{scroll-margin-top:64px}}
+.part-num{font:500 12.5px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+.part-title{font:700 clamp(28px,4.2vw,36px)/1.1 var(--f-display);letter-spacing:-.02em;margin-bottom:10px}
+.part-lead{font:16px/1.55 var(--f-ui);color:var(--muted);max-width:var(--measure)}
 .chapter{max-width:760px;padding-top:56px;scroll-margin-top:16px}
 @media (max-width:920px){.chapter{scroll-margin-top:64px}}
 .ch-num{font:500 12px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin:0 0 6px}
@@ -221,8 +237,8 @@ figure.fig figcaption{font:13.5px/1.5 var(--f-ui);color:var(--muted);margin-top:
     <header class="masthead">
       <p class="eyebrow">Piperine · a language manual</p>
       <h1>The <span>MSL</span> Book</h1>
-      <p class="lead">Learn to read and write MSL, the Rust-like language for analog, digital and mixed-signal circuit models. Example first, rules second.</p>
-      <div class="meta"><span>12 chapters</span><span>Three ways to write: <code>=</code> <code>+&gt;</code> <code>&lt;-</code></span><span>Examples from the spec's galleries</span></div>
+      <p class="lead">Learn to read and write MSL, the Piperine language for analog, digital and mixed-signal circuit models, and to run what you write. Example first, rules second.</p>
+      <div class="meta"><span>{{CHAPTERS}} chapters in {{PARTS}} parts</span><span>Part 1: Fundamentals</span><span>Part 2: In depth</span><span>Three ways to write: <code>=</code> <code>+&gt;</code> <code>&lt;-</code></span><span>Examples from the spec's galleries</span></div>
     </header>
 
 {{CONTENT}}

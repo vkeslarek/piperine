@@ -134,13 +134,24 @@ content = re.sub(r"<code>(.*?)</code>", code_inline, content, flags=re.S)
 
 content = re.sub(r"\x00(\d+)\x00", lambda m: store[int(m.group(1))], content)
 
-chapters = re.findall(r'<section id="([\w-]+)" class="chapter">\s*<p class="ch-num">Chapter (\d+)</p>\s*<h2>(.*?)</h2>', content)
-nav = "\n".join(
-    f'<li><a href="#{cid}" data-target="{cid}"><span class="n">{num}</span><span class="t">{title}</span></a></li>'
-    for cid, num, title in chapters)
+# The rail and the menu list the Book's two parts, each followed by its chapters, in source order:
+# a part is a `<div class="part" id=".." data-part="N" data-title="..">`, a chapter a `<section class="chapter">`.
+entries = re.findall(
+    r'<div class="part" id="([\w-]+)" data-part="(\d+)" data-title="([^"]*)">'
+    r'|<section id="([\w-]+)" class="chapter">\s*<p class="ch-num">Chapter (\d+)</p>\s*<h2>(.*?)</h2>', content)
+rows = []
+for pid, pnum, ptitle, cid, num, title in entries:
+    if pid:
+        rows.append(f'<li class="part-row"><a href="#{pid}"><span class="p">Part {pnum}</span><span class="pt">{ptitle}</span></a></li>')
+    else:
+        rows.append(f'<li><a href="#{cid}" data-target="{cid}"><span class="n">{num}</span><span class="t">{title}</span></a></li>')
+nav = "\n".join(rows)
+chapter_count = sum(1 for entry in entries if entry[3])
+part_count = sum(1 for entry in entries if entry[0])
 
 template = (HERE / "template.html").read_text()
-out = template.replace("{{NAV}}", nav).replace("{{CONTENT}}", content)
+out = (template.replace("{{NAV}}", nav).replace("{{CHAPTERS}}", str(chapter_count)).replace("{{PARTS}}", str(part_count))
+       .replace("{{CONTENT}}", content))
 dest = HERE / "index.html"
 dest.write_text(out)
 print(dest, len(out))

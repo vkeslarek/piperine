@@ -71,8 +71,8 @@ name = "book_welcome"
 path = "tests/book/welcome.rs"
 
 [[test]]
-name = "book_from_rust"
-path = "tests/book/from_rust.rs"
+name = "book_language"
+path = "tests/book/language.rs"
 
 [[test]]
 name = "book_values"

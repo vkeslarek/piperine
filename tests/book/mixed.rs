@@ -235,7 +235,7 @@ fn the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero() {
     // bit high 65 % of the clocks; mixed~ac0aefe3 "Its = 0.0 holds it at 0 V through the transient's
     // operating point": the transient runs, where a Dc solve is singular and names `x` (the Book's step 6)
     let chapter = Chapter::read();
-    let clock = chapter.text("from-rust#2");
+    let clock = chapter.text("language#13");
     let clock = clock.split_once("/// Counts rising edges").expect("the clock comes first").0;
     let after = format!("{SOURCE}module Top() {{ signal vin: Electrical; signal clk: Bit; signal bit: Bit; let s = Vdc(vin) {{ dc: 0.3 }}; let m = DeltaSigma1(vin, clk, bit); let o = Osc(clk) {{ f: 1M }}; }}\n{clock}");
     let model = chapter.wrapped("delta_sigma.msl", "", "mixed#14", &after);

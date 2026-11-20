@@ -1,4 +1,4 @@
-//! Scope: chapter 11 of the Book, "Reading errors" (feature `root-e2e`, RE-02 and RE-03): the
+//! Scope: chapter 12 of the Book, "Reading errors" (feature `root-e2e`, RE-02 and RE-03): the
 //! models of the chapter run through `piperine::` (`Project`, `Session`), a model the Book shows
 //! refused is asserted refused with the codes and messages the tool gives, and each code the
 //! chapter's tables name is provoked by the smallest model that makes the mistake. Each test opens
@@ -476,7 +476,9 @@ fn e0507_is_a_non_finite_value_in_a_solve() {
 #[test]
 fn e0508_is_a_transient_step_that_cannot_be_completed_at_the_smallest_step() {
     // errors~5c44e91d and simulation~5c44e91d: "E0508: A transient step cannot be completed at the smallest step" (a
-    // discontinuity in an `analog` expression): the report names the instant
+    // discontinuity in an `analog` expression): the report names the instant; solver~1a7aff56 "A step that fails at that
+    // length ends the run with E0508, or E0504 when the step follows a digital change (chapter 12)." (the E0504 half
+    // is `e0504_is_a_step_after_a_digital_change_that_does_not_converge`'s)
     let source = format!("{CIRCUIT_PARTS}module Chatter(p: Electrical, n: Electrical) {{ from_time: f64 = 1e-6; }}\nanalog for Chatter {{ i(p, n) +> if now() > from_time {{ if v(p, n) > 0.5 {{ 1e-3 }} else {{ -1e-3 }} }} else {{ 0.0 }}; }}\nmodule Top() {{ signal n: Electrical; let r1 = R(n, gnd); let c = Chatter(n, gnd); }}\n");
     let faulty = Faulty::running("errors~5c44e91d", &source, Faulty::transient_of_top(2e-6, Some(1e-8)));
     let run = faulty.first("E0508");

@@ -388,7 +388,7 @@ fn the_rc_output_blocks_are_what_the_binary_prints() {
 
 #[test]
 fn every_cli_listing_of_the_book_is_what_the_binary_prints() {
-    // Book claims held here: welcome~72129ad3, welcome~a4895da4, welcome~df325c6f, welcome~6e662db9, from-rust~4938c15f, values~2931bd2e, values~9a0ece05, cli~54e71d59
+    // Book claims held here: welcome~72129ad3, welcome~a4895da4, welcome~df325c6f, welcome~6e662db9, language~4938c15f, solver~1cdf59b8, values~2931bd2e, values~9a0ece05, cli~54e71d59
     // verification F6: every listing of the whole Book that claims to be the binary's output, in
     // every chapter and of any project, is the binary's whole output; `data-cli-lines` only
     // selects the lines the page shows, so a line it leaves out is held all the same
@@ -609,7 +609,7 @@ fn the_chapter_runs_each_new_analysis() {
 
 #[test]
 fn a_plot_draws_a_curve_and_a_legend_per_real_signal_and_a_lane_per_digital_one() {
-    // Book chapter 16 (root-e2e, cli~1369f2e0): "Every printed real signal is a curve on one shared axis, with a
+    // Book chapter 13 (root-e2e, cli~1369f2e0): "Every printed real signal is a curve on one shared axis, with a
     // legend; every digital signal is a step trace in a lane of its own below": a node that follows a bit
     // gives one curve, one lane and a legend naming both
     let dir = tempfile::tempdir().expect("tmp");

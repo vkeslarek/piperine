@@ -76,7 +76,7 @@ impl Reaction {
 fn the_statements_wrap_and_convert_as_the_book_says() {
     // values#1 (run): the block's statements inside a reaction that emits what they computed;
     // values~ec65c268 "Arithmetic always wraps"; values~d5f52d81 "a 3-bit duty word is a u3, and a
-    // 10-bit ADC code a u10"; values~df08bac4 "integer arithmetic wraps the way a register does, in every
+    // 10-bit ADC code a u10"; values~9c69a651 "integer arithmetic wraps the way a register does, in every
     // build"; the block's own comments: 250 + 10 is 4, a u3 holds 0 to 7, 4.7k is an f64 4700.0
     let chapter = Chapter::read();
     let model = chapter.wrapped("statements.msl", Reaction::BEFORE, "values#1", "emit!(\"v\", a = a, b = b, duty = duty, r = r, n = n, x = x);\n} }\n");

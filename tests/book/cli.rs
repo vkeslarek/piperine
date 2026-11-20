@@ -1,4 +1,4 @@
-//! Scope: chapter 16 of the Book, "The command line" (feature `root-e2e`, RE-02 and RE-03): the RC project
+//! Scope: chapter 13 of the Book, "The command line" (feature `root-e2e`, RE-02 and RE-03): the RC project
 //! the chapter prints file for file, the lowpass and the square-wave RC it saves, and the buck bench, run
 //! through `piperine::` with the keys and flags the chapter gives; the values and records a run gives (the
 //! `from` trim, the shapes of the tables, the derivatives of `sens`, the Bode exercise), the refusals the

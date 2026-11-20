@@ -406,12 +406,12 @@ One row per block or sentence of the Book that the binary refuses (`refused`), d
 (`diverges`), never raises (`unraised`) or that the spec contradicts (`disputed`), under the id of the
 gap above that explains it. `Book` is the row's id in `tests/book/inventory.tsv`; `tests/book/inventory_guard.rs`
 holds this section equal to the inventory. A faulty model the Book teaches (the worked `SampleHold` of
-chapter 11) is refused by design and has no row. `Owner` is the feature that closes the row: `root-e2e`
+chapter 12) is refused by design and has no row. `Owner` is the feature that closes the row: `root-e2e`
 for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
-| from-rust#1 | L6 | `composite-values` | reached from a top, `range_of` is `P0001` (a range pattern in a `match` arm; the enum has no `#[derive(Repr)]`) and `mean` is `P0001` (a reference type) |
+| language#20 | L6 | `composite-values` | reached from a top, `range_of` is `P0001` (a range pattern in a `match` arm; the enum has no `#[derive(Repr)]`) and `mean` is `P0001` (a reference type) |
 | values#2 | L53 | `unknown-semantics-events` | `handshake`, a `fn` that returns `Event`, is `P0001`: method `rise` on this receiver is not supported yet |
 | values~c389077a | L53 | `unknown-semantics-events` | the class of a function that returns `Event` does not run (`handshake`); the pure, `now()` and `emit!` classes do |
 | values#18 | L12 | `foreign-models` | an `extern "C" fn` with its `#[derivative]` is `P0001`: `extern` function is not supported yet |
