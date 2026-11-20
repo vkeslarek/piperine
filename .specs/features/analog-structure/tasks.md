@@ -1235,7 +1235,7 @@ Proof: run parac | test ac_rc ... ok
 Proof: run parop | test divider ... ok
 Proof: run pardc | test diode_iv ... ok
 Proof: run corpus | test every_twin_has_a_cir_and_a_test ... ok
-Proof: `git diff --exit-code main -- crates/piperine-parity/src/contract.rs`
+Proof: `git diff --exit-code origin/main -- crates/piperine-parity/src/contract.rs`
 
 **C78** - With the ngspice comparison disabled the new twins run and print the harness's skip line. (AS-18, AC 3; T23, T24)
 Proof: run partran | test uic_rc_runs_and_prints_the_skip_line_without_ngspice ... ok
