@@ -195,8 +195,8 @@ T63
 
 **Done when**:
 
-- [ ] The rebase is clean or its conflicts are resolved without changing behaviour; the `**Build**` line and `cargo test` at the root pass
-- [ ] The Handoff names each anchor that moved and the task it affects
+- [x] The rebase is clean or its conflicts are resolved without changing behaviour; the `**Build**` line and `cargo test` at the root pass
+- [x] The Handoff names each anchor that moved and the task it affects
 
 **Tests**: none
 **Gate**: build
@@ -1835,7 +1835,7 @@ Proof: run irctl | test a_loop_reaching_a_probe_on_a_later_iteration_reads_it ..
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none yet. Planning (2026-11-20): the user was away and asked for the most reasonable default on every open point ("Tu sempre assume o default mais razoável e depois me conta"); the defaults are design.md D1 to D20.
+**Settled mid-build:** T1 (2026-11-20, batch B1, branch `feature/composite-values` at `c720b421`, already on `origin/main` `4f505e09` with `analog-structure` merged: no rebase needed, `**Build**` line green and zero warnings at that head). Anchors re-read at the new `HEAD`; everything design.md names exists, these moved or are not what the design calls them: (1) `Ir::check`'s recursion check is `Checker::recursion` in `check.rs` (was `check.rs:1052`) and `deps.rs`'s recursion refusal is `Walk::enter` (was `deps.rs:852`) - both T5; (2) the checker's refusals moved to `types/unsupported.rs` plus `types/call.rs:334` (`closure`, was `call.rs:333`) and `types/expr.rs` - T11 to T18 read them by name, not line; (3) `Known` is not a type: the `known_or`/`is_known`/`high` lowering is `Builtin::Known*` in `elab/known.rs` and the known/unknown decision is the `Flagged` type of the condition - T19 to T24 and T22 key on `ValueType::Flagged`; (4) `Frame` is not in `elab/structural.rs`: the carrier `Frame` is `elab/carriers.rs:48`, the placement frame is the `frame: usize` index of `elab/hoist.rs` (`hoisted_name`, `hoist`, `hoist_placements`) - T25 and T26 read `hoist.rs` and `structural.rs` again before editing; (5) `rt::Merge` is a trait (`rt/flag.rs:325`), not a struct, and `Carried::to_levels` is the trait method at `rt/flag.rs:38` - T6, T7, T36; (6) `ValuePrinter::merged` is `print/value.rs:1038`, `holds_effect` `:1057`, `block_lines` `:1085`; `Commits::branch` `rt/commits.rs:325`, `run` `:346`; `CarrierLayout` `plan/digital.rs:160`, `RecordLayout` `:252`; `Metadata` `api/metadata.rs:47`, `Cell` `api/table.rs:18` (all as design.md, line numbers only drifted); (7) the next free `MD-` number is `MD-73` (`MD-72` is taken by "the root package holds the integrated tests", STATE.md still says "MD-72 is the next free one" in a stale line) - T62. Planning (2026-11-20): the user was away and asked for the most reasonable default on every open point ("Tu sempre assume o default mais razoável e depois me conta"); the defaults are design.md D1 to D20.
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 
