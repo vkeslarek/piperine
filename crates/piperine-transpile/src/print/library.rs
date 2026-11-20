@@ -20,7 +20,7 @@ use piperine_ir::{EventSource, Expr, ExprId, FunctionId, Ir, StmtId};
 use piperine_plan::{BodyPlan, DerivePlan, Mode};
 
 use crate::Error;
-use crate::print::{AnalogPrinter, DerivativePrinter, DerivePrinter, DigitalPrinter, ShapePrinter, Text, ValuePrinter};
+use crate::print::{AnalogPrinter, DerivativePrinter, DerivePrinter, DigitalPrinter, ShapePrinter, Text, TypeItems, ValuePrinter};
 
 /// Prints a design.
 #[derive(Debug)]
@@ -93,6 +93,10 @@ impl LibraryPrinter {
         t.line("");
         for line in Self::imports(&uses) {
             t.line(&line);
+        }
+        for item in TypeItems::new(ir).items()? {
+            t.line("");
+            t.line(item.trim_end());
         }
         for text in &function_texts {
             t.line("");

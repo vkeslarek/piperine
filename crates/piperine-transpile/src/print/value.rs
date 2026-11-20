@@ -28,7 +28,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 
 use piperine_ir::{Addend, AnalysisKind, LevelPart,
-    BinaryOp, Body, EmitField, Env, Expr, ExprId, FunctionId, Ir, Local, MathFn, Method, Origin, Param, Stmt, StmtId, Stream,
+    BinaryOp, Body, EmitField, Env, Expr, ExprId, FunctionId, Ir, Local, MathFn, Method, Origin, Param, Stmt, StmtId, Stream, TypeData,
     QuantityRole, Terminal, UnaryOp, ValueType,
 };
 
@@ -36,7 +36,7 @@ use piperine_plan::{RecordLayout, StatementPlan};
 
 use crate::Error;
 use crate::print::control::LoopFrame;
-use crate::print::{ContributionSums, Text};
+use crate::print::{ContributionSums, Text, TypeItems};
 
 /// Binding strength of a printed expression: an operand weaker than its place is parenthesized.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -173,6 +173,33 @@ impl<'a> ValuePrinter<'a> {
             carriers: Vec::new(),
             streams: Vec::new(),
             origin,
+            analog: None,
+            sums: None,
+            plain: false,
+            flagged_reals: false,
+            commits: false,
+            committed: RefCell::new(Vec::new()),
+            finishes: Cell::new(false),
+            branches: Cell::new(false),
+            used: RefCell::new(BTreeSet::new()),
+        }
+    }
+
+    /// The printer of a type item's field types: a real is `R`, the item's own generic parameter.
+    pub fn of_type(ir: &'a Ir, data: &TypeData) -> ValuePrinter<'a> {
+        ValuePrinter {
+            ir,
+            path: format!("type {}", data.path),
+            locals: Vec::new(),
+            local_types: Vec::new(),
+            mutable: Vec::new(),
+            returns: None,
+            function: None,
+            loops: RefCell::new(Vec::new()),
+            params: Vec::new(),
+            carriers: Vec::new(),
+            streams: Vec::new(),
+            origin: data.origin.clone(),
             analog: None,
             sums: None,
             plain: false,
@@ -381,11 +408,12 @@ impl<'a> ValuePrinter<'a> {
         Ok(t.finish())
     }
 
-    /// Whether `function` is generic over `Real`: a real is among its params, its return, its
+    /// Whether `function` is generic over `Real`: a real (or a type holding one) is among its params, its return, its
     /// locals, or it reads an environment real (every read but `analysis(..)`, a `bool`).
     pub fn is_generic(ir: &Ir, function: FunctionId) -> bool {
         let f = ir.function(function);
-        let real = |ty: &ValueType| *ty == ValueType::F64;
+        let items = TypeItems::new(ir);
+        let real = |ty: &ValueType| items.holds_real(ty);
         f.params().iter().chain(f.locals()).any(|l| real(&l.ty))
             || real(f.ret())
             || Self::env_reads(ir, function).iter().any(|e| !matches!(e, Env::Static | Env::Analysis(_)))
@@ -607,9 +635,23 @@ impl<'a> ValuePrinter<'a> {
                 Ok(format!("rt::Flagged<{inner}>"))
             }
             ValueType::Fn(params, ret) => self.function_type(params, ret, path),
-            // The aggregate types print as Rust items from T34 (`print/types.rs`); until then they are refused by name.
-            ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Slice(_) | ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Option(_) => {
-                Err(Error::Unsupported { form: format!("the aggregate type {ty}"), path: path.to_string(), origin: self.origin.clone() })
+            ValueType::Tuple(parts) => {
+                let parts: Result<Vec<String>, Error> = parts.iter().map(|part| self.rust_type(part, path)).collect();
+                let parts = parts?;
+                Ok(if parts.len() == 1 { format!("({},)", parts[0]) } else { format!("({})", parts.join(", ")) })
+            }
+            ValueType::Array(element, length) => Ok(format!("[{}; {length}]", self.rust_type(element, path)?)),
+            ValueType::Slice(element) => Ok(format!("&[{}]", self.rust_type(element, path)?)),
+            ValueType::Option(inner) => Ok(format!("Option<{}>", self.rust_type(inner, path)?)),
+            // One item per arena entry (`print/types.rs`); a type that holds a real is generic over it.
+            ValueType::Struct(id) | ValueType::Enum(id) => {
+                let items = TypeItems::new(self.ir);
+                let generic = match (items.holds_real(ty), self.plain) {
+                    (false, _) => String::new(),
+                    (true, true) => "<f64>".to_string(),
+                    (true, false) => "<R>".to_string(),
+                };
+                Ok(format!("{}{generic}", items.name(*id)))
             }
         }
     }
