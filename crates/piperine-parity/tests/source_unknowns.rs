@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 
 use piperine_api::{Field, Record, Streams, Verdict};
+use piperine_solver::protocol::ObservationKind;
 use piperine_parity::project::Project;
 
 #[allow(dead_code)]
@@ -280,4 +281,22 @@ fn a_known_false_guard_does_not_run() {
     // §13 rule 1: a guard that is known false stops the event, so the reaction does not run and
     // `blocked`, which held 1, never changes
     assert_eq!(guarded("blocked"), Vec::<(i64, Vec<u8>)>::new());
+}
+
+/// The instants (seconds) of the `hit` records of `top` of `cross_if.msl`, in a 1 us transient.
+fn hits(top: &str) -> Vec<f64> {
+    let seen = build(&project("cross_if.msl"), top).run(1e-6, 0.05e-6);
+    seen.all().iter().filter(|o| matches!(o.kind, ObservationKind::Record { .. })).map(|o| o.time).collect()
+}
+
+#[test]
+fn an_unknown_if_in_a_cross_argument_merges() {
+    // §3.3.3: `cross(if d { v(p) - 0.3 } else { v(p) - 0.7 })`. With `d` known true it watches
+    // `v(p) - 0.3`, which a 1 V/us ramp crosses at 0.3 us (within the 1 ps `ttol`); with `d`
+    // unknown both arms run and the value differs, so it is unknown, which is NaN to the solver
+    // (abi.md A4): the watch never crosses, and nothing is refused
+    let known = hits("KnownBench");
+    assert_eq!(known.len(), 1, "one crossing: {known:?}");
+    assert!((known[0] - 0.3e-6).abs() <= 1e-12, "at 0.3 us: {known:?}");
+    assert_eq!(hits("MaybeBench"), Vec::<f64>::new());
 }

@@ -18,10 +18,11 @@ use core::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Neg, Not, Rem, Shl, Shr, S
 
 use super::control::Panic;
 use super::int::{Int, UInt};
+use super::real::Real;
 
 /// A type a pin carries: its value bytes little-endian at offset 0, then one known byte; the
 /// layouts of the plan (`piperine_plan::CarrierLayout`, spec RS-12 AC 1).
-pub trait Carried: Copy + Default + PartialEq {
+pub trait Carried: Copy + Default + PartialEq + Levelwise {
     /// The width of the value bytes.
     const WIDTH: usize;
     /// The pin's size: the known byte after the value, rounded to the value's alignment.
@@ -37,6 +38,39 @@ pub trait Carried: Copy + Default + PartialEq {
     fn to_levels(self) -> u64;
     /// The value whose levels are the low `LEVELS` bits of `bits`.
     fn from_levels(bits: u64) -> Self;
+}
+
+/// A value two paths of an unknown `if` can be compared on (§3.3.3): the carried types, and the
+/// reals of analog code (`f64`, `Dual<N>`), whose `Flagged` form a `cross` argument computes on.
+pub trait Levelwise: Copy + Default {
+    /// Whether `self` and `other` hold the same levels, a NaN being the same as itself (§3.3.9,
+    /// §22.1.2 rule 2).
+    fn same_levels(self, other: Self) -> bool;
+}
+
+/// A real is compared as `Real` says, its tangent included.
+impl<R: Real> Levelwise for R {
+    fn same_levels(self, other: R) -> bool {
+        Real::same_levels(self, other)
+    }
+}
+
+impl Levelwise for bool {
+    fn same_levels(self, other: bool) -> bool {
+        self == other
+    }
+}
+
+impl<const N: u32> Levelwise for UInt<N> {
+    fn same_levels(self, other: UInt<N>) -> bool {
+        self.get() == other.get()
+    }
+}
+
+impl<const N: u32> Levelwise for Int<N> {
+    fn same_levels(self, other: Int<N>) -> bool {
+        self.get() == other.get()
+    }
 }
 
 /// A carried type with levels, so with `&` and `|`: `bool` and the integers.
@@ -297,10 +331,10 @@ pub trait Merge: Sized {
     fn unknown() -> Self;
 }
 
-impl<T: Carried> Merge for Flagged<T> {
+impl<T: Levelwise> Merge for Flagged<T> {
     /// One flag per value: known only when both are known and hold the same levels.
     fn merge(self, other: Flagged<T>) -> Flagged<T> {
-        if self.known && other.known && self.value.to_levels() == other.value.to_levels() { self } else { Flagged::unknown() }
+        if self.known && other.known && self.value.same_levels(other.value) { self } else { Flagged::unknown() }
     }
 
     fn unknown() -> Flagged<T> {
@@ -692,6 +726,20 @@ mod tests {
         // a statement yields nothing, so there is nothing to merge
         assert_eq!(().merge(()), ());
         assert_eq!(<Flagged<bool> as Merge>::unknown(), u());
+    }
+
+    #[test]
+    fn a_real_with_its_tangent_merges_as_one_value() {
+        // §3.3.3, §22.1.2: the arms of an unknown `if` in a `cross` argument yield `Flagged<Dual>`,
+        // which merges as `Real::same_levels` says: the value and every partial must agree, a NaN
+        // being the same as itself
+        use crate::rt::real::Dual;
+        let d = |v: f64, d0: f64| k(Dual::<2> { v, d: [d0, 1.0] });
+        assert_eq!(d(2.0, 3.0).merge(d(2.0, 3.0)), d(2.0, 3.0), "equal value and tangent are kept");
+        assert_eq!(d(2.0, 3.0).merge(d(2.0, 4.0)), u(), "a different tangent is a different value");
+        assert_eq!(d(2.0, 3.0).merge(d(5.0, 3.0)), u());
+        assert!(d(f64::NAN, 3.0).merge(d(f64::NAN, 3.0)).is_known(), "NaN merges with itself");
+        assert_eq!(d(2.0, 3.0).merge(u()), u());
     }
 
     #[test]

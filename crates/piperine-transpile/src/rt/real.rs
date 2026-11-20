@@ -65,6 +65,9 @@ pub trait Real:
     fn is_nan(self) -> bool;
     fn is_finite(self) -> bool;
     fn is_infinite(self) -> bool;
+    /// Whether `self` and `other` are the same number down to the bits, tangent included: how the
+    /// merge of an unknown `if` decides that two paths agree (§3.3.3). A NaN is the same as itself.
+    fn same_levels(self, other: Self) -> bool;
 }
 
 impl Real for f64 {
@@ -206,6 +209,10 @@ impl Real for f64 {
 
     fn is_infinite(self) -> bool {
         f64::is_infinite(self)
+    }
+
+    fn same_levels(self, other: f64) -> bool {
+        self.to_bits() == other.to_bits()
     }
 }
 
@@ -417,6 +424,10 @@ impl<const N: usize> Real for Dual<N> {
 
     fn is_infinite(self) -> bool {
         self.v.is_infinite()
+    }
+
+    fn same_levels(self, other: Dual<N>) -> bool {
+        self.v.to_bits() == other.v.to_bits() && self.d.iter().zip(other.d).all(|(a, b)| a.to_bits() == b.to_bits())
     }
 }
 

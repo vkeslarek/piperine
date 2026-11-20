@@ -99,9 +99,6 @@ pub struct ValuePrinter<'a> {
     /// A real inside `rt::Flagged` is the code's own real `R` rather than a plain `f64`: the
     /// value of a `cross` that may be unknown, whose probe tangents must survive (design C8).
     flagged_reals: bool,
-    /// Whether an `if` on a condition that may be unknown has a lowering here (§3.3.3): every
-    /// owner but an `analog` block, whose reals are duals that `Flagged` cannot merge.
-    merges: bool,
     /// Whether a commit has a place to go: the code of a reaction.
     commits: bool,
     /// The carrier and `min_after` of each commit printed so far, in printing order: the order
@@ -155,7 +152,6 @@ impl<'a> ValuePrinter<'a> {
             analog: None,
             plain: false,
             flagged_reals: false,
-            merges: true,
             commits: false,
             committed: RefCell::new(Vec::new()),
             finishes: Cell::new(false),
@@ -182,7 +178,6 @@ impl<'a> ValuePrinter<'a> {
             analog: None,
             plain: false,
             flagged_reals: false,
-            merges: false,
             commits: false,
             committed: RefCell::new(Vec::new()),
             finishes: Cell::new(false),
@@ -194,7 +189,7 @@ impl<'a> ValuePrinter<'a> {
     /// The printer of the code of a drive or an event of `body`: its locals are the body's, a
     /// real is a plain `f64`, and an unknown `if` merges.
     pub fn of_digital(ir: &'a Ir, body: Body<'a>) -> ValuePrinter<'a> {
-        ValuePrinter { plain: true, merges: true, ..Self::of_body(ir, body) }
+        ValuePrinter { plain: true, ..Self::of_body(ir, body) }
     }
 
     /// The printer of an expression a placement gives a child's param (`ChildValue::Expr`): over
@@ -1009,12 +1004,11 @@ impl<'a> ValuePrinter<'a> {
     /// one arm, an unknown one runs both and merges what they yield and, in a reaction, what they
     /// commit. `c.choose(|| { A }, || { B })` when the arms commit and emit nothing, and
     /// `commits_.branch(c, |commits_| { A }, |commits_| { B })` when they do, so each arm's
-    /// commits and records are a path of the reaction's `Commits`. Analog code has no merge of
-    /// duals and refuses it.
+    /// commits and records are a path of the reaction's `Commits`. In an `analog` block a real
+    /// that may be unknown is a plain `f64` (its tangent dropped), and in a `cross` argument it is
+    /// the code's own `R` (`Flagged<R>`, which merges as `Real::same_levels` says), so the same
+    /// `choose` serves every owner.
     fn merged(&self, e: ExprId, cond: ExprId, then: ExprId, otherwise: ExprId) -> Result<Piece, Error> {
-        if !self.merges {
-            return Err(self.unsupported(e, "an `if` on an unknown condition in analog code"));
-        }
         let ty = self.ir.expr_type(e);
         let piece = self.piece(cond)?;
         let joins = self.commits && (self.holds_effect(then) || self.holds_effect(otherwise));
