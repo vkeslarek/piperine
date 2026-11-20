@@ -1166,7 +1166,7 @@ Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move .
 Proof: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test 'parity_*'`
 
 **C17** - `ToleranceContract` and the comparison targets are unedited by the feature. (RE-04, AC 3; T3)
-Proof: `git diff --quiet $(git merge-base HEAD main) -- crates/piperine-parity/src/contract.rs crates/piperine-parity/tests/parity_op.rs crates/piperine-parity/tests/parity_dc.rs crates/piperine-parity/tests/parity_ac.rs crates/piperine-parity/tests/parity_tran.rs crates/piperine-parity/tests/parity_tf.rs crates/piperine-parity/tests/parity_pz.rs crates/piperine-parity/tests/parity_sens.rs crates/piperine-parity/tests/parity_pss.rs crates/piperine-parity/tests/parity_temp.rs`
+Proof: `git diff --quiet $(git merge-base HEAD origin/main) -- crates/piperine-parity/src/contract.rs crates/piperine-parity/tests/parity_op.rs crates/piperine-parity/tests/parity_dc.rs crates/piperine-parity/tests/parity_ac.rs crates/piperine-parity/tests/parity_tran.rs crates/piperine-parity/tests/parity_tf.rs crates/piperine-parity/tests/parity_pz.rs crates/piperine-parity/tests/parity_sens.rs crates/piperine-parity/tests/parity_pss.rs crates/piperine-parity/tests/parity_temp.rs`
 
 **C18** - Every twin of `tests/e2e/` has a scenario test at the root. (RE-05, AC 1; T10)
 Proof: run scenarios | test every_twin_has_a_scenario_test ... ok
