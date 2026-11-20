@@ -2,7 +2,7 @@
 //! over the body's own params), its nodes (ports first, then signals, with nature and initial
 //! potential). A body is a function of its module alone: one variant per module in M1.
 
-use piperine_ir::{BodyId, BodyNode, BodySpec, Carrier, Child, Constant, NatureId, NodeRole, Origin, Merge, Param, Real, Terminal};
+use piperine_ir::{BodyId, BodyNode, BodySpec, Carrier, Child, Constant, NatureId, NodeRole, Origin, Merge, Param, Real, Terminal, ValueType};
 
 use super::carriers::{Frame, Structure};
 use super::children::ChildPlan;
@@ -58,7 +58,7 @@ impl Elaboration<'_, '_> {
                 let DeclKind::Param(p) = &data.kind else { continue };
                 let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
                 let default = match p.default {
-                    Some(expr) => match self.consts.value(expr, &Bindings::new()) {
+                    Some(expr) => match self.fold_param_value(expr, &Bindings::new()) {
                         Ok(value) => Some(value),
                         Err(fault) => {
                             self.const_fault(&fault, "a param default");
@@ -142,7 +142,8 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(param).clone();
         let DeclKind::Param(p) = &data.kind else { return None };
         let plan = self.param_plans.get(&module)?.iter().find(|plan| plan.decl == param)?.clone();
-        let ty = self.lower_type(data.file, p.ty)?;
+        // A param of module type holds its template's number (`templates.rs`).
+        let ty = if self.is_module_param(param) { ValueType::UInt(32) } else { self.lower_type(data.file, p.ty)? };
         let check = match p.where_ {
             Some(cond) => Some(self.lower_expr(scope, cond)?),
             None => None,

@@ -25,7 +25,7 @@ use super::body::ModulePlan;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use piperine_ir::Terminal;
-use crate::pom::{Arm, DeclId, DeclKind, Design, ExprId, ExprKind, PatId, PatKind, Resolution, StmtId, StmtKind, UnOp};
+use crate::pom::{Arm, FileId, DeclId, DeclKind, Design, ExprId, ExprKind, PatId, PatKind, Resolution, StmtId, StmtKind, UnOp};
 use crate::types::Types;
 
 /// A body to lower: a module and the values of its key params, one text per key param in the
@@ -351,6 +351,15 @@ impl Elaboration<'_, '_> {
     /// Classifies the key params of `modules` (the reached modules with a body): see the module
     /// documentation. Run once, before any body is lowered.
     pub(super) fn classify_key_params(&mut self, modules: &[DeclId]) {
+        // A param of module type is structural (§8.4.6): its template selects what is placed.
+        for module in modules {
+            let order = self.params_of(*module);
+            for param in order.clone() {
+                if self.is_module_param(param) {
+                    self.keys.add(*module, param, &order);
+                }
+            }
+        }
         for module in modules {
             let order = self.params_of(*module);
             for contribution in self.potential_capable_contributions(*module) {
@@ -729,11 +738,17 @@ impl Overrides {
 impl Elaboration<'_, '_> {
     /// `values` and `bindings` of the instance `path`, with each key param the host bound before the
     /// run (`overrides`) set to that value, of the type of the param's default.
-    pub(super) fn apply_overrides(&self, module: DeclId, path: &str, plans: &[super::body::ParamPlan], mut values: Vec<Constant>, mut bindings: Bindings) -> (Vec<Constant>, Bindings) {
+    pub(super) fn apply_overrides(&mut self, module: DeclId, path: &str, plans: &[super::body::ParamPlan], mut values: Vec<Constant>, mut bindings: Bindings, at: (FileId, crate::msl::Span)) -> (Vec<Constant>, Bindings) {
         let top = path.split('.').next().unwrap_or(path);
-        for key in self.keys.of(module) {
-            let Some(index) = plans.iter().position(|p| p.decl == *key) else { continue };
+        for key in self.keys.of(module).to_vec() {
+            let Some(index) = plans.iter().position(|p| p.decl == key) else { continue };
             let Some(given) = self.overrides.value(top, path, &plans[index].name) else { continue };
+            // D13: the host has no text for a template; the param is bound in the source.
+            if self.is_module_param(key) {
+                let message = format!("`{path}.{}` is a module-typed param: it is bound in the source, a host cannot give it the value {given}", plans[index].name);
+                self.report(at.0, crate::msl::Diagnostic::new("E0802", message, at.1, "a module-typed param is bound in the source"));
+                continue;
+            }
             let value = match plans[index].default {
                 Some(Constant::Bool(_)) => Constant::Bool(given != 0.0),
                 Some(Constant::Int(_)) => Constant::Int(given as i128),
@@ -742,7 +757,7 @@ impl Elaboration<'_, '_> {
             if let Some(slot) = values.get_mut(index) {
                 *slot = value;
             }
-            bindings.bind(*key, value);
+            bindings.bind(key, value);
         }
         (values, bindings)
     }

@@ -37,6 +37,7 @@ mod reactions;
 mod records;
 mod selectors;
 mod structural;
+mod templates;
 mod unlowered;
 mod variants;
 

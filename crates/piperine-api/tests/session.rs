@@ -193,3 +193,22 @@ fn a_top_with_a_node_port_is_refused_by_the_interpreter_naming_the_host_source()
         Ok(_) => panic!("the interpreter ran a host source"),
     }
 }
+
+#[test]
+fn a_module_typed_param_is_not_set_by_text() {
+    // PI-04, design D13: a param of module type is bound in the source, so a request param that
+    // names it is E0802 at elaboration; the design itself opens
+    let devices = format!("{DEVICES}\nmodule Cell(p: Electrical) {{ r: f64 = 1k; }}\nanalog for Cell {{ i(p, gnd) +> v(p, gnd) / r; }}\n");
+    let top = "module Top() {\n    cell: Cell = Cell { r: 2k };\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let c1 = cell(a);\n}\n";
+    let text = format!("{devices}\n{top}");
+    open(&text, &flags("op", "interp", Some("Top")), &unused()).unwrap_or_else(|f| panic!("the design opens: {f}"));
+    let overrides = Overrides { params: vec![("Top.cell".to_string(), 1.0)], ..flags("op", "interp", Some("Top")) };
+    match open(&text, &overrides, &unused()) {
+        Err(Failure::Diagnostics { found, .. }) => {
+            assert_eq!(found.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0802"], "{found:?}");
+            assert!(found[0].diagnostic.message.contains("Top.cell"), "{}", found[0].diagnostic.message);
+        }
+        Err(other) => panic!("E0802 from elaboration, found {other}"),
+        Ok(_) => panic!("a text value was given to a module-typed param"),
+    }
+}

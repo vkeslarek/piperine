@@ -11,6 +11,7 @@ use piperine_ir::{Child, ChildValue, Constant, NodeRole, Terminal};
 use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use super::templates::TemplateValue;
 use super::unlowered::Unlowered;
 use crate::msl::Diagnostic;
 use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Resolution, StructClass};
@@ -108,27 +109,58 @@ impl Elaboration<'_, '_> {
     /// `None` after a diagnostic (`E0319` for a key param with neither).
     pub(super) fn child_key_values(&mut self, scope: &Scope, module: DeclId, fields: &[FieldInit], file: FileId, span: crate::msl::Span) -> Option<Bindings> {
         let mut values = Bindings::new();
-        let plans = self.param_plans.get(&module).cloned().unwrap_or_default();
         for key in self.keys.of(module).to_vec() {
-            let written = fields.iter().find(|f| f.res == Resolution::Decl(key));
-            let value = match (written, plans.iter().find(|p| p.decl == key).and_then(|p| p.default)) {
-                (Some(field), _) => match self.consts.value(field.value, &scope.keys) {
-                    Ok(value) => value,
+            let written = match fields.iter().find(|f| f.res == Resolution::Decl(key)) {
+                Some(field) => match self.fold_param_value(field.value, &scope.keys) {
+                    Ok(value) => Some(value),
                     Err(fault) => {
                         self.const_fault(&fault, "the value of a param that fixes structure");
                         return None;
                     }
                 },
-                (None, Some(default)) => default,
-                (None, None) => {
-                    let name = self.design.decl_data(key).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-                    self.report(file, Diagnostic::new("E0319", format!("the placement leaves the required param `{name}` unbound"), span, "required param not bound"));
-                    return None;
-                }
+                None => None,
             };
-            values.bind(key, value);
+            values.bind(key, self.key_value(module, key, written, file, span)?);
         }
         Some(values)
+    }
+
+    /// The value key param `key` of `module` takes at a placement: `written`, else the default.
+    /// `None` after `E0319` for a key param with neither.
+    fn key_value(&mut self, module: DeclId, key: DeclId, written: Option<Constant>, file: FileId, span: crate::msl::Span) -> Option<Constant> {
+        let default = self.param_plans.get(&module).and_then(|plans| plans.iter().find(|p| p.decl == key)).and_then(|p| p.default);
+        match written.or(default) {
+            Some(value) => Some(value),
+            None => {
+                let name = self.design.decl_data(key).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                self.report(file, Diagnostic::new("E0319", format!("the placement leaves the required param `{name}` unbound"), span, "required param not bound"));
+                None
+            }
+        }
+    }
+
+    /// The template a placement through a param of module type places (`cell(c)`, PI-04): the
+    /// value the param holds in the body being lowered (`scope.keys`), the default or the parent's
+    /// binding. `None` when `class` is no such placement.
+    fn template_through(&self, scope: &Scope, class: &CallClass) -> Option<TemplateValue> {
+        let CallClass::Instance { via: Some(param), .. } = class else { return None };
+        if !self.is_module_param(*param) {
+            return None;
+        }
+        self.templates.get(scope.keys.get(*param)?).cloned()
+    }
+
+    /// What a placement through a template gives its module: the constant of each param the block
+    /// binds, as `lower_child` keeps them, and the values of the module's key params.
+    fn template_values(&mut self, template: &TemplateValue, file: FileId, span: crate::msl::Span) -> Option<(Vec<(u32, Option<Constant>, ExprId)>, Bindings)> {
+        let params: Vec<DeclId> = self.design.decl_data(template.module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
+        let given: Vec<(u32, Option<Constant>, ExprId)> = template.fields.iter().filter_map(|(param, value, expr)| Some((params.iter().position(|p| p == param)? as u32, Some(*value), *expr))).collect();
+        let mut keys = Bindings::new();
+        for key in self.keys.of(template.module).to_vec() {
+            let written = template.fields.iter().find(|(param, _, _)| *param == key).map(|(_, value, _)| *value);
+            keys.bind(key, self.key_value(template.module, key, written, file, span)?);
+        }
+        Some((given, keys))
     }
 
     fn lower_child(&mut self, scope: &Scope, call: ExprId, module: DeclId, ordinal: u32, index: u32) -> Option<(Child, ChildPlan)> {
@@ -139,7 +171,8 @@ impl Elaboration<'_, '_> {
             self.unsupported(file, node.span, "a placement through a template value");
             return None;
         }
-        let fields = self.placement_fields(call, module);
+        let through = self.template_through(scope, class);
+        let fields = if through.is_some() { Vec::new() } else { self.placement_fields(call, module) };
         let module_name = self.design.decl_data(module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let name = self.placement_name(call, &module_name, ordinal);
         let mut ok = true;
@@ -165,7 +198,17 @@ impl Elaboration<'_, '_> {
                 None => ok = false,
             }
         }
-        let given = self.lower_given(scope, file, module, index, &fields);
+        let templated = match &through {
+            Some(template) => match self.template_values(template, file, node.span) {
+                Some(values) => Some(values),
+                None => return None,
+            },
+            None => None,
+        };
+        let given = match &templated {
+            Some((given, _)) => Some(given.clone()),
+            None => self.lower_given(scope, file, module, index, &fields),
+        };
         let given = match given {
             Some(given) => given,
             None => {
@@ -176,7 +219,10 @@ impl Elaboration<'_, '_> {
         if !ok {
             return None;
         }
-        let key_values = self.child_key_values(scope, module, &fields, file, node.span)?;
+        let key_values = match templated {
+            Some((_, keys)) => keys,
+            None => self.child_key_values(scope, module, &fields, file, node.span)?,
+        };
         let (_, body) = self.request_body(module, &key_values)?;
         let params = given.iter().filter_map(|(index, value, _)| value.map(|v| (*index, v))).collect();
         let origin = self.locator.origin(file, node.span);
@@ -245,7 +291,8 @@ impl Elaboration<'_, '_> {
                 ok = false;
                 continue;
             }
-            match self.consts.value(field.value, &Bindings::new()) {
+            let bindings = if self.is_module_param(params[index]) { scope.keys.clone() } else { Bindings::new() };
+            match self.fold_param_value(field.value, &bindings) {
                 Ok(value) => out.push((index as u32, Some(value), field.value)),
                 // A value over the parent's params (`{ r: r_top }`, `{ l }`): the authored child
                 // shows the expression, the instance table the constant of each instance.

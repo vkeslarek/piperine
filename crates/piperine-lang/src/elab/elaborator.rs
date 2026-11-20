@@ -88,6 +88,8 @@ pub(super) struct Elaboration<'d, 't> {
     /// The ammeter branch of each port whose `inflow()` the body being lowered reads (`inflow.rs`).
     pub(super) ammeters: BTreeMap<crate::pom::DeclId, u32>,
     pub(super) reach_frames: BTreeMap<(usize, crate::pom::ExprId), usize>,
+    /// The templates the params of module type hold (`templates.rs`).
+    pub(super) templates: super::templates::Templates,
     pub(super) diagnostics: Vec<DesignDiagnostic>,
 }
 
@@ -117,6 +119,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             body_keys: Bindings::new(),
             ammeters: BTreeMap::new(),
             reach_frames: BTreeMap::new(),
+            templates: super::templates::Templates::default(),
             diagnostics: Vec::new(),
         }
     }
