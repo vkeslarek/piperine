@@ -361,7 +361,7 @@ The user is away ("Tu sempre assume o default mais razoável e depois me conta")
 | Noise density function | one function per source (`noise:<k>`) | the assembly evaluates only the densities a sweep needs; a fault names the source |
 | Session parameter layout | flagged `F64` | the absent-optional rule of abi.md gives "unknown", which `known_or` turns into the default |
 | Trace writer | the `terms` function | it runs at every Newton evaluation, which is §19 rule 3's "every evaluation" |
-| Band total | power law per interval | ngspice's quadrature, so `onoise_total` compares under the density's bound |
+| Band total | power law per interval, summed per source, then the root | ngspice's quadrature (`N_INTEG` per source), so `onoise_total` compares under the density's bound; same-name inputs merge before integration |
 | Jump retake | in the owner's protocol | the owner alone sees both the instant's boundary and the step that read the jump |
 
 ---
