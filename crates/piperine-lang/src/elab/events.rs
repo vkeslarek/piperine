@@ -39,12 +39,12 @@ use crate::types::{Builtin, Callee};
 
 /// One disjunct of a head: what fires it, and its guard split in two.
 pub(super) struct Disjunct {
-    source: EventSource,
+    pub(super) source: EventSource,
     /// The conjuncts the event holds.
-    discrete: Vec<LoweredExpr>,
+    pub(super) discrete: Vec<LoweredExpr>,
     /// The conjuncts that read a probe, `now()` or `analysis(Static)`: the `if` around the body.
-    continuous: Vec<LoweredExpr>,
-    origin: Origin,
+    pub(super) continuous: Vec<LoweredExpr>,
+    pub(super) origin: Origin,
 }
 
 impl Elaboration<'_, '_> {
@@ -127,9 +127,7 @@ impl Elaboration<'_, '_> {
         for d in disjuncts {
             let event = self.add_event(d.source, &d.discrete, d.origin.clone());
             on.push(event);
-            let fired = self.emit(Expr::Fired(event), ValueType::Bool, d.origin);
-            let operands: Vec<LoweredExpr> = std::iter::once(fired).chain(d.continuous).collect();
-            if let Some(arm) = self.conjunction(&operands) {
+            if let Some(arm) = self.fired_arm(event, d.continuous, d.origin) {
                 arms.push(arm);
             }
         }
@@ -141,7 +139,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// Add the event of `source` guarded by the conjunction of `discrete`: its index.
-    fn add_event(&mut self, source: EventSource, discrete: &[LoweredExpr], origin: Origin) -> u32 {
+    pub(super) fn add_event(&mut self, source: EventSource, discrete: &[LoweredExpr], origin: Origin) -> u32 {
         let guard = self.conjunction(discrete);
         self.structure.events.push(Event { source, guard, origin });
         self.structure.events.len() as u32 - 1
@@ -149,7 +147,7 @@ impl Elaboration<'_, '_> {
 
     /// `a && b && …` over lowered `bool`s, left to right: `&` when an operand may be unknown
     /// (§3.3.12), `&&` otherwise. `None` for no operand.
-    fn conjunction(&mut self, operands: &[LoweredExpr]) -> Option<LoweredExpr> {
+    pub(super) fn conjunction(&mut self, operands: &[LoweredExpr]) -> Option<LoweredExpr> {
         let mut iter = operands.iter().copied();
         let first = iter.next()?;
         Some(iter.fold(first, |acc, next| {
@@ -162,7 +160,7 @@ impl Elaboration<'_, '_> {
 
     /// `a || b || …` over lowered `bool`s, left to right: `|` when an operand may be unknown
     /// (§3.3.12), `||` otherwise. `None` for no operand.
-    fn disjunction(&mut self, operands: &[LoweredExpr]) -> Option<LoweredExpr> {
+    pub(super) fn disjunction(&mut self, operands: &[LoweredExpr]) -> Option<LoweredExpr> {
         let mut iter = operands.iter().copied();
         let first = iter.next()?;
         Some(iter.fold(first, |acc, next| {
@@ -200,7 +198,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The disjuncts of the head `expr`. `None` after a diagnostic.
-    fn disjuncts(&mut self, scope: &mut Scope, expr: ExprId) -> Option<Vec<Disjunct>> {
+    pub(super) fn disjuncts(&mut self, scope: &mut Scope, expr: ExprId) -> Option<Vec<Disjunct>> {
         let node = self.design.expr_node(expr).clone();
         let origin = self.expr_origin(expr);
         match &node.kind {

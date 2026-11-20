@@ -2,7 +2,8 @@
 //! run-time criterion of `on settle` and of the settle commit, each model written in
 //! `tests/events/`, elaborated by the front end, compiled on the transpiled backend and run on the
 //! solver. Every expected value is written from the rule it cites (§13 rules 1, 14, 17; §15 step 4,
-//! T4 and S1 to S7; §16 O4, rule 5), never read back from the model.
+//! T4 and S1 to S7; §16 O4, rule 5) and, for an event read as a `bool`, §13 rule 2 and rule 9,
+//! never read back from the model.
 #![cfg(unix)]
 
 use std::path::{Path, PathBuf};
@@ -315,4 +316,70 @@ fn a_settle_commit_at_the_stop_time_is_dropped_from_source() {
     assert_eq!(short.changes("LateBench.r"), vec![(0, known_real(1000.0))], "and the commit is dropped");
     let long = scenario.transient(4e-6, 1e-6);
     assert_eq!(long.changes("LateBench.r"), vec![(0, known_real(1000.0)), (4 * US, known_real(5000.0))], "run on, it lands at the next time point");
+}
+
+/// The bool field `name` of a record.
+fn flag(record: &Record, name: &str) -> bool {
+    match record.fields.iter().find(|(field, _)| field == name) {
+        Some((_, Field::Bool(value))) => *value,
+        other => panic!("no bool field `{name}`: {other:?}"),
+    }
+}
+
+/// The instants and the two bool fields `first` and `second` of the records of `stream`.
+fn flags(run: &Run, stream: &str, first: &str, second: &str) -> Vec<(i64, bool, bool)> {
+    run.records(AnalysisKind::Transient, stream).into_iter().map(|(t, r)| (t, flag(&r, first), flag(&r, second))).collect()
+}
+
+#[test]
+fn an_event_read_as_a_bool_says_whether_it_fired() {
+    // §13 rule 2 (UE-01 AC 1): the reaction runs at every rising edge; `a.rise()` and `b.rise()`
+    // read inside it are true exactly for the edge that fired in that microstep: `a` alone at
+    // 10 ns, `b` alone at 20 ns. The falls at 30 ns run nothing
+    let run = Scenario::of("reads.msl", "DetectBench").transient(60e-9, 10e-9);
+    let edges = flags(&run, "edges", "a", "b");
+    assert_eq!(edges[..2], [(10 * NS, true, false), (20 * NS, false, true)], "{edges:?}");
+    assert!(edges.iter().all(|(t, ..)| *t != 30 * NS), "no rising edge at 30 ns: {edges:?}");
+}
+
+#[test]
+fn two_events_in_one_microstep_run_the_reaction_once_both_true() {
+    // §12.1.15, §13 rule 18 (UE-01 AC 2): `a` and `b` rise in one microstep at 40 ns; the
+    // reaction on `a.rise() || b.rise()` runs once there with both read as true
+    let run = Scenario::of("reads.msl", "DetectBench").transient(60e-9, 10e-9);
+    let at_forty: Vec<(i64, bool, bool)> = flags(&run, "edges", "a", "b").into_iter().filter(|(t, ..)| *t == 40 * NS).collect();
+    assert_eq!(at_forty, [(40 * NS, true, true)], "one run, both edges true");
+}
+
+#[test]
+fn an_event_not_in_the_head_reads_whether_it_fired() {
+    // §13 rule 2 (edge case): the reaction is on `a.rise()` alone and reads `b.rise()`: false at
+    // 10 ns where only `a` rises, true at 40 ns where `b` rises with it
+    let run = Scenario::of("reads.msl", "ElsewhereBench").transient(60e-9, 10e-9);
+    let seen: Vec<(i64, bool)> = run.records(AnalysisKind::Transient, "elsewhere").into_iter().map(|(t, r)| (t, flag(&r, "b"))).collect();
+    assert_eq!(seen, [(10 * NS, false), (40 * NS, true)], "{seen:?}");
+}
+
+#[test]
+fn a_committed_event_read_commits_whether_it_fired() {
+    // §13 rule 2, design D2 (UE-02 AC 5): `q <- a.rise()` on either edge commits whether `a` rose:
+    // true at 10 ns, false at 20 ns (only `b` rose), true at 40 ns (both rose)
+    let run = Scenario::of("reads.msl", "CommitBench").transient(60e-9, 10e-9);
+    let changes: Vec<(i64, bool)> = run.changes("CommitBench.q").into_iter().filter(|(t, _)| *t > 0).map(|(t, bytes)| (t, bytes[0] == 1)).collect();
+    assert_eq!(changes, [(10 * NS, true), (20 * NS, false), (40 * NS, true)], "{changes:?}");
+}
+
+#[test]
+fn a_settle_reaction_reads_an_event_as_true_only_when_settle_fires_it() {
+    // §15 Resolution, §13 rule 2 (UE-01 AC 4): in the settle phase only `settle` has fired, so a
+    // reaction on `settle || clk.rise()` reads `settle` as true and the edge as false at every time
+    // point, and the reverse at a rising edge (no edge here is a time point)
+    let run = Scenario::of("reads.msl", "SettleBench").transient(3e-6, 1e-6);
+    let steps = run.time_points();
+    let reads = flags(&run, "either", "settle", "edge");
+    for (t, settle, edge) in &reads {
+        assert_eq!(*settle, steps.contains(t), "`settle` reads true at the time points only: {t}");
+        assert_eq!(*edge, !*settle, "exactly one of the two fired at {t}");
+    }
+    assert!(reads.iter().any(|(_, settle, _)| *settle) && reads.iter().any(|(_, _, edge)| *edge), "both kinds of instant occur: {reads:?}");
 }

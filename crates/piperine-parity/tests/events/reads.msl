@@ -1,0 +1,95 @@
+//! An event read as a `bool` from source (§13 rule 2, UE-01, UE-02): inside a reaction, an event
+//! says whether it fired in this microstep. A stimulus makes `a` and `b` rise apart (10 ns, 20 ns),
+//! fall together (30 ns) and rise together (40 ns); the readers write what they read.
+use buck::dpwm::Osc;
+
+/// An ideal DC source from `p` to ground.
+module Vsrc(p: Electrical) { dc: f64 = 1.0; }
+analog for Vsrc { v(p) +> dc; }
+
+/// A resistor.
+module Res(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Res { i(p, n) +> v(p, n) / r; }
+
+/// A capacitor.
+module Cap(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }
+analog for Cap { i(p, n) +> ddt(c * v(p, n)); }
+
+/// `a` rises alone at 10 ns, `b` alone at 20 ns, both fall at 30 ns and both rise in one
+/// microstep at 40 ns.
+module Stimulus(out a: Bit = false, out b: Bit = false) {}
+digital for Stimulus {
+    on at(10n) { a <- true; }
+    on at(20n) { b <- true; }
+    on at(30n) { a <- false; b <- false; }
+    on at(40n) { a <- true; b <- true; }
+}
+
+/// Runs on either rising edge and writes whether each fired: one record per microstep that has an
+/// edge, however many edges that microstep has (§12.1.15, §13 rule 18).
+module Detect(in a: Bit, in b: Bit) {}
+digital for Detect {
+    on a.rise() || b.rise() {
+        let up = a.rise();
+        let dn = b.rise();
+        emit!("edges", t = now(), a = up, b = dn);
+    }
+}
+
+/// The stimulus and the detector.
+module DetectBench() {
+    signal a: Bit; signal b: Bit;
+    let stimulus = Stimulus(a, b);
+    let detect = Detect(a, b);
+}
+
+/// Runs on `a` rising only and reads `b`'s edge, which is not in its head (§13 rule 2).
+module Elsewhere(in a: Bit, in b: Bit) {}
+digital for Elsewhere {
+    on a.rise() {
+        let other = b.rise();
+        emit!("elsewhere", t = now(), b = other);
+    }
+}
+
+/// The stimulus and the reader of an event outside its head.
+module ElsewhereBench() {
+    signal a: Bit; signal b: Bit;
+    let stimulus = Stimulus(a, b);
+    let elsewhere = Elsewhere(a, b);
+}
+
+/// Commits whether `a` rose to `q` on either edge: `q <- up` is the `bool` rule 2 reads (D2).
+module Comparator(in a: Bit, in b: Bit, out q: Bit = false) {}
+digital for Comparator {
+    on a.rise() || b.rise() { q <- a.rise(); }
+}
+
+/// The stimulus and the committing reader.
+module CommitBench() {
+    signal a: Bit; signal b: Bit; signal q: Bit;
+    let stimulus = Stimulus(a, b);
+    let comparator = Comparator(a, b, q);
+}
+
+/// Runs on `settle` or on a rising clock edge and reads both as a `bool`: only the one that fires
+/// is true (§15, Resolution: in the settle phase only `settle` has fired).
+module Either(in clk: Bit) {}
+digital for Either {
+    on settle || clk.rise() {
+        let tick = settle;
+        let edge = clk.rise();
+        emit!("either", t = now(), settle = tick, edge = edge);
+    }
+}
+
+/// An RC network on 1 V with a free-running clock nothing continuous reads: its edges are
+/// instants that are no time point.
+module SettleBench() {
+    signal a: Electrical; signal b: Electrical; signal clk: Bit;
+    let source = Vsrc(a) { dc: 1.0 };
+    let r = Res(a, b) { r: 1k };
+    let c = Cap(b, gnd) { c: 1n };
+    let osc = Osc(clk) { f: 1.35M };
+    let either = Either(clk);
+}

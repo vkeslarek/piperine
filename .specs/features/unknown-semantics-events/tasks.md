@@ -390,7 +390,7 @@ T27 → T28 → T29 → T30 → T31
 
 - [x] `settle_runs_once_per_accepted_time_point`, `settle_does_not_run_at_an_event_time_that_is_not_a_time_point`, `settle_runs_at_the_operating_point_each_dc_point_and_the_last_instant`, `settle_records_follow_every_microstep_of_their_time_point`, `settle_combined_with_an_event_fires_by_rule_1`, `a_time_point_with_no_settle_reaction_adds_no_microstep_and_no_record`, `settle_runs_once_per_time_point_across_a_jump`, `a_probing_settle_reaction_reads_the_time_point_solution` and `settle_in_a_design_with_nothing_analog_runs_at_the_operating_point_and_the_stop` pass under `**Run sourceevents**`
 - [x] `a_settle_commit_is_read_at_the_next_time_point`, `an_event_time_between_reads_the_value_before_the_settle_commit`, `a_delayed_settle_commit_is_ordinary` and `a_settle_commit_at_the_stop_time_is_dropped_from_source` pass under `**Run sourceevents**`
-- [ ] `a_settle_reaction_reads_an_event_as_true_only_when_settle_fires_it` passes under `**Run sourceevents**` (needs events read as `bool`: moved to T14, Settled B2 (9))
+- [x] `a_settle_reaction_reads_an_event_as_true_only_when_settle_fires_it` passes under `**Run sourceevents**` (needs events read as `bool`: moved to T14, Settled B2 (9); added with T14)
 - [x] Code clarity: test fixtures are methods of a named scenario type; no free test helper
 - [x] Gate check passes: Full
 
@@ -412,10 +412,10 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `an_event_reads_as_a_bool_in_a_reaction_body`, `an_event_committed_onto_a_bool_carrier_reads_as_a_bool` and `an_event_where_another_type_is_expected_is_e0441` pass under `**Run typesevents**`
-- [ ] `the_commit_of_an_event_read_as_a_bool_is_stated` passes under `**Run spectext**`
-- [ ] Code clarity: `event_out_of_place` is split, not grown: one method per outcome, each doc-commented with its rule
-- [ ] Gate check passes: Quick
+- [x] `an_event_reads_as_a_bool_in_a_reaction_body`, `an_event_committed_onto_a_bool_carrier_reads_as_a_bool` and `an_event_where_another_type_is_expected_is_e0441` pass under `**Run typesevents**`
+- [x] `the_commit_of_an_event_read_as_a_bool_is_stated` passes under `**Run spectext**`
+- [x] Code clarity: `event_out_of_place` is split, not grown: one method per outcome, each doc-commented with its rule
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -435,9 +435,9 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `a_guard_reads_an_event_as_a_bool`, `negating_an_event_outside_a_guard_or_body_is_e0440` and `a_bool_and_an_event_in_an_event_position_is_e0440` pass under `**Run typesevents**`
-- [ ] Code clarity: no method grows past one screen; `///` docs cite §13 rules 1 and 9
-- [ ] Gate check passes: Quick
+- [x] `a_guard_reads_an_event_as_a_bool`, `negating_an_event_outside_a_guard_or_body_is_e0440` and `a_bool_and_an_event_in_an_event_position_is_e0440` pass under `**Run typesevents**`
+- [x] Code clarity: no method grows past one screen; `///` docs cite §13 rules 1 and 9
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -457,10 +457,10 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `an_event_read_as_a_bool_in_a_body_lowers_to_fired` passes under `**Run elabdigital**`
-- [ ] `an_event_read_as_a_bool_says_whether_it_fired`, `two_events_in_one_microstep_run_the_reaction_once_both_true`, `an_event_not_in_the_head_reads_whether_it_fired` and `a_committed_event_read_commits_whether_it_fired` pass under `**Run sourceevents**`
-- [ ] Code clarity: the lookup-or-append is one named type or method with a `///` doc citing §13 rule 2; no free function
-- [ ] Gate check passes: Full
+- [x] `an_event_read_as_a_bool_in_a_body_lowers_to_fired` passes under `**Run elabdigital**`
+- [x] `an_event_read_as_a_bool_says_whether_it_fired`, `two_events_in_one_microstep_run_the_reaction_once_both_true`, `an_event_not_in_the_head_reads_whether_it_fired` and `a_committed_event_read_commits_whether_it_fired` pass under `**Run sourceevents**`
+- [x] Code clarity: the lookup-or-append is one named type or method with a `///` doc citing §13 rule 2; no free function
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

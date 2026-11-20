@@ -18,6 +18,7 @@ mod contribute;
 mod derivatives;
 mod diagnose;
 mod drives;
+mod event_reads;
 mod events;
 mod elaborator;
 mod analog;
