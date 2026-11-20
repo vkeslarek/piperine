@@ -11,6 +11,7 @@ use crate::msl::lexer;
 use crate::pom::{Arm, DeclId, DeclKind, ExprId, ExprKind, FileId, LitKind, PatId, PatKind, Resolution, UnOp};
 
 use super::check::Checker;
+use super::flow::Assigned;
 use super::unsupported::Unsupported;
 use super::Ty;
 
@@ -72,13 +73,26 @@ impl Checker<'_> {
     }
 
     /// The type of the arms: `expected`, else the first arm that does not wait for another's type.
+    /// Each arm starts from the state after the scrutinee; the state after the `match` is where
+    /// they meet.
     fn arms(&mut self, arms: &[Arm], expected: Option<&Ty>) -> Option<Ty> {
+        let before = self.flow.assigned.clone();
+        let mut after_arms = Vec::new();
+        let ty = self.arm_types(arms, expected, &before, &mut after_arms);
+        self.flow.assigned = Assigned::join(after_arms);
+        ty
+    }
+
+    /// The type of each arm body, checked in order from `before`; the state each leaves goes to
+    /// `after_arms`.
+    fn arm_types(&mut self, arms: &[Arm], expected: Option<&Ty>, before: &Assigned, after_arms: &mut Vec<Assigned>) -> Option<Ty> {
         let ty = match expected {
             Some(t) => t.clone(),
             None => {
                 let first = arms.iter().position(|a| !self.integer_literal_waits(a.body) && !self.is_none_literal(a.body)).unwrap_or(0);
                 let Some(arm) = arms.get(first) else { return Some(Ty::Unit) };
                 let t = self.infer(arm.body);
+                after_arms.push(self.flow.end_branch(before));
                 for (i, arm) in arms.iter().enumerate() {
                     if i != first {
                         match &t {
@@ -87,6 +101,7 @@ impl Checker<'_> {
                                 self.infer(arm.body);
                             }
                         }
+                        after_arms.push(self.flow.end_branch(before));
                     }
                 }
                 return t;
@@ -94,6 +109,7 @@ impl Checker<'_> {
         };
         for arm in arms {
             self.check(arm.body, &ty);
+            after_arms.push(self.flow.end_branch(before));
         }
         Some(ty)
     }

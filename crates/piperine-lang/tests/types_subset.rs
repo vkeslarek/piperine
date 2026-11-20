@@ -44,7 +44,6 @@ const ROWS: &[Row] = &[
     Row { construct: "generic function", source: "fn g<T>(x: f64) -> f64 { x }\nmodule Top() { }\nanalog for Top { let x = g(1.0); }", names: "generic function" },
     Row { construct: "generic module", source: "module G<N: Nature>(a: N) { }\nmodule Top(a: E) { let g = G(a); }", names: "generic module" },
     Row { construct: "const generic", source: "module G<const N: usize>() { }\nmodule Top() { let g = G(); }", names: "generic module" },
-    Row { construct: "let mut in a fn", source: "fn f() -> f64 { let mut y = 1.0; 2.0 }\nmodule Top() { }\nanalog for Top { let x = f(); }", names: "`let mut` binding" },
     Row { construct: "closure in a module body", source: "module Top() { let f = |x: f64| x; }", names: "closure" },
     Row { construct: "discrete nature", source: "nature B { value: bool }\nmodule Top(a: B) { }", names: "discrete nature `B`" },
     Row { construct: "bundle", source: "struct Bn { a: E }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
@@ -58,8 +57,6 @@ const ROWS: &[Row] = &[
     Row { construct: "break", source: "module Top() { }\nanalog for Top { break; }", names: "`break`" },
     Row { construct: "continue", source: "module Top() { }\nanalog for Top { continue; }", names: "`continue`" },
     Row { construct: "return", source: "fn f() -> f64 { return 1.0; }\nmodule Top() { }\nanalog for Top { let x = f(); }", names: "`return`" },
-    Row { construct: "let mut", source: "module Top() { }\nanalog for Top { let mut x = 1.0; }", names: "`let mut` binding" },
-    Row { construct: "assignment", source: "module Top() { }\nanalog for Top { let x = 1.0; x = 2.0; }", names: "assignment" },
     Row { construct: "let else", source: "module Top() { }\nanalog for Top { let x = 1.0 else { return; }; }", names: "`let ... else`" },
     Row { construct: "try", source: "module Top() { }\nanalog for Top { let x = 1.0?; }", names: "`?` expression" },
     Row { construct: "template", source: "module Top(a: E, b: E) { let t = Resistor { r: 1.0 }; }", names: "module template" },
@@ -126,7 +123,7 @@ fn unreached_items_are_not_reported() {
     assert_eq!(types.reached().len(), 2, "only Top and Resistor are reached");
 
     // The same names, reached, are refused.
-    let reached = format!("{HEAD}fn loops(x: f64) -> f64 {{ let mut y = x; y }}\nmodule Top() {{ }}\nanalog for Top {{ let x = loops(1.0); }}");
+    let reached = format!("{HEAD}fn loops(x: f64) -> f64 {{ let mut y = x; while y > 0.0 {{ y = y - 1.0; }} y }}\nmodule Top() {{ }}\nanalog for Top {{ let x = loops(1.0); }}");
     let design: Design = support::build(&reached);
     assert!(Types::check(&design, "Top").is_err());
 }

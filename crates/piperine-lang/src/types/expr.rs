@@ -8,6 +8,7 @@ use crate::pom::{BinOp, BlockNode, FileId, BuiltinKind, DeclKind, ExprId, ExprKi
 use crate::stack;
 
 use super::check::{Checker, Context};
+use super::flow::Assigned;
 use super::unsupported::Unsupported;
 use super::Ty;
 
@@ -50,8 +51,11 @@ impl Checker<'_> {
                 ExprKind::Path(_) if matches!(expected, Ty::Fn(..)) && self.fn_value_at == Some(expr) && self.function_named(expr).is_some() => self.function_value(expr),
                 ExprKind::If { cond, then, else_: Some(else_) } => {
                     self.condition(*cond);
+                    let before = self.flow.assigned.clone();
                     self.statements_as(&then.stmts, Some(expected), code);
+                    let after_then = self.flow.end_branch(&before);
                     self.check_as(*else_, expected, code);
+                    self.flow.assigned = Assigned::join([after_then, self.flow.assigned.clone()]);
                     Some(expected.clone())
                 }
                 // `100` where an `f64` is required: an integer literal never converts (§1 rule 7).
@@ -201,6 +205,7 @@ impl Checker<'_> {
                     }
                 }
             }
+            ExprKind::Assign { op, lhs, rhs } => self.assignment(expr, *op, *lhs, *rhs),
             ExprKind::Cast { expr: operand, ty } => self.cast(*operand, *ty),
             ExprKind::Binary { op, lhs, rhs } => self.binary(expr, *op, *lhs, *rhs),
             ExprKind::Block(block) => self.statements(&block.stmts, None),
@@ -225,7 +230,7 @@ impl Checker<'_> {
         }
     }
 
-    fn binary(&mut self, whole: ExprId, op: BinOp, lhs: ExprId, rhs: ExprId) -> Option<Ty> {
+    pub(super) fn binary(&mut self, whole: ExprId, op: BinOp, lhs: ExprId, rhs: ExprId) -> Option<Ty> {
         let file = self.file_of_expr(lhs);
         let span = self.design.expr_node(whole).span;
         match op {
@@ -364,36 +369,40 @@ impl Checker<'_> {
     /// without one, `()`.
     fn conditional(&mut self, cond: ExprId, then: &BlockNode, else_: Option<ExprId>) -> Option<Ty> {
         self.condition(cond);
-        // `if c { 0 } else { count + 1 }`: the first arm that is not a bare integer literal gives
-        // the type the literal takes (local literal typing).
-        if let Some(else_) = else_
-            && self.block_waits(then)
-        {
-            let else_ty = self.infer(else_);
-            if let Some(t) = &else_ty {
-                self.statements(&then.stmts, Some(t));
-            } else {
-                self.statements(&then.stmts, None);
+        let before = self.flow.assigned.clone();
+        let (found, after_then, after_else) = match else_ {
+            // `if c { 0 } else { count + 1 }`: the first arm that is not a bare integer literal gives
+            // the type the literal takes (local literal typing).
+            Some(else_) if self.block_waits(then) => {
+                let else_ty = self.infer(else_);
+                let after_else = self.flow.end_branch(&before);
+                self.statements(&then.stmts, else_ty.as_ref());
+                (else_ty, self.flow.end_branch(&before), after_else)
             }
-            return else_ty;
-        }
-        let then_ty = self.statements(&then.stmts, None);
-        match (else_, then_ty) {
-            (Some(else_), Some(t)) => {
-                self.check(else_, &t);
-                Some(t)
+            _ => {
+                let then_ty = self.statements(&then.stmts, None);
+                let after_then = self.flow.end_branch(&before);
+                let (found, after_else) = match (else_, then_ty) {
+                    (Some(else_), Some(t)) => {
+                        self.check(else_, &t);
+                        (Some(t), self.flow.end_branch(&before))
+                    }
+                    (Some(else_), None) => {
+                        self.infer(else_);
+                        (None, self.flow.end_branch(&before))
+                    }
+                    (None, Some(t)) if t != Ty::Unit => {
+                        let file = self.file_of_expr(cond);
+                        self.mismatch(file, then.span, &Ty::Unit, &t);
+                        (Some(Ty::Unit), before.clone())
+                    }
+                    (None, t) => (t, before.clone()),
+                };
+                (found, after_then, after_else)
             }
-            (Some(else_), None) => {
-                self.infer(else_);
-                None
-            }
-            (None, Some(t)) if t != Ty::Unit => {
-                let file = self.file_of_expr(cond);
-                self.mismatch(file, then.span, &Ty::Unit, &t);
-                Some(Ty::Unit)
-            }
-            (None, t) => t,
-        }
+        };
+        self.flow.assigned = Assigned::join([after_then, after_else]);
+        found
     }
 
     fn literal(&mut self, kind: &LitKind, file: crate::pom::FileId, span: crate::msl::Span) -> Option<Ty> {
@@ -515,6 +524,9 @@ impl Checker<'_> {
                     DeclKind::Signal(s) => self.read_type(decl, s.ty),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {
                         let local = self.locals.get(&decl).cloned();
+                        if self.read_before_assignment(file, node.span, decl) {
+                            return local;
+                        }
                         if local.is_none() && self.lets_open.contains_key(&decl) {
                             return self.self_read(file, node.span, decl);
                         }
@@ -615,18 +627,22 @@ impl Checker<'_> {
         value
     }
 
-    /// `let x = init;` or `let x: T = init;`: the binding takes the annotation, else the type of
-    /// the initializer.
+    /// `let x = init;`, `let x: T = init;`, `let mut x = init;`, and `let x;` or `let x: T;` (§1.7.5):
+    /// the binding takes the annotation, else the type of the initializer, else the type of its
+    /// first assignment.
     fn let_statement(&mut self, file: crate::pom::FileId, span: crate::msl::Span, pat: crate::pom::PatId, ty: Option<crate::pom::TypeId>, init: Option<ExprId>) {
         let pat_node = self.design.pat_node(pat).clone();
         if let (PatKind::Tuple(_), None, Some(init)) = (&pat_node.kind, ty, init) {
             self.tuple_let(file, &pat_node, init);
             return;
         }
-        let PatKind::Ident { by_ref: false, mutable: false, sub: None, binding, res: Resolution::Unresolved, .. } = &pat_node.kind else {
+        let PatKind::Ident { by_ref: false, mutable, sub: None, binding, res: Resolution::Unresolved, .. } = &pat_node.kind else {
             self.unsupported(file, pat_node.span, Unsupported::pat(&pat_node.kind));
             return;
         };
+        if *mutable {
+            self.mutable.insert(*binding);
+        }
         let annotated = match ty {
             Some(t) => match self.lower_type(t) {
                 Some(t) => Some(t),
@@ -646,9 +662,12 @@ impl Checker<'_> {
                 Some(t)
             }
             (None, Some(init)) => self.infer(init),
-            (Some(_), None) | (None, None) => {
-                self.unsupported(file, span, "`let` without a value");
-                None
+            (annotated, None) => {
+                self.deferred.insert(*binding, self.flow.loop_depth);
+                if let Some(t) = annotated {
+                    self.locals.insert(*binding, t);
+                }
+                return;
             }
         };
         match bound {

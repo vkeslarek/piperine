@@ -8,6 +8,7 @@
 //! The result is a table or the reasons there is none, never both.
 
 mod analog;
+mod assign;
 mod call;
 mod carrier;
 mod catalogue;
@@ -19,6 +20,7 @@ mod definition;
 mod event;
 mod expr;
 mod flag_total;
+mod flow;
 mod intrinsic;
 mod module;
 mod reach;

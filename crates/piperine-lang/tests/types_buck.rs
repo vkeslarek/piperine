@@ -22,8 +22,6 @@ const ROWS: &[Row] = &[
     Row { construct: "a while loop", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { while true { } } }", names: "`while` loop" },
     Row { construct: "a loop", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { loop { } } }", names: "`loop`" },
     Row { construct: "a for loop", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { for k in 0..3 { } } }", names: "`for` loop" },
-    Row { construct: "let mut", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let mut n = 0; } }", names: "`let mut` binding" },
-    Row { construct: "an assignment", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let n = 0; n = 1; } }", names: "assignment" },
     Row { construct: "a struct", source: "struct S { a: f64 }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let s = S { a: 1.0 }; } }", names: "struct expression" },
     Row { construct: "an array", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let a = [1.0, 2.0]; } }", names: "array expression" },
     Row { construct: "an array type", source: "module Top() { signal s: [Bit; 4]; }", names: "array type" },

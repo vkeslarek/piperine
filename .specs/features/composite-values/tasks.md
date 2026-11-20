@@ -407,8 +407,8 @@ T63
 
 **Done when**:
 
-- [ ] `let_mut_and_every_compound_operator_type_check`, `assigning_a_non_place_is_e0183_naming_the_target`, `a_read_before_assignment_is_e0183` and `let_mut_in_a_module_body_is_e0331` pass under `**Run typesctl**`
-- [ ] Gate check passes: Quick
+- [x] `let_mut_and_every_compound_operator_type_check`, `assigning_a_non_place_is_e0183_naming_the_target`, `a_read_before_assignment_is_e0183` and `let_mut_in_a_module_body_is_e0331` pass under `**Run typesctl**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

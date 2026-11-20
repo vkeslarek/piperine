@@ -9,6 +9,7 @@ use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Desi
 
 use super::continuity::Continuity;
 use super::definition::DriveBook;
+use super::flow::Flow;
 use super::record::Records;
 use super::unsupported::Unsupported;
 use super::{Builtin, Callee, Method, Ty, Types};
@@ -98,6 +99,13 @@ pub(super) struct Checker<'d> {
     /// The one expression that may be a function used as a value: an argument written
     /// directly where the parameter has a function type.
     pub(super) fn_value_at: Option<ExprId>,
+    /// The locals declared with `mut` (§1.7.7).
+    pub(super) mutable: BTreeSet<DeclId>,
+    /// The locals declared without a value (`let x;`, §1.7.5), each with the loop depth it is
+    /// declared at.
+    pub(super) deferred: BTreeMap<DeclId, usize>,
+    /// The control state of the body being checked.
+    pub(super) flow: Flow,
     /// The type the context expects of one call, handed down by `check_as` just before the call
     /// is typed: the result type of a call that is generic over its result (`logic`, `cast`).
     pub(super) call_expected: Option<(ExprId, Ty)>,
@@ -140,6 +148,9 @@ impl<'d> Checker<'d> {
             poisoned: BTreeSet::new(),
             fn_where: false,
             fn_value_at: None,
+            mutable: BTreeSet::new(),
+            deferred: BTreeMap::new(),
+            flow: Flow::default(),
             call_expected: None,
             queued: BTreeSet::new(),
             checked: BTreeSet::new(),
@@ -204,7 +215,7 @@ impl<'d> Checker<'d> {
         }
         self.reach(module);
         let (owner, context, event_slot, in_guard, committing, fn_where, fn_value_at) = (self.owner, self.context, self.event_slot, self.in_guard, self.committing, self.fn_where, self.fn_value_at);
-        let (book, lets_open, placing) = (std::mem::take(&mut self.book), std::mem::take(&mut self.lets_open), std::mem::take(&mut self.placing));
+        let (book, lets_open, placing, flow) = (std::mem::take(&mut self.book), std::mem::take(&mut self.lets_open), std::mem::take(&mut self.placing), std::mem::take(&mut self.flow));
         self.context = Context::Module;
         self.event_slot = None;
         self.in_guard = false;
@@ -213,7 +224,7 @@ impl<'d> Checker<'d> {
         self.fn_value_at = None;
         self.declaration(module);
         (self.owner, self.context, self.event_slot, self.in_guard, self.committing, self.fn_where, self.fn_value_at) = (owner, context, event_slot, in_guard, committing, fn_where, fn_value_at);
-        (self.book, self.lets_open, self.placing) = (book, lets_open, placing);
+        (self.book, self.lets_open, self.placing, self.flow) = (book, lets_open, placing, flow);
     }
 
     fn declaration(&mut self, decl: DeclId) {
@@ -221,6 +232,7 @@ impl<'d> Checker<'d> {
             return;
         }
         self.owner = Some(decl);
+        self.flow = Flow::default();
         match &self.design.decl_data(decl).kind {
             DeclKind::Module(_) => self.module(decl),
             DeclKind::Fn(_) => self.function(decl),
