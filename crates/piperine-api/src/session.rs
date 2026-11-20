@@ -364,7 +364,10 @@ impl Session {
         if let Err(found) = Types::check(&design, &top) {
             return Err(Session::diagnosed("typeck", design, found));
         }
-        match Elaborator::new(&design).run(&top) {
+        // the before-run bindings of key params are elaboration inputs (analog-structure, AS-15 AC 1):
+        // the elaborator lowers the variant of their values; every other binding is written below
+        let bound = piperine_lang::elab::Overrides::new(&spec.params);
+        match Elaborator::new(&design).run_with(&top, &bound) {
             Ok(ir) => Ok((Arc::new(ir), top)),
             Err(found) => Err(Session::diagnosed("elaborate", design, found)),
         }

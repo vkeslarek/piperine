@@ -445,3 +445,56 @@ impl Elaboration<'_, '_> {
         reads
     }
 }
+
+/// The before-run bindings of params a host gives the elaborator (`Elaborator::run_with`):
+/// `<instance>.<param>` and the value, the instance as its full path or relative to the top. A
+/// binding of a key param selects the variant of that value at that instance; a binding of any other
+/// param is ignored here, it stays the host's write before the run (design mechanism 4, C6).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Overrides {
+    entries: Vec<(String, f64)>,
+}
+
+impl Overrides {
+    /// No binding: what `Elaborator::run` elaborates with.
+    pub fn none() -> Overrides {
+        Overrides::default()
+    }
+
+    /// The bindings `entries` (`<instance>.<param>`, value), in the order given; a later entry for
+    /// the same param wins, as it does when the host writes them in order.
+    pub fn new(entries: &[(String, f64)]) -> Overrides {
+        Overrides { entries: entries.to_vec() }
+    }
+
+    /// The value bound to `param` of the instance at `instance`, written in full or relative to
+    /// `top` (the first segment of every instance path).
+    fn value(&self, top: &str, instance: &str, param: &str) -> Option<f64> {
+        self.entries.iter().rev().find_map(|(entry, value)| {
+            let (path, name) = entry.rsplit_once('.')?;
+            (name == param && (path == instance || format!("{top}.{path}") == instance)).then_some(*value)
+        })
+    }
+}
+
+impl Elaboration<'_, '_> {
+    /// `values` and `bindings` of the instance `path`, with each key param the host bound before the
+    /// run (`overrides`) set to that value, of the type of the param's default.
+    pub(super) fn apply_overrides(&self, module: DeclId, path: &str, plans: &[super::body::ParamPlan], mut values: Vec<Constant>, mut bindings: Bindings) -> (Vec<Constant>, Bindings) {
+        let top = path.split('.').next().unwrap_or(path);
+        for key in self.keys.of(module) {
+            let Some(index) = plans.iter().position(|p| p.decl == *key) else { continue };
+            let Some(given) = self.overrides.value(top, path, &plans[index].name) else { continue };
+            let value = match plans[index].default {
+                Some(Constant::Bool(_)) => Constant::Bool(given != 0.0),
+                Some(Constant::Int(_)) => Constant::Int(given as i128),
+                _ => Constant::Real(piperine_ir::Real::new(given)),
+            };
+            if let Some(slot) = values.get_mut(index) {
+                *slot = value;
+            }
+            bindings.bind(*key, value);
+        }
+        (values, bindings)
+    }
+}

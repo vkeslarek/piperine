@@ -64,6 +64,7 @@ impl Elaboration<'_, '_> {
         }
         let param_plans = self.param_plans.get(&placing.module)?.clone();
         let (params, bindings) = self.bind_params(&placing, &param_plans)?;
+        let (params, bindings) = self.apply_overrides(placing.module, &placing.path, &param_plans, params, bindings);
         let plan = self.body_plan(placing.module, &bindings)?;
         let declared_by = self.ir.next_instance_id();
         let mut ports = placing.ports.iter().copied();

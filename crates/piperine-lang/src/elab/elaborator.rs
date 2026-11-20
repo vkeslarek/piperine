@@ -9,7 +9,7 @@ use super::body::{ModulePlan, ParamPlan};
 use super::carriers::{Frame, Structure};
 use super::consts::{Bindings, ConstEval};
 use super::origin::Locator;
-use super::structural::{BodyKey, BodyVariants, KeyParams};
+use super::structural::{BodyKey, BodyVariants, KeyParams, Overrides};
 use super::variants::Variants;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, Design, DesignDiagnostic, FileId};
@@ -32,9 +32,15 @@ impl<'d> Elaborator<'d> {
     /// diagnostic naming it, and so is a top with a continuous port (a node of a top has nothing
     /// to connect to). A discrete port of the top is a net the host drives (§5.2.3).
     pub fn run(self, top: &str) -> Result<Ir, Vec<DesignDiagnostic>> {
+        self.run_with(top, &Overrides::none())
+    }
+
+    /// [`run`](Self::run) with the params a host bound before the run: a binding of a key param
+    /// selects the variant of its value at that instance (`Overrides`); any other is ignored.
+    pub fn run_with(self, top: &str, overrides: &Overrides) -> Result<Ir, Vec<DesignDiagnostic>> {
         let types = Types::check(self.design, top)?;
         let top_decl = types.reached()[0];
-        Elaboration::new(self.design, &types).run(top_decl)
+        Elaboration::new(self.design, &types, overrides.clone()).run(top_decl)
     }
 }
 
@@ -67,6 +73,8 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) keys: KeyParams,
     /// The variants of keyed bodies requested so far.
     pub(super) body_variants: BodyVariants,
+    /// The params the host bound before the run.
+    pub(super) overrides: Overrides,
     /// The carriers, drives, events and reactions of the body being lowered.
     pub(super) structure: Structure,
     /// The frames of the body being lowered: frame 0 is its own module.
@@ -75,7 +83,7 @@ pub(super) struct Elaboration<'d, 't> {
 }
 
 impl<'d, 't> Elaboration<'d, 't> {
-    fn new(design: &'d Design, types: &'t Types<'d>) -> Self {
+    fn new(design: &'d Design, types: &'t Types<'d>, overrides: Overrides) -> Self {
         Elaboration {
             design,
             types,
@@ -92,6 +100,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             plans: BTreeMap::new(),
             param_plans: BTreeMap::new(),
             keys: KeyParams::default(),
+            overrides,
             body_variants: BodyVariants::default(),
             structure: Structure::default(),
             frames: Vec::new(),

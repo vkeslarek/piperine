@@ -305,3 +305,24 @@ fn a_limit_in_a_closure_is_e0350() {
     assert_eq!(Elab::codes(&err), ["E0350"]);
     assert!(err[0].diagnostic.message.contains("limit"), "{}", err[0].diagnostic.message);
 }
+
+#[test]
+fn an_override_of_a_key_param_lowers_its_variant() {
+    // AS-15 AC 1 (design mechanism 4): the host's before-run binding `Top.m.short = 0` of the key
+    // param `short` selects the variant of that value at that instance, whatever its default: the body
+    // is `Sw~short=0.0` with a flow branch and the instance holds 0. A binding of a param that is no key
+    // is ignored by the elaborator, and a relative path names the same instance.
+    use piperine_lang::elab::{Elaborator, Overrides};
+    let src = format!("{SWITCH}module Top() {{ signal s: Electrical; let m = Sw {{ }}(s, gnd); }}");
+    let design = Elab::design(&src);
+    for entry in ["Top.m.short", "m.short"] {
+        let ir = Elaborator::new(&design).run_with("Top", &Overrides::new(&[(entry.to_string(), 0.0)])).expect("elaborates");
+        let m = ir.instance_at("Top.m").expect("m");
+        assert_eq!(m.body().name(), "Sw~short=0.0", "{entry}");
+        assert_eq!(m.body().branches()[0].kind, BranchKind::Flow, "{entry}");
+        assert_eq!(m.param(0), Some(&piperine_ir::Constant::Real(piperine_ir::Real::new(0.0))), "{entry}");
+    }
+    let plain = Elaborator::new(&design).run_with("Top", &Overrides::new(&[("Top.m.nothing".to_string(), 0.0)])).expect("elaborates");
+    assert_eq!(plain.instance_at("Top.m").expect("m").body().name(), "Sw~short=1.0", "the default variant: the binding names no key param");
+    assert_eq!(body_names(&Elaborator::new(&design).run("Top").expect("elaborates")), body_names(&plain));
+}

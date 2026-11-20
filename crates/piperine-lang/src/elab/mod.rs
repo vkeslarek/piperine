@@ -38,3 +38,4 @@ mod variants;
 
 pub use consts::{Bindings, ConstEval, ConstFault, Folded};
 pub use elaborator::Elaborator;
+pub use structural::Overrides;
