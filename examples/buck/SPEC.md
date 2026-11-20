@@ -143,8 +143,12 @@ the ESR ripple (§4.2) at the worst Vin, 16 V: ΔIL = 3.3 V · (1 − 3.3/16) / 
 columns) and the reference (0.1 %) scale with the output voltage: 6.6 mV and 3.3 mV. The total is
 the sum of the four rows.
 
-The model reproduces the quantization part: the steady-state error stays within ±2.4 mV at
-every corner of Vin {9, 12, 16} V × setpoint {0.8, 3.3, 5.0} V.
+The model reproduces the quantization part and then some. Over the nine corners of Vin
+{9, 12, 16} V × setpoint {0.8, 3.3, 5.0} V the measured error of the window mean is at most
+3.51 mV (corner 5, 12 V and 3.3 V), then 2.94 mV (corner 4), not the ±2.4 mV of quantization
+alone: the loop settles on a code, so the mean sits within about half a code of the setpoint
+(quantization, ±3.1 mV at 3.3 V), and the sampled ripple (§3.3) moves the mean by a further
+fraction of a code. It stays well inside the §4.3 totals, which S9 judges.
 
 ## 5. Digital PWM
 
@@ -267,8 +271,9 @@ The three classic conditions for a digitally controlled converter without limit 
 3. **No integrator dead band.** One code of error adds KI = 8 Q4 units = 0.5 duty LSB per
    sample. The Q4 fraction keeps sub-LSB integral increments instead of rounding them away.
 
-In the model, with the mid-tread ADC, the steady state is a constant code at every tested
-corner (no idle tone). A truncating ADC was also tried: it adds a +3.1 mV bias, which is why the
+In the model, with the mid-tread ADC, the steady state is a constant code at seven of the nine
+tested corners; at corners 5 and 9 the code swings by one (the ripple reaches a code boundary),
+which is within the 1-code bound and not a sub-harmonic idle tone. A truncating ADC was also tried: it adds a +3.1 mV bias, which is why the
 ADC rounds.
 
 ## 7. Reference
@@ -398,7 +403,7 @@ criteria; the model column is the averaged-model prediction.
 | S6 | Over-voltage | inject 5 A into the output (back-drive) | the sink limit holds the low-side current at −3 A; Vout rises at ≈ 7 mV/µs; `fault` = OverVoltage once Vout > 3.81 V (≈ 80 to 120 µs); both switches off | hand estimate |
 | S7 | Brown-out | Vin ramps 12 V → 7.5 V → 12 V | `mode` = Off below 8.0 V, both switches off, `pgood` low, `fault` unchanged; soft-start again above 8.5 V | — |
 | S8 | Disable | `en` falls in Regulate | both switches off at the next sample; `pgood` low; Vout decays through the load | — |
-| S9 | Steady state | 9 corners: Vin {9, 12, 16} V × setpoint {0.8, 3.3, 5.0} V at full load, each measured after the wait of §10.1 | DC error within §4.3; ripple ≤ 10 mV p-p; no sub-harmonic idle tone above 1 code | max 2.4 mV error, constant code |
+| S9 | Steady state | 9 corners: Vin {9, 12, 16} V × setpoint {0.8, 3.3, 5.0} V at full load, each measured after the wait of §10.1 | DC error within §4.3; ripple ≤ 10 mV p-p; no sub-harmonic idle tone above 1 code | error at most 3.51 mV (corner 5, quantization plus sampled ripple); constant code at seven corners, 1-code swing at corners 5 and 9 |
 | S10 | Shoot-through | any of the above | the `Never` monitor never fails (`checks` stream has no failed `never`) | — |
 
 ### 10.1 How the bench measures
