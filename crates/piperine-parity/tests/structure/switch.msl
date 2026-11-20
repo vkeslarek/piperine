@@ -214,9 +214,11 @@ module JunctionBench() {
     let diode = Junction(a, gnd);
 }
 
-/// A `limit` that reads a carrier through `known_or`: 2 mA of `lv` into `a`.
+/// A `limit` over the sum of a carrier and a probe, through a limiter that damps its step (it has the
+/// input as its fixed point, so the converged value is the sum): `lv` + half of `v(a)` into 1 kOhm
+/// from 1 mA per volt.
 module CarrierLimited(a: Electrical, in lv: Bit<f64>) {}
-analog for CarrierLimited { i(gnd, a) +> limit(lv.known_or(0.0), |new, old| new) * 1m; }
+analog for CarrierLimited { i(gnd, a) +> limit(lv.known_or(0.0) + 0.5 * v(a), |new, old| old + 0.5 * (new - old)) * 1m; }
 
 module CarrierLimitBench() {
     signal a: Electrical;
@@ -239,6 +241,24 @@ module StimOffBench() {
     signal a: Electrical;
     signal en: Bit = false;
     let source = GatedStim(a, en);
+}
+
+/// A unit AC stimulus on the flow, in a statement `if`: 1 mA into 1 kOhm when `en` is high.
+module GatedFlowStim(a: Electrical, in en: Bit) {}
+analog for GatedFlowStim { if en.high() { i(a, gnd) +> ac_stim(1m); } }
+
+module FlowStimOnBench() {
+    signal a: Electrical;
+    signal en: Bit = true;
+    let source = GatedFlowStim(a, en);
+    let load = Resistor { r: 1k }(a, gnd);
+}
+
+module FlowStimOffBench() {
+    signal a: Electrical;
+    signal en: Bit = false;
+    let source = GatedFlowStim(a, en);
+    let load = Resistor { r: 1k }(a, gnd);
 }
 
 /// A stimulus whose magnitude is the carrier `lv`.

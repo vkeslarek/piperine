@@ -57,19 +57,27 @@ fn a_derivative_times_a_probe_is_k_v_dv_dt() {
     }
 }
 
-#[test]
-fn an_event_reads_the_derivative_of_the_step() {
-    // AS-07 AC 4 (§14.5.4): on `v(a)` = 1 kV/s * t, `on at(1m) { emit!("d", x = dv); }` with
-    // `let dv = ddt(v(a));` records 1000 V/s within 1e-6 relative.
-    let seen = build(&project(), "EventBench").run(2e-3, 0.1e-3);
+/// The `x` of the one record the watcher of `top` emits at 1 ms of a transient to 2 ms.
+fn derivative_recorded_at_one_millisecond(top: &str) -> f64 {
+    let seen = build(&project(), top).run(2e-3, 0.1e-3);
     let records: Vec<(f64, Vec<u8>)> = seen.all().iter().filter_map(|o| match &o.kind {
         ObservationKind::Record { bytes, .. } => Some((o.time, bytes.clone())),
         _ => None,
     }).collect();
     assert_eq!(records.len(), 1, "one record: {records:?}");
     assert!((records[0].0 - 1e-3).abs() <= 1e-12, "at 1 ms, got {}", records[0].0);
-    let dv = f64::from_le_bytes(records[0].1[..8].try_into().expect("the field x"));
+    f64::from_le_bytes(records[0].1[..8].try_into().expect("the field x"))
+}
+
+#[test]
+fn an_event_reads_the_derivative_of_the_step() {
+    // AS-07 AC 4 (§14.5.4): on `v(a)` = 1 kV/s * t, `on at(1m) { emit!("d", x = dv); }` with
+    // `let dv = ddt(v(a));` records 1000 V/s within 1e-6 relative; on a node at equilibrium (held at
+    // 2 V) the same record is 0.
+    let dv = derivative_recorded_at_one_millisecond("EventBench");
     assert!((dv - 1000.0).abs() <= 1e-6 * 1000.0, "dv/dt = {dv}");
+    let at_rest = derivative_recorded_at_one_millisecond("EquilibriumBench");
+    assert!(at_rest.abs() <= 1e-6, "dv/dt at equilibrium = {at_rest}");
 }
 
 /// The accepted steps of the transient of `top` to 10 us with the step cap of the whole run.

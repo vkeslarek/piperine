@@ -141,7 +141,12 @@ fn a_named_lag_is_one_instance_for_analog_and_its_event() {
     // AS-09 AC 5: `let l = Lag(v(inp));` read by `analog` (`v(o) +> l`) and by `on above(l - 0.5)`:
     // one instance, so the event fires when `v(o)` crosses 0.5, at tau * ln 2, within the default
     // `ttol` of 1 ps.
-    let seen = build(&project(), "NamedBench").run(0.8e-3, 0.05e-6);
+    let built = build(&project(), "NamedBench");
+    // one instance: the body hoists one frame, `l`, however many times it is read (two instances of
+    // `Lag(v(inp))` would give the same waveform, so timing alone does not tell)
+    let body = built.ir.bodies().find(|b| b.name() == "NamedBench").expect("the bench body");
+    assert_eq!(body.hoisted().iter().map(|h| h.name.as_str()).collect::<Vec<_>>(), ["l"]);
+    let seen = built.run(0.8e-3, 0.05e-6);
     let changes = support::transient(&seen, "NamedBench.crossed");
     assert_eq!(changes.len(), 1, "the event fires once: {changes:?}");
     let at = changes[0].0 as f64 * 1e-15;

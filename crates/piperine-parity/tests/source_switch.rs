@@ -8,8 +8,9 @@
 use std::path::{Path, PathBuf};
 
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
+use piperine_parity::ngspice::{Ngspice, Reference};
 use piperine_parity::project::Project;
-use piperine_solver::prelude::{AcSweepAnalysisOptions, Context, NodeIdentifier};
+use piperine_solver::prelude::{AcSweepAnalysisOptions, BranchIdentifier, Context, NodeIdentifier};
 
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/digital.rs"]
@@ -54,6 +55,15 @@ fn switch_transient() -> Vec<(f64, f64)> {
     result.iter().map(|point| (point.time(), point.get_node(&a).expect("v(a)"))).collect()
 }
 
+/// The flow of the branch `(a, gnd)` of the switch of `SwitchBench` at every point of the same
+/// transient, as `(time, amps)`: the current the switch takes from `a`.
+fn switch_flow() -> Vec<(f64, f64)> {
+    let built = build(&project(), "SwitchBench");
+    let branch = BranchIdentifier::new("SwitchBench.sw".to_string(), "b0.flow".to_string());
+    let (_, result) = built.run_with(1.9e-6, 0.1e-6);
+    result.iter().map(|point| (point.time(), point.get_branch(branch.clone()).expect("the flow of the switch"))).collect()
+}
+
 #[test]
 fn a_flow_contribution_under_an_if_on_a_probe_gives_one_volt() {
     // AS-01 AC 1: `if v(a) > 0.5 { i +> v/1k } else { i +> v/2k }` driven by 1 mA: the first arm
@@ -94,6 +104,11 @@ fn the_switch_shorts_at_one_microsecond() {
         ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("switch", "v(a)", Coordinate::Time(*time)), wanted, *volts);
     }
     assert!(points.iter().any(|(t, _)| *t < 1e-6 - 1e-12) && points.iter().any(|(t, _)| *t > 1e-6 + 1e-12), "the run covers both sides of 1 us");
+    // and the flow of `(a, gnd)`: 0 while it is open, 1 V / 1 kOhm = 1 mA once it shorts
+    for (time, amps) in switch_flow() {
+        let wanted = if time < 1e-6 - 1e-12 { 0.0 } else if time > 1e-6 + 1e-12 { 1e-3 } else { continue };
+        ToleranceContract::DC_CURRENT.assert(&Point::new("switch", "i(a, gnd)", Coordinate::Time(time)), wanted, amps);
+    }
 }
 
 #[test]
@@ -113,6 +128,7 @@ fn both_kinds_enabled_in_one_solve_fail_with_e0418() {
     // in the same solve: the run fails with E0418 naming the instance and the branch.
     let err = operating_point_failure("BothBench");
     assert!(err.contains("E0418") && err.contains("both"), "{err:?}");
+    assert!(err.contains("BothBench.both") && err.contains("branch v(a)"), "it names the instance and the branch: {err:?}");
 }
 
 #[test]
@@ -152,13 +168,28 @@ fn a_limit_under_an_untaken_branch_neither_vetoes_nor_moves() {
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("stubborn off", "v(a)", Coordinate::OperatingPoint), 1.0, off);
 }
 
+/// The drop across `tests/ngspice/rdiode.cir`'s junction (5 V behind 1 kOhm into a diode of `is` 1e-14 at
+/// 27 C, `gmin` 1e-12): the root of `(5 - v) / 1k = is (exp(v / vt) - 1) + gmin v`, by bisection, so it
+/// is written from the circuit and not read from the model under test.
+fn rdiode_drop() -> f64 {
+    let thermal_voltage = 1.380649e-23 * 300.15 / 1.602176634e-19;
+    let residual = |v: f64| (5.0 - v) / 1e3 - 1e-14 * ((v / thermal_voltage).exp() - 1.0) - 1e-12 * v;
+    let (mut low, mut high) = (0.0_f64, 5.0_f64);
+    for _ in 0..200 {
+        let middle = 0.5 * (low + high);
+        if residual(middle) > 0.0 { low = middle } else { high = middle }
+    }
+    0.5 * (low + high)
+}
+
 #[test]
 fn a_junction_enabled_after_the_operating_point_reaches_the_rdiode_solution() {
-    // AS-06 AC 1: the limited junction behind 1 kOhm from 5 V is open (v(a) = 5 V) until `en` rises at
-    // 1 us; once it runs, the circuit settles at the operating point of the same junction with no
-    // enable, which is the `rdiode` solution (about 0.7 V).
-    let wanted = operating_point_result("JunctionBench").expect("the ungated junction solves");
-    assert!((0.6..0.8).contains(&wanted), "the rdiode solution is a junction drop: {wanted}");
+    // AS-06 AC 2: the limited junction behind 1 kOhm from 5 V is open (v(a) = 5 V) until `en` rises at
+    // 1 us; once it runs, the circuit settles at the `rdiode` solution (about 0.7 V): `rdiode.cir`'s
+    // `v(out)` where ngspice is present, the root of that circuit's equation otherwise, under
+    // `DC_VOLTAGE`; the same junction with no enable lands there too.
+    let wanted = rdiode_drop();
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("ungated junction", "v(a)", Coordinate::OperatingPoint), wanted, operating_point_result("JunctionBench").expect("the ungated junction solves"));
     let built = build(&project(), "GatedJunctionBench");
     let a = NodeIdentifier::Anonymous(built.ir.node_at("GatedJunctionBench.a").expect("node a").id().index());
     let (_, result) = built.run_with(1.9e-6, 0.1e-6);
@@ -167,13 +198,19 @@ fn a_junction_enabled_after_the_operating_point_reaches_the_rdiode_solution() {
     ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("gated junction", "v(a) before", Coordinate::Time(before.0)), 5.0, before.1);
     let last = points.last().expect("points");
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("gated junction", "v(a) after", Coordinate::Time(last.0)), wanted, last.1);
+    if let Reference::Golden(golden) = Ngspice::from_environment().run("rdiode") {
+        let at = Point::new("gated junction", "v(a) after against ngspice", Coordinate::Time(last.0)).with_ngspice(golden.version());
+        ToleranceContract::DC_VOLTAGE.assert(&at, golden.printed("v(out)"), last.1);
+    }
 }
 
 #[test]
 fn a_limit_reads_a_carrier_through_known_or() {
-    // AS-06 AC 2 (abi.md F2): `limit(lv.known_or(0.0), |new, old| new) * 1m` with `lv` = 2.0 into
-    // 1 kOhm: the limiter passes its input, so v(a) = 2 mA * 1 kOhm... 2.0 * 1 mA * 1 kOhm = 2.0 V.
-    ToleranceContract::DC_VOLTAGE.assert(&Point::new("carrier limit", "v(a)", Coordinate::OperatingPoint), 2.0, operating_point("CarrierLimitBench"));
+    // AS-06 AC 3 (abi.md F2): `limit(lv.known_or(0.0) + 0.5 * v(a), ..) * 1m` with `lv` = 2.0 into
+    // 1 kOhm: the value input is the sum of a carrier and a probe, which the limiter (a damped step with
+    // the input as its fixed point) settles at, so v(a) = 1 kOhm * 1 mA * (2.0 + 0.5 v(a)): v = 4.0 V.
+    // The carrier alone would give 2.0 V.
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("carrier limit", "v(a)", Coordinate::OperatingPoint), 4.0, operating_point("CarrierLimitBench"));
 }
 
 /// `|v(a)|` of the bench `top` at 100 kHz in an AC sweep of one point.
@@ -187,11 +224,19 @@ fn ac_magnitude(top: &str) -> f64 {
 
 #[test]
 fn an_ac_stim_under_an_if_drives_only_when_enabled() {
-    // AS-06 AC 4: `v(a) +> if en.high() { ac_stim(1.0) } else { 0.0 }`: the sweep injects the unit
+    // AS-06 AC 4 (the expression form): `v(a) +> if en.high() { ac_stim(1.0) } else { 0.0 }`: the sweep injects the unit
     // stimulus with `en` high (|v(a)| = 1) and nothing with it low (|v(a)| = 0): a term in an arm
     // not taken does not read the stimulus.
     ToleranceContract::AC_MAGNITUDE.assert(&Point::new("stim on", "|v(a)|", Coordinate::Frequency(1e5)), 1.0, ac_magnitude("StimOnBench"));
     ToleranceContract::AC_MAGNITUDE.assert(&Point::new("stim off", "|v(a)|", Coordinate::Frequency(1e5)), 0.0, ac_magnitude("StimOffBench"));
+}
+
+#[test]
+fn a_flow_ac_stim_under_a_statement_if_drives_only_when_enabled() {
+    // AS-06 AC 4 as written: `if en.high() { i(a, gnd) +> ac_stim(1m); }` with 1 kOhm from `a` to ground
+    // gives |v(a)| = 1 mA * 1 kOhm = 1 V with `en` high and 0 V with it low.
+    ToleranceContract::AC_MAGNITUDE.assert(&Point::new("flow stim on", "|v(a)|", Coordinate::Frequency(1e5)), 1.0, ac_magnitude("FlowStimOnBench"));
+    ToleranceContract::AC_MAGNITUDE.assert(&Point::new("flow stim off", "|v(a)|", Coordinate::Frequency(1e5)), 0.0, ac_magnitude("FlowStimOffBench"));
 }
 
 #[test]

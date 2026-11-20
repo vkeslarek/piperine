@@ -59,6 +59,14 @@ module EventBench() {
     let load = Resistor { r: 1k }(a, gnd);
 }
 
+/// The same watcher on a node held at 2 V: an equilibrium, the derivative of the step is 0.
+module EquilibriumBench() {
+    signal a: Electrical;
+    let held = Level { volts: 2.0 }(a);
+    let watcher = Watcher(a);
+    let load = Resistor { r: 1k }(a, gnd);
+}
+
 // -- AS-07 AC 5: the `abstol` of a `ddt` term
 
 /// A capacitor whose charge has the absolute tolerance `tol`.

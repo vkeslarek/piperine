@@ -85,6 +85,21 @@ fn the_parent_reads_a_pub_carrier_of_its_child() {
 }
 
 #[test]
+fn the_parent_reads_a_pub_carrier_of_its_child_in_a_reaction_and_a_definition() {
+    // AS-11 AC 3: the child's `state` is 1.0 until 1 us and 3.0 after. The parent's definition
+    // `mirror = c.state.known_or(0.0)` follows it (1.0, then 3.0), and its reaction `on at(2u)`
+    // writes `seen` the value it reads at 2 us: 3.0.
+    let seen = build(&project(), "CarrierReactionBench").run(3e-6, 0.1e-6);
+    let as_f64 = |raw: &[u8]| f64::from_le_bytes(raw[..8].try_into().expect("a Bit<f64>"));
+    let mirror = support::series(&seen, "CarrierReactionBench.mirror");
+    assert_eq!(as_f64(support::value_at(&mirror, 0)), 1.0, "the definition before the change");
+    assert_eq!(as_f64(support::value_at(&mirror, 2_000_000_000)), 3.0, "the definition after the change");
+    let written = support::series(&seen, "CarrierReactionBench.seen");
+    assert_eq!(as_f64(support::value_at(&written, 3_000_000_000)), 3.0, "the reaction read 3.0 at 2 us");
+    assert_eq!(as_f64(support::value_at(&written, 1_500_000_000)), 0.0, "and had written nothing before");
+}
+
+#[test]
 fn the_parent_reads_a_pub_param_and_a_pub_let_of_its_child() {
     // AS-11 AC 4 (§8.2.25): the placement gives `r` = k = 4.0; the child's `let e = r * 3.0` is
     // evaluated in the reader's context: 12.0. `v(o)` = `c.r + c.e` = 4 + 12 = 16.0 V.

@@ -51,8 +51,13 @@ fn a_contribution_in_a_nested_block_lowers_as_at_the_top() {
 fn a_contribution_in_a_closure_is_refused_at_parse() {
     // AS-01 AC 6 (Appendix B.2 rule 3): a contribution in the body of a closure stays refused at parse,
     // before elaboration: the design carries the diagnostic.
-    let design = Elab::design(&Device::source("let f = |x: f64| { i(p, n) +> x; };"));
-    assert!(!design.diagnostics().is_empty(), "the front end refuses a contribution in a closure");
+    let source = Device::source("let f = |x: f64| { i(p, n) +> x; };");
+    let design = Elab::design(&source);
+    let [found] = design.diagnostics() else { panic!("one refusal, found {:?}", design.diagnostics()) };
+    assert_eq!(found.diagnostic.code, "E0404", "the parse refusal of a contribution in a closure");
+    assert!(found.diagnostic.message.contains("closure"), "{}", found.diagnostic.message);
+    let span = found.diagnostic.primary.0;
+    assert_eq!(&source[span.start as usize..span.end as usize], "i(p, n) +> x;", "the span is the contribution inside the closure");
 }
 
 #[test]
@@ -484,8 +489,9 @@ fn a_param_value_let_may_read_another_let() {
 fn a_param_value_let_that_reads_a_probe_is_e0321() {
     // AS-12 AC 3 (§8.1.19): a `let` used as a param value that reads a probe, a carrier or the environment
     // has no value at elaboration: `E0321` at the use, naming the `let`.
-    for (let_, reads) in [("let p = v(a);", "a probe"), ("let p = temperature();", "a call that is not a function"), ("let p = k.known_or(0.0);", "a carrier")] {
-        let src = format!("module Leaf() {{ c: f64 = 1.0; }}\nmodule Mid(a: Electrical) {{ signal k: Bit<f64>; {let_} let leaf = Leaf {{ c: p }}(); }}\nmodule Top() {{ signal a: Electrical; let m = Mid(a); }}");
+    for (let_, reads) in [("let p = v(a);", "a probe"), ("let p = temperature();", "a call that is not a function"), ("let p = k.known_or(0.0);", "a carrier"), ("let p = Lag(1.0);", "the result of an instance")] {
+        let lag = "module Lag(x: f64) -> f64 { signal y: State; potential(y) }\nanalog for Lag { flow(y) +> ddt(potential(y)) + potential(y) - x; }\n";
+        let src = format!("{lag}module Leaf() {{ c: f64 = 1.0; }}\nmodule Mid(a: Electrical) {{ signal k: Bit<f64>; {let_} let leaf = Leaf {{ c: p }}(); }}\nmodule Top() {{ signal a: Electrical; let m = Mid(a); }}");
         let err = Elab::run(&src, "Top").expect_err("the value has no constant");
         assert_eq!(Elab::codes(&err), ["E0321"], "{let_}: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
         let message = &err[0].diagnostic.message;

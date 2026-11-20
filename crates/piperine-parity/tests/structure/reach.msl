@@ -58,6 +58,17 @@ module CarrierReadBench() {
 }
 analog for CarrierReadBench { v(o) +> c.state.known_or(0.0); }
 
+/// The parent reads the child's `state` in a reaction and in a definition, not only in `analog`.
+module CarrierReactionBench() {
+    signal a: Electrical;
+    signal seen: Bit<f64> = 0.0;
+    signal mirror: Bit<f64>;
+    let source = Level { volts: 0.0 }(a);
+    let c = Counter(a);
+    mirror = c.state.known_or(0.0);
+}
+digital for CarrierReactionBench { on at(2u) { seen <- c.state.known_or(0.0); } }
+
 // -- AS-11 AC 4: a `pub` param and a `pub` let of a child
 
 /// A `pub` param and a `pub` name for three times it.
