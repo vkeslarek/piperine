@@ -1,9 +1,9 @@
 # buck-scenarios proofs
 
-**HEAD**: ad1d57c1
+**HEAD**: edb08487
 **Tree**: clean
 **Shell**: /bin/sh
-**Result**: 73 pass, 7 fail
+**Result**: 79 pass, 0 fail
 
 | Check | Proof | Result |
 | --- | --- | --- |
@@ -28,7 +28,7 @@
 | C19 | `run scenarios / test s2_overshoot_is_at_most_15_mv ... ok` | pass |
 | C20 | `run scenarios / test s2_pgood_stays_high ... ok` | pass |
 | C21 | `run scenarios / test s2b_reference_reaches_160_codes_1_28_ms_after_the_write ... ok` | pass |
-| C22 | `run scenarios / test s2b_vout_settles_into_1_v_within_1_percent_at_1_38_ms ... ok` | **fail** |
+| C22 | `run scenarios / test s2b_vout_settles_into_1_v_within_1_percent_at_1_38_ms ... ok` | pass |
 | C23 | `run scenarios / test s2b_inductor_current_goes_negative ... ok` | pass |
 | C24 | `run scenarios / test s2b_sink_limit_never_trips ... ok` | pass |
 | C25 | `run scenarios / test s2b_no_over_voltage_fault ... ok` | pass |
@@ -56,7 +56,7 @@
 | C47 | `run scenarios / test faults_regulates_at_3_3_v_with_pgood_before_its_first_stimulus ... ok` | pass |
 | C48 | `run scenarios / test s5_every_period_is_cut_until_hiccup ... ok` | pass |
 | C49 | `run scenarios / test s5_inductor_current_stays_at_or_below_7_6_a ... ok` | pass |
-| C50 | `run scenarios / test s5_hiccup_with_over_current_26_5_to_30_5_us_after_the_step ... ok` | **fail** |
+| C50 | `run scenarios / test s5_hiccup_with_over_current_26_5_to_30_5_us_after_the_step ... ok` | pass |
 | C51 | `run scenarios / test s5_pgood_falls_within_8_us_of_the_deviation ... ok` | pass |
 | C52 | `run scenarios / test s5_both_switches_stay_off_in_hiccup ... ok` | pass |
 | C53 | `run scenarios / test s5_retry_comes_2_ms_after_the_hiccup_with_the_overload_on ... ok` | pass |
@@ -74,40 +74,39 @@
 | C65 | `run scenarios / test s7_fault_unchanged_while_off ... ok` | pass |
 | C66 | `run scenarios / test s7_soft_start_at_the_sample_after_vin_rises_through_8_5_v ... ok` | pass |
 | C67 | `run scenarios / test brownout_passes_every_check ... ok` | pass |
-| C68 | `run scenarios / test s9_dc_error_within_section_4_3_at_every_corner ... ok` | **fail** |
-| C69 | `run scenarios / test s9_ripple_at_most_10_mv_at_every_corner ... ok` | **fail** |
-| C70 | `run scenarios / test s9_no_idle_tone_above_1_code_at_every_corner ... ok` | **fail** |
-| C71 | `run scenarios / test s9_every_corner_is_settled ... ok` | **fail** |
+| C68 | `run scenarios / test s9_dc_error_within_section_4_3_at_every_corner ... ok` | pass |
+| C69 | `run scenarios / test s9_ripple_at_most_10_mv_at_every_corner ... ok` | pass |
+| C70 | `run scenarios / test s9_no_idle_tone_above_1_code_at_every_corner ... ok` | pass |
+| C71 | `run scenarios / test s9_every_corner_is_settled ... ok` | pass |
 | C72 | `run scenarios / test steady_state_passes_every_check ... ok` | pass |
 | C73 | `run supervisor / test each_hiccup_lasts_1000_samples ... ok` | pass |
 | C74 | `run docs / test the_buck_spec_holds_the_bench_bounds ... ok` | pass |
 | C75 | `run docs / test the_buck_readme_points_at_the_scenarios ... ok` | pass |
 | C76 | `run docs / test gaps_narrows_what_buck_scenarios_ran ... ok` | pass |
-| Run scenarios | `cargo test -p piperine --test buck_scenarios -- --nocapture` | **fail** - exit 101 |
 | Build | `cargo build -p piperine -p piperine-parity -p piperine-api -p piperine-cli --all-targets 2>&1 / tee /dev/stder` | pass |
 | Build | `cargo test -p piperine-lang --test suite_hygiene` | pass |
 | Build | `cargo test -p piperine-solver --test workspace_shape` | pass |
 
 ## Output
 
-`Run scenarios` - exit 101
+`Run scenarios` - exit 0
 
 ```
-thread 's9_ripple_at_most_10_mv_at_every_corner' (118594) panicked at tests/buck_scenarios.rs:1302:9:
-a corner rings: corner 6 has 16.09 mV peak to peak; corner 8 has 11.35 mV peak to peak; corner 9 has 12.52 mV peak to peak
-S9 corner 1 (Vin 9 V, 0.8 V): mean error 1.26 mV (bound 6.5 mV), ripple 6.56 mV (10 mV), code swing 1 (1), half-window drift 3.20 mV (6.25 mV), window 4.64e-4 s to 5.28e-4 s
-S9 corner 2 (Vin 12 V, 0.8 V): mean error 2.70 mV (bound 6.5 mV), ripple 3.46 mV (10 mV), code swing 1 (1), half-window drift 0.51 mV (6.25 mV), window 9.28e-4 s to 9.92e-4 s
-S9 corner 3 (Vin 16 V, 0.8 V): mean error 0.60 mV (bound 6.5 mV), ripple 2.86 mV (10 mV), code swing 0 (1), half-window drift 0.87 mV (6.25 mV), window 1.3920000000000002e-3 s to 1.4560000000000003e-3 s
-S9 corner 4 (Vin 16 V, 3.3 V): mean error 1.36 mV (bound 14.7 mV), ripple 7.48 mV (10 mV), code swing 1 (1), half-window drift 2.01 mV (6.25 mV), window 2.4580000000000005e-3 s to 2.5220000000000004e-3 s
-S9 corner 5 (Vin 12 V, 3.3 V): mean error 0.39 mV (bound 14.7 mV), ripple 8.37 mV (10 mV), code swing 1 (1), half-window drift 1.99 mV (6.25 mV), window 2.9220000000000006e-3 s to 2.9860000000000004e-3 s
-S9 corner 6 (Vin 9 V, 3.3 V): mean error -1.42 mV (bound 14.7 mV), ripple 16.09 mV (10 mV), code swing 2 (1), half-window drift 8.48 mV (6.25 mV), window 3.3860000000000006e-3 s to 3.4500000000000004e-3 s
-S9 corner 7 (Vin 9 V, 5 V): mean error 2.92 mV (bound 20.0 mV), ripple 4.69 mV (10 mV), code swing 1 (1), half-window drift 0.69 mV (6.25 mV), window 4.196e-3 s to 4.26e-3 s
-S9 corner 8 (Vin 12 V, 5 V): mean error 2.62 mV (bound 20.0 mV), ripple 11.35 mV (10 mV), code swing 2 (1), half-window drift 3.58 mV (6.25 mV), window 4.659999999999999e-3 s to 4.723999999999999e-3 s
-S9 corner 9 (Vin 16 V, 5 V): mean error 3.51 mV (bound 20.0 mV), ripple 12.52 mV (10 mV), code swing 2 (1), half-window drift 3.32 mV (6.25 mV), window 5.123999999999998e-3 s to 5.187999999999998e-3 s
-
-thread 's9_every_corner_is_settled' (118592) panicked at tests/buck_scenarios.rs:1302:9:
-a corner is not settled: corner 6 is not settled: its half-window means differ by 8.48 mV
-error: test failed, to rerun pass `-p piperine --test buck_scenarios`
+S9 corner 4 (Vin 16 V, 3.3 V): mean error 2.94 mV (bound 14.7 mV), ripple 3.95 mV (10 mV), code swing 0 (1), half-window drift 0.17 mV (6.25 mV), window 3.458e-3 s to 3.522e-3 s
+S9 corner 5 (Vin 12 V, 3.3 V): mean error 3.51 mV (bound 14.7 mV), ripple 6.18 mV (10 mV), code swing 1 (1), half-window drift 0.42 mV (6.25 mV), window 4.172e-3 s to 4.236e-3 s
+S9 corner 6 (Vin 9 V, 3.3 V): mean error 1.61 mV (bound 14.7 mV), ripple 4.04 mV (10 mV), code swing 0 (1), half-window drift 0.62 mV (6.25 mV), window 4.886e-3 s to 4.9499999999999995e-3 s
+S9 corner 7 (Vin 9 V, 5 V): mean error 0.38 mV (bound 20.0 mV), ripple 3.02 mV (10 mV), code swing 0 (1), half-window drift 0.00 mV (6.25 mV), window 5.945999999999999e-3 s to 6.009999999999999e-3 s
+S9 corner 8 (Vin 12 V, 5 V): mean error 1.20 mV (bound 20.0 mV), ripple 5.09 mV (10 mV), code swing 0 (1), half-window drift 0.64 mV (6.25 mV), window 6.659999999999998e-3 s to 6.723999999999998e-3 s
+S9 corner 9 (Vin 16 V, 5 V): mean error 1.42 mV (bound 20.0 mV), ripple 8.64 mV (10 mV), code swing 1 (1), half-window drift 2.78 mV (6.25 mV), window 7.373999999999998e-3 s to 7.4379999999999976e-3 s
+S9 corner 1 (Vin 9 V, 0.8 V): mean error 0.70 mV (bound 6.5 mV), ripple 1.26 mV (10 mV), code swing 0 (1), half-window drift 0.05 mV (6.25 mV), window 7.14e-4 s to 7.78e-4 s
+S9 corner 2 (Vin 12 V, 0.8 V): mean error 0.63 mV (bound 6.5 mV), ripple 1.47 mV (10 mV), code swing 0 (1), half-window drift 0.11 mV (6.25 mV), window 1.428e-3 s to 1.492e-3 s
+S9 corner 3 (Vin 16 V, 0.8 V): mean error 1.36 mV (bound 6.5 mV), ripple 1.36 mV (10 mV), code swing 0 (1), half-window drift 0.01 mV (6.25 mV), window 2.1420000000000002e-3 s to 2.206e-3 s
+S9 corner 4 (Vin 16 V, 3.3 V): mean error 2.94 mV (bound 14.7 mV), ripple 3.95 mV (10 mV), code swing 0 (1), half-window drift 0.17 mV (6.25 mV), window 3.458e-3 s to 3.522e-3 s
+S9 corner 5 (Vin 12 V, 3.3 V): mean error 3.51 mV (bound 14.7 mV), ripple 6.18 mV (10 mV), code swing 1 (1), half-window drift 0.42 mV (6.25 mV), window 4.172e-3 s to 4.236e-3 s
+S9 corner 6 (Vin 9 V, 3.3 V): mean error 1.61 mV (bound 14.7 mV), ripple 4.04 mV (10 mV), code swing 0 (1), half-window drift 0.62 mV (6.25 mV), window 4.886e-3 s to 4.9499999999999995e-3 s
+S9 corner 7 (Vin 9 V, 5 V): mean error 0.38 mV (bound 20.0 mV), ripple 3.02 mV (10 mV), code swing 0 (1), half-window drift 0.00 mV (6.25 mV), window 5.945999999999999e-3 s to 6.009999999999999e-3 s
+S9 corner 8 (Vin 12 V, 5 V): mean error 1.20 mV (bound 20.0 mV), ripple 5.09 mV (10 mV), code swing 0 (1), half-window drift 0.64 mV (6.25 mV), window 6.659999999999998e-3 s to 6.723999999999998e-3 s
+S9 corner 9 (Vin 16 V, 5 V): mean error 1.42 mV (bound 20.0 mV), ripple 8.64 mV (10 mV), code swing 1 (1), half-window drift 2.78 mV (6.25 mV), window 7.373999999999998e-3 s to 7.4379999999999976e-3 s
 ```
 
 `Run clibuck` - exit 0
@@ -116,30 +115,31 @@ error: test failed, to rerun pass `-p piperine --test buck_scenarios`
 running 1 test
 test the_buck_has_its_bench_and_two_runs ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.01s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized] target(s) in 0.21s
-     Running tests/buck.rs (/var/tmp/piperine-target-a/debug/deps/buck-e0a5ced46b7d0d71)
+   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-buck-scenarios/crates/piperine-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.01s
+     Running tests/buck.rs (/var/tmp/piperine-target/debug/deps/buck-bbdfc91b7e8260da)
 ```
 
 `Run harness` - exit 0
 
 ```
+test scenario::trace::tests::largest_rise_is_the_biggest_step_up_and_negative_on_a_decay ... ok
+test scenario::trace::tests::mean_is_the_arithmetic_mean_of_the_rows ... ok
+test scenario::trace::tests::peak_to_peak_is_the_largest_minus_the_smallest ... ok
 test scenario::trace::tests::scaled_multiplies_every_value ... ok
 test scenario::trace::tests::settled_into_is_the_first_row_from_which_every_row_stays_inside ... ok
-test scenario::column::tests::a_missing_column_panics_naming_the_name_and_the_columns ... ok
-test scenario::column::tests::two_matching_labels_panic_naming_both ... ok
-test scenario::trace::tests::between_keeps_half_open_windows_and_an_empty_window_panics_naming_it ... ok
-test scenario::discrete::tests::peak_to_peak_is_the_largest_known_value_minus_the_smallest_and_panics_on_an_unknown_row ... ok
 test scenario::run::tests::each_run_builds_in_its_own_directory ... ok
-test scenario::stimulus::tests::a_refused_action_is_returned_naming_it ... ok
-test scenario::run::tests::a_failed_run_is_kept_as_its_message_and_the_others_still_run ... ok
 test scenario::stimulus::tests::a_stimulus_is_applied_to_the_session_and_its_drives_and_sets_land ... ok
+test scenario::run::tests::a_failed_run_is_kept_as_its_message_and_the_others_still_run ... ok
+test scenario::stimulus::tests::a_refused_action_is_returned_naming_it ... ok
 
-test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 25 filtered out; finished in 5.36s
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 25 filtered out; finished in 3.56s
 
-    Finished `test` profile [unoptimized] target(s) in 0.19s
-     Running unittests src/lib.rs (/var/tmp/piperine-target-a/debug/deps/piperine_parity-6187a033365891a7)
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-buck-scenarios/crates/piperine-parity)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.59s
+     Running unittests src/lib.rs (/var/tmp/piperine-target/debug/deps/piperine_parity-fbb8a25f7a10f95a)
 ```
 
 `Run supervisor` - exit 0
@@ -147,31 +147,32 @@ test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 25 filtered out; fi
 ```
 running 3 tests
 test each_hiccup_lasts_1000_samples ... ok
-test power_good_asserts_after_64_and_drops_after_4 ... ok
 test the_supervisor_follows_its_state_table ... ok
+test power_good_asserts_after_64_and_drops_after_4 ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.22s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.09s
 
-    Finished `test` profile [unoptimized] target(s) in 0.13s
-     Running tests/buck_supervisor.rs (/var/tmp/piperine-target-a/debug/deps/buck_supervisor-ef1d5af335e10bba)
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-buck-scenarios/crates/piperine-parity)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.07s
+     Running tests/buck_supervisor.rs (/var/tmp/piperine-target/debug/deps/buck_supervisor-4739e1539f46721a)
 ```
 
 `Run docs` - exit 0
 
 ```
-test the_roadmap_lists_what_the_long_run_leaves ... ok
-test gaps_drops_what_msl_fixes_closed ... ok
-test the_roadmap_and_state_record_root_e2e ... ok
-test gaps_drops_what_root_e2e_closed ... ok
-test state_records_the_unknown_semantics_decision ... ok
-test the_roadmap_and_state_record_msl_fixes ... ok
-test the_roadmap_marks_the_cli_item_done ... ok
 test state_records_the_cli_decision ... ok
-test the_roadmap_lists_the_host_follow_ups ... ok
+test state_records_the_observation_decision ... ok
+test state_records_the_unknown_semantics_decision ... ok
+test the_roadmap_marks_the_cli_item_done ... ok
 test state_records_the_derived_param_decision ... ok
+test the_roadmap_and_state_record_msl_fixes ... ok
+test the_roadmap_and_state_record_analog_structure ... ok
+test the_roadmap_and_state_record_root_e2e ... ok
+test the_instruction_files_say_the_host_crates_build ... ok
 
-test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized] target(s) in 0.14s
-     Running tests/docs.rs (/var/tmp/piperine-target-a/debug/deps/docs-93bbd657b5852db6)
+   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-buck-scenarios/crates/piperine-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.46s
+     Running tests/docs.rs (/var/tmp/piperine-target/debug/deps/docs-93d5e8cdc98935cc)
 ```
