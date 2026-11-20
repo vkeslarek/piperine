@@ -123,6 +123,18 @@ impl Trace {
         self.rows().windows(2).find(|pair| pair[1].value >= pair[0].value).map(|pair| pair[1])
     }
 
+    /// The row that rises most above its predecessor; its `value` is that rise (negative when every
+    /// row falls). A decay is judged against the solver's own voltage resolution with this, since
+    /// two rows of an accepted-step interpolation can differ by less than the solver tolerance in
+    /// either direction.
+    pub fn largest_rise(&self) -> Sample {
+        self.rows()
+            .windows(2)
+            .map(|pair| Sample { time: pair[1].time, value: pair[1].value - pair[0].value })
+            .reduce(|best, row| if row.value > best.value { row } else { best })
+            .unwrap_or_else(|| panic!("`{}` has fewer than two rows to compare", self.label))
+    }
+
     /// The time constant of an exponential decay through the first and the last row:
     /// `(t_last - t_first) / ln(v_first / v_last)`.
     pub fn decay_time_constant(&self) -> f64 {
@@ -222,6 +234,15 @@ mod tests {
         // a flat step is a rise ("not below its predecessor")
         let stalled = Tables::trace(&[(0.0, 3.0), (1.0, 2.0), (2.0, 2.0), (3.0, 1.0)]);
         assert_eq!(stalled.first_rise_in_any_row(), Some(Sample { time: 2.0, value: 2.0 }));
+    }
+
+    #[test]
+    fn largest_rise_is_the_biggest_step_up_and_negative_on_a_decay() {
+        // steps: -1, +0.5, -2: the rise is 0.5 at time 2; a strict decay gives its smallest fall
+        let wobble = Tables::trace(&[(0.0, 3.0), (1.0, 2.0), (2.0, 2.5), (3.0, 0.5)]);
+        assert_eq!(wobble.largest_rise(), Sample { time: 2.0, value: 0.5 });
+        let decay = Tables::trace(&[(0.0, 3.0), (1.0, 2.0), (2.0, 0.5)]);
+        assert_eq!(decay.largest_rise(), Sample { time: 1.0, value: -1.0 });
     }
 
     #[test]

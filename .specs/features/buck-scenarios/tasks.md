@@ -336,14 +336,16 @@ T13 → T15
 
 **Done when**:
 
-- [ ] `load_line_regulates_at_3_3_v_with_pgood_before_its_first_stimulus`, `s3_load_step_up_stays_within_165_mv`, `s3_load_step_down_stays_within_165_mv`, `s3_load_step_up_recovers_within_200_us`, `s3_load_step_down_recovers_within_200_us`, `s3_pgood_stays_high`, `s3_no_current_limit`, `s4_line_step_up_stays_within_165_mv`, `s4_line_step_down_stays_within_165_mv`, `s4_line_step_up_recovers_within_200_us`, `s4_line_step_down_recovers_within_200_us`, `s4_no_fault`, `s8_off_at_the_sample_after_en_falls`, `s8_both_switches_stay_off`, `s8_pgood_low_from_off`, `s8_vout_decays_with_the_load_time_constant`, `load_line_passes_every_check`
-- [ ] Gate check passes: `Run scenarios` and the Build line
-- [ ] Test count: 17 new tests
+- [x] `load_line_regulates_at_3_3_v_with_pgood_before_its_first_stimulus`, `s3_load_step_up_stays_within_165_mv`, `s3_load_step_down_stays_within_165_mv`, `s3_load_step_up_recovers_within_200_us`, `s3_load_step_down_recovers_within_200_us`, `s3_pgood_stays_high`, `s3_no_current_limit`, `s4_line_step_up_stays_within_165_mv`, `s4_line_step_down_stays_within_165_mv`, `s4_line_step_up_recovers_within_200_us`, `s4_line_step_down_recovers_within_200_us`, `s4_no_fault`, `s8_off_at_the_sample_after_en_falls`, `s8_both_switches_stay_off`, `s8_pgood_low_from_off`, `s8_vout_decays_with_the_load_time_constant`, `load_line_passes_every_check`
+- [x] Gate check passes: `Run scenarios` and the Build line (34 of 35 pass; the one red is T9's `s2b_vout_settles_into_1_v_within_1_percent_at_1_29_ms`)
+- [x] Test count: 17 new tests
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `test: the buck's load, line and disable scenarios S3, S4 and S8 at 3.3 V`
+
+**Status**: Complete (all 17 pass; the 18th test of the target, C22 of T9, stays red)
 
 ---
 

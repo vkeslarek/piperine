@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use piperine::{Analysis, Overrides, ParamValue, Project, Session};
-use piperine_parity::scenario::{DiscreteTrace, Ran, ScenarioBatch, ScenarioRun, Stimulus, Trace};
+use piperine_parity::scenario::{DiscreteTrace, Ramp, Ran, ScenarioBatch, ScenarioRun, Stimulus, Trace};
 use piperine_transpile::Settings;
 
 /// The scenario package and what its tests ask of it.
@@ -145,6 +145,8 @@ fn opening_a_run_leaves_only_the_package_sources() {
 struct Supervisor;
 
 impl Supervisor {
+    /// `Mode::Off`: both switches off.
+    const OFF: i128 = 0;
     /// `Mode::Regulate`: the reference follows the target.
     const REGULATE: i128 = 2;
     /// `Fault::Clear`.
@@ -160,10 +162,15 @@ impl Timing {
     const FIRST_STIMULUS: f64 = 1.25e-3;
     /// The print grid of every run (BS-01 AC 2).
     const GRID: f64 = 1e-8;
+    /// A mode that changes at the next sample shows within this long of its cause (§10.1).
+    const NEXT_SAMPLE: f64 = 2.02e-6;
     /// The sense chain: 0.1 V per ampere (§2), so the inductor current is `isense` times ten.
     const AMPERES_PER_VOLT: f64 = 10.0;
     /// The regulation band of every settling criterion: ± 1 % (§2, §10).
     const BAND: f64 = 0.01;
+    /// The solver's voltage tolerance `vntol`, 1 µV: a difference of two rows below it is noise of
+    /// the solution, so a fall is judged to it.
+    const VOLTAGE_RESOLUTION: f64 = 1e-6;
     /// The 3.3 V of the default setpoint (§7.1, code 100).
     const NOMINAL: f64 = 3.3;
 }
@@ -179,6 +186,9 @@ impl BuckHost {
     const DATA_LEAD: f64 = 1e-6;
     /// How long `sp_wr` stays high after its rise (§10.1).
     const WRITE_PULSE: f64 = 9e-6;
+    /// The size of one step of a supply ramp (§10.1).
+    const SUPPLY_STEP: f64 = 0.1;
+
     /// A host with the five ports at rest at time 0: `en`, `sp_wr`, `load_step` and `inject` low,
     /// `sp_data` at the reset code 100 (§7.1).
     fn at_rest() -> BuckHost {
@@ -202,6 +212,11 @@ impl BuckHost {
         self.push(|stimulus| stimulus.drive("en", ParamValue::Bool(true), at))
     }
 
+    /// `en` falls at `at`.
+    fn disable(&mut self, at: f64) -> &mut BuckHost {
+        self.push(|stimulus| stimulus.drive("en", ParamValue::Bool(false), at))
+    }
+
     /// Writes the setpoint `code`: `sp_data` is presented 1 µs before `edge`, `sp_wr` rises at
     /// `edge` and falls 9 µs later (§10.1).
     fn write_setpoint(&mut self, code: i64, edge: f64) -> &mut BuckHost {
@@ -211,6 +226,23 @@ impl BuckHost {
                 .drive("sp_wr", ParamValue::Bool(true), edge)
                 .drive("sp_wr", ParamValue::Bool(false), edge + BuckHost::WRITE_PULSE)
         })
+    }
+
+    /// `load_step` takes `high` at `at`: the load step of S3, the overload of S5.
+    fn load_step(&mut self, high: bool, at: f64) -> &mut BuckHost {
+        self.push(|stimulus| stimulus.drive("load_step", ParamValue::Bool(high), at))
+    }
+
+    /// The base load becomes `ohms` at `at`.
+    fn load(&mut self, ohms: f64, at: f64) -> &mut BuckHost {
+        self.push(|stimulus| stimulus.set("buck.r_load", ohms, at))
+    }
+
+    /// The supply moves from `from` to `to` as a staircase of 0.1 V steps over `duration` from
+    /// `start` (§10.1: the line step, the brown-out).
+    fn line(&mut self, from: f64, to: f64, start: f64, duration: f64) -> &mut BuckHost {
+        let ramp = Ramp { from, to, start, duration, step: BuckHost::SUPPLY_STEP };
+        self.push(|stimulus| stimulus.ramp("buck.vin_nom", ramp))
     }
 
     /// The schedule built so far.
@@ -258,6 +290,21 @@ impl<'a> Waveforms<'a> {
     /// Power-good.
     fn pgood(&self) -> DiscreteTrace {
         DiscreteTrace::of(&self.ran.table, "pgood")
+    }
+
+    /// The high-side gate command.
+    fn high_side(&self) -> DiscreteTrace {
+        DiscreteTrace::of(&self.ran.table, "buck.hs_cmd")
+    }
+
+    /// The low-side gate command.
+    fn low_side(&self) -> DiscreteTrace {
+        DiscreteTrace::of(&self.ran.table, "buck.ls_cmd")
+    }
+
+    /// The cycle-by-cycle overcurrent comparator (§8.2).
+    fn over_current(&self) -> DiscreteTrace {
+        DiscreteTrace::of(&self.ran.table, "buck.oc")
     }
 
     /// The sink-limit comparator (§8.3).
@@ -336,6 +383,7 @@ impl Suite {
     /// The runs of the families this target judges, with each one's stimulus.
     fn plan() -> Vec<(&'static str, Stimulus)> {
         vec![
+            (LoadLineFamily::RUN, LoadLineFamily::stimulus()),
             (SetpointFamily::RUN, SetpointFamily::stimulus()),
         ]
     }
@@ -515,4 +563,199 @@ fn every_family_reports_its_wall_time_and_rows() {
         assert!(line.contains(&format!("wall time {:.1} s", ran.wall().as_secs_f64())), "{line}");
         assert!(line.contains(&format!("{} rows", ran.table.rows.len())), "{line}");
     }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The load and line family: S3, S4 and S8 at 3.3 V (BS-04, BS-06 AC 6 to AC 9)
+// ---------------------------------------------------------------------------------------------
+
+/// S3, S4 and S8 on one run: the load steps, the line steps, then `en` falls.
+struct LoadLineFamily;
+
+impl LoadLineFamily {
+    /// The load step rises (S3 up).
+    const LOAD_UP: f64 = 1.25e-3;
+    /// The load step falls (S3 down).
+    const LOAD_DOWN: f64 = 1.55e-3;
+    /// The end of S3's windows.
+    const LOAD_END: f64 = 1.85e-3;
+    /// The load becomes 1.65 Ω, the 2 A of S4, 200 µs before the line step (§10.1).
+    const LOAD_2_AMPERES: f64 = 1.85e-3;
+    /// The line step up starts (S4 up).
+    const LINE_UP: f64 = 2.05e-3;
+    /// The line step down starts (S4 down).
+    const LINE_DOWN: f64 = 2.35e-3;
+    /// The end of S4's windows.
+    const LINE_END: f64 = 2.65e-3;
+    /// The 10 µs a line step takes (§10.1).
+    const LINE_STEP: f64 = 10e-6;
+    /// `en` falls (S8).
+    const DISABLE: f64 = 2.80e-3;
+    /// The end of the run.
+    const END: f64 = 2.92e-3;
+    /// The base load again, 0.5 A, once S4 is judged.
+    const LOAD_HALF_AMPERE: f64 = 2.65e-3;
+    /// The deviation bound of S3 and S4: 5 % of 3.3 V (§10).
+    const DEVIATION: f64 = 0.165;
+    /// The time to be back within the band: 200 µs (§10).
+    const RECOVERY: f64 = 200e-6;
+
+    /// The time `mode` first reads `Off` after `en` falls.
+    fn off_entry() -> f64 {
+        Self::waves().mode().first_time(Supervisor::OFF, Self::DISABLE).expect("mode never reads Off after en falls")
+    }
+}
+
+impl Family for LoadLineFamily {
+    const RUN: &'static str = "load_line";
+
+    fn stimulus() -> Stimulus {
+        let mut host = BuckHost::at_rest();
+        host.enable(1e-6).load_step(true, Self::LOAD_UP).load_step(false, Self::LOAD_DOWN).load(1.65, Self::LOAD_2_AMPERES);
+        host.line(12.0, 16.0, Self::LINE_UP, Self::LINE_STEP).line(16.0, 12.0, Self::LINE_DOWN, Self::LINE_STEP);
+        host.load(6.6, Self::LOAD_HALF_AMPERE).disable(Self::DISABLE);
+        host.stimulus()
+    }
+}
+
+#[test]
+fn load_line_regulates_at_3_3_v_with_pgood_before_its_first_stimulus() {
+    LoadLineFamily::assert_regulating_before_the_first_stimulus();
+}
+
+#[test]
+fn s3_load_step_up_stays_within_165_mv() {
+    // BS-04 AC 1, SPEC §10 S3: deviation at most 165 mV (5 %) after 0.5 A to 4.5 A
+    let deviation = LoadLineFamily::waves().vout().between(LoadLineFamily::LOAD_UP, LoadLineFamily::LOAD_DOWN).deviation_from(Timing::NOMINAL);
+    eprintln!("S3 up: deviation {:.2} mV at {:e} s (limit 165 mV)", deviation.value * 1e3, deviation.time);
+    assert!(deviation.value <= LoadLineFamily::DEVIATION, "vout is {} V from 3.3 V at {:e} s", deviation.value, deviation.time);
+}
+
+#[test]
+fn s3_load_step_down_stays_within_165_mv() {
+    // BS-04 AC 2, SPEC §10 S3: deviation at most 165 mV after 4.5 A to 0.5 A
+    let deviation = LoadLineFamily::waves().vout().between(LoadLineFamily::LOAD_DOWN, LoadLineFamily::LOAD_END).deviation_from(Timing::NOMINAL);
+    eprintln!("S3 down: deviation {:.2} mV at {:e} s (limit 165 mV)", deviation.value * 1e3, deviation.time);
+    assert!(deviation.value <= LoadLineFamily::DEVIATION, "vout is {} V from 3.3 V at {:e} s", deviation.value, deviation.time);
+}
+
+#[test]
+fn s3_load_step_up_recovers_within_200_us() {
+    // BS-04 AC 3, SPEC §10 S3: back within 1 % no later than 200 us after the edge
+    let settling = LoadLineFamily::waves().settling_after(LoadLineFamily::LOAD_UP, LoadLineFamily::LOAD_DOWN, Timing::NOMINAL);
+    eprintln!("S3 up: vout settles into 3.3 V +- 1 % {:.1} us after the edge (limit 200 us)", settling * 1e6);
+    assert!(settling <= LoadLineFamily::RECOVERY, "vout settles {settling:e} s after the edge");
+}
+
+#[test]
+fn s3_load_step_down_recovers_within_200_us() {
+    // BS-04 AC 4, SPEC §10 S3: back within 1 % no later than 200 us after the edge
+    let settling = LoadLineFamily::waves().settling_after(LoadLineFamily::LOAD_DOWN, LoadLineFamily::LOAD_END, Timing::NOMINAL);
+    eprintln!("S3 down: vout settles into 3.3 V +- 1 % {:.1} us after the edge (limit 200 us)", settling * 1e6);
+    assert!(settling <= LoadLineFamily::RECOVERY, "vout settles {settling:e} s after the edge");
+}
+
+#[test]
+fn s3_pgood_stays_high() {
+    // BS-04 AC 5, SPEC §10 S3: `pgood` stays high from 1.25 ms to 1.85 ms
+    let held = LoadLineFamily::waves().pgood().between(LoadLineFamily::LOAD_UP, LoadLineFamily::LOAD_END).holds(1);
+    eprintln!("S3: pgood over 1.25 ms to 1.85 ms: {held:?}");
+    assert!(held.is_ok(), "pgood departs: {held:?}");
+}
+
+#[test]
+fn s3_no_current_limit() {
+    // BS-04 AC 6, SPEC §10 S3: `buck.oc` stays low from 1.25 ms to 1.85 ms
+    let held = LoadLineFamily::waves().over_current().between(LoadLineFamily::LOAD_UP, LoadLineFamily::LOAD_END).holds(0);
+    eprintln!("S3: buck.oc over 1.25 ms to 1.85 ms: {held:?}");
+    assert!(held.is_ok(), "the current limit trips: {held:?}");
+}
+
+#[test]
+fn s4_line_step_up_stays_within_165_mv() {
+    // BS-04 AC 7, SPEC §10 S4: deviation at most 165 mV after 12 V to 16 V
+    let deviation = LoadLineFamily::waves().vout().between(LoadLineFamily::LINE_UP, LoadLineFamily::LINE_DOWN).deviation_from(Timing::NOMINAL);
+    eprintln!("S4 up: deviation {:.2} mV at {:e} s (limit 165 mV)", deviation.value * 1e3, deviation.time);
+    assert!(deviation.value <= LoadLineFamily::DEVIATION, "vout is {} V from 3.3 V at {:e} s", deviation.value, deviation.time);
+}
+
+#[test]
+fn s4_line_step_down_stays_within_165_mv() {
+    // BS-04 AC 8, SPEC §10 S4: deviation at most 165 mV after 16 V to 12 V
+    let deviation = LoadLineFamily::waves().vout().between(LoadLineFamily::LINE_DOWN, LoadLineFamily::LINE_END).deviation_from(Timing::NOMINAL);
+    eprintln!("S4 down: deviation {:.2} mV at {:e} s (limit 165 mV)", deviation.value * 1e3, deviation.time);
+    assert!(deviation.value <= LoadLineFamily::DEVIATION, "vout is {} V from 3.3 V at {:e} s", deviation.value, deviation.time);
+}
+
+#[test]
+fn s4_line_step_up_recovers_within_200_us() {
+    // BS-04 AC 9, SPEC §10 S4: back within 1 % no later than 200 us after the step's start
+    let settling = LoadLineFamily::waves().settling_after(LoadLineFamily::LINE_UP, LoadLineFamily::LINE_DOWN, Timing::NOMINAL);
+    eprintln!("S4 up: vout settles into 3.3 V +- 1 % {:.1} us after the step starts (limit 200 us)", settling * 1e6);
+    assert!(settling <= LoadLineFamily::RECOVERY, "vout settles {settling:e} s after the step starts");
+}
+
+#[test]
+fn s4_line_step_down_recovers_within_200_us() {
+    // BS-04 AC 10, SPEC §10 S4: back within 1 % no later than 200 us after the step's start
+    let settling = LoadLineFamily::waves().settling_after(LoadLineFamily::LINE_DOWN, LoadLineFamily::LINE_END, Timing::NOMINAL);
+    eprintln!("S4 down: vout settles into 3.3 V +- 1 % {:.1} us after the step starts (limit 200 us)", settling * 1e6);
+    assert!(settling <= LoadLineFamily::RECOVERY, "vout settles {settling:e} s after the step starts");
+}
+
+#[test]
+fn s4_no_fault() {
+    // BS-04 AC 11, SPEC §10 S4: no fault, so `fault` stays `Clear` and `mode` stays `Regulate`
+    let waves = LoadLineFamily::waves();
+    let fault = waves.fault().between(LoadLineFamily::LINE_UP, LoadLineFamily::LINE_END).holds(Supervisor::CLEAR);
+    let mode = waves.mode().between(LoadLineFamily::LINE_UP, LoadLineFamily::LINE_END).holds(Supervisor::REGULATE);
+    eprintln!("S4: fault {fault:?}, mode {mode:?} over 2.05 ms to 2.65 ms");
+    assert!(fault.is_ok(), "fault departs from Clear: {fault:?}");
+    assert!(mode.is_ok(), "mode departs from Regulate: {mode:?}");
+}
+
+#[test]
+fn s8_off_at_the_sample_after_en_falls() {
+    // BS-06 AC 6, SPEC §10 S8, §10.1: `Off` within 2.02 us of the edge
+    let delay = LoadLineFamily::off_entry() - LoadLineFamily::DISABLE;
+    eprintln!("S8: mode reads Off {:.3} us after en falls (limit 2.02 us)", delay * 1e6);
+    assert!((0.0..=Timing::NEXT_SAMPLE).contains(&delay), "mode reads Off {delay:e} s after en falls");
+}
+
+#[test]
+fn s8_both_switches_stay_off() {
+    // BS-06 AC 7, SPEC §10 S8: both gate commands low from one grid row after the entry on
+    let (waves, from) = (LoadLineFamily::waves(), LoadLineFamily::off_entry() + Timing::GRID);
+    let (high, low) = (waves.high_side().between(from, LoadLineFamily::END).holds(0), waves.low_side().between(from, LoadLineFamily::END).holds(0));
+    eprintln!("S8: hs_cmd {high:?}, ls_cmd {low:?} from {from:e} s to the end");
+    assert!(high.is_ok(), "the high side departs: {high:?}");
+    assert!(low.is_ok(), "the low side departs: {low:?}");
+}
+
+#[test]
+fn s8_pgood_low_from_off() {
+    // BS-06 AC 8, SPEC §8.6: `pgood` falls at once on leaving `Regulate`
+    let (waves, from) = (LoadLineFamily::waves(), LoadLineFamily::off_entry());
+    let held = waves.pgood().between(from, LoadLineFamily::END).holds(0);
+    eprintln!("S8: pgood from {from:e} s to the end: {held:?}");
+    assert!(held.is_ok(), "pgood departs from low: {held:?}");
+}
+
+#[test]
+fn s8_vout_decays_with_the_load_time_constant() {
+    // BS-06 AC 9, SPEC §10.1: from 10 us after the entry vout falls in every row with the time
+    // constant (6.6 ohm parallel 40 kohm) * 220 uF = 1.452 ms, within 2 %. A row "falls" to the
+    // solver's own voltage resolution: the rows are interpolated between accepted steps, and two
+    // of them differ by less than `vntol` (1 uV) in either direction
+    let decay = LoadLineFamily::waves().vout().between(LoadLineFamily::off_entry() + 10e-6, LoadLineFamily::END + Timing::GRID);
+    let (rise, constant) = (decay.largest_rise(), decay.decay_time_constant());
+    eprintln!("S8: the largest rise between two rows is {:.3e} V at {:e} s (solver resolution {:e} V); time constant {:.4} ms (1.452 ms +- 2 %)", rise.value, rise.time, Timing::VOLTAGE_RESOLUTION, constant * 1e3);
+    assert!(rise.value <= Timing::VOLTAGE_RESOLUTION, "vout rises by {} V at {:e} s", rise.value, rise.time);
+    assert!((constant - 1.452e-3).abs() <= 1.452e-3 * 0.02, "time constant {constant:e} s");
+}
+
+#[test]
+fn load_line_passes_every_check() {
+    // BS-08 AC 4, SPEC §10 S10
+    LoadLineFamily::assert_every_check_passed();
 }
