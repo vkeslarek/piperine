@@ -60,8 +60,11 @@ impl CompletedRun {
 /// One named run of a scenario package under one stimulus.
 #[derive(Debug, Clone)]
 pub struct ScenarioRun {
+    /// The directory of the scenario package.
     package: PathBuf,
+    /// The name of the run, as the package declares it.
     run: String,
+    /// What the host does to the session during the run.
     stimulus: Stimulus,
 }
 
@@ -95,6 +98,7 @@ impl ScenarioRun {
 /// longest run and not their sum.
 #[derive(Debug)]
 pub struct ScenarioBatch {
+    /// The runs, executed at once, one thread each.
     runs: Vec<ScenarioRun>,
 }
 

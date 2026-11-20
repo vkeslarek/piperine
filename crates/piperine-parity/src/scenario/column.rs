@@ -6,7 +6,9 @@ use piperine_api::Table;
 /// `vout` for the label `buck.vout` without spelling the instance path of the bench.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NamedColumn {
+    /// The position of the column in every row of its table.
     index: usize,
+    /// The full label of the column, as the table spells it.
     label: String,
 }
 

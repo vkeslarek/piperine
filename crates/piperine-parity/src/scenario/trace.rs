@@ -27,8 +27,11 @@ pub enum Crossing {
 /// a pass means the SPEC's criterion and not a quirk of a helper written beside a test.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Trace {
+    /// The full label of the column, for the messages of a failure.
     label: String,
+    /// The window the rows were cut to; none for the whole run.
     window: Option<(f64, f64)>,
+    /// The rows, in time order.
     rows: Vec<Sample>,
 }
 

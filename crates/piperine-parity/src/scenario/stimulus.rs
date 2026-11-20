@@ -88,6 +88,7 @@ impl Ramp {
 /// The host's schedule for one run, applied to a [`Session`] in the order it was given.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Stimulus {
+    /// The actions, in the order they are applied.
     actions: Vec<Action>,
 }
 
@@ -139,11 +140,16 @@ mod tests {
         fn record(&mut self, _: &Record) {}
     }
 
-    /// Opens the `short` run of the planted package.
-    fn open(package: &PlantedPackage, cache: &tempfile::TempDir) -> Session {
-        let project = Project::at(package.path()).unwrap_or_else(|f| panic!("{f}"));
-        let spec = project.request(Some("short"), &Overrides::default()).unwrap_or_else(|f| panic!("{f}"));
-        Session::open(&project, &spec, &Settings { rustc: None, cache: cache.path().to_path_buf() }).unwrap_or_else(|f| panic!("{f}"))
+    /// Sessions the tests open.
+    struct Sessions;
+
+    impl Sessions {
+        /// Opens the `short` run of the planted package.
+        fn open(package: &PlantedPackage, cache: &tempfile::TempDir) -> Session {
+            let project = Project::at(package.path()).unwrap_or_else(|f| panic!("{f}"));
+            let spec = project.request(Some("short"), &Overrides::default()).unwrap_or_else(|f| panic!("{f}"));
+            Session::open(&project, &spec, &Settings { rustc: None, cache: cache.path().to_path_buf() }).unwrap_or_else(|f| panic!("{f}"))
+        }
     }
 
     #[test]
@@ -169,7 +175,7 @@ mod tests {
     fn a_stimulus_is_applied_to_the_session_and_its_drives_and_sets_land() {
         let package = PlantedPackage::write();
         let cache = tempfile::tempdir().expect("a build cache");
-        let mut session = open(&package, &cache);
+        let mut session = Sessions::open(&package, &cache);
         let accepted = Stimulus::new()
             .drive("level", ParamValue::Int(5), 0.0)
             .drive("level", ParamValue::Int(9), 1e-6)
@@ -186,7 +192,7 @@ mod tests {
     fn a_refused_action_is_returned_naming_it() {
         let package = PlantedPackage::write();
         let cache = tempfile::tempdir().expect("a build cache");
-        let mut refused = open(&package, &cache);
+        let mut refused = Sessions::open(&package, &cache);
         let refusal = Stimulus::new().drive("nothing", ParamValue::Bool(true), 0.0).apply(&mut refused).expect_err("no such port");
         assert!(matches!(refusal.failure, Failure::Host { code: "E0801", .. }), "{refusal}");
         assert!(refusal.action.contains("the drive of `nothing`"), "{refusal}");

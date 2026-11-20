@@ -28,8 +28,11 @@ pub struct Departure {
 /// read the same way.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DiscreteTrace {
+    /// The full label of the column, for the messages of a failure.
     label: String,
+    /// The window the rows were cut to; none for the whole run.
     window: Option<(f64, f64)>,
+    /// The rows, in time order.
     rows: Vec<DiscreteSample>,
 }
 

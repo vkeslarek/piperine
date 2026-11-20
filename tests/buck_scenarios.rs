@@ -190,6 +190,7 @@ impl Timing {
 /// The buck's stimulus vocabulary over a [`Stimulus`]: what each scenario of SPEC §10 does to the
 /// converter's five ports and three params, in the shapes of §10.1.
 struct BuckHost {
+    /// The schedule built so far.
     stimulus: Stimulus,
 }
 
@@ -280,6 +281,7 @@ impl BuckHost {
 
 /// The buck's columns of one run, as the traces the measurements read.
 struct Waveforms<'a> {
+    /// The completed run whose table the traces read.
     ran: &'a CompletedRun,
 }
 
@@ -418,6 +420,7 @@ trait Family {
 
 /// The five results, run once by one [`ScenarioBatch`] at the first access (BS-08).
 struct Suite {
+    /// Each run's name with its completed run or the message of its failure.
     results: Vec<(&'static str, Result<CompletedRun, String>)>,
 }
 
@@ -1192,11 +1195,15 @@ impl Corner {
 /// The schedule of S9 and the corners it measures, built together so a window and the stimulus
 /// that precedes it can never disagree.
 struct SteadyStatePlan {
+    /// The stimulus built so far.
     host: BuckHost,
+    /// The corners to measure, in plan order.
     corners: Vec<Corner>,
     /// The end of the last window or step: where the next action starts.
     cursor: f64,
+    /// The supply voltage the plan has reached.
     supply: f64,
+    /// The reference code the plan has written.
     setpoint_code: i64,
 }
 

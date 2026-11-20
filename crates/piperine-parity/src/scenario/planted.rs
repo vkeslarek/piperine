@@ -15,6 +15,7 @@ const MANIFEST: &str = "[package]\nname = \"planted\"\nversion = \"0.1.0\"\n\n[r
 
 /// The planted package, deleted with this value.
 pub struct PlantedPackage {
+    /// The temporary directory holding the package; removed with the value.
     dir: TempDir,
 }
 
