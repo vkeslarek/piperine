@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use piperine_ir::{BodyId, BodyNode, Carrier, CarrierRole, ChildValue, Constant, Derivative, Drive, Event, Hoisted, Reach, Reaction, Stream, Terminal, ValueType};
 
 use super::body::NodePlan;
-use super::consts::{Bindings, Folded};
+use super::consts::Folded;
 use super::elaborator::Elaboration;
 use crate::pom::{DeclId, DeclKind, Dir, ExprId};
 use crate::types::Ty;

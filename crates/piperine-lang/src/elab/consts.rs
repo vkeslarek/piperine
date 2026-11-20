@@ -273,7 +273,7 @@ impl<'d, 't> ConstEval<'d, 't> {
                 None => self.body_let(expr, decl, bindings),
             },
             // A value input the caller binds to a constant (`structural.rs`, a selector through an input).
-            DeclKind::Port(_) if let Some(value) = bindings.get(decl) => Ok(value),
+            DeclKind::Port(_) if let Some(value) = bindings.get(decl) => Ok(Folded::Known(value)),
             DeclKind::Port(_) | DeclKind::Signal(_) if self.types.carrier(decl).is_some() => Err(ConstFault::Dynamic { expr, what: "a carrier".to_string() }),
             DeclKind::Port(_) | DeclKind::Signal(_) => Err(ConstFault::Dynamic { expr, what: "a node".to_string() }),
             _ => Err(ConstFault::Unsupported { expr, what: "this name in a const expression".to_string() }),
