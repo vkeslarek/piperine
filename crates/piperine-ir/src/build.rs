@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use crate::real::Real;
 use crate::deps::DepsMemo;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
-use crate::model::{
+use crate::model::{NodeAlias, 
     BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, Derivative, Drive, Event, Expr, ExprData, FunctionData, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
     Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, Terminal, ValueType,
 };
@@ -120,6 +120,8 @@ pub struct IrBuilder {
     instances: Vec<InstanceData>,
     nodes: Vec<NodeData>,
     nets: Vec<NetData>,
+    /// The paths of the merged nodes, set when `finish` applies the merges.
+    aliases: Vec<NodeAlias>,
     /// The merges `merge_nodes` asked for, applied by `finish`.
     union: NodeUnion,
 }
@@ -414,8 +416,10 @@ impl IrBuilder {
         }
         let mut renumbered: Vec<Option<NodeId>> = Vec::with_capacity(self.nodes.len());
         let mut kept: Vec<NodeData> = Vec::new();
+        let mut merged_away: Vec<(String, NodeId)> = Vec::new();
         for (at, node) in std::mem::take(&mut self.nodes).into_iter().enumerate() {
             if self.union.merged_into.contains_key(&NodeId(at as u32)) {
+                merged_away.push((node.path.clone(), NodeId(at as u32)));
                 renumbered.push(None);
             } else {
                 renumbered.push(Some(NodeId(kept.len() as u32)));
@@ -423,6 +427,16 @@ impl IrBuilder {
             }
         }
         self.nodes = kept;
+        self.aliases = merged_away
+            .into_iter()
+            .map(|(path, node)| NodeAlias {
+                path,
+                node: match self.union.resolve(NodeRef::Node(node)) {
+                    NodeRef::Node(id) => renumbered.get(id.index()).copied().flatten().map_or(NodeRef::Ground, NodeRef::Node),
+                    NodeRef::Ground => NodeRef::Ground,
+                },
+            })
+            .collect();
         for instance in &mut self.instances {
             for slot in &mut instance.nodes {
                 *slot = match self.union.resolve(*slot) {
@@ -446,6 +460,7 @@ impl IrBuilder {
             nodes: self.nodes,
             top,
             nets: self.nets,
+            aliases: self.aliases,
         }
     }
 }

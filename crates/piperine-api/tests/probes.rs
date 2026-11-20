@@ -153,3 +153,28 @@ fn a_probe_with_no_value_in_the_circuit_is_a_failure_naming_it() {
         }
     }
 }
+
+/// A top whose `Zero` shorts `a` and `b` with a zero potential, and `c` to ground.
+const MERGED: &str = "pub module Zero(p: Electrical, n: Electrical) { }\nanalog for Zero { v(p, n) +> 0.0; }\nmodule Top() {\n    signal a: Electrical;\n    signal b: Electrical;\n    signal c: Electrical;\n    let z = Zero(a, b);\n    let g = Zero(c, gnd);\n}\n";
+
+#[test]
+fn a_merged_node_is_printed_as_the_node_that_survives() {
+    // F3: `--print b` of a signal the author wrote resolves to the node `b` merged into (`a`), under
+    // the name written; a node merged into ground says so (E0801 names the merge), not "names nothing".
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("merged.msl");
+    std::fs::write(&file, MERGED).expect("write");
+    let ir = elaborated(&file, "Top");
+    let (a, b) = (Probe::resolve(&ir, "Top", "a").expect("a"), Probe::resolve(&ir, "Top", "b").expect("b"));
+    match (&a, &b) {
+        (Probe::Node { id: survivor, .. }, Probe::Node { id, path }) => {
+            assert_eq!(id, survivor);
+            assert_eq!(path, "Top.b");
+        }
+        other => panic!("two nodes, found {other:?}"),
+    }
+    match Probe::resolve(&ir, "Top", "c") {
+        Err(Failure::Host { code: "E0801", message }) => assert!(message.contains("merges with ground"), "{message}"),
+        other => panic!("E0801, found {other:?}"),
+    }
+}

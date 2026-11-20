@@ -23,7 +23,7 @@ pub use handle::{Body, Function, Instance, Nature, Net, Node, RecordSite};
 pub use ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
 pub use model::{
     Addend, AnalysisKind, BinaryOp, BodyData, BodyNode, Branch, BranchKind, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Env, Event, EventSource, Expr,
-    ExprData, FunctionData, Hoisted, InstanceData, Inflow, Merge, Reach, ReachedItem, Ir, LevelPart, Local, MathFn, Method, NatureData, NetData, NodeData, NodeRef,
+    ExprData, FunctionData, Hoisted, InstanceData, Inflow, Merge, Reach, ReachedItem, Ir, LevelPart, Local, MathFn, Method, NatureData, NetData, NodeAlias, NodeData, NodeRef,
     NodeRole, Operator, Origin, Param, Quantity, QuantityRole, Reaction, Site, Stmt, Stream, StreamField, Terminal, UnaryOp,
     ValueType,
 };

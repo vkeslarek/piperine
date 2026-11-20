@@ -277,7 +277,19 @@ fn a_merge_with_ground_binds_the_node_to_ground() {
     let ir = Elab::ir(&shorted("v(a, b) +> 0.0;", "s, gnd, u"), "Top");
     assert_eq!(ir.nodes().count(), 2, "`s` is gone, `t` and `u` are left");
     assert!(ir.node_at("Top.s").is_none());
+    assert!(ir.is_ground_alias("Top.s"), "the name the author wrote still says what it became: ground");
     assert_eq!(ir.instance_at("Top.m").expect("m").binding(0), Some(piperine_ir::NodeRef::Ground));
+}
+
+#[test]
+fn a_merged_node_keeps_its_authored_path_as_an_alias_of_its_survivor() {
+    // F3 (the navigability rule): `v(a, b) +> 0.0` joins `s` and `t`; both names the author wrote
+    // still resolve, to the one node that stands for them.
+    let ir = Elab::ir(&shorted("v(a, b) +> 0.0;", "s, t, u"), "Top");
+    let (s, t) = (ir.node_at("Top.s").expect("`s` survives"), ir.node_at("Top.t").expect("`t` is an alias of it"));
+    assert_eq!(s.id(), t.id());
+    assert!(!ir.is_ground_alias("Top.t"));
+    assert_eq!(ir.nodes().count(), 2, "the arena holds `s` and `u` only");
 }
 
 /// The rows of the contributions of body `M`: (quantity, operators of the addends, negations).

@@ -33,6 +33,18 @@ pub struct Ir {
     /// The discrete nets, the twins of `nodes` for carriers; empty in an analog design.
     #[serde(default)]
     pub(crate) nets: Vec<NetData>,
+    /// The authored paths of the nodes a merge removed, each with the node that stands for it now.
+    #[serde(default)]
+    pub(crate) aliases: Vec<NodeAlias>,
+}
+
+/// The authored path of a node that a merge (a fixed zero-potential branch) removed from the arena,
+/// and what it stands for after the merge: the surviving node, or ground. A name the author wrote
+/// stays reachable (`Ir::node_at`, `Ir::is_ground_alias`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NodeAlias {
+    pub(crate) path: String,
+    pub(crate) node: NodeRef,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

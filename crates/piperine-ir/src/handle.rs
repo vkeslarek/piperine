@@ -87,9 +87,24 @@ impl Ir {
         (site.stream == stream).then_some((instance, site))
     }
 
-    /// The node with this path, or nothing.
+    /// The node with this path, or nothing. The path of a node a merge removed (a fixed
+    /// zero-potential branch joined it to another) is the surviving node it stands for now.
     pub fn node_at(&self, path: &str) -> Option<Node<'_>> {
-        self.nodes().find(|n| n.path() == path)
+        self.nodes().find(|n| n.path() == path).or_else(|| match self.alias_at(path)? {
+            NodeRef::Node(id) => Some(Node { ir: self, id }),
+            NodeRef::Ground => None,
+        })
+    }
+
+    /// Whether `path` names a node that a merge joined to ground: it has no node of its own, and its
+    /// potential is zero.
+    pub fn is_ground_alias(&self, path: &str) -> bool {
+        self.alias_at(path) == Some(NodeRef::Ground)
+    }
+
+    /// What the merged-away node `path` stands for now.
+    fn alias_at(&self, path: &str) -> Option<NodeRef> {
+        self.aliases.iter().find(|a| a.path == path).map(|a| a.node)
     }
 
     pub fn net(&self, id: NetId) -> Net<'_> {

@@ -69,6 +69,10 @@ impl Probe {
             if let Some(net) = ir.net_at(&path) {
                 return Ok(Probe::Net { ty: net.ty().clone(), path });
             }
+            if ir.is_ground_alias(&path) {
+                let why = "a fixed zero-potential branch joins it to ground, so it has no unknown of its own: its potential is 0";
+                return Err(Failure::Host { code: "E0801", message: format!("`{entry}` is a node the design merges with ground: {why}") });
+            }
         }
         if let Some((instance, param)) = entry.rsplit_once('.') {
             for path in full(instance) {
