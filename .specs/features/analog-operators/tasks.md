@@ -419,8 +419,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `a_noise_run_without_output_or_sweep_is_p0010`, `a_key_of_another_analysis_is_p0010_in_a_noise_run` and `the_output_and_input_flags_win_over_the_keys` pass
-- [ ] Gate check passes: `Run apinoise`, then `cargo test -p piperine-api`
+- [x] `a_noise_run_without_output_or_sweep_is_p0010`, `a_key_of_another_analysis_is_p0010_in_a_noise_run` and `the_output_and_input_flags_win_over_the_keys` pass
+- [x] Gate check passes: `Run apinoise`, then `cargo test -p piperine-api`
 
 **Tests**: integration
 **Gate**: full

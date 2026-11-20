@@ -28,14 +28,17 @@ pub enum Analysis {
     Pz { input: String, output: String },
     /// The DC sensitivity (ngspice `.sens`) of the printed signals with respect to each param of `wrt`.
     Sens { wrt: Vec<String> },
+    /// The noise analysis: the density of `output` from `from` to `to` hertz; with `input`, also
+    /// referred to that source instance (AO-05).
+    Noise { output: String, input: Option<String>, from: f64, to: f64, grid: Grid },
     /// The periodic steady state of a circuit driven with period `period`; the orbit starts at
     /// `tstab` (a transient of that length comes first). `max_step` bounds the steps of a shot.
     Pss { period: f64, tstab: f64, max_step: Option<f64>, print_step: Option<f64> },
 }
 
 impl Analysis {
-    /// The eight names a user writes, in the order they are listed.
-    pub const NAMES: [&'static str; 8] = ["op", "dc", "ac", "transient", "tf", "pz", "sens", "pss"];
+    /// The nine names a user writes, in the order they are listed.
+    pub const NAMES: [&'static str; 9] = ["op", "dc", "ac", "transient", "tf", "pz", "sens", "pss", "noise"];
 
     /// The names as a fault lists them: each in backquotes, comma separated.
     fn listed() -> String {
@@ -53,6 +56,7 @@ impl Analysis {
             Analysis::Pz { .. } => "pz",
             Analysis::Sens { .. } => "sens",
             Analysis::Pss { .. } => "pss",
+            Analysis::Noise { .. } => "noise",
         }
     }
 }
@@ -535,6 +539,7 @@ impl Keys {
             "op" => &[],
             "dc" => &["sweep", "from", "to", "step", "plot"],
             "ac" => &["from", "to", "per_decade", "points", "plot"],
+            "noise" => &["output", "input", "from", "to", "per_decade", "points"],
             "transient" => &["stop", "max_step", "print_step", "from", "plot"],
             "tf" | "pz" => &["input", "output"],
             "sens" => &["wrt"],
@@ -585,7 +590,7 @@ impl Keys {
                 }
                 Analysis::Dc { sweep: sweep.value.clone(), from: from.value, to: to.value, step: step.value }
             }
-            "ac" => {
+            "ac" | "noise" => {
                 let grid = match (&self.per_decade, &self.points) {
                     (Some(n), None) if n.value > 0 => Grid::PerDecade(n.value),
                     (None, Some(n)) if n.value > 0 => Grid::Points(n.value),
@@ -593,16 +598,16 @@ impl Keys {
                         return Err(fault(n.at, format!("run `{name}`: `per_decade` or `points` must be greater than 0"), "not greater than 0"));
                     }
                     (Some(_), Some(p)) => {
-                        let message = format!("run `{name}`: an `ac` run gives exactly one of `per_decade` and `points`, not both");
+                        let message = format!("run `{name}`: a `{}` run gives exactly one of `per_decade` and `points`, not both", analysis.value);
                         return Err(fault(p.at.or(self.name_at), message, "both grids"));
                     }
                     (None, None) => {
-                        let message = format!("run `{name}`: an `ac` run gives exactly one of `per_decade` and `points`");
+                        let message = format!("run `{name}`: a `{}` run gives exactly one of `per_decade` and `points`", analysis.value);
                         return Err(fault(self.name_at, message, "no grid"));
                     }
                 };
-                let from = self.from.as_ref().ok_or_else(|| missing("from", "ac"))?;
-                let to = self.to.as_ref().ok_or_else(|| missing("to", "ac"))?;
+                let from = self.from.as_ref().ok_or_else(|| missing("from", &analysis.value))?;
+                let to = self.to.as_ref().ok_or_else(|| missing("to", &analysis.value))?;
                 if !(from.value > 0.0) {
                     return Err(fault(from.at, format!("run `{name}`: `from` must be greater than 0, found {}", from.value), "not greater than 0"));
                 }
@@ -610,7 +615,12 @@ impl Keys {
                     let message = format!("run `{name}`: `to` ({}) is less than `from` ({})", to.value, from.value);
                     return Err(fault(to.at, message, "less than `from`"));
                 }
-                Analysis::Ac { from: from.value, to: to.value, grid }
+                if analysis.value == "ac" {
+                    Analysis::Ac { from: from.value, to: to.value, grid }
+                } else {
+                    let output = self.output.as_ref().ok_or_else(|| missing("output", "noise"))?;
+                    Analysis::Noise { output: output.value.clone(), input: self.input.as_ref().map(|g| g.value.clone()), from: from.value, to: to.value, grid }
+                }
             }
             "tf" | "pz" => {
                 let input = self.input.as_ref().ok_or_else(|| missing("input", &analysis.value))?;
@@ -1187,7 +1197,7 @@ points = 5
     #[test]
     fn the_eight_analysis_names() {
         // HII-08 AC 3: eight names, in the order listed, each written in an unknown-analysis fault
-        assert_eq!(Analysis::NAMES, ["op", "dc", "ac", "transient", "tf", "pz", "sens", "pss"]);
+        assert_eq!(Analysis::NAMES, ["op", "dc", "ac", "transient", "tf", "pz", "sens", "pss", "noise"]);
         let f = fault("[run.a]\nanalysis = \"tran\"\nstop = 1e-3\n");
         let (_, message, _) = located(&f);
         for name in Analysis::NAMES {

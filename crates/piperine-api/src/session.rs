@@ -584,6 +584,7 @@ impl Session {
                     None => Ok(table),
                 }
             }
+            Analysis::Noise { .. } => Err(Failure::Backend("a noise run is not run by the session yet".into())),
             Analysis::Sens { .. } => {
                 let mut circuit = circuit;
                 let nets = circuit.nets();
