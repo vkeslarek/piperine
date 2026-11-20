@@ -185,8 +185,9 @@ impl<'a> ValuePrinter<'a> {
         }
     }
 
-    /// The printer of a type item's field types: a real is `R`, the item's own generic parameter.
-    pub fn of_type(ir: &'a Ir, data: &TypeData) -> ValuePrinter<'a> {
+    /// The printer of a type item's field types: a real is `R`, the item's own generic parameter, or
+    /// a plain `f64` for the impls written for the item at `f64` (`plain`).
+    pub fn of_type(ir: &'a Ir, data: &TypeData, plain: bool) -> ValuePrinter<'a> {
         ValuePrinter {
             ir,
             path: format!("type {}", data.path),
@@ -202,7 +203,7 @@ impl<'a> ValuePrinter<'a> {
             origin: data.origin.clone(),
             analog: None,
             sums: None,
-            plain: false,
+            plain,
             flagged_reals: false,
             commits: false,
             committed: RefCell::new(Vec::new()),

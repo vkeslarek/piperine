@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 
-use piperine_ir::{Derives, FieldsForm, Ir, TypeData, TypeId, TypeKind, ValueType};
+use piperine_ir::{Derives, FieldsForm, Ir, TypeData, TypeId, TypeKind, ValueType, VariantData};
 
 use crate::Error;
 use crate::print::{Text, ValuePrinter};
@@ -70,7 +70,7 @@ impl<'a> TypeItems<'a> {
     fn item(&self, id: TypeId) -> Result<String, Error> {
         let data = self.ir.type_data(id);
         let generic = if self.holds_real(&Self::as_value(self.ir, id)) { "<R>" } else { "" };
-        let fields = ValuePrinter::of_type(self.ir, data);
+        let fields = ValuePrinter::of_type(self.ir, data, false);
         let mut t = Text::new();
         let kind = if matches!(data.kind, TypeKind::Struct { .. }) { "a struct" } else { "an enum" };
         t.line(&format!("/// MSL `{}`, {kind}, written at {}:{}:{}.", data.path, data.origin.file, data.origin.line, data.origin.col));
@@ -115,7 +115,12 @@ impl<'a> TypeItems<'a> {
                 t.line("}");
             }
         }
-        Ok(t.finish())
+        let mut text = t.finish();
+        if data.derives.repr {
+            text.push('\n');
+            text.push_str(&self.carried_impls(id)?);
+        }
+        Ok(text)
     }
 
     /// The printed name and Rust type of each field.
@@ -151,5 +156,247 @@ impl<'a> TypeItems<'a> {
             TypeKind::Struct { .. } => ValueType::Struct(id),
             TypeKind::Enum { .. } => ValueType::Enum(id),
         }
+    }
+}
+
+// ---- the carried form of a type that derives `Repr` (§2) ----------------------------------------------------------
+
+/// What one variant (or the one struct) contributes to the carried impl: the printed constructor
+/// pieces over its fields.
+struct Shape {
+    /// The Rust type of each field, at `f64`.
+    types: Vec<String>,
+    /// The pattern binding each field to `field<k>_`, `None` for a form without fields.
+    pattern: String,
+    /// The expression building the value from the fields read as `read`.
+    build: Box<dyn Fn(&[String]) -> String>,
+}
+
+impl TypeItems<'_> {
+    /// The head of an impl for type `id`: the name, at `f64` where the type holds a real.
+    fn head(&self, id: TypeId) -> String {
+        if self.holds_real(&Self::as_value(self.ir, id)) { format!("{}<f64>", self.name(id)) } else { self.name(id).to_string() }
+    }
+
+    /// `impl rt::flag::Carried` and `Levelwise` for type `id` (a struct concatenates its fields, first
+    /// lowest; an enum lays out its tag, then the widest payload, padded with false levels, §2), and
+    /// a `Default` unless the source derives one (`Carried` holds an unknown value as the default).
+    fn carried_impls(&self, id: TypeId) -> Result<String, Error> {
+        let data = self.ir.type_data(id);
+        let derives = &data.derives;
+        if !(derives.clone && derives.copy && derives.partial_eq) {
+            return Err(Error::Unsupported { form: format!("the type {}, which derives Repr without Clone, Copy and PartialEq", data.path), path: format!("type {}", data.path), origin: data.origin.clone() });
+        }
+        let printer = ValuePrinter::of_type(self.ir, data, true);
+        let head = self.head(id);
+        let mut t = Text::new();
+        t.line(&format!("/// MSL `{}` as a carried value: its bytes and levels follow section 2 of the language.", data.path));
+        t.line("#[allow(dead_code)]");
+        t.line(&format!("impl rt::flag::Carried for {head} {{"));
+        let mut written = Ok(());
+        t.indented(|t| {
+            written = match &data.kind {
+                TypeKind::Struct { form, fields } => self.struct_carried(t, &printer, id, *form, fields),
+                TypeKind::Enum { tag_levels, variants } => self.enum_carried(t, &printer, id, *tag_levels, variants),
+            };
+        });
+        written?;
+        t.line("}");
+        t.line("");
+        t.line(&format!("impl rt::flag::Levelwise for {head} {{"));
+        t.indented(|t| {
+            t.line(&format!("fn same_levels(self, other: {head}) -> bool {{"));
+            t.indented(|t| t.line("rt::flag::Carried::to_levels(self) == rt::flag::Carried::to_levels(other)"));
+            t.line("}");
+        });
+        t.line("}");
+        let derived_default = derives.default && matches!(data.kind, TypeKind::Struct { .. });
+        if !derived_default {
+            t.line("");
+            t.line(&self.default_impl(id, &printer)?);
+        }
+        Ok(t.finish())
+    }
+
+    /// The constructor of fields at `f64`: pieces of `Name { a: x, b: y }`, `Name(x, y)` or `Name`.
+    fn shape(&self, printer: &ValuePrinter<'_>, data: &TypeData, name: String, form: FieldsForm, fields: &[(String, ValueType)]) -> Result<Shape, Error> {
+        let types = fields.iter().map(|(field, ty)| printer.rust_type(ty, &format!("type {} field {field}", data.path))).collect::<Result<Vec<_>, _>>()?;
+        let labels: Vec<String> = fields.iter().map(|(field, _)| Self::label(field)).collect();
+        let bound: Vec<String> = (0..fields.len()).map(|k| Text::generated(&format!("field{k}"))).collect();
+        let pattern = match form {
+            FieldsForm::Unit => name.clone(),
+            FieldsForm::Tuple => format!("{name}({})", bound.join(", ")),
+            FieldsForm::Named => format!("{name} {{ {} }}", labels.iter().zip(&bound).map(|(label, b)| format!("{label}: {b}")).collect::<Vec<_>>().join(", ")),
+        };
+        let build = move |values: &[String]| match form {
+            FieldsForm::Unit => name.clone(),
+            FieldsForm::Tuple => format!("{name}({})", values.join(", ")),
+            FieldsForm::Named => format!("{name} {{ {} }}", labels.iter().zip(values).map(|(label, value)| format!("{label}: {value}")).collect::<Vec<_>>().join(", ")),
+        };
+        Ok(Shape { types, pattern, build: Box::new(build) })
+    }
+
+    /// A field label as it prints: a number as it is, a name as `Text::ident`.
+    fn label(name: &str) -> String {
+        if name.chars().all(|c| c.is_ascii_digit()) { name.to_string() } else { Text::ident(name) }
+    }
+
+    /// `<ty as rt::flag::Carried>::<what>` summed over `types`, `0` for none.
+    fn sum(types: &[String], what: &str) -> String {
+        if types.is_empty() { "0".to_string() } else { types.iter().map(|ty| format!("<{ty} as rt::flag::Carried>::{what}")).collect::<Vec<_>>().join(" + ") }
+    }
+
+    /// The associated items of a struct's `Carried`: the fields concatenated, the first lowest.
+    fn struct_carried(&self, t: &mut Text, printer: &ValuePrinter<'_>, id: TypeId, form: FieldsForm, fields: &[(String, ValueType)]) -> Result<(), Error> {
+        let data = self.ir.type_data(id);
+        let head = self.head(id);
+        let shape = self.shape(printer, data, self.name(id).to_string(), form, fields)?;
+        let accessors: Vec<String> = fields.iter().map(|(field, _)| format!("self.{}", Self::label(field))).collect();
+        t.line(&format!("const WIDTH: usize = {};", Self::sum(&shape.types, "WIDTH")));
+        t.line("const SIZE: usize = Self::WIDTH + 1;");
+        t.line(&format!("const LEVELS: u32 = {};", Self::sum(&shape.types, "LEVELS")));
+        t.line("fn encode(self, out: &mut [u8]) {");
+        t.indented(|t| {
+            t.line("let mut at = 0;");
+            accessors.iter().for_each(|field| t.line(&format!("rt::flag::Field::write({field}, out, &mut at);")));
+        });
+        t.line("}");
+        let reads: Vec<String> = fields.iter().map(|_| "rt::flag::Field::read(bytes, &mut at)".to_string()).collect();
+        t.line(&format!("fn decode(bytes: &[u8]) -> {head} {{"));
+        t.indented(|t| {
+            t.line("let mut at = 0;");
+            t.line(&(shape.build)(&reads));
+        });
+        t.line("}");
+        t.line("fn to_levels(self) -> rt::flag::LevelWords {");
+        t.indented(|t| t.line(&format!("rt::flag::LevelWords::concat::<{}>([{}])", fields.len(), accessors.iter().map(|field| format!("rt::flag::Carried::to_levels({field})")).collect::<Vec<_>>().join(", "))));
+        t.line("}");
+        let levels: Vec<String> = fields.iter().map(|_| "rt::flag::Field::levels(words, &mut at)".to_string()).collect();
+        t.line(&format!("fn from_levels(words: &rt::flag::LevelWords) -> {head} {{"));
+        t.indented(|t| {
+            t.line("let mut at = 0;");
+            t.line(&(shape.build)(&levels));
+        });
+        t.line("}");
+        Ok(())
+    }
+
+    /// The associated items of an enum's `Carried`: the tag, then the widest payload.
+    fn enum_carried(&self, t: &mut Text, printer: &ValuePrinter<'_>, id: TypeId, tag_levels: u32, variants: &[VariantData]) -> Result<(), Error> {
+        let data = self.ir.type_data(id);
+        let head = self.head(id);
+        let tag_bytes = Self::tag_bytes(tag_levels);
+        let mut shapes = Vec::new();
+        for variant in variants {
+            let name = format!("{}::{}", self.name(id), Text::ident(&variant.name));
+            shapes.push((variant, self.shape(printer, data, name, variant.form, &variant.fields)?));
+        }
+        let widths: Vec<String> = shapes.iter().map(|(_, shape)| Self::sum(&shape.types, "WIDTH")).collect();
+        let levels: Vec<String> = shapes.iter().map(|(_, shape)| format!("({}) as usize", Self::sum(&shape.types, "LEVELS"))).collect();
+        t.line(&format!("const WIDTH: usize = {tag_bytes} + rt::flag::Tag::widest(&[{}]);", widths.join(", ")));
+        t.line("const SIZE: usize = Self::WIDTH + 1;");
+        t.line(&format!("const LEVELS: u32 = {tag_levels} + rt::flag::Tag::widest(&[{}]) as u32;", levels.join(", ")));
+        t.line("fn encode(self, out: &mut [u8]) {");
+        t.indented(|t| {
+            t.line("out[..Self::WIDTH].fill(0);");
+            t.line("match self {");
+            t.indented(|t| {
+                for (variant, shape) in &shapes {
+                    let writes: Vec<String> = (0..variant.fields.len()).map(|k| format!("rt::flag::Field::write({}, out, &mut at);", Text::generated(&format!("field{k}")))).collect();
+                    let at = if writes.is_empty() { String::new() } else { format!(" let mut at = {tag_bytes}; {}", writes.join(" ")) };
+                    t.line(&format!("{} => {{ rt::flag::Tag::put({}, out, {tag_bytes});{at} }}", shape.pattern, variant.discriminant));
+                }
+            });
+            t.line("}");
+        });
+        t.line("}");
+        t.line(&format!("fn decode(bytes: &[u8]) -> {head} {{"));
+        t.indented(|t| {
+            t.line(&format!("match rt::flag::Tag::get(bytes, {tag_bytes}) {{"));
+            t.indented(|t| {
+                for (variant, shape) in &shapes {
+                    let reads: Vec<String> = variant.fields.iter().map(|_| "rt::flag::Field::read(bytes, &mut at)".to_string()).collect();
+                    let built = (shape.build)(&reads);
+                    let at = if reads.is_empty() { String::new() } else { format!("let mut at = {tag_bytes}; ") };
+                    t.line(&format!("{} => {{ {at}{built} }}", variant.discriminant));
+                }
+                t.line(&format!("_ => <{head} as Default>::default(),"));
+            });
+            t.line("}");
+        });
+        t.line("}");
+        let tags: Vec<String> = variants.iter().map(|v| v.discriminant.to_string()).collect();
+        t.line("fn is_valid(bytes: &[u8]) -> bool {");
+        t.indented(|t| t.line(&format!("matches!(rt::flag::Tag::get(bytes, {tag_bytes}), {})", tags.join(" | "))));
+        t.line("}");
+        t.line("fn to_levels(self) -> rt::flag::LevelWords {");
+        t.indented(|t| {
+            t.line("let (tag, payload) = match self {");
+            t.indented(|t| {
+                for (variant, shape) in &shapes {
+                    let parts: Vec<String> = (0..variant.fields.len()).map(|k| format!("rt::flag::Carried::to_levels({})", Text::generated(&format!("field{k}")))).collect();
+                    t.line(&format!("{} => ({}u64, rt::flag::LevelWords::concat::<{}>([{}])),", shape.pattern, variant.discriminant, parts.len(), parts.join(", ")));
+                }
+            });
+            t.line("};");
+            t.line(&format!("rt::flag::LevelWords::concat([rt::flag::LevelWords::of(tag, {tag_levels}), payload.padded(Self::LEVELS - {tag_levels})])"));
+        });
+        t.line("}");
+        t.line(&format!("fn from_levels(words: &rt::flag::LevelWords) -> {head} {{"));
+        t.indented(|t| {
+            t.line(&format!("let payload = words.slice({tag_levels}, Self::LEVELS - {tag_levels});"));
+            t.line(&format!("match words.slice(0, {tag_levels}).low() {{"));
+            t.indented(|t| {
+                for (variant, shape) in &shapes {
+                    let reads: Vec<String> = variant.fields.iter().map(|_| "rt::flag::Field::levels(&payload, &mut at)".to_string()).collect();
+                    let built = (shape.build)(&reads);
+                    let at = if reads.is_empty() { String::new() } else { "let mut at = 0; ".to_string() };
+                    t.line(&format!("{} => {{ {at}{built} }}", variant.discriminant));
+                }
+                t.line(&format!("_ => <{head} as Default>::default(),"));
+            });
+            t.line("}");
+        });
+        t.line("}");
+        Ok(())
+    }
+
+    /// How many bytes the tag of `levels` levels takes in the byte form: none for no levels, else the
+    /// narrowest of 1, 2, 4 and 8 (the width of an integer of that many bits, `rt::flag`).
+    fn tag_bytes(levels: u32) -> usize {
+        match levels {
+            0 => 0,
+            1..=8 => 1,
+            9..=16 => 2,
+            17..=32 => 4,
+            _ => 8,
+        }
+    }
+
+    /// `impl Default` for a type that does not derive one: every field its default; an enum is its
+    /// first variant (an unknown value is the default, and an enum has none of its own, H.8 rule 4).
+    fn default_impl(&self, id: TypeId, printer: &ValuePrinter<'_>) -> Result<String, Error> {
+        let data = self.ir.type_data(id);
+        let generic = self.holds_real(&Self::as_value(self.ir, id));
+        let (impl_head, ty) = if generic { ("impl<R: Default> Default".to_string(), format!("{}<R>", self.name(id))) } else { ("impl Default".to_string(), self.name(id).to_string()) };
+        let defaults = |count: usize| vec!["Default::default()".to_string(); count];
+        let built = match &data.kind {
+            TypeKind::Struct { form, fields } => (self.shape(printer, data, self.name(id).to_string(), *form, fields)?.build)(&defaults(fields.len())),
+            TypeKind::Enum { variants, .. } => {
+                let first = variants.first().ok_or_else(|| Error::Unsupported { form: format!("the enum {} without a variant", data.path), path: format!("type {}", data.path), origin: data.origin.clone() })?;
+                let name = format!("{}::{}", self.name(id), Text::ident(&first.name));
+                (self.shape(printer, data, name, first.form, &first.fields)?.build)(&defaults(first.fields.len()))
+            }
+        };
+        let mut t = Text::new();
+        t.line("#[allow(dead_code)]");
+        t.line(&format!("{impl_head} for {ty} {{"));
+        t.indented(|t| {
+            t.line(&format!("fn default() -> {ty} {{"));
+            t.indented(|t| t.line(&built));
+            t.line("}");
+        });
+        t.line("}");
+        Ok(t.finish())
     }
 }

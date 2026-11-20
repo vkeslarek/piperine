@@ -39,6 +39,11 @@ pub trait Carried: Copy + Default + PartialEq + Levelwise {
     fn to_levels(self) -> LevelWords;
     /// The value whose levels are the first `LEVELS` levels of `words`.
     fn from_levels(words: &LevelWords) -> Self;
+    /// Whether `bytes[..WIDTH]` decode to a value of the type: false for a tag that names no
+    /// variant, which reads as unknown (§2 rule 9). Every byte pattern of a built-in is a value.
+    fn is_valid(_bytes: &[u8]) -> bool {
+        true
+    }
 }
 
 /// The levels of a value as bits, level `k` being bit `k`, in as many 64-bit words as the value's
@@ -110,6 +115,15 @@ impl LevelWords {
         joined
     }
 
+    /// `self` followed by false levels up to `len` levels: the payload of a variant narrower than the
+    /// widest (§2 rule 6). Already `len` levels or more, `self` as it is.
+    pub fn padded(mut self, len: u32) -> LevelWords {
+        if self.len < len {
+            self.append(&LevelWords::zeros(len - self.len));
+        }
+        self
+    }
+
     /// The `count` levels starting at level `from`, as their own value.
     pub fn slice(&self, from: u32, count: u32) -> LevelWords {
         let mut part = LevelWords { words: vec![0; count.div_ceil(64) as usize], len: count };
@@ -123,25 +137,26 @@ impl LevelWords {
 }
 
 /// One field of a composite value read or written in order: the cursor of the byte form and of the
-/// level form of a tuple, an array or an `Option`.
-struct Field;
+/// level form of a tuple, an array, an `Option` or a derived struct or enum (the generated `Carried`
+/// impls of `print/types.rs` call it too).
+pub struct Field;
 
 impl Field {
     /// Writes `value`'s bytes at `*at`, then moves `*at` past them.
-    fn write<T: Carried>(value: T, out: &mut [u8], at: &mut usize) {
+    pub fn write<T: Carried>(value: T, out: &mut [u8], at: &mut usize) {
         value.encode(&mut out[*at..*at + T::WIDTH]);
         *at += T::WIDTH;
     }
 
     /// The value whose bytes start at `*at`; moves `*at` past them.
-    fn read<T: Carried>(bytes: &[u8], at: &mut usize) -> T {
+    pub fn read<T: Carried>(bytes: &[u8], at: &mut usize) -> T {
         let value = T::decode(&bytes[*at..*at + T::WIDTH]);
         *at += T::WIDTH;
         value
     }
 
     /// The value whose levels start at level `*at`; moves `*at` past them.
-    fn levels<T: Carried>(words: &LevelWords, at: &mut u32) -> T {
+    pub fn levels<T: Carried>(words: &LevelWords, at: &mut u32) -> T {
         let value = T::from_levels(&words.slice(*at, T::LEVELS));
         *at += T::LEVELS;
         value
@@ -400,7 +415,7 @@ impl<T: Carried> Flagged<T> {
         if bytes.len() < T::SIZE {
             panic!("a pin of {} bytes read as a value of {} bytes", bytes.len(), T::SIZE);
         }
-        if bytes[T::WIDTH] == 0 { Flagged::unknown() } else { Flagged::known(T::decode(bytes)) }
+        if bytes[T::WIDTH] == 0 || !T::is_valid(bytes) { Flagged::unknown() } else { Flagged::known(T::decode(bytes)) }
     }
 
     /// Writes the pin's bytes (`encode`) at the start of `out`, the buffer of a write cell.
@@ -816,6 +831,37 @@ where
     /// A signed `>>` fills with the sign level and its flag: unknown stays unknown.
     fn shr(self, rhs: Flagged<A>) -> Flagged<Int<N>> {
         self.zip(rhs, |a, k| a >> k)
+    }
+}
+
+/// The tag of a derived enum in the byte form: its value in the low `width` bytes, little-endian
+/// (none for an enum of one variant), and the widths a derived enum's layout takes the widest of.
+pub struct Tag;
+
+impl Tag {
+    /// Writes `tag` into `out[..width]`.
+    pub fn put(tag: u64, out: &mut [u8], width: usize) {
+        out[..width].copy_from_slice(&tag.to_le_bytes()[..width]);
+    }
+
+    /// The tag in `bytes[..width]`.
+    pub fn get(bytes: &[u8], width: usize) -> u64 {
+        let mut word = [0u8; 8];
+        word[..width].copy_from_slice(&bytes[..width]);
+        u64::from_le_bytes(word)
+    }
+
+    /// The widest of `widths`: the payload of a derived enum is as wide as its widest variant's.
+    pub const fn widest(widths: &[usize]) -> usize {
+        let mut widest = 0;
+        let mut at = 0;
+        while at < widths.len() {
+            if widths[at] > widest {
+                widest = widths[at];
+            }
+            at += 1;
+        }
+        widest
     }
 }
 

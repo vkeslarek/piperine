@@ -24,7 +24,7 @@ impl Checker<'_> {
             match &data.kind {
                 TypeKind::Struct { form, fields } => self.fields(&item, data, *form, fields),
                 TypeKind::Enum { tag_levels, variants } => {
-                    self.tag_holds_discriminants(&item, data, *tag_levels, variants.iter().map(|v| (v.name.as_str(), v.discriminant)));
+                    self.tag_holds_discriminants(&item, data, *tag_levels, variants.len(), variants.iter().map(|v| (v.name.as_str(), v.discriminant)));
                     for variant in variants {
                         self.fields(&format!("{item} variant {}", variant.name), data, variant.form, &variant.fields);
                     }
@@ -59,10 +59,11 @@ impl Checker<'_> {
         }
     }
 
-    /// The tag has 1..=64 levels and holds each discriminant, and no two variants share one.
-    fn tag_holds_discriminants<'v>(&mut self, item: &str, data: &TypeData, tag_levels: u32, variants: impl Iterator<Item = (&'v str, i128)>) {
-        if !(1..=64).contains(&tag_levels) {
-            self.report(item.to_string(), data.origin.clone(), format!("a tag of {tag_levels} levels is outside 1..=64"));
+    /// The tag has up to 64 levels (none only for an enum of one variant, §2 rule 5) and holds each
+    /// discriminant, and no two variants share one.
+    fn tag_holds_discriminants<'v>(&mut self, item: &str, data: &TypeData, tag_levels: u32, count: usize, variants: impl Iterator<Item = (&'v str, i128)>) {
+        if tag_levels > 64 || (tag_levels == 0 && count > 1) {
+            self.report(item.to_string(), data.origin.clone(), format!("a tag of {tag_levels} levels is outside 1..=64 for {count} variants (none only for one variant)"));
             return;
         }
         let mut seen: BTreeSet<i128> = BTreeSet::new();

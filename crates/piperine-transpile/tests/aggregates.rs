@@ -362,3 +362,133 @@ fn main() {{
     ];
     assert_eq!(out.lines().collect::<Vec<_>>(), expected);
 }
+
+// ---- T37: `Carried` for derived structs and enums (CV-17, CV-20) ---------------------------------------------------
+
+/// The types that derive `Repr`, and the text of their items.
+struct Carried;
+
+impl Carried {
+    /// `Bits { a: bool, n: u2 }`, `Tx { Idle, Start, Data { n: u3 }, Stop }` (a 2-level tag),
+    /// `Frame { state: Tx, ok: bool }`, `Sample { v: f64, valid: bool }`, `Solo { Only { x: u2 } }` (a
+    /// tag of zero levels), `Three { A, B, C }` (a 2-level tag, one tag naming no variant) and the
+    /// tuple struct `Pair(u2, bool)`, all `#[derive(Repr, Clone, Copy, PartialEq, Debug)]`.
+    fn texts() -> Vec<String> {
+        let mut b = IrBuilder::new();
+        let repr = Derives { clone: true, copy: true, partial_eq: true, debug: true, repr: true, ..Derives::default() };
+        let named = |fields: &[(&str, ValueType)]| TypeKind::Struct { form: FieldsForm::Named, fields: fields.iter().map(|(n, ty)| (n.to_string(), ty.clone())).collect() };
+        Fixtures::entry(&mut b, "Bits", 1, named(&[("a", ValueType::Bool), ("n", Ty::u(2))]), repr);
+        let tx = vec![
+            Fixtures::variant("Idle", 0, FieldsForm::Unit, &[]),
+            Fixtures::variant("Start", 1, FieldsForm::Unit, &[]),
+            Fixtures::variant("Data", 2, FieldsForm::Named, &[("n", Ty::u(3))]),
+            Fixtures::variant("Stop", 3, FieldsForm::Unit, &[]),
+        ];
+        let tx = Fixtures::entry(&mut b, "Tx", 3, TypeKind::Enum { tag_levels: 2, variants: tx }, repr);
+        Fixtures::entry(&mut b, "Frame", 5, named(&[("state", ValueType::Enum(tx)), ("ok", ValueType::Bool)]), repr);
+        Fixtures::entry(&mut b, "Sample", 7, named(&[("v", ValueType::F64), ("valid", ValueType::Bool)]), repr);
+        let solo = vec![Fixtures::variant("Only", 0, FieldsForm::Named, &[("x", Ty::u(2))])];
+        Fixtures::entry(&mut b, "Solo", 9, TypeKind::Enum { tag_levels: 0, variants: solo }, repr);
+        let three = vec![Fixtures::variant("A", 0, FieldsForm::Unit, &[]), Fixtures::variant("B", 1, FieldsForm::Unit, &[]), Fixtures::variant("C", 2, FieldsForm::Unit, &[])];
+        Fixtures::entry(&mut b, "Three", 11, TypeKind::Enum { tag_levels: 2, variants: three }, repr);
+        let pair = vec![("0".to_string(), Ty::u(2)), ("1".to_string(), ValueType::Bool)];
+        Fixtures::entry(&mut b, "Pair", 13, TypeKind::Struct { form: FieldsForm::Tuple, fields: pair }, repr);
+        let ir = Alone::finish(b);
+        TypeItems::new(&ir).items().unwrap_or_else(|e| panic!("{e}"))
+    }
+}
+
+#[test]
+fn every_composite_value_crosses_the_abi_unchanged() {
+    // CV-17 AC 2, §2: for every value of a small derived type, the pin bytes the writer wrote decode
+    // to the value, the levels move through `from_levels` unchanged, an unknown value is all-zero
+    // bytes, and a tag naming no variant reads unknown (§2 rule 9)
+    let texts = Carried::texts();
+    let text = texts.join("\n");
+    assert!(text.contains("impl rt::flag::Carried for Tx {") && text.contains("impl rt::flag::Carried for Sample<f64> {"), "{text}");
+    let main = "\
+use rt::flag::{Carried, Flagged};
+
+fn cross<T: Carried + std::fmt::Debug>(values: &[T]) -> usize {
+    for &v in values {
+        let bytes = Flagged::known(v).encode();
+        assert_eq!(bytes.len(), T::SIZE);
+        assert_eq!(Flagged::<T>::decode(&bytes), Flagged::known(v), \"{v:?} through the bytes\");
+        assert_eq!(T::from_levels(&v.to_levels()), v, \"{v:?} through the levels\");
+        assert_eq!(v.to_levels().len(), T::LEVELS);
+    }
+    assert!(Flagged::<T>::unknown().encode().iter().all(|b| *b == 0), \"an unknown value is all-zero bytes\");
+    assert_eq!(Flagged::<T>::decode(&vec![0; T::SIZE]), Flagged::unknown());
+    values.len()
+}
+
+fn main() {
+    let u = |v: u64, n: u32| v & ((1 << n) - 1);
+    let bits: Vec<Bits> = (0..8).map(|k| Bits { a: k & 1 != 0, n: rt::UInt::<2>::new(u(k >> 1, 2)) }).collect();
+    let mut tx = vec![Tx::Idle, Tx::Start, Tx::Stop];
+    tx.extend((0..8).map(|k| Tx::Data { n: rt::UInt::<3>::new(k) }));
+    let frames: Vec<Frame> = tx.iter().flat_map(|&state| [false, true].map(|ok| Frame { state, ok })).collect();
+    let samples = [Sample::<f64> { v: -2.5, valid: true }, Sample::<f64> { v: 0.0, valid: false }, Sample::<f64> { v: 1e300, valid: true }];
+    let solo: Vec<Solo> = (0..4).map(|x| Solo::Only { x: rt::UInt::<2>::new(x) }).collect();
+    let pairs: Vec<Pair> = (0..8).map(|k| Pair(rt::UInt::<2>::new(u(k >> 1, 2)), k & 1 != 0)).collect();
+    println!(\"counts {} {} {} {} {} {}\", cross(&bits), cross(&tx), cross(&frames), cross(&samples), cross(&solo), cross(&pairs));
+    println!(\"widths {} {} {} {} {} {}\", <Tx as Carried>::WIDTH, <Frame as Carried>::WIDTH, <Sample<f64> as Carried>::WIDTH, <Solo as Carried>::WIDTH, <Pair as Carried>::WIDTH, <Bits as Carried>::WIDTH);
+    println!(\"levels {} {} {} {} {} {}\", <Tx as Carried>::LEVELS, <Frame as Carried>::LEVELS, <Sample<f64> as Carried>::LEVELS, <Solo as Carried>::LEVELS, <Pair as Carried>::LEVELS, <Bits as Carried>::LEVELS);
+    // section 2: the tag lowest, then the payload; fields first-lowest
+    println!(\"tx {} {} {}\", Tx::Data { n: rt::UInt::<3>::new(5) }.to_levels().low(), Tx::Stop.to_levels().low(), Tx::Start.to_levels().low());
+    println!(\"frame {}\", Frame { state: Tx::Data { n: rt::UInt::<3>::new(5) }, ok: true }.to_levels().low());
+    println!(\"bits {} pair {}\", Bits { a: true, n: rt::UInt::<2>::new(3) }.to_levels().low(), Pair(rt::UInt::<2>::new(1), true).to_levels().low());
+    // a tag that names no variant reads unknown (rule 9): tag 3 of `Three`
+    println!(\"three {} {}\", Flagged::<Three>::decode(&[3, 1]).is_known(), Flagged::<Three>::decode(&[2, 1]).is_known());
+}
+";
+    let out = Probe::run(&texts, main);
+    let expected = [
+        "counts 8 11 22 3 4 8",
+        // Tx: 1 tag byte + 1 payload byte; Frame: Tx + bool; Sample: f64 + bool; Solo: no tag, 1 payload byte; Pair: 2; Bits: 2
+        "widths 2 3 9 1 2 2",
+        // Tx: 2 + 3; Frame: 5 + 1; Sample: 64 + 1; Solo: 0 + 2; Pair: 3; Bits: 3
+        "levels 5 6 65 2 3 3",
+        // Data{5}: tag 2 then 5 << 2; Stop: tag 3; Start: tag 1
+        &format!("tx {} 3 1", 2 | (5 << 2)),
+        &format!("frame {}", (2 | (5 << 2)) | (1 << 5)),
+        &format!("bits {} pair {}", 1 | (3 << 1), 1 | (1 << 2)),
+        "three false true",
+    ];
+    assert_eq!(out.lines().collect::<Vec<_>>(), expected);
+}
+
+#[test]
+fn narrow_payloads_pad_with_false_levels() {
+    // §2 rule 6: a variant narrower than the widest is padded with false levels by `encode` and the
+    // padding is ignored by `decode`; the payload of a payload-less variant is all false
+    let texts = Carried::texts();
+    let main = "\
+use rt::flag::{Carried, Flagged};
+
+fn main() {
+    // `Tx` has a 3-level payload: `Idle` and `Stop` carry none, so their levels 2 to 4 are false
+    let idle = Tx::Idle.to_levels();
+    println!(\"idle {} {} {}\", idle.len(), idle.low(), (2..5).any(|k| idle.get(k)));
+    let stop = Tx::Stop.to_levels();
+    println!(\"stop {} {}\", stop.low(), (2..5).any(|k| stop.get(k)));
+    // the bytes: tag 3 then a zero payload byte; garbage in the padding changes nothing
+    println!(\"bytes {:?} {:?}\", Flagged::known(Tx::Stop).encode(), Flagged::known(Tx::Idle).encode());
+    println!(\"ignored {} {}\", Tx::decode(&[3, 0xFF]) == Tx::Stop, Tx::decode(&[0, 0b101]) == Tx::Idle);
+    // the levels: a pattern with the tag of `Idle` and payload levels set is `Idle`, and `Start` too
+    println!(\"levels {} {}\", Tx::from_levels(&rt::flag::LevelWords::of(0b11100, 5)) == Tx::Idle, Tx::from_levels(&rt::flag::LevelWords::of(0b10101, 5)) == Tx::Start);
+    // the widest variant keeps its payload: `Data { n: 7 }` has every payload level true
+    println!(\"widest {}\", Tx::Data { n: rt::UInt::<3>::new(7) }.to_levels().low());
+}
+";
+    let out = Probe::run(&texts, main);
+    let expected = [
+        "idle 5 0 false",
+        "stop 3 false",
+        "bytes [3, 0, 1] [0, 0, 1]",
+        "ignored true true",
+        "levels true true",
+        &format!("widest {}", 2 | (7 << 2)),
+    ];
+    assert_eq!(out.lines().collect::<Vec<_>>(), expected);
+}

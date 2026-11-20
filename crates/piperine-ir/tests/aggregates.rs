@@ -131,6 +131,18 @@ fn an_enum_tag_holds_its_discriminants() {
     assert_eq!(Entries::with(&negative.check(), "does not fit a 2-level tag").len(), 1);
     let empty_tag = Types::ir(|b| vec![ValueType::Enum(Types::tx(b, 0, [0, 1, 2]))]);
     assert_eq!(Entries::with(&empty_tag.check(), "outside 1..=64").len(), 1);
+    // §2 rule 5: an enum of one variant has a tag of zero levels
+    let one_variant = Types::ir(|b| {
+        let only = b.type_data(TypeData {
+            name: "One".into(),
+            path: "m::One".into(),
+            origin: Types::origin(3),
+            kind: TypeKind::Enum { tag_levels: 0, variants: vec![VariantData { name: "Only".into(), discriminant: 0, form: FieldsForm::Unit, fields: vec![] }] },
+            derives: Derives::default(),
+        });
+        vec![ValueType::Enum(only)]
+    });
+    assert_eq!(one_variant.check(), vec![], "a one-variant enum has a zero-level tag");
 }
 
 #[test]
