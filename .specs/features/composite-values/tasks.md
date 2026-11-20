@@ -302,8 +302,8 @@ T63
 
 **Done when**:
 
-- [ ] `rt::control::tests::trips_panic_past_two_to_the_twenty_four` and `rt::control::tests::depth_panics_past_one_thousand_twenty_four` pass under `**Run rt**`
-- [ ] Gate check passes: Quick
+- [x] `rt::control::tests::trips_panic_past_two_to_the_twenty_four` and `rt::control::tests::depth_panics_past_one_thousand_twenty_four` pass under `**Run rt**`
+- [x] Gate check passes: Quick
 
 **Tests**: unit
 **Gate**: quick
