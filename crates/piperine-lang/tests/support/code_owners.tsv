@@ -28,7 +28,6 @@ E0262	resolved-nets	L25
 E0264	resolved-nets	L25
 E0313	composite-values	L24 (array carriers)
 E0322	generics	L31 (generation)
-E0333	params-and-io	PI-12 AC 7, raised here
 E0340	generics	L31
 E0342	generics	L31
 E0351	composite-values	L5 (loops)

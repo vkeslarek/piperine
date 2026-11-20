@@ -519,6 +519,9 @@ impl Checker<'_> {
                         if local.is_none() && self.lets_open.contains_key(&decl) {
                             return self.self_read(file, node.span, decl);
                         }
+                        if let Some(Ty::Module(module)) = &local {
+                            return self.instance_as_value(file, node.span, decl, *module);
+                        }
                         if local.is_none() && !self.poisoned.contains(&decl) {
                             let what = if self.fn_where { "a value parameter in the `where` of a `fn`" } else { "a name whose type is unknown" };
                             self.unsupported(file, node.span, what);

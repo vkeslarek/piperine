@@ -19,7 +19,7 @@ impl Checker<'_> {
         let ExprKind::Field { expr: receiver, res, .. } = &node.kind else { return None };
         match res {
             Resolution::Decl(item) if self.is_child_item(*item) => {
-                self.infer(*receiver)?;
+                self.infer_receiver(*receiver)?;
                 self.item_type(*item, file, node.span)
             }
             // A missing or private item already has its `E0343`.
@@ -29,6 +29,19 @@ impl Checker<'_> {
                 None
             }
         }
+    }
+
+    /// The receiver of `inst.name`: an instance named there is the place a member is read from, not
+    /// a value read (§8.2.14, so no `E0333`); any other receiver is inferred as usual.
+    fn infer_receiver(&mut self, receiver: ExprId) -> Option<Ty> {
+        if let ExprKind::Path(path) = &self.design.expr_node(receiver).kind {
+            if let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) {
+                if let Some(instance @ Ty::Module(_)) = self.locals.get(&decl) {
+                    return Some(instance.clone());
+                }
+            }
+        }
+        self.infer(receiver)
     }
 
     /// The param `recv` names (through parentheses) and its type: a param of the module being

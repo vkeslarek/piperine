@@ -53,6 +53,19 @@ impl Checker<'_> {
         }
     }
 
+    /// The name `instance` of a placement of `module`, read as a value: an instance of a module
+    /// without a result has no value, `E0333` naming it (§8.2.14). One with a result is that value.
+    pub(super) fn instance_as_value(&mut self, file: FileId, span: Span, instance: DeclId, module: DeclId) -> Option<Ty> {
+        let has_result = matches!(&self.design.decl_data(module).kind, DeclKind::Module(m) if m.ret.is_some());
+        if has_result {
+            return Some(Ty::Module(module));
+        }
+        let name = self.design.decl_data(instance).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let message = format!("the instance `{name}` has no result: a module without a result is not a value (§8.2.14)");
+        self.coded(file, "E0333", span, message, "an instance without a result used as a value");
+        None
+    }
+
     /// Whether `decl` is a value input: a port whose type is a value, not a nature.
     pub(super) fn is_value_input(&self, decl: DeclId) -> bool {
         matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if self.design.nature_of(p.ty).is_none())

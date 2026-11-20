@@ -402,10 +402,10 @@ T44
 
 **Done when**:
 
-- [ ] `an_instance_without_a_result_used_as_a_value_is_e0333` passes under `**Run typesmodules**`
-- [ ] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `an_instance_without_a_result_used_as_a_value_is_e0333` passes under `**Run typesmodules**`
+- [x] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

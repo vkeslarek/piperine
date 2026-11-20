@@ -261,3 +261,13 @@ fn an_expression_on_a_carrier_port_that_is_not_in_is_e0315() {
         assert!(["2.0 * v(a)", "1.0", "true"].contains(&snippet(&src, &d[0])), "{}", snippet(&src, &d[0]));
     }
 }
+
+#[test]
+fn an_instance_without_a_result_used_as_a_value_is_e0333() {
+    // §8.2.14 (`E0333`): the name of an instance of a module without a result read as a value
+    // names the instance.
+    let (src, d) = diagnostics("module Top(a: E, b: E) { let r1 = Resistor { r: 1k }(a, b); let q = r1; }");
+    assert_eq!(codes_of(&d), ["E0333"], "{:?}", d.iter().map(|x| &x.diagnostic.message).collect::<Vec<_>>());
+    assert_eq!(snippet(&src, &d[0]), "r1");
+    assert!(d[0].diagnostic.message.contains("`r1`"), "{}", d[0].diagnostic.message);
+}
