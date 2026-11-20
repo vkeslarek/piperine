@@ -3,7 +3,7 @@
 //! a name that matches nothing is `E0801`, never a solver fault.
 
 use piperine_ir::Ir;
-use piperine_solver::prelude::{FlowOutput, NodeIdentifier};
+use piperine_solver::prelude::{FlowOutput, NodeIdentifier, NoiseAnalysisResult};
 
 use crate::failure::Failure;
 use crate::probe::Probe;
@@ -87,5 +87,51 @@ impl NoiseProbe {
 
     fn nothing(entry: &str, why: &str) -> Failure {
         Failure::Host { code: "E0801", message: format!("`{entry}` names nothing in the design: {why}") }
+    }
+}
+
+/// The result of a noise run as the host reads it: densities in V/√Hz or A/√Hz (the square
+/// root of the solver's power densities), the band totals in V or A, and each group's density
+/// (a source's name, else its instance path).
+#[derive(Debug, Clone, PartialEq)]
+pub struct NoiseReport {
+    /// The frequencies of the sweep, hertz.
+    pub frequencies: Vec<f64>,
+    /// The output density at each frequency.
+    pub output: Vec<f64>,
+    /// With an input: the output density referred to it, at each frequency.
+    pub input: Option<Vec<f64>>,
+    /// The band total of the output noise (`onoise_total`).
+    pub output_total: f64,
+    /// With an input: the band total of the input-referred noise (`inoise_total`).
+    pub input_total: Option<f64>,
+    /// Each group's density at each frequency, in first-seen order.
+    pub groups: Vec<(String, Vec<f64>)>,
+    /// The unit of the densities.
+    pub unit: &'static str,
+}
+
+impl NoiseReport {
+    /// The report of the solver's `result` for an output of `unit`: the root of each power
+    /// density, and the contributions that share a name summed into one group.
+    pub fn of(result: &NoiseAnalysisResult, unit: &'static str) -> NoiseReport {
+        let root = |powers: &[f64]| powers.iter().map(|power| power.sqrt()).collect::<Vec<f64>>();
+        let mut powers: Vec<(String, Vec<f64>)> = Vec::new();
+        for contribution in result.contributions() {
+            let name = if contribution.source.is_empty() { contribution.element.clone() } else { contribution.source.clone() };
+            match powers.iter_mut().find(|(group, _)| *group == name) {
+                Some((_, series)) => series.iter_mut().zip(&contribution.psd).for_each(|(sum, power)| *sum += power),
+                None => powers.push((name, contribution.psd.clone())),
+            }
+        }
+        NoiseReport {
+            frequencies: result.frequencies.clone(),
+            output: root(&result.out_noise_sq),
+            input: result.input_noise_sq.as_deref().map(root),
+            output_total: result.output_total,
+            input_total: result.input_total,
+            groups: powers.into_iter().map(|(name, series)| (name, root(&series))).collect(),
+            unit,
+        }
     }
 }

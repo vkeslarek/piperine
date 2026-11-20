@@ -9,6 +9,7 @@ use piperine_plan::CarrierLayout;
 use piperine_solver::prelude::{AcAnalysisResult, DcAnalysisResult, Net, PoleZeroResult, SensResult, TransferFunctionAnalysisResult, TransientAnalysisResult};
 
 use crate::failure::Failure;
+use crate::noise::NoiseReport;
 use crate::probe::Probe;
 use crate::held::Held;
 use crate::session::ParamPath;
@@ -228,6 +229,38 @@ impl Table {
             })
             .collect::<Result<Vec<_>, Failure>>()?;
         Ok(Table { columns, rows })
+    }
+
+    /// A noise run: the column `freq`, `onoise`, and `inoise` when the run has an input; one row
+    /// per frequency, the densities in the report's unit.
+    pub fn noise(report: &NoiseReport) -> Table {
+        let mut columns = vec!["freq".to_string(), "onoise".to_string()];
+        if report.input.is_some() {
+            columns.push("inoise".into());
+        }
+        let rows = report
+            .frequencies
+            .iter()
+            .enumerate()
+            .map(|(k, frequency)| {
+                let mut row = vec![Cell::Real(*frequency), Cell::Real(report.output[k])];
+                if let Some(input) = &report.input {
+                    row.push(Cell::Real(input[k]));
+                }
+                row
+            })
+            .collect();
+        Table { columns, rows }
+    }
+
+    /// The summary lines a noise run prints after its rows: `onoise_total`, and `inoise_total`
+    /// with an input, each as a name and a value.
+    pub fn summary(report: &NoiseReport) -> Vec<(String, f64)> {
+        let mut lines = vec![("onoise_total".to_string(), report.output_total)];
+        if let Some(total) = report.input_total {
+            lines.push(("inoise_total".to_string(), total));
+        }
+        lines
     }
 
     /// A transient: the column `time`, then one column per probe; one row per step the result

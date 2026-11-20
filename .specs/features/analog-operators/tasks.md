@@ -461,8 +461,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `a_noise_run_prints_freq_onoise_and_the_total`, `an_input_adds_inoise_and_its_total`, `the_library_returns_rows_totals_and_group_densities` and `a_design_with_no_noise_source_prints_zero_and_succeeds` pass
-- [ ] Gate check passes: `Run apinoise`, then `cargo test -p piperine-api`
+- [x] `a_noise_run_prints_freq_onoise_and_the_total`, `an_input_adds_inoise_and_its_total`, `the_library_returns_rows_totals_and_group_densities` and `a_design_with_no_noise_source_prints_zero_and_succeeds` pass
+- [x] Gate check passes: `Run apinoise`, then `cargo test -p piperine-api`
 
 **Tests**: integration
 **Gate**: full

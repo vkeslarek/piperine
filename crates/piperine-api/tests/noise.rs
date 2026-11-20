@@ -83,3 +83,96 @@ mod resolution {
         }
     }
 }
+
+mod run {
+    //! A noise run through the session, on the resistor and capacitor of the AC RC twin (neither
+    //! models a noise source, so every density is 0): the shape of the table, the summary and the
+    //! report.
+    use std::cell::RefCell;
+    use std::path::{Path, PathBuf};
+    use std::rc::Rc;
+    use std::sync::OnceLock;
+
+    use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table};
+    use piperine_transpile::Settings;
+
+    /// A sink that keeps nothing: these tests read the table and the report.
+    struct Ignore;
+
+    impl RecordSink for Ignore {
+        fn record(&mut self, _: &Record) {}
+    }
+
+    fn settings() -> Settings {
+        static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
+        let dir = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
+        Settings { rustc: None, cache: dir.path().to_path_buf() }
+    }
+
+    /// The finished session of a noise run of the AC RC twin from 1 kHz to 1 MHz, 1 point per
+    /// decade (`round(1 * 3) + 1 = 4` frequencies), and its table.
+    fn run(input: Option<&str>) -> (Session, Table) {
+        let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/ac_rc.msl");
+        let project = Project::file(&path).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides {
+            analysis: Some("noise".into()),
+            output: Some("out".into()),
+            input: input.map(str::to_string),
+            from: Some(1e3),
+            to: Some(1e6),
+            per_decade: Some(1),
+            ..Overrides::default()
+        };
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+        let table = session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
+        (session, table)
+    }
+
+    #[test]
+    fn a_noise_run_prints_freq_onoise_and_the_total() {
+        // AO-05 AC 1: columns `freq`, `onoise`; one row per frequency, 1e3 to 1e6 at one point
+        // per decade is 4 rows; the summary is `onoise_total` alone.
+        let (session, table) = run(None);
+        assert_eq!(table.columns, ["freq", "onoise"]);
+        let frequencies: Vec<f64> = table.rows.iter().map(|row| match row[0] { Cell::Real(f) => f, _ => panic!("a frequency") }).collect();
+        assert_eq!(frequencies.len(), 4);
+        let want = [1e3, 1e4, 1e5, 1e6];
+        for (got, want) in frequencies.iter().zip(want) {
+            assert!((got - want).abs() <= 1e-9 * want, "{got} vs {want}");
+        }
+        let report = session.noise_report().expect("a report");
+        assert_eq!(Table::summary(report), [("onoise_total".to_string(), 0.0)]);
+    }
+
+    #[test]
+    fn an_input_adds_inoise_and_its_total() {
+        // AO-05 AC 2: with `input = v1` the table gains `inoise`, the summary `inoise_total`.
+        // A noiseless circuit refers 0 to the input: 0 / |H|^2 = 0.
+        let (session, table) = run(Some("v1"));
+        assert_eq!(table.columns, ["freq", "onoise", "inoise"]);
+        let report = session.noise_report().expect("a report");
+        let names: Vec<String> = Table::summary(report).into_iter().map(|(name, _)| name).collect();
+        assert_eq!(names, ["onoise_total", "inoise_total"]);
+    }
+
+    #[test]
+    fn the_library_returns_rows_totals_and_group_densities() {
+        // AO-05 AC 7: the report carries the rows, the totals, the unit and the groups (none: no
+        // device of the design has a noise source).
+        let (session, _) = run(Some("v1"));
+        let report = session.noise_report().expect("a report");
+        assert_eq!(report.frequencies.len(), 4);
+        assert_eq!(report.output.len(), 4);
+        assert_eq!(report.unit, "V/sqrt(Hz)");
+        assert!(report.groups.is_empty(), "{:?}", report.groups);
+        assert_eq!(report.output_total, 0.0);
+    }
+
+    #[test]
+    fn a_design_with_no_noise_source_prints_zero_and_succeeds() {
+        // AO-05 edge case: no source means a density of 0 at every frequency, not a failure.
+        let (_, table) = run(None);
+        assert!(table.rows.iter().all(|row| row[1] == Cell::Real(0.0)), "{:?}", table.rows);
+    }
+}
