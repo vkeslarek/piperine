@@ -1,4 +1,4 @@
-//! Scope: the deviation table (HYG-06): each of the 14 twins that are operating points, waveforms or
+//! Scope: the deviation table (HYG-06): each of the 15 twins that are operating points, waveforms or
 //! sweeps (the three of `host-ii` that give resistances, eigenvalues and derivatives print their own
 //! deviation, `OWN_TARGET`) is run with the policy of its own
 //! `parity_*` target and the worst `|golden - actual| / bound` of every compared quantity is
@@ -139,9 +139,10 @@ fn floor(golden: &piperine_parity::golden::Golden) -> Measured {
 
 /// The twins whose source reads the time, which only the compiled backend runs.
 ///
-/// `uic_rc` joined them with `analog-structure` (T23): `CapIc` reads `analysis(..)`, which the
-/// interpreter refuses by name (T15).
-const COMPILED_ONLY: [&str; 5] = ["tran_jump", "tran_corner", "tran_floor", "pss_rc", "uic_rc"];
+/// `uic_rc` and `diode_rs` joined them with `analog-structure` (T23, T24): `CapIc` reads
+/// `analysis(..)` and `DiodeRs` selects a contribution by a param, forms the interpreter refuses by
+/// name (T15).
+const COMPILED_ONLY: [&str; 6] = ["tran_jump", "tran_corner", "tran_floor", "pss_rc", "uic_rc", "diode_rs"];
 
 /// The twins of `host-ii` whose `parity_*` target measures and prints its own deviation per
 /// quantity (`parity_tf`, `parity_pz`, `parity_sens`): resistances, eigenvalues and derivatives
@@ -226,6 +227,8 @@ fn measure(backend: Backend) -> Option<BTreeMap<&'static str, Measured>> {
         table.insert("pss_rc", pss_rc(&golden, backend));
         let Reference::Golden(golden) = ngspice.run("uic_rc") else { return None };
         table.insert("uic_rc", tran("uic_rc", "uic_rc_tran", "out", &golden, backend));
+        let Reference::Golden(golden) = ngspice.run("diode_rs") else { return None };
+        table.insert("diode_rs", operating_point(&OperatingPoint { fixture: "diode_rs", nodes: &["vin", "a"] }, &golden, backend));
     }
     Some(table)
 }

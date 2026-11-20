@@ -1,0 +1,31 @@
+//! Twin of `tests/ngspice/diode_rs.cir`: 5 V behind 1 kOhm into a diode with a 100 Ohm series
+//! resistance. The series resistance is the params-only pattern of the section 18 `Diode` without
+//! `Option` (analog-structure Q2): `rs` > 0 puts a resistor between `a` and the internal node `ai`;
+//! `rs` = 0 selects the short `v(a, ai) +> 0.0`, which fixes the branch as a potential at
+//! elaboration and merges `a` and `ai` (section 11 rule 3).
+mod devices;
+use devices::*;
+
+/// Junction diode (as `devices::Diode`) with a series resistance `rs` between `a` and the junction.
+module DiodeRs(a: Electrical, k: Electrical) {
+    is: f64 = 1e-14 where is > 0.0;
+    n: f64 = 1.0 where n > 0.0;
+    rs: f64 = 0.0 where rs >= 0.0;
+    signal ai: Electrical;
+}
+analog for DiodeRs {
+    if rs > 0.0 { i(a, ai) +> v(a, ai) / rs; } else { v(a, ai) +> 0.0; }
+    let nvt   = n * vt();
+    let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();
+    let vd    = limit(v(ai, k), |new, old| pnjlim(new, old, nvt, vcrit), vcrit);
+    let id    = is * ((vd / nvt).exp() - 1.0);
+    i(ai, k) +> id + gmin() * vd;
+}
+
+module DiodeRsBench() {
+    signal vin: Electrical;
+    signal a: Electrical;
+    let v1 = Vsource { dc: 5.0 }(vin, gnd);
+    let r1 = Resistor { r: 1k }(vin, a);
+    let d1 = DiodeRs { is: 1e-14, n: 1.0, rs: 100.0 }(a, gnd);
+}

@@ -354,3 +354,16 @@ fn an_override_of_a_key_param_lowers_its_variant() {
     assert_eq!(plain.instance_at("Top.m").expect("m").body().name(), "Sw~short=1.0", "the default variant: the binding names no key param");
     assert_eq!(body_names(&Elaborator::new(&design).run("Top").expect("elaborates")), body_names(&plain));
 }
+
+#[test]
+fn the_section_18_diode_waits_for_params_and_io() {
+    // AS-05 AC 3 and 4 (Q2): the section 18 `Diode` as the spec writes it has `rs: Option<f64>`, an
+    // `Option` param that `params-and-io` (L28) owns. Until then it is refused by name, not mis-run:
+    // `P0001` naming the param type. The local `DiodeRs` (`tests/ngspice/diode_rs.msl`) proves the
+    // mechanism with a params-only `f64` selector.
+    let src = "module Diode(a: Electrical, k: Electrical) {\n    is: f64 = 1e-14 where is > 0.0;\n    rs: Option<f64>;\n    signal ai: Electrical;\n}\nanalog for Diode {\n    match rs {\n        Some(r) => { i(a, ai) +> v(a, ai) / r; }\n        None    => { v(a, ai) +> 0.0; }\n    }\n    i(ai, k) +> is * (v(ai, k) / vt()).exp();\n}\nmodule Top() { signal s: Electrical; let d = Diode { rs: Some(100.0) }(s, gnd); }";
+    let design = Elab::design(src);
+    let found = piperine_lang::types::Types::check(&design, "Top").expect_err("the Option param is refused");
+    assert_eq!(Elab::codes(&found), ["P0001"]);
+    assert!(found[0].diagnostic.message.contains("Option"), "the refusal names the param type: {}", found[0].diagnostic.message);
+}

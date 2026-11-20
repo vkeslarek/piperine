@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use piperine_interp::Interpreter;
 use piperine_ir::{BranchKind, Ir};
-use piperine_lang::elab::Elaborator;
+use piperine_lang::elab::{Elaborator, Overrides};
 use piperine_lang::types::Types;
 use piperine_lang::pom::{Design, DesignDiagnostic, Reflect};
 use piperine_solver::prelude::{BranchIdentifier, CircuitInstance, NodeIdentifier, ParamValue};
@@ -54,6 +54,12 @@ impl Bench {
     /// backend transpiles the design and builds it with `rustc` into a cache directory of this
     /// bench's own, unless `PIPERINE_CACHE_DIR` names one; a failure names its stage.
     pub fn load_file_on(fixture: &str, path: impl Into<PathBuf>, backend: Backend) -> Bench {
+        Self::load_file_with_on(fixture, path, backend, &Overrides::none())
+    }
+
+    /// [`load_file_on`](Self::load_file_on) with the before-run bindings `overrides` (`<instance>.<param>`)
+    /// handed to the elaborator, so a binding of a structural param selects its body variant.
+    pub fn load_file_with_on(fixture: &str, path: impl Into<PathBuf>, backend: Backend, overrides: &Overrides) -> Bench {
         let design = Design::builder().root_file(path).build();
         if !design.diagnostics().is_empty() {
             Self::fail(fixture, "parse", design.diagnostics());
@@ -65,7 +71,7 @@ impl Bench {
         if let Err(found) = Types::check(&design, top) {
             Self::fail(fixture, "typeck", &found);
         }
-        let ir = Elaborator::new(&design).run(top).unwrap_or_else(|found| Self::fail(fixture, "elaborate", &found));
+        let ir = Elaborator::new(&design).run_with(top, overrides).unwrap_or_else(|found| Self::fail(fixture, "elaborate", &found));
         let (circuit, compiled, cache) = match backend {
             Backend::Interp => {
                 let interpreter = match Interpreter::new(Arc::new(ir.clone())) {
@@ -99,6 +105,11 @@ impl Bench {
         })
         .unwrap_or_else(|error| panic!("{fixture}: stage `settings`: {error}"));
         (settings, cache)
+    }
+
+    /// The elaborated design the bench runs.
+    pub fn ir(&self) -> &Ir {
+        &self.ir
     }
 
     /// The backend this bench runs on.

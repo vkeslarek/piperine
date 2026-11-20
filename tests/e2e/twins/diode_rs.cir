@@ -1,0 +1,14 @@
+* diode_rs - the rdiode clamp with a series resistance in the diode model
+* (rs=100): 5 V behind 1 kOhm into a diode whose junction sits behind
+* 100 Ohm. The twin's `DiodeRs` selects `i(a, ai) +> v(a, ai) / rs` for
+* rs > 0 and the short `v(a, ai) +> 0` otherwise (a params-only selector,
+* analog-structure AS-02); with rs=0 it is `rdiode.cir`.
+V1 vin 0 DC 5
+R1 vin a 1k
+D1 a 0 DMOD
+.model DMOD D (is=1e-14 n=1 rs=100)
+.control
+op
+print v(a) v(vin)
+.endc
+.end
