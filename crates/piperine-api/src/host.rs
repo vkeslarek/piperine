@@ -80,15 +80,13 @@ impl Session {
     /// Sets the param `path` (`<instance>.<param>`) to `value` at time `at`: before the run
     /// (`at = 0`) as a `set` before the analysis, later after the step to `at` is accepted, so a
     /// node its behavior reads keeps its old value at `at`. `E0801` for a path that names no
-    /// param, `E0803` for a structural param at `at > 0`, `E0802` for a value its `where`
+    /// param, `E0803` for a structural param (at any `at`: the body is elaborated), `E0802` for a value its `where`
     /// refuses, `E0806` for a negative `at` or one past the transient's stop.
     pub fn set_at(&mut self, path: &str, value: f64, at: f64) -> Result<(), Failure> {
         let action = format!("the set of `{path}`");
         Session::not_before(at, &action)?;
         let param = ParamPath::resolve(self.ir(), self.ir().top().path(), path)?;
-        if at > 0.0 {
-            param.refuse_timed(self.ir())?;
-        }
+        param.refuse_structural(self.ir())?;
         self.ready_for(at, &action)?;
         if at > 0.0 {
             // the values a timed set derives depend on every other set due before it, whatever the

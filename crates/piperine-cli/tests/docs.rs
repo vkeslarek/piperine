@@ -274,13 +274,13 @@ fn gaps_drops_what_msl_fixes_closed() {
         assert!(gaps.contains(kept), "GAPS.md keeps {kept}");
     }
     // the counts follow, as `host-ii` moved them, `unknown-semantics` (L18, L19) after it and
-    // `analog-structure` (nine loud rows and S4) after that: 2 silent, 2 broken, 40 loud
-    assert!(gaps.contains("2 silent, 2 broken, 40 loud"), "the counts of §9 follow");
+    // `analog-structure` (nine loud rows and S4) after that: 2 silent, 2 broken, 41 loud
+    assert!(gaps.contains("2 silent, 2 broken, 41 loud"), "the counts of §9 follow");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
     assert_eq!(rows("## 3. Silent", "## 4."), 2, "two silent entries");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 40, "forty loud rows");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 41, "forty-one loud rows");
 }
 
 #[test]
@@ -377,7 +377,7 @@ fn gaps_drops_what_analog_structure_closed() {
     let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("GAPS.md has the row {id}")).to_string();
     assert!(!row("L58").contains("`slew`"), "L58 no longer lists slew: {}", row("L58"));
     assert!(row("L60").contains("slew") && row("L60").contains("analog-operators"), "L60 records the ideal step and its owner: {}", row("L60"));
-    // the cluster is delivered and the counts follow: 2 silent, 2 broken, 40 loud (checked above)
+    // the cluster is delivered and the counts follow: 2 silent, 2 broken, 41 loud (checked above)
     assert!(gaps.contains("| Analog structure (delivered, MD-71) |"), "the cluster is marked delivered");
 }
 

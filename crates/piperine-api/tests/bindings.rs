@@ -45,14 +45,21 @@ module Top() {
 }
 ";
 
-fn run(params: Vec<(String, f64)>) -> Table {
+fn open(overrides: Overrides) -> Result<Session, piperine_api::Failure> {
     let dir = tempfile::tempdir().expect("tmp");
     let file = dir.path().join("bench.msl");
     std::fs::write(&file, SOURCE).expect("write");
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
-    let overrides = Overrides { analysis: Some("op".into()), backend: Some("rust".into()), top: Some("Top".into()), print: vec!["a".into(), "c".into()], params, ..Overrides::default() };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    Session::open(&project, &spec, &settings())
+}
+
+fn op_overrides(params: Vec<(String, f64)>) -> Overrides {
+    Overrides { analysis: Some("op".into()), backend: Some("rust".into()), top: Some("Top".into()), print: vec!["a".into(), "c".into()], params, ..Overrides::default() }
+}
+
+fn run(params: Vec<(String, f64)>) -> Table {
+    let mut session = open(op_overrides(params)).unwrap_or_else(|f| panic!("{f}"));
     session.run(Rc::new(RefCell::new(Kept))).unwrap_or_else(|f| panic!("{f}"))
 }
 
@@ -75,6 +82,23 @@ fn a_before_run_binding_of_a_structural_param_selects_its_variant() {
     close(real(&table.rows[0][1]), 0.25, "the default variant");
     let table = run(vec![("Top.m.short".into(), 0.0)]);
     close(real(&table.rows[0][1]), 1.0, "short = 0");
+}
+
+#[test]
+fn a_write_of_a_structural_param_after_open_is_e0803() {
+    // F1: `short` fixes the variant at elaboration, so a sweep of it, or a `set` between open and
+    // the run, would run the variant of the old value: both are refused naming it (§23.1 rule 7)
+    let sweep = Overrides { analysis: Some("dc".into()), sweep: Some("Top.m.short".into()), from: Some(0.0), to: Some(1.0), step: Some(1.0), backend: Some("rust".into()), top: Some("Top".into()), print: vec!["a".into()], ..Overrides::default() };
+    match open(sweep) {
+        Err(piperine_api::Failure::Host { code: "E0803", message }) => assert!(message.contains("Top.m.short"), "{message}"),
+        other => panic!("a sweep of a key param is E0803, found {:?}", other.map(|_| ())),
+    }
+    let mut session = open(op_overrides(vec![])).unwrap_or_else(|f| panic!("{f}"));
+    match session.set_at("Top.m.short", 0.0, 0.0) {
+        Err(piperine_api::Failure::Host { code: "E0803", message }) => assert!(message.contains("Top.m.short"), "{message}"),
+        other => panic!("a set of a key param is E0803, found {other:?}"),
+    }
+    session.set_at("Top.l.scale", 2.0, 0.0).expect("a plain param is still the host's write");
 }
 
 #[test]

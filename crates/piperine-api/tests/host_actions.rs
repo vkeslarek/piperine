@@ -220,12 +220,12 @@ fn a_timed_set_of_a_structural_param_is_e0803() {
     let marked = serde_json::to_string(s.ir()).expect("serialize").replace("\"structural\":false", "\"structural\":true");
     let ir: piperine_ir::Ir = serde_json::from_str(&marked).expect("deserialize");
     let r = ParamPath::resolve(&ir, ir.top().path(), "r1.r").expect("resolves");
-    match r.refuse_timed(&ir).expect_err("structural") {
+    match r.refuse_structural(&ir).expect_err("structural") {
         Failure::Host { code: "E0803", message } => assert!(message.contains("Top.r1.r"), "{message}"),
         other => panic!("E0803, found {other}"),
     }
     let plain = ParamPath::resolve(s.ir(), s.ir().top().path(), "r1.r").expect("resolves");
-    plain.refuse_timed(s.ir()).expect("a param the elaborator leaves unmarked is not refused");
+    plain.refuse_structural(s.ir()).expect("a param the elaborator leaves unmarked is not refused");
 }
 
 #[test]

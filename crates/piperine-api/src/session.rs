@@ -113,12 +113,14 @@ impl ParamPath {
         format!("{}.{}", self.instance, self.param)
     }
 
-    /// `E0803` when this param is structural: a structural param is fixed at elaboration, so a
-    /// `set` of it during a run (at a time after the start) is refused (§23.1 rule 7).
-    pub fn refuse_timed(&self, ir: &Ir) -> Result<(), Failure> {
+    /// `E0803` when this param is structural: a structural param selects the body at elaboration,
+    /// so a write of it after the session opened (a `set` at any time, a sweep of it) would run
+    /// the variant of its old value; it is refused (§23.1 rule 7). Its value before the run is a
+    /// request param, an elaboration input.
+    pub fn refuse_structural(&self, ir: &Ir) -> Result<(), Failure> {
         let structural = ir.instance_at(&self.instance).and_then(|i| i.body().params().iter().find(|p| p.name == self.param).map(|p| p.structural));
         match structural {
-            Some(true) => Err(Failure::Host { code: "E0803", message: format!("`{}` is a structural param: it cannot change during a run, re-elaborate instead", self.label()) }),
+            Some(true) => Err(Failure::Host { code: "E0803", message: format!("`{}` is a structural param: its value selects the body at elaboration, so a write after the session opened would run the old variant: give it as a request param (before `open`) or re-elaborate", self.label()) }),
             _ => Ok(()),
         }
     }
@@ -169,7 +171,13 @@ impl Session {
         }
         streams.keep(&spec.streams)?;
         let swept = match &spec.analysis {
-            Analysis::Dc { sweep, .. } => Some(ParamPath::resolve(&ir, ir.top().path(), sweep)?),
+            Analysis::Dc { sweep, .. } => {
+                let path = ParamPath::resolve(&ir, ir.top().path(), sweep)?;
+                // a sweep of a key param needs one elaboration per value (GAPS: owned by
+                // sweeps-montecarlo-optimization): refused before anything compiles
+                path.refuse_structural(&ir)?;
+                Some(path)
+            }
             _ => None,
         };
         // every param path resolves before anything compiles: a typo costs no `rustc`
@@ -739,15 +747,18 @@ mod tests {
     #[test]
     fn set_at_refuses_a_structural_param_after_the_start_before_the_run() {
         // HII-13 AC 3 (§23.1 rule 7, F12): a set of a structural param at 0.5 us is E0803 naming
-        // it, given before the run starts, and the session still runs; the same set at 0 is not
-        // timed, so the structural check does not apply to it
+        // it, given before the run starts, and the session still runs; the same set at 0 is refused
+        // too (F1): the body was elaborated with the old value, so the write would run its variant
         let (_dir, mut session) = structural_session();
         match session.set_at("r1.r", 2000.0, 5e-7) {
             Err(Failure::Host { code: "E0803", message }) => assert!(message.contains("Top.r1.r"), "{message}"),
             other => panic!("E0803, found {other:?}"),
         }
         assert!(session.circuit().is_some(), "the refusal ran no analysis");
-        session.set_at("r1.r", 2000.0, 0.0).expect("a set at 0 is a set before the analysis");
+        match session.set_at("r1.r", 2000.0, 0.0) {
+            Err(Failure::Host { code: "E0803", message }) => assert!(message.contains("Top.r1.r"), "{message}"),
+            other => panic!("E0803, found {other:?}"),
+        }
     }
 
     #[test]
