@@ -113,11 +113,11 @@ block	modules#12	7d514f590b39e281	refused	piperine/book_modules::a_function_that
 block	modules#13	306ed28d3083ab43	fragment	modules#12	-	-
 block	modules#14	25696a4b4e2cdf58	refused	piperine/book_modules::the_extern_osdi_module_is_refused	L33	-
 block	analog#1	86764b71680a9fd9	run	piperine/book_analog::a_capacitor_is_open_and_an_inductor_is_a_short_at_the_operating_point	-	-
-block	analog#2	bf3cc4ac19e90181	refused	piperine/book_analog::the_clipper_is_refused_for_limexp	L9	-
-block	analog#3	6395ae5e780ffca4	refused	piperine/book_analog::the_clipper_is_refused_for_limexp	L9	-
+block	analog#2	bf3cc4ac19e90181	run	piperine/book_analog::the_clipper_prints_one_clip_record_per_period_near_0_72_volts	-	-
+block	analog#3	6395ae5e780ffca4	run	piperine/book_analog::the_clipper_prints_one_clip_record_per_period_near_0_72_volts	-	-
 block	analog#4	f44e0e6d9f174a31	shown	-	-	-
 block	analog#5	f0d9aa24342fc413	shown	-	-	-
-block	analog#6	a2255f2e88bc2fe9	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run clipper.msl --analysis transient --stop 2e-3 --print vin --print vout --stream clip --plot clipper.svg
+block	analog#6	86627a9b1ef08bf0	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run clipper.msl --analysis transient --stop 2e-3 --print vin --print vout --stream clip --plot clipper.svg
 block	analog#7	2dcf8ccdabaf5fbf	refused	piperine/book_analog::the_diode_with_a_trace_is_refused	L49	-
 block	analog#8	c75a64c2f73e0062	shown	-	-	-
 block	analog#9	618d2c0b12b5a698	run	piperine/book_analog::the_switch_shorts_its_nodes_while_its_control_is_high	-	-
@@ -406,7 +406,7 @@ claim	modules~4bcf211d	4bcf211dc68711ea	holds	piperine/book_modules::e0330_one_n
 claim	modules~54e1b71d	54e1b71dcbc8277f	holds	piperine/book_modules::e0401_a_module_and_its_behavior_live_in_one_file	-	E0401
 claim	modules~4bcb9f1d	4bcb9f1dc683ff2d	unraised	piperine/book_modules::e0304_is_not_raised_a_generic_ladder_is_refused_before_its_where_is_checked	L30	E0304
 claim	analog~8f90421c	8f90421cf10f758d	holds	piperine/book_analog::the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation	-	The clip stream answers a sharper question, "when does the clipping start, and how high is the input then?".
-claim	analog~773a3851	773a3851ccd5ff87	refused	analog#3	L9	Today the command stops at the source, with those three diagnostics, and runs nothing:
+claim	analog~750ad45d	750ad45df3f747a1	holds	piperine/book_analog::the_clipper_prints_one_clip_record_per_period_near_0_72_volts	-	The command runs: it prints the two clip records, then the table of the rows, and writes the plot:
 claim	analog~139c67b5	139c67b5de8bbf3a	refused	analog#7	L49	This emit! runs when the code around it runs, and analog runs at every evaluation: every Newton iteration of every step, including iterations and whole steps that the solver later rejects.
 claim	analog~b103eeb0	b103eeb07178680c	refused	analog#7	L49	The piperine command prints the records of reactions; a trace from analog is not among the lines it shows.
 claim	analog~c91537fe	c91537fe5beade7a	holds	piperine/book_analog::e0414_a_branch_that_switches_kind_on_a_probe_is_refused	-	A choice of kind that depends on a probe is an error (E0414), because the solver would have to change the equations while it is solving them.

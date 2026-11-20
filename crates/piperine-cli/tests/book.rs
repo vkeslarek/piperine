@@ -527,20 +527,22 @@ fn the_cycle_counter_prints_three_pulses() {
 }
 
 #[test]
-fn the_clipper_refusal_no_longer_names_sin() {
-    // CAT-05 AC 3: the clipper's refusal names `limexp`, not `settle` (compiled since
-    // unknown-semantics-events T5), `sin` or `bound_step`, and the page's prose around it does not wait
-    // for them either.
+fn the_clipper_runs_as_the_book_prints() {
+    // UE-06 AC 3, UE-07 AC 2: the clipper's listing is the binary's output (`every_cli_listing_of_the_book_is_what_the_binary_prints`
+    // holds the bytes): two `clip` records, one per period, each `vin` near 0.72, and the page's
+    // prose around it no longer waits for `settle` or `limexp`.
     let out = run_listing("piperine run clipper.msl");
-    assert!(out.contains("limexp"), "{out}");
-    for gone in ["`settle`", "`sin`", "method sin", "bound_step"] {
-        assert!(!out.contains(gone), "the refusal still names {gone}: {out}");
+    let clips: Vec<&str> = out.lines().filter(|l| l.contains(" clip t=")).collect();
+    assert_eq!(clips.len(), 2, "one clip record per period: {out}");
+    for clip in clips {
+        let vin: f64 = clip.split_whitespace().find_map(|w| w.strip_prefix("vin=")).and_then(|v| v.parse().ok()).unwrap_or_else(|| panic!("vin in `{clip}`"));
+        assert!((vin - 0.72).abs() < 0.05, "vin within 50 mV of 0.72 V: {clip}");
     }
     let html = content();
     let at = html.find("piperine run clipper.msl").expect("the clipper's command");
     let callout = &html[at..at + html[at..].find("</div>").expect("the callout closes")];
     let prose = plain(callout);
-    for gone in ["once `sin`", "`bound_step` is compiled", "sin is compiled", "bound_step is compiled"] {
+    for gone in ["are compiled", "does not take", "runs nothing", "those three diagnostics"] {
         assert!(!prose.contains(gone), "the clipper's prose still says {gone:?}");
     }
 }

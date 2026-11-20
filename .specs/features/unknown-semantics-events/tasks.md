@@ -616,10 +616,10 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `the_clipper_prints_one_clip_record_per_period_near_0_72_volts` passes under `**Run bookanalog**`
-- [ ] `the_clipper_runs_as_the_book_prints` and `every_cli_listing_of_the_book_is_what_the_binary_prints` pass under `**Run clibook**`
-- [ ] `**Run bookinventory**` passes
-- [ ] Gate check passes: Build
+- [x] `the_clipper_prints_one_clip_record_per_period_near_0_72_volts` passes under `**Run bookanalog**`
+- [x] `the_clipper_runs_as_the_book_prints` and `every_cli_listing_of_the_book_is_what_the_binary_prints` pass under `**Run clibook**`
+- [x] `**Run bookinventory**` passes
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build

@@ -467,11 +467,8 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | modules~4bcf201d | D3 | `params-and-io` | `E0333` is not raised: an instance used as a value is `P0002`, mismatched types |
 | modules~4bd9131d | L31 | `generics` | `E0340` is not raised: a `for` in a body is `P0001`, generation is refused |
 | modules~4bcb9f1d | L30 | `generics` | `E0304` is not raised: `Ladder::<0>` is `P0001`, the generic module is refused |
-| analog#2 | L9 | `composite-values` | the devices are `P0001` twice: `limexp` is written with a closure, `limit(x, \|new, old\| ..)`, and its two parameters are a binding inside a module |
-| analog#3 | L9 | `composite-values` | the clipper with its `on settle` reaction gives the two diagnostics of the listing, the closure parameters of `limexp`, and runs nothing |
-| analog#7 | L49 | `analog-operators` | `emit!("newton", ..)` in an `analog` block is `P0001`, next to the `limexp` closure |
+| analog#7 | L49 | `analog-operators` | `emit!("newton", ..)` in an `analog` block is `P0001` |
 | analog#11 | L45 | `analog-operators` | `noise(..)` is `P0001`: core primitive `noise` |
-| analog~773a3851 | L9 | `composite-values` | the command stops at the source with the two diagnostics of analog#3: held with analog#3 (the sentence still counts three, until `unknown-semantics-events` T21) |
 | analog~139c67b5 | L49 | `analog-operators` | a trace from `analog` is refused with analog#7: no record per Newton iteration exists |
 | analog~b103eeb0 | L49 | `analog-operators` | no trace line reaches the command: the `emit!` in `analog` is refused with analog#7 |
 | digital#6 | L5 | `composite-values` | `Pfd3` is `P0001`: `let mut` and assignment, and the names whose type follows from them; its event reads (`fref.rise() && s < 1`) run (`unknown-semantics-events` T14) |

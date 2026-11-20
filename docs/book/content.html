@@ -2658,30 +2658,126 @@ module Clipper() {
   <p class="callout-label">Run it</p>
   <p>Save the clipper with its <code>digital</code> block as <code>clipper.msl</code>. Two periods, the <code>clip</code> records on the terminal, the waveform as a picture:</p>
 <pre data-lang="sh">piperine run clipper.msl --analysis transient --stop 2e-3 --print vin --print vout --stream clip --plot clipper.svg</pre>
-  <p>Look for two <code>clip</code> lines, one per period, each with <code>vin</code> near 0.72. Then open <code>clipper.svg</code> in a browser: the sine and its clipped copy on one axis. To keep the <code>wave</code> records instead of printing them, send every record to a file with <code>--records wave.jsonl</code>, one JSON object per line. That is, once <code>settle</code> and <code>limexp</code> are compiled: the first is an event the compiler does not take yet, and <code>limexp</code> is written with a closure, <code>|new, old| deltalim(..)</code>, whose bindings it does not take either. Today the command stops at the source, with those three diagnostics, and runs nothing:</p>
-<pre data-lang="text" data-cli-output="piperine run clipper.msl --analysis transient --stop 2e-3 --print vin --print vout --stream clip --plot clipper.svg" data-cli-stream="stderr" data-cli-lines="1-3">P0001
+  <p>Look for two <code>clip</code> lines, one per period, each with <code>vin</code> near 0.72. Then open <code>clipper.svg</code> in a browser: the sine and its clipped copy on one axis. To keep the <code>wave</code> records instead of printing them, send every record to a file with <code>--records wave.jsonl</code>, one JSON object per line. The command runs: it prints the two <code>clip</code> records, then the table of the rows, and writes the plot:</p>
+<pre data-lang="text" data-cli-output="piperine run clipper.msl --analysis transient --stop 2e-3 --print vin --print vout --stream clip --plot clipper.svg" data-cli-lines="1-3">run clipper: transient, top Clipper, backend rust
+@5.850282e-5 Clipper clip t=5.850282e-5 vin=7.187239e-1
+@1.058503e-3 Clipper clip t=1.058503e-3 vin=7.187239e-1
 
-  × binding inside a module is not supported yet
-    ╭─[analog.msl:19:46]
- 18 │ 
- 19 │ pub module limexp(x: f64) -&gt; f64 { limit(x, |new, old| deltalim(new, old, 1.0)).exp() }
-    ·                                              ─┬─
-    ·                                               ╰── binding inside a module is outside the M1 subset
- 20 │ 
-    ╰────
-
-P0001
-
-  × binding inside a module is not supported yet
-    ╭─[analog.msl:19:51]
- 18 │ 
- 19 │ pub module limexp(x: f64) -&gt; f64 { limit(x, |new, old| deltalim(new, old, 1.0)).exp() }
-    ·                                                   ─┬─
-    ·                                                    ╰── binding inside a module is outside the M1 subset
- 20 │ 
-    ╰────
-
-error: typeck failed with 2 diagnostic(s)</pre>
+time         Clipper.vin    Clipper.vout
+0.000000e0   0.000000e0     0.000000e0
+2.000000e-6  2.513208e-2    2.513208e-2
+5.000000e-6  6.282152e-2    6.282152e-2
+9.500000e-6  1.193096e-1    1.193096e-1
+1.625000e-5  2.038489e-1    2.038489e-1
+2.637500e-5  3.299231e-1    3.299196e-1
+4.156250e-5  5.163736e-1    5.123645e-1
+5.831603e-5  7.165329e-1    5.996065e-1
+5.842973e-5  7.178667e-1    5.998472e-1
+5.847376e-5  7.183831e-1    5.999399e-1
+5.849106e-5  7.185860e-1    5.999763e-1
+5.849790e-5  7.186661e-1    5.999906e-1
+5.850060e-5  7.186979e-1    5.999963e-1
+5.850167e-5  7.187104e-1    5.999985e-1
+5.850282e-5  7.187239e-1    6.000009e-1
+7.850282e-5  9.469781e-1    6.257461e-1
+9.850282e-5  1.160298e0     6.383060e-1
+1.185028e-4  1.355319e0     6.462270e-1
+1.385028e-4  1.528966e0     6.517305e-1
+1.585028e-4  1.678500e0     6.557012e-1
+1.785028e-4  1.801564e0     6.585749e-1
+1.985028e-4  1.896215e0     6.605905e-1
+2.185028e-4  1.960962e0     6.618858e-1
+2.385028e-4  1.994784e0     6.625379e-1
+2.585028e-4  1.997146e0     6.625828e-1
+2.785028e-4  1.968013e0     6.620231e-1
+2.985028e-4  1.907843e0     6.608279e-1
+3.185028e-4  1.817585e0     6.589270e-1
+3.385028e-4  1.698662e0     6.561939e-1
+3.585028e-4  1.552951e0     6.524086e-1
+3.785028e-4  1.382748e0     6.471751e-1
+3.985028e-4  1.190739e0     6.397046e-1
+4.185028e-4  9.799514e-1    6.281009e-1
+4.385028e-4  7.537092e-1    6.057032e-1
+4.585028e-4  5.155805e-1    5.116766e-1
+4.785028e-4  2.693208e-1    2.693205e-1
+4.985028e-4  1.881380e-2    1.881380e-2
+5.185028e-4  -2.319899e-1   -2.319898e-1
+5.385028e-4  -4.791350e-1   -4.780704e-1
+5.585028e-4  -7.187239e-1   -6.000009e-1
+5.785028e-4  -9.469781e-1   -6.257461e-1
+5.985028e-4  -1.160298e0    -6.383060e-1
+6.185028e-4  -1.355319e0    -6.462270e-1
+6.385028e-4  -1.528966e0    -6.517305e-1
+6.585028e-4  -1.678500e0    -6.557012e-1
+6.785028e-4  -1.801564e0    -6.585749e-1
+6.985028e-4  -1.896215e0    -6.605905e-1
+7.185028e-4  -1.960962e0    -6.618858e-1
+7.385028e-4  -1.994784e0    -6.625379e-1
+7.585028e-4  -1.997146e0    -6.625828e-1
+7.785028e-4  -1.968013e0    -6.620231e-1
+7.985028e-4  -1.907843e0    -6.608279e-1
+8.185028e-4  -1.817585e0    -6.589270e-1
+8.385028e-4  -1.698662e0    -6.561939e-1
+8.585028e-4  -1.552951e0    -6.524086e-1
+8.785028e-4  -1.382748e0    -6.471751e-1
+8.985028e-4  -1.190739e0    -6.397046e-1
+9.185028e-4  -9.799514e-1   -6.281009e-1
+9.385028e-4  -7.537092e-1   -6.057032e-1
+9.585028e-4  -5.155805e-1   -5.116766e-1
+9.785028e-4  -2.693208e-1   -2.693205e-1
+9.985028e-4  -1.881380e-2   -1.881380e-2
+1.018503e-3  2.319899e-1    2.319898e-1
+1.038503e-3  4.791350e-1    4.780704e-1
+1.058503e-3  7.187239e-1    6.000009e-1
+1.078503e-3  9.469781e-1    6.257461e-1
+1.098503e-3  1.160298e0     6.383060e-1
+1.118503e-3  1.355319e0     6.462270e-1
+1.138503e-3  1.528966e0     6.517305e-1
+1.158503e-3  1.678500e0     6.557012e-1
+1.178503e-3  1.801564e0     6.585749e-1
+1.198503e-3  1.896215e0     6.605905e-1
+1.218503e-3  1.960962e0     6.618858e-1
+1.238503e-3  1.994784e0     6.625379e-1
+1.258503e-3  1.997146e0     6.625828e-1
+1.278503e-3  1.968013e0     6.620231e-1
+1.298503e-3  1.907843e0     6.608279e-1
+1.318503e-3  1.817585e0     6.589270e-1
+1.338503e-3  1.698662e0     6.561939e-1
+1.358503e-3  1.552951e0     6.524086e-1
+1.378503e-3  1.382748e0     6.471751e-1
+1.398503e-3  1.190739e0     6.397046e-1
+1.418503e-3  9.799514e-1    6.281009e-1
+1.438503e-3  7.537092e-1    6.057032e-1
+1.458503e-3  5.155805e-1    5.116766e-1
+1.478503e-3  2.693208e-1    2.693205e-1
+1.498503e-3  1.881380e-2    1.881380e-2
+1.518503e-3  -2.319899e-1   -2.319898e-1
+1.538503e-3  -4.791350e-1   -4.780704e-1
+1.558503e-3  -7.187239e-1   -6.000009e-1
+1.578503e-3  -9.469781e-1   -6.257461e-1
+1.598503e-3  -1.160298e0    -6.383060e-1
+1.618503e-3  -1.355319e0    -6.462270e-1
+1.638503e-3  -1.528966e0    -6.517305e-1
+1.658503e-3  -1.678500e0    -6.557012e-1
+1.678503e-3  -1.801564e0    -6.585749e-1
+1.698503e-3  -1.896215e0    -6.605905e-1
+1.718503e-3  -1.960962e0    -6.618858e-1
+1.738503e-3  -1.994784e0    -6.625379e-1
+1.758503e-3  -1.997146e0    -6.625828e-1
+1.778503e-3  -1.968013e0    -6.620231e-1
+1.798503e-3  -1.907843e0    -6.608279e-1
+1.818503e-3  -1.817585e0    -6.589270e-1
+1.838503e-3  -1.698662e0    -6.561939e-1
+1.858503e-3  -1.552951e0    -6.524086e-1
+1.878503e-3  -1.382748e0    -6.471751e-1
+1.898503e-3  -1.190739e0    -6.397046e-1
+1.918503e-3  -9.799514e-1   -6.281009e-1
+1.938503e-3  -7.537092e-1   -6.057032e-1
+1.958503e-3  -5.155805e-1   -5.116766e-1
+1.978503e-3  -2.693208e-1   -2.693205e-1
+1.998503e-3  -1.881380e-2   -1.881380e-2
+2.000000e-3  -9.797174e-16  -9.797174e-16
+wrote clipper.svg</pre>
 </div>
 
 <h3>Looking inside Newton: <code>emit!</code> in <code>analog</code></h3>
