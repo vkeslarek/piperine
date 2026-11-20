@@ -509,7 +509,7 @@ impl<'a> ValuePrinter<'a> {
             Expr::LevelCast { expr, .. } => out.push(*expr),
             Expr::Method { receiver, args, .. } => out.extend([*receiver].into_iter().chain(args.iter().copied())),
             Expr::Binary { lhs, rhs, .. } => out.extend([*lhs, *rhs]),
-            aggregate @ (Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_)) => out.extend(aggregate.operands()),
+            aggregate @ (Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_)) => out.extend(aggregate.operands()),
             Expr::If { cond, then, otherwise } => out.extend([*cond, *then, *otherwise]),
             Expr::Block { stmts, value } => {
                 for s in stmts {
@@ -811,7 +811,7 @@ impl<'a> ValuePrinter<'a> {
             Expr::FunctionRef(function) => self.function_value(*function),
             Expr::CallValue { callee, args } => self.call_value(e, *callee, args),
             // Printed from T35 (`print/aggregate.rs`); refused by name until then.
-            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) => Err(self.unsupported(e, "an aggregate expression")),
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => Err(self.unsupported(e, "an aggregate expression")),
         }
     }
 

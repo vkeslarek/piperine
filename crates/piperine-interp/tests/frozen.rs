@@ -722,4 +722,24 @@ fn each_composite_values_form_is_refused_by_name() {
         aggregates,
         ["a tuple", "an array", "an array repeat", "a struct expression", "a variant expression", "a field read", "an element read", "a slice", "a length read"]
     );
+
+    // `matches!(e, E::A)`, `e.0` of a variant, an option from its pair and back, `default` (T32)
+    let variants = Composite::refused(|b| {
+        let (yes, one) = (Switching::ex(b).boolean(true), Switching::ex(b).real(1.0));
+        let choice = b.type_data(TypeData {
+            name: "E".into(),
+            path: "E".into(),
+            origin: Switching::at(),
+            kind: TypeKind::Enum { tag_levels: 1, variants: vec![VariantData { name: "A".into(), discriminant: 0, form: FieldsForm::Tuple, fields: vec![("0".into(), ValueType::F64)] }] },
+            derives: Derives::default(),
+        });
+        let built = b.expr(Expr::VariantOf { ty: choice, variant: 0, fields: vec![one] }, ValueType::Enum(choice), Switching::at());
+        let test = b.expr(Expr::IsVariant { expr: built, variant: 0 }, ValueType::Bool, Switching::at());
+        let payload = b.expr(Expr::VariantField { expr: built, variant: 0, field: 0 }, ValueType::F64, Switching::at());
+        let packed = b.expr(Expr::OptionPack { is: yes, value: one }, ValueType::Option(Box::new(ValueType::F64)), Switching::at());
+        let part = b.expr(Expr::OptionPart { option: packed, part: piperine_ir::LevelPart::Is }, ValueType::Bool, Switching::at());
+        let fresh = b.expr(Expr::Default(ValueType::F64), ValueType::F64, Switching::at());
+        (vec![], [test, payload, part, fresh].into_iter().map(|e| b.stmt(Stmt::Expr(e))).collect())
+    });
+    assert_eq!(variants, ["a variant expression", "a variant test", "a variant field read", "an option pack", "an option part", "a default value"]);
 }

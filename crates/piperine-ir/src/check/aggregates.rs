@@ -4,9 +4,10 @@
 
 use std::collections::BTreeSet;
 
+use super::traits::Trait;
 use super::{Checker, Ctx, Task, Walk};
 use crate::ids::ExprId;
-use crate::model::{Derives, Expr, FieldsForm, Place, Projection, TypeData, TypeKind, ValueType};
+use crate::model::{BinaryOp, Derives, Expr, FieldsForm, LevelPart, Place, Projection, TypeData, TypeKind, ValueType};
 use crate::typing::Typing;
 
 impl Checker<'_> {
@@ -84,9 +85,23 @@ impl Checker<'_> {
                 self.report(item.to_string(), data.origin.clone(), format!("derive {derived} requires {required} (H.8)"));
             }
         }
+        for which in Trait::ALL {
+            if which.derived(&data.derives) && !self.fields_implement(data, which) {
+                self.report(item.to_string(), data.origin.clone(), format!("derive {} requires every field to implement it (H.8 rule 6)", which.name()));
+            }
+        }
         if default && matches!(data.kind, TypeKind::Enum { .. }) {
             self.report(item.to_string(), data.origin.clone(), "an enum does not derive Default (H.8 rule 4)".to_string());
         }
+    }
+
+    /// Whether every field of `data` implements `which` on its own (H.8 rule 6); `Repr` is checked by the elaborator.
+    fn fields_implement(&self, data: &TypeData, which: Trait) -> bool {
+        let fields: Vec<&ValueType> = match &data.kind {
+            TypeKind::Struct { fields, .. } => fields.iter().map(|(_, ty)| ty).collect(),
+            TypeKind::Enum { variants, .. } => variants.iter().flat_map(|v| v.fields.iter().map(|(_, ty)| ty)).collect(),
+        };
+        fields.into_iter().all(|ty| self.implements(ty, which))
     }
 
     /// Whether the type `start` reaches itself through the fields of structs, variants, tuples,
@@ -225,10 +240,91 @@ impl Checker<'_> {
                     }
                     self.own(w, &origin, ty, &ValueType::UInt(64));
                 }
+                Expr::IsVariant { expr, variant } => {
+                    self.own(w, &origin, ty, &ValueType::Bool);
+                    self.variant_of(w, &origin, *expr, *variant);
+                }
+                Expr::VariantField { expr, variant, field } => {
+                    if let Some(fields) = self.variant_of(w, &origin, *expr, *variant) {
+                        match fields.get(*field as usize) {
+                            Some(field_ty) => self.own(w, &origin, ty, field_ty),
+                            None => self.wrong(w, origin.clone(), format!("field {field} of variant {variant}, which has {} fields", fields.len())),
+                        }
+                    }
+                }
+                Expr::OptionPack { is, value } => {
+                    self.want(w, *is, &ValueType::Bool, "the `is` half of an option");
+                    if let Some(inner) = self.ty(*value) {
+                        self.own(w, &origin, ty, &ValueType::Option(Box::new(inner.clone())));
+                    }
+                }
+                Expr::OptionPart { option, part } => match self.ty(*option) {
+                    Some(ValueType::Option(inner)) => self.own(w, &origin, ty, if *part == LevelPart::Is { &ValueType::Bool } else { inner }),
+                    Some(other) => self.wrong(w, origin.clone(), format!("an option part of a value of type {other}, which is not an Option")),
+                    None => {}
+                },
+                Expr::Default(wanted) => {
+                    self.own(w, &origin, ty, wanted);
+                    if !self.implements(wanted, Trait::Default) {
+                        self.wrong(w, origin.clone(), format!("`default` of type {wanted}, which does not implement Default (H.8 rule 4)"));
+                    }
+                }
                 _ => {}
             }
         }
         next.extend(kind.operands().into_iter().map(|operand| Task::Expr(operand, ctx)));
+    }
+
+    /// The field types of variant `variant` of the enum value `expr`; names the mistake otherwise.
+    fn variant_of(&mut self, w: &Walk, origin: &crate::model::Origin, expr: ExprId, variant: u32) -> Option<Vec<ValueType>> {
+        let ValueType::Enum(id) = self.ty(expr)? else {
+            self.wrong(w, origin.clone(), format!("a variant of a value of type {}, which is not an enum", self.ty(expr)?));
+            return None;
+        };
+        let Some(TypeKind::Enum { variants, .. }) = self.ir.types.get(id.index()).map(|t| &t.kind) else { return None };
+        match variants.get(variant as usize) {
+            Some(v) => Some(v.fields.iter().map(|(_, ty)| ty.clone()).collect()),
+            None => {
+                self.wrong(w, origin.clone(), format!("variant {variant} out of range of enum t{}", id.0));
+                None
+            }
+        }
+    }
+
+    /// Whether `ty` is an aggregate: a tuple, an array, a slice, a struct, an enum or an `Option`.
+    pub(super) fn is_aggregate(ty: &ValueType) -> bool {
+        matches!(ty, ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Slice(_) | ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Option(_))
+    }
+
+    /// Whether `kind` is an operator with an aggregate operand.
+    pub(super) fn operates_on_aggregates(&self, kind: &Expr) -> bool {
+        matches!(kind, Expr::Binary { lhs, rhs, .. } if [lhs, rhs].iter().any(|e| self.ty(**e).is_some_and(Checker::is_aggregate)))
+    }
+
+    /// A comparison of aggregates (§1.3.10): `==` and `!=` need `PartialEq`, `<`, `<=`, `>` and `>=`
+    /// need `PartialOrd`, both operands one type; the result is a `bool`. Anything else is refused.
+    pub(super) fn aggregate_comparison(&mut self, w: &mut Walk, id: ExprId, first: bool, ctx: Ctx, next: &mut Vec<Task>) {
+        let data = &self.ir.exprs[id.index()];
+        let Expr::Binary { op, lhs, rhs } = &data.kind else { return };
+        let origin = data.origin.clone();
+        if first {
+            self.own(w, &origin, &data.ty, &ValueType::Bool);
+            if let (Some(l), Some(r)) = (self.ty(*lhs), self.ty(*rhs)) {
+                let needed = match op {
+                    BinaryOp::Eq | BinaryOp::Ne => Some(Trait::PartialEq),
+                    BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => Some(Trait::PartialOrd),
+                    _ => None,
+                };
+                match needed {
+                    None => self.wrong(w, origin.clone(), format!("`{op:?}` does not apply to aggregates")),
+                    Some(_) if l != r => self.wrong(w, origin.clone(), format!("compares {l} with {r}")),
+                    Some(needed) if !self.implements(l, needed) => self.wrong(w, origin.clone(), format!("`{op:?}` on {l}, which does not implement {} (§1.3.10)", needed.name())),
+                    Some(_) => {}
+                }
+            }
+        }
+        next.push(Task::Expr(*lhs, ctx));
+        next.push(Task::Expr(*rhs, ctx));
     }
 
     /// The element type of an array or a slice.

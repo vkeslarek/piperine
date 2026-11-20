@@ -34,6 +34,7 @@ use crate::model::{
 use crate::typing::Typing;
 
 mod aggregates;
+mod traits;
 
 /// One broken invariant: the item, where it was written, and what is wrong.
 #[derive(Debug, Clone, PartialEq)]
@@ -505,7 +506,7 @@ impl<'a> Checker<'a> {
             }
             Expr::Math { args, .. } => exprs.extend(args),
             Expr::Closure { body, .. } => exprs.push(*body),
-            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) => {
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
                 for &s in kind.statements() {
                     self.stmt_id(item, origin, s);
                 }
@@ -902,7 +903,7 @@ impl<'a> Checker<'a> {
                 Expr::Call { args, .. } | Expr::Math { args, .. } => stack_e.extend(args),
                 Expr::Method { receiver, args, .. } => stack_e.extend([*receiver].into_iter().chain(args.iter().copied())),
                 Expr::Closure { body, .. } => stack_e.push(*body),
-                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) => {
+                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
                     stack_s.extend(data.kind.statements());
                     stack_e.extend(data.kind.operands());
                 }
@@ -1577,6 +1578,7 @@ impl<'a> Checker<'a> {
                 }
                 next.push(Task::Expr(*expr, ctx));
             }
+            Expr::Binary { .. } if self.operates_on_aggregates(&data.kind) => self.aggregate_comparison(w, id, first, ctx, next),
             Expr::Binary { op, lhs, rhs }
                 if Typing::digital_op(*op) || [*lhs, *rhs].iter().any(|e| self.ty(*e).is_some_and(Typing::digital)) =>
             {
@@ -1991,7 +1993,7 @@ impl<'a> Checker<'a> {
                 next.push(Task::Expr(*callee, ctx));
                 next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
             }
-            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) => {
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
                 self.aggregate_form(w, id, first, ctx, next);
             }
             Expr::IsKnown(value) | Expr::High(value) => {

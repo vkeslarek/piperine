@@ -12,12 +12,12 @@ use piperine_ir::{Body, EventSource, Expr, ExprId, Stmt, StmtId};
 pub(crate) struct CompositeForms<'a> {
     body: Body<'a>,
     /// The forms met so far, by their position in `CompositeForms::NAMES`.
-    met: [bool; 18],
+    met: [bool; 23],
 }
 
 impl<'a> CompositeForms<'a> {
     /// The name of each form, in the order the refusal lists them.
-    const NAMES: [&'static str; 18] = [
+    const NAMES: [&'static str; 23] = [
         "an assignment",
         "a loop",
         "a while loop",
@@ -36,11 +36,16 @@ impl<'a> CompositeForms<'a> {
         "an element read",
         "a slice",
         "a length read",
+        "a variant test",
+        "a variant field read",
+        "an option pack",
+        "an option part",
+        "a default value",
     ];
 
     /// The forms `body` holds, each once, in a fixed order.
     pub(crate) fn of(body: Body<'a>) -> Vec<&'static str> {
-        let mut forms = CompositeForms { body, met: [false; 18] };
+        let mut forms = CompositeForms { body, met: [false; 23] };
         forms.walk();
         Self::NAMES.into_iter().zip(forms.met).filter_map(|(name, met)| met.then_some(name)).collect()
     }
@@ -121,6 +126,11 @@ impl<'a> CompositeForms<'a> {
             Expr::Index { .. } => Some(15),
             Expr::SliceOf { .. } => Some(16),
             Expr::Length(_) => Some(17),
+            Expr::IsVariant { .. } => Some(18),
+            Expr::VariantField { .. } => Some(19),
+            Expr::OptionPack { .. } => Some(20),
+            Expr::OptionPart { .. } => Some(21),
+            Expr::Default(_) => Some(22),
             _ => None,
         }
     }

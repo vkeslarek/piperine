@@ -14,7 +14,7 @@ mod devices;
 mod shape;
 
 use digital::Ty;
-use piperine_ir::{BinaryOp, Derives, Expr, ExprId, FieldsForm, FunctionId, FunctionSpec, Ir, IrBuilder, Local, Origin, Place, Projection, Stmt, StmtId, TypeData, TypeId, TypeKind, ValueType, VariantData};
+use piperine_ir::{BinaryOp, Derives, Expr, ExprId, FieldsForm, FunctionId, FunctionSpec, Ir, IrBuilder, LevelPart, Local, Origin, Place, Projection, Stmt, StmtId, TypeData, TypeId, TypeKind, ValueType, VariantData};
 use shape::{Entries, FILE, Shape, Written};
 
 /// The builders of the type arena's entries.
@@ -295,6 +295,80 @@ fn ill_typed_aggregate_expressions_are_refused() {
         ("a slice stands only as a call argument or a method receiver", 1),
         ("a projection of local 0 reaches into a value of type [f64; 2]", 1),
         ("the value of an assignment must be f64, found bool", 1),
+    ] {
+        assert_eq!(Entries::with(&broken, phrase).len(), count, "`{phrase}` in {broken:#?}");
+    }
+}
+
+// ---- T32: variant tests, `Option` packing and defaults (CV-11, CV-12, CV-20) -------------------------------------
+
+#[test]
+fn variant_tests_option_packs_and_comparisons_check() {
+    // §1.3.4 to §1.3.10, H.8: a variant test and a variant field read, an `Option` built from its
+    // pair and read back, `default`, and `==` and `<` on aggregates the derives allow.
+    let ir = Forms::design(vec![], |b| {
+        let pair = Forms::pair(b);
+        let tx = Types::tx(b, 2, [0, 1, 2]);
+        let (one, yes) = (Shape::dx(b, 2).real(1.0), Shape::dx(b, 2).boolean(true));
+        let three = Shape::dx(b, 3).int(3, Ty::u(3));
+        let data = Forms::e(b, Expr::VariantOf { ty: tx, variant: 1, fields: vec![three] }, ValueType::Enum(tx), 3);
+        let is_data = Forms::e(b, Expr::IsVariant { expr: data, variant: 1 }, ValueType::Bool, 4);
+        let payload = Forms::e(b, Expr::VariantField { expr: data, variant: 1, field: 0 }, ValueType::UInt(3), 4);
+        let packed = Forms::e(b, Expr::OptionPack { is: yes, value: one }, ValueType::Option(Box::new(ValueType::F64)), 5);
+        let is = Forms::e(b, Expr::OptionPart { option: packed, part: LevelPart::Is }, ValueType::Bool, 5);
+        let value = Forms::e(b, Expr::OptionPart { option: packed, part: LevelPart::Value }, ValueType::F64, 5);
+        let fresh = Forms::e(b, Expr::Default(ValueType::Struct(pair)), ValueType::Struct(pair), 6);
+        let built = Forms::e(b, Expr::StructOf { ty: pair, fields: vec![one, yes] }, ValueType::Struct(pair), 6);
+        let equal = Forms::e(b, Expr::Binary { op: BinaryOp::Eq, lhs: fresh, rhs: built }, ValueType::Bool, 7);
+        let ordered = Forms::e(b, Expr::Binary { op: BinaryOp::Lt, lhs: fresh, rhs: built }, ValueType::Bool, 7);
+        let tuple = Forms::e(b, Expr::Tuple(vec![one, yes]), ValueType::Tuple(vec![ValueType::F64, ValueType::Bool]), 8);
+        let same_tuple = Forms::e(b, Expr::Binary { op: BinaryOp::Ne, lhs: tuple, rhs: tuple }, ValueType::Bool, 8);
+        let same_option = Forms::e(b, Expr::Binary { op: BinaryOp::Eq, lhs: packed, rhs: packed }, ValueType::Bool, 8);
+        [is_data, payload, is, value, equal, ordered, same_tuple, same_option].map(|e| b.stmt(Stmt::Expr(e))).to_vec()
+    });
+    assert_eq!(ir.check(), vec![], "well-typed variant, option and comparison forms check");
+    let text = ir.to_string();
+    for form in ["is_variant e", "variant_field e", "option_pack e", "option_part e", "default t0"] {
+        assert!(text.contains(form), "the arena lines name `{form}`:\n{text}");
+    }
+    assert!(text.contains("matches!(Tx::Data(3u3), Tx::Data)"), "the tree text writes the variant test:\n{text}");
+}
+
+#[test]
+fn aggregate_forms_the_derives_do_not_allow_are_refused() {
+    // §1.3.10 and H.8: `==` on a type without `PartialEq`, `<` without `PartialOrd`, two types
+    // compared, arithmetic on aggregates, `default` of an enum and of a type without `Default`,
+    // a variant test of a non-enum, and a derive whose fields lack the trait (rule 6).
+    let ir = Forms::design(vec![], |b| {
+        let pair = Forms::pair(b);
+        let tx = Types::tx(b, 2, [0, 1, 2]);
+        let bare = Types::named(b, "Bare", 5, &[("a", ValueType::Bool)], Derives::default());
+        Types::named(b, "Holder", 6, &[("t", ValueType::Enum(tx))], Derives { partial_eq: true, ..Derives::default() });
+        let (one, yes) = (Shape::dx(b, 2).real(1.0), Shape::dx(b, 2).boolean(true));
+        let tuple = Forms::e(b, Expr::Tuple(vec![one, yes]), ValueType::Tuple(vec![ValueType::F64, ValueType::Bool]), 8);
+        let made = Forms::e(b, Expr::StructOf { ty: bare, fields: vec![yes] }, ValueType::Struct(bare), 9);
+        let no_eq = Forms::e(b, Expr::Binary { op: BinaryOp::Eq, lhs: made, rhs: made }, ValueType::Bool, 9);
+        let no_ord = Forms::e(b, Expr::Binary { op: BinaryOp::Lt, lhs: made, rhs: made }, ValueType::Bool, 10);
+        let built = Forms::e(b, Expr::StructOf { ty: pair, fields: vec![one, yes] }, ValueType::Struct(pair), 11);
+        let mixed = Forms::e(b, Expr::Binary { op: BinaryOp::Eq, lhs: built, rhs: tuple }, ValueType::Bool, 11);
+        let sum = Forms::e(b, Expr::Binary { op: BinaryOp::Add, lhs: built, rhs: built }, ValueType::Struct(pair), 12);
+        let enum_default = Forms::e(b, Expr::Default(ValueType::Enum(tx)), ValueType::Enum(tx), 13);
+        let bare_default = Forms::e(b, Expr::Default(ValueType::Struct(bare)), ValueType::Struct(bare), 14);
+        let scalar_variant = Forms::e(b, Expr::IsVariant { expr: one, variant: 0 }, ValueType::Bool, 15);
+        let missing = Forms::e(b, Expr::OptionPart { option: one, part: LevelPart::Is }, ValueType::Bool, 16);
+        [no_eq, no_ord, mixed, sum, enum_default, bare_default, scalar_variant, missing].map(|e| b.stmt(Stmt::Expr(e))).to_vec()
+    });
+    let broken = ir.check();
+    for (phrase, count) in [
+        ("on t2, which does not implement PartialEq", 1),
+        ("on t2, which does not implement PartialOrd", 1),
+        ("compares t0 with (f64, bool)", 1),
+        ("`Add` does not apply to aggregates", 1),
+        ("`default` of type t1, which does not implement Default", 1),
+        ("`default` of type t2, which does not implement Default", 1),
+        ("a variant of a value of type f64, which is not an enum", 1),
+        ("an option part of a value of type f64, which is not an Option", 1),
+        ("derive PartialEq requires every field to implement it (H.8 rule 6)", 1),
     ] {
         assert_eq!(Entries::with(&broken, phrase).len(), count, "`{phrase}` in {broken:#?}");
     }

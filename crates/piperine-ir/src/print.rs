@@ -839,6 +839,18 @@ impl<'a> Printer<'a> {
                 next.push(text("]".into()));
             }
             Expr::Length(expr) => next.extend([Piece::Expr(*expr), text(".len()".into())]),
+            Expr::IsVariant { expr, variant } => {
+                let ty = self.ir.exprs.get(expr.index()).map(|e| &e.ty);
+                let name = match ty {
+                    Some(ValueType::Enum(id)) => self.variant_name(*id, *variant),
+                    _ => format!("<variant {variant}>"),
+                };
+                next.extend([text("matches!(".into()), Piece::Expr(*expr), text(format!(", {name})"))]);
+            }
+            Expr::VariantField { expr, variant, field } => next.extend([Piece::Expr(*expr), text(format!(" as variant {variant} .{field}"))]),
+            Expr::OptionPack { is, value } => next.extend([text("option(".into()), Piece::Expr(*is), text(", ".into()), Piece::Expr(*value), text(")".into())]),
+            Expr::OptionPart { option, part } => next.extend([Piece::Expr(*option), text(if *part == LevelPart::Is { ".is" } else { ".value" }.into())]),
+            Expr::Default(ty) => next.push(text(format!("{ty}::default()"))),
             Expr::Math { f, args } => {
                 next.push(text(format!("{}(", Printer::math_name(*f))));
                 Printer::list(next, args);
@@ -1041,6 +1053,9 @@ impl<'a> Printer<'a> {
             // The aggregate forms are typed by their arena entry: the structural form writes the type.
             Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } => None,
             Expr::Length(_) => Some(ValueType::UInt(64)),
+            Expr::IsVariant { .. } | Expr::OptionPart { part: LevelPart::Is, .. } => Some(ValueType::Bool),
+            Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } => None,
+            Expr::Default(ty) => Some(ty.clone()),
         }
     }
 
@@ -1254,6 +1269,11 @@ impl<'a> Printer<'a> {
             Expr::Index { expr, index } => format!("index {} {}", e(expr), e(index)),
             Expr::SliceOf { expr, low, high, inclusive } => format!("slice_of {} {} {}{}", e(expr), opt(low), opt(high), if *inclusive { " inclusive" } else { "" }),
             Expr::Length(expr) => format!("length {}", e(expr)),
+            Expr::IsVariant { expr, variant } => format!("is_variant {} v{variant}", e(expr)),
+            Expr::VariantField { expr, variant, field } => format!("variant_field {} v{variant} .{field}", e(expr)),
+            Expr::OptionPack { is, value } => format!("option_pack {} {}", e(is), e(value)),
+            Expr::OptionPart { option, part } => format!("option_part {} {}", e(option), if *part == LevelPart::Is { "is" } else { "value" }),
+            Expr::Default(ty) => format!("default {ty}"),
         }
     }
 

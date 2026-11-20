@@ -890,7 +890,7 @@ impl<'a> Walk<'a> {
             }
             Expr::Call { args, .. } | Expr::Math { args, .. } => next.extend(args.iter().map(|&a| Task::Expr(a))),
             // An aggregate is one abstract value: what its parts read (`finish`).
-            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) => {
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
                 next.extend(ir.exprs[id.index()].kind.operands().into_iter().map(Task::Expr));
             }
             Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } => return self.begin_loop(id, next),
@@ -996,7 +996,7 @@ impl<'a> Walk<'a> {
                 Value::nonlinear(&values)
             }
             // An aggregate and each of its projections read everything its parts read.
-            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) => {
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
                 let values = self.pop_n(ir.exprs[id.index()].kind.operands().len());
                 Value::nonlinear(&values)
             }

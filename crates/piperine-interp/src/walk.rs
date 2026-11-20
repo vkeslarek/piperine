@@ -342,6 +342,11 @@ impl<'a> Walk<'a> {
             Expr::Index { .. } => "Index",
             Expr::SliceOf { .. } => "SliceOf",
             Expr::Length(_) => "Length",
+            Expr::IsVariant { .. } => "IsVariant",
+            Expr::VariantField { .. } => "VariantField",
+            Expr::OptionPack { .. } => "OptionPack",
+            Expr::OptionPart { .. } => "OptionPart",
+            Expr::Default(_) => "Default",
         }
     }
 

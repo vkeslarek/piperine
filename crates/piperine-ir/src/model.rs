@@ -515,6 +515,17 @@ pub enum Expr {
     SliceOf { expr: ExprId, low: Option<ExprId>, high: Option<ExprId>, inclusive: bool },
     /// `expr.len()`: the length of an array or a slice, a `UInt<64>`.
     Length(ExprId),
+    /// `matches!(expr, Enum::Variant ..)`: whether the enum value is variant `variant`. A `bool`.
+    IsVariant { expr: ExprId, variant: u32 },
+    /// Field `field` of variant `variant` of an enum value: defined where `IsVariant` holds.
+    VariantField { expr: ExprId, variant: u32, field: u32 },
+    /// The `Option<T>` made from the pair `(is, value)` that value code keeps (MD-67): `is` a
+    /// `bool`, `value` a `T`.
+    OptionPack { is: ExprId, value: ExprId },
+    /// One half of an `Option<T>` as the pair: `Is` gives a `bool`, `Value` the `T`.
+    OptionPart { option: ExprId, part: LevelPart },
+    /// `T::default()` (H.8 rule 4): the type is the one written.
+    Default(ValueType),
 }
 
 impl Expr {
@@ -540,7 +551,10 @@ impl Expr {
             Expr::CallValue { callee, args } => [*callee].into_iter().chain(args.iter().copied()).collect(),
             Expr::Tuple(parts) | Expr::Array(parts) | Expr::StructOf { fields: parts, .. } | Expr::VariantOf { fields: parts, .. } => parts.clone(),
             Expr::ArrayRepeat { element, .. } => vec![*element],
-            Expr::Field { expr, .. } | Expr::Length(expr) => vec![*expr],
+            Expr::Field { expr, .. } | Expr::Length(expr) | Expr::IsVariant { expr, .. } | Expr::VariantField { expr, .. } => vec![*expr],
+            Expr::OptionPack { is, value } => vec![*is, *value],
+            Expr::OptionPart { option, .. } => vec![*option],
+            Expr::Default(_) => Vec::new(),
             Expr::Index { expr, index } => vec![*expr, *index],
             Expr::SliceOf { expr, low, high, .. } => [*expr].into_iter().chain(*low).chain(*high).collect(),
         }
