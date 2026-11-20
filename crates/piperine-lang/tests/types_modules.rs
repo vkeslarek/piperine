@@ -271,3 +271,37 @@ fn an_instance_without_a_result_used_as_a_value_is_e0333() {
     assert_eq!(snippet(&src, &d[0]), "r1");
     assert!(d[0].diagnostic.message.contains("`r1`"), "{}", d[0].diagnostic.message);
 }
+
+/// Two modules with one param each, and a top with a param of module type `Cell` (PI-04).
+const CELLS: &str = "module Cell(a: E) { cs: f64 = 1.0; }\nmodule Other(a: E) { cs: f64 = 1.0; }\n";
+
+#[test]
+fn a_module_typed_param_takes_a_template() {
+    // PI-04 AC 1, §8.4.4: a param of module type has a template `Cell { cs: 30.0 }` as its default
+    // and as its binding, and `cell(x)` places it, its ports checked like `Cell(x)`
+    let src = format!("{NATURES}{CELLS}module Top(x: E) {{ cell: Cell = Cell {{ cs: 30.0 }}; let c1 = cell(x); }}\nmodule Parent(y: E) {{ let t = Top {{ cell: Cell {{ cs: 10.0 }} }}(y); }}");
+    let design = design_of(&src);
+    let types = Types::check(&design, "Top").expect("a param of module type, placed through");
+    let cell = types.ty(expr_of(&design, &src, "Cell { cs: 30.0 }")).cloned();
+    assert!(matches!(cell, Some(Ty::Module(_))), "the template is typed as its module: {cell:?}");
+    // a wrong connection through the param is a port error, as for `Cell(..)`
+    let (_, d) = diagnostics(&format!("{CELLS}module Top(x: E, y: E) {{ cell: Cell = Cell {{ cs: 30.0 }}; let c1 = cell(x, y); }}"));
+    assert_eq!(codes_of(&d), ["E0312"], "the count of connections is the module's");
+}
+
+#[test]
+fn a_param_block_on_a_placement_through_a_param_is_e0361() {
+    // PI-04 AC 3, §8.4.4: the params belong to the template, so `cell(x) { cs: 2.0 }` is E0361
+    let (src, d) = diagnostics(&format!("{CELLS}module Top(x: E) {{ cell: Cell = Cell {{ cs: 30.0 }}; let c1 = cell(x) {{ cs: 2.0 }}; }}"));
+    assert_eq!(codes_of(&d), ["E0361"]);
+    assert!(snippet(&src, &d[0]).starts_with("cell(x)"), "{}", snippet(&src, &d[0]));
+}
+
+#[test]
+fn a_template_of_another_module_is_e0180_naming_both() {
+    // PI-04 AC 5, Q2 (a): `Other { .. }` bound to a param of type `Cell` names both modules
+    let (_, d) = diagnostics(&format!("{CELLS}module Top(x: E) {{ cell: Cell = Other {{ cs: 1.0 }}; let c1 = cell(x); }}"));
+    assert_eq!(codes_of(&d), ["E0180"]);
+    let message = &d[0].diagnostic.message;
+    assert!(message.contains("Cell") && message.contains("Other"), "{message}");
+}

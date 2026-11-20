@@ -312,6 +312,8 @@ impl<'d> Checker<'d> {
                 Resolution::Decl(d) if matches!(&self.design.decl_data(d).kind, DeclKind::Nature(n) if n.kind == NatureKind::Discrete) && self.is_std(d) && self.design.decl_data(d).name.as_ref().is_some_and(|n| n.text == "Bit") => self.bit_type(d, file, node.span, *path),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) => Some(Ty::Node(d)),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_)) => self.enum_type(d, file, node.span),
+                // A module named as a type is the type of a param (§8.1.1, PI-04): a template of it.
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Module(_)) && self.design.decl_data(d).generics_span.is_none() => Some(Ty::Module(d)),
                 Resolution::Decl(d) => {
                     let what = Unsupported::item(&self.design.decl_data(d).kind);
                     self.unsupported(file, node.span, &format!("{what} used as a type"));

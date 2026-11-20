@@ -60,6 +60,8 @@ impl Checker<'_> {
                     Some(expected.clone())
                 }
                 ExprKind::Match { .. } => self.match_expr(expr, Some(expected)),
+                // `Name { params }` where a module type is expected: a template value (PI-04).
+                ExprKind::Struct { class: StructClass::Template(module), fields, .. } if matches!(expected, Ty::Module(_)) => self.template_value(expr, *module, fields),
                 // `Unknown` where a carried type is expected (§3.3.1: of any `Repr` type). `analog`
                 // computes with known reals (§3.3.5): there it is refused by name.
                 ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Unknown) && expected.has_repr() && self.context != Context::Analog => Some(expected.clone()),

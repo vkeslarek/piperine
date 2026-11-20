@@ -54,10 +54,11 @@ impl Checker<'_> {
         }
     }
 
-    /// `name: T = default where cond;` — `T` is `f64` or `bool`; `where` is `bool` (`E0318`).
+    /// `name: T = default where cond;` — `T` is `f64`, `bool` or a module (its value a template
+    /// `Name { params }`, PI-04); `where` is `bool` (`E0318`).
     pub(super) fn param(&mut self, decl: DeclId, param: &ParamData) {
         let ty = self.lower_type(param.ty).and_then(|ty| match ty {
-            Ty::F64 | Ty::Bool => Some(ty),
+            Ty::F64 | Ty::Bool | Ty::Module(_) => Some(ty),
             other => {
                 let node = self.design.type_node(param.ty).clone();
                 let file = self.design.decl_data(node.owner).file;
@@ -168,6 +169,15 @@ impl Checker<'_> {
         let fields: Vec<FieldInit> = match &callee_node.kind {
             ExprKind::Struct { fields, class: StructClass::Template(m), .. } if *m == module && params.is_none() => fields.clone(),
             ExprKind::Path(_) if matches!(self.design.decl_data(module).kind, DeclKind::Module(_)) && self.callee_is(*callee, module) => params.clone().unwrap_or_default(),
+            // `cell(c)` through a param of module type (§8.4.4): the module's ports are connected;
+            // the param block belongs to the template, so one on the placement is `E0361`.
+            ExprKind::Path(_) if self.callee_is_param_of(*callee, module) => {
+                if params.is_some() {
+                    let name = self.design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                    self.coded(file, "E0361", node.span, format!("a placement through a param of module `{name}` takes no param block: the template holds the params (§8.4.4)"), "param block on a placement through a template value");
+                }
+                Vec::new()
+            }
             _ => {
                 if !self.reads_poisoned(*callee) {
                     self.unsupported(file, node.span, "placement through a template value or a function");
@@ -196,6 +206,15 @@ impl Checker<'_> {
     fn reads_poisoned(&self, expr: ExprId) -> bool {
         match &self.design.expr_node(expr).kind {
             ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if self.poisoned.contains(&d)),
+            _ => false,
+        }
+    }
+
+    /// Whether `callee` names a param whose declared type is the module `module`.
+    fn callee_is_param_of(&self, callee: ExprId, module: DeclId) -> bool {
+        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return false };
+        match self.design.path_node(*path).segments.last().map(|s| s.res) {
+            Some(Resolution::Decl(d)) => matches!(&self.design.decl_data(d).kind, DeclKind::Param(p) if self.design.type_resolution(p.ty) == Resolution::Decl(module)),
             _ => false,
         }
     }
@@ -359,8 +378,17 @@ impl Checker<'_> {
         }
     }
 
+    /// A template `Name { params }` where a value of module type is expected (PI-04): its params
+    /// are checked like a placement's block, and its type is the module it names, so a template
+    /// of another module is a mismatch (`E0180`) naming both.
+    pub(super) fn template_value(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit]) -> Option<Ty> {
+        self.param_block(fields);
+        self.exprs[expr.index()] = Some(Ty::Module(module));
+        Some(Ty::Module(module))
+    }
+
     /// `{ name: value }` of a placement: each value against the declared type of its param.
-    fn param_block(&mut self, fields: &[FieldInit]) {
+    pub(super) fn param_block(&mut self, fields: &[FieldInit]) {
         for field in fields {
             self.no_placement_in(field.value);
             let param = match field.res {
@@ -371,7 +399,7 @@ impl Checker<'_> {
                 _ => None,
             };
             match param.and_then(|t| self.lower_type(t)) {
-                Some(ty @ (Ty::F64 | Ty::Bool)) => self.check(field.value, &ty),
+                Some(ty @ (Ty::F64 | Ty::Bool | Ty::Module(_))) => self.check(field.value, &ty),
                 _ => {
                     self.infer(field.value);
                 }
