@@ -310,3 +310,22 @@ fn an_unwritable_plot_names_the_path_and_exits_1() {
     assert!(text(&op.stderr).contains("P0010") && text(&op.stderr).contains("nothing to plot"), "{}", text(&op.stderr));
     assert!(!project.path().join("op.svg").exists());
 }
+
+#[test]
+fn tnom_key_and_flag_default_to_27() {
+    // AO-08 AC 1: `--tnom` takes degrees Celsius; the divider has no temperature dependence, so
+    // a run with `--tnom 50` prints the same operating point as the run with none.
+    let dir = tempfile::tempdir().expect("tmp");
+    let plain = stdout_of(&piperine_in(dir.path(), &["run", twin("divider.msl").to_str().expect("path"), "--analysis", "op"]));
+    let hot = stdout_of(&piperine_in(dir.path(), &["run", twin("divider.msl").to_str().expect("path"), "--analysis", "op", "--tnom", "50"]));
+    assert_eq!(plain, hot, "the divider does not read tnom");
+}
+
+#[test]
+fn tnom_at_or_below_absolute_zero_is_p0010() {
+    // AO-08 AC 2: `--tnom -273.15` is a P0010 naming the key, exit code 1, nothing on stdout.
+    let dir = tempfile::tempdir().expect("tmp");
+    let out = piperine_in(dir.path(), &["run", twin("divider.msl").to_str().expect("path"), "--analysis", "op", "--tnom", "-273.15"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(text(&out.stderr).contains("P0010") && text(&out.stderr).contains("`tnom`"), "{}", text(&out.stderr));
+}

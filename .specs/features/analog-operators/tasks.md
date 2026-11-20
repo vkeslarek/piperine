@@ -503,8 +503,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `tnom_key_and_flag_default_to_27` and `tnom_at_or_below_absolute_zero_is_p0010` pass
-- [ ] Gate check passes: `Run apioptions`, `Run clioptions`
+- [x] `tnom_key_and_flag_default_to_27` and `tnom_at_or_below_absolute_zero_is_p0010` pass
+- [x] Gate check passes: `Run apioptions`, `Run clioptions`
 
 **Tests**: integration
 **Gate**: quick

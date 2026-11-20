@@ -268,6 +268,9 @@ impl Session {
                 *slot = value;
             }
         }
+        if let Some(celsius) = options.tnom {
+            tolerances.tnom = celsius + 273.15;
+        }
         if let Some(celsius) = options.temp {
             tolerances.temperature = celsius + 273.15;
         }

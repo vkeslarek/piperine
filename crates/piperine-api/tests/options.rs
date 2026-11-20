@@ -263,3 +263,29 @@ fn max_steps_defaults_to_two_million() {
     assert_eq!(session.spec().options.max_steps, None);
     assert_eq!(piperine_solver::prelude::TransientAnalysisOptions::new(1.0, 1e-3).max_steps, 2_000_000);
 }
+
+#[test]
+fn tnom_key_and_flag_default_to_27() {
+    // AO-08 AC 1: `tnom` is Celsius in the run and Kelvin in the solver; with none given the
+    // nominal temperature is 27 C = 300.15 K, and `tnom = 50` is 323.15 K, whatever `temp` says.
+    let default = open(&with_parts(THERMOMETER), op(&["a"])).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(default.context().tolerances.tnom, 300.15);
+    let flag = open(&with_parts(THERMOMETER), Overrides { tnom: Some(50.0), temp: Some(75.0), ..op(&["a"]) }).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(flag.context().tolerances.tnom, 323.15);
+    assert_eq!(flag.context().tolerances.temperature, 348.15, "`temp` is untouched by `tnom`");
+}
+
+#[test]
+fn tnom_at_or_below_absolute_zero_is_p0010() {
+    // AO-08 AC 2: a `tnom` not above -273.15 C is a P0010 naming the key.
+    for value in [-273.15, -300.0] {
+        let dir = tempfile::tempdir().expect("tmp");
+        let file = dir.path().join("bench.msl");
+        std::fs::write(&file, with_parts(THERMOMETER)).expect("write");
+        let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides { tnom: Some(value), top: Some("Top".into()), ..op(&["a"]) };
+        let fault = project.request(None, &overrides).err().unwrap_or_else(|| panic!("tnom = {value} was accepted"));
+        let message = format!("{fault:?}");
+        assert!(message.contains("P0010") && message.contains("`tnom`"), "{message}");
+    }
+}

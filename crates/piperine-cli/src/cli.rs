@@ -129,6 +129,7 @@ const COMMANDS: &[CommandRow] = &[
             ArgRow { id: "vntol", kind: ArgKind::Real { value: "VOLTS" }, help: "the absolute tolerance of a potential" },
             ArgRow { id: "trtol", kind: ArgKind::Real { value: "VALUE" }, help: "the factor on the truncation error a transient accepts" },
             ArgRow { id: "temp", kind: ArgKind::Real { value: "CELSIUS" }, help: "the temperature of the run, in degrees Celsius" },
+            ArgRow { id: "tnom", kind: ArgKind::Real { value: "CELSIUS" }, help: "the nominal temperature of the models' parameters, in degrees Celsius (default 27)" },
             ArgRow { id: "resolution", kind: ArgKind::Real { value: "SECONDS" }, help: "the tick of the digital engine, in seconds" },
             ArgRow { id: "maxrounds", kind: ArgKind::Count { value: "N" }, help: "the bound on the rounds of an operating point" },
             ArgRow { id: "maxmicro", kind: ArgKind::Count { value: "N" }, help: "the bound on the microsteps of one instant" },
@@ -279,6 +280,7 @@ impl Cli {
             vntol: real("vntol"),
             trtol: real("trtol"),
             temp: real("temp"),
+            tnom: real("tnom"),
             resolution: real("resolution"),
             maxrounds: count("maxrounds"),
             maxmicro: count("maxmicro"),
@@ -372,7 +374,7 @@ mod tests {
         // those and `--project` exists (`--help` is clap's, added when the command is built)
         let flags = [
             "bench", "top", "analysis", "stop", "max-step", "print-step", "sweep", "from", "to", "step", "per-decade", "points", "print", "stream", "param", "backend", "csv", "records", "plot", "all-checks",
-            "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "max-steps", "nodeset", "input", "output", "wrt", "period", "tstab",
+            "reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "max-steps", "nodeset", "input", "output", "wrt", "period", "tstab", "tnom",
         ];
         let command = Cli::command();
         let run = command.find_subcommand("run").expect("a `run` command");
@@ -417,6 +419,7 @@ mod tests {
             vntol: Some(2e-6),
             trtol: Some(5.0),
             temp: Some(-40.0),
+            tnom: None,
             resolution: Some(1e-12),
             maxrounds: Some(30),
             maxmicro: Some(500),
