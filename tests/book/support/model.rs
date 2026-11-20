@@ -113,6 +113,14 @@ impl Model {
         std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
     }
 
+    /// The path a run opens: the lone file, or the package's root. A test that needs a session of its own
+    /// (a build cache it can read back) opens this path itself.
+    pub fn opened_path(&self) -> &Path {
+        match &self.opening {
+            Opening::File(path) | Opening::Package(path) => path,
+        }
+    }
+
     /// The directory the model's files are relative to: a lone file's directory, a package's root.
     fn base(&self) -> PathBuf {
         match &self.opening {

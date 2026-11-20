@@ -157,8 +157,8 @@ block	abi#3	051cb6db57f75a67	shown	-	-	-
 block	abi#4	7f56c990874e7013	run	piperine/book_abi::the_flip_flop_starts_low_and_takes_its_input_at_the_rising_edge	-	-
 block	abi#5	97e83a277ec19321	shown	-	-	-
 block	abi#6	4a8e6d160cd528e0	shown	-	-	-
-block	compiler#1	07f51b3645a3ebce	pending	-	-	-
-block	compiler#2	a8029e9e14f098ed	pending	-	-	-
+block	compiler#1	07f51b3645a3ebce	run	piperine/book_compiler::the_divider_puts_mid_at_7_5_volts_and_ngspice_prints_the_same	-	-
+block	compiler#2	a8029e9e14f098ed	run	piperine/book_compiler::the_diode_with_a_limited_junction_settles_where_the_junction_equation_says	-	-
 block	compiler#3	17700775a142241f	shown	-	-	-
 block	cli#1	a85641490b6e3b0b	shown	-	-	-
 block	cli#2	eea02ab5185142c6	shown	-	-	-
@@ -469,17 +469,17 @@ claim	solver~4d1bc10b	4d1bc10b58a44d4a	pending	-	-	If Newton failed or the error
 claim	solver~c2aa698e	c2aa698ebf814cfc	pending	-	-	What the instant changed reaches the analog side.
 claim	solver~4642dd47	4642dd47b67015c0	pending	-	-	A loop of functions is accepted only if it passes through a net marked to relax, which is iterated until it stops changing.
 claim	solver~dbaf149d	dbaf149df95de26e	pending	-	-	After 1000 microsteps the solver stops with E0501 and names the nets that keep changing.
-claim	compiler~696ad77d	696ad77df2130b34	pending	-	-	It is an object model, not a text format, but it prints in a stable form for reading and for tests.
-claim	compiler~0f9a1fec	0f9a1fec1e2a5725	pending	-	-	Every circuit the path runs has a twin written for ngspice, and a test runs both and compares every printed number.
-claim	compiler~a16be3e7	a16be3e7c5d562a6	pending	-	-	Diode under reverse bias to −20 V
-claim	compiler~e9ad112c	e9ad112ccaebd130	pending	-	-	5.9 × 10−21 A
-claim	compiler~79f44db1	79f44db163622a6c	pending	-	-	P0001
-claim	compiler~79f450b1	79f450b163622f85	pending	-	-	P0002
-claim	compiler~79f44fb1	79f44fb163622dd2	pending	-	-	P0003
-claim	compiler~79f44ab1	79f44ab163622553	pending	-	-	P0004
-claim	compiler~931761f9	931761f9a0e69952	pending	-	-	The Rust backend prints the whole design as one Rust source file, compiles it with the rustc it finds on the machine, and loads the library through the device ABI.
-claim	compiler~13572839	13572839026b148b	pending	-	-	The block is generic over a number type: run with plain floats it gives the current, run with dual numbers it gives the current and its derivatives, which is the Jacobian.
-claim	compiler~b03dc2fa	b03dc2faaa022c6b	pending	-	-	Digital code reads the same way: a reaction is a function whose commits go out together when it ends, and an if on a value that may be unknown stops with a fault naming that if in your source.
+claim	compiler~696ad77d	696ad77df2130b34	holds	piperine/book_compiler::the_intermediate_form_prints_in_a_stable_form	-	It is an object model, not a text format, but it prints in a stable form for reading and for tests.
+claim	compiler~0f9a1fec	0f9a1fec1e2a5725	holds	piperine/book_compiler::every_circuit_of_the_comparison_table_has_a_twin_and_a_scenario_test	-	Every circuit the path runs has a twin written for ngspice, and a test runs both and compares every printed number.
+claim	compiler~a16be3e7	a16be3e7c5d562a6	holds	piperine/book_compiler::the_reverse_bias_sweep_goes_down_to_minus_20_volts	-	Diode under reverse bias to −20 V
+claim	compiler~e9ad112c	e9ad112ccaebd130	disputed	piperine/book_compiler::the_reverse_sweep_agrees_with_ngspice_inside_the_floor_not_to_the_digits_the_book_prints	D5	5.9 × 10−21 A
+claim	compiler~79f44db1	79f44db163622a6c	holds	piperine/book_compiler::a_compiler_code_says_what_the_chapter_says	-	P0001
+claim	compiler~79f450b1	79f450b163622f85	holds	piperine/book_compiler::a_compiler_code_says_what_the_chapter_says	-	P0002
+claim	compiler~79f44fb1	79f44fb163622dd2	holds	piperine/book_compiler::a_compiler_code_says_what_the_chapter_says	-	P0003
+claim	compiler~79f44ab1	79f44ab163622553	prose	-	-	P0004
+claim	compiler~931761f9	931761f9a0e69952	holds	piperine/book_compiler::the_rust_backend_prints_one_source_file_and_loads_the_library_it_builds	-	The Rust backend prints the whole design as one Rust source file, compiles it with the rustc it finds on the machine, and loads the library through the device ABI.
+claim	compiler~13572839	13572839026b148b	holds	piperine/book_compiler::the_rust_backend_prints_one_source_file_and_loads_the_library_it_builds	-	The block is generic over a number type: run with plain floats it gives the current, run with dual numbers it gives the current and its derivatives, which is the Jacobian.
+claim	compiler~b03dc2fa	b03dc2faaa022c6b	holds	piperine/book_compiler::a_digital_if_on_an_unknown_value_stops_with_a_fault_naming_that_if	-	Digital code reads the same way: a reaction is a function whose commits go out together when it ends, and an if on a value that may be unknown stops with a fault naming that if in your source.
 claim	cli~3da257ec	3da257ec8712dccb	pending	-	-	By the end of this chapter you know every command of piperine, every key of a run table and the flag that overrides it, how results and emit! records are printed and saved, and what each exit code and each of the tool's own error codes means.
 claim	cli~31fc7600	31fc76008c425d67	pending	-	-	Runs one run of the project, or a lone file, and prints records and results.
 claim	cli~3cd92481	3cd92481b801b639	pending	-	-	piperine --help lists them, and piperine --version prints the version.
@@ -582,7 +582,7 @@ claim	mixed~ac0aefe3	ac0aefe3b2ca4ca9	holds	piperine/book_mixed::the_delta_sigma
 claim	mixed~fef5c97a	fef5c97a04840342	binary	piperine-cli/buck::startup_ends_with_the_reference_at_128	-	A full-size digitally controlled buck converter (12 V in, 200 MHz digital PWM, PID, ADC, comparators and a supervisor) starts from its .msl and regulates at 0.8 V within 3 mV with its loop closed, and the piperine command runs it (chapter 16).
 claim	mixed~a879bf2a	a879bf2aa5b759ac	prose	-	-	In the cycle counter, set hyst: 0.0 and add a small 50 kHz ripple to the source (a second Vsin in series).
 claim	errors~2b0048e8	2b0048e8bba634bb	holds	piperine/book_errors::without_an_initial_value_the_output_sits_at_zero_volts	-	What does vout do before the first clock edge, and which line decided that? (It sits at 0 V: held is unknown, and known_or(0.0) said what unknown means.)
-claim	compiler~05f756b4	05f756b4750e40ff	pending	-	-	Its operating point puts mid at 7.5 V, the same number ngspice prints for the same circuit.
+claim	compiler~05f756b4	05f756b4750e40ff	holds	piperine/book_compiler::the_divider_puts_mid_at_7_5_volts_and_ngspice_prints_the_same	-	Its operating point puts mid at 7.5 V, the same number ngspice prints for the same circuit.
 claim	cli~a717f995	a717f9954de38412	pending	-	-	This is the file it wrote, as it is: Step.vin flat at 1 V, Step.vout rising towards it with the time constant of 1 µs.
 claim	cli~662c11ca	662c11cac0eb42a8	pending	-	-	Raising r1 by one ohm lowers the output by 1.875 mV, and raising r2 by one ohm raises it by 0.625 mV: the output is 10·R2/(R1+R2), and the numbers are its two partial derivatives.
 claim	cli~3d1453da	3d1453dac50df26b	pending	-	-	The same commands run a full-size design: a digitally controlled buck converter that steps 12 V down to 0.8 V, with an analog power stage, a 200 MHz digital PWM, an ADC, a fixed-point PID, a soft start and a supervisor, all in MSL.

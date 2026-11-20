@@ -237,6 +237,7 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 | D2 | A sentence of the Book that the code outran: the code does more than the Book says, so the Book is stale and the user decides (a `disputed` row of §11) | `docs/book/content.html`, §11 below | S |
 | D3 | An error code the spec names that no source raises, for a construct the compiler does implement: the checker stops the model with another code (`E0333` is `P0002`, a type mismatch), `params-and-io`'s PI-13 keeps the code listed | `docs/spec/part_iii_structure.md`, §10 | S |
 | D4 | A value, record or table the run gives differs from the one the Book prints or states, for a construct the compiler implements: the buck's start-up, whose operating point already holds the controller's first commit | `docs/book/content.html`, §11 below | S |
+| D5 | A figure the Book prints from a measurement the test suite repeats: the worst difference of the reverse-bias sweep from ngspice is 5.0e-20 A today, the Book prints 5.9e-21 A (both inside the 1 pA floor), so the Book is stale and the user decides (a `disputed` row of §11) | `docs/book/content.html`, §11 below | S |
 
 ---
 
@@ -500,3 +501,4 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function need a generic module: `P0001` |
 | cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
 | cheatsheet#10 | L57 | `composite-values` | with its `emit!` the card is `E0900` (a statement among items); without it `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` a reference type |
+| compiler~e9ad112c | D5 | `user` | the reverse-bias sweep differs from ngspice by 4.98e-20 A at worst (inside the 1 pA floor), where the table prints 5.9e-21 A |
