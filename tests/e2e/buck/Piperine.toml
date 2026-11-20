@@ -1,0 +1,61 @@
+[package]
+name = "buck_scenarios"
+version = "0.1.0"
+description = "SPEC section 10 scenarios S2 to S10 of examples/buck, driven by a Rust host (tests/buck_scenarios.rs)"
+
+[dependencies]
+buck = { path = "../../../examples/buck" }
+
+# Five runs, one per family of scenarios (the stimulus of each is the host's, never the bench's).
+# Every run samples the same thirteen signals on a 10 ns grid and emits the monitors' `checks`;
+# `max_steps` is above the default budget because 4.7 ms of converter time takes about 5.3 M steps.
+
+[run.brownout]
+top = "Bench"
+analysis = "transient"
+stop = 1.52e-3
+max_step = 1e-8
+print_step = 1e-8
+print = ["buck.vout", "buck.vin", "buck.isense", "buck.ctl.reference", "buck.code", "mode", "fault", "pgood", "buck.hs_cmd", "buck.ls_cmd", "buck.oc", "buck.sink_oc", "buck.ctl.cut"]
+streams = ["checks"]
+max_steps = 15000000
+
+[run.faults]
+top = "Bench"
+analysis = "transient"
+stop = 4.70e-3
+max_step = 1e-8
+print_step = 1e-8
+print = ["buck.vout", "buck.vin", "buck.isense", "buck.ctl.reference", "buck.code", "mode", "fault", "pgood", "buck.hs_cmd", "buck.ls_cmd", "buck.oc", "buck.sink_oc", "buck.ctl.cut"]
+streams = ["checks"]
+max_steps = 15000000
+
+[run.load_line]
+top = "Bench"
+analysis = "transient"
+stop = 2.92e-3
+max_step = 1e-8
+print_step = 1e-8
+print = ["buck.vout", "buck.vin", "buck.isense", "buck.ctl.reference", "buck.code", "mode", "fault", "pgood", "buck.hs_cmd", "buck.ls_cmd", "buck.oc", "buck.sink_oc", "buck.ctl.cut"]
+streams = ["checks"]
+max_steps = 15000000
+
+[run.setpoint]
+top = "Bench"
+analysis = "transient"
+stop = 3.40e-3
+max_step = 1e-8
+print_step = 1e-8
+print = ["buck.vout", "buck.vin", "buck.isense", "buck.ctl.reference", "buck.code", "mode", "fault", "pgood", "buck.hs_cmd", "buck.ls_cmd", "buck.oc", "buck.sink_oc", "buck.ctl.cut"]
+streams = ["checks"]
+max_steps = 15000000
+
+[run.steady_state]
+top = "Bench"
+analysis = "transient"
+stop = 4.05e-3
+max_step = 1e-8
+print_step = 1e-8
+print = ["buck.vout", "buck.vin", "buck.isense", "buck.ctl.reference", "buck.code", "mode", "fault", "pgood", "buck.hs_cmd", "buck.ls_cmd", "buck.oc", "buck.sink_oc", "buck.ctl.cut"]
+streams = ["checks"]
+max_steps = 15000000

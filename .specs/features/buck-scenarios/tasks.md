@@ -239,16 +239,18 @@ T13 → T15
 
 **Done when**:
 
-- [ ] `the_package_declares_the_five_scenario_runs`, `every_run_samples_the_thirteen_signals_on_a_10_ns_grid`, `every_run_accepts_the_five_ports_and_three_params` (opens every run, drives the five ports at 0 and sets the three params at 1 µs, does not run), `the_scenario_package_checks_with_no_diagnostic`, `opening_a_run_leaves_only_the_package_sources` (BS-01 AC 1 to 4, 6)
-- [ ] `Run clibuck` passes (BS-01 AC 5) and `cargo test -p piperine-parity --test parity_corpus` passes (no twin added)
-- [ ] `git status --porcelain` is clean after the gate but for the task's files
-- [ ] Gate check passes: `Run scenarios` and the Build line
-- [ ] Test count: 5 new tests
+- [x] `the_package_declares_the_five_scenario_runs`, `every_run_samples_the_thirteen_signals_on_a_10_ns_grid`, `every_run_accepts_the_five_ports_and_three_params` (opens every run, drives the five ports at 0 and sets the three params at 1 µs, does not run), `the_scenario_package_checks_with_no_diagnostic`, `opening_a_run_leaves_only_the_package_sources` (BS-01 AC 1 to 4, 6)
+- [x] `Run clibuck` passes (BS-01 AC 5) and `cargo test -p piperine-parity --test parity_corpus` passes (no twin added)
+- [x] `git status --porcelain` is clean after the gate but for the task's files
+- [x] Gate check passes: `Run scenarios` and the Build line
+- [x] Test count: 5 new tests
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `test: the buck's scenario package with five host-driven runs`
+
+**Status**: Complete
 
 ---
 
