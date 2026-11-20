@@ -272,7 +272,7 @@ impl Elaboration<'_, '_> {
             ExprKind::If { cond, then, else_ } if matches!(self.design.expr_node(*cond).kind, ExprKind::Let { .. }) => self.lower_if_let(scope, *cond, then, *else_, ty, origin),
             // A condition that reads only key params and constants is folded: only the arm it
             // selects is lowered (`structural.rs`, §11 rule 3).
-            ExprKind::If { cond, then, else_ } if let Some(holds) = self.folded_condition(&scope.keys.clone(), *cond) => {
+            ExprKind::If { cond, then, else_ } if let Some(holds) = self.folded_condition(&scope.keys.clone(), &self.placement_chain(scope.frame), *cond) => {
                 if holds {
                     return self.lower_block(scope, file, &then.stmts, node.span);
                 }
@@ -358,7 +358,7 @@ impl Elaboration<'_, '_> {
                 Some(self.emit(Expr::Cast { expr: operand, to: ty }, flagged, origin))
             }
             // A scrutinee over the key params folds: only the arm it selects is lowered (`structural.rs`).
-            ExprKind::Match { scrutinee, arms } if let Some(selected) = self.folded_arm(&scope.keys.clone(), *scrutinee, arms) => self.lower_expr(scope, arms[selected].body),
+            ExprKind::Match { scrutinee, arms } if let Some(selected) = self.folded_arm(&scope.keys.clone(), &self.placement_chain(scope.frame), *scrutinee, arms) => self.lower_expr(scope, arms[selected].body),
             ExprKind::Match { scrutinee, arms } => self.lower_match(scope, *scrutinee, arms, ty, origin),
             ExprKind::Closure { params, body, .. } => {
                 let mut locals = Vec::new();

@@ -55,7 +55,23 @@ impl Elaboration<'_, '_> {
 
     /// Whether `decl` is a port of a value type: a value input.
     pub(super) fn is_value_input(&self, decl: DeclId) -> bool {
-        matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if self.types.carrier(decl).is_none() && self.design.nature_of(p.ty).is_none())
+        super::structural::ParamReads::new(self.design, self.types).is_value_input(decl)
+    }
+
+    /// The placements, outermost first, that open the frame `frame`: the calls that lead from the
+    /// body's own module to it. Empty for the body's own module.
+    pub(super) fn placement_chain(&self, frame: usize) -> Vec<ExprId> {
+        let mut chain = Vec::new();
+        let mut at = frame;
+        while let Some(call) = self.frames[at].call {
+            chain.push(call);
+            match self.frames[at].parent {
+                Some(parent) => at = parent,
+                None => break,
+            }
+        }
+        chain.reverse();
+        chain
     }
 
     /// Hoist every placement of a hoisted module that the module of the frame `scope.frame`
@@ -181,6 +197,7 @@ impl Elaboration<'_, '_> {
         let ports: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_))).collect();
         let mut frame = Frame::root(module);
         frame.parent = Some(parent);
+        frame.call = Some(call);
         frame.prefix = prefix;
         frame.params = bound;
         let mut node_ports = Vec::new();

@@ -388,15 +388,48 @@ fn two_placements_with_equal_arguments_are_two_instances() {
 fn a_selector_through_a_value_input_is_judged_per_placement() {
     // AS-02 AC 2 (§11 rule 3, §8.3.9): the selector of `Gate` reads its value input `s`. It is judged
     // per instance, after substitution: a placement that binds `s` to a probe gets E0414 (the branch
-    // has a potential contribution under a selector that reads a probe), one that binds it to a param
-    // does not.
+    // has a potential contribution under a selector that reads a probe); one that binds it to a param
+    // reads params only (AC 3): the kind is fixed at elaboration, the caller's param is structural
+    // and the body is the variant of its value.
     let gate = "module Gate(a: Electrical, s: f64) {}\nanalog for Gate { if s > 0.5 { v(a) +> 1.0; } else { i(a, gnd) +> 0.0; } }\n";
     let probed = format!("{gate}module Top() {{ signal a: Electrical; signal b: Electrical; let g = Gate(a, v(b)); }}");
     let err = Elab::run(&probed, "Top").expect_err("a probe selects a potential branch");
     assert_eq!(Elab::codes(&err), ["E0414", "E0414"], "one at each contribution under the selector");
-    let bound = format!("{gate}module Top() {{ k: f64 = 1.0; signal a: Electrical; let g = Gate(a, k); }}");
-    let ir = Elab::ir(&bound, "Top");
-    assert_eq!(body(&ir, "Top").branches().iter().map(|b| b.kind).collect::<Vec<_>>(), [BranchKind::Switch], "a param selects at run time");
+    for (k, kind) in [(1.0, BranchKind::Potential), (0.0, BranchKind::Flow)] {
+        let bound = format!("{gate}module Top() {{ k: f64 = {k:?}; signal a: Electrical; let g = Gate(a, k); }}");
+        let ir = Elab::ir(&bound, "Top");
+        let top = ir.bodies().find(|b| b.name().starts_with("Top~k=")).expect("a body of the variant of `k`");
+        assert_eq!(top.branches().iter().map(|b| b.kind).collect::<Vec<_>>(), [kind], "k = {k}");
+        assert!(top.params()[0].structural, "`k` is structural");
+        assert_eq!(top.contributions().len(), 1, "only the selected arm is lowered");
+        assert!(top.contributions()[0].conditions.is_empty(), "the folded condition is no condition");
+    }
+}
+
+#[test]
+fn both_kinds_enabled_through_a_value_input_bound_to_a_param_are_e0415() {
+    // AS-02 AC 5 through AC 2: the selectors of `Gate` read `s`, bound to the param `k`, so they depend
+    // on params only and both are true for `k` = 1: E0415 at elaboration naming the branch, as for
+    // a selector that reads the param directly.
+    let gate = "module Gate(a: Electrical, s: f64) {}\nanalog for Gate { if s > 0.5 { v(a) +> 1.0; } if s > 0.5 { i(a, gnd) +> 1m; } }\n";
+    let src = format!("{gate}module Top() {{ k: f64 = 1.0; signal a: Electrical; let g = Gate(a, k); }}");
+    let err = Elab::run(&src, "Top").expect_err("both kinds enabled");
+    assert_eq!(Elab::codes(&err), ["E0415"]);
+    assert!(err[0].diagnostic.message.contains("(a, gnd)"), "{}", err[0].diagnostic.message);
+    // with `k` = 0 neither is enabled in the variant: no contribution, no error
+    Elab::ir(&src.replace("k: f64 = 1.0", "k: f64 = 0.0"), "Top");
+}
+
+#[test]
+fn a_zero_potential_enabled_through_a_value_input_merges_the_nodes() {
+    // AS-02 AC 4 through AC 2: the zero potential is the arm the param `k` selects, so with `k` = 1 the
+    // branch is a fixed zero potential and `a` merges with ground; with `k` = 0 it is driven.
+    let gate = "module Gate(a: Electrical, s: f64) {}\nanalog for Gate { if s > 0.5 { v(a) +> 0.0; } else { v(a) +> 1.0; } }\n";
+    let top = |k: f64| format!("{gate}module Top() {{ k: f64 = {k:?}; signal a: Electrical; let g = Gate(a, k); }}");
+    let merged = Elab::ir(&top(1.0), "Top");
+    let driven = Elab::ir(&top(0.0), "Top");
+    assert_eq!(merged.nodes().count() + 1, driven.nodes().count());
+    assert_eq!(merged.bodies().find(|b| b.name().starts_with("Top~k=")).expect("the variant").merges().len(), 1);
 }
 
 #[test]

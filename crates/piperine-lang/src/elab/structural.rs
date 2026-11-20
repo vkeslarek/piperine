@@ -97,44 +97,88 @@ impl BodyVariants {
 }
 
 /// The params an expression reads, when it reads nothing else but constants and operators on
-/// them: what a condition that depends on params only is made of.
+/// them: what a condition that depends on params only is made of. An expression written in a
+/// hoisted frame reads through the placements that lead to it (`within`): a value input is the
+/// caller's argument, so it reads what that argument reads.
 pub(super) struct ParamReads<'a, 'd> {
     design: &'d Design,
     types: &'a Types<'d>,
+    /// The placements, outermost first, between the body's own module and the frame the expression
+    /// is written in; empty for an expression of the body's own module.
+    placements: &'a [ExprId],
+    /// Whether a read went through a value input of a placement.
+    through_input: std::cell::Cell<bool>,
 }
 
 impl<'a, 'd> ParamReads<'a, 'd> {
+    /// A reader of expressions written in the body's own module.
     pub(super) fn new(design: &'d Design, types: &'a Types<'d>) -> Self {
-        ParamReads { design, types }
+        ParamReads::within(design, types, &[])
     }
 
-    /// The params `expr` reads; `None` when it reads a probe, a carrier, the environment, a local
-    /// or calls anything but a method of the catalogue.
+    /// A reader of expressions written in the frame that `placements` lead to.
+    pub(super) fn within(design: &'d Design, types: &'a Types<'d>, placements: &'a [ExprId]) -> Self {
+        ParamReads { design, types, placements, through_input: std::cell::Cell::new(false) }
+    }
+
+    /// Whether `decl` is a port of a value type: a value input.
+    pub(super) fn is_value_input(&self, decl: DeclId) -> bool {
+        matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if self.types.carrier(decl).is_none() && self.design.nature_of(p.ty).is_none())
+    }
+
+    /// Whether the last `of` read went through a value input of a placement.
+    pub(super) fn reads_an_input(&self) -> bool {
+        self.through_input.get()
+    }
+
+    /// The params of the body's own module `expr` reads; `None` when it reads a probe, a carrier,
+    /// the environment, a local or calls anything but a method of the catalogue.
     pub(super) fn of(&self, expr: ExprId) -> Option<BTreeSet<DeclId>> {
         let mut params = BTreeSet::new();
-        self.collect(expr, &mut params).then_some(params)
+        self.collect(expr, self.placements.len(), &mut params).then_some(params)
     }
 
-    /// Adds the params `expr` reads to `params`; `false` when it reads anything else.
-    fn collect(&self, expr: ExprId, params: &mut BTreeSet<DeclId>) -> bool {
+    /// Adds the params `expr` reads to `params`; `false` when it reads anything else. `depth` is how
+    /// many of the placements the expression is written beneath.
+    fn collect(&self, expr: ExprId, depth: usize, params: &mut BTreeSet<DeclId>) -> bool {
         match &self.design.expr_node(expr).kind {
             ExprKind::Lit(_) => true,
-            ExprKind::Paren(inner) | ExprKind::Cast { expr: inner, .. } | ExprKind::Unary { op: UnOp::Neg | UnOp::Not, expr: inner } => self.collect(*inner, params),
-            ExprKind::Binary { lhs, rhs, .. } => self.collect(*lhs, params) && self.collect(*rhs, params),
-            ExprKind::MethodCall { recv, args, .. } if self.types.method(expr).is_some() => self.collect(*recv, params) && args.iter().all(|a| self.collect(a.value, params)),
+            ExprKind::Paren(inner) | ExprKind::Cast { expr: inner, .. } | ExprKind::Unary { op: UnOp::Neg | UnOp::Not, expr: inner } => self.collect(*inner, depth, params),
+            ExprKind::Binary { lhs, rhs, .. } => self.collect(*lhs, depth, params) && self.collect(*rhs, depth, params),
+            ExprKind::MethodCall { recv, args, .. } if self.types.method(expr).is_some() => self.collect(*recv, depth, params) && args.iter().all(|a| self.collect(a.value, depth, params)),
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
+                    // a param of a placed callee is a constant of its frame, not a read of the body
                     DeclKind::Param(_) => {
-                        params.insert(decl);
+                        if depth == 0 {
+                            params.insert(decl);
+                        }
                         true
                     }
                     DeclKind::Const(_) | DeclKind::Variant(_) => true,
+                    DeclKind::Port(_) => self.collect_input(decl, depth, params),
                     _ => false,
                 },
                 _ => false,
             },
             _ => false,
         }
+    }
+
+    /// Adds the params the caller's argument for the value input `input` reads; `false` when
+    /// `input` is no value input of the placement the expression is beneath.
+    fn collect_input(&self, input: DeclId, depth: usize, params: &mut BTreeSet<DeclId>) -> bool {
+        if depth == 0 || !self.is_value_input(input) {
+            return false;
+        }
+        let call = self.placements[depth - 1];
+        let Some(crate::types::Callee::Module(callee)) = self.types.callee(call) else { return false };
+        let ports = self.design.decl_data(callee).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Port(_)));
+        let Some(position) = ports.into_iter().position(|c| *c == input) else { return false };
+        let ExprKind::Call { args, .. } = &self.design.expr_node(call).kind else { return false };
+        let Some(argument) = args.get(position) else { return false };
+        self.through_input.set(true);
+        self.collect(argument.value, depth - 1, params)
     }
 }
 
@@ -147,6 +191,9 @@ pub(super) struct WrittenContribution {
     pub(super) conditions: Vec<ExprId>,
     /// The right side of the contribution.
     pub(super) rhs: ExprId,
+    /// The placements, outermost first, of the hoisted frame the contribution is written in (the
+    /// conditions and the right side are read there); empty for the module's own.
+    pub(super) placements: Vec<ExprId>,
 }
 
 /// The walk that lists the contributions of statements with the conditions around them.
@@ -156,9 +203,35 @@ struct ContributionWalk<'e, 'd, 't> {
     keys: Bindings,
     conditions: Vec<ExprId>,
     found: Vec<WrittenContribution>,
+    /// The placements the walk is beneath: empty in the module's own `analog` blocks.
+    placements: Vec<ExprId>,
 }
 
 impl ContributionWalk<'_, '_, '_> {
+    /// The contributions of the `analog` blocks of `module`, then of every module it hoists, each
+    /// beneath its placement.
+    fn module(&mut self, module: DeclId) {
+        let DeclKind::Module(data) = &self.elaboration.design.decl_data(module).kind else { return };
+        let (blocks, calls) = (data.behaviors.clone(), data.instances.clone());
+        for block in blocks {
+            if let DeclKind::Behavior(behavior) = &self.elaboration.design.decl_data(block).kind.clone()
+                && behavior.kind == crate::pom::BehaviorKind::Analog
+            {
+                self.statements(&behavior.body);
+            }
+        }
+        for call in calls {
+            let Some(callee) = self.elaboration.hoisted_callee(call) else { continue };
+            // a module that places itself is reported when it is hoisted (`E0341`), not walked forever
+            if self.placements.iter().any(|p| self.elaboration.hoisted_callee(*p) == Some(callee)) {
+                continue;
+            }
+            self.placements.push(call);
+            self.module(callee);
+            self.placements.pop();
+        }
+    }
+
     /// The contributions among `stmts` and what they hold, in source order.
     fn statements(&mut self, stmts: &[StmtId]) {
         for stmt in stmts {
@@ -177,7 +250,7 @@ impl ContributionWalk<'_, '_, '_> {
             ExprKind::Paren(inner) => self.expression(inner),
             ExprKind::Block(block) => self.statements(&block.stmts),
             // A condition over the key params folds: only the arm it selects is written (`lower.rs`).
-            ExprKind::If { cond, then, else_ } => match self.elaboration.folded_condition(&self.keys, cond) {
+            ExprKind::If { cond, then, else_ } => match self.elaboration.folded_condition(&self.keys, &self.placements, cond) {
                 Some(true) => self.statements(&then.stmts),
                 Some(false) => {
                     if let Some(otherwise) = else_ {
@@ -195,7 +268,7 @@ impl ContributionWalk<'_, '_, '_> {
             },
             // A scrutinee over the key params folds like an `if` condition (§11 rule 3): only the
             // arm it selects is written.
-            ExprKind::Match { scrutinee, arms } => match self.elaboration.folded_arm(&self.keys, scrutinee, &arms) {
+            ExprKind::Match { scrutinee, arms } => match self.elaboration.folded_arm(&self.keys, &self.placements, scrutinee, &arms) {
                 Some(selected) => self.expression(arms[selected].body),
                 None => {
                     self.conditions.push(scrutinee);
@@ -216,7 +289,7 @@ impl ContributionWalk<'_, '_, '_> {
         let Some(quantity) = self.elaboration.quantity_role(*callee) else { return };
         let mut ends: Vec<Option<DeclId>> = Vec::new();
         for arg in args {
-            let Some(end) = self.elaboration.terminal_decl(arg.value) else { return };
+            let Some(end) = self.elaboration.terminal_in(arg.value, &self.placements) else { return };
             ends.push(end);
         }
         let mut ends = match ends[..] {
@@ -225,7 +298,7 @@ impl ContributionWalk<'_, '_, '_> {
             _ => return,
         };
         ends.sort();
-        self.found.push(WrittenContribution { ends, quantity, conditions: self.conditions.clone(), rhs });
+        self.found.push(WrittenContribution { ends, quantity, conditions: self.conditions.clone(), rhs, placements: self.placements.clone() });
     }
 }
 
@@ -246,20 +319,26 @@ impl Elaboration<'_, '_> {
         self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect()
     }
 
-    /// The contributions `module` writes in its `analog` blocks, with the conditions that enclose
-    /// each; a condition over the key params `keys` folds and is not one of them.
+    /// The contributions `module` writes in its `analog` blocks and `analog` blocks of the modules it
+    /// hoists (a module with a value input or a result), with the conditions that enclose each; a
+    /// condition over the key params `keys` folds and is not one of them.
     pub(super) fn written_contributions(&mut self, module: DeclId, keys: &Bindings) -> Vec<WrittenContribution> {
-        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
-        let blocks = data.behaviors.clone();
-        let mut walk = ContributionWalk { elaboration: self, keys: keys.clone(), conditions: Vec::new(), found: Vec::new() };
-        for block in blocks {
-            if let DeclKind::Behavior(behavior) = &walk.elaboration.design.decl_data(block).kind.clone()
-                && behavior.kind == crate::pom::BehaviorKind::Analog
-            {
-                walk.statements(&behavior.body);
-            }
-        }
+        let mut walk = ContributionWalk { elaboration: self, keys: keys.clone(), conditions: Vec::new(), found: Vec::new(), placements: Vec::new() };
+        walk.module(module);
         walk.found
+    }
+
+    /// The node `arg` names as an end of a branch written in the frame `placements` lead to, read
+    /// as the body's own module has it: a node port of a placed callee is the node its argument
+    /// names, one level up. `None` for a node the callee owns, or anything but a node.
+    pub(super) fn terminal_in(&self, arg: ExprId, placements: &[ExprId]) -> Option<Option<DeclId>> {
+        let Some(decl) = self.terminal_decl(arg)? else { return Some(None) };
+        let [outer @ .., call] = placements else { return Some(Some(decl)) };
+        let Some(crate::types::Callee::Module(callee)) = self.types.callee(*call) else { return None };
+        let ports = self.design.decl_data(callee).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Port(_)));
+        let position = ports.into_iter().position(|c| *c == decl)?;
+        let ExprKind::Call { args, .. } = &self.design.expr_node(*call).kind else { return None };
+        self.terminal_in(args.get(position)?.value, outer)
     }
 
     /// The contributions of `module` to a branch that has a potential contribution among them.
@@ -276,7 +355,7 @@ impl Elaboration<'_, '_> {
             let order = self.params_of(*module);
             for contribution in self.potential_capable_contributions(*module) {
                 for condition in &contribution.conditions {
-                    for param in ParamReads::new(self.design, self.types).of(*condition).into_iter().flatten() {
+                    for param in ParamReads::within(self.design, self.types, &contribution.placements).of(*condition).into_iter().flatten() {
                         self.keys.add(*module, param, &order);
                     }
                 }
@@ -408,20 +487,57 @@ impl Elaboration<'_, '_> {
 
 
 impl Elaboration<'_, '_> {
-    /// The value of the condition `cond` when it reads only the key params `scope.keys` binds and
-    /// constants; `None` for any other condition, which is lowered as written.
-    pub(super) fn folded_condition(&mut self, keys: &Bindings, cond: ExprId) -> Option<bool> {
-        if keys.is_empty() {
-            return None;
-        }
-        let reads = ParamReads::new(self.design, self.types).of(cond)?;
-        if !reads.iter().all(|param| keys.get(*param).is_some()) {
-            return None;
-        }
-        match self.consts.value(cond, keys) {
+    /// The value of the condition `cond`, written in the frame `placements` lead to, when it reads
+    /// only the key params `keys` binds and constants (through the value inputs of the placements:
+    /// the caller's arguments, which read key params only); `None` for any other condition, which is
+    /// lowered as written.
+    pub(super) fn folded_condition(&mut self, keys: &Bindings, placements: &[ExprId], cond: ExprId) -> Option<bool> {
+        let bindings = self.fold_bindings(keys, placements, cond)?;
+        match self.consts.value(cond, &bindings) {
             Ok(Constant::Bool(holds)) => Some(holds),
             _ => None,
         }
+    }
+
+    /// What `expr`, written in the frame `placements` lead to, is evaluated over for a fold: `keys`
+    /// at the body's own module, and beneath a placement the callee's params and the values of its
+    /// value inputs, each the caller's argument evaluated one level up. `None` when `expr` is not a
+    /// value of the key params alone, or (beneath a placement) reads no value input, which
+    /// the frame lowers as written as it always did.
+    fn fold_bindings(&mut self, keys: &Bindings, placements: &[ExprId], expr: ExprId) -> Option<Bindings> {
+        let reads = ParamReads::within(self.design, self.types, placements);
+        let params = reads.of(expr)?;
+        if keys.is_empty() || !params.iter().all(|param| keys.get(*param).is_some()) || (!placements.is_empty() && !reads.reads_an_input()) {
+            return None;
+        }
+        let mut level = keys.clone();
+        for call in placements {
+            level = self.placement_bindings(*call, &level)?;
+        }
+        Some(level)
+    }
+
+    /// The values the value inputs and params of the callee of the placement `call` take, the
+    /// arguments read over `caller`, the bindings of the frame the placement is written in.
+    fn placement_bindings(&mut self, call: ExprId, caller: &Bindings) -> Option<Bindings> {
+        let Some(crate::types::Callee::Module(callee)) = self.types.callee(call) else { return None };
+        let ExprKind::Call { args, .. } = self.design.expr_node(call).kind.clone() else { return None };
+        let ports: Vec<DeclId> = self.design.decl_data(callee).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_))).collect();
+        let mut bound = Bindings::new();
+        for (position, port) in ports.iter().enumerate() {
+            if self.is_value_input(*port) {
+                let value = self.consts.value(args.get(position)?.value, caller).ok()?;
+                bound.bind(*port, value);
+            }
+        }
+        let fields = self.placement_fields(call, callee);
+        for param in self.params_of(callee) {
+            let DeclKind::Param(data) = &self.design.decl_data(param).kind else { continue };
+            let written = fields.iter().find(|f| f.res == Resolution::Decl(param)).map(|f| f.value);
+            let value = self.consts.value(written.or(data.default)?, &Bindings::new()).ok()?;
+            bound.bind(param, value);
+        }
+        Some(bound)
     }
 }
 
@@ -431,14 +547,8 @@ impl Elaboration<'_, '_> {
     /// elaboration, an `if` and a `match` alike). `None` when the scrutinee is not such a value,
     /// an arm has a guard or a pattern that binds, or no arm matches: the `match` is then lowered
     /// as written, a run-time selector.
-    pub(super) fn folded_arm(&mut self, keys: &Bindings, scrutinee: ExprId, arms: &[Arm]) -> Option<usize> {
-        if keys.is_empty() {
-            return None;
-        }
-        let reads = ParamReads::new(self.design, self.types).of(scrutinee)?;
-        if !reads.iter().all(|param| keys.get(*param).is_some()) {
-            return None;
-        }
+    pub(super) fn folded_arm(&mut self, keys: &Bindings, placements: &[ExprId], scrutinee: ExprId, arms: &[Arm]) -> Option<usize> {
+        let keys = &self.fold_bindings(keys, placements, scrutinee)?;
         let subject = self.consts.value(scrutinee, keys).ok()?;
         for (position, arm) in arms.iter().enumerate() {
             if arm.guard.is_some() {
@@ -543,21 +653,28 @@ impl Elaboration<'_, '_> {
         matches!(self.consts.value(expr, &Bindings::new()), Ok(Constant::Real(value)) if value.get() == 0.0)
     }
 
-    /// The branches (sorted pairs of ends) whose flow an expression of `module` reads: a call of
-    /// the flow quantity that is not the left side of a contribution.
+    /// The branches (sorted pairs of ends) whose flow an expression of `module`, or of a module it
+    /// hoists, reads: a call of the flow quantity that is not the left side of a contribution.
     fn flow_reads_in(&self, module: DeclId) -> Vec<[Option<DeclId>; 2]> {
         let written: BTreeSet<ExprId> = (0..self.design.stmt_count() as u32).filter_map(|k| match &self.design.stmt_node(StmtId(k)).kind {
             StmtKind::Contribution { lhs, .. } => Some(*lhs),
             _ => None,
         }).collect();
         let mut reads = Vec::new();
+        self.collect_flow_reads(module, &[], &written, &mut reads);
+        reads
+    }
+
+    /// Adds to `reads` the branches the flow reads of `module` (written beneath `placements`) and of
+    /// the modules it hoists name, the ends read as the body's own module has them.
+    fn collect_flow_reads(&self, module: DeclId, placements: &[ExprId], written: &BTreeSet<ExprId>, reads: &mut Vec<[Option<DeclId>; 2]>) {
         for id in self.module_exprs(module) {
             let node = self.design.expr_node(id);
             let ExprKind::Call { callee, args, .. } = &node.kind else { continue };
             if written.contains(&id) || self.quantity_role(*callee) != Some(crate::pom::QuantityRole::Flow) {
                 continue;
             }
-            let ends: Option<Vec<Option<DeclId>>> = args.iter().map(|a| self.terminal_decl(a.value)).collect();
+            let ends: Option<Vec<Option<DeclId>>> = args.iter().map(|a| self.terminal_in(a.value, placements)).collect();
             let mut pair = match ends.as_deref() {
                 Some([a]) => [*a, None],
                 Some([a, b]) => [*a, *b],
@@ -566,7 +683,15 @@ impl Elaboration<'_, '_> {
             pair.sort();
             reads.push(pair);
         }
-        reads
+        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return };
+        for call in &data.instances {
+            let Some(callee) = self.hoisted_callee(*call) else { continue };
+            if placements.iter().any(|p| self.hoisted_callee(*p) == Some(callee)) || callee == module {
+                continue;
+            }
+            let inner: Vec<ExprId> = placements.iter().copied().chain([*call]).collect();
+            self.collect_flow_reads(callee, &inner, written, reads);
+        }
     }
 }
 

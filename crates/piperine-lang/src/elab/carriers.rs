@@ -49,6 +49,9 @@ pub(super) struct Frame {
     pub(super) module: DeclId,
     /// The frame of the placement's caller; `None` for the body's own module.
     pub(super) parent: Option<usize>,
+    /// The placement (the call) that opened this frame; `None` for the body's own module and for
+    /// a reach frame.
+    pub(super) call: Option<ExprId>,
     /// What the frame's carriers are named with in the body: empty for the body's own module,
     /// `gate.` for `let gate = transition(..)`.
     pub(super) prefix: String,
@@ -76,7 +79,7 @@ pub(super) struct Frame {
 impl Frame {
     /// The frame of the body's own module.
     pub(super) fn root(module: DeclId) -> Frame {
-        Frame { module, parent: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), child: None }
+        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), child: None }
     }
 }
 
