@@ -286,8 +286,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `gaps_narrows_s3_to_generic_items` passes under `**Run docs**`
-- [ ] Gate check passes: Build
+- [x] `gaps_narrows_s3_to_generic_items` passes under `**Run docs**`
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build

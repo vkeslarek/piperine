@@ -410,3 +410,20 @@ fn the_roadmap_and_state_record_analog_structure() {
         assert!(decision.contains(name), "MD-71 names {name}");
     }
 }
+
+#[test]
+fn gaps_narrows_s3_to_generic_items() {
+    // generics GN-31 (T6): the whole-model check closed S3 for every item but a generic one, so the
+    // entry keeps only that, the library-check sentence and the `E0610`/`E0612`/`E0613` note are gone,
+    // and §9 Coverage I §3.4 to §3.6 names the generic item as its hole
+    let gaps = read("GAPS.md");
+    let start = gaps.find("### S3.").expect("GAPS.md keeps S3");
+    let entry = &gaps[start..start + gaps[start..].find("### S6.").expect("S3 is followed by S6")];
+    assert!(entry.starts_with("### S3. The type checker does not check a generic body"), "{entry}");
+    assert!(entry.contains("generic") && entry.contains("X6"), "S3 keeps the generic body and X6: {entry}");
+    for gone in ["A library package with no run is never type-checked", "E0612", "E0613"] {
+        assert!(!entry.contains(gone), "S3 still says `{gone}`: {entry}");
+    }
+    let row = gaps.lines().find(|l| l.starts_with("| I §3.4–§3.6 files, crates, packages |")).expect("the Coverage row");
+    assert!(row.contains("unreached generic item (S3)"), "{row}");
+}

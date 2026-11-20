@@ -74,17 +74,15 @@ change of the IR or the ABI.
 
 ## 3. Silent — accepted, then wrong or ignored
 
-### S3. The type checker checks only what a run's top reaches — size M
+### S3. The type checker does not check a generic body — size M
 
-- **What.** `Types::check` walks the reachable set from the top (`types/check.rs:147`). A
-  function or module nothing reaches is resolved and never typed:
-  `fn broken(x: f64) -> bool { x + 1.0 }` and a module that calls `ddx` pass `piperine check`
-  (`ok: u (2 crates, 0 runs)`). A library package with no run is never type-checked. An unreached
-  `const X: &str = include_str!("missing.txt")` is accepted: `E0610`, `E0612` and `E0613` are
-  raised nowhere.
-- **Impact.** `check` is green for a library that cannot compile. §0.3 puts every static check
-  in elaboration, of the whole model.
-- Generic items need an instantiation to check (X6); the others do not.
+- **What.** `Types::check_model` types every module, function, `const` and `impl` function of
+  every crate but `std`, reached from a top or not, and `piperine check`, `build` and `run` fail
+  alike on an error in any of them. A generic item is the one thing it leaves out: its body is
+  checked per Q1 (c) with X6, and until then reaching it is `P0001`, so
+  `fn id<T>(x: T) -> T { x + 1 }` passes `piperine check` when nothing calls it.
+- **Impact.** `check` is green for a library whose generic item cannot compile.
+- Generic items need an instantiation to check (X6).
 
 ### S6. Unknown integers are one flag per value, so `&` and `|` lose known bits (G6) — size L (ABI)
 
@@ -187,7 +185,7 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 
 | # | Refused | Spec | Size |
 | - | ------- | ---- | ---- |
-| L57 | `include_str!`, `parse_table`, `parse_hex`, `table_model` (`P0001` when reached; see S3) | §20, §22.6.4, §22.2.15 | M, after L3 |
+| L57 | `include_str!`, `parse_table`, `parse_hex`, `table_model` (`P0001`) | §20, §22.6.4, §22.2.15 | M, after L3 |
 | L58 | Stdlib refused with the form it is built on. **Generics (L30):** `Short`, `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`, `merge`, `cast`, `same`. **Resolved nets (L21):** `Logic`, `Strength`, `Wire`, `Tri`, `SumNet`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir`, `TribufDelayed`. **Other:** `limexp` (`binding inside a module`), `AckWithin` (a `u32` param), `MinPulse` (`since`), `normal` (tuples, `cos`), `limvds` as a function value (L9) | §22 | by its group |
 | L59 | `unwrap` or `expect` of an `Option` whose presence may be unknown; the closure of `map`, `and_then` or `then` when it is not a literal; an `expect` message that is not a string literal | H.3 | `P0001` naming the form | S |
 | L60 | the stdlib `slew` does not limit an ideal (jump) step: §15.2 rule 4 fires a jump's crossing after the solve, so the output passes the jump in one step. Fix = retake the step when a jump-crossing flips a carrier read by `analog` (owner `analog-operators`, AO-13; found by `analog-structure` AS-09 AC 6, which covers a step with a finite edge) | §15.2 rule 4, §22.2.10 | none: the output follows the jump | M |
@@ -334,7 +332,7 @@ does not count.
 | ---- | ---- | ------------- |
 | I §1–§2 values, `Repr` | 35 % | composites, payload enums, floats other than `f64`, widths over 64 |
 | I §3–§3.3 functions, calls, unknown values | 35 % | generics, `impl`, traits, handles, loops, arrays and composites; the merge and the level reads run |
-| I §3.4–§3.6 files, crates, packages | 95 % | the check of unreached items (S3) |
+| I §3.4–§3.6 files, crates, packages | 97 % | the check of an unreached generic item (S3) |
 | II §4–§5 natures, discrete carriers | 40 % | `resolve`, arrays, user discrete natures, `Unknown` initial values |
 | II §6 nodes, probes | 85 % | signal-flow |
 | II §7 bundles | 0 % | all |
