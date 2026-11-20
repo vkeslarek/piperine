@@ -8,7 +8,7 @@
 //! [`TransientAnalysisOptions`], and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
 use piperine_analog_solver::crossing::{CrossDir, predict_crossing};
-use piperine_analog_solver::device::{Ambient, AssemblySnapshot, Stage};
+use piperine_analog_solver::device::{Ambient, AssemblySnapshot, JumpPosition, Stage};
 use piperine_analog_solver::netlist::AnalogReference;
 use crate::analyses::dc::DcSolver;
 use crate::analyses::Context;
@@ -295,6 +295,11 @@ pub struct TransientSystem<'a> {
     /// Last accepted step size, so the TR stage can re-derive the previous
     /// capacitor current. Updated after each accepted BDF2 phase.
     pub prev_h: f64,
+    /// Where the next step stands relative to a jump (§15.2.6): set by `device_attempt`.
+    pub jump: JumpPosition,
+    /// Whether the last accepted step read a jump: the step after it is `JumpPosition::After`.
+    /// Time-loop state, kept by `AcceptUndo` and `AnalogResume`.
+    pub last_read_jump: bool,
     pub tfinal: f64,
     /// UIC hold clamps (ngspice `CKTsetIC`): `@initial` branch seeds pinned
     /// through the t=0 solve and the first accepted step.
@@ -373,7 +378,7 @@ impl TransientSystem<'_> {
             Some(row) => row.to_vec(),
             None => vec![0.0; state.size()],
         };
-        let stage = Stage { phase: self.phase, h: self.h, prev_h: self.prev_h };
+        let stage = Stage { phase: self.phase, h: self.h, prev_h: self.prev_h, jump: self.jump };
         let amb = self.ambient();
         let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
         let mut all_stamps = bound.analog.assemble_tran(&x, amb, stage)?;
@@ -556,6 +561,8 @@ impl<'a> TransientSolver<'a> {
             phase: TrBdf2Phase::Trapezoidal,
             h: options.dt,
             prev_h: 0.0,
+            jump: JumpPosition::None,
+            last_read_jump: false,
             tfinal: options.stop_time,
             uic_clamps: Vec::new(),
             uic_hold: false,
@@ -961,6 +968,7 @@ pub(crate) struct DeviceRun {
 struct AcceptUndo {
     st: TimeLoop,
     prev_h: f64,
+    last_read_jump: bool,
     uic_hold: bool,
     steps: usize,
     cap: f64,
@@ -1349,6 +1357,7 @@ impl TransientSolver<'_> {
             run.st.last_step_accepted = analog.last_step_accepted();
             run.st.sets_just_applied = analog.restart_pending();
             self.system.prev_h = analog.prev_h();
+            self.system.last_read_jump = analog.last_read_jump();
             self.plan.stepper_mut().resume(analog.stepper());
         } else {
             let ivs: Vec<InitialValue<AnalogReference, f64>> = self
@@ -1412,6 +1421,7 @@ impl TransientSolver<'_> {
             run.last_dt,
             run.st.last_step_accepted,
             run.st.sets_just_applied,
+            self.system.last_read_jump,
             self.plan.stepper().memory(),
         )
     }
@@ -1522,6 +1532,13 @@ impl TransientSolver<'_> {
             landed_on_breakpoint: exempt,
         };
         let post_set_step = st.sets_just_applied;
+        self.system.jump = if st.sets_just_applied {
+            JumpPosition::Reads
+        } else if self.system.last_read_jump {
+            JumpPosition::After
+        } else {
+            JumpPosition::None
+        };
         let outcome = self.execute_timestep(st.current_time, prediction.dt_actual, st.last_step_accepted);
         if let Ok(Some(snapshot)) = outcome {
             let assessment = self.assess_step(&prediction, post_set_step);
@@ -1644,6 +1661,7 @@ impl TransientSolver<'_> {
         run.undo = Some(AcceptUndo {
             st: run.st.clone(),
             prev_h: self.system.prev_h,
+            last_read_jump: self.system.last_read_jump,
             uic_hold: self.system.uic_hold,
             steps: run.steps.len(),
             cap: run.cap,
@@ -1668,6 +1686,7 @@ impl TransientSolver<'_> {
         self.record_step(&mut run.steps, t_next, snapshot);
         st.current_time = t_next;
         self.system.prev_h = dt_actual;
+        self.system.last_read_jump = st.sets_just_applied;
         // A design that locates crossings ends a step on the tick below the controller's
         // proposal: the controller grows from its proposal, or a step of a few ticks would
         // round down to the same tick forever.
@@ -1695,6 +1714,7 @@ impl TransientSolver<'_> {
         let undo = run.undo.take().expect("a retake follows an acceptance");
         run.st = undo.st;
         self.system.prev_h = undo.prev_h;
+        self.system.last_read_jump = undo.last_read_jump;
         self.system.uic_hold = undo.uic_hold;
         run.steps.truncate(undo.steps);
         run.cap = undo.cap;

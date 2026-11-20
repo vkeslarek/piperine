@@ -109,6 +109,18 @@ impl TrBdf2 {
         Self::phase_coeffs(phase, h)
     }
 
+    /// The coefficients of a stage of the step that reads a jump (§15.2.6): the step is first
+    /// order throughout. The trapezoidal stage is the restart's backward Euler over `γh`,
+    /// `(1/(γh), −1/(γh), 0)`; the second stage is backward Euler over the whole step from the
+    /// step's start, `(1/h, 0, −1/h)` on `(Q_{n+1}, Q_{n+γ}, Q_n)`, so the derivative the step
+    /// ends with is its secant `(Q_{n+1} − Q_n)/h` and has the sign of the change.
+    pub fn jump_coeffs(phase: TrBdf2Phase, h: f64) -> (f64, f64, f64) {
+        match phase {
+            TrBdf2Phase::Trapezoidal => Self::stage_coeffs(phase, h, 0.0),
+            TrBdf2Phase::Bdf2 => (1.0 / h, 0.0, -1.0 / h),
+        }
+    }
+
     /// The truncation error of a step over its `ddt` states, normalized as ngspice's `CKTterr`:
     /// per state, Milne's difference `|q_{n+1} − (q_{n+γ} + ((1−γ)/γ)(q_{n+γ} − q_n))|` over the
     /// larger of `h·(abstol + reltol·max(|i_n|, |i_{n+1}|))` and

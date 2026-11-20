@@ -17,12 +17,12 @@ mod system;
 use circuit::{at, f64_bytes, instance, netlist};
 use devices::modules;
 use piperine_analog_solver::device::AnalogBinding::Discrete;
-use piperine_analog_solver::device::{AnalogPlan, Assembly, Stage};
+use piperine_analog_solver::device::{AnalogPlan, Assembly, JumpPosition, Stage};
 use piperine_analog_solver::math::integration::TrBdf2Phase;
 use system::{at_rest, at_time, close, dense, matrix_positions};
 
 const US: f64 = 1e-6;
-const STAGE: Stage = Stage { phase: TrBdf2Phase::Bdf2, h: 0.5 * US, prev_h: 0.5 * US };
+const STAGE: Stage = Stage { phase: TrBdf2Phase::Bdf2, h: 0.5 * US, prev_h: 0.5 * US, jump: JumpPosition::None };
 
 /// A delay line from unknown 0 (`a`) to the row of unknown 1 (`o`), with a
 /// ramp `v(a) = t/µs` accepted at 0, 1, 2 and 3 µs.

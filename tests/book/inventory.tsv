@@ -26,7 +26,7 @@ block	welcome#15	22bdfa847a6e9e8b	held	piperine-cli/book::every_cli_listing_of_t
 block	welcome#16	09a7d97e5c52020f	shown	-	-	-
 block	welcome#17	6c28b7facfb06ecf	run	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	-
 block	welcome#18	dddafa2050e950cd	shown	-	-	-
-block	welcome#19	21913b57ecc70534	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run benches/delayed.msl --analysis transient --stop 5e-6 --print-step 1e-6
+block	welcome#19	1ed41f9bf57024a8	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run benches/delayed.msl --analysis transient --stop 5e-6 --print-step 1e-6
 block	welcome#20	5a43010c6903b85d	shown	-	-	-
 block	welcome#21	40aed5bddc1b9b01	run	piperine/book_welcome::the_inverter_drives_its_output_a_propagation_delay_after_its_input	-	-
 block	from-rust#1	3484b3537670c234	refused	piperine/book_from_rust::the_rust_that_carries_over_is_refused_where_the_solver_reaches_it	L6	-
@@ -209,7 +209,7 @@ block	cli#43	10b7a1389fbd7646	held	piperine-cli/book::every_cli_listing_of_the_b
 block	cli#44	fb7b83ae02e8b060	run	piperine/book_cli::the_buck_bench_of_the_chapter_is_the_example_and_starts_with_the_supervisor_off	-	-
 block	cli#45	1c66b4b4d5d7a1e2	shown	-	-	-
 block	cli#46	47b905ff64d8b849	shown	-	-	-
-block	cli#47	0864d88b35e61a2b	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run startup
+block	cli#47	9d243cb374658c0c	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run startup
 block	cli#48	0d76250cc10f06b4	shown	-	-	-
 block	cheatsheet#1	35f08adcbe452e09	run	piperine/book_cheatsheet::the_nature_card_is_the_standard_librarys	-	-
 block	cheatsheet#2	383dda9a42c27bf9	refused	piperine/book_cheatsheet::the_module_card_is_refused_for_its_const_generic	L30	-
@@ -593,7 +593,7 @@ claim	cli~662c11ca	662c11cac0eb42a8	holds	piperine/book_cli::sens_gives_the_deri
 claim	cli~3d1453da	3d1453dac50df26b	binary	piperine-cli/buck::startup_ends_within_3_mv_of_0_8_volts	-	The same commands run a full-size design: a digitally controlled buck converter that steps 12 V down to 0.8 V, with an analog power stage, a 200 MHz digital PWM, an ADC, a fixed-point PID, a soft start and a supervisor, all in MSL.
 claim	cli~6acf516c	6acf516c01fb6a39	prose	-	-	Then it simulates 600 µs of a circuit switching at 500 kHz with a 200 MHz clock, a couple of minutes on a laptop.
 claim	cli~9c4b6fcf	9c4b6fcf8e2fe12f	binary	piperine-cli/book::the_buck_block_is_what_the_binary_prints	-	The table has 1 201 rows, one per 0.5 µs from time 0 to 600 µs; the listing shows the first five, where the supervisor is still off, the reference is 0 and the output is at its initial rest.
-claim	cli~6153ef01	6153ef017a7d0cbd	binary	piperine-cli/buck::startup_ends_within_3_mv_of_0_8_volts	-	The last row, at 600 µs, reads reference 128, the code of 0.8 V; mode 2, regulation, after off and soft start; and an output within 3 mV of 0.8 V (0.8025).
+claim	cli~586d4401	586d440175610e64	binary	piperine-cli/buck::startup_ends_within_3_mv_of_0_8_volts	-	The last row, at 600 µs, reads reference 128, the code of 0.8 V; mode 2, regulation, after off and soft start; and an output within 3 mV of 0.8 V (0.8026).
 claim	cli~5010f432	5010f43297534039	binary	piperine-cli/buck::startup_prints_no_failed_check	-	There are no record lines, yet the converter checks itself at every clock: its PWM carries a monitor that writes a checks record at every edge of the 200 MHz clock, saying the two power switches are never on together.
 claim	cli~7656eb9c	7656eb9c4b8bde20	holds	piperine/book_cli::the_bode_exercise_reads_0_707_and_minus_45_degrees_at_159_kilohertz	-	In the project of chapter 1, add a run [run.bode] that sweeps the filter from 1 kHz to 10 MHz with 10 points per decade and plots it. (The source needs a small-signal stimulus: v(p, n) + dc + ac_stim(1.0, 0.0);, chapter 6.
 claim	cli~e1afdf04	e1afdf0449b3645f	holds	piperine/book_cli::the_bode_exercise_reads_0_707_and_minus_45_degrees_at_159_kilohertz	-	The table needs analysis = "ac", from = 1e3, to = 1e7, per_decade = 10, print = ["vout"] and plot = "bode.svg".) At which frequency should mag(Step.vout) read 0.707 and phase(Step.vout) read −45? (At 1 / (2π · r · c) = 159 kHz.)

@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use circuit::{at, f64_bytes, instance, netlist};
 use devices::modules;
 use piperine_analog_solver::device::AnalogBinding::{Absent, Discrete, Ground};
-use piperine_analog_solver::device::{AnalogPlan, Assembly, Stage};
+use piperine_analog_solver::device::{AnalogPlan, Assembly, JumpPosition, Stage};
 use piperine_analog_solver::math::integration::{TrBdf2, TrBdf2Phase};
 use piperine_analog_solver::math::iv::InitialValue;
 use piperine_analog_solver::netlist::Netlist;
@@ -104,9 +104,9 @@ fn device_modules_hold_no_unsafe() {
 /// history row (`assemble_tran` through the Newton loop, `end_iteration`
 /// between iterations, `push_stage` after each stage).
 fn step(solver: &mut Solver, asm: &mut Assembly, net: &Netlist, t: f64, dt: f64, prev_h: f64) -> Vec<f64> {
-    let trap = Stage { phase: TrBdf2Phase::Trapezoidal, h: dt, prev_h };
+    let trap = Stage { phase: TrBdf2Phase::Trapezoidal, h: dt, prev_h, jump: JumpPosition::None };
     solve_stage(solver, asm, net, at_time(t + TrBdf2::GAMMA * dt), trap);
-    let bdf2 = Stage { phase: TrBdf2Phase::Bdf2, h: dt, prev_h };
+    let bdf2 = Stage { phase: TrBdf2Phase::Bdf2, h: dt, prev_h, jump: JumpPosition::None };
     solve_stage(solver, asm, net, at_time(t + dt), bdf2).to_vec()
 }
 
@@ -135,7 +135,7 @@ fn rc_with_a_dac(reject: Option<usize>) -> (f64, f64) {
     // A boundary event: the code goes to full scale.
     asm.set_discrete(1, &[255, 1]);
     let dt = r * c / 50.0;
-    let first = Stage { phase: TrBdf2Phase::Trapezoidal, h: dt, prev_h: 0.0 };
+    let first = Stage { phase: TrBdf2Phase::Trapezoidal, h: dt, prev_h: 0.0, jump: JumpPosition::None };
     let mut solver = Solver::new(&mut Tran { asm: &mut asm, net: &net, amb: at_time(0.0), stage: first }, size(&net), 4)
         .expect("dry run");
     let ivs = n.iter().zip(&op).map(|(r, v)| InitialValue { reference: r.clone(), value: *v }).collect();

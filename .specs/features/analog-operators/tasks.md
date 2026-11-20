@@ -377,8 +377,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `slew_limits_an_ideal_step_to_its_rate` passes
-- [ ] Gate check passes: `Run sslew`
+- [x] `slew_limits_an_ideal_step_to_its_rate` passes
+- [x] Gate check passes: `Run sslew`
 
 **Tests**: e2e
 **Gate**: quick

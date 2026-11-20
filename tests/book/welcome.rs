@@ -144,10 +144,10 @@ fn the_delayed_bench_steps_at_one_microsecond() {
     let ran = Chapter::read().marked("rc/benches/delayed.msl", "welcome#17").run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
     assert_eq!(ran.real(1, "Delayed.vin"), 0.0, "the source is at 0 V until t0 = 1 us");
     assert_eq!(ran.real(2, "Delayed.vin"), 1.0, "and at v1 = 1 V after it");
-    Printed::holds("6.321468e-1", ran.real(2, "Delayed.vout"), "vout one time constant after the step");
+    Printed::holds("6.321445e-1", ran.real(2, "Delayed.vout"), "vout one time constant after the step");
     let tau = ran.stream("tau");
     assert_eq!(tau.len(), 1, "{:?}", ran.records);
-    Printed::holds("1.999927e-6", tau[0].time, "the tau record's instant");
+    Printed::holds("1.999933e-6", tau[0].time, "the tau record's instant");
     let Field::Real(vout) = tau[0].fields[1].1 else { panic!("vout is a real number: {:?}", tau[0].fields) };
     Printed::holds("6.321206e-1", vout, "vout at the record");
     assert!((vout - (1.0 - (-1.0f64).exp())).abs() < 5e-7, "1 - 1/e to the digit");
