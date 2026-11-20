@@ -214,16 +214,18 @@ T13 → T15
 
 **Done when**:
 
-- [ ] `a_failed_run_is_kept_as_its_message_and_the_others_still_run` (BS-08 AC 2): a batch of a short planted run and a run of a name the package lacks gives `Ok` then `Err` naming the missing run
-- [ ] `the_tally_counts_checks_and_the_failed_ones` on hand-made `Record`s
-- [ ] `each_run_builds_in_its_own_directory`: two runs of the planted package report different `build` paths and overlapping `started..ended` intervals
-- [ ] Gate check passes: `cargo test -p piperine-parity --lib scenario::`
-- [ ] Test count: 3 new tests
+- [x] `a_failed_run_is_kept_as_its_message_and_the_others_still_run` (BS-08 AC 2): a batch of a short planted run and a run of a name the package lacks gives `Ok` then `Err` naming the missing run
+- [x] `the_tally_counts_checks_and_the_failed_ones` on hand-made `Record`s
+- [x] `each_run_builds_in_its_own_directory`: two runs of the planted package report different `build` paths and overlapping `started..ended` intervals
+- [x] Gate check passes: `cargo test -p piperine-parity --lib scenario::`
+- [x] Test count: 3 new tests
 
 **Tests**: unit
 **Gate**: quick
 
 **Commit**: `feat(parity): ScenarioBatch runs scenario runs once each, at once`
+
+**Status**: Complete
 
 ---
 

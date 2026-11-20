@@ -12,10 +12,12 @@ pub mod column;
 pub mod discrete;
 #[cfg(test)]
 mod planted;
+pub mod run;
 pub mod stimulus;
 pub mod trace;
 
 pub use column::NamedColumn;
 pub use discrete::{Departure, DiscreteTrace};
+pub use run::{CheckTally, Ran, ScenarioBatch, ScenarioRun};
 pub use stimulus::{Ramp, Refusal, Stimulus};
 pub use trace::{Crossing, Sample, Trace};
