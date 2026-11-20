@@ -12,8 +12,8 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use piperine::{Analysis, Overrides, ParamValue, Project, Session};
-use piperine_parity::scenario::{DiscreteTrace, Ramp, Ran, ScenarioBatch, ScenarioRun, Stimulus, Trace};
+use piperine::{Analysis, Cell, Overrides, ParamValue, Project, Session};
+use piperine_parity::scenario::{Crossing, DiscreteTrace, NamedColumn, Ramp, Ran, ScenarioBatch, ScenarioRun, Stimulus, Trace};
 use piperine_transpile::Settings;
 
 /// The scenario package and what its tests ask of it.
@@ -147,10 +147,18 @@ struct Supervisor;
 impl Supervisor {
     /// `Mode::Off`: both switches off.
     const OFF: i128 = 0;
+    /// `Mode::SoftStart`: the reference ramps up from zero.
+    const SOFT_START: i128 = 1;
     /// `Mode::Regulate`: the reference follows the target.
     const REGULATE: i128 = 2;
+    /// `Mode::Hiccup`: both switches off, counting down to a retry.
+    const HICCUP: i128 = 3;
     /// `Fault::Clear`.
     const CLEAR: i128 = 0;
+    /// `Fault::OverCurrent`: eight consecutive cut periods (§8.2).
+    const OVER_CURRENT: i128 = 1;
+    /// `Fault::OverVoltage`: two consecutive samples over the threshold (§8.4).
+    const OVER_VOLTAGE: i128 = 2;
 }
 
 /// SPEC's shared numbers: the grid the bench reads, the sample time and the bounds of §10.1.
@@ -164,6 +172,8 @@ impl Timing {
     const GRID: f64 = 1e-8;
     /// A mode that changes at the next sample shows within this long of its cause (§10.1).
     const NEXT_SAMPLE: f64 = 2.02e-6;
+    /// A fault that needs two consecutive samples shows within this long of its cause (§10.1).
+    const TWO_SAMPLES: f64 = 4.52e-6;
     /// The sense chain: 0.1 V per ampere (§2), so the inductor current is `isense` times ten.
     const AMPERES_PER_VOLT: f64 = 10.0;
     /// The regulation band of every settling criterion: ± 1 % (§2, §10).
@@ -233,9 +243,19 @@ impl BuckHost {
         self.push(|stimulus| stimulus.drive("load_step", ParamValue::Bool(high), at))
     }
 
+    /// `inject` rises at `at`: the back-drive of S6.
+    fn inject(&mut self, at: f64) -> &mut BuckHost {
+        self.push(|stimulus| stimulus.drive("inject", ParamValue::Bool(true), at))
+    }
+
     /// The base load becomes `ohms` at `at`.
     fn load(&mut self, ohms: f64, at: f64) -> &mut BuckHost {
         self.push(|stimulus| stimulus.set("buck.r_load", ohms, at))
+    }
+
+    /// The resistor `load_step` switches in becomes `ohms` at `at`.
+    fn step_resistance(&mut self, ohms: f64, at: f64) -> &mut BuckHost {
+        self.push(|stimulus| stimulus.set("buck.r_step", ohms, at))
     }
 
     /// The supply moves from `from` to `to` as a staircase of 0.1 V steps over `duration` from
@@ -312,6 +332,11 @@ impl<'a> Waveforms<'a> {
         DiscreteTrace::of(&self.ran.table, "buck.sink_oc")
     }
 
+    /// The flag of a cut period (§8.2).
+    fn cut(&self) -> DiscreteTrace {
+        DiscreteTrace::of(&self.ran.table, "buck.ctl.cut")
+    }
+
     /// The value of `trace` at the grid row holding `time`.
     fn at(trace: &Trace, time: f64) -> f64 {
         trace.between(time - Timing::GRID / 2.0, time + Timing::GRID / 2.0).mean()
@@ -323,6 +348,16 @@ impl<'a> Waveforms<'a> {
         let band = (nominal * (1.0 - Timing::BAND), nominal * (1.0 + Timing::BAND));
         let settled = self.vout().between(from, to).settled_into(band.0, band.1);
         settled.map(|time| time - from).unwrap_or_else(|| panic!("buck.vout never settles into {} V to {} V in [{from:e} s, {to:e} s)", band.0, band.1))
+    }
+
+    /// The first time at or after `after` that the ADC code is outside the power-good window
+    /// `reference ± reference / 16` (§8.6, in the integer arithmetic of the supervisor).
+    fn first_code_outside_window(&self, after: f64) -> Option<f64> {
+        let (code, reference) = (NamedColumn::find(&self.ran.table, "buck.code"), NamedColumn::find(&self.ran.table, "buck.ctl.reference"));
+        self.ran.table.rows.iter().find_map(|row| match (&row[0], &row[code.index()], &row[reference.index()]) {
+            (Cell::Real(time), Cell::Int(code), Cell::Int(reference)) if *time >= after && (code + reference / 16 < *reference || *code > reference + reference / 16) => Some(*time),
+            _ => None,
+        })
     }
 }
 
@@ -383,6 +418,7 @@ impl Suite {
     /// The runs of the families this target judges, with each one's stimulus.
     fn plan() -> Vec<(&'static str, Stimulus)> {
         vec![
+            (FaultsFamily::RUN, FaultsFamily::stimulus()),
             (LoadLineFamily::RUN, LoadLineFamily::stimulus()),
             (SetpointFamily::RUN, SetpointFamily::stimulus()),
         ]
@@ -758,4 +794,202 @@ fn s8_vout_decays_with_the_load_time_constant() {
 fn load_line_passes_every_check() {
     // BS-08 AC 4, SPEC §10 S10
     LoadLineFamily::assert_every_check_passed();
+}
+
+// ---------------------------------------------------------------------------------------------
+// The faults family: S5 then S6 (BS-05)
+// ---------------------------------------------------------------------------------------------
+
+/// S5 and S6 on one run: an overload at 1.25 ms that is removed during the retry, then a
+/// back-drive at 4.50 ms.
+struct FaultsFamily;
+
+impl FaultsFamily {
+    /// The load step to 0.3 Ω rises (S5's overload).
+    const OVERLOAD: f64 = 1.25e-3;
+    /// The overload is removed, during the retry's soft-start.
+    const OVERLOAD_REMOVED: f64 = 3.32e-3;
+    /// `inject` rises (S6).
+    const INJECT: f64 = 4.50e-3;
+    /// The overload resistance: 11 A of demand at 3.3 V (§10 S5).
+    const OVERLOAD_OHMS: f64 = 0.3;
+    /// The inductor current stays at or below 7.5 A plus the reaction bound (§10.1).
+    const CURRENT_CEILING: f64 = 7.5 + 0.1;
+    /// The over-voltage threshold at 3.3 V, 528 + 66 + 16 codes (§8.4), in volts.
+    const OVER_VOLTAGE_LEVEL: f64 = 3.81;
+
+    /// The time `mode` first reads `Hiccup` after the overload, with `fault` `OverCurrent`.
+    fn over_current_entry() -> f64 {
+        let waves = Self::waves();
+        let entry = waves.mode().first_time(Supervisor::HICCUP, Self::OVERLOAD).expect("mode never reads Hiccup after the overload");
+        assert_eq!(waves.fault().value_at(entry), Some(Supervisor::OVER_CURRENT), "fault at the entry into Hiccup, {entry:e} s");
+        entry
+    }
+
+    /// The time `mode` reads `SoftStart` after the overcurrent `Hiccup`: the first retry.
+    fn retry() -> f64 {
+        Self::waves().mode().first_time(Supervisor::SOFT_START, Self::over_current_entry()).expect("mode never retries after the overcurrent Hiccup")
+    }
+
+    /// The time `mode` first reads `Hiccup` after `inject` rises, with `fault` `OverVoltage`.
+    fn over_voltage_entry() -> f64 {
+        let waves = Self::waves();
+        let entry = waves.mode().first_time(Supervisor::HICCUP, Self::INJECT).expect("mode never reads Hiccup after inject");
+        assert_eq!(waves.fault().value_at(entry), Some(Supervisor::OVER_VOLTAGE), "fault at the entry into Hiccup, {entry:e} s");
+        entry
+    }
+
+    /// The first time `vout` is at or above 3.81 V after `inject` rises.
+    fn over_voltage_level_reached() -> f64 {
+        Self::waves().vout().first_crossing(Self::OVER_VOLTAGE_LEVEL, Crossing::Rising, Self::INJECT).expect("vout never reaches 3.81 V after inject")
+    }
+}
+
+impl Family for FaultsFamily {
+    const RUN: &'static str = "faults";
+
+    fn stimulus() -> Stimulus {
+        let mut host = BuckHost::at_rest();
+        host.step_resistance(Self::OVERLOAD_OHMS, 0.0).enable(1e-6).load_step(true, Self::OVERLOAD);
+        host.load_step(false, Self::OVERLOAD_REMOVED).inject(Self::INJECT);
+        host.stimulus()
+    }
+}
+
+#[test]
+fn faults_regulates_at_3_3_v_with_pgood_before_its_first_stimulus() {
+    FaultsFamily::assert_regulating_before_the_first_stimulus();
+}
+
+#[test]
+fn s5_every_period_is_cut_until_hiccup() {
+    // BS-05 AC 1, SPEC §8.2: from the first rise of `cut` to the entry into Hiccup it stays high
+    let cut = FaultsFamily::waves().cut();
+    let (first, entry) = (cut.first_time(1, FaultsFamily::OVERLOAD).expect("cut never rises after the overload"), FaultsFamily::over_current_entry());
+    let held = cut.between(first, entry).holds(1);
+    eprintln!("S5: cut first rises at {first:e} s, Hiccup at {entry:e} s: {held:?}");
+    assert!(held.is_ok(), "a period is not cut: {held:?}");
+}
+
+#[test]
+fn s5_inductor_current_stays_at_or_below_7_6_a() {
+    // BS-05 AC 2, SPEC §8.2 and §10.1: 7.5 A plus the reaction bound of 0.1 A
+    let (waves, entry) = (FaultsFamily::waves(), FaultsFamily::over_current_entry());
+    let peak = waves.inductor_current().between(FaultsFamily::OVERLOAD, entry).maximum();
+    eprintln!("S5: the inductor current peaks at {:.4} A at {:e} s (limit 7.6 A)", peak.value, peak.time);
+    assert!(peak.value <= FaultsFamily::CURRENT_CEILING, "the inductor current is {} A at {:e} s", peak.value, peak.time);
+}
+
+#[test]
+fn s5_hiccup_with_over_current_16_to_20_us_after_the_step() {
+    // BS-05 AC 3, SPEC §10 S5: Hiccup with OverCurrent within 16 to 20 us of the edge
+    let delay = FaultsFamily::over_current_entry() - FaultsFamily::OVERLOAD;
+    eprintln!("S5: Hiccup with OverCurrent {:.3} us after the step (16 us to 20 us)", delay * 1e6);
+    assert!((16e-6..=20e-6).contains(&delay), "Hiccup {delay:e} s after the step");
+}
+
+#[test]
+fn s5_pgood_falls_within_8_us_of_the_deviation() {
+    // BS-05 AC 4, SPEC §10 S5: `pgood` low within 8 us of the ADC code leaving the window
+    let waves = FaultsFamily::waves();
+    let deviation = waves.first_code_outside_window(FaultsFamily::OVERLOAD).expect("the ADC code never leaves the window");
+    let low = waves.pgood().first_time(0, deviation).expect("pgood never falls");
+    eprintln!("S5: the code leaves the window at {deviation:e} s, pgood falls {:.3} us later (limit 8 us)", (low - deviation) * 1e6);
+    assert!(low - deviation <= 8e-6, "pgood falls {:e} s after the deviation", low - deviation);
+}
+
+#[test]
+fn s5_both_switches_stay_off_in_hiccup() {
+    // BS-05 AC 5, SPEC §8: both gate commands low in every row of the hiccup, from one grid row
+    // after the entry as in S6 to S8: the supervisor's commit and the gates' own update take 20 ns
+    // (§10.1), and the row of the entry still shows the last period's high-side command
+    let (waves, entry, retry) = (FaultsFamily::waves(), FaultsFamily::over_current_entry(), FaultsFamily::retry());
+    let from = entry + Timing::GRID;
+    let (high, low) = (waves.high_side().between(from, retry).holds(0), waves.low_side().between(from, retry).holds(0));
+    eprintln!("S5: hs_cmd {high:?}, ls_cmd {low:?} over {from:e} s to {retry:e} s");
+    assert!(high.is_ok(), "the high side departs: {high:?}");
+    assert!(low.is_ok(), "the low side departs: {low:?}");
+}
+
+#[test]
+fn s5_retry_comes_2_ms_after_the_hiccup_with_the_overload_on() {
+    // BS-05 AC 6, SPEC §8.5: 1000 samples, so SoftStart 2.000 ms after the entry, within a grid
+    // row, while the overload is still on
+    let (entry, retry) = (FaultsFamily::over_current_entry(), FaultsFamily::retry());
+    eprintln!("S5: SoftStart {:.4} ms after the entry into Hiccup (2.000 ms, one grid row); the overload ends at 3.32 ms, the retry is at {retry:e} s", (retry - entry) * 1e3);
+    assert!((retry - entry - 2e-3).abs() <= Timing::GRID + 1e-12, "SoftStart {:e} s after the entry", retry - entry);
+    assert!(retry < FaultsFamily::OVERLOAD_REMOVED, "the overload is already removed at the retry, {retry:e} s");
+}
+
+#[test]
+fn s5_retry_without_the_overload_regulates_and_clears_the_fault() {
+    // BS-05 AC 7, SPEC §8.5: the overload goes during the retry's soft-start, `Regulate` follows
+    // and `fault` reads `Clear` from that row on, until `inject` begins S6
+    let (waves, retry) = (FaultsFamily::waves(), FaultsFamily::retry());
+    let regulate = waves.mode().first_time(Supervisor::REGULATE, retry).expect("mode never reaches Regulate after the retry");
+    let held = waves.fault().between(regulate, FaultsFamily::INJECT).holds(Supervisor::CLEAR);
+    eprintln!("S5: Regulate at {regulate:e} s; fault from there to inject: {held:?}");
+    assert!(regulate < FaultsFamily::INJECT, "Regulate at {regulate:e} s, after inject");
+    assert!(held.is_ok(), "fault departs from Clear: {held:?}");
+}
+
+#[test]
+fn s6_sink_limit_trips() {
+    // BS-05 AC 8, SPEC §8.3: the back-drive trips the sink limit before the over-voltage Hiccup
+    let (waves, entry) = (FaultsFamily::waves(), FaultsFamily::over_voltage_entry());
+    let first = waves.sink_limit().between(FaultsFamily::INJECT, entry).first_time(1, FaultsFamily::INJECT);
+    eprintln!("S6: buck.sink_oc first high at {first:?} (inject at 4.50 ms, Hiccup at {entry:e} s)");
+    assert!(first.is_some(), "buck.sink_oc never rises between inject and the Hiccup at {entry:e} s");
+}
+
+#[test]
+fn s6_inductor_current_is_held_at_minus_3_a() {
+    // BS-05 AC 9, SPEC §8.3 and §10 S6: the sink limit holds the current at -3 A, within the
+    // reaction bound of 0.1 A (§10.1)
+    let (waves, entry) = (FaultsFamily::waves(), FaultsFamily::over_voltage_entry());
+    let lowest = waves.inductor_current().between(FaultsFamily::INJECT, entry).minimum();
+    eprintln!("S6: the inductor current reaches {:.4} A at {:e} s (-3.0 A +- 0.1 A)", lowest.value, lowest.time);
+    assert!((lowest.value + 3.0).abs() <= 0.1, "the lowest inductor current is {} A at {:e} s", lowest.value, lowest.time);
+}
+
+#[test]
+fn s6_over_voltage_within_two_samples_of_3_81_v() {
+    // BS-05 AC 10, SPEC §8.4 and §10.1: Hiccup with OverVoltage no earlier than the first row of
+    // vout above 3.81 V and within 4.52 us of it
+    let (level, entry) = (FaultsFamily::over_voltage_level_reached(), FaultsFamily::over_voltage_entry());
+    eprintln!("S6: vout reaches 3.81 V at {level:e} s, Hiccup with OverVoltage {:.3} us later (0 to 4.52 us)", (entry - level) * 1e6);
+    assert!((0.0..=Timing::TWO_SAMPLES).contains(&(entry - level)), "Hiccup {:e} s after vout reaches 3.81 V", entry - level);
+}
+
+#[test]
+fn s6_reports_its_timing_and_rise_rate() {
+    // BS-05 AC 11, SPEC §10 S6 and §10.1: the time from inject to the Hiccup (about 80 to 120 us)
+    // and the mean rise of vout from 3.4 V to 3.8 V (about 7 mV/us) are estimates, reported only
+    let (waves, entry) = (FaultsFamily::waves(), FaultsFamily::over_voltage_entry());
+    let vout = waves.vout();
+    let (low, high) = (vout.first_crossing(3.4, Crossing::Rising, FaultsFamily::INJECT), vout.first_crossing(3.8, Crossing::Rising, FaultsFamily::INJECT));
+    let (low, high) = (low.expect("vout never reaches 3.4 V after inject"), high.expect("vout never reaches 3.8 V after inject"));
+    let rate = (3.8 - 3.4) / (high - low) * 1e-3;
+    eprintln!("S6: {:.2} us from inject to the over-voltage Hiccup (SPEC estimates 80 to 120 us); vout rises {:.3} mV/us from 3.4 V to 3.8 V (SPEC estimates 7 mV/us)", (entry - FaultsFamily::INJECT) * 1e6, rate);
+    assert!(entry > FaultsFamily::INJECT && rate.is_finite() && rate > 0.0, "time {:e} s, rise rate {rate} mV/us", entry - FaultsFamily::INJECT);
+}
+
+#[test]
+fn s6_both_switches_stay_off_after_over_voltage() {
+    // BS-05 AC 12, SPEC §8: both gate commands low from one grid row after the entry to the end
+    let (waves, from) = (FaultsFamily::waves(), FaultsFamily::over_voltage_entry() + Timing::GRID);
+    let end = waves.ran.table.rows.last().map_or(0.0, |row| match row[0] {
+        Cell::Real(time) => time + Timing::GRID,
+        _ => 0.0,
+    });
+    let (high, low) = (waves.high_side().between(from, end).holds(0), waves.low_side().between(from, end).holds(0));
+    eprintln!("S6: hs_cmd {high:?}, ls_cmd {low:?} from {from:e} s to the end");
+    assert!(high.is_ok(), "the high side departs: {high:?}");
+    assert!(low.is_ok(), "the low side departs: {low:?}");
+}
+
+#[test]
+fn faults_passes_every_check() {
+    // BS-08 AC 4, SPEC §10 S10
+    FaultsFamily::assert_every_check_passed();
 }

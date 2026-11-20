@@ -359,15 +359,17 @@ T13 → T15
 
 **Done when**:
 
-- [ ] `faults_regulates_at_3_3_v_with_pgood_before_its_first_stimulus`, `s5_every_period_is_cut_until_hiccup`, `s5_inductor_current_stays_at_or_below_7_6_a`, `s5_hiccup_with_over_current_16_to_20_us_after_the_step`, `s5_pgood_falls_within_8_us_of_the_deviation`, `s5_both_switches_stay_off_in_hiccup`, `s5_retry_comes_2_ms_after_the_hiccup_with_the_overload_on`, `s5_retry_without_the_overload_regulates_and_clears_the_fault`, `s6_sink_limit_trips`, `s6_inductor_current_is_held_at_minus_3_a`, `s6_over_voltage_within_two_samples_of_3_81_v`, `s6_reports_its_timing_and_rise_rate`, `s6_both_switches_stay_off_after_over_voltage`, `faults_passes_every_check`
-- [ ] A criterion the model misses (design "Risks": S5's 16 to 20 µs) stays red and is reported in the handoff with its measured value; no bound moves
-- [ ] Gate check passes: `Run scenarios` and the Build line (≈ 24 min)
-- [ ] Test count: 14 new tests
+- [x] `faults_regulates_at_3_3_v_with_pgood_before_its_first_stimulus`, `s5_every_period_is_cut_until_hiccup`, `s5_inductor_current_stays_at_or_below_7_6_a`, `s5_hiccup_with_over_current_16_to_20_us_after_the_step`, `s5_pgood_falls_within_8_us_of_the_deviation`, `s5_both_switches_stay_off_in_hiccup`, `s5_retry_comes_2_ms_after_the_hiccup_with_the_overload_on`, `s5_retry_without_the_overload_regulates_and_clears_the_fault`, `s6_sink_limit_trips`, `s6_inductor_current_is_held_at_minus_3_a`, `s6_over_voltage_within_two_samples_of_3_81_v`, `s6_reports_its_timing_and_rise_rate`, `s6_both_switches_stay_off_after_over_voltage`, `faults_passes_every_check`
+- [x] A criterion the model misses (design "Risks": S5's 16 to 20 µs) stays red and is reported in the handoff with its measured value; no bound moves
+- [x] Gate check passes: `Run scenarios` and the Build line (≈ 24 min) (47 of 49 pass; the reds are T9's S2b settling and this task's `s5_hiccup_with_over_current_16_to_20_us_after_the_step`, bounds unmoved)
+- [x] Test count: 14 new tests
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `test: the buck's overcurrent and over-voltage scenarios S5 and S6`
+
+**Status**: Complete (13 of 14 pass; C50, the 16 to 20 us window of S5, is red on SPEC's own numbers: measured 28.5 us, see Handoff)
 
 ---
 
