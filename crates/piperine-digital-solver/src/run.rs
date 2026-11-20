@@ -430,17 +430,28 @@ fn relax(
     Ok(())
 }
 
+/// Where in an instant a microstep runs (§15): an ordinary microstep, or the settle phase that
+/// closes the instant of a time point (§15 step 4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Phase {
+    /// A microstep of the loop.
+    Microstep,
+    /// The settle phase, after the loop is quiet.
+    Settle,
+}
+
 /// A reaction that runs in the current microstep.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Firing {
     pub instance: usize,
     pub reaction: usize,
-    /// One of the events it ran for is `SETTLE`.
+    /// It runs in the settle phase: §13 rule 14 says the phase decides, whatever event its head
+    /// names, so its commits with no advancing delay are settle commits (§15 S1).
     pub on_settle: bool,
 }
 
 /// R1: the reactions with an event pin in `on` that fired in this microstep, in (instance, reaction) order.
-pub fn fired_reactions(instances: &[InstancePlan], settle: &[NetId], store: &Store) -> Vec<Firing> {
+pub fn fired_reactions(instances: &[InstancePlan], phase: Phase, store: &Store) -> Vec<Firing> {
     let mut out = Vec::new();
     for (i, inst) in instances.iter().enumerate() {
         for (r, reaction) in inst.handle.shape().reactions.iter().enumerate() {
@@ -453,7 +464,7 @@ pub fn fired_reactions(instances: &[InstancePlan], settle: &[NetId], store: &Sto
                 })
                 .collect();
             if !on.is_empty() {
-                out.push(Firing { instance: i, reaction: r, on_settle: on.iter().any(|n| settle.contains(n)) });
+                out.push(Firing { instance: i, reaction: r, on_settle: phase == Phase::Settle });
             }
         }
     }
@@ -641,9 +652,9 @@ pub fn run_reactions(
     obs: &mut Obs,
     at: Instant,
     call: &mut u32,
+    phase: Phase,
 ) -> Result<Fired, DigitalError> {
-    let settle = plan.analysis().settle_nets().to_vec();
-    let jobs: Vec<Job> = fired_reactions(&plan.instances, &settle, store)
+    let jobs: Vec<Job> = fired_reactions(&plan.instances, phase, store)
         .into_iter()
         .map(|f| Job {
             instance: f.instance,

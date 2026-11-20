@@ -222,6 +222,77 @@ fn a_settle_commit_with_no_delay_is_refused() {
     assert_eq!(d.next_due(), Some(Tick(NS)));
 }
 
+/// The nets of a settle-event design whose delay is `delay` seconds (the shape's default is 0).
+fn settle_event_engine(delay: f64, extra: Vec<Placed<'_>>) -> Digital {
+    let mut devices = vec![("s", settle_event(), vec![("en", "en"), ("out", "out")])];
+    devices.extend(extra);
+    let plan = bind_by_name_with(devices, Resolution::default(), |nets| {
+        nets.iter_mut().find(|n| n.name == "s.delay").expect("the delay net").init = delay.to_le_bytes().to_vec();
+    })
+    .expect("binds");
+    Digital::new(plan, DigitalLimits::default())
+}
+
+#[test]
+fn a_guarded_settle_event_fires_in_the_settle_phase() {
+    // §15 step 4 and §13 rules 1, 14, 17: the settle phase fires `SETTLE`, runs the discrete
+    // functions of its cone (V2), so `settle && en.high()` fires its event pin, and its reaction
+    // runs; the guard decides
+    let settle = Mode { is_static: false, settle: true };
+    let run = |en: &[u8], mode: Mode| {
+        let mut d = settle_event_engine(1e-9, vec![]);
+        d.start().unwrap();
+        d.host_commit(net(&d, "en"), 0, en, Tick(0)).unwrap();
+        d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10 * NS)), mode).expect("the instant runs");
+        (d.next_due(), calls("settle_event").1)
+    };
+    reset_calls();
+    assert_eq!(run(&HIGH, settle), (Some(Tick(NS)), 1), "the guard holds: the event fired and its commit is due 1 ns on");
+    reset_calls();
+    assert_eq!(run(&LOW, settle), (None, 0), "the guard is false: the event did not fire");
+    reset_calls();
+    assert_eq!(run(&HIGH, Mode::default()), (None, 0), "no settle phase: SETTLE never fired");
+}
+
+#[test]
+fn a_reaction_in_the_settle_phase_is_on_settle_whatever_its_head() {
+    // §13 rule 14, D4: the reaction listens to the private event pin `seen`, not to `SETTLE`, yet it
+    // runs in the settle phase, so a commit with no advancing delay is a settle commit (S1, held
+    // from T7; refused until then)
+    let mut d = settle_event_engine(0.0, vec![]);
+    d.start().unwrap();
+    d.host_commit(net(&d, "en"), 0, &HIGH, Tick(0)).unwrap();
+    match d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), Mode { is_static: false, settle: true }) {
+        Err(DigitalError::Unsupported { what }) => assert!(what.contains("settle"), "{what}"),
+        other => panic!("expected the settle commit to be refused, got {other:?}"),
+    }
+}
+
+#[test]
+fn settle_records_carry_the_last_microstep_index() {
+    // §19 Resolution, V1, D3: the settle phase records under (t, n), n the last microstep the
+    // instant ran. A rising clock makes the flip-flop commit `q` into microstep 1, so n = 1
+    let mut d = settle_event_engine(1e-9, vec![("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")])]);
+    d.start().unwrap();
+    instant(&mut d, Tick(0)); // the inits, `delay` included, apply at (0, 0)
+    d.host_commit(net(&d, "en"), 0, &HIGH, Tick(1)).unwrap();
+    d.host_commit(net(&d, "clk"), 0, &LOW, Tick(1)).unwrap();
+    d.host_commit(net(&d, "clk"), 0, &HIGH, Tick(2)).unwrap();
+    instant(&mut d, Tick(1));
+    d.drain_observations();
+    let out = d.run_instant(Tick(2), &[], Horizon::uniform(Tick(10 * NS)), Mode { is_static: false, settle: true }).expect("runs");
+    assert_eq!(out.microsteps, 2, "the loop ran microsteps 0 and 1");
+    let seen = d.drain_observations();
+    let at = (Tick(2), 1);
+    assert!(seen.contains(&Observation::Fire { net: "global:8".into(), at }), "SETTLE fires at (t, n): {seen:?}");
+    assert!(seen.contains(&Observation::Fire { net: "s.seen".into(), at }), "the settle event fires at (t, n): {seen:?}");
+    assert!(
+        seen.iter().any(|o| matches!(o, Observation::Commit { instance, made, .. } if instance == "s" && *made == at)),
+        "its commit is made at (t, n): {seen:?}"
+    );
+    assert!(seen.iter().all(|o| !matches!(o, Observation::Fire { at: (_, n), .. } if *n > 1)), "nothing is stamped past n: {seen:?}");
+}
+
 #[test]
 fn an_instant_reports_boundary_fired_and_final() {
     // C33: the sampler reads its sample; `out` is read by the analog side; the stub finishes

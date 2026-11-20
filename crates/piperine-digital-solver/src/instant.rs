@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use crate::engine::{Digital, Horizon, Mode, Outcome};
 use crate::net::{NetId, NetKind};
 use crate::queue::{Instant, Writer};
-use crate::run::{check_canonical, fire_net, fired_reactions, run_functions, run_reactions, write_net};
+use crate::run::{Phase, check_canonical, fire_net, fired_reactions, run_functions, run_reactions, write_net};
 use piperine_abi::layout::Merge;
 use piperine_abi::raw::{commit_flag, reaction_flag};
 use crate::tick::Tick;
@@ -21,6 +21,16 @@ pub(crate) enum Stepped {
     /// A look-ahead stopped: the instant is a landing; `time_point` is false when only an
     /// `IRREVERSIBLE` reaction made it one.
     Landing { time_point: bool },
+}
+
+/// What the settle phase of an instant reported (`Digital::settle_phase`).
+struct SettlePhase {
+    /// A reaction of the phase returned `FINISH`.
+    finish: bool,
+    /// The nets that fired in the phase.
+    fired: BTreeSet<NetId>,
+    /// The analog-read nets the phase's functions changed.
+    boundary: BTreeSet<NetId>,
 }
 
 /// One discrete net as the commits due at a microstep left it.
@@ -164,8 +174,7 @@ impl Digital {
                 }
             }
             if lookahead {
-                let settle = self.plan.analysis().settle_nets();
-                let firing = fired_reactions(&self.plan.instances, settle, &self.store);
+                let firing = fired_reactions(&self.plan.instances, Phase::Microstep, &self.store);
                 let probing = firing.iter().any(|f| self.plan.analysis().probes(f.instance as u32, f.reaction as u32));
                 let irreversible = firing.iter().any(|f| {
                     let shape = self.plan.instances[f.instance].handle.shape();
@@ -188,6 +197,7 @@ impl Digital {
                 &mut self.obs,
                 here,
                 &mut self.call,
+                Phase::Microstep,
             )?;
             out.finish |= ran.finish;
             self.obs.flush();
@@ -232,33 +242,48 @@ impl Digital {
         }
 
         if mode.settle {
-            let here = (at, n + 1);
-            self.store.begin_microstep();
-            self.call = 0;
-            for net in self.plan.analysis().settle_nets().to_vec() {
-                fire_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, net, here);
-                fired.insert(net);
-            }
-            let mut ambient = self.ambient(at);
-            ambient.is_static = mode.is_static;
-            ambient.horizon = self.horizon(at, limit.stop);
-            ambient.crossing_horizon = self.horizon(at, limit.crossing);
-            let ran = run_reactions(
-                &mut self.plan,
-                &self.store,
-                samples,
-                &ambient,
-                &mut self.queue,
-                &mut self.obs,
-                here,
-                &mut self.call,
-            )?;
-            out.finish |= ran.finish;
-            self.obs.flush();
+            let settled = self.settle_phase(at, n, samples, limit, mode)?;
+            out.finish |= settled.finish;
+            fired.extend(settled.fired);
+            boundary.extend(settled.boundary);
         }
 
         out.boundary = boundary.into_iter().map(|n| (n, self.store.value(n).to_vec())).collect();
         out.fired = fired.into_iter().collect();
         Ok(Stepped::Done(out))
+    }
+
+    /// The settle phase of the instant `at` (§15 step 4, §19 rule 8), run after the microstep loop
+    /// went quiet at microstep `last`: fire the `SETTLE` nets, run the discrete functions of their
+    /// cone (§13 rule 1: a guard reads in the microstep, so a guarded `settle` fires here), then
+    /// the reactions whose event pins fired. Every reaction that runs is `on_settle` whatever its
+    /// head names (§13 rule 14), and the phase's records are stamped `(at, last)`, the last
+    /// microstep the instant ran (§19 Resolution).
+    fn settle_phase(&mut self, at: Tick, last: u32, samples: &[f64], limit: Horizon, mode: Mode) -> Result<SettlePhase, DigitalError> {
+        let here = (at, last);
+        self.store.begin_microstep();
+        self.call = 0;
+        let mut phase = SettlePhase { finish: false, fired: BTreeSet::new(), boundary: BTreeSet::new() };
+        for net in self.plan.analysis().settle_nets().to_vec() {
+            fire_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, net, here);
+        }
+        let mut ambient = self.ambient(at);
+        ambient.is_static = mode.is_static;
+        ambient.horizon = self.horizon(at, limit.stop);
+        ambient.crossing_horizon = self.horizon(at, limit.crossing);
+        run_functions(&self.plan, &mut self.store, &mut self.dirty, here, &ambient, &mut self.obs)?;
+        for (i, spec) in self.plan.nets.iter().enumerate() {
+            let id = NetId(i as u32);
+            if self.store.fired(id) {
+                phase.fired.insert(id);
+            }
+            if spec.analog_reads && self.store.changed(id) {
+                phase.boundary.insert(id);
+            }
+        }
+        let ran = run_reactions(&mut self.plan, &self.store, samples, &ambient, &mut self.queue, &mut self.obs, here, &mut self.call, Phase::Settle)?;
+        phase.finish = ran.finish;
+        self.obs.flush();
+        Ok(phase)
     }
 }

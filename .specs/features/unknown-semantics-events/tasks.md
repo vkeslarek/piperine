@@ -231,9 +231,9 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `a_guarded_settle_event_fires_in_the_settle_phase`, `a_reaction_in_the_settle_phase_is_on_settle_whatever_its_head` and `settle_records_carry_the_last_microstep_index` pass under `**Run instant**`
-- [ ] Code clarity: the settle phase is its own method of the engine (no growth of `microsteps` past one screen), doc-commented with §15 step 4; no free function
-- [ ] Gate check passes: Full
+- [x] `a_guarded_settle_event_fires_in_the_settle_phase`, `a_reaction_in_the_settle_phase_is_on_settle_whatever_its_head` and `settle_records_carry_the_last_microstep_index` pass under `**Run instant**`
+- [x] Code clarity: the settle phase is its own method of the engine (no growth of `microsteps` past one screen), doc-commented with §15 step 4; no free function
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
