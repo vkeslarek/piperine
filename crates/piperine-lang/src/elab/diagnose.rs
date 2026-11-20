@@ -37,6 +37,7 @@ impl Elaboration<'_, '_> {
                 let message = format!("{position} is unknown: a value that may be unknown cannot decide structure (§3.3.8)");
                 self.report(file, Diagnostic::new("E0151", message, span, "unknown here"));
             }
+            ConstFault::Leaves { .. } => self.unsupported(file, span, &format!("a `break`, `continue` or `return` outside the loop or function it leaves in {position}")),
             ConstFault::Panic { what, .. } => {
                 let message = format!("{position} panics while it is evaluated at elaboration: {what}");
                 self.report(file, Diagnostic::new("E0104", message, span, "panics"));

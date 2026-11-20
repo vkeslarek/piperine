@@ -744,8 +744,8 @@ T63
 
 **Done when**:
 
-- [ ] `phase_a_forms_fold_in_const_contexts` and `a_panic_in_a_const_evaluation_names_the_expression` pass under `**Run elabctl**`
-- [ ] Gate check passes: Quick
+- [x] `phase_a_forms_fold_in_const_contexts` and `a_panic_in_a_const_evaluation_names_the_expression` pass under `**Run elabctl**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

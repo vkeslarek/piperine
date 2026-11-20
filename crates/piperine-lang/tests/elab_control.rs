@@ -209,3 +209,96 @@ fn an_unfoldable_recursion_from_analog_is_e0126() {
     assert_eq!(Elab::codes(&refused), ["E0126"]);
     assert!(refused[0].diagnostic.message.contains("`forever`"), "{:?}", refused[0].diagnostic.message);
 }
+
+/// The folded value of the `f64` param `name` of `Top`.
+fn default_of(ir: &Ir, name: &str) -> piperine_ir::Constant {
+    let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
+    let param = top.params().iter().find(|p| p.name == name).unwrap_or_else(|| panic!("no param {name}"));
+    param.default.unwrap_or_else(|| panic!("no default for {name}"))
+}
+
+#[test]
+fn phase_a_forms_fold_in_const_contexts() {
+    // CV-36 AC 1: every form of phase A evaluates at elaboration to the value it has at run time, in
+    // a `const`, a `const fn`, a param default and a `where`. The expected values are the same
+    // computations in Rust.
+    let gcd = |mut x: u32, mut y: u32| {
+        while y != 0 {
+            (x, y) = (y, x % y);
+        }
+        x
+    };
+    let items = "\
+        const fn gcd(a: u32, b: u32) -> u32 { let mut x = a; let mut y = b; while y != 0 { let t = x % y; x = y; y = t; } x }\n\
+        const fn fact(n: u32) -> u32 { if n == 0 { 1 } else { n * fact(n - 1) } }\n\
+        const fn first_square_over(limit: u32) -> u32 { let mut k = 0u32; loop { k += 1; if k * k > limit { break k; } } }\n\
+        const fn weigh(x: u32) -> f64 { match x { 0 => 0.0, 1..=3 => 1.5, n if n % 2 == 0 => 2.5, _ => 3.5 } }\n\
+        const fn early(n: u32) -> u32 { for k in 0..n { if k * k >= 30 { return k; } } n }\n\
+        const fn through_closure(n: u32) -> u32 { let double = |x: u32| x * 2; let mut s = 0u32; for k in 1..=n { if k == 3 { continue; } s += double(k); } s }\n\
+        const fn pick(v: u32) -> u32 { if let 0..=2 = v { return 10; } let 3 = v else { return 99; }; let mut n = 0u32; while let 0..=4 = n { n += 2; } 30 + n }\n\
+        const GCD: u32 = gcd(84, 36);\n\
+        const FACT: u32 = fact(5);\n";
+    let src = format!(
+        "{items}module Top() {{\n\
+            a: f64 = GCD as f64;\n\
+            b: f64 = FACT as f64;\n\
+            c: f64 = first_square_over(40) as f64;\n\
+            d: f64 = weigh(0) + weigh(2) + weigh(8) + weigh(9);\n\
+            e: f64 = early(100) as f64;\n\
+            f: f64 = through_closure(5) as f64 where f > 0.0;\n\
+            h: f64 = (pick(1) + pick(3) + pick(7)) as f64;\n\
+        }}\nmodule Unused() {{ }}"
+    );
+    let ir = Elab::ir(&src, "Top");
+    let real = |name: &str| match default_of(&ir, name) {
+        piperine_ir::Constant::Real(r) => r.get(),
+        other => panic!("{name} is {other:?}"),
+    };
+    assert_eq!(real("a"), f64::from(gcd(84, 36)), "a `while` over mutable locals (§1.8.8)");
+    assert_eq!(real("b"), 120.0, "a recursion (§3 rule 12)");
+    assert_eq!(real("c"), 7.0, "`loop` with `break value` (§1.8.9)");
+    let weigh = |x: u32| match x {
+        0 => 0.0,
+        1..=3 => 1.5,
+        n if n % 2 == 0 => 2.5,
+        _ => 3.5,
+    };
+    assert_eq!(real("d"), weigh(0) + weigh(2) + weigh(8) + weigh(9), "range patterns, a guard and a binder (§1.8.4)");
+    assert_eq!(real("e"), 6.0, "`return` from inside a `for` (§1.8.12)");
+    assert_eq!(real("f"), f64::from((1..=5u32).filter(|k| *k != 3).map(|k| k * 2).sum::<u32>()), "a closure, `continue` and `..=` (§1.8.10)");
+
+    assert_eq!(real("h"), 10.0 + 36.0 + 99.0, "`if let`, `let .. else` and `while let` with range patterns (§1.7.5, §1.8.4)");
+
+    // The `where` of a param folds the same forms: a condition over a `const fn` that loops.
+    let src = format!("{items}module Top() {{ g: f64 = 1.0 where gcd(12, 18) == 6 && fact(4) == 24; }}");
+    Elab::ir(&src, "Top");
+    let src = format!("{items}module Top() {{ g: f64 = 1.0 where gcd(12, 18) == 7; }}");
+    let refused = Elab::run(&src, "Top").expect_err("the `where` is false");
+    assert_eq!(Elab::codes(&refused), ["E0317"]);
+}
+
+#[test]
+fn a_panic_in_a_const_evaluation_names_the_expression() {
+    // §1 rule 11 and Q5 (CV-36 AC 2): a division by zero reached through a loop, a loop past 2^24
+    // iterations and a call nested past 1 024 are elaboration errors, `E0104`, at the expression.
+    let division = "const fn bad() -> u32 { let mut s = 0u32; loop { s += 1; if s > 3 { break; } } 10 / (s - 4) }\nconst X: u32 = bad();\nmodule Top() { a: f64 = X as f64; }";
+    let refused = Elab::run(division, "Top").expect_err("a division by zero");
+    assert_eq!(Elab::codes(&refused), ["E0104"]);
+    let message = &refused[0].diagnostic.message;
+    assert!(message.contains("division by zero"), "{message}");
+    let span = refused[0].diagnostic.span();
+    assert_eq!(&division[span.start..span.end], "10 / (s - 4)", "the diagnostic sits on the expression that panics");
+
+    let endless = "const fn spin() -> u32 { let mut s = 0u32; loop { s += 1; } }\nconst X: u32 = spin();\nmodule Top() { a: f64 = X as f64; }";
+    let refused = Elab::run(endless, "Top").expect_err("a loop with no end");
+    assert_eq!(Elab::codes(&refused), ["E0104"]);
+    assert!(refused[0].diagnostic.message.contains("2^24"), "{:?}", refused[0].diagnostic.message);
+
+    let deep = "const fn down(n: u32) -> u32 { if n == 0 { 0 } else { down(n - 1) } }\nconst X: u32 = down(2000);\nmodule Top() { a: f64 = X as f64; }";
+    let refused = Elab::run(deep, "Top").expect_err("a call nested too deep");
+    assert_eq!(Elab::codes(&refused), ["E0104"]);
+    assert!(refused[0].diagnostic.message.contains("1 024"), "{:?}", refused[0].diagnostic.message);
+    // the same recursion within the bound is the value
+    let within = "const fn down(n: u32) -> u32 { if n == 0 { 7 } else { down(n - 1) } }\nconst X: u32 = down(1000);\nmodule Top() { a: f64 = X as f64; }";
+    assert_eq!(default_of(&Elab::ir(within, "Top"), "a"), piperine_ir::Constant::Real(piperine_ir::Real::new(7.0)));
+}

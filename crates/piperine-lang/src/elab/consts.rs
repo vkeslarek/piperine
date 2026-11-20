@@ -21,6 +21,11 @@
 //! [`Bindings`]; a read with no binding, an environment function, a probe or a node is *not
 //! constant*, reported to the caller as such so that it can pick the code of its position
 //! (`E0321`, or `P0001` for a param of the parent).
+//!
+//! The forms of phase A (mutation, loops, exits, patterns, closures, recursion) are `control.rs`:
+//! a `const`, a `const fn`, a param default and a `where` evaluate them with their run-time value.
+
+mod control;
 
 use std::collections::BTreeMap;
 
@@ -28,11 +33,12 @@ use piperine_ir::{Constant, Real};
 
 use super::compound::EnumLayout;
 use crate::msl::lexer;
-use crate::pom::{BinOp, BlockNode, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, StmtId, StmtKind, UnOp};
+use crate::pom::{BinOp, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, UnOp};
 use crate::types::{Builtin, Callee, Intrinsic, Method, Ty, Types};
+use control::{Argument, FnValue};
 
-/// The most nested calls of functions an evaluation follows.
-const CALL_DEPTH: usize = 256;
+/// The most nested calls an evaluation follows: a call past it is a panic (§1 rule 11, Q5).
+const CALL_DEPTH: usize = 1024;
 
 /// The bound value of each param declaration an evaluation may read.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -119,13 +125,27 @@ pub enum ConstFault {
     /// The value is unknown (§3.3) where a known one is required: the caller says what it
     /// decides (`E0151` when it fixes structure, §3.3.8).
     Unknown { expr: ExprId },
+    /// A `break`, `continue` or `return` on its way to the loop or function it leaves; the value it
+    /// carries waits in the evaluator. Never reaches a caller of [`ConstEval::value`].
+    Leaves { expr: ExprId, exit: Exit },
+}
+
+/// Which exit a [`ConstFault::Leaves`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Exit {
+    /// `break`, with or without a value.
+    Break,
+    /// `continue`.
+    Continue,
+    /// `return`, with or without a value.
+    Return,
 }
 
 impl ConstFault {
     /// The expression the fault sits on; none for a `const` item without a value.
     pub fn expr(&self) -> Option<ExprId> {
         match self {
-            ConstFault::UnboundParam { expr, .. } | ConstFault::Dynamic { expr, .. } | ConstFault::Unsupported { expr, .. } | ConstFault::Panic { expr, .. } | ConstFault::Unknown { expr } => Some(*expr),
+            ConstFault::UnboundParam { expr, .. } | ConstFault::Dynamic { expr, .. } | ConstFault::Unsupported { expr, .. } | ConstFault::Panic { expr, .. } | ConstFault::Unknown { expr } | ConstFault::Leaves { expr, .. } => Some(*expr),
             ConstFault::NoValue { .. } => None,
         }
     }
@@ -141,11 +161,15 @@ pub struct ConstEval<'d, 't> {
     depth: usize,
     /// The module-body `let`s being evaluated, innermost last: a read of one of them is a cycle.
     open_lets: Vec<DeclId>,
+    /// The function each local that holds one stands for (`control.rs`).
+    fn_values: BTreeMap<DeclId, FnValue>,
+    /// The value a `break` or `return` on its way to its target carries; `None` for none.
+    leaving: Option<Folded>,
 }
 
 impl<'d, 't> ConstEval<'d, 't> {
     pub fn new(design: &'d Design, types: &'t Types<'d>) -> Self {
-        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new() }
+        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new(), fn_values: BTreeMap::new(), leaving: None }
     }
 
     /// How many `const` items this evaluator has folded, each counted once however many times
@@ -176,8 +200,10 @@ impl<'d, 't> ConstEval<'d, 't> {
         };
         let expr = *expr;
         let outer = std::mem::take(&mut self.locals);
+        let outer_functions = std::mem::take(&mut self.fn_values);
         let value = self.folded(expr, &Bindings::new());
         self.locals = outer;
+        self.fn_values = outer_functions;
         let value = value?;
         self.evaluations += 1;
         self.consts.insert(decl, value);
@@ -202,8 +228,8 @@ impl<'d, 't> ConstEval<'d, 't> {
             ExprKind::Path(_) => self.path(expr, bindings),
             ExprKind::Unary { op, expr: operand } => self.unary(expr, *op, *operand, bindings),
             ExprKind::Binary { op, lhs, rhs } => self.binary(expr, *op, *lhs, *rhs, bindings),
-            ExprKind::If { cond, then, else_ } => self.conditional(expr, *cond, then, *else_, bindings),
-            ExprKind::Block(block) => self.block(expr, &block.stmts, bindings),
+            // the forms that may have no value, or that leave (`control.rs`)
+            ExprKind::If { .. } | ExprKind::Block(_) | ExprKind::While { .. } | ExprKind::Loop { .. } | ExprKind::For { .. } | ExprKind::Assign { .. } | ExprKind::Match { .. } | ExprKind::Break(_) | ExprKind::Continue | ExprKind::Return(_) => self.exec_value(expr, bindings),
             ExprKind::Call { args, .. } => self.call(expr, &args.iter().map(|a| a.value).collect::<Vec<_>>(), bindings),
             ExprKind::MethodCall { recv, args, .. } => self.method(expr, *recv, &args.iter().map(|a| a.value).collect::<Vec<_>>(), bindings),
             ExprKind::Cast { expr: operand, .. } => self.cast(expr, *operand, bindings),
@@ -519,78 +545,39 @@ impl<'d, 't> ConstEval<'d, 't> {
         Ok(Folded::Known(converted))
     }
 
-    /// An `if` as a value: a known condition takes its arm, an unknown one merges both (§3.3.3).
-    fn conditional(&mut self, expr: ExprId, cond: ExprId, then: &BlockNode, else_: Option<ExprId>, bindings: &Bindings) -> Result<Folded, ConstFault> {
-        let Folded::Known(condition) = self.folded(cond, bindings)? else {
-            return self.merged_arms(expr, then, else_, bindings);
-        };
-        match (Self::boolean(cond, condition)?, else_) {
-            (true, _) => self.block(expr, &then.stmts, bindings),
-            (false, Some(else_)) => self.folded(else_, bindings),
-            (false, None) => Err(ConstFault::Unsupported { expr, what: "an `if` without an `else` as a value".to_string() }),
-        }
-    }
-
-    /// An `if` on an unknown condition: both arms are taken and the merge of what they yield is
-    /// the value (§3.3.3). An arm that panics is no fault, it makes the merge unknown (§1 rule 13).
-    fn merged_arms(&mut self, expr: ExprId, then: &BlockNode, else_: Option<ExprId>, bindings: &Bindings) -> Result<Folded, ConstFault> {
-        let Some(else_) = else_ else {
-            return Err(ConstFault::Unsupported { expr, what: "an `if` without an `else` as a value".to_string() });
-        };
-        let (first, second) = (self.block(expr, &then.stmts, bindings), self.folded(else_, bindings));
-        match (first, second) {
-            (Ok(a), Ok(b)) => Ok(a.merge(b)),
-            (Err(ConstFault::Panic { .. }), Ok(_) | Err(ConstFault::Panic { .. })) | (Ok(_), Err(ConstFault::Panic { .. })) => Ok(Folded::Unknown),
-            (Err(fault), _) | (_, Err(fault)) => Err(fault),
-        }
-    }
-
-    /// The value of a block: its last statement, an expression without `;`.
-    fn block(&mut self, expr: ExprId, stmts: &[StmtId], bindings: &Bindings) -> Result<Folded, ConstFault> {
-        let mut value = None;
-        for stmt in stmts {
-            value = None;
-            match self.design.stmt_node(*stmt).kind.clone() {
-                StmtKind::Let { pat, init: Some(init), else_: None, .. } => {
-                    let bound = self.folded(init, bindings)?;
-                    match &self.design.pat_node(pat).kind {
-                        PatKind::Ident { binding, sub: None, .. } => {
-                            self.locals.insert(*binding, bound);
-                        }
-                        _ => return Err(ConstFault::Unsupported { expr, what: "a `let` pattern that is not a name".to_string() }),
-                    }
-                }
-                StmtKind::Expr { expr: inner, semi } => {
-                    let inner_value = self.folded(inner, bindings)?;
-                    if !semi {
-                        value = Some(inner_value);
-                    }
-                }
-                StmtKind::Empty => {}
-                _ => return Err(ConstFault::Unsupported { expr, what: "this statement in a const expression".to_string() }),
-            }
-        }
-        value.ok_or(ConstFault::Unsupported { expr, what: "a block without a value".to_string() })
-    }
-
-    /// A call of a function of the reachable set: its body evaluated over its arguments. Every
-    /// other callee needs a run.
+    /// A call of a function of the reachable set, or of a function a local holds: its body
+    /// evaluated over its arguments. Every other callee needs a run.
     fn call(&mut self, expr: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Folded, ConstFault> {
         if self.types.callee(expr) == Some(Callee::Intrinsic(Intrinsic::Logic)) {
             return self.logic(expr, args);
         }
-        let Some(Callee::Function(function)) = self.types.callee(expr) else {
-            let what = match &self.design.expr_node(expr).kind {
-                ExprKind::Call { class: crate::pom::CallClass::Probe, .. } => "a probe",
-                ExprKind::Call { class: crate::pom::CallClass::Instance { .. }, .. } => "the result of an instance",
-                _ => "a call that is not a function",
-            };
-            return Err(ConstFault::Dynamic { expr, what: what.to_string() });
+        let function = match self.types.callee(expr) {
+            Some(Callee::Function(function)) => FnValue::Named(function),
+            _ => match self.called_function_value(expr) {
+                Some(function) => function,
+                None => {
+                    let what = match &self.design.expr_node(expr).kind {
+                        ExprKind::Call { class: crate::pom::CallClass::Probe, .. } => "a probe",
+                        ExprKind::Call { class: crate::pom::CallClass::Instance { .. }, .. } => "the result of an instance",
+                        _ => "a call that is not a function",
+                    };
+                    return Err(ConstFault::Dynamic { expr, what: what.to_string() });
+                }
+            },
         };
-        let mut values = Vec::new();
+        let mut arguments = Vec::new();
         for arg in args {
-            values.push(self.folded(*arg, bindings)?);
+            arguments.push(match self.fn_value_of(*arg) {
+                Some(function) => Argument { value: Folded::Unknown, function: Some(function) },
+                None => Argument { value: self.folded(*arg, bindings)?, function: None },
+            });
         }
+        self.apply_value(expr, function, arguments, bindings)
+    }
+
+    /// The body of the function `function` evaluated for `arguments`; a function reads no param of
+    /// the caller.
+    fn apply_function(&mut self, expr: ExprId, function: DeclId, arguments: Vec<Argument>) -> Result<Folded, ConstFault> {
         let data = self.design.decl_data(function);
         let DeclKind::Fn(f) = &data.kind else {
             return Err(ConstFault::Unsupported { expr, what: "a call of a name that is not a function".to_string() });
@@ -598,21 +585,22 @@ impl<'d, 't> ConstEval<'d, 't> {
         let Some(body) = &f.body else {
             return Err(ConstFault::Unsupported { expr, what: "a function without a body".to_string() });
         };
-        if self.depth >= CALL_DEPTH {
-            return Err(ConstFault::Unsupported { expr, what: format!("calls nested deeper than {CALL_DEPTH}") });
-        }
+        self.enter(expr)?;
         let params = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)));
-        let mut frame = BTreeMap::new();
-        for (param, value) in params.zip(values) {
-            frame.insert(param, value);
+        let (mut frame, mut functions) = (BTreeMap::new(), BTreeMap::new());
+        for (param, argument) in params.zip(arguments) {
+            frame.insert(param, argument.value);
+            if let Some(function) = argument.function {
+                functions.insert(param, function);
+            }
         }
         let outer = std::mem::replace(&mut self.locals, frame);
-        self.depth += 1;
-        // A function reads no param of the caller: its body is evaluated with none bound.
-        let result = self.block(expr, &body.stmts, &Bindings::new());
+        let outer_functions = std::mem::replace(&mut self.fn_values, functions);
+        let result = crate::stack::deep(|| self.exec_block(expr, &body.stmts, &Bindings::new()));
         self.depth -= 1;
         self.locals = outer;
-        result
+        self.fn_values = outer_functions;
+        self.returned(expr, result)
     }
 
     /// `logic::<T>("..")` (§22.1.4): the value whose level `k` is the pattern's character `WIDTH - 1

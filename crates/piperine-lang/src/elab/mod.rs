@@ -44,6 +44,6 @@ mod unlowered;
 mod unroll;
 mod variants;
 
-pub use consts::{Bindings, ConstEval, ConstFault, Folded};
+pub use consts::{Bindings, ConstEval, ConstFault, Exit, Folded};
 pub use elaborator::Elaborator;
 pub use structural::Overrides;
