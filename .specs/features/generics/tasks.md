@@ -202,8 +202,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_library_package_with_no_run_is_type_checked` and `a_dependency_crate_is_type_checked` pass under `**Run apiproject**`
-- [ ] Gate check passes: Quick
+- [x] `a_library_package_with_no_run_is_type_checked` and `a_dependency_crate_is_type_checked` pass under `**Run apiproject**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
