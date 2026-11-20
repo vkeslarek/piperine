@@ -322,7 +322,7 @@ Every id of `GAPS.md` (audit of 2026-11-17) has one owning feature. Specs only f
 | C | `solver-hygiene` | V1–V11, V14, V15 | implementing |
 | B next | `root-e2e` | H11, U5, U10 | delivered |
 | B next | host follow-up | H1 (`force`, `release`, a wait for an event), H6 (continued transients, an analysis at a transient's last instant), the operating-point variable of H4, noise (blocked by L45), S-parameters, adjoint gradients | needs new solver mechanisms; to plan |
-| B next | `buck-scenarios` | U3 (SPEC S2–S9 as runs + host tests; load tests at 3.3 V) | queued, after host-ii |
+| B next | `buck-scenarios` | U3 (SPEC S2–S9 as runs + host tests; load tests at 3.3 V) | planned (`.specs/features/buck-scenarios/`) |
 
 **Language expressiveness (the user's priority):**
 
