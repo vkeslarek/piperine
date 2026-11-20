@@ -154,6 +154,15 @@ impl Checker<'_> {
                 };
                 self.port_type(ty).map(|t| (decl, t))
             }
+            // `c.state`: a `pub` port or signal of a placed child (§8.2.8).
+            ExprKind::Field { res: Resolution::Decl(decl), .. } => {
+                let ty = match &self.design.decl_data(*decl).kind {
+                    DeclKind::Port(p) => p.ty,
+                    DeclKind::Signal(s) => s.ty,
+                    _ => return None,
+                };
+                self.port_type(ty).map(|t| (*decl, t))
+            }
             _ => None,
         }
     }

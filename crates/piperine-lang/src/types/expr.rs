@@ -208,6 +208,7 @@ impl Checker<'_> {
             ExprKind::Call { .. } => self.call(expr),
             ExprKind::Match { .. } => self.match_expr(expr, None),
             ExprKind::MethodCall { .. } => self.method_call(expr),
+            ExprKind::Field { .. } => self.field_read(expr),
             ExprKind::Closure { .. } => {
                 self.unsupported(file, node.span, "closure outside an argument whose parameter has a function type");
                 None

@@ -93,3 +93,51 @@ fn a_discrete_argument_read_by_a_callee_definition_is_accepted() {
     let src = "module Probe(x: f64, p: Electrical) { }\nanalog for Probe { v(p) +> x; }\nmodule Top(a: Electrical) { let h = Probe(v(a), a); }";
     Types::check(&design_of(src), "Top").unwrap_or_else(|d| panic!("{:?}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
 }
+
+/// A child with a `pub` node, carrier, param and `let`, and an item of each that is not `pub`.
+const CELL: &str = "module Cell(a: Electrical) {\n    pub signal mid: Electrical;\n    pub signal state: Bit<u8> = 0;\n    pub r: f64 = 2.0;\n    pub let e = r * 2.0;\n    hidden: f64 = 1.0;\n    signal inner: Electrical;\n}\n";
+
+#[test]
+fn inst_name_types_as_the_pub_item() {
+    // AS-11 AC 1 to 4 (§8.2.8): `c.mid` is the child's node (a probe takes it), `c.state` the child's
+    // carrier of `Bit<u8>` (read by `known_or`, it is a `u8`), `c.r` the child's param (an `f64`) and
+    // `c.e` the child's `let` (the type of its value, an `f64`): each types as the item itself.
+    let src = format!("{CELL}module Top(a: Electrical) {{\n    let c = Cell(a);\n    let z = c.r;\n    let w = c.e;\n}}\nanalog for Top {{ v(a) +> v(c.mid) + (c.state.known_or(0) as f64) + z + w; }}");
+    let design = design_of(&src);
+    let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("{:?}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+    let typed_as = |text: &str| -> Vec<Option<Ty>> { (0..design.expr_count()).map(|i| ExprId(i as u32)).filter(|e| src.get(design.expr_node(*e).span.range()) == Some(text) && matches!(design.expr_node(*e).kind, piperine_lang::pom::ExprKind::Field { .. })).map(|e| types.ty(e).cloned()).collect() };
+    assert!(!typed_as("c.r").is_empty(), "the read of `c.r` is in the design");
+    assert!(typed_as("c.r").iter().all(|t| *t == Some(Ty::F64)), "the param `r` reads as f64");
+    assert!(typed_as("c.e").iter().all(|t| *t == Some(Ty::F64)), "the let `e` reads as f64");
+    assert!(typed_as("c.mid").iter().all(|t| matches!(t, Some(Ty::Node(_)))), "the node `mid` reads as a node");
+    assert!(typed_as("c.state").iter().all(|t| *t == Some(Ty::UInt(8))), "the carrier `state` reads as its value, a u8");
+}
+
+#[test]
+fn inst_name_of_an_item_that_is_not_pub_is_e0343() {
+    // AS-11 AC 5 (§8.2.8): `hidden` is a param and `inner` a node of `Cell`, neither `pub`: each read
+    // is `E0343` naming the item, at the item's name.
+    for item in ["hidden", "inner"] {
+        let src = format!("{CELL}module Top(a: Electrical) {{ let c = Cell(a); let z = c.{item}; }}");
+        let design = Design::builder().source("top.msl", &src).build();
+        let found: Vec<_> = design.diagnostics().iter().filter(|d| &*d.diagnostic.code == "E0343").collect();
+        assert_eq!(found.len(), 1, "{item}: {:?}", design.diagnostics().iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+        assert_eq!(&src[found[0].diagnostic.span().range()], item, "the error is at the item's name");
+        assert!(found[0].diagnostic.message.contains(&format!("`{item}`")), "{item}: it names the item: {}", found[0].diagnostic.message);
+    }
+}
+
+#[test]
+fn a_commit_to_a_childs_carrier_is_e0222() {
+    // AS-11 AC 6 (§8.2.10): a parent never writes a child's drive: `c.state <- 1` in a reaction and the
+    // definition `c.state = 1` are each `E0222` at the place, naming the carrier.
+    for (item, behavior) in [("", "digital for Top { on at(1m) { c.state <- 1; } }"), ("c.state = 1;", "")] {
+        let body = format!("{item}{behavior}");
+        let src = format!("{CELL}module Top(a: Electrical) {{ let c = Cell(a); {item} }}\n{behavior}");
+        let found = diagnostics(&src);
+        let codes: Vec<&str> = found.iter().map(|d| &*d.diagnostic.code).collect();
+        assert_eq!(codes, ["E0222"], "{body}: {:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(&src[found[0].diagnostic.span().range()], "c.state", "the error is at the place");
+        assert!(found[0].diagnostic.message.contains("carrier of an instance"), "{body}: {}", found[0].diagnostic.message);
+    }
+}

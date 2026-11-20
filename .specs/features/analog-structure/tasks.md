@@ -817,10 +817,10 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Tests with exactly these names pass in `Run typestruct`: `inst_name_of_an_item_that_is_not_pub_is_e0343`, `a_commit_to_a_childs_carrier_is_e0222`, `inst_name_types_as_the_pub_item`
-- [ ] `Run clibook` passes unedited
-- [ ] Gate check passes: Quick (`Run typestruct`, `Run clibook`), then `cargo test -p piperine-lang`
-- [ ] Test count: the 3 tests named above, and no existing test removed
+- [x] Tests with exactly these names pass in `Run typestruct`: `inst_name_of_an_item_that_is_not_pub_is_e0343`, `a_commit_to_a_childs_carrier_is_e0222`, `inst_name_types_as_the_pub_item`
+- [x] `Run clibook` passes unedited
+- [x] Gate check passes: Quick (`Run typestruct`, `Run clibook`), then `cargo test -p piperine-lang`
+- [x] Test count: the 3 tests named above, and no existing test removed
 
 **Tests**: integration
 **Gate**: quick

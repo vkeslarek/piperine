@@ -21,6 +21,7 @@ mod expr;
 mod flag_total;
 mod intrinsic;
 mod module;
+mod reach;
 mod reaction;
 mod record;
 mod result;

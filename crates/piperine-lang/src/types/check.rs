@@ -102,6 +102,9 @@ pub(super) struct Checker<'d> {
     /// is typed: the result type of a call that is generic over its result (`logic`, `cast`).
     pub(super) call_expected: Option<(ExprId, Ty)>,
     queued: BTreeSet<DeclId>,
+    /// The declarations already checked, so one reached ahead of the queue (`check_ahead`) is not
+    /// checked twice.
+    checked: BTreeSet<DeclId>,
     queue: VecDeque<DeclId>,
     diagnostics: Vec<DesignDiagnostic>,
     /// The spans already reported: one diagnostic per construct.
@@ -139,6 +142,7 @@ impl<'d> Checker<'d> {
             fn_value_at: None,
             call_expected: None,
             queued: BTreeSet::new(),
+            checked: BTreeSet::new(),
             queue: VecDeque::new(),
             diagnostics: Vec::new(),
             reported: BTreeSet::new(),
@@ -191,7 +195,31 @@ impl<'d> Checker<'d> {
         }
     }
 
+    /// Check `module` now, out of queue order, when it is not checked yet: a read of a child's
+    /// `let` needs the type of its value (`reach.rs`). The state of the declaration being checked
+    /// is set aside and restored; a module already checked (or being checked) is left alone.
+    pub(super) fn check_ahead(&mut self, module: DeclId) {
+        if self.checked.contains(&module) {
+            return;
+        }
+        self.reach(module);
+        let (owner, context, event_slot, in_guard, committing, fn_where, fn_value_at) = (self.owner, self.context, self.event_slot, self.in_guard, self.committing, self.fn_where, self.fn_value_at);
+        let (book, lets_open, placing) = (std::mem::take(&mut self.book), std::mem::take(&mut self.lets_open), std::mem::take(&mut self.placing));
+        self.context = Context::Module;
+        self.event_slot = None;
+        self.in_guard = false;
+        self.committing = false;
+        self.fn_where = false;
+        self.fn_value_at = None;
+        self.declaration(module);
+        (self.owner, self.context, self.event_slot, self.in_guard, self.committing, self.fn_where, self.fn_value_at) = (owner, context, event_slot, in_guard, committing, fn_where, fn_value_at);
+        (self.book, self.lets_open, self.placing) = (book, lets_open, placing);
+    }
+
     fn declaration(&mut self, decl: DeclId) {
+        if !self.checked.insert(decl) {
+            return;
+        }
         self.owner = Some(decl);
         match &self.design.decl_data(decl).kind {
             DeclKind::Module(_) => self.module(decl),

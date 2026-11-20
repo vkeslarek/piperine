@@ -129,6 +129,9 @@ pub(super) fn run(design: &mut Design) {
     for (expr, res) in members.res {
         design.set_member(expr, res);
     }
+    for (path, index, res) in members.segments {
+        design.set_segment_res(path, index, res);
+    }
     for (file, diagnostic) in members.diagnostics {
         design.push_diagnostic(file, diagnostic);
     }

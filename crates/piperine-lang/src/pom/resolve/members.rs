@@ -10,7 +10,8 @@ use super::super::body::{ExprKind, PatKind, StmtKind, TypeKind};
 use super::super::builtin::builtin_method;
 use super::super::decl::{DeclKind, FnParamData, GenericParamData, NatureFieldNode};
 use super::super::design::Design;
-use super::super::ids::{DeclId, ExprId, FileId, TypeId};
+use super::super::ids::{DeclId, ExprId, FileId, PathId, TypeId};
+use super::classify::access_table;
 use super::super::resolution::{CallClass, DeferReason, Resolution};
 use crate::msl::Diagnostic;
 
@@ -19,6 +20,9 @@ use crate::msl::Diagnostic;
 pub(super) struct Members {
     /// `(field access or method call, what its member names)`.
     pub res: Vec<(ExprId, Resolution)>,
+    /// `(path, segment, what it names)`: the callee of an access call whose first node is a reached
+    /// item (`v(c.mid)`), which classification could not give a nature (stage 6 leaves it ambiguous).
+    pub segments: Vec<(PathId, usize, Resolution)>,
     pub diagnostics: Vec<(FileId, Diagnostic)>,
 }
 
@@ -51,8 +55,12 @@ pub(super) type InScope<'a> = &'a dyn Fn(DeclId, DeclId) -> bool;
 pub(super) fn run<'a>(design: &Design, in_scope: InScope<'a>) -> Members {
     let reader = Reader { design, local_types: local_types(design), in_scope };
     let mut out = Members::default();
+    let access = access_table(design);
     for i in 0..design.expr_count() {
         let expr = ExprId(i as u32);
+        if let Some(segment) = reader.reached_access(expr, &access) {
+            out.segments.push(segment);
+        }
         if let ExprKind::MethodCall { recv, method, .. } = &design.expr_node(expr).kind {
             let (res, on_array) = reader.method(*recv, &method.text, design.expr_node(expr).owner);
             out.res.push((expr, res));
@@ -93,6 +101,32 @@ fn local_types(design: &Design) -> BTreeMap<DeclId, TypeId> {
 }
 
 impl Reader<'_> {
+    /// The callee of the access call `expr` (`v(c.mid)`) when classification left it ambiguous and
+    /// its first node is a `pub` port or signal of a placed child: the quantity of that item's
+    /// nature, which the declarations alone decide (§8.2.8). The segment to write and what it names.
+    fn reached_access(&self, expr: ExprId, access: &BTreeMap<String, Vec<DeclId>>) -> Option<(PathId, usize, Resolution)> {
+        let ExprKind::Call { callee, args, .. } = &self.design.expr_node(expr).kind else { return None };
+        let ExprKind::Path(path) = &self.design.expr_node(*callee).kind else { return None };
+        let segment = self.design.path_node(*path).segments.last()?;
+        if segment.res != Resolution::Deferred(DeferReason::AmbiguousAccess) {
+            return None;
+        }
+        let ExprKind::Field { expr: recv, name, .. } = &self.design.expr_node(self.unparenthesized(args.first()?.value)).kind else { return None };
+        let Recv::Instance(module) = self.receiver(*recv) else { return None };
+        let item = self.member_of(module, &name.text)?;
+        let nature = self.design.nature_of(self.design.declared_type(item)?)?;
+        let quantity = access.get(&segment.name.text)?.iter().copied().find(|q| self.design.decl_data(*q).parent == Some(nature))?;
+        Some((*path, self.design.path_node(*path).segments.len() - 1, Resolution::Decl(quantity)))
+    }
+
+    /// `expr` with its parentheses peeled.
+    fn unparenthesized(&self, mut expr: ExprId) -> ExprId {
+        while let ExprKind::Paren(inner) = &self.design.expr_node(expr).kind {
+            expr = *inner;
+        }
+        expr
+    }
+
     /// The member `name` of the receiver expression: what it names, and the
     /// module whose item it is when the item is not `pub` or does not exist
     /// (`true`): both are `E0343` (§8.4.8).

@@ -120,6 +120,14 @@ impl Checker<'_> {
                     }
                 }
             }
+            ExprKind::Field { res: Resolution::Decl(decl), .. } if self.is_discrete_carrier(*decl) => {
+                if !reported.insert(expr) {
+                    return;
+                }
+                let name = self.design.decl_data(*decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                let message = format!("an `analog` block reads the discrete carrier `{name}` of a child other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
+                self.coded(here.1, "E0150", here.0, message, "a discrete carrier read in `analog`");
+            }
             ExprKind::Path(path) => {
                 let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else { return };
                 if self.is_discrete_carrier(decl) {
@@ -176,6 +184,7 @@ impl Checker<'_> {
         match &self.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.is_carrier_path(*inner),
             ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if self.is_discrete_carrier(d)),
+            ExprKind::Field { res: Resolution::Decl(d), .. } => self.is_discrete_carrier(*d),
             _ => false,
         }
     }
