@@ -264,17 +264,19 @@ T13 → T15
 
 **Done when**:
 
-- [ ] `each_hiccup_lasts_1000_samples` fails before the model change and passes after it (run once each way, both outcomes in the handoff)
-- [ ] `the_supervisor_follows_its_state_table` passes with the reference model at 999
-- [ ] `cargo test -p piperine-lang --test elab_buck` passes with the pin's one line changed (`git diff --stat` shows one line in `buck.txt`)
-- [ ] `cargo test -p piperine-parity --test buck_closed_loop --test buck_whole` pass
-- [ ] Gate check passes: `Run supervisor` and the Build line
-- [ ] Test count: 1 new test
+- [x] `each_hiccup_lasts_1000_samples` fails before the model change and passes after it (run once each way, both outcomes in the handoff)
+- [x] `the_supervisor_follows_its_state_table` passes with the reference model at 999
+- [x] `cargo test -p piperine-lang --test elab_buck` passes with the pin's one line changed (`git diff --stat` shows one line in `buck.txt`)
+- [x] `cargo test -p piperine-parity --test buck_closed_loop --test buck_whole` pass
+- [x] Gate check passes: `Run supervisor` and the Build line
+- [x] Test count: 1 new test
 
 **Tests**: integration
 **Gate**: full
 
 **Commit**: `fix(buck): a hiccup lasts 1000 samples, as SPEC 8.5 says`
+
+**Status**: Complete
 
 ---
 

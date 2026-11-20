@@ -425,7 +425,7 @@ body Supervisor
     let fault_now.val = if (oc_n >= 8u4) { 1u2 } else { if (ov_n >= 2u2) { 2u2 } else { 0u2 } }
     oc_count <- oc_n
     ov_count <- ov_n
-    if (!enabled) { mode <- 0u2 } else { let match$0 = mode.known_or(0u2); if (match$0 == 0u2) { mode <- 1u2 } else { if (match$0 == 3u2) { if (retry == 0u11) { mode <- 1u2 } else { retry <- (retry - 1u11) } } else { if fault_now.is { let f = fault_now.val; mode <- 3u2; fault <- f; retry <- 1000u11; let log.severity = 1u2; emit log(severity = log.severity, msg = "buck: fault, entering hiccup") } else { if ((mode == 1u2) & at_target.known_or(false)) { mode <- 2u2; fault <- 0u2 } else { () } } } } }
+    if (!enabled) { mode <- 0u2 } else { let match$0 = mode.known_or(0u2); if (match$0 == 0u2) { mode <- 1u2 } else { if (match$0 == 3u2) { if (retry == 0u11) { mode <- 1u2 } else { retry <- (retry - 1u11) } } else { if fault_now.is { let f = fault_now.val; mode <- 3u2; fault <- f; retry <- 999u11; let log.severity = 1u2; emit log(severity = log.severity, msg = "buck: fault, entering hiccup") } else { if ((mode == 1u2) & at_target.known_or(false)) { mode <- 2u2; fault <- 0u2 } else { () } } } } }
     let regulating = (((mode == 2u2) & enabled) & (!fault_now.is))
     let inside = in_window(m, r)
     let in_n = if (!(regulating & inside)) { 0u7 } else { if (pg_in < 64u7) { (pg_in + 1u7) } else { 64u7 } }

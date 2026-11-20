@@ -83,7 +83,9 @@ digital for Supervisor {
                     if let Some(f) = fault_now {
                         mode <- Mode::Hiccup;
                         fault <- f;
-                        retry <- HICCUP_SAMPLES;
+                        // the entry is the first sample of the hiccup, so SPEC §8.5's 1000 samples
+                        // end when the count has run 999 more: `retry == 0` then retries
+                        retry <- HICCUP_SAMPLES - 1;
                         log(Severity::Warning, "buck: fault, entering hiccup");
                     } else if mode == Mode::SoftStart && at_target.known_or(false) {
                         mode <- Mode::Regulate;
