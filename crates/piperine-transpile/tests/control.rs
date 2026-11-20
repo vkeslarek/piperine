@@ -550,3 +550,102 @@ fn a_reaction_loop_committing_after_an_unknown_decision_commits_maybe() {
     assert_eq!(react(Some(0)), [(0, pin(Some(0)), 0.0, 0), (0, pin(Some(1)), 0.0, 0)]);
     assert_eq!(react(Some(1)), [(0, pin(Some(0)), 0.0, 0)]);
 }
+
+// ---- T10: function values and recursion (CV-05 to CV-07) -------------------------------------------------
+
+/// The IR of `fact`, `twice` and `demo`, with the MSL each transcribes.
+fn function_library() -> Ir {
+    let (u16, boolean) = (Ty::u(16), ValueType::Bool);
+    let function = ValueType::Fn(vec![u16.clone()], Box::new(u16.clone()));
+    let mut b = IrBuilder::new();
+
+    // control.msl:100  fn fact(n: u16) -> u16 { if n < 2 { 1 } else { n * fact(n - 1) } }
+    let locals = vec![Functions::local("n", u16.clone(), false)];
+    let mut x = Dx::new(&mut b, FILE, 101, 5);
+    let (n, two) = (x.local(0, u16.clone()), x.int(2, u16.clone()));
+    let small = x.bin(BinaryOp::Lt, n, two, boolean.clone());
+    let one = x.int(1, u16.clone());
+    let (n, n_again, one_again) = (x.local(0, u16.clone()), x.local(0, u16.clone()), x.int(1, u16.clone()));
+    let below = x.bin(BinaryOp::Sub, n_again, one_again, u16.clone());
+    let rest = x.call(FunctionId(0), vec![below], u16.clone());
+    let product = x.bin(BinaryOp::Mul, n, rest, u16.clone());
+    let body = x.if_(small, one, product, u16.clone());
+    Functions::define(&mut b, "fact", 100, locals, 1, u16.clone(), body);
+
+    // control.msl:110  fn twice(f: fn(u16) -> u16, x: u16) -> u16 { f(f(x)) }
+    let locals = vec![Functions::local("f", function.clone(), false), Functions::local("x", u16.clone(), false)];
+    let mut x = Dx::new(&mut b, FILE, 111, 5);
+    let (f, f_again, value) = (x.local(0, function.clone()), x.local(0, function.clone()), x.local(1, u16.clone()));
+    let inner = Functions::control(&mut b, Expr::CallValue { callee: f_again, args: vec![value] }, u16.clone(), 111);
+    let body = Functions::control(&mut b, Expr::CallValue { callee: f, args: vec![inner] }, u16.clone(), 111);
+    Functions::define(&mut b, "twice", 110, locals, 2, u16.clone(), body);
+
+    // control.msl:120  fn demo(x: u16) -> u16 { let add = |y| y + x; twice(add, 1) + twice(fact, 3) }
+    let locals = vec![Functions::local("x", u16.clone(), false), Functions::local("add", function.clone(), false), Functions::local("y", u16.clone(), false)];
+    let mut x = Dx::new(&mut b, FILE, 121, 5);
+    let (y, captured) = (x.local(2, u16.clone()), x.local(0, u16.clone()));
+    let sum = x.bin(BinaryOp::Add, y, captured, u16.clone());
+    let closure = Functions::control(&mut b, Expr::Closure { params: vec![2], body: sum }, function.clone(), 121);
+    let let_add = b.stmt(Stmt::Let { local: 1, init: closure });
+    let mut x = Dx::new(&mut b, FILE, 121, 30);
+    let (add, one) = (x.local(1, function.clone()), x.int(1, u16.clone()));
+    let first = x.call(FunctionId(1), vec![add, one], u16.clone());
+    let reference = Functions::control(&mut b, Expr::FunctionRef(FunctionId(0)), function.clone(), 122);
+    let mut x = Dx::new(&mut b, FILE, 122, 5);
+    let three = x.int(3, u16.clone());
+    let second = x.call(FunctionId(1), vec![reference, three], u16.clone());
+    let total = x.bin(BinaryOp::Add, first, second, u16.clone());
+    let body = x.block(vec![let_add], Some(total), u16.clone());
+    Functions::define(&mut b, "demo", 120, locals, 1, u16.clone(), body);
+
+    // control.msl:130  fn forever(n: u16) -> u16 { forever(n + 1) }
+    let locals = vec![Functions::local("n", u16.clone(), false)];
+    let mut x = Dx::new(&mut b, FILE, 131, 5);
+    let (n, one) = (x.local(0, u16.clone()), x.int(1, u16.clone()));
+    let next = x.bin(BinaryOp::Add, n, one, u16.clone());
+    let body = x.call(FunctionId(3), vec![next], u16.clone());
+    Functions::define(&mut b, "forever", 130, locals, 1, u16.clone(), body);
+    Alone::finish(b)
+}
+
+/// `fact` as Rust writes it, on `u16`.
+fn fact(n: u16) -> u16 {
+    if n < 2 { 1 } else { n.wrapping_mul(fact(n - 1)) }
+}
+
+#[test]
+fn function_values_and_recursion_compile_and_run() {
+    // §1.5.10, §1.5.14, §3 rule 12: a function used as a value, called through it, a closure
+    // capturing by value, and a recursive function; the recursive function carries a depth, the
+    // others keep their text
+    let ir = function_library();
+    let functions = printed(&ir);
+    let text = functions.join("\n");
+    assert!(text.contains("fn fact(n: rt::UInt<16>, depth_: rt::Depth) -> rt::UInt<16> {"), "{text}");
+    assert!(text.contains("fact(n - rt::UInt::<16>::new(1), depth_.deeper(\"fact\"))"), "{text}");
+    assert!(text.contains("fn twice(f: &dyn Fn(rt::UInt<16>) -> rt::UInt<16>, x: rt::UInt<16>) -> rt::UInt<16> {"), "{text}");
+    assert!(text.contains("let add: &dyn Fn(rt::UInt<16>) -> rt::UInt<16> = &move |y| y + x;"), "{text}");
+    assert!(text.contains("&move |arg0_| fact(arg0_, rt::Depth::root())"), "{text}");
+
+    let mut main = String::from("fn main() {\n");
+    let mut expected = Vec::new();
+    for n in [0u16, 1, 5, 8] {
+        main += &format!("    println!(\"fact {n} {{}}\", fact(rt::UInt::<16>::new({n}), rt::Depth::root()).get());\n");
+        expected.push(format!("fact {n} {}", fact(n)));
+        main += &format!("    println!(\"demo {n} {{}}\", demo(rt::UInt::<16>::new({n})).get());\n");
+        // twice(add, 1) is 1 + x + x; twice(fact, 3) is fact(fact(3))
+        expected.push(format!("demo {n} {}", (1 + 2 * n).wrapping_add(fact(fact(3)))));
+    }
+    main += "}\n";
+    let out = Probe::run(&functions, &main);
+    assert_eq!(out.lines().collect::<Vec<_>>(), expected.iter().map(String::as_str).collect::<Vec<_>>());
+}
+
+#[test]
+fn a_recursion_past_the_depth_bound_faults_by_name() {
+    // Q5 (b): a recursion that never ends is a panic naming the function, not a stack overflow
+    let ir = function_library();
+    let main = "fn main() {\n    let caught = std::panic::catch_unwind(|| forever(rt::UInt::<16>::new(0), rt::Depth::root()));\n    let payload = caught.err().expect(\"the recursion panics\");\n    println!(\"{}\", payload.downcast_ref::<String>().expect(\"text\"));\n}\n";
+    let out = Probe::run(&printed(&ir), main);
+    assert!(out.contains("forever") && out.contains("1024"), "{out}");
+}

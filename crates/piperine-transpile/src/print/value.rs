@@ -90,6 +90,9 @@ pub struct ValuePrinter<'a> {
     /// The result type of the function being printed; `None` for any other owner. A `return`
     /// lifts its value to it.
     pub(super) returns: Option<ValueType>,
+    /// The function being printed; `None` for any other owner. A call it makes to a function on a
+    /// call cycle with it passes a deeper `rt::Depth`.
+    pub(super) function: Option<FunctionId>,
     /// The loops whose body is being printed, innermost last: what `break`, `continue` and
     /// `return` print as depends on the loop they leave.
     pub(super) loops: RefCell<Vec<LoopFrame>>,
@@ -100,7 +103,7 @@ pub struct ValuePrinter<'a> {
     /// The record streams of the owner's body, by index; empty for a function.
     streams: Vec<Stream>,
     /// The owner's origin: where an error with no expression of its own points.
-    origin: Origin,
+    pub(super) origin: Origin,
     /// How the analog read forms print; `None` outside an `analog` block.
     analog: Option<Reads>,
     /// The accumulators a contribution adds to, in the structured form of an `analog` block
@@ -164,6 +167,7 @@ impl<'a> ValuePrinter<'a> {
             local_types: f.locals().iter().map(|l| l.ty.clone()).collect(),
             mutable: f.locals().iter().map(|l| l.mutable).collect(),
             returns: Some(f.ret().clone()),
+            function: Some(function),
             loops: RefCell::new(Vec::new()),
             params: Vec::new(),
             carriers: Vec::new(),
@@ -194,6 +198,7 @@ impl<'a> ValuePrinter<'a> {
             local_types: body.locals().iter().map(|l| l.ty.clone()).collect(),
             mutable: body.locals().iter().map(|l| l.mutable).collect(),
             returns: None,
+            function: None,
             loops: RefCell::new(Vec::new()),
             params,
             carriers: body.carriers().iter().map(|c| c.ty.clone()).collect(),
@@ -361,6 +366,10 @@ impl<'a> ValuePrinter<'a> {
             let ty = if matches!(env, Env::Static | Env::Analysis(_)) { "bool" } else { "R" };
             params.push(format!("{}: {ty}", Self::env_name(*env)));
         }
+        // a function on a call cycle carries its depth (Q5 (b)); one that is not keeps its text
+        if Self::is_recursive(ir, function) {
+            params.push("depth_: rt::Depth".to_string());
+        }
         let ret = printer.rust_type(f.ret(), &format!("{} return", printer.path))?;
         let generic = if Self::is_generic(ir, function) { "<R: Real>" } else { "" };
         let mut t = Text::new();
@@ -452,6 +461,7 @@ impl<'a> ValuePrinter<'a> {
                         functions.push(*function);
                         exprs.extend(args);
                     }
+                    Expr::FunctionRef(function) => functions.push(*function),
                     other => Self::children(ir, other, &mut exprs),
                 }
             }
@@ -524,8 +534,9 @@ impl<'a> ValuePrinter<'a> {
             | Expr::Derivative(_)
             | Expr::ParamPrevious(_)
             | Expr::Fired(_)
-            | Expr::Previous(_) => {}
-            control @ (Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. }) => {
+            | Expr::Previous(_)
+            | Expr::FunctionRef(_) => {}
+            control @ (Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. }) => {
                 out.extend(control.operands());
                 for s in control.statements() {
                     out.extend(ir.stmt(*s).operands());
@@ -578,7 +589,7 @@ impl<'a> ValuePrinter<'a> {
     /// Rust lacks is `Error::Unsupported` naming it: an integer wider than 64 bits (or of no
     /// width), a function type. (The IR has no `Float<16>` or `Float<128>`: the only real is
     /// `f64`, so there is nothing of those to refuse.)
-    fn rust_type(&self, ty: &ValueType, path: &str) -> Result<String, Error> {
+    pub(super) fn rust_type(&self, ty: &ValueType, path: &str) -> Result<String, Error> {
         match ty {
             ValueType::F64 => Ok(if self.plain { "f64" } else { "R" }.to_string()),
             ValueType::Bool => Ok("bool".to_string()),
@@ -594,11 +605,7 @@ impl<'a> ValuePrinter<'a> {
                 let inner = if **inner == ValueType::F64 && !self.flagged_reals { "f64".to_string() } else { self.rust_type(inner, path)? };
                 Ok(format!("rt::Flagged<{inner}>"))
             }
-            ValueType::Fn(..) => Err(Error::Unsupported {
-                form: "a function-typed value".into(),
-                path: path.to_string(),
-                origin: self.origin.clone(),
-            }),
+            ValueType::Fn(params, ret) => self.function_type(params, ret, path),
         }
     }
 
@@ -711,6 +718,7 @@ impl<'a> ValuePrinter<'a> {
                     });
                 }
                 printed.extend(Self::env_reads(self.ir, *function).into_iter().map(|env| self.read(Self::env_name(env))));
+                printed.extend(self.depth_argument(*function));
                 // a generic function called with nothing to fix its `Real` type names it
                 let real = if printed.is_empty() && Self::is_generic(self.ir, *function) { format!("::<{}>", if self.plain { "f64" } else { "R" }) } else { String::new() };
                 atom(format!("{}{real}({})", Text::ident(self.ir.function(*function).name()), printed.join(", ")))
@@ -731,16 +739,8 @@ impl<'a> ValuePrinter<'a> {
                 }
                 atom(format!("{}.{name}()", self.piece(*arg)?.at(Prec::Atom)))
             }
-            Expr::Closure { params, body } => {
-                let mut names = Vec::with_capacity(params.len());
-                for p in params {
-                    match self.locals.get(*p as usize) {
-                        Some(name) => names.push(Self::unused_prefix(self.ir, *body, *p, name)),
-                        None => return Err(self.unsupported(e, "a closure parameter out of range")),
-                    }
-                }
-                Ok(Piece::new(format!("|{}| {}", names.join(", "), self.expr(*body)?), Prec::Low))
-            }
+            // a closure is a function value, which is the reference `&dyn Fn` takes
+            Expr::Closure { .. } => Ok(Piece::new(format!("&{}", self.closure(e)?), Prec::Unary)),
             Expr::Probe { plus, minus } => self.probe_piece(*plus, *minus).ok_or_else(|| self.unsupported(e, "probe")),
             Expr::Derivative(k) => match self.analog.as_ref().and_then(|r| r.derivatives.get(*k as usize)) {
                 Some(name) => atom(self.read(name)),
@@ -803,10 +803,25 @@ impl<'a> ValuePrinter<'a> {
             Expr::Break(value) => self.leave_loop(e, *value),
             Expr::Continue => self.continue_loop(e),
             Expr::Return(value) => self.return_from_function(e, *value),
-            // Printed by T10; until then each is named.
-            Expr::FunctionRef(_) => Err(self.unsupported(e, "a function value")),
-            Expr::CallValue { .. } => Err(self.unsupported(e, "a call through a function value")),
+            Expr::FunctionRef(function) => self.function_value(*function),
+            Expr::CallValue { callee, args } => self.call_value(e, *callee, args),
         }
+    }
+
+    /// The closure `e` as the closure itself: `move |a, b| body`, which captures by value
+    /// (§1.5.14). A `limit` function is this text; as a value it is the reference to it.
+    pub fn closure(&self, e: ExprId) -> Result<String, Error> {
+        let Expr::Closure { params, body } = self.ir.expr(e) else {
+            return Err(self.unsupported(e, "a form that is not a closure"));
+        };
+        let mut names = Vec::with_capacity(params.len());
+        for p in params {
+            match self.locals.get(*p as usize) {
+                Some(name) => names.push(Self::unused_prefix(self.ir, *body, *p, name)),
+                None => return Err(self.unsupported(e, "a closure parameter out of range")),
+            }
+        }
+        Ok(format!("move |{}| {}", names.join(", "), self.expr(*body)?))
     }
 
     /// One half of `value.level(index)` (§3.3.4): `.0` says the level is known, `.1` is its value.
@@ -1152,7 +1167,12 @@ impl<'a> ValuePrinter<'a> {
                     None => self.expr(*init)?,
                 };
                 let keyword = if self.mutable.get(*local as usize).copied().unwrap_or(false) { "let mut" } else { "let" };
-                Ok(format!("{keyword} {name} = {init};"))
+                // a function value has no type of its own to infer: the local is the `&dyn Fn` it holds
+                let annotation = match self.local_types.get(*local as usize) {
+                    Some(ty @ ValueType::Fn(..)) => format!(": {}", self.rust_type(ty, &self.path)?),
+                    _ => String::new(),
+                };
+                Ok(format!("{keyword} {name}{annotation} = {init};"))
             }
             Stmt::Expr(e) => self.expression_statement(*e),
             Stmt::Contribute { branch, quantity, addends } => match &self.sums {

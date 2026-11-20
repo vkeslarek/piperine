@@ -271,6 +271,8 @@ impl<'a> AnalogPrinter<'a> {
                     sources.extend(ValuePrinter::env_reads(self.ir, *function).into_iter().filter_map(Self::env_source));
                     stack.extend(args);
                 }
+                // a function used as a value reads the environment its closure passes on
+                Expr::FunctionRef(function) => sources.extend(ValuePrinter::env_reads(self.ir, *function).into_iter().filter_map(Self::env_source)),
                 Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack.push(*expr),
                 Expr::KnownOr { value, default } => stack.extend([*value, *default]),
                 Expr::Unwrap { is, value, .. } => stack.extend([*is, *value]),
@@ -287,7 +289,7 @@ impl<'a> AnalogPrinter<'a> {
                 }
                 Expr::Math { args, .. } => stack.extend(args),
                 Expr::Closure { body, .. } => stack.push(*body),
-                control @ (Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. }) => {
+                control @ (Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. }) => {
                     stack.extend(control.operands());
                     for s in control.statements() {
                         stack.extend(self.ir.stmt(*s).operands());

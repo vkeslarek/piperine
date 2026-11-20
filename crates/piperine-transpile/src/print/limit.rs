@@ -110,7 +110,7 @@ impl<'a> AnalogPrinter<'a> {
         for id in &slice.stmts {
             lines.push(self.values.stmt(*id)?);
         }
-        let mut tuple = vec![self.values.expr(site.x)?, format!("move {}", self.values.expr(site.f)?)];
+        let mut tuple = vec![self.values.expr(site.x)?, self.values.closure(site.f)?];
         if let Some(seed) = site.seed {
             tuple.push(self.values.expr(seed)?);
         }

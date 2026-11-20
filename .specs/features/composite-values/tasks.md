@@ -386,8 +386,8 @@ T63
 
 **Done when**:
 
-- [ ] `function_values_and_recursion_compile_and_run` and `a_recursion_past_the_depth_bound_faults_by_name` pass under `**Run tctl**`
-- [ ] Gate check passes: Full
+- [x] `function_values_and_recursion_compile_and_run` and `a_recursion_past_the_depth_bound_faults_by_name` pass under `**Run tctl**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

@@ -22,7 +22,7 @@
 //! An exit under an unknown `if` anywhere but among the statements of its loop is refused by name:
 //! there is no rest of the iteration to hand over.
 
-use piperine_ir::{BinaryOp, Expr, ExprId, Place, Stmt, StmtId, ValueType};
+use piperine_ir::{BinaryOp, Expr, ExprId, FunctionId, Place, Stmt, StmtId, ValueType};
 
 use crate::Error;
 use crate::print::value::{Piece, Prec, ValuePrinter};
@@ -524,5 +524,99 @@ impl<'a> ValuePrinter<'a> {
     /// Whether an unknown `if` with an exit in an arm sits where `steps` does not reach it.
     pub(super) fn holds_unreachable_exit(&self, then: ExprId, otherwise: ExprId) -> bool {
         self.holds_exit(&[Item::Expr(then)], false) || self.holds_exit(&[Item::Expr(otherwise)], false)
+    }
+
+    // ---- function values and recursion (CV-05 to CV-07) ---------------------------------------
+
+    /// The Rust type of a function value: `&dyn Fn(A, B) -> R`, a reference so that a local of
+    /// it is `Copy` as a function value is (§1.5.10). A function cannot return one: the reference
+    /// would outlive its closure.
+    pub(super) fn function_type(&self, params: &[ValueType], ret: &ValueType, path: &str) -> Result<String, Error> {
+        let mut printed = Vec::with_capacity(params.len());
+        for p in params {
+            printed.push(self.rust_type(p, path)?);
+        }
+        let result = match ret {
+            ValueType::Fn(..) => {
+                return Err(Error::Unsupported { form: "a function value returning a function value".into(), path: path.to_string(), origin: self.origin.clone() });
+            }
+            other => self.rust_type(other, path)?,
+        };
+        Ok(format!("&dyn Fn({}) -> {result}", printed.join(", ")))
+    }
+
+    /// Whether `function` is on a call cycle: it reaches itself through calls and function values.
+    pub fn is_recursive(ir: &piperine_ir::Ir, function: FunctionId) -> bool {
+        Self::reaches(ir, function, function)
+    }
+
+    /// Whether `from` reaches `to` through one or more calls or function values.
+    fn reaches(ir: &piperine_ir::Ir, from: FunctionId, to: FunctionId) -> bool {
+        let mut seen = std::collections::BTreeSet::new();
+        let mut pending = vec![from];
+        while let Some(f) = pending.pop() {
+            let mut exprs = vec![ir.function(f).body()];
+            while let Some(e) = exprs.pop() {
+                let target = match ir.expr(e) {
+                    Expr::Call { function, .. } | Expr::FunctionRef(function) => Some(*function),
+                    _ => None,
+                };
+                if let Some(g) = target {
+                    if g == to {
+                        return true;
+                    }
+                    if seen.insert(g.index()) {
+                        pending.push(g);
+                    }
+                }
+                Self::children(ir, ir.expr(e), &mut exprs);
+            }
+        }
+        false
+    }
+
+    /// The trailing `rt::Depth` argument of a call to `callee`: `depth_.deeper("callee")` from
+    /// a function on a call cycle with it, `rt::Depth::root()` from anywhere else; nothing when
+    /// `callee` is on no cycle.
+    pub(super) fn depth_argument(&self, callee: FunctionId) -> Option<String> {
+        if !Self::is_recursive(self.ir, callee) {
+            return None;
+        }
+        let same_cycle = self.function.is_some_and(|caller| Self::reaches(self.ir, callee, caller) && Self::reaches(self.ir, caller, callee));
+        Some(if same_cycle { format!("depth_.deeper({:?})", self.ir.function(callee).name()) } else { "rt::Depth::root()".to_string() })
+    }
+
+    /// A function used as a value: its path as a reference, or a closure over the trailing
+    /// arguments it takes (the environment, the depth) so that its type is the `Fn` of its params.
+    pub(super) fn function_value(&self, function: FunctionId) -> Result<Piece, Error> {
+        let f = self.ir.function(function);
+        let envs = Self::env_reads(self.ir, function);
+        let depth = self.depth_argument(function);
+        let generic = if Self::is_generic(self.ir, function) { format!("::<{}>", if self.plain { "f64" } else { "R" }) } else { String::new() };
+        let name = format!("{}{generic}", Text::ident(f.name()));
+        if envs.is_empty() && depth.is_none() {
+            return Ok(Piece::new(format!("&{name}"), Prec::Unary));
+        }
+        let params: Vec<String> = (0..f.params().len()).map(|i| Text::generated(&format!("arg{i}"))).collect();
+        let mut arguments = params.clone();
+        arguments.extend(envs.into_iter().map(|env| self.read(Self::env_name(env))));
+        arguments.extend(depth);
+        Ok(Piece::new(format!("&move |{}| {name}({})", params.join(", "), arguments.join(", ")), Prec::Unary))
+    }
+
+    /// `callee(args)` where `callee` is a value of function type; each argument lifted to the
+    /// parameter type the function type gives.
+    pub(super) fn call_value(&self, e: ExprId, callee: ExprId, args: &[ExprId]) -> Result<Piece, Error> {
+        let ValueType::Fn(params, _) = self.ir.expr_type(callee) else {
+            return Err(self.unsupported(e, "a call through a value that is not a function"));
+        };
+        let mut printed = Vec::with_capacity(args.len());
+        for (i, a) in args.iter().enumerate() {
+            printed.push(match params.get(i) {
+                Some(ty) => self.expr_as(*a, ty)?,
+                None => self.expr(*a)?,
+            });
+        }
+        Ok(Piece::new(format!("{}({})", self.piece(callee)?.at(Prec::Atom), printed.join(", ")), Prec::Atom))
     }
 }

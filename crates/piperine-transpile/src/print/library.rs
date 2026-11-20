@@ -374,6 +374,11 @@ impl LibraryPrinter {
                     }
                     exprs.extend(args);
                 }
+                Expr::FunctionRef(function) => {
+                    if found.insert(function.index()) {
+                        exprs.push(ir.function(*function).body());
+                    }
+                }
                 other => ValuePrinter::children(ir, other, &mut exprs),
             }
         }
