@@ -4,10 +4,20 @@ use piperine_api::{Cell, Table};
 
 use super::column::NamedColumn;
 
-/// A row of a discrete trace that breaks what was asked of it.
+/// One row of a discrete trace: its time and what it holds.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DiscreteSample {
+    /// The time of the row, in seconds.
+    pub time: f64,
+    /// The value the row holds; none when the column was unknown there.
+    pub value: Option<i128>,
+}
+
+/// The first row that does not hold what a trace was asked to hold: the error of
+/// [`DiscreteTrace::holds`].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Departure {
-    /// The time of the row, in seconds.
+    /// The time of the departing row, in seconds.
     pub time: f64,
     /// The value the row holds; none when the column was unknown there.
     pub value: Option<i128>,
@@ -20,7 +30,7 @@ pub struct Departure {
 pub struct DiscreteTrace {
     label: String,
     window: Option<(f64, f64)>,
-    rows: Vec<Departure>,
+    rows: Vec<DiscreteSample>,
 }
 
 impl DiscreteTrace {
@@ -40,7 +50,7 @@ impl DiscreteTrace {
                     Cell::Unknown => None,
                     other => panic!("row {row} of `{}` is not a discrete value: {other:?}", column.label()),
                 };
-                Departure { time, value }
+                DiscreteSample { time, value }
             })
             .collect();
         DiscreteTrace { label: column.label().to_string(), window: None, rows }
@@ -60,7 +70,7 @@ impl DiscreteTrace {
     /// Passes when every row holds `value`; otherwise the first row that does not, with its time
     /// and what it holds. An unknown row does not hold any value.
     pub fn holds(&self, value: i128) -> Result<(), Departure> {
-        self.rows().iter().find(|row| row.value != Some(value)).map_or(Ok(()), |row| Err(*row))
+        self.rows().iter().find(|row| row.value != Some(value)).map_or(Ok(()), |row| Err(Departure { time: row.time, value: row.value }))
     }
 
     /// What the row at or before `time` holds (the last row not after `time`); none when it was
@@ -85,7 +95,7 @@ impl DiscreteTrace {
 
     /// The rows; an empty window panics naming the label and the window, so a scenario never
     /// judges nothing.
-    fn rows(&self) -> &[Departure] {
+    fn rows(&self) -> &[DiscreteSample] {
         if self.rows.is_empty() {
             let window = self.window.map_or("the whole run".to_string(), |(from, to)| format!("[{from:e} s, {to:e} s)"));
             panic!("`{}` has no row in {window}", self.label);

@@ -35,7 +35,7 @@ impl RecordSink for CheckTally {
 
 /// What one run left.
 #[derive(Debug)]
-pub struct Ran {
+pub struct CompletedRun {
     /// The name of the run.
     pub run: String,
     /// The rows the run printed.
@@ -50,7 +50,7 @@ pub struct Ran {
     pub build: PathBuf,
 }
 
-impl Ran {
+impl CompletedRun {
     /// How long the run took, from opening to its end.
     pub fn wall(&self) -> Duration {
         self.ended - self.started
@@ -73,7 +73,7 @@ impl ScenarioRun {
 
     /// Opens the run in a build directory of its own, applies the stimulus, runs it with a
     /// [`CheckTally`] and returns what it left. Every failure becomes a message naming the run.
-    pub fn execute(&self) -> Result<Ran, String> {
+    pub fn execute(&self) -> Result<CompletedRun, String> {
         let started = Instant::now();
         let fail = |stage: &str, what: &dyn std::fmt::Display| format!("run `{}`: {stage}: {what}", self.run);
         let build = tempfile::tempdir().map_err(|error| fail("build directory", &error))?;
@@ -87,7 +87,7 @@ impl ScenarioRun {
         // the session holds the build's libraries: it goes before the directory does
         drop(session);
         let tally = *checks.borrow();
-        Ok(Ran { run: self.run.clone(), table, checks: tally, started, ended: Instant::now(), build: build.path().to_path_buf() })
+        Ok(CompletedRun { run: self.run.clone(), table, checks: tally, started, ended: Instant::now(), build: build.path().to_path_buf() })
     }
 }
 
@@ -107,7 +107,7 @@ impl ScenarioBatch {
     /// Executes every run once, in parallel, and returns the results in the order the runs were
     /// given. A run that fails, or whose thread panics, is its message; the others are
     /// unaffected, so a test of a healthy run never waits on a failed one.
-    pub fn execute(self) -> Vec<Result<Ran, String>> {
+    pub fn execute(self) -> Vec<Result<CompletedRun, String>> {
         std::thread::scope(|scope| {
             let threads: Vec<_> = self.runs.iter().map(|run| scope.spawn(move || run.execute())).collect();
             threads

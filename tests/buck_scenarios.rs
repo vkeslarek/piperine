@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use piperine::{Analysis, Cell, Overrides, ParamValue, Project, Session};
-use piperine_parity::scenario::{Crossing, DiscreteTrace, NamedColumn, Ramp, Ran, ScenarioBatch, ScenarioRun, Stimulus, Trace};
+use piperine_parity::scenario::{CompletedRun, Crossing, DiscreteTrace, NamedColumn, Ramp, ScenarioBatch, ScenarioRun, Stimulus, Trace};
 use piperine_transpile::Settings;
 
 /// The scenario package and what its tests ask of it.
@@ -280,12 +280,12 @@ impl BuckHost {
 
 /// The buck's columns of one run, as the traces the measurements read.
 struct Waveforms<'a> {
-    ran: &'a Ran,
+    ran: &'a CompletedRun,
 }
 
 impl<'a> Waveforms<'a> {
     /// The columns of `ran`.
-    fn of(ran: &'a Ran) -> Waveforms<'a> {
+    fn of(ran: &'a CompletedRun) -> Waveforms<'a> {
         Waveforms { ran }
     }
 
@@ -388,7 +388,7 @@ trait Family {
     fn stimulus() -> Stimulus;
 
     /// What the run left; panics with the run's failure message when it failed (BS-08 AC 2).
-    fn ran() -> &'static Ran {
+    fn ran() -> &'static CompletedRun {
         Suite::get().ran(Self::RUN)
     }
 
@@ -418,7 +418,7 @@ trait Family {
 
 /// The five results, run once by one [`ScenarioBatch`] at the first access (BS-08).
 struct Suite {
-    results: Vec<(&'static str, Result<Ran, String>)>,
+    results: Vec<(&'static str, Result<CompletedRun, String>)>,
 }
 
 impl Suite {
@@ -453,7 +453,7 @@ impl Suite {
 
     /// The run `run`; panics with the stored message when it failed, so every test of the family
     /// reports the failure once and none runs it again (BS-08 AC 2).
-    fn ran(&self, run: &str) -> &Ran {
+    fn ran(&self, run: &str) -> &CompletedRun {
         match self.results.iter().find(|(name, _)| *name == run) {
             Some((_, Ok(ran))) => ran,
             Some((_, Err(message))) => panic!("{message}"),
@@ -462,7 +462,7 @@ impl Suite {
     }
 
     /// Every run that completed.
-    fn completed(&self) -> Vec<&Ran> {
+    fn completed(&self) -> Vec<&CompletedRun> {
         self.results.iter().filter_map(|(_, result)| result.as_ref().ok()).collect()
     }
 

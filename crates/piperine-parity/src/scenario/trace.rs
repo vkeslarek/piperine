@@ -117,12 +117,6 @@ impl Trace {
         self.rows.iter().find(|row| row.time >= after && reached(row.value)).map(|row| row.time)
     }
 
-    /// The first row whose value is not below its predecessor's; none when every row is below
-    /// the one before it (S8's decay is strictly decreasing).
-    pub fn first_rise_in_any_row(&self) -> Option<Sample> {
-        self.rows().windows(2).find(|pair| pair[1].value >= pair[0].value).map(|pair| pair[1])
-    }
-
     /// The row that rises most above its predecessor; its `value` is that rise (negative when every
     /// row falls). A decay is judged against the solver's own voltage resolution with this, since
     /// two rows of an accepted-step interpolation can differ by less than the solver tolerance in
@@ -224,16 +218,13 @@ mod tests {
     }
 
     #[test]
-    fn first_rise_and_decay_time_constant_recover_an_exponential() {
+    fn decay_time_constant_recovers_an_exponential() {
         // v = 3.3 exp(-t / 1.452e-3) sampled every 1e-4: strictly decreasing, tau recovered
         let tau = 1.452e-3;
         let rows: Vec<(f64, f64)> = (0..=20).map(|k| (k as f64 * 1e-4, 3.3 * (-(k as f64) * 1e-4 / tau).exp())).collect();
         let decay = Tables::trace(&rows);
-        assert_eq!(decay.first_rise_in_any_row(), None);
+        assert!(decay.largest_rise().value < 0.0);
         assert!((decay.decay_time_constant() - tau).abs() / tau < 1e-9, "{}", decay.decay_time_constant());
-        // a flat step is a rise ("not below its predecessor")
-        let stalled = Tables::trace(&[(0.0, 3.0), (1.0, 2.0), (2.0, 2.0), (3.0, 1.0)]);
-        assert_eq!(stalled.first_rise_in_any_row(), Some(Sample { time: 2.0, value: 2.0 }));
     }
 
     #[test]

@@ -17,7 +17,7 @@ pub mod stimulus;
 pub mod trace;
 
 pub use column::NamedColumn;
-pub use discrete::{Departure, DiscreteTrace};
-pub use run::{CheckTally, Ran, ScenarioBatch, ScenarioRun};
+pub use discrete::{Departure, DiscreteSample, DiscreteTrace};
+pub use run::{CheckTally, CompletedRun, ScenarioBatch, ScenarioRun};
 pub use stimulus::{Ramp, Refusal, Stimulus};
 pub use trace::{Crossing, Sample, Trace};
