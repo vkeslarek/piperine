@@ -300,3 +300,34 @@ fn the_roadmap_and_state_record_msl_fixes() {
         assert!(decision.contains(name), "MD-67 names {name}");
     }
 }
+
+#[test]
+fn state_records_the_unknown_semantics_decision() {
+    // US-07 (design "New project-level decision"): `.specs/STATE.md` holds MD-70, which says the
+    // merge runs in generated code, the ABI's additive entry, the record's `maybe` and the
+    // deletion point of the contract lowering (Q1 (b)); it extends MD-62 and MD-64 and
+    // supersedes nothing
+    let state = read(".specs/STATE.md");
+    let at = state.find("### MD-70:").expect("STATE.md holds MD-70");
+    let decision = state[at..].split("\n---").next().expect("a decision");
+    for name in ["runs in the generated Rust", "`Host.commit_with(", "`maybe`", "`generics`", "`std/values.msl`", "64", "extends MD-62", "MD-64"] {
+        assert!(decision.contains(name), "MD-70 names {name}");
+    }
+    assert!(decision.contains("It supersedes nothing"), "MD-70 supersedes nothing");
+}
+
+#[test]
+fn abi_states_commits_under_unknown_control() {
+    // US-07: abi.md gives `Host` the entry `commit_with`, lists `commit_flag` (`MAYBE` 1, `MERGE` 2)
+    // and `MINOR` 1 in its constants, and states rule C7 (merge at the due microstep in C2 order;
+    // transport converts under `MAYBE`)
+    let abi = read(".specs/features/device-abi/abi.md");
+    assert!(abi.contains("commit_with: unsafe extern \"C\" fn"), "the Host struct has commit_with");
+    assert!(abi.contains("| `commit_with` flags (`commit_flag`) | `MAYBE` 1, `MERGE` 2 |"), "the constants table lists the flags");
+    assert!(abi.contains("`MAJOR` 1, `MINOR` 1"), "MINOR is 1");
+    let at = abi.find("- **C7. Commits under unknown control.**").expect("abi.md has rule C7");
+    let rule = abi[at..].split("\n---").next().expect("a rule").split_whitespace().collect::<Vec<_>>().join(" ");
+    for fact in ["merged, level by level, with the bytes the net holds at that point of the C2 order", "transport (C3, §12.1.4) does not remove the pending commits", "turns them into `MERGE` commits"] {
+        assert!(rule.contains(fact), "C7 lacks \"{fact}\"");
+    }
+}

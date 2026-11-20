@@ -62,7 +62,7 @@ Not concepts, and where they went:
 | checkpoint / restore; capability flags | none |
 | Jacobian mechanism (O1) | invisible (§8) |
 
-## 2. Entry points (6), each with one contract
+## 2. Entry points (7), each with one contract
 
 | # | Entry | Side | Contract |
 | - | ----- | ---- | -------- |
@@ -72,6 +72,7 @@ Not concepts, and where they went:
 | 4 | `eval(instance, k, frame) -> Status` | device | run function `k`: read `input[]`, write `output[]` and seeded `jac[]` |
 | 5 | `react(instance, k, frame) -> Status` | device | run reaction `k`: read `input[]`, call `commit` |
 | 6 | `commit(statement, offset, len, bytes, after) -> Status` | solver | queue one write of the calling reaction (§6). Nothing else calls it, and it does nothing else. |
+| 7 | `commit_with(statement, offset, len, bytes, after, flags) -> Status` | solver | minor 1: `commit` for a write made under unknown control; `flags` are `commit_flag::MAYBE` and `MERGE` (C7). Offered only when `Host.size` reaches it. |
 
 No function may unwind across the boundary.
 
@@ -179,9 +180,10 @@ validation:
 | `Function.flags` | `OWNS_CORRECTION` 1 |
 | `Reaction.flags` | `IRREVERSIBLE` 1 |
 | `Statement.flags` | `LATER` 1, `REPLACE` 2 |
+| `commit_with` flags (`commit_flag`) | `MAYBE` 1, `MERGE` 2 |
 | status | `OK` 1, `FAULT` 2, `RESHAPE` 3, `FINISH` 4 |
 | indices | `GROUND` = `u32::MAX` (a term's `plus`/`minus`), `DEFAULT` = `u32::MAX − 1` (a tolerance or bound pin) |
-| version | `MAJOR` 1, `MINOR` 0, symbol `piperine_abi_1`; `Note.text` holds 248 bytes |
+| version | `MAJOR` 1, `MINOR` 1, symbol `piperine_abi_1`; `Note.text` holds 248 bytes |
 
 `piperine-abi` also ships two layouts beside those of P3: `F64` (`{ v: F64 @0 }`, size 8,
 align 8, no known byte: the layout of every continuous pin) and `NONE` (size 0, align 1, no
@@ -208,6 +210,9 @@ The two frames. Every pointer is non-null and has the length the shape says.
     size: u32,                    // a later minor may append (a commit that also carries tangent bytes, §14.4)
     commit: unsafe extern "C" fn(*mut c_void, statement: u32, offset: u32, len: u32,
                                  bytes: *const u8, after: f64) -> u32,
+    // minor 1, appended: `commit` plus the `commit_flag` bits of C7 (offered when `size` reaches it)
+    commit_with: unsafe extern "C" fn(*mut c_void, statement: u32, offset: u32, len: u32,
+                                      bytes: *const u8, after: f64, flags: u32) -> u32,
 }
 ```
 
@@ -517,6 +522,18 @@ step 5 nothing is undone: the discontinuity handling restarts the *next* step.
 - **C6. The solver writes the same way.** A located crossing is a commit to the watch's event
   pin due at `(t, 0)`; a crossing between rounds is due at the next microstep; a host `set`
   or drive is a commit by the host.
+- **C7. Commits under unknown control.** A path taken because a condition, a scrutinee, a guard
+  or a delay is unknown (part I §3.3.3) commits through `commit_with` with `flags`:
+  `MERGE` (2): at the due microstep the committed bytes are merged, level by level, with the
+  bytes the net holds at that point of the C2 order (`layout::Merge`, per field with
+  `HAS_KNOWN`: equal and known is kept, anything else is zeroed, P3); `MAYBE` (1): the commit
+  may not have happened, so transport (C3, §12.1.4) does not remove the pending commits of the
+  same statement and byte range that it would remove, it turns them into `MERGE` commits (on
+  the path that ran they were removed, on the path that did not they apply, and their merge is
+  the value). A commit through plain `commit` has no flags, and a design with no unknown
+  control never calls `commit_with`. A `Host` whose `size` does not reach the entry is a
+  minor-0 owner: the first call is a `FAULT` naming the statement. An unknown flag bit is a
+  `FAULT`. A rejected step undoes a conversion with the commits it undoes.
 
 ---
 
@@ -954,7 +971,7 @@ given is one its own shape declared.
 | versioning, `cdylib` safety, debuggability | §12 |
 
 **Counts.** Concepts: 13, with Cell and Partial counted as the critic counts them.
-Entry points: 6, each with one contract.
+Entry points: 7, each with one contract.
 
 ## 14. Known weak points
 

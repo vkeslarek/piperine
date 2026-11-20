@@ -1533,6 +1533,35 @@ writes), `crates/piperine-cli`, `docs/book`.
 
 ---
 
+### MD-70: the unknown-value rules run in generated code; the ABI grows one entry, `commit_with`
+
+`unknown-semantics` (2026-11-19). Part I §3.3, §1 rule 13 and §22.1 on the compiled backend.
+
+1. **The merge of §3.3.3 runs in the generated Rust**, one rule for every owner of code: a
+   control on a value that may be unknown (an `if`, a `match`, a guard, a short-circuit
+   operand) runs both paths and merges each effect, so the fault of an unknown `if` is gone and
+   a panic on a path under unknown control makes the merge unknown (§1 rule 13). `level`,
+   `merge`, `same`, `cast`, `logic` and `matches_bits` are typed and lowered by their §22.1
+   contract at the concrete type, in `elab/intrinsics.rs`, which is deleted when `generics`
+   compiles `std/values.msl` (Q1 (b)); a loop under unknown control is bounded by 64
+   iterations, written in Appendix C.2.
+2. **The device ABI grows one additive entry**: `Host.commit_with(.., flags)` with
+   `commit_flag::{MAYBE, MERGE}`, `MINOR` 1, abi.md C7. Transport converts under `MAYBE`; a
+   `MERGE` commit merges by layout (`layout::Merge`). No `Statement`, `Pin` or layout changed.
+3. **A record carries `maybe`**: every stream's layout ends with a known `bool` field, true when
+   the `emit!` was reached under unknown control; a `fatal` record that is `maybe` does not end
+   the run (`Record::surely`), and a `maybe` check is judged as unknown.
+4. **`Unknown` decides no structure** (`E0151`) and `analog` refuses a value that may be unknown
+   with `E0150` (§3.3.5, §3.3.8).
+
+It supersedes nothing and extends MD-62 (the one device contract) and MD-64 (the IR's value
+forms and unknown-ness as an elaboration analysis).
+
+**Scope:** `crates/piperine-lang` (`elab/`, `types/`), `crates/piperine-ir`,
+`crates/piperine-plan`, `crates/piperine-transpile` (`rt/`, `print/`), `crates/piperine-abi`,
+`crates/piperine-digital-solver`, `crates/piperine-api`, `crates/piperine-cli`, `docs/spec`.
+**Status:** Accepted (2026-11-19), from the approved `.specs/features/unknown-semantics/design.md`.
+
 ### MD-72: the root package holds the integrated tests
 
 `root-e2e` (2026-11-19). The Book and the ngspice scenarios are held at the root.
