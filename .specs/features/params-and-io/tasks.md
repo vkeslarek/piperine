@@ -217,10 +217,10 @@ T44
 
 **Done when**:
 
-- [ ] `every_spec_code_is_raised_or_owned`, `no_owned_code_is_raised`, `every_owned_code_names_its_owner_and_construct` pass under `**Run speccodes**`
-- [ ] The target opens with a `//!` scope header; `suite_hygiene` passes
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `every_spec_code_is_raised_or_owned`, `no_owned_code_is_raised`, `every_owned_code_names_its_owner_and_construct` pass under `**Run speccodes**`
+- [x] The target opens with a `//!` scope header; `suite_hygiene` passes
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
