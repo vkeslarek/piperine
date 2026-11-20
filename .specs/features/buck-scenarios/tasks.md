@@ -430,14 +430,16 @@ T13 → T15
 
 **Done when**:
 
-- [ ] The new test fails before the edit and passes after it; `the_buck_readme_says_how_to_run_it` still passes
-- [ ] Gate check passes: `Run docs` and the Build line
-- [ ] Test count: 1 new test
+- [x] The new test fails before the edit and passes after it; `the_buck_readme_says_how_to_run_it` still passes
+- [x] Gate check passes: `Run docs` and the Build line
+- [x] Test count: 1 new test
 
 **Tests**: integration
 **Gate**: build
 
 **Commit**: `docs(buck): the README points at the host scenarios`
+
+**Status**: Complete
 
 ---
 

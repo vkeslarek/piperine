@@ -63,8 +63,16 @@ cargo test -p piperine-parity --test buck_closed_loop # starts and regulates at 
 Each block also runs alone from source against the SPEC's own numbers: `buck_dpwm`,
 `buck_control`, `buck_boundary`, `buck_power`, `buck_supervisor`, `buck_records`, `buck_time` and
 `buck_commits` in `crates/piperine-parity/tests/`. The closed loop is proven at one operating
-point (setpoint 0.8 V, Vin 12 V, 6.6 Ω); the bench scenarios of `SPEC.md` §10 need host stimulus
-during a run (drives, waits, `set`), which no host offers yet (`ROADMAP.md`, queue item 4).
+point (setpoint 0.8 V, Vin 12 V, 6.6 Ω) by `piperine-parity`; the bench scenarios S2 to S10 of
+`SPEC.md` §10 run from a Rust host, `tests/buck_scenarios.rs`, over the scenario package
+`tests/e2e/buck/` (the converter under a `Bench` whose ports the host drives), through
+`Session::drive` and `Session::set_at`:
+
+```sh
+cargo test -p piperine --test buck_scenarios -- --nocapture   # five families at once; about 25 minutes
+```
+
+S1 at 3.3 V and S1b are not run there (`GAPS.md` U3).
 
 ## Driving it from a host
 
@@ -85,9 +93,11 @@ during a run, and reads `pgood`, `fault`, `mode` and any node or carrier by path
 | `vout`, `vin`, `isense`, `power.sw`, `power.lx` | nodes to probe | all |
 | `ctl.reference`, `ctl.duty`, `ctl.setpoint`, `mode`, `fault`, `pgood` | carriers to read | all |
 
-A sketch in Python of three scenarios of `SPEC.md` §10. No such host exists yet: there is no
-Python host, and `piperine-api` (Rust) has no drives, waits or mid-run `set`. The names are
-illustrative, in the style of the spec's own sketches:
+The Rust host of `tests/buck_scenarios.rs` does this today with `Session::drive` and
+`Session::set_at` of `piperine-api`, and judges what each run prints against `SPEC.md` §10. A
+sketch in Python of three scenarios of §10. No such host exists yet for Python (B4), and a Rust
+host has no wait for an event or read at an instant either. The names are illustrative, in the
+style of the spec's own sketches:
 
 ```python
 import piperine as pp

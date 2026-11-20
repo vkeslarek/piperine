@@ -33,6 +33,21 @@ fn the_buck_readme_says_how_to_run_it() {
 }
 
 #[test]
+fn the_buck_readme_points_at_the_scenarios() {
+    // buck-scenarios BS-10 AC 1: S2 to S10 run from `tests/buck_scenarios.rs` over `tests/e2e/buck/`
+    // through `Session::drive` and `Session::set_at`; the README no longer says `piperine-api` has no
+    // drives or mid-run `set`, and only the Python sketch keeps "No such host exists yet"
+    let readme = read("examples/buck/README.md");
+    for held in ["tests/buck_scenarios.rs", "tests/e2e/buck/", "Session::drive", "Session::set_at", "S2 to S10"] {
+        assert!(readme.contains(held), "the README names `{held}`");
+    }
+    for stale in ["has no drives, waits or mid-run `set`", "which no host offers yet", "no host offers"] {
+        assert!(!readme.contains(stale), "the README still says `{stale}`");
+    }
+    assert!(readme.contains("No such host exists yet for Python"), "the Python sketch keeps saying that no Python host exists");
+}
+
+#[test]
 fn the_instruction_files_say_the_host_crates_build() {
     // CLI-20 AC 1: `CLAUDE.md` and `AGENTS.md` no longer say the host crates do not build; their
     // rows say what `msl-cli` left (`Project`/`Session` for `piperine-api`, the seven commands for
