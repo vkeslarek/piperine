@@ -197,10 +197,10 @@ its edge, `sp_wr` rises at the edge and falls 9 µs later.
 | | 4.50 ms | `inject` high | S6: 4.50 to 4.70 ms |
 | `brownout` (stop 1.52 ms) | 1.250 to 1.340 ms | `buck.vin_nom` 12 → 7.5 V, 45 steps of 0.1 V, 2 µs each | S7: Off expected ≈ 1.33 ms |
 | | 1.400 to 1.490 ms | `buck.vin_nom` 7.5 → 12 V, 45 steps | S7: SoftStart expected ≈ 1.42 ms |
-| `steady_state` (stop 4.05 ms) | 0 | `buck.vin_nom` 9 V, `buck.r_load` 0.16 Ω, write 0 (edge 1 µs), `en` at 2 µs | |
+| `steady_state` (stop 7.46 ms) | 0 | `buck.vin_nom` 9 V, `buck.r_load` 0.16 Ω, write 0 (edge 1 µs), `en` at 2 µs | |
 
-`steady_state` corners (each window 64 µs, starting 200 µs after the last ramp or line step; a line step takes
-10 µs in 0.1 V steps; a setpoint write moves `buck.r_load` to the full-load value at its edge):
+`steady_state` corners (each window 64 µs, starting 450 µs (SPEC §10.1) after the last ramp or line step; a line step is a
+200 µs ramp in 0.1 V steps; a setpoint write moves `buck.r_load` to the full-load value at its edge):
 
 | # | Setpoint | Vin | `r_load` | Window | Bound (§4.3) |
 | - | -------- | --- | -------- | ------ | ------------ |
@@ -214,7 +214,7 @@ its edge, `sp_wr` rises at the edge and falls 9 µs later.
 | 8 | 5.0 V | 12 V | 1.0 Ω | 3.710 to 3.774 ms (line 3.500 to 3.510) | ± 20 mV |
 | 9 | 5.0 V | 16 V | 1.0 Ω | 3.984 to 4.048 ms (line 3.774 to 3.784) | ± 20 mV |
 
-`SteadyStateFamily` computes these windows from three constants (`SETTLE` 200 µs, `WINDOW` 64 µs, `LINE` 10 µs)
+`SteadyStateFamily` computes these windows from three constants (`SETTLE` 450 µs, `WINDOW` 64 µs, `LINE` 200 µs)
 and the ramp lengths of SPEC §7.2; the table is the result, so a test and its stimulus can never disagree.
 
 ---

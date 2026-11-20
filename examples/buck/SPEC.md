@@ -398,7 +398,7 @@ criteria; the model column is the averaged-model prediction.
 | S6 | Over-voltage | inject 5 A into the output (back-drive) | the sink limit holds the low-side current at −3 A; Vout rises at ≈ 7 mV/µs; `fault` = OverVoltage once Vout > 3.81 V (≈ 80 to 120 µs); both switches off | hand estimate |
 | S7 | Brown-out | Vin ramps 12 V → 7.5 V → 12 V | `mode` = Off below 8.0 V, both switches off, `pgood` low, `fault` unchanged; soft-start again above 8.5 V | — |
 | S8 | Disable | `en` falls in Regulate | both switches off at the next sample; `pgood` low; Vout decays through the load | — |
-| S9 | Steady state | 9 corners: Vin {9, 12, 16} V × setpoint {0.8, 3.3, 5.0} V at full load | DC error within §4.3; ripple ≤ 10 mV p-p; no sub-harmonic idle tone above 1 code | max 2.4 mV error, constant code |
+| S9 | Steady state | 9 corners: Vin {9, 12, 16} V × setpoint {0.8, 3.3, 5.0} V at full load, each measured after the wait of §10.1 | DC error within §4.3; ripple ≤ 10 mV p-p; no sub-harmonic idle tone above 1 code | max 2.4 mV error, constant code |
 | S10 | Shoot-through | any of the above | the `Never` monitor never fails (`checks` stream has no failed `never`) | — |
 
 ### 10.1 How the bench measures
@@ -415,6 +415,7 @@ reads a result, so that a bound the bench adds is written here and never only in
 | Ramp of a supply or load value | a staircase of 0.1 V (or equivalent) steps, equally spaced, the last step at the end of the ramp and equal to the target; the supply is an ideal source behind 20 mΩ (§2) with no slew of its own |
 | Line step, 12 V to 16 V and back (S4) | 10 µs, one step every 0.25 µs |
 | Supply ramp between the corners of S9 | 200 µs in 0.1 V steps, equally spaced: at 5 A and 5.0 V a 9 V to 12 V step in 10 µs sends the inductor current to the 7.5 A limit for eight periods and trips `OverCurrent` (§8.2), which is S5's mechanism and not S9's |
+| Wait before an S9 window | **450 µs** after the last supply ramp or setpoint move, then a 64 µs window (32 periods, 4 dither frames). The slowest closed-loop poles of §6.2 are a pair at 5 to 6 kHz with \|z\| ≤ 0.982, τ ≤ 110 µs (at 9 V). A 200 µs ramp leaves a tracking lag of Δu / (N · Ki) codes, at most 6.2 codes (12 V → 9 V at 3.3 V, 5 A); it decays under ¼ code (1.6 mV, so the §3.3 ripple of 6.1 mV plus the residue stays under 10 mV and within one code) after τ · ln(6.2 / 0.25) = 3.2 τ = 350 µs; 450 µs is ≈ 4 τ. S3 and S4's 200 µs is a recovery into ±1 %, not into one code |
 | Brown-out (S7) | 50 mV/µs (0.1 V every 2 µs) down to 7.5 V, held 60 µs, then 50 mV/µs up to 12 V |
 | Load of S4 | 2 A: `r_load` = 1.65 Ω (3.3 V / 2 A), set 200 µs before the step |
 

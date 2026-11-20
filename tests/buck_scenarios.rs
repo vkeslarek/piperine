@@ -1201,8 +1201,9 @@ struct SteadyStatePlan {
 }
 
 impl SteadyStatePlan {
-    /// Time after a window or a step before the next window starts: the output has settled (§4.3).
-    const SETTLE: f64 = 200e-6;
+    /// Time after a window or a step before the next window starts: 450 µs, about 4 time constants
+    /// of the loop's slowest closed-loop pair, so the ramp's tracking lag is under a code (§10.1).
+    const SETTLE: f64 = 450e-6;
     /// How long a supply ramp takes. SPEC §10.1's 10 µs line step is S4's, at 2 A; at full load and
     /// 5.0 V a 9 V to 12 V step in 10 µs sends the inductor current to the 7.5 A limit for eight
     /// periods and trips `OverCurrent` (§8.2), so S9 reaches a corner by a ramp the loop follows.
@@ -1260,7 +1261,7 @@ impl SteadyStatePlan {
         self.cursor = SteadyStatePlan::ENABLE + SteadyStatePlan::STARTUP_LATENCY + ramp;
     }
 
-    /// Records the corner whose window starts 200 µs after the cursor.
+    /// Records the corner whose window starts `SETTLE` after the cursor.
     fn measure(&mut self, bound: f64) {
         let from = self.cursor + SteadyStatePlan::SETTLE;
         let setpoint = 0.8 + SteadyStatePlan::VOLTS_PER_CODE * self.setpoint_code as f64;

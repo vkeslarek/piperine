@@ -68,7 +68,7 @@ default the planner took; each is reported to the user and each can be overturne
 | "Both switches off" | both gate commands of the controller, `buck.hs_cmd` and `buck.ls_cmd`, low | the commands are the controller's decision; the 10 ns driver delay is §5.3's and is held by `buck_power` | n - default (user AFK) |
 | Inductor current | `buck.isense` divided by 0.1 V/A | SPEC §2: the sense chain is 0.1 V/A, bidirectional, in series with L | n - default (user AFK) |
 | The deviation instant of S5 | the first row where the ADC code is outside `reference ± reference/16`, the supervisor's own window (§8.6) | the supervisor sees the deviation through the ADC, not the node | n - default (user AFK) |
-| S9's settling before each window | 200 µs after the last ramp or line step, then a 64 µs window (32 periods, 4 dither frames) | SPEC §10 S3/S4 recovery is ≤ 200 µs; the window spans whole dither frames | n - default (user AFK) |
+| S9's settling before each window | 450 µs after the last ramp or line step (SPEC §10.1, derived from the loop's slowest pole), then a 64 µs window (32 periods, 4 dither frames) | SPEC §10 S3/S4 recovery is ≤ 200 µs; the window spans whole dither frames | n - default (user AFK) |
 | S7 after the restart | the restart meets a pre-biased output (≈ 3.1 V) and, with the OVP threshold on the ramped reference (§8.4), trips `OverVoltage` two samples into `SoftStart`; S7 is judged up to the entry into `SoftStart` | SPEC §7.2: pre-bias is not supported; reported to the user | n - default (user AFK) |
 
 **Open questions:** none - all resolved or logged above (each a default the user delegated while away).
@@ -89,7 +89,7 @@ parallel threads of one target.
 | `load_line` | S3, S4, S8 | 2.92 ms | 3.3 M | 11 to 15 min |
 | `faults` | S5, S6 | 4.70 ms | 5.3 M | 17 to 24 min |
 | `brownout` | S7 | 1.52 ms | 1.7 M | 6 to 8 min |
-| `steady_state` | S9 | 4.05 ms | 4.6 M | 15 to 20 min |
+| `steady_state` | S9 | 7.46 ms | 8.5 M | 26 min |
 | **Target** | S2 to S10 | 16.59 ms (CPU) | 18.7 M | 17 to 24 min wall |
 
 ---
@@ -237,7 +237,7 @@ parallel threads of one target.
 
 **Why P1**: S9 is the converter's DC specification.
 
-**Acceptance Criteria** (run `steady_state`: full load, 5 A, at each setpoint; setpoint 0.8 V at Vin 9, 12, 16 V, then 3.3 V at 16, 12, 9 V, then 5.0 V at 9, 12, 16 V; each corner measured over a 64 µs window that starts 200 µs after the last ramp or line step):
+**Acceptance Criteria** (run `steady_state`: full load, 5 A, at each setpoint; setpoint 0.8 V at Vin 9, 12, 16 V, then 3.3 V at 16, 12, 9 V, then 5.0 V at 9, 12, 16 V; each corner measured over a 64 µs window that starts 450 µs after the last ramp or line step):
 
 1. WHEN a corner's window is measured THEN the system SHALL keep the mean of `vout` within the §4.3 total of its setpoint: ± 6.5 mV at 0.8 V, ± 14.7 mV at 3.3 V, ± 20 mV at 5.0 V.
 2. WHEN a corner's window is measured THEN the system SHALL keep the peak-to-peak of `vout` at or below 10 mV.

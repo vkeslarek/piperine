@@ -53,7 +53,7 @@ max_steps = 15000000
 [run.steady_state]
 top = "Bench"
 analysis = "transient"
-stop = 5.20e-3
+stop = 7.46e-3
 max_step = 1e-8
 print_step = 1e-8
 print = ["buck.vout", "buck.vin", "buck.isense", "buck.ctl.reference", "buck.code", "mode", "fault", "pgood", "buck.hs_cmd", "buck.ls_cmd", "buck.oc", "buck.sink_oc", "buck.ctl.cut"]
