@@ -1,0 +1,87 @@
+# Builds the documentation: the site (specification, object model and the MSL Book),
+# the specification PDF and the standalone Book page. Runs on every push to main that
+# touches them; a manual run with a version also publishes a release with the PDF and
+# the Book attached.
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'hooks/**'
+      - 'mkdocs.yml'
+      - 'mkdocs-spec.yml'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Specification version to release (empty: build only)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NO_MKDOCS_2_WARNING: '1'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install the PDF renderer's system libraries
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0
+
+      - name: Install MkDocs and plugins
+        run: pip install mkdocs==1.6.1 mkdocs-material==9.8.2 mkdocs-macros-plugin==1.5.0 mkdocs-with-pdf==0.9.3 weasyprint==70.0
+
+      - name: Build the site with the Book
+        run: mkdocs build --strict -f mkdocs.yml -d site
+
+      - name: Build the specification PDF
+        run: mkdocs build -f mkdocs-spec.yml -d spec-site
+
+      - name: Name the outputs
+        id: names
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          if [ -z "$VERSION" ]; then VERSION=$(grep 'spec_version:' mkdocs.yml | awk -F '"' '{print $2}'); fi
+          mkdir -p out
+          cp spec-site/pdf/piperine-spec.pdf "out/msl-spec-v${VERSION}.pdf"
+          cp site/book/index.html "out/msl-book-v${VERSION}.html"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the site
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-site
+          path: site
+
+      - name: Upload the PDF and the Book
+        uses: actions/upload-artifact@v4
+        with:
+          name: msl-docs-v${{ steps.names.outputs.version }}
+          path: out
+
+      - name: Release
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.version != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: spec-v${{ steps.names.outputs.version }}
+          name: MSL Specification v${{ steps.names.outputs.version }}
+          files: out/*
