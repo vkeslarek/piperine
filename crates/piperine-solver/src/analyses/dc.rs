@@ -186,7 +186,7 @@ impl<'a> DcSolver<'a> {
         let netlist = circuit.netlist();
         let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
 
-        let nodeset = context.nodeset.clone();
+        let nodeset = Self::start_values(circuit, &context);
         let mut system = DcSystem {
             circuit,
             context,
@@ -216,6 +216,20 @@ impl<'a> DcSolver<'a> {
         // context's nodeset reaches them all (ac, transient, tf, pz, sens, pss)
         dc.apply_initial_conditions(nodeset);
         Ok(dc)
+    }
+
+    /// The first Newton iterate of an operating point of `circuit` (Part V §16 step 3): the host's
+    /// nodeset, and for each node it names no value of, the node's own `= value` (`Bound::holds`);
+    /// a node with neither starts from zero.
+    fn start_values(circuit: &CircuitInstance, context: &Context) -> Vec<InitialValue<AnalogReference, f64>> {
+        let mut start = context.nodeset.clone();
+        let Some(bound) = &circuit.abi else { return start };
+        for hold in &bound.holds {
+            if !start.iter().any(|given| given.reference == hold.reference) {
+                start.push(InitialValue { reference: hold.reference.clone(), value: hold.value });
+            }
+        }
+        start
     }
 
     /// The operating point of another analysis (`global::AC` or `global::NOISE`): the same solve,

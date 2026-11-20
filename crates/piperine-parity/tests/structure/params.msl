@@ -49,6 +49,25 @@ module StartedBench() {
     let shunt = Capacitor { c: 1u }(o, gnd);
 }
 
+/// A node with three equilibria: the current into ground is `v^3 - v`, zero at -1, 0 and 1 V. Which one an
+/// operating point reaches depends on where Newton starts.
+module Bistable(a: Electrical) {}
+analog for Bistable { i(a, gnd) +> v(a) * v(a) * v(a) - v(a); }
+
+/// `o` starts at `v0` = 0.6: Newton in an `op` starts there and settles at +1 V.
+module BistableBench() {
+    v0: f64 = 0.6;
+    signal o: Electrical = v0;
+    let cell = Bistable(o);
+}
+
+/// The same cell started at -0.6 V: it settles at -1 V.
+module BistableNegBench() {
+    v0: f64 = -0.6;
+    signal o: Electrical = v0;
+    let cell = Bistable(o);
+}
+
 /// A potential held at `volts`.
 module Level(p: Electrical) { volts: f64 = 0.0; }
 analog for Level { v(p, gnd) +> volts; }

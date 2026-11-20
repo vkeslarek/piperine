@@ -75,3 +75,19 @@ fn a_node_initial_value_over_a_param_holds_the_operating_point() {
         ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("started", "v(o)", Coordinate::Time(time)), wanted, actual);
     }
 }
+
+/// `v(o)` of the bench `top` at its operating point.
+fn operating_point(top: &str) -> f64 {
+    let mut running = project().compile(top).unwrap_or_else(|r| panic!("{r}"));
+    let out = node(&running.ir, top, "o");
+    running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves").get_node(&out).expect("v(o)")
+}
+
+#[test]
+fn a_node_initial_value_over_a_param_starts_newton_in_an_operating_point() {
+    // AS-15 AC 2 (§16): the node `o = v0` is where Newton starts in an `op`. The cell's current is
+    // `v^3 - v`, zero at -1, 0 and 1 V: started at 0.6 V the iteration settles at +1 V, started at
+    // -0.6 V at -1 V, so the solution tells the start.
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("bistable", "v(o)", Coordinate::OperatingPoint), 1.0, operating_point("BistableBench"));
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("bistable negative", "v(o)", Coordinate::OperatingPoint), -1.0, operating_point("BistableNegBench"));
+}
