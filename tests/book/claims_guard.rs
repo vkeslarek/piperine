@@ -153,14 +153,18 @@ impl ClaimGuard<'_> {
         offences
     }
 
-    /// A claim only the binary can make names a `piperine-cli` test that exists.
+    /// A claim only the binary can make names a `piperine-cli` test that exists and cites the claim.
     fn binary_claims_without_a_command_line_test(&self) -> Vec<String> {
         let mut offences = Vec::new();
         for row in self.inventory.claims().into_iter().filter(|row| row.verdict == Verdict::Binary) {
             if !row.covered_by.starts_with("piperine-cli/") {
                 offences.push(format!("{}: a `binary` claim names a `piperine-cli` test, not `{}`", row.id, row.covered_by));
-            } else if let Err(message) = self.coverage.resolve(&row.covered_by) {
-                offences.push(format!("{}: {message}", row.id));
+            } else {
+                match self.coverage.resolve(&row.covered_by) {
+                    Err(message) => offences.push(format!("{}: {message}", row.id)),
+                    Ok(test) if !test.body().contains(&row.id) => offences.push(format!("{}: its test `{}` never cites the claim", row.id, row.covered_by)),
+                    Ok(_) => {}
+                }
             }
         }
         offences
@@ -294,7 +298,7 @@ impl Planted {
         };
         write("Cargo.toml", "[package]\nname = \"demo\"\n\n[[test]]\nname = \"book_demo\"\npath = \"tests/book/demo.rs\"\n");
         write("tests/book/demo.rs", &format!("#[test]\nfn cites() {{\n    // {cited}\n    let x = 1;\n}}\n\n#[test]\nfn forgets() {{\n    let x = 1;\n}}\n"));
-        write("crates/piperine-cli/tests/cli.rs", "#[test]\nfn prints() {\n}\n");
+        write("crates/piperine-cli/tests/cli.rs", &format!("#[test]\nfn prints() {{\n    // {cited}\n}}\n\n#[test]\nfn forgets() {{\n}}\n"));
         root
     }
 
@@ -361,9 +365,12 @@ fn the_claim_guard_names_a_sentence_without_a_row() {
     binary[1].covered_by = "piperine/book_demo::cites".to_string();
     binary[2].verdict = Verdict::Binary;
     binary[2].covered_by = "piperine-cli/cli::no_such_test".to_string();
+    binary[3].verdict = Verdict::Binary;
+    binary[3].covered_by = "piperine-cli/cli::forgets".to_string();
     let found = judged(&binary, &|guard| guard.binary_claims_without_a_command_line_test());
-    assert_eq!(found.len(), 2, "{found:?}");
+    assert_eq!(found.len(), 3, "{found:?}");
     assert!(found[0].starts_with(&binary[1].id) && found[1].starts_with(&binary[2].id), "{found:?}");
+    assert!(found[2].starts_with(&binary[3].id) && found[2].contains("never cites the claim"), "a binary claim's test cites it: {found:?}");
 
     let mut refused = first.clone();
     refused[0].verdict = Verdict::Refused;

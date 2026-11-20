@@ -24,6 +24,7 @@ fn cells(line: &str) -> Vec<&str> {
 
 #[test]
 fn info_prints_params_ports_and_streams() {
+    // Book claims held here: cli~21c5d5e3
     // HII-11 AC 1: in `examples/rc`, the top and the backend, then the three tables: `r` and `c`
     // of the low-pass are among the params; nothing was compiled
     let cache = tempfile::tempdir().expect("tmp");
@@ -50,6 +51,7 @@ fn info_prints_params_ports_and_streams() {
 
 #[test]
 fn info_of_a_broken_design_prints_diagnostics_and_exits_1() {
+    // Book claims held here: cli~e4cb970e
     // HII-11 AC 2: a design that does not elaborate: the diagnostics of `check`, exit 1, no table
     let cache = tempfile::tempdir().expect("tmp");
     let broken = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/projects/type_error");

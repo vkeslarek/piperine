@@ -78,6 +78,7 @@ fn rc_copy() -> tempfile::TempDir {
 
 #[test]
 fn csv_writes_the_table_and_prints_wrote() {
+    // Book claims held here: cli~c1b61958
     // CLI-11 AC 1: `step` has `print_step = 1e-6` and `stop = 5e-6`, so 6 rows (CLI-11 AC 4);
     // the file is a header row and those rows, cells separated by `,` in the text table's number
     // format, and standard output prints `wrote <file> (<n> rows)` in place of the table
@@ -207,6 +208,7 @@ fn two_checks() -> (tempfile::TempDir, PathBuf) {
 
 #[test]
 fn a_passing_check_is_hidden_a_failing_one_shown_and_all_checks_shows_both() {
+    // Book claims held here: welcome~b7e6723a, cli~1f56976d, cli~21724a6d, cli~8c30079b
     // CLI-06 AC 9 (user, 2026-11-16): by default the terminal hides `checks` records with
     // pass=true and shows pass=false, other streams stay; `--all-checks` shows both; the
     // records file keeps every record either way
@@ -241,6 +243,7 @@ fn series_points(svg: &str, signal: &str) -> Vec<(f64, f64)> {
 
 #[test]
 fn plot_writes_an_svg_and_prints_wrote() {
+    // Book claims held here: cli~cee54a4e
     // CLI-22 AC 1 and 2: the file is one SVG with a series per printed signal (`Step.vin`,
     // `Step.vout`) and standard output ends with `wrote step.svg` after the table. The plot area
     // is x 70..780, y 20..430: `vout` starts at (70, 430) (0 V at t = 0, the axis range 0..1)
@@ -264,6 +267,7 @@ fn plot_writes_an_svg_and_prints_wrote() {
 
 #[test]
 fn a_plot_of_a_gridded_run_draws_its_rows() {
+    // Book claims held here: cli~67917c72
     // CLI-22 AC 7 as amended (long-run LR-17 AC 1): `step` prints 6 rows (`print_step = 1e-6`)
     // and the plot draws those 6 points, one per row of the run's table
     let project = rc_copy();

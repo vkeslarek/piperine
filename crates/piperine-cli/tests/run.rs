@@ -64,6 +64,7 @@ fn field(line: &str, name: &str) -> String {
 
 #[test]
 fn run_prints_header_records_blank_line_and_table() {
+    // Book claims held here: cli~31fc7600, cli~e7ed5598
     // CLI-07 AC 1: the header `run <name>: <analysis>, top <Top>, backend <backend>`, the record
     // lines, one empty line, the table. The name and analysis are `examples/rc/Piperine.toml`'s
     // (`[run.step]`, `analysis = "transient"`); the top is the one module without ports of its
@@ -136,6 +137,7 @@ fn a_completed_run_exits_0() {
 
 #[test]
 fn stdout_is_the_same_from_two_caches_and_two_directories() {
+    // Book claims held here: cli~59441d1b
     // CLI-07 AC 6: no wall-clock time, no absolute path and no cache key on standard output, so
     // the bytes do not depend on the cache or the directory the command ran from
     let (cache_a, cache_b) = (tempfile::tempdir().expect("tmp"), tempfile::tempdir().expect("tmp"));
@@ -239,6 +241,7 @@ fn failed(out: &Output, code: i32) -> String {
 
 #[test]
 fn no_manifest_is_e0170_and_exit_1() {
+    // Book claims held here: cli~4142e137, cli~39a2cb1d
     // CLI-02 AC 3: no manifest upward, and the command needs a project: E0170, exit 1
     let nowhere = tempfile::tempdir().expect("tmp");
     let out = piperine_in(nowhere.path(), shared_cache(), &["run", "step"]);
@@ -261,6 +264,7 @@ fn a_package_error_is_rendered_with_code_file_and_line() {
 
 #[test]
 fn no_name_with_no_run_or_several_lists_them_and_exits_2() {
+    // Book claims held here: cli~07125ec2
     // CLI-03 AC 10: no name and several runs (`two_runs` has `first` and `second`), or no run at
     // all: exit 2, the run names listed on standard error
     let several = piperine_in(&fixture("two_runs"), shared_cache(), &["run"]);
@@ -351,6 +355,7 @@ fn a_solver_failure_prints_no_table_and_exits_1() {
 
 #[test]
 fn a_failure_before_the_analysis_prints_nothing_on_stdout() {
+    // Book claims held here: cli~57fa9eec
     // CLI-07 AC 4: any stage before the analysis fails: nothing on standard output, exit 1.
     // A parse-stage error is no different from a typeck one, a bad run table, a missing
     // dependency, a `print` that names nothing (E0801) or a missing project.
@@ -373,6 +378,7 @@ fn a_failure_before_the_analysis_prints_nothing_on_stdout() {
 
 #[test]
 fn records_stay_when_the_analysis_fails() {
+    // Book claims held here: cli~5037c701
     // CLI-07 AC 5: records already printed stay, the error goes to standard error, exit 1.
     // `fails_after_emit`: a node that starts at 0.1 V crosses the monitor's 0.5 V at 1.6 us
     // (0.1 * exp(t / 1 us)), emitting `trip`, then grows until the solver meets an infinity.

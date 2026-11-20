@@ -67,6 +67,17 @@ fn version_prints_the_workspace_version() {
 }
 
 #[test]
+fn help_lists_the_commands_and_version_prints_the_version() {
+    // the Book's cli~3cd92481: `piperine --help` lists the commands and `piperine --version` prints the version
+    let help = piperine(&["--help"]);
+    assert_eq!(help.status.code(), Some(0), "{}", text(&help.stderr));
+    assert_eq!(commands_listed(&text(&help.stdout)).len(), 8, "{}", text(&help.stdout));
+    let version = piperine(&["--version"]);
+    assert_eq!(version.status.code(), Some(0), "{}", text(&version.stderr));
+    assert_eq!(text(&version.stdout), format!("piperine {}\n", workspace_version()));
+}
+
+#[test]
 fn an_unknown_command_or_flag_exits_2() {
     // CLI-01 AC 7: a command or a flag the system does not define prints the usage error on
     // standard error, nothing on standard output, and exits 2

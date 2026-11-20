@@ -115,6 +115,7 @@ fn check_prints_ok_with_the_counts() {
 
 #[test]
 fn check_renders_every_diagnostic_and_exits_1() {
+    // Book claims held here: errors~a1afa480, structure~58f974e3
     // CLI-14 AC 3: every diagnostic of every run, no `ok` line, exit 1. A type error in the
     // bench of a copy of `rc` is seen by both of its runs (`op` and `step` share it) and
     // reported with its code, file and line; the two runs share the source, so it is reported
@@ -167,6 +168,7 @@ fn check_takes_a_lone_file() {
 
 #[test]
 fn build_prints_one_line_per_run() {
+    // Book claims held here: cli~00319f47
     // CLI-15 AC 1: one line per run, in manifest order, `built <name>: compiled | cached |
     // interp, nothing to compile`. On an empty cache the first Rust run of `rc` compiles; the
     // second run has the same design (both name the bench's `Step`), so it is found cached.
@@ -255,6 +257,7 @@ fn lines_of(out: &Output) -> Vec<String> {
 
 #[test]
 fn test_runs_every_run_or_the_named_ones() {
+    // Book claims held here: digital~4830dc9c
     // CLI-16 AC 1: every run in manifest order (`good`, `bad`), or only the runs named, in the
     // order named; a name that is no run is a usage error
     let dir = fixture("one_pass_one_fail");
@@ -286,6 +289,7 @@ fn test_prints_pass_with_the_check_count() {
 
 #[test]
 fn test_prints_fail_and_the_failing_records() {
+    // Book claims held here: cli~9ed0890c
     // CLI-16 AC 3: `FAIL <name> (<k> of <n> checks failed)` then the line of each failing
     // record, and exit 1; the monitor requires `v <= 0.1` at the 0.5 V crossing, which is false
     let out = piperine_in(&fixture("failing_require"), &["test"]);
@@ -303,6 +307,7 @@ fn test_prints_fail_and_the_failing_records() {
 
 #[test]
 fn test_prints_no_table_and_no_other_record() {
+    // Book claims held here: cli~3c91ac79
     // CLI-16 AC 4: `rc`'s `step` also writes a `trip` record and a table of `time`, `vin` and
     // `vout`; none reaches standard output, only the verdict and the count
     let out = piperine_in(&rc(), &["test", "step"]);
@@ -314,6 +319,7 @@ fn test_prints_no_table_and_no_other_record() {
 
 #[test]
 fn test_prints_fail_fatal_with_the_msg() {
+    // Book claims held here: cli~906cefdd
     // HII-15 AC 2: a run whose bench calls `fatal("brownout")` is `FAIL <run> (fatal at <t>: <msg>)` and
     // exit 1; the other run of the project still runs and passes
     let out = piperine_in(&fixture("fatal_and_target"), &["test", "brown"]);
@@ -323,6 +329,7 @@ fn test_prints_fail_fatal_with_the_msg() {
 
 #[test]
 fn test_prints_target_margins_after_the_run_line() {
+    // Book claims held here: cli~3bb4a4a0, cli~f6eae41a
     // HII-16 AC 1 to 3 (decision X3): `margins` writes `gain` twice (0.5, then -0.25) and `power`
     // twice (2, then 1.5); the last of each is printed in the order of the first, after the
     // PASS line, and the negative margin does not fail the run
@@ -410,6 +417,7 @@ fn files_under(dir: &Path) -> Vec<(String, String)> {
 
 #[test]
 fn new_creates_the_four_files_and_says_created() {
+    // Book claims held here: cli~bc9ef575
     // CLI-17 AC 1: the directory `<name>` holds `Piperine.toml`, `src/lib.msl`,
     // `benches/step.msl` and `.gitignore`, and `created <name>` is printed
     let tmp = tempfile::tempdir().expect("tmp");
@@ -511,6 +519,7 @@ const ENTRY: &str = "rust/0123456789abcdef0123456789abcdef";
 
 #[test]
 fn clean_removes_the_target_directory() {
+    // Book claims held here: cli~8ba7a6de
     // CLI-18 AC 1: `<project>/target` is removed and `removed target` is printed; the cache,
     // which `--cache` was not given for, is still there
     let (_tmp, dir, cache) = project_with_target();
@@ -658,6 +667,7 @@ fn read(path: &Path) -> String {
 
 #[test]
 fn fmt_rewrites_what_differs_and_names_it() {
+    // Book claims held here: cli~e088bcbe
     // CLI-24 AC 1: every `.msl` under `src/` and `benches/` that differs is rewritten in place
     // and named by its project-relative path; a formatted one is not touched
     let (_tmp, dir, lib, step) = unformatted_rc();
@@ -689,6 +699,7 @@ fn fmt_takes_files() {
 
 #[test]
 fn fmt_check_writes_nothing_and_exits_1_on_a_difference() {
+    // Book claims held here: cli~41e380a0
     // CLI-24 AC 3: `would format <path>` for each file that differs, no byte changed, exit 1
     let (_tmp, dir, _, _) = unformatted_rc();
     let before = files_under(&dir);

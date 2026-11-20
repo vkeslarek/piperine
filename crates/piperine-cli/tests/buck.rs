@@ -76,6 +76,7 @@ fn startup_ends_with_the_reference_at_128() {
 
 #[test]
 fn startup_ends_within_3_mv_of_0_8_volts() {
+    // Book claims held here: mixed~fef5c97a, cli~3d1453da, cli~6153ef01
     // Book chapter 16, "an output within 3 mV of 0.8 V (0.8025)" in the last row of `startup`, and chapter 8,
     // "regulates at 0.8 V within 3 mV": the end of the start is tighter than the 10 mV of SPEC section 2 that
     // `startup_ends_with_the_reference_at_128` holds. The run is the shared one of this target
@@ -87,6 +88,7 @@ fn startup_ends_within_3_mv_of_0_8_volts() {
 
 #[test]
 fn startup_prints_the_whole_start_on_its_grid() {
+    // Book claims held here: cli~418fd42b
     // LR-13: with no `from`, `startup` prints the whole start, 0 to 600 us, on its 0.5 us grid:
     // 1 201 rows, the time of row k being k * 0.5e-6
     let (header, rows) = table(startup());
@@ -101,6 +103,7 @@ fn startup_prints_the_whole_start_on_its_grid() {
 
 #[test]
 fn startup_prints_no_failed_check() {
+    // Book claims held here: cli~5010f432
     // CLI-08 AC 3: a passing check is hidden on the terminal (CLI-06 AC 9) and a failing one
     // would print, so no ` checks ` line on standard output means no failed check; the claim is
     // not vacuous: the DPWM's no-shoot-through monitor checks at every clock of the 600 us, and

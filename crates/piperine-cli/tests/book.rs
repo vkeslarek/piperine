@@ -319,6 +319,7 @@ fn holds(html: &str, lang: &str, text: &str) -> bool {
 
 #[test]
 fn the_plot_in_the_chapter_is_the_file_the_binary_writes() {
+    // Book claims held here: cli~a717f995
     // CLI-19 AC 11: the SVG the chapter embeds is the file `piperine run step --plot` writes in
     // `examples/rc`
     let html = chapter(&content(), "cli");
@@ -387,6 +388,7 @@ fn the_rc_output_blocks_are_what_the_binary_prints() {
 
 #[test]
 fn every_cli_listing_of_the_book_is_what_the_binary_prints() {
+    // Book claims held here: welcome~72129ad3, welcome~a4895da4, welcome~df325c6f, welcome~6e662db9, from-rust~4938c15f, values~2931bd2e, values~9a0ece05, cli~54e71d59
     // verification F6: every listing of the whole Book that claims to be the binary's output, in
     // every chapter and of any project, is the binary's whole output; `data-cli-lines` only
     // selects the lines the page shows, so a line it leaves out is held all the same
@@ -400,6 +402,7 @@ fn every_cli_listing_of_the_book_is_what_the_binary_prints() {
 
 #[test]
 fn the_buck_block_is_what_the_binary_prints() {
+    // Book claims held here: cli~9c4b6fcf
     // CLI-19 AC 4: the buck's bench and its `startup` table equal to the files, and the standard
     // output of `piperine run startup` in `examples/buck` equal to what the binary prints
     let html = content();
