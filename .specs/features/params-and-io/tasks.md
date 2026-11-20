@@ -587,11 +587,11 @@ T44
 
 **Done when**:
 
-- [ ] `a_dc_source_sets_the_port_at_the_operating_point`, `an_undriven_node_port_is_e0810`, `a_node_port_tied_to_gnd_inside_is_still_refused_undriven` pass under `**Run apisources**`
-- [ ] `a_host_driven_rc_matches_ac_rc_in_ac`, `a_host_driven_rc_step_matches_tran_rc` pass under `**Run sourcehost**`
-- [ ] No `ToleranceContract` and no twin golden changes
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `a_dc_source_sets_the_port_at_the_operating_point`, `an_undriven_node_port_is_e0810`, `a_node_port_tied_to_gnd_inside_is_still_refused_undriven` pass under `**Run apisources**`
+- [x] `a_host_driven_rc_matches_ac_rc_in_ac`, `a_host_driven_rc_step_matches_tran_rc` pass under `**Run sourcehost**`
+- [x] No `ToleranceContract` and no twin golden changes
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

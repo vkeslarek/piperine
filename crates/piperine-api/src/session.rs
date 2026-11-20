@@ -36,6 +36,7 @@ use crate::recorder::{Recorder, Tap};
 use crate::table::Table;
 use crate::project::Project;
 use crate::request::{Analysis, Grid, Options, RunSpec};
+use crate::source::NodeSources;
 
 /// How the design of a session was built.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,6 +77,8 @@ pub struct Session {
     /// The `set`s the host scheduled after the start, as given: their changes are derived in time
     /// order, against the table as of each one's time, when a call adds one and when the run starts.
     pub(crate) timed_sets: Vec<TimedSet>,
+    /// The node ports of the top the host has given a source (§23.1 rule 1).
+    pub(crate) sources: NodeSources,
     /// The value of every param of every instance, which a `set` keeps with what derives from it.
     pub(crate) params: Params,
 }
@@ -218,7 +221,7 @@ impl Session {
         for (path, _, value) in &params {
             Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, path, *value)?;
         }
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, wrt, actions: Vec::new(), timed_sets: Vec::new(), params: table })
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, wrt, actions: Vec::new(), timed_sets: Vec::new(), sources: NodeSources::default(), params: table })
     }
 
     /// Sets `path` to `value` on `circuit` and, through `table`, every param derived from it, in
@@ -426,6 +429,9 @@ impl Session {
     /// run reach `sink` as the solver delivers them. A session runs once: the analysis takes its
     /// circuit.
     pub fn run(&mut self, sink: Rc<RefCell<dyn RecordSink>>) -> Result<Table, Failure> {
+        if self.circuit.is_some() {
+            self.sources.require_all(&self.ir)?;
+        }
         let circuit = self.circuit.take().ok_or_else(|| Failure::Backend("this session has already run: open another".into()))?;
         let failure = Rc::new(RefCell::new(None));
         let delivery = Box::new(Delivery { streams: self.streams.clone(), sink, failure: failure.clone(), recorder: None, finished: Rc::new(RefCell::new(None)) });
