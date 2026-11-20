@@ -16,7 +16,7 @@ runs, because they need host stimulus during a run. `host-ii` delivered that sti
 
 - [ ] SPEC §10 S2 to S9 each run as a scenario run and are judged by Rust host tests against SPEC's own pass criteria, at Vin 12 V and setpoint 3.3 V unless the scenario says otherwise.
 - [ ] Every scenario run passes S10: its `checks` stream holds records and none failed.
-- [ ] The whole suite simulates 16.6 ms of converter time in five runs that execute in parallel, so its wall time is the longest run's (about 4.7 ms simulated), not the sum.
+- [ ] The whole suite simulates 20.0 ms of converter time in five runs that execute in parallel, so its wall time is the longest run's (7.46 ms simulated, `steady_state`), not the sum.
 - [ ] Every buck behaviour that diverges from its SPEC is fixed in the model, not documented away.
 
 ## Out of Scope
@@ -45,7 +45,7 @@ default the planner took; each is reported to the user and each can be overturne
 | D2 | Where the stimulus lives | In the Rust host test, through `Session::drive` and `Session::set_at`; the bench holds none | S4, S7 and S9 change `vin_nom` and `r_load` during a run, which no MSL bench can do (X8). One mechanism for every scenario keeps each timeline beside the windows it measures |
 | D3 | What the bench and the run tables describe | The bench is the top `Bench`, in `src/lib.msl` (the crate root `piperine-project` requires); it places `Buck` and takes `Buck`'s five `in` ports as its own; each run table names what is sampled (`print`, on a 10 ns `print_step`) and emitted (`streams = ["checks"]`); the host's `Recorder` samples | The user's rule: "the bench describes what is sampled/emitted, sampling is host-side" |
 | D4 | How the runs are shared | Five runs, one per family: `setpoint` (S2, S2b), `load_line` (S3, S4, S8), `faults` (S5, S6), `brownout` (S7), `steady_state` (S9). One test target holds all five; each family runs once, and the five run in parallel threads | A 3.3 V start costs 1.25 ms of simulated time; sharing it cuts the CPU time, and parallel families cut the wall time to the longest run |
-| D5 | A "ramp" of Vin | A staircase of `set_at` on `buck.vin_nom` in 0.1 V steps: S4 and S9 line steps take 10 µs (0.25 µs per step for 4 V); S7's brown-out falls and rises at 50 mV/µs (0.1 V every 2 µs) and holds 7.5 V for 60 µs | The supply is an ideal source behind 20 mΩ (SPEC §2) with no slew; SPEC gives S4's 10 µs and no S7 rate |
+| D5 | A "ramp" of Vin | A staircase of `set_at` on `buck.vin_nom` in 0.1 V steps: S4's line step takes 10 µs (0.25 µs per step for 4 V) and S9's supply ramps are 200 µs (SPEC §10.1); S7's brown-out falls and rises at 50 mV/µs (0.1 V every 2 µs) and holds 7.5 V for 60 µs | The supply is an ideal source behind 20 mΩ (SPEC §2) with no slew; SPEC gives S4's 10 µs, S9's 200 µs ramps and no S7 rate |
 | D6 | S4's 2 A load | `buck.r_load` set to 1.65 Ω (3.3 V / 2 A) 200 µs before the line step, and back to 6.6 Ω 150 µs before S8 | SPEC §10 S4 says "2 A load"; `r_load` is a non-structural param |
 | D7 | S5's "retry every 2 ms while the overload stays" | One retry is observed with the overload still on; the overload is then removed during that retry's soft-start, which must reach `Regulate` and clear `fault` | A second retry costs 2.7 ms more of simulated time (about 10 min); the 2 ms period is measured exactly on the one hiccup |
 | D8 | A value SPEC writes with "≈" | Reported by the test, not judged: S2b's ≈ −0.6 A, S6's ≈ 7 mV/µs and ≈ 80 to 120 µs. S6 is judged on its mechanism instead: `OverVoltage` within two samples of `vout` passing 3.81 V | SPEC §10: "the tolerances are the bench's pass criteria"; an "≈" is an estimate. S6's estimates assume the sink current holds −3 A on average, while §8.3's cut ends the low-side pulse and lets the current relax each period, so the model may rise faster; reported to the user |
@@ -54,7 +54,7 @@ default the planner took; each is reported to the user and each can be overturne
 | D11 | Bounds SPEC leaves to the bench: the current limits (S5, S6), S8's decay, the sample-time resolution | Written into a new SPEC §10.1 "How the bench measures" with each derivation (BS-09) | A test cites SPEC; a bound that lives only in a test is a tolerance nobody approved |
 | D12 | SPEC names the cleared fault code `None`, the model `Clear` | SPEC is corrected to `Clear` | A name, not a behaviour; `None` is `Option`'s variant in the reactions that latch the fault. Reported to the user as a spec edit |
 | D13 | The hiccup lasts 1001 samples in the model (2.002 ms); SPEC §8.5 says 1000 (2 ms) | Fixed in the model (`supervisor.msl`) and in the reference model of `piperine-parity/tests/buck_supervisor.rs`, which mirrors the same off-by-one | Code follows spec |
-| D14 | The step budget | `max_steps = 15000000` in every run | The 600 µs start takes about 675 000 accepted steps; the longest run (4.7 ms) needs about 5.3 M, above the default budget of 2 M attempts |
+| D14 | The step budget | `max_steps = 15000000` in every run | The 600 µs start takes about 675 000 accepted steps; the longest run (7.46 ms) needs about 8.5 M, above the default budget of 2 M attempts |
 
 ---
 
@@ -68,7 +68,7 @@ default the planner took; each is reported to the user and each can be overturne
 | "Both switches off" | both gate commands of the controller, `buck.hs_cmd` and `buck.ls_cmd`, low | the commands are the controller's decision; the 10 ns driver delay is §5.3's and is held by `buck_power` | n - default (user AFK) |
 | Inductor current | `buck.isense` divided by 0.1 V/A | SPEC §2: the sense chain is 0.1 V/A, bidirectional, in series with L | n - default (user AFK) |
 | The deviation instant of S5 | the first row where the ADC code is outside `reference ± reference/16`, the supervisor's own window (§8.6) | the supervisor sees the deviation through the ADC, not the node | n - default (user AFK) |
-| S9's settling before each window | 450 µs after the last ramp or line step (SPEC §10.1, derived from the loop's slowest pole), then a 64 µs window (32 periods, 4 dither frames) | SPEC §10 S3/S4 recovery is ≤ 200 µs; the window spans whole dither frames | n - default (user AFK) |
+| S9's settling before each window | 450 µs after the last ramp or line step (SPEC §10.1, derived from the loop's slowest pole), then a 64 µs window (32 periods, 4 dither frames) | the worst ramp's 9.2-code lag needs 3.6 τ ≈ 400 µs to fall under a quarter code (SPEC §10.1); the window spans whole dither frames | n - default (user AFK) |
 | S7 after the restart | the restart meets a pre-biased output (≈ 3.1 V) and, with the OVP threshold on the ramped reference (§8.4), trips `OverVoltage` two samples into `SoftStart`; S7 is judged up to the entry into `SoftStart` | SPEC §7.2: pre-bias is not supported; reported to the user | n - default (user AFK) |
 
 **Open questions:** none - all resolved or logged above (each a default the user delegated while away).
@@ -90,7 +90,7 @@ parallel threads of one target.
 | `faults` | S5, S6 | 4.70 ms | 5.3 M | 17 to 24 min |
 | `brownout` | S7 | 1.52 ms | 1.7 M | 6 to 8 min |
 | `steady_state` | S9 | 7.46 ms | 8.5 M | 26 min |
-| **Target** | S2 to S10 | 16.59 ms (CPU) | 18.7 M | 17 to 24 min wall |
+| **Target** | S2 to S10 | 20.0 ms (CPU) | 22.6 M | 26 min wall |
 
 ---
 
@@ -343,5 +343,5 @@ Note: BS-03 AC 1 (the precondition at 1.25 ms) is written once and holds for eve
 ## Success Criteria
 
 - [ ] `cargo test -p piperine --test buck_scenarios` passes with every SPEC §10 S2 to S10 criterion judged.
-- [ ] The target's wall time is that of its longest run (≈ 4.7 ms simulated), printed by the target.
+- [ ] The target's wall time is that of its longest run (≈ 7.46 ms simulated), printed by the target.
 - [ ] No tolerance of SPEC is loosened; every bound the bench adds is in SPEC §10.1.
