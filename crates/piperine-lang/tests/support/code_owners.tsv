@@ -18,7 +18,6 @@ E0184	composite-values	patterns (T14, T15)
 E0185	composite-values	control flow (T12, T13)
 E0186	composite-values	structs and enums (T38, T39)
 E0187	generics	L7 (traits and generic arguments)
-E0188	params-and-io	PI-06 AC 7, raised here
 E0203	resolved-nets	L21
 E0204	params-and-io	PI-12 AC 4, raised here
 E0205	params-and-io	PI-12 AC 5, raised here

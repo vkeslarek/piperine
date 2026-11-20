@@ -413,7 +413,14 @@ impl<'d> Checker<'d> {
             None => {
                 let d = self.design.decl_data(decl);
                 let (file, span) = (d.file, d.span);
-                self.unsupported(file, span, "`const` without a value");
+                let name = d.name.as_ref().map_or_else(String::new, |name| name.text.clone());
+                let in_trait = d.parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Trait(_)));
+                if in_trait {
+                    self.unsupported(file, span, "`const` without a value");
+                } else {
+                    // §3.9.2: a `const` has a value everywhere but in a trait.
+                    self.coded(file, "E0188", span, format!("the `const` `{name}` has no value"), "a `const` outside a trait has a value");
+                }
             }
         }
     }

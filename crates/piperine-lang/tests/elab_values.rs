@@ -769,3 +769,27 @@ fn option_rows_lower_on_the_pair() {
     assert!(th.contains("let t.is = (c > 1u8)") && th.contains("let t.val = if (c > 1u8) { 7u8 } else { 0u8 }"), "{th}");
     assert!(th.contains("let s.is = (c > 2u8)") && th.contains("let s.val = 5u8"), "{th}");
 }
+
+#[test]
+fn a_const_reading_a_run_value_is_e0188() {
+    // §3.9.2: the initializer of a `const` that is not a const expression is `E0188` naming the
+    // `const`: here it calls a function that reads the environment, which only a run gives. A
+    // `const` without a value outside a trait is the same code.
+    for (src, wanted) in [("fn h() -> f64 { temperature() }\nconst K: f64 = h();", "reads a call that is not a function"), ("const K: u8;", "has no value")] {
+        let src = reaching(src, &["K"]);
+        let err = Elab::run(&src, "Top").expect_err(wanted);
+        assert_eq!(Elab::codes(&err), ["E0188"], "{src}: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert!(err[0].diagnostic.message.contains("`K`") && err[0].diagnostic.message.contains(wanted), "{}", err[0].diagnostic.message);
+    }
+}
+
+#[test]
+fn a_const_that_depends_on_itself_is_e0188() {
+    // §3.9.2: a constant that depends on itself, directly or through another `const`, is `E0188`.
+    for src in ["const K: u8 = K + 1;\nfn f() -> u8 { K }", "const A: u8 = B;\nconst B: u8 = A;\nfn f() -> u8 { A }"] {
+        let src = reaching(src, &["f()"]);
+        let err = Elab::run(&src, "Top").expect_err("a cycle");
+        assert_eq!(Elab::codes(&err), ["E0188"], "{src}");
+        assert!(err[0].diagnostic.message.contains("depends on itself"), "{}", err[0].diagnostic.message);
+    }
+}

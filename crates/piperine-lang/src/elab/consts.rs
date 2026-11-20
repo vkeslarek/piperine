@@ -107,13 +107,19 @@ pub enum ConstFault {
     /// The value is unknown (§3.3) where a known one is required: the caller says what it
     /// decides (`E0151` when it fixes structure, §3.3.8).
     Unknown { expr: ExprId },
+    /// The initializer of the `const` item `constant` reads, at `expr`, something only a run gives
+    /// (`what`): the `const` is not a const expression (§3.9.2, `E0188`).
+    NotConstant { expr: ExprId, constant: DeclId, what: String },
+    /// A `const` read, at `expr`, while its own initializer is being folded: it depends on itself
+    /// (§3.9.2, `E0188`).
+    Cyclic { expr: ExprId, constant: DeclId },
 }
 
 impl ConstFault {
     /// The expression the fault sits on; none for a `const` item without a value.
     pub fn expr(&self) -> Option<ExprId> {
         match self {
-            ConstFault::UnboundParam { expr, .. } | ConstFault::Dynamic { expr, .. } | ConstFault::Unsupported { expr, .. } | ConstFault::Panic { expr, .. } | ConstFault::Unknown { expr } => Some(*expr),
+            ConstFault::UnboundParam { expr, .. } | ConstFault::Dynamic { expr, .. } | ConstFault::Unsupported { expr, .. } | ConstFault::Panic { expr, .. } | ConstFault::Unknown { expr } | ConstFault::Cyclic { expr, .. } | ConstFault::NotConstant { expr, .. } => Some(*expr),
             ConstFault::NoValue { .. } => None,
         }
     }
@@ -129,11 +135,13 @@ pub struct ConstEval<'d, 't> {
     depth: usize,
     /// The module-body `let`s being evaluated, innermost last: a read of one of them is a cycle.
     open_lets: Vec<DeclId>,
+    /// The `const` items being folded, innermost last: a read of one of them is a cycle (§3.9.2).
+    open_constants: Vec<DeclId>,
 }
 
 impl<'d, 't> ConstEval<'d, 't> {
     pub fn new(design: &'d Design, types: &'t Types<'d>) -> Self {
-        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new() }
+        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new(), open_constants: Vec::new() }
     }
 
     /// How many `const` items this evaluator has folded, each counted once however many times
@@ -164,9 +172,14 @@ impl<'d, 't> ConstEval<'d, 't> {
         };
         let expr = *expr;
         let outer = std::mem::take(&mut self.locals);
+        self.open_constants.push(decl);
         let value = self.folded(expr, &Bindings::new());
+        self.open_constants.pop();
         self.locals = outer;
-        let value = value?;
+        let value = value.map_err(|fault| match fault {
+            ConstFault::Dynamic { expr, what } => ConstFault::NotConstant { expr, constant: decl, what },
+            other => other,
+        })?;
         self.evaluations += 1;
         self.consts.insert(decl, value);
         Ok(value)
@@ -261,8 +274,10 @@ impl<'d, 't> ConstEval<'d, 't> {
             return Err(ConstFault::Dynamic { expr, what: "a built-in name".to_string() });
         };
         match &self.design.decl_data(decl).kind {
+            DeclKind::Const(_) if self.open_constants.contains(&decl) => Err(ConstFault::Cyclic { expr, constant: decl }),
             DeclKind::Const(_) => self.folded_constant(decl).map_err(|fault| match fault {
-                ConstFault::NoValue { .. } => ConstFault::Unsupported { expr, what: "a `const` without a value".to_string() },
+                // A trait's `const` without a value is outside the subset; anywhere else it is `E0188`.
+                ConstFault::NoValue { decl } if self.is_trait_item(decl) => ConstFault::Unsupported { expr, what: "a `const` without a value".to_string() },
                 other => other,
             }),
             DeclKind::Param(_) => bindings.get(decl).map(Folded::Known).ok_or(ConstFault::UnboundParam { expr, param: decl }),
@@ -278,6 +293,11 @@ impl<'d, 't> ConstEval<'d, 't> {
             DeclKind::Port(_) | DeclKind::Signal(_) => Err(ConstFault::Dynamic { expr, what: "a node".to_string() }),
             _ => Err(ConstFault::Unsupported { expr, what: "this name in a const expression".to_string() }),
         }
+    }
+
+    /// Whether `decl` is declared in a `trait` (the one place a `const` has no value, §3.9.2).
+    pub fn is_trait_item(&self, decl: DeclId) -> bool {
+        self.design.decl_data(decl).parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Trait(_)))
     }
 
     /// The value of the module-body `let` name `decl` read at `expr`: its value expression evaluated
