@@ -24,7 +24,7 @@ change of the IR or the ABI.
 
 **Counts.** 3 silent, 2 broken, 49 loud (L1 to L59 less the nine `msl-fixes` and the one `host-ii` closed, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
-15 host gaps, 11 unproven.
+17 host gaps, 9 unproven.
 
 | Section | Ids |
 | ------- | --- |
@@ -33,8 +33,8 @@ change of the IR or the ABI.
 | §4 Loud | L1–L59 (L11, L14, L15, L17, L41, L46, L48, L54, L55, L56 closed) |
 | §5 Spec holes and disagreements | G1–G6 (the buck's), X1, X2, X5, X6 (X3, X4, X7, X8, X9 decided by `host-ii`) |
 | §6 Solver, numerics, performance | V12, V13, V16 |
-| §7 Host surface | H1–H15 |
-| §8 Unproven | U1–U11 |
+| §7 Host surface | H1–H18 (H11 closed by `root-e2e`) |
+| §8 Unproven | U1–U11 (U5, U10 closed by `root-e2e`) |
 | §9 Coverage by spec part | — |
 | §10 Reference lists, changed entries, clusters | — |
 | §11 The Book against the binary | one row per Book block or claim the binary refuses, does not meet, never raises or the spec disputes |
@@ -227,8 +227,8 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 
 ### 4.8 Diagnostics that are loud and say too little
 
-- **73 of the spec's 180 error codes appear nowhere in the source** (list in §10). Most belong to
-  a refused construct; `E0102`, `E0105`, `E0503` to `E0508` and `E0803` to `E0806` do not.
+- **64 of the spec's 180 error codes appear nowhere in the source** (list in §10). Most belong to
+  a refused construct; `E0102` and `E0105` do not.
 - `P0001` says "outside the M1 subset" for forms the spec defines.
 
 | ID | Gap | Where | Size |
@@ -301,31 +301,29 @@ adjoint and PSS (`core/circuit.rs:111` to `:172`); the host exposes four analyse
 | H8 | Gradients: gradient params, `∂(record)/∂p`, saltation, `E0807` to `E0809`. The solver's `adjoint` and `sens` are not reached from MSL | §21 rule 7, §23.3 | L |
 | H9 | Host error codes: `E0804` (drive of a carrier that is no top `in` port), `E0805` (late subscription) and `E0806` (past time) are delivered. `E0803` (timed `set` of a structural param) is checked but no MSL design reaches it: the elaborator marks no param structural, and generation in a module body is `P0001` | §23.1 | with L-generation |
 | H10 | Command line: `add`, `remove`, `tree`, `update`, `--locked`, `--offline`, plugin scripts, a REPL, ngspice raw output, a terminal or PNG plot | — | S each |
-| H11 | The root package's integrated tests: one per Book example and claim, through the api or the CLI (queue item 4), and the single root `tests/e2e/` with ngspice parity (4b) | ROADMAP | M |
 | H12 | The stdlib, the galleries and `examples/buck/src` are not reformatted by `piperine fmt` (the formatter is proven on them) | — | S |
 | H13 | Stale repository documents: the first 270 lines of `ROADMAP.md` (PHDL, a Python bench, Cranelift), the `STATE.md` handoff below `solver-restructure`, `SPEC_DEVIATIONS.md`, `CLEANUP_PLAN.md`, `docs/audit/`, `docs/reference/`, `VAMS-LRM-2-4.md` | — | S |
 | H14 | A flow term `i(<instance>)` of an instance with no potential branch prints in `op` and `dc` only; `transient`, `ac`, `pss` and `sens` refuse it (`E0801`/`P0010`) because `StepView` carries no device term, so a transient table cannot show it. Needs a `StepView` read of `Assembly::term_value`. Owner: `host-analyses` | §21 | S |
 | H15 | `pss` of a design whose `transition` holds an absolute time (`ramp.t0`, a `D2A` driven by a discrete clock) never closes its digital periodicity (`digital state is not periodic at T`), so a D2A-driven design cannot shoot; the `pss_rc` twin drives the source from `now()` instead. Any digital state that grows with time breaks it too (the stdlib `every` counter rises +2 per period). Needs time-like state marked through lang, IR, plan, transpile and solver; a `now()`-computed edge also lacks a breakpoint, so it needs a step cap. Owner: `periodic-small-signal` (user, 2026-11-18) | §16.3 | M |
+| H16 | No run key or flag for the transient's minimum step (`dt_min`, ngspice's `delmin`): `piperine run` always runs the default floor, so a design that needs ngspice's `delmin=1n` (the `tran_corner` twin) is run through the library (`Session::circuit` into `transient`). Owner: `host-analyses` | §23 table | S |
+| H17 | A `--stream <name>` that is also the name of a signal fails after the run prints: `error: cannot decode a value of type bool: 24 bytes where its layout holds 2` (the record layout of the stream is read with the signal's). Owner: `host-analyses` | §19 | S |
+| H18 | A root file whose stem is a keyword (`module.msl`, `analog.msl`, `extern.msl`) is `E0171`: the crate takes the stem as its name, so the file must be renamed; the message says the crate would be named `module_`. Owner: `cli-packages` | §3.5 | S |
 
 ---
 
 ## 8. Unproven
 
-- **U1. Parity covers 7 small analog circuits** (`tests/ngspice/*.msl`: a divider, a current
-  source, three diode circuits, `ac_rc`, `tran_rc`). 43 of the 50 `.cir` fixtures have no MSL
-  twin: BJT, JFET, MOS 1 to 3, noise, distortion, homotopy, temperature. Two twins (`diode_iv`,
-  `tran_rc`) sit near the tolerance floor.
+- **U1. Parity covers 16 small circuits** (`tests/e2e/twins/*.msl`: a divider, a current
+  source, three diode circuits, `ac_rc`, `tran_rc`, `tran_dq`, `tran_jump`, `tran_corner`,
+  `tran_floor`, `tf_divider`, `pz_lowpass`, `sens_divider`, `pss_rc`, `temp_res`). 43 of the 59
+  `.cir` fixtures have no MSL twin: BJT, JFET, MOS 1 to 3, noise, distortion, homotopy. Two twins
+  (`diode_iv`, `tran_rc`) sit near the tolerance floor.
 - **U2. No oracle for digital or mixed-signal behavior.** The interpreter cannot run them; they
   are tested against the spec's own expected values and `examples/buck/SPEC.md` only.
 - **U3. The buck's closed loop is proven at one operating point**: 0.8 V, Vin 12 V, 6.6 Ω,
   600 µs. Scenarios S1 to S9 of its SPEC §10 need H1.
 - **U4. The galleries (Appendices D, E, F: 18 fences) are parsed and resolved only**
   (`std_galleries`); none is type-checked, elaborated or run. Most use a refused form.
-- **U5. The Book.** Its 97 `msl` blocks are held to the parser and its 29 command-line listings
-  to the binary (`piperine-cli/tests/book.rs`). No block is run as a model unless a listing runs
-  it. Shown with their refusal: the ladder (generic module), the debouncer and the PWM (a `u8`
-  param), the alarm line (`Wire`), the clipper (`settle`, `limexp`), the chapter-8 buck
-  (`settle`), `Blinky` and `Count` (digital-only transient).
 - **U6. Rules of Part V with no test that names them**: record order within a microstep (§19
   rule 8), the tick rounding of T2 to T4, `E0502`, the round bound `E0506`, crossings between
   sweep points (§16.1.2), a rejected step leaving no record (§19 rule 7).
@@ -335,8 +333,6 @@ adjoint and PSS (`core/circuit.rs:111` to `:172`); the host exposes four analyse
   part (§16.1.4) or a DC sweep that crosses a threshold (§16.1.2).
 - **U9. The two backends agree on the M1 subset only** (`backends`, `twins`); everything else has
   one implementation and no second opinion.
-- **U10. Parity tests are scattered** (`tests/ngspice/` + `piperine-parity`); the single root
-  `tests/e2e/` does not exist yet (H11).
 - **U11. `analysis(Noise)` is proven in the solver only.** The noise analysis's operating point
   carries the `NOISE` flag (`piperine-solver/tests/environment.rs`); no MSL design that reads it
   is run through a noise analysis from source.
@@ -375,12 +371,14 @@ does not count.
 
 ## 10. Reference lists
 
-**Error codes of the spec that no source file mentions (73 of 180).**
+**Error codes of the spec that no source file mentions (64 of 180).** `E0503`, `E0504`, `E0505`,
+`E0507` and `E0508` are raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`),
+spelled as enum names and rendered by `as_str`, which a count of string literals misses (an earlier
+list gave `E0504` and `E0507` as unraised, wrongly). `E0803` to `E0806` are raised by `host.rs`.
 `E0102 E0105 E0110 E0111 E0122 E0123 E0124 E0126 E0127 E0131 E0132 E0133 E0134 E0151 E0203 E0204
 E0205 E0224 E0242 E0243 E0244 E0260 E0261 E0262 E0264 E0313 E0315 E0322 E0333 E0340 E0342 E0351
 E0354 E0360 E0361 E0362 E0371 E0372 E0373 E0374 E0413 E0414 E0416 E0418 E0451 E0452 E0453 E0454
-E0456 E0503 E0504 E0505 E0507 E0508 E0610 E0612 E0613 E0614 E0701 E0702 E0703 E0704 E0705 E0706
-E0803 E0804 E0805 E0806 E0807 E0808 E0809 E0904 E0906`
+E0456 E0610 E0612 E0613 E0614 E0701 E0702 E0703 E0704 E0705 E0706 E0807 E0808 E0809 E0904 E0906`
 
 **Entries of the previous file that changed.**
 
@@ -391,7 +389,7 @@ E0803 E0804 E0805 E0806 E0807 E0808 E0809 E0904 E0906`
 - `examples/buck/GAPS.md` G3 (a method on a carrier left unresolved) was already closed by
   `msl-digital`: it is a `P0001` naming the method (L15, since closed).
 - Every other entry is kept: S4, B3, B4, L19, L37, §4.7, G1 to G6, the solver points (now V1 to V11), U1 to
-  U3, U10.
+  U3.
 
 **Clusters one feature would close.** Sizes are rough; the order is the user's.
 
@@ -404,7 +402,7 @@ E0803 E0804 E0805 E0806 E0807 E0808 E0809 E0904 E0906`
 | Generics and generation | L7, L30, L31, L32, S3 for generic items: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
 | Resolved nets and bundles | L21, L22, L23, L25: `Wire`, `Tribuf`, `Tran`, `Bidir` | L |
 | Unknown semantics | L18, L19, S6 (ABI), L51, L52, L53, L8 | L |
-| Host II (delivered in part by `host-ii`) | H1, H3, H6, H9, H11, L39, then B4 (Python) | L |
+| Host II (delivered in part by `host-ii`) | H1, H3, H6, H9, L39, then B4 (Python) | L |
 | Speed | V12, V13, V16, PSS on the device ABI | L |
 | Foreign models | L12, L33 | L |
 | Language server | B3 | M, deferred |
@@ -488,3 +486,8 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function need a generic module: `P0001` |
 | cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
 | cheatsheet#10 | L57 | `composite-values` | with its `emit!` the card is `E0900` (a statement among items); without it `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` a reference type |
+
+Three observations the root tests made are no Book row, so they are not above: they are entries of §7,
+each with its owner. A run has no key or flag for `dt_min` (H16, `host-analyses`); a `--stream` named like
+a signal fails decoding (H17, `host-analyses`); a root file stem that is a keyword is `E0171` (H18,
+`cli-packages`).

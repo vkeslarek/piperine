@@ -1081,10 +1081,10 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] `docs.rs` gains `gaps_drops_what_root_e2e_closed` (no `| H11 |` row, no `U10.` or `U5.` entry, a §11, `tests/e2e/twins` named in U1)
-- [ ] `Run inventory` passes (§11 unchanged by the edit)
-- [ ] Gate check passes: Quick (`Run docs`, `Run inventory`)
-- [ ] Test count: 1 new test
+- [x] `docs.rs` gains `gaps_drops_what_root_e2e_closed` (no `| H11 |` row, no `U10.` or `U5.` entry, a §11, `tests/e2e/twins` named in U1)
+- [x] `Run inventory` passes (§11 unchanged by the edit)
+- [x] Gate check passes: Quick (`Run docs`, `Run inventory`)
+- [x] Test count: 1 new test
 
 **Tests**: integration
 **Gate**: quick

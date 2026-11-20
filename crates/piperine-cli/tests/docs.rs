@@ -106,6 +106,33 @@ fn gaps_drops_what_host_ii_closed() {
 }
 
 #[test]
+fn gaps_drops_what_root_e2e_closed() {
+    // root-e2e RE-04 AC 1 (T42): H11, U5 and U10 are gone (the Book is held block by block and
+    // sentence by sentence, the parity tests live under `tests/e2e/`), U1 names the twins' new home,
+    // section 11 stays, the three observations are host entries with an owner, and the run codes are
+    // not listed as unraised
+    let gaps = read("GAPS.md");
+    assert!(!gaps.contains("| H11 |"), "H11 is still a row");
+    for closed in ["U5", "U10"] {
+        assert!(!gaps.contains(&format!("- **{closed}.")), "{closed} is still an entry");
+    }
+    assert!(gaps.contains("## 11. The Book against the binary"), "section 11 stays");
+    let unproven = gaps.split("## 8. Unproven").nth(1).and_then(|s| s.split("## 9.").next()).expect("GAPS.md has a section 8");
+    let u1 = unproven.split("- **U2.").next().expect("U1 is the first entry");
+    assert!(u1.contains("tests/e2e/twins") && !u1.contains("tests/ngspice"), "U1 names tests/e2e/twins: {u1}");
+    let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("a row {id}")).to_string();
+    assert!(row("H16").contains("`dt_min`") && row("H16").contains("Owner: `host-analyses`"), "H16: {}", row("H16"));
+    assert!(row("H17").contains("`--stream <name>`") && row("H17").contains("Owner: `host-analyses`"), "H17: {}", row("H17"));
+    assert!(row("H18").contains("`E0171`") && row("H18").contains("Owner: `cli-packages`"), "H18: {}", row("H18"));
+    let unraised = gaps.split("**Error codes of the spec that no source file mentions").nth(1).and_then(|s| s.split("`E0102").nth(1)).and_then(|s| s.split('`').next()).expect("section 10 lists the unraised codes");
+    let listed: Vec<&str> = unraised.split_whitespace().collect();
+    for raised in ["E0503", "E0504", "E0505", "E0507", "E0508", "E0803", "E0804", "E0805", "E0806"] {
+        assert!(!listed.contains(&raised), "{raised} is raised and is listed as unraised");
+    }
+    assert!(listed.contains(&"E0105") && listed.contains(&"E0906"), "the list keeps the codes nothing raises");
+}
+
+#[test]
 fn the_roadmap_lists_the_host_follow_ups() {
     // HII-23 AC 2: the roadmap records `host-ii` as delivered and lists the follow-ups: the host
     // follow-up feature (what needs new solver mechanisms) and `root-e2e`
