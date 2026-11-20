@@ -379,14 +379,15 @@ impl<'a> Checker<'a> {
     }
 
     /// A child's own terminal `Own(k)` at `slot`: it must name its own slot, and that node of the
-    /// child's body must be a `signal` (a port is bound to the parent, never owned).
+    /// child's body must be a `signal` or a node it reaches into a grandchild (a port is bound to the
+    /// parent, never owned).
     fn own_slot(&mut self, item: &str, child: &Child, slot: usize, k: u32, callee: Option<&BodyData>) {
         if k as usize != slot {
             self.report(item.to_string(), child.origin.clone(), format!("child {}: slot {slot} holds own{k}, an own terminal names its own slot", child.name));
             return;
         }
         let Some(node) = callee.and_then(|b| b.nodes.get(slot)) else { return };
-        if node.role != NodeRole::Signal {
+        if node.role == NodeRole::Port {
             self.report(item.to_string(), child.origin.clone(), format!("child {}: slot {slot} holds own{k}, but node {} of the child's body is a port", child.name, node.name));
         }
     }

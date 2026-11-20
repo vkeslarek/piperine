@@ -38,8 +38,9 @@ impl Elaboration<'_, '_> {
     /// Gives every authored child the node slots of its body that are no port, now that every body is
     /// built (`Ir::check` asks for one slot per node of the child's body): each names the child's own
     /// node, `Terminal::Own(k)` with `k` the node's index in the child's body, so the authored tree
-    /// shows the child's signals and never ground where a node exists (S4, AS-16). A node of the
-    /// child that is no signal (one it reaches into a grandchild) has no `Own`: its slot is ground.
+    /// shows the child's signals and never ground where a node exists (S4, AS-16). A node the child
+    /// reaches into a grandchild (`NodeRole::Reached`) is the child's own view of it, so its slot
+    /// names it too.
     pub(super) fn pad_child_nodes(&mut self) {
         let nodes: std::collections::BTreeMap<piperine_ir::BodyId, Vec<NodeRole>> = self.plans.values().map(|plan| (plan.body, plan.nodes.iter().map(|n| n.role).collect())).collect();
         let slots: Vec<(piperine_ir::BodyId, u32, Vec<Terminal>)> = self
@@ -50,7 +51,7 @@ impl Elaboration<'_, '_> {
                     let roles = nodes.get(&child.body)?;
                     let mut slots = child.terminals.clone();
                     for (slot, role) in roles.iter().enumerate().skip(slots.len()) {
-                        slots.push(if *role == NodeRole::Signal { Terminal::Own(slot as u32) } else { Terminal::Ground });
+                        slots.push(if *role == NodeRole::Port { Terminal::Ground } else { Terminal::Own(slot as u32) });
                     }
                     Some((plan.body, index as u32, slots))
                 })

@@ -514,6 +514,17 @@ fn a_childs_own_signal_is_bound_to_own_in_the_authored_child() {
 }
 
 #[test]
+fn a_node_a_child_reaches_into_a_grandchild_is_named_own_too() {
+    // AS-16 AC 1 (S4): `Mid` loads the `pub` node `g.x` of its child `Leaf` (a reached node, slot 1
+    // of `Mid`'s body after the port): the authored `mid` names it `own1`, never ground, and the IR
+    // still passes the check.
+    let src = "module Leaf(a: Electrical) { pub signal x: Electrical; }\nanalog for Leaf { v(x) +> v(a); }\nmodule Mid(a: Electrical) { let g = Leaf(a); }\nanalog for Mid { i(g.x, gnd) +> v(g.x) / 1k; }\nmodule Top() { signal s: Electrical; let mid = Mid(s); }";
+    let ir = Elab::ir(src, "Top");
+    assert_eq!(child_slots(&ir, "Top", "mid"), [piperine_ir::Terminal::Node(0), piperine_ir::Terminal::Own(1)]);
+    assert_eq!(ir.check(), vec![], "the check passes");
+}
+
+#[test]
 fn a_design_with_own_terminals_passes_check() {
     // AS-16 AC 2 and 3: the IR of a design whose child has an own signal passes `Ir::check`, and its
     // printed text shows the own node by name where it showed ground.
