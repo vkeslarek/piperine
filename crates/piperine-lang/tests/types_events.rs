@@ -613,3 +613,54 @@ fn an_event_where_another_type_is_expected_is_e0441() {
     let d = diagnostics(src);
     assert_eq!((codes(&d), snippet(src, &d[0])), (vec!["E0441".to_string()], "clk.rise()"));
 }
+
+#[test]
+fn a_guard_reads_an_event_as_a_bool() {
+    // UE-02 AC 1 and 2, §13 rule 9: inside a guard an `Event` subexpression and `!ev` read as a
+    // `bool`, as in a reaction body: `on d.changed() && en && !en.changed()`. Each read is recorded.
+    let src = "module Top(in d: Bit, in en: Bit) { }\ndigital for Top { on d.changed() && en && !en.changed() { } }";
+    let design = design_of(src);
+    let types = checked(&design, src);
+    let negated = exprs_reading(&design, &types, src, "en.changed()");
+    assert_eq!(negated.len(), 1);
+    assert!(types.event_read(negated[0]), "`en.changed()` under `!` in a guard is an event read");
+    assert_eq!(types.ty(negated[0]), Some(&Ty::Bool));
+    // A guard that is itself an event expression (`ev && bool`) reads as a `bool` as a whole.
+    let src = "module Top(in d: Bit, in en: Bit) { }\ndigital for Top { on d.changed() && (en.rise() && en) { } }";
+    let design = design_of(src);
+    let types = checked(&design, src);
+    let guard = exprs_reading(&design, &types, src, "en.rise() && en");
+    assert!(guard.iter().all(|e| types.event_read(*e) && types.ty(*e) == Some(&Ty::Bool)), "{guard:?}");
+    // The event of the head is no read: the head stays an `Event`.
+    let head = exprs_reading(&design, &types, src, "d.changed()");
+    assert!(head.iter().all(|e| !types.event_read(*e)), "{head:?}");
+}
+
+#[test]
+fn negating_an_event_outside_a_guard_or_body_is_e0440() {
+    // UE-02 AC 3, §13 rule 1: `!` applies to a `bool`. Outside a guard and a reaction body (a head,
+    // an operand of `||`, a body `let` of a module) it is `E0440` at the `!` expression.
+    for (src, at) in [
+        (with_heads(&["!clk.rise()"]), "!clk.rise()"),
+        (with_heads(&["clk.rise() || !clk.fall()"]), "!clk.fall()"),
+        ("module Top(in clk: Bit) { let e = !clk.rise(); }".to_string(), "!clk.rise()"),
+    ] {
+        let d = diagnostics(&src);
+        assert_eq!(codes(&d), ["E0440"], "{src}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(snippet(&src, &d[0]), at, "{src}");
+    }
+}
+
+#[test]
+fn a_bool_and_an_event_in_an_event_position_is_e0440() {
+    // UE-02 AC 3, §13 rule 1: `&&` has the event on the left, `ev && guard`; a `bool` on the left
+    // and an `Event` on the right in an event position is `E0440` at the `&&` expression.
+    for head in ["en && clk.rise()", "clk.rise() || (en && clk.fall())"] {
+        let src = with_heads(&[head]);
+        let d = diagnostics(&src);
+        assert_eq!(codes(&d), ["E0440"], "{head}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    }
+    // In a reaction body the same `&&` is an ordinary `bool` expression (§13 rule 2).
+    let src = with_body("clk.changed()", "if en && clk.rise() { q <- true; }");
+    checked(&design_of(&src), &src);
+}
