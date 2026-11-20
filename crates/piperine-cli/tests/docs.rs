@@ -269,17 +269,18 @@ fn gaps_drops_what_msl_fixes_closed() {
     assert!(row("L16").contains("H.5, H.6, H.7") && !row("L16").contains("unwrap expect"), "L16 keeps H.5 to H.7: {}", row("L16"));
     assert!(!row("L58").contains("db10") && !row("L58").contains("absdelta") && row("L58").contains("`limexp`") && row("L58").contains("`normal`"), "L58: {}", row("L58"));
     // (`### S2.` was kept here until `host-ii` closed it: `gaps_drops_what_host_ii_closed`)
-    for kept in ["### S3.", "### S4.", "### S6.", "### B3.", "### B4."] {
+    // (`### S4.` was kept here until `analog-structure` closed it, T35: `gaps_drops_what_analog_structure_closed`)
+    for kept in ["### S3.", "### S6.", "### B3.", "### B4."] {
         assert!(gaps.contains(kept), "GAPS.md keeps {kept}");
     }
-    // the counts follow, as `host-ii` moved them and `unknown-semantics` (L18, L19) after it:
-    // 3 silent, 2 broken
-    assert!(gaps.contains("3 silent, 2 broken, 47 loud"), "the counts of §9 follow");
+    // the counts follow, as `host-ii` moved them, `unknown-semantics` (L18, L19) after it and
+    // `analog-structure` (nine loud rows and S4) after that: 2 silent, 2 broken, 40 loud
+    assert!(gaps.contains("2 silent, 2 broken, 40 loud"), "the counts of §9 follow");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
-    assert_eq!(rows("## 3. Silent", "## 4."), 3, "three silent entries");
+    assert_eq!(rows("## 3. Silent", "## 4."), 2, "two silent entries");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 47, "forty-seven loud rows");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 40, "forty loud rows");
 }
 
 #[test]
@@ -361,5 +362,51 @@ fn gaps_carries_the_unknown_index_merge_to_composite_values() {
     assert!(row("L5").contains("64 iterations") && row("L5").contains("US-04 AC 11"), "L5 carries the loop bound");
     for id in ["L3", "L24"] {
         assert!(row(id).contains("merges every element it may name") && row(id).contains("US-04 AC 12"), "{id} carries the index merge");
+    }
+}
+
+#[test]
+fn gaps_drops_what_analog_structure_closed() {
+    // analog-structure AS-18 AC 4 (T36): `GAPS.md` drops L26, L27, L34 to L38, L42, L50 and S4, and the
+    // stdlib `slew` leaves the list of L58 (it runs; an ideal step is L60, owned by `analog-operators`)
+    let gaps = read("GAPS.md");
+    for id in ["L26", "L27", "L34", "L35", "L36", "L37", "L38", "L42", "L50"] {
+        assert!(!gaps.contains(&format!("| {id} |")), "GAPS.md still has the row {id}");
+    }
+    assert!(!gaps.contains("### S4."), "GAPS.md still has the entry S4");
+    let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("GAPS.md has the row {id}")).to_string();
+    assert!(!row("L58").contains("`slew`"), "L58 no longer lists slew: {}", row("L58"));
+    assert!(row("L60").contains("slew") && row("L60").contains("analog-operators"), "L60 records the ideal step and its owner: {}", row("L60"));
+    // the cluster is delivered and the counts follow: 2 silent, 2 broken, 40 loud (checked above)
+    assert!(gaps.contains("| Analog structure (delivered, MD-71) |"), "the cluster is marked delivered");
+}
+
+#[test]
+fn gaps_keeps_l40_for_the_spec_models_that_wait() {
+    // analog-structure AS-18 AC 4, Q2 (T36): one L40 line is left, for the three spec models that wait on
+    // another feature's dependency: the stdlib `idt` and `Water` (`generics`) and the §18 `Diode`
+    // (`params-and-io`)
+    let gaps = read("GAPS.md");
+    let rows: Vec<&str> = gaps.lines().filter(|l| l.starts_with("| L40 |")).collect();
+    assert_eq!(rows.len(), 1, "one L40 row: {rows:?}");
+    for name in ["`idt`", "`Water`", "`Diode`", "`generics`", "`params-and-io`"] {
+        assert!(rows[0].contains(name), "L40 names {name}: {}", rows[0]);
+    }
+}
+
+#[test]
+fn the_roadmap_and_state_record_analog_structure() {
+    // analog-structure AS-18 AC 4 (T36): the queue marks item 7 delivered and names what is left; STATE.md
+    // holds MD-71 with the decisions of the design: a contribution stays in place, the derivative site, the
+    // key params, hoisting and the reach
+    let roadmap = read("ROADMAP.md");
+    assert!(roadmap.lines().any(|l| l.starts_with("3f. ✅ **Delivered") && l.contains("analog-structure") && l.contains("MD-71") && l.contains("L40")), "the queue records analog-structure");
+    assert!(roadmap.lines().any(|l| l.starts_with("7. ✅ `analog-structure`")), "execution order item 7 is delivered");
+    assert!(roadmap.lines().any(|l| l.starts_with("| `analog-structure` |") && l.contains("delivered")), "the language table says delivered");
+    let state = read(".specs/STATE.md");
+    let at = state.find("### MD-71:").expect("STATE.md holds MD-71");
+    let decision = state[at..].split("\n---").next().expect("a decision");
+    for name in ["switch branch", "derivative site", "key params", "`Name~p=v`", "hoisted", "`Terminal::Own`", "`p.inflow()`"] {
+        assert!(decision.contains(name), "MD-71 names {name}");
     }
 }

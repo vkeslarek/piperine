@@ -1562,6 +1562,41 @@ forms and unknown-ness as an elaboration analysis).
 `crates/piperine-digital-solver`, `crates/piperine-api`, `crates/piperine-cli`, `docs/spec`.
 **Status:** Accepted (2026-11-19), from the approved `.specs/features/unknown-semantics/design.md`.
 
+### MD-71: a contribution stays where it was written; a module is lowered once per value of its key params
+
+`analog-structure` (2026-11-20). The analog half of the language runs the forms Part IV §11 and
+Part III §8.3 are built on. The note on the number: `host-ii` and `solver-hygiene` wrote MD-68 and
+`unknown-semantics` holds MD-70, so this one is MD-71; the second feature to merge renumbers.
+
+1. **A contribution under a selector stays in place in the IR.** The arms of an `if` or a `match`
+   keep their contributions; a branch's kind is decided once every contribution is lowered: a
+   branch whose potential contribution depends on a carrier, the environment or a value input is
+   a *switch branch* (one private flow pin, one selected equation, `E0418` from the device when two
+   selectors hold), and a selector that reads a probe of a potential-capable branch is `E0414`.
+2. **A `ddt` that is not a whole addend of an unconditional contribution is a derivative site** on
+   its own private pin (`d<k>.rate`, `d<k>.state`, abi.md A1's rule), so `2.0 * ddt(q)`, a `ddt` in
+   a `let`, an event read and one with an `abstol` share one mechanism. A core module's inputs
+   (`limit`, `ac_stim`, `bound_step`) are evaluated standalone, outside every condition.
+3. **A module is lowered once per value of its key params.** A param read by a params-only condition
+   that encloses a contribution, by an initial value, or through `inst.name` is structural: the
+   body is a variant named `Name~p=v`, a `--param` of such a param selects the variant before the
+   run, and a host `set` of it is refused (`E0803`). A zero-potential branch no flow reads merges.
+4. **A module with a value input, a result or an `analog` block is hoisted** like a module with a
+   result (Appendix C.1.1): the caller's expression is read where the callee reads it.
+5. **A parent reaches a child through the IR** (`inst.name`): a reached node or carrier is a node or
+   carrier of the parent's body bound by placement to the child's own; `p.inflow()` is an ammeter, a
+   zero-potential branch on an inside node; the authored `Child` names its own nodes with
+   `Terminal::Own`. A param's start value and a before-run binding are no change: `changed()` is
+   false and `prev()` is the value until the first timed `set` (the one cross-lane touch, in the digital
+   store).
+
+It supersedes nothing and extends MD-64 (hoisting) and MD-69 (derived params).
+
+**Scope:** `crates/piperine-ir`, `crates/piperine-plan`, `crates/piperine-transpile`,
+`crates/piperine-lang` (`types/`, `elab/`), `crates/piperine-analog-solver` (the `CAP` watch),
+`crates/piperine-digital-solver`, `crates/piperine-solver`, `crates/piperine-api`.
+**Status:** Accepted (2026-11-18), from the approved `.specs/features/analog-structure/design.md`.
+
 ### MD-72: the root package holds the integrated tests
 
 `root-e2e` (2026-11-19). The Book and the ngspice scenarios are held at the root.
