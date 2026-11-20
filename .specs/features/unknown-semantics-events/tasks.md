@@ -593,10 +593,10 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `tran_clipper` passes under `**Run paritytran**`
-- [ ] `cargo test -p piperine-cli --test twins` still counts sixteen twins
-- [ ] Code clarity: the new test reuses `TranRun`; no free helper added
-- [ ] Gate check passes: Full
+- [x] `tran_clipper` passes under `**Run paritytran**`
+- [x] `cargo test -p piperine-cli --test twins` still counts sixteen twins
+- [x] Code clarity: the new test reuses `TranRun`; no free helper added
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
