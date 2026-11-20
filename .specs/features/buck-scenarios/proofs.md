@@ -1,6 +1,6 @@
 # buck-scenarios proofs
 
-**HEAD**: edb08487
+**HEAD**: 6bfe5454
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 79 pass, 0 fail
@@ -117,62 +117,60 @@ test the_buck_has_its_bench_and_two_runs ... ok
 
 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
 
-   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-buck-scenarios/crates/piperine-cli)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.01s
-     Running tests/buck.rs (/var/tmp/piperine-target/debug/deps/buck-bbdfc91b7e8260da)
+    Finished `test` profile [unoptimized] target(s) in 0.27s
+     Running tests/buck.rs (/var/tmp/piperine-target-a/debug/deps/buck-e0a5ced46b7d0d71)
 ```
 
 `Run harness` - exit 0
 
 ```
-test scenario::trace::tests::largest_rise_is_the_biggest_step_up_and_negative_on_a_decay ... ok
-test scenario::trace::tests::mean_is_the_arithmetic_mean_of_the_rows ... ok
+test scenario::trace::tests::first_crossing_is_the_first_row_at_or_past_the_level_after_a_time ... ok
+test scenario::trace::tests::between_keeps_half_open_windows_and_an_empty_window_panics_naming_it ... ok
 test scenario::trace::tests::peak_to_peak_is_the_largest_minus_the_smallest ... ok
 test scenario::trace::tests::scaled_multiplies_every_value ... ok
 test scenario::trace::tests::settled_into_is_the_first_row_from_which_every_row_stays_inside ... ok
-test scenario::run::tests::each_run_builds_in_its_own_directory ... ok
-test scenario::stimulus::tests::a_stimulus_is_applied_to_the_session_and_its_drives_and_sets_land ... ok
-test scenario::run::tests::a_failed_run_is_kept_as_its_message_and_the_others_still_run ... ok
+test scenario::trace::tests::decay_time_constant_recovers_an_exponential ... ok
 test scenario::stimulus::tests::a_refused_action_is_returned_naming_it ... ok
+test scenario::stimulus::tests::a_stimulus_is_applied_to_the_session_and_its_drives_and_sets_land ... ok
+test scenario::run::tests::each_run_builds_in_its_own_directory ... ok
+test scenario::run::tests::a_failed_run_is_kept_as_its_message_and_the_others_still_run ... ok
 
-test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 25 filtered out; finished in 3.56s
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 25 filtered out; finished in 4.08s
 
-   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-buck-scenarios/crates/piperine-parity)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.59s
-     Running unittests src/lib.rs (/var/tmp/piperine-target/debug/deps/piperine_parity-fbb8a25f7a10f95a)
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running unittests src/lib.rs (/var/tmp/piperine-target-a/debug/deps/piperine_parity-6187a033365891a7)
 ```
 
 `Run supervisor` - exit 0
 
 ```
 running 3 tests
-test each_hiccup_lasts_1000_samples ... ok
-test the_supervisor_follows_its_state_table ... ok
 test power_good_asserts_after_64_and_drops_after_4 ... ok
+test the_supervisor_follows_its_state_table ... ok
+test each_hiccup_lasts_1000_samples ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.09s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.66s
 
-   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-buck-scenarios/crates/piperine-parity)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.07s
-     Running tests/buck_supervisor.rs (/var/tmp/piperine-target/debug/deps/buck_supervisor-4739e1539f46721a)
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running tests/buck_supervisor.rs (/var/tmp/piperine-target-a/debug/deps/buck_supervisor-ef1d5af335e10bba)
 ```
 
 `Run docs` - exit 0
 
 ```
 test state_records_the_cli_decision ... ok
-test state_records_the_observation_decision ... ok
-test state_records_the_unknown_semantics_decision ... ok
-test the_roadmap_marks_the_cli_item_done ... ok
-test state_records_the_derived_param_decision ... ok
 test the_roadmap_and_state_record_msl_fixes ... ok
-test the_roadmap_and_state_record_analog_structure ... ok
-test the_roadmap_and_state_record_root_e2e ... ok
 test the_instruction_files_say_the_host_crates_build ... ok
+test the_roadmap_and_state_record_analog_structure ... ok
+test state_records_the_unknown_semantics_decision ... ok
+test state_records_the_derived_param_decision ... ok
+test state_records_the_observation_decision ... ok
+test the_roadmap_marks_the_cli_item_done ... ok
+test gaps_drops_what_msl_fixes_closed ... ok
+test the_roadmap_and_state_record_root_e2e ... ok
 
 test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-buck-scenarios/crates/piperine-cli)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.46s
-     Running tests/docs.rs (/var/tmp/piperine-target/debug/deps/docs-93d5e8cdc98935cc)
+    Finished `test` profile [unoptimized] target(s) in 0.16s
+     Running tests/docs.rs (/var/tmp/piperine-target-a/debug/deps/docs-93bbd657b5852db6)
 ```
