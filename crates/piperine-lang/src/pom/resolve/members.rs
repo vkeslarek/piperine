@@ -56,6 +56,7 @@ pub(super) fn run<'a>(design: &Design, in_scope: InScope<'a>) -> Members {
     let reader = Reader { design, local_types: local_types(design), in_scope };
     let mut out = Members::default();
     let access = access_table(design);
+    let probe_operands = reader.probe_operands();
     for i in 0..design.expr_count() {
         let expr = ExprId(i as u32);
         if let Some(segment) = reader.reached_access(expr, &access) {
@@ -76,12 +77,15 @@ pub(super) fn run<'a>(design: &Design, in_scope: InScope<'a>) -> Members {
             if let Some((module, missing)) = error {
                 let owner = design.expr_node(expr).owner;
                 let module_name = design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str());
-                let (message, label) = if missing {
-                    (format!("no item `{}` in module `{module_name}`", name.text), "no such item")
+                let (code, message, label) = if missing {
+                    ("E0343", format!("no item `{}` in module `{module_name}`", name.text), "no such item")
+                } else if probe_operands.contains(&expr) {
+                    // §6 rule 7: a probe or a contribution on a node the module cannot reach.
+                    ("E0244", format!("the node `{}` of module `{module_name}` is not `pub`: the module cannot reach it (§6 rule 7)", name.text), "node out of reach")
                 } else {
-                    (format!("`{}` is not `pub` in module `{module_name}`", name.text), "not `pub`")
+                    ("E0343", format!("`{}` is not `pub` in module `{module_name}`", name.text), "not `pub`")
                 };
-                out.diagnostics.push((design.decl_data(owner).file, Diagnostic::new("E0343", message, name.span, label)));
+                out.diagnostics.push((design.decl_data(owner).file, Diagnostic::new(code, message, name.span, label)));
             }
         }
     }
@@ -117,6 +121,26 @@ impl Reader<'_> {
         let nature = self.design.nature_of(self.design.declared_type(item)?)?;
         let quantity = access.get(&segment.name.text)?.iter().copied().find(|q| self.design.decl_data(*q).parent == Some(nature))?;
         Some((*path, self.design.path_node(*path).segments.len() - 1, Resolution::Decl(quantity)))
+    }
+
+    /// The nodes named by the arguments of every access call (`v(c.x)`, `i(a, c.x)`, `potential(..)`)
+    /// as the expression of the node: what a probe or a contribution reads or drives (§6 rule 7).
+    fn probe_operands(&self) -> std::collections::BTreeSet<ExprId> {
+        let mut operands = std::collections::BTreeSet::new();
+        for i in 0..self.design.expr_count() {
+            let ExprKind::Call { callee, args, .. } = &self.design.expr_node(ExprId(i as u32)).kind else { continue };
+            let ExprKind::Path(path) = &self.design.expr_node(*callee).kind else { continue };
+            let is_access = match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Deferred(DeferReason::AmbiguousAccess)) => true,
+                Some(Resolution::Decl(decl)) => matches!(self.design.decl_data(decl).kind, DeclKind::Quantity(_)),
+                Some(Resolution::Builtin(id)) => matches!(id.info().name, "potential" | "flow"),
+                _ => false,
+            };
+            if is_access {
+                operands.extend(args.iter().map(|arg| self.unparenthesized(arg.value)));
+            }
+        }
+        operands
     }
 
     /// `expr` with its parentheses peeled.

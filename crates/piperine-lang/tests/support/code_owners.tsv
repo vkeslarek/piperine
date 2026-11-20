@@ -21,7 +21,6 @@ E0187	generics	L7 (traits and generic arguments)
 E0203	resolved-nets	L21
 E0224	resolved-nets	L21 (`others()`)
 E0242	resolved-nets	L23 (signal-flow)
-E0244	params-and-io	PI-12 AC 10, raised here
 E0260	resolved-nets	L25 (bundles)
 E0261	resolved-nets	L25
 E0262	resolved-nets	L25

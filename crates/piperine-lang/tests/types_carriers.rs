@@ -522,3 +522,21 @@ fn a_carrier_of_another_value_type_is_e0251() {
     let src = format!("{items}module Top() {{ signal w: Bit<u10>; signal v: Bit<u10>; let c = Wide(5, w); let d = Wide(w, v); }}");
     checked_top(&src, "Top");
 }
+
+#[test]
+fn a_probe_on_a_childs_private_node_is_e0244() {
+    // §6 rule 7 (`E0244`): a probe or a contribution naming a node of a child that is not `pub`
+    // cannot reach it. The same node under `pub`, and a port of the child, are accepted.
+    let child = "module Child(p: Electrical) { signal hidden: Electrical; }\n";
+    for (body, at) in [("i(x) +> v(c.hidden);", "hidden"), ("i(c.hidden) +> 1.0;", "hidden"), ("i(x) +> v(c.hidden, gnd);", "hidden")] {
+        let src = format!("{child}module Step() {{ signal x: Electrical; let c = Child(x); }}\nanalog for Step {{ {body} }}");
+        let design = Design::builder().source("top.msl", &src).build();
+        assert_eq!(codes(design.diagnostics()), ["E0244"], "{body}");
+        assert_eq!(snippet(&src, &design.diagnostics()[0]), at, "{body}");
+        assert!(design.diagnostics()[0].diagnostic.message.contains("`hidden`"), "{}", design.diagnostics()[0].diagnostic.message);
+    }
+    for (child, body) in [("module Child(p: Electrical) { pub signal hidden: Electrical; }\n", "i(x) +> v(c.hidden);"), (child, "i(x) +> v(c.p);")] {
+        let src = format!("{child}module Step() {{ signal x: Electrical; let c = Child(x); }}\nanalog for Step {{ {body} }}");
+        assert!(design_of(&src).diagnostics().is_empty(), "{body}");
+    }
+}

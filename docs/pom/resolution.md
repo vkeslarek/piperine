@@ -263,7 +263,7 @@ slot only.
   The call is listed in that method's `references()`. A value receiver stays `Deferred(ReceiverTypeUnknown)`:
   the POM does no trait solving, so a type checker links it.
 * A member item that is not `pub` still resolves, and `E0343` is reported at the member name. A
-  member that the instance's module does not have stays `Unresolved` and is also `E0343` (§8.4.8).
+  member that the instance's module does not have stays `Unresolved` and is also `E0343` (§8.4.8). A non-`pub` node that is the operand of a probe or a contribution is `E0244` instead (§6 rule 7).
 * A field a declared struct does not have stays `Unresolved` with no diagnostic: the POM has no
   code for it (only the eight binding codes), and a type checker reports it.
 * A method a known receiver does not have stays `Unresolved`, with no diagnostic.
@@ -331,6 +331,7 @@ parser, such as `E0900`) are copied into `Design::diagnostics()` first, with the
 | `E0201` | 8 | `§4` | a nature that repeats a field, mixes discrete and continuous fields, or has neither `value` nor `potential`; its `kind()` is `Invalid` | the nature's name |
 | `E0206` | 6 | `§4` | an access call whose first argument has a declared nature that declares no access of that name; the callee stays `Unresolved` and the call is not a `Probe` | the callee |
 | `E0211` | 7 | `§5.1` | a carrier method (one of B.1, or a function of the element nature's `impl`) called on an array of carriers; the method stays `Unresolved` and `arr[i].m()` resolves | the method name |
+| `E0244` | 7 | `§6` | a node of an instance that is not `pub`, named as the operand of a probe or a contribution (`v(c.x)`, `i(c.x) +> ..`): the module cannot reach it (§6 rule 7); the member is still resolved | the member name |
 | `E0263` | 6 | `§7` | a bundle literal that names a field the bundle lacks, or names one twice | the name (the second, when repeated) |
 | `E0320` | 6 | `§8.1` | a param block or a template field list that names no param of the module, or names one twice | the name (the second, when repeated) |
 | `E0330` | 2 | `§8.2` | a name defined more than once in a module (the second is reported, with a label on the first) | the repeated name |
