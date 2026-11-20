@@ -639,10 +639,10 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28` passes under `**Run bookmixed**`
-- [ ] `the_book_no_longer_says_settle_is_not_compiled` passes under `**Run docs**`
-- [ ] `**Run clibook**` and `**Run bookinventory**` pass
-- [ ] Gate check passes: Build
+- [x] `the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28` passes under `**Run bookmixed**`
+- [x] `the_book_no_longer_says_settle_is_not_compiled` passes under `**Run docs**`
+- [x] `**Run clibook**` and `**Run bookinventory**` pass
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build

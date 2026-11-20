@@ -474,3 +474,14 @@ fn the_buck_spec_holds_the_bench_bounds() {
     assert!(spec.contains("(`Clear`, `OverCurrent`, `OverVoltage`)"), "§8.5 names `Clear`");
     assert!(!spec.contains("`None`"), "the SPEC no longer names the cleared fault code `None`");
 }
+
+#[test]
+fn the_book_no_longer_says_settle_is_not_compiled() {
+    // unknown-semantics-events UE-07 AC 2 (T22): `settle` runs, so the Book's status paragraph, the buck's
+    // "Run it" box and the mixed chapter's introduction no longer list it among what the compiler refuses
+    let book = read("docs/book/content.html");
+    for stale in ["`settle` event.", "<code>settle</code> event.", "the check's <code>settle</code> is not compiled yet", "not compiled yet and is refused with P0001: the <code>settle</code> event"] {
+        assert!(!book.contains(stale), "the Book still says {stale:?}");
+    }
+    assert!(!book.contains("both commands refuse the file and run nothing"), "the buck's Run it box still says the file is refused");
+}

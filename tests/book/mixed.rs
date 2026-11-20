@@ -18,7 +18,7 @@ mod support {
     pub mod refusal;
 }
 
-use piperine::{Cell, Overrides};
+use piperine::{Cell, Field, Overrides};
 use support::chapter::Chapter;
 use support::faulty::Faulty;
 use support::model::Model;
@@ -113,10 +113,9 @@ fn the_cycle_counter_counts_the_located_crossings_of_the_sine() {
 
 #[test]
 fn the_math_methods_and_the_settle_event_run() {
-    // mixed~a6b3f8ed: "One thing the examples here use is not compiled yet and is refused with P0001: the
-    // settle event (the converter's check). The math methods of f64 such as sin (the sine sources) run":
-    // the sine source runs (the cycle counter above) and so does the `settle` check (mixed#10): the event
-    // runs since unknown-semantics-events T5 (L52); the sentence's prose is left for T22
+    // The chapter's introduction no longer lists `settle` among what is refused, and "the math methods of
+    // f64 such as sin (the sine sources) run": the sine source runs (the cycle counter above) and so does
+    // the `settle` check (mixed#10), since unknown-semantics-events T5 (L52); the sentence is gone (T22)
     let chapter = Chapter::read();
     CycleCounter::model(&chapter).run(Commands::cycles()).unwrap_or_else(|failure| panic!("`sin` runs: {failure}"));
     chapter.marked("buck.msl", "mixed#10").run(Commands::buck()).unwrap_or_else(|failure| panic!("the `settle` check runs (mixed#10): {failure}"));
@@ -163,13 +162,23 @@ fn the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28() {
     // ("Leave the `digital for Buck` block out and the converter runs, loop records and all"); mixed#10
     // (run): with it the file runs, the `settle` event is compiled (L52); mixed~9d07c4b9 "It checks, at every
     // time point after start-up, that the output stays within 50 mV of the target" (run with it);
-    // mixed~758eca03 "A buck converter steps 12 V down to 3.3 V ... the output settles near d . 12 V";
+    // mixed~117bf721 "With the check in the file, every time point after 10 ms is tested, and the run completes
+    // with every regulated record passing"; mixed~758eca03 "A buck converter steps 12 V down to 3.3 V ... the output settles near d . 12 V";
     // mixed~a32dcb77 "emit!(\"loop\", ...) is the window into the loop: one record per period with the sample,
     // the error and the duty just decided. duty = d prints the new value"; mixed~3bce4014 "At the end the error
     // is zero and the duty sits where 12 V times the duty, less the small drop in the switch, equals 3.3 V:
     // about 0.28"
     let chapter = Chapter::read();
-    chapter.marked("buck.msl", "mixed#10").run(Commands::buck()).unwrap_or_else(|failure| panic!("mixed#10, the converter with its `settle` check: {failure}"));
+    let mut with_checks = Commands::buck();
+    with_checks.streams.push("checks".to_string());
+    let checked = chapter.marked("buck.msl", "mixed#10").run(with_checks).unwrap_or_else(|failure| panic!("mixed#10, the converter with its `settle` check: {failure}"));
+    // UE-06 AC 2: every `regulated` check record after 10 ms is a pass (the bound is 50 mV, the Book's own)
+    let regulated: Vec<&_> = checked.stream("checks").into_iter().filter(|record| matches!(Fields::of(record, "name"), Field::Text(name) if name == "regulated")).collect();
+    assert!(!regulated.is_empty(), "the check runs at the time points after 10 ms");
+    for record in &regulated {
+        assert!(record.time > 10e-3, "the check is guarded by now() > 10m: {}", record.time);
+        assert_eq!(Fields::of(record, "pass"), &Field::Bool(true), "regulated at {:e} s: {:?}", record.time, record.fields);
+    }
     let records = Buck::loop_records(&chapter.marked("buck.msl", "mixed#8"));
     assert_eq!(records.len(), 1201, "one record per switching period of 10 us over 12 ms, the first at 0");
     assert!((records[1].0 - 1e-5).abs() < 1e-12 && (records[1200].0 - 12e-3).abs() < 1e-9, "the periods");
