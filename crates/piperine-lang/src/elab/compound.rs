@@ -538,6 +538,8 @@ impl Elaboration<'_, '_> {
                 let is = self.emit(Expr::Bool(true), ValueType::Bool, origin);
                 Some(Pair { is, val, literal: Some(true) })
             }
+            // A call of a function that returns an `Option`: the pair of its two halves (`returns.rs`).
+            ExprKind::Call { .. } if let Some(function) = self.calls_option_function(expr) => self.lower_option_call(scope, expr, function),
             // `x.known()`: the two flag-total reads of `x`, each reading `x` where it stands.
             ExprKind::MethodCall { recv, .. } if self.types.builtin(expr) == Some(Builtin::Known) => {
                 let read = self.lower_expr(scope, *recv)?;

@@ -22,10 +22,34 @@ use super::known::Flag;
 use crate::msl::Span;
 use crate::pom::{DeclId, FileId};
 
+/// Which value of the function's result a variant computes. An `Option` result is no IR value, so
+/// the function is two IR functions, one for each half of the pair `(is, val)` (MD-67 item 2): both
+/// run the whole body, each returns its half.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Half {
+    /// The result itself: any function that does not return an `Option`.
+    Whole,
+    /// Whether the `Option` is `Some`.
+    Presence,
+    /// The payload of the `Option`, the zero of its type for `None`.
+    Payload,
+}
+
+impl Half {
+    /// What the half adds to the function's name.
+    fn suffix(self) -> &'static str {
+        match self {
+            Half::Whole => "",
+            Half::Presence => ".is",
+            Half::Payload => ".val",
+        }
+    }
+}
+
 /// The variants requested so far.
 #[derive(Default)]
 pub(super) struct Variants {
-    ids: BTreeMap<(DeclId, Vec<Flag>), FunctionId>,
+    ids: BTreeMap<(DeclId, Vec<Flag>, Half), FunctionId>,
     /// By id: the result type once the variant is lowered; `None` while its body is being
     /// lowered (a call met then is a recursion) or after it failed.
     results: Vec<Option<ValueType>>,
@@ -40,12 +64,13 @@ pub(super) struct Variants {
 impl Variants {
     /// The name of the variant of `name` for `pattern`: the source name when every argument is
     /// known, else `name~bits`, a `1` for each argument that may be unknown.
-    pub(super) fn name(name: &str, pattern: &[Flag]) -> String {
+    pub(super) fn name(name: &str, pattern: &[Flag], half: Half) -> String {
+        let suffix = half.suffix();
         if pattern.iter().all(|f| *f == Flag::Plain) {
-            return name.to_string();
+            return format!("{name}{suffix}");
         }
         let bits: String = pattern.iter().map(|f| if *f == Flag::Flagged { '1' } else { '0' }).collect();
-        format!("{name}~{bits}")
+        format!("{name}~{bits}{suffix}")
     }
 
     /// Whether the variant `id` reads a continuous value; `false` while it is being lowered.
@@ -63,8 +88,8 @@ impl Elaboration<'_, '_> {
     /// The variant of `function` for `pattern` and its result type, lowered the first time it is
     /// reached. `None` after a diagnostic: the variant failed to lower, or the call at `span`
     /// reaches a variant whose body is being lowered (the IR has no recursion).
-    pub(super) fn request(&mut self, function: DeclId, pattern: Vec<Flag>, file: FileId, span: Span) -> Option<(FunctionId, ValueType)> {
-        if let Some(id) = self.variants.ids.get(&(function, pattern.clone())).copied() {
+    pub(super) fn request(&mut self, function: DeclId, pattern: Vec<Flag>, half: Half, file: FileId, span: Span) -> Option<(FunctionId, ValueType)> {
+        if let Some(id) = self.variants.ids.get(&(function, pattern.clone(), half)).copied() {
             return match self.variants.results[id.index()].clone() {
                 Some(ret) => Some((id, ret)),
                 None if self.variants.open.contains(&id) => {
@@ -75,12 +100,12 @@ impl Elaboration<'_, '_> {
             };
         }
         let id = FunctionId(self.variants.results.len() as u32);
-        self.variants.ids.insert((function, pattern.clone()), id);
+        self.variants.ids.insert((function, pattern.clone(), half), id);
         self.variants.results.push(None);
         self.variants.specs.push(None);
         self.variants.continuous.push(false);
         self.variants.open.insert(id);
-        let spec = self.lower_function(function, &pattern);
+        let spec = self.lower_function(function, &pattern, half);
         self.variants.open.remove(&id);
         let spec = spec?;
         let ret = spec.ret.clone();

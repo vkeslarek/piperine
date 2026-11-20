@@ -618,8 +618,8 @@ T63
 
 **Done when**:
 
-- [ ] `an_early_return_gives_the_caller_its_value` and `the_question_mark_on_none_returns_none` pass under `**Run srcctl**`
-- [ ] Gate check passes: Full
+- [x] `an_early_return_gives_the_caller_its_value` and `the_question_mark_on_none_returns_none` pass under `**Run srcctl**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

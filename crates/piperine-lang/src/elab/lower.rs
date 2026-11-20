@@ -12,6 +12,8 @@ use piperine_ir::{BinaryOp, Branch, Condition, Constant, Expr, ExprId as Lowered
 
 use super::compound::EnumLayout;
 use super::control::LoopFrame;
+use super::returns::FunctionResult;
+use super::variants::Half;
 use super::consts::{Bindings, Folded};
 use super::known::Flag;
 use super::elaborator::Elaboration;
@@ -85,11 +87,14 @@ pub(super) struct Scope {
     pub(super) may_be_unknown: bool,
     /// The loops the code being lowered sits in, innermost last (`control.rs`).
     pub(super) loops: Vec<LoopFrame>,
+    /// What a `return` of the function being lowered gives (`returns.rs`); `None` outside a function
+    /// whose body returns early.
+    pub(super) result: Option<FunctionResult>,
 }
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), may_be_unknown: false, loops: Vec::new() }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), may_be_unknown: false, loops: Vec::new(), result: None }
     }
 }
 
@@ -330,6 +335,8 @@ impl Elaboration<'_, '_> {
             ExprKind::For { pat, iter, body } => self.lower_for(scope, *pat, *iter, body, origin),
             ExprKind::Break(value) => self.lower_break(scope, *value, node.span, origin),
             ExprKind::Continue => Some(self.lower_continue(origin)),
+            ExprKind::Return(value) => self.lower_return(scope, *value, node.span, origin),
+            ExprKind::Try(inner) => self.lower_try(scope, *inner, node.span, origin),
             ExprKind::Call { args, class, .. } => self.lower_call(scope, expr, &args.iter().map(|a| a.value).collect::<Vec<_>>(), *class, ty, origin),
             ExprKind::MethodCall { recv, args, .. } if self.types.builtin(expr).is_some() => {
                 let builtin = self.types.builtin(expr)?;
@@ -416,7 +423,7 @@ impl Elaboration<'_, '_> {
             (_, Some(Callee::Function(function))) => {
                 let lowered = self.lower_arguments(scope, expr, function)?;
                 let pattern: Vec<Flag> = lowered.iter().map(|a| self.flag(*a)).collect();
-                let (id, ret) = self.request(function, pattern, scope.file, span)?;
+                let (id, ret) = self.request(function, pattern, Half::Whole, scope.file, span)?;
                 Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin))
             }
             (_, Some(Callee::Core(id))) => self.lower_core(scope, expr, id, args, ty, origin),
@@ -438,7 +445,7 @@ impl Elaboration<'_, '_> {
     /// The arguments of the call `expr` of `function`, one IR argument per parameter in parameter
     /// order, from the checker's binding of the call (§3.2): an `Option<T>` parameter takes two,
     /// its flag and its payload, a parameter left out `(false, zero)`. `None` after a diagnostic.
-    fn lower_arguments(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId) -> Option<Vec<LoweredExpr>> {
+    pub(super) fn lower_arguments(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId) -> Option<Vec<LoweredExpr>> {
         let Some(binding) = self.types.binding(expr).map(<[_]>::to_vec) else {
             self.unsupported(scope.file, self.design.expr_node(expr).span, "a call whose arguments the type checker did not bind");
             return None;

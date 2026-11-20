@@ -226,3 +226,55 @@ fn an_empty_range_runs_zero_times_in_analog_too() {
     assert!((at[0] - 2.0).abs() <= SOLVE * 2.0, "`for _ in 0..0` keeps y: {}", at[0]);
     assert!((at[1] - 3.0).abs() <= SOLVE * 3.0, "an empty param range and `while false` keep z: {}", at[1]);
 }
+
+/// An `i16` carrier value: two bytes little-endian, the known byte, one byte of padding.
+fn short(v: i16) -> Vec<u8> {
+    let mut bytes = v.to_le_bytes().to_vec();
+    bytes.extend([1, 0]);
+    bytes
+}
+
+#[test]
+fn an_early_return_gives_the_caller_its_value() {
+    // CV-03 AC 1 (§1.8.13): `return e` from inside a loop, an `if` and a `match` arm gives the
+    // caller `e` and skips the rest of the body.
+    let names = ["a", "b", "c", "d", "e", "f"];
+    let committed = first_commits("returns.msl", &names);
+    let first_over = |limit: u8| (0..200u8).find(|k| k * k > limit).unwrap_or(255);
+    let clamp_low = |x: i16| if x < 0 { 0 } else { x };
+    let named = |m: u8| -> u8 {
+        let v = match m {
+            0 => return 100,
+            1 => 7,
+            _ => m * 2,
+        };
+        v + 1
+    };
+    let wanted = [byte(first_over(50)), short(clamp_low(-5)), short(clamp_low(5)), byte(named(0)), byte(named(1)), byte(named(5))];
+    for (k, name) in names.iter().enumerate() {
+        assert_eq!(committed[k], wanted[k], "{name} is the value Rust gives");
+    }
+}
+
+#[test]
+fn the_question_mark_on_none_returns_none() {
+    // CV-03 AC 2 (§1.8.14): in a function whose result is an `Option`, `x?` is the payload of
+    // `Some` and returns `None` from the function for `None`, also through a second call.
+    let half = |x: Option<u8>| -> Option<u8> { Some(x? / 2) };
+    let twice = |x: Option<u8>| -> Option<u8> {
+        let a = half(x)?;
+        half(Some(a))
+    };
+    let names = ["g", "h", "some", "none", "third"];
+    let committed = first_commits("returns.msl", &names);
+    let wanted = [
+        byte(half(Some(8)).unwrap_or(99)),
+        byte(half(None).unwrap_or(99)),
+        byte(u8::from(half(Some(8)).is_some())),
+        byte(u8::from(half(None).is_none())),
+        byte(twice(Some(8)).unwrap_or(99)),
+    ];
+    for (k, name) in names.iter().enumerate() {
+        assert_eq!(committed[k], wanted[k], "{name} is the value Rust gives");
+    }
+}

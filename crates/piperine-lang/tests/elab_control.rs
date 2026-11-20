@@ -81,3 +81,14 @@ fn loops_lower_to_the_loops_of_the_ir() {
     let text = ir.print_structural();
     assert!(text.contains("while") && !text.contains("for k in"), "{text}");
 }
+
+#[test]
+fn a_function_returning_an_option_is_two_ir_functions() {
+    // MD-67 item 2 (CV-03): an `Option` is the pair `(is, val)`; a function that returns one is
+    // the IR function of each half, and a call reads both.
+    let items = "fn halved(x: Option<u8>) -> Option<u8> { let v = x?; Some(v / 2) }";
+    let src = reacting(items, "q <- halved(Some(8)).unwrap_or(99);");
+    let ir = Elab::ir(&src, "Top");
+    let names: Vec<String> = ir.functions().map(|f| f.name().to_string()).collect();
+    assert_eq!(names, vec!["halved.is".to_string(), "halved.val".to_string()]);
+}
