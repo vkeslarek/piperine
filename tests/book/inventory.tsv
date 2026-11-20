@@ -459,16 +459,16 @@ claim	abi~5856e308	5856e308decfdc14	prose	-	-	A call returns OK, FAULT (with a m
 claim	abi~978c8986	978c8986b77bf2f9	prose	-	-	No macro is involved: a generic function produces the C thunks.
 claim	abi~e42ad9e5	e42ad9e55b310b40	prose	-	-	It runs its own clock up to there, or stops earlier at its first output, because that output may come back to it.
 claim	abi~09170599	09170599d8835780	prose	-	-	A time at which the analog solver produces an accepted solution and runs the time-point procedure.
-claim	solver~fe59ce49	fe59ce49a19424cb	pending	-	-	This chapter explains what it does with them, so that you can predict what a simulation will do and read what it reports.
-claim	solver~83cb975b	83cb975b79c20f2c	pending	-	-	The analog and digital solvers never call each other: everything that crosses between them is an event the owner carries.
-claim	solver~73d81a62	73d81a62e1d21515	pending	-	-	When plain Newton fails, the solver makes the problem easier and walks back.
-claim	solver~81105bea	81105bea4589431f	pending	-	-	If that fails, it turns all sources off and ramps them back up (source stepping).
-claim	solver~53123473	53123473c254e4be	pending	-	-	After 20 rounds that still change something the solver stops with E0506 and names the nets that kept moving, rather than return a wrong answer.
-claim	solver~ce518374	ce518374bc9e9752	pending	-	-	It stops at the first instant that touches the analog side, and the step is shortened to land exactly there.
-claim	solver~4d1bc10b	4d1bc10b58a44d4a	pending	-	-	If Newton failed or the error estimate is too big, everything returns to the checkpoint taken at the start, and the step is retried smaller.
-claim	solver~c2aa698e	c2aa698ebf814cfc	pending	-	-	What the instant changed reaches the analog side.
-claim	solver~4642dd47	4642dd47b67015c0	pending	-	-	A loop of functions is accepted only if it passes through a net marked to relax, which is iterated until it stops changing.
-claim	solver~dbaf149d	dbaf149df95de26e	pending	-	-	After 1000 microsteps the solver stops with E0501 and names the nets that keep changing.
+claim	solver~fe59ce49	fe59ce49a19424cb	prose	-	-	This chapter explains what it does with them, so that you can predict what a simulation will do and read what it reports.
+claim	solver~83cb975b	83cb975b79c20f2c	holds	piperine/book_solver::the_two_sides_of_the_solver_never_depend_on_each_other	-	The analog and digital solvers never call each other: everything that crosses between them is an event the owner carries.
+claim	solver~73d81a62	73d81a62e1d21515	prose	-	-	When plain Newton fails, the solver makes the problem easier and walks back.
+claim	solver~81105bea	81105bea4589431f	prose	-	-	If that fails, it turns all sources off and ramps them back up (source stepping).
+claim	solver~53123473	53123473c254e4be	holds	piperine/book_solver::an_operating_point_that_never_settles_stops_after_20_rounds_with_e0506_naming_its_nets	-	After 20 rounds that still change something the solver stops with E0506 and names the nets that kept moving, rather than return a wrong answer.
+claim	solver~ce518374	ce518374bc9e9752	holds	piperine/book_solver::a_step_lands_exactly_on_a_digital_instant_and_what_it_changed_reaches_the_analog_side	-	It stops at the first instant that touches the analog side, and the step is shortened to land exactly there.
+claim	solver~4d1bc10b	4d1bc10b58a44d4a	prose	-	-	If Newton failed or the error estimate is too big, everything returns to the checkpoint taken at the start, and the step is retried smaller.
+claim	solver~c2aa698e	c2aa698ebf814cfc	holds	piperine/book_solver::a_step_lands_exactly_on_a_digital_instant_and_what_it_changed_reaches_the_analog_side	-	What the instant changed reaches the analog side.
+claim	solver~4642dd47	4642dd47b67015c0	holds	piperine/book_solver::a_loop_of_undelayed_definitions_is_refused_when_the_design_is_built_naming_its_functions	-	A loop of functions is accepted only if it passes through a net marked to relax, which is iterated until it stops changing.
+claim	solver~dbaf149d	dbaf149df95de26e	holds	piperine/book_solver::an_instant_that_never_goes_quiet_stops_after_1000_microsteps_with_e0501_naming_its_nets	-	After 1000 microsteps the solver stops with E0501 and names the nets that keep changing.
 claim	compiler~696ad77d	696ad77df2130b34	holds	piperine/book_compiler::the_intermediate_form_prints_in_a_stable_form	-	It is an object model, not a text format, but it prints in a stable form for reading and for tests.
 claim	compiler~0f9a1fec	0f9a1fec1e2a5725	holds	piperine/book_compiler::every_circuit_of_the_comparison_table_has_a_twin_and_a_scenario_test	-	Every circuit the path runs has a twin written for ngspice, and a test runs both and compares every printed number.
 claim	compiler~a16be3e7	a16be3e7c5d562a6	holds	piperine/book_compiler::the_reverse_bias_sweep_goes_down_to_minus_20_volts	-	Diode under reverse bias to −20 V
@@ -540,11 +540,11 @@ claim	cli~b47893cf	b47893cf294b3cf6	pending	-	-	--print vuot, --stream tripp, --
 claim	cli~771ae41d	771ae41ddf0bbebe	pending	-	-	E0802
 claim	cli~a6b80de0	a6b80de009e7ed71	pending	-	-	The design refuses the value: the param's where r > 0.0 fails.
 claim	cli~39a2cb1d	39a2cb1dbbfe80b4	pending	-	-	E0170
-claim	structure~e6791845	e679184513f3ee4f	pending	-	-	It reads the command line, calls piperine-api and lays out the text; every rule of what a run prints and judges lives in the library.
-claim	structure~b45cc292	b45cc292b6849768	pending	-	-	It knows neither the language nor the solver, and prints in a stable form for reading.
-claim	structure~f9cbf76a	f9cbf76a7374932d	pending	-	-	It prints the design as Rust, compiles it once with rustc, keeps the result in a cache and loads it.
-claim	structure~58f974e3	58f974e3566763f4	pending	-	-	Until it is, piperine check gives the same diagnostics on the command line.
-claim	structure~00d9ae38	00d9ae382cd12fca	pending	-	-	Everything that crosses between analog and digital is an event the owner of time carries.
+claim	structure~e6791845	e679184513f3ee4f	prose	-	-	It reads the command line, calls piperine-api and lays out the text; every rule of what a run prints and judges lives in the library.
+claim	structure~b45cc292	b45cc292b6849768	holds	piperine/book_structure::the_intermediate_form_crate_knows_neither_the_language_nor_the_solver	-	It knows neither the language nor the solver, and prints in a stable form for reading.
+claim	structure~f9cbf76a	f9cbf76a7374932d	holds	piperine/book_structure::the_compiled_backend_compiles_once_and_keeps_the_result_in_its_cache	-	It prints the design as Rust, compiles it once with rustc, keeps the result in a cache and loads it.
+claim	structure~58f974e3	58f974e3566763f4	binary	piperine-cli/commands::check_renders_every_diagnostic_and_exits_1	-	Until it is, piperine check gives the same diagnostics on the command line.
+claim	structure~00d9ae38	00d9ae382cd12fca	holds	piperine/book_structure::analog_and_digital_meet_only_in_the_owner_of_time	-	Everything that crosses between analog and digital is an event the owner of time carries.
 claim	cheatsheet~a9561024	a956102475bf9f2b	holds	piperine/book_cheatsheet::a_name_of_yours_hides_the_library_but_not_the_core	-	Yours hides both, except a core name (E0457).
 claim	welcome~37aa8247	37aa824721bf86c4	holds	piperine/book_welcome::the_rc_project_holds_its_operating_point_and_its_netlist	-	At rest no current flows, so the output sits at the source's 1 V.
 claim	welcome~937d7801	937d7801efa02527	holds	piperine/book_welcome::the_rc_step_charges_as_the_book_says	-	The second run is a transient of 5 µs, printed every microsecond:
