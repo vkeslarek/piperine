@@ -287,6 +287,11 @@ impl<'a> Waveforms<'a> {
         Trace::of(&self.ran.table, "buck.vout")
     }
 
+    /// The input node, in volts.
+    fn vin(&self) -> Trace {
+        Trace::of(&self.ran.table, "buck.vin")
+    }
+
     /// The inductor current, in amperes (the sense output over 0.1 V/A, §2).
     fn inductor_current(&self) -> Trace {
         Trace::of(&self.ran.table, "buck.isense").scaled(Timing::AMPERES_PER_VOLT)
@@ -418,6 +423,7 @@ impl Suite {
     /// The runs of the families this target judges, with each one's stimulus.
     fn plan() -> Vec<(&'static str, Stimulus)> {
         vec![
+            (BrownoutFamily::RUN, BrownoutFamily::stimulus()),
             (FaultsFamily::RUN, FaultsFamily::stimulus()),
             (LoadLineFamily::RUN, LoadLineFamily::stimulus()),
             (SetpointFamily::RUN, SetpointFamily::stimulus()),
@@ -992,4 +998,111 @@ fn s6_both_switches_stay_off_after_over_voltage() {
 fn faults_passes_every_check() {
     // BS-08 AC 4, SPEC §10 S10
     FaultsFamily::assert_every_check_passed();
+}
+
+// ---------------------------------------------------------------------------------------------
+// The brown-out family: S7 (BS-06 AC 1 to AC 5)
+// ---------------------------------------------------------------------------------------------
+
+/// S7 on one run: Vin falls from 12 V to 7.5 V at 50 mV/µs, holds, and rises back.
+struct BrownoutFamily;
+
+impl BrownoutFamily {
+    /// Vin starts to fall.
+    const FALL: f64 = 1.25e-3;
+    /// Vin starts to rise again, after 60 µs at 7.5 V (§10.1).
+    const RISE: f64 = 1.40e-3;
+    /// The 90 µs a 4.5 V ramp takes at 50 mV/µs (§10.1).
+    const RAMP: f64 = 90e-6;
+    /// The UVLO falling threshold (§8.1).
+    const UVLO_FALLING: f64 = 8.0;
+    /// The UVLO rising threshold (§8.1).
+    const UVLO_RISING: f64 = 8.5;
+
+    /// The first time `buck.vin` is at or below 8.0 V.
+    fn falls_through_8_v() -> f64 {
+        Self::waves().vin().first_crossing(Self::UVLO_FALLING, Crossing::Falling, Self::FALL).expect("buck.vin never falls through 8.0 V")
+    }
+
+    /// The first time `buck.vin` is at or above 8.5 V after it fell through 8.0 V.
+    fn rises_through_8_5_v() -> f64 {
+        Self::waves().vin().first_crossing(Self::UVLO_RISING, Crossing::Rising, Self::falls_through_8_v()).expect("buck.vin never rises through 8.5 V")
+    }
+
+    /// The time `mode` first reads `Off` after Vin starts to fall.
+    fn off_entry() -> f64 {
+        Self::waves().mode().first_time(Supervisor::OFF, Self::FALL).expect("mode never reads Off in the brown-out")
+    }
+
+    /// The time `mode` first reads `SoftStart` after the entry into `Off`.
+    fn soft_start_entry() -> f64 {
+        Self::waves().mode().first_time(Supervisor::SOFT_START, Self::off_entry()).expect("mode never reads SoftStart after the brown-out")
+    }
+}
+
+impl Family for BrownoutFamily {
+    const RUN: &'static str = "brownout";
+
+    fn stimulus() -> Stimulus {
+        let mut host = BuckHost::at_rest();
+        host.enable(1e-6).line(12.0, 7.5, Self::FALL, Self::RAMP).line(7.5, 12.0, Self::RISE, Self::RAMP);
+        host.stimulus()
+    }
+}
+
+#[test]
+fn brownout_regulates_at_3_3_v_with_pgood_before_its_first_stimulus() {
+    BrownoutFamily::assert_regulating_before_the_first_stimulus();
+}
+
+#[test]
+fn s7_off_at_the_sample_after_vin_falls_through_8_v() {
+    // BS-06 AC 1, SPEC §8.1 and §10.1: `Off` within 2.02 us after the crossing, and not before
+    let (crossing, off) = (BrownoutFamily::falls_through_8_v(), BrownoutFamily::off_entry());
+    eprintln!("S7: buck.vin falls through 8.0 V at {crossing:e} s, mode reads Off {:.3} us later (0 to 2.02 us)", (off - crossing) * 1e6);
+    assert!((0.0..=Timing::NEXT_SAMPLE).contains(&(off - crossing)), "mode reads Off {:e} s after the crossing", off - crossing);
+}
+
+#[test]
+fn s7_both_switches_off_while_off() {
+    // BS-06 AC 2, SPEC §8: both gate commands low in every `Off` row from one grid row after the entry
+    let (waves, from, to) = (BrownoutFamily::waves(), BrownoutFamily::off_entry() + Timing::GRID, BrownoutFamily::soft_start_entry());
+    let (high, low) = (waves.high_side().between(from, to).holds(0), waves.low_side().between(from, to).holds(0));
+    eprintln!("S7: hs_cmd {high:?}, ls_cmd {low:?} over {from:e} s to {to:e} s");
+    assert!(high.is_ok(), "the high side departs: {high:?}");
+    assert!(low.is_ok(), "the low side departs: {low:?}");
+}
+
+#[test]
+fn s7_pgood_low_while_off() {
+    // BS-06 AC 3, SPEC §8.6: `pgood` low in every `Off` row
+    let (waves, from, to) = (BrownoutFamily::waves(), BrownoutFamily::off_entry(), BrownoutFamily::soft_start_entry());
+    let held = waves.pgood().between(from, to).holds(0);
+    eprintln!("S7: pgood over {from:e} s to {to:e} s: {held:?}");
+    assert!(held.is_ok(), "pgood departs from low: {held:?}");
+}
+
+#[test]
+fn s7_fault_unchanged_while_off() {
+    // BS-06 AC 4, SPEC §8.1: UVLO is not a fault, so `fault` keeps its value (`Clear`)
+    let (waves, from, to) = (BrownoutFamily::waves(), BrownoutFamily::off_entry(), BrownoutFamily::soft_start_entry());
+    let held = waves.fault().between(from, to).holds(Supervisor::CLEAR);
+    eprintln!("S7: fault over {from:e} s to {to:e} s: {held:?}");
+    assert!(held.is_ok(), "fault departs from Clear: {held:?}");
+}
+
+#[test]
+fn s7_soft_start_at_the_sample_after_vin_rises_through_8_5_v() {
+    // BS-06 AC 5, SPEC §8.1 and §10.1: `SoftStart` within 2.02 us after the crossing, `Off` until it
+    let (crossing, off, soft) = (BrownoutFamily::rises_through_8_5_v(), BrownoutFamily::off_entry(), BrownoutFamily::soft_start_entry());
+    let held = BrownoutFamily::waves().mode().between(off, crossing).holds(Supervisor::OFF);
+    eprintln!("S7: buck.vin rises through 8.5 V at {crossing:e} s, SoftStart {:.3} us later (0 to 2.02 us); mode over the gap: {held:?}", (soft - crossing) * 1e6);
+    assert!(held.is_ok(), "mode leaves Off before the crossing: {held:?}");
+    assert!((0.0..=Timing::NEXT_SAMPLE).contains(&(soft - crossing)), "mode reads SoftStart {:e} s after the crossing", soft - crossing);
+}
+
+#[test]
+fn brownout_passes_every_check() {
+    // BS-08 AC 4, SPEC §10 S10
+    BrownoutFamily::assert_every_check_passed();
 }
