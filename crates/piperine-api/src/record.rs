@@ -95,6 +95,13 @@ impl Streams {
         paths
     }
 
+    /// Whether `bytes` at `path` is the write of a stream's `RECORD` pin, which the digital side
+    /// also reports as the net `path` taking a value: a stream may share its name with a signal, and
+    /// a record's bytes (its fields and the `maybe` flag) are no value of that signal's type.
+    pub fn is_record_write(&self, path: &str, bytes: &[u8]) -> bool {
+        self.pins.get(path).is_some_and(|(_, _, layout)| layout.size as usize == bytes.len())
+    }
+
     /// Keeps only the streams `entries` name (CLI-12 AC 1, 2): an entry is a stream's name,
     /// which keeps that stream of every instance, or one stream's full path
     /// `<instance path>.<stream>`. No entry keeps every stream. An entry that matches no stream
@@ -215,7 +222,7 @@ impl Sink for Delivery {
     fn observe(&mut self, o: &Observation) {
         // a change with bytes is a net taking a value; one with none is an event firing
         if let (Some(recorder), ObservationKind::Change { bytes }) = (&self.recorder, &o.kind) {
-            if !bytes.is_empty() {
+            if !bytes.is_empty() && !self.streams.is_record_write(&o.path, bytes) {
                 recorder.borrow_mut().change(&o.path, o.time, bytes);
             }
         }
