@@ -230,18 +230,17 @@ fn e0404_a_commit_belongs_in_a_reaction() {
 
 #[test]
 fn the_status_paragraph_lists_what_is_still_refused_and_one_item_runs() {
-    // welcome~5b11a01a (disputed): "Parts of the language beyond that are still refused by name with
-    // P0001: in analog, noise, idt, delay and math methods such as sin; elsewhere, generic modules,
-    // params of an integer type, resolved natures such as Wire and the settle event." Every item is
-    // `P0001` but `sin`: `msl-fixes` made the math methods run, so the sentence is stale. GAPS.md
-    // section 11 lists it for the user; when the Book changes this test follows its answer
+    // welcome~a17f566a: "Parts of the language beyond that are still refused by name with P0001: in analog,
+    // noise, idt and delay; elsewhere, generic modules, params of an integer type, resolved natures such as
+    // Wire and the settle event." Every item is `P0001`; the math methods such as `sin`, which the sentence
+    // no longer lists, run
     let p0001 = |row: &str, source: &str, message: &str| {
         let model = Model::written("refused.msl", source);
         let overrides = Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() };
         let given = Refusal::of(model.run(overrides), row);
         assert!(given.iter().any(|(code, text)| code == "P0001" && text == message), "{source:?} gives {given:?}");
     };
-    let row = "welcome~5b11a01a";
+    let row = "welcome~a17f566a";
     p0001(row, "module Top() { signal p: Electrical; }\nanalog for Top { i(p, gnd) +> white_noise(1e-12, \"n\"); }\n", "core primitive `noise` is not supported yet");
     p0001(row, "module Top() { signal p: Electrical; }\nanalog for Top { i(p, gnd) +> idt(v(p)); }\n", "generic module is not supported yet");
     p0001(row, "module Top() { signal p: Electrical; signal q: Electrical; }\nanalog for Top { v(q) +> delay(v(p), 1n); }\n", "core primitive `delay` is not supported yet");

@@ -115,6 +115,18 @@ impl Streams {
         Some(self.record(o, *site, bytes))
     }
 
+    /// The instant of `o` when it is a `sim` record whose `finish` is true, whether or not the run
+    /// keeps the `sim` stream: a model's `finish()` ends the run whatever streams the host asked for.
+    pub fn finish_of(&self, o: &Observation) -> Option<f64> {
+        let ObservationKind::Record { site, bytes } = &o.kind else { return None };
+        let (_, stream, _) = self.pins.get(&o.path)?;
+        if stream.name != "sim" {
+            return None;
+        }
+        let record = self.record(o, *site, bytes).ok()?;
+        record.fields.iter().any(|(name, field)| name == "finish" && *field == Field::Bool(true)).then_some(record.time)
+    }
+
     fn record(&self, o: &Observation, site: Option<(u32, u32)>, bytes: &[u8]) -> Result<Record, Failure> {
         let refused = |why: String| Failure::Backend(format!("a record on `{}` at {}: {why}", o.path, o.time));
         let (instance, stream, layout) = self.pins.get(&o.path).ok_or_else(|| refused("no stream of the design has that path".into()))?;
@@ -190,13 +202,11 @@ impl Sink for Delivery {
                 recorder.borrow_mut().change(&o.path, o.time, bytes);
             }
         }
+        if let Some(at) = self.streams.finish_of(o) {
+            *self.finished.borrow_mut() = Some(at);
+        }
         match self.streams.decode(o) {
-            Some(Ok(record)) => {
-                if record.stream == "sim" && record.fields.iter().any(|(name, field)| name == "finish" && *field == Field::Bool(true)) {
-                    *self.finished.borrow_mut() = Some(record.time);
-                }
-                self.sink.borrow_mut().record(&record)
-            }
+            Some(Ok(record)) => self.sink.borrow_mut().record(&record),
             Some(Err(failure)) => {
                 self.failure.borrow_mut().get_or_insert(failure);
             }

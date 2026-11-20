@@ -265,17 +265,52 @@ fn the_options_carry_the_names_ngspice_gives_its_options_in_lowercase() {
     RcProject::model(&chapter, &format!("[run.tuned]\nbench = \"benches/step.msl\"\nanalysis = \"op\"\n{keys}")).of_run("tuned").run(Overrides::default()).unwrap_or_else(|failure| panic!("every key is a key of the run table: {failure}"));
 }
 
+/// A node with two stable operating points, `+-sqrt(3)` and an unstable one at 0: a source of 0 V through
+/// 1 ohm into the node `a`, where a capacitor and the cubic conductance `v^3 - 4v` hang to ground. The seed
+/// of a `nodeset` picks the root the operating point converges to.
+struct Bistable;
+
+impl Bistable {
+    /// The design, as one file.
+    const SOURCE: &'static str = "pub module Source(p: Electrical, n: Electrical) { dc: f64 = 0.0; }\nanalog for Source { v(p, n) +> dc + ac_stim(1.0); }\npub module Res(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Res { i(p, n) +> v(p, n) / r; }\npub module Cap(p: Electrical, n: Electrical) { c: f64 = 1u; }\nanalog for Cap { i(p, n) +> ddt(c * v(p, n)); }\npub module Cubic(p: Electrical, n: Electrical) {}\nanalog for Cubic { i(p, n) +> v(p, n) * v(p, n) * v(p, n) - 4.0 * v(p, n); }\nmodule Top() {\n    signal s: Electrical;\n    signal a: Electrical;\n    let v1 = Source(s, gnd);\n    let r1 = Res(s, a) { r: 1.0 };\n    let c1 = Cap(a, gnd);\n    let nl = Cubic(a, gnd);\n}\n";
+
+    /// The run `analysis` with the node `a` seeded at `seed`, tight so a root is held to its digits.
+    fn run(analysis: Overrides, seed: f64) -> Ran {
+        let tight = Overrides { top: Some("Top".to_string()), reltol: Some(1e-12), vntol: Some(1e-12), print: vec!["a".to_string()], nodeset: vec![("a".to_string(), seed)], ..analysis };
+        Model::written("bistable.msl", Self::SOURCE).run(tight).unwrap_or_else(|failure| panic!("{failure}"))
+    }
+
+    /// The last value of `a` of a transient seeded at `seed`.
+    fn transient_end(seed: f64) -> f64 {
+        let ran = Self::run(Overrides { analysis: Some("transient".to_string()), stop: Some(1e-6), print_step: Some(5e-7), ..Overrides::default() }, seed);
+        ran.real(ran.table.rows.len() - 1, "Top.a")
+    }
+
+    /// The magnitude of `a` over the source at the first frequency of an ac sweep seeded at `seed`.
+    fn gain(seed: f64) -> f64 {
+        let ran = Self::run(Overrides { analysis: Some("ac".to_string()), from: Some(1e-3), to: Some(1e-2), per_decade: Some(1), ..Overrides::default() }, seed);
+        match &ran.table.rows[0][1] {
+            Cell::Real(value) => *value,
+            other => panic!("a real magnitude, found {other:?}"),
+        }
+    }
+}
+
 #[test]
-fn a_nodeset_on_ac_or_transient_is_accepted_where_the_book_says_p0010() {
-    // cli~0549bfb1 (diverges, GAPS.md D6) "An analysis that takes its own operating point inside the solver,
-    // ac and transient, has no door for a seed, and a nodeset on it is a P0010 error rather than a silent
-    // no-op.": today the seed is accepted and ignored: the run gives the table it gives without it
+fn a_nodeset_seeds_the_operating_point_of_ac_and_transient() {
+    // cli~271fd4c4 "A nodeset seeds the operating point of every analysis, ac and transient included: where the
+    // circuit has more than one equilibrium, the seed picks the one the run starts from": a bistable node
+    // starts a transient at +sqrt(3) or -sqrt(3) as the seed says, and an ac sweep takes its gain at the
+    // root the seed picks (1/6 at +-sqrt(3), 1/3 at 0)
+    let root = 3.0_f64.sqrt();
+    assert!((Bistable::transient_end(1.7) - root).abs() < 1e-6, "a seed above zero");
+    assert!((Bistable::transient_end(-1.7) + root).abs() < 1e-6, "a seed below zero");
+    assert!((Bistable::gain(1.7) - 1.0 / 6.0).abs() < 1e-6, "the gain at the upper root");
+    assert!((Bistable::gain(0.1) - 1.0 / 3.0).abs() < 1e-6, "the gain at the root at zero");
     let chapter = Chapter::read();
     let seed = vec![("vout".to_string(), 0.5)];
     let transient = |nodeset: Vec<(String, f64)>| RcProject::ran(&chapter, "op", Overrides { analysis: Some("transient".to_string()), stop: Some(1e-6), nodeset, ..Overrides::default() });
-    assert_eq!(transient(seed.clone()).table, transient(Vec::new()).table, "a seed on a transient changes nothing, and is not refused");
-    let ac = |nodeset: Vec<(String, f64)>| RcProject::ran(&chapter, "op", Overrides { analysis: Some("ac".to_string()), from: Some(1e3), to: Some(1e6), per_decade: Some(10), nodeset, ..Overrides::default() });
-    assert_eq!(ac(seed).table, ac(Vec::new()).table, "a seed on an ac run changes nothing, and is not refused");
+    assert_eq!(transient(seed).table, transient(Vec::new()).table, "a seed on a circuit with one equilibrium is accepted and changes nothing");
 }
 
 #[test]

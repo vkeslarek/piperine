@@ -233,12 +233,8 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 
 | ID | Gap | Where | Size |
 | -- | --- | ----- | ---- |
-| D1 | A diagnostic differs from what the Book shows: a part it leaves out (the help line of `E0150`, the secondary label of `E0163`) or another code (`E0900` for an `emit!` in a module body, where the Book says `E0601`) | `docs/book/content.html` chapters 2 and 11, §11 below | S |
-| D2 | A sentence of the Book that the code outran: the code does more than the Book says, so the Book is stale and the user decides (a `disputed` row of §11) | `docs/book/content.html`, §11 below | S |
 | D3 | An error code the spec names that no source raises, for a construct the compiler does implement: the checker stops the model with another code (`E0333` is `P0002`, a type mismatch), `params-and-io`'s PI-13 keeps the code listed | `docs/spec/part_iii_structure.md`, §10 | S |
 | D4 | A value, record or table the run gives differs from the one the Book prints or states, for a construct the compiler implements: the buck's start-up, whose operating point already holds the controller's first commit | `docs/book/content.html`, §11 below | S |
-| D5 | A figure the Book prints from a measurement the test suite repeats: the worst difference of the reverse-bias sweep from ngspice is 5.0e-20 A today, the Book prints 5.9e-21 A (both inside the 1 pA floor), so the Book is stale and the user decides (a `disputed` row of §11) | `docs/book/content.html`, §11 below | S |
-| D6 | A key or a flag the Book says the run refuses is accepted and ignored: a `nodeset` on an `ac` or a `transient` run, where the Book says P0010 "rather than a silent no-op"; the rule is the request validation of `piperine-api` (MD-65) | `docs/book/content.html` chapter 16, §11 below | S |
 
 ---
 
@@ -429,7 +425,6 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
 | errors~54e5381d | L40 | `analog-structure` | `E0414` is not raised: a contribution under an `if` is `P0001` on both branches |
-| welcome~5b11a01a | D2 | `user` | the math methods such as `sin` run; the other items of the sentence are `P0001` as written |
 | from-rust#1 | L6 | `composite-values` | reached from a top, `range_of` is `P0001` (a range pattern in a `match` arm; the enum has no `#[derive(Repr)]`) and `mean` is `P0001` (a reference type) |
 | values#2 | L53 | `unknown-semantics-events` | `handshake`, a `fn` that returns `Event`, is `P0001`: method `rise` on this receiver is not supported yet |
 | values~c389077a | L53 | `unknown-semantics-events` | the class of a function that returns `Event` does not run (`handshake`); the pure, `now()` and `emit!` classes do |
@@ -495,4 +490,3 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function need a generic module: `P0001` |
 | cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
 | cheatsheet#10 | L57 | `composite-values` | with its `emit!` the card is `E0900` (a statement among items); without it `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` a reference type |
-| cli~0549bfb1 | D6 | `root-e2e` | `--nodeset` (and the `nodeset` key) on an `ac` or a `transient` run is accepted and ignored: the table is the one the run gives with no seed, no `P0010` |

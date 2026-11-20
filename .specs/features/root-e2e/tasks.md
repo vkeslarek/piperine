@@ -1035,10 +1035,10 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] No row of the area is `diverges`; `divergences.md` marks each fixed with its commit
-- [ ] Each fix has a test in its crate that fails with the fix reverted
-- [ ] Gate check passes: Full (the crate's targets, the Book targets of the rows, `Run inventory`, `Run claims`, then the root `cargo test`)
-- [ ] Test count: written in the commit body
+- [x] No row of the area is `diverges`; `divergences.md` marks each fixed with its commit
+- [x] Each fix has a test in its crate that fails with the fix reverted
+- [x] Gate check passes: Full (the crate's targets, the Book targets of the rows, `Run inventory`, `Run claims`, then the root `cargo test`)
+- [x] Test count: written in the commit body
 
 **Tests**: integration
 **Gate**: full
