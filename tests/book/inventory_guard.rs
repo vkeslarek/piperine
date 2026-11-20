@@ -5,6 +5,7 @@
 //! of `suite_hygiene.rs` registers.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 #[allow(dead_code)] // the support modules are shared by every Book target; this one uses part of each
 #[path = "support"]
@@ -176,6 +177,26 @@ impl Guard<'_> {
         offences
     }
 
+    /// Every `refused` or `unraised` row of section 11 names an owner feature that has a spec under
+    /// `features`: a refusal nobody owns is a gap nobody closes. The owner is written in backticks.
+    fn owners_without_a_spec(&self, features: &Path) -> Vec<String> {
+        let owned: Vec<&Row> = self.inventory.rows().iter().filter(|row| matches!(row.verdict, Verdict::Refused | Verdict::Unraised) && row.gap != "-").collect();
+        let mut offences = Vec::new();
+        for line in self.gaps.rows() {
+            if owned.iter().any(|row| row.id == line.book) && !features.join(&line.owner).join("spec.md").is_file() {
+                offences.push(format!("{}: section 11 names the owner `{}`, which has no spec under {}", line.book, line.owner, features.display()));
+            }
+        }
+        offences
+    }
+
+    /// Every `disputed` row is a line of `divergences`, the list the user reads: a sentence the spec
+    /// may have wrong is shown to them, not decided by a task.
+    fn disputed_rows_that_are_not_listed(&self, divergences: &str) -> Vec<String> {
+        let disputed = self.inventory.rows().iter().filter(|row| row.verdict == Verdict::Disputed);
+        disputed.filter(|row| !divergences.contains(&row.id)).map(|row| format!("{}: a `disputed` row is listed for the user; add it to divergences.md", row.id)).collect()
+    }
+
     /// Fails listing `offences`, one per line, under the rule `rule`.
     fn expect_none(rule: &str, offences: Vec<String>) {
         assert!(offences.is_empty(), "{rule}:\n  {}", offences.join("\n  "));
@@ -297,6 +318,21 @@ fn refused_rows_and_gaps_section_11_agree() {
 fn settled_chapters_have_no_pending_row() {
     // RE-01 AC 4: a chapter its task settled keeps no row pending
     Guard::expect_none("settled chapters have no pending row", Tree::read().guard().pending_in_settled_chapters());
+}
+
+#[test]
+fn every_gaps_row_names_its_owner() {
+    // RE-02 AC 2 (T34): a `refused` or `unraised` row of section 11 names an owner feature with a spec
+    let features = Path::new(env!("CARGO_MANIFEST_DIR")).join(".specs/features");
+    Guard::expect_none("every refusal has an owner feature with a spec", Tree::read().guard().owners_without_a_spec(&features));
+}
+
+#[test]
+fn disputed_rows_are_listed_for_the_user() {
+    // RE-03 AC 1 (T34): a `disputed` row is in divergences.md
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(".specs/features/root-e2e/divergences.md");
+    let divergences = std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: unreadable: {error}", path.display()));
+    Guard::expect_none("every disputed row is listed for the user", Tree::read().guard().disputed_rows_that_are_not_listed(&divergences));
 }
 
 /// A planted Book, the tests it names and the inventory of it: the rules are held on these.
@@ -488,4 +524,34 @@ fn the_gaps_guard_names_a_missing_and_an_extra_row() {
 
     let found = judged(&inventory, &section("| demo#3 | L7 | `generics` | refused |\n| broken |\n"));
     assert_eq!(found, vec!["section 11 has a line that is not a four-cell row: | broken |"]);
+}
+
+#[test]
+fn the_owner_and_disputed_rules_name_what_they_break() {
+    // RE-02 AC 2 and RE-03 AC 1 (T34) on planted input: an owner with no spec, a disputed row unlisted
+    let book = Planted::book();
+    let tests = Planted::tests();
+    let coverage = Coverage::at(tests.path());
+    let features = tempfile::tempdir().expect("a features tree");
+    std::fs::create_dir_all(features.path().join("generics")).expect("a feature");
+    std::fs::write(features.path().join("generics/spec.md"), "# spec\n").expect("a spec");
+    let rows = Planted::rows(&book);
+    let inventory = Planted::inventory(&rows);
+
+    let owned = Gaps::from_text("| L7 | a generic module | §8 | x | L |\n\n## 11. The Book against the binary\n\n| Book | Gap | Owner | Today |\n| ---- | --- | ----- | ----- |\n| demo#3 | L7 | `generics` | refused |\n");
+    let guard = Guard { book: &book, inventory: &inventory, coverage: &coverage, gaps: &owned, settled: &[] };
+    assert!(guard.owners_without_a_spec(features.path()).is_empty(), "an owner with a spec is accepted");
+    let nobody = Gaps::from_text("| L7 | a generic module | §8 | x | L |\n\n## 11. The Book against the binary\n\n| Book | Gap | Owner | Today |\n| ---- | --- | ----- | ----- |\n| demo#3 | L7 | `nobody` | refused |\n");
+    let guard = Guard { book: &book, inventory: &inventory, coverage: &coverage, gaps: &nobody, settled: &[] };
+    let found = guard.owners_without_a_spec(features.path());
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].starts_with("demo#3: section 11 names the owner `nobody`, which has no spec"), "{found:?}");
+
+    let mut disputed = rows.clone();
+    disputed[0].verdict = Verdict::Disputed;
+    let inventory = Planted::inventory(&disputed);
+    let guard = Guard { book: &book, inventory: &inventory, coverage: &coverage, gaps: &owned, settled: &[] };
+    let found = guard.disputed_rows_that_are_not_listed("nothing is listed here");
+    assert_eq!(found, vec![format!("{}: a `disputed` row is listed for the user; add it to divergences.md", disputed[0].id)]);
+    assert!(guard.disputed_rows_that_are_not_listed(&format!("| {} | listed |", disputed[0].id)).is_empty());
 }

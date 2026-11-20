@@ -171,13 +171,22 @@ impl ClaimGuard<'_> {
         offences
     }
 
-    /// A claim about a refused block names that block's row, and the row is `refused`.
-    fn refused_claims_without_a_refused_block(&self) -> Vec<String> {
+    /// A claim about a refusal names either the `refused` block it is about, or, when the Book shows
+    /// no block for it (a binding the checker refuses), a root test that cites the claim.
+    fn refused_claims_without_a_refusal(&self) -> Vec<String> {
         let mut offences = Vec::new();
         for row in self.inventory.claims().into_iter().filter(|row| row.verdict == Verdict::Refused) {
+            if row.covered_by.starts_with("piperine/") {
+                match self.coverage.resolve(&row.covered_by) {
+                    Err(message) => offences.push(format!("{}: {message}", row.id)),
+                    Ok(test) if !test.body().contains(&row.id) => offences.push(format!("{}: its test `{}` never cites the claim", row.id, row.covered_by)),
+                    Ok(_) => {}
+                }
+                continue;
+            }
             let block = self.inventory.row(&row.covered_by).filter(|block| block.kind == Kind::Block);
             if block.is_none_or(|block| block.verdict != Verdict::Refused) {
-                offences.push(format!("{}: a `refused` claim names the `refused` block it is about, not `{}`", row.id, row.covered_by));
+                offences.push(format!("{}: a `refused` claim names the `refused` block it is about or a root test that cites it, not `{}`", row.id, row.covered_by));
             }
         }
         offences
@@ -238,7 +247,7 @@ fn binary_claims_name_command_line_tests() {
     let tree = Tree::read();
     let guard = tree.guard();
     ClaimGuard::expect_none("a binary claim names a command line test", guard.binary_claims_without_a_command_line_test());
-    ClaimGuard::expect_none("a refused claim names its refused block", guard.refused_claims_without_a_refused_block());
+    ClaimGuard::expect_none("a refused claim names its refusal", guard.refused_claims_without_a_refusal());
 }
 
 #[test]
@@ -369,9 +378,18 @@ fn the_claim_guard_names_a_sentence_without_a_row() {
     refused[1].covered_by = "demo#2".to_string();
     let block = Row { kind: Kind::Block, id: "demo#1".to_string(), verdict: Verdict::Refused, ..first[0].clone() };
     refused.push(block);
-    let found = judged(&refused, &[], &|guard| guard.refused_claims_without_a_refused_block());
+    let found = judged(&refused, &[], &|guard| guard.refused_claims_without_a_refusal());
     assert_eq!(found.len(), 1, "{found:?}");
     assert!(found[0].starts_with(&refused[1].id), "{found:?}");
+
+    let mut by_test = first.clone();
+    by_test[0].verdict = Verdict::Refused;
+    by_test[0].covered_by = "piperine/book_demo::cites".to_string();
+    by_test[1].verdict = Verdict::Refused;
+    by_test[1].covered_by = "piperine/book_demo::forgets".to_string();
+    let found = judged(&by_test, &[], &|guard| guard.refused_claims_without_a_refusal());
+    assert_eq!(found.len(), 1, "a block-less refusal names a root test that cites it: {found:?}");
+    assert!(found[0].starts_with(&by_test[1].id) && found[0].contains("never cites the claim"), "{found:?}");
 
     let found = judged(&first, &["demo"], &|guard| guard.pending_in_settled_chapters());
     assert_eq!(found.len(), 4, "{found:?}");

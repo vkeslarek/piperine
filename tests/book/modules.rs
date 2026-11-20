@@ -218,8 +218,8 @@ fn the_extern_osdi_module_is_refused() {
 fn binding_m_and_dtemp_is_refused_as_an_unknown_param() {
     // modules~1faf8c12: "Every instance has these two implicit params, and you bind them like any other:
     // Resistor(a, b) { r: 1k, m: 4.0 } behaves as four resistors in parallel": the binding is `E0320`
-    // today, `no param m` (L29); the Book's meaning is four resistors in parallel. Phase 9 triage: the
-    // row diverges until `params-and-io` implements `m`
+    // today, `no param m` (L29); the Book's meaning is four resistors in parallel. The row is `refused`,
+    // owned by `params-and-io`, which implements `m`
     let faulty = Faulty::elaborating("modules~1faf8c12", &Parts::with_top("    let r1 = Resistor(a, gnd) { r: 1k, m: 4.0 };\n"), "Top");
     assert_eq!(faulty.first("E0320").message, "no param `m` in `Resistor`");
     let dtemp = Faulty::elaborating("modules~1faf8c12", &Parts::with_top("    let r1 = Resistor(a, gnd) { r: 1k, dtemp: 5.0 };\n"), "Top");

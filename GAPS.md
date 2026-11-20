@@ -455,7 +455,7 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | modules~87ce6f6e | L31 | `generics` | the `half` block over the ladder is refused with modules#2 |
 | modules~3f8e84ba | L31 | `generics` | the `half` stream is refused with modules#2 |
 | modules~8b927a42 | L30 | `generics` | the value inputs of `lowpass` are refused with modules#6 |
-| modules~1faf8c12 | L29 | `root-e2e` | `m` and `dtemp` in a param block are `E0320`, no param `m`: the Book's four resistors in parallel do not run (Phase 9 triage: `params-and-io` implements them) |
+| modules~1faf8c12 | L29 | `params-and-io` | `m` and `dtemp` in a param block are `E0320`, no param `m`: the Book's four resistors in parallel do not run until `params-and-io` implements them |
 | modules~4bcf201d | D3 | `params-and-io` | `E0333` is not raised: an instance used as a value is `P0002`, mismatched types |
 | modules~4bd9131d | L31 | `generics` | `E0340` is not raised: a `for` in a body is `P0001`, generation is refused |
 | modules~4bcb9f1d | L30 | `generics` | `E0304` is not raised: `Ladder::<0>` is `P0001`, the generic module is refused |

@@ -897,10 +897,10 @@ T40 → T41 → T42 → T43
 
 **Done when**:
 
-- [ ] Every `diverges` row of the inventory has one line in `divergences.md` with its cause and area or owner
-- [ ] `inventory_guard.rs` holds `every_gaps_row_names_its_owner` and `disputed_rows_are_listed_for_the_user`
-- [ ] Gate check passes: Quick (`Run inventory`, `Run claims`)
-- [ ] Test count: 2 new tests
+- [x] Every `diverges` row of the inventory has one line in `divergences.md` with its cause and area or owner
+- [x] `inventory_guard.rs` holds `every_gaps_row_names_its_owner` and `disputed_rows_are_listed_for_the_user`
+- [x] Gate check passes: Quick (`Run inventory`, `Run claims`)
+- [x] Test count: 2 new tests
 
 **Tests**: integration
 **Gate**: quick
