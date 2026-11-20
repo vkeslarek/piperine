@@ -8,7 +8,8 @@
 //! | --- | --- |
 //! | literal, const, param, probe, `now()`, `analysis(Static)`, environment | plain |
 //! | a carrier read, `Unknown` | flagged |
-//! | `known_or`, `is_known`, `high` | plain |
+//! | `is_known`, `high` | plain |
+//! | `known_or` | as flagged as its default |
 //! | any other operator, cast, method or `if` | flagged when an operand, the condition or an arm is |
 //! | a local | what its initializer was |
 //! | a call | the result of the variant its argument pattern selects |
@@ -145,13 +146,10 @@ impl Elaboration<'_, '_> {
                     _ => None,
                 };
                 let (value, default) = (value?, default?);
-                if self.flag(default) == Flag::Flagged {
-                    // The IR's `known_or` takes a known default; a default that may itself be
-                    // unknown would make the result unknown again.
-                    self.unsupported(scope.file, span, "a `known_or` default that may be unknown");
-                    return None;
-                }
-                Some(self.emit(Expr::KnownOr { value, default }, base, origin))
+                // §22.1.1 rule 4: the result is the default when `value` is unknown, so it is as
+                // unknown as the default is.
+                let ty = self.flag(default).wrap(base);
+                Some(self.emit(Expr::KnownOr { value, default }, ty, origin))
             }
             Builtin::IsKnown => {
                 let value = self.lower_expr(scope, recv)?;

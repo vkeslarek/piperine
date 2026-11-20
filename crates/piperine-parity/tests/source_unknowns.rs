@@ -562,3 +562,32 @@ fn short_circuit_operands_follow_the_merge() {
     assert_eq!(ran.len(), 8, "two emitting right operands per rising edge: {ran:?}");
     assert!(ran.iter().all(|r| r.maybe), "reached under unknown control");
 }
+
+#[test]
+fn a_math_function_of_an_unknown_value_is_unknown() {
+    // US-06 AC 1, §3.3.2: `sqrt` of the known 4.0 is 2.0; `sqrt`, `abs`, `exp` and `ln` of a value
+    // that is unknown are unknown, so `known_or` gives its default and the bare result is unknown
+    let (_, records) = records_of("math.msl", "MathBench");
+    assert_eq!(
+        constant_fields(&records, "math"),
+        fields(&[
+            ("root", Field::Real(2.0)),
+            ("no_root", Field::Real(-1.0)),
+            ("abs", Field::Real(-2.0)),
+            ("exp", Field::Real(-3.0)),
+            ("ln", Field::Real(-4.0)),
+            ("still_unknown", Field::Unknown),
+        ])
+    );
+}
+
+#[test]
+fn known_or_with_an_unknown_default_gives_that_default() {
+    // US-06 AC 2, §22.1.1 rule 4: `x.known_or(d)` is `x` when `x` is known (4.0, whatever `d`
+    // is), else `d` with its flags: 9.0 for a known `d`, unknown for an unknown one
+    let (_, records) = records_of("math.msl", "MathBench");
+    assert_eq!(
+        constant_fields(&records, "default"),
+        fields(&[("held", Field::Real(4.0)), ("taken", Field::Real(9.0)), ("both_unknown", Field::Unknown), ("unknown_flag", Field::Bool(false))])
+    );
+}

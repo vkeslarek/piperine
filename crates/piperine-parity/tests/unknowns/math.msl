@@ -1,0 +1,26 @@
+//! Math functions and `known_or` over values that may be unknown (US-06 AC 1, 2). `x` holds 4.0,
+//! `y` holds 9.0, `u` and `w` are never driven. A 1 GHz oscillator gives the rising edges the
+//! probe runs on.
+
+/// A free-running oscillator, its first change at half a period.
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// `math` applies each function to a known and an unknown value and reads it through `known_or`;
+/// `default` is `known_or` with a default that is known, unknown, or not needed.
+module Probe(in clk: Bit, in x: Bit<f64>, in y: Bit<f64>, in u: Bit<f64>, in w: Bit<f64>) {}
+digital for Probe {
+    on clk.rise() {
+        emit!("math", root = x.sqrt().known_or(-1.0), no_root = u.sqrt().known_or(-1.0), abs = u.abs().known_or(-2.0),
+              exp = u.exp().known_or(-3.0), ln = u.ln().known_or(-4.0), still_unknown = u.sqrt());
+        emit!("default", held = x.known_or(u), taken = u.known_or(y), both_unknown = u.known_or(w), unknown_flag = u.known_or(w).is_known());
+    }
+}
+
+module MathBench() {
+    signal clk: Bit; signal x: Bit<f64> = 4.0; signal y: Bit<f64> = 9.0; signal u: Bit<f64>; signal w: Bit<f64>;
+    let osc = Osc(clk) { f: 1G };
+    let probe = Probe(clk, x, y, u, w);
+}

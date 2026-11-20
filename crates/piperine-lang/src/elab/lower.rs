@@ -298,10 +298,8 @@ impl Elaboration<'_, '_> {
                     }
                 };
                 let recv = self.lower_expr(scope, *recv)?;
-                if self.flag(recv) == Flag::Flagged {
-                    self.unsupported(file, node.span, "a math function of a value that may be unknown");
-                    return None;
-                }
+                // §3.3.2: one unknown operand makes the result unknown.
+                let ty = self.flag(recv).wrap(ty);
                 Some(self.emit(Expr::Math { f, args: vec![recv] }, ty, origin))
             }
             ExprKind::Cast { expr: operand, .. } => {
