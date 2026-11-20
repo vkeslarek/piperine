@@ -163,10 +163,10 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `a_settle_event_is_built_checked_and_printed` passes under `**Run irdigital**`
-- [ ] `a_settle_event_is_refused_by_name` passes under `**Run interp**`
-- [ ] Code clarity: the variant and every arm it adds carry `///` docs citing §13 rule 17; no free function
-- [ ] Gate check passes: Quick
+- [x] `a_settle_event_is_built_checked_and_printed` passes under `**Run irdigital**`
+- [x] `a_settle_event_is_refused_by_name` passes under `**Run interp**`
+- [x] Code clarity: the variant and every arm it adds carry `///` docs citing §13 rule 17; no free function
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

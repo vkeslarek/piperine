@@ -402,6 +402,8 @@ impl<'a> Printer<'a> {
             let mut text = format!("event E{k} ");
             match &event.source {
                 EventSource::Changed(c) => text.push_str(&format!("changed {}", Printer::carrier(scope, *c))),
+                // `settle` (§13 rule 17) names no carrier, param or expression.
+                EventSource::Settle => text.push_str("settle"),
                 EventSource::ParamChanged(p) => {
                     let name = scope.params.get(*p as usize).map_or(format!("<bad param {p}>"), |param| Printer::name(&param.name));
                     text.push_str(&format!("param_changed {name}"));
@@ -961,6 +963,7 @@ impl<'a> Printer<'a> {
                         EventSource::Cross { e, ttol: None, etol: None } => format!("(cross e{} {})", e.0, opt(ev.guard)),
                         EventSource::Cross { e, ttol, etol } => format!("(cross e{} {} ttol {} etol {})", e.0, opt(ev.guard), opt(*ttol), opt(*etol)),
                         EventSource::At(e) => format!("(at e{} {})", e.0, opt(ev.guard)),
+                        EventSource::Settle => format!("(settle {})", opt(ev.guard)),
                     })
                     .collect();
                 let reactions: Vec<String> = body

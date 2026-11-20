@@ -142,6 +142,17 @@ impl Amended {
         Buck::reaction(b, body, vec![event], vec![commit], vec![], Amended::F, 22);
     }
 
+    /// `on settle { q <- true; }`
+    fn settling(b: &mut IrBuilder) {
+        let body = b.body(Buck::spec("Settling", Amended::F, 51));
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Amended::F, 51, 20));
+        let event = b.event(body, Event { source: EventSource::Settle, guard: None, origin: Amended::at(52) });
+        let mut x = Dx::new(b, Amended::F, 52, 20);
+        let yes = x.boolean(true);
+        let commit = x.commit(0, yes, None);
+        Buck::reaction(b, body, vec![event], vec![commit], vec![], Amended::F, 52);
+    }
+
     /// `on q.changed() { emit!("sim", finish = true); }`
     fn monitor(b: &mut IrBuilder) {
         let body = b.body(Buck::spec("Monitor", Amended::F, 31));
@@ -227,6 +238,29 @@ fn a_body_with_an_amended_form_is_rejected_by_name() {
     for entry in &rejected.entries {
         assert_eq!(entry.origin.file, Amended::F, "{entry:?}");
     }
+}
+
+/// §13 rule 17 (unknown-semantics-events UE-03): the event `settle` is a form the interpreter
+/// refuses by name, as it refuses `at(t)` (codegen context R1).
+#[test]
+fn a_settle_event_is_refused_by_name() {
+    let mut b = IrBuilder::new();
+    Amended::settling(&mut b);
+    let top_body = b.body(Buck::spec("Top", "top.msl", 1));
+    let top = b.instance(InstanceSpec {
+        path: "Top".into(),
+        name: "Top".into(),
+        body: top_body,
+        parent: None,
+        nodes: vec![],
+        params: vec![],
+        origin: Origin { file: "top.msl".into(), line: 1, col: 1 },
+    });
+    let ir = b.finish(top);
+    assert_eq!(ir.check(), vec![], "the design itself is well formed");
+    let Err(rejected) = Interpreter::new(Arc::new(ir)) else { panic!("a design with a settle event was accepted") };
+    let named: Vec<&str> = rejected.entries.iter().map(|e| e.what.split_once(": ").map_or(e.what.as_str(), |(head, _)| head)).collect();
+    assert!(named.contains(&"body Settling holds settle"), "{named:?}");
 }
 
 /// Bodies that hold one form msl-fixes added, each in a design of its own.

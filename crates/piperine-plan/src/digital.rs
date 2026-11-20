@@ -591,6 +591,8 @@ impl Digital {
                 }
                 // an unguarded one is fired by its arming reaction's statement
                 EventSource::At(_) => continue,
+                // the event function of `settle` is planned by `Source::Settle` (T2)
+                EventSource::Settle => continue,
             }
             add(s, format!("event:{k}"), &e.origin, BodyPlan::function(Mode::Event(k), &set, vec![(Target::EventPin(k), None)]));
         }

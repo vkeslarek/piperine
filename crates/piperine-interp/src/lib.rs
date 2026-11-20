@@ -141,11 +141,14 @@ impl Interpreter {
         let ttol = body.events().iter().any(|e| matches!(e.source, EventSource::Cross { ttol: Some(_), .. }));
         let etol = body.events().iter().any(|e| matches!(e.source, EventSource::Cross { etol: Some(_), .. }));
         let at = body.events().iter().any(|e| matches!(e.source, EventSource::At(_)));
+        let settle = body.events().iter().any(|e| matches!(e.source, EventSource::Settle));
         let emit = (0..body.reactions().len() as u32).any(|k| body.reaction_statements(k).iter().any(|s| matches!(body.ir().stmt(*s), Stmt::Emit { .. })));
         [
             (time, "now()"),
             (stat, "analysis(Static)"),
             (at, "at(t)"),
+            // §13 rule 17: the settle phase is the digital engine's; the interpreter has none
+            (settle, "settle"),
             (emit, "emit!"),
             (flow, "the flow of a potential branch"),
             (previous, "the previous value of a carrier"),

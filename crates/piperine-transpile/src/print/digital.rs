@@ -211,6 +211,8 @@ impl<'a> DigitalPrinter<'a> {
                     EventSource::Cross { .. } => (self.names.read_name(Source::Crossed(e)), format!("its crossing fired (event {e})")),
                     // only a guarded timer has an event function: it gates the timer's own pin
                     EventSource::At(_) => (self.names.read_name(Source::Timer(e)), format!("its timer fired (event {e})")),
+                    // fail loud until the settle event function is printed (T3)
+                    EventSource::Settle => return Err(self.unsupported("the event function of settle")),
                 };
                 (source, event.guard, event.origin.clone(), what)
             }

@@ -895,7 +895,7 @@ impl<'a> Checker<'a> {
         for (k, event) in body.events.iter().enumerate() {
             let at = match event.source {
                 EventSource::At(e) => Some(e),
-                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) => None,
+                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) | EventSource::Settle => None,
             };
             for e in event.guard.into_iter().chain(at) {
                 positions.push((format!("{item} event {k}"), event.origin.clone(), e));
@@ -1021,7 +1021,7 @@ impl<'a> Checker<'a> {
                 let cross = match e.source {
                     EventSource::Cross { e: x, ttol, etol } => [Some(x), ttol, etol],
                     EventSource::At(x) => [Some(x), None, None],
-                    EventSource::Changed(_) | EventSource::ParamChanged(_) => [None; 3],
+                    EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle => [None; 3],
                 };
                 cross.into_iter().flatten().chain(e.guard)
             }));
@@ -1190,7 +1190,7 @@ impl<'a> Checker<'a> {
                         }
                     }
                     EventSource::At(e) => self.walk(&mut w, Task::Expr(e, Ctx::top())),
-                    EventSource::Changed(_) | EventSource::ParamChanged(_) => {}
+                    EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle => {}
                 }
                 if let Some(guard) = event.guard {
                     self.carried(&w, guard, &ValueType::Bool, "the guard of an event");
