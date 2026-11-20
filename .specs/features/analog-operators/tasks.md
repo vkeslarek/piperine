@@ -334,8 +334,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `part_v_retakes_the_step_a_jump_crossing_changes` passes
-- [ ] Gate check passes: `Run spectext`
+- [x] `part_v_retakes_the_step_a_jump_crossing_changes` passes
+- [x] Gate check passes: `Run spectext`
 
 **Tests**: integration
 **Gate**: quick

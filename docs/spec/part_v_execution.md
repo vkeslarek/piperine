@@ -285,12 +285,19 @@ of its own.
    3 pF one at 0 V gives 0.25 V on both at the first step that reads the jump (Appendix F.5).
 3. **A state multiplied by a carrier keeps the product.** In `ddt(c * v(p, n))` with `c` a
    `Bit<f64>` that jumps, `c·v` is carried and `v` moves. Charge is conserved.
-4. **Probes and `cross` read solutions that exist.** There is no second pass. A reaction at
-   `(t, n)` reads the latest solution (§15 step 3.3), which is the left value until a
-   step has read the change. A crossing that a change makes is found between the left value and
-   the right value. It is not located (§17.3): it fires at the time point of the step that
-   reads the change, at the microstep after that step's solve (§15 step 3.4), so never before
-   the change that caused it.
+4. **Probes and `cross` read solutions that exist.** A reaction at `(t, n)` reads the latest
+   solution (§15 step 3.3), which is the left value until a step has read the change. A crossing
+   that a change makes is found between the left value and the right value. It is not located
+   (§17.3): it fires at the time point of the step that reads the change, at the microstep after
+   that step's solve (§15 step 3.4), so never before the change that caused it. **When the
+   reactions of that crossing change a carrier or a param that `analog` reads, the step is
+   retaken to the same time `t` with the change, and the retaken solution replaces the first.**
+   The retaken step is exempt from the truncation-error test and restarts the integrator, like
+   the step that reads a host `set`. The reactions that ran are not run again. A crossing that
+   the retaken solution makes, and the first did not, fires at the next microstep of `t` and may
+   retake again. A step that reads no jump never retakes, and neither does a crossing whose
+   reactions change nothing `analog` reads. More retakes at one `t` than the operating point's
+   round bound fail as `E0504`, naming the instant.
 5. **Other instance state is untouched.** `delay` keeps its history and `limit` its last
    value. `idt`, `slew` and `transition` have no rule of their own: their state is a node
    under `ddt` and discrete carriers.
@@ -323,7 +330,7 @@ of its own.
 | Code | Condition | Phase |
 | --- | --- | --- |
 | `E0503` | A solve of any kind is singular. The report names the branches, or the node, that make it so. | run |
-| `E0504` | A transient step that reads a jump does not converge (§17.1). The report names the instant and the carriers or params whose change caused it. | run |
+| `E0504` | A transient step that reads a jump does not converge (§17.1), or the crossings of one instant retake the step more often than the round bound (rule 4). The report names the instant and the carriers or params whose change caused it. | run |
 
 **Example.** Appendix F.5 traces the charge-sharing jump row by row.
 

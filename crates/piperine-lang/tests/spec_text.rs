@@ -1650,3 +1650,22 @@ fn appendix_c_lists_the_loop_bound_among_the_defaults() {
     let rows = table_rows(&section(&text, "### C.2.1 "));
     assert!(rows.iter().any(|r| r[..] == ["loop iterations under unknown control", "64", "§3.3.16"]), "{rows:?}");
 }
+
+#[test]
+fn part_v_retakes_the_step_a_jump_crossing_changes() {
+    // AO-13 (D16): §15.2 rule 4 says a crossing made by a jump still fires after the step that read
+    // it, but when its reactions change what `analog` reads, that step is retaken to the same time
+    let text = spec("part_v_execution.md");
+    let rule = flat(&section(&text, "### 15.2 "));
+    for fact in [
+        "it fires at the time point of the step that reads the change, at the microstep after that step's solve",
+        "the step is retaken to the same time `t` with the change, and the retaken solution replaces the first",
+        "The reactions that ran are not run again",
+        "fires at the next microstep of `t` and may retake again",
+        "A step that reads no jump never retakes",
+        "fail as `E0504`, naming the instant",
+    ] {
+        assert!(rule.contains(fact), "§15.2 lacks \"{fact}\"");
+    }
+    assert!(!rule.contains("There is no second pass."), "rule 4's \"no second pass\" is gone");
+}
