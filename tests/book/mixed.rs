@@ -123,14 +123,18 @@ fn the_math_methods_and_the_settle_event_run() {
 }
 
 #[test]
-fn the_comparator_without_hysteresis_is_refused_for_its_event_read_as_a_bool() {
-    // mixed#6 (refused): `Comparator`, `on up || dn { q <- up; }`: "in the body, up read as a bool says
-    // whether it was the rising one" is an event read as a `bool` (L51): the checker answers `E0441`, an
-    // `Event` committed, where the spec allows it
+fn the_comparator_without_hysteresis_reads_its_event_as_a_bool() {
+    // mixed#6 (run): `Comparator`, `on up || dn { q <- up; }`: "in the body, up read as a bool says
+    // whether it was the rising one" (§13 rule 2, design D2): `above` fires at the start, where the
+    // voltage already is above, so with `a` over `b` the `up` read commits true and with `b` over `a`
+    // `dn` fired, `up` reads false and `q` stays low
     let chapter = Chapter::read();
-    let after = format!("{SOURCE}module Top() {{ signal a: Electrical; signal b: Electrical; signal q: Bit; let s = Vdc(a) {{ dc: 1.0 }}; let s2 = Vdc(b) {{ dc: 0.5 }}; let c = Comparator(a, b, q); }}\n");
-    let model = chapter.wrapped("comparator.msl", "", "mixed#6", &after);
-    Refusal::expect(model.run(Commands::transient("Top", 1e-6, None)), "mixed#6", "E0441", "an `Event` value outside an event position, a guard or a reaction body: an event is never committed, carried or stored (§13 rule 8)");
+    for (a, b, wanted) in [(1.0, 0.5, true), (0.5, 1.0, false)] {
+        let after = format!("{SOURCE}module Top() {{ signal a: Electrical; signal b: Electrical; signal q: Bit; let s = Vdc(a) {{ dc: {a:?} }}; let s2 = Vdc(b) {{ dc: {b:?} }}; let c = Comparator(a, b, q); }}\n");
+        let ran = chapter.wrapped("comparator.msl", "", "mixed#6", &after).run(Commands::transient("Top", 1e-6, None)).unwrap_or_else(|failure| panic!("the comparator runs: {failure}"));
+        let last = ran.table.rows.len() - 1;
+        assert_eq!(ran.cell(last, "Top.q"), &Cell::Bool(wanted), "a = {a} V, b = {b} V: `q` is `up` read as a `bool`");
+    }
 }
 
 #[test]
@@ -251,19 +255,16 @@ fn the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero() {
 }
 
 #[test]
-fn the_sar_adc_is_refused_at_its_comparator_and_its_field_access_runs() {
-    // mixed#15 (refused): `SarAdc` and its `analog for SarAdc { i(dac.core) +> ... }` on a public node of its
-    // DAC elaborates since `analog-structure` (L36); what is left is the chapter's own `Comparator` (mixed#6,
-    // `E0441`, L51), with the pieces the chapter does not show written by the test (a sample-hold, `Dac8`,
-    // `SarLogic`)
+fn the_sar_adc_runs_with_its_comparator_and_its_field_access() {
+    // mixed#15 (run): `SarAdc` and its `analog for SarAdc { i(dac.core) +> ... }` on a public node of its
+    // DAC (`analog-structure`, L36) with the chapter's own `Comparator` (mixed#6: its `q <- up` reads an
+    // event as a `bool`, §13 rule 2, unknown-semantics-events), the pieces the chapter does not show
+    // written by the test (a source, a sample-hold, `Dac8`, `SarLogic`)
     let chapter = Chapter::read();
-    let pieces = "module SampleHold(vin: Electrical, vout: Electrical, in clk: Bit) { signal held: Bit<f64> = 0.0; }\ndigital for SampleHold { on clk.rise() { held <- v(vin); } }\nanalog for SampleHold { v(vout) +> held.known_or(0.0); }\nmodule Dac8(in code: Bit<u8>, vout: Electrical) { pub signal core: Electrical; }\nanalog for Dac8 { v(core) +> 0.5; v(vout) +> v(core); }\nmodule SarLogic(in clk: Bit, in start: Bit, in cmp: Bit, out code: Bit<u8> = 0, out done: Bit = false) {}\n";
-    let after = "module Top(in clk: Bit, in start: Bit) { signal vin: Electrical; signal code: Bit<u8>; signal done: Bit; let a = SarAdc(vin, clk, start, code, done); }\n";
+    let pieces = "module Vdc(p: Electrical) { dc: f64 = 1.0; }\nanalog for Vdc { v(p) +> dc; }\nmodule SampleHold(vin: Electrical, vout: Electrical, in clk: Bit) { signal held: Bit<f64> = 0.0; }\ndigital for SampleHold { on clk.rise() { held <- v(vin); } }\nanalog for SampleHold { v(vout) +> held.known_or(0.0); }\nmodule Dac8(in code: Bit<u8>, vout: Electrical) { pub signal core: Electrical; }\nanalog for Dac8 { v(core) +> 0.5; v(vout) +> v(core); }\nmodule SarLogic(in clk: Bit, in start: Bit, in cmp: Bit, out code: Bit<u8> = 0, out done: Bit = false) {}\n";
+    let after = "module Top(in clk: Bit, in start: Bit) { signal vin: Electrical; signal code: Bit<u8>; signal done: Bit; let s = Vdc(vin) { dc: 0.3 }; let a = SarAdc(vin, clk, start, code, done); }\n";
     let before = format!("{}\n{pieces}", chapter.text("mixed#6"));
-    let model = chapter.wrapped("sar.msl", &before, "mixed#15", after);
-    let given = Refusal::of(model.run(Faulty::operating_point_of("Top")), "mixed#15");
-    assert!(given.iter().all(|(_, message)| !message.contains("field access")), "the field access on the converter runs: {given:?}");
-    Refusal::expect(model.run(Faulty::operating_point_of("Top")), "mixed#15", "E0441", "an `Event` value outside an event position, a guard or a reaction body: an event is never committed, carried or stored (§13 rule 8)");
+    chapter.wrapped("sar.msl", &before, "mixed#15", after).run(Commands::transient("Top", 1e-6, None)).unwrap_or_else(|failure| panic!("the SAR ADC runs: {failure}"));
 }
 
 #[test]

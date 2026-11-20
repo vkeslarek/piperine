@@ -474,7 +474,7 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | analog~773a3851 | L9 | `composite-values` | the command stops at the source with the two diagnostics of analog#3: held with analog#3 (the sentence still counts three, until `unknown-semantics-events` T21) |
 | analog~139c67b5 | L49 | `analog-operators` | a trace from `analog` is refused with analog#7: no record per Newton iteration exists |
 | analog~b103eeb0 | L49 | `analog-operators` | no trace line reaches the command: the `emit!` in `analog` is refused with analog#7 |
-| digital#6 | L51 | `unknown-semantics-events` | `Pfd3` is `P0001`: `let mut`, assignment, an event read as a `bool` (`fref.rise() && s < 1`) and the names whose type follows from them |
+| digital#6 | L5 | `composite-values` | `Pfd3` is `P0001`: `let mut` and assignment, and the names whose type follows from them; its event reads (`fref.rise() && s < 1`) run (`unknown-semantics-events` T14) |
 | digital#7 | L28 | `params-and-io` | `param of type u8 is not supported yet` on `n: u8`; with the param written as a literal, `known_or(clean)` is `P0001` too (a `known_or` default that may be unknown, L59) |
 | digital#11 | L28 | `params-and-io` | `param of type u8 is not supported yet` on `period: u8` |
 | digital#14 | L28 | `params-and-io` | `PwmCheck` is `P0001` twice: `limit: u8` and `cycles: u32` |
@@ -485,8 +485,6 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | digital~a0ca3f9d | L28 | `params-and-io` | the check does not run as the Book places it: `limit: u8` and `cycles: u32` are refused with digital#14 |
 | digital~d7032a06 | L28 | `params-and-io` | the form is refused as the sentence says (digital#7) |
 | digital~d1d69398 | L28 | `params-and-io` | the debouncer and the PWM are refused (digital#7, digital#11); the counter runs |
-| mixed#6 | L51 | `unknown-semantics-events` | `Comparator`'s `on up \|\| dn { q <- up; }` is `E0441`, an `Event` committed, where the Book reads `up` as a `bool` |
-| mixed#15 | L51 | `unknown-semantics-events` | the chapter's `Comparator` in it is `E0441` (as in mixed#6); the `i(dac.core) +> ..` on a public node of a child runs |
 | packages#12 | L57 | `composite-values` | `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` is `P0001`, a reference type; `include_str!` itself is accepted in a `const` |
 | packages~64f2121d | L57 | `composite-values` | `E0610` is not raised: `include_str!` in a module body is `P0001`, `include_str!` is not supported yet |
 | core-std#6 | L21 | `resolved-nets` | `IrqSource` and `Board` are `P0001`: the resolved nature `Wire`, and `.v`/`Logic` behind it |
