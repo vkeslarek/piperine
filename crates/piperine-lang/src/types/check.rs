@@ -553,6 +553,9 @@ impl<'d> Checker<'d> {
                     (DeclKind::Definition(d), ItemPhase::Definitions) => self.definition(&d.clone()),
                     (DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) | DeclKind::Let(_) | DeclKind::Definition(_), _) => {}
                     (DeclKind::GenericParam(_) | DeclKind::Behavior(_) | DeclKind::Error, _) => {}
+                    // A closure's parameters (`|new, old| ..` of `limexp`, §22.2.4) are children of the
+                    // module that holds the closure, typed with it, not module items (design D9).
+                    (DeclKind::Binding(_), _) => {}
                     (DeclKind::Generation(_), ItemPhase::Declarations) => self.unsupported(item.file, item.span, "generation `for`/`if` in a module body"),
                     (other, ItemPhase::Declarations) => self.unsupported(item.file, item.span, &format!("{} inside a module", other.label().to_lowercase())),
                     (_, _) => {}

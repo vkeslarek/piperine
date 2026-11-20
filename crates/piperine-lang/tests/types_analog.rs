@@ -226,3 +226,15 @@ fn simparam_stays_p0001() {
     assert!(d[0].diagnostic.message.contains("simparam"), "{}", d[0].diagnostic.message);
     assert!(snippet(&src, &d[0]).starts_with("simparam"), "{}", snippet(&src, &d[0]));
 }
+
+/// `limexp` (std `analog.msl`, §22.2.4) is a module with a result whose body hands `limit` a
+/// closure: the closure's parameters are bindings the module walk must not refuse (D9). It is
+/// checked over the real standard library, which the helpers above replace by an empty one.
+#[test]
+fn limexp_checks_with_its_closure_bindings() {
+    let src = "module Top(a: Electrical) { }\nanalog for Top { let x = limexp(v(a) / 0.025); }";
+    let design = Design::builder().source("top.msl", src).build();
+    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("expected a clean check: {:?}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+    assert_eq!(*types.local(binding(&design, "x")).expect("x is typed"), Ty::F64);
+}

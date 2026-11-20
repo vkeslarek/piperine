@@ -526,9 +526,9 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `limexp_checks_with_its_closure_bindings` passes under `**Run typesanalog**`
-- [ ] Code clarity: the arm carries a comment citing §22.2.4 and D9
-- [ ] Gate check passes: Quick
+- [x] `limexp_checks_with_its_closure_bindings` passes under `**Run typesanalog**`
+- [x] Code clarity: the arm carries a comment citing §22.2.4 and D9
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
