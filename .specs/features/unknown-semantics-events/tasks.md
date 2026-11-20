@@ -548,10 +548,10 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `limexp_elaborates_from_the_stdlib_with_its_closure`, `limexp_and_pnjlim_diodes_agree_at_the_operating_point` and `the_limexp_diode_series_twin_agrees_with_ngspice` pass under `**Run sourcelimexp**`
-- [ ] No `ToleranceContract` edited
-- [ ] Code clarity: the comparison is a method of a named fixture type; no free test helper
-- [ ] Gate check passes: Full
+- [x] `limexp_elaborates_from_the_stdlib_with_its_closure`, `limexp_and_pnjlim_diodes_agree_at_the_operating_point` and `the_limexp_diode_series_twin_agrees_with_ngspice` pass under `**Run sourcelimexp**`
+- [x] No `ToleranceContract` edited
+- [x] Code clarity: the comparison is a method of a named fixture type; no free test helper
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
