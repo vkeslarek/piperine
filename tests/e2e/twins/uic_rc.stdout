@@ -1,4 +1,3 @@
-run uic_rc: transient, top UicRc, backend rust
 
 time         UicRc.out
 0.000000e0   2.000000e0
