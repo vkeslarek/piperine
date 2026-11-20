@@ -19,13 +19,12 @@ use crate::msl::Span;
 use crate::pom::{BinOp, CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, LitKind, PatKind, Resolution, StmtId, StmtKind, UnOp};
 use crate::types::{Callee, Method, Ty};
 
-/// What names the code being lowered: the owner's params, nodes and locals.
+/// What names the code being lowered: the owner's params and locals (its nodes are those of its
+/// frame, `Frame::nodes`).
 pub(super) struct Scope {
     pub(super) file: FileId,
     /// Param declaration to its index in the body's params.
     pub(super) params: BTreeMap<DeclId, u32>,
-    /// Port or signal declaration to its index in the body's nodes.
-    pub(super) nodes: BTreeMap<DeclId, u32>,
     pub(super) locals: Vec<Local>,
     pub(super) local_index: BTreeMap<DeclId, u32>,
     pub(super) limits: Vec<Site>,
@@ -83,7 +82,7 @@ pub(super) struct Scope {
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), nodes: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new() }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new() }
     }
 }
 

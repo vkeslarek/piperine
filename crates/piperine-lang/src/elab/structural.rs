@@ -303,7 +303,7 @@ impl Elaboration<'_, '_> {
         let mut out = Vec::new();
         for call in &data.instances {
             let Some(crate::types::Callee::Module(child)) = self.types.callee(*call) else { continue };
-            if self.result_callee(*call).is_some() {
+            if self.hoisted_callee(*call).is_some() {
                 continue;
             }
             for field in self.placement_fields(*call, child) {
@@ -500,7 +500,7 @@ impl Elaboration<'_, '_> {
         for pair in ends {
             let all_zero = found.iter().filter(|c| c.ends == pair).all(|c| c.quantity == crate::pom::QuantityRole::Potential && c.conditions.is_empty() && self.is_constant_zero(c.rhs));
             if all_zero && !read.contains(&pair) {
-                let terminal = |end: Option<DeclId>| end.and_then(|d| scope.nodes.get(&d).copied()).map_or(Terminal::Ground, Terminal::Node);
+                let terminal = |end: Option<DeclId>| end.and_then(|d| self.frames[0].nodes.get(&d).copied()).unwrap_or(Terminal::Ground);
                 merged.push((terminal(pair[0]), terminal(pair[1])));
             }
         }

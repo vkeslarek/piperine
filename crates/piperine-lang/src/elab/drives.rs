@@ -11,11 +11,10 @@ use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
 impl Elaboration<'_, '_> {
     /// A scope for code of the body outside its `analog` block and its functions (a drive, a
-    /// reaction): the names of `scope` (params, nodes, frame), with no local of its own.
+    /// reaction): the names of `scope` (params, frame), with no local of its own.
     pub(super) fn sub_scope(scope: &Scope) -> Scope {
         let mut sub = Scope::new(scope.file);
         sub.params = scope.params.clone();
-        sub.nodes = scope.nodes.clone();
         sub.frame = scope.frame;
         sub
     }

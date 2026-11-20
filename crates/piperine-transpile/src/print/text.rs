@@ -138,9 +138,13 @@ impl Text {
     /// (`above$0`, `match$0`). They print as `_v`, `_d` and `_s`: `rev3_v1`, `gate_dx`,
     /// `above_s0_dinit_s0_dup`, snake-case names (contract.md D9). The name of a body variant
     /// (`Sw~short=1,gain=-0.5`) adds `=`, `,` and `-`, printed `_q`, `_c` and `_m`. Two names of one owner that
-    /// spell alike are refused where the owner is printed, never shadowed.
+    /// spell alike are refused where the owner is printed, never shadowed. A front-end name is also
+    /// lowercased: an unnamed placement is `<module>$<k>`, with the module's own capital (`Lag$0.y`,
+    /// analog-structure design 5), which prints `lag_s0_dy`, never `Lag_s0_dy` (a non-snake-case
+    /// variable, a rustc warning).
     fn spelled(name: &str) -> String {
-        name.replace('~', "_v").replace('.', "_d").replace('$', "_s").replace('=', "_q").replace(',', "_c").replace('-', "_m")
+        let spelled = name.replace('~', "_v").replace('.', "_d").replace('$', "_s").replace('=', "_q").replace(',', "_c").replace('-', "_m");
+        if name.contains(['~', '.', '$']) { spelled.to_ascii_lowercase() } else { spelled }
     }
 }
 

@@ -112,11 +112,10 @@ impl<'d, 't> Elaboration<'d, 't> {
         if self.top_has_a_port(top) {
             return Err(self.diagnostics);
         }
-        // A module with a result gets no body: it is hoisted into each body that places it.
-        let modules: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(&self.design.decl_data(*d).kind, DeclKind::Module(m) if m.ret.is_none())).collect();
-        if self.refuse_digital_forms(&modules) {
-            return Err(self.diagnostics);
-        }
+        // A module with a result or a value input gets no body: it is hoisted into each body that
+        // places it. Its natures are still the IR's before any body.
+        let reached: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(&self.design.decl_data(*d).kind, DeclKind::Module(_))).collect();
+        let modules: Vec<DeclId> = reached.iter().copied().filter(|d| !self.is_hoisted(*d)).collect();
         self.plan_params(&modules);
         self.classify_key_params(&modules);
         // An unkeyed module keeps the id of its place in first-reach order; a keyed module's
@@ -124,7 +123,7 @@ impl<'d, 't> Elaboration<'d, 't> {
         let unkeyed: Vec<DeclId> = modules.iter().copied().filter(|m| self.keys.of(*m).is_empty()).collect();
         self.body_ids = unkeyed.iter().enumerate().map(|(k, m)| (*m, BodyId(k as u32))).collect();
         self.body_variants = BodyVariants::starting_at(unkeyed.len() as u32);
-        self.lower_natures(&modules);
+        self.lower_natures(&reached);
         for module in &unkeyed {
             if let Some(id) = self.body_ids.get(module).copied() {
                 self.lower_body(*module, &Bindings::new(), BodyKey::unkeyed(*module), id);

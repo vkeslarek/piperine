@@ -367,3 +367,57 @@ fn the_section_18_diode_waits_for_params_and_io() {
     assert_eq!(Elab::codes(&found), ["P0001"]);
     assert!(found[0].diagnostic.message.contains("Option"), "the refusal names the param type: {}", found[0].diagnostic.message);
 }
+
+/// `Lag` of AS-09: a result that reads its own node, hoisted into each body that places it.
+const LAG: &str = "module Lag(x: f64) -> f64 { tau: f64 = 1m; signal y: State; potential(y) }\nanalog for Lag { flow(y) +> tau * ddt(potential(y)) + potential(y) - x; }\n";
+
+#[test]
+fn two_placements_with_equal_arguments_are_two_instances() {
+    // AS-09 AC 3 (§8.3.3): two placements written the same make two instances, each with its own node
+    // (`Lag$0.y` and `Lag$1.y`) and its own equation, not one memoized by its arguments.
+    let src = format!("{LAG}module Top() {{ signal a: Electrical; signal o: Electrical; }}\nanalog for Top {{ v(o) +> Lag(v(a)) + Lag(v(a)); }}");
+    let ir = Elab::ir(&src, "Top");
+    let top = body(&ir, "Top");
+    let names: Vec<&str> = top.nodes().iter().map(|n| n.name.as_str()).collect();
+    assert_eq!(names, ["a", "o", "Lag$0.y", "Lag$1.y"], "one node per placement, after the body's own");
+    assert_eq!(top.hoisted().iter().map(|h| h.name.as_str()).collect::<Vec<_>>(), ["Lag$0", "Lag$1"]);
+    assert_eq!(top.contributions().len(), 3, "the body's potential and one flow row per instance");
+}
+
+#[test]
+fn a_selector_through_a_value_input_is_judged_per_placement() {
+    // AS-02 AC 2 (§11 rule 3, §8.3.9): the selector of `Gate` reads its value input `s`. It is judged
+    // per instance, after substitution: a placement that binds `s` to a probe gets E0414 (the branch
+    // has a potential contribution under a selector that reads a probe), one that binds it to a param
+    // does not.
+    let gate = "module Gate(a: Electrical, s: f64) {}\nanalog for Gate { if s > 0.5 { v(a) +> 1.0; } else { i(a, gnd) +> 0.0; } }\n";
+    let probed = format!("{gate}module Top() {{ signal a: Electrical; signal b: Electrical; let g = Gate(a, v(b)); }}");
+    let err = Elab::run(&probed, "Top").expect_err("a probe selects a potential branch");
+    assert_eq!(Elab::codes(&err), ["E0414", "E0414"], "one at each contribution under the selector");
+    let bound = format!("{gate}module Top() {{ k: f64 = 1.0; signal a: Electrical; let g = Gate(a, k); }}");
+    let ir = Elab::ir(&bound, "Top");
+    assert_eq!(body(&ir, "Top").branches().iter().map(|b| b.kind).collect::<Vec<_>>(), [BranchKind::Switch], "a param selects at run time");
+}
+
+#[test]
+fn the_stdlib_idt_waits_for_generics() {
+    // AS-05 AC 1 (Q2): the stdlib `idt` of section 22.2.8 is generic (`idt<S: Nature = State>`), which
+    // `generics` (L30) owns; until then a placement of it is refused by name, never run as a different
+    // module. The local `Integ` (`tests/structure/modules.msl`) proves the mechanism.
+    let src = "module Top() { signal o: Electrical; }\nanalog for Top { v(o) +> idt(1.0, 0.0); }";
+    let design = Elab::design(src);
+    let found = piperine_lang::types::Types::check(&design, "Top").expect_err("a generic module is refused");
+    assert_eq!(Elab::codes(&found), ["P0001"]);
+    assert!(found[0].diagnostic.message.contains("generic"), "the refusal names the form: {}", found[0].diagnostic.message);
+}
+
+#[test]
+fn the_water_model_waits_for_generics() {
+    // AS-05 AC 2 (Q2): `Water` of Part IV section 13 reads `idt::<Heat>`, a generic instantiation: refused
+    // by name until `generics` merges.
+    let src = "#[derive(Repr, Clone, Copy, PartialEq)]\nenum Phase { Liquid, Boiling, Vapor }\nnature Heat { potential: Energy { access: joules, units: \"J\", abstol: 1m }, flow: Power { access: pwr, units: \"W\", abstol: 1n } }\nmodule Water(t: Thermal) {\n    mass: f64 = 1.0;\n    hv: f64 = 2.26M;\n    pub signal phase: Bit<Phase> = Phase::Liquid;\n    let ph = phase.known_or(Phase::Liquid);\n    let absorbed = idt::<Heat>(pwr(t), 0.0, reset: ph != Phase::Boiling);\n}\nmodule Top() { signal t: Thermal; let w = Water(t); }";
+    let design = Elab::design(src);
+    let found = piperine_lang::types::Types::check(&design, "Top").expect_err("a generic instantiation is refused");
+    assert!(Elab::codes(&found).iter().all(|c| c == "P0001"), "{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+    assert!(found.iter().any(|d| d.diagnostic.message.contains("generic")), "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+}

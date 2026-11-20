@@ -9,8 +9,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use piperine_ir::{BodyId, Carrier, CarrierRole, ChildValue, Constant, Derivative, Drive, Event, Reaction, Stream, ValueType};
+use piperine_ir::{BodyId, BodyNode, Carrier, CarrierRole, ChildValue, Constant, Derivative, Drive, Event, Hoisted, Reaction, Stream, Terminal, ValueType};
 
+use super::body::NodePlan;
 use super::consts::{Bindings, Folded};
 use super::elaborator::Elaboration;
 use crate::pom::{DeclId, DeclKind, Dir, ExprId};
@@ -19,6 +20,11 @@ use crate::types::Ty;
 /// What a body holds besides its analog block, in the order the IR numbers it.
 #[derive(Default)]
 pub(super) struct Structure {
+    /// The nodes of the body in the order the IR numbers them: its own ports, then its own signals,
+    /// then the signals of the hoisted frames (`hoist.rs`), each with the plan placement reads.
+    pub(super) nodes: Vec<(BodyNode, NodePlan)>,
+    /// The hoisted frames that add a node or an `analog` statement to the body (`BodyData::hoisted`).
+    pub(super) hoisted: Vec<Hoisted>,
     pub(super) carriers: Vec<Carrier>,
     pub(super) drives: Vec<Drive>,
     pub(super) events: Vec<Event>,
@@ -44,6 +50,10 @@ pub(super) struct Frame {
     pub(super) prefix: String,
     /// The carrier of the body each discrete port or signal declaration of `module` is.
     pub(super) carriers: BTreeMap<DeclId, u32>,
+    /// The terminal of the body each node port and node `signal` declaration of `module` is: frame
+    /// 0's are the body's own nodes; a hoisted frame's node port is the caller's terminal for its
+    /// argument, and its node `signal` a node the body gained (`hoist.rs`).
+    pub(super) nodes: BTreeMap<DeclId, Terminal>,
     /// A hoisted module's params, bound to constants by the placement or their defaults.
     pub(super) params: BTreeMap<DeclId, Constant>,
     /// A hoisted module's value inputs: the caller's expression, read in the parent frame, or
@@ -60,7 +70,7 @@ pub(super) struct Frame {
 impl Frame {
     /// The frame of the body's own module.
     pub(super) fn root(module: DeclId) -> Frame {
-        Frame { module, parent: None, prefix: String::new(), carriers: BTreeMap::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new() }
+        Frame { module, parent: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new() }
     }
 }
 
@@ -137,6 +147,9 @@ impl Elaboration<'_, '_> {
     /// Add the gathered structure of the body `body` to the IR, in the order it was numbered.
     pub(super) fn finish_structure(&mut self, body: BodyId) {
         let structure = std::mem::take(&mut self.structure);
+        for hoisted in structure.hoisted {
+            self.ir.hoisted(body, hoisted);
+        }
         for carrier in structure.carriers {
             self.ir.carrier(body, carrier);
         }

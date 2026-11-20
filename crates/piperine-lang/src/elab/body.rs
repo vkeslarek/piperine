@@ -78,6 +78,8 @@ impl Elaboration<'_, '_> {
         let name = self.body_name(&key);
         let mut scope = Scope::new(data.file);
         scope.keys = keys.clone();
+        self.structure = Structure::default();
+        self.frames = vec![Frame::root(module)];
         let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
         for (index, param) in params.iter().enumerate() {
             scope.params.insert(*param, index as u32);
@@ -88,22 +90,23 @@ impl Elaboration<'_, '_> {
                 param_specs.push(spec);
             }
         }
-        let nodes = self.lower_nodes(&mut scope, module);
-        let (node_specs, node_plans): (Vec<BodyNode>, Vec<NodePlan>) = nodes.into_iter().unzip();
+        self.lower_nodes(module);
         scope.merged = self.merged_branches(&scope, module);
-        self.structure = Structure::default();
-        self.frames = vec![Frame::root(module)];
         self.lower_carriers(0, module);
         self.lower_definitions(&scope, module);
         self.hoist_placements(&scope);
         scope.addend_lets = self.addend_only_ddt_lets(&scope, module);
-        let analog = self.lower_analog(&mut scope, module);
+        let mut analog = self.lower_analog(&mut scope, module);
+        if let Some(hoisted) = self.lower_hoisted_analog(&mut scope) {
+            analog.get_or_insert_with(Vec::new).extend(hoisted);
+        }
         self.decide_branch_kinds(&mut scope);
         self.check_selector_rule(&scope);
         let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&scope, module).into_iter().unzip();
         self.lower_digital(&scope, module);
         let carriers = self.structure.carriers.clone();
         let merged = scope.merged.clone();
+        let (node_specs, node_plans): (Vec<BodyNode>, Vec<NodePlan>) = std::mem::take(&mut self.structure.nodes).into_iter().unzip();
         let body = self.ir.body(BodySpec {
             name,
             origin: self.locator.decl(module),
@@ -139,26 +142,32 @@ impl Elaboration<'_, '_> {
         Some(Param { name: plan.name, ty, default: plan.default, check, structural, origin: self.locator.decl(param) })
     }
 
-    /// The nodes of a module: ports first, then signals, each with its nature and initial value.
-    /// A discrete carrier is not a node (`carriers.rs`).
-    fn lower_nodes(&mut self, scope: &mut Scope, module: DeclId) -> Vec<(BodyNode, NodePlan)> {
+    /// The nodes of a module, ports first and then signals, each with its nature and initial value,
+    /// added to the structure of the body and named in frame 0. A discrete carrier is not a node
+    /// (`carriers.rs`).
+    fn lower_nodes(&mut self, module: DeclId) {
         let children = self.design.decl_data(module).children.clone();
         let node = |c: &DeclId| self.types.carrier(*c).is_none();
         let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && node(c));
         let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && node(c));
-        let mut out = Vec::new();
         for (decl, role) in ports.map(|d| (d, NodeRole::Port)).chain(signals.map(|d| (d, NodeRole::Signal))).collect::<Vec<_>>() {
-            if let Some(node) = self.lower_node(decl, role) {
-                scope.nodes.insert(decl, out.len() as u32);
-                out.push(node);
+            if let Some(terminal) = self.add_node(decl, role, "") {
+                self.frames[0].nodes.insert(decl, terminal);
             }
         }
-        out
     }
 
-    fn lower_node(&mut self, decl: DeclId, role: NodeRole) -> Option<(BodyNode, NodePlan)> {
+    /// The node `decl` as a node of the body being lowered, named `prefix` and its own name (`lag.y`
+    /// for a signal of a hoisted frame): added to the structure; its terminal. `None` after a diagnostic.
+    pub(super) fn add_node(&mut self, decl: DeclId, role: NodeRole, prefix: &str) -> Option<Terminal> {
+        let (spec, plan) = self.lower_node(decl, role, prefix)?;
+        self.structure.nodes.push((spec, plan));
+        Some(Terminal::Node(self.structure.nodes.len() as u32 - 1))
+    }
+
+    fn lower_node(&mut self, decl: DeclId, role: NodeRole, prefix: &str) -> Option<(BodyNode, NodePlan)> {
         let data = self.design.decl_data(decl).clone();
-        let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let name = format!("{prefix}{}", data.name.as_ref().map_or("", |n| n.text.as_str()));
         let (ty, init) = match &data.kind {
             DeclKind::Port(p) => (p.ty, None),
             DeclKind::Signal(s) => (s.ty, s.init),

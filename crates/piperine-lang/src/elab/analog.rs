@@ -318,8 +318,8 @@ impl Elaboration<'_, '_> {
             return None;
         };
         match self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
-            Resolution::Decl(decl) => match scope.nodes.get(&decl) {
-                Some(index) => Some(Terminal::Node(*index)),
+            Resolution::Decl(decl) => match self.frames.get(scope.frame).and_then(|f| f.nodes.get(&decl)) {
+                Some(terminal) => Some(*terminal),
                 None => {
                     self.unsupported(file, node.span, "a name that is not a node of this module");
                     None

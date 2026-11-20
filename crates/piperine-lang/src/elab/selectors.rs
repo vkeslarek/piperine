@@ -125,13 +125,13 @@ impl Elaboration<'_, '_> {
     /// `(a, b)`: the nodes of a branch as the module names them, `gnd` for ground.
     pub(super) fn branch_name(&self, scope: &Scope, branch: usize) -> String {
         let ends = &scope.branches[branch];
-        format!("({}, {})", self.terminal_name(scope, ends.plus), self.terminal_name(scope, ends.minus))
+        format!("({}, {})", self.terminal_name(ends.plus), self.terminal_name(ends.minus))
     }
 
     /// The name of the node `terminal` of the body being lowered.
-    pub(super) fn terminal_name(&self, scope: &Scope, terminal: Terminal) -> String {
+    pub(super) fn terminal_name(&self, terminal: Terminal) -> String {
         let Terminal::Node(index) = terminal else { return "gnd".to_string() };
-        let decl = scope.nodes.iter().find(|(_, i)| **i == index).map(|(d, _)| *d);
+        let decl = self.frames[0].nodes.iter().find(|(_, t)| **t == Terminal::Node(index)).map(|(d, _)| *d);
         match decl.map(|d| self.design.decl_data(d)) {
             Some(data) if matches!(data.kind, DeclKind::Port(_) | DeclKind::Signal(_)) => data.name.as_ref().map_or_else(|| format!("#{index}"), |n| n.text.clone()),
             _ => format!("#{index}"),
@@ -169,7 +169,7 @@ impl Elaboration<'_, '_> {
             }
             let Some(kind) = self.ir.expr_kind(id) else { continue };
             let found = match kind {
-                Expr::Probe { plus, minus } => Some(format!("the probe of ({}, {})", self.terminal_name(scope, *plus), self.terminal_name(scope, *minus))),
+                Expr::Probe { plus, minus } => Some(format!("the probe of ({}, {})", self.terminal_name(*plus), self.terminal_name(*minus))),
                 Expr::Flow { branch } => Some(format!("the flow of the branch {}", self.branch_name(scope, *branch as usize))),
                 Expr::Derivative(_) => Some("a `ddt` result".to_string()),
                 Expr::Limit { .. } => Some("a `limit` value".to_string()),

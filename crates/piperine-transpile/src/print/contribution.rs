@@ -179,7 +179,9 @@ impl ContributionSums {
             }
             for (held, quantity) in [(received.potential, QuantityRole::Potential), (received.flow, QuantityRole::Flow)] {
                 if let Some(flag) = self.flag(b, quantity).filter(|_| held) {
-                    lines.push(format!("let mut {flag} = false;"));
+                    // A flag every arm of an `if`/`else` sets (`if c { v +> 1.0 } else { v +> 2.0 }`) is never
+                    // read at `false`: the start value is still the one an untaken path reads.
+                    lines.push(format!("#[allow(unused_assignments)] let mut {flag} = false;"));
                 }
             }
         }

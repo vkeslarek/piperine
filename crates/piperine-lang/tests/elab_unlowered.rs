@@ -162,7 +162,6 @@ fn a_form_the_checker_accepts_for_msl_digital_is_p0001_until_it_is_lowered() {
         // A module with a result is hoisted from msl-digital T33 on: the form still refused in its
         // place is `others()` of DIG-07 AC 1.
         ("others()", "module Top(in c: Bit) { let x = c.others(); }", vec!["method `others`"]),
-        ("a value input", "module Amp(x: f64, p: Electrical) { }\nanalog for Amp { v(p) +> x; }\nmodule Top() { signal s: Electrical; let a = Amp(1.0, s); }", vec!["a value input"]),
         // The flow read of a potential branch is lowered from msl-digital T35 on: the form still
         // refused in its place is the template of DIG-07 AC 1.
         ("a template", "module Top(a: Electrical) { let t = Resistor { r: 1.0 }; }\nmodule Resistor(p: Electrical, n: Electrical) { r: f64; }", vec!["module template"]),
@@ -173,6 +172,19 @@ fn a_form_the_checker_accepts_for_msl_digital_is_p0001_until_it_is_lowered() {
             assert!(err.iter().any(|d| d.diagnostic.message.contains(name)), "{form}: no diagnostic names `{name}`: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
         }
     }
+}
+
+#[test]
+fn a_value_input_of_a_module_without_a_result_lowers_hoisted() {
+    // analog-structure T27 (AS-08 AC 1): the row `a value input` of the table above is lifted: a
+    // module with a value input is hoisted like one with a result. `Amp` has no body of its own; its
+    // `analog` block joins `Top`'s under the placement's name, and the body records it (`hoisted`).
+    let src = "module Amp(x: f64, p: Electrical) { }\nanalog for Amp { v(p) +> x; }\nmodule Top() { signal s: Electrical; let a = Amp(1.0, s); }";
+    let ir = Elab::ir(src, "Top");
+    assert!(ir.bodies().all(|b| b.name() != "Amp"), "a hoisted module gets no body");
+    let top = ir.bodies().find(|b| b.name() == "Top").expect("the body Top");
+    assert_eq!(top.contributions().len(), 1, "the callee's contribution joins the caller's body");
+    assert_eq!(top.hoisted().iter().map(|h| (h.name.as_str(), h.module.as_str())).collect::<Vec<_>>(), [("a", "Amp")]);
 }
 
 #[test]

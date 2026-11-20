@@ -1,0 +1,161 @@
+//! Modules in expressions (analog-structure AS-08, AS-09, AS-10): a value input of a module without
+//! a result, a result that reads its own node (`Lag`, `Integ`), a body `let` read by `analog` and by an
+//! event, and feedback through an instance. Every module is written from the spec text (Part III
+//! §8.3, Part IV §11, Part VII §22.2.8 with `S` replaced by `State`).
+
+/// Ideal resistor.
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// A potential held at `volts`.
+module Level(p: Electrical) { volts: f64 = 0.0; }
+analog for Level { v(p, gnd) +> volts; }
+
+/// A potential held at `volts` with a unit AC stimulus on top.
+module AcLevel(p: Electrical) { volts: f64 = 0.0; }
+analog for AcLevel { v(p, gnd) +> volts + ac_stim(1.0); }
+
+/// 0 V at the operating point and 1 V from the first step on: a step "at 0".
+module StepAtZero(p: Electrical) {}
+analog for StepAtZero { v(p, gnd) +> if now() > 0.0 { 1.0 } else { 0.0 }; }
+
+/// A potential ramping at 1 kV per second.
+module Ramp(p: Electrical) {}
+analog for Ramp { v(p, gnd) +> now() * 1.0e3; }
+
+// -- AS-08: a value input of a module without a result
+
+/// Drives `o` to `x`: a value input of a module with no result.
+module Drive(o: Electrical, x: f64) {}
+analog for Drive { v(o) +> x; }
+
+module GainBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let source = Level { volts: 1.0 }(a);
+    let drive = Drive(o, 2.0 * v(a));
+}
+
+module GainAcBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let source = AcLevel { volts: 1.0 }(a);
+    let drive = Drive(o, 2.0 * v(a));
+}
+
+/// A `Bit<f64>` that is 1.0 until 1 us and 3.0 from then on.
+module Stepper(out lv: Bit<f64> = 1.0) {}
+digital for Stepper { on at(1u) { lv <- 3.0; } }
+
+module CarrierBench() {
+    signal o: Electrical;
+    signal lv: Bit<f64>;
+    let stepper = Stepper(lv);
+    let drive = Drive(o, lv.known_or(0.0));
+}
+
+/// Records `x` at 1 ms: a value input read in a reaction of the callee.
+module Sample(x: f64) {}
+digital for Sample { on at(1m) { emit!("d", x = x); } }
+
+module SampleBench() {
+    signal a: Electrical;
+    let ramp = Ramp(a);
+    let sample = Sample(v(a));
+    let load = Resistor { r: 1k }(a, gnd);
+}
+
+// -- AS-09: a result that holds a node
+
+/// A first-order low-pass of time constant `tau`.
+module Lag(x: f64) -> f64 {
+    tau: f64 = 1m;
+    signal y: State;
+    potential(y)
+}
+analog for Lag { flow(y) +> tau * ddt(potential(y)) + potential(y) - x; }
+
+module LagBench() {
+    signal inp: Electrical;
+    signal o: Electrical;
+    let source = StepAtZero(inp);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for LagBench { v(o) +> Lag(v(inp)); }
+
+module LagAcBench() {
+    signal inp: Electrical;
+    signal o: Electrical;
+    let source = AcLevel { volts: 0.0 }(inp);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for LagAcBench { v(o) +> Lag(v(inp)); }
+
+/// 0 until 2 ms, then true: the enable that the lag waits for.
+module Enabler(out en: Bit = false) {}
+digital for Enabler { on at(2m) { en <- true; } }
+
+module UntakenBench() {
+    signal inp: Electrical;
+    signal o: Electrical;
+    signal en: Bit;
+    let enabler = Enabler(en);
+    let source = StepAtZero(inp);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for UntakenBench {
+    if en.high() { v(o) +> Lag(v(inp)); } else { v(o) +> 0.0; }
+}
+
+module NamedBench() {
+    signal inp: Electrical;
+    signal o: Electrical;
+    signal crossed: Bit = false;
+    let source = StepAtZero(inp);
+    let load = Resistor { r: 1k }(o, gnd);
+    let l = Lag(v(inp));
+}
+analog for NamedBench { v(o) +> l; }
+digital for NamedBench { on above(l - 0.5) { crossed <- true; } }
+
+// -- AS-10 and AS-04 AC 2 to 4: the local `Integ` and feedback through it
+
+/// The integral of `x` (Part VII §22.2.8 with `S` = `State`, no generic): held at `ic` in an
+/// equilibrium solve and while `reset` is true.
+module Integ(x: f64, ic: Option<f64>, reset: Option<bool>) -> f64 {
+    signal y: State;
+    potential(y)
+}
+analog for Integ {
+    let hold = reset.unwrap_or(false) || (ic.is_some() && analysis(Static));
+    if hold { potential(y) +> ic.unwrap_or(0.0); } else { flow(y) +> ddt(potential(y)) - x; }
+}
+
+module FeedbackBench() {
+    signal o: Electrical;
+    let y = Integ(-y / 1m, 1.0, None);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for FeedbackBench { v(o) +> y; }
+
+module ResetBench() {
+    signal o: Electrical;
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for ResetBench { v(o) +> Integ(1.0, 0.5, now() < 1m); }
+
+module IntegAcBench() {
+    signal inp: Electrical;
+    signal o: Electrical;
+    let source = AcLevel { volts: 0.0 }(inp);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for IntegAcBench { v(o) +> Integ(v(inp), 0.0, None); }
+
+module HoldBench() {
+    signal o: Electrical;
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for HoldBench { v(o) +> Integ(1.0, 0.5, None); }
