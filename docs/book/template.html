@@ -6,9 +6,10 @@
 <style>
 /* Layout: a book. Fixed chapter rail on the left (top menu on phones), one calm reading column of ~68ch; code and tables may run a little wider than prose. */
 :root{
-  --bg:#f5f7f6; --surface:#ffffff; --fg:#17201c; --muted:#5b6863; --line:#d8e0dc;
-  --accent:#0f7a5c; --accent-soft:#e2f1eb; --code-bg:#eef3f1;
-  --ana:#1f62a8; --dig:#a1520c; --warn:#8a5a00; --warn-soft:#f8eed9;
+  /* Piperine's colors, from assets/logo.svg: cream #f3f3eb, ink #454440, orange #d16127. */
+  --bg:#f3f3eb; --surface:#fbfbf7; --fg:#2e2d29; --muted:#64625b; --line:#dbdacf;
+  --accent:#b04f1c; --accent-soft:#f6e4d8; --code-bg:#ebeae0;
+  --ana:#1f62a8; --dig:#3d7a3f; --warn:#8a5a00; --warn-soft:#f6ecd4;
   --kw:#7a3fb8; --st:#1f6fb2; --nu:#a6600f; --com:#7c8a85; --ty:#0d6b6e; --fn:#33507f; --er:#b3261e;
   --f-display:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;
   --f-read:"IBM Plex Serif",Georgia,"Times New Roman",serif;
@@ -17,15 +18,15 @@
   --rail:268px; --measure:68ch;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#0f1412; --surface:#161d1a; --fg:#e2eae6; --muted:#97a59f; --line:#28332f;
-  --accent:#4cc79f; --accent-soft:#15302a; --code-bg:#18211e;
-  --ana:#7cb4ee; --dig:#eba663; --warn:#e8b46f; --warn-soft:#30260f;
+  --bg:#22211e; --surface:#2b2a26; --fg:#f3f3eb; --muted:#b2b0a5; --line:#45443f;
+  --accent:#e8834f; --accent-soft:#3d2a1f; --code-bg:#292824;
+  --ana:#7cb4ee; --dig:#86c487; --warn:#e8b46f; --warn-soft:#33291a;
   --kw:#c49bf0; --st:#7cb8ec; --nu:#e8b46f; --com:#7f8e88; --ty:#62c9c2; --fn:#a9c1ea; --er:#ff8a80;
   color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#0f1412; --surface:#161d1a; --fg:#e2eae6; --muted:#97a59f; --line:#28332f;
-  --accent:#4cc79f; --accent-soft:#15302a; --code-bg:#18211e;
-  --ana:#7cb4ee; --dig:#eba663; --warn:#e8b46f; --warn-soft:#30260f;
+  --bg:#22211e; --surface:#2b2a26; --fg:#f3f3eb; --muted:#b2b0a5; --line:#45443f;
+  --accent:#e8834f; --accent-soft:#3d2a1f; --code-bg:#292824;
+  --ana:#7cb4ee; --dig:#86c487; --warn:#e8b46f; --warn-soft:#33291a;
   --kw:#c49bf0; --st:#7cb8ec; --nu:#e8b46f; --com:#7f8e88; --ty:#62c9c2; --fn:#a9c1ea; --er:#ff8a80;
   color-scheme:dark}
 
@@ -189,7 +190,7 @@ blockquote.pull code{font-size:.8em}
 .cheat-card .code{margin:0 0 10px}
 .cheat-card .code pre{padding:10px 12px;font-size:12.5px}
 .cheat-card .code .lang{display:none}
-figure.plot{margin:4px 0 22px;padding:10px;background:#fff;border:1px solid var(--line);border-radius:8px}
+figure.plot{margin:4px 0 22px;padding:10px;background:#fbfbf7;border:1px solid var(--line);border-radius:8px}
 figure.plot svg{display:block;width:100%;height:auto}
 
 /* ---- drawn figures: inline SVG that follows the theme (strokes and fills come from the tokens) ---- */
