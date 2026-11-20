@@ -482,8 +482,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `a_noise_run_prints_one_row_per_frequency_then_the_total` passes
-- [ ] Gate check passes: `Run clianalyses`, then `Run twins`
+- [x] `a_noise_run_prints_one_row_per_frequency_then_the_total` passes
+- [x] Gate check passes: `Run clianalyses`, then `Run twins`
 
 **Tests**: e2e
 **Gate**: full

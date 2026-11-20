@@ -7,7 +7,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use piperine_api::{Backend, Cell, Failure, Field, Overrides, Project, Record, RecordSink, RunSpec, Session};
+use piperine_api::{Backend, Cell, Failure, Field, Overrides, Project, Record, RecordSink, RunSpec, Session, Table};
 use piperine_transpile::Settings;
 
 use crate::cli::Out;
@@ -155,7 +155,7 @@ impl RunCommand {
     fn attempt(&self, out: &Out, err: &mut dyn Write) -> Result<Option<Record>, Stop> {
         if self.lone().is_some() && self.overrides.analysis.is_none() {
             // CLI-03 AC 12: a lone file has no run table, so the flags must say what to run
-            let message = "a lone file has no run table: name the analysis with --analysis (op, dc, ac, transient, tf, pz, sens or pss)".to_string();
+            let message = "a lone file has no run table: name the analysis with --analysis (op, dc, ac, transient, tf, pz, sens, pss or noise)".to_string();
             return Err(Stop::Usage(Failure::Host { code: "P0010", message }));
         }
         let project = self.discover()?;
@@ -193,7 +193,12 @@ impl RunCommand {
                 Self::replace(&base, file, &text)?;
                 writeln!(out, "wrote {} ({} rows)", file.display(), table.rows.len())?;
             }
-            None => TextTable::write(&table, &mut *out)?,
+            None => {
+                TextTable::write(&table, &mut *out)?;
+                if let Some(report) = session.noise_report() {
+                    TextTable::write_summary(&Table::summary(report), &mut *out)?;
+                }
+            }
         }
         if let Some(file) = &spec.plot {
             let mut text = Vec::new();

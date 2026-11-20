@@ -2,7 +2,7 @@
 
 use std::io::{self, Write};
 
-use piperine_api::Table;
+use piperine_api::{Cell, Table};
 
 use crate::render::number::Number;
 
@@ -19,6 +19,15 @@ impl TextTable {
         for line in &lines {
             let padded: Vec<String> = line.iter().zip(&widths).map(|(cell, width)| format!("{cell:<width$}")).collect();
             writeln!(out, "{}", padded.join("  ").trim_end())?;
+        }
+        Ok(())
+    }
+
+    /// The summary lines of a run after its rows, one per line as `name  value`, the value
+    /// written as a table cell is.
+    pub fn write_summary(lines: &[(String, f64)], out: &mut dyn Write) -> io::Result<()> {
+        for (name, value) in lines {
+            writeln!(out, "{name}  {}", Number::text(&Cell::Real(*value)))?;
         }
         Ok(())
     }
