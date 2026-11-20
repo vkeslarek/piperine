@@ -1,0 +1,36 @@
+//! `x.level(k)` (MSL §3.3.4, §22.1, US-02). `x` holds 165 (levels 1010 0101, level 0 the
+//! lowest), `u` and `k` are never driven, so they stay unknown, and `ones` holds 255. A 1 GHz
+//! oscillator gives the rising edges the probe runs on (0.5 ns, 1.5 ns, ...).
+
+/// A free-running oscillator, its first change at half a period.
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// Reads levels of a known value, of an unknown one, and through an index that is unknown.
+module Probe(in clk: Bit, in x: Bit<u8>, in ones: Bit<u8>, in u: Bit<u8>, in k: Bit<u32>) {}
+digital for Probe {
+    on clk.rise() {
+        emit!("known", b0 = x.level(0).unwrap_or(false), b1 = x.level(1).unwrap_or(false), b2 = x.level(2).unwrap_or(false),
+              b7 = x.level(7).unwrap_or(false), some7 = x.level(7).is_some());
+        emit!("unknown", some = u.level(3).is_some(), value = u.level(3).unwrap_or(true));
+        emit!("indexed", mixed = x.level(k).unwrap_or(false), all = ones.level(k).unwrap_or(false), some = x.level(k).is_some());
+    }
+}
+
+module LevelsBench() {
+    signal clk: Bit; signal x: Bit<u8> = 165; signal ones: Bit<u8> = 255; signal u: Bit<u8>; signal k: Bit<u32>;
+    let osc = Osc(clk) { f: 1G };
+    let probe = Probe(clk, x, ones, u, k);
+}
+
+/// Level 8 of a `u8` does not exist: a known index not below the level count is a panic (§1 rule 11).
+module Outside(in clk: Bit, in x: Bit<u8>) {}
+digital for Outside { on clk.rise() { emit!("outside", b = x.level(8).unwrap_or(false)); } }
+
+module OutsideBench() {
+    signal clk: Bit; signal x: Bit<u8> = 165;
+    let osc = Osc(clk) { f: 1G };
+    let outside = Outside(clk, x);
+}

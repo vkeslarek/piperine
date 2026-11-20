@@ -372,3 +372,65 @@ fn committing_unknown_makes_every_level_unknown() {
     let (seen, _) = records_of("unknown_values.msl", "UnknownBench");
     assert_eq!(transient(&seen, "UnknownBench.q"), vec![(NS / 2, UNKNOWN.to_vec())]);
 }
+
+/// The fields every record of the stream `name` carries over the run, which must all be alike
+/// (the probes read values that do not change), as `(name, field)` pairs.
+fn constant_fields(records: &[Record], name: &str) -> Vec<(String, Field)> {
+    let all = stream(records, name);
+    assert_eq!(all.len(), 4, "one `{name}` record per rising edge: {all:?}");
+    assert!(all.iter().all(|r| r.fields == all[0].fields), "the probe reads values that do not change: {all:?}");
+    all[0].fields.clone()
+}
+
+/// The field `field` of the records of the stream `name` (alike, as `constant_fields` checks).
+fn named(records: &[Record], name: &str, field: &str) -> Field {
+    constant_fields(records, name).into_iter().find(|(n, _)| n == field).unwrap_or_else(|| panic!("no field `{field}` in `{name}`")).1
+}
+
+/// The fields of one record, named: `[("a", Field::Bool(true)), ..]`.
+fn fields(list: &[(&str, Field)]) -> Vec<(String, Field)> {
+    list.iter().map(|(name, field)| ((*name).to_string(), field.clone())).collect()
+}
+
+#[test]
+fn level_reads_each_level_of_a_known_value() {
+    // US-02 AC 1, §22.1: `x` holds 165 = 1010 0101, so level 0 is 1, 1 is 0, 2 is 1 and 7 is 1,
+    // and level 7 is `Some`
+    let (_, records) = records_of("levels.msl", "LevelsBench");
+    let wanted = fields(&[("b0", Field::Bool(true)), ("b1", Field::Bool(false)), ("b2", Field::Bool(true)), ("b7", Field::Bool(true)), ("some7", Field::Bool(true))]);
+    assert_eq!(constant_fields(&records, "known"), wanted);
+}
+
+#[test]
+fn level_with_a_known_index_is_known() {
+    // US-02 AC 1 and 2, §3.3.14: a level of an unknown value is `None`, and the answer is known:
+    // `u.level(3).is_some()` is a known `false`, `unwrap_or(true)` the known default
+    let (_, records) = records_of("levels.msl", "LevelsBench");
+    assert_eq!(constant_fields(&records, "unknown"), fields(&[("some", Field::Bool(false)), ("value", Field::Bool(true))]));
+}
+
+#[test]
+fn level_out_of_range_is_a_panic_naming_k() {
+    // US-02 AC 4, §1 rule 11: `x.level(8)` of a `u8` is a run fault, whose message names the
+    // level and the count
+    let built = build(&project("levels.msl"), "OutsideBench");
+    let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| built.run(2e-9, 0.5e-9)));
+    let message = match run {
+        Ok(_) => panic!("level 8 of a `u8` does not exist, the run must fault"),
+        Err(payload) => payload.downcast_ref::<String>().cloned().unwrap_or_default(),
+    };
+    assert!(message.contains("level 8") && message.contains("out of range"), "{message}");
+}
+
+#[test]
+fn level_with_an_unknown_index_merges_every_level() {
+    // US-02 AC 5, §3.3.13: `k` is unknown, so `x.level(k)` is the merge of every level: `x` =
+    // 1010 0101 has both bits, so the value is unknown (`mixed`), while `ones` = 255 has only 1s,
+    // so it is a known `true` (`all`); every level exists, so the level is `Some` (`some`)
+    let (_, records) = records_of("levels.msl", "LevelsBench");
+    assert_eq!(
+        constant_fields(&records, "indexed"),
+        fields(&[("mixed", Field::Unknown), ("all", Field::Bool(true)), ("some", Field::Bool(true))])
+    );
+}
+

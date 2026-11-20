@@ -18,7 +18,7 @@
 //!   literal `None` or `Some` is its value.
 //! - `let (a, b) = (x, y);` is one local per component.
 
-use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, Local, Method as IrMethod, Origin, Stmt, StmtId, UnaryOp, ValueType};
+use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, LevelPart, Local, Method as IrMethod, Origin, Stmt, StmtId, UnaryOp, ValueType};
 
 use super::elaborator::Elaboration;
 use super::known::Flag;
@@ -503,6 +503,21 @@ impl Elaboration<'_, '_> {
                 let read = self.lower_expr(scope, *recv)?;
                 let Some(zero) = self.zero(&payload, origin.clone()) else { return unsupported(self) };
                 let val = self.emit(Expr::KnownOr { value: read, default: zero }, payload, origin);
+                Some(Pair { is, val, literal: None })
+            }
+            // `x.level(k)`: the pair `(is, value)` of the `Option<bool>` (§3.3.4), each half read
+            // from the receiver and the index where they stand. Both halves are flagged only when
+            // the index may be unknown (§3.3.13, §3.3.14).
+            ExprKind::MethodCall { recv, args, .. } if self.types.builtin(expr) == Some(Builtin::Level) => {
+                let [index] = args.as_slice() else { return unsupported(self) };
+                let mut half = |this: &mut Self, part: LevelPart| {
+                    let value = this.lower_expr(scope, *recv)?;
+                    let index = this.lower_expr(scope, index.value)?;
+                    let ty = this.flag(index).wrap(ValueType::Bool);
+                    Some(this.emit(Expr::Level { value, index, part }, ty, origin.clone()))
+                };
+                let is = half(self, LevelPart::Is)?;
+                let val = half(self, LevelPart::Value)?;
                 Some(Pair { is, val, literal: None })
             }
             // `a.checked_add(b)`: `None` when the wrapping operation overflowed (H.1), so the flag is

@@ -150,9 +150,10 @@ impl Elaboration<'_, '_> {
                 self.unsupported(scope.file, span, "`known()`, an `Option`,");
                 None
             }
-            // Typed by the checker (T2); its lowering to a level pair is T27.
+            // An `Option`, lowered as a pair by `lower_option` wherever it is read; the checker
+            // allows no other reading of it.
             Builtin::Level => {
-                self.unsupported(scope.file, span, "method `level`");
+                self.unsupported(scope.file, span, "`level` read as a value rather than as an `Option`");
                 None
             }
             Builtin::Prev => {

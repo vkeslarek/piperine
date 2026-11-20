@@ -209,6 +209,8 @@ impl Checker<'_> {
             Resolution::Builtin(id) => match id.info().name {
                 "prev" => Some(Builtin::Prev),
                 "changed" => Some(Builtin::Changed),
+                // `level` of a carrier or a value the POM resolved to the language's own row
+                "level" => Some(Builtin::Level),
                 _ => {
                     self.unsupported(file, node.span, &format!("method `{name}`"));
                     return None;
