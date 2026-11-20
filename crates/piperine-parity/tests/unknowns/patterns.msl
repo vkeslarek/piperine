@@ -1,0 +1,25 @@
+//! `logic` and `matches_bits` by the tables of §22.1.4 (US-03). `a` holds 5 (0101), `u` is never
+//! driven. A 1 GHz oscillator gives the rising edges the probe runs on.
+
+/// A free-running oscillator, its first change at half a period.
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// `v` takes `logic("1010")` as its initial value; the others are built in the reaction.
+module Probe(in clk: Bit, in a: Bit<u4>, in u: Bit<u4>, in v: Bit<u4>) {}
+digital for Probe {
+    on clk.rise() {
+        emit!("logic", ones = logic::<u4>("1010"), zeros = logic::<u4>("0000"), skip = logic::<u4>("xxxx"), initial = v, bit = logic::<bool>("1"));
+        emit!("matches", exact = matches_bits(a, "0101"), wild = matches_bits(a, "01xx"), all_x = matches_bits(a, "xxxx"),
+              wrong = matches_bits(a, "0111"), low_wild = matches_bits(a, "xx01"), unknown = matches_bits(u, "0101"),
+              unknown_all_x = matches_bits(u, "xxxx"));
+    }
+}
+
+module PatternsBench() {
+    signal clk: Bit; signal a: Bit<u4> = 5; signal u: Bit<u4>; signal v: Bit<u4> = logic("1010");
+    let osc = Osc(clk) { f: 1G };
+    let probe = Probe(clk, a, u, v);
+}

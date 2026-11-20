@@ -29,7 +29,7 @@ use piperine_ir::{Constant, Real};
 use super::compound::EnumLayout;
 use crate::msl::lexer;
 use crate::pom::{BinOp, BlockNode, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, StmtId, StmtKind, UnOp};
-use crate::types::{Builtin, Callee, Method, Ty, Types};
+use crate::types::{Builtin, Callee, Intrinsic, Method, Ty, Types};
 
 /// The most nested calls of functions an evaluation follows.
 const CALL_DEPTH: usize = 256;
@@ -490,6 +490,9 @@ impl<'d, 't> ConstEval<'d, 't> {
     /// A call of a function of the reachable set: its body evaluated over its arguments. Every
     /// other callee needs a run.
     fn call(&mut self, expr: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Folded, ConstFault> {
+        if self.types.callee(expr) == Some(Callee::Intrinsic(Intrinsic::Logic)) {
+            return self.logic(expr, args);
+        }
         let Some(Callee::Function(function)) = self.types.callee(expr) else {
             return Err(ConstFault::Dynamic { expr, what: "a call that is not a function".to_string() });
         };
@@ -519,6 +522,37 @@ impl<'d, 't> ConstEval<'d, 't> {
         self.depth -= 1;
         self.locals = outer;
         result
+    }
+
+    /// `logic::<T>("..")` (§22.1.4): the value whose level `k` is the pattern's character `WIDTH - 1
+    /// - k`, a literal `0` or `1`. A pattern with an `x` is `Unknown` (one flag per value, G6
+    /// provisional: the per-level spec gives it its partial form), and so is a tag no variant of an
+    /// enum target has (§22.1.3 rule 2). The checker reported a pattern that is not a literal of
+    /// `T::WIDTH` characters of `0`, `1` and `x` (`E0702`).
+    fn logic(&self, expr: ExprId, args: &[ExprId]) -> Result<Folded, ConstFault> {
+        let pattern = args.first().and_then(|a| match &self.design.expr_node(*a).kind {
+            ExprKind::Lit(lit) => lit.str_value(),
+            _ => None,
+        });
+        let Some(pattern) = pattern else {
+            return Err(ConstFault::Unsupported { expr, what: "a `logic` pattern that is not a string literal".to_string() });
+        };
+        if pattern.contains('x') {
+            return Ok(Folded::Unknown);
+        }
+        let bits = pattern.chars().fold(0u64, |bits, level| (bits << 1) | u64::from(level == '1'));
+        let known = |value: Constant| Ok(Folded::Known(value));
+        match self.types.ty(expr) {
+            Some(Ty::Bool) => known(Constant::Bool(bits != 0)),
+            Some(Ty::F64) => known(Constant::Real(Real::new(f64::from_bits(bits)))),
+            Some(Ty::Enum(decl)) if !EnumLayout::of(self.design, *decl).tags().contains(&i128::from(bits)) => Ok(Folded::Unknown),
+            Some(Ty::Enum(_)) => known(Constant::Int(i128::from(bits))),
+            Some(ty) => match Width::of(ty) {
+                Some(width) => known(width.wrap(i128::from(bits))),
+                None => Err(ConstFault::Unsupported { expr, what: "a `logic` of a type with no levels".to_string() }),
+            },
+            None => Err(ConstFault::Unsupported { expr, what: "a `logic` the checker did not type".to_string() }),
+        }
     }
 
     /// A method call: a read of a flag (§3.3.4), or a row of the Appendix H catalogue applied to

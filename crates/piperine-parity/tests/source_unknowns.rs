@@ -501,3 +501,40 @@ fn cast_to_a_tag_with_no_variant_is_unknown() {
     assert_eq!(named(&records, "cast", "missing"), Field::Bool(true));
 }
 
+#[test]
+fn logic_builds_known_and_unknown_values() {
+    // US-03 AC 6, §22.1.4: `logic("1010")` is 10 (the leftmost character is the highest level),
+    // `"0000"` is 0, `"xxxx"` is unknown, a `bool` pattern `"1"` is true, and the pattern builds
+    // an initial value too
+    let (_, records) = records_of("patterns.msl", "PatternsBench");
+    assert_eq!(
+        constant_fields(&records, "logic"),
+        fields(&[
+            ("ones", Field::Int(10)),
+            ("zeros", Field::Int(0)),
+            ("skip", Field::Unknown),
+            ("initial", Field::Int(10)),
+            ("bit", Field::Bool(true)),
+        ])
+    );
+}
+
+#[test]
+fn matches_bits_follows_its_table() {
+    // US-03 AC 7, §22.1.4: `a` = 0101. An exact pattern, a wildcard one and an all-`x` one match;
+    // a pattern that differs in a level does not; an unknown value matches only an all-`x`
+    // pattern, and the answer is a known `bool` either way
+    let (_, records) = records_of("patterns.msl", "PatternsBench");
+    assert_eq!(
+        constant_fields(&records, "matches"),
+        fields(&[
+            ("exact", Field::Bool(true)),
+            ("wild", Field::Bool(true)),
+            ("all_x", Field::Bool(true)),
+            ("wrong", Field::Bool(false)),
+            ("low_wild", Field::Bool(true)),
+            ("unknown", Field::Bool(false)),
+            ("unknown_all_x", Field::Bool(true)),
+        ])
+    );
+}
