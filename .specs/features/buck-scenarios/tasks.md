@@ -290,14 +290,16 @@ T13 → T15
 
 **Done when**:
 
-- [ ] The new test fails before the edit and passes after it
-- [ ] Gate check passes: `Run docs` and the Build line
-- [ ] Test count: 1 new test
+- [x] The new test fails before the edit and passes after it
+- [x] Gate check passes: `Run docs` and the Build line
+- [x] Test count: 1 new test
 
 **Tests**: integration
 **Gate**: build
 
 **Commit**: `docs(buck): SPEC holds the 3.3 V budget, the S2b tolerance and how the bench measures`
+
+**Status**: Complete
 
 ---
 
@@ -686,7 +688,7 @@ Proof: run docs | test gaps_narrows_what_buck_scenarios_ran ... ok
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none
+**Settled mid-build:** B1 (worker defaults, user AFK): (1) `Stimulus::apply` returns `Result<(), Refusal>` (new type: action text plus the session's `Failure`, Display) instead of `Failure`, because `Failure` cannot carry the action's name; (2) `DiscreteTrace::value_at` panics when no row is at or before the time; (3) `scenario::planted` (cfg(test)) plants the one-module package of the harness tests; (4) extra harness tests beyond the counts: `between`/`scaled` in trace, split apply tests; (5) SPEC §4.3 gains a short paragraph deriving the 3.3 V column (aliasing = half the ESR ripple at 16 V: 1.7 mV) and §10.1 derives 2.02 us = Ts + 20 ns, 4.52 us = 2 Ts + 500 ns conversion + 20 ns, 0.1 A reaction = 20 ns x 3.4 A/us = 0.068 A; (6) hiccup fix is `retry <- HICCUP_SAMPLES - 1` (pin line folds to `999u11`), reference model `hiccup_left = 999`; `each_hiccup_lasts_1000_samples` measured 1001 before the fix and 1000 after; (7) the print list's non-`pub` signals (`buck.code`, `buck.oc`, `buck.ctl.cut`...) resolve with no change to the converter.
 **Dispatched:** none
 **Walked:** none
 

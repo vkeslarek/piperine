@@ -410,3 +410,34 @@ fn the_roadmap_and_state_record_analog_structure() {
         assert!(decision.contains(name), "MD-71 names {name}");
     }
 }
+
+#[test]
+fn the_buck_spec_holds_the_bench_bounds() {
+    // BS-09 AC 2 to AC 5: what the scenarios cite is in the SPEC they are judged against
+    let spec = read("examples/buck/SPEC.md");
+    let budget = &spec[spec.find("### 4.3 Regulation budget").expect("SPEC has §4.3")..spec.find("## 5.").expect("§5 follows §4.3")];
+    let cells = |label: &str| -> Vec<String> {
+        let row = budget.lines().find(|l| l.starts_with(&format!("| {label}"))).unwrap_or_else(|| panic!("SPEC §4.3 has a row `{label}`"));
+        row.trim_matches('|').split('|').map(|cell| cell.trim().to_string()).collect()
+    };
+    // AC 2: §4.3 has a 3.3 V column, the middle one, with each row and the total
+    assert!(spec.contains("| Contribution | At 0.8 V | At 3.3 V | At 5.0 V |"), "§4.3 has a 3.3 V column");
+    for (label, at_3v3) in [("ADC quantization", "±3.1 mV"), ("Ripple aliasing", "±1.7 mV"), ("Divider", "±6.6 mV"), ("ADC reference", "±3.3 mV")] {
+        assert_eq!(cells(label)[2], at_3v3, "§4.3 row `{label}` at 3.3 V");
+    }
+    assert!(
+        spec.contains("| **Total, worst case** | **±6.5 mV** (target ±10 mV) | **±14.7 mV = 0.45 %** (target ±1 %) | **±20 mV = 0.41 %** (target ±1 %) |"),
+        "§4.3 total row"
+    );
+    // AC 3: S2b has its settling tolerance
+    let s2b = spec.lines().find(|l| l.starts_with("| S2b |")).expect("the S2b row");
+    assert!(s2b.contains("within ±1 % of 1.0 V at 1.29 ms ±0.05 ms"), "{s2b}");
+    // AC 4: §10.1 defines the stimulus shapes, the measurements and the bounds with their derivations
+    let section = &spec[spec.find("### 10.1 How the bench measures").expect("SPEC has §10.1")..spec.find("## 11.").expect("§11 follows §10.1")];
+    for held in ["Setpoint write", "staircase", "Line step", "Brown-out", "Settling time", "Deviation", "10 ns", "2.02 µs", "4.52 µs", "0.1 A", "3.4 A/µs", "±2 %", "1.452 ms", "≈"] {
+        assert!(section.contains(held), "§10.1 holds `{held}`");
+    }
+    // AC 5: the cleared fault code is `Clear`, never `None`
+    assert!(spec.contains("(`Clear`, `OverCurrent`, `OverVoltage`)"), "§8.5 names `Clear`");
+    assert!(!spec.contains("`None`"), "the SPEC no longer names the cleared fault code `None`");
+}
