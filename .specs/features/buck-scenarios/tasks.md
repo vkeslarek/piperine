@@ -167,14 +167,16 @@ T13 → T15
 
 **Done when**:
 
-- [ ] One test each for BS-02 AC 6 and AC 7; one for `value_at` between rows; one for `peak_to_peak` panicking on an unknown row (asserted through `catch_unwind`)
-- [ ] Gate check passes: `cargo test -p piperine-parity --lib scenario::`
-- [ ] Test count: 4 new tests
+- [x] One test each for BS-02 AC 6 and AC 7; one for `value_at` between rows; one for `peak_to_peak` panicking on an unknown row (asserted through `catch_unwind`)
+- [x] Gate check passes: `cargo test -p piperine-parity --lib scenario::`
+- [x] Test count: 4 new tests
 
 **Tests**: unit
 **Gate**: quick
 
 **Commit**: `feat(parity): DiscreteTrace reads a mode, a code or a bit over a window`
+
+**Status**: Complete
 
 ---
 
