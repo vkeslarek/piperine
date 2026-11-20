@@ -363,7 +363,7 @@ previous derivative enters them:
 
 | Step | Trace |
 | --- | --- |
-| The step | Adding the node rows removes `i` and `k`: `1p · (v − 1) + 3p · v = 0`, so the stage ends at 0.25 V. The BDF2 stage has the same form over the charges of `t − h`, the stage point and `t`, and conserves the same sum. So `v(a) = v(b) = 0.25 V`: the right values are those of the first step that reads the jump. |
+| The step | Adding the node rows removes `i` and `k`: `1p · (v − 1) + 3p · v = 0`, so the stage ends at 0.25 V. The second stage, backward Euler over the whole step from the charges of `t − h` (§15.2.6), has the same form and conserves the same sum. So `v(a) = v(b) = 0.25 V`: the right values are those of the first step that reads the jump. |
 | Conservation | The cut that the switch closes holds 1 pC before and `4p · 0.25 = 1 pC` after (§15.2.2). |
 | No solve of its own | The change has no solve at an unchanged `t`; the step to `t` is the solve that reads it (§15.2). |
 | Restart | The step to `t` landed there for the commit of `close`, so it is exempt from the truncation-error test; the step after it drops the previous derivative and runs its trapezoidal stage as backward Euler (§15.2.6). |

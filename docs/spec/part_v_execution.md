@@ -304,7 +304,12 @@ of its own.
 6. **The integrator restarts after a landing and after a host `set`.** Three steps restart
    the integrator: the first step after the operating point (H2), the step after one that
    landed on `t` because something was due there, and the step that reads a host `set`. Restarting, the trapezoidal stage drops the previous
-   derivative and runs as backward Euler over its sub-step. A change made after the solve of
+   derivative and runs as backward Euler over its sub-step. **The step that reads a jump is
+   first order throughout: its second stage also runs as backward Euler, over the whole step
+   from the step's start, so the derivative it ends with is the change of each state across
+   the step divided by the step. The step after it takes that derivative as its previous
+   derivative.** The first step after the operating point reads no jump and keeps its BDF2
+   stage. A change made after the solve of
    `t` restarts nothing. After a host `set` the step size also restarts
    at 10⁻³ of the last step (Appendix C.2). **The step that restarts the integrator after a
    landing or a host `set` is at most a tenth of the smaller of the last accepted step and the

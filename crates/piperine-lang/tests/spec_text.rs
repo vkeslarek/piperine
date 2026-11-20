@@ -1171,6 +1171,20 @@ fn jump_has_no_solve_of_its_own() {
 }
 
 #[test]
+fn the_step_that_reads_a_jump_is_first_order() {
+    let exec = spec("part_v_execution.md");
+    let s = flat(&section(&exec, "### 15.2"));
+    let r6 = &s[s.find(" 6. ").expect("rule 6")..s.find(" 7. ").expect("rule 7")];
+    assert!(r6.contains("The step that reads a jump is first order throughout"), "{r6}");
+    assert!(r6.contains("The step after it takes that derivative as its previous derivative."), "{r6}");
+    let behavior = flat(&spec("part_iv_behavior.md"));
+    assert!(
+        behavior.contains("that step's derivative, which is the change of `x` across the step divided by the step"),
+        "§14.5.4 names the secant"
+    );
+}
+
+#[test]
 fn reference_rows_describe_the_kept_jump() {
     let c = spec("appendix_c_implementation.md");
     let jumps: Vec<&str> = c.lines().filter(|l| l.starts_with("| the jump")).collect();
