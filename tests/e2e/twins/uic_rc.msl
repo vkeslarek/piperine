@@ -1,0 +1,25 @@
+//! Twin of `tests/ngspice/uic_rc.cir`: the RC charge of a capacitor that starts at 2 V. ngspice
+//! reads the start from the cap's `IC=2.0` under `uic`; MSL has no `uic` (§16 H6) and an initial
+//! condition on a branch is model text (§16 H7), so the capacitor is the `CapIc` of H7.
+mod devices;
+use devices::*;
+
+/// A capacitor that starts charged (§16 H7): the transient's operating point holds it at `ic`,
+/// every other solve is the capacitor (in a sweep `analysis(Static)` and `analysis(Transient)` are
+/// false, so its admittance is `jω·c`, §11.1.5).
+module CapIc(p: Electrical, n: Electrical) {
+    c: f64 where c >= 0.0;
+    ic: f64 = 0.0;
+}
+analog for CapIc {
+    if analysis(Transient) && analysis(Static) { v(p, n) +> ic; }
+    else { i(p, n) +> ddt(c * v(p, n)); }
+}
+
+module UicRc() {
+    signal vin: Electrical;
+    signal r#out: Electrical;
+    let v1 = Vsource { dc: 5.0 }(vin, gnd);
+    let r1 = Resistor { r: 1000.0 }(vin, r#out);
+    let c1 = CapIc { c: 1.5915494309189535e-9, ic: 2.0 }(r#out, gnd);
+}

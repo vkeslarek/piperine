@@ -12,7 +12,7 @@
 use piperine_parity::backend::Backend;
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
-use piperine_parity::ngspice::{Ngspice, Reference};
+use piperine_parity::ngspice::{Lookup, Ngspice, Reference};
 use piperine_parity::waveform::Waveform;
 use piperine_solver::prelude::{Context, TransientAnalysisOptions};
 
@@ -177,5 +177,29 @@ fn tran_rc_with_a_scaled_derivative() {
         let actual = waveform.at(time).unwrap_or_else(|| panic!("tran_rc_scaled: the time {time:e} s lies outside the result"));
         let at = Point::new("tran_rc_scaled", "v(out)", Coordinate::Time(time)).with_ngspice(golden.version()).with_backend(Backend::Rust.name());
         ToleranceContract::TRAN_VOLTAGE.assert(&at, wanted, actual);
+    }
+}
+
+/// The RC charge of a capacitor that starts at 2 V: `CapIc` (§16 H7, `tests/ngspice/uic_rc.msl`)
+/// against ngspice's `uic` run with `IC=2.0`, on the Rust backend (the interpreter refuses the
+/// `analysis` environment reads, T15).
+#[test]
+fn uic_rc() {
+    let reference = Ngspice::from_environment().run("uic_rc");
+    for backend in compiled_backends() {
+        compare_on("uic_rc", "out", &reference, backend);
+    }
+}
+
+#[test]
+fn uic_rc_runs_and_prints_the_skip_line_without_ngspice() {
+    // AS-18 AC 3: with the comparison disabled `Ngspice::run` prints its skip line and returns
+    // `Skipped`, and the twin still solves its transient on the Rust backend (`compare_on` runs it
+    // and compares nothing).
+    let reference = Ngspice::new(Lookup::Skip).run("uic_rc");
+    assert!(matches!(reference, Reference::Skipped));
+    assert_eq!(Ngspice::skip_line("uic_rc"), "SKIP uic_rc: ngspice comparison disabled by PIPERINE_NGSPICE=skip");
+    for backend in compiled_backends() {
+        compare_on("uic_rc", "out", &reference, backend);
     }
 }

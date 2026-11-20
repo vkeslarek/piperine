@@ -216,3 +216,11 @@ fn a_bound_step_under_an_if_caps_only_the_steps_that_executed_it() {
     assert!(before.iter().cloned().fold(0.0, f64::max) > 5e-9, "nothing caps the steps before the call is executed: {before:?}");
     assert!(after.len() > 5 && after.iter().all(|dt| *dt <= 1e-9 * (1.0 + 1e-9)), "every step after it is capped at 1 ns: {after:?}");
 }
+
+#[test]
+fn capic_has_the_admittance_of_a_capacitor_in_ac() {
+    // AS-03 AC 6 (§16 H7, §11.1.5): in a sweep `analysis(Transient)` is false, so `CapIc` is the
+    // capacitor `i +> ddt(c * v)` and `ic` is gone. With R = 1 kOhm, C = 1/(2 pi 100 kHz R) the
+    // divider is 1 / (1 + j w R C) = 1 / (1 + j) at 100 kHz: |v(a)| = 1 / sqrt(2).
+    ToleranceContract::AC_MAGNITUDE.assert(&Point::new("capic", "|v(a)|", Coordinate::Frequency(1e5)), std::f64::consts::FRAC_1_SQRT_2, ac_magnitude("CapIcBench"));
+}

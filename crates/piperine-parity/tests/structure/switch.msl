@@ -265,3 +265,24 @@ module CapperBench() {
     let source = Capper(a, ctl);
     let load = Resistor { r: 1k }(a, gnd);
 }
+
+// -- AS-03 AC 6: a capacitor that starts charged (§16 H7) has a capacitor's admittance in AC
+
+/// The `CapIc` of §16 H7: held at `ic` by the transient's operating point, a capacitor otherwise.
+module CapIc(p: Electrical, n: Electrical) {
+    c: f64 where c >= 0.0;
+    ic: f64 = 0.0;
+}
+analog for CapIc {
+    if analysis(Transient) && analysis(Static) { v(p, n) +> ic; }
+    else { i(p, n) +> ddt(c * v(p, n)); }
+}
+
+/// 1 V of stimulus behind 1 kOhm into a `CapIc` whose corner is exactly 100 kHz.
+module CapIcBench() {
+    signal s: Electrical;
+    signal a: Electrical;
+    let source = Battery { volts: 0.0 }(s);
+    let series = Resistor { r: 1k }(s, a);
+    let cap = CapIc { c: 1.5915494309189535e-9, ic: 2.0 }(a, gnd);
+}
