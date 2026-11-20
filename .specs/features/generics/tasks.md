@@ -180,9 +180,9 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `every_item_kind_of_every_crate_is_checked_unreached`, `an_unreached_function_with_an_error_fails_the_model_check`, `an_unplaced_module_calling_ddt_from_a_function_is_e0350`, `an_unreached_item_has_the_code_it_has_when_reached` and `the_standard_library_is_left_to_its_own_check` pass under `**Run typesmodel**`
-- [ ] `types_subset.rs::unreached_items_are_not_reported` still passes (the reach of one top is unchanged)
-- [ ] Gate check passes: Quick
+- [x] `every_item_kind_of_every_crate_is_checked_unreached`, `an_unreached_function_with_an_error_fails_the_model_check`, `an_unplaced_module_calling_ddt_from_a_function_is_e0350`, `an_unreached_item_has_the_code_it_has_when_reached` and `the_standard_library_is_left_to_its_own_check` pass under `**Run typesmodel**`
+- [x] `types_subset.rs::unreached_items_are_not_reported` still passes (the reach of one top is unchanged)
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

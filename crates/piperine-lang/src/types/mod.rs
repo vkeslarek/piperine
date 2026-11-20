@@ -20,6 +20,7 @@ mod event;
 mod expr;
 mod flag_total;
 mod intrinsic;
+mod model;
 mod module;
 mod reach;
 mod reaction;

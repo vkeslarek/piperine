@@ -6,6 +6,7 @@ use crate::msl::{Diagnostic, Span};
 use crate::pom::{BuiltinId, DeclId, Design, DesignDiagnostic, ExprId, ExprKind, FileId, LitKind, Reflect, TypeId};
 
 use super::check;
+use super::model::ModelCheck;
 use super::{Intrinsic, Ty};
 
 /// What a `Deferred` method call of the reachable set resolves to: a row of the Appendix H
@@ -173,6 +174,16 @@ impl<'d> Types<'d> {
             return Err(vec![DesignDiagnostic { file: FileId(0), diagnostic }]);
         };
         check::Checker::new(design).run(module.decl().id())
+    }
+
+    /// Check every module, function, `const` and `impl` function of every crate but `std`, reached
+    /// from a top or not, and give back only the diagnostics (S3, GN-08): the table of a top is
+    /// [`Types::check`]'s. A design that already holds diagnostics gives them back.
+    pub fn check_model(design: &Design) -> Result<(), Vec<DesignDiagnostic>> {
+        if !design.diagnostics().is_empty() {
+            return Err(design.diagnostics().to_vec());
+        }
+        ModelCheck::new(design).run()
     }
 
     /// The design the table was built over.

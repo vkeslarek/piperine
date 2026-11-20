@@ -161,14 +161,9 @@ impl<'d> Checker<'d> {
     /// Check `top` and everything it reaches: the table, or the diagnostics in source order.
     pub(super) fn run(mut self, top: DeclId) -> Result<Types<'d>, Vec<DesignDiagnostic>> {
         self.reach(top);
-        while let Some(decl) = self.queue.pop_front() {
-            self.declaration(decl);
-        }
-        self.record_conflicts();
+        self.drain();
         if !self.diagnostics.is_empty() {
-            let mut diagnostics = self.diagnostics;
-            diagnostics.sort_by_key(|d| (d.file, d.diagnostic.span().start));
-            return Err(diagnostics);
+            return Err(self.sorted_diagnostics());
         }
         let typed: Vec<ExprId> = (0..self.exprs.len()).map(|i| ExprId(i as u32)).filter(|e| self.exprs[e.index()].is_some()).collect();
         for expr in typed {
@@ -177,6 +172,31 @@ impl<'d> Checker<'d> {
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
         Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, widths: self.widths, written: self.written, continuous, emits })
+    }
+
+    /// Check every declaration of `items`, and what they reach, and keep only the diagnostics, in
+    /// source order: the whole-model check (`model.rs`), which builds no table.
+    pub(super) fn run_model(mut self, items: &[DeclId]) -> Vec<DesignDiagnostic> {
+        for item in items {
+            self.reach(*item);
+        }
+        self.drain();
+        self.sorted_diagnostics()
+    }
+
+    /// Check the worklist until it is empty, then the conflicts between definitions.
+    fn drain(&mut self) {
+        while let Some(decl) = self.queue.pop_front() {
+            self.declaration(decl);
+        }
+        self.record_conflicts();
+    }
+
+    /// The diagnostics so far, in source order.
+    fn sorted_diagnostics(self) -> Vec<DesignDiagnostic> {
+        let mut diagnostics = self.diagnostics;
+        diagnostics.sort_by_key(|d| (d.file, d.diagnostic.span().start));
+        diagnostics
     }
 
     /// Run `body` with `context` as the place being checked, then restore the one outside.
