@@ -5,12 +5,17 @@
 //! - `trace`: [`Trace`], one real column measured over a window.
 //! - `discrete`: [`DiscreteTrace`], one discrete column read over a window.
 //! - `stimulus`: [`Stimulus`] and [`Ramp`], the host's schedule for one run.
+//! - `planted` (tests only): a one-module package the harness tests plant on disk.
 //! - `run`: [`ScenarioRun`] and [`ScenarioBatch`], runs of a package executed once each, at once.
 
 pub mod column;
 pub mod discrete;
+#[cfg(test)]
+mod planted;
+pub mod stimulus;
 pub mod trace;
 
 pub use column::NamedColumn;
 pub use discrete::{Departure, DiscreteTrace};
+pub use stimulus::{Ramp, Refusal, Stimulus};
 pub use trace::{Crossing, Sample, Trace};

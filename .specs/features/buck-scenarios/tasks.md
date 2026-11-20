@@ -190,15 +190,17 @@ T13 → T15
 
 **Done when**:
 
-- [ ] `a_ramp_sets_once_per_equal_step_and_ends_on_its_target` (BS-02 AC 8) covers a rising and a falling ramp (12 → 16 V in 10 µs: 40 points 0.25 µs apart; 12 → 7.5 V in 90 µs: 45 points 2 µs apart)
-- [ ] `apply` is tested on a planted one-module package (a tempdir: `Piperine.toml`, `src/lib.msl` with one discrete `in` port and one `f64` param): a drive and a timed set are accepted, a drive of an unknown port returns `E0801` naming the action
-- [ ] Gate check passes: `cargo test -p piperine-parity --lib scenario::`
-- [ ] Test count: 3 new tests
+- [x] `a_ramp_sets_once_per_equal_step_and_ends_on_its_target` (BS-02 AC 8) covers a rising and a falling ramp (12 → 16 V in 10 µs: 40 points 0.25 µs apart; 12 → 7.5 V in 90 µs: 45 points 2 µs apart)
+- [x] `apply` is tested on a planted one-module package (a tempdir: `Piperine.toml`, `src/lib.msl` with one discrete `in` port and one `f64` param): a drive and a timed set are accepted, a drive of an unknown port returns `E0801` naming the action
+- [x] Gate check passes: `cargo test -p piperine-parity --lib scenario::`
+- [x] Test count: 3 new tests
 
 **Tests**: unit
 **Gate**: quick
 
 **Commit**: `feat(parity): Stimulus schedules a host's drives and timed sets`
+
+**Status**: Complete
 
 ---
 
