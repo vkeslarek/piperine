@@ -36,19 +36,20 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
           cache: pip
+          cache-dependency-path: docs/requirements.txt
 
       - name: Install the PDF renderer's system libraries
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0
 
       - name: Install MkDocs and plugins
-        run: pip install mkdocs==1.6.1 mkdocs-material==9.8.2 mkdocs-macros-plugin==1.5.0 mkdocs-with-pdf==0.9.3 weasyprint==70.0
+        run: pip install -r docs/requirements.txt
 
       - name: Build the site with the Book
         run: mkdocs build --strict -f mkdocs.yml -d site

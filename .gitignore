@@ -34,3 +34,10 @@ docs/book/index.html
 
 # Python bytecode (mkdocs hooks)
 __pycache__/
+
+# Local agent and editor tool folders (skills, settings): never tracked
+.agents/
+.claude/
+.cursor/
+.gemini/
+.windsurf/
