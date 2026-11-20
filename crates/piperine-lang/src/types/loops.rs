@@ -2,7 +2,7 @@
 //! `for p in a..b`, `break`, `break value` and `continue`. `break` and `continue` outside a loop,
 //! and `break value` outside a `loop`, are `E0185`.
 
-use crate::pom::{BlockNode, ExprId, ExprKind, PatId, PatKind, Resolution};
+use crate::pom::{BlockNode, ExprId, ExprKind, PatId};
 
 use super::check::Checker;
 use super::flow::{Assigned, LoopFrame};
@@ -80,25 +80,10 @@ impl Checker<'_> {
         }
     }
 
-    /// The pattern of a `for`: a name (`mut` allowed) or `_`; a refutable pattern is `E0184`
-    /// (§1.6.11), any other form is outside the subset until the aggregate types.
+    /// The pattern of a `for`: irrefutable (§1.6.11), its names typed as the element.
     fn for_binding(&mut self, pat: PatId, element: &Ty) {
-        let node = self.design.pat_node(pat).clone();
-        let file = self.design.decl_data(node.owner).file;
-        match &node.kind {
-            PatKind::Wild => {}
-            PatKind::Ident { by_ref: false, mutable, sub: None, binding, res: Resolution::Unresolved, .. } => {
-                if *mutable {
-                    self.mutable.insert(*binding);
-                }
-                self.locals.insert(*binding, element.clone());
-            }
-            PatKind::Lit(_) | PatKind::Range { .. } | PatKind::Path(_) | PatKind::TupleStruct { .. } | PatKind::Or(_) | PatKind::Ident { res: Resolution::Decl(_) | Resolution::Builtin(_), .. } => {
-                let message = "a `for` takes an irrefutable pattern: this one does not match every element (§1.6.11)".to_string();
-                self.coded(file, "E0184", node.span, message, "refutable pattern");
-            }
-            other => self.unsupported(file, node.span, &format!("{} in a `for`", super::unsupported::Unsupported::pat(other))),
-        }
+        let file = self.design.decl_data(self.design.pat_node(pat).owner).file;
+        self.irrefutable_pattern(file, pat, element, "a `for`");
     }
 
     /// `break` or `break value` (§1.8.10): leaves the innermost loop; the value is allowed in a

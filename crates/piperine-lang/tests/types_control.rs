@@ -244,3 +244,47 @@ fn an_integer_match_covered_by_ranges_is_exhaustive() {
     let guarded = source("fn a(x: u8) -> u8 { match x { 0..=255 if true => 1 } }", "let y = a(1);");
     assert_eq!(outcome(&guarded).len(), 1, "a guarded arm covers nothing");
 }
+
+// ---- T15: refutable patterns and `E0184` ----------------------------------------------------------
+
+#[test]
+fn refutable_patterns_type_check_in_if_let_while_let_and_let_else() {
+    // §1.8.2, §1.7.6: `if let`, `while let` and `let … else` take any refutable pattern: literal,
+    // range, `None`, `Some` of a nested pattern, an enum variant.
+    let items = "#[derive(Repr, PartialEq)]\nenum Mode { A, B }\n\
+                 fn lit(n: u8) -> u8 { if let 3 = n { 1 } else { 0 } }\n\
+                 fn range(n: u8) -> u8 { if let 4..=9 = n { 1 } else { 0 } }\n\
+                 fn none(o: Option<u8>) -> u8 { if let None = o { 1 } else { 0 } }\n\
+                 fn nested(o: Option<u8>) -> u8 { if let Some(1..=3) = o { 1 } else { 0 } }\n\
+                 fn variant(m: Mode) -> u8 { if let Mode::B = m { 1 } else { 0 } }\n\
+                 fn bound(o: Option<u8>) -> u8 { if let Some(x @ 5..) = o { x } else { 0 } }\n\
+                 fn looped(o: Option<u8>) -> u8 { let mut n = 0u8; while let Some(x) = o { n += x; break; } n }\n\
+                 fn guarded(o: Option<u8>) -> u8 { let Some(x) = o else { return 0; }; x }\n\
+                 fn ranged(n: u8) -> u8 { let 1..=9 = n else { return 0; }; n }\n\
+                 fn looping(o: Option<u8>) -> u8 { let mut s = 0u8; for i in 0u8..3 { let Some(x) = o else { continue; }; s += x + i; } s }";
+    let body = "let a = lit(1) + range(1) + none(None) + nested(None) + variant(Mode::A) + bound(None) + looped(None) + guarded(None) + ranged(1) + looping(None);";
+    assert_clean(&source(items, body));
+    // irrefutable patterns need no `else`: a name, `_`, and a pattern that covers every value
+    assert_clean(&source("", "let _ = 1.0; let n @ 0..=255 = 3u8; let (lo, hi) = (0.0, 1.0);"));
+}
+
+#[test]
+fn a_non_exhaustive_match_or_refutable_let_is_e0184() {
+    // §1.8.6: a `match` that leaves a value out is `E0184` naming one missing pattern.
+    // each source reaches `f` from `Top`, so the checker visits its `match`
+    let reach = |ty: &str, arms: &str, arg: &str| source(&format!("#[derive(Repr, PartialEq)]\nenum Mode {{ A, B, C }}\nfn f(x: {ty}) -> u8 {{ match x {{ {arms} }} }}"), &format!("let y = f({arg});"));
+    assert_refused(&reach("bool", "true => 1,", "true"), "E0184", "`false` is not covered");
+    assert_refused(&reach("Mode", "Mode::A => 1, Mode::C => 2,", "Mode::A"), "E0184", "`Mode::B` is not covered");
+    assert_refused(&reach("Option<u8>", "Some(_) => 1,", "None"), "E0184", "`None` is not covered");
+    assert_refused(&reach("Option<bool>", "Some(true) => 1, None => 2,", "None"), "E0184", "`Some(false)` is not covered");
+    assert_refused(&reach("u8", "0..=9 => 1,", "1"), "E0184", "`10..=255` is not covered");
+    assert_refused(&reach("f64", "0.0..=1.0 => 1,", "1.0"), "E0184", "`_` is not covered");
+    // a guarded arm covers nothing
+    assert_refused(&reach("bool", "true if true => 1, false => 2,", "true"), "E0184", "`true` is not covered");
+    // §1.6.11: a refutable pattern in `let` without `else`, in a `for` and in a closure parameter
+    assert_refused(&source("", "let o: Option<u8> = None; let Some(x) = o;"), "E0184", "`None`");
+    assert_refused(&source("", "let n = 3u8; let 1..=9 = n;"), "E0184", "irrefutable");
+    assert_refused(&source("", "let o: Option<u8> = None; let y = o.map(|3| 1u8);"), "E0184", "a closure parameter");
+    // §1.7.6: the `else` block of a `let … else` must not complete
+    assert_refused(&source("", "let o: Option<u8> = None; let Some(x) = o else { let z = 1; };"), "E0185", "can complete");
+}

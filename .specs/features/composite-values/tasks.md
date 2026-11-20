@@ -491,8 +491,8 @@ T63
 
 **Done when**:
 
-- [ ] `refutable_patterns_type_check_in_if_let_while_let_and_let_else` and `a_non_exhaustive_match_or_refutable_let_is_e0184` pass under `**Run typesctl**`
-- [ ] Gate check passes: Quick
+- [x] `refutable_patterns_type_check_in_if_let_while_let_and_let_else` and `a_non_exhaustive_match_or_refutable_let_is_e0184` pass under `**Run typesctl**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

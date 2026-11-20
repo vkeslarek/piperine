@@ -47,8 +47,8 @@ impl Checker<'_> {
             && patterns_typed
             && let Some(missing) = Coverage::new(self.design).missing(t, &covered)
         {
-            let what = format!("a `match` covering every value of `{}`", t.name(self.design));
-            self.mismatch_text(file, node.span, &what, &format!("a `match` that misses `{missing}`"));
+            let message = format!("a `match` over `{}` is not exhaustive: `{missing}` is not covered (§1.8.6)", t.name(self.design));
+            self.coded(file, "E0184", node.span, message, "not exhaustive");
         }
         ty
     }
@@ -108,8 +108,8 @@ impl Checker<'_> {
         typed.unwrap_or(Some(Ty::Never))
     }
 
-    /// The condition of an `if`: a `bool`, or `let Some(x) = e` (DIG-03 AC 6) whose binding is
-    /// in scope in the first block.
+    /// The condition of an `if` or a `while`: a `bool`, or `let pat = e` (§1.8.2) with a pattern of
+    /// any form the checker knows, whose names are in scope in the first block.
     pub(super) fn condition(&mut self, cond: ExprId) {
         let node = self.design.expr_node(cond).clone();
         let ExprKind::Let { pat, expr } = &node.kind else {
@@ -117,19 +117,21 @@ impl Checker<'_> {
             return;
         };
         let file = self.file_of_expr(cond);
-        let pat_node = self.design.pat_node(*pat).clone();
-        let is_some = matches!(&pat_node.kind, PatKind::TupleStruct { path, pats } if pats.len() == 1 && matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Builtin(id)) if id.info().name == "Some"));
-        match self.infer(*expr) {
-            Some(t @ Ty::Option(_)) if is_some => {
-                self.pattern(file, *pat, &t);
-            }
-            Some(Ty::Option(_)) => self.unsupported(file, pat_node.span, "`if let` with a pattern other than `Some(p)`"),
-            Some(other) => {
+        if let Some(found) = self.infer(*expr) {
+            let pat_node = self.design.pat_node(*pat).clone();
+            // `Some(p)` over a value that is no `Option` is a mismatch of the value.
+            if self.is_some_pattern(&pat_node.kind) && !matches!(found, Ty::Option(_)) {
                 let span = self.design.expr_node(*expr).span;
-                self.mismatch_text(file, span, "an `Option`", &other.name(self.design));
+                self.mismatch_text(file, span, "an `Option`", &found.name(self.design));
+            } else {
+                self.pattern(file, *pat, &found);
             }
-            None => {}
         }
         self.exprs[cond.index()] = Some(Ty::Bool);
+    }
+
+    /// Whether a pattern is `Some(p)`.
+    fn is_some_pattern(&self, kind: &PatKind) -> bool {
+        matches!(kind, PatKind::TupleStruct { path, pats } if pats.len() == 1 && matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Builtin(id)) if id.info().name == "Some"))
     }
 }

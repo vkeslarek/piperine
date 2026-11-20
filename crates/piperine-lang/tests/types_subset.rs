@@ -50,7 +50,6 @@ const ROWS: &[Row] = &[
     Row { construct: "generation in a digital block", source: "module Top() { }\ndigital for Top { if true { } }", names: "generation" },
     Row { construct: "string `let` with an annotation", source: "module Top() { }\nanalog for Top { let x: &str = \"a\"; }", names: "string literal" },
     Row { construct: "include_str!", source: "module Top() { }\nanalog for Top { let x = include_str!(\"a.txt\"); }", names: "`include_str!`" },
-    Row { construct: "let else", source: "module Top() { }\nanalog for Top { let x = 1.0 else { return; }; }", names: "`let ... else`" },
     Row { construct: "template", source: "module Top(a: E, b: E) { let t = Resistor { r: 1.0 }; }", names: "module template" },
     Row { construct: "placement through a template", source: "module Top(a: E, b: E) { let t = Resistor { r: 1.0 }; let r = t(a, b); }", names: "module template" },
     Row { construct: "value input of an unsupported type", source: "module Top(x: &str) { }", names: "value input port" },

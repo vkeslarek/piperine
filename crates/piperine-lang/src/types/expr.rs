@@ -610,13 +610,7 @@ impl Checker<'_> {
             let node = self.design.stmt_node(*stmt).clone();
             let file = self.design.decl_data(node.owner).file;
             match &node.kind {
-                StmtKind::Let { pat, ty, init, else_ } => {
-                    if else_.is_some() {
-                        self.unsupported(file, node.span, Unsupported::stmt(&node.kind));
-                    } else {
-                        self.let_statement(file, node.span, *pat, *ty, *init);
-                    }
-                }
+                StmtKind::Let { pat, ty, init, else_ } => self.let_statement(file, node.span, *pat, *ty, *init, else_.as_ref()),
                 StmtKind::Expr { expr, semi } => {
                     if last && !semi {
                         match expected {
@@ -644,16 +638,20 @@ impl Checker<'_> {
     /// `let x = init;`, `let x: T = init;`, `let mut x = init;`, and `let x;` or `let x: T;` (§1.7.5):
     /// the binding takes the annotation, else the type of the initializer, else the type of its
     /// first assignment.
-    fn let_statement(&mut self, file: crate::pom::FileId, span: crate::msl::Span, pat: crate::pom::PatId, ty: Option<crate::pom::TypeId>, init: Option<ExprId>) {
+    fn let_statement(&mut self, file: crate::pom::FileId, span: crate::msl::Span, pat: crate::pom::PatId, ty: Option<crate::pom::TypeId>, init: Option<ExprId>, else_: Option<&BlockNode>) {
         let pat_node = self.design.pat_node(pat).clone();
         if let (PatKind::Tuple(_), None, Some(init)) = (&pat_node.kind, ty, init) {
             self.tuple_let(file, &pat_node, init);
             return;
         }
         let PatKind::Ident { by_ref: false, mutable, sub: None, binding, res: Resolution::Unresolved, .. } = &pat_node.kind else {
-            self.unsupported(file, pat_node.span, Unsupported::pat(&pat_node.kind));
+            self.let_pattern(file, pat, ty, init, else_);
             return;
         };
+        if else_.is_some() {
+            self.let_pattern(file, pat, ty, init, else_);
+            return;
+        }
         if *mutable {
             self.mutable.insert(*binding);
         }

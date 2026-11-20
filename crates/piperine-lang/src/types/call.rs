@@ -358,8 +358,9 @@ impl Checker<'_> {
         for (param, ty) in params.iter().zip(declared) {
             let pat = self.design.pat_node(param.pat).clone();
             let PatKind::Ident { by_ref: false, mutable: false, sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {
-                self.unsupported(file, pat.span, Unsupported::pat(&pat.kind));
-                return None;
+                // §1.6.11: a closure parameter takes an irrefutable pattern
+                self.irrefutable_pattern(file, param.pat, ty, "a closure parameter");
+                continue;
             };
             if let Some(annotation) = param.ty
                 && let Some(written) = self.lower_type(annotation)

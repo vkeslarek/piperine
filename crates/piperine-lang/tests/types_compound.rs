@@ -290,7 +290,7 @@ fn a_match_that_is_not_exhaustive_is_p0002() {
         "let s: i2 = 0; let x = match s { -1 => 1.0, 0 => 2.0, 1 => 3.0 };",
     ] {
         let (src, d) = diagnostics(&supervisor_items(), body);
-        assert_eq!(codes(&d), ["P0002"], "{src}");
+        assert_eq!(codes(&d), ["E0184"], "{src}");
         assert!(snippet(&src, &d[0]).starts_with("match "), "{src}: {}", snippet(&src, &d[0]));
     }
     // Every value, and only then, passes: all four variants; every value of a `u2` by literals;
@@ -311,13 +311,13 @@ fn a_nested_pattern_inside_some_covers_its_payload() {
     let ok = source(&supervisor_items(), "let o: Option<bool> = None; let x = match o { Some(true) => 1.0, Some(false) => 0.0, None => 0.5 }; \
                                          let f: Option<Fault> = None; let y = match f { Some(Fault::Clear) => 1, Some(Fault::OverCurrent) | Some(Fault::OverVoltage) => 2, None => 3 };");
     checked(&design_of(&ok), &ok);
-    // A payload left out is still a missing value: `P0002` at the `match`.
+    // A payload left out is still a missing value: `E0184` at the `match` (§1.8.6).
     for body in [
         "let o: Option<bool> = None; let x = match o { Some(true) => 1.0, None => 0.5 };",
         "let f: Option<Fault> = None; let y = match f { Some(Fault::Clear) => 1, Some(Fault::OverCurrent) => 2, None => 3 };",
     ] {
         let (src, d) = diagnostics(&supervisor_items(), body);
-        assert_eq!(codes(&d), ["P0002"], "{src}");
+        assert_eq!(codes(&d), ["E0184"], "{src}");
         assert!(snippet(&src, &d[0]).starts_with("match "), "{src}: {}", snippet(&src, &d[0]));
     }
     // The stdlib `D2A` writes the nested `match` in a module-body `let`: its `None` is the
@@ -342,8 +342,9 @@ fn if_let_some_binds_the_payload() {
     let (src, d) = diagnostics("", "let x = 1.0; let y = if let Some(v) = x { v } else { 0.0 };");
     assert_eq!(codes(&d)[0], "P0002", "{src}");
     assert_eq!(snippet(&src, &d[0]), "x");
-    let (src, d) = diagnostics("", "let o: Option<f64> = None; let y = if let None = o { 1.0 } else { 0.0 };");
-    assert_eq!(codes(&d), ["P0001"], "{src}");
+    // `if let` takes any refutable pattern (§1.8.2): `None` is one.
+    let src = source("", "let o: Option<f64> = None; let y = if let None = o { 1.0 } else { 0.0 };");
+    checked(&design_of(&src), &src);
 }
 
 #[test]

@@ -6,10 +6,10 @@
 //! nothing (§1 rule 14); one that resolves to nothing binds, at any depth (§1.6.2).
 
 use crate::msl::Span;
-use crate::pom::{DeclKind, ExprId, ExprKind, FileId, LitKind, Name, PatId, PatKind, Resolution, UnOp};
+use crate::pom::{BlockNode, DeclKind, ExprId, ExprKind, FileId, LitKind, Name, PatId, PatKind, Resolution, UnOp};
 
 use super::check::Checker;
-use super::cover::Covers;
+use super::cover::{Coverage, Covers};
 use super::unsupported::Unsupported;
 use super::Ty;
 
@@ -70,9 +70,69 @@ impl Checker<'_> {
             }
             PatKind::Or(alternatives) => self.or_pattern(file, node.span, alternatives, scrut),
             other => {
-                self.unsupported(file, node.span, &format!("{} in a `match` arm", Unsupported::pat(other)));
+                self.unsupported(file, node.span, &format!("{} as a pattern", Unsupported::pat(other)));
                 None
             }
+        }
+    }
+
+    /// `pat` where §1.6.11 requires an irrefutable pattern (`what` names the place: a `let`, a
+    /// `for`, a closure parameter): the pattern against a value of type `ty`, or `E0184` naming a
+    /// value it does not match.
+    pub(super) fn irrefutable_pattern(&mut self, file: FileId, pat: PatId, ty: &Ty, what: &str) -> Option<Matched> {
+        let matched = self.pattern(file, pat, ty)?;
+        if let Some(missing) = Coverage::new(self.design).missing(ty, &matched.covers) {
+            let span = self.design.pat_node(pat).span;
+            let message = format!("{what} takes an irrefutable pattern: this one does not match `{missing}` (§1.6.11)");
+            self.coded(file, "E0184", span, message, "refutable pattern");
+            return None;
+        }
+        Some(matched)
+    }
+
+    /// `let pat = init;` and `let pat = init else { .. };` for a pattern that is not a plain name
+    /// (§1.7.3, §1.7.6): without `else` the pattern is irrefutable (`E0184`); with it the pattern
+    /// may be refutable and the `else` block must not complete (`E0185`).
+    pub(super) fn let_pattern(&mut self, file: FileId, pat: PatId, ty: Option<crate::pom::TypeId>, init: Option<ExprId>, else_: Option<&BlockNode>) {
+        let span = self.design.pat_node(pat).span;
+        let Some(init) = init else {
+            self.unsupported(file, span, "a `let` with a pattern and no value");
+            return;
+        };
+        let annotated = ty.map(|t| self.lower_type(t));
+        let value = match annotated {
+            Some(Some(t)) => {
+                self.check(init, &t);
+                Some(t)
+            }
+            Some(None) => {
+                self.infer(init);
+                None
+            }
+            None => self.infer(init),
+        };
+        let Some(value) = value else { return };
+        match else_ {
+            None => {
+                self.irrefutable_pattern(file, pat, &value, "a `let` without `else`");
+            }
+            Some(block) => {
+                self.pattern(file, pat, &value);
+                self.diverging_block(file, block);
+            }
+        }
+    }
+
+    /// The `else` block of a `let … else` (§1.7.6): it ends in `return`, `break`, `continue` or a
+    /// `loop` without `break`, so it never completes; otherwise `E0185`. What it assigns is
+    /// not assigned after the `let`.
+    fn diverging_block(&mut self, file: FileId, block: &BlockNode) {
+        let before = self.flow.assigned.clone();
+        let found = self.statements(&block.stmts, None);
+        self.flow.assigned = before;
+        if found.is_some_and(|t| t != Ty::Never) {
+            let message = "the `else` block of a `let … else` can complete: it must end in `return`, `break`, `continue` or a `loop` without `break` (§1.7.6)".to_string();
+            self.coded(file, "E0185", block.span, message, "the block completes");
         }
     }
 
