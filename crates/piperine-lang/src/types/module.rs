@@ -2,7 +2,7 @@
 //! one module in another (§8.1): node arguments by nature and count, param block by type.
 
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, LetData, ParamData, PatKind, PortData, Resolution, SignalData, StructClass, TypeId};
+use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, LetData, ParamData, PatKind, PortData, QuantityRole, Resolution, SignalData, StructClass, TypeId};
 
 use super::check::{Checker, Context};
 use super::unsupported::Unsupported;
@@ -275,7 +275,7 @@ impl Checker<'_> {
             return;
         }
         match (port, found) {
-            (Ty::Node(p), Ty::Node(f)) if p == f => {}
+            (Ty::Node(p), Ty::Node(f)) if p == f || self.natures_compatible(*p, *f) => {}
             (_, Ty::AnyNode) => {}
             (Ty::Node(_), Ty::Node(_)) => {
                 let message = format!("expected {}, found {}", port.name(self.design), found.name(self.design));
@@ -370,6 +370,26 @@ impl Checker<'_> {
                 }
             }
         }
+    }
+}
+
+impl Checker<'_> {
+    /// The name of the `role` quantity nature `nature` declares, if it declares one.
+    fn quantity_name(&self, nature: DeclId, role: QuantityRole) -> Option<String> {
+        self.design.decl_data(nature).children.iter().find_map(|child| {
+            let data = self.design.decl_data(*child);
+            matches!(&data.kind, DeclKind::Quantity(q) if q.role == role).then(|| data.name.as_ref().map_or_else(String::new, |n| n.text.clone()))
+        })
+    }
+
+    /// Whether two continuous natures are compatible (§4 rule 13): their potential quantities
+    /// have the same name and, when both declare a `flow`, their flow quantities do too.
+    fn natures_compatible(&self, a: DeclId, b: DeclId) -> bool {
+        let same_flow = match (self.quantity_name(a, QuantityRole::Flow), self.quantity_name(b, QuantityRole::Flow)) {
+            (Some(x), Some(y)) => x == y,
+            _ => true,
+        };
+        same_flow && self.quantity_name(a, QuantityRole::Potential) == self.quantity_name(b, QuantityRole::Potential)
     }
 }
 

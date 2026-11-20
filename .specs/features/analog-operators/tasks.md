@@ -398,8 +398,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] the four tests of AO-10 named in `## Checks` pass
-- [ ] Gate check passes: `Run apinatures`
+- [x] the four tests of AO-10 named in `## Checks` pass
+- [x] Gate check passes: `Run apinatures`
 
 **Tests**: integration
 **Gate**: quick

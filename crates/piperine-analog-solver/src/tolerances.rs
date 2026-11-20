@@ -56,6 +56,10 @@ pub struct Tolerances {
     /// convergence on the connected net," which the potential/node case
     /// alone already demonstrates.
     pub node_vntol_overrides: std::rc::Rc<std::collections::HashMap<crate::netlist::NodeIdentifier, f64>>,
+    /// Per-branch flow-`abstol` override (§17.1 rules 1 and 2): a branch unknown present here
+    /// uses its nature's flow `abstol` instead of `abstol`, in the update test and in the
+    /// residual test of its row. Empty by default; a branch absent here is unaffected.
+    pub branch_abstol_overrides: std::rc::Rc<std::collections::HashMap<crate::netlist::BranchIdentifier, f64>>,
 }
 
 impl Default for Tolerances {
@@ -72,6 +76,7 @@ impl Default for Tolerances {
             tnom: 300.15,
             gshunt: 0.0,
             node_vntol_overrides: std::rc::Rc::new(std::collections::HashMap::new()),
+            branch_abstol_overrides: std::rc::Rc::new(std::collections::HashMap::new()),
         }
     }
 }
@@ -90,10 +95,19 @@ impl Tolerances {
         }
     }
 
+    /// The absolute tolerance of a branch unknown and of its row: its nature's flow `abstol`
+    /// when the branch has one in `branch_abstol_overrides`, else the flat `abstol`.
+    fn abstol_for(&self, variable: &crate::netlist::AnalogVariable) -> f64 {
+        match variable {
+            crate::netlist::AnalogVariable::Branch(id) => self.branch_abstol_overrides.get(id).copied().unwrap_or(self.abstol),
+            _ => self.abstol,
+        }
+    }
+
     /// The update test of one unknown: `|new − old| ≤ reltol·max(|old|, |new|) + abs`.
     fn update_within(&self, reference: &crate::netlist::AnalogReference, old_v: f64, new_v: f64) -> bool {
         let abs_limit = if reference.is_branch() {
-            self.abstol
+            self.abstol_for(reference.variable())
         } else {
             self.vntol_for(reference.variable())
         };
@@ -105,7 +119,7 @@ impl Tolerances {
     /// The residual test of one row: `|residual| ≤ abs + reltol·scale`.
     fn residual_within(&self, reference: &crate::netlist::AnalogReference, residual: f64, scale: f64) -> bool {
         let abs_limit = if reference.variable().is_branch() {
-            self.abstol
+            self.abstol_for(reference.variable())
         } else {
             self.vntol_for(reference.variable())
         };

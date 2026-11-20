@@ -16,6 +16,8 @@ piperine-digital-solver = { path = "../piperine-digital-solver" }
 toml = "1.1.2"
 
 [dev-dependencies]
+ndarray.workspace = true
+piperine-parity = { path = "../piperine-parity" }
 tempfile.workspace = true
 num-complex.workspace = true
 serde_json = "1"

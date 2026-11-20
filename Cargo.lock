@@ -1361,12 +1361,14 @@ dependencies = [
 name = "piperine-api"
 version = "0.2.0"
 dependencies = [
+ "ndarray",
  "num-complex",
  "piperine-abi",
  "piperine-digital-solver",
  "piperine-interp",
  "piperine-ir",
  "piperine-lang",
+ "piperine-parity",
  "piperine-plan",
  "piperine-project",
  "piperine-solver",
