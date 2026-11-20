@@ -212,3 +212,36 @@ fn a_binding_before_the_run_fires_no_changed() {
     let before = records.iter().find(|(_, s, _)| s == "before").map(|(_, _, f)| (field(f, "prev"), field(f, "value"))).expect("a `before` record");
     assert_eq!(before, (7.0, 7.0), "the bound value is the param's own");
 }
+
+/// What a 1 ms transient of the lone module `Top` of `module` records, as (stream, fields), after `params`
+/// bound before the run.
+fn emitted(module: &str, params: Vec<(String, f64)>) -> Vec<(String, Vec<(String, piperine_api::Field)>)> {
+    #[derive(Default)]
+    struct All(Vec<piperine_api::Record>);
+    impl RecordSink for All {
+        fn record(&mut self, record: &Record) {
+            self.0.push(record.clone());
+        }
+    }
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("bench.msl");
+    std::fs::write(&file, format!("{}{module}", &WATCHED[..WATCHED.find("module Watch").expect("the parts")])).expect("write");
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let overrides = Overrides { analysis: Some("transient".into()), stop: Some(1e-3), max_step: Some(1e-4), backend: Some("rust".into()), top: Some("Top".into()), params, ..Overrides::default() };
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    let kept = Rc::new(RefCell::new(All::default()));
+    session.run(kept.clone()).unwrap_or_else(|f| panic!("{f}"));
+    let records = kept.borrow().0.iter().map(|r| (r.stream.clone(), r.fields.clone())).collect();
+    records
+}
+
+#[test]
+fn an_initial_value_over_a_param_follows_its_binding() {
+    // AS-15 AC 1: `signal s: Bit<f64> = k0;` holds `k0` from (0, 0): 2.5 by default, and 4.0 after
+    // `--param Top.k0=4.0` (the param is structural: the binding selects the variant that folds it).
+    let top = "module Top() {\n    k0: f64 = 2.5;\n    signal s: Bit<f64> = k0;\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n}\ndigital for Top { on at(0.5m) { emit!(\"s\", v = s); } }\n";
+    let value = |records: &[(String, Vec<(String, piperine_api::Field)>)]| field(&records.iter().find(|(s, _)| s == "s").expect("an `s` record").1, "v");
+    assert_eq!(value(&emitted(top, vec![])), 2.5, "the default");
+    assert_eq!(value(&emitted(top, vec![("Top.k0".into(), 4.0)])), 4.0, "after --param Top.k0=4.0");
+}

@@ -98,10 +98,11 @@ fn carriers_follow_ports_then_signals() {
     let ir = Elab::ir(src, "Top");
     let read = Read { ir: &ir };
     assert_eq!(read.carriers("Top").iter().map(|c| (c.2.clone(), c.3)).collect::<Vec<_>>(), [(ValueType::UInt(8), Some(Constant::Int(10))), (ValueType::UInt(2), Some(Constant::Int(2))), (ValueType::F64, Some(Constant::Real(piperine_ir::Real::new(1.5))))]);
-    // One that reads a param is a value per instance: `P0001`, no `Ir`.
-    let err = Elab::run("module Top() { r: f64 = 1.0; signal x: Bit<f64> = r; }", "Top").expect_err("an initial value that reads a param");
-    assert_eq!(Elab::codes(&err), ["P0001"]);
-    assert!(err[0].diagnostic.message.contains("initial value") && err[0].diagnostic.message.contains("param"), "{}", err[0].diagnostic.message);
+    // One that reads a param is folded per body variant (AS-15 AC 1; it was `P0001` before `analog-structure`
+    // T34): the param is structural and the variant `Top~r=1.0` holds the value of `r`.
+    let ir = Elab::ir("module Top() { r: f64 = 1.0; signal x: Bit<f64> = r; }", "Top");
+    let read = Read { ir: &ir };
+    assert_eq!(read.carriers("Top~r=1.0").iter().map(|c| c.3).collect::<Vec<_>>(), [Some(Constant::Real(piperine_ir::Real::new(1.0)))], "x starts at the value of r");
 }
 
 #[test]

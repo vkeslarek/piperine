@@ -225,7 +225,7 @@ impl Elaboration<'_, '_> {
         let prefix = self.frames[frame].prefix.clone();
         let mut gained = 0;
         for signal in signals {
-            if let Some(terminal) = self.add_node(signal, NodeRole::Signal, &prefix) {
+            if let Some(terminal) = self.add_node(signal, NodeRole::Signal, &prefix, frame) {
                 self.frames[frame].nodes.insert(signal, terminal);
                 gained += 1;
             }

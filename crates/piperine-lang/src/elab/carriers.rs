@@ -128,19 +128,20 @@ impl Elaboration<'_, '_> {
         };
         let ty = self.carried_type(decl)?;
         let init = match init {
-            Some(expr) => self.carrier_init(expr)?,
+            Some(expr) => self.carrier_init(expr, frame)?,
             None => None,
         };
         let name = format!("{}{name}", self.frames[frame].prefix);
         Some(Carrier { name, ty, role, init, origin: self.locator.decl(decl) })
     }
 
-    /// The initial value of a carrier, folded: a constant expression over literals and `const`s
-    /// (§5.2.3). One that reads a param is `P0001` (a value per instance is a host concern). The
-    /// outer `None` is a diagnostic; the inner one is an initial value that is `Unknown`, which
-    /// is the same as none: every level unknown at `(0, 0)` and no `changed()` there (§3.3).
-    fn carrier_init(&mut self, expr: ExprId) -> Option<Option<Constant>> {
-        match self.consts.folded(expr, &Bindings::new()) {
+    /// The initial value of a carrier, folded: a constant expression over literals, `const`s and the
+    /// params of its frame (§5.2.3, §5.1.5): a param it reads is a key param of the body, so each
+    /// variant folds its own value (`structural.rs`). The outer `None` is a diagnostic; the inner
+    /// one is an initial value that is `Unknown`, which is the same as none: every level unknown
+    /// at `(0, 0)` and no `changed()` there (§3.3).
+    fn carrier_init(&mut self, expr: ExprId, frame: usize) -> Option<Option<Constant>> {
+        match self.consts.folded(expr, &self.frame_bindings(frame)) {
             Ok(Folded::Known(value)) => Some(Some(value)),
             Ok(Folded::Unknown) => Some(None),
             Err(fault) => {

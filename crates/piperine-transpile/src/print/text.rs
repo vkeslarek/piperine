@@ -143,8 +143,15 @@ impl Text {
     /// analog-structure design 5), which prints `lag_s0_dy`, never `Lag_s0_dy` (a non-snake-case
     /// variable, a rustc warning).
     fn spelled(name: &str) -> String {
-        let spelled = name.replace('~', "_v").replace('.', "_d").replace('$', "_s").replace('=', "_q").replace(',', "_c").replace('-', "_m");
+        let spelled = Self::spelled_cased(name);
         if name.contains(['~', '.', '$']) { spelled.to_ascii_lowercase() } else { spelled }
+    }
+
+    /// [`Self::spelled`] with the capitals kept: the spelling a type name is made from (a body
+    /// variant's struct, `StartedBench_vv0_q0_d6`, which `LibraryPrinter::camel` turns into
+    /// `StartedBenchVv0Q0D6`; a lowercase type name is a rustc warning).
+    pub fn spelled_cased(name: &str) -> String {
+        name.replace('~', "_v").replace('.', "_d").replace('$', "_s").replace('=', "_q").replace(',', "_c").replace('-', "_m")
     }
 }
 
@@ -152,6 +159,14 @@ impl Text {
 mod tests {
     use super::Text;
     use piperine_ir::Origin;
+
+    #[test]
+    fn a_variants_type_spelling_keeps_its_capitals() {
+        // `spelled` lowercases a front-end name (a snake-case item); a type name keeps its capitals, so a
+        // body variant `StartedBench~v0=0.6` is `StartedBench_vv0_q0_d6`, not a lowercase type.
+        assert_eq!(Text::spelled_cased("StartedBench~v0=0.6"), "StartedBench_vv0_q0_d6");
+        assert_eq!(Text::ident("StartedBench~v0=0.6"), "startedbench_vv0_q0_d6");
+    }
 
     /// The significant digits of a decimal literal: its mantissa's digits, leading and trailing
     /// zeros dropped.

@@ -282,6 +282,13 @@ impl Elaboration<'_, '_> {
                 }
             }
         }
+        // A param read by the initial value of a node or a carrier is structural too: the body folds it.
+        for module in modules {
+            let order = self.params_of(*module);
+            for param in self.params_read_by_initial_values(*module) {
+                self.keys.add(*module, param, &order);
+            }
+        }
         // A param of a child that the parent reads through `inst.name` is fixed by the placement.
         for (module, param) in self.params_read_through_reaches() {
             if modules.contains(&module) {
@@ -301,6 +308,23 @@ impl Elaboration<'_, '_> {
                 }
             }
         }
+    }
+
+    /// The params of `module` that the initial value of one of its nodes or carriers reads (`signal a:
+    /// Electrical = v0`, a port's default).
+    fn params_read_by_initial_values(&self, module: DeclId) -> Vec<DeclId> {
+        let mut found = Vec::new();
+        for child in &self.design.decl_data(module).children {
+            let init = match &self.design.decl_data(*child).kind {
+                DeclKind::Signal(s) => s.init,
+                DeclKind::Port(p) if self.types.carrier(*child).is_some() => p.default,
+                _ => None,
+            };
+            if let Some(params) = init.and_then(|expr| ParamReads::new(self.design, self.types).of(expr)) {
+                found.extend(params);
+            }
+        }
+        found
     }
 
     /// The params of `module` read by a value `module` gives to a key param of a module it

@@ -173,3 +173,20 @@ fn changed_and_prev_of_a_param_type_as_an_event_and_the_params_type() {
     assert!(typed_as("r.changed()").iter().all(|t| *t == Some(Ty::Event)), "an event");
     assert!(!typed_as("r.prev()").is_empty() && typed_as("r.prev()").iter().all(|t| *t == Some(Ty::F64)), "the param's type");
 }
+
+#[test]
+fn an_initial_value_that_reads_a_carrier_is_e0210() {
+    // AS-15 AC 3 (§5.1.5): an initial value is over params and constants: a carrier or a probe in it is
+    // `E0210` at the read, for a node and for a carrier alike; a param is accepted.
+    for (init, read) in [("signal a: Electrical = c.known_or(0.0);", "c"), ("signal b: Bit<f64> = c.known_or(0.0);", "c"), ("signal a: Electrical = v(x);", "v(x)")] {
+        let src = format!("module Top(in c: Bit<f64>, x: Electrical) {{ {init} }}");
+        let found = diagnostics(&src);
+        let codes: Vec<&str> = found.iter().map(|d| &*d.diagnostic.code).collect();
+        assert_eq!(codes, ["E0210"], "{init}: {:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert!(src.get(found[0].diagnostic.span().range()).is_some_and(|t| t.contains(read)), "{init}: the error is at the read of `{read}`");
+    }
+    for init in ["signal a: Electrical = k0;", "signal b: Bit<f64> = k0 * 2.0;"] {
+        let src = format!("module Top() {{ k0: f64 = 1.0; {init} }}");
+        Types::check(&design_of(&src), "Top").unwrap_or_else(|d| panic!("{init}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
+    }
+}

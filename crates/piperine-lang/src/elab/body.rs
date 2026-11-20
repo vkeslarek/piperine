@@ -82,6 +82,7 @@ impl Elaboration<'_, '_> {
         scope.keys = keys.clone();
         self.structure = Structure::default();
         self.frames = vec![Frame::root(module)];
+        self.body_keys = keys.clone();
         self.index_children(module);
         let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
         for (index, param) in params.iter().enumerate() {
@@ -150,6 +151,19 @@ impl Elaboration<'_, '_> {
         Some(Param { name: plan.name, ty, default: plan.default, check, structural, origin: self.locator.decl(param) })
     }
 
+    /// The values the params a frame's initial values may read take: the body's key params for the body's
+    /// own module (frame 0, `body_keys`), the constants the placement bound for a hoisted module.
+    pub(super) fn frame_bindings(&self, frame: usize) -> Bindings {
+        if frame == 0 {
+            return self.body_keys.clone();
+        }
+        let mut bindings = Bindings::new();
+        for (param, value) in &self.frames[frame].params {
+            bindings.bind(*param, *value);
+        }
+        bindings
+    }
+
     /// The nodes of a module, ports first and then signals, each with its nature and initial value,
     /// added to the structure of the body and named in frame 0. A discrete carrier is not a node
     /// (`carriers.rs`).
@@ -159,7 +173,7 @@ impl Elaboration<'_, '_> {
         let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && node(c));
         let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && node(c));
         for (decl, role) in ports.map(|d| (d, NodeRole::Port)).chain(signals.map(|d| (d, NodeRole::Signal))).collect::<Vec<_>>() {
-            if let Some(terminal) = self.add_node(decl, role, "") {
+            if let Some(terminal) = self.add_node(decl, role, "", 0) {
                 self.frames[0].nodes.insert(decl, terminal);
             }
         }
@@ -167,13 +181,13 @@ impl Elaboration<'_, '_> {
 
     /// The node `decl` as a node of the body being lowered, named `prefix` and its own name (`lag.y`
     /// for a signal of a hoisted frame): added to the structure; its terminal. `None` after a diagnostic.
-    pub(super) fn add_node(&mut self, decl: DeclId, role: NodeRole, prefix: &str) -> Option<Terminal> {
-        let (spec, plan) = self.lower_node(decl, role, prefix)?;
+    pub(super) fn add_node(&mut self, decl: DeclId, role: NodeRole, prefix: &str, frame: usize) -> Option<Terminal> {
+        let (spec, plan) = self.lower_node(decl, role, prefix, frame)?;
         self.structure.nodes.push((spec, plan));
         Some(Terminal::Node(self.structure.nodes.len() as u32 - 1))
     }
 
-    fn lower_node(&mut self, decl: DeclId, role: NodeRole, prefix: &str) -> Option<(BodyNode, NodePlan)> {
+    fn lower_node(&mut self, decl: DeclId, role: NodeRole, prefix: &str, frame: usize) -> Option<(BodyNode, NodePlan)> {
         let data = self.design.decl_data(decl).clone();
         let name = format!("{prefix}{}", data.name.as_ref().map_or("", |n| n.text.as_str()));
         let (ty, init) = match &data.kind {
@@ -183,7 +197,7 @@ impl Elaboration<'_, '_> {
         };
         let nature = self.design.nature_of(ty).and_then(|n| self.nature(n))?;
         let init = match init {
-            Some(expr) => match self.consts.value(expr, &Bindings::new()) {
+            Some(expr) => match self.consts.value(expr, &self.frame_bindings(frame)) {
                 Ok(Constant::Real(value)) => Some(value),
                 Ok(Constant::Bool(_)) => {
                     self.unsupported(data.file, self.design.expr_node(expr).span, "a `bool` initial value");

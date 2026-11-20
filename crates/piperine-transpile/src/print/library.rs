@@ -71,7 +71,7 @@ impl LibraryPrinter {
                 module = Text::generated(&format!("{snake}_{}", body.id().index()));
                 taken.insert(module.clone());
             }
-            let strukt = Text::ident(&Self::camel(body.name()));
+            let strukt = Text::ident(&Self::camel(&Text::spelled_cased(body.name())));
             let text = Self::body(body, plan, &module, &strukt, &mut shapes, &mut uses)?;
             modules.push((body.name(), module, strukt, text));
         }

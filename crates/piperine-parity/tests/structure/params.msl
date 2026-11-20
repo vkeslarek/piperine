@@ -35,3 +35,20 @@ module CornerBench() {
     let source = AcLevel { volts: 0.0 }(a);
     let filter = CornerFilter(a, o);
 }
+
+// -- AS-15 AC 2: a node that starts at a param's value
+
+/// An RC low-pass whose node `o` starts at `v0` through the operating point: 1 V behind 1 kOhm into
+/// 1 uF (tau = 1 ms).
+module StartedBench() {
+    v0: f64 = 0.6;
+    signal src: Electrical;
+    signal o: Electrical = v0;
+    let source = Level { volts: 1.0 }(src);
+    let series = Resistor { r: 1k }(src, o);
+    let shunt = Capacitor { c: 1u }(o, gnd);
+}
+
+/// A potential held at `volts`.
+module Level(p: Electrical) { volts: f64 = 0.0; }
+analog for Level { v(p, gnd) +> volts; }

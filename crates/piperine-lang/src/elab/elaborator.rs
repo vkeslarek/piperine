@@ -82,6 +82,8 @@ pub(super) struct Elaboration<'d, 't> {
     /// The index each placement of the body being lowered takes among its children (`reach.rs`).
     pub(super) child_indices: BTreeMap<crate::pom::ExprId, u32>,
     /// The reach frame of each child a body reads: by the frame that reads it and the placement.
+    /// The values of the key params of the body being lowered: what its initial values fold over.
+    pub(super) body_keys: Bindings,
     /// The ammeter branch of each port whose `inflow()` the body being lowered reads (`inflow.rs`).
     pub(super) ammeters: BTreeMap<crate::pom::DeclId, u32>,
     pub(super) reach_frames: BTreeMap<(usize, crate::pom::ExprId), usize>,
@@ -111,6 +113,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             structure: Structure::default(),
             frames: Vec::new(),
             child_indices: BTreeMap::new(),
+            body_keys: Bindings::new(),
             ammeters: BTreeMap::new(),
             reach_frames: BTreeMap::new(),
             diagnostics: Vec::new(),

@@ -933,11 +933,11 @@ T35 → T36
 
 **Done when**:
 
-- [ ] Test with exactly this name passes in `Run apibind`: `an_initial_value_over_a_param_follows_its_binding`
-- [ ] Test with exactly this name passes in `Run sparams`: `a_node_initial_value_over_a_param_holds_the_operating_point`
-- [ ] Test with exactly this name passes in `Run typestruct`: `an_initial_value_that_reads_a_carrier_is_e0210`
-- [ ] Gate check passes: Full (`Run apibind`, `Run sparams`, `Run typestruct`, `cargo test -p piperine-lang`, `Run twins`, `Run tgolden`)
-- [ ] Test count: the 3 tests named above, and no existing test removed
+- [x] Test with exactly this name passes in `Run apibind`: `an_initial_value_over_a_param_follows_its_binding`
+- [x] Test with exactly this name passes in `Run sparams`: `a_node_initial_value_over_a_param_holds_the_operating_point`
+- [x] Test with exactly this name passes in `Run typestruct`: `an_initial_value_that_reads_a_carrier_is_e0210`
+- [x] Gate check passes: Full (`Run apibind`, `Run sparams`, `Run typestruct`, `cargo test -p piperine-lang`, `Run twins`, `Run tgolden`)
+- [x] Test count: the 3 tests named above, and no existing test removed
 
 **Tests**: e2e
 **Gate**: full

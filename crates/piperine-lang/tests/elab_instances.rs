@@ -23,12 +23,12 @@ fn an_empty_module_is_an_empty_body() {
 }
 
 #[test]
-fn a_node_init_that_reads_a_param_is_p0001() {
-    let src = "module Top() { p: f64 = 1.0; signal n: Electrical = p; }";
-    let err = Elab::run(src, "Top").expect_err("a node's initial value cannot read a param");
-    assert_eq!(Elab::codes(&err), ["P0001"]);
-    let span = err[0].diagnostic.span();
-    assert_eq!(&src[span.start..span.end], "p", "the diagnostic sits at the value");
+fn a_node_init_that_reads_a_param_is_folded_per_variant() {
+    // AS-15 AC 2 (it was `P0001` before `analog-structure` T34): the param is structural, so the body
+    // variant `Top~p=1.0` holds the value of `p` as the node's initial value.
+    let ir = Elab::ir("module Top() { p: f64 = 1.0; signal n: Electrical = p; }", "Top");
+    let top = ir.bodies().find(|b| b.name() == "Top~p=1.0").expect("the variant of p = 1.0");
+    assert_eq!(top.nodes().iter().map(|n| n.init).collect::<Vec<_>>(), [Some(piperine_ir::Real::new(1.0))], "n starts at the value of p");
 }
 
 #[test]
