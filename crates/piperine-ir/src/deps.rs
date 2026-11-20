@@ -35,8 +35,9 @@
 //! a meaning to (a local read before its `let`, a cycle); on an IR that fails
 //! it the walk panics with the origin, never answers a default.
 //!
-//! Mutation (`control.rs`) stays inside the finite lattice: an assignment joins the assigned
-//! value (and the conditions it sits under) into the local's, so a local only grows.
+//! Mutation and loops (`control.rs`) stay inside the finite lattice: an assignment joins the
+//! assigned value into the local's, and a loop's body is walked again until no local changes. A
+//! loop's trip count and the conditions its exits sit under reach every local the loop assigns.
 
 mod control;
 
@@ -46,6 +47,7 @@ use std::sync::OnceLock;
 use crate::handle::Body;
 use crate::ids::{ExprId, FunctionId, StmtId};
 use crate::model::{BinaryOp, BodyData, EmitField, Env, EventSource, Expr, Ir, Operator, Stmt, Terminal, UnaryOp, ValueType};
+use control::LoopFrame;
 
 /// The index of a branch in its body (`Body::branches`).
 pub type BranchIndex = u32;
@@ -396,6 +398,15 @@ enum Task {
     Return { at: ExprId, function: FunctionId, args: Vec<Value> },
     /// The value of an assignment is on the stack: join it into the local.
     Assign { local: u32, op: Option<BinaryOp>, at: ExprId },
+    /// The bounds of a `for` range are on the stack: the loop variable and the trip count.
+    LoopBounds(ExprId),
+    /// The condition of a `while` is on the stack: it decides the trip count.
+    LoopCondition(ExprId),
+    /// A pass over the body of loop `0` ended (`before` holds the locals it began with), or the
+    /// loop has just begun (`before` is `None`): walk again while a local changed, else finish.
+    LoopPass { id: ExprId, before: Option<Vec<Option<Value>>> },
+    /// A `break` or `continue` (its value on the stack when `valued`) leaves the innermost loop.
+    Escape { at: ExprId, valued: bool },
 }
 
 /// One abstract walk of a body, and of the functions it calls. The walk is iterative (an
@@ -426,6 +437,8 @@ struct Walk<'a> {
     /// The conditions of the arms enclosing the statement being walked, outermost first: what a
     /// nested contribution reads beyond its own addends (analog-structure, mechanism 1).
     enclosing: Vec<Value>,
+    /// The loops being walked, innermost last.
+    frames: Vec<LoopFrame>,
 }
 
 impl<'a> Walk<'a> {
@@ -446,6 +459,7 @@ impl<'a> Walk<'a> {
             caps: Vec::new(),
             held: HashMap::new(),
             enclosing: Vec::new(),
+            frames: Vec::new(),
         };
         let owner = format!("body {}", data.name);
         let checks = data
@@ -671,6 +685,10 @@ impl<'a> Walk<'a> {
                     self.returns.insert((function, args), callee);
                 }
                 Task::Assign { local, op, at } => self.assign(local, op, at),
+                Task::LoopBounds(id) => self.loop_bounds(id),
+                Task::LoopCondition(id) => self.loop_condition(id),
+                Task::LoopPass { id, before } => self.loop_pass(id, before, &mut next),
+                Task::Escape { at, valued } => self.escape(at, valued),
             }
             // `next` holds the follow-up tasks in evaluation order.
             stack.extend(next.drain(..).rev());
@@ -857,6 +875,16 @@ impl<'a> Walk<'a> {
                 next.push(Task::Restore(outside));
             }
             Expr::Call { args, .. } | Expr::Math { args, .. } => next.extend(args.iter().map(|&a| Task::Expr(a))),
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } => return self.begin_loop(id, next),
+            Expr::Break(value) => {
+                next.extend(value.iter().map(|&v| Task::Expr(v)));
+                next.push(Task::Escape { at: id, valued: value.is_some() });
+                return;
+            }
+            Expr::Continue => {
+                next.push(Task::Escape { at: id, valued: false });
+                return;
+            }
             Expr::Closure { body, .. } => {
                 // The parameters end with the closure.
                 let outside = self.scope().locals.clone();
@@ -960,7 +988,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };

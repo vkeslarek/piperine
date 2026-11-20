@@ -1,14 +1,15 @@
-//! Scope: the control forms of the IR (composite-values phase A, CV-01): a mutable local and its
-//! assignment, built by hand, checked (valid and refused), printed, and walked by the dependency
-//! analysis, where an assignment joins what it reads into the local.
+//! Scope: the control forms of the IR (composite-values phase A, CV-01, CV-02): a mutable local
+//! and its assignment, and `loop`/`while`/`for` with `break` and `continue`. Each form is built by
+//! hand, checked (valid and refused), printed, and walked by the dependency analysis, whose fixed
+//! point (a loop's later iteration) is what these tests pin.
 
 #[path = "support/digital.rs"]
 #[allow(dead_code)]
 mod digital;
 
-use digital::{Buck, Dx};
+use digital::{Buck, Dx, Ty};
 use piperine_ir::{
-    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Broken, Deps, ExprId, InstanceSpec, Ir, IrBuilder, Local, NodeRef,
+    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Broken, CarrierRole, Constant, Deps, Expr, ExprId, InstanceSpec, Ir, IrBuilder, Local, NodeRef,
     NodeRole, Operator, Origin, Place, QuantityRole, Stmt, StmtId, Target, Terminal, ValueType,
 };
 
@@ -49,6 +50,11 @@ impl Shape {
     /// `local = value;`, or `local op= value;`.
     fn assign(b: &mut IrBuilder, local: u32, op: Option<BinaryOp>, value: ExprId) -> StmtId {
         b.stmt(Stmt::Assign { place: Place { local, path: vec![] }, op, value })
+    }
+
+    /// An expression of kind `kind` and type `ty`.
+    fn expr(b: &mut IrBuilder, kind: Expr, ty: ValueType, line: u32) -> ExprId {
+        b.expr(kind, ty, Origin { file: FILE.into(), line, col: 5 })
     }
 
     /// The design: `write` builds the locals, the statements and the value; functions are added
@@ -169,4 +175,179 @@ fn an_assignment_joins_what_it_reads_into_the_local() {
     });
     assert_eq!(ir.check(), vec![]);
     assert_eq!(Shape::reads(&ir), Deps { nodes: vec![0, 1], ..Deps::default() });
+}
+
+// ---- T3: loops, `break` and `continue` (CV-02) -----------------------------------------------------------------
+
+#[test]
+fn loops_check_type_and_print() {
+    // `let x = loop { break 1.0 };  while true { break }  for k in 0..4 { continue }` and the
+    // inclusive, reversed range `for k in (0..=4).rev()`.
+    let ir = Shape::ir(|b| {
+        let one = Shape::dx(b, 2).real(1.0);
+        let leave = Shape::expr(b, Expr::Break(Some(one)), ValueType::F64, 2);
+        let leave = b.stmt(Stmt::Expr(leave));
+        let looped = Shape::expr(b, Expr::Loop { body: vec![leave] }, ValueType::F64, 2);
+        let declare = Shape::dx(b, 2).let_(0, looped);
+
+        let always = Shape::dx(b, 3).boolean(true);
+        let stop = Shape::expr(b, Expr::Break(None), ValueType::Unit, 3);
+        let stop = b.stmt(Stmt::Expr(stop));
+        let whiled = Shape::expr(b, Expr::While { cond: always, body: vec![stop] }, ValueType::Unit, 3);
+        let whiled = b.stmt(Stmt::Expr(whiled));
+
+        let (low, high) = {
+            let mut x = Shape::dx(b, 4);
+            (x.int(0, Ty::u(8)), x.int(4, Ty::u(8)))
+        };
+        let skip = Shape::expr(b, Expr::Continue, ValueType::Unit, 4);
+        let skip = b.stmt(Stmt::Expr(skip));
+        let ranged = Shape::expr(b, Expr::ForRange { local: 1, low, high, inclusive: false, reverse: false, body: vec![skip] }, ValueType::Unit, 4);
+        let ranged = b.stmt(Stmt::Expr(ranged));
+
+        let (low, high) = {
+            let mut x = Shape::dx(b, 5);
+            (x.int(0, Ty::u(8)), x.int(4, Ty::u(8)))
+        };
+        let reversed = Shape::expr(b, Expr::ForRange { local: 1, low, high, inclusive: true, reverse: true, body: vec![] }, ValueType::Unit, 5);
+        let reversed = b.stmt(Stmt::Expr(reversed));
+
+        let read = Shape::dx(b, 6).local(0, ValueType::F64);
+        Written { locals: vec![Shape::local("x", ValueType::F64), Shape::local("k", Ty::u(8))], stmts: vec![declare, whiled, ranged, reversed], value: read }
+    });
+    assert_eq!(ir.check(), vec![], "loops of every kind check");
+    let text = ir.to_string();
+    for printed in ["loop { break 1", "while true { break }", "for k in 0u8..4u8 { continue }", "for k in (0u8..=4u8).rev() {  }"] {
+        assert!(text.contains(printed), "`{printed}` in:\n{text}");
+    }
+
+    // A `loop` is typed by its breaks: a value of another type is refused, and so is the bounds
+    // of a range that are not of one integer type.
+    let ir = Shape::ir(|b| {
+        let one = Shape::dx(b, 2).real(1.0);
+        let leave = Shape::expr(b, Expr::Break(Some(one)), ValueType::Bool, 2);
+        let leave = b.stmt(Stmt::Expr(leave));
+        let looped = Shape::expr(b, Expr::Loop { body: vec![leave] }, ValueType::Bool, 2);
+        let declare = Shape::dx(b, 2).let_(0, looped);
+        let (low, high) = {
+            let mut x = Shape::dx(b, 3);
+            (x.int(0, Ty::u(8)), x.int(4, Ty::u(9)))
+        };
+        let ranged = Shape::expr(b, Expr::ForRange { local: 1, low, high, inclusive: false, reverse: false, body: vec![] }, ValueType::Unit, 3);
+        let ranged = b.stmt(Stmt::Expr(ranged));
+        let read = Shape::dx(b, 4).real(0.0);
+        Written { locals: vec![Shape::local("b", ValueType::Bool), Shape::local("k", Ty::u(8))], stmts: vec![declare, ranged], value: read }
+    });
+    let broken = ir.check();
+    assert_eq!(Entries::with(&broken, "the value of a `break` must be bool, found f64").len(), 1, "{broken:?}");
+    assert_eq!(Entries::with(&broken, "bounds of a `for` range must have one integer type").len(), 1, "{broken:?}");
+}
+
+#[test]
+fn break_outside_a_loop_is_refused() {
+    // `break;` and `continue;` at the top of the block (§1.8), and `break 1.0` out of a `while`,
+    // which only a `loop` may carry a value out of.
+    let ir = Shape::ir(|b| {
+        let stop = Shape::expr(b, Expr::Break(None), ValueType::Unit, 2);
+        let stop = b.stmt(Stmt::Expr(stop));
+        let skip = Shape::expr(b, Expr::Continue, ValueType::Unit, 3);
+        let skip = b.stmt(Stmt::Expr(skip));
+        let always = Shape::dx(b, 4).boolean(true);
+        let one = Shape::dx(b, 4).real(1.0);
+        let valued = Shape::expr(b, Expr::Break(Some(one)), ValueType::Unit, 4);
+        let valued = b.stmt(Stmt::Expr(valued));
+        let whiled = Shape::expr(b, Expr::While { cond: always, body: vec![valued] }, ValueType::Unit, 4);
+        let whiled = b.stmt(Stmt::Expr(whiled));
+        let value = Shape::dx(b, 5).real(0.0);
+        Written { locals: vec![], stmts: vec![stop, skip, whiled], value }
+    });
+    let broken = ir.check();
+    let outside = Entries::with(&broken, "outside a loop");
+    assert_eq!(outside.len(), 2, "{broken:?}");
+    assert_eq!(outside[0].origin.line, 2, "`break` is named where it stands");
+    assert_eq!(outside[1].origin.line, 3, "`continue` is named where it stands");
+    assert_eq!(Entries::with(&broken, "with a value out of a loop that is not `loop`").len(), 1, "{broken:?}");
+}
+
+#[test]
+fn a_commit_in_a_loop_is_one_statement() {
+    // `on clk.rise() { loop { q <- true; break } }`: the ABI numbers a commit once however
+    // often the loop runs (§12.1.14), so the reaction has one statement, the commit.
+    let mut b = IrBuilder::new();
+    let body = b.body(Buck::spec("Latch", FILE, 1));
+    b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, FILE, 1, 19));
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), FILE, 1, 30));
+    let rise = Buck::rise(&mut b, body, 0, FILE, 2, 22);
+    let mut x = Dx::new(&mut b, FILE, 2, 37);
+    let high = x.boolean(true);
+    let commit = x.commit(1, high, None);
+    let stop = Shape::expr(&mut b, Expr::Break(None), ValueType::Unit, 2);
+    let stop = b.stmt(Stmt::Expr(stop));
+    let looped = Shape::expr(&mut b, Expr::Loop { body: vec![commit, stop] }, ValueType::Unit, 2);
+    let looped = b.stmt(Stmt::Expr(looped));
+    Buck::reaction(&mut b, body, vec![rise], vec![looped], vec![], FILE, 2);
+    let top = b.next_instance_id();
+    let clk = b.net(piperine_ir::NetSpec { path: "Latch.clk".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: Shape::origin() });
+    let q = b.net(piperine_ir::NetSpec { path: "Latch.q".into(), ty: ValueType::Bool, declared_by: top, init: Some(Constant::Bool(false)), origin: Shape::origin() });
+    let top = b.instance(InstanceSpec { path: "Latch".into(), name: "Latch".into(), body, parent: None, nodes: vec![], params: vec![], origin: Shape::origin() });
+    b.bind_nets(top, vec![clk, q]);
+    let ir = b.finish(top);
+    assert_eq!(ir.check(), vec![]);
+    let statements = ir.instance_at("Latch").expect("placed").body().reaction_statements(0);
+    assert_eq!(statements, vec![commit], "the commit in the loop body is the reaction's one statement");
+}
+
+#[test]
+fn a_loop_reaching_a_probe_on_a_later_iteration_reads_it() {
+    // `let mut prev = 0.0; let mut acc = 0.0; for k in 0..3 { acc = prev; prev = v(p, n); }`:
+    // `acc` takes the probe through `prev` on the second iteration, so the contribution of `acc`
+    // reads the nodes. Written in straight line (the same two assignments, no loop) it reads none.
+    let looped = Shape::ir(|b| {
+        let (zero, zero_again) = (Shape::dx(b, 2).real(0.0), Shape::dx(b, 3).real(0.0));
+        let (prev, acc) = (Shape::dx(b, 2).let_(0, zero), Shape::dx(b, 3).let_(1, zero_again));
+        let (before, probe) = (Shape::dx(b, 5).local(0, ValueType::F64), Shape::probe(b, 6));
+        let (take, remember) = (Shape::assign(b, 1, None, before), Shape::assign(b, 0, None, probe));
+        let (low, high) = {
+            let mut x = Shape::dx(b, 4);
+            (x.int(0, Ty::u(8)), x.int(3, Ty::u(8)))
+        };
+        let ranged = Shape::expr(b, Expr::ForRange { local: 2, low, high, inclusive: false, reverse: false, body: vec![take, remember] }, ValueType::Unit, 4);
+        let ranged = b.stmt(Stmt::Expr(ranged));
+        let read = Shape::dx(b, 7).local(1, ValueType::F64);
+        let locals = vec![Shape::mutable("prev", ValueType::F64), Shape::mutable("acc", ValueType::F64), Shape::local("k", Ty::u(8))];
+        Written { locals, stmts: vec![prev, acc, ranged], value: read }
+    });
+    assert_eq!(looped.check(), vec![]);
+    assert_eq!(Shape::reads(&looped).nodes, vec![0, 1], "the second iteration reads what the first one stored");
+
+    let straight = Shape::ir(|b| {
+        let (zero, zero_again) = (Shape::dx(b, 2).real(0.0), Shape::dx(b, 3).real(0.0));
+        let (prev, acc) = (Shape::dx(b, 2).let_(0, zero), Shape::dx(b, 3).let_(1, zero_again));
+        let (before, probe) = (Shape::dx(b, 5).local(0, ValueType::F64), Shape::probe(b, 6));
+        let (take, remember) = (Shape::assign(b, 1, None, before), Shape::assign(b, 0, None, probe));
+        let read = Shape::dx(b, 7).local(1, ValueType::F64);
+        Written { locals: vec![Shape::mutable("prev", ValueType::F64), Shape::mutable("acc", ValueType::F64)], stmts: vec![prev, acc, take, remember], value: read }
+    });
+    assert_eq!(straight.check(), vec![]);
+    assert_eq!(Shape::reads(&straight).nodes, Vec::<u32>::new(), "without the loop `acc` took `prev` before the probe was stored");
+}
+
+#[test]
+fn a_loop_trip_count_reaches_what_the_loop_assigns() {
+    // `let mut n = 0.0; while v(p, n) < 1.0 { n += 1.0 }`: how often the body ran depends on the
+    // probe, so `n` reads the nodes though the body only adds a constant.
+    let ir = Shape::ir(|b| {
+        let zero = Shape::dx(b, 2).real(0.0);
+        let declare = Shape::dx(b, 2).let_(0, zero);
+        let (probe, one) = (Shape::probe(b, 3), Shape::dx(b, 3).real(1.0));
+        let cond = Shape::dx(b, 3).bin(BinaryOp::Lt, probe, one, ValueType::Bool);
+        let step = Shape::dx(b, 4).real(1.0);
+        let add = Shape::assign(b, 0, Some(BinaryOp::Add), step);
+        let whiled = Shape::expr(b, Expr::While { cond, body: vec![add] }, ValueType::Unit, 3);
+        let whiled = b.stmt(Stmt::Expr(whiled));
+        let read = Shape::dx(b, 5).local(0, ValueType::F64);
+        Written { locals: vec![Shape::mutable("n", ValueType::F64)], stmts: vec![declare, whiled], value: read }
+    });
+    assert_eq!(ir.check(), vec![]);
+    assert_eq!(Shape::reads(&ir).nodes, vec![0, 1], "the condition decides the trip count (§3.3.3)");
 }

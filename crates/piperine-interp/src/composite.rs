@@ -12,17 +12,17 @@ use piperine_ir::{Body, EventSource, Expr, ExprId, Stmt, StmtId};
 pub(crate) struct CompositeForms<'a> {
     body: Body<'a>,
     /// The forms met so far, by their position in `CompositeForms::NAMES`.
-    met: [bool; 1],
+    met: [bool; 6],
 }
 
 impl<'a> CompositeForms<'a> {
     /// The name of each form, in the order the refusal lists them.
-    const NAMES: [&'static str; 1] =
-        ["an assignment"];
+    const NAMES: [&'static str; 6] =
+        ["an assignment", "a loop", "a while loop", "a for loop", "break", "continue"];
 
     /// The forms `body` holds, each once, in a fixed order.
     pub(crate) fn of(body: Body<'a>) -> Vec<&'static str> {
-        let mut forms = CompositeForms { body, met: [false; 1] };
+        let mut forms = CompositeForms { body, met: [false; 6] };
         forms.walk();
         Self::NAMES.into_iter().zip(forms.met).filter_map(|(name, met)| met.then_some(name)).collect()
     }
@@ -70,6 +70,9 @@ impl<'a> CompositeForms<'a> {
                 continue;
             }
             let kind = ir.expr(id);
+            if let Some(position) = Self::position(kind) {
+                self.met[position] = true;
+            }
             if let Expr::Call { function, .. } = kind
                 && seen_functions.insert(*function)
             {
@@ -77,6 +80,18 @@ impl<'a> CompositeForms<'a> {
             }
             exprs.extend(kind.operands());
             stmts.extend(kind.statements());
+        }
+    }
+
+    /// The position in `NAMES` of the composite-values form `kind` is, `None` for any other.
+    fn position(kind: &Expr) -> Option<usize> {
+        match kind {
+            Expr::Loop { .. } => Some(1),
+            Expr::While { .. } => Some(2),
+            Expr::ForRange { .. } => Some(3),
+            Expr::Break(_) => Some(4),
+            Expr::Continue => Some(5),
+            _ => None,
         }
     }
 }

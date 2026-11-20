@@ -471,15 +471,29 @@ pub enum Expr {
     /// them is `Unknown`, so the result is `Flagged`; with no `tags` it is flagged only when
     /// `expr` is.
     LevelCast { expr: ExprId, to: ValueType, tags: Option<Vec<i128>> },
+    /// `loop { body }` (§1.8): runs `body` until a `Break`. Its type is its breaks' value type,
+    /// `()` for a `break` with no value.
+    Loop { body: Vec<StmtId> },
+    /// `while cond { body }`: runs `body` while `cond`, a `bool`, holds. Its type is `()`.
+    While { cond: ExprId, body: Vec<StmtId> },
+    /// `for local in low..high { body }`, `..=` when `inclusive`, walked from the top down when
+    /// `reverse` (`.rev()`): `local` takes each integer of the range, `low` and `high` have one
+    /// integer type. Its type is `()`.
+    ForRange { local: u32, low: ExprId, high: ExprId, inclusive: bool, reverse: bool, body: Vec<StmtId> },
+    /// `break` or `break value`: leaves the innermost loop; a value only out of a `Loop`. It
+    /// fits any expected type, as it never produces one.
+    Break(Option<ExprId>),
+    /// `continue`: starts the innermost loop's next iteration. It fits any expected type.
+    Continue,
 }
 
 impl Expr {
     /// The expressions the form evaluates directly, in evaluation order: not the statements of a
-    /// block (`Expr::statements`).
+    /// block or a loop body (`Expr::statements`).
     pub fn operands(&self) -> Vec<ExprId> {
         match self {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown => Vec::new(),
-            Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::ParamPrevious(_) | Expr::Derivative(_) | Expr::Fired(_) => Vec::new(),
+            Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::ParamPrevious(_) | Expr::Derivative(_) | Expr::Fired(_) | Expr::Continue => Vec::new(),
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::LevelCast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => vec![*expr],
             Expr::Binary { lhs: a, rhs: b, .. } | Expr::KnownOr { value: a, default: b } | Expr::Unwrap { is: a, value: b, .. } | Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => vec![*a, *b],
             Expr::If { cond, then, otherwise } => vec![*cond, *then, *otherwise],
@@ -489,13 +503,17 @@ impl Expr {
             Expr::Method { receiver, args, .. } => [*receiver].into_iter().chain(args.iter().copied()).collect(),
             Expr::Limit { x, f, seed, .. } => [*x, *f].into_iter().chain(*seed).collect(),
             Expr::Stim { mag, phase, .. } => [*mag].into_iter().chain(*phase).collect(),
+            Expr::Loop { .. } => Vec::new(),
+            Expr::While { cond, .. } => vec![*cond],
+            Expr::ForRange { low, high, .. } => vec![*low, *high],
+            Expr::Break(value) => value.iter().copied().collect(),
         }
     }
 
-    /// The statements the form runs: a block's; none for any other form.
+    /// The statements the form runs: a block's, a loop's body; none for any other form.
     pub fn statements(&self) -> &[StmtId] {
         match self {
-            Expr::Block { stmts, .. } => stmts,
+            Expr::Block { stmts: body, .. } | Expr::Loop { body } | Expr::While { body, .. } | Expr::ForRange { body, .. } => body,
             _ => &[],
         }
     }

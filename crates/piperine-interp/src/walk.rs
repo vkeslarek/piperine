@@ -325,6 +325,11 @@ impl<'a> Walk<'a> {
             Expr::Merge { .. } => "Merge",
             Expr::Same { .. } => "Same",
             Expr::LevelCast { .. } => "LevelCast",
+            Expr::Loop { .. } => "Loop",
+            Expr::While { .. } => "While",
+            Expr::ForRange { .. } => "ForRange",
+            Expr::Break(_) => "Break",
+            Expr::Continue => "Continue",
         }
     }
 

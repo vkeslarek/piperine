@@ -118,6 +118,9 @@ struct Walk {
 struct Ctx {
     conditional: bool,
     closure: bool,
+    /// The innermost loop expression the code sits in, `None` outside every loop and inside a
+    /// closure (`break` and `continue` do not cross a closure).
+    enclosing_loop: Option<ExprId>,
 }
 
 /// One step of the iterative walk.
@@ -496,6 +499,12 @@ impl<'a> Checker<'a> {
             }
             Expr::Math { args, .. } => exprs.extend(args),
             Expr::Closure { body, .. } => exprs.push(*body),
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue => {
+                for &s in kind.statements() {
+                    self.stmt_id(item, origin, s);
+                }
+                exprs.extend(kind.operands());
+            }
             Expr::Limit { x, f, seed, .. } => {
                 exprs.extend([*x, *f]);
                 exprs.extend(seed);
@@ -855,6 +864,10 @@ impl<'a> Checker<'a> {
                 Expr::Call { args, .. } | Expr::Math { args, .. } => stack_e.extend(args),
                 Expr::Method { receiver, args, .. } => stack_e.extend([*receiver].into_iter().chain(args.iter().copied())),
                 Expr::Closure { body, .. } => stack_e.push(*body),
+                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue => {
+                    stack_s.extend(data.kind.statements());
+                    stack_e.extend(data.kind.operands());
+                }
                 Expr::Limit { x, f, seed, .. } => stack_e.extend([*x, *f].into_iter().chain(*seed)),
                 Expr::Stim { mag, phase, .. } => stack_e.extend([*mag].into_iter().chain(*phase)),
             }
@@ -1355,6 +1368,9 @@ impl<'a> Checker<'a> {
                     self.report(w.owner.item.clone(), origin.clone(), "contribution outside the analog block of a body".to_string());
                 } else if ctx.closure {
                     self.report(w.owner.item.clone(), origin.clone(), "contribution inside a closure".to_string());
+                } else if ctx.enclosing_loop.is_some() {
+                    // §11 rule 12: the elaborator unrolls a loop that contributes, so none reaches the IR.
+                    self.report(w.owner.item.clone(), origin.clone(), "contribution inside a loop".to_string());
                 }
                 let kind = w.owner.branches.get(*branch as usize).copied();
                 match kind {
@@ -1652,7 +1668,7 @@ impl<'a> Checker<'a> {
                     }
                 }
                 w.rescope();
-                next.push(Task::Expr(*body, Ctx { closure: true, ..ctx }));
+                next.push(Task::Expr(*body, Ctx { closure: true, enclosing_loop: None, ..ctx }));
                 // The parameters end with the closure.
                 next.push(Task::Restore(outside));
             }
@@ -1875,6 +1891,12 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } => self.looping(w, id, first, ctx, next),
+            Expr::Break(value) => {
+                self.leave_loop(w, &origin, ctx, *value, true);
+                next.extend(value.iter().map(|v| Task::Expr(*v, ctx)));
+            }
+            Expr::Continue => self.leave_loop(w, &origin, ctx, None, false),
             Expr::IsKnown(value) | Expr::High(value) => {
                 if first {
                     let high = matches!(data.kind, Expr::High(_));
@@ -1909,6 +1931,65 @@ impl<'a> Checker<'a> {
                     self.wrong(w, origin.clone(), format!("`{op:?}` does not apply to a {target} target and this value"));
                 }
             }
+        }
+    }
+
+    /// The walk of the loop expression `id`: the checks of its own form (when `first`), then the
+    /// tasks of its operands and its body, which run inside it (`break` and `continue` look the
+    /// loop up through `Ctx::enclosing_loop`).
+    fn looping(&mut self, w: &mut Walk, id: ExprId, first: bool, ctx: Ctx, next: &mut Vec<Task>) {
+        let Some(data) = self.ir.exprs.get(id.index()) else { return };
+        let (kind, ty, origin) = (&data.kind, &data.ty, data.origin.clone());
+        let inside = Ctx { conditional: true, enclosing_loop: Some(id), ..ctx };
+        let outside = w.bound.clone();
+        match kind {
+            Expr::While { cond, .. } => {
+                if first {
+                    self.carried(w, *cond, &ValueType::Bool, "the condition of a `while`");
+                    self.own(w, &origin, ty, &ValueType::Unit);
+                }
+                next.push(Task::Expr(*cond, ctx));
+            }
+            Expr::ForRange { local, low, high, .. } => {
+                if first {
+                    self.own(w, &origin, ty, &ValueType::Unit);
+                    if let (Some(l), Some(h)) = (self.ty(*low), self.ty(*high)) {
+                        if l != h || !l.is_integer() {
+                            self.wrong(w, origin.clone(), format!("the bounds of a `for` range must have one integer type, found {l} and {h}"));
+                        } else if w.owner.locals.get(*local as usize) != Some(l) {
+                            self.wrong(w, origin.clone(), format!("the variable of a `for` range must be a local of type {l}"));
+                        }
+                    }
+                }
+                next.extend([Task::Expr(*low, ctx), Task::Expr(*high, ctx), Task::Bind(*local)]);
+            }
+            _ => {}
+        }
+        next.extend(kind.statements().iter().map(|&s| Task::Stmt(s, inside, false)));
+        // The body's `let`s, and a range's variable, end with the loop.
+        next.push(Task::Restore(outside));
+    }
+
+    /// A `break` (`is_break`, with `value` when it carries one) or a `continue` at `origin`: it
+    /// must sit in a loop, and a `break` value only out of a `loop`, of the type the loop gives.
+    fn leave_loop(&mut self, w: &Walk, origin: &Origin, ctx: Ctx, value: Option<ExprId>, is_break: bool) {
+        let word = if is_break { "break" } else { "continue" };
+        let Some(enclosing) = ctx.enclosing_loop else {
+            self.wrong(w, origin.clone(), format!("`{word}` outside a loop"));
+            return;
+        };
+        if !is_break {
+            return;
+        }
+        let loop_ty = self.ty(enclosing).cloned();
+        match (self.ir.exprs.get(enclosing.index()).map(|d| &d.kind), value, loop_ty) {
+            (Some(Expr::Loop { .. }), Some(v), Some(ty)) => self.want(w, v, &ty, "the value of a `break`"),
+            (Some(Expr::Loop { .. }), None, Some(ty)) if ty != ValueType::Unit => {
+                self.wrong(w, origin.clone(), format!("`break` without a value out of a `loop` of type {ty}"));
+            }
+            (Some(Expr::Loop { .. }), ..) => {}
+            (_, Some(_), _) => self.wrong(w, origin.clone(), "`break` with a value out of a loop that is not `loop`".to_string()),
+            _ => {}
         }
     }
 
@@ -1993,6 +2074,6 @@ impl Walk {
 
 impl Ctx {
     fn top() -> Self {
-        Ctx { conditional: false, closure: false }
+        Ctx { conditional: false, closure: false, enclosing_loop: None }
     }
 }

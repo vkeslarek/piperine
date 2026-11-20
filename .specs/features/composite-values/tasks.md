@@ -238,9 +238,9 @@ T63
 
 **Done when**:
 
-- [ ] `loops_check_type_and_print`, `break_outside_a_loop_is_refused`, `a_commit_in_a_loop_is_one_statement` and `a_loop_reaching_a_probe_on_a_later_iteration_reads_it` pass under `**Run irctl**`
-- [ ] `each_composite_values_form_is_refused_by_name` covers the five forms under `**Run interp**`
-- [ ] Gate check passes: Quick
+- [x] `loops_check_type_and_print`, `break_outside_a_loop_is_refused`, `a_commit_in_a_loop_is_one_statement` and `a_loop_reaching_a_probe_on_a_later_iteration_reads_it` pass under `**Run irctl**`
+- [x] `each_composite_values_form_is_refused_by_name` covers the five forms under `**Run interp**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

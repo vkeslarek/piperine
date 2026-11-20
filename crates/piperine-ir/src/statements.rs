@@ -59,6 +59,11 @@ impl Statements {
                         Expr::If { cond, then, otherwise } => next.extend([Step::Expr(*cond), Step::Expr(*then), Step::Expr(*otherwise)]),
                         Expr::Call { args, .. } | Expr::Math { args, .. } => next.extend(args.iter().map(|a| Step::Expr(*a))),
                         Expr::Closure { body, .. } => next.push(Step::Expr(*body)),
+                        // A loop body is walked once: a commit in a loop is one statement (§12.1.14).
+                        Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue => {
+                            next.extend(data.kind.operands().into_iter().map(Step::Expr));
+                            next.extend(data.kind.statements().iter().map(|s| Step::Stmt(*s)));
+                        }
                         Expr::Limit { x, f, seed, .. } => next.extend([*x, *f].into_iter().chain(*seed).map(Step::Expr)),
                         Expr::Stim { mag, phase, .. } => next.extend([*mag].into_iter().chain(*phase).map(Step::Expr)),
                         Expr::Method { receiver, args, .. } => next.extend([*receiver].into_iter().chain(args.iter().copied()).map(Step::Expr)),

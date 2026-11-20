@@ -616,6 +616,12 @@ impl Composite {
         });
         Structured::refused(ir)
     }
+
+    /// A statement that evaluates a form of type `ty`.
+    fn run(b: &mut IrBuilder, kind: Expr, ty: ValueType) -> StmtId {
+        let form = b.expr(kind, ty, Switching::at());
+        b.stmt(Stmt::Expr(form))
+    }
 }
 
 #[test]
@@ -629,4 +635,24 @@ fn each_composite_values_form_is_refused_by_name() {
     });
     assert_eq!(assignment, ["an assignment"]);
 
+    // `loop { break }`, `while true { continue }`, `for k in 0..2 { }` (T3)
+    let looped = Composite::refused(|b| {
+        let stop = Composite::run(b, Expr::Break(None), ValueType::Unit);
+        (vec![], vec![Composite::run(b, Expr::Loop { body: vec![stop] }, ValueType::Unit)])
+    });
+    assert_eq!(looped, ["a loop", "break"]);
+    let whiled = Composite::refused(|b| {
+        let (always, skip) = (Switching::ex(b).boolean(true), Composite::run(b, Expr::Continue, ValueType::Unit));
+        (vec![], vec![Composite::run(b, Expr::While { cond: always, body: vec![skip] }, ValueType::Unit)])
+    });
+    assert_eq!(whiled, ["a while loop", "continue"]);
+    let ranged = Composite::refused(|b| {
+        let (low, high) = {
+            let mut x = Dx::new(b, "composite.msl", 2, 5);
+            (x.int(0, Ty::u(8)), x.int(2, Ty::u(8)))
+        };
+        let kind = Expr::ForRange { local: 0, low, high, inclusive: false, reverse: false, body: vec![] };
+        (vec![Local { name: "k".into(), ty: Ty::u(8), mutable: false }], vec![Composite::run(b, kind, ValueType::Unit)])
+    });
+    assert_eq!(ranged, ["a for loop"]);
 }

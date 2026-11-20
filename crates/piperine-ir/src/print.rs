@@ -667,6 +667,18 @@ impl<'a> Printer<'a> {
         }
     }
 
+    /// A loop body: `head { s0; s1 }`, the statements written in order.
+    fn statements(next: &mut Vec<Piece>, head: &str, stmts: &[StmtId]) {
+        next.push(Piece::Text(if head.is_empty() { "{ ".to_string() } else { format!("{head} {{ ") }));
+        for (i, &s) in stmts.iter().enumerate() {
+            if i > 0 {
+                next.push(Piece::Text("; ".into()));
+            }
+            next.push(Piece::Stmt(s));
+        }
+        next.push(Piece::Text(" }".into()));
+    }
+
     fn expr(&mut self, scope: Scope<'_>, id: ExprId, next: &mut Vec<Piece>) {
         let Some(data) = self.ir.exprs.get(id.index()) else {
             next.push(Piece::Text(format!("<bad expr {}>", id.0)));
@@ -799,6 +811,24 @@ impl<'a> Printer<'a> {
                 let tags = tags.as_ref().map(|t| format!(" in {t:?}")).unwrap_or_default();
                 next.extend([text(format!("cast::<{to}{tags}>(")), Piece::Expr(*expr), text(")".into())]);
             }
+            Expr::Loop { body } => Printer::statements(next, "loop", body),
+            Expr::While { cond, body } => {
+                next.extend([text("while ".into()), Piece::Expr(*cond), text(" ".into())]);
+                Printer::statements(next, "", body);
+            }
+            Expr::ForRange { local, low, high, inclusive, reverse, body } => {
+                let range = if *inclusive { "..=" } else { ".." };
+                let (open, close) = if *reverse { ("(", ").rev()") } else { ("", "") };
+                next.extend([text(format!("for {} in {open}", Printer::local(scope, *local))), Piece::Expr(*low), text(range.into()), Piece::Expr(*high), text(format!("{close} "))]);
+                Printer::statements(next, "", body);
+            }
+            Expr::Break(value) => {
+                next.push(text("break".into()));
+                if let Some(value) = value {
+                    next.extend([text(" ".into()), Piece::Expr(*value)]);
+                }
+            }
+            Expr::Continue => next.push(text("continue".into())),
             Expr::Unwrap { is, value, message } => {
                 let name = if message.is_some() { "expect" } else { "unwrap" };
                 next.extend([text(format!("{name}(")), Piece::Expr(*is), text(", ".into()), Piece::Expr(*value)]);
@@ -899,6 +929,9 @@ impl<'a> Printer<'a> {
             Expr::Unknown | Expr::KnownOr { .. } | Expr::IsKnown(_) | Expr::High(_) | Expr::Carrier(_) | Expr::Previous(_) => None,
             Expr::Level { .. } | Expr::Merge { .. } | Expr::Same { .. } | Expr::LevelCast { .. } => None,
             Expr::Unwrap { value, .. } => ty(value),
+            Expr::While { .. } | Expr::ForRange { .. } => Some(ValueType::Unit),
+            // A diverging form fits any type, and a loop is typed by its breaks: both write theirs.
+            Expr::Loop { .. } | Expr::Break(_) | Expr::Continue => None,
         }
     }
 
@@ -1092,7 +1125,20 @@ impl<'a> Printer<'a> {
                 Some(message) => format!("expect {} {} {message:?}", e(is), e(value)),
                 None => format!("unwrap {} {}", e(is), e(value)),
             },
+            Expr::Loop { body } => format!("loop ({})", Printer::stmt_ids(body)),
+            Expr::While { cond, body } => format!("while {} ({})", e(cond), Printer::stmt_ids(body)),
+            Expr::ForRange { local, low, high, inclusive, reverse, body } => {
+                let flags = format!("{}{}", if *inclusive { " inclusive" } else { "" }, if *reverse { " reverse" } else { "" });
+                format!("for local {local} {} {}{flags} ({})", e(low), e(high), Printer::stmt_ids(body))
+            }
+            Expr::Break(value) => format!("break {}", opt(value)),
+            Expr::Continue => "continue".to_string(),
         }
+    }
+
+    /// Statement ids as `s0, s1`.
+    fn stmt_ids(stmts: &[StmtId]) -> String {
+        stmts.iter().map(|s| format!("s{}", s.0)).collect::<Vec<_>>().join(", ")
     }
 
     /// A statement's form with its operands as ids.

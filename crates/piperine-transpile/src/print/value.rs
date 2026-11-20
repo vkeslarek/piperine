@@ -508,6 +508,12 @@ impl<'a> ValuePrinter<'a> {
             | Expr::ParamPrevious(_)
             | Expr::Fired(_)
             | Expr::Previous(_) => {}
+            control @ (Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue) => {
+                out.extend(control.operands());
+                for s in control.statements() {
+                    out.extend(ir.stmt(*s).operands());
+                }
+            }
         }
     }
 
@@ -776,6 +782,12 @@ impl<'a> ValuePrinter<'a> {
                     self.piece(*value)
                 }
             }
+            // Printed by the later tasks of composite-values (T8 to T10); until then each is named.
+            Expr::Loop { .. } => Err(self.unsupported(e, "a `loop`")),
+            Expr::While { .. } => Err(self.unsupported(e, "a `while` loop")),
+            Expr::ForRange { .. } => Err(self.unsupported(e, "a `for` loop")),
+            Expr::Break(_) => Err(self.unsupported(e, "`break`")),
+            Expr::Continue => Err(self.unsupported(e, "`continue`")),
         }
     }
 

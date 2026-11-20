@@ -287,6 +287,12 @@ impl<'a> AnalogPrinter<'a> {
                 }
                 Expr::Math { args, .. } => stack.extend(args),
                 Expr::Closure { body, .. } => stack.push(*body),
+                control @ (Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue) => {
+                    stack.extend(control.operands());
+                    for s in control.statements() {
+                        stack.extend(self.ir.stmt(*s).operands());
+                    }
+                }
                 Expr::Carrier(c) => {
                     sources.insert(Source::Carrier(*c));
                 }
