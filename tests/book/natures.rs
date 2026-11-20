@@ -68,15 +68,16 @@ fn the_book_shows_the_natures_the_standard_library_gives() {
 #[test]
 fn signals_of_every_family_are_refused_for_the_arrays_and_the_wire() {
     // natures#2 (refused): "signal en: Bit; ... signal lines: [Bit; 8]; ... signal sda: Wire; ...": an
-    // array of carriers is `P0001` (L24), a `Wire` is `P0001` (L21), and `logic("10xx")` reaches a
-    // generic function of the standard library (L7); the discrete, node and initial-value lines before
+    // array of carriers is `P0001` (L24), and a `Wire` is `P0001` (L21); `logic("10xx")` is typed by its
+    // contract and accepted (`unknown-semantics`); the discrete, node and initial-value lines before
     // them are accepted. When the block runs this test fails and the row moves to `run`
     let chapter = Chapter::read();
     let model = chapter.wrapped("signals.msl", "module Top() {\n", "natures#2", "}\n");
     let given = Refusal::of(model.run(OperatingPoint::of_top()), "natures#2");
-    for expected in ["array type is not supported yet", "resolved nature `Wire` is not supported yet", "generic function is not supported yet"] {
+    for expected in ["array type is not supported yet", "resolved nature `Wire` is not supported yet"] {
         assert!(given.contains(&("P0001".to_string(), expected.to_string())), "{expected}: {given:?}");
     }
+    assert_eq!(given.len(), 2, "the array and the wire only; `logic(\"10xx\")` is accepted: {given:?}");
     assert!(given.iter().all(|(code, _)| code == "P0001"), "the other lines are accepted: {given:?}");
     Refusal::expect(chapter.wrapped("signals.msl", "module Top() {\n", "natures#2", "}\n").run(OperatingPoint::of_top()), "natures#2", "P0001", "array type is not supported yet");
 }
