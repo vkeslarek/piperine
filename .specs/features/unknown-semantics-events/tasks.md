@@ -571,9 +571,9 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `limexp_moves_its_argument_at_most_one_per_iteration` and `the_derivative_of_limexp_is_limexp` pass under `**Run sourcelimexp**`
-- [ ] Code clarity: expected values computed by Rust in the test from §22.2.4
-- [ ] Gate check passes: Quick
+- [x] `limexp_moves_its_argument_at_most_one_per_iteration` and `the_derivative_of_limexp_is_limexp` pass under `**Run sourcelimexp**`
+- [x] Code clarity: expected values computed by Rust in the test from §22.2.4
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
