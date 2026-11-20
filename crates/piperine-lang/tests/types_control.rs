@@ -408,3 +408,27 @@ fn a_function_value_is_not_carried_e0112() {
     let found = Types::check(&design, "Top").err().unwrap_or_default();
     assert_eq!(found.iter().filter(|d| d.diagnostic.code == "E0112").count(), 2, "{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
 }
+
+// ---- T18: recursion ---------------------------------------------------------------------------------------
+
+#[test]
+fn direct_and_mutual_recursion_type_check() {
+    // §3 rule 12: a function that calls itself, directly or through others, type-checks; a call is
+    // typed from the signature, so the recursion ends.
+    let items = "fn fact(n: u8) -> u8 { if n <= 1 { 1 } else { n * fact(n - 1) } }\n\
+                 fn even(n: u8) -> bool { if n == 0 { true } else { odd(n - 1) } }\n\
+                 fn odd(n: u8) -> bool { if n == 0 { false } else { even(n - 1) } }";
+    assert_clean(&source(items, "let f = fact(5); let e = even(4); let o = odd(3);"));
+    // the mismatch inside a recursive body is still a mismatch
+    assert_refused(&source("fn bad(n: u8) -> u8 { if n == 0 { 1 } else { bad(n - 1) + true } }", "let y = bad(2);"), "P0002", "expected `u8`");
+    // the class of a recursive function is the fixed point of its body's classes (§3): `a` reads the
+    // solve and `b` only calls `a`, so a closure calling `b` is solve-reading, and not callable in a
+    // const context
+    let cycle = "fn a(n: u8) -> f64 { if n == 0 { now() } else { b(n - 1) } }\nfn b(n: u8) -> f64 { a(n) }\n\
+                 module Top() { r: f64 = { let f = || b(3); f() }; }";
+    assert_refused(cycle, "E0122", "solve-reading");
+    // a recursion that reads nothing of the solve is pure: callable there
+    let pure = "fn p(n: u8) -> f64 { if n == 0 { 1.0 } else { q(n - 1) } }\nfn q(n: u8) -> f64 { p(n) }\n\
+                module Top() { r: f64 = { let f = || q(3); f() }; }";
+    assert_clean(pure);
+}

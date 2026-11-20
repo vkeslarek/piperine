@@ -554,8 +554,8 @@ T63
 
 **Done when**:
 
-- [ ] `direct_and_mutual_recursion_type_check` passes under `**Run typesctl**`
-- [ ] Gate check passes: Quick
+- [x] `direct_and_mutual_recursion_type_check` passes under `**Run typesctl**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
