@@ -1627,3 +1627,26 @@ fn appendix_c_states_the_solver_hygiene_numerics() {
         assert!(!text.contains(gone), "Appendix C still says \"{gone}\"");
     }
 }
+
+#[test]
+fn appendix_c_states_the_loop_bound_under_unknown_control() {
+    // US-04 AC 11, §3.3.16 (C30): the reference implementation's bound is documented in C.2, in
+    // the row of "unknown control (§3.3.3)": the merge in generated code and the 64 iterations,
+    // applied in every analysis
+    let text = spec("appendix_c_implementation.md");
+    let rows = table_rows(&section(&text, "## C.2 "));
+    let row = rows.iter().find(|r| r[0] == "unknown control (§3.3.3)").expect("C.2 has a row for unknown control");
+    let algorithm = flat(&row[1]);
+    for fact in ["runs both arms of an `if` or `match` on a value that may be unknown and merges what each wrote", "a loop under unknown control runs at most 64 iterations, in every analysis", "(§3.3.16)"] {
+        assert!(algorithm.contains(fact), "the row lacks \"{fact}\": {algorithm}");
+    }
+}
+
+#[test]
+fn appendix_c_lists_the_loop_bound_among_the_defaults() {
+    // US-07 AC 2 (C43): C.2.1 holds the default "loop iterations under unknown control: 64",
+    // serving §3.3.16
+    let text = spec("appendix_c_implementation.md");
+    let rows = table_rows(&section(&text, "### C.2.1 "));
+    assert!(rows.iter().any(|r| r[..] == ["loop iterations under unknown control", "64", "§3.3.16"]), "{rows:?}");
+}

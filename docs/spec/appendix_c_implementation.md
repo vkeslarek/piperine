@@ -69,6 +69,7 @@ How the Piperine solver meets Part V. Every number is a default the host may cha
 | Part V guarantee | Piperine algorithm | Status |
 | --- | --- | --- |
 | microstep loop (§15) | two-phase delta cycle: combinational cells in topological order, then sequential evaluation over one snapshot; commits sorted by (instant made, source index); at most 1000 microsteps per instant; relaxation passes per loop of resolved drives bounded by its drive count plus one | |
+| unknown control (§3.3.3) | the generated code runs both arms of an `if` or `match` on a value that may be unknown and merges what each wrote (a panic of an arm makes the merge unknown, §1 rule 13); a loop under unknown control runs at most 64 iterations, in every analysis, and what it wrote by then is unknown (§3.3.16) | |
 | the jump (§15.2) | no solve of its own: the solver lands exactly on the time of the change (`predict_step`); what is due there, and the zero-delay microsteps that follow from it, run to quiescence before the solve (`attempt_step`: `drain_due`, `run_digital_at`, which reads no new solution), so the step that arrives there reads them; a step that landed on a digital event or a breakpoint is exempt from the truncation-error test (`assess_step`); reactions that read the solution at that time run after the step is accepted (`settle_digital`: the accept hooks, then the scheduler to quiescence), and their changes are read by the next step as an ordinary step, neither exempt nor restarted; a host `set` lands the solver on its time without exemption (`predict_step` marks only digital events and breakpoints), applies after that step is accepted (`apply_scheduled_sets`), retakes it when its invalidation strength is `OperatingPoint` or more (`execute_timestep(t − h, h)`), and the next step reads it exempt (`post_set_step`) | |
 | operating point (§16) | Newton; then gmin stepping (a shunt on every node from 0.1 S down, a decade per converged solve, adaptive factor); then source stepping (scale from 0 to 1, first step 0.1 growing ×1.5 up to 0.25, halved on failure, a 1 µS knee shunt ramped out at the end); at most 20 mixed rounds | |
 | held nodes (§16) | a 10¹² S clamp from each node with `= value` to that value through every solve of a transient's operating point, removed before the first step | |
@@ -89,6 +90,7 @@ How the Piperine solver meets Part V. Every number is a default the host may cha
 | --- | --- | --- |
 | time resolution (tick) | 1 fs | §15 |
 | microsteps per instant | 1000 | §15: a loop that never goes quiet is an error |
+| loop iterations under unknown control | 64 | §3.3.16 |
 | relaxation passes per loop | drive count + 1 | §8.2.3 |
 | mixed rounds of an operating point | 20 | §16 step 4 |
 | `reltol` | 1e-3 | §17.1 |
