@@ -62,6 +62,7 @@ pub(super) struct Checker<'d> {
     /// The `Ty::Carrier` of each discrete port and signal declaration read or declared so far.
     pub(super) carriers: BTreeMap<DeclId, Ty>,
     pub(super) builtins: BTreeMap<ExprId, Builtin>,
+    pub(super) widths: BTreeMap<ExprId, u32>,
     /// The type each type node of the reachable set writes.
     pub(super) written: BTreeMap<TypeId, Ty>,
     /// The method names a project item (an `fn` of an `impl` or a `trait` outside the stdlib)
@@ -119,6 +120,7 @@ impl<'d> Checker<'d> {
             somes: BTreeSet::new(),
             carriers: BTreeMap::new(),
             builtins: BTreeMap::new(),
+            widths: BTreeMap::new(),
             written: BTreeMap::new(),
             project_methods: Self::project_methods(design),
             continuity: Continuity::new(design),
@@ -169,7 +171,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, written: self.written, continuous, emits })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, widths: self.widths, written: self.written, continuous, emits })
     }
 
     /// Run `body` with `context` as the place being checked, then restore the one outside.

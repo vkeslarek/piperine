@@ -246,7 +246,9 @@ impl Checker<'_> {
             Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) => self.enum_type(decl, file, node.span)?,
             _ => return None,
         };
-        owner_type.has_repr().then_some(Ty::UInt(32))
+        let levels = owner_type.levels(self.design)?;
+        self.widths.insert(expr, levels);
+        Some(Ty::UInt(32))
     }
 
     /// `c.prev()` on a discrete carrier: the value before its most recent change, of the

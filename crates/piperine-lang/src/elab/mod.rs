@@ -32,5 +32,5 @@ mod records;
 mod unlowered;
 mod variants;
 
-pub use consts::{Bindings, ConstEval, ConstFault};
+pub use consts::{Bindings, ConstEval, ConstFault, Folded};
 pub use elaborator::Elaborator;

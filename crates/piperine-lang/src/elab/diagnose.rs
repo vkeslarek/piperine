@@ -30,6 +30,7 @@ impl Elaboration<'_, '_> {
             }
             ConstFault::Unsupported { what, .. } => self.unsupported(file, span, &format!("{what} in {position}")),
             ConstFault::NoValue { .. } => self.unsupported(file, span, &format!("a `const` without a value in {position}")),
+            ConstFault::Unknown { .. } => self.unsupported(file, span, &format!("a value that may be unknown in {position}")),
             ConstFault::Panic { what, .. } => {
                 let message = format!("{position} panics while it is evaluated at elaboration: {what}");
                 self.report(file, Diagnostic::new("E0104", message, span, "panics"));
