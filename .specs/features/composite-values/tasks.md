@@ -365,8 +365,8 @@ T63
 
 **Done when**:
 
-- [ ] `unknown_decisions_merge_written_locals_and_loop_exits` and `a_reaction_loop_committing_after_an_unknown_decision_commits_maybe` pass under `**Run tctl**`
-- [ ] Gate check passes: Full
+- [x] `unknown_decisions_merge_written_locals_and_loop_exits` and `a_reaction_loop_committing_after_an_unknown_decision_commits_maybe` pass under `**Run tctl**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

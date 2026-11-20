@@ -24,7 +24,7 @@
 use piperine_abi::device::{Fault, Flow, React};
 use piperine_abi::raw::commit_flag;
 
-use super::control::{Attempt, Decision};
+use super::control::{Attempt, Decision, Outcome, Step, Unrolled};
 use super::flag::{Carried, Flagged, Merge};
 
 /// The merge of two committed values, as bytes: `Flagged::<T>::merge_bytes` of the type the commit
@@ -352,6 +352,24 @@ impl Commits {
         let ran = self.path(body);
         let middle = self.entries.len();
         self.join(start, middle, ran.is_none());
+    }
+
+    /// A loop under unknown control in a reaction, as its unrolling (`Unrolled`). Its commits up to
+    /// and including the iteration of the first unknown decision are definite; the iterations
+    /// after it are paths that may not run, so they run as `run(false, ..)` does and each commit
+    /// is a `MAYBE | MERGE` one (§3.3.3, §13 rule 1, MD-70).
+    pub fn unrolled<S: Merge, B: Merge, R: Merge>(
+        &mut self,
+        origin: &'static str,
+        state: S,
+        mut body: impl FnMut(&mut Commits, S) -> Step<S, B, R>,
+    ) -> Outcome<S, B, R> {
+        let mut unrolled = Unrolled::start(origin, state);
+        while !unrolled.is_unknown() && unrolled.advance(|state| body(self, state)) {}
+        if unrolled.is_unknown() {
+            self.run(false, |commits| while unrolled.advance(|state| body(commits, state)) {});
+        }
+        unrolled.finish()
     }
 
     /// Runs `body` as one path taken under unknown control: `maybe` is true inside it, and a

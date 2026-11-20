@@ -113,7 +113,7 @@ pub struct ValuePrinter<'a> {
     /// value of a `cross` that may be unknown, whose probe tangents must survive (design C8).
     flagged_reals: bool,
     /// Whether a commit has a place to go: the code of a reaction.
-    commits: bool,
+    pub(super) commits: bool,
     /// The carrier and `min_after` of each commit printed so far, in printing order: the order
     /// of the reaction's statements in the shape.
     committed: RefCell<Vec<StatementPlan>>,
@@ -123,7 +123,7 @@ pub struct ValuePrinter<'a> {
     finishes: Cell<bool>,
     /// Whether the code printed so far holds an `if` that joins the commits of its arms
     /// (`Commits::branch`): the reaction then builds its `Commits` with the carriers table.
-    branches: Cell<bool>,
+    pub(super) branches: Cell<bool>,
     /// The names of the reads (params, nodes, carriers, the environment) printed so far: the
     /// variables the code uses, so a function binds no read it leaves alone.
     used: RefCell<BTreeSet<String>>,
@@ -799,9 +799,7 @@ impl<'a> ValuePrinter<'a> {
                     self.piece(*value)
                 }
             }
-            Expr::Loop { body } => self.counted_loop(e, "loop", body),
-            Expr::While { cond, body } => self.counted_while(e, *cond, body),
-            Expr::ForRange { local, low, high, inclusive, reverse, body } => self.counted_for(e, *local, *low, *high, *inclusive, *reverse, body),
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } => self.loop_expr(e),
             Expr::Break(value) => self.leave_loop(e, *value),
             Expr::Continue => self.continue_loop(e),
             Expr::Return(value) => self.return_from_function(e, *value),
@@ -1074,6 +1072,12 @@ impl<'a> ValuePrinter<'a> {
     /// the code's own `R` (`Flagged<R>`, which merges as `Real::same_levels` says), so the same
     /// `choose` serves every owner.
     fn merged(&self, e: ExprId, cond: ExprId, then: ExprId, otherwise: ExprId) -> Result<Piece, Error> {
+        if self.holds_unreachable_exit(then, otherwise) {
+            return Err(self.unsupported(e, "a `break`, `continue` or `return` under a value that may be unknown, outside the statements of its loop"));
+        }
+        if !self.ir.written_locals(e).is_empty() {
+            return self.merged_with_writes(e, cond, then, otherwise);
+        }
         let ty = self.ir.expr_type(e);
         let piece = self.piece(cond)?;
         let joins = self.commits && (self.holds_effect(then) || self.holds_effect(otherwise));
@@ -1092,7 +1096,7 @@ impl<'a> ValuePrinter<'a> {
 
     /// Whether `e` holds a commit or an `emit!`: the arm of an `if` that does is a path of the
     /// reaction's `Commits`, not a pure value.
-    fn holds_effect(&self, e: ExprId) -> bool {
+    pub(super) fn holds_effect(&self, e: ExprId) -> bool {
         let mut exprs = vec![e];
         while let Some(e) = exprs.pop() {
             if self.ir.expr(e).statements().iter().any(|s| matches!(self.ir.stmt(*s), Stmt::Commit { .. } | Stmt::Emit { .. })) {
@@ -1129,6 +1133,13 @@ impl<'a> ValuePrinter<'a> {
         Ok(lines.join("\n"))
     }
 
+    /// `e` as a statement: an `if` closes with its brace; a merge is a call and takes a `;`.
+    pub(super) fn expression_statement(&self, e: ExprId) -> Result<String, Error> {
+        let piece = self.piece(e)?;
+        let block = matches!(self.ir.expr(e), Expr::If { .. }) && *self.ir.expr_type(e) == ValueType::Unit && piece.prec == Prec::Low;
+        Ok(if block { piece.text } else { format!("{};", piece.text) })
+    }
+
     /// `let name = init;`, `expr;`, or a commit.
     pub fn stmt(&self, s: StmtId) -> Result<String, Error> {
         match self.ir.stmt(s) {
@@ -1143,12 +1154,7 @@ impl<'a> ValuePrinter<'a> {
                 let keyword = if self.mutable.get(*local as usize).copied().unwrap_or(false) { "let mut" } else { "let" };
                 Ok(format!("{keyword} {name} = {init};"))
             }
-            Stmt::Expr(e) => {
-                let piece = self.piece(*e)?;
-                // an `if` statement closes with its brace; a merge is a call and takes a `;`
-                let block = matches!(self.ir.expr(*e), Expr::If { .. }) && *self.ir.expr_type(*e) == ValueType::Unit && piece.prec == Prec::Low;
-                Ok(if block { piece.text } else { format!("{};", piece.text) })
-            }
+            Stmt::Expr(e) => self.expression_statement(*e),
             Stmt::Contribute { branch, quantity, addends } => match &self.sums {
                 Some(sums) => self.contribution(sums, *branch, *quantity, addends),
                 None => Err(Error::Unsupported {

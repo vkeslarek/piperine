@@ -14,6 +14,7 @@ mod print;
 mod real;
 mod statements;
 mod typing;
+mod written;
 
 pub use check::Broken;
 pub use contributions::{Condition, Contribution};
