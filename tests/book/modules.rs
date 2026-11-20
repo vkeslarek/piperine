@@ -255,13 +255,12 @@ fn e0343_a_parent_sees_only_what_the_child_publishes() {
 }
 
 #[test]
-fn e0333_is_not_raised_an_instance_as_a_value_is_a_type_mismatch() {
-    // modules~4bcf201d: "E0333 let x = r1 * 2.0; where r1 is a resistor instance". `E0333` is named by the
-    // spec (section 8.2.14) and no source raises it (GAPS.md section 10): the checker gives `E0180`
-    // (X5, mismatched types) where the Book says the instance is not a value
+fn e0333_an_instance_used_as_a_value_names_the_instance() {
+    // modules~4bcf201d: "E0333 let x = r1 * 2.0; where r1 is a resistor instance". `E0333` (section 8.2.14,
+    // PI-12 AC 7) names the instance of a module without a result read as a value
     let faulty = Faulty::elaborating("modules~4bcf201d", &Parts::with_top("    let r1 = Resistor(a, gnd) { r: 1k };\n    let x = r1 * 2.0;\n"), "Top");
-    assert_eq!(faulty.first("E0180").message, "mismatched types: expected `f64`, found `module `Resistor``");
-    assert!(faulty.given.iter().all(|reported| reported.code != "E0333"), "E0333 is not raised");
+    assert_eq!(faulty.first("E0333").message, "the instance `r1` has no result: a module without a result is not a value (§8.2.14)");
+    assert_eq!(faulty.pointed_at("E0333"), "r1");
 }
 
 #[test]

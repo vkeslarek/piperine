@@ -100,12 +100,12 @@ fn nothing_converts_by_itself_and_a_condition_is_a_bool() {
         ("let x = if 1 { 2 } else { 3 }; emit!(\"r\", x = x);", "bool", "i32"),
     ] {
         let faulty = ValueFile::refused("language~03460845", "", statements);
-        assert_eq!(faulty.first("P0002").message, format!("mismatched types: expected `{expected}`, found `{found}`"), "{statements}");
+        assert_eq!(faulty.first("E0180").message, format!("mismatched types: expected `{expected}`, found `{found}`"), "{statements}");
     }
     let too_large = ValueFile::refused("language~03460845", "", "let a: u8 = 300; emit!(\"r\", a = a);");
     assert_eq!(too_large.first("E0909").message, "`300` is out of range: an integer literal beyond the range of `u8`");
     let partial = ValueFile::refused("language~03460845", "", "let x = 3u8; let y = match x { 0 => 1.0, 1 => 2.0 }; emit!(\"r\", y = y);");
-    assert!(partial.first("P0002").message.contains("a `match` that misses some"), "the arms cover every value: {}", partial.first("P0002").message);
+    assert!(partial.first("E0180").message.contains("a `match` that misses some"), "the arms cover every value: {}", partial.first("E0180").message);
 }
 
 #[test]
@@ -170,9 +170,9 @@ fn a_fault_ends_the_analysis_or_the_build_and_a_non_finite_value_ends_the_solve(
     // circuit has an infinite voltage"
     let divided = Model::written("m.msl", "module Top() {}\ndigital for Top { on at(1u) { let a = 7u8; let b = 0u8; emit!(\"r\", q = a / b); } }\n").run(ValueFile::transient()).err().expect("an integer division by zero is a fault");
     let said = format!("{divided:#}");
-    assert!(said.contains("fault 0 in `Top` at tick 1000000000: panic: integer division by zero"), "{said}");
+    assert!(said.contains("E0105") && said.contains("in `Top` at tick 1000000000: integer division by zero"), "the fault is E0105 naming the instance and the time: {said}");
     let unwrapped = Model::written("m.msl", "module Top() {}\ndigital for Top { on at(1u) { let o: Option<f64> = None; emit!(\"r\", v = o.unwrap()); } }\n").run(ValueFile::transient()).err().expect("`unwrap` on `None` is a fault");
-    assert!(format!("{unwrapped:#}").contains("panic: called `Option::unwrap()` on a `None` value"), "{unwrapped:#}");
+    assert!(format!("{unwrapped:#}").contains("E0105") && format!("{unwrapped:#}").contains("called `Option::unwrap()` on a `None` value"), "{unwrapped:#}");
     let constant = ValueFile::refused("language~a3318a63", "const D: u8 = 1 / 0;", "emit!(\"r\", d = D);");
     assert_eq!(constant.first("E0104").message, "a constant expression panics while it is evaluated at elaboration: an integer division by zero");
     let source = "module R(p: Electrical, n: Electrical) { r: f64 = 1k; }\nanalog for R { i(p, n) +> v(p, n) / r; }\nmodule Bad(p: Electrical, n: Electrical) { z: f64 = 0.0; }\nanalog for Bad { v(p, n) +> 1.0 / z; }\nmodule Top() { signal a: Electrical; let s = Bad(a, gnd); let r = R(a, gnd); }\n";
