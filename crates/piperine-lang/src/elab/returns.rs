@@ -172,12 +172,11 @@ impl Elaboration<'_, '_> {
     /// The pair `(f.is(args), f.val(args))` of a call of a function that returns an `Option`: the
     /// arguments are lowered once for each half.
     pub(super) fn lower_option_call(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId) -> Option<Pair> {
-        let span = self.design.expr_node(expr).span;
         let origin = self.expr_origin(expr);
         let first = self.lower_arguments(scope, expr, function)?;
         let pattern: Vec<Flag> = first.iter().map(|a| self.flag(*a)).collect();
-        let (presence, is_ty) = self.request(function, pattern.clone(), Half::Presence, scope.file, span)?;
-        let (payload, val_ty) = self.request(function, pattern, Half::Payload, scope.file, span)?;
+        let (presence, is_ty) = self.request(function, pattern.clone(), Half::Presence)?;
+        let (payload, val_ty) = self.request(function, pattern, Half::Payload)?;
         let second = self.lower_arguments(scope, expr, function)?;
         let is = self.emit(Expr::Call { function: presence, args: first }, is_ty, origin.clone());
         let val = self.emit(Expr::Call { function: payload, args: second }, val_ty, origin);

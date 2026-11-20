@@ -8,7 +8,7 @@
 use std::path::{Path, PathBuf};
 
 use piperine_parity::project::Project;
-use piperine_solver::prelude::{AcSweepAnalysisOptions, Context, NodeIdentifier};
+use piperine_solver::prelude::{AcSweepAnalysisOptions, Context, NodeIdentifier, Solver, TransientAnalysisOptions};
 
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/digital.rs"]
@@ -428,4 +428,49 @@ fn a_closure_in_analog_is_differentiated_through() {
             assert!((gain - partial).abs() <= 1e-6 * partial, "{name}: the partial is 3 v^2 = {partial}, the AC gain is {gain}");
         }
     }
+}
+
+/// The message of the fault the transient of `top` of `file` runs into: the run is expected to fail.
+fn the_fault(file: &str, top: &str) -> String {
+    let built = build(&project(file), top);
+    let circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
+    let mut options = TransientAnalysisOptions::new(10e-9, 1e-9);
+    options.dt_max = 1e-9;
+    let mut solver = Solver::new(circuit).with_context(Context::default()).with_tran_opts(options).build();
+    match solver.tran().and_then(|mut t| t.solve()) {
+        Ok(_) => panic!("the run was expected to fault"),
+        Err(e) => e.to_string(),
+    }
+}
+
+#[test]
+fn recursion_from_a_reaction_runs() {
+    // CV-07 AC 1 (§3 rule 12): a function that calls itself, and two that call each other, run from
+    // a reaction and give the values Rust's recursion gives.
+    fn fib(n: u8) -> u16 {
+        if n < 2 { u16::from(n) } else { fib(n - 1) + fib(n - 2) }
+    }
+    fn is_even(n: u8) -> bool {
+        n == 0 || is_odd(n - 1)
+    }
+    fn is_odd(n: u8) -> bool {
+        n != 0 && is_even(n - 1)
+    }
+    let committed = first_commits("recursion.msl", &["a", "b", "c", "d"]);
+    let wanted = vec![word(fib(10)), byte(u8::from(is_even(10))), byte(u8::from(is_odd(7))), byte(u8::from(is_even(7)))];
+    assert_eq!(committed, wanted);
+}
+
+#[test]
+fn runaway_loops_and_recursions_fail_the_analysis_by_name() {
+    // CV-07 AC 4 (Q5 (b)): a recursion deeper than 1 024 calls and a loop of more than 2^24
+    // iterations fail the analysis with a message naming the function or the loop (by its place
+    // in the source), the instance and the instant; the process, which runs this test on, survives.
+    let deep = the_fault("recursion.msl", "RunawayBench");
+    assert!(deep.contains("deep") && deep.contains("1024"), "the fault names the function and the bound: {deep}");
+    assert!(deep.contains("RunawayBench.runaway"), "the fault names the instance: {deep}");
+    let endless = the_fault("recursion.msl", "EndlessBench");
+    assert!(endless.contains("loop @ recursion.msl:12"), "the fault names the loop by its place in the source: {endless}");
+    assert!(endless.contains("16777216"), "the fault gives the bound, 2^24: {endless}");
+    assert!(endless.contains("EndlessBench.endless"), "the fault names the instance: {endless}");
 }

@@ -681,8 +681,8 @@ T63
 
 **Done when**:
 
-- [ ] `recursion_from_a_reaction_runs` and `runaway_loops_and_recursions_fail_the_analysis_by_name` pass under `**Run srcctl**`
-- [ ] Gate check passes: Full
+- [x] `recursion_from_a_reaction_runs` and `runaway_loops_and_recursions_fail_the_analysis_by_name` pass under `**Run srcctl**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

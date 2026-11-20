@@ -159,10 +159,15 @@ impl Elaboration<'_, '_> {
 
     /// `loop { body }`: its value is what its `break`s carry, of the type the checker gave
     /// (`base`), and may be unknown where the code may see unknowns.
-    pub(super) fn lower_loop(&mut self, scope: &mut Scope, body: &BlockNode, base: ValueType, origin: Origin) -> Option<LoweredExpr> {
+    pub(super) fn lower_loop(&mut self, scope: &mut Scope, body: &BlockNode, base: ValueType, broke_never: bool, origin: Origin) -> Option<LoweredExpr> {
         let ty = if base == ValueType::Unit { base } else { Self::mutable_type(scope, base) };
         let body = self.lower_loop_body(scope, body, ty.clone())?;
-        Some(self.emit(Expr::Loop { body }, ty, origin))
+        let looped = self.emit(Expr::Loop { body: body.clone() }, ty, origin);
+        // a `loop` with no `break` never gives a value: it fits any type its position needs
+        if broke_never {
+            self.note_exit(looped, Expr::Loop { body });
+        }
+        Some(looped)
     }
 
     /// `for k in low..high { body }` (or `..=`) over an integer range. It stays a `ForRange`

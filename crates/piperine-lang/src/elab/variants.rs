@@ -19,8 +19,8 @@ use piperine_ir::{FunctionId, FunctionSpec, ValueType};
 
 use super::elaborator::Elaboration;
 use super::known::Flag;
-use crate::msl::Span;
-use crate::pom::{DeclId, FileId};
+use crate::pom::{DeclId, DeclKind};
+use crate::types::Ty;
 
 /// Which value of the function's result a variant computes. An `Option` result is no IR value, so
 /// the function is two IR functions, one for each half of the pair `(is, val)` (MD-67 item 2): both
@@ -59,6 +59,11 @@ pub(super) struct Variants {
     continuous: Vec<bool>,
     /// The variants whose bodies are being lowered.
     open: BTreeSet<FunctionId>,
+    /// By id: the result type a call inside the variant's own body (a recursion) is given while
+    /// its body is being lowered: the declared result, then the fixed point of the body's.
+    assumed: Vec<ValueType>,
+    /// The variants a recursive call was met in.
+    recursive: BTreeSet<FunctionId>,
 }
 
 impl Variants {
@@ -88,13 +93,14 @@ impl Elaboration<'_, '_> {
     /// The variant of `function` for `pattern` and its result type, lowered the first time it is
     /// reached. `None` after a diagnostic: the variant failed to lower, or the call at `span`
     /// reaches a variant whose body is being lowered (the IR has no recursion).
-    pub(super) fn request(&mut self, function: DeclId, pattern: Vec<Flag>, half: Half, file: FileId, span: Span) -> Option<(FunctionId, ValueType)> {
+    pub(super) fn request(&mut self, function: DeclId, pattern: Vec<Flag>, half: Half) -> Option<(FunctionId, ValueType)> {
         if let Some(id) = self.variants.ids.get(&(function, pattern.clone(), half)).copied() {
             return match self.variants.results[id.index()].clone() {
                 Some(ret) => Some((id, ret)),
+                // a recursion: the variant is registered, its result is assumed until its body says
                 None if self.variants.open.contains(&id) => {
-                    self.unsupported(file, span, "a function that calls itself");
-                    None
+                    self.variants.recursive.insert(id);
+                    Some((id, self.variants.assumed[id.index()].clone()))
                 }
                 None => None,
             };
@@ -104,8 +110,9 @@ impl Elaboration<'_, '_> {
         self.variants.results.push(None);
         self.variants.specs.push(None);
         self.variants.continuous.push(false);
+        self.variants.assumed.push(self.declared_result(function, half));
         self.variants.open.insert(id);
-        let spec = self.lower_function(function, &pattern, half);
+        let spec = self.lower_variant(id, function, &pattern, half);
         self.variants.open.remove(&id);
         let spec = spec?;
         let ret = spec.ret.clone();
@@ -113,6 +120,34 @@ impl Elaboration<'_, '_> {
         self.variants.results[id.index()] = Some(ret.clone());
         self.variants.specs[id.index()] = Some(spec);
         Some((id, ret))
+    }
+
+    /// The result of `function` as its signature declares it (the half's type for an `Option`):
+    /// what a recursive call is first taken to give.
+    fn declared_result(&self, function: DeclId, half: Half) -> ValueType {
+        let declared = match &self.design.decl_data(function).kind {
+            DeclKind::Fn(f) => f.ret.and_then(|t| self.types.written(t)),
+            _ => None,
+        };
+        match (declared, half) {
+            (Some(Ty::Option(_)), Half::Presence) => ValueType::Bool,
+            (Some(Ty::Option(payload)), _) => self.value_type(payload).unwrap_or(ValueType::Unit),
+            (Some(ty), _) => self.value_type(ty).unwrap_or(ValueType::Unit),
+            (None, _) => ValueType::Unit,
+        }
+    }
+
+    /// The body of the variant `id`, lowered again with the result it came out with while a
+    /// recursive call took another (a result that may be unknown): the fixed point of the body.
+    /// Each lowering leaves the expressions of the one before unused.
+    fn lower_variant(&mut self, id: FunctionId, function: DeclId, pattern: &[Flag], half: Half) -> Option<FunctionSpec> {
+        loop {
+            let spec = self.lower_function(function, pattern, half)?;
+            if !self.variants.recursive.contains(&id) || spec.ret == self.variants.assumed[id.index()] {
+                return Some(spec);
+            }
+            self.variants.assumed[id.index()] = spec.ret.clone();
+        }
     }
 
     /// Add the lowered variants to the IR, in the order of their ids. After a diagnostic no IR

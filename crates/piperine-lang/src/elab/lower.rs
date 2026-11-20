@@ -334,7 +334,7 @@ impl Elaboration<'_, '_> {
             }
             ExprKind::Assign { .. } => self.lower_assignment_expr(scope, expr, origin),
             ExprKind::While { cond, body } => self.lower_while(scope, *cond, body, origin),
-            ExprKind::Loop { body } => self.lower_loop(scope, body, ty, origin),
+            ExprKind::Loop { body } => self.lower_loop(scope, body, ty, matches!(self.types.ty(expr), Some(Ty::Never)), origin),
             ExprKind::For { pat, iter, body } => self.lower_for(scope, *pat, *iter, body, origin),
             ExprKind::Break(value) => self.lower_break(scope, *value, node.span, origin),
             ExprKind::Continue => Some(self.lower_continue(origin)),
@@ -411,7 +411,7 @@ impl Elaboration<'_, '_> {
             (_, Some(Callee::Function(function))) => {
                 let lowered = self.lower_arguments(scope, expr, function)?;
                 let pattern: Vec<Flag> = lowered.iter().map(|a| self.flag(*a)).collect();
-                let (id, ret) = self.request(function, pattern, Half::Whole, scope.file, span)?;
+                let (id, ret) = self.request(function, pattern, Half::Whole)?;
                 Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin))
             }
             (_, Some(Callee::Core(id))) => self.lower_core(scope, expr, id, args, ty, origin),

@@ -81,7 +81,7 @@ impl Elaboration<'_, '_> {
             self.unsupported(scope.file, span, "a function with an `Option` parameter or result used as a value");
             return None;
         }
-        let (id, ret) = self.request(function, vec![Flag::Plain; parameters], Half::Whole, scope.file, span)?;
+        let (id, ret) = self.request(function, vec![Flag::Plain; parameters], Half::Whole)?;
         let ValueType::Fn(types, _) = ty else { return None };
         Some(self.emit(Expr::FunctionRef(id), ValueType::Fn(types, Box::new(ret)), origin))
     }
@@ -125,7 +125,7 @@ impl Elaboration<'_, '_> {
             return None;
         };
         let pattern: Vec<Flag> = args.iter().map(|a| self.flag(*a)).collect();
-        let (id, ret) = self.request(function, pattern, Half::Whole, scope.file, span)?;
+        let (id, ret) = self.request(function, pattern, Half::Whole)?;
         Some(self.emit(Expr::Call { function: id, args }, ret, origin))
     }
 

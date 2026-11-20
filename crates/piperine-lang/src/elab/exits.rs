@@ -53,6 +53,11 @@ impl Elaboration<'_, '_> {
         lowered
     }
 
+    /// Remembers that `expr` diverges and was made of `exit`.
+    pub(super) fn note_exit(&mut self, expr: LoweredExpr, exit: Expr) {
+        self.divergences.expressions.insert(expr.index(), Divergence::Exit(exit));
+    }
+
     /// Remembers the block `block`, made of `stmts` and `value`, when it diverges: its value does,
     /// or it has none and its last statement is a diverging expression.
     pub(super) fn note_block(&mut self, block: LoweredExpr, stmts: &[LoweredStmt], value: Option<LoweredExpr>) {
