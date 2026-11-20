@@ -12,17 +12,17 @@ use piperine_ir::{Body, EventSource, Expr, ExprId, Stmt, StmtId};
 pub(crate) struct CompositeForms<'a> {
     body: Body<'a>,
     /// The forms met so far, by their position in `CompositeForms::NAMES`.
-    met: [bool; 6],
+    met: [bool; 7],
 }
 
 impl<'a> CompositeForms<'a> {
     /// The name of each form, in the order the refusal lists them.
-    const NAMES: [&'static str; 6] =
-        ["an assignment", "a loop", "a while loop", "a for loop", "break", "continue"];
+    const NAMES: [&'static str; 7] =
+        ["an assignment", "a loop", "a while loop", "a for loop", "break", "continue", "return"];
 
     /// The forms `body` holds, each once, in a fixed order.
     pub(crate) fn of(body: Body<'a>) -> Vec<&'static str> {
-        let mut forms = CompositeForms { body, met: [false; 6] };
+        let mut forms = CompositeForms { body, met: [false; 7] };
         forms.walk();
         Self::NAMES.into_iter().zip(forms.met).filter_map(|(name, met)| met.then_some(name)).collect()
     }
@@ -91,6 +91,7 @@ impl<'a> CompositeForms<'a> {
             Expr::ForRange { .. } => Some(3),
             Expr::Break(_) => Some(4),
             Expr::Continue => Some(5),
+            Expr::Return(_) => Some(6),
             _ => None,
         }
     }

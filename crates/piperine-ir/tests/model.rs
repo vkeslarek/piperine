@@ -290,7 +290,7 @@ impl Reach {
                     Reach::expr(ir, *p, out);
                 }
             }
-            control @ (Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue) => {
+            control @ (Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_)) => {
                 for e in control.operands() {
                     Reach::expr(ir, e, out);
                 }

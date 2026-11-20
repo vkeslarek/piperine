@@ -63,6 +63,8 @@ struct Owner {
     locals: Vec<ValueType>,
     /// Which locals the source declared `let mut`, parallel to `locals`: only these are assigned.
     mutable: Vec<bool>,
+    /// The result type of the function being walked: what a `return` carries. `()` in a body.
+    result: ValueType,
     params: Vec<ValueType>,
     nodes: usize,
     branches: Vec<BranchKind>,
@@ -499,7 +501,7 @@ impl<'a> Checker<'a> {
             }
             Expr::Math { args, .. } => exprs.extend(args),
             Expr::Closure { body, .. } => exprs.push(*body),
-            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue => {
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) => {
                 for &s in kind.statements() {
                     self.stmt_id(item, origin, s);
                 }
@@ -864,7 +866,7 @@ impl<'a> Checker<'a> {
                 Expr::Call { args, .. } | Expr::Math { args, .. } => stack_e.extend(args),
                 Expr::Method { receiver, args, .. } => stack_e.extend([*receiver].into_iter().chain(args.iter().copied())),
                 Expr::Closure { body, .. } => stack_e.push(*body),
-                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue => {
+                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) => {
                     stack_s.extend(data.kind.statements());
                     stack_e.extend(data.kind.operands());
                 }
@@ -1146,6 +1148,7 @@ impl<'a> Checker<'a> {
                 origin: body.origin.clone(),
                 locals: body.locals.iter().map(|l| l.ty.clone()).collect(),
                 mutable: body.locals.iter().map(|l| l.mutable).collect(),
+                result: ValueType::Unit,
                 params: body.params.iter().map(|p| p.ty.clone()).collect(),
                 nodes: body.nodes.len(),
                 branches: body.branches.iter().map(|b| b.kind).collect(),
@@ -1249,6 +1252,7 @@ impl<'a> Checker<'a> {
                 origin: function.origin.clone(),
                 locals: function.locals.iter().map(|l| l.ty.clone()).collect(),
                 mutable: function.locals.iter().map(|l| l.mutable).collect(),
+                result: function.ret.clone(),
                 params: Vec::new(),
                 nodes: 0,
                 branches: Vec::new(),
@@ -1897,6 +1901,21 @@ impl<'a> Checker<'a> {
                 next.extend(value.iter().map(|v| Task::Expr(*v, ctx)));
             }
             Expr::Continue => self.leave_loop(w, &origin, ctx, None, false),
+            Expr::Return(value) => {
+                if w.owner.in_body {
+                    self.wrong(w, origin.clone(), "`return` outside a function".to_string());
+                } else if ctx.closure {
+                    self.wrong(w, origin.clone(), "`return` inside a closure".to_string());
+                } else {
+                    let result = w.owner.result.clone();
+                    match value {
+                        Some(v) => self.want(w, *v, &result, "the value of a `return`"),
+                        None if result != ValueType::Unit => self.wrong(w, origin.clone(), format!("`return` without a value in a function that returns {result}")),
+                        None => {}
+                    }
+                }
+                next.extend(value.iter().map(|v| Task::Expr(*v, ctx)));
+            }
             Expr::IsKnown(value) | Expr::High(value) => {
                 if first {
                     let high = matches!(data.kind, Expr::High(_));

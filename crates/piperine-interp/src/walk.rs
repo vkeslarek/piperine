@@ -330,6 +330,7 @@ impl<'a> Walk<'a> {
             Expr::ForRange { .. } => "ForRange",
             Expr::Break(_) => "Break",
             Expr::Continue => "Continue",
+            Expr::Return(_) => "Return",
         }
     }
 

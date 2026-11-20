@@ -73,7 +73,7 @@ impl Elaboration<'_, '_> {
             Expr::Closure { body, .. } => self.continuous(*body),
             Expr::Limit { x, f, seed, .. } => any(&[*x, *f]) || seed.is_some_and(|s| self.continuous(s)),
             Expr::Stim { mag, phase, .. } => self.continuous(*mag) || phase.is_some_and(|p| self.continuous(p)),
-            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue => {
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) => {
                 any(&kind.operands()) || kind.statements().iter().any(|s| self.stmt_continuous.get(s.index()).copied().unwrap_or(false))
             }
         }

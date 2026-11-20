@@ -1,7 +1,7 @@
-//! Scope: the control forms of the IR (composite-values phase A, CV-01, CV-02): a mutable local
-//! and its assignment, and `loop`/`while`/`for` with `break` and `continue`. Each form is built by
-//! hand, checked (valid and refused), printed, and walked by the dependency analysis, whose fixed
-//! point (a loop's later iteration) is what these tests pin.
+//! Scope: the control forms of the IR (composite-values phase A, CV-01 to CV-03): a mutable local
+//! and its assignment, `loop`/`while`/`for`, `break` and `continue`, and `return`. Each form is
+//! built by hand, checked (valid and refused), printed, and walked by the dependency analysis,
+//! whose fixed point (a loop's later iteration) is what these tests pin.
 
 #[path = "support/digital.rs"]
 #[allow(dead_code)]
@@ -9,7 +9,7 @@ mod digital;
 
 use digital::{Buck, Dx, Ty};
 use piperine_ir::{
-    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Broken, CarrierRole, Constant, Deps, Expr, ExprId, InstanceSpec, Ir, IrBuilder, Local, NodeRef,
+    Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Broken, CarrierRole, Constant, Deps, Expr, ExprId, FunctionId, FunctionSpec, InstanceSpec, Ir, IrBuilder, Local, NodeRef,
     NodeRole, Operator, Origin, Place, QuantityRole, Stmt, StmtId, Target, Terminal, ValueType,
 };
 
@@ -91,6 +91,11 @@ impl Shape {
         ir.instance_at("Shape").expect("placed").body().dependencies(Target::Flow(0))
     }
 
+    /// A function `name(x: f64) -> f64` whose body is `body`, over the local `x`.
+    fn function(b: &mut IrBuilder, name: &str, body: ExprId) -> FunctionId {
+        let x = Shape::local("x", ValueType::F64);
+        b.function(FunctionSpec { name: name.into(), origin: Origin { file: FILE.into(), line: 9, col: 1 }, params: vec![x.clone()], ret: ValueType::F64, locals: vec![x], body })
+    }
 }
 
 /// The entries of a failed check that mention a phrase.
@@ -350,4 +355,65 @@ fn a_loop_trip_count_reaches_what_the_loop_assigns() {
     });
     assert_eq!(ir.check(), vec![]);
     assert_eq!(Shape::reads(&ir).nodes, vec![0, 1], "the condition decides the trip count (§3.3.3)");
+}
+
+// ---- T4: `return` (CV-03) ------------------------------------------------------------------------------
+
+#[test]
+fn a_return_checks_against_the_result_type() {
+    // `fn early(x: f64) -> f64 { if x > 0.0 { return x; } 0.0 }` called from the contribution.
+    let ir = Shape::ir(|b| {
+        let early = {
+            let mut x = Shape::dx(b, 9);
+            let (read, zero) = (x.local(0, ValueType::F64), x.real(0.0));
+            let positive = x.bin(BinaryOp::Gt, read, zero, ValueType::Bool);
+            let result = x.local(0, ValueType::F64);
+            let returned = Shape::expr(x.b, Expr::Return(Some(result)), ValueType::F64, 9);
+            let returned = x.b.stmt(Stmt::Expr(returned));
+            let guarded = Shape::dx(b, 9).when(positive, vec![returned], None);
+            let guarded = Shape::dx(b, 9).stmt(guarded);
+            let fallback = Shape::dx(b, 10).real(0.0);
+            let body = Shape::dx(b, 9).block(vec![guarded], Some(fallback), ValueType::F64);
+            Shape::function(b, "early", body)
+        };
+        let probe = Shape::probe(b, 3);
+        let call = Shape::dx(b, 3).call(early, vec![probe], ValueType::F64);
+        Written { locals: vec![], stmts: vec![], value: call }
+    });
+    assert_eq!(ir.check(), vec![], "a return of the result type checks");
+    assert!(ir.to_string().contains("{ return x }"), "the return prints as source:\n{ir}");
+    assert_eq!(Shape::reads(&ir).nodes, vec![0, 1], "what the function returns is what the call reads");
+
+    // A `return` of another type, and one without a value in a function that returns `f64`.
+    let ir = Shape::ir(|b| {
+        let flag = Shape::dx(b, 9).boolean(true);
+        let wrong = Shape::expr(b, Expr::Return(Some(flag)), ValueType::Bool, 9);
+        let bare = Shape::expr(b, Expr::Return(None), ValueType::Unit, 10);
+        let (wrong, bare) = (b.stmt(Stmt::Expr(wrong)), b.stmt(Stmt::Expr(bare)));
+        let value = Shape::dx(b, 11).real(0.0);
+        let body = Shape::dx(b, 9).block(vec![wrong, bare], Some(value), ValueType::F64);
+        let wrong = Shape::function(b, "wrong", body);
+        let probe = Shape::probe(b, 3);
+        let call = Shape::dx(b, 3).call(wrong, vec![probe], ValueType::F64);
+        Written { locals: vec![], stmts: vec![], value: call }
+    });
+    let broken = ir.check();
+    assert_eq!(Entries::with(&broken, "the value of a `return` must be f64, found bool").len(), 1, "{broken:?}");
+    assert_eq!(Entries::with(&broken, "`return` without a value in a function that returns f64").len(), 1, "{broken:?}");
+}
+
+#[test]
+fn a_return_outside_a_function_is_refused() {
+    // `return 1.0;` in the `analog` block of a body (§1.8: only a function returns).
+    let ir = Shape::ir(|b| {
+        let one = Shape::dx(b, 2).real(1.0);
+        let returned = Shape::expr(b, Expr::Return(Some(one)), ValueType::F64, 2);
+        let returned = b.stmt(Stmt::Expr(returned));
+        let value = Shape::dx(b, 3).real(0.0);
+        Written { locals: vec![], stmts: vec![returned], value }
+    });
+    let broken = ir.check();
+    let hits = Entries::with(&broken, "`return` outside a function");
+    assert_eq!(hits.len(), 1, "{broken:?}");
+    assert_eq!(hits[0].origin.line, 2);
 }

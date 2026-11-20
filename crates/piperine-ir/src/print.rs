@@ -829,6 +829,12 @@ impl<'a> Printer<'a> {
                 }
             }
             Expr::Continue => next.push(text("continue".into())),
+            Expr::Return(value) => {
+                next.push(text("return".into()));
+                if let Some(value) = value {
+                    next.extend([text(" ".into()), Piece::Expr(*value)]);
+                }
+            }
             Expr::Unwrap { is, value, message } => {
                 let name = if message.is_some() { "expect" } else { "unwrap" };
                 next.extend([text(format!("{name}(")), Piece::Expr(*is), text(", ".into()), Piece::Expr(*value)]);
@@ -931,7 +937,7 @@ impl<'a> Printer<'a> {
             Expr::Unwrap { value, .. } => ty(value),
             Expr::While { .. } | Expr::ForRange { .. } => Some(ValueType::Unit),
             // A diverging form fits any type, and a loop is typed by its breaks: both write theirs.
-            Expr::Loop { .. } | Expr::Break(_) | Expr::Continue => None,
+            Expr::Loop { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) => None,
         }
     }
 
@@ -1133,6 +1139,7 @@ impl<'a> Printer<'a> {
             }
             Expr::Break(value) => format!("break {}", opt(value)),
             Expr::Continue => "continue".to_string(),
+            Expr::Return(value) => format!("return {}", opt(value)),
         }
     }
 

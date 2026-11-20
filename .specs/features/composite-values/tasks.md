@@ -260,8 +260,8 @@ T63
 
 **Done when**:
 
-- [ ] `a_return_checks_against_the_result_type` and `a_return_outside_a_function_is_refused` pass under `**Run irctl**`
-- [ ] Gate check passes: Quick
+- [x] `a_return_checks_against_the_result_type` and `a_return_outside_a_function_is_refused` pass under `**Run irctl**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

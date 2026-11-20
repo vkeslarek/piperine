@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use piperine_interp::Interpreter;
 use piperine_ir::{
-    Addend, AnalysisKind, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Child, EmitField, Env, Event, EventSource, Expr, Hoisted,
+    Addend, AnalysisKind, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Child, EmitField, Env, Event, EventSource, Expr, ExprId, FunctionSpec, Hoisted,
     Inflow, InstanceSpec, Ir, LevelPart, IrBuilder, Local, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, Place, QuantityRole, Reach, ReachedItem, Site, Stmt, Stream,
     StreamField, StmtId, Terminal, ValueType,
 };
@@ -622,6 +622,12 @@ impl Composite {
         let form = b.expr(kind, ty, Switching::at());
         b.stmt(Stmt::Expr(form))
     }
+
+    /// `fn name(x: f64) -> f64 { body }` over the one local `x`.
+    fn function(b: &mut IrBuilder, name: &str, body: ExprId) -> piperine_ir::FunctionId {
+        let x = Local { name: "x".into(), ty: ValueType::F64, mutable: false };
+        b.function(FunctionSpec { name: name.into(), origin: Switching::at(), params: vec![x.clone()], ret: ValueType::F64, locals: vec![x], body })
+    }
 }
 
 #[test]
@@ -655,4 +661,17 @@ fn each_composite_values_form_is_refused_by_name() {
         (vec![Local { name: "k".into(), ty: Ty::u(8), mutable: false }], vec![Composite::run(b, kind, ValueType::Unit)])
     });
     assert_eq!(ranged, ["a for loop"]);
+
+    // `fn early(x) -> f64 { return x }` called from the block (T4)
+    let returned = Composite::refused(|b| {
+        let result = Switching::ex(b).local(0);
+        let exit = Composite::run(b, Expr::Return(Some(result)), ValueType::F64);
+        let fallthrough = Switching::ex(b).real(0.0);
+        let body = Switching::ex(b).block(vec![exit], Some(fallthrough), ValueType::F64);
+        let early = Composite::function(b, "early", body);
+        let argument = Switching::ex(b).real(1.0);
+        let call = Switching::ex(b).call(early, vec![argument]);
+        (vec![], vec![b.stmt(Stmt::Expr(call))])
+    });
+    assert_eq!(returned, ["return"]);
 }

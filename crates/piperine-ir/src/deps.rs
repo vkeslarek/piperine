@@ -35,9 +35,10 @@
 //! a meaning to (a local read before its `let`, a cycle); on an IR that fails
 //! it the walk panics with the origin, never answers a default.
 //!
-//! Mutation and loops (`control.rs`) stay inside the finite lattice: an assignment joins the
-//! assigned value into the local's, and a loop's body is walked again until no local changes. A
-//! loop's trip count and the conditions its exits sit under reach every local the loop assigns.
+//! Mutation, loops and `return` (`control.rs`) stay inside the finite lattice: an assignment
+//! joins the assigned value into the local's, a loop's body is walked again until no local
+//! changes, and a `return` joins its value into the function's result. A loop's trip count and
+//! the conditions its exits sit under reach every local the loop assigns.
 
 mod control;
 
@@ -358,14 +359,16 @@ struct Scope {
     in_body: bool,
     locals: Vec<Option<Value>>,
     memo: HashMap<ExprId, Value>,
-    /// How many conditions of `Walk::enclosing` held when this owner's walk began: an assignment
-    /// reads only the conditions inside the owner.
+    /// The join of what the `return`s of this function carry; `None` for a body.
+    returned: Option<Value>,
+    /// How many conditions of `Walk::enclosing` held when this owner's walk began: a `return`
+    /// or an assignment reads only the conditions inside the owner.
     enclosed_from: usize,
 }
 
 impl Scope {
     fn new(owner: String, in_body: bool, locals: usize) -> Self {
-        Scope { owner, in_body, locals: vec![None; locals], memo: HashMap::new(), enclosed_from: 0 }
+        Scope { owner, in_body, locals: vec![None; locals], memo: HashMap::new(), returned: None, enclosed_from: 0 }
     }
 }
 
@@ -407,6 +410,8 @@ enum Task {
     LoopPass { id: ExprId, before: Option<Vec<Option<Value>>> },
     /// A `break` or `continue` (its value on the stack when `valued`) leaves the innermost loop.
     Escape { at: ExprId, valued: bool },
+    /// A `return` (its value on the stack when `valued`) joins the function's result.
+    Yield { at: ExprId, valued: bool },
 }
 
 /// One abstract walk of a body, and of the functions it calls. The walk is iterative (an
@@ -677,18 +682,13 @@ impl<'a> Walk<'a> {
                     }
                 }
                 Task::Restore(outside) => self.restore(outside),
-                Task::Return { at, function, args } => {
-                    let callee = self.pop();
-                    self.scopes.pop();
-                    self.calls.pop();
-                    self.called(at, &args, &callee);
-                    self.returns.insert((function, args), callee);
-                }
+                Task::Return { at, function, args } => self.leave_call(at, function, args),
                 Task::Assign { local, op, at } => self.assign(local, op, at),
                 Task::LoopBounds(id) => self.loop_bounds(id),
                 Task::LoopCondition(id) => self.loop_condition(id),
                 Task::LoopPass { id, before } => self.loop_pass(id, before, &mut next),
                 Task::Escape { at, valued } => self.escape(at, valued),
+                Task::Yield { at, valued } => self.yield_value(at, valued),
             }
             // `next` holds the follow-up tasks in evaluation order.
             stack.extend(next.drain(..).rev());
@@ -885,6 +885,11 @@ impl<'a> Walk<'a> {
                 next.push(Task::Escape { at: id, valued: false });
                 return;
             }
+            Expr::Return(value) => {
+                next.extend(value.iter().map(|&v| Task::Expr(v)));
+                next.push(Task::Yield { at: id, valued: value.is_some() });
+                return;
+            }
             Expr::Closure { body, .. } => {
                 // The parameters end with the closure.
                 let outside = self.scope().locals.clone();
@@ -988,7 +993,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Unknown | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };

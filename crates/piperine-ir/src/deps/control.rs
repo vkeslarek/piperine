@@ -1,5 +1,6 @@
-//! The dependency walk over mutation, loops and exits (composite-values CV-01, CV-02): the
-//! methods of [`Walk`] that give an assignment, a loop and a `break` their abstract value.
+//! The dependency walk over mutation, loops and exits (composite-values CV-01 to CV-03): the
+//! methods of [`Walk`] that give an assignment, a loop, a `break` and a `return` their abstract
+//! value.
 //!
 //! The lattice stays finite, so every fixed point here ends:
 //!
@@ -8,12 +9,13 @@
 //! - a **loop** body is walked again from the locals the last pass left until no local changes,
 //!   so a read late in the body sees an assignment made later in it on the next iteration; the
 //!   bounds of a range, the condition of a `while` and the conditions a `break` or `continue`
-//!   sits under then reach every local the loop assigned, since they decide how often it ran.
+//!   sits under then reach every local the loop assigned, since they decide how often it ran;
+//! - a **`return`** joins its value into the function's result.
 
 use std::collections::BTreeSet;
 
 use super::{Class, Sources, Task, Value, Walk};
-use crate::ids::ExprId;
+use crate::ids::{ExprId, FunctionId};
 use crate::model::{BinaryOp, Expr, ValueType};
 
 /// One loop being walked: what decides its trip count and which locals its body assigns.
@@ -216,5 +218,35 @@ impl<'a> Walk<'a> {
             }
         }
         self.values.push(Value::constant());
+    }
+
+    /// A `return` at `at` (its value on the stack when `valued`) joins the function's result,
+    /// read under the conditions it sits under inside the function.
+    pub(super) fn yield_value(&mut self, at: ExprId, valued: bool) {
+        let mut value = if valued { self.pop() } else { Value::constant() };
+        let from = self.scope().enclosed_from;
+        let conditions = self.enclosing.get(from..).unwrap_or_default().to_vec();
+        value.under(&conditions);
+        if self.scope().in_body {
+            self.refuse(at, "`return` outside a function");
+        }
+        let scope = self.scope();
+        match &mut scope.returned {
+            Some(returned) => returned.join(&value),
+            None => scope.returned = Some(value),
+        }
+        self.values.push(Value::constant());
+    }
+
+    /// The walk of `function`'s body, called at `at` with `args`, ended (its value on the stack):
+    /// the result is that value joined with what its `return`s carried.
+    pub(super) fn leave_call(&mut self, at: ExprId, function: FunctionId, args: Vec<Value>) {
+        let mut result = self.pop();
+        if let Some(returned) = self.scopes.pop().and_then(|scope| scope.returned) {
+            result.join(&returned);
+        }
+        self.calls.pop();
+        self.called(at, &args, &result);
+        self.returns.insert((function, args), result);
     }
 }

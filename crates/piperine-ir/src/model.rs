@@ -485,6 +485,9 @@ pub enum Expr {
     Break(Option<ExprId>),
     /// `continue`: starts the innermost loop's next iteration. It fits any expected type.
     Continue,
+    /// `return` or `return value` in a function body: the value has the function's result type.
+    /// It fits any expected type.
+    Return(Option<ExprId>),
 }
 
 impl Expr {
@@ -506,7 +509,7 @@ impl Expr {
             Expr::Loop { .. } => Vec::new(),
             Expr::While { cond, .. } => vec![*cond],
             Expr::ForRange { low, high, .. } => vec![*low, *high],
-            Expr::Break(value) => value.iter().copied().collect(),
+            Expr::Break(value) | Expr::Return(value) => value.iter().copied().collect(),
         }
     }
 
