@@ -67,3 +67,81 @@ fn a_zero_density_takes_the_plain_rectangle() {
     assert_eq!(Integrator::power_law(&[1.0, 3.0], &[0.0, 2.0]), 0.0);
     assert_eq!(Integrator::power_law(&[1.0], &[2.0]), 0.0);
 }
+
+// ─── The assembly's reads for the noise sweep ───────────────────────────────
+
+#[allow(dead_code)]
+#[path = "support/circuit.rs"]
+mod circuit;
+#[allow(dead_code)]
+#[path = "support/devices.rs"]
+mod devices;
+#[allow(dead_code)]
+#[path = "support/system.rs"]
+mod system;
+
+use circuit::{at, f64_bytes, instance, netlist};
+use devices::modules;
+use num_complex::Complex64;
+use piperine_analog_solver::device::AnalogBinding::{Discrete, Ground};
+use piperine_analog_solver::device::{AnalogPlan, Assembly};
+use system::at_freq;
+
+#[test]
+fn a_stimulus_column_carries_its_partials_and_phase() {
+    // An `AcVSource` (dc 0, re 1, im 1) from node 0 to ground: its `STIM` input "ac" enters the
+    // branch row `f` of `eq = v(p) − v(n) − dc − I0` with partial −1, at unit magnitude, so the
+    // column is one row (the branch unknown, 2) of −1, and the phasor 1 + j has phase π/4.
+    let m = modules();
+    let (net, n) = netlist(1, &["f"]);
+    let source = instance("top.v1", m.ac_vsource, vec![Discrete(0), Discrete(1), Discrete(2), at(&n[0]), Ground, at(&n[1])]);
+    let mut asm = Assembly::new(AnalogPlan::bind(vec![source], &net).expect("bind"));
+    for (slot, value) in [(0, 0.0), (1, 1.0), (2, 1.0)] {
+        asm.set_discrete(slot, &f64_bytes(value));
+    }
+    let columns = asm.stimulus_columns(&[0.0, 0.0], at_freq(1.0e3), "top.v1").expect("columns");
+    assert_eq!(columns.len(), 1, "one column per STIM input");
+    assert_eq!(columns[0].name, "top.v1.ac");
+    assert!((columns[0].phase - std::f64::consts::FRAC_PI_4).abs() < 1e-15, "phase {}", columns[0].phase);
+    let rows: Vec<(usize, Complex64)> = columns[0].rows.iter().map(|(r, v)| (r.idx().expect("row"), *v)).collect();
+    assert_eq!(rows, vec![(1, Complex64::new(-1.0, 0.0))]);
+
+    // An unknown instance is named.
+    let err = asm.stimulus_columns(&[0.0, 0.0], at_freq(1.0e3), "top.nope").expect_err("no such instance").to_string();
+    assert!(err.contains("top.nope"), "{err}");
+}
+
+#[test]
+fn a_term_linearization_carries_its_unknown_and_noise_partials() {
+    // `NoisyResistor` term `i = (v(p) − v(n))/r + I0` at r = 2 kΩ: ∂/∂v(p) = 1/r, ∂/∂v(n) = −1/r,
+    // and a direct partial of 1 against its one NOISE input (position 0); the response of a
+    // FLOW term is 1.
+    let m = modules();
+    let (net, n) = netlist(2, &[]);
+    let r = 2.0e3;
+    let res = instance("r1", m.noisy, vec![Discrete(0), at(&n[0]), at(&n[1])]);
+    let mut asm = Assembly::new(AnalogPlan::bind(vec![res], &net).expect("bind"));
+    asm.set_discrete(0, &f64_bytes(r));
+    let linearization = asm.term_linearization(&[0.3, 0.1], at_freq(1.0e3), "r1", "i").expect("linearization");
+    let unknowns: Vec<(usize, Complex64)> =
+        linearization.unknowns.iter().map(|(c, g)| (c.idx().expect("unknown"), *g)).collect();
+    assert_eq!(unknowns, vec![(0, Complex64::new(1.0 / r, 0.0)), (1, Complex64::new(-1.0 / r, 0.0))]);
+    assert_eq!(linearization.noise, vec![(0, Complex64::new(1.0, 0.0))]);
+    let err = asm.term_linearization(&[0.3, 0.1], at_freq(1.0e3), "r1", "nope").expect_err("no such term").to_string();
+    assert!(err.contains("`r1`") && err.contains("`nope`"), "{err}");
+
+    // The `DDT` term `q` of a `Trio` (b = 3, partial against p1) at 100 kHz carries the response
+    // jω: ∂v/∂v(p1)·jω = 3·j·2π·1e5.
+    let trio = instance("t1", m.trio, vec![Discrete(0), Discrete(1), Discrete(2), Discrete(3), at(&n[0]), at(&n[1]), Ground]);
+    let mut asm = Assembly::new(AnalogPlan::bind(vec![trio], &net).expect("bind"));
+    for (slot, value) in [(0, 1.0), (1, 3.0), (2, 1.0), (3, 0.0)] {
+        asm.set_discrete(slot, &f64_bytes(value));
+    }
+    let omega = 2.0 * std::f64::consts::PI * 1.0e5;
+    let linearization = asm.term_linearization(&[0.0, 0.0], at_freq(1.0e5), "t1", "q").expect("linearization");
+    assert_eq!(linearization.unknowns.len(), 1);
+    assert_eq!(linearization.unknowns[0].0.idx(), Some(1));
+    close(linearization.unknowns[0].1.im, 3.0 * omega, 1e-12, "jω·b");
+    assert_eq!(linearization.unknowns[0].1.re, 0.0);
+    assert!(linearization.noise.is_empty(), "no noise input on the term");
+}

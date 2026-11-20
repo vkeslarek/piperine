@@ -271,8 +271,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `a_stimulus_column_carries_its_partials_and_phase` and `a_term_linearization_carries_its_unknown_and_noise_partials` pass
-- [ ] Gate check passes: `Run numerics`, then `cargo test -p piperine-analog-solver`
+- [x] `a_stimulus_column_carries_its_partials_and_phase` and `a_term_linearization_carries_its_unknown_and_noise_partials` pass
+- [x] Gate check passes: `Run numerics`, then `cargo test -p piperine-analog-solver`
 
 **Tests**: integration
 **Gate**: full
