@@ -413,7 +413,8 @@ reads a result, so that a bound the bench adds is written here and never only in
 | --- | --- |
 | Setpoint write | `sp_data` is presented 1 µs before `sp_wr` rises and `sp_wr` stays high 9 µs; the stimulus edge of the scenario is the rise of `sp_wr` (§7.1) |
 | Ramp of a supply or load value | a staircase of 0.1 V (or equivalent) steps, equally spaced, the last step at the end of the ramp and equal to the target; the supply is an ideal source behind 20 mΩ (§2) with no slew of its own |
-| Line step, 12 V to 16 V and back (S4, S9) | 10 µs, one step every 0.25 µs |
+| Line step, 12 V to 16 V and back (S4) | 10 µs, one step every 0.25 µs |
+| Supply ramp between the corners of S9 | 200 µs in 0.1 V steps, equally spaced: at 5 A and 5.0 V a 9 V to 12 V step in 10 µs sends the inductor current to the 7.5 A limit for eight periods and trips `OverCurrent` (§8.2), which is S5's mechanism and not S9's |
 | Brown-out (S7) | 50 mV/µs (0.1 V every 2 µs) down to 7.5 V, held 60 µs, then 50 mV/µs up to 12 V |
 | Load of S4 | 2 A: `r_load` = 1.65 Ω (3.3 V / 2 A), set 200 µs before the step |
 

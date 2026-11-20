@@ -170,6 +170,8 @@ impl Timing {
     const FIRST_STIMULUS: f64 = 1.25e-3;
     /// The print grid of every run (BS-01 AC 2).
     const GRID: f64 = 1e-8;
+    /// One sample, 2 µs (§4.2).
+    const SAMPLE: f64 = 2e-6;
     /// A mode that changes at the next sample shows within this long of its cause (§10.1).
     const NEXT_SAMPLE: f64 = 2.02e-6;
     /// A fault that needs two consecutive samples shows within this long of its cause (§10.1).
@@ -258,6 +260,11 @@ impl BuckHost {
         self.push(|stimulus| stimulus.set("buck.r_step", ohms, at))
     }
 
+    /// The supply is `volts` at `at` (time 0 sets its initial value).
+    fn supply(&mut self, volts: f64, at: f64) -> &mut BuckHost {
+        self.push(|stimulus| stimulus.set("buck.vin_nom", volts, at))
+    }
+
     /// The supply moves from `from` to `to` as a staircase of 0.1 V steps over `duration` from
     /// `start` (§10.1: the line step, the brown-out).
     fn line(&mut self, from: f64, to: f64, start: f64, duration: f64) -> &mut BuckHost {
@@ -340,6 +347,11 @@ impl<'a> Waveforms<'a> {
     /// The flag of a cut period (§8.2).
     fn cut(&self) -> DiscreteTrace {
         DiscreteTrace::of(&self.ran.table, "buck.ctl.cut")
+    }
+
+    /// The ADC code of every sample.
+    fn code(&self) -> DiscreteTrace {
+        DiscreteTrace::of(&self.ran.table, "buck.code")
     }
 
     /// The value of `trace` at the grid row holding `time`.
@@ -427,6 +439,7 @@ impl Suite {
             (FaultsFamily::RUN, FaultsFamily::stimulus()),
             (LoadLineFamily::RUN, LoadLineFamily::stimulus()),
             (SetpointFamily::RUN, SetpointFamily::stimulus()),
+            (SteadyStateFamily::RUN, SteadyStateFamily::stimulus()),
         ]
     }
 
@@ -1105,4 +1118,233 @@ fn s7_soft_start_at_the_sample_after_vin_rises_through_8_5_v() {
 fn brownout_passes_every_check() {
     // BS-08 AC 4, SPEC §10 S10
     BrownoutFamily::assert_every_check_passed();
+}
+
+// ---------------------------------------------------------------------------------------------
+// The steady-state family: S9 at nine corners (BS-07)
+// ---------------------------------------------------------------------------------------------
+
+/// One corner of S9: a supply, a setpoint and the window over which the output is measured.
+#[derive(Debug, Clone, Copy)]
+struct Corner {
+    /// The corner's place in the run, 1 to 9.
+    number: usize,
+    /// The supply, in volts.
+    supply: f64,
+    /// The setpoint, in volts (§7.1).
+    setpoint: f64,
+    /// The DC error SPEC §4.3 allows at this setpoint, in volts.
+    bound: f64,
+    /// The first time of the window.
+    from: f64,
+    /// The end of the window (excluded).
+    to: f64,
+}
+
+/// What one corner's window shows.
+struct Measured {
+    /// The mean of `vout`.
+    mean: f64,
+    /// The peak-to-peak of `vout`.
+    ripple: f64,
+    /// The peak-to-peak of the ADC code.
+    code_swing: i128,
+    /// The difference between the means of the window's two halves.
+    drift: f64,
+}
+
+impl Corner {
+    /// The one-code bound on an unsettled window: 6.25 mV (§4.1, BS-07 AC 4).
+    const ONE_CODE: f64 = 6.25e-3;
+
+    /// What the window shows in `waves`.
+    fn measure(&self, waves: &Waveforms<'_>) -> Measured {
+        let vout = waves.vout().between(self.from, self.to);
+        let middle = (self.from + self.to) / 2.0;
+        let (first, second) = (waves.vout().between(self.from, middle).mean(), waves.vout().between(middle, self.to).mean());
+        Measured { mean: vout.mean(), ripple: vout.peak_to_peak(), code_swing: waves.code().between(self.from, self.to).peak_to_peak(), drift: (first - second).abs() }
+    }
+
+    /// The line a corner prints, failing or not.
+    fn describe(&self, measured: &Measured) -> String {
+        format!(
+            "corner {} (Vin {} V, {} V): mean error {:.2} mV (bound {:.1} mV), ripple {:.2} mV (10 mV), code swing {} (1), half-window drift {:.2} mV (6.25 mV), window {:e} s to {:e} s",
+            self.number,
+            self.supply,
+            self.setpoint,
+            (measured.mean - self.setpoint) * 1e3,
+            self.bound * 1e3,
+            measured.ripple * 1e3,
+            measured.code_swing,
+            measured.drift * 1e3,
+            self.from,
+            self.to
+        )
+    }
+}
+
+/// The schedule of S9 and the corners it measures, built together so a window and the stimulus
+/// that precedes it can never disagree.
+struct SteadyStatePlan {
+    host: BuckHost,
+    corners: Vec<Corner>,
+    /// The end of the last window or step: where the next action starts.
+    cursor: f64,
+    supply: f64,
+    setpoint_code: i64,
+}
+
+impl SteadyStatePlan {
+    /// Time after a window or a step before the next window starts: the output has settled (§4.3).
+    const SETTLE: f64 = 200e-6;
+    /// How long a supply ramp takes. SPEC §10.1's 10 µs line step is S4's, at 2 A; at full load and
+    /// 5.0 V a 9 V to 12 V step in 10 µs sends the inductor current to the 7.5 A limit for eight
+    /// periods and trips `OverCurrent` (§8.2), so S9 reaches a corner by a ramp the loop follows.
+    const LINE: f64 = 200e-6;
+    /// The length of a window: 32 periods (§4.2).
+    const WINDOW: f64 = 64e-6;
+    /// `en` rises, after the first write.
+    const ENABLE: f64 = 2e-6;
+    /// The first write's edge.
+    const FIRST_WRITE: f64 = 1e-6;
+    /// The time from `en` to the first ramp step: the supervisor leaves `Off` at the next sample
+    /// and the reference takes its first step at the one after, plus a sample to settle on it.
+    const STARTUP_LATENCY: f64 = 3.0 * Timing::SAMPLE;
+    /// ADC codes per setpoint code: 25 mV over 6.25 mV (§7.1).
+    const CODES_PER_SETPOINT: i64 = 4;
+    /// The setpoint, in volts, of a code (§7.1).
+    const VOLTS_PER_CODE: f64 = 0.025;
+    /// The full-load resistance at a setpoint of `volts`: 5 A (§10 S9).
+    const FULL_LOAD_CURRENT: f64 = 5.0;
+
+    /// The plan: start-up at 0.8 V and 9 V, then the nine corners in the order of BS-07.
+    fn new() -> SteadyStatePlan {
+        let mut plan = SteadyStatePlan { host: BuckHost::at_rest(), corners: Vec::new(), cursor: 0.0, supply: 9.0, setpoint_code: 0 };
+        plan.start_up();
+        for supply in [12.0, 16.0] {
+            plan.measure(6.5e-3);
+            plan.step_line(supply);
+        }
+        plan.measure(6.5e-3);
+        plan.move_setpoint(100);
+        for supply in [12.0, 9.0] {
+            plan.measure(14.7e-3);
+            plan.step_line(supply);
+        }
+        plan.measure(14.7e-3);
+        plan.move_setpoint(168);
+        for supply in [12.0, 16.0] {
+            plan.measure(20e-3);
+            plan.step_line(supply);
+        }
+        plan.measure(20e-3);
+        plan
+    }
+
+    /// Full-load resistance at the setpoint code `code`.
+    fn full_load(code: i64) -> f64 {
+        (0.8 + SteadyStatePlan::VOLTS_PER_CODE * code as f64) / SteadyStatePlan::FULL_LOAD_CURRENT
+    }
+
+    /// Writes 0 (0.8 V) at 9 V and full load, enables, and waits out the 128-code start-up ramp.
+    fn start_up(&mut self) {
+        self.host.supply(9.0, 0.0).load(SteadyStatePlan::full_load(0), 0.0);
+        self.host.write_setpoint(0, SteadyStatePlan::FIRST_WRITE).enable(SteadyStatePlan::ENABLE);
+        let ramp = 128.0 * Timing::SAMPLE;
+        self.cursor = SteadyStatePlan::ENABLE + SteadyStatePlan::STARTUP_LATENCY + ramp;
+    }
+
+    /// Records the corner whose window starts 200 µs after the cursor.
+    fn measure(&mut self, bound: f64) {
+        let from = self.cursor + SteadyStatePlan::SETTLE;
+        let setpoint = 0.8 + SteadyStatePlan::VOLTS_PER_CODE * self.setpoint_code as f64;
+        self.corners.push(Corner { number: self.corners.len() + 1, supply: self.supply, setpoint, bound, from, to: from + SteadyStatePlan::WINDOW });
+        self.cursor = from + SteadyStatePlan::WINDOW;
+    }
+
+    /// Ramps the supply to `volts` from the cursor.
+    fn step_line(&mut self, volts: f64) {
+        self.host.line(self.supply, volts, self.cursor, SteadyStatePlan::LINE);
+        self.supply = volts;
+        self.cursor += SteadyStatePlan::LINE;
+    }
+
+    /// Writes `code` at the cursor, moves the load to its full value there, and waits out the
+    /// ramp (one ADC code per sample, §7.2) and one sample more.
+    fn move_setpoint(&mut self, code: i64) {
+        self.host.write_setpoint(code, self.cursor).load(SteadyStatePlan::full_load(code), self.cursor);
+        let codes = (code - self.setpoint_code).abs() * SteadyStatePlan::CODES_PER_SETPOINT;
+        self.cursor += codes as f64 * Timing::SAMPLE + Timing::SAMPLE;
+        self.setpoint_code = code;
+    }
+}
+
+/// S9 on one run: nine corners of supply and setpoint at full load.
+struct SteadyStateFamily;
+
+impl SteadyStateFamily {
+    /// The nine corners.
+    fn corners() -> Vec<Corner> {
+        SteadyStatePlan::new().corners
+    }
+
+    /// What every corner's window shows, printed one line per corner.
+    fn measured() -> Vec<(Corner, Measured)> {
+        let waves = Self::waves();
+        let measured: Vec<(Corner, Measured)> = Self::corners().into_iter().map(|corner| (corner, corner.measure(&waves))).collect();
+        measured.iter().for_each(|(corner, measured)| eprintln!("S9 {}", corner.describe(measured)));
+        measured
+    }
+
+    /// Fails naming each corner that `broken` describes; every corner is printed first.
+    fn assert_every_corner(rule: &str, broken: impl Fn(&Corner, &Measured) -> Option<String>) {
+        let failures: Vec<String> = Self::measured().iter().filter_map(|(corner, measured)| broken(corner, measured)).collect();
+        assert!(failures.is_empty(), "{rule}: {}", failures.join("; "));
+    }
+
+    /// The corners whose halves differ by more than one code: not settled (BS-07 AC 4).
+    fn unsettled(corner: &Corner, measured: &Measured) -> Option<String> {
+        (measured.drift > Corner::ONE_CODE).then(|| format!("corner {} is not settled: its half-window means differ by {:.2} mV", corner.number, measured.drift * 1e3))
+    }
+}
+
+impl Family for SteadyStateFamily {
+    const RUN: &'static str = "steady_state";
+
+    fn stimulus() -> Stimulus {
+        SteadyStatePlan::new().host.stimulus()
+    }
+}
+
+#[test]
+fn s9_every_corner_is_settled() {
+    // BS-07 AC 4: the means of a window's two halves differ by at most one code (6.25 mV)
+    SteadyStateFamily::assert_every_corner("a corner is not settled", SteadyStateFamily::unsettled);
+}
+
+#[test]
+fn s9_dc_error_within_section_4_3_at_every_corner() {
+    // BS-07 AC 1, SPEC §4.3: the mean of vout is within the total of its setpoint; a corner that
+    // is not settled is named as such before its error is judged (BS-07 AC 4)
+    SteadyStateFamily::assert_every_corner("a corner misses its DC error", |corner, measured| {
+        SteadyStateFamily::unsettled(corner, measured).or_else(|| ((measured.mean - corner.setpoint).abs() > corner.bound).then(|| format!("corner {} is {:.2} mV from {} V (bound {:.1} mV)", corner.number, (measured.mean - corner.setpoint) * 1e3, corner.setpoint, corner.bound * 1e3)))
+    });
+}
+
+#[test]
+fn s9_ripple_at_most_10_mv_at_every_corner() {
+    // BS-07 AC 2, SPEC §2 and §10 S9: the peak-to-peak of vout is at most 10 mV
+    SteadyStateFamily::assert_every_corner("a corner rings", |corner, measured| (measured.ripple > 10e-3).then(|| format!("corner {} has {:.2} mV peak to peak", corner.number, measured.ripple * 1e3)));
+}
+
+#[test]
+fn s9_no_idle_tone_above_1_code_at_every_corner() {
+    // BS-07 AC 3, SPEC §6.5 and §10 S9: the ADC code moves by at most one code
+    SteadyStateFamily::assert_every_corner("a corner has an idle tone", |corner, measured| (measured.code_swing > 1).then(|| format!("corner {} has a code swing of {}", corner.number, measured.code_swing)));
+}
+
+#[test]
+fn steady_state_passes_every_check() {
+    // BS-08 AC 4, SPEC §10 S10
+    SteadyStateFamily::assert_every_check_passed();
 }
