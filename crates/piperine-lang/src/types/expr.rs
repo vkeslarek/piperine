@@ -416,7 +416,9 @@ impl Checker<'_> {
                 None
             }
             LitKind::Unknown => {
-                self.unsupported(file, span, "`Unknown` literal where no carried type is expected");
+                // A.6 (`E0906`): no carried type is expected here, or the expected type has no `Repr`.
+                let message = "`Unknown` has no type here: write it where a type that implements `Repr` is expected (A.6)".to_string();
+                self.coded(file, "E0906", span, message, "`Unknown` of what type?");
                 None
             }
         }
