@@ -97,3 +97,31 @@ fn a_host_driven_rc_step_matches_tran_rc() {
         ToleranceContract::TRAN_VOLTAGE.assert(&at, wanted, actual);
     }
 }
+
+#[test]
+fn a_host_pwl_into_the_rc_matches_tran_pwl_rc() {
+    // the ngspice source `V1 vin 0 PWL(0 0 2u 1 5u 1 6u 0.25)`: the same corners as the host's,
+    // held at 0.25 V after the last
+    let reference = Ngspice::from_environment().run("tran_pwl_rc");
+    let rows = match &reference {
+        Reference::Golden(golden) => {
+            let rows = golden.real("tran_pwl_rc_tran");
+            golden.expect_rows("tran_pwl_rc_tran", &rows, 100);
+            rows
+        }
+        Reference::Skipped => Vec::new(),
+    };
+    let corners = vec![(0.0, 0.0), (2e-6, 1.0), (5e-6, 1.0), (6e-6, 0.25)];
+    // one print step past ngspice's last time, as in the DC step above
+    let overrides = Overrides { analysis: Some("transient".to_string()), stop: Some(10e-6 + 1e-7), max_step: Some(1e-8), print_step: Some(1e-7), ..Overrides::default() };
+    let mut session = HostDrivenRc::session(overrides);
+    session.source("vin", NodeSource::dc(0.0).with_corners(corners)).expect("a piecewise-linear source on vin");
+    let table = HostDrivenRc::table(&mut session);
+    let Reference::Golden(golden) = &reference else { return };
+    let waveform = Waveform::new(table.rows.iter().map(|row| HostRun::real(&row[0])).collect(), table.rows.iter().map(|row| HostRun::real(&row[1])).collect());
+    for (time, wanted) in rows {
+        let actual = waveform.at(time).unwrap_or_else(|| panic!("the time {time:e} s lies outside the result"));
+        let at = Point::new("rc_top", "v(out)", Coordinate::Time(time)).with_ngspice(golden.version()).with_backend("rust");
+        ToleranceContract::TRAN_VOLTAGE.assert(&at, wanted, actual);
+    }
+}

@@ -611,11 +611,11 @@ T44
 
 **Done when**:
 
-- [ ] `a_pwl_source_lands_on_every_corner`, `a_timed_source_change_is_a_jump` pass under `**Run apisources**`
-- [ ] `a_host_pwl_into_the_rc_matches_tran_pwl_rc` passes under `**Run sourcehost**`
-- [ ] The CLI twin count of `crates/piperine-cli/tests/twins.rs` is unchanged
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `a_pwl_source_lands_on_every_corner`, `a_timed_source_change_is_a_jump` pass under `**Run apisources**`
+- [x] `a_host_pwl_into_the_rc_matches_tran_pwl_rc` passes under `**Run sourcehost**`
+- [x] The CLI twin count of `crates/piperine-cli/tests/twins.rs` is unchanged
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

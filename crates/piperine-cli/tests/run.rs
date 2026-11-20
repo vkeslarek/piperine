@@ -498,3 +498,18 @@ fn a_maybe_record_prints_maybe_and_a_known_one_does_not() {
     assert!(line("unsure").ends_with(" n=1 maybe=true"), "{}", line("unsure"));
     assert!(line("sure").ends_with(" n=1") && !line("sure").contains("maybe"), "{}", line("sure"));
 }
+
+#[test]
+fn run_of_a_top_with_a_node_port_is_e0810() {
+    // PI-07 AC 5, X8, §23.1 rule 1: no manifest key drives a port, so `piperine run` of a top
+    // with a node port has no host source for it: E0810 naming the port, exit 1, and nothing on
+    // standard output (the P0001 "continuous port" of the elaborator is gone)
+    let files = written(&[("bench.msl", "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\n\nmodule Top(vin: Electrical) {\n    let r1 = Resistor(vin, gnd) { r: 1k };\n}\n")]);
+    let file = files.path().join("bench.msl");
+    let out = piperine_in(files.path(), shared_cache(), &["run", &file.to_string_lossy(), "--analysis", "op", "--top", "Top"]);
+    let err = failed(&out, 1);
+    assert!(err.contains("E0810"), "{err}");
+    assert!(err.contains("`vin`"), "the port is named:\n{err}");
+    assert!(!err.contains("P0001"), "{err}");
+    assert!(out.stdout.is_empty(), "{}", text(&out.stdout));
+}
