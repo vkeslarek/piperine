@@ -186,7 +186,7 @@ One silent defect sits on the same path: the authored `Child` record of the IR p
 2. WHEN that circuit is swept in AC THEN the system SHALL give `|v(out)/v(in)|` = 1/√(1 + (2πfτ)²) within `AC_MAGNITUDE`.
 3. WHEN two placements with equal arguments are written THEN the system SHALL make two instances, each with its own node.
 4. WHEN a placement sits under a branch not taken THEN the system SHALL still create the instance and advance its state (§8.3.14): with `en` rising at 2τ, `if en.high() { v(out) +> Lag(v(in)); } else { v(out) +> 0.0; }` gives `v(out)` = 1 − e^(−2) just after 2τ within `TRAN_VOLTAGE`.
-5. WHEN a body `let l = Lag(v(in));` is read by `analog` and by `on above(l - 0.5)` THEN the system SHALL read one instance in both, and the reaction SHALL fire at τ·ln 2 within the default `ttol`.
+5. WHEN a body `let l = Lag(v(in));` is read by `analog` and by `on above(l - 0.5)` THEN the system SHALL read one instance in both, and the reaction SHALL fire within the default `ttol` of the crossing of the numerical solution `l = 0.5` (Part V §17.3: the locator refines the crossing of the computed waveform, not of the closed form `τ·ln 2`; with the step capped at 50 ns the two agree within `ttol`) (user, 2026-11-19).
 6. WHEN the stdlib `slew(v(in), 1M, 1M)` follows a 0 to 1 V step at 1 µs THEN the system SHALL give 0 V before 1 µs, a ramp of 1 V/µs, and 1 V from 2 µs, within `TRAN_VOLTAGE`; and `v(in)` at an operating point (Q3).
 
 **Acceptance Criteria** (AS-10, feedback through an instance, L38):

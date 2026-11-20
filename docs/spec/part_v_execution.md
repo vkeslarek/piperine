@@ -694,6 +694,8 @@ time points, and whose time the solver finds.
 8. A crossing between the two solutions a jump separates is not located. It fires at the
    time point of the step that reads the jump, after that step's solve (§15.2.4).
 
+> **Resolution.** The crossing of rule 1 is the crossing of the numerical solution: `ttol` bounds the distance between the landing and where the computed `e` crosses zero, never the distance to the closed form of the model. The solution is accurate to the step's truncation tolerance (`reltol`, `trtol`), so an event may differ from an analytic crossing by what that tolerance allows; a closed-form check caps the step so the two agree.
+
 > **Resolution.** Rule 3's guarantee is stated as: the landing time exceeds the true crossing
 > time by at most `ttol` plus one tick, or `e < etol` holds there. Rule 4 is stated here.
 

@@ -150,6 +150,24 @@ fn a_named_lag_is_one_instance_for_analog_and_its_event() {
 }
 
 #[test]
+fn a_named_lag_event_lands_within_ttol_of_the_computed_crossing() {
+    // AS-09 AC 5 and Part V §17.3 (amended 2026-11-19): with the step capped only at 10 us the
+    // computed `v(o)` runs 18 ns behind `1 - exp(-t / tau)`, and the event fires within `ttol` (1 ps) of
+    // where that computed waveform crosses 0.5, found by interpolating the two points that bracket it.
+    let built = build(&project(), "NamedBench");
+    let out = node(&built.ir, "NamedBench", "o");
+    let (seen, result) = built.run_with(0.8e-3, 10e-6);
+    let steps: Vec<_> = result.iter().collect();
+    let points: Vec<(f64, f64)> = steps.iter().map(|s| (s.time(), s.get_node(&out).expect("v(o)"))).collect();
+    let (before, after) = points.windows(2).map(|w| (w[0], w[1])).find(|(a, b)| a.1 <= 0.5 && b.1 > 0.5).expect("the waveform crosses 0.5");
+    let crossing = before.0 + (0.5 - before.1) * (after.0 - before.0) / (after.1 - before.1);
+    let changes = support::transient(&seen, "NamedBench.crossed");
+    assert_eq!(changes.len(), 1, "the event fires once: {changes:?}");
+    let at = changes[0].0 as f64 * 1e-15;
+    assert!((at - crossing).abs() <= 1e-12, "fired at {at}, the computed waveform crosses at {crossing}: within 1 ps");
+}
+
+#[test]
 fn feedback_through_integ_decays_exponentially() {
     // AS-10 AC 1: `let y = Integ(-y / 1m, 1.0, None);` is y' = -y / 1 ms with y(0) = ic = 1.0: `y` = 1.0
     // at the operating point and exp(-t / 1 ms) after it.
