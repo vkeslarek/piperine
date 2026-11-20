@@ -8,5 +8,7 @@
 //! - `run`: [`ScenarioRun`] and [`ScenarioBatch`], runs of a package executed once each, at once.
 
 pub mod column;
+pub mod trace;
 
 pub use column::NamedColumn;
+pub use trace::{Crossing, Sample, Trace};

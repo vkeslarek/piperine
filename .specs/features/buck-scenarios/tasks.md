@@ -143,15 +143,17 @@ T13 → T15
 
 **Done when**:
 
-- [ ] One test per BS-02 AC 1 to AC 5 on hand-built tables whose answers are worked by hand in the test's comment; AC 1's test also asserts `None` when the last row is outside
-- [ ] A test for `first_rise_in_any_row` and `decay_time_constant` on an exact exponential (τ recovered to 1e-9 relative)
-- [ ] Gate check passes: `cargo test -p piperine-parity --lib scenario::`
-- [ ] Test count: 7 new tests
+- [x] One test per BS-02 AC 1 to AC 5 on hand-built tables whose answers are worked by hand in the test's comment; AC 1's test also asserts `None` when the last row is outside
+- [x] A test for `first_rise_in_any_row` and `decay_time_constant` on an exact exponential (τ recovered to 1e-9 relative)
+- [x] Gate check passes: `cargo test -p piperine-parity --lib scenario::`
+- [x] Test count: 7 new tests
 
 **Tests**: unit
 **Gate**: quick
 
 **Commit**: `feat(parity): Trace measures a real column over a window`
+
+**Status**: Complete
 
 ---
 
