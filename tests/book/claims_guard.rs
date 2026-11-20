@@ -215,7 +215,7 @@ impl Tree {
         Tree { book: Book::read(), inventory: Inventory::read(), coverage: Coverage::of_repository() }
     }
 
-    /// The rules over this tree, with the chapters the registry settles.
+    /// The claim rules over this tree: its Book, its inventory and the tests the rows name.
     fn guard(&self) -> ClaimGuard<'_> {
         ClaimGuard { book: &self.book, inventory: &self.inventory, coverage: &self.coverage }
     }

@@ -153,6 +153,7 @@ struct Check<'a> {
 }
 
 impl<'a> Check<'a> {
+    /// The check of `scenario` on `backend` against `reference`: a golden to compare with, or none when ngspice is skipped.
     fn new(scenario: &'a str, reference: &'a Reference, backend: Backend) -> Check<'a> {
         let golden = match reference {
             Reference::Golden(golden) => Some(golden),

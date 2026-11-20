@@ -224,7 +224,7 @@ impl Tree {
         Tree { book: Book::read(), inventory: Inventory::read(), coverage: Coverage::of_repository(), gaps: Gaps::read() }
     }
 
-    /// The rules over this tree, 
+    /// The block rules over this tree: its Book, its inventory, the tests the rows name and `GAPS.md`.
     fn guard(&self) -> Guard<'_> {
         Guard { book: &self.book, inventory: &self.inventory, coverage: &self.coverage, gaps: &self.gaps }
     }

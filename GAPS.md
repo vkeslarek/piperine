@@ -374,7 +374,7 @@ does not count.
 **Error codes of the spec that no source file mentions (64 of 180).** `E0503`, `E0504`, `E0505`,
 `E0507` and `E0508` are raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`),
 spelled as enum names and rendered by `as_str`, which a count of string literals misses (an earlier
-list gave `E0504` and `E0507` as unraised, wrongly). `E0803` to `E0806` are raised by `host.rs`.
+list gave `E0504` and `E0507` as unraised, wrongly). `E0804` to `E0806` are raised by `host.rs` and `E0803` by `session.rs`.
 `E0102 E0105 E0110 E0111 E0122 E0123 E0124 E0126 E0127 E0131 E0132 E0133 E0134 E0151 E0203 E0204
 E0205 E0224 E0242 E0243 E0244 E0260 E0261 E0262 E0264 E0313 E0315 E0322 E0333 E0340 E0342 E0351
 E0354 E0360 E0361 E0362 E0371 E0372 E0373 E0374 E0413 E0414 E0416 E0418 E0451 E0452 E0453 E0454
