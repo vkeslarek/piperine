@@ -6,8 +6,11 @@ use std::mem::size_of;
 #[path = "support/devices.rs"]
 #[allow(dead_code)]
 mod devices;
+#[path = "support/sources.rs"]
+mod sources;
 
 use devices::Devices;
+use sources::SourceTree;
 use piperine_ir::{
     BinaryOp, Body, BodyId, BodyNode, BodySpec, Branch, BranchKind, NodeRef, Site, Constant, Env, Expr, ExprId, Function,
     FunctionId, Instance, InstanceId, InstanceSpec, Ir, IrBuilder, MathFn, Nature, NatureId, Node,
@@ -42,28 +45,12 @@ fn ir_is_send_and_sync() {
     let _ = Bounds::<Ir>(std::marker::PhantomData);
 }
 
-/// Every Rust source file of the crate, as text.
-struct Sources;
-
-impl Sources {
-    fn all() -> Vec<(String, String)> {
-        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let mut out = Vec::new();
-        for entry in std::fs::read_dir(&dir).expect("read src") {
-            let path = entry.expect("dir entry").path();
-            let text = std::fs::read_to_string(&path).expect("read a source");
-            out.push((path.display().to_string(), text));
-        }
-        out
-    }
-}
-
 #[test]
 fn a_finished_ir_has_no_mutating_operation() {
     // No `&mut self` method on `Ir` or on a handle: the builder (and the printer's own buffer)
     // are the only types that mutate.
     let read_only = ["Ir ", "Ir{", "Body<", "Function<", "Instance<", "Node<", "Nature<"];
-    for (path, text) in Sources::all() {
+    for (path, text) in SourceTree::files() {
         let mut guarded = false;
         for (n, line) in text.lines().enumerate() {
             if line.starts_with("impl") {
@@ -220,7 +207,7 @@ impl Reach {
     fn stmt(ir: &Ir, id: StmtId, out: &mut Vec<ExprId>) {
         match ir.stmt(id) {
             Stmt::Let { init, .. } => Reach::expr(ir, *init, out),
-            Stmt::Expr(e) | Stmt::BoundStep { value: e, .. } => Reach::expr(ir, *e, out),
+            Stmt::Expr(e) | Stmt::BoundStep { value: e, .. } | Stmt::Assign { value: e, .. } => Reach::expr(ir, *e, out),
             Stmt::Contribute { addends, .. } => {
                 for a in addends {
                     Reach::expr(ir, a.value, out);

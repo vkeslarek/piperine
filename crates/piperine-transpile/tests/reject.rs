@@ -86,9 +86,9 @@ fn sampled(b: &mut IrBuilder, limits: Vec<Site>, stims: Vec<Site>, site: fn(&mut
         limits,
         stims,
         locals: vec![
-            Local { name: "x".into(), ty: ValueType::F64 },
-            Local { name: "new".into(), ty: ValueType::F64 },
-            Local { name: "old".into(), ty: ValueType::F64 },
+            Local { name: "x".into(), ty: ValueType::F64, mutable: false },
+            Local { name: "new".into(), ty: ValueType::F64, mutable: false },
+            Local { name: "old".into(), ty: ValueType::F64, mutable: false },
         ],
         analog: Some(vec![let_x, contribute]),
         ..Buck::spec("Sampled", F, 1)

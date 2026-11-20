@@ -29,7 +29,7 @@ impl Statements {
             match step {
                 Step::Count(id) => out.push(id),
                 Step::Stmt(id) => match ir.stmts.get(id.index()) {
-                    Some(Stmt::Let { init, .. }) => next.push(Step::Expr(*init)),
+                    Some(Stmt::Let { init, .. } | Stmt::Assign { value: init, .. }) => next.push(Step::Expr(*init)),
                     Some(Stmt::Expr(e) | Stmt::BoundStep { value: e, .. }) => next.push(Step::Expr(*e)),
                     Some(Stmt::Contribute { addends, .. }) => next.extend(addends.iter().map(|a| Step::Expr(a.value))),
                     Some(Stmt::Commit { value, after, .. }) => {

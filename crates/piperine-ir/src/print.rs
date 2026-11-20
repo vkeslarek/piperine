@@ -33,7 +33,7 @@ use std::fmt::{self, Display, Write};
 use crate::ids::{ExprId, StmtId};
 use crate::model::{
     BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, ChildValue, Constant, EmitField, Env, EventSource, Expr, ExprData, FunctionData, InstanceData, Ir,
-    LevelPart, Local, MathFn, Method, NodeRef, Operator, Origin, Param, Quantity, QuantityRole, Stmt, Stream, Terminal,
+    LevelPart, Local, MathFn, Method, NodeRef, Operator, Origin, Param, Place, Projection, Quantity, QuantityRole, Stmt, Stream, Terminal,
     UnaryOp, ValueType,
 };
 use crate::real::Real;
@@ -236,7 +236,7 @@ impl<'a> Printer<'a> {
 
     /// The locals table of an owner: index order in the full text, sorted in the structural form.
     fn locals(&mut self, indent: usize, locals: &[Local]) {
-        let lines = locals.iter().map(|l| self.chunk(|p| p.line(indent, &format!("local {}: {}", Printer::name(&l.name), l.ty)))).collect();
+        let lines = locals.iter().map(|l| self.chunk(|p| p.line(indent, &format!("local {}{}: {}", if l.mutable { "mut " } else { "" }, Printer::name(&l.name), l.ty)))).collect();
         self.items(lines);
     }
 
@@ -550,6 +550,12 @@ impl<'a> Printer<'a> {
         scope.carriers.get(i as usize).map_or(format!("<bad carrier {i}>"), |c| Printer::name(&c.name))
     }
 
+    /// An assignment target: the local, then `.k` for each field projection.
+    fn place(scope: Scope<'_>, place: &Place) -> String {
+        let fields: String = place.path.iter().map(|Projection::Field(k)| format!(".{k}")).collect();
+        format!("{}{fields}", Printer::local(scope, place.local))
+    }
+
     fn local(scope: Scope<'_>, i: u32) -> String {
         scope.locals.get(i as usize).map_or(format!("<bad local {i}>"), |l| Printer::name(&l.name))
     }
@@ -601,6 +607,11 @@ impl<'a> Printer<'a> {
                 next.push(Piece::Expr(*init));
             }
             Stmt::Expr(e) => next.push(Piece::Expr(*e)),
+            Stmt::Assign { place, op, value } => {
+                let op = op.map_or(String::new(), |op| Printer::binary_op(op).to_string());
+                next.push(Piece::Text(format!("{} {op}= ", Printer::place(scope, place))));
+                next.push(Piece::Expr(*value));
+            }
             Stmt::BoundStep { value, when, .. } => {
                 next.extend([Piece::Text("bound_step(".into()), Piece::Expr(*value), Piece::Text(")".into())]);
                 if let Some(when) = when {
@@ -1089,6 +1100,11 @@ impl<'a> Printer<'a> {
         match stmt {
             Stmt::Let { local, init } => format!("let {local} e{}", init.0),
             Stmt::Expr(e) => format!("expr e{}", e.0),
+            Stmt::Assign { place, op, value } => {
+                let fields: String = place.path.iter().map(|Projection::Field(k)| format!(".{k}")).collect();
+                let op = op.map_or("-".to_string(), |op| Printer::binary_name(op).to_string());
+                format!("assign {}{fields} {op} e{}", place.local, value.0)
+            }
             Stmt::BoundStep { site, value, when } => match when {
                 Some(when) => format!("bound_step B{site} e{} when e{}", value.0, when.0),
                 None => format!("bound_step B{site} e{}", value.0),

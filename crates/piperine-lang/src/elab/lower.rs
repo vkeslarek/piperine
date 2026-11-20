@@ -458,7 +458,7 @@ impl Elaboration<'_, '_> {
             return None;
         };
         let index = scope.locals.len() as u32;
-        scope.locals.push(Local { name, ty });
+        scope.locals.push(Local { name, ty, mutable: false });
         scope.local_index.insert(binding, index);
         Some(index)
     }

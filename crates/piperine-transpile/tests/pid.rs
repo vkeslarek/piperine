@@ -114,7 +114,7 @@ fn script_body(b: &mut IrBuilder) -> BodyId {
     x.at(10, 17);
     let meas = chain(&mut x, &[(40, 0), (80, 20), (110, 1023), (140, 0)], 100, &u10);
     let commit_meas = x.commit(3, meas, None);
-    let locals = vec![Local { name: "s".into(), ty: u8_ }];
+    let locals = vec![Local { name: "s".into(), ty: u8_, mutable: false }];
     Buck::reaction(b, body, vec![fall], vec![let_s, commit_n, commit_run, commit_target, commit_meas], locals, F, 5);
     body
 }

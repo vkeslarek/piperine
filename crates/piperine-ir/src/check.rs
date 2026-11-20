@@ -28,7 +28,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::contributions::Contributions;
 use crate::ids::{ExprId, FunctionId, StmtId};
 use crate::model::{
-    BinaryOp, BodyData, BranchKind, CarrierRole, Child, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, NodeRef, NodeRole, Origin, QuantityRole, ReachedItem, Stmt, Terminal, UnaryOp,
+    BinaryOp, BodyData, BranchKind, CarrierRole, Child, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, NodeRef, NodeRole, Origin, Place, QuantityRole, ReachedItem, Stmt, Terminal, UnaryOp,
     ValueType,
 };
 use crate::typing::Typing;
@@ -61,6 +61,8 @@ struct Owner {
     item: String,
     origin: Origin,
     locals: Vec<ValueType>,
+    /// Which locals the source declared `let mut`, parallel to `locals`: only these are assigned.
+    mutable: Vec<bool>,
     params: Vec<ValueType>,
     nodes: usize,
     branches: Vec<BranchKind>,
@@ -177,7 +179,7 @@ impl<'a> Checker<'a> {
             Stmt::Let { init, .. } => Some(*init),
             Stmt::Expr(e) => Some(*e),
             Stmt::Contribute { addends, .. } => addends.first().map(|a| a.value),
-            Stmt::Commit { value, .. } | Stmt::BoundStep { value, .. } => Some(*value),
+            Stmt::Commit { value, .. } | Stmt::BoundStep { value, .. } | Stmt::Assign { value, .. } => Some(*value),
             Stmt::Emit { fields, .. } => fields.iter().find_map(|f| match f {
                 EmitField::Value { value, .. } => Some(*value),
                 EmitField::Text { .. } => None,
@@ -313,6 +315,7 @@ impl<'a> Checker<'a> {
             match stmt {
                 Stmt::Let { init, .. } => self.expr_id(&item, &origin, *init),
                 Stmt::Expr(e) => self.expr_id(&item, &origin, *e),
+                Stmt::Assign { value, .. } => self.expr_id(&item, &origin, *value),
                 Stmt::BoundStep { value, when, .. } => {
                     for id in [*value].into_iter().chain(*when) {
                         self.expr_id(&item, &origin, id);
@@ -818,6 +821,7 @@ impl<'a> Checker<'a> {
                 match stmt {
                     Stmt::Let { init, .. } => stack_e.push(*init),
                     Stmt::Expr(e) => stack_e.push(*e),
+                    Stmt::Assign { value, .. } => stack_e.push(*value),
                     Stmt::Contribute { addends, .. } => stack_e.extend(addends.iter().map(|a| a.value)),
                     Stmt::Commit { value, after, .. } => stack_e.extend([*value].into_iter().chain(*after)),
                     Stmt::BoundStep { value, when, .. } => stack_e.extend([*value].into_iter().chain(*when)),
@@ -1128,6 +1132,7 @@ impl<'a> Checker<'a> {
                 item,
                 origin: body.origin.clone(),
                 locals: body.locals.iter().map(|l| l.ty.clone()).collect(),
+                mutable: body.locals.iter().map(|l| l.mutable).collect(),
                 params: body.params.iter().map(|p| p.ty.clone()).collect(),
                 nodes: body.nodes.len(),
                 branches: body.branches.iter().map(|b| b.kind).collect(),
@@ -1216,6 +1221,7 @@ impl<'a> Checker<'a> {
                 let item = format!("body {} reaction {k}", body.name);
                 let mut owner = owner(false, item);
                 owner.locals = reaction.locals.iter().map(|l| l.ty.clone()).collect();
+                owner.mutable = reaction.locals.iter().map(|l| l.mutable).collect();
                 owner.reaction = true;
                 let mut w = Walk::new(owner, 0);
                 for &stmt in &reaction.stmts {
@@ -1229,6 +1235,7 @@ impl<'a> Checker<'a> {
                 item: format!("function {}", function.name),
                 origin: function.origin.clone(),
                 locals: function.locals.iter().map(|l| l.ty.clone()).collect(),
+                mutable: function.locals.iter().map(|l| l.mutable).collect(),
                 params: Vec::new(),
                 nodes: 0,
                 branches: Vec::new(),
@@ -1326,6 +1333,10 @@ impl<'a> Checker<'a> {
                 next.push(Task::Bind(*local));
             }
             Stmt::Expr(e) => next.push(Task::Expr(*e, ctx)),
+            Stmt::Assign { place, op, value } => {
+                self.assignment(w, &origin, place, *op, *value);
+                next.push(Task::Expr(*value, ctx));
+            }
             Stmt::BoundStep { value, when, .. } => {
                 if !top || !w.owner.analog {
                     self.report(w.owner.item.clone(), origin.clone(), "`bound_step` outside the top level of an analog block".to_string());
@@ -1874,6 +1885,31 @@ impl<'a> Checker<'a> {
             }
         }
         next.push(Task::Exit(id));
+    }
+
+    /// An assignment `place op= value` (§1.5.12): the target is a place of a `mutable` local, the
+    /// value has the target's type, and `op`, when given, is a compound operator the type has.
+    fn assignment(&mut self, w: &Walk, origin: &Origin, place: &Place, op: Option<BinaryOp>, value: ExprId) {
+        let Some(target) = w.owner.locals.get(place.local as usize).cloned() else {
+            self.wrong(w, origin.clone(), format!("assignment to local {}, out of range ({} locals)", place.local, w.owner.locals.len()));
+            return;
+        };
+        if !w.owner.mutable.get(place.local as usize).copied().unwrap_or(false) {
+            self.wrong(w, origin.clone(), format!("assignment to local {}, which is not `mutable`", place.local));
+        }
+        if !place.path.is_empty() {
+            self.wrong(w, origin.clone(), format!("a field of local {} of type {target}, which has no fields", place.local));
+            return;
+        }
+        match op {
+            None => self.want(w, value, &target, "the value of an assignment"),
+            Some(op) => {
+                let result = self.ty(value).and_then(|v| Typing::compound(op, &target, v));
+                if self.ty(value).is_some() && result.as_ref() != Some(&target) {
+                    self.wrong(w, origin.clone(), format!("`{op:?}` does not apply to a {target} target and this value"));
+                }
+            }
+        }
     }
 
     /// The recorded type `got` of a digital form must be `want`, the type its form gives its

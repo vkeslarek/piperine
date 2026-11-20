@@ -29,7 +29,7 @@ impl Design {
     }
 
     fn local(name: &str, ty: ValueType) -> Local {
-        Local { name: name.to_string(), ty }
+        Local { name: name.to_string(), ty, mutable: false }
     }
 
     /// An empty body `Top`, placed as the design.

@@ -37,7 +37,7 @@ impl Elaboration<'_, '_> {
                 let name = self.design.decl_data(param).name.as_ref().map_or_else(String::new, |n| n.text.clone());
                 let is = scope.locals.len() as u32;
                 for (suffix, ty) in [("is", ValueType::Bool), ("val", payload)] {
-                    let local = Local { name: format!("{name}.{suffix}"), ty: flags.next().unwrap_or(Flag::Plain).wrap(ty) };
+                    let local = Local { name: format!("{name}.{suffix}"), ty: flags.next().unwrap_or(Flag::Plain).wrap(ty), mutable: false };
                     scope.locals.push(local.clone());
                     params.push(local);
                 }

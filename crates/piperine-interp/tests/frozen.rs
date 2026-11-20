@@ -9,8 +9,8 @@ use std::sync::Arc;
 use piperine_interp::Interpreter;
 use piperine_ir::{
     Addend, AnalysisKind, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Child, EmitField, Env, Event, EventSource, Expr, Hoisted,
-    Inflow, InstanceSpec, Ir, LevelPart, IrBuilder, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, QuantityRole, Reach, ReachedItem, Site, Stmt, Stream,
-    StreamField, Terminal, ValueType,
+    Inflow, InstanceSpec, Ir, LevelPart, IrBuilder, Local, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, Place, QuantityRole, Reach, ReachedItem, Site, Stmt, Stream,
+    StreamField, StmtId, Terminal, ValueType,
 };
 use piperine_ir::Method as M;
 
@@ -600,4 +600,33 @@ fn an_analog_body_without_new_forms_still_runs_on_the_interpreter() {
     assert_eq!(ir.check(), vec![], "the design itself is well formed");
     let interpreter = Interpreter::new(Arc::new(ir)).expect("a body of the M1 subset is accepted");
     assert!(interpreter.module(resistor).is_some(), "the resistor has a module");
+}
+
+/// Designs that hold one form of `composite-values`, each refused by name (R1).
+struct Composite;
+
+impl Composite {
+    /// The design whose `analog` block runs what `write` returns (with its locals) and then
+    /// contributes `1.0`; `Structured::refused` names the forms the interpreter refuses it for.
+    fn refused(write: impl FnOnce(&mut IrBuilder) -> (Vec<Local>, Vec<StmtId>)) -> Vec<String> {
+        let ir = Switching::ir(BranchKind::Flow, |b| {
+            let (locals, mut analog) = write(b);
+            analog.push(Switching::contribute(b, QuantityRole::Flow, 1.0));
+            Written { analog, locals, ..Written::default() }
+        });
+        Structured::refused(ir)
+    }
+}
+
+#[test]
+fn each_composite_values_form_is_refused_by_name() {
+    // `let mut x = 0.0; x = 1.0;` (T2)
+    let assignment = Composite::refused(|b| {
+        let (zero, one) = (Switching::ex(b).real(0.0), Switching::ex(b).real(1.0));
+        let declare = b.stmt(Stmt::Let { local: 0, init: zero });
+        let set = b.stmt(Stmt::Assign { place: Place { local: 0, path: vec![] }, op: None, value: one });
+        (vec![Local { name: "x".into(), ty: ValueType::F64, mutable: true }], vec![declare, set])
+    });
+    assert_eq!(assignment, ["an assignment"]);
+
 }

@@ -78,7 +78,7 @@ impl Models {
         });
         let at = |line: u32| Origin { file: "hold.msl".into(), line, col: 1 };
         let port = |name: &str| BodyNode { name: name.into(), nature: el, role: NodeRole::Port, init: None, origin: at(1) };
-        let local = |name: &str| Local { name: name.into(), ty: ValueType::F64 };
+        let local = |name: &str| Local { name: name.into(), ty: ValueType::F64, mutable: false };
         let body = b.body(BodySpec {
             name: "Hold".into(),
             origin: at(1),

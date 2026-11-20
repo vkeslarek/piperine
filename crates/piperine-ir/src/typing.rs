@@ -69,6 +69,17 @@ impl Typing {
         Some(Typing::flag(base, flagged))
     }
 
+    /// `target op= value` (§1.5.12): Rust has a compound form for the arithmetic, bitwise and
+    /// shift operators only, never for a comparison or `&&`/`||`. The type is what `op` gives the
+    /// two types; the assignment holds when it is the target's own.
+    pub(crate) fn compound(op: BinaryOp, target: &ValueType, value: &ValueType) -> Option<ValueType> {
+        let has_compound_form = matches!(
+            op,
+            BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem | BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr
+        );
+        if has_compound_form { Typing::binary(op, target, value) } else { None }
+    }
+
     pub(crate) fn unary(op: UnaryOp, t: &ValueType) -> Option<ValueType> {
         let base = Typing::base(t);
         let fits = match op {

@@ -122,7 +122,7 @@ impl Row {
             origin: Self::origin(),
         };
         let port = |name: &str| BodyNode { name: name.into(), nature: el, role: NodeRole::Port, init: None, origin: Self::origin() };
-        let local = |name: &str| Local { name: name.into(), ty: ValueType::F64 };
+        let local = |name: &str| Local { name: name.into(), ty: ValueType::F64, mutable: false };
         let site = |name: &str| Site { name: name.into(), origin: Self::origin(), enabled: None };
         let body = b.body(BodySpec {
             name: "Row".into(),
@@ -159,9 +159,9 @@ impl Row {
         b.function(FunctionSpec {
             name: "identity".into(),
             origin: Self::origin(),
-            params: vec![Local { name: "x".into(), ty: ValueType::F64 }],
+            params: vec![Local { name: "x".into(), ty: ValueType::F64, mutable: false }],
             ret: ValueType::F64,
-            locals: vec![Local { name: "x".into(), ty: ValueType::F64 }],
+            locals: vec![Local { name: "x".into(), ty: ValueType::F64, mutable: false }],
             body: x,
         })
     }
@@ -462,7 +462,7 @@ fn a_doubling_call_chain_is_walked_once_per_signature() {
     // 25 functions: `f24(x) = x`, `f_i(x) = f_{i+1}(x) + f_{i+1}(x)`, `f0` called once from the
     // addend: 2^25 call paths, one per distinct (function, argument) pair to walk.
     let ir = Row::ir(|b| {
-        let x = Local { name: "x".into(), ty: ValueType::F64 };
+        let x = Local { name: "x".into(), ty: ValueType::F64, mutable: false };
         let function = |b: &mut IrBuilder, name: String, body: ExprId| {
             b.function(FunctionSpec {
                 name,

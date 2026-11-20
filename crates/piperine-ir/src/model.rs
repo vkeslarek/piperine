@@ -354,6 +354,10 @@ pub struct Inflow {
 pub struct Local {
     pub name: String,
     pub ty: ValueType,
+    /// Whether the source wrote `let mut` (§1.5.12): only a mutable local is the target of a
+    /// `Stmt::Assign`. A function parameter and a loop variable are never mutable.
+    #[serde(default)]
+    pub mutable: bool,
 }
 
 /// An authored placement inside a body (the tree the device author wrote).
@@ -469,6 +473,34 @@ pub enum Expr {
     LevelCast { expr: ExprId, to: ValueType, tags: Option<Vec<i128>> },
 }
 
+impl Expr {
+    /// The expressions the form evaluates directly, in evaluation order: not the statements of a
+    /// block (`Expr::statements`).
+    pub fn operands(&self) -> Vec<ExprId> {
+        match self {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown => Vec::new(),
+            Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::ParamPrevious(_) | Expr::Derivative(_) | Expr::Fired(_) => Vec::new(),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::LevelCast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => vec![*expr],
+            Expr::Binary { lhs: a, rhs: b, .. } | Expr::KnownOr { value: a, default: b } | Expr::Unwrap { is: a, value: b, .. } | Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => vec![*a, *b],
+            Expr::If { cond, then, otherwise } => vec![*cond, *then, *otherwise],
+            Expr::Block { value, .. } => value.iter().copied().collect(),
+            Expr::Call { args, .. } | Expr::Math { args, .. } => args.clone(),
+            Expr::Closure { body, .. } => vec![*body],
+            Expr::Method { receiver, args, .. } => [*receiver].into_iter().chain(args.iter().copied()).collect(),
+            Expr::Limit { x, f, seed, .. } => [*x, *f].into_iter().chain(*seed).collect(),
+            Expr::Stim { mag, phase, .. } => [*mag].into_iter().chain(*phase).collect(),
+        }
+    }
+
+    /// The statements the form runs: a block's; none for any other form.
+    pub fn statements(&self) -> &[StmtId] {
+        match self {
+            Expr::Block { stmts, .. } => stmts,
+            _ => &[],
+        }
+    }
+}
+
 /// Which half of the `Option<bool>` of `x.level(k)` an `Expr::Level` reads.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LevelPart {
@@ -494,6 +526,22 @@ pub enum Stmt {
     /// step whose solution did not execute the call (`when` false) is capped by nothing
     /// (§14.10.2). `None` for an unconditional call.
     BoundStep { site: u32, value: ExprId, when: Option<ExprId> },
+    /// `place = value;`, or `place op= value;` when `op` is set (§1.5.12): the target is a place
+    /// of a `mutable` local. Not an ABI statement: it writes a local, never the outside.
+    Assign { place: Place, op: Option<BinaryOp>, value: ExprId },
+}
+
+/// The target of an assignment: a local and the projections that reach inside it (`s.f`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Place {
+    pub local: u32,
+    pub path: Vec<Projection>,
+}
+
+/// One step into a value from a place: a field of a struct or a tuple, by index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Projection {
+    Field(u32),
 }
 
 impl Stmt {
@@ -503,6 +551,7 @@ impl Stmt {
         match self {
             Stmt::Let { init, .. } => vec![*init],
             Stmt::Expr(e) => vec![*e],
+            Stmt::Assign { value, .. } => vec![*value],
             Stmt::Contribute { addends, .. } => addends.iter().map(|a| a.value).collect(),
             Stmt::Commit { value, after, .. } => [*value].into_iter().chain(*after).collect(),
             Stmt::BoundStep { value, when, .. } => [*value].into_iter().chain(*when).collect(),

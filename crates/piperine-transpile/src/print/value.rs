@@ -1120,6 +1120,7 @@ impl<'a> ValuePrinter<'a> {
                     origin: addends.first().map_or_else(|| self.origin.clone(), |a| self.ir.expr_origin(a.value).clone()),
                 }),
             },
+            Stmt::Assign { value, .. } => Err(self.unsupported(*value, "an assignment")),
             Stmt::BoundStep { value, .. } => Err(self.unsupported(*value, "`bound_step` outside the top level of the `analog` block")),
             Stmt::Emit { stream, fields } => self.emit(s, *stream, fields),
             Stmt::Commit { carrier, value, after } => {
@@ -1376,7 +1377,7 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
     ) -> FunctionId {
         let mut x = Dx::new(b, "dpwm.msl", 1, 1);
         let body = body(&mut x);
-        let locals: Vec<Local> = params.iter().map(|(n, t)| Local { name: (*n).to_string(), ty: t.clone() }).collect();
+        let locals: Vec<Local> = params.iter().map(|(n, t)| Local { name: (*n).to_string(), ty: t.clone(), mutable: false }).collect();
         b.function(FunctionSpec {
             name: name.into(),
             origin: Origin { file: "dpwm.msl".into(), line: 1, col: 1 },

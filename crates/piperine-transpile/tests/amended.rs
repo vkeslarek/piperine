@@ -190,7 +190,7 @@ fn hoisted(b: &mut IrBuilder, name: &str, extra: Option<&str>) -> BodyId {
     let bind = x.let_(0, level);
     let local = x.local(0, digital::Ty::flagged(BIT));
     let commit = x.commit(3, local, None);
-    let locals = vec![Local { name: "match$0".into(), ty: digital::Ty::flagged(BIT) }];
+    let locals = vec![Local { name: "match$0".into(), ty: digital::Ty::flagged(BIT), mutable: false }];
     Buck::reaction(b, body, vec![up], vec![bind, commit], locals, F, 7);
     body
 }

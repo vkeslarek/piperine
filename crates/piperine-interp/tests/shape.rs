@@ -55,7 +55,7 @@ impl Odd {
             branches: vec![],
             limits: vec![],
             stims: vec![],
-            locals: vec![piperine_ir::Local { name: "x".into(), ty: piperine_ir::ValueType::F64 }],
+            locals: vec![piperine_ir::Local { name: "x".into(), ty: piperine_ir::ValueType::F64, mutable: false }],
             analog: Some(vec![let_x]),
             children: vec![],
         });

@@ -32,8 +32,13 @@
 //!
 //! Locals are bound by scope, as `Ir::check` reads them: a `let` until its block ends, a
 //! closure's parameters in its body. The walk assumes an IR that passes `Ir::check`, which names every form the walk cannot give
-//! a meaning to (a local read before its `let`, a recursive call, a cycle); on an IR that fails
+//! a meaning to (a local read before its `let`, a cycle); on an IR that fails
 //! it the walk panics with the origin, never answers a default.
+//!
+//! Mutation (`control.rs`) stays inside the finite lattice: an assignment joins the assigned
+//! value (and the conditions it sits under) into the local's, so a local only grows.
+
+mod control;
 
 use std::collections::{BTreeSet, HashMap};
 use std::sync::OnceLock;
@@ -161,8 +166,8 @@ impl<'a> Body<'a> {
     }
 
     /// Whether `target` takes a decision on a value that may be unknown, through locals and
-    /// function calls: an `if` whose condition is `Flagged`, which is also what a `match` and a
-    /// short-circuit operand over such a value lower to (§3.3.3). The commits and records of a
+    /// function calls: an `if` or a `while` whose condition is `Flagged`, which is also what a
+    /// `match` and a short-circuit operand over such a value lower to (§3.3.3). The commits and records of a
     /// reaction that does are joined across the paths the decision opens.
     pub fn decides_on_unknown(&self, target: Target) -> bool {
         self.sources_of(target).unknown_control
@@ -351,11 +356,14 @@ struct Scope {
     in_body: bool,
     locals: Vec<Option<Value>>,
     memo: HashMap<ExprId, Value>,
+    /// How many conditions of `Walk::enclosing` held when this owner's walk began: an assignment
+    /// reads only the conditions inside the owner.
+    enclosed_from: usize,
 }
 
 impl Scope {
     fn new(owner: String, in_body: bool, locals: usize) -> Self {
-        Scope { owner, in_body, locals: vec![None; locals], memo: HashMap::new() }
+        Scope { owner, in_body, locals: vec![None; locals], memo: HashMap::new(), enclosed_from: 0 }
     }
 }
 
@@ -386,6 +394,8 @@ enum Task {
     Restore(Vec<Option<Value>>),
     /// A callee's body has been walked (its value on the stack): leave its scope.
     Return { at: ExprId, function: FunctionId, args: Vec<Value> },
+    /// The value of an assignment is on the stack: join it into the local.
+    Assign { local: u32, op: Option<BinaryOp>, at: ExprId },
 }
 
 /// One abstract walk of a body, and of the functions it calls. The walk is iterative (an
@@ -652,13 +662,7 @@ impl<'a> Walk<'a> {
                         }
                     }
                 }
-                Task::Restore(locals) => {
-                    let scope = self.scope();
-                    if scope.locals != locals {
-                        scope.memo.clear();
-                        scope.locals = locals;
-                    }
-                }
+                Task::Restore(outside) => self.restore(outside),
                 Task::Return { at, function, args } => {
                     let callee = self.pop();
                     self.scopes.pop();
@@ -666,6 +670,7 @@ impl<'a> Walk<'a> {
                     self.called(at, &args, &callee);
                     self.returns.insert((function, args), callee);
                 }
+                Task::Assign { local, op, at } => self.assign(local, op, at),
             }
             // `next` holds the follow-up tasks in evaluation order.
             stack.extend(next.drain(..).rev());
@@ -677,6 +682,7 @@ impl<'a> Walk<'a> {
         match &ir.stmts[id.index()] {
             Stmt::Let { local, init } => next.extend([Task::Expr(*init), Task::Bind(*local, *init)]),
             Stmt::Expr(e) => next.extend([Task::Expr(*e), Task::Discard]),
+            Stmt::Assign { place, op, value } => next.extend([Task::Expr(*value), Task::Assign { local: place.local, op: *op, at: *value }]),
             Stmt::BoundStep { site, value, when } => {
                 next.extend([Task::Expr(*value), Task::Cap(*site)]);
                 // What decides whether the call runs is read by the same site.
@@ -725,7 +731,10 @@ impl<'a> Walk<'a> {
         if let Some(reads) = &mut self.reads {
             reads.join(&value.sources);
         }
-        self.scope().memo.insert(id, value.clone());
+        // A form that assigns is walked on every visit: a memoized value would hide its effect.
+        if !Walk::assigns(&self.ir.exprs[id.index()].kind) {
+            self.scope().memo.insert(id, value.clone());
+        }
         self.values.push(value);
     }
 
@@ -989,6 +998,7 @@ impl<'a> Walk<'a> {
         for (slot, arg) in callee.locals.iter_mut().zip(&args) {
             *slot = Some(arg.clone());
         }
+        callee.enclosed_from = self.enclosing.len();
         self.calls.push(function);
         self.scopes.push(callee);
         next.extend([Task::Expr(data.body), Task::Return { at, function, args }]);

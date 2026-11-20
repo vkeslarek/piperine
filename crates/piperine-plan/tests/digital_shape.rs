@@ -837,7 +837,7 @@ impl Merging {
         let en = x.local(0, flagged.clone());
         let (yes, no) = (x.boolean(true), x.boolean(false));
         let decision = x.if_(en, yes, no, flagged.clone());
-        let local = Local { name: "en".into(), ty: flagged.clone() };
+        let local = Local { name: "en".into(), ty: flagged.clone(), mutable: false };
         let pick = b.function(FunctionSpec {
             name: "pick".into(),
             origin: Buck::origin(Merging::F, 5, 1),

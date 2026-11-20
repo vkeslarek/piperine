@@ -148,7 +148,7 @@ impl Elaboration<'_, '_> {
             };
             let local = scope.locals.len() as u32;
             let ty = self.type_of(value);
-            scope.locals.push(piperine_ir::Local { name: format!("{name}.{param_name}"), ty });
+            scope.locals.push(piperine_ir::Local { name: format!("{name}.{param_name}"), ty, mutable: false });
             scope.local_index.insert(*param, local);
             out.push(self.stmt(Stmt::Let { local, init: value }));
         }

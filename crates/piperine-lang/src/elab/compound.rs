@@ -100,8 +100,8 @@ impl Elaboration<'_, '_> {
             let k = Self::match_locals(scope);
             let (is_ty, val_ty) = (self.type_of(pair.is), self.type_of(pair.val));
             let is = scope.locals.len() as u32;
-            scope.locals.push(Local { name: format!("match${k}.is"), ty: is_ty.clone() });
-            scope.locals.push(Local { name: format!("match${k}.val"), ty: val_ty.clone() });
+            scope.locals.push(Local { name: format!("match${k}.is"), ty: is_ty.clone(), mutable: false });
+            scope.locals.push(Local { name: format!("match${k}.val"), ty: val_ty.clone(), mutable: false });
             let first = self.stmt(Stmt::Let { local: is, init: pair.is });
             let second = self.stmt(Stmt::Let { local: is + 1, init: pair.val });
             (Subject::Pair { is: (is, is_ty), val: (is + 1, val_ty) }, Some(vec![first, second]))
@@ -112,7 +112,7 @@ impl Elaboration<'_, '_> {
             let ty = self.type_of(lowered);
             let index = scope.locals.len() as u32;
             let name = format!("match${}", scope.locals.iter().filter(|l| l.name.starts_with("match$")).count());
-            scope.locals.push(Local { name, ty: ty.clone() });
+            scope.locals.push(Local { name, ty: ty.clone(), mutable: false });
             (Subject::Local(index, ty), Some(vec![self.stmt(Stmt::Let { local: index, init: lowered })]))
         };
         let chain = self.arms_chain(scope, scrutinee, &subject, arms, &base, &origin);
@@ -819,8 +819,8 @@ impl Elaboration<'_, '_> {
         let name = self.design.decl_data(binding).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let Some(pair) = self.lower_option(scope, init) else { return false };
         let is = scope.locals.len() as u32;
-        scope.locals.push(Local { name: format!("{name}.is"), ty: self.type_of(pair.is) });
-        scope.locals.push(Local { name: format!("{name}.val"), ty: self.type_of(pair.val) });
+        scope.locals.push(Local { name: format!("{name}.is"), ty: self.type_of(pair.is), mutable: false });
+        scope.locals.push(Local { name: format!("{name}.val"), ty: self.type_of(pair.val), mutable: false });
         out.push(self.stmt(Stmt::Let { local: is, init: pair.is }));
         out.push(self.stmt(Stmt::Let { local: is + 1, init: pair.val }));
         scope.options.insert(binding, (is, is + 1));

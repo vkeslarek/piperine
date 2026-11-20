@@ -24,7 +24,7 @@ pub use ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, S
 pub use model::{
     Addend, AnalysisKind, BinaryOp, BodyData, BodyNode, Branch, BranchKind, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Env, Event, EventSource, Expr,
     ExprData, FunctionData, Hoisted, InstanceData, Inflow, Merge, Reach, ReachedItem, Ir, LevelPart, Local, MathFn, Method, NatureData, NetData, NodeAlias, NodeData, NodeRef,
-    NodeRole, Operator, Origin, Param, Quantity, QuantityRole, Reaction, Site, Stmt, Stream, StreamField, Terminal, UnaryOp,
+    NodeRole, Operator, Origin, Param, Place, Projection, Quantity, QuantityRole, Reaction, Site, Stmt, Stream, StreamField, Terminal, UnaryOp,
     ValueType,
 };
 pub use real::Real;
