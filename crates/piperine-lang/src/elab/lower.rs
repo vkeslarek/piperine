@@ -355,11 +355,8 @@ impl Elaboration<'_, '_> {
                 self.unsupported(scope.file, span, "a placement used as a value");
                 None
             }
-            // Typed by `types::intrinsic` (T3); lowered by its §22.1 contract in T28 and T29.
-            (_, Some(Callee::Intrinsic(_))) => {
-                self.unsupported(scope.file, span, "a function of §22.1 over `Repr`");
-                None
-            }
+            // Typed by `types::intrinsic`, lowered by its §22.1 contract (`intrinsics.rs`).
+            (_, Some(Callee::Intrinsic(intrinsic))) => self.lower_intrinsic(scope, expr, intrinsic, args, ty, origin),
             (_, None) => {
                 self.unsupported(scope.file, span, "a call the type checker did not resolve");
                 None
@@ -542,7 +539,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The literal `Unknown` of type `ty`: a value with every level unknown, so flagged (§3.3.1).
-    fn unknown_expr(&mut self, ty: ValueType, origin: Origin) -> LoweredExpr {
+    pub(super) fn unknown_expr(&mut self, ty: ValueType, origin: Origin) -> LoweredExpr {
         self.emit(Expr::Unknown, Flag::Flagged.wrap(ty), origin)
     }
 

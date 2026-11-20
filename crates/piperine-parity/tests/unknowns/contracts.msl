@@ -1,0 +1,39 @@
+//! `merge`, `same` and `cast` by the contract of §22.1.2 to §22.1.4 (US-03). `a` holds 5, `b`
+//! holds 6, `u` is never driven. A 1 GHz oscillator gives the rising edges the probe runs on.
+
+/// A free-running oscillator, its first change at half a period.
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(Repr, PartialEq)]
+enum Mode { Idle, Run, Halt }
+
+/// Merges and compares, one record per function.
+module Probe(in clk: Bit, in a: Bit<u8>, in b: Bit<u8>, in u: Bit<u8>, in t: Bit, in f: Bit) {}
+digital for Probe {
+    on clk.rise() {
+        emit!("merge", equal = merge(a, a), differ = merge(a, b), swapped = merge(b, a), with_unknown = merge(a, u),
+              of_itself = merge(u, u), bits = merge(t, f), same_bits = merge(t, t), commutes = same(merge(a, b), merge(b, a)));
+        emit!("same", equal = same(a, a), differ = same(a, b), both_unknown = same(u, u), one_unknown = same(a, u),
+              eq_unknown = u == u, flags = same(t, f));
+    }
+}
+
+/// `cast` keeps each level and its flag; a tag with no variant is `Unknown` (rule 2).
+module Casts(in clk: Bit, in a: Bit<u8>, in u: Bit<u8>, in code: Bit<u2>, in bad: Bit<u2>) {}
+digital for Casts {
+    on clk.rise() {
+        emit!("cast", signed = cast::<u8, i8>(a), unsigned = cast::<i8, u8>(cast::<u8, i8>(a)), unknown = cast::<u8, i8>(u),
+              mode = same(cast::<u2, Mode>(code), Mode::Run), missing = cast::<u2, Mode>(bad).known_or(Mode::Idle) == Mode::Idle);
+    }
+}
+
+module ContractsBench() {
+    signal clk: Bit; signal a: Bit<u8> = 5; signal b: Bit<u8> = 6; signal u: Bit<u8>;
+    signal t: Bit = true; signal f: Bit = false; signal code: Bit<u2> = 1; signal bad: Bit<u2> = 3;
+    let osc = Osc(clk) { f: 1G };
+    let probe = Probe(clk, a, b, u, t, f);
+    let casts = Casts(clk, a, u, code, bad);
+}

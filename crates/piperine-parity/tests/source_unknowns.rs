@@ -434,3 +434,70 @@ fn level_with_an_unknown_index_merges_every_level() {
     );
 }
 
+#[test]
+fn merge_of_equal_known_values_is_that_value() {
+    // US-03 AC 1, §22.1.2 rule 1: `merge(5, 5)` is 5 and `merge(true, true)` is true, known
+    let (_, records) = records_of("contracts.msl", "ContractsBench");
+    assert_eq!(named(&records, "merge", "equal"), Field::Int(5));
+    assert_eq!(named(&records, "merge", "same_bits"), Field::Bool(true));
+}
+
+#[test]
+fn merge_of_different_values_is_unknown_and_commutative() {
+    // US-03 AC 2, §22.1.2 rules 1 and 2: `merge(5, 6)` and `merge(6, 5)` differ in a level, so
+    // both are unknown, and `merge(true, false)` is unknown; they have the same levels and flags
+    let (_, records) = records_of("contracts.msl", "ContractsBench");
+    assert_eq!(named(&records, "merge", "differ"), Field::Unknown);
+    assert_eq!(named(&records, "merge", "swapped"), Field::Unknown);
+    assert_eq!(named(&records, "merge", "bits"), Field::Unknown);
+    assert_eq!(named(&records, "merge", "commutes"), Field::Bool(true));
+}
+
+#[test]
+fn merge_of_a_value_with_itself_is_that_value() {
+    // US-03 edge case, §22.1.2 rule 2: `merge(a, a)` has the levels and flags of `a`: 5 for a
+    // known `a`, unknown for an unknown one; `merge(5, unknown)` is unknown
+    let (_, records) = records_of("contracts.msl", "ContractsBench");
+    assert_eq!(named(&records, "merge", "equal"), Field::Int(5));
+    assert_eq!(named(&records, "merge", "of_itself"), Field::Unknown);
+    assert_eq!(named(&records, "merge", "with_unknown"), Field::Unknown);
+}
+
+#[test]
+fn same_compares_flags_and_values() {
+    // US-03 AC 3, §22.1.4, §3.3.10: `same` is a known `bool`: equal known values are the same,
+    // different ones are not, two unknown values are the same, a known and an unknown one are
+    // not, and `Unknown == Unknown` is unknown
+    let (_, records) = records_of("contracts.msl", "ContractsBench");
+    assert_eq!(
+        constant_fields(&records, "same"),
+        fields(&[
+            ("equal", Field::Bool(true)),
+            ("differ", Field::Bool(false)),
+            ("both_unknown", Field::Bool(true)),
+            ("one_unknown", Field::Bool(false)),
+            ("eq_unknown", Field::Unknown),
+            ("flags", Field::Bool(false)),
+        ])
+    );
+}
+
+#[test]
+fn cast_keeps_each_level_and_its_flag() {
+    // US-03 AC 4, §22.1.3: 5 as an `i8` is 5, back to a `u8` is 5, an unknown value stays unknown,
+    // and a tag the enum has is its variant (`Mode::Run` is 1)
+    let (_, records) = records_of("contracts.msl", "ContractsBench");
+    assert_eq!(named(&records, "cast", "signed"), Field::Int(5));
+    assert_eq!(named(&records, "cast", "unsigned"), Field::Int(5));
+    assert_eq!(named(&records, "cast", "unknown"), Field::Unknown);
+    assert_eq!(named(&records, "cast", "mode"), Field::Bool(true));
+}
+
+#[test]
+fn cast_to_a_tag_with_no_variant_is_unknown() {
+    // US-03 AC 5, §22.1.3 rule 2: tag 3 has no variant of a three-variant enum, so the cast is
+    // `Unknown` and `known_or` gives the default `Mode::Idle`
+    let (_, records) = records_of("contracts.msl", "ContractsBench");
+    assert_eq!(named(&records, "cast", "missing"), Field::Bool(true));
+}
+

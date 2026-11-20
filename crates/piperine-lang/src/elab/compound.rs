@@ -63,6 +63,11 @@ impl EnumLayout {
         u64::BITS - (v - 1).leading_zeros()
     }
 
+    /// The tag of every variant, in declaration order: the patterns a cast to the enum decodes.
+    pub(super) fn tags(&self) -> Vec<i128> {
+        (0..self.variants.len() as i128).collect()
+    }
+
     /// The tag's IR type; `None` for an enum of one variant.
     pub(super) fn ty(&self) -> Option<ValueType> {
         let width = self.width();
