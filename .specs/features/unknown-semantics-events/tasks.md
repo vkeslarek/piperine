@@ -300,9 +300,9 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `a_settle_commit_is_held_until_it_is_landed`, `a_landed_settle_commit_fires_changed_at_microstep_0`, `a_dropped_settle_commit_never_applies` and `a_settle_commit_with_an_advancing_delay_is_an_ordinary_commit` pass under `**Run instant**`
-- [ ] Code clarity: `SettleCommits` has one purpose and `///` docs on the type, its field and each method, citing §15 S1, S6, S7; no free function
-- [ ] Gate check passes: Quick
+- [x] `a_settle_commit_is_held_until_it_is_landed`, `a_landed_settle_commit_fires_changed_at_microstep_0`, `a_dropped_settle_commit_never_applies` and `a_settle_commit_with_an_advancing_delay_is_an_ordinary_commit` pass under `**Run instant**`
+- [x] Code clarity: `SettleCommits` has one purpose and `///` docs on the type, its field and each method, citing §15 S1, S6, S7; no free function
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -322,9 +322,9 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `a_restore_brings_back_the_held_settle_commits` and `a_restore_takes_back_a_landing` pass under `**Run checkpoint**`
-- [ ] Code clarity: the new field documented; no free function
-- [ ] Gate check passes: Quick
+- [x] `a_restore_brings_back_the_held_settle_commits` and `a_restore_takes_back_a_landing` pass under `**Run checkpoint**`
+- [x] Code clarity: the new field documented; no free function
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -344,9 +344,9 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `a_settle_commit_lands_at_the_next_time_point`, `the_step_after_a_settle_commit_is_exempt_and_restarts`, `an_event_time_before_the_next_time_point_reads_the_old_value`, `a_rejected_step_moves_the_settle_commit` and `a_settle_commit_at_the_stop_time_is_dropped` pass under `**Run prototran**`
-- [ ] Code clarity: the landing is a named method of the protocol (the step loop gains one call, not a block), `///` docs citing S1 to S6; no free function
-- [ ] Gate check passes: Full
+- [x] `a_settle_commit_lands_at_the_next_time_point`, `the_step_after_a_settle_commit_is_exempt_and_restarts`, `an_event_time_before_the_next_time_point_reads_the_old_value`, `a_rejected_step_moves_the_settle_commit` and `a_settle_commit_at_the_stop_time_is_dropped` pass under `**Run prototran**`
+- [x] Code clarity: the landing is a named method of the protocol (the step loop gains one call, not a block), `///` docs citing S1 to S6; no free function
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -366,9 +366,9 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `a_settle_commit_of_a_dc_point_lands_at_the_next_point` and `a_settle_commit_of_the_last_point_is_dropped` pass under `**Run protoop**`
-- [ ] Code clarity: one named method per rule, doc-commented with §15 S6 and §16 O4; no free function
-- [ ] Gate check passes: Full
+- [x] `a_settle_commit_of_a_dc_point_lands_at_the_next_point` and `a_settle_commit_of_the_last_point_is_dropped` pass under `**Run protoop**`
+- [x] Code clarity: one named method per rule, doc-commented with §15 S6 and §16 O4; no free function
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -388,10 +388,11 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `settle_runs_once_per_accepted_time_point`, `settle_does_not_run_at_an_event_time_that_is_not_a_time_point`, `settle_runs_at_the_operating_point_each_dc_point_and_the_last_instant`, `settle_records_follow_every_microstep_of_their_time_point`, `settle_combined_with_an_event_fires_by_rule_1`, `a_time_point_with_no_settle_reaction_adds_no_microstep_and_no_record`, `settle_runs_once_per_time_point_across_a_jump`, `a_probing_settle_reaction_reads_the_time_point_solution` and `settle_in_a_design_with_nothing_analog_runs_at_the_operating_point_and_the_stop` pass under `**Run sourceevents**`
-- [ ] `a_settle_commit_is_read_at_the_next_time_point`, `an_event_time_between_reads_the_value_before_the_settle_commit`, `a_delayed_settle_commit_is_ordinary`, `a_settle_commit_at_the_stop_time_is_dropped_from_source` and `a_settle_reaction_reads_an_event_as_true_only_when_settle_fires_it` pass under `**Run sourceevents**`
-- [ ] Code clarity: test fixtures are methods of a named scenario type; no free test helper
-- [ ] Gate check passes: Full
+- [x] `settle_runs_once_per_accepted_time_point`, `settle_does_not_run_at_an_event_time_that_is_not_a_time_point`, `settle_runs_at_the_operating_point_each_dc_point_and_the_last_instant`, `settle_records_follow_every_microstep_of_their_time_point`, `settle_combined_with_an_event_fires_by_rule_1`, `a_time_point_with_no_settle_reaction_adds_no_microstep_and_no_record`, `settle_runs_once_per_time_point_across_a_jump`, `a_probing_settle_reaction_reads_the_time_point_solution` and `settle_in_a_design_with_nothing_analog_runs_at_the_operating_point_and_the_stop` pass under `**Run sourceevents**`
+- [x] `a_settle_commit_is_read_at_the_next_time_point`, `an_event_time_between_reads_the_value_before_the_settle_commit`, `a_delayed_settle_commit_is_ordinary` and `a_settle_commit_at_the_stop_time_is_dropped_from_source` pass under `**Run sourceevents**`
+- [ ] `a_settle_reaction_reads_an_event_as_true_only_when_settle_fires_it` passes under `**Run sourceevents**` (needs events read as `bool`: moved to T14, Settled B2 (9))
+- [x] Code clarity: test fixtures are methods of a named scenario type; no free test helper
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1015,6 +1016,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** Planning (2026-11-20): the user was away and asked for the most reasonable default on every open point ("always take the most reasonable default and tell later"); the defaults are design.md D1 to D19.
 **Settled B1 (T1 to T6, 2026-11-20, user AFK):** (1) between T1 and T3 the plan and the transpile printer failed loud or planned nothing for `EventSource::Settle` so each commit builds; T2 and T3 replaced them. (2) the interpreter names `settle` among its `amended_forms`. (3) the `SETTLE` pin is the last pin of a body (after the derivative abstol pins), so no existing shape moves. (4) `fired_reactions` and `run_reactions` take a `Phase` (`Microstep` or `Settle`); the two call sites of `tests/reactions.rs` pass `Phase::Microstep`. (5) beyond the tasks: a commit to a RECORD pin in the settle phase is no settle commit and applies as the instant exits (found by the Book buck check, §19 rules 7 and 8; commit `fix(digital-solver): a record from the settle phase is no settle commit`, with its tests). (6) refusal pins superseded by acceptance tests and named in the T5 commit body: the `settle` rows of `types_events`, `types_buck`, `types_subset`, `elab_unlowered`. (7) Book: the cheat card of cheatsheet#5 commits its pulse to `q` (a `Bit`), not to the node `p` the check probes (E0222 otherwise); the buck listing of mixed#13 holds the whole 1217-line output, the page shows lines 1 to 12; tests renamed (`the_clipper_is_refused_for_limexp`, `the_digital_card_runs`, `the_debug_prints_card_is_refused_for_the_analog_trace`, `the_math_methods_and_the_settle_event_run`) and their inventory rows and the GAPS section 11 rows follow (analog#3 and analog~773a3851 re-pointed to L9, mixed#10, mixed~9d07c4b9 and cheatsheet#5 left). (8) prose left stale for T21 and T22 as the task says: the welcome status sentence, analog~773a3851 ("three diagnostics"), the clipper and buck "not compiled yet" sentences, mixed~a6b3f8ed. (9) the buck check holds: no failing `regulated` record from 10 ms to 12 ms (D16 not triggered). (10) commits end with the trailer tasks.md prescribes (Claude Opus 5.5).
+**Settled B2 (T7 to T11, 2026-11-20, user AFK):** (1) `SettleCommits` holds `queue::Pending` plus the REPLACE flag (not `Planned`, which lacks writer and call); it is `pub` because `run_reactions`, a public function, takes it (`&mut SettleCommits`, ninth parameter; the two call sites of `tests/reactions.rs` pass `SettleCommits::default()`). (2) A held commit's `Observation::Commit` reports `due: None` (it has no instant until landed). (3) `Mark` (the journal rewind the owner protocol actually uses) holds the settle commits as well as `Checkpoint` (T8 says Checkpoint only; the protocol restores through `Mark`). (4) `Digital::start_at` keeps the held commits: a sweep point's commits land at the next point's `operating_point` (S6); they are dropped by `Protocol::end_sweep`, called by `DcSolver::solve` unless `followed_by_another_point(true)`, which the api's `Dc` sweep driver passes for every point but the last; a lone operating point, `Ac`, noise and the other analyses that take one therefore drop theirs at its end; a transient's operating point keeps them for the first time point (O4). (5) The transient drops held commits at the end of `transient()` (the stop), so the continuation case of S6 ("unless the transient is continued") is not implemented (G.34 stays open). (6) `Protocol::exempt_next` carries the S3 exemption across a rejected retry and clears it when a step is accepted. (7) `DiscreteSide` gained `land_settle_commits`/`drop_settle_commits` as required methods (stub and `DigitalSide` implement them); `Outcome::settle_boundary` (protocol side) is `Vec<Boundary>`, the adapter moves the analog copy as for `boundary`. (8) The removed test `a_settle_commit_with_no_delay_is_refused` is listed in `solver-abi-integration/removed.txt` (a guard requires it). (9) T11: the criterion `a_settle_reaction_reads_an_event_as_true_only_when_settle_fires_it` cannot pass in T11: it reads `settle` as a `bool` in a reaction body, which the checker refuses (`E0606`) until T12 to T14; it is NOT in `source_events.rs` and is added by T14 with the other event reads (D2). All other 13 T11 tests are in. Source-level tests compare accepted steps with records to one tick (the analog side's own step time and a record's tick round a tick apart). (10) Environment: the shared `/var/tmp/piperine-target-a` was used by other worktrees concurrently; every gate of T7 to T10 was re-run after touching every `.rs` of the worktree (all green); the first B1 root run's `book` failures were a stale `piperine` binary, fixed by rebuilding it.
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 

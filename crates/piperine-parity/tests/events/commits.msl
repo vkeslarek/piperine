@@ -1,0 +1,59 @@
+//! Settle commits from source (§15 S1 to S7): a reaction on `settle` commits a carrier the
+//! analog side reads, and the commit is due at the next time point.
+use buck::dpwm::Osc;
+
+/// An ideal DC source from `p` to ground.
+module Vsrc(p: Electrical) { dc: f64 = 1.0; }
+analog for Vsrc { v(p) +> dc; }
+
+/// A resistance `r` the settle phase sets from the control voltage: an explicit lag of one step.
+module Lag(p: Electrical, n: Electrical, ctl: Electrical, out r: Bit<f64> = 1k) {
+    r0: f64 = 1k;
+}
+digital for Lag { on settle { r <- r0 * (1.0 + v(ctl)); } }
+analog for Lag { i(p, n) +> v(p, n) / r.known_or(r0); }
+
+/// The lagged resistor on a 1 V source: its resistance goes from 1 kOhm to 2 kOhm.
+module LagBench() {
+    signal a: Electrical; signal r: Bit<f64>;
+    let source = Vsrc(a) { dc: 1.0 };
+    let lag = Lag(a, gnd, a, r);
+}
+
+/// Writes the resistance it reads at each rising edge of the clock.
+module Sample(in clk: Bit, in r: Bit<f64>) {}
+digital for Sample { on clk.rise() { emit!("read", r = r.known_or(0.0)); } }
+
+/// The lagged resistor and a clock whose rising edges (0.37 us, 1.11 us, ...) fall between the
+/// time points of a 1 us step.
+module BetweenBench() {
+    signal a: Electrical; signal r: Bit<f64>; signal clk: Bit;
+    let source = Vsrc(a) { dc: 1.0 };
+    let lag = Lag(a, gnd, a, r);
+    let osc = Osc(clk) { f: 1.35M };
+    let sample = Sample(clk, r);
+}
+
+/// The same commit with a delay that advances time: 250 ns.
+module Slow(ctl: Electrical, out r: Bit<f64> = 1k) {}
+digital for Slow { on settle { r <- 2k after 250n; } }
+
+module SlowBench() {
+    signal a: Electrical; signal r: Bit<f64>;
+    let source = Vsrc(a) { dc: 1.0 };
+    let slow = Slow(a, r);
+}
+
+/// Commits only from 2.5 us on, with a record to say it ran.
+module Late(ctl: Electrical, out r: Bit<f64> = 1k) {}
+digital for Late {
+    on settle {
+        if now() > 2.5u { r <- 5k; emit!("committed", t = now()); }
+    }
+}
+
+module LateBench() {
+    signal a: Electrical; signal r: Bit<f64>;
+    let source = Vsrc(a) { dc: 1.0 };
+    let late = Late(a, r);
+}
