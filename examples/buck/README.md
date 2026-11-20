@@ -69,7 +69,7 @@ point (setpoint 0.8 V, Vin 12 V, 6.6 Ω) by `piperine-parity`; the bench scenari
 `Session::drive` and `Session::set_at`:
 
 ```sh
-cargo test -p piperine --test buck_scenarios -- --nocapture   # five families at once; about 25 minutes
+cargo test -p piperine --test buck_scenarios -- --nocapture   # five families at once; about 20 to 30 minutes
 ```
 
 S1 at 3.3 V and S1b are not run there (`GAPS.md` U3).
