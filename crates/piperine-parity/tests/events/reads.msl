@@ -93,3 +93,56 @@ module SettleBench() {
     let osc = Osc(clk) { f: 1.35M };
     let either = Either(clk);
 }
+
+/// `en` rises at 10 ns and `d` toggles at 20, 40, 50, 60 and 70 ns against it: at 20 ns `d`
+/// changes with `en` high and still; at 40 ns with `en` low; at 50 ns with `en` rising; at 60 ns
+/// with `en` high and still; at 70 ns with `en` falling.
+module Hold(out d: Bit = false, out en: Bit = false) {}
+digital for Hold {
+    on at(10n) { en <- true; }
+    on at(20n) { d <- true; }
+    on at(30n) { en <- false; }
+    on at(40n) { d <- false; }
+    on at(50n) { d <- true; en <- true; }
+    on at(60n) { d <- false; }
+    on at(70n) { en <- false; d <- true; }
+}
+
+/// "Data changed while enable held still": a guard that reads an event (§13 rule 9).
+module Held(in d: Bit, in en: Bit) {}
+digital for Held {
+    on d.changed() && en && !en.changed() { emit!("held", t = now()); }
+}
+
+/// The four combinations of `d` and `en` and the guard that reads them.
+module HoldBench() {
+    signal d: Bit; signal en: Bit;
+    let hold = Hold(d, en);
+    let held = Held(d, en);
+}
+
+/// `x` and `y` rise together at 10 ns; `x` falls at 20 ns and `y` follows a microstep later;
+/// `x` rises at 30 ns and `y` follows a microstep later.
+module Pair(out x: Bit = false, out y: Bit = false) {}
+digital for Pair {
+    on at(10n) { x <- true; y <- true; }
+    on at(20n) { x <- false; }
+    on x.fall() { y <- false; }
+    on at(30n) { x <- true; }
+    on x.rise() { y <- true; }
+}
+
+/// A head whose guard reads another carrier's edge: it holds only in the microstep where both
+/// edges happen (§13 rules 1 and 9: the guard reads what the reaction would read, in the
+/// microstep of the head).
+module Joint(in x: Bit, in y: Bit) {}
+digital for Joint {
+    on x.changed() && y.rise() { emit!("joint", t = now()); }
+}
+
+/// The pair and the joint reader.
+module JointBench() {
+    signal x: Bit; signal y: Bit;
+    let pair = Pair(x, y);
+    let joint = Joint(x, y);
+}

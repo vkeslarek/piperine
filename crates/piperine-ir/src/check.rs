@@ -80,6 +80,9 @@ struct Owner {
     derivatives: usize,
     /// The statements of a reaction: `fired` may appear.
     reaction: bool,
+    /// The event whose guard is walked: `fired` of another event may appear there (§13 rule 9),
+    /// never of itself.
+    event: Option<u32>,
     /// A body (probes and params are readable) rather than a function.
     in_body: bool,
     /// The `analog` block of a body: sites and contributions may appear.
@@ -1140,6 +1143,7 @@ impl<'a> Checker<'a> {
                 events: body.events.len(),
                 derivatives: body.derivatives.len(),
                 reaction: false,
+                event: None,
                 in_body: true,
                 analog,
             };
@@ -1182,7 +1186,9 @@ impl<'a> Checker<'a> {
                 }
             }
             for (k, event) in body.events.iter().enumerate() {
-                let mut w = Walk::new(owner(false, format!("body {} event {k}", body.name)), 0);
+                let mut guarded = owner(false, format!("body {} event {k}", body.name));
+                guarded.event = Some(k as u32);
+                let mut w = Walk::new(guarded, 0);
                 match event.source {
                     EventSource::Cross { e, ttol, etol } => {
                         for id in [e].into_iter().chain(ttol).chain(etol) {
@@ -1241,6 +1247,7 @@ impl<'a> Checker<'a> {
                 events: 0,
                 derivatives: 0,
                 reaction: false,
+                event: None,
                 in_body: false,
                 analog: false,
             };
@@ -1823,8 +1830,10 @@ impl<'a> Checker<'a> {
             Expr::Fired(e) => {
                 if first {
                     self.own(w, &origin, ty, &ValueType::Bool);
-                    if !w.owner.reaction {
-                        self.wrong(w, origin, "`fired` outside a reaction".to_string());
+                    if !w.owner.reaction && w.owner.event.is_none() {
+                        self.wrong(w, origin, "`fired` outside a reaction or the guard of an event".to_string());
+                    } else if w.owner.event == Some(*e) {
+                        self.wrong(w, origin, format!("the guard of event {e} reads its own `fired`"));
                     } else if *e as usize >= w.owner.events {
                         self.wrong(w, origin, format!("`fired` of event {e}, out of range ({} events)", w.owner.events));
                     }

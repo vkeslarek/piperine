@@ -982,3 +982,47 @@ fn a_body_without_settle_has_no_settle_pin() {
         assert!(!has_pin(plan.shape().shape(), "settle"));
     }
 }
+
+/// A body whose second event is guarded by whether the first fired (§13 rule 9): an `in en: Bit`,
+/// an `in d: Bit` and an `out q: Bit`; `on d.changed() && !en.changed() { q <- true; }`.
+struct Guarding;
+
+impl Guarding {
+    const F: &'static str = "guarding.msl";
+
+    fn body(b: &mut IrBuilder) -> BodyId {
+        let body = b.body(Buck::spec("Guarding", Guarding::F, 1));
+        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, Guarding::F, 1, 14));
+        b.carrier(body, Buck::carrier("d", ValueType::Bool, CarrierRole::In, None, Guarding::F, 1, 28));
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Guarding::F, 1, 40));
+        let en_changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(Guarding::F, 2, 8) });
+        let mut x = Dx::new(b, Guarding::F, 2, 30);
+        let still = x.b.expr(piperine_ir::Expr::Fired(en_changed), ValueType::Bool, x.origin());
+        let guard = x.un(piperine_ir::UnaryOp::Not, still, ValueType::Bool);
+        let d_changed = b.event(body, Event { source: EventSource::Changed(1), guard: Some(guard), origin: Buck::origin(Guarding::F, 2, 8) });
+        let yes = Dx::new(b, Guarding::F, 3, 14).boolean(true);
+        let commit = Dx::new(b, Guarding::F, 3, 9).commit(2, yes, None);
+        Buck::reaction(b, body, vec![d_changed], vec![commit], vec![], Guarding::F, 2);
+        body
+    }
+}
+
+#[test]
+fn an_event_function_reading_another_event_runs_after_it() {
+    // §13 rule 9, design D8: the function of the guarded event reads the `CHANGED` byte of the
+    // other event's pin (`Source::Fired(0)`), which the other event's function writes, so the
+    // dependency of abi.md D runs `event:0` first; the shape validates (no cycle)
+    let (ir, body) = Alone::design(Guarding::body);
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (first, second) = (Find::pin(shape, "event:0"), Find::pin(shape, "event:1"));
+    let (_, writes, _) = Find::function(shape, "event:0");
+    assert_eq!(writes, [pin(first, part::CHANGED)], "event 0 writes its own pin");
+    let (reads, writes, _) = Find::function(shape, "event:1");
+    assert!(reads.contains(&pin(first, part::CHANGED)), "event 1 reads event 0's pin: {reads:?}");
+    assert_eq!(writes, [pin(second, part::CHANGED)]);
+    assert!(plan.functions()[1].reads.contains(&Source::Fired(0)), "{:?}", plan.functions()[1].reads);
+    let names = Find::function_names(shape);
+    assert!(names.iter().position(|n| n == "event:0") < names.iter().position(|n| n == "event:1"), "{names:?}");
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+}

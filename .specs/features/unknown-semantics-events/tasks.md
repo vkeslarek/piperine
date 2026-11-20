@@ -480,10 +480,10 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `a_guard_reading_events_fires_only_when_d_changed_with_en_high_and_still` and `a_guard_reads_what_the_reaction_would_read` pass under `**Run sourceevents**`
-- [ ] `an_event_function_reading_another_event_runs_after_it` passes under `**Run planshape**`
-- [ ] Code clarity: `///` docs cite §13 rule 9; no free function
-- [ ] Gate check passes: Full
+- [x] `a_guard_reading_events_fires_only_when_d_changed_with_en_high_and_still` and `a_guard_reads_what_the_reaction_would_read` pass under `**Run sourceevents**`
+- [x] `an_event_function_reading_another_event_runs_after_it` passes under `**Run planshape**`
+- [x] Code clarity: `///` docs cite §13 rule 9; no free function
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

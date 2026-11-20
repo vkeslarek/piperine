@@ -383,3 +383,22 @@ fn a_settle_reaction_reads_an_event_as_true_only_when_settle_fires_it() {
     }
     assert!(reads.iter().any(|(_, settle, _)| *settle) && reads.iter().any(|(_, _, edge)| *edge), "both kinds of instant occur: {reads:?}");
 }
+
+#[test]
+fn a_guard_reading_events_fires_only_when_d_changed_with_en_high_and_still() {
+    // §13 rule 9 (UE-02 AC 1): `on d.changed() && en && !en.changed()` fires in a microstep where
+    // `d` changed, `en` is true and `en` did not change: 20 ns (`en` high, still) and 60 ns only.
+    // Not at 40 ns (`en` low), 50 ns (`en` rises with `d`) nor 70 ns (`en` falls with `d`)
+    let run = Scenario::of("reads.msl", "HoldBench").transient(90e-9, 10e-9);
+    assert_eq!(run.instants(AnalysisKind::Transient, "held"), [20 * NS, 60 * NS]);
+}
+
+#[test]
+fn a_guard_reads_what_the_reaction_would_read() {
+    // §13 rules 1 and 9 (UE-02 AC 2): the guard of `x.changed() && y.rise()` is read in the
+    // microstep of the head. `x` and `y` rise in one microstep at 10 ns: it fires. At 20 ns and
+    // 30 ns `y` follows `x` one microstep later: `y.rise()` reads false where `x` changed and
+    // `x.changed()` is false where `y` rises, so it never fires
+    let run = Scenario::of("reads.msl", "JointBench").transient(50e-9, 10e-9);
+    assert_eq!(run.instants(AnalysisKind::Transient, "joint"), [10 * NS]);
+}
