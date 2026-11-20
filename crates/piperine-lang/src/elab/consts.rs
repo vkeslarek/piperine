@@ -214,6 +214,8 @@ impl<'d, 't> ConstEval<'d, 't> {
         self.types.ty(expr).and_then(Width::of)
     }
 
+    /// A literal as the constant it is: a number of its type's width, a bool, a real. `Unknown`
+    /// folds to `Folded::Unknown`.
     fn literal(&self, expr: ExprId, kind: &LitKind) -> Result<Folded, ConstFault> {
         let known = |value: Constant| Ok(Folded::Known(value));
         match kind {
@@ -237,6 +239,8 @@ impl<'d, 't> ConstEval<'d, 't> {
         }
     }
 
+    /// A name as the constant it is bound to (a `const`, a param, a binding of the call), or the
+    /// level count of a `T::WIDTH`; a built-in name is dynamic.
     fn path(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Folded, ConstFault> {
         // `T::WIDTH`: the level count of `T`, which the checker recorded (§2, §22.1)
         if let Some(levels) = self.types.width(expr) {
@@ -263,6 +267,8 @@ impl<'d, 't> ConstEval<'d, 't> {
         }
     }
 
+    /// A unary operator over `operand`: unknown when the operand is (§3.3.2), else wrapped to the
+    /// width of an integer result.
     fn unary(&mut self, expr: ExprId, op: UnOp, operand: ExprId, bindings: &Bindings) -> Result<Folded, ConstFault> {
         // §3.3.2: an operator of an unknown value is unknown
         let Folded::Known(value) = self.folded(operand, bindings)? else {
@@ -282,6 +288,8 @@ impl<'d, 't> ConstEval<'d, 't> {
         }
     }
 
+    /// A binary operator over `lhs` and `rhs`: `&&` and `||` stop at a known left operand that
+    /// decides; an unknown operand makes the result unknown unless the operator decides (§3.3.2).
     fn binary(&mut self, expr: ExprId, op: BinOp, lhs: ExprId, rhs: ExprId, bindings: &Bindings) -> Result<Folded, ConstFault> {
         let left = self.folded(lhs, bindings)?;
         // `&&` and `||` short-circuit on a known left operand, as in the source: the right side is
@@ -434,6 +442,7 @@ impl<'d, 't> ConstEval<'d, 't> {
         Ok(Folded::Known(converted))
     }
 
+    /// An `if` as a value: a known condition takes its arm, an unknown one merges both (§3.3.3).
     fn conditional(&mut self, expr: ExprId, cond: ExprId, then: &BlockNode, else_: Option<ExprId>, bindings: &Bindings) -> Result<Folded, ConstFault> {
         let Folded::Known(condition) = self.folded(cond, bindings)? else {
             return self.merged_arms(expr, then, else_, bindings);

@@ -217,6 +217,7 @@ impl ReadSet {
         }));
     }
 
+    /// Adds every source `other` reads to this set.
     pub(crate) fn union(&mut self, other: &ReadSet) {
         self.0.extend(other.0.iter().copied());
     }
