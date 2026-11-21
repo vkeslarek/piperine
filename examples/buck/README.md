@@ -147,6 +147,6 @@ cargo test -p piperine-cli --test buck --test book_buck
 cargo test -p piperine --test buck_scenarios --test book_buck
 ```
 
-They take about half an hour in a debug build (`buck_scenarios` alone 25 to 90 minutes, and six of its tests judge
-the model against SPEC and are red today). To check that they still compile without running them, add
+They take about half an hour in a debug build (`buck_scenarios` alone 25 to 90 minutes; all of its 61 tests
+passed on the last on-demand run). To check that they still compile without running them, add
 `--no-run` to each line.
