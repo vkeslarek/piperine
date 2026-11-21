@@ -16,8 +16,8 @@ digital for Rows {
         let add = |x: u8, y: u8| x + y;
         a <- add(3, 4);
         // A closure captures by value, where it is written: the later assignment does not reach it.
-        let mut k = 3u8;
-        let plus_k = move |x: u8| x + k;
+        let k = 3u8;
+        let plus_k = |x: u8| x + k;
         k = 10;
         b <- plus_k(1);
         c <- k;

@@ -214,13 +214,13 @@ fn a_catalogue_method_on_a_carrier_is_typed_on_its_value() {
 #[test]
 fn a_single_variant_enum_cannot_be_carried() {
     // Edge case 3: a single-variant enum has a tag of zero levels (part I §2 rule 5): `P0001`.
-    let src = "#[derive(Repr, Clone, Copy, PartialEq)]\nenum One { A }\nmodule Top() { signal s: Bit<One>; }";
+    let src = "#[derive(Repr, PartialEq)]\nenum One { A }\nmodule Top() { signal s: Bit<One>; }";
     let d = diagnostics(src);
     assert_eq!(codes(&d), ["P0001"]);
     assert!(d[0].diagnostic.message.contains("single-variant enum `One`"), "{}", d[0].diagnostic.message);
     assert_eq!(snippet(src, &d[0]), "One");
     // Two variants are the smallest carried enum.
-    let src = "#[derive(Repr, Clone, Copy, PartialEq)]\nenum Two { A, B }\nmodule Top() { signal s: Bit<Two>; }";
+    let src = "#[derive(Repr, PartialEq)]\nenum Two { A, B }\nmodule Top() { signal s: Bit<Two>; }";
     checked(&design_of(src), src);
 }
 

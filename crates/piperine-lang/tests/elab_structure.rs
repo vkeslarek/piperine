@@ -465,7 +465,7 @@ fn the_stdlib_idt_waits_for_generics() {
 fn the_water_model_waits_for_generics() {
     // AS-05 AC 2 (Q2): `Water` of Part IV section 13 reads `idt::<Heat>`, a generic instantiation: refused
     // by name until `generics` merges.
-    let src = "#[derive(Repr, Clone, Copy, PartialEq)]\nenum Phase { Liquid, Boiling, Vapor }\nnature Heat { potential: Energy { access: joules, units: \"J\", abstol: 1m }, flow: Power { access: pwr, units: \"W\", abstol: 1n } }\nmodule Water(t: Thermal) {\n    mass: f64 = 1.0;\n    hv: f64 = 2.26M;\n    pub signal phase: Bit<Phase> = Phase::Liquid;\n    let ph = phase.known_or(Phase::Liquid);\n    let absorbed = idt::<Heat>(pwr(t), 0.0, reset: ph != Phase::Boiling);\n}\nmodule Top() { signal t: Thermal; let w = Water(t); }";
+    let src = "#[derive(Repr, PartialEq)]\nenum Phase { Liquid, Boiling, Vapor }\nnature Heat { potential: Energy { access: joules, units: \"J\", abstol: 1m }, flow: Power { access: pwr, units: \"W\", abstol: 1n } }\nmodule Water(t: Thermal) {\n    mass: f64 = 1.0;\n    hv: f64 = 2.26M;\n    pub signal phase: Bit<Phase> = Phase::Liquid;\n    let ph = phase.known_or(Phase::Liquid);\n    let absorbed = idt::<Heat>(pwr(t), 0.0, reset: ph != Phase::Boiling);\n}\nmodule Top() { signal t: Thermal; let w = Water(t); }";
     let design = Elab::design(src);
     let found = piperine_lang::types::Types::check(&design, "Top").expect_err("a generic instantiation is refused");
     assert!(Elab::codes(&found).iter().all(|c| c == "P0001"), "{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());

@@ -178,11 +178,11 @@ fn the_files_card_is_refused_for_its_table_and_its_statement() {
     };
     let whole = Refusal::of(package(format!("{card}\nmodule Top() {{ }}\n")).run(Overrides::default()), "cheatsheet#10");
     assert!(whole.iter().any(|(code, message)| code == "E0601" && message == "`emit!` is written in a reaction, in `analog` or in a `fn` only (§19 rule 10)"), "{whole:?}");
-    let reading = "module Top() { signal a: Electrical; }\nanalog for Top { v(a) +> table_model(v(a), &IV, \"3E\"); }\n";
+    let reading = "module Top() { signal a: Electrical; }\nanalog for Top { v(a) +> table_model(v(a), IV, \"3E\"); }\n";
     let items_only = package(format!("{items}\n{reading}"));
     let given = Refusal::of(items_only.run(Overrides::default()), "cheatsheet#10");
     assert!(Surroundings::holds(&given, "P0001", "generic function is not supported yet"), "{given:?}");
-    Refusal::expect(items_only.run(Overrides::default()), "cheatsheet#10", "P0001", "reference type is not supported yet");
+    Refusal::expect(items_only.run(Overrides::default()), "cheatsheet#10", "P0001", "an array whose length is a generic parameter is not supported yet");
 }
 
 #[test]

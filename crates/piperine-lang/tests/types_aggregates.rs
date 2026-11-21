@@ -182,7 +182,7 @@ fn tuples_and_tuple_patterns_type_check() {
 fn payload_enums_build_and_match() {
     // §1.3.5 and §1.3.6: a variant has no field, positional fields or named fields, and is built by its
     // name, a call or a struct expression; the arms bind the fields and join the exhaustiveness of §1.8.6.
-    let items = "#[derive(Repr, Clone, Copy, PartialEq)]\nenum Tx { Idle, Data(u8), Frame { n: u3, last: bool } }\n\
+    let items = "#[derive(Repr, PartialEq)]\nenum Tx { Idle, Data(u8), Frame { n: u3, last: bool } }\n\
                  fn size(t: Tx) -> u8 { match t { Tx::Idle => 0, Tx::Data(b) => b, Tx::Frame { n, last: true } => n as u8, Tx::Frame { n, .. } => 1 } }";
     let src = source(items, "let va = Tx::Idle; let vb = Tx::Data(3); let vc = Tx::Frame { n: 2, last: false }; let s = size(vc);");
     for name in ["va", "vb", "vc"] {
@@ -236,7 +236,7 @@ fn arrays_and_indexing_type_check() {
     // its own (`types_value_semantics.rs`).
     let items = "fn pick(a: [[u8; 2]; 2]) -> u8 { a[1][0] }";
     let body = "let arr = [1.0, 2.0, 3.0]; let r = [0u8; 4]; let i: u16 = 2; let x = arr[i]; let y: f64 = arr[0]; \
-                let mut m = [[1u8, 2], [3, 4]]; m[1][0] = 9; let p = pick(m);";
+                let m = [[1u8, 2], [3, 4]]; m[1][0] = 9; let p = pick(m);";
     let src = source(items, body);
     assert_eq!(local_type(&src, "arr"), Ty::Array(Box::new(Ty::F64), 3));
     assert_eq!(local_type(&src, "r"), Ty::Array(Box::new(Ty::UInt(8)), 4));

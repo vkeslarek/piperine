@@ -9,7 +9,7 @@ fn fib(n: u8) -> u16 { if n < 2 { n as u16 } else { fib(n - 1) + fib(n - 2) } }
 fn is_even(n: u8) -> bool { if n == 0 { true } else { is_odd(n - 1) } }
 fn is_odd(n: u8) -> bool { if n == 0 { false } else { is_even(n - 1) } }
 fn deep(n: u32) -> u32 { if n < 4000000000 { deep(n + 1) } else { 0 } }
-fn spin(x: u8) -> u8 { let mut k = x; loop { k ^= 1; } }
+fn spin(x: u8) -> u8 { let k = x; loop { k ^= 1; } }
 
 module Rows(in clk: Bit, out a: Bit<u16>, out b: Bit, out c: Bit, out d: Bit) {}
 digital for Rows {

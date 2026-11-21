@@ -16,8 +16,8 @@ fn if_let_range(x: u8) -> u8 { if let n @ 3..=5 = x { n * 2 } else { 0 } }
 fn if_let_option_range(o: Option<u8>) -> u8 { if let Some(1..=3) = o { 1 } else { 0 } }
 fn let_else(o: Option<u8>) -> u8 { let Some(v) = o else { return 77; }; v * 2 }
 fn small_sum(limit: u8) -> u8 {
-    let mut i = 0u8;
-    let mut sum = 0u8;
+    let i = 0u8;
+    let sum = 0u8;
     while let Some(v @ 0..=4) = (i < limit).then_some(i) { sum += v; i += 1; }
     sum
 }
@@ -41,7 +41,7 @@ digital for Rows {
         let local = 7u8;
         t0 <- match local { n if n > 5 => n + 1, 0..=5 => 0, _ => 99 };
         let found = (local < 9).then_some(local);
-        let mut got = 0u8;
+        let got = 0u8;
         if let Some(n @ 6..=8) = found { got = n; }
         t1 <- got;
     }

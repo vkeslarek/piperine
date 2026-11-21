@@ -264,7 +264,7 @@ fn e0605_a_reserved_stream_field_has_a_fixed_type() {
     // core-std~64ee891d: "E0605 emit!(\"checks\", name = 3);": `name` is text
     let source = "module Top() { }\ndigital for Top { on at(1u) { emit!(\"checks\", name = 3); } }\n";
     let faulty = Faulty::running("core-std~64ee891d", source, Commands::transient(2e-6, None));
-    assert_eq!(faulty.first("E0605").message, "the field `name` of the stream `checks` has type `i32`: the stdlib gives it `&str` (§19 rule 15)");
+    assert_eq!(faulty.first("E0605").message, "the field `name` of the stream `checks` has type `i32`: the stdlib gives it `str` (§19 rule 15)");
 }
 
 #[test]

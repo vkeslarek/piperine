@@ -237,7 +237,7 @@ fn a_reaction_body_is_typed() {
 
     // A body of every statement kind, and the read of a carrier in a guard and in the body
     // (DIG-04 AC 3): `u9`.
-    let src = "#[derive(Repr, Clone, Copy, PartialEq)]\nenum Phase { Idle, Run }\n\
+    let src = "#[derive(Repr, PartialEq)]\nenum Phase { Idle, Run }\n\
 module Top(in clk: Bit, in go: Bit, p: Electrical, out cnt: Bit<u9> = 0, out when: Bit<f64> = 0.0, out ph: Bit<Phase> = Phase::Idle) { gap: f64 = 5n; }\n\
 digital for Top {\n    on clk.rise() && cnt > 3 {\n        let next = cnt + 1;\n        let level = v(p);\n        if go.known_or(false) { cnt <- next; } else { cnt <- 0 after gap; }\n        match ph.known_or(Phase::Idle) { Phase::Idle => { ph <- Phase::Run; } Phase::Run => { ph <- Phase::Idle after gap; } }\n        when <- now() + level;\n    }\n}";
     let design = design_of(src);

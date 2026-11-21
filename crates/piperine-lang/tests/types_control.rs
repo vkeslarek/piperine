@@ -64,11 +64,11 @@ fn diagnostics(src: &str) -> Vec<DesignDiagnostic> {
 fn let_mut_and_every_compound_operator_type_check() {
     // §1.5.12: `place = value` is `()`; `place op= value` is `place = place op value` for every
     // operator of level 15, in an `analog` block and in a function.
-    let body = "let mut a = 1.0; a = 2.0; a += 1.0; a -= 1.0; a *= 2.0; a /= 2.0;\n\
-                let mut n = 1u8; n = n + 1; n %= 3; n &= 1; n |= 2; n ^= 3; n <<= 1; n >>= 1;\n\
-                let mut b = true; b &= false; b |= true; b ^= true;\n\
+    let body = "let a = 1.0; a = 2.0; a += 1.0; a -= 1.0; a *= 2.0; a /= 2.0;\n\
+                let n = 1u8; n = n + 1; n %= 3; n &= 1; n |= 2; n ^= 3; n <<= 1; n >>= 1;\n\
+                let b = true; b &= false; b |= true; b ^= true;\n\
                 let s = twice(a);";
-    let items = "fn twice(x: f64) -> f64 { let mut y = x; y += x; y }";
+    let items = "fn twice(x: f64) -> f64 { let y = x; y += x; y }";
     let src = source(items, body);
     assert_clean(&src);
     let types = assignment_types(&src);
@@ -78,7 +78,7 @@ fn let_mut_and_every_compound_operator_type_check() {
     assert_clean(&source("", "let x; let c = true; if c { x = 1.0; } else { x = 2.0; } let y = x + 1.0;"));
     assert_clean(&source("", "let x: f64; x = 1.0; let y = x;"));
     // a mismatching value is an ordinary mismatch
-    assert_refused(&source("", "let mut a = 1.0; a = true;"), "P0002", "expected `f64`");
+    assert_refused(&source("", "let a = 1.0; a = true;"), "P0002", "expected `f64`");
 }
 
 #[test]
@@ -104,7 +104,7 @@ fn a_read_before_assignment_is_e0183() {
     // §1.7.5: a variable declared without a value is assigned on every path before it is read.
     assert_refused(&source("", "let x: f64; let y = x;"), "E0183", "`x` is read before it is assigned");
     assert_refused(&source("", "let x: f64; let c = true; if c { x = 1.0; } let y = x;"), "E0183", "`x` is read before it is assigned");
-    assert_refused(&source("", "let mut x: f64; x += 1.0;"), "E0183", "`x` is read before it is assigned");
+    assert_refused(&source("", "let x: f64; x += 1.0;"), "E0183", "`x` is read before it is assigned");
     assert_clean(&source("", "let x: f64; let c = true; if c { x = 1.0; } else { x = 2.0; } let y = x;"));
 }
 
@@ -121,11 +121,11 @@ fn let_mut_in_a_module_body_is_e0331() {
 fn every_loop_form_type_checks() {
     // §1.8.7 to §1.8.10: `while`, `while let`, `loop` with `break` and `break value`, `for` over
     // a range, `continue`.
-    assert_clean(&source("", "let mut i = 0u8; while i < 3 { i += 1; }"));
-    assert_clean(&source("", "let o: Option<u8> = Some(1); let mut k = 0u8; while let Some(x) = o { k += x; }"));
-    assert_clean(&source("", "let mut j = 0; loop { j += 1; if j > 2 { break; } }"));
+    assert_clean(&source("", "let i = 0u8; while i < 3 { i += 1; }"));
+    assert_clean(&source("", "let o: Option<u8> = Some(1); let k = 0u8; while let Some(x) = o { k += x; }"));
+    assert_clean(&source("", "let j = 0; loop { j += 1; if j > 2 { break; } }"));
     assert_clean(&source("", "for i in 0..3 { continue; } for i in 0u8..=3 { let y = i + 1; }"));
-    assert_clean(&source("", "let mut s = 0u8; for mut i in 0u8..4 { i += 1; s += i; } for _ in 0..2 { s += 1; }"));
+    assert_clean(&source("", "let s = 0u8; for i in 0u8..4 { i += 1; s += i; } for _ in 0..2 { s += 1; }"));
     // `loop` takes the type of its `break` values (§1.8.8), from the position or from the break
     assert_clean(&source("", "let v: u8 = loop { break 7; }; let w = loop { break 2.0; }; let z = w + 1.0;"));
     assert_clean(&source("", "let u = loop { break; }; let t: () = u;"));
@@ -134,7 +134,7 @@ fn every_loop_form_type_checks() {
     // `while` and `for` are `()`; a deferred local assigned before a `loop` breaks is assigned after it
     assert_clean(&source("", "let x: f64; loop { x = 1.0; break; } let y = x;"));
     // `break` and `continue` leave the innermost loop of a nested pair
-    assert_clean(&source("", "let mut n = 0; while n < 3 { n += 1; for i in 0..2 { if i == 1 { break; } continue; } }"));
+    assert_clean(&source("", "let n = 0; while n < 3 { n += 1; for i in 0..2 { if i == 1 { break; } continue; } }"));
     // a mismatching `break` value, an integer range over floats, a non-bool condition
     assert_refused(&source("", "let v = loop { if true { break 1u8; } break 2u16; };"), "P0002", "expected `u8`");
     assert_refused(&source("", "for i in 0.0..1.0 { }"), "P0002", "an integer type");
@@ -163,7 +163,7 @@ fn return_and_question_mark_type_check() {
                  fn unit(x: f64) { if x > 1.0 { return; } }\n\
                  fn both(x: f64) -> f64 { let y = if x > 0.0 { x } else { return 0.0 }; y }\n\
                  fn each(x: f64) -> f64 { match x > 0.0 { true => return 1.0, false => 2.0 } }\n\
-                 fn in_loop(x: u8) -> u8 { let mut i = 0u8; while i < 9 { if i == x { return i; } i += 1; } 0 }";
+                 fn in_loop(x: u8) -> u8 { let i = 0u8; while i < 9 { if i == x { return i; } i += 1; } 0 }";
     assert_clean(&source(items, "let a = early(1.0); unit(1.0); let b = both(1.0); let c = each(1.0); let d = in_loop(2);"));
     // §1.5.15: `e?` is the `T` of an `Option<T>`, in a function whose result is an `Option`
     let option = "fn first(a: Option<u8>, b: Option<u8>) -> Option<u8> { let x = a?; let y = b?; Some(x + y) }\n\
@@ -252,10 +252,10 @@ fn refutable_patterns_type_check_in_if_let_while_let_and_let_else() {
                  fn nested(o: Option<u8>) -> u8 { if let Some(1..=3) = o { 1 } else { 0 } }\n\
                  fn variant(m: Mode) -> u8 { if let Mode::B = m { 1 } else { 0 } }\n\
                  fn bound(o: Option<u8>) -> u8 { if let Some(x @ 5..) = o { x } else { 0 } }\n\
-                 fn looped(o: Option<u8>) -> u8 { let mut n = 0u8; while let Some(x) = o { n += x; break; } n }\n\
+                 fn looped(o: Option<u8>) -> u8 { let n = 0u8; while let Some(x) = o { n += x; break; } n }\n\
                  fn guarded(o: Option<u8>) -> u8 { let Some(x) = o else { return 0; }; x }\n\
                  fn ranged(n: u8) -> u8 { let 1..=9 = n else { return 0; }; n }\n\
-                 fn looping(o: Option<u8>) -> u8 { let mut s = 0u8; for i in 0u8..3 { let Some(x) = o else { continue; }; s += x + i; } s }";
+                 fn looping(o: Option<u8>) -> u8 { let s = 0u8; for i in 0u8..3 { let Some(x) = o else { continue; }; s += x + i; } s }";
     let body = "let a = lit(1) + range(1) + none(None) + nested(None) + variant(Mode::A) + bound(None) + looped(None) + guarded(None) + ranged(1) + looping(None);";
     assert_clean(&source(items, body));
     // irrefutable patterns need no `else`: a name, `_`, and a pattern that covers every value

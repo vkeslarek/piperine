@@ -448,8 +448,8 @@ fn an_enum_is_its_tag_and_a_match_is_an_if_chain() {
     // DIG-08 AC 9, §2 rule 5: an enum of `V` unit variants is `UInt<ceil(log2 V)>`, variant `k`
     // the literal `k`; a `match` is an `if` chain that reads its scrutinee once. The enums are
     // the buck's (examples/buck/src/supervisor.msl) and the stdlib's `Severity` (std/io.msl).
-    let items = "#[derive(Repr, Clone, Copy, PartialEq)]\npub enum Mode { Off, SoftStart, Regulate, Hiccup }\n\
-                 #[derive(Repr, Clone, Copy, PartialEq)]\npub enum Fault { Clear, OverCurrent, OverVoltage }\n\
+    let items = "#[derive(Repr, PartialEq)]\npub enum Mode { Off, SoftStart, Regulate, Hiccup }\n\
+                 #[derive(Repr, PartialEq)]\npub enum Fault { Clear, OverCurrent, OverVoltage }\n\
                  fn hiccup() -> Mode { Mode::Hiccup }\n\
                  fn clear() -> Fault { Fault::Clear }\n\
                  fn warning(s: Severity) -> bool { s == Severity::Warning }\n\
@@ -497,7 +497,7 @@ fn an_enum_is_its_tag_and_a_match_is_an_if_chain() {
     assert!(ops.contains(&BinaryOp::BitOr) && !ops.contains(&BinaryOp::Or), "{ops:?}");
 
     // An enum of one variant has a tag of no level: no IR type holds it (spec Edge Cases).
-    let src = reaching("#[derive(Repr, Clone, Copy, PartialEq)]\npub enum One { Only }\nfn only() -> One { One::Only }", &["only()"]);
+    let src = reaching("#[derive(Repr, PartialEq)]\npub enum One { Only }\nfn only() -> One { One::Only }", &["only()"]);
     let err = Elab::run(&src, "Top").expect_err("a tag of no level");
     assert!(Elab::codes(&err).iter().all(|c| c == "P0001"), "{:?}", Elab::codes(&err));
     assert!(err.iter().any(|d| d.diagnostic.message.contains("an enum of one variant")), "{:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
@@ -510,7 +510,7 @@ fn an_option_is_a_flag_and_a_payload() {
     // `setpoint` is the body of `SetpointReg`'s reaction (examples/buck/src/control.msl) and
     // `supervise` holds `Supervisor`'s `fault_now` (examples/buck/src/supervisor.msl), their
     // carriers here locals that may be unknown and their commits results.
-    let items = "#[derive(Repr, Clone, Copy, PartialEq)]\npub enum Fault { Clear, OverCurrent, OverVoltage }\n\
+    let items = "#[derive(Repr, PartialEq)]\npub enum Fault { Clear, OverCurrent, OverVoltage }\n\
                  const SETPOINT_MAX: u8 = 168;\nconst OC_PERIODS: u4 = 8;\nconst OV_SAMPLES: u2 = 2;\n\
                  fn setpoint(code: u8) -> u8 { let data: u8 = Unknown; if let Some(d) = data.known() { d.min(SETPOINT_MAX) } else { code } }\n\
                  fn supervise(oc_n: u4, ov_n: u2) -> u8 {\n\

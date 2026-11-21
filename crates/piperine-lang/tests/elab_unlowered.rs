@@ -109,7 +109,7 @@ fn m_dtemp_or_extern_at_a_placement_is_p0001() {
 fn a_for_loop_in_a_digital_block_lowers() {
     // Replaces `a_for_loop_in_a_digital_block_is_p0001` (composite-values T20, CV-02 AC 1): a
     // `for` over a range lowers in a reaction, as the IR's own `for`.
-    let src = "module Top(in clk: Bit, out q: Bit<u8>) { }\ndigital for Top { on clk.rise() { let mut s = 0u8; for k in 0..3u8 { s += k; } q <- s; } }";
+    let src = "module Top(in clk: Bit, out q: Bit<u8>) { }\ndigital for Top { on clk.rise() { let s = 0u8; for k in 0..3u8 { s += k; } q <- s; } }";
     let ir = Elab::ir(src, "Top");
     assert!(ir.print_structural().contains("for k in 0u8..3u8"), "{}", ir.print_structural());
 }

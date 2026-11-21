@@ -31,7 +31,7 @@ fn function_text(ir: &Ir, name: &str) -> String {
 fn let_mut_lowers_to_mutable_locals_and_assignments() {
     // §1.5.12: `let mut` is a mutable local, `x = e` and `x op= e` assign it; a plain `let` and a
     // parameter stay immutable. The IR passes its own check.
-    let items = "fn work(a: f64) -> f64 { let mut x = a; x = x + 1.0; x += 2.0; x *= 3.0; let y = x; y }";
+    let items = "fn work(a: f64) -> f64 { let x = a; x = x + 1.0; x += 2.0; x *= 3.0; let y = x; y }";
     let ir = Elab::ir(&reaching(items, &["work(1.0)"]), "Top");
     let function = ir.functions().find(|f| f.name() == "work").expect("work");
     let flags: Vec<(String, bool)> = function.locals().iter().map(|l| (l.name.clone(), l.mutable)).collect();
@@ -62,7 +62,7 @@ fn loops_lower_to_the_loops_of_the_ir() {
     // §1.8.7 to §1.8.12: every form stays the IR's own loop in a function, where no decision may
     // be unknown; `break value` gives the loop its value's type.
     let items = "fn work(n: u8) -> u8 {\n\
-                 let mut s = 0u8; let mut i = 0u8;\n\
+                 let s = 0u8; let i = 0u8;\n\
                  while i < n { s += i; i += 1; }\n\
                  let first = loop { if s > 3 { break s; } s += 1; };\n\
                  for k in 0..n { if k == 2 { continue; } s += k; }\n\
@@ -76,7 +76,7 @@ fn loops_lower_to_the_loops_of_the_ir() {
 
     // In a reaction, whose values may be unknown, a `for` that leaves early is the `while` that
     // counts a mutable local, taking the next value before the body so `continue` still counts.
-    let body = "let mut hit = 0u8; for k in 0..9u8 { if k > 3 { hit = k; break; } } q <- hit;";
+    let body = "let hit = 0u8; for k in 0..9u8 { if k > 3 { hit = k; break; } } q <- hit;";
     let ir = Elab::ir(&reacting("", body), "Top");
     let text = ir.print_structural();
     assert!(text.contains("while") && !text.contains("for k in"), "{text}");
@@ -152,7 +152,7 @@ fn a_contributing_analog_loop_without_a_constant_trip_count_is_e0416() {
     let src = "module Top() { signal o: Electrical; }\nanalog for Top { for k in 0..(v(o) as u8) { i(o) +> 1.0; } }";
     let refused = Elab::run(src, "Top").expect_err("a probe is no trip count");
     assert_eq!(Elab::codes(&refused), ["E0416"]);
-    let src = "module Top() { signal o: Electrical; }\nanalog for Top { let mut n = 0u8; while n < 3 { i(o) +> 1.0; n += 1; } }";
+    let src = "module Top() { signal o: Electrical; }\nanalog for Top { let n = 0u8; while n < 3 { i(o) +> 1.0; n += 1; } }";
     let refused = Elab::run(src, "Top").expect_err("a while has no trip count");
     assert_eq!(Elab::codes(&refused), ["E0416"]);
 
@@ -229,13 +229,13 @@ fn phase_a_forms_fold_in_const_contexts() {
         x
     };
     let items = "\
-        const fn gcd(a: u32, b: u32) -> u32 { let mut x = a; let mut y = b; while y != 0 { let t = x % y; x = y; y = t; } x }\n\
+        const fn gcd(a: u32, b: u32) -> u32 { let x = a; let y = b; while y != 0 { let t = x % y; x = y; y = t; } x }\n\
         const fn fact(n: u32) -> u32 { if n == 0 { 1 } else { n * fact(n - 1) } }\n\
-        const fn first_square_over(limit: u32) -> u32 { let mut k = 0u32; loop { k += 1; if k * k > limit { break k; } } }\n\
+        const fn first_square_over(limit: u32) -> u32 { let k = 0u32; loop { k += 1; if k * k > limit { break k; } } }\n\
         const fn weigh(x: u32) -> f64 { match x { 0 => 0.0, 1..=3 => 1.5, n if n % 2 == 0 => 2.5, _ => 3.5 } }\n\
         const fn early(n: u32) -> u32 { for k in 0..n { if k * k >= 30 { return k; } } n }\n\
-        const fn through_closure(n: u32) -> u32 { let double = |x: u32| x * 2; let mut s = 0u32; for k in 1..=n { if k == 3 { continue; } s += double(k); } s }\n\
-        const fn pick(v: u32) -> u32 { if let 0..=2 = v { return 10; } let 3 = v else { return 99; }; let mut n = 0u32; while let 0..=4 = n { n += 2; } 30 + n }\n\
+        const fn through_closure(n: u32) -> u32 { let double = |x: u32| x * 2; let s = 0u32; for k in 1..=n { if k == 3 { continue; } s += double(k); } s }\n\
+        const fn pick(v: u32) -> u32 { if let 0..=2 = v { return 10; } let 3 = v else { return 99; }; let n = 0u32; while let 0..=4 = n { n += 2; } 30 + n }\n\
         const GCD: u32 = gcd(84, 36);\n\
         const FACT: u32 = fact(5);\n";
     let src = format!(
@@ -281,7 +281,7 @@ fn phase_a_forms_fold_in_const_contexts() {
 fn a_panic_in_a_const_evaluation_names_the_expression() {
     // §1 rule 11 and Q5 (CV-36 AC 2): a division by zero reached through a loop, a loop past 2^24
     // iterations and a call nested past 1 024 are elaboration errors, `E0104`, at the expression.
-    let division = "const fn bad() -> u32 { let mut s = 0u32; loop { s += 1; if s > 3 { break; } } 10 / (s - 4) }\nconst X: u32 = bad();\nmodule Top() { a: f64 = X as f64; }";
+    let division = "const fn bad() -> u32 { let s = 0u32; loop { s += 1; if s > 3 { break; } } 10 / (s - 4) }\nconst X: u32 = bad();\nmodule Top() { a: f64 = X as f64; }";
     let refused = Elab::run(division, "Top").expect_err("a division by zero");
     assert_eq!(Elab::codes(&refused), ["E0104"]);
     let message = &refused[0].diagnostic.message;
@@ -289,7 +289,7 @@ fn a_panic_in_a_const_evaluation_names_the_expression() {
     let span = refused[0].diagnostic.span();
     assert_eq!(&division[span.start..span.end], "10 / (s - 4)", "the diagnostic sits on the expression that panics");
 
-    let endless = "const fn spin() -> u32 { let mut s = 0u32; loop { s += 1; } }\nconst X: u32 = spin();\nmodule Top() { a: f64 = X as f64; }";
+    let endless = "const fn spin() -> u32 { let s = 0u32; loop { s += 1; } }\nconst X: u32 = spin();\nmodule Top() { a: f64 = X as f64; }";
     let refused = Elab::run(endless, "Top").expect_err("a loop with no end");
     assert_eq!(Elab::codes(&refused), ["E0104"]);
     assert!(refused[0].diagnostic.message.contains("2^24"), "{:?}", refused[0].diagnostic.message);

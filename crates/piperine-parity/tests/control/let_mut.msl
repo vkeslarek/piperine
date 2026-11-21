@@ -4,11 +4,11 @@
 pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
 digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
 
-fn real_ops(a: f64) -> f64 { let mut x = a; x += 1.5; x -= 0.25; x *= 3.0; x /= 2.0; x }
-fn int_ops(a: u8) -> u8 { let mut n = a; n += 3; n -= 1; n *= 2; n /= 3; n %= 5; n &= 7; n |= 8; n ^= 5; n <<= 1; n >>= 1; n }
-fn bool_ops(a: bool, b: bool) -> bool { let mut t = a; t &= b; t |= !b; t ^= true; t }
+fn real_ops(a: f64) -> f64 { let x = a; x += 1.5; x -= 0.25; x *= 3.0; x /= 2.0; x }
+fn int_ops(a: u8) -> u8 { let n = a; n += 3; n -= 1; n *= 2; n /= 3; n %= 5; n &= 7; n |= 8; n ^= 5; n <<= 1; n >>= 1; n }
+fn bool_ops(a: bool, b: bool) -> bool { let t = a; t &= b; t |= !b; t ^= true; t }
 fn deferred(c: bool) -> u8 { let r: u8; if c { r = 1; } else { r = 2; } r }
-fn reassigned(a: f64) -> f64 { let mut x = a; x = x * x; x = x + a; x }
+fn reassigned(a: f64) -> f64 { let x = a; x = x * x; x = x + a; x }
 
 module Rows(in clk: Bit, out f: Bit<f64>, out g: Bit<u8>, out h: Bit, out d1: Bit<u8>, out d2: Bit<u8>,
             out r: Bit<f64>, out local_n: Bit<u8>, out local_x: Bit<f64>, out local_b: Bit) {}
@@ -21,11 +21,11 @@ digital for Rows {
         d2 <- deferred(false);
         r <- reassigned(3.0);
         // The same operators on the locals of the reaction itself.
-        let mut n = 20u8; n += 3; n -= 1; n *= 2; n /= 3; n %= 5; n &= 7; n |= 8; n ^= 5; n <<= 1; n >>= 1;
+        let n = 20u8; n += 3; n -= 1; n *= 2; n /= 3; n %= 5; n &= 7; n |= 8; n ^= 5; n <<= 1; n >>= 1;
         local_n <- n;
-        let mut x = 2.0; x += 1.5; x -= 0.25; x *= 3.0; x /= 2.0;
+        let x = 2.0; x += 1.5; x -= 0.25; x *= 3.0; x /= 2.0;
         local_x <- x;
-        let mut t = true; t &= false; t |= true; t ^= true;
+        let t = true; t &= false; t |= true; t ^= true;
         local_b <- t;
     }
 }
@@ -42,9 +42,9 @@ analog for Load { i(p, n) +> v(p, n); }
 
 module Currents(a: Electrical, b: Electrical, c: Electrical) {}
 analog for Currents {
-    let mut x = 2.0; x += 1.5; x -= 0.25; x *= 3.0; x /= 2.0;
+    let x = 2.0; x += 1.5; x -= 0.25; x *= 3.0; x /= 2.0;
     i(gnd, a) +> x;
-    let mut y = 20.0; y -= 7.0; y += 1.0;
+    let y = 20.0; y -= 7.0; y += 1.0;
     i(gnd, b) +> y;
     i(gnd, c) +> real_ops(2.0);
 }

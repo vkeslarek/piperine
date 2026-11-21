@@ -804,3 +804,132 @@ fn phdl_corpus_does_not_grow() {
             .join("\n  ")
     );
 }
+
+// ---- value semantics: no source of the tree writes a removed form (VS-09) -------------------
+
+/// The forms the amended language removed (Appendix G.71), found in the text of an MSL source: `let mut`, a
+/// `&` or `*` that starts an operand, `Clone` or `Copy` in a derive, and a `'static` lifetime.
+struct RemovedForms;
+
+impl RemovedForms {
+    /// The characters after which an operator is a prefix operator: the start of an operand.
+    const OPERAND_START: [char; 6] = ['(', '[', ',', '=', '{', ':'];
+
+    /// The line without its `//` comment and without the text of its string literals.
+    fn code_of(line: &str) -> String {
+        let mut code = String::new();
+        let mut in_string = false;
+        let mut previous = ' ';
+        for c in line.chars() {
+            if !in_string && c == '/' && previous == '/' {
+                code.pop();
+                break;
+            }
+            if c == '"' && previous != '\\' {
+                in_string = !in_string;
+            } else if !in_string {
+                code.push(c);
+            }
+            previous = c;
+        }
+        code
+    }
+
+    /// Whether `code` has a `&` or a `*` where an operand starts (a borrow or a dereference, not the binary operator).
+    fn has_prefix_operator(code: &str) -> bool {
+        let chars: Vec<char> = code.chars().collect();
+        (0..chars.len()).any(|at| {
+            let c = chars[at];
+            if c != '&' && c != '*' {
+                return false;
+            }
+            let after = chars.get(at + 1).copied();
+            let glued = after == Some('=') || (c == '&' && (after == Some('&') || (at > 0 && chars[at - 1] == '&')));
+            let before: String = chars[..at].iter().collect::<String>().trim_end().to_string();
+            let starts = before.is_empty() || before.ends_with("->") || before.chars().last().is_some_and(|b| Self::OPERAND_START.contains(&b));
+            let operand = after.is_some_and(|a| a.is_alphanumeric() || matches!(a, '_' | '(' | '[' | '\''));
+            !glued && starts && operand
+        })
+    }
+
+    /// The removed forms a line of MSL writes, by name.
+    fn in_line(line: &str) -> Vec<&'static str> {
+        let code = Self::code_of(line);
+        let mut found = Vec::new();
+        if code.contains("let mut ") {
+            found.push("let mut");
+        }
+        if code.contains("derive(") && code.split(|c: char| !c.is_alphanumeric() && c != '_').any(|word| word == "Clone" || word == "Copy") {
+            found.push("Clone or Copy in a derive");
+        }
+        if code.contains("'static") {
+            found.push("'static");
+        }
+        if Self::has_prefix_operator(&code) {
+            found.push("a prefix `&` or `*`");
+        }
+        found
+    }
+
+    /// Every `.msl` file of `std/`, `examples/` and the `tests/` trees of the crates, recursively.
+    fn msl_files() -> Vec<PathBuf> {
+        let root = repo_root();
+        let mut files = Vec::new();
+        Self::collect(&root.join("examples"), &mut files);
+        if let Ok(crates) = fs::read_dir(root.join("crates")) {
+            for krate in crates.flatten() {
+                Self::collect(&krate.path().join("std"), &mut files);
+                Self::collect(&krate.path().join("tests"), &mut files);
+            }
+        }
+        files
+    }
+
+    /// Appends the `.msl` files under `dir` to `out`.
+    fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                Self::collect(&path, out);
+            } else if path.extension().is_some_and(|e| e == "msl") {
+                out.push(path);
+            }
+        }
+    }
+}
+
+#[test]
+fn no_msl_file_uses_a_removed_form() {
+    // VS-09 AC 1: the tree is written in the amended language, so the parser can refuse the earlier one.
+    let files = RemovedForms::msl_files();
+    assert!(files.len() > 40, "the walk found only {} `.msl` files: the layout moved and the guard is blind", files.len());
+    let mut offences = Vec::new();
+    for file in &files {
+        let text = fs::read_to_string(file).expect("an `.msl` file");
+        for (number, line) in text.lines().enumerate() {
+            for form in RemovedForms::in_line(line) {
+                offences.push(format!("{}:{}: {form}: {}", file.display(), number + 1, line.trim()));
+            }
+        }
+    }
+    assert!(offences.is_empty(), "removed forms in the tree:\n  {}", offences.join("\n  "));
+}
+
+#[test]
+fn the_removed_form_walk_fails_on_a_planted_line() {
+    // The detector finds each removed form and passes the neighbouring forms that stay (binary `&`, `&&`, `*`).
+    for (line, form) in [
+        ("fn f() { let mut x = 1.0; }", "let mut"),
+        ("#[derive(Repr, Clone, Copy)]", "Clone or Copy in a derive"),
+        ("fn f(s: &'static str) {}", "'static"),
+        ("let y = f(&x);", "a prefix `&` or `*`"),
+        ("let y = *x + 1;", "a prefix `&` or `*`"),
+        ("fn f(xs: &[f64]) -> f64 { 0.0 }", "a prefix `&` or `*`"),
+    ] {
+        assert!(RemovedForms::in_line(line).contains(&form), "`{line}` is not found as {form}");
+    }
+    for line in ["let y = a & -b;", "let y = a && !b;", "let y = a * (b);", "n &= 7; m *= 2;", "// let mut x = &y;", "let s = \"let mut &x\";", "#[derive(Repr, PartialEq)]"] {
+        assert!(RemovedForms::in_line(line).is_empty(), "`{line}` writes no removed form: {:?}", RemovedForms::in_line(line));
+    }
+}
