@@ -121,6 +121,6 @@ the mechanical half of the rule.
 - `docs/spec/` — the Piperine mixed-signal language (MSL) specification, the sole grammar
   and semantics source of the front end; design record in `.specs/features/msl-spec/`
 - What does not work yet, ranked: `GAPS.md`
-- Solver gaps + ABI plan: merged into `ROADMAP.md` (P1/P2)
+- What is in development and in what order: `ROADMAP.md` (the development pool)
 - Spec-driven feature tracking: `.specs/STATE.md` + `.specs/features/`
 - Open items: `ROADMAP.md`

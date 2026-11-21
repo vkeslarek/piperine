@@ -1,6 +1,6 @@
 //! The repository's own records after the command line (feature `msl-cli`, phase 7; CLI-20): the
 //! buck's README says how to run it, the instruction files describe the host crates as built,
-//! `GAPS.md` drops what closed and lists what is left, `ROADMAP.md` marks the CLI item done and
+//! `GAPS.md` drops what closed and lists what is left, `ROADMAP.md` is forward-looking and
 //! `.specs/STATE.md` holds the decision. Each test reads one file as text.
 
 use std::path::{Path, PathBuf};
@@ -199,17 +199,10 @@ fn gaps_narrows_what_buck_scenarios_ran() {
 }
 
 #[test]
-fn the_roadmap_and_state_record_root_e2e() {
-    // root-e2e RE-04 AC 2 and 3 (T43): the roadmap marks queue items 4 and 4b delivered and the lane
-    // `root-e2e` delivered; STATE.md holds MD-72 naming the book targets, the inventory and `tests/e2e/`
+fn state_records_root_e2e() {
+    // root-e2e RE-04 AC 2 and 3 (T43), the delivery record moved out of ROADMAP.md on its 2026-11-21
+    // rewrite (see `the_roadmap_is_forward_looking`): STATE.md holds MD-72 naming the book targets, the inventory and `tests/e2e/`
     // and amending MD-28; the instruction files say the root holds the integrated tests
-    let roadmap = read("ROADMAP.md");
-    let queue = roadmap.split("## Queue after ir-rust").nth(1).expect("ROADMAP.md has the queue");
-    for item in ["4. ", "4b. "] {
-        let line = queue.lines().find(|l| l.starts_with(item)).unwrap_or_else(|| panic!("the queue has item {item}"));
-        assert!(line.starts_with(&format!("{item}\u{2705} **Delivered")) && line.contains("root-e2e"), "item {item} is delivered: {line}");
-    }
-    assert!(roadmap.lines().any(|l| l.starts_with("| B next | `root-e2e`") && l.ends_with("| delivered |")), "the lane table says delivered");
     let state = read(".specs/STATE.md");
     let at = state.find("### MD-72:").expect("STATE.md holds MD-72");
     let decision = state[at..].split("\n---").next().expect("a decision");
@@ -222,17 +215,6 @@ fn the_roadmap_and_state_record_root_e2e() {
         assert!(!text.contains("holds no Rust target"), "{file} still says the root holds no Rust target");
     }
     assert!(read("CLAUDE.md").contains("`tests/e2e/twins/*.cir`"), "CLAUDE.md's parity row names tests/e2e/");
-}
-
-#[test]
-fn the_roadmap_lists_the_host_follow_ups() {
-    // HII-23 AC 2: the roadmap records `host-ii` as delivered and lists the follow-ups: the host
-    // follow-up feature (what needs new solver mechanisms) and `root-e2e`
-    let roadmap = read("ROADMAP.md");
-    assert!(roadmap.lines().any(|l| l.starts_with("3e. ✅ **Delivered") && l.contains("host-ii") && l.contains("MD-69")), "item 3e records host-ii");
-    assert!(roadmap.lines().any(|l| l.starts_with("| B | `host-ii`") && l.ends_with("| delivered |")), "the lane table says delivered");
-    assert!(roadmap.lines().any(|l| l.starts_with("| B next | host follow-up") && l.contains("`force`") && l.contains("continued transients")), "the host follow-up row");
-    assert!(roadmap.lines().any(|l| l.starts_with("| B next | `root-e2e`")), "the root-e2e row");
 }
 
 #[test]
@@ -253,17 +235,6 @@ fn state_records_the_derived_param_decision() {
     }
     assert!(claude.lines().any(|l| l.starts_with("| `piperine-cli` |") && l.contains("`info`")), "the piperine-cli row names `info`");
     assert!(read("AGENTS.md").contains("check build run test info"), "AGENTS.md lists `info`");
-}
-
-#[test]
-fn the_roadmap_marks_the_cli_item_done() {
-    // CLI-20 AC 3: item 3 of "Queue after ir-rust" is marked done; item 3b is left as it is
-    let roadmap = read("ROADMAP.md");
-    let queue = roadmap.split("## Queue after ir-rust").nth(1).expect("ROADMAP.md has the queue");
-    let item = queue.lines().find(|l| l.starts_with("3. ")).expect("the queue has an item 3");
-    assert!(item.starts_with("3. ✅ **Delivered"), "item 3 is marked done: {item}");
-    assert!(item.contains("msl-cli"), "item 3 names the feature: {item}");
-    assert!(queue.lines().any(|l| l.starts_with("3b. **Spec-completeness planning pass")), "item 3b stays as it is");
 }
 
 #[test]
@@ -292,19 +263,6 @@ fn gaps_says_a_host_run_is_bounded() {
     // (the loud gap of `on above(..) { emit!(..) }` closed with msl-fixes FIX-13, L55)
     assert!(!gaps.contains("`on above(..) { emit!(..) }` is `P0001`"), "GAPS.md no longer lists the closed `on above` gap");
     assert!(gaps.contains("prints the whole 600 µs start"), "the command-line row names the whole-start run");
-}
-
-#[test]
-fn the_roadmap_lists_what_the_long_run_leaves() {
-    // long-run LR-18 AC 2: `ROADMAP.md` marks `long-run` delivered and names the three futures
-    // of decision 6
-    let roadmap = read("ROADMAP.md");
-    let queue = roadmap.split("## Queue after ir-rust").nth(1).expect("ROADMAP.md has the queue");
-    let item = queue.lines().find(|l| l.starts_with("3c. ")).expect("the queue has an entry for long-run");
-    assert!(item.starts_with("3c. ✅ **Delivered") && item.contains("long-run"), "the entry is delivered and names the feature: {item}");
-    for future in ["Multi-rate stepping", "Surrogate or averaged models", "Periodic steady state"] {
-        assert!(queue.contains(future), "ROADMAP.md names `{future}`");
-    }
 }
 
 #[test]
@@ -353,17 +311,10 @@ fn gaps_drops_what_msl_fixes_closed() {
 }
 
 #[test]
-fn the_roadmap_and_state_record_msl_fixes() {
+fn state_records_msl_fixes() {
     // msl-fixes DOC-01 AC 2: the queue marks `msl-fixes` delivered and says what it leaves;
     // `.specs/STATE.md` holds MD-67 naming the catalogue, `E0161`, the `(is, val)` pair and the
     // amendment of abi.md A4
-    let roadmap = read("ROADMAP.md");
-    let queue = roadmap.split("## Queue after ir-rust").nth(1).expect("ROADMAP.md has the queue");
-    let item = queue.lines().find(|l| l.starts_with("3d. ")).expect("the queue has an entry for msl-fixes");
-    assert!(item.starts_with("3d. ✅ **Delivered") && item.contains("msl-fixes"), "the entry is delivered and names the feature: {item}");
-    for left in ["S3", "H.5 to H.7", "`simparam`", "`limexp`"] {
-        assert!(item.contains(left), "the entry names what is left: `{left}`");
-    }
     let state = read(".specs/STATE.md");
     let at = state.find("### MD-67:").expect("STATE.md holds MD-67");
     let decision = state[at..].split("\n---").next().expect("a decision");
@@ -464,14 +415,10 @@ fn gaps_keeps_l40_for_the_spec_models_that_wait() {
 }
 
 #[test]
-fn the_roadmap_and_state_record_analog_structure() {
+fn state_records_analog_structure() {
     // analog-structure AS-18 AC 4 (T36): the queue marks item 7 delivered and names what is left; STATE.md
     // holds MD-71 with the decisions of the design: a contribution stays in place, the derivative site, the
     // key params, hoisting and the reach
-    let roadmap = read("ROADMAP.md");
-    assert!(roadmap.lines().any(|l| l.starts_with("3f. ✅ **Delivered") && l.contains("analog-structure") && l.contains("MD-71") && l.contains("L40")), "the queue records analog-structure");
-    assert!(roadmap.lines().any(|l| l.starts_with("7. ✅ `analog-structure`")), "execution order item 7 is delivered");
-    assert!(roadmap.lines().any(|l| l.starts_with("| `analog-structure` |") && l.contains("delivered")), "the language table says delivered");
     let state = read(".specs/STATE.md");
     let at = state.find("### MD-71:").expect("STATE.md holds MD-71");
     let decision = state[at..].split("\n---").next().expect("a decision");
@@ -562,8 +509,8 @@ fn gaps_no_longer_lists_x5_l20_l39_h12() {
     assert_eq!(listed, allowed, "section 10 lists exactly the rows of code_owners.tsv");
     assert!(gaps.contains(&format!("({} of ", allowed.len())), "the heading counts the listed codes");
     let roadmap = read("ROADMAP.md");
-    let row = roadmap.lines().find(|line| line.starts_with("| `params-and-io` |")).expect("the roadmap has a params-and-io row");
-    assert!(row.contains("B1 to B4") && row.contains("B5") && row.contains("`composite-values`"), "the row says what B1 to B4 delivered and that B5 and B6 wait: {row}");
+    let row = roadmap.lines().find(|line| line.contains("| `params-and-io` |")).expect("the roadmap has a params-and-io row");
+    assert!(row.contains("B5–B6") && row.contains("composite-values"), "the row says B5 and B6 wait on composite-values: {row}");
     let state = read(".specs/STATE.md");
     assert!(state.contains("### MD-75:") && state.contains("`params-and-io`"), "STATE.md holds the decision entry");
 }
@@ -581,4 +528,26 @@ fn gaps_no_longer_lists_project_or_signal_flow_natures() {
     let row = gaps.lines().find(|l| l.starts_with("| modules#8 |")).expect("the Book row modules#8");
     assert!(row.contains("| L30 |") && row.contains("`generics`") && !row.contains("signal-flow nature"), "modules#8 keeps only the generic `idt`: {row}");
     assert!(gaps.lines().any(|l| l.starts_with("| L21 |")), "L21 stays: resolved natures are not compiled yet");
+}
+
+#[test]
+fn the_roadmap_is_forward_looking() {
+    // ROADMAP.md rewrite (user, 2026-11-21: "limpar ... coloca certinho, tabelado, o que tem no pool de
+    // desenvolvimento"): the roadmap lists only what is in flight or waits, in tables, and no longer
+    // carries delivery history (that lives in STATE.md, held by the `state_records_*` tests above);
+    // what long-run, host-ii and msl-fixes left is still named as a future row
+    let roadmap = read("ROADMAP.md");
+    for section in ["## Development pool", "### In flight", "### Waiting, in order", "### After the review", "## Decisions waiting for the user"] {
+        assert!(roadmap.contains(section), "ROADMAP.md has `{section}`");
+    }
+    for stale in ["## Queue after ir-rust", "✅ **Delivered", "PHDL", "Python host:", "## V1 status"] {
+        assert!(!roadmap.contains(stale), "ROADMAP.md still carries `{stale}`");
+    }
+    let row = |name: &str| roadmap.lines().find(|l| l.contains(&format!("| `{name}`"))).unwrap_or_else(|| panic!("ROADMAP.md has a `{name}` row"));
+    for future in ["multi-rate", "surrogate-models", "periodic-small-signal", "host-iii", "transient-performance", "ngspice-models", "spec-closure", "code-clarity"] {
+        row(future);
+    }
+    assert!(row("host-iii").contains("`force`") && row("host-iii").contains("continued transients"), "the host follow-up row");
+    assert!(row("spec-closure").contains("item 13"), "spec-closure is item 13");
+    assert!(roadmap.contains("stops after item 13"), "the roadmap says where the automatic run stops");
 }

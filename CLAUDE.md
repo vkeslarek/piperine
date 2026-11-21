@@ -103,7 +103,7 @@ compile). Never pass `--workspace`: `piperine-lang-server` does not build.
 | `piperine-parity` | The parity harness and the runner of MSL from source (`publish = false`): runs ngspice on `tests/e2e/twins/*.cir` at test time and compares the MSL twins under one `ToleranceContract` (`tests/e2e/` holds each twin with its command and expected output; `tests/scenarios.rs` runs them); `Project` takes a crate graph from disk to a compiled circuit, which the `buck_*` targets use to run `examples/buck` from its `.msl`. |
 
 The root package `piperine` is the shell over `piperine-api` (`pub use piperine_api::*`, so a Rust
-host writes `use piperine::…`); it builds, and its integrated tests are queue item 4 of `ROADMAP.md`.
+host writes `use piperine::…`); it builds, and its integrated tests are the `tests/integrated/` package (MD-77).
 
 ## Solver architecture (current state)
 
@@ -183,6 +183,6 @@ no list here — the tree is the list, and a guard keeps it honest.
   front end. Design record (adversarial critic/builder rounds, review):
   `.specs/features/msl-spec/`.
 - What does not work yet, ranked: `GAPS.md`.
-- Solver gaps + ABI plan: merged into `ROADMAP.md` (P1/P2)
+- What is in development and in what order: `ROADMAP.md` (the development pool)
 - Spec-driven feature tracking: `.specs/STATE.md` + `.specs/features/`
 - Open items: `ROADMAP.md`
