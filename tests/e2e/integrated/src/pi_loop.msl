@@ -32,7 +32,7 @@ digital for Pi {
         }
         let decided = u.clamp(0, 100) as u8;
         duty <- decided;
-        emit!("loop", code = sampled, err = e, duty = decided);
+        emit!("loop", code = sampled, err = e, duty = decided, integ = integ);
     }
 }
 

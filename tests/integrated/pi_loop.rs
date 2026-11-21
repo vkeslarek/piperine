@@ -197,18 +197,23 @@ fn the_table_has_10001_rows_on_the_10_ns_grid() {
 #[test]
 fn the_duty_saturates_and_the_integrator_holds() {
     // IT-08 AC 6: the first samples see the full error: the duty saturates at 100 and the integral holds while
-    // the output is saturated in the error's direction (the reference's integral does not move, and the
-    // committed duties that follow it are equal to the reference's, so the run's integral held too)
+    // the output is saturated in the error's direction: the run's own integral, read from its `loop` records
+    // (the term the sample saw, before its update), does not move across a saturated sample
     let ran = Suite::get().ran(PiLoopScenario::RUN);
     let reference = Samples::reference(ran);
     let duty = Samples::column(ran, "duty");
+    let records = Samples::loop_records(ran);
     let saturated: Vec<usize> = (0..Samples::COUNT).filter(|m| reference[*m].saturated()).collect();
     println!("pi_loop: saturated samples {saturated:?}; first decisions {:?}", &reference[..3]);
     assert!(!saturated.is_empty(), "the duty never saturated");
     assert_eq!(saturated[0], 1, "the first sample's output is 96 (integral 0); the second saturates");
     for m in &saturated {
         assert_eq!(duty[Samples::row_after(*m)], 100, "sample {m} saturates the duty at 100");
-        assert_eq!(reference[*m].integral_before, reference[*m].integral_after, "the integral holds at sample {m}");
+        assert_eq!(reference[*m].integral_before, reference[*m].integral_after, "the reference's integral holds at sample {m}");
+        let seen = Samples::field(records[*m], "integ");
+        let next = Samples::field(records[*m + 1], "integ");
+        assert_eq!(seen, reference[*m].integral_before, "the run's integral at sample {m} is the reference's");
+        assert_eq!(next, seen, "the run's integral holds across saturated sample {m}");
     }
     assert!(saturated.len() < 20, "the loop leaves saturation: {saturated:?}");
 }
