@@ -404,7 +404,8 @@ impl Digital {
     }
 
     /// Checks a host write to a `PARAM` or `GLOBAL` net before it is committed (abi.md P6): the
-    /// parameter cone downstream of the net runs on a copy of the store. A false `check` pin refuses
+    /// parameter cone downstream of the net runs on a copy of the store. A false `check` pin anywhere
+    /// in the design (every dependent `where` is re-checked, §8.1.23) refuses
     /// the write and names the pin; a `RESHAPE` names the instance. Nothing of the engine changes.
     pub fn shadow(&self, net: NetId, offset: u32, bytes: &[u8]) -> Result<Shadow, DigitalError> {
         let analysis = self.plan.analysis();
@@ -426,8 +427,8 @@ impl Digital {
         }
         for inst in &self.plan.instances {
             let shape = inst.handle.shape();
-            for (i, pin) in shape.pins.iter().enumerate() {
-                if inst.pins[i] != Binding::Net(net) || pin.flags & pin_flag::HAS_CHECK == 0 {
+            for pin in shape.pins.iter() {
+                if pin.flags & pin_flag::HAS_CHECK == 0 {
                     continue;
                 }
                 let Some(check) = shape.pins.get(pin.check as usize) else { continue };

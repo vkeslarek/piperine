@@ -512,23 +512,21 @@ fn pss_takes_the_sessions_step_budget() {
     assert!(matches!(&failure, Failure::Solver { analysis: "pss", .. }), "{failure:?}");
 }
 
-/// A lone design whose `Thresh` has a param bounded below by a constant (`x >= 0.0`) and one
-/// bounded by another param (`v_release < v_pick`).
-const BOUNDED_PARAMS: &str = "pub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\npub module Thresh(p: Electrical, n: Electrical) {\n    x: f64 = 1.0 where x >= 0.0;\n    v_pick: f64 = 2.0;\n    v_release: f64 = 1.2 where v_release < v_pick;\n}\nanalog for Thresh { i(p, n) +> v(p, n) / 1k + x * 0.0 + v_release * 0.0; }\n\nmodule Top() {\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let t = Thresh(a, gnd);\n}\n";
-
 #[test]
 fn a_where_holds_at_equality_and_reads_the_other_params() {
     // Part III 8.1 and §0.3: `x >= 0.0` takes 0; `v_release < v_pick` is checked against the
-    // pick's value now, the default or one written earlier in the same table
-    let dir = tempfile::tempdir().expect("tmp");
-    let file = dir.path().join("bounded.msl");
-    std::fs::write(&file, BOUNDED_PARAMS).expect("write");
+    // pick's value now. Each entry of a table is one host `set`, applied in order, and §8.1.23
+    // re-checks every dependent `where` at each: a table that passes through an invalid state is
+    // refused even when its end state is valid
+    // `fixtures/bounded_params.msl`: a `Thresh` with a param bounded below by a constant
+    // (`x >= 0.0`) and one bounded by another param (`v_release < v_pick`); the CLI tests share it
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/bounded_params.msl");
     let overrides = |params: &[(&str, f64)]| with_params(Overrides { top: Some("Top".into()), ..op(&["a"]) }, params);
     for backend in ["interp", "rust"] {
-        for accepted in [&[("Top.t.x", 0.0)][..], &[("Top.t.v_release", 1.5)], &[("Top.t.v_release", 1.2)], &[("Top.t.v_pick", 1.0), ("Top.t.v_release", 0.5)]] {
+        for accepted in [&[("Top.t.x", 0.0)][..], &[("Top.t.v_release", 1.5)], &[("Top.t.v_release", 1.2)], &[("Top.t.v_release", 0.5), ("Top.t.v_pick", 1.0)]] {
             run(&file, backend, overrides(accepted)).unwrap_or_else(|f| panic!("{backend} {accepted:?}: {f}"));
         }
-        for refused in [&[("Top.t.x", -1.0)][..], &[("Top.t.v_release", 2.0)], &[("Top.t.v_release", 2.5)], &[("Top.t.v_pick", 1.0), ("Top.t.v_release", 1.5)]] {
+        for refused in [&[("Top.t.x", -1.0)][..], &[("Top.t.v_release", 2.0)], &[("Top.t.v_release", 2.5)], &[("Top.t.v_pick", 1.0)], &[("Top.t.v_pick", 1.0), ("Top.t.v_release", 0.5)], &[("Top.t.v_pick", 1.0), ("Top.t.v_release", 1.5)]] {
             match run(&file, backend, overrides(refused)) {
                 Err(Failure::Host { code: "E0802", .. }) => {}
                 other => panic!("{backend} {refused:?}: expected E0802, found {other:?}"),
