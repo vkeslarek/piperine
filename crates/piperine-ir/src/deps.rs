@@ -519,19 +519,19 @@ impl<'a> Walk<'a> {
             };
             crosses.push(one(match event.source {
                 EventSource::Cross { e, .. } => Some(e),
-                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle => None,
             }));
             ttols.push(one(match event.source {
                 EventSource::Cross { ttol, .. } => ttol,
-                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle => None,
             }));
             etols.push(one(match event.source {
                 EventSource::Cross { etol, .. } => etol,
-                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle => None,
             }));
             ats.push(one(match event.source {
                 EventSource::At(e) => Some(e),
-                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) => None,
+                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) | EventSource::Settle => None,
             }));
             guards.push(one(event.guard));
         }

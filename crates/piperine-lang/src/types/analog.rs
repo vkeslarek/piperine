@@ -87,8 +87,7 @@ impl Checker<'_> {
             self.coded(file, "E0450", node.span, "a probe is allowed in an `analog` block and a module body only".to_string(), "core primitive out of place");
         }
         if args.is_empty() || args.len() > 2 {
-            let message = format!("a probe takes 1 or 2 nodes, found {}", args.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, message));
+            self.arity_mismatch(file, node.span, "1 to 2", args);
             return None;
         }
         let mut natures = Vec::new();
@@ -221,8 +220,8 @@ impl Checker<'_> {
         // in it.
         let (min, max) = (sig.required.len(), sig.required.len() + sig.optional.len());
         if args.len() < min || args.len() > max {
-            let message = format!("`{}` takes {min} to {max} argument(s), found {}", id.name(), args.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, message));
+            let expected = if min == max { min.to_string() } else { format!("{min} to {max}") };
+            self.arity_mismatch(file, node.span, expected, args);
             return None;
         }
         let params: Vec<Ty> = sig.required.iter().chain(sig.optional).map(|p| p.ty()).collect();
@@ -252,8 +251,7 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
         let [arg] = args else {
-            let message = format!("`analysis` takes 1 argument, found {}", args.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), span, message));
+            self.arity_mismatch(file, span, 1, args);
             return None;
         };
         let kind = match &self.design.expr_node(arg.value).kind {

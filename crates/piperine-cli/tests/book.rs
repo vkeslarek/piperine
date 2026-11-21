@@ -527,19 +527,22 @@ fn the_cycle_counter_prints_three_pulses() {
 }
 
 #[test]
-fn the_clipper_refusal_no_longer_names_sin() {
-    // CAT-05 AC 3: the clipper's refusal names `settle` and `limexp`, not `sin` or `bound_step`,
-    // and the page's prose around it does not wait for them either.
+fn the_clipper_runs_as_the_book_prints() {
+    // UE-06 AC 3, UE-07 AC 2: the clipper's listing is the binary's output (`every_cli_listing_of_the_book_is_what_the_binary_prints`
+    // holds the bytes): two `clip` records, one per period, each `vin` near 0.72, and the page's
+    // prose around it no longer waits for `settle` or `limexp`.
     let out = run_listing("piperine run clipper.msl");
-    assert!(out.contains("`settle`") && out.contains("limexp"), "{out}");
-    for gone in ["`sin`", "method sin", "bound_step"] {
-        assert!(!out.contains(gone), "the refusal still names {gone}: {out}");
+    let clips: Vec<&str> = out.lines().filter(|l| l.contains(" clip t=")).collect();
+    assert_eq!(clips.len(), 2, "one clip record per period: {out}");
+    for clip in clips {
+        let vin: f64 = clip.split_whitespace().find_map(|w| w.strip_prefix("vin=")).and_then(|v| v.parse().ok()).unwrap_or_else(|| panic!("vin in `{clip}`"));
+        assert!((vin - 0.72).abs() < 0.05, "vin within 50 mV of 0.72 V: {clip}");
     }
     let html = content();
     let at = html.find("piperine run clipper.msl").expect("the clipper's command");
     let callout = &html[at..at + html[at..].find("</div>").expect("the callout closes")];
     let prose = plain(callout);
-    for gone in ["once `sin`", "`bound_step` is compiled", "sin is compiled", "bound_step is compiled"] {
+    for gone in ["are compiled", "does not take", "runs nothing", "those three diagnostics"] {
         assert!(!prose.contains(gone), "the clipper's prose still says {gone:?}");
     }
 }
@@ -640,4 +643,15 @@ fn blinky_runs_to_its_stop_in_the_book() {
     let cells: Vec<&str> = last.split_whitespace().collect();
     assert_eq!(cells.first(), Some(&"3.000000e-6"), "the table ends at the stop: {last}");
     assert_eq!(cells.last(), Some(&"3"), "the counter has counted three edges: {last}");
+}
+
+#[test]
+fn no_book_listing_prints_p0002() {
+    // PI-06 (X5): a type mismatch carries the code its spec row names (`E0180`), so the plain
+    // `P0002` is no code of the tool: no block and no code span of the Book prints it.
+    let html = content();
+    let printing: Vec<usize> = blocks(&html).iter().filter(|block| block.text.contains("P0002")).map(|block| block.at).collect();
+    assert!(printing.is_empty(), "blocks of the Book print P0002 at {printing:?}");
+    let spans: Vec<String> = code_spans(&html).into_iter().filter(|span| span.contains("P0002")).collect();
+    assert!(spans.is_empty(), "code spans of the Book name P0002: {spans:?}");
 }

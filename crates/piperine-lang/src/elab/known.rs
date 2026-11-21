@@ -208,10 +208,11 @@ impl Elaboration<'_, '_> {
                 let carrier = self.carrier_of(scope, recv)?;
                 Some(self.previous(carrier, origin))
             }
-            // The checker reports an event read as a `bool` first (part IV §13 rule 2).
             Builtin::Inflow => self.lower_inflow(scope, recv, origin),
+            // An event read is `fired(k)` (`event_reads.rs`, §13 rule 2) before it gets here; an
+            // edge that reaches this arm stands where no event read does.
             Builtin::Changed | Builtin::Rise | Builtin::Fall => {
-                self.unsupported(scope.file, span, "an event read as a `bool`");
+                self.unsupported(scope.file, span, "an event that is not an event read");
                 None
             }
         }

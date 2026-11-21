@@ -23,9 +23,18 @@ Types referenced: `Tx` (§2), `Stream<T>` (§7), `Logic`, `Strength`, `Wire`, `P
 **Purpose.** A register of any `Repr` type with an active-low asynchronous reset.
 
 ```rust
-module Dff<T: Repr>(in clk: Bit, in rst_n: Bit, in d: Bit<T>, out q: Bit<T>) { reset: T; }
+module Dff<T: Repr>(in clk: Bit, in rst_n: Bit, in d: Bit<T>, out q: Bit<T>) {
+    reset: T;
+}
+
 digital<T> for Dff<T> {
-    on clk.rise() || rst_n.fall() { if !rst_n { q <- reset; } else { q <- d; } }
+    on clk.rise() || rst_n.fall() {
+        if !rst_n {
+            q <- reset;
+        } else {
+            q <- d;
+        }
+    }
 }
 ```
 
@@ -52,15 +61,20 @@ definitions with no reaction.
 
 ```rust
 module DLatch<T: Repr>(in en: Bit, in d: Bit<T>, out q: Bit<T>) {}
+
 digital<T> for DLatch<T> {
-    on en.changed() || d.changed() { if en { q <- d; } }    // transparent from time 0: first values are changes
+    on en.changed() || d.changed() {
+        if en {
+            q <- d;
+        }
+    } // transparent from time 0: first values are changes
 }
 
 /// Cross-coupled NOR gates with gate delay: pure structure.
 module SrLatch(in s: Bit, in r: Bit, out q: Bit = false, out qn: Bit = true) {
     tpd: f64 = 10p where tpd > 0.0;
-    q  = !(r | qn) after tpd;
-    qn = !(s | q)  after tpd;
+    q = !(r | qn) after tpd;
+    qn = !(s | q) after tpd;
 }
 ```
 
@@ -93,8 +107,14 @@ module SrLatch(in s: Bit, in r: Bit, out q: Bit = false, out qn: Bit = true) {
 statement order.
 
 ```rust
-module MacPipe(in clk: Bit, in a: Bit<i16>, in b: Bit<i16>, in valid_in: Bit,
-               out acc: Bit<i40> = 0, out valid_out: Bit = false) {
+module MacPipe(
+    in clk: Bit,
+    in a: Bit<i16>,
+    in b: Bit<i16>,
+    in valid_in: Bit,
+    out acc: Bit<i40> = 0,
+    out valid_out: Bit = false,
+) {
     signal a1: Bit<i16>;
     signal b1: Bit<i16>;
     signal v1: Bit = false;
@@ -104,9 +124,15 @@ module MacPipe(in clk: Bit, in a: Bit<i16>, in b: Bit<i16>, in valid_in: Bit,
 
 digital for MacPipe {
     on clk.rise() {
-        a1 <- a; b1 <- b; v1 <- valid_in;                    // stage 1
-        p2 <- (a1 as i32) * (b1 as i32); v2 <- v1;           // stage 2
-        if v2 { acc <- acc + p2 as i40; } valid_out <- v2;   // stage 3
+        a1 <- a;
+        b1 <- b;
+        v1 <- valid_in; // stage 1
+        p2 <- (a1 as i32) * (b1 as i32);
+        v2 <- v1; // stage 2
+        if v2 {
+            acc <- acc + p2 as i40;
+        }
+        valid_out <- v2; // stage 3
     }
 }
 
@@ -114,8 +140,14 @@ module Delay<T: Repr, const N: usize>(in clk: Bit, in d: Bit<T>, out q: Bit<T>) 
     signal r: [Bit<T>; N];
     q = r[N - 1];
 }
+
 digital<T, N> for Delay<T, N> {
-    on clk.rise() { r[0] <- d; for k in 1..N { r[k] <- r[k - 1]; } }
+    on clk.rise() {
+        r[0] <- d;
+        for k in 1..N {
+            r[k] <- r[k - 1];
+        }
+    }
 }
 ```
 
@@ -148,8 +180,14 @@ digital<T, N> for Delay<T, N> {
 
 ```rust
 /// Tx is the enum of section 2.
-module UartTx(in clk: Bit, in baud_tick: Bit, in start: Bit, in byte: Bit<u8>,
-              out txd: Bit = true, out busy: Bit) {
+module UartTx(
+    in clk: Bit,
+    in baud_tick: Bit,
+    in start: Bit,
+    in byte: Bit<u8>,
+    out txd: Bit = true,
+    out busy: Bit,
+) {
     signal st: Bit<Tx> = Tx::Idle;
     signal sh: Bit<u8> = 0;
     busy = st != Tx::Idle;
@@ -158,15 +196,28 @@ module UartTx(in clk: Bit, in baud_tick: Bit, in start: Bit, in byte: Bit<u8>,
 digital for UartTx {
     on clk.rise() {
         match st {
-            Tx::Idle => if start { sh <- byte; st <- Tx::Start; },
-            _ if !baud_tick => {}
-            Tx::Start => { txd <- false; st <- Tx::Data { n: 0 }; }
+            Tx::Idle => if start {
+                sh <- byte;
+                st <- Tx::Start;
+            },
+            _ if !baud_tick => {},
+            Tx::Start => {
+                txd <- false;
+                st <- Tx::Data { n: 0 };
+            },
             Tx::Data { n } => {
                 txd <- (sh & 1) == 1;
                 sh <- sh >> 1;
-                st <- if n == 7 { Tx::Stop } else { Tx::Data { n: n + 1 } };
-            }
-            Tx::Stop => { txd <- true; st <- Tx::Idle; }
+                st <- if n == 7 {
+                    Tx::Stop
+                } else {
+                    Tx::Data { n: n + 1 }
+                };
+            },
+            Tx::Stop => {
+                txd <- true;
+                st <- Tx::Idle;
+            },
         }
     }
 }
@@ -192,13 +243,22 @@ digital for UartTx {
 **Purpose.** A synchronous RAM as an array of carriers, with read-before-write.
 
 ```rust
-module Ram(in clk: Bit, in we: Bit, in addr: Bit<u8>, in wdata: Bit<u32>, out rdata: Bit<u32>) {
-    signal mem: [Bit<u32>; 256];         // one carrier per word, materialized on first write (§5.1)
+module Ram(
+    in clk: Bit,
+    in we: Bit,
+    in addr: Bit<u8>,
+    in wdata: Bit<u32>,
+    out rdata: Bit<u32>,
+) {
+    signal mem: [Bit<u32>; 256]; // one carrier per word, materialized on first write (§5.1)
 }
+
 digital for Ram {
     on clk.rise() {
-        if we { mem[addr] <- wdata; }
-        rdata <- mem[addr];              // read-before-write
+        if we {
+            mem[addr] <- wdata;
+        }
+        rdata <- mem[addr]; // read-before-write
     }
 }
 ```
@@ -228,9 +288,15 @@ module Slice<T: Repr>(in clk: Bit, rx: flip Stream<T>, tx: Stream<T>) {
     tx.valid = full;
     rx.ready = !full || tx.ready;
 }
+
 digital<T> for Slice<T> {
-    on rx.beat(clk) { buf <- rx.data; full <- true; }
-    on clk.rise() && !(rx.valid && rx.ready) && tx.ready { full <- false; }
+    on rx.beat(clk) {
+        buf <- rx.data;
+        full <- true;
+    }
+    on clk.rise() && !(rx.valid && rx.ready) && tx.ready {
+        full <- false;
+    }
 }
 ```
 
@@ -256,14 +322,25 @@ digital<T> for Slice<T> {
 how many drivers there are.
 
 ```rust
-module IrqSource(in req: Bit, irq_n: Wire) { irq_n = if req { Logic::strong(false) } else { Logic::Z }; }
+module IrqSource(in req: Bit, irq_n: Wire) {
+    irq_n = if req {
+        Logic::strong(false)
+    } else {
+        Logic::Z
+    };
+}
 
 module IrqController(in clk: Bit, irq_n: Wire, out pending: Bit = false) {}
-digital for IrqController { on clk.rise() { pending <- !irq_n.v; } }
+
+digital for IrqController {
+    on clk.rise() {
+        pending <- !irq_n.v;
+    }
+}
 
 module Board(in clk: Bit, in req0: Bit, in req1: Bit, out pending: Bit) {
     signal irq_n: Wire;
-    let pu = Pullup(irq_n);                  // wins only while every source is released
+    let pu = Pullup(irq_n); // wins only while every source is released
     let s0 = IrqSource(req0, irq_n);
     let s1 = IrqSource(req1, irq_n);
     let ic = IrqController(clk, irq_n, pending);

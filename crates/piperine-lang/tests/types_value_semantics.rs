@@ -101,7 +101,7 @@ fn a_range_index_is_an_array_of_the_folded_length() {
     // through a `const` and arithmetic. The result is passed where an array of that length is wanted.
     let items = "const TAPS: [f64; 4] = [0.25, 0.5, 0.5, 0.25];\nconst LOW: usize = 1;\nfn pair(xs: [f64; 2]) -> f64 { xs[0] + xs[1] }\nfn all(xs: [f64; 4]) -> f64 { xs[0] }\nfn tail(xs: [f64; 3]) -> f64 { xs[0] }\nfn head(xs: [f64; 3]) -> f64 { xs[0] }";
     assert_clean(&source(items, "let a = pair(TAPS[1..3]); let b = pair(TAPS[LOW..=LOW + 1]); let c = all(TAPS[..]); let d = tail(TAPS[1..]); let e = head(TAPS[..3]);"));
-    assert_refused(&source(items, "let a = pair(TAPS[1..4]);"), "P0002", "[f64; 3]");
+    assert_refused(&source(items, "let a = pair(TAPS[1..4]);"), "E0180", "[f64; 3]");
 }
 
 #[test]
@@ -134,7 +134,7 @@ fn an_array_is_passed_as_itself() {
     // §1.2.4 (VS-06 AC 5): `fn f(xs: [f64; 3])` takes the array, with no `&`; `[x; N]` takes an `x` of any type.
     let items = "fn first(xs: [f64; 3]) -> f64 { xs[0] }\n#[derive(PartialEq)] enum Mode { Off, On }";
     assert_clean(&source(items, "let a = [1.0, 2.0, 3.0]; let b = first(a); let c = first([0.5; 3]); let m = [(1.0, true); 2];"));
-    assert_refused(&source(items, "let a = [1.0, 2.0]; let b = first(a);"), "P0002", "[f64; 3]");
+    assert_refused(&source(items, "let a = [1.0, 2.0]; let b = first(a);"), "E0180", "[f64; 3]");
 }
 
 #[test]

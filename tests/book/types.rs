@@ -94,14 +94,14 @@ fn an_enum_is_matched_compared_and_printed_by_the_number_of_its_variant() {
 fn a_match_that_misses_a_variant_stops_the_build() {
     // types~545f1643 "Add a fourth variant later and this match stops the build until it has an arm for it, so
     // a new case cannot be forgotten silently" and the second row of the chapter's table of mistakes,
-    // types~79f450b1 (P0002): the `match` of `levels.msl` with a variant `Over` added
+    // types~39ba351d (E0180): the `match` of `levels.msl` with a variant `Over` added
     let source = Chapter::read().text("types#8").replace("enum Level { Low, Between, High }", "enum Level { Low, Between, High, Over }");
     let faulty = Faulty::elaborating("types~545f1643", &source, "Levels");
     // E0184 since composite-values T14: the exhaustiveness check names a pattern the arms miss (§1.8.6)
     assert_eq!(faulty.first("E0184").message, "a `match` over `enum `Level`` is not exhaustive: `Level::Over` is not covered (§1.8.6)");
     // the first row of the table: an `Option<f64>` is not an `f64`
-    let added = ValueFile::refused("types~79f450b1", "", "let limit: Option<f64> = Some(3.3); let x = limit + 1.0; emit!(\"r\", x = x);");
-    assert_eq!(added.first("P0002").message, "mismatched types: expected `f64`, found `Option<f64>`");
+    let added = ValueFile::refused("types~39ba351d", "", "let limit: Option<f64> = Some(3.3); let x = limit + 1.0; emit!(\"r\", x = x);");
+    assert_eq!(added.first("E0180").message, "mismatched types: expected `f64`, found `Option<f64>`");
     let fixed = ValueFile::written("", "let limit: Option<f64> = Some(3.3); let x = limit.unwrap_or(0.0) + 1.0; emit!(\"r\", x = x);");
     Printed::holds("4.300000e0", Fields::real(&fixed, "x"), "the fix of the table");
 }
@@ -236,7 +236,7 @@ fn optional_arguments_may_be_left_out_or_named() {
     assert_eq!(Fields::of(s, "positional"), &Field::Real(15.0), "k = Some(3.0)");
     assert_eq!(Fields::of(s, "named"), &Field::Real(1.0), "limit skips k and clamps 10.0 to 1.0");
     let integer = Faulty::elaborating("types~4b156a2d", "module Top() { r: f64 = 100; }\n", "Top");
-    assert_eq!(integer.first("P0002").message, "mismatched types: expected `f64`, found `an integer literal`");
+    assert_eq!(integer.first("E0180").message, "mismatched types: expected `f64`, found `an integer literal`");
 }
 
 #[test]

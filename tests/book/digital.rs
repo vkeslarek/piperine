@@ -246,17 +246,20 @@ fn without_its_delay_the_book_latch_is_a_loop_e0339() {
 }
 
 #[test]
-fn the_phase_detector_is_refused_for_events_read_as_bools() {
-    // digital#6 (refused): `Pfd3`: `s += 1` on a local of a reaction (L5, lifted by composite-values T11: the checker
-    // accepts it) and `fref.rise()` tested as a `bool` (L51, still refused)
+fn the_phase_detector_runs_assignment_and_events_read_as_bools() {
+    // digital#6 (run): `Pfd3`: `s += 1` on a local of a reaction (every local may be assigned, composite-values T11)
+    // and `fref.rise()` tested as a `bool` (§13 rule 2, unknown-semantics-events T14). A rising `fref` at 1 us
+    // raises `up`, a rising `fvco` at 2 us brings the state back, and both rising at 3 us cancel
     let chapter = Chapter::read();
-    let after = "module Top() { signal a: Bit = false; signal b: Bit = false; signal up: Bit; signal dn: Bit; let p = Pfd3(a, b, up, dn); }\n";
-    let model = chapter.wrapped("pfd.msl", "", "digital#6", after);
-    let given = Refusal::of(model.run(Commands::transient_of("Top", 1e-6)), "digital#6");
-    let expected = "an event read as a `bool` is not supported yet";
-    assert!(given.contains(&("P0001".to_string(), expected.to_string())), "{expected}: {given:?}");
-    assert!(!given.iter().any(|(_, message)| message.contains("assignment")), "assignment is accepted: {given:?}");
-    Refusal::expect(model.run(Commands::transient_of("Top", 1e-6)), "digital#6", "P0001", "an event read as a `bool` is not supported yet");
+    let after = "module Top() { signal a: Bit = false; signal b: Bit = false; signal up: Bit; signal dn: Bit; let p = Pfd3(a, b, up, dn); }\ndigital for Top { on at(1u) { a <- true; } on at(2u) { b <- true; } on at(2.2u) { a <- false; b <- false; } on at(3u) { a <- true; b <- true; } }\n";
+    let overrides = Overrides { print_step: Some(5e-7), ..Commands::transient_of("Top", 4e-6) };
+    let ran = chapter.wrapped("pfd.msl", "", "digital#6", after).run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
+    let at = |microseconds: f64| ran.table.rows.iter().position(|row| matches!(row[0], Cell::Real(time) if (time - microseconds * 1e-6).abs() < 1e-9)).unwrap_or_else(|| panic!("no row at {microseconds} us"));
+    let levels = |microseconds: f64| (Table::text(&ran, at(microseconds), "Top.up"), Table::text(&ran, at(microseconds), "Top.dn"));
+    assert_eq!(levels(0.5), ("Bool(false)".to_string(), "Bool(false)".to_string()), "no edge yet");
+    assert_eq!(levels(1.5), ("Bool(true)".to_string(), "Bool(false)".to_string()), "fref first: up");
+    assert_eq!(levels(2.5), ("Bool(false)".to_string(), "Bool(false)".to_string()), "fvco next: back to zero");
+    assert_eq!(levels(3.5), ("Bool(false)".to_string(), "Bool(false)".to_string()), "both at once: up first, then down");
 }
 
 #[test]
@@ -537,7 +540,7 @@ fn e0432_a_commit_of_another_type_is_a_mismatch() {
     // a u8: commit count + 1": the operand `1.0` is the mismatch, with the Book's code
     let book = Faulty::running("digital~54ec4a1d", "module Top() { signal count: Bit<u8> = 0; }\ndigital for Top { on at(1u) { count <- count + 1.0; } }\n", Commands::transient_of("Top", 1e-6));
     assert_eq!(book.first("E0432").message, "mismatched types: expected `u8`, found `f64`");
-    assert!(book.given.iter().all(|reported| reported.code != "P0002"), "the Book's code, not the plain mismatch");
+    assert!(book.given.iter().all(|reported| reported.code != "E0180"), "the Book's code, not the plain mismatch");
     let commit = Faulty::running("digital~54ec4a1d", "module Top() { signal count: Bit<u8> = 0; }\ndigital for Top { on at(1u) { count <- 1.0; } }\n", Commands::transient_of("Top", 1e-6));
     assert_eq!(commit.first("E0432").message, "mismatched types: expected `u8`, found `f64`");
 }

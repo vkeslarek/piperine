@@ -62,7 +62,7 @@ impl<'a> CompositeForms<'a> {
             match event.source {
                 EventSource::Cross { e, ttol, etol } => exprs.extend([e].into_iter().chain(ttol).chain(etol)),
                 EventSource::At(e) => exprs.push(e),
-                EventSource::Changed(_) | EventSource::ParamChanged(_) => {}
+                EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle => {}
             }
         }
         stmts.extend(body.reactions().iter().flat_map(|reaction| reaction.stmts.iter().copied()));

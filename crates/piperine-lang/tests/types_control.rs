@@ -78,7 +78,7 @@ fn let_mut_and_every_compound_operator_type_check() {
     assert_clean(&source("", "let x; let c = true; if c { x = 1.0; } else { x = 2.0; } let y = x + 1.0;"));
     assert_clean(&source("", "let x: f64; x = 1.0; let y = x;"));
     // a mismatching value is an ordinary mismatch
-    assert_refused(&source("", "let a = 1.0; a = true;"), "P0002", "expected `f64`");
+    assert_refused(&source("", "let a = 1.0; a = true;"), "E0180", "expected `f64`");
 }
 
 #[test]
@@ -129,9 +129,9 @@ fn every_loop_form_type_checks() {
     // `break` and `continue` leave the innermost loop of a nested pair
     assert_clean(&source("", "let n = 0; while n < 3 { n += 1; for i in 0..2 { if i == 1 { break; } continue; } }"));
     // a mismatching `break` value, an integer range over floats, a non-bool condition
-    assert_refused(&source("", "let v = loop { if true { break 1u8; } break 2u16; };"), "P0002", "expected `u8`");
-    assert_refused(&source("", "for i in 0.0..1.0 { }"), "P0002", "an integer type");
-    assert_refused(&source("", "while 1 { }"), "P0002", "expected `bool`");
+    assert_refused(&source("", "let v = loop { if true { break 1u8; } break 2u16; };"), "E0180", "expected `u8`");
+    assert_refused(&source("", "for i in 0.0..1.0 { }"), "E0180", "an integer type");
+    assert_refused(&source("", "while 1 { }"), "E0180", "expected `bool`");
 }
 
 #[test]
@@ -163,10 +163,10 @@ fn return_and_question_mark_type_check() {
                   fn chained(a: Option<u8>) -> Option<u8> { Some(a? + 1) }";
     assert_clean(&source(option, "let s = first(Some(1), None); let t = chained(Some(1));"));
     // a `return` of the wrong type, and a missing value, are mismatches
-    assert_refused(&source("fn f(x: f64) -> f64 { return true; }", "let y = f(1.0);"), "P0002", "expected `f64`");
-    assert_refused(&source("fn f(x: f64) -> f64 { return; }", "let y = f(1.0);"), "P0002", "expected `f64`");
+    assert_refused(&source("fn f(x: f64) -> f64 { return true; }", "let y = f(1.0);"), "E0180", "expected `f64`");
+    assert_refused(&source("fn f(x: f64) -> f64 { return; }", "let y = f(1.0);"), "E0180", "expected `f64`");
     // the operand of `?` is an `Option`
-    assert_refused(&source("fn f(a: u8) -> Option<u8> { let x = a?; Some(x) }", "let y = f(1);"), "P0002", "an `Option`");
+    assert_refused(&source("fn f(a: u8) -> Option<u8> { let x = a?; Some(x) }", "let y = f(1);"), "E0180", "an `Option`");
 }
 
 #[test]
@@ -192,10 +192,10 @@ fn guards_ranges_or_bindings_and_at_type_check() {
                  fn named(n: u8) -> u8 { match n { whole => whole + 1 } }";
     assert_clean(&source(items, "let a = classify(1); let b = floats(1.0); let c = payload(None); let d = named(2);"));
     // a guard is a `bool`
-    assert_refused(&source("fn f(n: u8) -> u8 { match n { x if x => 1, _ => 0 } }", "let y = f(1);"), "P0002", "expected `bool`");
+    assert_refused(&source("fn f(n: u8) -> u8 { match n { x if x => 1, _ => 0 } }", "let y = f(1);"), "E0180", "expected `bool`");
     // a range over an enum is a plain mismatch (D6)
     let en = "#[derive(Repr)]\nenum Mode { A, B }\nfn f(m: Mode) -> u8 { match m { Mode::A..=Mode::B => 1, _ => 0 } }";
-    assert_refused(&source(en, "let y = f(Mode::A);"), "P0002", "range pattern");
+    assert_refused(&source(en, "let y = f(Mode::A);"), "E0180", "range pattern");
 }
 
 #[test]
@@ -305,13 +305,13 @@ fn closures_type_check_where_rust_allows_them() {
     // a closure may be passed to a parameter of function type
     assert_clean(&source("fn apply(f: fn(f64) -> f64, x: f64) -> f64 { f(x) }", "let y = apply(|x: f64| x + 1.0, 2.0);"));
     // a call is typed from the closure's own signature
-    assert_refused(&source("", "let f = |x: f64| x; let y = f(true);"), "P0002", "expected `f64`");
+    assert_refused(&source("", "let f = |x: f64| x; let y = f(true);"), "E0180", "expected `f64`");
     // a parameter with no written type and no call is `E0181`; so is one with no `let` to find a call
     assert_refused(&source("", "let g = |x| x;"), "E0181", "never called");
     let used = outcome(&source("", "let g = |x| x; let h = g;"));
     assert!(!used.is_empty() && used.iter().all(|d| d.0 == "E0181"), "{used:?}");
     // the closure's value is the `Fn` type, so a mismatching annotation is a mismatch
-    assert_refused(&source("", "let f: u8 = |x: f64| x;"), "P0002", "expected `u8`");
+    assert_refused(&source("", "let f: u8 = |x: f64| x;"), "E0180", "expected `u8`");
 }
 
 #[test]
@@ -358,9 +358,9 @@ fn a_function_name_is_a_function_value() {
     assert_eq!(local_type(&src, "f"), Ty::Fn(vec![Ty::F64, Ty::F64], Box::new(Ty::F64)));
     assert_eq!(local_type(&src, "r"), Ty::F64);
     // a call through the value is typed from its signature
-    assert_refused(&source(APPLY, "let f = h; let r = f(1.0);"), "P0002", "expected 2 argument(s)");
+    assert_refused(&source(APPLY, "let f = h; let r = f(1.0);"), "E0141", "expected 2 argument(s)");
     // a function of another signature is no `fn(f64) -> f64`
-    assert_refused(&source(APPLY, "let r = apply(h, 1.0);"), "P0002", "expected `fn(f64) -> f64`");
+    assert_refused(&source(APPLY, "let r = apply(h, 1.0);"), "E0180", "expected `fn(f64) -> f64`");
     // a parameter of function type is called
     assert_clean(&source("fn run(f: fn(f64) -> f64, x: f64) -> f64 { f(x) }", "let y = run(|a: f64| a, 1.0);"));
 }
@@ -407,7 +407,7 @@ fn direct_and_mutual_recursion_type_check() {
                  fn odd(n: u8) -> bool { if n == 0 { false } else { even(n - 1) } }";
     assert_clean(&source(items, "let f = fact(5); let e = even(4); let o = odd(3);"));
     // the mismatch inside a recursive body is still a mismatch
-    assert_refused(&source("fn bad(n: u8) -> u8 { if n == 0 { 1 } else { bad(n - 1) + true } }", "let y = bad(2);"), "P0002", "expected `u8`");
+    assert_refused(&source("fn bad(n: u8) -> u8 { if n == 0 { 1 } else { bad(n - 1) + true } }", "let y = bad(2);"), "E0180", "expected `u8`");
     // the class of a recursive function is the fixed point of its body's classes (§3): `a` reads the
     // solve and `b` only calls `a`, so a closure calling `b` is solve-reading, and not callable in a
     // const context

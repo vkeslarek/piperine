@@ -6,7 +6,7 @@
 //! subset and refused by name. A tuple is the initializer of a tuple `let` and nothing else:
 //! the elaborator gives each component its own local.
 
-use crate::msl::{Diagnostic, Span};
+use crate::msl::Span;
 use crate::pom::{Arg, AttrArgNode, AttrInputNode, DeclId, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, PathId, Resolution};
 
 use super::check::Checker;
@@ -46,8 +46,7 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let [arg] = args else {
             let span = self.design.expr_node(expr).span;
-            let message = format!("`Some` takes 1 argument, found {}", args.len());
-            self.report(file, Diagnostic::new("P0002", format!("mismatched types: {message}"), span, message));
+            self.arity_mismatch(file, span, 1, args);
             return None;
         };
         match inner {

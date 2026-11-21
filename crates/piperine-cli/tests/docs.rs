@@ -113,7 +113,7 @@ fn gaps_drops_what_host_ii_closed() {
         assert!(!gaps.contains(&format!("- **{closed} \u{2014}")), "{closed} is still an entry");
     }
     assert!(!gaps.contains("A digital-only transient is refused"), "the refusal is still listed");
-    assert!(gaps.contains("| L39 | a top module with a continuous port"), "L39 stays");
+    // (L39, which stayed, is closed by `params-and-io`: `gaps_no_longer_lists_x5_l20_l39_h12`)
     let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("a row {id}")).to_string();
     assert!(row("H1").contains("`Session::drive`") && row("H1").contains("`force` and `release`"), "H1 says what is delivered and what is left");
     assert!(row("H3").contains("`ttol`") && row("H3").contains("`tnom`"), "H3 lists what is left of the options");
@@ -139,12 +139,12 @@ fn gaps_drops_what_root_e2e_closed() {
     assert!(row("H16").contains("`dt_min`") && row("H16").contains("Owner: `host-analyses`"), "H16: {}", row("H16"));
     assert!(row("H17").contains("`--stream <name>`") && row("H17").contains("Owner: `host-analyses`"), "H17: {}", row("H17"));
     assert!(row("H18").contains("`E0171`") && row("H18").contains("Owner: `cli-packages`"), "H18: {}", row("H18"));
-    let unraised = gaps.split("**Error codes of the spec that no source file mentions").nth(1).and_then(|s| s.split("`E0105").nth(1)).and_then(|s| s.split('`').next()).expect("section 10 lists the unraised codes");
+    let unraised = gaps.split("**Error codes of the spec that no source file mentions").nth(1).and_then(|s| s.split("by the elaborator.\n`").nth(1)).and_then(|s| s.split('`').next()).expect("section 10 lists the unraised codes");
     let listed: Vec<&str> = unraised.split_whitespace().collect();
     for raised in ["E0503", "E0504", "E0505", "E0507", "E0508", "E0803", "E0804", "E0805", "E0806"] {
         assert!(!listed.contains(&raised), "{raised} is raised and is listed as unraised");
     }
-    assert!(listed.contains(&"E0110") && listed.contains(&"E0906"), "the list keeps the codes nothing raises");
+    assert!(listed.contains(&"E0123") && listed.contains(&"E0614"), "the list keeps the codes nothing raises");
 }
 
 #[test]
@@ -299,21 +299,22 @@ fn gaps_drops_what_msl_fixes_closed() {
     let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("GAPS.md has the row {id}")).to_string();
     assert!(row("L47").contains("`simparam`") && !row("L47").contains("`freq()`, "), "L47 keeps simparam: {}", row("L47"));
     assert!(row("L16").contains("H.5, H.6, H.7") && !row("L16").contains("unwrap expect"), "L16 keeps H.5 to H.7: {}", row("L16"));
-    assert!(!row("L58").contains("db10") && !row("L58").contains("absdelta") && row("L58").contains("`limexp`") && row("L58").contains("`normal`"), "L58: {}", row("L58"));
+    assert!(!row("L58").contains("db10") && !row("L58").contains("absdelta") && !row("L58").contains("`limexp`") && row("L58").contains("`normal`"), "L58 (limexp left with unknown-semantics-events T17): {}", row("L58"));
     // (`### S2.` was kept here until `host-ii` closed it: `gaps_drops_what_host_ii_closed`)
     // (`### S4.` was kept here until `analog-structure` closed it, T35: `gaps_drops_what_analog_structure_closed`)
     for kept in ["### S3.", "### S6.", "### B3.", "### B4."] {
         assert!(gaps.contains(kept), "GAPS.md keeps {kept}");
     }
     // the counts follow, as `host-ii` moved them, `unknown-semantics` (L18, L19) after it and
-    // `analog-structure` (nine loud rows and S4) after that, `composite-values` phase A (L5, L6, L10)
-    // next, L63 (§1.4.4 literal typing) after it, and `value-semantics` last (it closed S7): 2 silent, 2 broken, 38 loud
-    assert!(gaps.contains("2 silent, 2 broken, 38 loud"), "the counts of §9 follow");
+    // `analog-structure` (nine loud rows and S4) after that, `unknown-semantics-events` (L52) after
+    // that: 2 silent, 2 broken, 40 loud; `params-and-io` (L20, L39) took the loud rows to 38, `composite-values`
+    // phase A (L5, L6, L10) and L63 to 35, `Pfd3` (L51: its event reads ran, its assignment now does) to 34, and `value-semantics` closed S7 (the spec amendment had added it)
+    assert!(gaps.contains("2 silent, 2 broken, 34 loud"), "the counts of §9 follow");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
     assert_eq!(rows("## 3. Silent", "## 4."), 2, "two silent entries");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 38, "thirty-eight loud rows");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 34, "thirty-four loud rows");
 }
 
 #[test]
@@ -324,7 +325,7 @@ fn gaps_drops_the_value_semantics_gap() {
     assert!(!gaps.contains("### S7."), "S7 is closed");
     assert!(!gaps.contains("| S3, S6, S7 |") && gaps.contains("| S3, S6 |"), "the section table lists S3 and S6");
     assert!(!gaps.contains("E0331") && !gaps.contains("(`value-semantics`)"), "no entry names the retired code or the plan");
-    assert!(gaps.contains("2 silent, 2 broken, 38 loud"), "the counts are restored");
+    assert!(gaps.contains("2 silent, 2 broken, 34 loud"), "the counts are restored");
 }
 
 #[test]
@@ -497,18 +498,75 @@ fn gaps_drops_what_composite_values_phase_a_closed() {
     }
     let l9 = row("L9");
     assert!(l9.contains("capturing closure") && l9.contains("`generics`") && !l9.contains("function name passed as a value"), "L9 is the generics part only: {l9}");
-    // the rows that stay point at gaps that stay: the Book's types#17 and analog#2 refusals moved off L6 and L9
+    // the rows that stay point at gaps that stay: the Book's types#17 refusal moved off L6 (analog#2 runs since `unknown-semantics-events`)
     let book = gaps.split("## 11. The Book against the binary").nth(1).expect("section 11");
     for stale in ["| L5 |", "| L6 |", "| L10 |"] {
         assert!(!book.contains(stale), "section 11 still names {stale}");
     }
-    assert!(book.contains("| types#17 | L4 |") && book.contains("| analog#2 | L58 |"), "the two rows follow their remaining refusals");
+    assert!(book.contains("| types#17 | L4 |") && !book.contains("| analog#2 |"), "types#17 follows its remaining refusal and analog#2 runs");
     // section 9: the rows of I §1-§2 and I §3-§3.3 no longer list the loops as a hole
     let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("section 9");
     let functions = coverage.lines().find(|l| l.starts_with("| I §3–§3.3 ")).expect("the coverage row of §3.3");
     assert!(functions.contains("loops, recursion, closures") && functions.contains("run") && !functions.contains("handles, loops"), "{functions}");
     let values = coverage.lines().find(|l| l.starts_with("| I §1–§2 ")).expect("the coverage row of §1 and §2");
     assert!(values.contains("`let mut`, assignment and patterns run"), "{values}");
-    // the counts follow: 39 loud, then 38 when `composite-values` closed L63 (§1.4.4 literal typing)
-    assert!(gaps.contains("38 loud"), "the loud count is 38");
+    // the counts follow: 39 loud, then 38 when `composite-values` closed L63 (§1.4.4 literal typing), 35 with `params-and-io`
+    assert!(gaps.contains("34 loud"), "the loud count is 34 once `params-and-io`, `composite-values` and the last of `unknown-semantics-events` closed rows");
+}
+
+#[test]
+fn the_book_no_longer_says_settle_is_not_compiled() {
+    // unknown-semantics-events UE-07 AC 2 (T22): `settle` runs, so the Book's status paragraph, the buck's
+    // "Run it" box and the mixed chapter's introduction no longer list it among what the compiler refuses
+    let book = read("docs/book/content.html");
+    for stale in ["`settle` event.", "<code>settle</code> event.", "the check's <code>settle</code> is not compiled yet", "not compiled yet and is refused with P0001: the <code>settle</code> event"] {
+        assert!(!book.contains(stale), "the Book still says {stale:?}");
+    }
+    assert!(!book.contains("both commands refuse the file and run nothing"), "the buck's Run it box still says the file is refused");
+}
+
+#[test]
+fn gaps_no_longer_lists_settle_or_limexp() {
+    // unknown-semantics-events UE-07 AC 1 (T23): `GAPS.md` drops L52 (`settle`) and `limexp` from L58, section 1's
+    // "stdlib that runs" names `settle` and `limexp`, the coverage rows of IV section 13 and V section 15 no longer
+    // list `settle`; L53 stays until the feature's last batch
+    let gaps = read("GAPS.md");
+    assert!(!gaps.contains("| L52 |"), "GAPS.md still has the row L52");
+    let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("GAPS.md has the row {id}")).to_string();
+    assert!(!row("L58").contains("`limexp`"), "L58 still lists limexp: {}", row("L58"));
+    assert!(!gaps.contains("| L51 |"), "L51 (`Pfd3`) is closed: its event reads ran and `composite-values` lifted the assignment");
+    assert!(row("L53").contains("`Event`"), "L53 stays");
+    let runs = gaps.lines().find(|l| l.starts_with("| stdlib that runs |")).expect("section 1 lists the stdlib that runs");
+    assert!(runs.contains("`settle`") && runs.contains("`limexp`"), "section 1 names settle and limexp: {runs}");
+    let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("GAPS.md has a section 9");
+    for prefix in ["| IV §12–§13 ", "| V §15–§18 "] {
+        let line = coverage.lines().find(|l| l.starts_with(prefix)).unwrap_or_else(|| panic!("the coverage row {prefix}"));
+        assert!(!line.contains("`settle`"), "{line}");
+        assert!(!line.contains("an event as a `bool`"), "{line}");
+    }
+}
+
+#[test]
+fn gaps_no_longer_lists_x5_l20_l39_h12() {
+    // params-and-io PI-14 AC 1 (T28): X5, L20, L39 and H12 are gone from `GAPS.md` as entries and rows
+    // (the numbering of the other sections is kept), section 10 lists exactly the rows of the guard's
+    // allow-list `code_owners.tsv`, and the roadmap and the state record what B1 to B4 delivered
+    let gaps = read("GAPS.md");
+    for closed in ["| L20 |", "| L39 |", "| H12 |", "- **X5 \u{2014}"] {
+        assert!(!gaps.contains(closed), "{closed} is still in GAPS.md");
+    }
+    assert!(gaps.contains("| L21 |") && gaps.contains("| H13 |") && gaps.contains("- **X6 \u{2014}"), "the neighbours keep their numbers");
+    let owners = read("crates/piperine-lang/tests/support/code_owners.tsv");
+    let mut allowed: Vec<&str> = owners.lines().filter(|line| !line.starts_with('#') && !line.is_empty()).filter_map(|line| line.split('\t').next()).collect();
+    allowed.sort_unstable();
+    let listed = gaps.split("**Error codes of the spec that no source file mentions").nth(1).and_then(|s| s.split("by the elaborator.\n`").nth(1)).and_then(|s| s.split('`').next()).expect("section 10 lists the unraised codes");
+    let mut listed: Vec<&str> = listed.split_whitespace().collect();
+    listed.sort_unstable();
+    assert_eq!(listed, allowed, "section 10 lists exactly the rows of code_owners.tsv");
+    assert!(gaps.contains(&format!("({} of ", allowed.len())), "the heading counts the listed codes");
+    let roadmap = read("ROADMAP.md");
+    let row = roadmap.lines().find(|line| line.starts_with("| `params-and-io` |")).expect("the roadmap has a params-and-io row");
+    assert!(row.contains("B1 to B4") && row.contains("B5") && row.contains("`composite-values`"), "the row says what B1 to B4 delivered and that B5 and B6 wait: {row}");
+    let state = read(".specs/STATE.md");
+    assert!(state.contains("### MD-75:") && state.contains("`params-and-io`"), "STATE.md holds the decision entry");
 }

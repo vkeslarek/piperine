@@ -88,18 +88,49 @@ fn event_expressions_are_typed() {
     let d = diagnostics(src);
     assert_eq!((codes(&d), snippet(src, &d[0])), (vec!["E0230".to_string()], "p.changed()"));
 
-    // Out of the subset: `settle`. (A tolerance given to `cross` types since `msl-fixes` T7, see
+    // `settle` is an `Event` since unknown-semantics-events T5 (`settle_is_an_event_in_every_event_position`).
+    // (A tolerance given to `cross` types since `msl-fixes` T7, see
     // `cross_takes_ttol_and_etol_by_position_and_by_name`.)
-    for (head, at, names) in [("settle", "settle", "`settle`")] {
-        let src = with_heads(&[head]);
-        let d = diagnostics(&src);
-        assert_eq!(codes(&d), ["P0001"], "{head}");
-        assert!(d[0].diagnostic.message.contains(names), "{head}: {}", d[0].diagnostic.message);
-        assert_eq!(snippet(&src, &d[0]), at, "{head}");
-    }
     // No tolerance, or tolerances that are `None`, is the event the `Cross` node has.
     let src = with_heads(&["cross(v(p))", "cross(v(p), None, None)"]);
     checked(&design_of(&src), &src);
+}
+
+#[test]
+fn settle_is_an_event_in_every_event_position() {
+    // §13 rule 10: `settle` is a core `Event` value; §13 rule 14: it combines with `&&` and `||`
+    // like any event. It replaces the `P0001` "built-in `settle`" this test pinned (L52,
+    // unknown-semantics-events UE-03).
+    let heads = ["settle", "settle && en.high()", "settle || clk.rise()", "clk.rise() || settle", "(settle || clk.changed()) && en.high()"];
+    let src = with_heads(&heads);
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    for head in heads {
+        let found = exprs_reading(&design, &types, &src, head);
+        assert!(!found.is_empty() && found.iter().all(|e| types.ty(*e) == Some(&Ty::Event)), "{head}: {found:?}");
+    }
+    // a body `let` is an event position, and the name it binds stands in a head
+    let src = "module Top(in clk: Bit, in en: Bit) { let s = settle; let t = s || clk.fall(); }";
+    let design = design_of(src);
+    let types = checked(&design, src);
+    for name in ["s", "t"] {
+        assert_eq!(types.local(binding(&design, name)), Some(&Ty::Event), "{name}");
+    }
+}
+
+#[test]
+fn settle_outside_an_event_position_is_e0441() {
+    // §13 rule 8, rule 10: `settle` is an `Event` and is never carried, stored or passed
+    let cases: [(&str, &str); 3] = [
+        ("module Top(in clk: Bit, out q: Bit) { q = settle; }", "settle"),
+        ("module Top(in clk: Bit) { }\nanalog for Top { let x = settle; }", "settle"),
+        ("fn pick(e: bool) -> bool { e }\nmodule Top(in clk: Bit) { let y = pick(settle); }", "settle"),
+    ];
+    for (src, at) in cases {
+        let d = diagnostics(src);
+        assert_eq!(codes(&d), ["E0441"], "{src}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(snippet(src, &d[0]), at, "{src}");
+    }
 }
 
 #[test]
@@ -115,7 +146,7 @@ fn a_bool_head_is_e0430() {
     // An `||` of an event and a `bool` is a mismatch of its operand.
     let src = with_heads(&["clk.rise() || en"]);
     let d = diagnostics(&src);
-    assert_eq!((codes(&d), snippet(&src, &d[0])), (vec!["P0002".to_string()], "en"));
+    assert_eq!((codes(&d), snippet(&src, &d[0])), (vec!["E0180".to_string()], "en"));
 }
 
 #[test]
@@ -251,13 +282,14 @@ digital for Top {\n    on clk.rise() && cnt > 3 {\n        let next = cnt + 1;\n
 #[test]
 fn a_commit_of_another_type_is_e0432() {
     // DIG-05 AC 8 (§12.1.9): the committed expression has the value type of its target. An `Event`
-    // committed is `E0441` (§13 rule 8); a commit outside a reaction body is outside the subset.
+    // committed where a type other than `bool` is expected is `E0441` (§13 rules 2 and 8, design D2;
+    // onto a `bool` it is read, `an_event_committed_onto_a_bool_carrier_reads_as_a_bool`).
     for (body, at, code) in [
         ("count <- true;", "true", "E0432"),
         ("count <- 1.5;", "1.5", "E0432"),
         ("count <- wide;", "wide", "E0432"),
-        ("flag <- clk.rise();", "clk.rise()", "E0441"),
-        ("flag <- clk.rise() || clk.fall();", "clk.rise() || clk.fall()", "E0441"),
+        ("count <- clk.rise();", "clk.rise()", "E0441"),
+        ("count <- clk.rise() || clk.fall();", "clk.rise() || clk.fall()", "E0441"),
     ] {
         let src = format!("module Top(in clk: Bit, in wide: Bit<u12>, out count: Bit<u9> = 0, out flag: Bit = false) {{ }}\ndigital for Top {{ on clk.rise() {{ {body} }} }}");
         let d = diagnostics(&src);
@@ -272,7 +304,7 @@ fn a_commit_of_another_type_is_e0432() {
 #[test]
 fn an_operand_of_another_type_in_a_commit_is_e0432() {
     // digital~54ec4a1d of the Book (chapter 7, §12.1.9): `count <- count + 1.5` on an integer carrier
-    // is `E0432` at the operand that is not the carrier's type, not the plain mismatch `P0002`
+    // is `E0432` at the operand that is not the carrier's type, not the plain mismatch `E0180`
     let src = "module Top(in clk: Bit, out count: Bit<u9> = 0) { }\ndigital for Top { on clk.rise() { count <- count + 1.5; } }";
     let d = diagnostics(src);
     assert_eq!(codes(&d), ["E0432"], "{:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
@@ -518,9 +550,117 @@ fn cross_takes_ttol_and_etol_by_position_and_by_name() {
     }
     // A name that is no parameter, one bound twice, `e` by name, and a count the row cannot take
     // (the plain mismatch of a core primitive's own count).
-    for (head, code) in [("cross(v(p), atol: 1u)", "E0140"), ("cross(v(p), 1p, ttol: 2p)", "E0140"), ("cross(v(p), e: 1.0)", "E0140"), ("cross(v(p), 1p, 1u, 2u)", "P0002"), ("cross()", "P0002")] {
+    for (head, code) in [("cross(v(p), atol: 1u)", "E0140"), ("cross(v(p), 1p, ttol: 2p)", "E0140"), ("cross(v(p), e: 1.0)", "E0140"), ("cross(v(p), 1p, 1u, 2u)", "E0141"), ("cross()", "E0141")] {
         let src = with_heads(&[head]);
         let d = diagnostics(&src);
         assert_eq!(codes(&d), [code], "{head}");
     }
+}
+
+/// `Top` with one reaction on `head` whose body is `body`, over a `bool` carrier `q` and an `f64`
+/// carrier `x`.
+fn with_body(head: &str, body: &str) -> String {
+    format!("module Top(in clk: Bit, in en: Bit, out q: Bit, out x: Bit<f64>) {{ }}\ndigital for Top {{\non {head} {{ {body} }}\n}}")
+}
+
+#[test]
+fn an_event_reads_as_a_bool_in_a_reaction_body() {
+    // UE-01 AC 1, §13 rule 2: an event used as a `bool` inside a reaction says whether it fired in
+    // the microstep: `if clk.rise() { .. }`, `!ev`, `en && ev`, an event not in the head, a `let`
+    // bound event. Each read is recorded and typed `bool`.
+    for body in [
+        "if clk.rise() { q <- true; }",
+        "if !clk.fall() { q <- true; }",
+        "if en && clk.rise() { q <- true; }",
+        "if clk.rise() && en { q <- true; }",
+        "if clk.rise() || clk.fall() { q <- true; }",
+    ] {
+        let src = with_body("clk.changed()", body);
+        let design = design_of(&src);
+        let types = checked(&design, &src);
+        let reads: Vec<ExprId> = (0..design.expr_count()).map(|i| ExprId(i as u32)).filter(|e| in_top(&design, *e) && types.event_read(*e)).collect();
+        assert!(!reads.is_empty(), "{body}: an event read is recorded");
+        assert!(reads.iter().all(|e| types.ty(*e) == Some(&Ty::Bool)), "{body}: a read is typed bool: {reads:?}");
+    }
+    let src = with_body("clk.changed()", "let up = clk.rise(); if up { q <- true; }");
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    let reads = exprs_reading(&design, &types, &src, "clk.rise()");
+    assert!(reads.iter().all(|e| types.event_read(*e) && types.ty(*e) == Some(&Ty::Bool)), "the value of a body `let` is read as a bool: {reads:?}");
+}
+
+#[test]
+fn an_event_committed_onto_a_bool_carrier_reads_as_a_bool() {
+    // UE-02 AC 5, §13 rule 2 and design D2: `on up || dn { q <- up; }` commits whether `up` fired
+    // in this microstep, as the `Comparator` of §13 does. The event is read, typed `bool`.
+    let src = "module Top(in clk: Bit, in en: Bit, out q: Bit) { let up = clk.rise(); let dn = clk.fall(); }\ndigital for Top { on up || dn { q <- up; } }";
+    let design = design_of(src);
+    let types = checked(&design, src);
+    let committed: Vec<ExprId> = exprs_reading(&design, &types, src, "up").into_iter().filter(|e| types.event_read(*e)).collect();
+    assert_eq!(committed.len(), 1, "the commit's value is the one event read");
+    assert_eq!(types.ty(committed[0]), Some(&Ty::Bool));
+}
+
+#[test]
+fn an_event_where_another_type_is_expected_is_e0441() {
+    // UE-02 AC 4, §13 rules 2 and 8: an event read is a `bool`; a commit onto a carrier of another
+    // type is `E0441` at the event, and so is a read stored or carried outside any reaction.
+    let src = with_body("clk.rise()", "x <- clk.rise();");
+    let d = diagnostics(&src);
+    assert_eq!(codes(&d), ["E0441"], "{:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    assert_eq!(snippet(&src, &d[0]), "clk.rise()");
+    let src = "module Top(in clk: Bit, out q: Bit) { q = clk.rise(); }";
+    let d = diagnostics(src);
+    assert_eq!((codes(&d), snippet(src, &d[0])), (vec!["E0441".to_string()], "clk.rise()"));
+}
+
+#[test]
+fn a_guard_reads_an_event_as_a_bool() {
+    // UE-02 AC 1 and 2, §13 rule 9: inside a guard an `Event` subexpression and `!ev` read as a
+    // `bool`, as in a reaction body: `on d.changed() && en && !en.changed()`. Each read is recorded.
+    let src = "module Top(in d: Bit, in en: Bit) { }\ndigital for Top { on d.changed() && en && !en.changed() { } }";
+    let design = design_of(src);
+    let types = checked(&design, src);
+    let negated = exprs_reading(&design, &types, src, "en.changed()");
+    assert_eq!(negated.len(), 1);
+    assert!(types.event_read(negated[0]), "`en.changed()` under `!` in a guard is an event read");
+    assert_eq!(types.ty(negated[0]), Some(&Ty::Bool));
+    // A guard that is itself an event expression (`ev && bool`) reads as a `bool` as a whole.
+    let src = "module Top(in d: Bit, in en: Bit) { }\ndigital for Top { on d.changed() && (en.rise() && en) { } }";
+    let design = design_of(src);
+    let types = checked(&design, src);
+    let guard = exprs_reading(&design, &types, src, "en.rise() && en");
+    assert!(guard.iter().all(|e| types.event_read(*e) && types.ty(*e) == Some(&Ty::Bool)), "{guard:?}");
+    // The event of the head is no read: the head stays an `Event`.
+    let head = exprs_reading(&design, &types, src, "d.changed()");
+    assert!(head.iter().all(|e| !types.event_read(*e)), "{head:?}");
+}
+
+#[test]
+fn negating_an_event_outside_a_guard_or_body_is_e0440() {
+    // UE-02 AC 3, §13 rule 1: `!` applies to a `bool`. Outside a guard and a reaction body (a head,
+    // an operand of `||`, a body `let` of a module) it is `E0440` at the `!` expression.
+    for (src, at) in [
+        (with_heads(&["!clk.rise()"]), "!clk.rise()"),
+        (with_heads(&["clk.rise() || !clk.fall()"]), "!clk.fall()"),
+        ("module Top(in clk: Bit) { let e = !clk.rise(); }".to_string(), "!clk.rise()"),
+    ] {
+        let d = diagnostics(&src);
+        assert_eq!(codes(&d), ["E0440"], "{src}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(snippet(&src, &d[0]), at, "{src}");
+    }
+}
+
+#[test]
+fn a_bool_and_an_event_in_an_event_position_is_e0440() {
+    // UE-02 AC 3, §13 rule 1: `&&` has the event on the left, `ev && guard`; a `bool` on the left
+    // and an `Event` on the right in an event position is `E0440` at the `&&` expression.
+    for head in ["en && clk.rise()", "clk.rise() || (en && clk.fall())"] {
+        let src = with_heads(&[head]);
+        let d = diagnostics(&src);
+        assert_eq!(codes(&d), ["E0440"], "{head}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    }
+    // In a reaction body the same `&&` is an ordinary `bool` expression (§13 rule 2).
+    let src = with_body("clk.changed()", "if en && clk.rise() { q <- true; }");
+    checked(&design_of(&src), &src);
 }

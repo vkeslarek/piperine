@@ -26,27 +26,52 @@ comparator located by the solver, and a binary search in a reaction.
 ```rust
 /// 8-bit DAC: ideal level, ladder resistance, output switch.
 module Dac8(in code: Bit<u8>, vout: Electrical) {
-    vref: f64 = 1.0; rout: f64 = 1k; rsw: f64 = 200.0;
+    vref: f64 = 1.0;
+    rout: f64 = 1k;
+    rsw: f64 = 200.0;
     signal src: Electrical;
     pub signal core: Electrical;
 }
+
 analog for Dac8 {
-    v(src) +> vref * (code.known_or(0x80) as f64) / 256.0;     // unknown code: mid-scale
+    v(src) +> vref * (code.known_or(0x80) as f64) / 256.0; // unknown code: mid-scale
     i(src, core) +> v(src, core) / rout;
     i(core, vout) +> v(core, vout) / rsw;
 }
 
 /// Binary search; cmp is high when the input is above the DAC.
-module SarLogic(in clk: Bit, in start: Bit, in cmp: Bit, out code: Bit<u8> = 0x80, out done: Bit = false) {
+module SarLogic(
+    in clk: Bit,
+    in start: Bit,
+    in cmp: Bit,
+    out code: Bit<u8> = 0x80,
+    out done: Bit = false,
+) {
     signal bit: Bit<u3> = 7;
     signal busy: Bit = false;
 }
+
 digital for SarLogic {
-    on clk.rise() && start && !busy { busy <- true; bit <- 7; code <- 0x80; done <- false; }
+    on clk.rise() && start && !busy {
+        busy <- true;
+        bit <- 7;
+        code <- 0x80;
+        done <- false;
+    }
     on clk.rise() && busy {
-        let kept = if cmp { code } else { code & !(1u8 << bit) };
-        if bit == 0 { code <- kept; done <- true; busy <- false; }
-        else { code <- kept | (1u8 << (bit - 1)); bit <- bit - 1; }
+        let kept = if cmp {
+            code
+        } else {
+            code & !(1u8 << bit)
+        };
+        if bit == 0 {
+            code <- kept;
+            done <- true;
+            busy <- false;
+        } else {
+            code <- kept | (1u8 << (bit - 1));
+            bit <- bit - 1;
+        }
     }
 }
 
@@ -55,12 +80,15 @@ module SarAdc(vin: Electrical, in clk: Bit, in start: Bit, out code: Bit<u8>, ou
     signal vh: Electrical;
     signal vdac: Electrical;
     signal cmp: Bit;
-    let sh = SampleHold(vin, vh, start);      // 12.1
+    let sh = SampleHold(vin, vh, start); // 12.1
     let dac = Dac8(code, vdac);
-    let comp = Comparator(vh, vdac, cmp);    // 13
+    let comp = Comparator(vh, vdac, cmp); // 13
     let logic = SarLogic(clk, start, cmp, code, done);
 }
-analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's own branch on a public node
+
+analog for SarAdc {
+    i(dac.core) +> ddt(cpar * v(dac.core));
+} // the parent's own branch on a public node
 ```
 
 > **Resolution.** `rsw` is written `200.0`. The source model had the integer literal `200` as
@@ -116,28 +144,59 @@ analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's
 the VCO of D.3 and a divider. The top module is pure structure.
 
 ```rust
-module Pfd(in fref: Bit, in fdiv: Bit, out up: Bit = false, out dn: Bit = false) { treset: f64 = 50p; }
-digital for Pfd {
-    on fref.rise() { up <- true; }
-    on fdiv.rise() { dn <- true; }
-    on (up.changed() || dn.changed()) && up && dn { up <- false after treset; dn <- false after treset; }
+module Pfd(in fref: Bit, in fdiv: Bit, out up: Bit = false, out dn: Bit = false) {
+    treset: f64 = 50p;
 }
 
-module ChargePump(in up: Bit, in dn: Bit, vc: Electrical) { icp: f64 = 100u; }
+digital for Pfd {
+    on fref.rise() {
+        up <- true;
+    }
+    on fdiv.rise() {
+        dn <- true;
+    }
+    on (up.changed() || dn.changed()) && up && dn {
+        up <- false after treset;
+        dn <- false after treset;
+    }
+}
+
+module ChargePump(in up: Bit, in dn: Bit, vc: Electrical) {
+    icp: f64 = 100u;
+}
+
 analog for ChargePump {
-    i(vc) +> if dn.high() { icp } else { 0.0 } - if up.high() { icp } else { 0.0 };
+    i(vc) +> if dn.high() {
+        icp
+    } else {
+        0.0
+    } - if up.high() {
+        icp
+    } else {
+        0.0
+    };
 }
 
 module Divider<const N: u32>(in clk: Bit, out q: Bit = false) where N >= 2 && N % 2 == 0 {
     signal cnt: Bit<u32> = 0;
 }
+
 digital<N> for Divider<N> {
-    on clk.rise() { if cnt == N / 2 - 1 { cnt <- 0; q <- !q; } else { cnt <- cnt + 1; } }
+    on clk.rise() {
+        if cnt == N / 2 - 1 {
+            cnt <- 0;
+            q <- !q;
+        } else {
+            cnt <- cnt + 1;
+        }
+    }
 }
 
 /// Pure structure.
 module Pll(in fref: Bit, out clk: Bit) {
-    r: f64 = 10k; c1: f64 = 10p; c2: f64 = 1p;
+    r: f64 = 10k;
+    c1: f64 = 10p;
+    c2: f64 = 1p;
     signal up: Bit;
     signal dn: Bit;
     signal fdiv: Bit;
@@ -148,7 +207,7 @@ module Pll(in fref: Bit, out clk: Bit) {
     let rz = Resistor(vc, mid) { r: r };
     let cz = Capacitor(mid, gnd) { c: c1 };
     let cp2 = Capacitor(vc, gnd) { c: c2 };
-    let vco = Vco(vc, clk);                  // D.3
+    let vco = Vco(vc, clk); // D.3
     let div = Divider::<8>(clk, fdiv);
 }
 ```
@@ -201,29 +260,52 @@ charge-based cell of §8.4 without touching the array.
 
 ```rust
 /// Behavioral cell with the ports of Dram1T1C (§8.4), for fast runs.
-module BehavioralCell(c: Cell) { vdd: f64 = 1.0; ron: f64 = 2k; signal bit: Bit = false; }
-analog for BehavioralCell {
-    if c.wl.high() { i(c.bl) +> (v(c.bl) - if bit.high() { vdd } else { 0.0 }) / ron; }
+module BehavioralCell(c: Cell) {
+    vdd: f64 = 1.0;
+    ron: f64 = 2k;
+    signal bit: Bit = false;
 }
+
+analog for BehavioralCell {
+    if c.wl.high() {
+        i(c.bl) +> (v(c.bl) - if bit.high() {
+            vdd
+        } else {
+            0.0
+        }) / ron;
+    }
+}
+
 digital for BehavioralCell {
-    on c.wl.fall() && c.wl.prev().is_known() { bit <- v(c.bl) > vdd / 2.0; }
+    on c.wl.fall() && c.wl.prev().is_known() {
+        bit <- v(c.bl) > vdd / 2.0;
+    }
 }
 
 module SenseAmp(bl: Electrical, vref: Electrical, in en: Bit, out q: Bit) {}
-digital for SenseAmp { on en.rise() { q <- v(bl, vref) > 0.0; } }
+
+digital for SenseAmp {
+    on en.rise() {
+        q <- v(bl, vref) > 0.0;
+    }
+}
 
 module Dram<const ROWS: u32, const COLS: u32>(in wl: [Bit; ROWS], in pre: Bit, in sense: Bit, out q: [Bit; COLS]) {
-    cbl: f64 = 100f; vpre: f64 = 0.5;
+    cbl: f64 = 100f;
+    vpre: f64 = 0.5;
     signal bl: [Electrical; COLS];
     signal vref: Electrical;
-    pub let bank = MemoryBank::<_, ROWS, COLS>(wl, bl) { cell: Dram1T1C { cs: 30f } };   // 8.4
+    pub let bank = MemoryBank::<_, ROWS, COLS>(wl, bl) { cell: Dram1T1C { cs: 30f } }; // 8.4
     for c in 0..COLS {
         let cb = Capacitor(bl[c], gnd) { c: cbl };
-        let pc = RSwitch(bl[c], vref, pre);  // D.6
+        let pc = RSwitch(bl[c], vref, pre); // D.6
         let sa = SenseAmp(bl[c], vref, sense, q[c]);
     }
 }
-analog<ROWS, COLS> for Dram<ROWS, COLS> { v(vref) +> vpre; }
+
+analog<ROWS, COLS> for Dram<ROWS, COLS> {
+    v(vref) +> vpre;
+}
 ```
 
 > **Resolution.** The store reaction of `BehavioralCell` is guarded by
@@ -277,7 +359,11 @@ with a keeper on one side. Nothing here is analog.
 ```rust
 /// A device on a shared line: drives when enabled, always listens.
 module Dev(in d: Bit, in oe: Bit, out seen: Bit, pad: Wire) {
-    pad = if oe { Logic::strong(d) } else { Logic::Z };
+    pad = if oe {
+        Logic::strong(d)
+    } else {
+        Logic::Z
+    };
     seen = pad.v;
 }
 
@@ -288,7 +374,7 @@ module Board(in en: Bit, in d: [Bit; 4], in oe: [Bit; 4], out seen: [Bit; 4]) {
     let a1 = Dev(d[1], oe[1], seen[1], la);
     let b0 = Dev(d[2], oe[2], seen[2], lb);
     let b1 = Dev(d[3], oe[3], seen[3], lb);
-    let gate = Tran(la, lb, en);             // 22.3
+    let gate = Tran(la, lb, en); // 22.3
     let keep = Keeper(lb);
 }
 ```
@@ -328,11 +414,11 @@ capacitors at different potentials.
 
 ```rust
 module ShareCharge(in close: Bit) {
-    pub signal a: Electrical = 1.0;            // held at 1 V through the transient's operating point
-    pub signal b: Electrical = 0.0;            // held at 0 V
+    pub signal a: Electrical = 1.0; // held at 1 V through the transient's operating point
+    pub signal b: Electrical = 0.0; // held at 0 V
     let c1 = Capacitor(a, gnd) { c: 1p };
     let c2 = Capacitor(b, gnd) { c: 3p };
-    let sw = Switch(a, b, close);              // 11: a short while close is high
+    let sw = Switch(a, b, close); // 11: a short while close is high
 }
 ```
 

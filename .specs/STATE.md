@@ -1641,9 +1641,62 @@ It amends MD-28's "root `tests/` holds no Rust target" and extends MD-31 and MD-
 **Scope:** `tests/e2e/buck/`, `tests/buck_scenarios.rs`, `crates/piperine-parity/src/scenario/`.
 **Status:** Proposed (2026-11-20), from `.specs/features/buck-scenarios/design.md`.
 
-### MD-74: pure value semantics: no reference, no move, no mutability marker
+### MD-74: `settle` runs as section 15 says: held settle commits landed by the owner; an event read as a `bool` is `fired(k)`
 
-`value-semantics` (2026-11-21, user decisions D1 to D8 of `.specs/features/value-semantics/spec.md`; the numbers V1 to V7 are Appendix G.71's).
+`unknown-semantics-events` (2026-11-20, written at T23 while the user was away; completed at T31). The
+number: `unknown-semantics` holds MD-70, `analog-structure` MD-71, `root-e2e` MD-72 and `buck-scenarios`
+MD-73 (which `composite-values` had reserved), so this is the next free one, MD-74; the second feature to
+merge renumbers.
+
+1. **`settle` is an event with a pin of its own.** It fires once per time point, after the instant has
+   gone quiet (section 13 rule 17, section 15 step 4); the plan appends a `SETTLE` pin after the
+   derivative abstol pins, so no existing shape moves. A commit made in the settle phase is held by the
+   digital solver and landed by the owner at the next instant (S1 to S7); a commit to a record pin in
+   that phase is no settle commit and applies as the instant exits.
+2. **An event read as a `bool` is `fired(k)`.** Outside an event position, in a guard or a reaction body,
+   an event expression types `bool` and lowers to `fired(j)` of a body event `j` (section 13 rules 2 and
+   9); an event read where another type is expected is `E0441`.
+3. **`limexp` runs from the standard library.** A closure's parameters are bindings the module item walk
+   skips (they are typed with their closure), so `limexp` checks and lowers like any module with a
+   result; it is one `limit` instance per use, its argument moves by at most 1.0 per iteration and its
+   derivative is `limexp` (section 22.2.4 rules 3 to 5).
+4. **Parity measured, never tuned.** The `limexp` diode agrees with `diode_series.cir` under `DC_VOLTAGE`,
+   and the Book's clipper (`tran_clipper.cir`, ngspice given the harness's own step cap) agrees under
+   `TRAN_VOLTAGE`; no tolerance moved. The Book's buck holds its `regulated` check from 10 ms on (largest
+   deviation 9.4 mV against 50 mV).
+
+**Scope:** `crates/piperine-{ir,plan,transpile,digital-solver,solver,lang}`, the Book's chapters 8 and 10.
+**Status:** Batches B1 to B4 delivered (T1 to T23); B5 (event functions, L51 and L53) waits for
+`composite-values` and `generics`.
+
+### MD-75: params of every carried type; the host drives a top's node through an IR source; files read at elaboration; every spec code raised or owned
+
+`params-and-io` (2026-11-20, batches B1 to B4; B5 and B6 wait on `composite-values` phases A to B). The
+number follows MD-74 (`unknown-semantics-events`, merged first).
+
+1. **Every code of the spec is raised or owned.** `crates/piperine-lang/tests/spec_codes.rs` lists every
+   code of every error table under `docs/spec/`, and fails for one that no non-test source spells and
+   no row of `tests/support/code_owners.tsv` (owner feature and construct) holds, and for a row whose
+   code a source now raises; a type mismatch is `E0180`, no source spells `P0002`.
+2. **The host drives a top's node ports** with one `HostSource` body per nature (a potential source to
+   `gnd`: DC, AC stimulus, piecewise-linear); a run with a node port and no source is `E0810`, a top with
+   a value input is `E0811` (spec §8.1.14, §23.1). ngspice parity runs under the existing contracts.
+3. **A param of module type** is a key param holding its template; a placement through it places the
+   template's module with the template's constants.
+4. **Files are read at elaboration.** `include_str!` is a `const` expression in a `const` item only
+   (`E0610`); `IncludedFiles` resolves the path beside the source file, reads each path once
+   (`E0612`, `E0613`), and a change to the file reaches nothing until the next elaboration (§20).
+5. **The shipped sources are in the formatter's form:** the stdlib, `examples/buck` and the gallery
+   fences, with `piperine fmt --check` guarding them; Appendix C.2 states the `table_model` spline end
+   conditions.
+
+**Scope:** `crates/piperine-lang` (`types/`, `elab/`), `crates/piperine-api`, `crates/piperine-cli`,
+`crates/piperine-parity`, `docs/spec`, `GAPS.md`.
+**Status:** Accepted (2026-11-20), from the approved `.specs/features/params-and-io/design.md`.
+
+### MD-76: pure value semantics: no reference, no move, no mutability marker
+
+`value-semantics` (2026-11-21; the number follows MD-75, `params-and-io`; user decisions D1 to D8 of `.specs/features/value-semantics/spec.md`; the numbers V1 to V7 are Appendix G.71's).
 
 1. **Every value is copied where it is used** (§1.4.6); hardware is reached by identity and changes only by a definition, a commit or a contribution (§1.4.7). There is no reference, no borrow, no slice, no lifetime, no move.
 2. **Every local is a place** (§1.5.12): `let x = e;` may be assigned. A parameter, a closure parameter, a captured name, `self` and a body `let` are not (`E0183`). `mut`, `ref` and `move` are reserved words (`E0903`).

@@ -656,6 +656,30 @@ fn carriers_and_drives_print() {
     assert_eq!(broken.len(), 3, "{broken:#?}");
 }
 
+/// §13 rule 17: `on settle { q <- true; }` and `on settle && ready.high() { .. }` build, pass
+/// `Ir::check` (a guard is a `bool`, `settle` reads no expression) and print as `settle`.
+#[test]
+fn a_settle_event_is_built_checked_and_printed() {
+    let mut b = IrBuilder::new();
+    let body = b.body(Buck::spec("Sampler", "settle.msl", 1));
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, "settle.msl", 1, 20));
+    b.carrier(body, Buck::carrier("ready", ValueType::Bool, CarrierRole::In, None, "settle.msl", 1, 30));
+    let bare = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Settle, guard: None, origin: Design::origin("settle.msl", 2, 8) });
+    let mut x = Dx::new(&mut b, "settle.msl", 3, 9);
+    let ready = x.carrier(1, ValueType::Bool);
+    let guard = x.high(ready);
+    let guarded = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Settle, guard: Some(guard), origin: Design::origin("settle.msl", 4, 8) });
+    let mut x = Dx::new(&mut b, "settle.msl", 5, 9);
+    let yes = x.boolean(true);
+    let commit = x.commit(0, yes, None);
+    Buck::reaction(&mut b, body, vec![bare, guarded], vec![commit], vec![], "settle.msl", 5);
+    let top = Slice::design(&mut b, &[("sampler", body, 0, vec![ValueType::Bool, ValueType::Bool], vec![])]);
+    let ir = b.finish(top);
+    assert_eq!(ir.check(), vec![], "§13 rule 17: settle is an event with no expression of its own");
+    Printed::holds(&ir, &["body Sampler", "  carrier q: bool out", "  carrier ready: bool in", "  event E0 settle", "  event E1 settle guard ready.high()", "  reaction R0 on (E0, E1)"]);
+    assert!(ir.to_string().contains("(settle -)"), "the structural form names a bare settle:\n{ir}");
+}
+
 /// One design that places bodies side by side under an empty top, every node port on a node and
 /// every carrier on a net of its own, every param at its default.
 struct Slice;

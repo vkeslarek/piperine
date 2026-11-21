@@ -233,6 +233,10 @@ impl Elaboration<'_, '_> {
             self.unsupported(file, node.span, what);
             return None;
         };
+        // An event read as a `bool` is `fired(k)` (§13 rules 2 and 9, `event_reads.rs`).
+        if self.types.event_read(expr) {
+            return self.lower_event_read(scope, expr);
+        }
         if ty.is_integer() && self.constant_form(expr) {
             return match self.consts.folded(expr, &Bindings::new()) {
                 Ok(Folded::Known(value)) => Some(self.constant_expr(value, ty, origin)),

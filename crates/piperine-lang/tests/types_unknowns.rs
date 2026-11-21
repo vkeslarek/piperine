@@ -155,3 +155,18 @@ fn a_function_that_reads_its_parameter_bare_is_not_flag_total() {
         assert!(d[0].diagnostic.message.contains("`c`"), "the carrier is named: {}", d[0].diagnostic.message);
     }
 }
+
+#[test]
+fn unknown_with_no_inferable_type_is_e0906() {
+    // A.6 (`E0906`): `Unknown` where no type can be inferred, in a module body and in a reaction
+    // body; where a `Repr` type is expected it types as that type.
+    let src = "module Top(in clk: Bit) { let x = Unknown; }";
+    let design = design_of(src);
+    let d = Types::check(&design, "Top").expect_err("no type for `Unknown`");
+    assert_eq!(d.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0906"]);
+    assert_eq!(&src[d[0].diagnostic.span().range()], "Unknown");
+    let src = "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let x = Unknown; } }";
+    let design = design_of(src);
+    let d = Types::check(&design, "Top").expect_err("no type for `Unknown`");
+    assert_eq!(d.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0906"], "{:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+}

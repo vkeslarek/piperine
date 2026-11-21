@@ -26,7 +26,7 @@ const ROWS: &[Row] = &[
     Row { construct: "a nature with resolve", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },
     Row { construct: "a bundle", source: "struct Bn { a: Bit }\nmodule Top(p: Bn) { }", names: "(a bundle) as a value type" },
     Row { construct: "others()", source: "module Top(in c: Bit) { let x = c.others(); }", names: "method `others`" },
-    Row { construct: "settle", source: "module Top() { }\ndigital for Top { on settle { } }", names: "`settle`" },
+    // `settle` left this table when unknown-semantics-events T5 typed it (`types_events::settle_is_an_event_in_every_event_position`).
     Row { construct: "an element commit", source: "module Top(in clk: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q[0] <- true; } }", names: "element or field commit" },
     Row { construct: "a field commit", source: "module Top(in clk: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q.v <- true; } }", names: "element or field commit" },
     Row { construct: "delay", source: "module Top(p: Electrical) { }\nanalog for Top { let x = delay(v(p), 1.0); }", names: "`delay`" },

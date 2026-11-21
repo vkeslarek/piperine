@@ -57,7 +57,12 @@ param by path. A **host drive** writes one of the drives the host holds (rule 1)
 **Semantics.**
 
 1. The host drives the top module's `in` ports as their one driver, and holds one drive of
-   each top-level resolved carrier.
+   each top-level resolved carrier. It drives each node port of the top with one **host
+   source**: a potential source between the port and `gnd` that holds a DC value, an optional
+   AC stimulus (magnitude and phase) and a piecewise-linear waveform whose corners are
+   strictly increasing in time. A run needs a host source for every node port of the top
+   (`E0810`). A value input of the top has no host source and is refused at elaboration
+   (`E0811`).
 2. The host **MAY** wait for any event of the model, read any carrier and probe any node
    (§21). Reading never changes the result, except that a probe at a scheduled time makes it
    a time point (§17.2.6).
@@ -94,6 +99,13 @@ param by path. A **host drive** writes one of the drives the host holds (rule 1)
 > On a node, a `force` is a potential source to `gnd` applied by the host: its application
 > and its release are each a time point and a jump, and a loop of potential contributions
 > through it is singular (`E0503`).
+
+> **Resolution.** A host source (rule 1) is a potential source to `gnd`, never a current source:
+> a current source is an MSL module placed in a design. A transient lands on every corner of
+> a piecewise-linear host source, each a time point (§15.2), and a host change of its value
+> at a time is a jump there. An `ac` analysis takes the source's magnitude and phase as the
+> port's stimulus. A port tied to `gnd` inside the design is still driven by the host or the
+> run is refused (`E0810`).
 
 > **Resolution.** Rule 9 and the refusal semantics of rules 6–7 (nothing changes) are stated
 > here. Which module is the top is the host's choice (G.17).
@@ -132,6 +144,8 @@ Nodesets and Monte Carlo distributions are given by path in the same way:
 | `E0804` | A host drive of a carrier of which the host holds no drive (rule 1). | host |
 | `E0805` | A subscription to a stream after the run has started (§21). | host |
 | `E0806` | A host action scheduled for a time already past. | host |
+| `E0810` | A run starts with a node port of the top that has no host source (rule 1). | host |
+| `E0811` | The top module has a value input, which the host cannot drive as a source (rule 1). | elaboration |
 
 ### 23.2 Optimization
 

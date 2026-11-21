@@ -29,6 +29,7 @@ pub mod record;
 mod recorder;
 pub mod request;
 pub mod session;
+mod source;
 pub mod table;
 pub mod verdict;
 
@@ -42,6 +43,7 @@ pub use project::{Checked, Project};
 pub use record::{Field, Record, RecordSink, Streams};
 pub use request::{Analysis, Grid, Overrides, RunSpec};
 pub use session::{Built, ParamPath, Session};
+pub use source::NodeSource;
 pub use params::{Changed, Derive, Params};
 pub use piperine_solver::prelude::ParamValue;
 pub use table::{Cell, Table};

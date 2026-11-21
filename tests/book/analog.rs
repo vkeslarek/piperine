@@ -1,7 +1,7 @@
 //! Scope: chapter 8 of the Book, "Analog behavior" (feature `root-e2e`, RE-02 and RE-03): the capacitor
 //! and the inductor, the Nullor and the coupled inductors, the clipper (its `limexp` and its `settle`
-//! are refused today, asserted refused with their diagnostics, and its numbers are held on the same
-//! circuit written with a bare `exp`), the traced diode, the switch and the noise source (refused),
+//! run since `unknown-semantics-events`; its numbers are held on the Book's own text), the traced diode,
+//! the switch and the noise source (refused),
 //! the `ac_stim` source, and each mistake of the chapter's table, run through `piperine::`. Each test
 //! opens with the inventory ids it holds, from `tests/book/inventory.tsv`.
 
@@ -64,32 +64,21 @@ impl Commands {
     }
 }
 
-/// The clipper of the chapter's two listings, and the same circuit written without the two forms the
-/// compiler refuses.
+/// The clipper of the chapter's two listings, as the Book writes them and with its second diode
+/// changed.
 struct Clipper;
 
 impl Clipper {
-    /// The `settle` reaction of the second listing, which the substitute leaves out.
-    const SETTLE_REACTION: &'static str = "    on settle {\n        emit!(\"wave\", t = now(), vin = v(vin), vout = v(vout));\n    }\n";
-
     /// The clipper as the Book assembles it in `clipper.msl`.
     fn book(chapter: &Chapter) -> Model {
         chapter.marked("clipper.msl", "analog#3")
     }
 
-    /// The same circuit with a bare `exp` in place of `limexp` (they are equal once the solver has
-    /// converged, and `limexp` is a closure the compiler does not take) and without the `settle`
-    /// reaction (an event it does not take); `second_diode` is how `d2` is written.
-    fn with_exp(chapter: &Chapter, second_diode: &str) -> Model {
-        let device = chapter.text("analog#2").replace("limexp(v(a, k) / nvt)", "(v(a, k) / nvt).exp()").replace("Diode(gnd, vout);", second_diode);
-        let reactions = chapter.text("analog#3").replace(Self::SETTLE_REACTION, "");
-        assert!(device.contains(".exp()") && !reactions.contains("settle"), "the substitutes apply to the Book's text");
-        Model::written("clipper.msl", &format!("{device}\n{reactions}\n"))
-    }
-
-    /// The run of the substitute with the second diode as the Book writes it.
-    fn ran_with_exp(chapter: &Chapter) -> Ran {
-        Self::with_exp(chapter, "Diode(gnd, vout);").run(Commands::clipper()).unwrap_or_else(|failure| panic!("{failure}"))
+    /// The Book's clipper with `d2` written `second_diode` instead of `Diode(gnd, vout);`.
+    fn with_second_diode(chapter: &Chapter, second_diode: &str) -> Model {
+        let device = chapter.text("analog#2").replace("Diode(gnd, vout);", second_diode);
+        assert!(device.contains(second_diode), "the substitute applies to the Book's text");
+        Model::written("clipper.msl", &format!("{device}\n{}\n", chapter.text("analog#3")))
     }
 
     /// The least and the greatest value of the column `column` of `ran`.
@@ -112,38 +101,43 @@ fn a_capacitor_is_open_and_an_inductor_is_a_short_at_the_operating_point() {
 }
 
 #[test]
-fn the_clipper_is_refused_for_limexp_and_settle() {
-    // analog#2 and analog#3 (refused): the clipper's devices and its two reactions, one file
-    // (`clipper.msl`); analog~773a3851 "Today the command stops at the source, with those three
-    // diagnostics, and runs nothing" (refused with it). The
-    // `settle` event is `P0001` (L52), and `limexp`, written with a closure, is two `P0001` (L58)
+fn the_clipper_prints_one_clip_record_per_period_near_0_72_volts() {
+    // analog#2 and analog#3 (run since unknown-semantics-events T17 and T5): the Book's clipper with
+    // `limexp` and its `settle` reaction (analog~750ad45d "The command runs: it prints the two clip records,
+    // then the table of the rows, and writes the plot"). UE-06 AC 1: one `clip` record per period of the 1 kHz sine over
+    // 2 ms, `vin` within 50 mV of 0.72 V (analog~8f90421c, analog~9e74b878), and one `wave` record per time
+    // point (the reaction on `settle`, section 15 step 4): the table prints a row at each
+    // accepted step and the `wave` stream holds one record at each of them
     let chapter = Chapter::read();
-    let model = Clipper::book(&chapter);
-    let given = Refusal::of(model.run(Commands::clipper()), "analog#3");
-    assert_eq!(given.len(), 3, "the three diagnostics of the listing: {given:?}");
-    assert!(given.iter().all(|(code, _)| code == "P0001"), "{given:?}");
-    assert_eq!(given.iter().filter(|(_, message)| message == "binding inside a module is not supported yet").count(), 2, "the two closure parameters of `limexp`");
-    Refusal::expect(model.run(Commands::clipper()), "analog#3", "P0001", "built-in `settle` is not supported yet");
-    let devices = Refusal::of(chapter.marked("clipper.msl", "analog#2").run(Faulty::operating_point_of("Clipper")), "analog#2");
-    assert_eq!(devices.len(), 2, "the devices alone: the two parameters of the `limexp` closure: {devices:?}");
-    Refusal::expect(chapter.marked("clipper.msl", "analog#2").run(Faulty::operating_point_of("Clipper")), "analog#2", "P0001", "binding inside a module is not supported yet");
+    let mut command = Commands::clipper();
+    command.streams.push("wave".to_string());
+    let ran = Clipper::book(&chapter).run(command).unwrap_or_else(|failure| panic!("{failure}"));
+    let clips = ran.stream("clip");
+    assert_eq!(clips.len(), 2, "one clip record per period over two periods");
+    for clip in &clips {
+        assert!((Fields::real(clip, "vin") - 0.72).abs() < 0.05, "vin within 50 mV of 0.72 V: {:?}", clip.fields);
+    }
+    let waves = ran.stream("wave");
+    let time_points = ran.table.rows.len();
+    assert!(time_points > 100, "a transient of 2 ms has many time points: {time_points}");
+    assert_eq!(waves.len(), time_points, "one wave record per time point");
 }
 
 #[test]
 fn the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation() {
-    // On the clipper written with `exp` for `limexp` and without `settle` (analog#2 and analog#3 refuse the
-    // Book's text): analog~53c7822c "A 2 V sine drives a resistor into two diodes back to back"; analog~a6eeb69c "The output follows the input while it is small and is clipped near
-    // +-0.65 V"; analog~72e8923f "In an operating-point solve now() is 0 and the source sits at 0 V";
+    // On the Book's clipper (analog#2 and analog#3): analog~53c7822c "A 2 V sine drives a resistor into two
+    // diodes back to back"; analog~a6eeb69c "The output follows the input while it is small and is clipped
+    // near +-0.65 V"; analog~72e8923f "In an operating-point solve now() is 0 and the source sits at 0 V";
     // analog~8f90421c "The clip stream answers a sharper question ... when does the clipping start, and how
     // high is the input then?"; analog~9e74b878 "At 0.6 V the diode carries about 0.12 mA, which drops 0.12
     // V over the resistor, so the input is at 0.72 V: the record confirms the hand calculation"
     let chapter = Chapter::read();
-    let ran = Clipper::ran_with_exp(&chapter);
+    let ran = Clipper::book(&chapter).run(Commands::clipper()).unwrap_or_else(|failure| panic!("{failure}"));
     let (least, greatest) = Clipper::extremes(&ran, "Clipper.vout");
     assert!((greatest - 0.65).abs() < 0.05 && (least + 0.65).abs() < 0.05, "clipped near +-0.65 V: {least} to {greatest}");
     let (input_least, input_greatest) = Clipper::extremes(&ran, "Clipper.vin");
     assert!(input_greatest > 1.9 && input_least < -1.9, "the 2 V sine itself: {input_least} to {input_greatest}");
-    let point = Clipper::with_exp(&chapter, "Diode(gnd, vout);").run(Faulty::operating_point_of("Clipper")).unwrap_or_else(|failure| panic!("{failure}"));
+    let point = Clipper::book(&chapter).run(Faulty::operating_point_of("Clipper")).unwrap_or_else(|failure| panic!("{failure}"));
     assert_eq!(point.signal("Clipper.vin"), 0.0, "now() is 0 in the operating point and the source sits at 0 V");
     let clips = ran.stream("clip");
     assert_eq!(clips.len(), 2, "one clip record per period over two periods");
@@ -160,9 +154,9 @@ fn the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_h
 fn a_louder_second_diode_clips_the_negative_half_higher() {
     // analog~e79bf782: "Give d2 a different diode: Diode(gnd, vout) { n: 2.0 }. Which half of the output
     // wave is clipped higher now, and at roughly what voltage? (The negative half: an ideality factor of 2
-    // doubles the voltage for the same current, to about 1.3 V.)" On the clipper of the test above
+    // doubles the voltage for the same current, to about 1.3 V.)" On the Book's clipper with that second diode
     let chapter = Chapter::read();
-    let ran = Clipper::with_exp(&chapter, "Diode(gnd, vout) { n: 2.0 };").run(Commands::clipper()).unwrap_or_else(|failure| panic!("{failure}"));
+    let ran = Clipper::with_second_diode(&chapter, "Diode(gnd, vout) { n: 2.0 };").run(Commands::clipper()).unwrap_or_else(|failure| panic!("{failure}"));
     let (least, greatest) = Clipper::extremes(&ran, "Clipper.vout");
     assert!((least + 1.3).abs() < 0.05, "the negative half is clipped near -1.3 V: {least}");
     assert!(greatest < 0.7, "the positive half is still clipped near 0.65 V: {greatest}");
@@ -184,7 +178,7 @@ fn the_diode_with_a_trace_is_refused() {
     // analog#7 (refused): the Diode with `emit!("newton", ..)` in its `analog` block; analog~139c67b5 "This
     // emit! runs when the code around it runs, and analog runs at every evaluation" and analog~b103eeb0
     // "The piperine command prints the records of reactions; a trace from analog is not among the lines it
-    // shows" (refused with it). An `emit!` in `analog` is `P0001` (L49), next to the `limexp` closure
+    // shows" (refused with it). An `emit!` in `analog` is `P0001` (L49)
     let chapter = Chapter::read();
     let before = "module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\nmodule Diode(a: Electrical, k: Electrical) { is: f64 = 1e-14 where is > 0.0; n: f64 = 1.0 where n > 0.0; }\n";
     let after = format!("{}module Top() {{ signal a: Electrical; signal b: Electrical; let s = Vdc(a); let r = Resistor(a, b) {{ r: 1k }}; let d = Diode(b, gnd); }}\n", Bench::PARTS);

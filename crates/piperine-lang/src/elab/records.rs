@@ -58,6 +58,8 @@ impl Elaboration<'_, '_> {
             if matches!(self.types.ty(field.value), Some(Ty::Str)) {
                 match self.text_of(scope, field.value) {
                     Some(text) => lowered.push(EmitField::Text { name: field.name.text.clone(), text }),
+                    // A file with no text was reported as `E0612` or `E0613` by `read_included_files`.
+                    None if self.names_unreadable_file(field.value) => ok = false,
                     None => {
                         let span = self.design.expr_node(field.value).span;
                         self.unsupported(scope.file, span, "a `str` that is not a text after inlining");
@@ -91,13 +93,19 @@ impl Elaboration<'_, '_> {
     }
 
     /// The text a `str` expression stands for after inlining: a string literal, a `const` of type
-    /// `str`, a `let` bound to a text, or a `str` param of an inlined function bound to one.
-    pub(super) fn text_of(&self, scope: &Scope, expr: ExprId) -> Option<String> {
-        match &self.design.expr_node(self.peel_parens(expr)).kind {
+    /// `str` (its literal, or the file an `include_str!` reads, once, §20 rule 3), a `let` bound to a
+    /// text, or a `str` param of an inlined function bound to one.
+    pub(super) fn text_of(&mut self, scope: &Scope, expr: ExprId) -> Option<String> {
+        let design = self.design;
+        match &design.expr_node(self.peel_parens(expr)).kind {
             ExprKind::Lit(lit) => lit.str_value(),
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
-                    DeclKind::Const(constant) => constant.value.and_then(|value| self.text_of(scope, value)),
+            ExprKind::Path(path) => match design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(decl)) => match &design.decl_data(decl).kind {
+                    DeclKind::Const(constant) => match constant.value {
+                        Some(value) if matches!(design.expr_node(value).kind, ExprKind::IncludeStr(_)) => self.consts.text(decl).ok().map(|text| text.to_string()),
+                        Some(value) => self.text_of(scope, value),
+                        None => None,
+                    },
                     _ => scope.texts.get(&decl).cloned(),
                 },
                 _ => None,

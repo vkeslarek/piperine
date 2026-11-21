@@ -1,6 +1,7 @@
 # Unknown Semantics: Events Specification
 
 **Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+**Amended**: 2026-11-20 - under the user's standing AFK rule ("always take the most reasonable default and tell later"): Out of Scope and UE-06 follow what `msl-fixes` (MD-67) and `host-ii` (MD-69) delivered; UE-02 AC 4 says what "committed" means (design.md D2); UE-05 AC 5 and UE-06 AC 4 add the ngspice parity the project puts first; UE-06 AC 1 counts the `clip` records as the Book does. Each change is a D-default of design.md.
 
 The third spec of the unknown-value area (see `unknown-semantics`). It closes the event gaps of
 §13 that remain: an event read as a `bool` (L51), `settle` (L52) and functions that return
@@ -35,9 +36,9 @@ the IR and the generated Rust.
 | ------- | ------ |
 | The merge of unknown control, `maybe`, `Unknown` | `unknown-semantics` |
 | A function that takes a carrier or a node as a handle, in general (L8) | `generics`. UE-04 uses handles and waits for them |
-| `sin` and the other `f64` methods (L14) | `msl-fixes` (lane A). The clipper needs `sin` |
-| `on above(..) { emit!(..) }` (L55) | `msl-fixes` (lane A). The clipper's clipping-instant stream needs it |
-| A digital-only transient (L56) | `host-ii` (lane B). `settle` in a design with nothing analog is checked once it lands |
+| `emit!` in `analog` (L49, the Book's `newton` trace next to the clipper) | `analog-operators` |
+| Closures outside the argument of `limit` (L9), `let mut` and assignment (L5) | `composite-values`. The Book's `Pfd3` needs `let mut`, so UE-01 AC 3 waits for its phase A |
+| The stdlib monitors `Stable`, `Setup`, `Hold` | `generics` (L30, generic modules). They read events in guards; UE-02 proves the form on non-generic modules |
 | Settle commits made in an analysis without time run at a transient's last instant | Open in the spec (G.34) |
 | A `ttol` or `etol` given to `cross` (L54) | `msl-fixes` |
 | The interpreter | Frozen at the M1 analog subset (codegen context R1) |
@@ -51,6 +52,9 @@ the IR and the generated Rust.
 | `settle` on the ABI | The global event pin `SETTLE` that the solver already fires, read by a reaction like any event pin | abi.md §4 lists `SETTLE` among the globals; `piperine-solver` binds it (`core/bind.rs`) | n - planner |
 | Where `limexp` lives | In this feature, because the clipper needs it. The change is narrow: the closure argument of `limit` inside a module with a result. Closures elsewhere (L9) stay `composite-values`' | The orchestrator assigned `limexp` to this area; L9 already exempts the argument of `limit` | n - planner |
 | A guard read with an unknown `bool` | Runs under the merge of `unknown-semantics` (US-04 AC 9) | §13 rule 1 | n - planner |
+| `q <- up` in a reaction body, `up` an `Event` | Commits the `bool` §13 rule 2 reads, as the spec's own `Comparator` does; `E0441` stays for an `Event` where a type other than `bool` is expected, and outside reaction bodies, guards and event positions. `docs/spec` §13 gains a Resolution saying so | §13's example contradicts the literal "never committed" of rule 8; the Book (mixed#6) reads it as a `bool` | y - AFK default (design.md D2) |
+| `sin` (L14), `on above(..) { emit!(..) }` (L55), a digital-only transient (L56) | Delivered on `main` (`msl-fixes`, `host-ii`); UE-06 AC 1 no longer waits on them | ROADMAP 3d, 3e | y - AFK default (design.md D1) |
+| ngspice parity of what this feature unblocks | The `limexp` diode is compared with ngspice's diode at an existing twin's operating point (UE-05 AC 5); the Book's clipper gets a transient twin (UE-06 AC 4). No tolerance moves | the project's rule: parity first, tolerances never retuned | y - AFK default (design.md D11) |
 | The clipper's and the buck's expected output | What the Book prints for them: the clipper's `clip` stream (two lines per period, `vin` near 0.72) and `wave` records, the buck's `regulated` check passing after 10 ms | The Book is the source; its listings are held to the binary (`piperine-cli/tests/book.rs`) | n - planner |
 
 **Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
@@ -89,7 +93,8 @@ the IR and the generated Rust.
 1. WHEN the head `on d.changed() && en && !en.changed()` is evaluated THEN the system SHALL fire it exactly in a microstep where `d` changed, `en` is true and `en` did not change.
 2. WHEN a guard reads an event as a `bool` THEN the system SHALL evaluate it in the microstep of the head, reading what the reaction would read (§13 rule 1).
 3. IF `!` is applied to an `Event` outside a guard or a reaction body, or `&&` has a `bool` on the left and an `Event` on the right in an event position THEN the system SHALL report `E0440`.
-4. IF an `Event` value appears outside an event position, a guard or a reaction body, or is committed or carried THEN the system SHALL report `E0441`.
+4. IF an `Event` value appears outside an event position, a guard or a reaction body, or where a type other than `bool` is expected (a commit onto a carrier whose type is not `bool`, a carried or stored value) THEN the system SHALL report `E0441`.
+5. WHEN a reaction body commits an event read as a `bool` (`on up || dn { q <- up; }`, `q: Bit`) THEN the system SHALL commit whether `up` fired in that microstep (§13 rule 2, design.md D2).
 
 **Independent Test**: A compiled run with `d` and `en` driven by timed commits through the four combinations, and elaboration tests for `E0440` and `E0441`.
 
@@ -147,6 +152,7 @@ the IR and the generated Rust.
 2. WHEN a diode written with `limexp(v(a, k) / nvt)` and the same diode written with `(v(a, k) / nvt).exp()` and `pnjlim` limiting both converge THEN their operating points SHALL agree under `ToleranceContract::DC_VOLTAGE`.
 3. WHILE Newton iterates, the system SHALL move the argument of each `limexp` instance by at most 1.0 per iteration (§22.2.4 rule 3).
 4. The system SHALL give `limexp(x)` the derivative `limexp(x)` (§22.2.4 rule 5).
+5. WHEN the operating point of the `diode_series` twin (`tests/e2e/twins/diode_series.cir`) is solved with its diode written with `limexp` THEN its node voltages SHALL agree with ngspice under `ToleranceContract::DC_VOLTAGE`.
 
 **Independent Test**: An op of the Book's diode against the `exp` form, and a trace of the argument across iterations.
 
@@ -160,9 +166,10 @@ the IR and the generated Rust.
 
 **Acceptance Criteria** (UE-06):
 
-1. WHERE `sin` (L14) and `on above(..) { emit!(..) }` (L55) are delivered WHEN `piperine run clipper.msl` runs with the Book's flags THEN the system SHALL print two `clip` records per period with `vin` within 50 mV of 0.72 V, and write one `wave` record per time point.
+1. WHEN `piperine run clipper.msl --analysis transient --stop 2e-3 ...` runs with the Book's flags THEN the system SHALL print one `clip` record per period (two in the run) with `vin` within 50 mV of 0.72 V, and write one `wave` record per time point.
 2. WHEN `piperine run buck.msl --analysis transient --stop 12e-3 ...` of chapter 8 runs with the `digital for Buck` check THEN the system SHALL complete with every `regulated` check record `pass = true`.
 3. WHEN either run completes THEN the Book's listing SHALL be the binary's output, the refusal listings replaced, and `piperine-cli/tests/book.rs` SHALL pass.
+4. WHEN the analog part of the Book's clipper (sine source, resistor, two `limexp` diodes) runs a 2 ms transient THEN `v(vout)` SHALL agree with its ngspice twin `tests/e2e/twins/tran_clipper.cir` under `ToleranceContract::TRAN_VOLTAGE`.
 
 **Independent Test**: `cargo test -p piperine-cli --test book`.
 
@@ -190,6 +197,8 @@ the IR and the generated Rust.
 - WHEN two time points are a jump's left and right values THEN the system SHALL run `settle` once per time point, reading the solution at that time point.
 - WHEN a function returning `Event` calls another one THEN the system SHALL fire the outer when the inner fires under the outer's guard.
 - IF a reaction on `settle` probes THEN the system SHALL read the solution at its time point and SHALL NOT make a new time point.
+- WHEN a design has nothing analog THEN the system SHALL run `settle` at the operating point and at the stop time of a transient (§15, "What each kind of code reads"; L56 delivered by `host-ii`).
+- WHEN a reaction body reads as a `bool` an event that is not in its head THEN the system SHALL give whether that event fired in the microstep (§13 rule 2).
 
 ---
 
@@ -197,15 +206,15 @@ the IR and the generated Rust.
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| UE-01 | P1: An event reads as a `bool` | - | Pending |
-| UE-02 | P1: Guards read events | - | Pending |
-| UE-03 | P1: `on settle` | - | Pending |
-| UE-04 | P1: Functions that return `Event` | - | Pending |
-| UE-05 | P1: `limexp` | - | Pending |
-| UE-06 | P2: The Book's clipper and chapter-8 buck run | - | Pending |
-| UE-07 | P3: The documents say what is true | - | Pending |
+| UE-01 | P1: An event reads as a `bool` | Tasks | In Tasks |
+| UE-02 | P1: Guards read events | Tasks | In Tasks |
+| UE-03 | P1: `on settle` | Tasks | In Tasks |
+| UE-04 | P1: Functions that return `Event` | Tasks | In Tasks |
+| UE-05 | P1: `limexp` | Tasks | In Tasks |
+| UE-06 | P2: The Book's clipper and chapter-8 buck run | Tasks | In Tasks |
+| UE-07 | P3: The documents say what is true | Tasks | In Tasks |
 
-**Coverage:** 7 total, 0 mapped to tasks, 7 unmapped (no tasks yet).
+**Coverage:** 7 total, 7 mapped to tasks (tasks.md), 0 unmapped.
 
 ### Gaps closed
 
@@ -216,18 +225,19 @@ the IR and the generated Rust.
 | L53 | a function that returns `Event` | UE-04 (after `generics` delivers handles, L8) |
 | L58, `limexp` only | `limexp` refused, "binding inside a module" | UE-05 |
 | U5, the clipper and the chapter-8 buck rows | shown with their refusal | UE-06 (the rest of U5 is `root-e2e`'s) |
+| Book rows (GAPS §11) | values#2, values~c389077a (L53); analog#3, analog~773a3851, mixed#10, mixed~9d07c4b9, cheatsheet#5 (L52); digital#6, mixed#6, mixed#15 (L51) | UE-01 to UE-06; a row another gap still refuses is re-pointed to that gap (design.md D15) |
 
 ## Dependencies
 
 - `unknown-semantics`: US-04 AC 9 (a guard whose `bool` is unknown).
-- `generics`: L8 handles, for UE-04 only.
-- `msl-fixes` (lane A): L14 `sin` and L55 for UE-06 AC 1 only.
-- `host-ii` (lane B): L56 for `settle` in a design with nothing analog (an edge, not a criterion here).
-- `piperine-digital-solver` already fires `SETTLE`; nothing in the solver is expected to change except, if needed, the due instant of a settle commit (S1 to S3).
+- `generics`: L8 handles (phase B), for UE-04 only.
+- `composite-values`: `let mut` and assignment (phase A), for UE-01 AC 3 (`Pfd3`) only.
+- `msl-fixes` and `host-ii`: delivered on `main` (L14, L55, L56).
+- `piperine-digital-solver` already fires `SETTLE`; it refuses a settle commit today (`run.rs`, "settle commit"). This feature gives it the due instant of S1 to S6, and the owner protocol in `piperine-solver` lands it (design.md D6).
 
 ## Size
 
-**M.** About 17 tasks: UE-01 2, UE-02 2, UE-03 6, UE-04 2, UE-05 2, UE-06 2, UE-07 1.
+**M to L.** 31 tasks in five batches (tasks.md): four start from `main` now, the fifth waits for `composite-values` A–B and `generics` A–B.
 
 ## Sources
 

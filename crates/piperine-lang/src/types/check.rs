@@ -91,9 +91,9 @@ pub(super) struct Checker<'d> {
     pub(super) event_slot: Option<ExprId>,
     /// Set while the guard of an event, the right operand of `ev && guard`, is typed.
     pub(super) in_guard: bool,
-    /// Set while the value of a commit is typed: an `Event` there is committed (`E0441`), not
-    /// read as a `bool`.
-    pub(super) committing: bool,
+    /// The events read as a `bool` (§13 rules 2 and 9): the expressions of type `Event` that
+    /// stand in a guard or a reaction body and are typed `bool`.
+    pub(super) event_reads: BTreeSet<ExprId>,
     /// Bindings whose value could not be typed: a read of one is silent, so one mistake is
     /// one diagnostic.
     pub(super) poisoned: BTreeSet<DeclId>,
@@ -163,7 +163,7 @@ impl<'d> Checker<'d> {
             context: Context::Module,
             event_slot: None,
             in_guard: false,
-            committing: false,
+            event_reads: BTreeSet::new(),
             poisoned: BTreeSet::new(),
             fn_where: false,
             places: Places::default(),
@@ -198,6 +198,7 @@ impl<'d> Checker<'d> {
 
     /// Check `top` and everything it reaches: the table, or the diagnostics in source order.
     pub(super) fn run(mut self, top: DeclId) -> Result<Types<'d>, Vec<DesignDiagnostic>> {
+        self.check_attributes();
         self.reach(top);
         while let Some(decl) = self.queue.pop_front() {
             self.declaration(decl);
@@ -214,7 +215,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, widths: self.widths, written: self.written, continuous, emits, assigned: self.places.into_assigned() })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, written: self.written, continuous, emits, assigned: self.places.into_assigned() })
     }
 
     /// Run `body` with `context` as the place being checked, then restore the one outside.
@@ -241,15 +242,14 @@ impl<'d> Checker<'d> {
             return;
         }
         self.reach(module);
-        let (owner, context, event_slot, in_guard, committing, fn_where) = (self.owner, self.context, self.event_slot, self.in_guard, self.committing, self.fn_where);
+        let (owner, context, event_slot, in_guard, fn_where) = (self.owner, self.context, self.event_slot, self.in_guard, self.fn_where);
         let (book, lets_open, placing, flow) = (std::mem::take(&mut self.book), std::mem::take(&mut self.lets_open), std::mem::take(&mut self.placing), std::mem::take(&mut self.flow));
         self.context = Context::Module;
         self.event_slot = None;
         self.in_guard = false;
-        self.committing = false;
         self.fn_where = false;
         self.declaration(module);
-        (self.owner, self.context, self.event_slot, self.in_guard, self.committing, self.fn_where) = (owner, context, event_slot, in_guard, committing, fn_where);
+        (self.owner, self.context, self.event_slot, self.in_guard, self.fn_where) = (owner, context, event_slot, in_guard, fn_where);
         (self.book, self.lets_open, self.placing, self.flow) = (book, lets_open, placing, flow);
     }
 
@@ -300,15 +300,15 @@ impl<'d> Checker<'d> {
         self.unsupported(file, span, what);
     }
 
-    /// `P0002`: a plain type mismatch at `span`, naming both types.
+    /// `E0180`: a plain type mismatch at `span`, naming both types.
     pub(super) fn mismatch(&mut self, file: FileId, span: Span, expected: &Ty, found: &Ty) {
         let (expected, found) = (expected.name(self.design), found.name(self.design));
         self.mismatch_text(file, span, &expected, &found);
     }
 
-    /// `P0002` with the two types already written out.
+    /// `E0180` with the two types already written out.
     pub(super) fn mismatch_text(&mut self, file: FileId, span: Span, expected: &str, found: &str) {
-        self.mismatch_coded(file, span, "P0002", expected, found);
+        self.mismatch_coded(file, span, "E0180", expected, found);
     }
 
     /// A mismatch under the code of the rule that was broken.
@@ -354,6 +354,8 @@ impl<'d> Checker<'d> {
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) => Some(Ty::Node(d)),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_)) => self.enum_type(d, file, node.span),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Struct(_)) => self.struct_type(d, file, node.span),
+                // A module named as a type is the type of a param (§8.1.1, PI-04): a template of it.
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Module(_)) && self.design.decl_data(d).generics_span.is_none() => Some(Ty::Module(d)),
                 Resolution::Decl(d) => {
                     let what = Unsupported::item(&self.design.decl_data(d).kind);
                     self.unsupported(file, node.span, &format!("{what} used as a type"));
@@ -455,7 +457,14 @@ impl<'d> Checker<'d> {
             None => {
                 let d = self.design.decl_data(decl);
                 let (file, span) = (d.file, d.span);
-                self.unsupported(file, span, "`const` without a value");
+                let name = d.name.as_ref().map_or_else(String::new, |name| name.text.clone());
+                let in_trait = d.parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Trait(_)));
+                if in_trait {
+                    self.unsupported(file, span, "`const` without a value");
+                } else {
+                    // §3.9.2: a `const` has a value everywhere but in a trait.
+                    self.coded(file, "E0188", span, format!("the `const` `{name}` has no value"), "a `const` outside a trait has a value");
+                }
             }
         }
     }
@@ -588,6 +597,9 @@ impl<'d> Checker<'d> {
                     (DeclKind::Definition(d), ItemPhase::Definitions) => self.definition(&d.clone()),
                     (DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) | DeclKind::Let(_) | DeclKind::Definition(_), _) => {}
                     (DeclKind::GenericParam(_) | DeclKind::Behavior(_) | DeclKind::Error, _) => {}
+                    // A closure's parameters (`|new, old| ..` of `limexp`, §22.2.4) are children of the
+                    // module that holds the closure, typed with it, not module items (design D9).
+                    (DeclKind::Binding(_), _) => {}
                     (DeclKind::Generation(_), ItemPhase::Declarations) => self.unsupported(item.file, item.span, "generation `for`/`if` in a module body"),
                     (other, ItemPhase::Declarations) => self.unsupported(item.file, item.span, &format!("{} inside a module", other.label().to_lowercase())),
                     (_, _) => {}

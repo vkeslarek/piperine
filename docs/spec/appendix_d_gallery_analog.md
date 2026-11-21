@@ -32,17 +32,23 @@ is a carrier change that `analog` reads, so the solver lands on it (§17.3).
 
 ```rust
 module Pwl<const N: usize>(p: Electrical, n: Electrical) where N >= 1 {
-    points: [(f64, f64); N];          // (time, value), times strictly increasing
+    points: [(f64, f64); N]; // (time, value), times strictly increasing
     signal seg: Bit<u32> = 0;
 }
 
 digital<N> for Pwl<N> {
-    for k in 1..N { on at(points[k].0) { seg <- k as u32; } }
+    for k in 1..N {
+        on at(points[k].0) {
+            seg <- k as u32;
+        }
+    }
 }
 
 analog<N> for Pwl<N> {
     let k = seg.known_or(0) as usize;
-    let y = if k + 1 >= N { points[N - 1].1 } else {
+    let y = if k + 1 >= N {
+        points[N - 1].1
+    } else {
         let ((t0, y0), (t1, y1)) = (points[k], points[k + 1]);
         y0 + (y1 - y0) * ((now() - t0) / (t1 - t0)).clamp(0.0, 1.0)
     };
@@ -81,7 +87,7 @@ its cost to the solver depends on who reads `clk`.
 ```rust
 module ClockGen(out clk: Bit = false) {
     period: f64 where period > 0.0;
-    jitter: f64 = 0.0 where jitter < period / 10.0;    // keeps every half period positive in practice
+    jitter: f64 = 0.0 where jitter < period / 10.0; // keeps every half period positive in practice
     seed: u64 = 1;
     signal rng: Bit<u64> = seed;
 }
@@ -123,15 +129,21 @@ crossings half a cycle apart, never the wrap itself.
 module Vco(vctl: Electrical, out clk: Bit = false) {
     f0: f64 = 1G;
     kvco: f64 = 100M;
-    let ph = idtmod(f0 + kvco * v(vctl), 0.0, 1.0, -0.5);    // phase in [-0.5, 0.5)
+    let ph = idtmod(f0 + kvco * v(vctl), 0.0, 1.0, -0.5); // phase in [-0.5, 0.5)
 }
 
 digital for Vco {
-    on above(ph + 0.25) { clk <- true; }      // above: ph starts at 0, already inside the high half
-    on cross(ph - 0.25) { clk <- false; }
+    on above(ph + 0.25) {
+        clk <- true;
+    } // above: ph starts at 0, already inside the high half
+    on cross(ph - 0.25) {
+        clk <- false;
+    }
 }
 
-analog for Vco { bound_step(0.05 / f0); }
+analog for Vco {
+    bound_step(0.05 / f0);
+}
 ```
 
 **Semantics walkthrough.**
@@ -172,10 +184,14 @@ output.
 
 ```rust
 module DacRamp(in code: Bit<u8>, vout: Electrical) {
-    vref: f64 = 1.0; tedge: f64 = 100p;
+    vref: f64 = 1.0;
+    tedge: f64 = 100p;
     let ramp = transition(vref * (code as f64) / 256.0, 0.0, tedge, tedge);
 }
-analog for DacRamp { v(vout) +> ramp; }
+
+analog for DacRamp {
+    v(vout) +> ramp;
+}
 ```
 
 **Semantics walkthrough.**
@@ -208,17 +224,25 @@ by a reaction, and feedback through a discrete carrier.
 
 ```rust
 module DeltaSigma1(vin: Electrical, in clk: Bit, out bit: Bit = false) {
-    r: f64 = 100k; c: f64 = 1p; vref: f64 = 1.0;
+    r: f64 = 100k;
+    c: f64 = 1p;
+    vref: f64 = 1.0;
     signal x: Electrical = 0.0;
 }
 
 analog for DeltaSigma1 {
-    let fb = if bit.high() { vref } else { -vref };
+    let fb = if bit.high() {
+        vref
+    } else {
+        -vref
+    };
     i(x) +> ddt(c * v(x)) - (v(vin) - fb) / r;
 }
 
 digital for DeltaSigma1 {
-    on clk.rise() { bit <- v(x) > 0.0; }
+    on clk.rise() {
+        bit <- v(x) > 0.0;
+    }
 }
 ```
 
@@ -248,22 +272,46 @@ digital for DeltaSigma1 {
 two delayed definitions, four resistive switches, two capacitors and an amplifier.
 
 ```rust
-module RSwitch(a: Electrical, b: Electrical, in ctl: Bit) { ron: f64 = 100.0; roff: f64 = 1G; }
-analog for RSwitch { i(a, b) +> v(a, b) / if ctl.high() { ron } else { roff }; }
+module RSwitch(a: Electrical, b: Electrical, in ctl: Bit) {
+    ron: f64 = 100.0;
+    roff: f64 = 1G;
+}
 
-module OpAmpIdeal(inp: Electrical, inn: Electrical, vout: Electrical) { a0: f64 = 1e5; }
-analog for OpAmpIdeal { v(vout) +> a0 * v(inp, inn); }
+analog for RSwitch {
+    i(a, b) +> v(a, b) / if ctl.high() {
+        ron
+    } else {
+        roff
+    };
+}
+
+module OpAmpIdeal(inp: Electrical, inn: Electrical, vout: Electrical) {
+    a0: f64 = 1e5;
+}
+
+analog for OpAmpIdeal {
+    v(vout) +> a0 * v(inp, inn);
+}
 
 /// Non-overlapping two-phase clock: pure structure.
 module TwoPhase(in clk: Bit, out phi1: Bit = false, out phi2: Bit = false) {
     gap: f64 = 50p;
-    phi1 = clk after if clk { gap } else { 0.0 };      // rises gap after clk, falls with it
-    phi2 = !clk after if clk { 0.0 } else { gap };     // the mirror
+    phi1 = clk after if clk {
+        gap
+    } else {
+        0.0
+    }; // rises gap after clk, falls with it
+    phi2 = !clk after if clk {
+        0.0
+    } else {
+        gap
+    }; // the mirror
 }
 
 /// Stray-insensitive SC integrator: structure only.
 module ScIntegrator(vin: Electrical, vout: Electrical, in clk: Bit) {
-    cs: f64 = 1p; cf: f64 = 4p;
+    cs: f64 = 1p;
+    cf: f64 = 4p;
     signal phi1: Bit;
     signal phi2: Bit;
     signal x: Electrical;

@@ -11,6 +11,7 @@ mod aggregate;
 mod aggregate_patterns;
 mod analog;
 mod assign;
+mod attributes;
 mod call;
 mod carrier;
 mod catalogue;

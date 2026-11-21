@@ -1,0 +1,49 @@
+//! Values and `Bit` (§22.1): `Known`, `merge`, `cast`, `same`, the engine-implemented pattern
+//! functions, the edges of `Bit`, `init`, `every` and `since`.
+
+pub trait Known: Repr {
+    /// The value when every level is known.
+    fn known(self) -> Option<Self> { for k in 0..Self::WIDTH { self.level(k)?; } Some(self) }
+    fn known_or(self, d: Self) -> Self { self.known().unwrap_or(d) }
+    fn is_known(self) -> bool { self.known().is_some() }
+}
+impl<T: Repr> Known for T {}
+
+/// Level by level: equal known levels kept, the rest unknown.
+pub fn merge<T: Repr>(a: T, b: T) -> T { let c: bool = Unknown; if c { a } else { b } }
+
+/// The same levels under another type of the same width.
+pub fn cast<A: Repr, B: Repr>(a: A) -> B where A::WIDTH == B::WIDTH {
+    B::decode(a.encode()).unwrap_or(Unknown)
+}
+
+pub fn same<T: Repr>(a: T, b: T) -> bool { (0..T::WIDTH).all(|k| a.level(k) == b.level(k)) }
+pub extern "intrinsic" fn matches_bits<T: Repr>(s: T, pattern: str) -> bool;
+pub extern "intrinsic" fn logic<T: Repr>(pattern: str) -> T;
+
+impl Bit {
+    /// IEEE 1364 posedge: L → H, L → unknown, unknown → H. A change never goes from unknown to unknown.
+    pub fn rise(self) -> Event { self.changed() && self.prev().level(0) != Some(true)  && self.level(0) != Some(false) }
+    /// IEEE 1364 negedge: H → L, H → unknown, unknown → L.
+    pub fn fall(self) -> Event { self.changed() && self.prev().level(0) != Some(false) && self.level(0) != Some(true) }
+    /// Known and true. In analog code an unknown control then acts as low; say so where that is wrong.
+    pub fn high(self) -> bool { self.known_or(false) }
+}
+
+pub module init() -> Event {
+    signal up: Bit = true;
+    up.changed()
+}
+
+pub module every(t0: f64, period: f64) -> Event {
+    signal k: Bit<u64> = 0;
+    let tick = at(t0 + k as f64 * period);
+    tick
+}
+digital for every { on tick { k <- k + 1; } }
+
+pub module since<T: Repr>(in s: Bit<T>) -> f64 {
+    signal t: Bit<f64> = -inf;
+    now() - t.known_or(-inf)                 // a known real, so analog may read it (§3.3.5)
+}
+digital<T> for since<T> { on s.changed() { t <- now(); } }

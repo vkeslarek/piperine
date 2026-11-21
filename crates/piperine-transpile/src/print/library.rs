@@ -354,7 +354,7 @@ impl LibraryPrinter {
                 exprs.extend(e.guard);
                 match e.source {
                     EventSource::Cross { e: x, .. } | EventSource::At(x) => exprs.push(x),
-                    EventSource::Changed(_) | EventSource::ParamChanged(_) => {}
+                    EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle => {}
                 }
             }
             for r in body.reactions() {

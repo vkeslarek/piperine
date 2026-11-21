@@ -28,10 +28,12 @@
 mod control;
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use piperine_ir::{Constant, Real};
 
 use super::compound::EnumLayout;
+use super::files::{FileFault, IncludedFiles};
 use crate::msl::lexer;
 use crate::pom::{BinOp, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, UnOp};
 use crate::types::{Builtin, Callee, Intrinsic, Method, Ty, Types};
@@ -125,6 +127,14 @@ pub enum ConstFault {
     /// The value is unknown (§3.3) where a known one is required: the caller says what it
     /// decides (`E0151` when it fixes structure, §3.3.8).
     Unknown { expr: ExprId },
+    /// The initializer of the `const` item `constant` reads, at `expr`, something only a run gives
+    /// (`what`): the `const` is not a const expression (§3.9.2, `E0188`).
+    NotConstant { expr: ExprId, constant: DeclId, what: String },
+    /// A `const` read, at `expr`, while its own initializer is being folded: it depends on itself
+    /// (§3.9.2, `E0188`).
+    Cyclic { expr: ExprId, constant: DeclId },
+    /// The file an `include_str!` at `expr` names has no text (§20 errors: `E0612`, `E0613`).
+    File { expr: ExprId, fault: FileFault },
     /// A `break`, `continue` or `return` on its way to the loop or function it leaves; the value it
     /// carries waits in the evaluator. Never reaches a caller of [`ConstEval::value`].
     Leaves { expr: ExprId, exit: Exit },
@@ -145,7 +155,7 @@ impl ConstFault {
     /// The expression the fault sits on; none for a `const` item without a value.
     pub fn expr(&self) -> Option<ExprId> {
         match self {
-            ConstFault::UnboundParam { expr, .. } | ConstFault::Dynamic { expr, .. } | ConstFault::Unsupported { expr, .. } | ConstFault::Panic { expr, .. } | ConstFault::Unknown { expr } | ConstFault::Leaves { expr, .. } => Some(*expr),
+            ConstFault::UnboundParam { expr, .. } | ConstFault::Dynamic { expr, .. } | ConstFault::Unsupported { expr, .. } | ConstFault::Panic { expr, .. } | ConstFault::Unknown { expr } | ConstFault::Cyclic { expr, .. } | ConstFault::NotConstant { expr, .. } | ConstFault::File { expr, .. } | ConstFault::Leaves { expr, .. } => Some(*expr),
             ConstFault::NoValue { .. } => None,
         }
     }
@@ -165,17 +175,45 @@ pub struct ConstEval<'d, 't> {
     fn_values: BTreeMap<DeclId, FnValue>,
     /// The value a `break` or `return` on its way to its target carries; `None` for none.
     leaving: Option<Folded>,
+    /// The `const` items being folded, innermost last: a read of one of them is a cycle (§3.9.2).
+    open_constants: Vec<DeclId>,
+    /// The files `include_str!` has read, each once (§20 rule 3).
+    files: IncludedFiles,
 }
 
 impl<'d, 't> ConstEval<'d, 't> {
     pub fn new(design: &'d Design, types: &'t Types<'d>) -> Self {
-        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new(), fn_values: BTreeMap::new(), leaving: None }
+        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new(), fn_values: BTreeMap::new(), leaving: None, open_constants: Vec::new(), files: IncludedFiles::new() }
     }
 
     /// How many `const` items this evaluator has folded, each counted once however many times
     /// it was read.
     pub fn evaluations(&self) -> usize {
         self.evaluations
+    }
+
+    /// How many files `include_str!` has opened, one per distinct resolved path (§20 rule 3).
+    pub fn files_read(&self) -> usize {
+        self.files.reads()
+    }
+
+    /// The text of the `const` item `decl` whose initializer is `include_str!("path")`: the file
+    /// beside the source that holds the `const`, read the first time (§20 rules 1 to 4). An
+    /// initializer of another form is [`ConstFault::Unsupported`]: the subset has no other text.
+    pub fn text(&mut self, decl: DeclId) -> Result<Arc<str>, ConstFault> {
+        let data = self.design.decl_data(decl);
+        let DeclKind::Const(ConstData { value: Some(expr), .. }) = &data.kind else {
+            return Err(ConstFault::NoValue { decl });
+        };
+        let expr = *expr;
+        let ExprKind::IncludeStr(literal) = &self.design.expr_node(expr).kind else {
+            return Err(ConstFault::Unsupported { expr, what: "a text value other than `include_str!`".to_string() });
+        };
+        let Some(path) = literal.str_value() else {
+            return Err(ConstFault::Unsupported { expr, what: "an `include_str!` path with an undefined escape".to_string() });
+        };
+        let source = self.design.file_data(data.file).path.clone();
+        self.files.text(source.as_deref(), &path).map_err(|fault| ConstFault::File { expr, fault })
     }
 
     /// The value of a `const` item, folded the first time it is asked for. A `const` that is
@@ -201,10 +239,15 @@ impl<'d, 't> ConstEval<'d, 't> {
         let expr = *expr;
         let outer = std::mem::take(&mut self.locals);
         let outer_functions = std::mem::take(&mut self.fn_values);
+        self.open_constants.push(decl);
         let value = self.folded(expr, &Bindings::new());
+        self.open_constants.pop();
         self.locals = outer;
         self.fn_values = outer_functions;
-        let value = value?;
+        let value = value.map_err(|fault| match fault {
+            ConstFault::Dynamic { expr, what } => ConstFault::NotConstant { expr, constant: decl, what },
+            other => other,
+        })?;
         self.evaluations += 1;
         self.consts.insert(decl, value);
         Ok(value)
@@ -301,8 +344,10 @@ impl<'d, 't> ConstEval<'d, 't> {
             return Err(ConstFault::Dynamic { expr, what: "a built-in name".to_string() });
         };
         match &self.design.decl_data(decl).kind {
+            DeclKind::Const(_) if self.open_constants.contains(&decl) => Err(ConstFault::Cyclic { expr, constant: decl }),
             DeclKind::Const(_) => self.folded_constant(decl).map_err(|fault| match fault {
-                ConstFault::NoValue { .. } => ConstFault::Unsupported { expr, what: "a `const` without a value".to_string() },
+                // A trait's `const` without a value is outside the subset; anywhere else it is `E0188`.
+                ConstFault::NoValue { decl } if self.is_trait_item(decl) => ConstFault::Unsupported { expr, what: "a `const` without a value".to_string() },
                 other => other,
             }),
             DeclKind::Param(_) => bindings.get(decl).map(Folded::Known).ok_or(ConstFault::UnboundParam { expr, param: decl }),
@@ -321,6 +366,11 @@ impl<'d, 't> ConstEval<'d, 't> {
             DeclKind::Port(_) | DeclKind::Signal(_) => Err(ConstFault::Dynamic { expr, what: "a node".to_string() }),
             _ => Err(ConstFault::Unsupported { expr, what: "this name in a const expression".to_string() }),
         }
+    }
+
+    /// Whether `decl` is declared in a `trait` (the one place a `const` has no value, §3.9.2).
+    pub fn is_trait_item(&self, decl: DeclId) -> bool {
+        self.design.decl_data(decl).parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Trait(_)))
     }
 
     /// The value of the module-body `let` name `decl` read at `expr`: its value expression evaluated

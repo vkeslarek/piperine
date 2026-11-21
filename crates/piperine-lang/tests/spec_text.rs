@@ -1813,3 +1813,63 @@ fn section_22_no_longer_says_std_is_in_the_earlier_spelling() {
     assert!(one_line(&spec("part_vii_stdlib.md")).contains(r#"table_model(v(a, k), IV, "3E")"#));
     assert!(one_line(&spec("part_vi_io.md")).contains(r#"table_model(v(a, k), IV, "3E")"#), "Part VI and Part VII agree");
 }
+
+#[test]
+fn the_commit_of_an_event_read_as_a_bool_is_stated() {
+    // UE-02 AC 5, design D2: §13 rule 2 reads an event as a `bool` in the value of a commit, so
+    // the spec's own `Comparator` (`q <- up`) is well typed; rule 8's "never committed" is an
+    // `Event` where a type other than `bool` is expected.
+    let behavior = flat(&spec("part_iv_behavior.md"));
+    for fact in [
+        "§13 rule 2 reads an event as a `bool` in the value of a commit too",
+        "`on up || dn { q <- up; }`, the `Comparator` of this section, commits whether `up` fired in this",
+        "an `Event` committed where a type other than `bool` is expected (`E0441`)",
+        "an `Event` committed where a type other than `bool` is expected, or carried (§13 rule 8)",
+    ] {
+        assert!(behavior.contains(fact), "§13 lacks \"{fact}\"");
+    }
+}
+
+#[test]
+fn the_host_drives_a_tops_node_ports_e0810_e0811() {
+    // PI-07 AC 8, D10: §8.1.14 and §23.1 rule 1 state the host source, and §23.1's errors table
+    // carries E0810 (host) and E0811 (elaboration)
+    let structure = flat(&spec("part_iii_structure.md"));
+    for fact in ["The host drives each node port with a host source, a potential source to `gnd`", "(`E0810` when a run has none)", "a value input of the top is refused (`E0811`)"] {
+        assert!(structure.contains(fact), "§8.1.14 lacks \"{fact}\"");
+    }
+    let host = spec("part_viii_host.md");
+    let flat_host = flat(&host);
+    for fact in [
+        "It drives each node port of the top with one **host source**",
+        "a DC value, an optional AC stimulus (magnitude and phase) and a piecewise-linear waveform",
+        "A run needs a host source for every node port of the top (`E0810`)",
+        "A value input of the top has no host source and is refused at elaboration (`E0811`)",
+    ] {
+        assert!(flat_host.contains(fact), "§23.1 lacks \"{fact}\"");
+    }
+    let quoted = flat_host.replace("> ", "");
+    assert!(quoted.contains("a host change of its value at a time is a jump there"), "the Resolution lacks the jump");
+    let rows = table_rows(&section(&host, "### 23.1 "));
+    for (code, phase) in [("`E0810`", "host"), ("`E0811`", "elaboration")] {
+        let row = rows.iter().find(|r| r[0] == code).unwrap_or_else(|| panic!("§23.1's errors table lacks {code}"));
+        assert_eq!(row[2], phase, "{code}'s phase");
+    }
+}
+
+#[test]
+fn appendix_c2_states_the_spline_end_conditions() {
+    // PI-10, D18, G.64: Appendix C.2 documents the end conditions of the `table_model` splines
+    // (§22.2.15 rule 8) and the derivative at a sample
+    let text = spec("appendix_c_implementation.md");
+    let rows = table_rows(&section(&text, "## C.2 "));
+    let row = rows.iter().find(|r| r[0].starts_with("`table_model` splines")).expect("C.2's table has a row for the table_model splines");
+    let algorithm = flat(&row[1]);
+    for fact in [
+        "Control `3`: a cubic spline with the not-a-knot end conditions",
+        "Control `2`: a quadratic spline whose first segment is the parabola through the first three samples",
+        "The derivative at a sample is the slope of the segment on its right; at the last sample, the slope of the segment on its left",
+    ] {
+        assert!(algorithm.contains(fact), "C.2's row lacks \"{fact}\": {algorithm}");
+    }
+}

@@ -11,6 +11,7 @@ mod spec_corpus;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
+use piperine_lang::msl::format::Formatter;
 use piperine_lang::pom::{Design, ExprKind, Reference, Reflect, Resolution};
 use spec_corpus::{Block, Class, corpus};
 
@@ -394,4 +395,17 @@ fn the_fences_composite_values_lifted_are_checked() {
         held.push(g.section);
     }
     assert_eq!(held, ["E.3", "E.4"], "both fences are held");
+}
+
+/// PI-11 AC 3: each of the 18 gallery fences is the formatter's output for itself, so a reader
+/// copies it into a file `piperine fmt --check` accepts.
+#[test]
+fn every_gallery_fence_is_in_the_formatters_form() {
+    let fences = galleries();
+    assert_eq!(fences.len(), 18, "the galleries hold 18 fences");
+    for gallery in fences {
+        let text = format!("{}\n", gallery.block.text.trim_end());
+        let formatted = Formatter::format(&text).unwrap_or_else(|d| panic!("{} ({}:{}): {d:?}", gallery.section, gallery.block.file, gallery.block.line));
+        assert_eq!(formatted, text, "{} ({}:{}) is not in the formatter's form", gallery.section, gallery.block.file, gallery.block.line);
+    }
 }

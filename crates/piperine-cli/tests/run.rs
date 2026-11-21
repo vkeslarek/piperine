@@ -313,7 +313,7 @@ fn a_type_error_is_rendered_with_its_stage_and_exits_1() {
     // exit 1. `type_error/src/lib.msl` puts a real where a `bool` is declared, at line 2.
     let out = piperine_in(&fixture("type_error"), shared_cache(), &["run", "main"]);
     let err = failed(&out, 1);
-    assert!(err.contains("P0002"), "the code:\n{err}");
+    assert!(err.contains("E0180"), "the code:\n{err}");
     assert!(err.contains("lib.msl:2:"), "the file and the line:\n{err}");
     assert!(err.contains("flag: bool = 1.5;"), "the excerpt:\n{err}");
     assert!(err.contains("error: typeck failed with 1 diagnostic(s)"), "the stage:\n{err}");
@@ -497,4 +497,19 @@ fn a_maybe_record_prints_maybe_and_a_known_one_does_not() {
     let line = |stream: &str| stdout.lines().find(|l| l.contains(&format!(" {stream} "))).unwrap_or_else(|| panic!("no `{stream}` record in:\n{stdout}")).to_string();
     assert!(line("unsure").ends_with(" n=1 maybe=true"), "{}", line("unsure"));
     assert!(line("sure").ends_with(" n=1") && !line("sure").contains("maybe"), "{}", line("sure"));
+}
+
+#[test]
+fn run_of_a_top_with_a_node_port_is_e0810() {
+    // PI-07 AC 5, X8, §23.1 rule 1: no manifest key drives a port, so `piperine run` of a top
+    // with a node port has no host source for it: E0810 naming the port, exit 1, and no table on
+    // standard output (the P0001 "continuous port" of the elaborator is gone)
+    let files = written(&[("bench.msl", "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\n\nmodule Top(vin: Electrical) {\n    let r1 = Resistor(vin, gnd) { r: 1k };\n}\n")]);
+    let file = files.path().join("bench.msl");
+    let out = piperine_in(files.path(), shared_cache(), &["run", &file.to_string_lossy(), "--analysis", "op", "--top", "Top"]);
+    let err = failed(&out, 1);
+    assert!(err.contains("E0810"), "{err}");
+    assert!(err.contains("`vin`"), "the port is named:\n{err}");
+    assert!(!err.contains("P0001"), "{err}");
+    assert_eq!(text(&out.stdout).trim_end(), "run bench: op, top Top, backend rust", "only the header, no table");
 }

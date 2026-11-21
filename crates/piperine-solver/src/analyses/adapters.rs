@@ -142,6 +142,20 @@ impl DigitalSide {
         slots
     }
 
+    /// The nets of `nets` whose bytes differ from the analog side's copy, as the boundary slots
+    /// they are; the copy takes the new bytes, as the analog side will once they are delivered.
+    fn changed_slots(&mut self, nets: Vec<(NetId, Vec<u8>)>) -> Vec<Boundary> {
+        let mut boundary = Vec::new();
+        for (net, bytes) in nets {
+            let slot = self.slots[&net];
+            if self.copy[slot as usize] != bytes {
+                self.copy[slot as usize].clone_from(&bytes);
+                boundary.push(Boundary { slot, bytes });
+            }
+        }
+        boundary
+    }
+
     fn time(&self, tick: DigitalTick) -> f64 {
         tick.0 as f64 * self.digital.plan().resolution.seconds_per_tick
     }
@@ -185,16 +199,18 @@ impl DiscreteSide for DigitalSide {
         let mode = Mode { is_static: mode.is_static, settle: mode.settle };
         let microsteps = self.microsteps;
         let out = self.digital.run_instant(DigitalTick(at), samples, limit, mode).map_err(|e| instant_error(e, microsteps))?;
-        let mut boundary = Vec::new();
-        for (net, bytes) in out.boundary {
-            let slot = self.slots[&net];
-            if self.copy[slot as usize] != bytes {
-                self.copy[slot as usize].clone_from(&bytes);
-                boundary.push(Boundary { slot, bytes });
-            }
-        }
+        let boundary = self.changed_slots(out.boundary);
         let host_events = out.host_events.iter().map(|n| n.0).collect();
-        Ok(Outcome { boundary, host_param_write: out.host_param_write, finish: out.finish, host_events })
+        let settle_boundary = self.changed_slots(out.settle_boundary);
+        Ok(Outcome { boundary, host_param_write: out.host_param_write, finish: out.finish, host_events, settle_boundary })
+    }
+
+    fn land_settle_commits(&mut self, tick: Tick) {
+        self.digital.land_settle_commits(DigitalTick(tick));
+    }
+
+    fn drop_settle_commits(&mut self) {
+        self.digital.drop_settle_commits();
     }
 
     /// The engine's journal mark: no net is copied. The full copy and every net's bytes are

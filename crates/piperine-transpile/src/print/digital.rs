@@ -106,6 +106,7 @@ impl<'a> DigitalPrinter<'a> {
             | Source::Crossed(_)
             | Source::Timer(_)
             | Source::Fired(_)
+            | Source::Settle
             | Source::ParamChanged(_) => format!("let {name} = {cx}.bool({i});"),
             Source::Node(_) | Source::Derivative(_) | Source::Temperature | Source::Gmin | Source::SourceScale | Source::Time | Source::Freq | Source::Resolution => {
                 format!("let {name} = {cx}.f64({i});")
@@ -211,6 +212,8 @@ impl<'a> DigitalPrinter<'a> {
                     EventSource::Cross { .. } => (self.names.read_name(Source::Crossed(e)), format!("its crossing fired (event {e})")),
                     // only a guarded timer has an event function: it gates the timer's own pin
                     EventSource::At(_) => (self.names.read_name(Source::Timer(e)), format!("its timer fired (event {e})")),
+                    // §13 rule 17: the `SETTLE` pin's `CHANGED` byte, which the engine fires in the settle phase (§15 step 4)
+                    EventSource::Settle => (self.names.read_name(Source::Settle), "the settle phase runs".to_string()),
                 };
                 (source, event.guard, event.origin.clone(), what)
             }

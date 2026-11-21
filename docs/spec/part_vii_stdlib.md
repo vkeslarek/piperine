@@ -117,10 +117,20 @@ Reads the known flag (§3.3.4) of a whole `Repr` value.
 ```rust
 pub trait Known: Repr {
     /// The value when every level is known.
-    fn known(self) -> Option<Self> { for k in 0..Self::WIDTH { self.level(k)?; } Some(self) }
-    fn known_or(self, d: Self) -> Self { self.known().unwrap_or(d) }
-    fn is_known(self) -> bool { self.known().is_some() }
+    fn known(self) -> Option<Self> {
+        for k in 0..Self::WIDTH {
+            self.level(k)?;
+        }
+        Some(self)
+    }
+    fn known_or(self, d: Self) -> Self {
+        self.known().unwrap_or(d)
+    }
+    fn is_known(self) -> bool {
+        self.known().is_some()
+    }
 }
+
 impl<T: Repr> Known for T {}
 ```
 
@@ -141,7 +151,14 @@ impl<T: Repr> Known for T {}
 
 ```rust
 /// Level by level: equal known levels kept, the rest unknown.
-pub fn merge<T: Repr>(a: T, b: T) -> T { let c: bool = Unknown; if c { a } else { b } }
+pub fn merge<T: Repr>(a: T, b: T) -> T {
+    let c: bool = Unknown;
+    if c {
+        a
+    } else {
+        b
+    }
+}
 ```
 
 1. Level `k` of `merge(a, b)` is known exactly when level `k` of `a` and of `b` are known and equal. It then has that value.
@@ -170,8 +187,12 @@ byte = cast(sh);            // byte: Bit<u8>; sh[0] is the least significant lev
 #### 22.1.4 `same`, `matches_bits`, `logic`
 
 ```rust
-pub fn same<T: Repr>(a: T, b: T) -> bool { (0..T::WIDTH).all(|k| a.level(k) == b.level(k)) }
+pub fn same<T: Repr>(a: T, b: T) -> bool {
+    (0..T::WIDTH).all(|k| a.level(k) == b.level(k))
+}
+
 pub extern "intrinsic" fn matches_bits<T: Repr>(s: T, pattern: str) -> bool;
+
 pub extern "intrinsic" fn logic<T: Repr>(pattern: str) -> T;
 ```
 
@@ -194,11 +215,17 @@ pub extern "intrinsic" fn logic<T: Repr>(pattern: str) -> T;
 ```rust
 impl Bit {
     /// IEEE 1364 posedge: L → H, L → unknown, unknown → H. A change never goes from unknown to unknown.
-    pub fn rise(self) -> Event { self.changed() && self.prev().level(0) != Some(true)  && self.level(0) != Some(false) }
+    pub fn rise(self) -> Event {
+        self.changed() && self.prev().level(0) != Some(true) && self.level(0) != Some(false)
+    }
     /// IEEE 1364 negedge: H → L, H → unknown, unknown → L.
-    pub fn fall(self) -> Event { self.changed() && self.prev().level(0) != Some(false) && self.level(0) != Some(true) }
+    pub fn fall(self) -> Event {
+        self.changed() && self.prev().level(0) != Some(false) && self.level(0) != Some(true)
+    }
     /// Known and true. In analog code an unknown control then acts as low; say so where that is wrong.
-    pub fn high(self) -> bool { self.known_or(false) }
+    pub fn high(self) -> bool {
+        self.known_or(false)
+    }
 }
 ```
 
@@ -254,7 +281,12 @@ pub module every(t0: f64, period: f64) -> Event {
     let tick = at(t0 + k as f64 * period);
     tick
 }
-digital for every { on tick { k <- k + 1; } }
+
+digital for every {
+    on tick {
+        k <- k + 1;
+    }
+}
 ```
 
 1. The `n`-th firing is at `t0 + n · period`, rounded to a tick (§15), for `n = 0, 1, …`.
@@ -284,9 +316,14 @@ Time since a carrier last changed.
 ```rust
 pub module since<T: Repr>(in s: Bit<T>) -> f64 {
     signal t: Bit<f64> = -inf;
-    now() - t.known_or(-inf)                 // a known real, so analog may read it (§3.3.5)
+    now() - t.known_or(-inf) // a known real, so analog may read it (§3.3.5)
 }
-digital<T> for since<T> { on s.changed() { t <- now(); } }
+
+digital<T> for since<T> {
+    on s.changed() {
+        t <- now();
+    }
+}
 ```
 
 1. The result is `inf` while `s` has never changed, and `now()` minus the time of the last change after.
@@ -312,8 +349,8 @@ A unitless nature for states of order one.
 
 ```rust
 pub nature State {
-    potential: Value { access: pos,  abstol: 1u },
-    flow:      Rate  { access: rate, abstol: 1n },
+    potential: Value { access: pos, abstol: 1u },
+    flow: Rate { access: rate, abstol: 1n },
 }
 ```
 
@@ -325,7 +362,9 @@ pub nature State {
 #### 22.2.2 `vt`
 
 ```rust
-pub fn vt() -> f64 { K_B * temperature() / Q }
+pub fn vt() -> f64 {
+    K_B * temperature() / Q
+}
 ```
 
 1. `vt()` is the thermal voltage at the instance's temperature, `dtemp` included (§8.5).
@@ -334,8 +373,14 @@ pub fn vt() -> f64 { K_B * temperature() / Q }
 #### 22.2.3 `white_noise`, `flicker_noise`, `noise_table`
 
 ```rust
-pub module white_noise(psd: f64, name: Option<str>) -> f64 { noise(psd, name) }
-pub module flicker_noise(k: f64, exp: f64, name: Option<str>) -> f64 { noise(k / freq().powf(exp), name) }
+pub module white_noise(psd: f64, name: Option<str>) -> f64 {
+    noise(psd, name)
+}
+
+pub module flicker_noise(k: f64, exp: f64, name: Option<str>) -> f64 {
+    noise(k / freq().powf(exp), name)
+}
+
 pub module noise_table<const N: usize>(name: Option<str>) -> f64 {
     table: [(f64, f64); N];
     noise(table_model(freq(), table, "1C"), name)
@@ -362,18 +407,36 @@ pub module noise_table<const N: usize>(name: Option<str>) -> f64 {
 #### 22.2.4 `limexp` and the limiting functions
 
 ```rust
-pub module limexp(x: f64) -> f64 { limit(x, |new, old| deltalim(new, old, 1.0)).exp() }
+pub module limexp(x: f64) -> f64 {
+    limit(x, |new, old| deltalim(new, old, 1.0)).exp()
+}
 
 pub fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64 {
     if new > vcrit && (new - old).abs() > 2.0 * nvt {
         if old > 0.0 {
             let arg = (new - old) / nvt;
-            if arg > 0.0 { old + nvt * (2.0 + (arg - 2.0).ln()) } else { old - nvt * (2.0 + (2.0 - arg).ln()) }
-        } else { nvt * (new / nvt).ln() }
+            if arg > 0.0 {
+                old + nvt * (2.0 + (arg - 2.0).ln())
+            } else {
+                old - nvt * (2.0 + (2.0 - arg).ln())
+            }
+        } else {
+            nvt * (new / nvt).ln()
+        }
     } else if new < 0.0 {
-        let arg = if old > 0.0 { -old - 1.0 } else { 2.0 * old - 1.0 };
-        if new < arg { arg } else { new }
-    } else { new }
+        let arg = if old > 0.0 {
+            -old - 1.0
+        } else {
+            2.0 * old - 1.0
+        };
+        if new < arg {
+            arg
+        } else {
+            new
+        }
+    } else {
+        new
+    }
 }
 
 pub fn fetlim(new: f64, old: f64, vth: f64) -> f64 {
@@ -384,26 +447,83 @@ pub fn fetlim(new: f64, old: f64, vth: f64) -> f64 {
     if old >= vth {
         if old >= vtox {
             if delv <= 0.0 {
-                if new >= vtox { if -delv > lo { old - lo } else { new } }
-                else if new > vth + 2.0 { new } else { vth + 2.0 }
-            } else if delv >= hi { old + hi } else { new }
-        } else if delv <= 0.0 { if new > vth - 0.5 { new } else { vth - 0.5 } }
-        else if new < vth + 4.0 { new } else { vth + 4.0 }
-    } else if delv <= 0.0 { if -delv > hi { old - hi } else { new } }
-    else if new <= vth + 0.5 { if delv > lo { old + lo } else { new } }
-    else { vth + 0.5 }
+                if new >= vtox {
+                    if -delv > lo {
+                        old - lo
+                    } else {
+                        new
+                    }
+                } else if new > vth + 2.0 {
+                    new
+                } else {
+                    vth + 2.0
+                }
+            } else if delv >= hi {
+                old + hi
+            } else {
+                new
+            }
+        } else if delv <= 0.0 {
+            if new > vth - 0.5 {
+                new
+            } else {
+                vth - 0.5
+            }
+        } else if new < vth + 4.0 {
+            new
+        } else {
+            vth + 4.0
+        }
+    } else if delv <= 0.0 {
+        if -delv > hi {
+            old - hi
+        } else {
+            new
+        }
+    } else if new <= vth + 0.5 {
+        if delv > lo {
+            old + lo
+        } else {
+            new
+        }
+    } else {
+        vth + 0.5
+    }
 }
 
 pub fn limvds(new: f64, old: f64) -> f64 {
     if old >= 3.5 {
-        if new > old { if new < 3.0 * old + 2.0 { new } else { 3.0 * old + 2.0 } }
-        else if new < 3.5 { if new > 2.0 { new } else { 2.0 } }
-        else { new }
-    } else if new > old { if new < 4.0 { new } else { 4.0 } }
-    else if new > -0.5 { new } else { -0.5 }
+        if new > old {
+            if new < 3.0 * old + 2.0 {
+                new
+            } else {
+                3.0 * old + 2.0
+            }
+        } else if new < 3.5 {
+            if new > 2.0 {
+                new
+            } else {
+                2.0
+            }
+        } else {
+            new
+        }
+    } else if new > old {
+        if new < 4.0 {
+            new
+        } else {
+            4.0
+        }
+    } else if new > -0.5 {
+        new
+    } else {
+        -0.5
+    }
 }
 
-pub fn deltalim(new: f64, old: f64, delta: f64) -> f64 { new.clamp(old - delta, old + delta) }
+pub fn deltalim(new: f64, old: f64, delta: f64) -> f64 {
+    new.clamp(old - delta, old + delta)
+}
 ```
 
 | Function | Bounds |
@@ -456,7 +576,12 @@ pub module absdelta(e: f64, delta: f64) -> Event {
     let moved = init() || cross(e - last - delta) || cross(last - delta - e);
     moved
 }
-digital for absdelta { on moved { last <- e; } }
+
+digital for absdelta {
+    on moved {
+        last <- e;
+    }
+}
 ```
 
 1. The first firing is `init()`. Its reaction commits `last <- e`, read at the first solution.
@@ -476,9 +601,14 @@ Time of the last rising crossing of `e`; `-1.0` before the first.
 ```rust
 pub module last_crossing(e: f64) -> f64 {
     signal t: Bit<f64> = -1.0;
-    t.known_or(-1.0)                         // a known real, so analog may read it (§3.3.5)
+    t.known_or(-1.0) // a known real, so analog may read it (§3.3.5)
 }
-digital for last_crossing { on cross(e) { t <- now(); } }
+
+digital for last_crossing {
+    on cross(e) {
+        t <- now();
+    }
+}
 ```
 
 1. The result is a discrete value: piecewise constant, changing one microstep after each located crossing.
@@ -498,12 +628,16 @@ The time integral of `x`, on a node whose nature gives the state its tolerance.
 ```rust
 pub module idt<S: Nature = State>(x: f64, ic: Option<f64>, reset: Option<bool>) -> f64 {
     signal y: S;
-    potential(y)                             // the result
+    potential(y) // the result
 }
 
 analog<S> for idt<S> {
     let hold = reset.unwrap_or(false) || (ic.is_some() && analysis(Static));
-    if hold { potential(y) +> ic.unwrap_or(0.0); } else { flow(y) +> ddt(potential(y)) - x; }
+    if hold {
+        potential(y) +> ic.unwrap_or(0.0);
+    } else {
+        flow(y) +> ddt(potential(y)) - x;
+    }
 }
 ```
 
@@ -548,17 +682,26 @@ The integral of `x` wrapped into `[lo, lo + modulus)`, with `lo = offset.unwrap_
 
 ```rust
 pub module idtmod<S: Nature = State>(x: f64, ic: Option<f64>, modulus: f64, offset: Option<f64>) -> f64 {
-    signal base: Bit<f64>;                   // where the integral was last seated
-    signal seat: Bit = false;                // true for the one microstep that seats it
+    signal base: Bit<f64>; // where the integral was last seated
+    signal seat: Bit = false; // true for the one microstep that seats it
     let lo = offset.unwrap_or(0.0);
     let start = lo + (ic.unwrap_or(0.0) - lo).rem_euclid(modulus);
     let acc = idt::<S>(x, base.known_or(start), reset: seat.known_or(false));
     acc
 }
+
 digital<S> for idtmod<S> {
-    on cross(acc - lo - modulus) { base <- acc - modulus; seat <- true; }    // over the top
-    on cross(lo - acc)           { base <- acc + modulus; seat <- true; }    // under the bottom
-    on seat.rise()               { seat <- false; }
+    on cross(acc - lo - modulus) {
+        base <- acc - modulus;
+        seat <- true;
+    } // over the top
+    on cross(lo - acc) {
+        base <- acc + modulus;
+        seat <- true;
+    } // under the bottom
+    on seat.rise() {
+        seat <- false;
+    }
 }
 ```
 
@@ -591,7 +734,11 @@ Follows `x` with a bounded rate of change.
 
 ```rust
 #[derive(Repr, PartialEq)]
-enum Slewing { Track, Up, Down }
+enum Slewing {
+    Track,
+    Up,
+    Down,
+}
 
 pub module slew(x: f64, rise: Option<f64>, fall: Option<f64>) -> f64 {
     signal y: State;
@@ -600,16 +747,28 @@ pub module slew(x: f64, rise: Option<f64>, fall: Option<f64>) -> f64 {
     let dx = ddt(x);
     pos(y)
 }
+
 analog for slew {
     match mode.known_or(Slewing::Track) {
-        Slewing::Track => { pos(y) +> x; }
-        Slewing::Up    => { rate(y) +> ddt(pos(y)) - r; }
-        Slewing::Down  => { rate(y) +> ddt(pos(y)) + f; }
+        Slewing::Track => {
+            pos(y) +> x;
+        },
+        Slewing::Up => {
+            rate(y) +> ddt(pos(y)) - r;
+        },
+        Slewing::Down => {
+            rate(y) +> ddt(pos(y)) + f;
+        },
     }
 }
+
 digital for slew {
-    on above(dx - r)  && mode == Slewing::Track { mode <- Slewing::Up; }      // x runs away upward
-    on above(-dx - f) && mode == Slewing::Track { mode <- Slewing::Down; }
+    on above(dx - r) && mode == Slewing::Track {
+        mode <- Slewing::Up;
+    } // x runs away upward
+    on above(-dx - f) && mode == Slewing::Track {
+        mode <- Slewing::Down;
+    }
     on (cross(pos(y) - x) || cross(x - pos(y))) && mode != Slewing::Track {   // caught up
         mode <- if dx > r { Slewing::Up } else if dx < -f { Slewing::Down } else { Slewing::Track };
     }
@@ -638,21 +797,31 @@ Ramps a piecewise-constant input: a delay `td`, then a straight edge of `tr` (up
 
 ```rust
 pub module transition(in x: Bit<f64>, td: Option<f64>, tr: Option<f64>, tf: Option<f64>) -> f64 {
-    signal xd: Bit<f64>;                     // x after the delay
-    signal y0: Bit<f64>;                     // output where the current edge began
-    signal y1: Bit<f64>;                     // where it ends
-    signal t0: Bit<f64> = 0.0;               // when it began
-    signal dt: Bit<f64> = 0.0;               // its duration; 0.0 at rest
+    signal xd: Bit<f64>; // x after the delay
+    signal y0: Bit<f64>; // output where the current edge began
+    signal y1: Bit<f64>; // where it ends
+    signal t0: Bit<f64> = 0.0; // when it began
+    signal dt: Bit<f64> = 0.0; // its duration; 0.0 at rest
     xd = x after td.unwrap_or(0.0);
     let (a, b, s, d) = (y0.known_or(0.0), y1.known_or(0.0), t0.known_or(0.0), dt.known_or(0.0));
-    let y = if analysis(Static) { x.known_or(0.0) }
-            else if d > 0.0 { a + (b - a) * ((now() - s) / d).clamp(0.0, 1.0) }
-            else { b };
+    let y = if analysis(Static) {
+        x.known_or(0.0)
+    } else if d > 0.0 {
+        a + (b - a) * ((now() - s) / d).clamp(0.0, 1.0)
+    } else {
+        b
+    };
     y
 }
+
 digital for transition {
-    on at(t0 + dt) && dt > 0.0 { dt <- 0.0; }                 // the far corner
-    on x.changed() && analysis(Static) { y0 <- x; y1 <- x; }  // no delay to wait out, no ramp: at rest on x
+    on at(t0 + dt) && dt > 0.0 {
+        dt <- 0.0;
+    } // the far corner
+    on x.changed() && analysis(Static) {
+        y0 <- x;
+        y1 <- x;
+    } // no delay to wait out, no ramp: at rest on x
     on xd.changed() && !analysis(Static) {                    // written last: wins a tie (§12.1.2)
         if let Some(to) = xd.known() {
             y0 <- y; y1 <- to; t0 <- now();
@@ -702,14 +871,16 @@ A discrete-time filter sampled every `period`:
 
 ```rust
 pub module zi_nd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
-    num: [f64; N]; den: [f64; D];            // den[k] is the coefficient of y[n−1−k]
-    signal xs: [Bit<f64>; N];                // xs[k] = x[n−1−k]
-    signal ys: [Bit<f64>; D];                // ys[k] = y[n−1−k]
-    signal vout: Bit<f64>;                   // the current sample y[n]
+    num: [f64; N];
+    den: [f64; D]; // den[k] is the coefficient of y[n−1−k]
+    signal xs: [Bit<f64>; N]; // xs[k] = x[n−1−k]
+    signal ys: [Bit<f64>; D]; // ys[k] = y[n−1−k]
+    signal vout: Bit<f64>; // the current sample y[n]
     signal y: State;
     let sampled = analysis(Transient) && !analysis(Static);
     pos(y)
 }
+
 digital<N, D> for zi_nd<N, D> {
     on settle && analysis(Static) {          // the history of a steady input, read by the first step (§15)
         vout <- pos(y);
@@ -718,19 +889,36 @@ digital<N, D> for zi_nd<N, D> {
     }
     on every(period, period) {
         let acc = num[0] * x;
-        for k in 1..N { acc += num[k] * xs[k - 1].known_or(0.0); }
-        for k in 0..D { acc -= den[k] * ys[k].known_or(0.0); }
+        for k in 1..N {
+            acc += num[k] * xs[k - 1].known_or(0.0);
+        }
+        for k in 0..D {
+            acc -= den[k] * ys[k].known_or(0.0);
+        }
         vout <- acc;
-        xs[0] <- x;   for k in 1..N { xs[k] <- xs[k - 1]; }
-        ys[0] <- acc; for k in 1..D { ys[k] <- ys[k - 1]; }
+        xs[0] <- x;
+        for k in 1..N {
+            xs[k] <- xs[k - 1];
+        }
+        ys[0] <- acc;
+        for k in 1..D {
+            ys[k] <- ys[k - 1];
+        }
     }
 }
+
 analog<N, D> for zi_nd<N, D> {
-    if sampled { pos(y) +> vout.known_or(0.0); } else {
+    if sampled {
+        pos(y) +> vout.known_or(0.0);
+    } else {
         let acc = 0.0;
-        for k in 0..N { acc += num[k] * delay(x, k as f64 * period); }
-        for k in 0..D { acc -= den[k] * delay(pos(y), (k + 1) as f64 * period); }
-        rate(y) +> pos(y) - acc;             // the row of y: y = Σ num·x(t−kT) − Σ den·y(t−(k+1)T)
+        for k in 0..N {
+            acc += num[k] * delay(x, k as f64 * period);
+        }
+        for k in 0..D {
+            acc -= den[k] * delay(pos(y), (k + 1) as f64 * period);
+        }
+        rate(y) +> pos(y) - acc; // the row of y: y = Σ num·x(t−kT) − Σ den·y(t−(k+1)T)
     }
 }
 ```
@@ -764,9 +952,9 @@ Discrete-time filters given by roots. Each converts its roots to coefficients at
 ```rust
 /// True when each complex root has its conjugate as often as itself.
 const fn conjugate_closed<const N: usize>(roots: [(f64, f64); N]) -> bool {
-    roots.iter().all(|r| r.1 == 0.0
-        || roots.iter().filter(|c| c.0 == r.0 && c.1 == -r.1).count()
-        == roots.iter().filter(|c| c.0 == r.0 && c.1 == r.1).count())
+    roots.iter().all(
+        |r| r.1 == 0.0 || roots.iter().filter(|c| c.0 == r.0 && c.1 == -r.1).count() == roots.iter().filter(|c| c.0 == r.0 && c.1 == r.1).count(),
+    )
 }
 
 /// Coefficients, ascending in `q = z^−1`, of the product of `1 − ρ·q` over the roots.
@@ -781,7 +969,9 @@ const fn poly_q<const N: usize>(roots: [(f64, f64); N]) -> [f64; N + 1] {
         }
     }
     let re = [0.0; N + 1];
-    for k in 0..=N { re[k] = c[k].0; }
+    for k in 0..=N {
+        re[k] = c[k].0;
+    }
     re
 }
 
@@ -789,7 +979,9 @@ const fn poly_q<const N: usize>(roots: [(f64, f64); N]) -> [f64; N + 1] {
 const fn den_q<const D: usize>(poles: [(f64, f64); D]) -> [f64; D] {
     let c = poly_q(poles);
     let d = [0.0; D];
-    for k in 0..D { d[k] = c[k + 1]; }
+    for k in 0..D {
+        d[k] = c[k + 1];
+    }
     d
 }
 
@@ -798,11 +990,13 @@ pub module zi_zp<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
     poles: [(f64, f64); D] where conjugate_closed(poles);
     zi_nd(x, period) { num: poly_q(zeros), den: den_q(poles) }
 }
+
 pub module zi_zd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
     zeros: [(f64, f64); N] where conjugate_closed(zeros);
     den: [f64; D];
     zi_nd(x, period) { num: poly_q(zeros), den }
 }
+
 pub module zi_np<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
     num: [f64; N];
     poles: [(f64, f64); D] where conjugate_closed(poles);
@@ -830,34 +1024,61 @@ const fn poly_s<const N: usize>(roots: [(f64, f64); N]) -> [f64; N + 1] {
         let (a, b) = roots[n];
         let zero = a == 0.0 && b == 0.0;
         let m = a * a + b * b;
-        let (ia, ib) = if zero { (0.0, 0.0) } else { (a / m, -b / m) };        // 1/ρ
+        let (ia, ib) = if zero {
+            (0.0, 0.0)
+        } else {
+            (a / m, -b / m)
+        }; // 1/ρ
         for k in (1..=n + 1).rev() {
             let (pr, pi) = c[k - 1];
-            c[k] = if zero { (pr, pi) } else { (c[k].0 - (ia * pr - ib * pi), c[k].1 - (ia * pi + ib * pr)) };
+            c[k] = if zero {
+                (pr, pi)
+            } else {
+                (c[k].0 - (ia * pr - ib * pi), c[k].1 - (ia * pi + ib * pr))
+            };
         }
-        if zero { c[0] = (0.0, 0.0); }
+        if zero {
+            c[0] = (0.0, 0.0);
+        }
     }
     let re = [0.0; N + 1];
-    for k in 0..=N { re[k] = c[k].0; }
+    for k in 0..=N {
+        re[k] = c[k].0;
+    }
     re
 }
 
 pub module laplace_nd<const N: usize, const D: usize>(x: f64) -> f64 where D >= 1 && N <= D {
     num: [f64; N];
     den: [f64; D] where den[D - 1] != 0.0;
-    signal w: [State; D - 1];                // w[k]: the k-th derivative of W, where den(s)·W = x
-    let top = if D > 1 { ddt(pos(w[D - 2])) } else { x / den[0] };
-    let y = (0..N).map(|k| num[k] * if k + 1 < D { pos(w[k]) } else { top }).sum();
+    signal w: [State; D - 1]; // w[k]: the k-th derivative of W, where den(s)·W = x
+    let top = if D > 1 {
+        ddt(pos(w[D - 2]))
+    } else {
+        x / den[0]
+    };
+    let y = (0..N).map(
+        |k| num[k] * if k + 1 < D {
+            pos(w[k])
+        } else {
+            top
+        },
+    ).sum();
     y
 }
+
 analog<N, D> for laplace_nd<N, D> {
     for k in 0..D - 1 {
-        if k + 2 < D { rate(w[k]) +> ddt(pos(w[k])) - pos(w[k + 1]); }
+        if k + 2 < D {
+            rate(w[k]) +> ddt(pos(w[k])) - pos(w[k + 1]);
+        }
     }
     if D > 1 {
         let acc = den[D - 1] * top - x;
-        for j in 0..D - 1 { acc += den[j] * pos(w[j]); }
-        rate(w[D - 2]) +> acc;               // the row of the last state: den(s)·W = x
+        for j in 0..D - 1 {
+            acc += den[j] * pos(w[j]);
+        }
+        rate(w[D - 2]) +> acc; // the row of the last state: den(s)·W = x
     }
 }
 
@@ -866,11 +1087,13 @@ pub module laplace_zp<const N: usize, const D: usize>(x: f64) -> f64 where N <= 
     poles: [(f64, f64); D] where conjugate_closed(poles);
     laplace_nd(x) { num: poly_s(zeros), den: poly_s(poles) }
 }
+
 pub module laplace_zd<const N: usize, const D: usize>(x: f64) -> f64 where N < D {
     zeros: [(f64, f64); N] where conjugate_closed(zeros);
     den: [f64; D];
     laplace_nd(x) { num: poly_s(zeros), den }
 }
+
 pub module laplace_np<const N: usize, const D: usize>(x: f64) -> f64 where N <= D + 1 {
     num: [f64; N];
     poles: [(f64, f64); D] where conjugate_closed(poles);
@@ -930,8 +1153,13 @@ analog for MeasuredDiode { i(a, k) +> table_model(v(a, k), IV, "3E"); }   // cub
 #### 22.2.16 `db10`, `db20`
 
 ```rust
-pub fn db10(x: f64) -> f64 { 10.0 * x.log10() }            // a power ratio
-pub fn db20(x: f64) -> f64 { 20.0 * x.abs().log10() }      // an amplitude ratio
+pub fn db10(x: f64) -> f64 {
+    10.0 * x.log10()
+} // a power ratio
+
+pub fn db20(x: f64) -> f64 {
+    20.0 * x.abs().log10()
+} // an amplitude ratio
 ```
 
 1. Both are pure functions over values, callable anywhere.
@@ -987,17 +1215,34 @@ High impedance, strengths and wired logic are a value type and a `resolve` funct
 
 ```rust
 #[derive(Repr, PartialEq, PartialOrd)]
-pub enum Strength { HighZ, Weak, Pull, Strong, Supply }
+pub enum Strength {
+    HighZ,
+    Weak,
+    Pull,
+    Strong,
+    Supply,
+}
 
 #[derive(Repr, PartialEq)]
-pub struct Logic { pub v: bool, pub s: Strength }
+pub struct Logic {
+    pub v: bool,
+    pub s: Strength,
+}
 
 impl Logic {
-    pub const Z: Logic = Logic { v: Unknown, s: Strength::HighZ };     // not driving
-    pub fn strong(v: bool) -> Logic { Logic { v, s: Strength::Strong } }
-    pub fn pull(v: bool)   -> Logic { Logic { v, s: Strength::Pull } }
-    pub fn weak(v: bool)   -> Logic { Logic { v, s: Strength::Weak } }
-    pub fn supply(v: bool) -> Logic { Logic { v, s: Strength::Supply } }
+    pub const Z: Logic = Logic { v: Unknown, s: Strength::HighZ }; // not driving
+    pub fn strong(v: bool) -> Logic {
+        Logic { v, s: Strength::Strong }
+    }
+    pub fn pull(v: bool) -> Logic {
+        Logic { v, s: Strength::Pull }
+    }
+    pub fn weak(v: bool) -> Logic {
+        Logic { v, s: Strength::Weak }
+    }
+    pub fn supply(v: bool) -> Logic {
+        Logic { v, s: Strength::Supply }
+    }
 }
 ```
 
@@ -1013,12 +1258,23 @@ impl Logic {
 impl Logic {
     /// IEEE 1364 net resolution: the strongest drive wins; equal strengths that disagree are unknown.
     pub fn wired<const N: usize>(d: [Logic; N]) -> Logic {
-        d.iter().fold(Logic::Z, |a, x|
-            if x.s > a.s { x } else if x.s < a.s { a } else { Logic { v: merge(a.v, x.v), s: a.s } })
+        d.iter().fold(
+            Logic::Z,
+            |a, x| if x.s > a.s {
+                x
+            } else if x.s < a.s {
+                a
+            } else {
+                Logic { v: merge(a.v, x.v), s: a.s }
+            },
+        )
     }
 }
 
-pub nature Wire { value: Logic, resolve: Logic::wired }
+pub nature Wire {
+    value: Logic,
+    resolve: Logic::wired,
+}
 ```
 
 | Drives | `wired` |
@@ -1040,9 +1296,19 @@ A typed bus with one driver at a time.
 
 ```rust
 pub fn tri<T: Repr, const N: usize>(d: [Option<T>; N]) -> Option<T> {
-    d.iter().fold(None, |a, x| match (a, x) { (None, y) | (y, None) => y, _ => Some(Unknown) })
+    d.iter().fold(
+        None,
+        |a, x| match (a, x) {
+            (None, y) | (y, None) => y,
+            _ => Some(Unknown),
+        },
+    )
 }
-pub nature Tri<T: Repr> { value: Option<T>, resolve: tri }
+
+pub nature Tri<T: Repr> {
+    value: Option<T>,
+    resolve: tri,
+}
 ```
 
 | Drives | `tri` |
@@ -1059,8 +1325,14 @@ pub nature Tri<T: Repr> { value: Option<T>, resolve: tri }
 A real-valued net whose drivers add.
 
 ```rust
-pub fn sum<const N: usize>(d: [f64; N]) -> f64 { d.iter().sum() }
-pub nature SumNet { value: f64, resolve: sum }
+pub fn sum<const N: usize>(d: [f64; N]) -> f64 {
+    d.iter().sum()
+}
+
+pub nature SumNet {
+    value: f64,
+    resolve: sum,
+}
 ```
 
 1. The drives are added in the order of their instance paths (§4 rule 2). The result is a function of the source.
@@ -1070,9 +1342,21 @@ pub nature SumNet { value: f64, resolve: sum }
 #### 22.3.5 `Tribuf`, `Pullup`, `Pulldown`
 
 ```rust
-pub module Tribuf(in d: Bit, in oe: Bit, y: Wire) { y = if oe { Logic::strong(d) } else { Logic::Z }; }
-pub module Pullup(w: Wire)   { w = Logic::pull(true); }
-pub module Pulldown(w: Wire) { w = Logic::pull(false); }
+pub module Tribuf(in d: Bit, in oe: Bit, y: Wire) {
+    y = if oe {
+        Logic::strong(d)
+    } else {
+        Logic::Z
+    };
+}
+
+pub module Pullup(w: Wire) {
+    w = Logic::pull(true);
+}
+
+pub module Pulldown(w: Wire) {
+    w = Logic::pull(false);
+}
 ```
 
 | Module | Drive |
@@ -1091,8 +1375,16 @@ pub module Pulldown(w: Wire) { w = Logic::pull(false); }
 A bus keeper (Verilog `trireg`): holds the last driven level, weakly.
 
 ```rust
-pub module Keeper(w: Wire) { signal last: Bit; w = Logic::weak(last); }
-digital for Keeper { on w.changed() && w.s > Strength::Weak { last <- w.v; } }
+pub module Keeper(w: Wire) {
+    signal last: Bit;
+    w = Logic::weak(last);
+}
+
+digital for Keeper {
+    on w.changed() && w.s > Strength::Weak {
+        last <- w.v;
+    }
+}
 ```
 
 1. The keeper records the wire's level whenever the wire is driven above `Weak`.
@@ -1105,8 +1397,16 @@ A bidirectional pass gate (Verilog `tranif1`).
 
 ```rust
 pub module Tran(a: Wire, b: Wire, in en: Bit) {
-    a = if en { b.others() } else { Logic::Z };
-    b = if en { a.others() } else { Logic::Z };
+    a = if en {
+        b.others()
+    } else {
+        Logic::Z
+    };
+    b = if en {
+        a.others()
+    } else {
+        Logic::Z
+    };
 }
 ```
 
@@ -1152,10 +1452,23 @@ Discrete carriers and nodes never connect, and no converter is inserted implicit
 
 ```rust
 pub module D2A(in d: Bit, a: Electrical, vdd: Electrical) {
-    rout: f64 = 100.0; tr: f64 = 20p;
-    let ramp = transition(match d.known() { Some(true) => 1.0, Some(false) => 0.0, None => 0.5 }, 0.0, tr, tr);
+    rout: f64 = 100.0;
+    tr: f64 = 20p;
+    let ramp = transition(
+        match d.known() {
+            Some(true) => 1.0,
+            Some(false) => 0.0,
+            None => 0.5,
+        },
+        0.0,
+        tr,
+        tr,
+    );
 }
-analog for D2A { i(a) +> (v(a) - ramp * v(vdd)) / rout; }
+
+analog for D2A {
+    i(a) +> (v(a) - ramp * v(vdd)) / rout;
+}
 ```
 
 | `d` | Target potential of `a` |
@@ -1180,10 +1493,18 @@ analog for D2A { i(a) +> (v(a) - ramp * v(vdd)) / rout; }
 Node to `Bit`, with hysteresis; right from the operating point.
 
 ```rust
-pub module A2D(a: Electrical, out d: Bit = false) { vth: f64 = 0.6; hyst: f64 = 50m; }
+pub module A2D(a: Electrical, out d: Bit = false) {
+    vth: f64 = 0.6;
+    hyst: f64 = 50m;
+}
+
 digital for A2D {
-    on above(v(a) - vth - hyst / 2.0) { d <- true; }
-    on above(vth - hyst / 2.0 - v(a)) { d <- false; }
+    on above(v(a) - vth - hyst / 2.0) {
+        d <- true;
+    }
+    on above(vth - hyst / 2.0 - v(a)) {
+        d <- false;
+    }
 }
 ```
 
@@ -1202,18 +1523,42 @@ A pad: one `Wire`, one node.
 
 ```rust
 pub module Bidir(d: Wire, a: Electrical, vdd: Electrical) {
-    rout: f64 = 100.0; tr: f64 = 20p; vth: f64 = 0.6; hyst: f64 = 50m;
-    signal seen: Bit = false;                                  // the node, thresholded
-    let driving = d.others().s.known_or(Strength::Strong) != Strength::HighZ;   // unknown strength: assume driven
-    d = if driving { Logic::Z } else { Logic::strong(seen) };
-    let ramp = transition(match d.others().v.known() { Some(true) => 1.0, Some(false) => 0.0, None => 0.5 }, 0.0, tr, tr);
+    rout: f64 = 100.0;
+    tr: f64 = 20p;
+    vth: f64 = 0.6;
+    hyst: f64 = 50m;
+    signal seen: Bit = false; // the node, thresholded
+    let driving = d.others().s.known_or(Strength::Strong) != Strength::HighZ; // unknown strength: assume driven
+    d = if driving {
+        Logic::Z
+    } else {
+        Logic::strong(seen)
+    };
+    let ramp = transition(
+        match d.others().v.known() {
+            Some(true) => 1.0,
+            Some(false) => 0.0,
+            None => 0.5,
+        },
+        0.0,
+        tr,
+        tr,
+    );
 }
+
 analog for Bidir {
-    if driving { i(a) +> (v(a) - ramp * v(vdd)) / rout; }     // released: no contribution, zero flow
+    if driving {
+        i(a) +> (v(a) - ramp * v(vdd)) / rout;
+    } // released: no contribution, zero flow
 }
+
 digital for Bidir {
-    on above(v(a) - vth - hyst / 2.0) { seen <- true; }
-    on above(vth - hyst / 2.0 - v(a)) { seen <- false; }
+    on above(v(a) - vth - hyst / 2.0) {
+        seen <- true;
+    }
+    on above(vth - hyst / 2.0 - v(a)) {
+        seen <- false;
+    }
 }
 ```
 
@@ -1260,12 +1605,14 @@ A **monitor** is a module that watches carriers and reports a temporal property 
 ```rust
 pub module AckWithin(in clk: Bit, in req: Bit, in ack: Bit) {
     n: u32 = 4;
-    signal waiting: Bit<u32> = 0;      // cycles since an unanswered req; 0 is idle
+    signal waiting: Bit<u32> = 0; // cycles since an unanswered req; 0 is idle
 }
+
 digital for AckWithin {
     on clk.rise() {
-        if ack { waiting <- 0; }
-        else if waiting > 0 || req {
+        if ack {
+            waiting <- 0;
+        } else if waiting > 0 || req {
             require("ack_within_n", waiting < n);
             waiting <- waiting + 1;
         }
@@ -1280,7 +1627,12 @@ digital for AckWithin {
 
 ```rust
 pub module Never(in clk: Bit, in bad: Bit) {}
-digital for Never { on clk.rise() { require("never", !bad); } }
+
+digital for Never {
+    on clk.rise() {
+        require("never", !bad);
+    }
+}
 ```
 
 1. `bad` is sampled at each rising edge, with the value before the edge's own commits (§12.1.1).
@@ -1289,7 +1641,12 @@ digital for Never { on clk.rise() { require("never", !bad); } }
 
 ```rust
 pub module Stable<T: Repr>(in en: Bit, in d: Bit<T>) {}
-digital<T> for Stable<T> { on d.changed() && en && !en.changed() { require("stable", false); } }
+
+digital<T> for Stable<T> {
+    on d.changed() && en && !en.changed() {
+        require("stable", false);
+    }
+}
 ```
 
 1. A change of `d` while `en` is high is a violation.
@@ -1302,8 +1659,12 @@ pub module Setup<T: Repr>(in clk: Bit, in d: Bit<T>, out viol: Bit = false) {
     ts: f64 where ts > 0.0;
     let age = since(d);
 }
+
 digital<T> for Setup<T> {
-    on clk.rise() { require("setup", age >= ts); viol <- age < ts; }
+    on clk.rise() {
+        require("setup", age >= ts);
+        viol <- age < ts;
+    }
 }
 ```
 
@@ -1316,10 +1677,13 @@ digital<T> for Setup<T> {
 ```rust
 pub module Hold<T: Repr>(in clk: Bit, in d: Bit<T>) {
     th: f64 where th > 0.0;
-    let high_for = since(clk);          // clk high: its last change was a rise
+    let high_for = since(clk); // clk high: its last change was a rise
 }
+
 digital<T> for Hold<T> {
-    on d.changed() && clk && d.prev().is_known() { require("hold", !clk.changed() && high_for >= th); }
+    on d.changed() && clk && d.prev().is_known() {
+        require("hold", !clk.changed() && high_for >= th);
+    }
 }
 ```
 
@@ -1331,8 +1695,16 @@ digital<T> for Hold<T> {
 #### 22.5.7 `MinPulse`
 
 ```rust
-pub module MinPulse(in d: Bit) { w: f64 where w > 0.0; let width = since(d); }
-digital for MinPulse { on d.changed() { require("min_pulse", width >= w); } }
+pub module MinPulse(in d: Bit) {
+    w: f64 where w > 0.0;
+    let width = since(d);
+}
+
+digital for MinPulse {
+    on d.changed() {
+        require("min_pulse", width >= w);
+    }
+}
 ```
 
 1. Each change of `d` **MUST** come at least `w` after the previous one.
@@ -1348,9 +1720,17 @@ pub module inertial<T: Repr>(in x: Bit<T>, tpd: f64) -> T {
     signal seen: Bit<f64>;
     y
 }
+
 digital<T> for inertial<T> {
-    on x.changed() { seen <- now(); if analysis(Static) { y <- x; } }
-    on at(seen + tpd) { y <- x; }           // re-armed by every change: only the last one survives
+    on x.changed() {
+        seen <- now();
+        if analysis(Static) {
+            y <- x;
+        }
+    }
+    on at(seen + tpd) {
+        y <- x;
+    } // re-armed by every change: only the last one survives
 }
 ```
 
@@ -1374,8 +1754,20 @@ A tristate buffer with Verilog's inertial gate delay, slower to release than to 
 
 ```rust
 pub module TribufDelayed(in d: Bit, in oe: Bit, y: Wire) {
-    ton: f64 = 100p; toff: f64 = 300p;
-    y = inertial(if oe { Logic::strong(d) } else { Logic::Z }, if oe { ton } else { toff });
+    ton: f64 = 100p;
+    toff: f64 = 300p;
+    y = inertial(
+        if oe {
+            Logic::strong(d)
+        } else {
+            Logic::Z
+        },
+        if oe {
+            ton
+        } else {
+            toff
+        },
+    );
 }
 ```
 
@@ -1392,9 +1784,15 @@ Functions over `emit!` (§19) and `include_str!` (§20). None is core, and there
 
 ```rust
 #[derive(Repr, PartialEq)]
-pub enum Severity { Info, Warning, Error }
+pub enum Severity {
+    Info,
+    Warning,
+    Error,
+}
 
-pub fn log(severity: Severity, msg: str) { emit!("log", severity = severity, msg = msg); }
+pub fn log(severity: Severity, msg: str) {
+    emit!("log", severity = severity, msg = msg);
+}
 ```
 
 1. `log` writes a record to the `log` stream of the calling instance (§19 rule 2).
@@ -1406,8 +1804,13 @@ pub fn log(severity: Severity, msg: str) { emit!("log", severity = severity, msg
 #### 22.6.2 `finish`, `fatal`
 
 ```rust
-pub fn finish()         { emit!("sim", finish = true); }
-pub fn fatal(msg: str) { emit!("sim", finish = true, failed = true, msg = msg); }
+pub fn finish() {
+    emit!("sim", finish = true);
+}
+
+pub fn fatal(msg: str) {
+    emit!("sim", finish = true, failed = true, msg = msg);
+}
 ```
 
 1. Both write to the reserved global stream `sim`. The analysis ends at the instant of the record (§19 rule 5), unless the record was reached under unknown control: then it is written with `maybe = true` and the run goes on (G.55).
@@ -1420,11 +1823,19 @@ pub fn fatal(msg: str) { emit!("sim", finish = true, failed = true, msg = msg); 
 
 ```rust
 /// A condition that must hold. Unknown is reported as unknown, not as a pass.
-pub fn require(name: str, pass: bool)    { emit!("checks", kind = "require", name = name, pass = pass); }
+pub fn require(name: str, pass: bool) {
+    emit!("checks", kind = "require", name = name, pass = pass);
+}
+
 /// A condition worth reaching; the host counts the hits.
-pub fn cover(name: str, hit: bool)       { emit!("checks", kind = "cover", name = name, pass = hit); }
+pub fn cover(name: str, hit: bool) {
+    emit!("checks", kind = "cover", name = name, pass = hit);
+}
+
 /// A number to keep at or above zero: an objective or a constraint of an optimization (§23.2).
-pub fn target(name: str, margin: f64)    { emit!("checks", kind = "target", name = name, margin = margin); }
+pub fn target(name: str, margin: f64) {
+    emit!("checks", kind = "target", name = name, margin = margin);
+}
 ```
 
 | Function | `kind` | Fields | Read by the host as |
@@ -1443,8 +1854,9 @@ pub fn target(name: str, margin: f64)    { emit!("checks", kind = "target", name
 #### 22.6.4 `parse_table`, `parse_hex`
 
 ```rust
-pub const extern "intrinsic" fn parse_table<Row, const N: usize>(text: str) -> [Row; N];   // Row: f64 or a tuple of f64
-pub const extern "intrinsic" fn parse_hex<T, const N: usize>(text: str) -> [T; N];         // T: an integer type
+pub const extern "intrinsic" fn parse_table<Row, const N: usize>(text: str) -> [Row; N]; // Row: f64 or a tuple of f64
+
+pub const extern "intrinsic" fn parse_hex<T, const N: usize>(text: str) -> [T; N]; // T: an integer type
 ```
 
 1. Both are `const fn`s from text to an array. They run at elaboration; a run never reads a file (§20).

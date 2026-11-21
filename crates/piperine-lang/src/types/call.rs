@@ -2,7 +2,8 @@
 //! after each argument is checked against its parameter; a closure takes its parameter types
 //! from the function type of the parameter it is passed to.
 
-use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, LitKind, PatKind, Resolution};
+use crate::msl::Span;
+use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, FileId, LitKind, PatKind, Resolution};
 
 use super::carrier::flag_builtin;
 use super::catalogue::{Catalogue, Lookup};
@@ -53,8 +54,11 @@ impl Checker<'_> {
             Some(Resolution::Builtin(id)) => self.core_call(expr, id, args),
             Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
                 DeclKind::Fn(_) => self.function_call(expr, *callee, decl, args),
+                // A local that is no function and hides the function of its name is `E0180` (§3.5.4).
+                DeclKind::FnParam(_) | DeclKind::Binding(_) if self.hidden_function(decl).is_some() && matches!(self.infer(*callee), Some(ty) if !matches!(ty, Ty::Fn(..))) => self.hidden_function_call(expr, *callee, decl, args),
                 DeclKind::FnParam(_) | DeclKind::Binding(_) => self.local_call(expr, decl, args),
                 DeclKind::Struct(_) | DeclKind::Variant(_) => self.constructor_call(expr, decl, args),
+                DeclKind::Param(_) | DeclKind::Const(_) | DeclKind::Let(_) if self.hidden_function(decl).is_some() => self.hidden_function_call(expr, *callee, decl, args),
                 _ => {
                     self.unsupported(file, node.span, "call of this declaration");
                     None
@@ -161,17 +165,66 @@ impl Checker<'_> {
         Some(())
     }
 
+    /// The function of the name of `hider` (a param, a `let` or a `const` that is not a function)
+    /// that `hider` hides: a `fn` of that name among the children of an enclosing namespace
+    /// (Part I §3.5.4).
+    fn hidden_function(&self, hider: DeclId) -> Option<DeclId> {
+        let name = &self.design.decl_data(hider).name.as_ref()?.text;
+        let mut scope = self.design.decl_data(hider).parent;
+        while let Some(namespace) = scope {
+            let data = self.design.decl_data(namespace);
+            let hidden = data.children.iter().copied().find(|child| {
+                let child_data = self.design.decl_data(*child);
+                matches!(child_data.kind, DeclKind::Fn(_)) && child_data.name.as_ref().is_some_and(|candidate| candidate.text == *name)
+            });
+            if hidden.is_some() {
+                return hidden;
+            }
+            scope = data.parent;
+        }
+        None
+    }
+
+    /// `E0180` "expected a function, found `<type>`" for a call whose callee is a value that
+    /// hides the function of its name, with a note at that function's declaration (Part I
+    /// §3.5.4, L20). The arguments are still inferred, so the one mistake is one diagnostic.
+    fn hidden_function_call(&mut self, expr: ExprId, callee: ExprId, hider: DeclId, args: &[Arg]) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(callee).span;
+        let found = self.infer(callee).map_or_else(|| "a value".to_string(), |ty| ty.name(self.design));
+        let name = self.design.decl_data(hider).name.as_ref().map_or_else(String::new, |name| name.text.clone());
+        let mut diagnostic = crate::msl::Diagnostic::new("E0180", format!("expected a function, found `{found}`"), span, format!("`{name}` is a `{found}` here, not the function"));
+        if let Some(function) = self.hidden_function(hider) {
+            let declaration = self.design.decl_data(function);
+            if declaration.file == file {
+                diagnostic = diagnostic.with_label(declaration.name.as_ref().map_or(declaration.span, |name| name.span), format!("the function `{name}` is hidden by the {} of the same name", Unsupported::item(&self.design.decl_data(hider).kind)));
+            }
+        }
+        self.report(file, diagnostic);
+        for arg in args {
+            self.infer(arg.value);
+        }
+        None
+    }
+
+    /// `E0141` (Part I §3.2.6): a call that takes `expected` arguments (a count, or a range
+    /// spelled `1 to 2`) and has the arguments of `args`. Every argument is still inferred, so
+    /// one wrong count is one diagnostic.
+    pub(super) fn arity_mismatch(&mut self, file: FileId, span: Span, expected: impl std::fmt::Display, args: &[Arg]) {
+        let found = args.len();
+        self.coded(file, "E0141", span, format!("expected {expected} argument(s), found {found}"), "wrong number of arguments");
+        for arg in args {
+            self.infer(arg.value);
+        }
+    }
+
     /// Check each argument against its parameter, in order. Only a function call binds by name
     /// (`bind_arguments`); the callers of this one take positional arguments.
     pub(super) fn apply(&mut self, expr: ExprId, params: &[Ty], args: &[Arg]) -> Option<()> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
         if args.len() != params.len() {
-            let message = format!("expected {} argument(s), found {}", params.len(), args.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), span, message));
-            for arg in args {
-                self.infer(arg.value);
-            }
+            self.arity_mismatch(file, span, params.len(), args);
             return None;
         }
         for (arg, ty) in args.iter().zip(params) {
@@ -282,11 +335,7 @@ impl Checker<'_> {
             _ => Ty::Unit,
         };
         if args.len() != 1 {
-            let message = format!("expected 1 argument(s), found {}", args.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, message));
-            for arg in args {
-                self.infer(arg.value);
-            }
+            self.arity_mismatch(file, node.span, 1, args);
             return None;
         }
         let value = args[0].value;
@@ -346,7 +395,7 @@ impl Checker<'_> {
         let ExprKind::Closure { params, ret, body, .. } = &node.kind else { return None };
         if params.len() != declared.len() {
             let message = format!("expected a closure of {} parameter(s), found {}", declared.len(), params.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, message));
+            self.report(file, crate::msl::Diagnostic::new("E0180", format!("mismatched types: {message}"), node.span, message));
             return None;
         }
         for (param, ty) in params.iter().zip(declared) {

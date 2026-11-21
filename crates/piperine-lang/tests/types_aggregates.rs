@@ -138,7 +138,7 @@ fn a_bad_struct_expression_is_e0186_naming_the_field() {
     assert_refused(&source(items, "let p = P { x: 1.0, y: 2.0 }; let z = p.z;"), "E0186", "no field `z`");
     assert_refused(&source("", "let t = (1.0, 2.0); let z = t.2;"), "E0186", "no field `2`");
     // a field is checked against its type
-    assert_refused(&source(items, "let p = P { x: true, y: 2.0 };"), "P0002", "expected `f64`, found `bool`");
+    assert_refused(&source(items, "let p = P { x: true, y: 2.0 };"), "E0180", "expected `f64`, found `bool`");
 }
 
 #[test]
@@ -169,7 +169,7 @@ fn tuples_and_tuple_patterns_type_check() {
     assert_eq!(local_type(&src, "z"), Ty::UInt(8));
     // §1.6.5: `..` stands for the fields between; the arity is the type's
     assert_clean(&source("fn f(t: (u8, u8, u8)) -> u8 { let (a, .., c) = t; a + c }", "let h = f;"));
-    assert_refused(&source("", "let (a, b) = (1.0, 2.0, 3.0);"), "P0002", "a pattern of 3 fields");
+    assert_refused(&source("", "let (a, b) = (1.0, 2.0, 3.0);"), "E0180", "a pattern of 3 fields");
     // §1.6.11: a refutable pattern in a `let` is E0184; §1.6.10: a name is bound once
     assert_refused(&source("", "let (a, 1) = (true, 2u8);"), "E0184", "irrefutable");
     assert_refused(&source("", "let (a, a) = (1.0, 2.0);"), "E0184", "bound twice");
@@ -243,9 +243,9 @@ fn arrays_and_indexing_type_check() {
     assert_eq!(local_type(&src, "x"), Ty::F64);
     assert_eq!(local_type(&src, "m"), Ty::Array(Box::new(Ty::Array(Box::new(Ty::UInt(8)), 2)), 2));
     assert_eq!(local_type(&src, "p"), Ty::UInt(8));
-    assert_refused(&source("", "let a = [1.0, true];"), "P0002", "expected `f64`, found `bool`");
-    assert_refused(&source("", "let a = [1.0, 2.0]; let x = a[1.5];"), "P0002", "an integer type");
-    assert_refused(&source("", "let a = 3.0; let x = a[0];"), "P0002", "an array");
+    assert_refused(&source("", "let a = [1.0, true];"), "E0180", "expected `f64`, found `bool`");
+    assert_refused(&source("", "let a = [1.0, 2.0]; let x = a[1.5];"), "E0180", "an integer type");
+    assert_refused(&source("", "let a = 3.0; let x = a[0];"), "E0180", "an array");
     // an empty array has no element type of its own (§1.4.4), unless the position gives one
     assert_refused(&source("", "let a = [];"), "E0181", "element type");
     assert_clean(&source("", "let a: [u8; 0] = [];"));
@@ -258,8 +258,8 @@ fn arrays_and_indexing_type_check() {
 fn a_non_constant_array_length_is_refused_naming_it() {
     // §1.2.5: `N` of `[x; N]` is a const expression; the specification names no code for another
     // (D6), so the plain mismatch names the length.
-    assert_refused(&source("", "let n: u8 = 3; let a = [0u8; n];"), "P0002", "`n`");
-    assert_refused(&source("const F: f64 = 2.0;", "let a = [0u8; F];"), "P0002", "`F`");
+    assert_refused(&source("", "let n: u8 = 3; let a = [0u8; n];"), "E0180", "`n`");
+    assert_refused(&source("const F: f64 = 2.0;", "let a = [0u8; F];"), "E0180", "`F`");
     // a `const` folds, and so does arithmetic of constants
     assert_clean(&source("const N: usize = 2;", "let a = [0u8; N * 2 + 1];"));
 }

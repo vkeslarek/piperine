@@ -32,7 +32,6 @@ impl Checker<'_> {
         }
         let place_span = self.design.expr_node(place).span;
         let target = self.drive_target(place, "commit");
-        let outer = std::mem::replace(&mut self.committing, true);
         match &target {
             // §1 rule 9: a function value or a closure has no `Repr`, so no carrier holds one
             Some(_) if self.is_function_value(value) => {
@@ -45,7 +44,6 @@ impl Checker<'_> {
                 self.infer(value);
             }
         }
-        self.committing = outer;
         if let Some(after) = after {
             self.check_as(after, &Ty::F64, "E0433");
         }

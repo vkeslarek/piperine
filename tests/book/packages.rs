@@ -157,14 +157,14 @@ fn the_include_str_table_is_refused_for_its_generic_function() {
 }
 
 #[test]
-fn e0610_is_not_raised_include_str_in_a_module_is_refused_as_p0001() {
+fn e0610_include_str_in_a_module_is_refused() {
     // packages~64f2121d: "E0610 let t = include_str!(\"iv.tbl\"); in a module": `include_str!` is for `const`
-    // items. `E0610` is named by the spec and no source raises it (GAPS.md section 10, L57): the use in a
-    // module is `P0001`, `include_str!` is not supported yet
+    // items (section 20 rule 1, PI-08 AC 2), so a use in a module body is `E0610`
     let source = "module Top() { signal a: Electrical; let t = include_str!(\"iv.tbl\"); }\n";
     let model = Model::package(&Manifest::of("iv", "", "Top")).with_source("src/lib.msl", source).with_source("src/iv.tbl", "0 0\n");
     let given = Refusal::of(model.run(Overrides::default()), "packages~64f2121d");
-    assert_eq!(given, [("P0001".to_string(), "`include_str!` is not supported yet".to_string())]);
+    assert!(given.iter().any(|(code, _)| code == "E0610"), "{given:?}");
+    assert!(given.iter().all(|(_, message)| !message.contains("`include_str!` is not supported")), "{given:?}");
 }
 
 #[test]

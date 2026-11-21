@@ -59,7 +59,7 @@ fn params_are_f64_or_bool() {
 #[test]
 fn a_default_of_the_wrong_type_is_rejected() {
     let (src, d) = diagnostics("module Top() { a: f64 = true; }");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "true");
     let message = &d[0].diagnostic.message;
     assert!(message.contains("f64") && message.contains("bool"), "{message}");
@@ -125,7 +125,7 @@ fn a_placement_checks_nodes_count_and_params() {
 
     // A param of the wrong type: at the value.
     let (src, d) = diagnostics("module Top(a: E, b: E) { let r1 = Resistor { r: true }(a, b); }");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "true");
 
     // Too few and too many connections are `E0312`, at the placement.
@@ -152,9 +152,10 @@ fn a_node_of_another_nature_is_e0251() {
     assert_eq!(codes_of(&d), ["E0251"]);
     assert_eq!(snippet(&src, &d[0]), "t");
 
-    // A value where a node is wanted is a plain mismatch.
+    // A value where a node is wanted is `E0315` (§8.1.11), proved by
+    // `an_expression_on_a_carrier_port_that_is_not_in_is_e0315`; no longer a plain mismatch.
     let (src, d) = diagnostics("module Top(a: E) { let r1 = Resistor { r: 1.0 }(a, 1.0); }");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0315"]);
     assert_eq!(snippet(&src, &d[0]), "1.0");
 }
 
@@ -174,7 +175,7 @@ fn a_where_on_a_module_or_fn_is_bool() {
     }
     // A `fn` `where` that is not `bool` is a plain mismatch (the specification gives it no code).
     let (src, d) = diagnostics("fn f(x: f64) -> f64 where 1.0 { x }\nmodule Top() { }\nanalog for Top { let y = f(1.0); }");
-    assert_eq!(codes_of(&d), ["P0002"]);
+    assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "1.0");
 
     // A `bool` const condition on each checks.
@@ -247,4 +248,60 @@ fn a_where_over_its_own_and_earlier_params_is_accepted() {
     let src = format!("{NATURES}module Top() {{ a: f64 = 1.0; c: f64 = 2.0 where c > a && c > 0.0; }}");
     let design = design_of(&src);
     Types::check(&design, "Top").expect("a where over its own and earlier params");
+}
+
+#[test]
+fn an_expression_on_a_carrier_port_that_is_not_in_is_e0315() {
+    // §8.1.11 (`E0315`): an expression connected to a node port, which is no `in` port of a
+    // discrete nature, names the port; a node and `gnd` stay accepted.
+    for args in ["2.0 * v(a), gnd", "a, 1.0", "true, gnd"] {
+        let (src, d) = diagnostics(&format!("module Top(a: E) {{ let r1 = Resistor {{ r: 1k }}({args}); }}\nanalog for Top {{ }}"));
+        assert_eq!(codes_of(&d), ["E0315"], "{args}");
+        assert!(d[0].diagnostic.message.contains("`p`") || d[0].diagnostic.message.contains("`n`"), "{}", d[0].diagnostic.message);
+        assert!(["2.0 * v(a)", "1.0", "true"].contains(&snippet(&src, &d[0])), "{}", snippet(&src, &d[0]));
+    }
+}
+
+#[test]
+fn an_instance_without_a_result_used_as_a_value_is_e0333() {
+    // §8.2.14 (`E0333`): the name of an instance of a module without a result read as a value
+    // names the instance.
+    let (src, d) = diagnostics("module Top(a: E, b: E) { let r1 = Resistor { r: 1k }(a, b); let q = r1; }");
+    assert_eq!(codes_of(&d), ["E0333"], "{:?}", d.iter().map(|x| &x.diagnostic.message).collect::<Vec<_>>());
+    assert_eq!(snippet(&src, &d[0]), "r1");
+    assert!(d[0].diagnostic.message.contains("`r1`"), "{}", d[0].diagnostic.message);
+}
+
+/// Two modules with one param each, and a top with a param of module type `Cell` (PI-04).
+const CELLS: &str = "module Cell(a: E) { cs: f64 = 1.0; }\nmodule Other(a: E) { cs: f64 = 1.0; }\n";
+
+#[test]
+fn a_module_typed_param_takes_a_template() {
+    // PI-04 AC 1, §8.4.4: a param of module type has a template `Cell { cs: 30.0 }` as its default
+    // and as its binding, and `cell(x)` places it, its ports checked like `Cell(x)`
+    let src = format!("{NATURES}{CELLS}module Top(x: E) {{ cell: Cell = Cell {{ cs: 30.0 }}; let c1 = cell(x); }}\nmodule Parent(y: E) {{ let t = Top {{ cell: Cell {{ cs: 10.0 }} }}(y); }}");
+    let design = design_of(&src);
+    let types = Types::check(&design, "Top").expect("a param of module type, placed through");
+    let cell = types.ty(expr_of(&design, &src, "Cell { cs: 30.0 }")).cloned();
+    assert!(matches!(cell, Some(Ty::Module(_))), "the template is typed as its module: {cell:?}");
+    // a wrong connection through the param is a port error, as for `Cell(..)`
+    let (_, d) = diagnostics(&format!("{CELLS}module Top(x: E, y: E) {{ cell: Cell = Cell {{ cs: 30.0 }}; let c1 = cell(x, y); }}"));
+    assert_eq!(codes_of(&d), ["E0312"], "the count of connections is the module's");
+}
+
+#[test]
+fn a_param_block_on_a_placement_through_a_param_is_e0361() {
+    // PI-04 AC 3, §8.4.4: the params belong to the template, so `cell(x) { cs: 2.0 }` is E0361
+    let (src, d) = diagnostics(&format!("{CELLS}module Top(x: E) {{ cell: Cell = Cell {{ cs: 30.0 }}; let c1 = cell(x) {{ cs: 2.0 }}; }}"));
+    assert_eq!(codes_of(&d), ["E0361"]);
+    assert!(snippet(&src, &d[0]).starts_with("cell(x)"), "{}", snippet(&src, &d[0]));
+}
+
+#[test]
+fn a_template_of_another_module_is_e0180_naming_both() {
+    // PI-04 AC 5, Q2 (a): `Other { .. }` bound to a param of type `Cell` names both modules
+    let (_, d) = diagnostics(&format!("{CELLS}module Top(x: E) {{ cell: Cell = Other {{ cs: 1.0 }}; let c1 = cell(x); }}"));
+    assert_eq!(codes_of(&d), ["E0180"]);
+    let message = &d[0].diagnostic.message;
+    assert!(message.contains("Cell") && message.contains("Other"), "{message}");
 }

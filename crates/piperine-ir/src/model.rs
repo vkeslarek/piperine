@@ -244,6 +244,9 @@ pub enum EventSource {
     /// `p.changed()` of a param `p` of the body (§5.3.1): fires when the param's pin changes, a
     /// host `set` during the run (a binding before the run is not a change).
     ParamChanged(u32),
+    /// `settle` (§13 rule 17): fires once per time point, in the settle phase that closes the
+    /// instant (§15 step 4), when its guard, if any, holds.
+    Settle,
 }
 
 /// `on <events> { … }`: statements run when any of the events fires. Its `let`s bind `locals`,

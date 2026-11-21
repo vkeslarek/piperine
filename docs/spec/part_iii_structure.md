@@ -148,7 +148,10 @@ argument, a generation range or condition, an array length, a param default and 
   the call: `transition(v(a), …)` is rejected.
 - **§8.1.13** A value input takes any expression of its type, discrete or continuous. It **MAY**
   probe: `slew(v(a), …)` is accepted.
-- **§8.1.14** The ports of the top module are connected by the host (§23.1).
+- **§8.1.14** The ports of the top module are connected by the host (§23.1). The host drives
+  each node port with a host source, a potential source to `gnd` with a DC value, an AC
+  stimulus and a piecewise-linear waveform (`E0810` when a run has none); a value input of the
+  top is refused (`E0811`).
 
 > **Resolution.** §8.1.7 rejects `= expr` on a port of a continuous nature. A node's starting value
 > is given where the node is declared (§6) or by the host's nodeset (§18), so that it is given once.

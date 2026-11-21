@@ -379,7 +379,7 @@ impl Checker<'_> {
         Some(Ty::Array(Box::new(element), items.len() as u64))
     }
 
-    /// `[x; N]` (§1.2.5): `x` is `Copy`; `N` a const expression the checker folds, else `P0002`
+    /// `[x; N]` (§1.2.5): `x` is `Copy`; `N` a const expression the checker folds, else `E0180`
     /// naming it (the specification gives no code of its own, D6).
     pub(super) fn array_repeat(&mut self, expr: ExprId, element: ExprId, len: ExprId, expected: Option<&Ty>) -> Option<Ty> {
         let file = self.file_of_expr(expr);

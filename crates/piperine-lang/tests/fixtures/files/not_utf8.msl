@@ -1,0 +1,4 @@
+const L: str = include_str!("latin.bin");
+module Cell(in clk: Bit) { }
+digital for Cell { on clk.rise() { emit!("sim", msg = L); } }
+module Top() { signal clk: Bit; let c = Cell(clk); }

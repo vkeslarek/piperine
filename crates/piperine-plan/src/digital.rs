@@ -54,6 +54,11 @@
 //! guarded `cross` does. These pins follow the delayed pins: the timer pins in event order, the
 //! `START` pin, then the re-arming pins in event and read order.
 //!
+//! `settle` (unknown-semantics-events, §13 rule 17): a body with a `settle` event has one
+//! `GLOBAL` `SETTLE` pin (`settle`, after every other pin), and the event function `event:<k>` of
+//! each `settle` event reads its `CHANGED` byte (`Source::Settle`) and the guard's pins, as a
+//! `changed` event reads its carrier's.
+//!
 //! Records (msl-digital A4; abi.md P7, C5): each stream of a body is one `PRIVATE` `DISCRETE`
 //! pin named by the stream and flagged `RECORD` (so `QUIET`: no reader, never a microstep). Its
 //! layout holds one field per value field of the stream, in the stream's order, each laid out
@@ -506,6 +511,15 @@ impl Digital {
         })
     }
 
+    /// Adds the `GLOBAL` `SETTLE` pin when `body` has a `settle` event (§13 rule 17): the pin the
+    /// engine fires in the settle phase (§15 step 4), read by the event function of each
+    /// `settle` event (`Source::Settle`).
+    pub(crate) fn settle_pin(s: &mut ShapeBuf, body: Body<'_>) -> Option<u32> {
+        body.events().iter().any(|e| matches!(e.source, EventSource::Settle)).then(|| {
+            s.pin(PinSpec { origin: &Self::at(body.origin()), global: global::SETTLE, ..PinSpec::event("settle", role::GLOBAL) })
+        })
+    }
+
     /// Adds, per `at` event, one event pin `at:<k>.<carrier>` per carrier its time reads.
     pub(crate) fn rearm_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<Vec<(u32, u32)>> {
         body.events()
@@ -591,6 +605,10 @@ impl Digital {
                 }
                 // an unguarded one is fired by its arming reaction's statement
                 EventSource::At(_) => continue,
+                // `settle` (§13 rule 17): the settle pin's `CHANGED` byte, gated by the guard
+                EventSource::Settle => {
+                    set.0.insert(Source::Settle);
+                }
             }
             add(s, format!("event:{k}"), &e.origin, BodyPlan::function(Mode::Event(k), &set, vec![(Target::EventPin(k), None)]));
         }

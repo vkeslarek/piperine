@@ -1,5 +1,5 @@
 //! Value expressions: `check` against an expected type where the position gives one, `infer`
-//! otherwise. A mismatch is one `P0002` at the expression and the expression then takes the
+//! otherwise. A mismatch is one `E0180` at the expression and the expression then takes the
 //! expected type, so one mistake is one diagnostic.
 
 use crate::msl::lexer;
@@ -16,7 +16,7 @@ impl Checker<'_> {
     /// Check `expr` against `expected`. A mismatch is one diagnostic; the expression then takes
     /// the expected type.
     pub(super) fn check(&mut self, expr: ExprId, expected: &Ty) {
-        self.check_as(expr, expected, "P0002");
+        self.check_as(expr, expected, "E0180");
     }
 
     /// `check` of an argument: an `Option<T>` parameter takes a `T` as `Some` of it (§3.2.3).
@@ -29,7 +29,7 @@ impl Checker<'_> {
     }
 
     /// `check`, where a mismatch of `expr` itself carries `code` (a rule of the specification
-    /// with a code of its own, `E0318` for a `where`) instead of the plain `P0002`.
+    /// with a code of its own, `E0318` for a `where`) instead of the plain `E0180`.
     pub(super) fn check_as(&mut self, expr: ExprId, expected: &Ty, code: &'static str) {
         stack::deep(|| {
             let node = self.design.expr_node(expr).clone();
@@ -71,6 +71,8 @@ impl Checker<'_> {
                 ExprKind::Array(items) => self.array_expression(expr, items, Some(expected)),
                 ExprKind::ArrayRepeat { elem, len } => self.array_repeat(expr, *elem, *len, Some(expected)),
                 ExprKind::Loop { body } => self.loop_expr(body, Some(expected)),
+                // `Name { params }` where a module type is expected: a template value (PI-04).
+                ExprKind::Struct { class: StructClass::Template(module), fields, .. } if matches!(expected, Ty::Module(_)) => self.template_value(expr, *module, fields),
                 // `Unknown` where a carried type is expected (§3.3.1: of any `Repr` type). `analog`
                 // computes with known reals (§3.3.5): there it is refused by name.
                 ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Unknown) && self.repr_ok(expected) && self.context != Context::Analog => Some(expected.clone()),
@@ -130,8 +132,12 @@ impl Checker<'_> {
                 && found != *expected
                 && found != Ty::Never
             {
-                let (expected_name, found_name) = (expected.name(self.design), found.name(self.design));
-                self.mismatch_coded(file, node.span, code, &expected_name, &found_name);
+                if self.event_reads.contains(&expr) {
+                    self.event_where_another_type_is_expected(expr, expected);
+                } else {
+                    let (expected_name, found_name) = (expected.name(self.design), found.name(self.design));
+                    self.mismatch_coded(file, node.span, code, &expected_name, &found_name);
+                }
             }
             self.exprs[expr.index()] = Some(expected.clone());
         })
@@ -157,9 +163,9 @@ impl Checker<'_> {
     pub(super) fn infer(&mut self, expr: ExprId) -> Option<Ty> {
         stack::deep(|| {
             let in_event_position = self.event_slot == Some(expr);
-            let ty = self.infer_kind(expr);
+            let mut ty = self.infer_kind(expr);
             if ty == Some(Ty::Event) && !in_event_position {
-                self.event_out_of_place(expr);
+                ty = Some(self.event_out_of_place(expr));
             }
             self.exprs[expr.index()] = ty.clone();
             ty
@@ -201,10 +207,7 @@ impl Checker<'_> {
                 match self.infer(*operand) {
                     Some(t) if t.is_integer() => Some(t),
                     Some(Ty::Bool) | None => Some(Ty::Bool),
-                    Some(Ty::Event) => {
-                        self.negated_event(expr);
-                        None
-                    }
+                    Some(Ty::Event) => self.negated_event(expr, *operand),
                     Some(other) => {
                         let span = self.design.expr_node(*operand).span;
                         self.mismatch(file, span, &Ty::Bool, &other);
@@ -235,6 +238,7 @@ impl Checker<'_> {
             ExprKind::Struct { path, fields, class: StructClass::StructLiteral } => self.struct_expression(expr, *path, fields),
             ExprKind::Closure { .. } => self.closure_value(expr),
             ExprKind::Emit { stream, fields } => self.emit(expr, stream, fields),
+            ExprKind::IncludeStr(_) => self.include_str(expr),
             ExprKind::Struct { class: StructClass::Template(_), .. } => {
                 self.unsupported(file, node.span, "module template `Name { .. }` outside a placement");
                 None
@@ -244,6 +248,20 @@ impl Checker<'_> {
                 None
             }
         }
+    }
+
+    /// `include_str!("path")` is the text of a file, a `str`, and a const expression allowed in a
+    /// `const` item only (§20.2 rule 1); a param default, a `where` or any other position is
+    /// `E0610`.
+    fn include_str(&mut self, expr: ExprId) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        let in_const_item = self.context == Context::Const && self.owner.is_some_and(|owner| matches!(self.design.decl_data(owner).kind, DeclKind::Const(_)));
+        if !in_const_item {
+            self.coded(file, "E0610", span, "`include_str!` outside a `const` item".to_string(), "`include_str!` is allowed in the initializer of a `const` item only");
+            return None;
+        }
+        Some(Ty::Str)
     }
 
     pub(super) fn binary(&mut self, whole: ExprId, op: BinOp, lhs: ExprId, rhs: ExprId) -> Option<Ty> {
@@ -364,7 +382,7 @@ impl Checker<'_> {
     }
 
     /// `expr as T`: between any two of the integer types and `f64`, and from `bool` to an integer
-    /// type (§1 rule 1); anything else is a plain mismatch.
+    /// type (§1 rule 1); any other pair is `E0182` naming both types (§1.4.5).
     fn cast(&mut self, operand: ExprId, ty: crate::pom::TypeId) -> Option<Ty> {
         let target = self.lower_type(ty);
         let source = self.infer(operand);
@@ -382,8 +400,8 @@ impl Checker<'_> {
         {
             let file = self.file_of_expr(operand);
             let span = self.design.expr_node(operand).span;
-            let found = source.name(self.design);
-            self.mismatch_text(file, span, &format!("a value `as` converts to `{}`", target.name(self.design)), &found);
+            let (found, wanted) = (source.name(self.design), target.name(self.design));
+            self.coded(file, "E0182", span, format!("no `as` conversion from `{found}` to `{wanted}`"), &format!("`{found}` does not convert `as` `{wanted}`"));
         }
         Some(target)
     }
@@ -450,7 +468,9 @@ impl Checker<'_> {
                 None
             }
             LitKind::Unknown => {
-                self.unsupported(file, span, "`Unknown` literal where no carried type is expected");
+                // A.6 (`E0906`): no carried type is expected here, or the expected type has no `Repr`.
+                let message = "`Unknown` has no type here: write it where a type that implements `Repr` is expected (A.6)".to_string();
+                self.coded(file, "E0906", span, message, "`Unknown` of what type?");
                 None
             }
         }
@@ -563,6 +583,12 @@ impl Checker<'_> {
                         if local.is_none() && self.lets_open.contains_key(&decl) {
                             return self.self_read(file, node.span, decl);
                         }
+                        if local.is_none() && self.continuous_result_in_const(file, node.span, decl) {
+                            return None;
+                        }
+                        if let Some(Ty::Module(module)) = &local {
+                            return self.instance_as_value(file, node.span, decl, *module);
+                        }
                         if local.is_none() && !self.poisoned.contains(&decl) {
                             let what = if self.fn_where { "a value parameter in the `where` of a `fn`" } else { "a name whose type is unknown" };
                             self.unsupported(file, node.span, what);
@@ -579,9 +605,10 @@ impl Checker<'_> {
                 }
             }
             Resolution::Builtin(id) if id.info().kind == BuiltinKind::Node => Some(Ty::AnyNode),
+            Resolution::Builtin(id) if id.info().kind == BuiltinKind::Event => Some(self.settle_event()),
             Resolution::Builtin(id) if id.info().name == "None" => {
                 let message = "`None` has no type here: write it where an `Option<T>` is expected";
-                self.report(file, Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, "`Option` of what?"));
+                self.report(file, Diagnostic::new("E0180", format!("mismatched types: {message}"), node.span, "`Option` of what?"));
                 None
             }
             Resolution::Builtin(id) => match self.width_read(expr) {
@@ -609,7 +636,7 @@ impl Checker<'_> {
     /// that of its last expression without a `;`, else `()`. With an `expected` type the last
     /// expression is checked against it.
     pub(super) fn statements(&mut self, stmts: &[StmtId], expected: Option<&Ty>) -> Option<Ty> {
-        self.statements_as(stmts, expected, "P0002")
+        self.statements_as(stmts, expected, "E0180")
     }
 
     /// `statements`, where a mismatch of the block's value carries `code` (see `check_as`).

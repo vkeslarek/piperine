@@ -155,7 +155,7 @@ fn the_flag_reads_are_typed() {
     assert_eq!((codes(&d), d[0].diagnostic.message.contains("`high` on `u9`")), (vec!["P0001".to_string()], true), "{}", d[0].diagnostic.message);
     let src = "module Top(in c: Bit<u9>) { let a = c.known_or(true); }";
     let d = diagnostics(src);
-    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(codes(&d), ["E0180"]);
     assert_eq!(snippet(src, &d[0]), "true");
 
     // §3.3.7: a project's own `high` is not the stdlib's. It is `P0001` at its use, whether the
@@ -521,4 +521,22 @@ fn a_carrier_of_another_value_type_is_e0251() {
     // The same type connects, a literal takes the type of the port it is connected to.
     let src = format!("{items}module Top() {{ signal w: Bit<u10>; signal v: Bit<u10>; let c = Wide(5, w); let d = Wide(w, v); }}");
     checked_top(&src, "Top");
+}
+
+#[test]
+fn a_probe_on_a_childs_private_node_is_e0244() {
+    // §6 rule 7 (`E0244`): a probe or a contribution naming a node of a child that is not `pub`
+    // cannot reach it. The same node under `pub`, and a port of the child, are accepted.
+    let child = "module Child(p: Electrical) { signal hidden: Electrical; }\n";
+    for (body, at) in [("i(x) +> v(c.hidden);", "hidden"), ("i(c.hidden) +> 1.0;", "hidden"), ("i(x) +> v(c.hidden, gnd);", "hidden")] {
+        let src = format!("{child}module Step() {{ signal x: Electrical; let c = Child(x); }}\nanalog for Step {{ {body} }}");
+        let design = Design::builder().source("top.msl", &src).build();
+        assert_eq!(codes(design.diagnostics()), ["E0244"], "{body}");
+        assert_eq!(snippet(&src, &design.diagnostics()[0]), at, "{body}");
+        assert!(design.diagnostics()[0].diagnostic.message.contains("`hidden`"), "{}", design.diagnostics()[0].diagnostic.message);
+    }
+    for (child, body) in [("module Child(p: Electrical) { pub signal hidden: Electrical; }\n", "i(x) +> v(c.hidden);"), (child, "i(x) +> v(c.p);")] {
+        let src = format!("{child}module Step() {{ signal x: Electrical; let c = Child(x); }}\nanalog for Step {{ {body} }}");
+        assert!(design_of(&src).diagnostics().is_empty(), "{body}");
+    }
 }

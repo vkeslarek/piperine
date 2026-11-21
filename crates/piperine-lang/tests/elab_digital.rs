@@ -138,14 +138,13 @@ fn a_top_with_discrete_ports_gets_one_net_per_port() {
     assert_eq!(read.net_paths(), ["Top.en", "Top.pgood", "Top.s"]);
     assert_eq!(read.nets_of("Top"), ["Top.en", "Top.pgood", "Top.s"]);
     assert!(ir.nets().all(|n| n.declared_by().path() == "Top"));
-    // A continuous port on the top has nothing to connect to: `P0001` at the module's name,
-    // naming the port.
-    let src = "module Top(in en: Bit, p: Electrical) { }";
-    let err = Elab::run(src, "Top").expect_err("a continuous port on the top");
-    assert_eq!(Elab::codes(&err), ["P0001"]);
+    // A value input on the top has no host source: `E0811` at its name (§23.1 rule 1).
+    let src = "module Top(in en: Bit, p: f64) { }";
+    let err = Elab::run(src, "Top").expect_err("a value input on the top");
+    assert_eq!(Elab::codes(&err), ["E0811"]);
     assert!(err[0].diagnostic.message.contains("`p`"), "{}", err[0].diagnostic.message);
     let span = err[0].diagnostic.span();
-    assert_eq!(&src[span.start..span.end], "Top");
+    assert_eq!(&src[span.start..span.end], "p");
 }
 
 #[test]
@@ -314,7 +313,7 @@ fn edges(digital: &str) -> String {
 fn changed_rise_fall_and_cross_lower_to_events() {
     // DIG-09 AC 6, C80. The stdlib's own text (§22.1) is what `rise` and `fall` mean.
     let values = std::fs::read_to_string(format!("{}/std/values.msl", env!("CARGO_MANIFEST_DIR"))).expect("std/values.msl");
-    assert!(values.contains("self.changed() && self.prev().level(0) != Some(true)  && self.level(0) != Some(false)"), "the stdlib `rise` is the oracle");
+    assert!(values.contains("self.changed() && self.prev().level(0) != Some(true) && self.level(0) != Some(false)"), "the stdlib `rise` is the oracle");
     assert!(values.contains("self.changed() && self.prev().level(0) != Some(false) && self.level(0) != Some(true)"), "the stdlib `fall` is the oracle");
     let src = edges("on c.changed() { q <- true; }\non c.rise() { q <- true; }\non c.fall() { q <- false; }\non cross(v(a) - 0.5) { q <- true; }\non d.changed() && d.prev().known_or(0) == 3 { q <- d.prev().is_known(); }");
     let ir = Elab::ir(&src, "Top");
@@ -443,14 +442,56 @@ fn a_split_head_over_an_emitting_body_is_one_reaction() {
 }
 
 #[test]
-fn a_head_the_ir_cannot_hold_is_p0001() {
-    // DIG-09 AC 9, C83. (A split head over a body that emits is one reaction since FIX-13:
-    // `a_split_head_over_an_emitting_body_is_one_reaction`.)
-    // An event read as a `bool` in a reaction body: the IR has no read of it (§13 rule 2).
-    let src = "module M(in x: Bit, out q: Bit) { }\ndigital for M { on x.changed() { if x.rise() { q <- true; } } }\nmodule Top() { signal x: Bit; signal q: Bit; let m = M(x, q); }";
-    let err = Elab::run(src, "Top").expect_err("an event read as a bool");
-    assert_eq!(Elab::codes(&err), ["P0001"]);
-    assert!(err[0].diagnostic.message.contains("an event read as a `bool`"), "{}", err[0].diagnostic.message);
+fn settle_lowers_to_the_settle_event_source() {
+    // §13 rules 10, 14, 17 (unknown-semantics-events UE-03): `settle` is `EventSource::Settle`,
+    // alone, guarded (`settle && g`) and in a disjunction (`settle || ev`, one reaction on both).
+    use piperine_ir::EventSource;
+    let src = "module M(in x: Bit, in en: Bit, out q: Bit) { }\ndigital for M {\n on settle { q <- true; }\n on settle && en.high() { q <- false; }\n on settle || x.changed() { q <- true; }\n}";
+    let ir = Elab::ir(src, "M");
+    let read = Read { ir: &ir };
+    let m = read.body("M");
+    let events = m.events();
+    assert_eq!(events.len(), 4, "one event per disjunct: {:?}", events.iter().map(|e| &e.source).collect::<Vec<_>>());
+    assert_eq!((&events[0].source, events[0].guard), (&EventSource::Settle, None), "`settle` alone is unguarded");
+    assert_eq!(events[1].source, EventSource::Settle);
+    assert!(events[1].guard.is_some(), "`settle && en.high()` keeps its guard on the event");
+    assert_eq!(events[2].source, EventSource::Settle, "a disjunction adds one event per disjunct, in source order");
+    assert!(matches!(events[3].source, EventSource::Changed(_)));
+    let heads: Vec<Vec<u32>> = m.reactions().iter().map(|r| r.on.clone()).collect();
+    assert_eq!(heads, [vec![0], vec![1], vec![2, 3]], "the reaction of a disjunction listens to both events");
+}
+
+#[test]
+fn an_event_read_as_a_bool_in_a_body_lowers_to_fired() {
+    // §13 rule 2 (UE-01 AC 1, design D7): an event read as a `bool` in a reaction body is
+    // `fired(k)`. `x.changed()` is the head's own event 0, reused; `x.rise()` is a new event 1
+    // appended to the body's events and to no reaction's `on`. It replaces
+    // `a_head_the_ir_cannot_hold_is_p0001`, which pinned the `P0001` this read used to meet.
+    use piperine_ir::{EventSource, Expr, Stmt};
+    let src = "module M(in x: Bit, out q: Bit) { }\ndigital for M { on x.changed() { if x.rise() { q <- true; } if x.changed() { q <- false; } } }";
+    let ir = Elab::ir(src, "M");
+    let read = Read { ir: &ir };
+    let m = read.body("M");
+    let events = m.events();
+    assert_eq!(events.len(), 2, "the head's event and the one `rise` appended: {:?}", events.iter().map(|e| &e.source).collect::<Vec<_>>());
+    assert!(matches!(events[0].source, EventSource::Changed(_)) && events[0].guard.is_none(), "the head's `changed`");
+    assert!(matches!(events[1].source, EventSource::Changed(_)) && events[1].guard.is_some(), "`rise` is `changed` with its edge guard");
+    assert_eq!(m.reactions()[0].on, [0], "the appended event is in no head");
+    let fired: Vec<u32> = m.reactions()[0]
+        .stmts
+        .iter()
+        .filter_map(|s| match ir.stmt(*s) {
+            Stmt::Expr(e) => match ir.expr(*e) {
+                Expr::If { cond, .. } => match ir.expr(*cond) {
+                    Expr::Fired(k) => Some(*k),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    assert_eq!(fired, [1, 0], "`if x.rise()` reads event 1, `if x.changed()` reuses the head's event 0");
 }
 
 /// The text of a golden print of `crates/piperine-ir/tests/golden/buck/` (`ir-rust` T29): the

@@ -54,10 +54,11 @@ impl Checker<'_> {
         }
     }
 
-    /// `name: T = default where cond;` — `T` is `f64` or `bool`; `where` is `bool` (`E0318`).
+    /// `name: T = default where cond;` — `T` is `f64`, `bool` or a module (its value a template
+    /// `Name { params }`, PI-04); `where` is `bool` (`E0318`).
     pub(super) fn param(&mut self, decl: DeclId, param: &ParamData) {
         let ty = self.lower_type(param.ty).and_then(|ty| match ty {
-            Ty::F64 | Ty::Bool => Some(ty),
+            Ty::F64 | Ty::Bool | Ty::Module(_) => Some(ty),
             other => {
                 let node = self.design.type_node(param.ty).clone();
                 let file = self.design.decl_data(node.owner).file;
@@ -171,6 +172,15 @@ impl Checker<'_> {
         let fields: Vec<FieldInit> = match &callee_node.kind {
             ExprKind::Struct { fields, class: StructClass::Template(m), .. } if *m == module && params.is_none() => fields.clone(),
             ExprKind::Path(_) if matches!(self.design.decl_data(module).kind, DeclKind::Module(_)) && self.callee_is(*callee, module) => params.clone().unwrap_or_default(),
+            // `cell(c)` through a param of module type (§8.4.4): the module's ports are connected;
+            // the param block belongs to the template, so one on the placement is `E0361`.
+            ExprKind::Path(_) if self.callee_is_param_of(*callee, module) => {
+                if params.is_some() {
+                    let name = self.design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                    self.coded(file, "E0361", node.span, format!("a placement through a param of module `{name}` takes no param block: the template holds the params (§8.4.4)"), "param block on a placement through a template value");
+                }
+                Vec::new()
+            }
             _ => {
                 if !self.reads_poisoned(*callee) {
                     self.unsupported(file, node.span, "placement through a template value or a function");
@@ -199,6 +209,15 @@ impl Checker<'_> {
     fn reads_poisoned(&self, expr: ExprId) -> bool {
         match &self.design.expr_node(expr).kind {
             ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if self.poisoned.contains(&d)),
+            _ => false,
+        }
+    }
+
+    /// Whether `callee` names a param whose declared type is the module `module`.
+    fn callee_is_param_of(&self, callee: ExprId, module: DeclId) -> bool {
+        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return false };
+        match self.design.path_node(*path).segments.last().map(|s| s.res) {
+            Some(Resolution::Decl(d)) => matches!(&self.design.decl_data(d).kind, DeclKind::Param(p) if self.design.type_resolution(p.ty) == Resolution::Decl(module)),
             _ => false,
         }
     }
@@ -252,7 +271,7 @@ impl Checker<'_> {
                 Some(Ty::Carrier { value, .. }) => self.connect_carrier(arg.value, dir, &value),
                 Some(expected @ Ty::Node(_)) => {
                     let Some(found) = self.infer(arg.value) else { continue };
-                    self.connect(arg.value, &expected, &found);
+                    self.connect(arg.value, port_decl, &expected, &found);
                 }
                 // A value input: any expression of its type, a probe included (§8.1.13).
                 Some(value) => {
@@ -267,8 +286,10 @@ impl Checker<'_> {
         }
     }
 
-    /// One node argument: the nature of its port, or `gnd`.
-    fn connect(&mut self, arg: ExprId, port: &Ty, found: &Ty) {
+    /// One node argument to the port `port_decl`: the nature of its port, or `gnd`. A value (an
+    /// expression that is not a node) at a continuous carrier port is `E0315` naming the port:
+    /// only an `in` port takes an expression, and a node port is never one (§8.1.11).
+    fn connect(&mut self, arg: ExprId, port_decl: DeclId, port: &Ty, found: &Ty) {
         let file = self.file_of_expr(arg);
         let span = self.design.expr_node(arg).span;
         // A discrete carrier read as a value is typed by what it holds; the declaration tells.
@@ -283,6 +304,11 @@ impl Checker<'_> {
             (Ty::Node(_), Ty::Node(_)) => {
                 let message = format!("expected {}, found {}", port.name(self.design), found.name(self.design));
                 self.coded(file, "E0251", span, format!("a node of another nature is connected: {message}"), &message);
+            }
+            (Ty::Node(_), _) => {
+                let name = self.design.decl_data(port_decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                let message = format!("an expression of type {} is connected to the node port `{name}`: only an `in` port of a discrete nature takes an expression (§8.1.11)", found.name(self.design));
+                self.coded(file, "E0315", span, message, "expression at a node port");
             }
             _ => self.mismatch(file, span, port, found),
         }
@@ -355,8 +381,17 @@ impl Checker<'_> {
         }
     }
 
+    /// A template `Name { params }` where a value of module type is expected (PI-04): its params
+    /// are checked like a placement's block, and its type is the module it names, so a template
+    /// of another module is a mismatch (`E0180`) naming both.
+    pub(super) fn template_value(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit]) -> Option<Ty> {
+        self.param_block(fields);
+        self.exprs[expr.index()] = Some(Ty::Module(module));
+        Some(Ty::Module(module))
+    }
+
     /// `{ name: value }` of a placement: each value against the declared type of its param.
-    fn param_block(&mut self, fields: &[FieldInit]) {
+    pub(super) fn param_block(&mut self, fields: &[FieldInit]) {
         for field in fields {
             self.no_placement_in(field.value);
             let param = match field.res {
@@ -367,7 +402,7 @@ impl Checker<'_> {
                 _ => None,
             };
             match param.and_then(|t| self.lower_type(t)) {
-                Some(ty @ (Ty::F64 | Ty::Bool)) => self.check(field.value, &ty),
+                Some(ty @ (Ty::F64 | Ty::Bool | Ty::Module(_))) => self.check(field.value, &ty),
                 _ => {
                     self.infer(field.value);
                 }
