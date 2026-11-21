@@ -1,11 +1,13 @@
-//! Struct, tuple and array types (§1.2.4, §1.2.5, §1.3).
+//! Struct, tuple and array types (§1.2.4 to §1.2.6, §1.3) and the expressions
+//! that build and read them: struct expressions, field access, tuple and array expressions,
+//! indexing.
 //!
 //! A `struct` is a nominal value type ([`Ty::Struct`]): its fields are typed once, on first use,
 //! into [`FieldType`]s kept in `Checker::layouts`. A type that contains itself, directly or
 //! through structs, enums, tuples, arrays and `Option`, is `E0186` (§1.3.8).
 
 use crate::msl::Span;
-use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FileId, TypeId};
+use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Name, Resolution, TypeId};
 
 use super::check::Checker;
 use super::Ty;
@@ -149,6 +151,139 @@ impl Checker<'_> {
     fn type_place(&self, ty: TypeId) -> (FileId, Span) {
         let node = self.design.type_node(ty);
         (self.design.decl_data(node.owner).file, node.span)
+    }
+
+    // ---- struct expressions ----------------------------------------------------------------
+
+    /// `P { x: 1.0, y }`, `Tx::Data { n: 3 }` (§1.3.3): every field named once, in any order, each
+    /// checked against the field's type. A field left out, named twice or not in the type is
+    /// `E0186` naming it.
+    pub(super) fn struct_expression(&mut self, expr: ExprId, path: crate::pom::PathId, fields: &[FieldInit]) -> Option<Ty> {
+        let node = self.design.expr_node(expr).clone();
+        let file = self.file_of_expr(expr);
+        let Some(Resolution::Decl(target)) = self.design.path_node(path).segments.last().map(|s| s.res) else {
+            self.unsupported(file, node.span, "struct expression of a name that is no struct");
+            return None;
+        };
+        let (ty, owner) = self.constructed_type(target, file, node.span)?;
+        let layout = self.fields_of(owner)?;
+        let mut seen: Vec<&str> = Vec::new();
+        for init in fields {
+            let name = init.name.text.as_str();
+            let Some(field) = layout.iter().find(|f| f.name.as_deref() == Some(name)) else {
+                let of = ty.name(self.design);
+                self.coded(file, "E0186", init.span, format!("{of} has no field `{name}` (§1.3.3)"), "no such field");
+                self.infer(init.value);
+                continue;
+            };
+            if seen.contains(&name) {
+                self.coded(file, "E0186", init.span, format!("the field `{name}` is named twice in one struct expression (§1.3.3)"), "named twice");
+                self.infer(init.value);
+                continue;
+            }
+            seen.push(name);
+            self.check(init.value, &field.ty);
+        }
+        let left_out: Vec<String> = layout.iter().filter_map(|f| f.name.as_deref()).filter(|n| !seen.contains(n)).map(|n| format!("`{n}`")).collect();
+        if !left_out.is_empty() {
+            let of = ty.name(self.design);
+            self.coded(file, "E0186", node.span, format!("this struct expression for {of} leaves out the field {} (§1.3.3)", left_out.join(", ")), "field left out");
+        }
+        Some(ty)
+    }
+
+    /// The type a struct, a tuple struct or a variant constructs, with the declaration that owns
+    /// its fields.
+    pub(super) fn constructed_type(&mut self, target: DeclId, file: FileId, span: Span) -> Option<(Ty, DeclId)> {
+        match &self.design.decl_data(target).kind {
+            DeclKind::Struct(_) => self.struct_type(target, file, span).map(|ty| (ty, target)),
+            DeclKind::Variant(_) => {
+                let parent = self.design.decl_data(target).parent?;
+                self.enum_type(parent, file, span).map(|ty| (ty, target))
+            }
+            other => {
+                self.unsupported(file, span, &format!("{} as a struct expression", super::unsupported::Unsupported::item(other)));
+                None
+            }
+        }
+    }
+
+    /// `P(1.0, 2.0)`, `Tx::Data(3)` (§1.3.3, §1.3.6): a tuple struct or a variant with positional
+    /// fields built by a call; each argument is checked against its field.
+    pub(super) fn constructor_call(&mut self, expr: ExprId, target: DeclId, args: &[Arg]) -> Option<Ty> {
+        let node = self.design.expr_node(expr).clone();
+        let file = self.file_of_expr(expr);
+        let (ty, owner) = self.constructed_type(target, file, node.span)?;
+        let layout = self.fields_of(owner)?;
+        if layout.iter().any(|f| f.name.is_some()) {
+            self.unsupported(file, node.span, "a call of a struct or variant with named fields: write a struct expression `Name { .. }`");
+            return None;
+        }
+        if layout.len() != args.len() {
+            let message = format!("{} takes {} argument{}, found {}", ty.name(self.design), layout.len(), if layout.len() == 1 { "" } else { "s" }, args.len());
+            self.mismatch_text(file, node.span, &format!("{} fields", layout.len()), &format!("{} arguments ({message})", args.len()));
+            for arg in args {
+                self.infer(arg.value);
+            }
+            return Some(ty);
+        }
+        for (arg, field) in args.iter().zip(&layout) {
+            if arg.name.is_some() {
+                self.unsupported(file, arg.span, "a named argument of a constructor");
+                continue;
+            }
+            self.check(arg.value, &field.ty);
+        }
+        Some(ty)
+    }
+
+    /// A struct or a variant named as a value: a unit one is its value, any other is a
+    /// constructor that only a call or a struct expression uses.
+    pub(super) fn constructor_value(&mut self, target: DeclId, file: FileId, span: Span) -> Option<Ty> {
+        let (ty, owner) = self.constructed_type(target, file, span)?;
+        let layout = self.fields_of(owner)?;
+        if !layout.is_empty() {
+            let name = ty.name(self.design);
+            self.unsupported(file, span, &format!("the name of {name}, which has fields, used as a value: build it with a call or a struct expression"));
+            return None;
+        }
+        Some(ty)
+    }
+
+    // ---- field access ----------------------------------------------------------------------
+
+    /// `s.x` and `t.0` (§1.3.4): the type of the field, or `E0186`
+    /// naming the field a type does not have.
+    pub(super) fn field_of_value(&mut self, expr: ExprId, receiver: ExprId, name: &Name) -> Option<Ty> {
+        let node = self.design.expr_node(expr).clone();
+        let file = self.file_of_expr(expr);
+        let found = self.infer(receiver)?;
+        match &found {
+            Ty::Struct(decl) => {
+                let layout = self.fields_of(*decl)?;
+                let named = match name.text.parse::<usize>() {
+                    Ok(position) => layout.get(position).filter(|f| f.name.is_none()),
+                    Err(_) => layout.iter().find(|f| f.name.as_deref() == Some(name.text.as_str())),
+                };
+                match named {
+                    Some(field) => Some(field.ty.clone()),
+                    None => self.no_field(file, node.span, &found, name),
+                }
+            }
+            Ty::Tuple(items) => match name.text.parse::<usize>().ok().and_then(|i| items.get(i)) {
+                Some(ty) => Some(ty.clone()),
+                None => self.no_field(file, node.span, &found, name),
+            },
+            Ty::Module(_) => None,
+            other => self.no_field(file, node.span, other, name),
+        }
+    }
+
+    /// `E0186`: a field access or tuple index the type does not have (§1.3.4).
+    fn no_field(&mut self, file: FileId, span: Span, ty: &Ty, name: &Name) -> Option<Ty> {
+        let of = ty.name(self.design);
+        self.coded(file, "E0186", span, format!("{of} has no field `{}` (§1.3.4)", name.text), "no such field");
+        None
     }
 
     /// The name of a const expression for a message: a path as written, else a plain word.

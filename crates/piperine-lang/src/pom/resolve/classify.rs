@@ -322,7 +322,8 @@ fn struct_expressions(design: &Design, bundles: &BTreeSet<DeclId>, out: &mut Cla
                 (None, StructClass::Template(_)) => out.diagnostics.push(missing_binding(design, "E0320", target, "param", &f.name, from)),
                 (None, StructClass::BundleLiteral) => out.diagnostics.push(missing_binding(design, "E0263", target, "field", &f.name, from)),
                 (None, StructClass::Unclassified) => {}
-                (None, _) => out.diagnostics.push(missing_binding(design, "E0161", target, "field", &f.name, from)),
+                // A field a struct literal names that the type lacks (§1.3.3).
+                (None, _) => out.diagnostics.push(missing_binding(design, "E0186", target, "field", &f.name, from)),
             }
         }
         classes.insert(expr, class);
@@ -332,7 +333,7 @@ fn struct_expressions(design: &Design, bundles: &BTreeSet<DeclId>, out: &mut Cla
 }
 
 /// The fields a struct pattern names: each links to the field of the struct or
-/// variant its path names; one that does not exist is `E0161`, as in a literal.
+/// variant its path names; one that does not exist is `E0186`, as in a literal (§1.3.3).
 fn struct_patterns(design: &Design, out: &mut Classified) {
     for i in 0..design.pat_count() {
         let id = PatId(i as u32);
@@ -345,7 +346,7 @@ fn struct_patterns(design: &Design, out: &mut Classified) {
         for (k, f) in fields.iter().enumerate() {
             match child_named(design, target, &f.name.text, is_field) {
                 Some(d) => out.pattern_fields.push((id, k, Resolution::Decl(d))),
-                None => out.diagnostics.push(missing_binding(design, "E0161", target, "field", &f.name, node.owner)),
+                None => out.diagnostics.push(missing_binding(design, "E0186", target, "field", &f.name, node.owner)),
             }
         }
     }

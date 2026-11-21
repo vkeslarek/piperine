@@ -7,7 +7,6 @@
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
 use super::check::Checker;
-use super::unsupported::Unsupported;
 use super::Ty;
 
 impl Checker<'_> {
@@ -16,18 +15,15 @@ impl Checker<'_> {
     pub(super) fn field_read(&mut self, expr: ExprId) -> Option<Ty> {
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
-        let ExprKind::Field { expr: receiver, res, .. } = &node.kind else { return None };
+        let ExprKind::Field { expr: receiver, name, res } = &node.kind else { return None };
         match res {
             Resolution::Decl(item) if self.is_child_item(*item) => {
                 self.infer(*receiver)?;
                 self.item_type(*item, file, node.span)
             }
-            // A missing or private item already has its `E0343`.
-            Resolution::Unresolved => None,
-            _ => {
-                self.unsupported(file, node.span, Unsupported::expr(&node.kind));
-                None
-            }
+            // A field of a value (§1.3.4): the type says whether it exists. A missing or private
+            // item of a placed child already has its `E0343`.
+            _ => self.field_of_value(expr, *receiver, name),
         }
     }
 

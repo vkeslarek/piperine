@@ -105,3 +105,43 @@ fn a_self_containing_type_is_e0186() {
     // §1.3.2: the field names of a struct are distinct
     assert_refused(&source("struct H { x: f64, x: u8 }\nfn f(a: H) {}", "let h = f;"), "E0186", "declared twice");
 }
+
+#[test]
+fn struct_expressions_and_field_reads_type_check() {
+    // §1.3.3: named fields in any order, shorthand, a tuple struct built by a call, a unit struct by
+    // its name; §1.3.4: `s.x`, `t.0` and nested reads .
+    let items = "struct P { x: f64, y: u8 }\nstruct Pair(f64, bool);\nstruct Marker;\nstruct Line { from: P, to: P }";
+    let body = "let y: u8 = 3; \
+                let p = P { y, x: 1.0 }; \
+                let q = Pair(2.0, true); \
+                let m = Marker; \
+                let l = Line { from: P { x: 0.0, y: 1 }, to: p }; \
+                let a: f64 = p.x; let b: u8 = l.to.y; let c: bool = q.1; let d: f64 = q.0;";
+    let src = source(items, body);
+    assert_eq!(local_type(&src, "p"), Ty::Struct(type_decl(&src, "P")));
+    assert_eq!(local_type(&src, "q"), Ty::Struct(type_decl(&src, "Pair")));
+    assert_eq!(local_type(&src, "m"), Ty::Struct(type_decl(&src, "Marker")));
+    assert_eq!(local_type(&src, "a"), Ty::F64);
+    assert_eq!(local_type(&src, "b"), Ty::UInt(8), "nested reads give the innermost field");
+}
+
+#[test]
+fn a_bad_struct_expression_is_e0186_naming_the_field() {
+    // §1.3.3: every field exactly once; §1.3.4: a field access the type does not have.
+    let items = "struct P { x: f64, y: f64 }";
+    assert_refused(&source(items, "let p = P { x: 1.0 };"), "E0186", "`y`");
+    assert_refused(&source(items, "let p = P { x: 1.0, y: 2.0, x: 3.0 };"), "E0186", "`x` is named twice");
+    // an unknown field of a struct literal is found where names resolve (the pom classifier)
+    assert_eq!(support::codes(&support::build(&source(items, "let p = P { x: 1.0, y: 2.0, z: 3.0 };"))), ["E0186"]);
+    assert_refused(&source(items, "let p = P { x: 1.0, y: 2.0 }; let z = p.z;"), "E0186", "no field `z`");
+    // a field is checked against its type
+    assert_refused(&source(items, "let p = P { x: true, y: 2.0 };"), "P0002", "expected `f64`, found `bool`");
+}
+
+#[test]
+fn struct_update_syntax_is_a_parse_error() {
+    // §1.3.3 and B.3.7: there is no form that copies the remaining fields from another value (D3).
+    let src = source("struct P { x: f64, y: f64 }", "let a = P { x: 1.0, y: 2.0 }; let b = P { x: 3.0, ..a };");
+    let design = support::build(&src);
+    assert!(!design.diagnostics().is_empty(), "`..base` must not parse");
+}

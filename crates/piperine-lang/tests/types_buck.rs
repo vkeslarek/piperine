@@ -19,7 +19,6 @@ struct Row {
 const NODE: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n";
 
 const ROWS: &[Row] = &[
-    Row { construct: "a struct", source: "struct S { a: f64 }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let s = S { a: 1.0 }; } }", names: "struct expression" },
     Row { construct: "an array", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let a = [1.0, 2.0]; } }", names: "array expression" },
     Row { construct: "an array type", source: "module Top() { signal s: [Bit; 4]; }", names: "an array of" },
     Row { construct: "an index", source: "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let a = clk; let b = a[0]; } }", names: "index expression" },

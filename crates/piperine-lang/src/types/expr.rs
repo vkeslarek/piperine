@@ -224,6 +224,7 @@ impl Checker<'_> {
             ExprKind::Match { .. } => self.match_expr(expr, None),
             ExprKind::MethodCall { .. } => self.method_call(expr),
             ExprKind::Field { .. } => self.field_read(expr),
+            ExprKind::Struct { path, fields, class: StructClass::StructLiteral } => self.struct_expression(expr, *path, fields),
             ExprKind::Closure { .. } => self.closure_value(expr),
             ExprKind::Emit { stream, fields } => self.emit(expr, stream, fields),
             ExprKind::Struct { class: StructClass::Template(_), .. } => {
@@ -553,13 +554,7 @@ impl Checker<'_> {
                         }
                         local
                     }
-                    DeclKind::Variant(_) => match self.design.decl_data(decl).parent {
-                        Some(parent) if matches!(self.design.decl_data(parent).kind, DeclKind::Enum(_)) => self.enum_type(parent, file, node.span),
-                        _ => {
-                            self.unsupported(file, node.span, "`enum` variant used as a value");
-                            None
-                        }
-                    },
+                    DeclKind::Struct(_) | DeclKind::Variant(_) => self.constructor_value(decl, file, node.span),
                     // §1.2.10: a function's name is a value of type `fn(T..) -> U`
                     DeclKind::Fn(_) => self.function_value(expr),
                     other => {

@@ -54,6 +54,7 @@ impl Checker<'_> {
             Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
                 DeclKind::Fn(_) => self.function_call(expr, *callee, decl, args),
                 DeclKind::FnParam(_) | DeclKind::Binding(_) => self.local_call(expr, decl, args),
+                DeclKind::Struct(_) | DeclKind::Variant(_) => self.constructor_call(expr, decl, args),
                 _ => {
                     self.unsupported(file, node.span, "call of this declaration");
                     None
