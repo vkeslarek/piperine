@@ -1463,6 +1463,7 @@ name = "piperine-plan"
 version = "0.2.0"
 dependencies = [
  "piperine-abi",
+ "piperine-digital-solver",
  "piperine-interp",
  "piperine-ir",
  "piperine-solver",

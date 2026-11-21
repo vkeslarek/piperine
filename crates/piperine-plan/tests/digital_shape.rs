@@ -9,6 +9,9 @@ use piperine_abi::raw::{Cell, Layout, Pin, Shape, cell, field_flag, global, kind
 use piperine_ir::{
     BodyId, BodySpec, CarrierRole, Constant, Event, EventSource, FunctionSpec, InstanceSpec, Ir, IrBuilder, Local, Origin, Real, Stream, StreamField, ValueType,
 };
+use piperine_digital_solver::dag::{Dag, Step};
+use piperine_digital_solver::net::{NetId, NetSpec};
+use piperine_digital_solver::plan::FnNode;
 use piperine_plan::{BodyPlan, Mode, RecordLayout, Source, Target};
 
 #[allow(dead_code)]
@@ -983,8 +986,10 @@ fn a_body_without_settle_has_no_settle_pin() {
     }
 }
 
-/// A body whose second event is guarded by whether the first fired (§13 rule 9): an `in en: Bit`,
-/// an `in d: Bit` and an `out q: Bit`; `on d.changed() && !en.changed() { q <- true; }`.
+/// A body whose first event is guarded by whether the second fired (§13 rule 9), declared as the
+/// elaborator does: the guarded event of the head first, the event the guard reads appended after
+/// it. An `in en: Bit`, an `in d: Bit` and an `out q: Bit`; `on d.changed() && !en.changed() { q <-
+/// true; }`.
 struct Guarding;
 
 impl Guarding {
@@ -995,11 +1000,12 @@ impl Guarding {
         b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, Guarding::F, 1, 14));
         b.carrier(body, Buck::carrier("d", ValueType::Bool, CarrierRole::In, None, Guarding::F, 1, 28));
         b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Guarding::F, 1, 40));
-        let en_changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(Guarding::F, 2, 8) });
+        // the guard reads the event declared next: `Fired(1)`
         let mut x = Dx::new(b, Guarding::F, 2, 30);
-        let still = x.b.expr(piperine_ir::Expr::Fired(en_changed), ValueType::Bool, x.origin());
+        let still = x.b.expr(piperine_ir::Expr::Fired(1), ValueType::Bool, x.origin());
         let guard = x.un(piperine_ir::UnaryOp::Not, still, ValueType::Bool);
         let d_changed = b.event(body, Event { source: EventSource::Changed(1), guard: Some(guard), origin: Buck::origin(Guarding::F, 2, 8) });
+        b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(Guarding::F, 2, 8) });
         let yes = Dx::new(b, Guarding::F, 3, 14).boolean(true);
         let commit = Dx::new(b, Guarding::F, 3, 9).commit(2, yes, None);
         Buck::reaction(b, body, vec![d_changed], vec![commit], vec![], Guarding::F, 2);
@@ -1007,22 +1013,56 @@ impl Guarding {
     }
 }
 
+/// The levelized order of a shape's discrete functions, by the dag the digital solver runs them in
+/// (abi.md §9 D1): every pin is a net, a function reads and writes the nets of its cells.
+struct Levelized;
+
+impl Levelized {
+    /// The names of the functions of `shape` in the order the dag runs them.
+    fn order(shape: &Shape<'_>) -> Vec<String> {
+        let nets: Vec<NetSpec> = shape.pins.iter().map(|p| NetSpec::discrete(p.name.as_str(), 1, 1)).collect();
+        let nodes: Vec<FnNode> = shape
+            .functions
+            .iter()
+            .enumerate()
+            .map(|(k, f)| FnNode {
+                name: f.name.as_str().to_string(),
+                instance: 0,
+                k: k as u32,
+                reads: f.reads.iter().filter(|c| c.kind == cell::PIN).map(|c| NetId(c.index)).collect(),
+                writes: f.writes.iter().filter(|c| c.kind == cell::PIN).map(|c| NetId(c.index)).collect(),
+            })
+            .collect();
+        let dag = Dag::build(&nodes, &nets).expect("the functions have no cycle");
+        dag.order()
+            .iter()
+            .map(|step| match step {
+                Step::Run(f) => dag.function(*f).name.clone(),
+                Step::Relax { .. } => panic!("no relaxation in this body"),
+            })
+            .collect()
+    }
+}
+
 #[test]
 fn an_event_function_reading_another_event_runs_after_it() {
-    // §13 rule 9, design D8: the function of the guarded event reads the `CHANGED` byte of the
-    // other event's pin (`Source::Fired(0)`), which the other event's function writes, so the
-    // dependency of abi.md D runs `event:0` first; the shape validates (no cycle)
+    // §13 rule 9, design D8: the guarded event is declared first (`event:0`) and reads the
+    // `CHANGED` byte of the event its guard names, declared after it (`Source::Fired(1)`, `event:1`),
+    // so the order of the shape's functions is the wrong one; the dependency of abi.md D1, from
+    // what each function reads and writes, runs `event:1` first; the shape validates (no cycle)
     let (ir, body) = Alone::design(Guarding::body);
     let plan = BodyPlan::new(ir.body(body));
     let shape = plan.shape().shape();
-    let (first, second) = (Find::pin(shape, "event:0"), Find::pin(shape, "event:1"));
-    let (_, writes, _) = Find::function(shape, "event:0");
-    assert_eq!(writes, [pin(first, part::CHANGED)], "event 0 writes its own pin");
-    let (reads, writes, _) = Find::function(shape, "event:1");
-    assert!(reads.contains(&pin(first, part::CHANGED)), "event 1 reads event 0's pin: {reads:?}");
-    assert_eq!(writes, [pin(second, part::CHANGED)]);
-    assert!(plan.functions()[1].reads.contains(&Source::Fired(0)), "{:?}", plan.functions()[1].reads);
-    let names = Find::function_names(shape);
-    assert!(names.iter().position(|n| n == "event:0") < names.iter().position(|n| n == "event:1"), "{names:?}");
+    let (guarded, read) = (Find::pin(shape, "event:0"), Find::pin(shape, "event:1"));
+    let (reads, writes, _) = Find::function(shape, "event:0");
+    assert!(reads.contains(&pin(read, part::CHANGED)), "the guarded event reads the other event's pin: {reads:?}");
+    assert_eq!(writes, [pin(guarded, part::CHANGED)]);
+    let (_, writes, _) = Find::function(shape, "event:1");
+    assert_eq!(writes, [pin(read, part::CHANGED)], "the read event writes its own pin");
+    assert_eq!(plan.functions()[0].reads.iter().filter(|s| **s == Source::Fired(1)).count(), 1, "{:?}", plan.functions()[0].reads);
+    let declared = Find::function_names(shape);
+    assert!(declared.iter().position(|n| n == "event:0") < declared.iter().position(|n| n == "event:1"), "declaration order is the wrong one: {declared:?}");
+    let levelized = Levelized::order(shape);
+    assert!(levelized.iter().position(|n| n == "event:1") < levelized.iter().position(|n| n == "event:0"), "the dependency order runs the read event first: {levelized:?}");
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 }
