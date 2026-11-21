@@ -23,12 +23,10 @@ struct Row {
 // `analysis` of another kind, `bound_step` and `freq` left this table when FIX-09 to FIX-11 typed
 // them (`types_analog::freq_analysis_kinds_and_bound_step_type`).
 const ROWS: &[Row] = &[
-    Row { construct: "index", source: "module Top() { }\nanalog for Top { let x = 1.0; let y = x[0]; }", names: "index expression" },
     Row { construct: "settle", source: "module Top() { }\nanalog for Top { let x = settle; }", names: "`settle`" },
     Row { construct: "f32", source: "module Top() { }\nanalog for Top { let x: f32 = 1.0; }", names: "`f32`" },
     Row { construct: "Float<N>", source: "module Top() { }\nanalog for Top { let x: Float<32> = 1.0; }", names: "`Float`" },
     Row { construct: "string literal", source: "module Top() { }\nanalog for Top { let x = \"a\"; }", names: "string literal" },
-    Row { construct: "array", source: "module Top() { }\nanalog for Top { let x = [1.0, 2.0]; }", names: "array expression" },
     Row { construct: "slice", source: "fn f(s: [f64]) -> f64 { 1.0 }\nmodule Top() { }\nanalog for Top { let x = f(1.0); }", names: "slice type" },
     Row { construct: "reference", source: "module Top() { }\nanalog for Top { let x = 1.0; let y = &x; }", names: "reference `&`" },
     Row { construct: "reference type", source: "module Top() { }\nanalog for Top { let x: &f64 = 1.0; }", names: "reference type" },
@@ -107,7 +105,7 @@ fn unreached_items_are_not_reported() {
     assert_eq!(types.reached().len(), 2, "only Top and Resistor are reached");
 
     // The same names, reached, are refused.
-    let reached = format!("{HEAD}fn loops(x: f64) -> f64 {{ let a = [x, x]; x }}\nmodule Top() {{ }}\nanalog for Top {{ let x = loops(1.0); }}");
+    let reached = format!("{HEAD}fn loops(x: f64) -> f64 {{ let a = [x, x]; let s = a[0..1]; x }}\nmodule Top() {{ }}\nanalog for Top {{ let x = loops(1.0); }}");
     let design: Design = support::build(&reached);
     assert!(Types::check(&design, "Top").is_err());
 }

@@ -66,8 +66,10 @@ impl Checker<'_> {
                     Some(expected.clone())
                 }
                 ExprKind::Match { .. } => self.match_expr(expr, Some(expected)),
-                // The expected aggregate type flows into the parts of a tuple.
+                // The expected aggregate type flows into the parts of a tuple and an array.
                 ExprKind::Tuple(items) => self.tuple_expression(items, Some(expected)),
+                ExprKind::Array(items) => self.array_expression(expr, items, Some(expected)),
+                ExprKind::ArrayRepeat { elem, len } => self.array_repeat(expr, *elem, *len, Some(expected)),
                 ExprKind::Loop { body } => self.loop_expr(body, Some(expected)),
                 // `Unknown` where a carried type is expected (§3.3.1: of any `Repr` type). `analog`
                 // computes with known reals (§3.3.5): there it is refused by name.
@@ -227,6 +229,9 @@ impl Checker<'_> {
             ExprKind::MethodCall { .. } => self.method_call(expr),
             ExprKind::Field { .. } => self.field_read(expr),
             ExprKind::Tuple(items) => self.tuple_expression(items, None),
+            ExprKind::Array(items) => self.array_expression(expr, items, None),
+            ExprKind::ArrayRepeat { elem, len } => self.array_repeat(expr, *elem, *len, None),
+            ExprKind::Index { expr: base, index } => self.index_expression(expr, *base, *index),
             ExprKind::Struct { path, fields, class: StructClass::StructLiteral } => self.struct_expression(expr, *path, fields),
             ExprKind::Closure { .. } => self.closure_value(expr),
             ExprKind::Emit { stream, fields } => self.emit(expr, stream, fields),

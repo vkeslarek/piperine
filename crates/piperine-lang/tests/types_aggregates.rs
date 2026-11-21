@@ -228,3 +228,40 @@ fn a_discriminant_that_does_not_fit_or_repeats_is_e0111() {
     // a one-variant enum has a tag of no levels, its only discriminant is 0
     assert_clean(&source("#[derive(Repr)]\nenum One { Only }\nfn f(o: One) {}", "let h = f;"));
 }
+
+#[test]
+fn arrays_indexing_and_slices_type_check() {
+    // §1.2.5: `[a, b, c]` has one element type, `[x; N]` repeats a value, `e[i]` takes any integer
+    // type, an element is assigned, arrays nest; §1.6.7: slice patterns over an array. A range index
+    // is a slice, which waits on the amended spec (no borrows): it is refused by name.
+    let items = "fn pick(a: [[u8; 2]; 2]) -> u8 { a[1][0] }";
+    let body = "let arr = [1.0, 2.0, 3.0]; let r = [0u8; 4]; let i: u16 = 2; let x = arr[i]; let y: f64 = arr[0]; \
+                let mut m = [[1u8, 2], [3, 4]]; m[1][0] = 9; let p = pick(m);";
+    let src = source(items, body);
+    assert_eq!(local_type(&src, "arr"), Ty::Array(Box::new(Ty::F64), 3));
+    assert_eq!(local_type(&src, "r"), Ty::Array(Box::new(Ty::UInt(8)), 4));
+    assert_eq!(local_type(&src, "x"), Ty::F64);
+    assert_eq!(local_type(&src, "m"), Ty::Array(Box::new(Ty::Array(Box::new(Ty::UInt(8)), 2)), 2));
+    assert_eq!(local_type(&src, "p"), Ty::UInt(8));
+    assert_refused(&source("", "let a = [1.0, true];"), "P0002", "expected `f64`, found `bool`");
+    assert_refused(&source("", "let a = [1.0, 2.0]; let x = a[1.5];"), "P0002", "an integer type");
+    assert_refused(&source("", "let a = 3.0; let x = a[0];"), "P0002", "an array");
+    assert_refused(&source("", "let a = [1.0, 2.0, 3.0]; let s = a[0..2];"), "P0001", "slice");
+    // an empty array has no element type of its own (§1.4.4), unless the position gives one
+    assert_refused(&source("", "let a = [];"), "E0181", "element type");
+    assert_clean(&source("", "let a: [u8; 0] = [];"));
+    assert_clean(&source("fn f(a: [u8; 4]) -> u8 { let [x, .., z] = a; let [h, rest @ ..] = a; x + z + h + rest[0] }", "let h = f;"));
+    assert_refused(&source("fn f(a: [u8; 2]) { let [x, y, z] = a; }", "let h = f;"), "P0002", "2 elements");
+    assert_clean(&source("fn f(a: [bool; 2]) -> u8 { match a { [true, _] => 1, [false, true] => 2, [false, false] => 3 } }", "let h = f;"));
+}
+
+#[test]
+fn a_non_constant_array_length_is_refused_naming_it() {
+    // §1.2.5: `N` of `[x; N]` is a const expression; the specification names no code for another
+    // (D6), so the plain mismatch names the length.
+    assert_refused(&source("", "let n: u8 = 3; let a = [0u8; n];"), "P0002", "`n`");
+    assert_refused(&source("const F: f64 = 2.0;", "let a = [0u8; F];"), "P0002", "`F`");
+    // a `const` folds, and so does arithmetic of constants
+    assert_clean(&source("const N: usize = 2;", "let a = [0u8; N * 2 + 1];"));
+}
+

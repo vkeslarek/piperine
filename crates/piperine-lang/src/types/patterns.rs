@@ -84,6 +84,7 @@ impl Checker<'_> {
             PatKind::Tuple(pats) => self.tuple_pattern(file, node.span, pats, scrut),
             PatKind::TupleStruct { path, pats } => self.constructor_pattern(file, node.span, *path, pats, scrut),
             PatKind::Struct { path, fields, rest } => self.struct_pattern(file, node.span, *path, fields, *rest, scrut),
+            PatKind::Slice(pats) => self.slice_pattern(file, node.span, pats, scrut),
             other => {
                 self.unsupported(file, node.span, &format!("{} as a pattern", Unsupported::pat(other)));
                 None

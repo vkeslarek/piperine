@@ -109,7 +109,65 @@ impl Checker<'_> {
         Some(Matched::new(Self::product(&parts, shape), bound))
     }
 
+    /// `[a, b]`, `[first, .., last]` and `[head, rest @ ..]` (§1.6.7): over an array, with `..`
+    /// standing for the elements between.
+    pub(super) fn slice_pattern(&mut self, file: FileId, span: Span, pats: &[PatId], scrut: &Ty) -> Option<Matched> {
+        let Ty::Array(element, length) = scrut else { return self.not_sliceable(file, span, scrut) };
+        let element = (**element).clone();
+        let arity = usize::try_from(*length).ok()?;
+        let rest_at = pats.iter().position(|p| self.is_rest_pattern(*p));
+        let fixed = pats.len() - usize::from(rest_at.is_some());
+        let mut matched = Vec::new();
+        let mut columns: Vec<Option<PatId>> = Vec::new();
+        match rest_at {
+            None => columns.extend(pats.iter().map(|p| Some(*p))),
+            Some(i) => {
+                if fixed > arity {
+                    self.mismatch_text(file, span, &format!("a pattern of at most {arity} elements"), &format!("{fixed} elements"));
+                    return None;
+                }
+                columns.extend(pats[..i].iter().map(|p| Some(*p)));
+                columns.extend(std::iter::repeat_n(None, arity - fixed));
+                columns.extend(pats[i + 1..].iter().map(|p| Some(*p)));
+                matched.extend(self.rest_binding(pats[i], &Ty::Array(Box::new(element.clone()), (arity - fixed) as u64)));
+            }
+        }
+        if columns.len() != arity {
+            self.mismatch_text(file, span, &format!("a pattern of {arity} elements"), &format!("{} elements", columns.len()));
+            return None;
+        }
+        let items = vec![element; arity];
+        let (parts, bound) = self.fields_matched(file, span, &columns, &items)?;
+        let all = self.merge_bound(file, span, matched.into_iter().chain(std::iter::once(Matched::new(vec![Covers::All], bound))).collect())?;
+        Some(Matched::new(Self::product(&parts, Shape::Fields), all))
+    }
+
     // ---- helpers ---------------------------------------------------------------------------
+
+    /// `E0184`-free mismatch for a slice pattern over a value that is no array or slice.
+    fn not_sliceable(&mut self, file: FileId, span: Span, scrut: &Ty) -> Option<Matched> {
+        self.mismatch_text(file, span, &scrut.name(self.design), "a slice pattern");
+        None
+    }
+
+    /// Whether `pat` is `..` or `name @ ..` (the rest of a slice pattern).
+    fn is_rest_pattern(&self, pat: PatId) -> bool {
+        match &self.design.pat_node(pat).kind {
+            PatKind::Rest => true,
+            PatKind::Ident { sub: Some(sub), .. } => matches!(self.design.pat_node(*sub).kind, PatKind::Rest),
+            _ => false,
+        }
+    }
+
+    /// The binding of `name @ ..` typed as `ty`; nothing for a bare `..`.
+    fn rest_binding(&mut self, pat: PatId, ty: &Ty) -> Option<Matched> {
+        let PatKind::Ident { name, binding, mutable, .. } = &self.design.pat_node(pat).kind.clone() else { return None };
+        self.locals.insert(*binding, ty.clone());
+        if *mutable {
+            self.mutable.insert(*binding);
+        }
+        Some(Matched::new(vec![Covers::All], vec![Bound::new(name.text.clone(), ty.clone())]))
+    }
 
     /// The pattern of each of `arity` fields, `..` standing for those between the patterns before
     /// it and after it; `None` marks a field a `..` skips.

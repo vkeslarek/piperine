@@ -322,6 +322,100 @@ impl Checker<'_> {
         typed.then(|| Ty::Tuple(types))
     }
 
+    // ---- arrays ----------------------------------------------------------------------------
+
+    /// `[a, b, c]` (§1.2.5): one element type, taken from `expected` or from the first item that
+    /// does not wait for another's type. An empty array has no element type of its own (`E0181`).
+    pub(super) fn array_expression(&mut self, expr: ExprId, items: &[ExprId], expected: Option<&Ty>) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        let element = match expected {
+            Some(Ty::Array(element, _)) => Some((**element).clone()),
+            _ => None,
+        };
+        let element = match (element, items) {
+            (Some(element), _) => element,
+            (None, []) => {
+                self.coded(file, "E0181", span, "an empty array has no element type: write the type where it is used (§1.4.4)".to_string(), "element type unknown");
+                return None;
+            }
+            (None, _) => {
+                let first = items.iter().copied().find(|i| !self.integer_literal_waits(*i)).unwrap_or(items[0]);
+                let ty = self.infer(first)?;
+                if !ty.is_value() {
+                    let span = self.design.expr_node(first).span;
+                    self.unsupported(file, span, &format!("a `{}` inside an array", ty.name(self.design)));
+                    return None;
+                }
+                for item in items.iter().filter(|i| **i != first) {
+                    self.check(*item, &ty);
+                }
+                return Some(Ty::Array(Box::new(ty), items.len() as u64));
+            }
+        };
+        for item in items {
+            self.check(*item, &element);
+        }
+        Some(Ty::Array(Box::new(element), items.len() as u64))
+    }
+
+    /// `[x; N]` (§1.2.5): `x` is `Copy`; `N` a const expression the checker folds, else `P0002`
+    /// naming it (the specification gives no code of its own, D6).
+    pub(super) fn array_repeat(&mut self, expr: ExprId, element: ExprId, len: ExprId, expected: Option<&Ty>) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let ty = match expected {
+            Some(Ty::Array(want, _)) => {
+                self.check(element, want);
+                Some((**want).clone())
+            }
+            _ => self.infer(element),
+        };
+        let Some(length) = self.fold_length(len) else {
+            let span = self.design.expr_node(len).span;
+            let what = self.expression_name(len);
+            self.mismatch_text(file, span, "a constant array length", &what);
+            return None;
+        };
+        let ty = ty?;
+        Some(Ty::Array(Box::new(ty), length))
+    }
+
+    /// `e[i]` reads an element of an array (§1.5.9); an index is
+    /// any integer type.
+    pub(super) fn index_expression(&mut self, expr: ExprId, base: ExprId, index: ExprId) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let found = self.infer(base);
+        if matches!(self.design.expr_node(index).kind, ExprKind::Range { .. }) {
+            let span = self.design.expr_node(expr).span;
+            self.unsupported(file, span, "a slice `e[a..b]`");
+            return None;
+        }
+        self.integer_index(index);
+        let found = found?;
+        let element = match &found {
+            Ty::Array(element, _) => (**element).clone(),
+            other => {
+                let span = self.design.expr_node(base).span;
+                self.mismatch_text(file, span, "an array", &other.name(self.design));
+                return None;
+            }
+        };
+        Some(element)
+    }
+
+    /// An index or a bound of a range: any integer type (§1.5.9).
+    fn integer_index(&mut self, index: ExprId) {
+        match self.infer(index) {
+            Some(ty) if ty.is_integer() => {}
+            Some(other) => {
+                let file = self.file_of_expr(index);
+                let span = self.design.expr_node(index).span;
+                self.mismatch_text(file, span, "an integer type", &other.name(self.design));
+            }
+            None => {}
+        }
+    }
+
     /// The name of a const expression for a message: a path as written, else a plain word.
     pub(super) fn expression_name(&self, expr: ExprId) -> String {
         match &self.design.expr_node(expr).kind {
