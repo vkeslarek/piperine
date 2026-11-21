@@ -628,7 +628,11 @@ dlopen ─► piperine_abi_1()        major = symbol; check Library.size / minor
 
 **D1. Cycles** (resolved nets). The elaborator lowers a resolved carrier to one-writer nets
 plus a resolver *instance* generated from the nature: one drive pin per driver in
-instance-path order, flagged `RELAX`; one value pin; one "others" pin per reader that needs
+instance-path order, flagged `RELAX`, whose layout is the value's layout followed by one field
+`driving: BOOL` with a known byte (a driver writes `driving` known true with every value it
+writes; zero bytes read as `driving` unknown, a drive *absent*, which the resolver leaves out of
+what it receives, while a present drive whose value is unknown is passed); one value pin; one
+"others" pin per reader that needs
 it. An external device joins by ordinary binding. A cycle of functions through `RELAX` nets is
 relaxed: those nets start the microstep at zero bytes (P3: not driving); the cycle's functions
 run in order until no byte changes, at most (`RELAX` nets in the cycle + 1) passes; a field with a

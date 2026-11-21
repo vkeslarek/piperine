@@ -299,9 +299,9 @@ T34 → T35 → T36
 
 **Done when**:
 
-- [ ] `a_relaxing_cycle_starts_absent_and_stops_within_drives_plus_one_passes`, `a_released_loop_keeps_no_earlier_level` and `an_absent_drive_is_left_out_and_an_unknown_one_is_passed` pass under `**Run relax**`
-- [ ] The abi.md sentence is in §9 D1
-- [ ] Gate check passes: Quick
+- [x] `a_relaxing_cycle_starts_absent_and_stops_within_drives_plus_one_passes`, `a_released_loop_keeps_no_earlier_level` and `an_absent_drive_is_left_out_and_an_unknown_one_is_passed` pass under `**Run relax**`
+- [x] The abi.md sentence is in §9 D1
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
