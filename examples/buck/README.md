@@ -132,3 +132,7 @@ The `checks` stream carries the `Never` monitor of `Dpwm`: a bench passes only i
 failed `never` record (S10).
 
 ## On demand
+
+```sh
+cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_boundary --test buck_power --test buck_supervisor --test buck_closed_loop
+```

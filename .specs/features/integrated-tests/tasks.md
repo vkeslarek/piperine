@@ -153,11 +153,11 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] `cargo test -p piperine-parity --no-run` lists none of the seven executables; `Run whole` runs `buck_whole`'s three tests and they pass
-- [ ] `Run hygiene` passes with the seven entries
-- [ ] `git diff --quiet 856d2668 HEAD -- crates/piperine-parity/tests/buck_*.rs crates/piperine-parity/tests/buck/` exits 0 (no buck test or fixture edited)
-- [ ] Gate check passes: `Run whole`, `Run hygiene`, the Build line
-- [ ] Test count: no test added or removed
+- [x] `cargo test -p piperine-parity --no-run` lists none of the seven executables; `Run whole` runs `buck_whole`'s three tests and they pass
+- [x] `Run hygiene` passes with the seven entries
+- [x] `git diff --quiet 856d2668 HEAD -- crates/piperine-parity/tests/buck_*.rs crates/piperine-parity/tests/buck/` exits 0 (no buck test or fixture edited)
+- [x] Gate check passes: `Run whole`, `Run hygiene`, the Build line
+- [x] Test count: no test added or removed
 
 **Tests**: integration
 **Gate**: full
