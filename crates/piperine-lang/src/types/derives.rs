@@ -82,7 +82,7 @@ impl Checker<'_> {
             Ty::Tuple(items) => items.iter().all(|item| self.implements(item, which)),
             Ty::Struct(decl) | Ty::Enum(decl) => self.derives(*decl, which.name()),
             Ty::Fn(..) => which == DerivedTrait::Debug,
-            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Carrier { .. } | Ty::Event | Ty::Never => false,
+            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Carrier { .. } | Ty::Event | Ty::Never | Ty::Range { .. } | Ty::Iterator { .. } => false,
         }
     }
 

@@ -31,9 +31,10 @@ impl Checker<'_> {
     }
 
     /// `for pat in lo..hi { body }` and `lo..=hi`: the type `()`. The range is over one integer
-    /// type, its elements ascend (§1.8.9); arrays and iterators come with the aggregate types.
+    /// type, its elements ascend (§1.8.9); an array gives its elements by value, an iterator of H.7
+    /// its own.
     pub(super) fn for_loop(&mut self, iter: ExprId, pat: PatId, body: &BlockNode) -> Option<Ty> {
-        let element = self.range_element(iter);
+        let element = if matches!(self.design.expr_node(iter).kind, ExprKind::Range { lo: Some(_), hi: Some(_), .. }) { self.range_element(iter) } else { self.iteration_element(iter) };
         if let Some(element) = &element {
             self.for_binding(pat, element);
         }
@@ -51,15 +52,11 @@ impl Checker<'_> {
         self.flow.loops.pop().unwrap_or_else(|| LoopFrame::new(false, None))
     }
 
-    /// The element type of the range `iter` of a `for`: an integer type both bounds have. Any other
-    /// iterator is outside the subset until the aggregate types.
+    /// The element type of the range `iter` of a `for`: an integer type both bounds have.
     fn range_element(&mut self, iter: ExprId) -> Option<Ty> {
         let node = self.design.expr_node(iter).clone();
         let file = self.file_of_expr(iter);
-        let ExprKind::Range { lo: Some(lo), hi: Some(hi), .. } = &node.kind else {
-            self.unsupported(file, node.span, "a `for` over anything but a range `a..b` or `a..=b`");
-            return None;
-        };
+        let ExprKind::Range { lo: Some(lo), hi: Some(hi), .. } = &node.kind else { return None };
         let (first, second) = self.literal_last(*lo, *hi);
         match self.infer(first) {
             Some(t) if t.is_integer() => {

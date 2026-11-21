@@ -331,6 +331,9 @@ impl Checker<'_> {
     /// `expect`, `unwrap_or_else`, `map`, `and_then` on an `Option<T>`, `then` and `then_some` on
     /// a `bool`. A closure's parameter is the payload `T`; its body's type is the result's.
     fn payload_row(&mut self, expr: ExprId, row: Method, recv: &Ty, args: &[Arg]) -> Option<Ty> {
+        if matches!(recv, Ty::Array(..) | Ty::Range { .. } | Ty::Iterator { .. }) {
+            return self.sequence_row(expr, row, recv, args);
+        }
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let payload = match recv {

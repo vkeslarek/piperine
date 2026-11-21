@@ -236,6 +236,7 @@ impl Checker<'_> {
             ExprKind::Array(items) => self.array_expression(expr, items, None),
             ExprKind::ArrayRepeat { elem, len } => self.array_repeat(expr, *elem, *len, None),
             ExprKind::Index { expr: base, index } => self.index_expression(expr, *base, *index),
+            ExprKind::Range { lo, hi, .. } => self.range_expr(file, node.span, *lo, *hi),
             ExprKind::Struct { path, fields, class: StructClass::StructLiteral } => self.struct_expression(expr, *path, fields),
             ExprKind::Closure { .. } => self.closure_value(expr),
             ExprKind::Emit { stream, fields } => self.emit(expr, stream, fields),

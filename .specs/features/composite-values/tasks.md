@@ -1125,8 +1125,8 @@ T63
 
 **Done when**:
 
-- [ ] `the_rows_of_h5_to_h7_type_check` and `a_method_outside_appendix_h_is_e0161` pass under `**Run typesagg**`
-- [ ] Gate check passes: Quick
+- [x] `the_rows_of_h5_to_h7_type_check` and `a_method_outside_appendix_h_is_e0161` pass under `**Run typesagg**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

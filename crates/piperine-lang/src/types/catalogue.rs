@@ -140,6 +140,9 @@ impl Catalogue {
             Ty::F64 => F64_METHODS,
             Ty::UInt(_) | Ty::Int(_) => INTEGER_METHODS,
             Ty::Option(inner) => return Self::option(inner, name),
+            Ty::Array(element, _) => return Self::array(element, name),
+            Ty::Range { element, iterable } => return Self::range(element, *iterable, name),
+            Ty::Iterator { element, reversible } => return Self::iterator(element, *reversible, name),
             Ty::Bool => {
                 return match name {
                     "then" => Lookup::Payload(Method::Then),
@@ -147,11 +150,55 @@ impl Catalogue {
                     _ => Lookup::Absent,
                 };
             }
-            Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Struct(_) | Ty::Array(..) | Ty::Carrier { .. } | Ty::Event | Ty::Str | Ty::Never => return Lookup::Uncatalogued,
+            Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Struct(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str | Ty::Never => return Lookup::Uncatalogued,
         };
         match rows.iter().find(|r| r.name == name && (!r.signed_only || matches!(recv, Ty::Int(_)))) {
             Some(r) => Lookup::Row(r.method, r.params.iter().map(|a| a.ty(recv)).collect(), r.result.ty(recv)),
             None => Lookup::Absent,
+        }
+    }
+
+    /// The rows of `[T; N]` (Appendix H.5): every receiver, argument and result is a value.
+    fn array(element: &Ty, name: &str) -> Lookup {
+        let usize_ty = Ty::UInt(64);
+        let option = Ty::Option(Box::new(element.clone()));
+        match name {
+            "len" => Lookup::Row(Method::ArrayLen, vec![], usize_ty),
+            "is_empty" => Lookup::Row(Method::ArrayIsEmpty, vec![], Ty::Bool),
+            "iter" => Lookup::Row(Method::ArrayIter, vec![], Ty::Iterator { element: Box::new(element.clone()), reversible: true }),
+            "contains" => Lookup::Payload(Method::ArrayContains),
+            "first" => Lookup::Row(Method::ArrayFirst, vec![], option),
+            "last" => Lookup::Row(Method::ArrayLast, vec![], option),
+            "get" => Lookup::Row(Method::ArrayGet, vec![usize_ty], option),
+            _ => Lookup::Absent,
+        }
+    }
+
+    /// The rows of a range (Appendix H.6); an iterable range is also an iterator (H.7).
+    fn range(element: &Ty, iterable: bool, name: &str) -> Lookup {
+        match name {
+            "contains" => Lookup::Row(Method::RangeContains, vec![element.clone()], Ty::Bool),
+            "is_empty" => Lookup::Row(Method::RangeIsEmpty, vec![], Ty::Bool),
+            _ if iterable => Self::iterator(element, true, name),
+            _ => Lookup::Absent,
+        }
+    }
+
+    /// The rows of an iterator of `element` (Appendix H.7); `rev` only when `reversible` (rule 3).
+    fn iterator(element: &Ty, reversible: bool, name: &str) -> Lookup {
+        let iterator = |item: Ty, reversible: bool| Ty::Iterator { element: Box::new(item), reversible };
+        match name {
+            "map" => Lookup::Payload(Method::IteratorMap),
+            "filter" => Lookup::Payload(Method::IteratorFilter),
+            "fold" => Lookup::Payload(Method::IteratorFold),
+            "sum" => Lookup::Payload(Method::IteratorSum),
+            "zip" => Lookup::Payload(Method::IteratorZip),
+            "any" => Lookup::Payload(Method::IteratorAny),
+            "all" => Lookup::Payload(Method::IteratorAll),
+            "count" => Lookup::Row(Method::IteratorCount, vec![], Ty::UInt(64)),
+            "enumerate" => Lookup::Row(Method::IteratorEnumerate, vec![], iterator(Ty::Tuple(vec![Ty::UInt(64), element.clone()]), reversible)),
+            "rev" if reversible => Lookup::Row(Method::IteratorRev, vec![], iterator(element.clone(), true)),
+            _ => Lookup::Absent,
         }
     }
 

@@ -44,6 +44,14 @@ pub enum Ty {
     Struct(DeclId),
     /// `[T; N]`: `N` values of one type (§1.2.5).
     Array(Box<Ty>, u64),
+    /// The value of `a..b`, `a..=b`, `a..`, `..b` or `..=b` over one integer or float type (§1.5.11,
+    /// H.6). It cannot be written. `iterable` is true for an integer range with both bounds: only
+    /// that range is an iterator (H.6 rule 3).
+    Range { element: Box<Ty>, iterable: bool },
+    /// The iterator of `iter()`, a range or an adaptor (H.7). It cannot be written. `reversible`
+    /// is true when `rev` applies (H.7 rule 3): `iter()` of an array, an integer range, and the
+    /// `map`, `enumerate`, `zip` and `rev` of those.
+    Iterator { element: Box<Ty>, reversible: bool },
 }
 
 impl Ty {
@@ -68,6 +76,7 @@ impl Ty {
         match self {
             Ty::F64 | Ty::Bool | Ty::Unit | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Struct(_) | Ty::Str => true,
             Ty::Option(inner) | Ty::Array(inner, _) => inner.is_value(),
+            Ty::Range { element, .. } | Ty::Iterator { element, .. } => element.is_value(),
             Ty::Tuple(items) => items.iter().all(Ty::is_value),
             Ty::Fn(..) => true,
             Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Carrier { .. } | Ty::Event | Ty::Never => false,
@@ -140,6 +149,8 @@ impl Ty {
                 None => "struct".to_string(),
             },
             Ty::Array(element, length) => format!("[{}; {length}]", element.name(design)),
+            Ty::Range { element, .. } => format!("Range<{}>", element.name(design)),
+            Ty::Iterator { element, .. } => format!("Iterator<{}>", element.name(design)),
             Ty::Module(module) => match &design.decl_data(*module).name {
                 Some(n) => format!("module `{}`", n.text),
                 None => "module".to_string(),

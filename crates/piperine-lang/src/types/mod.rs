@@ -31,6 +31,7 @@ mod expr;
 mod flag_total;
 mod flow;
 mod intrinsic;
+mod iterators;
 mod lengths;
 mod literals;
 mod loops;

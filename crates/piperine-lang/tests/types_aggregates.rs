@@ -327,3 +327,54 @@ fn an_enum_deriving_default_is_refused() {
     let src = source("#[derive(Repr, Default)]\nenum Mode { Off, On }", "let m = Mode::Off;");
     assert_refused(&src, "E0180", "`Default`");
 }
+
+#[test]
+fn the_rows_of_h5_to_h7_type_check() {
+    // H.5 to H.7, every row by value (§1.4.6): an array's rows read a copy of it, `iter` yields `T`,
+    // `first`/`last`/`get` give `Option<T>`, `contains(x: T)`, a closure takes `T`; `for` reads an
+    // array's elements, a range and an adaptor chain (§1.8.9); `rev` only where H.7 rule 3 allows.
+    let body = "let a = [1u8, 2, 3]; \
+                let n = a.len(); let e = a.is_empty(); let has = a.contains(2); let f = a.first(); let l = a.last(); let g = a.get(1); \
+                let it = a.iter(); \
+                let doubled = a.iter().map(|x| x * 2); let big = a.iter().filter(|x| x > 1); \
+                let total = a.iter().fold(0, |acc, x| acc + x); let s = a.iter().sum(); let c = a.iter().count(); \
+                let z = a.iter().zip(a.iter()); let en = a.iter().enumerate(); let r = a.iter().rev(); \
+                let any = a.iter().any(|x| x == 3); let all = a.iter().all(|x| x > 0); \
+                let inside = (0u8..4).contains(2); let inclusive = (0.0..=1.0).contains(0.5); let empty = (3u8..3).is_empty(); \
+                let squares = (0u8..4).map(|k| k * k).rev(); let sum_range = (1u8..=3).sum(); \
+                for x in a { let y: u8 = x; } for x in a.iter().rev() { let y: u8 = x; } for (i, x) in a.iter().enumerate() { let k: usize = i; let y: u8 = x; } \
+                for x in (0u8..4).map(|k| k + 1) { let y: u8 = x; } for (p, q) in a.iter().zip(a.iter()) { let s: u8 = p + q; } for x in 0u8..3 { let y: u8 = x; }";
+    let src = source("", body);
+    let iterator = |element: Ty, reversible: bool| Ty::Iterator { element: Box::new(element), reversible };
+    let expected = [
+        ("n", Ty::UInt(64)), ("e", Ty::Bool), ("has", Ty::Bool), ("f", Ty::Option(Box::new(Ty::UInt(8)))), ("l", Ty::Option(Box::new(Ty::UInt(8)))), ("g", Ty::Option(Box::new(Ty::UInt(8)))),
+        ("it", iterator(Ty::UInt(8), true)), ("doubled", iterator(Ty::UInt(8), true)), ("big", iterator(Ty::UInt(8), false)),
+        ("total", Ty::UInt(8)), ("s", Ty::UInt(8)), ("c", Ty::UInt(64)),
+        ("z", iterator(Ty::Tuple(vec![Ty::UInt(8), Ty::UInt(8)]), true)), ("en", iterator(Ty::Tuple(vec![Ty::UInt(64), Ty::UInt(8)]), true)), ("r", iterator(Ty::UInt(8), true)),
+        ("any", Ty::Bool), ("all", Ty::Bool), ("inside", Ty::Bool), ("inclusive", Ty::Bool), ("empty", Ty::Bool),
+        ("squares", iterator(Ty::UInt(8), true)), ("sum_range", Ty::UInt(8)),
+    ];
+    for (name, ty) in expected {
+        assert_eq!(local_type(&src, name), ty, "{name}");
+    }
+    // H.7 rule 3: `rev` is refused after `filter`; `sum` needs an integer or a float element
+    assert_refused(&source("", "let r = [1u8, 2].iter().filter(|x| x > 1).rev();"), "E0161", "rev");
+    assert_refused(&source("", "let s = [true, false].iter().sum();"), "E0180", "an integer or a float element type");
+    // H.6 rule 3: a float range or a range without a bound is no iterator
+    assert_refused(&source("", "let m = (0.0..1.0).count();"), "E0161", "count");
+    // a closure takes the element by value: a wrong parameter use is the plain mismatch
+    assert_refused(&source("", "let m = [1u8, 2].iter().map(|x| x && true);"), "E0180", "bool");
+    // `contains` needs `PartialEq` of the element (H.8)
+    assert_refused(&source("struct P { x: f64 }", "let a = [P { x: 1.0 }]; let h = a.contains(P { x: 1.0 });"), "E0180", "`PartialEq`");
+}
+
+#[test]
+fn a_method_outside_appendix_h_is_e0161() {
+    // H rule 1: the catalogue of arrays, ranges and iterators is closed; `clone` is no method (§1.4.6).
+    for (receiver, method) in [("[1u8, 2]", "push(3)"), ("[1u8, 2]", "clone()"), ("[1u8, 2]", "sort()"), ("(0u8..3)", "len()"), ("[1u8, 2].iter()", "next()"), ("[1u8, 2].iter()", "collect()")] {
+        let found = outcome(&source("", &format!("let v = {receiver}.{method};")));
+        assert!(found.iter().any(|(code, message)| code == "E0161" && message.contains(method.split('(').next().unwrap_or(""))), "{receiver}.{method}: {found:?}");
+    }
+    // the element type is named in the message
+    assert_refused(&source("", "let v = [1u8, 2].push(3);"), "E0161", "[u8; 2]");
+}

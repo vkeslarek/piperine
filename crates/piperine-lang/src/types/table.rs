@@ -84,6 +84,44 @@ pub enum Method {
     Then,
     /// `c.then_some(v)` on a `bool`.
     ThenSome,
+    /// `a.len()` on an array (H.5).
+    ArrayLen,
+    /// `a.is_empty()` on an array.
+    ArrayIsEmpty,
+    /// `a.iter()`: the elements of an array as an iterator.
+    ArrayIter,
+    /// `a.contains(x)` on an array of a `PartialEq` type.
+    ArrayContains,
+    /// `a.first()` on an array: `Some` of element 0.
+    ArrayFirst,
+    /// `a.last()` on an array: `Some` of the last element.
+    ArrayLast,
+    /// `a.get(i)` on an array: `None` past the end.
+    ArrayGet,
+    /// `r.contains(x)` on a range (H.6).
+    RangeContains,
+    /// `r.is_empty()` on a range.
+    RangeIsEmpty,
+    /// `it.map(f)` on an iterator (H.7).
+    IteratorMap,
+    /// `it.filter(f)`.
+    IteratorFilter,
+    /// `it.fold(init, f)`.
+    IteratorFold,
+    /// `it.sum()` of an integer or float element type.
+    IteratorSum,
+    /// `it.count()`.
+    IteratorCount,
+    /// `it.zip(other)`.
+    IteratorZip,
+    /// `it.enumerate()`.
+    IteratorEnumerate,
+    /// `it.rev()` on a reversible iterator.
+    IteratorRev,
+    /// `it.any(f)`.
+    IteratorAny,
+    /// `it.all(f)`.
+    IteratorAll,
 }
 
 /// A method the checker treats as part of the language because it resolved to the stdlib's own
