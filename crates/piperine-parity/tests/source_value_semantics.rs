@@ -163,6 +163,18 @@ fn a_value_is_read_twice() {
 }
 
 #[test]
+fn an_enum_without_copy_is_carried_and_compared() {
+    // VS-05 AC 2 (§1.4.6, H.8): an enum that derives `Repr` and `PartialEq` and not `Clone` or `Copy` is carried
+    // on a signal, compared with `==` and copied into a second local, as before: `Mode::Run` is variant 1 of
+    // three, equal to its copy and not to `Mode::Hold`.
+    let committed = first_commits("enums.msl", &["m", "same", "differs"]);
+    let variant_run = 1u8;
+    assert_eq!(committed[0], byte(variant_run), "the carried enum is its variant");
+    assert_eq!(committed[1], byte((variant_run == variant_run) as u8), "a value equals its copy");
+    assert_eq!(committed[2], byte((variant_run == 2) as u8), "Run is not Hold");
+}
+
+#[test]
 fn a_string_is_passed_and_compared_by_value() {
     // VS-07 AC 1 (§1.2.9): a `str` is passed to a function, held by a `let` and a `const`, and compared with `==`
     // and `!=`; the comparison is the one Rust makes of the same two strings.

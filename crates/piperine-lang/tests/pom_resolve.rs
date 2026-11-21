@@ -69,7 +69,7 @@ fn the_core_rows_are_unchanged() {
         ("UInt", Type, "§1"), ("Int", Type, "§1"), ("Float", Type, "§1"), ("Option", Type, "§1"), ("Event", Type, "§13"), ("Analysis", Type, "§11.1"),
         ("Some", Variant, "§1"), ("None", Variant, "§1"), ("Dc", Variant, "§11.1.1"), ("Transient", Variant, "§11.1.1"), ("Ac", Variant, "§11.1.1"),
         ("Noise", Variant, "§11.1.1"), ("Static", Variant, "§11.1.1"),
-        ("Repr", Trait, "§2"), ("Nature", Trait, "§4"), ("Fn", Trait, "§3"), ("Clone", Trait, "App. H"), ("Copy", Trait, "App. H"),
+        ("Repr", Trait, "§2"), ("Nature", Trait, "§4"), ("Fn", Trait, "§3"),
         ("PartialEq", Trait, "App. H"), ("Eq", Trait, "App. H"), ("PartialOrd", Trait, "App. H"), ("Ord", Trait, "App. H"),
         ("Default", Trait, "App. H"), ("Debug", Trait, "App. H"), ("Hash", Trait, "App. H"),
         ("str", Type, "§1"), ("gnd", Node, "§6"), ("m", ImplicitParam, "§8.5"), ("dtemp", ImplicitParam, "§8.5"),
@@ -829,9 +829,9 @@ fn catalogue_traits_and_types_resolve() {
     let types = appendix_h_names("## H.9");
     assert!(traits.len() >= 7 && types.len() >= 6, "{traits:?} {types:?}");
     // A derive name resolves like a bound: to the trait row it names (D2).
-    let derived = build("#[derive(Default)]\nstruct S { a: f64 }\n#[derive(PartialOrd, Debug, Hash, Clone, Repr)]\nstruct U;\ntrait Mine {}\n#[derive(Mine)]\nstruct V;\n");
+    let derived = build("#[derive(Default)]\nstruct S { a: f64 }\n#[derive(PartialOrd, Debug, Hash, PartialEq, Repr)]\nstruct U;\ntrait Mine {}\n#[derive(Mine)]\nstruct V;\n");
     assert!(derived.diagnostics().is_empty(), "{:?}", derived.diagnostics());
-    for (item, want) in [("S", vec!["Default"]), ("U", vec!["PartialOrd", "Debug", "Hash", "Clone", "Repr"]), ("V", vec!["Mine"])] {
+    for (item, want) in [("S", vec!["Default"]), ("U", vec!["PartialOrd", "Debug", "Hash", "PartialEq", "Repr"]), ("V", vec!["Mine"])] {
         let decl = derived.find(item).unwrap();
         let attr = decl.attr("derive").unwrap();
         let got: Vec<_> = attr.paths().iter().map(|p| (p.segments()[0].name.text.clone(), p.segments()[0].res)).collect();
@@ -846,7 +846,7 @@ fn catalogue_traits_and_types_resolve() {
     }
     // Anything else is E0161 at the name: an unknown word, a type, a value.
     for name in ["Bogus", "Iterator", "Option", "PI"] {
-        let src = format!("#[derive(Clone, {name})]\nstruct S;\n");
+        let src = format!("#[derive(PartialEq, {name})]\nstruct S;\n");
         let bad = build(&src);
         let at = src.find(name).unwrap();
         let found: Vec<_> = bad.diagnostics().iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.span().start)).collect();
@@ -882,9 +882,6 @@ fn builtin_table_matches_appendix_h() {
     // Traits: Appendix H's list, plus the language's own `Repr`, `Nature` and `Fn`.
     let mut traits: BTreeSet<String> = appendix_h_names("## H.8").into_iter().collect();
     traits.extend(own(&["Repr", "Nature", "Fn"]));
-    // `Clone` and `Copy` left Appendix H with value semantics (G.71, H.8 rule 1) ahead of the
-    // built-in table (`GAPS.md` S7); the feature `value-semantics` drops both rows and this line.
-    traits.extend(own(&["Clone", "Copy"]));
     assert_eq!(rows(BuiltinKind::Trait), traits);
     // Types: every H.9 type has a row; the others are the sized families, `usize`/`isize`, `Event` and `Analysis`.
     let types = rows(BuiltinKind::Type);
@@ -983,7 +980,7 @@ fn unknown_repr_member_is_e0161() {
 #[test]
 fn member_through_a_builtin_bound_is_deferred() {
     use piperine_lang::pom::DeferReason;
-    let src = "trait Tr { fn run() {} }\nfn f<T: PartialOrd>(a: T) { T::foo; }\nfn g<T: Repr + Clone>(a: T) { T::foo; T::WIDTH; }\nfn h<T: Tr>() { T::run(); }\n";
+    let src = "trait Tr { fn run() {} }\nfn f<T: PartialOrd>(a: T) { T::foo; }\nfn g<T: Repr + PartialEq>(a: T) { T::foo; T::WIDTH; }\nfn h<T: Tr>() { T::run(); }\n";
     let design = build(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     let foo = resolutions(&design, "T::foo");

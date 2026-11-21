@@ -562,6 +562,10 @@ pub(super) fn path_diagnostic(design: &Design, segments: &[PathSegment], span: c
             if at == 0 && design.crates.iter().any(|c| c.name == *name) {
                 return diagnostic.with_help("name it under [dependencies] in Piperine.toml");
             }
+            // The names value semantics took out of the language (§1.4.6): nothing grants a copy.
+            if matches!(name.as_str(), "Clone" | "Copy" | "clone") {
+                return diagnostic.with_help(crate::msl::diag::COPY_HELP);
+            }
             diagnostic
         }
         WalkError::Private { at } => {

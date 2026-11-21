@@ -136,3 +136,42 @@ fn an_array_is_passed_as_itself() {
     assert_clean(&source(items, "let a = [1.0, 2.0, 3.0]; let b = first(a); let c = first([0.5; 3]); let m = [(1.0, true); 2];"));
     assert_refused(&source(items, "let a = [1.0, 2.0]; let b = first(a);"), "P0002", "[f64; 3]");
 }
+
+#[test]
+fn clone_and_copy_are_e0161_with_a_help() {
+    // VS-05 AC 1 (§1.4.6, H.8 rule 1): `Clone` and `Copy` are no names of the language; in a derive or a
+    // bound each is `E0161` at the name, and the help says every value is copied.
+    for src in [
+        "#[derive(Clone)]\nstruct S { a: f64 }\nmodule Top() { }",
+        "#[derive(Copy, PartialEq)]\nenum E { A, B }\nmodule Top() { }",
+        "fn f<T: Clone>(x: T) -> T { x }\nmodule Top() { }",
+        "fn f<T: Copy>(x: T) -> T { x }\nmodule Top() { }",
+    ] {
+        let design: Design = support::build(src);
+        let found: Vec<_> = design.diagnostics().iter().filter(|d| d.diagnostic.code == "E0161").collect();
+        assert_eq!(found.len(), 1, "{src}: {:?}", support::codes(&design));
+        let name = if src.contains("Clone") { "Clone" } else { "Copy" };
+        assert!(found[0].diagnostic.message.contains(name), "{src}: {}", found[0].diagnostic.message);
+        assert_eq!(found[0].diagnostic.help.as_deref(), Some("every value is copied; delete the name"), "{src}");
+    }
+}
+
+#[test]
+fn clone_as_a_method_is_e0161() {
+    // VS-05 AC 3 (§1.4.6): a value is copied where it is used, so `clone()` names no method: `E0161` naming
+    // the method and the type of the receiver.
+    for (items, body, ty) in [
+        ("", "let x = 1.0; let y = x.clone();", "f64"),
+        ("struct S { a: f64 }", "let s = S { a: 1.0 }; let t = s.clone();", "S"),
+        ("", "let a = [1.0, 2.0]; let b = a.clone();", "[f64; 2]"),
+    ] {
+        let src = source(items, body);
+        let design: Design = support::build(&src);
+        let found = Types::check(&design, "Top").expect_err(&src);
+        let found: Vec<_> = found.iter().filter(|d| d.diagnostic.code == "E0161").collect();
+        assert_eq!(found.len(), 1, "{src}");
+        let message = &found[0].diagnostic.message;
+        assert!(message.contains("`clone`") && message.contains(ty), "{message}");
+        assert_eq!(found[0].diagnostic.help.as_deref(), Some("every value is copied; delete the name"), "{src}");
+    }
+}

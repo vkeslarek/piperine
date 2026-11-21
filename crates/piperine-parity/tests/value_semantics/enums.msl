@@ -1,0 +1,27 @@
+//! An enum that derives `Repr` and `PartialEq` and no `Clone` or `Copy` (VS-05): it is carried on a signal,
+//! compared and copied into a second local, as every value is. The expected values are computed by Rust in
+//! `source_value_semantics.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(PartialEq, Repr)]
+enum Mode { Idle, Run, Hold }
+
+module Rows(in clk: Bit, out m: Bit<Mode>, out same: Bit<bool>, out differs: Bit<bool>) {}
+digital for Rows {
+    on clk.rise() {
+        let a = Mode::Run;
+        let b = a;
+        m <- a;
+        same <- a == b;
+        differs <- a == Mode::Hold;
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal m: Bit<Mode>; signal same: Bit<bool>; signal differs: Bit<bool>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, m, same, differs);
+}
