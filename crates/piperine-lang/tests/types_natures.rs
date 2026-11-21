@@ -126,6 +126,11 @@ fn a_flow_contribution_to_a_signal_flow_node_is_e0413() {
     assert_eq!(source.codes(), ["E0413"]);
     let source = Source::new("module Top(a: VSignal, o: VSignal) { }\nanalog for Top { v(o) +> 2.0 * v(a); }");
     source.checked();
+    // RN-08 AC 4: any flow contribution to such a node is `E0413`, spelled with another nature's
+    // access name (`i`) as well, which the POM would otherwise take for a probe of an access the
+    // nature lacks (`E0206`, reserved for reads).
+    let spelled = "module Top(a: VSignal, o: VSignal) { }\nanalog for Top { i(o) +> v(a); }";
+    assert_eq!(Source::design_codes(spelled), ["E0413"]);
 }
 
 #[test]
