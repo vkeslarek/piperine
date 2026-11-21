@@ -329,7 +329,9 @@ fn walk(
 
 /// The cycle of `fns` through the `RELAX` nets `nets` (abi.md §9 D1): those nets start at zero
 /// bytes, the functions run in order until no byte changes, at most `nets.len() + 1` passes; what
-/// still moves is zeroed where it has a known byte and a fault where it has none.
+/// still moves is zeroed where it has a known byte and a fault where it has none. A step that
+/// does not settle is one `Unsettled` observation naming every `RELAX` net of the step in name
+/// order (spec §8.2.3 step 4).
 fn relax(
     plan: &DigitalPlan,
     store: &mut Store,
@@ -412,9 +414,11 @@ fn relax(
                 }
             }
             store.write(*net, 0, &value);
-            obs.push(Observation::Unsettled { net: name.clone(), at });
             after[i] = value;
         }
+        let mut names: Vec<String> = nets.iter().map(|n| plan.nets[n.0 as usize].name.clone()).collect();
+        names.sort();
+        obs.push(Observation::Unsettled { nets: names, at });
     }
     // the run sees one change per net: from the value it had before the group, to the settled one
     for (i, net) in written.iter().enumerate() {

@@ -2,8 +2,11 @@
 //! §5.2.12; abi.md §9 D1 and its drive presence field, design D3): a relaxing cycle starts with
 //! every drive absent, stops within the drive count plus one passes, keeps no level of an earlier
 //! microstep once released, leaves an absent drive out of what `resolve` receives and passes an
-//! unknown one. The devices are stubs built on `ShapeBuf`: a driver writes the value and
-//! `driving`, a resolver reads `driving` per drive and folds the present ones.
+//! unknown one; a step that never settles is one `Unsettled` observation naming every `RELAX` net.
+//! The devices are stubs built on `ShapeBuf`: a driver writes the value and
+//! `driving`, a resolver reads `driving` per drive and folds the present ones. A step that never
+//! settles is one `Unsettled` observation naming every `RELAX` net of the step (RN-05 AC 4, below
+//! the language).
 
 #[path = "support/devices.rs"]
 #[allow(dead_code)] // each test target uses the devices it needs
@@ -21,7 +24,7 @@ use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef};
 use piperine_abi::thunk::module;
 use piperine_digital_solver::error::DigitalError;
 use piperine_digital_solver::net::NetId;
-use piperine_digital_solver::observe::Obs;
+use piperine_digital_solver::observe::{Obs, Observation};
 use piperine_digital_solver::plan::DigitalPlan;
 use piperine_digital_solver::run::{Ambient, DirtySet, run_functions, write_net};
 use piperine_digital_solver::store::Store;
@@ -235,6 +238,53 @@ impl Device for Resolver {
     }
 }
 
+/// An oscillator: drives the inverse of the level it reads, and high while that level is unknown.
+/// Two of them on one resolver never settle.
+///
+/// pins: a=0 (PORT BIT); y=1 (PORT DRIVE, RELAX).  fn 0 "flip": reads [a] writes [y]
+struct Oscillator;
+static OSCILLATOR_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static OSCILLATOR: OnceLock<Module> = OnceLock::new();
+
+impl Oscillator {
+    /// The shape every `Oscillator` shares.
+    fn shape() -> ShapeRef {
+        let mut s = ShapeBuf::new();
+        let a = s.pin(PinSpec::discrete("a", role::PORT, &BIT));
+        let y = s.pin(PinSpec { flags: pin_flag::RELAX, ..PinSpec::discrete("y", role::PORT, &DRIVE) });
+        s.function(FunctionSpec {
+            name: "flip",
+            reads: vec![Pins::cell(a)],
+            writes: vec![Pins::cell(y)],
+            ..FunctionSpec::default()
+        });
+        s.freeze()
+    }
+
+    /// A live instance.
+    fn handle() -> Handle {
+        Handle::create(OSCILLATOR.get_or_init(|| module::<Oscillator>("oscillator")), &[]).expect("a stub creates")
+    }
+}
+
+impl Device for Oscillator {
+    fn prototype() -> &'static Shape<'static> {
+        OSCILLATOR_SHAPE.get_or_init(Oscillator::shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Oscillator, Arc::clone(OSCILLATOR_SHAPE.get_or_init(Oscillator::shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let a = cx.bytes(0);
+        let level = if a[1] != 0 { a[0] == 0 } else { true };
+        cx.out_bytes(0).copy_from_slice(&Drive::present([level as u8, 1]));
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
 /// The relaxing loop under test: `res` resolves the drives `d0` (from a keeper reading the
 /// resolved level `v`, closing the loop) and `d1` (from an enabled driver outside the loop) into `v`.
 struct Loop {
@@ -248,11 +298,25 @@ struct Loop {
 impl Loop {
     /// The loop bound by net name; `d1` is driven by a `Driver` reading nets `en` and `a`.
     fn new() -> Loop {
-        let devices: Vec<Placed<'_>> = vec![
+        Loop::of(vec![
             ("res", Resolver::handle(), vec![("d0", "d0"), ("d1", "d1"), ("v", "v")]),
             ("keep", Keeper::handle(), vec![("a", "v"), ("y", "d0")]),
             ("src", Driver::handle(), vec![("en", "en"), ("a", "a"), ("y", "d1")]),
-        ];
+        ])
+    }
+
+    /// Two oscillators on one resolver, their drive nets named `zeta` and `alpha` (bound in that
+    /// order, so the name order of an observation differs from the bind order).
+    fn oscillating() -> Loop {
+        Loop::of(vec![
+            ("res", Resolver::handle(), vec![("d0", "zeta"), ("d1", "alpha"), ("v", "v")]),
+            ("osc0", Oscillator::handle(), vec![("a", "v"), ("y", "zeta")]),
+            ("osc1", Oscillator::handle(), vec![("a", "v"), ("y", "alpha")]),
+        ])
+    }
+
+    /// The loop of `devices`, bound by net name.
+    fn of(devices: Vec<Placed<'_>>) -> Loop {
         let plan = bind_by_name(devices, Resolution::default()).expect("the loop binds");
         let store = Store::new(&plan.nets);
         let dirty = DirtySet::none(&plan);
@@ -354,4 +418,19 @@ fn an_absent_drive_is_left_out_and_an_unknown_one_is_passed() {
     let counts = Received::counts();
     assert_eq!(counts[before], 1, "an unknown drive is present, so it is passed: {counts:?}");
     assert_eq!(unknown.value("v"), [0, 0], "and it makes the level unknown");
+}
+
+#[test]
+fn an_unsettled_step_is_one_observation_naming_every_relax_net() {
+    // §8.2.3 step 4: a step still moving after its last pass is one observation, not one per
+    // net, and it names every `RELAX` net of the step in name order (design C9).
+    let mut run = Loop::oscillating();
+    run.dirty = DirtySet::all(&run.plan);
+    run.run().expect("an unsettled loop is not an error");
+    let unsettled: Vec<&Observation> =
+        run.obs.list().iter().filter(|o| matches!(o, Observation::Unsettled { .. })).collect();
+    assert_eq!(unsettled.len(), 1, "one observation for the step: {:?}", run.obs.list());
+    let Observation::Unsettled { nets, .. } = unsettled[0] else { unreachable!("filtered on Unsettled") };
+    assert_eq!(nets, &["alpha", "zeta"], "every RELAX net of the step, in name order");
+    assert_eq!(run.value("v"), [0, 0], "the moving level is unknown");
 }

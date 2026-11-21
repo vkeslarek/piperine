@@ -188,7 +188,7 @@ fn a_moving_known_field_is_zeroed_and_observed() {
     assert_eq!(e.value("d"), [0, 0], "zeroed: no value");
     assert_eq!(e.value("v"), [0, 0]);
     let unsettled: Vec<&Observation> =
-        e.obs.list().iter().filter(|o| matches!(o, Observation::Unsettled { net, .. } if net == "d")).collect();
+        e.obs.list().iter().filter(|o| matches!(o, Observation::Unsettled { nets, .. } if nets == &["d"])).collect();
     assert_eq!(unsettled.len(), 1, "one observation naming d: {:?}", e.obs.list());
 }
 

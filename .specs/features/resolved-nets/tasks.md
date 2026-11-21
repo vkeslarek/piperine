@@ -321,9 +321,9 @@ T34 → T35 → T36
 
 **Done when**:
 
-- [ ] `an_unsettled_step_is_one_observation_naming_every_relax_net` passes under `**Run relax**`
-- [ ] Code clarity: the variant's doc cites §8.2.3 step 4 and abi.md D1
-- [ ] Gate check passes: Full
+- [x] `an_unsettled_step_is_one_observation_naming_every_relax_net` passes under `**Run relax**`
+- [x] Code clarity: the variant's doc cites §8.2.3 step 4 and abi.md D1
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
