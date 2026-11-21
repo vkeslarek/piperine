@@ -1865,7 +1865,7 @@ impl<'a> Checker<'a> {
             }
             Expr::LevelCast { expr, to, tags } => {
                 if first {
-                    let want = self.ty(*expr).and_then(|t| Typing::level_cast(t, to, tags.is_some()));
+                    let want = self.ty(*expr).and_then(|t| Typing::level_cast(t, to, tags.is_some(), &self.ir.types));
                     self.typed(w, &origin, ty, want, "`cast`");
                 }
                 next.push(Task::Expr(*expr, ctx));

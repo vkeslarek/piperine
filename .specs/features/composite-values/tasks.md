@@ -1188,9 +1188,9 @@ T63
 
 **Done when**:
 
-- [ ] `every_reached_struct_and_enum_is_one_arena_type` passes under `**Run elabagg**`
-- [ ] Every buck target passes with unchanged assertions
-- [ ] Gate check passes: Full
+- [x] `every_reached_struct_and_enum_is_one_arena_type` passes under `**Run elabagg**`
+- [x] Every buck target passes with unchanged assertions
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

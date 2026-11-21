@@ -125,6 +125,8 @@ pub(super) struct Checker<'d> {
     pub(super) layouts: BTreeMap<DeclId, Vec<super::aggregate::FieldType>>,
     /// The enums whose variants are typed (`enums.rs`).
     pub(super) declared: BTreeSet<DeclId>,
+    /// The tag of each enum declared so far.
+    pub(super) enum_tags: BTreeMap<DeclId, super::enums::EnumTag>,
     /// The structs and enums whose fields are being typed: meeting one again is a type that
     /// contains itself (§1.3.8).
     pub(super) declaring: BTreeSet<DeclId>,
@@ -180,6 +182,7 @@ impl<'d> Checker<'d> {
             call_expected: None,
             layouts: BTreeMap::new(),
             declared: BTreeSet::new(),
+            enum_tags: BTreeMap::new(),
             declaring: BTreeSet::new(),
             broken: BTreeSet::new(),
             queued: BTreeSet::new(),
@@ -218,7 +221,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, written: self.written, continuous, emits, assigned: self.places.into_assigned() })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, continuous, emits, assigned: self.places.into_assigned() })
     }
 
     /// Run `body` with `context` as the place being checked, then restore the one outside.

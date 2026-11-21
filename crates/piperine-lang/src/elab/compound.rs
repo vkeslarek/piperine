@@ -1,8 +1,10 @@
 //! Compound values lowered to nodes the IR already has (design "From a source form to IR nodes
 //! the contract already has").
 //!
-//! - An enum of `V` unit variants is its tag (§2 rule 5): `UInt<ceil(log2 V)>`, variant `k` (in
-//!   declaration order, from 0) the literal `k`. No IR type names the enum.
+//! - An enum is an IR enum of the type arena (`types.rs`): a unit variant is `VariantOf`, the
+//!   constant evaluator names a unit variant by its position `k` in declaration order, and a
+//!   `match` arm over it tests `IsVariant` (or compares with the variant when the subject may be
+//!   unknown).
 //! - A `match` is an `if` chain over its scrutinee, read once: bound to a local unless it already
 //!   is a local, a param or a literal. In code that has no local (a drive) the scrutinee is read
 //!   again at each test: an expression of the IR has no effect, so the value is the same. Each
@@ -53,21 +55,9 @@ impl EnumLayout {
         EnumLayout { variants }
     }
 
-    /// `ceil(log2 V)`: 0 for an enum of one variant, whose tag has no level.
-    pub(super) fn width(&self) -> u32 {
-        let v = self.variants.len().max(1) as u64;
-        u64::BITS - (v - 1).leading_zeros()
-    }
-
     /// The tag of every variant, in declaration order: the patterns a cast to the enum decodes.
     pub(super) fn tags(&self) -> Vec<i128> {
         (0..self.variants.len() as i128).collect()
-    }
-
-    /// The tag's IR type; `None` for an enum of one variant.
-    pub(super) fn ty(&self) -> Option<ValueType> {
-        let width = self.width();
-        (width > 0).then_some(ValueType::UInt(width))
     }
 
     /// Whether the enum `decl` writes a discriminant or a `#[repr]`: its integer value is then not the
@@ -255,6 +245,8 @@ impl Elaboration<'_, '_> {
             ValueType::F64 => Expr::Real(piperine_ir::Real::new(0.0)),
             ValueType::Bool => Expr::Bool(false),
             ValueType::UInt(_) | ValueType::Int(_) => Expr::Int(0),
+            // the default of an enum is its first variant (the generated `Default`)
+            ValueType::Enum(id) => Expr::VariantOf { ty: *id, variant: 0, fields: Vec::new() },
             _ => return None,
         };
         Some(self.emit(kind, ty.clone(), origin))

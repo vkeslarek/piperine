@@ -12,6 +12,16 @@ use super::aggregate::FieldType;
 use super::check::Checker;
 use super::Ty;
 
+/// The tag of a declared enum (§2 rule 5, §1.3.7): its width in levels and the discriminant of each
+/// variant, in declaration order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumTag {
+    /// The number of levels of the tag: `N` of `#[repr(uN)]`, else `ceil(log2 V)`, zero for one variant.
+    pub tag_levels: u32,
+    /// The discriminant of every variant, in declaration order.
+    pub discriminants: Vec<i128>,
+}
+
 impl Checker<'_> {
     /// The type of the enum `decl` named at `span` of `file`: [`Ty::Enum`] when its variants and
     /// their fields are typed, else a diagnostic and `None` (a generic enum or one without
@@ -121,6 +131,10 @@ impl Checker<'_> {
                 ok = false;
             }
             taken.push((value, name));
+        }
+        if ok {
+            let discriminants = taken.iter().map(|(value, _)| *value as i128).collect();
+            self.enum_tags.insert(decl, EnumTag { tag_levels: levels, discriminants });
         }
         ok
     }

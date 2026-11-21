@@ -344,7 +344,10 @@ impl TypeItems<'_> {
         t.line("}");
         t.line(&format!("fn from_levels(words: &rt::flag::LevelWords) -> {head} {{"));
         t.indented(|t| {
-            t.line(&format!("let payload = words.slice({tag_levels}, Self::LEVELS - {tag_levels});"));
+            // an enum whose variants have no fields has no payload to read
+            if shapes.iter().any(|(variant, _)| !variant.fields.is_empty()) {
+                t.line(&format!("let payload = words.slice({tag_levels}, Self::LEVELS - {tag_levels});"));
+            }
             t.line(&format!("match words.slice(0, {tag_levels}).low() {{"));
             t.indented(|t| {
                 for (variant, shape) in &shapes {

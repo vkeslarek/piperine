@@ -93,11 +93,16 @@ fn carriers_follow_ports_then_signals() {
     assert_eq!(adc.carriers().iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["sample", "code", "done"]);
     assert_eq!(read.carriers("Adc")[1].3, Some(Constant::Int(0)), "`out code: Bit<u10> = 0`");
     assert_eq!(read.carriers("Adc")[2].3, Some(Constant::Bool(false)), "`out done: Bit = false`");
-    // An initial value is folded (§5.2.3): over `const`s and operators, an enum variant as its tag.
+    // An initial value is folded (§5.2.3): over `const`s and operators, an enum variant as a composite
+    // constant of the variant (the enum is an IR enum since composite-values T48, `Mode::Hold` is variant 2).
     let src = "const K: u8 = 2 + 3;\n#[derive(Repr, PartialEq)]\nenum Mode { Off, On, Hold }\nmodule Top() { signal k: Bit<u8> = K * 2; signal m: Bit<Mode> = Mode::Hold; signal x: Bit<f64> = 0.5 * 3.0; }";
     let ir = Elab::ir(src, "Top");
     let read = Read { ir: &ir };
-    assert_eq!(read.carriers("Top").iter().map(|c| (c.2.clone(), c.3)).collect::<Vec<_>>(), [(ValueType::UInt(8), Some(Constant::Int(10))), (ValueType::UInt(2), Some(Constant::Int(2))), (ValueType::F64, Some(Constant::Real(piperine_ir::Real::new(1.5))))]);
+    let carriers = read.carriers("Top");
+    assert_eq!(carriers.iter().map(|c| c.2.clone()).collect::<Vec<_>>(), [ValueType::UInt(8), ValueType::Enum(piperine_ir::TypeId(0)), ValueType::F64]);
+    assert_eq!(carriers[0].3, Some(Constant::Int(10)));
+    assert!(matches!(carriers[1].3, Some(Constant::Aggregate(id)) if ir.aggregate(id).variant == Some(2)), "`Mode::Hold` is the variant 2: {:?}", carriers[1].3);
+    assert_eq!(carriers[2].3, Some(Constant::Real(piperine_ir::Real::new(1.5))));
     // One that reads a param is folded per body variant (AS-15 AC 1; it was `P0001` before `analog-structure`
     // T34): the param is structural and the variant `Top~r=1.0` holds the value of `r`.
     let ir = Elab::ir("module Top() { r: f64 = 1.0; signal x: Bit<f64> = r; }", "Top");

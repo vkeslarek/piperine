@@ -51,9 +51,9 @@ impl Flag {
     }
 
     /// `base`, flagged when this is `Flagged` and the base is a scalar a flag can ride on
-    /// (`bool`, `f64`, an integer): the IR's own rule (`piperine_ir` typing, `Typing::flag`).
+    /// (`bool`, `f64`, an integer, an enum): the IR's own rule (`piperine_ir` typing, `Typing::flag`).
     pub(super) fn wrap(self, base: ValueType) -> ValueType {
-        let scalar = matches!(base, ValueType::Bool | ValueType::F64) || base.is_integer();
+        let scalar = matches!(base, ValueType::Bool | ValueType::F64 | ValueType::Enum(_)) || base.is_integer();
         if self == Flag::Flagged && scalar { ValueType::Flagged(Box::new(base)) } else { base }
     }
 }

@@ -112,13 +112,13 @@ impl Scope {
 }
 
 /// The IR type of a type of the subset.
-pub(super) struct ValueTypes<'d> {
-    pub(super) design: &'d crate::pom::Design,
+pub(super) struct ValueTypes<'a> {
+    pub(super) arena: &'a super::types::TypeArena,
 }
 
 impl ValueTypes<'_> {
     /// `None` for a type no value has in the IR: a node, a module, an `Option` (a pair of values,
-    /// msl-digital T27), an enum of one variant (its tag has no level).
+    /// msl-digital T27).
     pub(super) fn of(&self, ty: &Ty) -> Option<ValueType> {
         match ty {
             Ty::F64 => Some(ValueType::F64),
@@ -126,13 +126,13 @@ impl ValueTypes<'_> {
             Ty::Unit => Some(ValueType::Unit),
             Ty::UInt(n) => Some(ValueType::UInt(u32::from(*n))),
             Ty::Int(n) => Some(ValueType::Int(u32::from(*n))),
-            // §2 rule 5: an enum of unit variants is its tag.
-            Ty::Enum(decl) => EnumLayout::of(self.design, *decl).ty(),
             Ty::Fn(params, ret) => {
                 let params: Option<Vec<ValueType>> = params.iter().map(|p| self.of(p)).collect();
                 Some(ValueType::Fn(params?, Box::new(self.of(ret)?)))
             }
-            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Option(_) | Ty::Tuple(_) | Ty::Struct(_) | Ty::Array(..) | Ty::Carrier { .. } | Ty::Event | Ty::Str | Ty::Never | Ty::Range { .. } | Ty::Iterator { .. } => None,
+            // A struct, an enum, a tuple and an array are the arena's entries and their composition.
+            Ty::Struct(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Array(..) => self.arena.of(ty, |part| self.of(part)),
+            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Option(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str | Ty::Never | Ty::Range { .. } | Ty::Iterator { .. } => None,
         }
     }
 }
@@ -182,7 +182,7 @@ impl Elaboration<'_, '_> {
 
     /// The IR type of a type of the subset; `None` when no value has it in the IR.
     pub(super) fn value_type(&self, ty: &Ty) -> Option<ValueType> {
-        ValueTypes { design: self.design }.of(ty)
+        ValueTypes { arena: &self.type_arena }.of(ty)
     }
 
     /// Add an expression to the IR, remembering its type (the builder does not hand it back) and
@@ -226,11 +226,7 @@ impl Elaboration<'_, '_> {
             other => other.and_then(|t| self.value_type(t)),
         };
         let Some(ty) = ty else {
-            let what = match self.types.ty(expr) {
-                Some(Ty::Enum(_)) => "a value of an enum of one variant, whose tag has no level",
-                _ => "an expression the type checker gave no value type",
-            };
-            self.unsupported(file, node.span, what);
+            self.unsupported(file, node.span, "an expression the type checker gave no value type");
             return None;
         };
         // An event read as a `bool` is `fired(k)` (§13 rules 2 and 9, `event_reads.rs`).
@@ -658,6 +654,8 @@ impl Elaboration<'_, '_> {
         match value {
             Constant::Real(r) => self.emit(Expr::Real(r), ValueType::F64, origin),
             Constant::Bool(b) => self.emit(Expr::Bool(b), ValueType::Bool, origin),
+            // A unit variant is folded to its position among the enum's variants.
+            Constant::Int(v) if let ValueType::Enum(id) = ty => self.emit(Expr::VariantOf { ty: id, variant: v as u32, fields: Vec::new() }, ty, origin),
             Constant::Int(v) => self.emit(Expr::Int(v), ty, origin),
             // The const evaluator builds no composite constant before the aggregate lowering; a
             // composite folded value reaching here would be a lowering bug, never user input.
@@ -688,10 +686,10 @@ impl Elaboration<'_, '_> {
                     None
                 }
             },
-            // A unit variant is its tag (§2 rule 5).
-            DeclKind::Variant(_) => match EnumLayout::variant_tag(self.design, decl) {
-                Some(tag) => Some(self.emit(Expr::Int(tag), ty, origin)),
-                None => {
+            // A unit variant is a value of its enum (§1.3.5).
+            DeclKind::Variant(_) => match (EnumLayout::variant_tag(self.design, decl), &ty) {
+                (Some(position), ValueType::Enum(id)) => Some(self.emit(Expr::VariantOf { ty: *id, variant: position as u32, fields: Vec::new() }, ty, origin)),
+                _ => {
                     self.unsupported(scope.file, node.span, "a variant outside its enum");
                     None
                 }

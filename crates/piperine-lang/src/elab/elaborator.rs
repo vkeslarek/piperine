@@ -101,6 +101,8 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) cycles: CallCycles,
     /// The templates the params of module type hold (`templates.rs`).
     pub(super) templates: super::templates::Templates,
+    /// The IR type each reached struct and enum has (`types.rs`).
+    pub(super) type_arena: super::types::TypeArena,
     pub(super) diagnostics: Vec<DesignDiagnostic>,
 }
 
@@ -135,6 +137,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             looped: BTreeMap::new(),
             cycles: CallCycles::default(),
             templates: super::templates::Templates::default(),
+            type_arena: super::types::TypeArena::default(),
             diagnostics: Vec::new(),
         }
     }
@@ -148,6 +151,7 @@ impl<'d, 't> Elaboration<'d, 't> {
         let reached: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(&self.design.decl_data(*d).kind, DeclKind::Module(_))).collect();
         let modules: Vec<DeclId> = reached.iter().copied().filter(|d| !self.is_hoisted(*d)).collect();
         self.read_included_files();
+        self.build_type_arena();
         self.plan_params(&modules);
         self.classify_key_params(&modules);
         // An unkeyed module keeps the id of its place in first-reach order; a keyed module's

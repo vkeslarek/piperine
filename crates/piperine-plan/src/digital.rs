@@ -225,6 +225,21 @@ impl CarrierLayout {
         }
     }
 
+    /// The layout of a carrier holding `ty` in the design `ir`: [`of`](Self::of) the scalar the pin holds
+    /// for it (`Ir::carried`: an enum without fields is its tag).
+    pub fn in_ir(ir: &Ir, ty: &ValueType) -> Option<&'static Layout<'static>> {
+        Self::of(&ir.carried(ty))
+    }
+
+    /// [`bytes`](Self::bytes) of a value of `ty` in the design `ir`: an enum constant is its
+    /// discriminant held as the tag.
+    pub fn bytes_in(ir: &Ir, ty: &ValueType, value: Constant) -> Option<Vec<u8>> {
+        match ir.discriminant(ty, value) {
+            Some(tag) => Self::bytes(&ir.carried(ty), Constant::Int(tag)),
+            None => Self::bytes(ty, value),
+        }
+    }
+
     /// The canonical bytes of `value` held as `ty` (abi.md P3): the value little-endian at
     /// offset 0, the known byte 1, padding 0. `None` when `value` is not a value of `ty`.
     pub fn bytes(ty: &ValueType, value: Constant) -> Option<Vec<u8>> {
@@ -268,10 +283,21 @@ impl RecordLayout {
     /// The layout of `stream`'s pin; `None` when a field holds a type no carrier holds
     /// (`check()` refuses it).
     pub fn of(stream: &Stream) -> Option<RecordLayout> {
+        Self::laid_out(stream, |ty| ty.clone())
+    }
+
+    /// [`of`](Self::of) in the design `ir`: a field holding an enum without fields is laid out as
+    /// its tag.
+    pub fn in_ir(ir: &Ir, stream: &Stream) -> Option<RecordLayout> {
+        Self::laid_out(stream, |ty| ir.carried(ty))
+    }
+
+    /// The layout of `stream`'s pin with each field laid out as the scalar `carried` gives for its type.
+    fn laid_out(stream: &Stream, carried: impl Fn(&ValueType) -> ValueType) -> Option<RecordLayout> {
         let (mut end, mut align) = (0u32, 1u32);
         let mut fields = Vec::with_capacity(stream.fields.len());
         for f in &stream.fields {
-            let layout = CarrierLayout::of(&f.ty)?;
+            let layout = CarrierLayout::of(&carried(&f.ty))?;
             let offset = end.next_multiple_of(layout.align);
             fields.push((offset, layout));
             end = offset + layout.size;
@@ -315,11 +341,11 @@ impl Digital {
         let first = s.shape().pins.len() as u32;
         for (i, c) in body.carriers().iter().enumerate() {
             let at = format!("{}:{}:{}", c.origin.file, c.origin.line, c.origin.col);
-            let Some(layout) = CarrierLayout::of(&c.ty) else {
+            let Some(layout) = CarrierLayout::in_ir(body.ir(), &c.ty) else {
                 panic!("body {}: carrier {} at {at} holds {}, which no pin holds; check() refuses it", body.name(), c.name, c.ty)
             };
             let init = match c.init {
-                Some(value) => CarrierLayout::bytes(&c.ty, value).unwrap_or_else(|| {
+                Some(value) => CarrierLayout::bytes_in(body.ir(), &c.ty, value).unwrap_or_else(|| {
                     panic!("body {}: carrier {} at {at}: initial value {value:?} is not a value of {}; check() refuses it", body.name(), c.name, c.ty)
                 }),
                 None => Vec::new(),
@@ -460,7 +486,7 @@ impl Digital {
             .map(|d| {
                 d.after?;
                 let name = Self::carrier_name(body, d.carrier);
-                let layout = body.carriers().get(d.carrier as usize).and_then(|c| CarrierLayout::of(&c.ty))?;
+                let layout = body.carriers().get(d.carrier as usize).and_then(|c| CarrierLayout::in_ir(body.ir(), &c.ty))?;
                 let at = Self::at(&d.origin);
                 let value = s.pin(PinSpec { origin: &at, ..PinSpec::discrete(&format!("drive:{name}.now"), role::PRIVATE, layout) });
                 let event = s.pin(PinSpec { origin: &at, ..PinSpec::event(&format!("drive:{name}.changed"), role::PRIVATE) });
@@ -545,7 +571,7 @@ impl Digital {
         body.streams()
             .iter()
             .map(|stream| {
-                let Some(record) = RecordLayout::of(stream) else {
+                let Some(record) = RecordLayout::in_ir(body.ir(), stream) else {
                     panic!("body {}: stream {} holds a field no pin holds; check() refuses it", body.name(), stream.name)
                 };
                 let fields = record.abi_fields(stream);
@@ -717,12 +743,12 @@ impl Digital {
             .map(|st| {
                 let (pin, len) = match st.target {
                     Target::Carrier(c) => {
-                        (pins.carrier(c), body.carriers().get(c as usize).and_then(|x| CarrierLayout::of(&x.ty)).map_or(0, |l| l.size))
+                        (pins.carrier(c), body.carriers().get(c as usize).and_then(|x| CarrierLayout::in_ir(body.ir(), &x.ty)).map_or(0, |l| l.size))
                     }
                     Target::EventPin(k) => (pins.events.get(k as usize).copied().unwrap_or(GROUND), 0),
                     Target::Timer(k) => (pins.timer(k), 0),
                     Target::Record(r) => {
-                        (pins.record(r), body.streams().get(r as usize).and_then(RecordLayout::of).map_or(0, |l| l.size))
+                        (pins.record(r), body.streams().get(r as usize).and_then(|stream| RecordLayout::in_ir(body.ir(), stream)).map_or(0, |l| l.size))
                     }
                     _ => (GROUND, 0),
                 };

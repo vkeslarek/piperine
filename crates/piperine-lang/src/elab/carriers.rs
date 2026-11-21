@@ -134,7 +134,7 @@ impl Elaboration<'_, '_> {
         };
         let ty = self.carried_type(decl)?;
         let init = match init {
-            Some(expr) => self.carrier_init(expr, frame)?,
+            Some(expr) => self.carrier_init(expr, frame)?.map(|value| self.ir_constant(value, &ty)),
             None => None,
         };
         let name = format!("{}{name}", self.frames[frame].prefix);

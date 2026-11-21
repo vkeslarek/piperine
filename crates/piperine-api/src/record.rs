@@ -80,7 +80,7 @@ impl Streams {
             for stream in instance.body().streams() {
                 // `check()` refuses a stream field no carrier holds, so every checked stream has
                 // a layout
-                if let Some(layout) = RecordLayout::of(stream) {
+                if let Some(layout) = RecordLayout::in_ir(&ir, stream) {
                     pins.insert(format!("{}.{}", instance.path(), stream.name), (instance.path().to_string(), stream.clone(), layout));
                 }
             }
@@ -156,7 +156,7 @@ impl Streams {
             let f = stream.fields.get(field as usize).ok_or_else(|| refused(format!("no value field {field}")))?;
             let (offset, carrier) = layout.fields[field as usize];
             let slice = &bytes[offset as usize..(offset + carrier.size) as usize];
-            Ok((f.name.clone(), Field::of(Cell::decode(&f.ty, slice)?)))
+            Ok((f.name.clone(), Field::of(Cell::decode(&self.ir.carried(&f.ty), slice)?)))
         };
         // `maybe` is always known (§19 rule 1); a clear known byte, which no run writes, reads as
         // not maybe rather than as a guess

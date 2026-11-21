@@ -67,7 +67,7 @@ impl Probe {
                 return Ok(Probe::Node { id: NodeIdentifier::Anonymous(node.id().index()), path });
             }
             if let Some(net) = ir.net_at(&path) {
-                return Ok(Probe::Net { ty: net.ty().clone(), path });
+                return Ok(Probe::Net { ty: ir.carried(net.ty()), path });
             }
             if ir.is_ground_alias(&path) {
                 let why = "a fixed zero-potential branch joins it to ground, so it has no unknown of its own: its potential is 0";

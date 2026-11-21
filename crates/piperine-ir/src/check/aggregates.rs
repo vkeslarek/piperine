@@ -288,7 +288,7 @@ impl Checker<'_> {
 
     /// Whether `kind` is an operator with an aggregate operand.
     pub(super) fn operates_on_aggregates(&self, kind: &Expr) -> bool {
-        matches!(kind, Expr::Binary { lhs, rhs, .. } if [lhs, rhs].iter().any(|e| self.ty(**e).is_some_and(Checker::is_aggregate)))
+        matches!(kind, Expr::Binary { lhs, rhs, .. } if [lhs, rhs].iter().any(|e| self.ty(**e).is_some_and(|t| Checker::is_aggregate(Typing::base(t)))))
     }
 
     /// A comparison of aggregates (§1.3.10): `==` and `!=` need `PartialEq`, `<`, `<=`, `>` and `>=`
@@ -298,8 +298,10 @@ impl Checker<'_> {
         let Expr::Binary { op, lhs, rhs } = &data.kind else { return };
         let origin = data.origin.clone();
         if first {
-            self.own(w, &origin, &data.ty, &ValueType::Bool);
-            if let (Some(l), Some(r)) = (self.ty(*lhs), self.ty(*rhs)) {
+            // An enum value that may be unknown compares to a value that may be unknown (§3.3.2).
+            let unknown = [lhs, rhs].iter().any(|e| self.ty(**e).is_some_and(Typing::flagged));
+            self.own(w, &origin, &data.ty, &Typing::flag(ValueType::Bool, unknown));
+            if let (Some(l), Some(r)) = (self.ty(*lhs).map(Typing::base), self.ty(*rhs).map(Typing::base)) {
                 let needed = match op {
                     BinaryOp::Eq | BinaryOp::Ne => Some(Trait::PartialEq),
                     BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => Some(Trait::PartialOrd),

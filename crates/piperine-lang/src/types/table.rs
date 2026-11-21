@@ -189,6 +189,10 @@ pub struct Types<'d> {
     pub(super) widths: BTreeMap<ExprId, u32>,
     /// The type `T` of each `T::default()` call of the reachable set (H.8 rule 4).
     pub(super) defaults: BTreeMap<ExprId, Ty>,
+    /// The typed fields of every struct and every enum variant the check reached.
+    pub(super) layouts: BTreeMap<DeclId, Vec<super::FieldType>>,
+    /// The tag of every enum the check reached.
+    pub(super) enum_tags: BTreeMap<DeclId, super::EnumTag>,
     pub(super) written: BTreeMap<TypeId, Ty>,
     pub(super) continuous: BTreeSet<ExprId>,
     pub(super) emits: BTreeMap<DeclId, BTreeSet<String>>,
@@ -198,7 +202,7 @@ pub struct Types<'d> {
 
 impl PartialEq for Types<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.bindings == other.bindings && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins && self.event_reads == other.event_reads && self.widths == other.widths && self.defaults == other.defaults && self.written == other.written && self.continuous == other.continuous && self.emits == other.emits && self.assigned == other.assigned
+        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.bindings == other.bindings && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins && self.event_reads == other.event_reads && self.widths == other.widths && self.defaults == other.defaults && self.layouts == other.layouts && self.enum_tags == other.enum_tags && self.written == other.written && self.continuous == other.continuous && self.emits == other.emits && self.assigned == other.assigned
     }
 }
 
@@ -273,6 +277,30 @@ impl<'d> Types<'d> {
     /// default of `T`. `None` for any other expression.
     pub fn default_of(&self, expr: ExprId) -> Option<&Ty> {
         self.defaults.get(&expr)
+    }
+
+    /// The structs and enums the check reached, in declaration order of the design: the types a
+    /// value of the design may have.
+    pub fn aggregate_types(&self) -> Vec<DeclId> {
+        let structs = self.layouts.keys().copied().filter(|d| matches!(self.design.decl_data(*d).kind, crate::pom::DeclKind::Struct(_)));
+        let mut all: Vec<DeclId> = structs.chain(self.enum_tags.keys().copied()).collect();
+        all.sort();
+        all
+    }
+
+    /// The typed fields of the struct or enum variant `owner`, in declaration order.
+    pub fn fields(&self, owner: DeclId) -> Option<&[super::FieldType]> {
+        self.layouts.get(&owner).map(Vec::as_slice)
+    }
+
+    /// The tag of the enum `decl`.
+    pub fn enum_tag(&self, decl: DeclId) -> Option<&super::EnumTag> {
+        self.enum_tags.get(&decl)
+    }
+
+    /// Whether the struct or enum `decl` writes `#[derive(.., name, ..)]`.
+    pub fn derives(&self, decl: DeclId, name: &str) -> bool {
+        super::derives::DerivedTrait::is_listed(self.design, decl, name)
     }
 
     /// Whether an expression of the reachable set is discrete or continuous (part III §8.2);

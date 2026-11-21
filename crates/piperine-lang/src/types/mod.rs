@@ -46,6 +46,8 @@ mod table;
 mod ty;
 pub(crate) mod unsupported;
 
+pub use aggregate::FieldType;
+pub use enums::EnumTag;
 pub use intrinsic::Intrinsic;
 pub use table::{Builtin, Callee, Continuity, Method, Types};
 pub use ty::Ty;

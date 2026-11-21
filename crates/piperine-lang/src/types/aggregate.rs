@@ -14,13 +14,13 @@ use super::Ty;
 
 /// One typed field of a struct or of an enum variant, in declaration order.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct FieldType {
+pub struct FieldType {
     /// The field's name; `None` for a positional field.
-    pub(super) name: Option<String>,
+    pub name: Option<String>,
     /// The field's declaration.
-    pub(super) decl: DeclId,
+    pub decl: DeclId,
     /// The field's type.
-    pub(super) ty: Ty,
+    pub ty: Ty,
 }
 
 impl Checker<'_> {

@@ -1308,7 +1308,7 @@ impl<'a> ValuePrinter<'a> {
         let Some(declared) = self.streams.get(stream as usize) else {
             return Err(unsupported("emit! to a stream out of range"));
         };
-        let Some(layout) = RecordLayout::of(declared) else {
+        let Some(layout) = RecordLayout::in_ir(self.ir, declared) else {
             return Err(unsupported(&format!("emit! to stream `{}`, whose fields no pin holds", declared.name)));
         };
         let stream_name = declared.name.as_str();

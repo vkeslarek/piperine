@@ -4,7 +4,7 @@ use crate::real::Real;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId, AggregateId};
 use crate::model::{
     BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Event, Expr, FunctionData, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
-    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, TypeData, ValueType, AggregateData,
+    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, TypeData, TypeKind, ValueType, AggregateData,
 };
 use crate::contributions::{Contribution, Contributions};
 use crate::statements::Statements;
@@ -23,6 +23,30 @@ impl Ir {
     /// The composite constants, in id order.
     pub fn aggregates(&self) -> &[AggregateData] {
         &self.aggregates
+    }
+
+    /// The scalar a pin holds for a value of `ty`: an enum whose variants have no fields is its tag
+    /// (§2 rule 5), `UInt<tag_levels>`, so carried bytes are the tag's; any other type is itself.
+    /// A flag is the pin's known byte, not part of the type.
+    pub fn carried(&self, ty: &ValueType) -> ValueType {
+        match ty {
+            ValueType::Flagged(inner) => self.carried(inner),
+            ValueType::Enum(id) => match &self.types[id.index()].kind {
+                TypeKind::Enum { tag_levels, variants } if *tag_levels > 0 && variants.iter().all(|v| v.fields.is_empty()) => ValueType::UInt(*tag_levels),
+                _ => ty.clone(),
+            },
+            other => other.clone(),
+        }
+    }
+
+    /// The discriminant a constant of the enum type `ty` holds: the tag a pin carries for it.
+    pub fn discriminant(&self, ty: &ValueType, value: Constant) -> Option<i128> {
+        let (ValueType::Enum(id), Constant::Aggregate(aggregate)) = (ty, value) else { return None };
+        let variant = self.aggregates.get(aggregate.index())?.variant?;
+        match &self.types.get(id.index())?.kind {
+            TypeKind::Enum { variants, .. } => variants.get(variant as usize).map(|v| v.discriminant),
+            TypeKind::Struct { .. } => None,
+        }
     }
 
     /// The type arena, in id order.

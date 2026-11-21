@@ -110,10 +110,18 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    /// `subject == the value the path names`: a unit variant's tag or a `const`.
+    /// `subject == the value the path names`: a unit variant or a `const`.
     fn test_named_value(&mut self, scope: &mut Scope, subject: &Subject, res: Resolution, span: Span, origin: Origin) -> Option<PatternTest> {
         let read = self.read_subject(scope, subject, origin.clone())?;
         let base = self.base_of(read);
+        // A known enum value is tested for its variant; one that may be unknown is compared with it,
+        // which is unknown as the value is (§3.3.12).
+        if let (Resolution::Decl(variant), ValueType::Enum(_), false) = (res, &base, matches!(self.type_of(read), ValueType::Flagged(_))) {
+            if matches!(self.design.decl_data(variant).kind, DeclKind::Variant(_)) {
+                let position = EnumLayout::variant_tag(self.design, variant)? as u32;
+                return Some(PatternTest::when(self.emit(Expr::IsVariant { expr: read, variant: position }, ValueType::Bool, origin)));
+            }
+        }
         let value = self.path_value(scope, res, &base, span, origin.clone())?;
         Some(PatternTest::when(self.compared(BinaryOp::Eq, read, value, origin)))
     }
@@ -276,12 +284,13 @@ impl Elaboration<'_, '_> {
         Some(PatternTest::when(self.both(present, equal, origin)))
     }
 
-    /// The value a path pattern names: a unit variant's tag or a constant, of the subject's type.
+    /// The value a path pattern names: a unit variant or a constant, of the subject's type.
     fn path_value(&mut self, scope: &Scope, res: Resolution, base: &ValueType, span: Span, origin: Origin) -> Option<LoweredExpr> {
         match res {
             Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Variant(_)) => {
-                let tag = EnumLayout::variant_tag(self.design, d)?;
-                Some(self.emit(Expr::Int(tag), base.clone(), origin))
+                let ValueType::Enum(id) = base else { return None };
+                let position = EnumLayout::variant_tag(self.design, d)? as u32;
+                Some(self.emit(Expr::VariantOf { ty: *id, variant: position, fields: Vec::new() }, base.clone(), origin))
             }
             Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Const(_)) => match self.consts.constant(d) {
                 Ok(value) => Some(self.constant_expr(value, base.clone(), origin)),

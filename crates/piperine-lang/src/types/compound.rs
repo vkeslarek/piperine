@@ -7,7 +7,7 @@
 //! the elaborator gives each component its own local.
 
 use crate::msl::Span;
-use crate::pom::{Arg, AttrArgNode, AttrInputNode, DeclId, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, PathId, Resolution};
+use crate::pom::{Arg, DeclId, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, PathId, Resolution};
 
 use super::check::Checker;
 use super::Ty;
@@ -15,11 +15,7 @@ use super::Ty;
 impl Checker<'_> {
     /// Whether `decl` carries `#[derive(.., trait_name, ..)]`.
     pub(super) fn derives(&self, decl: DeclId, trait_name: &str) -> bool {
-        self.design.decl_data(decl).meta.attrs.iter().any(|attr| {
-            let is_derive = matches!(self.design.path_node(attr.path).segments.as_slice(), [only] if only.name.text == "derive");
-            is_derive
-                && matches!(&attr.input, AttrInputNode::List(args) if args.iter().any(|arg| matches!(arg, AttrArgNode::Path(p) if self.design.path_node(*p).segments.last().is_some_and(|s| s.name.text == trait_name))))
-        })
+        super::derives::DerivedTrait::is_listed(self.design, decl, trait_name)
     }
 
     /// `Option<T>` written with its one type argument.

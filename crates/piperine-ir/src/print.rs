@@ -1020,7 +1020,7 @@ impl<'a> Printer<'a> {
             Expr::Level { value, index, .. } => Typing::level(&ty(value)?, &ty(index)?),
             Expr::Merge { a, b } => Typing::merge(&ty(a)?, &ty(b)?),
             Expr::Same { a, b } => Typing::same(&ty(a)?, &ty(b)?),
-            Expr::LevelCast { expr, to, tags } => Typing::level_cast(&ty(expr)?, to, tags.is_some()),
+            Expr::LevelCast { expr, to, tags } => Typing::level_cast(&ty(expr)?, to, tags.is_some(), &ir.types),
             Expr::Math { args, .. } if args.iter().any(|a| ty(a).is_some_and(|t| Typing::flagged(&t))) => {
                 let args: Option<Vec<ValueType>> = args.iter().map(ty).collect();
                 Typing::math(&args?.iter().collect::<Vec<_>>())

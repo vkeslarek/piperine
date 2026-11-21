@@ -7,7 +7,7 @@
 //! copied where it is used (§1.4.6), so the table holds seven.
 
 use crate::msl::Span;
-use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FileId, Resolution};
+use crate::pom::{AttrArgNode, AttrInputNode, DeclId, DeclKind, Design, ExprId, ExprKind, FileId, Resolution};
 
 use super::aggregate::FieldType;
 use super::check::Checker;
@@ -47,6 +47,14 @@ impl DerivedTrait {
             Self::Debug => "Debug",
             Self::Hash => "Hash",
         }
+    }
+
+    /// Whether `decl` carries `#[derive(.., name, ..)]`: any trait name, `Repr` included.
+    pub(super) fn is_listed(design: &Design, decl: DeclId, name: &str) -> bool {
+        design.decl_data(decl).meta.attrs.iter().any(|attr| {
+            let is_derive = matches!(design.path_node(attr.path).segments.as_slice(), [only] if only.name.text == "derive");
+            is_derive && matches!(&attr.input, AttrInputNode::List(args) if args.iter().any(|arg| matches!(arg, AttrArgNode::Path(p) if design.path_node(*p).segments.last().is_some_and(|s| s.name.text == name))))
+        })
     }
 
     /// The traits a type must implement before it implements this one (H.8 rules 2 and 3).
