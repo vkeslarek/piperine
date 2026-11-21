@@ -1,7 +1,7 @@
 # Integrated Tests verification
 
-**Verdict**: FAIL
-**Proofs**: `proofs.md` at 3b8e4b0f (HEAD 5b28f348 adds only `proofs.md`)
+**Verdict**: PASS
+**Proofs**: `proofs.md` at 3a45f737 (79 pass, 0 fail; HEAD ccf5a4b9 adds only `proofs.md`); fix round on top of 602e98e7
 **Verifier**: independent sub-agent (author != verifier), post-merge on `main` 5b28f348
 
 Runs by the Verifier at 5b28f348 (`CARGO_TARGET_DIR=/var/tmp/piperine-target-b`, `CARGO_PROFILE_DEV_DEBUG=0`,
@@ -80,16 +80,22 @@ The on-demand buck run was not repeated (the author's B3: 61/61 `buck_scenarios`
 | C64 | `docs` `the_instructions_name_the_integrated_gate_and_the_buck_on_demand` | yes |
 | C65 | `grep "^### MD-77"` in `.specs/STATE.md` | yes |
 | C66 | `workspace_shape` `root_tests_hold_no_end_to_end_target` | yes for its criterion; but any `.rs` under `tests/integrated/` is now accepted whether or not `main.rs` declares it as a `mod`, so an undeclared scenario file is never compiled and its tests never run (finding 3) |
+| C67 | `integrated` `half_bridge::the_nested_instance_paths_print_and_the_driver_sees_the_command` | yes (fix round, author-read) - depth-2 and depth-3 paths print; `armed` equals `hi` on every row |
+| C68 | `integrated` `half_bridge::each_gate_follows_its_command_by_the_driver_delay` | yes (author-read) - both edges of both gates, 5 rows after the command, non-vacuous |
+| C69 | `integrated` `half_bridge::the_interlock_holds_on_every_clock_edge_and_on_every_row` | yes (author-read) - no row with both gates high; 120 `never` records, 0 failed, 120 derived from the clock |
+| C70 | `integrated` `half_bridge::the_shunt_follows_its_closed_form_through_the_ramp` | yes (author-read) - 1 201 rows vs `PiecewiseRc` under `TRAN_VOLTAGE`, no tolerance written |
+| C71 | `integrated` `half_bridge::the_supply_ramp_is_five_steps_ending_at_one_volt` | yes (author-read) - literals for the five points; the peak against the closed form |
+| C72 | `integrated` `half_bridge::the_low_phase_decays_with_the_load_time_constant` | yes (author-read) - decay 0.99999 us vs 1 us (bound 1 %); crossing time from the closed form |
 
 ## Findings
 
 | Finding | Evidence | Fix | Closed |
 | --- | --- | --- | --- |
-| 1. A `test = false` target escapes the registry when the line carries a TOML comment (or the `[[test]]` header does): cargo skips it, `suite_hygiene` stays green - the exact silent switch-off IT-02 AC 1 forbids | `suite_hygiene.rs` `OnDemandManifest::targets`: `compact == "test=false"` and `line == "[[test]]"`; Verifier probe: `targets("[[test]]\nname = \"slow\"\ntest = false # on demand\n")` returns `[]` | strip a `#` comment before matching (header and key lines), or parse with the `toml` crate; add the commented shapes to `the_on_demand_reader_finds_test_false` | |
-| 2. The README guard matches `--test <name>` as a substring without the crate: `--test buck` is satisfied by `--test buck_whole`, and the two `book_buck` entries satisfy each other; the whole `piperine-cli` line can vanish with C7 green | `OnDemandRegistry::undocumented`: `block.contains(&format!("--test {target}"))`; Verifier probe with a block lacking the CLI line returns no offence | match `--test <name>` as a whole word on a line that also holds `-p <crate package>` (the root `.` as `-p piperine`); plant the prefix case and the two-crate case in the test | |
-| 3. `workspace_shape` now accepts any `.rs` under a declared `main.rs`'s directory without checking it is a `mod` of that target: a new `tests/integrated/<scenario>.rs` that `main.rs` forgets is never compiled, its tests never run, and no guard fails | `workspace_shape.rs` `RootTestFiles::is_module_of_declared_main` (`file.starts_with(dir)` only) | require each such file to be named by a `mod <stem>;` line of the declared `main.rs` (or `#[path]`), and plant an orphan in `a_declared_main_target_accounts_for_its_own_modules_only` | |
-| 4. The buck listing's `data-cli-lines="1-8"` is no longer validated: `book`'s `checked()` drops project `buck` before `selection()`, and `BookListing` ignores `data-cli-*` other than output/project | `crates/piperine-cli/tests/book.rs` `checked()`; `crates/piperine-cli/tests/support/book_listing.rs` | apply the same range check in `book_buck` (or keep the selection check in `book` for every block, the buck's included, while skipping only its run) | |
-| 5. The buck README says six `buck_scenarios` tests are red today, while the author's on-demand run at this tree passed 61/61 | `examples/buck/README.md` "On demand" last paragraph; `tasks.md` Settled B3 | drop or correct the sentence (and the spec's Out-of-Scope note is historical) | |
+| 1. A `test = false` target escapes the registry when the line carries a TOML comment (or the `[[test]]` header does): cargo skips it, `suite_hygiene` stays green - the exact silent switch-off IT-02 AC 1 forbids | `suite_hygiene.rs` `OnDemandManifest::targets`: `compact == "test=false"` and `line == "[[test]]"`; Verifier probe: `targets("[[test]]\nname = \"slow\"\ntest = false # on demand\n")` returns `[]` | strip a `#` comment before matching (header and key lines), or parse with the `toml` crate; add the commented shapes to `the_on_demand_reader_finds_test_false` |  closed in d760215e |
+| 2. The README guard matches `--test <name>` as a substring without the crate: `--test buck` is satisfied by `--test buck_whole`, and the two `book_buck` entries satisfy each other; the whole `piperine-cli` line can vanish with C7 green | `OnDemandRegistry::undocumented`: `block.contains(&format!("--test {target}"))`; Verifier probe with a block lacking the CLI line returns no offence | match `--test <name>` as a whole word on a line that also holds `-p <crate package>` (the root `.` as `-p piperine`); plant the prefix case and the two-crate case in the test |  closed in edc7707d |
+| 3. `workspace_shape` now accepts any `.rs` under a declared `main.rs`'s directory without checking it is a `mod` of that target: a new `tests/integrated/<scenario>.rs` that `main.rs` forgets is never compiled, its tests never run, and no guard fails | `workspace_shape.rs` `RootTestFiles::is_module_of_declared_main` (`file.starts_with(dir)` only) | require each such file to be named by a `mod <stem>;` line of the declared `main.rs` (or `#[path]`), and plant an orphan in `a_declared_main_target_accounts_for_its_own_modules_only` |  closed in 681fe911 |
+| 4. The buck listing's `data-cli-lines="1-8"` is no longer validated: `book`'s `checked()` drops project `buck` before `selection()`, and `BookListing` ignores `data-cli-*` other than output/project | `crates/piperine-cli/tests/book.rs` `checked()`; `crates/piperine-cli/tests/support/book_listing.rs` | apply the same range check in `book_buck` (or keep the selection check in `book` for every block, the buck's included, while skipping only its run) |  closed in 7b921cfc |
+| 5. The buck README says six `buck_scenarios` tests are red today, while the author's on-demand run at this tree passed 61/61 | `examples/buck/README.md` "On demand" last paragraph; `tasks.md` Settled B3 | drop or correct the sentence (and the spec's Out-of-Scope note is historical) |  closed in 7a33a01f |
 
 **Capabilities the default run no longer proves at whole-design level** (moved on demand by D3, not re-proven
 by the suite; listed for the record, not as findings unless the user wants them back):
@@ -102,3 +108,7 @@ tests of the harness only; the suite judges closed forms instead); the CLI's `id
 16 lines); the Book claims `cli~3d1453da`, `cli~6153ef01`, `cli~5010f432` (held by `piperine-cli/buck`, now
 on demand); `--all-targets` no longer compiles the on-demand targets (the `**Build**` line and MD-77 cover it
 at feature close only).
+
+## Fix round (post-merge, on main 602e98e7)
+
+Findings 1 to 5 closed by d760215e, edc7707d, 681fe911, 7b921cfc and 7a33a01f (one commit each). Loose proofs tightened: C22 by 4fdc19ea (`the_done_strobe_is_exactly_50_ns_wide`, 5 ns grid, strobe exactly 50 ns), C43 by 01953069 (the run's own `integ` read from the `loop` records), C13 by e26d5c1f (`Suite::ran` failure path), C50 by 3164bae9 (exactly 55 listings held; the Book has 56, buck's is on demand), `Phase`/`FaultCause` variants documented by 15e54566. Coverage default: `half_bridge` (3a45f737, IT-14, C67 to C72) restores nested instance paths, gate-driver delay, the interlock `Never` and `Stimulus::ramp` with `Trace` settling and decay-constant measurements; `the_package_declares_the_five_runs_...` is renamed `the_package_declares_its_runs_...` (six runs). Runs: `cargo test -p piperine --test integrated` 42 passed, 30 s wall; `cargo test -p piperine-cli --test integrated` 3 passed, 11.6 s; full root `env -u PIPERINE_NGSPICE cargo test --no-fail-fast` exit 0, 18 min 47 s wall; `check_proofs.py` 79 pass, 0 fail.
