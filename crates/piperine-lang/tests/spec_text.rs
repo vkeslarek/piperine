@@ -1836,3 +1836,11 @@ fn appendix_c2_states_the_spline_end_conditions() {
         assert!(algorithm.contains(fact), "C.2's row lacks \"{fact}\": {algorithm}");
     }
 }
+
+#[test]
+fn the_analog_step_floor_past_2_52_ticks_is_a_recorded_deviation() {
+    let c = spec("appendix_c_implementation.md");
+    let row = c.lines().find(|l| l.starts_with("| analog step floor past 2^52 ticks")).expect("step floor row");
+    assert!(row.contains("256 `f64` spacings"), "{row}");
+    assert!(row.contains("transient-performance T25"), "{row}");
+}

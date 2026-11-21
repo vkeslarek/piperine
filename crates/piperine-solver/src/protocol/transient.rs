@@ -175,21 +175,21 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
     }
 
     /// How many `f64` spacings the shortest step spans once a tick is finer than the spacing.
-    const MIN_STEP_ULPS: f64 = 256.0;
+    const SHORTEST_STEP_SPACINGS: f64 = 256.0;
 
     /// The fewest ticks a proposed step advances. A tick is an exact integer, but the time the
     /// analog side steps on is an `f64`: once its spacing (`ulp`) passes one tick (past 2^52 ticks,
     /// about 4.5 s at the default 1 fs) a step of a few ticks is a few `f64` steps, and a stepper
     /// that collapses onto a stiff edge crawls on them for ever. A step then spans at least
-    /// `MIN_STEP_ULPS` spacings, about a picosecond over the first minutes at 1 fs, the resolution
-    /// a run that set `resolution = 1e-12` already had. While one tick spans more than one spacing
+    /// `SHORTEST_STEP_SPACINGS` spacings: about 0.9 ps at 16 s and 1.8 ps at 32 to 64 s at 1 fs, growing
+    /// with the time reached (a stopgap, see Appendix C.2.1). While one tick spans more than one spacing
     /// (every run under 4.5 s, and every run at a coarser resolution) the minimum stays one tick.
     fn min_advance(&self) -> Tick {
         let spacing = self.now.next_up() - self.now;
         if spacing <= self.options.seconds_per_tick {
             return 1;
         }
-        ((Self::MIN_STEP_ULPS * spacing) / self.options.seconds_per_tick).ceil() as Tick
+        ((Self::SHORTEST_STEP_SPACINGS * spacing) / self.options.seconds_per_tick).ceil() as Tick
     }
 
     /// The time of the step that ends at `tick`, a tick after `now_tick` or later. Past 2^52 ticks
