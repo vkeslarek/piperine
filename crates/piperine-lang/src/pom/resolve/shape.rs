@@ -1,10 +1,10 @@
 //! Stage 8: structural checks over declarations alone, with no types and no
 //! const evaluation: the shape of an `extern` module (`E0370`), the body rule
 //! of functions (`E0125`), the fields of a nature (`E0201`) and the declaration
-//! rules of a bundle (`E0260`, `E0261`, `E0262`, §7). Runs after classification: a value input is
+//! rules of a bundle (`E0260`, `E0261`, `E0262`, `E0264`, §7). Runs after classification: a value input is
 //! a port the classifier made one.
 
-use super::super::body::TypeKind;
+use super::super::body::{GenericArgNode, GenericArgsNode, TypeKind};
 use super::super::decl::{DeclKind, Dir, FieldData};
 use super::super::design::Design;
 use super::super::ids::{DeclId, FileId, TypeId};
@@ -115,7 +115,9 @@ impl<'design> BundleShape<'design> {
         }
         if let Some(ty) = self.design.declared_type(decl) {
             self.check_flip(data.file, ty, out);
+            self.check_nature_argument(data.file, ty, out);
         }
+        self.check_value_position(decl, out);
     }
 
     /// What `ty` is made of.
@@ -227,5 +229,55 @@ impl<'design> BundleShape<'design> {
         }
         let message = "`flip` applies to a bundle type only (§7 rule 6)";
         out.push((file, Diagnostic::new("E0262", message, self.design.type_node(ty).span, "not a bundle")));
+    }
+
+    /// §7 rule 9 and rule 10: a bundle is not a value, so it is no param type, no function result
+    /// and has no initial value as a signal or a port.
+    fn check_value_position(&self, decl: DeclId, out: &mut Vec<(FileId, Diagnostic)>) {
+        let data = self.design.decl_data(decl);
+        let name = data.name.as_ref().map_or("", |n| n.text.as_str());
+        let (span, message) = match &data.kind {
+            DeclKind::Param(p) if self.shape_of(p.ty) == TypeShape::Bundle => {
+                (data.name.as_ref().map_or(data.span, |n| n.span), format!("the param `{name}` is a bundle, which is not a value (§7 rule 9)"))
+            }
+            DeclKind::Fn(f) if f.ret.is_some_and(|ret| self.shape_of(ret) == TypeShape::Bundle) => {
+                let ret = f.ret.map_or(data.span, |ret| self.design.type_node(ret).span);
+                (ret, format!("the function `{name}` returns a bundle, which is not a value (§7 rule 9)"))
+            }
+            DeclKind::Signal(s) if s.init.is_some() && self.shape_of(s.ty) == TypeShape::Bundle => {
+                let init = s.init.map_or(data.span, |init| self.design.expr_node(init).span);
+                (init, format!("the bundle signal `{name}` has no initial value; a field's comes from its driver (§7 rule 10)"))
+            }
+            DeclKind::Port(p) if p.kind == PortKind::Bundle && p.default.is_some() => {
+                let default = p.default.map_or(data.span, |default| self.design.expr_node(default).span);
+                (default, format!("the bundle port `{name}` has no initial value; a field's comes from its driver (§7 rule 10)"))
+            }
+            _ => return,
+        };
+        out.push((data.file, Diagnostic::new("E0264", message, span, "a bundle used as a value")));
+    }
+
+    /// §7 rule 9: a bundle is no type argument of a nature (`Bit<Stream>`), at any depth of the
+    /// declared type.
+    fn check_nature_argument(&self, file: FileId, ty: TypeId, out: &mut Vec<(FileId, Diagnostic)>) {
+        let node = self.design.type_node(ty);
+        match &node.kind {
+            TypeKind::Array { elem, .. } | TypeKind::Flip(elem) | TypeKind::Slice(elem) | TypeKind::Ref { inner: elem, .. } => self.check_nature_argument(file, *elem, out),
+            TypeKind::Tuple(items) => items.iter().for_each(|item| self.check_nature_argument(file, *item, out)),
+            TypeKind::Path(path) => {
+                let Some(last) = self.design.path_node(*path).segments.last() else { return };
+                let Some(GenericArgsNode::Angle { args, .. }) = &last.args else { return };
+                let of_nature = matches!(last.res, Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)));
+                for arg in args {
+                    let GenericArgNode::Type(arg) = arg else { continue };
+                    if of_nature && self.shape_of(*arg) == TypeShape::Bundle {
+                        let message = "a bundle is not a value, so it is no type argument of a nature (§7 rule 9)";
+                        out.push((file, Diagnostic::new("E0264", message, self.design.type_node(*arg).span, "a bundle used as a value")));
+                    }
+                    self.check_nature_argument(file, *arg, out);
+                }
+            }
+            TypeKind::FnPtr { .. } | TypeKind::Infer => {}
+        }
     }
 }

@@ -202,8 +202,8 @@ T21
 
 **Done when**:
 
-- [ ] `a_bundle_declared_as_a_value_is_e0264` passes under `**Run pombundles**`
-- [ ] Gate check passes: Build
+- [x] `a_bundle_declared_as_a_value_is_e0264` passes under `**Run pombundles**`
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build
@@ -673,6 +673,7 @@ Proof: run elabbundles | test a_bundle_port_lowers_to_one_carrier_per_leaf_field
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** none
+**Settled B1:** B1 (T1-T4) done. Defaults taken (user AFK): `code_owners.tsv` is on the branch after the rebase onto origin/main, so each task deleted its row (E0260 to E0262, E0264) with the GAPS section 10 list and count, and added its row to docs/pom/resolution.md (the `pom_docs` guard). One-driver means a discrete nature without `resolve` (spec part II 5.2), so a signal-flow field takes no direction. A flipped generic or unresolved type, and a field of a generic nature, are not judged by the POM. `E0264` at the declaration covers a param type, a nature's type argument, a function result (not a module result) and an initial value of a bundle signal or port. Two fixtures that declared an invalid bundle were corrected (pom_classify `Port2`, types_buck `Bn`), named in the T1 and T2 bodies. `is_carrier_type` and `has_unresolved_bound` of classify.rs became `pub(super)` for shape.rs.
 **Dispatched:** none
 **Walked:** none
 

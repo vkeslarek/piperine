@@ -21,7 +21,7 @@ A name that cannot be resolved is a hole in the navigation, not a failure: the s
 | 5. Names | every path with its lexical scope stack | `PathSegment::res`, `E0161` |
 | 6. Classification | calls, struct expressions, ports, bundles, access calls | `CallClass`, `StructClass`, `PortKind`, `StructData::bundle`, `E0130` |
 | 7. Members | `e.name` and `e.m()` through declared types | `ExprKind::Field::res`, `MethodCall::res`, `E0343` |
-| 8. Shape | the structural checks that read declarations only: `extern` modules, function bodies, nature fields, bundle fields | `E0370`, `E0125`, `E0201`, `E0260`, `E0261`, `E0262` |
+| 8. Shape | the structural checks that read declarations only: `extern` modules, function bodies, nature fields, bundle fields | `E0370`, `E0125`, `E0201`, `E0260`, `E0261`, `E0262`, `E0264` |
 | 9. Index | `references`, `writers`, `instantiated_by` | the [`Index`](model.md#index) |
 
 Diagnostics are sorted by file, then span start, then code after the last stage, so their order
@@ -336,6 +336,7 @@ parser, such as `E0900`) are copied into `Design::diagnostics()` first, with the
 | `E0261` | 8 | `§7` | a field of a bundle whose nature is one-driver (a discrete nature without `resolve`) and has no `in` or `out`, or whose nature is any other (`Wire`, `Electrical`, a signal-flow nature) and has a direction (§7 rule 2); a field of a generic nature is not judged | the field's name |
 | `E0262` | 8 | `§7` | `flip` on a type that is no bundle (§7 rule 6); `out` on a bundle port (§7 rule 6); `in` or `out` on a field whose type is a bundle (§7 rule 5); a generic or unresolved type is not judged | the field, the port or the `flip` type |
 | `E0263` | 6 | `§7` | a bundle literal that names a field the bundle lacks, or names one twice | the name (the second, when repeated) |
+| `E0264` | 8 | `§7` | a bundle at a declaration that makes it a value: a param type, a type argument of a nature (`Bit<Stream>`), a function result (§7 rule 9), or a bundle signal or port with an initial value (§7 rule 10); the operand and literal positions are the checker's | the param, the type or the initial value |
 | `E0320` | 6 | `§8.1` | a param block or a template field list that names no param of the module, or names one twice | the name (the second, when repeated) |
 | `E0330` | 2 | `§8.2` | a name defined more than once in a module (the second is reported, with a label on the first) | the repeated name |
 | `E0343` | 7 | `§8.2` | a member of an instance that is missing or not `pub`, named from outside its module (§8.4.8) | the member name |

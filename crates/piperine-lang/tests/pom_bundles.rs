@@ -85,3 +85,22 @@ fn flip_out_and_nested_directions_are_e0262() {
     );
     assert_eq!(Bundles::spans(&design, "E0262"), ["nested", "tx", "flip Bit"], "{:?}", design.diagnostics());
 }
+
+#[test]
+fn a_bundle_declared_as_a_value_is_e0264() {
+    // §7 rule 9: a bundle is no param type, no type argument of a nature and no function result;
+    // rule 10: a bundle signal or port has no initial value. Each case is one error at the position.
+    let cases: [(&str, &str, &str); 5] = [
+        ("a param type", "module Top() { k: Stream; }", "k"),
+        ("a nature's type argument", "module Top(p: Bit<Stream>) { }", "Stream"),
+        ("a function result", "fn make() -> Stream { }\nmodule Top() { }", "Stream"),
+        ("a signal's initial value", "module Top(s: Stream) { signal t: Stream = s; }", "s"),
+        ("a port's initial value", "module Top(p: Stream = 0) { }", "0"),
+    ];
+    for (what, body, expected_span) in cases {
+        let design = Bundles::design(&format!("struct Stream {{ out valid: Bit }}\n{body}\n"));
+        assert_eq!(Bundles::spans(&design, "E0264"), [expected_span], "{what}: {:?}", design.diagnostics());
+    }
+    let plain = Bundles::design("struct Stream { out valid: Bit }\nmodule Top(p: Stream, in q: Stream) { signal t: Stream; }\n");
+    assert_eq!(Bundles::codes(&plain), Vec::<String>::new(), "a bundle port and signal without a value are accepted: {:?}", plain.diagnostics());
+}
