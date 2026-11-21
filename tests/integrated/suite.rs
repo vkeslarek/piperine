@@ -148,3 +148,21 @@ impl Suite {
         lines.join("\n")
     }
 }
+
+/// IT-03 AC 5: a run that failed to complete is reported by every test that asks for it, with the
+/// message the failure stored, and a run the plan never had is named as such.
+#[test]
+fn a_failed_run_panics_every_asker_with_its_message_and_an_unknown_run_is_named() {
+    let suite = Suite { results: vec![("broken", Err("run `broken`: open: no such top".to_string()))] };
+    let message = |run: &str| {
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            suite.ran(run);
+        }));
+        let payload = caught.expect_err("a run that failed does not return");
+        payload.downcast_ref::<String>().cloned().expect("a formatted panic message")
+    };
+    assert_eq!(message("broken"), "run `broken`: open: no such top");
+    assert_eq!(message("broken"), "run `broken`: open: no such top", "every asker gets the same message, the run is not retried");
+    assert_eq!(message("absent"), "no scenario runs `absent`");
+    assert!(suite.completed().is_empty() && suite.report().contains("failed: run `broken`: open: no such top"));
+}
