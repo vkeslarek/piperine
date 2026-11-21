@@ -522,9 +522,9 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] `the_instructions_name_the_integrated_gate_and_the_buck_on_demand` passes under `Run docs`; `Run shape` passes (the crate table is untouched)
-- [ ] Gate check passes: the Build line, `Run docs`
-- [ ] Test count: 1 new test
+- [x] `the_instructions_name_the_integrated_gate_and_the_buck_on_demand` passes under `Run docs`; `Run shape` passes (the crate table is untouched)
+- [x] Gate check passes: the Build line, `Run docs`
+- [x] Test count: 1 new test
 
 **Tests**: integration
 **Gate**: build

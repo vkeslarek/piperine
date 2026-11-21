@@ -52,6 +52,21 @@ fn the_buck_readme_says_when_to_run_the_buck_on_demand() {
 }
 
 #[test]
+fn the_instructions_name_the_integrated_gate_and_the_buck_on_demand() {
+    // integrated-tests IT-13 AC 2: `CLAUDE.md` names the integrated target as the per-task gate, says that
+    // `cargo test` skips the buck and points at the README's "On demand" block; "Where the tests are"
+    // names `tests/integrated/` and `tests/e2e/integrated/`; `AGENTS.md` names the gate too
+    let claude = read("CLAUDE.md");
+    for held in ["cargo test -p piperine --test integrated", "cargo test -p piperine-cli --test integrated", "`cargo test` skips every target that simulates the buck", "examples/buck/README.md", "\"On demand\"", "tests/integrated/", "tests/e2e/integrated/"] {
+        assert!(claude.contains(held), "CLAUDE.md names `{held}`");
+    }
+    let agents = read("AGENTS.md");
+    for held in ["cargo test -p piperine --test integrated", "examples/buck/README.md", "tests/integrated/"] {
+        assert!(agents.contains(held), "AGENTS.md names `{held}`");
+    }
+}
+
+#[test]
 fn the_buck_readme_points_at_the_scenarios() {
     // buck-scenarios BS-10 AC 1: S2 to S10 run from `tests/buck_scenarios.rs` over `tests/e2e/buck/`
     // through `Session::drive` and `Session::set_at`; the README no longer says `piperine-api` has no

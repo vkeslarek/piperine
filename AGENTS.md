@@ -43,7 +43,12 @@ Always build and test before declaring work done:
 ```sh
 cargo build     # the default members; zero warnings is the bar
 cargo test      # their whole suite, ngspice parity included; never `--workspace` (the language server does not build)
+cargo test -p piperine --test integrated   # the per-task gate: five small mixed-signal designs
 ```
+
+`cargo test` skips every target that simulates the buck converter (`test = false`, MD-77); it runs on demand by
+the "On demand" block of `examples/buck/README.md`, once at a feature's close and in every task that edits
+`examples/buck/**`, `tests/e2e/buck/**` or a buck target.
 
 ## Workspace map
 
@@ -106,7 +111,7 @@ violates any of them is not ready.
 
 ## Test placement
 
-A target lives in the crate it exercises (MD-28); the root `tests/` holds the integrated tests only: `tests/book/` (one target per Book chapter and its inventory), `tests/scenarios.rs` and `tests/e2e/` (MD-72).
+A target lives in the crate it exercises (MD-28); the root `tests/` holds the integrated tests only: `tests/book/` (one target per Book chapter and its inventory), `tests/scenarios.rs`, `tests/integrated/` and `tests/e2e/` (MD-72, MD-77).
 Do not maintain a file list anywhere — enumerate with `ls crates/*/tests/*.rs` and read
 each target's `//!` scope header. `crates/piperine-lang/tests/suite_hygiene.rs` enforces
 the mechanical half of the rule.
