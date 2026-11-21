@@ -133,13 +133,27 @@ struct RootTestFiles<'a> {
     tests: &'a std::path::Path,
     /// The paths the root manifest's `path = "..."` lines declare.
     declared: &'a [PathBuf],
+    /// The text of each declared `main.rs` target, by path: what says which files it makes modules.
+    main_sources: &'a [(PathBuf, String)],
 }
 
 impl RootTestFiles<'_> {
-    /// Whether `file` is a module of a declared `main.rs` target: a `.rs` under the directory of a
-    /// declared `.../main.rs` (the shape `tests/integrated/main.rs` gives a target of many files).
+    /// Whether `file` is a module of a declared `main.rs` target: under that target's directory, and
+    /// its first path component (`suite.rs` or `suite/...`) named by a `mod <name>;` line of the
+    /// `main.rs` (the shape `tests/integrated/main.rs` gives a target of many files). A file the
+    /// `main.rs` forgets is never compiled, so it is not accounted for.
     fn is_module_of_declared_main(&self, file: &PathBuf) -> bool {
-        self.declared.iter().any(|path| path.file_name().is_some_and(|name| name == "main.rs") && path.parent().is_some_and(|dir| file.starts_with(dir)))
+        self.main_sources.iter().any(|(main, source)| {
+            let Some(relative) = main.parent().and_then(|dir| file.strip_prefix(dir).ok()) else {
+                return false;
+            };
+            let first = relative.components().next().map(|part| part.as_os_str().to_string_lossy().to_string()).unwrap_or_default();
+            let module = first.strip_suffix(".rs").unwrap_or(&first);
+            source.lines().any(|line| {
+                let line = line.trim();
+                line.strip_prefix("mod ").or_else(|| line.strip_prefix("pub mod ")).is_some_and(|rest| rest.trim_end_matches(';').trim() == module && rest.ends_with(';'))
+            })
+        })
     }
 
     /// The `.rs` files of `files` that no root target accounts for: not a top-level `tests/<name>.rs`
@@ -163,9 +177,18 @@ impl RootTestFiles<'_> {
 fn a_declared_main_target_accounts_for_its_own_modules_only() {
     let tests = PathBuf::from("/repo/tests");
     let declared = vec![tests.join("integrated/main.rs")];
-    let files = vec![tests.join("integrated/main.rs"), tests.join("integrated/suite.rs"), tests.join("integrated/deep/more.rs"), tests.join("other/stray.rs"), tests.join("top_level.rs")];
-    let undeclared = RootTestFiles { tests: &tests, declared: &declared }.undeclared(&files);
-    assert_eq!(undeclared, vec![&tests.join("other/stray.rs")]);
+    let main_sources = vec![(tests.join("integrated/main.rs"), "mod suite;\nmod deep;\n// mod commented;\n".to_string())];
+    let files = vec![
+        tests.join("integrated/main.rs"),
+        tests.join("integrated/suite.rs"),
+        tests.join("integrated/deep/more.rs"),
+        tests.join("integrated/orphan.rs"),
+        tests.join("integrated/commented.rs"),
+        tests.join("other/stray.rs"),
+        tests.join("top_level.rs"),
+    ];
+    let undeclared = RootTestFiles { tests: &tests, declared: &declared, main_sources: &main_sources }.undeclared(&files);
+    assert_eq!(undeclared, vec![&tests.join("integrated/orphan.rs"), &tests.join("integrated/commented.rs"), &tests.join("other/stray.rs")]);
 }
 
 #[test]
@@ -191,7 +214,12 @@ fn root_tests_hold_no_end_to_end_target() {
         .filter_map(|rest| rest.strip_suffix('"'))
         .map(|path| repo_root().join(path))
         .collect();
-    let rs = RootTestFiles { tests: &tests, declared: &declared }.undeclared(&files);
+    let main_sources: Vec<(PathBuf, String)> = declared
+        .iter()
+        .filter(|path| path.file_name().is_some_and(|name| name == "main.rs"))
+        .map(|path| (path.clone(), std::fs::read_to_string(path).expect("read a declared main.rs")))
+        .collect();
+    let rs = RootTestFiles { tests: &tests, declared: &declared, main_sources: &main_sources }.undeclared(&files);
     assert!(rs.is_empty(), ".rs files under the root tests/ that no root target declares: {rs:?}");
 }
 
