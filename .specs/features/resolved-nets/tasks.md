@@ -211,9 +211,9 @@ T34 → T35 → T36
 
 **Done when**:
 
-- [ ] `others_on_a_one_driver_carrier_is_e0224` passes under `**Run typesnatures**`
-- [ ] Code clarity: the rule cites §5.2.7; no free function
-- [ ] Gate check passes: Quick
+- [x] `others_on_a_one_driver_carrier_is_e0224` passes under `**Run typesnatures**`
+- [x] Code clarity: the rule cites §5.2.7; no free function
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1137,7 +1137,7 @@ Proof: run bookinventory | test refused_rows_and_gaps_section_11_agree ... ok
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none
+**Settled mid-build:** D16 - `code_owners.tsv` is not on this branch's base (it lives on `feature/params-and-io`): rows of `E0224` (T3), `E0413` (T4), `E0242` (T5) are left for T36 to delete.
 **Dispatched:** none
 **Walked:** none
 

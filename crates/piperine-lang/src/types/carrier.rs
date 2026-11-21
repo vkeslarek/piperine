@@ -277,6 +277,27 @@ impl Checker<'_> {
         Some(Ty::UInt(32))
     }
 
+    /// `s.others()` written on a carrier of a one-driver nature is `E0224` naming the carrier: the
+    /// method reads the drives of a resolved carrier other than the module's own, and a one-driver
+    /// carrier has no other (§5.2.7). Returns whether the rule fired, so the caller stops there; a
+    /// resolved carrier is not this rule's (until the resolved carriers are typed it stays `P0001`).
+    pub(super) fn others_on_one_driver(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> bool {
+        let Some((decl, Ty::Carrier { nature, .. })) = self.declared_port(recv) else { return false };
+        if !NatureRules::of(self.design, nature).one_driver {
+            return false;
+        }
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let nature_name = self.design.decl_data(nature).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let message = format!("`{name}.others()`: `{name}` is a carrier of `{nature_name}`, which has no `resolve`, so it has one drive and no other to read (§5.2.7)");
+        self.coded(file, "E0224", span, message, "`others()` on a one-driver carrier");
+        for arg in args {
+            self.infer(arg.value);
+        }
+        true
+    }
+
     /// `c.prev()` on a discrete carrier: the value before its most recent change, of the
     /// carrier's value type (§5.3). On a node it is `E0230`.
     pub(super) fn prev_read(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> Option<Ty> {

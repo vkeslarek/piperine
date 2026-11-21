@@ -97,3 +97,18 @@ fn a_generic_project_nature_takes_its_argument_or_its_default() {
     assert_eq!(nature("a"), Ty::UInt(8));
     assert_eq!(nature("b"), Ty::UInt(16));
 }
+
+#[test]
+fn others_on_a_one_driver_carrier_is_e0224() {
+    // §5.2.7: `others()` is the read of a resolved carrier; on a carrier of a nature with no
+    // `resolve` there is no other drive, `E0224` naming the carrier. `Bit` and a project's nature
+    // alike.
+    for (items, port) in [("", "Bit<u8>"), (BYTE, "Byte")] {
+        let text = format!("{items}module Top(in s: {port}) {{ }}\ndigital for Top {{ on settle {{ let x = s.others(); }} }}");
+        let source = Source::new(&text);
+        let diagnostics = source.diagnostics();
+        assert_eq!(diagnostics.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0224"], "{text}");
+        assert!(diagnostics[0].diagnostic.message.contains("`s`"), "{}", diagnostics[0].diagnostic.message);
+        assert_eq!(&text[diagnostics[0].diagnostic.span().range()], "s.others()");
+    }
+}

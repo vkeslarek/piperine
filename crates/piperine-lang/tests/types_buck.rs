@@ -34,7 +34,7 @@ const ROWS: &[Row] = &[
     Row { construct: "a generic function", source: "fn g<T>(x: f64) -> f64 { x }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let x = g(1.0); } }", names: "generic function" },
     Row { construct: "a nature with resolve", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },
     Row { construct: "a bundle", source: "struct Bn { a: Bit }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
-    Row { construct: "others()", source: "module Top(in c: Bit) { let x = c.others(); }", names: "method `others`" },
+    // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it (`types_natures::others_on_a_one_driver_carrier_is_e0224`).
     // `settle` left this table when unknown-semantics-events T5 typed it (`types_events::settle_is_an_event_in_every_event_position`).
     Row { construct: "an element commit", source: "module Top(in clk: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q[0] <- true; } }", names: "element or field commit" },
     Row { construct: "a field commit", source: "module Top(in clk: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q.v <- true; } }", names: "element or field commit" },
