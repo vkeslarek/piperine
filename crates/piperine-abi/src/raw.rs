@@ -487,7 +487,9 @@ pub struct Field<'a> {
     pub count: u32,
     /// `field_flag::*` bits.
     pub flags: u32,
-    /// `HAS_KNOWN`: the offset of one byte per element; 0 there = no value.
+    /// `HAS_KNOWN`: the offset of one byte per element; 0 there = no value. With `KNOWN_LEVELS`
+    /// too: the offset of one mask per element, the size of the leaf, bit `k` = level `k` known;
+    /// 0 there = no value.
     pub known: u32,
 }
 
@@ -648,7 +650,7 @@ pub const DEFAULT: u32 = u32::MAX - 1;
 /// The ABI major; it is the exported symbol's suffix.
 pub const MAJOR: u32 = 1;
 /// The ABI minor this crate implements.
-pub const MINOR: u32 = 1;
+pub const MINOR: u32 = 2;
 /// The one exported symbol of a library.
 pub const SYMBOL: &str = "piperine_abi_1";
 
@@ -719,7 +721,11 @@ pub mod leaf {
 
 /// `Field.flags` bits.
 pub mod field_flag {
+    /// `Field.known` is the offset of one known byte per element.
     pub const HAS_KNOWN: u32 = 1 << 0;
+    /// With `HAS_KNOWN`: `Field.known` is the offset of one mask per element, the size of the
+    /// leaf, bit `k` set when level `k` is known (abi.md §3; minor 2).
+    pub const KNOWN_LEVELS: u32 = 1 << 1;
 }
 
 /// `Term.op`.

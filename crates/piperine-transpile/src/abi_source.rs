@@ -16,6 +16,7 @@ impl AbiSource {
     pub const FILES: &'static [(&'static str, &'static str)] = &[
         ("caller.rs", include_str!("../../piperine-abi/src/caller.rs")),
         ("device.rs", include_str!("../../piperine-abi/src/device.rs")),
+        ("known.rs", include_str!("../../piperine-abi/src/known.rs")),
         ("layout.rs", include_str!("../../piperine-abi/src/layout.rs")),
         ("lib.rs", include_str!("../../piperine-abi/src/lib.rs")),
         ("raw.rs", include_str!("../../piperine-abi/src/raw.rs")),

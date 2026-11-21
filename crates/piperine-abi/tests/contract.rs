@@ -39,7 +39,7 @@ fn every_constant_has_its_pinned_value() {
             (leaf::I8, 6), (leaf::I16, 7), (leaf::I32, 8), (leaf::I64, 9), (leaf::F32, 10),
             (leaf::F64, 11),
         ]),
-        ("field_flag", &[(field_flag::HAS_KNOWN, 1)]),
+        ("field_flag", &[(field_flag::HAS_KNOWN, 1), (field_flag::KNOWN_LEVELS, 2)]),
         ("op", &[(op::FLOW, 1), (op::DDT, 2), (op::DELAY, 3)]),
         ("input", &[(input::LIMIT, 1), (input::NOISE, 2), (input::STIM, 3)]),
         ("watch", &[(watch::VAR, 1), (watch::CROSS, 2), (watch::CAP, 3), (watch::TRACE, 4)]),
@@ -71,8 +71,9 @@ fn every_constant_has_its_pinned_value() {
     assert_eq!(DEFAULT, u32::MAX - 1);
     assert_ne!(GROUND, DEFAULT);
     assert_eq!(MAJOR, 1);
-    // ABI minor 1 appended `Host.commit_with` (abi.md C7); minor 0 was the first release.
-    assert_eq!(MINOR, 1);
+    // ABI minor 1 appended `Host.commit_with` (abi.md C7); minor 2 added `field_flag::KNOWN_LEVELS`
+    // (abi.md §3); minor 0 was the first release.
+    assert_eq!(MINOR, 2);
     assert_eq!(SYMBOL, "piperine_abi_1");
     assert_eq!(NOTE_TEXT, 248);
 }

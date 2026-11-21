@@ -181,9 +181,9 @@ T34
 
 **Done when**:
 
-- [ ] `crates/piperine-abi/tests/known_levels.rs` created with a `//!` header; `a_levels_field_reads_one_mask_per_element` passes under `**Run abilevels**` (a `U16` field of count 2 with masks `0x0005` and `0x01FF` reads levels per element; a plain known byte reads as one level)
-- [ ] Code clarity: `FieldKnown` and every method carry `///` docs citing abi.md §3; no free function
-- [ ] Gate check passes: Quick
+- [x] `crates/piperine-abi/tests/known_levels.rs` created with a `//!` header; `a_levels_field_reads_one_mask_per_element` passes under `**Run abilevels**` (a `U16` field of count 2 with masks `0x0005` and `0x01FF` reads levels per element; a plain known byte reads as one level)
+- [x] Code clarity: `FieldKnown` and every method carry `///` docs citing abi.md §3; no free function
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
