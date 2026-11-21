@@ -1,7 +1,7 @@
 # Resolved Nets: Bundles verification
 
-**Verdict**: FAIL
-**Proofs**: `proofs.md` at 22fc40b4
+**Verdict**: PASS
+**Proofs**: `proofs.md` at 73cef16b
 **Verifier**: independent sub-agent (author != verifier)
 **Scope**: partial merge, batch B1 (T1-T4) only. Every check owned by T5-T21 is deferred (it waits on `composite-values` A-B, `generics`, `resolved-nets` T22); its proof is red or has no test at this HEAD, as expected, and is not judged here.
 
@@ -52,4 +52,4 @@ Test runs at 22fc40b4: `pom_bundles` 6/6. In the root `cargo test --no-fail-fast
 
 | Finding | Evidence | Fix | Closed |
 | --- | --- | --- | --- |
-| F1. C1's test does not assert that the struct is a bundle; it passes if classification treated it as a value struct | `pom_bundles.rs` `a_struct_of_carriers_is_a_bundle` asserts only `codes == []` | assert `StructData::bundle == Some(true)` (through the POM reflection) for `Stream` and for a struct whose only field is an array of carriers, and for one whose only field is a nested bundle | |
+| F1. C1's test does not assert that the struct is a bundle; it passes if classification treated it as a value struct | `pom_bundles.rs` `a_struct_of_carriers_is_a_bundle` asserts only `codes == []` | assert `StructData::bundle == Some(true)` (through the POM reflection) for `Stream` and for a struct whose only field is an array of carriers, and for one whose only field is a nested bundle | cf54677e: C1 asserts `StructData::bundle` is `Some(true)` for `Stream`, an array-of-carriers struct and a nested bundle |
