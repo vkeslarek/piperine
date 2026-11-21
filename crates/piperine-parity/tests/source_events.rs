@@ -30,12 +30,8 @@ use support::build;
 const US: i64 = 1_000_000_000;
 const NS: i64 = 1_000_000;
 
-/// The instant of an observation in ticks.
-fn ticks(o: &Observation) -> i64 {
-    (o.time * 1e15).round() as i64
-}
-
-/// Keeps every observation of a run, in the order the solver delivered them.
+/// Keeps every observation of a run, in the order the solver delivered them. The field is the shared
+/// buffer the sink appends to and the run reads back.
 struct Tape(std::rc::Rc<std::cell::RefCell<Vec<Observation>>>);
 
 impl Sink for Tape {
@@ -47,8 +43,11 @@ impl Sink for Tape {
 /// What one run observed: every observation, in order, the accepted steps of a transient, and the
 /// decoders of its records.
 struct Run {
+    /// Every observation, in the order the solver delivered them.
     observations: Vec<Observation>,
+    /// The accepted steps of the transient, in ticks (empty for operating points).
     steps: Vec<i64>,
+    /// The decoders of the model's record streams.
     streams: Streams,
 }
 
@@ -58,7 +57,7 @@ impl Run {
         self.observations
             .iter()
             .filter(|o| o.analysis == analysis)
-            .filter_map(|o| self.streams.decode(o).map(|r| (ticks(o), r.unwrap_or_else(|f| panic!("{f}")))))
+            .filter_map(|o| self.streams.decode(o).map(|r| (Run::tick(o), r.unwrap_or_else(|f| panic!("{f}")))))
             .filter(|(_, r)| r.stream == stream)
             .collect()
     }
@@ -79,7 +78,7 @@ impl Run {
             .iter()
             .filter(|o| o.path == path && !self.streams.paths().contains(&path))
             .filter_map(|o| match &o.kind {
-                ObservationKind::Change { bytes } => Some((ticks(o), bytes.clone())),
+                ObservationKind::Change { bytes } => Some((Run::tick(o), bytes.clone())),
                 _ => None,
             })
             .collect()
@@ -89,14 +88,57 @@ impl Run {
     fn record_position(&self, stream: &str, instant: i64) -> usize {
         self.observations
             .iter()
-            .position(|o| ticks(o) == instant && self.streams.decode(o).is_some_and(|r| r.is_ok_and(|r| r.stream == stream)))
+            .position(|o| Run::tick(o) == instant && self.streams.decode(o).is_some_and(|r| r.is_ok_and(|r| r.stream == stream)))
             .unwrap_or_else(|| panic!("no `{stream}` record at {instant}"))
+    }
+
+    /// The instant of an observation in ticks.
+    fn tick(o: &Observation) -> i64 {
+        (o.time * 1e15).round() as i64
+    }
+
+    /// The bytes of a known `Bit<f64>`: the value, its known byte and the padding of the 16-byte carrier.
+    fn known_real(value: f64) -> Vec<u8> {
+        let mut bytes = value.to_le_bytes().to_vec();
+        bytes.push(1);
+        bytes.resize(16, 0);
+        bytes
+    }
+
+    /// Whether two lists of instants in ticks are the same instants: an accepted step is the analog
+    /// side's own time, a record the tick of its instant, and the two round to ticks a tick apart at
+    /// most.
+    fn same_instants(left: &[i64], right: &[i64]) -> bool {
+        left.len() == right.len() && left.iter().zip(right).all(|(a, b)| (a - b).abs() <= 1)
+    }
+
+    /// The real field `name` of a record.
+    fn real(record: &Record, name: &str) -> f64 {
+        match record.fields.iter().find(|(field, _)| field == name) {
+            Some((_, Field::Real(value))) => *value,
+            other => panic!("no real field `{name}`: {other:?}"),
+        }
+    }
+
+    /// The bool field `name` of a record.
+    fn flag(record: &Record, name: &str) -> bool {
+        match record.fields.iter().find(|(field, _)| field == name) {
+            Some((_, Field::Bool(value))) => *value,
+            other => panic!("no bool field `{name}`: {other:?}"),
+        }
+    }
+
+    /// The instants and the two bool fields `first` and `second` of the records of `stream`.
+    fn flags(&self, stream: &str, first: &str, second: &str) -> Vec<(i64, bool, bool)> {
+        self.records(AnalysisKind::Transient, stream).into_iter().map(|(t, r)| (t, Run::flag(&r, first), Run::flag(&r, second))).collect()
     }
 }
 
 /// A model of `tests/events/` compiled once, and the runs made of it.
 struct Scenario {
+    /// The model compiled on the transpiled backend.
     built: Built,
+    /// The decoders of the model's record streams, handed to each run.
     streams: Streams,
 }
 
@@ -130,29 +172,6 @@ impl Scenario {
         drop(solver);
         let observations = tape.borrow().clone();
         Run { observations, steps: Vec::new(), streams: self.streams.clone() }
-    }
-}
-
-/// The bytes of a known `Bit<f64>`: the value, its known byte and the padding of the 16-byte carrier.
-fn known_real(value: f64) -> Vec<u8> {
-    let mut bytes = value.to_le_bytes().to_vec();
-    bytes.push(1);
-    bytes.resize(16, 0);
-    bytes
-}
-
-/// Whether two lists of instants in ticks are the same instants: an accepted step is the analog
-/// side's own time, a record the tick of its instant, and the two round to ticks a tick apart at
-/// most.
-fn same_instants(left: &[i64], right: &[i64]) -> bool {
-    left.len() == right.len() && left.iter().zip(right).all(|(a, b)| (a - b).abs() <= 1)
-}
-
-/// The real field `name` of a record.
-fn real(record: &Record, name: &str) -> f64 {
-    match record.fields.iter().find(|(field, _)| field == name) {
-        Some((_, Field::Real(value))) => *value,
-        other => panic!("no real field `{name}`: {other:?}"),
     }
 }
 
@@ -202,7 +221,7 @@ fn settle_records_follow_every_microstep_of_their_time_point() {
     let at = run.changes("ChainBench.y").into_iter().find(|(t, bytes)| *t > 0 && bytes[0] == 1).expect("y rises").0;
     let record = run.record_position("settled", at);
     for net in ["ChainBench.x", "ChainBench.y"] {
-        let change = run.observations.iter().position(|o| o.path == net && ticks(o) == at && matches!(o.kind, ObservationKind::Change { .. }));
+        let change = run.observations.iter().position(|o| o.path == net && Run::tick(o) == at && matches!(o.kind, ObservationKind::Change { .. }));
         assert!(change.is_some_and(|c| c < record), "{net} changes before the record of its time point");
     }
 }
@@ -227,7 +246,7 @@ fn a_time_point_with_no_settle_reaction_adds_no_microstep_and_no_record() {
     assert!(plain.observations.iter().all(|o| o.path != "$settle"), "SETTLE never fires: the design has no settle phase");
     let tapped = Scenario::of("settle.msl", "ChainBench").transient(3e-6, 1e-6);
     let without_records = |run: &Run| -> Vec<(String, i64)> {
-        run.observations.iter().filter(|o| !matches!(o.kind, ObservationKind::Record { .. }) && !o.path.contains("tap") && o.path != "$settle").map(|o| (o.path.replace("Plain", "Chain"), ticks(o))).collect()
+        run.observations.iter().filter(|o| !matches!(o.kind, ObservationKind::Record { .. }) && !o.path.contains("tap") && o.path != "$settle").map(|o| (o.path.replace("Plain", "Chain"), Run::tick(o))).collect()
     };
     assert_eq!(without_records(&plain), without_records(&tapped), "the tap changes no instant and adds no microstep of the rest");
 }
@@ -240,7 +259,7 @@ fn settle_runs_once_per_time_point_across_a_jump() {
     let steps = run.time_points();
     assert!(steps.contains(&(5 * US / 2)), "the rising edge at 2.5 us is a time point: {steps:?}");
     let settled = run.instants(AnalysisKind::Transient, "settled");
-    assert!(same_instants(&settled, &steps), "once per time point, the jump's included: {settled:?} against {steps:?}");
+    assert!(Run::same_instants(&settled, &steps), "once per time point, the jump's included: {settled:?} against {steps:?}");
 }
 
 #[test]
@@ -251,7 +270,7 @@ fn a_probing_settle_reaction_reads_the_time_point_solution() {
     let (seen, result) = scenario.built.run_with(5e-6, 1e-6);
     let out = NodeIdentifier::Anonymous(scenario.built.ir.node_at("ProbeBench.b").expect("node b").id().index());
     let run = Run { observations: seen.all(), steps: Vec::new(), streams: scenario.streams.clone() };
-    let seen: Vec<(i64, f64)> = run.records(AnalysisKind::Transient, "seen").into_iter().map(|(t, r)| (t, real(&r, "v"))).collect();
+    let seen: Vec<(i64, f64)> = run.records(AnalysisKind::Transient, "seen").into_iter().map(|(t, r)| (t, Run::real(&r, "v"))).collect();
     assert_eq!(seen.len(), 5);
     for (t, v) in seen {
         let step = result.iter().find(|s| (s.time() * 1e15).round() as i64 == t).expect("a step at the record's instant");
@@ -277,7 +296,7 @@ fn a_settle_commit_is_read_at_the_next_time_point() {
     let first = run.time_points()[0];
     assert_eq!(
         run.changes("LagBench.r"),
-        vec![(0, known_real(1000.0)), (first, known_real(2000.0))],
+        vec![(0, Run::known_real(1000.0)), (first, Run::known_real(2000.0))],
         "the initial value at the operating point, then the commit at the first time point"
     );
 }
@@ -292,7 +311,7 @@ fn an_event_after_the_landing_reads_the_settle_commit() {
     // is its proof
     let run = Scenario::of("commits.msl", "BetweenBench").transient(3e-6, 1e-6);
     let first = run.time_points()[0];
-    let reads: Vec<(i64, f64)> = run.records(AnalysisKind::Transient, "read").into_iter().map(|(t, r)| (t, real(&r, "r"))).collect();
+    let reads: Vec<(i64, f64)> = run.records(AnalysisKind::Transient, "read").into_iter().map(|(t, r)| (t, Run::real(&r, "r"))).collect();
     assert!(reads.len() >= 3, "edges at 0.37, 1.11 and 1.85 us at least: {reads:?}");
     for (t, r) in reads {
         assert!(t > first, "the edge at {t} follows the first time point {first}");
@@ -305,7 +324,7 @@ fn a_delayed_settle_commit_is_ordinary() {
     // §15 S7: `r <- 2k after 250n` from the operating point's settle phase is an ordinary delayed
     // commit: the carrier changes at 250 ns, not at the next time point (1 us)
     let run = Scenario::of("commits.msl", "SlowBench").transient(3e-6, 1e-6);
-    assert_eq!(run.changes("SlowBench.r"), vec![(0, known_real(1000.0)), (250 * NS, known_real(2000.0))]);
+    assert_eq!(run.changes("SlowBench.r"), vec![(0, Run::known_real(1000.0)), (250 * NS, Run::known_real(2000.0))]);
 }
 
 #[test]
@@ -316,22 +335,9 @@ fn a_settle_commit_at_the_stop_time_is_dropped_from_source() {
     let scenario = Scenario::of("commits.msl", "LateBench");
     let short = scenario.transient(3e-6, 1e-6);
     assert_eq!(short.instants(AnalysisKind::Transient, "committed"), vec![3 * US], "the reaction commits at the stop time");
-    assert_eq!(short.changes("LateBench.r"), vec![(0, known_real(1000.0))], "and the commit is dropped");
+    assert_eq!(short.changes("LateBench.r"), vec![(0, Run::known_real(1000.0))], "and the commit is dropped");
     let long = scenario.transient(4e-6, 1e-6);
-    assert_eq!(long.changes("LateBench.r"), vec![(0, known_real(1000.0)), (4 * US, known_real(5000.0))], "run on, it lands at the next time point");
-}
-
-/// The bool field `name` of a record.
-fn flag(record: &Record, name: &str) -> bool {
-    match record.fields.iter().find(|(field, _)| field == name) {
-        Some((_, Field::Bool(value))) => *value,
-        other => panic!("no bool field `{name}`: {other:?}"),
-    }
-}
-
-/// The instants and the two bool fields `first` and `second` of the records of `stream`.
-fn flags(run: &Run, stream: &str, first: &str, second: &str) -> Vec<(i64, bool, bool)> {
-    run.records(AnalysisKind::Transient, stream).into_iter().map(|(t, r)| (t, flag(&r, first), flag(&r, second))).collect()
+    assert_eq!(long.changes("LateBench.r"), vec![(0, Run::known_real(1000.0)), (4 * US, Run::known_real(5000.0))], "run on, it lands at the next time point");
 }
 
 #[test]
@@ -340,7 +346,7 @@ fn an_event_read_as_a_bool_says_whether_it_fired() {
     // read inside it are true exactly for the edge that fired in that microstep: `a` alone at
     // 10 ns, `b` alone at 20 ns. The falls at 30 ns run nothing
     let run = Scenario::of("reads.msl", "DetectBench").transient(60e-9, 10e-9);
-    let edges = flags(&run, "edges", "a", "b");
+    let edges = run.flags("edges", "a", "b");
     assert_eq!(edges[..2], [(10 * NS, true, false), (20 * NS, false, true)], "{edges:?}");
     assert!(edges.iter().all(|(t, ..)| *t != 30 * NS), "no rising edge at 30 ns: {edges:?}");
 }
@@ -350,7 +356,7 @@ fn two_events_in_one_microstep_run_the_reaction_once_both_true() {
     // §12.1.15, §13 rule 18 (UE-01 AC 2): `a` and `b` rise in one microstep at 40 ns; the
     // reaction on `a.rise() || b.rise()` runs once there with both read as true
     let run = Scenario::of("reads.msl", "DetectBench").transient(60e-9, 10e-9);
-    let at_forty: Vec<(i64, bool, bool)> = flags(&run, "edges", "a", "b").into_iter().filter(|(t, ..)| *t == 40 * NS).collect();
+    let at_forty: Vec<(i64, bool, bool)> = run.flags("edges", "a", "b").into_iter().filter(|(t, ..)| *t == 40 * NS).collect();
     assert_eq!(at_forty, [(40 * NS, true, true)], "one run, both edges true");
 }
 
@@ -359,7 +365,7 @@ fn an_event_not_in_the_head_reads_whether_it_fired() {
     // §13 rule 2 (edge case): the reaction is on `a.rise()` alone and reads `b.rise()`: false at
     // 10 ns where only `a` rises, true at 40 ns where `b` rises with it
     let run = Scenario::of("reads.msl", "ElsewhereBench").transient(60e-9, 10e-9);
-    let seen: Vec<(i64, bool)> = run.records(AnalysisKind::Transient, "elsewhere").into_iter().map(|(t, r)| (t, flag(&r, "b"))).collect();
+    let seen: Vec<(i64, bool)> = run.records(AnalysisKind::Transient, "elsewhere").into_iter().map(|(t, r)| (t, Run::flag(&r, "b"))).collect();
     assert_eq!(seen, [(10 * NS, false), (40 * NS, true)], "{seen:?}");
 }
 
@@ -379,7 +385,7 @@ fn a_settle_reaction_reads_an_event_as_true_only_when_settle_fires_it() {
     // point, and the reverse at a rising edge (no edge here is a time point)
     let run = Scenario::of("reads.msl", "SettleBench").transient(3e-6, 1e-6);
     let steps = run.time_points();
-    let reads = flags(&run, "either", "settle", "edge");
+    let reads = run.flags("either", "settle", "edge");
     for (t, settle, edge) in &reads {
         assert_eq!(*settle, steps.contains(t), "`settle` reads true at the time points only: {t}");
         assert_eq!(*edge, !*settle, "exactly one of the two fired at {t}");

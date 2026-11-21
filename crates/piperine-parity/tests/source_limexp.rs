@@ -21,11 +21,6 @@ use piperine_solver::prelude::Context;
 /// The nodes of `diode_series` the operating point is read at.
 const NODES: [&str; 2] = ["a", "b"];
 
-/// The backends that run a diode written with `limit`: the compiled one.
-fn compiled_backends() -> Vec<Backend> {
-    Backend::selected().into_iter().filter(|backend| *backend == Backend::Rust).collect()
-}
-
 /// One `diode_series` model of `tests/limexp/`.
 struct SeriesModel {
     /// The model's file under `tests/limexp/`.
@@ -33,6 +28,11 @@ struct SeriesModel {
 }
 
 impl SeriesModel {
+    /// The backends that run a diode written with `limit`: the compiled one.
+    fn compiled_backends() -> Vec<Backend> {
+        Backend::selected().into_iter().filter(|backend| *backend == Backend::Rust).collect()
+    }
+
     /// The path of the model.
     fn path(&self) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/limexp").join(self.file)
@@ -59,7 +59,7 @@ fn limexp_elaborates_from_the_stdlib_with_its_closure() {
 fn limexp_and_pnjlim_diodes_agree_at_the_operating_point() {
     // The same circuit with the junction's exponential written two ways reaches one operating
     // point: `limexp` only changes how Newton gets there (§22.2.4 rule 3), never where it lands.
-    for backend in compiled_backends() {
+    for backend in SeriesModel::compiled_backends() {
         let limexp = SeriesModel { file: "series_limexp.msl" }.operating_point(backend);
         let pnjlim = SeriesModel { file: "series_pnjlim.msl" }.operating_point(backend);
         for ((node, limited), exact) in NODES.iter().zip(&limexp).zip(&pnjlim) {
@@ -76,7 +76,7 @@ fn the_limexp_diode_series_twin_agrees_with_ngspice() {
     // netlist the pnjlim twin is held to in `parity_op`, under the same `DC_VOLTAGE`.
     let reference = Ngspice::from_environment().run("diode_series");
     let Reference::Golden(golden) = &reference else { panic!("ngspice is required for this comparison, it is not skipped") };
-    for backend in compiled_backends() {
+    for backend in SeriesModel::compiled_backends() {
         let solved = SeriesModel { file: "series_limexp.msl" }.operating_point(backend);
         for (node, actual) in NODES.iter().zip(solved) {
             let quantity = format!("v({node})");
@@ -89,13 +89,16 @@ fn the_limexp_diode_series_twin_agrees_with_ngspice() {
 /// The compiled `DiodeLimexp`, called through the device ABI at its default `is` and `n`. The
 /// project is kept so the loaded library outlives the handle.
 struct CompiledDiode {
+    /// The instance the functions are called on.
     handle: Handle,
     _running: Running,
 }
 
 /// What one call of a function wrote (each write as an `f64`) and the partials it declares.
 struct Call {
+    /// The function's write cells, each read as an `f64`.
     writes: Vec<f64>,
+    /// The partials the function declares, in its own order.
     partials: Vec<f64>,
 }
 
