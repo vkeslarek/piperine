@@ -205,11 +205,10 @@ impl Library {
         let body = Dx::new(&mut b, FILE, 24, 5).block(vec![declare, set_a, set_b], Some(result), pair_t.clone());
         Library::define(&mut b, "bump", 20, vec![Library::local("p", pair_t.clone(), false), Library::local("q", pair_t.clone(), true)], 1, pair_t.clone(), body);
 
-        // aggregates.msl:30  fn span(a: [u8; 4], lo: u8) -> u64 { a[lo..].len() }
-        let (a, lo) = (Library::e(&mut b, Expr::Local(0), array4.clone(), 30), Library::e(&mut b, Expr::Local(1), u8t.clone(), 30));
-        let view = Library::e(&mut b, Expr::SliceOf { expr: a, low: Some(lo), high: None, inclusive: false }, ValueType::Slice(Box::new(u8t.clone())), 30);
-        let body = Library::e(&mut b, Expr::Length(view), Ty::u(64), 30);
-        Library::define(&mut b, "span", 30, vec![Library::local("a", array4.clone(), false), Library::local("lo", u8t.clone(), false)], 2, Ty::u(64), body);
+        // aggregates.msl:30  fn span(a: [u8; 4]) -> u64 { a.len() }
+        let a = Library::e(&mut b, Expr::Local(0), array4.clone(), 30);
+        let body = Library::e(&mut b, Expr::Length(a), Ty::u(64), 30);
+        Library::define(&mut b, "span", 30, vec![Library::local("a", array4.clone(), false)], 1, Ty::u(64), body);
 
         // aggregates.msl:32  fn payload(t: Tx) -> u8 { if matches!(t, Tx::Data) { t.n as u8 } else { 255 } }
         let t = Library::e(&mut b, Expr::Local(0), tx_t.clone(), 32);
@@ -279,7 +278,7 @@ fn pick(a: [u8; 3], i: usize) -> u8 {
 
 #[test]
 fn aggregate_expressions_compile_and_run() {
-    // CV-13, CV-20: construction, field and element reads and writes, a slice's length, a variant
+    // CV-13, CV-20: construction, field and element reads and writes, an array's length, a variant
     // test and field, an option from its pair and back, `default`, comparison of aggregates the
     // derives allow, and an index that may be unknown; each is compared with the same Rust.
     let ir = Library::ir();
@@ -290,7 +289,7 @@ fn aggregate_expressions_compile_and_run() {
         "rt::Index::at(&a, i.get() as i128, \"aggregates.msl:10:1\")",
         "q.a = q.a + R::constant(1.0);",
         "a[rt::Index::of(rt::UInt::<8>::new(1).get() as i128, a.len(), \"aggregates.msl:14:12\")] = rt::UInt::<8>::new(5);",
-        "rt::Index::slice(&a, Some(lo.get() as i128), None, false, \"aggregates.msl:30:1\")",
+        "a.len()",
         "matches!(t, Tx::Data { .. })",
         "rt::Index::read(&a, ",
         "rt::Index::write(&mut c, ",
@@ -315,7 +314,7 @@ fn main() {{
     let q = bump(Pair::<f64> {{ a: 1.5, b: true }});
     println!(\"bump {{}} {{}}\", q.a, q.b);
     let w = [{u1}, {u2}, {u3}, {u4}];
-    println!(\"span {{}} {{}}\", span(w, {u1}).get(), span(w, {u4}).get());
+    println!(\"span {{}} {{}}\", span(w).get(), w.len());
     println!(\"payload {{}} {{}}\", payload(Tx::Data {{ n: rt::UInt::<3>::new(6) }}).get(), payload(Tx::Idle).get());
     println!(\"option {{}} {{}} {{}} {{}}\", has(maybe(2.5, true)), has(maybe(2.5, false)), got(maybe(2.5, true)), got(maybe(2.5, false)));
     println!(\"compare {{}} {{}} {{}} {{}}\", below(Level::Low, Level::High), below(Level::High, Level::High), same(({u1}, true), ({u1}, true)), same(({u1}, true), ({u2}, true)));
@@ -350,7 +349,7 @@ fn main() {{
         format!("pick {} {} {}", rust_pick[0], rust_pick[1], rust_pick[2]),
         "fill 0 5 7".to_string(),
         format!("bump {} {}", 1.5f64 + 1.0, !true),
-        format!("span {} {}", [1u8, 2, 3, 4][1..].len(), [1u8, 2, 3, 4][4..].len()),
+        format!("span {} {}", [1u8, 2, 3, 4].len(), [1u8, 2, 3, 4].len()),
         "payload 6 255".to_string(),
         format!("option {} {} {} {}", true, false, 2.5f64, 0.0f64),
         format!("compare {} {} {} {}", 0 < 1, 1 < 1, (1u8, true) == (1u8, true), (1u8, true) == (2u8, true)),

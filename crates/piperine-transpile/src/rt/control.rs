@@ -96,7 +96,7 @@ impl Depth {
     }
 }
 
-/// Indices and slice bounds checked against a length (§1.5.25): outside the length, a panic naming
+/// Indices checked against a length (§1.5.25): outside the length, a panic naming
 /// the index and where the access was written. An index that may be unknown names any element, so a
 /// read merges the elements and a write merges the value into each (§3.3.13).
 pub struct Index;
@@ -140,25 +140,6 @@ impl Index {
                 }
             }
         }
-    }
-
-    /// `&elements[low..high]` (`..=` when `inclusive`): a start past the end, or a bound outside the
-    /// length, is the panic naming the bound and `origin`.
-    pub fn slice<'a, T>(elements: &'a [T], low: Option<i128>, high: Option<i128>, inclusive: bool, origin: &str) -> &'a [T] {
-        let length = elements.len() as i128;
-        let start = low.unwrap_or(0);
-        let end = match high {
-            Some(high) if inclusive => high + 1,
-            Some(high) => high,
-            None => length,
-        };
-        if start < 0 || end > length {
-            Panic::raise(format!("{origin}: the slice {start}..{end} is out of range for a length of {length}"));
-        }
-        if start > end {
-            Panic::raise(format!("{origin}: the slice starts at {start}, past its end {end}"));
-        }
-        &elements[start as usize..end as usize]
     }
 }
 
@@ -401,8 +382,8 @@ mod tests {
 
     #[test]
     fn an_index_out_of_range_panics_naming_it() {
-        // §1.5.25: an index at or past the length, a negative one, and a slice bound past the length
-        // or a start past the end, each a panic naming the index and where it was written
+        // §1.5.25: an index at or past the length or a negative one is a panic naming the index and
+        // where it was written
         let elements = [10u8, 20, 30];
         assert_eq!(Index::at(&elements, 2, "a.msl:3:5"), 30);
         let message = |body: fn() -> u8| {
@@ -411,10 +392,6 @@ mod tests {
         };
         assert_eq!(message(|| Index::at(&[10u8, 20, 30], 3, "a.msl:3:5")), "a.msl:3:5: the index 3 is out of range for a length of 3");
         assert_eq!(message(|| Index::at(&[10u8, 20, 30], -1, "a.msl:4:5")), "a.msl:4:5: the index -1 is out of range for a length of 3");
-        assert_eq!(Index::slice(&elements, Some(1), None, false, "a.msl:5:5"), &[20, 30]);
-        assert_eq!(Index::slice(&elements, Some(0), Some(1), true, "a.msl:5:5"), &[10, 20]);
-        assert_eq!(message(|| Index::slice(&[10u8, 20, 30], Some(0), Some(3), true, "a.msl:6:5").len() as u8), "a.msl:6:5: the slice 0..4 is out of range for a length of 3");
-        assert_eq!(message(|| Index::slice(&[10u8, 20, 30], Some(2), Some(1), false, "a.msl:7:5").len() as u8), "a.msl:7:5: the slice starts at 2, past its end 1");
     }
 
     #[test]

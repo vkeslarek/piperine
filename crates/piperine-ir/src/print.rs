@@ -89,7 +89,6 @@ impl Display for ValueType {
                 write!(f, "({})", parts.join(", "))
             }
             ValueType::Array(element, length) => write!(f, "[{element}; {length}]"),
-            ValueType::Slice(element) => write!(f, "&[{element}]"),
             ValueType::Struct(id) | ValueType::Enum(id) => write!(f, "t{}", id.0),
             ValueType::Option(inner) => write!(f, "Option<{inner}>"),
         }
@@ -865,13 +864,6 @@ impl<'a> Printer<'a> {
             }
             Expr::Field { expr, index } => next.extend([Piece::Expr(*expr), text(format!(".{index}"))]),
             Expr::Index { expr, index } => next.extend([Piece::Expr(*expr), text("[".into()), Piece::Expr(*index), text("]".into())]),
-            Expr::SliceOf { expr, low, high, inclusive } => {
-                next.extend([Piece::Expr(*expr), text("[".into())]);
-                next.extend(low.map(Piece::Expr));
-                next.push(text(if *inclusive { "..=" } else { ".." }.into()));
-                next.extend(high.map(Piece::Expr));
-                next.push(text("]".into()));
-            }
             Expr::Length(expr) => next.extend([Piece::Expr(*expr), text(".len()".into())]),
             Expr::IsVariant { expr, variant } => {
                 let ty = self.ir.exprs.get(expr.index()).map(|e| &e.ty);
@@ -1085,7 +1077,7 @@ impl<'a> Printer<'a> {
                 _ => None,
             },
             // The aggregate forms are typed by their arena entry: the structural form writes the type.
-            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } => None,
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } => None,
             Expr::Length(_) => Some(ValueType::UInt(64)),
             Expr::IsVariant { .. } | Expr::OptionPart { part: LevelPart::Is, .. } => Some(ValueType::Bool),
             Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } => None,
@@ -1301,7 +1293,6 @@ impl<'a> Printer<'a> {
             Expr::VariantOf { ty, variant, fields } => format!("variant_of t{} v{variant} ({})", ty.0, ids(fields)),
             Expr::Field { expr, index } => format!("field {} .{index}", e(expr)),
             Expr::Index { expr, index } => format!("index {} {}", e(expr), e(index)),
-            Expr::SliceOf { expr, low, high, inclusive } => format!("slice_of {} {} {}{}", e(expr), opt(low), opt(high), if *inclusive { " inclusive" } else { "" }),
             Expr::Length(expr) => format!("length {}", e(expr)),
             Expr::IsVariant { expr, variant } => format!("is_variant {} v{variant}", e(expr)),
             Expr::VariantField { expr, variant, field } => format!("variant_field {} v{variant} .{field}", e(expr)),

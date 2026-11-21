@@ -47,7 +47,7 @@ impl<'a> TypeItems<'a> {
         match ty {
             ValueType::F64 => true,
             ValueType::Tuple(parts) => parts.iter().any(|part| self.holds_real_visiting(part, visited)),
-            ValueType::Array(element, _) | ValueType::Slice(element) | ValueType::Option(element) => self.holds_real_visiting(element, visited),
+            ValueType::Array(element, _) | ValueType::Option(element) => self.holds_real_visiting(element, visited),
             ValueType::Struct(id) | ValueType::Enum(id) => {
                 if !visited.insert(id.index()) {
                     return false;

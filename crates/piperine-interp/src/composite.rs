@@ -12,12 +12,12 @@ use piperine_ir::{Body, EventSource, Expr, ExprId, Stmt, StmtId};
 pub(crate) struct CompositeForms<'a> {
     body: Body<'a>,
     /// The forms met so far, by their position in `CompositeForms::NAMES`.
-    met: [bool; 23],
+    met: [bool; 22],
 }
 
 impl<'a> CompositeForms<'a> {
     /// The name of each form, in the order the refusal lists them.
-    const NAMES: [&'static str; 23] = [
+    const NAMES: [&'static str; 22] = [
         "an assignment",
         "a loop",
         "a while loop",
@@ -34,7 +34,6 @@ impl<'a> CompositeForms<'a> {
         "a variant expression",
         "a field read",
         "an element read",
-        "a slice",
         "a length read",
         "a variant test",
         "a variant field read",
@@ -45,7 +44,7 @@ impl<'a> CompositeForms<'a> {
 
     /// The forms `body` holds, each once, in a fixed order.
     pub(crate) fn of(body: Body<'a>) -> Vec<&'static str> {
-        let mut forms = CompositeForms { body, met: [false; 23] };
+        let mut forms = CompositeForms { body, met: [false; 22] };
         forms.walk();
         Self::NAMES.into_iter().zip(forms.met).filter_map(|(name, met)| met.then_some(name)).collect()
     }
@@ -124,13 +123,12 @@ impl<'a> CompositeForms<'a> {
             Expr::VariantOf { .. } => Some(13),
             Expr::Field { .. } => Some(14),
             Expr::Index { .. } => Some(15),
-            Expr::SliceOf { .. } => Some(16),
-            Expr::Length(_) => Some(17),
-            Expr::IsVariant { .. } => Some(18),
-            Expr::VariantField { .. } => Some(19),
-            Expr::OptionPack { .. } => Some(20),
-            Expr::OptionPart { .. } => Some(21),
-            Expr::Default(_) => Some(22),
+            Expr::Length(_) => Some(16),
+            Expr::IsVariant { .. } => Some(17),
+            Expr::VariantField { .. } => Some(18),
+            Expr::OptionPack { .. } => Some(19),
+            Expr::OptionPart { .. } => Some(20),
+            Expr::Default(_) => Some(21),
             _ => None,
         }
     }

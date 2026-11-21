@@ -1,5 +1,5 @@
 //! The aggregate forms of the IR as Rust (composite-values CV-13, CV-20): construction of tuples,
-//! arrays, structs and enum variants; field, element and slice reads; `len`; variant tests and
+//! arrays, structs and enum variants; field and element reads; `len`; variant tests and
 //! fields; `Option` packing; `default`; the comparison of aggregates; and assignment through field
 //! and index projections. Each is plain Rust over the items of `print/types.rs`. An index outside
 //! its length is a panic naming the index and where it was written (`rt::Index`, §1.5.25); an index
@@ -41,13 +41,6 @@ impl ValuePrinter<'_> {
                 atom(format!("{}.{name}", self.operand(*expr)?))
             }
             Expr::Index { expr, index } => atom(self.element_read(e, *expr, *index)?),
-            Expr::SliceOf { expr, low, high, inclusive } => {
-                let bound = |b: &Option<ExprId>| match b {
-                    Some(b) => Ok(format!("Some({})", self.index_value(*b)?)),
-                    None => Ok("None".to_string()),
-                };
-                atom(format!("rt::Index::slice(&{}, {}, {}, {inclusive}, {:?})", self.operand(*expr)?, bound(low)?, bound(high)?, self.site(e)))
-            }
             Expr::Length(expr) => atom(format!("rt::UInt::<64>::new({}.len() as u64)", self.operand(*expr)?)),
             Expr::IsVariant { expr, variant } => {
                 let (name, _) = self.variant_label(self.ir.expr_type(*expr), *variant).ok_or_else(|| self.unsupported(e, "a variant test of a value that is not an enum"))?;
@@ -137,10 +130,10 @@ impl ValuePrinter<'_> {
         }
     }
 
-    /// An index or a slice bound as a Rust `i128`: the integer's value, whatever its width and sign.
+    /// An index as a Rust `i128`: the integer's value, whatever its width and sign.
     fn index_value(&self, index: ExprId) -> Result<String, Error> {
         if Self::is_flagged(self.ir.expr_type(index)) {
-            return Err(self.unsupported(index, "a slice bound that may be unknown"));
+            return Err(self.unsupported(index, "an index that may be unknown"));
         }
         Ok(format!("{}.get() as i128", self.operand(index)?))
     }
@@ -176,7 +169,7 @@ impl ValuePrinter<'_> {
 
     /// Whether `e` has an aggregate type.
     pub(super) fn is_aggregate_operand(&self, e: ExprId) -> bool {
-        matches!(self.ir.expr_type(e), ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Slice(_) | ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Option(_))
+        matches!(self.ir.expr_type(e), ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Option(_))
     }
 
     /// `a == b`, `a < b` over two aggregates: Rust's derived operators. The code's real `R` has no

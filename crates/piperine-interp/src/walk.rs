@@ -340,7 +340,6 @@ impl<'a> Walk<'a> {
             Expr::VariantOf { .. } => "VariantOf",
             Expr::Field { .. } => "Field",
             Expr::Index { .. } => "Index",
-            Expr::SliceOf { .. } => "SliceOf",
             Expr::Length(_) => "Length",
             Expr::IsVariant { .. } => "IsVariant",
             Expr::VariantField { .. } => "VariantField",

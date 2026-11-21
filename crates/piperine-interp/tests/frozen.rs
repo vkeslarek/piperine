@@ -686,7 +686,7 @@ fn each_composite_values_form_is_refused_by_name() {
     });
     assert_eq!(through_a_value, ["a function value", "a call through a function value"]);
 
-    // `let t = (1.0, 2.0); let a = [t.0; 2]; a[0]; a.len(); a[0..1]` and the struct and variant
+    // `let t = (1.0, 2.0); let a = [t.0; 2]; a[0]; a.len()` and the struct and variant
     // expressions (T31): each form is named, in the order of the list.
     let aggregates = Composite::refused(|b| {
         let (one, two) = (Switching::ex(b).real(1.0), Switching::ex(b).real(2.0));
@@ -698,8 +698,7 @@ fn each_composite_values_form_is_refused_by_name() {
         let listed = b.expr(Expr::Array(vec![one, two]), array_type, Switching::at());
         let zero = Dx::new(b, "composite.msl", 2, 5).int(0, Ty::u(8));
         let element = b.expr(Expr::Index { expr: listed, index: zero }, ValueType::F64, Switching::at());
-        let view = b.expr(Expr::SliceOf { expr: repeated, low: None, high: None, inclusive: false }, ValueType::Slice(Box::new(ValueType::F64)), Switching::at());
-        let length = b.expr(Expr::Length(view), ValueType::UInt(64), Switching::at());
+        let length = b.expr(Expr::Length(repeated), ValueType::UInt(64), Switching::at());
         let shape = b.type_data(TypeData {
             name: "S".into(),
             path: "S".into(),
@@ -720,7 +719,7 @@ fn each_composite_values_form_is_refused_by_name() {
     });
     assert_eq!(
         aggregates,
-        ["a tuple", "an array", "an array repeat", "a struct expression", "a variant expression", "a field read", "an element read", "a slice", "a length read"]
+        ["a tuple", "an array", "an array repeat", "a struct expression", "a variant expression", "a field read", "an element read", "a length read"]
     );
 
     // `matches!(e, E::A)`, `e.0` of a variant, an option from its pair and back, `default` (T32)

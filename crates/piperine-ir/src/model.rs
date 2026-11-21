@@ -512,12 +512,9 @@ pub enum Expr {
     VariantOf { ty: TypeId, variant: u32, fields: Vec<ExprId> },
     /// `expr.field`, `expr.0`: field `index` of a struct or a tuple.
     Field { expr: ExprId, index: u32 },
-    /// `expr[index]`: an element of an array or a slice; `index` has an integer type.
+    /// `expr[index]`: an element of an array; `index` has an integer type.
     Index { expr: ExprId, index: ExprId },
-    /// `expr[low..high]`, `expr[low..=high]`: a part of an array or a slice. It is a view: it
-    /// stands only as a call argument or as a method receiver.
-    SliceOf { expr: ExprId, low: Option<ExprId>, high: Option<ExprId>, inclusive: bool },
-    /// `expr.len()`: the length of an array or a slice, a `UInt<64>`.
+    /// `expr.len()`: the length of an array, a `UInt<64>`.
     Length(ExprId),
     /// `matches!(expr, Enum::Variant ..)`: whether the enum value is variant `variant`. A `bool`.
     IsVariant { expr: ExprId, variant: u32 },
@@ -560,7 +557,6 @@ impl Expr {
             Expr::OptionPart { option, .. } => vec![*option],
             Expr::Default(_) => Vec::new(),
             Expr::Index { expr, index } => vec![*expr, *index],
-            Expr::SliceOf { expr, low, high, .. } => [*expr].into_iter().chain(*low).chain(*high).collect(),
         }
     }
 
@@ -840,8 +836,6 @@ pub enum ValueType {
     Tuple(Vec<ValueType>),
     /// An array `[T; N]`: the element type and the length.
     Array(Box<ValueType>, u64),
-    /// A slice `&[T]`: a function parameter only (a view of an array or a part of one).
-    Slice(Box<ValueType>),
     /// A source struct, named by its entry of the type arena.
     Struct(TypeId),
     /// A source enum, named by its entry of the type arena.

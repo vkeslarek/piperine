@@ -56,7 +56,6 @@ impl Ir {
         checker.type_arena();
         checker.aggregate_constants();
         checker.composite_params();
-        checker.slice_positions();
         checker.code();
         checker.discrete();
         checker.out
@@ -509,7 +508,7 @@ impl<'a> Checker<'a> {
             }
             Expr::Math { args, .. } => exprs.extend(args),
             Expr::Closure { body, .. } => exprs.push(*body),
-            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
                 for &s in kind.statements() {
                     self.stmt_id(item, origin, s);
                 }
@@ -828,24 +827,8 @@ impl<'a> Checker<'a> {
                 ValueType::Enum(id) if !matches!(self.ir.types[id.index()].kind, TypeKind::Enum { .. }) => {
                     return Some(format!("type {t} names a struct as an enum"));
                 }
-                ValueType::Tuple(parts) => {
-                    if parts.iter().any(|p| matches!(p, ValueType::Slice(_))) {
-                        return Some(format!("type {t} holds a slice: a slice is a function parameter only"));
-                    }
-                    stack.extend(parts);
-                }
-                ValueType::Array(element, _) | ValueType::Option(element) => {
-                    if matches!(**element, ValueType::Slice(_)) {
-                        return Some(format!("type {t} holds a slice: a slice is a function parameter only"));
-                    }
-                    stack.push(element);
-                }
-                ValueType::Slice(element) => {
-                    if matches!(**element, ValueType::Slice(_)) {
-                        return Some(format!("type {t} holds a slice: a slice is a function parameter only"));
-                    }
-                    stack.push(element);
-                }
+                ValueType::Tuple(parts) => stack.extend(parts),
+                ValueType::Array(element, _) | ValueType::Option(element) => stack.push(element),
                 _ => {}
             }
         }
@@ -906,7 +889,7 @@ impl<'a> Checker<'a> {
                 Expr::Call { args, .. } | Expr::Math { args, .. } => stack_e.extend(args),
                 Expr::Method { receiver, args, .. } => stack_e.extend([*receiver].into_iter().chain(args.iter().copied())),
                 Expr::Closure { body, .. } => stack_e.push(*body),
-                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
+                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
                     stack_s.extend(data.kind.statements());
                     stack_e.extend(data.kind.operands());
                 }
@@ -1996,7 +1979,7 @@ impl<'a> Checker<'a> {
                 next.push(Task::Expr(*callee, ctx));
                 next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
             }
-            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
                 self.aggregate_form(w, id, first, ctx, next);
             }
             Expr::IsKnown(value) | Expr::High(value) => {

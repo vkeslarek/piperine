@@ -538,7 +538,7 @@ impl<'a> ValuePrinter<'a> {
             Expr::LevelCast { expr, .. } => out.push(*expr),
             Expr::Method { receiver, args, .. } => out.extend([*receiver].into_iter().chain(args.iter().copied())),
             Expr::Binary { lhs, rhs, .. } => out.extend([*lhs, *rhs]),
-            aggregate @ (Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_)) => out.extend(aggregate.operands()),
+            aggregate @ (Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_)) => out.extend(aggregate.operands()),
             Expr::If { cond, then, otherwise } => out.extend([*cond, *then, *otherwise]),
             Expr::Block { stmts, value } => {
                 for s in stmts {
@@ -642,7 +642,6 @@ impl<'a> ValuePrinter<'a> {
                 Ok(if parts.len() == 1 { format!("({},)", parts[0]) } else { format!("({})", parts.join(", ")) })
             }
             ValueType::Array(element, length) => Ok(format!("[{}; {length}]", self.rust_type(element, path)?)),
-            ValueType::Slice(element) => Ok(format!("&[{}]", self.rust_type(element, path)?)),
             ValueType::Option(inner) => Ok(format!("Option<{}>", self.rust_type(inner, path)?)),
             // One item per arena entry (`print/types.rs`); a type that holds a real is generic over it.
             ValueType::Struct(id) | ValueType::Enum(id) => {
@@ -854,7 +853,7 @@ impl<'a> ValuePrinter<'a> {
             Expr::Return(value) => self.return_from_function(e, *value),
             Expr::FunctionRef(function) => self.function_value(*function),
             Expr::CallValue { callee, args } => self.call_value(e, *callee, args),
-            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::SliceOf { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => self.aggregate(e),
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => self.aggregate(e),
         }
     }
 

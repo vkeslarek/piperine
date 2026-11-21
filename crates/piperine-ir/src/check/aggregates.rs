@@ -122,7 +122,7 @@ impl Checker<'_> {
                     }
                 }
                 ValueType::Tuple(parts) => stack.extend(parts.clone()),
-                ValueType::Array(element, _) | ValueType::Option(element) | ValueType::Slice(element) => stack.push(*element.clone()),
+                ValueType::Array(element, _) | ValueType::Option(element) => stack.push(*element.clone()),
                 ValueType::Flagged(inner) => stack.push(*inner.clone()),
                 ValueType::F64 | ValueType::Bool | ValueType::Unit | ValueType::Fn(..) | ValueType::UInt(_) | ValueType::Int(_) => {}
             }
@@ -218,25 +218,14 @@ impl Checker<'_> {
                     if let Some(base) = self.ty(*expr) {
                         match Checker::element_type(base) {
                             Some(element) => self.own(w, &origin, ty, element),
-                            None => self.wrong(w, origin.clone(), format!("an index applied to a value of type {base}, which is not an array or a slice")),
-                        }
-                    }
-                }
-                Expr::SliceOf { expr, low, high, .. } => {
-                    for bound in low.iter().chain(high) {
-                        self.integer_index(w, *bound, "a slice bound");
-                    }
-                    if let Some(base) = self.ty(*expr) {
-                        match Checker::element_type(base) {
-                            Some(element) => self.own(w, &origin, ty, &ValueType::Slice(Box::new(element.clone()))),
-                            None => self.wrong(w, origin.clone(), format!("a slice of a value of type {base}, which is not an array or a slice")),
+                            None => self.wrong(w, origin.clone(), format!("an index applied to a value of type {base}, which is not an array")),
                         }
                     }
                 }
                 Expr::Length(expr) => {
                     if let Some(base) = self.ty(*expr) {
                         if Checker::element_type(base).is_none() {
-                            self.wrong(w, origin.clone(), format!("`len` of a value of type {base}, which is not an array or a slice"));
+                            self.wrong(w, origin.clone(), format!("`len` of a value of type {base}, which is not an array"));
                         }
                     }
                     self.own(w, &origin, ty, &ValueType::UInt(64));
@@ -292,9 +281,9 @@ impl Checker<'_> {
         }
     }
 
-    /// Whether `ty` is an aggregate: a tuple, an array, a slice, a struct, an enum or an `Option`.
+    /// Whether `ty` is an aggregate: a tuple, an array, a struct, an enum or an `Option`.
     pub(super) fn is_aggregate(ty: &ValueType) -> bool {
-        matches!(ty, ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Slice(_) | ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Option(_))
+        matches!(ty, ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Option(_))
     }
 
     /// Whether `kind` is an operator with an aggregate operand.
@@ -328,15 +317,15 @@ impl Checker<'_> {
         next.push(Task::Expr(*rhs, ctx));
     }
 
-    /// The element type of an array or a slice.
+    /// The element type of an array.
     fn element_type(ty: &ValueType) -> Option<&ValueType> {
         match ty {
-            ValueType::Array(element, _) | ValueType::Slice(element) => Some(element),
+            ValueType::Array(element, _) => Some(element),
             _ => None,
         }
     }
 
-    /// An index or a slice bound has an integer type.
+    /// An index has an integer type.
     fn integer_index(&mut self, w: &Walk, index: ExprId, what: &str) {
         if let Some(ty) = self.ty(index) {
             if !Typing::base(ty).is_integer() {
@@ -381,23 +370,6 @@ impl Checker<'_> {
         Some(current)
     }
 
-    /// A slice is a view: it stands only as a call argument or a method receiver (`len` is one).
-    pub(super) fn slice_positions(&mut self) {
-        let ir = self.ir;
-        let is_slice = |id: &ExprId| matches!(ir.exprs.get(id.index()).map(|e| &e.kind), Some(Expr::SliceOf { .. }));
-        for (i, data) in ir.exprs.iter().enumerate() {
-            let views_allowed = matches!(data.kind, Expr::Call { .. } | Expr::CallValue { .. } | Expr::Method { .. } | Expr::Length(_));
-            if !views_allowed && data.kind.operands().iter().any(is_slice) {
-                self.report(format!("expr {i}"), data.origin.clone(), "a slice stands only as a call argument or a method receiver".to_string());
-            }
-        }
-        for (i, stmt) in ir.stmts.iter().enumerate() {
-            if stmt.operands().iter().any(is_slice) {
-                let first = stmt.operands().into_iter().find(is_slice).map_or_else(Checker::unknown, |e| self.expr_origin(e));
-                self.report(format!("stmt {i}"), first, "a slice stands only as a call argument or a method receiver".to_string());
-            }
-        }
-    }
 }
 
 

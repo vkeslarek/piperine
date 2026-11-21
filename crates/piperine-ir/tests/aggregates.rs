@@ -1,5 +1,5 @@
 //! Scope: the aggregate forms of the IR (composite-values phase B, CV-20): the type arena of source
-//! structs and enums (`ValueType::{Tuple, Array, Slice, Struct, Enum, Option}`, `TypeData`), what
+//! structs and enums (`ValueType::{Tuple, Array, Struct, Enum, Option}`, `TypeData`), what
 //! `Ir::check` demands of it (§1.3.7, §1.3.8, §2 rule 5, H.8), and how it prints. Each form is
 //! built by hand, checked (valid and refused) and printed.
 
@@ -172,14 +172,12 @@ fn derives_imply_what_h8_says() {
 
 #[test]
 fn a_malformed_aggregate_type_is_refused() {
-    // A struct id outside the arena, a struct id that names an enum, a slice held by an aggregate,
+    // A struct id outside the arena, a struct id that names an enum,
     // a field list that disagrees with its form, and two fields of one name.
     let outside = Types::ir(|_| vec![ValueType::Struct(TypeId(9))]);
     assert_eq!(Entries::with(&outside.check(), "outside the arena").len(), 1);
     let confused = Types::ir(|b| vec![ValueType::Struct(Types::tx(b, 2, [0, 1, 2]))]);
     assert_eq!(Entries::with(&confused.check(), "names an enum as a struct").len(), 1);
-    let sliced = Types::ir(|_| vec![ValueType::Array(Box::new(ValueType::Slice(Box::new(ValueType::F64))), 2)]);
-    assert_eq!(Entries::with(&sliced.check(), "a slice is a function parameter only").len(), 1);
     let unit_with_fields = Types::ir(|b| {
         let id = b.type_data(TypeData { name: "U".into(), path: "m::U".into(), origin: Types::origin(3), kind: TypeKind::Struct { form: FieldsForm::Unit, fields: vec![("x".into(), ValueType::Bool)] }, derives: Derives::default() });
         vec![ValueType::Struct(id)]
@@ -212,11 +210,11 @@ impl Forms {
         })
     }
 
-    /// `xs.len()` as the function `total(xs: &[f64]) -> u64`.
+    /// `xs.len()` as the function `total(xs: [f64; 3]) -> u64`.
     fn total(b: &mut IrBuilder) -> FunctionId {
-        let slice = ValueType::Slice(Box::new(ValueType::F64));
-        let xs = Shape::local("xs", slice.clone());
-        let read = Forms::e(b, Expr::Local(0), slice, 9);
+        let array = ValueType::Array(Box::new(ValueType::F64), 3);
+        let xs = Shape::local("xs", array.clone());
+        let read = Forms::e(b, Expr::Local(0), array, 9);
         let body = Forms::e(b, Expr::Length(read), ValueType::UInt(64), 9);
         b.function(FunctionSpec { name: "total".into(), origin: Types::origin(9), params: vec![xs.clone()], ret: ValueType::UInt(64), locals: vec![xs], body })
     }
@@ -264,9 +262,8 @@ fn ir_check_types_every_aggregate_expression() {
         let index = Shape::dx(b, 5).int(1, Ty::u(8));
         let element = Forms::e(b, Expr::Index { expr: repeated, index }, ValueType::F64, 5);
         let read = Forms::e(b, Expr::Local(0), array_type.clone(), 6);
-        let view = Forms::e(b, Expr::SliceOf { expr: read, low: Some(index), high: None, inclusive: false }, ValueType::Slice(Box::new(ValueType::F64)), 6);
         let total = Forms::total(b);
-        let call = Forms::e(b, Expr::Call { function: total, args: vec![view] }, ValueType::UInt(64), 6);
+        let call = Forms::e(b, Expr::Call { function: total, args: vec![read] }, ValueType::UInt(64), 6);
         let built = Forms::e(b, Expr::StructOf { ty: pair, fields: vec![element, yes] }, ValueType::Struct(pair), 7);
         let flag = Forms::e(b, Expr::Field { expr: built, index: 1 }, ValueType::Bool, 7);
         let three = Shape::dx(b, 8).int(3, Ty::u(3));
@@ -279,10 +276,10 @@ fn ir_check_types_every_aggregate_expression() {
     });
     assert_eq!(ir.check(), vec![], "well-typed aggregate expressions check");
     let text = ir.to_string();
-    for form in ["array_repeat", "struct_of t0", "variant_of t1 v1", "slice_of", "length e", "index e", "field e", "tuple (e"] {
+    for form in ["array_repeat", "struct_of t0", "variant_of t1 v1", "length e", "index e", "field e", "tuple (e"] {
         assert!(text.contains(form), "the arena lines name `{form}`:\n{text}");
     }
-    for form in ["Pair(", "Tx::Data(", ".len()", "total(a[e6..])", "a[1u8] = e0", "a[e6] += e0"] {
+    for form in ["Pair(", "Tx::Data(", ".len()", "total(a)", "a[1u8] = e0", "a[e6] += e0"] {
         assert!(text.contains(form), "the tree text writes `{form}`:\n{text}");
     }
 }
@@ -290,10 +287,9 @@ fn ir_check_types_every_aggregate_expression() {
 #[test]
 fn ill_typed_aggregate_expressions_are_refused() {
     // Each mistake of §1.5.25 and §1.3: a part of the wrong type or count, a variant out of range,
-    // a field out of range, an index that is not an integer, `len` of a scalar, a slice stored in a
-    // `let`, an assignment through a field of an array.
+    // a field out of range, an index that is not an integer, `len` of a scalar, an assignment through a field of an array.
     let array_type = ValueType::Array(Box::new(ValueType::F64), 2);
-    let ir = Forms::design(vec![Shape::mutable("a", array_type.clone()), Shape::local("s", ValueType::Slice(Box::new(ValueType::F64)))], |b| {
+    let ir = Forms::design(vec![Shape::mutable("a", array_type.clone())], |b| {
         let pair = Forms::pair(b);
         let tx = Types::tx(b, 2, [0, 1, 2]);
         let (one, yes) = (Shape::dx(b, 2).real(1.0), Shape::dx(b, 2).boolean(true));
@@ -308,13 +304,10 @@ fn ill_typed_aggregate_expressions_are_refused() {
         let read = Forms::e(b, Expr::Local(0), array_type.clone(), 10);
         let real_index = Forms::e(b, Expr::Index { expr: read, index: one }, ValueType::F64, 10);
         let length_of_scalar = Forms::e(b, Expr::Length(one), ValueType::UInt(64), 11);
-        let slice_type = ValueType::Slice(Box::new(ValueType::F64));
-        let view = Forms::e(b, Expr::SliceOf { expr: read, low: None, high: None, inclusive: false }, slice_type, 12);
-        let stored = Shape::dx(b, 12).let_(1, view);
         let index = Shape::dx(b, 13).int(0, Ty::u(8));
         let through_field = b.stmt(Stmt::Assign { place: Place { local: 0, path: vec![Projection::Field(0)] }, op: None, value: one });
         let wrong_value = b.stmt(Stmt::Assign { place: Place { local: 0, path: vec![Projection::Index(index)] }, op: None, value: yes });
-        let mut stmts = vec![stored, through_field, wrong_value];
+        let mut stmts = vec![through_field, wrong_value];
         stmts.extend([wrong_tuple, short_array, mixed_array, swapped, missing, nowhere, beyond, real_index, length_of_scalar].map(|e| b.stmt(Stmt::Expr(e))));
         stmts
     });
@@ -329,7 +322,6 @@ fn ill_typed_aggregate_expressions_are_refused() {
         ("field 5 of a value of type (f64, bool), which has no such field", 1),
         ("an index must have an integer type, found f64", 1),
         ("`len` of a value of type f64", 1),
-        ("a slice stands only as a call argument or a method receiver", 1),
         ("a projection of local 0 reaches into a value of type [f64; 2]", 1),
         ("the value of an assignment must be f64, found bool", 1),
     ] {
@@ -463,4 +455,18 @@ fn composite_constants_check_print_and_round_trip() {
         let found = broken.check();
         assert!(!Entries::with(&found, phrase).is_empty(), "`{phrase}` in {found:#?}");
     }
+}
+
+#[test]
+fn the_ir_holds_no_slice() {
+    // VS-12 AC 1 (§1.2, G.71): no value type and no expression of the IR is a slice, so none can be
+    // built, printed or checked. The definition names none, and the printer of an array type writes none.
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    for file in ["model.rs", "print.rs", "check/aggregates.rs", "build.rs", "deps.rs"] {
+        let text = std::fs::read_to_string(root.join(file)).expect("the source file is UTF-8");
+        for removed in ["SliceOf", "ValueType::Slice", "slice_of", "Slice(Box"] {
+            assert!(!text.contains(removed), "{file} still names `{removed}`");
+        }
+    }
+    assert_eq!(ValueType::Array(Box::new(ValueType::F64), 2).to_string(), "[f64; 2]");
 }
