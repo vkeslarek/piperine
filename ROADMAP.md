@@ -31,7 +31,6 @@ Opus or Fable; a feature merges to `main` and upstream when its verifier passes.
 | Feature | What it delivers | Progress | Lane |
 | --- | --- | --- | --- |
 | `composite-values` (+ `value-semantics`, MD-76) | Structs, tuples, payload enums, arrays and ranges, `Option` of aggregates, iterators (Appendix H.5–H.7), `normal`; value semantics: no borrows, moves, `Clone` or `Copy`, every `let` reassignable (`E0903`, `E0161`) | B1–B7 done; B8 implementing; then B9–B10, verifier, merge | C |
-| `fix/long-transient-and-param-where` | Transients past ~4.5 s at the default 1 fs tick (a stopgap step floor, recorded in Appendix C.2); a host `set` or `--param` re-checks every dependent `where` against the params as they hold now | fixed and verified; fix round for the verifier's findings | A |
 
 ### Waiting, in order (all unblock when `composite-values` merges)
 
