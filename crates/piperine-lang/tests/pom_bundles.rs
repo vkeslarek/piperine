@@ -72,3 +72,16 @@ fn a_misplaced_or_missing_field_direction_is_e0261() {
     let design = Bundles::design("struct Stream { valid: Bit, out bus: Wire, in node: Electrical, ok: Wire, out good: Bit }\nmodule Top() { }\n");
     assert_eq!(Bundles::spans(&design, "E0261"), ["valid", "bus", "node"], "{:?}", design.diagnostics());
 }
+
+#[test]
+fn flip_out_and_nested_directions_are_e0262() {
+    // §7 rules 5 and 6: a direction on a nested bundle field, `out` on a bundle port and `flip` on
+    // a type that is no bundle are errors; `flip` on a bundle, `in` on a bundle port and a plain
+    // nested bundle are accepted
+    let design = Bundles::design(
+        "struct Inner { out x: Bit }\n\
+         struct Outer { in nested: Inner, reversed: flip Inner, plain: Inner, out data: Bit }\n\
+         module Top(out tx: Inner, rx: flip Inner, in obs: Inner, bad: flip Bit) { }\n",
+    );
+    assert_eq!(Bundles::spans(&design, "E0262"), ["nested", "tx", "flip Bit"], "{:?}", design.diagnostics());
+}

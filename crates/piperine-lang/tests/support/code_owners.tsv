@@ -17,7 +17,6 @@ E0185	composite-values	control flow (T12, T13)
 E0186	composite-values	structs and enums (T38, T39)
 E0187	generics	L7 (traits and generic arguments)
 E0203	resolved-nets	L21
-E0262	resolved-nets	L25
 E0264	resolved-nets	L25
 E0313	composite-values	L24 (array carriers)
 E0322	generics	L31 (generation)

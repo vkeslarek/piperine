@@ -182,8 +182,8 @@ T21
 
 **Done when**:
 
-- [ ] `flip_out_and_nested_directions_are_e0262` passes under `**Run pombundles**`
-- [ ] Gate check passes: Quick
+- [x] `flip_out_and_nested_directions_are_e0262` passes under `**Run pombundles**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

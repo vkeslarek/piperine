@@ -1,11 +1,11 @@
 //! Stage 8: structural checks over declarations alone, with no types and no
 //! const evaluation: the shape of an `extern` module (`E0370`), the body rule
 //! of functions (`E0125`), the fields of a nature (`E0201`) and the declaration
-//! rules of a bundle (`E0260`, `E0261`, §7). Runs after classification: a value input is
+//! rules of a bundle (`E0260`, `E0261`, `E0262`, §7). Runs after classification: a value input is
 //! a port the classifier made one.
 
 use super::super::body::TypeKind;
-use super::super::decl::{DeclKind, FieldData};
+use super::super::decl::{DeclKind, Dir, FieldData};
 use super::super::design::Design;
 use super::super::ids::{DeclId, FileId, TypeId};
 use super::super::resolution::{NatureKind, PortKind, Resolution};
@@ -105,6 +105,16 @@ impl<'design> BundleShape<'design> {
         {
             self.check_fields_are_carriers(decl, out);
             self.check_field_directions(decl, out);
+            self.check_nested_directions(decl, out);
+        }
+        if let DeclKind::Port(port) = &data.kind
+            && port.kind == PortKind::Bundle
+            && port.dir == Some(Dir::Out)
+        {
+            self.report_port_out(decl, out);
+        }
+        if let Some(ty) = self.design.declared_type(decl) {
+            self.check_flip(data.file, ty, out);
         }
     }
 
@@ -182,5 +192,40 @@ impl<'design> BundleShape<'design> {
             };
             out.push((file, Diagnostic::new("E0261", message, span, "a misplaced or missing direction")));
         }
+    }
+
+    /// §7 rule 5: a field whose type is a bundle takes `flip` to reverse it and no `in` or `out`.
+    fn check_nested_directions(&self, bundle: DeclId, out: &mut Vec<(FileId, Diagnostic)>) {
+        let file = self.design.decl_data(bundle).file;
+        for (field, data) in self.fields_of(bundle) {
+            if data.dir.is_some() && self.shape_of(data.ty) == TypeShape::Bundle {
+                let (name, span) = self.field_name(field);
+                let message = format!("the field `{name}` is a bundle and takes no `in` or `out`; write `flip` to reverse it (§7 rule 5)");
+                out.push((file, Diagnostic::new("E0262", message, span, "a direction on a nested bundle")));
+            }
+        }
+    }
+
+    /// §7 rule 6: `out` on a bundle port is an error; the observer view is `in`, the producer none.
+    fn report_port_out(&self, port: DeclId, out: &mut Vec<(FileId, Diagnostic)>) {
+        let data = self.design.decl_data(port);
+        let span = data.name.as_ref().map_or(data.span, |n| n.span);
+        let name = data.name.as_ref().map_or("", |n| n.text.as_str());
+        let message = format!("the bundle port `{name}` takes no `out`: the producer view has no direction and `in` is the observer view (§7 rule 6)");
+        out.push((data.file, Diagnostic::new("E0262", message, span, "`out` on a bundle port")));
+    }
+
+    /// §7 rule 6: `flip` applies to a bundle type only. A type under arrays that is flipped and is
+    /// neither a bundle nor unknown is `E0262` at the `flip` type.
+    fn check_flip(&self, file: FileId, mut ty: TypeId, out: &mut Vec<(FileId, Diagnostic)>) {
+        while let TypeKind::Array { elem, .. } = &self.design.type_node(ty).kind {
+            ty = *elem;
+        }
+        let TypeKind::Flip(inner) = &self.design.type_node(ty).kind else { return };
+        if matches!(self.shape_of(*inner), TypeShape::Bundle | TypeShape::Unknown) {
+            return;
+        }
+        let message = "`flip` applies to a bundle type only (§7 rule 6)";
+        out.push((file, Diagnostic::new("E0262", message, self.design.type_node(ty).span, "not a bundle")));
     }
 }
