@@ -288,10 +288,15 @@ impl Device for Oscillator {
 /// The relaxing loop under test: `res` resolves the drives `d0` (from a keeper reading the
 /// resolved level `v`, closing the loop) and `d1` (from an enabled driver outside the loop) into `v`.
 struct Loop {
+    /// The plan the stub devices are bound into, with its relaxing cycle.
     plan: DigitalPlan,
+    /// The nets' values, as the digital solver holds them.
     store: Store,
+    /// The functions to run in the current microstep.
     dirty: DirtySet,
+    /// What the run observed, flushed after each `run`.
     obs: Obs,
+    /// The microstep of the instant the loop is at.
     step: u32,
 }
 

@@ -7,9 +7,12 @@ use crate::pom::{DeclId, DeclKind, Design, NatureKind, QuantityRole};
 /// or node is this", so no rule matches on [`NatureKind`] itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct NatureRules {
-    /// A carrier of the nature has one drive (§5.2.1): `Bit<T>`, a project discrete nature, and
-    /// the potential of a signal-flow node (§6 rule 2).
+    /// A carrier of the nature has one drive (§5.2.1): a discrete nature without `resolve`
+    /// (`Bit<T>`, a project nature).
     pub one_driver: bool,
+    /// The nature is signal-flow (§6 rule 2): a node of the analog solver with a potential and no
+    /// flow, driven by exactly one potential contribution.
+    pub signal_flow: bool,
     /// The nature declares `resolve`: its drives combine into one value (§4 rule 8).
     pub resolved: bool,
     /// The nature declares a `flow`: a conservative node, which a current may be contributed to.
@@ -28,11 +31,11 @@ impl NatureRules {
             _ => NatureKind::Invalid,
         };
         match kind {
-            NatureKind::Discrete => NatureRules { one_driver: true, resolved: false, flow: false, carries_values: true },
-            NatureKind::SignalFlow => NatureRules { one_driver: true, resolved: false, flow: false, carries_values: false },
-            NatureKind::Resolved => NatureRules { one_driver: false, resolved: true, flow: false, carries_values: true },
-            NatureKind::Conservative => NatureRules { one_driver: false, resolved: false, flow: true, carries_values: false },
-            NatureKind::Invalid => NatureRules { one_driver: false, resolved: false, flow: false, carries_values: false },
+            NatureKind::Discrete => NatureRules { one_driver: true, signal_flow: false, resolved: false, flow: false, carries_values: true },
+            NatureKind::SignalFlow => NatureRules { one_driver: false, signal_flow: true, resolved: false, flow: false, carries_values: false },
+            NatureKind::Resolved => NatureRules { one_driver: false, signal_flow: false, resolved: true, flow: false, carries_values: true },
+            NatureKind::Conservative => NatureRules { one_driver: false, signal_flow: false, resolved: false, flow: true, carries_values: false },
+            NatureKind::Invalid => NatureRules { one_driver: false, signal_flow: false, resolved: false, flow: false, carries_values: false },
         }
     }
 
