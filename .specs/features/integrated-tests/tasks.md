@@ -458,10 +458,10 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] `a_host_square_into_the_rc_matches_tran_square_rc` passes under `Run sourcehost` with ngspice present (the variable unset)
-- [ ] `git diff --diff-filter=MD --quiet 856d2668 HEAD -- crates/piperine-parity/src/contract.rs crates/piperine-transpile/tests/golden tests/e2e/twins` exits 0
-- [ ] Gate check passes: `Run sourcehost`, `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test parity_corpus`, the Build line
-- [ ] Test count: 1 new test
+- [x] `a_host_square_into_the_rc_matches_tran_square_rc` passes under `Run sourcehost` with ngspice present (the variable unset)
+- [x] `git diff --diff-filter=MD --quiet 856d2668 HEAD -- crates/piperine-parity/src/contract.rs crates/piperine-transpile/tests/golden tests/e2e/twins` exits 0
+- [x] Gate check passes: `Run sourcehost`, `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test parity_corpus`, the Build line
+- [x] Test count: 1 new test
 
 **Tests**: integration
 **Gate**: full
