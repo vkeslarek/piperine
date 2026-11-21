@@ -142,19 +142,17 @@ fn a_crate_reaches_another_only_through_its_manifest() {
 }
 
 #[test]
-fn the_include_str_table_is_refused_for_its_generic_function_and_its_reference() {
+fn the_include_str_table_is_refused_for_its_generic_function() {
     // packages#12 (refused): `const IV: [(f64, f64); 64] = parse_table(include_str!("diode_iv.tbl"));` and
-    // the measured diode's `table_model(v(a, k), &IV, "3E")`: `parse_table` is a generic function and `&IV` a
-    // reference type, both `P0001` (L57)
+    // the measured diode's `table_model(v(a, k), IV, "3E")`: `parse_table` is a generic function,
+    // `P0001` (L57)
     let chapter = Chapter::read();
     let table: String = (0..64).map(|row| format!("{} {:e}\n", f64::from(row) * 0.01, f64::from(row) * 1e-12)).collect();
     let rom: String = (0..1024).map(|word| format!("{word:x}\n")).collect();
     let root = format!("{}\nmodule Top() {{ signal a: Electrical; signal k: Electrical; let m = MeasuredDiode(a, k); }}\n", chapter.text("packages#12"));
     let model = Model::package(&Manifest::of("iv", "", "Top")).with_source("src/lib.msl", &root).with_source("src/diode_iv.tbl", &table).with_source("src/boot.hex", &rom);
     let given = Refusal::of(model.run(Overrides::default()), "packages#12");
-    for expected in ["generic function is not supported yet", "reference type is not supported yet"] {
-        assert!(given.contains(&("P0001".to_string(), expected.to_string())), "{expected}: {given:?}");
-    }
+    assert!(given.contains(&("P0001".to_string(), "generic function is not supported yet".to_string())), "{given:?}");
     Refusal::expect(model.run(Overrides::default()), "packages#12", "P0001", "generic function is not supported yet");
 }
 

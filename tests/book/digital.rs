@@ -246,13 +246,13 @@ fn without_its_delay_the_book_latch_is_a_loop_e0339() {
 }
 
 #[test]
-fn the_phase_detector_is_refused_for_let_mut_and_events_read_as_bools() {
-    // digital#6 (refused): `Pfd3`: `let mut s` in a reaction (L5) and `fref.rise()` tested as a `bool` (L51)
+fn the_phase_detector_is_refused_for_assignment_and_events_read_as_bools() {
+    // digital#6 (refused): `Pfd3`: `s += 1` in a reaction (L5) and `fref.rise()` tested as a `bool` (L51)
     let chapter = Chapter::read();
     let after = "module Top() { signal a: Bit = false; signal b: Bit = false; signal up: Bit; signal dn: Bit; let p = Pfd3(a, b, up, dn); }\n";
     let model = chapter.wrapped("pfd.msl", "", "digital#6", after);
     let given = Refusal::of(model.run(Commands::transient_of("Top", 1e-6)), "digital#6");
-    for expected in ["`let mut` binding is not supported yet", "an event read as a `bool` is not supported yet"] {
+    for expected in ["assignment is not supported yet", "an event read as a `bool` is not supported yet"] {
         assert!(given.contains(&("P0001".to_string(), expected.to_string())), "{expected}: {given:?}");
     }
     Refusal::expect(model.run(Commands::transient_of("Top", 1e-6)), "digital#6", "P0001", "an event read as a `bool` is not supported yet");

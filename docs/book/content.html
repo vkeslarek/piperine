@@ -485,7 +485,7 @@ time
 <tr><td>unsigned integer</td><td><code>u1</code> … <code>u128</code></td><td><code>uN</code> holds 0 to 2<sup>N</sup> − 1. Any width is a type: a 3-bit duty word is a <code>u3</code>, a 10-bit converter code a <code>u10</code>.</td></tr>
 <tr><td>signed integer</td><td><code>i1</code> … <code>i128</code></td><td><code>iN</code> holds −2<sup>N−1</sup> to 2<sup>N−1</sup> − 1, in two's complement.</td></tr>
 <tr><td>float</td><td><code>f64</code>, and <code>f16</code>, <code>f32</code>, <code>f128</code></td><td>IEEE 754 numbers, with infinities and NaN. Analog code computes in <code>f64</code>.</td></tr>
-<tr><td>string</td><td><code>&'static str</code></td><td>A literal text. It is never carried by a signal.</td></tr>
+<tr><td>string</td><td><code>str</code></td><td>A literal text. It is never carried by a signal.</td></tr>
 <tr><td>unit</td><td><code>()</code></td><td>One value, <code>()</code>: the type of a block that computes nothing.</td></tr>
 </tbody></table></div>
 
@@ -615,7 +615,7 @@ time
 2.000000e-6</pre>
 </div>
 
-<p>A local is fixed once it is named. Where a body needs a variable it updates, the language has <code>let mut</code>, assignment (<code>x = x + 1;</code>, <code>x += 1;</code>) and the loops <code>for i in 0..n</code>, <code>while</code> and <code>loop</code> with <code>break</code> and <code>continue</code>. Whether a loop's count must be known before the run depends on where the loop stands: in a function called from a reaction it need not be, and where a loop describes hardware or equations (chapters 7 and 8) it must. Only locals can be assigned this way: a signal is never assigned, it is driven, and that is the subject of chapter 5.</p>
+<p>A local may be given a new value. An assignment, <code>x = x + 1;</code> or <code>x += 1;</code>, replaces the value of <code>x</code> with another of the same type. Every local can be assigned, and its <code>let</code> needs no extra word for it. Assigning one name never changes another, because each name holds its own value. For repetition the language has the loops <code>for i in 0..n</code>, <code>while</code> and <code>loop</code> with <code>break</code> and <code>continue</code>. Whether a loop's count must be known before the run depends on where the loop stands: in a function called from a reaction it need not be, and where a loop describes hardware or equations (chapters 7 and 8) it must. Only locals can be assigned this way. A parameter of a function is not a local: it is the caller's value, handed over, and the function yields a result instead of changing it. A signal is never assigned either: it is driven, and that is the subject of chapter 5.</p>
 
 <h3>Constants and functions</h3>
 
@@ -682,11 +682,11 @@ time
 
 <h3>What the compiler runs today</h3>
 
-<p>The rules of this chapter are the language. The compiler does not yet run every form they describe. This function is correct MSL, and it uses three forms that are still on the way: a local that is updated, an assignment and a loop.</p>
+<p>The rules of this chapter are the language. The compiler does not yet run every form they describe. This function is correct MSL, and it uses two forms that are still on the way: an assignment and a loop.</p>
 
 <pre data-lang="msl">/// The sum of the whole numbers below `n`.
 fn sum_below(n: u32) -> u32 {
-    let mut total = 0;
+    let total = 0;
     for k in 0..n { total += k; }
     total
 }</pre>
@@ -694,7 +694,8 @@ fn sum_below(n: u32) -> u32 {
 <div class="callout status">
   <p class="callout-label">Status</p>
   <p>Running today: <code>bool</code>, integers of up to 64 bits, <code>f64</code>, constants, functions, <code>let</code> and blocks, <code>if</code>, and <code>match</code> over literals. Everything the four files above use is in that list.</p>
-  <p>Parsed and checked, and not run yet: <code>let mut</code>, assignment and loops, <code>return</code>, a function that calls itself, an item declared inside a block, <code>%</code> on floats, floats other than <code>f64</code>, and integers wider than 64 bits. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
+  <p>Parsed and checked, and not run yet: assignment and loops, <code>return</code>, a function that calls itself, an item declared inside a block, <code>%</code> on floats, floats other than <code>f64</code>, and integers wider than 64 bits. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
+  <p>One spelling of an earlier version of the language is no longer MSL: <code>let mut x</code>. A local needs no <code>mut</code> to be assigned; write <code>let x</code>. Today's compiler still knows the word: it stops a model that uses it with the code P0001 and names a <code>let mut</code> binding. A later compiler refuses the word itself.</p>
 </div>
 
 <div class="callout mistake">
@@ -816,13 +817,13 @@ const TAPS: [f64; 3] = [0.25, 0.5, 0.25];
 
 /// The filter's output for the last three samples, oldest first.
 fn smoothed(x: [f64; 3]) -> f64 {
-    let mut sum = 0.0;
+    let sum = 0.0;
     for k in 0..3 { sum += TAPS[k] * x[k]; }
     sum
 }
 
 /// The mean of a table of any length.
-fn mean(xs: &[f64]) -> f64 {
+fn mean<const N: usize>(xs: [f64; N]) -> f64 {
     let total: f64 = xs.iter().sum();
     total / xs.len() as f64
 }</pre>
@@ -830,10 +831,11 @@ fn mean(xs: &[f64]) -> f64 {
 <ul>
 <li><strong>Writing one.</strong> <code>[0.25, 0.5, 0.25]</code> lists the elements, which have one type. <code>[0.0; 16]</code> repeats one value sixteen times.</li>
 <li><strong>Reading one.</strong> <code>x[k]</code> is the element at position <code>k</code>, counted from 0. A position outside the array is a fault. <code>x.len()</code> is the length, and <code>for v in x { … }</code> visits every element in order.</li>
-<li><strong>Any length.</strong> A function that should accept a table of any length takes a <strong>slice</strong>, <code>&amp;[f64]</code>, and is called with <code>&amp;table</code>. The <code>&amp;</code> lends the table for reading; a later part of this chapter comes back to it.</li>
+<li><strong>Any length.</strong> A function that should accept a table of any length gives the length a name of its own, <code>&lt;const N: usize&gt;</code>, and takes <code>[f64; N]</code>. It is called with the table itself, <code>mean(TAPS)</code>, and <code>N</code> is read from the argument. Chapter 4 explains parameters written in angle brackets.</li>
+<li><strong>Passing one.</strong> An array is a value like a number: a function that receives one has its own copy, whatever its length.</li>
 </ul>
 
-<p>The methods of arrays and slices, such as <code>iter</code>, <code>sum</code>, <code>map</code> and <code>contains</code>, are a fixed list; chapter 13 has it.</p>
+<p>The methods of arrays, such as <code>iter</code>, <code>sum</code>, <code>map</code> and <code>contains</code>, are a fixed list; chapter 13 has it.</p>
 
 <h3>Enums</h3>
 
@@ -844,7 +846,7 @@ fn mean(xs: &[f64]) -> f64 {
 const VDD: f64 = 3.3;
 
 /// What a receiver makes of a voltage.
-#[derive(Clone, Copy, PartialEq, PartialOrd, Repr)]
+#[derive(PartialEq, PartialOrd, Repr)]
 enum Level { Low, Between, High }
 
 /// Classifies `v` against the two thresholds.
@@ -884,13 +886,13 @@ time
 <ul>
 <li><strong>A variant is named through its enum</strong>, <code>Level::High</code>. A file that uses the variants often may write <code>use Level::*;</code> once and then name them bare.</li>
 <li><strong>The <code>match</code> has no <code>_</code> arm.</strong> It lists the three variants, and that is every value a <code>Level</code> has. Add a fourth variant later and this <code>match</code> stops the build until it has an arm for it, so a new case cannot be forgotten silently.</li>
-<li><strong>The line above the enum is an attribute.</strong> <code>#[derive(…)]</code> asks the compiler to write standard behavior for the type that follows: <code>Clone</code> and <code>Copy</code> let its values be copied like numbers, <code>PartialEq</code> gives it <code>==</code> and <code>!=</code>, <code>PartialOrd</code> gives it <code>&lt;</code> and <code>&gt;</code> in the order of the declaration, and <code>Repr</code> gives it a layout in bits, which a signal needs to carry it. So <code>Low &lt; Between &lt; High</code> here. Each of these names is a trait; chapter 4 says what that means.</li>
+<li><strong>The line above the enum is an attribute.</strong> <code>#[derive(…)]</code> asks the compiler to write standard behavior for the type that follows: <code>PartialEq</code> gives it <code>==</code> and <code>!=</code>, <code>PartialOrd</code> gives it <code>&lt;</code> and <code>&gt;</code> in the order of the declaration, and <code>Repr</code> gives it a layout in bits, which a signal needs to carry it. So <code>Low &lt; Between &lt; High</code> here. Each of these names is a trait; chapter 4 says what that means.</li>
 </ul>
 
 <p>A variant may also hold values, and then the enum says which case it is <em>and</em> carries the data of that case. <code>Option&lt;T&gt;</code> is exactly such an enum, with the variants <code>None</code> and <code>Some(T)</code>. Fields are positional, as in <code>Circle(f64)</code>, or named, as in <code>Rect { w: f64, h: f64 }</code>, and a <code>match</code> names them as it takes the value apart:</p>
 
 <pre data-lang="msl">/// The outline of a pad on a layout.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(PartialEq)]
 enum Shape { Dot, Circle(f64), Rect { w: f64, h: f64 } }
 
 /// The area a shape covers.
@@ -909,11 +911,10 @@ fn area(s: Shape) -> f64 {
 <p>A <strong>struct</strong> is a type with named fields: several values that belong together and travel as one.</p>
 
 <pre data-lang="msl">/// One sample of a converter: the voltage it saw and whether it was in range.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(PartialEq)]
 struct Reading { volts: f64, valid: bool }
 
 /// A voltage, kept apart from every other `f64` by its type.
-#[derive(Clone, Copy)]
 struct Volts(f64);
 
 /// The reading scaled by `k`, valid when the source was.
@@ -948,7 +949,7 @@ fn scaled(r: Reading, k: f64) -> Reading {
 <tr><td><code>Some(v)</code>, <code>Shape::Circle(r)</code></td><td>that variant, when its fields fit</td><td>what the fields introduce</td></tr>
 <tr><td><code>Reading { volts, .. }</code></td><td>a struct, field by field; <code>..</code> stands for the fields not written</td><td>what the fields introduce</td></tr>
 <tr><td><code>(a, b)</code></td><td>a tuple, part by part</td><td>what the parts introduce</td></tr>
-<tr><td><code>[first, .., last]</code></td><td>an array or a slice, element by element</td><td>what the elements introduce</td></tr>
+<tr><td><code>[first, .., last]</code></td><td>an array, element by element</td><td>what the elements introduce</td></tr>
 </tbody></table></div>
 
 <p>Patterns nest: <code>Some((lo, hi))</code> fits an optional pair and names both parts. Where a pattern stands decides what it must cover:</p>
@@ -965,7 +966,7 @@ fn scaled(r: Reading, k: f64) -> Reading {
 
 <!-- cli-file: family.msl -->
 <pre data-lang="msl">/// A logic family.
-#[derive(Clone, Copy, PartialEq, Repr)]
+#[derive(PartialEq, Repr)]
 enum Family { Cmos, Ttl }
 
 impl Family {
@@ -1039,10 +1040,12 @@ fn reads_high(f: Family, v: f64, vdd: f64) -> bool { v > f.switches_at(vdd) }</p
 <p>Three consequences are worth knowing by name.</p>
 
 <ul>
-<li><strong>A function cannot modify its argument.</strong> A function that "updates" something takes the old value and yields the new one: <code>fn bump(c: u8) -&gt; u8 { c + 1 }</code>.</li>
-<li><strong>A type without <code>Copy</code> is used once.</strong> If you declare a struct and do not derive <code>Copy</code>, reading a variable of that type hands the value over, and the variable cannot be read again. Deriving <code>Clone</code> and <code>Copy</code> removes the question, and every type a signal carries has them.</li>
-<li><strong><code>&amp;</code> lends a value for reading.</strong> A function that takes a table of numbers writes its parameter as <code>&amp;[f64]</code> and is called with <code>&amp;table</code>. The function may read through it and nothing else; nothing can be stored or changed through a <code>&amp;</code>.</li>
+<li><strong>A function cannot modify its argument.</strong> A function that "updates" something takes the old value and yields the new one: <code>fn bump(c: u8) -&gt; u8 { c + 1 }</code>. The caller keeps the result under the name it likes, often the same one: <code>count = bump(count);</code>. A method follows the same rule, because its <code>self</code> is a copy as well.</li>
+<li><strong>Every type is copied.</strong> A struct, an array and an enum with data are copied exactly as a number is, however large they are. Nothing has to be asked for, and reading a value never uses it up: a variable can be read as often as you like.</li>
+<li><strong>Nothing is lent.</strong> A function that takes a table of numbers takes the table, <code>[f64; N]</code>, and is called with it. The language has no reference, no pointer and no view into another value, so <code>&amp;</code> is only the operator on bits.</li>
 </ul>
+
+<p>What a model does share is hardware. A signal, a node and an instance each exist once, and a port is a connection to that one thing, never a copy of it. Chapter 5 starts from there.</p>
 
 <h3>What a model may not do</h3>
 
@@ -1052,10 +1055,10 @@ fn reads_high(f: Family, v: f64, vdd: f64) -> bool { v > f.switches_at(vdd) }</p
 <thead><tr><th>Not in the language</th><th>What a model writes</th></tr></thead>
 <tbody>
 <tr><td>Growable containers and strings; any allocation</td><td>Arrays and signals whose size is fixed when the design is built. Text is a literal.</td></tr>
-<tr><td>References that allow writing; pointers</td><td>A function yields the new value. State lives in signals.</td></tr>
+<tr><td>References and pointers of any kind; the words <code>mut</code>, <code>ref</code> and <code>move</code></td><td>Values, which are copied. A function yields the new value. State lives in signals.</td></tr>
 <tr><td>Global variables</td><td>A <code>const</code> for a fixed value, a param for one the user sets, a signal for one that changes.</td></tr>
 <tr><td>Threads and asynchronous code</td><td>Reactions. Concurrency is what hardware does by nature; the simulator orders it.</td></tr>
-<tr><td>A character type</td><td>Strings exist only whole, as <code>&'static str</code> literals.</td></tr>
+<tr><td>A character type</td><td>Strings exist only whole, as literals of type <code>str</code>.</td></tr>
 <tr><td><code>macro_rules!</code>, <code>println!</code>, <code>format!</code></td><td>Only two built-in <code>!</code> forms: <code>emit!</code> for output and <code>include_str!</code> for data (E0901).</td></tr>
 <tr><td>Default values in a function signature; two functions of one name</td><td>Trailing <code>Option&lt;T&gt;</code> parameters, which may be left out or named.</td></tr>
 <tr><td>Type aliases</td><td>The type, written out.</td></tr>
@@ -1066,9 +1069,9 @@ fn reads_high(f: Family, v: f64, vdd: f64) -> bool { v > f.switches_at(vdd) }</p
 
 <h3>What the compiler runs today</h3>
 
-<p>The rules of this chapter are the language. The compiler does not yet run every form they describe. This function pair is correct MSL, and it uses three forms that are still on the way: an enum that derives no <code>Repr</code>, a range pattern, and a borrowed table of numbers.</p>
+<p>The rules of this chapter are the language. The compiler does not yet run every form they describe. This function pair is correct MSL, and it uses three forms that are still on the way: an enum that derives no <code>Repr</code>, a range pattern, and a function over a table of any length.</p>
 
-<pre data-lang="msl">#[derive(Clone, Copy, PartialEq)]
+<pre data-lang="msl">#[derive(PartialEq)]
 enum Range { Low, Mid, High }
 
 /// Which third of 0..=255 a code falls in.
@@ -1080,7 +1083,7 @@ fn range_of(code: u8) -> Range {
     }
 }
 
-fn mean(xs: &[f64]) -> f64 {
+fn mean<const N: usize>(xs: [f64; N]) -> f64 {
     let total: f64 = xs.iter().sum();
     total / xs.len() as f64
 }</pre>
@@ -1088,7 +1091,8 @@ fn mean(xs: &[f64]) -> f64 {
 <div class="callout status">
   <p class="callout-label">Status</p>
   <p>Running today: <code>Option</code> as a local, a parameter and a constant, with its methods, <code>match</code> and <code>if let</code>; optional parameters; a tuple pattern in a <code>let</code>; enums without fields that derive <code>Repr</code>, matched and compared; the constants of an <code>impl</code> and its functions that take no <code>self</code>; <code>use</code> and <code>pub</code>. Everything the three files above use is in that list.</p>
-  <p>Parsed and checked, and not run yet: tuples as values, arrays, slices and <code>&amp;</code>, structs, an enum with fields, with a number given to a variant or without <code>Repr</code>, a function that yields an <code>Option</code>, range patterns, <code>@</code>, a condition on an arm, <code>let … else</code>, and methods that take <code>self</code>. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
+  <p>Parsed and checked, and not run yet: tuples as values, arrays, structs, an enum with fields, with a number given to a variant or without <code>Repr</code>, a function that yields an <code>Option</code>, range patterns, <code>@</code>, a condition on an arm, <code>let … else</code>, and methods that take <code>self</code>. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
+  <p>Two spellings of an earlier version of the language are no longer MSL: a parameter or an argument lent with <code>&amp;</code>, and <code>Clone</code> or <code>Copy</code> in a derive. Leave them out. Today's compiler still knows both: it stops a model that lends a table with the code P0001 and names a reference type, and it accepts the two names in a derive, where they change nothing. A later compiler refuses all of them.</p>
 </div>
 
 <div class="callout mistake">
@@ -1144,7 +1148,7 @@ trait Receiver {
 }
 
 /// A logic family.
-#[derive(Clone, Copy, PartialEq, Repr)]
+#[derive(PartialEq, Repr)]
 enum Family { Cmos, Ttl }
 
 impl Receiver for Family {
@@ -1158,7 +1162,6 @@ impl Receiver for Family {
 }
 
 /// A receiver that switches at a fixed fraction of its supply.
-#[derive(Clone, Copy)]
 struct Ratio { fraction: f64 }
 
 impl Receiver for Ratio {
@@ -1174,7 +1177,7 @@ impl Receiver for Ratio {
 <li><strong>The functions are then methods of the type.</strong> <code>Family::Ttl.reads_high(2.0, 5.0)</code> uses the default body, which calls the <code>switches_at</code> of <code>Family</code>. The constant is read through the type: <code>Family::LEVELS</code>.</li>
 </ol>
 
-<p>Inside a trait and inside an <code>impl</code>, <code>Self</code> is the type the trait is implemented for. A trait may require another: <code>trait Receiver: Copy { … }</code> says that every receiver can also be copied, and lets the trait's own bodies rely on that.</p>
+<p>Inside a trait and inside an <code>impl</code>, <code>Self</code> is the type the trait is implemented for. A trait may require another: <code>trait Receiver: PartialEq { … }</code> says that every receiver can also be compared with <code>==</code>, and lets the trait's own bodies rely on that.</p>
 
 <p>Three rules keep a design the same wherever it is compiled:</p>
 
@@ -1191,7 +1194,6 @@ impl Receiver for Ratio {
 <div class="table-wrap"><table>
 <thead><tr><th>Trait</th><th>What a type gains</th><th>How a type gets it</th></tr></thead>
 <tbody>
-<tr><td><code>Clone</code>, <code>Copy</code></td><td>Its values are copied wherever they are used. Derive both on every plain data type.</td><td>derived</td></tr>
 <tr><td><code>PartialEq</code></td><td><code>==</code> and <code>!=</code>.</td><td>derived, or written</td></tr>
 <tr><td><code>PartialOrd</code></td><td><code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>: variants in the order declared, fields first to last.</td><td>derived, or written</td></tr>
 <tr><td><code>Default</code></td><td><code>T::default()</code>: zero, <code>false</code>, <code>None</code>, and for a struct the default of each field.</td><td>derived on a struct</td></tr>
@@ -1209,17 +1211,17 @@ impl Receiver for Ratio {
 <pre data-lang="msl">/// One of two values, chosen by `sel`: a two-way multiplexer for any type.
 fn pick<T>(sel: bool, a: T, b: T) -> T { if sel { a } else { b } }
 
-/// The larger of two values, for any type that can be ordered and copied.
-fn larger<T: PartialOrd + Copy>(a: T, b: T) -> T { if a > b { a } else { b } }
+/// The larger of two values, for any type that can be ordered.
+fn larger<T: PartialOrd>(a: T, b: T) -> T { if a > b { a } else { b } }
 
 /// How far `v` lies above the switching point of any receiver.
 fn overdrive<R: Receiver>(r: R, v: f64, vdd: f64) -> f64 { v - r.switches_at(vdd) }</pre>
 
-<p><code>pick</code> asks nothing of <code>T</code>: it only moves values of that type around, so any type will do. The other two need more, and they say so with a <strong>bound</strong>.</p>
+<p><code>pick</code> asks nothing of <code>T</code>: it only passes values of that type along, so any type will do. The other two need more, and they say so with a <strong>bound</strong>.</p>
 
 <ul>
-<li><strong>A bound is a trait after a colon.</strong> <code>T: PartialOrd + Copy</code> reads "any type <code>T</code> that implements <code>PartialOrd</code> and <code>Copy</code>". Several traits are joined with <code>+</code>.</li>
-<li><strong>The bound is all the body may use.</strong> Inside <code>larger</code>, <code>a &gt; b</code> is allowed because of <code>PartialOrd</code>, and using <code>a</code> a second time because of <code>Copy</code>. <code>a + b</code> would be an error in the function itself, whatever types callers have in mind, because nothing says a <code>T</code> can be added.</li>
+<li><strong>A bound is a trait after a colon.</strong> <code>T: PartialOrd</code> reads "any type <code>T</code> that implements <code>PartialOrd</code>". Several traits are joined with <code>+</code>, as in <code>T: PartialOrd + Repr</code>.</li>
+<li><strong>The bound is all the body may use.</strong> Inside <code>larger</code>, <code>a &gt; b</code> is allowed because of <code>PartialOrd</code>. Using <code>a</code> a second time needs no bound, since every value is copied. <code>a + b</code> would be an error in the function itself, whatever types callers have in mind, because nothing says a <code>T</code> can be added.</li>
 <li><strong>The bound is what every caller must meet.</strong> <code>overdrive</code> accepts a <code>Family</code> and a <code>Ratio</code>, because both implement <code>Receiver</code>, and no other type.</li>
 </ul>
 
@@ -1238,8 +1240,7 @@ let wide = larger::<u16>(3, 200);               // the type, written out</pre>
 <p>A struct or an enum takes parameters the same way, and then stands for a family of types.</p>
 
 <pre data-lang="msl">/// A closed range of any ordered type.
-#[derive(Clone, Copy)]
-struct Window<T: PartialOrd + Copy> { lo: T, hi: T }
+struct Window<T: PartialOrd> { lo: T, hi: T }
 
 impl<T> Window<T> {
     /// True when `x` lies in the window, ends included.
@@ -1266,21 +1267,21 @@ fn in_tolerance(vdd: f64) -> bool {
 
 <pre data-lang="msl">/// The sum of the products of two tables of one length.
 fn dot<const N: usize>(a: [f64; N], b: [f64; N]) -> f64 {
-    let mut sum = 0.0;
+    let sum = 0.0;
     for k in 0..N { sum += a[k] * b[k]; }
     sum
 }
 
 /// The mean of a table, which may not be empty.
 fn mean_of<const N: usize>(xs: [f64; N]) -> f64 where N >= 1 {
-    let mut sum = 0.0;
+    let sum = 0.0;
     for x in xs { sum += x; }
     sum / N as f64
 }
 
 /// The table with one more element, 0.0, at its end.
 fn widened<const N: usize>(xs: [f64; N]) -> [f64; N + 1] {
-    let mut wide = [0.0; N + 1];
+    let wide = [0.0; N + 1];
     for k in 0..N { wide[k] = xs[k]; }
     wide
 }</pre>
@@ -1289,7 +1290,7 @@ fn widened<const N: usize>(xs: [f64; N]) -> [f64; N + 1] {
 <li><strong><code>N</code> is a constant inside the item.</strong> It may size an array, bound a loop and take part in arithmetic, as <code>N as f64</code> does.</li>
 <li><strong>The types carry the check.</strong> <code>dot</code> takes two tables of the <em>same</em> <code>N</code>. Calling it with a table of three and a table of four is a type error, found before the run, so no length test is needed in the body.</li>
 <li><strong>A use states the number or lets it be read.</strong> <code>dot([1.0, 2.0], [3.0, 4.0])</code> has <code>N</code> = 2 from its arguments. Written out, an argument is a literal or a single name, <code>mean_of::&lt;4&gt;(xs)</code>, and any other expression goes in braces, <code>Fifo&lt;u8, { DEPTH + 1 }&gt;</code>.</li>
-<li><strong>A const parameter is an integer or a <code>bool</code>.</strong> Type and const parameters mix freely: <code>struct Fifo&lt;T: Copy, const DEPTH: usize&gt; { slots: [T; DEPTH], count: usize }</code>.</li>
+<li><strong>A const parameter is an integer or a <code>bool</code>.</strong> Type and const parameters mix freely: <code>struct Fifo&lt;T, const DEPTH: usize&gt; { slots: [T; DEPTH], count: usize }</code>.</li>
 </ul>
 
 <h3><code>where</code>: a condition on the numbers</h3>
@@ -1417,7 +1418,7 @@ fn clean(v: f64) -> f64 { corrected(v, remove_offset) }</pre>
   <tr><td>E0900</td><td><code>fn over(r: impl Receiver) -&gt; f64</code></td><td>A trait is not a type. Name a parameter for it: <code>fn over&lt;R: Receiver&gt;(r: R)</code>.</td></tr>
   <tr><td>E0101</td><td><code>fn over(r: &amp;dyn Receiver) -&gt; f64</code></td><td>No value picks its type during the run. Use a generic parameter, or an enum of the kinds you have.</td></tr>
   <tr><td>E0900</td><td><code>&lt;Family as Receiver&gt;::LEVELS</code></td><td>An item of a trait is reached through the type: <code>Family::LEVELS</code>.</td></tr>
-  <tr><td>E0905</td><td><code>fn first&lt;'a&gt;(xs: &amp;'a [f64]) -&gt; f64</code></td><td>There are no lifetime parameters: nothing outlives the call it is lent to. Write <code>fn first(xs: &amp;[f64]) -&gt; f64</code>.</td></tr>
+  <tr><td>E0905</td><td><code>fn first&lt;'a&gt;(xs: &amp;'a [f64]) -&gt; f64</code></td><td>There are no lifetimes, because nothing is lent: a table is passed as a value. Write <code>fn first&lt;const N: usize&gt;(xs: [f64; N]) -&gt; f64</code>.</td></tr>
   <tr><td>E0903</td><td><code>type Volts = f64;</code></td><td>There are no type aliases. For a distinct type write a struct, <code>struct Volts(f64);</code>, or use the type itself.</td></tr>
   </tbody></table></div>
 </div>
@@ -1441,7 +1442,11 @@ fn clean(v: f64) -> f64 { corrected(v, remove_offset) }</pre>
 
 <h3>Where values meet hardware</h3>
 
-<p>Everything so far computes and then is gone. Hardware is different: it exists for the whole simulation and its parts react to each other. Here is a complete file with a clock, a counter and a top that connects them. It is the "blinky" of this book.</p>
+<p>Everything so far computes and then is gone. Hardware is different: it exists for the whole simulation and its parts react to each other.</p>
+
+<p>The two are also passed around in opposite ways, and this is the one split of the language between "by value" and "by reference". A value is copied wherever it is used, so no two names ever share one. A piece of hardware exists once: a signal, a node and an instance each have an identity, and a port is a connection to that one thing, never a copy of it. Two modules joined to one signal see the same signal. Since that is the only sharing there is, it has a strict rule for change: what a signal holds changes only when a block drives it, with <code>&lt;-</code> in a reaction or <code>+&gt;</code> in an analog block, at the moment the simulator gives that statement. Reading a signal gives a value, a copy of what it holds at that moment.</p>
+
+<p>Here is a complete file with a clock, a counter and a top that connects them. It is the "blinky" of this book.</p>
 
 <!-- cli-file: blinky.msl -->
 <pre data-lang="msl">/// A free-running clock of frequency `f`.
@@ -1594,7 +1599,7 @@ pub fn handshake(req: Bit, ack: Bit) -> Event { req.rise() && ack }</pre>
 
 <p>A signal is hardware, and what travels on it is bits. Only a type that implements the trait <code>Repr</code> can be <em>carried by a signal</em>. <code>Repr</code> lays a value out as a row of boolean <strong>levels</strong>, the bits a wire would carry. Primitives have it built in; your own types derive it:</p>
 
-<pre data-lang="msl">#[derive(Repr, Clone, Copy, PartialEq)]
+<pre data-lang="msl">#[derive(Repr, PartialEq)]
 enum Zone { Under, Ok, Over }</pre>
 
 <p>A derived struct puts its fields side by side, first field lowest. A derived enum lays out a tag, then the widest payload. One-hot or Gray encodings are a hand-written <code>impl Repr</code>.</p>
@@ -1606,7 +1611,7 @@ enum Zone { Under, Ok, Over }</pre>
 <p>Put a type, a function and a module together. This file watches a node and reports, on every clock edge, whether its voltage is under, inside or over a window. The source is a ramp of 1&nbsp;V/µs, so the node walks through all three zones.</p>
 
 <!-- cli-file: monitor.msl -->
-<pre data-lang="msl">#[derive(Repr, Clone, Copy, PartialEq)]
+<pre data-lang="msl">#[derive(Repr, PartialEq)]
 enum Zone { Under, Ok, Over }
 
 /// Where `x` lies against the window `lo ..= hi`.
@@ -2531,7 +2536,7 @@ extern "osdi" module Bsim4(d: Electrical, g: Electrical, s: Electrical, b: Elect
   <tr><td>E0312</td><td><code>RcSection(a) { r: 1k }</code></td><td>A port is left unconnected. Connections are positional: give both.</td></tr>
   <tr><td>E0343</td><td><code>v(lad.head.a)</code>, or a tap that is not <code>pub</code></td><td>A parent sees only what the child publishes. Mark the item <code>pub</code> in the child.</td></tr>
   <tr><td>E0333</td><td><code>let x = r1 * 2.0;</code> where <code>r1</code> is a resistor instance</td><td>An instance without a result is not a value. Read a param or a node, not the instance.</td></tr>
-  <tr><td>E0331</td><td><code>let mut acc = 0.0;</code> in a module body</td><td>A body holds no variables. State is a <code>signal</code>; a name for an expression is a plain <code>let</code>.</td></tr>
+  <tr><td>E0331</td><td><code>let mut acc = 0.0;</code> in a module body</td><td>A body holds no variables. State is a <code>signal</code>; a name for an expression is a plain <code>let</code>. No <code>let</code> takes <code>mut</code>: a local of a function or a reaction is assigned without it.</td></tr>
   <tr><td>E0340</td><td><code>for k in 0..count { … }</code> with <code>count</code> a signal</td><td>Generation runs at elaboration, so its range is a constant expression: a param or a const generic.</td></tr>
   <tr><td>E0330</td><td>a param <code>c</code> and <code>let c = Capacitor(…)</code></td><td>One name, declared twice in one module. Rename the instance: <code>c1</code>.</td></tr>
   <tr><td>E0401</td><td><code>analog for RcSection { … }</code> in another file</td><td>A module and all its behavior blocks live in the same file.</td></tr>
@@ -2943,7 +2948,7 @@ module Pfd3(in fref: Bit, in fvco: Bit, out up: Bit, out dn: Bit) {
 }
 digital for Pfd3 {
     on fref.rise() || fvco.rise() {
-        let mut s = state;
+        let s = state;
         if fref.rise() && s < 1 { s += 1; }    // which one fired?
         if fvco.rise() && s > -1 { s -= 1; }   // both at once: up first, then down
         state <- s;
@@ -4914,7 +4919,7 @@ commit = "3f1c9a0e5b7d2c4e8a6f1b0d9c3e7a5f2b8d4c61"</pre>
 const ROM: [u32; 1024]      = parse_hex(include_str!("boot.hex"));         // $readmemh format
 
 module MeasuredDiode(a: Electrical, k: Electrical) {}
-analog for MeasuredDiode { i(a, k) +> table_model(v(a, k), &IV, "3E"); }   // cubic, error outside</pre>
+analog for MeasuredDiode { i(a, k) +> table_model(v(a, k), IV, "3E"); }   // cubic, error outside</pre>
 
 <h3>The standard library and the prelude</h3>
 
@@ -5256,7 +5261,7 @@ digital for Watchdog {
   <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
   <tbody>
   <tr><td>E0457</td><td><code>fn ddt(x: f64) -&gt; f64 { … }</code></td><td>A core name cannot be redefined. Pick another name; only library items can be replaced.</td></tr>
-  <tr><td>E0125</td><td><code>extern "intrinsic" fn my_parse(text: &amp;str) -&gt; f64;</code></td><td>Only <code>std</code> declares engine items. Write the function in MSL, or use <code>extern "C"</code>.</td></tr>
+  <tr><td>E0125</td><td><code>extern "intrinsic" fn my_parse(text: str) -&gt; f64;</code></td><td>Only <code>std</code> declares engine items. Write the function in MSL, or use <code>extern "C"</code>.</td></tr>
   <tr><td>E0603</td><td><code>require(…)</code>, <code>finish()</code> or <code>fatal(…)</code> in <code>analog</code></td><td>The reserved streams take records from reactions only. Move the call into <code>on settle { … }</code> or another reaction.</td></tr>
   <tr><td>E0605</td><td><code>emit!("checks", name = 3);</code></td><td>On a reserved stream the host's fields have fixed types: <code>name</code> is text. Use <code>require</code>, <code>cover</code> or <code>target</code>.</td></tr>
   <tr><td>E0161</td><td><code>x.cbrt()</code>, or another method the library does not list</td><td>The library of the built-in types is a closed list. Write the expression another way: <code>x.powf(1.0 / 3.0)</code>.</td></tr>

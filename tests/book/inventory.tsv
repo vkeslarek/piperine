@@ -41,29 +41,29 @@ block	language#9	e0b45d039c83a8f3	held	piperine-cli/book::every_cli_listing_of_t
 block	language#10	ae89c5ca38e7bd81	run	piperine/book_language::constants_and_functions_compute_before_and_during_the_run	-	-
 block	language#11	cdc1363cea7a473b	shown	-	-	-
 block	language#12	ada19f0dc89c6e13	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run functions.msl --analysis transient --stop 2e-6
-block	language#13	47f3e2541a5d9ea5	refused	piperine/book_language::the_loop_still_on_the_way_is_refused_where_the_solver_reaches_it	L5	-
+block	language#13	54a4e9d6a8d354cb	refused	piperine/book_language::the_loop_still_on_the_way_is_refused_where_the_solver_reaches_it	L5	-
 block	types#1	cb8e6ac8cab957a5	run	piperine/book_types::an_option_is_read_with_its_methods_a_match_and_an_if_let	-	-
 block	types#2	882c7bee6c3834b3	shown	-	-	-
 block	types#3	3bf569354fd77d70	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run option.msl --analysis transient --stop 2e-6
 block	types#4	12b765caa91c5cbd	run	piperine/book_types::optional_arguments_may_be_left_out_or_named	-	-
 block	types#5	2bbe7594bd207d1e	fragment	types#4	-	-
 block	types#6	752d2a198d304f5c	refused	piperine/book_types::the_listings_still_on_the_way_are_refused_where_a_top_reaches_them	L2	-
-block	types#7	6c1dbe685bd1077f	refused	piperine/book_types::the_listings_still_on_the_way_are_refused_where_a_top_reaches_them	L3	-
-block	types#8	7d2708c0d7a141d5	run	piperine/book_types::an_enum_is_matched_compared_and_printed_by_the_number_of_its_variant	-	-
+block	types#7	3b9b74b50cece325	refused	piperine/book_types::the_listings_still_on_the_way_are_refused_where_a_top_reaches_them	L3	-
+block	types#8	b63a21346a74deb1	run	piperine/book_types::an_enum_is_matched_compared_and_printed_by_the_number_of_its_variant	-	-
 block	types#9	0a7d56d69e848349	shown	-	-	-
 block	types#10	df15c0637f325b78	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run levels.msl --analysis transient --stop 2e-6
-block	types#11	a58ade9c5c898f48	refused	piperine/book_types::the_listings_still_on_the_way_are_refused_where_a_top_reaches_them	L4	-
-block	types#12	3368fc9329a3b366	refused	piperine/book_types::the_listings_still_on_the_way_are_refused_where_a_top_reaches_them	L1	-
-block	types#13	6668ee5eaad94dce	run	piperine/book_types::an_impl_gives_a_type_its_constants_and_functions	-	-
+block	types#11	febab19eac3f694a	refused	piperine/book_types::the_listings_still_on_the_way_are_refused_where_a_top_reaches_them	L4	-
+block	types#12	6d450490ba2c8973	refused	piperine/book_types::the_listings_still_on_the_way_are_refused_where_a_top_reaches_them	L1	-
+block	types#13	cf6386a8806d36c2	run	piperine/book_types::an_impl_gives_a_type_its_constants_and_functions	-	-
 block	types#14	ab640fdf8ec97154	shown	-	-	-
 block	types#15	acfdc5d5abc58d68	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run family.msl --analysis transient --stop 2e-6
 block	types#16	8e920eeacbf1e24c	refused	piperine/book_types::the_listings_still_on_the_way_are_refused_where_a_top_reaches_them	L7	-
-block	types#17	3484b3537670c234	refused	piperine/book_types::the_forms_still_on_the_way_are_refused_where_the_solver_reaches_them	L6	-
-block	generics#1	7cadc96df0b49897	refused	piperine/book_generics::the_methods_of_a_trait_are_refused_where_a_top_reaches_them	L7	-
-block	generics#2	72b95ac7328a2857	refused	piperine/book_generics::the_generic_listings_are_refused_where_a_top_reaches_them	L7	-
+block	types#17	3947677589d123b8	refused	piperine/book_types::the_forms_still_on_the_way_are_refused_where_the_solver_reaches_them	L6	-
+block	generics#1	fdb5d23ba36c91c0	refused	piperine/book_generics::the_methods_of_a_trait_are_refused_where_a_top_reaches_them	L7	-
+block	generics#2	6803b9254f40ecb6	refused	piperine/book_generics::the_generic_listings_are_refused_where_a_top_reaches_them	L7	-
 block	generics#3	8694f745166f4054	fragment	generics#2	-	-
-block	generics#4	e9287d604b15cd18	refused	piperine/book_generics::the_generic_listings_are_refused_where_a_top_reaches_them	L1	-
-block	generics#5	bf1869a8049cc679	refused	piperine/book_generics::the_generic_listings_are_refused_where_a_top_reaches_them	L7	-
+block	generics#4	124b4c9bb8ae22d5	refused	piperine/book_generics::the_generic_listings_are_refused_where_a_top_reaches_them	L1	-
+block	generics#5	1e73ed00424c8e07	refused	piperine/book_generics::the_generic_listings_are_refused_where_a_top_reaches_them	L7	-
 block	generics#6	08b623f55f10a9aa	run	piperine/book_generics::a_closure_is_passed_to_the_methods_of_an_option	-	-
 block	generics#7	59d44a07fe9184da	shown	-	-	-
 block	generics#8	23eae11c0b71edb0	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run clip.msl --analysis transient --stop 2e-6
@@ -76,8 +76,8 @@ block	values#5	cef4b6240f4d6713	shown	-	-	-
 block	values#6	99d13973553af432	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run blinky.msl --analysis transient --stop 3e-6 --print-step 1e-6 --print count
 block	values#7	35ff65aaf710211a	run	piperine/book_values::a_message_with_values_is_a_record_with_a_text_field	-	-
 block	values#8	775ff75685a16476	refused	piperine/book_values::a_function_has_the_class_its_body_gives	L53	-
-block	values#9	32f78a863ab23b69	fragment	values#10	-	-
-block	values#10	730d64db0c3d7ad5	run	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	-
+block	values#9	d9806c64bb24943b	fragment	values#10	-	-
+block	values#10	bf4e0f7117cbdde7	run	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	-
 block	values#11	a07bbc60df4e55a9	shown	-	-	-
 block	values#12	6801c85357a0db7b	shown	-	-	-
 block	values#13	2ab2c4cf88e53d78	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --analysis transient --stop 3e-6 --stream zone
@@ -128,7 +128,7 @@ block	digital#2	a15e186f7ce2d093	shown	-	-	-
 block	digital#3	a594897648f9a3c9	run	piperine/book_digital::the_counter_raises_full_exactly_while_the_count_is_255	-	-
 block	digital#4	47d868a14e955d28	shown	-	-	-
 block	digital#5	8edf6a5eb1554578	run	piperine/book_digital::the_set_reset_latch_needs_no_reaction	-	-
-block	digital#6	83147f960628b266	refused	piperine/book_digital::the_phase_detector_is_refused_for_let_mut_and_events_read_as_bools	L51	-
+block	digital#6	6d5e2bb1132e7374	refused	piperine/book_digital::the_phase_detector_is_refused_for_assignment_and_events_read_as_bools	L51	-
 block	digital#7	522e2b665ccc0283	refused	piperine/book_digital::the_debouncer_is_refused_for_its_integer_param_alone	L28	-
 block	digital#8	af80f7bef2680656	shown	-	-	-
 block	digital#9	21242d386fccfbe6	shown	-	-	-
@@ -167,7 +167,7 @@ block	packages#8	a6e033b06cef59d2	shown	-	-	-
 block	packages#9	73c3eda598d0bacf	run	piperine/book_packages::the_crate_root_of_the_bigger_project_loads_its_files_and_reaches_its_dependency	-	-
 block	packages#10	a97e75886fee3431	shown	-	-	-
 block	packages#11	f01cdf951bdfcbc8	shown	-	-	-
-block	packages#12	ce45ac0976f71d1f	refused	piperine/book_packages::the_include_str_table_is_refused_for_its_generic_function_and_its_reference	L57	-
+block	packages#12	52cbabbc897e6885	refused	piperine/book_packages::the_include_str_table_is_refused_for_its_generic_function	L57	-
 block	packages#13	b2997ca3b9ad5e0a	refused	piperine/book_packages::a_local_namespace_and_a_dependency_of_one_name_make_the_use_ambiguous	-	-
 block	packages#14	022839d3af99d3a3	shown	-	-	-
 block	packages#15	5f60f0eac75c1c77	fragment	packages#13	-	-
@@ -303,11 +303,13 @@ claim	language~332e938b	332e938bde049d51	holds	piperine/book_language::arithmeti
 claim	language~a3318a63	a3318a635662486a	holds	piperine/book_language::a_fault_ends_the_analysis_or_the_build_and_a_non_finite_value_ends_the_solve	-	A value that is not finite and arrives at the analog solver ends the solve with an error, because no circuit has an infinite voltage.
 claim	language~fb958b67	fb958b67704a4eb8	holds	piperine/book_language::blocks_ifs_and_matches_are_expressions_with_one_value	-	let names a value. let x = expr; evaluates the expression and gives the result a name, visible from that statement to the end of the block.
 claim	language~b76ed779	b76ed779b06ebcf9	holds	piperine/book_language::blocks_ifs_and_matches_are_expressions_with_one_value	-	So { let s = x * 10.0; s + 1.0 } is a number.
-claim	language~181a8b38	181a8b38677db48f	prose	-	-	Where a body needs a variable it updates, the language has let mut, assignment (x = x + 1;, x += 1;) and the loops for i in 0..n, while and loop with break and continue.
+claim	language~67bae4f9	67bae4f9b20bad22	prose	-	-	For repetition the language has the loops for i in 0..n, while and loop with break and continue.
 claim	language~c87e9922	c87e992280216c08	prose	-	-	Its header gives each parameter with its type and, after ->, the type of the result.
 claim	language~9273ae3d	9273ae3d2225da3b	holds	piperine/book_language::the_prelude_gives_its_constants	-	The prelude gives you the constants Q, K_B, EPS0, PI, E and inf.
 claim	language~49c521bb	49c521bb27bd7018	holds	piperine/book_language::constants_and_functions_compute_before_and_during_the_run	-	Running today: bool, integers of up to 64 bits, f64, constants, functions, let and blocks, if, and match over literals.
-claim	language~0da752e7	0da752e7ad7d9b9c	holds	piperine/book_language::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	-	Parsed and checked, and not run yet: let mut, assignment and loops, return, a function that calls itself, an item declared inside a block, % on floats, floats other than f64, and integers wider than 64 bits.
+claim	language~6a60313e	6a60313e436394ff	holds	piperine/book_language::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	-	Parsed and checked, and not run yet: assignment and loops, return, a function that calls itself, an item declared inside a block, % on floats, floats other than f64, and integers wider than 64 bits.
+claim	language~8883ef8c	8883ef8ca20d88b7	holds	piperine/book_language::the_earlier_let_mut_spelling_is_still_known_and_stopped_by_name	-	Today's compiler still knows the word: it stops a model that uses it with the code P0001 and names a let mut binding.
+claim	language~c2dd2b0b	c2dd2b0b05f730fc	prose	-	-	A later compiler refuses the word itself.
 claim	language~5628120b	5628120bc0d03e21	holds	piperine/book_language::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	-	A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.
 claim	language~79f450b1	79f450b163622f85	holds	piperine/book_language::nothing_converts_by_itself_and_a_condition_is_a_bool	-	P0002
 claim	language~8031841d	8031841de450ce28	holds	piperine/book_language::e0909_e0905_and_e0903_a_literal_too_large_a_character_and_a_keyword_as_a_name	-	E0909
@@ -319,11 +321,14 @@ claim	types~d5d7690f	d5d7690f043a99ce	holds	piperine/book_types::an_option_is_re
 claim	types~4b156a2d	4b156a2da44bc9e4	holds	piperine/book_types::optional_arguments_may_be_left_out_or_named	-	Passing a plain T wraps it in Some, the one implicit conversion in the language:
 claim	types~050c60ed	050c60ed3f6d5b27	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The command prints an enum field as the number of its variant, counted from 0 in the order of the declaration, so seen=2 is High.
 claim	types~545f1643	545f1643d584ba9b	holds	piperine/book_types::a_match_that_misses_a_variant_stops_the_build	-	Add a fourth variant later and this match stops the build until it has an arm for it, so a new case cannot be forgotten silently.
-claim	types~9f570f67	9f570f67596fc0c5	holds	piperine/book_types::an_enum_is_matched_compared_and_printed_by_the_number_of_its_variant	-	The line above the enum is an attribute. #[derive(…)] asks the compiler to write standard behavior for the type that follows: Clone and Copy let its values be copied like numbers, PartialEq gives it == and !=, PartialOrd gives it < and > in the order of the declaration, and Repr gives it a layout in bits, which a signal needs to carry it.
+claim	types~61763362	6176336202534a2d	prose	-	-	A function that should accept a table of any length gives the length a name of its own, <const N: usize>, and takes [f64; N].
+claim	types~10cb5d87	10cb5d87fc98b669	holds	piperine/book_types::an_enum_is_matched_compared_and_printed_by_the_number_of_its_variant	-	The line above the enum is an attribute. #[derive(…)] asks the compiler to write standard behavior for the type that follows: PartialEq gives it == and !=, PartialOrd gives it < and > in the order of the declaration, and Repr gives it a layout in bits, which a signal needs to carry it.
 claim	types~e26b60ff	e26b60ff8c87e786	prose	-	-	It fits a value or it does not, and when it fits it gives names to the parts you want.
 claim	types~1c8de7ec	1c8de7ecca03f031	holds	piperine/book_types::an_impl_gives_a_type_its_constants_and_functions	-	The same notation reaches into a namespace, as in std::constants::PI. use path; gives the last name of a path a short name in the file that writes it.
 claim	types~95095180	950951807bc5b336	holds	piperine/book_types::only_two_built_in_bang_forms_exist	-	Only two built-in ! forms: emit! for output and include_str! for data (E0901).
 claim	types~5628120b	5628120bc0d03e21	holds	piperine/book_types::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	-	A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.
+claim	types~ee044194	ee0441940667a4a1	holds	piperine/book_types::the_earlier_borrow_and_copy_spellings_are_still_known	-	Today's compiler still knows both: it stops a model that lends a table with the code P0001 and names a reference type, and it accepts the two names in a derive, where they change nothing.
+claim	types~9e59c9f5	9e59c9f5b6dfbfce	prose	-	-	A later compiler refuses all of them.
 claim	types~79f450b1	79f450b163622f85	holds	piperine/book_types::a_match_that_misses_a_variant_stops_the_build	-	P0002
 claim	types~39acbe1d	39acbe1dbc06bf22	holds	piperine/book_types::e0143_there_are_no_default_arguments	-	E0143
 claim	types~39acbd1d	39acbd1dbc06bd6f	holds	piperine/book_types::e0140_a_named_argument_must_name_an_optional_parameter	-	E0140
@@ -366,6 +371,8 @@ claim	values~39a9371d	39a9371dbc03a3e6	holds	piperine/book_values::analog_reads_
 claim	values~399bbd1d	399bbd1dbbf84a3c	holds	piperine/book_values::e0112_a_carried_type_needs_repr	-	E0112
 claim	values~4bd60d1d	4bd60d1dc68d0e9c	holds	piperine/book_values::e0350_a_fn_cannot_hold_ddt	-	E0350
 claim	values~3998361d	3998361dbbf52f00	unraised	piperine/book_values::an_extern_function_is_refused_with_or_without_its_derivative	L12	E0123
+claim	values~2648fe25	2648fe25559ad3bb	prose	-	-	Since that is the only sharing there is, it has a strict rule for change: what a signal holds changes only when a block drives it, with <- in a reaction or +> in an analog block, at the moment the simulator gives that statement.
+claim	values~ef061060	ef0610606942e208	prose	-	-	Reading a signal gives a value, a copy of what it holds at that moment.
 claim	natures~b91f6505	b91f650573b09f15	prose	-	-	By the end of this chapter you can pick the right kind of wire for a job, declare signals and ports of every kind, and build a shared open-drain line that several modules drive, with a monitor that prints every change of it.
 claim	natures~cd4205d5	cd4205d55ed90e62	prose	-	-	Every carrier has a nature, and the nature answers two questions: what does it hold, and what happens when several modules drive it.
 claim	natures~c82d9d81	c82d9d814a2989c0	prose	-	-	A circuit node has no "driver" at all: every element connected to it pushes or pulls current, and Kirchhoff's law settles the voltage.

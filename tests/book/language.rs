@@ -183,14 +183,13 @@ fn a_fault_ends_the_analysis_or_the_build_and_a_non_finite_value_ends_the_solve(
 
 #[test]
 fn the_loop_still_on_the_way_is_refused_where_the_solver_reaches_it() {
-    // language#13 (refused): the chapter's `sum_below`, a local that is updated, an assignment and a loop
+    // language#13 (refused): the chapter's `sum_below`, an assignment and a loop
     // (GAPS.md L5). A function nothing reaches is accepted (GAPS.md S3); one the top reaches is `P0001`. When
     // it runs this test fails and the row moves to `run`
     let chapter = Chapter::read();
     let overrides = || Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2e-6), ..Overrides::default() };
     let top = |statements: &str| format!("module Top() {{ }}\ndigital for Top {{ on at(1u) {{ {statements} }} }}\n");
     let reaching = || chapter.wrapped("sum.msl", "", "language#13", &top("emit!(\"r\", s = sum_below(4));")).run(overrides());
-    Refusal::expect(reaching(), "language#13", "P0001", "`let mut` binding is not supported yet");
     Refusal::expect(reaching(), "language#13", "P0001", "`for` loop is not supported yet");
     let unreached = chapter.wrapped("sum.msl", "", "language#13", &top("emit!(\"r\", s = 1);")).run(overrides());
     assert!(unreached.is_ok(), "a function nothing reaches is accepted");
@@ -198,17 +197,16 @@ fn the_loop_still_on_the_way_is_refused_where_the_solver_reaches_it() {
 
 #[test]
 fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
-    // language~0da752e7 "Parsed and checked, and not run yet: let mut, assignment and loops, return, a function
+    // language~6a60313e "Parsed and checked, and not run yet: assignment and loops, return, a function
     // that calls itself, an item declared inside a block, % on floats, floats other than f64, and integers
     // wider than 64 bits"; language~5628120b "A model that uses one of them is stopped before the run with the
     // code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones
     // above": the forms of the status box, each on the smallest model (when one of them runs, this test fails
     // and the box loses it)
     for (items, statements, named) in [
-        ("", "let mut x = 5; x = 6; emit!(\"r\", x = x);", "`let mut` binding is not supported yet"),
         ("", "let x = 5; x = 6; emit!(\"r\", x = x);", "assignment is not supported yet"),
-        ("", "let mut s = 0; for i in 0..4 { s += i; } emit!(\"r\", s = s);", "`for` loop is not supported yet"),
-        ("", "let mut n = 0; while n < 3 { n += 1; } emit!(\"r\", n = n);", "`while` loop is not supported yet"),
+        ("", "let s = 0; for i in 0..4 { s += i; } emit!(\"r\", s = s);", "`for` loop is not supported yet"),
+        ("", "let n = 0; while n < 3 { n += 1; } emit!(\"r\", n = n);", "`while` loop is not supported yet"),
         ("fn sign(x: f64) -> f64 { if x < 0.0 { return -1.0; } 1.0 }", "emit!(\"r\", s = sign(-3.0));", "`return` is not supported yet"),
         ("fn fact(n: u32) -> u32 { if n == 0 { 1 } else { n * fact(n - 1) } }", "emit!(\"r\", f = fact(5));", "a function that calls itself is not supported yet"),
         ("", "const K: f64 = 4.0; emit!(\"r\", y = K);", "item inside a block is not supported yet"),
@@ -233,4 +231,13 @@ fn e0909_e0905_and_e0903_a_literal_too_large_a_character_and_a_keyword_as_a_name
     assert_eq!(keyword.first("E0903").message, "`module` is a reserved keyword and cannot be used as an identifier");
     let raw = ValueFile::written("", "let r#module = 2; emit!(\"r\", y = r#module);");
     ValueFile::int(&raw, "y", 2);
+}
+
+#[test]
+fn the_earlier_let_mut_spelling_is_still_known_and_stopped_by_name() {
+    // language~8883ef8c "Today's compiler still knows the word: it stops a model that uses it with the code P0001
+    // and names a let mut binding": `mut` left the language with value semantics (spec Appendix G.71, GAPS.md
+    // S7). When the parser refuses the word this test fails and the status box loses the sentence
+    let faulty = ValueFile::refused("language~8883ef8c", "", "let mut x = 5; x = 6; emit!(\"r\", x = x);");
+    assert!(faulty.given.iter().any(|reported| reported.code == "P0001" && reported.message == "`let mut` binding is not supported yet"), "{:?}", faulty.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
 }

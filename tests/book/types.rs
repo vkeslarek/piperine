@@ -74,9 +74,9 @@ fn an_option_is_read_with_its_methods_a_match_and_an_if_let() {
 
 #[test]
 fn an_enum_is_matched_compared_and_printed_by_the_number_of_its_variant() {
-    // types#8 (run, `levels.msl`) with its listing types#10; types~9f570f67 "The line above the enum is an
-    // attribute. #[derive(..)] asks the compiler to write standard behavior for the type that follows: Clone
-    // and Copy let its values be copied like numbers, PartialEq gives it == and !=, PartialOrd gives it < and >
+    // types#8 (run, `levels.msl`) with its listing types#10; types~10cb5d87 "The line above the enum is an
+    // attribute. #[derive(..)] asks the compiler to write standard behavior for the type that follows:
+    // PartialEq gives it == and !=, PartialOrd gives it < and >
     // in the order of the declaration, and Repr gives it a layout in bits" (the field `seen` is the variant's
     // number, `high` uses `==`, `above` uses `>`); a `use Level::*;` names the variants bare
     let record = ValueFile::only(Chapter::read().marked("levels.msl", "types#8").run(ValueFile::transient()), "levels");
@@ -84,7 +84,7 @@ fn an_enum_is_matched_compared_and_printed_by_the_number_of_its_variant() {
     ValueFile::flag(&record, "high", true);
     ValueFile::flag(&record, "above", true);
     ValueFile::int(&record, "weight", 2);
-    let level = "#[derive(Clone, Copy, PartialEq, PartialOrd, Repr)]\nenum Level { Low, Between, High }\nuse Level::*;";
+    let level = "#[derive(PartialEq, PartialOrd, Repr)]\nenum Level { Low, Between, High }\nuse Level::*;";
     let bare = ValueFile::written(level, "let l = Between; emit!(\"r\", same = l == Level::Between, ordered = Low < Between && Between < High);");
     ValueFile::flag(&bare, "same", true);
     ValueFile::flag(&bare, "ordered", true);
@@ -133,11 +133,11 @@ fn the_listings_still_on_the_way_are_refused_where_a_top_reaches_them() {
     Refusal::expect(Reached::run("types#6", "", "emit!(\"r\", s = span(2.0, 0.8));"), "types#6", "P0001", "tuple type is not supported yet");
     Refusal::expect(Reached::run("types#6", "", "emit!(\"r\", s = span(2.0, 0.8));"), "types#6", "P0001", "tuple expression is not supported yet");
     Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = smoothed([1.0, 2.0, 3.0]));"), "types#7", "P0001", "array type is not supported yet");
-    Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = mean(&TAPS));"), "types#7", "P0001", "reference type is not supported yet");
+    Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = mean(TAPS));"), "types#7", "P0001", "generic function is not supported yet");
     Refusal::expect(Reached::run("types#11", "", "emit!(\"r\", s = area(Shape::Circle(1.0)));"), "types#11", "P0001", "enum `Shape` with a variant with a payload (`Circle`) is not supported yet");
     Refusal::expect(Reached::run("types#12", "", "let r = Reading { volts: 3.0, valid: true }; emit!(\"r\", s = scaled(r, 0.5).volts);"), "types#12", "P0001", "struct expression is not supported yet");
     Refusal::expect(Reached::run("types#12", "", "let r = Reading { volts: 3.0, valid: true }; emit!(\"r\", s = scaled(r, 0.5).volts);"), "types#12", "P0001", "field access is not supported yet");
-    let family = "#[derive(Clone, Copy, PartialEq, Repr)]\nenum Family { Cmos, Ttl }\n";
+    let family = "#[derive(PartialEq, Repr)]\nenum Family { Cmos, Ttl }\n";
     Refusal::expect(Reached::run("types#16", family, "emit!(\"r\", s = reads_high(Family::Cmos, 2.0, 3.3));"), "types#16", "P0001", "method `switches_at` on `enum `Family`` is not supported yet");
 }
 
@@ -147,15 +147,14 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
     // that names the form, so nothing is ever computed by a rule other than the ones above": the forms of the
     // chapter's status box, each on the smallest model (when one of them runs, this test fails and the box
     // loses it)
-    let level = "#[derive(Clone, Copy, PartialEq, Repr)] enum Z { A, B }";
+    let level = "#[derive(PartialEq, Repr)] enum Z { A, B }";
     for (items, statements, named) in [
         ("", "let t = (1.5, true); emit!(\"r\", f = t.0);", "tuple expression is not supported yet"),
         ("", "let a = [1.0, 2.0]; emit!(\"r\", x = a[0]);", "array expression is not supported yet"),
-        ("fn mean(xs: &[f64]) -> f64 { xs.len() as f64 }", "emit!(\"r\", x = mean(&[1.0, 2.0]));", "reference type is not supported yet"),
         ("struct P { x: f64 }", "let p = P { x: 1.0 }; emit!(\"r\", x = p.x);", "struct expression is not supported yet"),
-        ("#[derive(Clone, Copy, PartialEq, Repr)] enum Cmd { Idle, Set(u8) }", "let c = Cmd::Idle; emit!(\"r\", y = c == Cmd::Idle);", "enum `Cmd` with a variant with a payload (`Set`) is not supported yet"),
-        ("#[derive(Clone, Copy, PartialEq, Repr)] enum Op { Add = 0b00, Sub = 0b01 }", "let o = Op::Sub; emit!(\"r\", y = o == Op::Sub);", "enum `Op` with an explicit discriminant (`Add`) is not supported yet"),
-        ("#[derive(Clone, Copy, PartialEq)] enum Lv { Low, High }", "let a = Lv::Low; emit!(\"r\", y = a == Lv::Low);", "enum `Lv` without `#[derive(Repr)]` is not supported yet"),
+        ("#[derive(PartialEq, Repr)] enum Cmd { Idle, Set(u8) }", "let c = Cmd::Idle; emit!(\"r\", y = c == Cmd::Idle);", "enum `Cmd` with a variant with a payload (`Set`) is not supported yet"),
+        ("#[derive(PartialEq, Repr)] enum Op { Add = 0b00, Sub = 0b01 }", "let o = Op::Sub; emit!(\"r\", y = o == Op::Sub);", "enum `Op` with an explicit discriminant (`Add`) is not supported yet"),
+        ("#[derive(PartialEq)] enum Lv { Low, High }", "let a = Lv::Low; emit!(\"r\", y = a == Lv::Low);", "enum `Lv` without `#[derive(Repr)]` is not supported yet"),
         ("fn some(v: f64) -> Option<f64> { if v > 0.0 { Some(v) } else { None } }", "emit!(\"r\", y = some(1.0).is_some());", "this form of an `Option` value is not supported yet"),
         ("", "let x = 3u8; let y = match x { 0..=9 => 1, _ => 2 }; emit!(\"r\", y = y);", "range pattern in a `match` arm is not supported yet"),
         ("", "let c = 5u8; let v = match c { n @ 4 => n, _ => 0 }; emit!(\"r\", v = v);", "`@` pattern in a `match` arm is not supported yet"),
@@ -173,7 +172,7 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
 fn e0161_an_enum_has_no_other_variant() {
     // types~39a5d01d (E0161), the last row of the chapter's table: "Level::Mid: The enum has no such variant,
     // so the path does not resolve"
-    let faulty = ValueFile::refused("types~39a5d01d", "#[derive(Clone, Copy, PartialEq, Repr)] enum Level { Low, Between, High }", "let l = Level::Mid; emit!(\"r\", y = 1);");
+    let faulty = ValueFile::refused("types~39a5d01d", "#[derive(PartialEq, Repr)] enum Level { Low, Between, High }", "let l = Level::Mid; emit!(\"r\", y = 1);");
     assert_eq!(faulty.first("E0161").message, "cannot find `Mid` in this scope");
 }
 
@@ -181,7 +180,7 @@ fn e0161_an_enum_has_no_other_variant() {
 fn the_forms_still_on_the_way_are_refused_where_the_solver_reaches_them() {
     // types#17 (refused): the chapter's `range_of` and `mean`, the example of its part on what runs today. A function nothing reaches is accepted
     // (GAPS.md S3); one the top reaches is `P0001`: the enum has no `#[derive(Repr)]`, a `match` arm holds a
-    // range pattern (L6), `&[f64]` is a reference type (L3). When one of them runs this test fails and the
+    // range pattern (L6), `mean` is a generic function (L7). When one of them runs this test fails and the
     // row moves to `run`
     let chapter = Chapter::read();
     let reaching = |call: &str| chapter.wrapped("carry.msl", "", "types#17", &format!("module Top() {{ }}\ndigital for Top {{ on at(1u) {{ {call} }} }}\n"));
@@ -189,7 +188,7 @@ fn the_forms_still_on_the_way_are_refused_where_the_solver_reaches_them() {
     let range = Refusal::of(reaching("let z = range_of(3);").run(overrides()), "types#17");
     assert!(range.contains(&("P0001".to_string(), "range pattern in a `match` arm is not supported yet".to_string())), "{range:?}");
     assert!(range.contains(&("P0001".to_string(), "enum `Range` without `#[derive(Repr)]` is not supported yet".to_string())), "{range:?}");
-    Refusal::expect(reaching("let z = mean(&[1.0, 2.0]);").run(overrides()), "types#17", "P0001", "reference type is not supported yet");
+    Refusal::expect(reaching("let z = mean([1.0, 2.0]);").run(overrides()), "types#17", "P0001", "generic function is not supported yet");
 }
 
 #[test]
@@ -258,4 +257,18 @@ fn e0142_a_positional_argument_cannot_follow_a_named_one() {
     let source = "fn scale(x: f64, k: Option<f64>, limit: Option<f64>) -> f64 { x * k.unwrap_or(2.0) }\nmodule Top() { }\n";
     let faulty = Faulty::elaborating("types~39acbf1d", &format!("{source}digital for Top {{ on at(1u) {{ let v = 5.0; emit!(\"s\", a = scale(v, limit: 1.0, 3.0)); }} }}\n"), "Top");
     assert_eq!(faulty.first("E0142").message, "a positional argument after a named one");
+}
+
+#[test]
+fn the_earlier_borrow_and_copy_spellings_are_still_known() {
+    // types~ee044194 "Today's compiler still knows both: it stops a model that lends a table with the code P0001
+    // and names a reference type, and it accepts the two names in a derive, where they change nothing": `&`,
+    // `Clone` and `Copy` left the language with value semantics (spec Appendix G.71, GAPS.md S7). When the
+    // front end refuses them this test fails and the status box loses the sentence
+    let lent = ValueFile::refused("types~ee044194", "fn mean(xs: &[f64]) -> f64 { xs.len() as f64 }", "emit!(\"r\", x = mean(&[1.0, 2.0]));");
+    assert!(lent.given.iter().any(|reported| reported.code == "P0001" && reported.message == "reference type is not supported yet"), "{:?}", lent.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
+    let plain = ValueFile::written("#[derive(PartialEq, Repr)] enum Z { A, B }", "let z = Z::B; emit!(\"r\", same = z == Z::B);");
+    let derived = ValueFile::written("#[derive(Clone, Copy, PartialEq, Repr)] enum Z { A, B }", "let z = Z::B; emit!(\"r\", same = z == Z::B);");
+    ValueFile::flag(&plain, "same", true);
+    ValueFile::flag(&derived, "same", true);
 }
