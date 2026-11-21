@@ -767,8 +767,12 @@ impl<'a> ValuePrinter<'a> {
                 }
                 printed.extend(Self::env_reads(self.ir, *function).into_iter().map(|env| self.read(Self::env_name(env))));
                 printed.extend(self.depth_argument(*function));
-                // a generic function called with nothing to fix its `Real` type names it
-                let real = if printed.is_empty() && Self::is_generic(self.ir, *function) { format!("::<{}>", if self.plain { "f64" } else { "R" }) } else { String::new() };
+                // a generic function called with no argument that fixes its `Real` type names it
+                let items = TypeItems::new(self.ir);
+                // `R` is fixed by what the call passes or returns; a function that holds a real only in
+                // a local (a struct field) leaves it open, so the call names it
+                let fixed = params.iter().any(|p| items.holds_real(&p.ty)) || items.holds_real(self.ir.function(*function).ret()) || !Self::env_reads(self.ir, *function).is_empty();
+                let real = if (printed.is_empty() || !fixed) && Self::is_generic(self.ir, *function) { format!("::<{}>", if self.plain { "f64" } else { "R" }) } else { String::new() };
                 atom(format!("{}{real}({})", Text::ident(self.ir.function(*function).name()), printed.join(", ")))
             }
             Expr::Math { f, args } => {

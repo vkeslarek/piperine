@@ -1210,8 +1210,8 @@ T63
 
 **Done when**:
 
-- [ ] `struct_expressions_give_rusts_values`, `field_reads_give_the_fields`, `assigning_a_field_changes_that_field_only`, `tuples_give_rusts_values` and `tuple_patterns_bind_each_component` pass under `**Run srcagg**`
-- [ ] Gate check passes: Full
+- [x] `struct_expressions_give_rusts_values`, `field_reads_give_the_fields`, `assigning_a_field_changes_that_field_only`, `tuples_give_rusts_values` and `tuple_patterns_bind_each_component` pass under `**Run srcagg**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

@@ -81,8 +81,17 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_assignment(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, expr: ExprId) -> bool {
         let node = self.design.expr_node(expr).clone();
         let ExprKind::Assign { op, lhs, rhs } = node.kind else { return false };
-        let Some(local) = self.assigned_local(scope, lhs) else { return false };
-        let target = scope.locals[local as usize].ty.clone();
+        let Some(place) = self.place_of(scope, lhs) else { return false };
+        let target = match place.path.is_empty() {
+            true => scope.locals[place.local as usize].ty.clone(),
+            false => match self.types.ty(lhs).and_then(|t| self.value_type(t)) {
+                Some(field) => field,
+                None => {
+                    self.unsupported(scope.file, node.span, "an assignment to a field whose type has no value in the IR");
+                    return false;
+                }
+            },
+        };
         let Some(value) = self.lower_expr(scope, rhs) else { return false };
         if self.flag(value) == Flag::Flagged && Flag::of(&target) == Flag::Plain {
             self.unsupported(scope.file, node.span, "an assignment of a value that may be unknown to a local that cannot hold one");
@@ -90,7 +99,7 @@ impl Elaboration<'_, '_> {
         }
         let value = self.coerced_to(scope, value, &target);
         let op = op.map(Self::binary_op);
-        out.push(self.stmt(Stmt::Assign { place: Place { local, path: Vec::new() }, op, value }));
+        out.push(self.stmt(Stmt::Assign { place, op, value }));
         true
     }
 
@@ -104,9 +113,8 @@ impl Elaboration<'_, '_> {
         Some(self.emit(Expr::Block { stmts, value: None }, ValueType::Unit, origin))
     }
 
-    /// The IR local an assignment's target names: a `let mut` or deferred local. A field or an
-    /// index target joins with the aggregate types.
-    fn assigned_local(&mut self, scope: &Scope, target: ExprId) -> Option<u32> {
+    /// The IR local an assignment's target names: a `let mut` or deferred local.
+    pub(super) fn assigned_local(&mut self, scope: &Scope, target: ExprId) -> Option<u32> {
         let node = self.design.expr_node(self.peel_parens(target)).clone();
         let ExprKind::Path(path) = &node.kind else {
             self.unsupported(scope.file, node.span, "an assignment to a field or an element");

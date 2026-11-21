@@ -9,6 +9,7 @@
 //! (first-reach order, each function variant lowered when a call first reaches it), then the
 //! instance tree. Any diagnostic means no `Ir`.
 
+mod aggregate;
 mod body;
 mod carriers;
 mod children;

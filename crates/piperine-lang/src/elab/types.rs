@@ -19,12 +19,19 @@ use crate::types::{FieldType, Ty};
 pub(super) struct TypeArena {
     /// The arena index of each declaration.
     ids: BTreeMap<DeclId, TypeId>,
+    /// The IR type of each field of each arena struct, by arena index (empty for an enum).
+    fields: Vec<Vec<ValueType>>,
 }
 
 impl TypeArena {
     /// The arena over `decls`, numbered in their order.
     fn over(decls: &[DeclId]) -> TypeArena {
-        TypeArena { ids: decls.iter().enumerate().map(|(index, decl)| (*decl, TypeId(index as u32))).collect() }
+        TypeArena { ids: decls.iter().enumerate().map(|(index, decl)| (*decl, TypeId(index as u32))).collect(), fields: Vec::new() }
+    }
+
+    /// The IR types of the fields of the arena struct `id`, in declaration order.
+    pub(super) fn field_types(&self, id: TypeId) -> &[ValueType] {
+        self.fields.get(id.index()).map_or(&[], Vec::as_slice)
     }
 
     /// The entry of the struct or enum `decl`, `None` when the check did not reach it.
@@ -65,6 +72,11 @@ impl Elaboration<'_, '_> {
         self.type_arena = TypeArena::over(&decls);
         for decl in decls {
             let data = self.type_data(decl);
+            let fields = match &data.kind {
+                TypeKind::Struct { fields, .. } => fields.iter().map(|(_, ty)| ty.clone()).collect(),
+                TypeKind::Enum { .. } => Vec::new(),
+            };
+            self.type_arena.fields.push(fields);
             self.ir.type_data(data);
         }
     }

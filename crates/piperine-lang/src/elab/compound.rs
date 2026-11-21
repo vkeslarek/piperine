@@ -634,6 +634,12 @@ impl Elaboration<'_, '_> {
         true
     }
 
+    /// Whether `let (p, q) = init;` binds a name to each component of a tuple expression.
+    pub(super) fn is_component_let(&self, pats: &[PatId], init: ExprId) -> bool {
+        matches!(&self.design.expr_node(self.peel_parens(init)).kind, ExprKind::Tuple(items) if items.len() == pats.len())
+            && pats.iter().all(|p| matches!(self.design.pat_node(*p).kind, PatKind::Ident { sub: None, .. }))
+    }
+
     /// `let (a, b) = (x, y);`: one local per component, in order.
     pub(super) fn lower_tuple_let(&mut self, scope: &mut Scope, out: &mut Vec<StmtId>, pats: &[PatId], init: ExprId, file: FileId, span: crate::msl::Span) -> bool {
         let ExprKind::Tuple(items) = self.design.expr_node(self.peel_parens(init)).kind.clone() else {

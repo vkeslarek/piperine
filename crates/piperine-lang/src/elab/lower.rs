@@ -254,7 +254,10 @@ impl Elaboration<'_, '_> {
             },
             ExprKind::Paren(inner) => self.lower_expr(scope, *inner),
             ExprKind::Path(_) => self.lower_path(scope, expr, ty, origin),
+            ExprKind::Field { expr: recv, name, .. } if matches!(self.types.ty(*recv), Some(Ty::Struct(_) | Ty::Tuple(_))) => self.lower_field_value(scope, *recv, &name.text, ty, origin),
             ExprKind::Field { .. } => self.lower_field(scope, expr, ty, origin),
+            ExprKind::Struct { fields, .. } => self.lower_struct_expr(scope, expr, fields, ty, origin),
+            ExprKind::Tuple(items) => self.lower_tuple(scope, items, ty, origin),
             ExprKind::Unary { op, expr: operand } => {
                 let op = match op {
                     UnOp::Neg => UnaryOp::Neg,
@@ -445,6 +448,7 @@ impl Elaboration<'_, '_> {
             }
             // Typed by `types::intrinsic`, lowered by its §22.1 contract (`intrinsics.rs`).
             (_, Some(Callee::Intrinsic(intrinsic))) => self.lower_intrinsic(scope, expr, intrinsic, args, ty, origin),
+            (_, None) if let ExprKind::Call { callee, .. } = &self.design.expr_node(expr).kind && self.constructs_struct(*callee) => self.lower_constructor_call(scope, expr, args, ty, origin),
             (_, None) if let Some(decl) = self.called_local(scope, expr) => self.lower_value_call(scope, expr, decl, args, origin),
             (_, None) => {
                 self.unsupported(scope.file, span, "a call the type checker did not resolve");
@@ -601,7 +605,10 @@ impl Elaboration<'_, '_> {
                     _ => false,
                 }
             }
-            PatKind::Tuple(pats) => self.lower_tuple_let(scope, out, &pats, init, file, span),
+            // `let (a, b) = (x, y);` is one local per component; any other value is bound once and
+            // taken apart by its pattern (`aggregate.rs`).
+            PatKind::Tuple(pats) if self.is_component_let(&pats, init) => self.lower_tuple_let(scope, out, &pats, init, file, span),
+            PatKind::Tuple(_) | PatKind::TupleStruct { .. } | PatKind::Struct { .. } => self.lower_destructuring_let(scope, out, pat, init),
             _ => {
                 self.unsupported(file, span, "a `let` pattern that is not a name");
                 false
@@ -741,6 +748,7 @@ impl Elaboration<'_, '_> {
                 }
             },
             DeclKind::Fn(_) => self.lower_function_value(scope, decl, ty, node.span, origin),
+            DeclKind::Struct(_) => self.lower_unit_struct(ty, origin),
             _ => {
                 self.unsupported(scope.file, node.span, "this name as a value");
                 None

@@ -83,6 +83,16 @@ impl Elaboration<'_, '_> {
                 Some(found)
             }
             PatKind::Range { lo, hi, inclusive } => self.test_range(scope, subject, *lo, *hi, *inclusive, origin),
+            // A tuple, a tuple struct and a struct: each sub-pattern over its field (`aggregate.rs`).
+            PatKind::Tuple(_) | PatKind::TupleStruct { .. } | PatKind::Struct { .. } => {
+                let read = self.read_subject(scope, subject, origin.clone())?;
+                let base = self.base_of(read);
+                if !matches!(base, ValueType::Tuple(_) | ValueType::Struct(_)) {
+                    self.unsupported(scope.file, node.span, "a pattern with fields over a value that is not a struct or a tuple");
+                    return None;
+                }
+                self.test_aggregate_pattern(scope, subject, pat, &base, origin)
+            }
             PatKind::Lit(expr) => {
                 let read = self.read_subject(scope, subject, origin.clone())?;
                 match self.bool_literal(*expr) {

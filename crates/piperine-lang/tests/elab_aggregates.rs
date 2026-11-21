@@ -62,3 +62,23 @@ fn every_reached_struct_and_enum_is_one_arena_type() {
     let is_hiccup = ir.functions().find(|f| f.name() == "is_hiccup").expect("is_hiccup");
     assert_eq!(is_hiccup.params()[0].ty, ValueType::Enum(piperine_ir::TypeId(mode as u32)));
 }
+
+#[test]
+fn struct_fields_are_evaluated_in_written_order() {
+    // §1.3.11: the fields of a struct expression run in the order they are written. Written in
+    // declaration order, or as plain reads, the parts stand where they are used; written out of order
+    // with a part that is more than a read, each is bound to a local in written order first.
+    let items = "struct P { x: f64, y: u8 }\nfn half(a: f64) -> f64 { a / 2.0 }\nfn one() -> u8 { 1 }\n\
+                 fn ordered() -> P { P { x: half(1.0), y: one() } }\nfn shuffled() -> P { P { y: one(), x: half(1.0) } }";
+    let ir = Elab::ir(&reaching(items, &["ordered()", "shuffled()"]), "Top");
+    let text = ir.print_structural();
+    let function = |name: &str| {
+        let start = text.find(&format!("fn {name}(")).unwrap_or_else(|| panic!("no fn {name}"));
+        let rest = &text[start..];
+        rest[..rest[1..].find("\nfn ").map_or(rest.len(), |at| at + 1)].to_string()
+    };
+    assert!(!function("ordered").contains("field$"), "{}", function("ordered"));
+    let shuffled = function("shuffled");
+    let (first, second) = (shuffled.find("let field$").expect("a local per field"), shuffled.rfind("let field$").expect("a second"));
+    assert!(first < second && shuffled[first..].find("one()").is_some_and(|at| at < shuffled[first..].find("half(").unwrap_or(usize::MAX)), "`y` runs before `x`: {shuffled}");
+}
