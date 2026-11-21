@@ -16,12 +16,19 @@
 //! There is no testbench here: the host drives `Buck`'s ports and params (see `README.md`).
 
 pub mod spec;
+
 pub mod power;
+
 pub mod sense;
+
 pub mod dpwm;
+
 pub mod control;
+
 pub mod supervisor;
+
 pub mod top;
 
 pub use crate::top::{Buck, Controller};
+
 pub use crate::supervisor::{Fault, Mode};

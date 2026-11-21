@@ -752,6 +752,34 @@ fn fmt_check_passes_on_the_rc_example_and_on_a_new_project() {
     assert_eq!(text(&out.stdout), "");
 }
 
+/// The repository root, two levels above this crate.
+fn repository() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+#[test]
+fn fmt_check_passes_on_every_stdlib_file() {
+    // PI-11 AC 2: `piperine fmt --check` names every file of `crates/piperine-lang/std/` and exits 0
+    // with no output, the standard library being in the formatter's form
+    let std = repository().join("crates/piperine-lang/std");
+    let mut files: Vec<String> = std::fs::read_dir(&std).expect("the std directory").map(|entry| entry.expect("an entry").path().to_string_lossy().into_owned()).filter(|path| path.ends_with(".msl")).collect();
+    files.sort();
+    assert!(files.len() >= 10, "the standard library holds its files: {files:?}");
+    let mut args = vec!["fmt", "--check"];
+    args.extend(files.iter().map(String::as_str));
+    let out = piperine_in(&std, &args);
+    assert_eq!(out.status.code(), Some(0), "{}{}", text(&out.stdout), text(&out.stderr));
+    assert_eq!(text(&out.stdout), "");
+}
+
+#[test]
+fn fmt_check_passes_in_examples_buck() {
+    // PI-11 AC 2: `piperine fmt --check` in `examples/buck` exits 0 with no output
+    let out = piperine_in(&repository().join("examples/buck"), &["fmt", "--check"]);
+    assert_eq!(out.status.code(), Some(0), "{}{}", text(&out.stdout), text(&out.stderr));
+    assert_eq!(text(&out.stdout), "");
+}
+
 #[test]
 fn test_prints_fail_with_the_fatal_message() {
     // FIX-02 AC 3: a run that called `fatal("boom")` at 2 us is `FAIL <name>` with the record's

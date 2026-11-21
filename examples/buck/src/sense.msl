@@ -24,21 +24,30 @@ pub module Adc(ain: Electrical, in sample: Bit, out code: Bit<u10> = 0, out done
     /// Width of the `done` strobe: one 200 MHz clock.
     tstrobe: f64 = 5n where tstrobe > 0.0;
 }
+
 digital for Adc {
     on sample.rise() {
         let q = (v(ain) / vref * 1024.0 + 0.5).floor().clamp(0.0, 1023.0) as u10;
         code <- q after tconv;
         done <- true after tconv;
-        done <- false after tconv + tstrobe;          // a second statement: the pair is a pulse
+        done <- false after tconv + tstrobe; // a second statement: the pair is a pulse
     }
 }
 
 /// Everything that measures (SPEC §4, §8.1 to §8.3): the output divider and its ADC, the input
 /// divider and the UVLO comparator, and the two current-limit comparators on the sense outputs.
-pub module Sensing(vin: Electrical, vout: Electrical, isense: Electrical, isense_n: Electrical,
-                   in sample: Bit,
-                   out code: Bit<u10>, out done: Bit,
-                   out vin_ok: Bit, out oc: Bit, out sink_oc: Bit) {
+pub module Sensing(
+    vin: Electrical,
+    vout: Electrical,
+    isense: Electrical,
+    isense_n: Electrical,
+    in sample: Bit,
+    out code: Bit<u10>,
+    out done: Bit,
+    out vin_ok: Bit,
+    out oc: Bit,
+    out sink_oc: Bit,
+) {
     pub signal fb: Electrical;
     pub signal vin_div: Electrical;
     /// Vout / 4 into the ADC: 6.25 mV per code at the output (SPEC §4.1).
