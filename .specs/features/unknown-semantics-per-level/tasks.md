@@ -267,8 +267,8 @@ T34
 
 **Done when**:
 
-- [ ] `a_minor_one_library_with_levels_is_refused` passes under `**Run load**`
-- [ ] Gate check passes: Quick
+- [x] `a_minor_one_library_with_levels_is_refused` passes under `**Run load**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

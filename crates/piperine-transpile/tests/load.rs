@@ -82,6 +82,63 @@ pub extern "C" fn piperine_abi_1() -> *const Library {{
     )
 }
 
+/// A library with one module whose prototype has a pin of a `KNOWN_LEVELS` field `code`, its
+/// `Library.minor` set to `MINOR_TEXT` before it is exported.
+const LEVELS_LIBRARY: &str = r#"use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
+use piperine_abi::raw::{Field, Layout, Library, List, Shape, Str, field_flag, leaf, role};
+use piperine_abi::shape::{PinSpec, ShapeBuf, ShapeRef};
+use piperine_abi::thunk::{library, module};
+use std::sync::OnceLock;
+
+static FIELDS: [Field; 1] = [Field {
+    name: Str::from_static("code"),
+    leaf: leaf::U16,
+    offset: 0,
+    count: 1,
+    flags: field_flag::HAS_KNOWN | field_flag::KNOWN_LEVELS,
+    known: 2,
+}];
+static LAYOUT: Layout = Layout { size: 4, align: 2, fields: List::from_slice(&FIELDS) };
+
+struct Probe;
+
+impl Probe {
+    fn shape() -> ShapeRef {
+        let mut buf = ShapeBuf::new();
+        buf.pin(PinSpec::discrete("state", role::PRIVATE, &LAYOUT));
+        buf.freeze()
+    }
+}
+
+impl Device for Probe {
+    fn prototype() -> &'static Shape<'static> {
+        static PROTOTYPE: OnceLock<ShapeRef> = OnceLock::new();
+        PROTOTYPE.get_or_init(Probe::shape).shape()
+    }
+    fn create(_values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Probe, Probe::shape()))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval<'_>) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React<'_>) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn piperine_abi_1() -> *const Library {
+    static MODULES: OnceLock<[piperine_abi::raw::Module; 1]> = OnceLock::new();
+    static LIBRARY: OnceLock<Library> = OnceLock::new();
+    LIBRARY.get_or_init(|| {
+        let modules = MODULES.get_or_init(|| [module::<Probe>("probe")]);
+        let mut library = library("test", "load.rs", modules);
+        library.minor = MINOR_TEXT;
+        library
+    })
+}
+"#;
+
 fn must_name(err: &Error, entry: &Entry, what: &str) {
     match err {
         Error::Load { file, cause } => {
@@ -228,4 +285,19 @@ fn unsafe_lives_in_load_only() {
         assert!(above.iter().any(|l| l.contains("SAFETY:")), "load.rs:{line} has no `// SAFETY:` comment");
         assert!(above.iter().any(|l| l.contains("abi.md")), "load.rs:{line}: the SAFETY comment cites abi.md");
     }
+}
+
+// UL-05 AC 6 / abi.md §3: a library whose minor predates `KNOWN_LEVELS` and whose prototype sets
+// the flag is refused, naming the file, the field and the minor; the same library at minor 2 loads.
+#[test]
+fn a_minor_one_library_with_levels_is_refused() {
+    let shop = Workshop::new();
+    let current = shop.library("levels-now", &LEVELS_LIBRARY.replace("MINOR_TEXT", "2"));
+    let loaded = Loaded::open(&current).expect("a minor-2 library may set KNOWN_LEVELS");
+    assert_eq!(loaded.names(), vec!["probe"]);
+
+    let old = shop.library("levels-old", &LEVELS_LIBRARY.replace("MINOR_TEXT", "1"));
+    let error = Loaded::open(&old).expect_err("a minor-1 library that sets KNOWN_LEVELS");
+    must_name(&error, &old, "probe.state.code");
+    must_name(&error, &old, "Library.minor 1");
 }

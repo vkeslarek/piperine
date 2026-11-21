@@ -9,7 +9,8 @@
 //! 2. the library is opened and `piperine_abi_1` looked up (abi.md §2 entry 1: the symbol's
 //!    suffix is the ABI major);
 //! 3. `Library.size` and `Library.minor` are read, and nothing else is, until both are accepted
-//!    (abi.md §12 "Versioning");
+//!    (abi.md §12 "Versioning"); once the module list is readable, a library of minor below 2
+//!    whose prototype sets `KNOWN_LEVELS` on a field is refused (abi.md §3);
 //! 4. the handle is leaked: abi.md §12 says a library and its prototypes live until the process
 //!    ends, and the solver holds `&'static Module`s into it.
 //!
@@ -45,7 +46,8 @@ pub struct Loaded {
 impl Loaded {
     /// Loads the library of `entry` through `piperine_abi_1`. A library whose bytes do not hash
     /// to what the manifest records, that cannot be opened, that has no such symbol, whose
-    /// `size` is smaller than this host reads or whose `minor` is newer than the host's, is an
+    /// `size` is smaller than this host reads, whose `minor` is newer than the host's or whose
+    /// `minor` is below 2 and whose prototype sets `KNOWN_LEVELS` on a field, is an
     /// `Error::Load` naming the file; a library that fails its hash is not opened.
     ///
     /// Every successful open leaks one mapping (abi.md §12): one per distinct design.
@@ -82,7 +84,28 @@ impl Loaded {
         if !library.modules.is_readable() {
             return Err(fail("its module list is not readable by this host".to_string()));
         }
-        Ok(Loaded { file, library, derive })
+        let loaded = Loaded { file, library, derive };
+        if let Some(field) = loaded.levels_field_below(minor) {
+            let cause = format!("Library.minor {minor} predates KNOWN_LEVELS (minor 2) but field {field} sets it");
+            return Err(Error::Load { file: loaded.file, cause });
+        }
+        Ok(loaded)
+    }
+
+    /// abi.md §12 "Versioning" and §3: a library of minor below 2 cannot know `KNOWN_LEVELS`, so a
+    /// prototype field that sets it is a mismatch. The first such field as `module.pin.field`,
+    /// `None` when `minor` is 2 or later or no field sets the flag.
+    fn levels_field_below(&self, minor: u32) -> Option<String> {
+        if minor >= 2 {
+            return None;
+        }
+        (0..self.library.modules.len()).filter_map(|i| self.library.modules.get(i)).find_map(|module| {
+            module.prototype().pins.iter().find_map(|pin| {
+                pin.layout.fields.iter().find(|field| field.flags & raw::field_flag::KNOWN_LEVELS != 0).map(|field| {
+                    format!("`{}.{}.{}`", module.name().as_str(), pin.name.as_str(), field.name.as_str())
+                })
+            })
+        })
     }
 
     /// Opens `file`, finds `piperine_abi_1` and leaks the handle.
