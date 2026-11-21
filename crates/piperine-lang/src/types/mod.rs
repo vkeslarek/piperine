@@ -7,6 +7,7 @@
 //!
 //! The result is a table or the reasons there is none, never both.
 
+mod aggregate;
 mod analog;
 mod assign;
 mod call;
@@ -26,6 +27,7 @@ mod expr;
 mod flag_total;
 mod flow;
 mod intrinsic;
+mod lengths;
 mod literals;
 mod loops;
 mod module;

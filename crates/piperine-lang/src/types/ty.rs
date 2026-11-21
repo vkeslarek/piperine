@@ -26,8 +26,7 @@ pub enum Ty {
     Enum(DeclId),
     /// `Option<T>`.
     Option(Box<Ty>),
-    /// `(A, B, ..)`: the value of a tuple expression, which the subset allows only as the
-    /// initializer of a tuple `let`.
+    /// `(A, B, ..)` (§1.2.4), and `(A,)` of one field.
     Tuple(Vec<Ty>),
     /// A discrete carrier of the nature `Bit<value>` (a `signal` or a port). Reading one gives
     /// its `value`; the carrier type itself is what a declaration has.
@@ -40,6 +39,10 @@ pub enum Ty {
     /// The type of an expression that never completes: `return`, `break`, `continue` and a
     /// `loop` with no `break` (§1.5.16). It fits any required type.
     Never,
+    /// A `struct` of named, positional or no fields, by its declaration (§1.3.1): a nominal type.
+    Struct(DeclId),
+    /// `[T; N]`: `N` values of one type (§1.2.5).
+    Array(Box<Ty>, u64),
 }
 
 impl Ty {
@@ -51,6 +54,18 @@ impl Ty {
     /// Whether the type implements `Repr` (part I §2): the types a carrier may hold.
     pub fn has_repr(&self) -> bool {
         matches!(self, Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_))
+    }
+
+    /// Whether a value of this type can be bound, stored and passed (§1.2): a type a carrier, a
+    /// node, a module or an event is not.
+    pub fn is_value(&self) -> bool {
+        match self {
+            Ty::F64 | Ty::Bool | Ty::Unit | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Struct(_) => true,
+            Ty::Option(inner) | Ty::Array(inner, _) => inner.is_value(),
+            Ty::Tuple(items) => items.iter().all(Ty::is_value),
+            Ty::Fn(..) => true,
+            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str | Ty::Never => false,
+        }
     }
 
     /// The largest magnitude an integer literal of this type may have; with `negated`, the
@@ -104,8 +119,8 @@ impl Ty {
             },
             Ty::Option(inner) => format!("Option<{}>", inner.name(design)),
             Ty::Tuple(items) => {
-                let items: Vec<String> = items.iter().map(|t| t.name(design)).collect();
-                format!("({})", items.join(", "))
+                let names: Vec<String> = items.iter().map(|t| t.name(design)).collect();
+                if items.len() == 1 { format!("({},)", names[0]) } else { format!("({})", names.join(", ")) }
             }
             Ty::Carrier { nature, value } => {
                 let nature = design.decl_data(*nature).name.as_ref().map_or("Bit", |n| n.text.as_str());
@@ -114,6 +129,11 @@ impl Ty {
             Ty::Event => "Event".to_string(),
             Ty::Str => "&str".to_string(),
             Ty::Never => "!".to_string(),
+            Ty::Struct(decl) => match &design.decl_data(*decl).name {
+                Some(n) => format!("struct `{}`", n.text),
+                None => "struct".to_string(),
+            },
+            Ty::Array(element, length) => format!("[{}; {length}]", element.name(design)),
             Ty::Module(module) => match &design.decl_data(*module).name {
                 Some(n) => format!("module `{}`", n.text),
                 None => "module".to_string(),

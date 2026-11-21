@@ -178,7 +178,7 @@ fn a_tuple_let_names_each_component() {
 
     // A tuple anywhere but the two sides of a `let` is outside the subset; a count that differs
     // is a mismatch.
-    for (body, names) in [("let t = (1.0, 2.0);", "tuple expression"), ("let x = (1.0, 2.0); let (a, b) = x;", "tuple expression"), ("let t: (f64, f64) = 1.0;", "tuple type")] {
+    for (body, names) in [("let t = (1.0, 2.0);", "tuple expression"), ("let x = (1.0, 2.0); let (a, b) = x;", "tuple expression")] {
         let (src, d) = diagnostics("", body);
         assert_eq!(codes(&d)[0], "P0001", "{src}");
         assert!(d[0].diagnostic.message.contains(names), "{src}: {}", d[0].diagnostic.message);

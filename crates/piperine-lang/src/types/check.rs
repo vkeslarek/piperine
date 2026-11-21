@@ -119,6 +119,13 @@ pub(super) struct Checker<'d> {
     /// The type the context expects of one call, handed down by `check_as` just before the call
     /// is typed: the result type of a call that is generic over its result (`logic`, `cast`).
     pub(super) call_expected: Option<(ExprId, Ty)>,
+    /// The typed fields of each struct and each enum variant typed so far (`aggregate.rs`).
+    pub(super) layouts: BTreeMap<DeclId, Vec<super::aggregate::FieldType>>,
+    /// The structs and enums whose fields are being typed: meeting one again is a type that
+    /// contains itself (§1.3.8).
+    pub(super) declaring: BTreeSet<DeclId>,
+    /// The structs and enums that could not be typed: a use is silent, the cause is reported.
+    pub(super) broken: BTreeSet<DeclId>,
     queued: BTreeSet<DeclId>,
     /// The declarations already checked, so one reached ahead of the queue (`check_ahead`) is not
     /// checked twice.
@@ -166,6 +173,9 @@ impl<'d> Checker<'d> {
             pending_closures: BTreeMap::new(),
             classes: BTreeMap::new(),
             call_expected: None,
+            layouts: BTreeMap::new(),
+            declaring: BTreeSet::new(),
+            broken: BTreeSet::new(),
             queued: BTreeSet::new(),
             checked: BTreeSet::new(),
             queue: VecDeque::new(),
@@ -338,6 +348,7 @@ impl<'d> Checker<'d> {
                 Resolution::Decl(d) if matches!(&self.design.decl_data(d).kind, DeclKind::Nature(n) if n.kind == NatureKind::Discrete) && self.is_std(d) && self.design.decl_data(d).name.as_ref().is_some_and(|n| n.text == "Bit") => self.bit_type(d, file, node.span, *path),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) => Some(Ty::Node(d)),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_)) => self.enum_type(d, file, node.span),
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Struct(_)) => self.struct_type(d, file, node.span),
                 Resolution::Decl(d) => {
                     let what = Unsupported::item(&self.design.decl_data(d).kind);
                     self.unsupported(file, node.span, &format!("{what} used as a type"));
@@ -352,7 +363,9 @@ impl<'d> Checker<'d> {
             // `&str` (also `&'static str`): the type of a string literal, which no `let`, no carrier
             // and no param holds.
             TypeKind::Ref { inner, .. } if matches!(self.design.type_resolution(*inner), Resolution::Builtin(id) if id.info().name == "str") => Some(Ty::Str),
-            TypeKind::Tuple(_) | TypeKind::Array { .. } | TypeKind::Slice(_) | TypeKind::Ref { .. } | TypeKind::Flip(_) | TypeKind::Infer => {
+            TypeKind::Tuple(items) => self.tuple_type(items),
+            TypeKind::Array { elem, len } => self.array_type(file, node.span, *elem, *len),
+            TypeKind::Slice(_) | TypeKind::Ref { .. } | TypeKind::Flip(_) | TypeKind::Infer => {
                 self.unsupported(file, node.span, Unsupported::ty(&node.kind));
                 None
             }
