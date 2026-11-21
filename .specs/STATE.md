@@ -1694,6 +1694,62 @@ number follows MD-74 (`unknown-semantics-events`, merged first).
 `crates/piperine-parity`, `docs/spec`, `GAPS.md`.
 **Status:** Accepted (2026-11-20), from the approved `.specs/features/params-and-io/design.md`.
 
+### MD-77: the buck runs on demand; the integrated suite is the gate
+
+`integrated-tests` (2026-11-21). The number follows MD-75 (`params-and-io`); MD-76 is `value-semantics`'s
+(on `feature/composite-values`, not yet on `main`) and is left to it, so the two never collide at merge.
+The feature's spec and design call this decision MD-76 (D16) and are renumbered here.
+
+1. **A target that simulates the buck is excluded from `cargo test` by `test = false`** (D1), in a
+   `[[test]]` table of its own crate's manifest: `buck_scenarios` and `book_buck` (root), `buck_whole`,
+   `buck_dpwm`, `buck_control`, `buck_boundary`, `buck_power`, `buck_supervisor`, `buck_closed_loop`
+   (`piperine-parity`), `buck_long` (`piperine-api`), `buck` and `book_buck` (`piperine-cli`). Paths, test
+   names and every historical `**Run**` line stay valid: `cargo test -p <crate> --test <name>` selects a
+   `test = false` target. No `#[ignore]`, no `cfg`, no feature.
+2. **`test = false` cannot hide a test** (D2): `ON_DEMAND_TARGETS` in
+   `crates/piperine-lang/tests/suite_hygiene.rs` registers every flagged target; the guard fails for an
+   unregistered one, for a registered one that is gone or runs by default, and for one that
+   `examples/buck/README.md`'s "On demand" block does not name as `--test <name>`.
+3. **When the buck runs** (D11): once at a feature's close, before its merge, for a feature that changes
+   the runtime, the printer, the plan, the solvers or the lowering of an existing form, and in every task
+   that edits `examples/buck/**`, `tests/e2e/buck/**` or a buck target. Per-task and per-batch gates use the
+   integrated suite. A feature that adds a `test = false` target adds its registry row and README line, and
+   its close compiles the on-demand targets (`--no-run`), since `--all-targets` no longer does.
+4. **The mapping of historical commands.** `buck_commits`, `buck_records` and `buck_time` are now
+   `source_commits`, `source_records` and `source_time` (language proofs that stay in the default run,
+   fixtures under `crates/piperine-parity/tests/digital/`); `the_buck_block_is_what_the_binary_prints` runs
+   under `cargo test -p piperine-cli --test book_buck` (it was under `--test book`); the 2 us run of
+   `cli#44` is `the_buck_bench_starts_with_the_supervisor_off` under `cargo test -p piperine --test
+   book_buck`. Closed features are not re-proven.
+5. **The suite** (`tests/integrated/`, package `tests/e2e/integrated/`): `threshold`, `sample_hold`,
+   `pwm_filter`, `state_machine`, `pi_loop`, run at once by one `ScenarioBatch`; the analog half is
+   cross-checked against ngspice by `tran_square_rc.cir` under the existing `TRAN_VOLTAGE`.
+
+**Gate migration** (spec "Gate migration", D12):
+
+The replacement lines each in-flight feature applies to its `tasks.md` at its next rebase onto `main` (D12).
+"Integrated targets" is the line `cargo test -p piperine --test integrated; cargo test -p piperine-cli --test
+integrated; cargo test -p piperine-parity --test source_commits --test source_records --test source_time`.
+"The buck run" is the README's on-demand block.
+
+| Feature (branch) | Lines that cite the buck | Replacement |
+| ---------------- | ------------------------ | ----------- |
+| every one below | the header line `Buck targets: cargo test -p piperine-parity --test buck_whole ... --test buck_power` | `Integrated targets: <the line above>` and `The buck run (on demand): examples/buck/README.md, "On demand"` |
+| every one below | the "Parity is untouchable" sentence "Every buck target passes after every task that touches ..." | "Every integrated target passes after every task that touches ...; the buck run passes once at the feature's close, before merge" |
+| every one below | the `Full` gate row "Quick, then the buck targets, `cargo test -p piperine-cli --test buck --test twins [--test commands]`, `cargo test -p piperine-api --test buck_long`, ..." | "Quick, then the integrated targets, `cargo test -p piperine-cli --test twins [--test commands]`, ..." (the rest of the row as it is) |
+| `composite-values` | T26 (line 1192) "Every buck target passes with unchanged assertions"; B8 note on T48 | "Every integrated target passes with unchanged assertions"; T48's note stays (`elab_buck`'s pin is a default static proof) |
+| `resolved-nets` | lines 36, 47, 89 | the three common rows |
+| `unknown-semantics-per-level` | T8 (line 334) "Every buck target passes with only the listed assertions moved"; B2 note | T8 edits assertions inside buck targets, so its gate is the integrated targets **and** the buck targets it edits, run by name (D11) |
+| `analog-operators` | line 359 (done) "every `buck_*` target ... pass unedited" | done, historical; B4 to B7 gate with the integrated targets |
+| `generics` | T32 (line 840) "Every buck target passes"; B5 note | "Every integrated target passes"; the buck run at the feature's close |
+| `params-and-io` B5, B6 | T26 (line 777: it edits `examples/buck/src`), line 846 (rebase), line 913 (byte-identical) | T26 keeps the buck run (D11: it edits the example); line 846: "the `**Build**` line and the integrated targets pass at the rebased `HEAD`"; line 913: "the transpile goldens are byte-identical and every integrated target passes" |
+| `unknown-semantics-events` B5 | lines 37, 48, 88 (B5 = T24 to T31) | the three common rows; T5's done-when citing `the_buck_block_is_what_the_binary_prints` under `clibook` is done and historical (the test now runs under `--test book_buck`) |
+
+
+**Scope:** `Cargo.toml` manifests, `crates/piperine-lang/tests/suite_hygiene.rs`, `crates/piperine-parity`,
+`crates/piperine-cli`, `tests/`, `examples/buck/README.md`, `CLAUDE.md`, `AGENTS.md`.
+**Status:** Accepted (2026-11-21), from the approved `.specs/features/integrated-tests/design.md`.
+
 ---
 
 ## Handoff Snapshot

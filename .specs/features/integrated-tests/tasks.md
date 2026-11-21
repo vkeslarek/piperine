@@ -543,9 +543,9 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] `grep -q "^### MD-77" .specs/STATE.md` exits 0 and the entry holds the seven rows of the migration
-- [ ] Gate check passes: the Build line, `Run docs`
-- [ ] Test count: no test added
+- [x] `grep -q "^### MD-77" .specs/STATE.md` exits 0 and the entry holds the seven rows of the migration
+- [x] Gate check passes: the Build line, `Run docs`
+- [x] Test count: no test added
 
 **Tests**: none
 **Gate**: build
@@ -769,6 +769,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 `--test <name>`.
 **Settled B1 (T1-T8):** full root `cargo test --no-fail-fast` green, 17m15s wall (no buck simulation target; its longest remaining target 83 s). Defaults: `test = false` entries and README lines added task by task; the `source_*` targets keep `buck/support.rs` and open their fixture by path under `tests/digital/`; `book_buck`'s `BookListing::printed` compares the binary's whole stdout to the block; `the_on_demand_targets_are_the_buck_set` pins D3's twelve; the approval lines of spec/tasks are the relayed standing authorization (validate_tasks --execute flags their wording only; the Build line was run by hand, green).
 **Settled B2 (T9-T15):** full root `cargo test --no-fail-fast` green, 18m31s wall; the integrated target takes 25 s (batch 20 s, longest run `pi_loop`). Defaults: `Switch`'s input is `gate` (`on` is a keyword); `dead` is the const `DEAD_COUNTS` (an integer module param is outside the M1 subset); `Adc8` and `EdgeCounter` count only edges between known values (the commit from unknown at time 0 is no edge); the state machine's source starts at 0 V and the host sets 1 V at 0.5 us (a floating node settles at half the rail at the operating point); the planted harness package gained a `ticks` run for the records test. Derivation corrected (design.md `state_machine`): the 22 us run holds thirteen phase changes, not twelve (Hold at 21.75 us is the thirteenth); `pi_loop` limits held as derived (codes 127 to 128 after 50 us). Decision number: MD-77 (the coordinator reserved MD-76 for value-semantics); every `MD-76` of this feature reads `MD-77`.
+**Settled B3 (T16-T20):** full root `cargo test --no-fail-fast` green, 16m40s wall (295 targets ok); the integrated target 25 s. The on-demand buck run (the README's four lines) on this tree: all pass, 3m07 + 2m18 + 6m25 + 26m37 wall; every one of `buck_scenarios`' 61 tests passed (the six reds the plan expected were not red). `tran_square_rc` passes with ngspice present (no SKIP) under `TRAN_VOLTAGE`, step cap 10 ns on both sides. Defaults: the twin writes its PWL times in picoseconds; `SquareCorners` builds the host's corners; the CLI target shares one `pi_loop` run; `origin/main` had not moved (`856d2668`), so no rebase was needed.
 **Dispatched:** none
 **Walked:** none
 
