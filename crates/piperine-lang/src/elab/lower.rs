@@ -268,6 +268,7 @@ impl Elaboration<'_, '_> {
                 let ty = self.flag(operand).wrap(ty);
                 Some(self.emit(Expr::Unary { op, expr: operand }, ty, origin))
             }
+            ExprKind::Binary { op: op @ (BinOp::Eq | BinOp::Ne), lhs, rhs } if matches!(self.types.ty(*lhs), Some(Ty::Str)) => self.lower_text_comparison(scope, *op, *lhs, *rhs, origin),
             ExprKind::Binary { op, lhs, rhs } => {
                 // The right operand of `&&`/`||` runs only when the left does not decide: it is
                 // conditional exactly like an `if` arm.
@@ -430,7 +431,7 @@ impl Elaboration<'_, '_> {
         match (class, self.types.callee(expr)) {
             (CallClass::Probe, _) => self.lower_probe(scope, expr, ty, origin),
             // A function that emits is no IR function: its call is inlined where it stands (§19 rule 10).
-            (_, Some(Callee::Function(function))) if self.types.emits(function).is_some() => self.inline_emitting_value(scope, function, args, origin),
+            (_, Some(Callee::Function(function))) if self.is_inlined(function) => self.inline_emitting_value(scope, function, args, origin),
             // A recursion reached from an `analog` block is expanded where it is called (§3 rule 12, `unroll.rs`).
             (_, Some(Callee::Function(function))) if scope.in_analog_block && self.reaches_recursion(function) => self.lower_expanded_call(scope, expr, function, origin),
             (_, Some(Callee::Function(function))) => {
@@ -574,6 +575,7 @@ impl Elaboration<'_, '_> {
     /// (one local per component). `false` after a diagnostic.
     fn lower_let(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, pat: crate::pom::PatId, init: ExprId, file: FileId, span: Span) -> bool {
         match self.design.pat_node(pat).kind.clone() {
+            PatKind::Ident { binding, sub: None, .. } if matches!(self.types.local(binding), Some(Ty::Str)) => self.lower_text_let(scope, binding, init),
             PatKind::Ident { binding, sub: None, .. } if matches!(self.types.local(binding), Some(Ty::Option(_))) => self.lower_option_let(scope, out, binding, init),
             PatKind::Ident { binding, sub: None, .. } => {
                 let local = self.bind_local(scope, binding);

@@ -262,7 +262,7 @@ impl Checker<'_> {
             BinOp::Eq | BinOp::Ne => {
                 let (first, second) = self.literal_last(lhs, rhs);
                 match self.infer(first) {
-                    Some(t @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_))) => self.check(second, &t),
+                    Some(t @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Str)) => self.check(second, &t),
                     // §2 rule 5: an enum compares when it derives `PartialEq`.
                     Some(t @ Ty::Enum(e)) => {
                         self.check(second, &t);
@@ -623,7 +623,7 @@ impl Checker<'_> {
             let node = self.design.stmt_node(*stmt).clone();
             let file = self.design.decl_data(node.owner).file;
             match &node.kind {
-                StmtKind::Let { pat, ty, init, else_ } => self.let_statement(file, node.span, *pat, *ty, *init, else_.as_ref()),
+                StmtKind::Let { pat, ty, init, else_ } => self.let_statement(file, *pat, *ty, *init, else_.as_ref()),
                 StmtKind::Expr { expr, semi } => {
                     if last && !semi {
                         match expected {
@@ -651,7 +651,7 @@ impl Checker<'_> {
     /// `let x = init;`, `let x: T = init;`, and `let x;` or `let x: T;` (§1.7.5):
     /// the binding takes the annotation, else the type of the initializer, else the type of its
     /// first assignment.
-    fn let_statement(&mut self, file: crate::pom::FileId, span: crate::msl::Span, pat: crate::pom::PatId, ty: Option<crate::pom::TypeId>, init: Option<ExprId>, else_: Option<&BlockNode>) {
+    fn let_statement(&mut self, file: crate::pom::FileId, pat: crate::pom::PatId, ty: Option<crate::pom::TypeId>, init: Option<ExprId>, else_: Option<&BlockNode>) {
         let pat_node = self.design.pat_node(pat).clone();
         let PatKind::Ident { by_ref: false, sub: None, binding, res: Resolution::Unresolved, .. } = &pat_node.kind else {
             self.let_pattern(file, pat, ty, init, else_);
@@ -704,10 +704,6 @@ impl Checker<'_> {
             self.closure_locals.insert(*binding, closure);
         }
         match bound {
-            Some(Ty::Str) => {
-                self.unsupported(file, span, "a string literal bound by a `let`");
-                self.poisoned.insert(*binding);
-            }
             Some(t) => {
                 if let (None, Some(init)) = (ty, init) {
                     self.wait_for_use(*binding, init);

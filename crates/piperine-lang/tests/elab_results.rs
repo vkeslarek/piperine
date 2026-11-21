@@ -345,9 +345,9 @@ fn a_text_field_that_is_not_a_literal_is_p0001() {
     // DIG-11 AC 3, C103: `log(sev, msg)` with `msg` a function parameter that is no literal at
     // the call: the text cannot stay on the site.
     let src = "fn note(ok: bool) { log(Severity::Info, if ok { \"up\" } else { \"down\" }); }\nmodule Top(in clk: Bit, in c: Bit) { }\ndigital for Top { on clk.rise() { note(c.known_or(false)); } }";
-    let err = Elab::run(src, "Top").expect_err("a text that is no literal");
+    let err = Elab::run(src, "Top").expect_err("a text that is no text");
     assert_eq!(Elab::codes(&err), ["P0001"]);
-    assert!(err[0].diagnostic.message.contains("not a literal"), "{}", err[0].diagnostic.message);
+    assert!(err[0].diagnostic.message.contains("not a text after inlining"), "{}", err[0].diagnostic.message);
     let span = err[0].diagnostic.span();
     assert_eq!(&src[span.start..span.end], "if ok { \"up\" } else { \"down\" }");
 }

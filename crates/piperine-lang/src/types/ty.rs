@@ -34,7 +34,8 @@ pub enum Ty {
     /// `Event` (part IV §13): something that fires at instants. It has no `Repr`: it is never
     /// carried, committed or stored.
     Event,
-    /// `&str`, the type of a string literal. It has no `Repr` and no `let`.
+    /// `str` (§1.2.9), the type of a string: a value type with no `Repr`, so it is never carried,
+    /// committed or derived. A string is text known at elaboration, kept on the site that reads it.
     Str,
     /// The type of an expression that never completes: `return`, `break`, `continue` and a
     /// `loop` with no `break` (§1.5.16). It fits any required type.
@@ -60,11 +61,11 @@ impl Ty {
     /// node, a module or an event is not.
     pub fn is_value(&self) -> bool {
         match self {
-            Ty::F64 | Ty::Bool | Ty::Unit | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Struct(_) => true,
+            Ty::F64 | Ty::Bool | Ty::Unit | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Struct(_) | Ty::Str => true,
             Ty::Option(inner) | Ty::Array(inner, _) => inner.is_value(),
             Ty::Tuple(items) => items.iter().all(Ty::is_value),
             Ty::Fn(..) => true,
-            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str | Ty::Never => false,
+            Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Carrier { .. } | Ty::Event | Ty::Never => false,
         }
     }
 
@@ -127,7 +128,7 @@ impl Ty {
                 format!("{nature}<{}>", value.name(design))
             }
             Ty::Event => "Event".to_string(),
-            Ty::Str => "&str".to_string(),
+            Ty::Str => "str".to_string(),
             Ty::Never => "!".to_string(),
             Ty::Struct(decl) => match &design.decl_data(*decl).name {
                 Some(n) => format!("struct `{}`", n.text),

@@ -1,16 +1,18 @@
 //! Records (part VI §19; DIG-11 AC 1 to 3): `emit!("stream", f = e, …)` in a reaction is one
 //! `Stmt::Emit` naming the body's stream and its fields in source order. A string literal field
 //! is text kept on the site, never sent (abi.md C5); every other field is a value field of the
-//! stream, typed by its first site. A function that reaches `emit!` (`log`, `require`) is no IR
-//! function, IR functions being pure values: it is inlined at its call, its `&str` params bound
-//! to the literals the call gives and its other params to locals of the reaction holding the
-//! arguments. A `&str` field that is no literal after inlining is `P0001`.
+//! stream, typed by its first site. A `str` is text known at elaboration (§1.2.9): a literal, a
+//! `const` of that type, a `let` bound to a text or a `str` param of an inlined call; `==` and `!=`
+//! between texts are known at elaboration too. A function that reaches `emit!` (`log`, `require`)
+//! or takes a `str` is no IR function, IR functions being pure values: it is inlined at its call,
+//! its `str` params bound to the texts the call gives and its other params to locals of the
+//! reaction holding the arguments. A `str` that is no text after inlining is `P0001`.
 
 use piperine_ir::{EmitField, Expr, ExprId as LoweredExpr, Origin, Stmt, Stream, StreamField, StmtId as LoweredStmt, ValueType};
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
-use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FieldInit, Lit, Resolution};
+use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, FieldInit, Lit, Resolution};
 use crate::types::{Callee, Ty};
 
 impl Elaboration<'_, '_> {
@@ -23,7 +25,7 @@ impl Elaboration<'_, '_> {
         match &node.kind {
             ExprKind::Emit { stream, fields } => Some(self.lower_emit(scope, out, stream, fields)),
             ExprKind::Call { args, .. } => match self.types.callee(expr) {
-                Some(Callee::Function(function)) if self.types.emits(function).is_some() => {
+                Some(Callee::Function(function)) if self.is_inlined(function) => {
                     let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
                     Some(self.inline_emitting(scope, out, function, &args))
                 }
@@ -31,6 +33,13 @@ impl Elaboration<'_, '_> {
             },
             _ => None,
         }
+    }
+
+    /// Whether a call of `function` is inlined where it stands: it reaches `emit!` (§19 rule 10) or
+    /// takes a `str`, a text that exists at elaboration only (§1.2.9).
+    pub(super) fn is_inlined(&self, function: DeclId) -> bool {
+        let takes_text = self.design.decl_data(function).children.iter().any(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)) && matches!(self.types.local(*c), Some(Ty::Str)));
+        self.types.emits(function).is_some() || takes_text
     }
 
     /// `emit!(stream, fields)`: one site of the body's stream named `stream`.
@@ -51,7 +60,7 @@ impl Elaboration<'_, '_> {
                     Some(text) => lowered.push(EmitField::Text { name: field.name.text.clone(), text }),
                     None => {
                         let span = self.design.expr_node(field.value).span;
-                        self.unsupported(scope.file, span, "a `&str` field that is not a literal after inlining");
+                        self.unsupported(scope.file, span, "a `str` that is not a text after inlining");
                         ok = false;
                     }
                 }
@@ -81,17 +90,47 @@ impl Elaboration<'_, '_> {
         ok
     }
 
-    /// The text a `&str` expression stands for after inlining: a string literal, or a `&str`
-    /// param of an inlined function bound to one.
-    fn text_of(&self, scope: &Scope, expr: ExprId) -> Option<String> {
+    /// The text a `str` expression stands for after inlining: a string literal, a `const` of type
+    /// `str`, a `let` bound to a text, or a `str` param of an inlined function bound to one.
+    pub(super) fn text_of(&self, scope: &Scope, expr: ExprId) -> Option<String> {
         match &self.design.expr_node(self.peel_parens(expr)).kind {
             ExprKind::Lit(lit) => lit.str_value(),
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                Some(Resolution::Decl(decl)) => scope.texts.get(&decl).cloned(),
+                Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
+                    DeclKind::Const(constant) => constant.value.and_then(|value| self.text_of(scope, value)),
+                    _ => scope.texts.get(&decl).cloned(),
+                },
                 _ => None,
             },
             _ => None,
         }
+    }
+
+    /// `let name = text;` of type `str`: the name stands for the text, and no local holds it. `false`
+    /// after a diagnostic.
+    pub(super) fn lower_text_let(&mut self, scope: &mut Scope, binding: DeclId, init: ExprId) -> bool {
+        match self.text_of(scope, init) {
+            Some(text) => {
+                scope.texts.insert(binding, text);
+                true
+            }
+            None => {
+                let span = self.design.expr_node(init).span;
+                self.unsupported(scope.file, span, "a `str` that is not a text after inlining");
+                false
+            }
+        }
+    }
+
+    /// `a == b` and `a != b` of two `str`: known at elaboration, the `bool` of whether the texts
+    /// are the same. `None` after a diagnostic.
+    pub(super) fn lower_text_comparison(&mut self, scope: &Scope, op: BinOp, lhs: ExprId, rhs: ExprId, origin: Origin) -> Option<LoweredExpr> {
+        let (Some(left), Some(right)) = (self.text_of(scope, lhs), self.text_of(scope, rhs)) else {
+            let span = self.design.expr_node(lhs).span;
+            self.unsupported(scope.file, span, "a `str` that is not a text after inlining");
+            return None;
+        };
+        Some(self.emit(Expr::Bool((left == right) == (op == BinOp::Eq)), ValueType::Bool, origin))
     }
 
     /// A call of `function`, which reaches `emit!`, inlined where it stands as statements of
@@ -136,7 +175,7 @@ impl Elaboration<'_, '_> {
                     }
                     None => {
                         let span = self.design.expr_node(*arg).span;
-                        self.unsupported(scope.file, span, "a `&str` field that is not a literal after inlining");
+                        self.unsupported(scope.file, span, "a `str` that is not a text after inlining");
                         ok = false;
                     }
                 }

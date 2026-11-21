@@ -335,6 +335,8 @@ impl<'d> Checker<'d> {
                 Resolution::Builtin(id) => match (id.info().name, id.width()) {
                     ("fN", Some(64)) => Some(Ty::F64),
                     ("bool", _) => Some(Ty::Bool),
+                    // §1.2.9: `str` is a value type, the type of a string.
+                    ("str", _) => Some(Ty::Str),
                     ("uN", Some(w)) => self.integer_type(file, node.span, Ty::UInt, u128::from(w), &id.name()),
                     ("iN", Some(w)) => self.integer_type(file, node.span, Ty::Int, u128::from(w), &id.name()),
                     // §1 Resolution: `usize` and `isize` are `UInt<64>` and `Int<64>` everywhere.
@@ -363,8 +365,7 @@ impl<'d> Checker<'d> {
                 }
             },
             TypeKind::Tuple(items) if items.is_empty() => Some(Ty::Unit),
-            // `&str` (also `&'static str`): the type of a string literal, which no `let`, no carrier
-            // and no param holds.
+            // `&str` (also `&'static str`) is `str` until the standard library is written without it.
             TypeKind::Ref { inner, .. } if matches!(self.design.type_resolution(*inner), Resolution::Builtin(id) if id.info().name == "str") => Some(Ty::Str),
             TypeKind::Tuple(items) => self.tuple_type(items),
             TypeKind::Array { elem, len } => self.array_type(file, node.span, *elem, *len),

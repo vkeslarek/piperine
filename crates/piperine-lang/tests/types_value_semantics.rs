@@ -80,3 +80,17 @@ fn a_deferred_let_is_assigned_twice_and_never_read_first() {
     assert_refused(&source("", "let x: f64; let y = x;"), "E0183", "`x` is read before it is assigned");
     assert_refused(&source("", "let x: f64; let c = true; if c { x = 1.0; } let y = x;"), "E0183", "`x` is read before it is assigned");
 }
+
+#[test]
+fn str_is_a_value_type_in_every_position() {
+    // §1.2.9 (VS-07 AC 1): `str` is the type of a parameter, a `const`, a local, the payload of an `Option`, a
+    // struct field and a record field; two strings compare with `==` and `!=`; a derive of `Repr` over a `str`
+    // field is `E0110`.
+    assert_clean(&source("fn tag(name: str) -> bool { name == \"a\" }", "let t = tag(\"a\");"));
+    assert_clean(&source("const NAME: str = \"a\";\nfn same(name: str) -> bool { name != NAME }", "let t = same(\"b\");"));
+    assert_clean(&source("", "let s = \"abc\"; let t = s == \"abc\"; let u = s != \"x\";"));
+    assert_clean(&source("fn pick(name: Option<str>) -> bool { true }", "let t = pick(Some(\"a\")); let u = pick(None);"));
+    assert_clean(&source("struct Tagged { name: str, level: f64 }", "let t = Tagged { name: \"a\", level: 1.0 }; let s = t.name == \"a\";"));
+    assert_clean("module Top() { }\ndigital for Top { on at(1u) { emit!(\"log\", name = \"a\", level = 1.0); } }");
+    assert_refused(&source("#[derive(Repr)] struct Tagged { name: str }", "let t = Tagged { name: \"a\" };"), "E0110", "the field `name` has type `str`");
+}

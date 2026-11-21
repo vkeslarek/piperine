@@ -7,6 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
+use piperine_api::{Field, Record, Streams};
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier};
 
@@ -159,4 +160,39 @@ fn a_value_is_read_twice() {
     let committed = first_commits("places.msl", &["twice", "copied"]);
     assert_eq!(committed[0], byte(7 + 7), "x is read twice by read_twice");
     assert_eq!(committed[1], byte(6 + 5 + 5), "p changed to 6; q and a are 5");
+}
+
+#[test]
+fn a_string_is_passed_and_compared_by_value() {
+    // VS-07 AC 1 (§1.2.9): a `str` is passed to a function, held by a `let` and a `const`, and compared with `==`
+    // and `!=`; the comparison is the one Rust makes of the same two strings.
+    let names = ["same", "other", "named", "held", "unlike"];
+    let committed = first_commits("strings.msl", &names);
+    let wanted = [u8::from("a" == "a"), u8::from("a" == "b"), u8::from("ab" == "ab"), u8::from("held" == "held"), u8::from("x" != "y")];
+    for (k, label) in names.iter().enumerate() {
+        assert_eq!(committed[k], byte(wanted[k]), "{label} is the comparison Rust makes");
+    }
+}
+
+/// Every record of the 4 ns transient of `top` of `file`, decoded as the host decodes it.
+fn records_of(file: &str, top: &str) -> Vec<Record> {
+    let built = build(&project(file), top);
+    let streams = Streams::of(built.ir.clone());
+    let seen = built.run(4e-9, 0.5e-9);
+    seen.all().iter().filter_map(|o| streams.decode(o)).map(|r| r.unwrap_or_else(|f| panic!("{f}"))).collect()
+}
+
+#[test]
+fn the_reporting_functions_emit_the_same_records() {
+    // VS-07 AC 2 (§22.6, §19): `log`, `require`, `cover` and `target` take a `str` and write the records the
+    // standard library gave them: the text fields stay on the site, the values are the call's.
+    let records = records_of("reports.msl", "ReportBench");
+    let first = |stream: &str| records.iter().filter(|r| r.stream == stream).map(|r| r.fields.clone()).collect::<Vec<_>>();
+    let text = |value: &str| Field::Text(value.to_string());
+    let field = |name: &str, value: Field| (name.to_string(), value);
+    assert_eq!(first("log")[0], vec![field("severity", Field::Int(1)), field("msg", text("hello"))], "log: Severity::Warning is the second variant");
+    let checks = first("checks");
+    assert_eq!(checks[0], vec![field("kind", text("require")), field("name", text("held")), field("pass", Field::Bool(true))]);
+    assert_eq!(checks[1], vec![field("kind", text("cover")), field("name", text("seen")), field("pass", Field::Bool(true))]);
+    assert_eq!(checks[2], vec![field("kind", text("target")), field("name", text("margin")), field("margin", Field::Real(0.25))]);
 }
