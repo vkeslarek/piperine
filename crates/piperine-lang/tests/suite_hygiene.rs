@@ -363,7 +363,7 @@ impl OnDemandManifest {
         let mut in_test_table = false;
         let mut name = String::new();
         let mut flagged = false;
-        for line in text.lines().map(str::trim) {
+        for line in text.lines().map(Self::without_comment) {
             if line.starts_with('[') {
                 if in_test_table && flagged {
                     targets.push(name.clone());
@@ -384,6 +384,12 @@ impl OnDemandManifest {
             targets.push(name);
         }
         targets
+    }
+
+    /// The `line` with its TOML `#` comment cut off and the ends trimmed (`test = false # slow` and
+    /// `[[test]] # x` are legal TOML: cargo reads them as the bare key and header).
+    fn without_comment(line: &str) -> &str {
+        line.split('#').next().unwrap_or("").trim()
     }
 
     /// Every on-demand target of the repository's manifests as `(crate directory, target)`; the root
@@ -507,6 +513,8 @@ fn on_demand_targets_are_registered() {
     assert!(offences.is_empty(), "targets switched off by `test = false` without a registry entry:\n  {}", offences.join("\n  "));
 }
 
+    let commented = "[[test]] # on demand\nname = \"slow\" # the long one\ntest = false # slow\n";
+    assert_eq!(OnDemandManifest::targets(commented), vec!["slow".to_string()]);
 /// Every registry entry names a target that exists and is flagged; a planted stale entry is reported.
 #[test]
 fn the_on_demand_registry_names_only_on_demand_targets() {
