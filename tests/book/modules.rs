@@ -152,9 +152,9 @@ fn the_book_shows_the_integrator_the_standard_library_gives() {
 }
 
 #[test]
-fn the_pi_controller_is_refused_for_its_signal_flow_ports() {
+fn the_pi_controller_is_refused_only_for_its_generic_idt() {
     // modules#8 (refused): `windup` and `PiAw`: the ports `e: VSignal` and `y: VSignal` are signal-flow
-    // nodes since resolved-nets T4 (L23), so only the integral's `idt`, a generic module (L30), is refused
+    // nodes (spec §6 rule 2), so only the integral's `idt`, a generic module (L30), is refused
     let chapter = Chapter::read();
     let after = "module Top() { signal a: VSignal; signal b: VSignal; let c = PiAw(a, b); }\n";
     let model = chapter.wrapped("piaw.msl", "", "modules#8", after);

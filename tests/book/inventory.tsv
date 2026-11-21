@@ -105,7 +105,7 @@ block	modules#4	d7b4e96dd3da2949	shown	-	-	-
 block	modules#5	a0d616b7b3da06dd	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run ladder.msl --analysis op
 block	modules#6	7c3db491e9d50314	refused	piperine/book_modules::the_lowpass_module_is_refused_for_the_generic_integrator	L30	-
 block	modules#7	785f58bd27638c90	run	piperine/book_modules::the_book_shows_the_integrator_the_standard_library_gives	-	-
-block	modules#8	f26832ff2564dcd3	refused	piperine/book_modules::the_pi_controller_is_refused_for_its_signal_flow_ports	L23	-
+block	modules#8	f26832ff2564dcd3	refused	piperine/book_modules::the_pi_controller_is_refused_only_for_its_generic_idt	L30	-
 block	modules#9	ba9f90eb4e23c8f9	run	piperine/book_modules::the_switched_capacitor_integrator_is_a_netlist_that_runs	-	-
 block	modules#10	6d51419f2d5b4317	refused	piperine/book_modules::the_memory_bank_is_refused_for_its_struct_arrays_and_generics	L32	-
 block	modules#11	6a4250f9fc568cc7	fragment	modules#10	-	-

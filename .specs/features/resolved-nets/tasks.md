@@ -364,9 +364,9 @@ T34 → T35 → T36
 
 **Done when**:
 
-- [ ] `gaps_no_longer_lists_project_or_signal_flow_natures` passes under `**Run docs**`
-- [ ] `the_pi_controller_is_refused_only_for_its_generic_idt` passes under `**Run bookmodules**`; `**Run bookinventory**` passes
-- [ ] Gate check passes: Build
+- [x] `gaps_no_longer_lists_project_or_signal_flow_natures` passes under `**Run docs**`
+- [x] `the_pi_controller_is_refused_only_for_its_generic_idt` passes under `**Run bookmodules**`; `**Run bookinventory**` passes
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build
@@ -1138,6 +1138,7 @@ Proof: run bookinventory | test refused_rows_and_gaps_section_11_agree ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** B1 (T1-T6) done. Defaults taken (user AFK): D16 - `code_owners.tsv` is not on this branch's base (it lives on `feature/params-and-io`), so the rows of `E0224` (T3), `E0413` (T4) and `E0242` (T5) are owed to T36, which deletes them. `NatureRules` carries a fourth field `carries_values` (discrete or resolved carrier versus node) beside the three of design C2, and answers `compatible` (§4 rule 13: a `VSignal` meets an `Electrical` port). `E0242` is reported at the top module's name, naming the node's path and each driver's instance path (the IR keeps origins, not spans). T2 needed no elaborator edit: the carrier's value type already flows from the checker's `Ty::Carrier`. The `types_carriers.rs` pins design "Goldens" names did not exist there; the pins actually replaced are listed in the T1, T3 and T4 commit bodies (`types_subset`, `types_modules`, `types_buck`, `elab_unlowered`, Book `modules#8`, whose test keeps only the `idt` generic-module refusal and is finished by T10). Owed to later tasks: `GAPS.md` L22 and L23, `inventory.tsv` and the Book status boxes (T10).
+**Settled B2:** B2 (T7-T10) done, rebased onto origin/main (856d2668; two conflicts, hand-merged: `types/result.rs` import, `elab/elaborator.rs` where main had removed `top_has_a_port`). Defaults taken (user AFK): abi.md D1 amended as design D3 says (`driving: BOOL` after the value, zero bytes absent), in `.specs/features/device-abi/abi.md`; `Observation::Unsettled { nets, at }` lists every RELAX net of the step in name order; the owner's `ObservationKind::Unsettled { nets }` carries the first net as its path; relax tests use stub devices (`Driver`, `Keeper`, `Resolver`, `Oscillator`) in the test target. `code_owners.tsv` arrived with the rebase: the rows of E0224, E0413, E0242 and the GAPS section 10 list were deleted in the T10 commit. T10 moved the docs.rs loud count 38 to 36 (params-and-io had already moved it to 38). No Book prose or status box pins a P0001 of project or signal-flow natures, so none changed. The T9 test added a partials check for its stub (abi_devices guard). Full root `cargo test --no-fail-fast` green after the rebase except that guard, fixed.
 **Dispatched:** none
 **Walked:** none
 

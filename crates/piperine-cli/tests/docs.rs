@@ -342,13 +342,14 @@ fn gaps_drops_what_msl_fixes_closed() {
     // the counts follow, as `host-ii` moved them, `unknown-semantics` (L18, L19) after it and
     // `analog-structure` (nine loud rows and S4) after that, `unknown-semantics-events` (L52) after
     // that: 2 silent, 2 broken, 40 loud; the value-semantics amendment of the spec then added S7
-    // (the front end is the earlier language): 3 silent; `params-and-io` closed L20 and L39 (38 loud)
-    assert!(gaps.contains("3 silent, 2 broken, 38 loud"), "the counts of §9 follow");
+    // (the front end is the earlier language): 3 silent; `params-and-io` closed L20 and L39 (38 loud);
+    // `resolved-nets` T10 closed L22 and L23 (36 loud)
+    assert!(gaps.contains("3 silent, 2 broken, 36 loud"), "the counts of §9 follow");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
     assert_eq!(rows("## 3. Silent", "## 4."), 3, "three silent entries");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 38, "thirty-eight loud rows");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 36, "thirty-six loud rows");
 }
 
 #[test]
@@ -565,4 +566,19 @@ fn gaps_no_longer_lists_x5_l20_l39_h12() {
     assert!(row.contains("B1 to B4") && row.contains("B5") && row.contains("`composite-values`"), "the row says what B1 to B4 delivered and that B5 and B6 wait: {row}");
     let state = read(".specs/STATE.md");
     assert!(state.contains("### MD-75:") && state.contains("`params-and-io`"), "STATE.md holds the decision entry");
+}
+
+#[test]
+fn gaps_no_longer_lists_project_or_signal_flow_natures() {
+    // resolved-nets T10 (RN-10 AC 1, RN-01, RN-08): a nature the project declares and a signal-flow
+    // nature run, so L22 and L23 are no rows, and `modules#8` of the §11 table keeps only the
+    // generic `idt` that `generics` owns
+    let gaps = read("GAPS.md");
+    for closed in ["L22", "L23"] {
+        assert!(!gaps.lines().any(|l| l.starts_with(&format!("| {closed} |"))), "{closed} is still a row");
+    }
+    assert!(!gaps.contains("`discrete nature Byte`") && !gaps.contains("`signal-flow nature VSignal`"), "a probe of the closed rows is still listed");
+    let row = gaps.lines().find(|l| l.starts_with("| modules#8 |")).expect("the Book row modules#8");
+    assert!(row.contains("| L30 |") && row.contains("`generics`") && !row.contains("signal-flow nature"), "modules#8 keeps only the generic `idt`: {row}");
+    assert!(gaps.lines().any(|l| l.starts_with("| L21 |")), "L21 stays: resolved natures are not compiled yet");
 }
