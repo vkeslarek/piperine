@@ -1819,3 +1819,20 @@ fn the_host_drives_a_tops_node_ports_e0810_e0811() {
         assert_eq!(row[2], phase, "{code}'s phase");
     }
 }
+
+#[test]
+fn appendix_c2_states_the_spline_end_conditions() {
+    // PI-10, D18, G.64: Appendix C.2 documents the end conditions of the `table_model` splines
+    // (§22.2.15 rule 8) and the derivative at a sample
+    let text = spec("appendix_c_implementation.md");
+    let rows = table_rows(&section(&text, "## C.2 "));
+    let row = rows.iter().find(|r| r[0].starts_with("`table_model` splines")).expect("C.2's table has a row for the table_model splines");
+    let algorithm = flat(&row[1]);
+    for fact in [
+        "Control `3`: a cubic spline with the not-a-knot end conditions",
+        "Control `2`: a quadratic spline whose first segment is the parabola through the first three samples",
+        "The derivative at a sample is the slope of the segment on its right; at the last sample, the slope of the segment on its left",
+    ] {
+        assert!(algorithm.contains(fact), "C.2's row lacks \"{fact}\": {algorithm}");
+    }
+}
