@@ -33,6 +33,40 @@ fn the_buck_readme_says_how_to_run_it() {
 }
 
 #[test]
+fn the_buck_readme_says_when_to_run_the_buck_on_demand() {
+    // integrated-tests IT-13 AC 1: the "On demand" block holds the four `cargo test` lines of every
+    // registered target, says that `cargo test` skips them, when they run, and how to only compile them
+    let readme = read("examples/buck/README.md");
+    let block = &readme[readme.find("## On demand").expect("the README has an \"On demand\" block")..];
+    for line in [
+        "cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_boundary --test buck_power --test buck_supervisor --test buck_closed_loop",
+        "cargo test -p piperine-api --test buck_long",
+        "cargo test -p piperine-cli --test buck --test book_buck",
+        "cargo test -p piperine --test buck_scenarios --test book_buck",
+    ] {
+        assert!(block.contains(line), "the block holds `{line}`");
+    }
+    for held in ["`cargo test` skips", "once at a feature's close", "examples/buck/**", "--no-run", "cargo test -p piperine --test integrated"] {
+        assert!(block.contains(held), "the block says `{held}`");
+    }
+}
+
+#[test]
+fn the_instructions_name_the_integrated_gate_and_the_buck_on_demand() {
+    // integrated-tests IT-13 AC 2: `CLAUDE.md` names the integrated target as the per-task gate, says that
+    // `cargo test` skips the buck and points at the README's "On demand" block; "Where the tests are"
+    // names `tests/integrated/` and `tests/e2e/integrated/`; `AGENTS.md` names the gate too
+    let claude = read("CLAUDE.md");
+    for held in ["cargo test -p piperine --test integrated", "cargo test -p piperine-cli --test integrated", "`cargo test` skips every target that simulates the buck", "examples/buck/README.md", "\"On demand\"", "tests/integrated/", "tests/e2e/integrated/"] {
+        assert!(claude.contains(held), "CLAUDE.md names `{held}`");
+    }
+    let agents = read("AGENTS.md");
+    for held in ["cargo test -p piperine --test integrated", "examples/buck/README.md", "tests/integrated/"] {
+        assert!(agents.contains(held), "AGENTS.md names `{held}`");
+    }
+}
+
+#[test]
 fn the_buck_readme_points_at_the_scenarios() {
     // buck-scenarios BS-10 AC 1: S2 to S10 run from `tests/buck_scenarios.rs` over `tests/e2e/buck/`
     // through `Session::drive` and `Session::set_at`; the README no longer says `piperine-api` has no
@@ -308,13 +342,13 @@ fn gaps_drops_what_msl_fixes_closed() {
     // the counts follow, as `host-ii` moved them, `unknown-semantics` (L18, L19) after it and
     // `analog-structure` (nine loud rows and S4) after that, `unknown-semantics-events` (L52) after
     // that: 2 silent, 2 broken, 40 loud; `params-and-io` (L20, L39) took the loud rows to 38, `composite-values`
-    // phase A (L5, L6, L10) and L63 to 35, `Pfd3` (L51: its event reads ran, its assignment now does) to 34, and `value-semantics` closed S7 (the spec amendment had added it)
-    assert!(gaps.contains("2 silent, 2 broken, 34 loud"), "the counts of §9 follow");
+    // phase A (L5, L6, L10) and L63 to 35, `Pfd3` (L51: its event reads ran, its assignment now does) to 34, `resolved-nets` (L22, L23) to 32, and `value-semantics` closed S7 (the spec amendment had added it)
+    assert!(gaps.contains("2 silent, 2 broken, 32 loud"), "the counts of §9 follow");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
     assert_eq!(rows("## 3. Silent", "## 4."), 2, "two silent entries");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 34, "thirty-four loud rows");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 32, "thirty-two loud rows");
 }
 
 #[test]
@@ -325,7 +359,7 @@ fn gaps_drops_the_value_semantics_gap() {
     assert!(!gaps.contains("### S7."), "S7 is closed");
     assert!(!gaps.contains("| S3, S6, S7 |") && gaps.contains("| S3, S6 |"), "the section table lists S3 and S6");
     assert!(!gaps.contains("E0331") && !gaps.contains("(`value-semantics`)"), "no entry names the retired code or the plan");
-    assert!(gaps.contains("2 silent, 2 broken, 34 loud"), "the counts are restored");
+    assert!(gaps.contains("2 silent, 2 broken, 32 loud"), "the counts are restored");
 }
 
 #[test]
@@ -511,7 +545,7 @@ fn gaps_drops_what_composite_values_phase_a_closed() {
     let values = coverage.lines().find(|l| l.starts_with("| I §1–§2 ")).expect("the coverage row of §1 and §2");
     assert!(values.contains("`let mut`, assignment and patterns run"), "{values}");
     // the counts follow: 39 loud, then 38 when `composite-values` closed L63 (§1.4.4 literal typing), 35 with `params-and-io`
-    assert!(gaps.contains("34 loud"), "the loud count is 34 once `params-and-io`, `composite-values` and the last of `unknown-semantics-events` closed rows");
+    assert!(gaps.contains("32 loud"), "the loud count is 32 once `params-and-io`, `composite-values`, `resolved-nets` and the last of `unknown-semantics-events` closed rows");
 }
 
 #[test]
@@ -569,4 +603,19 @@ fn gaps_no_longer_lists_x5_l20_l39_h12() {
     assert!(row.contains("B1 to B4") && row.contains("B5") && row.contains("`composite-values`"), "the row says what B1 to B4 delivered and that B5 and B6 wait: {row}");
     let state = read(".specs/STATE.md");
     assert!(state.contains("### MD-75:") && state.contains("`params-and-io`"), "STATE.md holds the decision entry");
+}
+
+#[test]
+fn gaps_no_longer_lists_project_or_signal_flow_natures() {
+    // resolved-nets T10 (RN-10 AC 1, RN-01, RN-08): a nature the project declares and a signal-flow
+    // nature run, so L22 and L23 are no rows, and `modules#8` of the §11 table keeps only the
+    // generic `idt` that `generics` owns
+    let gaps = read("GAPS.md");
+    for closed in ["L22", "L23"] {
+        assert!(!gaps.lines().any(|l| l.starts_with(&format!("| {closed} |"))), "{closed} is still a row");
+    }
+    assert!(!gaps.contains("`discrete nature Byte`") && !gaps.contains("`signal-flow nature VSignal`"), "a probe of the closed rows is still listed");
+    let row = gaps.lines().find(|l| l.starts_with("| modules#8 |")).expect("the Book row modules#8");
+    assert!(row.contains("| L30 |") && row.contains("`generics`") && !row.contains("signal-flow nature"), "modules#8 keeps only the generic `idt`: {row}");
+    assert!(gaps.lines().any(|l| l.starts_with("| L21 |")), "L21 stays: resolved natures are not compiled yet");
 }

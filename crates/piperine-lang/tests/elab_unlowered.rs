@@ -153,9 +153,8 @@ fn a_form_the_checker_accepts_for_msl_digital_is_p0001_until_it_is_lowered() {
         // the element commit of DIG-07 AC 1.
         ("an element commit", "module Top(in clk: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q[0] <- true; } }", vec!["element or field commit"]),
         // `settle` lowers from unknown-semantics-events T5 on (`elab_digital::settle_lowers_to_the_settle_event_source`).
-        // A module with a result is hoisted from msl-digital T33 on: the form still refused in its
-        // place is `others()` of DIG-07 AC 1.
-        ("others()", "module Top(in c: Bit) { let x = c.others(); }", vec!["method `others`"]),
+        // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it
+        // (`types_natures::others_on_a_one_driver_carrier_is_e0224`).
         // The flow read of a potential branch is lowered from msl-digital T35 on: the form still
         // refused in its place is the template of DIG-07 AC 1.
         ("a template", "module Top(a: Electrical) { let t = Resistor { r: 1.0 }; }\nmodule Resistor(p: Electrical, n: Electrical) { r: f64; }", vec!["module template"]),

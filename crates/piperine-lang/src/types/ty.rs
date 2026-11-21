@@ -138,8 +138,13 @@ impl Ty {
                 if items.len() == 1 { format!("({},)", names[0]) } else { format!("({})", names.join(", ")) }
             }
             Ty::Carrier { nature, value } => {
-                let nature = design.decl_data(*nature).name.as_ref().map_or("Bit", |n| n.text.as_str());
-                format!("{nature}<{}>", value.name(design))
+                let data = design.decl_data(*nature);
+                let nature = data.name.as_ref().map_or("Bit", |n| n.text.as_str());
+                // A nature that takes no type argument is written bare, as its author wrote it.
+                match data.generics_span {
+                    Some(_) => format!("{nature}<{}>", value.name(design)),
+                    None => nature.to_string(),
+                }
             }
             Ty::Event => "Event".to_string(),
             Ty::Str => "str".to_string(),

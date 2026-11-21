@@ -1,0 +1,39 @@
+//! Signal-flow nodes (§6 rule 2): a chain of gain blocks over `VSignal` nodes, each node driven by
+//! exactly one potential contribution to `(n, gnd)`. A signal-flow node has no flow: a driver
+//! forces its potential and a reader only probes it.
+
+/// A constant potential with a unit AC stimulus on top, on a signal-flow node.
+module Source(o: VSignal) { level: f64 = 1.0; }
+analog for Source { v(o) +> level + ac_stim(1.0); }
+
+/// `v(y) +> k * v(x)`: the one driver of `y`, a reader of `x`.
+module Gain(x: VSignal, y: VSignal) { k: f64 = 1.0; }
+analog for Gain { v(y) +> k * v(x); }
+
+/// 1.5 V, then gains of 2 and 3.
+module GainBench() {
+    signal a: VSignal;
+    signal b: VSignal;
+    signal c: VSignal;
+    let source = Source(a) { level: 1.5 };
+    let first = Gain(a, b) { k: 2.0 };
+    let second = Gain(b, c) { k: 3.0 };
+}
+
+/// The source alone with two readers of its node: nothing a reader does changes the node.
+module LoadlessBench() {
+    signal a: VSignal;
+    signal b: VSignal;
+    signal c: VSignal;
+    let source = Source(a) { level: 1.5 };
+    let first = Gain(a, b) { k: 2.0 };
+    let second = Gain(a, c) { k: 7.0 };
+}
+
+/// The same chain with its input a port of the top: nothing in the design drives `a`, the host does.
+module OpenChain(a: VSignal) {
+    signal b: VSignal;
+    signal c: VSignal;
+    let first = Gain(a, b) { k: 2.0 };
+    let second = Gain(b, c) { k: 3.0 };
+}

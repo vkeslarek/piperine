@@ -43,6 +43,7 @@ mod reactions;
 mod returns;
 mod records;
 mod selectors;
+mod signal_flow;
 mod structural;
 mod templates;
 mod types;

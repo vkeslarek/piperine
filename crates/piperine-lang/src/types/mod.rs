@@ -38,6 +38,7 @@ mod loops;
 mod module;
 mod patterns;
 mod plain;
+mod nature_rules;
 mod reach;
 mod reaction;
 mod record;

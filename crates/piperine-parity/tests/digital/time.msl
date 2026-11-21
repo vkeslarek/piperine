@@ -1,6 +1,11 @@
 //! Time and timers from source (T51): the stdlib `every`, `now()` and `analysis(Static)` read in
 //! reactions, and the edges `rise()` and `fall()` over values that pass through unknown.
-use buck::dpwm::Osc;
+
+/// The clock: a free-running oscillator, its first change at half a period.
+module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
 
 /// `every(1u, 2u)` in an `on` head: a toggle at 1, 3, 5, 7 and 9 us.
 module Timer(out hit: Bit = false) {}

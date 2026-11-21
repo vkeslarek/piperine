@@ -1,0 +1,20 @@
+//! A `VSignal` node connected to an `Electrical` port (§4 rule 13: compatible natures meet through a
+//! connection; §6 Resolution of rule 2: a node where a nature has `flow` is conservative).
+
+/// A constant potential on a signal-flow node.
+module Source(o: VSignal) { level: f64 = 1.0; }
+analog for Source { v(o) +> level; }
+
+/// An ideal resistor.
+module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// The source's node `a` is a conservative node once a resistor meets it: a divider of two 1 kOhm
+/// resistors from `a` to ground through `m`.
+module MixedBench() {
+    signal a: VSignal;
+    signal m: Electrical;
+    let source = Source(a) { level: 1.0 };
+    let upper = Resistor(a, m) { r: 1k };
+    let lower = Resistor(m, gnd) { r: 1k };
+}

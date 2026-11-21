@@ -22,7 +22,7 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 2 silent, 2 broken, 34 loud (L1 to L63 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the two `params-and-io` (L20, L39) and the four `composite-values` rows (L5, L6, L10, L63) closed, L9 narrowed to its `generics` part, in six tables) plus
+**Counts.** 2 silent, 2 broken, 32 loud (L1 to L63 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the two `params-and-io` (L20, L39) and the four `composite-values` rows (L5, L6, L10, L63) and the two `resolved-nets` rows (L22, L23) closed, L9 narrowed to its `generics` part, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 9 unproven.
 
@@ -30,7 +30,7 @@ change of the IR or the ABI.
 | ------- | --- |
 | §2 Broken | B3, B4 |
 | §3 Silent (read this first) | S3, S6 |
-| §4 Loud | L1–L62 (L11, L14, L15, L17, L18, L19, L20, L39, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L51 closed; L9 narrowed) |
+| §4 Loud | L1–L62 (L11, L14, L15, L17, L18, L19, L20, L39, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L51, L22, L23 closed; L9 narrowed) |
 | §5 Spec holes and disagreements | G1–G6 (the buck's), X1, X2, X6 (X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
 | §6 Solver, numerics, performance | V12, V13, V16 |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
@@ -122,8 +122,6 @@ quotes the text after `P0001:` unless another code is shown.
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
 | L21 | natures with `resolve`: `Wire`, `Tri`, `SumNet`; `others()`; relaxation of loops | §4 rule 2, §5.2.2, §8.2.3 | `resolved nature Wire` | L |
-| L22 | a discrete nature the project declares (`nature Byte { value: u8 }`) | §4 rule 1 | `discrete nature Byte` | S |
-| L23 | signal-flow natures (`VSignal`) | §6 rule 2 | `signal-flow nature VSignal` | M |
 | L24 | arrays of carriers (`[Bit; 8]`, `[Electrical; 4]`); element and field commits (`bits[3] <- true`) and definitions (an index that may be unknown merges every element it may name, §3.3.3: `unknown-semantics` US-04 AC 12 travels with this row) | §5.1.4, §12.1 | `array type`; `an element or field commit` | L, with L3 |
 | L25 | bundles: a `struct` of carriers, `flip`, bundle literals, `impl` on a bundle | §7 | `struct item used as a type`, `flip type` | L |
 
@@ -349,14 +347,14 @@ does not count.
 
 ## 10. Reference lists
 
-**Error codes of the spec that no source file mentions (40 of 189).** A code counts as mentioned when it is spelled
+**Error codes of the spec that no source file mentions (33 of 189).** A code counts as mentioned when it is spelled
 outside a comment in `crates/*/src` (a literal, or an enum variant's `as_str`); `E0375` is named in a doc
 comment only (`pom/builtin.rs`), so it is on the list. `E0503`, `E0504`, `E0505`, `E0507` and `E0508` are
 raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`). `E0803` to `E0806` are raised
 by `session.rs` and `host.rs`; `E0701` and `E0702` by the elaborator.
-`E0123 E0124 E0127 E0131 E0132 E0133 E0134 E0187 E0203 E0224 E0242 E0260 E0261 E0262
-E0264 E0313 E0322 E0340 E0342 E0360 E0362 E0371 E0372 E0373 E0374 E0375 E0413 E0451
-E0452 E0453 E0454 E0456 E0614 E0703 E0704 E0705 E0706 E0807 E0808 E0809`
+`E0123 E0124 E0127 E0131 E0132 E0133 E0134 E0187 E0203 E0313 E0322 E0340 E0342
+E0360 E0362 E0371 E0372 E0373 E0374 E0375 E0451 E0452 E0453 E0454 E0456 E0614
+E0703 E0704 E0705 E0706 E0807 E0808 E0809`
 
 **Entries of the previous file that changed.**
 
@@ -378,7 +376,7 @@ E0452 E0453 E0454 E0456 E0614 E0703 E0704 E0705 E0706 E0807 E0808 E0809`
 | Analog operators | L43, L44, L45, L49, H2 (`Noise`) | M to L |
 | Composite values | L1 to L4, L16 (H.5 to H.7), L24, L57 (phase A closed L5, L6, L10 and the part of L9 that is not `generics`) | L |
 | Generics and generation | L7, L30, L31, L32, S3 for generic items: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
-| Resolved nets and bundles | L21, L22, L23, L25: `Wire`, `Tribuf`, `Tran`, `Bidir` | L |
+| Resolved nets and bundles | L21, L25: `Wire`, `Tribuf`, `Tran`, `Bidir` | L |
 | Unknown semantics | S6 (ABI), L53, L8 (L18, L19 closed by `unknown-semantics`; L51, L52 by `unknown-semantics-events`) | L |
 | Host II (delivered in part by `host-ii`) | H1, H3, H6, H9, then B4 (Python) | L |
 | Speed | V12, V13, V16, PSS on the device ABI | L |
@@ -424,7 +422,7 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | modules#1 | L30 | `generics` | `ladder.msl` is `P0001`, a generic module, on `Ladder::<3>`, for an operating point and for the DC sweep |
 | modules#2 | L31 | `generics` | next to the generic ladder, generation `for` in a `digital` block is `P0001` |
 | modules#6 | L30 | `generics` | `lowpass` is `P0001`: its `idt` is a generic module; the module that returns a value with feedback through an instance is behind it (L38) |
-| modules#8 | L23 | `resolved-nets` | `PiAw` is `P0001`: the `VSignal` ports are a signal-flow nature, and the `idt` of the integral is a generic module |
+| modules#8 | L30 | `generics` | `PiAw` is `P0001`: the `idt` of the integral is a generic module (its `VSignal` ports are typed signal-flow nodes) |
 | modules#10 | L32 | `generics` | `Cell` as a type, the arrays of carriers of `MemoryBank` and the generic module are `P0001` |
 | modules#12 | L32 | `generics` | `nch(0.13u, 2u)(d, g, s, b)`: placement through a template value or a function is `P0001` |
 | modules#14 | L33 | `foreign-models` | `extern "osdi" module Bsim4` is `P0001`: `extern` module is not supported yet |

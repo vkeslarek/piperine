@@ -7,7 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::super::body::{Arg, ExprKind, FieldInit, PatKind, TypeKind};
+use super::super::body::{Arg, ExprKind, FieldInit, PatKind, QuantityRole, StmtKind, TypeKind};
 use super::super::builtin::BuiltinKind;
 use super::super::decl::{DeclKind, FnParamData, GenericParamData, Name};
 use super::super::design::Design;
@@ -118,13 +118,13 @@ impl Design {
 
     /// Is `decl` a generic parameter with a bound that resolved to nothing?
     /// What it carries is not known then.
-    fn has_unresolved_bound(&self, decl: DeclId) -> bool {
+    pub(super) fn has_unresolved_bound(&self, decl: DeclId) -> bool {
         let DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) = &self.decl_data(decl).kind else { return false };
         bounds.iter().any(|b| self.bound_resolution(*b) == Resolution::Unresolved)
     }
 
     /// Is a type a carrier: a nature or a `Nature`-bounded generic, under arrays and `flip`?
-    fn is_carrier_type(&self, ty: TypeId) -> bool {
+    pub(super) fn is_carrier_type(&self, ty: TypeId) -> bool {
         match self.type_resolution(ty) {
             Resolution::Decl(d) => matches!(self.decl_data(d).kind, DeclKind::Nature(_)) || self.is_nature_generic(d),
             _ => false,
@@ -542,7 +542,34 @@ fn param_block(design: &Design, module: DeclId, params: &[FieldInit], from: Decl
     links
 }
 
+/// The nature of the first argument of the call `node`, when it names a declared node.
+fn args_first_nature(design: &Design, node: &super::super::body::ExprNode) -> Option<DeclId> {
+    let ExprKind::Call { args, .. } = &node.kind else { return None };
+    nature_of_expr(design, args.first()?.value)
+}
+
+/// The left-hand sides of the contributions of the design: the calls a `+>` writes to.
+fn contribution_targets(design: &Design) -> BTreeSet<ExprId> {
+    (0..design.stmt_count())
+        .filter_map(|i| match &design.stmt_node(crate::pom::StmtId(i as u32)).kind {
+            StmtKind::Contribution { lhs, .. } => Some(*lhs),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Whether the nature `nature` declares a `flow` quantity.
+fn declares_flow(design: &Design, nature: DeclId) -> bool {
+    design.decl_data(nature).children.iter().any(|c| matches!(&design.decl_data(*c).kind, DeclKind::Quantity(q) if q.role == QuantityRole::Flow))
+}
+
+/// Whether the access `name` is that of a flow quantity of some nature.
+fn is_flow_access(design: &Design, access: &BTreeMap<String, Vec<DeclId>>, name: &str) -> bool {
+    access.get(name).is_some_and(|quantities| quantities.iter().any(|q| matches!(&design.decl_data(*q).kind, DeclKind::Quantity(data) if data.role == QuantityRole::Flow)))
+}
+
 fn call_expressions(design: &Design, templates: &BTreeMap<ExprId, StructClass>, access: &BTreeMap<String, Vec<DeclId>>, out: &mut Classified) {
+    let targets = contribution_targets(design);
     for i in 0..design.expr_count() {
         let expr = ExprId(i as u32);
         let node = design.expr_node(expr);
@@ -555,8 +582,19 @@ fn call_expressions(design: &Design, templates: &BTreeMap<ExprId, StructClass>, 
             }
             Some(Probed::WrongNature(path)) => {
                 let segment = &design.path_node(path).segments[0];
-                let message = format!("the nature of the first argument declares no access `{}`", segment.name.text);
-                out.diagnostics.push((design.decl_data(node.owner).file, Diagnostic::new("E0206", message, segment.name.span, "not an access of that nature")));
+                // §11 rule 11, RN-08 AC 4: a flow access written as the target of a contribution to a
+                // node of a nature without `flow` is a flow contribution (`E0413`); read, or any other
+                // access the nature lacks, it is a probe of something it does not declare (`E0206`).
+                let first_nature = args_first_nature(design, node);
+                let flow_contribution = targets.contains(&expr) && is_flow_access(design, access, &segment.name.text) && first_nature.is_some_and(|n| !declares_flow(design, n));
+                let diagnostic = if flow_contribution {
+                    let message = format!("a flow contribution needs a nature with a `flow`: the nature of the first argument declares none, so `{}` cannot be contributed to it (§11 rule 11)", segment.name.text);
+                    Diagnostic::new("E0413", message, segment.name.span, "no flow on this nature")
+                } else {
+                    let message = format!("the nature of the first argument declares no access `{}`", segment.name.text);
+                    Diagnostic::new("E0206", message, segment.name.span, "not an access of that nature")
+                };
+                out.diagnostics.push((design.decl_data(node.owner).file, diagnostic));
                 out.calls.push(CallFacts { expr, class: CallClass::Function, args: Vec::new(), params: Vec::new() });
                 continue;
             }

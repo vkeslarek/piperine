@@ -71,7 +71,15 @@ cargo test                        # their whole suite, ngspice parity included
 cargo test -p piperine-solver     # one crate
 cargo test <name>                 # one test
 cargo test -- --nocapture         # see solver output
+cargo test -p piperine --test integrated   # the per-task gate: five small mixed-signal designs, about half a minute
 ```
+
+`cargo test` skips every target that simulates the buck converter (`test = false`, MD-77). The per-task
+and per-batch gate is the integrated suite above, with `cargo test -p piperine-cli --test integrated`; the
+buck runs on demand by the four lines of the "On demand" block of `examples/buck/README.md`, once at a
+feature's close (before its merge) when the feature changes the runtime, the printer, the plan, the solvers
+or the lowering of an existing form, and in every task that edits `examples/buck/**`, `tests/e2e/buck/**`
+or a buck target.
 
 At the root, `cargo build` / `cargo test` run the `default-members` (the crates that
 compile). Never pass `--workspace`: `piperine-lang-server` does not build.
@@ -161,7 +169,8 @@ no list here — the tree is the list, and a guard keeps it honest.
 - **Placement rule (MD-28, amended by MD-72)**: a target lives in the crate it exercises; the root
   `tests/` holds the integrated tests only: `tests/book/` (one target per Book chapter, through
   `piperine::`, with `inventory.tsv`), `tests/scenarios.rs` (the ngspice scenarios) and `tests/e2e/`
-  (their fixtures). Integration tests are grouped by functionality, one concern per target.
+  (their fixtures); `tests/integrated/` (one target, one module per scenario, MD-77) runs the scenario
+  package `tests/e2e/integrated/`. Integration tests are grouped by functionality, one concern per target.
 - **The enforcing guard**: `crates/piperine-lang/tests/suite_hygiene.rs` walks the repo's own sources
   and fails on switched-off test code, `#[ignore]`d tests, unregistered
   ```` ```ignore ```` doc fences, a target with no `//!` scope header, file-scope

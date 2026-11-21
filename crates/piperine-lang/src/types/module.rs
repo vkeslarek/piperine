@@ -5,6 +5,7 @@ use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, LetData, ParamData, PatKind, PortData, Resolution, SignalData, StructClass, TypeId};
 
 use super::check::{Checker, Context};
+use super::nature_rules::NatureRules;
 use super::unsupported::Unsupported;
 use super::{Callee, Ty};
 
@@ -270,7 +271,7 @@ impl Checker<'_> {
                 continue;
             };
             match kind {
-                Some(Ty::Carrier { value, .. }) => self.connect_carrier(arg.value, dir, &value),
+                Some(carrier @ Ty::Carrier { .. }) => self.connect_carrier(arg.value, dir, &carrier),
                 Some(expected @ Ty::Node(_)) => {
                     let Some(found) = self.infer(arg.value) else { continue };
                     self.connect(arg.value, port_decl, &expected, &found);
@@ -301,7 +302,7 @@ impl Checker<'_> {
             return;
         }
         match (port, found) {
-            (Ty::Node(p), Ty::Node(f)) if p == f => {}
+            (Ty::Node(p), Ty::Node(f)) if NatureRules::compatible(self.design, *p, *f) => {}
             (_, Ty::AnyNode) => {}
             (Ty::Node(_), Ty::Node(_)) => {
                 let message = format!("expected {}, found {}", port.name(self.design), found.name(self.design));
@@ -319,7 +320,7 @@ impl Checker<'_> {
     /// One argument at a carrier port holding `value`. At an `in` port a carrier of the same
     /// type or a discrete expression (an anonymous definition, §8.2.9); at an `out` port a
     /// carrier the parent may hand to one driver, and nothing else (§8.1.11).
-    fn connect_carrier(&mut self, arg: ExprId, dir: Option<crate::msl::ast::Dir>, value: &Ty) {
+    fn connect_carrier(&mut self, arg: ExprId, dir: Option<crate::msl::ast::Dir>, port: &Ty) {
         let file = self.file_of_expr(arg);
         let span = self.design.expr_node(arg).span;
         let carrier = self.declared_port(arg);
@@ -331,9 +332,9 @@ impl Checker<'_> {
             (None, _) if found == Some(Ty::AnyNode) => {
                 self.coded(file, "E0250", span, "`gnd` is connected to a port of a discrete nature (§6.1)".to_string(), "`gnd` at a discrete port");
             }
-            (Some((decl, Ty::Carrier { value: held, .. })), dir) => {
-                if **held != *value {
-                    let message = format!("a carrier of `Bit<{}>` is connected to a port of `Bit<{}>`", held.name(self.design), value.name(self.design));
+            (Some((decl, held @ Ty::Carrier { .. })), dir) => {
+                if held != port {
+                    let message = format!("a carrier of `{}` is connected to a port of `{}`", held.name(self.design), port.name(self.design));
                     self.coded(file, "E0251", span, message, "carrier of another type");
                 } else if dir == Some(crate::msl::ast::Dir::Out) {
                     self.hand_over(*decl, span, file);
@@ -345,6 +346,7 @@ impl Checker<'_> {
                 self.coded(file, "E0314", span, message, "expression at an `out` port");
             }
             (None, _) => {
+                let Ty::Carrier { value, .. } = port else { return };
                 self.check_as(arg, value, "E0337");
                 if self.continuous(arg) {
                     let message = "a continuous expression is connected to an `in` port: it reads a probe, `now()`, `freq()`, `gmin()`, `source_scale()` or `analysis(Static)` (§8.1.12)".to_string();

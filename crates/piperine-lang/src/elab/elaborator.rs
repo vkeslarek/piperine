@@ -10,6 +10,7 @@ use super::carriers::{Frame, Structure};
 use super::consts::{Bindings, ConstEval};
 use super::exits::Divergences;
 use super::origin::Locator;
+use super::signal_flow::SignalFlowCheck;
 use super::structural::{BodyKey, BodyVariants, KeyParams, Overrides};
 use super::unroll::CallCycles;
 use super::variants::Variants;
@@ -172,6 +173,10 @@ impl<'d, 't> Elaboration<'d, 't> {
         match top_instance {
             Some(instance) if self.diagnostics.is_empty() => {
                 let ir = self.ir.finish(instance);
+                self.diagnostics.extend(Self::signal_flow_diagnostics(self.design, top, &ir));
+                if !self.diagnostics.is_empty() {
+                    return Err(self.diagnostics);
+                }
                 Self::well_formed(self.design, top, ir)
             }
             _ => Err(self.diagnostics),
@@ -195,6 +200,21 @@ impl<'d, 't> Elaboration<'d, 't> {
                 diagnostic: Diagnostic::new("P0004", format!("internal error: elaboration produced an ill-formed IR: {} ({} at {})", b.what, b.item, b.origin), span, "this is a bug in the elaborator, not in the model"),
             })
             .collect())
+    }
+
+    /// `E0242` for each signal-flow node of `ir` that does not have exactly one potential driver
+    /// (§6 rule 2), reported at the top module and naming the node and each driver.
+    fn signal_flow_diagnostics(design: &Design, top: DeclId, ir: &Ir) -> Vec<DesignDiagnostic> {
+        let data = design.decl_data(top);
+        let (file, span) = (data.file, data.name.as_ref().map_or(data.span, |n| n.span));
+        SignalFlowCheck::run(ir)
+            .into_iter()
+            .map(|fault| {
+                let drivers = if fault.drivers.is_empty() { "none".to_string() } else { fault.drivers.join(", ") };
+                let message = format!("the signal-flow node `{}` has {} potential driver(s), it takes exactly one (§6 rule 2); drivers: {drivers}", fault.node, fault.drivers.len());
+                DesignDiagnostic { file, diagnostic: Diagnostic::new("E0242", message, span, "a signal-flow node with the wrong number of potential drivers") }
+            })
+            .collect()
     }
 
     pub(super) fn report(&mut self, file: FileId, diagnostic: Diagnostic) {

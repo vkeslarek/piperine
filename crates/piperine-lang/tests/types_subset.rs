@@ -33,8 +33,7 @@ const ROWS: &[Row] = &[
     Row { construct: "generic function", source: "fn g<T>(x: f64) -> f64 { x }\nmodule Top() { }\nanalog for Top { let x = g(1.0); }", names: "generic function" },
     Row { construct: "generic module", source: "module G<N: Nature>(a: N) { }\nmodule Top(a: E) { let g = G(a); }", names: "generic module" },
     Row { construct: "const generic", source: "module G<const N: usize>() { }\nmodule Top() { let g = G(); }", names: "generic module" },
-    Row { construct: "discrete nature", source: "nature B { value: bool }\nmodule Top(a: B) { }", names: "discrete nature `B`" },
-    Row { construct: "bundle", source: "struct Bn { a: E }\nmodule Top(p: Bn) { }", names: "(a bundle) as a value type" },
+    Row { construct: "bundle", source: "struct Bn { a: E }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
     Row { construct: "generation in a digital block", source: "module Top() { }\ndigital for Top { if true { } }", names: "generation" },
     Row { construct: "template", source: "module Top(a: E, b: E) { let t = Resistor { r: 1.0 }; }", names: "module template" },
     Row { construct: "placement through a template", source: "module Top(a: E, b: E) { let t = Resistor { r: 1.0 }; let r = t(a, b); }", names: "module template" },
@@ -108,7 +107,7 @@ fn unreached_items_are_not_reported() {
 /// Constructs that only resolve against the real standard library: `Bit`, `Repr` and the known
 /// flag are refused by name as well.
 const STD_ROWS: &[Row] = &[
-    Row { construct: "others on a carrier", source: "module Top(in c: Bit) { let x = c.others(); }", names: "method `others`" },
+    // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it (`types_natures::others_on_a_one_driver_carrier_is_e0224`).
     Row { construct: "element definition", source: "module Top(out q: Bit) { q[0] = true; }", names: "element or field definition" },
     Row { construct: "resolved nature", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },
     Row { construct: "Repr", source: "module Top() { }\nanalog for Top { let x: Repr = 1.0; }", names: "`Repr`" },

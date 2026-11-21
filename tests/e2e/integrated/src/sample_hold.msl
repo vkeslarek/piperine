@@ -1,0 +1,22 @@
+//! `sample_hold`: a DC source the host steps, a switch that tracks it while a 1 MHz clock is high, a
+//! 1 nF hold node and an 8-bit ADC that samples the hold node at each falling edge of the clock.
+
+use crate::{Adc8, Capacitor, Clock, Switch, Vdc};
+
+/// The sample-and-hold: tracking for half a period (50 time constants of 10 ohm and 1 nF), holding for
+/// the other half, converted 200 ns after each falling edge with a 50 ns `done` strobe.
+pub module SampleHold() {
+    signal clk: Bit;
+    signal nclk: Bit;
+    signal code: Bit<u8>;
+    signal done: Bit;
+    signal input: Electrical;
+    signal hold: Electrical;
+    /// The ADC samples on the rise of `nclk`, which is the fall of the clock.
+    nclk = !clk;
+    pub let source = Vdc(input) { dc: 0.0 };
+    pub let osc = Clock(clk) { f: 1M };
+    pub let gate = Switch(input, hold, clk) { ron: 10.0, roff: 1G };
+    pub let storage = Capacitor(hold, gnd) { c: 1n };
+    pub let converter = Adc8(hold, nclk, code, done) { vref: 1.0, tconv: 200n, tstrobe: 50n };
+}

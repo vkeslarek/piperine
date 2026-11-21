@@ -1,7 +1,7 @@
 //! Time and timers from MSL source (feature `msl-digital`, T51; checks C110, C115, C162,
 //! DIG-12 AC 1 and 4, DIG-14 AC 13): the stdlib `every(t0, period)` placed in an `on` head, a
 //! reaction that commits `now()` and `analysis(Static)`, and `rise()`/`fall()` over edges to and
-//! from unknown, from `tests/buck/time.msl`. Times are compared in ticks (one femtosecond) or
+//! from unknown, from `tests/digital/time.msl`. Times are compared in ticks (one femtosecond) or
 //! with the exact tick product, `now()` being `tick * resolution` (abi.md §4.2).
 #![cfg(unix)]
 
@@ -19,7 +19,8 @@ mod mixed;
 mod support;
 
 use mixed::rise;
-use support::{HIGH, LOW, build, transient, with_buck};
+use std::path::Path;
+use support::{HIGH, LOW, build, transient};
 
 /// One nanosecond and one microsecond in ticks.
 const NS: i64 = 1_000_000;
@@ -28,7 +29,7 @@ const US: i64 = 1_000 * NS;
 const TICK: f64 = 1e-15;
 
 fn project() -> Project {
-    with_buck("time.msl")
+    Project::new(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/digital/time.msl"))
 }
 
 #[test]

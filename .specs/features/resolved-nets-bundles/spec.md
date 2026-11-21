@@ -1,11 +1,24 @@
 # Resolved Nets: Bundles Specification
 
-**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+**Approved**: 2026-11-21 - under the user's standing AFK rule - user: "Eu gostaria que engatilhasse até o 12" and, 2026-11-21, "pode ir tocando como previsto, parando só depois da revisão no item 13" (the amendment of 2026-11-21 below; the criteria of 2026-11-18 stand under the user's "Sobre as open questions, vou de aceito todas ok?")
 
 Bundles (§7, L25): a `struct` whose fields are carriers, its views (`flip`, observer `in`),
 bundle literals and functions on a bundle. The companion of `resolved-nets`: a bundle field of a
 resolved nature has no direction, and a bundle field of a discrete or continuous nature follows
 that spec's natures.
+
+## Amendment of 2026-11-21 (planning, user AFK)
+
+Written when design and tasks were planned (ROADMAP execution order, item 12). Each change is a
+D-numbered default of `design.md` "Decisions taken (user AFK)".
+
+| # | What changed since 2026-11-18 | Effect on this spec |
+| - | ----------------------------- | ------------------- |
+| A1 | Pure value semantics (G.71): data copy, hardware is reached by identity (§1.4.7). A bundle, like a carrier, is hardware; a handle is the one reference left (§3.1) | BN-05 AC 1 cites §1.4.7; no criterion changes |
+| A2 | The codes the error tables already map: a carrier method on a whole bundle is `E0211` (§5.1, raised today in `pom/resolve/members.rs`); a write through a handle is `E0133` (§3.1, owned by `generics` B) | BN-04 AC 3 and BN-05 AC 4 name the code |
+| A3 | The spec-code guard of `params-and-io` (`code_owners.tsv`, PI-13) assigns `E0260`, `E0261`, `E0262`, `E0264` to `resolved-nets` (construct L25) | BN-08 AC 2 is added |
+| A4 | Delivery (design D1): the declaration checks are POM checks beside `E0263` and need nothing (phase 1, now); views, fields, literals and the elaboration wait for `composite-values` A–B on `main` (struct items as types); functions on a bundle wait for `generics` B and `unknown-semantics-events` B5; generic bundles for `generics` A and C; arrays of bundles for `composite-values` C | Dependencies and Size rewritten |
+| A5 | Planned on the branch `feature/resolved-nets`, beside `resolved-nets` (its design D2) | none |
 
 ## Problem Statement
 
@@ -43,9 +56,9 @@ blocked.
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --------------------- | -------------- | --------- | ---------- |
-| Delivery against the dependencies | The same answer as `resolved-nets` Q1. Under its recommendation (B, phased): non-generic bundles of `Bit`, `Electrical` and project natures first (after `composite-values` L1), handles and `Event` functions on bundles after `generics` and `unknown-semantics-events` | One rule for both specs of this area | n - follows the user's answer to `resolved-nets` Q1 |
-| How a bundle reaches the IR | Each field becomes the carrier it is, named by its dotted path (`tx.valid`); a connection of a bundle is a connection of each field of the same name (§7 rule 14). The bundle itself exists in the POM only | §7 rule 14 ("no semantics of its own") and the navigability rule (MD-25, MD-54) | n - planner |
-| How the host names a bundle field | By its dotted path under the instance: `Top.s.tx.valid` in `--print`, tables, records and metadata | §7 rule 12 reaches fields with `.`; the host already names nets by path | n - planner |
+| Delivery against the dependencies | The same answer as `resolved-nets` Q1 (B, phased): the declaration checks now; non-generic bundles of `Bit`, `Electrical` and project natures after `composite-values` A–B; handles and `Event` functions after `generics` B and `unknown-semantics-events` B5 (amendment A4) | One rule for both specs of this area | y - Q1 answered B, 2026-11-18 |
+| How a bundle reaches the IR | Each field becomes the carrier it is, named by its dotted path (`tx.valid`); a connection of a bundle is a connection of each field of the same name (§7 rule 14). The bundle itself exists in the POM only | §7 rule 14 ("no semantics of its own") and the navigability rule (MD-25, MD-54) | y - AFK default (design D3) |
+| How the host names a bundle field | By its dotted path under the instance: `Top.s.tx.valid` in `--print`, tables, records and metadata | §7 rule 12 reaches fields with `.`; the host already names nets by path | y - AFK default (design D4) |
 
 **Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
@@ -121,7 +134,7 @@ blocked.
 
 1. WHEN a module commits to, or defines, a field its view lets it drive (`tx.valid <- true;`, `tx.data = buf;`) THEN the system SHALL apply the rules of §5 to that field.
 2. WHEN a carrier method is called on a field (`tx.valid.changed()`, `rx.ready.high()`) THEN the system SHALL apply it to that field.
-3. IF a carrier method is called on a whole bundle THEN the system SHALL report an elaboration error naming the bundle and the method.
+3. IF a carrier method is called on a whole bundle THEN the system SHALL report `E0211` naming the bundle and the method (§5.1).
 
 **Independent Test**: A compiled run with a reaction on `rx.valid.changed()` and a definition of `tx.data`.
 
@@ -138,7 +151,7 @@ blocked.
 1. WHEN a function on a bundle takes `self` THEN the system SHALL bind `self` as a handle and SHALL make every field read-only through it, whatever the view (§7 rule 13, §3.1.1).
 2. WHEN `d.vd()` is called in `analog` for `impl Diff { fn vd(self) -> f64 { v(self.p, self.n) } }` THEN the system SHALL give `v(d.p, d.n)`.
 3. WHEN `on rx.beat(clk)` heads a reaction for `fn beat(self, clk: Bit) -> Event { clk.rise() && self.valid && self.ready }` THEN the reaction SHALL run exactly at the rising edges of `clk` where `valid` and `ready` are both true.
-4. IF a function commits to or defines a field through a handle THEN the system SHALL report an elaboration error naming the field.
+4. IF a function commits to or defines a field through a handle THEN the system SHALL report `E0133` naming the field (§3.1.5).
 
 **Independent Test**: A compiled run of a handshake with `beat`, and an op with `vd`.
 
@@ -185,8 +198,9 @@ blocked.
 **Acceptance Criteria** (BN-08):
 
 1. WHEN this feature merges THEN `GAPS.md` SHALL no longer list L25, and §9 SHALL give Part II §7 its new share.
+2. WHEN a task first raises `E0260`, `E0261`, `E0262` or `E0264` THEN that commit SHALL delete the code's row from `crates/piperine-lang/tests/support/code_owners.tsv`, so the guard `spec_codes` passes (`resolved-nets` design D16).
 
-**Independent Test**: `cargo test -p piperine-cli --test docs`.
+**Independent Test**: `cargo test -p piperine-cli --test docs` and `cargo test -p piperine-lang --test spec_codes`.
 
 ---
 
@@ -203,16 +217,16 @@ blocked.
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| BN-01 | P1: A bundle is declared and checked | - | Pending |
-| BN-02 | P1: Views | - | Pending |
-| BN-03 | P1: Connections and literals | - | Pending |
-| BN-04 | P1: Fields are carriers | - | Pending |
-| BN-05 | P2: Functions on a bundle | - | Pending |
-| BN-06 | P2: Nesting, generics and arrays | - | Pending |
-| BN-07 | P2: The host and the POM see the bundle as written | - | Pending |
-| BN-08 | P3: The documents say what is true | - | Pending |
+| BN-01 | P1: A bundle is declared and checked | T1–T4 | In Tasks |
+| BN-02 | P1: Views | T5, T6, T9, T11, T12 | In Tasks |
+| BN-03 | P1: Connections and literals | T7, T10, T13 | In Tasks |
+| BN-04 | P1: Fields are carriers | T6, T8, T12 | In Tasks |
+| BN-05 | P2: Functions on a bundle | T17, T18 | In Tasks |
+| BN-06 | P2: Nesting, generics and arrays | T14, T15, T19, T20 | In Tasks |
+| BN-07 | P2: The host and the POM see the bundle as written | T16 | In Tasks |
+| BN-08 | P3: The documents say what is true | T21 | In Tasks |
 
-**Coverage:** 8 total, 0 mapped to tasks, 8 unmapped (no tasks yet).
+**Coverage:** 8 total, 8 mapped to tasks (tasks.md, T1–T21), 0 unmapped.
 
 ### Gaps closed
 
@@ -222,14 +236,15 @@ blocked.
 
 ## Dependencies
 
-- `composite-values`: L1 (`struct` items as types) for everything; L24 for BN-06 AC 4.
-- `generics`: L8 handles for BN-05; L7 and L30 for BN-06 AC 3 and gallery E.6.
-- `unknown-semantics-events`: UE-04 (`Event` functions) for BN-05 AC 3.
-- `resolved-nets`: RN-02 to RN-04 for BN-06 AC 2; RN-01 and RN-08 for fields of project and signal-flow natures.
+- Phase 1 (BN-01 AC 3 to AC 6 at the declaration): none; POM checks beside `E0263`.
+- Phases 2 to 5 (BN-01 AC 1 and AC 2, BN-02, BN-03, BN-04, BN-06 AC 1, BN-07): `composite-values` A–B on `main` (L1, struct items as types, the checker's field access).
+- BN-06 AC 2 (a field of a resolved nature): `resolved-nets` phase 7 (its T22), on the same branch.
+- Phase 6 (BN-05): `generics` B (L8 handles, `E0133`) and `unknown-semantics-events` B5 (UE-04, functions that return `Event`).
+- Phase 7 (BN-06 AC 3 and AC 4): `generics` A (generic value types) and C (generic modules, the Book's `Slice<T>`); `composite-values` C (L24).
 
 ## Size
 
-**M.** About 15 tasks: BN-01 2, BN-02 3, BN-03 3, BN-04 1, BN-05 2, BN-06 2, BN-07 1, BN-08 1.
+**M.** 21 tasks in 8 phases, 4 batches (tasks.md).
 
 ## Sources
 

@@ -1330,10 +1330,13 @@ name = "piperine"
 version = "0.2.0"
 dependencies = [
  "num-complex",
+ "piperine-abi",
  "piperine-api",
  "piperine-cli",
+ "piperine-ir",
  "piperine-lang",
  "piperine-parity",
+ "piperine-plan",
  "piperine-solver",
  "piperine-transpile",
  "tempfile",

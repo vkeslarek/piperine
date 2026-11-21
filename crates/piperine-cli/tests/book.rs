@@ -260,15 +260,16 @@ fn selection(block: &Block) -> Result<(), String> {
     Ok(())
 }
 
-/// Every listing of the whole Book, any chapter and any project, run once per test binary
-/// and shared by the tests that read it (the buck alone takes minutes).
+/// Every listing of the whole Book, any chapter and any project but `buck`, run once per test binary
+/// and shared by the tests that read it. The buck's listing runs the 600 us start (minutes) and is
+/// held on demand by `book_buck` (MD-77).
 fn checked() -> &'static [Checked] {
     static CHECKED: OnceLock<Vec<Checked>> = OnceLock::new();
     CHECKED.get_or_init(|| {
         let html = content();
         let all = blocks(&html);
         all.iter()
-            .filter(|b| b.attr("data-cli-output").is_some())
+            .filter(|b| b.attr("data-cli-output").is_some() && b.attr("data-cli-project") != Some("buck"))
             .map(|block| Checked {
                 at: block.at,
                 project: block.attr("data-cli-project").map(str::to_string),
@@ -386,6 +387,17 @@ fn the_rc_output_blocks_are_what_the_binary_prints() {
     }
 }
 
+/// `data-cli-lines` is checked on every listing of the Book, the buck's included: its run is on demand
+/// (`book_buck`), its selection is not, so the range stays held by default.
+#[test]
+fn every_listing_selects_lines_inside_its_block() {
+    let html = content();
+    let selecting: Vec<Block> = blocks(&html).into_iter().filter(|b| b.attr("data-cli-output").is_some() && b.attr("data-cli-lines").is_some()).collect();
+    assert!(selecting.iter().any(|b| b.attr("data-cli-project") == Some("buck")), "the buck listing selects lines of its block");
+    let failures: Vec<String> = selecting.iter().filter_map(|b| selection(b).err().map(|why| format!("`{}`: {why}", b.attr("data-cli-output").unwrap_or("")))).collect();
+    assert!(failures.is_empty(), "listings with a bad `data-cli-lines`:\n{}", failures.join("\n"));
+}
+
 #[test]
 fn every_cli_listing_of_the_book_is_what_the_binary_prints() {
     // Book claims held here: welcome~72129ad3, welcome~a4895da4, welcome~df325c6f, welcome~6e662db9, language~b8b3f31f, types~050c60ed, values~4938c15f, solver~1cdf59b8, values~2931bd2e, values~9a0ece05, cli~54e71d59
@@ -394,17 +406,17 @@ fn every_cli_listing_of_the_book_is_what_the_binary_prints() {
     // selects the lines the page shows, so a line it leaves out is held all the same
     let all: Vec<&Checked> = checked().iter().collect();
     let commands = hold(&all);
-    assert!(commands.len() >= 29, "the Book shows {} listings: {commands:?}", commands.len());
+    // the Book shows 56 listings of the binary; the buck's moved to `book_buck` (MD-77), so exactly 55 are held here
+    assert_eq!(commands.len(), 55, "the Book shows {} listings: {commands:?}", commands.len());
     let html = content();
     let (from, to) = span_of(&html, "cli");
     assert!(all.iter().any(|c| c.at >= from && c.at < to) && all.iter().any(|c| c.at < from), "listings of chapter `cli` and of the other chapters are held");
 }
 
 #[test]
-fn the_buck_block_is_what_the_binary_prints() {
-    // Book claims held here: cli~9c4b6fcf
-    // CLI-19 AC 4: the buck's bench and its `startup` table equal to the files, and the standard
-    // output of `piperine run startup` in `examples/buck` equal to what the binary prints
+fn the_buck_block_shows_the_example_files() {
+    // CLI-19 AC 4: the buck's bench and its `startup` table equal to the files, and the command in a
+    // shell block; what the binary prints for it is held on demand by `book_buck`
     let html = content();
     let cli = chapter(&html, "cli");
     assert!(holds(&cli, "msl", &example("buck/benches/startup.msl")), "the chapter shows examples/buck/benches/startup.msl as it is");
@@ -412,9 +424,6 @@ fn the_buck_block_is_what_the_binary_prints() {
     let table = blocks(&cli).into_iter().find(|b| b.lang == "toml" && b.text.contains("[run.startup]")).expect("the chapter shows the run table `startup`");
     assert!(manifest.ends_with(&table.text), "the `startup` table is the end of examples/buck/Piperine.toml, as it is:\n{}", table.text);
     assert!(holds(&cli, "sh", "piperine run startup"), "the chapter gives the command in a shell block");
-    let (from, to) = span_of(&html, "cli");
-    let commands = hold(&listings_of(from, to, "buck"));
-    assert_eq!(commands, ["piperine run startup"]);
 }
 
 #[test]

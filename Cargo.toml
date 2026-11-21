@@ -41,6 +41,10 @@ piperine-transpile = { path = "crates/piperine-transpile" }
 # corpus layout of the parity harness, and hold the table `piperine::` gives to ngspice.
 piperine-cli = { path = "crates/piperine-cli" }
 piperine-parity = { path = "crates/piperine-parity" }
+# The integrated target (`tests/integrated/`) validates the shape of each compiled body.
+piperine-ir = { path = "crates/piperine-ir" }
+piperine-plan = { path = "crates/piperine-plan" }
+piperine-abi = { path = "crates/piperine-abi" }
 tempfile = { workspace = true }
 num-complex = { workspace = true }
 
@@ -223,3 +227,18 @@ too_many_arguments              = "allow"
 type_complexity                 = "allow"
 large_enum_variant              = "allow"
 mutable_key_type                = "allow"
+
+# Runs by name, not by `cargo test` (MD-77; registered in `suite_hygiene.rs`).
+[[test]]
+name = "buck_scenarios"
+path = "tests/buck_scenarios.rs"
+test = false
+
+[[test]]
+name = "book_buck"
+path = "tests/book/buck.rs"
+test = false
+
+[[test]]
+name = "integrated"
+path = "tests/integrated/main.rs"

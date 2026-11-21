@@ -1,6 +1,6 @@
 //! Commit semantics from MSL source (feature `msl-digital`, T47; checks C138 to C141, DIG-14
 //! AC 11): four modules, each the example of its rule in `docs/spec/part_iv_behavior.md`
-//! §12.1, written in `tests/buck/commits.msl`, elaborated by the front end, compiled on the
+//! §12.1, written in `tests/digital/commits.msl`, elaborated by the front end, compiled on the
 //! transpiled backend and run on the solver. Every expected instant and value is written from
 //! the rule cited at its assertion, in ticks of one femtosecond, never read back from the model.
 #![cfg(unix)]
@@ -16,13 +16,14 @@ mod mixed;
 mod support;
 
 use piperine_parity::project::Project;
-use support::{HIGH, LOW, build, fixture, transient};
+use std::path::Path;
+use support::{HIGH, LOW, build, transient};
 
 /// One nanosecond in ticks.
 const NS: i64 = 1_000_000;
 
 fn project() -> Project {
-    Project::new(&fixture("commits.msl"))
+    Project::new(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/digital/commits.msl"))
 }
 
 #[test]

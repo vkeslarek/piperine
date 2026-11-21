@@ -127,3 +127,52 @@ fn a_host_pwl_into_the_rc_matches_tran_pwl_rc() {
         ToleranceContract::TRAN_VOLTAGE.assert(&at, wanted, actual);
     }
 }
+
+/// The square of the integrated suite's `threshold` run as piecewise-linear corners: 0 to 1 V at 5 us,
+/// back at 10 us, and so on to 40 us, each edge 20 ps long.
+struct SquareCorners;
+
+impl SquareCorners {
+    /// Four periods of 10 us.
+    const PERIODS: usize = 4;
+    /// The length of each edge, in seconds.
+    const EDGE: f64 = 20e-12;
+
+    /// The corners in time order: the start at 0 V, then each rise and each fall with the instant its edge ends.
+    fn corners() -> Vec<(f64, f64)> {
+        let mut corners = vec![(0.0, 0.0)];
+        for period in 0..SquareCorners::PERIODS {
+            let rise = (2 * period + 1) as f64 * 5e-6;
+            let fall = (2 * period + 2) as f64 * 5e-6;
+            corners.extend([(rise, 0.0), (rise + SquareCorners::EDGE, 1.0), (fall, 1.0), (fall + SquareCorners::EDGE, 0.0)]);
+        }
+        corners
+    }
+}
+
+#[test]
+fn a_host_square_into_the_rc_matches_tran_square_rc() {
+    // the ngspice source `V1 vin 0 PWL(...)` of `tran_square_rc.cir`: the same corners as the host's, a
+    // square of four periods; both sides cap their step at 10 ns (`tran 0.1u 42u 0 10n uic`, `max_step 1e-8`)
+    let reference = Ngspice::from_environment().run("tran_square_rc");
+    let rows = match &reference {
+        Reference::Golden(golden) => {
+            let rows = golden.real("tran_square_rc_tran");
+            golden.expect_rows("tran_square_rc_tran", &rows, 420);
+            rows
+        }
+        Reference::Skipped => Vec::new(),
+    };
+    // one print step past ngspice's last time, as in the PWL comparison above
+    let overrides = Overrides { analysis: Some("transient".to_string()), stop: Some(42e-6 + 1e-7), max_step: Some(1e-8), print_step: Some(1e-7), ..Overrides::default() };
+    let mut session = HostDrivenRc::session(overrides);
+    session.source("vin", NodeSource::dc(0.0).with_corners(SquareCorners::corners())).expect("a piecewise-linear source on vin");
+    let table = HostDrivenRc::table(&mut session);
+    let Reference::Golden(golden) = &reference else { return };
+    let waveform = Waveform::new(table.rows.iter().map(|row| HostRun::real(&row[0])).collect(), table.rows.iter().map(|row| HostRun::real(&row[1])).collect());
+    for (time, wanted) in rows {
+        let actual = waveform.at(time).unwrap_or_else(|| panic!("the time {time:e} s lies outside the result"));
+        let at = Point::new("rc_top", "v(out)", Coordinate::Time(time)).with_ngspice(golden.version()).with_backend("rust");
+        ToleranceContract::TRAN_VOLTAGE.assert(&at, wanted, actual);
+    }
+}
