@@ -764,7 +764,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 (`CARGO_TARGET_DIR=/var/tmp/piperine-target-it`, `CARGO_PROFILE_DEV_DEBUG=0`, debug build, one target at a time):
 `buck_time` 4 s, `buck_power` 7 s, `buck_whole` 16 s, `buck_dpwm` 5 s, `buck_boundary` 7 s, `buck_commits` 6 s,
 `buck_records` 10 s, `buck_control` 5 s, `buck_closed_loop` 330 s, `buck_supervisor` 5 s, `piperine-cli` `buck`
-404 s; see the planner's report for `book`, `book_cli`, `book_mixed`, `buck_long` and `buck_scenarios`. Cargo's
+404 s, `piperine-cli` `book` 269 s (its shared fixture runs the 600 µs start), root `book_cli` 17 s (whole target), `book_mixed` 15 s (the Book's own averaged buck: stays, D4 of Out of Scope), `piperine-api` `buck_long` 167 s; `buck_scenarios` not re-measured (25 to 90 min recorded by `buck-scenarios`, six reds). The buck's share of the default run: about 20 min plus `buck_scenarios`. Cargo's
 `test = false` verified on a scratch package: skipped by `cargo test`, `--tests` and `--all-targets`, run by
 `--test <name>`.
 **Dispatched:** none
