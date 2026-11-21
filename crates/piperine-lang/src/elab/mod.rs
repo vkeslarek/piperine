@@ -37,6 +37,7 @@ mod reach;
 mod reactions;
 mod records;
 mod selectors;
+mod signal_flow;
 mod structural;
 mod templates;
 mod unlowered;

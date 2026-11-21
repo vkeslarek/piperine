@@ -255,9 +255,9 @@ T34 → T35 → T36
 
 **Done when**:
 
-- [ ] `a_signal_flow_node_with_no_or_two_drivers_is_e0242` and `a_node_meeting_a_nature_with_flow_is_not_counted` pass under `**Run elabnatures**`
-- [ ] Code clarity: `SignalFlowCheck` doc-commented citing §6 rule 2 and its Resolution
-- [ ] Gate check passes: Quick
+- [x] `a_signal_flow_node_with_no_or_two_drivers_is_e0242` and `a_node_meeting_a_nature_with_flow_is_not_counted` pass under `**Run elabnatures**`
+- [x] Code clarity: `SignalFlowCheck` doc-commented citing §6 rule 2 and its Resolution
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
