@@ -955,3 +955,11 @@ Execution is strictly sequential - there is no intra-phase parallelism.
 | T22 | Protocol and analog side | integration | integration | ✅ OK |
 | T23 | Spec and records | integration | integration | ✅ OK |
 | T24 | Spec and records | integration | integration | ✅ OK |
+
+### T25: The analog time is an integer epoch plus a small offset
+
+**Added 2026-11-21 (user: "faz reescale em long run" → "Ok, topo").** Past 2^52 ticks (≈ 4.5 s at the default 1 fs resolution) the analog side's `f64` absolute time can no longer tell adjacent ticks apart, so a step of a few ticks (a located-crossing retake) has zero length. main carries a stopgap (`min_advance()`, about 1 ps, in `protocol/transient.rs`, branch fix/long-transient-and-param-where). This task replaces it with the definitive form: the analog side keeps the time as an integer tick origin plus an `f64` offset in seconds since that origin, moved forward at every accepted point (or checkpoint), so the offset stays small and every tick is exact for any run length. The integrator reads only differences; anything reading absolute time (`now()`, host sources, records) rebuilds it from origin + offset.
+
+- **What**: the epoch representation in the analog side and the protocol; remove `min_advance()` and its guard.
+- **Done when**: a 20 s, a 100 s and a 1 h transient at the default 1 fs land every event on its tick (the existing tests in `crates/piperine-api/tests/options.rs` and the pump tolerance fixture in `crates/piperine-cli/tests/options.rs` pass without the stopgap); every result under 4.5 s is byte-identical (twins, transpile goldens, integrated targets, Book listings); no tolerance or contract changes; the tick stays 1 fs and no spec text changes.
+- **Gate**: Build line, `cargo test -p piperine-solver`, the integrated targets, the parity targets with ngspice present.
