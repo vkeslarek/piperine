@@ -14,5 +14,9 @@ mod digital;
 #[allow(dead_code)]
 #[path = "../../crates/piperine-transpile/tests/support/mixed.rs"]
 mod mixed;
+mod clock;
 mod package;
+mod rc;
 mod suite;
+mod table;
+mod threshold;

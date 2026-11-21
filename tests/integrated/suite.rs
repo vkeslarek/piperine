@@ -10,12 +10,14 @@ use piperine::{Overrides, Project, Session};
 use piperine_parity::scenario::{CompletedRun, ScenarioBatch, ScenarioRun, Stimulus};
 use piperine_transpile::Settings;
 
+use crate::threshold::ThresholdScenario;
+
 /// The scenario package `tests/e2e/integrated/` and what its tests ask of it.
 pub struct IntegratedPackage;
 
 impl IntegratedPackage {
     /// The runs the package declares so far, sorted by name; a scenario adds its own.
-    pub const RUNS: [&'static str; 0] = [];
+    pub const RUNS: [&'static str; 1] = ["threshold"];
 
     /// The directory of the package.
     pub fn dir() -> PathBuf {
@@ -53,8 +55,6 @@ impl IntegratedPackage {
 }
 
 /// What a scenario module gives the suite: the name of its run and what the host does during it.
-// Implemented by the scenario modules, which arrive one task at a time (T11 to T15).
-#[allow(dead_code)]
 pub trait Scenario {
     /// The run's name, as the package's manifest declares it.
     const RUN: &'static str;
@@ -83,7 +83,12 @@ impl Suite {
 
     /// The runs of the scenarios, each with its stimulus; a scenario adds its own.
     fn plan() -> Vec<(&'static str, Stimulus)> {
-        Vec::new()
+        vec![Suite::entry::<ThresholdScenario>()]
+    }
+
+    /// The plan entry of the scenario `S`: its run and its stimulus.
+    fn entry<S: Scenario>() -> (&'static str, Stimulus) {
+        (S::RUN, S::stimulus())
     }
 
     /// Runs every scenario at once, each in a build directory of its own.
@@ -101,7 +106,6 @@ impl Suite {
 
     /// The run `run`; panics with the stored message when it failed, so every test of the run
     /// reports the failure once and none runs it again (IT-03 AC 5).
-    #[allow(dead_code)] // read by the scenario modules, which arrive one task at a time (T11 to T15)
     pub fn ran(&self, run: &str) -> &CompletedRun {
         match self.results.iter().find(|(name, _)| *name == run) {
             Some((_, Ok(ran))) => ran,

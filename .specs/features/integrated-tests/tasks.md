@@ -353,9 +353,9 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] The five tests pass under `Run integrated`; the package tests now see `threshold`
-- [ ] Gate check passes: `Run integrated`, the Build line
-- [ ] Test count: 5 new tests
+- [x] The five tests pass under `Run integrated`; the package tests now see `threshold`
+- [x] Gate check passes: `Run integrated`, the Build line
+- [x] Test count: 5 new tests
 
 **Tests**: integration
 **Gate**: full
