@@ -23,7 +23,6 @@
 | C14 | `run sourceevents / test a_settle_commit_is_read_at_the_next_time_point ... ok` | pass |
 | C14 | `run prototran / test a_settle_commit_lands_at_the_next_time_point ... ok` | pass |
 | C15 | `run prototran / test the_step_after_a_settle_commit_is_exempt_and_restarts ... ok` | pass |
-| C16 | `run sourceevents / test an_event_time_between_reads_the_value_before_the_settle_commit ... ok` | pass |
 | C16 | `run prototran / test an_event_time_before_the_next_time_point_reads_the_old_value ... ok` | pass |
 | C17 | `run instant / test a_settle_commit_with_an_advancing_delay_is_an_ordinary_commit ... ok` | pass |
 | C17 | `run sourceevents / test a_delayed_settle_commit_is_ordinary ... ok` | pass |

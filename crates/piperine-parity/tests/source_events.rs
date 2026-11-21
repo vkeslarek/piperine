@@ -283,17 +283,20 @@ fn a_settle_commit_is_read_at_the_next_time_point() {
 }
 
 #[test]
-fn an_event_time_between_reads_the_value_before_the_settle_commit() {
-    // §15 S4: a rising edge at 0.37 us lies between the operating point and the first time point
-    // (1 us): it reads 1 kOhm although the operating point's settle phase committed 2 kOhm; the
-    // edges from 1.11 us on read the landed 2 kOhm
+fn an_event_after_the_landing_reads_the_settle_commit() {
+    // §15 S3: the operating point's settle phase committed 2 kOhm; the first time point (well before
+    // the first clock edge at 0.37 us) lands it, so every edge reads the landed 2 kOhm. S4 itself (an
+    // event time before the next time point reads the old value) cannot arise from source: the first
+    // step is a tenth of the distance to the first pending edge, so no edge precedes the first time
+    // point. `protocol_transient.rs` `an_event_time_before_the_next_time_point_reads_the_old_value`
+    // is its proof
     let run = Scenario::of("commits.msl", "BetweenBench").transient(3e-6, 1e-6);
     let first = run.time_points()[0];
     let reads: Vec<(i64, f64)> = run.records(AnalysisKind::Transient, "read").into_iter().map(|(t, r)| (t, real(&r, "r"))).collect();
     assert!(reads.len() >= 3, "edges at 0.37, 1.11 and 1.85 us at least: {reads:?}");
     for (t, r) in reads {
-        let wanted = if t < first { 1000.0 } else { 2000.0 };
-        assert_eq!(r, wanted, "the edge at {t} reads the value of its own time");
+        assert!(t > first, "the edge at {t} follows the first time point {first}");
+        assert_eq!(r, 2000.0, "the edge at {t} reads the landed settle commit");
     }
 }
 

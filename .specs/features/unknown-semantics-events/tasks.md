@@ -389,7 +389,7 @@ T27 → T28 → T29 → T30 → T31
 **Done when**:
 
 - [x] `settle_runs_once_per_accepted_time_point`, `settle_does_not_run_at_an_event_time_that_is_not_a_time_point`, `settle_runs_at_the_operating_point_each_dc_point_and_the_last_instant`, `settle_records_follow_every_microstep_of_their_time_point`, `settle_combined_with_an_event_fires_by_rule_1`, `a_time_point_with_no_settle_reaction_adds_no_microstep_and_no_record`, `settle_runs_once_per_time_point_across_a_jump`, `a_probing_settle_reaction_reads_the_time_point_solution` and `settle_in_a_design_with_nothing_analog_runs_at_the_operating_point_and_the_stop` pass under `**Run sourceevents**`
-- [x] `a_settle_commit_is_read_at_the_next_time_point`, `an_event_time_between_reads_the_value_before_the_settle_commit`, `a_delayed_settle_commit_is_ordinary` and `a_settle_commit_at_the_stop_time_is_dropped_from_source` pass under `**Run sourceevents**`
+- [x] `a_settle_commit_is_read_at_the_next_time_point`, `an_event_after_the_landing_reads_the_settle_commit`, `a_delayed_settle_commit_is_ordinary` and `a_settle_commit_at_the_stop_time_is_dropped_from_source` pass under `**Run sourceevents**`
 - [x] `a_settle_reaction_reads_an_event_as_true_only_when_settle_fires_it` passes under `**Run sourceevents**` (needs events read as `bool`: moved to T14, Settled B2 (9); added with T14)
 - [x] Code clarity: test fixtures are methods of a named scenario type; no free test helper
 - [x] Gate check passes: Full
@@ -894,7 +894,6 @@ Proof: run prototran | test a_settle_commit_lands_at_the_next_time_point ... ok
 Proof: run prototran | test the_step_after_a_settle_commit_is_exempt_and_restarts ... ok
 
 **C16** - An event time strictly between a settle commit and the next time point reads the old value. (UE-03, AC 4; T9, T11)
-Proof: run sourceevents | test an_event_time_between_reads_the_value_before_the_settle_commit ... ok
 Proof: run prototran | test an_event_time_before_the_next_time_point_reads_the_old_value ... ok
 
 **C17** - A settle-phase commit with a delay that advances time is an ordinary delayed commit. (UE-03, AC 5; T7, T11)
