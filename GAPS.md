@@ -22,7 +22,7 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 3 silent, 2 broken, 40 loud (L1 to L62 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure` and the one `unknown-semantics-events` (L52) closed, in six tables) plus
+**Counts.** 3 silent, 2 broken, 38 loud (L1 to L62 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure` and the one `unknown-semantics-events` (L52) closed, then L20 and L39 by `params-and-io`, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 9 unproven.
 
@@ -30,10 +30,10 @@ change of the IR or the ABI.
 | ------- | --- |
 | §2 Broken | B3, B4 |
 | §3 Silent (read this first) | S3, S6, S7 |
-| §4 Loud | L1–L62 (L11, L14, L15, L17, L18, L19, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50 closed) |
-| §5 Spec holes and disagreements | G1–G6 (the buck's), X1, X2, X5, X6 (X3, X4, X7, X8, X9 decided by `host-ii`) |
+| §4 Loud | L1–L62 (L11, L14, L15, L17, L18, L19, L20, L39, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50 closed) |
+| §5 Spec holes and disagreements | G1–G6 (the buck's), X1, X2, X6 (X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
 | §6 Solver, numerics, performance | V12, V13, V16 |
-| §7 Host surface | H1–H18 (H11 closed by `root-e2e`) |
+| §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
 | §8 Unproven | U1–U11 (U5, U10 closed by `root-e2e`) |
 | §9 Coverage by spec part | — |
 | §10 Reference lists, changed entries, clusters | — |
@@ -137,7 +137,6 @@ quotes the text after `P0001:` unless another code is shown.
 | L12 | `extern "C" fn`, `#[derivative]` | §3 rules 2, 10, 11 | `extern function` | M |
 | L13 | `f16`, `f32`, `f128`; integers wider than 64 bits | §1 rule 5 | `type f32`; `integer type u128` | M |
 | L16 | every row of H.5, H.6, H.7 (arrays, ranges, iterators); the `Option` and `bool` rows of H.3 and H.4 run | H.5–H.7 | `E0161: no method .. on ..` | with L3 |
-| L20 | a param named like a function it calls (`vt` and `vt()`). The previous file said the generated Rust failed to compile; the type checker now stops it first. As in Rust the local shadows the function, so the refusal is right and only its code is generic | §3.5.4 | `call of this declaration` | S |
 
 ### 4.2 Carriers (Part II §4–§7)
 
@@ -165,7 +164,6 @@ before and after the first change, `E0150`, `E0210`, `E0220`, `E0221`, `E0222`, 
 | L31 | generation `for` and `if`, in a body and in a `digital` block | §8.2.7, §12 rule 1 | `generation for/if in a module body` | M |
 | L32 | templates (`Name { .. }` as a value), placement through a template or a function, `Fn(P)` bounds | §8.4 | `module template Name { .. } outside a placement` | M, after L28 |
 | L33 | `extern` modules: `"osdi"`, `"cosim"`, `#[link]` | §8.5.7–§8.5.16 | `extern module` | L |
-| L39 | a top module with a continuous port: the host connects nothing | §8.1.14, §23.1 rule 1 | `top module Top has the continuous port a` | with H1 |
 
 Works, by probe: `where` at elaboration and on a set (`E0317`, `E0802`), `E0312`, `E0314`,
 `E0316`, `E0320`, `E0330`, `E0335` to `E0339`, `E0343`, `E0457`, definitions with and without
@@ -260,8 +258,6 @@ G1 to G6 are the buck's (`examples/buck/GAPS.md`). The spec's own open list is A
 - **X2 — Appendix C.2.3 and G.38 say "nothing is executed".** Of the conformance set,
   `transition` runs; `zi_nd`, `inertial` and `Tran` are refused; the §15.1 trace has no test from
   source.
-- **X5 — a type mismatch has no spec code.** The checker uses `P0002`; `E0417`, `E0432`, `E0337`
-  and `E0210` cover four positions and the rest is "as in Rust".
 - **X6 — what `check` owes a library.** Is a generic body checked once against its bounds, or per
   instantiation only (§3 rule 9 reads as the latter)? S3 depends on the answer.
 
@@ -304,7 +300,6 @@ adjoint and PSS (`core/circuit.rs:111` to `:172`); the host exposes four analyse
 | H8 | Gradients: gradient params, `∂(record)/∂p`, saltation, `E0807` to `E0809`. The solver's `adjoint` and `sens` are not reached from MSL | §21 rule 7, §23.3 | L |
 | H9 | Host error codes: `E0804` (drive of a carrier that is no top `in` port), `E0805` (late subscription) and `E0806` (past time) are delivered. `E0803` (timed `set` of a structural param) is checked but no MSL design reaches it: the elaborator marks no param structural, and generation in a module body is `P0001` | §23.1 | with L-generation |
 | H10 | Command line: `add`, `remove`, `tree`, `update`, `--locked`, `--offline`, plugin scripts, a REPL, ngspice raw output, a terminal or PNG plot | — | S each |
-| H12 | The stdlib, the galleries and `examples/buck/src` are not reformatted by `piperine fmt` (the formatter is proven on them) | — | S |
 | H13 | Stale repository documents: the first 270 lines of `ROADMAP.md` (PHDL, a Python bench, Cranelift), the `STATE.md` handoff below `solver-restructure`, `editors/vscode` (a Verilog-AMS extension) and `piperine-lang-server` (postponed); `SPEC_DEVIATIONS.md`, `CLEANUP_PLAN.md`, `docs/audit/`, `docs/reference/` and `VAMS-LRM-2-4.md` are deleted (2026-11-20) | — | S |
 | H14 | A flow term `i(<instance>)` of an instance with no potential branch prints in `op` and `dc` only; `transient`, `ac`, `pss` and `sens` refuse it (`E0801`/`P0010`) because `StepView` carries no device term, so a transient table cannot show it. Needs a `StepView` read of `Assembly::term_value`. Owner: `host-analyses` | §21 | S |
 | H15 | `pss` of a design whose `transition` holds an absolute time (`ramp.t0`, a `D2A` driven by a discrete clock) never closes its digital periodicity (`digital state is not periodic at T`), so a D2A-driven design cannot shoot; the `pss_rc` twin drives the source from `now()` instead. Any digital state that grows with time breaks it too (the stdlib `every` counter rises +2 per period). Needs time-like state marked through lang, IR, plan, transpile and solver; a `now()`-computed edge also lacks a breakpoint, so it needs a step cap. Owner: `periodic-small-signal` (user, 2026-11-18) | §16.3 | M |
@@ -376,23 +371,22 @@ does not count.
 
 ## 10. Reference lists
 
-**Error codes of the spec that no source file mentions (67 of 187).** A code counts as mentioned when it is spelled
+**Error codes of the spec that no source file mentions (51 of 189).** A code counts as mentioned when it is spelled
 outside a comment in `crates/*/src` (a literal, or an enum variant's `as_str`); `E0375` is named in a doc
 comment only (`pom/builtin.rs`), so it is on the list. `E0503`, `E0504`, `E0505`, `E0507` and `E0508` are
 raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`). `E0803` to `E0806` are raised
 by `session.rs` and `host.rs`; `E0701` and `E0702` by the elaborator.
-`E0105 E0110 E0111 E0122 E0123 E0124 E0126 E0127 E0131 E0132 E0133 E0134 E0180
-E0181 E0182 E0183 E0184 E0185 E0186 E0187 E0188 E0203 E0204 E0205 E0224 E0242 E0244
-E0260 E0261 E0262 E0264 E0313 E0315 E0322 E0333 E0340 E0342 E0351 E0354 E0360 E0361
-E0362 E0371 E0372 E0373 E0374 E0375 E0413 E0416 E0451 E0452 E0453 E0454 E0456 E0610
-E0612 E0613 E0614 E0703 E0704 E0705 E0706 E0807 E0808 E0809 E0904 E0906`
+`E0110 E0111 E0122 E0123 E0124 E0126 E0127 E0131 E0132 E0133 E0134 E0181 E0183 E0184
+E0185 E0186 E0187 E0203 E0224 E0242 E0260 E0261 E0262 E0264 E0313 E0322 E0340 E0342
+E0351 E0360 E0362 E0371 E0372 E0373 E0374 E0375 E0413 E0416 E0451 E0452 E0453 E0454
+E0456 E0614 E0703 E0704 E0705 E0706 E0807 E0808 E0809`
 
 **Entries of the previous file that changed.**
 
 - "A derived child param is not re-derived … no host can `set` yet": the second half stopped
   being true with `msl-cli` (`--param`, `dc --sweep`). It was S2, closed by `host-ii` (a `set` recomputes the derived params, MD-69).
 - "An MSL local named like an MSL function makes the generated Rust fail to compile": the type
-  checker stops it first (`types/call.rs:54`, there since `295b5ab8`). Now L20.
+  checker stops it first (`types/call.rs:54`, there since `295b5ab8`); closed by `params-and-io` as `E0180` (L20).
 - `examples/buck/GAPS.md` G3 (a method on a carrier left unresolved) was already closed by
   `msl-digital`: it is a `P0001` naming the method (L15, since closed).
 - Every other entry is kept: B3, B4, §4.7, G1 to G6, the solver points (now V1 to V11), U1 to
@@ -409,7 +403,7 @@ E0612 E0613 E0614 E0703 E0704 E0705 E0706 E0807 E0808 E0809 E0904 E0906`
 | Generics and generation | L7, L30, L31, L32, S3 for generic items: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
 | Resolved nets and bundles | L21, L22, L23, L25: `Wire`, `Tribuf`, `Tran`, `Bidir` | L |
 | Unknown semantics | S6 (ABI), L51, L52, L53, L8 (L18 and L19 closed by `unknown-semantics`) | L |
-| Host II (delivered in part by `host-ii`) | H1, H3, H6, H9, L39, then B4 (Python) | L |
+| Host II (delivered in part by `host-ii`) | H1, H3, H6, H9, then B4 (Python) | L |
 | Speed | V12, V13, V16, PSS on the device ABI | L |
 | Foreign models | L12, L33 | L |
 | Language server | B3 | M, deferred |

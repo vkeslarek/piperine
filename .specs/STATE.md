@@ -1669,6 +1669,31 @@ merge renumbers.
 **Status:** Batches B1 to B4 delivered (T1 to T23); B5 (event functions, L51 and L53) waits for
 `composite-values` and `generics`.
 
+### MD-74: params of every carried type; the host drives a top's node through an IR source; files read at elaboration; every spec code raised or owned
+
+`params-and-io` (2026-11-20, batches B1 to B4; B5 and B6 wait on `composite-values` phases A to B). The
+number follows MD-73; the second feature to merge renumbers.
+
+1. **Every code of the spec is raised or owned.** `crates/piperine-lang/tests/spec_codes.rs` lists every
+   code of every error table under `docs/spec/`, and fails for one that no non-test source spells and
+   no row of `tests/support/code_owners.tsv` (owner feature and construct) holds, and for a row whose
+   code a source now raises; a type mismatch is `E0180`, no source spells `P0002`.
+2. **The host drives a top's node ports** with one `HostSource` body per nature (a potential source to
+   `gnd`: DC, AC stimulus, piecewise-linear); a run with a node port and no source is `E0810`, a top with
+   a value input is `E0811` (spec §8.1.14, §23.1). ngspice parity runs under the existing contracts.
+3. **A param of module type** is a key param holding its template; a placement through it places the
+   template's module with the template's constants.
+4. **Files are read at elaboration.** `include_str!` is a `const` expression in a `const` item only
+   (`E0610`); `IncludedFiles` resolves the path beside the source file, reads each path once
+   (`E0612`, `E0613`), and a change to the file reaches nothing until the next elaboration (§20).
+5. **The shipped sources are in the formatter's form:** the stdlib, `examples/buck` and the gallery
+   fences, with `piperine fmt --check` guarding them; Appendix C.2 states the `table_model` spline end
+   conditions.
+
+**Scope:** `crates/piperine-lang` (`types/`, `elab/`), `crates/piperine-api`, `crates/piperine-cli`,
+`crates/piperine-parity`, `docs/spec`, `GAPS.md`.
+**Status:** Accepted (2026-11-20), from the approved `.specs/features/params-and-io/design.md`.
+
 ---
 
 ## Handoff Snapshot

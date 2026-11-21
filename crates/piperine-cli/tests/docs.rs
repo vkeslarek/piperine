@@ -113,7 +113,7 @@ fn gaps_drops_what_host_ii_closed() {
         assert!(!gaps.contains(&format!("- **{closed} \u{2014}")), "{closed} is still an entry");
     }
     assert!(!gaps.contains("A digital-only transient is refused"), "the refusal is still listed");
-    assert!(gaps.contains("| L39 | a top module with a continuous port"), "L39 stays");
+    // (L39, which stayed, is closed by `params-and-io`: `gaps_no_longer_lists_x5_l20_l39_h12`)
     let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("a row {id}")).to_string();
     assert!(row("H1").contains("`Session::drive`") && row("H1").contains("`force` and `release`"), "H1 says what is delivered and what is left");
     assert!(row("H3").contains("`ttol`") && row("H3").contains("`tnom`"), "H3 lists what is left of the options");
@@ -139,12 +139,12 @@ fn gaps_drops_what_root_e2e_closed() {
     assert!(row("H16").contains("`dt_min`") && row("H16").contains("Owner: `host-analyses`"), "H16: {}", row("H16"));
     assert!(row("H17").contains("`--stream <name>`") && row("H17").contains("Owner: `host-analyses`"), "H17: {}", row("H17"));
     assert!(row("H18").contains("`E0171`") && row("H18").contains("Owner: `cli-packages`"), "H18: {}", row("H18"));
-    let unraised = gaps.split("**Error codes of the spec that no source file mentions").nth(1).and_then(|s| s.split("`E0105").nth(1)).and_then(|s| s.split('`').next()).expect("section 10 lists the unraised codes");
+    let unraised = gaps.split("**Error codes of the spec that no source file mentions").nth(1).and_then(|s| s.split("`E0110").nth(1)).and_then(|s| s.split('`').next()).expect("section 10 lists the unraised codes");
     let listed: Vec<&str> = unraised.split_whitespace().collect();
     for raised in ["E0503", "E0504", "E0505", "E0507", "E0508", "E0803", "E0804", "E0805", "E0806"] {
         assert!(!listed.contains(&raised), "{raised} is raised and is listed as unraised");
     }
-    assert!(listed.contains(&"E0110") && listed.contains(&"E0906"), "the list keeps the codes nothing raises");
+    assert!(listed.contains(&"E0111") && listed.contains(&"E0614"), "the list keeps the codes nothing raises");
 }
 
 #[test]
@@ -308,13 +308,13 @@ fn gaps_drops_what_msl_fixes_closed() {
     // the counts follow, as `host-ii` moved them, `unknown-semantics` (L18, L19) after it and
     // `analog-structure` (nine loud rows and S4) after that, `unknown-semantics-events` (L52) after
     // that: 2 silent, 2 broken, 40 loud; the value-semantics amendment of the spec then added S7
-    // (the front end is the earlier language): 3 silent
-    assert!(gaps.contains("3 silent, 2 broken, 40 loud"), "the counts of §9 follow");
+    // (the front end is the earlier language): 3 silent; `params-and-io` closed L20 and L39 (38 loud)
+    assert!(gaps.contains("3 silent, 2 broken, 38 loud"), "the counts of §9 follow");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
     assert_eq!(rows("## 3. Silent", "## 4."), 3, "three silent entries");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 40, "forty loud rows");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 38, "thirty-eight loud rows");
 }
 
 #[test]
@@ -506,4 +506,29 @@ fn gaps_no_longer_lists_settle_or_limexp() {
         assert!(!line.contains("`settle`"), "{line}");
         assert!(!line.contains("an event as a `bool`"), "{line}");
     }
+}
+
+#[test]
+fn gaps_no_longer_lists_x5_l20_l39_h12() {
+    // params-and-io PI-14 AC 1 (T28): X5, L20, L39 and H12 are gone from `GAPS.md` as entries and rows
+    // (the numbering of the other sections is kept), section 10 lists exactly the rows of the guard's
+    // allow-list `code_owners.tsv`, and the roadmap and the state record what B1 to B4 delivered
+    let gaps = read("GAPS.md");
+    for closed in ["| L20 |", "| L39 |", "| H12 |", "- **X5 \u{2014}"] {
+        assert!(!gaps.contains(closed), "{closed} is still in GAPS.md");
+    }
+    assert!(gaps.contains("| L21 |") && gaps.contains("| H13 |") && gaps.contains("- **X6 \u{2014}"), "the neighbours keep their numbers");
+    let owners = read("crates/piperine-lang/tests/support/code_owners.tsv");
+    let mut allowed: Vec<&str> = owners.lines().filter(|line| !line.starts_with('#') && !line.is_empty()).filter_map(|line| line.split('\t').next()).collect();
+    allowed.sort_unstable();
+    let listed = gaps.split("**Error codes of the spec that no source file mentions").nth(1).and_then(|s| s.split("`E0110").nth(1)).and_then(|s| s.split('`').next()).expect("section 10 lists the unraised codes");
+    let mut listed: Vec<&str> = std::iter::once("E0110").chain(listed.split_whitespace()).collect();
+    listed.sort_unstable();
+    assert_eq!(listed, allowed, "section 10 lists exactly the rows of code_owners.tsv");
+    assert!(gaps.contains(&format!("({} of ", allowed.len())), "the heading counts the listed codes");
+    let roadmap = read("ROADMAP.md");
+    let row = roadmap.lines().find(|line| line.starts_with("| `params-and-io` |")).expect("the roadmap has a params-and-io row");
+    assert!(row.contains("B1 to B4") && row.contains("B5") && row.contains("`composite-values`"), "the row says what B1 to B4 delivered and that B5 and B6 wait: {row}");
+    let state = read(".specs/STATE.md");
+    assert!(state.contains("### MD-74:") && state.contains("`params-and-io`"), "STATE.md holds the decision entry");
 }
