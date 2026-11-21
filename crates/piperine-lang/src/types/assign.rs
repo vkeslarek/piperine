@@ -22,12 +22,21 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let target = self.assignable(file, lhs);
         let pending = target.as_ref().is_some_and(|root| !root.projected && self.deferred.contains_key(&root.local) && !self.locals.contains_key(&root.local));
+        let open = target.as_ref().is_some_and(|root| !root.projected && self.open_literal_local(lhs) == Some(root.local));
         let place = match (op, pending) {
             (None, true) => None,
             (None, false) => self.place_type(lhs, target.as_ref()),
+            // An open literal local is read by the operator, which lets the other operand fix it.
+            (Some(_), _) if open => target.as_ref().and_then(|root| self.locals.get(&root.local).cloned()),
             (Some(_), _) => self.infer(lhs),
         };
         match (op, place) {
+            // `total = k`: the value, when it has a type of its own, fixes the open local.
+            (None, Some(_)) if open && !self.integer_literal_waits(rhs) => {
+                if let Some(found) = self.infer(rhs) {
+                    self.check(lhs, &found);
+                }
+            }
             (None, Some(place)) => self.check(rhs, &place),
             (None, None) => {
                 // `let x;` takes the type of its first assignment.
@@ -36,7 +45,12 @@ impl Checker<'_> {
                 }
             }
             (Some(op), Some(place)) => {
-                if let Some(found) = self.binary(expr, op, lhs, rhs)
+                let found = self.binary(expr, op, lhs, rhs);
+                let place = match &target {
+                    Some(root) if open => self.locals.get(&root.local).cloned().unwrap_or(place),
+                    _ => place,
+                };
+                if let Some(found) = found
                     && found != place
                 {
                     let span = self.design.expr_node(expr).span;

@@ -475,3 +475,41 @@ fn abs_and_signum_on_an_unsigned_integer_are_e0161() {
         assert_eq!(snippet(&src, &d[0]), name);
     }
 }
+
+#[test]
+fn a_bare_literal_takes_the_type_its_later_uses_fix() {
+    // §1.4.4: where the initializer does not fix its own type (a literal without a suffix), the
+    // uses of the binding in the same body fix it. Each form of use below is such a use.
+    let typed = |body: &str, name: &str| {
+        let src = source("fn k() -> u32 { 7 }", body);
+        let design = design_of(&src);
+        let types = checked(&design, &src);
+        types.local(binding(&design, name)).cloned().expect("typed")
+    };
+    // a compound assignment with a `u32` operand (the Book's `sum_below`)
+    assert_eq!(typed("let mut total = 0; let n: u32 = 4; total += n;", "total"), Ty::UInt(32));
+    // a plain assignment of a `u8`
+    assert_eq!(typed("let mut t = 0; let n: u8 = 4; t = n;", "t"), Ty::UInt(8));
+    // an operator and a comparison with a typed operand, either side
+    assert_eq!(typed("let t = 1; let n: u16 = 4; let s = n + t;", "t"), Ty::UInt(16));
+    assert_eq!(typed("let t = 1; let n: i64 = 4; let s = t < n;", "t"), Ty::Int(64));
+    // an argument of a call, and the value of a block checked against the function result
+    assert_eq!(typed("let t = 1; let s: u32 = t;", "t"), Ty::UInt(32));
+    // with no use that requires a type, the default `i32` (§1.4.2)
+    assert_eq!(typed("let t = 1; let s = t + 1;", "t"), Ty::Int(32));
+    // the loop of `sum_below`, reached from a function result
+    let src = source("fn sum_below(n: u32) -> u32 { let mut total = 0; for k in 0..n { total += k; } total }", "let s = sum_below(4);");
+    let design = design_of(&src);
+    let types = checked(&design, &src);
+    assert_eq!(types.local(binding(&design, "total")), Some(&Ty::UInt(32)), "§1.4.4: `total` is the `u32` its uses fix");
+    // the literal is range-checked against the type the use fixes: 300 does not fit a `u8`
+    let (src, d) = diagnostics("", "let t = 300; let n: u8 = 1; let s = n + t;");
+    assert_eq!(codes(&d), ["E0909"], "{src}");
+}
+
+#[test]
+fn a_read_that_requires_no_type_closes_the_literal_at_i32() {
+    // §1.4.2: `i32` when the position requires none; a later `u32` use is then the mismatch it was.
+    let (src, d) = diagnostics("", "let mut t = 0; let a = t; let n: u32 = 4; t += n;");
+    assert_eq!(codes(&d), ["P0002"], "{src}");
+}

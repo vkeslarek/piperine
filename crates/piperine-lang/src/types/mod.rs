@@ -26,6 +26,7 @@ mod expr;
 mod flag_total;
 mod flow;
 mod intrinsic;
+mod literals;
 mod loops;
 mod module;
 mod patterns;

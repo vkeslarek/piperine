@@ -682,7 +682,7 @@ time
 
 <h3>What the compiler runs today</h3>
 
-<p>The rules of this chapter are the language. The compiler does not yet run every form they describe. This function is correct MSL, and it uses three forms that are still on the way: a local that is updated, an assignment and a loop.</p>
+<p>A body that needs a variable it updates uses a local that is updated, an assignment and a loop. The type of the literal in <code>let mut total = 0</code> is fixed by its later use: <code>total += k</code> with a <code>u32</code> <code>k</code> makes <code>total</code> a <code>u32</code>.</p>
 
 <pre data-lang="msl">/// The sum of the whole numbers below `n`.
 fn sum_below(n: u32) -> u32 {

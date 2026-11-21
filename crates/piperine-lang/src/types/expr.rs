@@ -37,6 +37,11 @@ impl Checker<'_> {
             if *expected == Ty::Event {
                 self.event_slot = Some(expr);
             }
+            // A local bound to a bare literal takes the integer type its first use requires (§1.4.4).
+            if self.fix_open_literal(expr, expected) {
+                self.exprs[expr.index()] = Some(expected.clone());
+                return;
+            }
             // Where the expected type flows into the parts of the expression: the value of a
             // block or of the arms of an `if` is where a mismatch is reported.
             let found = match &node.kind {
@@ -331,7 +336,7 @@ impl Checker<'_> {
     /// `(lhs, rhs)`, or `(rhs, lhs)` when only `lhs` is a bare integer literal: the order in which
     /// two operands of one type are typed.
     pub(super) fn literal_last(&self, lhs: ExprId, rhs: ExprId) -> (ExprId, ExprId) {
-        let bare = |this: &Self, e: ExprId| this.integer_literal_text(e).is_some_and(|t| lexer::int_suffix_text(&t).is_empty());
+        let bare = |this: &Self, e: ExprId| this.integer_literal_text(e).is_some_and(|t| lexer::int_suffix_text(&t).is_empty()) || this.open_literal_local(e).is_some();
         if bare(self, lhs) && !bare(self, rhs) { (rhs, lhs) } else { (lhs, rhs) }
     }
 
@@ -439,7 +444,7 @@ impl Checker<'_> {
     /// 7). A suffix of another type than `expected` is a mismatch; a value outside the type's
     /// range is `E0909`; a suffix outside the subset (`u128`, `f32`) is `P0001` naming it. With
     /// `negated` the literal is the operand of a unary `-`.
-    fn integer_literal(&mut self, file: FileId, span: Span, text: &str, expected: Option<&Ty>, negated: bool) -> Option<Ty> {
+    pub(super) fn integer_literal(&mut self, file: FileId, span: Span, text: &str, expected: Option<&Ty>, negated: bool) -> Option<Ty> {
         let suffix = lexer::int_suffix_text(text);
         let ty = match suffix {
             "" => expected.cloned().unwrap_or(Ty::Int(32)),
@@ -476,7 +481,7 @@ impl Checker<'_> {
     }
 
     /// The text of `expr` when it is an integer literal without an `f64` suffix, through parens.
-    fn integer_literal_text(&self, expr: ExprId) -> Option<String> {
+    pub(super) fn integer_literal_text(&self, expr: ExprId) -> Option<String> {
         match &self.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.integer_literal_text(*inner),
             ExprKind::Lit(lit) => match &lit.kind {
@@ -529,6 +534,8 @@ impl Checker<'_> {
                     DeclKind::Signal(s) => self.read_type(decl, s.ty),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {
                         let local = self.locals.get(&decl).cloned();
+                        // A read that requires no type gives the literal its default `i32` (§1.4.2).
+                        self.open_literals.remove(&decl);
                         if self.read_before_assignment(file, node.span, decl) {
                             return local;
                         }
@@ -699,6 +706,9 @@ impl Checker<'_> {
                 self.poisoned.insert(*binding);
             }
             Some(t) => {
+                if let (None, Some(init)) = (ty, init) {
+                    self.wait_for_use(*binding, init);
+                }
                 self.locals.insert(*binding, t);
             }
             None => {

@@ -41,7 +41,7 @@ block	language#9	e0b45d039c83a8f3	held	piperine-cli/book::every_cli_listing_of_t
 block	language#10	ae89c5ca38e7bd81	run	piperine/book_language::constants_and_functions_compute_before_and_during_the_run	-	-
 block	language#11	cdc1363cea7a473b	shown	-	-	-
 block	language#12	ada19f0dc89c6e13	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run functions.msl --analysis transient --stop 2e-6
-block	language#13	47f3e2541a5d9ea5	refused	piperine/book_language::the_sum_below_listing_waits_on_the_type_of_a_literal_from_its_use	L63	-
+block	language#13	47f3e2541a5d9ea5	run	piperine/book_language::the_sum_below_listing_runs_with_the_literal_typed_by_its_use	-	-
 block	types#1	cb8e6ac8cab957a5	run	piperine/book_types::an_option_is_read_with_its_methods_a_match_and_an_if_let	-	-
 block	types#2	882c7bee6c3834b3	shown	-	-	-
 block	types#3	3bf569354fd77d70	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run option.msl --analysis transient --stop 2e-6

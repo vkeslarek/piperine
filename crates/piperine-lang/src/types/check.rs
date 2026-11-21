@@ -100,6 +100,9 @@ pub(super) struct Checker<'d> {
     pub(super) fn_where: bool,
     /// The locals declared with `mut` (§1.7.7).
     pub(super) mutable: BTreeSet<DeclId>,
+    /// The locals bound to a bare integer literal whose type no use has fixed yet (§1.4.4), each
+    /// with the literal expression: `let mut total = 0;` waits for `total += k`.
+    pub(super) open_literals: BTreeMap<DeclId, ExprId>,
     /// The locals declared without a value (`let x;`, §1.7.5), each with the loop depth it is
     /// declared at.
     pub(super) deferred: BTreeMap<DeclId, usize>,
@@ -155,6 +158,7 @@ impl<'d> Checker<'d> {
             poisoned: BTreeSet::new(),
             fn_where: false,
             mutable: BTreeSet::new(),
+            open_literals: BTreeMap::new(),
             deferred: BTreeMap::new(),
             flow: Flow::default(),
             closures: BTreeMap::new(),

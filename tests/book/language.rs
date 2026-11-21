@@ -26,7 +26,6 @@ use support::faulty::Faulty;
 use support::model::Model;
 use support::printed::Printed;
 use support::records::Fields;
-use support::refusal::Refusal;
 use support::value_file::ValueFile;
 
 #[test]
@@ -183,19 +182,15 @@ fn a_fault_ends_the_analysis_or_the_build_and_a_non_finite_value_ends_the_solve(
 }
 
 #[test]
-fn the_sum_below_listing_waits_on_the_type_of_a_literal_from_its_use() {
-    // language#13 (refused): the chapter's `sum_below`, a local that is updated, an assignment and a loop: they
-    // run since composite-values T11 to T20, but `let mut total = 0` then `total += k` with `k: u32` is a
-    // literal whose type the later use fixes (§1.4.4), which the checker does not do (GAPS.md L63): it types
-    // the bare literal `i32` and reports the mismatch. A function nothing reaches is accepted (GAPS.md S3).
-    // When the binary infers it this test fails and the row moves to `run`
+fn the_sum_below_listing_runs_with_the_literal_typed_by_its_use() {
+    // language#13 (run): the chapter's `sum_below` is a local that is updated, an assignment and a loop (composite-values
+    // T11 to T20); `let mut total = 0` then `total += k` with `k: u32` is a literal whose type the later use fixes
+    // (§1.4.4), so `total` is a `u32` and the sum of 0, 1, 2 and 3 is 6.
     let chapter = Chapter::read();
-    let overrides = || Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2e-6), ..Overrides::default() };
-    let top = |statements: &str| format!("module Top() {{ }}\ndigital for Top {{ on at(1u) {{ {statements} }} }}\n");
-    let reaching = || chapter.wrapped("sum.msl", "", "language#13", &top("emit!(\"r\", s = sum_below(4));")).run(overrides());
-    Refusal::expect(reaching(), "language#13", "P0002", "mismatched types: expected `i32`, found `u32`");
-    let unreached = chapter.wrapped("sum.msl", "", "language#13", &top("emit!(\"r\", s = 1);")).run(overrides());
-    assert!(unreached.is_ok(), "a function nothing reaches is accepted");
+    let overrides = Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2e-6), ..Overrides::default() };
+    let source = "module Top() { }\ndigital for Top { on at(1u) { emit!(\"r\", s = sum_below(4)); } }\n";
+    let record = ValueFile::only(chapter.wrapped("sum.msl", "", "language#13", source).run(overrides), "r");
+    ValueFile::int(&record, "s", 6);
 }
 
 #[test]
