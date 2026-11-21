@@ -221,11 +221,11 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] `every_cli_listing_of_the_book_is_what_the_binary_prints` and `the_buck_block_shows_the_example_files` pass under `Run clibook`, which no longer runs `piperine run startup` (its wall time drops from minutes; reported)
-- [ ] `the_buck_block_is_what_the_binary_prints` passes under `Run clibookbuck`
-- [ ] `the_on_demand_targets_are_the_buck_set` passes under `Run hygiene`; `Run bookguards` passes
-- [ ] Gate check passes: `Run clibook`, `Run clibookbuck`, `Run bookguards`, `Run hygiene`, the Build line
-- [ ] Test count: 2 new tests (`the_buck_block_shows_the_example_files`, `the_on_demand_targets_are_the_buck_set`), one moved
+- [x] `every_cli_listing_of_the_book_is_what_the_binary_prints` and `the_buck_block_shows_the_example_files` pass under `Run clibook`, which no longer runs `piperine run startup` (its wall time drops from minutes; reported)
+- [x] `the_buck_block_is_what_the_binary_prints` passes under `Run clibookbuck`
+- [x] `the_on_demand_targets_are_the_buck_set` passes under `Run hygiene`; `Run bookguards` passes
+- [x] Gate check passes: `Run clibook`, `Run clibookbuck`, `Run bookguards`, `Run hygiene`, the Build line
+- [x] Test count: 2 new tests (`the_buck_block_shows_the_example_files`, `the_on_demand_targets_are_the_buck_set`), one moved
 
 **Tests**: integration
 **Gate**: full

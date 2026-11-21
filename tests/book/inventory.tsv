@@ -244,7 +244,7 @@ block	cli#43	10b7a1389fbd7646	held	piperine-cli/book::every_cli_listing_of_the_b
 block	cli#44	3031e1b2fe1ad642	run	piperine/book_buck::the_buck_bench_starts_with_the_supervisor_off	-	-
 block	cli#45	1c66b4b4d5d7a1e2	shown	-	-	-
 block	cli#46	47b905ff64d8b849	shown	-	-	-
-block	cli#47	0864d88b35e61a2b	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run startup
+block	cli#47	0864d88b35e61a2b	held	piperine-cli/book_buck::the_buck_block_is_what_the_binary_prints	-	piperine run startup
 block	cli#48	0d76250cc10f06b4	shown	-	-	-
 block	simulation#1	3bc4e9693928f3de	run	piperine/book_simulation::the_divider_rests_at_four_fifths_of_its_source_and_the_source_delivers_1_ma	-	-
 block	simulation#2	4f09c3cb5927442c	shown	-	-	-
@@ -787,7 +787,7 @@ claim	cli~a717f995	a717f9954de38412	binary	piperine-cli/book::the_plot_in_the_ch
 claim	cli~662c11ca	662c11cac0eb42a8	holds	piperine/book_cli::sens_gives_the_derivative_of_each_printed_signal_with_respect_to_each_param	-	Raising r1 by one ohm lowers the output by 1.875 mV, and raising r2 by one ohm raises it by 0.625 mV: the output is 10·R2/(R1+R2), and the numbers are its two partial derivatives.
 claim	cli~3d1453da	3d1453dac50df26b	binary	piperine-cli/buck::startup_ends_within_3_mv_of_0_8_volts	-	The same commands run a full-size design: a digitally controlled buck converter that steps 12 V down to 0.8 V, with an analog power stage, a 200 MHz digital PWM, an ADC, a fixed-point PID, a soft start and a supervisor, all in MSL.
 claim	cli~6acf516c	6acf516c01fb6a39	prose	-	-	Then it simulates 600 µs of a circuit switching at 500 kHz with a 200 MHz clock, a couple of minutes on a laptop.
-claim	cli~9c4b6fcf	9c4b6fcf8e2fe12f	binary	piperine-cli/book::the_buck_block_is_what_the_binary_prints	-	The table has 1 201 rows, one per 0.5 µs from time 0 to 600 µs; the listing shows the first five, where the supervisor is still off, the reference is 0 and the output is at its initial rest.
+claim	cli~9c4b6fcf	9c4b6fcf8e2fe12f	binary	piperine-cli/book_buck::the_buck_block_is_what_the_binary_prints	-	The table has 1 201 rows, one per 0.5 µs from time 0 to 600 µs; the listing shows the first five, where the supervisor is still off, the reference is 0 and the output is at its initial rest.
 claim	cli~6153ef01	6153ef017a7d0cbd	binary	piperine-cli/buck::startup_ends_within_3_mv_of_0_8_volts	-	The last row, at 600 µs, reads reference 128, the code of 0.8 V; mode 2, regulation, after off and soft start; and an output within 3 mV of 0.8 V (0.8025).
 claim	cli~5010f432	5010f43297534039	binary	piperine-cli/buck::startup_prints_no_failed_check	-	There are no record lines, yet the converter checks itself at every clock: its PWM carries a monitor that writes a checks record at every edge of the 200 MHz clock, saying the two power switches are never on together.
 claim	cli~76428b9c	76428b9c4b7a91f6	holds	piperine/book_cli::the_bode_exercise_reads_0_707_and_minus_45_degrees_at_159_kilohertz	-	In the project of chapter 1, add a run [run.bode] that sweeps the filter from 1 kHz to 10 MHz with 10 points per decade and plots it. (The source needs a small-signal stimulus: v(p, n) + dc + ac_stim(1.0, 0.0);, chapter 8.

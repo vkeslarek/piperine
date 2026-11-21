@@ -25,3 +25,8 @@ tempfile.workspace = true
 name = "buck"
 path = "tests/buck.rs"
 test = false
+
+[[test]]
+name = "book_buck"
+path = "tests/book_buck.rs"
+test = false

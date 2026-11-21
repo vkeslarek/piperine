@@ -414,7 +414,7 @@ impl OnDemandManifest {
 /// directory, target name, why. `test = false` is a way to say "by name only", never a way to
 /// switch a test off, so every flagged target is named here and in `examples/buck/README.md`'s
 /// "On demand" block (`on_demand_targets_are_registered`).
-const ON_DEMAND_TARGETS: [(&str, &str, &str); 11] = [
+const ON_DEMAND_TARGETS: [(&str, &str, &str); 12] = [
     ("crates/piperine-parity", "buck_whole", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-76)"),
     ("crates/piperine-parity", "buck_dpwm", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-76)"),
     ("crates/piperine-parity", "buck_control", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-76)"),
@@ -426,6 +426,7 @@ const ON_DEMAND_TARGETS: [(&str, &str, &str); 11] = [
     ("crates/piperine-cli", "buck", "the binary on `examples/buck`'s `idle` and `startup` runs; run by name (MD-76)"),
     (".", "buck_scenarios", "SPEC S2 to S10 of `examples/buck` under a Rust host; run by name (MD-76)"),
     (".", "book_buck", "the 2 us run of the Book's `cli#44` buck bench, which compiles the whole converter; run by name (MD-76)"),
+    ("crates/piperine-cli", "book_buck", "the Book's buck listing held to `piperine run startup`, the 600 us start; run by name (MD-76)"),
 ];
 
 /// The registry and the README's "On demand" block, read against a set of declared targets.
@@ -517,6 +518,33 @@ fn the_on_demand_registry_names_only_on_demand_targets() {
 
     let offences = OnDemandRegistry { entries: &ON_DEMAND_TARGETS }.stale(&OnDemandManifest::declared());
     assert!(offences.is_empty(), "registry entries with no flagged target:\n  {}", offences.join("\n  "));
+}
+
+/// The registry holds exactly the twelve targets of `integrated-tests` D3: the ones that simulate
+/// `examples/buck`. A thirteenth entry is a decision, so it moves this set with it.
+#[test]
+fn the_on_demand_targets_are_the_buck_set() {
+    let mut registered: Vec<String> = ON_DEMAND_TARGETS.iter().map(|(dir, target, _)| format!("{dir}:{target}")).collect();
+    registered.sort();
+    let mut expected: Vec<String> = [
+        "crates/piperine-parity:buck_whole",
+        "crates/piperine-parity:buck_dpwm",
+        "crates/piperine-parity:buck_control",
+        "crates/piperine-parity:buck_boundary",
+        "crates/piperine-parity:buck_power",
+        "crates/piperine-parity:buck_supervisor",
+        "crates/piperine-parity:buck_closed_loop",
+        "crates/piperine-api:buck_long",
+        "crates/piperine-cli:buck",
+        "crates/piperine-cli:book_buck",
+        ".:buck_scenarios",
+        ".:book_buck",
+    ]
+    .iter()
+    .map(|entry| (*entry).to_string())
+    .collect();
+    expected.sort();
+    assert_eq!(registered, expected, "the on-demand set is the buck set of D3 (MD-76)");
 }
 
 /// The buck README's "On demand" block names each registered target as `--test <name>`; a planted

@@ -146,3 +146,7 @@ cargo test -p piperine --test buck_scenarios
 ```sh
 cargo test -p piperine --test book_buck
 ```
+
+```sh
+cargo test -p piperine-cli --test book_buck
+```
