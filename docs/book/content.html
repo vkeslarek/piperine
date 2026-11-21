@@ -2087,28 +2087,6 @@ P0001
 
 P0001
 
-  × field access is not supported yet
-    ╭─[alarm.msl:10:42]
-  9 │     on line.changed() {
- 10 │         emit!("line", t = now(), level = line.v, strength = line.s);
-    ·                                          ───┬──
-    ·                                             ╰── field access is outside the M1 subset
- 11 │     }
-    ╰────
-
-P0001
-
-  × field access is not supported yet
-    ╭─[alarm.msl:10:61]
-  9 │     on line.changed() {
- 10 │         emit!("line", t = now(), level = line.v, strength = line.s);
-    ·                                                             ───┬──
-    ·                                                                ╰── field access is outside the M1 subset
- 11 │     }
-    ╰────
-
-P0001
-
   × resolved nature `Wire` is not supported yet
     ╭─[alarm.msl:18:21]
  17 │     signal window: Bit = false;
@@ -2116,61 +2094,6 @@ P0001
     ·                     ──┬─
     ·                       ╰── resolved nature `Wire` is outside the M1 subset
  19 │     let pu = Pullup(alarm_n);
-    ╰────
-
-P0001
-
-  × `struct` item used as a type is not supported yet
-    ╭─[nets.msl:10:18]
-  9 │ impl Logic {
- 10 │     pub const Z: Logic = Logic { v: Unknown, s: Strength::HighZ };     // not driving
-    ·                  ──┬──
-    ·                    ╰── `struct` item used as a type is outside the M1 subset
- 11 │     pub fn strong(v: bool) -&gt; Logic { Logic { v, s: Strength::Strong } }
-    ╰────
-
-P0001
-
-  × `struct` item used as a type is not supported yet
-    ╭─[nets.msl:11:31]
- 10 │     pub const Z: Logic = Logic { v: Unknown, s: Strength::HighZ };     // not driving
- 11 │     pub fn strong(v: bool) -&gt; Logic { Logic { v, s: Strength::Strong } }
-    ·                               ──┬──
-    ·                                 ╰── `struct` item used as a type is outside the M1 subset
- 12 │     pub fn pull(v: bool)   -&gt; Logic { Logic { v, s: Strength::Pull } }
-    ╰────
-
-P0001
-
-  × struct expression is not supported yet
-    ╭─[nets.msl:11:39]
- 10 │     pub const Z: Logic = Logic { v: Unknown, s: Strength::HighZ };     // not driving
- 11 │     pub fn strong(v: bool) -&gt; Logic { Logic { v, s: Strength::Strong } }
-    ·                                       ────────────────┬───────────────
-    ·                                                       ╰── struct expression is outside the M1 subset
- 12 │     pub fn pull(v: bool)   -&gt; Logic { Logic { v, s: Strength::Pull } }
-    ╰────
-
-P0001
-
-  × `struct` item used as a type is not supported yet
-    ╭─[nets.msl:12:31]
- 11 │     pub fn strong(v: bool) -&gt; Logic { Logic { v, s: Strength::Strong } }
- 12 │     pub fn pull(v: bool)   -&gt; Logic { Logic { v, s: Strength::Pull } }
-    ·                               ──┬──
-    ·                                 ╰── `struct` item used as a type is outside the M1 subset
- 13 │     pub fn weak(v: bool)   -&gt; Logic { Logic { v, s: Strength::Weak } }
-    ╰────
-
-P0001
-
-  × struct expression is not supported yet
-    ╭─[nets.msl:12:39]
- 11 │     pub fn strong(v: bool) -&gt; Logic { Logic { v, s: Strength::Strong } }
- 12 │     pub fn pull(v: bool)   -&gt; Logic { Logic { v, s: Strength::Pull } }
-    ·                                       ───────────────┬──────────────
-    ·                                                      ╰── struct expression is outside the M1 subset
- 13 │     pub fn weak(v: bool)   -&gt; Logic { Logic { v, s: Strength::Weak } }
     ╰────
 
 P0001
@@ -2184,7 +2107,7 @@ P0001
  37 │ pub module Pulldown(w: Wire) { w = Logic::pull(false); }
     ╰────
 
-error: typeck failed with 12 diagnostic(s)</pre>
+error: typeck failed with 5 diagnostic(s)</pre>
 </div>
 
 <h3>Two continuous natures in one module</h3>
