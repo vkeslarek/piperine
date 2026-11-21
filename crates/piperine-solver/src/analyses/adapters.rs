@@ -277,8 +277,10 @@ impl DiscreteSide for DigitalSide {
                 DigitalObservation::Record { stream, reaction, statement, at, bytes } => {
                     (stream, at.0, ObservationKind::Record { site: Some((reaction, statement)), bytes })
                 }
-                // abi.md §9 D1: a relaxed field that still moved is one record on the resolver's log.
-                DigitalObservation::Unsettled { nets, at } => (nets.join(","), at.0, ObservationKind::Record { site: None, bytes: Vec::new() }),
+                // abi.md §9 D1: a relaxation step that still moved is one observation of its own.
+                DigitalObservation::Unsettled { nets, at } => {
+                    (nets.first().cloned().unwrap_or_default(), at.0, ObservationKind::Unsettled { nets })
+                }
             };
             let time = self.time(at);
             out.push(Observation { path, analysis: Default::default(), time, kind });

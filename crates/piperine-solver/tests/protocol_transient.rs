@@ -8,14 +8,28 @@
 //! and asks the next acceptance for a restart (the small one after a host
 //! param write); with no unknown no attempt is made; settle runs at time
 //! points and the stop time only; a resume off the grid steps on from the
-//! tick its discrete side ran at, and a stop inside that tick is an error.
+//! tick its discrete side ran at, and a stop inside that tick is an error; on a real discrete
+//! side, a relaxation step that never settles reaches the owner as one `Unsettled` observation
+//! (spec §8.2.3 step 4).
 
 #[allow(dead_code)]
 #[path = "support/stub_sides.rs"]
 mod stub_sides;
+#[allow(dead_code)]
+#[path = "helpers/partials.rs"]
+mod partials;
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::{Arc, OnceLock};
+
+use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
+use piperine_abi::layout::BIT;
+use piperine_abi::raw::{Cell, Module, Shape, cell, part, pin_flag, role};
+use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef};
+use piperine_abi::thunk::module;
+use piperine_solver::abi::Port;
+use piperine_solver::prelude::{CircuitBuilder, Solver, TransientAnalysisOptions};
 
 use piperine_solver::protocol::{
     Accepted, Advance, AnalysisKind, Attempt, Boundary, Ended, InstantMode, Observation, ObservationKind, Outcome,
@@ -650,4 +664,79 @@ fn a_settle_commit_at_the_stop_time_is_dropped() {
     let order = settle_calls(&log);
     assert_eq!(order.last(), Some(&Call::DropSettleCommits), "{order:?}");
     assert_eq!(order.iter().filter(|c| matches!(c, Call::LandSettleCommits(_))).count(), 1, "only the stop's own landing: {order:?}");
+}
+
+/// A function that never settles on its own net: it writes the inverse of the level it reads, and
+/// high while that level is unknown. Bound with `a` and `y` on one `RELAX` net it relaxes forever.
+///
+/// pins: a=0 (PORT BIT); y=1 (PORT BIT, RELAX).  fn 0 "flip": reads [a] writes [y]
+struct Flipper;
+static FLIPPER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static FLIPPER: OnceLock<Module> = OnceLock::new();
+
+impl Flipper {
+    /// The shape every `Flipper` shares.
+    fn shape() -> ShapeRef {
+        let mut s = ShapeBuf::new();
+        let a = s.pin(PinSpec::discrete("a", role::PORT, &BIT));
+        let y = s.pin(PinSpec { flags: pin_flag::RELAX, ..PinSpec::discrete("y", role::PORT, &BIT) });
+        s.function(FunctionSpec {
+            name: "flip",
+            origin: "protocol_transient.rs",
+            reads: vec![Cell { kind: cell::PIN, index: a, part: part::VALUE }],
+            writes: vec![Cell { kind: cell::PIN, index: y, part: part::VALUE }],
+            ..FunctionSpec::default()
+        });
+        s.freeze()
+    }
+}
+
+impl Device for Flipper {
+    fn prototype() -> &'static Shape<'static> {
+        FLIPPER_SHAPE.get_or_init(Flipper::shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Flipper, Arc::clone(FLIPPER_SHAPE.get_or_init(Flipper::shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let a = cx.bytes(0);
+        let level = if a[1] != 0 { a[0] == 0 } else { true };
+        cx.out_bytes(0).copy_from_slice(&[level as u8, 1]);
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+#[test]
+fn an_unsettled_loop_reaches_the_owner_once_per_step() {
+    // spec §8.2.3 step 4, abi.md §9 D1: the discrete side's one `Unsettled` observation of the
+    // step is one observation at the owner, naming the loop's net, not one per net and not a record.
+    let mut builder = CircuitBuilder::new("unsettled");
+    builder.device(
+        FLIPPER.get_or_init(|| module::<Flipper>("Flipper")),
+        "flip",
+        &[],
+        &[Port::Net("x".to_string()), Port::Net("x".to_string())],
+    );
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let mut solver = Solver::new(builder.build().expect("build"))
+        .with_tran_opts(TransientAnalysisOptions::new(1.0e-7, 1.0e-8))
+        .with_sink(Box::new(Collect(Rc::clone(&seen))))
+        .build();
+    solver.tran().expect("transient").solve().expect("an unsettled loop is not an error");
+    let seen = seen.borrow();
+    let unsettled: Vec<&Observation> =
+        seen.iter().filter(|o| matches!(o.kind, ObservationKind::Unsettled { .. })).collect();
+    assert_eq!(unsettled.len(), 1, "one observation for the one unsettled step: {seen:?}");
+    assert_eq!(unsettled[0].kind, ObservationKind::Unsettled { nets: vec!["x".to_string()] }, "it names the loop's net");
+    let known_level = seen.iter().any(|o| o.path == "x" && matches!(&o.kind, ObservationKind::Change { bytes } if bytes[1] != 0));
+    assert!(!known_level, "the moving level was made unknown: the net never shows a known level");
+}
+
+/// SAI-15: the target's own device passes the partials verifier (the guard of `abi_devices.rs`).
+#[test]
+fn its_devices_pass_the_partials_verifier() {
+    partials::verify_every_function("Flipper", FLIPPER.get_or_init(|| module::<Flipper>("Flipper")));
 }

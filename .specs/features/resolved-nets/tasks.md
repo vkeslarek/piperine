@@ -343,8 +343,8 @@ T34 → T35 → T36
 
 **Done when**:
 
-- [ ] `an_unsettled_loop_reaches_the_owner_once_per_step` passes under `**Run prototran**`
-- [ ] Gate check passes: Full
+- [x] `an_unsettled_loop_reaches_the_owner_once_per_step` passes under `**Run prototran**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

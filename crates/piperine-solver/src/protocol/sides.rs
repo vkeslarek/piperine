@@ -156,11 +156,14 @@ pub enum ObservationKind {
     Crossing,
     /// A commit to a `RECORD` pin. `site` is the reaction and the statement that made it
     /// (abi.md C5), so a record is decoded on its own, never by pairing it with a `Commit`;
-    /// `None` for the record of a relaxed field that still moved (abi.md §9 D1), which no
-    /// statement made.
+    /// `None` for a record no statement made.
     Record { site: Option<(u32, u32)>, bytes: Vec<u8> },
     /// A `TRACE` watch written in Newton iteration `iteration`.
     Trace { iteration: u32, bytes: Vec<u8> },
+    /// A relaxation step that still moved after its last pass (spec §8.2.3 step 4, abi.md §9 D1):
+    /// the moving levels were made unknown. One per step; `nets` names every `RELAX` net of the
+    /// step in name order, and the observation's path is the first of them.
+    Unsettled { nets: Vec<String> },
 }
 
 /// The discrete sub-solver as the owner drives it.
