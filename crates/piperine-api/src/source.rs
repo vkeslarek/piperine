@@ -38,8 +38,11 @@ pub struct NodeSource {
 /// One set of a param of a source instance, due at `at` (§23.1 rule 4).
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct SegmentSet {
+    /// The param of the source instance that is set.
     param: HostSourceParam,
+    /// The value it takes.
     value: f64,
+    /// The time the set is due, in seconds.
     at: f64,
 }
 
@@ -62,7 +65,7 @@ impl NodeSource {
     /// The params of the source instance this source sets, each with its value.
     fn params(&self) -> [(HostSourceParam, f64); 4] {
         let (magnitude, phase) = self.ac.unwrap_or((0.0, 0.0));
-        [(HostSourceParam::V0, self.dc), (HostSourceParam::V1, self.dc), (HostSourceParam::Mag, magnitude), (HostSourceParam::Phase, phase)]
+        [(HostSourceParam::V0, self.dc), (HostSourceParam::V1, self.dc), (HostSourceParam::Magnitude, magnitude), (HostSourceParam::Phase, phase)]
     }
 
     /// `E0802` when a value of the source is not a finite number or the corners do not increase

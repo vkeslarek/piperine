@@ -22,8 +22,8 @@ use crate::pom::{DeclId, DeclKind};
 /// waveform sets the corners of one segment at a time (design D9).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostSourceParam {
-    /// The AC stimulus magnitude (§14.4.4).
-    Mag,
+    /// The AC stimulus magnitude (§14.4.4); the body's param is named `mag`.
+    Magnitude,
     /// The AC stimulus phase in radians (§14.3.1).
     Phase,
     /// The time the segment starts.
@@ -38,12 +38,12 @@ pub enum HostSourceParam {
 
 impl HostSourceParam {
     /// Every param, in the order of the body's params.
-    pub const ALL: [HostSourceParam; 6] = [HostSourceParam::Mag, HostSourceParam::Phase, HostSourceParam::T0, HostSourceParam::V0, HostSourceParam::T1, HostSourceParam::V1];
+    pub const ALL: [HostSourceParam; 6] = [HostSourceParam::Magnitude, HostSourceParam::Phase, HostSourceParam::T0, HostSourceParam::V0, HostSourceParam::T1, HostSourceParam::V1];
 
     /// The param's name in the body: the last segment of its path (`Top.vin.source.v0`).
     pub fn name(self) -> &'static str {
         match self {
-            HostSourceParam::Mag => "mag",
+            HostSourceParam::Magnitude => "mag",
             HostSourceParam::Phase => "phase",
             HostSourceParam::T0 => "t0",
             HostSourceParam::V0 => "v0",
@@ -81,19 +81,24 @@ pub(super) struct HostPort {
 /// The expressions of the body `HostSource` over one `IrBuilder`: the data path from a param to
 /// the potential the source contributes.
 struct HostSourceExpressions<'a> {
+    /// The builder the expressions are added to.
     ir: &'a mut IrBuilder,
+    /// The source position every expression carries: the port's.
     origin: Origin,
 }
 
 impl HostSourceExpressions<'_> {
+    /// An `f64` expression of `kind` at the port's origin.
     fn emit(&mut self, kind: Expr) -> ExprId {
         self.ir.expr(kind, ValueType::F64, self.origin.clone())
     }
 
+    /// `lhs op rhs`.
     fn binary(&mut self, op: BinaryOp, lhs: ExprId, rhs: ExprId) -> ExprId {
         self.emit(Expr::Binary { op, lhs, rhs })
     }
 
+    /// A read of the body's param `param`.
     fn param(&mut self, param: HostSourceParam) -> ExprId {
         self.emit(Expr::Param(param.index()))
     }
@@ -116,8 +121,8 @@ impl HostSourceExpressions<'_> {
         let rise = self.binary(BinaryOp::Sub, v1, v0);
         let travelled = self.binary(BinaryOp::Mul, rise, fraction);
         let segment = self.binary(BinaryOp::Add, v0, travelled);
-        let (mag, phase) = (self.param(HostSourceParam::Mag), self.param(HostSourceParam::Phase));
-        let stimulus = self.emit(Expr::Stim { site: 0, mag, phase: Some(phase) });
+        let (magnitude, phase) = (self.param(HostSourceParam::Magnitude), self.param(HostSourceParam::Phase));
+        let stimulus = self.emit(Expr::Stim { site: 0, mag: magnitude, phase: Some(phase) });
         self.binary(BinaryOp::Add, segment, stimulus)
     }
 }
@@ -125,11 +130,14 @@ impl HostSourceExpressions<'_> {
 /// The host sources of one elaboration: the body `HostSource` of each nature a top port has,
 /// and the instances placed from them.
 pub(super) struct HostSources<'a> {
+    /// The builder the bodies and the instances are added to.
     ir: &'a mut IrBuilder,
+    /// The body `HostSource` built for each nature so far.
     bodies: BTreeMap<NatureId, BodyId>,
 }
 
 impl<'a> HostSources<'a> {
+    /// The host sources of an elaboration that has built none yet.
     pub(super) fn new(ir: &'a mut IrBuilder) -> Self {
         HostSources { ir, bodies: BTreeMap::new() }
     }

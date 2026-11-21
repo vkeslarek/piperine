@@ -183,8 +183,10 @@ fn every_diagnostic_has_code_span_and_path() {
 struct RcTop;
 
 impl RcTop {
+    /// The source of the top: an RC with its input the top's node port.
     const SOURCE: &'static str = "mod devices;\nuse devices::*;\nmodule Top(vin: Electrical) {\n    signal r#out: Electrical;\n    let r1 = Resistor { r: 1000.0 }(vin, r#out);\n    let c1 = Capacitor { c: 1e-9 }(r#out, gnd);\n}\n";
 
+    /// The design of `SOURCE` with the twins' devices, which must have no diagnostics.
     fn design() -> Design {
         let devices = Disk::read(&["..", "..", "tests", "e2e", "twins", "devices.msl"]);
         let design = Design::builder().source("top.msl", Self::SOURCE).source("devices.msl", devices).build();

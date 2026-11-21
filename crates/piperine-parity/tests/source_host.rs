@@ -27,6 +27,7 @@ impl RecordSink for Ignore {
 struct HostDrivenRc;
 
 impl HostDrivenRc {
+    /// A session of `RcTop` on the Rust backend with `overrides` on top of the top and the print.
     fn session(overrides: Overrides) -> Session {
         let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "tests", "source_host", "rc_top.msl"].iter().collect();
         let project = Project::file(&path).unwrap_or_else(|f| panic!("project: {f}"));
@@ -35,6 +36,7 @@ impl HostDrivenRc {
         Session::open(&project, &spec, &HostRun::settings()).unwrap_or_else(|f| panic!("open: {f}"))
     }
 
+    /// The table of one run of `session`; a failure panics with its message.
     fn table(session: &mut Session) -> Table {
         session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("run: {f}"))
     }

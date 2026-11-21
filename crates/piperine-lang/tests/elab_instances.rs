@@ -155,9 +155,14 @@ fn an_unconnected_node_stays_in_the_table() {
 /// and a parent that may bind it (PI-04).
 const CELL: &str = "module Cell(a: Electrical) { cs: f64 = 1.0; }\nanalog for Cell { i(a, gnd) +> v(a, gnd) * cs; }\n";
 
-/// The value of the first param of the instance at `path`.
-fn first_param(ir: &piperine_ir::Ir, path: &str) -> piperine_ir::Constant {
-    *ir.instance_at(path).unwrap_or_else(|| panic!("no instance {path}")).param(0).expect("the instance has a param")
+/// The instances of an elaborated design, read by path.
+struct Placed;
+
+impl Placed {
+    /// The value of the first param of the instance at `path`.
+    fn first_param(ir: &piperine_ir::Ir, path: &str) -> piperine_ir::Constant {
+        *ir.instance_at(path).unwrap_or_else(|| panic!("no instance {path}")).param(0).expect("the instance has a param")
+    }
 }
 
 #[test]
@@ -166,8 +171,8 @@ fn a_placement_through_a_module_param_places_its_template() {
     // 30, the instance `Cell(x) { cs: 30.0 }` places
     let through = Elab::ir(&format!("{CELL}module Top() {{ cell: Cell = Cell {{ cs: 30.0 }}; signal x: Electrical; let c1 = cell(x); }}"), "Top");
     let direct = Elab::ir(&format!("{CELL}module Top() {{ signal x: Electrical; let c1 = Cell(x) {{ cs: 30.0 }}; }}"), "Top");
-    assert_eq!(first_param(&through, "Top.c1"), piperine_ir::Constant::Real(piperine_ir::Real::new(30.0)));
-    assert_eq!(first_param(&through, "Top.c1"), first_param(&direct, "Top.c1"));
+    assert_eq!(Placed::first_param(&through, "Top.c1"), piperine_ir::Constant::Real(piperine_ir::Real::new(30.0)));
+    assert_eq!(Placed::first_param(&through, "Top.c1"), Placed::first_param(&direct, "Top.c1"));
     assert_eq!(through.instance_at("Top.c1").map(|i| i.body().name().to_string()), direct.instance_at("Top.c1").map(|i| i.body().name().to_string()));
 }
 
@@ -176,12 +181,12 @@ fn a_parent_binding_replaces_the_template() {
     // PI-04 AC 2: `Top { cell: Cell { cs: 10.0 } }` replaces the default template
     let src = format!("{CELL}module Top() {{ cell: Cell = Cell {{ cs: 30.0 }}; signal x: Electrical; let c1 = cell(x); }}\nmodule Parent() {{ let t = Top {{ cell: Cell {{ cs: 10.0 }} }}(); }}");
     let ir = Elab::ir(&src, "Parent");
-    assert_eq!(first_param(&ir, "Parent.t.c1"), piperine_ir::Constant::Real(piperine_ir::Real::new(10.0)));
+    assert_eq!(Placed::first_param(&ir, "Parent.t.c1"), piperine_ir::Constant::Real(piperine_ir::Real::new(10.0)));
     // the same `Top` with its default places the other template: two templates, two bodies
     let both = format!("{CELL}module Top() {{ cell: Cell = Cell {{ cs: 30.0 }}; signal x: Electrical; let c1 = cell(x); }}\nmodule Parent() {{ let t = Top {{ cell: Cell {{ cs: 10.0 }} }}(); let u = Top(); }}");
     let ir = Elab::ir(&both, "Parent");
-    assert_eq!(first_param(&ir, "Parent.t.c1"), piperine_ir::Constant::Real(piperine_ir::Real::new(10.0)));
-    assert_eq!(first_param(&ir, "Parent.u.c1"), piperine_ir::Constant::Real(piperine_ir::Real::new(30.0)));
+    assert_eq!(Placed::first_param(&ir, "Parent.t.c1"), piperine_ir::Constant::Real(piperine_ir::Real::new(10.0)));
+    assert_eq!(Placed::first_param(&ir, "Parent.u.c1"), piperine_ir::Constant::Real(piperine_ir::Real::new(30.0)));
 }
 
 #[test]

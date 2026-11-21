@@ -62,15 +62,20 @@ fn a_nan_contribution_from_source_is_e0507() {
     }
 }
 
-/// The failure the host library gives for the operating point of `tests/run_errors/<name>.msl` on
-/// `backend`: the file opened as a project, as `piperine run` does.
-fn host_failure(name: &str, backend: Backend) -> Failure {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/run_errors").join(format!("{name}.msl"));
-    let project = Project::file(&path).unwrap_or_else(|f| panic!("{name}: project: {f}"));
-    let overrides = Overrides { analysis: Some("op".to_string()), backend: Some(backend.name().to_string()), ..Overrides::default() };
-    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{name}: request: {f}"));
-    let mut session = Session::open(&project, &spec, &HostRun::settings()).unwrap_or_else(|f| panic!("{name}: open: {f}"));
-    session.run(Rc::new(RefCell::new(Ignore))).expect_err("the run of this design must fail")
+/// The designs of `tests/run_errors/`, each failing its operating point.
+struct RunErrors;
+
+impl RunErrors {
+    /// The failure the host library gives for the operating point of `tests/run_errors/<name>.msl`
+    /// on `backend`: the file opened as a project, as `piperine run` does.
+    fn failure(name: &str, backend: Backend) -> Failure {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/run_errors").join(format!("{name}.msl"));
+        let project = Project::file(&path).unwrap_or_else(|f| panic!("{name}: project: {f}"));
+        let overrides = Overrides { analysis: Some("op".to_string()), backend: Some(backend.name().to_string()), ..Overrides::default() };
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{name}: request: {f}"));
+        let mut session = Session::open(&project, &spec, &HostRun::settings()).unwrap_or_else(|f| panic!("{name}: open: {f}"));
+        session.run(Rc::new(RefCell::new(Ignore))).expect_err("the run of this design must fail")
+    }
 }
 
 /// A sink that keeps nothing: these runs fail before they record.
@@ -87,7 +92,7 @@ fn a_division_by_zero_under_known_control_fails_the_run_with_e0105() {
     // The interpreter refuses `Int` arithmetic and `unwrap` by name (codegen context R1), so a panic
     // of the model's own values is the compiled backend's.
     for backend in [Backend::Rust] {
-        let failure = host_failure("divide", backend);
+        let failure = RunErrors::failure("divide", backend);
         let text = failure.to_string();
         assert!(matches!(failure, Failure::Host { code: "E0105", .. }), "{}: {text}", backend.name());
         assert!(text.contains("integer division by zero"), "{}: the operation: {text}", backend.name());
@@ -102,7 +107,7 @@ fn an_unwrap_of_none_under_known_control_fails_the_run_with_e0105() {
     // The interpreter refuses `Int` arithmetic and `unwrap` by name (codegen context R1), so a panic
     // of the model's own values is the compiled backend's.
     for backend in [Backend::Rust] {
-        let failure = host_failure("unwrap", backend);
+        let failure = RunErrors::failure("unwrap", backend);
         let text = failure.to_string();
         assert!(matches!(failure, Failure::Host { code: "E0105", .. }), "{}: {text}", backend.name());
         assert!(text.contains("Option::unwrap()"), "{}: the operation: {text}", backend.name());

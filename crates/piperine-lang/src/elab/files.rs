@@ -16,12 +16,25 @@ use crate::pom::{ConstData, DeclId, DeclKind, ExprId, ExprKind, Resolution};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileFault {
     /// The file cannot be read (`E0612`); `path` is the resolved path.
-    Unreadable { path: PathBuf, reason: String },
+    Unreadable {
+        /// The resolved path.
+        path: PathBuf,
+        /// The operating system's reason, as its error spells it.
+        reason: String,
+    },
     /// A relative path in a source that has no directory to resolve it against (`E0612`, D14).
-    NoDirectory { path: PathBuf },
+    NoDirectory {
+        /// The path as the source wrote it.
+        path: PathBuf,
+    },
     /// The file is not valid UTF-8 (`E0613`); `offset` is the byte offset of the first invalid
     /// sequence.
-    NotUtf8 { path: PathBuf, offset: usize },
+    NotUtf8 {
+        /// The resolved path.
+        path: PathBuf,
+        /// The byte offset of the first invalid sequence.
+        offset: usize,
+    },
 }
 
 impl FileFault {
@@ -46,7 +59,9 @@ impl FileFault {
 /// The text of every file read so far, by resolved path.
 #[derive(Debug, Default)]
 pub struct IncludedFiles {
+    /// Each resolved path with its text, or the fault that kept it from having one.
     texts: BTreeMap<PathBuf, Result<Arc<str>, FileFault>>,
+    /// How many files were opened.
     reads: usize,
 }
 
