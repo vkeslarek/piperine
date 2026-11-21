@@ -72,7 +72,7 @@ impl Checker<'_> {
         let name = data.name.as_ref().map_or("", |n| n.text.as_str());
         let carries = data.children.iter().any(|c| matches!(&self.design.decl_data(*c).kind, DeclKind::Field(f) if f.dir.is_some()));
         if matches!(&data.kind, DeclKind::Struct(s) if s.bundle == Some(true)) || carries {
-            self.unsupported(file, span, &format!("struct `{name}` with a carrier field (a bundle) as a value type"));
+            self.unsupported(file, span, &format!("`struct` item used as a type: `{name}` has a carrier field, a bundle"));
             return false;
         }
         let Some(fields) = self.fields_of(decl) else { return false };

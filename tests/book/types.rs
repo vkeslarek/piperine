@@ -127,18 +127,28 @@ fn an_impl_gives_a_type_its_constants_and_functions() {
 
 #[test]
 fn the_listings_still_on_the_way_are_refused_where_a_top_reaches_them() {
-    // types#6 (refused, L2): `ordered` yields a tuple and `span` takes it apart; types#7 (refused, L3): the
-    // table `TAPS`, `smoothed` and `mean`; types#11 (refused, L4): `Shape`, an enum with fields; types#12
-    // (refused, L1): the structs `Reading` and `Volts`; types#16 (refused, L7): the method `switches_at`.
+    // types#7 (refused, L3): the table `TAPS` and `mean`; types#11 (refused, L4): `Shape`, an enum with fields
+    // and no `Repr`; types#16 (refused, L7): the method `switches_at`. (types#6, the tuple `ordered`, and
+    // types#12, the structs `Reading` and `Volts`, run since composite-values T48 to T51: see
+    // `tuples_and_structs_run_where_a_top_reaches_them`.)
     // When one of them runs this test fails and its row moves to `run`
-    Refusal::expect(Reached::run("types#6", "", "emit!(\"r\", s = span(2.0, 0.8));"), "types#6", "P0001", "a tuple `let` whose value is not a tuple expression is not supported yet");
-    Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = smoothed([1.0, 2.0, 3.0]));"), "types#7", "P0001", "an expression the type checker gave no value type is not supported yet");
+    Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = smoothed([1.0, 2.0, 3.0]));"), "types#7", "P0001", "this form in a const expression in a `const` is not supported yet");
     Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = mean(TAPS));"), "types#7", "P0001", "generic function is not supported yet");
     Refusal::expect(Reached::run("types#11", "", "emit!(\"r\", s = area(Shape::Circle(1.0)));"), "types#11", "P0001", "enum `Shape` without `#[derive(Repr)]` is not supported yet");
-    Refusal::expect(Reached::run("types#12", "", "let r = Reading { volts: 3.0, valid: true }; emit!(\"r\", s = scaled(r, 0.5).volts);"), "types#12", "P0001", "a name whose type is not a value type is not supported yet");
-    Refusal::expect(Reached::run("types#12", "", "let r = Reading { volts: 3.0, valid: true }; emit!(\"r\", s = scaled(r, 0.5).volts);"), "types#12", "P0001", "a field access that is not an item of a placed module is not supported yet");
     let family = "#[derive(PartialEq, Repr)]\nenum Family { Cmos, Ttl }\n";
     Refusal::expect(Reached::run("types#16", family, "emit!(\"r\", s = reads_high(Family::Cmos, 2.0, 3.3));"), "types#16", "P0001", "method `switches_at` on `enum `Family`` is not supported yet");
+}
+
+#[test]
+fn tuples_and_structs_run_where_a_top_reaches_them() {
+    // types#6 (run): `ordered` yields a tuple and `span` takes it apart; types#12 (run): the structs
+    // `Reading` and `Volts`, built by a struct expression and read by a field
+    let span = ValueFile::only(Chapter::read().wrapped("reached.msl", "", "types#6", &Reached::top("emit!(\"r\", s = span(2.0, 0.8));")).run(Reached::overrides()), "r");
+    Printed::holds("1.200000e0", Fields::real(&span, "s"), "span");
+    let statements = "let r = Reading { volts: 3.0, valid: true }; emit!(\"r\", s = scaled(r, 0.5).volts, ok = scaled(r, 0.5).valid);";
+    let scaled = ValueFile::only(Chapter::read().wrapped("reached.msl", "", "types#12", &Reached::top(statements)).run(Reached::overrides()), "r");
+    Printed::holds("1.500000e0", Fields::real(&scaled, "s"), "scaled");
+    ValueFile::flag(&scaled, "ok", true);
 }
 
 #[test]
@@ -146,14 +156,10 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
     // types~5628120b "A model that uses one of them is stopped before the run with the code P0001 and a message
     // that names the form, so nothing is ever computed by a rule other than the ones above": the forms of the
     // chapter's status box, each on the smallest model (when one of them runs, this test fails and the box
-    // loses it)
+    // loses it; tuples, arrays, structs, enums with fields and numbered variants run since composite-values
+    // T48 to T51, `tuples_and_structs_run_where_a_top_reaches_them`)
     let level = "#[derive(PartialEq, Repr)] enum Z { A, B }";
     for (items, statements, named) in [
-        ("", "let t = (1.5, true); emit!(\"r\", f = t.0);", "a field access that is not an item of a placed module is not supported yet"),
-        ("", "let a = [1.0, 2.0]; emit!(\"r\", x = a[0]);", "index expression is not supported yet"),
-        ("struct P { x: f64 }", "let p = P { x: 1.0 }; emit!(\"r\", x = p.x);", "a field access that is not an item of a placed module is not supported yet"),
-        ("#[derive(PartialEq, Repr)] enum Cmd { Idle, Set(u8) }", "let c = Cmd::Set(3); emit!(\"r\", y = c == Cmd::Idle);", "a call the type checker did not resolve is not supported yet"),
-        ("#[derive(PartialEq, Repr)] enum Op { Add = 0b00, Sub = 0b01 }", "let o = Op::Sub; emit!(\"r\", y = o as u8);", "an `as` cast of an enum that writes discriminants or `#[repr]` is not supported yet"),
         ("#[derive(PartialEq)] enum Lv { Low, High }", "let a = Lv::Low; emit!(\"r\", y = a == Lv::Low);", "enum `Lv` without `#[derive(Repr)]` is not supported yet"),
         (level, "emit!(\"r\", y = Z::B.next() == Z::A);", "method `next` on `enum `Z`` is not supported yet"),
     ] {

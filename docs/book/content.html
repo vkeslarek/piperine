@@ -1090,8 +1090,8 @@ fn mean<const N: usize>(xs: [f64; N]) -> f64 {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Running today: <code>Option</code> as a local, a parameter and a constant, with its methods, <code>match</code> and <code>if let</code>; optional parameters; a tuple pattern in a <code>let</code>; enums without fields that derive <code>Repr</code>, matched and compared; the constants of an <code>impl</code> and its functions that take no <code>self</code>; <code>use</code> and <code>pub</code>. Everything the three files above use is in that list.</p>
-  <p>Parsed and checked, and not run yet: tuples as values, arrays, structs, an enum with fields, with a number given to a variant or without <code>Repr</code>, and methods that take <code>self</code>. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
+  <p>Running today: <code>Option</code> as a local, a parameter and a constant, with its methods, <code>match</code> and <code>if let</code>; optional parameters; tuples, arrays and structs as values, built, read, assigned and matched; enums that derive <code>Repr</code>, with or without fields and with a number given to a variant, matched and compared; the constants of an <code>impl</code> and its functions that take no <code>self</code>; <code>use</code> and <code>pub</code>. Everything the three files above use is in that list.</p>
+  <p>Parsed and checked, and not run yet: an enum without <code>Repr</code>, an array in a constant, and methods that take <code>self</code>. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
 </div>
 
 <div class="callout mistake">

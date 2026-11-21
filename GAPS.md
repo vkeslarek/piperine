@@ -397,10 +397,8 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
-| types#6 | L2 | `composite-values` | reached from a top, `span` is `P0001`: `ordered` yields a tuple (a tuple type, a tuple expression) |
-| types#7 | L3 | `composite-values` | reached from a top, `smoothed` is `P0001` (an array type) and `mean` is `P0001` (a generic function over an array, L7) |
+| types#7 | L3 | `composite-values` | reached from a top, `smoothed` is `P0001` (the `const` table `TAPS`: an array in a const expression) and `mean` is `P0001` (a generic function over an array, L7) |
 | types#11 | L4 | `composite-values` | reached from a top, `area` is `P0001`: the enum `Shape` has variants with a payload |
-| types#12 | L1 | `composite-values` | reached from a top, `scaled` is `P0001`: a struct expression and a field access |
 | types#16 | L7 | `generics` | reached from a top, `reads_high` is `P0001`: the method `switches_at` of an `impl` on the enum `Family` |
 | types#17 | L4 | `composite-values` | reached from a top, `range_of` is `P0001` (the enum has no `#[derive(Repr)]`; its range pattern is accepted) and `mean` is `P0001` (a reference type, L3) |
 | generics#1 | L7 | `generics` | the trait `Receiver` and its `impl`s are accepted and `Family::LEVELS` is read; a method (`switches_at`, the default `reads_high`) is `P0001` |

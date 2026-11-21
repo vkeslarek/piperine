@@ -747,7 +747,8 @@ impl<'a> ValuePrinter<'a> {
                 let sign = if *op == UnaryOp::Neg { "-" } else { "!" };
                 Ok(Piece::new(format!("{sign}{operand}"), Prec::Unary))
             }
-            Expr::Binary { op, lhs, rhs } if self.is_aggregate_operand(*lhs) => self.aggregate_comparison(e, *op, *lhs, *rhs),
+            // an enum value that may be unknown on either side compares as a flagged scalar does
+            Expr::Binary { op, lhs, rhs } if self.is_aggregate_operand(*lhs) && !Self::is_flagged(self.ir.expr_type(*rhs)) => self.aggregate_comparison(e, *op, *lhs, *rhs),
             Expr::Binary { op, lhs, rhs } => self.binary(e, *op, *lhs, *rhs),
             Expr::If { cond, then, otherwise } => self.if_else(e, *cond, *then, *otherwise),
             Expr::Block { stmts, value } => {

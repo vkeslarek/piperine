@@ -19,8 +19,6 @@ E0372	foreign-models	FM-07 AC 2, 3
 E0373	foreign-models	FM-07 AC 4, 5
 E0374	foreign-models	FM-07 AC 6
 E0375	generics	its spec, a model item named `m` or `dtemp`
-E0413	resolved-nets	L23 (a nature without `flow`)
-E0416	composite-values	L5
 E0451	analog-operators	L43 (`ddx`)
 E0452	analog-operators	L44 (`delay`)
 E0453	analog-operators	L44

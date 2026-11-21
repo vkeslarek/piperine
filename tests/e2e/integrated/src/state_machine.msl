@@ -5,7 +5,7 @@
 use crate::{Capacitor, Clock, Resistor, Switch, Vdc};
 
 /// What the sequencer is doing.
-#[derive(Repr, Clone, Copy, PartialEq)]
+#[derive(Repr, PartialEq)]
 pub enum Phase {
     /// Not enabled: both switches open.
     Idle,
@@ -20,7 +20,7 @@ pub enum Phase {
 }
 
 /// The cause of the last fault: latched on entering `Phase::Fault`, cleared when a charge phase ends clean.
-#[derive(Repr, Clone, Copy, PartialEq)]
+#[derive(Repr, PartialEq)]
 pub enum Fault {
     /// No fault pending.
     Clear,

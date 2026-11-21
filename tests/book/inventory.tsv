@@ -47,13 +47,13 @@ block	types#2	882c7bee6c3834b3	shown	-	-	-
 block	types#3	3bf569354fd77d70	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run option.msl --analysis transient --stop 2e-6
 block	types#4	12b765caa91c5cbd	run	piperine/book_types::optional_arguments_may_be_left_out_or_named	-	-
 block	types#5	2bbe7594bd207d1e	fragment	types#4	-	-
-block	types#6	752d2a198d304f5c	refused	piperine/book_types::the_listings_still_on_the_way_are_refused_where_a_top_reaches_them	L2	-
+block	types#6	752d2a198d304f5c	run	piperine/book_types::tuples_and_structs_run_where_a_top_reaches_them	-	-
 block	types#7	3b9b74b50cece325	refused	piperine/book_types::the_listings_still_on_the_way_are_refused_where_a_top_reaches_them	L3	-
 block	types#8	b63a21346a74deb1	run	piperine/book_types::an_enum_is_matched_compared_and_printed_by_the_number_of_its_variant	-	-
 block	types#9	0a7d56d69e848349	shown	-	-	-
 block	types#10	df15c0637f325b78	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run levels.msl --analysis transient --stop 2e-6
 block	types#11	febab19eac3f694a	refused	piperine/book_types::the_listings_still_on_the_way_are_refused_where_a_top_reaches_them	L4	-
-block	types#12	6d450490ba2c8973	refused	piperine/book_types::the_listings_still_on_the_way_are_refused_where_a_top_reaches_them	L1	-
+block	types#12	6d450490ba2c8973	run	piperine/book_types::tuples_and_structs_run_where_a_top_reaches_them	-	-
 block	types#13	cf6386a8806d36c2	run	piperine/book_types::an_impl_gives_a_type_its_constants_and_functions	-	-
 block	types#14	ab640fdf8ec97154	shown	-	-	-
 block	types#15	acfdc5d5abc58d68	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run family.msl --analysis transient --stop 2e-6
