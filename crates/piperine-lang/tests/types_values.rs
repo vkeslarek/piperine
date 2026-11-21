@@ -561,11 +561,18 @@ fn include_str_outside_a_const_is_e0610() {
     // §20 rule 1 (PI-08 AC 2): `include_str!` is allowed in the initializer of a `const` item
     // only; in an `analog` expression, or in a module's `let`, it is `E0610`, and the `P0001`
     // "`include_str!`" is gone.
-    let (src, d) = diagnostics("", "let a = include_str!(\"data.txt\");");
-    assert!(codes_of(&d).contains(&"E0610".to_string()), "{src}");
-    assert!(d.iter().all(|d| !d.diagnostic.message.contains("`include_str!` is not supported")), "{src}");
-    let e0610 = d.iter().find(|d| d.diagnostic.code == "E0610").expect("E0610");
-    assert_eq!(snippet(&src, e0610), "include_str!(\"data.txt\")");
+    let call = "include_str!(\"data.txt\")";
+    let analog = source("", &format!("let a = {call};"));
+    let module_let = format!("module Top() {{\n    let a = {call};\n}}");
+    let param_default = format!("module Top() {{ a: f64 = {call}; }}");
+    let fn_body = source(&format!("fn read() -> f64 {{ let a = {call}; 1.0 }}"), "let x = read();");
+    for (position, src) in [("an `analog` let", analog), ("a module `let`", module_let), ("a param default", param_default), ("a `fn` body", fn_body)] {
+        let design = design_of(&src);
+        let d = Types::check(&design, "Top").expect_err("expected diagnostics");
+        assert_eq!(codes_of(&d), ["E0610"], "{position}: {src}");
+        assert_eq!(snippet(&src, &d[0]), call, "{position}");
+        assert!(!d[0].diagnostic.message.contains("`include_str!` is not supported"), "{position}: {}", d[0].diagnostic.message);
+    }
 }
 
 #[test]
