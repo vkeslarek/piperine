@@ -660,7 +660,7 @@ Any of them is restricted to an analysis with a guard: `init() && analysis(Trans
 | Code | Condition | Phase |
 | --- | --- | --- |
 | `E0440` | `!` applied to an `Event` outside a guard or reaction body; `&&` whose left operand is a `bool` and right an `Event` in an event position (§13 rule 1) | elaboration |
-| `E0441` | an `Event` value outside an event position, a guard or a reaction body; an `Event` committed or carried (§13 rule 8) | elaboration |
+| `E0441` | an `Event` value outside an event position, a guard or a reaction body; an `Event` committed where a type other than `bool` is expected, or carried (§13 rule 8) | elaboration |
 | `E0442` | the argument of `at` is a continuous expression (§13 rule 11) | elaboration |
 | `E0443` | `cross` or `at` placed outside an event position (§13 rule 10) | elaboration |
 | §12.1 | a `bool` as the head of `on` (`E0430`) | elaboration |

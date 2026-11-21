@@ -1787,6 +1787,7 @@ fn the_commit_of_an_event_read_as_a_bool_is_stated() {
         "§13 rule 2 reads an event as a `bool` in the value of a commit too",
         "`on up || dn { q <- up; }`, the `Comparator` of this section, commits whether `up` fired in this",
         "an `Event` committed where a type other than `bool` is expected (`E0441`)",
+        "an `Event` committed where a type other than `bool` is expected, or carried (§13 rule 8)",
     ] {
         assert!(behavior.contains(fact), "§13 lacks \"{fact}\"");
     }
