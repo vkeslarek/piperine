@@ -350,6 +350,177 @@ fn the_root_manifest_names_its_test_targets() {
     assert!(RootManifest::test_paths("[dependencies]\nx = { path = \"a/b\" }\n").is_empty());
 }
 
+// ─── Targets excluded from the default run (`test = false`, MD-76) ───────────
+
+/// A manifest read for its on-demand targets: the `[[test]]` tables that carry `test = false`.
+struct OnDemandManifest;
+
+impl OnDemandManifest {
+    /// The `name` of every `[[test]]` table of manifest `text` that sets `test = false`, in order. A
+    /// `test = false` under any other table (`[lib]`, `[[bin]]`) is not a test target.
+    fn targets(text: &str) -> Vec<String> {
+        let mut targets = Vec::new();
+        let mut in_test_table = false;
+        let mut name = String::new();
+        let mut flagged = false;
+        for line in text.lines().map(str::trim) {
+            if line.starts_with('[') {
+                if in_test_table && flagged {
+                    targets.push(name.clone());
+                }
+                in_test_table = line == "[[test]]";
+                name.clear();
+                flagged = false;
+            } else if in_test_table {
+                let compact: String = line.split_whitespace().collect();
+                if let Some(value) = compact.strip_prefix("name=") {
+                    name = value.trim_matches('"').to_string();
+                } else if compact == "test=false" {
+                    flagged = true;
+                }
+            }
+        }
+        if in_test_table && flagged {
+            targets.push(name);
+        }
+        targets
+    }
+
+    /// Every on-demand target of the repository's manifests as `(crate directory, target)`; the root
+    /// package's directory is `.`.
+    fn declared() -> Vec<(String, String)> {
+        let root = repo_root();
+        let mut manifests = vec![(".".to_string(), root.join("Cargo.toml"))];
+        let mut crate_dirs: Vec<_> = fs::read_dir(root.join("crates"))
+            .expect("the crates directory is readable")
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .collect();
+        crate_dirs.sort();
+        for dir in crate_dirs {
+            manifests.push((format!("crates/{dir}"), root.join("crates").join(&dir).join("Cargo.toml")));
+        }
+        let mut declared = Vec::new();
+        for (dir, manifest) in manifests {
+            if let Ok(text) = fs::read_to_string(manifest) {
+                declared.extend(Self::targets(&text).into_iter().map(|target| (dir.clone(), target)));
+            }
+        }
+        declared
+    }
+}
+
+/// The targets a manifest excludes from `cargo test`, each with the reason it still exists: crate
+/// directory, target name, why. `test = false` is a way to say "by name only", never a way to
+/// switch a test off, so every flagged target is named here and in `examples/buck/README.md`'s
+/// "On demand" block (`on_demand_targets_are_registered`).
+const ON_DEMAND_TARGETS: [(&str, &str, &str); 0] = [];
+
+/// The registry and the README's "On demand" block, read against a set of declared targets.
+struct OnDemandRegistry<'a> {
+    /// The registry's entries: crate directory, target, why.
+    entries: &'a [(&'a str, &'a str, &'a str)],
+}
+
+impl OnDemandRegistry<'_> {
+    /// Every declared flagged target that no entry registers, named by crate and target.
+    fn unregistered(&self, declared: &[(String, String)]) -> Vec<String> {
+        declared
+            .iter()
+            .filter(|(dir, target)| !self.entries.iter().any(|(d, t, _)| d == dir && t == target))
+            .map(|(dir, target)| format!("{dir}: target `{target}` has `test = false` but is not in `ON_DEMAND_TARGETS`"))
+            .collect()
+    }
+
+    /// Every entry whose target is missing from the declared set (gone, or not flagged).
+    fn stale(&self, declared: &[(String, String)]) -> Vec<String> {
+        self.entries
+            .iter()
+            .filter(|(dir, target, _)| !declared.iter().any(|(d, t)| d == dir && t == target))
+            .map(|(dir, target, _)| format!("{dir}: registered target `{target}` is missing or has no `test = false`"))
+            .collect()
+    }
+
+    /// Every entry whose `--test <name>` the block of `readme` does not hold.
+    fn undocumented(&self, readme: &str) -> Vec<String> {
+        let block = Self::on_demand_block(readme);
+        self.entries
+            .iter()
+            .filter(|(_, target, _)| !block.contains(&format!("--test {target}")))
+            .map(|(dir, target, _)| format!("{dir}: target `{target}` is not named as `--test {target}` in the README's \"On demand\" block"))
+            .collect()
+    }
+
+    /// The README text from its `## On demand` heading to the next `## ` heading (empty if absent).
+    fn on_demand_block(readme: &str) -> String {
+        let mut block = String::new();
+        let mut inside = false;
+        for line in readme.lines() {
+            if line.starts_with("## ") {
+                inside = line.trim() == "## On demand";
+            }
+            if inside {
+                block.push_str(line);
+                block.push('\n');
+            }
+        }
+        block
+    }
+}
+
+/// The reader finds exactly the `[[test]]` tables flagged `test = false`, whatever the key order,
+/// and ignores a `test = false` of `[lib]`.
+#[test]
+fn the_on_demand_reader_finds_test_false() {
+    let manifest = "[lib]\ntest = false\n\n[[test]]\nname = \"fast\"\npath = \"tests/fast.rs\"\n\n\
+                    [[test]]\ntest = false\nname = \"slow\"\npath = \"tests/slow.rs\"\n";
+    assert_eq!(OnDemandManifest::targets(manifest), vec!["slow".to_string()]);
+    let last = "[[test]]\nname = \"tail\"\ntest = false\n";
+    assert_eq!(OnDemandManifest::targets(last), vec!["tail".to_string()]);
+    assert!(OnDemandManifest::targets("[lib]\ntest = false\n").is_empty());
+}
+
+/// Every flagged target of every manifest is registered; a planted flagged target missing from a
+/// planted registry is reported by crate and target.
+#[test]
+fn on_demand_targets_are_registered() {
+    let planted = [("crates/x", "slow", "why")];
+    let declared = vec![("crates/x".to_string(), "slow".to_string()), ("crates/y".to_string(), "hidden".to_string())];
+    let offences = OnDemandRegistry { entries: &planted }.unregistered(&declared);
+    assert_eq!(offences.len(), 1, "{offences:?}");
+    assert!(offences[0].contains("crates/y") && offences[0].contains("hidden"), "{offences:?}");
+
+    let offences = OnDemandRegistry { entries: &ON_DEMAND_TARGETS }.unregistered(&OnDemandManifest::declared());
+    assert!(offences.is_empty(), "targets switched off by `test = false` without a registry entry:\n  {}", offences.join("\n  "));
+}
+
+/// Every registry entry names a target that exists and is flagged; a planted stale entry is reported.
+#[test]
+fn the_on_demand_registry_names_only_on_demand_targets() {
+    let planted = [("crates/x", "gone", "why")];
+    let declared = vec![("crates/x".to_string(), "slow".to_string())];
+    let offences = OnDemandRegistry { entries: &planted }.stale(&declared);
+    assert_eq!(offences.len(), 1, "{offences:?}");
+    assert!(offences[0].contains("crates/x") && offences[0].contains("gone"), "{offences:?}");
+
+    let offences = OnDemandRegistry { entries: &ON_DEMAND_TARGETS }.stale(&OnDemandManifest::declared());
+    assert!(offences.is_empty(), "registry entries with no flagged target:\n  {}", offences.join("\n  "));
+}
+
+/// The buck README's "On demand" block names each registered target as `--test <name>`; a planted
+/// block that omits one is reported by target.
+#[test]
+fn the_buck_readme_names_every_on_demand_target() {
+    let planted = [("crates/x", "slow", "why")];
+    let offences = OnDemandRegistry { entries: &planted }.undocumented("# t\n\n## On demand\n\ncargo test --test fast\n\n## Next\n--test slow\n");
+    assert_eq!(offences.len(), 1, "{offences:?}");
+    assert!(offences[0].contains("slow"), "{offences:?}");
+
+    let readme = fs::read_to_string(repo_root().join("examples/buck/README.md")).expect("the buck README is readable");
+    let offences = OnDemandRegistry { entries: &ON_DEMAND_TARGETS }.undocumented(&readme);
+    assert!(offences.is_empty(), "on-demand targets the buck README does not name:\n  {}", offences.join("\n  "));
+}
+
 // ─── 4a. LRM-COVERS declarations are well-formed (T6, lrm-conformance-wave2) ──
 
 /// Whether one `//! LRM-COVERS:` line is malformed: not the canonical

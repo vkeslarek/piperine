@@ -131,10 +131,10 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] `the_on_demand_reader_finds_test_false`, `on_demand_targets_are_registered`, `the_on_demand_registry_names_only_on_demand_targets`, `the_buck_readme_names_every_on_demand_target` pass under `Run hygiene`
-- [ ] Each detector is also exercised on planted input that must fail (a flagged target missing from a planted registry is reported by name)
-- [ ] Gate check passes: `Run hygiene`
-- [ ] Test count: 4 new tests
+- [x] `the_on_demand_reader_finds_test_false`, `on_demand_targets_are_registered`, `the_on_demand_registry_names_only_on_demand_targets`, `the_buck_readme_names_every_on_demand_target` pass under `Run hygiene`
+- [x] Each detector is also exercised on planted input that must fail (a flagged target missing from a planted registry is reported by name)
+- [x] Gate check passes: `Run hygiene`
+- [x] Test count: 4 new tests
 
 **Tests**: integration
 **Gate**: quick

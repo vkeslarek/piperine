@@ -130,3 +130,5 @@ async def s5_overcurrent():
 
 The `checks` stream carries the `Never` monitor of `Dpwm`: a bench passes only if it holds no
 failed `never` record (S10).
+
+## On demand
