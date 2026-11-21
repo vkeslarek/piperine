@@ -174,6 +174,34 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         tick as f64 * self.options.seconds_per_tick
     }
 
+    /// How many `f64` spacings the shortest step spans once a tick is finer than the spacing.
+    const MIN_STEP_ULPS: f64 = 256.0;
+
+    /// The fewest ticks a proposed step advances. A tick is an exact integer, but the time the
+    /// analog side steps on is an `f64`: once its spacing (`ulp`) passes one tick (past 2^52 ticks,
+    /// about 4.5 s at the default 1 fs) a step of a few ticks is a few `f64` steps, and a stepper
+    /// that collapses onto a stiff edge crawls on them for ever. A step then spans at least
+    /// `MIN_STEP_ULPS` spacings, about a picosecond over the first minutes at 1 fs, the resolution
+    /// a run that set `resolution = 1e-12` already had. While one tick spans more than one spacing
+    /// (every run under 4.5 s, and every run at a coarser resolution) the minimum stays one tick.
+    fn min_advance(&self) -> Tick {
+        let spacing = self.now.next_up() - self.now;
+        if spacing <= self.options.seconds_per_tick {
+            return 1;
+        }
+        ((Self::MIN_STEP_ULPS * spacing) / self.options.seconds_per_tick).ceil() as Tick
+    }
+
+    /// The time of the step that ends at `tick`, a tick after `now_tick` or later. Past 2^52 ticks
+    /// (about 4.5 s at the default 1 fs) neighbouring ticks are closer than an `f64` can tell
+    /// apart, so `time(tick)` can equal the time already reached; the step then ends one `f64`
+    /// step after `now`, which keeps time strictly advancing. The tick stays the exact instant of
+    /// the discrete side, and a time the plain conversion already moves past `now` is unchanged.
+    fn step_time(&self, tick: Tick) -> f64 {
+        let time = self.time(tick);
+        if time > self.now { time } else { self.now.next_up() }
+    }
+
     fn checkpoint(&mut self) -> Checkpoint<D::Mark, A::Mark> {
         Checkpoint { discrete: self.discrete.mark(), analog: self.analog.mark(), sink: self.delivery.mark() }
     }
@@ -273,7 +301,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                 None if unknowns => {
                     let next_due = self.discrete.next_due().map(|tick| self.time(tick));
                     let proposed = self.analog.propose(self.now, stop, next_due);
-                    self.floor_tick(proposed).clamp(now_tick + 1, stop_tick)
+                    self.floor_tick(proposed).clamp((now_tick + self.min_advance()).min(stop_tick), stop_tick)
                 }
                 None => stop_tick,
             };
@@ -297,7 +325,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                     format!("a landing at tick {tick_c} does not advance from tick {now_tick} ({:e} s)", self.now),
                 ));
             }
-            let t_c = self.time(tick_c);
+            let t_c = self.step_time(tick_c);
             self.collect(AnalysisKind::Transient);
 
             // Steps 3 and 4: one analog attempt to t_c.
@@ -312,14 +340,16 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                     Attempt::Rejected => Some(None),
                     Attempt::LandedEarlier(t) => {
                         let nearest = self.tick(t);
-                        if t >= t_c || (nearest >= tick_c && tick_c - 1 <= now_tick) {
-                            // The crossing lies at or past the step's end, or rounds to
-                            // the end of a one-tick step: the step is taken at its end and
-                            // the analog side reports the crossing in `Accepted::fired`.
+                        let shortest = now_tick + self.min_advance();
+                        if t >= t_c || tick_c - 1 < shortest {
+                            // The crossing lies at or past the step's end, or the step is
+                            // too short for a shorter one to fit in it: the step is taken at
+                            // its end and the analog side reports the crossing in
+                            // `Accepted::fired`.
                             None
                         } else {
                             // The nearest tick inside the step, at least one tick shorter.
-                            Some(Some(nearest.clamp(now_tick + 1, tick_c - 1)))
+                            Some(Some(nearest.clamp(shortest, tick_c - 1)))
                         }
                     }
                 };

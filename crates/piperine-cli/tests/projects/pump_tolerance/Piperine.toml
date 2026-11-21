@@ -1,0 +1,12 @@
+[package]
+name = "pump_action"
+version = "0.1.0"
+description = "A NE555 pump controller, one tolerance sample of 45 s at the default resolution (fixture: a long transient whose crossings land past 8 s)"
+
+[run.tolerance]
+bench = "benches/tolerance.msl"
+analysis = "transient"
+stop = 45.0
+max_step = 0.02
+print = ["Tolerance.pump_p"]
+print_step = 45.0

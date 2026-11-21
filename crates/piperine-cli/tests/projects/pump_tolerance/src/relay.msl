@@ -1,0 +1,40 @@
+//! A 12 V SPDT relay of the SRD-12VDC-SL-C class, normally-open contact only.
+
+use crate::parts::Contact;
+
+/// Coil between `a` and `b`, contact between `com` and `no`. The armature follows the coil
+/// current with hysteresis: it pulls in above the pick-up current and releases below the
+/// drop-out current, each after its mechanical delay. The two levels are given the way the
+/// datasheet gives them, as coil voltages at the coil's own resistance. The defaults are the
+/// guaranteed limits, the worst case for the driver: must-operate at 75 % of 12 V, must-release
+/// at 10 %.
+pub module Relay(a: Electrical, b: Electrical, com: Electrical, no: Electrical) {
+    r_coil: f64 = 400.0 where r_coil > 0.0;
+    l_coil: f64 = 0.4 where l_coil > 0.0;
+    v_pick: f64 = 9.0 where v_pick > 0.0;
+    /// Must stay below `v_pick`.
+    v_release: f64 = 1.2 where v_release > 0.0;
+    t_operate: f64 = 10m where t_operate > 0.0;
+    t_release: f64 = 5m where t_release > 0.0;
+    /// Between the coil's resistance and its inductance.
+    signal mid: Electrical;
+    pub signal closed: Bit = false;
+    let i_pick = v_pick / r_coil;
+    let i_drop = v_release / r_coil;
+    let contact = Contact(com, no, closed) { ron: 0.1, roff: 1G };
+}
+
+analog for Relay {
+    i(a, mid) +> v(a, mid) / r_coil;
+    v(mid, b) +> ddt(l_coil * i(mid, b));
+}
+
+digital for Relay {
+    on above(v(a, mid) / r_coil - i_pick) {
+        closed <- true after t_operate;
+        emit!("relay", t = now(), event = "pick-up", i_coil = v(a, mid) / r_coil);
+    }
+    on above(i_drop - v(a, mid) / r_coil) {
+        closed <- false after t_release;
+    }
+}

@@ -343,3 +343,22 @@ fn a_param_is_checked_at_equality_and_against_the_others() {
     let late = piperine_in(dir.path(), &["run", file, "--top", "Top", "--analysis", "op", "--print", "a", "--param", "Top.t.v_pick=1.0", "--param", "Top.t.v_release=1.5"]);
     assert!(text(&late.stderr).contains("E0802"), "{}", text(&late.stderr));
 }
+
+#[test]
+fn a_long_transient_at_the_default_resolution_lands_its_crossings() {
+    // §15 T1 and T4: at the default 1 fs a tick is finer than an f64 second past 4.5 s. The
+    // pump controller's 45 s run locates a relay crossing at 16.2 s; its steps must still
+    // advance there, and the run must reach the instants the 1 ps run of the same design reaches
+    let project = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/projects/pump_tolerance");
+    let default = stdout_of(&piperine_in(&project, &["run", "tolerance"]));
+    let metrics = default.lines().find(|l| l.contains(" metrics ")).unwrap_or_else(|| panic!("no metrics record in\n{default}"));
+    for field in ["t_on=1.012092e0", "t_off=1.623526e1", "run_on=1.323526e1", "pump_off_at_end=true"] {
+        assert!(metrics.contains(field), "{field} missing from {metrics}");
+    }
+    let last = default.lines().last().unwrap_or_default();
+    assert!(last.starts_with("4.500000e1"), "the table ends at the stop: {default}");
+    let picoseconds = stdout_of(&piperine_in(&project, &["run", "tolerance", "--resolution", "1e-12"]));
+    let reference = picoseconds.lines().find(|l| l.contains(" metrics ")).expect("metrics at 1 ps");
+    let timing = |line: &str| line.split_whitespace().filter(|c| c.starts_with("t_on=") || c.starts_with("t_off=") || c.starts_with("run_on=")).map(str::to_string).collect::<Vec<_>>();
+    assert_eq!(timing(metrics), timing(reference), "the same edges at both resolutions");
+}
