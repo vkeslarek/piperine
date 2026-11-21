@@ -123,6 +123,8 @@ fn struct_expressions_and_field_reads_type_check() {
     assert_eq!(local_type(&src, "m"), Ty::Struct(type_decl(&src, "Marker")));
     assert_eq!(local_type(&src, "a"), Ty::F64);
     assert_eq!(local_type(&src, "b"), Ty::UInt(8), "nested reads give the innermost field");
+    // a tuple field of a tuple value
+    assert_eq!(local_type(&source("", "let t = (1.0, (2u8, true)); let u = t.1.0; let v = t.1.1;"), "u"), Ty::UInt(8));
 }
 
 #[test]
@@ -134,6 +136,7 @@ fn a_bad_struct_expression_is_e0186_naming_the_field() {
     // an unknown field of a struct literal is found where names resolve (the pom classifier)
     assert_eq!(support::codes(&support::build(&source(items, "let p = P { x: 1.0, y: 2.0, z: 3.0 };"))), ["E0186"]);
     assert_refused(&source(items, "let p = P { x: 1.0, y: 2.0 }; let z = p.z;"), "E0186", "no field `z`");
+    assert_refused(&source("", "let t = (1.0, 2.0); let z = t.2;"), "E0186", "no field `2`");
     // a field is checked against its type
     assert_refused(&source(items, "let p = P { x: true, y: 2.0 };"), "P0002", "expected `f64`, found `bool`");
 }
@@ -144,4 +147,33 @@ fn struct_update_syntax_is_a_parse_error() {
     let src = source("struct P { x: f64, y: f64 }", "let a = P { x: 1.0, y: 2.0 }; let b = P { x: 3.0, ..a };");
     let design = support::build(&src);
     assert!(!design.diagnostics().is_empty(), "`..base` must not parse");
+}
+
+#[test]
+fn tuples_and_tuple_patterns_type_check() {
+    // §1.2.4 and §1.6.5: a tuple is built, returned, passed and nested anywhere a value is, and a
+    // tuple pattern binds each field in a `let`, a `match`, an `if let` and a closure parameter.
+    let items = "fn swap(p: (f64, u8)) -> (u8, f64) { let (a, b) = p; (b, a) }\n\
+                 fn first(p: ((u8, bool), f64)) -> u8 { let ((n, _), _) = p; n }";
+    let body = "let t = swap((1.0, 2)); let n: u8 = t.0; \
+                let (x, y) = (1.0, true); \
+                let u = match t { (0, f) => f, (_, f) => f + 1.0 }; \
+                let w = first(((1, false), 0.5)); \
+                let one = (3u8,); let z = one.0;";
+    let src = source(items, body);
+    assert_eq!(local_type(&src, "t"), Ty::Tuple(vec![Ty::UInt(8), Ty::F64]));
+    assert_eq!(local_type(&src, "x"), Ty::F64);
+    assert_eq!(local_type(&src, "y"), Ty::Bool);
+    assert_eq!(local_type(&src, "u"), Ty::F64);
+    assert_eq!(local_type(&src, "w"), Ty::UInt(8));
+    assert_eq!(local_type(&src, "z"), Ty::UInt(8));
+    // §1.6.5: `..` stands for the fields between; the arity is the type's
+    assert_clean(&source("fn f(t: (u8, u8, u8)) -> u8 { let (a, .., c) = t; a + c }", "let h = f;"));
+    assert_refused(&source("", "let (a, b) = (1.0, 2.0, 3.0);"), "P0002", "a pattern of 3 fields");
+    // §1.6.11: a refutable pattern in a `let` is E0184; §1.6.10: a name is bound once
+    assert_refused(&source("", "let (a, 1) = (true, 2u8);"), "E0184", "irrefutable");
+    assert_refused(&source("", "let (a, a) = (1.0, 2.0);"), "E0184", "bound twice");
+    // an `if let` over a tuple and an exhaustive `match` over a tuple of `bool`s
+    assert_clean(&source("", "let t = (true, 2u8); if let (true, n) = t { let m: u8 = n; } let r = match (true, false) { (true, _) => 1, (false, true) => 2, (false, false) => 3 };"));
+    assert_refused(&source("", "let r = match (true, false) { (true, _) => 1, (false, true) => 2 };"), "E0184", "(false, false)");
 }

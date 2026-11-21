@@ -21,7 +21,7 @@ impl Checker<'_> {
         let ExprKind::Match { scrutinee, arms } = &node.kind else { return None };
         let scrut = self.infer(*scrutinee);
         if let Some(t) = &scrut
-            && !matches!(t, Ty::Enum(_) | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::F64 | Ty::Option(_))
+            && !matches!(t, Ty::Enum(_) | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::F64 | Ty::Option(_) | Ty::Tuple(_) | Ty::Struct(_) | Ty::Array(..))
         {
             let span = self.design.expr_node(*scrutinee).span;
             self.unsupported(file, span, &format!("`match` expression over `{}`", t.name(self.design)));
@@ -43,10 +43,8 @@ impl Checker<'_> {
             }
         }
         let ty = self.arms(arms, expected);
-        if let Some(t) = &scrut
-            && patterns_typed
-            && let Some(missing) = Coverage::new(self.design).missing(t, &covered)
-        {
+        let missing = scrut.as_ref().filter(|_| patterns_typed).and_then(|t| Coverage::new(self.design, &self.layouts).missing(t, &covered));
+        if let (Some(t), Some(missing)) = (&scrut, missing) {
             let message = format!("a `match` over `{}` is not exhaustive: `{missing}` is not covered (§1.8.6)", t.name(self.design));
             self.coded(file, "E0184", node.span, message, "not exhaustive");
         }

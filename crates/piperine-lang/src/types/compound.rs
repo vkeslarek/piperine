@@ -7,7 +7,7 @@
 //! the elaborator gives each component its own local.
 
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{Arg, AttrArgNode, AttrInputNode, DeclId, DeclKind, ExprId, ExprKind, FieldsForm, FileId, GenericArgNode, GenericArgsNode, PatKind, PatNode, PathId, Resolution};
+use crate::pom::{Arg, AttrArgNode, AttrInputNode, DeclId, DeclKind, ExprId, ExprKind, FieldsForm, FileId, GenericArgNode, GenericArgsNode, PathId, Resolution};
 
 use super::check::Checker;
 use super::Ty;
@@ -138,56 +138,5 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
         self.mismatch(file, span, expected, &found);
-    }
-
-    /// `let (a, b) = (x, y);` (DIG-03 AC 7): each binding takes the type of its component. The
-    /// value must be a tuple expression of as many items; a component pattern is a name.
-    pub(super) fn tuple_let(&mut self, file: FileId, pat: &PatNode, init: ExprId) {
-        let PatKind::Tuple(pats) = &pat.kind else { return };
-        let bindings: Vec<Option<DeclId>> = pats
-            .iter()
-            .map(|p| match &self.design.pat_node(*p).kind {
-                PatKind::Ident { by_ref: false, mutable: false, sub: None, binding, res: Resolution::Unresolved, .. } => Some(*binding),
-                _ => None,
-            })
-            .collect();
-        let init_node = self.design.expr_node(init).clone();
-        let ExprKind::Tuple(items) = &init_node.kind else {
-            self.unsupported(file, init_node.span, "a tuple `let` whose value is not a tuple expression");
-            self.infer(init);
-            self.poisoned.extend(bindings.into_iter().flatten());
-            return;
-        };
-        if items.len() != pats.len() {
-            let (expected, found) = (format!("a tuple of {}", pats.len()), format!("a tuple of {}", items.len()));
-            self.mismatch_text(file, init_node.span, &expected, &found);
-        }
-        let mut types = Some(Vec::new());
-        for (i, item) in items.iter().enumerate() {
-            let ty = self.infer(*item);
-            match (bindings.get(i).copied(), &ty) {
-                (Some(Some(binding)), Some(Ty::Str)) => {
-                    let span = self.design.expr_node(*item).span;
-                    self.unsupported(file, span, "a string literal bound by a `let`");
-                    self.poisoned.insert(binding);
-                }
-                (Some(Some(binding)), Some(t)) => {
-                    self.locals.insert(binding, t.clone());
-                }
-                (Some(Some(binding)), None) => {
-                    self.poisoned.insert(binding);
-                }
-                (Some(None), _) => {
-                    let p = self.design.pat_node(pats[i]).clone();
-                    self.unsupported(file, p.span, &format!("{} in a tuple `let`", super::unsupported::Unsupported::pat(&p.kind)));
-                }
-                (None, _) => {}
-            }
-            types = types.zip(ty).map(|(mut v, t)| {
-                v.push(t);
-                v
-            });
-        }
-        self.exprs[init.index()] = types.map(Ty::Tuple);
     }
 }

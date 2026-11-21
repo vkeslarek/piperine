@@ -176,16 +176,18 @@ fn a_tuple_let_names_each_component() {
     let types = checked(&design, src);
     assert_eq!([types.local(decl(&design, "a", false)), types.local(decl(&design, "b", false))], [Some(&Ty::F64), Some(&Ty::F64)]);
 
-    // A tuple anywhere but the two sides of a `let` is outside the subset; a count that differs
-    // is a mismatch.
-    for (body, names) in [("let t = (1.0, 2.0);", "tuple expression"), ("let x = (1.0, 2.0); let (a, b) = x;", "tuple expression")] {
-        let (src, d) = diagnostics("", body);
-        assert_eq!(codes(&d)[0], "P0001", "{src}");
-        assert!(d[0].diagnostic.message.contains(names), "{src}: {}", d[0].diagnostic.message);
+    // A tuple is a value anywhere (§1.2.4, composite-values T40): bound whole, destructured from a
+    // variable, and a type that is not a tuple is a plain mismatch; a count that differs is a
+    // mismatch at the pattern.
+    for body in ["let t = (1.0, 2.0);", "let x = (1.0, 2.0); let (a, b) = x;"] {
+        let src = source("", body);
+        checked(&design_of(&src), &src);
     }
+    let (src, d) = diagnostics("", "let t: (f64, f64) = 1.0;");
+    assert_eq!(codes(&d), ["P0002"], "{src}");
     let (src, d) = diagnostics("", "let (a, b) = (1.0, 2.0, 3.0);");
     assert_eq!(codes(&d), ["P0002"]);
-    assert_eq!(snippet(&src, &d[0]), "(1.0, 2.0, 3.0)");
+    assert_eq!(snippet(&src, &d[0]), "(a, b)");
 }
 
 #[test]

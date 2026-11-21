@@ -8,6 +8,7 @@
 //! The result is a table or the reasons there is none, never both.
 
 mod aggregate;
+mod aggregate_patterns;
 mod analog;
 mod assign;
 mod call;

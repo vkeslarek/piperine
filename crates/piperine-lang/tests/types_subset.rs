@@ -28,7 +28,6 @@ const ROWS: &[Row] = &[
     Row { construct: "f32", source: "module Top() { }\nanalog for Top { let x: f32 = 1.0; }", names: "`f32`" },
     Row { construct: "Float<N>", source: "module Top() { }\nanalog for Top { let x: Float<32> = 1.0; }", names: "`Float`" },
     Row { construct: "string literal", source: "module Top() { }\nanalog for Top { let x = \"a\"; }", names: "string literal" },
-    Row { construct: "tuple", source: "module Top() { }\nanalog for Top { let x = (1.0, 2.0); }", names: "tuple expression" },
     Row { construct: "array", source: "module Top() { }\nanalog for Top { let x = [1.0, 2.0]; }", names: "array expression" },
     Row { construct: "slice", source: "fn f(s: [f64]) -> f64 { 1.0 }\nmodule Top() { }\nanalog for Top { let x = f(1.0); }", names: "slice type" },
     Row { construct: "reference", source: "module Top() { }\nanalog for Top { let x = 1.0; let y = &x; }", names: "reference `&`" },

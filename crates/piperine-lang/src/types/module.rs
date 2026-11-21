@@ -117,7 +117,7 @@ impl Checker<'_> {
         let pat = self.design.pat_node(data.pat).clone();
         let file = self.design.decl_data(pat.owner).file;
         if matches!(pat.kind, PatKind::Tuple(_)) {
-            self.tuple_let(file, &pat, data.value);
+            self.let_pattern(file, data.pat, None, Some(data.value), None);
             return;
         }
         let PatKind::Ident { by_ref: false, mutable: false, sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {

@@ -1,6 +1,6 @@
 //! One pattern against a value of a known type (§1.6): what it covers, and the names it binds
-//! with their types. Literal, range, path, `Some(p)`, binding, `name @ p` and or-patterns; a form
-//! outside that (tuple, struct, slice, `ref`) is refused by name until the aggregate types.
+//! with their types. Literal, range, path, `Some(p)`, binding, `name @ p` and or-patterns here;
+//! tuple, struct, variant, slice and reference patterns in `aggregate_patterns.rs`.
 //!
 //! An identifier pattern that resolves to a unit variant or a constant is a path and binds
 //! nothing (§1 rule 14); one that resolves to nothing binds, at any depth (§1.6.2).
@@ -15,22 +15,27 @@ use super::Ty;
 
 /// One name a pattern binds, with its type.
 #[derive(Debug, Clone, PartialEq)]
-struct Bound {
-    name: String,
-    ty: Ty,
+pub(super) struct Bound {
+    pub(super) name: String,
+    pub(super) ty: Ty,
 }
 
 /// What matching one pattern against a value covers of it and binds.
 #[derive(Debug, Clone)]
 pub(super) struct Matched {
     pub(super) covers: Vec<Covers>,
-    bound: Vec<Bound>,
+    pub(super) bound: Vec<Bound>,
 }
 
 impl Matched {
     /// A pattern that binds nothing and covers `covers`.
-    fn covering(covers: Covers) -> Self {
+    pub(super) fn covering(covers: Covers) -> Self {
         Matched { covers: vec![covers], bound: Vec::new() }
+    }
+
+    /// A pattern covering the alternatives `covers` and binding `bound`.
+    pub(super) fn new(covers: Vec<Covers>, bound: Vec<Bound>) -> Self {
+        Matched { covers, bound }
     }
 }
 
@@ -69,6 +74,7 @@ impl Checker<'_> {
                 Some(Matched { covers: vec![Covers::Some(payload.covers)], bound: payload.bound })
             }
             PatKind::Or(alternatives) => self.or_pattern(file, node.span, alternatives, scrut),
+            PatKind::Tuple(pats) => self.tuple_pattern(file, node.span, pats, scrut),
             other => {
                 self.unsupported(file, node.span, &format!("{} as a pattern", Unsupported::pat(other)));
                 None
@@ -81,7 +87,8 @@ impl Checker<'_> {
     /// value it does not match.
     pub(super) fn irrefutable_pattern(&mut self, file: FileId, pat: PatId, ty: &Ty, what: &str) -> Option<Matched> {
         let matched = self.pattern(file, pat, ty)?;
-        if let Some(missing) = Coverage::new(self.design).missing(ty, &matched.covers) {
+        let missing = Coverage::new(self.design, &self.layouts).missing(ty, &matched.covers);
+        if let Some(missing) = missing {
             let span = self.design.pat_node(pat).span;
             let message = format!("{what} takes an irrefutable pattern: this one does not match `{missing}` (§1.6.11)");
             self.coded(file, "E0184", span, message, "refutable pattern");

@@ -286,6 +286,42 @@ impl Checker<'_> {
         None
     }
 
+    // ---- tuples ----------------------------------------------------------------------------
+
+    /// `(a, b)`, `(a,)` and `()` (§1.2.4): a tuple of the items' types, each item checked against
+    /// the matching field of `expected` when the position gives a tuple.
+    pub(super) fn tuple_expression(&mut self, items: &[ExprId], expected: Option<&Ty>) -> Option<Ty> {
+        if items.is_empty() {
+            return Some(Ty::Unit);
+        }
+        let wanted: Option<&Vec<Ty>> = match expected {
+            Some(Ty::Tuple(types)) if types.len() == items.len() => Some(types),
+            _ => None,
+        };
+        let mut types = Vec::new();
+        let mut typed = true;
+        for (i, item) in items.iter().enumerate() {
+            let ty = match wanted.and_then(|w| w.get(i)) {
+                Some(want) => {
+                    self.check(*item, want);
+                    Some(want.clone())
+                }
+                None => self.infer(*item),
+            };
+            match ty {
+                Some(ty) if ty.is_value() => types.push(ty),
+                Some(ty) => {
+                    let file = self.file_of_expr(*item);
+                    let span = self.design.expr_node(*item).span;
+                    self.unsupported(file, span, &format!("a `{}` inside a tuple", ty.name(self.design)));
+                    typed = false;
+                }
+                None => typed = false,
+            }
+        }
+        typed.then(|| Ty::Tuple(types))
+    }
+
     /// The name of a const expression for a message: a path as written, else a plain word.
     pub(super) fn expression_name(&self, expr: ExprId) -> String {
         match &self.design.expr_node(expr).kind {
