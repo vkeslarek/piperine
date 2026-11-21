@@ -45,23 +45,6 @@ pub(crate) fn to_diagnostic(e: &Err<'_>, tokens: &[(Token, Span)]) -> Diagnostic
         {
             name_error(&t, span)
         }
-        // `&mut`: the `&` before the `mut` that was found is part of the form.
-        RichReason::ExpectedFound { found: Some(t), .. }
-            if matches!(&**t, Token::Kw(Kw::Mut))
-                && tokens.iter().any(|(p, s)| *p == Token::Punct(Punct::And) && s.end == span.start) =>
-        {
-            let start = tokens
-                .iter()
-                .find(|(p, s)| *p == Token::Punct(Punct::And) && s.end == span.start)
-                .map_or(span.start, |(_, s)| s.start);
-            Diagnostic::new(
-                "E0101",
-                "a mutable reference is not part of the language",
-                Span::new(start, span.end),
-                "a syntactic form left out of the language",
-            )
-            .with_help("values are immutable and owned; Part I §1 rule 2 lists the forms left out")
-        }
         // A Rust keyword no production of the language accepts anywhere.
         RichReason::ExpectedFound { found: Some(t), .. } if matches!(&**t, Token::Kw(k) if unused_keyword(*k)) => {
             name_error(&t, span)
@@ -302,7 +285,7 @@ fn is_close(t: &Token) -> bool {
 fn ends_operand(t: &Token) -> bool {
     match t {
         Token::Ident(_) | Token::RawIdent(_) | Token::Int(_) | Token::Float { .. } | Token::Str { .. }
-        | Token::Unknown | Token::StaticLifetime => true,
+        | Token::Unknown => true,
         Token::Kw(Kw::SelfLower | Kw::SelfUpper | Kw::True | Kw::False) => true,
         Token::Punct(p) => matches!(p, Punct::RParen | Punct::RBracket | Punct::RBrace | Punct::Question),
         _ => false,

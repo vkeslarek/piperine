@@ -13,9 +13,11 @@ pub(crate) fn build<'a, I: In<'a>>(
 
     let wild = punct(Punct::Underscore).map_with(move |_, e| mk(PatKind::Wild, e.span()));
     let rest = punct(Punct::DotDot).map_with(move |_, e| mk(PatKind::Rest, e.span()));
-    let reference = punct(Punct::And)
-        .ignore_then(pat1.clone())
-        .map_with(move |p, e| mk(PatKind::Ref(Box::new(p)), e.span()));
+    // `&p`: removed (B.3.6); reported at the head, read as the pattern it borrows.
+    let reference = reference_head().then(pat1.clone()).validate(|(head, inner), _, emitter| {
+        emitter.emit(removed("references and borrows", head));
+        inner
+    });
 
     // `(p)` is p; `(p,)`, `(a, b)` and `()` are tuples.
     let tuple = pat

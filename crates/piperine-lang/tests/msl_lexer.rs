@@ -97,17 +97,17 @@ fn malformed_si_literal_reports_e0902() {
 #[test]
 fn dropped_token_class_reports_e0905() {
     // Appendix A.1 resolution + A.6: char, byte, byte string, lifetime.
-    for src in ["'a'", "b'a'", "b\"x\"", "'a"] {
+    for src in ["'a'", "b'a'", "b\"x\"", "'a", "'static"] {
         let d = diagnostics(src);
         assert_eq!(d.len(), 1, "{src:?}: {d:?}");
         assert_eq!(d[0].code, "E0905", "{src:?}");
         assert_eq!(d[0].span(), Span::new(0, src.len()), "{src:?} span");
     }
-    // `'static` is the one accepted lifetime.
-    assert_eq!(
-        tokens("&'static str"),
-        vec![Token::Punct(Punct::And), Token::StaticLifetime, Token::Ident("str".into())]
-    );
+    // The lifetime of a reference is part of the removed reference form (B.3.6): one E0905 and no
+    // token, so the reference reports itself.
+    let (toks, diags) = lex("&'static str");
+    assert_eq!(toks.into_iter().map(|(t, _)| t).collect::<Vec<_>>(), vec![Token::Punct(Punct::And), Token::Ident("str".into())]);
+    assert_eq!(diags.len(), 1);
 }
 
 #[test]

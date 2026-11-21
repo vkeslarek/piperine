@@ -729,7 +729,7 @@ fn builtin_kinds(design: &Design, name: &str) -> Vec<Option<BuiltinKind>> {
 
 #[test]
 fn str_is_a_builtin_type() {
-    let design = build("const S: &'static str = \"x\";\n");
+    let design = build("const S: str = \"x\";\n");
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     assert_eq!(builtin_kinds(&design, "str"), [Some(BuiltinKind::Type)]);
 }

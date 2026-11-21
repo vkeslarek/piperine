@@ -39,7 +39,6 @@ pub(crate) const REMOVED_FORMS: &[RemovedForm] = &[
     RemovedForm { row: "restricted visibility", code: "E0900", message: "restricted visibility is not part of the language", help: "write `pub` or no visibility" },
     RemovedForm { row: "loop labels", code: "E0905", message: "loop labels are not part of the language", help: "restructure the loop" },
     RemovedForm { row: "references and borrows", code: "E0101", message: "references and borrows are not part of the language", help: "pass the value itself: every value is copied where it is used" },
-    RemovedForm { row: "`&self` and `&mut self` receivers", code: "E0900", message: "`&self` and `&mut self` receivers are not part of the language", help: "write `self`" },
     RemovedForm { row: "pattern parameters", code: "E0900", message: "pattern parameters are not part of the language", help: "write a plain name, then `let`" },
     RemovedForm { row: "half-open range patterns", code: "E0900", message: "half-open range patterns are not part of the language", help: "write `..=x` or a guard" },
     RemovedForm { row: "a leading `::`", code: "E0900", message: "a leading `::` is not part of the language", help: "write a path from a name in scope" },
@@ -48,7 +47,6 @@ pub(crate) const REMOVED_FORMS: &[RemovedForm] = &[
     RemovedForm { row: "raw-pointer types", code: "E0900", message: "raw-pointer types are not part of the language", help: "write a value or an array" },
     RemovedForm { row: "named function-pointer parameters", code: "E0900", message: "named function-pointer parameters are not part of the language", help: "write the types only: `fn(f64) -> f64`" },
     RemovedForm { row: "attributes and doc comments on a parameter", code: "E0900", message: "attributes and doc comments on parameters, generic parameters and struct-literal fields are not part of the language", help: "put the attribute or comment on the item" },
-    RemovedForm { row: "double borrows", code: "E0900", message: "double borrows are not part of the language", help: "write one borrow: `&a`" },
     RemovedForm { row: "`union` items", code: "E0900", message: "`union` items are not part of the language", help: "write a `struct` or an `enum`" },
     RemovedForm { row: "`extern` blocks", code: "E0900", message: "`extern` blocks are not part of the language", help: "write an `extern \"C\" fn` item" },
     RemovedForm { row: "`extern crate` items", code: "E0900", message: "`extern crate` is not part of the language", help: "name the dependency under `[dependencies]` in Piperine.toml" },
@@ -58,6 +56,12 @@ pub(crate) const REMOVED_FORMS: &[RemovedForm] = &[
 pub(crate) fn removed(row: &str, span: Span) -> Err<'static> {
     let f = REMOVED_FORMS.iter().find(|f| f.row == row).unwrap_or_else(|| panic!("B.3.6 has no row `{row}`"));
     Rich::custom(span, Custom { code: f.code, message: f.message.into(), help: Some(f.help.into()) })
+}
+
+/// The head of a reference form: `&`, `&&` or `&mut`, as one span. The form is removed (B.3.6); the
+/// parser reports it where it reads it and goes on with what follows.
+pub(crate) fn reference_head<'a, I: In<'a>>() -> impl Parser<'a, I, Span, Extra<'a>> + Clone {
+    choice((punct(Punct::And), punct(Punct::AndAnd))).then_ignore(kw(Kw::Mut).or_not()).map_with(|_, e| e.span())
 }
 
 /// One of the three markers of B.3.6 (`mut`, `ref`, `move`): a reserved word (A.1) with the plain

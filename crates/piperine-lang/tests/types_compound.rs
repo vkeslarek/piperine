@@ -388,7 +388,7 @@ fn every_option_and_bool_row_types_with_a_closure_or_value() {
 fn expect_with_a_non_literal_message_is_p0001() {
     // CAT-03 AC 8: the message of `expect` is a string literal, so the fault names it at compile
     // time; anything else is `P0001` naming `expect`.
-    let (src, d) = diagnostics("fn h(o: Option<u8>, s: &str) -> u8 { o.expect(s) }", "let r = h(Some(3), \"msg\");");
+    let (src, d) = diagnostics("fn h(o: Option<u8>, s: str) -> u8 { o.expect(s) }", "let r = h(Some(3), \"msg\");");
     assert_eq!(codes(&d), ["P0001"], "{src}");
     assert!(d[0].diagnostic.message.contains("expect"), "{}", d[0].diagnostic.message);
     assert_eq!(snippet(&src, &d[0]), "s");

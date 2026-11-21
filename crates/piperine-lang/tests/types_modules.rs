@@ -97,7 +97,7 @@ fn ports_and_signals_are_nodes_and_gnd_fits_any() {
     // A discrete nature or a value input is not a conservative node: refused by name.
     let (_, d) = diagnostics("nature Bit2 { value: bool }\nmodule Top(a: Bit2) { }");
     assert_eq!(codes_of(&d), ["P0001"]);
-    let (_, d) = diagnostics("module Top(a: &str) { }");
+    let (_, d) = diagnostics("module Top(a: str) { }");
     assert_eq!(codes_of(&d), ["P0001"]);
 }
 

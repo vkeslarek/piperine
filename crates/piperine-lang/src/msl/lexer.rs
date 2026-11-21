@@ -107,8 +107,6 @@ pub enum Token {
     /// raw string (`r#"..."#`) holds its body with backslash and quote escaped,
     /// so the text reads back as the same value, and the number of its `#`.
     Str { text: String, raw_hashes: Option<u8> },
-    /// The lifetime `'static`, the only one MSL accepts.
-    StaticLifetime,
     /// `///` doc comment: the text after the marker, verbatim.
     DocOuter(String),
     /// `//!` doc comment: the text after the marker, verbatim.
@@ -132,7 +130,6 @@ impl std::fmt::Display for Token {
             Token::Int(s) => write!(f, "`{s}`"),
             Token::Float { raw, .. } => write!(f, "`{raw}`"),
             Token::Str { .. } => f.write_str("string literal"),
-            Token::StaticLifetime => f.write_str("`'static`"),
             Token::DocOuter(_) | Token::DocInner(_) | Token::DocOuterBlock(_) | Token::DocInnerBlock(_) => {
                 f.write_str("doc comment")
             },
@@ -389,7 +386,11 @@ pub(crate) fn lex_with_comments(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnosti
                     comments.push(span);
                 }
             }
-            Ok(Raw::Lifetime) if text == "'static" => tokens.push((Token::StaticLifetime, span)),
+            Ok(Raw::Lifetime) if tokens.last().is_some_and(|(t, _)| *t == Token::Punct(Punct::And)) => {
+                // The lifetime of a reference (`&'a T`, `&'static str`): it is part of the removed
+                // reference form, so one E0905 and no token; the reference reports itself.
+                diags.push(dropped_class(text, span));
+            }
             Ok(Raw::Lifetime) if loop_label(&tokens, lexer.remainder()).is_some() => {
                 // A loop label (`'a: loop`, `break 'a`): one E0905, and the label and its
                 // colon leave no token, so the parse goes on.
@@ -491,10 +492,10 @@ fn dropped_class(text: &str, span: Span) -> Diagnostic {
     } else if text.starts_with('\'') && text.ends_with('\'') && text.len() > 1 {
         "character literal"
     } else {
-        "lifetime other than `'static`"
+        "lifetime"
     };
     Diagnostic::new("E0905", format!("{what} is not part of the language"), span, "dropped token class")
-        .with_help("`char` is not a value type; the only accepted lifetime is `'static`, in `&'static str`")
+        .with_help("`char` is not a value type and there are no lifetimes: nothing is lent, every value is copied")
 }
 
 /// A token `logos` could not match, or a callback rejected: an unterminated
