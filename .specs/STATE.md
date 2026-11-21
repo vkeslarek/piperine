@@ -1669,10 +1669,10 @@ merge renumbers.
 **Status:** Batches B1 to B4 delivered (T1 to T23); B5 (event functions, L51 and L53) waits for
 `composite-values` and `generics`.
 
-### MD-74: params of every carried type; the host drives a top's node through an IR source; files read at elaboration; every spec code raised or owned
+### MD-75: params of every carried type; the host drives a top's node through an IR source; files read at elaboration; every spec code raised or owned
 
 `params-and-io` (2026-11-20, batches B1 to B4; B5 and B6 wait on `composite-values` phases A to B). The
-number follows MD-73; the second feature to merge renumbers.
+number follows MD-74 (`unknown-semantics-events`, merged first).
 
 1. **Every code of the spec is raised or owned.** `crates/piperine-lang/tests/spec_codes.rs` lists every
    code of every error table under `docs/spec/`, and fails for one that no non-test source spells and

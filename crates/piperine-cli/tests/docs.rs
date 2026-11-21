@@ -530,5 +530,5 @@ fn gaps_no_longer_lists_x5_l20_l39_h12() {
     let row = roadmap.lines().find(|line| line.starts_with("| `params-and-io` |")).expect("the roadmap has a params-and-io row");
     assert!(row.contains("B1 to B4") && row.contains("B5") && row.contains("`composite-values`"), "the row says what B1 to B4 delivered and that B5 and B6 wait: {row}");
     let state = read(".specs/STATE.md");
-    assert!(state.contains("### MD-74:") && state.contains("`params-and-io`"), "STATE.md holds the decision entry");
+    assert!(state.contains("### MD-75:") && state.contains("`params-and-io`"), "STATE.md holds the decision entry");
 }
