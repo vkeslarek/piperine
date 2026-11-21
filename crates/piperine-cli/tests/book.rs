@@ -387,6 +387,17 @@ fn the_rc_output_blocks_are_what_the_binary_prints() {
     }
 }
 
+/// `data-cli-lines` is checked on every listing of the Book, the buck's included: its run is on demand
+/// (`book_buck`), its selection is not, so the range stays held by default.
+#[test]
+fn every_listing_selects_lines_inside_its_block() {
+    let html = content();
+    let selecting: Vec<Block> = blocks(&html).into_iter().filter(|b| b.attr("data-cli-output").is_some() && b.attr("data-cli-lines").is_some()).collect();
+    assert!(selecting.iter().any(|b| b.attr("data-cli-project") == Some("buck")), "the buck listing selects lines of its block");
+    let failures: Vec<String> = selecting.iter().filter_map(|b| selection(b).err().map(|why| format!("`{}`: {why}", b.attr("data-cli-output").unwrap_or("")))).collect();
+    assert!(failures.is_empty(), "listings with a bad `data-cli-lines`:\n{}", failures.join("\n"));
+}
+
 #[test]
 fn every_cli_listing_of_the_book_is_what_the_binary_prints() {
     // Book claims held here: welcome~72129ad3, welcome~a4895da4, welcome~df325c6f, welcome~6e662db9, language~b8b3f31f, types~050c60ed, values~4938c15f, solver~1cdf59b8, values~2931bd2e, values~9a0ece05, cli~54e71d59
