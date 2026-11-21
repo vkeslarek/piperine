@@ -90,7 +90,7 @@ fn unreached_items_are_not_reported() {
         "{HEAD}\
          struct S {{ a: f64 }}\nenum C {{ A, B }}\ntrait Tr {{ fn get(self) -> f64; }}\nimpl S {{ fn get(self) -> f64 {{ 1.0 }} }}\n\
          const N: u32 = 3;\n\
-         fn loops(x: f64) -> f64 {{ let mut y = x; while y > 0.0 {{ y = y - 1.0; }} match y {{ _ => y }} }}\n\
+         fn loops(x: f64) -> f64 {{ let y = x; while y > 0.0 {{ y = y - 1.0; }} match y {{ _ => y }} }}\n\
          fn generic<T>(x: T) -> T {{ x }}\n\
          module Generic<N: Nature>(a: N) {{ }}\n\
          module Digital(in d: bool) -> f64 {{ 1.0 }}\n\

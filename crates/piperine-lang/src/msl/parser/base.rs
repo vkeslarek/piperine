@@ -38,8 +38,9 @@ pub(crate) const REMOVED_FORMS: &[RemovedForm] = &[
     RemovedForm { row: "qualified paths", code: "E0900", message: "qualified paths are not part of the language", help: "write a path through the type: `T::X`" },
     RemovedForm { row: "restricted visibility", code: "E0900", message: "restricted visibility is not part of the language", help: "write `pub` or no visibility" },
     RemovedForm { row: "loop labels", code: "E0905", message: "loop labels are not part of the language", help: "restructure the loop" },
+    RemovedForm { row: "references and borrows", code: "E0101", message: "references and borrows are not part of the language", help: "pass the value itself: every value is copied where it is used" },
     RemovedForm { row: "`&self` and `&mut self` receivers", code: "E0900", message: "`&self` and `&mut self` receivers are not part of the language", help: "write `self`" },
-    RemovedForm { row: "`mut` and pattern parameters", code: "E0900", message: "`mut` and pattern parameters are not part of the language", help: "write a plain name, then `let`" },
+    RemovedForm { row: "pattern parameters", code: "E0900", message: "pattern parameters are not part of the language", help: "write a plain name, then `let`" },
     RemovedForm { row: "half-open range patterns", code: "E0900", message: "half-open range patterns are not part of the language", help: "write `..=x` or a guard" },
     RemovedForm { row: "a leading `::`", code: "E0900", message: "a leading `::` is not part of the language", help: "write a path from a name in scope" },
     RemovedForm { row: "inner attributes", code: "E0900", message: "inner attributes are not part of the language", help: "write an outer attribute on the item" },
@@ -57,6 +58,35 @@ pub(crate) const REMOVED_FORMS: &[RemovedForm] = &[
 pub(crate) fn removed(row: &str, span: Span) -> Err<'static> {
     let f = REMOVED_FORMS.iter().find(|f| f.row == row).unwrap_or_else(|| panic!("B.3.6 has no row `{row}`"));
     Rich::custom(span, Custom { code: f.code, message: f.message.into(), help: Some(f.help.into()) })
+}
+
+/// One of the three markers of B.3.6 (`mut`, `ref`, `move`): a reserved word (A.1) with the plain
+/// form to write instead.
+pub(crate) struct ReservedMarker {
+    /// The reserved word.
+    pub word: Kw,
+    /// What to write in its place.
+    pub help: &'static str,
+}
+
+/// The markers, one row each.
+pub(crate) const RESERVED_MARKERS: &[ReservedMarker] = &[
+    ReservedMarker { word: Kw::Mut, help: "write the plain form `let x`: every local may be assigned" },
+    ReservedMarker { word: Kw::Ref, help: "write the plain name: a pattern binds a copy" },
+    ReservedMarker { word: Kw::Move, help: "write `|x| e`: a closure captures by value" },
+];
+
+impl ReservedMarker {
+    /// The marker for a keyword, when it is one.
+    pub(crate) fn of(word: Kw) -> Option<&'static ReservedMarker> {
+        RESERVED_MARKERS.iter().find(|m| m.word == word)
+    }
+
+    /// `E0903` at the word `word` found at `span`, with the help of its row.
+    pub(crate) fn report(word: Kw, span: Span) -> Err<'static> {
+        let help = Self::of(word).map_or("choose another name", |m| m.help);
+        Rich::custom(span, Custom { code: "E0903", message: format!("{} is a reserved keyword", Token::Kw(word)), help: Some(help.into()) })
+    }
 }
 
 /// Tokens up to, not including, the next `;`, `{` or `}`: the rest of a form

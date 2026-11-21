@@ -1152,8 +1152,8 @@ use E::*;
 fn g() {}
 fn f(o: Option<u32>, e: E) -> u32 {
     let local = 1;
-    let a = match o { Some(y) => y, mut m => 0 };
-    let b = match e { ref r => 0 };
+    let a = match o { Some(y) => y, m => 0 };
+    let b = match e { r => 0 };
     let c = match local { whole @ 1 => whole, nothing => nothing, g => 0, B => 0, local => local };
     a + b + c
 }

@@ -309,16 +309,54 @@ fn a_statement_outside_a_reaction_in_digital_reports_e0434() {
 }
 
 #[test]
-fn module_forms_report_e0302_e0303_e0331() {
+fn module_forms_report_e0302_and_e0303() {
     // E0302: a result expression needs `-> T`.
     assert_eq!(codes("module M(a: Bit) { a }"), [("E0302", Span::new(19, 20))]);
     assert!(codes("module M(a: Bit) -> Bit { a }").is_empty());
     // E0303: a module in a block or a function.
     let found = codes("fn f() { module M() {} }");
     assert!(found.contains(&("E0303", Span::new(9, 22))), "{found:?}");
-    // E0331: `let mut` in a module body.
-    let found = codes("module M() { let mut x = 1; }");
-    assert!(found.contains(&("E0331", Span::new(17, 22))), "{found:?}");
+}
+
+#[test]
+fn let_mut_in_a_module_body_is_e0903() {
+    // VS-02 AC 2 (A.1, B.3.6): `mut` is a reserved word wherever it stands, a module body
+    // included; the module-body rule `E0331` no longer exists.
+    assert_eq!(codes("module M() { let mut x = 1; }"), [("E0903", Span::new(17, 20))]);
+}
+
+#[test]
+fn the_markers_are_reserved_words_with_a_help_each() {
+    // VS-02 AC 1 (B.3.6): `mut`, `ref` and `move` are each `E0903` at the word, once, and the help
+    // names the plain form of that word.
+    for (src, word, at, help) in [
+        ("fn f() { let mut x = 0; }", "mut", 13, "let x"),
+        ("fn f() { match v { ref y => { } _ => { } } }", "ref", 19, "plain name"),
+        ("fn f() { let g = move |a| a; }", "move", 17, "|x| e"),
+        ("fn f(mut x: u8) { }", "mut", 5, "let x"),
+    ] {
+        let r = parse(src);
+        assert_eq!(r.diagnostics.len(), 1, "{src}: {:?}", r.diagnostics);
+        let d = &r.diagnostics[0];
+        assert_eq!((d.code.as_ref(), d.span()), ("E0903", Span::new(at, at + word.len())), "{src}");
+        assert!(d.message.contains(&format!("`{word}`")), "{src}: {}", d.message);
+        assert!(d.help.as_deref().is_some_and(|h| h.contains(help)), "{src}: {:?}", d.help);
+    }
+}
+
+#[test]
+fn e0102_and_e0331_are_raised_nowhere() {
+    // VS-02 AC 3: both codes are retired (G.71); no source of the forms they named raises them.
+    for src in [
+        "module M() { let mut x = 1; }",
+        "fn f() { let mut x = 1; }",
+        "fn f(x: &mut u8) { }",
+        "fn f() { let r = &mut x; }",
+        "fn f(x: &u8) { }",
+    ] {
+        let found = codes(src);
+        assert!(found.iter().all(|(code, _)| *code != "E0102" && *code != "E0331"), "{src}: {found:?}");
+    }
 }
 
 #[test]
@@ -431,7 +469,7 @@ fn diagnostic_has_code_message_label_help() {
         ("E0121", "fn f() { x +> 1.0; }"),
         ("E0302", "module M(a: Bit) { a }"),
         ("E0303", "fn f() { module M() {} }"),
-        ("E0331", "module M() { let mut x = 1; }"),
+        ("E0903", "module M() { let mut x = 1; }"),
         ("E0404", "analog for M { q <- 1; }"),
         ("E0434", "digital for M { q <- 1; }"),
         ("E0901", "fn f() { println!(\"x\"); }"),
@@ -518,7 +556,7 @@ fn fixtures() -> Vec<Fixture> {
         fixture("E0302", "module M(a: Bit) { ", "a", " }"),
         fixture("E0303", "fn f() { ", "module M() {}", " }"),
         fixture("E0303", "module M() { ", "module N() {}", " }"),
-        fixture("E0331", "module M() { let ", "mut x", " = 1; }"),
+        fixture("E0903", "module M() { let ", "mut", " x = 1; }"),
         // Part IV
         fixture("E0404", "analog for M { ", "q <- 1;", " }"),
         fixture("E0404", "digital for M { on e { ", "i(p, n) +> 1.0;", " } }"),
@@ -607,27 +645,17 @@ fn every_parse_phase_row_has_a_fixture() {
     let covered: std::collections::BTreeSet<String> = fixtures().iter().map(|f| f.code.to_string()).collect();
     let missing: Vec<&String> = spec.difference(&covered).collect();
     assert!(missing.is_empty(), "parse-phase rows without a fixture: {missing:?}");
-    // And a fixture for a code the spec does not list as `parse` is stale, except the codes the
-    // value-semantics amendment retired ahead of the parser (G.71).
-    let stale: Vec<&String> = covered.difference(&spec).filter(|c| !RETIRED_AHEAD_OF_THE_PARSER.contains(&c.as_str())).collect();
+    // And a fixture for a code the spec does not list as `parse` is stale.
+    let stale: Vec<&String> = covered.difference(&spec).collect();
     assert!(stale.is_empty(), "fixtures for codes that are not parse-phase rows: {stale:?}");
-    for code in RETIRED_AHEAD_OF_THE_PARSER {
-        assert!(covered.contains(code) && !spec.contains(code), "{code} is retired in the spec and still raised: drop it from the list once the parser stops");
-    }
 }
 
-/// Parse-phase codes the specification retired before the parser stopped raising them: the
-/// value-semantics amendment (Appendix G.71) changed the text first. `GAPS.md` S7 lists them;
-/// the feature `value-semantics` removes each fixture and empties this list.
-const RETIRED_AHEAD_OF_THE_PARSER: [&str; 1] = ["E0331"];
+/// B.3.6 rows whose fixtures are still to be written by the task that makes the parser report
+/// them.
+const ROWS_AHEAD_OF_THE_PARSER: [&str; 1] = ["references and borrows"];
 
-/// B.3.6 rows the specification gained with value semantics that the parser does not report
-/// yet (`GAPS.md` S7). The feature `value-semantics` adds their fixtures and empties this list.
-const ROWS_AHEAD_OF_THE_PARSER: [&str; 3] = ["references and borrows", "pattern parameters", "the markers `mut`, `ref` and `move`"];
-
-/// B.3.6 rows of earlier revisions whose fixtures still describe the parser (`GAPS.md` S7): the
-/// rows those of `ROWS_AHEAD_OF_THE_PARSER` replace. Emptied with it.
-const FIXTURES_BEHIND_THE_SPEC: [&str; 3] = ["`&self` and `&mut self` receivers", "`mut` and pattern parameters", "double borrows"];
+/// B.3.6 fixtures of the forms the parser still reports under their earlier rows.
+const FIXTURES_BEHIND_THE_SPEC: [&str; 2] = ["`&self` and `&mut self` receivers", "double borrows"];
 
 #[test]
 fn rendered_output_is_miette_graphical() {
@@ -966,8 +994,11 @@ const REMOVED: &[Removed] = &[
     removed("loop labels", "fn f() { loop { break 'a; } }", "E0905", "loop labels are not part of the language", "restructure the loop"),
     removed("`&self` and `&mut self` receivers", "impl S { fn h(&self) { } }", "E0900", "`&self` and `&mut self` receivers are not part of the language", "write `self`"),
     removed("`&self` and `&mut self` receivers", "impl S { fn h(&mut self) { } }", "E0900", "`&self` and `&mut self` receivers are not part of the language", "write `self`"),
-    removed("`mut` and pattern parameters", "fn f(mut x: u8) { }", "E0900", "`mut` and pattern parameters are not part of the language", "a plain name"),
-    removed("`mut` and pattern parameters", "fn f((a, b): (u8, u8)) { }", "E0900", "`mut` and pattern parameters are not part of the language", "a plain name"),
+    removed("pattern parameters", "fn f((a, b): (u8, u8)) { }", "E0900", "pattern parameters are not part of the language", "a plain name"),
+    removed("the markers `mut`, `ref` and `move`", "fn f(mut x: u8) { }", "E0903", "`mut` is a reserved keyword", "`let x`"),
+    removed("the markers `mut`, `ref` and `move`", "fn f() { let mut x = 0; }", "E0903", "`mut` is a reserved keyword", "`let x`"),
+    removed("the markers `mut`, `ref` and `move`", "fn f() { match v { ref y => { } _ => { } } }", "E0903", "`ref` is a reserved keyword", "plain name"),
+    removed("the markers `mut`, `ref` and `move`", "fn f() { let g = move |a| a; }", "E0903", "`move` is a reserved keyword", "`|x| e`"),
     removed("half-open range patterns", "fn f() { match x { ..5 => { } _ => { } } }", "E0900", "half-open range patterns are not part of the language", "`..=x`"),
     removed("a leading `::`", "fn f() { let x = ::a::b; }", "E0900", "a leading `::` is not part of the language", "a path from a name in scope"),
     removed("a leading `::`", "use ::a::b;", "E0900", "a leading `::` is not part of the language", "a path from a name in scope"),

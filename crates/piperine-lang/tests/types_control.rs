@@ -108,13 +108,6 @@ fn a_read_before_assignment_is_e0183() {
     assert_clean(&source("", "let x: f64; let c = true; if c { x = 1.0; } else { x = 2.0; } let y = x;"));
 }
 
-#[test]
-fn let_mut_in_a_module_body_is_e0331() {
-    // §8.2: a module body is not a block; `let mut` there is the parser's `E0331`.
-    let design = support::build("module Top() { let mut x = 1.0; }");
-    assert!(support::codes(&design).contains(&"E0331".to_string()), "{:?}", support::codes(&design));
-}
-
 // ---- T12: loops -----------------------------------------------------------------------------
 
 #[test]

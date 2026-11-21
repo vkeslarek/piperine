@@ -130,8 +130,6 @@ fn inherited_rust_forms_parse() {
     // ---- patterns ----
     assert!(matches!(pat("_").kind, PatKind::Wild));
     assert!(matches!(&pat("x").kind, PatKind::Ident { by_ref: false, mutable: false, sub: None, .. }));
-    assert!(matches!(&pat("mut x").kind, PatKind::Ident { mutable: true, .. }));
-    assert!(matches!(&pat("ref x").kind, PatKind::Ident { by_ref: true, .. }));
     assert!(matches!(&pat("x @ 1..=5").kind, PatKind::Ident { sub: Some(_), .. }));
     assert!(matches!(&pat("Phase::Liquid").kind, PatKind::Path(p) if path_names(p) == ["Phase", "Liquid"]));
     assert!(matches!(&pat("Some(x)").kind, PatKind::TupleStruct { pats, .. } if pats.len() == 1));
@@ -292,7 +290,6 @@ fn inherited_rust_forms_parse_expressions() {
     assert_eq!(params.len(), 2);
     assert!(matches!(&expr("|x: f64| -> f64 { x }").kind, ExprKind::Closure { ret: Some(_), .. }));
     assert!(matches!(&expr("|| 0").kind, ExprKind::Closure { params, .. } if params.is_empty()));
-    assert!(matches!(expr("move |x| x").kind, ExprKind::Closure { is_move: true, .. }));
     // A closure passed to a method, holding a `match` with or-patterns.
     expr("d.iter().fold(None, |a, x| match (a, *x) { (None, y) | (y, None) => y, _ => Some(Unknown) })");
 
@@ -323,7 +320,7 @@ fn inherited_rust_forms_parse_expressions() {
     assert!(matches!(&expr("include_str!(\"diode_iv.tbl\")").kind, ExprKind::IncludeStr(_)));
 
     // ---- statements ----
-    let b = block("{ let (a, b) = (1, 2); let mut s: i2 = state; s += 1; bound_step(t / 50.0); s }");
+    let b = block("{ let (a, b) = (1, 2); let s: i2 = state; s += 1; bound_step(t / 50.0); s }");
     assert_eq!(b.stmts.len(), 5);
     assert!(matches!(&b.stmts[0].kind, StmtKind::Let { init: Some(_), ty: None, .. }));
     assert!(matches!(&b.stmts[1].kind, StmtKind::Let { ty: Some(_), .. }));

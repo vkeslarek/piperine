@@ -767,8 +767,8 @@ fn unused_keyword(k: Kw) -> bool {
     use Kw::*;
     matches!(
         k,
-        Type | Static | Abstract | Become | Box | Do | Final | Macro | Override | Priv | Typeof | Unsized
-            | Virtual | Yield | Try | Gen
+        Type | Static | Mut | Ref | Move | Abstract | Become | Box | Do | Final | Macro | Override | Priv
+            | Typeof | Unsized | Virtual | Yield | Try | Gen
     )
 }
 
@@ -802,6 +802,7 @@ fn name_error(found: &Token, span: Span) -> Diagnostic {
         .with_help("values are immutable and owned; Part I §1 rule 2 lists the forms left out"),
         other => {
             let help = match other {
+                Token::Kw(k) if ReservedMarker::of(*k).is_some() => ReservedMarker::of(*k).map_or_else(String::new, |m| m.help.to_string()),
                 Token::Kw(k) if added_keyword(*k) => format!("choose another name, or write the keyword as a raw identifier: `r#{}`", other.to_string().trim_matches('`')),
                 _ => "choose another name".to_string(),
             };

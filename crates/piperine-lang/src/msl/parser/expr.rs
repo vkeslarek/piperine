@@ -383,6 +383,8 @@ pub(crate) fn build<'a, I: In<'a>>(
             .delimited_by(punct(Punct::Or), punct(Punct::Or)),
     ));
     let closure = kw(Kw::Move)
+        .map_with(|_, e| e.span())
+        .validate(|at, _, emitter| emitter.emit(ReservedMarker::report(Kw::Move, at)))
         .or_not()
         .then(closure_params)
         .then(first_of(vec![

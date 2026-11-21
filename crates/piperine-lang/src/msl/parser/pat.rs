@@ -70,10 +70,11 @@ pub(crate) fn build<'a, I: In<'a>>(
             ),
         });
 
-    // `ref x`, `mut x`, `ref mut x`, each with an optional `@ pat`.
+    // `ref x`, `mut x`, `ref mut x`: each marker is a reserved word (`E0903`), the name is read as plain.
     let binding_mods = kw(Kw::Ref)
+        .map_with(|_, e| (Kw::Ref, e.span()))
         .or_not()
-        .then(kw(Kw::Mut).or_not())
+        .then(kw(Kw::Mut).map_with(|_, e| (Kw::Mut, e.span())).or_not())
         .try_map(|(r, m), span| {
             if r.is_none() && m.is_none() {
                 Err(Rich::custom(span, Custom {
@@ -82,13 +83,16 @@ pub(crate) fn build<'a, I: In<'a>>(
                     help: None,
                 }))
             } else {
-                Ok((r.is_some(), m.is_some()))
+                Ok([r, m])
             }
         })
         .then(ident())
         .then(punct(Punct::At).ignore_then(pat1.clone()).or_not())
-        .map_with(move |(((by_ref, mutable), name), sub), e| {
-            mk(PatKind::Ident { by_ref, mutable, name, sub: sub.map(Box::new) }, e.span())
+        .validate(move |((markers, name), sub), e, emitter| {
+            for (word, span) in markers.into_iter().flatten() {
+                emitter.emit(ReservedMarker::report(word, span));
+            }
+            mk(PatKind::Ident { by_ref: false, mutable: false, name, sub: sub.map(Box::new) }, e.span())
         });
 
     // A path: a binding (single segment), a unit/const path, a tuple struct,
