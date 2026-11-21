@@ -71,7 +71,7 @@ fn connecting_byte_to_bit_u8_is_e0251_naming_both_natures() {
     let diagnostics = source.diagnostics();
     assert_eq!(diagnostics.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0251"]);
     let message = &diagnostics[0].diagnostic.message;
-    assert!(message.contains("Byte<u8>") && message.contains("Bit<u8>"), "{message}");
+    assert!(message.contains("`Byte`") && message.contains("`Bit<u8>`") && !message.contains("Byte<"), "{message}");
     let source = Source::new(&format!("{BYTE}module Sink(in x: Byte) {{ }}\nmodule Top() {{ signal b: Byte; let s = Sink(b); }}"));
     source.checked();
 }
