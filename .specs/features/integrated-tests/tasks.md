@@ -176,11 +176,11 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] `cargo test --no-run` at the root lists none of `buck_scenarios`, `buck_long`, `piperine-cli`'s `buck` (C2's proof)
-- [ ] `git diff --quiet 856d2668 HEAD -- tests/buck_scenarios.rs crates/piperine-api/tests/buck_long.rs crates/piperine-cli/tests/buck.rs` exits 0
-- [ ] `Run hygiene` and `Run shape` pass (the new root table declares an existing path)
-- [ ] Gate check passes: `Run hygiene`, `Run shape`, the Build line
-- [ ] Test count: no test added or removed
+- [x] `cargo test --no-run` at the root lists none of `buck_scenarios`, `buck_long`, `piperine-cli`'s `buck` (C2's proof)
+- [x] `git diff --quiet 856d2668 HEAD -- tests/buck_scenarios.rs crates/piperine-api/tests/buck_long.rs crates/piperine-cli/tests/buck.rs` exits 0
+- [x] `Run hygiene` and `Run shape` pass (the new root table declares an existing path)
+- [x] Gate check passes: `Run hygiene`, `Run shape`, the Build line
+- [x] Test count: no test added or removed
 
 **Tests**: integration
 **Gate**: full

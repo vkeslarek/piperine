@@ -19,3 +19,9 @@ piperine-transpile = { path = "../piperine-transpile" }
 # The twins' corpus layout (`Corpus`), read by the twins target.
 piperine-parity = { path = "../piperine-parity" }
 tempfile.workspace = true
+
+# Runs by name, not by `cargo test` (MD-76; registered in `suite_hygiene.rs`).
+[[test]]
+name = "buck"
+path = "tests/buck.rs"
+test = false

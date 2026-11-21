@@ -223,3 +223,9 @@ too_many_arguments              = "allow"
 type_complexity                 = "allow"
 large_enum_variant              = "allow"
 mutable_key_type                = "allow"
+
+# Runs by name, not by `cargo test` (MD-76; registered in `suite_hygiene.rs`).
+[[test]]
+name = "buck_scenarios"
+path = "tests/buck_scenarios.rs"
+test = false

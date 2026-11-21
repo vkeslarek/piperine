@@ -414,7 +414,7 @@ impl OnDemandManifest {
 /// directory, target name, why. `test = false` is a way to say "by name only", never a way to
 /// switch a test off, so every flagged target is named here and in `examples/buck/README.md`'s
 /// "On demand" block (`on_demand_targets_are_registered`).
-const ON_DEMAND_TARGETS: [(&str, &str, &str); 7] = [
+const ON_DEMAND_TARGETS: [(&str, &str, &str); 10] = [
     ("crates/piperine-parity", "buck_whole", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-76)"),
     ("crates/piperine-parity", "buck_dpwm", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-76)"),
     ("crates/piperine-parity", "buck_control", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-76)"),
@@ -422,6 +422,9 @@ const ON_DEMAND_TARGETS: [(&str, &str, &str); 7] = [
     ("crates/piperine-parity", "buck_power", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-76)"),
     ("crates/piperine-parity", "buck_supervisor", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-76)"),
     ("crates/piperine-parity", "buck_closed_loop", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-76)"),
+    ("crates/piperine-api", "buck_long", "the 600 us start of `examples/buck` through the host library; run by name (MD-76)"),
+    ("crates/piperine-cli", "buck", "the binary on `examples/buck`'s `idle` and `startup` runs; run by name (MD-76)"),
+    (".", "buck_scenarios", "SPEC S2 to S10 of `examples/buck` under a Rust host; run by name (MD-76)"),
 ];
 
 /// The registry and the README's "On demand" block, read against a set of declared targets.

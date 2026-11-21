@@ -136,3 +136,9 @@ failed `never` record (S10).
 ```sh
 cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_boundary --test buck_power --test buck_supervisor --test buck_closed_loop
 ```
+
+```sh
+cargo test -p piperine-api --test buck_long
+cargo test -p piperine-cli --test buck
+cargo test -p piperine --test buck_scenarios
+```
