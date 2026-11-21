@@ -28,6 +28,7 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | blocking writes and `#0` | commits; every read sees the past (§12.1.1) |
 | indirect contributions | the row of an internal node (§11, `Nullor`) |
 | heap types | arrays and carriers fixed at elaboration (§1 rule 2) |
+| references, borrows, moves, mutability markers | values, copied where they are used (§1.4.6); hardware named by identity (§1.4.7); G.71 |
 | reading files during a run | `include_str!` into a `const` (§20) |
 | implicit converters | `D2A`, `A2D`, `Bidir` placed explicitly (§6.1, §22.4) |
 | global nets other than `gnd` | ports (§6 rule 1) |
@@ -89,6 +90,7 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | G.68 | `Tran` passed to `analysis` names a module | Open |
 | G.69 | Implementation-defined float results: the bits of a NaN, the last place of the elementary functions | Resolved provisionally |
 | G.70 | The rules of the value language that were formerly taken from Rust | Resolved provisionally |
+| G.71 | Value semantics: no reference, no move, no `mut`; the implementation and `std` still use the earlier forms | Implementation |
 
 ## Open items
 
@@ -335,7 +337,7 @@ Each item is in force through the `Resolution` note cited, which refers back her
 | G.58 | §11 rule 3 | the selector rule also binds the flow contributions of a potential-capable branch; a probed short is not merged | extends the rule, with one exception clause |
 | G.59 | §6 rule 5 | `p.inflow()` includes the branches of child instances that end on `p` | the design says "this module's branches" |
 | G.60 | §15 T2, §15 T3 | a half-tick tie rounds to the later tick; a positive delay that rounds to no advance is the next microstep | observable at half-tick delays |
-| G.61 | A.1, A.3, §1 | `Unknown` is a reserved literal; an unlisted attribute is an error; `char` and every lifetime but `'static` are dropped | closes the token classes and the attribute set (A.1, A.8) |
+| G.61 | A.1, A.3, §1 | `Unknown` is a reserved literal; an unlisted attribute is an error; `char` and every lifetime are dropped | closes the token classes and the attribute set (A.1, A.8) |
 | G.62 | §1 | `usize` and `isize` are 64 bits on every platform | a fixed width, whatever the machine; needed for §0.1.1 |
 | G.63 | §23.1 | a `force` on a node is a potential source to `gnd`; a host action answering an event is due at `(t, n + 1)` | new host semantics |
 
@@ -380,6 +382,34 @@ For review: fix a canonical NaN, and require correctly rounded elementary functi
 In force: the rules as written. Most restate what the earlier text implied. The ones that had to be decided, because the design never chose, are listed in §0.10 with the rule written for each.
 For review: each row of §0.10.
 
+### G.71 Value semantics
+
+**Status: Implementation.** Decided (2026-11-20; V1 to V7 under "Closed items"): the value language has values only. Data are copied wherever they are used; hardware is reached by identity and changes only by a definition, a commit or a contribution.
+In force: §1 rule 2, §1.2.5 to §1.2.7, §1.2.9, §1.4.6, §1.4.7, §1.5.9, §1.5.12, §1.5.14, §1.6.2, §1.6.7, §1.6.9, §1.7.5, §1.7.7, §3.1.10, §4 rule 8, §8.2.12, A.1, B.3.6, B.3.7 and H.4 to H.8.
+
+This revision removes these special cases of earlier ones:
+
+| Removed | Was stated in | What stands in its place |
+| --- | --- | --- |
+| the borrow type `&T`, allowed in a parameter type for an array, a slice or a string, and on any call argument | §1 rule 2, §1.2.6, `E0102` | the value: a parameter of type `T` (§1.2.6) |
+| the four places where a borrow was read through without an operator, and `*r` elsewhere | §1.2.6, §1.2.7 | nothing to read through |
+| the slice type `[T]`, only behind a borrow; `&[T; N]` accepted where `&[T]` was required | §1.2.5 | arrays; a const parameter `N` where the length varies (§1.2.5) |
+| `e[a..b]` usable only as a borrowed argument or a receiver | §1.5.9 | `e[a..b]` is an array, with const bounds (§1.5.9) |
+| the lifetime `'static`, and `&'static str` as the one borrow a `const` could hold | §1.2.7, §1.2.9, A.1 | `str`, a value type (§1.2.9); no lifetime token |
+| the `Copy` property, held by some types and not by others; the move of a value without it; no field read out of such a value | §1.4.6, §1.4.7, `E0183` | every value is copied (§1.4.6) |
+| the traits `Clone` and `Copy`, their derives, `clone()`; the `Copy` requirement of `[x; N]`, of `*r` and of `Repr` | H.8, §1.2.4, §2 | none: the names do not resolve (`E0161`, H.8 rule 1) |
+| `let mut`, `mut x` in a pattern, and a local assigned at most once without it | §1.5.12, §1.6.2, §1.7.5, §1.7.7 | every local is a place (§1.5.12) |
+| `let mut` reported separately in a module body | §8.2.12, `E0331` | a body `let` is not a place (`E0183`); `mut` is a reserved word (`E0903`) |
+| `ref x` and `&p` patterns; a pattern that meets a borrow binds borrows | §1.6.2, §1.6.9 | a pattern binds copies (§1.6.9) |
+| `move` before a closure, accepted with no effect | §1.5.14 | a closure captures by value; `move` is a reserved word |
+| the `&self` spelling of Appendix H, for a method that did not move its receiver | H rule 4 | `self` in every signature |
+| `resolve` typed by a function pointer over a slice, `fn(&[T]) -> T` | §4 rule 8 | a function with a const parameter, `fn f<const N: usize>(drives: [T; N]) -> T` |
+
+Two codes are retired: `E0102` (§1) and `E0331` (§8.2). `E0183` no longer has a move to report.
+
+The reference implementation does not yet meet this item. Its front end still accepts `&`, `*r`, `mut`, `ref`, `move`, `&'static str` and the derives `Clone` and `Copy`, and still reports `E0331`. The source files of `std`, and so the fences of Part VII that are excerpts of them (§22), are still written in the earlier spelling. The feature `value-semantics` brings the implementation, `std` and those fences to the rules above.
+For review: that a parameter is not a place (§1.5.12, §3.1.10), so a method cannot assign `self`; and that `resolve` takes its drives as an array with a const length (§4 rule 8).
+
 ## Closed items
 
 ### Closed in this specification
@@ -391,12 +421,12 @@ For review: each row of §0.10.
 | G.42 | How the solve tables read in a periodic analysis | the small-signal column is taken at each point of the trajectory, with `now()` its time. `zi_nd` is in its `delay` form there, on purpose. | §16.2, §16.3 |
 | G.43 | A hold that agrees with a potential contribution on the same node | always an error: a hold is a potential source, and a loop of potential contributions is singular whether or not the values agree | §16 |
 | G.44 | Host actions between two runs of a continued transient; the old stop time | a host `set` or drive is a commit collected at the resume instant. The old stop time remains a time point. | §16.4.1 |
-| D1 | Which forms a reader of Rust would expect are not in the language | Appendix B.3.6 is the complete list of what is removed: type aliases, associated types, `static` items, trait-bound `where`, `impl Trait`, qualified paths, restricted `pub(..)`, loop labels, pattern and `mut` parameters, `&self`. In: function-pointer types `fn(T) -> U` and a negative literal as a const generic argument. | B.3.6, §1 rule 2, A.1 |
-| D2 | Which library names exist without a declaration | a closed catalogue: numeric methods of floats and integers, `Option` combinators, arrays and slices, ranges, ten iterator adaptors, derivable traits. Everything else is `E0161`. | Appendix H, §3.4.2 |
+| D1 | Which forms a reader of Rust would expect are not in the language | Appendix B.3.6 is the complete list of what is removed: type aliases, associated types, `static` items, trait-bound `where`, `impl Trait`, qualified paths, restricted `pub(..)`, loop labels, pattern parameters, references and the markers `mut`, `ref` and `move` (V1, V2). In: function-pointer types `fn(T) -> U` and a negative literal as a const generic argument. | B.3.6, §1 rule 2, A.1 |
+| D2 | Which library names exist without a declaration | a closed catalogue: numeric methods of floats and integers, `Option` combinators, arrays, ranges, ten iterator adaptors, derivable traits. Everything else is `E0161`. | Appendix H, §3.4.2 |
 | D3 | `gnd`, `Nature`, `m`, `dtemp` and `str` | core names, in the built-in table, that no declaration can define. | §6 rule 11, §3.4.2, A.1 rule 8 |
 | D5 | Duplicate names, colliding imports, ambiguous globs | `E0162`, with these rules: one name per table per namespace; an item or an explicit `use` beats a glob; two globs are an error only when the name is used. | §3.4.7, §3.4.8, §3.4.9 |
 | D6 | Generic names of a behavior block | the block repeats the module's generic names in the same order and introduces none of its own. | §10 rule 6, B.3.3 item 14 |
-| D7 | `&` in argument position | a shared borrow of any value is allowed as a call argument; `E0102` covers the rest. | §1 (`E0102`), §3.2 |
+| D7 | `&` in argument position | superseded by V1: no position takes a borrow, an argument is the value, and `E0102` is retired. | §1 rule 2, §3.2 |
 | D8 | What `E0910` counts | nesting only (delimiters, blocks, unary and type nesting) up to 256 levels; flat chains of binary operators, methods and `else if` arms have a separate bound of 4096 links. | A.6 |
 | D9 | Where docs and attributes may be written | before every item, field, variant, `match` arm and statement, and before reactions, definitions, generation and nature quantities; the docs of a quantity and of a reaction are metadata, those of a statement are kept and ignored. | A.4, §21 |
 | D10 | Identifier patterns | a plain identifier pattern that resolves to a constant, a unit variant or a unit struct is that path, not a binding. | §1 rule 14 |
@@ -418,8 +448,15 @@ For review: each row of §0.10.
 | S3 | The analysis kind and the pass switch share a name | the analysis kind is `Transient`; the module `Tran` of §22.3.7 keeps its name. | §11.1.1, §22.3.7 |
 | S4 | The namespaces of `std` | `std::constants`, `std::carriers`, `std::values`, `std::analog`, `std::nets`, `std::convert`, `std::monitor`, `std::io`, all re-exported by `std::prelude`. | §22 |
 | S5 | Where the prelude constants live | `Q`, `K_B`, `EPS0`, `PI`, `E` and `inf` are `pub const` items of `std::constants`; `inf` is `1.0 / 0.0`. | §1 rule 3 |
+| V1 | Whether data are passed by value or by reference | by value, always: there is no reference, borrow or pointer, and no lifetime. `&` is the bitwise operator only. | §1 rule 2, §1.2.6, §1.4.6 |
+| V2 | Which locals may be assigned | every one: `mut` is gone, with `ref` and `move`; the three are reserved words (`E0903`). A parameter, `self` included, is not a place. | §1.5.12, §1.7.7, A.1 |
+| V3 | What happens to a value used twice | it is copied: no move, no `Copy`, no `Clone`, no `clone()`. The two names are not accepted as empty derives: they do not resolve (`E0161`). | §1.4.6, H.8 rule 1 |
+| V4 | Slices | none. An array is a value; a function over any length takes `const N: usize`; `e[a..b]` is the array `[T; b - a]`, with const bounds; `resolve` takes `[T; N]`. | §1.2.5, §1.5.9, §4 rule 8 |
+| V5 | Strings | `str` is a value type, the text of a literal; `&str`, `&'static str` and the lifetime `'static` are gone. | §1.2.9, A.1 |
+| V6 | Methods that change a value | `self` is a copy; the method returns the new value and the caller assigns it, `s = s.step(x)`. There is no shorthand. | §3.1.10 |
+| V7 | What is reached by identity | hardware only: carriers, nodes, instances and bundles, through ports, connections and handles. Shared state changes only by a definition, a commit or a contribution, at the time its rule gives. | §1.4.7, §3.1 |
 
-G.33 to G.36 are what remains open around G.40 and G.42. D1 to D17 number the decisions taken when this specification's front end was audited against the grammar; D4, whether the standard library is a normative source, is not among them (G.38). P1 to P6 number the decisions of the crate and package model ([§3.5](part_i_values.md#35-crates), [§3.6](part_i_values.md#36-packages)). S1 to S5 number the decisions of the standard library ([§22](part_vii_stdlib.md#22-standard-library)).
+G.33 to G.36 are what remains open around G.40 and G.42. D1 to D17 number the decisions taken when this specification's front end was audited against the grammar; D4, whether the standard library is a normative source, is not among them (G.38). P1 to P6 number the decisions of the crate and package model ([§3.5](part_i_values.md#35-crates), [§3.6](part_i_values.md#36-packages)). S1 to S5 number the decisions of the standard library ([§22](part_vii_stdlib.md#22-standard-library)). V1 to V7 number the decisions of value semantics (G.71).
 
 ### Other closed items
 

@@ -22,14 +22,14 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 2 silent, 2 broken, 38 loud (L1 to L63 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure` and the four `composite-values` rows (L5, L6, L10, L63) closed, L9 narrowed to its `generics` part, in six tables) plus
+**Counts.** 3 silent, 2 broken, 38 loud (L1 to L63 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure` and the four `composite-values` rows (L5, L6, L10, L63) closed, L9 narrowed to its `generics` part, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 9 unproven.
 
 | Section | Ids |
 | ------- | --- |
 | §2 Broken | B3, B4 |
-| §3 Silent (read this first) | S3, S6 |
+| §3 Silent (read this first) | S3, S6, S7 |
 | §4 Loud | L1–L62 (L11, L14, L15, L17, L18, L19, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10 closed; L9 narrowed) |
 | §5 Spec holes and disagreements | G1–G6 (the buck's), X1, X2, X5, X6 (X3, X4, X7, X8, X9 decided by `host-ii`) |
 | §6 Solver, numerics, performance | V12, V13, V16 |
@@ -92,6 +92,24 @@ change of the IR or the ABI.
   gives 0. `x & 0` and `b && false` are right. Ruled provisional on 2026-11-15 (`ir-rust` F-B4);
   listed here because the result differs from the spec text with no diagnostic. Per-level flags
   change the ABI's one known byte per value.
+
+### S7. Value semantics: the front end still accepts what the spec removed — size M (`value-semantics`)
+
+- **What.** The spec was amended on 2026-11-20 (Appendix G.71, decisions V1 to V7): data are values
+  and always copy, every local may be assigned, and there is no reference, slice, move, `Clone`,
+  `Copy`, `mut`, `ref` or `move`. The implementation is the earlier language. The parser accepts
+  `&T`, `&x`, `*x`, `&p`, `ref`, `mut`, `move` and `&'static str`; it reports `&self`, `&&x` and a
+  `mut` parameter as `E0900` where B.3.6 now says `E0101` and `E0903`; it raises `E0331`, which the
+  spec retired, for `let mut` in a module body. `Clone` and `Copy` resolve in a derive and in a
+  bound where H.8 rule 1 says `E0161`. `resolve` is typed `fn(&[T]) -> T` where §4 rule 8 takes
+  `[T; N]`. Appendix H's rows are by value in the spec and by borrow in the catalogue.
+- **Where it shows.** `crates/piperine-lang/std/*.msl` and the Part VII fences that are excerpts of
+  it keep the earlier spelling (§22's Resolution says how to read it); `examples/buck/src` derives
+  `Clone, Copy`. `msl_errors.rs` names the three B.3.6 rows and the one code that are ahead of the
+  parser (`ROWS_AHEAD_OF_THE_PARSER`, `FIXTURES_BEHIND_THE_SPEC`, `RETIRED_AHEAD_OF_THE_PARSER`).
+- **Impact.** A model written to the spec is refused where it assigns a `let` without `mut`
+  (`E0183`: the checker takes an assignment only after `let mut`), and a model written with the
+  removed forms is accepted. Plan: `.specs/features/value-semantics/`.
 
 ---
 
@@ -210,8 +228,8 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 
 ### 4.8 Diagnostics that are loud and say too little
 
-- **68 of the spec's 189 error codes are raised nowhere in the source** (list in §10). Most belong to
-  a refused construct; `E0102` and `E0105` do not.
+- **67 of the spec's 187 error codes are raised nowhere in the source** (list in §10). Most belong to
+  a refused construct; `E0105` does not. `E0331` is raised and no longer in the spec (S7).
 - `P0001` says "outside the M1 subset" for forms the spec defines.
 
 | ID | Gap | Where | Size |
@@ -285,7 +303,7 @@ adjoint and PSS (`core/circuit.rs:111` to `:172`); the host exposes four analyse
 | H9 | Host error codes: `E0804` (drive of a carrier that is no top `in` port), `E0805` (late subscription) and `E0806` (past time) are delivered. `E0803` (timed `set` of a structural param) is checked but no MSL design reaches it: the elaborator marks no param structural, and generation in a module body is `P0001` | §23.1 | with L-generation |
 | H10 | Command line: `add`, `remove`, `tree`, `update`, `--locked`, `--offline`, plugin scripts, a REPL, ngspice raw output, a terminal or PNG plot | — | S each |
 | H12 | The stdlib, the galleries and `examples/buck/src` are not reformatted by `piperine fmt` (the formatter is proven on them) | — | S |
-| H13 | Stale repository documents: the first 270 lines of `ROADMAP.md` (PHDL, a Python bench, Cranelift), the `STATE.md` handoff below `solver-restructure`, `CLAUDE.md`/`AGENTS.md` (Verilog-AMS architecture), `editors/vscode` (a Verilog-AMS extension) and `piperine-lang-server` (postponed); `SPEC_DEVIATIONS.md`, `CLEANUP_PLAN.md`, `docs/audit/`, `docs/reference/` and `VAMS-LRM-2-4.md` are deleted (2026-11-20) | — | S |
+| H13 | Stale repository documents: the first 270 lines of `ROADMAP.md` (PHDL, a Python bench, Cranelift), the `STATE.md` handoff below `solver-restructure`, `editors/vscode` (a Verilog-AMS extension) and `piperine-lang-server` (postponed); `SPEC_DEVIATIONS.md`, `CLEANUP_PLAN.md`, `docs/audit/`, `docs/reference/` and `VAMS-LRM-2-4.md` are deleted (2026-11-20) | — | S |
 | H14 | A flow term `i(<instance>)` of an instance with no potential branch prints in `op` and `dc` only; `transient`, `ac`, `pss` and `sens` refuse it (`E0801`/`P0010`) because `StepView` carries no device term, so a transient table cannot show it. Needs a `StepView` read of `Assembly::term_value`. Owner: `host-analyses` | §21 | S |
 | H15 | `pss` of a design whose `transition` holds an absolute time (`ramp.t0`, a `D2A` driven by a discrete clock) never closes its digital periodicity (`digital state is not periodic at T`), so a D2A-driven design cannot shoot; the `pss_rc` twin drives the source from `now()` instead. Any digital state that grows with time breaks it too (the stdlib `every` counter rises +2 per period). Needs time-like state marked through lang, IR, plan, transpile and solver; a `now()`-computed edge also lacks a breakpoint, so it needs a step cap. Owner: `periodic-small-signal` (user, 2026-11-18) | §16.3 | M |
 | H16 | No run key or flag for the transient's minimum step (`dt_min`, ngspice's `delmin`): `piperine run` always runs the default floor, so a design that needs ngspice's `delmin=1n` (the `tran_corner` twin) is run through the library (`Session::circuit` into `transient`). Owner: `host-analyses` | §23 table | S |
@@ -356,12 +374,12 @@ does not count.
 
 ## 10. Reference lists
 
-**Error codes of the spec that no source file mentions (68 of 189).** A code counts as mentioned when it is spelled
+**Error codes of the spec that no source file mentions (67 of 187).** A code counts as mentioned when it is spelled
 outside a comment in `crates/*/src` (a literal, or an enum variant's `as_str`); `E0375` is named in a doc
 comment only (`pom/builtin.rs`), so it is on the list. `E0503`, `E0504`, `E0505`, `E0507` and `E0508` are
 raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`). `E0803` to `E0806` are raised
 by `session.rs` and `host.rs`; `E0701` and `E0702` by the elaborator.
-`E0102 E0105 E0110 E0111 E0122 E0123 E0124 E0126 E0127 E0131 E0132 E0133 E0134 E0180
+`E0105 E0110 E0111 E0122 E0123 E0124 E0126 E0127 E0131 E0132 E0133 E0134 E0180
 E0181 E0182 E0183 E0184 E0185 E0186 E0187 E0188 E0203 E0204 E0205 E0224 E0242 E0244
 E0260 E0261 E0262 E0264 E0313 E0315 E0322 E0333 E0340 E0342 E0351 E0354 E0360 E0361
 E0362 E0371 E0372 E0373 E0374 E0375 E0413 E0416 E0451 E0452 E0453 E0454 E0456 E0610
@@ -408,8 +426,9 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
+| language#13 | S7 | `value-semantics` | reached from a top, `sum_below` is `E0183`: it assigns `let total` and the checker takes an assignment only after `let mut` |
 | types#6 | L2 | `composite-values` | reached from a top, `span` is `P0001`: `ordered` yields a tuple (a tuple type, a tuple expression) |
-| types#7 | L3 | `composite-values` | reached from a top, `smoothed` is `P0001` (an array type) and `mean` is `P0001` (a reference type) |
+| types#7 | L3 | `composite-values` | reached from a top, `smoothed` is `E0183` (it assigns a `let` declared without `mut`, S7; its array type is L3) and `mean` is `P0001` (a generic function over an array, L7) |
 | types#11 | L4 | `composite-values` | reached from a top, `area` is `P0001`: the enum `Shape` has variants with a payload |
 | types#12 | L1 | `composite-values` | reached from a top, `scaled` is `P0001`: a struct expression and a field access |
 | types#16 | L7 | `generics` | reached from a top, `reads_high` is `P0001`: the method `switches_at` of an `impl` on the enum `Family` |

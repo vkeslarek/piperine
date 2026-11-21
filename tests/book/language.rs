@@ -26,6 +26,7 @@ use support::faulty::Faulty;
 use support::model::Model;
 use support::printed::Printed;
 use support::records::Fields;
+use support::refusal::Refusal;
 use support::value_file::ValueFile;
 
 #[test]
@@ -182,15 +183,14 @@ fn a_fault_ends_the_analysis_or_the_build_and_a_non_finite_value_ends_the_solve(
 }
 
 #[test]
-fn the_sum_below_listing_runs_with_the_literal_typed_by_its_use() {
-    // language#13 (run): the chapter's `sum_below` is a local that is updated, an assignment and a loop (composite-values
-    // T11 to T20); `let mut total = 0` then `total += k` with `k: u32` is a literal whose type the later use fixes
-    // (§1.4.4), so `total` is a `u32` and the sum of 0, 1, 2 and 3 is 6.
+fn the_sum_below_listing_is_refused_for_a_local_without_mut() {
+    // language#13 (refused): the chapter's `sum_below` assigns `let total = 0` and the checker still takes an
+    // assignment only after `let mut` (GAPS.md S7, `value-semantics` T2). The loop and the assignment run since
+    // composite-values T11 to T20, and the literal `0` is typed by its later use (§1.4.4). When every local is a place this test fails and the row moves to `run`
     let chapter = Chapter::read();
-    let overrides = Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2e-6), ..Overrides::default() };
-    let source = "module Top() { }\ndigital for Top { on at(1u) { emit!(\"r\", s = sum_below(4)); } }\n";
-    let record = ValueFile::only(chapter.wrapped("sum.msl", "", "language#13", source).run(overrides), "r");
-    ValueFile::int(&record, "s", 6);
+    let overrides = || Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2e-6), ..Overrides::default() };
+    let top = "module Top() { }\ndigital for Top { on at(1u) { emit!(\"r\", s = sum_below(4)); } }\n";
+    Refusal::expect(chapter.wrapped("sum.msl", "", "language#13", top).run(overrides()), "language#13", "E0183", "cannot assign to `total`: it is a local declared without `mut`, and only a local declared with `mut` is a place (§1.5.12)");
 }
 
 #[test]
@@ -226,4 +226,15 @@ fn e0909_e0905_and_e0903_a_literal_too_large_a_character_and_a_keyword_as_a_name
     assert_eq!(keyword.first("E0903").message, "`module` is a reserved keyword and cannot be used as an identifier");
     let raw = ValueFile::written("", "let r#module = 2; emit!(\"r\", y = r#module);");
     ValueFile::int(&raw, "y", 2);
+}
+
+#[test]
+fn a_local_is_assigned_only_after_let_mut_today() {
+    // language~22e35a04 "Today's compiler still needs the word: it refuses the assignment of a local declared
+    // without it with the code E0183": `mut` left the language with value semantics (spec Appendix G.71, GAPS.md
+    // S7). When every local is a place this test fails and the status box loses the sentence
+    let faulty = ValueFile::refused("language~22e35a04", "", "let x = 5; x = 6; emit!(\"r\", x = x);");
+    assert_eq!(faulty.first("E0183").message, "cannot assign to `x`: it is a local declared without `mut`, and only a local declared with `mut` is a place (§1.5.12)");
+    let kept = ValueFile::written("", "let mut x = 5; x = 6; emit!(\"r\", x = x);");
+    ValueFile::int(&kept, "x", 6);
 }

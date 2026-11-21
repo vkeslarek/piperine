@@ -827,7 +827,7 @@ fn appendix_h_names(heading: &str) -> Vec<String> {
 fn catalogue_traits_and_types_resolve() {
     let traits = appendix_h_names("## H.8");
     let types = appendix_h_names("## H.9");
-    assert!(traits.len() >= 9 && types.len() >= 6, "{traits:?} {types:?}");
+    assert!(traits.len() >= 7 && types.len() >= 6, "{traits:?} {types:?}");
     // A derive name resolves like a bound: to the trait row it names (D2).
     let derived = build("#[derive(Default)]\nstruct S { a: f64 }\n#[derive(PartialOrd, Debug, Hash, Clone, Repr)]\nstruct U;\ntrait Mine {}\n#[derive(Mine)]\nstruct V;\n");
     assert!(derived.diagnostics().is_empty(), "{:?}", derived.diagnostics());
@@ -882,6 +882,9 @@ fn builtin_table_matches_appendix_h() {
     // Traits: Appendix H's list, plus the language's own `Repr`, `Nature` and `Fn`.
     let mut traits: BTreeSet<String> = appendix_h_names("## H.8").into_iter().collect();
     traits.extend(own(&["Repr", "Nature", "Fn"]));
+    // `Clone` and `Copy` left Appendix H with value semantics (G.71, H.8 rule 1) ahead of the
+    // built-in table (`GAPS.md` S7); the feature `value-semantics` drops both rows and this line.
+    traits.extend(own(&["Clone", "Copy"]));
     assert_eq!(rows(BuiltinKind::Trait), traits);
     // Types: every H.9 type has a row; the others are the sized families, `usize`/`isize`, `Event` and `Analysis`.
     let types = rows(BuiltinKind::Type);

@@ -113,9 +113,9 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
     // of the chapter's status box, each on the smallest model (when one of them runs, this test fails and the
     // box loses it)
     for (items, statements, named) in [
-        ("trait Area { fn area(self) -> f64; }\n#[derive(Clone, Copy, PartialEq, Repr)] enum Z { A, B }\nimpl Area for Z { fn area(self) -> f64 { 1.0 } }", "emit!(\"r\", y = Z::A.area());", "method `area` on `enum `Z`` is not supported yet"),
-        ("fn same<T: Copy>(x: T) -> T { x }", "emit!(\"r\", y = same(1.0));", "generic function is not supported yet"),
-        ("#[derive(Clone, Copy)] struct Pair<T: Copy> { a: T, b: T }", "let p = Pair { a: 1.0, b: 2.0 }; emit!(\"r\", y = p.a);", "generic struct `Pair` is not supported yet"),
+        ("trait Area { fn area(self) -> f64; }\n#[derive(PartialEq, Repr)] enum Z { A, B }\nimpl Area for Z { fn area(self) -> f64 { 1.0 } }", "emit!(\"r\", y = Z::A.area());", "method `area` on `enum `Z`` is not supported yet"),
+        ("fn same<T: PartialEq>(x: T) -> T { x }", "emit!(\"r\", y = same(1.0));", "generic function is not supported yet"),
+        ("struct Pair<T: PartialEq> { a: T, b: T }", "let p = Pair { a: 1.0, b: 2.0 }; emit!(\"r\", y = p.a);", "generic struct `Pair` is not supported yet"),
         ("fn width<const N: usize>() -> usize { N }", "emit!(\"r\", y = width::<4>());", "generic parameter used as a value is not supported yet"),
     ] {
         let faulty = ValueFile::refused("generics~5628120b", items, statements);
@@ -141,7 +141,7 @@ fn an_impl_is_not_yet_compared_with_its_trait() {
 fn e0900_a_bound_is_not_a_where_an_impl_type_or_a_qualified_path() {
     // generics~80317d1d (E0900), three rows of the chapter's table: a trait bound in a `where`, `impl Receiver`
     // as the type of a parameter, and `<Family as Receiver>::LEVELS`; the fix of each row is accepted
-    let receiver = "trait Receiver { const LEVELS: u32; fn switches_at(self, vdd: f64) -> f64; }\n#[derive(Clone, Copy, PartialEq, Repr)] enum Family { Cmos, Ttl }\nimpl Receiver for Family { const LEVELS: u32 = 2; fn switches_at(self, vdd: f64) -> f64 { 0.5 * vdd } }";
+    let receiver = "trait Receiver { const LEVELS: u32; fn switches_at(self, vdd: f64) -> f64; }\n#[derive(PartialEq, Repr)] enum Family { Cmos, Ttl }\nimpl Receiver for Family { const LEVELS: u32 = 2; fn switches_at(self, vdd: f64) -> f64 { 0.5 * vdd } }";
     let bound = ValueFile::refused("generics~80317d1d", &format!("{receiver}\nfn over<R>(r: R) -> f64 where R: Receiver {{ 1.0 }}"), "emit!(\"r\", y = 1);");
     assert_eq!(bound.first("E0900").message, "trait-bound `where` clauses are not part of the language");
     let argument = ValueFile::refused("generics~80317d1d", &format!("{receiver}\nfn over(r: impl Receiver) -> f64 {{ 1.0 }}"), "emit!(\"r\", y = 1);");

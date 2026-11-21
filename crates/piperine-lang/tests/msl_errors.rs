@@ -607,10 +607,27 @@ fn every_parse_phase_row_has_a_fixture() {
     let covered: std::collections::BTreeSet<String> = fixtures().iter().map(|f| f.code.to_string()).collect();
     let missing: Vec<&String> = spec.difference(&covered).collect();
     assert!(missing.is_empty(), "parse-phase rows without a fixture: {missing:?}");
-    // And a fixture for a code the spec does not list as `parse` is stale.
-    let stale: Vec<&String> = covered.difference(&spec).collect();
+    // And a fixture for a code the spec does not list as `parse` is stale, except the codes the
+    // value-semantics amendment retired ahead of the parser (G.71).
+    let stale: Vec<&String> = covered.difference(&spec).filter(|c| !RETIRED_AHEAD_OF_THE_PARSER.contains(&c.as_str())).collect();
     assert!(stale.is_empty(), "fixtures for codes that are not parse-phase rows: {stale:?}");
+    for code in RETIRED_AHEAD_OF_THE_PARSER {
+        assert!(covered.contains(code) && !spec.contains(code), "{code} is retired in the spec and still raised: drop it from the list once the parser stops");
+    }
 }
+
+/// Parse-phase codes the specification retired before the parser stopped raising them: the
+/// value-semantics amendment (Appendix G.71) changed the text first. `GAPS.md` S7 lists them;
+/// the feature `value-semantics` removes each fixture and empties this list.
+const RETIRED_AHEAD_OF_THE_PARSER: [&str; 1] = ["E0331"];
+
+/// B.3.6 rows the specification gained with value semantics that the parser does not report
+/// yet (`GAPS.md` S7). The feature `value-semantics` adds their fixtures and empties this list.
+const ROWS_AHEAD_OF_THE_PARSER: [&str; 3] = ["references and borrows", "pattern parameters", "the markers `mut`, `ref` and `move`"];
+
+/// B.3.6 rows of earlier revisions whose fixtures still describe the parser (`GAPS.md` S7): the
+/// rows those of `ROWS_AHEAD_OF_THE_PARSER` replace. Emptied with it.
+const FIXTURES_BEHIND_THE_SPEC: [&str; 3] = ["`&self` and `&mut self` receivers", "`mut` and pattern parameters", "double borrows"];
 
 #[test]
 fn rendered_output_is_miette_graphical() {
@@ -1027,10 +1044,12 @@ fn every_b36_row_has_a_fixture() {
         .collect();
     assert_eq!(cells.len(), 21, "{cells:?}");
     for cell in &cells {
-        assert!(REMOVED.iter().any(|r| cell.starts_with(r.row)), "B.3.6 row `{cell}` has no fixture");
+        let ahead = ROWS_AHEAD_OF_THE_PARSER.iter().any(|row| cell.starts_with(row));
+        assert!(ahead != REMOVED.iter().any(|r| cell.starts_with(r.row)), "B.3.6 row `{cell}` has a fixture, or is listed as ahead of the parser, never both or neither");
     }
     for r in REMOVED {
-        assert!(cells.iter().any(|c| c.starts_with(r.row)), "fixture `{}` matches no row", r.row);
+        let behind = FIXTURES_BEHIND_THE_SPEC.contains(&r.row);
+        assert!(behind != cells.iter().any(|c| c.starts_with(r.row)), "fixture `{}` matches a row, or is listed as behind the spec, never both or neither", r.row);
     }
 }
 

@@ -758,7 +758,7 @@ an equation, so it is not model text. It is read only as Newton's starting point
 /// Junction diode with optional series resistance.
 module Diode(a: Electrical, k: Electrical) {
     is: f64 = 1e-14 where is > 0.0;
-    n: f64 = 1.0 where (0.1..=10.0).contains(&n);
+    n: f64 = 1.0 where (0.1..=10.0).contains(n);
     rs: Option<f64>;
     cj0: f64 = 0.0 where cj0 >= 0.0;
     signal ai: Electrical;

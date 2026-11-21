@@ -137,7 +137,7 @@ conjunction of the conditions of the `if` and `match` arms that enclose it.
   `i(b, a) +> x` is `i(a, b) +> -x`.
 - **§11 rule 11** A flow contribution needs a nature with a `flow`. A node of a nature without one
   takes potential contributions only, from exactly one module (§6).
-- **§11 rule 12** An `analog` block holds value statements (`let`, `let mut`, assignments to locals,
+- **§11 rule 12** An `analog` block holds value statements (`let`, assignments to locals,
   `if`, `match`, `for`, calls), contributions, `bound_step` (§14.10) and `emit!` (§19). A loop that
   contains a contribution or a placement **MUST** have a constant trip count (§8.3.4).
 - **§11 rule 13** `analog` has no unknown values. Every read of a discrete carrier passes through
@@ -389,7 +389,7 @@ later microstep.
 - **§12.1.9** The committed expression's type **MUST** be the value type of the levels the `place`
   names. `Unknown` is of every `Repr` type.
 - **§12.1.10** The head of `on` **MUST** have type `Event` (§13). A `bool` alone is not an event.
-- **§12.1.11** A reaction body holds value statements (`let`, `let mut`, assignments to locals,
+- **§12.1.11** A reaction body holds value statements (`let`, assignments to locals,
   `if`, `match`, loops, calls), commits and `emit!`. It holds no placement (§8.3.4), no
   contribution and no definition. It reads named results of the body.
 - **§12.1.12** A reaction body **MAY** probe and read the environment (§14.1, §14.4). A named
@@ -679,7 +679,7 @@ module Pfd3(in fref: Bit, in fvco: Bit, out up: Bit, out dn: Bit) {
 }
 digital for Pfd3 {
     on fref.rise() || fvco.rise() {
-        let mut s = state;
+        let s = state;
         if fref.rise() && s < 1 { s += 1; }    // which one fired?
         if fvco.rise() && s > -1 { s -= 1; }   // both at once: up first, then down
         state <- s;
@@ -690,7 +690,7 @@ digital for Pfd3 {
 ```rust
 /// Water heated through a thermal port boils at 100 °C: the event changes the state,
 /// the state changes the contribution.
-#[derive(Repr, Clone, Copy, PartialEq)]
+#[derive(Repr, PartialEq)]
 enum Phase { Liquid, Boiling, Vapor }
 
 nature Heat {
@@ -743,7 +743,7 @@ library (§22), written in the language over this section.
 | `ddt(x, abstol: Option<f64>)` | module | time derivative; its argument is a state of the jump rule (§15.2) | where instances go (§8.3.4) and `analog` reads them | 14.5 |
 | `delay(x, td, max: Option<f64>)` | module | `x` as it was `td` ago | the same | 14.6 |
 | `limit(x, f, seed: Option<f64>)` | module | Newton step limiting (§18) | the same | 14.7 |
-| `noise(psd, name: Option<&str>)` | module | noise source | the same | 14.8 |
+| `noise(psd, name: Option<str>)` | module | noise source | the same | 14.8 |
 | `cross`, `at` | module, result `Event` | located and scheduled events (§13) | event positions | 14.9 |
 | `s.changed()`, `settle` | `Event` values | (§13) | event positions | 14.9 |
 | `bound_step(dt)` | statement | the next step is at most `dt` | `analog` | 14.10 |
@@ -863,7 +863,7 @@ with `mag` and `phase` evaluated at the operating point.
 | Function | Returns | Class |
 | --- | --- | --- |
 | `temperature() -> f64` | the analysis temperature plus the instance's effective `dtemp` (§8.5.5), in kelvin | constant during an analysis |
-| `simparam(name: &str, default: Option<f64>) -> f64` | the session parameter `name`, else `default` | constant during an analysis |
+| `simparam(name: str, default: Option<f64>) -> f64` | the session parameter `name`, else `default` | constant during an analysis |
 | `analysis(a: Analysis) -> bool`, `a` in `Dc`, `Transient`, `Ac`, `Noise` | whether the analysis is of that kind (§11.1.1) | constant during an analysis |
 | `now() -> f64` | the time of the solve | environment of the solve |
 | `freq() -> f64` | the frequency of the sweep point | environment of the solve |
@@ -970,7 +970,7 @@ how far Newton moves `x` per iteration. §18 defines it; it changes the path, ne
 
 ### 14.8 `noise`
 
-`module noise(psd: f64, name: Option<&str>) -> f64` is a noise source of power spectral density
+`module noise(psd: f64, name: Option<str>) -> f64` is a noise source of power spectral density
 `psd`.
 
 **Static semantics**
