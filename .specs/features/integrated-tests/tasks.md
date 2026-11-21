@@ -480,9 +480,9 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] The three tests pass under `Run cliintegrated`
-- [ ] Gate check passes: `Run cliintegrated`, `Run hygiene`, the Build line
-- [ ] Test count: 3 new tests
+- [x] The three tests pass under `Run cliintegrated`
+- [x] Gate check passes: `Run cliintegrated`, `Run hygiene`, the Build line
+- [x] Test count: 3 new tests
 
 **Tests**: e2e
 **Gate**: full
