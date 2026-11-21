@@ -246,17 +246,16 @@ fn without_its_delay_the_book_latch_is_a_loop_e0339() {
 }
 
 #[test]
-fn the_phase_detector_is_refused_for_let_mut_alone() {
-    // digital#6 (refused): `Pfd3`: `let mut s` in a reaction (L5). `fref.rise()` tested as a `bool` runs
-    // since unknown-semantics-events T14 (§13 rule 2): no diagnostic names an event read any more, and the
-    // ones left follow from the `let mut` (its name has no type, its assignment is refused)
+fn the_phase_detector_is_refused_for_assignment_alone() {
+    // digital#6 (refused): `Pfd3`: `s += 1` in a reaction (L5). `fref.rise()` tested as a `bool` runs
+    // since unknown-semantics-events T14 (§13 rule 2): no diagnostic names an event read any more
     let chapter = Chapter::read();
     let after = "module Top() { signal a: Bit = false; signal b: Bit = false; signal up: Bit; signal dn: Bit; let p = Pfd3(a, b, up, dn); }\n";
     let model = chapter.wrapped("pfd.msl", "", "digital#6", after);
     let given = Refusal::of(model.run(Commands::transient_of("Top", 1e-6)), "digital#6");
-    assert!(given.contains(&("P0001".to_string(), "`let mut` binding is not supported yet".to_string())), "{given:?}");
+    assert!(given.contains(&("P0001".to_string(), "assignment is not supported yet".to_string())), "{given:?}");
     assert!(given.iter().all(|(_, message)| !message.contains("an event read as a `bool`")), "the event reads run (§13 rule 2): {given:?}");
-    Refusal::expect(model.run(Commands::transient_of("Top", 1e-6)), "digital#6", "P0001", "`let mut` binding is not supported yet");
+    Refusal::expect(model.run(Commands::transient_of("Top", 1e-6)), "digital#6", "P0001", "assignment is not supported yet");
 }
 
 #[test]
