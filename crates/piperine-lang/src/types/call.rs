@@ -224,9 +224,10 @@ impl Checker<'_> {
         None
     }
 
-    /// `E0141` (Part I §3.2.6): a call with `expected` positional arguments that has the
-    /// arguments of `args`. Every argument is still inferred, so one wrong count is one diagnostic.
-    fn arity_mismatch(&mut self, file: FileId, span: Span, expected: usize, args: &[Arg]) {
+    /// `E0141` (Part I §3.2.6): a call that takes `expected` arguments (a count, or a range
+    /// spelled `1 to 2`) and has the arguments of `args`. Every argument is still inferred, so
+    /// one wrong count is one diagnostic.
+    pub(super) fn arity_mismatch(&mut self, file: FileId, span: Span, expected: impl std::fmt::Display, args: &[Arg]) {
         let found = args.len();
         self.coded(file, "E0141", span, format!("expected {expected} argument(s), found {found}"), "wrong number of arguments");
         for arg in args {

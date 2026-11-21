@@ -518,6 +518,13 @@ fn a_call_through_a_function_value_with_the_wrong_arity_is_e0141() {
     let (src, d) = diagnostics("", "let x = 0.5; let r = x.abs(1.0, 2.0);");
     assert_eq!(codes_of(&d), ["E0141"], "{src}");
     assert!(d[0].diagnostic.message.contains("expected 0 argument(s), found 2"), "{}", d[0].diagnostic.message);
+    // A probe with three nodes counts as a call does (PI-06 AC 6).
+    let src = "module Top(p: Electrical, q: Electrical) {\n    let a = v(p, q, p);\n}".to_string();
+    let design = Design::builder().source("top.msl", &src).build();
+    assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {src}");
+    let d = Types::check(&design, "Top").expect_err("expected diagnostics");
+    assert_eq!(codes_of(&d), ["E0141"], "{src}");
+    assert!(d[0].diagnostic.message.contains("expected 1 to 2 argument(s), found 3"), "{}", d[0].diagnostic.message);
 }
 
 #[test]

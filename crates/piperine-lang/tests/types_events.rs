@@ -550,7 +550,7 @@ fn cross_takes_ttol_and_etol_by_position_and_by_name() {
     }
     // A name that is no parameter, one bound twice, `e` by name, and a count the row cannot take
     // (the plain mismatch of a core primitive's own count).
-    for (head, code) in [("cross(v(p), atol: 1u)", "E0140"), ("cross(v(p), 1p, ttol: 2p)", "E0140"), ("cross(v(p), e: 1.0)", "E0140"), ("cross(v(p), 1p, 1u, 2u)", "E0180"), ("cross()", "E0180")] {
+    for (head, code) in [("cross(v(p), atol: 1u)", "E0140"), ("cross(v(p), 1p, ttol: 2p)", "E0140"), ("cross(v(p), e: 1.0)", "E0140"), ("cross(v(p), 1p, 1u, 2u)", "E0141"), ("cross()", "E0141")] {
         let src = with_heads(&[head]);
         let d = diagnostics(&src);
         assert_eq!(codes(&d), [code], "{head}");
