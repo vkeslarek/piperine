@@ -310,3 +310,36 @@ fn an_unwritable_plot_names_the_path_and_exits_1() {
     assert!(text(&op.stderr).contains("P0010") && text(&op.stderr).contains("nothing to plot"), "{}", text(&op.stderr));
     assert!(!project.path().join("op.svg").exists());
 }
+
+/// A lone bench whose `Thresh` has a param bounded below by a constant (`x >= 0.0`) and one
+/// bounded by another param (`v_release < v_pick`).
+fn bounded_params() -> (tempfile::TempDir, PathBuf) {
+    let text = "pub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\npub module Thresh(p: Electrical, n: Electrical) {\n    x: f64 = 1.0 where x >= 0.0;\n    v_pick: f64 = 2.0;\n    v_release: f64 = 1.2 where v_release < v_pick;\n}\nanalog for Thresh { i(p, n) +> v(p, n) / 1k + x * 0.0 + v_release * 0.0; }\n\nmodule Top() {\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let t = Thresh(a, gnd);\n}\n";
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("bounded.msl");
+    std::fs::write(&file, text).expect("write");
+    (dir, file)
+}
+
+#[test]
+fn a_param_is_checked_at_equality_and_against_the_others() {
+    // Part III 8.1: a `where` holds at its boundary (`x >= 0.0` takes 0) and reads the other
+    // params as they are now (`v_release < v_pick` takes 1.5 under the default pick of 2 and
+    // refuses 2.5); a host `set` re-checks it (§0.3)
+    let (dir, file) = bounded_params();
+    let file = file.to_str().expect("path");
+    let run = |param: &str| piperine_in(dir.path(), &["run", file, "--top", "Top", "--analysis", "op", "--print", "a", "--param", param]);
+    for accepted in ["Top.t.x=0", "Top.t.x=0.5", "Top.t.v_release=1.5", "Top.t.v_release=1.2"] {
+        stdout_of(&run(accepted));
+    }
+    for refused in ["Top.t.x=-1", "Top.t.v_release=2.5", "Top.t.v_release=2"] {
+        let out = run(refused);
+        assert_eq!(out.status.code(), Some(1), "{refused}: {}", text(&out.stdout));
+        assert!(text(&out.stderr).contains("E0802"), "{refused}: {}", text(&out.stderr));
+    }
+    // a pick written first moves what the release is held against
+    let pick = piperine_in(dir.path(), &["run", file, "--top", "Top", "--analysis", "op", "--print", "a", "--param", "Top.t.v_pick=1.0", "--param", "Top.t.v_release=0.5"]);
+    stdout_of(&pick);
+    let late = piperine_in(dir.path(), &["run", file, "--top", "Top", "--analysis", "op", "--print", "a", "--param", "Top.t.v_pick=1.0", "--param", "Top.t.v_release=1.5"]);
+    assert!(text(&late.stderr).contains("E0802"), "{}", text(&late.stderr));
+}
