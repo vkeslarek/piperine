@@ -265,11 +265,11 @@ fn e0333_is_not_raised_an_instance_as_a_value_is_a_type_mismatch() {
 }
 
 #[test]
-fn e0331_a_body_holds_no_variables() {
-    // modules~4bcf221d: "E0331 let mut acc = 0.0; in a module body": a state is a signal
-    let faulty = Faulty::elaborating("modules~4bcf221d", &Parts::with_top("    let mut acc = 0.0;\n"), "Top");
-    assert_eq!(faulty.first("E0331").message, "`let mut` in a module body");
-    assert_eq!(faulty.first("E0331").help.as_deref(), Some("drop `mut`; compute the value in one expression"));
+fn e0903_a_body_holds_no_variables() {
+    // modules~80317e1d "E0903 let mut acc = 0.0; in a module body": `mut` is a reserved word; a state is a signal
+    let faulty = Faulty::elaborating("modules~80317e1d", &Parts::with_top("    let mut acc = 0.0;\n"), "Top");
+    assert_eq!(faulty.first("E0903").message, "`mut` is a reserved keyword");
+    assert_eq!(faulty.first("E0903").help.as_deref(), Some("write the plain form `let x`: every local may be assigned"));
 }
 
 #[test]

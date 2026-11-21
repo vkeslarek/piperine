@@ -180,13 +180,26 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Type> {
         inner
     });
 
-    // `[T; N]`: a type that is a list has its length (`[T]` is not a type).
+    // `[T; N]`. `[T]` is no type (B.3.7): it is reported at the type and stands as an inferred one, so the
+    // form around it (`&[T]`) is still reported for itself.
     let array = ty
         .clone()
-        .then_ignore(punct(Punct::Semi))
-        .then(h.expr.clone())
+        .then(punct(Punct::Semi).ignore_then(h.expr.clone()).or_not())
         .delimited_by(punct(Punct::LBracket), punct(Punct::RBracket))
-        .map_with(move |(elem, len), e| mk(TypeKind::Array { elem: Box::new(elem), len: Box::new(len) }, e.span()));
+        .validate(move |(elem, len), e, emitter| match len {
+            Some(len) => mk(TypeKind::Array { elem: Box::new(elem), len: Box::new(len) }, e.span()),
+            None => {
+                emitter.emit(Rich::custom(
+                    e.span(),
+                    Custom {
+                        code: "E0900",
+                        message: "slice types are not part of the language".into(),
+                        help: Some("write an array type with its length, `[T; N]`: a function takes a table as `[T; N]` under `const N: usize`".into()),
+                    },
+                ));
+                mk(TypeKind::Infer, e.span())
+            }
+        });
 
     // `fn(A, B) -> R`, taken only where a type is expected.
     // A parameter name is removed (B.3.6): reported, the type kept.

@@ -229,12 +229,12 @@ fn e0909_e0905_and_e0903_a_literal_too_large_a_character_and_a_keyword_as_a_name
 }
 
 #[test]
-fn the_earlier_let_mut_spelling_is_still_accepted_where_it_changes_nothing() {
-    // the status box of language#13 "Today's compiler still knows the word: it accepts it, where it changes nothing": `mut` left
-    // the language with value semantics (spec Appendix G.71, GAPS.md S7). When the parser refuses the word this
-    // test fails and the status box loses the sentence
-    let kept = ValueFile::written("", "let mut x = 5; x = 6; emit!(\"r\", x = x);");
-    ValueFile::int(&kept, "x", 6);
-    let bare = ValueFile::written("", "let x = 5; x = 6; emit!(\"r\", x = x);");
-    ValueFile::int(&bare, "x", 6);
+fn e0903_mut_is_not_a_word_of_the_language() {
+    // language~80317e1d "E0903 let mut x = 0;": `mut` is a reserved word; a local needs no marker to be assigned, so the
+    // plain `let x = 0;` runs and assigns
+    let refused = ValueFile::refused("language~80317e1d", "", "let mut x = 5; x = 6; emit!(\"r\", x = x);");
+    assert_eq!(refused.first("E0903").message, "`mut` is a reserved keyword");
+    assert_eq!(refused.first("E0903").help.as_deref(), Some("write the plain form `let x`: every local may be assigned"));
+    let plain = ValueFile::written("", "let x = 5; x = 6; emit!(\"r\", x = x);");
+    ValueFile::int(&plain, "x", 6);
 }

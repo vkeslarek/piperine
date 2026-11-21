@@ -159,7 +159,7 @@ fn e0101_e0905_and_e0903_no_dyn_no_lifetime_and_no_type_alias() {
     let dynamic = ValueFile::refused("generics~399f441d", "trait Receiver { const LEVELS: u32; }\nfn over(r: &dyn Receiver) -> f64 { 1.0 }", "emit!(\"r\", y = 1);");
     assert_eq!(dynamic.first("E0101").message, "`dyn` is not part of the language");
     let lifetime = ValueFile::refused("generics~8031801d", "fn first<'a>(xs: &'a [f64]) -> f64 { 1.0 }", "emit!(\"r\", y = 1);");
-    assert_eq!(lifetime.first("E0905").message, "lifetime other than `'static` is not part of the language");
+    assert_eq!(lifetime.first("E0905").message, "lifetime is not part of the language");
     let alias = ValueFile::refused("generics~80317e1d", "type Volts = f64;", "emit!(\"r\", y = 1);");
     assert_eq!(alias.first("E0903").message, "type aliases are not part of the language");
 }

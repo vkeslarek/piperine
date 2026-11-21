@@ -197,10 +197,11 @@ fn only_two_built_in_bang_forms_exist() {
 }
 
 #[test]
-fn e0101_there_are_no_mutable_references() {
-    // types~399f441d: "E0101 fn bump(c: &mut u8) { *c += 1; }": no mutable references
-    let faulty = Faulty::elaborating("types~399f441d", "fn bump(c: &mut u8) { *c += 1; }\nmodule Top() { }\n", "Top");
-    assert_eq!(faulty.first("E0101").message, "a mutable reference is not part of the language");
+fn e0101_nothing_is_lent() {
+    // types~399f441d "E0101 fn mean(xs: &[f64])": a reference is no form of the language; the table is taken itself (a function with a const length is not run yet, so only the refusal is held)
+    let faulty = Faulty::elaborating("types~399f441d", "fn mean(xs: &[f64]) -> f64 { 0.0 }\nmodule Top() { }\n", "Top");
+    assert_eq!(faulty.first("E0101").message, "references and borrows are not part of the language");
+    assert_eq!(faulty.first("E0101").help.as_deref(), Some("pass the value itself: every value is copied where it is used"));
 }
 
 #[test]
@@ -255,15 +256,12 @@ fn e0142_a_positional_argument_cannot_follow_a_named_one() {
 }
 
 #[test]
-fn the_earlier_borrow_and_copy_spellings_are_still_known() {
-    // types~ee044194 "Today's compiler still knows both: it stops a model that lends a table with the code P0001
-    // and names a reference type, and it accepts the two names in a derive, where they change nothing": `&`,
-    // `Clone` and `Copy` left the language with value semantics (spec Appendix G.71, GAPS.md S7). When the
-    // front end refuses them this test fails and the status box loses the sentence
-    let lent = ValueFile::refused("types~ee044194", "fn mean(xs: &[f64]) -> f64 { xs.len() as f64 }", "emit!(\"r\", x = mean(&[1.0, 2.0]));");
-    assert!(lent.given.iter().any(|reported| reported.code == "P0001" && reported.message == "reference type is not supported yet"), "{:?}", lent.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
+fn e0161_copying_is_not_a_trait() {
+    // types~39a5d01d "E0161 #[derive(Clone, Copy)]": `Clone` and `Copy` are no names; every value is copied where it is
+    // used, so the enum is carried and compared without them
+    let faulty = Faulty::elaborating("types~39a5d01d", "#[derive(Clone, Copy, PartialEq, Repr)] enum Z { A, B }\nmodule Top() { }\n", "Top");
+    assert_eq!(faulty.first("E0161").message, "cannot find `Clone` in this scope");
+    assert_eq!(faulty.first("E0161").help.as_deref(), Some("every value is copied; delete the name"));
     let plain = ValueFile::written("#[derive(PartialEq, Repr)] enum Z { A, B }", "let z = Z::B; emit!(\"r\", same = z == Z::B);");
-    let derived = ValueFile::written("#[derive(PartialEq, Repr)] enum Z { A, B }", "let z = Z::B; emit!(\"r\", same = z == Z::B);");
     ValueFile::flag(&plain, "same", true);
-    ValueFile::flag(&derived, "same", true);
 }

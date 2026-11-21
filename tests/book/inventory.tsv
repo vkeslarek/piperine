@@ -308,7 +308,6 @@ claim	language~c87e9922	c87e992280216c08	prose	-	-	Its header gives each paramet
 claim	language~9273ae3d	9273ae3d2225da3b	holds	piperine/book_language::the_prelude_gives_its_constants	-	The prelude gives you the constants Q, K_B, EPS0, PI, E and inf.
 claim	language~49c521bb	49c521bb27bd7018	holds	piperine/book_language::constants_and_functions_compute_before_and_during_the_run	-	Running today: bool, integers of up to 64 bits, f64, constants, functions, let and blocks, if, and match over literals.
 claim	language~56bbb0e9	56bbb0e9c4a49166	holds	piperine/book_language::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	-	Parsed and checked, and not run yet: an item declared inside a block, % on floats, floats other than f64, and integers wider than 64 bits.
-claim	language~c2dd2b0b	c2dd2b0b05f730fc	prose	-	-	A later compiler refuses the word itself.
 claim	language~5628120b	5628120bc0d03e21	holds	piperine/book_language::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	-	A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.
 claim	language~79f450b1	79f450b163622f85	holds	piperine/book_language::nothing_converts_by_itself_and_a_condition_is_a_bool	-	P0002
 claim	language~8031841d	8031841de450ce28	holds	piperine/book_language::e0909_e0905_and_e0903_a_literal_too_large_a_character_and_a_keyword_as_a_name	-	E0909
@@ -326,13 +325,11 @@ claim	types~e26b60ff	e26b60ff8c87e786	prose	-	-	It fits a value or it does not, 
 claim	types~1c8de7ec	1c8de7ecca03f031	holds	piperine/book_types::an_impl_gives_a_type_its_constants_and_functions	-	The same notation reaches into a namespace, as in std::constants::PI. use path; gives the last name of a path a short name in the file that writes it.
 claim	types~95095180	950951807bc5b336	holds	piperine/book_types::only_two_built_in_bang_forms_exist	-	Only two built-in ! forms: emit! for output and include_str! for data (E0901).
 claim	types~5628120b	5628120bc0d03e21	holds	piperine/book_types::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	-	A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.
-claim	types~ee044194	ee0441940667a4a1	holds	piperine/book_types::the_earlier_borrow_and_copy_spellings_are_still_known	-	Today's compiler still knows both: it stops a model that lends a table with the code P0001 and names a reference type, and it accepts the two names in a derive, where they change nothing.
-claim	types~9e59c9f5	9e59c9f5b6dfbfce	prose	-	-	A later compiler refuses all of them.
 claim	types~79f450b1	79f450b163622f85	holds	piperine/book_types::a_match_that_misses_a_variant_stops_the_build	-	P0002
 claim	types~39acbe1d	39acbe1dbc06bf22	holds	piperine/book_types::e0143_there_are_no_default_arguments	-	E0143
 claim	types~39acbd1d	39acbd1dbc06bd6f	holds	piperine/book_types::e0140_a_named_argument_must_name_an_optional_parameter	-	E0140
 claim	types~39acbf1d	39acbf1dbc06c0d5	holds	piperine/book_types::e0142_a_positional_argument_cannot_follow_a_named_one	-	E0142
-claim	types~399f441d	399f441dbbfb6578	holds	piperine/book_types::e0101_there_are_no_mutable_references	-	E0101
+claim	types~399f441d	399f441dbbfb6578	holds	piperine/book_types::e0101_nothing_is_lent	-	E0101
 claim	types~39a5d01d	39a5d01dbc00bf0a	holds	piperine/book_types::e0161_there_are_no_heap_types	-	E0161
 claim	generics~90d26ff4	90d26ff435a1e2de	prose	-	-	Hardware repeats itself with small differences: a register is the same circuit for 8 bits or for an enum, a filter is the same loop for 3 taps or for 64, a comparison is the same test for volts or for codes.
 claim	generics~872b633d	872b633d84cd1ace	refused	generics#1	L7	An item with a body, like reads_high, is a default: a type gets it as written unless it gives its own.
@@ -406,7 +403,7 @@ claim	modules~4bc8171d	4bc8171dc680e23e	holds	piperine/book_modules::e0312_a_por
 claim	modules~0d5cece8	0d5cece8da26ecc3	holds	piperine/book_modules::e0312_a_port_is_left_unconnected	-	RcSection(a) { r: 1k }
 claim	modules~4bd9101d	4bd9101dc68f498c	holds	piperine/book_modules::e0343_a_parent_sees_only_what_the_child_publishes	-	E0343
 claim	modules~4bcf201d	4bcf201dc6871037	unraised	piperine/book_modules::e0333_is_not_raised_an_instance_as_a_value_is_a_type_mismatch	D3	E0333
-claim	modules~4bcf221d	4bcf221dc687139d	holds	piperine/book_modules::e0331_a_body_holds_no_variables	-	E0331
+claim	modules~80317e1d	80317e1de450c3f6	holds	piperine/book_modules::e0903_a_body_holds_no_variables	-	E0903
 claim	modules~4bd9131d	4bd9131dc68f4ea5	unraised	piperine/book_modules::e0340_is_not_raised_generation_is_refused_before_its_range_is_checked	L31	E0340
 claim	modules~4bcf211d	4bcf211dc68711ea	holds	piperine/book_modules::e0330_one_name_is_declared_once_in_a_module	-	E0330
 claim	modules~54e1b71d	54e1b71dcbc8277f	holds	piperine/book_modules::e0401_a_module_and_its_behavior_live_in_one_file	-	E0401
