@@ -103,7 +103,7 @@ fn unreached_items_are_not_reported() {
     assert_eq!(types.reached().len(), 2, "only Top and Resistor are reached");
 
     // The same names, reached, are refused.
-    let reached = format!("{HEAD}fn loops(x: f64) -> f64 {{ let a = [x, x]; let s = a[0..1]; x }}\nmodule Top() {{ }}\nanalog for Top {{ let x = loops(1.0); }}");
+    let reached = format!("{HEAD}fn loops(x: f64) -> f64 {{ let s = include_str!(\"a.txt\"); x }}\nmodule Top() {{ }}\nanalog for Top {{ let x = loops(1.0); }}");
     let design: Design = support::build(&reached);
     assert!(Types::check(&design, "Top").is_err());
 }

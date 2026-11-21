@@ -123,7 +123,7 @@ impl Checker<'_> {
             None => columns.extend(pats.iter().map(|p| Some(*p))),
             Some(i) => {
                 if fixed > arity {
-                    self.mismatch_text(file, span, &format!("a pattern of at most {arity} elements"), &format!("{fixed} elements"));
+                    self.coded(file, "E0180", span, format!("mismatched types: a pattern of at most {arity} elements, found {fixed} (§1.6.7)"), "more sub-patterns than elements");
                     return None;
                 }
                 columns.extend(pats[..i].iter().map(|p| Some(*p)));
@@ -133,7 +133,7 @@ impl Checker<'_> {
             }
         }
         if columns.len() != arity {
-            self.mismatch_text(file, span, &format!("a pattern of {arity} elements"), &format!("{} elements", columns.len()));
+            self.coded(file, "E0180", span, format!("mismatched types: a pattern of {arity} elements, found {} (§1.6.7)", columns.len()), "wrong number of sub-patterns");
             return None;
         }
         let items = vec![element; arity];

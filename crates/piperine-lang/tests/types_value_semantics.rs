@@ -94,3 +94,45 @@ fn str_is_a_value_type_in_every_position() {
     assert_clean("module Top() { }\ndigital for Top { on at(1u) { emit!(\"log\", name = \"a\", level = 1.0); } }");
     assert_refused(&source("#[derive(Repr)] struct Tagged { name: str }", "let t = Tagged { name: \"a\" };"), "E0110", "the field `name` has type `str`");
 }
+
+#[test]
+fn a_range_index_is_an_array_of_the_folded_length() {
+    // §1.5.9 (VS-06 AC 1): `e[a..b]`, `e[a..=b]`, `e[..b]`, `e[a..]` and `e[..]` give `[T; b - a]`; a bound folds
+    // through a `const` and arithmetic. The result is passed where an array of that length is wanted.
+    let items = "const TAPS: [f64; 4] = [0.25, 0.5, 0.5, 0.25];\nconst LOW: usize = 1;\nfn pair(xs: [f64; 2]) -> f64 { xs[0] + xs[1] }\nfn all(xs: [f64; 4]) -> f64 { xs[0] }\nfn tail(xs: [f64; 3]) -> f64 { xs[0] }\nfn head(xs: [f64; 3]) -> f64 { xs[0] }";
+    assert_clean(&source(items, "let a = pair(TAPS[1..3]); let b = pair(TAPS[LOW..=LOW + 1]); let c = all(TAPS[..]); let d = tail(TAPS[1..]); let e = head(TAPS[..3]);"));
+    assert_refused(&source(items, "let a = pair(TAPS[1..4]);"), "P0002", "[f64; 3]");
+}
+
+#[test]
+fn a_range_bound_that_is_not_const_is_e0188() {
+    // §1.5.9 (VS-06 AC 2): a bound that is a local is no const expression, and the diagnostic names it.
+    let items = "const TAPS: [f64; 4] = [0.25, 0.5, 0.5, 0.25];";
+    assert_refused(&source(items, "let n = 2u8; let a = TAPS[0..n];"), "E0188", "the bound `n` of a range index");
+}
+
+#[test]
+fn a_range_index_out_of_the_array_is_refused() {
+    // §1.5.25 (VS-06 AC 3): a range that ends beyond the length, or starts after its end, is `E0104`.
+    let items = "const TAPS: [f64; 4] = [0.25, 0.5, 0.5, 0.25];";
+    assert_refused(&source(items, "let a = TAPS[2..5];"), "E0104", "outside an array of 4 elements");
+    assert_refused(&source(items, "let a = TAPS[3..1];"), "E0104", "outside an array of 4 elements");
+    assert_clean(&source(items, "let a = TAPS[4..];"));
+}
+
+#[test]
+fn an_array_rest_pattern_binds_an_array() {
+    // §1.6.7 (VS-06 AC 4): `name @ ..` binds `[T; N - k]`; more sub-patterns than elements is `E0180`.
+    let items = "fn sum2(xs: [f64; 2]) -> f64 { xs[0] + xs[1] }";
+    assert_clean(&source(items, "let a = [1.0, 2.0, 3.0, 4.0]; let [first, rest @ ..] = a; let [x, y, z] = rest; let [.., last] = a; let r = sum2([first, last]);"));
+    assert_clean(&source(items, "let a = [1.0, 2.0, 3.0, 4.0]; let [head, mid @ .., tail] = a; let s = sum2(mid);"));
+    assert_refused(&source("", "let a = [1.0, 2.0]; let [p, q, r, ..] = a;"), "E0180", "a pattern of at most 2 elements");
+}
+
+#[test]
+fn an_array_is_passed_as_itself() {
+    // §1.2.4 (VS-06 AC 5): `fn f(xs: [f64; 3])` takes the array, with no `&`; `[x; N]` takes an `x` of any type.
+    let items = "fn first(xs: [f64; 3]) -> f64 { xs[0] }\n#[derive(PartialEq)] enum Mode { Off, On }";
+    assert_clean(&source(items, "let a = [1.0, 2.0, 3.0]; let b = first(a); let c = first([0.5; 3]); let m = [(1.0, true); 2];"));
+    assert_refused(&source(items, "let a = [1.0, 2.0]; let b = first(a);"), "P0002", "[f64; 3]");
+}

@@ -403,13 +403,11 @@ impl Checker<'_> {
     /// `e[i]` reads an element of an array (§1.5.9); an index is
     /// any integer type.
     pub(super) fn index_expression(&mut self, expr: ExprId, base: ExprId, index: ExprId) -> Option<Ty> {
+        if matches!(self.design.expr_node(index).kind, ExprKind::Range { .. }) {
+            return self.range_index(expr, base, index);
+        }
         let file = self.file_of_expr(expr);
         let found = self.infer(base);
-        if matches!(self.design.expr_node(index).kind, ExprKind::Range { .. }) {
-            let span = self.design.expr_node(expr).span;
-            self.unsupported(file, span, "a slice `e[a..b]`");
-            return None;
-        }
         self.integer_index(index);
         let found = found?;
         let element = match &found {
