@@ -381,6 +381,13 @@ fn a_relaxing_cycle_starts_absent_and_stops_within_drives_plus_one_passes() {
     assert!(counts.len() <= run.drive_count() + 1, "at most drives + 1 passes: {counts:?}");
     assert_eq!(counts.last(), Some(&2), "the last pass sees both drives present: {counts:?}");
     assert_eq!(run.value("v"), HIGH, "the loop settled on the source's level");
+    // The bound is reached, not only respected: a loop that never settles (two oscillators) runs
+    // exactly its drive count plus one passes, so a looser bound would fail here.
+    let mut oscillating = Loop::oscillating();
+    oscillating.dirty = DirtySet::all(&oscillating.plan);
+    let before = Received::counts().len();
+    oscillating.run().expect("an unsettled loop is not an error");
+    assert_eq!(Received::counts().len() - before, oscillating.drive_count() + 1, "exactly drives + 1 passes: {:?}", Received::counts());
 }
 
 #[test]
