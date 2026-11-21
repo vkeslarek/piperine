@@ -33,6 +33,22 @@ impl RecordSink for CheckTally {
     }
 }
 
+/// Every record a run delivers, in delivery order, with the tally of its `checks` (a [`RecordSink`]).
+#[derive(Debug, Default)]
+pub struct RunRecords {
+    /// The records of every stream, as delivered.
+    records: Vec<Record>,
+    /// The `checks` among them.
+    checks: CheckTally,
+}
+
+impl RecordSink for RunRecords {
+    fn record(&mut self, record: &Record) {
+        self.checks.record(record);
+        self.records.push(record.clone());
+    }
+}
+
 /// What one run left.
 #[derive(Debug)]
 pub struct CompletedRun {
@@ -42,6 +58,8 @@ pub struct CompletedRun {
     pub table: Table,
     /// Its `checks` records.
     pub checks: CheckTally,
+    /// Every record its streams delivered, in delivery order (the `checks` included).
+    pub records: Vec<Record>,
     /// When the run began to open (build included).
     pub started: Instant,
     /// When the run ended.
@@ -85,12 +103,12 @@ impl ScenarioRun {
         let settings = Settings { rustc: None, cache: build.path().to_path_buf() };
         let mut session = Session::open(&project, &spec, &settings).map_err(|failure| fail("open", &failure))?;
         self.stimulus.apply(&mut session).map_err(|refusal| fail("stimulus", &refusal))?;
-        let checks = Rc::new(RefCell::new(CheckTally::default()));
-        let table = session.run(checks.clone()).map_err(|failure| fail("run", &failure))?;
+        let delivered = Rc::new(RefCell::new(RunRecords::default()));
+        let table = session.run(delivered.clone()).map_err(|failure| fail("run", &failure))?;
         // the session holds the build's libraries: it goes before the directory does
         drop(session);
-        let tally = *checks.borrow();
-        Ok(CompletedRun { run: self.run.clone(), table, checks: tally, started, ended: Instant::now(), build: build.path().to_path_buf() })
+        let RunRecords { records, checks } = std::mem::take(&mut *delivered.borrow_mut());
+        Ok(CompletedRun { run: self.run.clone(), table, checks, records, started, ended: Instant::now(), build: build.path().to_path_buf() })
     }
 }
 
@@ -177,6 +195,22 @@ mod tests {
         assert_eq!(ran.table.rows.len(), 5, "a 2 us run printed every 0.5 us");
         assert!(results[1].as_ref().is_err_and(|message| message.contains("`absent`")), "{:?}", results[1]);
         assert!(results[2].as_ref().is_err_and(|message| message.contains("stimulus") && message.contains("E0801")), "{:?}", results[2]);
+    }
+
+    #[test]
+    fn a_completed_run_keeps_every_record_in_delivery_order() {
+        // the clock of `ticks` rises at 0.5, 1.5, 2.5 and 3.5 us (first change at half its period of
+        // 1 us); its counter emits `tick` with the edge it counted, 0 to 3, and no run emits a check
+        let package = PlantedPackage::write();
+        let results = ScenarioBatch::new(vec![ScenarioRun::new(package.path(), "ticks", Stimulus::new())]).execute();
+        let ran = results[0].as_ref().unwrap_or_else(|message| panic!("{message}"));
+        assert_eq!(ran.records.len(), 4, "{:?}", ran.records);
+        for (index, record) in ran.records.iter().enumerate() {
+            assert_eq!(record.stream, "tick");
+            assert_eq!(record.fields, vec![("edge".to_string(), Field::Int(index as i128))], "record {index}");
+            assert!((record.time - (index as f64 + 0.5) * 1e-6).abs() < 1e-12, "record {index} at {}", record.time);
+        }
+        assert_eq!(ran.checks, CheckTally::default(), "no stream of the run is `checks`");
     }
 
     #[test]

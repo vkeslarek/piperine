@@ -310,9 +310,9 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] `a_completed_run_keeps_every_record_in_delivery_order` and the existing `a_failed_run_is_kept_as_its_message_and_the_others_still_run` pass under `Run harness`
-- [ ] Gate check passes: `Run harness`, the Build line (which compiles `buck_scenarios`)
-- [ ] Test count: 1 new test
+- [x] `a_completed_run_keeps_every_record_in_delivery_order` and the existing `a_failed_run_is_kept_as_its_message_and_the_others_still_run` pass under `Run harness`
+- [x] Gate check passes: `Run harness`, the Build line (which compiles `buck_scenarios`)
+- [x] Test count: 1 new test
 
 **Tests**: unit
 **Gate**: quick
