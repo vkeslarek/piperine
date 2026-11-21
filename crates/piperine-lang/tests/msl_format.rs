@@ -603,3 +603,36 @@ fn the_corpus_is_stable_under_a_second_format() {
         assert_eq!(twice, once, "{label}: a second format changes the text");
     }
 }
+
+// ---- the shipped sources in the formatter's form (PI-11) ---------------------------------------
+
+/// The text of the printed tree of `src`: what `piperine_lang::msl::print` writes for its parse.
+fn printed_tree(src: &str) -> String {
+    piperine_lang::msl::print::print(&parse(src).file)
+}
+
+/// PI-11 AC 1: every file of `crates/piperine-lang/std/` is the formatter's output for itself.
+#[test]
+fn every_stdlib_file_is_in_the_formatters_form() {
+    let files = msl_files(&repo().join("crates/piperine-lang/std"));
+    assert!(!files.is_empty(), "the standard library holds MSL files");
+    for path in files {
+        let text = std::fs::read_to_string(&path).expect("an MSL file is UTF-8");
+        let formatted = Formatter::format(&text).unwrap_or_else(|d| panic!("{}: {d:?}", path.display()));
+        assert_eq!(formatted, text, "{} is not in the formatter's form (`piperine fmt` rewrites it)", path.display());
+    }
+}
+
+/// PI-11 AC 4: formatting a shipped source (the standard library, `examples/buck`, the gallery
+/// fixtures) leaves its printed tree as it was, so no test that reads a name or a position of
+/// the tree sees a change.
+#[test]
+fn formatting_keeps_the_printed_tree_of_every_shipped_source() {
+    for dir in ["crates/piperine-lang/std", "examples/buck", "crates/piperine-lang/tests/fixtures/gallery"] {
+        for path in msl_files(&repo().join(dir)) {
+            let text = std::fs::read_to_string(&path).expect("an MSL file is UTF-8");
+            let formatted = Formatter::format(&text).unwrap_or_else(|d| panic!("{}: {d:?}", path.display()));
+            assert_eq!(printed_tree(&formatted), printed_tree(&text), "{}: formatting changed the printed tree", path.display());
+        }
+    }
+}

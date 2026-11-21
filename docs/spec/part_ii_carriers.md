@@ -138,17 +138,23 @@ nature** declares `potential`.
 **Examples**
 
 ```rust
-pub nature Bit<T: Repr = bool> { value: T }                              // prelude; Bit is Bit<bool>
+pub nature Bit<T: Repr = bool> {
+    value: T,
+} // prelude; Bit is Bit<bool>
 pub nature Wire { value: Logic, resolve: Logic::wired }                  // stdlib (§22.3): strengths, high impedance
 pub nature Electrical {
     potential: Voltage { access: v, units: "V", abstol: 1u },
-    flow:      Current { access: i, units: "A", abstol: 1p },
+    flow: Current { access: i, units: "A", abstol: 1p },
 }
+
 pub nature Thermal {
     potential: Temperature { access: temp, units: "K", abstol: 1m },
-    flow:      Power       { access: pwr,  units: "W", abstol: 1n },
+    flow: Power { access: pwr, units: "W", abstol: 1n },
 }
-pub nature VSignal { potential: Voltage { access: v, units: "V", abstol: 1u } }   // signal-flow
+
+pub nature VSignal {
+    potential: Voltage { access: v, units: "V", abstol: 1u },
+} // signal-flow
 ```
 
 ## 5. Discrete carriers

@@ -95,7 +95,7 @@ block	natures#2	6b0d8fdbd0ef2ae9	refused	piperine/book_natures::signals_of_every
 block	natures#3	e27df4c2a9cfd359	refused	piperine/book_natures::the_open_drain_line_is_refused_while_resolved_natures_are_not_compiled	L21	-
 block	natures#4	1d7a141cf1811928	shown	-	-	-
 block	natures#5	c62d8033ca3aff49	shown	-	-	-
-block	natures#6	9aaf90266da55ef2	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run alarm.msl --analysis transient --stop 4e-6 --stream line
+block	natures#6	42ee18734437cbee	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run alarm.msl --analysis transient --stop 4e-6 --stream line
 block	natures#7	954b1af85cb67042	run	piperine/book_natures::a_resistor_that_heats_itself_finds_the_temperature_where_power_in_equals_power_out	-	-
 block	natures#8	ee25d1f515652d04	refused	piperine/book_natures::a_bundle_is_refused_where_the_solver_reaches_it	L25	-
 block	modules#1	b8d5395ceea2ea36	refused	piperine/book_modules::the_ladder_is_refused_for_its_generic_module	L30	-

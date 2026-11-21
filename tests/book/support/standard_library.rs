@@ -1,5 +1,6 @@
 //! `StandardLibrary`: the text of the standard library's own files, which a chapter says it shows,
-//! normalized so a declaration compares with the Book's however the file lays it out.
+//! normalized so a declaration compares with the Book's however the file lays it out (the formatter's
+//! trailing commas included).
 
 use std::path::Path;
 
@@ -14,9 +15,11 @@ impl StandardLibrary {
         Self::normalize(&text)
     }
 
-    /// `text` without its line comments and its `pub` keywords, whitespace collapsed to single blanks.
+    /// `text` without its line comments, its `pub` keywords and the comma before a closing brace (the
+    /// formatter writes one after the last field, the Book may not), whitespace collapsed to single blanks.
     pub fn normalize(text: &str) -> String {
         let without_comments: Vec<&str> = text.lines().map(|line| line.split("//").next().unwrap_or("")).collect();
-        without_comments.join(" ").replace("pub ", "").split_whitespace().collect::<Vec<_>>().join(" ")
+        let joined = without_comments.join(" ").replace("pub ", "").split_whitespace().collect::<Vec<_>>().join(" ");
+        joined.replace(", }", " }")
     }
 }

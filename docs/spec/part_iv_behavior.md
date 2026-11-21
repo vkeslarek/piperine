@@ -222,7 +222,9 @@ analog for Switch {
 
 /// Two nodes made one: with no selector the kind is fixed, and the nodes merge at elaboration.
 pub module Short<N: Nature>(a: N, b: N) {}
-analog<N> for Short<N> { potential(a, b) +> 0.0; }
+analog<N> for Short<N> {
+    potential(a, b) +> 0.0;
+}
 
 /// An equation is a row: a nature whose "flow" is the residual gives it the right tolerance.
 nature Servo {
