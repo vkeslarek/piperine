@@ -20,6 +20,7 @@ mod diagnose;
 mod drives;
 mod event_reads;
 mod events;
+mod files;
 mod elaborator;
 mod analog;
 mod functions;
@@ -42,6 +43,7 @@ mod unlowered;
 mod variants;
 
 pub use consts::{Bindings, ConstEval, ConstFault, Folded};
+pub use files::{FileFault, IncludedFiles};
 pub use elaborator::Elaborator;
 pub use host_sources::HostSourceParam;
 pub use structural::Overrides;

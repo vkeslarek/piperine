@@ -50,6 +50,8 @@ impl Elaboration<'_, '_> {
         match fault {
             // Reported above as E0188.
             ConstFault::Cyclic { .. } | ConstFault::NotConstant { .. } => {}
+            // §20: the file of an `include_str!` has no text.
+            ConstFault::File { fault, .. } => self.report(file, Diagnostic::new(fault.code(), fault.message(), span, "the file named here")),
             ConstFault::UnboundParam { .. } => self.unsupported(file, span, &format!("{position} that reads a param")),
             ConstFault::Dynamic { what, .. } => {
                 let message = format!("{position} is not an expression over params and constants: it reads {what}");

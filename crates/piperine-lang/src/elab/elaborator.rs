@@ -132,6 +132,7 @@ impl<'d, 't> Elaboration<'d, 't> {
         // places it. Its natures are still the IR's before any body.
         let reached: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(&self.design.decl_data(*d).kind, DeclKind::Module(_))).collect();
         let modules: Vec<DeclId> = reached.iter().copied().filter(|d| !self.is_hoisted(*d)).collect();
+        self.read_included_files();
         self.plan_params(&modules);
         self.classify_key_params(&modules);
         // An unkeyed module keeps the id of its place in first-reach order; a keyed module's
