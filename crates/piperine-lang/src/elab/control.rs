@@ -82,15 +82,9 @@ impl Elaboration<'_, '_> {
         let node = self.design.expr_node(expr).clone();
         let ExprKind::Assign { op, lhs, rhs } = node.kind else { return false };
         let Some(place) = self.place_of(scope, lhs) else { return false };
-        let target = match place.path.is_empty() {
-            true => scope.locals[place.local as usize].ty.clone(),
-            false => match self.types.ty(lhs).and_then(|t| self.value_type(t)) {
-                Some(field) => field,
-                None => {
-                    self.unsupported(scope.file, node.span, "an assignment to a field whose type has no value in the IR");
-                    return false;
-                }
-            },
+        let Some(target) = self.place_type(scope, &place) else {
+            self.unsupported(scope.file, node.span, "an assignment to a place whose type has no value in the IR");
+            return false;
         };
         let Some(value) = self.lower_expr(scope, rhs) else { return false };
         if self.flag(value) == Flag::Flagged && Flag::of(&target) == Flag::Plain {

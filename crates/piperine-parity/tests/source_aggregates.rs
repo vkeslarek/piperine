@@ -308,3 +308,106 @@ fn options_of_aggregates_behave_as_enums() {
         &[byte(pick_y(true)), byte(pick_y(false)), byte(match wrapped.inner { Some(p) => p.y, None => 0 }), byte(u8::from(empty.inner.is_none()))],
     );
 }
+
+/// The message of the fault the transient of `top` of `file` runs into: the run is expected to fail.
+fn the_fault(file: &str, top: &str) -> String {
+    let built = build(&project(file), top);
+    let circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
+    let mut options = piperine_solver::prelude::TransientAnalysisOptions::new(10e-9, 1e-9);
+    options.dt_max = 1e-9;
+    let mut solver = piperine_solver::prelude::Solver::new(circuit).with_context(piperine_solver::prelude::Context::default()).with_tran_opts(options).build();
+    match solver.tran().and_then(|mut t| t.solve()) {
+        Ok(_) => panic!("the run was expected to fault"),
+        Err(e) => e.to_string(),
+    }
+}
+
+#[test]
+fn arrays_give_rusts_values() {
+    // CV-13 AC 1 (§1.2.5, §1.5.25): literals, `[x; N]`, indexing by a constant and by a variable, element
+    // assignment, nested arrays, an array of structs, and an array passed to a function and returned
+    // from it by value, so the caller's is unchanged.
+    let a = [1u8, 2, 3];
+    let repeated = [7u8; 4];
+    let nested = [[1u8, 2], [3, 4]];
+    let mut assigned = nested;
+    assigned[1][1] = 9;
+    let floats = [1.5f64, 2.5];
+    let original = [1u8, 2, 3];
+    let mut bumped = original;
+    bumped[0] += 1;
+    let ten = [10u8, 20, 30];
+    let mut ps = [P { x: 0.0, y: 4 }; 2];
+    ps[1].y = 6;
+    assert_commits(
+        "arrays.msl",
+        &["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"],
+        &[
+            byte(a[0] + a[2]),
+            byte(repeated[3]),
+            byte(nested[1][0]),
+            byte(assigned[1][1] + assigned[0][1]),
+            byte((floats[0] + floats[1]) as u8),
+            byte(original[0]),
+            byte(bumped[0]),
+            byte(ten[2]),
+            byte(ten[0]),
+            byte(ps[0].y + ps[1].y),
+        ],
+    );
+    // array patterns: `[x, .., z]`, `[h, rest @ ..]`, literals and `..` in a `match`
+    let four = [1u8, 2, 3, 4];
+    let [x, .., z] = four;
+    let [h, rest @ ..] = a;
+    let match_literals = |k: u8| match [k, 5, 6] {
+        [1, ..] => 10u8,
+        [2, n, _] => n,
+        _ => 0,
+    };
+    assert_commits(
+        "arrays.msl",
+        &["p0", "p1", "p2", "p3"],
+        &[byte(x * 10 + z), byte(h * 100 + rest[0] * 10 + rest[1]), byte(match_literals(1)), byte(match_literals(2))],
+    );
+}
+
+#[test]
+fn a_range_index_gives_the_array_of_its_elements() {
+    // CV-13 AC 2 (value semantics, §1.5.25): `a[i..j]` is the array of the elements `i` to `j - 1`, a
+    // missing bound is the array's end, `..=` includes the last, and the result is a copy.
+    let a = [1u8, 2, 3, 4];
+    let mid: [u8; 2] = a[1..3].try_into().expect("two elements");
+    let to: [u8; 2] = a[..2].try_into().expect("two elements");
+    let inclusive: [u8; 2] = a[1..=2].try_into().expect("two elements");
+    let three = [1u8, 2, 3];
+    let mut copy: [u8; 2] = three[0..2].try_into().expect("two elements");
+    copy[0] = 9;
+    assert_commits(
+        "arrays.msl",
+        &["r0", "r1", "r2", "r3", "r4"],
+        &[byte(mid[0] * 10 + mid[1]), byte(to[0] * 10 + to[1]), byte(inclusive[0] * 10 + inclusive[1]), byte(a[1..4][2]), byte(three[0] * 10 + copy[0])],
+    );
+}
+
+#[test]
+fn an_index_out_of_range_panics_at_run_time() {
+    // CV-13 AC 3 (§1 rule 11, §1.5.25): `a[5]` over three elements fails the analysis, naming the instance, the
+    // instant and the index.
+    let fault = the_fault("arrays.msl", "OverrunBench");
+    assert!(fault.contains("OverrunBench.overrun"), "the fault names the instance: {fault}");
+    assert!(fault.contains('5'), "the fault names the index: {fault}");
+    assert!(fault.contains("ns") || fault.contains("e-9") || fault.contains("instant") || fault.contains("time") || fault.contains("t="), "the fault names the instant: {fault}");
+}
+
+#[test]
+fn an_unknown_index_reads_and_writes_by_merge() {
+    // CV-13 AC 1 and US-04 AC 12 (§3.3.13): with `sel` never driven, reading `eq[sel]` over elements that are all
+    // 5 gives 5, known; over 5, 5, 6 it is unknown; writing 5 into `w[sel]` merges 5 with each element,
+    // which is 5 for the elements that held 5 and unknown for the one that held 6.
+    let seen = build(&project("arrays.msl"), "MergeBench").run(10e-9, 1e-9);
+    let at_edge = |name: &str| -> Option<Vec<u8>> { transient(&seen, &format!("MergeBench.{name}")).into_iter().next().map(|(_, bytes)| bytes) };
+    assert_eq!(at_edge("same"), Some(byte(5)), "the elements all hold 5");
+    assert_eq!(at_edge("differ"), Some(vec![0, 0]), "5, 5, 6 merge to unknown");
+    assert_eq!(at_edge("w0"), Some(byte(5)), "merge(5, 5) is 5");
+    assert_eq!(at_edge("w1"), Some(vec![0, 0]), "merge(6, 5) is unknown");
+}

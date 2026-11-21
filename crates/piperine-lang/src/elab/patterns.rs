@@ -96,6 +96,11 @@ impl Elaboration<'_, '_> {
                     }
                 }
             }
+            PatKind::Array(pats) => {
+                let read = self.read_subject(scope, subject, origin.clone())?;
+                let base = self.base_of(read);
+                self.test_array_pattern(scope, subject, pats, &base, origin)
+            }
             PatKind::Lit(expr) => {
                 let read = self.read_subject(scope, subject, origin.clone())?;
                 match self.bool_literal(*expr) {

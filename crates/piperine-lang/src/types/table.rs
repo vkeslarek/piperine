@@ -293,6 +293,13 @@ impl<'d> Types<'d> {
         self.layouts.get(&owner).map(Vec::as_slice)
     }
 
+    /// The value of the const expression `expr` of an array length or a range bound: a non-negative
+    /// integer built of literals, `const` names and integer arithmetic (§1.2.5). The elaborator's
+    /// own constant evaluator needs a typed literal, which a length does not have.
+    pub fn integer_constant(&self, expr: ExprId) -> Option<u128> {
+        super::lengths::IntegerFolder { design: self.design }.fold(expr, 16)
+    }
+
     /// The tag of the enum `decl`.
     pub fn enum_tag(&self, decl: DeclId) -> Option<&super::EnumTag> {
         self.enum_tags.get(&decl)

@@ -63,15 +63,30 @@ impl Checker<'_> {
     /// The value of the const expression `expr` when it is a non-negative integer the folder
     /// computes; `None` for anything else, an overflow or a division by zero included.
     pub(super) fn fold_integer(&self, expr: ExprId, nesting: u8) -> Option<u128> {
+        IntegerFolder { design: self.design }.fold(expr, nesting)
+    }
+}
+
+/// Folds a const expression to a non-negative integer from the POM alone (no type table).
+pub(super) struct IntegerFolder<'d> {
+    /// The design the expression is read from.
+    pub(super) design: &'d crate::pom::Design,
+}
+
+impl IntegerFolder<'_> {
+    /// The value of the const expression `expr` when it is a non-negative integer, following at
+    /// most `nesting` names of `const`s; `None` for anything else, an overflow or a division by
+    /// zero included.
+    pub(super) fn fold(&self, expr: ExprId, nesting: u8) -> Option<u128> {
         let nesting = nesting.checked_sub(1)?;
         match &self.design.expr_node(expr).kind {
             ExprKind::Lit(lit) => match &lit.kind {
                 LitKind::Int(text) if !text.ends_with("f64") => lexer::int_value(text),
                 _ => None,
             },
-            ExprKind::Paren(inner) | ExprKind::Cast { expr: inner, .. } => self.fold_integer(*inner, nesting),
+            ExprKind::Paren(inner) | ExprKind::Cast { expr: inner, .. } => self.fold(*inner, nesting),
             ExprKind::Binary { op, lhs, rhs } => {
-                let (lhs, rhs) = (self.fold_integer(*lhs, nesting)?, self.fold_integer(*rhs, nesting)?);
+                let (lhs, rhs) = (self.fold(*lhs, nesting)?, self.fold(*rhs, nesting)?);
                 match op {
                     BinOp::Add => lhs.checked_add(rhs),
                     BinOp::Sub => lhs.checked_sub(rhs),
@@ -85,7 +100,7 @@ impl Checker<'_> {
             }
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
-                    DeclKind::Const(data) => self.fold_integer(data.value?, nesting),
+                    DeclKind::Const(data) => self.fold(data.value?, nesting),
                     _ => None,
                 },
                 _ => None,

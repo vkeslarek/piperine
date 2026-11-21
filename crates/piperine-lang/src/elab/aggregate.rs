@@ -199,9 +199,9 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    /// The place an assignment's target names: a local and the fields below it. `None` after a
-    /// diagnostic.
-    pub(super) fn place_of(&mut self, scope: &Scope, target: ExprId) -> Option<Place> {
+    /// The place an assignment's target names: a local and the fields and elements below it. `None`
+    /// after a diagnostic.
+    pub(super) fn place_of(&mut self, scope: &mut Scope, target: ExprId) -> Option<Place> {
         let peeled = self.peel_parens(target);
         let node = self.design.expr_node(peeled).clone();
         match &node.kind {
@@ -215,12 +215,134 @@ impl Elaboration<'_, '_> {
                 place.path.push(Projection::Field(index));
                 Some(place)
             }
-            ExprKind::Index { .. } => {
-                self.unsupported(scope.file, node.span, "an assignment to an element");
-                None
+            ExprKind::Index { expr, index } => {
+                if matches!(self.design.expr_node(*index).kind, ExprKind::Range { .. }) {
+                    self.unsupported(scope.file, node.span, "an assignment to a range index");
+                    return None;
+                }
+                let mut place = self.place_of(scope, *expr)?;
+                let index = self.lower_expr(scope, *index)?;
+                place.path.push(Projection::Index(index));
+                Some(place)
             }
             _ => self.assigned_local(scope, peeled).map(|local| Place { local, path: Vec::new() }),
         }
+    }
+
+    /// The type of the place `place` of the local it starts at: the local's type, then through each
+    /// field and element. `None` when a step does not apply.
+    pub(super) fn place_type(&self, scope: &Scope, place: &Place) -> Option<ValueType> {
+        let mut ty = scope.locals.get(place.local as usize)?.ty.clone();
+        for step in &place.path {
+            ty = match (ty, step) {
+                (ValueType::Array(element, _), Projection::Index(_)) => *element,
+                (ValueType::Tuple(parts), Projection::Field(index)) => parts.get(*index as usize)?.clone(),
+                (ValueType::Struct(id), Projection::Field(index)) => self.type_arena.field_types(id).get(*index as usize)?.clone(),
+                _ => return None,
+            };
+        }
+        Some(ty)
+    }
+
+    /// `[a, b, ..]`: an array of its operands. When one may be unknown every element is held as a
+    /// value that may be (a known one merged with itself), so the array has one element type.
+    pub(super) fn lower_array(&mut self, scope: &mut Scope, items: &[ExprId], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        let mut parts = Vec::with_capacity(items.len());
+        for item in items {
+            parts.push(self.lower_expr(scope, *item)?);
+        }
+        let parts = self.alike(scope, parts);
+        let element = match parts.first() {
+            Some(first) => self.type_of(*first),
+            None => match &ty {
+                ValueType::Array(element, _) => (**element).clone(),
+                _ => return None,
+            },
+        };
+        Some(self.emit(Expr::Array(parts), ValueType::Array(Box::new(element), items.len() as u64), origin))
+    }
+
+    /// `[x; N]`: `N` copies of `x`, which is evaluated once; `N` is a constant.
+    pub(super) fn lower_array_repeat(&mut self, scope: &mut Scope, element: ExprId, length: ExprId, origin: Origin) -> Option<LoweredExpr> {
+        let count = self.const_count(scope, length)?;
+        let value = self.lower_expr(scope, element)?;
+        let element_type = self.type_of(value);
+        Some(self.emit(Expr::ArrayRepeat { element: value, count }, ValueType::Array(Box::new(element_type), count), origin))
+    }
+
+    /// The value of the constant `expr` as a count. `None` after a diagnostic.
+    fn const_count(&mut self, scope: &Scope, expr: ExprId) -> Option<u64> {
+        match self.types.integer_constant(expr).and_then(|count| u64::try_from(count).ok()) {
+            Some(count) => Some(count),
+            None => {
+                self.unsupported(scope.file, self.design.expr_node(expr).span, "a length or a bound that is not an integer constant");
+                None
+            }
+        }
+    }
+
+    /// `base[index]`: the element, or, for a range index with constant bounds, the array of the
+    /// elements in range. An index that may be unknown needs elements that may be (§3.3.13).
+    pub(super) fn lower_index(&mut self, scope: &mut Scope, expr: ExprId, base: ExprId, index: ExprId, origin: Origin) -> Option<LoweredExpr> {
+        let span = self.design.expr_node(expr).span;
+        let whole = self.lower_expr(scope, base)?;
+        let ValueType::Array(element, length) = self.type_of(whole) else {
+            self.unsupported(scope.file, span, "an index of a value that is not an array");
+            return None;
+        };
+        if let ExprKind::Range { lo, hi, inclusive } = self.design.expr_node(index).kind.clone() {
+            return self.lower_range_index(scope, span, whole, (*element).clone(), length, (lo, hi, inclusive), origin);
+        }
+        let at = self.lower_expr(scope, index)?;
+        if matches!(self.type_of(at), ValueType::Flagged(_)) && !matches!(*element, ValueType::Flagged(_)) {
+            self.unsupported(scope.file, span, "an index that may be unknown over elements that cannot be");
+            return None;
+        }
+        Some(self.emit(Expr::Index { expr: whole, index: at }, *element, origin))
+    }
+
+    /// `base[lo..hi]` as `[base[lo], .., base[hi - 1]]`: bounds are constants, a missing one is the
+    /// array's own end, and a range outside the array is a panic at elaboration (§1 rule 11).
+    fn lower_range_index(&mut self, scope: &Scope, span: crate::msl::Span, whole: LoweredExpr, element: ValueType, length: u64, range: (Option<ExprId>, Option<ExprId>, bool), origin: Origin) -> Option<LoweredExpr> {
+        let (lo, hi, inclusive) = range;
+        let low = match lo {
+            Some(lo) => self.const_count(scope, lo)?,
+            None => 0,
+        };
+        let high = match hi {
+            Some(hi) => self.const_count(scope, hi)? + u64::from(inclusive),
+            None => length,
+        };
+        if low > high || high > length {
+            let message = format!("the range index {low}..{high} is outside an array of {length} elements");
+            let file = scope.file;
+            self.report(file, crate::msl::Diagnostic::new("E0104", message, span, "range index out of bounds"));
+            return None;
+        }
+        let parts: Vec<LoweredExpr> = (low..high)
+            .map(|k| {
+                let at = self.emit(Expr::Int(i128::from(k)), ValueType::UInt(64), origin.clone());
+                self.emit(Expr::Index { expr: whole, index: at }, element.clone(), origin.clone())
+            })
+            .collect();
+        Some(self.emit(Expr::Array(parts), ValueType::Array(Box::new(element), high - low), origin))
+    }
+
+    /// `parts` held as one type: when one may be unknown, each is merged with itself so all may be.
+    fn alike(&mut self, scope: &mut Scope, parts: Vec<LoweredExpr>) -> Vec<LoweredExpr> {
+        if !parts.iter().any(|part| self.flag(*part) == Flag::Flagged) {
+            return parts;
+        }
+        parts
+            .into_iter()
+            .map(|part| {
+                let base = match self.type_of(part) {
+                    ValueType::Flagged(inner) => *inner,
+                    other => other,
+                };
+                self.coerced_to(scope, part, &Flag::Flagged.wrap(base))
+            })
+            .collect()
     }
 
     /// The tests of a tuple, tuple-struct or struct pattern over `subject` of the aggregate type
@@ -302,6 +424,60 @@ impl Elaboration<'_, '_> {
             }
         }
         Some(PatternTest { test: Some(test), bindings })
+    }
+
+    /// `[a, b]`, `[first, .., last]` and `[head, rest @ ..]` over an array (§1.6.7): each sub-pattern
+    /// over the element it names, `..` standing for the elements between and `rest @ ..` binding them
+    /// as an array.
+    pub(super) fn test_array_pattern(&mut self, scope: &mut Scope, subject: &Subject, pats: &[PatId], base: &ValueType, origin: Origin) -> Option<PatternTest> {
+        let ValueType::Array(element, length) = base else { return None };
+        let arity = usize::try_from(*length).ok()?;
+        let rest_at = pats.iter().position(|p| self.is_rest(*p));
+        let after = rest_at.map_or(0, |at| pats.len() - at - 1);
+        let mut test: Option<LoweredExpr> = None;
+        let mut bindings = Vec::new();
+        for (position, pat) in pats.iter().enumerate() {
+            if Some(position) == rest_at {
+                let (from, to) = (position, arity - after);
+                if let PatKind::Ident { binding, .. } = self.design.pat_node(*pat).kind {
+                    let whole = self.read_subject(scope, subject, origin.clone())?;
+                    let parts: Vec<LoweredExpr> = (from..to).map(|k| self.element_read(whole, k as u64, element, &origin)).collect();
+                    let rest = self.emit(Expr::Array(parts), ValueType::Array(element.clone(), (to - from) as u64), origin.clone());
+                    bindings.push((binding, rest));
+                }
+                continue;
+            }
+            let index = match rest_at {
+                Some(rest) if position > rest => arity - (pats.len() - position),
+                _ => position,
+            };
+            let whole = self.read_subject(scope, subject, origin.clone())?;
+            let field = self.element_read(whole, index as u64, element, &origin);
+            let found = self.test_pattern(scope, &Subject::Value(field), *pat)?;
+            bindings.extend(found.bindings);
+            if let Some(inner) = found.test {
+                test = Some(match test {
+                    Some(earlier) => self.both(earlier, inner, origin.clone()),
+                    None => inner,
+                });
+            }
+        }
+        Some(PatternTest { test, bindings })
+    }
+
+    /// Element `index` of the array value `whole`.
+    fn element_read(&mut self, whole: LoweredExpr, index: u64, element: &ValueType, origin: &Origin) -> LoweredExpr {
+        let at = self.emit(Expr::Int(i128::from(index)), ValueType::UInt(64), origin.clone());
+        self.emit(Expr::Index { expr: whole, index: at }, element.clone(), origin.clone())
+    }
+
+    /// Whether `pat` is `..` or `name @ ..`.
+    fn is_rest(&self, pat: PatId) -> bool {
+        match &self.design.pat_node(pat).kind {
+            PatKind::Rest => true,
+            PatKind::Ident { sub: Some(sub), .. } => matches!(self.design.pat_node(*sub).kind, PatKind::Rest),
+            _ => false,
+        }
     }
 
     /// `let pat = init;` of a tuple, tuple-struct or struct pattern: the value is bound once, each

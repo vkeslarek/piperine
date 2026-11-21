@@ -258,6 +258,9 @@ impl Elaboration<'_, '_> {
             ExprKind::Field { .. } => self.lower_field(scope, expr, ty, origin),
             ExprKind::Struct { path, fields, .. } => self.lower_struct_expr(scope, expr, *path, fields, ty, origin),
             ExprKind::Tuple(items) => self.lower_tuple(scope, items, ty, origin),
+            ExprKind::Array(items) => self.lower_array(scope, items, ty, origin),
+            ExprKind::ArrayRepeat { elem, len } => self.lower_array_repeat(scope, *elem, *len, origin),
+            ExprKind::Index { expr: base, index } => self.lower_index(scope, expr, *base, *index, origin),
             ExprKind::Unary { op, expr: operand } => {
                 let op = match op {
                     UnOp::Neg => UnaryOp::Neg,
@@ -602,7 +605,7 @@ impl Elaboration<'_, '_> {
             // `let (a, b) = (x, y);` is one local per component; any other value is bound once and
             // taken apart by its pattern (`aggregate.rs`).
             PatKind::Tuple(pats) if self.is_component_let(&pats, init) => self.lower_tuple_let(scope, out, &pats, init, file, span),
-            PatKind::Tuple(_) | PatKind::TupleStruct { .. } | PatKind::Struct { .. } => self.lower_destructuring_let(scope, out, pat, init),
+            PatKind::Tuple(_) | PatKind::TupleStruct { .. } | PatKind::Struct { .. } | PatKind::Array(_) => self.lower_destructuring_let(scope, out, pat, init),
             _ => {
                 self.unsupported(file, span, "a `let` pattern that is not a name");
                 false
