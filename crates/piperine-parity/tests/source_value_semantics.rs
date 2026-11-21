@@ -196,3 +196,24 @@ fn the_reporting_functions_emit_the_same_records() {
     assert_eq!(checks[1], vec![field("kind", text("cover")), field("name", text("seen")), field("pass", Field::Bool(true))]);
     assert_eq!(checks[2], vec![field("kind", text("target")), field("name", text("margin")), field("margin", Field::Real(0.25))]);
 }
+
+/// The value of a four-level pattern of `0` and `1` characters, the leftmost the highest level.
+fn pattern_value(pattern: &str) -> i128 {
+    pattern.chars().fold(0, |value, level| value * 2 + i128::from(level == '1'))
+}
+
+/// Whether `value` (four levels) matches `pattern`, an `x` matching any level (§22.1.4).
+fn pattern_matches(value: u8, pattern: &str) -> bool {
+    pattern.chars().enumerate().all(|(place, level)| level == 'x' || (value >> (3 - place)) & 1 == u8::from(level == '1'))
+}
+
+#[test]
+fn the_library_items_that_took_borrows_give_the_same_results() {
+    // VS-08 AC 4 (§22.1.4): `logic` and `matches_bits` take their pattern as a `str` and give the values of the
+    // table: `logic("1010")` is 10, `matches_bits` lets `x` match any level.
+    let records = records_of("library.msl", "LibraryBench");
+    let first = |stream: &str| records.iter().find(|r| r.stream == stream).map(|r| r.fields.clone()).unwrap_or_else(|| panic!("a `{stream}` record"));
+    let field = |name: &str, value: Field| (name.to_string(), value);
+    assert_eq!(first("logic"), vec![field("ones", Field::Int(pattern_value("1010"))), field("zeros", Field::Int(pattern_value("0000"))), field("bit", Field::Bool(true))]);
+    assert_eq!(first("matches"), vec![field("exact", Field::Bool(pattern_matches(5, "0101"))), field("wild", Field::Bool(pattern_matches(5, "01xx"))), field("wrong", Field::Bool(pattern_matches(5, "0111")))]);
+}

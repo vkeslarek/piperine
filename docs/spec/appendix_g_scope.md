@@ -90,7 +90,7 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | G.68 | `Tran` passed to `analysis` names a module | Open |
 | G.69 | Implementation-defined float results: the bits of a NaN, the last place of the elementary functions | Resolved provisionally |
 | G.70 | The rules of the value language that were formerly taken from Rust | Resolved provisionally |
-| G.71 | Value semantics: no reference, no move, no `mut`; the implementation and `std` still use the earlier forms | Implementation |
+| G.71 | Value semantics: no reference, no move, no `mut`; the implementation's front end still accepts the earlier forms | Implementation |
 
 ## Open items
 
@@ -407,7 +407,7 @@ This revision removes these special cases of earlier ones:
 
 Two codes are retired: `E0102` (§1) and `E0331` (§8.2). `E0183` no longer has a move to report.
 
-The reference implementation does not yet meet this item. Its front end still accepts `&`, `*r`, `mut`, `ref`, `move`, `&'static str` and the derives `Clone` and `Copy`, and still reports `E0331`. The source files of `std`, and so the fences of Part VII that are excerpts of them (§22), are still written in the earlier spelling. The feature `value-semantics` brings the implementation, `std` and those fences to the rules above.
+The reference implementation does not yet meet this item. Its front end still accepts `&`, `*r`, `mut`, `ref`, `move`, `&'static str` and the derives `Clone` and `Copy`, and still reports `E0331`. The source files of `std`, and so the fences of Part VII that are excerpts of them (§22), are written in the spelling above. The feature `value-semantics` brings the front end to the rules above.
 For review: that a parameter is not a place (§1.5.12, §3.1.10), so a method cannot assign `self`; and that `resolve` takes its drives as an array with a const length (§4 rule 8).
 
 ## Closed items

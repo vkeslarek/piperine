@@ -1711,7 +1711,7 @@ fn appendix_g_records_the_value_decisions() {
     assert!(one_line(&closed).contains("V1 to V7 number the decisions of value semantics"));
     assert_eq!(g_summary_status("71"), "Implementation");
     let g71 = g_entry("71");
-    for needle in ["**Status: Implementation.**", "Two codes are retired: `E0102` (§1) and `E0331` (§8.2)", "still written in the earlier spelling"] {
+    for needle in ["**Status: Implementation.**", "Two codes are retired: `E0102` (§1) and `E0331` (§8.2)", "are written in the spelling above"] {
         assert!(g71.contains(needle), "{needle}: {g71}");
     }
 }
@@ -1789,4 +1789,18 @@ fn there_is_no_slice_and_no_borrow_in_the_grammar() {
     assert!(ii.contains("`fn f<const N: usize>(drives: [T; N]) -> T`"), "§4 rule 8 takes an array");
     let h5 = section(&appendix_h(), "## H.5");
     assert!(!h5.contains('&'), "H.5 lends nothing: {h5}");
+}
+
+#[test]
+fn section_22_no_longer_says_std_is_in_the_earlier_spelling() {
+    // VS-08 AC 3: `std` and the fences of Part VII that are excerpts of it are written in the amended spelling,
+    // so §22 holds no Resolution about the earlier one, and the two spellings of `MeasuredDiode` agree.
+    let part = one_line(&spec("part_vii_stdlib.md"));
+    assert!(!part.contains("still written in the spelling of earlier revisions"), "§22 keeps no Resolution about the earlier spelling");
+    for removed in ["&str", "&[T]", "let mut ", "Clone, Copy"] {
+        assert!(!part.contains(removed), "Part VII still writes `{removed}`");
+    }
+    assert!(part.contains("pub fn wired<const N: usize>(d: [Logic; N]) -> Logic"), "§22.3 takes the drives as an array");
+    assert!(one_line(&spec("part_vii_stdlib.md")).contains(r#"table_model(v(a, k), IV, "3E")"#));
+    assert!(one_line(&spec("part_vi_io.md")).contains(r#"table_model(v(a, k), IV, "3E")"#), "Part VI and Part VII agree");
 }

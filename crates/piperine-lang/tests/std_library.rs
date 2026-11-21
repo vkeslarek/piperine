@@ -700,11 +700,11 @@ fn every_intrinsic_reads_a_str() {
     let mut without = Vec::new();
     for decl in design.std_crate().decls() {
         let Some(f) = decl.as_function().filter(|f| f.is_intrinsic()) else { continue };
-        if !f.params().iter().any(|p| p.ty().is_some_and(|t| t.text().contains("&str"))) {
+        if !f.params().iter().any(|p| p.ty().is_some_and(|t| t.text().contains("str"))) {
             without.push(decl.qualified_name());
         }
     }
-    assert!(without.is_empty(), "intrinsics with no `&str` parameter: {without:?}");
+    assert!(without.is_empty(), "intrinsics with no `str` parameter: {without:?}");
 }
 
 #[test]
@@ -795,5 +795,25 @@ fn no_pom_test_was_removed() {
         let text = std::fs::read_to_string(manifest.join("tests").join(format!("{target}.rs"))).expect("target source");
         let count = text.lines().filter(|l| l.trim() == "#[test]").count();
         assert!(count >= floor, "{target} holds {count} tests, at least {floor} are required");
+    }
+}
+
+#[test]
+fn std_holds_no_removed_form() {
+    // VS-08 AC 1 (§1.2.6, §1.4.6, §1.5.12): the files of `std` write no `&` borrow, no `*x` dereference, no `mut`,
+    // no `Clone` or `Copy` and no lifetime; the drives of a resolved net are an array under a const parameter.
+    for entry in std::fs::read_dir(std_dir()).expect("the std directory") {
+        let path = entry.expect("an entry").path();
+        let text = std::fs::read_to_string(&path).expect("a std file");
+        for (number, line) in text.lines().enumerate() {
+            let code = line.split("//").next().unwrap_or("");
+            for removed in ["&str", "&[", "&'", "let mut ", "Clone", "Copy", "(&", ", &", "= &", " *x", "(*"] {
+                assert!(!code.contains(removed), "{}:{} writes `{removed}`: {line}", path.display(), number + 1);
+            }
+        }
+    }
+    let nets = std::fs::read_to_string(std_dir().join("nets.msl")).expect("nets.msl");
+    for item in ["pub fn wired<const N: usize>(d: [Logic; N]) -> Logic", "pub fn tri<T: Repr, const N: usize>(d: [Option<T>; N]) -> Option<T>", "pub fn sum<const N: usize>(d: [f64; N]) -> f64"] {
+        assert!(nets.contains(item), "nets.msl holds `{item}`");
     }
 }

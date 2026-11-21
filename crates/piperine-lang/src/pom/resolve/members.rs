@@ -37,6 +37,10 @@ enum Recv {
     Carrier(Option<DeclId>),
     /// An array of carriers, still `depth` indexes away from one carrier.
     CarrierArray(Option<DeclId>, usize),
+    /// An array of values of this struct: its items are the struct's only after an index.
+    StructArray(DeclId),
+    /// An array of instances of this module: its items are the module's only after an index.
+    InstanceArray(DeclId),
     /// Nothing declared tells.
     Unknown,
 }
@@ -143,7 +147,7 @@ impl Reader<'_> {
                 None => (Resolution::Unresolved, None),
             },
             // The fields of a carrier come from its value type, which needs inference.
-            Recv::Carrier(_) | Recv::CarrierArray(..) | Recv::Unknown => deferred,
+            Recv::Carrier(_) | Recv::CarrierArray(..) | Recv::StructArray(_) | Recv::InstanceArray(_) | Recv::Unknown => deferred,
         }
     }
 
@@ -181,7 +185,7 @@ impl Reader<'_> {
             }
             Recv::Struct(s) => in_impls(s),
             Recv::Instance(_) => None,
-            Recv::Unknown => return (Resolution::Deferred(DeferReason::ReceiverTypeUnknown), false),
+            Recv::StructArray(_) | Recv::InstanceArray(_) | Recv::Unknown => return (Resolution::Deferred(DeferReason::ReceiverTypeUnknown), false),
         };
         (found.unwrap_or(Resolution::Unresolved), false)
     }
@@ -221,6 +225,8 @@ impl Reader<'_> {
             ExprKind::Index { expr: inner, .. } => match self.receiver(*inner) {
                 Recv::CarrierArray(nature, 1) => Recv::Carrier(nature),
                 Recv::CarrierArray(nature, depth) => Recv::CarrierArray(nature, depth - 1),
+                Recv::StructArray(s) => Recv::Struct(s),
+                Recv::InstanceArray(m) => Recv::Instance(m),
                 other => other,
             },
             ExprKind::Path(p) => match self.design.path_node(*p).segments.last().map(|s| s.res) {
@@ -230,7 +236,7 @@ impl Reader<'_> {
             ExprKind::Field { expr: inner, name, .. } => match self.receiver(*inner) {
                 Recv::Instance(m) => self.member_of(m, &name.text).map_or(Recv::Unknown, |d| self.of_decl(d)),
                 Recv::Struct(s) => child_field(self.design, s, &name.text).map_or(Recv::Unknown, |d| self.of_decl(d)),
-                Recv::Carrier(_) | Recv::CarrierArray(..) | Recv::Unknown => Recv::Unknown,
+                Recv::Carrier(_) | Recv::CarrierArray(..) | Recv::StructArray(_) | Recv::InstanceArray(_) | Recv::Unknown => Recv::Unknown,
             },
             _ => Recv::Unknown,
         }
@@ -274,7 +280,9 @@ impl Reader<'_> {
             TypeKind::Array { elem, .. } => match self.of_type(*elem) {
                 Recv::Carrier(nature) => Recv::CarrierArray(nature, 1),
                 Recv::CarrierArray(nature, depth) => Recv::CarrierArray(nature, depth + 1),
-                other => other,
+                Recv::Struct(s) | Recv::StructArray(s) => Recv::StructArray(s),
+                Recv::Instance(m) | Recv::InstanceArray(m) => Recv::InstanceArray(m),
+                Recv::Unknown => Recv::Unknown,
             },
             _ => match self.design.type_resolution(ty) {
                 Resolution::Decl(t) => match &self.design.decl_data(t).kind {

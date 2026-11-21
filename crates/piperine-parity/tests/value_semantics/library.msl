@@ -1,0 +1,20 @@
+//! The library items that took a borrow or a `&str` before give what they gave (VS-08 AC 4): `logic` and
+//! `matches_bits` take their pattern as a `str`. `a` holds 5 (0101). The expected records are computed by
+//! Rust in `source_value_semantics.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+module Probe(in clk: Bit, in a: Bit<u4>) {}
+digital for Probe {
+    on clk.rise() {
+        emit!("logic", ones = logic::<u4>("1010"), zeros = logic::<u4>("0000"), bit = logic::<bool>("1"));
+        emit!("matches", exact = matches_bits(a, "0101"), wild = matches_bits(a, "01xx"), wrong = matches_bits(a, "0111"));
+    }
+}
+
+module LibraryBench() {
+    signal clk: Bit; signal a: Bit<u4> = 5;
+    let osc = Osc(clk) { f: 1G };
+    let probe = Probe(clk, a);
+}

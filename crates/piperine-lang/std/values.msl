@@ -18,8 +18,8 @@ pub fn cast<A: Repr, B: Repr>(a: A) -> B where A::WIDTH == B::WIDTH {
 }
 
 pub fn same<T: Repr>(a: T, b: T) -> bool { (0..T::WIDTH).all(|k| a.level(k) == b.level(k)) }
-pub extern "intrinsic" fn matches_bits<T: Repr>(s: T, pattern: &str) -> bool;
-pub extern "intrinsic" fn logic<T: Repr>(pattern: &str) -> T;
+pub extern "intrinsic" fn matches_bits<T: Repr>(s: T, pattern: str) -> bool;
+pub extern "intrinsic" fn logic<T: Repr>(pattern: str) -> T;
 
 impl Bit {
     /// IEEE 1364 posedge: L → H, L → unknown, unknown → H. A change never goes from unknown to unknown.

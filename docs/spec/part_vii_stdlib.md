@@ -35,8 +35,6 @@ The **standard library** is the crate `std`, shipped with the implementation; it
 | `parse_table` | §22.6.4 | reads the characters of a `str` |
 | `parse_hex` | §22.6.4 | reads the characters of a `str` |
 
-> **Resolution.** The source files of `std` are still written in the spelling of earlier revisions, and the fences of this part, which are excerpts of them, with it: `&str` for `str`, a `&[T]` parameter for an array `[T; N]` with a const parameter `N`, `&x` for the argument `x`, `*x` for `x`, `let mut` for `let`, and `Clone` and `Copy` in a derive. Each is read as the form after "for"; the rules are those of Part I (§1.4.6). [G.71](appendix_g_scope.md) tracks the rewrite of both.
-
 > **Resolution.** An implementation **MAY** implement an item natively when the result is observably equal to the definition: same values, same events, same time points, same records.
 
 > **Resolution.** The natures `Bit` (§4), `Electrical`, `Thermal` and `VSignal` (§4) and the module `Short` (§11) are prelude items. Their defining text is in the sections cited; they are not repeated here.
@@ -173,8 +171,8 @@ byte = cast(sh);            // byte: Bit<u8>; sh[0] is the least significant lev
 
 ```rust
 pub fn same<T: Repr>(a: T, b: T) -> bool { (0..T::WIDTH).all(|k| a.level(k) == b.level(k)) }
-pub extern "intrinsic" fn matches_bits<T: Repr>(s: T, pattern: &str) -> bool;
-pub extern "intrinsic" fn logic<T: Repr>(pattern: &str) -> T;
+pub extern "intrinsic" fn matches_bits<T: Repr>(s: T, pattern: str) -> bool;
+pub extern "intrinsic" fn logic<T: Repr>(pattern: str) -> T;
 ```
 
 | Function | Result |
@@ -336,11 +334,11 @@ pub fn vt() -> f64 { K_B * temperature() / Q }
 #### 22.2.3 `white_noise`, `flicker_noise`, `noise_table`
 
 ```rust
-pub module white_noise(psd: f64, name: Option<&str>) -> f64 { noise(psd, name) }
-pub module flicker_noise(k: f64, exp: f64, name: Option<&str>) -> f64 { noise(k / freq().powf(exp), name) }
-pub module noise_table<const N: usize>(name: Option<&str>) -> f64 {
+pub module white_noise(psd: f64, name: Option<str>) -> f64 { noise(psd, name) }
+pub module flicker_noise(k: f64, exp: f64, name: Option<str>) -> f64 { noise(k / freq().powf(exp), name) }
+pub module noise_table<const N: usize>(name: Option<str>) -> f64 {
     table: [(f64, f64); N];
-    noise(table_model(freq(), &table, "1C"), name)
+    noise(table_model(freq(), table, "1C"), name)
 }
 ```
 
@@ -592,7 +590,7 @@ let ph = idtmod(f0 + kvco * v(vctl), 0.0, 1.0, -0.5);    // phase in [-0.5, 0.5)
 Follows `x` with a bounded rate of change.
 
 ```rust
-#[derive(Repr, Clone, Copy, PartialEq)]
+#[derive(Repr, PartialEq)]
 enum Slewing { Track, Up, Down }
 
 pub module slew(x: f64, rise: Option<f64>, fall: Option<f64>) -> f64 {
@@ -719,7 +717,7 @@ digital<N, D> for zi_nd<N, D> {
         for k in 0..D { ys[k] <- pos(y); }
     }
     on every(period, period) {
-        let mut acc = num[0] * x;
+        let acc = num[0] * x;
         for k in 1..N { acc += num[k] * xs[k - 1].known_or(0.0); }
         for k in 0..D { acc -= den[k] * ys[k].known_or(0.0); }
         vout <- acc;
@@ -729,7 +727,7 @@ digital<N, D> for zi_nd<N, D> {
 }
 analog<N, D> for zi_nd<N, D> {
     if sampled { pos(y) +> vout.known_or(0.0); } else {
-        let mut acc = 0.0;
+        let acc = 0.0;
         for k in 0..N { acc += num[k] * delay(x, k as f64 * period); }
         for k in 0..D { acc -= den[k] * delay(pos(y), (k + 1) as f64 * period); }
         rate(y) +> pos(y) - acc;             // the row of y: y = Σ num·x(t−kT) − Σ den·y(t−(k+1)T)
@@ -765,15 +763,15 @@ Discrete-time filters given by roots. Each converts its roots to coefficients at
 
 ```rust
 /// True when each complex root has its conjugate as often as itself.
-const fn conjugate_closed<const N: usize>(roots: &[(f64, f64); N]) -> bool {
+const fn conjugate_closed<const N: usize>(roots: [(f64, f64); N]) -> bool {
     roots.iter().all(|r| r.1 == 0.0
         || roots.iter().filter(|c| c.0 == r.0 && c.1 == -r.1).count()
         == roots.iter().filter(|c| c.0 == r.0 && c.1 == r.1).count())
 }
 
 /// Coefficients, ascending in `q = z^−1`, of the product of `1 − ρ·q` over the roots.
-const fn poly_q<const N: usize>(roots: &[(f64, f64); N]) -> [f64; N + 1] {
-    let mut c = [(0.0, 0.0); N + 1];
+const fn poly_q<const N: usize>(roots: [(f64, f64); N]) -> [f64; N + 1] {
+    let c = [(0.0, 0.0); N + 1];
     c[0] = (1.0, 0.0);
     for n in 0..N {
         let (a, b) = roots[n];
@@ -782,33 +780,33 @@ const fn poly_q<const N: usize>(roots: &[(f64, f64); N]) -> [f64; N + 1] {
             c[k] = (c[k].0 - (a * pr - b * pi), c[k].1 - (a * pi + b * pr));
         }
     }
-    let mut re = [0.0; N + 1];
+    let re = [0.0; N + 1];
     for k in 0..=N { re[k] = c[k].0; }
     re
 }
 
 /// The same product without its leading 1: the `den` of `zi_nd` (§22.2.12 rule 1).
-const fn den_q<const D: usize>(poles: &[(f64, f64); D]) -> [f64; D] {
+const fn den_q<const D: usize>(poles: [(f64, f64); D]) -> [f64; D] {
     let c = poly_q(poles);
-    let mut d = [0.0; D];
+    let d = [0.0; D];
     for k in 0..D { d[k] = c[k + 1]; }
     d
 }
 
 pub module zi_zp<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
-    zeros: [(f64, f64); N] where conjugate_closed(&zeros);
-    poles: [(f64, f64); D] where conjugate_closed(&poles);
-    zi_nd(x, period) { num: poly_q(&zeros), den: den_q(&poles) }
+    zeros: [(f64, f64); N] where conjugate_closed(zeros);
+    poles: [(f64, f64); D] where conjugate_closed(poles);
+    zi_nd(x, period) { num: poly_q(zeros), den: den_q(poles) }
 }
 pub module zi_zd<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
-    zeros: [(f64, f64); N] where conjugate_closed(&zeros);
+    zeros: [(f64, f64); N] where conjugate_closed(zeros);
     den: [f64; D];
-    zi_nd(x, period) { num: poly_q(&zeros), den }
+    zi_nd(x, period) { num: poly_q(zeros), den }
 }
 pub module zi_np<const N: usize, const D: usize>(x: f64, period: f64) -> f64 {
     num: [f64; N];
-    poles: [(f64, f64); D] where conjugate_closed(&poles);
-    zi_nd(x, period) { num, den: den_q(&poles) }
+    poles: [(f64, f64); D] where conjugate_closed(poles);
+    zi_nd(x, period) { num, den: den_q(poles) }
 }
 ```
 
@@ -825,8 +823,8 @@ Continuous-time filters `H(s)`, with one internal `State` node per pole.
 
 ```rust
 /// Coefficients, ascending in `s`, of the product of `1 − s/ρ`; a root at zero gives the factor `s`.
-const fn poly_s<const N: usize>(roots: &[(f64, f64); N]) -> [f64; N + 1] {
-    let mut c = [(0.0, 0.0); N + 1];
+const fn poly_s<const N: usize>(roots: [(f64, f64); N]) -> [f64; N + 1] {
+    let c = [(0.0, 0.0); N + 1];
     c[0] = (1.0, 0.0);
     for n in 0..N {
         let (a, b) = roots[n];
@@ -839,7 +837,7 @@ const fn poly_s<const N: usize>(roots: &[(f64, f64); N]) -> [f64; N + 1] {
         }
         if zero { c[0] = (0.0, 0.0); }
     }
-    let mut re = [0.0; N + 1];
+    let re = [0.0; N + 1];
     for k in 0..=N { re[k] = c[k].0; }
     re
 }
@@ -857,26 +855,26 @@ analog<N, D> for laplace_nd<N, D> {
         if k + 2 < D { rate(w[k]) +> ddt(pos(w[k])) - pos(w[k + 1]); }
     }
     if D > 1 {
-        let mut acc = den[D - 1] * top - x;
+        let acc = den[D - 1] * top - x;
         for j in 0..D - 1 { acc += den[j] * pos(w[j]); }
         rate(w[D - 2]) +> acc;               // the row of the last state: den(s)·W = x
     }
 }
 
 pub module laplace_zp<const N: usize, const D: usize>(x: f64) -> f64 where N <= D {
-    zeros: [(f64, f64); N] where conjugate_closed(&zeros);
-    poles: [(f64, f64); D] where conjugate_closed(&poles);
-    laplace_nd(x) { num: poly_s(&zeros), den: poly_s(&poles) }
+    zeros: [(f64, f64); N] where conjugate_closed(zeros);
+    poles: [(f64, f64); D] where conjugate_closed(poles);
+    laplace_nd(x) { num: poly_s(zeros), den: poly_s(poles) }
 }
 pub module laplace_zd<const N: usize, const D: usize>(x: f64) -> f64 where N < D {
-    zeros: [(f64, f64); N] where conjugate_closed(&zeros);
+    zeros: [(f64, f64); N] where conjugate_closed(zeros);
     den: [f64; D];
-    laplace_nd(x) { num: poly_s(&zeros), den }
+    laplace_nd(x) { num: poly_s(zeros), den }
 }
 pub module laplace_np<const N: usize, const D: usize>(x: f64) -> f64 where N <= D + 1 {
     num: [f64; N];
-    poles: [(f64, f64); D] where conjugate_closed(&poles);
-    laplace_nd(x) { num, den: poly_s(&poles) }
+    poles: [(f64, f64); D] where conjugate_closed(poles);
+    laplace_nd(x) { num, den: poly_s(poles) }
 }
 ```
 
@@ -899,7 +897,7 @@ pub module laplace_np<const N: usize, const D: usize>(x: f64) -> f64 where N <= 
 Interpolates a table of samples.
 
 ```rust
-pub extern "intrinsic" fn table_model<const N: usize>(x: f64, table: &[(f64, f64); N], control: &str) -> f64;
+pub extern "intrinsic" fn table_model<const N: usize>(x: f64, table: [(f64, f64); N], control: str) -> f64;
 ```
 
 1. `table` holds `(abscissa, value)` pairs with strictly increasing abscissae. Otherwise `E0704`.
@@ -926,7 +924,7 @@ pub extern "intrinsic" fn table_model<const N: usize>(x: f64, table: &[(f64, f64
 
 ```rust,fragment
 const IV: [(f64, f64); 64] = parse_table(include_str!("diode_iv.tbl"));
-analog for MeasuredDiode { i(a, k) +> table_model(v(a, k), &IV, "3E"); }   // cubic, error outside
+analog for MeasuredDiode { i(a, k) +> table_model(v(a, k), IV, "3E"); }   // cubic, error outside
 ```
 
 #### 22.2.16 `db10`, `db20`
@@ -988,10 +986,10 @@ High impedance, strengths and wired logic are a value type and a `resolve` funct
 #### 22.3.1 `Strength`, `Logic`
 
 ```rust
-#[derive(Repr, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Repr, PartialEq, PartialOrd)]
 pub enum Strength { HighZ, Weak, Pull, Strong, Supply }
 
-#[derive(Repr, Clone, Copy, PartialEq)]
+#[derive(Repr, PartialEq)]
 pub struct Logic { pub v: bool, pub s: Strength }
 
 impl Logic {
@@ -1014,9 +1012,9 @@ impl Logic {
 ```rust
 impl Logic {
     /// IEEE 1364 net resolution: the strongest drive wins; equal strengths that disagree are unknown.
-    pub fn wired(d: &[Logic]) -> Logic {
+    pub fn wired<const N: usize>(d: [Logic; N]) -> Logic {
         d.iter().fold(Logic::Z, |a, x|
-            if x.s > a.s { *x } else if x.s < a.s { a } else { Logic { v: merge(a.v, x.v), s: a.s } })
+            if x.s > a.s { x } else if x.s < a.s { a } else { Logic { v: merge(a.v, x.v), s: a.s } })
     }
 }
 
@@ -1041,8 +1039,8 @@ pub nature Wire { value: Logic, resolve: Logic::wired }
 A typed bus with one driver at a time.
 
 ```rust
-pub fn tri<T: Repr>(d: &[Option<T>]) -> Option<T> {
-    d.iter().fold(None, |a, x| match (a, *x) { (None, y) | (y, None) => y, _ => Some(Unknown) })
+pub fn tri<T: Repr, const N: usize>(d: [Option<T>; N]) -> Option<T> {
+    d.iter().fold(None, |a, x| match (a, x) { (None, y) | (y, None) => y, _ => Some(Unknown) })
 }
 pub nature Tri<T: Repr> { value: Option<T>, resolve: tri }
 ```
@@ -1061,7 +1059,7 @@ pub nature Tri<T: Repr> { value: Option<T>, resolve: tri }
 A real-valued net whose drivers add.
 
 ```rust
-pub fn sum(d: &[f64]) -> f64 { d.iter().sum() }
+pub fn sum<const N: usize>(d: [f64; N]) -> f64 { d.iter().sum() }
 pub nature SumNet { value: f64, resolve: sum }
 ```
 
@@ -1393,10 +1391,10 @@ Functions over `emit!` (§19) and `include_str!` (§20). None is core, and there
 #### 22.6.1 `Severity`, `log`
 
 ```rust
-#[derive(Repr, Clone, Copy, PartialEq)]
+#[derive(Repr, PartialEq)]
 pub enum Severity { Info, Warning, Error }
 
-pub fn log(severity: Severity, msg: &str) { emit!("log", severity = severity, msg = msg); }
+pub fn log(severity: Severity, msg: str) { emit!("log", severity = severity, msg = msg); }
 ```
 
 1. `log` writes a record to the `log` stream of the calling instance (§19 rule 2).
@@ -1409,7 +1407,7 @@ pub fn log(severity: Severity, msg: &str) { emit!("log", severity = severity, ms
 
 ```rust
 pub fn finish()         { emit!("sim", finish = true); }
-pub fn fatal(msg: &str) { emit!("sim", finish = true, failed = true, msg = msg); }
+pub fn fatal(msg: str) { emit!("sim", finish = true, failed = true, msg = msg); }
 ```
 
 1. Both write to the reserved global stream `sim`. The analysis ends at the instant of the record (§19 rule 5), unless the record was reached under unknown control: then it is written with `maybe = true` and the run goes on (G.55).
@@ -1422,11 +1420,11 @@ pub fn fatal(msg: &str) { emit!("sim", finish = true, failed = true, msg = msg);
 
 ```rust
 /// A condition that must hold. Unknown is reported as unknown, not as a pass.
-pub fn require(name: &str, pass: bool)    { emit!("checks", kind = "require", name = name, pass = pass); }
+pub fn require(name: str, pass: bool)    { emit!("checks", kind = "require", name = name, pass = pass); }
 /// A condition worth reaching; the host counts the hits.
-pub fn cover(name: &str, hit: bool)       { emit!("checks", kind = "cover", name = name, pass = hit); }
+pub fn cover(name: str, hit: bool)       { emit!("checks", kind = "cover", name = name, pass = hit); }
 /// A number to keep at or above zero: an objective or a constraint of an optimization (§23.2).
-pub fn target(name: &str, margin: f64)    { emit!("checks", kind = "target", name = name, margin = margin); }
+pub fn target(name: str, margin: f64)    { emit!("checks", kind = "target", name = name, margin = margin); }
 ```
 
 | Function | `kind` | Fields | Read by the host as |
@@ -1445,8 +1443,8 @@ pub fn target(name: &str, margin: f64)    { emit!("checks", kind = "target", nam
 #### 22.6.4 `parse_table`, `parse_hex`
 
 ```rust
-pub const extern "intrinsic" fn parse_table<Row, const N: usize>(text: &str) -> [Row; N];   // Row: f64 or a tuple of f64
-pub const extern "intrinsic" fn parse_hex<T, const N: usize>(text: &str) -> [T; N];         // T: an integer type
+pub const extern "intrinsic" fn parse_table<Row, const N: usize>(text: str) -> [Row; N];   // Row: f64 or a tuple of f64
+pub const extern "intrinsic" fn parse_hex<T, const N: usize>(text: str) -> [T; N];         // T: an integer type
 ```
 
 1. Both are `const fn`s from text to an array. They run at elaboration; a run never reads a file (§20).
