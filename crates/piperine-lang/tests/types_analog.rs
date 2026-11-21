@@ -114,9 +114,9 @@ fn ddt_ac_stim_and_environment_are_f64() {
     assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "true");
     let (_, d) = diagnostics("", "let x = ac_stim();");
-    assert_eq!(codes_of(&d), ["E0180"]);
+    assert_eq!(codes_of(&d), ["E0141"]);
     let (_, d) = diagnostics("", "let x = temperature(1.0);");
-    assert_eq!(codes_of(&d), ["E0180"]);
+    assert_eq!(codes_of(&d), ["E0141"]);
 
     // A core primitive with no row of the subset is refused by name, one `P0001` each.
     // (`analysis(Dc)`, `analysis(Transient)`, `analysis(Ac)`, `bound_step` and `freq` left this
@@ -196,9 +196,9 @@ fn freq_analysis_kinds_and_bound_step_type() {
     assert_eq!(codes_of(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "true");
     let (_, d) = diagnostics("", "bound_step();");
-    assert_eq!(codes_of(&d), ["E0180"]);
+    assert_eq!(codes_of(&d), ["E0141"]);
     let (_, d) = diagnostics("", "let f = freq(1.0);");
-    assert_eq!(codes_of(&d), ["E0180"]);
+    assert_eq!(codes_of(&d), ["E0141"]);
     // an argument that is no kind of analysis is still refused by name
     let (_, d) = diagnostics("", "let x = analysis(Some);");
     assert_eq!(codes_of(&d), ["P0001"]);
