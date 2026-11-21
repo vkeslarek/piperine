@@ -19,7 +19,7 @@ pub enum Observation {
     /// the statement that made it (abi.md C5): a record names its own site, whatever order the
     /// records and commits of one microstep are delivered in.
     Record { stream: String, reaction: u32, statement: u32, at: Instant, bytes: Vec<u8> },
-    /// A relaxed field with a known byte still moved and was zeroed (abi.md §9 D1).
+    /// A relaxed field with known flags still moved and what moved was cleared: the whole field for a known byte, the moving levels for a mask (abi.md §9 D1).
     Unsettled { net: String, at: Instant },
 }
 

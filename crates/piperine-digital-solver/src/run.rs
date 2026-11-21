@@ -7,14 +7,15 @@
 
 use piperine_abi::caller::{CallError, Commit};
 use piperine_abi::device::{Access, Flow, cell_lens};
-use piperine_abi::layout::{is_canonical, leaf_size};
-use piperine_abi::raw::{Cell, Statement, cell, field_flag, reaction_flag, statement_flag, status};
+use piperine_abi::layout::is_canonical;
+use piperine_abi::raw::{Cell, Statement, cell, reaction_flag, statement_flag, status};
 
 use crate::dag::Step;
 use crate::net::{NetId, NetKind};
 use crate::observe::{Obs, Observation};
 use crate::plan::{Binding, DigitalPlan, InstancePlan};
 use crate::queue::{Instant, Pending, Queue, Writer};
+use crate::relaxation::Relaxation;
 use crate::settle::SettleCommits;
 use crate::store::{Aligned, Store};
 use crate::tick::{Due, Tick};
@@ -386,31 +387,18 @@ fn relax(
             }
             let name = &plan.nets[net.0 as usize].name;
             let layout = plan.net_layout(*net).expect("a written net has a pin");
-            let mut value = after[i].clone();
-            for field in layout.fields.iter() {
-                let width = leaf_size(field.leaf).expect("bind validated the layout");
-                for e in 0..field.count as usize {
-                    let at_v = field.offset as usize + e * width..field.offset as usize + (e + 1) * width;
-                    let known = field.known as usize + e;
-                    let has_known = field.flags & field_flag::HAS_KNOWN != 0;
-                    let moved = before[i][at_v.clone()] != after[i][at_v.clone()]
-                        || (has_known && before[i][known] != after[i][known]);
-                    if !moved {
-                        continue;
-                    }
-                    if !has_known {
-                        let instance = plan.dag().function(fns[0]).name.clone();
-                        return Err(Stop::Error(DigitalError::Fault {
-                            code: 0,
-                            message: format!("net `{name}` did not settle and its field holds no known byte (D1)"),
-                            tick: at.0.0,
-                            instance,
-                        }));
-                    }
-                    value[at_v].fill(0);
-                    value[known] = 0;
+            let value = match Relaxation::of(layout, &before[i], &after[i]).settled() {
+                Ok(value) => value,
+                Err(field) => {
+                    let instance = plan.dag().function(fns[0]).name.clone();
+                    return Err(Stop::Error(DigitalError::Fault {
+                        code: 0,
+                        message: format!("net `{name}` did not settle and its field `{field}` holds no known byte (D1)"),
+                        tick: at.0.0,
+                        instance,
+                    }));
                 }
-            }
+            };
             store.write(*net, 0, &value);
             obs.push(Observation::Unsettled { net: name.clone(), at });
             after[i] = value;

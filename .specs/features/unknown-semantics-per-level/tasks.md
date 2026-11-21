@@ -288,8 +288,8 @@ T34
 
 **Done when**:
 
-- [ ] `crates/piperine-digital-solver/tests/known_levels.rs` created; `a_relaxation_clears_only_the_levels_still_moving` (two drivers in a `RELAX` loop whose level 3 keeps moving: levels 0 to 2 stay known, level 3 cleared, one log record), `a_merge_commit_lands_per_level` and `a_minor_one_byte_device_binds_and_runs_unchanged` (a `BYTE` device built against minor 1) pass under `**Run dslevels**`
-- [ ] Gate check passes: Full
+- [x] `crates/piperine-digital-solver/tests/known_levels.rs` created; `a_relaxation_clears_only_the_levels_still_moving` (two drivers in a `RELAX` loop whose level 3 keeps moving: levels 0 to 2 stay known, level 3 cleared, one log record), `a_merge_commit_lands_per_level` and `a_minor_one_byte_device_binds_and_runs_unchanged` (a `BYTE` device built against minor 1) pass under `**Run dslevels**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
