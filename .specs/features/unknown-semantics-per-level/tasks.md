@@ -203,8 +203,8 @@ T34
 
 **Done when**:
 
-- [ ] `levels_without_has_known_is_refused_by_name` and `a_mask_outside_the_layout_is_refused_by_name` pass under `**Run abilevels**`, each asserting the rule and the field's name in the message
-- [ ] Gate check passes: Quick
+- [x] `levels_without_has_known_is_refused_by_name` and `a_mask_outside_the_layout_is_refused_by_name` pass under `**Run abilevels**`, each asserting the rule and the field's name in the message
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

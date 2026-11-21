@@ -4,7 +4,9 @@
 //! by level, and a plain known byte (minor 1) keeps reading as one level.
 
 use piperine_abi::known::FieldKnown;
-use piperine_abi::raw::{Field, Str, field_flag, leaf};
+use piperine_abi::raw::{Field, Layout, List, Str, field_flag, leaf, role};
+use piperine_abi::shape::{PinSpec, ShapeBuf};
+use piperine_abi::validate::{Rule, validate};
 
 /// The fields the tests read, built by hand: the contract is bytes, not the transpiler.
 struct Fixture;
@@ -25,6 +27,19 @@ impl Fixture {
     /// A `U8` field with a plain known byte (minor 1): value byte 0, known byte 1.
     fn plain_byte() -> Field<'static> {
         Field { name: Str::from_static("v"), leaf: leaf::U8, offset: 0, count: 1, flags: field_flag::HAS_KNOWN, known: 1 }
+    }
+}
+
+/// Shapes with one discrete pin `lv` of a hand-built layout, validated.
+struct Shapes;
+
+impl Shapes {
+    /// The result of validating a shape whose only pin is `lv` with `layout`.
+    fn validate_pin(layout: &Layout<'_>) -> Result<(), piperine_abi::validate::ShapeError> {
+        let mut buf = ShapeBuf::new();
+        buf.pin(PinSpec { origin: "lv.msl:1:1", ..PinSpec::discrete("lv", role::PRIVATE, layout) });
+        let shape = buf.freeze();
+        validate(shape.shape())
     }
 }
 
@@ -61,4 +76,37 @@ fn a_levels_field_reads_one_mask_per_element() {
     assert!(!plain.level(&[7, 1], 0, 1), "and no other");
     assert!(!plain.level(&[0, 0], 0, 0), "a zero byte knows nothing");
     assert!(plain.is_whole(&[7, 1], 0) && plain.is_none(&[0, 0], 0));
+}
+
+/// abi.md §3, UL-05 AC 3: `KNOWN_LEVELS` without `HAS_KNOWN` is refused, naming the rule and the
+/// field.
+#[test]
+fn levels_without_has_known_is_refused_by_name() {
+    let fields = [Field {
+        name: Str::from_static("levels_field"),
+        leaf: leaf::U16,
+        offset: 0,
+        count: 1,
+        flags: field_flag::KNOWN_LEVELS,
+        known: 2,
+    }];
+    let layout = Layout { size: 4, align: 2, fields: List::from_slice(&fields) };
+    let error = Shapes::validate_pin(&layout).expect_err("a mask with no known flags");
+    assert_eq!(error.rule, Rule::LevelsWithoutKnown);
+    assert!(error.to_string().contains("levels_field"), "the message names the field: {error}");
+}
+
+/// abi.md §3, UL-05 AC 3: a mask that does not fit the layout is refused, naming the rule and the
+/// field; the same field inside the layout validates.
+#[test]
+fn a_mask_outside_the_layout_is_refused_by_name() {
+    let flags = field_flag::HAS_KNOWN | field_flag::KNOWN_LEVELS;
+    let outside = [Field { name: Str::from_static("wide"), leaf: leaf::U16, offset: 0, count: 2, flags, known: 4 }];
+    let layout = Layout { size: 6, align: 2, fields: List::from_slice(&outside) };
+    let error = Shapes::validate_pin(&layout).expect_err("masks of 2 x 2 bytes at 4 end at 8, past 6");
+    assert_eq!(error.rule, Rule::MaskOutsideLayout);
+    assert!(error.to_string().contains("wide"), "the message names the field: {error}");
+
+    let inside = Layout { size: 8, align: 2, fields: List::from_slice(&outside) };
+    Shapes::validate_pin(&inside).expect("the same field in an 8-byte layout validates");
 }

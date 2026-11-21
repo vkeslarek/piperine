@@ -60,11 +60,15 @@ pub enum Rule {
     CheckNotBool,
     /// `PREVIOUS` or `CHANGED` of a `QUIET` pin read by a reaction (P7).
     QuietChangeRead,
+    /// A field with `KNOWN_LEVELS` and no `HAS_KNOWN`: a mask has no meaning without known flags (§3).
+    LevelsWithoutKnown,
+    /// A field whose masks (`KNOWN_LEVELS`: one per element, the leaf's size) lie past the layout (§3).
+    MaskOutsideLayout,
 }
 
 impl Rule {
     /// Every rule, in the order of the spec's list.
-    pub const ALL: [Rule; 20] = [
+    pub const ALL: [Rule; 22] = [
         Rule::UnknownConstant,
         Rule::IndexOutOfRange,
         Rule::KindRole,
@@ -85,6 +89,8 @@ impl Rule {
         Rule::ContinuousNotF64,
         Rule::CheckNotBool,
         Rule::QuietChangeRead,
+        Rule::LevelsWithoutKnown,
+        Rule::MaskOutsideLayout,
     ];
 
     fn sentence(self) -> &'static str {
@@ -111,6 +117,8 @@ impl Rule {
             Rule::ContinuousNotF64 => "a continuous pin whose layout is not one F64",
             Rule::CheckNotBool => "a check that is not a discrete BOOL pin",
             Rule::QuietChangeRead => "PREVIOUS or CHANGED of a QUIET pin read by a reaction",
+            Rule::LevelsWithoutKnown => "a KNOWN_LEVELS field without HAS_KNOWN",
+            Rule::MaskOutsideLayout => "a known mask that lies past the layout",
         }
     }
 }
@@ -371,12 +379,28 @@ fn check_layout(e: &Entry<'_>, layout: &Layout) -> Result<(), ShapeError> {
         let Some(width) = leaf_size(f.leaf) else {
             return Err(e.fail(Rule::UnknownConstant, format!("field {} leaf {}", f.name.as_str(), f.leaf)));
         };
-        if !known_bits(f.flags, field_flag::HAS_KNOWN) {
+        if !known_bits(f.flags, field_flag::HAS_KNOWN | field_flag::KNOWN_LEVELS) {
             return Err(e.fail(Rule::UnknownConstant, format!("field {} flags {:#x}", f.name.as_str(), f.flags)));
         }
+        let has_known = f.flags & field_flag::HAS_KNOWN != 0;
+        let is_mask = f.flags & field_flag::KNOWN_LEVELS != 0;
+        if is_mask && !has_known {
+            return Err(e.fail(
+                Rule::LevelsWithoutKnown,
+                format!("field {} sets KNOWN_LEVELS without HAS_KNOWN", f.name.as_str()),
+            ));
+        }
+        // abi.md §3: a plain known byte is one byte per element, a mask the size of the leaf
+        let known_width = if is_mask { width as u64 } else { 1 };
+        let known_end = f.known as u64 + f.count as u64 * known_width;
+        if is_mask && known_end > layout.size as u64 {
+            return Err(e.fail(
+                Rule::MaskOutsideLayout,
+                format!("field {} has its masks past the layout's {} bytes", f.name.as_str(), layout.size),
+            ));
+        }
         let end = f.offset as u64 + width as u64 * f.count as u64;
-        let known_end = f.known as u64 + f.count as u64;
-        if end > layout.size as u64 || (f.flags & field_flag::HAS_KNOWN != 0 && known_end > layout.size as u64) {
+        if end > layout.size as u64 || (has_known && known_end > layout.size as u64) {
             return Err(e.fail(
                 Rule::IndexOutOfRange,
                 format!("field {} lies past the layout's {} bytes", f.name.as_str(), layout.size),

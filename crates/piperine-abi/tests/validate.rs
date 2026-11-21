@@ -6,7 +6,7 @@
 
 use piperine_abi::layout::{BIT, BYTE, F64, LOW};
 use piperine_abi::raw::{
-    Shape, Cell, DEFAULT, Partial, Statement, ambient, cell, fn_flag, global, input, kind, op, part, pin_flag, role, watch,
+    Field, Layout, List, Str, field_flag, leaf, Shape, Cell, DEFAULT, Partial, Statement, ambient, cell, fn_flag, global, input, kind, op, part, pin_flag, role, watch,
 };
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec, WatchSpec};
 use piperine_abi::validate::{Rule, validate};
@@ -133,6 +133,21 @@ fn resistor_writing_a_limit(flags: u32) -> Specs {
     s
 }
 
+static MASK_WITHOUT_KNOWN_FIELDS: [Field; 1] =
+    [Field { name: Str::from_static("v"), leaf: leaf::U16, offset: 0, count: 1, flags: field_flag::KNOWN_LEVELS, known: 2 }];
+/// A `U16` with `KNOWN_LEVELS` and no `HAS_KNOWN` (abi.md §3).
+static MASK_WITHOUT_KNOWN: Layout = Layout { size: 4, align: 2, fields: List::from_slice(&MASK_WITHOUT_KNOWN_FIELDS) };
+static MASK_PAST_FIELDS: [Field; 1] = [Field {
+    name: Str::from_static("v"),
+    leaf: leaf::U16,
+    offset: 0,
+    count: 2,
+    flags: field_flag::HAS_KNOWN | field_flag::KNOWN_LEVELS,
+    known: 4,
+}];
+/// Two `U16` elements whose masks end at byte 8 of a 6-byte layout.
+static MASK_PAST_LAYOUT: Layout = Layout { size: 6, align: 2, fields: List::from_slice(&MASK_PAST_FIELDS) };
+
 /// (rule, a defect planted in the raw shape, the entry the error names, its origin)
 type RawRow = (Rule, fn(&mut Shape), &'static str, &'static str);
 
@@ -141,7 +156,7 @@ type Row = (Rule, fn() -> Specs, &'static str, &'static str);
 
 #[test]
 fn every_shape_local_rule_is_enforced() {
-    let table: [Row; 19] = [
+    let table: [Row; 21] = [
         (Rule::UnknownConstant, || { let mut s = resistor(); s.terms[0].op = 9; s }, "term i", "res.msl:3:5"),
         (Rule::IndexOutOfRange, || { let mut s = resistor(); s.functions[0].reads[1].index = 7; s }, "function i", "res.msl:3:9"),
         (Rule::KindRole, || {
@@ -197,6 +212,16 @@ fn every_shape_local_rule_is_enforced() {
             s.reactions[0].reads = vec![pin_cell(1, part::PREVIOUS)];
             s
         }, "reaction sample", "dff.msl:3:5"),
+        (Rule::LevelsWithoutKnown, || {
+            let mut s = resistor();
+            s.pins.push(PinSpec { origin: "lv.msl:1:1", ..PinSpec::discrete("lv", role::PRIVATE, &MASK_WITHOUT_KNOWN) });
+            s
+        }, "pin lv", "lv.msl:1:1"),
+        (Rule::MaskOutsideLayout, || {
+            let mut s = resistor();
+            s.pins.push(PinSpec { origin: "lv.msl:2:1", ..PinSpec::discrete("lv", role::PRIVATE, &MASK_PAST_LAYOUT) });
+            s
+        }, "pin lv", "lv.msl:2:1"),
     ];
     // Defects below the specs (a list read by a stride the producer did not use).
     let raw_rows: [RawRow; 1] = [(
