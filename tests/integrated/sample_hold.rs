@@ -3,12 +3,17 @@
 //! sits at a code centre (`k / 256` volts), so a solver error under half an LSB (1.95 mV) cannot move
 //! a code; the hold node is judged against [`PiecewiseRc`] (track with tau = 10 ns, then hold).
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use piperine::Overrides;
+use piperine_parity::scenario::run::RunRecords;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::scenario::Stimulus;
 
 use crate::clock::ClockEdges;
 use crate::rc::{PiecewiseRc, RcSegment};
-use crate::suite::{Scenario, Suite};
+use crate::suite::{IntegratedPackage, Scenario, Suite};
 use crate::table::PrintedColumn;
 
 /// The host's five steps of the source, in volts, each inside a hold (`[k, k + 1/2)` microseconds).
@@ -122,6 +127,38 @@ fn the_code_appears_after_tconv_with_a_50_ns_done_strobe() {
     let wanted: Vec<i64> = (1..=SampleSchedule::SAMPLES).flat_map(|k| (20..=24).map(move |offset| SampleSchedule::row_of(clock.falling(k)) + offset)).collect();
     println!("sample_hold: `done` high on {} rows, expected {}", high.len(), wanted.len());
     assert_eq!(high, wanted, "`done` is high on exactly rows +200 ns to +240 ns after each falling edge (TCONV {:e} s)", SampleSchedule::TCONV);
+}
+
+/// The first sample's `done` strobe read on a 5 ns print grid, finer than the suite's 10 ns: the one place
+/// the strobe's width is pinned to the nanosecond.
+struct FineStrobe;
+
+impl FineStrobe {
+    /// The fine print grid, in seconds.
+    const GRID: f64 = 5e-9;
+
+    /// The times at which `done` prints 1 in a run of the first sample (falling edge at 1 us) on the fine grid.
+    fn high_times() -> Vec<f64> {
+        let cache = tempfile::tempdir().expect("a build directory");
+        let overrides = Overrides { stop: Some(1.5e-6), print_step: Some(FineStrobe::GRID), print: vec!["SampleHold.done".to_string()], ..Overrides::default() };
+        let mut session = IntegratedPackage::open_with(SampleHoldScenario::RUN, &overrides, cache.path());
+        let table = session.run(Rc::new(RefCell::new(RunRecords::default()))).unwrap_or_else(|failure| panic!("{failure}"));
+        PrintedColumn::integers(&table, "done").into_iter().filter(|(_, value)| *value == Some(1)).map(|(time, _)| time).collect()
+    }
+}
+
+#[test]
+fn the_done_strobe_is_exactly_50_ns_wide() {
+    // IT-05 AC 2: on a 5 ns grid `done` is high from 200 ns to 250 ns after the edge (the strobe is TCONV
+    // wide, 50 ns, not the 40 to 50 ns the suite's 10 ns grid bounds)
+    let high = FineStrobe::high_times();
+    let edge = SampleSchedule::clock().falling(1);
+    let first = high.first().copied().expect("`done` goes high");
+    let last = high.last().copied().expect("`done` goes high");
+    println!("sample_hold: `done` high on {} fine rows, {:e} s to {:e} s after the edge", high.len(), first - edge, last - edge);
+    assert_eq!(high.len(), 10, "ten 5 ns rows are high: {high:?}");
+    assert!((first - edge - SampleSchedule::TCONV).abs() < 1e-12, "`done` rises TCONV after the edge: {:e}", first - edge);
+    assert!((last + FineStrobe::GRID - edge - SampleSchedule::TCONV - 50e-9).abs() < 1e-12, "`done` falls 50 ns after it rose: last high row {:e}", last - edge);
 }
 
 #[test]

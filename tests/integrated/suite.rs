@@ -35,8 +35,13 @@ impl IntegratedPackage {
 
     /// A session of the run `run`, built into `cache`.
     pub fn open(run: &str, cache: &Path) -> Session {
+        IntegratedPackage::open_with(run, &Overrides::default(), cache)
+    }
+
+    /// A session of the run `run` with the command line's `overrides`, built into `cache`.
+    pub fn open_with(run: &str, overrides: &Overrides, cache: &Path) -> Session {
         let project = IntegratedPackage::project();
-        let spec = project.request(Some(run), &Overrides::default()).unwrap_or_else(|failure| panic!("{run}: {failure}"));
+        let spec = project.request(Some(run), overrides).unwrap_or_else(|failure| panic!("{run}: {failure}"));
         Session::open(&project, &spec, &Settings { rustc: None, cache: cache.to_path_buf() }).unwrap_or_else(|failure| panic!("{run}: {failure}"))
     }
 
