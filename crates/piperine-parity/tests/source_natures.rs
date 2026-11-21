@@ -23,7 +23,7 @@ mod mixed;
 #[path = "buck/support.rs"]
 mod support;
 
-use mixed::Built;
+use mixed::{Built, Seen};
 use support::{build, transient};
 
 /// One MSL file of `tests/natures/`.
@@ -74,6 +74,22 @@ impl Model {
         result.iter().map(|s| (s.time(), s.get_node(&node).expect("a node voltage"))).collect()
     }
 
+    /// The integer fields of every record of the stream `name` a run wrote, in order: the
+    /// operating point's first, then the transient's.
+    fn records(built: &Built, seen: &Seen, name: &str) -> Vec<Vec<(String, i128)>> {
+        let streams = Streams::of(built.ir.clone());
+        seen.all()
+            .iter()
+            .filter_map(|o| streams.decode(o))
+            .map(|r| r.unwrap_or_else(|f| panic!("{f}")))
+            .filter(|r| r.stream == name)
+            .map(|r| r.fields.into_iter().map(|(field, value)| match value {
+                Field::Int(value) => (field, value),
+                other => panic!("no integer field `{field}`: {other:?}"),
+            }).collect())
+            .collect()
+    }
+
     /// The value of a known `Byte` as the net holds it: the value byte, then its known byte.
     fn known_byte(value: u8) -> Vec<u8> {
         vec![value, 1]
@@ -106,6 +122,16 @@ fn a_counter_over_a_project_byte_nature_commits_and_records() {
         })
         .collect();
     assert_eq!(seen_counts, (0..6).collect::<Vec<i128>>());
+    // §8.2.4: the definition `twice = count + count` is recomputed at every change of `count`, so
+    // the net holds `2k` after the `k`-th rise.
+    let doubled: Vec<Vec<u8>> = transient(&seen, "ConnectedBench.twice").into_iter().map(|(_, bytes)| bytes).collect();
+    assert_eq!(doubled, (1..=6).map(|k| Model::known_byte(2 * k)).collect::<Vec<_>>(), "a definition follows its operand");
+    // §5.3: `changed()` fires at each change of `count`: at `(0, 0)` for its first commit `0`, whose
+    // `prev()` is all unknown (§5.3.8, read as 255), then at every rise for `k`, with `prev()` the
+    // value before that change, `k - 1`.
+    let changes = Model::records(&built, &seen, "changes");
+    let expected: Vec<Vec<(String, i128)>> = (0..=6).map(|count| vec![("count".to_string(), count), ("before".to_string(), if count == 0 { 255 } else { count - 1 })]).collect();
+    assert_eq!(changes, expected, "one `changed()` per change, with `prev()` the value before it");
 }
 
 #[test]
