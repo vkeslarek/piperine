@@ -147,19 +147,25 @@ fn a_pwl_source_lands_on_every_corner() {
 #[test]
 fn a_timed_source_change_is_a_jump() {
     // PI-07 AC 4, §15.2: the host changes the source at 2 us from 1 V to 3 V; before it the port
-    // is at 1 V, after it at 3 V (the change is a time point and a jump)
-    let mut s = transient(LOADED, 4e-6, 1e-7, 5e-7);
+    // is at 1 V, after it at 3 V (the change is a time point and a jump). The print step is 10 ns,
+    // so the rows on either side of 2 us pin where the change lands.
+    let jump = 2e-6;
+    let mut s = transient(LOADED, 4e-6, 1e-8, 1e-8);
     s.source("a", NodeSource::dc(1.0)).expect("a source");
-    s.source_at("a", 3.0, 2e-6).expect("a jump at 2 us");
+    s.source_at("a", 3.0, jump).expect("a jump at 2 us");
     let table = run(&mut s).unwrap_or_else(|f| panic!("{f}"));
+    let (mut before, mut after) = (0, 0);
     for row in &table.rows {
         let (time, volts) = (real(&row[0]), real(&row[1]));
-        if time < 1.9e-6 {
+        if time < jump - 1e-9 {
             assert!((volts - 1.0).abs() < 1e-6, "before the jump v(a) at {time:e} s is {volts}");
-        } else if time > 2.1e-6 {
+            before += 1;
+        } else if time > jump + 1e-9 {
             assert!((volts - 3.0).abs() < 1e-6, "after the jump v(a) at {time:e} s is {volts}");
+            after += 1;
         }
     }
+    assert!(before > 150 && after > 150, "rows either side of the jump: {before} before, {after} after");
     // a time already past is E0806 and changes nothing
     let mut s = transient(LOADED, 4e-6, 1e-7, 5e-7);
     assert!(matches!(s.source_at("a", 3.0, -1.0), Err(Failure::Host { code: "E0806", .. })));
