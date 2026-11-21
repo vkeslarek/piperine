@@ -23,6 +23,11 @@ impl Source {
         Source { text: text.to_string(), design }
     }
 
+    /// The codes the design itself reports for `text` (the POM's, before any checking).
+    fn design_codes(text: &str) -> Vec<String> {
+        Design::builder().source("top.msl", text).build().diagnostics().iter().map(|d| d.diagnostic.code.to_string()).collect()
+    }
+
     /// The diagnostics of checking `Top`, which must be there.
     fn diagnostics(&self) -> Vec<DesignDiagnostic> {
         Types::check(&self.design, "Top").expect_err("expected diagnostics")
@@ -111,4 +116,24 @@ fn others_on_a_one_driver_carrier_is_e0224() {
         assert!(diagnostics[0].diagnostic.message.contains("`s`"), "{}", diagnostics[0].diagnostic.message);
         assert_eq!(&text[diagnostics[0].diagnostic.span().range()], "s.others()");
     }
+}
+
+#[test]
+fn a_flow_contribution_to_a_signal_flow_node_is_e0413() {
+    // §11 rule 11, §6 Resolution of rule 2: a node of a nature without `flow` takes potential
+    // contributions only; `flow(o, gnd) +> x` is `E0413`, while `v(o) +> x` is fine.
+    let source = Source::new("module Top(a: VSignal, o: VSignal) { }\nanalog for Top { flow(o, gnd) +> v(a); }");
+    assert_eq!(source.codes(), ["E0413"]);
+    let source = Source::new("module Top(a: VSignal, o: VSignal) { }\nanalog for Top { v(o) +> 2.0 * v(a); }");
+    source.checked();
+}
+
+#[test]
+fn a_flow_probe_of_a_signal_flow_node_is_e0206() {
+    // §6 rule 10: `flow` applies to a nature with a `flow`. Spelled `flow(..)` the checker raises
+    // `E0206`; spelled with another nature's access name (`i`) the POM raises it, since `VSignal`
+    // declares no such access.
+    let source = Source::new("module Top(a: VSignal, o: VSignal) { }\nanalog for Top { v(o) +> flow(a, gnd); }");
+    assert_eq!(source.codes(), ["E0206"]);
+    assert_eq!(Source::design_codes("module Top(a: VSignal, o: VSignal) { }\nanalog for Top { v(o) +> i(a); }"), ["E0206"]);
 }

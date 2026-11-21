@@ -1,7 +1,7 @@
 //! The questions the checker asks of a nature's kind (part II §4): how many drives a carrier of
 //! it has, whether a `resolve` combines them, and whether its branches carry a flow.
 
-use crate::pom::{DeclId, DeclKind, Design, NatureKind};
+use crate::pom::{DeclId, DeclKind, Design, NatureKind, QuantityRole};
 
 /// What a nature's kind decides for the rules of `types/`: the one owner of "what kind of carrier
 /// or node is this", so no rule matches on [`NatureKind`] itself.
@@ -34,5 +34,23 @@ impl NatureRules {
             NatureKind::Conservative => NatureRules { one_driver: false, resolved: false, flow: true, carries_values: false },
             NatureKind::Invalid => NatureRules { one_driver: false, resolved: false, flow: false, carries_values: false },
         }
+    }
+
+    /// Whether two continuous natures are compatible and so connect (§4 rule 13): the same
+    /// nature, or potential quantities of one name and, when both declare `flow`, flow
+    /// quantities of one name. A signal-flow `VSignal` meets an `Electrical` port this way.
+    pub(super) fn compatible(design: &Design, left: DeclId, right: DeclId) -> bool {
+        if left == right {
+            return true;
+        }
+        let quantity = |nature: DeclId, role: QuantityRole| {
+            design.decl_data(nature).children.iter().find_map(|c| match &design.decl_data(*c).kind {
+                DeclKind::Quantity(q) if q.role == role => Some(design.decl_data(*c).name.as_ref().map_or_else(String::new, |n| n.text.clone())),
+                _ => None,
+            })
+        };
+        let potentials = quantity(left, QuantityRole::Potential);
+        let flows = (quantity(left, QuantityRole::Flow), quantity(right, QuantityRole::Flow));
+        potentials.is_some() && potentials == quantity(right, QuantityRole::Potential) && (flows.0.is_none() || flows.1.is_none() || flows.0 == flows.1)
     }
 }

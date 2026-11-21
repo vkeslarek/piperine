@@ -233,9 +233,9 @@ T34 → T35 → T36
 
 **Done when**:
 
-- [ ] `a_flow_contribution_to_a_signal_flow_node_is_e0413` and `a_flow_probe_of_a_signal_flow_node_is_e0206` pass under `**Run typesnatures**`
-- [ ] The `types_carriers.rs` test that pinned `signal-flow nature` as `P0001` is replaced (design "Goldens")
-- [ ] Gate check passes: Quick
+- [x] `a_flow_contribution_to_a_signal_flow_node_is_e0413` and `a_flow_probe_of_a_signal_flow_node_is_e0206` pass under `**Run typesnatures**`
+- [x] The `types_carriers.rs` test that pinned `signal-flow nature` as `P0001` is replaced (design "Goldens")
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

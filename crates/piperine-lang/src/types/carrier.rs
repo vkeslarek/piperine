@@ -123,13 +123,12 @@ impl Checker<'_> {
             Ty::Node(nature) => {
                 let name = self.design.decl_data(nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
                 let rules = NatureRules::of(self.design, nature);
-                if rules.flow {
+                if rules.flow || (rules.one_driver && !rules.carries_values) {
+                    // A conservative node, or a signal-flow node (§6 rule 2): both are nodes of the
+                    // analog solver.
                     Some(Ty::Node(nature))
                 } else if rules.resolved {
                     self.unsupported(file, node.span, &format!("resolved nature `{name}`"));
-                    None
-                } else if rules.one_driver && !rules.carries_values {
-                    self.unsupported(file, node.span, &format!("signal-flow nature `{name}`"));
                     None
                 } else {
                     None

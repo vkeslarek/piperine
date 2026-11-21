@@ -5,6 +5,7 @@ use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, LetData, ParamData, PatKind, PortData, Resolution, SignalData, StructClass, TypeId};
 
 use super::check::{Checker, Context};
+use super::nature_rules::NatureRules;
 use super::unsupported::Unsupported;
 use super::{Callee, Ty};
 
@@ -296,7 +297,7 @@ impl Checker<'_> {
             return;
         }
         match (port, found) {
-            (Ty::Node(p), Ty::Node(f)) if p == f => {}
+            (Ty::Node(p), Ty::Node(f)) if NatureRules::compatible(self.design, *p, *f) => {}
             (_, Ty::AnyNode) => {}
             (Ty::Node(_), Ty::Node(_)) => {
                 let message = format!("expected {}, found {}", port.name(self.design), found.name(self.design));
