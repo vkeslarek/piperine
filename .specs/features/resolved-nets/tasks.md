@@ -277,9 +277,9 @@ T34 → T35 → T36
 
 **Done when**:
 
-- [ ] `a_signal_flow_node_with_one_driver_solves_and_loads_nothing`, `a_gain_chain_over_vsignal_gives_the_product_of_the_gains` and `vsignal_connected_to_an_electrical_port_is_conservative` pass under `**Run sourcenatures**`
-- [ ] No contract or tolerance edited
-- [ ] Gate check passes: Full
+- [x] `a_signal_flow_node_with_one_driver_solves_and_loads_nothing`, `a_gain_chain_over_vsignal_gives_the_product_of_the_gains` and `vsignal_connected_to_an_electrical_port_is_conservative` pass under `**Run sourcenatures**`
+- [x] No contract or tolerance edited
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1137,7 +1137,7 @@ Proof: run bookinventory | test refused_rows_and_gaps_section_11_agree ... ok
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** D16 - `code_owners.tsv` is not on this branch's base (it lives on `feature/params-and-io`): rows of `E0224` (T3), `E0413` (T4), `E0242` (T5) are left for T36 to delete.
+**Settled mid-build:** B1 (T1-T6) done. Defaults taken (user AFK): D16 - `code_owners.tsv` is not on this branch's base (it lives on `feature/params-and-io`), so the rows of `E0224` (T3), `E0413` (T4) and `E0242` (T5) are owed to T36, which deletes them. `NatureRules` carries a fourth field `carries_values` (discrete or resolved carrier versus node) beside the three of design C2, and answers `compatible` (§4 rule 13: a `VSignal` meets an `Electrical` port). `E0242` is reported at the top module's name, naming the node's path and each driver's instance path (the IR keeps origins, not spans). T2 needed no elaborator edit: the carrier's value type already flows from the checker's `Ty::Carrier`. The `types_carriers.rs` pins design "Goldens" names did not exist there; the pins actually replaced are listed in the T1, T3 and T4 commit bodies (`types_subset`, `types_modules`, `types_buck`, `elab_unlowered`, Book `modules#8`, whose test keeps only the `idt` generic-module refusal and is finished by T10). Owed to later tasks: `GAPS.md` L22 and L23, `inventory.tsv` and the Book status boxes (T10).
 **Dispatched:** none
 **Walked:** none
 

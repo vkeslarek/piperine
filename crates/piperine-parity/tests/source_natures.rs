@@ -8,7 +8,9 @@
 use std::path::{Path, PathBuf};
 
 use piperine_api::{Field, Streams};
+use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::project::Project;
+use piperine_solver::prelude::{AcSweepAnalysisOptions, Context, NodeIdentifier};
 use piperine_solver::protocol::AnalysisKind;
 
 #[allow(dead_code)]
@@ -40,6 +42,36 @@ impl Model {
     /// `top` elaborated and compiled once.
     fn built(&self, top: &str) -> Built {
         build(&self.project, top)
+    }
+
+    /// The node `<top>.<name>` of an elaborated design.
+    fn node(ir: &piperine_ir::Ir, top: &str, name: &str) -> NodeIdentifier {
+        NodeIdentifier::Anonymous(ir.node_at(&format!("{top}.{name}")).expect("a node").id().index())
+    }
+
+    /// `v(<name>)` of the bench `top` at its operating point.
+    fn operating_point(&self, top: &str, name: &str) -> f64 {
+        let mut running = self.project.compile(top).unwrap_or_else(|r| panic!("{r}"));
+        let node = Model::node(&running.ir, top, name);
+        running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves").get_node(&node).expect("a node voltage")
+    }
+
+    /// `|v(<name>)|` of the bench `top` at each frequency of a sweep of `steps` points.
+    fn ac_magnitudes(&self, top: &str, name: &str, start: f64, stop: f64, steps: usize) -> Vec<(f64, f64)> {
+        let mut running = self.project.compile(top).unwrap_or_else(|r| panic!("{r}"));
+        let node = Model::node(&running.ir, top, name);
+        let mut ac = running.circuit.ac(Context::default()).expect("ac");
+        let sweep = ac.solve_sweep(AcSweepAnalysisOptions { start_frequency: start, stop_frequency: stop, steps, logarithmic: true }).unwrap_or_else(|e| panic!("the sweep does not solve: {e}"));
+        sweep.iter().map(|step| (step.frequency, step.get_node(&node).expect("a node voltage").norm())).collect()
+    }
+
+    /// The time and `v(<name>)` of the bench `top` at each accepted step of a transient to `stop` with
+    /// the step cap `step`.
+    fn transient_voltages(&self, top: &str, name: &str, stop: f64, step: f64) -> Vec<(f64, f64)> {
+        let built = self.built(top);
+        let node = Model::node(&built.ir, top, name);
+        let (_, result) = built.run_with(stop, step);
+        result.iter().map(|s| (s.time(), s.get_node(&node).expect("a node voltage"))).collect()
     }
 
     /// The value of a known `Byte` as the net holds it: the value byte, then its known byte.
@@ -83,4 +115,40 @@ fn a_project_nature_carrier_connects_to_a_port_of_the_same_nature() {
     let alone = Model::of("byte_counter.msl").built("CounterBench").run(60e-9, 1e-9);
     let connected = Model::of("byte_counter.msl").built("ConnectedBench").run(60e-9, 1e-9);
     assert_eq!(transient(&alone, "CounterBench.count"), transient(&connected, "ConnectedBench.count"));
+}
+
+#[test]
+fn a_signal_flow_node_with_one_driver_solves_and_loads_nothing() {
+    // §6 rule 2: the one potential driver forces `v(a)` = 1.5 V and a signal-flow node has no flow, so
+    // the readers (two gains, whose own nodes `b` and `c` are driven by them) change nothing: `v(a)`
+    // is the driver's 1.5 V with one reader or with two, and `v(b)` = k * 1.5 V.
+    let chain = Model::of("gain_chain.msl");
+    for (top, node, expected) in [("GainBench", "a", 1.5), ("LoadlessBench", "a", 1.5), ("LoadlessBench", "b", 2.0 * 1.5), ("LoadlessBench", "c", 7.0 * 1.5)] {
+        ToleranceContract::DC_VOLTAGE.assert(&Point::new("signal flow", &format!("v({node})"), Coordinate::OperatingPoint), expected, chain.operating_point(top, node));
+    }
+}
+
+#[test]
+fn a_gain_chain_over_vsignal_gives_the_product_of_the_gains() {
+    // §6 rule 2, §11 rule 1: `v(c)` = k2 * (k1 * v(a)) = 3 * 2 * 1.5 V = 9 V, in the operating point
+    // and at every step of a transient (a constant source); the unit AC stimulus on `a` reaches `c`
+    // multiplied by the same product, |v(c)| = 3 * 2 * 1 = 6 at every frequency.
+    let chain = Model::of("gain_chain.msl");
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("gain chain", "v(c)", Coordinate::OperatingPoint), 9.0, chain.operating_point("GainBench", "c"));
+    for (frequency, magnitude) in chain.ac_magnitudes("GainBench", "c", 1e3, 1e6, 4) {
+        ToleranceContract::AC_MAGNITUDE.assert(&Point::new("gain chain ac", "|v(c)|", Coordinate::Frequency(frequency)), 6.0, magnitude);
+    }
+    let steps = chain.transient_voltages("GainBench", "c", 1e-6, 1e-7);
+    assert!(steps.len() > 1, "a transient runs more than one step");
+    for (time, voltage) in steps {
+        ToleranceContract::DC_VOLTAGE.assert(&Point::new("gain chain tran", "v(c)", Coordinate::Time(time)), 9.0, voltage);
+    }
+}
+
+#[test]
+fn vsignal_connected_to_an_electrical_port_is_conservative() {
+    // §4 rule 13, §6 Resolution of rule 2: a resistor on the `VSignal` node `a` makes it conservative,
+    // so a 1 V source over two 1 kOhm resistors puts `v(m)` = 1 V * 1k / (1k + 1k) = 0.5 V.
+    let mixed = Model::of("mixed_node.msl");
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("mixed node", "v(m)", Coordinate::OperatingPoint), 0.5, mixed.operating_point("MixedBench", "m"));
 }
