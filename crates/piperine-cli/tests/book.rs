@@ -406,8 +406,8 @@ fn every_cli_listing_of_the_book_is_what_the_binary_prints() {
     // selects the lines the page shows, so a line it leaves out is held all the same
     let all: Vec<&Checked> = checked().iter().collect();
     let commands = hold(&all);
-    // 29 listings before the buck's moved to `book_buck` (MD-77); 28 are held here
-    assert!(commands.len() >= 28, "the Book shows {} listings: {commands:?}", commands.len());
+    // the Book shows 56 listings of the binary; the buck's moved to `book_buck` (MD-77), so exactly 55 are held here
+    assert_eq!(commands.len(), 55, "the Book shows {} listings: {commands:?}", commands.len());
     let html = content();
     let (from, to) = span_of(&html, "cli");
     assert!(all.iter().any(|c| c.at >= from && c.at < to) && all.iter().any(|c| c.at < from), "listings of chapter `cli` and of the other chapters are held");
