@@ -7,11 +7,15 @@
 
 use std::path::{Path, PathBuf};
 
-use piperine_api::{Field, Streams};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use piperine_api::{Cell, Field, Overrides, Project as HostProject, Record, RecordSink, Session, Streams};
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{AcSweepAnalysisOptions, Context, NodeIdentifier};
 use piperine_solver::protocol::AnalysisKind;
+use piperine_transpile::Settings;
 
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/digital.rs"]
@@ -25,6 +29,13 @@ mod support;
 
 use mixed::{Built, Seen};
 use support::{build, transient};
+
+/// A sink that keeps nothing: a sweep reads its table.
+struct Ignore;
+
+impl RecordSink for Ignore {
+    fn record(&mut self, _: &Record) {}
+}
 
 /// One MSL file of `tests/natures/`.
 struct Model {
@@ -72,6 +83,33 @@ impl Model {
         let node = Model::node(&built.ir, top, name);
         let (_, result) = built.run_with(stop, step);
         result.iter().map(|s| (s.time(), s.get_node(&node).expect("a node voltage"))).collect()
+    }
+
+    /// The `dc` sweep of the param `sweep` of `top` from `from` to `to` in steps of `step`, as the
+    /// host runs it: the swept value and `v(<name>)` at each point.
+    fn dc_sweep(file: &str, top: &str, sweep: &str, (from, to, step): (f64, f64, f64), name: &str) -> Vec<(f64, f64)> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/natures").join(file);
+        let project = HostProject::file(&path).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides {
+            top: Some(top.into()),
+            analysis: Some("dc".into()),
+            sweep: Some(sweep.into()),
+            from: Some(from),
+            to: Some(to),
+            step: Some(step),
+            print: vec![name.into()],
+            backend: Some("rust".into()),
+            ..Overrides::default()
+        };
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        let cache = tempfile::tempdir().expect("a temp dir");
+        let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
+        let table = Session::open(&project, &spec, &settings).unwrap_or_else(|f| panic!("{f}")).run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
+        let real = |cell: &Cell| match cell {
+            Cell::Real(value) => *value,
+            other => panic!("a real, found {other:?}"),
+        };
+        table.rows.iter().map(|row| (real(&row[0]), real(&row[1]))).collect()
     }
 
     /// The integer fields of every record of the stream `name` a run wrote, in order: the
@@ -167,6 +205,12 @@ fn a_gain_chain_over_vsignal_gives_the_product_of_the_gains() {
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("gain chain", "v(c)", Coordinate::OperatingPoint), 9.0, chain.operating_point("GainBench", "c"));
     for (frequency, magnitude) in chain.ac_magnitudes("GainBench", "c", 1e3, 1e6, 4) {
         ToleranceContract::AC_MAGNITUDE.assert(&Point::new("gain chain ac", "|v(c)|", Coordinate::Frequency(frequency)), 6.0, magnitude);
+    }
+    // RN-08 AC 2: sweeping the source `level` from 0 V to 2 V in `dc` gives `v(c) = 6 * level`.
+    let swept = Model::dc_sweep("gain_chain.msl", "GainBench", "source.level", (0.0, 2.0, 0.5), "c");
+    assert_eq!(swept.len(), 5, "0, 0.5, 1, 1.5 and 2 V");
+    for (level, voltage) in swept {
+        ToleranceContract::DC_VOLTAGE.assert(&Point::new("gain chain dc", "v(c)", Coordinate::Sweep(level)), 6.0 * level, voltage);
     }
     let steps = chain.transient_voltages("GainBench", "c", 1e-6, 1e-7);
     assert!(steps.len() > 1, "a transient runs more than one step");
