@@ -94,9 +94,11 @@ fn ports_and_signals_are_nodes_and_gnd_fits_any() {
     let design = design_of(&src);
     Types::check(&design, "Top").expect("gnd of any nature");
 
-    // A discrete nature or a value input is not a conservative node: refused by name.
+    // A discrete nature is a carrier, not a node: its port takes a direction (`E0310`, §8.1.5; the
+    // carriers of a project's nature are `types_natures.rs`). A value input of another type is
+    // refused by name.
     let (_, d) = diagnostics("nature Bit2 { value: bool }\nmodule Top(a: Bit2) { }");
-    assert_eq!(codes_of(&d), ["P0001"]);
+    assert_eq!(codes_of(&d), ["E0310"]);
     let (_, d) = diagnostics("module Top(a: &str) { }");
     assert_eq!(codes_of(&d), ["P0001"]);
 }

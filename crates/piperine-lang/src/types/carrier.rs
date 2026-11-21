@@ -1,15 +1,16 @@
-//! Discrete carriers (DIG-02, DIG-04): the type of a `signal` or a port of the nature `Bit<T>`,
+//! Discrete carriers (DIG-02, DIG-04): the type of a `signal` or a port of a discrete nature (`Bit<T>` or a project's),
 //! the types a carrier may hold (`E0112`), initial values (`E0210`), the flag reads `known`,
 //! `known_or`, `is_known`, `high`, and the history read `prev` (part II §5, part I §3.3).
 //!
-//! A carrier has the type `Ty::Carrier { value }`; reading it gives `value`. The checker reads
+//! A carrier has the type `Ty::Carrier { nature, value }`; reading it gives `value`. The checker reads
 //! the four flag reads, the two edges of `Bit` and `prev` as built-ins only when the name
 //! resolved to the stdlib's own item (§3.3.7): a project item of the same name is `P0001`.
 
 use crate::msl::Diagnostic;
-use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, GenericParamData, NatureKind, PathId, Resolution, TypeId};
+use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, GenericParamData, NatureFieldNode, PathId, Resolution, TypeId};
 
 use super::check::Checker;
+use super::nature_rules::NatureRules;
 use super::{Builtin, Ty};
 
 /// The methods of a value or a carrier that are flag reads, by name.
@@ -25,30 +26,51 @@ pub(super) fn flag_builtin(name: &str) -> Option<Builtin> {
 }
 
 impl Checker<'_> {
-    /// `Bit<T>` written at `path`: a carrier of the nature `nature` holding `T` (`bool` when the
-    /// argument is left out, the default of the nature's generic).
-    pub(super) fn bit_type(&mut self, nature: DeclId, file: FileId, span: crate::msl::Span, path: PathId) -> Option<Ty> {
-        let args = self.design.path_node(path).segments.last().and_then(|s| s.args.clone());
-        let value = match &args {
-            Some(GenericArgsNode::Angle { args, .. }) if args.len() == 1 => match &args[0] {
-                GenericArgNode::Type(t) => self.carried_type(*t)?,
-                GenericArgNode::Const(_) => {
-                    self.unsupported(file, span, "`Bit` of a const argument");
-                    return None;
-                }
-            },
-            None => {
-                let default = self.design.decl_data(nature).children.iter().find_map(|c| match &self.design.decl_data(*c).kind {
-                    DeclKind::GenericParam(GenericParamData::Type { default: Some(t), .. }) => Some(*t),
-                    _ => None,
-                })?;
-                self.carried_type(default)?
-            }
+    /// A discrete nature written at `path`, the stdlib's `Bit<T>` or a project's (§4 rule 12): a
+    /// carrier of `nature` holding the type its `value` field names. A generic nature takes its
+    /// type arguments in order and falls back to each parameter's default; a nature whose `value`
+    /// is not one of its parameters holds that type for every argument list.
+    pub(super) fn discrete_carrier_type(&mut self, nature: DeclId, file: FileId, span: crate::msl::Span, path: PathId) -> Option<Ty> {
+        let name = self.design.decl_data(nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let DeclKind::Nature(data) = &self.design.decl_data(nature).kind else { return None };
+        let value_type = data.fields.iter().find_map(|f| match f {
+            NatureFieldNode::Value { ty, .. } => Some(*ty),
+            _ => None,
+        })?;
+        let parameters: Vec<DeclId> = self.design.decl_data(nature).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::GenericParam(_))).collect();
+        let arguments = match self.design.path_node(path).segments.last().and_then(|s| s.args.clone()) {
+            Some(GenericArgsNode::Angle { args, .. }) => args,
+            None => Vec::new(),
             Some(_) => {
-                self.unsupported(file, span, "`Bit` with these generic arguments");
+                self.unsupported(file, span, &format!("`{name}` with these generic arguments"));
                 return None;
             }
         };
+        if arguments.len() > parameters.len() {
+            self.unsupported(file, span, &format!("`{name}` with {} generic arguments", arguments.len()));
+            return None;
+        }
+        let held = match self.design.type_resolution(value_type) {
+            Resolution::Decl(parameter) if parameters.contains(&parameter) => {
+                let position = parameters.iter().position(|p| *p == parameter)?;
+                match arguments.get(position) {
+                    Some(GenericArgNode::Type(t)) => *t,
+                    Some(GenericArgNode::Const(_)) => {
+                        self.unsupported(file, span, &format!("`{name}` of a const argument"));
+                        return None;
+                    }
+                    None => match &self.design.decl_data(parameter).kind {
+                        DeclKind::GenericParam(GenericParamData::Type { default: Some(default), .. }) => *default,
+                        _ => {
+                            self.unsupported(file, span, &format!("`{name}` without its type argument"));
+                            return None;
+                        }
+                    },
+                }
+            }
+            _ => value_type,
+        };
+        let value = self.carried_type(held)?;
         Some(Ty::Carrier { nature, value: Box::new(value) })
     }
 
@@ -99,23 +121,18 @@ impl Checker<'_> {
         let file = self.design.decl_data(node.owner).file;
         match self.lower_type(ty)? {
             Ty::Node(nature) => {
-                let DeclKind::Nature(data) = &self.design.decl_data(nature).kind else { return None };
                 let name = self.design.decl_data(nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-                match data.kind {
-                    NatureKind::Conservative => Some(Ty::Node(nature)),
-                    NatureKind::Discrete => {
-                        self.unsupported(file, node.span, &format!("discrete nature `{name}`"));
-                        None
-                    }
-                    NatureKind::Resolved => {
-                        self.unsupported(file, node.span, &format!("resolved nature `{name}`"));
-                        None
-                    }
-                    NatureKind::SignalFlow => {
-                        self.unsupported(file, node.span, &format!("signal-flow nature `{name}`"));
-                        None
-                    }
-                    NatureKind::Invalid => None,
+                let rules = NatureRules::of(self.design, nature);
+                if rules.flow {
+                    Some(Ty::Node(nature))
+                } else if rules.resolved {
+                    self.unsupported(file, node.span, &format!("resolved nature `{name}`"));
+                    None
+                } else if rules.one_driver && !rules.carries_values {
+                    self.unsupported(file, node.span, &format!("signal-flow nature `{name}`"));
+                    None
+                } else {
+                    None
                 }
             }
             carrier @ Ty::Carrier { .. } => Some(carrier),

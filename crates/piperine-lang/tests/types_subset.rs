@@ -48,7 +48,6 @@ const ROWS: &[Row] = &[
     Row { construct: "const generic", source: "module G<const N: usize>() { }\nmodule Top() { let g = G(); }", names: "generic module" },
     Row { construct: "let mut in a fn", source: "fn f() -> f64 { let mut y = 1.0; 2.0 }\nmodule Top() { }\nanalog for Top { let x = f(); }", names: "`let mut` binding" },
     Row { construct: "closure in a module body", source: "module Top() { let f = |x: f64| x; }", names: "closure" },
-    Row { construct: "discrete nature", source: "nature B { value: bool }\nmodule Top(a: B) { }", names: "discrete nature `B`" },
     Row { construct: "bundle", source: "struct Bn { a: E }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
     Row { construct: "generation in a digital block", source: "module Top() { }\ndigital for Top { if true { } }", names: "generation" },
     Row { construct: "string `let` with an annotation", source: "module Top() { }\nanalog for Top { let x: &str = \"a\"; }", names: "string literal" },

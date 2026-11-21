@@ -7,9 +7,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, ModuleData, NatureKind, Resolution, StmtId};
+use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, ModuleData, Resolution, StmtId};
 
 use super::check::{Checker, Context};
+use super::nature_rules::NatureRules;
 use super::{Builtin, Callee, Ty};
 
 /// The values the value inputs of a placement stand for while a result is read: each input is the
@@ -108,7 +109,7 @@ impl Checker<'_> {
             DeclKind::Signal(s) => s.ty,
             _ => return false,
         };
-        matches!(self.design.nature_of(ty), Some(n) if matches!(&self.design.decl_data(n).kind, DeclKind::Nature(d) if d.kind == NatureKind::Discrete))
+        self.design.nature_of(ty).is_some_and(|n| NatureRules::of(self.design, n).carries_values)
     }
 
     /// The value inputs of `module`, in port order.

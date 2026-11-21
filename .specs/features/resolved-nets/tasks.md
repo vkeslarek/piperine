@@ -166,10 +166,10 @@ T34 → T35 → T36
 
 **Done when**:
 
-- [ ] `a_project_discrete_port_without_a_direction_is_e0310`, `connecting_byte_to_bit_u8_is_e0251_naming_both_natures`, `a_nature_value_without_repr_is_e0112`, `a_second_driver_of_a_project_discrete_carrier_is_e0220` and `a_generic_project_nature_takes_its_argument_or_its_default` pass under `**Run typesnatures**`
-- [ ] The `types_carriers.rs` test that pinned `discrete nature` as `P0001` is replaced by these (design "Goldens")
-- [ ] Code clarity: `NatureRules` and `discrete_carrier_type` doc-commented; no free function
-- [ ] Gate check passes: Quick
+- [x] `a_project_discrete_port_without_a_direction_is_e0310`, `connecting_byte_to_bit_u8_is_e0251_naming_both_natures`, `a_nature_value_without_repr_is_e0112`, `a_second_driver_of_a_project_discrete_carrier_is_e0220` and `a_generic_project_nature_takes_its_argument_or_its_default` pass under `**Run typesnatures**`
+- [x] The `types_carriers.rs` test that pinned `discrete nature` as `P0001` is replaced by these (design "Goldens")
+- [x] Code clarity: `NatureRules` and `discrete_carrier_type` doc-commented; no free function
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

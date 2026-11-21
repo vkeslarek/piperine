@@ -22,6 +22,7 @@ mod expr;
 mod flag_total;
 mod intrinsic;
 mod module;
+mod nature_rules;
 mod reach;
 mod reaction;
 mod record;

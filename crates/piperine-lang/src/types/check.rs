@@ -5,10 +5,11 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::msl::{Diagnostic, Span};
 use crate::msl::lexer;
-use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, FnParamData, GenericArgNode, GenericArgsNode, LitKind, NatureKind, PathId, Reflect, Resolution, StmtKind, TypeId, TypeKind};
+use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, FnParamData, GenericArgNode, GenericArgsNode, LitKind, PathId, Reflect, Resolution, StmtKind, TypeId, TypeKind};
 
 use super::continuity::Continuity;
 use super::definition::DriveBook;
+use super::nature_rules::NatureRules;
 use super::record::Records;
 use super::unsupported::Unsupported;
 use super::{Builtin, Callee, Method, Ty, Types};
@@ -312,7 +313,7 @@ impl<'d> Checker<'d> {
                         None
                     }
                 },
-                Resolution::Decl(d) if matches!(&self.design.decl_data(d).kind, DeclKind::Nature(n) if n.kind == NatureKind::Discrete) && self.is_std(d) && self.design.decl_data(d).name.as_ref().is_some_and(|n| n.text == "Bit") => self.bit_type(d, file, node.span, *path),
+                Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) && NatureRules::of(self.design, d).carries_values && NatureRules::of(self.design, d).one_driver => self.discrete_carrier_type(d, file, node.span, *path),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Nature(_)) => Some(Ty::Node(d)),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Enum(_)) => self.enum_type(d, file, node.span),
                 // A module named as a type is the type of a param (§8.1.1, PI-04): a template of it.
