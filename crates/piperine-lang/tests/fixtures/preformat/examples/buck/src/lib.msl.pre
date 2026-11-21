@@ -1,0 +1,27 @@
+//! A digitally controlled buck converter, 9-16 V in, 0.8-5.0 V out, 5 A, 500 kHz.
+//!
+//! Every number comes from `SPEC.md` beside `Piperine.toml`; comments cite it as `SPEC §n`.
+//! The crate is layered like the converter:
+//!
+//! | Namespace    | What it holds                                                      |
+//! | ------------ | ------------------------------------------------------------------ |
+//! | `spec`       | the structural numbers of the spec, as constants                   |
+//! | `power`      | the analog power stage: source, switches, driver, L, C, sense, load |
+//! | `sense`      | the measurement chain: dividers, the ADC, the comparators          |
+//! | `dpwm`       | the 200 MHz oscillator and the counter-based DPWM with dead time   |
+//! | `control`    | setpoint register, reference ramp, fixed-point PID                 |
+//! | `supervisor` | the protection state machine and power-good                        |
+//! | `top`        | `Controller` (everything digital) and `Buck` (the whole converter) |
+//!
+//! There is no testbench here: the host drives `Buck`'s ports and params (see `README.md`).
+
+pub mod spec;
+pub mod power;
+pub mod sense;
+pub mod dpwm;
+pub mod control;
+pub mod supervisor;
+pub mod top;
+
+pub use crate::top::{Buck, Controller};
+pub use crate::supervisor::{Fault, Mode};
