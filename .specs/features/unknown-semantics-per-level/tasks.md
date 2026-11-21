@@ -224,9 +224,9 @@ T34
 
 **Done when**:
 
-- [ ] `canonical_form_holds_per_level`, `a_merge_commit_keeps_the_levels_both_hold` and `pins_with_and_without_levels_are_unequal` pass under `**Run abilevels**`
-- [ ] The existing `crates/piperine-abi/tests/layouts.rs` passes unchanged
-- [ ] Gate check passes: Quick
+- [x] `canonical_form_holds_per_level`, `a_merge_commit_keeps_the_levels_both_hold` and `pins_with_and_without_levels_are_unequal` pass under `**Run abilevels**`
+- [x] The existing `crates/piperine-abi/tests/layouts.rs` passes unchanged
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

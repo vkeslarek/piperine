@@ -4,6 +4,7 @@
 //! by level, and a plain known byte (minor 1) keeps reading as one level.
 
 use piperine_abi::known::FieldKnown;
+use piperine_abi::layout::{Merge, is_canonical, layout_eq};
 use piperine_abi::raw::{Field, Layout, List, Str, field_flag, leaf, role};
 use piperine_abi::shape::{PinSpec, ShapeBuf};
 use piperine_abi::validate::{Rule, validate};
@@ -27,6 +28,24 @@ impl Fixture {
     /// A `U8` field with a plain known byte (minor 1): value byte 0, known byte 1.
     fn plain_byte() -> Field<'static> {
         Field { name: Str::from_static("v"), leaf: leaf::U8, offset: 0, count: 1, flags: field_flag::HAS_KNOWN, known: 1 }
+    }
+}
+
+impl Fixture {
+    /// The layout of [`Fixture::masks`]: two `U16` elements and their masks, 8 bytes.
+    fn mask_layout<'a>(fields: &'a [Field<'a>]) -> Layout<'a> {
+        Layout { size: 8, align: 2, fields: List::from_slice(fields) }
+    }
+
+    /// The layout of [`Fixture::single`]: one `U16` and its flag, 4 bytes.
+    fn single_layout<'a>(fields: &'a [Field<'a>]) -> Layout<'a> {
+        Layout { size: 4, align: 2, fields: List::from_slice(fields) }
+    }
+
+    /// One `U16` element with a known flag at byte 2, a mask when `levels`, a plain byte otherwise.
+    fn single(levels: bool) -> Field<'static> {
+        let flags = if levels { field_flag::HAS_KNOWN | field_flag::KNOWN_LEVELS } else { field_flag::HAS_KNOWN };
+        Field { name: Str::from_static("v"), leaf: leaf::U16, offset: 0, count: 1, flags, known: 2 }
     }
 }
 
@@ -109,4 +128,58 @@ fn a_mask_outside_the_layout_is_refused_by_name() {
 
     let inside = Layout { size: 8, align: 2, fields: List::from_slice(&outside) };
     Shapes::validate_pin(&inside).expect("the same field in an 8-byte layout validates");
+}
+
+/// abi.md §3.1 P3 per level: all-zero bytes hold no value; the value bit of an unknown level is
+/// zero; a plain known byte of 0 holds no value.
+#[test]
+fn canonical_form_holds_per_level() {
+    let fields = [Fixture::masks()];
+    let layout = Fixture::mask_layout(&fields);
+    // element 0: value 0b0101 with mask 0b0111 (level 1 known false); element 1 all zero
+    assert!(is_canonical(&layout, &[0x05, 0, 0, 0, 0x07, 0, 0, 0]), "value bits only on known levels");
+    assert!(is_canonical(&layout, &[0; 8]), "all-zero bytes are the no-value form");
+    // level 3 of element 0 has its value bit set while its flag is clear
+    assert!(!is_canonical(&layout, &[0x08, 0, 0, 0, 0x07, 0, 0, 0]), "a value bit on an unknown level");
+    // a zero mask with a non-zero value is the old P3 violation
+    assert!(!is_canonical(&layout, &[0, 0, 0x01, 0, 0, 0, 0, 0]), "element 1 has a value and no flag");
+    assert!(!is_canonical(&layout, &[0; 7]), "bytes shorter than the layout are not canonical");
+
+    let plain = [Fixture::plain_byte()];
+    let byte = Layout { size: 2, align: 1, fields: List::from_slice(&plain) };
+    assert!(is_canonical(&byte, &[0, 0]) && is_canonical(&byte, &[7, 1]));
+    assert!(!is_canonical(&byte, &[7, 0]), "a plain known byte of 0 holds no value");
+}
+
+/// abi.md C7 per level: a merge keeps the levels both values hold known and equal and clears the
+/// rest, value bits included; an element equal on both sides is unchanged.
+#[test]
+fn a_merge_commit_keeps_the_levels_both_hold() {
+    let fields = [Fixture::masks()];
+    let layout = Fixture::mask_layout(&fields);
+    // element 0 settled: levels 1, 2, 3 known, values 1, 0, 1 -> value 0b1010, mask 0b1110.
+    // element 0 committed: levels 0, 1, 2 known, values 1, 1, 1 -> value 0b0111, mask 0b0111.
+    // both known: levels 1 and 2; equal: level 1 (1 = 1) only -> mask 0b0010, value 0b0010.
+    // element 1 is the same on both sides (value 0x00AB, mask 0x01FF) and stays.
+    let mut settled = [0x0A, 0, 0xAB, 0x00, 0x0E, 0, 0xFF, 0x01];
+    let committed = [0x07, 0, 0xAB, 0x00, 0x07, 0, 0xFF, 0x01];
+    Merge::of(&layout).merge_into(&mut settled, &committed).expect("a mergeable layout");
+    assert_eq!(settled, [0x02, 0, 0xAB, 0x00, 0x02, 0, 0xFF, 0x01]);
+    assert!(is_canonical(&layout, &settled), "the result is canonical (P3)");
+
+    // a level known on one side only is cleared, and nothing is invented
+    let mut one_sided = [0x01, 0, 0, 0, 0x01, 0, 0, 0];
+    Merge::of(&layout).merge_into(&mut one_sided, &[0; 8]).expect("a mergeable layout");
+    assert_eq!(one_sided, [0; 8], "an unknown commit clears every level");
+}
+
+/// abi.md P4 with `KNOWN_LEVELS`: the flag counts, so the same field with a plain known byte and
+/// with a mask are unequal layouts (D4); names still do not count.
+#[test]
+fn pins_with_and_without_levels_are_unequal() {
+    let (with, without) = ([Fixture::single(true)], [Fixture::single(false)]);
+    assert!(!layout_eq(&Fixture::single_layout(&with), &Fixture::single_layout(&without)), "a mask and a plain byte are not one shape");
+    assert!(layout_eq(&Fixture::single_layout(&with), &Fixture::single_layout(&with)));
+    let renamed = [Field { name: Str::from_static("w"), ..Fixture::single(true) }];
+    assert!(layout_eq(&Fixture::single_layout(&with), &Fixture::single_layout(&renamed)), "names do not count");
 }

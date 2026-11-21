@@ -3,6 +3,7 @@
 
 use std::fmt;
 
+use crate::known::FieldKnown;
 use crate::raw::{Field, Layout, List, Str, field_flag, leaf};
 
 const V: Str = Str::from_static("v");
@@ -44,55 +45,44 @@ pub fn leaf_size(l: u32) -> Option<usize> {
     }
 }
 
-/// The offset of a field's known bytes, `None` when it has none.
-fn known_of(f: &Field) -> Option<u32> {
-    (f.flags & field_flag::HAS_KNOWN != 0).then_some(f.known)
-}
-
-/// P4: equal size and alignment and, per field, equal leaf, offset, count and
-/// known offset. Names do not count.
+/// P4: equal size and alignment and, per field, equal leaf, offset, count and known flags (the
+/// offset, and whether it is a mask: abi.md §3 `KNOWN_LEVELS`). Names do not count.
 pub fn layout_eq(a: &Layout, b: &Layout) -> bool {
     a.size == b.size
         && a.align == b.align
         && a.fields.len() == b.fields.len()
         && a.fields.iter().zip(b.fields.iter()).all(|(x, y)| {
-            x.leaf == y.leaf && x.offset == y.offset && x.count == y.count && known_of(x) == known_of(y)
+            x.leaf == y.leaf
+                && x.offset == y.offset
+                && x.count == y.count
+                && FieldKnown::form_of(x) == FieldKnown::form_of(y)
         })
 }
 
-/// P3: every element of a field with a known byte whose known byte is 0 has
-/// all-zero value bytes. Bytes shorter than the layout are not canonical.
+/// P3: every element of a field with known flags holds all-zero value bytes where no flag is set
+/// (a plain known byte of 0, or the value bits of the levels a mask leaves unknown). Bytes
+/// shorter than the layout are not canonical.
 pub fn is_canonical(layout: &Layout, bytes: &[u8]) -> bool {
     if bytes.len() < layout.size as usize {
         return false;
     }
     layout.fields.iter().all(|f| {
-        let Some(known) = known_of(f) else { return true };
-        let Some(width) = leaf_size(f.leaf) else { return false };
-        (0..f.count as usize).all(|e| {
-            let value = f.offset as usize + e * width;
-            match (bytes.get(known as usize + e), bytes.get(value..value + width)) {
-                (Some(0), Some(v)) => v.iter().all(|b| *b == 0),
-                (Some(_), Some(_)) => true,
-                _ => false,
-            }
-        })
+        if FieldKnown::form_of(f).is_none() {
+            return true;
+        }
+        FieldKnown::of(f).is_some_and(|known| (0..known.count()).all(|element| known.is_canonical(bytes, element)))
     })
 }
 
-/// One field of a layout as a merge reads it: where its value elements and known bytes lie.
+/// One field of a layout as a merge reads it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct MergeField {
     /// The field's name, for an error.
     name: String,
-    /// The offset of the first value element.
-    value: usize,
-    /// The size of one element, `None` for a leaf this ABI does not define.
-    width: Option<usize>,
-    /// The array length.
-    count: usize,
-    /// The offset of the first known byte, `None` for a field that has none.
-    known: Option<usize>,
+    /// Whether the field has known flags at all.
+    has_known: bool,
+    /// The reader of its known flags, `None` for a field without them or with an undefined leaf.
+    known: Option<FieldKnown>,
 }
 
 /// Why two values could not be merged.
@@ -120,8 +110,10 @@ impl std::error::Error for MergeError {}
 
 /// The merge of two values of one layout, level by level (part I §3.3.3, abi.md C7): per element
 /// of each field, a known value both sides agree on is kept; anything else becomes unknown,
-/// canonically (P3: known byte 0 and value bytes zero). Values are compared as bytes, so `+0.0`
-/// and `-0.0` disagree, which only ever errs toward unknown.
+/// canonically (P3: known byte 0 and value bytes zero). A field with a mask (`KNOWN_LEVELS`)
+/// merges each level on its own: the levels both sides hold known and equal stay, the others are
+/// cleared, value bits included. Values are compared as bytes, so `+0.0` and `-0.0` disagree,
+/// which only ever errs toward unknown.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Merge {
     /// The layout's size: the least length of a value.
@@ -137,10 +129,8 @@ impl Merge {
             .iter()
             .map(|f| MergeField {
                 name: f.name.as_str().to_string(),
-                value: f.offset as usize,
-                width: leaf_size(f.leaf),
-                count: f.count as usize,
-                known: known_of(f).map(|k| k as usize),
+                has_known: FieldKnown::form_of(f).is_some(),
+                known: FieldKnown::of(f),
             })
             .collect();
         Merge { size: layout.size as usize, fields }
@@ -155,22 +145,16 @@ impl Merge {
             }
         }
         for field in &self.fields {
-            if field.known.is_none() {
+            if !field.has_known {
                 return Err(MergeError::NoKnownByte { field: field.name.clone() });
             }
-            if field.width.is_none() {
+            if field.known.is_none() {
                 return Err(MergeError::UnknownLeaf { field: field.name.clone() });
             }
         }
-        for field in &self.fields {
-            let (Some(known), Some(width)) = (field.known, field.width) else { continue };
-            for element in 0..field.count {
-                let value = field.value + element * width..field.value + (element + 1) * width;
-                let agree = settled[known + element] != 0 && committed[known + element] != 0 && settled[value.clone()] == committed[value.clone()];
-                if !agree {
-                    settled[known + element] = 0;
-                    settled[value].fill(0);
-                }
+        for known in self.fields.iter().filter_map(|field| field.known) {
+            for element in 0..known.count() {
+                known.merge(settled, committed, element);
             }
         }
         Ok(())
