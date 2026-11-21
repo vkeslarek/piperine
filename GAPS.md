@@ -426,7 +426,6 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
-| language#13 | S7 | `value-semantics` | reached from a top, `sum_below` is `P0001`: it assigns `let total`, and the elaborator lowers an assignment only to a local declared `let mut` until T3 |
 | types#6 | L2 | `composite-values` | reached from a top, `span` is `P0001`: `ordered` yields a tuple (a tuple type, a tuple expression) |
 | types#7 | L3 | `composite-values` | reached from a top, `smoothed` is `P0001` (an array type) and `mean` is `P0001` (a generic function over an array, L7) |
 | types#11 | L4 | `composite-values` | reached from a top, `area` is `P0001`: the enum `Shape` has variants with a payload |

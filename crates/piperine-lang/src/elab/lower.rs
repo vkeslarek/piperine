@@ -491,8 +491,16 @@ impl Elaboration<'_, '_> {
     }
 
     /// Allocate the local a `Binding` declaration names: its name and its type, in declaration
-    /// order. `None` after a diagnostic when the checker typed it with a non-value type.
+    /// order, assignable exactly when the body assigns it (§1.5.12). `None` after a diagnostic
+    /// when the checker typed it with a non-value type.
     pub(super) fn bind_local(&mut self, scope: &mut Scope, binding: DeclId) -> Option<u32> {
+        let assignable = self.types.is_assigned(binding);
+        self.bind_local_as(scope, binding, assignable)
+    }
+
+    /// `bind_local` with the assignable flag given: a loop's own variable is bound with `false`
+    /// and copied (`assignable_copy`), so the loop's counter is never written.
+    pub(super) fn bind_local_as(&mut self, scope: &mut Scope, binding: DeclId, assignable: bool) -> Option<u32> {
         let data = self.design.decl_data(binding);
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let (file, span) = (data.file, data.span);
@@ -500,10 +508,9 @@ impl Elaboration<'_, '_> {
             self.unsupported(file, span, "a name whose type is not a value type");
             return None;
         };
-        let mutable = self.declared_mutable(binding);
-        let ty = if mutable { Self::mutable_type(scope, ty) } else { ty };
+        let ty = if assignable { Self::mutable_type(scope, ty) } else { ty };
         let index = scope.locals.len() as u32;
-        scope.locals.push(Local { name, ty, mutable });
+        scope.locals.push(Local { name, ty, mutable: assignable });
         scope.local_index.insert(binding, index);
         Some(index)
     }

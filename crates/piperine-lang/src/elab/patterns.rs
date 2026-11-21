@@ -311,6 +311,22 @@ impl Elaboration<'_, '_> {
 
     // ---- the names a pattern binds ----------------------------------------------------------
 
+    /// A name a loop's pattern binds that the body assigns (§1.5.12, §1.6.9): `let name = variable;`
+    /// into a fresh assignable local at the head of the loop body, which the name then stands
+    /// for, so the loop's own variable is never written. `None` when the body does not assign it.
+    pub(super) fn assignable_copy(&mut self, scope: &mut Scope, binding: Option<DeclId>, variable: u32) -> Option<LoweredStmt> {
+        let binding = binding.filter(|binding| self.types.is_assigned(*binding))?;
+        let held = scope.locals[variable as usize].clone();
+        let ty = Self::mutable_type(scope, held.ty.clone());
+        let copy = scope.locals.len() as u32;
+        scope.locals.push(Local { name: held.name, ty: ty.clone(), mutable: true });
+        scope.local_index.insert(binding, copy);
+        let origin = self.locator.origin(scope.file, self.design.decl_data(binding).span);
+        let read = self.emit(Expr::Local(variable), held.ty, origin);
+        let init = self.coerced_to(scope, read, &ty);
+        Some(self.stmt(Stmt::Let { local: copy, init }))
+    }
+
     /// A local for each name of `bindings`, holding the type of its value: the pairs of (local,
     /// value) that `binding_lets` writes where the names are read. `None` after a diagnostic.
     pub(super) fn bind_names(&mut self, scope: &mut Scope, bindings: &[(DeclId, LoweredExpr)]) -> Option<Vec<(u32, LoweredExpr)>> {

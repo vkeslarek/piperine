@@ -1,8 +1,9 @@
 //! Mutation and control flow (part I §1.5.12, §1.7.5, §1.8): `let mut`, assignment, the deferred
 //! `let x;`, loops and the exits that leave them.
 //!
-//! A `let mut` is a `mutable` IR local and an assignment is `Stmt::Assign`. In code that may see
-//! an unknown (a reaction, a function variant with an argument that may be) a `let mut` scalar is
+//! A local the body assigns is a `mutable` IR local, whatever the source wrote on its `let`
+//! (every local is a place, §1.5.12), and an assignment is `Stmt::Assign`. In code that may see
+//! an unknown (a reaction, a function variant with an argument that may be) an assigned scalar is
 //! flagged whatever it starts as: an assignment under an unknown decision merges the written
 //! value with the old one (§3.3.3), which may be unknown. Code with no unknown keeps plain locals.
 
@@ -11,7 +12,7 @@ use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, Local, Origin, Place, S
 use super::elaborator::Elaboration;
 use super::known::Flag;
 use super::lower::Scope;
-use crate::pom::{BlockNode, DeclId, DeclKind, ExprId, ExprKind, FileId, PatId, PatKind, Resolution};
+use crate::pom::{BlockNode, DeclId, ExprId, ExprKind, FileId, PatId, PatKind, Resolution};
 
 /// One loop the code being lowered sits in.
 pub(super) struct LoopFrame {
@@ -20,12 +21,6 @@ pub(super) struct LoopFrame {
 }
 
 impl Elaboration<'_, '_> {
-    /// Whether the source wrote `let mut` (or `mut` in a pattern) for `binding`.
-    pub(super) fn declared_mutable(&self, binding: DeclId) -> bool {
-        let DeclKind::Binding(data) = &self.design.decl_data(binding).kind else { return false };
-        matches!(&self.design.pat_node(data.pat).kind, PatKind::Ident { mutable: true, binding: named, .. } if *named == binding)
-    }
-
     /// The type a `let mut` of base type `base` has in `scope`: flagged where the code may see an
     /// unknown (a flag rides on a scalar only).
     pub(super) fn mutable_type(scope: &Scope, base: ValueType) -> ValueType {
@@ -180,28 +175,31 @@ impl Elaboration<'_, '_> {
             return None;
         };
         let (low, high) = (self.lower_expr(scope, lo)?, self.lower_expr(scope, hi)?);
-        let variable = self.for_variable(scope, pat)?;
+        let (variable, binding) = self.for_variable(scope, pat)?;
         let counted = self.flags(&[low, high]) == Flag::Flagged || (scope.may_be_unknown && self.leaves_early(body));
         if counted && inclusive {
             self.unsupported(scope.file, body.span, "a `for` over `a..=b` whose bounds may be unknown or whose body leaves early");
             return None;
         }
         if counted {
-            return self.lower_counting_loop(scope, variable, (low, high), body, origin);
+            return self.lower_counting_loop(scope, (variable, binding), (low, high), body, origin);
         }
         scope.locals[variable as usize].ty = self.type_of(low);
-        let body = self.lower_loop_body(scope, body, ValueType::Unit)?;
+        let copy = self.assignable_copy(scope, binding, variable);
+        let mut body = self.lower_loop_body(scope, body, ValueType::Unit)?;
+        body.splice(0..0, copy);
         Some(self.emit(Expr::ForRange { local: variable, low, high, inclusive, reverse: false, body }, ValueType::Unit, origin))
     }
 
-    /// The local the pattern of a `for` binds: a name, or a fresh local for `_`.
-    fn for_variable(&mut self, scope: &mut Scope, pat: PatId) -> Option<u32> {
+    /// The local the pattern of a `for` binds, never assignable (the loop writes it), and the name
+    /// it binds: a name, or a fresh local for `_`.
+    fn for_variable(&mut self, scope: &mut Scope, pat: PatId) -> Option<(u32, Option<DeclId>)> {
         let node = self.design.pat_node(pat).clone();
         match node.kind {
-            PatKind::Ident { binding, sub: None, .. } => self.bind_local(scope, binding),
+            PatKind::Ident { binding, sub: None, .. } => Some((self.bind_local_as(scope, binding, false)?, Some(binding))),
             PatKind::Wild => {
                 scope.locals.push(Local { name: "_".to_string(), ty: ValueType::Unit, mutable: false });
-                Some(scope.locals.len() as u32 - 1)
+                Some((scope.locals.len() as u32 - 1, None))
             }
             _ => {
                 self.unsupported(scope.file, node.span, "a `for` pattern that is not a name");
@@ -222,7 +220,7 @@ impl Elaboration<'_, '_> {
     /// `for k in low..high { body }` as `{ let end = high; let mut next = low; while next < end { let k = next; next += 1; body } }`
     /// (`..=` is refused: its last step would overflow a bound at the type's maximum). The next
     /// value is taken before the body, so a `continue` still counts.
-    fn lower_counting_loop(&mut self, scope: &mut Scope, variable: u32, (low, high): (LoweredExpr, LoweredExpr), body: &BlockNode, origin: Origin) -> Option<LoweredExpr> {
+    fn lower_counting_loop(&mut self, scope: &mut Scope, (variable, binding): (u32, Option<DeclId>), (low, high): (LoweredExpr, LoweredExpr), body: &BlockNode, origin: Origin) -> Option<LoweredExpr> {
         let base = match self.type_of(low) {
             ValueType::Flagged(inner) => *inner,
             other => other,
@@ -244,8 +242,9 @@ impl Elaboration<'_, '_> {
         let take = self.stmt(Stmt::Let { local: variable, init: current });
         let one = self.emit(Expr::Int(1), base, origin.clone());
         let step = self.stmt(Stmt::Assign { place: Place { local: next, path: Vec::new() }, op: Some(BinaryOp::Add), value: one });
+        let copy = self.assignable_copy(scope, binding, variable);
         let mut rest = self.lower_loop_body(scope, body, ValueType::Unit)?;
-        rest.splice(0..0, [take, step]);
+        rest.splice(0..0, [take, step].into_iter().chain(copy));
         let looped = self.emit(Expr::While { cond, body: rest }, ValueType::Unit, origin.clone());
         Some(self.emit(Expr::Block { stmts: vec![bind_end, bind_next], value: Some(looped) }, ValueType::Unit, origin))
     }

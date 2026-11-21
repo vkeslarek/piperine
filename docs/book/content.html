@@ -682,7 +682,7 @@ time
 
 <h3>What the compiler runs today</h3>
 
-<p>The rules of this chapter are the language. The compiler does not yet run every form they describe. This function is correct MSL, and it uses a form that is still on the way: it assigns a local declared with <code>let</code>, and the compiler lowers an assignment only to a local declared with <code>let mut</code>.</p>
+<p>The rules of this chapter are the language, and the compiler runs the function below: it updates a local in a loop. The type of the literal in <code>let total = 0</code> is fixed by its later use: <code>total += k</code> with a <code>u32</code> <code>k</code> makes <code>total</code> a <code>u32</code>.</p>
 
 <pre data-lang="msl">/// The sum of the whole numbers below `n`.
 fn sum_below(n: u32) -> u32 {
@@ -695,7 +695,7 @@ fn sum_below(n: u32) -> u32 {
   <p class="callout-label">Status</p>
   <p>Running today: <code>bool</code>, integers of up to 64 bits, <code>f64</code>, constants, functions, <code>let</code> and blocks, <code>if</code>, and <code>match</code> over literals. Everything the four files above use is in that list.</p>
   <p>Parsed and checked, and not run yet: an item declared inside a block, <code>%</code> on floats, floats other than <code>f64</code>, and integers wider than 64 bits. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
-  <p>One spelling of an earlier version of the language is no longer MSL: <code>let mut x</code>. A local needs no <code>mut</code> to be assigned; write <code>let x</code>. Today's compiler still needs the word to run an assignment: without it the run stops with the code P0001. A later compiler takes the assignment with no word and refuses the word itself.</p>
+  <p>One spelling of an earlier version of the language is no longer MSL: <code>let mut x</code>. A local needs no <code>mut</code> to be assigned; write <code>let x</code>. Today's compiler still knows the word: it accepts it, where it changes nothing. A later compiler refuses the word itself.</p>
 </div>
 
 <div class="callout mistake">

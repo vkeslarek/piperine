@@ -361,8 +361,9 @@ pub struct Inflow {
 pub struct Local {
     pub name: String,
     pub ty: ValueType,
-    /// Whether the source wrote `let mut` (§1.5.12): only a mutable local is the target of a
-    /// `Stmt::Assign`. A function parameter and a loop variable are never mutable.
+    /// Whether the body assigns the local (§1.5.12), whatever its `let` wrote: only an assignable
+    /// local is the target of a `Stmt::Assign`. A function parameter and a loop variable are never
+    /// assignable, and a generated `let` keeps `mut` exactly for a local that is.
     #[serde(default)]
     pub mutable: bool,
 }

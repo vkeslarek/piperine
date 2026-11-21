@@ -26,7 +26,6 @@ use support::faulty::Faulty;
 use support::model::Model;
 use support::printed::Printed;
 use support::records::Fields;
-use support::refusal::Refusal;
 use support::value_file::ValueFile;
 
 #[test]
@@ -183,14 +182,15 @@ fn a_fault_ends_the_analysis_or_the_build_and_a_non_finite_value_ends_the_solve(
 }
 
 #[test]
-fn the_sum_below_listing_is_refused_for_a_local_without_mut() {
-    // language#13 (refused): the chapter's `sum_below` assigns `let total = 0`. The checker takes every local as a
-    // place since value-semantics T2; the elaborator lowers an assignment only to a local declared `let mut` until
-    // T3 (GAPS.md S7). When it runs this test fails and the row moves to `run`
+fn the_sum_below_listing_runs_with_the_literal_typed_by_its_use() {
+    // language#13 (run): the chapter's `sum_below` is a local that is updated, an assignment and a loop (composite-values
+    // T11 to T20, every local a place since value-semantics T2 and T3); `let total = 0` then `total += k` with `k: u32`
+    // is a literal whose type the later use fixes (§1.4.4), so `total` is a `u32` and the sum of 0, 1, 2 and 3 is 6.
     let chapter = Chapter::read();
     let overrides = Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2e-6), ..Overrides::default() };
-    let top = "module Top() { }\ndigital for Top { on at(1u) { emit!(\"r\", s = sum_below(4)); } }\n";
-    Refusal::expect(chapter.wrapped("sum.msl", "", "language#13", top).run(overrides), "language#13", "P0001", "an assignment to a local that is not mutable here is not supported yet");
+    let source = "module Top() { }\ndigital for Top { on at(1u) { emit!(\"r\", s = sum_below(4)); } }\n";
+    let record = ValueFile::only(chapter.wrapped("sum.msl", "", "language#13", source).run(overrides), "r");
+    ValueFile::int(&record, "s", 6);
 }
 
 #[test]
@@ -229,12 +229,12 @@ fn e0909_e0905_and_e0903_a_literal_too_large_a_character_and_a_keyword_as_a_name
 }
 
 #[test]
-fn a_local_is_assigned_only_after_let_mut_today() {
-    // language~769389d7 "Today's compiler still needs the word to run an assignment: without it the run stops with
-    // the code P0001": `mut` left the language with value semantics (spec Appendix G.71, GAPS.md S7). When every
-    // local runs an assignment this test fails and the status box loses the sentence
-    let faulty = ValueFile::refused("language~769389d7", "", "let x = 5; x = 6; emit!(\"r\", x = x);");
-    assert_eq!(faulty.first("P0001").message, "an assignment to a local that is not mutable here is not supported yet");
+fn the_earlier_let_mut_spelling_is_still_accepted_where_it_changes_nothing() {
+    // the status box of language#13 "Today's compiler still knows the word: it accepts it, where it changes nothing": `mut` left
+    // the language with value semantics (spec Appendix G.71, GAPS.md S7). When the parser refuses the word this
+    // test fails and the status box loses the sentence
     let kept = ValueFile::written("", "let mut x = 5; x = 6; emit!(\"r\", x = x);");
     ValueFile::int(&kept, "x", 6);
+    let bare = ValueFile::written("", "let x = 5; x = 6; emit!(\"r\", x = x);");
+    ValueFile::int(&bare, "x", 6);
 }

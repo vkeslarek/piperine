@@ -223,6 +223,31 @@ impl Forms {
 }
 
 #[test]
+fn a_local_is_assignable_exactly_when_its_body_assigns_it() {
+    // §1.5.12 (VS-03): `Local::mutable` says the body assigns the local, whatever its `let` wrote. `a` is
+    // assigned through an element and is `mutable`; `b` is only read and is not. The same body with `a` not
+    // `mutable` is refused, so no local is assigned that the flag does not name.
+    let array_type = ValueType::Array(Box::new(ValueType::F64), 3);
+    let design = |assigned: Local| {
+        Forms::design(vec![assigned, Shape::local("b", ValueType::F64)], |b| {
+            let one = Shape::dx(b, 2).real(1.0);
+            let array = Forms::e(b, Expr::ArrayRepeat { element: one, count: 3 }, array_type.clone(), 3);
+            let declare = Shape::dx(b, 3).let_(0, array);
+            let index = Shape::dx(b, 4).int(1, Ty::u(8));
+            let set = b.stmt(Stmt::Assign { place: Place { local: 0, path: vec![Projection::Index(index)] }, op: None, value: one });
+            let other = Shape::dx(b, 5).let_(1, one);
+            vec![declare, set, other]
+        })
+    };
+    let assignable = design(Shape::mutable("a", array_type.clone()));
+    assert_eq!(assignable.check(), vec![], "an assigned local is `mutable`");
+    let text = assignable.to_string();
+    assert!(text.contains("local mut a") && !text.contains("local mut b"), "the table says `mut` for `a` only:\n{text}");
+    let broken = design(Shape::local("a", array_type.clone())).check();
+    assert_eq!(Entries::with(&broken, "not `mutable`").len(), 1, "{broken:?}");
+}
+
+#[test]
 fn ir_check_types_every_aggregate_expression() {
     // §1.5.25: tuples, arrays, struct and variant expressions, field and element reads, a view of
     // an array passed to a function, `len`, and an assignment through an element and a field.

@@ -41,7 +41,7 @@ block	language#9	e0b45d039c83a8f3	held	piperine-cli/book::every_cli_listing_of_t
 block	language#10	ae89c5ca38e7bd81	run	piperine/book_language::constants_and_functions_compute_before_and_during_the_run	-	-
 block	language#11	cdc1363cea7a473b	shown	-	-	-
 block	language#12	ada19f0dc89c6e13	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run functions.msl --analysis transient --stop 2e-6
-block	language#13	54a4e9d6a8d354cb	refused	piperine/book_language::the_sum_below_listing_is_refused_for_a_local_without_mut	S7	-
+block	language#13	54a4e9d6a8d354cb	run	piperine/book_language::the_sum_below_listing_runs_with_the_literal_typed_by_its_use	-	-
 block	types#1	cb8e6ac8cab957a5	run	piperine/book_types::an_option_is_read_with_its_methods_a_match_and_an_if_let	-	-
 block	types#2	882c7bee6c3834b3	shown	-	-	-
 block	types#3	3bf569354fd77d70	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run option.msl --analysis transient --stop 2e-6
@@ -308,8 +308,7 @@ claim	language~c87e9922	c87e992280216c08	prose	-	-	Its header gives each paramet
 claim	language~9273ae3d	9273ae3d2225da3b	holds	piperine/book_language::the_prelude_gives_its_constants	-	The prelude gives you the constants Q, K_B, EPS0, PI, E and inf.
 claim	language~49c521bb	49c521bb27bd7018	holds	piperine/book_language::constants_and_functions_compute_before_and_during_the_run	-	Running today: bool, integers of up to 64 bits, f64, constants, functions, let and blocks, if, and match over literals.
 claim	language~56bbb0e9	56bbb0e9c4a49166	holds	piperine/book_language::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	-	Parsed and checked, and not run yet: an item declared inside a block, % on floats, floats other than f64, and integers wider than 64 bits.
-claim	language~769389d7	769389d76f473224	holds	piperine/book_language::a_local_is_assigned_only_after_let_mut_today	-	Today's compiler still needs the word to run an assignment: without it the run stops with the code P0001.
-claim	language~4dad0003	4dad0003b4187d64	prose	-	-	A later compiler takes the assignment with no word and refuses the word itself.
+claim	language~c2dd2b0b	c2dd2b0b05f730fc	prose	-	-	A later compiler refuses the word itself.
 claim	language~5628120b	5628120bc0d03e21	holds	piperine/book_language::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	-	A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.
 claim	language~79f450b1	79f450b163622f85	holds	piperine/book_language::nothing_converts_by_itself_and_a_condition_is_a_bool	-	P0002
 claim	language~8031841d	8031841de450ce28	holds	piperine/book_language::e0909_e0905_and_e0903_a_literal_too_large_a_character_and_a_keyword_as_a_name	-	E0909

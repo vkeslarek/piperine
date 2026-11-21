@@ -626,9 +626,9 @@ impl Elaboration<'_, '_> {
 
     /// `let o = e;` of type `Option<T>`: the flag to the local `o.is`, the payload to `o.val`.
     pub(super) fn lower_option_let(&mut self, scope: &mut Scope, out: &mut Vec<StmtId>, binding: DeclId, init: ExprId) -> bool {
-        if self.declared_mutable(binding) {
+        if self.types.is_assigned(binding) {
             let span = self.design.decl_data(binding).span;
-            self.unsupported(scope.file, span, "a `let mut` of an `Option`");
+            self.unsupported(scope.file, span, "an assignment to a local of type `Option`");
             return false;
         }
         let name = self.design.decl_data(binding).name.as_ref().map_or_else(String::new, |n| n.text.clone());
