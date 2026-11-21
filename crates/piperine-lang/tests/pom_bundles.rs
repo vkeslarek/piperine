@@ -31,6 +31,11 @@ impl Bundles {
         &file.text()[diagnostic.diagnostic.span().range()]
     }
 
+    /// What the POM reflects of the struct `name`: whether classification made it a bundle.
+    fn bundle_of(design: &Design, name: &str) -> Option<bool> {
+        design.struct_named(name).unwrap_or_else(|| panic!("no struct `{name}`")).bundle()
+    }
+
     /// The codes of every diagnostic of the design.
     fn codes(design: &Design) -> Vec<String> {
         design.diagnostics().iter().map(|d| d.diagnostic.code.to_string()).collect()
@@ -45,6 +50,17 @@ fn a_struct_of_carriers_is_a_bundle() {
         "struct Inner { x: Electrical }\nstruct Stream { a: Electrical, b: [Electrical; 4], c: Inner }\nmodule Top() { }\n",
     );
     assert_eq!(Bundles::codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    // ... and the classification says so: a bundle, not a plain value struct
+    assert_eq!(Bundles::bundle_of(&design, "Stream"), Some(true));
+    assert_eq!(Bundles::bundle_of(&design, "Inner"), Some(true));
+    // a struct whose only field is an array of carriers, and one whose only field is a bundle
+    let design = Bundles::design(
+        "struct Lines { lines: [Electrical; 4] }\nstruct Inner { x: Electrical }\nstruct Nested { inner: Inner }\nstruct Plain { gain: f64 }\nmodule Top() { }\n",
+    );
+    assert_eq!(Bundles::codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    assert_eq!(Bundles::bundle_of(&design, "Lines"), Some(true), "an array of carriers is a bundle");
+    assert_eq!(Bundles::bundle_of(&design, "Nested"), Some(true), "a nested bundle makes a bundle");
+    assert_eq!(Bundles::bundle_of(&design, "Plain"), Some(false), "a struct of values is not");
 }
 
 #[test]
