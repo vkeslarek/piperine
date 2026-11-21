@@ -48,10 +48,15 @@ impl Scenario for StateMachineScenario {
 /// The sequencer's phase, in declaration order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Phase {
+    /// Not enabled: both switches open.
     Idle,
+    /// The charge switch is closed, for 20 clock periods.
     Charge,
+    /// Both switches open, for 10 clock periods.
     Hold,
+    /// The dump switch is closed, for 20 clock periods.
     Dump,
+    /// An over-voltage was seen on two edges in a row: the dump switch is closed, for 30 clock periods.
     Fault,
 }
 
@@ -65,7 +70,9 @@ impl Phase {
 /// The sequencer's fault, in declaration order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FaultCause {
+    /// No fault is recorded.
     Clear,
+    /// The over-voltage input was seen on two edges in a row.
     OverVoltage,
 }
 
