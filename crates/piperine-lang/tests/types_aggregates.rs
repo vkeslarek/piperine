@@ -378,3 +378,71 @@ fn a_method_outside_appendix_h_is_e0161() {
     // the element type is named in the message
     assert_refused(&source("", "let v = [1u8, 2].push(3);"), "E0161", "[u8; 2]");
 }
+
+/// The design of `src` over the embedded standard library, which must parse and resolve: a source
+/// that names `Bit`.
+fn standard_design_of(src: &str) -> Design {
+    let design = Design::builder().source("top.msl", src).build();
+    assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", design.diagnostics().iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+    design
+}
+
+/// The level counts the `T::WIDTH` paths of the checked source read, in source order.
+fn widths(src: &str) -> Vec<u32> {
+    let design = design_of(src);
+    let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("{:?}\n{src}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
+    (0..design.expr_count()).filter_map(|i| types.width(piperine_lang::pom::ExprId(i as u32))).collect()
+}
+
+#[test]
+fn composite_carriers_type_check() {
+    // §2 table and rules 2, 5, 6: a tuple, an array, an `Option`, a derived struct and a derived
+    // payload enum have a `Repr`, so each is a carried type; `T::WIDTH` is the table's count.
+    let items = "#[derive(Repr, PartialEq)]\nstruct Pair { a: u3, b: bool }\n\
+                 #[derive(Repr, PartialEq)]\nenum Tx { Idle, Start, Data { n: u3 }, Stop }\n\
+                 #[derive(Repr)]\n#[repr(u4)]\nenum Wide { A, B(u2, bool) }";
+    for carried in ["(u8, bool)", "[u4; 3]", "Option<u8>", "Pair", "Tx", "Option<Pair>", "[(u2, bool); 2]", "Wide"] {
+        let src = format!("{items}\nmodule Top() {{ signal s: Bit<{carried}>; }}");
+        assert_clean_module(&src, carried);
+    }
+    // WIDTH: tuple/array/Option sums by the table; `Tx` is a 2-level tag and a 3-level payload
+    // (the Resolution under §2 rule 6); `Wide` is the `#[repr(u4)]` tag and its widest payload.
+    let body = "let a = Pair::WIDTH; let b = Tx::WIDTH; let c = Wide::WIDTH;";
+    assert_eq!(widths(&source(items, body)), [4, 5, 7]);
+}
+
+/// The source, a module, checks clean; `what` names the case.
+fn assert_clean_module(src: &str, what: &str) {
+    let design = standard_design_of(src);
+    if let Err(found) = Types::check(&design, "Top") {
+        panic!("{what}: {:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+    }
+}
+
+#[test]
+fn deriving_repr_with_a_field_without_repr_is_e0110() {
+    // §2 rule 3: `#[derive(Repr)]` needs every field to have a `Repr`, naming the field: a `str`, a
+    // struct that does not derive it, a tuple that holds one, a variant field of an enum.
+    let plain = "struct Plain { x: u8 }";
+    for (items, field) in [
+        ("#[derive(Repr)]\nstruct S { name: str }", "name"),
+        (&format!("{plain}\n#[derive(Repr)]\nstruct S {{ inner: Plain }}"), "inner"),
+        (&format!("{plain}\n#[derive(Repr)]\nstruct S {{ pair: (u8, Plain) }}"), "pair"),
+        ("#[derive(Repr)]\nenum E { A, B { text: str } }", "text"),
+    ] {
+        let used = source(&format!("{items}\nfn f(v: {}) {{}}", if items.contains("enum E") { "E" } else { "S" }), "let h = f;");
+        assert_refused(&used, "E0110", &format!("`{field}`"));
+    }
+}
+
+#[test]
+fn a_carried_type_without_repr_is_e0112() {
+    // §2 table: a type without a `Repr` is E0112 as a carried type, whatever holds it.
+    let items = "struct Plain { x: u8 }\n#[derive(Repr)]\nstruct Good { x: u8 }";
+    for carried in ["Plain", "(u8, str)", "[str; 2]", "Option<Plain>", "[Plain; 2]"] {
+        let src = format!("{items}\nmodule Top() {{ signal s: Bit<{carried}>; }}");
+        let design = standard_design_of(&src);
+        let found = Types::check(&design, "Top").err().unwrap_or_default();
+        assert!(found.iter().any(|d| d.diagnostic.code == "E0112"), "{carried}: {:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    }
+}

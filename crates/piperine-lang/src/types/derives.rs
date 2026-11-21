@@ -9,6 +9,7 @@
 use crate::msl::Span;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FileId, Resolution};
 
+use super::aggregate::FieldType;
 use super::check::Checker;
 use super::Ty;
 
@@ -146,5 +147,69 @@ impl Checker<'_> {
         self.require_trait(file, span, &ty, DerivedTrait::Default);
         self.defaults.insert(expr, ty.clone());
         Some(Some(ty))
+    }
+}
+
+impl Checker<'_> {
+    /// The number of levels of `ty`'s `Repr` (§2 table): the built-in layouts, a tuple, an array and
+    /// an `Option` over parts that have one, a struct or an enum that derives `Repr`. `None` for a
+    /// type without `Repr`.
+    pub(super) fn repr_levels(&mut self, ty: &Ty) -> Option<u32> {
+        match ty {
+            Ty::Bool | Ty::F64 | Ty::UInt(_) | Ty::Int(_) => ty.levels(self.design),
+            Ty::Tuple(items) => self.repr_sum(items),
+            Ty::Array(element, length) => u32::try_from(*length).ok()?.checked_mul(self.repr_levels(element)?),
+            Ty::Option(inner) => self.repr_levels(inner)?.checked_add(1),
+            Ty::Struct(decl) if self.derives(*decl, "Repr") => {
+                let fields: Vec<Ty> = self.fields_of(*decl)?.into_iter().map(|f| f.ty).collect();
+                self.repr_sum(&fields)
+            }
+            Ty::Enum(decl) => self.enum_levels(*decl),
+            _ => None,
+        }
+    }
+
+    /// The levels of `parts` laid end to end (§2 rule 2); `None` when one has no `Repr`.
+    fn repr_sum(&mut self, parts: &[Ty]) -> Option<u32> {
+        parts.iter().try_fold(0u32, |total, part| total.checked_add(self.repr_levels(part)?))
+    }
+
+    /// The levels of a derived enum: the tag, then the widest payload (§2 rules 2, 5 and 6).
+    fn enum_levels(&mut self, decl: DeclId) -> Option<u32> {
+        if !self.derives(decl, "Repr") {
+            return None;
+        }
+        let variants = self.variants_of(decl);
+        let tag = match self.repr_width(decl) {
+            None => usize::BITS - variants.len().saturating_sub(1).leading_zeros(),
+            Some(Some(width)) => width,
+            Some(None) => return None,
+        };
+        let mut widest = 0u32;
+        for variant in variants {
+            let fields: Vec<Ty> = self.fields_of(variant)?.into_iter().map(|f| f.ty).collect();
+            widest = widest.max(self.repr_sum(&fields)?);
+        }
+        tag.checked_add(widest)
+    }
+
+    /// `#[derive(Repr)]` on `decl` whose fields are `fields` requires every field to have a `Repr`
+    /// (§2 rule 3): a field without one is `E0110` naming it. `false` when one is refused.
+    pub(super) fn judge_repr(&mut self, decl: DeclId, file: FileId, fields: &[FieldType]) -> bool {
+        if !self.derives(decl, "Repr") {
+            return true;
+        }
+        let mut clean = true;
+        for (position, field) in fields.iter().enumerate() {
+            if self.repr_levels(&field.ty).is_some() {
+                continue;
+            }
+            let span = self.design.decl_data(field.decl).span;
+            let name = field.name.clone().unwrap_or_else(|| position.to_string());
+            let ty = field.ty.name(self.design);
+            self.coded(file, "E0110", span, format!("the field `{name}` has type `{ty}`, which has no `Repr`: `#[derive(Repr)]` needs a field that does (§2 rule 3)"), "a field without `Repr`");
+            clean = false;
+        }
+        clean
     }
 }

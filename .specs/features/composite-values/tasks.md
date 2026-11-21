@@ -1146,8 +1146,8 @@ T63
 
 **Done when**:
 
-- [ ] `composite_carriers_type_check`, `deriving_repr_with_a_field_without_repr_is_e0110` and `a_carried_type_without_repr_is_e0112` pass under `**Run typesagg**`
-- [ ] Gate check passes: Quick
+- [x] `composite_carriers_type_check`, `deriving_repr_with_a_field_without_repr_is_e0110` and `a_carried_type_without_repr_is_e0112` pass under `**Run typesagg**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

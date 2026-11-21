@@ -98,11 +98,12 @@ fn carriers_of_bit_are_typed_by_their_value() {
 #[test]
 fn a_carried_type_without_repr_is_e0112() {
     // DIG-04 AC 2 (part I §2): a carried type without `Repr` is `E0112`, at the type: `str`,
-    // `()`, an `Option`, an enum that does not derive `Repr`, and a module.
+    // `()`, an `Option` of one, an enum that does not derive `Repr`, and a module. `Option<u8>` is
+    // carried since composite-values T46 (`composite_carriers_type_check`).
     for (items, carried) in [
         ("", "str"),
         ("", "()"),
-        ("", "Option<u8>"),
+        ("", "Option<str>"),
         ("#[derive(PartialEq)]\nenum Plain { A, B }", "Plain"),
         ("", "Event"),
     ] {

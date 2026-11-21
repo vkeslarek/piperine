@@ -77,22 +77,7 @@ impl Checker<'_> {
         }
         let Some(fields) = self.fields_of(decl) else { return false };
         let types: Vec<Ty> = fields.iter().map(|f| f.ty.clone()).collect();
-        self.reject_str_in_repr(decl, file, &fields) & self.judge_derives(decl, file, span, &types)
-    }
-
-    /// `#[derive(Repr)]` on a struct with a `str` field is `E0110` (§1.2.9): a string has no `Repr`.
-    fn reject_str_in_repr(&mut self, decl: DeclId, file: FileId, fields: &[FieldType]) -> bool {
-        if !self.derives(decl, "Repr") {
-            return true;
-        }
-        let mut clean = true;
-        for field in fields.iter().filter(|f| f.ty == Ty::Str) {
-            let span = self.design.decl_data(field.decl).span;
-            let name = field.name.as_deref().unwrap_or("");
-            self.coded(file, "E0110", span, format!("the field `{name}` has type `str`, which has no `Repr`: `#[derive(Repr)]` needs a field that does (§1.2.9)"), "a field without `Repr`");
-            clean = false;
-        }
-        clean
+        self.judge_repr(decl, file, &fields) & self.judge_derives(decl, file, span, &types)
     }
 
     /// The typed fields of `owner`, a struct or an enum variant, typed on the first call and kept.

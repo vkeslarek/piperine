@@ -8,6 +8,7 @@
 use crate::msl::Span;
 use crate::pom::{AttrArgNode, AttrInputNode, DeclId, DeclKind, FieldsForm, FileId};
 
+use super::aggregate::FieldType;
 use super::check::Checker;
 use super::Ty;
 
@@ -64,7 +65,7 @@ impl Checker<'_> {
         let variants = self.variants_of(decl);
         let mut ok = true;
         let mut names: Vec<String> = Vec::new();
-        let mut field_types: Vec<Ty> = Vec::new();
+        let mut typed_fields: Vec<FieldType> = Vec::new();
         for variant in &variants {
             let data = self.design.decl_data(*variant).clone();
             let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
@@ -74,11 +75,12 @@ impl Checker<'_> {
             }
             names.push(name);
             match self.fields_of(*variant) {
-                Some(fields) => field_types.extend(fields.into_iter().map(|f| f.ty)),
+                Some(fields) => typed_fields.extend(fields),
                 None => ok = false,
             }
         }
-        ok && self.judge_tag(decl, &variants, file, span) & self.judge_derives(decl, file, span, &field_types)
+        let field_types: Vec<Ty> = typed_fields.iter().map(|f| f.ty.clone()).collect();
+        ok && self.judge_tag(decl, &variants, file, span) & self.judge_repr(decl, file, &typed_fields) & self.judge_derives(decl, file, span, &field_types)
     }
 
     /// The tag of the enum `decl` (§2 rule 5): `#[repr(uN)]` gives `N` levels, else
@@ -137,7 +139,7 @@ impl Checker<'_> {
 
     /// The `N` of `#[repr(uN)]` on `decl`: `None` without the attribute, `Some(None)` for another
     /// argument.
-    fn repr_width(&self, decl: DeclId) -> Option<Option<u32>> {
+    pub(super) fn repr_width(&self, decl: DeclId) -> Option<Option<u32>> {
         let attr = self.design.decl_data(decl).meta.attrs.iter().find(|a| matches!(self.design.path_node(a.path).segments.as_slice(), [only] if only.name.text == "repr"))?;
         let AttrInputNode::List(args) = &attr.input else { return Some(None) };
         let [AttrArgNode::Path(path)] = args.as_slice() else { return Some(None) };
@@ -146,8 +148,8 @@ impl Checker<'_> {
         Some(width)
     }
 
-    /// Whether `ty` is a type a carrier or a record field may hold: `Ty::has_repr`, except an enum
-    /// with a payload, whose carried layout `Repr` of composites (T46) has not given yet.
+    /// Whether `ty` is a scalar or a fieldless enum: what the unknown literal and the flag reads
+    /// take today. A carrier holds any type with a `Repr` (`Checker::repr_levels`).
     pub(super) fn repr_ok(&self, ty: &Ty) -> bool {
         match ty {
             Ty::Enum(decl) => !self.has_payload(*decl),

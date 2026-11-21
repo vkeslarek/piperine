@@ -78,7 +78,7 @@ impl Checker<'_> {
                 self.unsupported(file, node.span, &format!("a carrier of the single-variant enum `{name}` (its tag has zero levels)"));
                 None
             }
-            v if self.repr_ok(&v) => Some(value),
+            v if self.repr_levels(v).is_some() => Some(value),
             other => {
                 let name = other.name(self.design);
                 self.no_repr(file, node.span, &name);
@@ -263,7 +263,7 @@ impl Checker<'_> {
         }
         let file = self.file_of_expr(expr);
         let owner_type = self.path_owner_type(file, node.span, owner.res)?;
-        let levels = owner_type.levels(self.design)?;
+        let levels = self.repr_levels(&owner_type)?;
         self.widths.insert(expr, levels);
         Some(Ty::UInt(32))
     }

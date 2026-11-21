@@ -126,7 +126,7 @@ impl Checker<'_> {
 
     /// `E0701` unless `from` and `to` have the same number of levels (§22.1.3 rule 3).
     fn same_width(&mut self, file: FileId, span: Span, from: &Ty, to: &Ty) -> Option<()> {
-        let (a, b) = (from.levels(self.design)?, to.levels(self.design)?);
+        let (a, b) = (self.repr_levels(from)?, self.repr_levels(to)?);
         if a != b {
             let message = format!("`cast` between `{}` ({a} levels) and `{}` ({b} levels): the widths differ (§22.1.3)", from.name(self.design), to.name(self.design));
             self.coded(file, "E0701", span, message, "widths differ");
@@ -138,7 +138,7 @@ impl Checker<'_> {
     /// `E0702` unless `arg` is a string literal of `0`, `1` and `x`, one character per level of
     /// `value` (§22.1.4 rule 3).
     fn bit_pattern(&mut self, file: FileId, value: &Ty, arg: &Arg) -> Option<()> {
-        let levels = value.levels(self.design)?;
+        let levels = self.repr_levels(value)?;
         let ExprKind::Lit(lit) = &self.design.expr_node(arg.value).kind else {
             let message = "a pattern is a string literal of `0`, `1` and `x` (§22.1.4)".to_string();
             self.coded(file, "E0702", arg.span, message, "not a pattern literal");

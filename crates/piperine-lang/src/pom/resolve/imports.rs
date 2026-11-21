@@ -414,7 +414,8 @@ impl Ctx<'_> {
                 Some(item) => Some((Resolution::Decl(item), true)),
                 None => self.through_bounds(&t.supertraits, name, self.parent_namespace(owner).unwrap_or(from), visiting),
             },
-            DeclKind::Struct(_) => self.associated(owner, name).map(|v| (Resolution::Decl(v), true)).or_else(|| Self::default_member(name)),
+            DeclKind::Struct(_) => self.associated(owner, name).map(|v| (Resolution::Decl(v), true)).or_else(|| builtin_member("Repr", name).map(|member| (Resolution::Builtin(member), true)))
+                .or_else(|| Self::default_member(name)),
             DeclKind::Nature(_) | DeclKind::Module(_) => self.associated(owner, name).map(|v| (Resolution::Decl(v), true)),
             DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) => self.through_bounds(bounds, name, from, visiting),
             _ => None,
