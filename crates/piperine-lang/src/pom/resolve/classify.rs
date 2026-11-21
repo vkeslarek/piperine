@@ -118,13 +118,13 @@ impl Design {
 
     /// Is `decl` a generic parameter with a bound that resolved to nothing?
     /// What it carries is not known then.
-    fn has_unresolved_bound(&self, decl: DeclId) -> bool {
+    pub(super) fn has_unresolved_bound(&self, decl: DeclId) -> bool {
         let DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) = &self.decl_data(decl).kind else { return false };
         bounds.iter().any(|b| self.bound_resolution(*b) == Resolution::Unresolved)
     }
 
     /// Is a type a carrier: a nature or a `Nature`-bounded generic, under arrays and `flip`?
-    fn is_carrier_type(&self, ty: TypeId) -> bool {
+    pub(super) fn is_carrier_type(&self, ty: TypeId) -> bool {
         match self.type_resolution(ty) {
             Resolution::Decl(d) => matches!(self.decl_data(d).kind, DeclKind::Nature(_)) || self.is_nature_generic(d),
             _ => false,

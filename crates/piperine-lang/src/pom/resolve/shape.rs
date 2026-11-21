@@ -1,21 +1,25 @@
 //! Stage 8: structural checks over declarations alone, with no types and no
 //! const evaluation: the shape of an `extern` module (`E0370`), the body rule
-//! of functions (`E0125`) and the fields of a nature (`E0201`). Runs after
-//! classification: a value input is a port the classifier made one.
+//! of functions (`E0125`), the fields of a nature (`E0201`) and the declaration
+//! rules of a bundle (`E0260`, §7). Runs after classification: a value input is
+//! a port the classifier made one.
 
+use super::super::body::TypeKind;
 use super::super::decl::DeclKind;
 use super::super::design::Design;
-use super::super::ids::{DeclId, FileId};
-use super::super::resolution::{NatureKind, PortKind};
-use crate::msl::Diagnostic;
+use super::super::ids::{DeclId, FileId, TypeId};
+use super::super::resolution::{NatureKind, PortKind, Resolution};
 use crate::msl::ast::{Lit, LitKind};
+use crate::msl::{Diagnostic, Span};
 
 /// Every structural error of the design, in declaration order.
 pub(super) fn run(design: &Design) -> Vec<(FileId, Diagnostic)> {
     let mut out = Vec::new();
+    let bundles = BundleShape::new(design);
     for i in 0..design.decl_count() {
         let id = DeclId(i as u32);
         let data = design.decl_data(id);
+        bundles.check(id, &mut out);
         match &data.kind {
             DeclKind::Module(m) if m.abi.is_some() => extern_module(design, id, &mut out),
             DeclKind::Fn(f) => {
@@ -62,6 +66,89 @@ fn extern_module(design: &Design, module: DeclId, out: &mut Vec<(FileId, Diagnos
             DeclKind::Port(p) if p.kind == PortKind::ValueInput => report(item.span, "an `extern` module has no value input".to_string(), "value input"),
             DeclKind::Port(_) => {}
             other => report(item.span, format!("an `extern` module lists params only, not a `{}`", other.label()), "not a param"),
+        }
+    }
+}
+
+/// What a declared type is made of, for the bundle rules of §7.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TypeShape {
+    /// A carrier: a nature, or a `Nature`-bounded generic, under arrays and `flip`.
+    Carrier,
+    /// A bundle: a `struct` the classification flagged.
+    Bundle,
+    /// A value: a builtin, a struct or enum that is no bundle, a tuple, a slice or a reference.
+    Value,
+    /// Unresolved or not yet known: no rule of §7 applies, an earlier error already speaks.
+    Unknown,
+}
+
+/// §7 rule 1: the declaration rules of a bundle that need no types and no const evaluation. A
+/// `struct` with a carrier field (directly or through a bundle field) is a bundle, and every one
+/// of its fields is a carrier, an array of carriers or a bundle.
+struct BundleShape<'design> {
+    /// The classified design the rules read.
+    design: &'design Design,
+}
+
+impl<'design> BundleShape<'design> {
+    /// The rules over `design`.
+    fn new(design: &'design Design) -> Self {
+        BundleShape { design }
+    }
+
+    /// Every bundle rule that applies to the declaration `decl`.
+    fn check(&self, decl: DeclId, out: &mut Vec<(FileId, Diagnostic)>) {
+        let data = self.design.decl_data(decl);
+        if let DeclKind::Struct(s) = &data.kind
+            && s.bundle == Some(true)
+        {
+            self.check_fields_are_carriers(decl, out);
+        }
+    }
+
+    /// What `ty` is made of.
+    fn shape_of(&self, ty: TypeId) -> TypeShape {
+        if self.design.is_carrier_type(ty) {
+            return TypeShape::Carrier;
+        }
+        match self.design.type_resolution(ty) {
+            Resolution::Decl(d) if matches!(&self.design.decl_data(d).kind, DeclKind::Struct(s) if s.bundle == Some(true)) => TypeShape::Bundle,
+            Resolution::Decl(d) if self.design.has_unresolved_bound(d) => TypeShape::Unknown,
+            Resolution::Decl(_) | Resolution::Builtin(_) => TypeShape::Value,
+            Resolution::Unresolved | Resolution::Deferred(_) => match &self.design.type_node(self.design.peel_type(ty)).kind {
+                TypeKind::Tuple(_) | TypeKind::Slice(_) | TypeKind::Ref { .. } => TypeShape::Value,
+                _ => TypeShape::Unknown,
+            },
+        }
+    }
+
+    /// The name and the name's span of a field (a tuple field has none: its whole span).
+    fn field_name(&self, field: DeclId) -> (String, Span) {
+        let data = self.design.decl_data(field);
+        match &data.name {
+            Some(name) => (name.text.clone(), name.span),
+            None => ("(unnamed)".to_string(), data.span),
+        }
+    }
+
+    /// §7 rule 1: a bundle holds carriers, arrays of carriers and bundles only. A field of a value
+    /// type is `E0260`, naming it and a field that is a carrier.
+    fn check_fields_are_carriers(&self, bundle: DeclId, out: &mut Vec<(FileId, Diagnostic)>) {
+        let data = self.design.decl_data(bundle);
+        let typed: Vec<(DeclId, TypeShape)> = data
+            .children
+            .iter()
+            .filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Field(_)))
+            .filter_map(|c| self.design.declared_type(*c).map(|ty| (*c, self.shape_of(ty))))
+            .collect();
+        let Some(carrier) = typed.iter().find(|(_, shape)| matches!(shape, TypeShape::Carrier | TypeShape::Bundle)) else { return };
+        let (carrier_name, _) = self.field_name(carrier.0);
+        let bundle_name = data.name.as_ref().map_or("", |n| n.text.as_str());
+        for (field, _) in typed.iter().filter(|(_, shape)| *shape == TypeShape::Value) {
+            let (name, span) = self.field_name(*field);
+            let message = format!("the bundle `{bundle_name}` mixes the carrier field `{carrier_name}` with the value field `{name}` (§7 rule 1)");
+            out.push((data.file, Diagnostic::new("E0260", message, span, "a value field in a bundle")));
         }
     }
 }

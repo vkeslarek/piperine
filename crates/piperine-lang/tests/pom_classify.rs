@@ -737,11 +737,11 @@ module Top() {
 #[test]
 fn bundle_literal_field_errors_are_e0263() {
     let src = "\
-struct Port2 { hi: Electrical, lo: Electrical, gain: f64 }
+struct Port2 { hi: Electrical, lo: Electrical }
 module Top() {
     signal a: Electrical;
     signal b: Electrical;
-    let ok = Port2 { hi: a, lo: b, gain: 1.0 };
+    let ok = Port2 { hi: a, lo: b };
     let x = Port2 { hi: a, lo: b, zz: 1.0 };
     let y = Port2 { hi: a, hi: b, lo: b };
 }

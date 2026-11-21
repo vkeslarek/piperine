@@ -21,7 +21,7 @@ A name that cannot be resolved is a hole in the navigation, not a failure: the s
 | 5. Names | every path with its lexical scope stack | `PathSegment::res`, `E0161` |
 | 6. Classification | calls, struct expressions, ports, bundles, access calls | `CallClass`, `StructClass`, `PortKind`, `StructData::bundle`, `E0130` |
 | 7. Members | `e.name` and `e.m()` through declared types | `ExprKind::Field::res`, `MethodCall::res`, `E0343` |
-| 8. Shape | the structural checks that read declarations only: `extern` modules, function bodies, nature fields | `E0370`, `E0125`, `E0201` |
+| 8. Shape | the structural checks that read declarations only: `extern` modules, function bodies, nature fields, bundle fields | `E0370`, `E0125`, `E0201`, `E0260` |
 | 9. Index | `references`, `writers`, `instantiated_by` | the [`Index`](model.md#index) |
 
 Diagnostics are sorted by file, then span start, then code after the last stage, so their order
@@ -332,6 +332,7 @@ parser, such as `E0900`) are copied into `Design::diagnostics()` first, with the
 | `E0206` | 6 | `§4` | an access call whose first argument has a declared nature that declares no access of that name; the callee stays `Unresolved` and the call is not a `Probe` | the callee |
 | `E0211` | 7 | `§5.1` | a carrier method (one of B.1, or a function of the element nature's `impl`) called on an array of carriers; the method stays `Unresolved` and `arr[i].m()` resolves | the method name |
 | `E0244` | 7 | `§6` | a node of an instance that is not `pub`, named as the operand of a probe or a contribution (`v(c.x)`, `i(c.x) +> ..`): the module cannot reach it (§6 rule 7); the member is still resolved | the member name |
+| `E0260` | 8 | `§7` | a `struct` that is a bundle (it has a carrier field, directly or through a bundle field) and has a field of a value type (§7 rule 1); the message names that field and a carrier field | the value field's name |
 | `E0263` | 6 | `§7` | a bundle literal that names a field the bundle lacks, or names one twice | the name (the second, when repeated) |
 | `E0320` | 6 | `§8.1` | a param block or a template field list that names no param of the module, or names one twice | the name (the second, when repeated) |
 | `E0330` | 2 | `§8.2` | a name defined more than once in a module (the second is reported, with a label on the first) | the repeated name |

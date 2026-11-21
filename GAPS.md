@@ -369,13 +369,13 @@ does not count.
 
 ## 10. Reference lists
 
-**Error codes of the spec that no source file mentions (48 of 189).** A code counts as mentioned when it is spelled
+**Error codes of the spec that no source file mentions (47 of 189).** A code counts as mentioned when it is spelled
 outside a comment in `crates/*/src` (a literal, or an enum variant's `as_str`); `E0375` is named in a doc
 comment only (`pom/builtin.rs`), so it is on the list. `E0503`, `E0504`, `E0505`, `E0507` and `E0508` are
 raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`). `E0803` to `E0806` are raised
 by `session.rs` and `host.rs`; `E0701` and `E0702` by the elaborator.
 `E0110 E0111 E0122 E0123 E0124 E0126 E0127 E0131 E0132 E0133 E0134 E0181 E0183 E0184
-E0185 E0186 E0187 E0203 E0260 E0261 E0262 E0264 E0313 E0322 E0340 E0342
+E0185 E0186 E0187 E0203 E0261 E0262 E0264 E0313 E0322 E0340 E0342
 E0351 E0360 E0362 E0371 E0372 E0373 E0374 E0375 E0416 E0451 E0452 E0453 E0454
 E0456 E0614 E0703 E0704 E0705 E0706 E0807 E0808 E0809`
 

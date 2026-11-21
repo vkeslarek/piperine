@@ -141,9 +141,9 @@ T21
 
 **Done when**:
 
-- [ ] `a_struct_of_carriers_is_a_bundle` and `a_struct_mixing_carrier_and_value_fields_is_e0260` pass under `**Run pombundles**`
-- [ ] Code clarity: `BundleShape` doc-commented citing §7 rule 1; no free function
-- [ ] Gate check passes: Quick
+- [x] `a_struct_of_carriers_is_a_bundle` and `a_struct_mixing_carrier_and_value_fields_is_e0260` pass under `**Run pombundles**`
+- [x] Code clarity: `BundleShape` doc-commented citing §7 rule 1; no free function
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
