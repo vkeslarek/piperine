@@ -133,20 +133,20 @@ failed `never` record (S10).
 
 ## On demand
 
+`cargo test` skips every target that simulates the buck (each is a `[[test]]` with `test = false`, registered in
+`crates/piperine-lang/tests/suite_hygiene.rs`), so a batch or a task gates on the small integrated suite
+(`cargo test -p piperine --test integrated`). The buck is the strongest oracle and runs by name:
+once at a feature's close, before its merge, for a feature that changes the runtime, the printer, the plan, the solvers
+or the lowering of an existing form, and in every task that edits `examples/buck/**`, `tests/e2e/buck/**` or
+one of these targets. Four lines, one per crate, run all of it:
+
 ```sh
 cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_boundary --test buck_power --test buck_supervisor --test buck_closed_loop
-```
-
-```sh
 cargo test -p piperine-api --test buck_long
-cargo test -p piperine-cli --test buck
-cargo test -p piperine --test buck_scenarios
+cargo test -p piperine-cli --test buck --test book_buck
+cargo test -p piperine --test buck_scenarios --test book_buck
 ```
 
-```sh
-cargo test -p piperine --test book_buck
-```
-
-```sh
-cargo test -p piperine-cli --test book_buck
-```
+They take about half an hour in a debug build (`buck_scenarios` alone 25 to 90 minutes, and six of its tests judge
+the model against SPEC and are red today). To check that they still compile without running them, add
+`--no-run` to each line.

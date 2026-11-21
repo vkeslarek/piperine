@@ -33,6 +33,25 @@ fn the_buck_readme_says_how_to_run_it() {
 }
 
 #[test]
+fn the_buck_readme_says_when_to_run_the_buck_on_demand() {
+    // integrated-tests IT-13 AC 1: the "On demand" block holds the four `cargo test` lines of every
+    // registered target, says that `cargo test` skips them, when they run, and how to only compile them
+    let readme = read("examples/buck/README.md");
+    let block = &readme[readme.find("## On demand").expect("the README has an \"On demand\" block")..];
+    for line in [
+        "cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_boundary --test buck_power --test buck_supervisor --test buck_closed_loop",
+        "cargo test -p piperine-api --test buck_long",
+        "cargo test -p piperine-cli --test buck --test book_buck",
+        "cargo test -p piperine --test buck_scenarios --test book_buck",
+    ] {
+        assert!(block.contains(line), "the block holds `{line}`");
+    }
+    for held in ["`cargo test` skips", "once at a feature's close", "examples/buck/**", "--no-run", "cargo test -p piperine --test integrated"] {
+        assert!(block.contains(held), "the block says `{held}`");
+    }
+}
+
+#[test]
 fn the_buck_readme_points_at_the_scenarios() {
     // buck-scenarios BS-10 AC 1: S2 to S10 run from `tests/buck_scenarios.rs` over `tests/e2e/buck/`
     // through `Session::drive` and `Session::set_at`; the README no longer says `piperine-api` has no

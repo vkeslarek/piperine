@@ -501,9 +501,9 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] `the_buck_readme_says_when_to_run_the_buck_on_demand`, `the_buck_readme_says_how_to_run_it`, `the_buck_readme_points_at_the_scenarios` pass under `Run docs`; `the_buck_readme_names_every_on_demand_target` passes under `Run hygiene`
-- [ ] Gate check passes: the Build line, `Run docs`
-- [ ] Test count: 1 new test
+- [x] `the_buck_readme_says_when_to_run_the_buck_on_demand`, `the_buck_readme_says_how_to_run_it`, `the_buck_readme_points_at_the_scenarios` pass under `Run docs`; `the_buck_readme_names_every_on_demand_target` passes under `Run hygiene`
+- [x] Gate check passes: the Build line, `Run docs`
+- [x] Test count: 1 new test
 
 **Tests**: integration
 **Gate**: build
