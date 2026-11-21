@@ -177,3 +177,54 @@ fn tuples_and_tuple_patterns_type_check() {
     assert_clean(&source("", "let t = (true, 2u8); if let (true, n) = t { let m: u8 = n; } let r = match (true, false) { (true, _) => 1, (false, true) => 2, (false, false) => 3 };"));
     assert_refused(&source("", "let r = match (true, false) { (true, _) => 1, (false, true) => 2 };"), "E0184", "(false, false)");
 }
+
+#[test]
+fn payload_enums_build_and_match() {
+    // §1.3.5 and §1.3.6: a variant has no field, positional fields or named fields, and is built by its
+    // name, a call or a struct expression; the arms bind the fields and join the exhaustiveness of §1.8.6.
+    let items = "#[derive(Repr, Clone, Copy, PartialEq)]\nenum Tx { Idle, Data(u8), Frame { n: u3, last: bool } }\n\
+                 fn size(t: Tx) -> u8 { match t { Tx::Idle => 0, Tx::Data(b) => b, Tx::Frame { n, last: true } => n as u8, Tx::Frame { n, .. } => 1 } }";
+    let src = source(items, "let va = Tx::Idle; let vb = Tx::Data(3); let vc = Tx::Frame { n: 2, last: false }; let s = size(vc);");
+    for name in ["va", "vb", "vc"] {
+        assert_eq!(local_type(&src, name), Ty::Enum(type_decl(&src, "Tx")), "{name}");
+    }
+    assert_eq!(local_type(&src, "s"), Ty::UInt(8));
+    // §1.8.6: a variant left out is named, with its fields as wildcards
+    let missing = "#[derive(Repr)]\nenum Tx { Idle, Data(u8) }\nfn f(t: Tx) -> u8 { match t { Tx::Idle => 0 } }";
+    assert_refused(&source(missing, "let h = f;"), "E0184", "Tx::Data(0..=255)");
+    // `Option` of an aggregate behaves as an enum with a payload
+    assert_clean(&source("struct P { x: f64 }\nfn f(o: Option<P>) -> f64 { match o { Some(P { x }) => x, None => 0.0 } }", "let h = f;"));
+    // a fieldless enum converts to an integer (its discriminant), a payload enum does not
+    assert_clean(&source("#[derive(Repr)]\nenum M { A, B }\nfn f(m: M) -> u8 { m as u8 }", "let h = f;"));
+    // a variant with fields used as a bare name needs its fields
+    assert_refused(&source("#[derive(Repr)]\nenum Tx { Idle, Data(u8) }", "let t = Tx::Data;"), "P0001", "has fields");
+    // a field the variant lacks, and a payload that does not contain the enum (§1.3.8)
+    assert_eq!(support::codes(&support::build(&source("#[derive(Repr)]\nenum Tx { Idle, Frame { n: u3 } }", "let t = Tx::Frame { m: 1 };"))), ["E0186"]);
+    assert_refused(&source("#[derive(Repr)]\nenum L { Nil, Cons(u8, L) }\nfn f(l: L) {}", "let h = f;"), "E0186", "contains itself");
+}
+
+#[test]
+fn a_discriminant_that_does_not_fit_or_repeats_is_e0111() {
+    // §1.3.7 and §2 rule 5: explicit discriminants count from 0 in order unless written, must fit the
+    // tag's levels (`N` of `#[repr(uN)]`, else `ceil(log2(V))`) and are never repeated.
+    let clean = "#[derive(Repr)]\n#[repr(u8)]\nenum Op { Add = 0, Sub = 1, Mul = 0x80 }\nfn f(o: Op) -> u8 { o as u8 }";
+    assert_clean(&source(clean, "let h = f;"));
+    let narrow = "#[derive(Repr)]\n#[repr(u2)]\nenum Op { A = 0, B = 4 }\nfn f(o: Op) {}";
+    assert_refused(&source(narrow, "let h = f;"), "E0111", "does not fit");
+    let repeated = "#[derive(Repr)]\n#[repr(u8)]\nenum Op { A = 1, B = 1 }\nfn f(o: Op) {}";
+    assert_refused(&source(repeated, "let h = f;"), "E0111", "`B` has the discriminant 1");
+    // an implicit discriminant is the one before plus one: `B = 0` then `C` is 1 again
+    let implicit = "#[derive(Repr)]\n#[repr(u8)]\nenum Op { A = 1, B = 0, C }\nfn f(o: Op) {}";
+    assert_refused(&source(implicit, "let h = f;"), "E0111", "`C` has the discriminant 1");
+    // without `#[repr]` the tag has `ceil(log2(V))` levels: two variants, one level, so 2 does not fit
+    let tag = "#[derive(Repr)]\nenum Op { A, B = 2 }\nfn f(o: Op) {}";
+    assert_refused(&source(tag, "let h = f;"), "E0111", "1 levels");
+    // §1.3.7: a discriminant only where no variant has a field
+    let fields = "#[derive(Repr)]\nenum Op { A = 0, B(u8) }\nfn f(o: Op) {}";
+    assert_refused(&source(fields, "let h = f;"), "E0186", "has a discriminant");
+    // §1.3.2: variant names are distinct
+    let twice = "#[derive(Repr)]\nenum Op { A, A }\nfn f(o: Op) {}";
+    assert_refused(&source(twice, "let h = f;"), "E0186", "declared twice");
+    // a one-variant enum has a tag of no levels, its only discriminant is 0
+    assert_clean(&source("#[derive(Repr)]\nenum One { Only }\nfn f(o: One) {}", "let h = f;"));
+}

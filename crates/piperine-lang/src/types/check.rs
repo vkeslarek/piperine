@@ -121,6 +121,8 @@ pub(super) struct Checker<'d> {
     pub(super) call_expected: Option<(ExprId, Ty)>,
     /// The typed fields of each struct and each enum variant typed so far (`aggregate.rs`).
     pub(super) layouts: BTreeMap<DeclId, Vec<super::aggregate::FieldType>>,
+    /// The enums whose variants are typed (`enums.rs`).
+    pub(super) declared: BTreeSet<DeclId>,
     /// The structs and enums whose fields are being typed: meeting one again is a type that
     /// contains itself (§1.3.8).
     pub(super) declaring: BTreeSet<DeclId>,
@@ -174,6 +176,7 @@ impl<'d> Checker<'d> {
             classes: BTreeMap::new(),
             call_expected: None,
             layouts: BTreeMap::new(),
+            declared: BTreeSet::new(),
             declaring: BTreeSet::new(),
             broken: BTreeSet::new(),
             queued: BTreeSet::new(),

@@ -20,6 +20,13 @@ pub(super) struct Bound {
     pub(super) ty: Ty,
 }
 
+impl Bound {
+    /// The name `name` bound to a value of type `ty`.
+    pub(super) fn new(name: String, ty: Ty) -> Self {
+        Bound { name, ty }
+    }
+}
+
 /// What matching one pattern against a value covers of it and binds.
 #[derive(Debug, Clone)]
 pub(super) struct Matched {
@@ -75,6 +82,8 @@ impl Checker<'_> {
             }
             PatKind::Or(alternatives) => self.or_pattern(file, node.span, alternatives, scrut),
             PatKind::Tuple(pats) => self.tuple_pattern(file, node.span, pats, scrut),
+            PatKind::TupleStruct { path, pats } => self.constructor_pattern(file, node.span, *path, pats, scrut),
+            PatKind::Struct { path, fields, rest } => self.struct_pattern(file, node.span, *path, fields, *rest, scrut),
             other => {
                 self.unsupported(file, node.span, &format!("{} as a pattern", Unsupported::pat(other)));
                 None

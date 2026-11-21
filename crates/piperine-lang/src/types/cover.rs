@@ -21,6 +21,8 @@ pub(super) enum Covers {
     All,
     /// One variant of an enum, without fields.
     Variant(DeclId),
+    /// One variant with fields, with what each field covers.
+    Constructor(DeclId, Vec<Covers>),
     /// A tuple, a struct or an array, with what each field or element covers.
     Product(Vec<Covers>),
     Bool(bool),
@@ -174,6 +176,7 @@ impl<'d> Coverage<'d> {
             let sub = Self::specialize(rows, |c| match c {
                 Covers::All => vec![vec![Covers::All; arity]],
                 Covers::Variant(v) if *v == variant => vec![vec![]],
+                Covers::Constructor(v, cells) if *v == variant && cells.len() == arity => vec![cells.clone()],
                 _ => vec![],
             });
             let columns: Vec<Ty> = fields.iter().map(|f| f.ty.clone()).chain(rest.iter().cloned()).collect();

@@ -22,6 +22,7 @@ mod continuity;
 mod control;
 mod cover;
 mod definition;
+mod enums;
 mod event;
 mod exits;
 mod expr;

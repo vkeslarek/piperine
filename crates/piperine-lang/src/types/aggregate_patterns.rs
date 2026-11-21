@@ -3,12 +3,30 @@
 //! variant or a tuple are columns of the coverage judgement (`cover.rs`).
 
 use crate::msl::Span;
-use crate::pom::{FileId, PatId, PatKind};
+use crate::pom::{DeclId, DeclKind, FieldPatNode, FileId, PatId, PatKind, PathId, Resolution};
 
 use super::check::Checker;
 use super::cover::Covers;
 use super::patterns::{Bound, Matched};
 use super::Ty;
+
+/// How the covers of one pattern's fields make the cover of the whole: a tuple, a struct and an
+/// array are a product of their fields, a variant is a constructor over its own.
+#[derive(Clone, Copy)]
+enum Shape {
+    Fields,
+    Variant(DeclId),
+}
+
+impl Shape {
+    /// The cover of the pattern whose fields cover `cells`.
+    fn cover(self, cells: Vec<Covers>) -> Covers {
+        match self {
+            Shape::Fields => Covers::Product(cells),
+            Shape::Variant(variant) => Covers::Constructor(variant, cells),
+        }
+    }
+}
 
 /// The most rows one pattern of alternatives expands into before the coverage gives up listing
 /// them (`Covers::Opaque`): an or-pattern in every field multiplies.
@@ -24,7 +42,71 @@ impl Checker<'_> {
         };
         let columns = self.positions(file, span, pats, items.len())?;
         let (parts, bound) = self.fields_matched(file, span, &columns, items)?;
-        Some(Matched::new(Self::product(&parts), bound))
+        Some(Matched::new(Self::product(&parts, Shape::Fields), bound))
+    }
+
+    /// `P(a, b)` and `Tx::Data(a)` (§1.6.5): a tuple struct or a variant with positional fields.
+    pub(super) fn constructor_pattern(&mut self, file: FileId, span: Span, path: PathId, pats: &[PatId], scrut: &Ty) -> Option<Matched> {
+        let (owner, shape) = self.constructor_of(file, span, path, scrut)?;
+        let layout = self.fields_of(owner)?;
+        if layout.iter().any(|f| f.name.is_some()) {
+            self.mismatch_text(file, span, "a pattern with the fields' names", "a positional pattern");
+            return None;
+        }
+        let columns = self.positions(file, span, pats, layout.len())?;
+        let types: Vec<Ty> = layout.iter().map(|f| f.ty.clone()).collect();
+        let (parts, bound) = self.fields_matched(file, span, &columns, &types)?;
+        Some(Matched::new(Self::product(&parts, shape), bound))
+    }
+
+    /// `P { x, y: py, .. }` and `Tx::Data { n }` (§1.6.6): each field named once; a field left out
+    /// needs `..`, else `E0184`.
+    pub(super) fn struct_pattern(&mut self, file: FileId, span: Span, path: PathId, fields: &[FieldPatNode], rest: bool, scrut: &Ty) -> Option<Matched> {
+        let (owner, shape) = self.constructor_of(file, span, path, scrut)?;
+        let layout = self.fields_of(owner)?;
+        let mut columns: Vec<Option<&FieldPatNode>> = vec![None; layout.len()];
+        for field in fields {
+            let at = match field.res {
+                Resolution::Decl(decl) => layout.iter().position(|f| f.decl == decl),
+                _ => layout.iter().position(|f| f.name.as_deref() == Some(field.name.text.as_str())),
+            };
+            match at {
+                Some(i) if columns[i].is_none() => columns[i] = Some(field),
+                Some(_) => {
+                    self.coded(file, "E0184", field.span, format!("the field `{}` is named twice in one pattern (§1.6.6)", field.name.text), "named twice");
+                    return None;
+                }
+                None => {
+                    let of = scrut.name(self.design);
+                    self.coded(file, "E0186", field.span, format!("{of} has no field `{}` (§1.6.6)", field.name.text), "no such field");
+                    return None;
+                }
+            }
+        }
+        let left_out: Vec<String> = layout.iter().zip(&columns).filter(|(_, c)| c.is_none()).filter_map(|(f, _)| f.name.as_deref()).map(|n| format!("`{n}`")).collect();
+        if !rest && !left_out.is_empty() {
+            self.coded(file, "E0184", span, format!("this pattern leaves out the field {}: name it, or end the pattern with `..` (§1.6.6)", left_out.join(", ")), "field left out");
+            return None;
+        }
+        let mut parts = Vec::new();
+        let mut matched = Vec::new();
+        for (field, column) in layout.iter().zip(&columns) {
+            let part = match column {
+                None => Matched::covering(Covers::All),
+                Some(node) => match (node.pat, node.binding) {
+                    (Some(pat), _) => self.pattern(file, pat, &field.ty)?,
+                    (None, Some(binding)) => {
+                        self.locals.insert(binding, field.ty.clone());
+                        Matched::new(vec![Covers::All], vec![Bound::new(node.name.text.clone(), field.ty.clone())])
+                    }
+                    (None, None) => Matched::covering(Covers::All),
+                },
+            };
+            parts.push(part.covers.clone());
+            matched.push(part);
+        }
+        let bound = self.merge_bound(file, span, matched)?;
+        Some(Matched::new(Self::product(&parts, shape), bound))
     }
 
     // ---- helpers ---------------------------------------------------------------------------
@@ -87,9 +169,9 @@ impl Checker<'_> {
         Some(all)
     }
 
-    /// Every combination of the alternatives of each column, each as one `Covers::Product`;
+    /// Every combination of the alternatives of each column, each as one `Covers` made by `wrap`;
     /// past [`MOST_ROWS`] combinations the coverage is not listed.
-    fn product(columns: &[Vec<Covers>]) -> Vec<Covers> {
+    fn product(columns: &[Vec<Covers>], shape: Shape) -> Vec<Covers> {
         let mut rows: Vec<Vec<Covers>> = vec![Vec::new()];
         for alternatives in columns {
             if rows.len().saturating_mul(alternatives.len().max(1)) > MOST_ROWS {
@@ -97,7 +179,24 @@ impl Checker<'_> {
             }
             rows = rows.iter().flat_map(|row| alternatives.iter().map(move |a| row.iter().cloned().chain(std::iter::once(a.clone())).collect())).collect();
         }
-        rows.into_iter().map(Covers::Product).collect()
+        rows.into_iter().map(|cells| shape.cover(cells)).collect()
     }
 
+    /// The declaration owning the fields a struct or variant pattern names, and how its coverage is
+    /// made: the struct's `Product`, a variant's `Constructor`. The scrutinee must be the type.
+    fn constructor_of(&mut self, file: FileId, span: Span, path: PathId, scrut: &Ty) -> Option<(DeclId, Shape)> {
+        let Some(Resolution::Decl(target)) = self.design.path_node(path).segments.last().map(|s| s.res) else {
+            self.unsupported(file, span, "a pattern naming something that is no struct or variant");
+            return None;
+        };
+        let (ty, owner) = self.constructed_type(target, file, span)?;
+        if ty != *scrut {
+            self.mismatch(file, span, scrut, &ty);
+            return None;
+        }
+        match self.design.decl_data(target).kind {
+            DeclKind::Struct(_) => Some((owner, Shape::Fields)),
+            _ => Some((owner, Shape::Variant(owner))),
+        }
+    }
 }

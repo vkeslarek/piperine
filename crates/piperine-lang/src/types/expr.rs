@@ -71,7 +71,7 @@ impl Checker<'_> {
                 ExprKind::Loop { body } => self.loop_expr(body, Some(expected)),
                 // `Unknown` where a carried type is expected (§3.3.1: of any `Repr` type). `analog`
                 // computes with known reals (§3.3.5): there it is refused by name.
-                ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Unknown) && expected.has_repr() && self.context != Context::Analog => Some(expected.clone()),
+                ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Unknown) && self.repr_ok(expected) && self.context != Context::Analog => Some(expected.clone()),
                 // `None` and `Some(e)` where an `Option<T>` is expected.
                 ExprKind::Path(_) if matches!(expected, Ty::Option(_)) && self.is_none_literal(expr) => Some(expected.clone()),
                 ExprKind::Call { args, .. } if matches!(self.callee_resolution_of_call(expr), Some(Resolution::Builtin(id)) if id.info().name == "Some") => match expected {
@@ -365,6 +365,13 @@ impl Checker<'_> {
         let source = self.infer(operand);
         let target = target?;
         let numeric = |t: &Ty| t.is_integer() || *t == Ty::F64;
+        // §1.3.7: an enum without fields converts to an integer type; its value is the discriminant.
+        if let Some(Ty::Enum(decl)) = &source
+            && target.is_integer()
+            && !self.has_payload(*decl)
+        {
+            return Some(target);
+        }
         if let Some(source) = source
             && !(numeric(&target) && (numeric(&source) || (source == Ty::Bool && target.is_integer())))
         {

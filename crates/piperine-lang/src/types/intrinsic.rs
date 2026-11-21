@@ -116,7 +116,7 @@ impl Checker<'_> {
     /// `ty` as the `Repr` type a call works at: `None` after a diagnostic when it has none.
     fn value_type(&mut self, file: FileId, span: Span, ty: Option<Ty>) -> Option<Ty> {
         let ty = ty?;
-        if !ty.has_repr() {
+        if !self.repr_ok(&ty) {
             let message = format!("`{}` has no `Repr`: this function of §22.1 works on a type that implements it (part I §2)", ty.name(self.design));
             self.coded(file, "E0112", span, message, "no `Repr`");
             return None;

@@ -78,7 +78,7 @@ impl Checker<'_> {
                 self.unsupported(file, node.span, &format!("a carrier of the single-variant enum `{name}` (its tag has zero levels)"));
                 None
             }
-            v if v.has_repr() => Some(value),
+            v if self.repr_ok(&v) => Some(value),
             other => {
                 let name = other.name(self.design);
                 self.no_repr(file, node.span, &name);
@@ -212,7 +212,7 @@ impl Checker<'_> {
     /// The flag read `builtin` applied to a receiver of type `recv_ty`: its result type, or
     /// `None` when the receiver's type has no such read (`high` is the read of a `Bit`).
     pub(super) fn flag_read(&mut self, expr: ExprId, builtin: Builtin, recv_ty: &Ty, args: &[Arg]) -> Option<Option<Ty>> {
-        if !recv_ty.has_repr() || (builtin == Builtin::High && *recv_ty != Ty::Bool) {
+        if !self.repr_ok(recv_ty) || (builtin == Builtin::High && *recv_ty != Ty::Bool) {
             return None;
         }
         let (params, result) = match builtin {
