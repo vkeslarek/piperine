@@ -4,7 +4,7 @@
 use crate::spec::*;
 
 /// Where the converter is (SPEC §8).
-#[derive(Repr, Clone, Copy, PartialEq)]
+#[derive(Repr, PartialEq)]
 pub enum Mode {
     /// Not switching: disabled, or Vin below UVLO.
     Off,
@@ -18,7 +18,7 @@ pub enum Mode {
 
 /// The cause of the last hiccup (SPEC §8.5). It is latched on entry to `Hiccup` and cleared when
 /// a retry reaches `Regulate`.
-#[derive(Repr, Clone, Copy, PartialEq)]
+#[derive(Repr, PartialEq)]
 pub enum Fault { Clear, OverCurrent, OverVoltage }
 
 /// True when `meas` is inside `reference ± reference / 16` (SPEC §8.6).

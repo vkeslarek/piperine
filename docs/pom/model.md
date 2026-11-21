@@ -1213,7 +1213,7 @@ The arguments of an attribute.
 | --- | --- | --- |
 | `None` | — | `#[path]`. |
 | `Eq` | `(ExprId)` | `#[doc = "text"]` |
-| `List` | `(Vec<AttrArgNode>)` | `#[derive(Repr, Clone)]`, `#[link("x.osdi", model = "bsim4")]` |
+| `List` | `(Vec<AttrArgNode>)` | `#[derive(Repr, PartialEq)]`, `#[link("x.osdi", model = "bsim4")]` |
 
 ### `AttrArgNode`
 
