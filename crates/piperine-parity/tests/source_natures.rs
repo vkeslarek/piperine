@@ -13,7 +13,7 @@ use std::rc::Rc;
 use piperine_api::{Cell, Field, Overrides, Project as HostProject, Record, RecordSink, Session, Streams};
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::project::Project;
-use piperine_solver::prelude::{AcSweepAnalysisOptions, Context, NodeIdentifier};
+use piperine_solver::prelude::{AcSweepAnalysisOptions, AnalogVariable, Context, NodeIdentifier};
 use piperine_solver::protocol::AnalysisKind;
 use piperine_transpile::Settings;
 
@@ -65,6 +65,13 @@ impl Model {
         let mut running = self.project.compile(top).unwrap_or_else(|r| panic!("{r}"));
         let node = Model::node(&running.ir, top, name);
         running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves").get_node(&node).expect("a node voltage")
+    }
+
+    /// Every branch current of the bench `top` at its operating point: the variable and its value.
+    fn branch_currents(&self, top: &str) -> Vec<(String, f64)> {
+        let mut running = self.project.compile(top).unwrap_or_else(|r| panic!("{r}"));
+        let solved = running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves");
+        solved.values().iter().filter(|(variable, _)| matches!(variable.as_ref(), AnalogVariable::Branch(_))).map(|(variable, value)| (format!("{variable:?}"), *value)).collect()
     }
 
     /// `|v(<name>)|` of the bench `top` at each frequency of a sweep of `steps` points.
@@ -189,10 +196,18 @@ fn a_project_nature_carrier_connects_to_a_port_of_the_same_nature() {
 fn a_signal_flow_node_with_one_driver_solves_and_loads_nothing() {
     // §6 rule 2: the one potential driver forces `v(a)` = 1.5 V and a signal-flow node has no flow, so
     // the readers (two gains, whose own nodes `b` and `c` are driven by them) change nothing: `v(a)`
-    // is the driver's 1.5 V with one reader or with two, and `v(b)` = k * 1.5 V.
+    // is the driver's 1.5 V with one reader or with two, and `v(b)` = k * 1.5 V. Nothing draws flow
+    // from the driver either: every branch current is 0 A.
     let chain = Model::of("gain_chain.msl");
     for (top, node, expected) in [("GainBench", "a", 1.5), ("LoadlessBench", "a", 1.5), ("LoadlessBench", "b", 2.0 * 1.5), ("LoadlessBench", "c", 7.0 * 1.5)] {
         ToleranceContract::DC_VOLTAGE.assert(&Point::new("signal flow", &format!("v({node})"), Coordinate::OperatingPoint), expected, chain.operating_point(top, node));
+    }
+    // No flow: a node that one driver forces and two readers probe carries no current, so the
+    // branch of the driver (and of each reader's own driven node) holds 0 A.
+    let currents = chain.branch_currents("LoadlessBench");
+    assert_eq!(currents.len(), 3, "one branch per potential contribution: {currents:?}");
+    for (branch, current) in currents {
+        ToleranceContract::DC_CURRENT.assert(&Point::new("signal flow", &format!("i({branch})"), Coordinate::OperatingPoint), 0.0, current);
     }
 }
 
