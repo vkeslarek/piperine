@@ -141,7 +141,7 @@ second `Dump`), 1 V at 13.0 µs (inside `Fault`). Timeline (τ = 1.001 µs throu
 `Hold` 3.05, `Dump` 4.05, `Charge` 6.05, `Hold` 8.05, `Dump` 9.05, `Charge` 11.05 (to 2 V: crosses 0.91 V at
 ≈ 11.596 µs), `Fault` at 11.75 (second edge with `ov`), dump discharges below 0.89 V, `Charge` (retry) at
 14.75 with 1 V (peak ≈ 0.872 V, no trip, `fault` back to `Clear` at 16.75), `Hold` 16.75, `Dump` 17.75,
-`Charge` 19.75. Twelve `phase` records. Every instant above is what the reference computes; the tests
+`Charge` 19.75, `Hold` 21.75 (the run ends at 22). Thirteen `phase` records (a first derivation counted twelve and stopped at 19.75). Every instant above is what the reference computes; the tests
 compare to the reference, never to this table.
 
 ### `pi_loop`

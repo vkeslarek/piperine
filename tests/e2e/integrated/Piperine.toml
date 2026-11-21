@@ -35,3 +35,14 @@ max_step = 1e-8
 print_step = 1e-8
 print = ["PwmFilter.hs", "PwmFilter.ls", "PwmFilter.filtered"]
 streams = ["checks"]
+
+# A 10 MHz sequencer over a capacitor and two switches; the host raises `en` and steps the source to 2 V and
+# back. 220 clock periods, a row every 100 ns.
+[run.state_machine]
+top = "StateMachine"
+analysis = "transient"
+stop = 22e-6
+max_step = 1e-8
+print_step = 1e-7
+print = ["StateMachine.cap", "StateMachine.phase", "StateMachine.fault", "StateMachine.charge", "StateMachine.dump", "StateMachine.en", "StateMachine.ov"]
+streams = ["phase", "trips"]

@@ -19,6 +19,7 @@ mod package;
 mod pwm_filter;
 mod rc;
 mod sample_hold;
+mod state_machine;
 mod suite;
 mod table;
 mod threshold;

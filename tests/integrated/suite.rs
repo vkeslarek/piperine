@@ -12,6 +12,7 @@ use piperine_transpile::Settings;
 
 use crate::pwm_filter::PwmFilterScenario;
 use crate::sample_hold::SampleHoldScenario;
+use crate::state_machine::StateMachineScenario;
 use crate::threshold::ThresholdScenario;
 
 /// The scenario package `tests/e2e/integrated/` and what its tests ask of it.
@@ -19,7 +20,7 @@ pub struct IntegratedPackage;
 
 impl IntegratedPackage {
     /// The runs the package declares so far, sorted by name; a scenario adds its own.
-    pub const RUNS: [&'static str; 3] = ["pwm_filter", "sample_hold", "threshold"];
+    pub const RUNS: [&'static str; 4] = ["pwm_filter", "sample_hold", "state_machine", "threshold"];
 
     /// The directory of the package.
     pub fn dir() -> PathBuf {
@@ -85,7 +86,7 @@ impl Suite {
 
     /// The runs of the scenarios, each with its stimulus; a scenario adds its own.
     fn plan() -> Vec<(&'static str, Stimulus)> {
-        vec![Suite::entry::<PwmFilterScenario>(), Suite::entry::<SampleHoldScenario>(), Suite::entry::<ThresholdScenario>()]
+        vec![Suite::entry::<PwmFilterScenario>(), Suite::entry::<SampleHoldScenario>(), Suite::entry::<StateMachineScenario>(), Suite::entry::<ThresholdScenario>()]
     }
 
     /// The plan entry of the scenario `S`: its run and its stimulus.

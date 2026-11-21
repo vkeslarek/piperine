@@ -8,11 +8,15 @@ pub mod pwm_filter;
 
 pub mod sample_hold;
 
+pub mod state_machine;
+
 pub mod threshold;
 
 pub use crate::pwm_filter::PwmFilter;
 
 pub use crate::sample_hold::SampleHold;
+
+pub use crate::state_machine::StateMachine;
 
 pub use crate::threshold::Threshold;
 
