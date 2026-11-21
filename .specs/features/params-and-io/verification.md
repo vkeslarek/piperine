@@ -1,7 +1,7 @@
 # Params and I/O verification (B1 to B4)
 
-**Verdict**: FAIL
-**Proofs**: `proofs.md` at a28fdf9b (B1 to B4: every in-scope check passes; the 52 failing rows are the B5/B6 checks, whose tests do not exist yet, and `Run sourcetables`, a target T41 creates)
+**Verdict**: PASS (B1 to B4; B5 and B6 deferred, so the gate cannot exit 0 until they land)
+**Proofs**: `proofs.md` at 0bed6a92 (fix round; first run a28fdf9b) (B1 to B4: every in-scope check passes; the 52 failing rows are the B5/B6 checks, whose tests do not exist yet, and `Run sourcetables`, a target T41 creates)
 **Verifier**: independent sub-agent (author != verifier)
 **Scope**: batches B1 to B4 (T1 to T28) only. B5 and B6 (T29 to T44: integer, enum and `Option` params, `E0122` for named functions, `parse_table`, `parse_hex`, `table_model`) wait on `composite-values` and are marked "deferred", not judged; `validate_verification.py` cannot pass until they land.
 
@@ -86,18 +86,18 @@ line is `parity_tran`'s test of the skip message itself).
 | C24 | `typesvalues` `a_param_hiding_a_function_is_e0180_with_a_note_at_the_function` | yes |
 | C25 | `clibook` `no_book_listing_prints_p0002` | yes |
 | C26 | `typesvalues` `an_as_between_types_without_a_row_is_e0182` | yes |
-| C27 | `typesvalues` `a_call_through_a_function_value_with_the_wrong_arity_is_e0141` | partly - holds for a function value and a method call; PI-06 AC 6 also names a probe and a builtin, which still give `E0180` (F1) |
+| C27 | `typesvalues` `a_call_through_a_function_value_with_the_wrong_arity_is_e0141` | yes - after F1: a function value, a method call and a probe of three nodes are `E0141` |
 | C28 | `elabvalues` `a_const_reading_a_run_value_is_e0188` | yes |
 | C29 | `apisources` `a_dc_source_sets_the_port_at_the_operating_point` | yes |
 | C30 | `apisources` `a_pwl_source_lands_on_every_corner` | yes - corners 2, 5, 6 us are off the 0.3 us step grid; a missed corner interpolates to ~0.97 V and fails the 1e-6 bound |
 | C31 | `sourcehost` `a_host_driven_rc_matches_ac_rc_in_ac` | yes - ngspice ran (no SKIP); `AC_MAGNITUDE`, `AC_PHASE` unchanged |
-| C32 | `apisources` `a_timed_source_change_is_a_jump` | partly - rows every 0.5 us and 1.9 to 2.1 us skipped, so a change anywhere in (1.5, 2.5) us passes (F3) |
+| C32 | `apisources` `a_timed_source_change_is_a_jump` | yes - after F3: 10 ns rows pin 1 V before and 3 V after 2 us |
 | C33 | `apisources` `an_undriven_node_port_is_e0810` | yes |
 | C34 | `elabentry` `a_top_value_input_is_e0811` | yes |
 | C35 | `elabentry` `a_top_value_input_is_e0811` | yes - Q1 is (a); same test as C34 |
 | C36 | `spectext` `the_host_drives_a_tops_node_ports_e0810_e0811` | yes |
 | C37 | `elabfiles` `include_str_reads_the_file_beside_the_source` | yes |
-| C38 | `typesvalues` `include_str_outside_a_const_is_e0610` | partly - one position (an `analog` let) asserted with `contains`; probes at HEAD (param default, module `let`, `fn` body) all give `E0610`, so the rule holds (F4) |
+| C38 | `typesvalues` `include_str_outside_a_const_is_e0610` | yes - after F4: exactly `E0610` over an `analog` let, a module `let`, a param default and a `fn` body |
 | C39 | `elabfiles` `an_unreadable_file_is_e0612_naming_the_path` | yes |
 | C40 | `elabfiles` `a_file_that_is_not_utf8_is_e0613_with_the_offset` | yes |
 | C41 | `elabfiles` `a_changed_file_needs_a_new_elaboration` | yes - at the `ConstEval` layer the IR is built from |
@@ -117,7 +117,7 @@ line is `parity_tran`'s test of the skip message itself).
 | C55 | `clicommands` `fmt_check_passes_on_every_stdlib_file` | yes |
 | C56 | `clicommands` `fmt_check_passes_in_examples_buck` | yes |
 | C57 | `stdgalleries` `every_gallery_fence_is_in_the_formatters_form` | yes |
-| C58 | `msformat` `formatting_keeps_the_printed_tree_of_every_shipped_source` | no - every shipped file is already a fixed point, so `format(text) == text` and the tree comparison cannot fail; the claim holds by this verification: `piperine fmt` of each origin/main file and fence gives exactly HEAD (19 files, 60 fences) (F5) |
+| C58 | `msformat` `formatting_keeps_the_printed_tree_of_every_shipped_source` | yes - after F5: the pre-format texts of the 21 changed files are formatted, the tree is kept and the output is the shipped file |
 | C59 | `typesvalues` `a_borrow_outside_a_call_argument_is_e0102` | deferred - B5/B6 (T29), not judged |
 | C60 | `runerrors` `a_division_by_zero_under_known_control_fails_the_run_with_e0105` | yes |
 | C61 | `typesvalues` `a_named_emitting_fn_where_emit_is_not_allowed_is_e0122` | deferred - B5/B6 (T36), not judged |
@@ -177,9 +177,25 @@ line is `parity_tran`'s test of the skip message itself).
 
 | Finding | Evidence | Fix | Closed |
 | --- | --- | --- | --- |
-| F1. A wrong argument count on a probe or a builtin is `E0180`, not `E0141` (PI-06 AC 6, design line 55 and the table at line 263) | `v(p, q, gnd)` at HEAD: `E0180` "mismatched types: a probe takes 1 or 2 nodes, found 3"; `types_events.rs:521` asserts `E0180` for `cross()` and `cross(v(p), 1p, 1u, 2u)`; C27's test covers only a function value and a method call | route the probe and core-primitive count checks through `Checker::arity_mismatch` (`E0141` with both counts); assert `E0141` in `types_events.rs:521` and add a probe case to `a_call_through_a_function_value_with_the_wrong_arity_is_e0141` | |
-| F2. A non-exhaustive `match` is `E0180`, but Part I's `E0184` row names that position (PI-06 AC 1: `E0180` only where no other row names it) | `types_compound.rs:282` `a_match_that_is_not_exhaustive_is_e0180` (renamed from `_is_p0002`); `docs/spec/part_i_values.md:639` | raise `E0184` for exhaustiveness (the construct runs today, the amendment's own rule gives such codes here) and rename the test `_is_e0184`; `E0184`'s `code_owners.tsv` row must then leave (composite-values keeps its other forms) - or have the user rule that it waits for `composite-values` and record it in `GAPS.md` | |
-| F3. C32's test does not pin the jump to its time | `host_sources.rs` `a_timed_source_change_is_a_jump`: print step 0.5 us and rows between 1.9 and 2.1 us skipped, so a change anywhere between 1.5 and 2.5 us, or a ramp across that span, passes | print at a step of 1e-8 near 2 us and assert 1 V just before 2 us and 3 V from 2 us on | |
-| F4. C38's test covers one position and accepts extra codes | `types_values.rs` `include_str_outside_a_const_is_e0610`: one `analog` let, `codes_of(&d).contains(..)` | assert `["E0610"]` exactly, over an `analog` let, a module `let`, a param default and a `fn` body (all `E0610` at HEAD) | |
-| F5. C58's test cannot fail: the shipped files are fixed points of the formatter, so formatting them changes nothing | `msl_format.rs` `formatting_keeps_the_printed_tree_of_every_shipped_source` compares `print(format(text))` with `print(text)` where `format(text) == text` (C96, C55, C56) | compare the printed tree of each shipped file with that of its pre-format text: e.g. a test that formats a committed unformatted copy (or the fences' pre-format text) and asserts both trees equal; the claim itself holds (verified: fmt of origin/main == HEAD) | |
-| F6. New code without doc comments, and free functions in new test code (user cleanliness rules) | `elab/host_sources.rs`: `HostSourceExpressions::{emit, binary, param}`, `HostSources::new`, fields `ir`, `origin`, `bodies`; `elab/files.rs`: `IncludedFiles::{texts, reads}`, `FileFault` variant fields; `api/source.rs`: `SegmentSet` fields; tests: free `settings`, `session`, `transient`, `open`, `run`, `piecewise`, `real` (`api/tests/host_sources.rs`, most undocumented), `fixture`, `design_of`, `constant` (`elab_files.rs`), `host_failure` (`run_errors.rs`), `nature_source` (`elab_analog.rs`), `first_param` (`elab_instances.rs`), `repository` (`cli/tests/commands.rs`), `printed_tree` (`msl_format.rs`); undocumented `HostDrivenRc::{session, table}` (`source_host.rs`), `RcTop::design` (`elab_entry.rs`); `HostSourceParam::Mag` abbreviates magnitude | document each; move the test helpers onto owner structs (as `Fixture`, `Scratch`, `HostDrivenRc` already are); name the variant `Magnitude` (the IR param name can stay `mag`) | |
+| F1. A wrong argument count on a probe or a builtin is `E0180`, not `E0141` (PI-06 AC 6, design line 55 and the table at line 263) | `v(p, q, gnd)` at HEAD: `E0180` "mismatched types: a probe takes 1 or 2 nodes, found 3"; `types_events.rs:521` asserts `E0180` for `cross()` and `cross(v(p), 1p, 1u, 2u)`; C27's test covers only a function value and a method call | route the probe and core-primitive count checks through `Checker::arity_mismatch` (`E0141` with both counts); assert `E0141` in `types_events.rs:521` and add a probe case to `a_call_through_a_function_value_with_the_wrong_arity_is_e0141` | 731dab5c; C27 (`a_call_through_a_function_value_with_the_wrong_arity_is_e0141`, probe case added) and `types_events.rs` `cross_takes_ttol_and_etol_by_position_and_by_name` (now `E0141`) |
+| F2. A non-exhaustive `match` is `E0180`, but Part I's `E0184` row names that position (PI-06 AC 1: `E0180` only where no other row names it) | `types_compound.rs:282` `a_match_that_is_not_exhaustive_is_e0180` (renamed from `_is_p0002`); `docs/spec/part_i_values.md:639` | raise `E0184` for exhaustiveness (the construct runs today, the amendment's own rule gives such codes here) and rename the test `_is_e0184`; `E0184`'s `code_owners.tsv` row must then leave (composite-values keeps its other forms) - or have the user rule that it waits for `composite-values` and record it in `GAPS.md` | baf51375 (composite-values, B3 T15); closed by deferral: `E0184` for a non-exhaustive `match` is implemented on feature/composite-values (its B3, T15) and lands with that feature; its `code_owners.tsv` row stays; `types_compound.rs:282` stays as it is until then |
+| F3. C32's test does not pin the jump to its time | `host_sources.rs` `a_timed_source_change_is_a_jump`: print step 0.5 us and rows between 1.9 and 2.1 us skipped, so a change anywhere between 1.5 and 2.5 us, or a ramp across that span, passes | print at a step of 1e-8 near 2 us and assert 1 V just before 2 us and 3 V from 2 us on | 03472efa; C32 (`a_timed_source_change_is_a_jump`, 10 ns rows either side of 2 us) |
+| F4. C38's test covers one position and accepts extra codes | `types_values.rs` `include_str_outside_a_const_is_e0610`: one `analog` let, `codes_of(&d).contains(..)` | assert `["E0610"]` exactly, over an `analog` let, a module `let`, a param default and a `fn` body (all `E0610` at HEAD) | abd6fd6b; C38 (`include_str_outside_a_const_is_e0610`, exactly `["E0610"]` over four positions) |
+| F5. C58's test cannot fail: the shipped files are fixed points of the formatter, so formatting them changes nothing | `msl_format.rs` `formatting_keeps_the_printed_tree_of_every_shipped_source` compares `print(format(text))` with `print(text)` where `format(text) == text` (C96, C55, C56) | compare the printed tree of each shipped file with that of its pre-format text: e.g. a test that formats a committed unformatted copy (or the fences' pre-format text) and asserts both trees equal; the claim itself holds (verified: fmt of origin/main == HEAD) | c49ea25a; C58 (`formatting_keeps_the_printed_tree_of_every_shipped_source`, over the pre-format texts in `tests/fixtures/preformat/`; a renamed identifier in a fixture makes it fail) |
+| F6. New code without doc comments, and free functions in new test code (user cleanliness rules) | `elab/host_sources.rs`: `HostSourceExpressions::{emit, binary, param}`, `HostSources::new`, fields `ir`, `origin`, `bodies`; `elab/files.rs`: `IncludedFiles::{texts, reads}`, `FileFault` variant fields; `api/source.rs`: `SegmentSet` fields; tests: free `settings`, `session`, `transient`, `open`, `run`, `piecewise`, `real` (`api/tests/host_sources.rs`, most undocumented), `fixture`, `design_of`, `constant` (`elab_files.rs`), `host_failure` (`run_errors.rs`), `nature_source` (`elab_analog.rs`), `first_param` (`elab_instances.rs`), `repository` (`cli/tests/commands.rs`), `printed_tree` (`msl_format.rs`); undocumented `HostDrivenRc::{session, table}` (`source_host.rs`), `RcTop::design` (`elab_entry.rs`); `HostSourceParam::Mag` abbreviates magnitude | document each; move the test helpers onto owner structs (as `Fixture`, `Scratch`, `HostDrivenRc` already are); name the variant `Magnitude` (the IR param name can stay `mag`) | c8416da4; C55 to C57, C96 and the targets that held the moved helpers |
+
+## Fix round (F1 to F6)
+
+F1, F3, F4, F5 and F6 are closed by the commits in the table; F2 is closed by deferral to
+`composite-values`. F1 also changed the counts that `types_analog.rs` asserted (`ac_stim()`,
+`temperature(1.0)`, `bound_step()`, `freq(1.0)`: `E0141`, commit 0bed6a92). Rebased on origin/main
+(one new commit, a Book chapter); main holds no `MD-74`, so no renumbering. Root `env -u
+PIPERINE_NGSPICE cargo test --no-fail-fast`: exit 0, 301 test results, 3096 passed, 0 failed, 3
+ignored. With ngspice on `PATH`: `source_host` 3/3, `parity_ac` 2/2, `parity_tran` 9/9.
+`check_proofs.py`: 63 pass, 52 fail, the 52 being the B5/B6 checks and `Run sourcetables`.
+
+## For the user
+
+C83's DC-step comparison reuses main's frozen `tran_rc.cir` (ngspice's default step cap) against
+piperine `max_step 1e-8`: the twin convention of the existing `tran_rc` test, not the same-cap
+configuration of C84. Left as it is for the user or the spec closure to rule on.
