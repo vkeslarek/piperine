@@ -288,10 +288,10 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] `every_from_the_stdlib_fires_once_per_period` and the two other tests pass under `Run sources`, assertions unchanged
-- [ ] No file `crates/piperine-parity/tests/buck_{commits,records,time}.rs` remains; `grep -rq "buck::" crates/piperine-parity/tests/digital` fails
-- [ ] Gate check passes: `Run sources`, `Run hygiene`, the Build line
-- [ ] Test count: 3 tests, unchanged
+- [x] `every_from_the_stdlib_fires_once_per_period` and the two other tests pass under `Run sources`, assertions unchanged
+- [x] No file `crates/piperine-parity/tests/buck_{commits,records,time}.rs` remains; `grep -rq "buck::" crates/piperine-parity/tests/digital` fails
+- [x] Gate check passes: `Run sources`, `Run hygiene`, the Build line
+- [x] Test count: 3 tests, unchanged
 
 **Tests**: integration
 **Gate**: quick
@@ -767,6 +767,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 404 s, `piperine-cli` `book` 269 s (its shared fixture runs the 600 µs start), root `book_cli` 17 s (whole target), `book_mixed` 15 s (the Book's own averaged buck: stays, D4 of Out of Scope), `piperine-api` `buck_long` 167 s; `buck_scenarios` not re-measured (25 to 90 min recorded by `buck-scenarios`, six reds). The buck's share of the default run: about 20 min plus `buck_scenarios`. Cargo's
 `test = false` verified on a scratch package: skipped by `cargo test`, `--tests` and `--all-targets`, run by
 `--test <name>`.
+**Settled B1 (T1-T8):** full root `cargo test --no-fail-fast` green, 17m15s wall (no buck simulation target; its longest remaining target 83 s). Defaults: `test = false` entries and README lines added task by task; the `source_*` targets keep `buck/support.rs` and open their fixture by path under `tests/digital/`; `book_buck`'s `BookListing::printed` compares the binary's whole stdout to the block; `the_on_demand_targets_are_the_buck_set` pins D3's twelve; the approval lines of spec/tasks are the relayed standing authorization (validate_tasks --execute flags their wording only; the Build line was run by hand, green).
 **Dispatched:** none
 **Walked:** none
 
