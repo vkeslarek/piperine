@@ -225,6 +225,7 @@ elaborator, the IR and the generated Rust.
 4. IF a module contributes a flow to a node of a nature without `flow` THEN the system SHALL report `E0413`.
 5. WHEN a `VSignal` node is connected to an `Electrical` port THEN the system SHALL accept the connection and treat the net as conservative, with KCL (§4 rule 13).
 6. IF `i(n)` or `flow(n)` probes a node of a nature without `flow` THEN the system SHALL report `E0206`.
+7. WHEN a `VSignal` port of the top has no driver in the design THEN the system SHALL elaborate it, because the host drives the top's node ports (`params-and-io`, §23.1 rule 1), and a run that gives it no host source SHALL be `E0810`. (Added by the fix round of the partial merge, 2026-11-21; AC 4 covers a contribution spelled `flow(n)` or with another nature's access name, as `i(n)`.)
 
 **Independent Test**: A compiled op, ac and transient of the gain chain, and elaboration tests for `E0242`, `E0413` and `E0206`.
 

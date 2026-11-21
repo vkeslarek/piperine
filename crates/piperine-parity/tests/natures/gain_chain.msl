@@ -29,3 +29,11 @@ module LoadlessBench() {
     let first = Gain(a, b) { k: 2.0 };
     let second = Gain(a, c) { k: 7.0 };
 }
+
+/// The same chain with its input a port of the top: nothing in the design drives `a`, the host does.
+module OpenChain(a: VSignal) {
+    signal b: VSignal;
+    signal c: VSignal;
+    let first = Gain(a, b) { k: 2.0 };
+    let second = Gain(b, c) { k: 3.0 };
+}

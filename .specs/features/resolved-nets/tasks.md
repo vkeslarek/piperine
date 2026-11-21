@@ -1131,6 +1131,9 @@ Proof: run bookcorestd | test the_resolved_line_runs_on_its_wire ... ok
 **C67** - The Book's inventory agrees with `GAPS.md` §11 after the rows move (RN-10, AC 1)
 Proof: run bookinventory | test refused_rows_and_gaps_section_11_agree ... ok
 
+**C68** - An undriven `VSignal` port of the top elaborates, and a run with no host source on it is `E0810` (RN-08, AC 7)
+Proof: run sourcenatures | test an_undriven_top_signal_flow_port_is_driven_by_the_host_or_refused_at_the_run ... ok
+
 ---
 
 ## Handoff

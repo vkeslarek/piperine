@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use piperine_api::{Cell, Field, Overrides, Project as HostProject, Record, RecordSink, Session, Streams};
+use piperine_api::{Cell, Failure, Field, NodeSource, Overrides, Project as HostProject, Record, RecordSink, Session, Streams};
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{AcSweepAnalysisOptions, AnalogVariable, Context, NodeIdentifier};
@@ -92,26 +92,27 @@ impl Model {
         result.iter().map(|s| (s.time(), s.get_node(&node).expect("a node voltage"))).collect()
     }
 
+    /// An `op` session of `top` printing `v(<name>)`, as the host opens it on the Rust backend.
+    fn host_session(file: &str, top: &str, name: &str) -> Session {
+        let overrides = Overrides { top: Some(top.into()), analysis: Some("op".into()), print: vec![name.into()], ..Overrides::default() };
+        Model::open_host(file, overrides)
+    }
+
+    /// A session of `file` on the Rust backend with `overrides`.
+    fn open_host(file: &str, overrides: Overrides) -> Session {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/natures").join(file);
+        let project = HostProject::file(&path).unwrap_or_else(|f| panic!("{f}"));
+        let spec = project.request(None, &Overrides { backend: Some("rust".into()), ..overrides }).unwrap_or_else(|f| panic!("{f}"));
+        let cache = tempfile::tempdir().expect("a temp dir");
+        let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
+        Session::open(&project, &spec, &settings).unwrap_or_else(|f| panic!("{f}"))
+    }
+
     /// The `dc` sweep of the param `sweep` of `top` from `from` to `to` in steps of `step`, as the
     /// host runs it: the swept value and `v(<name>)` at each point.
     fn dc_sweep(file: &str, top: &str, sweep: &str, (from, to, step): (f64, f64, f64), name: &str) -> Vec<(f64, f64)> {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/natures").join(file);
-        let project = HostProject::file(&path).unwrap_or_else(|f| panic!("{f}"));
-        let overrides = Overrides {
-            top: Some(top.into()),
-            analysis: Some("dc".into()),
-            sweep: Some(sweep.into()),
-            from: Some(from),
-            to: Some(to),
-            step: Some(step),
-            print: vec![name.into()],
-            backend: Some("rust".into()),
-            ..Overrides::default()
-        };
-        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-        let cache = tempfile::tempdir().expect("a temp dir");
-        let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
-        let table = Session::open(&project, &spec, &settings).unwrap_or_else(|f| panic!("{f}")).run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides { top: Some(top.into()), analysis: Some("dc".into()), sweep: Some(sweep.into()), from: Some(from), to: Some(to), step: Some(step), print: vec![name.into()], ..Overrides::default() };
+        let table = Model::open_host(file, overrides).run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
         let real = |cell: &Cell| match cell {
             Cell::Real(value) => *value,
             other => panic!("a real, found {other:?}"),
@@ -240,4 +241,23 @@ fn vsignal_connected_to_an_electrical_port_is_conservative() {
     // so a 1 V source over two 1 kOhm resistors puts `v(m)` = 1 V * 1k / (1k + 1k) = 0.5 V.
     let mixed = Model::of("mixed_node.msl");
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("mixed node", "v(m)", Coordinate::OperatingPoint), 0.5, mixed.operating_point("MixedBench", "m"));
+}
+
+#[test]
+fn an_undriven_top_signal_flow_port_is_driven_by_the_host_or_refused_at_the_run() {
+    // RN-08 AC 1, params-and-io §23.1 rule 1: a `VSignal` port of the top that no module of the
+    // design drives elaborates, since the host drives the top's node ports; a run with no host
+    // source on it is `E0810` naming the port, and with one the chain gives 6 times the source.
+    let mut session = Model::host_session("gain_chain.msl", "OpenChain", "c");
+    match session.run(Rc::new(RefCell::new(Ignore))) {
+        Err(Failure::Host { code, message }) => {
+            assert_eq!(code, "E0810");
+            assert!(message.contains("`a`"), "{message}");
+        }
+        other => panic!("E0810, found {other:?}"),
+    }
+    session.source("a", NodeSource::dc(1.5)).expect("a source on `a`");
+    let table = session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
+    let Cell::Real(volts) = table.rows[0][1] else { panic!("a real, found {:?}", table.rows[0][1]) };
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("open chain", "v(c)", Coordinate::OperatingPoint), 9.0, volts);
 }
