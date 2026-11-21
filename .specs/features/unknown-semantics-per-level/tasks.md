@@ -246,8 +246,8 @@ T34
 
 **Done when**:
 
-- [ ] `abi_md_states_known_levels` passes under `**Run docs**`
-- [ ] Gate check passes: Quick
+- [x] `abi_md_states_known_levels` passes under `**Run docs**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

@@ -135,6 +135,8 @@ enumeration is a `u32` with named constants, never a Rust `enum`.
 #[repr(C)] pub struct Field  { name: Str, leaf: u32, offset: u32, count: u32, flags: u32, known: u32 }
 // leaf: BOOL U8 U16 U32 U64 I8 I16 I32 I64 F32 F64, little-endian. count: array length. Nested structs are
 // flattened, names dotted. flags & HAS_KNOWN: `known` is the offset of one byte per element; 0 = no value.
+// flags & KNOWN_LEVELS (with HAS_KNOWN, minor 2): `known` is the offset of one mask per element, the size of
+// the leaf, little-endian; bit k set = level k known; a zero mask = no value.
 
 #[repr(C)] pub struct Term  { name: Str, origin: Str, op: u32,        // FLOW | DDT | DELAY
                               plus: u32, minus: u32,                  // a continuous pin, or GROUND
@@ -170,7 +172,7 @@ validation:
 | `global` | `TEMPERATURE` 1, `RESOLUTION` 2, `DC` 3, `TRAN` 4, `AC` 5, `NOISE` 6, `START` 7, `SETTLE` 8, `NAMED` 9 |
 | `Pin.flags` | `STRUCTURAL` 1, `OPTIONAL` 2, `HAS_INIT` 4, `HAS_CHECK` 8, `QUIET` 16, `RECORD` 32, `RELAX` 64 |
 | `leaf` | `BOOL` 1, `U8` 2, `U16` 3, `U32` 4, `U64` 5, `I8` 6, `I16` 7, `I32` 8, `I64` 9, `F32` 10, `F64` 11 |
-| `Field.flags` | `HAS_KNOWN` 1 |
+| `Field.flags` | `HAS_KNOWN` 1, `KNOWN_LEVELS` 2 |
 | `op` | `FLOW` 1, `DDT` 2, `DELAY` 3 |
 | `Input.kind` | `LIMIT` 1, `NOISE` 2, `STIM` 3 |
 | `Watch.kind` | `VAR` 1, `CROSS` 2, `CAP` 3, `TRACE` 4 |
@@ -183,7 +185,7 @@ validation:
 | `commit_with` flags (`commit_flag`) | `MAYBE` 1, `MERGE` 2 |
 | status | `OK` 1, `FAULT` 2, `RESHAPE` 3, `FINISH` 4 |
 | indices | `GROUND` = `u32::MAX` (a term's `plus`/`minus`), `DEFAULT` = `u32::MAX − 1` (a tolerance or bound pin) |
-| version | `MAJOR` 1, `MINOR` 1, symbol `piperine_abi_1`; `Note.text` holds 248 bytes |
+| version | `MAJOR` 1, `MINOR` 2, symbol `piperine_abi_1`; `Note.text` holds 248 bytes |
 
 `piperine-abi` also ships two layouts beside those of P3: `F64` (`{ v: F64 @0 }`, size 8,
 align 8, no known byte: the layout of every continuous pin) and `NONE` (size 0, align 1, no
@@ -241,13 +243,16 @@ Rules that hold for every pin, whatever its role:
   between analyses or sweep points changes at microstep 0 of the next point, like any host
   commit: a function that reads `TEMPERATURE` re-runs there and what it writes changes there.
 - **P3. Zero is "nothing".** Discrete storage starts all zero. A field with `HAS_KNOWN` whose
-  known byte is 0 holds no value and its value bytes are zero; debug sessions check this
-  canonical form on every write. `piperine-abi` ships the common layouts as constants
+  known byte is 0 holds no value and its value bytes are zero; a field with `KNOWN_LEVELS` has a
+  mask per element (the size of the leaf, bit `k` set when level `k` is known, bits above the
+  type's levels zero): a zero mask is no value, and the value bit of every unknown level is
+  zero; debug sessions check this canonical form on every write. `piperine-abi` ships the common layouts as constants
   (`BIT`, `REAL`, `BYTE`), so an external author does not re-derive them. Each has one field `v` with a known byte:
   `BIT` is `{ v: BOOL @0, known @1 }` (size 2, align 1), `REAL` is `{ v: F64 @0, known @8 }`
   (size 16, align 8), `BYTE` is `{ v: U8 @0, known @1 }` (size 2, align 1).
 - **P4. Layout equality.** Pins on one net have equal layouts (size, alignment, and per field
-  leaf, offset, count, known). Names do not count.
+  leaf, offset, count, known, and whether `known` is a mask: `KNOWN_LEVELS` counts). Names do
+  not count, so a pin with a mask and a pin with a plain known byte on one net are a bind error.
 - **P5. Params.** `Module.prototype` lists the `PARAM` pins with layouts and defaults; that is
   how the host encodes `Value`s and how the elaborator checks an `extern` declaration without
   creating anything. `create` gets initial values for any subset; the solver, not the shape,
@@ -526,7 +531,9 @@ step 5 nothing is undone: the discontinuity handling restarts the *next* step.
   or a delay is unknown (part I §3.3.3) commits through `commit_with` with `flags`:
   `MERGE` (2): at the due microstep the committed bytes are merged, level by level, with the
   bytes the net holds at that point of the C2 order (`layout::Merge`, per field with
-  `HAS_KNOWN`: equal and known is kept, anything else is zeroed, P3); `MAYBE` (1): the commit
+  `HAS_KNOWN`: equal and known is kept, anything else is zeroed, P3; per field with
+  `KNOWN_LEVELS`, per level: each level both values hold known and equal is kept, the others are
+  cleared, value bits included); `MAYBE` (1): the commit
   may not have happened, so transport (C3, §12.1.4) does not remove the pending commits of the
   same statement and byte range that it would remove, it turns them into `MERGE` commits (on
   the path that ran they were removed, on the path that did not they apply, and their merge is
@@ -633,7 +640,8 @@ it. An external device joins by ordinary binding. A cycle of functions through `
 relaxed: those nets start the microstep at zero bytes (P3: not driving); the cycle's functions
 run in order until no byte changes, at most (`RELAX` nets in the cycle + 1) passes; a field with a
 known byte that still moves is zeroed (P3: no value) and one record goes to the resolver's
-log pin; a field without one that still moves is a fault. A cycle through no `RELAX` net (two
+log pin; in a field with `KNOWN_LEVELS` exactly the levels whose value bit or flag still moves
+are cleared (flag and value bit), the others keep their flag; a field without one that still moves is a fault. A cycle through no `RELAX` net (two
 cross-coupled gates written as functions) is a bind error.
 
 ---
@@ -987,7 +995,7 @@ Entry points: 7, each with one contract.
    so that entry can be appended.
 5. A `TRACE` site in a loop is bounded by a maximum the elaborator declares; past it the
    evaluation faults.
-6. D1's "a moving field with a known byte is zeroed" is the one place the solver acts on a
+6. D1's "a moving field with a known byte is zeroed" (per level in a `KNOWN_LEVELS` field) is the one place the solver acts on a
    layout's fields.
 7. `Pin` carries fields that apply to a subset of kind × role (`global`, `check`, `init`,
    `abstol`); it is one struct on purpose, and it is where a future field would land.
@@ -1012,7 +1020,7 @@ the critic's, from `critique_v3.md`; the last column is what this document assum
 | 3b | `part_iii_structure.md` §8.5.11, §8.5.15, §8.5.16 | Let a `"cosim"` module have continuous ports and read them; move the port restriction to the adapter. | **Defer to the user**: a language scope change the ABI does not need; §8.5.15 and §8.5.16 would have to change with it. | *not* amended. The ABI allows a reaction to read a continuous pin (the AVR of §11.7 does); whether the language's `extern "cosim"` may declare one is separate. |
 | 4 | `part_iii_structure.md` §8.5.10; `part_viii_host.md` §23.1 rule 7 (`E0803`) | A `set` that would change the structure of an extern module is refused like a structural param; in a `Dc` sweep that point re-elaborates the instance. | **Approve.** | amended (`RESHAPE`, P6). |
 | 5 | `part_vi_io.md` §19 rule 3; `part_iv_behavior.md` §11 rule 12 | Require a constant trip count for `emit!` in an `analog` loop. | **Reject as proposed**: it bends the language to fit a cell. Use an array field with a declared maximum. | rejected; A5 carries a bounded array instead, no language change. |
-| 6 | `part_i_values.md` §2 (`Repr`); `part_ii_carriers.md` §5.3.4–§5.3.6 | State the canonical byte form of a value. | **Trim.** Approve two sentences: *all-zero bytes are the all-unknown value*; *an unknown level's value bytes are zero*. Reject "one known byte per level": where the flags live is what `Layout` prints, not a language guarantee. | the two sentences (P3). The byte-per-element choice stays in `Field.known`, an ABI matter. |
+| 6 | `part_i_values.md` §2 (`Repr`); `part_ii_carriers.md` §5.3.4–§5.3.6 | State the canonical byte form of a value. | **Trim.** Approve two sentences: *all-zero bytes are the all-unknown value*; *an unknown level's value bytes are zero*. Reject "one known byte per level": where the flags live is what `Layout` prints, not a language guarantee. | the two sentences (P3). The byte-per-element choice stays in `Field.known`, an ABI matter. **Closed by `unknown-semantics-per-level`**: every level has its own flag, carried as a `KNOWN_LEVELS` mask in `Field.known` (minor 2); the language guarantee is unchanged, where the flags live is still what `Layout` prints. |
 | 7 | `part_iii_structure.md` §8.2.3 step 4 | A level of a type with no unknown that still moves is a run error. | **Reject**: the language cannot produce that case; it is D1's own rule. | rejected; the rule lives in D1 only. |
 | 8 | `part_iv_behavior.md` §14.4.6 | Give models access to the continuation variables. | **Rework — user decision.** As `simparam` names it contradicts §14.4.1 (they change between solves). Options: (a) two core environment functions `gmin()`, `source_scale()` in the class of `now()`/`freq()`; (b) no language change: independent sources are scaled by the solver, gmin is the solver's shunt only. ngspice parity for junction gmin argues for (a). | (a): the ambient inputs `GMIN` and `SOURCE_SCALE` exist. Under (b) they are deleted and `Term` gains nothing: the solver scales terms it is told are sources — that would need one flag on `Term`. |
 | 9 | `part_vi_io.md` §19 rule 1 | No text change: a note that records travel as commits to quiet pins and add no microstep. | **Fine**; belongs in Appendix C, not here. | a note for Appendix C. |

@@ -355,12 +355,12 @@ fn state_records_the_unknown_semantics_decision() {
 #[test]
 fn abi_states_commits_under_unknown_control() {
     // US-07: abi.md gives `Host` the entry `commit_with`, lists `commit_flag` (`MAYBE` 1, `MERGE` 2)
-    // and `MINOR` 1 in its constants, and states rule C7 (merge at the due microstep in C2 order;
+    // and `MINOR` 2 in its constants, and states rule C7 (merge at the due microstep in C2 order;
     // transport converts under `MAYBE`)
     let abi = read(".specs/features/device-abi/abi.md");
     assert!(abi.contains("commit_with: unsafe extern \"C\" fn"), "the Host struct has commit_with");
     assert!(abi.contains("| `commit_with` flags (`commit_flag`) | `MAYBE` 1, `MERGE` 2 |"), "the constants table lists the flags");
-    assert!(abi.contains("`MAJOR` 1, `MINOR` 1"), "MINOR is 1");
+    assert!(abi.contains("`MAJOR` 1, `MINOR` 2"), "MINOR is 2 (KNOWN_LEVELS)");
     let at = abi.find("- **C7. Commits under unknown control.**").expect("abi.md has rule C7");
     let rule = abi[at..].split("\n---").next().expect("a rule").split_whitespace().collect::<Vec<_>>().join(" ");
     for fact in ["merged, level by level, with the bytes the net holds at that point of the C2 order", "transport (C3, §12.1.4) does not remove the pending commits", "turns them into `MERGE` commits"] {
@@ -531,4 +531,27 @@ fn gaps_no_longer_lists_x5_l20_l39_h12() {
     assert!(row.contains("B1 to B4") && row.contains("B5") && row.contains("`composite-values`"), "the row says what B1 to B4 delivered and that B5 and B6 wait: {row}");
     let state = read(".specs/STATE.md");
     assert!(state.contains("### MD-75:") && state.contains("`params-and-io`"), "STATE.md holds the decision entry");
+}
+
+#[test]
+fn abi_md_states_known_levels() {
+    // UL-05 (T4): abi.md §3 gives `Field` the `KNOWN_LEVELS` flag, the constants table and the
+    // version row follow, and P3, P4, C7, D1 and amendment row 6 state the per-level rules
+    let abi = read(".specs/features/device-abi/abi.md");
+    let flat = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let abi = flat(&abi);
+    for sentence in ["flags & KNOWN_LEVELS (with HAS_KNOWN, minor 2): `known` is the offset of one mask per element, the size of", "bit k set = level k known; a zero mask = no value"] {
+        assert!(abi.contains(sentence), "§3 Field lacks \"{sentence}\"");
+    }
+    assert!(abi.contains("| `Field.flags` | `HAS_KNOWN` 1, `KNOWN_LEVELS` 2 |"), "the constants table lists KNOWN_LEVELS");
+    assert!(abi.contains("`MAJOR` 1, `MINOR` 2"), "the version row says minor 2");
+    for sentence in [
+        "a zero mask is no value, and the value bit of every unknown level is zero",
+        "and whether `known` is a mask: `KNOWN_LEVELS` counts",
+        "per level: each level both values hold known and equal is kept, the others are cleared, value bits included",
+        "exactly the levels whose value bit or flag still moves are cleared",
+        "**Closed by `unknown-semantics-per-level`**",
+    ] {
+        assert!(abi.contains(sentence), "abi.md lacks \"{sentence}\"");
+    }
 }
