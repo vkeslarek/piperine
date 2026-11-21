@@ -52,7 +52,6 @@ const ROWS: &[Row] = &[
     Row { construct: "bundle", source: "struct Bn { a: E }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
     Row { construct: "generation in a digital block", source: "module Top() { }\ndigital for Top { if true { } }", names: "generation" },
     Row { construct: "string `let` with an annotation", source: "module Top() { }\nanalog for Top { let x: &str = \"a\"; }", names: "string literal" },
-    Row { construct: "include_str!", source: "module Top() { }\nanalog for Top { let x = include_str!(\"a.txt\"); }", names: "`include_str!`" },
     Row { construct: "while", source: "module Top() { }\nanalog for Top { while true { } }", names: "`while` loop" },
     Row { construct: "loop", source: "module Top() { }\nanalog for Top { loop { } }", names: "`loop`" },
     Row { construct: "for", source: "module Top() { }\nanalog for Top { for i in 0..3 { } }", names: "`for` loop" },

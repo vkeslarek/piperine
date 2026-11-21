@@ -304,6 +304,9 @@ impl<'d> Checker<'d> {
                     (family @ ("UInt" | "Int" | "Float"), _) => self.sized_type(file, node.span, *path, family),
                     ("Option", _) => self.option_type(file, node.span, *path),
                     ("Event", _) => Some(Ty::Event),
+                    // §20: `include_str!` has type `str`, written without a borrow (the form
+                    // `&str` below is the one the earlier text spelt).
+                    ("str", _) => Some(Ty::Str),
                     _ => {
                         self.unsupported(file, node.span, &format!("type `{}`", id.name()));
                         None

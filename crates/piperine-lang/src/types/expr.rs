@@ -217,6 +217,7 @@ impl Checker<'_> {
                 None
             }
             ExprKind::Emit { stream, fields } => self.emit(expr, stream, fields),
+            ExprKind::IncludeStr(_) => self.include_str(expr),
             ExprKind::Struct { class: StructClass::Template(_), .. } => {
                 self.unsupported(file, node.span, "module template `Name { .. }` outside a placement");
                 None
@@ -226,6 +227,20 @@ impl Checker<'_> {
                 None
             }
         }
+    }
+
+    /// `include_str!("path")` is the text of a file, a `str`, and a const expression allowed in a
+    /// `const` item only (§20.2 rule 1); a param default, a `where` or any other position is
+    /// `E0610`.
+    fn include_str(&mut self, expr: ExprId) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        let in_const_item = self.context == Context::Const && self.owner.is_some_and(|owner| matches!(self.design.decl_data(owner).kind, DeclKind::Const(_)));
+        if !in_const_item {
+            self.coded(file, "E0610", span, "`include_str!` outside a `const` item".to_string(), "`include_str!` is allowed in the initializer of a `const` item only");
+            return None;
+        }
+        Some(Ty::Str)
     }
 
     fn binary(&mut self, whole: ExprId, op: BinOp, lhs: ExprId, rhs: ExprId) -> Option<Ty> {

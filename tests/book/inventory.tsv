@@ -486,7 +486,7 @@ claim	packages~39a5cf1d	39a5cf1dbc00bd57	holds	piperine/book_packages::e0162_one
 claim	packages~39a5ce1d	39a5ce1dbc00bba4	holds	piperine/book_packages::a_local_namespace_and_a_dependency_of_one_name_make_the_use_ambiguous	-	E0163
 claim	packages~39a2cc1d	39a2cc1dbbfe8267	holds	piperine/book_packages::e0171_a_manifest_has_only_package_and_dependencies	-	E0171
 claim	packages~39a2c81d	39a2c81dbbfe7b9b	holds	piperine/book_packages::e0175_the_crate_root_is_always_src_lib_msl	-	E0175
-claim	packages~64f2121d	64f2121dd48643ab	unraised	piperine/book_packages::e0610_is_not_raised_include_str_in_a_module_is_refused_as_p0001	L57	E0610
+claim	packages~64f2121d	64f2121dd48643ab	holds	piperine/book_packages::e0610_include_str_in_a_module_is_refused	-	E0610
 claim	packages~628751c4	628751c46bfd735c	prose	-	-	A path names an item through the namespaces that hold it, with :: between the segments. use gives an item a short name in the namespace that writes it, pub makes an item visible outside its namespace, and pub use passes a name on under the namespace that re-exports it. crate is the root of your crate, self is the current namespace and super the one above it.
 claim	core-std~ece4c57c	ece4c57c55119b14	holds	piperine/book_core_std::e0457_a_core_name_cannot_be_redefined	-	A core name needs no import and cannot be redefined: a namespace item with the same name is error E0457.
 claim	core-std~c59252de	c59252de190bd867	holds	piperine/book_core_std::the_probes_have_the_short_names_the_nature_gives	-	Your nature gives them their short names, v and i.

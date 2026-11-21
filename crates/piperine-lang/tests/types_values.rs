@@ -548,3 +548,30 @@ fn a_param_hiding_a_function_is_e0180_with_a_note_at_the_function() {
         assert!(note.range().start < src.find("module Top").unwrap(), "{hider}: the note is on the `fn`");
     }
 }
+
+#[test]
+fn include_str_outside_a_const_is_e0610() {
+    // §20 rule 1 (PI-08 AC 2): `include_str!` is allowed in the initializer of a `const` item
+    // only; in an `analog` expression, or in a module's `let`, it is `E0610`, and the `P0001`
+    // "`include_str!`" is gone.
+    let (src, d) = diagnostics("", "let a = include_str!(\"data.txt\");");
+    assert!(codes_of(&d).contains(&"E0610".to_string()), "{src}");
+    assert!(d.iter().all(|d| !d.diagnostic.message.contains("`include_str!` is not supported")), "{src}");
+    let e0610 = d.iter().find(|d| d.diagnostic.code == "E0610").expect("E0610");
+    assert_eq!(snippet(&src, e0610), "include_str!(\"data.txt\")");
+}
+
+#[test]
+fn include_str_in_a_const_is_a_str() {
+    // §20 (PI-08 AC 1): in the initializer of a `const` item `include_str!` is a `str`: the item
+    // is read where a `str` is taken (the `msg` of a `sim` record) and nowhere else, and a
+    // `const` of another type is the ordinary `E0180`.
+    let src = "const T: str = include_str!(\"data.txt\");\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { emit!(\"sim\", msg = T); } }";
+    let design = Design::builder().source("top.msl", src).build();
+    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let checked = Types::check(&design, "Top");
+    assert!(checked.is_ok(), "an `include_str!` const is a `str`: {src}\n{:?}", checked.err().map(|d| d.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect::<Vec<_>>()));
+    let (src, d) = diagnostics("const T: f64 = include_str!(\"data.txt\");", "let a = T;");
+    assert_eq!(codes_of(&d), ["E0180"], "{src}");
+    assert_eq!(snippet(&src, &d[0]), "include_str!(\"data.txt\")");
+}
