@@ -1,5 +1,7 @@
 # Value Semantics Tasks
 
+**Approved**: 2026-11-20 - user confirmed the plan and D1, D2, D5, D7 ("Ok, perfeito!" to the sequencing: composite-values pauses after B7, value-semantics B1-B2 run on its tip, then composite-values B8-B10 resume with amended tasks).
+
 ## Execution Protocol (MANDATORY -- do not skip)
 
 Implement these tasks with the `tlc-spec-driven` skill: **activate it by name and follow its Execute flow and Critical Rules.** Do not search for skill files by filesystem path. The skill is the source of truth for the full flow (per-task cycle, sub-agent delegation, the walk, check_proofs, the Verifier and the screens sub-agent).

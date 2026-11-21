@@ -1,6 +1,6 @@
 # Value Semantics Specification
 
-**Status**: awaiting approval. The language decision is the user's (2026-11-20, below); the defaults this spec takes where the user left the choice open are D1 to D8 and are listed for confirmation.
+**Approved**: 2026-11-20 - user: "Topo!" to pure value semantics (no borrows, pointers or moves; every `let` reassignable), and, on D1, D2, D5 and D7, the recommended answers: "Não, são fixos", "Erro com dica", "Erro", "Genérica em N". D3, D4, D6 and D8 follow from those answers and are accepted with the plan.
 
 ## Decision (user, 2026-11-20)
 
@@ -12,14 +12,14 @@ The defaults taken where the decision left the choice open. Each waits for the u
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --------------------- | -------------- | --------- | ---------- |
-| D1: `#[derive(Clone, Copy)]`: kept as words that do nothing, or removed | Removed. `Clone` and `Copy` leave Appendix H.8, so a derive or a bound naming one is `E0161` by the rule every other unknown name follows; the diagnostic's help says to delete it. `clone()` goes the same way | No special case (CC-11): an accepted no-op is a rule of its own, forever | n |
-| D2: `let mut`: error, warning, or still parsed | Error. `mut`, `ref` and `move` become reserved words: `E0903` at the word, with a help naming the plain form. `E0331` is retired | The reserved-word rule already exists; the language has no warnings (G.0) | n |
-| D3: Slices | None. An array is a value; a function over any length takes `const N: usize`; `e[a..b]` is the array `[T; b - a]` and its bounds are const expressions; `name @ ..` in an array pattern binds an array | One sequence type. A slice that is a value needs storage whose size the type does not give | n |
-| D4: A method that changes a value: any shorthand | None. `self` is a copy; the method returns the new value; `s = s.step(x);` | The decision's own default | n |
-| D5: Is a parameter a place | No: a parameter of a function or of a closure, `self` included, and a name a closure captures cannot be assigned (`E0183`). Every local can: a name bound by `let` or by the pattern of a `match` arm, `if let`, `while let` or `for` | `fn bump(self) { self.count += 1; }` would compile and change nothing. The user's stated problem is bugs that emerge | n |
-| D6: Strings | `str` is a value type, the text of a literal. `&str`, `&'static str` and the lifetime `'static` go | Without it `&` survives in one type | n |
-| D7: `resolve` of a nature, typed `fn(&[T]) -> T` | A function with one const parameter, `fn f<const N: usize>(drives: [T; N]) -> T`, instantiated with the number of drives of each call | Follows D3. It asks `generics` for const-generic functions and `resolved-nets` for the instantiation | n |
-| D8: Codes | `E0101` covers every reference form, at parse. `E0102` and `E0331` are retired, never reused. `E0183` keeps "read before assigned" and "not a place" | The fewest codes | n |
+| D1: `#[derive(Clone, Copy)]`: kept as words that do nothing, or removed | Removed. `Clone` and `Copy` leave Appendix H.8, so a derive or a bound naming one is `E0161` by the rule every other unknown name follows; the diagnostic's help says to delete it. `clone()` goes the same way | No special case (CC-11): an accepted no-op is a rule of its own, forever | y |
+| D2: `let mut`: error, warning, or still parsed | Error. `mut`, `ref` and `move` become reserved words: `E0903` at the word, with a help naming the plain form. `E0331` is retired | The reserved-word rule already exists; the language has no warnings (G.0) | y |
+| D3: Slices | None. An array is a value; a function over any length takes `const N: usize`; `e[a..b]` is the array `[T; b - a]` and its bounds are const expressions; `name @ ..` in an array pattern binds an array | One sequence type. A slice that is a value needs storage whose size the type does not give | y |
+| D4: A method that changes a value: any shorthand | None. `self` is a copy; the method returns the new value; `s = s.step(x);` | The decision's own default | y |
+| D5: Is a parameter a place | No: a parameter of a function or of a closure, `self` included, and a name a closure captures cannot be assigned (`E0183`). Every local can: a name bound by `let` or by the pattern of a `match` arm, `if let`, `while let` or `for` | `fn bump(self) { self.count += 1; }` would compile and change nothing. The user's stated problem is bugs that emerge | y |
+| D6: Strings | `str` is a value type, the text of a literal. `&str`, `&'static str` and the lifetime `'static` go | Without it `&` survives in one type | y |
+| D7: `resolve` of a nature, typed `fn(&[T]) -> T` | A function with one const parameter, `fn f<const N: usize>(drives: [T; N]) -> T`, instantiated with the number of drives of each call | Follows D3. It asks `generics` for const-generic functions and `resolved-nets` for the instantiation | y |
+| D8: Codes | `E0101` covers every reference form, at parse. `E0102` and `E0331` are retired, never reused. `E0183` keeps "read before assigned" and "not a place" | The fewest codes | y |
 
 **Open questions:** none blocks design. D1 to D8 are defaults for the user to confirm; the spec is not approved until they are.
 
