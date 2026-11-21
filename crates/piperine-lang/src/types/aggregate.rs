@@ -135,6 +135,10 @@ impl Checker<'_> {
     pub(super) fn array_type(&mut self, file: FileId, span: Span, elem: TypeId, len: ExprId) -> Option<Ty> {
         let element = self.lower_type(elem);
         let Some(length) = self.fold_length(len) else {
+            if self.names_generic_parameter(len) {
+                self.unsupported(file, span, "an array whose length is a generic parameter");
+                return None;
+            }
             let what = self.expression_name(len);
             self.coded(file, "E0151", span, format!("the length of an array type is a constant, and {what} is not one the checker folds (§1.2.5)"), "not a constant");
             return None;
@@ -413,6 +417,16 @@ impl Checker<'_> {
                 self.mismatch_text(file, span, "an integer type", &other.name(self.design));
             }
             None => {}
+        }
+    }
+
+    /// Whether the const expression `expr` is the name of a generic parameter: `[T; N]` waits on
+    /// `generics`, it is not a length the checker fails to fold.
+    fn names_generic_parameter(&self, expr: ExprId) -> bool {
+        match &self.design.expr_node(expr).kind {
+            ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if matches!(self.design.decl_data(d).kind, DeclKind::GenericParam(_))),
+            ExprKind::Paren(inner) => self.names_generic_parameter(*inner),
+            _ => false,
         }
     }
 

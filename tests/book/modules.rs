@@ -186,11 +186,11 @@ fn the_memory_bank_is_refused_for_its_struct_arrays_and_generics() {
     let top = format!("module Top() {{\n    signal wl: [Bit; 64];\n    signal bl: [Electrical; 32];\n    {}\n}}\n", chapter.text("modules#11"));
     let model = chapter.wrapped("bank.msl", "", "modules#10", &top);
     let given = Refusal::of(model.run(Commands::of_top()), "modules#10");
-    for expected in ["array type is not supported yet", "generic module is not supported yet"] {
+    for expected in ["an array of `Bit<bool>` is not supported yet", "generic module is not supported yet"] {
         assert!(given.contains(&("P0001".to_string(), expected.to_string())), "{expected}: {given:?}");
     }
     assert!(given.iter().all(|(code, _)| code == "P0001"), "{given:?}");
-    Refusal::expect(model.run(Commands::of_top()), "modules#10", "P0001", "array type is not supported yet");
+    Refusal::expect(model.run(Commands::of_top()), "modules#10", "P0001", "an array of `Bit<bool>` is not supported yet");
 }
 
 #[test]

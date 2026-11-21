@@ -74,12 +74,12 @@ fn signals_of_every_family_are_refused_for_the_arrays_and_the_wire() {
     let chapter = Chapter::read();
     let model = chapter.wrapped("signals.msl", "module Top() {\n", "natures#2", "}\n");
     let given = Refusal::of(model.run(OperatingPoint::of_top()), "natures#2");
-    for expected in ["array type is not supported yet", "resolved nature `Wire` is not supported yet"] {
+    for expected in ["an array of `Bit<bool>` is not supported yet", "resolved nature `Wire` is not supported yet"] {
         assert!(given.contains(&("P0001".to_string(), expected.to_string())), "{expected}: {given:?}");
     }
     assert_eq!(given.len(), 2, "the array and the wire only; `logic(\"10xx\")` is accepted: {given:?}");
     assert!(given.iter().all(|(code, _)| code == "P0001"), "the other lines are accepted: {given:?}");
-    Refusal::expect(chapter.wrapped("signals.msl", "module Top() {\n", "natures#2", "}\n").run(OperatingPoint::of_top()), "natures#2", "P0001", "array type is not supported yet");
+    Refusal::expect(chapter.wrapped("signals.msl", "module Top() {\n", "natures#2", "}\n").run(OperatingPoint::of_top()), "natures#2", "P0001", "an array of `Bit<bool>` is not supported yet");
 }
 
 #[test]
@@ -94,9 +94,9 @@ fn the_open_drain_line_is_refused_while_resolved_natures_are_not_compiled() {
     let overrides = Overrides { analysis: Some("transient".to_string()), stop: Some(4e-6), streams: vec!["line".to_string()], ..Overrides::default() };
     let given = Refusal::of(model.run(overrides.clone()), "natures#3");
     Refusal::expect(model.run(overrides), "natures#3", "P0001", "resolved nature `Wire` is not supported yet");
-    assert_eq!(given.len(), 12, "twelve diagnostics, as the Book's listing: {given:?}");
+    assert_eq!(given.len(), 5, "five diagnostics (the field accesses and the library struct are typed since composite-values T39): {given:?}");
     assert!(given.iter().all(|(code, _)| code == "P0001"), "{given:?}");
-    for expected in ["resolved nature `Wire` is not supported yet", "method `changed` on this receiver is not supported yet", "field access is not supported yet", "`struct` item used as a type is not supported yet"] {
+    for expected in ["resolved nature `Wire` is not supported yet", "method `changed` on this receiver is not supported yet"] {
         assert!(given.iter().any(|(_, message)| message == expected), "{expected}: {given:?}");
     }
 }
@@ -122,7 +122,7 @@ fn a_bundle_is_refused_where_the_solver_reaches_it() {
     let chapter = Chapter::read();
     let placing = "module Top(in clk: Bit) { signal b: Stream<u8>; signal d: Stream<u8>; let s = Slice::<u8>(clk, b, d); }\n";
     let given = Refusal::of(chapter.wrapped("bundle.msl", "", "natures#8", placing).run(OperatingPoint::of_top()), "natures#8");
-    assert!(given.contains(&("P0001".to_string(), "`struct` item used as a type is not supported yet".to_string())), "{given:?}");
+    assert!(given.contains(&("P0001".to_string(), "generic struct `Stream` is not supported yet".to_string())), "{given:?}");
     assert!(given.contains(&("P0001".to_string(), "generic module is not supported yet".to_string())), "{given:?}");
     let generic = "module Top(in clk: Bit) { signal c: Bit; let s = Slice::<u8>(c, gnd, gnd); }\n";
     Refusal::expect(chapter.wrapped("bundle.msl", "", "natures#8", generic).run(OperatingPoint::of_top()), "natures#8", "P0001", "generic module is not supported yet");

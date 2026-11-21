@@ -397,6 +397,12 @@ impl Elaboration<'_, '_> {
                 Some(self.emit(Expr::Math { f, args: vec![recv] }, ty, origin))
             }
             ExprKind::Cast { expr: operand, .. } => {
+                if let Some(Ty::Enum(decl)) = self.types.ty(*operand)
+                    && EnumLayout::has_written_discriminants(self.design, *decl)
+                {
+                    self.unsupported(file, node.span, "an `as` cast of an enum that writes discriminants or `#[repr]`");
+                    return None;
+                }
                 let operand = self.lower_expr(scope, *operand)?;
                 let flagged = self.flag(operand).wrap(ty.clone());
                 Some(self.emit(Expr::Cast { expr: operand, to: ty }, flagged, origin))

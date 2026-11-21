@@ -70,6 +70,14 @@ impl EnumLayout {
         (width > 0).then_some(ValueType::UInt(width))
     }
 
+    /// Whether the enum `decl` writes a discriminant or a `#[repr]`: its integer value is then not the
+    /// tag's position, which the lowering does not compute yet (composite-values T50).
+    pub(super) fn has_written_discriminants(design: &Design, decl: DeclId) -> bool {
+        let data = design.decl_data(decl);
+        let repr = data.meta.attrs.iter().any(|a| matches!(design.path_node(a.path).segments.as_slice(), [only] if only.name.text == "repr"));
+        repr || data.children.iter().any(|v| matches!(&design.decl_data(*v).kind, DeclKind::Variant(vd) if vd.discriminant.is_some()))
+    }
+
     /// The tag of `variant`, its position among the enum's variants.
     pub(super) fn tag_of(&self, variant: DeclId) -> Option<i128> {
         self.variants.iter().position(|v| *v == variant).map(|k| k as i128)

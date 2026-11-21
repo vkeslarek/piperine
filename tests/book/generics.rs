@@ -97,9 +97,9 @@ fn the_generic_listings_are_refused_where_a_top_reaches_them() {
     for statements in ["emit!(\"r\", s = pick(true, 3.3, 0.0));", "emit!(\"r\", s = larger(3u8, 200));", "emit!(\"r\", s = overdrive(Family::Cmos, 2.8, 3.3));"] {
         Refusal::expect(Reached::run("generics#2", &receiver, statements), "generics#2", "P0001", "generic function is not supported yet");
     }
-    Refusal::expect(Reached::run("generics#4", "", "emit!(\"r\", s = in_tolerance(3.3));"), "generics#4", "P0001", "struct expression is not supported yet");
+    Refusal::expect(Reached::run("generics#4", "", "emit!(\"r\", s = in_tolerance(3.3));"), "generics#4", "P0001", "generic struct `Window` is not supported yet");
     Refusal::expect(Reached::run("generics#5", "", "emit!(\"r\", s = dot([1.0, 2.0], [3.0, 4.0]));"), "generics#5", "P0001", "generic function is not supported yet");
-    Refusal::expect(Reached::run("generics#5", "", "emit!(\"r\", s = dot([1.0, 2.0], [3.0, 4.0]));"), "generics#5", "P0001", "array type is not supported yet");
+    Refusal::expect(Reached::run("generics#5", "", "emit!(\"r\", s = dot([1.0, 2.0], [3.0, 4.0]));"), "generics#5", "P0001", "generic function is not supported yet");
     Refusal::expect(Reached::run("generics#5", "", "emit!(\"r\", s = mean_of([1.0, 2.0]));"), "generics#5", "P0001", "generic parameter used as a value is not supported yet");
     Refusal::expect(Reached::run("generics#9", "", "emit!(\"r\", s = mid_ramp(1M));"), "generics#9", "P0001", "generic function is not supported yet");
     // a call of a function value runs since composite-values T5 and T23; the generic function that takes one stays refused
@@ -115,7 +115,7 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
     for (items, statements, named) in [
         ("trait Area { fn area(self) -> f64; }\n#[derive(Clone, Copy, PartialEq, Repr)] enum Z { A, B }\nimpl Area for Z { fn area(self) -> f64 { 1.0 } }", "emit!(\"r\", y = Z::A.area());", "method `area` on `enum `Z`` is not supported yet"),
         ("fn same<T: Copy>(x: T) -> T { x }", "emit!(\"r\", y = same(1.0));", "generic function is not supported yet"),
-        ("#[derive(Clone, Copy)] struct Pair<T: Copy> { a: T, b: T }", "let p = Pair { a: 1.0, b: 2.0 }; emit!(\"r\", y = p.a);", "struct expression is not supported yet"),
+        ("#[derive(Clone, Copy)] struct Pair<T: Copy> { a: T, b: T }", "let p = Pair { a: 1.0, b: 2.0 }; emit!(\"r\", y = p.a);", "generic struct `Pair` is not supported yet"),
         ("fn width<const N: usize>() -> usize { N }", "emit!(\"r\", y = width::<4>());", "generic parameter used as a value is not supported yet"),
     ] {
         let faulty = ValueFile::refused("generics~5628120b", items, statements);

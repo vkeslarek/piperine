@@ -131,13 +131,12 @@ fn the_listings_still_on_the_way_are_refused_where_a_top_reaches_them() {
     // table `TAPS`, `smoothed` and `mean`; types#11 (refused, L4): `Shape`, an enum with fields; types#12
     // (refused, L1): the structs `Reading` and `Volts`; types#16 (refused, L7): the method `switches_at`.
     // When one of them runs this test fails and its row moves to `run`
-    Refusal::expect(Reached::run("types#6", "", "emit!(\"r\", s = span(2.0, 0.8));"), "types#6", "P0001", "tuple type is not supported yet");
-    Refusal::expect(Reached::run("types#6", "", "emit!(\"r\", s = span(2.0, 0.8));"), "types#6", "P0001", "tuple expression is not supported yet");
-    Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = smoothed([1.0, 2.0, 3.0]));"), "types#7", "P0001", "array type is not supported yet");
+    Refusal::expect(Reached::run("types#6", "", "emit!(\"r\", s = span(2.0, 0.8));"), "types#6", "P0001", "a tuple `let` whose value is not a tuple expression is not supported yet");
+    Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = smoothed([1.0, 2.0, 3.0]));"), "types#7", "P0001", "an expression the type checker gave no value type is not supported yet");
     Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = mean(&TAPS));"), "types#7", "P0001", "reference type is not supported yet");
-    Refusal::expect(Reached::run("types#11", "", "emit!(\"r\", s = area(Shape::Circle(1.0)));"), "types#11", "P0001", "enum `Shape` with a variant with a payload (`Circle`) is not supported yet");
-    Refusal::expect(Reached::run("types#12", "", "let r = Reading { volts: 3.0, valid: true }; emit!(\"r\", s = scaled(r, 0.5).volts);"), "types#12", "P0001", "struct expression is not supported yet");
-    Refusal::expect(Reached::run("types#12", "", "let r = Reading { volts: 3.0, valid: true }; emit!(\"r\", s = scaled(r, 0.5).volts);"), "types#12", "P0001", "field access is not supported yet");
+    Refusal::expect(Reached::run("types#11", "", "emit!(\"r\", s = area(Shape::Circle(1.0)));"), "types#11", "P0001", "enum `Shape` without `#[derive(Repr)]` is not supported yet");
+    Refusal::expect(Reached::run("types#12", "", "let r = Reading { volts: 3.0, valid: true }; emit!(\"r\", s = scaled(r, 0.5).volts);"), "types#12", "P0001", "a name whose type is not a value type is not supported yet");
+    Refusal::expect(Reached::run("types#12", "", "let r = Reading { volts: 3.0, valid: true }; emit!(\"r\", s = scaled(r, 0.5).volts);"), "types#12", "P0001", "a field access that is not an item of a placed module is not supported yet");
     let family = "#[derive(Clone, Copy, PartialEq, Repr)]\nenum Family { Cmos, Ttl }\n";
     Refusal::expect(Reached::run("types#16", family, "emit!(\"r\", s = reads_high(Family::Cmos, 2.0, 3.3));"), "types#16", "P0001", "method `switches_at` on `enum `Family`` is not supported yet");
 }
@@ -150,12 +149,12 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
     // loses it)
     let level = "#[derive(Clone, Copy, PartialEq, Repr)] enum Z { A, B }";
     for (items, statements, named) in [
-        ("", "let t = (1.5, true); emit!(\"r\", f = t.0);", "tuple expression is not supported yet"),
-        ("", "let a = [1.0, 2.0]; emit!(\"r\", x = a[0]);", "array expression is not supported yet"),
+        ("", "let t = (1.5, true); emit!(\"r\", f = t.0);", "a field access that is not an item of a placed module is not supported yet"),
+        ("", "let a = [1.0, 2.0]; emit!(\"r\", x = a[0]);", "index expression is not supported yet"),
         ("fn mean(xs: &[f64]) -> f64 { xs.len() as f64 }", "emit!(\"r\", x = mean(&[1.0, 2.0]));", "reference type is not supported yet"),
-        ("struct P { x: f64 }", "let p = P { x: 1.0 }; emit!(\"r\", x = p.x);", "struct expression is not supported yet"),
-        ("#[derive(Clone, Copy, PartialEq, Repr)] enum Cmd { Idle, Set(u8) }", "let c = Cmd::Idle; emit!(\"r\", y = c == Cmd::Idle);", "enum `Cmd` with a variant with a payload (`Set`) is not supported yet"),
-        ("#[derive(Clone, Copy, PartialEq, Repr)] enum Op { Add = 0b00, Sub = 0b01 }", "let o = Op::Sub; emit!(\"r\", y = o == Op::Sub);", "enum `Op` with an explicit discriminant (`Add`) is not supported yet"),
+        ("struct P { x: f64 }", "let p = P { x: 1.0 }; emit!(\"r\", x = p.x);", "a field access that is not an item of a placed module is not supported yet"),
+        ("#[derive(Clone, Copy, PartialEq, Repr)] enum Cmd { Idle, Set(u8) }", "let c = Cmd::Set(3); emit!(\"r\", y = c == Cmd::Idle);", "a call the type checker did not resolve is not supported yet"),
+        ("#[derive(Clone, Copy, PartialEq, Repr)] enum Op { Add = 0b00, Sub = 0b01 }", "let o = Op::Sub; emit!(\"r\", y = o as u8);", "an `as` cast of an enum that writes discriminants or `#[repr]` is not supported yet"),
         ("#[derive(Clone, Copy, PartialEq)] enum Lv { Low, High }", "let a = Lv::Low; emit!(\"r\", y = a == Lv::Low);", "enum `Lv` without `#[derive(Repr)]` is not supported yet"),
         (level, "emit!(\"r\", y = Z::B.next() == Z::A);", "method `next` on `enum `Z`` is not supported yet"),
     ] {
