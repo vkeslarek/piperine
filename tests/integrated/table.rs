@@ -20,4 +20,25 @@ impl PrintedColumn {
             })
             .collect()
     }
+
+    /// The rows of the discrete column `name` of `table`: row time and value, an unknown cell as `None`; a
+    /// `Bool` reads as 0 or 1.
+    pub fn integers(table: &Table, name: &str) -> Vec<(f64, Option<i128>)> {
+        let column = NamedColumn::find(table, name);
+        table
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(row, cells)| {
+                let Cell::Real(time) = cells[0] else { panic!("row {row} of `{}` has no real time: {:?}", column.label(), cells[0]) };
+                let value = match &cells[column.index()] {
+                    Cell::Int(value) => Some(*value),
+                    Cell::Bool(flag) => Some(i128::from(*flag)),
+                    Cell::Unknown => None,
+                    other => panic!("row {row} of `{}` is not a discrete value: {other:?}", column.label()),
+                };
+                (time, value)
+            })
+            .collect()
+    }
 }

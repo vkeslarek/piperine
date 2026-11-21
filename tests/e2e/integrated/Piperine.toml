@@ -14,3 +14,13 @@ max_step = 1e-8
 print_step = 1e-7
 print = ["Threshold.cap", "Threshold.rises", "Threshold.falls"]
 streams = ["edges"]
+
+# A source the host steps, a switch that tracks it while a 1 MHz clock is high, a 1 nF hold node and an
+# 8-bit ADC that samples it at each falling edge: 50 samples in 51 us.
+[run.sample_hold]
+top = "SampleHold"
+analysis = "transient"
+stop = 51e-6
+max_step = 1e-8
+print_step = 1e-8
+print = ["SampleHold.hold", "SampleHold.code", "SampleHold.done", "SampleHold.clk"]

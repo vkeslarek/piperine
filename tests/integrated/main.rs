@@ -17,6 +17,7 @@ mod mixed;
 mod clock;
 mod package;
 mod rc;
+mod sample_hold;
 mod suite;
 mod table;
 mod threshold;

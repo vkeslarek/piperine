@@ -4,7 +4,11 @@
 //! their params during a run. Every number a scenario judges is derived in
 //! `.specs/features/integrated-tests/design.md`.
 
+pub mod sample_hold;
+
 pub mod threshold;
+
+pub use crate::sample_hold::SampleHold;
 
 pub use crate::threshold::Threshold;
 
@@ -75,7 +79,8 @@ analog for Switch {
     i(p, n) +> (1.0 / roff + (1.0 / ron - 1.0 / roff) * level) * v(p, n);
 }
 
-/// An 8-bit ADC, mid-tread: on a rising `sample` it probes `ain` once, rounds to the nearest code
+/// An 8-bit ADC, mid-tread: on a rising `sample` (a change between two known values: the first commit
+/// at time 0 takes it from unknown and is no sample) it probes `ain` once, rounds to the nearest code
 /// and, `tconv` later, presents the code with a `done` strobe of `tstrobe`. The input draws no flow.
 pub module Adc8(ain: Electrical, in sample: Bit, out code: Bit<u8> = 0, out done: Bit = false) {
     /// Full scale, in volts: one code is `vref / 256`.
@@ -87,7 +92,7 @@ pub module Adc8(ain: Electrical, in sample: Bit, out code: Bit<u8> = 0, out done
 }
 
 digital for Adc8 {
-    on sample.rise() {
+    on sample.rise() && sample.prev().is_known() {
         let q = (v(ain) / vref * 256.0 + 0.5).floor().clamp(0.0, 255.0) as u8;
         code <- q after tconv;
         done <- true after tconv;
