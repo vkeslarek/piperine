@@ -244,10 +244,10 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] `two_commits_exchange_two_carriers` and the three other tests pass under `cargo test -p piperine-parity --test source_commits`
-- [ ] `git diff -M 856d2668 HEAD -- crates/piperine-parity/tests/source_commits.rs` changes only the header and the fixture path
-- [ ] Gate check passes: `cargo test -p piperine-parity --test source_commits`, `Run hygiene`
-- [ ] Test count: 4 tests, unchanged
+- [x] `two_commits_exchange_two_carriers` and the three other tests pass under `cargo test -p piperine-parity --test source_commits`
+- [x] `git diff -M 856d2668 HEAD -- crates/piperine-parity/tests/source_commits.rs` changes only the header and the fixture path
+- [x] Gate check passes: `cargo test -p piperine-parity --test source_commits`, `Run hygiene`
+- [x] Test count: 4 tests, unchanged
 
 **Tests**: integration
 **Gate**: quick
