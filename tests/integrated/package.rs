@@ -45,7 +45,7 @@ impl Designs {
 }
 
 #[test]
-fn the_package_declares_the_five_runs_and_checks_clean() {
+fn the_package_declares_its_runs_and_checks_clean() {
     // IT-03 AC 1: the manifest declares exactly the runs the suite has so far, and every one elaborates
     let mut declared: Vec<String> = IntegratedPackage::project().runs().iter().map(|run| run.name.clone()).collect();
     declared.sort();

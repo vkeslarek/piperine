@@ -1,7 +1,7 @@
 [package]
 name = "integrated"
 version = "0.1.0"
-description = "Five small mixed-signal designs, one run each, driven by a Rust host (tests/integrated/main.rs)"
+description = "Six small mixed-signal designs, one run each, driven by a Rust host (tests/integrated/main.rs)"
 
 # The runs are added one scenario at a time, each with its own top in src/<run>.msl.
 
@@ -57,3 +57,14 @@ max_step = 1e-8
 print_step = 1e-8
 print = ["PiLoop.code", "PiLoop.duty", "PiLoop.filtered"]
 streams = ["loop", "checks"]
+
+# A half-bridge two levels deep (HalfBridge, Leg, GateDriver): 1 us commands behind 50 ns drivers into a 1 us RL
+# load, the host ramping the supply from 0.5 to 1 V; `checks` holds the interlock's `Never` records.
+[run.half_bridge]
+top = "HalfBridge"
+analysis = "transient"
+stop = 12e-6
+max_step = 1e-8
+print_step = 1e-8
+print = ["HalfBridge.coil", "HalfBridge.hi", "HalfBridge.lo", "HalfBridge.leg.hs", "HalfBridge.leg.ls", "HalfBridge.leg.high_driver.armed"]
+streams = ["checks"]

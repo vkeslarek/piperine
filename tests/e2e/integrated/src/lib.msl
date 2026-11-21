@@ -4,6 +4,8 @@
 //! their params during a run. Every number a scenario judges is derived in
 //! `.specs/features/integrated-tests/design.md`.
 
+pub mod half_bridge;
+
 pub mod pi_loop;
 
 pub mod pwm_filter;
@@ -13,6 +15,8 @@ pub mod sample_hold;
 pub mod state_machine;
 
 pub mod threshold;
+
+pub use crate::half_bridge::HalfBridge;
 
 pub use crate::pi_loop::PiLoop;
 

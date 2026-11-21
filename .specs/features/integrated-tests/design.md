@@ -173,6 +173,21 @@ counts of limit cycle 20 mV, plus one LSB 3.9 mV = 48.9 mV ≤ 50 mV. Reference:
 equations above on the codes the table commits and must give every committed duty. Run: to 100 µs, `max_step`
 10 ns, `print_step` 10 ns (10 001 rows), print `code`, `duty`, the filter node; `streams = ["loop", "checks"]`.
 
+### `half_bridge` (post-merge fix round, IT-14)
+
+Two levels under the top: `HalfBridge` places `Commander`, `Leg` and an `Inductor` (10 uH) into a 9 ohm shunt; `Leg`
+places two `GateDriver`s (50 ns `after` delay), two `Switch`es (default `ron` 1 ohm) and a `Never` over the gates.
+`Commander` counts 20 edges of a 10 MHz clock: `hi` for counts 0 to 9, `lo` for 10 to 19, complementary, so
+the gates change at `rising(1 + 10 m) + 50 ns` (0.10, 1.10, 2.10 us ...), high side at even `m`. No dead time: with
+both switches open the inductor would force its current through the 1 Gohm leak. Closed form: the shunt node
+`v(coil) = R i` is continuous; in either state `i` relaxes with `tau = L / (R + ron) = 1 us`, towards
+`R / (R + ron) * supply = 0.9 * supply` with the high switch closed and towards 0 with the low one. The host's ramp
+(`Stimulus::ramp`, 0.5 to 1.0 V, steps of 0.1 V at 4, 5, 6, 7, 8 us) is a segment boundary of `PiecewiseRc`
+like each gate change. Run: 12 us, `max_step` and `print_step` 10 ns (1 201 rows), `streams = ["checks"]`, 120 `Never`
+records. Measurements: the decay constant over 11.2 to 12 us (a low phase, no source in it) is 1 us within 1 %;
+`settled_into(0.4, 0.9)` over the last high phase equals the closed form's crossing of 0.4 V (the phase starts at
+0.22 V) to within two print rows.
+
 ### `tran_square_rc` (ngspice, analog only)
 
 `tests/e2e/twins/tran_square_rc.cir`: `V1 vin 0 PWL(...)` with the square of `threshold` (0 → 1 V at 5 µs,

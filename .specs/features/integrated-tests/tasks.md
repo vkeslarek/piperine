@@ -117,6 +117,12 @@ T15 → T16 → T17
 T17 → T18 → T19 → T20
 ```
 
+### Phase 7: The half-bridge (post-merge fix round)
+
+```
+T20 → T21
+```
+
 ---
 
 ## Task Breakdown
@@ -323,7 +329,7 @@ T17 → T18 → T19 → T20
 
 ### T10: The integrated package and its root target
 
-**What**: `tests/e2e/integrated/Piperine.toml` (package `integrated`, no run yet) and `src/lib.msl` (`//!` header; the shared modules of design "Shared MSL": `Clock`, `Vdc`, `Resistor`, `Capacitor`, `Switch`, `Adc8`, `PwmCounter`); root `[[test]] name = "integrated" path = "tests/integrated/main.rs"` and dev-dependencies `piperine-ir`, `piperine-plan`, `piperine-abi`; `tests/integrated/main.rs` (`//!` header, `mod` lines), `suite.rs` (`IntegratedPackage`, `Suite`, `Scenario`), `package.rs` with `the_package_declares_the_five_runs_and_checks_clean` (the declared set, growing to five by T15), `every_run_compiles_with_no_warning_and_valid_shapes`, `opening_every_run_leaves_only_the_package_sources`, `the_runs_execute_at_once_in_their_own_build_directories`, `every_run_reports_its_wall_time_and_rows`; `workspace_shape.rs` accepts `.rs` files under the directory of a declared `.../main.rs` target, with a planted case.
+**What**: `tests/e2e/integrated/Piperine.toml` (package `integrated`, no run yet) and `src/lib.msl` (`//!` header; the shared modules of design "Shared MSL": `Clock`, `Vdc`, `Resistor`, `Capacitor`, `Switch`, `Adc8`, `PwmCounter`); root `[[test]] name = "integrated" path = "tests/integrated/main.rs"` and dev-dependencies `piperine-ir`, `piperine-plan`, `piperine-abi`; `tests/integrated/main.rs` (`//!` header, `mod` lines), `suite.rs` (`IntegratedPackage`, `Suite`, `Scenario`), `package.rs` with `the_package_declares_its_runs_and_checks_clean` (the declared set, growing to five by T15), `every_run_compiles_with_no_warning_and_valid_shapes`, `opening_every_run_leaves_only_the_package_sources`, `the_runs_execute_at_once_in_their_own_build_directories`, `every_run_reports_its_wall_time_and_rows`; `workspace_shape.rs` accepts `.rs` files under the directory of a declared `.../main.rs` target, with a planted case.
 **Where**: `tests/integrated/suite.rs`
 **Depends on**: T9
 **Reuses**: `tests/buck_scenarios.rs` (`Package`, `Suite`), `crates/piperine-transpile/tests/support/mixed.rs` (`Built::new`) by `#[path]`
@@ -429,7 +435,7 @@ T17 → T18 → T19 → T20
 
 ### T15: The closed loop
 
-**What**: `src/pi_loop.msl` (top `PiLoop`, `Pi`, the `settle` check, the `loop` records) and `[run.pi_loop]` (`print_step` 10 ns, `streams = ["loop", "checks"]`); `tests/integrated/pi_loop.rs` with `PiController` (design "pi_loop") and `every_duty_follows_the_pi_reference`, `the_code_stays_within_three_of_128_after_50_us`, `every_regulated_check_passes_after_50_us`, `one_loop_record_per_sample`, `the_table_has_10001_rows_on_the_10_ns_grid`, `the_duty_saturates_and_the_integrator_holds`; `the_package_declares_the_five_runs_and_checks_clean` now asserts exactly the five runs. If a derived bound fails on a model that follows the design, the derivation is corrected with its reason in the Handoff; a contract is never widened.
+**What**: `src/pi_loop.msl` (top `PiLoop`, `Pi`, the `settle` check, the `loop` records) and `[run.pi_loop]` (`print_step` 10 ns, `streams = ["loop", "checks"]`); `tests/integrated/pi_loop.rs` with `PiController` (design "pi_loop") and `every_duty_follows_the_pi_reference`, `the_code_stays_within_three_of_128_after_50_us`, `every_regulated_check_passes_after_50_us`, `one_loop_record_per_sample`, `the_table_has_10001_rows_on_the_10_ns_grid`, `the_duty_saturates_and_the_integrator_holds`; `the_package_declares_its_runs_and_checks_clean` now asserts exactly the five runs. If a derived bound fails on a model that follows the design, the derivation is corrected with its reason in the Handoff; a contract is never widened.
 **Where**: `tests/integrated/pi_loop.rs`
 **Depends on**: T14
 **Reuses**: `PwmReference`'s counter, `Adc8`, `CompletedRun::records`
@@ -554,6 +560,25 @@ T17 → T18 → T19 → T20
 
 ---
 
+### T21: `half_bridge` (post-merge fix round, finding 8)
+
+**What**: `src/half_bridge.msl` (top `HalfBridge`, `Leg`, `GateDriver`, `Commander`, `Inductor`), `[run.half_bridge]`, `tests/integrated/half_bridge.rs`, registered in `main.rs`, `Suite::plan` and `IntegratedPackage::RUNS`.
+**Where**: `tests/e2e/integrated/`, `tests/integrated/`
+**Depends on**: T20
+**Requirement**: IT-14
+
+**Done when**:
+
+- [x] `cargo test -p piperine --test integrated half_bridge::` passes
+- [x] The integrated target stays under about 25 s
+
+**Tests**: integrated
+**Gate**: build
+
+**Commit**: `test(integrated): a half-bridge two levels deep with a delayed gate drive`
+
+---
+
 ## Checks
 
 **C1** - The on-demand registry holds exactly D3's twelve targets. (IT-01, AC 1; T5)
@@ -580,8 +605,8 @@ Proof: run hygiene | test the_buck_readme_names_every_on_demand_target ... ok
 **C8** - The reader returns exactly the flagged target of a planted two-table manifest. (IT-02, AC 4; T1)
 Proof: run hygiene | test the_on_demand_reader_finds_test_false ... ok
 
-**C9** - The package declares exactly the five runs and checks with no diagnostic. (IT-03, AC 1; T10, T15)
-Proof: run integrated | test package::the_package_declares_the_five_runs_and_checks_clean ... ok
+**C9** - The package declares exactly its runs (five at the merge, six with `half_bridge`) and checks with no diagnostic. (IT-03, AC 1; T10, T15)
+Proof: run integrated | test package::the_package_declares_its_runs_and_checks_clean ... ok
 
 **C10** - Every run's design compiles with no `rustc` warning and valid shapes. (IT-03, AC 2; T10)
 Proof: run integrated | test package::every_run_compiles_with_no_warning_and_valid_shapes ... ok
@@ -753,6 +778,24 @@ Proof: run shape | test root_tests_hold_no_end_to_end_target ... ok
 
 **C65** - `.specs/STATE.md` records MD-77 with the gate migration. (IT-13, AC 3; T20)
 Proof: `grep -q "^### MD-77" .specs/STATE.md && grep -q "unknown-semantics-per-level" .specs/STATE.md`
+
+**C67** - A nested signal two and three levels below the top prints, and the driver's copy of the command is the command. (IT-14, AC 1; T21)
+Proof: run integrated | test half_bridge::the_nested_instance_paths_print_and_the_driver_sees_the_command ... ok
+
+**C68** - Each gate follows its command by exactly the driver delay. (IT-14, AC 2; T21)
+Proof: run integrated | test half_bridge::each_gate_follows_its_command_by_the_driver_delay ... ok
+
+**C69** - The gates are never high together and the interlock delivers one passing record per edge. (IT-14, AC 3; T21)
+Proof: run integrated | test half_bridge::the_interlock_holds_on_every_clock_edge_and_on_every_row ... ok
+
+**C70** - The shunt follows the RL closed form through the host's ramp. (IT-14, AC 4; T21)
+Proof: run integrated | test half_bridge::the_shunt_follows_its_closed_form_through_the_ramp ... ok
+
+**C71** - The ramp gives its five steps and the last high phase peaks at the closed form's value. (IT-14, AC 5; T21)
+Proof: run integrated | test half_bridge::the_supply_ramp_is_five_steps_ending_at_one_volt ... ok
+
+**C72** - The decay constant is `L / (R + ron)` and the settling time is the closed form's crossing. (IT-14, AC 6; T21)
+Proof: run integrated | test half_bridge::the_low_phase_decays_with_the_load_time_constant ... ok
 
 ---
 

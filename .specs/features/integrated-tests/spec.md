@@ -119,6 +119,7 @@ and the scenario of the suite that re-proves the capability. Times: measured wit
 | `piperine-cli` `buck` | the binary runs `idle` and `startup`: run line, table on its 0.5 µs grid (1 201 rows), last row reference 128 and vout within 3 mV, no failed check printed while every check record passes, at most 16 lines for `idle`, `piperine test` passes both runs | minutes (the 600 µs start) | IT-10 (the binary on `pi_loop` and `threshold`) |
 | `piperine-cli` `book` (`the_buck_block_is_what_the_binary_prints` and the shared fixture) | the Book's buck listing is what `piperine run startup` prints; the chapter shows the bench and the run table as the example has them | minutes, paid by every test of the target | IT-11 (moved on demand; text equality stays) |
 | `piperine` `book_cli` (`the_buck_bench_of_the_chapter_is_the_example_and_starts_with_the_supervisor_off`) | `cli#44` is `benches/startup.msl`; a 2 µs run has the supervisor off and the reference 0 | about 15 s (a whole-buck compile) | IT-11 (text equality stays; the run moves on demand) |
+| `piperine-parity` `buck_power`, `buck_dpwm`, `buck_whole`, `buck_supervisor` (post-merge fix round) | the capabilities the first merge left on demand and that are cheap to prove small: hierarchy paths below one level (`Startup.buck.ctl.reference`-style), gate-driver delays and the interlock `Never` over an inductor load, `Stimulus::ramp` with `Trace` settling and decay-constant measurements on a real run | 5 to 16 s each | IT-14 (`half_bridge`, 22 s with the batch) |
 
 **Feature proofs that cite buck targets.** Closed features on `main` cite them in `**Run**` lines and proofs:
 `buck-scenarios` (7), `msl-cli` (16), `long-run` (15), `msl-digital` (23), `msl-fixes` (3), `value-semantics`
@@ -379,6 +380,23 @@ The closed forms, the reference models and the numbers each criterion uses are d
 
 ---
 
+### P2: The half-bridge (`half_bridge`) (post-merge fix round)
+
+**User Story**: As a maintainer, I want a small run two levels deep with a delayed gate drive, an interlock and a host ramp so that what moved on demand with the buck and is cheap to prove (hierarchy paths, driver delay, interlock, ramp with trace measurements) stays in the default gate.
+
+**Acceptance Criteria**:
+
+1. WHEN the run prints `HalfBridge.leg.hs` and `HalfBridge.leg.high_driver.armed` THEN both nested paths SHALL resolve and the driver's copy of the command SHALL equal the command on every row.
+2. WHEN a command changes THEN its gate SHALL change exactly the 50 ns driver delay later, on the print grid, for both edges of both gates.
+3. The two gates SHALL never be high on one row, and the `Never` of the leg SHALL deliver one passing record per rising edge (120), none failed.
+4. WHILE the host ramps the supply THEN every row of the shunt SHALL equal the closed form of the RL load (`tau = 1 us`) under `TRAN_VOLTAGE`.
+5. `Stimulus::ramp` SHALL give the five steps 0.6 to 1.0 V at 4 to 8 us, and the last high phase's peak SHALL be the closed form's.
+6. The trace's decay constant over the last low phase SHALL be `L / (R + ron)` within 1 %, and `settled_into` SHALL find the closed form's crossing time to within a grid row.
+
+**Independent Test**: `cargo test -p piperine --test integrated half_bridge::`.
+
+---
+
 ## Gate migration
 
 The replacement lines each in-flight feature applies to its `tasks.md` at its next rebase onto `main` (D12).
@@ -427,8 +445,9 @@ integrated; cargo test -p piperine-parity --test source_commits --test source_re
 | IT-11 | P1: The Book stays honest | Tasks | Pending |
 | IT-12 | P2: Language proofs leave the buck's name | Tasks | Pending |
 | IT-13 | P2: The documents say how to run the buck | Tasks | Pending |
+| IT-14 | P2: The half-bridge | Tasks | Pending |
 
-**Coverage:** 13 requirements, 13 mapped to tasks, 0 unmapped.
+**Coverage:** 14 requirements, 14 mapped to tasks, 0 unmapped.
 
 ---
 
