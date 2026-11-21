@@ -1,6 +1,6 @@
 //! Records from MSL source (feature `msl-digital`, T52 and T67; checks C104, C107, C180, C181, DIG-11
 //! AC 1, 4 and 5): the stdlib `Never` on a clock with `bad` held false and then true, `log` from
-//! a reaction, and `log` from two reactions of one body (`tests/buck/records.msl`). A `Sink` of
+//! a reaction, and `log` from two reactions of one body (`tests/digital/records.msl`). A `Sink` of
 //! this file decodes each record the solver delivers: a commit to a `RECORD` pin arrives as a
 //! `Record` observation carrying its pin path, the reaction and the statement that made it
 //! (abi.md C5) and the field bytes, and `Ir::record_at` gives the instance and the stream and
@@ -10,10 +10,12 @@
 #![cfg(unix)]
 
 use std::cell::RefCell;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use piperine_ir::Ir;
+use piperine_parity::project::Project;
 use piperine_solver::prelude::{Solver, TransientAnalysisOptions};
 use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind, Sink};
 
@@ -28,7 +30,17 @@ mod mixed;
 mod support;
 
 use mixed::{Built, rise};
-use support::{build, with_buck};
+use support::build;
+
+/// The fixture of this target: `tests/digital/records.msl` as a project of its own.
+struct Source;
+
+impl Source {
+    /// The project of the fixture file.
+    fn project() -> Project {
+        Project::new(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/digital/records.msl"))
+    }
+}
 
 /// One record, decoded.
 #[derive(Debug, Clone, PartialEq)]
@@ -83,7 +95,7 @@ fn records(built: &Built, stop: f64) -> Vec<Decoded> {
 #[test]
 fn never_reports_each_rising_edge() {
     // 30 ns: rising edges 1 to 6 at 2.5, 7.5, ..., 27.5 ns
-    let all = records(&build(&with_buck("records.msl"), "NeverBench"), 30e-9);
+    let all = records(&build(&Source::project(), "NeverBench"), 30e-9);
     // std/monitor.msl: `Never` runs `require("never", !bad)` at each rising edge: one record per
     // edge, on `checks`, with the texts `kind = require` and `name = never`
     assert_eq!(all.len(), 6, "one record per rising edge: {all:?}");
@@ -104,7 +116,7 @@ fn never_reports_each_rising_edge() {
 #[test]
 fn log_carries_its_severity_and_its_text() {
     // 12 ns: rising edges 1 and 2 at 2.5 and 7.5 ns
-    let all = records(&build(&with_buck("records.msl"), "LogBench"), 12e-9);
+    let all = records(&build(&Source::project(), "LogBench"), 12e-9);
     // part VI §19 and std/io.msl: `log(Severity::Warning, "x")` is one record of the stream `log`
     // with `severity` 1 and the site text `x`; the second statement is `Severity::Error` (2),
     // text `y`: one record per statement per run, in statement order
@@ -127,7 +139,7 @@ fn records_of_two_reactions_are_told_apart() {
     // statement of its commit (abi.md C5): keyed on the statement alone, both would read
     // `first`. Reactions of one instant run in source order (§12.1.2), so each edge gives the
     // first reaction's record, then the second's.
-    let all = records(&build(&with_buck("records.msl"), "TwoBench"), 12e-9);
+    let all = records(&build(&Source::project(), "TwoBench"), 12e-9);
     assert_eq!(all.len(), 4, "two reactions at two edges: {all:?}");
     for (k, r) in all.iter().enumerate() {
         let (severity, text) = if k % 2 == 0 { (1, "first") } else { (2, "second") };
@@ -162,7 +174,7 @@ fn records_of_two_reactions_at_different_statements_keep_their_texts() {
     // `Warning` `q` and `Error` `r` at statements 0 and 1 of the second: each edge gives `p`,
     // `q`, `r`. Each record keeps its own severity and its own text
     for (bench, texts) in [("ThreeBench", ["a", "b", "c"]), ("AfterBench", ["p", "q", "r"])] {
-        let all = records(&build(&with_buck("records.msl"), bench), 12e-9);
+        let all = records(&build(&Source::project(), bench), 12e-9);
         assert!(all.iter().all(|r| r.instance == format!("{bench}.talk")), "{all:?}");
         let mut want = Vec::new();
         for edge in 1..=2 {

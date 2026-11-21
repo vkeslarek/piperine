@@ -266,10 +266,10 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] `never_reports_each_rising_edge` and the three other tests pass under `cargo test -p piperine-parity --test source_records`, assertions unchanged
-- [ ] `grep -q "buck::" crates/piperine-parity/tests/digital/records.msl` fails
-- [ ] Gate check passes: `cargo test -p piperine-parity --test source_records`, `Run hygiene`
-- [ ] Test count: 4 tests, unchanged
+- [x] `never_reports_each_rising_edge` and the three other tests pass under `cargo test -p piperine-parity --test source_records`, assertions unchanged
+- [x] `grep -q "buck::" crates/piperine-parity/tests/digital/records.msl` fails
+- [x] Gate check passes: `cargo test -p piperine-parity --test source_records`, `Run hygiene`
+- [x] Test count: 4 tests, unchanged
 
 **Tests**: integration
 **Gate**: quick

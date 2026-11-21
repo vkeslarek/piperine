@@ -1,5 +1,10 @@
 //! Records from source (T52): the stdlib `Never` on a clock and `log` from a reaction.
-use buck::dpwm::Osc;
+
+/// The clock: a free-running oscillator, its first change at half a period.
+module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
 
 /// Holds `bad` false for the first two rising edges and drives it true at the third, so a
 /// `Never` on the same clock sees it false at edges 1 to 3 and true from edge 4.
