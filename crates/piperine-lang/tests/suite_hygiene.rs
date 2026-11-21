@@ -460,14 +460,30 @@ impl OnDemandRegistry<'_> {
             .collect()
     }
 
-    /// Every entry whose `--test <name>` the block of `readme` does not hold.
+    /// Every entry whose `--test <name>` the block of `readme` does not hold on a line that also
+    /// carries the entry's `-p <package>` (both as whole words: `--test buck` is not `--test
+    /// buck_whole`, and one crate's `book_buck` line is not the other's).
     fn undocumented(&self, readme: &str) -> Vec<String> {
         let block = Self::on_demand_block(readme);
         self.entries
             .iter()
-            .filter(|(_, target, _)| !block.contains(&format!("--test {target}")))
-            .map(|(dir, target, _)| format!("{dir}: target `{target}` is not named as `--test {target}` in the README's \"On demand\" block"))
+            .filter(|(dir, target, _)| !block.lines().any(|line| Self::names_target(line, Self::package_of(dir), target)))
+            .map(|(dir, target, _)| {
+                format!("{dir}: target `{target}` is not named as `-p {} --test {target}` on one line of the README's \"On demand\" block", Self::package_of(dir))
+            })
             .collect()
+    }
+
+    /// The package name of a crate directory: `crates/<name>` is `<name>`, the root `.` is `piperine`.
+    fn package_of(dir: &str) -> &str {
+        dir.strip_prefix("crates/").unwrap_or("piperine")
+    }
+
+    /// Whether `line` holds `-p <package>` and `--test <target>` as whole words.
+    fn names_target(line: &str, package: &str, target: &str) -> bool {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        let pair = |flag: &str, value: &str| words.windows(2).any(|pair| pair[0] == flag && pair[1] == value);
+        pair("-p", package) && pair("--test", target)
     }
 
     /// The README text from its `## On demand` heading to the next `## ` heading (empty if absent).
@@ -497,6 +513,8 @@ fn the_on_demand_reader_finds_test_false() {
     let last = "[[test]]\nname = \"tail\"\ntest = false\n";
     assert_eq!(OnDemandManifest::targets(last), vec!["tail".to_string()]);
     assert!(OnDemandManifest::targets("[lib]\ntest = false\n").is_empty());
+    let commented = "[[test]] # on demand\nname = \"slow\" # the long one\ntest = false # slow\n";
+    assert_eq!(OnDemandManifest::targets(commented), vec!["slow".to_string()]);
 }
 
 /// Every flagged target of every manifest is registered; a planted flagged target missing from a
@@ -513,8 +531,6 @@ fn on_demand_targets_are_registered() {
     assert!(offences.is_empty(), "targets switched off by `test = false` without a registry entry:\n  {}", offences.join("\n  "));
 }
 
-    let commented = "[[test]] # on demand\nname = \"slow\" # the long one\ntest = false # slow\n";
-    assert_eq!(OnDemandManifest::targets(commented), vec!["slow".to_string()]);
 /// Every registry entry names a target that exists and is flagged; a planted stale entry is reported.
 #[test]
 fn the_on_demand_registry_names_only_on_demand_targets() {
@@ -563,6 +579,17 @@ fn the_buck_readme_names_every_on_demand_target() {
     let offences = OnDemandRegistry { entries: &planted }.undocumented("# t\n\n## On demand\n\ncargo test --test fast\n\n## Next\n--test slow\n");
     assert_eq!(offences.len(), 1, "{offences:?}");
     assert!(offences[0].contains("slow"), "{offences:?}");
+
+    let prefix = [("crates/x", "buck", "why")];
+    let offences = OnDemandRegistry { entries: &prefix }.undocumented("## On demand\n\ncargo test -p x --test buck_whole\n");
+    assert_eq!(offences.len(), 1, "a longer target name is not the prefix target: {offences:?}");
+    let whole = [("crates/x", "buck_whole", "why")];
+    let offences = OnDemandRegistry { entries: &whole }.undocumented("## On demand\n\ncargo test -p x --test buck --test buck_whole\n");
+    assert!(offences.is_empty(), "{offences:?}");
+    let twins = [("crates/a", "book_buck", "why"), ("crates/b", "book_buck", "why")];
+    let offences = OnDemandRegistry { entries: &twins }.undocumented("## On demand\n\ncargo test -p a --test book_buck\n");
+    assert_eq!(offences.len(), 1, "the other package's line is missing: {offences:?}");
+    assert!(offences[0].contains("-p b"), "{offences:?}");
 
     let readme = fs::read_to_string(repo_root().join("examples/buck/README.md")).expect("the buck README is readable");
     let offences = OnDemandRegistry { entries: &ON_DEMAND_TARGETS }.undocumented(&readme);
