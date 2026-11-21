@@ -137,10 +137,14 @@ fn a_counter_over_a_project_byte_nature_commits_and_records() {
 #[test]
 fn a_project_nature_carrier_connects_to_a_port_of_the_same_nature() {
     // §6.1.3, §8.1.10: the counter's `Byte` signal reaches the reader's `Byte` port and a bench
-    // with no reader runs as well; the net is one net either way, named by its path.
+    // with no reader runs as well; the net is one net either way, named by its path. The reader
+    // sees the net: it records the count it reads at each rising edge, `0, 1, ..., 5`.
     let alone = Model::of("byte_counter.msl").built("CounterBench").run(60e-9, 1e-9);
-    let connected = Model::of("byte_counter.msl").built("ConnectedBench").run(60e-9, 1e-9);
+    let connected_bench = Model::of("byte_counter.msl").built("ConnectedBench");
+    let connected = connected_bench.run(60e-9, 1e-9);
     assert_eq!(transient(&alone, "CounterBench.count"), transient(&connected, "ConnectedBench.count"));
+    let read: Vec<Vec<(String, i128)>> = (0..6).map(|count| vec![("count".to_string(), count)]).collect();
+    assert_eq!(Model::records(&connected_bench, &connected, "seen"), read, "the reader reads the connected net");
 }
 
 #[test]
