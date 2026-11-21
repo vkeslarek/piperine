@@ -102,9 +102,9 @@ Total: L, about 95 tasks (110 with `f128` (a)).
 
 **Acceptance Criteria** (CV-01, `let mut` and assignment):
 
-1. WHEN a function body, a reaction body or an `analog` block declares `let mut x = e;` and later assigns `x = e2;` or `x += e2;` (every compound operator of Rust) THEN the system SHALL type-check, elaborate and run it with the value Rust gives.
-2. IF an assignment targets a binding declared without `mut`, a param, a carrier or a body `let` THEN the system SHALL refuse it at elaboration with a diagnostic naming the target.
-3. IF a module body declares `let mut` THEN the system SHALL refuse it with the placement code of Appendix B.2.
+1. WHEN a function body, a reaction body or an `analog` block declares `let x = e;` and later assigns `x = e2;` or `x += e2;` (every compound operator of Rust) THEN the system SHALL type-check, elaborate and run it with the value Rust gives.
+2. IF an assignment targets a param, a carrier or a body `let` (a binding declared without `mut` is a place: value-semantics) THEN the system SHALL refuse it at elaboration with a diagnostic naming the target.
+3. IF a module body declares `let mut` THEN the system SHALL refuse it as the reserved word `mut`, `E0903` (value-semantics VS-02 AC 2, in place of `E0331`).
 
 **Acceptance Criteria** (CV-02, loops):
 
@@ -187,22 +187,18 @@ Total: L, about 95 tasks (110 with `f128` (a)).
 
 **Acceptance Criteria** (CV-12, comparison and derives):
 
-1. WHEN a struct, tuple, array or enum derives `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Clone`, `Copy` or `Default` (H.8) THEN the system SHALL give `==`, `!=`, `<`, `<=`, `>`, `>=` and `T::default()` the results Rust's derives give.
+1. WHEN a struct, tuple, array or enum derives `PartialEq`, `Eq`, `PartialOrd`, `Ord` or `Default` (H.8; `Clone` and `Copy` are not names, `E0161`) THEN the system SHALL give `==`, `!=`, `<`, `<=`, `>`, `>=` and `T::default()` the results Rust's derives give.
 2. IF `==` or `<` is applied to a type that does not derive or implement the trait THEN the system SHALL refuse it naming the trait.
 3. WHEN a type derives `Debug` or `Hash` THEN the system SHALL accept the derive and give it no run-time effect.
 
-**Acceptance Criteria** (CV-13, arrays and slices):
+**Acceptance Criteria** (CV-13, arrays and range indexes):
 
-1. WHEN an array is built (`[a, b, c]`, `[x; N]` with `N` a const expression), indexed with a `usize`, assigned by element in a `let mut`, nested, or passed to a `&[T]` parameter THEN the system SHALL give the values Rust gives.
-2. WHEN a slice is taken (`&a[i..j]`, `&a[..]`) THEN the system SHALL give the elements `i` to `j - 1`.
-3. IF an index or a slice range is out of bounds THEN the system SHALL panic (§1 rule 11): at elaboration an elaboration error, during a run a failed analysis naming the instance, the instant and the index.
+1. WHEN an array is built (`[a, b, c]`, `[x; N]` with `N` a const expression), indexed with a `usize`, assigned by element in a `let`, nested, or passed to a `[T; N]` parameter THEN the system SHALL give the values Rust gives.
+2. WHEN a range index with const bounds is taken (`a[i..j]`) THEN the system SHALL give the array of the elements `i` to `j - 1`.
+3. IF an index or a range index is out of bounds THEN the system SHALL panic (§1 rule 11): at elaboration an elaboration error, during a run a failed analysis naming the instance, the instant and the index.
 4. IF an array length is not a const expression THEN the system SHALL refuse it naming the length.
 
-**Acceptance Criteria** (CV-14, references):
-
-1. WHEN `&` borrows an array, a slice or a string for a function parameter, or any value as a call argument (§1 rule 2, D7) THEN the system SHALL accept it.
-2. IF `&` appears anywhere else THEN the system SHALL refuse it with `E0102`.
-3. WHEN an element reference from `iter`, `first`, `last` or `get` is read with `*`, compared, or used in arithmetic THEN the system SHALL read it as the element, as Rust's auto-deref does.
+**Acceptance Criteria** (CV-14, references): dropped. No borrow exists (value-semantics, VS-01): a reference is `E0101`, so there is nothing to accept or read through.
 
 **Acceptance Criteria** (CV-15, Appendix H.5 to H.7):
 
@@ -387,7 +383,7 @@ Total: L, about 95 tasks (110 with `f128` (a)).
 | -- | ---- | --------- |
 | L1 | struct values, struct expressions, field access | CV-09, CV-12, CV-17, CV-20 |
 | L2 | tuples outside `let (a, b) = (x, y);` | CV-10 |
-| L3 | arrays, indexing, slices, `&` | CV-13, CV-14 |
+| L3 | arrays, indexing, range indexes (slices and `&` are closed by `value-semantics`) | CV-13 |
 | L4 | payload enums, `#[repr(uN)]`, explicit discriminants, one-variant enums as carriers | CV-11, CV-17 |
 | L4 | generic enums | `generics` GN-06 (a generic item; checked and instantiated by that feature) |
 | L5 | `let mut`, assignment, `for`, `while`, `loop`, `break`, `return` | CV-01, CV-02, CV-03 |

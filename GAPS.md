@@ -22,14 +22,14 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 3 silent, 2 broken, 38 loud (L1 to L63 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure` and the four `composite-values` rows (L5, L6, L10, L63) closed, L9 narrowed to its `generics` part, in six tables) plus
+**Counts.** 2 silent, 2 broken, 38 loud (L1 to L63 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure` and the four `composite-values` rows (L5, L6, L10, L63) closed, L9 narrowed to its `generics` part, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 9 unproven.
 
 | Section | Ids |
 | ------- | --- |
 | §2 Broken | B3, B4 |
-| §3 Silent (read this first) | S3, S6, S7 |
+| §3 Silent (read this first) | S3, S6 |
 | §4 Loud | L1–L62 (L11, L14, L15, L17, L18, L19, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10 closed; L9 narrowed) |
 | §5 Spec holes and disagreements | G1–G6 (the buck's), X1, X2, X5, X6 (X3, X4, X7, X8, X9 decided by `host-ii`) |
 | §6 Solver, numerics, performance | V12, V13, V16 |
@@ -92,24 +92,6 @@ change of the IR or the ABI.
   gives 0. `x & 0` and `b && false` are right. Ruled provisional on 2026-11-15 (`ir-rust` F-B4);
   listed here because the result differs from the spec text with no diagnostic. Per-level flags
   change the ABI's one known byte per value.
-
-### S7. Value semantics: the front end still accepts what the spec removed — size M (`value-semantics`)
-
-- **What.** The spec was amended on 2026-11-20 (Appendix G.71, decisions V1 to V7): data are values
-  and always copy, every local may be assigned, and there is no reference, slice, move, `Clone`,
-  `Copy`, `mut`, `ref` or `move`. The implementation is the earlier language. The parser accepts
-  `&T`, `&x`, `*x`, `&p`, `ref`, `mut`, `move` and `&'static str`; it reports `&self`, `&&x` and a
-  `mut` parameter as `E0900` where B.3.6 now says `E0101` and `E0903`; it raises `E0331`, which the
-  spec retired, for `let mut` in a module body. `Clone` and `Copy` resolve in a derive and in a
-  bound where H.8 rule 1 says `E0161`. `resolve` is typed `fn(&[T]) -> T` where §4 rule 8 takes
-  `[T; N]`. Appendix H's rows are by value in the spec and by borrow in the catalogue.
-- **Where it shows.** `crates/piperine-lang/std/*.msl` and the Part VII fences that are excerpts of
-  it keep the earlier spelling (§22's Resolution says how to read it); `examples/buck/src` derives
-  `Clone, Copy`. `msl_errors.rs` names the three B.3.6 rows and the one code that are ahead of the
-  parser (`ROWS_AHEAD_OF_THE_PARSER`, `FIXTURES_BEHIND_THE_SPEC`, `RETIRED_AHEAD_OF_THE_PARSER`).
-- **Impact.** A model written with the removed forms is accepted (the checker takes a `let` without `mut`
-  as assignable since `value-semantics` T2, and still takes `mut`, which changes nothing). Plan:
-  `.specs/features/value-semantics/`.
 
 ---
 
@@ -229,7 +211,7 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 ### 4.8 Diagnostics that are loud and say too little
 
 - **67 of the spec's 187 error codes are raised nowhere in the source** (list in §10). Most belong to
-  a refused construct; `E0105` does not. `E0331` is raised and no longer in the spec (S7).
+  a refused construct; `E0105` does not.
 - `P0001` says "outside the M1 subset" for forms the spec defines.
 
 | ID | Gap | Where | Size |

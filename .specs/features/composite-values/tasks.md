@@ -1062,17 +1062,17 @@ T63
 
 **Done when**:
 
-- [ ] `arrays_indexing_and_slices_type_check` and `a_non_constant_array_length_is_refused_naming_it` pass under `**Run typesagg**`
+- [ ] `arrays_and_indexing_type_check` and `a_non_constant_array_length_is_refused_naming_it` pass under `**Run typesagg**`
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
 
-**Commit**: `feat(types): arrays, indexing and slices`
+**Commit**: `feat(types): arrays and indexing`
 
 ---
 
-### T43: Checker: borrows and dereference
+### T43: Checker: borrows and dereference (dropped by `value-semantics`: CV-14 is void, no borrow exists)
 
 **What**: In `types/aggregate.rs`: `&` of an array, slice or string for a function parameter, and of any value as a call argument (§1 rule 2); anywhere else `E0102`; `*r` of a `Copy` value; the four read-through places of §1.2.6 (field, index, method receiver, scalar operator operand).
 **Where**: `crates/piperine-lang/src/types/aggregate.rs`
@@ -1095,7 +1095,7 @@ T63
 
 ### T44: Checker: derives, comparison, defaults and moves
 
-**What**: `types/derives.rs` (`Derives`): the H.8 traits a type derives, their requirements (H.8 rule 6), the traits of built-in types (rule 7); `==`/`!=` need `PartialEq`, `<`/`<=`/`>`/`>=` need `PartialOrd` (§1.3.10), refused naming the trait (`P0002`, D6); `x.clone()`; `T::default()` for a type deriving `Default`; `#[derive(Default)]` on an enum refused naming `Default` (D4); `Debug` and `Hash` accepted with no effect; an unknown derive name `E0161`; a read of a moved non-`Copy` value `E0183` (§1.4.7, D14).
+**What**: `types/derives.rs` (`Derives`): the H.8 traits a type derives, their requirements (H.8 rule 6), the traits of built-in types (rule 7); `==`/`!=` need `PartialEq`, `<`/`<=`/`>`/`>=` need `PartialOrd` (§1.3.10), refused naming the trait (`P0002`, D6); `T::default()` for a type deriving `Default`; `#[derive(Default)]` on an enum refused naming `Default` (D4); `Debug` and `Hash` accepted with no effect; an unknown derive name `E0161` (`Clone` and `Copy` are unknown names: value-semantics, no move and no `x.clone()`). The H.8 table of `Derives` holds seven traits (`Debug`, `Hash` accepted with no effect).
 **Where**: `crates/piperine-lang/src/types/derives.rs`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `Checker::derives`
@@ -1104,19 +1104,19 @@ T63
 
 **Done when**:
 
-- [ ] `derived_traits_give_comparison_clone_and_default`, `comparing_without_the_trait_is_refused_naming_it`, `debug_and_hash_derives_are_accepted`, `an_enum_deriving_default_is_refused` and `a_read_after_a_move_is_e0183` pass under `**Run typesagg**`
+- [ ] `derived_traits_give_comparison_and_default`, `comparing_without_the_trait_is_refused_naming_it`, `debug_and_hash_derives_are_accepted` and `an_enum_deriving_default_is_refused` pass under `**Run typesagg**`
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
 
-**Commit**: `feat(types): derives, comparison, defaults and moves`
+**Commit**: `feat(types): derives, comparison and defaults`
 
 ---
 
 ### T45: Checker: Appendix H.5 to H.7
 
-**What**: In `types/catalogue.rs`: the H.5 rows on arrays and slices (`len`, `is_empty`, `iter`, `contains`, `first`, `last`, `get`), H.6 on ranges (`contains`, `is_empty`), H.7 on iterators (`map`, `filter`, `fold`, `sum`, `count`, `zip`, `enumerate`, `rev` where rule 3 allows, `any`, `all`) with `Ty::Range` and `Ty::Iterator`; `for` over an array, a slice and any chain (§1.8.9); any other method on these receivers is `E0161` naming method and type.
+**What**: In `types/catalogue.rs`: the H.5 rows on arrays (`len`, `is_empty`, `iter`, `contains`, `first`, `last`, `get`), H.6 on ranges (`contains`, `is_empty`), H.7 on iterators (`map`, `filter`, `fold`, `sum`, `count`, `zip`, `enumerate`, `rev` where rule 3 allows, `any`, `all`) with `Ty::Range` and `Ty::Iterator`; `for` over an array and any chain (§1.8.9). Rows are by value (value-semantics): `iter` yields `T`, `first`/`last`/`get` give `Option<T>`, `contains(x: T)`, `filter`'s closure takes `T`; receivers are arrays only; no `Ty::Ref`; any other method on these receivers is `E0161` naming method and type.
 **Where**: `crates/piperine-lang/src/types/catalogue.rs`
 **Depends on**: T44
 **Reuses**: the catalogue rows, `Checker::closure_typed`
@@ -1243,7 +1243,7 @@ T63
 
 ### T51: Elaborator: arrays, indexing and slices
 
-**What**: In `elab/aggregate.rs`: array literals, `[x; N]` (evaluated once), indexing (out of range a run panic naming instance, instant and index), element assignment, nested arrays, `&a` to a `&[T]` parameter, slices `&a[i..j]` and `&a[..]` (a start after the end panics), slice patterns; an index that may be unknown reads the merge of the elements it may name and writes by merging into each (§3.3.13, unknown-semantics US-04 AC 12).
+**What**: In `elab/aggregate.rs`: array literals, `[x; N]` (evaluated once), indexing (out of range a run panic naming instance, instant and index), element assignment, nested arrays; a const range index lowers to the array of its elements, `rest @ ..` binds that array, and an array passed to a function is a copy (value-semantics: no `&a`, no slice); an index that may be unknown reads the merge of the elements it may name and writes by merging into each (§3.3.13, unknown-semantics US-04 AC 12).
 **Where**: `crates/piperine-lang/src/elab/aggregate.rs`
 **Depends on**: T50
 **Reuses**: T35's `rt::Index` through the printer
@@ -1252,40 +1252,40 @@ T63
 
 **Done when**:
 
-- [ ] `arrays_give_rusts_values`, `slices_give_the_elements_in_range`, `an_index_out_of_range_panics_at_run_time`, `a_slice_whose_start_exceeds_its_end_panics` and `an_unknown_index_reads_and_writes_by_merge` pass under `**Run srcagg**`
+- [ ] `arrays_give_rusts_values`, `a_range_index_gives_the_array_of_its_elements`, `an_index_out_of_range_panics_at_run_time` and `an_unknown_index_reads_and_writes_by_merge` pass under `**Run srcagg**`
 - [ ] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
 
-**Commit**: `feat(elab): arrays, indexing and slices`
+**Commit**: `feat(elab): arrays, indexing and range indexes`
 
 ---
 
-### T52: Elaborator: derives and borrows
+### T52: Elaborator: derives and defaults
 
-**What**: In `elab/aggregate.rs`: derived `==`, `!=`, `<`, `<=`, `>`, `>=` on structs, tuples, arrays, enums (enums by discriminant then fields, H.8 rule 3) and `Option`s (`None` lowest, §1.5.23); `clone()`; `T::default()` (`Expr::Default`); element borrows from `iter`, `first`, `last`, `get` read through by `*`, comparison and arithmetic (§1.2.6).
+**What**: In `elab/aggregate.rs`: derived `==`, `!=`, `<`, `<=`, `>`, `>=` on structs, tuples, arrays, enums (enums by discriminant then fields, H.8 rule 3) and `Option`s (`None` lowest, §1.5.23); `clone()`; `T::default()` (`Expr::Default`). No `clone()` and no element borrow (value-semantics: every value is copied).
 **Where**: `crates/piperine-lang/src/elab/aggregate.rs`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `Expr::Binary` on aggregates (T32)
-**Requirement**: CV-12, CV-14
+**Requirement**: CV-12
 **Executor**: Sonnet
 
 **Done when**:
 
-- [ ] `derived_comparisons_and_defaults_give_rusts_results` and `element_borrows_read_as_the_element` pass under `**Run srcagg**`
+- [ ] `derived_comparisons_and_defaults_give_rusts_results` passes under `**Run srcagg**`
 - [ ] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
 
-**Commit**: `feat(elab): derived comparisons, defaults and borrows`
+**Commit**: `feat(elab): derived comparisons and defaults`
 
 ---
 
 ### T53: Elaborator: Appendix H.5 to H.7 as loops
 
-**What**: `elab/iterators.rs` (`IteratorChain`): H.5 rows (`len` a constant for an array, `Length` for a slice), H.6 rows as comparisons, H.7 chains and `for` over arrays, slices and chains as one `ForRange` over indices (D10), in Rust's order; an empty array (`len` 0, `first` `None`); `get` past the end is `None`. The value code of the stdlib `zi_nd` reaction body (`acc` over `num`, `xs`, `den`, `ys`) runs as a monomorphic `fn` over arrays against Rust (D18).
+**What**: `elab/iterators.rs` (`IteratorChain`): H.5 rows (`len` a constant), H.6 rows as comparisons, H.7 chains and `for` over arrays and chains (no slices; elements are values) as one `ForRange` over indices (D10), in Rust's order; an empty array (`len` 0, `first` `None`); `get` past the end is `None`. The value code of the stdlib `zi_nd` reaction body (`acc` over `num`, `xs`, `den`, `ys`) runs as a monomorphic `fn` over arrays against Rust (D18).
 **Where**: `crates/piperine-lang/src/elab/iterators.rs`
 **Depends on**: T52
 **Reuses**: `elab/control.rs` loops, `PatternTest`
@@ -1495,7 +1495,7 @@ T63
 
 ### T63: Phase B bookkeeping
 
-**What**: `GAPS.md` drops L1, L2, L3, L4 (all but generic enums, which stay with `generics` GN-06), the H.5 to H.7 rows of L16, `normal` in L16 and L58, and the §4.7 note "Enum variant names are not carried"; §9 Coverage updates I §1–§2, I §3–§3.3, VII §22 and H; the fences and Book listings these forms lift are held to the checker (CV-37 AC 2); `.specs/STATE.md` gains the next free `MD-` entry of design.md "Tech Decisions"; the ROADMAP lane row says phases A–B delivered.
+**What**: `GAPS.md` drops L1, L2, L3, L4 (all but generic enums, which stay with `generics` GN-06), the H.5 to H.7 rows of L16, `normal` in L16 and L58 (L3's "slices, `&`" is closed by `value-semantics`, not listed as delivered here; the Book status rows this edits are those left after its T14), and the §4.7 note "Enum variant names are not carried"; §9 Coverage updates I §1–§2, I §3–§3.3, VII §22 and H; the fences and Book listings these forms lift are held to the checker (CV-37 AC 2); `.specs/STATE.md` gains the next free `MD-` entry of design.md "Tech Decisions"; the ROADMAP lane row says phases A–B delivered.
 **Where**: `GAPS.md`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `docs.rs`, `std_galleries.rs`

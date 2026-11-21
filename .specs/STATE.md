@@ -1641,6 +1641,20 @@ It amends MD-28's "root `tests/` holds no Rust target" and extends MD-31 and MD-
 **Scope:** `tests/e2e/buck/`, `tests/buck_scenarios.rs`, `crates/piperine-parity/src/scenario/`.
 **Status:** Proposed (2026-11-20), from `.specs/features/buck-scenarios/design.md`.
 
+### MD-74: pure value semantics: no reference, no move, no mutability marker
+
+`value-semantics` (2026-11-21, user decisions D1 to D8 of `.specs/features/value-semantics/spec.md`; the numbers V1 to V7 are Appendix G.71's).
+
+1. **Every value is copied where it is used** (§1.4.6); hardware is reached by identity and changes only by a definition, a commit or a contribution (§1.4.7). There is no reference, no borrow, no slice, no lifetime, no move.
+2. **Every local is a place** (§1.5.12): `let x = e;` may be assigned. A parameter, a closure parameter, a captured name, `self` and a body `let` are not (`E0183`). `mut`, `ref` and `move` are reserved words (`E0903`).
+3. **`Clone` and `Copy` are not names of the language**: no row of the built-in table, `E0161` in a derive, a bound or as `clone()`, with the help "every value is copied; delete the name". The Rust the backend writes still derives them for every generated type: every MSL value is plain data.
+4. **`str` is a value type; a range index with const bounds is an array** (`[T; b - a]`); `resolve` takes `[T; N]` under `const N`.
+5. **The IR has no slice** (`Expr::SliceOf`, `ValueType::Slice` deleted); `Local::mutable` says the body assigns the local.
+6. **Defaults taken while the user was away:** the parser reports a removed form and reads on as the plain form (one use, one diagnostic); a slice type `[T]` is E0900 at the type; the lifetime after a `&` is one `E0905` and no token; the per-task Full gate was replaced by one full root run at the end of the batch (user, 2026-11-21).
+
+**Scope:** `crates/piperine-lang`, `piperine-ir`, `piperine-interp`, `piperine-transpile`, `std`, `examples`, the Book, `GAPS.md` S7 (closed).
+**Status:** Delivered (2026-11-21).
+
 ---
 
 ## Handoff Snapshot

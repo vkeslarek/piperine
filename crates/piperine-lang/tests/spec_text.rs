@@ -1709,10 +1709,19 @@ fn appendix_g_records_the_value_decisions() {
     }
     assert_eq!(rows.iter().filter(|r| r[0].starts_with('V')).count(), 7);
     assert!(one_line(&closed).contains("V1 to V7 number the decisions of value semantics"));
-    assert_eq!(g_summary_status("71"), "Implementation");
+}
+
+#[test]
+fn g71_is_closed_and_names_no_implementation_gap() {
+    // VS-10 AC 2: the front end meets the amendment, so G.71 is Closed in its entry and its summary row, the retired
+    // codes are named, and no sentence says the reference implementation does not meet it yet
+    assert_eq!(g_summary_status("71"), "Closed");
     let g71 = g_entry("71");
-    for needle in ["**Status: Implementation.**", "Two codes are retired: `E0102` (§1) and `E0331` (§8.2)", "are written in the spelling above"] {
+    for needle in ["**Status: Closed.**", "Two codes are retired: `E0102` (§1) and `E0331` (§8.2)", "Provisional note, for review:"] {
         assert!(g71.contains(needle), "{needle}: {g71}");
+    }
+    for stale in ["does not yet meet", "still accepts", "are written in the spelling above", "`value-semantics` brings"] {
+        assert!(!g71.contains(stale), "G.71 still says `{stale}`: {g71}");
     }
 }
 
