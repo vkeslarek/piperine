@@ -147,7 +147,8 @@ impl Checker<'_> {
         }
         let span = self.design.expr_node(expr).span;
         let file = self.file_of_expr(expr);
-        let Some(ty) = self.path_owner_type(file, span, owner.res) else { return Some(None) };
+        let owner_type = if owner.name.text == "Option" && matches!(owner.res, Resolution::Builtin(_)) { self.option_owner_type(file, span, owner.args.as_ref()) } else { self.path_owner_type(file, span, owner.res) };
+        let Some(ty) = owner_type else { return Some(None) };
         if argument_count != 0 {
             self.report(file, crate::msl::Diagnostic::new("E0141", format!("`default` takes no argument, found {argument_count}"), span, "no argument expected"));
             return Some(None);
@@ -155,6 +156,20 @@ impl Checker<'_> {
         self.require_trait(file, span, &ty, DerivedTrait::Default);
         self.defaults.insert(expr, ty.clone());
         Some(Some(ty))
+    }
+}
+
+impl Checker<'_> {
+    /// The type `Option::<T>` of the owner of `Option::<T>::default()` (H.8 rule 7): `Option` of the
+    /// one type argument the turbofish gives. `None` after a diagnostic when it gives none.
+    fn option_owner_type(&mut self, file: FileId, span: Span, args: Option<&crate::pom::GenericArgsNode>) -> Option<Ty> {
+        match args {
+            Some(crate::pom::GenericArgsNode::Angle { args, .. }) if let [crate::pom::GenericArgNode::Type(payload)] = args.as_slice() => Some(Ty::Option(Box::new(self.lower_type(*payload)?))),
+            _ => {
+                self.unsupported(file, span, "`Option::default()` without the payload type written as `Option::<T>::default()`");
+                None
+            }
+        }
     }
 }
 

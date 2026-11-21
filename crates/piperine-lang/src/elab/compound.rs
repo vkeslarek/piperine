@@ -331,6 +331,12 @@ impl Elaboration<'_, '_> {
                 let is = self.emit(Expr::Bool(true), ValueType::Bool, origin);
                 Some(Pair { is, val, literal: Some(true) })
             }
+            // `Option::<T>::default()` is `None` (H.8 rule 4).
+            ExprKind::Call { .. } if matches!(self.types.default_of(expr), Some(Ty::Option(_))) => {
+                let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
+                let Some(val) = self.zero(&payload, origin) else { return unsupported(self) };
+                Some(Pair { is, val, literal: Some(false) })
+            }
             // A call of a function that returns an `Option`: the pair of its two halves (`returns.rs`).
             ExprKind::Call { .. } if let Some(function) = self.calls_option_function(expr) => self.lower_option_call(scope, expr, function),
             // A field of `Option` type: the two halves of the packed value, each unpacked from the

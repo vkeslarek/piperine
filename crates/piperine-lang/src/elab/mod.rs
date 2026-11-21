@@ -19,6 +19,7 @@ mod consts;
 mod control;
 mod contribute;
 mod derivatives;
+mod derived;
 mod diagnose;
 mod drives;
 mod event_reads;

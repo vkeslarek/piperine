@@ -7,7 +7,7 @@ use core::ops::{Add, Div, Mul, Neg, Sub};
 
 /// A number analog code computes with: a plain `f64`, or a value with its tangent.
 pub trait Real:
-    Copy + Default + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Div<Output = Self> + Neg<Output = Self>
+    Copy + Default + PartialEq + PartialOrd + Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Div<Output = Self> + Neg<Output = Self>
 {
     /// A value with no dependence on any read.
     fn constant(v: f64) -> Self;
@@ -216,11 +216,26 @@ impl Real for f64 {
     }
 }
 
-/// A value and its tangent: `d[i]` is the derivative against differentiable read `i`.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// A value and its tangent: `d[i]` is the derivative against differentiable read `i`. Two of them
+/// compare by value alone, as a real does (§1.5.23): the tangent is not part of the number.
+#[derive(Clone, Copy, Debug)]
 pub struct Dual<const N: usize> {
     pub v: f64,
     pub d: [f64; N],
+}
+
+impl<const N: usize> PartialEq for Dual<N> {
+    /// Equal when the values are, tangents aside.
+    fn eq(&self, other: &Dual<N>) -> bool {
+        self.v == other.v
+    }
+}
+
+impl<const N: usize> PartialOrd for Dual<N> {
+    /// Ordered by value, tangents aside.
+    fn partial_cmp(&self, other: &Dual<N>) -> Option<core::cmp::Ordering> {
+        self.v.partial_cmp(&other.v)
+    }
 }
 
 impl<const N: usize> Default for Dual<N> {

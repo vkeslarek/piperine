@@ -172,12 +172,9 @@ impl ValuePrinter<'_> {
         matches!(self.ir.expr_type(e), ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Option(_))
     }
 
-    /// `a == b`, `a < b` over two aggregates: Rust's derived operators. The code's real `R` has no
-    /// such operators, so an aggregate that holds one is refused in generic code.
+    /// `a == b`, `a < b` over two aggregates: Rust's derived operators. The code's real `R` compares
+    /// by value (`rt::Real` is `PartialEq + PartialOrd`), so an aggregate that holds one derives them.
     pub(super) fn aggregate_comparison(&self, e: ExprId, op: BinaryOp, lhs: ExprId, rhs: ExprId) -> Result<Piece, Error> {
-        if !self.plain && TypeItems::new(self.ir).holds_real(self.ir.expr_type(lhs)) {
-            return Err(self.unsupported(e, "a comparison of aggregates that hold a real, in code generic over the real"));
-        }
         let symbol = match op {
             BinaryOp::Eq => "==",
             BinaryOp::Ne => "!=",

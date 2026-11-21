@@ -418,6 +418,21 @@ impl<'a> ValuePrinter<'a> {
         f.params().iter().chain(f.locals()).any(|l| real(&l.ty))
             || real(f.ret())
             || Self::env_reads(ir, function).iter().any(|e| !matches!(e, Env::Static | Env::Analysis(_)))
+            || Self::computes_real_value(ir, function)
+    }
+
+    /// Whether some expression of the body of `function` (a callee's aside) has a type that holds a
+    /// real: an aggregate built and compared where no local or result holds it prints `R`.
+    fn computes_real_value(ir: &Ir, function: FunctionId) -> bool {
+        let items = TypeItems::new(ir);
+        let mut exprs = vec![ir.function(function).body()];
+        while let Some(e) = exprs.pop() {
+            if matches!(ir.expr_type(e), ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Option(_)) && items.holds_real(ir.expr_type(e)) {
+                return true;
+            }
+            Self::children(ir, ir.expr(e), &mut exprs);
+        }
+        false
     }
 
     /// The body of a function: its statements, then its value.

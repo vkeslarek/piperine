@@ -271,6 +271,7 @@ impl Elaboration<'_, '_> {
                 Some(self.emit(Expr::Unary { op, expr: operand }, ty, origin))
             }
             ExprKind::Binary { op: op @ (BinOp::Eq | BinOp::Ne), lhs, rhs } if matches!(self.types.ty(*lhs), Some(Ty::Str)) => self.lower_text_comparison(scope, *op, *lhs, *rhs, origin),
+            ExprKind::Binary { op: op @ (BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge), lhs, rhs } if matches!(self.types.ty(*lhs), Some(Ty::Option(_))) => self.lower_option_comparison(scope, *op, *lhs, *rhs, origin),
             ExprKind::Binary { op, lhs, rhs } => {
                 // The right operand of `&&`/`||` runs only when the left does not decide: it is
                 // conditional exactly like an `if` arm.
@@ -445,6 +446,7 @@ impl Elaboration<'_, '_> {
             }
             // Typed by `types::intrinsic`, lowered by its §22.1 contract (`intrinsics.rs`).
             (_, Some(Callee::Intrinsic(intrinsic))) => self.lower_intrinsic(scope, expr, intrinsic, args, ty, origin),
+            (_, None) if self.types.default_of(expr).is_some() => Some(self.emit(Expr::Default(ty.clone()), ty, origin)),
             (_, None) if let ExprKind::Call { callee, .. } = &self.design.expr_node(expr).kind && let Some(owner) = self.constructed_decl(*callee) => self.lower_constructor_call(scope, args, owner, ty, origin),
             (_, None) if let Some(decl) = self.called_local(scope, expr) => self.lower_value_call(scope, expr, decl, args, origin),
             (_, None) => {

@@ -411,3 +411,87 @@ fn an_unknown_index_reads_and_writes_by_merge() {
     assert_eq!(at_edge("w0"), Some(byte(5)), "merge(5, 5) is 5");
     assert_eq!(at_edge("w1"), Some(vec![0, 0]), "merge(6, 5) is unknown");
 }
+
+/// The enum `Level` of `compare.msl`, in Rust with the same derives.
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
+enum Level {
+    /// `Low`.
+    Low,
+    /// `Mid(u8)`.
+    Mid(u8),
+    /// `High { a, b }`.
+    High {
+        /// First field.
+        a: u8,
+        /// Second field.
+        b: u8,
+    },
+}
+
+/// `struct Wrap { inner: Option<u8>, tag: Level }` with the same derives.
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
+struct Wrap {
+    /// The optional field.
+    inner: Option<u8>,
+    /// The enum field.
+    tag: Level,
+}
+
+/// `struct Ordered { x: f64, y: u8 }` as `compare.msl` derives it.
+#[derive(Clone, Copy, PartialEq, PartialOrd, Default)]
+struct Ordered {
+    /// First field.
+    x: f64,
+    /// Second field.
+    y: u8,
+}
+
+#[test]
+fn derived_comparisons_and_defaults_give_rusts_results() {
+    // CV-12 AC 1 (H.8 rules 2 to 4, §1.5.23): derived `==`, `!=`, `<`, `<=`, `>`, `>=` on structs,
+    // tuples, arrays, enums (discriminant first, then fields) and `Option`s (`None` lowest), and
+    // `T::default()`, each the result Rust's derives give.
+    let flag = |b: bool| byte(u8::from(b));
+    let p = |x: f64, y: u8| Ordered { x, y };
+    let mid = Level::Mid;
+    let high = |a: u8, b: u8| Level::High { a, b };
+    let none: Option<u8> = None;
+    let wanted = vec![
+        flag(p(1.5, 2) == p(1.5, 2)),
+        flag(p(1.5, 2) != p(1.5, 3)),
+        flag(p(1.0, 9) < p(2.0, 0)),
+        flag(p(1.0, 1) < p(1.0, 2)),
+        flag(p(1.0, 1) <= p(1.0, 1)),
+        flag(p(2.0, 0) > p(1.0, 9)),
+        flag(p(1.0, 1) >= p(1.0, 2)),
+        flag((1u8, 2.5, true) == (1u8, 2.5, true)),
+        flag((1u8, 2.5, true) != (1u8, 2.5, false)),
+        flag((1u8, 9u8) < (2u8, 0u8)),
+        flag((3u8, 1u8) >= (3u8, 2u8)),
+        flag([1u8, 2, 3] == [1u8, 2, 3]),
+        flag([1u8, 2, 3] != [1u8, 2, 4]),
+        flag([1u8, 2, 3] < [1u8, 3, 0]),
+        flag([1u8, 2, 3] > [1u8, 3, 0]),
+        flag(mid(3) == mid(3)),
+        flag(mid(3) != high(3, 0)),
+        flag(Level::Low < mid(0)),
+        flag(mid(200) < high(0, 0)),
+        flag(high(1, 9) < high(2, 0)),
+        flag(mid(5) > mid(4)),
+        flag(none < Some(0u8)),
+        flag(Some(3u8) < Some(4u8)),
+        flag(Some(3u8) == Some(3u8)),
+        flag(none == None),
+        flag(Some(3u8) != none),
+        flag(Wrap { inner: Some(1), tag: mid(2) } < Wrap { inner: Some(1), tag: mid(3) }),
+        flag(Wrap { inner: None, tag: Level::Low } == Wrap { inner: None, tag: Level::Low }),
+        byte(Ordered::default().y),
+        flag(Ordered::default().x == 0.0),
+        flag(Ordered::default() == p(0.0, 0)),
+        flag(Option::<u8>::default() == none),
+    ];
+    let names = [
+        "r0", "r1", "r2", "r3", "r4", "r5", "r6", "t0", "t1", "t2", "t3", "a0", "a1", "a2", "a3", "e0", "e1", "e2", "e3", "e4", "e5", "o0", "o1", "o2", "o3", "o4", "n0", "n1", "d0", "d1", "d2", "d3",
+    ];
+    assert_commits("compare.msl", &names, &wanted);
+}
