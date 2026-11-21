@@ -383,13 +383,11 @@ impl<'d, 't> ConstEval<'d, 't> {
             return match op {
                 UnOp::Neg => Ok(Folded::Known(width.wrap(v.wrapping_neg()))),
                 UnOp::Not => Ok(Folded::Known(width.wrap(!v))),
-                UnOp::Deref | UnOp::Ref => Err(ConstFault::Unsupported { expr, what: "a reference or a dereference".to_string() }),
             };
         }
         match op {
             UnOp::Neg => Ok(Folded::Known(Constant::Real(Real::new(-Self::real(operand, value)?)))),
             UnOp::Not => Ok(Folded::Known(Constant::Bool(!Self::boolean(operand, value)?))),
-            UnOp::Deref | UnOp::Ref => Err(ConstFault::Unsupported { expr, what: "a reference or a dereference".to_string() }),
         }
     }
 

@@ -120,7 +120,7 @@ impl Checker<'_> {
             self.let_pattern(file, data.pat, None, Some(data.value), None);
             return;
         }
-        let PatKind::Ident { by_ref: false, mutable: false, sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {
+        let PatKind::Ident { sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {
             self.unsupported(file, pat.span, Unsupported::pat(&pat.kind));
             self.infer_event_position(data.value);
             return;

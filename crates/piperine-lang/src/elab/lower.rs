@@ -259,10 +259,6 @@ impl Elaboration<'_, '_> {
                 let op = match op {
                     UnOp::Neg => UnaryOp::Neg,
                     UnOp::Not => UnaryOp::Not,
-                    UnOp::Deref | UnOp::Ref => {
-                        self.unsupported(file, node.span, "a reference or a dereference");
-                        return None;
-                    }
                 };
                 let operand = self.lower_expr(scope, *operand)?;
                 let ty = self.flag(operand).wrap(ty);

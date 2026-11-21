@@ -69,8 +69,7 @@ fn bind_pattern(design: &Design, pat: PatId, init: ExprId, out: &mut BTreeMap<De
             ExprKind::Tuple(values) if values.len() == items.len() => items.iter().zip(values).for_each(|(p, v)| bind_pattern(design, *p, *v, out)),
             _ => items.iter().for_each(|p| bind_pattern(design, *p, init, out)),
         },
-        PatKind::TupleStruct { pats: items, .. } | PatKind::Or(items) | PatKind::Slice(items) => items.iter().for_each(|p| bind_pattern(design, *p, init, out)),
-        PatKind::Ref(inner) => bind_pattern(design, *inner, init, out),
+        PatKind::TupleStruct { pats: items, .. } | PatKind::Or(items) | PatKind::Array(items) => items.iter().for_each(|p| bind_pattern(design, *p, init, out)),
         PatKind::Wild | PatKind::Rest | PatKind::Lit(_) | PatKind::Path(_) | PatKind::Struct { .. } | PatKind::Range { .. } => {}
     }
 }

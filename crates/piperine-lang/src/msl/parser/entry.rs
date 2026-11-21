@@ -782,7 +782,7 @@ fn name_error(found: &Token, span: Span) -> Diagnostic {
             span,
             "a syntactic form left out of the language",
         )
-        .with_help("values are immutable and owned; Part I §1 rule 2 lists the forms left out"),
+        .with_help("Part I §1 rule 2 lists the forms left out"),
         other => {
             let help = match other {
                 Token::Kw(k) if ReservedMarker::of(*k).is_some() => ReservedMarker::of(*k).map_or_else(String::new, |m| m.help.to_string()),

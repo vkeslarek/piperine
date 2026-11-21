@@ -365,11 +365,9 @@ impl<'d> Checker<'d> {
                 }
             },
             TypeKind::Tuple(items) if items.is_empty() => Some(Ty::Unit),
-            // `&str` (also `&'static str`) is `str` until the standard library is written without it.
-            TypeKind::Ref { inner, .. } if matches!(self.design.type_resolution(*inner), Resolution::Builtin(id) if id.info().name == "str") => Some(Ty::Str),
             TypeKind::Tuple(items) => self.tuple_type(items),
             TypeKind::Array { elem, len } => self.array_type(file, node.span, *elem, *len),
-            TypeKind::Slice(_) | TypeKind::Ref { .. } | TypeKind::Flip(_) | TypeKind::Infer => {
+            TypeKind::Flip(_) | TypeKind::Infer => {
                 self.unsupported(file, node.span, Unsupported::ty(&node.kind));
                 None
             }

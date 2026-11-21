@@ -210,8 +210,8 @@ fn port_kind(design: &Design, port: DeclId, bundles: &BTreeSet<DeclId>) -> PortK
         Resolution::Decl(d) if design.has_unresolved_bound(d) => PortKind::Unknown,
         Resolution::Decl(_) | Resolution::Builtin(_) => PortKind::ValueInput,
         Resolution::Unresolved | Resolution::Deferred(_) => match &design.type_node(design.peel_type(ty)).kind {
-            // Tuples and slices of values are values; `_` and a missing name tell nothing.
-            TypeKind::Tuple(_) | TypeKind::Slice(_) | TypeKind::Ref { .. } => PortKind::ValueInput,
+            // Tuples of values are values; `_` and a missing name tell nothing.
+            TypeKind::Tuple(_) => PortKind::ValueInput,
             _ => PortKind::Unknown,
         },
     }

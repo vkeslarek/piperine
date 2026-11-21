@@ -64,8 +64,7 @@ fn pat_kind_name(k: &PatKind) -> &'static str {
         PatKind::Struct { .. } => "Struct",
         PatKind::Or(_) => "Or",
         PatKind::Range { .. } => "Range",
-        PatKind::Ref(_) => "Ref",
-        PatKind::Slice(_) => "Slice",
+        PatKind::Array(_) => "Array",
     }
 }
 
@@ -73,9 +72,7 @@ fn type_kind_name(k: &TypeKind) -> &'static str {
     match k {
         TypeKind::Path(_) => "Path",
         TypeKind::Array { .. } => "Array",
-        TypeKind::Slice(_) => "Slice",
         TypeKind::Tuple(_) => "Tuple",
-        TypeKind::Ref { .. } => "Ref",
         TypeKind::Flip(_) => "Flip",
         TypeKind::FnPtr { .. } => "FnPtr",
         TypeKind::Infer => "Infer",
@@ -194,7 +191,7 @@ const X: u32 = {
     let pats: BTreeSet<_> = (0..design.pat_count()).map(|i| pat_kind_name(&design.pat_node(PatId(i as u32)).kind)).collect();
     assert_eq!(
         pats.into_iter().collect::<Vec<_>>(),
-        ["Ident", "Lit", "Or", "Path", "Range", "Rest", "Slice", "Struct", "Tuple", "TupleStruct", "Wild"]
+        ["Array", "Ident", "Lit", "Or", "Path", "Range", "Rest", "Struct", "Tuple", "TupleStruct", "Wild"]
     );
     let types: BTreeSet<_> =
         (0..design.type_count()).map(|i| type_kind_name(&design.type_node(TypeId(i as u32)).kind)).collect();

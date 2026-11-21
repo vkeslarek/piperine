@@ -1,6 +1,6 @@
 //! One pattern against a value of a known type (§1.6): what it covers, and the names it binds
 //! with their types. Literal, range, path, `Some(p)`, binding, `name @ p` and or-patterns here;
-//! tuple, struct, variant, slice and reference patterns in `aggregate_patterns.rs`.
+//! tuple, struct, variant and array patterns in `aggregate_patterns.rs`.
 //!
 //! An identifier pattern that resolves to a unit variant or a constant is a path and binds
 //! nothing (§1 rule 14); one that resolves to nothing binds, at any depth (§1.6.2).
@@ -60,8 +60,8 @@ impl Checker<'_> {
         let node = self.design.pat_node(pat).clone();
         match &node.kind {
             PatKind::Wild => Some(Matched::covering(Covers::All)),
-            PatKind::Ident { by_ref: false, name, sub, binding, res: Resolution::Unresolved, .. } => self.binder(file, node.span, name, *binding, *sub, scrut),
-            PatKind::Ident { by_ref: false, mutable: false, sub: None, res: res @ (Resolution::Decl(_) | Resolution::Builtin(_)), .. } => self.path_pattern(file, node.span, *res, scrut),
+            PatKind::Ident { name, sub, binding, res: Resolution::Unresolved, .. } => self.binder(file, node.span, name, *binding, *sub, scrut),
+            PatKind::Ident { sub: None, res: res @ (Resolution::Decl(_) | Resolution::Builtin(_)), .. } => self.path_pattern(file, node.span, *res, scrut),
             PatKind::Path(path) => {
                 let res = self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
                 self.path_pattern(file, node.span, res, scrut)
@@ -84,7 +84,7 @@ impl Checker<'_> {
             PatKind::Tuple(pats) => self.tuple_pattern(file, node.span, pats, scrut),
             PatKind::TupleStruct { path, pats } => self.constructor_pattern(file, node.span, *path, pats, scrut),
             PatKind::Struct { path, fields, rest } => self.struct_pattern(file, node.span, *path, fields, *rest, scrut),
-            PatKind::Slice(pats) => self.slice_pattern(file, node.span, pats, scrut),
+            PatKind::Array(pats) => self.array_pattern(file, node.span, pats, scrut),
             other => {
                 self.unsupported(file, node.span, &format!("{} as a pattern", Unsupported::pat(other)));
                 None

@@ -126,7 +126,7 @@ fn inherited_rust_forms_parse() {
 
     // ---- patterns ----
     assert!(matches!(pat("_").kind, PatKind::Wild));
-    assert!(matches!(&pat("x").kind, PatKind::Ident { by_ref: false, mutable: false, sub: None, .. }));
+    assert!(matches!(&pat("x").kind, PatKind::Ident { sub: None, .. }));
     assert!(matches!(&pat("x @ 1..=5").kind, PatKind::Ident { sub: Some(_), .. }));
     assert!(matches!(&pat("Phase::Liquid").kind, PatKind::Path(p) if path_names(p) == ["Phase", "Liquid"]));
     assert!(matches!(&pat("Some(x)").kind, PatKind::TupleStruct { pats, .. } if pats.len() == 1));
@@ -135,7 +135,7 @@ fn inherited_rust_forms_parse() {
     assert!(matches!(&pat("(a, b)").kind, PatKind::Tuple(v) if v.len() == 2));
     assert!(matches!(&pat("()").kind, PatKind::Tuple(v) if v.is_empty()));
     assert!(matches!(pat("(a)").kind, PatKind::Ident { .. }));
-    assert!(matches!(&pat("[a, b, ..]").kind, PatKind::Slice(v) if v.len() == 3 && matches!(v[2].kind, PatKind::Rest)));
+    assert!(matches!(&pat("[a, b, ..]").kind, PatKind::Array(v) if v.len() == 3 && matches!(v[2].kind, PatKind::Rest)));
     // Alternatives, including nested in a tuple (spec: `(None, y) | (y, None)`).
     assert!(matches!(&pat("(None, y) | (y, None)").kind, PatKind::Or(v) if v.len() == 2));
     // Literals: integers, negative, strings, bools, `Unknown`.

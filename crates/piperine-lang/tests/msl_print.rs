@@ -364,3 +364,23 @@ fn raw_strings_print_as_written() {
     let text = assert_roundtrip("plain", r#"fn f() { let s = "a\"b"; }"#);
     assert!(text.contains(r#""a\"b""#), "{text}");
 }
+
+#[test]
+fn the_printer_and_the_object_model_hold_no_removed_form() {
+    // VS-09 AC 3 (B.3.6, G.71): no reference, marker or slice is a node of the syntax tree or of the
+    // object model, so none can be printed or read back. The definitions name none of them, and no
+    // source of the corpus prints one of the three markers.
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    for file in ["msl/ast.rs", "pom/body.rs"] {
+        let text = std::fs::read_to_string(root.join(file)).expect("the definition file is UTF-8");
+        for removed in ["by_ref", "static_lifetime", "is_move", "Deref", "Slice(", "Ref(", "Ref {", "mutable"] {
+            assert!(!text.contains(removed), "{file} still names `{removed}`");
+        }
+    }
+    for (label, src) in sources() {
+        let printed = print(&parsed(&label, &src));
+        let (tokens, _) = piperine_lang::msl::lexer::lex(&printed);
+        let marker = tokens.iter().find(|(t, _)| matches!(t, piperine_lang::msl::lexer::Token::Kw(piperine_lang::msl::lexer::Kw::Mut | piperine_lang::msl::lexer::Kw::Ref | piperine_lang::msl::lexer::Kw::Move)));
+        assert!(marker.is_none(), "{label}: the printer wrote a marker: {marker:?}");
+    }
+}

@@ -1,5 +1,5 @@
-//! Patterns over aggregates (§1.6.5 to §1.6.7): tuple, tuple-struct and variant, struct, slice and
-//! reference patterns. Each types its names and says what it covers; the fields of a struct, a
+//! Patterns over aggregates (§1.6.5 to §1.6.7): tuple, tuple-struct and variant, struct and array
+//! patterns. Each types its names and says what it covers; the fields of a struct, a
 //! variant or a tuple are columns of the coverage judgement (`cover.rs`).
 
 use crate::msl::Span;
@@ -111,8 +111,8 @@ impl Checker<'_> {
 
     /// `[a, b]`, `[first, .., last]` and `[head, rest @ ..]` (§1.6.7): over an array, with `..`
     /// standing for the elements between.
-    pub(super) fn slice_pattern(&mut self, file: FileId, span: Span, pats: &[PatId], scrut: &Ty) -> Option<Matched> {
-        let Ty::Array(element, length) = scrut else { return self.not_sliceable(file, span, scrut) };
+    pub(super) fn array_pattern(&mut self, file: FileId, span: Span, pats: &[PatId], scrut: &Ty) -> Option<Matched> {
+        let Ty::Array(element, length) = scrut else { return self.not_an_array(file, span, scrut) };
         let element = (**element).clone();
         let arity = usize::try_from(*length).ok()?;
         let rest_at = pats.iter().position(|p| self.is_rest_pattern(*p));
@@ -144,13 +144,13 @@ impl Checker<'_> {
 
     // ---- helpers ---------------------------------------------------------------------------
 
-    /// `E0184`-free mismatch for a slice pattern over a value that is no array or slice.
-    fn not_sliceable(&mut self, file: FileId, span: Span, scrut: &Ty) -> Option<Matched> {
-        self.mismatch_text(file, span, &scrut.name(self.design), "a slice pattern");
+    /// `E0184`-free mismatch for an array pattern over a value that is no array.
+    fn not_an_array(&mut self, file: FileId, span: Span, scrut: &Ty) -> Option<Matched> {
+        self.mismatch_text(file, span, &scrut.name(self.design), "an array pattern");
         None
     }
 
-    /// Whether `pat` is `..` or `name @ ..` (the rest of a slice pattern).
+    /// Whether `pat` is `..` or `name @ ..` (the rest of an array pattern).
     fn is_rest_pattern(&self, pat: PatId) -> bool {
         match &self.design.pat_node(pat).kind {
             PatKind::Rest => true,

@@ -56,15 +56,11 @@ impl Lowerer<'_> {
         let kind = match &t.kind {
             ast::TypeKind::Path(p) => TypeKind::Path(self.path(p)),
             ast::TypeKind::Array { elem, len } => TypeKind::Array { elem: self.ty(elem), len: self.expr(len) },
-            ast::TypeKind::Slice(inner) => TypeKind::Slice(self.ty(inner)),
             ast::TypeKind::Tuple(items) => TypeKind::Tuple(items.iter().map(|i| self.ty(i)).collect()),
             ast::TypeKind::FnPtr { params, ret } => TypeKind::FnPtr {
                 params: params.iter().map(|i| self.ty(i)).collect(),
                 ret: ret.as_ref().map(|r| self.ty(r)),
             },
-            ast::TypeKind::Ref { static_lifetime, inner } => {
-                TypeKind::Ref { static_lifetime: *static_lifetime, inner: self.ty(inner) }
-            }
             ast::TypeKind::Flip(inner) => TypeKind::Flip(self.ty(inner)),
             ast::TypeKind::Infer => TypeKind::Infer,
         };
@@ -91,12 +87,10 @@ impl Lowerer<'_> {
         let kind = match &p.kind {
             ast::PatKind::Wild => PatKind::Wild,
             ast::PatKind::Rest => PatKind::Rest,
-            ast::PatKind::Ident { by_ref, mutable, name: ident, sub } => {
+            ast::PatKind::Ident { name: ident, sub } => {
                 let binding = self.binding(ident, p.span.0, origin);
                 introduced.push(binding);
                 PatKind::Ident {
-                    by_ref: *by_ref,
-                    mutable: *mutable,
                     name: name(ident),
                     sub: sub.as_ref().map(|s| self.pat(s, origin)),
                     binding,
@@ -137,8 +131,7 @@ impl Lowerer<'_> {
                 hi: hi.as_ref().map(|e| self.expr(e)),
                 inclusive: *inclusive,
             },
-            ast::PatKind::Ref(inner) => PatKind::Ref(self.pat(inner, origin)),
-            ast::PatKind::Slice(items) => PatKind::Slice(items.iter().map(|i| self.pat(i, origin)).collect()),
+            ast::PatKind::Array(items) => PatKind::Array(items.iter().map(|i| self.pat(i, origin)).collect()),
         };
         let id = self.design.push_pat(PatNode { kind, span: p.span.0, owner: self.owner });
         for b in introduced {
@@ -238,8 +231,7 @@ impl Lowerer<'_> {
             ast::ExprKind::Break(v) => ExprKind::Break(self.opt_expr(v)),
             ast::ExprKind::Continue => ExprKind::Continue,
             ast::ExprKind::Return(v) => ExprKind::Return(self.opt_expr(v)),
-            ast::ExprKind::Closure { is_move, params, ret, body } => ExprKind::Closure {
-                is_move: *is_move,
+            ast::ExprKind::Closure { params, ret, body } => ExprKind::Closure {
                 params: params
                     .iter()
                     .map(|p| ClosureParam {

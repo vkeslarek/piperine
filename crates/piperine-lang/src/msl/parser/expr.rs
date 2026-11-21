@@ -407,12 +407,7 @@ pub(crate) fn build<'a, I: In<'a>>(
                 .boxed(),
             me.clone().map(|body| (None, body)).boxed(),
         ]))
-        .map_with(|((mv, params), (ret, body)), e| {
-            mk(
-                ExprKind::Closure { is_move: mv.is_some(), params, ret, body: boxed(body) },
-                e.span(),
-            )
-        });
+        .map_with(|((_, params), (ret, body)), e| mk(ExprKind::Closure { params, ret, body: boxed(body) }, e.span()));
 
     // A slice of boxed alternatives, not a tuple: a tuple `choice` keeps every
     // alternative's temporaries in one stack frame (60 KiB in a debug build).

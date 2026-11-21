@@ -1,7 +1,7 @@
 //! The one place that names a construct outside the M1 subset. Every `match` is exhaustive with
 //! no wildcard arm, so a new POM variant fails to compile until it is classified.
 
-use crate::pom::{BinOp, DeclKind, ExprKind, PatKind, StmtKind, TypeKind, UnOp};
+use crate::pom::{BinOp, DeclKind, ExprKind, PatKind, StmtKind, TypeKind};
 
 pub(crate) struct Unsupported;
 
@@ -11,8 +11,6 @@ impl Unsupported {
         match kind {
             ExprKind::Lit(_) => "literal",
             ExprKind::Path(_) => "path expression",
-            ExprKind::Unary { op: UnOp::Deref, .. } => "dereference `*`",
-            ExprKind::Unary { op: UnOp::Ref, .. } => "reference `&`",
             ExprKind::Unary { .. } => "unary expression",
             ExprKind::Binary { .. } => "binary expression",
             ExprKind::Assign { .. } => "assignment",
@@ -89,8 +87,6 @@ impl Unsupported {
         match kind {
             PatKind::Wild => "wildcard pattern",
             PatKind::Rest => "rest pattern",
-            PatKind::Ident { mutable: true, .. } => "`let mut` binding",
-            PatKind::Ident { by_ref: true, .. } => "`ref` binding",
             PatKind::Ident { sub: Some(_), .. } => "`@` pattern",
             PatKind::Ident { .. } => "binding",
             PatKind::Lit(_) => "literal pattern",
@@ -100,8 +96,7 @@ impl Unsupported {
             PatKind::Struct { .. } => "struct pattern",
             PatKind::Or(_) => "or-pattern",
             PatKind::Range { .. } => "range pattern",
-            PatKind::Ref(_) => "reference pattern",
-            PatKind::Slice(_) => "slice pattern",
+            PatKind::Array(_) => "array pattern",
         }
     }
 
@@ -110,10 +105,8 @@ impl Unsupported {
         match kind {
             TypeKind::Path(_) => "type",
             TypeKind::Array { .. } => "array type",
-            TypeKind::Slice(_) => "slice type",
             TypeKind::Tuple(items) if items.is_empty() => "unit type",
             TypeKind::Tuple(_) => "tuple type",
-            TypeKind::Ref { .. } => "reference type",
             TypeKind::Flip(_) => "`flip` type",
             TypeKind::FnPtr { .. } => "function type",
             TypeKind::Infer => "inferred type `_`",

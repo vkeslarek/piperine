@@ -653,7 +653,7 @@ impl Checker<'_> {
     /// first assignment.
     fn let_statement(&mut self, file: crate::pom::FileId, pat: crate::pom::PatId, ty: Option<crate::pom::TypeId>, init: Option<ExprId>, else_: Option<&BlockNode>) {
         let pat_node = self.design.pat_node(pat).clone();
-        let PatKind::Ident { by_ref: false, sub: None, binding, res: Resolution::Unresolved, .. } = &pat_node.kind else {
+        let PatKind::Ident { sub: None, binding, res: Resolution::Unresolved, .. } = &pat_node.kind else {
             self.let_pattern(file, pat, ty, init, else_);
             return;
         };
