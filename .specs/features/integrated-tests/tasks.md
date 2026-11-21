@@ -395,9 +395,9 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] The five tests pass under `Run integrated`; the `never` count is 6 000
-- [ ] Gate check passes: `Run integrated`, the Build line
-- [ ] Test count: 5 new tests
+- [x] The five tests pass under `Run integrated`; the `never` count is 6 000
+- [x] Gate check passes: `Run integrated`, the Build line
+- [x] Test count: 5 new tests
 
 **Tests**: integration
 **Gate**: full

@@ -24,3 +24,14 @@ stop = 51e-6
 max_step = 1e-8
 print_step = 1e-8
 print = ["SampleHold.hold", "SampleHold.code", "SampleHold.done", "SampleHold.clk"]
+
+# A 100 MHz counter PWM (1 MHz, dead time of 2 counts) into a 10 us RC; the host drives the duty from 25 to
+# 60 at 30.3 us. One row per clock period, and the `Never` monitor's records.
+[run.pwm_filter]
+top = "PwmFilter"
+analysis = "transient"
+stop = 60e-6
+max_step = 1e-8
+print_step = 1e-8
+print = ["PwmFilter.hs", "PwmFilter.ls", "PwmFilter.filtered"]
+streams = ["checks"]

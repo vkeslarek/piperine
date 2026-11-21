@@ -16,6 +16,7 @@ mod digital;
 mod mixed;
 mod clock;
 mod package;
+mod pwm_filter;
 mod rc;
 mod sample_hold;
 mod suite;
