@@ -22,7 +22,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`
 **Run docs**: `cargo test -p piperine-cli --test docs`
 **Run speccodes**: `cargo test -p piperine-lang --test spec_codes`
-Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
+Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test source_commits --test source_records --test buck_supervisor --test source_time --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
 
