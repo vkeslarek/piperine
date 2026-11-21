@@ -4456,6 +4456,50 @@ time         Divider.b
   <p>An instant is a landing when it changes a carrier that an analog model reads, or when a reaction that runs in it <em>can</em> reach the analog side: it probes a voltage, or it commits without a delay to something an analog model depends on. The second half is decided from the structure of the design, before the run. It does not look at whether the value actually changes this time.</p>
 </div>
 
+<h4>The other direction: digital reads analog</h4>
+
+<p>The loop above shows the digital side shaping the analog steps, and a jump is the digital side acting on the analog one. The loop runs the other way too, and it is the reason the digital side cannot simply run free until the end. A reaction can depend on the analog side in two ways: it can <strong>sample</strong> a continuous value, with <code>v(a)</code> in its body, or it can <strong>wait for an analog event</strong>, such as <code>cross</code> or <code>above</code>.</p>
+
+<p>Take sampling first. The digital side keeps no copy of the waveform. A voltage exists only as the solution of an accepted step, so a reaction that reads <code>v(a)</code> at time <em>t</em> needs a step that ends exactly at <em>t</em>. That is why such an instant is a landing. In step 2 the digital side stops before it, and in step 3 the analog side solves a step that ends there. Only after the step is accepted does the instant run, and the reaction reads the voltage as it was at that time, not as it was at some earlier step. Which reactions sample is known from the structure of the design before the run starts, so the solver never has to guess. The price is a shorter step at every such instant: a clock whose edge makes a reaction sample a node ends one analog step per edge, and a clock whose reactions only count does not.</p>
+
+<p>An analog event is the case where the digital side does not even know when to look. Whether and when <code>v(a) - level</code> changes sign is a property of the waveform, so the analog side is the one that notices, while it takes a step. This is the locating of the section above: the step is taken, the sign has changed inside it, the solver goes back to the checkpoint and retakes the step so that it ends at the crossing, on the nearest tick. That is also a landing, and it is the same mechanism as the other one: the step is made to end where the digital side needs a solution. When the step is accepted, the crossing becomes an event at that instant and the reactions that wait for it run, reading the solution at the crossing. In <code>divider.msl</code> this is how the <code>Monitor</code> gets its value: <code>on cross(v(a) - level)</code> runs in the instant the step ended on, and <code>v(a)</code> in its body is the solution there.</p>
+
+<figure class="fig" id="fig-digital-reads">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 300" role="img" aria-labelledby="fig-digital-reads-t">
+<title id="fig-digital-reads-t">The digital side reads the analog solution at a landing</title>
+<text x="20" y="60" class="t-dig hd">digital</text>
+<text x="20" y="150" class="t-ana hd">analog</text>
+<line x1="90" y1="56" x2="690" y2="56" class="ln s-dig"/>
+<polyline points="60,210.0 70,205.2 80,200.7 90,196.5 100,192.6 110,189.0 120,185.6 130,182.5 140,179.5 150,176.8 160,174.3 170,171.9 180,169.7 190,167.7 200,165.8 210,164.0 220,162.3 230,160.8 240,159.4 250,158.0 260,156.8 270,155.6 280,154.5 290,153.5 300,152.6 310,151.7 320,150.9 330,150.2 340,149.5 350,148.8 360,148.2 370,147.6 380,147.1 390,146.6 400,146.2 410,145.7 420,145.3 430,145.0 440,144.6 450,144.3 460,144.0 470,143.7 480,143.5 490,143.2 500,143.0 510,142.8 520,142.6 530,142.4 540,142.3 550,142.1 560,142.0 570,141.8 580,141.7 590,141.6 600,141.5 610,141.4 620,141.3 630,141.2 640,141.1 650,141.0 660,141.0" class="ln s-ana" fill="none"/>
+<line x1="90" y1="152.6" x2="690" y2="152.6" class="gr da"/>
+<text x="690" y="146.6" class="mu sm" text-anchor="end">the level of cross(...)</text>
+<line x1="60" y1="262" x2="690" y2="262" class="ln s-ana"/>
+<circle cx="60" cy="262" r="4" class="f-ana"/>
+<circle cx="150" cy="262" r="4" class="f-ana"/>
+<circle cx="230" cy="262" r="4" class="f-ana"/>
+<circle cx="360" cy="262" r="5" class="ln s-ana f-bg"/>
+<text x="360" y="284" class="mu sm" text-anchor="middle">where the step was meant to end</text>
+<circle cx="300" cy="262" r="5" class="f-acc"/>
+<text x="300" y="246" class="t-acc sm" text-anchor="middle">the step ends at the crossing</text>
+<circle cx="330" cy="262" r="4" class="f-ana"/>
+<circle cx="420" cy="262" r="4" class="f-ana"/>
+<circle cx="540" cy="262" r="4" class="f-ana"/>
+<circle cx="300" cy="152.6" r="4.5" class="f-acc"/>
+<rect x="291" y="43" width="18" height="26" rx="3" class="box-warn"/>
+<text x="318" y="40" class="t-dig sm">the instant: the reaction reads v(a) here</text>
+<line x1="300" y1="146.6" x2="300" y2="74" class="ln s-acc" marker-end="url(#ar-acc)"/>
+<text x="292" y="104" class="t-acc sm" text-anchor="end">the solution</text>
+<text x="292" y="119" class="t-acc sm" text-anchor="end">at this instant</text>
+<path d="M 312 70 Q 470 120 334 254" class="ln s-dig da" marker-end="url(#ar-dig)"/>
+<text x="470" y="150" class="t-dig sm">if the reaction changed something an</text>
+<text x="470" y="165" class="t-dig sm">analog model reads: the next step is</text>
+<text x="470" y="180" class="t-dig sm">short and starts afresh (a jump)</text>
+</svg>
+<figcaption>The other direction. The analog side finds that the level was crossed inside a step and the step is retaken to end there. The accepted solution at that point is what the reaction reads. Whatever the reaction changes for the analog side is read by the step that follows, which starts short.</figcaption>
+</figure>
+
+<p>Put the two directions together and the order in an instant is always the same. <strong>Solve, then react.</strong> The analog side is solved up to the instant first, using the values the digital side had before it; then the reactions run, reading what was just solved. If a reaction commits something that an analog model reads, that value is not applied behind the analog side's back. It is delivered after the instant, and the next analog step reads it. It is the jump of step 5, with its short first step, and it is what closes the loop: the analog side raises the instant, the digital side answers in it, and the answer reaches the analog side in the step after.</p>
+
 <h4>Inside one instant: microsteps and settle</h4>
 
 <p>An instant is not one action. A reaction commits a value; another reaction is waiting for that value to change; it commits something else. All of this happens at one time on the clock, in rounds called <strong>microsteps</strong>.</p>
