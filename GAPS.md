@@ -191,7 +191,7 @@ Works, by probe: `ddt` of a flow and of a potential (capacitor, inductor, couple
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L51 | an event read as a `bool`: `if fref.rise() { .. }` in a reaction, `on d.changed() && en && !en.changed()` | §13 rules 2, 9 | `an event read as a bool` | M |
+| L51 | only `Pfd3` remains: its state update needs `let mut` and assignment (L5); an event read as a `bool` already runs (`if fref.rise() { .. }`, `on d.changed() && en && !en.changed()`) | §13 rules 2, 9 | `Pfd3` is `P0001` | M |
 | L53 | a function that returns `Event` (`fn handshake(req: Bit, ack: Bit) -> Event`) | §13 rule 7 | `method rise on this receiver` | with L8 |
 
 Works, by probe: commits with and without `after`, transport per statement (a pulse from two
@@ -361,7 +361,7 @@ does not count.
 | III §8.3 instances in expressions | 70 % | generic results, the stdlib `idt` and `Water` (L40) |
 | III §8.4–§8.5 templates, `m`/`dtemp`, extern | 0 % | all |
 | IV §10–§11 analog | 70 % | the §18 `Diode` (L40), an ideal-step `slew` (L60) |
-| IV §12–§13 digital, events | 60 % | an event as a `bool`, `Event` functions, loops, element commits |
+| IV §12–§13 digital, events | 60 % | `Event` functions, `Pfd3` (L5), loops, element commits |
 | IV §14 core primitives | 50 % | `ddx`, `delay`, `noise`, `simparam`, `others`, `level`, `include_str!` |
 | V §15–§18 execution | 60 % | the merge, digital-only runs, error naming, the text of §15 itself (X1) |
 | VI §19–§21 output, input, metadata | 35 % | traces, `maybe`, files, host metadata |

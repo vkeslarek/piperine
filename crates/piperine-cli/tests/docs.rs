@@ -496,12 +496,14 @@ fn gaps_no_longer_lists_settle_or_limexp() {
     assert!(!gaps.contains("| L52 |"), "GAPS.md still has the row L52");
     let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("GAPS.md has the row {id}")).to_string();
     assert!(!row("L58").contains("`limexp`"), "L58 still lists limexp: {}", row("L58"));
-    assert!(row("L51").contains("an event read as a `bool`") && row("L53").contains("`Event`"), "L51 and L53 stay");
+    assert!(row("L51").contains("only `Pfd3` remains") && !row("L51").contains("refused"), "L51 names only Pfd3: {}", row("L51"));
+    assert!(row("L53").contains("`Event`"), "L53 stays");
     let runs = gaps.lines().find(|l| l.starts_with("| stdlib that runs |")).expect("section 1 lists the stdlib that runs");
     assert!(runs.contains("`settle`") && runs.contains("`limexp`"), "section 1 names settle and limexp: {runs}");
     let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("GAPS.md has a section 9");
     for prefix in ["| IV §12–§13 ", "| V §15–§18 "] {
         let line = coverage.lines().find(|l| l.starts_with(prefix)).unwrap_or_else(|| panic!("the coverage row {prefix}"));
         assert!(!line.contains("`settle`"), "{line}");
+        assert!(!line.contains("an event as a `bool`"), "{line}");
     }
 }
