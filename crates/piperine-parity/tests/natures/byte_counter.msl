@@ -1,0 +1,34 @@
+//! A counter over a project's own discrete nature (§4 rule 12): the carrier of `Byte` is built
+//! and run like a `Bit<u8>`.
+
+/// A project's discrete nature: one byte.
+nature Byte { value: u8 }
+
+/// A free-running clock of period 10 ns.
+module Clock(out clk: Bit = false) { period: f64 = 10n; }
+digital for Clock { on clk.changed() { clk <- !clk after 0.5 * period; } }
+
+/// Counts the rising edges of `clk` in a `Byte` it holds the drive of.
+module Counter(in clk: Bit, out count: Byte = 0) { }
+digital for Counter { on clk.rise() { count <- count + 1; } }
+
+/// Writes the count it reads at each rising edge of the clock.
+module Reader(in clk: Bit, in count: Byte) { }
+digital for Reader { on clk.rise() { emit!("seen", count = count.known_or(0)); } }
+
+/// The counter alone over a `Byte` signal.
+module CounterBench() {
+    signal clk: Bit;
+    signal count: Byte;
+    let clock = Clock(clk);
+    let counter = Counter(clk, count);
+}
+
+/// The counter and a reader of the same nature, connected through the parent's `Byte` signal.
+module ConnectedBench() {
+    signal clk: Bit;
+    signal count: Byte;
+    let clock = Clock(clk);
+    let counter = Counter(clk, count);
+    let reader = Reader(clk, count);
+}

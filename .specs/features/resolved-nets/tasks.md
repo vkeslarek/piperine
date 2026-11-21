@@ -189,9 +189,9 @@ T34 → T35 → T36
 
 **Done when**:
 
-- [ ] `a_counter_over_a_project_byte_nature_commits_and_records` and `a_project_nature_carrier_connects_to_a_port_of_the_same_nature` pass under `**Run sourcenatures**`
-- [ ] Code clarity: every new method doc-commented; the data path from the nature to the net's type in one place
-- [ ] Gate check passes: Full
+- [x] `a_counter_over_a_project_byte_nature_commits_and_records` and `a_project_nature_carrier_connects_to_a_port_of_the_same_nature` pass under `**Run sourcenatures**`
+- [x] Code clarity: every new method doc-commented; the data path from the nature to the net's type in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
