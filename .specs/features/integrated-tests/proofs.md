@@ -1,9 +1,9 @@
 # integrated-tests proofs
 
-**HEAD**: 3b8e4b0f
+**HEAD**: 3a45f737
 **Tree**: clean
 **Shell**: /bin/sh
-**Result**: 73 pass, 0 fail
+**Result**: 79 pass, 0 fail
 
 | Check | Proof | Result |
 | --- | --- | --- |
@@ -15,7 +15,7 @@
 | C6 | `run hygiene / test the_on_demand_registry_names_only_on_demand_targets ... ok` | pass |
 | C7 | `run hygiene / test the_buck_readme_names_every_on_demand_target ... ok` | pass |
 | C8 | `run hygiene / test the_on_demand_reader_finds_test_false ... ok` | pass |
-| C9 | `run integrated / test package::the_package_declares_the_five_runs_and_checks_clean ... ok` | pass |
+| C9 | `run integrated / test package::the_package_declares_its_runs_and_checks_clean ... ok` | pass |
 | C10 | `run integrated / test package::every_run_compiles_with_no_warning_and_valid_shapes ... ok` | pass |
 | C11 | `run integrated / test package::opening_every_run_leaves_only_the_package_sources ... ok` | pass |
 | C12 | `run integrated / test package::the_runs_execute_at_once_in_their_own_build_directories ... ok` | pass |
@@ -73,6 +73,12 @@
 | C64 | `run docs / test the_instructions_name_the_integrated_gate_and_the_buck_on_demand ... ok` | pass |
 | C66 | `run shape / test root_tests_hold_no_end_to_end_target ... ok` | pass |
 | C65 | `grep -q "^### MD-77" .specs/STATE.md && grep -q "unknown-semantics-per-level" .specs/STATE.md` | pass |
+| C67 | `run integrated / test half_bridge::the_nested_instance_paths_print_and_the_driver_sees_the_command ... ok` | pass |
+| C68 | `run integrated / test half_bridge::each_gate_follows_its_command_by_the_driver_delay ... ok` | pass |
+| C69 | `run integrated / test half_bridge::the_interlock_holds_on_every_clock_edge_and_on_every_row ... ok` | pass |
+| C70 | `run integrated / test half_bridge::the_shunt_follows_its_closed_form_through_the_ramp ... ok` | pass |
+| C71 | `run integrated / test half_bridge::the_supply_ramp_is_five_steps_ending_at_one_volt ... ok` | pass |
+| C72 | `run integrated / test half_bridge::the_low_phase_decays_with_the_load_time_constant ... ok` | pass |
 | Build | `cargo build -p piperine -p piperine-parity -p piperine-api -p piperine-cli -p piperine-lang -p piperine-solver` | pass |
 | Build | `cargo test --no-run -p piperine --test buck_scenarios 2>&1 / (! grep -qE '^(warning/error)')` | pass |
 | Build | `cargo test --no-run -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_boun` | pass |
@@ -87,19 +93,19 @@
 
 ```
 test mod_rs_declares_only ... ok
-test every_integration_target_declares_its_scope ... ok
 test the_walk_covers_the_three_solver_crates ... ok
 test every_ignored_doc_example_is_registered ... ok
 test root_targets_match_the_naming_rule ... ok
-test no_dead_architecture_identifiers ... ok
-test lrm_covers_declarations_are_well_formed ... ok
+test every_integration_target_declares_its_scope ... ok
 test no_file_scope_lint_suppression ... ok
+test no_dead_architecture_identifiers ... ok
 test no_ignored_tests ... ok
+test lrm_covers_declarations_are_well_formed ... ok
 test no_disabled_test_code ... ok
 
-test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
 
-    Finished `test` profile [unoptimized] target(s) in 0.26s
+    Finished `test` profile [unoptimized] target(s) in 0.30s
      Running tests/suite_hygiene.rs (/var/tmp/piperine-target-b/debug/deps/suite_hygiene-354b8333c6c0effe)
 ```
 
@@ -111,49 +117,49 @@ test the_buck_compiles_with_no_warning_and_valid_shapes ... ok
 test a_buck_that_is_not_enabled_stays_off_with_vin_ok_high ... ok
 test no_never_record_fails_while_not_enabled ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.78s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 22.94s
 
-    Finished `test` profile [unoptimized] target(s) in 0.13s
+    Finished `test` profile [unoptimized] target(s) in 0.23s
      Running tests/buck_whole.rs (/var/tmp/piperine-target-b/debug/deps/buck_whole-e6e8a004d8a3d997)
 ```
 
 `Run integrated` - exit 0
 
 ```
+test threshold::the_edges_stream_holds_eight_alternating_records ... ok
 test threshold::the_counters_read_four_rises_and_four_falls ... ok
 test threshold::the_capacitor_follows_its_closed_form ... ok
-test threshold::the_edges_stream_holds_eight_alternating_records ... ok
-test pi_loop::every_duty_follows_the_pi_reference ... ok
-test sample_hold::the_hold_node_stays_put_while_holding ... ok
-test pi_loop::every_regulated_check_passes_after_50_us ... ok
-test pwm_filter::the_filter_follows_its_closed_form ... ok
+test threshold::each_edge_record_is_where_the_capacitor_crosses_its_threshold ... ok
 test sample_hold::the_hold_node_tracks_the_source ... ok
+test pwm_filter::the_filter_follows_its_closed_form ... ok
+test pi_loop::every_regulated_check_passes_after_50_us ... ok
+test sample_hold::the_done_strobe_is_exactly_50_ns_wide ... ok
 test package::opening_every_run_leaves_only_the_package_sources ... ok
 test package::every_run_compiles_with_no_warning_and_valid_shapes ... ok
 
-test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.12s
+test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 58.58s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
+    Finished `test` profile [unoptimized] target(s) in 0.59s
      Running tests/integrated/main.rs (/var/tmp/piperine-target-b/debug/deps/integrated-e114db84690e682b)
 ```
 
 `Run harness` - exit 0
 
 ```
+test scenario::trace::tests::mean_is_the_arithmetic_mean_of_the_rows ... ok
 test scenario::trace::tests::peak_to_peak_is_the_largest_minus_the_smallest ... ok
-test scenario::trace::tests::settled_into_is_the_first_row_from_which_every_row_stays_inside ... ok
-test scenario::trace::tests::deviation_is_the_largest_absolute_difference_with_its_time ... ok
-test scenario::trace::tests::first_crossing_is_the_first_row_at_or_past_the_level_after_a_time ... ok
 test scenario::trace::tests::scaled_multiplies_every_value ... ok
+test scenario::trace::tests::settled_into_is_the_first_row_from_which_every_row_stays_inside ... ok
+test scenario::trace::tests::decay_time_constant_recovers_an_exponential ... ok
+test scenario::run::tests::each_run_builds_in_its_own_directory ... ok
+test scenario::stimulus::tests::a_refused_action_is_returned_naming_it ... ok
 test scenario::stimulus::tests::a_stimulus_is_applied_to_the_session_and_its_drives_and_sets_land ... ok
 test scenario::run::tests::a_completed_run_keeps_every_record_in_delivery_order ... ok
 test scenario::run::tests::a_failed_run_is_kept_as_its_message_and_the_others_still_run ... ok
-test scenario::stimulus::tests::a_refused_action_is_returned_naming_it ... ok
-test scenario::run::tests::each_run_builds_in_its_own_directory ... ok
 
-test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 25 filtered out; finished in 3.87s
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 25 filtered out; finished in 4.97s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
+    Finished `test` profile [unoptimized] target(s) in 0.12s
      Running unittests src/lib.rs (/var/tmp/piperine-target-b/debug/deps/piperine_parity-6187a033365891a7)
 ```
 
@@ -161,14 +167,14 @@ test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 25 filtered out; fi
 
 ```
 running 4 tests
+test a_host_driven_rc_step_matches_tran_rc ... ok
 test a_host_pwl_into_the_rc_matches_tran_pwl_rc ... ok
 test a_host_driven_rc_matches_ac_rc_in_ac ... ok
-test a_host_driven_rc_step_matches_tran_rc ... ok
 test a_host_square_into_the_rc_matches_tran_square_rc ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.11s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.67s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
+    Finished `test` profile [unoptimized] target(s) in 0.13s
      Running tests/source_host.rs (/var/tmp/piperine-target-b/debug/deps/source_host-480988613ba19c2b)
 ```
 
@@ -180,29 +186,29 @@ test pi_loop_prints_its_run_line_and_10001_rows_ending_near_128 ... ok
 test piperine_test_passes_pi_loop_and_threshold ... ok
 test pi_loop_prints_no_failed_check_and_records_every_passing_one ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.04s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.36s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
+    Finished `test` profile [unoptimized] target(s) in 0.14s
      Running tests/integrated.rs (/var/tmp/piperine-target-b/debug/deps/integrated-51bf5678f957a87c)
 ```
 
 `Run clibook` - exit 0
 
 ```
-test the_chapter_shows_fmt_and_says_comments_stay ... ok
 test a_plot_draws_a_curve_and_a_legend_per_real_signal_and_a_lane_per_digital_one ... ok
-test the_chapter_shows_the_session_options ... ok
 test blinky_runs_to_its_stop_in_the_book ... ok
 test the_cycle_counter_prints_three_pulses ... ok
-test the_plot_in_the_chapter_is_the_file_the_binary_writes ... ok
 test the_clipper_runs_as_the_book_prints ... ok
+test the_plot_in_the_chapter_is_the_file_the_binary_writes ... ok
 test the_chapter_runs_each_new_analysis ... ok
+test every_cli_listing_of_the_book_is_what_the_binary_prints has been running for over 60 seconds
+test the_rc_output_blocks_are_what_the_binary_prints has been running for over 60 seconds
 test the_rc_output_blocks_are_what_the_binary_prints ... ok
 test every_cli_listing_of_the_book_is_what_the_binary_prints ... ok
 
-test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 44.98s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 63.17s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
+    Finished `test` profile [unoptimized] target(s) in 0.13s
      Running tests/book.rs (/var/tmp/piperine-target-b/debug/deps/book-a1f18a8423c7ed6b)
 ```
 
@@ -213,9 +219,9 @@ running 1 test
 test the_buck_block_is_what_the_binary_prints has been running for over 60 seconds
 test the_buck_block_is_what_the_binary_prints ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 100.62s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 152.89s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
+    Finished `test` profile [unoptimized] target(s) in 0.14s
      Running tests/book_buck.rs (/var/tmp/piperine-target-b/debug/deps/book_buck-e2f5b58f7ea60209)
 ```
 
@@ -225,9 +231,9 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 1 test
 test the_buck_bench_starts_with_the_supervisor_off ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.68s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.05s
 
-    Finished `test` profile [unoptimized] target(s) in 0.31s
+    Finished `test` profile [unoptimized] target(s) in 0.13s
      Running tests/book/buck.rs (/var/tmp/piperine-target-b/debug/deps/book_buck-a47c6c199602e904)
 ```
 
@@ -235,38 +241,38 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 test the_records_of_one_instant_come_in_the_order_the_solver_delivers_them ... ok
-test a_value_the_design_refuses_is_e0802_and_no_analysis_runs ... ok
-test the_bode_exercise_reads_0_707_and_minus_45_degrees_at_159_kilohertz ... ok
+test tf_names_its_source_by_instance_or_in_full_and_refuses_what_is_no_voltage_source ... ok
+test the_lowpass_runs_with_a_seed_and_tight_tolerances_and_gives_the_divider ... ok
 test from_trims_the_table_and_leaves_the_solver_and_the_records_alone ... ok
-test the_rc_project_of_the_chapter_runs_its_operating_point_and_its_step_response ... ok
 test the_options_carry_the_names_ngspice_gives_its_options_in_lowercase ... ok
+test the_rc_project_of_the_chapter_runs_its_operating_point_and_its_step_response ... ok
 test a_node_gives_its_voltage_a_digital_signal_its_value_and_an_instance_its_current ... ok
 test a_nodeset_seeds_the_operating_point_of_ac_and_transient ... ok
 test the_bounds_of_the_solver_have_the_defaults_and_the_keys_the_chapter_gives ... ok
 test the_square_wave_rc_closes_its_orbit_over_one_period ... ok
 
-test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.99s
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.22s
 
-    Finished `test` profile [unoptimized] target(s) in 0.27s
+    Finished `test` profile [unoptimized] target(s) in 0.35s
      Running tests/book/cli.rs (/var/tmp/piperine-target-b/debug/deps/book_cli-3b04e829375302c3)
 ```
 
 `Run bookguards` - exit 0
 
 ```
+test no_row_diverges ... ok
+test disputed_rows_are_listed_for_the_user ... ok
 test the_guard_names_a_block_without_a_row_and_a_row_naming_no_test ... ok
-test refused_rows_name_tests_that_expect_their_refusal ... ok
+test a_verdict_fits_its_block ... ok
 test no_block_row_is_pending ... ok
+test refused_rows_name_tests_that_expect_their_refusal ... ok
 test run_rows_name_tests_that_run_their_model ... ok
-test every_block_of_the_book_has_one_row ... ok
-test every_gaps_row_names_its_owner ... ok
-test refused_rows_and_gaps_section_11_agree ... ok
 test every_row_names_an_existing_test ... ok
 test the_book_reads_every_block ... ok
 
-test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
+    Finished `test` profile [unoptimized] target(s) in 0.35s
      Running tests/book/claims_guard.rs (/var/tmp/piperine-target-b/debug/deps/book_claims-ad679f2d8052019c)
      Running tests/book/inventory_guard.rs (/var/tmp/piperine-target-b/debug/deps/book_inventory-1a21c47b4e1a6a60)
 ```
@@ -275,17 +281,17 @@ test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.89s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.37s
 
 
 running 3 tests
-test a_reaction_reads_now_and_static_from_source ... ok
 test every_from_the_stdlib_fires_once_per_period ... ok
+test a_reaction_reads_now_and_static_from_source ... ok
 test rise_and_fall_fire_on_edges_to_and_from_unknown ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.43s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.56s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
+    Finished `test` profile [unoptimized] target(s) in 0.13s
      Running tests/source_commits.rs (/var/tmp/piperine-target-b/debug/deps/source_commits-8983751bb30b7250)
      Running tests/source_records.rs (/var/tmp/piperine-target-b/debug/deps/source_records-9927e53ff9bcd459)
      Running tests/source_time.rs (/var/tmp/piperine-target-b/debug/deps/source_time-7d1a2d277816dcb9)
@@ -294,40 +300,40 @@ test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run docs` - exit 0
 
 ```
-test the_roadmap_lists_what_the_long_run_leaves ... ok
+test state_records_the_cli_decision ... ok
+test gaps_no_longer_lists_x5_l20_l39_h12 ... ok
+test the_book_no_longer_says_settle_is_not_compiled ... ok
 test the_roadmap_marks_the_cli_item_done ... ok
 test the_roadmap_and_state_record_msl_fixes ... ok
-test the_buck_readme_points_at_the_scenarios ... ok
-test the_instructions_name_the_integrated_gate_and_the_buck_on_demand ... ok
-test gaps_no_longer_lists_x5_l20_l39_h12 ... ok
-test state_records_the_observation_decision ... ok
-test state_records_the_unknown_semantics_decision ... ok
+test gaps_drops_what_host_ii_closed ... ok
 test state_records_the_derived_param_decision ... ok
-test the_book_no_longer_says_settle_is_not_compiled ... ok
+test the_roadmap_and_state_record_root_e2e ... ok
+test the_roadmap_lists_what_the_long_run_leaves ... ok
+test the_roadmap_lists_the_host_follow_ups ... ok
 
-test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
 
-    Finished `test` profile [unoptimized] target(s) in 0.30s
+    Finished `test` profile [unoptimized] target(s) in 0.49s
      Running tests/docs.rs (/var/tmp/piperine-target-b/debug/deps/docs-93bbd657b5852db6)
 ```
 
 `Run shape` - exit 0
 
 ```
-test examples_hold_no_vams_or_python ... ok
-test state_records_the_solver_structure_decision ... ok
-test no_manifest_names_a_retired_crate ... ok
-test a_declared_main_target_accounts_for_its_own_modules_only ... ok
-test instruction_files_and_state_name_the_abi_crate ... ok
+test workflows_name_no_retired_crate ... ok
+test the_root_package_is_a_re_export_and_nothing_else ... ok
 test solver_manifest_has_no_in_tree_dev_dependency ... ok
-test instructions_list_the_kept_crates ... ok
-test default_members_are_the_green_crates ... ok
+test hygiene_guard_lives_in_piperine_lang ... ok
 test instructions_have_no_entry_for_a_retired_crate ... ok
+test instruction_files_and_state_name_the_abi_crate ... ok
+test root_tests_hold_no_end_to_end_target ... ok
+test no_manifest_names_a_retired_crate ... ok
+test examples_hold_no_vams_or_python ... ok
 test host_crates_name_no_deleted_surface ... ok
 
-test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
-    Finished `test` profile [unoptimized] target(s) in 0.56s
+    Finished `test` profile [unoptimized] target(s) in 0.20s
      Running tests/workspace_shape.rs (/var/tmp/piperine-target-b/debug/deps/workspace_shape-15595651e2d2688b)
 ```
 
