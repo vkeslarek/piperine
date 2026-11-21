@@ -1,0 +1,82 @@
+//! Places and copies in `piperine_lang::types` (feature `value-semantics`, VS-03; docs/spec Part I
+//! §1.5.12, §1.6.9, §1.7.5, §1.7.7, §3.1.10). Each test states the rule it proves; every source is
+//! a design of `Top` over an empty standard library.
+
+#[path = "support/pom.rs"]
+mod support;
+
+use piperine_lang::pom::Design;
+use piperine_lang::types::Types;
+
+/// A design of `Top` with `items` before it and `body` as its analog block.
+fn source(items: &str, body: &str) -> String {
+    format!("{items}\nmodule Top() {{ }}\nanalog for Top {{ {body} }}")
+}
+
+/// The diagnostics of checking `Top`, as `(code, message)`; empty when the check passes.
+fn outcome(src: &str) -> Vec<(String, String)> {
+    let design: Design = support::build(src);
+    assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", support::codes(&design));
+    match Types::check(&design, "Top") {
+        Ok(_) => Vec::new(),
+        Err(found) => found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect(),
+    }
+}
+
+/// The source checks clean.
+fn assert_clean(src: &str) {
+    let found = outcome(src);
+    assert!(found.is_empty(), "expected a clean check, got {found:?}\n{src}");
+}
+
+/// The source is refused with exactly one diagnostic of `code`, whose message holds `words`.
+fn assert_refused(src: &str, code: &str, words: &str) {
+    let found = outcome(src);
+    assert_eq!(found.len(), 1, "expected one diagnostic, got {found:?}\n{src}");
+    assert_eq!(found[0].0, code, "{found:?}\n{src}");
+    assert!(found[0].1.contains(words), "`{}` does not name `{words}`\n{src}", found[0].1);
+}
+
+#[test]
+fn a_let_without_mut_is_assigned_with_every_operator() {
+    // §1.5.12, §1.7.7 (VS-03 AC 1): a `let` with no marker is a place for `=` and every compound operator,
+    // and so is a field or an element of it.
+    assert_clean(&source("", "let x = 1.0; x = 2.0; x += 1.0; x -= 1.0; x *= 2.0; x /= 2.0;"));
+    assert_clean(&source("", "let n = 6u32; n %= 4; n &= 3; n |= 8; n ^= 1; n <<= 1; n >>= 1;"));
+    assert_clean(&source("struct P { a: f64 }", "let p = P { a: 1.0 }; p.a = 2.0; p.a += 1.0;"));
+    assert_clean(&source("", "let t = [1.0, 2.0]; t[0] = 3.0; t[1] += 1.0;"));
+}
+
+#[test]
+fn a_parameter_a_capture_and_a_body_let_are_not_places() {
+    // §1.5.12, §3.1.10 (VS-03 AC 2): a parameter of a function or of a closure, a name a closure captures, a
+    // body `let`, a `const`, a param: each is `E0183`, naming the target and what it is.
+    let items = "const K: f64 = 1.0;";
+    let top = |body: &str| format!("{items}\nmodule Top() {{ r: f64; let w = 1.0; }}\nanalog for Top {{ {body} }}");
+    assert_refused(&source("fn f(p: f64) -> f64 { p = 1.0; p }", "let y = f(1.0);"), "E0183", "cannot assign to `p`: it is a function parameter");
+    assert_refused(&source("", "let f = |p: f64| { p = 1.0; p }; let y = f(1.0);"), "E0183", "cannot assign to `p`: it is a closure parameter");
+    assert_refused(&source("", "let c = 1.0; let f = |d: f64| { c = d; d }; let y = f(2.0);"), "E0183", "cannot assign to `c`: it is a name a closure captures");
+    assert_refused(&top("w = 2.0;"), "E0183", "cannot assign to `w`: it is a body `let`");
+    assert_refused(&top("r = 2.0;"), "E0183", "cannot assign to `r`: it is a param");
+    assert_refused(&top("K = 2.0;"), "E0183", "cannot assign to `K`: it is a `const`");
+}
+
+#[test]
+fn a_pattern_bound_name_is_a_place() {
+    // §1.6.9 (VS-03 AC 3): the names a `match` arm, an `if let`, a `while let` and a `for` bind are places.
+    assert_clean(&source("", "let o = Some(1.0); match o { Some(v) => { v += 1.0; } None => {} }"));
+    assert_clean(&source("", "let o = Some(1.0); if let Some(v) = o { v *= 2.0; }"));
+    assert_clean(&source("", "let o = Some(1u32); while let Some(v) = o { v += 1; break; }"));
+    assert_clean(&source("", "for i in 0..3 { i += 1; }"));
+}
+
+#[test]
+fn a_deferred_let_is_assigned_twice_and_never_read_first() {
+    // §1.7.5 (VS-03 AC 4): `let x;` takes any number of assignments; a read before an assignment on some path
+    // stays `E0183`.
+    assert_clean(&source("", "let x; x = 1.0; x = 2.0; let y = x;"));
+    assert_clean(&source("", "let x: f64; while true { x = 1.0; break; }"));
+    assert_clean(&source("", "let x: f64; let c = true; if c { x = 1.0; } else { x = 2.0; } x = 3.0; let y = x;"));
+    assert_refused(&source("", "let x: f64; let y = x;"), "E0183", "`x` is read before it is assigned");
+    assert_refused(&source("", "let x: f64; let c = true; if c { x = 1.0; } let y = x;"), "E0183", "`x` is read before it is assigned");
+}

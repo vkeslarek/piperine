@@ -60,7 +60,7 @@ impl Checker<'_> {
         let node = self.design.pat_node(pat).clone();
         match &node.kind {
             PatKind::Wild => Some(Matched::covering(Covers::All)),
-            PatKind::Ident { by_ref: false, mutable, name, sub, binding, res: Resolution::Unresolved } => self.binder(file, node.span, name, *binding, *mutable, *sub, scrut),
+            PatKind::Ident { by_ref: false, name, sub, binding, res: Resolution::Unresolved, .. } => self.binder(file, node.span, name, *binding, *sub, scrut),
             PatKind::Ident { by_ref: false, mutable: false, sub: None, res: res @ (Resolution::Decl(_) | Resolution::Builtin(_)), .. } => self.path_pattern(file, node.span, *res, scrut),
             PatKind::Path(path) => {
                 let res = self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
@@ -153,10 +153,10 @@ impl Checker<'_> {
         }
     }
 
-    /// A name, `mut name` or `name @ sub` (§1.6.2): it matches every value the sub-pattern does
+    /// A name or `name @ sub` (§1.6.2): it matches every value the sub-pattern does
     /// (every value without one) and binds the whole value. A name already bound in the pattern
     /// is `E0184` (§1.6.10).
-    fn binder(&mut self, file: FileId, span: Span, name: &Name, binding: crate::pom::DeclId, mutable: bool, sub: Option<PatId>, scrut: &Ty) -> Option<Matched> {
+    fn binder(&mut self, file: FileId, span: Span, name: &Name, binding: crate::pom::DeclId, sub: Option<PatId>, scrut: &Ty) -> Option<Matched> {
         let mut matched = match sub {
             Some(sub) => self.pattern(file, sub, scrut)?,
             None => Matched::covering(Covers::All),
@@ -166,9 +166,6 @@ impl Checker<'_> {
             return None;
         }
         self.locals.insert(binding, scrut.clone());
-        if mutable {
-            self.mutable.insert(binding);
-        }
         matched.bound.push(Bound { name: name.text.clone(), ty: scrut.clone() });
         Some(matched)
     }

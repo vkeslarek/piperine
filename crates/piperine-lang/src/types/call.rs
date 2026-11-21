@@ -370,6 +370,7 @@ impl Checker<'_> {
             self.mismatch(file, span, result, written);
         }
         let outer = std::mem::replace(&mut self.context, Context::Function);
+        self.places.enter_closure(node.span);
         let given = result.or(written.as_ref().map(|(_, ty)| ty));
         let enclosing = self.flow.enter_body(ExitFrame::new(given.cloned(), given.is_none()));
         let found = match given {
@@ -381,6 +382,7 @@ impl Checker<'_> {
         };
         let returned = self.flow.leave_body(enclosing).and_then(|frame| frame.returned);
         self.context = outer;
+        self.places.leave_closure();
         let found = self.settle_result(file, node.span, found?, returned);
         self.exprs[expr.index()] = Some(Ty::Fn(declared.to_vec(), Box::new(found.clone())));
         self.record_closure(expr);

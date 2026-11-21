@@ -648,21 +648,18 @@ impl Checker<'_> {
         if diverged && value == Some(Ty::Unit) { Some(Ty::Never) } else { value }
     }
 
-    /// `let x = init;`, `let x: T = init;`, `let mut x = init;`, and `let x;` or `let x: T;` (§1.7.5):
+    /// `let x = init;`, `let x: T = init;`, and `let x;` or `let x: T;` (§1.7.5):
     /// the binding takes the annotation, else the type of the initializer, else the type of its
     /// first assignment.
     fn let_statement(&mut self, file: crate::pom::FileId, span: crate::msl::Span, pat: crate::pom::PatId, ty: Option<crate::pom::TypeId>, init: Option<ExprId>, else_: Option<&BlockNode>) {
         let pat_node = self.design.pat_node(pat).clone();
-        let PatKind::Ident { by_ref: false, mutable, sub: None, binding, res: Resolution::Unresolved, .. } = &pat_node.kind else {
+        let PatKind::Ident { by_ref: false, sub: None, binding, res: Resolution::Unresolved, .. } = &pat_node.kind else {
             self.let_pattern(file, pat, ty, init, else_);
             return;
         };
         if else_.is_some() {
             self.let_pattern(file, pat, ty, init, else_);
             return;
-        }
-        if *mutable {
-            self.mutable.insert(*binding);
         }
         let annotated = match ty {
             Some(t) => match self.lower_type(t) {
@@ -696,7 +693,7 @@ impl Checker<'_> {
             }
             (None, Some(init)) => self.infer(init),
             (annotated, None) => {
-                self.deferred.insert(*binding, self.flow.loops.len());
+                self.deferred.insert(*binding);
                 if let Some(t) = annotated {
                     self.locals.insert(*binding, t);
                 }

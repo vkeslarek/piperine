@@ -161,11 +161,8 @@ impl Checker<'_> {
 
     /// The binding of `name @ ..` typed as `ty`; nothing for a bare `..`.
     fn rest_binding(&mut self, pat: PatId, ty: &Ty) -> Option<Matched> {
-        let PatKind::Ident { name, binding, mutable, .. } = &self.design.pat_node(pat).kind.clone() else { return None };
+        let PatKind::Ident { name, binding, .. } = &self.design.pat_node(pat).kind.clone() else { return None };
         self.locals.insert(*binding, ty.clone());
-        if *mutable {
-            self.mutable.insert(*binding);
-        }
         Some(Matched::new(vec![Covers::All], vec![Bound::new(name.text.clone(), ty.clone())]))
     }
 

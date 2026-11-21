@@ -107,9 +107,9 @@ change of the IR or the ABI.
   it keep the earlier spelling (§22's Resolution says how to read it); `examples/buck/src` derives
   `Clone, Copy`. `msl_errors.rs` names the three B.3.6 rows and the one code that are ahead of the
   parser (`ROWS_AHEAD_OF_THE_PARSER`, `FIXTURES_BEHIND_THE_SPEC`, `RETIRED_AHEAD_OF_THE_PARSER`).
-- **Impact.** A model written to the spec is refused where it assigns a `let` without `mut`
-  (`E0183`: the checker takes an assignment only after `let mut`), and a model written with the
-  removed forms is accepted. Plan: `.specs/features/value-semantics/`.
+- **Impact.** A model written with the removed forms is accepted (the checker takes a `let` without `mut`
+  as assignable since `value-semantics` T2, and still takes `mut`, which changes nothing). Plan:
+  `.specs/features/value-semantics/`.
 
 ---
 
@@ -426,9 +426,9 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
-| language#13 | S7 | `value-semantics` | reached from a top, `sum_below` is `E0183`: it assigns `let total` and the checker takes an assignment only after `let mut` |
+| language#13 | S7 | `value-semantics` | reached from a top, `sum_below` is `P0001`: it assigns `let total`, and the elaborator lowers an assignment only to a local declared `let mut` until T3 |
 | types#6 | L2 | `composite-values` | reached from a top, `span` is `P0001`: `ordered` yields a tuple (a tuple type, a tuple expression) |
-| types#7 | L3 | `composite-values` | reached from a top, `smoothed` is `E0183` (it assigns a `let` declared without `mut`, S7; its array type is L3) and `mean` is `P0001` (a generic function over an array, L7) |
+| types#7 | L3 | `composite-values` | reached from a top, `smoothed` is `P0001` (an array type) and `mean` is `P0001` (a generic function over an array, L7) |
 | types#11 | L4 | `composite-values` | reached from a top, `area` is `P0001`: the enum `Shape` has variants with a payload |
 | types#12 | L1 | `composite-values` | reached from a top, `scaled` is `P0001`: a struct expression and a field access |
 | types#16 | L7 | `generics` | reached from a top, `reads_high` is `P0001`: the method `switches_at` of an `impl` on the enum `Family` |

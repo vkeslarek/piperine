@@ -11,6 +11,7 @@ use super::continuity::Continuity;
 use super::class::FunctionClass;
 use super::closures::ClosureInfo;
 use super::definition::DriveBook;
+use super::assign::Places;
 use super::flow::{ExitFrame, Flow};
 use super::record::Records;
 use super::unsupported::Unsupported;
@@ -98,14 +99,13 @@ pub(super) struct Checker<'d> {
     pub(super) poisoned: BTreeSet<DeclId>,
     /// Set while the `where` of a `fn` is checked: its parameters are not in scope (§3 rule 8).
     pub(super) fn_where: bool,
-    /// The locals declared with `mut` (§1.7.7).
-    pub(super) mutable: BTreeSet<DeclId>,
+    /// Which names are places and which locals the body assigns (§1.5.12).
+    pub(super) places: Places,
     /// The locals bound to a bare integer literal whose type no use has fixed yet (§1.4.4), each
     /// with the literal expression: `let mut total = 0;` waits for `total += k`.
     pub(super) open_literals: BTreeMap<DeclId, ExprId>,
-    /// The locals declared without a value (`let x;`, §1.7.5), each with the loop depth it is
-    /// declared at.
-    pub(super) deferred: BTreeMap<DeclId, usize>,
+    /// The locals declared without a value (`let x;`, §1.7.5).
+    pub(super) deferred: BTreeSet<DeclId>,
     /// The control state of the body being checked.
     pub(super) flow: Flow,
     /// The captures and the function class of each closure typed so far.
@@ -166,9 +166,9 @@ impl<'d> Checker<'d> {
             committing: false,
             poisoned: BTreeSet::new(),
             fn_where: false,
-            mutable: BTreeSet::new(),
+            places: Places::default(),
             open_literals: BTreeMap::new(),
-            deferred: BTreeMap::new(),
+            deferred: BTreeSet::new(),
             flow: Flow::default(),
             closures: BTreeMap::new(),
             closure_locals: BTreeMap::new(),
@@ -214,7 +214,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, widths: self.widths, written: self.written, continuous, emits })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, widths: self.widths, written: self.written, continuous, emits, assigned: self.places.into_assigned() })
     }
 
     /// Run `body` with `context` as the place being checked, then restore the one outside.

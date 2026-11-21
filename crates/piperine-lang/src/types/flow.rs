@@ -14,14 +14,12 @@ pub(super) struct Assigned {
     /// The locals assigned on every path to the point; `None` once no path reaches it (after a
     /// `return`, `break` or `continue`), where every local counts as assigned.
     definite: Option<BTreeSet<DeclId>>,
-    /// The locals assigned on at least one path to the point.
-    possible: BTreeSet<DeclId>,
 }
 
 impl Assigned {
     /// The state at the start of a body: nothing is assigned yet.
     pub(super) fn start() -> Self {
-        Assigned { definite: Some(BTreeSet::new()), possible: BTreeSet::new() }
+        Assigned { definite: Some(BTreeSet::new()) }
     }
 
     /// Whether `local` is assigned on every path to the point.
@@ -29,17 +27,11 @@ impl Assigned {
         self.definite.as_ref().is_none_or(|set| set.contains(&local))
     }
 
-    /// Whether `local` is assigned on some path to the point.
-    pub(super) fn possibly(&self, local: DeclId) -> bool {
-        self.definitely(local) || self.possible.contains(&local)
-    }
-
     /// Records the assignment of `local` at the point.
     pub(super) fn assign(&mut self, local: DeclId) {
         if let Some(set) = &mut self.definite {
             set.insert(local);
         }
-        self.possible.insert(local);
     }
 
     /// Marks the point as one no path reaches (after `return`, `break` and `continue`).
@@ -49,7 +41,7 @@ impl Assigned {
 
     /// The state of a point no path reaches: the identity of `meet`.
     fn unreachable() -> Self {
-        Assigned { definite: None, possible: BTreeSet::new() }
+        Assigned { definite: None }
     }
 
     /// The state where all of `branches` meet; a point no branch reaches when there is none.
@@ -57,13 +49,13 @@ impl Assigned {
         branches.into_iter().fold(Assigned::unreachable(), |all, branch| all.meet(&branch))
     }
 
-    /// The state where two paths meet: assigned on every path of both, or on some path of either.
+    /// The state where two paths meet: assigned on every path of both.
     pub(super) fn meet(&self, other: &Assigned) -> Assigned {
         let definite = match (&self.definite, &other.definite) {
             (None, side) | (side, None) => side.clone(),
             (Some(a), Some(b)) => Some(a.intersection(b).copied().collect()),
         };
-        Assigned { definite, possible: self.possible.union(&other.possible).copied().collect() }
+        Assigned { definite }
     }
 }
 

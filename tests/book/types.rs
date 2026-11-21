@@ -132,7 +132,7 @@ fn the_listings_still_on_the_way_are_refused_where_a_top_reaches_them() {
     // (refused, L1): the structs `Reading` and `Volts`; types#16 (refused, L7): the method `switches_at`.
     // When one of them runs this test fails and its row moves to `run`
     Refusal::expect(Reached::run("types#6", "", "emit!(\"r\", s = span(2.0, 0.8));"), "types#6", "P0001", "a tuple `let` whose value is not a tuple expression is not supported yet");
-    Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = smoothed([1.0, 2.0, 3.0]));"), "types#7", "E0183", "cannot assign to `sum`: it is a local declared without `mut`, and only a local declared with `mut` is a place (§1.5.12)");
+    Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = smoothed([1.0, 2.0, 3.0]));"), "types#7", "P0001", "an expression the type checker gave no value type is not supported yet");
     Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = mean(TAPS));"), "types#7", "P0001", "generic function is not supported yet");
     Refusal::expect(Reached::run("types#11", "", "emit!(\"r\", s = area(Shape::Circle(1.0)));"), "types#11", "P0001", "enum `Shape` without `#[derive(Repr)]` is not supported yet");
     Refusal::expect(Reached::run("types#12", "", "let r = Reading { volts: 3.0, valid: true }; emit!(\"r\", s = scaled(r, 0.5).volts);"), "types#12", "P0001", "a name whose type is not a value type is not supported yet");

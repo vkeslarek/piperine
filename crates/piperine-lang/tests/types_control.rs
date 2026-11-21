@@ -85,9 +85,7 @@ fn let_mut_and_every_compound_operator_type_check() {
 fn assigning_a_non_place_is_e0183_naming_the_target() {
     let items = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\nconst K: f64 = 1.0;";
     let top = |params: &str, body: &str| format!("{items}\nmodule Top({params}) {{ r: f64; let w = 1.0; }}\nanalog for Top {{ {body} }}");
-    // §1.5.12: a local without `mut`, a param, a const, a function parameter, a body `let` and
-    // a value that is no place at all.
-    assert_refused(&source(items, "let x = 1.0; x = 2.0;"), "E0183", "cannot assign to `x`");
+    // §1.5.12: a param, a const, a function parameter, a body `let` and a value that is no place at all.
     assert_refused(&top("", "r = 2.0;"), "E0183", "cannot assign to `r`: it is a param");
     assert_refused(&source(items, "K = 2.0;"), "E0183", "cannot assign to `K`: it is a `const`");
     assert_refused(&source("fn f(p: f64) -> f64 { p = 1.0; p }", "let y = f(1.0);"), "E0183", "cannot assign to `p`: it is a function parameter");
@@ -99,8 +97,6 @@ fn assigning_a_non_place_is_e0183_naming_the_target() {
     assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
     let found = Types::check(&design, "Top").err().unwrap_or_default();
     assert!(found.iter().any(|d| d.diagnostic.code == "E0183" && d.diagnostic.message.contains("`q`") && d.diagnostic.message.contains("a carrier")), "{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
-    // a local assigned from a second assignment without `mut` is `E0183` as well (§1.7.5)
-    assert_refused(&source("", "let x; x = 1.0; x = 2.0;"), "E0183", "may be assigned twice");
 }
 
 #[test]
@@ -153,8 +149,6 @@ fn break_or_continue_outside_a_loop_is_e0185() {
     assert_refused(&source("", "while true { break 1; }"), "E0185", "`break` with a value outside a `loop`");
     assert_refused(&source("", "for i in 0..2 { break 1; }"), "E0185", "`break` with a value outside a `loop`");
     assert_refused(&source("fn f() -> f64 { break; 1.0 }", "let x = f();"), "E0185", "`break` outside a loop");
-    // assigning an immutable deferred local from a `while` body may assign it twice (§1.7.5)
-    assert_refused(&source("", "let x: f64; while true { x = 1.0; }"), "E0183", "may be assigned twice");
     // a refutable pattern in a `for` is `E0184` (§1.6.11)
     assert_refused(&source("", "for 3 in 0..2 { }"), "E0184", "irrefutable");
 }

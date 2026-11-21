@@ -1,10 +1,14 @@
-//! Places and assignment (§1.5.12, §1.7.5, §1.7.7): `let mut`, `place = value`, `place op= value`,
-//! and the locals declared without a value (`let x;`). An assignment to anything that is not a
-//! place, a read of a local before it is assigned, and a second assignment of a local without
-//! `mut` are `E0183`, naming the target.
+//! Places and assignment (§1.5.12, §1.7.5, §1.7.7): `place = value`, `place op= value`, and the
+//! locals declared without a value (`let x;`). Every local is a place: a name a `let` or the
+//! pattern of a `match` arm, an `if let`, a `while let` or a `for` binds. A parameter of a function
+//! or of a closure, `self`, a name a closure captures, a body `let`, a `const`, a param and a
+//! carrier are not. An assignment to anything that is not a place, and a read of a local before
+//! it is assigned, are `E0183`, naming the target.
+
+use std::collections::BTreeSet;
 
 use crate::msl::Span;
-use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, FileId, Resolution};
+use crate::pom::{BinOp, BindingOrigin, DeclId, DeclKind, ExprId, ExprKind, FileId, Resolution};
 
 use super::check::Checker;
 use super::Ty;
@@ -15,13 +19,50 @@ struct Root {
     projected: bool,
 }
 
+/// What the checker records about places while it types a body (§1.5.12).
+#[derive(Debug, Default)]
+pub(super) struct Places {
+    /// The spans of the closures whose body is being typed, the innermost last.
+    closures: Vec<Span>,
+    /// The locals some assignment of the body writes: the elaborator makes exactly these assignable.
+    assigned: BTreeSet<DeclId>,
+}
+
+impl Places {
+    /// A closure whose body starts being typed.
+    pub(super) fn enter_closure(&mut self, span: Span) {
+        self.closures.push(span);
+    }
+
+    /// The closure whose body was being typed is done.
+    pub(super) fn leave_closure(&mut self) {
+        self.closures.pop();
+    }
+
+    /// Whether an assignment at `at` to a name declared at `declared` writes a name a closure
+    /// captures: the assignment is inside a closure that the declaration is outside of (§1.5.14).
+    fn is_captured(&self, declared: Span, at: Span) -> bool {
+        self.closures.iter().any(|closure| closure.start <= at.start && at.end <= closure.end && !(closure.start <= declared.start && declared.end <= closure.end))
+    }
+
+    /// Records that a body assigns `local`.
+    fn record(&mut self, local: DeclId) {
+        self.assigned.insert(local);
+    }
+
+    /// The locals the checked bodies assign.
+    pub(super) fn into_assigned(self) -> BTreeSet<DeclId> {
+        self.assigned
+    }
+}
+
 impl Checker<'_> {
     /// `place = value` or `place op= value`: the type `()` (§1.5.12). The value is typed before
     /// the place is marked assigned, so `x = x + 1` reads an unassigned `x` as the error it is.
     pub(super) fn assignment(&mut self, expr: ExprId, op: Option<BinOp>, lhs: ExprId, rhs: ExprId) -> Option<Ty> {
         let file = self.file_of_expr(expr);
         let target = self.assignable(file, lhs);
-        let pending = target.as_ref().is_some_and(|root| !root.projected && self.deferred.contains_key(&root.local) && !self.locals.contains_key(&root.local));
+        let pending = target.as_ref().is_some_and(|root| !root.projected && self.deferred.contains(&root.local) && !self.locals.contains_key(&root.local));
         let open = target.as_ref().is_some_and(|root| !root.projected && self.open_literal_local(lhs) == Some(root.local));
         let place = match (op, pending) {
             (None, true) => None,
@@ -63,6 +104,7 @@ impl Checker<'_> {
         }
         if let Some(root) = target {
             self.flow.assigned.assign(root.local);
+            self.places.record(root.local);
         }
         Some(Ty::Unit)
     }
@@ -88,10 +130,14 @@ impl Checker<'_> {
         let data = self.design.decl_data(decl).clone();
         let name = data.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         let why = match &data.kind {
-            DeclKind::Binding(_) | DeclKind::FnParam(_) if self.mutable.contains(&decl) => return Some(Root { local: decl, projected }),
-            DeclKind::Binding(_) if self.deferred.contains_key(&decl) && !projected => return self.assignable_once(file, span, decl, &name),
-            DeclKind::Binding(_) if data.parent.is_some_and(|p| matches!(self.design.decl_data(p).kind, DeclKind::Let(_))) => "a body `let`",
-            DeclKind::Binding(_) => "a local declared without `mut`",
+            DeclKind::Binding(binding) => match binding.origin {
+                BindingOrigin::Local | BindingOrigin::MatchArm | BindingOrigin::For | BindingOrigin::IfLet if self.places.is_captured(data.span, span) => "a name a closure captures",
+                BindingOrigin::Local | BindingOrigin::MatchArm | BindingOrigin::For | BindingOrigin::IfLet => return Some(Root { local: decl, projected }),
+                BindingOrigin::ClosureParam => "a closure parameter",
+                BindingOrigin::BodyLet => "a body `let`",
+                BindingOrigin::GenFor => "a generation `for` binding",
+            },
+            DeclKind::FnParam(_) if name == "self" => "`self`, a copy of the receiver",
             DeclKind::FnParam(_) => "a function parameter",
             DeclKind::Param(_) => "a param",
             DeclKind::Port(_) if !self.carriers.contains_key(&decl) => "a port",
@@ -99,23 +145,8 @@ impl Checker<'_> {
             DeclKind::Const(_) => "a `const`",
             _ => "not a place",
         };
-        self.not_a_place(file, span, format!("cannot assign to `{name}`: it is {why}, and only a local declared with `mut` is a place (§1.5.12)"));
+        self.not_a_place(file, span, format!("cannot assign to `{name}`: it is {why}, and only a local that a `let` or a pattern binds is a place (§1.5.12)"));
         None
-    }
-
-    /// A local declared without a value and without `mut` is assigned at most once on any path
-    /// (§1.7.5): not where it may already be assigned, and not from a `while` or `for` it is
-    /// declared outside, whose body may run again. A `loop` is left to its `break`s: a second
-    /// iteration that assigns again is not found, which only lets through a program Rust refuses.
-    fn assignable_once(&mut self, file: FileId, span: Span, local: DeclId, name: &str) -> Option<Root> {
-        let declared_at = self.deferred.get(&local).copied().unwrap_or_default();
-        let repeats = self.flow.loops.iter().skip(declared_at).any(|frame| !frame.valued);
-        if self.flow.assigned.possibly(local) || repeats {
-            let message = format!("`{name}` is declared without `mut` and may be assigned twice: such a local is assigned at most once on any path (§1.7.5)");
-            self.coded(file, "E0183", span, message, "assigned twice");
-            return None;
-        }
-        Some(Root { local, projected: false })
     }
 
     /// The local a place expression is rooted in: through parentheses, fields and indexes to a name.
@@ -138,7 +169,7 @@ impl Checker<'_> {
 
     /// `E0183` for a read of a local declared without a value before it is assigned (§1.7.5).
     pub(super) fn read_before_assignment(&mut self, file: FileId, span: Span, local: DeclId) -> bool {
-        if !self.deferred.contains_key(&local) || self.flow.assigned.definitely(local) {
+        if !self.deferred.contains(&local) || self.flow.assigned.definitely(local) {
             return false;
         }
         let name = self.design.decl_data(local).name.as_ref().map_or("", |n| n.text.as_str()).to_string();

@@ -184,13 +184,13 @@ fn a_fault_ends_the_analysis_or_the_build_and_a_non_finite_value_ends_the_solve(
 
 #[test]
 fn the_sum_below_listing_is_refused_for_a_local_without_mut() {
-    // language#13 (refused): the chapter's `sum_below` assigns `let total = 0` and the checker still takes an
-    // assignment only after `let mut` (GAPS.md S7, `value-semantics` T2). The loop and the assignment run since
-    // composite-values T11 to T20, and the literal `0` is typed by its later use (§1.4.4). When every local is a place this test fails and the row moves to `run`
+    // language#13 (refused): the chapter's `sum_below` assigns `let total = 0`. The checker takes every local as a
+    // place since value-semantics T2; the elaborator lowers an assignment only to a local declared `let mut` until
+    // T3 (GAPS.md S7). When it runs this test fails and the row moves to `run`
     let chapter = Chapter::read();
-    let overrides = || Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2e-6), ..Overrides::default() };
+    let overrides = Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2e-6), ..Overrides::default() };
     let top = "module Top() { }\ndigital for Top { on at(1u) { emit!(\"r\", s = sum_below(4)); } }\n";
-    Refusal::expect(chapter.wrapped("sum.msl", "", "language#13", top).run(overrides()), "language#13", "E0183", "cannot assign to `total`: it is a local declared without `mut`, and only a local declared with `mut` is a place (§1.5.12)");
+    Refusal::expect(chapter.wrapped("sum.msl", "", "language#13", top).run(overrides), "language#13", "P0001", "an assignment to a local that is not mutable here is not supported yet");
 }
 
 #[test]
@@ -209,9 +209,9 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
         let faulty = ValueFile::refused("language~5628120b", items, statements);
         assert!(faulty.given.iter().any(|reported| reported.code == "P0001" && reported.message == named), "{statements}: {:?}", faulty.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
     }
-    // an assignment to a local declared without `mut` is the error E0183 (§1.5.12), no longer a form that waits
-    let immutable = ValueFile::refused("language~5628120b", "", "let x = 5; x = 6; emit!(\"r\", x = x);");
-    assert!(immutable.given.iter().any(|reported| reported.code == "E0183"), "{:?}", immutable.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
+    // an assignment to a parameter is the error E0183 (§1.5.12, §3.1.10), no longer a form that waits
+    let parameter = ValueFile::refused("language~5628120b", "fn bump(x: u32) -> u32 { x = 6; x }", "emit!(\"r\", x = bump(1));");
+    assert!(parameter.given.iter().any(|reported| reported.code == "E0183"), "{:?}", parameter.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
 }
 
 #[test]
@@ -230,11 +230,11 @@ fn e0909_e0905_and_e0903_a_literal_too_large_a_character_and_a_keyword_as_a_name
 
 #[test]
 fn a_local_is_assigned_only_after_let_mut_today() {
-    // language~22e35a04 "Today's compiler still needs the word: it refuses the assignment of a local declared
-    // without it with the code E0183": `mut` left the language with value semantics (spec Appendix G.71, GAPS.md
-    // S7). When every local is a place this test fails and the status box loses the sentence
-    let faulty = ValueFile::refused("language~22e35a04", "", "let x = 5; x = 6; emit!(\"r\", x = x);");
-    assert_eq!(faulty.first("E0183").message, "cannot assign to `x`: it is a local declared without `mut`, and only a local declared with `mut` is a place (§1.5.12)");
+    // language~769389d7 "Today's compiler still needs the word to run an assignment: without it the run stops with
+    // the code P0001": `mut` left the language with value semantics (spec Appendix G.71, GAPS.md S7). When every
+    // local runs an assignment this test fails and the status box loses the sentence
+    let faulty = ValueFile::refused("language~769389d7", "", "let x = 5; x = 6; emit!(\"r\", x = x);");
+    assert_eq!(faulty.first("P0001").message, "an assignment to a local that is not mutable here is not supported yet");
     let kept = ValueFile::written("", "let mut x = 5; x = 6; emit!(\"r\", x = x);");
     ValueFile::int(&kept, "x", 6);
 }

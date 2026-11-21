@@ -151,11 +151,13 @@ pub struct Types<'d> {
     pub(super) written: BTreeMap<TypeId, Ty>,
     pub(super) continuous: BTreeSet<ExprId>,
     pub(super) emits: BTreeMap<DeclId, BTreeSet<String>>,
+    /// The locals some assignment of a checked body writes (§1.5.12): the elaborator makes exactly these assignable.
+    pub(super) assigned: BTreeSet<DeclId>,
 }
 
 impl PartialEq for Types<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.bindings == other.bindings && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins && self.widths == other.widths && self.written == other.written && self.continuous == other.continuous && self.emits == other.emits
+        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.bindings == other.bindings && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins && self.widths == other.widths && self.written == other.written && self.continuous == other.continuous && self.emits == other.emits && self.assigned == other.assigned
     }
 }
 
@@ -178,6 +180,11 @@ impl<'d> Types<'d> {
     /// The design the table was built over.
     pub fn design(&self) -> &'d Design {
         self.design
+    }
+
+    /// Whether some assignment of a checked body writes the local `decl` (§1.5.12).
+    pub fn is_assigned(&self, decl: DeclId) -> bool {
+        self.assigned.contains(&decl)
     }
 
     /// The type of an expression; `None` outside the reachable set.
