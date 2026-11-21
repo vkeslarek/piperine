@@ -162,8 +162,8 @@ T21
 
 **Done when**:
 
-- [ ] `one_driver_fields_carry_a_direction_and_no_other_field_does` and `a_misplaced_or_missing_field_direction_is_e0261` pass under `**Run pombundles**`
-- [ ] Gate check passes: Quick
+- [x] `one_driver_fields_carry_a_direction_and_no_other_field_does` and `a_misplaced_or_missing_field_direction_is_e0261` pass under `**Run pombundles**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

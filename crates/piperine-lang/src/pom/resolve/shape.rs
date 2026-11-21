@@ -1,11 +1,11 @@
 //! Stage 8: structural checks over declarations alone, with no types and no
 //! const evaluation: the shape of an `extern` module (`E0370`), the body rule
 //! of functions (`E0125`), the fields of a nature (`E0201`) and the declaration
-//! rules of a bundle (`E0260`, §7). Runs after classification: a value input is
+//! rules of a bundle (`E0260`, `E0261`, §7). Runs after classification: a value input is
 //! a port the classifier made one.
 
 use super::super::body::TypeKind;
-use super::super::decl::DeclKind;
+use super::super::decl::{DeclKind, FieldData};
 use super::super::design::Design;
 use super::super::ids::{DeclId, FileId, TypeId};
 use super::super::resolution::{NatureKind, PortKind, Resolution};
@@ -104,6 +104,7 @@ impl<'design> BundleShape<'design> {
             && s.bundle == Some(true)
         {
             self.check_fields_are_carriers(decl, out);
+            self.check_field_directions(decl, out);
         }
     }
 
@@ -149,6 +150,37 @@ impl<'design> BundleShape<'design> {
             let (name, span) = self.field_name(*field);
             let message = format!("the bundle `{bundle_name}` mixes the carrier field `{carrier_name}` with the value field `{name}` (§7 rule 1)");
             out.push((data.file, Diagnostic::new("E0260", message, span, "a value field in a bundle")));
+        }
+    }
+
+    /// The fields of a bundle struct: the field declaration and its data.
+    fn fields_of(&self, bundle: DeclId) -> impl Iterator<Item = (DeclId, &'design FieldData)> + use<'design, '_> {
+        self.design.decl_data(bundle).children.iter().filter_map(|c| match &self.design.decl_data(*c).kind {
+            DeclKind::Field(f) => Some((*c, f)),
+            _ => None,
+        })
+    }
+
+    /// §7 rule 2: a field of a one-driver nature (a discrete nature without `resolve`) has `in` or
+    /// `out`; a field of any other nature has none. A field of a generic or an invalid nature is
+    /// not judged, and the directions of a nested bundle are `E0262`'s concern.
+    fn check_field_directions(&self, bundle: DeclId, out: &mut Vec<(FileId, Diagnostic)>) {
+        let file = self.design.decl_data(bundle).file;
+        for (field, data) in self.fields_of(bundle) {
+            if self.shape_of(data.ty) != TypeShape::Carrier {
+                continue;
+            }
+            let Some(nature) = self.design.nature_of(data.ty) else { continue };
+            let DeclKind::Nature(nature_data) = &self.design.decl_data(nature).kind else { continue };
+            let (name, span) = self.field_name(field);
+            let message = match (nature_data.kind, data.dir) {
+                (NatureKind::Discrete, None) => format!("the field `{name}` is of a one-driver nature and needs `in` or `out` (§7 rule 2)"),
+                (NatureKind::Resolved | NatureKind::Conservative | NatureKind::SignalFlow, Some(_)) => {
+                    format!("the field `{name}` is not of a one-driver nature and takes no direction (§7 rule 2)")
+                }
+                _ => continue,
+            };
+            out.push((file, Diagnostic::new("E0261", message, span, "a misplaced or missing direction")));
         }
     }
 }

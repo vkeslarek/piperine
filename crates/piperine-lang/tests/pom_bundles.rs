@@ -56,3 +56,19 @@ fn a_struct_mixing_carrier_and_value_fields_is_e0260() {
     let message = &design.diagnostics().iter().find(|d| d.diagnostic.code == "E0260").expect("E0260").diagnostic.message;
     assert!(message.contains("`hi`") && message.contains("`gain`"), "names a field of each kind: {message}");
 }
+
+#[test]
+fn one_driver_fields_carry_a_direction_and_no_other_field_does() {
+    // §7 rule 2: `Bit` is a one-driver nature and takes `in` or `out`; `Wire` (resolved) and
+    // `Electrical` (conservative) take none
+    let design = Bundles::design("struct Stream { out valid: Bit, in ready: Bit, bus: Wire, node: Electrical }\nmodule Top() { }\n");
+    assert_eq!(Bundles::codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+}
+
+#[test]
+fn a_misplaced_or_missing_field_direction_is_e0261() {
+    // §7 rule 2: a one-driver field with no direction, and a field of any other nature with one,
+    // is an error at the field's name
+    let design = Bundles::design("struct Stream { valid: Bit, out bus: Wire, in node: Electrical, ok: Wire, out good: Bit }\nmodule Top() { }\n");
+    assert_eq!(Bundles::spans(&design, "E0261"), ["valid", "bus", "node"], "{:?}", design.diagnostics());
+}
