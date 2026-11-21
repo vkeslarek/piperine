@@ -36,6 +36,9 @@ impl Checker<'_> {
         if matches!(self.callee_resolution(*callee), Some(Resolution::Builtin(id)) if id.info().name == "Some") {
             return self.some(expr, args, None);
         }
+        if let Some(found) = self.default_call(expr, *callee, args.len()) {
+            return found;
+        }
         match class {
             CallClass::Function => {}
             CallClass::Instance { module: Some(module), .. } => return self.placement(expr, *module),

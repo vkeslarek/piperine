@@ -1104,8 +1104,8 @@ T63
 
 **Done when**:
 
-- [ ] `derived_traits_give_comparison_and_default`, `comparing_without_the_trait_is_refused_naming_it`, `debug_and_hash_derives_are_accepted` and `an_enum_deriving_default_is_refused` pass under `**Run typesagg**`
-- [ ] Gate check passes: Quick
+- [x] `derived_traits_give_comparison_and_default`, `comparing_without_the_trait_is_refused_naming_it`, `debug_and_hash_derives_are_accepted` and `an_enum_deriving_default_is_refused` pass under `**Run typesagg**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

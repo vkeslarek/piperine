@@ -52,6 +52,11 @@ impl Ty {
         matches!(self, Ty::UInt(_) | Ty::Int(_))
     }
 
+    /// Whether this is a type made of parts: a struct, an enum, a tuple, an array or an `Option`.
+    pub fn is_composite(&self) -> bool {
+        matches!(self, Ty::Struct(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Array(..) | Ty::Option(_))
+    }
+
     /// Whether the type implements `Repr` (part I §2): the types a carrier may hold.
     pub fn has_repr(&self) -> bool {
         matches!(self, Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_))

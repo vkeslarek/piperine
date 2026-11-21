@@ -6,7 +6,7 @@
 //! the four flag reads, the two edges of `Bit` and `prev` as built-ins only when the name
 //! resolved to the stdlib's own item (§3.3.7): a project item of the same name is `P0001`.
 
-use crate::msl::Diagnostic;
+use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, GenericParamData, NatureKind, PathId, Resolution, TypeId};
 
 use super::check::Checker;
@@ -230,6 +230,26 @@ impl Checker<'_> {
         Some(Some(result))
     }
 
+    /// The type a path's first segment names when it is the owner of an associated item
+    /// (`T::WIDTH`, `T::default()`): a built-in scalar type, a struct or an enum. `None` for any
+    /// other segment.
+    pub(super) fn path_owner_type(&mut self, file: FileId, span: Span, owner: Resolution) -> Option<Ty> {
+        match owner {
+            Resolution::Builtin(id) => match (id.info().name, id.width()) {
+                ("fN", Some(64)) => Some(Ty::F64),
+                ("bool", _) => Some(Ty::Bool),
+                ("uN", Some(w)) => self.integer_type(file, span, Ty::UInt, u128::from(w), &id.name()),
+                ("iN", Some(w)) => self.integer_type(file, span, Ty::Int, u128::from(w), &id.name()),
+                ("usize", _) => Some(Ty::UInt(64)),
+                ("isize", _) => Some(Ty::Int(64)),
+                _ => None,
+            },
+            Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) => self.enum_type(decl, file, span),
+            Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::Struct(_)) => self.struct_type(decl, file, span),
+            _ => None,
+        }
+    }
+
     /// `T::WIDTH` written with a concrete `Repr` type `T` as its first segment: the level count
     /// of `T`, a const `u32` (§2, US-02 AC 3). `None` when `expr` is not such a path, so the caller
     /// reports it as it reports any other built-in name.
@@ -242,19 +262,7 @@ impl Checker<'_> {
             return None;
         }
         let file = self.file_of_expr(expr);
-        let owner_type = match owner.res {
-            Resolution::Builtin(id) => match (id.info().name, id.width()) {
-                ("fN", Some(64)) => Ty::F64,
-                ("bool", _) => Ty::Bool,
-                ("uN", Some(w)) => self.integer_type(file, node.span, Ty::UInt, u128::from(w), &id.name())?,
-                ("iN", Some(w)) => self.integer_type(file, node.span, Ty::Int, u128::from(w), &id.name())?,
-                ("usize", _) => Ty::UInt(64),
-                ("isize", _) => Ty::Int(64),
-                _ => return None,
-            },
-            Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) => self.enum_type(decl, file, node.span)?,
-            _ => return None,
-        };
+        let owner_type = self.path_owner_type(file, node.span, owner.res)?;
         let levels = owner_type.levels(self.design)?;
         self.widths.insert(expr, levels);
         Some(Ty::UInt(32))

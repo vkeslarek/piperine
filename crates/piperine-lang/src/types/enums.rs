@@ -64,6 +64,7 @@ impl Checker<'_> {
         let variants = self.variants_of(decl);
         let mut ok = true;
         let mut names: Vec<String> = Vec::new();
+        let mut field_types: Vec<Ty> = Vec::new();
         for variant in &variants {
             let data = self.design.decl_data(*variant).clone();
             let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
@@ -72,9 +73,12 @@ impl Checker<'_> {
                 ok = false;
             }
             names.push(name);
-            ok &= self.fields_of(*variant).is_some();
+            match self.fields_of(*variant) {
+                Some(fields) => field_types.extend(fields.into_iter().map(|f| f.ty)),
+                None => ok = false,
+            }
         }
-        ok && self.judge_tag(decl, &variants, file, span)
+        ok && self.judge_tag(decl, &variants, file, span) & self.judge_derives(decl, file, span, &field_types)
     }
 
     /// The tag of the enum `decl` (§2 rule 5): `#[repr(uN)]` gives `N` levels, else

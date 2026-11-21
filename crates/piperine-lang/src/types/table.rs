@@ -149,6 +149,8 @@ pub struct Types<'d> {
     pub(super) builtins: BTreeMap<ExprId, Builtin>,
     pub(super) event_reads: BTreeSet<ExprId>,
     pub(super) widths: BTreeMap<ExprId, u32>,
+    /// The type `T` of each `T::default()` call of the reachable set (H.8 rule 4).
+    pub(super) defaults: BTreeMap<ExprId, Ty>,
     pub(super) written: BTreeMap<TypeId, Ty>,
     pub(super) continuous: BTreeSet<ExprId>,
     pub(super) emits: BTreeMap<DeclId, BTreeSet<String>>,
@@ -158,7 +160,7 @@ pub struct Types<'d> {
 
 impl PartialEq for Types<'_> {
     fn eq(&self, other: &Self) -> bool {
-        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.bindings == other.bindings && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins && self.event_reads == other.event_reads && self.widths == other.widths && self.written == other.written && self.continuous == other.continuous && self.emits == other.emits && self.assigned == other.assigned
+        self.exprs == other.exprs && self.locals == other.locals && self.methods == other.methods && self.callees == other.callees && self.bindings == other.bindings && self.reached == other.reached && self.somes == other.somes && self.carriers == other.carriers && self.builtins == other.builtins && self.event_reads == other.event_reads && self.widths == other.widths && self.defaults == other.defaults && self.written == other.written && self.continuous == other.continuous && self.emits == other.emits && self.assigned == other.assigned
     }
 }
 
@@ -227,6 +229,12 @@ impl<'d> Types<'d> {
     /// for `uN` and `iN`, 64 for `f64`, the tag width of an enum. `None` for any other expression.
     pub fn width(&self, expr: ExprId) -> Option<u32> {
         self.widths.get(&expr).copied()
+    }
+
+    /// The type `T` of a `T::default()` call of the reachable set (H.8 rule 4), whose value is the
+    /// default of `T`. `None` for any other expression.
+    pub fn default_of(&self, expr: ExprId) -> Option<&Ty> {
+        self.defaults.get(&expr)
     }
 
     /// Whether an expression of the reachable set is discrete or continuous (part III §8.2);

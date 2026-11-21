@@ -8,6 +8,7 @@ use crate::pom::{BinOp, BlockNode, FileId, BuiltinKind, DeclKind, ExprId, ExprKi
 use crate::stack;
 
 use super::check::{Checker, Context};
+use super::derives::DerivedTrait;
 use super::flow::Assigned;
 use super::unsupported::Unsupported;
 use super::Ty;
@@ -281,14 +282,12 @@ impl Checker<'_> {
                 let (first, second) = self.literal_last(lhs, rhs);
                 match self.infer(first) {
                     Some(t @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Str)) => self.check(second, &t),
-                    // §2 rule 5: an enum compares when it derives `PartialEq`.
-                    Some(t @ Ty::Enum(e)) => {
+                    // §1.3.10, H.8 rule 7: an enum, a struct, a tuple, an array or an `Option` compares
+                    // when it implements `PartialEq`.
+                    Some(t) if t.is_composite() => {
                         self.check(second, &t);
-                        if !self.derives(e, "PartialEq") {
-                            let span = self.design.expr_node(first).span;
-                            let found = t.name(self.design);
-                            self.mismatch_text(file, span, "a type that derives `PartialEq`", &found);
-                        }
+                        let span = self.design.expr_node(first).span;
+                        self.require_trait(file, span, &t, DerivedTrait::PartialEq);
                     }
                     Some(_) => {
                         let span = self.design.expr_node(first).span;
@@ -336,14 +335,11 @@ impl Checker<'_> {
                 self.check(second, &t);
                 Some(t)
             }
-            Some(t @ Ty::Enum(e)) if ordering => {
+            Some(t) if ordering && t.is_composite() => {
                 self.check(second, &t);
-                if !self.derives(e, "PartialOrd") {
-                    let file = self.file_of_expr(first);
-                    let span = self.design.expr_node(first).span;
-                    let found = t.name(self.design);
-                    self.mismatch_text(file, span, "a type that derives `PartialOrd`", &found);
-                }
+                let file = self.file_of_expr(first);
+                let span = self.design.expr_node(first).span;
+                self.require_trait(file, span, &t, DerivedTrait::PartialOrd);
                 Some(t)
             }
             found => {

@@ -407,18 +407,24 @@ impl Ctx<'_> {
                 .variant(owner, name)
                 .or_else(|| self.associated(owner, name))
                 .map(|v| (Resolution::Decl(v), true))
-                .or_else(|| builtin_member("Repr", name).map(|member| (Resolution::Builtin(member), true))),
+                .or_else(|| builtin_member("Repr", name).map(|member| (Resolution::Builtin(member), true)))
+                .or_else(|| Self::default_member(name)),
             // `Self::NAME` in a trait: its own items, then each supertrait in the order written.
             DeclKind::Trait(t) => match self.associated(owner, name) {
                 Some(item) => Some((Resolution::Decl(item), true)),
                 None => self.through_bounds(&t.supertraits, name, self.parent_namespace(owner).unwrap_or(from), visiting),
             },
-            DeclKind::Struct(_) | DeclKind::Nature(_) | DeclKind::Module(_) => {
-                self.associated(owner, name).map(|v| (Resolution::Decl(v), true))
-            }
+            DeclKind::Struct(_) => self.associated(owner, name).map(|v| (Resolution::Decl(v), true)).or_else(|| Self::default_member(name)),
+            DeclKind::Nature(_) | DeclKind::Module(_) => self.associated(owner, name).map(|v| (Resolution::Decl(v), true)),
             DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) => self.through_bounds(bounds, name, from, visiting),
             _ => None,
         }
+    }
+
+    /// `Point::default()` reads `Default::default` through the type (App. H.8): left for the checker,
+    /// which refuses a type that does not implement `Default`.
+    fn default_member(name: &str) -> Option<(Resolution, bool)> {
+        (name == "default").then_some((Resolution::Deferred(DeferReason::BuiltinTraitMember), true))
     }
 
     /// `name` after a generic: an item of a user trait it is bounded by, a

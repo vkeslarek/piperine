@@ -264,3 +264,66 @@ fn a_non_constant_array_length_is_refused_naming_it() {
     assert_clean(&source("const N: usize = 2;", "let a = [0u8; N * 2 + 1];"));
 }
 
+
+#[test]
+fn derived_traits_give_comparison_and_default() {
+    // CV-12 AC 1, H.8 rules 2 to 4: a derived `PartialEq` gives `==` and `!=`, `PartialOrd` gives the
+    // four orderings, `Default` gives `T::default()`; the built-in types implement them by rule 7
+    // (tuples, arrays and `Option` per part).
+    let items = "#[derive(PartialEq, Eq, PartialOrd, Ord, Default)]\nstruct Key { a: u8, b: bool }\n\
+                 #[derive(PartialEq, PartialOrd, Default)]\nstruct Pt { x: f64, y: f64 }\n\
+                 #[derive(Repr, PartialEq, Eq, PartialOrd, Ord)]\nenum Mode { Off, On(u8) }";
+    let body = "let k = Key { a: 1, b: true }; let same = k == k; let other = k != Key::default(); let before = k < Key { a: 2, b: false }; \
+                let p = Pt::default(); let near = p <= Pt { x: 0.0, y: 1.0 }; \
+                let t = (1u8, 2.0) == (1u8, 2.0); let arr = [1u8, 2] < [1u8, 3]; let o = Some(1u8) == None; \
+                let m = Mode::On(1) > Mode::Off;";
+    for name in ["same", "other", "before", "near", "t", "arr", "o", "m"] {
+        assert_eq!(local_type(&source(items, body), name), Ty::Bool, "{name}");
+    }
+    let src = source(items, body);
+    assert_eq!(local_type(&src, "p"), Ty::Struct(type_decl(&src, "Pt")), "`T::default()` has the type `T`");
+    // H.8 rule 7: the defaults of the built-in types
+    let defaults = "let a: u8 = u8::default(); let b: bool = bool::default(); let c: f64 = f64::default();";
+    assert_clean(&source("", defaults));
+}
+
+#[test]
+fn comparing_without_the_trait_is_refused_naming_it() {
+    // CV-12 AC 2, D6: `==` on a type without `PartialEq` and `<` on one without `PartialOrd` are
+    // refused naming the trait; a type has a trait only when it derives it (H.8 rule 7: a tuple or
+    // an array, when every part has it).
+    let plain = "struct P { x: f64 }";
+    assert_refused(&source(plain, "let a = P { x: 1.0 } == P { x: 1.0 };"), "E0180", "a type that derives `PartialEq`");
+    assert_refused(&source(plain, "let a = P { x: 1.0 } != P { x: 1.0 };"), "E0180", "a type that derives `PartialEq`");
+    let eq_only = "#[derive(PartialEq)]\nstruct P { x: f64 }";
+    assert_refused(&source(eq_only, "let a = P { x: 1.0 } < P { x: 1.0 };"), "E0180", "a type that derives `PartialOrd`");
+    assert_refused(&source(plain, "let a = (1.0, P { x: 1.0 }) == (1.0, P { x: 1.0 });"), "E0180", "a type that derives `PartialEq`");
+    assert_refused(&source(plain, "let a = [P { x: 1.0 }] == [P { x: 1.0 }];"), "E0180", "a type that derives `PartialEq`");
+    // H.8 rule 6: a derive needs the trait on every field; a float has no `Eq` (H.8 resolution)
+    assert_refused(&source("#[derive(PartialEq, Eq)]\nstruct P { x: f64 }", "let h = P { x: 1.0 };"), "E0180", "`Eq`");
+    assert_refused(&source("#[derive(PartialEq)]\nstruct Q { x: u8 }\n#[derive(PartialEq)]\nstruct P { q: Q, n: f64 }\n#[derive(Default)]\nstruct D { q: Q }", "let h = D::default();"), "E0180", "`Default`");
+    // H.8 rule 3: `Ord` requires `Eq` and `PartialOrd`
+    assert_refused(&source("#[derive(Ord)]\nstruct P { x: u8 }", "let h = P { x: 1 };"), "E0180", "`#[derive(Ord)]` on struct `P` needs `#[derive(Eq)]`");
+}
+
+#[test]
+fn debug_and_hash_derives_are_accepted() {
+    // CV-12 AC 3, H.8 rule 5: `Debug` and `Hash` add nothing a model calls; a float has no `Hash`
+    // (H.8 resolution) and a derive on a field without the trait is refused.
+    let items = "#[derive(Debug, Hash, PartialEq, Eq)]\nstruct Id { n: u8, up: bool }\n#[derive(Repr, Debug, Hash)]\nenum Edge { Rise, Fall }";
+    assert_clean(&source(items, "let a = Id { n: 1, up: true }; let e = Edge::Rise;"));
+    assert_clean(&source("#[derive(Debug)]\nstruct Pt { x: f64 }", "let p = Pt { x: 1.0 };"));
+    assert_refused(&source("#[derive(Hash)]\nstruct Pt { x: f64 }", "let p = Pt { x: 1.0 };"), "E0180", "`Hash`");
+    // an unknown derive name is E0161 at the name, and `Clone` and `Copy` are unknown names
+    for name in ["Clone", "Copy", "Frobnicate"] {
+        let design = support::build(&source(&format!("#[derive({name})]\nstruct Pt {{ x: f64 }}"), "let p = Pt { x: 1.0 };"));
+        assert_eq!(support::codes(&design), ["E0161"], "{name}");
+    }
+}
+
+#[test]
+fn an_enum_deriving_default_is_refused() {
+    // CV-12 AC 1, D4, H.8 rule 4: "An enum does not derive `Default`", refused naming `Default`.
+    let src = source("#[derive(Repr, Default)]\nenum Mode { Off, On }", "let m = Mode::Off;");
+    assert_refused(&src, "E0180", "`Default`");
+}

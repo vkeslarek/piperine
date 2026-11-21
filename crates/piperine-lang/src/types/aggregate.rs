@@ -76,7 +76,8 @@ impl Checker<'_> {
             return false;
         }
         let Some(fields) = self.fields_of(decl) else { return false };
-        self.reject_str_in_repr(decl, file, &fields)
+        let types: Vec<Ty> = fields.iter().map(|f| f.ty.clone()).collect();
+        self.reject_str_in_repr(decl, file, &fields) & self.judge_derives(decl, file, span, &types)
     }
 
     /// `#[derive(Repr)]` on a struct with a `str` field is `E0110` (§1.2.9): a string has no `Repr`.
