@@ -703,7 +703,7 @@ fn sum_below(n: u32) -> u32 {
   <div class="table-wrap"><table class="codes">
   <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
   <tbody>
-  <tr><td>P0002</td><td><code>let x = 1 + 1.0;</code></td><td>An integer and a float never mix by themselves. Write both as floats, <code>1.0 + 1.0</code>, or convert: <code>n as f64 + 1.0</code>.</td></tr>
+  <tr><td>E0180</td><td><code>let x = 1 + 1.0;</code></td><td>An integer and a float never mix by themselves. Write both as floats, <code>1.0 + 1.0</code>, or convert: <code>n as f64 + 1.0</code>.</td></tr>
   <tr><td>E0909</td><td><code>let a: u8 = 300;</code></td><td>The literal does not fit the type. Write a value the type holds, or a wider type.</td></tr>
   <tr><td>E0905</td><td><code>let c = 'a';</code></td><td>There is no character type. Use a string, <code>"a"</code>, or the number you mean.</td></tr>
   <tr><td>E0903</td><td><code>let module = 2;</code></td><td>A keyword is not a name. Choose another, or write <code>r#module</code>.</td></tr>
@@ -1100,8 +1100,8 @@ fn mean<const N: usize>(xs: [f64; N]) -> f64 {
   <div class="table-wrap"><table class="codes">
   <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
   <tbody>
-  <tr><td>P0002</td><td><code>let limit: Option&lt;f64&gt; = Some(3.3); let x = limit + 1.0;</code></td><td>An <code>Option&lt;f64&gt;</code> is not an <code>f64</code>. Say what <code>None</code> means: <code>limit.unwrap_or(0.0) + 1.0</code>.</td></tr>
-  <tr><td>P0002</td><td>a <code>match</code> on a <code>Level</code> with no arm for <code>Level::Between</code></td><td>The arms cover every value. Add the arm, or a last arm <code>_ =&gt; …</code> for all the rest.</td></tr>
+  <tr><td>E0180</td><td><code>let limit: Option&lt;f64&gt; = Some(3.3); let x = limit + 1.0;</code></td><td>An <code>Option&lt;f64&gt;</code> is not an <code>f64</code>. Say what <code>None</code> means: <code>limit.unwrap_or(0.0) + 1.0</code>.</td></tr>
+  <tr><td>E0180</td><td>a <code>match</code> on a <code>Level</code> with no arm for <code>Level::Between</code></td><td>The arms cover every value. Add the arm, or a last arm <code>_ =&gt; …</code> for all the rest.</td></tr>
   <tr><td>E0143</td><td><code>fn scale(x: f64, k: f64 = 2.0)</code></td><td>No default arguments. <code>k: Option&lt;f64&gt;</code> and <code>k.unwrap_or(2.0)</code>.</td></tr>
   <tr><td>E0140</td><td><code>scale(v, gain: 3.0)</code></td><td>A named argument must name an optional parameter. It is called <code>k</code>.</td></tr>
   <tr><td>E0142</td><td><code>scale(v, limit: 1.0, 3.0)</code></td><td>A positional argument cannot follow a named one. <code>scale(v, 3.0, limit: 1.0)</code>.</td></tr>

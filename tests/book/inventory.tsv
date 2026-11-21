@@ -311,7 +311,7 @@ claim	language~6a60313e	6a60313e436394ff	holds	piperine/book_language::a_form_no
 claim	language~8883ef8c	8883ef8ca20d88b7	holds	piperine/book_language::the_earlier_let_mut_spelling_is_still_known_and_stopped_by_name	-	Today's compiler still knows the word: it stops a model that uses it with the code P0001 and names a let mut binding.
 claim	language~c2dd2b0b	c2dd2b0b05f730fc	prose	-	-	A later compiler refuses the word itself.
 claim	language~5628120b	5628120bc0d03e21	holds	piperine/book_language::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	-	A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.
-claim	language~79f450b1	79f450b163622f85	holds	piperine/book_language::nothing_converts_by_itself_and_a_condition_is_a_bool	-	P0002
+claim	language~39ba351d	39ba351dbc1213b3	holds	piperine/book_language::nothing_converts_by_itself_and_a_condition_is_a_bool	-	E0180
 claim	language~8031841d	8031841de450ce28	holds	piperine/book_language::e0909_e0905_and_e0903_a_literal_too_large_a_character_and_a_keyword_as_a_name	-	E0909
 claim	language~8031801d	8031801de450c75c	holds	piperine/book_language::e0909_e0905_and_e0903_a_literal_too_large_a_character_and_a_keyword_as_a_name	-	E0905
 claim	language~80317e1d	80317e1de450c3f6	holds	piperine/book_language::e0909_e0905_and_e0903_a_literal_too_large_a_character_and_a_keyword_as_a_name	-	E0903
@@ -329,7 +329,7 @@ claim	types~95095180	950951807bc5b336	holds	piperine/book_types::only_two_built_
 claim	types~5628120b	5628120bc0d03e21	holds	piperine/book_types::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	-	A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.
 claim	types~ee044194	ee0441940667a4a1	holds	piperine/book_types::the_earlier_borrow_and_copy_spellings_are_still_known	-	Today's compiler still knows both: it stops a model that lends a table with the code P0001 and names a reference type, and it accepts the two names in a derive, where they change nothing.
 claim	types~9e59c9f5	9e59c9f5b6dfbfce	prose	-	-	A later compiler refuses all of them.
-claim	types~79f450b1	79f450b163622f85	holds	piperine/book_types::a_match_that_misses_a_variant_stops_the_build	-	P0002
+claim	types~39ba351d	39ba351dbc1213b3	holds	piperine/book_types::a_match_that_misses_a_variant_stops_the_build	-	E0180
 claim	types~39acbe1d	39acbe1dbc06bf22	holds	piperine/book_types::e0143_there_are_no_default_arguments	-	E0143
 claim	types~39acbd1d	39acbd1dbc06bd6f	holds	piperine/book_types::e0140_a_named_argument_must_name_an_optional_parameter	-	E0140
 claim	types~39acbf1d	39acbf1dbc06c0d5	holds	piperine/book_types::e0142_a_positional_argument_cannot_follow_a_named_one	-	E0142

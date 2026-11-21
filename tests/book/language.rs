@@ -91,7 +91,7 @@ fn arithmetic_keeps_the_low_bits_and_as_converts_without_failing() {
 #[test]
 fn nothing_converts_by_itself_and_a_condition_is_a_bool() {
     // The chapter's rule 3 of "Types" ("1 + 1.0 is a type error, and so is passing a u8 where a u16 is asked
-    // for"), which is the first row of the chapter's table of mistakes, language~79f450b1 (P0002), and "The
+    // for"), which is the first row of the chapter's table of mistakes, language~39ba351d (E0180), and "The
     // condition of an if is a bool and nothing else"; language~03460845 "A literal too large
     // for its type is the error E0909, found before the run"
     for (statements, expected, found) in [
