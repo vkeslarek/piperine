@@ -67,6 +67,11 @@ impl FieldKnown {
         self.form == KnownForm::Mask
     }
 
+    /// Whether the value elements and the known flags all lie within `size` bytes.
+    pub fn fits(&self, size: usize) -> bool {
+        self.value + self.count * self.width <= size && self.known + self.count * self.known_width() <= size
+    }
+
     /// Whether every level of `element` is known: its byte is non-zero, or every bit of its
     /// mask is set. A type narrower than its leaf (a `u9` in a `U16`) has fewer levels than the
     /// leaf has bits, which the ABI cannot know: ask [`FieldKnown::level`] for those.

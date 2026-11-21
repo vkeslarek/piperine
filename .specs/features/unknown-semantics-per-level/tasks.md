@@ -309,8 +309,8 @@ T34
 
 **Done when**:
 
-- [ ] `a_host_value_fills_every_level_of_a_levels_field` passes under `**Run solverbind**`
-- [ ] Gate check passes: Full
+- [x] `a_host_value_fills_every_level_of_a_levels_field` passes under `**Run solverbind**`
+- [x] Gate check passes: Full
 
 **Tests**: unit
 **Gate**: full
@@ -1069,7 +1069,9 @@ Edge case 3 (`extern fn`) has no check: an `extern fn` call is refused by name u
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none yet. Planning (2026-11-21): the user is away and asked for the most reasonable default on every open point; the defaults are design.md D1 to D20. The spec of 2026-11-17 was amended, not rewritten.
+**Settled mid-build:** B1 (T1-T7) done 2026-11-21; feature PAUSED after B1 (orchestrator: B2 touches rt/flag.rs, which diverges on composite-values; resumes after it merges). Defaults taken: Rule::LevelsWithoutKnown/MaskOutsideLayout join Rule::ALL (validate.rs table gained two rows); FieldKnown::is_whole means every bit of the leaf (a u9 in a U16 is asked per level); the loader checks the prototype shapes of a minor<2 library; docs.rs MINOR 1 assertion moved to 2 and contract.rs pins MINOR 2 (version bump, not in D17); tests/bind.rs registers the new Levels fixture in its partials check.
+
+Planning note (kept): Planning (2026-11-21): the user is away and asked for the most reasonable default on every open point; the defaults are design.md D1 to D20. The spec of 2026-11-17 was amended, not rewritten.
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 

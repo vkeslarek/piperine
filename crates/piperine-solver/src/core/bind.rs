@@ -12,8 +12,9 @@
 use std::collections::HashMap;
 
 use piperine_abi::caller::Handle;
+use piperine_abi::known::FieldKnown;
 use piperine_abi::raw::{
-    Cell, DEFAULT, Layout, Module, Pin, Shape, cell, field_flag, global, kind, leaf, pin_flag, role, watch,
+    Cell, DEFAULT, Layout, Module, Pin, Shape, cell, global, kind, leaf, pin_flag, role, watch,
 };
 use piperine_analog_solver::device::{AnalogBinding, AnalogInstance, AnalogPlan, Assembly};
 use piperine_analog_solver::error::{Error, SolverDomain};
@@ -272,7 +273,8 @@ fn bind_error(path: &str, detail: impl std::fmt::Display) -> Error {
     Error::simple(SolverDomain::Device, format!("instance `{path}`: {detail}"))
 }
 
-/// The bytes of `value` in `layout` (P3: a field with a known byte gets it set).
+/// The bytes of `value` in `layout` (P3: the first field's known flags are set whole: the byte
+/// is 1, a `KNOWN_LEVELS` mask is full).
 pub(crate) fn encode(layout: &Layout, value: &ParamValue) -> std::result::Result<Vec<u8>, String> {
     if let ParamValue::Bytes(b) = value {
         return if b.len() == layout.size as usize {
@@ -314,8 +316,11 @@ pub(crate) fn encode(layout: &Layout, value: &ParamValue) -> std::result::Result
         }
         _ => return Err("the value does not fit the first field of the layout".into()),
     }
-    if field.flags & field_flag::HAS_KNOWN != 0 {
-        *bytes.get_mut(field.known as usize).ok_or("the known byte lies outside the layout")? = 1;
+    if let Some(known) = FieldKnown::of(field) {
+        if !known.fits(bytes.len()) {
+            return Err("the known flags lie outside the layout".into());
+        }
+        known.fill(&mut bytes, 0);
     }
     Ok(bytes)
 }

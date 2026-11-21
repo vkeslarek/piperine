@@ -11,8 +11,8 @@ mod partials;
 use std::sync::{Arc, OnceLock};
 
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::layout::{BYTE, F64};
-use piperine_abi::raw::{Cell, DEFAULT, Module, Shape, cell, global, op, part, pin_flag, role};
+use piperine_abi::layout::{BIT, BYTE, F64};
+use piperine_abi::raw::{Cell, DEFAULT, Field, Layout, List, Module, Shape, Str, cell, field_flag, global, leaf, op, part, pin_flag, role};
 use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_abi::thunk::module;
 use piperine_solver::abi::{ParamValue, Port, Site};
@@ -326,4 +326,62 @@ fn bind_creates_each_placement_once_for_both_sides() {
 fn its_devices_pass_the_partials_verifier() {
     partials::verify_every_function("Probe", MODULE.get_or_init(|| module::<Probe>("probe")));
     partials::verify_every_function("Counting", COUNTING_MODULE.get_or_init(|| module::<Counting>("counting")));
+    partials::verify_every_function("Levels", LEVELS_MODULE.get_or_init(|| module::<Levels>("levels")));
+}
+
+// ---------------------------------------------------------------------------
+// Host-written bytes carry the full known mask (UL-05, abi.md §3 P3)
+// ---------------------------------------------------------------------------
+
+static LEVELS_FIELDS: [Field; 1] = [Field {
+    name: Str::from_static("v"),
+    leaf: leaf::U8,
+    offset: 0,
+    count: 1,
+    flags: field_flag::HAS_KNOWN | field_flag::KNOWN_LEVELS,
+    known: 1,
+}];
+/// One `U8` with a `KNOWN_LEVELS` mask: `{ v: U8 @0, mask @1 }`.
+static LEVELS_BYTE: Layout = Layout { size: 2, align: 1, fields: List::from_slice(&LEVELS_FIELDS) };
+
+/// pins: code=0 (PARAM, levels `U8`); flag=1 (PARAM `BIT`)   no function
+struct Levels;
+static LEVELS_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static LEVELS_MODULE: OnceLock<Module> = OnceLock::new();
+
+fn levels_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    s.pin(PinSpec::discrete("code", role::PARAM, &LEVELS_BYTE));
+    s.pin(PinSpec::discrete("flag", role::PARAM, &BIT));
+    s.freeze()
+}
+
+impl Device for Levels {
+    fn prototype() -> &'static Shape<'static> {
+        LEVELS_SHAPE.get_or_init(levels_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Levels, Arc::clone(LEVELS_SHAPE.get_or_init(levels_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
+}
+
+/// abi.md §3 P3 and UL-05: a host value written into a levels `u8` is `[v, 255]` (every level
+/// known), and a `bool` keeps its one known byte, `[v, 1]`.
+#[test]
+fn a_host_value_fills_every_level_of_a_levels_field() {
+    let module = LEVELS_MODULE.get_or_init(|| module::<Levels>("levels"));
+    let mut b = CircuitBuilder::new("levels");
+    b.device(module, "x1", &[("code", ParamValue::Int(7)), ("flag", ParamValue::Bool(true))], &[]);
+    let circuit = b.build().expect("bind");
+    let bound = circuit.bound().expect("bound");
+    let nets = &bound.digital.plan().nets;
+    let init = |param: &str| nets[bound.names.params[&("x1".to_string(), param.to_string())].0 as usize].init.clone();
+    assert_eq!(init("code"), [7, 255], "a levels field: the value and the full mask");
+    assert_eq!(init("flag"), [1, 1], "a BIT: the value and its one known byte");
 }
