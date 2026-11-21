@@ -37,6 +37,7 @@ mod literals;
 mod loops;
 mod module;
 mod patterns;
+mod plain;
 mod reach;
 mod reaction;
 mod record;

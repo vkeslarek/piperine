@@ -88,7 +88,7 @@ impl Checker<'_> {
                 continue;
             }
             let Some(found) = found else { continue };
-            if !(self.repr_ok(&found) || found == Ty::Str) {
+            if !(self.repr_ok(&found) || found == Ty::Str || self.is_plain_composite(&found, true)) {
                 let message = format!("the field `{field_name}` has type `{}`, which is not a value type (§19 rule 11)", found.name(self.design));
                 self.coded(file, "E0606", field.span, message, "not a value");
                 continue;

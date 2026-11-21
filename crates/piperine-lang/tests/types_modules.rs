@@ -48,8 +48,9 @@ fn params_are_f64_or_bool() {
     assert_eq!(types.ty(expr_of(&design, &src, "1.0")), Some(&Ty::F64));
     assert_eq!(types.ty(expr_of(&design, &src, "true")), Some(&Ty::Bool));
 
-    // Any other type is outside the subset.
-    for ty in ["u32", "Option<f64>", "(f64, f64)"] {
+    // Any other type is outside the subset; a tuple param is accepted since composite-values T47
+    // (`composite_params_and_record_fields_type_check`).
+    for ty in ["u32", "Option<f64>"] {
         let (src, d) = diagnostics(&format!("module Top() {{ a: {ty}; }}"));
         assert_eq!(codes_of(&d), ["P0001"], "{ty}");
         assert!(snippet(&src, &d[0]).starts_with(ty.split('<').next().unwrap_or(ty)), "{ty}: {}", snippet(&src, &d[0]));

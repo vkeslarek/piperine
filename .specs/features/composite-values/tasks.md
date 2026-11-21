@@ -1167,8 +1167,8 @@ T63
 
 **Done when**:
 
-- [ ] `composite_params_and_record_fields_type_check`, `two_sites_giving_a_field_two_composite_types_is_e0605` and `phase_c_and_d_forms_stay_p0001_by_name` pass under `**Run typesagg**`
-- [ ] Gate check passes: Quick
+- [x] `composite_params_and_record_fields_type_check`, `two_sites_giving_a_field_two_composite_types_is_e0605` and `phase_c_and_d_forms_stay_p0001_by_name` pass under `**Run typesagg**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

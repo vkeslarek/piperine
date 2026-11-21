@@ -446,3 +446,50 @@ fn a_carried_type_without_repr_is_e0112() {
         assert!(found.iter().any(|d| d.diagnostic.code == "E0112"), "{carried}: {:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
     }
 }
+
+#[test]
+fn composite_params_and_record_fields_type_check() {
+    // CV-18 AC 1 (§8.1.15, §8.1.16): a param of struct, tuple or array type, with or without a
+    // default and a `where`, is bound at a placement; CV-19 AC 1 (§19 rule 11): an `emit!` field of a
+    // composite type.
+    let items = "#[derive(PartialEq)]\nstruct Gains { kp: f64, ki: f64 }\n\
+                 module Child(o: Electrical) { \
+                   gains: Gains = Gains { kp: 1.0, ki: 0.5 } where gains.kp > 0.0; \
+                   taps: [f64; 3] = [0.1, 0.2, 0.3]; \
+                   pair: (f64, bool); }";
+    let top = "module Top() { signal n: Electrical; let c = Child(n) { gains: Gains { kp: 2.0, ki: 1.0 }, taps: [1.0, 2.0, 3.0], pair: (1.0, true) }; }";
+    let design = standard_design_of(&format!("{items}\n{top}"));
+    if let Err(found) = Types::check(&design, "Top") {
+        panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+    }
+    // a bound value of the wrong composite type is the plain mismatch
+    let wrong = format!("{items}\nmodule Top() {{ signal n: Electrical; let c = Child(n) {{ taps: [1.0, 2.0], pair: (1.0, true) }}; }}");
+    let found = Types::check(&standard_design_of(&wrong), "Top").err().unwrap_or_default();
+    assert!(found.iter().any(|d| d.diagnostic.code == "E0180" && d.diagnostic.message.contains("[f64; 3]")), "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    // a field of a composite type is a value of a record
+    let record = "#[derive(PartialEq)]\nstruct Pt { x: f64, tag: u8 }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let p = Pt { x: 1.0, tag: 2 }; emit!(\"trace\", at = p, pair = (1.0, true), taps = [1u8, 2]); } }";
+    let design = standard_design_of(record);
+    if let Err(found) = Types::check(&design, "Top") {
+        panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+    }
+}
+
+#[test]
+fn two_sites_giving_a_field_two_composite_types_is_e0605() {
+    // CV-19 AC 2, §19 rule 12: one field of one stream has one type in a module.
+    let src = "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { emit!(\"trace\", v = (1.0, true)); emit!(\"trace\", v = [1.0, 2.0]); } }";
+    let found = Types::check(&standard_design_of(src), "Top").err().unwrap_or_default();
+    assert_eq!(found.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0605"], "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    assert!(found[0].diagnostic.message.contains("`v`"), "{}", found[0].diagnostic.message);
+}
+
+#[test]
+fn phase_c_and_d_forms_stay_p0001_by_name() {
+    // CV-34 AC 2: an array of carriers (phase C), a carrier of `f32` and of `u128` (phase D) are
+    // refused by name, never silently typed.
+    for (carried, form) in [("[Bit<u8>; 4]", "an array of `Bit<u8>`"), ("Bit<f32>", "f32"), ("Bit<u128>", "u128")] {
+        let src = format!("module Top() {{ signal s: {carried}; }}");
+        let found = Types::check(&standard_design_of(&src), "Top").err().unwrap_or_default();
+        assert!(found.iter().any(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains(form)), "{carried}: {:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+    }
+}
