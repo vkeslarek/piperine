@@ -437,9 +437,9 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] The six tests pass under `Run integrated`; `Run integrated` reports the batch's wall time (recorded in the Handoff; goal under 3 minutes with compile)
-- [ ] Gate check passes: `Run integrated`, the Build line
-- [ ] Test count: 6 new tests
+- [x] The six tests pass under `Run integrated`; `Run integrated` reports the batch's wall time (recorded in the Handoff; goal under 3 minutes with compile)
+- [x] Gate check passes: `Run integrated`, the Build line
+- [x] Test count: 6 new tests
 
 **Tests**: integration
 **Gate**: full
@@ -533,9 +533,9 @@ T17 → T18 → T19 → T20
 
 ---
 
-### T20: MD-76 and the gate migration
+### T20: MD-77 and the gate migration
 
-**What**: `.specs/STATE.md` gains `### MD-76: the buck runs on demand; the integrated suite is the gate` (D1, D2, D11, the Coverage inventory's mapping of historical commands, and spec "Gate migration" verbatim for the seven in-flight features), with the renumber note of D16.
+**What**: `.specs/STATE.md` gains `### MD-77: the buck runs on demand; the integrated suite is the gate` (D1, D2, D11, the Coverage inventory's mapping of historical commands, and spec "Gate migration" verbatim for the seven in-flight features), with the renumber note of D16.
 **Where**: `.specs/STATE.md`
 **Depends on**: T19
 **Reuses**: spec "Gate migration"
@@ -543,14 +543,14 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] `grep -q "^### MD-76" .specs/STATE.md` exits 0 and the entry holds the seven rows of the migration
+- [ ] `grep -q "^### MD-77" .specs/STATE.md` exits 0 and the entry holds the seven rows of the migration
 - [ ] Gate check passes: the Build line, `Run docs`
 - [ ] Test count: no test added
 
 **Tests**: none
 **Gate**: build
 
-**Commit**: `docs(specs): MD-76, the buck on demand and the gate migration`
+**Commit**: `docs(specs): MD-77, the buck on demand and the gate migration`
 
 ---
 
@@ -751,8 +751,8 @@ Proof: run docs | test the_instructions_name_the_integrated_gate_and_the_buck_on
 **C66** - The root `tests/` guard accepts the modules of the declared `tests/integrated/main.rs` target and still refuses an undeclared `.rs`. (IT-03, AC 1; T10)
 Proof: run shape | test root_tests_hold_no_end_to_end_target ... ok
 
-**C65** - `.specs/STATE.md` records MD-76 with the gate migration. (IT-13, AC 3; T20)
-Proof: `grep -q "^### MD-76" .specs/STATE.md && grep -q "unknown-semantics-per-level" .specs/STATE.md`
+**C65** - `.specs/STATE.md` records MD-77 with the gate migration. (IT-13, AC 3; T20)
+Proof: `grep -q "^### MD-77" .specs/STATE.md && grep -q "unknown-semantics-per-level" .specs/STATE.md`
 
 ---
 
@@ -768,6 +768,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 `test = false` verified on a scratch package: skipped by `cargo test`, `--tests` and `--all-targets`, run by
 `--test <name>`.
 **Settled B1 (T1-T8):** full root `cargo test --no-fail-fast` green, 17m15s wall (no buck simulation target; its longest remaining target 83 s). Defaults: `test = false` entries and README lines added task by task; the `source_*` targets keep `buck/support.rs` and open their fixture by path under `tests/digital/`; `book_buck`'s `BookListing::printed` compares the binary's whole stdout to the block; `the_on_demand_targets_are_the_buck_set` pins D3's twelve; the approval lines of spec/tasks are the relayed standing authorization (validate_tasks --execute flags their wording only; the Build line was run by hand, green).
+**Settled B2 (T9-T15):** full root `cargo test --no-fail-fast` green, 18m31s wall; the integrated target takes 25 s (batch 20 s, longest run `pi_loop`). Defaults: `Switch`'s input is `gate` (`on` is a keyword); `dead` is the const `DEAD_COUNTS` (an integer module param is outside the M1 subset); `Adc8` and `EdgeCounter` count only edges between known values (the commit from unknown at time 0 is no edge); the state machine's source starts at 0 V and the host sets 1 V at 0.5 us (a floating node settles at half the rail at the operating point); the planted harness package gained a `ticks` run for the records test. Derivation corrected (design.md `state_machine`): the 22 us run holds thirteen phase changes, not twelve (Hold at 21.75 us is the thirteenth); `pi_loop` limits held as derived (codes 127 to 128 after 50 us). Decision number: MD-77 (the coordinator reserved MD-76 for value-semantics); every `MD-76` of this feature reads `MD-77`.
 **Dispatched:** none
 **Walked:** none
 

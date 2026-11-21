@@ -1,7 +1,7 @@
 //! The Book's buck listing held to the binary (feature `integrated-tests`, IT-11): the block of
 //! chapter 15 that shows `piperine run startup` in `examples/buck` is what the binary prints, whole.
 //! The run is the 600 us start of the converter (minutes in a debug build), so the target runs on
-//! demand (`test = false`, MD-76; `examples/buck/README.md`, "On demand"); `book` holds every other
+//! demand (`test = false`, MD-77; `examples/buck/README.md`, "On demand"); `book` holds every other
 //! listing of the Book and the buck's files.
 
 #[allow(dead_code)] // the support module is shared by the Book targets of this crate

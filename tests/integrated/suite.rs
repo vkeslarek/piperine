@@ -10,6 +10,7 @@ use piperine::{Overrides, Project, Session};
 use piperine_parity::scenario::{CompletedRun, ScenarioBatch, ScenarioRun, Stimulus};
 use piperine_transpile::Settings;
 
+use crate::pi_loop::PiLoopScenario;
 use crate::pwm_filter::PwmFilterScenario;
 use crate::sample_hold::SampleHoldScenario;
 use crate::state_machine::StateMachineScenario;
@@ -20,7 +21,7 @@ pub struct IntegratedPackage;
 
 impl IntegratedPackage {
     /// The runs the package declares so far, sorted by name; a scenario adds its own.
-    pub const RUNS: [&'static str; 4] = ["pwm_filter", "sample_hold", "state_machine", "threshold"];
+    pub const RUNS: [&'static str; 5] = ["pi_loop", "pwm_filter", "sample_hold", "state_machine", "threshold"];
 
     /// The directory of the package.
     pub fn dir() -> PathBuf {
@@ -86,7 +87,7 @@ impl Suite {
 
     /// The runs of the scenarios, each with its stimulus; a scenario adds its own.
     fn plan() -> Vec<(&'static str, Stimulus)> {
-        vec![Suite::entry::<PwmFilterScenario>(), Suite::entry::<SampleHoldScenario>(), Suite::entry::<StateMachineScenario>(), Suite::entry::<ThresholdScenario>()]
+        vec![Suite::entry::<PiLoopScenario>(), Suite::entry::<PwmFilterScenario>(), Suite::entry::<SampleHoldScenario>(), Suite::entry::<StateMachineScenario>(), Suite::entry::<ThresholdScenario>()]
     }
 
     /// The plan entry of the scenario `S`: its run and its stimulus.

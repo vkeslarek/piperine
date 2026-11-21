@@ -35,7 +35,7 @@ nowhere else at the level of a whole design.
 | ------- | ------ |
 | Fixing the six red `buck_scenarios` tests (C22, C50, C68 to C71 of `buck-scenarios`) | They judge the model against SPEC; this feature moves the target, it does not change the converter. They stay red, on demand, and are reported |
 | Making the buck faster (multi-rate, averaged models) | `multi-rate` (V12), `surrogate-models` (V13) |
-| Editing the in-flight branches' `tasks.md` | Those worktrees are active; the replacement lines go into `.specs/STATE.md` (MD-76) and each branch adopts them at its next rebase onto `main` (D12) |
+| Editing the in-flight branches' `tasks.md` | Those worktrees are active; the replacement lines go into `.specs/STATE.md` (MD-77) and each branch adopts them at its next rebase onto `main` (D12) |
 | The static front-end proofs of the buck (`buck_example`, `elab_buck`, `types_buck`, `fmt --check` in `examples/buck`, the README/SPEC text tests of `docs.rs`) | They do not simulate; together they cost seconds and keep the example from rotting (D3) |
 | The Book's own averaged buck of chapter 10 (`tests/book/mixed.rs`, `buck.msl` of the Book) | It is a chapter model, not `examples/buck`; it stays in `book_mixed` (D4) |
 | The hand-built "buck slice" IR bodies of `piperine-ir`, `piperine-plan`, `piperine-transpile` (`dpwm.rs`, `pid.rs`, `digital_circuit.rs`, ...) and `piperine-parity`'s `boundary.rs` | They are small hand-built bodies, not the example; they already run in seconds |
@@ -62,11 +62,11 @@ Every row is a default; each is reported and each can be overturned.
 | D9 | How exact the criteria are | Digital: bit for bit against a Rust reference model written from this spec, on a print grid whose rows never coincide with a clock edge. Analog: the closed form evaluated at each row or at a record's instant, compared under `ToleranceContract::TRAN_VOLTAGE` (no time tolerance is written: a crossing is judged by the analytic voltage at its instant, as `buck_boundary` does). Counts: exact | The user's rule: closed forms where possible, existing contracts only |
 | D10 | The ngspice cross-check | One analog-only twin, `tests/e2e/twins/tran_square_rc.cir`: the RC of `rc_top.msl` driven by a piecewise-linear square (four periods of 10 µs, 20 ps edges), `.tran 0.1u 42u 0 10n uic`; the piperine side drives `RcTop`'s node port with `Session::source` and the same corners, `--max-step 1e-8`, in `piperine-parity`'s `source_host.rs` beside `tran_pwl_rc` | The square drive is the analog half of the comparator and PWM scenarios; `tran_pwl_rc` is the precedent for a host-driven analog-only twin with the same step cap on both sides |
 | D11 | When the buck runs | On demand: once at a feature's close (before its merge) for a feature that changes the runtime, the printer, the plan, the solvers or the lowering of an existing form, and in every task that edits `examples/buck/**`, `tests/e2e/buck/**` or a buck target. Per-task and per-batch gates use the suite | The buck stays the strongest oracle, paid once per feature instead of once per batch |
-| D12 | The in-flight features | Their replacement gate lines are written in this spec (Gate migration) and in `.specs/STATE.md` MD-76; each branch applies them at its next rebase onto `main` | Editing seven active branches from here would conflict with their workers |
+| D12 | The in-flight features | Their replacement gate lines are written in this spec (Gate migration) and in `.specs/STATE.md` MD-77; each branch applies them at its next rebase onto `main` | Editing seven active branches from here would conflict with their workers |
 | D13 | The closed loop | A PI (not a PID) in reactions, Q6 integers, the zero cancelling the plant pole; the plant is the PWM filter's RC | The user's words: "a short closed loop with a PI in reactions"; a pole-zero cancellation gives a loop whose settling is derived, not tuned |
 | D14 | The CLI's proof of a whole mixed design | A target `crates/piperine-cli/tests/integrated.rs` running `piperine run pi_loop` and `piperine test pi_loop threshold` in `tests/e2e/integrated` | MD-72: the binary's own output is held in `piperine-cli`; both runs need no host stimulus |
 | D15 | The command to run the buck | One block in `examples/buck/README.md` ("On demand") and the same lines in `CLAUDE.md`'s "Build and test", four `cargo test` lines, one per crate, no wrapper script | A script would be one more thing to keep honest; the lines are what a proof cites |
-| D16 | Decision number | MD-76 (MD-75 is `params-and-io`'s, the last on `main`); renumbered at merge if another lane takes it | The `.specs/STATE.md` convention |
+| D16 | Decision number | MD-77 (MD-75 is `params-and-io`'s, the last on `main`); renumbered at merge if another lane takes it | The `.specs/STATE.md` convention |
 
 ---
 
@@ -127,7 +127,7 @@ still runs verbatim (`cargo test -p <crate> --test <name>` selects a `test = fal
 name `the_buck_block_is_what_the_binary_prints` under `cargo test -p piperine-cli --test book` (`msl-cli`;
 `unknown-semantics-events` T5's done-when, already checked), which now runs under `--test book_buck`, and
 those that name `buck_commits`, `buck_records`, `buck_time` (`msl-digital`), now `source_commits`,
-`source_records`, `source_time`. Closed features are not re-proven; the mapping is recorded in MD-76.
+`source_records`, `source_time`. Closed features are not re-proven; the mapping is recorded in MD-77.
 
 ---
 
@@ -373,9 +373,9 @@ The closed forms, the reference models and the numbers each criterion uses are d
 
 1. `examples/buck/README.md` SHALL hold an "On demand" block with the four `cargo test` lines of D15 naming every target of `ON_DEMAND_TARGETS`, and SHALL keep the strings `docs.rs` already holds it to.
 2. `CLAUDE.md`'s "Build and test" SHALL name the integrated target as the per-task gate and point at the README's on-demand block for the buck.
-3. `.specs/STATE.md` SHALL record MD-76: the mechanism (D1, D2), the policy of D11, and the gate migration lines of this spec.
+3. `.specs/STATE.md` SHALL record MD-77: the mechanism (D1, D2), the policy of D11, and the gate migration lines of this spec.
 
-**Independent Test**: `cargo test -p piperine-cli --test docs` passes; MD-76 reads as written.
+**Independent Test**: `cargo test -p piperine-cli --test docs` passes; MD-77 reads as written.
 
 ---
 

@@ -17,7 +17,7 @@ tempfile.workspace = true
 piperine-abi = { path = "../piperine-abi" }
 piperine-plan = { path = "../piperine-plan" }
 
-# The buck's targets run by name, not by `cargo test` (MD-76; registered in `suite_hygiene.rs`).
+# The buck's targets run by name, not by `cargo test` (MD-77; registered in `suite_hygiene.rs`).
 
 [[test]]
 name = "buck_whole"

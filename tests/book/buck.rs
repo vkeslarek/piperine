@@ -1,6 +1,6 @@
 //! Scope: the one run of chapter 15 of the Book, "The command line", that simulates `examples/buck`
 //! (feature `integrated-tests`, IT-11): the 2 us start of the chapter's bench, which compiles the whole
-//! converter. The target runs on demand (`test = false`, MD-76; `examples/buck/README.md`, "On demand");
+//! converter. The target runs on demand (`test = false`, MD-77; `examples/buck/README.md`, "On demand");
 //! the chapter's text equality stays in `book_cli`. Each test opens with the inventory ids it holds,
 //! from `tests/book/inventory.tsv`.
 

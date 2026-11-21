@@ -262,7 +262,7 @@ fn selection(block: &Block) -> Result<(), String> {
 
 /// Every listing of the whole Book, any chapter and any project but `buck`, run once per test binary
 /// and shared by the tests that read it. The buck's listing runs the 600 us start (minutes) and is
-/// held on demand by `book_buck` (MD-76).
+/// held on demand by `book_buck` (MD-77).
 fn checked() -> &'static [Checked] {
     static CHECKED: OnceLock<Vec<Checked>> = OnceLock::new();
     CHECKED.get_or_init(|| {
@@ -395,7 +395,7 @@ fn every_cli_listing_of_the_book_is_what_the_binary_prints() {
     // selects the lines the page shows, so a line it leaves out is held all the same
     let all: Vec<&Checked> = checked().iter().collect();
     let commands = hold(&all);
-    // 29 listings before the buck's moved to `book_buck` (MD-76); 28 are held here
+    // 29 listings before the buck's moved to `book_buck` (MD-77); 28 are held here
     assert!(commands.len() >= 28, "the Book shows {} listings: {commands:?}", commands.len());
     let html = content();
     let (from, to) = span_of(&html, "cli");

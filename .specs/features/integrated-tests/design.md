@@ -49,7 +49,7 @@ graph TD
 | ------ | ------------------ |
 | Cargo | `[[test]] name, path, test = false` per on-demand target; root `[[test]] name = "integrated" path = "tests/integrated/main.rs"`, `name = "book_buck" path = "tests/book/buck.rs" test = false`; root dev-dependencies `piperine-ir`, `piperine-plan`, `piperine-abi` for the shape check |
 | `tests/book/inventory.tsv` | rows `cli#44`, the buck listing block and claims `cli~9c4b6fcf` name the on-demand tests |
-| `.specs/STATE.md` | MD-76 |
+| `.specs/STATE.md` | MD-77 |
 
 ---
 
@@ -248,7 +248,7 @@ configuration (TMAX 10 n on both sides), as `tran_pwl_rc.cir` does.
 
 | Concern | Location (file:line) | Impact | Mitigation |
 | ------- | -------------------- | ------ | ---------- |
-| `--all-targets` no longer compiles the on-demand targets | root `Cargo.toml`, each crate manifest | a refactor can break them unseen | this feature's `**Build**` line compiles them with `--no-run`; MD-76 asks the same of every feature's close (D11) |
+| `--all-targets` no longer compiles the on-demand targets | root `Cargo.toml`, each crate manifest | a refactor can break them unseen | this feature's `**Build**` line compiles them with `--no-run`; MD-77 asks the same of every feature's close (D11) |
 | A derived bound may be wrong (the `pi_loop` limit cycle, the 50 µs settling) | `design.md` "pi_loop" | a red test on a sound model | the worker measures and, if the derivation is wrong, corrects the derivation and its number with the reason in the Handoff, never widens a contract; a red caused by the code is a finding |
 | `book_inventory` may expect one root target per chapter | `tests/book/inventory_guard.rs` | `book_buck` refused | T4 reads the guard first; if it does, `book_buck` registers the way the guard says (no rule is relaxed silently) |
 | `checked()` count of listings | `crates/piperine-cli/tests/book.rs:390` | the moved listing lowers `>= 29` | the bound lowers by exactly one, with a comment naming `book_buck` |

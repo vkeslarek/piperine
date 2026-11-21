@@ -394,7 +394,7 @@ fn the_bode_exercise_reads_0_707_and_minus_45_degrees_at_159_kilohertz() {
 #[test]
 fn the_buck_bench_of_the_chapter_is_the_example() {
     // cli#44 (text): the chapter's listing is the buck's `benches/startup.msl`, which the package of
-    // examples/buck runs as `startup`; its short run is `book_buck` (on demand, MD-76)
+    // examples/buck runs as `startup`; its short run is `book_buck` (on demand, MD-77)
     let chapter = Chapter::read();
     let buck = Model::example("buck");
     assert_eq!(chapter.text("cli#44").trim_end(), buck.text_of("benches/startup.msl").trim_end(), "cli#44 is benches/startup.msl as it is");

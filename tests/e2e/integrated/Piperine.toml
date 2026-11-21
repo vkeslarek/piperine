@@ -46,3 +46,14 @@ max_step = 1e-8
 print_step = 1e-7
 print = ["StateMachine.cap", "StateMachine.phase", "StateMachine.fault", "StateMachine.charge", "StateMachine.dump", "StateMachine.en", "StateMachine.ov"]
 streams = ["phase", "trips"]
+
+# The closed loop: PWM, 10 us RC, 8-bit ADC at each wrap, a Q6 PI in a reaction; 100 samples in 100 us, a
+# row every 10 ns. `loop` records the controller's decisions, `checks` the monitors and `regulated`.
+[run.pi_loop]
+top = "PiLoop"
+analysis = "transient"
+stop = 100e-6
+max_step = 1e-8
+print_step = 1e-8
+print = ["PiLoop.code", "PiLoop.duty", "PiLoop.filtered"]
+streams = ["loop", "checks"]

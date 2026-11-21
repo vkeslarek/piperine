@@ -1,4 +1,4 @@
-//! Scope: the integrated suite (feature `integrated-tests`, IT-03 to IT-08; MD-76): five small mixed-signal
+//! Scope: the integrated suite (feature `integrated-tests`, IT-03 to IT-08; MD-77): five small mixed-signal
 //! designs of the scenario package `tests/e2e/integrated/`, run at once through the host library
 //! (`piperine::Session`, by `piperine_parity::scenario`) and judged against closed forms, reference
 //! models and exact counts. This is the per-task gate that replaced the buck converter's long
@@ -16,6 +16,7 @@ mod digital;
 mod mixed;
 mod clock;
 mod package;
+mod pi_loop;
 mod pwm_filter;
 mod rc;
 mod sample_hold;

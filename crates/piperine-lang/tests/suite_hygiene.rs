@@ -350,7 +350,7 @@ fn the_root_manifest_names_its_test_targets() {
     assert!(RootManifest::test_paths("[dependencies]\nx = { path = \"a/b\" }\n").is_empty());
 }
 
-// ─── Targets excluded from the default run (`test = false`, MD-76) ───────────
+// ─── Targets excluded from the default run (`test = false`, MD-77) ───────────
 
 /// A manifest read for its on-demand targets: the `[[test]]` tables that carry `test = false`.
 struct OnDemandManifest;
@@ -415,18 +415,18 @@ impl OnDemandManifest {
 /// switch a test off, so every flagged target is named here and in `examples/buck/README.md`'s
 /// "On demand" block (`on_demand_targets_are_registered`).
 const ON_DEMAND_TARGETS: [(&str, &str, &str); 12] = [
-    ("crates/piperine-parity", "buck_whole", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-76)"),
-    ("crates/piperine-parity", "buck_dpwm", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-76)"),
-    ("crates/piperine-parity", "buck_control", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-76)"),
-    ("crates/piperine-parity", "buck_boundary", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-76)"),
-    ("crates/piperine-parity", "buck_power", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-76)"),
-    ("crates/piperine-parity", "buck_supervisor", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-76)"),
-    ("crates/piperine-parity", "buck_closed_loop", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-76)"),
-    ("crates/piperine-api", "buck_long", "the 600 us start of `examples/buck` through the host library; run by name (MD-76)"),
-    ("crates/piperine-cli", "buck", "the binary on `examples/buck`'s `idle` and `startup` runs; run by name (MD-76)"),
-    (".", "buck_scenarios", "SPEC S2 to S10 of `examples/buck` under a Rust host; run by name (MD-76)"),
-    (".", "book_buck", "the 2 us run of the Book's `cli#44` buck bench, which compiles the whole converter; run by name (MD-76)"),
-    ("crates/piperine-cli", "book_buck", "the Book's buck listing held to `piperine run startup`, the 600 us start; run by name (MD-76)"),
+    ("crates/piperine-parity", "buck_whole", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-77)"),
+    ("crates/piperine-parity", "buck_dpwm", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-77)"),
+    ("crates/piperine-parity", "buck_control", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-77)"),
+    ("crates/piperine-parity", "buck_boundary", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-77)"),
+    ("crates/piperine-parity", "buck_power", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-77)"),
+    ("crates/piperine-parity", "buck_supervisor", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-77)"),
+    ("crates/piperine-parity", "buck_closed_loop", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-77)"),
+    ("crates/piperine-api", "buck_long", "the 600 us start of `examples/buck` through the host library; run by name (MD-77)"),
+    ("crates/piperine-cli", "buck", "the binary on `examples/buck`'s `idle` and `startup` runs; run by name (MD-77)"),
+    (".", "buck_scenarios", "SPEC S2 to S10 of `examples/buck` under a Rust host; run by name (MD-77)"),
+    (".", "book_buck", "the 2 us run of the Book's `cli#44` buck bench, which compiles the whole converter; run by name (MD-77)"),
+    ("crates/piperine-cli", "book_buck", "the Book's buck listing held to `piperine run startup`, the 600 us start; run by name (MD-77)"),
 ];
 
 /// The registry and the README's "On demand" block, read against a set of declared targets.
@@ -544,7 +544,7 @@ fn the_on_demand_targets_are_the_buck_set() {
     .map(|entry| (*entry).to_string())
     .collect();
     expected.sort();
-    assert_eq!(registered, expected, "the on-demand set is the buck set of D3 (MD-76)");
+    assert_eq!(registered, expected, "the on-demand set is the buck set of D3 (MD-77)");
 }
 
 /// The buck README's "On demand" block names each registered target as `--test <name>`; a planted
