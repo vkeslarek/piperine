@@ -199,10 +199,10 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] `the_buck_bench_of_the_chapter_is_the_example` passes under `Run bookcli`; `the_buck_bench_starts_with_the_supervisor_off` passes under `Run bookbuck`
-- [ ] `Run bookguards`, `Run hygiene`, `Run shape` pass
-- [ ] Gate check passes: `Run bookcli`, `Run bookbuck`, `Run bookguards`, the Build line
-- [ ] Test count: one test split into two, assertions unchanged
+- [x] `the_buck_bench_of_the_chapter_is_the_example` passes under `Run bookcli`; `the_buck_bench_starts_with_the_supervisor_off` passes under `Run bookbuck`
+- [x] `Run bookguards`, `Run hygiene`, `Run shape` pass
+- [x] Gate check passes: `Run bookcli`, `Run bookbuck`, `Run bookguards`, the Build line
+- [x] Test count: one test split into two, assertions unchanged
 
 **Tests**: integration
 **Gate**: full

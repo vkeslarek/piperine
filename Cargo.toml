@@ -229,3 +229,8 @@ mutable_key_type                = "allow"
 name = "buck_scenarios"
 path = "tests/buck_scenarios.rs"
 test = false
+
+[[test]]
+name = "book_buck"
+path = "tests/book/buck.rs"
+test = false

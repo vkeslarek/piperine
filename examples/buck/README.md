@@ -142,3 +142,7 @@ cargo test -p piperine-api --test buck_long
 cargo test -p piperine-cli --test buck
 cargo test -p piperine --test buck_scenarios
 ```
+
+```sh
+cargo test -p piperine --test book_buck
+```
