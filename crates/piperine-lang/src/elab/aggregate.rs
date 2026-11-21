@@ -1,7 +1,9 @@
 //! Structs and tuples as IR values (§1.2.4, §1.3.1 to §1.3.4, §1.3.11, §1.6.5; feature
 //! `composite-values`, CV-09, CV-10): a struct expression, a tuple-struct call, a unit struct, a
 //! tuple expression, a field or tuple-index read, an assignment through field projections, and the
-//! tests of tuple, tuple-struct and struct patterns.
+//! tests of tuple, tuple-struct and struct patterns. An enum variant with fields is built and
+//! matched the same way (`VariantOf`, `IsVariant`, `VariantField`; CV-11), and an `Option` held as
+//! one value (a field) is the pair of value code packed (`OptionPack`) and unpacked (`OptionPart`).
 //!
 //! A struct or tuple is one IR value (`StructOf`, `Tuple`) whose fields are the parts in declaration
 //! order, so assigning, passing or returning it copies it (§1.4.6). The fields of a struct
@@ -9,8 +11,9 @@
 //! order and a field is more than a read, each field is bound to a local first, in written order.
 //! A part that may be unknown is refused by name: a struct or a tuple is not a value a flag rides on.
 
-use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Place, Projection, Stmt, ValueType};
+use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Place, Projection, Stmt, TypeId, ValueType};
 
+use super::compound::EnumLayout;
 use super::elaborator::Elaboration;
 use super::known::Flag;
 use super::lower::Scope;
@@ -18,16 +21,66 @@ use super::patterns::{PatternTest, Subject};
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FieldInit, FieldPatNode, PatId, PatKind, Resolution};
 use crate::types::Ty;
 
+/// What a struct expression or a call builds: a struct of the arena, or one variant of an enum.
+#[derive(Clone, Copy)]
+enum Built {
+    /// A struct.
+    Struct(TypeId),
+    /// The variant at this position of an enum.
+    Variant(TypeId, u32),
+}
+
+impl Built {
+    /// The expression building the value from its parts.
+    fn expr(self, parts: Vec<LoweredExpr>) -> Expr {
+        match self {
+            Built::Struct(ty) => Expr::StructOf { ty, fields: parts },
+            Built::Variant(ty, variant) => Expr::VariantOf { ty, variant, fields: parts },
+        }
+    }
+}
+
 impl Elaboration<'_, '_> {
-    /// `Name { field: value, .. }` of a struct: its fields in declaration order, evaluated in the
-    /// order written (§1.3.11). `None` after a diagnostic.
-    pub(super) fn lower_struct_expr(&mut self, scope: &mut Scope, expr: ExprId, fields: &[FieldInit], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
-        let (ValueType::Struct(id), Some(Ty::Struct(decl))) = (&ty, self.types.ty(expr)) else {
-            self.unsupported(scope.file, self.design.expr_node(expr).span, "a struct expression of an enum variant");
-            return None;
+    /// The struct or variant declaration `callee` names, when it builds one.
+    pub(super) fn constructed_decl(&self, callee: ExprId) -> Option<DeclId> {
+        match &self.design.expr_node(callee).kind {
+            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(d)) if matches!(self.design.decl_data(d).kind, DeclKind::Struct(_) | DeclKind::Variant(_)) => Some(d),
+                _ => None,
+            },
+            ExprKind::Paren(inner) => self.constructed_decl(*inner),
+            _ => None,
+        }
+    }
+
+    /// What building the struct or variant `owner` as a value of `ty` makes, and the types of its
+    /// fields.
+    fn built_by(&self, owner: DeclId, ty: &ValueType) -> Option<(Built, Vec<ValueType>)> {
+        match (&self.design.decl_data(owner).kind, ty) {
+            (DeclKind::Struct(_), ValueType::Struct(id)) => Some((Built::Struct(*id), self.type_arena.field_types(*id).to_vec())),
+            (DeclKind::Variant(_), ValueType::Enum(id)) => {
+                let position = EnumLayout::variant_tag(self.design, owner)? as u32;
+                Some((Built::Variant(*id, position), self.type_arena.variant_field_types(*id, position).to_vec()))
+            }
+            _ => None,
+        }
+    }
+
+    /// `Name { field: value, .. }` of a struct or an enum variant: its fields in declaration order,
+    /// evaluated in the order written (§1.3.11). `None` after a diagnostic.
+    pub(super) fn lower_struct_expr(&mut self, scope: &mut Scope, expr: ExprId, path: crate::pom::PathId, fields: &[FieldInit], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        let owner = match self.types.ty(expr) {
+            Some(Ty::Struct(decl)) => *decl,
+            _ => match self.design.path_node(path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(variant)) if matches!(self.design.decl_data(variant).kind, DeclKind::Variant(_)) => variant,
+                _ => {
+                    self.unsupported(scope.file, self.design.expr_node(expr).span, "a struct expression that names neither a struct nor a variant");
+                    return None;
+                }
+            },
         };
-        let (id, decl) = (*id, *decl);
-        let layout: Vec<DeclId> = self.types.fields(decl)?.iter().map(|f| f.decl).collect();
+        let (built, wanted) = self.built_by(owner, &ty)?;
+        let layout: Vec<DeclId> = self.types.fields(owner)?.iter().map(|f| f.decl).collect();
         let mut written = Vec::with_capacity(fields.len());
         for init in fields {
             let index = match init.res {
@@ -36,18 +89,15 @@ impl Elaboration<'_, '_> {
             };
             written.push((index?, init.value));
         }
-        self.assemble(scope, &written, layout.len(), &ty, origin, |parts| Expr::StructOf { ty: id, fields: parts })
+        self.assemble(scope, &written, &wanted, &ty, origin, |parts| built.expr(parts))
     }
 
-    /// `Name(a, b)`: a tuple struct built by a call, its arguments the fields in order.
-    pub(super) fn lower_constructor_call(&mut self, scope: &mut Scope, call: ExprId, args: &[ExprId], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
-        let ValueType::Struct(id) = &ty else {
-            self.unsupported(scope.file, self.design.expr_node(call).span, "a variant built by a call");
-            return None;
-        };
-        let id = *id;
+    /// `Name(a, b)`: a tuple struct or a variant with positional fields built by a call, its arguments
+    /// the fields in order.
+    pub(super) fn lower_constructor_call(&mut self, scope: &mut Scope, args: &[ExprId], owner: DeclId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        let (built, wanted) = self.built_by(owner, &ty)?;
         let written: Vec<(usize, ExprId)> = args.iter().copied().enumerate().collect();
-        self.assemble(scope, &written, args.len(), &ty, origin, |parts| Expr::StructOf { ty: id, fields: parts })
+        self.assemble(scope, &written, &wanted, &ty, origin, |parts| built.expr(parts))
     }
 
     /// A unit struct named as a value: the one value of its type.
@@ -60,15 +110,16 @@ impl Elaboration<'_, '_> {
     /// `(a, b, ..)`: a tuple of its operands, lowest field first.
     pub(super) fn lower_tuple(&mut self, scope: &mut Scope, items: &[ExprId], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let written: Vec<(usize, ExprId)> = items.iter().copied().enumerate().collect();
-        self.assemble(scope, &written, items.len(), &ty, origin, Expr::Tuple)
+        let wanted = self.part_types(&ty);
+        self.assemble(scope, &written, &wanted, &ty, origin, Expr::Tuple)
     }
 
     /// The value `make` builds from the `count` parts of `written`, each `(declared index, expression)`
     /// listed in the order they are written and lowered in it. In declaration order, or when no
     /// part is more than a read, the parts are written where they are used; otherwise each is bound
     /// to a local in written order first, so the order they run in is the order they are written in.
-    fn assemble(&mut self, scope: &mut Scope, written: &[(usize, ExprId)], count: usize, ty: &ValueType, origin: Origin, make: impl FnOnce(Vec<LoweredExpr>) -> Expr) -> Option<LoweredExpr> {
-        let wanted = self.part_types(ty);
+    fn assemble(&mut self, scope: &mut Scope, written: &[(usize, ExprId)], wanted: &[ValueType], ty: &ValueType, origin: Origin, make: impl FnOnce(Vec<LoweredExpr>) -> Expr) -> Option<LoweredExpr> {
+        let count = wanted.len();
         let mut parts: Vec<Option<LoweredExpr>> = vec![None; count];
         let mut ok = true;
         for (index, value) in written {
@@ -111,6 +162,12 @@ impl Elaboration<'_, '_> {
 
     /// One part lowered: a value that may be unknown cannot be a part, which is a plain value.
     fn lower_part(&mut self, scope: &mut Scope, value: ExprId, wanted: Option<&ValueType>) -> Option<LoweredExpr> {
+        // An `Option` held as one value is the pair of value code packed (D8).
+        if let Some(ValueType::Option(_)) = wanted {
+            let pair = self.lower_option(scope, value)?;
+            let origin = self.expr_origin(value);
+            return Some(self.emit(Expr::OptionPack { is: pair.is, value: pair.val }, wanted?.clone(), origin));
+        }
         let lowered = self.lower_expr(scope, value)?;
         if self.flag(lowered) == Flag::Flagged && wanted.is_none_or(|w| Flag::of(w) == Flag::Plain) {
             self.unsupported(scope.file, self.design.expr_node(value).span, "a field of a struct or a tuple whose value may be unknown");
@@ -199,6 +256,54 @@ impl Elaboration<'_, '_> {
         Some(PatternTest { test, bindings })
     }
 
+    /// `Variant(p, ..)` and `Variant { f: p, .. }` over an enum value: the value is that variant and each
+    /// sub-pattern holds of the variant's field it names (§1.6.5). The fields are read only where
+    /// the variant test holds, as the `&&` that joins them runs them. `None` after a diagnostic.
+    pub(super) fn test_variant_pattern(&mut self, scope: &mut Scope, subject: &Subject, pat: PatId, base: &ValueType, origin: Origin) -> Option<PatternTest> {
+        let node = self.design.pat_node(pat).clone();
+        let ValueType::Enum(id) = base else { return None };
+        let path = match &node.kind {
+            PatKind::TupleStruct { path, .. } | PatKind::Struct { path, .. } => *path,
+            _ => return None,
+        };
+        let variant = match self.design.path_node(path).segments.last().map(|s| s.res) {
+            Some(Resolution::Decl(d)) if matches!(self.design.decl_data(d).kind, DeclKind::Variant(_)) => d,
+            _ => {
+                self.unsupported(scope.file, node.span, "a pattern with fields that names no variant");
+                return None;
+            }
+        };
+        let position = EnumLayout::variant_tag(self.design, variant)? as u32;
+        let whole = self.read_subject(scope, subject, origin.clone())?;
+        if matches!(self.type_of(whole), ValueType::Flagged(_)) {
+            self.unsupported(scope.file, node.span, "a variant with fields of a value that may be unknown");
+            return None;
+        }
+        let part_types = self.type_arena.variant_field_types(*id, position).to_vec();
+        let fields = match &node.kind {
+            PatKind::TupleStruct { pats, .. } => self.positional(pats, part_types.len()),
+            PatKind::Struct { fields, .. } => self.named_fields(fields)?,
+            _ => return None,
+        };
+        let mut test = self.emit(Expr::IsVariant { expr: whole, variant: position }, ValueType::Bool, origin.clone());
+        let mut bindings = Vec::new();
+        for (index, inner, binding) in fields {
+            let again = self.read_subject(scope, subject, origin.clone())?;
+            let field = self.emit(Expr::VariantField { expr: again, variant: position, field: index }, part_types.get(index as usize)?.clone(), origin.clone());
+            if let Some(binding) = binding {
+                bindings.push((binding, field));
+            }
+            if let Some(inner) = inner {
+                let found = self.test_pattern(scope, &Subject::Value(field), inner)?;
+                bindings.extend(found.bindings);
+                if let Some(inner_test) = found.test {
+                    test = self.both(test, inner_test, origin.clone());
+                }
+            }
+        }
+        Some(PatternTest { test: Some(test), bindings })
+    }
+
     /// `let pat = init;` of a tuple, tuple-struct or struct pattern: the value is bound once, each
     /// name takes its field (§1.7). `false` after a diagnostic.
     pub(super) fn lower_destructuring_let(&mut self, scope: &mut Scope, out: &mut Vec<piperine_ir::StmtId>, pat: PatId, init: ExprId) -> bool {
@@ -238,14 +343,5 @@ impl Elaboration<'_, '_> {
             out.push((index, field.pat, field.binding));
         }
         Some(out)
-    }
-
-    /// Whether the call `expr` builds a struct: its callee names one.
-    pub(super) fn constructs_struct(&self, callee: ExprId) -> bool {
-        match &self.design.expr_node(callee).kind {
-            ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if matches!(self.design.decl_data(d).kind, DeclKind::Struct(_))),
-            ExprKind::Paren(inner) => self.constructs_struct(*inner),
-            _ => false,
-        }
     }
 }

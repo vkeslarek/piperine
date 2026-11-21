@@ -87,11 +87,14 @@ impl Elaboration<'_, '_> {
             PatKind::Tuple(_) | PatKind::TupleStruct { .. } | PatKind::Struct { .. } => {
                 let read = self.read_subject(scope, subject, origin.clone())?;
                 let base = self.base_of(read);
-                if !matches!(base, ValueType::Tuple(_) | ValueType::Struct(_)) {
-                    self.unsupported(scope.file, node.span, "a pattern with fields over a value that is not a struct or a tuple");
-                    return None;
+                match base {
+                    ValueType::Enum(_) => self.test_variant_pattern(scope, subject, pat, &base, origin),
+                    ValueType::Tuple(_) | ValueType::Struct(_) => self.test_aggregate_pattern(scope, subject, pat, &base, origin),
+                    _ => {
+                        self.unsupported(scope.file, node.span, "a pattern with fields over a value that is not a struct, a tuple or an enum");
+                        None
+                    }
                 }
-                self.test_aggregate_pattern(scope, subject, pat, &base, origin)
             }
             PatKind::Lit(expr) => {
                 let read = self.read_subject(scope, subject, origin.clone())?;

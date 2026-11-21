@@ -256,7 +256,7 @@ impl Elaboration<'_, '_> {
             ExprKind::Path(_) => self.lower_path(scope, expr, ty, origin),
             ExprKind::Field { expr: recv, name, .. } if matches!(self.types.ty(*recv), Some(Ty::Struct(_) | Ty::Tuple(_))) => self.lower_field_value(scope, *recv, &name.text, ty, origin),
             ExprKind::Field { .. } => self.lower_field(scope, expr, ty, origin),
-            ExprKind::Struct { fields, .. } => self.lower_struct_expr(scope, expr, fields, ty, origin),
+            ExprKind::Struct { path, fields, .. } => self.lower_struct_expr(scope, expr, *path, fields, ty, origin),
             ExprKind::Tuple(items) => self.lower_tuple(scope, items, ty, origin),
             ExprKind::Unary { op, expr: operand } => {
                 let op = match op {
@@ -397,12 +397,6 @@ impl Elaboration<'_, '_> {
                 Some(self.emit(Expr::Math { f, args: vec![recv] }, ty, origin))
             }
             ExprKind::Cast { expr: operand, .. } => {
-                if let Some(Ty::Enum(decl)) = self.types.ty(*operand)
-                    && EnumLayout::has_written_discriminants(self.design, *decl)
-                {
-                    self.unsupported(file, node.span, "an `as` cast of an enum that writes discriminants or `#[repr]`");
-                    return None;
-                }
                 let operand = self.lower_expr(scope, *operand)?;
                 let flagged = self.flag(operand).wrap(ty.clone());
                 Some(self.emit(Expr::Cast { expr: operand, to: ty }, flagged, origin))
@@ -448,7 +442,7 @@ impl Elaboration<'_, '_> {
             }
             // Typed by `types::intrinsic`, lowered by its §22.1 contract (`intrinsics.rs`).
             (_, Some(Callee::Intrinsic(intrinsic))) => self.lower_intrinsic(scope, expr, intrinsic, args, ty, origin),
-            (_, None) if let ExprKind::Call { callee, .. } = &self.design.expr_node(expr).kind && self.constructs_struct(*callee) => self.lower_constructor_call(scope, expr, args, ty, origin),
+            (_, None) if let ExprKind::Call { callee, .. } = &self.design.expr_node(expr).kind && let Some(owner) = self.constructed_decl(*callee) => self.lower_constructor_call(scope, args, owner, ty, origin),
             (_, None) if let Some(decl) = self.called_local(scope, expr) => self.lower_value_call(scope, expr, decl, args, origin),
             (_, None) => {
                 self.unsupported(scope.file, span, "a call the type checker did not resolve");

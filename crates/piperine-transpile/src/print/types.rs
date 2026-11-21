@@ -18,6 +18,9 @@ pub struct TypeItems<'a> {
     ir: &'a Ir,
     /// The Rust name of each type, by arena index: its source name, made distinct when two share one.
     names: Vec<String>,
+    /// The arena entries a value of `Option<T>` holds, directly or through a field: an unpacked
+    /// `None` reads as the type's default, so each has one.
+    optional: BTreeSet<usize>,
 }
 
 impl<'a> TypeItems<'a> {
@@ -29,7 +32,30 @@ impl<'a> TypeItems<'a> {
             let name = if names.contains(&plain) { Text::generated(&format!("{}_{index}", data.name)) } else { plain };
             names.push(name);
         }
-        TypeItems { ir, names }
+        let mut optional = BTreeSet::new();
+        for ty in ir.expression_types() {
+            if let ValueType::Option(inner) = ty {
+                Self::collect_aggregates(ir, inner, &mut optional);
+            }
+        }
+        TypeItems { ir, names, optional }
+    }
+
+    /// Adds to `found` every arena entry `ty` holds: itself, and what its fields hold.
+    fn collect_aggregates(ir: &Ir, ty: &ValueType, found: &mut BTreeSet<usize>) {
+        match ty {
+            ValueType::Tuple(parts) => parts.iter().for_each(|part| Self::collect_aggregates(ir, part, found)),
+            ValueType::Array(element, _) | ValueType::Option(element) => Self::collect_aggregates(ir, element, found),
+            ValueType::Struct(id) | ValueType::Enum(id) => {
+                if found.insert(id.index()) {
+                    match &ir.type_data(*id).kind {
+                        TypeKind::Struct { fields, .. } => fields.iter().for_each(|(_, field)| Self::collect_aggregates(ir, field, found)),
+                        TypeKind::Enum { variants, .. } => variants.iter().flat_map(|v| &v.fields).for_each(|(_, field)| Self::collect_aggregates(ir, field, found)),
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
     /// The Rust name of type `id`.
@@ -119,6 +145,10 @@ impl<'a> TypeItems<'a> {
         if data.derives.repr {
             text.push('\n');
             text.push_str(&self.carried_impls(id)?);
+        } else if self.optional.contains(&id.index()) && !(data.derives.default && matches!(data.kind, TypeKind::Struct { .. })) {
+            // `None` unpacks to the default of the payload (`Option::unwrap_or_default`)
+            text.push('\n');
+            text.push_str(&self.default_impl(id, &ValuePrinter::of_type(self.ir, data, true))?);
         }
         Ok(text)
     }

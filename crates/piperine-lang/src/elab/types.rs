@@ -19,19 +19,25 @@ use crate::types::{FieldType, Ty};
 pub(super) struct TypeArena {
     /// The arena index of each declaration.
     ids: BTreeMap<DeclId, TypeId>,
-    /// The IR type of each field of each arena struct, by arena index (empty for an enum).
-    fields: Vec<Vec<ValueType>>,
+    /// The IR types of the fields of each arena entry, by arena index: one list for a struct, one
+    /// per variant for an enum.
+    shapes: Vec<Vec<Vec<ValueType>>>,
 }
 
 impl TypeArena {
     /// The arena over `decls`, numbered in their order.
     fn over(decls: &[DeclId]) -> TypeArena {
-        TypeArena { ids: decls.iter().enumerate().map(|(index, decl)| (*decl, TypeId(index as u32))).collect(), fields: Vec::new() }
+        TypeArena { ids: decls.iter().enumerate().map(|(index, decl)| (*decl, TypeId(index as u32))).collect(), shapes: Vec::new() }
     }
 
     /// The IR types of the fields of the arena struct `id`, in declaration order.
     pub(super) fn field_types(&self, id: TypeId) -> &[ValueType] {
-        self.fields.get(id.index()).map_or(&[], Vec::as_slice)
+        self.shapes.get(id.index()).and_then(|shape| shape.first()).map_or(&[], Vec::as_slice)
+    }
+
+    /// The IR types of the fields of variant `variant` of the arena enum `id`.
+    pub(super) fn variant_field_types(&self, id: TypeId, variant: u32) -> &[ValueType] {
+        self.shapes.get(id.index()).and_then(|shape| shape.get(variant as usize)).map_or(&[], Vec::as_slice)
     }
 
     /// The entry of the struct or enum `decl`, `None` when the check did not reach it.
@@ -72,11 +78,11 @@ impl Elaboration<'_, '_> {
         self.type_arena = TypeArena::over(&decls);
         for decl in decls {
             let data = self.type_data(decl);
-            let fields = match &data.kind {
-                TypeKind::Struct { fields, .. } => fields.iter().map(|(_, ty)| ty.clone()).collect(),
-                TypeKind::Enum { .. } => Vec::new(),
+            let shape = match &data.kind {
+                TypeKind::Struct { fields, .. } => vec![fields.iter().map(|(_, ty)| ty.clone()).collect()],
+                TypeKind::Enum { variants, .. } => variants.iter().map(|v| v.fields.iter().map(|(_, ty)| ty.clone()).collect()).collect(),
             };
-            self.type_arena.fields.push(fields);
+            self.type_arena.shapes.push(shape);
             self.ir.type_data(data);
         }
     }

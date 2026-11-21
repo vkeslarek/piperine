@@ -73,6 +73,11 @@ impl Ir {
         self.exprs.iter().map(|data| &data.kind)
     }
 
+    /// The type of every expression, in id order.
+    pub fn expression_types(&self) -> impl Iterator<Item = &ValueType> {
+        self.exprs.iter().map(|data| &data.ty)
+    }
+
     pub fn stmt(&self, id: StmtId) -> &Stmt {
         &self.stmts[id.index()]
     }

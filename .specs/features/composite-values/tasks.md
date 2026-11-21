@@ -1231,8 +1231,8 @@ T63
 
 **Done when**:
 
-- [ ] `payload_variants_build_and_match`, `discriminants_are_the_tag_and_the_cast` and `options_of_aggregates_behave_as_enums` pass under `**Run srcagg**`
-- [ ] Gate check passes: Full
+- [x] `payload_variants_build_and_match`, `discriminants_are_the_tag_and_the_cast` and `options_of_aggregates_behave_as_enums` pass under `**Run srcagg**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

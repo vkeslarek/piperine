@@ -581,6 +581,14 @@ impl<'d, 't> ConstEval<'d, 't> {
         let Folded::Known(value) = self.folded(operand, bindings)? else {
             return Ok(Folded::Unknown);
         };
+        // An enum value is folded to its variant's position; `as` reads its discriminant (§1.3.7).
+        let value = match (self.types.ty(operand), value) {
+            (Some(Ty::Enum(decl)), Constant::Int(position)) => match self.types.enum_tag(*decl).and_then(|t| t.discriminants.get(position as usize)) {
+                Some(discriminant) => Constant::Int(*discriminant),
+                None => return Err(ConstFault::Unsupported { expr, what: "a cast of a variant outside its enum".to_string() }),
+            },
+            (_, value) => value,
+        };
         let converted = match (self.types.ty(expr), value) {
             (Some(Ty::F64), Constant::Int(v)) => Constant::Real(Real::new(v as f64)),
             (Some(Ty::F64), Constant::Real(r)) => Constant::Real(r),
@@ -674,8 +682,11 @@ impl<'d, 't> ConstEval<'d, 't> {
         match self.types.ty(expr) {
             Some(Ty::Bool) => known(Constant::Bool(bits != 0)),
             Some(Ty::F64) => known(Constant::Real(Real::new(f64::from_bits(bits)))),
-            Some(Ty::Enum(decl)) if !EnumLayout::of(self.design, *decl).tags().contains(&i128::from(bits)) => Ok(Folded::Unknown),
-            Some(Ty::Enum(_)) => known(Constant::Int(i128::from(bits))),
+            // the levels are a tag: the variant with that discriminant, else no variant (unknown)
+            Some(Ty::Enum(decl)) => match self.types.enum_tag(*decl).and_then(|t| t.discriminants.iter().position(|d| *d == i128::from(bits))) {
+                Some(position) => known(Constant::Int(position as i128)),
+                None => Ok(Folded::Unknown),
+            },
             Some(ty) => match Width::of(ty) {
                 Some(width) => known(width.wrap(i128::from(bits))),
                 None => Err(ConstFault::Unsupported { expr, what: "a `logic` of a type with no levels".to_string() }),

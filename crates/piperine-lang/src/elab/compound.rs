@@ -55,20 +55,8 @@ impl EnumLayout {
         EnumLayout { variants }
     }
 
-    /// The tag of every variant, in declaration order: the patterns a cast to the enum decodes.
-    pub(super) fn tags(&self) -> Vec<i128> {
-        (0..self.variants.len() as i128).collect()
-    }
-
-    /// Whether the enum `decl` writes a discriminant or a `#[repr]`: its integer value is then not the
-    /// tag's position, which the lowering does not compute yet (composite-values T50).
-    pub(super) fn has_written_discriminants(design: &Design, decl: DeclId) -> bool {
-        let data = design.decl_data(decl);
-        let repr = data.meta.attrs.iter().any(|a| matches!(design.path_node(a.path).segments.as_slice(), [only] if only.name.text == "repr"));
-        repr || data.children.iter().any(|v| matches!(&design.decl_data(*v).kind, DeclKind::Variant(vd) if vd.discriminant.is_some()))
-    }
-
-    /// The tag of `variant`, its position among the enum's variants.
+    /// The position of `variant` among the enum's variants: the name the constant evaluator and the
+    /// IR's `VariantOf` give it (its discriminant is `Types::enum_tag`).
     pub(super) fn tag_of(&self, variant: DeclId) -> Option<i128> {
         self.variants.iter().position(|v| *v == variant).map(|k| k as i128)
     }
@@ -245,8 +233,21 @@ impl Elaboration<'_, '_> {
             ValueType::F64 => Expr::Real(piperine_ir::Real::new(0.0)),
             ValueType::Bool => Expr::Bool(false),
             ValueType::UInt(_) | ValueType::Int(_) => Expr::Int(0),
-            // the default of an enum is its first variant (the generated `Default`)
-            ValueType::Enum(id) => Expr::VariantOf { ty: *id, variant: 0, fields: Vec::new() },
+            // the zero of an aggregate is the aggregate of zeros; that of an enum is its first variant
+            ValueType::Tuple(parts) => Expr::Tuple(parts.iter().map(|part| self.zero(part, origin.clone())).collect::<Option<_>>()?),
+            ValueType::Array(element, count) => Expr::ArrayRepeat { element: self.zero(element, origin.clone())?, count: *count },
+            ValueType::Struct(id) => {
+                let parts = self.type_arena.field_types(*id).to_vec();
+                Expr::StructOf { ty: *id, fields: parts.iter().map(|part| self.zero(part, origin.clone())).collect::<Option<_>>()? }
+            }
+            ValueType::Enum(id) => {
+                let parts = self.type_arena.variant_field_types(*id, 0).to_vec();
+                Expr::VariantOf { ty: *id, variant: 0, fields: parts.iter().map(|part| self.zero(part, origin.clone())).collect::<Option<_>>()? }
+            }
+            ValueType::Option(inner) => {
+                let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
+                Expr::OptionPack { is, value: self.zero(inner, origin.clone())? }
+            }
             _ => return None,
         };
         Some(self.emit(kind, ty.clone(), origin))
@@ -332,6 +333,19 @@ impl Elaboration<'_, '_> {
             }
             // A call of a function that returns an `Option`: the pair of its two halves (`returns.rs`).
             ExprKind::Call { .. } if let Some(function) = self.calls_option_function(expr) => self.lower_option_call(scope, expr, function),
+            // A field of `Option` type: the two halves of the packed value, each unpacked from the
+            // field read where it stands.
+            ExprKind::Field { expr: recv, name, .. } if matches!(self.types.ty(*recv), Some(Ty::Struct(_) | Ty::Tuple(_))) => {
+                let index = self.field_index(self.types.ty(*recv)?, &name.text)?;
+                let mut half = |this: &mut Self, part: LevelPart, ty: ValueType| {
+                    let base = this.lower_expr(scope, *recv)?;
+                    let packed = this.emit(Expr::Field { expr: base, index }, ValueType::Option(Box::new(payload.clone())), origin.clone());
+                    Some(this.emit(Expr::OptionPart { option: packed, part }, ty, origin.clone()))
+                };
+                let is = half(self, LevelPart::Is, ValueType::Bool)?;
+                let val = half(self, LevelPart::Value, payload.clone())?;
+                Some(Pair { is, val, literal: None })
+            }
             // `x.known()`: the two flag-total reads of `x`, each reading `x` where it stands.
             ExprKind::MethodCall { recv, .. } if self.types.builtin(expr) == Some(Builtin::Known) => {
                 let read = self.lower_expr(scope, *recv)?;

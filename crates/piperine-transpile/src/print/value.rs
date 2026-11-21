@@ -771,7 +771,9 @@ impl<'a> ValuePrinter<'a> {
                 let items = TypeItems::new(self.ir);
                 // `R` is fixed by what the call passes or returns; a function that holds a real only in
                 // a local (a struct field) leaves it open, so the call names it
-                let fixed = params.iter().any(|p| items.holds_real(&p.ty)) || items.holds_real(self.ir.function(*function).ret()) || !Self::env_reads(self.ir, *function).is_empty();
+                let ret = self.ir.function(*function).ret();
+                let aggregate_result = matches!(ret, ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Option(_)) && items.holds_real(ret);
+                let fixed = params.iter().any(|p| items.holds_real(&p.ty)) || (items.holds_real(ret) && !aggregate_result) || !Self::env_reads(self.ir, *function).is_empty();
                 let real = if (printed.is_empty() || !fixed) && Self::is_generic(self.ir, *function) { format!("::<{}>", if self.plain { "f64" } else { "R" }) } else { String::new() };
                 atom(format!("{}{real}({})", Text::ident(self.ir.function(*function).name()), printed.join(", ")))
             }
@@ -931,6 +933,9 @@ impl<'a> ValuePrinter<'a> {
             (ValueType::Bool, ValueType::UInt(_) | ValueType::Int(_)) => {
                 format!("{}::from_bool({operand})", self.integer_path(target, e)?)
             }
+            // an enum without fields converts to its discriminant, which Rust gives as the enum cast to an integer
+            (ValueType::Enum(_), ValueType::UInt(_)) => format!("{}::new(({operand} as i64) as u64)", self.integer_path(target, e)?),
+            (ValueType::Enum(_), ValueType::Int(_)) => format!("{}::new({operand} as i64)", self.integer_path(target, e)?),
             (ValueType::UInt(_) | ValueType::Int(_), ValueType::F64) => {
                 self.integer_path(source, e)?;
                 if self.plain || (flagged && !self.flagged_reals) { format!("{operand}.to_f64()") } else { format!("R::constant({operand}.to_f64())") }
