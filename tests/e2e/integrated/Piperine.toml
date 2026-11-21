@@ -1,0 +1,6 @@
+[package]
+name = "integrated"
+version = "0.1.0"
+description = "Five small mixed-signal designs, one run each, driven by a Rust host (tests/integrated/main.rs)"
+
+# The runs are added one scenario at a time, each with its own top in src/<run>.msl.

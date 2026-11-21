@@ -127,6 +127,47 @@ fn files_under(dir: &std::path::Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// The Rust files under the root `tests/` read against the targets the root manifest declares.
+struct RootTestFiles<'a> {
+    /// The root `tests/` directory.
+    tests: &'a std::path::Path,
+    /// The paths the root manifest's `path = "..."` lines declare.
+    declared: &'a [PathBuf],
+}
+
+impl RootTestFiles<'_> {
+    /// Whether `file` is a module of a declared `main.rs` target: a `.rs` under the directory of a
+    /// declared `.../main.rs` (the shape `tests/integrated/main.rs` gives a target of many files).
+    fn is_module_of_declared_main(&self, file: &PathBuf) -> bool {
+        self.declared.iter().any(|path| path.file_name().is_some_and(|name| name == "main.rs") && path.parent().is_some_and(|dir| file.starts_with(dir)))
+    }
+
+    /// The `.rs` files of `files` that no root target accounts for: not a top-level `tests/<name>.rs`
+    /// (cargo finds it), not a declared `[[test]]` path, not support code of the Book targets and not
+    /// a module of a declared `main.rs` target.
+    fn undeclared<'f>(&self, files: &'f [PathBuf]) -> Vec<&'f PathBuf> {
+        files
+            .iter()
+            .filter(|path| path.extension().is_some_and(|extension| extension == "rs"))
+            .filter(|path| path.parent() != Some(self.tests))
+            .filter(|path| !self.declared.contains(path))
+            .filter(|path| !path.starts_with(self.tests.join("book").join("support")))
+            .filter(|path| !self.is_module_of_declared_main(path))
+            .collect()
+    }
+}
+
+/// The modules of a declared `main.rs` target are accounted for under its own directory only; an
+/// undeclared `.rs` anywhere else under `tests/` is still refused.
+#[test]
+fn a_declared_main_target_accounts_for_its_own_modules_only() {
+    let tests = PathBuf::from("/repo/tests");
+    let declared = vec![tests.join("integrated/main.rs")];
+    let files = vec![tests.join("integrated/main.rs"), tests.join("integrated/suite.rs"), tests.join("integrated/deep/more.rs"), tests.join("other/stray.rs"), tests.join("top_level.rs")];
+    let undeclared = RootTestFiles { tests: &tests, declared: &declared }.undeclared(&files);
+    assert_eq!(undeclared, vec![&tests.join("other/stray.rs")]);
+}
+
 #[test]
 fn root_tests_hold_no_end_to_end_target() {
     let tests = repo_root().join("tests");
@@ -150,13 +191,7 @@ fn root_tests_hold_no_end_to_end_target() {
         .filter_map(|rest| rest.strip_suffix('"'))
         .map(|path| repo_root().join(path))
         .collect();
-    let rs: Vec<_> = files
-        .iter()
-        .filter(|p| ext(p, "rs"))
-        .filter(|p| p.parent() != Some(tests.as_path()))
-        .filter(|p| !declared.contains(p))
-        .filter(|p| !p.starts_with(tests.join("book").join("support")))
-        .collect();
+    let rs = RootTestFiles { tests: &tests, declared: &declared }.undeclared(&files);
     assert!(rs.is_empty(), ".rs files under the root tests/ that no root target declares: {rs:?}");
 }
 

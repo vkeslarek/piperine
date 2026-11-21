@@ -331,10 +331,10 @@ T17 → T18 → T19 → T20
 
 **Done when**:
 
-- [ ] The five package tests pass under `Run integrated` (vacuous-free: each asserts the run set it sees is the set declared so far, non-empty from T11)
-- [ ] `Run shape` passes with the new rule and its planted case
-- [ ] Gate check passes: `Run integrated`, `Run shape`, `Run hygiene`, the Build line
-- [ ] Test count: 5 new tests in `integrated`, 1 in `workspace_shape`
+- [x] The five package tests pass under `Run integrated` (vacuous-free: each asserts the run set it sees is the set declared so far, non-empty from T11)
+- [x] `Run shape` passes with the new rule and its planted case
+- [x] Gate check passes: `Run integrated`, `Run shape`, `Run hygiene`, the Build line
+- [x] Test count: 5 new tests in `integrated`, 1 in `workspace_shape`
 
 **Tests**: integration
 **Gate**: full

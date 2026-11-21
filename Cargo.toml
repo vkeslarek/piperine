@@ -41,6 +41,10 @@ piperine-transpile = { path = "crates/piperine-transpile" }
 # corpus layout of the parity harness, and hold the table `piperine::` gives to ngspice.
 piperine-cli = { path = "crates/piperine-cli" }
 piperine-parity = { path = "crates/piperine-parity" }
+# The integrated target (`tests/integrated/`) validates the shape of each compiled body.
+piperine-ir = { path = "crates/piperine-ir" }
+piperine-plan = { path = "crates/piperine-plan" }
+piperine-abi = { path = "crates/piperine-abi" }
 tempfile = { workspace = true }
 num-complex = { workspace = true }
 
@@ -234,3 +238,7 @@ test = false
 name = "book_buck"
 path = "tests/book/buck.rs"
 test = false
+
+[[test]]
+name = "integrated"
+path = "tests/integrated/main.rs"
