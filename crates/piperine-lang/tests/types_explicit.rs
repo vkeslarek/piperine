@@ -122,11 +122,22 @@ fn width_is_typed_u32_on_a_concrete_type() {
 fn the_intrinsics_are_typed_at_the_concrete_type() {
     // §22.1.3 and §22.1.4: each function is typed at the concrete type of its arguments, its
     // turbofish or the type the context expects (US-03).
-    let body = "let b = same(3_u8, 4_u8); let c: u2 = cast::<Mode, u2>(Mode::Run); let d = cast::<u8, i8>(3_u8);";
-    let t = local_types(MODE, body, &["b", "c", "d"]);
+    // `cast` is an `Option<B>` (§22.1.3): `None` when `B` rejects the levels
+    let body = "let b = same(3_u8, 4_u8); let c: Option<u2> = cast::<Mode, u2>(Mode::Run); let d = cast::<u8, i8>(3_u8); let e: Option<Mode> = cast(2_u2);";
+    let t = local_types(MODE, body, &["b", "c", "d", "e"]);
     assert_eq!(t[0], Ty::Bool);
-    assert_eq!(t[1], Ty::UInt(2));
-    assert_eq!(t[2], Ty::Int(8));
+    assert_eq!(t[1], Ty::Option(Box::new(Ty::UInt(2))));
+    assert_eq!(t[2], Ty::Option(Box::new(Ty::Int(8))));
+    assert!(matches!(&t[3], Ty::Option(inner) if matches!(**inner, Ty::Enum(_))), "{:?}", t[3]);
+}
+
+#[test]
+fn a_cast_into_a_sequence_that_holds_an_enum_is_refused() {
+    // GAPS L58: a tag that names no variant is judged for an enum and a struct, not yet inside a tuple or an array
+    let (src, d) = diagnostics(MODE, "let a = cast::<u4, (Mode, u2)>(5_u4);");
+    assert_eq!(codes_of(&d), ["P0001"], "{src}");
+    let (src, d) = diagnostics(MODE, "let a = cast::<u4, [Mode; 2]>(5_u4);");
+    assert_eq!(codes_of(&d), ["P0001"], "{src}");
 }
 
 #[test]

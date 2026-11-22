@@ -227,7 +227,7 @@ impl TypeItems<'_> {
 
     /// `impl rt::pin::Carried` for type `id` (a struct concatenates its fields, first lowest; an
     /// enum lays out its tag, then the widest payload, padded with false levels, §2), and a
-    /// `Default` unless the source derives one (a tag that names no variant decodes as the default).
+    /// `Default` unless the source derives one (a pin whose tag names no variant decodes as the default; `try_from_levels` is `None`).
     fn carried_impls(&self, id: TypeId) -> Result<String, Error> {
         let data = self.ir.type_data(id);
         let derives = &data.derives;
@@ -316,6 +316,13 @@ impl TypeItems<'_> {
             t.line(&(shape.build)(&levels));
         });
         t.line("}");
+        let tried: Vec<String> = fields.iter().map(|_| "rt::pin::Field::try_levels(words, &mut at)?".to_string()).collect();
+        t.line(&format!("fn try_from_levels(words: &rt::pin::LevelWords) -> Option<{head}> {{"));
+        t.indented(|t| {
+            t.line("let mut at = 0;");
+            t.line(&format!("Some({})", (shape.build)(&tried)));
+        });
+        t.line("}");
         Ok(())
     }
 
@@ -390,6 +397,24 @@ impl TypeItems<'_> {
                     t.line(&format!("{} => {{ {at}{built} }}", variant.discriminant));
                 }
                 t.line(&format!("_ => <{head} as Default>::default(),"));
+            });
+            t.line("}");
+        });
+        t.line("}");
+        t.line(&format!("fn try_from_levels(words: &rt::pin::LevelWords) -> Option<{head}> {{"));
+        t.indented(|t| {
+            if shapes.iter().any(|(variant, _)| !variant.fields.is_empty()) {
+                t.line(&format!("let payload = words.slice({tag_levels}, Self::LEVELS - {tag_levels});"));
+            }
+            t.line(&format!("match words.slice(0, {tag_levels}).low() {{"));
+            t.indented(|t| {
+                for (variant, shape) in &shapes {
+                    let reads: Vec<String> = variant.fields.iter().map(|_| "rt::pin::Field::try_levels(&payload, &mut at)?".to_string()).collect();
+                    let built = (shape.build)(&reads);
+                    let at = if reads.is_empty() { String::new() } else { "let mut at = 0; ".to_string() };
+                    t.line(&format!("{} => {{ {at}Some({built}) }}", variant.discriminant));
+                }
+                t.line("_ => None,");
             });
             t.line("}");
         });

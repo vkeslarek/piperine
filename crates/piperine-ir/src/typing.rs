@@ -130,11 +130,11 @@ impl Typing {
         fits.then_some(ValueType::Bool)
     }
 
-    /// `cast::<A, B>(value)`: `to`, when it has the level count of the value's type (§22.1.3
+    /// `cast::<A, B>(value)`: `Option<to>`, when `to` has the level count of the value's type (§22.1.3
     /// rule 3).
     pub(crate) fn level_cast(value: &ValueType, to: &ValueType, types: &[TypeData]) -> Option<ValueType> {
         let fits = Typing::laid_out(to) && Typing::levels_in(value, types).is_some() && Typing::levels_in(value, types) == Typing::levels_in(to, types);
-        fits.then(|| to.clone())
+        fits.then(|| ValueType::Option(Box::new(to.clone())))
     }
 
     pub(crate) fn method(method: Method, receiver: &ValueType, args: &[&ValueType]) -> Option<ValueType> {

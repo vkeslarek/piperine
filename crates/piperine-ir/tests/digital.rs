@@ -965,17 +965,17 @@ impl Levels {
         Functions::function(b, "alike", Levels::F, 4, params, ValueType::Bool, vec![], body);
     }
 
-    /// `fn recode(a: u4) -> i4 { cast::<u4, i4>(a) }` and, to a type that decodes only some tags,
-    /// `fn tagged(a: u2) -> u2 { cast::<u2, State>(a) }` (tags 0, 1, 2).
+    /// `fn recode(a: u4) -> Option<i4> { cast::<u4, i4>(a) }` and, to a type that decodes only some tags,
+    /// `fn tagged(a: u2) -> Option<u2> { cast::<u2, State>(a) }` (tags 0, 1, 2): a cast is an `Option` (§22.1.3).
     fn casts(b: &mut IrBuilder) {
         let mut x = Dx::new(b, Levels::F, 5, 9);
         let a = x.local(0, Ty::u(4));
-        let body = x.level_cast(a, Ty::i(4), None, Ty::i(4));
-        Functions::function(b, "recode", Levels::F, 5, vec![Design::local("a", Ty::u(4))], Ty::i(4), vec![], body);
+        let body = x.level_cast(a, Ty::i(4), None, ValueType::Option(Box::new(Ty::i(4))));
+        Functions::function(b, "recode", Levels::F, 5, vec![Design::local("a", Ty::u(4))], ValueType::Option(Box::new(Ty::i(4))), vec![], body);
         let mut x = Dx::new(b, Levels::F, 6, 9);
         let a = x.local(0, Ty::u(2));
-        let body = x.level_cast(a, Ty::u(2), Some(vec![0, 1, 2]), Ty::u(2));
-        Functions::function(b, "tagged", Levels::F, 6, vec![Design::local("a", Ty::u(2))], Ty::u(2), vec![], body);
+        let body = x.level_cast(a, Ty::u(2), Some(vec![0, 1, 2]), ValueType::Option(Box::new(Ty::u(2))));
+        Functions::function(b, "tagged", Levels::F, 6, vec![Design::local("a", Ty::u(2))], ValueType::Option(Box::new(Ty::u(2))), vec![], body);
     }
 }
 
@@ -990,10 +990,10 @@ fn same_and_cast_type_print_and_check() {
     // The structural print writes each node by the name the source gives it, and a type only
     // where it differs from the one the form implies.
     Printed::holds(&ir, &["fn alike(a: u8, b: u8) -> bool", "  local a: u8", "  local b: u8", "  same(a, b)"]);
-    Printed::holds(&ir, &["fn recode(a: u4) -> i4", "  local a: u4", "  cast::<i4>(a)"]);
-    Printed::holds(&ir, &["fn tagged(a: u2) -> u2", "  local a: u2", "  cast::<u2 in [0, 1, 2]>(a)"]);
+    Printed::holds(&ir, &["fn recode(a: u4) -> Option<i4>", "  local a: u4", "  cast::<i4>(a)"]);
+    Printed::holds(&ir, &["fn tagged(a: u2) -> Option<u2>", "  local a: u2", "  cast::<u2 in [0, 1, 2]>(a)"]);
     let full = ir.to_string();
-    for form in [": bool = same e", ": i4 = level_cast e", ": u2 = level_cast e", "tags [0, 1, 2]"] {
+    for form in [": bool = same e", ": Option<i4> = level_cast e", ": Option<u2> = level_cast e", "tags [0, 1, 2]"] {
         assert!(full.contains(form), "{form} missing from:\n{full}");
     }
 
@@ -1005,8 +1005,8 @@ fn same_and_cast_type_print_and_check() {
     Functions::function(&mut b, "bad_same", Levels::F, 1, vec![Design::local("a", ValueType::Bool), Design::local("b", Ty::u(1))], ValueType::Bool, vec![], alike);
     let mut x = Dx::new(&mut b, Levels::F, 2, 9);
     let a = x.local(0, Ty::u(4));
-    let wide = x.level_cast(a, Ty::u(5), None, Ty::u(5));
-    Functions::function(&mut b, "bad_cast", Levels::F, 2, vec![Design::local("a", Ty::u(4))], Ty::u(5), vec![], wide);
+    let wide = x.level_cast(a, Ty::u(5), None, ValueType::Option(Box::new(Ty::u(5))));
+    Functions::function(&mut b, "bad_cast", Levels::F, 2, vec![Design::local("a", Ty::u(4))], ValueType::Option(Box::new(Ty::u(5))), vec![], wide);
     let broken = Design::finish(b).check();
     let at = |line: u32, what: &str| broken.iter().filter(|e| e.origin.line == line && e.what.contains(what)).count();
     assert_eq!(at(1, "the operands of `same` do not fit its types"), 1, "{broken:#?}");

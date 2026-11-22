@@ -26,12 +26,13 @@ digital for Commits {
 }
 
 // A value that changes at each edge, and a tag a variant names (1, with n = 3).
-module Moves(in clk: Bit, out u: Bit<Pair> = Pair { a: 6, b: false }, out step: Bit<u8> = 7, out good: Bit<Tx> = Tx::Idle) {}
+module Moves(in clk: Bit, out u: Bit<Pair> = Pair { a: 6, b: false }, out step: Bit<u8> = 7, out good: Bit<Tx> = Tx::Idle, out none: Bit<bool> = false) {}
 digital for Moves {
     on clk.rise() {
         u <- Pair { a: step, b: false };
         step <- step + 1;
-        good <- cast::<u5, Tx>(13);
+        good <- cast::<u5, Tx>(13).unwrap();
+        none <- cast::<u5, Tx>(15).is_none();
     }
 }
 
@@ -74,14 +75,14 @@ module Defined(out first: Bit<Pair> = Pair { a: 3, b: true }, out defined: Bit<P
 module Bench() {
     signal clk: Bit;
     signal s: Bit<Pair>; signal t: Bit<(u8, bool)>; signal arr: Bit<[u8; 3]>; signal tx: Bit<Tx>; signal opt: Bit<Option<u8>>;
-    signal u: Bit<Pair>; signal step: Bit<u8>; signal good: Bit<Tx>;
+    signal u: Bit<Pair>; signal step: Bit<u8>; signal good: Bit<Tx>; signal none: Bit<bool>;
     signal r_t: Bit<u8>; signal r_arr: Bit<u8>; signal r_opt: Bit<u8>; signal r_tx: Bit<u8>; 
     signal now_a: Bit<u8>; signal before_a: Bit<u8>; signal s_changes: Bit<u8>;
     signal w_pair: Bit<u8>; signal w_enum: Bit<u8>; signal w_wrap: Bit<u8>;
         signal first: Bit<Pair>; signal defined: Bit<Pair>;
     let osc = Osc(clk) { f: 200M };
     let commits = Commits(clk, s, t, arr, tx, opt);
-    let moves = Moves(clk, u, step, good);
+    let moves = Moves(clk, u, step, good, none);
     let watch = Watch(u, s, now_a, before_a, s_changes);
     let reads = Reads(t, arr, opt, tx, good, r_t, r_arr, r_opt, r_tx);
     let widths = Widths(clk, w_pair, w_enum, w_wrap);

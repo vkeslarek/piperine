@@ -104,7 +104,8 @@ fn tables(b: &mut IrBuilder) -> BodyId {
     let (a, bb) = (x.carrier(1, Ty::u(8)), x.carrier(2, Ty::u(8)));
     let same = x.same(a, bb);
     stmts.push(x.commit(4, same, None));
-    let recast = x.level_cast(a, Ty::i(8), None, Ty::i(8));
+    let recast = x.level_cast(a, Ty::i(8), None, ValueType::Option(Box::new(Ty::i(8))));
+    let recast = x.option_value(recast, Ty::i(8));
     stmts.push(x.commit(5, recast, None));
     let v = x.carrier(3, ValueType::F64);
     let exp = x.math(MathFn::Exp, v, ValueType::F64);

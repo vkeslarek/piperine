@@ -786,12 +786,12 @@ impl<'a> ValuePrinter<'a> {
         Ok(format!("rt::Carried::to_levels({operand})"))
     }
 
-    /// `cast::<A, B>(x)` (§22.1.3): the levels of `x` under `to`. A tag that names no variant of an
-    /// enum `to` is the enum's default, as a pin of it decodes.
+    /// `cast::<A, B>(x)` (§22.1.3): the levels of `x` under `to`, an `Option<B>`: `None` for a tag that
+    /// names no variant of an enum `to` (or of one in a struct or a payload of it).
     fn level_cast(&self, expr: ExprId, to: &ValueType) -> Result<Piece, Error> {
         let target = self.pin_type(to)?;
-        let cast = format!("<{target} as rt::Carried>::from_levels(&{})", self.levels(expr)?);
-        let text = if *to == ValueType::F64 && !self.plain { format!("R::constant({cast})") } else { cast };
+        let cast = format!("<{target} as rt::Carried>::try_from_levels(&{})", self.levels(expr)?);
+        let text = if *to == ValueType::F64 && !self.plain { format!("{cast}.map(R::constant)") } else { cast };
         Ok(Piece::new(text, Prec::Atom))
     }
 

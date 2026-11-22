@@ -460,7 +460,8 @@ pub enum Expr {
     /// result is a `bool`.
     Same { a: ExprId, b: ExprId },
     /// `cast::<A, B>(expr)` (§22.1.3): the levels of `expr` under type `to`, which has the same
-    /// number of levels. `tags` lists the tags `to` decodes when it is an enum.
+    /// number of levels; the result is an `Option<to>`, `None` for a tag that names no variant.
+    /// `tags` lists the tags `to` decodes when it is an enum.
     LevelCast { expr: ExprId, to: ValueType, tags: Option<Vec<i128>> },
     /// `loop { body }` (§1.8): runs `body` until a `Break`. Its type is its breaks' value type,
     /// `()` for a `break` with no value.

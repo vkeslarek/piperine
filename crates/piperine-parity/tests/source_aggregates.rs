@@ -851,10 +851,11 @@ fn committing_an_equal_composite_fires_no_change() {
 #[test]
 fn a_tag_the_cast_names_is_a_variant() {
     // CV-17 AC 5 (§2 rule 9, explicit-unknowns T27; replaces `a_tag_naming_no_variant_reads_unknown`): `Tx` has the
-    // tags 0, 1 and 2. `cast::<u5, Tx>(13)` has tag 1 and n = 3, a value (a tag naming no variant is `None` once `cast` returns an
-    // `Option`, which T29 and `generics` T41 bring)
+    // tags 0, 1 and 2. `cast::<u5, Tx>(13)` has tag 1 and n = 3, a value; `cast::<u5, Tx>(15)` has tag 3, which
+    // names no variant: `None` (§22.1.3), never the enum's default
     let carriers = Carriers::run();
     assert_eq!(carriers.once("good"), Carriers::known(&[1, 3]), "tag 1, n = 3");
+    assert_eq!(carriers.once("none"), CarrierBytes::byte(1), "a tag naming no variant is `None`");
 }
 
 #[test]

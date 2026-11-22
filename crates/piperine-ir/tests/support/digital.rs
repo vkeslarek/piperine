@@ -6,7 +6,7 @@
 
 use piperine_ir::{
     Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Constant, Drive, Event,
-    EventSource, Expr, ExprId, FunctionId, IrBuilder, MathFn, Method, NatureId, NodeRole, Operator, Origin, Param, Quantity,
+    EventSource, Expr, ExprId, FunctionId, IrBuilder, LevelPart, MathFn, Method, NatureId, NodeRole, Operator, Origin, Param, Quantity,
     QuantityRole, Reaction, Real, Stmt, StmtId, Terminal, UnaryOp, ValueType,
 };
 
@@ -116,9 +116,14 @@ impl<'b> Dx<'b> {
         self.emit(Expr::Same { a, b }, ValueType::Bool)
     }
 
-    /// `cast::<_, to>(expr)`, with the tags `to` decodes when it is an enum; `ty` is the result.
+    /// `cast::<_, to>(expr)`, with the tags `to` decodes when it is an enum; `ty` is the result, an `Option` of `to`.
     pub fn level_cast(&mut self, expr: ExprId, to: ValueType, tags: Option<Vec<i128>>, ty: ValueType) -> ExprId {
         self.emit(Expr::LevelCast { expr, to, tags }, ty)
+    }
+
+    /// The payload of the `Option` `option` (`ty`, its payload type).
+    pub fn option_value(&mut self, option: ExprId, ty: ValueType) -> ExprId {
+        self.emit(Expr::OptionPart { option, part: LevelPart::Value }, ty)
     }
 
     /// A math function of one argument.

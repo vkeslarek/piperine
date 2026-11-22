@@ -56,6 +56,11 @@ impl Checker<'_> {
             }
             Intrinsic::Cast => {
                 let from = self.operand_type(file, span, written.first().cloned(), args.first())?;
+                // the result is `Option<B>` (§22.1.3): the expected type names `B` through its `Option`
+                let expected = expected.map(|ty| match ty {
+                    Ty::Option(inner) => *inner,
+                    other => other,
+                });
                 let Some(to) = written.get(1).cloned().or(expected) else {
                     self.unsupported(file, span, "`cast` whose result type is not written (use `cast::<A, B>` or an expected type)");
                     return None;
@@ -63,7 +68,8 @@ impl Checker<'_> {
                 let to = self.value_type(file, span, Some(to))?;
                 self.apply(expr, &[from.clone()], args)?;
                 self.same_width(file, span, &from, &to)?;
-                to
+                self.refuse_enum_in_a_sequence(file, span, &to)?;
+                Ty::Option(Box::new(to))
             }
         };
         self.callees.insert(expr, Callee::Intrinsic(intrinsic));
@@ -100,6 +106,38 @@ impl Checker<'_> {
             return None;
         }
         Some(ty)
+    }
+
+    /// `P0001` (`GAPS.md` L58) for a `cast` target that is a tuple or an array holding an enum, directly or
+    /// through a struct or a payload: the generated decoders judge a tag that names no variant for an enum and a
+    /// struct, and the runtime's tuples and arrays do not yet, so `None` would not be given where the rule needs it.
+    fn refuse_enum_in_a_sequence(&mut self, file: FileId, span: Span, to: &Ty) -> Option<()> {
+        if self.sequence_holds_enum(to, false) {
+            self.unsupported(file, span, &format!("`cast` to `{}`, a tuple or an array holding an enum: a tag that names no variant is not judged inside one yet", to.name(self.design)));
+            return None;
+        }
+        Some(())
+    }
+
+    /// Whether `ty` holds an enum below a tuple or an array (`in_sequence`: already below one).
+    fn sequence_holds_enum(&self, ty: &Ty, in_sequence: bool) -> bool {
+        match ty {
+            Ty::Enum(decl) => {
+                in_sequence
+                    || self.design.decl_data(*decl).children.iter().any(|variant| {
+                        self.types_of_fields(*variant).iter().any(|field| self.sequence_holds_enum(field, false))
+                    })
+            }
+            Ty::Tuple(items) => items.iter().any(|item| self.sequence_holds_enum(item, true)),
+            Ty::Array(element, _) => self.sequence_holds_enum(element, true),
+            Ty::Struct(decl) => self.types_of_fields(*decl).iter().any(|field| self.sequence_holds_enum(field, in_sequence)),
+            _ => false,
+        }
+    }
+
+    /// The types of the fields of the struct or variant `owner`.
+    fn types_of_fields(&self, owner: DeclId) -> Vec<Ty> {
+        self.layouts.get(&owner).map(|fields| fields.iter().map(|f| f.ty.clone()).collect()).unwrap_or_default()
     }
 
     /// `E0701` unless `from` and `to` have the same number of levels (§22.1.3 rule 3).

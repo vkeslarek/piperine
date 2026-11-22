@@ -23,6 +23,12 @@ pub trait Carried: Copy + Default + PartialEq {
     fn to_levels(self) -> LevelWords;
     /// The value whose levels are the first `LEVELS` levels of `words`.
     fn from_levels(words: &LevelWords) -> Self;
+    /// The value whose levels are the first `LEVELS` levels of `words`, or `None` when the type
+    /// rejects them: an enum whose tag names no variant (`cast` is an `Option`, §22.1.3). A type that
+    /// accepts every pattern of its levels is always `Some`.
+    fn try_from_levels(words: &LevelWords) -> Option<Self> {
+        Some(Self::from_levels(words))
+    }
 
     /// The value of a pin's bytes.
     fn from_pin(bytes: &[u8]) -> Self {
@@ -158,6 +164,13 @@ impl Field {
     /// The value whose levels start at level `*at`; moves `*at` past them.
     pub fn levels<T: Carried>(words: &LevelWords, at: &mut u32) -> T {
         let value = T::from_levels(&words.slice(*at, T::LEVELS));
+        *at += T::LEVELS;
+        value
+    }
+
+    /// Like [`Field::levels`], `None` when the type rejects the levels.
+    pub fn try_levels<T: Carried>(words: &LevelWords, at: &mut u32) -> Option<T> {
+        let value = T::try_from_levels(&words.slice(*at, T::LEVELS));
         *at += T::LEVELS;
         value
     }

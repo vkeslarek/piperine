@@ -356,6 +356,11 @@ impl Elaboration<'_, '_> {
                 let Some(val) = self.zero(&payload, origin) else { return unsupported(self) };
                 Some(Pair { is, val, literal: Some(false) })
             }
+            // `cast::<A, B>(x)` (§22.1.3): an `Option<B>`, the two halves of one level cast.
+            ExprKind::Call { args, .. } if matches!(self.types.callee(expr), Some(crate::types::Callee::Intrinsic(crate::types::Intrinsic::Cast))) => {
+                let [arg] = args.as_slice() else { return unsupported(self) };
+                self.lower_cast(scope, expr, arg.value)
+            }
             // A call of a function that returns an `Option`: the pair of its two halves (`returns.rs`).
             ExprKind::Call { .. } if let Some(function) = self.calls_option_function(expr) => self.lower_option_call(scope, expr, function),
             // A field of `Option` type: the two halves of the packed value, each unpacked from the
