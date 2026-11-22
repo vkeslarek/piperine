@@ -255,7 +255,7 @@ digital for DeltaSigma1 {
 | First step | The hold is removed. `c · v(x)` is a `ddt` state, so the step starts from 0 V with no jump (§16, §15.2.1). |
 | Rising edge, `(t, 0)` | `t` is a time point: the reaction probes (§12.1.5, §17.2.2). The reaction runs before the step to `t` is solved and reads the solution of the previous time point (§15 step 3.3). It commits `bit`. |
 | Rising edge, `(t, 1)` | If `bit` changed, `analog` reads the change: a jump (§15 step 3.4). `c · v(x)` stays (§15.2.1). The flow term changes by `2 · vref / r`. |
-| Restart | The step to `t` landed there for the clock edge, so it is exempt from the truncation-error test, and the step after it restarts the integrator, whether or not `bit` changed (§15.2.6). |
+| Restart | The step to `t` is an ordinary step, tested for truncation error. The step after it reads the change, is first order and is tested with the first-order estimate; it restarts the integrator whether or not `bit` changed (§15.2.6). |
 | Unchanged `bit` | A commit of the value already held changes nothing. No jump; the instant is still a time point. |
 | Falling edge | No reaction fires and `analog` does not read `clk`. Not a time point (guarded instant). |
 | `Dc` | Nothing is held outside a transient's operating point. The solve is singular and names `x` (§16). |

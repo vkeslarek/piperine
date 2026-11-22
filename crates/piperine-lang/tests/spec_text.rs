@@ -1189,7 +1189,7 @@ fn jump_has_no_solve_of_its_own() {
     assert!(r6.contains("drops the previous derivative"), "{r6}");
     let landing = &s[s.find("**Before the solve of `t`.**").expect("before-the-solve case")
         ..s.find("**After the solve of `t`.**").expect("after-the-solve case")];
-    assert!(landing.contains("is exempt from the truncation-error test"), "{landing}");
+    assert!(landing.contains("is an ordinary step, tested for truncation error like any other"), "{landing}");
 }
 
 #[test]
@@ -2264,4 +2264,61 @@ fn part_v_convergence_tests_both_rows_against_the_smaller_abstol() {
     assert!(rule2.contains("with the `abstol` of rule 1"), "{rule2}");
     assert!(rule2.contains("the smaller of the session `vntol` and the smallest potential `abstol`"), "{rule2}");
     assert!(rule2.contains("the smaller of the session `abstol` and its flow `abstol`"), "{rule2}");
+}
+
+#[test]
+fn part_v_rule_6_tests_the_step_that_reads_a_jump_with_the_first_order_estimate() {
+    // TP-05 AC 6: §15.2 rule 6 states the estimate and the retake.
+    let rule = flat(&section(&spec("part_v_execution.md"), "### 15.2 "));
+    for fact in [
+        "tested for truncation error with the first-order estimate of its two stages, against the tolerance of §17.2 rule 1",
+        "a step that fails is rejected and retaken smaller, and it is still the step that reads the jump",
+    ] {
+        assert!(rule.contains(fact), "§15.2 rule 6 lacks \"{fact}\"");
+    }
+}
+
+#[test]
+fn part_v_the_step_that_arrives_at_a_landing_is_an_ordinary_step() {
+    // TP-04 AC 3: §15.2 "Before the solve of `t`" and §15 S3 no longer exempt the arriving step.
+    let text = spec("part_v_execution.md");
+    let jump = flat(&section(&text, "### 15.2 "));
+    assert!(
+        jump.contains("a step that arrives at a landing and reads no change is an ordinary step, tested for truncation error like any other"),
+        "§15.2 \"Before the solve\" lacks the ordinary landing step"
+    );
+    assert!(!jump.contains("so that step is exempt from the truncation-error test"), "the old exemption is gone");
+    let settle = flat(&text);
+    assert!(
+        settle.contains("the step that arrives at `t_next` is an ordinary step, tested for truncation error"),
+        "S3 lacks the tested arriving step"
+    );
+}
+
+#[test]
+fn appendix_c_2_tests_the_landing_step_and_the_jump_step() {
+    // TP-04 AC 3, TP-05 AC 6: the "the jump", "truncation error" and restart-constant rows.
+    let text = flat(&spec("appendix_c_implementation.md"));
+    for fact in [
+        "the step that arrives there reads no change and is an ordinary step, tested for truncation error like any other",
+        "a step that ends on a landing and reads no jump is tested like any other",
+        "tested with a first-order estimate taken from its own two backward-Euler stages (`jump_lte`)",
+        "the step is tested with the first-order estimate, retaken at an eighth",
+    ] {
+        assert!(text.contains(fact), "Appendix C.2 lacks \"{fact}\"");
+    }
+    assert!(!text.contains("a step that lands on a jump is exempt"), "the old truncation-error exemption is gone");
+}
+
+#[test]
+fn appendix_d_and_f_restart_rows_say_the_step_to_the_landing_is_ordinary() {
+    // TP-04 AC 3: the two gallery "Restart" rows.
+    for (file, fact) in [
+        ("appendix_d_gallery_analog.md", "The step to `t` is an ordinary step, tested for truncation error. The step after it reads the change"),
+        ("appendix_f_gallery_mixed.md", "The step to `t` is an ordinary step, tested for truncation error; the step after it reads the change"),
+    ] {
+        let text = flat(&spec(file));
+        assert!(text.contains(fact), "{file} lacks \"{fact}\"");
+        assert!(!text.contains("so it is exempt from the truncation-error test"), "{file} keeps the old exemption");
+    }
 }

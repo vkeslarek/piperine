@@ -178,8 +178,8 @@ next microstep under T3. It is an ordinary commit with one fixed due instant.
   the same level are due at `(t_next, 0)`, the step reads the winner under §12.1.2.
 - **S3.** The solver has no settle commit yet. A commit due at `t_next` enters its queue as a
   digital event, which is a landing (`predict_step`): the step that arrives at `t_next` is
-  exempt from the truncation-error test and the step after it restarts the integrator, as
-  for any change due before the solve (§15.2). A settle commit is an explicit lag of one step.
+  an ordinary step, tested for truncation error, and the step that reads the change restarts
+  the integrator, as for any change due before the solve (§15.2). A settle commit is an explicit lag of one step.
 - **S4.** Event times strictly between `t` and `t_next` read the old value.
 - **S5.** If the step to `t_next` is rejected, the commit moves with `t_next`.
 - **S6.** Where time does not advance, the next time point is the next sweep point (§16.1).
@@ -249,9 +249,10 @@ it, and how, depends on when the change is made:
 - **Before the solve of `t`.** What is due at microstep 0 of `t` (a commit, an `at`), and every
   change the microsteps before §15 step 3.4 make from it through commits with no delay,
   definitions and `resolve`s, is applied before the step that arrives at `t` is solved, so
-  that step reads it. The solver landed on `t` because something was due there, so that step
-  is exempt from the truncation-error test (§17.2.1), and the step after it restarts the
-  integrator (rule 6).
+  that step reads it. The step that reads the change is the one treated specially
+  (rule 6): a step that arrives at a landing and reads no change is an ordinary step, tested
+  for truncation error like any other (§17.2.1), and the step that reads the change restarts
+  the integrator.
 - **After the solve of `t`.** A change made by a reaction that reads the solution at `t` (a
   crossing found by that solve, a converter's threshold, a probe after step 3.4), and by the
   microsteps that follow from it, is read by the first step after `t`. That step is an
@@ -320,6 +321,9 @@ of its own.
    landing or a host `set` is at most a tenth of the smaller of the last accepted step and the
    time from `t` to the next scheduled time point, and never larger than the controller's
    proposal; the first stage is first order, whose error grows with the square of the step.
+   **The step that reads a jump is tested for truncation error with the first-order estimate
+   of its two stages, against the tolerance of §17.2 rule 1; a step that fails is rejected and
+   retaken smaller, and it is still the step that reads the jump.**
    In every other case the controller's proposal is kept.
 7. The step that reads a jump converges under §17.1. Each primitive has in it the meaning of
    the "Jump solve" column of §16.2, which is the meaning in a transient step.
