@@ -59,7 +59,7 @@ pub(super) struct Composite {
 }
 
 /// A folded value with its composites taken apart, for the elaborator to turn into IR constants.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ConstTree {
     /// A scalar, or a part that is unknown.
     Scalar(Folded),
@@ -100,6 +100,17 @@ impl ConstEval<'_, '_> {
         match self.composite_of(value) {
             Some(composite) => Ok((composite.kind, composite.parts.clone())),
             None => Err(ConstFault::Unsupported { expr, what: format!("{what} that is not a composite value") }),
+        }
+    }
+
+    /// The value `tree` describes, its composites added to this evaluator's own.
+    pub(super) fn adopt(&mut self, tree: &ConstTree) -> Folded {
+        match tree {
+            ConstTree::Scalar(value) => *value,
+            ConstTree::Composite { kind, parts } => {
+                let parts = parts.iter().map(|part| self.adopt(part)).collect();
+                self.make(*kind, parts)
+            }
         }
     }
 

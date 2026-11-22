@@ -160,7 +160,7 @@ impl Elaboration<'_, '_> {
         }
         let mut bindings = Bindings::new();
         for (param, value) in &self.frames[frame].params {
-            bindings.bind(*param, *value);
+            self.bind_param(&mut bindings, *param, *value);
         }
         bindings
     }

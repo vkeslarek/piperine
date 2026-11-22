@@ -26,7 +26,7 @@ use piperine_plan::{BodyPlan, FunctionPlan, Mode, Source, Target, Term};
 use crate::Error;
 use crate::print::value::Reads;
 use crate::print::derivative::States;
-use crate::print::{ContributionSums, DerivativePrinter, Text, ValuePrinter};
+use crate::print::{ContributionSums, DerivativePrinter, RealLift, Text, TypeItems, ValuePrinter};
 
 /// Prints the analog functions of one body from its plan.
 #[derive(Debug)]
@@ -335,6 +335,15 @@ impl<'a> AnalogPrinter<'a> {
         })
     }
 
+    /// The read `s` named `name` at the real `Dual<slots>`, when it is a composite param that holds
+    /// a real: it decodes at `f64` and the block takes it at its own real (`lift.rs`).
+    fn lifted(&self, s: Source, name: &str, slots: usize) -> Option<String> {
+        let (Source::Param(p) | Source::ParamPrevious(p)) = s else { return None };
+        let ty = &self.body.params().get(p as usize)?.ty;
+        let items = TypeItems::new(self.body.ir());
+        (ty.is_composite() && items.holds_real(ty)).then(|| RealLift::new(self.body.ir(), &items).expr(ty, name, &format!("Dual<{slots}>"), 0))
+    }
+
     /// Whether a generic block takes read `s` as it is rather than as a `Real` (so it is no
     /// `Dual`): a bool or integer param, a carrier, `analysis(Static)`.
     pub(crate) fn is_plain(&self, s: Source) -> bool {
@@ -375,6 +384,8 @@ impl<'a> AnalogPrinter<'a> {
                     self.values.pin_type(ty)?,
                     ValuePrinter::zero(ty)
                 ),
+                // a composite param is the bytes of a composite pin: its default where nothing wrote it
+                Some(ty) if ty.is_composite() => format!("let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i})).known_or(Default::default());", RealLift::new(self.body.ir(), &TypeItems::new(self.body.ir())).concrete_type(ty)),
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
             Source::Carrier(c) | Source::CarrierPrevious(c) => match self.body.carriers().get(c as usize) {
@@ -612,6 +623,8 @@ impl<'a> AnalogPrinter<'a> {
                         if *i < f.slots {
                             let v = if zero && s.is_pin() { "0.0" } else { name.as_str() };
                             format!("Dual::<{}>::seeded({v}, {i})", f.slots)
+                        } else if let Some(lifted) = self.lifted(*s, name, f.slots) {
+                            lifted
                         } else if self.is_plain(*s) {
                             name.clone()
                         } else {

@@ -356,7 +356,7 @@ impl Elaboration<'_, '_> {
                     continue;
                 }
             };
-            bindings.bind(*param, value);
+            self.bind_param(&mut bindings, *param, value);
             out.insert(*param, value);
         }
         for param in &params {

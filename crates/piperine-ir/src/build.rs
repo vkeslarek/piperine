@@ -141,6 +141,11 @@ impl IrBuilder {
         TypeId((self.types.len() - 1) as u32)
     }
 
+    /// The composite constant `id` names, as added.
+    pub fn aggregate_at(&self, id: AggregateId) -> &AggregateData {
+        &self.aggregates[id.index()]
+    }
+
     /// Adds a composite constant; `Constant::Aggregate` names it by the id.
     pub fn aggregate(&mut self, data: AggregateData) -> AggregateId {
         self.aggregates.push(data);

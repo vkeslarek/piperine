@@ -219,6 +219,12 @@ impl Params {
             if !read_changed {
                 continue;
             }
+            if binding.ty.is_composite() {
+                return Err(refuse(format!(
+                    "`{label}` is read by the placement of the composite param `{}.{}`, which keeps the value it elaborated to: set `{}.{}` itself instead",
+                    binding.child, binding.param, binding.child, binding.param
+                )));
+            }
             let parent = working.slot(&binding.parent).ok_or_else(|| Failure::Backend(format!("the derive plan names `{}`, which is no instance", binding.parent)))?;
             let inputs: Vec<f64> = parent.params.iter().map(|(_, _, v)| *v).collect();
             let derived = derive.derive(binding.k, &inputs);

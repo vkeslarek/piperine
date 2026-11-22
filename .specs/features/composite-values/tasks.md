@@ -1399,8 +1399,8 @@ T63
 
 **Done when**:
 
-- [ ] `composite_params_bind_and_read_everywhere` passes under `**Run srcagg**`
-- [ ] Gate check passes: Full
+- [x] `composite_params_bind_and_read_everywhere` passes under `**Run srcagg**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

@@ -201,7 +201,7 @@ impl Elaboration<'_, '_> {
         for (index, value, expr) in &child.given {
             let value = match value {
                 Some(value) => *value,
-                None => match self.consts.value(*expr, parent.bindings) {
+                None => match self.fold_param_value(*expr, parent.bindings) {
                     Ok(value) => value,
                     Err(fault) => {
                         self.const_fault(&fault, "a param value");
@@ -237,7 +237,7 @@ impl Elaboration<'_, '_> {
             let given = placing.given.iter().find(|(i, _, _)| *i as usize == index);
             match given.map(|(_, value, _)| *value).or(param.default) {
                 Some(value) => {
-                    bindings.bind(param.decl, value);
+                    self.bind_param(&mut bindings, param.decl, value);
                     values.push(value);
                 }
                 None => {

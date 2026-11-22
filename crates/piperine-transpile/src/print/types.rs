@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use piperine_ir::{Derives, FieldsForm, Ir, TypeData, TypeId, TypeKind, ValueType, VariantData};
 
 use crate::Error;
-use crate::print::{Text, ValuePrinter};
+use crate::print::{RealLift, Text, ValuePrinter};
 
 /// Prints the type arena of one design.
 #[derive(Debug)]
@@ -21,6 +21,8 @@ pub struct TypeItems<'a> {
     /// The arena entries a value of `Option<T>` holds, directly or through a field: an unpacked
     /// `None` reads as the type's default, so each has one.
     optional: BTreeSet<usize>,
+    /// The arena entries a composite param holds that hold a real: each has a `lift` (`lift.rs`).
+    lifted: BTreeSet<usize>,
 }
 
 impl<'a> TypeItems<'a> {
@@ -38,7 +40,16 @@ impl<'a> TypeItems<'a> {
                 Self::collect_aggregates(ir, inner, &mut optional);
             }
         }
-        TypeItems { ir, names, optional }
+        let mut lifted = BTreeSet::new();
+        for body in ir.bodies() {
+            for param in body.params().iter().filter(|param| param.ty.is_composite()) {
+                Self::collect_aggregates(ir, &param.ty, &mut lifted);
+            }
+        }
+        let mut items = TypeItems { ir, names, optional, lifted };
+        let held = std::mem::take(&mut items.lifted);
+        items.lifted = held.into_iter().filter(|index| items.holds_real(&Self::as_value(ir, TypeId(*index as u32)))).collect();
+        items
     }
 
     /// Adds to `found` every arena entry `ty` holds: itself, and what its fields hold.
@@ -142,6 +153,10 @@ impl<'a> TypeItems<'a> {
             }
         }
         let mut text = t.finish();
+        if self.lifted.contains(&id.index()) {
+            text.push('\n');
+            text.push_str(&RealLift::new(self.ir, self).item(id)?);
+        }
         if data.derives.repr {
             text.push('\n');
             text.push_str(&self.carried_impls(id)?);

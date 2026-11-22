@@ -32,6 +32,13 @@ struct P {
     y: u8,
 }
 
+/// `struct Gains { a: u8, b: f64 }` of the model `params.msl`.
+#[derive(Clone, Copy)]
+struct Gains {
+    a: u8,
+    b: f64,
+}
+
 /// `struct Line { from: P, to: P }`.
 #[derive(Clone, Copy)]
 struct Line {
@@ -823,4 +830,38 @@ fn a_tag_naming_no_variant_reads_unknown() {
     assert_eq!(carriers.changes("bad"), vec![], "an unknown value commits nothing the net had not");
     assert_eq!(carriers.once("good_known"), byte(1));
     assert_eq!(carriers.once("bad_known"), byte(0), "a tag naming no variant reads unknown");
+}
+
+#[test]
+fn composite_params_bind_and_read_everywhere() {
+    // CV-18 AC 1 (§8.1): a struct, a tuple and an array param bind their defaults or a placement's
+    // value, and every block reads them: a digital reaction (fields, elements, a real field
+    // converted), an `analog` block (a real field times Rust's constant) and the `where`.
+    let built = build(&project("params.msl"), "Bench");
+    let seen = built.run(10e-9, 1e-9);
+    let at_edge = |name: &str| transient(&seen, &format!("Bench.{name}"))[0].1.clone();
+    // the defaults: g = Gains { a: 3, b: 0.5 }, t = (4, 5), arr = [1, 2, 3]
+    let defaults = (Gains { a: 3, b: 0.5 }, (4u8, 5u8), [1u8, 2, 3]);
+    assert_eq!(at_edge("dq"), byte(defaults.0.a), "g.a");
+    assert_eq!(at_edge("dr"), byte(defaults.1.1), "t.1");
+    assert_eq!(at_edge("ds"), byte(defaults.2[2]), "arr[2]");
+    assert_eq!(at_edge("dw"), byte((defaults.0.b * 10.0) as u8), "g.b converted");
+    // the placement binds g, t and arr; `g.b` is over the parent's `scale = 0.5`
+    let scale = 0.5f64;
+    let bound = (Gains { a: 9, b: scale * 1.5 }, (7u8, 8u8), [4u8, 5, 6]);
+    assert_eq!(at_edge("pq"), byte(bound.0.a));
+    assert_eq!(at_edge("pr"), byte(bound.1.1));
+    assert_eq!(at_edge("ps"), byte(bound.2[2]));
+    assert_eq!(at_edge("pw"), byte((bound.0.b * 10.0) as u8));
+    // the analog block: a source held at `g.b * 4.0`, by default and bound
+    let (_, result) = built.run_with(10e-9, 1e-9);
+    let volts = |name: &str| {
+        let id = piperine_solver::prelude::NodeIdentifier::Anonymous(built.ir.node_at(&format!("Bench.{name}")).expect("a node").id().index());
+        result.iter().last().and_then(|step| step.get_node(&id)).expect("a value")
+    };
+    assert!((volts("by_default") - 0.25 * 4.0).abs() < 1e-9, "the default b = 0.25");
+    assert!((volts("by_placement") - 0.5 * 4.0).abs() < 1e-9, "the bound b = 0.5");
+    // the `where` is checked on the value a placement binds (E0317)
+    let refused = project("params_where.msl").elaborate("Bench").err().expect("a false where is refused");
+    assert!(refused.to_string().contains("E0317"), "{refused}");
 }

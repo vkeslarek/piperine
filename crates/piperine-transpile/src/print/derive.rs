@@ -23,12 +23,15 @@ pub struct DerivePrinter;
 impl DerivePrinter {
     /// The functions and the export of `plan` as source lines; `None` when the plan is empty.
     pub fn text(ir: &Ir, plan: &DerivePlan) -> Result<Option<String>, Error> {
-        if plan.is_empty() {
+        // A composite param derived from the parent's params keeps the value it elaborated to: no
+        // function recomputes it (`Params::changes` refuses a `set` that would need one).
+        let printed: Vec<&Binding> = plan.bindings().iter().filter(|binding| !binding.ty.is_composite()).collect();
+        if printed.is_empty() {
             return Ok(None);
         }
         let mut t = Text::new();
         let mut arms = Vec::new();
-        for binding in plan.bindings() {
+        for binding in printed {
             let (text, count) = Self::function(ir, binding)?;
             t.line(&text);
             t.line("");

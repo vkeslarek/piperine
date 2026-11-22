@@ -36,6 +36,11 @@ impl TypeArena {
     }
 
     /// The IR types of the fields of variant `variant` of the arena enum `id`.
+    /// Whether the enum `id` has no field in any variant: a value of it is its tag.
+    pub(super) fn is_unit_only(&self, id: TypeId) -> bool {
+        self.shapes.get(id.index()).is_some_and(|variants| variants.iter().all(Vec::is_empty))
+    }
+
     pub(super) fn variant_field_types(&self, id: TypeId, variant: u32) -> &[ValueType] {
         self.shapes.get(id.index()).and_then(|shape| shape.get(variant as usize)).map_or(&[], Vec::as_slice)
     }

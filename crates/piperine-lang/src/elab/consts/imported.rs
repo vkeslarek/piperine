@@ -24,6 +24,36 @@ impl Elaboration<'_, '_> {
         self.import_tree(expr, &tree, &ty)
     }
 
+    /// `value`, a param's constant, bound to `param` in `bindings`; a composite is also bound taken
+    /// apart, for the evaluator that reads it (a `where`, a value over the param).
+    pub(in crate::elab) fn bind_param(&self, bindings: &mut Bindings, param: crate::pom::DeclId, value: Constant) {
+        match value {
+            Constant::Aggregate(_) => bindings.bind_composite(param, value, self.imported_tree(value)),
+            other => bindings.bind(param, other),
+        }
+    }
+
+    /// The constant `value` of the IR's arena as the tree the evaluator reads: the reverse of
+    /// `import_tree`. A unit variant of an enum with no field is its tag.
+    fn imported_tree(&self, value: Constant) -> ConstTree {
+        let Constant::Aggregate(id) = value else { return ConstTree::Scalar(Folded::Known(value)) };
+        let data = self.ir.aggregate_at(id);
+        let parts: Vec<ConstTree> = data.parts.iter().map(|part| self.imported_tree(*part)).collect();
+        let kind = match (&data.ty, data.variant) {
+            (ValueType::Tuple(_), _) => CompositeKind::Tuple,
+            (ValueType::Array(..), _) => CompositeKind::Array,
+            (ValueType::Option(_), _) => CompositeKind::Option,
+            (ValueType::Enum(type_id), Some(position)) => {
+                if self.type_arena.is_unit_only(*type_id) {
+                    return ConstTree::Scalar(Folded::Known(Constant::Int(i128::from(position))));
+                }
+                CompositeKind::Variant(position)
+            }
+            _ => CompositeKind::Struct,
+        };
+        ConstTree::Composite { kind, parts }
+    }
+
     /// A read of the composite `const` `decl` in value code: its tree written out as the expression
     /// that builds the value (a tuple, an array, a struct or a variant of constants). `None` after
     /// a diagnostic.
