@@ -23,6 +23,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabctl**: `cargo test -p piperine-lang --test elab_control`
 **Run elabagg**: `cargo test -p piperine-lang --test elab_aggregates`
 **Run srcctl**: `cargo test -p piperine-parity --test source_control`
+**Run errors**: `cargo test -p piperine-lang --test msl_errors`
+**Run typesvs**: `cargo test -p piperine-lang --test types_value_semantics`
+**Run srcvs**: `cargo test -p piperine-parity --test source_value_semantics`
 **Run srcagg**: `cargo test -p piperine-parity --test source_aggregates`
 **Run plancomp**: `cargo test -p piperine-plan --test composite_shape`
 **Run apicomp**: `cargo test -p piperine-api --test composites`
@@ -1520,11 +1523,11 @@ T63
 **C1** - `let mut` and every compound operator give Rust's values in a function, a reaction and an `analog` block. (CV-01, AC 1; T19)
 Proof: run srcctl | test let_mut_and_every_compound_operator_give_rusts_values ... ok
 
-**C2** - Assigning to a binding without `mut`, a param, a carrier or a body `let` is `E0183` naming the target. (CV-01, AC 2; T11)
+**C2** - Assigning to a name that is no place (a param, a const, a fn parameter, a carrier, a body `let`) is `E0183` naming the target; every local a `let` binds is assignable (value-semantics VS-02, VS-03). (CV-01, AC 2; T11)
 Proof: run typesctl | test assigning_a_non_place_is_e0183_naming_the_target ... ok
 
-**C3** - `let mut` in a module body is `E0331`. (CV-01, AC 3; T11)
-Proof: run typesctl | test let_mut_in_a_module_body_is_e0331 ... ok
+**C3** - `let mut` in a module body is `E0903` with the help to write the plain form (CV-01 AC 3 amended by value-semantics VS-02 AC 2: `E0331` is retired). (CV-01, AC 3; T11)
+Proof: run errors | test let_mut_in_a_module_body_is_e0903 ... ok
 
 **C4** - `for`, `while`, `while let`, `loop` with `break`, `break value` and `continue` give Rust's values. (CV-02, AC 1; T20)
 Proof: run srcctl | test every_loop_form_gives_rusts_values ... ok
@@ -1676,14 +1679,14 @@ Proof: run typesagg | test comparing_without_the_trait_is_refused_naming_it ... 
 **C53** - `Debug` and `Hash` derives are accepted with no run-time effect. (CV-12, AC 3; T44)
 Proof: run typesagg | test debug_and_hash_derives_are_accepted ... ok
 
-**C54** - A read of a moved non-`Copy` value is `E0183` (§1.4.7). (CV-12, AC 1; T44)
-Proof: run typesagg | test a_read_after_a_move_is_e0183 ... ok
+**C54** - A value is read twice and copied: there are no moves, so no read of a used value is refused (CV-12 AC 1 amended by value-semantics VS-04 AC 3, §1.4.7). (CV-12, AC 1; T44)
+Proof: run srcvs | test a_value_is_read_twice ... ok
 
-**C55** - Arrays built, repeated, indexed, assigned by element, nested and passed to `&[T]` give Rust's values. (CV-13, AC 1; T51)
+**C55** - Arrays built, repeated, indexed, assigned by element, nested and passed to `[T; N]` give Rust's values. (CV-13, AC 1; T51)
 Proof: run srcagg | test arrays_give_rusts_values ... ok
 
-**C56** - `&a[i..j]` and `&a[..]` give elements `i` to `j - 1` and all of them. (CV-13, AC 2; T51)
-Proof: run srcagg | test slices_give_the_elements_in_range ... ok
+**C56** - `a[i..j]` and `a[..]` give the array of elements `i` to `j - 1` and of all of them (value-semantics VS-06: there are no slices). (CV-13, AC 2; T51)
+Proof: run srcagg | test a_range_index_gives_the_array_of_its_elements ... ok
 
 **C57** - An index out of range during a run fails the analysis naming the instance, the instant and the index. (CV-13, AC 3; T51)
 Proof: run srcagg | test an_index_out_of_range_panics_at_run_time ... ok
@@ -1691,8 +1694,8 @@ Proof: run srcagg | test an_index_out_of_range_panics_at_run_time ... ok
 **C58** - An index out of range in a const context is `E0104` naming the expression. (CV-13, AC 3; T55)
 Proof: run elabagg | test an_index_out_of_range_in_a_const_is_e0104 ... ok
 
-**C59** - A slice whose start exceeds its end panics, as Rust. (CV-13, AC 3 and edge case; T51)
-Proof: run srcagg | test a_slice_whose_start_exceeds_its_end_panics ... ok
+**C59** - A range index whose start exceeds its end, or that ends past the array, is `E0104` at elaboration, where a slice once panicked (value-semantics VS-06 AC 3). (CV-13, AC 3 and edge case; T51)
+Proof: run typesvs | test a_range_index_out_of_the_array_is_refused ... ok
 
 **C60** - A non-constant array length is refused naming the length. (CV-13, AC 4; T42)
 Proof: run typesagg | test a_non_constant_array_length_is_refused_naming_it ... ok
@@ -1700,14 +1703,7 @@ Proof: run typesagg | test a_non_constant_array_length_is_refused_naming_it ... 
 **C61** - An index that may be unknown reads the merge of the elements it may name and writes by merging into each (§3.3.13). (CV-13, `GAPS.md` L3 with unknown-semantics US-04 AC 12; T51)
 Proof: run srcagg | test an_unknown_index_reads_and_writes_by_merge ... ok
 
-**C62** - `&` of an array, slice or string for a parameter, and of any value as a call argument, is accepted. (CV-14, AC 1; T43)
-Proof: run typesagg | test borrows_in_call_arguments_are_accepted ... ok
-
-**C63** - `&` anywhere else is `E0102`. (CV-14, AC 2; T43)
-Proof: run typesagg | test a_borrow_elsewhere_is_e0102 ... ok
-
-**C64** - Element borrows from `iter`, `first`, `last`, `get` read as the element under `*`, comparison and arithmetic. (CV-14, AC 3; T52)
-Proof: run srcagg | test element_borrows_read_as_the_element ... ok
+Void, not checks: C62 to C64 (CV-14, borrows) are dropped with the requirement by value-semantics VS-01 (there are no borrows, `E0102` is retired, VS-02 AC 3); `&` and `*x` are `E0101` (value-semantics C1).
 
 **C65** - Every row of H.5, H.6 and H.7 gives Rust's result, `get` past the end `None`. (CV-15, AC 1; T53)
 Proof: run srcagg | test every_row_of_h5_to_h7_gives_rusts_result ... ok
