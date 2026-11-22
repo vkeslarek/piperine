@@ -50,7 +50,7 @@ tree one level at a time.
 
 ## Constructs of B.1
 
-The 65 constructs [Appendix B.1.2](../spec/appendix_b_grammar.md) lists as added to Rust, one row each, numbered as there, with the POM type or method that represents it. A construct that is a name (a core module, a core `fn`, a type or a carrier method) has no storage of its own: it is a row of the built-in table (see [Resolution](resolution.md)), and the call, instance or access that uses it carries a `Resolution::Builtin`. `crates/piperine-lang/tests/pom_docs.rs` (`every_b1_construct_is_mapped`) reads the numbers and spellings of B.1.2 and fails when a construct has no row here.
+The 62 constructs [Appendix B.1.2](../spec/appendix_b_grammar.md) lists as added to Rust, one row each, numbered as there, with the POM type or method that represents it. A construct that is a name (a core module, a core `fn`, a type or a carrier method) has no storage of its own: it is a row of the built-in table (see [Resolution](resolution.md)), and the call, instance or access that uses it carries a `Resolution::Builtin`. `crates/piperine-lang/tests/pom_docs.rs` (`every_b1_construct_is_mapped`) reads the numbers and spellings of B.1.2 and fails when a construct has no row here.
 
 | # | Construct | POM |
 | --- | --- | --- |
