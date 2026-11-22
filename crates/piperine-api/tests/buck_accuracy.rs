@@ -14,7 +14,7 @@ use std::rc::Rc;
 use std::sync::OnceLock;
 
 use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table};
-use piperine_solver::protocol::StepEnd;
+use piperine_solver::protocol::{InstantCause, StepEnd};
 use piperine_transpile::Settings;
 
 /// The largest difference of `buck.vout` the run may have against the fine reference, in volts.
@@ -41,8 +41,12 @@ struct Run {
     accepted_steps: u64,
     /// The accepted steps that ended on a landing, whatever its cause.
     landings: u64,
-    /// The discrete instants the protocol ran at accepted steps.
-    instants: u64,
+    /// The discrete instants the protocol ran at accepted steps, with a crossing fired there.
+    crossing_instants: u64,
+    /// The discrete instants it ran at accepted steps with no crossing, for what the discrete
+    /// side held at the time.
+    scheduled_instants: u64,
+
     /// The counts of `diagnosis.md` section 2, for the table of its "After".
     summary: String,
 }
@@ -69,7 +73,7 @@ fn run_with(max_step: f64) -> Run {
         "{} rejected by truncation, {} by Newton, {} retaken toward a crossing, {} ended on the controller's proposal, {} at max_step, {} jump steps",
         analog.rejected_truncation, analog.rejected_newton, steps.retaken(), steps.ended(StepEnd::Proposal), steps.ended(StepEnd::MaxStep), analog.jump_steps
     );
-    Run { table, accepted_steps: steps.accepted(), landings, instants: steps.instants_run(), summary }
+    Run { table, accepted_steps: steps.accepted(), landings, crossing_instants: steps.instants_for(InstantCause::Crossing), scheduled_instants: steps.instants_for(InstantCause::Scheduled), summary }
 }
 
 /// The two runs, made once for every test of this target: the run as the buck is run, and the
@@ -78,7 +82,7 @@ fn runs() -> &'static (Run, Run) {
     static RUNS: OnceLock<(Run, Run)> = OnceLock::new();
     RUNS.get_or_init(|| {
         let (run, reference) = (run_with(1e-8), run_with(1e-10));
-        eprintln!("buck accuracy: {} accepted steps ({} landings, {} instants run) at max_step 1e-8, {} at 1e-10", run.accepted_steps, run.landings, run.instants, reference.accepted_steps);
+        eprintln!("buck accuracy: {} accepted steps ({} landings, {} instants run for crossings, {} scheduled) at max_step 1e-8, {} at 1e-10", run.accepted_steps, run.landings, run.crossing_instants, run.scheduled_instants, reference.accepted_steps);
         eprintln!("buck accuracy: {}", run.summary);
         (run, reference)
     })
@@ -132,9 +136,14 @@ fn the_first_100_us_land_at_most_1000_times() {
 
 #[test]
 fn the_first_100_us_run_an_instant_only_where_something_is_due() {
-    // TP-08 AC 2: a step that ends where nothing is due runs no instant
+    // TP-08 AC 2: an instant runs for a crossing or for a time the discrete side holds something
+    // at, and a landing is the latter (a step that ends where nothing is due runs none)
     let (run, _) = runs();
-    eprintln!("buck instants: {} run in the first 100 us for {} accepted steps (limit {INSTANT_BOUND})", run.instants, run.accepted_steps);
-    assert!(run.instants >= run.landings, "every landing runs its instant");
-    assert!(run.instants <= INSTANT_BOUND, "{} instants for {} accepted steps, limit {INSTANT_BOUND}", run.instants, run.accepted_steps);
+    let instants = run.crossing_instants + run.scheduled_instants;
+    eprintln!(
+        "buck instants: {instants} run in the first 100 us for {} accepted steps ({} for crossings, {} scheduled, {} landings; limit {INSTANT_BOUND})",
+        run.accepted_steps, run.crossing_instants, run.scheduled_instants, run.landings
+    );
+    assert!(run.landings <= instants, "every landing runs its instant: {} landings, {instants} instants", run.landings);
+    assert!(instants <= INSTANT_BOUND, "{instants} instants for {} accepted steps, limit {INSTANT_BOUND}", run.accepted_steps);
 }

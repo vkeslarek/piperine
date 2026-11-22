@@ -39,11 +39,21 @@ impl StepEnd {
     ];
 }
 
+/// Why the protocol ran a discrete instant at an accepted step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum InstantCause {
+    /// A crossing fired at the step.
+    Crossing,
+    /// No crossing fired, and the discrete side held something at the step's time: a commit
+    /// scheduled there, a suspended instant, a dirty function or a reaction on `settle`.
+    Scheduled,
+}
+
 /// The protocol's count of a transient's steps.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct StepStatistics {
     ends: HashMap<StepEnd, u64>,
-    instants_run: u64,
+    instants: HashMap<InstantCause, u64>,
     retaken: u64,
 }
 
@@ -53,9 +63,9 @@ impl StepStatistics {
         *self.ends.entry(end).or_insert(0) += 1;
     }
 
-    /// Counts one discrete instant run by the protocol at an accepted step.
-    pub fn record_instant(&mut self) {
-        self.instants_run += 1;
+    /// Counts one discrete instant run by the protocol at an accepted step, for `cause`.
+    pub fn record_instant(&mut self, cause: InstantCause) {
+        *self.instants.entry(cause).or_insert(0) += 1;
     }
 
     /// Counts one step retaken toward a located crossing.
@@ -80,7 +90,12 @@ impl StepStatistics {
 
     /// The instants the protocol ran at accepted steps.
     pub fn instants_run(&self) -> u64 {
-        self.instants_run
+        self.instants.values().sum()
+    }
+
+    /// The instants the protocol ran at accepted steps for `cause`.
+    pub fn instants_for(&self, cause: InstantCause) -> u64 {
+        self.instants.get(&cause).copied().unwrap_or(0)
     }
 
     /// The steps retaken toward a located crossing.
@@ -137,9 +152,10 @@ mod tests {
     #[test]
     fn instants_and_retakes_are_counted_apart_from_ends() {
         let mut statistics = StepStatistics::default();
-        statistics.record_instant();
-        statistics.record_instant();
+        statistics.record_instant(InstantCause::Scheduled);
+        statistics.record_instant(InstantCause::Crossing);
         statistics.record_retake();
         assert_eq!((statistics.instants_run(), statistics.retaken(), statistics.accepted()), (2, 1, 0));
+        assert_eq!((statistics.instants_for(InstantCause::Scheduled), statistics.instants_for(InstantCause::Crossing)), (1, 1));
     }
 }

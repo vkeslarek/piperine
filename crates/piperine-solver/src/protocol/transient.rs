@@ -29,7 +29,7 @@ use super::retake::JumpRetake;
 use super::sides::{
     Advance, AnalogSide, AnalysisKind, Attempt, DiscreteSide, Horizon, InstantMode, Origin, Outcome, ProposalBound, Restart, Tick,
 };
-use super::statistics::{StepEnd, StepStatistics};
+use super::statistics::{InstantCause, StepEnd, StepStatistics};
 use super::sink::{Delivery, Sink};
 use super::step::{StepObserver, observe};
 
@@ -448,7 +448,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                 self.discrete.pass_instant(tick_c);
                 Outcome::default()
             } else {
-                self.statistics.record_instant();
+                self.statistics.record_instant(if crossings.is_empty() { InstantCause::Scheduled } else { InstantCause::Crossing });
                 self.run_whole_instant(tick_c, &samples, limit, rounds).map_err(|e| at(t_c, e))?
             };
             if unknowns && jump.wanted(&crossings, &outcome) {
