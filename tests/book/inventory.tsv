@@ -194,7 +194,7 @@ block	abi#2	30c3504b382a7487	run	piperine/book_abi::two_resistors_of_one_shape_d
 block	abi#3	051cb6db57f75a67	shown	-	-	-
 block	abi#4	7f56c990874e7013	run	piperine/book_abi::the_flip_flop_starts_low_and_takes_its_input_at_the_rising_edge	-	-
 block	abi#5	97e83a277ec19321	shown	-	-	-
-block	abi#6	4a8e6d160cd528e0	shown	-	-	-
+block	abi#6	52e5d7721de89cee	shown	-	-	-
 block	compiler#1	07f51b3645a3ebce	run	piperine/book_compiler::the_divider_puts_mid_at_7_5_volts_and_ngspice_prints_the_same	-	-
 block	compiler#2	a8029e9e14f098ed	run	piperine/book_compiler::the_diode_with_a_limited_junction_settles_where_the_junction_equation_says	-	-
 block	compiler#3	835ad43867b51f3a	shown	-	-	-
@@ -568,7 +568,6 @@ claim	solver~53123473	53123473c254e4be	holds	piperine/book_solver::an_operating_
 claim	solver~ce518374	ce518374bc9e9752	holds	piperine/book_solver::a_step_lands_exactly_on_a_digital_instant_and_what_it_changed_reaches_the_analog_side	-	It stops at the first instant that touches the analog side, and the step is shortened to land exactly there.
 claim	solver~4d1bc10b	4d1bc10b58a44d4a	prose	-	-	If Newton failed or the error estimate is too big, everything returns to the checkpoint taken at the start, and the step is retried smaller.
 claim	solver~c2aa698e	c2aa698ebf814cfc	holds	piperine/book_solver::a_step_lands_exactly_on_a_digital_instant_and_what_it_changed_reaches_the_analog_side	-	What the instant changed reaches the analog side.
-claim	solver~4642dd47	4642dd47b67015c0	holds	piperine/book_solver::a_loop_of_undelayed_definitions_is_refused_when_the_design_is_built_naming_its_functions	-	A loop of functions is accepted only if it passes through a net marked to relax, which is iterated until it stops changing.
 claim	solver~dbaf149d	dbaf149df95de26e	holds	piperine/book_solver::an_instant_that_never_goes_quiet_stops_after_1000_microsteps_with_e0501_naming_its_nets	-	After 1000 microsteps the solver stops with E0501 and names the nets that keep changing.
 claim	solver~7c9343cf	7c9343cf4dfe75c0	holds	piperine/book_solver::a_value_outside_its_range_and_a_key_outside_its_analysis_are_p0010	-	A key that the chosen analysis does not read is refused with P0010 before anything runs, so a setting is never silently ignored.
 claim	solver~452e0c7b	452e0c7b1f5a2926	prose	-	-	How the printed signals move with each named param, at the operating point.
@@ -830,3 +829,4 @@ claim	errors~4a35ef2c	4a35ef2c052036a9	prose	-	-	A reaction on q.changed() that 
 claim	errors~39ba3a1d	39ba3a1dbc121c32	unraised	piperine/book_errors::e0187_is_not_raised_for_a_signal_with_no_first_value_yet	S8	E0187
 claim	errors~385c354c	385c354c6a15974a	unraised	piperine/book_errors::e0187_is_not_raised_for_a_signal_with_no_first_value_yet	S8	Which error do you expect, and what does it name? (E0187, naming held and the trait Default: a real number has no default value, so the first value must be written.)
 claim	cli~d8ef198c	d8ef198c3a5817c1	prose	-	-	A real has six decimals and an exponent, 7.500000e0; a bool is true or false; an integer is decimal; a four-state Logic is its characters, 0, 1, x and z, highest level first, as in 10xz; an absent Option is None; a text field is in double quotes.
+claim	solver~95d8c226	95d8c226ae3825f3	prose	-	-	A loop of functions is accepted only if it passes through a net marked to relax, which is iterated until it stops changing; a net that still moves after its bounded passes stops the run with E0511, naming the loop's drives.

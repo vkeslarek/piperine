@@ -7990,6 +7990,21 @@ flowchart TB
 <tr><td><code>commit(statement, offset, len, bytes, after) -> Status</code></td><td>solver</td><td>Queues one write of the calling reaction. Nothing else calls it, and it does nothing else.</td></tr>
 </tbody></table></div>
 
+<h3>What a pin holds</h3>
+
+<p>A pin holds the bytes of its type and nothing else: no byte beside a value says whether the value is established. This contract is still <strong>major 1</strong> and is <strong>unreleased</strong>: until the first release it changes in place, symbol <code>piperine_abi_1</code> and minor 0 included, and a compiled model is always rebuilt against the contract it is loaded by, never loaded against another. The layouts follow from that:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>A pin of type</th><th>Layout</th></tr></thead>
+<tbody>
+<tr><td><code>bool</code> (<code>BIT</code>)</td><td>One field, <code>v: BOOL</code> at offset 0: size 1, alignment 1. <code>BYTE</code> is <code>v: U8</code> and <code>F64</code> is <code>v: F64</code>, size 8.</td></tr>
+<tr><td><code>Option&lt;T&gt;</code></td><td>A <code>BOOL</code> presence field, then the layout of <code>T</code>. A param that may be left out is such a pin.</td></tr>
+<tr><td><code>Logic&lt;N&gt;</code></td><td>Two fields of the leaf of <code>UInt&lt;N&gt;</code>: <code>binary</code> at offset 0 and <code>value</code> after it. Two bits per level, and no byte for a flag.</td></tr>
+<tr><td>a drive of a resolved net</td><td>The layout of the type driven, then a <code>driving: BOOL</code> field: 0 is a drive that is absent from what <code>resolve</code> receives, 1 a present one. The value pin has the layout of the nature's <code>value</code> type.</td></tr>
+</tbody></table></div>
+
+<p>There is one <code>commit</code>, and a field is <code>{ name, leaf, offset, count }</code>.</p>
+
 <p>A call returns <code>OK</code>, <code>FAULT</code> (with a message), <code>RESHAPE</code> (these param values need a different shape) or <code>FINISH</code> (a reaction ends the analysis at its instant). Nothing may unwind across the boundary.</p>
 
 <h3>The Rust side</h3>
@@ -8053,7 +8068,7 @@ fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
 <pre data-lang="rust">// pins:  pad_in[8], pad_out[8] (PORT BIT)     adc0 (PORT continuous)     reset (PORT BIT)
 //        firmware (PARAM U8[256], STRUCTURAL)  f_cpu (PARAM F64)
 //        cpu (PRIVATE discrete, QUIET; layout: registers, SRAM, timers, its own tick — plain fields)
-//        adc_val (PRIVATE REAL)                log (PRIVATE discrete, RECORD)
+//        adc_val (PRIVATE F64)                log (PRIVATE discrete, RECORD)
 //        irq, wake, sample (PRIVATE event)
 //        resolution (GLOBAL RESOLUTION), start (GLOBAL START)
 // fn 0 "pad change": reads [pad_in[0..8].CHANGED, reset.CHANGED, adc_val.CHANGED]   writes [irq]
@@ -8077,7 +8092,7 @@ fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
     match stop {
         Stop::PadWrite { pad, level } => cx.commit(1 + pad, &level, dt)?,   // the edge keeps its exact time
         Stop::AdcStart                => cx.commit(10, &[], dt)?,           // fire `sample` then
-        Stop::Break { pc }            => cx.commit(11, bytes_of(&Log { pc, known: 1 }), 0.0)?,   // a record
+        Stop::Break { pc }            => cx.commit(11, bytes_of(&Log { pc }), 0.0)?,   // a record
         Stop::Horizon | Stop::Sleep   => {}
     }
     cx.commit(9, &[], cpu.next_wake(now, res))?;               // "advance me to": REPLACE re-arms
@@ -8434,7 +8449,7 @@ Caused by: Transient: exceeded the 20 step budget at t = 5.528574e-4 s of 5.0000
 
 <ul>
 <li><strong>Only what changed runs.</strong> A function whose inputs did not change is not called. A free-running clock costs only what it actually touches.</li>
-<li><strong>Combinational loops must say so.</strong> A loop of functions is accepted only if it passes through a net marked to relax, which is iterated until it stops changing. Any other loop is refused when the design is built, naming its functions.</li>
+<li><strong>Combinational loops must say so.</strong> A loop of functions is accepted only if it passes through a net marked to relax, which is iterated until it stops changing; a net that still moves after its bounded passes stops the run with E0511, naming the loop's drives. Any other loop is refused when the design is built, naming its functions.</li>
 <li><strong>Only the settled value is seen.</strong> Several commits to one net in the same microstep are applied in order and the net is written once. <code>changed()</code> and the previous value compare with the value before the microstep, so <code>x <- 1; x <- 0;</code> on a net that was 0 changes nothing.</li>
 <li><strong>Reactions see the environment.</strong> A reaction or a definition may read <code>temperature()</code>, <code>gmin()</code> and <code>source_scale()</code>; they get the values in force at that instant, the same ones the analog side uses.</li>
 <li><strong>An instant must go quiet.</strong> After 1000 microsteps the solver stops with <code>E0501</code> and names the nets that keep changing.</li>
