@@ -251,9 +251,7 @@ fn the_book_drives_nets_with_strength() {
     for fact in ["impl Resolve<bool> for AndWire", "impl Resolve<Driven> for Sda", "impl Resolve<Driven> for TriBus", "impl Resolve<Option<u8>, Data> for DataBus", "After its bounded passes the run stops with error E0511"] {
         assert!(section.contains(fact), "the section lacks {fact}");
     }
-    for name in ["natures", "digital"] {
-        let text = chapter(name);
-        let library_wire = text.contains("<code>Wire</code>") || text.contains(": Wire") || text.contains("signal alarm_n: Wire") || text.contains(" Wire,") || text.contains("a <code>Wire</code>");
-        assert!(!library_wire, "chapter {name} names a library Wire (AlarmLine and AndWire are the model's own)");
-    }
+    // no chapter of the Book names a library `Wire`: a `Wire` that is not the tail of a longer name (`AndWire`)
+    let mut standalone = book.match_indices("Wire").filter(|(at, _)| !book[..*at].ends_with(|c: char| c.is_ascii_alphabetic()));
+    assert!(standalone.next().is_none(), "the Book names a library Wire (AlarmLine and AndWire are the model's own)");
 }

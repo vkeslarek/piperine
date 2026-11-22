@@ -206,7 +206,7 @@ fn the_chapter_has_a_part_per_namespace() {
 
 /// Prelude exports the Book no longer names because the explicit model removed them (`Known`, `merge`,
 /// `Wire`, `Tri`, `tri`, `SumNet`) while `std` still declares them; owned by explicit-unknowns T23.
-const STD_BEHIND_THE_BOOK: [&str; 5] = ["Known", "merge", "tri", "Tri", "SumNet"];
+const STD_BEHIND_THE_BOOK: [&str; 6] = ["Known", "merge", "tri", "Tri", "SumNet", "Wire"];
 
 #[test]
 fn the_chapter_names_every_prelude_export() {

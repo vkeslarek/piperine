@@ -349,7 +349,7 @@ print_step = 1e-6</pre>
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 17) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 18 and 19). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run from source as compiled Rust: a full-size digitally controlled buck converter starts and regulates with its loop closed (chapter 20). So a file with a <code>digital</code> block, like <code>Monitor</code> above, runs today. The <code>piperine</code> command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself. Parts of the language beyond that are still refused by name with P0001: in analog, noise, <code>idt</code> and <code>delay</code>; elsewhere, generic modules, params of an integer type and resolved natures such as <code>Wire</code>. When a chapter's example needs one of them, its "Run it" box says so and shows the refusal. This book describes the language as specified.</p>
+  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 17) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 18 and 19). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run from source as compiled Rust: a full-size digitally controlled buck converter starts and regulates with its loop closed (chapter 20). So a file with a <code>digital</code> block, like <code>Monitor</code> above, runs today. The <code>piperine</code> command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself. Parts of the language beyond that are still refused by name with P0001: in analog, noise, <code>idt</code> and <code>delay</code>; elsewhere, generic modules, params of an integer type and resolved natures (a nature that implements <code>Resolve</code>). When a chapter's example needs one of them, its "Run it" box says so and shows the refusal. This book describes the language as specified.</p>
 </div>
 
 <div class="callout mistake">
@@ -3638,7 +3638,7 @@ digital for Comparator { on up || dn { q <- up; } }</pre>
 
 <h3>Between modules: converters</h3>
 
-<p>Across a module boundary, a <code>Bit</code> and an <code>Electrical</code> never connect. You place a converter from the standard library, and so the electrical details of every crossing are a visible, named instance with params: <code>A2D</code> is the threshold with hysteresis above; <code>D2A</code> drives a level through an output resistance with finite edges; <code>Bidir</code> is a pad on a <code>Wire</code>.</p>
+<p>Across a module boundary, a <code>Bit</code> and an <code>Electrical</code> never connect. You place a converter from the standard library, and so the electrical details of every crossing are a visible, named instance with params: <code>A2D</code> is the threshold with hysteresis above; <code>D2A</code> drives a level through an output resistance with finite edges; <code>Bidir</code> is a pad on a net whose nature implements <code>Resolve&lt;Driven&gt;</code>.</p>
 
 <pre data-lang="msl">module D2A(in d: Bit, a: Electrical, vdd: Electrical) {
     rout: f64 = 100.0; tr: f64 = 20p;
@@ -5304,7 +5304,7 @@ utilx = { path = "../util", package = "util" }    # now `utilx::cells::Cell`</pr
 
 <p>This chapter is a tour, not a lesson: read the first two parts, then skim the tables and come back when you need a name. Each part has one small module that uses a few of its names, and every one of those modules is a complete file.</p>
 
-<p>Every name you write in a model comes from one of three places: your own files, the <strong>core</strong>, or the <strong>standard library</strong>. The core is what only the simulator can provide: reading a voltage, taking a time derivative, locating a crossing. Everything else, <code>idt</code>, <code>transition</code>, <code>Wire</code>, <code>Setup</code>, is ordinary source code written in the language, shipped as the crate <code>std</code>, and you can open it and read it. This chapter is the tour that tells you which is which.</p>
+<p>Every name you write in a model comes from one of three places: your own files, the <strong>core</strong>, or the <strong>standard library</strong>. The core is what only the simulator can provide: reading a voltage, taking a time derivative, locating a crossing. Everything else, <code>idt</code>, <code>transition</code>, <code>Setup</code>, is ordinary source code written in the language, shipped as the crate <code>std</code>, and you can open it and read it. This chapter is the tour that tells you which is which.</p>
 
 <h3>What is core</h3>
 
