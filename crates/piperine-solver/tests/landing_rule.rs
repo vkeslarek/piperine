@@ -29,16 +29,52 @@ const EDGES_PER_CHANGE: f64 = 400.0;
 /// The run: 1400 oscillator edges, a millisecond-scale RC step and a margin of one nanosecond.
 const STOP: f64 = 3.5e-6 + 1.0e-9;
 
-fn net(name: &str) -> Port {
-    Port::Net(name.to_string())
-}
-
 /// Keeps every observation in the order the sink is handed them.
 struct Collect(Rc<RefCell<Vec<Observation>>>);
 
 impl Sink for Collect {
     fn observe(&mut self, observation: &Observation) {
         self.0.borrow_mut().push(observation.clone());
+    }
+}
+
+/// The circuits of this target.
+struct Circuits;
+
+impl Circuits {
+    /// The port of the net called `name`.
+    fn net(name: &str) -> Port {
+        Port::Net(name.to_string())
+    }
+
+    /// The open-loop fixture: `osc` (200 MHz) clocks a counter and a flip-flop; `slow` toggles every
+    /// 400 edges and the flip-flop passes it on at the next rising edge to a D2A that charges an RC.
+    fn open_loop() -> CircuitBuilder {
+        let mut b = CircuitBuilder::new("open loop");
+        let gnd = b.ground();
+        let o = b.node("o");
+        let c = b.node("c");
+        b.device(timer(), "osc", &[("half", ParamValue::Real(HALF_PERIOD))], &[Circuits::net("clk")]);
+        b.device(counter(), "cnt", &[], &[Circuits::net("clk"), Circuits::net("n")]);
+        b.device(timer(), "slow", &[("half", ParamValue::Real(HALF_PERIOD * EDGES_PER_CHANGE))], &[Circuits::net("d")]);
+        b.device(dff(), "ff", &[], &[Circuits::net("clk"), Circuits::net("d"), Circuits::net("q")]);
+        b.device(dac(), "dac", &[("vref", ParamValue::Real(1.0))], &[Circuits::net("q"), Port::Node(o.clone())]);
+        add_resistor(&mut b, "r1", 1.0e3, &o, &c);
+        add_capacitor(&mut b, "c1", 1.0e-9, &c, &gnd);
+        b
+    }
+
+    /// A ramp of 1 kV per second across 1 kΩ, watched by a comparator against 2 mV: it crosses at 2 us.
+    fn crossing() -> CircuitBuilder {
+        let mut b = CircuitBuilder::new("crossing");
+        let gnd = b.ground();
+        let ramp = b.node("ramp");
+        let reference = b.node("ref");
+        b.device(vramp(), "ramp", &[], &[Port::Node(ramp.clone()), Port::Node(gnd.clone())]);
+        add_resistor(&mut b, "load", 1.0e3, &ramp, &gnd);
+        add_vsrc(&mut b, "vr", 2.0e-3, &reference, &gnd);
+        b.device(comparator(), "cmp", &[], &[Port::Node(ramp), Port::Node(reference), Circuits::net("above")]);
+        b
     }
 }
 
@@ -58,45 +94,28 @@ impl Run {
     fn landings(&self) -> u64 {
         StepEnd::ALL.iter().filter(|end| matches!(end, StepEnd::Landing(_))).map(|end| self.statistics().ended(*end)).sum()
     }
-}
 
-/// The transient of `builder`'s circuit to `stop` under `rule`, its observations kept.
-fn run(mut builder: CircuitBuilder, rule: TimePointRule, stop: f64, max_step: f64) -> Run {
-    builder.time_point_rule(rule);
-    let seen = Rc::new(RefCell::new(Vec::new()));
-    let mut solver = Solver::new(builder.build().expect("build"))
-        .with_context(Context::default())
-        .with_tran_opts(TransientAnalysisOptions::new(stop, max_step))
-        .with_sink(Box::new(Collect(Rc::clone(&seen))))
-        .build();
-    let result = solver.tran().expect("tran").solve().expect("solve");
-    drop(solver);
-    let seen = seen.borrow().clone();
-    Run { result, seen }
-}
-
-/// The open-loop fixture: `osc` (200 MHz) clocks a counter and a flip-flop; `slow` toggles every
-/// 400 edges and the flip-flop passes it on at the next rising edge to a D2A that charges an RC.
-fn open_loop() -> CircuitBuilder {
-    let mut b = CircuitBuilder::new("open loop");
-    let gnd = b.ground();
-    let o = b.node("o");
-    let c = b.node("c");
-    b.device(timer(), "osc", &[("half", ParamValue::Real(HALF_PERIOD))], &[net("clk")]);
-    b.device(counter(), "cnt", &[], &[net("clk"), net("n")]);
-    b.device(timer(), "slow", &[("half", ParamValue::Real(HALF_PERIOD * EDGES_PER_CHANGE))], &[net("d")]);
-    b.device(dff(), "ff", &[], &[net("clk"), net("d"), net("q")]);
-    b.device(dac(), "dac", &[("vref", ParamValue::Real(1.0))], &[net("q"), Port::Node(o.clone())]);
-    add_resistor(&mut b, "r1", 1.0e3, &o, &c);
-    add_capacitor(&mut b, "c1", 1.0e-9, &c, &gnd);
-    b
+    /// The transient of `builder`'s circuit to `stop` under `rule`, its observations kept.
+    fn under(mut builder: CircuitBuilder, rule: TimePointRule, stop: f64, max_step: f64) -> Run {
+        builder.time_point_rule(rule);
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let mut solver = Solver::new(builder.build().expect("build"))
+            .with_context(Context::default())
+            .with_tran_opts(TransientAnalysisOptions::new(stop, max_step))
+            .with_sink(Box::new(Collect(Rc::clone(&seen))))
+            .build();
+        let result = solver.tran().expect("tran").solve().expect("solve");
+        drop(solver);
+        let seen = seen.borrow().clone();
+        Run { result, seen }
+    }
 }
 
 #[test]
 fn the_open_loop_fixture_gives_the_same_observations_in_both_rules() {
     // TP-09 AC 1: every change, commit and fire, instant for instant and byte for byte
-    let observable = run(open_loop(), TimePointRule::Observable, STOP, 1.0e-7);
-    let declared = run(open_loop(), TimePointRule::Declared, STOP, 1.0e-7);
+    let observable = Run::under(Circuits::open_loop(), TimePointRule::Observable, STOP, 1.0e-7);
+    let declared = Run::under(Circuits::open_loop(), TimePointRule::Declared, STOP, 1.0e-7);
     assert!(observable.seen.len() > 1000, "the oscillator and the counter were observed");
     assert_eq!(observable.seen.len(), declared.seen.len());
     for (index, (a, b)) in observable.seen.iter().zip(&declared.seen).enumerate() {
@@ -108,7 +127,7 @@ fn the_open_loop_fixture_gives_the_same_observations_in_both_rules() {
 fn the_observations_of_both_rules_come_in_time_order() {
     // TP-09 AC 3: instants run in increasing order whichever rule decides the landings
     for rule in [TimePointRule::Observable, TimePointRule::Declared] {
-        let run = run(open_loop(), rule, STOP, 1.0e-7);
+        let run = Run::under(Circuits::open_loop(), rule, STOP, 1.0e-7);
         let times: Vec<f64> = run.seen.iter().map(|o| o.time).collect();
         assert!(times.windows(2).all(|w| w[0] <= w[1]), "{rule:?}: observations are out of time order");
     }
@@ -117,8 +136,8 @@ fn the_observations_of_both_rules_come_in_time_order() {
 #[test]
 fn the_declared_rule_lands_on_every_clock_edge_and_the_observable_rule_on_the_input_changes() {
     // TP-06 AC 3: 1400 edges; the D2A's input changes at the first rising edge after 1, 2 and 3 us
-    let declared = run(open_loop(), TimePointRule::Declared, STOP, 1.0e-7);
-    let observable = run(open_loop(), TimePointRule::Observable, STOP, 1.0e-7);
+    let declared = Run::under(Circuits::open_loop(), TimePointRule::Declared, STOP, 1.0e-7);
+    let observable = Run::under(Circuits::open_loop(), TimePointRule::Observable, STOP, 1.0e-7);
     assert_eq!(declared.landings(), 1400, "{:?}", declared.statistics());
     assert_eq!(observable.landings(), 3, "{:?}", observable.statistics());
     assert!(observable.result.len() < declared.result.len() / 10, "the skipped landings are skipped steps");
@@ -128,7 +147,7 @@ fn the_declared_rule_lands_on_every_clock_edge_and_the_observable_rule_on_the_in
 fn the_counter_counts_every_edge_in_both_rules() {
     // the instants nothing observes still run: the counter sees all 700 rising edges
     for rule in [TimePointRule::Observable, TimePointRule::Declared] {
-        let mut builder = open_loop();
+        let mut builder = Circuits::open_loop();
         builder.time_point_rule(rule);
         let mut circuit = builder.build().expect("build");
         circuit.transient(TransientAnalysisOptions::new(STOP, 1.0e-7), Context::default()).expect("tran").solve().expect("solve");
@@ -138,23 +157,10 @@ fn the_counter_counts_every_edge_in_both_rules() {
     }
 }
 
-/// A ramp of 1 kV per second across 1 kΩ, watched by a comparator against 2 mV: it crosses at 2 us.
-fn crossing() -> CircuitBuilder {
-    let mut b = CircuitBuilder::new("crossing");
-    let gnd = b.ground();
-    let ramp = b.node("ramp");
-    let reference = b.node("ref");
-    b.device(vramp(), "ramp", &[], &[Port::Node(ramp.clone()), Port::Node(gnd.clone())]);
-    add_resistor(&mut b, "load", 1.0e3, &ramp, &gnd);
-    add_vsrc(&mut b, "vr", 2.0e-3, &reference, &gnd);
-    b.device(comparator(), "cmp", &[], &[Port::Node(ramp), Port::Node(reference), net("above")]);
-    b
-}
-
 #[test]
 fn a_cross_is_located_in_both_rules() {
     let times = |rule| {
-        let run = run(crossing(), rule, 4.0e-6, 1.0e-6);
+        let run = Run::under(Circuits::crossing(), rule, 4.0e-6, 1.0e-6);
         run.seen.iter().filter(|o| o.kind == ObservationKind::Crossing && o.path == "cmp.up").map(|o| o.time).collect::<Vec<_>>()
     };
     let observable = times(TimePointRule::Observable);
@@ -173,7 +179,7 @@ fn a_bound_step_cap_applies_in_both_rules() {
         add_vsrc(&mut b, "v1", 1.0, &top, &gnd);
         add_resistor(&mut b, "r1", 1.0e3, &top, &gnd);
         b.device(capped(), "cc", &[("cap", ParamValue::Real(cap))], &[Port::Node(top.clone())]);
-        let run = run(b, rule, 1.0e-5, 1.0e-6);
+        let run = Run::under(b, rule, 1.0e-5, 1.0e-6);
         let times: Vec<f64> = run.result.iter().map(|step| step.time()).collect();
         let widest = times.windows(2).map(|w| w[1] - w[0]).fold(0.0, f64::max);
         assert!(widest <= cap * (1.0 + 1.0e-9), "{rule:?}: a step of {widest:e} s beat the cap");

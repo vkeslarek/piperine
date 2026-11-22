@@ -37,7 +37,9 @@ impl RecordSink for Discard {
 
 /// One run of the first 100 us.
 struct Run {
+    /// The rows the run printed.
     table: Table,
+    /// The accepted steps of the run.
     accepted_steps: u64,
     /// The accepted steps that ended on a landing, whatever its cause.
     landings: u64,
@@ -46,59 +48,65 @@ struct Run {
     /// The discrete instants it ran at accepted steps with no crossing, for what the discrete
     /// side held at the time.
     scheduled_instants: u64,
-
     /// The counts of `diagnosis.md` section 2, for the table of its "After".
     summary: String,
 }
 
-/// The run of the first 100 us with `max_step`.
-fn run_with(max_step: f64) -> Run {
-    let buck = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck");
-    let cache = tempfile::tempdir().expect("tmp");
-    let project = Project::at(&buck).unwrap_or_else(|f| panic!("{f}"));
-    let overrides = Overrides {
-        stop: Some(100e-6),
-        max_step: Some(max_step),
-        print_step: Some(0.5e-6),
-        print: ["buck.vout", "buck.ctl.reference", "mode"].map(String::from).to_vec(),
-        ..Overrides::default()
-    };
-    let spec = project.request(Some("startup"), &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = Session::open(&project, &spec, &Settings { rustc: None, cache: cache.path().to_path_buf() }).unwrap_or_else(|f| panic!("{f}"));
-    let table = session.run(Rc::new(RefCell::new(Discard))).unwrap_or_else(|f| panic!("{f}"));
-    let steps = session.statistics().expect("a transient leaves its statistics").steps();
-    let landings = StepEnd::ALL.iter().filter(|end| matches!(end, StepEnd::Landing(_))).map(|end| steps.ended(*end)).sum();
-    let analog = session.statistics().expect("a transient leaves its statistics").analog().clone();
-    let summary = format!(
-        "{} rejected by truncation, {} by Newton, {} retaken toward a crossing, {} ended on the controller's proposal, {} at max_step, {} jump steps",
-        analog.rejected_truncation, analog.rejected_newton, steps.retaken(), steps.ended(StepEnd::Proposal), steps.ended(StepEnd::MaxStep), analog.jump_steps
-    );
-    Run { table, accepted_steps: steps.accepted(), landings, crossing_instants: steps.instants_for(InstantCause::Crossing), scheduled_instants: steps.instants_for(InstantCause::Scheduled), summary }
+impl Run {
+    /// The run of the first 100 us with `max_step`.
+    fn with_max_step(max_step: f64) -> Run {
+        let buck = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck");
+        let cache = tempfile::tempdir().expect("tmp");
+        let project = Project::at(&buck).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides {
+            stop: Some(100e-6),
+            max_step: Some(max_step),
+            print_step: Some(0.5e-6),
+            print: ["buck.vout", "buck.ctl.reference", "mode"].map(String::from).to_vec(),
+            ..Overrides::default()
+        };
+        let spec = project.request(Some("startup"), &overrides).unwrap_or_else(|f| panic!("{f}"));
+        let mut session = Session::open(&project, &spec, &Settings { rustc: None, cache: cache.path().to_path_buf() }).unwrap_or_else(|f| panic!("{f}"));
+        let table = session.run(Rc::new(RefCell::new(Discard))).unwrap_or_else(|f| panic!("{f}"));
+        let steps = session.statistics().expect("a transient leaves its statistics").steps();
+        let landings = StepEnd::ALL.iter().filter(|end| matches!(end, StepEnd::Landing(_))).map(|end| steps.ended(*end)).sum();
+        let analog = session.statistics().expect("a transient leaves its statistics").analog().clone();
+        let summary = format!(
+            "{} rejected by truncation, {} by Newton, {} retaken toward a crossing, {} ended on the controller's proposal, {} at max_step, {} jump steps",
+            analog.rejected_truncation, analog.rejected_newton, steps.retaken(), steps.ended(StepEnd::Proposal), steps.ended(StepEnd::MaxStep), analog.jump_steps
+        );
+        Run { table, accepted_steps: steps.accepted(), landings, crossing_instants: steps.instants_for(InstantCause::Crossing), scheduled_instants: steps.instants_for(InstantCause::Scheduled), summary }
+    }
+
+    /// The two runs, made once for every test of this target: the run as the buck is run, and the
+    /// reference with a hundredth of the step.
+    fn pair() -> &'static (Run, Run) {
+        static RUNS: OnceLock<(Run, Run)> = OnceLock::new();
+        RUNS.get_or_init(|| {
+            let (run, reference) = (Run::with_max_step(1e-8), Run::with_max_step(1e-10));
+            eprintln!("buck accuracy: {} accepted steps ({} landings, {} instants run for crossings, {} scheduled) at max_step 1e-8, {} at 1e-10", run.accepted_steps, run.landings, run.crossing_instants, run.scheduled_instants, reference.accepted_steps);
+            eprintln!("buck accuracy: {}", run.summary);
+            (run, reference)
+        })
+    }
 }
 
-/// The two runs, made once for every test of this target: the run as the buck is run, and the
-/// reference with a hundredth of the step.
-fn runs() -> &'static (Run, Run) {
-    static RUNS: OnceLock<(Run, Run)> = OnceLock::new();
-    RUNS.get_or_init(|| {
-        let (run, reference) = (run_with(1e-8), run_with(1e-10));
-        eprintln!("buck accuracy: {} accepted steps ({} landings, {} instants run for crossings, {} scheduled) at max_step 1e-8, {} at 1e-10", run.accepted_steps, run.landings, run.crossing_instants, run.scheduled_instants, reference.accepted_steps);
-        eprintln!("buck accuracy: {}", run.summary);
-        (run, reference)
-    })
-}
+/// The columns of a printed table.
+struct Columns;
 
-/// The index of the column whose label is `name` or ends in `.name`.
-fn column(table: &Table, name: &str) -> usize {
-    let dotted = format!(".{name}");
-    table.columns.iter().position(|c| c == name || c.ends_with(&dotted)).unwrap_or_else(|| panic!("no column `{name}` in {:?}", table.columns))
+impl Columns {
+    /// The index of the column whose label is `name` or ends in `.name`.
+    fn index(table: &Table, name: &str) -> usize {
+        let dotted = format!(".{name}");
+        table.columns.iter().position(|c| c == name || c.ends_with(&dotted)).unwrap_or_else(|| panic!("no column `{name}` in {:?}", table.columns))
+    }
 }
 
 #[test]
 fn the_first_100_us_match_the_fine_reference_within_0_104_mv() {
-    let (run, reference) = runs();
+    let (run, reference) = Run::pair();
     assert_eq!(run.table.rows.len(), reference.table.rows.len(), "the same 0.5 us grid");
-    let at = column(&run.table, "vout");
+    let at = Columns::index(&run.table, "vout");
     let mut largest = (0.0_f64, 0.0_f64);
     for (row, fine) in run.table.rows.iter().zip(&reference.table.rows) {
         match (&row[0], &row[at], &fine[at]) {
@@ -117,9 +125,9 @@ fn the_first_100_us_match_the_fine_reference_within_0_104_mv() {
 
 #[test]
 fn the_digital_columns_equal_the_fine_reference_row_for_row() {
-    let (run, reference) = runs();
+    let (run, reference) = Run::pair();
     for name in ["reference", "mode"] {
-        let at = column(&run.table, name);
+        let at = Columns::index(&run.table, name);
         for (index, (row, fine)) in run.table.rows.iter().zip(&reference.table.rows).enumerate() {
             assert_eq!(row[at], fine[at], "{name} at row {index}");
         }
@@ -129,7 +137,7 @@ fn the_digital_columns_equal_the_fine_reference_row_for_row() {
 #[test]
 fn the_first_100_us_land_at_most_1000_times() {
     // TP-03 AC 6: only the instants something observes are landings
-    let (run, _) = runs();
+    let (run, _) = Run::pair();
     eprintln!("buck landings: {} in the first 100 us (limit {LANDING_BOUND})", run.landings);
     assert!(run.landings <= LANDING_BOUND, "{} landings in the first 100 us, limit {LANDING_BOUND}", run.landings);
 }
@@ -138,7 +146,7 @@ fn the_first_100_us_land_at_most_1000_times() {
 fn the_first_100_us_run_an_instant_only_where_something_is_due() {
     // TP-08 AC 2: an instant runs for a crossing or for a time the discrete side holds something
     // at, and a landing is the latter (a step that ends where nothing is due runs none)
-    let (run, _) = runs();
+    let (run, _) = Run::pair();
     let instants = run.crossing_instants + run.scheduled_instants;
     eprintln!(
         "buck instants: {instants} run in the first 100 us for {} accepted steps ({} for crossings, {} scheduled, {} landings; limit {INSTANT_BOUND})",
