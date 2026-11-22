@@ -402,7 +402,7 @@ impl Ctx<'_> {
                 Some((Resolution::Decl(found), visible))
             }
             // `Mode::WIDTH` reads a member of `Repr` through the enum (§2); a variant or an item of
-            // the enum's own named alike wins, and the checker refuses an enum without `Repr`.
+            // the enum's own named alike wins, and a carrier of an enum without `Repr` is `E0112`.
             DeclKind::Enum(_) => self
                 .variant(owner, name)
                 .or_else(|| self.associated(owner, name))

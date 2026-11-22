@@ -106,7 +106,7 @@ quotes the text after `P0001:` unless another code is shown.
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L4 | generic enums, and an enum used by value code without `#[derive(Repr)]` (§2: every enum is a value type; payload enums, `#[repr(uN)]`, explicit discriminants and a one-variant enum as a carrier run) | §2 rules 2, 5 | `enum `Shape` without `#[derive(Repr)]``, `generic enum` | `generics` GN-06 |
+| L4 | generic enums (`enum Tagged<T> { .. }`; §2: every other enum, a payload enum, `#[repr(uN)]`, explicit discriminants and an enum of one variant, is a value type, and the one a carrier holds derives `Repr`) | §2 rules 2, 5 | `generic enum` | `generics` GN-06 |
 | L7 | generic functions, `self` parameters, `impl` on a value type, user traits | §3 rule 9, §3.1 | `generic function`, `generic parameter used as a type` | L, with L30 |
 | L8 | `impl` on a nature (other than the stdlib's `impl Bit`); a function that takes a carrier or a node and probes it (a handle) | §3.1, §3 rule 7 | `method mv`; `E0450: a probe is allowed in an analog block and a module body only` | M |
 | L9 | a capturing closure passed to a user `fn` parameter (it needs an `Fn` bound: `generics` GN-01) | §3 rule 3 | `P0001` naming the form | with L7 |
@@ -393,9 +393,8 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
 | types#7 | L7 | `generics` | reached from a top, `mean` is `P0001` (a generic function over the length of an array); `smoothed`, over the `const` table `TAPS`, runs |
-| types#11 | L4 | `generics` | reached from a top, `area` is `P0001`: the enum `Shape` has variants with a payload |
 | types#16 | L7 | `generics` | reached from a top, `reads_high` is `P0001`: the method `switches_at` of an `impl` on the enum `Family` |
-| types#17 | L4 | `generics` | reached from a top, `range_of` is `P0001` (the enum has no `#[derive(Repr)]`; its range pattern is accepted) and `mean` is `P0001` (a generic function over an array, L7) |
+| types#17 | L7 | `generics` | reached from a top, `range_of` runs (an enum without `Repr` is a value; its range pattern is accepted) and `mean` is `P0001` (a generic function over an array) |
 | generics#1 | L7 | `generics` | the trait `Receiver` and its `impl`s are accepted and `Family::LEVELS` is read; a method (`switches_at`, the default `reads_high`) is `P0001` |
 | generics~872b633d | L7 | `generics` | a default body of a trait does not run: the method `reads_high` on `Family` is `P0001` |
 | generics#2 | L7 | `generics` | reached from a top, `pick`, `larger` and `overdrive` are `P0001`: a generic function |

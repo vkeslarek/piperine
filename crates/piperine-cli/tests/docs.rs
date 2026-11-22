@@ -486,7 +486,7 @@ fn gaps_drops_what_composite_values_phase_a_closed() {
     for stale in ["| L5 |", "| L6 |", "| L10 |"] {
         assert!(!book.contains(stale), "section 11 still names {stale}");
     }
-    assert!(book.contains("| types#17 | L4 |") && !book.contains("| analog#2 |"), "types#17 follows its remaining refusal and analog#2 runs");
+    assert!(book.contains("| types#17 | L7 |") && !book.contains("| types#11 |") && !book.contains("| analog#2 |"), "types#17 follows its remaining refusal, types#11 runs and analog#2 runs");
     // section 9: the rows of I §1-§2 and I §3-§3.3 no longer list the loops as a hole
     let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("section 9");
     let functions = coverage.lines().find(|l| l.starts_with("| I §3–§3.3 ")).expect("the coverage row of §3.3");
@@ -571,8 +571,8 @@ fn gaps_no_longer_lists_project_or_signal_flow_natures() {
 
 #[test]
 fn gaps_drops_what_composite_values_phase_b_closed() {
-    // composite-values CV-37 AC 1 (T63): L1, L2, L3 and L16 leave `GAPS.md`; L4 stays for generic enums (and an enum
-    // used as a value without `#[derive(Repr)]`), which wait on `generics` GN-06; `normal` leaves L58; the note
+    // composite-values CV-37 AC 1 (T63): L1, L2, L3 and L16 leave `GAPS.md`; L4 stays for generic enums only, which wait on `generics` GN-06 (an enum
+    // without `#[derive(Repr)]` runs as a value); `normal` leaves L58; the note
     // that enum variant names are not carried leaves section 4.7; section 9 follows
     let gaps = read("GAPS.md");
     for id in ["L1", "L2", "L3", "L16"] {

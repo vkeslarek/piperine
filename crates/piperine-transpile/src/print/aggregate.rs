@@ -118,7 +118,12 @@ impl ValuePrinter<'_> {
         let chosen = variants.get(variant as usize).ok_or_else(|| self.unsupported(e, "a variant out of range"))?;
         let types: Vec<ValueType> = chosen.fields.iter().map(|(_, ty)| ty.clone()).collect();
         let values = self.parts(fields, &types)?;
-        let name = format!("{}::{}", TypeItems::new(self.ir).name(ty), Text::ident(&chosen.name));
+        let items = TypeItems::new(self.ir);
+        // an enum that holds a real is generic over it, and a variant that holds none (`Dot`) names no real
+        // for Rust to infer: it is written on the instance, `Shape::<f64>::Dot`
+        let real = if self.plain { "f64" } else { "R" };
+        let owner = if items.holds_real(&ValueType::Enum(ty)) { format!("{}::<{real}>", items.name(ty)) } else { items.name(ty).to_string() };
+        let name = format!("{owner}::{}", Text::ident(&chosen.name));
         Ok(Piece::new(self.constructed(&name, chosen.form, &chosen.fields, &values), Prec::Atom))
     }
 

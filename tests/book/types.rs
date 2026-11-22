@@ -127,14 +127,13 @@ fn an_impl_gives_a_type_its_constants_and_functions() {
 
 #[test]
 fn the_listings_still_on_the_way_are_refused_where_a_top_reaches_them() {
-    // types#7 (refused, L3): `mean`, generic over the length; types#11 (refused, L4): `Shape`, an enum with
-    // fields and no `Repr`; types#16 (refused, L7): the method `switches_at`. (types#6, the tuple `ordered`, and
-    // types#12, the structs `Reading` and `Volts`, run since composite-values T48 to T51, and the table `TAPS`
-    // with `smoothed` of types#7 since T55: see `tuples_and_structs_run_where_a_top_reaches_them` and
-    // `a_table_const_runs_where_a_top_reaches_it`.)
+    // types#7 (refused, L3): `mean`, generic over the length; types#16 (refused, L7): the method `switches_at`.
+    // (types#6, the tuple `ordered`, and types#12, the structs `Reading` and `Volts`, run since composite-values
+    // T48 to T51, the table `TAPS` with `smoothed` of types#7 since T55, and types#11, the enum `Shape` with
+    // fields and no `Repr`, since composite-values finding 3: see `tuples_and_structs_run_where_a_top_reaches_them`,
+    // `a_table_const_runs_where_a_top_reaches_it` and `an_enum_without_repr_runs_as_a_value`.)
     // When one of them runs this test fails and its row moves to `run`
     Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = mean(TAPS));"), "types#7", "P0001", "generic function is not supported yet");
-    Refusal::expect(Reached::run("types#11", "", "emit!(\"r\", s = area(Shape::Circle(1.0)));"), "types#11", "P0001", "enum `Shape` without `#[derive(Repr)]` is not supported yet");
     let family = "#[derive(PartialEq, Repr)]\nenum Family { Cmos, Ttl }\n";
     Refusal::expect(Reached::run("types#16", family, "emit!(\"r\", s = reads_high(Family::Cmos, 2.0, 3.3));"), "types#16", "P0001", "method `switches_at` on `enum `Family`` is not supported yet");
 }
@@ -149,6 +148,17 @@ fn tuples_and_structs_run_where_a_top_reaches_them() {
     let scaled = ValueFile::only(Chapter::read().wrapped("reached.msl", "", "types#12", &Reached::top(statements)).run(Reached::overrides()), "r");
     Printed::holds("1.500000e0", Fields::real(&scaled, "s"), "scaled");
     ValueFile::flag(&scaled, "ok", true);
+}
+
+#[test]
+fn an_enum_without_repr_runs_as_a_value() {
+    // types#11 (run, composite-values CV-11 AC 1, part I section 1.3 and 2: every enum is a value type): `area` of the
+    // chapter takes an enum with fields and no `Repr` apart by `match`; a signal needs `Repr`, a value does not
+    let areas = "let c = area(Shape::Circle(1.0)); let r = area(Shape::Rect { w: 2.0, h: 3.0 }); let d = area(Shape::Dot); emit!(\"r\", circle = c, rect = r, dot = d);";
+    let record = ValueFile::only(Chapter::read().wrapped("reached.msl", "", "types#11", &Reached::top(areas)).run(Reached::overrides()), "r");
+    Printed::holds("3.141593e0", Fields::real(&record, "circle"), "circle");
+    Printed::holds("6.000000e0", Fields::real(&record, "rect"), "rect");
+    Printed::holds("0.000000e0", Fields::real(&record, "dot"), "dot");
 }
 
 #[test]
@@ -168,7 +178,6 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
     // T48 to T51, `tuples_and_structs_run_where_a_top_reaches_them`)
     let level = "#[derive(PartialEq, Repr)] enum Z { A, B }";
     for (items, statements, named) in [
-        ("#[derive(PartialEq)] enum Lv { Low, High }", "let a = Lv::Low; emit!(\"r\", y = a == Lv::Low);", "enum `Lv` without `#[derive(Repr)]` is not supported yet"),
         (level, "emit!(\"r\", y = Z::B.next() == Z::A);", "method `next` on `enum `Z`` is not supported yet"),
     ] {
         let items = if statements.contains(".next()") { format!("{items}\nimpl Z {{ fn next(self) -> Z {{ match self {{ Z::A => Z::B, Z::B => Z::A }} }} }}") } else { items.to_string() };
@@ -188,15 +197,14 @@ fn e0161_an_enum_has_no_other_variant() {
 #[test]
 fn the_forms_still_on_the_way_are_refused_where_the_solver_reaches_them() {
     // types#17 (refused): the chapter's `range_of` and `mean`, the example of its part on what runs today. A function nothing reaches is accepted
-    // (GAPS.md S3); one the top reaches is `P0001`: the enum has no `#[derive(Repr)]`, `mean` is a generic function
-    // (L7); the range pattern of a `match` arm (L6) is accepted since composite-values T14. When one of
-    // them runs this test fails and the row moves to `run`
+    // (GAPS.md S3); one the top reaches runs, an enum without `Repr` being a value (composite-values CV-11) and the range
+    // pattern of a `match` arm since T14, except `mean`, a generic function (L7). When it runs this test fails and the
+    // row moves to `run`
     let chapter = Chapter::read();
     let reaching = |call: &str| chapter.wrapped("carry.msl", "", "types#17", &format!("module Top() {{ }}\ndigital for Top {{ on at(1u) {{ {call} }} }}\n"));
     let overrides = || Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2e-6), ..Overrides::default() };
-    let range = Refusal::of(reaching("let z = range_of(3);").run(overrides()), "types#17");
-    assert!(!range.iter().any(|(_, message)| message.contains("range pattern")), "a range pattern is accepted: {range:?}");
-    assert!(range.contains(&("P0001".to_string(), "enum `Range` without `#[derive(Repr)]` is not supported yet".to_string())), "{range:?}");
+    let ran = reaching("let z = range_of(3);").run(overrides());
+    assert!(ran.is_ok(), "`range_of` runs: an enum without `Repr` is a value and a range pattern an arm");
     Refusal::expect(reaching("let z = mean([1.0, 2.0]);").run(overrides()), "types#17", "P0001", "generic function is not supported yet");
 }
 

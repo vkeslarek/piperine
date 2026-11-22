@@ -109,16 +109,14 @@ fn unit_enums_and_their_variants_are_typed() {
 }
 
 #[test]
-fn an_enum_outside_the_subset_is_p0001() {
-    // DIG-03 AC 2: an enum that does not derive `Repr` is `P0001`; a payload, an explicit discriminant
-    // and `#[repr]` are accepted since composite-values T41 (payload_enums_build_and_match,
-    // a_discriminant_that_does_not_fit_or_repeats_is_e0111).
-    for (items, names) in [("#[derive(PartialEq)]\nenum E { A, B }", "#[derive(Repr)]")] {
-        let (src, d) = diagnostics(items, "let x = E::B;");
-        assert_eq!(codes(&d), ["P0001"], "{src}");
-        assert!(d[0].diagnostic.message.contains(names), "{src}: {}", d[0].diagnostic.message);
-        assert_eq!(snippet(&src, &d[0]), "E::B", "{src}");
-    }
+fn an_enum_that_derives_no_repr_is_a_value() {
+    // DIG-03 AC 2 as amended by composite-values CV-11 (part I section 1.3 and 2: every enum is a value type): an enum
+    // that does not derive `Repr` is built and compared like any other, and only a carrier of it needs the `Repr`
+    // (`a_carried_type_without_repr_is_e0112`); a payload, an explicit discriminant and `#[repr]` are accepted since
+    // composite-values T41.
+    let src = source("#[derive(PartialEq)]\nenum E { A, B }", "let x = E::B; let y = x == E::A;");
+    let design = design_of(&src);
+    checked(&design, &src);
 }
 
 #[test]

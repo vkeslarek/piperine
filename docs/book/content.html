@@ -1069,7 +1069,7 @@ fn reads_high(f: Family, v: f64, vdd: f64) -> bool { v > f.switches_at(vdd) }</p
 
 <h3>What the compiler runs today</h3>
 
-<p>The rules of this chapter are the language. The compiler does not yet run every form they describe. This function pair is correct MSL, and it uses three forms that are still on the way: an enum that derives no <code>Repr</code>, a range pattern, and a function over a table of any length.</p>
+<p>The rules of this chapter are the language. The compiler does not yet run every form they describe. This function pair is correct MSL, and it uses a form that is still on the way: a function over a table of any length.</p>
 
 <pre data-lang="msl">#[derive(PartialEq)]
 enum Range { Low, Mid, High }
@@ -1090,8 +1090,8 @@ fn mean<const N: usize>(xs: [f64; N]) -> f64 {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Running today: <code>Option</code> as a local, a parameter and a constant, with its methods, <code>match</code> and <code>if let</code>; optional parameters; tuples, arrays and structs as values, built, read, assigned and matched; enums that derive <code>Repr</code>, with or without fields and with a number given to a variant, matched and compared; the constants of an <code>impl</code> and its functions that take no <code>self</code>; <code>use</code> and <code>pub</code>. Everything the three files above use is in that list.</p>
-  <p>Parsed and checked, and not run yet: an enum without <code>Repr</code>, an array in a constant, and methods that take <code>self</code>. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
+  <p>Running today: <code>Option</code> as a local, a parameter and a constant, with its methods, <code>match</code> and <code>if let</code>; optional parameters; tuples, arrays and structs as values, built, read, assigned and matched; enums, with or without fields and with a number given to a variant, matched and compared (an enum a signal carries derives <code>Repr</code>); the constants of an <code>impl</code> and its functions that take no <code>self</code>; <code>use</code> and <code>pub</code>. Everything the three files above use is in that list.</p>
+  <p>Parsed and checked, and not run yet: functions generic over a length, and methods that take <code>self</code>. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.</p>
 </div>
 
 <div class="callout mistake">

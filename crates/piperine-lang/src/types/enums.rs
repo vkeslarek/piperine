@@ -24,8 +24,8 @@ pub struct EnumTag {
 
 impl Checker<'_> {
     /// The type of the enum `decl` named at `span` of `file`: [`Ty::Enum`] when its variants and
-    /// their fields are typed, else a diagnostic and `None` (a generic enum or one without
-    /// `#[derive(Repr)]` is outside the subset; a duplicate variant or field and a self-containing
+    /// their fields are typed, else a diagnostic and `None` (a generic enum is outside the subset; a
+    /// carrier needs `#[derive(Repr)]`, checked where a carrier takes it; a duplicate variant or field and a self-containing
     /// type are `E0186`; a discriminant that does not fit or repeats is `E0111`).
     pub(super) fn enum_type(&mut self, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
         let data = self.design.decl_data(decl).clone();
@@ -42,10 +42,6 @@ impl Checker<'_> {
         }
         if self.declaring.contains(&decl) {
             return self.cyclic_type(decl, file, span);
-        }
-        if !self.derives(decl, "Repr") {
-            self.unsupported(file, span, &format!("enum `{name}` without `#[derive(Repr)]`"));
-            return None;
         }
         self.declaring.insert(decl);
         let declared = self.declare_enum(decl, file, span);
