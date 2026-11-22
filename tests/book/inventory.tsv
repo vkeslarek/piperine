@@ -804,3 +804,5 @@ claim	values~14a2d197	14a2d197a5fc8548	prose	-	-	A host prints a four-state cell
 claim	values~34ab1b88	34ab1b88caa53266	prose	-	-	A Logic is not a number, so it reaches an analog block through a function that returns one: x.to_volts(vdd) gives vdd for 1, 0 for 0 and half of vdd for x and z, and x.is_high() gives a bool.
 claim	values~13ffaea6	13ffaea64643a8e3	unraised	piperine/book_values::e0187_and_e0180_are_not_raised_yet	S8	Using a Logic where an f64 or a bool is required is error E0180.
 claim	values~39ba3a1d	39ba3a1dbc121c32	unraised	piperine/book_values::e0187_and_e0180_are_not_raised_yet	S8	E0187
+claim	generics~8faad162	8faad162d3b6c3df	prose	-	-	Each trait names the type of its result, so an operator need not give back what it took: Logic is a library struct whose impl BitAnd for Logic<N> follows the four-state table, and its == gives a Logic because its PartialEq says so.
+claim	language~e9d4432f	e9d4432f923f1d51	prose	-	-	A value whose levels may be 0, 1, x or z, like a Verilog wire.

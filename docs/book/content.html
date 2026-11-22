@@ -427,7 +427,7 @@ print_step = 1e-6</pre>
 <tr><td>scaled float</td><td><code>4.7k</code> <code>10n</code> <code>1M</code></td><td>An SI suffix multiplies by a power of ten. The result is always a float.</td></tr>
 <tr><td>boolean</td><td><code>true</code> <code>false</code></td><td></td></tr>
 <tr><td>string</td><td><code>"overrange"</code></td><td>Text for names and messages. Strings are constants: there is no string arithmetic.</td></tr>
-<tr><td>unknown</td><td><code>Unknown</code></td><td>The value of a signal nothing has driven yet. Chapter 5 is about it.</td></tr>
+<tr><td>four-state logic</td><td><code>Logic</code></td><td>A value whose levels may be 0, 1, <code>x</code> or <code>z</code>, like a Verilog wire. Chapter 5 is about it.</td></tr>
 </tbody></table></div>
 
 <p>The SI suffixes are the ones on a schematic, and they are case-sensitive: <code>m</code> is milli and <code>M</code> is mega.</p>
@@ -491,7 +491,7 @@ time
 
 <p><code>usize</code> is another name for <code>u64</code>, on every machine: it is the type of a count or of a position in a table, and a result never depends on the computer that runs the model. Chapter 3 adds the types built from these: tuples, arrays, <code>Option</code>, and the structs and enums you declare.</p>
 
-<p>Four rules decide the type of what you write.</p>
+<p>Four rules decide the type of what you write, and one fact about the numbers is worth knowing before the first register: <strong>a number has no default value</strong>. In many languages <code>u8::default()</code> is 0, and a variable left unset starts there. In MSL <code>u8::default()</code> does not exist, and neither does one for <code>bool</code>, for the other integers or for the floats, because zero is a value like any other and a register with no reset value has no meaning a number could express. A register of a number is always given its first value, <code>signal n: Bit&lt;u8&gt; = 0;</code>, and chapter 5 shows the types that do have a default.</p>
 
 <ol class="steps">
 <li><strong>A literal takes the type its place asks for.</strong> In <code>let a: u8 = 250;</code> the literal is a <code>u8</code>. With nothing to decide it, an integer literal is an <code>i32</code> and a float literal an <code>f64</code>. A literal too large for its type is the error E0909, found before the run.</li>
@@ -729,7 +729,7 @@ fn sum_below(n: u32) -> u32 {
 
 <h3>A value that may be absent: <code>Option</code></h3>
 
-<p>Some values do not always exist: a limit the user may leave unset, the time of a crossing that may never happen. MSL has no null and does not ask you to reserve a number such as −1 for "nothing". The type says it: an <code>Option&lt;T&gt;</code> is either <code>Some(x)</code>, holding an <code>x</code> of type <code>T</code>, or <code>None</code>.</p>
+<p>Some values do not always exist: a limit the user may leave unset, the time of a crossing that may never happen. MSL has no null and does not ask you to reserve a number such as −1 for "nothing". Absence is always an <code>Option</code>, wherever it appears: a parameter, a signal, a result. The type says it: an <code>Option&lt;T&gt;</code> is either <code>Some(x)</code>, holding an <code>x</code> of type <code>T</code>, or <code>None</code>.</p>
 
 <p>An <code>Option&lt;f64&gt;</code> is not an <code>f64</code>, so it cannot be added or compared by accident. You get to the value inside in one of three ways:</p>
 
@@ -1061,6 +1061,7 @@ fn reads_high(f: Family, v: f64, vdd: f64) -> bool { v > f.switches_at(vdd) }</p
 <tr><td>A character type</td><td>Strings exist only whole, as literals of type <code>str</code>.</td></tr>
 <tr><td><code>macro_rules!</code>, <code>println!</code>, <code>format!</code></td><td>Only two built-in <code>!</code> forms: <code>emit!</code> for output and <code>include_str!</code> for data (E0901).</td></tr>
 <tr><td>Default values in a function signature; two functions of one name</td><td>Trailing <code>Option&lt;T&gt;</code> parameters, which may be left out or named.</td></tr>
+<tr><td>A default value for a number (<code>u8::default()</code>); a register that starts at zero because nobody said otherwise</td><td>The first value, written. A value that may be absent is an <code>Option</code>; one that may be undetermined is a <code>Logic</code> (chapter 5).</td></tr>
 <tr><td>Type aliases</td><td>The type, written out.</td></tr>
 <tr><td>Visibility levels between private and public</td><td><code>pub</code> or nothing.</td></tr>
 </tbody></table></div>
@@ -1196,13 +1197,15 @@ impl Receiver for Ratio {
 <tbody>
 <tr><td><code>PartialEq</code></td><td><code>==</code> and <code>!=</code>.</td><td>derived, or written</td></tr>
 <tr><td><code>PartialOrd</code></td><td><code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>: variants in the order declared, fields first to last.</td><td>derived, or written</td></tr>
-<tr><td><code>Default</code></td><td><code>T::default()</code>: zero, <code>false</code>, <code>None</code>, and for a struct the default of each field.</td><td>derived on a struct</td></tr>
+<tr><td><code>Default</code></td><td><code>T::default()</code>, the value of "nothing yet": <code>None</code> for an <code>Option</code>, <code>x</code> on every level for a <code>Logic</code>, and for a struct, a tuple or an array the default of each part. Numbers and <code>bool</code> have none.</td><td>derived on a struct whose fields all have it</td></tr>
 <tr><td><code>Repr</code></td><td>A layout as bits, which is what allows a signal to carry the type. Chapter 5.</td><td>derived, or written for a special encoding</td></tr>
 <tr><td><code>Nature</code></td><td>Marks a kind of signal. Chapter 6.</td><td>by declaring a <code>nature</code></td></tr>
 <tr><td><code>Fn(A, B) -&gt; R</code></td><td>Can be called with those arguments. The last part of this chapter.</td><td>every function and closure has it</td></tr>
 </tbody></table></div>
 
-<p>The built-in types have what fits them: numbers and <code>bool</code> have every trait of the first five rows, and an <code>Option&lt;T&gt;</code>, a tuple or an array has each of them when its parts do.</p>
+<p>The built-in types have what fits them: numbers and <code>bool</code> have the traits of the other rows but not <code>Default</code>, an <code>Option&lt;T&gt;</code> has <code>Default</code> whatever <code>T</code> is, and a tuple or an array has each trait when its parts do.</p>
+
+<p><strong>Operators are traits too.</strong> A type has the operator <code>&amp;</code> when it implements <code>BitAnd</code>, <code>|</code> with <code>BitOr</code>, <code>^</code> with <code>BitXor</code>, <code>!</code> with <code>Not</code>, the shifts with <code>Shl</code> and <code>Shr</code>, and <code>==</code> with <code>PartialEq</code>. Each trait names the type of its result, so an operator need not give back what it took: <code>Logic</code> is a library struct whose <code>impl BitAnd for Logic&lt;N&gt;</code> follows the four-state table, and its <code>==</code> gives a <code>Logic</code> because its <code>PartialEq</code> says so. A type of your own gets <code>a &amp; b</code> the same way: <code>impl BitAnd for Flags { fn bitand(self, r: Flags) -&gt; Flags { Flags { bits: self.bits &amp; r.bits } } }</code>. Arithmetic and ordering have no trait; they belong to the numbers and to a derived <code>PartialOrd</code>.</p>
 
 <h3>Generic functions</h3>
 
@@ -1331,7 +1334,7 @@ fn widened<const N: usize>(xs: [f64; N]) -> [f64; N + 1] {
 <thead><tr><th>Construct</th><th>Written</th><th>Means</th></tr></thead>
 <tbody>
 <tr><td>a kind of signal</td><td><code>nature Bit&lt;T: Repr = bool&gt;</code></td><td>A digital wire that carries any type with a layout in bits: <code>Bit</code>, <code>Bit&lt;u8&gt;</code>, <code>Bit&lt;Family&gt;</code>. Chapter 6.</td></tr>
-<tr><td>a module over a type</td><td><code>module Dff&lt;T: Repr&gt;(in clk: Bit, in d: Bit&lt;T&gt;, out q: Bit&lt;T&gt;)</code></td><td>One register for every type a wire can carry. Chapter 9.</td></tr>
+<tr><td>a module over a type</td><td><code>module Dff&lt;T: Repr + Default&gt;(in clk: Bit, in d: Bit&lt;T&gt;, out q: Bit&lt;T&gt;)</code></td><td>One register for every type a wire can carry and that has a first value of its own. Chapter 9.</td></tr>
 <tr><td>a module over a size</td><td><code>module Ladder&lt;const N: usize&gt;(a: Electrical, b: Electrical) where N &gt;= 1</code></td><td>A netlist with <code>N</code> sections, placed as <code>Ladder::&lt;4&gt;(x, y)</code>. Chapter 7.</td></tr>
 </tbody></table></div>
 

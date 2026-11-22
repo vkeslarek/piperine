@@ -6,7 +6,7 @@ content = (HERE / "content.html").read_text()
 KW = set("""module nature signal on out flip after in extern analog digital for fn let mut pub use mod
 crate self super Self struct enum impl trait const if else match while loop return where as true false
 break continue type static unsafe dyn async ref move""".split())
-CONSTS = {"Some", "None", "Unknown", "gnd", "Static", "Dc", "Transient", "Tran", "Ac", "Noise"}
+CONSTS = {"Some", "None", "gnd", "Static", "Dc", "Transient", "Tran", "Ac", "Noise"}
 PRIM = set("bool f16 f32 f64 f128 usize isize str u1 u2 u3 u4 u5 u8 u10 u16 u32 u64 u128 i2 i8 i16 i32 i40 i64 i128".split())
 
 TOK = re.compile(r"""
