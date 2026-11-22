@@ -232,6 +232,25 @@ A mixed-signal transient of the buck converter takes about 6 million accepted st
 
 ---
 
+### P2: The analog time stays exact over a long run
+
+**User Story**: As a host that runs an hour of simulated time at the default 1 fs resolution, I want every tick to be told apart from its neighbours, so that a step of a few ticks is not a zero-length step and no stopgap floor moves an event.
+
+**Why P2**: Past 2^52 ticks (about 4.5 s) an `f64` of seconds cannot name adjacent ticks. T25 built the answer (user, 2026-11-21: "faz reescale em long run" and "Ok, topo") and had no requirement; added by the verification round (finding F14); no approved criterion is edited.
+
+**TP-11** (the tick epoch)
+
+**Acceptance Criteria**:
+
+1. WHEN a transient runs past 2^52 ticks THEN every time the owner gives the analog side SHALL be a small, exact number of seconds since an epoch the owner moves to the tick just accepted.
+2. WHEN a step is one tick long past 2^52 ticks THEN the analog side SHALL be given a step of exactly one tick.
+3. WHEN a transient stays under 2^52 ticks THEN no epoch SHALL move and every time given SHALL equal the absolute time, bit for bit.
+4. WHEN a one-hour transient runs at the default resolution THEN every clock edge SHALL land within the `f64` resolution of its time, and every crossing SHALL lie where a located crossing may: its value under `etol`, or within `ttol` of it, plus a tick.
+
+**Independent Test**: `cargo test -p piperine-solver --test protocol_epoch`; `cargo test -p piperine-api --test options`.
+
+---
+
 ### P3: The counts say the rule they were taken under
 
 **User Story**: As a reader of the step counts, I want to know which landing rule produced them, so that the buck's counts are not read against a baseline taken under the other rule.
@@ -275,9 +294,10 @@ A mixed-signal transient of the buck converter takes about 6 million accepted st
 | TP-08 | P2: a step costs less | Tasks | In Tasks |
 | TP-09 | P1: nothing else moves | Tasks | In Tasks |
 | TP-10 | P3: the documents say what is true | Tasks | In Tasks |
+| TP-11 | P2: the analog time stays exact over a long run | Tasks | In Tasks |
 | TP-12 | P3: the counts say the rule they were taken under | Tasks | In Tasks |
 
-**Coverage:** 11 total, 11 mapped to tasks, 0 unmapped.
+**Coverage:** 12 total, 12 mapped to tasks, 0 unmapped.
 
 ---
 

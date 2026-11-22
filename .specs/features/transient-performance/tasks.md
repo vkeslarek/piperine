@@ -26,6 +26,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run parity**: `cargo test -p piperine-parity`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run grid**: `cargo test -p piperine-solver --test parity_baseline`
+**Run epoch**: `cargo test -p piperine-solver --test protocol_epoch`
+**Run options**: `cargo test -p piperine-api --test options an_hour`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run docs**: `cargo test -p piperine-cli --test docs`
 
@@ -840,6 +842,18 @@ Proof: `git diff --quiet origin/main -- crates/piperine-parity/tests crates/pipe
 **C49** - `buck_long` prints the landing rule its counts were taken under, the solver's default (TP-12, AC 1; fix round F10)
 Proof: run bucklong | test the_statistics_of_the_whole_start_are_reported ... ok
 
+**C50** - Past 2^52 ticks the analog side is given small times since an epoch the owner moves (TP-11, AC 1; T25)
+Proof: run epoch | test past_2_52_ticks_the_analog_side_is_told_small_times_since_the_epoch ... ok
+
+**C51** - A step of one tick past 2^52 ticks is one tick long (TP-11, AC 2; T25)
+Proof: run epoch | test a_step_of_one_tick_is_one_tick_long_past_2_52_ticks ... ok
+
+**C52** - A run under 2^52 ticks never moves its epoch (TP-11, AC 3; T25)
+Proof: run epoch | test a_run_under_2_52_ticks_never_moves_its_epoch ... ok
+
+**C53** - An hour at 1 fs lands every clock edge to the `f64` resolution and every crossing within its `etol` or `ttol` plus a tick (TP-11, AC 4; T25)
+Proof: run options | test an_hour_long_transient_runs_at_the_default_resolution ... ok
+
 ---
 
 ## Handoff
@@ -1000,3 +1014,8 @@ Execution is strictly sequential - there is no intra-phase parallelism.
 - **What**: the epoch representation in the analog side and the protocol; remove `min_advance()` and its guard.
 - **Done when**: a 20 s, a 100 s and a 1 h transient at the default 1 fs land every event on its tick (the existing tests in `crates/piperine-api/tests/options.rs` and the pump tolerance fixture in `crates/piperine-cli/tests/options.rs` pass without the stopgap); every result under 4.5 s is byte-identical (twins, transpile goldens, integrated targets, Book listings); no tolerance or contract changes; the tick stays 1 fs and no spec text changes.
 - **Gate**: Build line, `cargo test -p piperine-solver`, the integrated targets, the parity targets with ngspice present.
+
+**Requirement**: TP-11
+
+**Tests**: unit, integration
+**Gate**: full

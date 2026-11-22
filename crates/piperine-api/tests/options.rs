@@ -379,13 +379,13 @@ impl LongRun {
         }
     }
 
-    /// Runs and checks the digital clock (every half second, from 0) and the sine's rising
-    /// crossing of one half (at `k + 1/12` s) both land on time.
-    fn assert_events_on_time(&self) {
-        let clock: Vec<f64> = (0..=2 * self.seconds).map(|k| k as f64 / 2.0).collect();
-        self.assert_on_time("clock", &clock, 1e-9);
+    /// Runs and checks the digital clock (every half second, from 0) lands within `clock` seconds
+    /// of its edges and the sine's rising crossing of one half (at `k + 1/12` s) within `crossing`.
+    fn assert_events_on_time(&self, clock: f64, crossing: f64) {
+        let edges: Vec<f64> = (0..=2 * self.seconds).map(|k| k as f64 / 2.0).collect();
+        self.assert_on_time("clock", &edges, clock);
         let crossings: Vec<f64> = (0..self.seconds).map(|k| k as f64 + 1.0 / 12.0).collect();
-        self.assert_on_time("rise", &crossings, 1e-6);
+        self.assert_on_time("rise", &crossings, crossing);
     }
 }
 
@@ -393,19 +393,24 @@ impl LongRun {
 fn a_twenty_second_transient_runs_at_the_default_resolution() {
     // §15 T1-T4: at 1 fs a tick is finer than an f64 second past 2^52 ticks (4.5 s); the analog
     // side counts its time from a tick epoch (T25), so a run past 8 s still lands its events
-    LongRun { seconds: 20, past: 0.0 }.assert_events_on_time();
+    LongRun { seconds: 20, past: 0.0 }.assert_events_on_time(1e-9, 1e-6);
 }
 
 #[test]
 fn a_hundred_second_transient_runs_at_the_default_resolution() {
-    LongRun { seconds: 100, past: 0.0 }.assert_events_on_time();
+    LongRun { seconds: 100, past: 0.0 }.assert_events_on_time(1e-9, 1e-6);
 }
 
 #[test]
 fn an_hour_long_transient_runs_at_the_default_resolution() {
-    // T25: the analog time is a tick epoch plus a small offset, so 3.6e18 ticks (an hour at 1 fs)
-    // land every clock edge and every crossing on its tick
-    LongRun { seconds: 3600, past: 1e-6 }.assert_events_on_time();
+    // T25 (TP-11): the analog time is a tick epoch plus a small offset, so 3.6e18 ticks (an hour at
+    // 1 fs) land every clock edge on its tick, to the 4.5e-13 s an `f64` of 3600 s can say (the
+    // stopgap this replaced moved a step by 0.1 ns and fails it), and every crossing where a
+    // located crossing may lie: its value under the default `etol` (the 1 uV `vntol`) on the
+    // sine's slope at one half, or within the default `ttol` of 1 ps, plus a tick
+    let slope = 2.0 * std::f64::consts::PI * (std::f64::consts::PI / 6.0).cos();
+    let crossing = 1e-6 / slope + 1e-12 + 1e-15;
+    LongRun { seconds: 3600, past: 1e-6 }.assert_events_on_time(1e-12, crossing);
 }
 
 /// The rule the digital engine of the session of `THERMOMETER` was bound with, the host having set
