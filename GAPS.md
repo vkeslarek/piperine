@@ -22,16 +22,16 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 3 silent, 2 broken, 36 loud (L1 to L62 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure` and the one `unknown-semantics-events` (L52) closed, then L20 and L39 by `params-and-io` and L22 and L23 by `resolved-nets`, in six tables) plus
+**Counts.** 3 silent, 2 broken, 35 loud (L1 to L62 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure` and the one `unknown-semantics-events` (L52) closed, then L20 and L39 by `params-and-io` and L22 and L23 by `resolved-nets`, then L59 by `explicit-unknowns`, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 9 unproven.
 
 | Section | Ids |
 | ------- | --- |
 | §2 Broken | B3, B4 |
-| §3 Silent (read this first) | S3, S6, S7 |
-| §4 Loud | L1–L62 (L11, L14, L15, L17, L18, L19, L20, L39, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L22, L23 closed) |
-| §5 Spec holes and disagreements | G1–G6 (the buck's), X1, X2, X6 (X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
+| §3 Silent (read this first) | S3, S7, S8 (S6 closed by `explicit-unknowns`) |
+| §4 Loud | L1–L62 (L11, L14, L15, L17, L18, L19, L20, L39, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L22, L23, L59 closed) |
+| §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X1, X2, X6 (X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
 | §6 Solver, numerics, performance | V12, V13, V16 |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
 | §8 Unproven | U1–U11 (U5, U10 closed by `root-e2e`) |
@@ -51,7 +51,7 @@ change of the IR or the ABI.
 | backends | IR → Rust → `rustc` → device library: everything the checker accepts. The interpreter is frozen at the M1 analog subset (R1) |
 | analyses from a host | `op`, `dc` (one sweep), `ac`, `transient`; on both backends for the 7 ngspice twins |
 | digital and mixed-signal | on the Rust backend only: `examples/buck` whole, closed loop at 0.8 V (`buck_closed_loop`, `buck_long`), scenarios S2 to S10 on the Rust host (`buck_scenarios`) |
-| stdlib that runs | `known`, `known_or`, `is_known`, `rise`, `fall`, `high`, `init`, `every`, `settle`, `vt`, `pnjlim`, `fetlim`, `deltalim`, `limexp`, `above`, `last_crossing`, `transition`, `D2A`, `A2D`, `Never`, `State`, `log`, `require`, `cover`, `target`, the six constants. About 29 of the 75 names of the §22 index |
+| stdlib that runs | `rise`, `fall`, `init`, `every`, `settle`, `vt`, `pnjlim`, `fetlim`, `deltalim`, `limexp`, `above`, `last_crossing`, `transition`, `D2A`, `A2D`, `Never`, `State`, `log`, `require`, `cover`, `target`, the six constants. About 29 of the 75 names of the §22 index |
 | command line and host library | `check`, `build`, `run`, `test`, `new`, `clean`, `fmt`; tables, record lines, CSV, JSON Lines, SVG; `--param` before a run; a transient keeps rows, not steps: `piperine run startup` in `examples/buck` prints the whole 600 µs start |
 | language server | **does not build**, deferred by the user |
 
@@ -86,12 +86,30 @@ change of the IR or the ABI.
   in elaboration, of the whole model.
 - Generic items need an instantiation to check (X6); the others do not.
 
-### S6. Unknown integers are one flag per value, so `&` and `|` lose known bits (G6) — size L (ABI)
+### S8. The implementation still carries the known flag — size L (`explicit-unknowns`, phases A and B)
 
-- §3.3.2 is per level. Probe: with `x` unknown, `((x & 1) & 2).known_or(9)` gives 9; the spec
-  gives 0. `x & 0` and `b && false` are right. Ruled provisional on 2026-11-15 (`ir-rust` F-B4);
-  listed here because the result differs from the spec text with no diagnostic. Per-level flags
-  change the ABI's one known byte per value.
+- **What.** The spec was amended on 2026-11-21 (Appendix G.72, MD-78): no value carries a flag,
+  `Logic<N>` and `Option<T>` say what a type may hold, a carrier starts at its written value or
+  its type's `Default`, and a nature that implements `Resolve<X, V>` takes many drives. S6 and G6
+  (one flag per value where the text said one per level) closed with it: the redesign removes the
+  flag instead of finishing it, and `unknown-semantics-per-level` is dropped. The implementation is
+  the earlier model. The layers: the lexer and parser (`Token::Unknown`, `LitKind::Unknown`);
+  the checker (`flag_total.rs`, `E0150`, `E0151`, `level`, `known`, `known_or`, `is_known`, `high`,
+  `merge`); the elaborator (`elab/known.rs`, the merge lowering, the unknown index); the IR
+  (`ValueType::Flagged`); the plan (the known byte of every layout, `maybe`); the generated code
+  (`rt/flag.rs`, the merge of paths, `commit_with`); the device ABI (`Field.known`, `HAS_KNOWN`,
+  `commit_flag`, `layout::Merge`, `MINOR` 1); the engines (the `MERGE` and `MAYBE` commits, relaxation
+  zeroing a known byte); the host (an unknown cell, `Record::surely`); the `resolve` field of a nature
+  and the library nets `Wire`, `Tri` and `SumNet`; and `std`, `examples/` and the tests, which use the
+  removed names.
+- **Where it shows.** Every model that reads `known_or(d)`, `high()` or `.is_known()` runs; a
+  carrier with no initial value starts unknown where the spec says it starts at its `Default`
+  (`E0187`); a `Bit` that starts high rises at `(0, 0)` where §22.1.5 says it does not; a loop that
+  does not settle writes a `log` record where §8.2.3 stops the run with `E0511`.
+- **Fix.** Phase A (B4 to B7 of `.specs/features/explicit-unknowns/tasks.md`) removes the flag from
+  every layer in three moves (accept, rewrite the tree, refuse and remove); phase B (B8) writes
+  `Logic<N>` and the operator traits in `std` after `generics`. This row is deleted when phase A lands
+  (T40).
 
 ### S7. Value semantics: the front end still accepts what the spec removed — size M (`value-semantics`)
 
@@ -126,9 +144,9 @@ quotes the text after `P0001:` unless another code is shown.
 | - | ------- | ---- | ------------------ | ---- |
 | L1 | `struct` values, struct expressions, field access | §1, §2 | `struct item used as a type`, `struct expression`, `field access` | L, with L2–L4 |
 | L2 | tuples outside `let (a, b) = (x, y);` | §1 | `tuple expression`, `tuple type` | |
-| L3 | arrays, indexing, slices, `&` (an index that may be unknown merges every element it may name, §3.3.3: `unknown-semantics` US-04 AC 12 travels with this row) | §1, H.5 | `array type`, `array expression`, `index expression`, `reference type` | |
+| L3 | arrays, indexing, slices, `&` | §1, H.5 | `array type`, `array expression`, `index expression`, `reference type` | |
 | L4 | enums with a payload, `#[repr(uN)]`, an explicit discriminant, generic enums, an enum of one variant as a carrier | §2 rules 2, 5 | `enum Tx with a variant with a payload`, `with a #[repr] attribute` | |
-| L5 | `let mut`, assignment, `for`, `while`, `loop`, `break`, `return` (a loop under unknown control is bounded at 64 iterations and merged exit by exit, §3.3.3, §3.3.16, Appendix C.2: `unknown-semantics` US-04 AC 11 travels with this row) | §0.4, §11 rule 12, §12.1.11 | `let mut binding`, `assignment`, `for loop`, `while loop` | M |
+| L5 | `let mut`, assignment, `for`, `while`, `loop`, `break`, `return` | §0.4, §11 rule 12, §12.1.11 | `let mut binding`, `assignment`, `for loop`, `while loop` | M |
 | L6 | `match` arm guards, range patterns, bindings in or-patterns; `if let` other than `Some(p)` | §0.4 | `a match arm guard`, `range pattern in a match arm` | S |
 | L7 | generic functions, `self` parameters, `impl` on a value type, user traits | §3 rule 9, §3.1 | `generic function`, `generic parameter used as a type` | L, with L30 |
 | L8 | `impl` on a nature (other than the stdlib's `impl Bit`); a function that takes a carrier or a node and probes it (a handle) | §3.1, §3 rule 7 | `method mv`; `E0450: a probe is allowed in an analog block and a module body only` | M |
@@ -142,8 +160,8 @@ quotes the text after `P0001:` unless another code is shown.
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L21 | natures with `resolve`: `Wire`, `Tri`, `SumNet`; `others()`; relaxation of loops | §4 rule 2, §5.2.2, §8.2.3 | `resolved nature Wire` | L |
-| L24 | arrays of carriers (`[Bit; 8]`, `[Electrical; 4]`); element and field commits (`bits[3] <- true`) and definitions (an index that may be unknown merges every element it may name, §3.3.3: `unknown-semantics` US-04 AC 12 travels with this row) | §5.1.4, §12.1 | `array type`; `an element or field commit` | L, with L3 |
+| L21 | natures that implement `Resolve<X, V>` (declared by the model; the library has no net nature); `others()`; relaxation of loops; `E0511` | §4 rule 2, §5.2.2, §8.2.3 | `resolved nature Wire` | L |
+| L24 | arrays of carriers (`[Bit; 8]`, `[Electrical; 4]`); element and field commits (`bits[3] <- true`) and definitions | §5.1.4, §12.1 | `array type`; `an element or field commit` | L, with L3 |
 | L25 | bundles: a `struct` of carriers, `flip`, bundle literals, `impl` on a bundle | §7 | `struct item used as a type`, `flip type` | L |
 
 Works, by probe: continuous natures with their own access names (`State` runs; `Thermal` and a
@@ -201,8 +219,7 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 | # | Refused | Spec | Size |
 | - | ------- | ---- | ---- |
 | L57 | `include_str!`, `parse_table`, `parse_hex`, `table_model` (`P0001` when reached; see S3) | §20, §22.6.4, §22.2.15 | M, after L3 |
-| L58 | Stdlib refused with the form it is built on. **Generics (L30):** `Short`, `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`, `merge`, `cast`, `same`. **Resolved nets (L21):** `Logic`, `Strength`, `Wire`, `Tri`, `SumNet`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir`, `TribufDelayed`. **Other:** `AckWithin` (a `u32` param), `MinPulse` (`since`), `normal` (tuples, `cos`), `limvds` as a function value (L9) | §22 | by its group |
-| L59 | `unwrap` or `expect` of an `Option` whose presence may be unknown; the closure of `map`, `and_then` or `then` when it is not a literal; an `expect` message that is not a string literal | H.3 | `P0001` naming the form | S |
+| L58 | Stdlib refused with the form it is built on. **Generics (L30):** `Short`, `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`, `cast`, `same`. **Resolved nets (L21):** `Logic`, `Strength`, `Driven`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir`, `TribufDelayed`. **Other:** `AckWithin` (a `u32` param), `MinPulse` (`since`), `normal` (tuples, `cos`), `limvds` as a function value (L9) | §22 | by its group |
 | L60 | the stdlib `slew` does not limit an ideal (jump) step: §15.2 rule 4 fires a jump's crossing after the solve, so the output passes the jump in one step. Fix = retake the step when a jump-crossing flips a carrier read by `analog` (owner `analog-operators`, AO-13; found by `analog-structure` AS-09 AC 6, which covers a step with a finite edge) | §15.2 rule 4, §22.2.10 | none: the output follows the jump | M |
 | L61 | sweeping or setting a key param after `Session::open`: a param that fixes the structure (a selector, an initial value, a reached param) is folded into the body at elaboration, so a `dc` sweep of it, or a `set` of it between open and the run, needs one elaboration per value. Today `E0803` refuses both naming the param; the before-run request param (`--param`) works (owner `sweeps-montecarlo-optimization`; found by `analog-structure` verification F1) | §23.1 rule 7, §8.1.2 | `E0803` | M |
 | L62 | a `switch` branch between two floating nodes with an undriven control panics in faer (`attempt to subtract with overflow`, `faer.rs:47`) instead of a named solver error (owner `spec-closure`; found by the `analog-structure` fix round) | §11 (switch branches), §15 | a switch between two floating nodes whose control no source drives | S |
@@ -239,14 +256,13 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 ## 5. Spec holes and disagreements
 
 Each has a provisional rule or a note so work is not blocked; the spec sentence is still owed.
-G1 to G6 are the buck's (`examples/buck/GAPS.md`). The spec's own open list is Appendix G
+G1 to G5 are the buck's (`examples/buck/GAPS.md`; G6, unknown integers per value, closed with S6 by `explicit-unknowns`). The spec's own open list is Appendix G
 (`G.1` to `G.68`, about 30 open) and is not repeated here.
 
 - **G4 — `f64 as u10` outside the range.** §1 rule 1 says "truncates or extends, as in Rust".
   Provisional: saturate, NaN → 0 (probe: `5000.7 as u10` is 1023).
 - **G5 — shift by N or more bits.** No rule. Provisional: the mathematical result truncated to N
   bits (probe: `1u8 << 9` is 0). A negative amount panics in compiled code (a fault, F-B9).
-- **G6 — unknown integers are per value** (S6).
 - **G1 — no fixed-point type; G2 — no ranged integer.** Language proposals of the buck.
 - **X1 — §15 describes a solver that is gone.** Its notes say the microsteps of `t` run before
   the solve of `t`, and that the device ABI order (solve, then react) "is adopted: `solver-abi`
@@ -345,9 +361,9 @@ does not count.
 | Part | Runs | Biggest holes |
 | ---- | ---- | ------------- |
 | I §1–§2 values, `Repr` | 35 % | composites, payload enums, floats other than `f64`, widths over 64 |
-| I §3–§3.3 functions, calls, unknown values | 35 % | generics, `impl`, traits, handles, loops, arrays and composites; the merge and the level reads run |
+| I §3–§3.3 functions, calls, uncertainty and absence | 35 % | generics, `impl`, traits, handles, loops, arrays and composites; the known flag is still carried (S8) |
 | I §3.4–§3.6 files, crates, packages | 95 % | the check of unreached items (S3) |
-| II §4–§5 natures, discrete carriers | 40 % | `resolve`, arrays, user discrete natures, `Unknown` initial values |
+| II §4–§5 natures, discrete carriers | 40 % | `Resolve`, arrays, user discrete natures, initial values by `Default` (S8) |
 | II §6 nodes, probes | 85 % | signal-flow |
 | II §7 bundles | 0 % | all |
 | III §8–§8.2 modules, ports, params, the body | 60 % | generics, generation, params that are not `f64` or `bool` |
@@ -355,9 +371,9 @@ does not count.
 | III §8.4–§8.5 templates, `m`/`dtemp`, extern | 0 % | all |
 | IV §10–§11 analog | 70 % | the §18 `Diode` (L40), an ideal-step `slew` (L60) |
 | IV §12–§13 digital, events | 60 % | `Event` functions, `Pfd3` (L5), loops, element commits |
-| IV §14 core primitives | 50 % | `ddx`, `delay`, `noise`, `simparam`, `others`, `level`, `include_str!` |
-| V §15–§18 execution | 60 % | the merge, digital-only runs, error naming, the text of §15 itself (X1) |
-| VI §19–§21 output, input, metadata | 35 % | traces, `maybe`, files, host metadata |
+| IV §14 core primitives | 50 % | `ddx`, `delay`, `noise`, `simparam`, `others`, `include_str!` |
+| V §15–§18 execution | 60 % | digital-only runs, error naming, the text of §15 itself (X1) |
+| VI §19–§21 output, input, metadata | 35 % | traces, files, host metadata |
 | VII §22 stdlib | 35 % (about 29 of 75 names) | everything generic, every resolved net, `idt`, filters, noise, tables |
 | VIII §23 host | 15 % | host actions, options, Monte Carlo, optimization, gradients |
 | A lexical, B grammar | 100 % parsed | the placement matrix B.2 is enforced for the subset only |
@@ -387,7 +403,7 @@ E0456 E0511 E0614 E0703 E0704 E0705 E0706 E0807 E0808 E0809`
   checker stops it first (`types/call.rs:54`, there since `295b5ab8`); closed by `params-and-io` as `E0180` (L20).
 - `examples/buck/GAPS.md` G3 (a method on a carrier left unresolved) was already closed by
   `msl-digital`: it is a `P0001` naming the method (L15, since closed).
-- Every other entry is kept: B3, B4, §4.7, G1 to G6, the solver points (now V1 to V11), U1 to
+- Every other entry is kept: B3, B4, §4.7, G1 to G5, the solver points (now V1 to V11), U1 to
   U3.
 
 **Clusters one feature would close.** Sizes are rough; the order is the user's.
@@ -399,8 +415,8 @@ E0456 E0511 E0614 E0703 E0704 E0705 E0706 E0807 E0808 E0809`
 | Analog operators | L43, L44, L45, L49, H2 (`Noise`) | M to L |
 | Composite values | L1 to L6, L16 (H.5 to H.7), L24, L57 | L |
 | Generics and generation | L7, L30, L31, L32, S3 for generic items: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
-| Resolved nets and bundles | L21, L25: `Wire`, `Tribuf`, `Tran`, `Bidir` | L |
-| Unknown semantics | S6 (ABI), L51, L52, L53, L8 (L18 and L19 closed by `unknown-semantics`) | L |
+| Resolved nets and bundles | L21, L25: natures that implement `Resolve`, `Tribuf`, `Tran`, `Bidir` | L |
+| Unknown semantics | S8 (explicit unknowns), L51, L52, L53, L8 (L18 and L19 closed by `unknown-semantics`; S6 and G6 closed by `explicit-unknowns`) | L |
 | Host II (delivered in part by `host-ii`) | H1, H3, H6, H9, then B4 (Python) | L |
 | Speed | V12, V13, V16, PSS on the device ABI | L |
 | Foreign models | L12, L33 | L |
