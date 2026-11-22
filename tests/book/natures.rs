@@ -77,13 +77,14 @@ fn signals_of_every_family_are_refused_for_the_arrays_the_option_the_logic_and_t
     let alone = chapter.wrapped("signals.msl", "module Top() {\n", "natures#2", "}\n");
     let unknown = Refusal::of(alone.run(OperatingPoint::of_top()), "natures#2");
     assert!(unknown.contains(&("E0161".to_string(), "cannot find `Sda` in this scope".to_string())), "the nature `Sda` is not declared in the block: {unknown:?}");
-    // with a nature of that name in scope the type checker reaches the other lines
-    let model = chapter.wrapped("signals.msl", "nature Sda { value: bool }\nmodule Top() {\n", "natures#2", "}\n");
+    // with a nature of that name in scope the type checker reaches the other lines; the stand-in's value type
+    // has a `Default`, so the line `signal sda: Sda;` stays valid once every carrier starts at its default (phase A)
+    let model = chapter.wrapped("signals.msl", "nature Sda { value: Option<bool> }\nmodule Top() {\n", "natures#2", "}\n");
     let given = Refusal::of(model.run(OperatingPoint::of_top()), "natures#2");
     for (code, expected) in [("P0001", "array type is not supported yet"), ("E0112", "`Option<u8>` has no `Repr`: a carrier holds only a type that implements it (part I §2)"), ("P0001", "`struct` item used as a type is not supported yet")] {
         assert!(given.contains(&(code.to_string(), expected.to_string())), "{expected}: {given:?}");
     }
-    Refusal::expect(chapter.wrapped("signals.msl", "nature Sda { value: bool }\nmodule Top() {\n", "natures#2", "}\n").run(OperatingPoint::of_top()), "natures#2", "P0001", "array type is not supported yet");
+    Refusal::expect(chapter.wrapped("signals.msl", "nature Sda { value: Option<bool> }\nmodule Top() {\n", "natures#2", "}\n").run(OperatingPoint::of_top()), "natures#2", "P0001", "array type is not supported yet");
 }
 
 #[test]
