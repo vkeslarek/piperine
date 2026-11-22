@@ -6,12 +6,13 @@
 //! - a range `a..=b`, `a..b`, `a..` is `subject >= a && subject <= b` (`<` for `..b`);
 //! - a name binds the subject, `name @ p` binds it when `p` matches, `_` matches everything;
 //! - `p | q` is the disjunction, binding the names of each alternative;
-//! - over an `Option`, `None` is `!is` and `Some(p)` is `is` and `p` over the payload.
+//! - over an `Option`, `None` is `!is`, `Some(p)` is `is` and `p` over the payload, `_` matches
+//!   every one and a name binds the whole `Option`.
 //!
 //! A test over a subject that may be unknown uses the bitwise `&` and `|`, which §3.3.12 gives the
 //! table of `&&` and `||` (`known.rs`). A pattern that matches every value has no test.
 
-use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, Local, Origin, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
+use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, LevelPart, Local, Origin, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
 
 use super::compound::EnumLayout;
 use super::elaborator::Elaboration;
@@ -251,6 +252,12 @@ impl Elaboration<'_, '_> {
             let ty = self.flag(present).wrap(ValueType::Bool);
             return Some(PatternTest::when(self.emit(Expr::Unary { op: UnaryOp::Not, expr: present }, ty, origin)));
         }
+        match &node.kind {
+            // `_` matches every `Option`; a name binds the whole one (`name @ p` when `p` matches).
+            PatKind::Wild | PatKind::Rest => return Some(PatternTest::everything()),
+            PatKind::Ident { res: Resolution::Unresolved, binding, sub, .. } => return self.option_binding(scope, subject, *binding, *sub, present, origin),
+            _ => {}
+        }
         let PatKind::TupleStruct { pats, .. } = &node.kind else {
             self.unsupported(scope.file, node.span, "this pattern of an `Option`");
             return None;
@@ -267,6 +274,20 @@ impl Elaboration<'_, '_> {
             None => present,
         };
         Some(PatternTest { test: Some(test), bindings: found.bindings })
+    }
+
+    /// A name over an `Option` subject: it takes the whole `Option`, packed from its flag and its
+    /// payload (D8), when `sub`, the pattern after `@`, matches.
+    fn option_binding(&mut self, scope: &mut Scope, subject: &Subject, binding: DeclId, sub: Option<PatId>, present: LoweredExpr, origin: Origin) -> Option<PatternTest> {
+        let mut found = match sub {
+            Some(inner) => self.test_pattern(scope, subject, inner)?,
+            None => PatternTest::everything(),
+        };
+        let payload = self.read_pair(scope, subject, true, origin.clone())?;
+        let option = ValueType::Option(Box::new(self.base_of(payload)));
+        let value = self.emit(Expr::OptionPack { is: present, value: payload }, option, origin);
+        found.bindings.push((binding, value));
+        Some(found)
     }
 
     /// `Some(p)` over an `Option` in code with no local (a drive): `_` or a value, tested against
@@ -364,11 +385,35 @@ impl Elaboration<'_, '_> {
         }
         let mut names = Vec::with_capacity(bindings.len());
         for (decl, value) in bindings {
+            if matches!(self.type_of(*value), ValueType::Option(_)) {
+                names.extend(self.bind_option_name(scope, *decl, *value)?);
+                continue;
+            }
             let local = self.bind_local(scope, *decl)?;
             scope.locals[local as usize].ty = self.type_of(*value);
             names.push((local, *value));
         }
         Some(names)
+    }
+
+    /// The name `decl` of an `Option` that `packed` holds: its flag to the local `name.is` and its
+    /// payload to `name.val`, as `let` binds one (D8), and the two reads that fill them.
+    fn bind_option_name(&mut self, scope: &mut Scope, decl: DeclId, packed: LoweredExpr) -> Option<Vec<(u32, LoweredExpr)>> {
+        let data = self.design.decl_data(decl);
+        let (name, span) = (data.name.as_ref().map_or_else(String::new, |n| n.text.clone()), data.span);
+        if self.types.is_assigned(decl) {
+            self.unsupported(scope.file, span, "an assignment to a local of type `Option`");
+            return None;
+        }
+        let ValueType::Option(payload) = self.type_of(packed) else { return None };
+        let origin = self.locator.origin(scope.file, span);
+        let is = self.emit(Expr::OptionPart { option: packed, part: LevelPart::Is }, ValueType::Bool, origin.clone());
+        let val = self.emit(Expr::OptionPart { option: packed, part: LevelPart::Value }, *payload, origin);
+        let first = scope.locals.len() as u32;
+        scope.locals.push(Local { name: format!("{name}.is"), ty: ValueType::Bool, mutable: false });
+        scope.locals.push(Local { name: format!("{name}.val"), ty: self.type_of(val), mutable: false });
+        scope.options.insert(decl, (first, first + 1));
+        Some(vec![(first, is), (first + 1, val)])
     }
 
     /// `let name = value;` for each name: a fresh statement each time, so a guard and an arm's

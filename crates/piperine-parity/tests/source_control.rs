@@ -350,6 +350,51 @@ fn or_patterns_and_at_bindings_bind_as_rust() {
 }
 
 #[test]
+fn option_arms_take_rusts_patterns() {
+    // CV-04 AC 1 and AC 4 (finding 4): `Some(1)`, `Some(2) | Some(3)`, `Some(n) if ..`, `_` and `None` arms, a name
+    // that binds the whole `Option` (`whole @ Some(7)`, `other`) and a pattern nested in `Some` (`Some((n, true))`)
+    // over an `Option` take the arm Rust takes.
+    let exact = |o: Option<u8>| match o {
+        Some(1) => 10u8,
+        Some(2) | Some(3) => 20,
+        Some(n) if n > 100 => 30,
+        None => 40,
+        _ => 50,
+    };
+    let wild = |o: Option<u8>| match o {
+        Some(1) => 10u8,
+        _ => 20,
+    };
+    let bound = |o: Option<u8>| match o {
+        whole @ Some(7) => whole.unwrap_or(0) + 1,
+        other => other.unwrap_or(9),
+    };
+    let nested = |o: Option<(u8, bool)>| match o {
+        Some((n, true)) => n,
+        Some((_, false)) => 1u8,
+        None => 0,
+    };
+    let got = pattern_rows(&["s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s11", "s12", "s13"]);
+    let wanted = vec![
+        exact(Some(1)),
+        exact(Some(3)),
+        exact(Some(200)),
+        exact(None),
+        exact(Some(5)),
+        wild(Some(1)),
+        wild(Some(2)),
+        wild(None),
+        bound(Some(7)),
+        bound(Some(3)),
+        bound(None),
+        nested(Some((4, true))),
+        nested(Some((4, false))),
+        nested(None),
+    ];
+    assert_eq!(got, wanted);
+}
+
+#[test]
 fn refutable_patterns_run_in_if_let_while_let_and_let_else() {
     // CV-04 AC 4 (§1.6.9, §1.7.6, §1.8.6): `if let`, `while let` and `let ... else` with literal,
     // range, `Some` and nested patterns run as Rust; a `let ... else` that fails runs its block.
