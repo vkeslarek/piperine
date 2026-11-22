@@ -472,7 +472,7 @@ fn unknown_decisions_merge_written_locals_and_loop_exits() {
     let text = functions.join("\n");
     // the arms hand back their value and the locals they write; the loop is `rt::Unrolled`
     assert!(text.contains(".choose(|| {"), "{text}");
-    assert!(text.contains("let (_, x_out_) ="), "{text}");
+    assert!(text.contains("let (_, merge_out0_) ="), "{text}");
     assert!(text.contains("rt::Unrolled::<_, (), ()>::run(\"loop @ control.msl:72:1\", (i, tag), |(mut i, mut tag)| {"), "{text}");
     assert!(text.contains("outcome_.exit()"), "{text}");
 
