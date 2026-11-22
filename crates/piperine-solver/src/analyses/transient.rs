@@ -19,6 +19,7 @@ use piperine_analog_solver::math::integration::{TrBdf2, TrBdf2Phase};
 use piperine_analog_solver::math::iv::InitialValue;
 use piperine_analog_solver::math::linear::{AsIndex, Stamp};
 use piperine_analog_solver::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
+use crate::protocol::ProposalBound;
 use crate::prelude::{TransientAnalysisResult, TransientStep};
 
 use ndarray::ArrayView1;
@@ -439,6 +440,15 @@ struct StepPrediction {
     landed_on_breakpoint: bool,
 }
 
+/// Why an attempt was rejected.
+#[derive(Clone, Copy)]
+enum Rejection {
+    /// The step failed the truncation-error test.
+    Truncation,
+    /// Newton did not converge on the step.
+    Newton,
+}
+
 /// Phase 3 output — the Milne-LTE accept-gate verdict for a converged
 /// candidate step.
 struct StepAssessment {
@@ -458,7 +468,16 @@ struct TimeLoop {
     current_time: f64,
     dt: f64,
     steps_accepted: usize,
-    steps_rejected: usize,
+    /// Attempts rejected by the truncation-error test.
+    rejected_truncation: usize,
+    /// Attempts rejected because Newton did not converge.
+    rejected_newton: usize,
+    /// Accepted steps that read a jump.
+    jump_steps: usize,
+    /// Rejected attempts of a step that reads a jump.
+    jump_retakes: usize,
+    /// Accepted steps of the size `max_step`.
+    steps_at_max_step: usize,
     /// Steps retaken at `dt_min` after a larger attempt failed (ngspice's `delta = delmin`).
     dt_min_floor_hits: usize,
     /// Steps accepted at `dt_min` although they fail the truncation test: nothing smaller is
@@ -478,12 +497,21 @@ struct TimeLoop {
 }
 
 impl TimeLoop {
+    /// The attempts rejected, by either cause.
+    fn steps_rejected(&self) -> usize {
+        self.rejected_truncation + self.rejected_newton
+    }
+
     fn new(start_time: f64, dt: f64) -> Self {
         Self {
             current_time: start_time,
             dt,
             steps_accepted: 0,
-            steps_rejected: 0,
+            rejected_truncation: 0,
+            rejected_newton: 0,
+            jump_steps: 0,
+            jump_retakes: 0,
+            steps_at_max_step: 0,
             dt_min_floor_hits: 0,
             floor_accepts: 0,
             last_step_accepted: false,
@@ -841,7 +869,12 @@ impl<'a> TransientSolver<'a> {
         result.stats.newton_iterations = self.solver.total_iterations();
         result.stats.converged = true;
         result.stats.steps_accepted = st.steps_accepted;
-        result.stats.steps_rejected = st.steps_rejected;
+        result.stats.steps_rejected = st.steps_rejected();
+        result.stats.rejected_truncation = st.rejected_truncation;
+        result.stats.rejected_newton = st.rejected_newton;
+        result.stats.jump_steps = st.jump_steps;
+        result.stats.jump_retakes = st.jump_retakes;
+        result.stats.steps_at_max_step = st.steps_at_max_step;
         result.stats.dt_min_floor_hits = st.dt_min_floor_hits;
         result.stats.floor_accepts = st.floor_accepts;
         result.stats.dt_min = if st.dt_min_seen.is_finite() { st.dt_min_seen } else { 0.0 };
@@ -931,6 +964,8 @@ pub(crate) struct DeviceRun {
     pending: Option<PendingStep>,
     /// The end of the step this side proposed last, on its own clock.
     proposed: f64,
+    /// What cut that proposal.
+    bound: ProposalBound,
     /// The time of the last attempt, for its trace records.
     attempted: f64,
     /// The size of the last accepted step.
@@ -1134,6 +1169,7 @@ impl TransientSolver<'_> {
             steps: Vec::new(),
             pending: None,
             proposed: self.options.start_time,
+            bound: ProposalBound::Controller,
             attempted: self.options.start_time,
             last_dt: 0.0,
             attempts: 0,
@@ -1204,6 +1240,7 @@ impl TransientSolver<'_> {
                 Ok(())
             })
             .and_then(|_| protocol.transient(stop));
+        let statistics = protocol.statistics().clone();
         let (side, analog) = protocol.into_sides();
         let mut run = analog.run;
         if let Some(bound) = self.system.circuit.abi.as_mut() {
@@ -1229,7 +1266,9 @@ impl TransientSolver<'_> {
         if let Some(last) = run.steps.last_mut() {
             last.set_reentry(Some(std::sync::Arc::new(state)));
         }
-        Ok(self.finish_run(&run.st, run.steps))
+        let mut result = self.finish_run(&run.st, run.steps);
+        result.set_statistics(statistics);
+        Ok(result)
     }
 
     /// The solution as the Newton solver holds it (empty with no unknown), as `snapshot` reads it.
@@ -1441,7 +1480,8 @@ impl TransientSolver<'_> {
                 dt = dt.min(Self::JUMP_FRACTION * span).max(self.options.dt_min);
             }
         }
-        let mut end = (st.current_time + dt).min(self.options.stop_time).min(st.current_time + run.cap);
+        let cap_end = st.current_time + run.cap;
+        let mut end = (st.current_time + dt).min(self.options.stop_time).min(cap_end);
         // A step that would end within two ticks short of the stop ends at the stop: the
         // remainder would be a step of a few femtoseconds, or less than a tick, which the
         // companion of a charge integrates as noise (a capped step after a jump can end there).
@@ -1450,6 +1490,15 @@ impl TransientSolver<'_> {
             end = self.options.stop_time.min(st.current_time + run.cap);
         }
         run.proposed = end;
+        run.bound = if end == cap_end && end < st.current_time + dt {
+            ProposalBound::Cap
+        } else if end == self.options.stop_time {
+            ProposalBound::Stop
+        } else if dt >= self.options.dt_max {
+            ProposalBound::MaxStep
+        } else {
+            ProposalBound::Controller
+        };
         run.proposed
     }
 
@@ -1495,7 +1544,7 @@ impl TransientSolver<'_> {
                     progress * 100.0,
                     st.dt,
                     st.steps_accepted,
-                    st.steps_rejected,
+                    st.steps_rejected(),
                     st.dt_min_floor_hits,
                     if st.dt_min_seen.is_finite() { st.dt_min_seen } else { 0.0 },
                 ),
@@ -1557,12 +1606,12 @@ impl TransientSolver<'_> {
                 return Ok(Attempt::Converged);
             }
             self.trace_rejection(run, &prediction, assessment.milne);
-            self.cut_after_failure(run, &prediction);
+            self.cut_after_failure(run, &prediction, Rejection::Truncation);
             return Ok(Attempt::Rejected);
         }
         // A Newton failure: ngspice cuts the step to an eighth; one that would fall to the floor is
         // retaken there once, and the attempt at the floor that fails again is "Timestep too small".
-        let spent = self.cut_after_failure(run, &prediction);
+        let spent = self.cut_after_failure(run, &prediction, Rejection::Newton);
         if spent && let Err(e) = outcome {
             run.failed = Some(run.floor_error(e, t_next, post_set_step));
         }
@@ -1580,10 +1629,14 @@ impl TransientSolver<'_> {
     /// be at or under `dt_min` is `dt_min` instead, and the attempt retaken there is counted in
     /// `dt_min_floor_hits`, once; `true` when the failed attempt was itself at the floor, which has
     /// no retake left.
-    fn cut_after_failure(&mut self, run: &mut DeviceRun, prediction: &StepPrediction) -> bool {
+    fn cut_after_failure(&mut self, run: &mut DeviceRun, prediction: &StepPrediction, cause: Rejection) -> bool {
         let at_floor = self.is_at_floor(run, prediction.dt_actual);
         let st = &mut run.st;
-        st.steps_rejected += 1;
+        match cause {
+            Rejection::Truncation => st.rejected_truncation += 1,
+            Rejection::Newton => st.rejected_newton += 1,
+        }
+        st.jump_retakes += usize::from(st.sets_just_applied);
         st.last_step_accepted = false;
         st.dt = self.plan.stepper_mut().reject_dt(prediction.dt_proposed, &self.options.step_limits());
         let falls_to_floor = st.dt <= self.options.dt_min;
@@ -1673,6 +1726,8 @@ impl TransientSolver<'_> {
         let StepPrediction { t_next, dt_actual, dt_proposed, .. } = prediction;
         let st = &mut run.st;
         st.steps_accepted += 1;
+        st.jump_steps += usize::from(post_set_step);
+        st.steps_at_max_step += usize::from(dt_actual + run.spt >= self.options.dt_max);
         st.floor_accepts += usize::from(over_error_at_floor);
         st.last_step_accepted = true;
         self.system.uic_hold = false;
@@ -1816,6 +1871,10 @@ impl DeviceRun {
     }
 
     /// The time of the last attempt.
+    pub(crate) fn proposal_bound(&self) -> ProposalBound {
+        self.bound
+    }
+
     pub(crate) fn attempted(&self) -> f64 {
         self.attempted
     }
