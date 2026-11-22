@@ -300,7 +300,7 @@ of its own.
    reactions change nothing `analog` reads. More retakes at one `t` than the operating point's
    round bound fail as `E0504`, naming the instant. A change due before the solve that a settle
    commit makes (S2, S3) is a jump like any other: the step that reads it retakes by this rule.
-   The instant's settle phase runs once, after its last round, so a retake never runs an
+   The instant's microstep numbering goes on across the rounds: a crossing only a retaken solution makes fires at the next microstep of `t`, and the settle phase that follows runs after the last microstep, so its records are stamped `(t, last)` (§19). The instant's settle phase runs once, after its last round, so a retake never runs an
    `on settle` reaction twice at `t`, and the settle commits it holds are the ones the analog side
    is given.
 5. **Other instance state is untouched.** `delay` keeps its history and `limit` its last

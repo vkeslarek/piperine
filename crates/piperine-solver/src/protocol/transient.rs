@@ -403,6 +403,8 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                 outcome = self.retake_step(&c.analog, tick_c, crossings, outcome, limit, rounds).map_err(|e| at(t_c, e))?;
             }
             if deferred {
+                // the settle phase follows the instant's last microstep: its records are stamped `(t, last)`
+                self.discrete.reopen(tick_c, false);
                 let samples = self.samples.clone();
                 let settled = self.run_whole_instant(tick_c, &samples, limit, mode).map_err(|e| at(t_c, e))?;
                 outcome.absorb_settle(settled);

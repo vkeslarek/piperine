@@ -2,7 +2,7 @@
 //! the jump, and when its reactions change what `analog` reads, that step is taken again at the
 //! same time with the change. One solution per time point: the retaken solution replaces the
 //! first, the reactions that ran are not run again, and a crossing only the retaken solution makes
-//! fires at the next microstep and may retake again, up to the round bound (`E0504`).
+//! fires at the next microstep of the instant (its numbering goes on) and may retake again, up to the round bound (`E0504`).
 
 use piperine_analog_solver::error::{Error, Result, RunCode, SolverDomain};
 
@@ -83,6 +83,8 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             if made.is_empty() {
                 return Ok(whole);
             }
+            // the crossings fire at the next microstep of `t`, and the instant goes on from there
+            self.discrete.reopen(tick, true);
             for net in &made {
                 self.discrete.fire(*net, tick)?;
             }

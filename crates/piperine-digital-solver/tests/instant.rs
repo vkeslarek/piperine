@@ -674,3 +674,46 @@ fn a_merge_commit_the_layout_cannot_merge_is_a_run_error_naming_the_net() {
     assert!(matches!(err, DigitalError::Merge { .. }), "{err:?}");
     assert!(text.contains("`q`") && text.contains("`d`") && text.contains("no known byte"), "{text}");
 }
+
+#[test]
+fn a_reopened_instant_settles_at_its_last_microstep() {
+    // §19 Resolution, §15.2 rule 4: the owner may run an instant without its settle phase and run the
+    // phase afterwards. `reopen(at, false)` resumes at the last microstep the instant ran, so the
+    // record of the settle phase is stamped `(t, 1)` as in one run, not `(t, 0)` of a fresh loop.
+    let mut d = engine(vec![
+        ("sr", settle_recorder(), vec![("log", "log")]),
+        ("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
+    ]);
+    d.start().unwrap();
+    instant(&mut d, Tick(0));
+    d.host_commit(net(&d, "clk"), 0, &LOW, Tick(1)).unwrap();
+    d.host_commit(net(&d, "clk"), 0, &HIGH, Tick(2)).unwrap();
+    instant(&mut d, Tick(1));
+    d.drain_observations();
+    let quiet = d.run_instant(Tick(2), &[], Horizon::uniform(Tick(10 * NS)), Mode { is_static: false, settle: false }).expect("runs");
+    assert_eq!(quiet.microsteps, 2, "microsteps 0 and 1");
+    d.reopen(Tick(2), false);
+    d.run_instant(Tick(2), &[], Horizon::uniform(Tick(10 * NS)), Mode { is_static: false, settle: true }).expect("the settle phase");
+    let seen = d.drain_observations();
+    let records: Vec<&Observation> = seen.iter().filter(|o| matches!(o, Observation::Record { .. })).collect();
+    assert_eq!(records, [&Observation::Record { stream: "sr.log".into(), reaction: 0, statement: 0, at: (Tick(2), 1), bytes: vec![7, 1] }], "{seen:?}");
+}
+
+#[test]
+fn a_firing_after_a_reopened_instant_is_due_at_the_next_microstep() {
+    // §15.2 rule 4: a crossing only a retaken solution makes fires at the next microstep of `t`. The
+    // first crossing fires at (t, 0) and its commit applies at (t, 1), so the next one fires at (t, 2).
+    let mut d = engine(vec![("cmp", setter(), vec![("up", "cross"), ("out", "above")])]);
+    d.start().unwrap();
+    instant(&mut d, Tick(0));
+    d.fire(net(&d, "cross"), Tick(2)).unwrap();
+    let first = instant(&mut d, Tick(2));
+    assert_eq!(first.microsteps, 2, "microsteps 0 and 1");
+    d.drain_observations();
+    d.reopen(Tick(2), true);
+    d.fire(net(&d, "cross"), Tick(2)).unwrap();
+    d.run_instant(Tick(2), &[], Horizon::uniform(Tick(10 * NS)), Mode { is_static: false, settle: false }).expect("the next round");
+    let seen = d.drain_observations();
+    assert!(seen.contains(&Observation::Fire { net: "cross".into(), at: (Tick(2), 2) }), "{seen:?}");
+    assert!(!seen.iter().any(|o| matches!(o, Observation::Fire { at: (_, 0), .. })), "nothing restarts at microstep 0: {seen:?}");
+}

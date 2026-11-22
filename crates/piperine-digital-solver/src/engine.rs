@@ -136,6 +136,8 @@ pub struct Digital {
     pub(crate) waited: Vec<NetId>,
     /// An instant suspended for the host's waiters: its tick and the microstep it continues at.
     pub(crate) suspended: Option<(Tick, u32)>,
+    /// The instant the last `run_instant` ran to its end and the last microstep it ran, for `reopen`.
+    pub(crate) last_run: Option<(Tick, u32)>,
     /// `GMIN` and `SOURCE_SCALE` as reactions and discrete functions read them.
     pub(crate) continuation: (f64, f64),
     /// The full copies of the state `checkpoint` has taken (a diagnostic).
@@ -166,6 +168,7 @@ impl Digital {
             running: false,
             waited: Vec::new(),
             suspended: None,
+            last_run: None,
             continuation: (0.0, 1.0),
             checkpoints_taken: std::sync::atomic::AtomicU64::new(0),
         }
@@ -312,6 +315,20 @@ impl Digital {
     /// Whether a settle commit is held, waiting for the next time point.
     pub fn holds_settle_commits(&self) -> bool {
         !self.settle_commits.is_empty()
+    }
+
+    /// Reopens the instant `at` that the last `run_instant` ran to its end, so that the owner goes on
+    /// with it instead of starting a fresh one at microstep 0: the next `run_instant(at)` resumes at
+    /// the microstep after the last one it ran (`next_microstep`, for a crossing the owner fires there,
+    /// §15.2 rule 4) or at the last one (for the settle phase, whose records are stamped `(at, last)`,
+    /// §19 Resolution). A host commit or `fire` made meanwhile is due at the microstep it resumes at.
+    /// An instant `at` that did not just run to its end is left alone.
+    pub fn reopen(&mut self, at: Tick, next_microstep: bool) {
+        if let Some((tick, last)) = self.last_run
+            && tick == at
+        {
+            self.suspended = Some((at, if next_microstep { last + 1 } else { last }));
+        }
     }
 
     /// Fires event net `net`: a commit due at microstep 0 of `at` (abi.md §6 C6).

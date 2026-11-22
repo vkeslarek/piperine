@@ -190,6 +190,11 @@ pub trait DiscreteSide {
     fn advance(&mut self, to: Tick) -> Result<Advance>;
     /// Commits a firing of event pin `net` due at microstep 0 of `at` (C6).
     fn fire(&mut self, net: u32, at: Tick) -> Result<()>;
+    /// Reopens the instant `at` that `run_instant` just ran to its end, so the next `run_instant(at)`
+    /// and a `fire` made before it continue its microstep numbering: at the microstep after its last
+    /// one (`next_microstep`) or at its last one (the settle phase after the rounds, §19 Resolution).
+    /// A side that does not number its microsteps does nothing.
+    fn reopen(&mut self, _at: Tick, _next_microstep: bool) {}
     /// Runs (or, after a suspension, continues) the instant `at`. `samples` are
     /// the accepted continuous values reactions read; `limit` bounds each
     /// reaction's `HORIZON` (R5): `limit.crossing` for one a `CROSS` watch can

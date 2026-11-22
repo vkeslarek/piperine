@@ -16,6 +16,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run report**: `cargo test -p piperine-solver --test noise_report`
 **Run abinoise**: `cargo test -p piperine-solver --test abi_noise`
 **Run retake**: `cargo test -p piperine-solver --test jump_retake`
+**Run digital**: `cargo test -p piperine-digital-solver --test instant`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run irops**: `cargo test -p piperine-ir --test operators`
 **Run planops**: `cargo test -p piperine-plan --test operators_shape`
@@ -1361,6 +1362,8 @@ Proof: run elabops | test a_noise_density_reading_an_unknown_value_is_e0150 ... 
 Proof: run retake | test a_crossing_made_by_a_step_that_reads_a_settle_commit_retakes_it ... ok
 Proof: run retake | test a_second_round_retake_runs_settle_once_and_delivers_its_settle_commits ... ok
 Proof: run retake | test the_first_step_after_an_operating_point_that_holds_a_settle_commit_is_first_order ... ok
+Proof: run digital | test a_reopened_instant_settles_at_its_last_microstep ... ok
+Proof: run digital | test a_firing_after_a_reopened_instant_is_due_at_the_next_microstep ... ok
 
 **C70** - The band total integrates the density by ngspice's power-law rule, exact on power laws. (AO-05, AC 1, D8; T2, T3)
 Proof: run numerics | test the_power_law_integral_is_exact_on_power_laws ... ok
