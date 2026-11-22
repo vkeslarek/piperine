@@ -47,6 +47,9 @@ enum ArgKind {
     Real { value: &'static str },
     /// `--<id> <value>`, a whole number.
     Count { value: &'static str },
+    /// `--<id> <value>`, a real number checked when the run is built, so a value that is no number
+    /// is a `P0010` naming the flag, not a usage error.
+    Checked { value: &'static str },
     /// `--<id> <value>`, given any number of times.
     Texts { value: &'static str },
     /// `--<id> <path>=<value>`, given any number of times.
@@ -147,7 +150,7 @@ const COMMANDS: &[CommandRow] = &[
             ArgRow { id: "vntol", kind: ArgKind::Real { value: "VOLTS" }, help: "the absolute tolerance of a potential" },
             ArgRow { id: "trtol", kind: ArgKind::Real { value: "VALUE" }, help: "the factor on the truncation error a transient accepts" },
             ArgRow { id: "temp", kind: ArgKind::Real { value: "CELSIUS" }, help: "the temperature of the run, in degrees Celsius" },
-            ArgRow { id: "tnom", kind: ArgKind::Real { value: "CELSIUS" }, help: "the nominal temperature of the models' parameters, in degrees Celsius (default 27)" },
+            ArgRow { id: "tnom", kind: ArgKind::Checked { value: "CELSIUS" }, help: "the nominal temperature of the models' parameters, in degrees Celsius (default 27)" },
             ArgRow { id: "resolution", kind: ArgKind::Real { value: "SECONDS" }, help: "the tick of the digital engine, in seconds" },
             ArgRow { id: "maxrounds", kind: ArgKind::Count { value: "N" }, help: "the bound on the rounds of an operating point" },
             ArgRow { id: "maxmicro", kind: ArgKind::Count { value: "N" }, help: "the bound on the microsteps of one instant" },
@@ -261,6 +264,7 @@ impl Cli {
             ArgKind::Text { value } => arg.long(row.id).value_name(value).action(ArgAction::Set),
             ArgKind::Path { value } => arg.long(row.id).value_name(value).value_parser(PathBufValueParser::new()).action(ArgAction::Set),
             ArgKind::Real { value } => arg.long(row.id).value_name(value).value_parser(Values::real).allow_negative_numbers(true).action(ArgAction::Set),
+            ArgKind::Checked { value } => arg.long(row.id).value_name(value).allow_negative_numbers(true).action(ArgAction::Set),
             ArgKind::Count { value } => arg.long(row.id).value_name(value).value_parser(Values::count).action(ArgAction::Set),
             ArgKind::Texts { value } => arg.long(row.id).value_name(value).action(ArgAction::Append),
             ArgKind::Param => arg.long(row.id).value_name("PATH=VALUE").value_parser(Values::param).action(ArgAction::Append),
@@ -301,7 +305,7 @@ impl Cli {
             vntol: real("vntol"),
             trtol: real("trtol"),
             temp: real("temp"),
-            tnom: real("tnom"),
+            tnom: text("tnom").and_then(|value| value.parse().ok()),
             resolution: real("resolution"),
             maxrounds: count("maxrounds"),
             maxmicro: count("maxmicro"),
@@ -314,6 +318,15 @@ impl Cli {
             nodeset: m.get_many::<(String, f64)>("nodeset").map(|v| v.cloned().collect()).unwrap_or_default(),
             simparam: Cli::simparam_entries(m).0,
         }
+    }
+
+    /// The fault (`P0010`) of the first flag of `m` checked when the run is built whose value is no
+    /// number, naming it: a `--simparam` entry, else `--tnom`.
+    fn refusal(m: &clap::ArgMatches) -> Option<String> {
+        Cli::simparam_entries(m).1.or_else(|| {
+            let value = m.get_one::<String>("tnom")?;
+            Values::real(value).err().map(|why| format!("`--tnom {value}`: {why}"))
+        })
     }
 
     /// The `--simparam` entries of `m` whose value is a number, in order, and the fault of the
@@ -351,7 +364,7 @@ impl Cli {
         Ok(match name {
             "check" => Invocation::Check { project: project(), target: text("target").map(PathBuf::from) },
             "build" => Invocation::Build { project: project(), runs: texts("runs"), verbose: flag("verbose") },
-            "run" => Invocation::Run { project: project(), target: text("target"), overrides: Cli::overrides(m), refused: Cli::simparam_entries(m).1 },
+            "run" => Invocation::Run { project: project(), target: text("target"), overrides: Cli::overrides(m), refused: Cli::refusal(m) },
             "test" => Invocation::Test { project: project(), runs: texts("runs") },
             "new" => Invocation::New { name: text("name").unwrap_or_default() },
             "clean" => Invocation::Clean { project: project(), cache: flag("cache") },

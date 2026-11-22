@@ -335,6 +335,16 @@ fn tnom_key_and_flag_default_to_27() {
 }
 
 #[test]
+fn a_tnom_that_is_no_number_is_p0010_naming_the_flag() {
+    // AO-08 AC 2: like `--simparam gain=two`, `--tnom abc` is a P0010 naming it, exit 1, nothing on stdout.
+    let dir = tempfile::tempdir().expect("tmp");
+    let out = piperine_in(dir.path(), &["run", twin("divider.msl").to_str().expect("path"), "--analysis", "op", "--tnom", "abc"]);
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
+    assert!(text(&out.stderr).contains("P0010") && text(&out.stderr).contains("--tnom abc"), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "");
+}
+
+#[test]
 fn tnom_at_or_below_absolute_zero_is_p0010() {
     // AO-08 AC 2: `--tnom -273.15` is a P0010 naming the key, exit code 1, nothing on stdout.
     let dir = tempfile::tempdir().expect("tmp");
