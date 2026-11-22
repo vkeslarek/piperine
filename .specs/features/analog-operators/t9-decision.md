@@ -228,3 +228,11 @@ fn slew_limits_an_ideal_step_to_its_rate() {
     }
 }
 ```
+
+## User confirmation (2026-11-22)
+
+The user confirmed this decision and its consequences after the B1 to B3 verification:
+
+- The Book numbers T9 moved are accepted and the Book is corrected to what the binary prints: "Numeros do Book mudaram então acerta o book".
+- Part V section 15.2 rule 6 (the step that reads a jump is first order in both stages) is approved: "Ok".
+- The settle/retake defect found by the verifier (Finding 3) is to be fixed: "Corrige".
