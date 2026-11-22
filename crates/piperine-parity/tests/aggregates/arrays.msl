@@ -70,25 +70,24 @@ module OverrunBench() {
     let overrun = Overrun(clk, y);
 }
 
-// an index that may be unknown reads the merge of the elements it may name and writes by merging
-// into each (§3.3.13): `sel` is never driven
+// an index is an integer (§3.3.5): it reads the element it names and writes into that one; `sel` holds 1
 module Merges(in clk: Bit, in sel: Bit<u2>, in e0: Bit<u8>, in e1: Bit<u8>, in e2: Bit<u8>, in e3: Bit<u8>, out same: Bit<u8> = 1, out differ: Bit<u8> = 1, out w0: Bit<u8> = 1, out w1: Bit<u8> = 1) {}
 digital for Merges {
     on clk.rise() {
         let eq = [e0, e1, e2];
         same <- eq[sel];
         let ne = [e0, e1, e3];
-        differ <- ne[sel];
+        differ <- ne[2];
         let w = [e0, e1];
-        w[sel] = 5;
+        w[sel] = 7;
         w0 <- w[0];
         let v = [e0, e3];
-        v[sel] = 5;
+        v[sel] = 7;
         w1 <- v[1];
     }
 }
 module MergeBench() {
-    signal clk: Bit; signal sel: Bit<u2>;
+    signal clk: Bit; signal sel: Bit<u2> = 1;
     signal e0: Bit<u8> = 5; signal e1: Bit<u8> = 5; signal e2: Bit<u8> = 5; signal e3: Bit<u8> = 6;
     signal same: Bit<u8>; signal differ: Bit<u8>; signal w0: Bit<u8>; signal w1: Bit<u8>;
     let osc = Osc(clk) { f: 200M };

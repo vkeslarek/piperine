@@ -1,0 +1,188 @@
+//! Control over carriers runs one path (part I §3.3.5, §1.8): `d` holds true, `e` and `en` hold false and `sel`
+//! holds 1 for the whole run, so every `if`, `match` and guard below takes exactly one of its paths and commits
+//! only what that path commits. A 1 GHz oscillator gives the rising edges (0.5 ns, 1.5 ns, ...) on which every
+//! reaction runs once per edge.
+
+/// A free-running oscillator, its first change at half a period.
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// `if d` commits its first arm and no other: 5 and 5, over the 1 each held.
+module Arms(in clk: Bit, in d: Bit, out differ: Bit<u8> = 1, out equal: Bit<u8> = 1, out before: Bit<u8> = 0) {}
+digital for Arms {
+    on clk.rise() {
+        before <- 9;
+        if d { differ <- 5; } else { differ <- 6; }
+        if d { equal <- 5; } else { equal <- 5; }
+    }
+}
+
+/// One arm commits: `changes` holds 3 and is committed 7, `keeps` holds 7 and is committed 7, the held value.
+module OneArm(in clk: Bit, in d: Bit, out changes: Bit<u8> = 3, out keeps: Bit<u8> = 7) {}
+digital for OneArm { on clk.rise() { if d { changes <- 7; keeps <- 7; } } }
+
+/// Neither arm does anything: no commit.
+module Neither(in clk: Bit, in d: Bit, out idle: Bit<u8> = 1) {}
+digital for Neither { on clk.rise() { if d { } else { } } }
+
+/// An `if` statement and an `if` expression commit the same value.
+module Forms(in clk: Bit, in d: Bit, out statement: Bit<u8> = 0, out expression: Bit<u8> = 0) {}
+digital for Forms {
+    on clk.rise() {
+        if d { statement <- 1; } else { statement <- 2; }
+        expression <- if d { 1 } else { 2 };
+    }
+}
+
+/// A `match` on `sel` takes the arm `sel` names and no other.
+module Matching(in clk: Bit, in sel: Bit<u8>, out picked: Bit<u8> = 0) {}
+digital for Matching {
+    on clk.rise() {
+        match sel {
+            0 => { picked <- 10; }
+            1 => { picked <- 11; }
+            _ => { picked <- 12; }
+        }
+    }
+}
+
+/// A one-armed `if` nested in a path: `held` takes the 3 of the path that ran, the inner commit does not run, and
+/// the other two carriers are never reached (the else arm, a guard that does not hold).
+module Nested(in clk: Bit, in d: Bit, in e: Bit, in en: Bit,
+              out held: Bit<u8> = 5, out other: Bit<u8> = 5, out guarded: Bit<u8> = 5) {}
+digital for Nested {
+    on clk.rise() {
+        if d { held <- 3; if e { held <- 5; } }
+        if d { } else { other <- 3; if e { other <- 5; } }
+    }
+    on clk.rise() && en { guarded <- 3; if e { guarded <- 5; } }
+}
+
+/// Another reaction's commit in the same microstep, of the value the first one made.
+module Pair(in clk: Bit, in d: Bit, out q: Bit<u8> = 1) {}
+digital for Pair {
+    on clk.rise() { q <- 4; }
+    on clk.rise() { if d { q <- 4; } }
+}
+
+/// The arm that divides by zero does not run, so there is no fault and `q` takes the other arm.
+module Panics(in clk: Bit, in e: Bit, out q: Bit<u8> = 4, out before: Bit<u8> = 0) {
+    signal zero: Bit<u8> = 0;
+}
+digital for Panics {
+    on clk.rise() {
+        before <- 9;
+        if e { q <- 1 / zero; } else { q <- 5; }
+    }
+}
+
+fn pick(c: bool, a: u8, b: u8) -> u8 { if c { a } else { b } }
+
+/// A definition, a body `let` and a function decide alike on `d`: arms 3 and 4 give 3.
+module Alike(in clk: Bit, in d: Bit, out by_let: Bit<u8> = 0, out by_function: Bit<u8> = 0, out by_definition: Bit<u8>) {
+    by_definition = if d { 3 } else { 4 };
+}
+digital for Alike {
+    on clk.rise() {
+        let t: u8 = if d { 3 } else { 4 };
+        by_let <- t;
+        by_function <- pick(d, 3, 4);
+    }
+}
+
+/// A delay is an `f64`: `q <- 2 after t` commits 2, `t` after the edge, in either arm.
+module Late(in clk: Bit, in d: Bit, in t: Bit<f64>, out q: Bit<u8> = 1) {}
+digital for Late { on clk.rise() { if d { q <- 2 after t; } else { q <- 3 after t; } } }
+
+/// Delays one tick (1 fs) apart are one instant: only the arm `d` names commits, 1 ns after the edge.
+module Ticks(in clk: Bit, in d: Bit, out q: Bit<u8> = 0) {}
+digital for Ticks { on clk.rise() { if d { q <- 1 after 1n; } else { q <- 2 after 1.0000004n; } } }
+
+/// A three-state phase detector in the `if`-expression form, starting at 0: the first edge steps it to 1, the
+/// third commits 0 and the fourth steps it to 1.
+module Pfd3(in clk: Bit, out edges: Bit<u8> = 0, out state: Bit<i2> = 0) {}
+digital for Pfd3 {
+    on clk.rise() {
+        edges <- edges + 1;
+        state <- if edges == 2 { 0 } else { if state < 1 { state + 1 } else { state } };
+    }
+}
+
+module Paths() {
+    signal clk: Bit; signal d: Bit = true; signal e: Bit = false; signal en: Bit = false; signal sel: Bit<u8> = 1;
+    signal t: Bit<f64> = 1n;
+    signal differ: Bit<u8>; signal equal: Bit<u8>; signal before: Bit<u8>;
+    signal changes: Bit<u8>; signal keeps: Bit<u8>;
+    signal idle: Bit<u8>;
+    signal statement: Bit<u8>; signal expression: Bit<u8>;
+    signal picked: Bit<u8>;
+    signal panic_q: Bit<u8>; signal panic_before: Bit<u8>;
+    signal by_let: Bit<u8>; signal by_function: Bit<u8>; signal by_definition: Bit<u8>;
+    signal late_q: Bit<u8>; signal ticks_q: Bit<u8>;
+    signal edges: Bit<u8>; signal state: Bit<i2>;
+    signal nested_held: Bit<u8>; signal nested_other: Bit<u8>; signal nested_guarded: Bit<u8>;
+    signal pair_q: Bit<u8>;
+    let osc = Osc(clk) { f: 1G };
+    let arms = Arms(clk, d, differ, equal, before);
+    let one_arm = OneArm(clk, d, changes, keeps);
+    let neither = Neither(clk, d, idle);
+    let forms = Forms(clk, d, statement, expression);
+    let matching = Matching(clk, sel, picked);
+    let panics = Panics(clk, e, panic_q, panic_before);
+    let alike = Alike(clk, d, by_let, by_function, by_definition);
+    let late = Late(clk, d, t, late_q);
+    let ticks = Ticks(clk, d, ticks_q);
+    let pfd3 = Pfd3(clk, edges, state);
+    let nested = Nested(clk, d, e, en, nested_held, nested_other, nested_guarded);
+    let pair = Pair(clk, d, pair_q);
+}
+
+/// A node held at 1 V, so the run has an analog side.
+module Held(p: Electrical) {}
+analog for Held { v(p, gnd) +> 1.0; }
+
+/// `finish()` under a guard that holds: it ends the run at the first rising edge.
+module Finish(in clk: Bit, in d: Bit) {}
+digital for Finish { on clk.rise() { if d { finish(); } } }
+
+module FinishBench() {
+    signal clk: Bit; signal d: Bit = true; signal a: Electrical;
+    let h = Held(a);
+    let osc = Osc(clk) { f: 1G };
+    let m = Finish(clk, d);
+}
+
+/// `finish()` under a guard that does not hold: the run goes on to its stop.
+module KeepGoingBench() {
+    signal clk: Bit; signal d: Bit = false; signal a: Electrical;
+    let h = Held(a);
+    let osc = Osc(clk) { f: 1G };
+    let m = Finish(clk, d);
+}
+
+/// Reaction guards: the first holds and its reaction runs, the second does not and its reaction does not. An event
+/// read as a `bool` is whether it fired in this microstep.
+module Guards(in clk: Bit, in en: Bit, in off: Bit, out runs: Bit<u8> = 0, out blocked: Bit<u8> = 1, out fired: Bit = false) {}
+digital for Guards {
+    on clk.rise() && en { runs <- runs + 1; }
+    on clk.rise() && off { blocked <- 2; }
+    on clk.rise() { fired <- clk.rise(); }
+}
+
+module GuardBench() {
+    signal clk: Bit; signal en: Bit = true; signal off: Bit = false;
+    signal runs: Bit<u8>; signal blocked: Bit<u8>; signal fired: Bit;
+    let osc = Osc(clk) { f: 1G };
+    let g = Guards(clk, en, off, runs, blocked, fired);
+}
+
+/// A reaction on `settle` commits once per time point; its commit lands at the next instant.
+module Settler(out s: Bit<u8> = 0) {}
+digital for Settler { on settle { s <- 1; } }
+
+module SettleBench() {
+    signal s: Bit<u8>;
+    let settler = Settler(s);
+}

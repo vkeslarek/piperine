@@ -19,7 +19,9 @@ mod support;
 mod run;
 
 use piperine_api::{Field, Record};
+use mixed::Seen;
 use run::SourceRun;
+use support::{build, series, transient};
 
 /// The model files of `tests/explicit/`.
 const RUN: SourceRun = SourceRun::in_directory("tests/explicit");
@@ -178,4 +180,184 @@ fn a_carrier_a_definition_drives_has_not_risen_at_the_start() {
     for stream in ["defined_rise", "defined_fall"] {
         assert!(edge_stream("Defined", stream).is_empty(), "{stream} fires on no transition");
     }
+}
+
+/// One nanosecond in ticks.
+const NS: i64 = 1_000_000;
+
+/// A known byte of a one-byte carrier.
+fn byte(value: u8) -> Vec<u8> {
+    vec![value, 1]
+}
+
+/// The 4 ns transient of `Paths` of `paths.msl`.
+fn paths() -> Seen {
+    build(&RUN.project("paths.msl"), "Paths").run(4e-9, 0.5e-9)
+}
+
+/// The changes of the net `name` of `Paths`.
+fn changes(seen: &Seen, name: &str) -> Vec<(i64, Vec<u8>)> {
+    transient(seen, &format!("Paths.{name}"))
+}
+
+#[test]
+fn control_on_a_carrier_runs_one_path() {
+    // §3.3.5, EU-01 AC 2 (replaces the 14 tests of `source_unknowns` that held a merge of two arms: a_function_and_a_definition_merge_an_unknown_if,
+    // an_unknown_if_runs_both_arms_without_a_fault, both_arms_committing_commit_their_merge, equal_known_commits_stay_known,
+    // one_arm_committing_merges_with_the_value_then, an_if_expression_and_an_if_statement_commit_the_same,
+    // an_unknown_match_merges_every_arm, a_nested_one_armed_commit_merges_with_the_path_before_it,
+    // a_merge_commit_meets_another_reactions_commit_of_the_same_microstep, a_panic_under_unknown_control_makes_the_merge_unknown,
+    // definitions_lets_and_functions_merge_alike, neither_arm_committing_commits_nothing,
+    // an_unknown_delay_under_unknown_control_commits_unknown_next, delays_one_tick_apart_are_one_key): `d` holds true, `e` false, `sel` 1,
+    // so every `if`, `match` and function takes one path and commits what that path commits
+    let seen = paths();
+    let at_first_edge = |name: &str| changes(&seen, name);
+    assert_eq!(at_first_edge("differ"), vec![(NS / 2, byte(5))], "`if d` takes its first arm");
+    assert_eq!(at_first_edge("equal"), vec![(NS / 2, byte(5))]);
+    assert_eq!(at_first_edge("before"), vec![(NS / 2, byte(9))], "a commit outside the `if` is made once");
+    assert_eq!(at_first_edge("changes"), vec![(NS / 2, byte(7))], "the one arm commits 7 over the 3 held");
+    assert_eq!(at_first_edge("keeps"), Vec::<(i64, Vec<u8>)>::new(), "the held 7 committed again is no change");
+    assert_eq!(at_first_edge("idle"), Vec::<(i64, Vec<u8>)>::new(), "arms that only bind commit nothing");
+    assert_eq!(at_first_edge("statement"), vec![(NS / 2, byte(1))]);
+    assert_eq!(at_first_edge("expression"), at_first_edge("statement"), "an `if` expression and an `if` statement commit the same");
+    assert_eq!(at_first_edge("picked"), vec![(NS / 2, byte(11))], "`match sel` takes the arm of 1");
+    assert_eq!(at_first_edge("nested_held"), vec![(NS / 2, byte(3))], "the inner `if e` does not run");
+    assert_eq!(at_first_edge("nested_other"), Vec::<(i64, Vec<u8>)>::new(), "the else arm is not reached");
+    assert_eq!(at_first_edge("nested_guarded"), Vec::<(i64, Vec<u8>)>::new(), "a guard that does not hold runs nothing");
+    assert_eq!(at_first_edge("pair_q"), vec![(NS / 2, byte(4))]);
+    assert_eq!(at_first_edge("panic_q"), vec![(NS / 2, byte(5))], "the arm that divides by zero is not taken: no fault");
+    assert_eq!(at_first_edge("panic_before"), vec![(NS / 2, byte(9))]);
+    for name in ["by_let", "by_function"] {
+        assert_eq!(at_first_edge(name), vec![(NS / 2, byte(3))], "{name}");
+    }
+    assert_eq!(series(&seen, "Paths.by_definition").pop().map(|(_, bytes)| bytes), Some(byte(3)), "a definition decides alike");
+    assert_eq!(at_first_edge("late_q"), vec![(3 * NS / 2, byte(2))], "a delay is an f64: `after 1n` commits 1 ns after the edge");
+    assert_eq!(at_first_edge("ticks_q"), vec![(3 * NS / 2, byte(1))], "only the arm `d` names commits");
+    assert_eq!(at_first_edge("state"), vec![(NS / 2, byte(1)), (5 * NS / 2, byte(0)), (7 * NS / 2, byte(1))], "a phase detector with an initial state");
+}
+
+/// The instant of the last step of the transient of `top` of `paths.msl`, run to 4 ns.
+fn last_step(top: &str) -> f64 {
+    let (_, result) = build(&RUN.project("paths.msl"), top).run_with(4e-9, 0.5e-9);
+    result.iter().last().expect("a time point").time()
+}
+
+#[test]
+fn a_finish_ends_the_run_where_its_guard_holds() {
+    // §19 (replaces a_maybe_finish_does_not_end_the_run): `if d { finish(); }` with `d` true ends the run at the first rising
+    // edge (0.5 ns); with `d` false the run goes on to its stop (4 ns)
+    assert!((last_step("FinishBench") - 0.5e-9).abs() <= 1e-15, "a finish whose guard holds ends at the edge");
+    assert!((last_step("KeepGoingBench") - 4e-9).abs() <= 1e-15, "a finish whose guard does not hold runs to stop");
+}
+
+#[test]
+fn settle_runs_as_before() {
+    // §15 (EU-14 AC 1): `on settle` runs once per time point and its commit lands at the next instant, so `s` changes once, to 1
+    let seen = build(&RUN.project("paths.msl"), "SettleBench").run(4e-9, 0.5e-9);
+    let changes = transient(&seen, "SettleBench.s");
+    assert_eq!(changes.len(), 1, "one change: {changes:?}");
+    assert_eq!(changes[0].1, byte(1));
+}
+
+#[test]
+fn an_event_read_is_a_bool() {
+    // §13 rule 2 (EU-14 AC 2): `fired <- clk.rise()` reads whether the edge fired in this microstep, so it is true at the first
+    // edge and holds there
+    let seen = build(&RUN.project("paths.msl"), "GuardBench").run(4e-9, 0.5e-9);
+    assert_eq!(transient(&seen, "GuardBench.fired"), vec![(NS / 2, byte(1))]);
+}
+
+#[test]
+fn a_false_guard_runs_nothing() {
+    // §13 rule 1 (EU-14 AC 3, replaces a_known_false_guard_does_not_run, an_unknown_guard_runs_the_reaction_as_a_maybe and
+    // two_commits_under_an_unknown_guard_merge_exactly): `on clk.rise() && en` with `en` true runs at each of the four rising
+    // edges and `on clk.rise() && off` never runs, so `blocked`, which held 1, never changes
+    let seen = build(&RUN.project("paths.msl"), "GuardBench").run(4e-9, 0.5e-9);
+    let runs: Vec<i64> = transient(&seen, "GuardBench.runs").iter().map(|(at, _)| *at).collect();
+    assert_eq!(runs, [NS / 2, 3 * NS / 2, 5 * NS / 2, 7 * NS / 2]);
+    assert_eq!(transient(&seen, "GuardBench.blocked"), Vec::<(i64, Vec<u8>)>::new());
+}
+
+/// The instants of the records of `top` of `cross_if.msl`, in a 1 us transient.
+fn hits(top: &str) -> Vec<f64> {
+    let seen = build(&RUN.project("cross_if.msl"), top).run(1e-6, 0.05e-6);
+    seen.all().iter().filter(|o| matches!(o.kind, piperine_solver::protocol::ObservationKind::Record { .. })).map(|o| o.time).collect()
+}
+
+#[test]
+fn an_if_in_a_cross_argument_picks_its_arm() {
+    // §13 (replaces an_unknown_if_in_a_cross_argument_merges): `cross(if d { v(p) - 0.3 } else { v(p) - 0.7 })` with `d` true
+    // watches `v(p) - 0.3`, which a 1 V/us ramp crosses at 0.3 us
+    let known = hits("KnownBench");
+    assert_eq!(known.len(), 1, "one crossing: {known:?}");
+    assert!((known[0] - 0.3e-6).abs() <= 1e-12, "at 0.3 us: {known:?}");
+}
+
+/// Every record of the 4 ns transient of `top` of `plain_values.msl`, decoded as the host decodes it.
+fn plain_records(top: &str) -> Vec<Record> {
+    RUN.records_of("plain_values.msl", top)
+}
+
+/// The fields every record of the stream `name` carries (the probes read values that do not change).
+fn constant_fields(records: &[Record], name: &str) -> Vec<(String, Field)> {
+    let all: Vec<&Record> = records.iter().filter(|r| r.stream == name).collect();
+    assert_eq!(all.len(), 4, "one `{name}` record per rising edge: {all:?}");
+    assert!(all.iter().all(|r| r.fields == all[0].fields), "the probe reads values that do not change: {all:?}");
+    all[0].fields.clone()
+}
+
+/// The fields of one record, named.
+fn fields(list: &[(&str, Field)]) -> Vec<(String, Field)> {
+    list.iter().map(|(name, field)| ((*name).to_string(), field.clone())).collect()
+}
+
+#[test]
+fn a_math_function_of_a_value_is_a_value() {
+    // §3.3, §1.5 (replaces a_math_function_of_an_unknown_value_is_unknown and known_or_with_an_unknown_default_gives_that_default):
+    // `sqrt` of 4.0 is 2.0, `abs` of -9.0 is 9.0, `exp(0.0)` is 1.0 and `ln(4.0) * 0.0` is 0.0
+    let records = plain_records("MathBench");
+    assert_eq!(constant_fields(&records, "math"), fields(&[("root", Field::Real(2.0)), ("abs", Field::Real(9.0)), ("exp", Field::Real(1.0)), ("ln", Field::Real(0.0))]));
+}
+
+#[test]
+fn short_circuit_operands_decide_as_bools() {
+    // §1.5, §1.8 (replaces short_circuit_operands_follow_the_merge): a left operand that decides never runs the right one
+    // (`f && 10 / 0 > 1` is false, `t || 10 / 0 > 1` is true), one that does not gives the right operand's value; a block that
+    // emits runs only then
+    let records = plain_records("ShortBench");
+    assert_eq!(constant_fields(&records, "and"), fields(&[("skipped", Field::Bool(false)), ("run", Field::Bool(true))]));
+    assert_eq!(constant_fields(&records, "or"), fields(&[("skipped", Field::Bool(true)), ("run", Field::Bool(false))]));
+    assert_eq!(constant_fields(&records, "emits"), fields(&[("skipped", Field::Bool(false)), ("run", Field::Bool(false))]));
+    let ran = records.iter().filter(|r| r.stream == "ran").count();
+    assert_eq!(ran, 4, "the one emitting right operand that runs, once per rising edge");
+}
+
+#[test]
+fn an_emit_under_a_guard_is_a_plain_record() {
+    // §19 (replaces a_record_under_unknown_control_is_maybe, a_record_field_keeps_its_flag and a_maybe_check_is_judged_as_unknown):
+    // `if d { emit!(..) }` with `d` true writes at each edge, `if e` with `e` false never, and `emit!` itself writes a record
+    // with the value it names; a `require` that holds is a pass
+    let records = plain_records("RecordBench");
+    let count = |name: &str| records.iter().filter(|r| r.stream == name).count();
+    assert_eq!((count("taken"), count("skipped"), count("plain")), (4, 0, 4));
+    assert_eq!(constant_fields(&records, "taken"), fields(&[("v", Field::Int(6)), ("k", Field::Int(3))]));
+    assert!(records.iter().all(|r| !r.maybe), "no record is reached under an unknown control");
+    let verdict = piperine_api::Verdict::judge(&records);
+    assert!(verdict.passed());
+    assert_eq!((verdict.checks(), verdict.failed().len()), (4, 0));
+}
+
+#[test]
+fn an_emitting_function_runs_in_a_value_position_of_a_reaction() {
+    // §19 rule 10: `sure <- heard()` commits 7 and writes its record; `if d { chosen <- heard(); }` with `d` true does too;
+    // `u && ping()` with `u` true runs `ping`. Per rising edge: `heard` twice, `pinged` once
+    let built = build(&RUN.project("plain_values.msl"), "CallsBench");
+    let streams = piperine_api::Streams::of(built.ir.clone());
+    let seen = built.run(4e-9, 0.5e-9);
+    let records: Vec<Record> = seen.all().iter().filter_map(|o| streams.decode(o)).map(|r| r.unwrap_or_else(|f| panic!("{f}"))).collect();
+    assert_eq!(transient(&seen, "CallsBench.sure"), vec![(NS / 2, byte(7))]);
+    assert_eq!(transient(&seen, "CallsBench.chosen"), vec![(NS / 2, byte(7))]);
+    assert_eq!(records.iter().filter(|r| r.stream == "heard").count(), 8);
+    assert_eq!(records.iter().filter(|r| r.stream == "pinged").count(), 4);
+    assert_eq!(constant_fields(&records, "both"), fields(&[("r", Field::Bool(true))]));
 }

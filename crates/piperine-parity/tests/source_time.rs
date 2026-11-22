@@ -1,7 +1,6 @@
 //! Time and timers from MSL source (feature `msl-digital`, T51; checks C110, C115, C162,
 //! DIG-12 AC 1 and 4, DIG-14 AC 13): the stdlib `every(t0, period)` placed in an `on` head, a
-//! reaction that commits `now()` and `analysis(Static)`, and `rise()`/`fall()` over edges to and
-//! from unknown, from `tests/digital/time.msl`. Times are compared in ticks (one femtosecond) or
+//! reaction that commits `now()` and `analysis(Static)`, and `rise()`/`fall()` over transitions, from `tests/digital/time.msl`. Times are compared in ticks (one femtosecond) or
 //! with the exact tick product, `now()` being `tick * resolution` (abi.md §4.2).
 #![cfg(unix)]
 
@@ -80,14 +79,13 @@ fn a_reaction_reads_now_and_static_from_source() {
 }
 
 #[test]
-fn rise_and_fall_fire_on_edges_to_and_from_unknown() {
-    // `q` starts false and is committed false, unknown, true, unknown, false and true at the
-    // rising edges 1 to 6 of the oscillator (the commit of false is no change)
+fn rise_and_fall_fire_on_transitions() {
+    // `q` starts false and is committed false, true, false, ... (odd edges false) at the rising edges 1 to 8 of the
+    // oscillator in the 40 ns run (explicit-unknowns T27: a Bit passes through no unknown; the earlier name was
+    // `rise_and_fall_fire_on_edges_to_and_from_unknown`). `rise()` is a change that ends true: false to true at edges
+    // 2, 4, 6 and 8; `fall()` a change that ends false: true to false at edges 3, 5 and 7; the commit of false at edge 1
+    // is no change. Each run commits once to its counter, at its instant.
     let seen = build(&project(), "EdgeBench").run(40e-9, 1e-9);
-    // §22.1: `rise()` is IEEE 1364 posedge: false to unknown (edge 2), unknown to true (edge 3)
-    // and false to true (edge 6), and no other edge; `fall()` is negedge: true to unknown (edge
-    // 4) and unknown to false (edge 5), and no other edge (a true to false is not in the
-    // sequence). Each run commits once to its counter, at its instant.
-    assert_eq!(seen.commits("EdgeBench.rises"), vec![rise(2), rise(3), rise(6)], "rise() runs");
-    assert_eq!(seen.commits("EdgeBench.falls"), vec![rise(4), rise(5)], "fall() runs");
+    assert_eq!(seen.commits("EdgeBench.rises"), vec![rise(2), rise(4), rise(6), rise(8)], "rise() runs");
+    assert_eq!(seen.commits("EdgeBench.falls"), vec![rise(3), rise(5), rise(7)], "fall() runs");
 }

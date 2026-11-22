@@ -750,9 +750,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `suite_hygiene::no_source_uses_a_removed_unknown_form` and `every_unknown_test_has_a_successor` pass
-- [ ] `source_unknowns.rs` and `tests/unknowns/` are gone; the commit body lists every old and new name
-- [ ] Gate check passes: Batch
+- [x] `suite_hygiene::no_source_uses_a_removed_unknown_form` and `every_unknown_test_has_a_successor` pass
+- [x] `source_unknowns.rs` and `tests/unknowns/` are gone; the commit body lists every old and new name
+- [x] Gate check passes: Batch
 
 **Tests**: integration
 **Gate**: full

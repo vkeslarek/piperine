@@ -1,5 +1,5 @@
 //! Time and timers from source (T51): the stdlib `every`, `now()` and `analysis(Static)` read in
-//! reactions, and the edges `rise()` and `fall()` over values that pass through unknown.
+//! reactions, and the edges `rise()` and `fall()` over transitions.
 
 /// The clock: a free-running oscillator, its first change at half a period.
 module Osc(out clk: Bit = false) {
@@ -15,7 +15,7 @@ digital for Timer { on every(1u, 2u) { hit <- !hit; } }
 module Stamp(in clk: Bit, out t: Bit<f64>, out s: Bit) {}
 digital for Stamp { on clk.changed() { t <- now(); s <- analysis(Static); } }
 
-/// Six commits to one `Bit`, one per rising edge: false, unknown, true, unknown, false, true.
+/// Six commits to one `Bit`, one per rising edge: false, true, false, true, false, true.
 module Walk(in clk: Bit, out q: Bit = false) {
     signal n: Bit<u8> = 0;
 }
@@ -23,12 +23,7 @@ digital for Walk {
     on clk.rise() {
         let s = n;
         n <- s + 1;
-        if s == 0 { q <- false; }
-        if s == 1 { q <- Unknown; }
-        if s == 2 { q <- true; }
-        if s == 3 { q <- Unknown; }
-        if s == 4 { q <- false; }
-        if s == 5 { q <- true; }
+        q <- s % 2 == 1;
     }
 }
 

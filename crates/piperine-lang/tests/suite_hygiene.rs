@@ -1179,3 +1179,148 @@ fn the_removed_form_walk_fails_on_a_planted_line() {
         assert!(RemovedForms::in_line(line).is_empty(), "`{line}` writes no removed form: {:?}", RemovedForms::in_line(line));
     }
 }
+
+/// The explicit model of unknowns (explicit-unknowns, EU-20): which `.msl` sources may still spell a removed name,
+/// and which test replaced each test that pinned an unknown behavior.
+struct RemovedUnknownForms;
+
+impl RemovedUnknownForms {
+    /// The spellings of the earlier flag: `Unknown`, `known_or`, `is_known`, `.known()`, `.high()`, `.level(` and `merge(`.
+    const NAMES: [&'static str; 7] = ["Unknown", "known_or", "is_known", ".known()", ".high()", ".level(", "merge("];
+
+    /// The `.msl` files that still use a removed name, with the task that removes it: the flag methods still resolve
+    /// until T29, and a plain read of a carrier inside a struct, a variant or a tuple needs the elaborator without the
+    /// flag (T31). The list shrinks to nothing there; `the_removed_name_exceptions_are_still_needed` fails on a stale entry.
+    const PENDING: [(&'static str, &'static str); 3] = [
+        ("crates/piperine-lang/std/values.msl", "T29: Known, merge and high are std items until the flag methods go"),
+        ("crates/piperine-parity/tests/aggregates/carriers.msl", "T31: a plain carrier read inside `Pair { .. }` and a `match` on a carrier"),
+        ("crates/piperine-parity/tests/aggregates/normal.msl", "T31: a plain carrier read as the argument of a tuple-returning call"),
+    ];
+
+    /// The `.msl` files of std, the examples and every test tree, as `(repo-relative path, text)`.
+    fn sources() -> Vec<(String, String)> {
+        let root = repo_root();
+        let mut found = Vec::new();
+        for base in ["crates/piperine-lang/std", "examples", "tests", "crates"] {
+            Self::collect(&root.join(base), &root, &mut found);
+        }
+        found
+    }
+
+    /// Every `.msl` under `dir`, skipping build output.
+    fn collect(dir: &Path, root: &Path, out: &mut Vec<(String, String)>) {
+        let Ok(entries) = fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.file_name().is_some_and(|name| name == "target") {
+                continue;
+            }
+            if path.is_dir() {
+                Self::collect(&path, root, out);
+            } else if path.extension().is_some_and(|ext| ext == "msl") {
+                let relative = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+                if relative.contains("/fixtures/preformat/") || (relative.starts_with("crates/") && !relative.contains("/tests/") && !relative.contains("/std/")) {
+                    continue;
+                }
+                if let Ok(text) = fs::read_to_string(&path) {
+                    out.push((relative, text));
+                }
+            }
+        }
+    }
+
+    /// The removed names a source spells, outside its `//` comments.
+    fn spelled(text: &str) -> Vec<&'static str> {
+        let code: String = text.lines().map(|line| line.split("//").next().unwrap_or("")).collect::<Vec<_>>().join("\n");
+        Self::NAMES.iter().copied().filter(|name| code.contains(name)).collect()
+    }
+
+    /// Each test that pinned an unknown behavior, the test that supersedes it, and the task that writes it when it does
+    /// not exist yet (`None`: it exists).
+    const SUCCESSORS: [(&'static str, &'static str, Option<&'static str>); 44] = [
+        ("a_function_and_a_definition_merge_an_unknown_if", "control_on_a_carrier_runs_one_path", None),
+        ("an_unknown_if_runs_both_arms_without_a_fault", "control_on_a_carrier_runs_one_path", None),
+        ("both_arms_committing_commit_their_merge", "control_on_a_carrier_runs_one_path", None),
+        ("equal_known_commits_stay_known", "control_on_a_carrier_runs_one_path", None),
+        ("one_arm_committing_merges_with_the_value_then", "control_on_a_carrier_runs_one_path", None),
+        ("an_if_expression_and_an_if_statement_commit_the_same", "control_on_a_carrier_runs_one_path", None),
+        ("an_unknown_match_merges_every_arm", "control_on_a_carrier_runs_one_path", None),
+        ("a_nested_one_armed_commit_merges_with_the_path_before_it", "control_on_a_carrier_runs_one_path", None),
+        ("a_merge_commit_meets_another_reactions_commit_of_the_same_microstep", "control_on_a_carrier_runs_one_path", None),
+        ("a_panic_under_unknown_control_makes_the_merge_unknown", "control_on_a_carrier_runs_one_path", None),
+        ("definitions_lets_and_functions_merge_alike", "control_on_a_carrier_runs_one_path", None),
+        ("an_unknown_delay_under_unknown_control_commits_unknown_next", "control_on_a_carrier_runs_one_path", None),
+        ("neither_arm_committing_commits_nothing", "control_on_a_carrier_runs_one_path", None),
+        ("delays_one_tick_apart_are_one_key", "control_on_a_carrier_runs_one_path", None),
+        ("the_pfd3_reaction_keeps_state_unknown_until_a_known_commit", "control_on_a_carrier_runs_one_path", None),
+        ("an_if_whose_arms_commit_is_the_value_of_a_commit_and_of_an_emit_field", "control_on_a_carrier_runs_one_path", None),
+        ("a_maybe_finish_does_not_end_the_run", "a_finish_ends_the_run_where_its_guard_holds", None),
+        ("a_record_under_unknown_control_is_maybe", "an_emit_under_a_guard_is_a_plain_record", None),
+        ("a_record_field_keeps_its_flag", "an_emit_under_a_guard_is_a_plain_record", None),
+        ("a_maybe_check_is_judged_as_unknown", "an_emit_under_a_guard_is_a_plain_record", None),
+        ("an_unknown_guard_runs_the_reaction_as_a_maybe", "a_false_guard_runs_nothing", None),
+        ("two_commits_under_an_unknown_guard_merge_exactly", "a_false_guard_runs_nothing", None),
+        ("a_known_false_guard_does_not_run", "a_false_guard_runs_nothing", None),
+        ("an_unknown_if_in_a_cross_argument_merges", "an_if_in_a_cross_argument_picks_its_arm", None),
+        ("an_unknown_initial_value_starts_every_level_unknown", "a_carrier_without_a_value_starts_at_its_default", None),
+        ("an_unknown_initial_value_fires_no_change_at_zero", "the_first_commit_is_a_change", None),
+        ("a_const_holding_unknown_reads_unknown_everywhere", "a_binary_carrier_is_read_as_its_value", None),
+        ("committing_unknown_makes_every_level_unknown", "a_written_initial_value_is_the_value_at_the_start", None),
+        ("short_circuit_operands_follow_the_merge", "short_circuit_operands_decide_as_bools", None),
+        ("a_math_function_of_an_unknown_value_is_unknown", "a_math_function_of_a_value_is_a_value", None),
+        ("known_or_with_an_unknown_default_gives_that_default", "a_math_function_of_a_value_is_a_value", None),
+        ("a_function_that_emits_runs_in_a_value_position_of_a_reaction", "an_emitting_function_runs_in_a_value_position_of_a_reaction", None),
+        ("level_reads_each_level_of_a_known_value", "at_gives_the_state_of_one_level", Some("T46")),
+        ("level_with_a_known_index_is_known", "at_gives_the_state_of_one_level", Some("T46")),
+        ("level_out_of_range_is_a_panic_naming_k", "at_gives_the_state_of_one_level", Some("T46")),
+        ("level_with_an_unknown_index_merges_every_level", "at_gives_the_state_of_one_level", Some("T46")),
+        ("merge_of_equal_known_values_is_that_value", "and_follows_the_four_state_table", Some("T46")),
+        ("merge_of_different_values_is_unknown_and_commutative", "or_follows_the_four_state_table", Some("T46")),
+        ("merge_of_a_value_with_itself_is_that_value", "same_compares_the_four_states", Some("T46")),
+        ("same_compares_flags_and_values", "same_compares_the_four_states", Some("T46")),
+        ("cast_keeps_each_level_and_its_flag", "a_binary_value_converts_to_logic", Some("T46")),
+        ("cast_to_a_tag_with_no_variant_is_unknown", "a_logic_converts_to_an_option_of_bits", Some("T46")),
+        ("logic_builds_known_and_unknown_values", "logic_reads_a_four_state_pattern", Some("T45")),
+        ("matches_bits_follows_its_table", "logic_reads_a_four_state_pattern", Some("T45")),
+    ];
+}
+
+#[test]
+fn no_source_uses_a_removed_unknown_form() {
+    // EU-20 AC 1 (C86): no `.msl` under std, examples, tests or crates/*/tests spells `Unknown`, `known_or`, `is_known`,
+    // `.known()`, `.high()`, `.level(` or `merge(` in code, except the three files PENDING names, each with its task
+    let mut offences = Vec::new();
+    for (path, text) in RemovedUnknownForms::sources() {
+        let spelled = RemovedUnknownForms::spelled(&text);
+        if !spelled.is_empty() && !RemovedUnknownForms::PENDING.iter().any(|(pending, _)| *pending == path) {
+            offences.push(format!("{path} spells {spelled:?}"));
+        }
+    }
+    assert!(offences.is_empty(), "sources that use a removed unknown form:\n  {}", offences.join("\n  "));
+    // the exceptions are honest: each still spells a removed name
+    let sources = RemovedUnknownForms::sources();
+    for (pending, why) in RemovedUnknownForms::PENDING {
+        let still = sources.iter().any(|(path, text)| path == pending && !RemovedUnknownForms::spelled(text).is_empty());
+        assert!(still, "{pending} spells no removed name now: drop it from PENDING ({why})");
+    }
+}
+
+#[test]
+fn every_unknown_test_has_a_successor() {
+    // EU-20 AC 2 (C87): each test of the deleted `source_unknowns.rs` is named in the table with the test that replaces
+    // it; the old name is spelled by no test, the new one is a test of the tree, unless a later task writes it
+    let sources = rust_sources();
+    let defines = |name: &str| sources.iter().any(|(_, text)| text.contains(&format!("fn {name}(")));
+    let mut offences = Vec::new();
+    for (old, new, pending) in RemovedUnknownForms::SUCCESSORS {
+        if defines(old) {
+            offences.push(format!("{old} is still a test: replace it by {new}"));
+        }
+        match pending {
+            None if !defines(new) => offences.push(format!("{old}: the successor {new} is no test of the tree")),
+            Some(task) if defines(new) => offences.push(format!("{old}: {new} exists now: drop `Some(\"{task}\")` from its row")),
+            _ => {}
+        }
+    }
+    assert!(offences.is_empty(), "{}", offences.join("\n"));
+}

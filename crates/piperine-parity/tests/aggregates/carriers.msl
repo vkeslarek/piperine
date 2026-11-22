@@ -25,56 +25,45 @@ digital for Commits {
     }
 }
 
-// A value that changes at the second edge, and the levels of a tag a variant names (1, with n = 3)
-// and of one none does (3 of the tags 0, 1, 2).
-module Moves(in clk: Bit, out u: Bit<Pair>, out step: Bit<u8>, out good: Bit<Tx>, out bad: Bit<Tx>) {}
+// A value that changes at each edge, and a tag a variant names (1, with n = 3).
+module Moves(in clk: Bit, out u: Bit<Pair> = Pair { a: 6, b: false }, out step: Bit<u8> = 7, out good: Bit<Tx> = Tx::Idle) {}
 digital for Moves {
     on clk.rise() {
         u <- Pair { a: step.known_or(7), b: false };
         step <- step.known_or(7) + 1;
         good <- cast::<u5, Tx>(13);
-        bad <- cast::<u5, Tx>(3);
     }
 }
 
 // Reads of the whole value: how often it changed, its fields and the value before the change.
-module Watch(in u: Bit<Pair>, in s: Bit<Pair>, out now_a: Bit<u8>, out before_a: Bit<u8>, out before_known: Bit<bool>, out s_changes: Bit<u8>) {}
+module Watch(in u: Bit<Pair>, in s: Bit<Pair>, out now_a: Bit<u8> = 0, out before_a: Bit<u8> = 0, out s_changes: Bit<u8> = 0) {}
 digital for Watch {
     on u.changed() {
         now_a <- u.a;
-        before_known <- u.prev().is_known();
-        if u.prev().is_known() { before_a <- u.prev().a; }
+        before_a <- u.prev().a;
     }
-    on s.changed() { s_changes <- s_changes.known_or(0) + 1; }
+    on s.changed() { s_changes <- s_changes + 1; }
 }
 
-// Reads of a tuple, an array, an `Option` and a payload enum, whole and by part, and the flag
-// reads of an enum whose tag a variant names and of one whose tag none does.
-module Reads(in t: Bit<(u8, bool)>, in arr: Bit<[u8; 3]>, in opt: Bit<Option<u8>>, in tx: Bit<Tx>, in good: Bit<Tx>, in bad: Bit<Tx>,
-             out r_t: Bit<u8>, out r_arr: Bit<u8>, out r_opt: Bit<u8>, out r_tx: Bit<u8>, out r_levels: Bit<[bool; 5]>, out good_known: Bit<bool>, out bad_known: Bit<bool>) {}
+// Reads of a tuple, an array, an `Option` and a payload enum, whole and by part.
+module Reads(in t: Bit<(u8, bool)>, in arr: Bit<[u8; 3]>, in opt: Bit<Option<u8>>, in tx: Bit<Tx>, in good: Bit<Tx>,
+             out r_t: Bit<u8> = 0, out r_arr: Bit<u8> = 0, out r_opt: Bit<u8> = 0, out r_tx: Bit<u8> = 0) {}
 digital for Reads {
     on tx.changed() {
         r_t <- t.0;
         r_arr <- arr[1];
         r_opt <- opt.unwrap_or(0);
         r_tx <- match tx.known_or(Tx::Idle) { Tx::Data { n } => n as u8, _ => 99 };
-        r_levels <- [tx.level(0).unwrap_or(false), tx.level(1).unwrap_or(true), tx.level(2).unwrap_or(false), tx.level(3).unwrap_or(true), tx.level(4).unwrap_or(false)];
-        good_known <- good.is_known();
-        bad_known <- bad.is_known();
     }
 }
 
-// The width of each type and a level of a value, §2.
-module Widths(in clk: Bit, in s: Bit<Pair>, out w_pair: Bit<u8>, out w_enum: Bit<u8>, out w_wrap: Bit<u8>, out level_a0: Bit<bool>, out level_b: Bit<bool>) {}
+// The width of each type, §2.
+module Widths(in clk: Bit, out w_pair: Bit<u8> = 0, out w_enum: Bit<u8> = 0, out w_wrap: Bit<u8> = 0) {}
 digital for Widths {
     on clk.rise() {
         w_pair <- Pair::WIDTH as u8;
         w_enum <- Tx::WIDTH as u8;
         w_wrap <- Wrap::WIDTH as u8;
-    }
-    on s.changed() {
-        level_a0 <- s.level(0).unwrap_or(false);
-        level_b <- s.level(8).unwrap_or(false);
     }
 }
 
@@ -84,34 +73,16 @@ module Defined(out first: Bit<Pair> = Pair { a: 3, b: true }, out defined: Bit<P
 module Bench() {
     signal clk: Bit;
     signal s: Bit<Pair>; signal t: Bit<(u8, bool)>; signal arr: Bit<[u8; 3]>; signal tx: Bit<Tx>; signal opt: Bit<Option<u8>>;
-    signal u: Bit<Pair>; signal step: Bit<u8>; signal good: Bit<Tx>; signal bad: Bit<Tx>;
-    signal r_t: Bit<u8>; signal r_arr: Bit<u8>; signal r_opt: Bit<u8>; signal r_tx: Bit<u8>; signal r_levels: Bit<[bool; 5]>; signal good_known: Bit<bool>; signal bad_known: Bit<bool>;
-    signal now_a: Bit<u8>; signal before_a: Bit<u8>; signal before_known: Bit<bool>; signal s_changes: Bit<u8>;
+    signal u: Bit<Pair>; signal step: Bit<u8>; signal good: Bit<Tx>;
+    signal r_t: Bit<u8>; signal r_arr: Bit<u8>; signal r_opt: Bit<u8>; signal r_tx: Bit<u8>; 
+    signal now_a: Bit<u8>; signal before_a: Bit<u8>; signal s_changes: Bit<u8>;
     signal w_pair: Bit<u8>; signal w_enum: Bit<u8>; signal w_wrap: Bit<u8>;
-    signal level_a0: Bit<bool>; signal level_b: Bit<bool>;
-    signal first: Bit<Pair>; signal defined: Bit<Pair>;
+        signal first: Bit<Pair>; signal defined: Bit<Pair>;
     let osc = Osc(clk) { f: 200M };
     let commits = Commits(clk, s, t, arr, tx, opt);
-    let moves = Moves(clk, u, step, good, bad);
-    let watch = Watch(u, s, now_a, before_a, before_known, s_changes);
-    let reads = Reads(t, arr, opt, tx, good, bad, r_t, r_arr, r_opt, r_tx, r_levels, good_known, bad_known);
-    let widths = Widths(clk, s, w_pair, w_enum, w_wrap, level_a0, level_b);
+    let moves = Moves(clk, u, step, good);
+    let watch = Watch(u, s, now_a, before_a, s_changes);
+    let reads = Reads(t, arr, opt, tx, good, r_t, r_arr, r_opt, r_tx);
+    let widths = Widths(clk, w_pair, w_enum, w_wrap);
     let defs = Defined(first, defined);
-}
-
-// A field of a composite that holds no value yet (`un` is never driven) is refused by name, where the
-// scalar `ux` of the same reaction reads unknown (§3.3.2, §5.1.1).
-module UnknownRead(in clk: Bit, in un: Bit<Pair>, out y: Bit<u8>) {}
-digital for UnknownRead { on clk.rise() { y <- un.a; } }
-module UnknownPrevRead(in clk: Bit, in un: Bit<Pair>, out y: Bit<u8>) {}
-digital for UnknownPrevRead { on clk.rise() { y <- un.prev().a; } }
-module UnknownPrevBench() {
-    signal clk: Bit; signal un: Bit<Pair>; signal y: Bit<u8>;
-    let osc = Osc(clk) { f: 200M };
-    let read = UnknownPrevRead(clk, un, y);
-}
-module UnknownBench() {
-    signal clk: Bit; signal un: Bit<Pair>; signal y: Bit<u8>;
-    let osc = Osc(clk) { f: 200M };
-    let read = UnknownRead(clk, un, y);
 }

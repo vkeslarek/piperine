@@ -35,7 +35,7 @@ module Bench() {
 pub module JitterClock(out clk: Bit = false) {
     period: f64 = 10n where period > 0.0;
     jitter: f64 = 1n;
-    signal rng: Bit<u64>; // unknown until the first draw, which reads the seed 7
+    signal rng: Bit<u64> = 7; // the seed, until the first draw
 }
 digital for JitterClock {
     on clk.changed() {
