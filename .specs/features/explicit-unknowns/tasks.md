@@ -763,7 +763,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T28: Lexer and parser: `Unknown` is no token
 
-**What**: Remove `Token::Unknown`, `LitKind::Unknown` and their arms from `msl/lexer.rs`, `msl/ast.rs`, the parser, the printer, the formatter and `pom`. `Unknown` lexes as an identifier and resolves to nothing: `E0161`, with the `RemovedName` help. `E0906` and `E0908` are raised nowhere.
+**What**: Remove `Token::Unknown`, `LitKind::Unknown` and their arms from `msl/lexer.rs`, `msl/ast.rs`, the parser, the printer, the formatter and `pom`. `Unknown` lexes as an identifier and resolves to nothing: `E0161`, with the `RemovedName` help. `E0906` and `E0908` are raised nowhere. The `LitKind::Unknown` statement of `docs/pom/mapping.md` leaves with it, and so does its entry in `pom_docs::DocAheadOfTheCode::WAITING`.
 **Where**: `crates/piperine-lang/src/msl/lexer.rs`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: the `Clone`/`Copy` help of `value-semantics` T13
@@ -785,7 +785,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T29: Checker: the flag methods are gone
 
-**What**: Delete `level`, `known`, `known_or`, `is_known`, `high` and `merge` from `types/intrinsic.rs` and `elab/intrinsics.rs`; a call is `E0161` naming the method and the type, with the help. `logic` and `matches_bits` are refused by name with `P0001` (`GAPS.md` L58) until T45.
+**What**: Delete `level`, `known`, `known_or`, `is_known`, `high` and `merge` from `types/intrinsic.rs` and `elab/intrinsics.rs`; a call is `E0161` naming the method and the type, with the help. `logic` and `matches_bits` are refused by name with `P0001` (`GAPS.md` L58) until T45. The `level` statement of `docs/pom/mapping.md` and its `pom_docs::DocAheadOfTheCode::WAITING` entry leave with it.
 **Where**: `crates/piperine-lang/src/types/intrinsic.rs`
 **Depends on**: T28
 **Reuses**: `RemovedName`

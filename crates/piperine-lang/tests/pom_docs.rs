@@ -460,3 +460,57 @@ fn the_builtin_table_doc_has_no_const_row() {
     let kinds = section_rows(&model, "### `BuiltinKind`");
     assert!(kinds.iter().all(|r| r.first().is_none_or(|c| c.as_str() != "`Const`")), "BuiltinKind has no `Const` variant row");
 }
+
+/// One statement of `docs/pom/` that describes a form the implementation still has, although the
+/// specification no longer has it (explicit-unknowns, D7): the page, the text that says it, the source file
+/// and the text that keeps it alive, and the task that removes both.
+struct DocAheadOfTheCode {
+    /// The page of `docs/pom/` that holds the statement.
+    page: &'static str,
+    /// The text of the statement, as written on the page.
+    statement: &'static str,
+    /// The source file, relative to the repository root, that still has the form.
+    source: &'static str,
+    /// The text of the source that is the form.
+    form: &'static str,
+    /// The task that removes the form from the code and rewrites the page.
+    owner: &'static str,
+}
+
+impl DocAheadOfTheCode {
+    /// The statements that wait for their task. When a task removes a form the entry fails here, naming it.
+    const WAITING: [DocAheadOfTheCode; 7] = [
+        DocAheadOfTheCode { page: "mapping.md", statement: "`NatureFieldNode::Resolve`", source: "crates/piperine-lang/src/pom/decl.rs", form: "Resolve { meta: Meta, expr: ExprId", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
+        DocAheadOfTheCode { page: "mapping.md", statement: "`LitKind::Unknown`", source: "crates/piperine-lang/src/msl/ast.rs", form: "/// The `Unknown` literal (A.3).", owner: "explicit-unknowns T28" },
+        DocAheadOfTheCode { page: "mapping.md", statement: "the `level` builtin", source: "crates/piperine-lang/src/pom/builtin.rs", form: "row(\"level\"", owner: "explicit-unknowns T29" },
+        DocAheadOfTheCode { page: "reflection.md", statement: "`resolve_fn(self)`", source: "crates/piperine-lang/src/pom/reflect/hardware.rs", form: "pub fn resolve_fn", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
+        DocAheadOfTheCode { page: "reflection.md", statement: "nature Wire { value: bool, resolve: pick }", source: "crates/piperine-lang/src/pom/decl.rs", form: "Resolve { meta: Meta, expr: ExprId", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
+        DocAheadOfTheCode { page: "model.md", statement: "value: T, resolve: f }", source: "crates/piperine-lang/src/pom/decl.rs", form: "Resolve { meta: Meta, expr: ExprId", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
+        DocAheadOfTheCode { page: "model.md", statement: "`resolve: expr`", source: "crates/piperine-lang/src/pom/decl.rs", form: "Resolve { meta: Meta, expr: ExprId", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
+    ];
+
+    /// The offences of this statement: the page no longer says it, or the source no longer has the form.
+    /// Either way the entry is stale and its owner has delivered.
+    fn offences(&self) -> Vec<String> {
+        let mut found = Vec::new();
+        if !page_of(self.page).contains(self.statement) {
+            found.push(format!("docs/pom/{} no longer says {}: drop the entry (owner {})", self.page, self.statement, self.owner));
+        }
+        let source = std::fs::read_to_string(repo().join(self.source)).unwrap_or_else(|e| panic!("{}: {e}", self.source));
+        if !source.contains(self.form) {
+            found.push(format!("{} no longer has `{}`: rewrite docs/pom/{} and drop the entry (owner {})", self.source, self.form, self.page, self.owner));
+        }
+        found
+    }
+}
+
+#[test]
+fn the_pom_docs_that_wait_for_the_code_stay_honest() {
+    // docs/pom describes the implementation, which still has the `resolve` field, the `Unknown` literal and the
+    // `level` builtin that the specification removed; each statement is owned by the task that removes its form,
+    // and a stale entry (the form gone or the page rewritten) fails here instead of hiding a divergence.
+    let found: Vec<String> = DocAheadOfTheCode::WAITING.iter().flat_map(DocAheadOfTheCode::offences).collect();
+    assert!(found.is_empty(), "{found:#?}");
+    let note = page_of("mapping.md");
+    assert!(note.contains("T28 for `Unknown`, T29 for `level`, and `resolved-nets` T16"), "the mapping note names the owners of the forms it keeps");
+}
