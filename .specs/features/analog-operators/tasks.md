@@ -57,7 +57,7 @@ The tasks follow the spec's Q1 to Q6, all their recommended option (user, 2026-1
 
 Rules every task follows:
 
-- **Parity is untouched.** The existing constants of `crates/piperine-parity/src/contract.rs`, the existing files of `tests/e2e/twins/` (`devices.msl`, `noise_rc.cir` and `noise_switch.cir` included), the existing functions of the `parity_*` targets, `crates/piperine-cli/tests/goldens/` and `crates/piperine-transpile/tests/golden/` are not edited. New twins, new contract constants (T40 only) and new test functions are appended. No tolerance is written outside `ToleranceContract`, and none is changed. A task whose change moves a twin's bytes or a generated golden stops and reports.
+- **Parity is untouched.** The existing constants of `crates/piperine-parity/src/contract.rs`, the existing files of `tests/e2e/twins/` (`devices.msl`, `noise_rc.cir` and `noise_switch.cir` included), the existing functions of the `parity_*` targets, `crates/piperine-cli/tests/goldens/` and `crates/piperine-transpile/tests/golden/` are not edited. New twins, new contract constants (T40 only) and new test functions are appended. No tolerance is written outside `ToleranceContract`, and none is changed. A task whose change moves a twin's bytes or a generated golden stops and reports. One generated golden line moved, by T10 (761db13e), and is kept: see design.md D18.
 - **Cross-lane touches are only those `design.md` names**: `piperine-analog-solver` (`math/integration.rs`, `device/assembly.rs`), `piperine-solver` (`analyses/noise.rs`, `protocol/transient.rs`, the one literal of `tests/abi_noise.rs`), `docs/spec/part_v_execution.md` §15.2. No other file of the solver crates or `piperine-abi` is edited.
 - **The interpreter is frozen (R1).** `piperine-interp` gains refusal rows only (T31); none of its existing targets is edited except `frozen.rs`, which gains tests.
 - **Fail loud.** A form this feature does not run is `P0001` naming it, or the spec's code; never a default, a skipped statement or a value of 0.
@@ -1317,7 +1317,7 @@ Proof: run apinatures | test natures_with_different_flow_names_at_a_port_are_e02
 **C60** - The interpreter refuses a design holding `ddx`, `delay`, `noise`, `simparam` or `emit!` in `analog`, naming the form. (AO-11, AC 1; T31)
 Proof: run frozen | test the_interpreter_refuses_each_analog_operator_by_name ... ok
 
-**C61** - Each of the existing twins prints, on each backend, the bytes it printed before this feature. (AO-12, AC 1; every task)
+**C61** - Each of the existing twins prints, on each backend, the bytes it printed before this feature, and the generated goldens are the ones of before except one sanctioned line: `vsource.rs` prints `abstol: [1e-6, 1e-12]` on the private flow pin `b0.flow` (T10, D18, verification Finding 2). (AO-12, AC 1; every task)
 Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok
 Proof: run tgolden | test the_five_m1_bodies_print_as_the_golden_files ... ok
 Proof: run planops | test a_body_without_a_new_form_keeps_its_shape ... ok
