@@ -715,11 +715,11 @@ fn every_buck_slice_shape_validates() {
 }
 
 #[test]
-fn every_record_layout_ends_with_maybe() {
-    // §19 rule 1: every record carries `maybe`, whether it was reached under unknown control;
-    // §19 rule 11 reserves the name. Its layout is a `bool` carrier (abi.md P3: the value byte,
-    // then its known byte) after the stream's value fields, so the last field of the pin is
-    // `maybe` for a stream of any shape, and the value fields keep their offsets.
+fn every_record_layout_holds_its_declared_fields_only() {
+    // §19 rule 1 (EU-15 AC 1): a record layout is the stream's declared fields and no other; each
+    // is a carrier (abi.md P3: the value byte, then its known byte) at the next offset its
+    // alignment allows, the size rounded up to the largest alignment, so the last field of the
+    // pin is the stream's last field, for a stream of any shape.
     let streams: [(&str, Vec<(&str, ValueType)>); 3] = [
         ("none", vec![]),
         ("level", vec![("level", ValueType::F64)]),
@@ -745,30 +745,26 @@ fn every_record_layout_ends_with_maybe() {
     });
     let plan = BodyPlan::new(ir.body(body));
     let shape = plan.shape().shape();
-    let known = field_flag::HAS_KNOWN;
-    // (field names, the `maybe` offset, the size, the alignment) of each stream's pin
+    // (field names, the size, the alignment) of each stream's pin
     let want = [
-        (vec!["maybe"], 0, 2, 1),
-        // `level`: a `REAL` at 0 (known 8, 16 bytes), `maybe` at 16, 18 bytes rounded to 8
-        (vec!["level", "maybe"], 16, 24, 8),
-        // `code` a `BYTE` at 0, `ok` a `BIT` at 2, `count` an `i32` at 4 (8 bytes), `maybe` at
-        // 12, 14 bytes rounded to 4
-        (vec!["code", "ok", "count", "maybe"], 12, 16, 4),
+        (vec![], 0, 1),
+        // `level`: a `REAL` at 0 (known 8), 16 bytes
+        (vec!["level"], 16, 8),
+        // `code` a `BYTE` at 0, `ok` a `BIT` at 2, `count` an `i32` at 4 (8 bytes), 12 bytes
+        (vec!["code", "ok", "count"], 12, 4),
     ];
-    for ((name, _), (names, maybe_at, size, align)) in streams.iter().zip(want.clone()) {
+    for ((name, _), (names, size, align)) in streams.iter().zip(want.clone()) {
         let p = shape.pins.get(Find::pin(shape, name) as usize).expect("the record pin");
-        let fields: Vec<(String, u32, u32, u32)> = p.layout.fields.iter().map(|f| (f.name.as_str().to_string(), f.leaf, f.flags, f.known)).collect();
-        assert_eq!(fields.iter().map(|f| f.0.as_str()).collect::<Vec<_>>(), names, "{name}: the value fields, then `maybe`");
-        let last = p.layout.fields.iter().last().expect("a layout has `maybe`");
-        assert_eq!((last.leaf, last.offset, last.count, last.flags, last.known), (leaf::BOOL, maybe_at, 1, known, maybe_at + 1), "{name}: `maybe` is a `bool` carrier");
+        let fields: Vec<String> = p.layout.fields.iter().map(|f| f.name.as_str().to_string()).collect();
+        assert_eq!(fields.iter().map(String::as_str).collect::<Vec<_>>(), names, "{name}: the declared fields and nothing after them");
         assert_eq!((p.layout.size, p.layout.align), (size, align), "{name}");
         assert_eq!(piperine_abi::validate::validate(shape), Ok(()), "{name}");
     }
-    // the plan's own layout names the same offset, and keeps the value fields apart from it
-    for (stream, (_, maybe_at, size, _)) in ir.body(body).streams().iter().zip(want) {
+    // the plan's own layout names the same size, one field per field of the stream
+    for (stream, (_, size, _)) in ir.body(body).streams().iter().zip(want) {
         let layout = RecordLayout::of(stream).expect("a layout");
-        assert_eq!((layout.maybe_offset(), layout.size), (maybe_at, size), "{}", stream.name);
-        assert_eq!(layout.fields.len(), stream.fields.len(), "{}: `maybe` is no field of the stream", stream.name);
+        assert_eq!(layout.size, size, "{}", stream.name);
+        assert_eq!(layout.fields.len(), stream.fields.len(), "{}", stream.name);
     }
 }
 

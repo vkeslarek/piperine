@@ -9,8 +9,7 @@ use piperine_api::{Cell, Field, Record};
 pub struct JsonRecord;
 
 impl JsonRecord {
-    /// `{"time":..,"instance":"..","stream":"..","fields":{..}}` and a line break, with
-    /// `"maybe":true` after `fields` when the record was reached under unknown control. A real is a
+    /// `{"time":..,"instance":"..","stream":"..","fields":{..}}` and a line break. A real is a
     /// JSON number in Rust's shortest form that reads back as the same `f64` (a real JSON cannot
     /// hold, NaN or an infinity, is the string `"NaN"`, `"inf"` or `"-inf"`), a `bool` a JSON
     /// boolean, an integer a JSON number, a text a JSON string and an unknown value `null`.
@@ -30,10 +29,7 @@ impl JsonRecord {
             };
             write!(out, "{}:{value}", JsonRecord::string(name))?;
         }
-        // `maybe` is written only when true (§19 rule 1), so no record of a design without unknown
-        // control changes
-        let maybe = if record.maybe { ",\"maybe\":true" } else { "" };
-        writeln!(out, "}}{maybe}}}")
+        writeln!(out, "}}}}")
     }
 
     /// A scalar part of a composite value as JSON: a number, a boolean, a string or `null`.
@@ -103,30 +99,26 @@ mod tests {
                 ("kind".into(), Field::Text("require".into())),
                 ("lost".into(), Field::Unknown),
             ],
-            maybe: false,
         };
         assert_eq!(
             line(&record),
             "{\"time\":1e-6,\"instance\":\"Step.mon\",\"stream\":\"trip\",\"fields\":{\"v\":0.5,\"ok\":true,\"n\":-7,\"big\":18446744073709551615,\"kind\":\"require\",\"lost\":null}}\n"
         );
         // a record with no field has an empty object
-        let bare = Record { time: 0.0, instance: "T".into(), stream: "s".into(), fields: vec![], maybe: false };
+        let bare = Record { time: 0.0, instance: "T".into(), stream: "s".into(), fields: vec![] };
         assert_eq!(line(&bare), "{\"time\":0.0,\"instance\":\"T\",\"stream\":\"s\",\"fields\":{}}\n");
-        // a record reached under unknown control says so after its fields; a sure one does not
-        let reached = Record { maybe: true, ..bare.clone() };
-        assert_eq!(line(&reached), "{\"time\":0.0,\"instance\":\"T\",\"stream\":\"s\",\"fields\":{},\"maybe\":true}\n");
         // string escaping: a quote, a backslash, a line break and a control character
-        let text = Record { time: 0.0, instance: "T".into(), stream: "s".into(), fields: vec![("m".into(), Field::Text("a\"b\\c\nd\u{1}".into()))], maybe: false };
+        let text = Record { time: 0.0, instance: "T".into(), stream: "s".into(), fields: vec![("m".into(), Field::Text("a\"b\\c\nd\u{1}".into()))] };
         assert_eq!(line(&text), "{\"time\":0.0,\"instance\":\"T\",\"stream\":\"s\",\"fields\":{\"m\":\"a\\\"b\\\\c\\nd\\u0001\"}}\n");
         // a real reads back as the same f64: the shortest form is exact
         for v in [0.1, 6.931075e-7, 1.0 / 3.0, 1e300, -2.5e-300, f64::MIN_POSITIVE] {
-            let record = Record { time: v, instance: "T".into(), stream: "s".into(), fields: vec![], maybe: false };
+            let record = Record { time: v, instance: "T".into(), stream: "s".into(), fields: vec![] };
             let text = line(&record);
             let number = text.strip_prefix("{\"time\":").and_then(|t| t.split(',').next()).expect("a time");
             assert_eq!(number.parse::<f64>().expect("a number"), v, "{text}");
         }
         // a value JSON has no number for is a string, never a bare `NaN`
-        let nan = Record { time: 0.0, instance: "T".into(), stream: "s".into(), fields: vec![("x".into(), Field::Real(f64::NAN)), ("y".into(), Field::Real(f64::NEG_INFINITY))], maybe: false };
+        let nan = Record { time: 0.0, instance: "T".into(), stream: "s".into(), fields: vec![("x".into(), Field::Real(f64::NAN)), ("y".into(), Field::Real(f64::NEG_INFINITY))] };
         assert!(line(&nan).contains("\"x\":\"NaN\",\"y\":\"-inf\""), "{}", line(&nan));
     }
 }

@@ -1124,12 +1124,10 @@ impl<'a> ValuePrinter<'a> {
         let text = if texts.is_empty() { String::new() } else { format!("; its text {} stays in the IR", texts.join(", ")) };
         let mut lines = vec![format!("// emit! to stream `{}` @ {}:{}:{}{text}", declared.name, origin.file, origin.line, origin.col)];
         lines.extend(evaluated);
-        lines.push(format!("let mut record_ = [0u8; {}];", layout.size));
+        // a stream with no value field writes nothing into its zero bytes
+        let binding = if writes.is_empty() { "let" } else { "let mut" };
+        lines.push(format!("{binding} record_ = [0u8; {}];", layout.size));
         lines.extend(writes);
-        // the record's own `maybe` (§19 rule 1) is false: no code runs under unknown control (the
-        // field leaves the layout with `explicit-unknowns` T34)
-        let maybe_at = layout.maybe_offset();
-        lines.push(format!("rt::Carried::write_pin(false, &mut record_[{maybe_at}..]);"));
         lines.push(format!("commits_.record({index}, &record_);"));
         Ok(lines.join("\n"))
     }

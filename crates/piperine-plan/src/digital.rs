@@ -63,8 +63,7 @@
 //! pin named by the stream and flagged `RECORD` (so `QUIET`: no reader, never a microstep). Its
 //! layout holds one field per value field of the stream, in the stream's order, each laid out
 //! as a carrier of its type (the value, then its known byte) at the next offset its alignment
-//! allows, then the field `maybe` of §19 rule 1 (a `bool`, laid out the same way), the size
-//! rounded up to the largest alignment (`RecordLayout`): a site that leaves a
+//! allows, the size rounded up to the largest alignment (`RecordLayout`): a site that leaves a
 //! field out writes it all zero, its known byte 0 (P3, C5). Each emit site is one statement of
 //! its reaction, in the order of the commits (`Body::reaction_statements`), committing the
 //! whole layout. The record pins follow the re-arming pins, in stream order.
@@ -267,19 +266,14 @@ impl CarrierLayout {
 
 /// The layout of a stream's `RECORD` pin: each value field laid out as a pin of its type
 /// (`PinLayout`: a carrier's scalar layout, or a composite's), in the stream's order, at the
-/// next offset its alignment allows, then the `maybe` field (§19 rule 1: whether the record was
-/// reached under unknown control), a `bool` laid out as a carrier; the size rounded up to the
-/// largest alignment.
+/// next offset its alignment allows; the size rounded up to the largest alignment.
 #[derive(Clone, Debug)]
 pub struct RecordLayout {
     pub size: u32,
     pub align: u32,
-    /// Per value field of the stream: its offset and the layout it is laid out as. The `maybe`
-    /// field is not among them: it is no field of the stream (`maybe_offset`).
+    /// Per value field of the stream: its offset and the layout it is laid out as.
     pub fields: Vec<(u32, PinLayout)>,
-    /// The offset of the `maybe` field.
-    maybe: u32,
-    /// Every leaf of the layout as an ABI field, the `maybe` field last.
+    /// Every leaf of the layout as an ABI field.
     leaves: Vec<RecordLeaf>,
 }
 
@@ -318,12 +312,7 @@ impl RecordLayout {
             align = align.max(layout.align());
             fields.push((offset, layout));
         }
-        let maybe_layout = pin(&ValueType::Bool)?;
-        let maybe = end.next_multiple_of(maybe_layout.align());
-        leaves.extend(Self::leaves_of("maybe", maybe, &maybe_layout)?);
-        end = maybe + maybe_layout.size();
-        align = align.max(maybe_layout.align());
-        Some(RecordLayout { size: end.next_multiple_of(align), align, fields, maybe, leaves })
+        Some(RecordLayout { size: end.next_multiple_of(align), align, fields, leaves })
     }
 
     /// The ABI fields of the value field `name` laid out as `layout` at `offset`: the leaf of a
@@ -349,14 +338,7 @@ impl RecordLayout {
         }
     }
 
-    /// The offset of the `maybe` field: a `bool` carrier (its value byte, then its known byte)
-    /// after the stream's value fields.
-    pub fn maybe_offset(&self) -> u32 {
-        self.maybe
-    }
-
-    /// The ABI fields of the layout: each value field's leaves, named after the stream's fields,
-    /// then `maybe` (§19 rule 1).
+    /// The ABI fields of the layout: each value field's leaves, named after the stream's fields.
     fn abi_fields(&self) -> Vec<Field<'_>> {
         self.leaves
             .iter()

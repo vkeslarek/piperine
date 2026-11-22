@@ -301,8 +301,7 @@ fn a_stream_is_a_record_pin_with_one_field_per_value() {
     assert_eq!((p.kind, p.role, p.flags), (kind::DISCRETE, role::PRIVATE, pin_flag::RECORD));
     // one field per value field, each with a known byte (P3), laid out as a carrier of its type:
     // `code` a `BYTE` at 0 (known 1), `level` a `REAL` at the next multiple of 8 (value 8, known
-    // 16), `ok` a `BIT` at 24 (known 25), then the `maybe` of §19 rule 1, a `BIT` at 26 (known
-    // 27); 28 bytes rounded up to the alignment 8. The text `note` is no field: text never
+    // 16), `ok` a `BIT` at 24 (known 25); 26 bytes rounded up to the alignment 8. The text `note` is no field: text never
     // crosses the ABI (design "Amendments behind the IR")
     let fields: Vec<(String, u32, u32, u32, u32, u32)> =
         p.layout.fields.iter().map(|f| (f.name.as_str().to_string(), f.leaf, f.offset, f.count, f.flags, f.known)).collect();
@@ -313,7 +312,6 @@ fn a_stream_is_a_record_pin_with_one_field_per_value() {
             ("code".into(), leaf::U8, 0, 1, known, 1),
             ("level".into(), leaf::F64, 8, 1, known, 16),
             ("ok".into(), leaf::BOOL, 24, 1, known, 25),
-            ("maybe".into(), leaf::BOOL, 26, 1, known, 27),
         ]
     );
     assert_eq!((p.layout.size, p.layout.align), (32, 8));

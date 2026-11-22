@@ -68,13 +68,13 @@ enum Destination {
 struct LiveRecords {
     to: Destination,
     closed: Option<io::Error>,
-    /// The first `sim` record whose `failed` is known true: a `fatal` of the model.
+    /// The first `sim` record whose `failed` is true: a `fatal` of the model.
     fatal: Option<Record>,
 }
 
 impl RecordSink for LiveRecords {
     fn record(&mut self, record: &Record) {
-        if self.fatal.is_none() && record.stream == "sim" && record.surely("failed") {
+        if self.fatal.is_none() && record.stream == "sim" && record.holds("failed") {
             self.fatal = Some(record.clone());
         }
         if self.closed.is_some() {

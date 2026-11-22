@@ -429,9 +429,9 @@ fn emit_is_typed_in_a_reaction() {
 
 #[test]
 fn a_repeated_or_reserved_field_is_e0604() {
-    // DIG-05 AC 12 (§19 rule 11): a field name is distinct within one `emit!`, and `maybe` is
-    // reserved. The error is at the field.
-    for (fields, at) in [("a = 1.0, a = 2.0", "a = 2.0"), ("a = 1.0, b = 2.0, a = true", "a = true"), ("maybe = true", "maybe = true"), ("x = 1.0, maybe = 2.0", "maybe = 2.0")] {
+    // DIG-05 AC 12 (§19 rule 11): a field name is distinct within one `emit!`. The error is at the
+    // field.
+    for (fields, at) in [("a = 1.0, a = 2.0", "a = 2.0"), ("a = 1.0, b = 2.0, a = true", "a = true")] {
         let src = format!("module Top(in clk: Bit) {{ }}\ndigital for Top {{ on clk.rise() {{ emit!(\"s\", {fields}); }} }}");
         let d = diagnostics(&src);
         assert_eq!(codes(&d), ["E0604"], "{fields}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());

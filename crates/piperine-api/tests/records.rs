@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 
-use piperine_api::{Cell, Field, Failure, Overrides, Project, Record, RecordSink, Session, Streams};
+use piperine_api::{Cell, Field, Failure, Overrides, Project, Record, RecordSink, Session, Streams, Verdict};
 use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind};
 use piperine_transpile::Settings;
 
@@ -101,11 +101,13 @@ fn an_emit_gives_one_record_with_time_instance_stream_and_fields() {
 }
 
 #[test]
-fn maybe_is_decoded_beside_the_fields() {
-    // US-05 AC 1, 2 and §19 rule 1: `maybe` is the last field of the stream's layout, a `bool`
-    // laid out as a carrier; the host reads it into `Record::maybe`, and it is no entry of
-    // `fields`. `s` is `a: f64` (bytes 0..16), `b: bool` (16..18), `maybe` (18..20), 24 bytes
-    let text = design("module M() {}\ndigital for M { on at(1u) { emit!(\"s\", a = 1.5, b = true); } }\n", "    let m = M();\n");
+fn a_record_holds_its_declared_fields_only() {
+    // EU-15 AC 1 (§19): a stream's record layout is its declared fields, laid out at the next
+    // offset their alignment allows, and nothing after them. `s` is `ok: bool` alone: a `bool`
+    // carrier is 2 bytes (the value, then its known byte), so the record is 2 bytes; two bytes
+    // decode as the record, and the four bytes the layout once held (a trailing `maybe`) are a
+    // failure, never a truncated or a padded record
+    let text = design("module M() {}\ndigital for M { on at(1u) { emit!(\"s\", ok = true); } }\n", "    let m = M();\n");
     let dir = tempfile::tempdir().expect("tmp");
     let file = dir.path().join("bench.msl");
     std::fs::write(&file, &text).expect("write");
@@ -114,22 +116,47 @@ fn maybe_is_decoded_beside_the_fields() {
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
     let session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
     let streams = Streams::of(Arc::new(session.ir().clone()));
-    let decode = |maybe: [u8; 2]| {
-        let mut bytes = vec![0u8; 24];
-        bytes[..8].copy_from_slice(&1.5f64.to_le_bytes());
-        bytes[8] = 1;
-        bytes[16..18].copy_from_slice(&[1, 1]);
-        bytes[18..20].copy_from_slice(&maybe);
+    let decode = |bytes: Vec<u8>| {
         let observation = Observation { path: "Top.m.s".into(), analysis: AnalysisKind::Transient, time: 1e-6, kind: ObservationKind::Record { site: Some((0, 0)), bytes } };
-        streams.decode(&observation).expect("a record").unwrap_or_else(|f| panic!("{f}"))
+        streams.decode(&observation).expect("a record observation")
     };
-    let fields = [("a".to_string(), Field::Real(1.5)), ("b".to_string(), Field::Bool(true))];
-    let reached = decode([1, 1]);
-    assert!(reached.maybe, "a known true `maybe` byte pair");
-    assert_eq!(reached.fields, fields, "`maybe` is kept out of the fields");
-    let sure = decode([0, 1]);
-    assert!(!sure.maybe, "a known false `maybe`");
-    assert_eq!(sure.fields, fields);
+    let record = decode(vec![1, 1]).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(record.fields, [("ok".to_string(), Field::Bool(true))], "the declared field and no other");
+    let long = decode(vec![1, 1, 0, 1]);
+    assert!(matches!(&long, Err(Failure::Backend(m)) if m.contains("4 bytes where the stream's layout holds 2")), "{long:?}");
+}
+
+#[test]
+fn a_require_is_a_pass_or_a_fail() {
+    // EU-15 AC 2 (std/io.msl `require`): a `require` that holds is a record with `pass = true`
+    // and the run is a pass; one that does not is `pass = false` and the verdict fails it. No
+    // record is a third thing: `pass` is a `bool`
+    let m = "module M() { ok: bool = true; }\ndigital for M { on at(1u) { require(\"held\", ok); } }\n";
+    let held = records(&design(m, "    let m = M();\n"));
+    assert_eq!(held.iter().map(|r| r.fields[2].1.clone()).collect::<Vec<_>>(), [Field::Bool(true)], "{held:?}");
+    assert!(Verdict::judge(&held).passed());
+    let failed = records(&design(m, "    let m = M() { ok: false };\n"));
+    assert_eq!(failed.iter().map(|r| r.fields[2].1.clone()).collect::<Vec<_>>(), [Field::Bool(false)], "{failed:?}");
+    let verdict = Verdict::judge(&failed);
+    assert!(!verdict.passed());
+    assert_eq!((verdict.checks(), verdict.failed().len()), (1, 1));
+}
+
+#[test]
+fn a_fatal_record_ends_the_run() {
+    // EU-15 AC 3 (std/io.msl `fatal`): `emit!("sim", finish = true, failed = true, msg = msg)`;
+    // a `sim` record that says `failed` is a failed verdict carrying the message, and the run
+    // ends at its instant: the rows stop at 2 us in a run to 5 us
+    let m = "module M() {}\ndigital for M { on at(2u) { fatal(\"boom\"); } }\n";
+    let text = design(m, "    let m = M();\n");
+    let all = records(&text);
+    let verdict = Verdict::judge(&all);
+    assert!(!verdict.passed(), "{all:?}");
+    let fatal = verdict.fatal().expect("the fatal record");
+    assert_eq!(fatal.fields.last(), Some(&("msg".to_string(), Field::Text("boom".into()))));
+    let times = time_column(&table_of(&text, None).unwrap_or_else(|f| panic!("{f}")));
+    let last = *times.last().expect("rows");
+    assert!((last - 2e-6).abs() <= 1e-12, "the last row is at the fatal instant, not 5 us: {last}");
 }
 
 #[test]

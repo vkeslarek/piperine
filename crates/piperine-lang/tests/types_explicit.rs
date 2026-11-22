@@ -52,6 +52,21 @@ fn codes_of(diagnostics: &[DesignDiagnostic]) -> Vec<String> {
 const MODE: &str = "#[derive(Repr)] enum Mode { Idle, Run, Halt }";
 
 #[test]
+fn maybe_is_an_ordinary_field_name() {
+    // EU-02 AC 3 (C6, §19 rule 11): no record has a `maybe` any more, so an `emit!` field may be
+    // named `maybe`; only a repeated name in one `emit!` is `E0604`
+    let src = "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { emit!(\"s\", maybe = true, x = 1.0); } }";
+    let design = design_of(src);
+    if let Err(d) = Types::check(&design, "Top") {
+        panic!("`maybe` is an ordinary field name: {:?}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+    }
+    let twice = "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { emit!(\"s\", maybe = true, maybe = false); } }";
+    let design = design_of(twice);
+    let err = Types::check(&design, "Top").expect_err("a repeated field");
+    assert_eq!(codes_of(&err), ["E0604"]);
+}
+
+#[test]
 fn the_flag_methods_do_not_resolve() {
     // EU-02 AC 2 (C5): `level`, `known`, `known_or`, `is_known`, `high` and `merge` resolve to nothing: `E0161`
     // naming the method and the type, with the help that names an initial value, `Option<T>` and `Logic`

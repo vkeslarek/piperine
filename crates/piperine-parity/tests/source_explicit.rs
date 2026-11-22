@@ -341,7 +341,6 @@ fn an_emit_under_a_guard_is_a_plain_record() {
     let count = |name: &str| records.iter().filter(|r| r.stream == name).count();
     assert_eq!((count("taken"), count("skipped"), count("plain")), (4, 0, 4));
     assert_eq!(constant_fields(&records, "taken"), fields(&[("v", Field::Int(6)), ("k", Field::Int(3))]));
-    assert!(records.iter().all(|r| !r.maybe), "no record is reached under an unknown control");
     let verdict = piperine_api::Verdict::judge(&records);
     assert!(verdict.passed());
     assert_eq!((verdict.checks(), verdict.failed().len()), (4, 0));

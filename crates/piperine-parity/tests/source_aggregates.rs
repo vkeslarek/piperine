@@ -923,7 +923,7 @@ fn a_record_carries_a_composite_field_and_its_type() {
     let records = out.borrow().clone();
     assert_eq!(records.len(), 2, "one record per rising edge: {records:?}");
     // the fields in order: t (f64, 16), pair (u8, f64 + known), arr (3 u8 + known), tup (u8, bool + known),
-    // tx (tag 1 = Data, n = 5 + known), then `maybe` (bool + known): each at the next offset its alignment allows
+    // tx (tag 1 = Data, n = 5 + known): each at the next offset its alignment allows
     let mut wanted: Vec<u8> = Vec::new();
     let pad = |bytes: &mut Vec<u8>, align: usize| bytes.resize(bytes.len().next_multiple_of(align), 0);
     // `t` is the time of the edge: read it back from the record rather than compute it
@@ -938,7 +938,6 @@ fn a_record_carries_a_composite_field_and_its_type() {
     wanted.extend_from_slice(&[1, 2, 3, 1]);
     wanted.extend_from_slice(&[9, 1, 1]);
     wanted.extend_from_slice(&[1, 5, 1]);
-    wanted.extend_from_slice(&[0, 1]);
     pad(&mut wanted, 8);
     assert_eq!(records[0], wanted, "the record of the first edge");
     assert_eq!(f64::from_le_bytes(time.try_into().expect("eight bytes")), 2.5e-9, "t = now() at the first rising edge");
