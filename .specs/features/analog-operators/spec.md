@@ -254,6 +254,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 **Acceptance Criteria** (AO-13, from analog-structure, user 2026-11-19):
 
 1. WHEN the stdlib `slew(v(in), 1M, 1M)` follows a 0 to 1 V ideal step (a carrier change at 1 µs, no edge) THEN the system SHALL give 0 V before 1 µs, a ramp of 1 V/µs and 1 V from 2 µs, within `TRAN_VOLTAGE`. Today §15.2 rule 4 fires a jump's crossing after the solve of the step that reads the jump, so the output passes the jump in one step; the fix is to retake the step when a jump-crossing flips a carrier that `analog` reads (a change to §15.2 rule 4 and the engine).
+2. WHEN the step that arrives at a time point reads a settle commit (§15 S2, S3) and a crossing it makes changes a carrier `analog` reads THEN the system SHALL retake that step like any step that reads a jump, and WHEN an instant is retaken THEN its settle phase SHALL run once, after its last round, and the settle commits it holds SHALL be the ones delivered to the analog side (§15 step 4).
 
 ---
 

@@ -1239,6 +1239,7 @@ Proof: run snoise | test analysis_noise_is_true_and_ac_stim_zero_in_a_noise_run 
 
 **C35** - `piperine-api` returns the rows, the totals and each group's density. (AO-05, AC 8; T13)
 Proof: run apinoise | test the_library_returns_rows_totals_and_group_densities ... ok
+Proof: run apinoise | test report::the_report_takes_roots_groups_by_name_else_instance_and_carries_the_totals ... ok
 
 **C36** - `noise_rc.msl` agrees with ngspice's `onoise_spectrum` at every frequency and its `onoise_total` under `NOISE`. (AO-06, AC 1; T40)
 Proof: run parnoise | test noise_rc ... ok
@@ -1270,6 +1271,7 @@ Proof: run apioptions | test a_simparam_entry_naming_an_option_is_p0010 ... ok
 
 **C45** - The key `tnom` and the flag `--tnom` are read in °C, 27 when absent. (AO-08, AC 1; T15)
 Proof: run apioptions | test tnom_key_and_flag_default_to_27 ... ok
+Proof: run apioptions | test the_tnom_key_of_a_run_table_reaches_the_session_context ... ok
 
 **C46** - A `tnom` that is not a number above −273.15 is `P0010` naming the key. (AO-08, AC 2; T15)
 Proof: run apioptions | test tnom_at_or_below_absolute_zero_is_p0010 ... ok
@@ -1354,6 +1356,10 @@ Proof: run elabops | test a_field_type_conflict_across_trace_sites_is_e0605 ... 
 **C69** - An unknown value reaching `delay` or `noise` is `E0150` naming its source (unknown-semantics AC 3). (§14 errors; T33, T34)
 Proof: run elabops | test a_delay_reading_an_unknown_value_is_e0150 ... ok
 Proof: run elabops | test a_noise_density_reading_an_unknown_value_is_e0150 ... ok
+
+**C72** - A step that reads a settle commit retakes when its crossing changes what `analog` reads, and a retaken instant settles once and delivers that phase's settle commits. (AO-13, AC 2; fix round)
+Proof: run retake | test a_crossing_made_by_a_step_that_reads_a_settle_commit_retakes_it ... ok
+Proof: run retake | test a_second_round_retake_runs_settle_once_and_delivers_its_settle_commits ... ok
 
 **C70** - The band total integrates the density by ngspice's power-law rule, exact on power laws. (AO-05, AC 1, D8; T2, T3)
 Proof: run numerics | test the_power_law_integral_is_exact_on_power_laws ... ok
