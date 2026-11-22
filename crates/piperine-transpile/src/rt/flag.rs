@@ -425,7 +425,7 @@ impl<T: Carried> Flagged<T> {
     /// the path unknown (§1 rule 13).
     pub fn known_or_refuse(self, carrier: &str) -> T {
         if !self.known {
-            Panic::raise(format!("`{carrier}` is a composite that holds no value yet, so it has no field or copy to read; test `{carrier}.is_known()` first"));
+            Panic::raise(format!("`{carrier}` is a composite that holds no value yet, so it has no field or copy to read; drive it or give it an initial value first"));
         }
         self.value
     }

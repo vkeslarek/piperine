@@ -269,7 +269,7 @@ fn the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic() {
     // from an in port of its own, which nothing drives, so b starts at None" and values~c30bad4d "The
     // undriven b starts at xxxx ..." are held by the listings' refusal (S8)
     let adder = chapter.marked("monitor.msl", "values#14").run(Transient::of("AdderTop", 3e-6));
-    Refusal::expect(adder, "values#14", "E0105", "a model panicked under known control in `AdderTop.add` at tick 500000000: `b` is a composite that holds no value yet, so it has no field or copy to read; test `b.is_known()` first");
+    Refusal::expect(adder, "values#14", "E0105", "a model panicked under known control in `AdderTop.add` at tick 500000000: `b` is a composite that holds no value yet, so it has no field or copy to read; drive it or give it an initial value first");
     let peek = chapter.marked("monitor.msl", "values#18").run(Transient::of("PeekTop", 3e-6));
     Refusal::expect(peek, "values#18", "P0001", "generic arguments on `Logic`, which has no generic parameter is not supported yet");
 }

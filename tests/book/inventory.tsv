@@ -84,10 +84,10 @@ block	values#13	e87cfdd0a992563c	held	piperine-cli/book::every_cli_listing_of_th
 block	values#14	15606b1fa80f3505	refused	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic	S8	-
 block	values#15	c68146731ab6a79c	shown	-	-	-
 block	values#16	d022fb86cf9de984	shown	-	-	-
-block	values#17	b7c99eed03b22e70	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream lost
+block	values#17	22792880fbef6fa1	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream absent
 block	values#18	cf6cf170a04f408d	refused	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic	S8	-
 block	values#19	4bcc7aec0a6efc87	shown	-	-	-
-block	values#20	069f955aa9090719	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream bigger
+block	values#20	91e20d2ed735e545	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream compare
 block	values#21	1c36af9fee8a108e	refused	piperine/book_values::analog_reads_a_digital_carrier_directly	S8	-
 block	values#22	fb8add290ef4024e	refused	piperine/book_values::an_extern_function_is_refused_with_or_without_its_derivative	L12	-
 block	natures#1	a19f95185defd84a	run	piperine/book_natures::the_book_shows_the_natures_the_standard_library_gives	-	-
