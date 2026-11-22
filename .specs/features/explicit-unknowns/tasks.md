@@ -1236,7 +1236,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 One check per acceptance criterion. `(task)` is the task that makes the check pass. A check of phase B is red until B8; a check of phase A until its batch.
 
 **C1** - A plain read of a `Bit<u8>`, a struct and an array carrier yields the value in a reaction, a function and `analog` (EU-01, AC 1; T20)
-Proof: run src | test a_binary_carrier_is_read_as_its_value ... ok
+Proof: run src | test a_binary_carrier_of_any_shape_is_read_as_its_value_everywhere ... ok
 
 **C2** - An `if`, a `match`, a guard and `&&` on a carrier's value run one path (EU-01, AC 2; T31)
 Proof: run src | test control_on_a_carrier_runs_one_path ... ok
