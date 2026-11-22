@@ -144,7 +144,14 @@ pub struct Digital {
 
 impl Digital {
     pub fn new(plan: DigitalPlan, limits: DigitalLimits) -> Digital {
-        let store = Store::new(&plan.nets);
+        let mut store = Store::new(&plan.nets);
+        // A param holds its initial value from the start, before any run (§5.3.1): a host `set`
+        // checks its `where` against the other params' values, which a zeroed store would not give.
+        for (index, net) in plan.nets.iter().enumerate() {
+            if net.param && !net.init.is_empty() {
+                store.seed(NetId(index as u32), &net.init);
+            }
+        }
         let dirty = DirtySet::all(&plan);
         Digital {
             plan,
@@ -397,7 +404,8 @@ impl Digital {
     }
 
     /// Checks a host write to a `PARAM` or `GLOBAL` net before it is committed (abi.md P6): the
-    /// parameter cone downstream of the net runs on a copy of the store. A false `check` pin refuses
+    /// parameter cone downstream of the net runs on a copy of the store. A false `check` pin anywhere
+    /// in the design (every dependent `where` is re-checked, §8.1.23) refuses
     /// the write and names the pin; a `RESHAPE` names the instance. Nothing of the engine changes.
     pub fn shadow(&self, net: NetId, offset: u32, bytes: &[u8]) -> Result<Shadow, DigitalError> {
         let analysis = self.plan.analysis();
@@ -405,18 +413,22 @@ impl Digital {
             return Ok(Shadow::Accept);
         }
         let mut store = self.store.clone();
-        let mut dirty = DirtySet::none(&self.plan);
+        // The functions still waiting for a first evaluation run too, and the cone of the written
+        // net runs whether or not the value changed: a check reads the other params as they are
+        // now, so a write of the value a param already holds is still checked against them.
+        let mut dirty = self.dirty.clone();
         let mut obs = Obs::new();
         let here = (self.now, 0);
         write_net(&self.plan, &mut store, &mut dirty, &mut obs, net, offset, bytes, here);
+        dirty.mark_net(&self.plan, net);
         let ambient = self.ambient(self.now);
         if let Some(instance) = run_cone(&self.plan, &mut store, &mut dirty, here, &ambient, &mut obs)? {
             return Ok(Shadow::Reshape { instance });
         }
         for inst in &self.plan.instances {
             let shape = inst.handle.shape();
-            for (i, pin) in shape.pins.iter().enumerate() {
-                if inst.pins[i] != Binding::Net(net) || pin.flags & pin_flag::HAS_CHECK == 0 {
+            for pin in shape.pins.iter() {
+                if pin.flags & pin_flag::HAS_CHECK == 0 {
                     continue;
                 }
                 let Some(check) = shape.pins.get(pin.check as usize) else { continue };

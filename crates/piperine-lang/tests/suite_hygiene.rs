@@ -807,7 +807,7 @@ fn mod_rs_files() -> Vec<(String, usize, String)> {
 /// reason for the ones that remain.
 fn registered_oversized_mod_rs(path: &str) -> Option<&'static str> {
     Some(match path {
-        // Follow-up (ROADMAP.md): refactor these three into named modules after msl-stdlib merges.
+        // Follow-up (ROADMAP.md, `code-clarity`): refactor these three into named modules.
         "crates/piperine-lang/src/pom/resolve/mod.rs" => "name-resolution stages; split pending",
         "crates/piperine-lang/src/pom/reflect/mod.rs" => "POM reflection surface; split pending",
         "crates/piperine-lang/src/pom/lower/mod.rs" => "lowering driver; split pending",

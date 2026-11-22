@@ -263,3 +263,56 @@ fn max_steps_defaults_to_two_million() {
     assert_eq!(session.spec().options.max_steps, None);
     assert_eq!(piperine_solver::prelude::TransientAnalysisOptions::new(1.0, 1e-3).max_steps, 2_000_000);
 }
+
+/// A half-second clock beside a one-hertz sine that a comparator watches: the digital side has a
+/// periodic event of its own and the analog side a located crossing, both on the tick grid.
+const SLOW_DESIGN: &str = "pub module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }\nanalog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }\nmodule Tick(out clk: Bit = false) { }\ndigital for Tick { on clk.changed() { clk <- !clk after 0.5; emit!(\"clock\", t = now()); } }\nmodule Sine(p: Electrical) { }\nanalog for Sine { v(p) +> (6.283185307179586 * now()).sin(); }\nmodule Top() {\n    signal a: Electrical;\n    signal clk: Bit;\n    let s = Sine(a);\n    let c1 = Capacitor(a, gnd) { c: 1u };\n    let m = Tick(clk);\n}\ndigital for Top { on above(v(a) - 0.5) { emit!(\"rise\", t = now()); } }\n";
+
+/// A `seconds`-long transient of `SLOW_DESIGN` at the default resolution, and what it must show.
+struct LongRun {
+    /// The run's stop time, in whole seconds.
+    seconds: usize,
+}
+
+impl LongRun {
+    /// The instants of the `stream` records of the run.
+    fn instants(&self, stream: &str) -> Vec<f64> {
+        let overrides = Overrides { top: Some("Top".into()), max_step: Some(0.25), analysis: Some("transient".into()), stop: Some(self.seconds as f64), ..rust(Overrides::default()) };
+        let (_, records) = run(SLOW_DESIGN, overrides).unwrap_or_else(|f| panic!("{f}"));
+        records.iter().filter(|r| r.stream == stream).map(|r| r.time).collect()
+    }
+
+    /// Asserts that every instant of `stream` lies within `tolerance` seconds of `want`'s.
+    fn assert_on_time(&self, stream: &str, want: &[f64], tolerance: f64) {
+        let got = self.instants(stream);
+        assert_eq!(got.len(), want.len(), "{stream}: {got:?}");
+        for (got, want) in got.iter().zip(want) {
+            assert!((got - want).abs() <= tolerance, "`{stream}` at {got} s, due at {want} s");
+        }
+    }
+
+    /// Runs and checks the digital clock (every half second, from 0) and the sine's rising
+    /// crossing of one half (at `k + 1/12` s) both land on time.
+    fn assert_events_on_time(&self) {
+        let clock: Vec<f64> = (0..=2 * self.seconds).map(|k| k as f64 / 2.0).collect();
+        self.assert_on_time("clock", &clock, 1e-9);
+        let crossings: Vec<f64> = (0..self.seconds).map(|k| k as f64 + 1.0 / 12.0).collect();
+        self.assert_on_time("rise", &crossings, 1e-6);
+    }
+}
+
+#[test]
+fn a_twenty_second_transient_runs_at_the_default_resolution() {
+    // A pin, not a guard of the step-floor fix: it also passes on the code before it (a crossing
+    // two comparator edges apart did not reproduce the collapse either). Only the CLI pump test,
+    // `a_long_transient_at_the_default_resolution_lands_its_crossings`, fails without the fix.
+    // §15 T1-T4: at 1 fs a tick is finer than an f64 second past 2^52 ticks (4.5 s), so a run past
+    // 8 s must still advance and land its events
+    LongRun { seconds: 20 }.assert_events_on_time();
+}
+
+#[test]
+fn a_hundred_second_transient_runs_at_the_default_resolution() {
+    // A pin only, like the twenty-second run above.
+    LongRun { seconds: 100 }.assert_events_on_time();
+}
