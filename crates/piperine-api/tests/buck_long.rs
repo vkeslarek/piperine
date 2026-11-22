@@ -164,13 +164,13 @@ fn the_output_settles_into_10_mv_within_the_ramp_window() {
 #[test]
 fn the_start_ends_in_regulation_with_power_good() {
     // LR-10 AC 2: the last row holds reference code 128 (SPEC §7.2: 0.8 V is code 0, reference
-    // 128), supervisor mode 2 (`Regulate`, §8) and `pgood` true (§8.6)
+    // 128), supervisor mode `Regulate` (§8, variant 2) and `pgood` true (§8.6)
     let table = &start().table;
     let last = table.rows.last().expect("rows");
     let (reference, mode, pgood) = (&last[column(table, "reference")], &last[column(table, "mode")], &last[column(table, "pgood")]);
     eprintln!("end state: reference {reference:?}, mode {mode:?}, pgood {pgood:?} at {:?}", last[0]);
     assert_eq!(reference, &Cell::Int(128), "reference at the end");
-    assert_eq!(mode, &Cell::Int(2), "mode at the end");
+    assert_eq!(mode, &Cell::Text("Regulate".into()), "mode at the end (read by its variant name, CV-22)");
     assert_eq!(pgood, &Cell::Bool(true), "pgood at the end");
 }
 

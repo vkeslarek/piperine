@@ -158,7 +158,7 @@ impl Recorder {
             self.started = true;
             self.changes.clear();
             for (held, (cell, column)) in self.held.iter_mut().zip(cells.iter().zip(&self.columns)) {
-                if matches!(column, Column::Net { .. }) {
+                if matches!(column, Column::Net { .. } | Column::Shaped { .. }) {
                     *held = cell.clone();
                 }
             }
@@ -189,7 +189,7 @@ impl Recorder {
         self.changes.clear();
         self.applied = 0;
         for (at, column) in self.columns.iter().enumerate() {
-            if matches!(column, Column::Net { .. }) {
+            if matches!(column, Column::Net { .. } | Column::Shaped { .. }) {
                 if !Recorder::same(&self.held[at], &cells[at]) {
                     let (held, read) = (&self.held[at], &cells[at]);
                     self.failure = Some(Failure::Backend(format!(
