@@ -305,6 +305,12 @@ fn settle_runs_as_before() {
     let changes = transient(&seen, "SettleBench.s");
     assert_eq!(changes.len(), 1, "one change: {changes:?}");
     assert_eq!(changes[0].1, byte(1));
+    // the reaction emits `now()` at each run: one run per time point (never twice at one instant, strictly later each
+    // time), and the commit of the first run lands at the next time point, which is the instant of the second run
+    let runs: Vec<i64> = seen.all().iter().filter(|o| matches!(o.kind, piperine_solver::protocol::ObservationKind::Record { .. })).map(|o| (o.time * 1e15).round() as i64).collect();
+    assert!(runs.len() >= 2, "the reaction runs at several time points: {runs:?}");
+    assert!(runs.windows(2).all(|w| w[0] < w[1]), "one run per time point, each later than the last: {runs:?}");
+    assert_eq!(changes[0].0, runs[1], "the commit of the run at {} lands at the next time point, {}: {runs:?}", runs[0], runs[1]);
 }
 
 #[test]

@@ -180,7 +180,7 @@ module GuardBench() {
 
 /// A reaction on `settle` commits once per time point; its commit lands at the next instant.
 module Settler(out s: Bit<u8> = 0) {}
-digital for Settler { on settle { s <- 1; } }
+digital for Settler { on settle { s <- 1; emit!("settled", at = now()); } }
 
 module SettleBench() {
     signal s: Bit<u8>;
