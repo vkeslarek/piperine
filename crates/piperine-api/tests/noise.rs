@@ -32,10 +32,11 @@ fn a_noise_run_without_output_or_sweep_is_p0010() {
 
 #[test]
 fn a_key_of_another_analysis_is_p0010_in_a_noise_run() {
-    // AO-05 AC 6: `stop` belongs to `transient`, `wrt` to `sens`: neither is read by `noise`.
-    for key in ["stop = 1e-3\n", "wrt = [\"r.r\"]\n", "period = 1e-3\n"] {
+    // AO-05 AC 6: `stop` belongs to `transient`, `sweep` to `dc`, `wrt` to `sens`: none is read by `noise`.
+    for key in ["stop = 1e-3\n", "sweep = \"r.r\"\n", "wrt = [\"r.r\"]\n", "period = 1e-3\n"] {
         let keys = format!("output = \"o\"\nfrom = 1.0\nto = 1e3\nper_decade = 5\n{key}");
         let message = spec(&keys).expect_err(key);
+        assert!(message.contains("P0010"), "{key}: {message}");
         assert!(message.contains("not read by a `noise` run"), "{key}: {message}");
     }
 }
