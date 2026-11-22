@@ -641,7 +641,8 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [x] `source_explicit::a_written_initial_value_is_the_value_at_the_start`, `a_carrier_without_a_value_starts_at_its_default`, `an_element_never_committed_reads_its_initial_value`, `an_unbound_option_param_is_none`, `an_option_carrier_is_read_by_matching`, `the_first_commit_is_a_change`, `prev_is_the_initial_value_before_a_change` pass
+- [x] `source_explicit::a_written_initial_value_is_the_value_at_the_start`, `a_carrier_without_a_value_starts_at_its_default`, `an_element_never_committed_reads_its_initial_value`, `an_option_carrier_is_read_by_matching`, `the_first_commit_is_a_change`, `prev_is_the_initial_value_before_a_change` pass
+- [ ] Deferred to `params-and-io` B5-B6 (GAPS L28; its T31 and check C11 hold the same behavior): C20, `an_unbound_option_param_is_none`; until a param of type `Option` elaborates, `an_unbound_option_param_waits_for_params_and_io` is its interim proof (finding 19)
 - [x] Gate check passes: Full
 
 **Tests**: integration
@@ -1290,8 +1291,8 @@ Proof: run types | test deriving_default_over_a_number_is_e0187 ... ok
 **C19** - `u8::default()`, `bool::default()`, `f64::default()` and `str::default()` are `E0187` (EU-05, AC 3; T21)
 Proof: run types | test no_primitive_numeric_type_has_a_default ... ok
 
-**C20** - An `Option<T>` param no instance binds is `None` (EU-06, AC 1; T22)
-Proof: run src | test an_unbound_option_param_is_none ... ok
+**C20** - An `Option<T>` param no instance binds is `None` (EU-06, AC 1; T22; DEFERRED, owner `params-and-io` B5-B6, GAPS L28: the criterion's own test `an_unbound_option_param_is_none` is written there, not ticked here; until then the refusal is the interim proof)
+Proof: run src | test an_unbound_option_param_waits_for_params_and_io ... ok
 
 **C21** - A `Bit<Option<u8>>` carrier is read with `match`, `if let` and `unwrap_or` (EU-06, AC 2; T22)
 Proof: run src | test an_option_carrier_is_read_by_matching ... ok

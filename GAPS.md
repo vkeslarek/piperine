@@ -124,7 +124,7 @@ before and after the first change, `E0150`, `E0210`, `E0220`, `E0221`, `E0222`, 
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L28 | params of an integer, enum, `Option` or module type (`n: u8`, `md: Mode`, `rs: Option<f64>`, `cell: C`) | §8.1.15, §3.2.6 | `param of type u8` | M |
+| L28 | params of an integer, enum, `Option` or module type (`n: u8`, `md: Mode`, `rs: Option<f64>`, `cell: C`); also owes `explicit-unknowns` EU-06 AC 1 (an `Option<T>` param no instance binds is `None`, check C20, test `an_unbound_option_param_is_none`, interim `an_unbound_option_param_waits_for_params_and_io`) | §8.1.15, §3.2.6 | `param of type u8` | M, `params-and-io` B5-B6 |
 | L29 | `m` and `dtemp`: binding them at a placement and reading them | §8.5.1–§8.5.6 | `E0320: no param m in R`; `built-in m` | M |
 | L30 | generic modules and const generics: the prelude's own `Short<N>` and every stdlib module built on them | §8 rule 4 | `generic module` | L |
 | L31 | generation `for` and `if`, in a body and in a `digital` block | §8.2.7, §12 rule 1 | `generation for/if in a module body` | M |
