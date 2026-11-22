@@ -524,7 +524,7 @@ fn attrs_are_allowed_before_statements_and_hardware_items() {
         if has("nature_field") {
             let p = production(text, "nature_field").join("\n");
             assert!(p.lines().next().unwrap().contains("attrs ( 'potential'"), "{file}: {p}");
-            assert!(p.contains("| attrs 'value'") && p.contains("| attrs 'resolve'"), "{file}: {p}");
+            assert!(p.contains("| attrs 'value'") && !p.contains("'resolve'"), "{file}: the nature_field production has no `resolve` line (D17): {p}");
         }
         if has("reaction") {
             check("reaction", "attrs 'on'", "all");
@@ -1772,7 +1772,7 @@ fn there_is_no_slice_and_no_borrow_in_the_grammar() {
         assert!(part.contains(needle), "{needle}");
     }
     let ii = one_line(&spec("part_ii_carriers.md"));
-    assert!(ii.contains("`fn f<const N: usize>(drives: [T; N]) -> T`"), "§4 rule 8 takes an array");
+    assert!(ii.contains("fn resolve<const N: usize>(drives: [X; N]) -> V;"), "§4 rule 8 takes an array");
     let h5 = section(&appendix_h(), "## H.5");
     assert!(!h5.contains('&'), "H.5 lends nothing: {h5}");
 }
@@ -1897,4 +1897,69 @@ fn appendix_h_holds_default_from_and_the_operator_traits() {
     for rule in ["the one `impl` whose type is the left operand's", "at most one `impl` exists (`E0187`)", "`a &= b` is `a = a & b`", "have no trait"] {
         assert!(s.contains(rule), "H.10 lacks \"{rule}\"");
     }
+}
+
+// ---- explicit unknowns: EU-11, resolved nets as a capability ----
+
+/// Part II section 4 rule 8 and section 5.2, flattened.
+fn part_ii_rules() -> (String, String) {
+    let ii = spec("part_ii_carriers.md");
+    (flat(&section(&ii, "## 4. ")), flat(&section(&ii, "### 5.2 ")))
+}
+
+#[test]
+fn resolve_is_a_trait_of_two_parameters() {
+    // EU-11 AC 2, D18: `Resolve<X: Repr, V: Repr = X>`, one function, `V` is the `value` type
+    // (E0203), no `resolve` field and no `resolve` keyword.
+    let (nat, _) = part_ii_rules();
+    assert!(nat.contains("pub trait Resolve<X: Repr, V: Repr = X> { fn resolve<const N: usize>(drives: [X; N]) -> V; }"), "{nat}");
+    assert!(nat.contains("`V` **MUST** be the nature's `value` type"), "{nat}");
+    assert!(nat.contains("There is no `resolve` field and no keyword `resolve`"), "{nat}");
+    let e0203 = table_rows(&section(&spec("part_ii_carriers.md"), "## 4. ")).into_iter().find(|r| r[0] == "`E0203`").expect("E0203 row");
+    assert!(e0203[1].contains("`impl Resolve<X, V>`") && e0203[1].contains("`value` type"), "{e0203:?}");
+}
+
+#[test]
+fn many_drives_need_the_resolve_capability() {
+    // EU-11 AC 3, D21: a carrier takes more than one drive only when its nature implements
+    // `Resolve`; a second drive of any other is E0220, naming the nature and `Resolve`.
+    let (_, drives) = part_ii_rules();
+    assert!(drives.contains("A **one-driver carrier** is a carrier of a discrete nature that does not implement `Resolve`."), "{drives}");
+    assert!(drives.contains("A second drive is `E0220`, and its diagnostic names the nature and `Resolve`."), "{drives}");
+    assert!(drives.contains("takes any number of them, zero included"), "{drives}");
+    let e0220 = table_rows(&section(&spec("part_ii_carriers.md"), "### 5.2 ")).into_iter().find(|r| r[0] == "`E0220`").expect("E0220 row");
+    assert!(e0220[1].contains("names the nature and `Resolve`"), "{e0220:?}");
+}
+
+#[test]
+fn a_drive_picks_its_impl_by_its_type() {
+    // EU-11 AC 4, D19: E0225 for two driven types, E0180 for a type no `impl` accepts.
+    let (_, drives) = part_ii_rules();
+    assert!(drives.contains("A drive picks its `impl` of `Resolve` by the type of the value it drives."), "{drives}");
+    assert!(drives.contains("two driven types on one carrier are `E0225`") && drives.contains("no `impl` accepts is `E0180`"), "{drives}");
+    let rows = table_rows(&section(&spec("part_ii_carriers.md"), "### 5.2 "));
+    assert!(rows.iter().any(|r| r[0] == "`E0225`"), "E0225 has its defining row in 5.2");
+}
+
+#[test]
+fn resolve_receives_plain_values_for_every_count() {
+    // EU-11 AC 5 and 7, D14: plain values in instance-path order, every count from zero, and a
+    // drive that relaxation has not produced is absent, not a value.
+    let (nat, _) = part_ii_rules();
+    assert!(nat.contains("receives as an array of plain values in the order of their instance paths"), "{nat}");
+    assert!(nat.contains("with `N` the number of drives a call receives, zero included"), "{nat}");
+    assert!(nat.contains("It receives every present drive as a plain value of type `X`"), "{nat}");
+    assert!(nat.contains("absence is not a value of the type"), "{nat}");
+}
+
+#[test]
+fn a_drive_without_a_value_starts_at_its_default() {
+    // EU-11 AC 6, EU-04 AC 2: a drive with no initial value starts at `Default::default()` of the
+    // driven type and is a drive from `(0, 0)`; a resolved carrier needs no initial value.
+    let (_, drives) = part_ii_rules();
+    assert!(drives.contains("A drive with no initial value starts at `Default::default()` of the driven type"), "{drives}");
+    assert!(drives.contains("It is a drive from `(0, 0)` on"), "{drives}");
+    assert!(drives.contains("needs no initial value of its own"), "{drives}");
+    let ii = flat(&section(&spec("part_ii_carriers.md"), "### 5.1 "));
+    assert!(ii.contains("starts at `Default::default()` of its value type"), "{ii}");
 }

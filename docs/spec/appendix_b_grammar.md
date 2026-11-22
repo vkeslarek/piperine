@@ -197,7 +197,6 @@ item           ::= nature_decl | module_decl | behavior_block | value_item
 nature_decl    ::= attrs 'pub'? 'nature' IDENT generics? '{' nature_field ( ',' nature_field )* ','? '}'
 nature_field   ::= attrs ( 'potential' | 'flow' ) ':' IDENT ( '{' ( IDENT ':' expr ',' )* '}' )?
                  | attrs 'value' ':' type
-                 | attrs 'resolve' ':' expr                                           // a fn with one const parameter N: ([T; N]) -> T (§4 rule 8)
 struct_field   ::= attrs 'pub'? dir? IDENT ':' ( type | sigtype )               // carrier fields make a bundle
 impl_block     ::= 'impl' generics? path generic_args? ( 'for' path generic_args? )? '{' impl_item* '}'
 impl_item      ::= attrs 'pub'? ( fn_decl | const_item )

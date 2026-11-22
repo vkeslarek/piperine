@@ -179,7 +179,7 @@ does not define is not part of the language.
 | `where` | trait bounds | a boolean const expression; bounds are written in the generic list | [§3](part_i_values.md#3-functions) rule 8 |
 | receivers | `self`, `&self`, `&mut self` | `self`, a copy; a method returns what it changed | [§3.1.10](part_i_values.md#31-impl) |
 | type aliases, associated types, `static`, `union`, `impl Trait`, qualified paths, restricted `pub`, loop labels | part of the language | not in the language | [B.3.6](appendix_b_grammar.md#b36-forms-that-are-not-part-of-the-language) |
-| values | known | every level is known or unknown | [§3.3](part_i_values.md#33-unknown-values) |
+| values | known | every level is known or unknown | [§3.3](part_i_values.md#33-uncertainty-and-absence) |
 | numeric literals | type suffixes | type suffixes and SI suffixes (`1k`, `2.2u`) | [A.2](appendix_a_lexical.md#a2-si-suffixed-reals) |
 | library | `core`, `alloc`, `std` | the closed catalogue of Appendix H and the MSL standard library | [Appendix H](appendix_h_library.md), [§22](part_vii_stdlib.md#22-standard-library) |
 | packages | Cargo, registries | `Piperine.toml`, `path` and `git` dependencies only | [§3.6](part_i_values.md#36-packages) |
@@ -327,7 +327,7 @@ Each term has one defining occurrence. The table points at it.
 | event time | [§15](part_v_execution.md#15-time-and-the-instant) |
 | event, `Event` | [§13](part_iv_behavior.md#13-events) |
 | extern module, implicit param | [§8.5](part_iii_structure.md#85-implicit-params-and-extern-modules) |
-| flag-total function | [§3.3.6](part_i_values.md#33-unknown-values) |
+| flag-total function | [§3.3.6](part_i_values.md#33-uncertainty-and-absence) |
 | `force`, `release` | [§23.1](part_viii_host.md#231-testbenches) |
 | function class | [§3](part_i_values.md#3-functions) |
 | generation | [§8.2.7](part_iii_structure.md#82-the-body) |
@@ -345,7 +345,7 @@ Each term has one defining occurrence. The table points at it.
 | instant, microstep | [§15](part_v_execution.md#15-time-and-the-instant) |
 | irrefutable pattern, refutable pattern | [§1.6.11](part_i_values.md#16-patterns) |
 | jump, right value | [§15.2](part_v_execution.md#152-the-jump) |
-| known, unknown, known flag | [§3.3](part_i_values.md#33-unknown-values) |
+| known, unknown, known flag | [§3.3](part_i_values.md#33-uncertainty-and-absence) |
 | left value | [§15.2](part_v_execution.md#152-the-jump) |
 | level | [§2](part_i_values.md#2-repr) |
 | limiting | [§18](part_v_execution.md#18-limiting) |
@@ -353,7 +353,7 @@ Each term has one defining occurrence. The table points at it.
 | lockfile | [§3.6](part_i_values.md#36-packages) |
 | loop, relaxation | [§8.2.3](part_iii_structure.md#82-the-body) |
 | manifest | [§3.6](part_i_values.md#36-packages) |
-| merge | [§3.3.3](part_i_values.md#33-unknown-values) |
+| merge | [§3.3.3](part_i_values.md#33-uncertainty-and-absence) |
 | metadata, path | [§21](part_vi_io.md#21-metadata) |
 | module | [§8](part_iii_structure.md#8-modules) |
 | monitor | [§22.5](part_vii_stdlib.md#225-monitors) |

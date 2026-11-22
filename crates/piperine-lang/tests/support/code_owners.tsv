@@ -17,6 +17,7 @@ E0185	composite-values	control flow (T12, T13)
 E0186	composite-values	structs and enums (T38, T39)
 E0187	generics	L7 (traits and generic arguments)
 E0203	resolved-nets	L21
+E0225	explicit-unknowns	EU-11 AC 4 (two driven types on one resolved carrier)
 E0313	composite-values	L24 (array carriers)
 E0322	generics	L31 (generation)
 E0340	generics	L31

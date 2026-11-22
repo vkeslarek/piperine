@@ -21,33 +21,37 @@ carrier, change, node, branch, probe, `gnd`, signal-flow node, bundle, view.
 nature_decl    ::= attrs 'pub'? 'nature' IDENT generics? '{' nature_field ( ',' nature_field )* ','? '}'
 nature_field   ::= attrs ( 'potential' | 'flow' ) ':' IDENT ( '{' ( IDENT ':' expr ',' )* '}' )?
                  | attrs 'value' ':' type
-                 | attrs 'resolve' ':' expr                                           // a fn with one const parameter N: ([T; N]) -> T (rule 8)
 ```
+
+A nature takes trait `impl`s ([§3.1.9](part_i_values.md#31-impl)); `impl Resolve<X> for N` is the one
+that lets a discrete carrier take several drives (rule 8). There is no `resolve` field and no
+keyword `resolve`.
 
 **Static semantics**
 
 There are four kinds of nature. A **discrete nature** declares `value`. A **continuous
 nature** declares `potential`.
 
-|  | discrete, no `resolve` | discrete with `resolve` | continuous, with `flow` | continuous, no `flow` |
+|  | discrete | discrete that implements `Resolve` | continuous, with `flow` | continuous, no `flow` |
 | --- | --- | --- | --- | --- |
-| declared | `nature N { value: T }` | `nature N { value: T, resolve: f }` | `nature N { potential: …, flow: … }` | `nature N { potential: … }` |
+| declared | `nature N { value: T }` | `nature N { value: T }` and `impl Resolve<X> for N` | `nature N { potential: …, flow: … }` | `nature N { potential: … }` |
 | holds | a `T: Repr`, level by level | the same | a real potential and flow; complex in small-signal analyses | a real potential |
-| drivers combine | one driver | `f([T; N]) -> T` over all `N` drives | flows sum to zero (KCL) | one driver |
+| drivers combine | one driver | `resolve([X; N]) -> T` over all `N` drives | flows sum to zero (KCL) | one driver |
 | port direction | `in` or `out` | none | none | none |
 | computed by | the event engine | the event engine | the analog solver | the analog solver |
 | written by | `=`, `<-` | `=`, `<-` | `+>` | `+>` |
 | past | `prev()` ([§5.3](#53-history)) | the same | located events, modules with state | the same |
 
-- **§4 rule 1.** A discrete nature declares `value` and optionally `resolve`. A continuous
+- **§4 rule 1.** A discrete nature declares `value`. It may implement `Resolve` (rule 8). A continuous
   nature declares `potential` and optionally `flow`. Discrete and continuous carriers never
   connect ([§6.1](#61-crossing-between-kinds)).
-- **§4 rule 2.** `resolve` is a function of the drives, which it receives in the order of
-  their instance paths. The result is a function of the source even when `f` is not exactly
-  associative, as a floating-point sum is not. It is called with an empty array for a carrier
-  nobody drives. High impedance, strengths, wired logic and summing nets are value types and
-  `resolve` functions in the stdlib ([§22.3](part_vii_stdlib.md#223-resolved-nets)), not
-  language features.
+- **§4 rule 2.** `resolve` is a function of the drives, which it receives as an array of plain
+  values in the order of their instance paths. The result is a function of the source even
+  when the function is not exactly associative, as a floating-point sum is not. It is called
+  with an empty array for a carrier nobody drives. High impedance, strengths, wired logic and
+  summing nets are value types and `impl Resolve` of natures that a model declares, never
+  language features and never library natures
+  ([§22.3](part_vii_stdlib.md#223-strengths-and-ready-made-net-modules)).
 - **§4 rule 3.** `access` names the probe. It is an alias of the generic probes `potential`
   and `flow` ([§6](#6-continuous-carriers)), which read the fields of the same names. `units`
   is metadata, never checked. `abstol` is the tolerance of that quantity's unknowns and
@@ -59,20 +63,34 @@ nature** declares `potential`.
 - **§4 rule 5.** Quantity names are labels: two natures whose potentials share a name may
   connect. A high-voltage variant of `Electrical` is a second nature with
   `Voltage { abstol: 1m }`. There is no inheritance between natures.
-- **§4 rule 6.** A nature declares each field at most once. `value` and `resolve` do not mix
-  with `potential` and `flow`. `resolve` requires `value`; `flow` requires `potential`.
+- **§4 rule 6.** A nature declares each field at most once. `value` does not mix with
+  `potential` and `flow`. `flow` requires `potential`. `Resolve` is implemented for a discrete
+  nature only.
 - **§4 rule 7.** The type of `value` **MUST** implement `Repr`
   ([§2](part_i_values.md#2-repr)).
-- **§4 rule 8.** `resolve` names a function with one const parameter and the signature
-  `fn f<const N: usize>(drives: [T; N]) -> T`, where `T` is the `value` type. The drives are
-  an array, passed by value like any other
-  ([§1.4.6](part_i_values.md#14-typing-inference-and-conversion)); elaboration instantiates
-  the function with `N` the number of drives a call receives
-  ([§8.2.3](part_iii_structure.md#82-the-body)). The function **MUST** be of class pure
-  ([§3](part_i_values.md#3-functions)).
+- **§4 rule 8.** `Resolve` is the capability of taking several drives
+  ([§3.7.13](part_i_values.md#37-traits)):
 
   ```rust
-  fn first<const N: usize>(xs: [f64; N]) -> f64 { xs[0] }
+  pub trait Resolve<X: Repr, V: Repr = X> {
+      fn resolve<const N: usize>(drives: [X; N]) -> V;
+  }
+  ```
+
+  `X` is the type a module drives into the carrier; `V` **MUST** be the nature's `value` type,
+  what a reader sees (`E0203`). An `impl` whose `V` is another type, or for a continuous
+  nature, is `E0203`. The drives are an array, passed by value like any other
+  ([§1.4.6](part_i_values.md#14-typing-inference-and-conversion)); elaboration instantiates
+  the function with `N` the number of drives a call receives, zero included
+  ([§8.2.3](part_iii_structure.md#82-the-body)). The function **MUST** be of class pure
+  ([§3](part_i_values.md#3-functions)). A nature may implement `Resolve` for several `X`; a
+  drive picks the `impl` by the type it drives ([§5.2.15](#52-drives)).
+
+  ```rust
+  pub nature AndWire { value: bool }
+  impl Resolve<bool> for AndWire {
+      fn resolve<const N: usize>(drives: [bool; N]) -> bool { drives.iter().all(|d| d) }
+  }
   ```
 - **§4 rule 9.** A **nature quantity** is the `IDENT` after `potential:` or `flow:` with its
   attribute block. The attributes are closed:
@@ -118,8 +136,9 @@ nature** declares `potential`.
 - **§4 rule 14.** A nature has no behavior of its own. What it decides is which engine
   computes its carriers and how drives combine (table above).
 - **§4 rule 15.** `resolve` is called in the microstep in which any drive of the carrier
-  changes ([§5.2](#52-drives)). It receives every existing drive, with its known flags; the
-  rules of [§3.3](part_i_values.md#33-unknown-values) apply inside it.
+  changes ([§5.2](#52-drives)). It receives every present drive as a plain value of type `X`.
+  A drive that relaxation has not yet produced is absent from what it receives
+  ([§8.2.3](part_iii_structure.md#82-the-body)); absence is not a value of the type.
 - **§4 rule 16.** In every analysis a discrete nature's carriers are constant during a solve,
   and a continuous nature's carriers are unknowns of the solve
   ([§16.2](part_v_execution.md#162-every-primitive-in-every-solve)).
@@ -130,7 +149,7 @@ nature** declares `potential`.
 | --- | --- | --- |
 | `E0201` | a nature that repeats a field, mixes discrete and continuous fields, or lacks `value` or `potential` | elaboration |
 | [§2](part_i_values.md#2-repr) | a `value` type that does not implement `Repr` (`E0112`) | elaboration |
-| `E0203` | a `resolve` that is not a pure function with one const parameter `N: usize` and the signature `fn([T; N]) -> T` | elaboration |
+| `E0203` | an `impl Resolve<X, V>` whose `V` is not the nature's `value` type, one for a continuous nature, or one whose `resolve` is not a pure function with one const parameter `N: usize` and the signature `fn([X; N]) -> V` | elaboration |
 | `E0204` | a quantity attribute other than `access`, `units`, `abstol`; one of the wrong type; an `abstol` that is not positive | elaboration |
 | `E0205` | the two `access` names of one nature are equal | elaboration |
 | `E0206` | a probe that the nature of its first argument does not declare | elaboration |
@@ -141,7 +160,10 @@ nature** declares `potential`.
 pub nature Bit<T: Repr = bool> {
     value: T,
 } // prelude; Bit is Bit<bool>
-pub nature Wire { value: Logic, resolve: Logic::wired }                  // stdlib (§22.3): strengths, high impedance
+pub nature Sda { value: Driven }                                         // a model's own net (§22.3, Appendix F.4)
+impl Resolve<Driven> for Sda {
+    fn resolve<const N: usize>(drives: [Driven; N]) -> Driven { Driven::strongest(drives) }
+}
 pub nature Electrical {
     potential: Voltage { access: v, units: "V", abstol: 1u },
     flow: Current { access: i, units: "A", abstol: 1p },
@@ -177,10 +199,12 @@ sigtype        ::= 'flip'? path generic_args? | '[' sigtype ';' expr ']'
   `K` carriers; `K` is a const expression.
 - **§5.1.5** The initial value `= expr` has the nature's `value` type, or for an array an
   array of it. It is an expression over params and constants; it reads no carrier and no
-  probe. It may be or contain `Unknown`.
+  probe. A carrier with no initial value starts at `Default::default()` of its value type
+  ([§3.3.4](part_i_values.md#33-uncertainty-and-absence)); a type without `Default` requires
+  the initial value (`E0187`).
 - **§5.1.6** Where a discrete carrier may be read is the placement matrix
-  ([Appendix B.2](appendix_b_grammar.md)). Inside `analog` a read is restricted by
-  [§3.3.5](part_i_values.md#33-unknown-values).
+  ([Appendix B.2](appendix_b_grammar.md)). Inside `analog` a read is an ordinary expression
+  ([§3.3.6](part_i_values.md#33-uncertainty-and-absence)).
 - **§5.1.7** `changed`, `prev` and `others` apply to one carrier. On an array of carriers
   they are written on an element: `lines[k].changed()`.
 
@@ -190,19 +214,19 @@ sigtype        ::= 'flip'? path generic_args? | '[' sigtype ';' expr ']'
 
 **Dynamic semantics**
 
-- **§5.1.1** Reading a carrier yields its value, with its known flags
-  ([§3.3](part_i_values.md#33-unknown-values)). Every level is unknown until the first
-  commit. `= value` is that commit, made at `(0, 0)`
-  ([§16](part_v_execution.md#16-the-operating-point)). `q <- Unknown;` commits an unknown
-  value.
+- **§5.1.1** Reading a carrier yields its value
+  ([§3.3](part_i_values.md#33-uncertainty-and-absence)). The carrier has a value from `(0, 0)`
+  on: the initial value is committed there, `= value` or `Default::default()`
+  ([§16](part_v_execution.md#16-the-operating-point)).
 - **§5.1.2** A discrete carrier is constant during every Newton solve. It has no derivative
   and no small-signal response around an operating point
   ([§11.1](part_iv_behavior.md#111-one-block-every-analysis)). What a commit of a real value
   carries along a trajectory is [§23.3.4](part_viii_host.md#233-gradients-across-events).
 - **§5.1.3** An array of carriers reads as an array value. Storage and history of an element
   exist from its first commit, so `[Bit<u8>; 1 << 32]` costs what is written.
-- **§5.1.8** An element that was never committed reads as unknown, and its `prev()` is
-  unknown. An implementation **MUST NOT** require storage proportional to the declared length.
+- **§5.1.8** An element that was never committed reads as the array's initial value for that
+  element, and its `prev()` is the same value. An implementation **MUST NOT** require storage
+  proportional to the declared length.
 - **§5.1.9** The initial expression is evaluated with the param values in force when the
   analysis starts. A later `set` does not commit it again
   ([§9](part_iii_structure.md#9-quantities) rule 4).
@@ -216,17 +240,19 @@ sigtype        ::= 'flip'? path generic_args? | '[' sigtype ';' expr ']'
 | --- | --- | --- |
 | `E0210` | an initial value of a signal or node of the wrong type, or one that reads a carrier or a probe | elaboration |
 | `E0211` | a carrier method applied to an array of carriers or to a bundle | elaboration |
+| [§3.7](part_i_values.md#37-traits) | a signal, an `out` port or a drive with no initial value whose value type does not implement `Default` (`E0187`, naming the carrier and `Default`) | elaboration |
 
 **Examples**
 
 ```rust,fragment
-signal en:    Bit;                       // starts unknown
+signal en:    Bit = false;               // a bool has no default: the initial value is written
+signal last:  Bit<Option<u8>>;           // starts at None: Option has a default
 signal count: Bit<u8> = 0;
 signal level: Bit<f64> = 0.0;            // real-number modeling: piecewise constant
 signal st:    Bit<Tx> = Tx::Idle;
-signal lines: [Bit; 8];                  // eight carriers, each with its own events
-signal bus:   Bit<u4> = logic("10xx");   // level by level; x is unknown
-signal sda:   Wire;                      // resolved: any number of drivers
+signal lines: [Bit; 8] = [false; 8];     // eight carriers, each with its own events
+signal bus:   Bit<Logic<4>> = logic("10xx");  // four-state, level by level; starts xxxx without `= ..`
+signal sda:   Sda;                       // resolved: any number of drivers, no initial value of its own
 ```
 
 ### 5.2 Drives
@@ -237,26 +263,32 @@ carrier holds one drive of it: either one `=` definition
 ([§12.1](part_iv_behavior.md#121-reactions)), never both. The carrier's value is what its
 nature makes of the drives.
 
-A **one-driver carrier** is a carrier of a discrete nature without `resolve`. A **resolved
-carrier** is a carrier of a discrete nature with `resolve`.
+A **one-driver carrier** is a carrier of a discrete nature that does not implement `Resolve`.
+A **resolved carrier** is a carrier of a discrete nature that does
+([§4](#4-natures) rule 8).
 
 **Static semantics**
 
-- **§5.2.1 No `resolve`.** One module holds the drive: the one that declares the carrier, or
-  the one that has it as an `out` port. A second drive is an elaboration error.
-- **§5.2.2 With `resolve`.** Any module that sees the carrier may hold a drive.
+- **§5.2.1 One driver.** One module holds the drive: the one that declares the carrier, or
+  the one that has it as an `out` port. A second drive is `E0220`, and its diagnostic names
+  the nature and `Resolve`.
+- **§5.2.2 Resolved.** Any module that sees the carrier may hold a drive, and the carrier
+  takes any number of them, zero included. Its ports take no direction.
 - **§5.2.3** `= value` on a signal or port is the first commit of the declaring module's
-  drive ([§16](part_v_execution.md#16-the-operating-point) step 2). A carrier's initial value
-  is given once, by its driver. For a top-level `in` port the driver is the host
-  ([§23.1](part_viii_host.md#231-testbenches)).
+  drive ([§16](part_v_execution.md#16-the-operating-point) step 2). On a resolved signal it is
+  a drive of type `X`. A carrier's initial value is given once, by its driver. For a top-level
+  `in` port the driver is the host ([§23.1](part_viii_host.md#231-testbenches)). A resolved
+  carrier with no drive of the declaring module needs no initial value of its own: its value
+  is `resolve` of its drives.
 - **§5.2.4** A module **MUST NOT** hold both a definition and commits for one carrier. An
   element of an array of carriers is one carrier for this rule.
 - **§5.2.5** A module never writes a carrier it has as an `in` port.
 - **§5.2.6** When a module passes a one-driver carrier it declares to an `out` port of an
   instance, the instance holds the drive. The declaring module then holds none, and its
   `signal` **MUST NOT** have an initial value.
-- **§5.2.7** `s.others()` is defined on a resolved carrier only.
-- **§5.2.8** A one-driver carrier with no drive is allowed. It is unknown in every analysis.
+- **§5.2.7** `s.others()` is defined on a resolved carrier only. It gives a `V`.
+- **§5.2.8** A one-driver carrier with no drive is allowed. It holds its initial value in every
+  analysis; its value type implements `Default` or it is `E0187`.
 
 > **Resolution.** Rule 6 states who gives the initial value when the declaring module is not
 > the driver: the `out` port does (`signal up: Bit;` with `out up: Bit = false`). Rule 8
@@ -265,20 +297,26 @@ carrier** is a carrier of a discrete nature with `resolve`.
 **Dynamic semantics**
 
 - **§5.2.9** On a one-driver carrier the value is the drive.
-- **§5.2.10** On a resolved carrier the value is `resolve` of all drives, recomputed in the
-  microstep any drive changes. Readers, `changed()` and history see the resolved value.
+- **§5.2.10** On a resolved carrier the value is always `resolve` of its present drives,
+  recomputed in the microstep any drive changes, also when there is one or none. Readers,
+  `changed()` and history see the resolved value.
 - **§5.2.11** `s.others()` reads `resolve` of every drive but this module's own. This is how
   a bidirectional element looks through itself
   ([§22.3](part_vii_stdlib.md#223-resolved-nets)). In a module that holds no drive of `s`, it
   equals the value of `s`.
-- **§5.2.12** A drive with no initial value starts unknown. It is a drive from `(0, 0)` on,
-  and `resolve` receives it. A module that never writes a carrier has no drive of it.
+- **§5.2.12** A drive with no initial value starts at `Default::default()` of the driven type;
+  a type without it is `E0187` (§5.1 errors). It is a drive from `(0, 0)` on, and `resolve`
+  receives it. A module that never writes a carrier has no drive of it.
 - **§5.2.13** A commit to some levels of a drive leaves its other levels as they were
   ([§12.1](part_iv_behavior.md#121-reactions)).
 - **§5.2.14** In which microstep a drive takes a new value, and how commits to one level are
   ordered, is [§12.1](part_iv_behavior.md#121-reactions) and
   [§15](part_v_execution.md#15-time-and-the-instant). Where time does not advance, drives
   behave as [§16.1](part_v_execution.md#161-analyses-without-time) states.
+- **§5.2.15** A drive picks its `impl` of `Resolve` by the type of the value it drives. Every
+  drive of one carrier has the same `X`: two driven types on one carrier are `E0225`, naming
+  both modules and both types. A drive whose type no `impl` accepts is `E0180`, naming the
+  nature and the driven type; a literal that several `impl`s accept is `E0181`.
 
 On a node, the counterpart of a drive is the module's branches ([§6](#6-continuous-carriers)).
 
@@ -286,11 +324,12 @@ On a node, the counterpart of a drive is the module's branches ([§6](#6-continu
 
 | Code | Condition | Phase |
 | --- | --- | --- |
-| `E0220` | a second drive of a one-driver carrier | elaboration |
+| `E0220` | a second drive of a one-driver carrier; the diagnostic names the nature and `Resolve` | elaboration |
 | `E0221` | a definition and a commit to the same carrier in one module | elaboration |
 | `E0222` | a definition or commit whose target the module may not drive ([§8.2.10](part_iii_structure.md#82-the-body)): an `in` port, a carrier it neither declares nor has as a port, a child's one-driver carrier, or anything that is not a discrete carrier | elaboration |
 | `E0223` | an initial value given by a module that does not hold the drive, or given twice | elaboration |
 | `E0224` | `others()` on a one-driver carrier | elaboration |
+| `E0225` | two drives of one resolved carrier whose driven types differ | elaboration |
 
 ### 5.3 History
 
@@ -299,7 +338,7 @@ Every discrete carrier, and every param, keeps one previous value.
 | Method | Gives |
 | --- | --- |
 | `s.changed()` | `Event`: `s` changed in this microstep |
-| `s.prev()` | the value before the most recent change (on a resolved carrier, the previous settled value); before the first, unknown on a carrier and the param's own value on a param |
+| `s.prev()` | the value before the most recent change (on a resolved carrier, the previous settled value); before any change after `(0, 0)`, the initial value of a carrier and the param's own value on a param |
 
 **Static semantics**
 
@@ -313,31 +352,30 @@ Every discrete carrier, and every param, keeps one previous value.
 **Dynamic semantics**
 
 - **§5.3.4** A carrier undergoes a **change** in a microstep when its value there differs from
-  its value in the previous microstep in at least one level: the level's flag differs, or
-  both are known and the levels differ.
-- **§5.3.5** A level that stays unknown has not changed. A commit of the value the carrier
-  already holds is not a change.
+  its value in the previous microstep in at least one level.
+- **§5.3.5** A commit of the value the carrier already holds is not a change.
 - **§5.3.6** A `Bit<f64>` changes when its levels change: `0.0` to `-0.0` is a change, the
   same NaN is not ([G.9](appendix_g_scope.md)).
-- **§5.3.7** `prev()` is the whole value of the carrier before its most recent change, all
-  levels with their flags. It is constant between changes.
-- **§5.3.8** The first commit is a change when it makes any level known
-  ([§13](part_iv_behavior.md#13-events) rule 6). After it, `prev()` is all unknown.
+- **§5.3.7** `prev()` is the whole value of the carrier before its most recent change. It is
+  constant between changes.
+- **§5.3.8** The initial value, written or `Default::default()`, is committed at `(0, 0)` and
+  that commit is a change ([§13](part_iv_behavior.md#13-events) rule 6). Before any later
+  change `prev()` equals the initial value, as a param's does.
 - **§5.3.9** On a resolved carrier, a change and `prev()` refer to the resolved value after
   the microstep's structure has settled
   ([§8.2.3](part_iii_structure.md#82-the-body)). Intermediate relaxation passes are not
   changes.
 - **§5.3.10** No change happens in a small-signal sweep
   ([§16.2](part_v_execution.md#162-every-primitive-in-every-solve), second table).
-- **§5.3.11** A param is always known and has no first commit: binding it, at elaboration or
+- **§5.3.11** A param has a value from elaboration and no first commit: binding it, at elaboration or
   by a `set` made before the run, is not a change
   ([§13](part_iv_behavior.md#13-events) rule 16). Before the first `set` during a run,
   `p.prev()` equals `p`.
-- **§5.3.12** The value bytes of an unknown level are zero.
 
-> **Resolution.** Rules 4, 5 and 7 define "changed" at the level of flags, as the stdlib's
-> `rise` and `fall` assume ("a change never goes from unknown to unknown"). Whether one
-> previous value is enough stays open ([G.19](appendix_g_scope.md)).
+> **Resolution.** Rules 4, 5 and 7 define "changed" level by level, as the stdlib's `rise` and
+> `fall` assume: a commit of the value a carrier holds is not a change, and a carrier that
+> starts high has not risen at `(0, 0)`. Whether one previous value is enough stays open
+> ([G.19](appendix_g_scope.md)).
 
 **Errors**
 
@@ -419,7 +457,7 @@ the flow of a branch.
 - **§6 rule 15.** In a reaction a probe reads the solution at the instant its event fired
   ([§12.1.5](part_iv_behavior.md#121-reactions)). In an event expression it is read by
   the solver ([§13](part_iv_behavior.md#13-events)).
-- **§6 rule 16.** A probe is always known ([§3.3.1](part_i_values.md#33-unknown-values)).
+- **§6 rule 16.** A probe is a plain `f64` ([§3.3.1](part_i_values.md#33-uncertainty-and-absence)).
 - **§6 rule 17.** Flow probes are divided by the effective multiplicity
   ([§8.5.3](part_iii_structure.md#85-implicit-params-and-extern-modules)).
 - **§6 rule 18.** A node's value is continuous in time except at a jump, where it has a left
@@ -452,7 +490,7 @@ A discrete carrier is never connected to a node, and no converter is inserted im
 - **§6.1.1** Crossing is a module: the stdlib `D2A`, `A2D` and `Bidir`
   ([§22.4](part_vii_stdlib.md#224-converters)).
 - **§6.1.2** Inside a module, behavior crosses freely: `analog` reads discrete carriers
-  ([§3.3.5](part_i_values.md#33-unknown-values)), and events and reactions probe.
+  ([§3.3.6](part_i_values.md#33-uncertainty-and-absence)), and events and reactions probe.
 - **§6.1.3** A carrier connects to a port only when their natures are the same discrete
   nature or compatible continuous natures ([§4](#4-natures) rule 13).
 
@@ -498,8 +536,9 @@ A **view** is the way one module sees a bundle: which of its one-driver fields i
 
 - **§7 rule 1.** Every field of a bundle is a carrier, an array of carriers, or a bundle. A
   `struct` that mixes carrier fields and value fields is an error.
-- **§7 rule 2.** A field of a one-driver nature **MUST** have `in` or `out`. A field of any
-  other nature **MUST NOT** have a direction.
+- **§7 rule 2.** A field of a one-driver nature (a discrete nature that does not implement
+  `Resolve`) **MUST** have `in` or `out`. A field of any other nature, a resolved one
+  included, **MUST NOT** have a direction.
 - **§7 rule 3.** In the producer view the module drives the `out` fields and reads the `in`
   fields. `flip` swaps `in` and `out` on every one-driver field, nested bundles included. The
   observer view makes every one-driver field an input.

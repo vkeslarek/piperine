@@ -173,7 +173,7 @@ rl: f64 = 1T;
 ## A.3 Unknown values
 
 `Unknown` is the literal of any `Repr` type with every level unknown
-([§3.3](part_i_values.md#33-unknown-values)).
+([§3.3](part_i_values.md#33-uncertainty-and-absence)).
 
 **Static semantics**
 
