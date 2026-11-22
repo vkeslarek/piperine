@@ -252,7 +252,7 @@ fn controller() -> String {
 
 #[test]
 fn an_expression_at_an_in_port_is_a_carrier_and_a_drive() {
-    // DIG-09 AC 3, C77: `RefRamp(done, run, target_codes(setpoint.known_or(0)), ..)` in
+    // DIG-09 AC 3, C77: `RefRamp(done, run, target_codes(setpoint), ..)` in
     // `Controller` adds the signal carrier `ramp.target` to `Controller` with its drive, and binds
     // the child's port `target` to it (§8.2.9).
     let ir = Elab::ir(&controller(), "Controller");
@@ -264,7 +264,7 @@ fn an_expression_at_an_in_port_is_a_carrier_and_a_drive() {
     let drives: Vec<_> = body.drives().iter().filter(|d| d.carrier == at as u32).collect();
     assert_eq!(drives.len(), 1, "one drive of `ramp.target`");
     assert_eq!(drives[0].after, None);
-    assert!(body_text(&ir, "Controller").contains("  drive ramp.target = target_codes(setpoint.known_or(0u8))\n"), "{}", body_text(&ir, "Controller"));
+    assert!(body_text(&ir, "Controller").contains("  drive ramp.target = \"target_codes~1\"(setpoint)\n"), "{}", body_text(&ir, "Controller"));
     let ramp = body.children().iter().position(|c| c.name == "ramp").expect("the child `ramp`");
     let setpoint = body.carriers().iter().position(|c| c.name == "setpoint").map(|i| i as u32);
     let (done, run, reference, at_target) = ["done", "run", "reference", "at_target"].map(|n| body.carriers().iter().position(|c| c.name == n).map(|i| i as u32)).into();
@@ -554,7 +554,13 @@ fn a_reaction_body_lowers_in_source_order() {
     // its one listed difference, `DUTY_MAX as i32` folded to `2880i32` (DIG-08 AC 2).
     let src = format!("{}\n{}", buck::spec(), buck::module_with_digital("control.msl", "Pid"));
     let ir = Elab::ir(&src, "Pid");
-    let expected = reaction_text(&golden("pid"), 0).replace("(2880u12 as i32)", "2880i32");
+    // `Pid` reads `run`, `reference` and `meas` directly (explicit-unknowns T24): the fixture's `known_or` reads are plain
+    let expected = reaction_text(&golden("pid"), 0)
+        .replace("(2880u12 as i32)", "2880i32")
+        .replace("(!run.known_or(false))", "(!run)")
+        .replace("(reference.known_or(0u10) as i16) - (meas.known_or(1023u10) as i16)", "(reference as i16) - (meas as i16)")
+        .replace("    local e: i16", "    local e: flagged<i16>")
+        .replace("    local p: i32", "    local p: flagged<i32>");
     assert_eq!(reaction_text(&body_text(&ir, "Pid"), 0), expected);
 
     // `Dpwm`'s reaction (dpwm.msl), statement by statement against the same transcription; the
@@ -567,7 +573,14 @@ fn a_reaction_body_lowers_in_source_order() {
     let dpwm: String = lines.iter().enumerate().filter(|(k, _)| *k != at && !(*k + 1 == at && lines[*k].trim_start().starts_with("///"))).map(|(_, l)| *l).collect::<Vec<_>>().join("\n");
     let src = format!("{}\n{}\n{}\n{dpwm}", buck::spec(), buck::item("dpwm.msl", "fn rev3"), buck::item("dpwm.msl", "fn dithered_width"));
     let ir = Elab::ir(&src, "Dpwm");
-    assert_eq!(reaction_text(&body_text(&ir, "Dpwm"), 0), reaction_text(&golden("dpwm"), 0));
+    // `Dpwm` reads `run`, `duty`, `oc` and `sink_oc` directly (explicit-unknowns T24): the fixture's `known_or` reads are plain
+    let expected = reaction_text(&golden("dpwm"), 0)
+        .replace("    local enabled: bool", "    local enabled: flagged<bool>")
+        .replace("let enabled = run.known_or(false)", "let enabled = run")
+        .replace("\"dithered_width~01\"(duty.known_or(0u12), (frame + 1u3))", "\"dithered_width~11\"(duty, (frame + 1u3))")
+        .replace("(hs & oc.known_or(true))", "(hs & oc)")
+        .replace("(ls & sink_oc.known_or(true))", "(ls & sink_oc)");
+    assert_eq!(reaction_text(&body_text(&ir, "Dpwm"), 0), expected);
 }
 
 #[test]

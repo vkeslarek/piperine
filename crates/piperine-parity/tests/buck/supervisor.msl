@@ -1,12 +1,14 @@
 //! The stimulus of the supervisor test (T55): `Script` drives every input of `Supervisor` from a
 //! sample counter, with `if` chains over it, so the Rust reference of `buck_supervisor.rs`
 //! computes the same inputs from the same index.
+
 use buck::dpwm::Osc;
+
 use buck::supervisor::{Fault, Mode, Supervisor};
 
-/// The inputs of sample `s`, written at the falling edge before its rising edge (the oscillator's
-/// first fall is its initial value at `(0, 0)`, so the fall with `n = s` writes the inputs the
-/// rising edge of sample `s` reads).
+/// The inputs of sample `s`, written at the falling edge before its rising edge (the oscillator starts
+/// low, so the start at `(0, 0)` stands for its first fall and the fall with `n = s` writes the inputs
+/// the rising edge of sample `s` reads).
 ///
 /// - `en` is low before sample 5 and from 2300 to 2304; `vin_ok` is low from 1500 to 1504.
 /// - `reference` is 128 codes (0.8 V): the window is 120 to 136, the OVP threshold 160.
@@ -14,12 +16,20 @@ use buck::supervisor::{Fault, Mode, Supervisor};
 /// - `meas` is 128, except: 100 (outside the window) at 120 to 122 and at 130 to 133; 170 (over
 ///   the OVP threshold) at 220, alone, and at 1298 and 1299, two in a row.
 /// - `cut` is high from 230 to 236 (seven periods) and from 250 to 257 (eight periods).
-module Script(in clk: Bit, out en: Bit = false, out vin_ok: Bit = true, out cut: Bit = false,
-              out meas: Bit<u10> = 128, out reference: Bit<u10> = 128, out at_target: Bit = false) {
+module Script(
+    in clk: Bit,
+    out en: Bit = false,
+    out vin_ok: Bit = true,
+    out cut: Bit = false,
+    out meas: Bit<u10> = 128,
+    out reference: Bit<u10> = 128,
+    out at_target: Bit = false,
+) {
     signal n: Bit<u12> = 0;
 }
+
 digital for Script {
-    on clk.fall() {
+    on clk.fall() || init() {
         let s = n.known_or(0);
         n <- s + 1;
         en <- !(s < 5 || (s >= 2300 && s < 2305));
@@ -27,9 +37,13 @@ digital for Script {
         cut <- (s >= 230 && s < 237) || (s >= 250 && s < 258);
         reference <- 128;
         at_target <- s >= 20 && !(s >= 1500 && s < 1520);
-        meas <- if (s >= 120 && s < 123) || (s >= 130 && s < 134) { 100 }
-                else if s == 220 || s == 1298 || s == 1299 { 170 }
-                else { 128 };
+        meas <- if (s >= 120 && s < 123) || (s >= 130 && s < 134) {
+            100
+        } else if s == 220 || s == 1298 || s == 1299 {
+            170
+        } else {
+            128
+        };
     }
 }
 

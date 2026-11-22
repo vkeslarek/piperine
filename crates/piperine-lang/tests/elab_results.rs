@@ -189,7 +189,7 @@ fn ps_children_are_empty(ir: &Ir) -> bool {
 
 #[test]
 fn an_expression_at_a_discrete_input_drives_the_hoisted_carrier() {
-    // DIG-10 AC 6, C95: `transition(if g.high() { 1.0 } else { 0.0 }, ..)` is a drive of `gate.x`
+    // DIG-10 AC 6, C95: `transition(if g { 1.0 } else { 0.0 }, ..)` is a drive of `gate.x`
     // by that expression, undelayed.
     let ir = Elab::ir(&power_switch(&["p"]), "Top");
     let ps = body(&ir, "PowerSwitch");
@@ -198,8 +198,7 @@ fn an_expression_at_a_discrete_input_drives_the_hoisted_carrier() {
     assert_eq!(drives.len(), 1);
     assert_eq!(drives[0].after, None);
     let Expr::If { cond, then, otherwise } = ir.expr(drives[0].value) else { panic!("the `if`: {:?}", ir.expr(drives[0].value)) };
-    let Expr::High(read) = ir.expr(*cond) else { panic!("`g.high()`") };
-    assert_eq!(ir.expr(*read), &Expr::Carrier(g));
+    assert_eq!(ir.expr(*cond), &Expr::Carrier(g), "`g` is read directly");
     assert_eq!((ir.expr(*then), ir.expr(*otherwise)), (&Expr::Real(piperine_ir::Real::new(1.0)), &Expr::Real(piperine_ir::Real::new(0.0))));
     // `xd = x after td.unwrap_or(0.0)` is the callee's own definition, with `td` the caller's `0.0`.
     let xd = index_of(&ps, "gate.xd");

@@ -212,3 +212,12 @@ fn no_primitive_numeric_type_has_a_default() {
         assert!(found[0].1.contains(&format!("`{ty}`")), "{ty}: the type is named: {}", found[0].1);
     }
 }
+
+#[test]
+fn an_in_port_may_carry_an_initial_value() {
+    // §3.3.4, §23.1 rule 9 (EU-04): a top-level `in` port starts at its written value, like an `out` port or a signal
+    let src = "module Top(in en: Bit = false, in data: Bit<u8> = 100, out ready: Bit = true) { }";
+    let design = Design::builder().source("top.msl", src).build();
+    assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
+    Types::check(&design, "Top").unwrap_or_else(|d| panic!("{:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
+}

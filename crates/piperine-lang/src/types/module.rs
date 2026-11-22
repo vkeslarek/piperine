@@ -43,7 +43,8 @@ impl Checker<'_> {
                 self.coded(file, "E0311", span, "a value input takes no initial value (§8.1.7)".to_string(), "no initial value here");
                 self.infer(default);
             }
-            (Some(Ty::Carrier { value, .. }), Some(crate::msl::ast::Dir::Out)) => {
+            // An `in` port of a top level starts at its written value too (§3.3.4, §23.1 rule 9).
+            (Some(Ty::Carrier { value, .. }), Some(crate::msl::ast::Dir::Out | crate::msl::ast::Dir::In)) => {
                 self.initial_reads(default);
                 self.within(Context::Const, |this| this.check_as(default, value, "E0210"));
             }

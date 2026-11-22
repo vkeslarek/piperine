@@ -571,12 +571,12 @@ fn an_option_is_a_flag_and_a_payload() {
     assert!(known.contains("let k.is = x.is_known()") && known.contains("let k.val = x.known_or(0u8)") && known.contains("if k.is { k.val } else { 5u8 }"), "{known}");
 
     // The reaction form of `SetpointReg` (examples/buck/src/control.msl, owed to T31): no IR type
-    // is an `Option`, and `if let Some(d) = data.known()` reads the pair where it stands.
+    // is an `Option`, and the register reads `data` directly (explicit-unknowns T24: no `known()` test).
     let src = format!("const SETPOINT_RESET: u8 = 100;\nconst SETPOINT_MAX: u8 = 168;\n{}", buck_module("control.msl", "SetpointReg"));
     let ir = Elab::ir(&src, "SetpointReg");
     let text = ir.print_structural();
     assert!(!text.contains("Option") && !text.contains("option"), "{text}");
-    assert!(text.contains("if data.is_known() { let d = data.known_or(0u8); code <- d.min(168u8) } else { () }"), "{text}");
+    assert!(text.contains("code <- data.min(168u8)"), "{text}");
 
     // The reaction form of `Supervisor` (supervisor.msl, owed to T31; its `log` is inlined from
     // T34 on): `fault_now` is a flag and a payload, `if let Some(f) = fault_now` reads the pair.

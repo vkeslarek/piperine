@@ -684,9 +684,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] Every buck target of `piperine-parity` and `cargo test -p piperine-cli --test buck` pass with no expected value edited
-- [ ] The only asserts rewritten are on a known byte, listed in the commit body
-- [ ] Gate check passes: Full, with the buck
+- [x] Every buck target of `piperine-parity` and `cargo test -p piperine-cli --test buck` pass with no expected value edited
+- [x] The only asserts rewritten are on a known byte, listed in the commit body
+- [x] Gate check passes: Full, with the buck
 
 **Tests**: integration
 **Gate**: full

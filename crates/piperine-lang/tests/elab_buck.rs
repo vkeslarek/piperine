@@ -50,6 +50,32 @@ fn stdlib_rise_guard(carrier: &str) -> (String, String) {
 /// The second: `Pid` folds `DUTY_MAX as i32` where the fixture writes the cast (DIG-08 AC 2).
 const PID_FOLD: (&str, &str) = ("(2880u12 as i32)", "2880i32");
 
+/// The reads of `examples/buck` that the explicit model made plain (explicit-unknowns T24): the fixtures, the hand
+/// transcription of the earlier source, read a carrier through `known_or` or `high()`; the source reads it directly.
+/// `Dpwm` (`run`, `duty`, `oc`, `sink_oc`), the call it makes (`dithered_width` has one variant per flag pattern, and
+/// `duty` is flagged now), `SetpointReg` (no `known()` test), `RefRamp` and `Pid` (`run`, `reference`, `meas`).
+const DPWM_PLAIN_READS: [(&str, &str); 5] = [
+    ("    local enabled: bool", "    local enabled: flagged<bool>"),
+    ("let enabled = run.known_or(false)", "let enabled = run"),
+    ("\"dithered_width~01\"(duty.known_or(0u12), (frame + 1u3))", "\"dithered_width~11\"(duty, (frame + 1u3))"),
+    ("(hs & oc.known_or(true))", "(hs & oc)"),
+    ("(ls & sink_oc.known_or(true))", "(ls & sink_oc)"),
+];
+const DITHERED_WIDTH_PLAIN: [(&str, &str); 4] = [
+    ("fn \"dithered_width~01\"(duty: u12, frame: flagged<u3>) -> flagged<u9>", "fn \"dithered_width~11\"(duty: flagged<u12>, frame: flagged<u3>) -> flagged<u9>"),
+    ("  local coarse: u9", "  local coarse: flagged<u9>"),
+    ("  local duty: u12", "  local duty: flagged<u12>"),
+    ("  local fine: u3", "  local fine: flagged<u3>"),
+];
+const SETPOINT_PLAIN: (&str, &str) = ("if data.is_known() { let d = data.known_or(0u8); code <- d.min(168u8) } else { () }", "code <- data.min(168u8)");
+const RAMP_PLAIN: (&str, &str) = ("(!run.known_or(false))", "(!run)");
+const PID_PLAIN_READS: [(&str, &str); 4] = [
+    ("    local e: i16", "    local e: flagged<i16>"),
+    ("    local p: i32", "    local p: flagged<i32>"),
+    ("(!run.known_or(false))", "(!run)"),
+    ("(reference.known_or(0u10) as i16) - (meas.known_or(1023u10) as i16)", "(reference as i16) - (meas as i16)"),
+];
+
 /// Replace `from` by `to` in `lines`, which must hold `from` exactly once: a listed difference is
 /// one place, never a blanket rewrite.
 fn replace_once(lines: &[String], (from, to): &(String, String)) -> Vec<String> {
@@ -72,19 +98,25 @@ fn six_slice_bodies_equal_their_hand_built_fixtures() {
     // (SetpointReg `wr`, RefRamp `tick`, Adc `sample`, Pid `tick`) and Pid also by the fold.
     let ir = buck_ir();
     let print = ir.print_structural();
+    let mut pid = vec![stdlib_rise_guard("tick"), pair(PID_FOLD)];
+    pid.extend(PID_PLAIN_READS.map(pair));
     let cases: [(&str, &str, Vec<(String, String)>); 6] = [
         ("osc", "Osc", vec![]),
         ("gate_driver", "GateDriver", vec![]),
-        ("setpoint_reg", "SetpointReg", vec![stdlib_rise_guard("wr")]),
-        ("ref_ramp", "RefRamp", vec![stdlib_rise_guard("tick")]),
+        ("setpoint_reg", "SetpointReg", vec![stdlib_rise_guard("wr"), pair(SETPOINT_PLAIN)]),
+        ("ref_ramp", "RefRamp", vec![stdlib_rise_guard("tick"), pair(RAMP_PLAIN)]),
         ("adc", "Adc", vec![stdlib_rise_guard("sample")]),
-        ("pid", "Pid", vec![stdlib_rise_guard("tick"), pair(PID_FOLD)]),
+        ("pid", "Pid", pid),
     ];
     for (file, body, differences) in cases {
         let header = format!("body {body}");
         let mut expected = item(&fixture(file), &header);
         for difference in &differences {
             expected = replace_once(&expected, difference);
+        }
+        // `SetpointReg` has no local `d` any more: its `known()` test is gone
+        if body == "SetpointReg" {
+            expected = without(&expected, &[Extra("    local d: u8")]);
         }
         assert_same(body, &expected, &item(&print, &header));
     }
@@ -118,12 +150,18 @@ fn dpwm_and_a2d_differ_only_as_listed() {
         Extra("  drive no_shoot_through.bad = (hs & ls)"),
     ];
     let elaborated = item(&print, "body Dpwm");
-    let expected = replace_once(&item(&fixture("dpwm"), "body Dpwm"), &stdlib_rise_guard("clk"));
-    assert_same("Dpwm", &expected, &without(&elaborated, &dpwm_extras));
-    // Its two functions are the fixture's, exactly.
-    for header in ["fn \"dithered_width~01\"", "fn \"rev3~1\""] {
-        assert_same(header, &item(&fixture("dpwm"), header), &item(&print, header));
+    let mut expected = replace_once(&item(&fixture("dpwm"), "body Dpwm"), &stdlib_rise_guard("clk"));
+    for difference in DPWM_PLAIN_READS {
+        expected = replace_once(&expected, &pair(difference));
     }
+    assert_same("Dpwm", &expected, &without(&elaborated, &dpwm_extras));
+    // Its two functions are the fixture's, `dithered_width` for the flag pattern its call now has.
+    let mut dithered = item(&fixture("dpwm"), "fn \"dithered_width~01\"");
+    for difference in DITHERED_WIDTH_PLAIN {
+        dithered = replace_once(&dithered, &pair(difference));
+    }
+    assert_same("dithered_width", &dithered, &item(&print, "fn \"dithered_width~11\""));
+    assert_same("rev3", &item(&fixture("dpwm"), "fn \"rev3~1\""), &item(&print, "fn \"rev3~1\""));
 
     // A2D (the fixture `comparator`) adds the `init` of each `above`: two signals and an event for
     // each, numbered after the cross, so the second cross is E2 where the fixture has E1. Each

@@ -64,7 +64,7 @@ fn body_diode(vsd: f64, vf: f64, rd: f64) -> f64 {
 
 /// An N-channel power switch (SPEC §2): a channel that moves between `roff` and `ron` in `tsw`
 /// when its gate command changes, the body diode from source to drain, and the output
-/// capacitance. An unknown gate reads as off (`high()`), which is the safe state.
+/// capacitance.
 pub module PowerSwitch(d: Electrical, s: Electrical, in g: Bit) {
     ron: f64 = 20m where ron > 0.0;
     roff: f64 = 1M where roff > ron;
@@ -77,7 +77,7 @@ pub module PowerSwitch(d: Electrical, s: Electrical, in g: Bit) {
     rd: f64 = 20m where rd > 0.0;
     /// 0 when off, 1 when on, a ramp of `tsw` in between.
     let gate = transition(
-        if g.high() {
+        if g {
             1.0
         } else {
             0.0
@@ -128,7 +128,7 @@ pub module Load(p: Electrical, in step: Bit, in inject: Bit) {
     /// Current pushed into the output while `inject` is high.
     i_inject: f64 = 5.0;
     let k_step = transition(
-        if step.high() {
+        if step {
             1.0
         } else {
             0.0
@@ -138,7 +138,7 @@ pub module Load(p: Electrical, in step: Bit, in inject: Bit) {
         tr,
     );
     let k_inject = transition(
-        if inject.high() {
+        if inject {
             1.0
         } else {
             0.0
