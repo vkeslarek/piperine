@@ -166,7 +166,6 @@ fn a_relax_group_settles_within_its_bound() {
     assert_eq!(e.value("v"), HIGH);
     assert_eq!(e.value("d"), HIGH);
     assert_eq!(calls("resolver").0, 2, "one pass that moves, one that does not");
-    assert!(e.obs.list().iter().all(|o| !matches!(o, Observation::Unsettled { .. })), "it settled");
     // the net `d` changed once for the run, from nothing to high
     let changes: Vec<_> = e
         .obs
@@ -178,29 +177,26 @@ fn a_relax_group_settles_within_its_bound() {
 }
 
 #[test]
-fn a_moving_field_is_a_fault_naming_its_net() {
-    // C17, abi.md §9 D1: v = d | LOW, d = not v never settles; a net that still moves after the
-    // bounded passes is a fault, never a value made up
+fn a_moving_loop_is_e0511_not_a_value_made_up() {
+    // C17, abi.md §9 D1: v = d | LOW, d = not v never settles; a loop that still moves after the
+    // bounded passes is `E0511`, never a value made up
     let mut e = Env::new(plan(vec![
         ("res", resolver(), vec![("d0", "d"), ("d1", "e"), ("v", "v")]),
         ("inv", inverter(), vec![("a", "v"), ("y", "d")]),
     ]))
     .all_dirty();
     e.write("e", &LOW);
-    let error = e.run().expect_err("a loop that does not settle is a fault");
-    assert!(error.to_string().contains("did not settle"), "{error}");
+    let error = e.run().expect_err("a loop that does not settle is E0511");
+    assert!(error.to_string().contains("E0511") && error.to_string().contains("did not settle"), "{error}");
 }
 
 #[test]
-fn a_moving_field_without_a_known_byte_fails() {
-    // C17: a counter field that always moves has nothing to fall back to
+fn a_counter_that_always_moves_is_e0511() {
+    // C17: a counter field that always moves has nothing to fall back to: the loop is `E0511`
     let mut e = Env::new(plan(vec![("s", succ(), vec![("a", "x"), ("y", "x")])])).all_dirty();
     match e.run() {
-        Err(DigitalError::Fault { message, instance, .. }) => {
-            assert!(message.contains("`x`"), "the net is named: {message}");
-            assert!(instance.contains("s"), "the cycle is named: {instance}");
-        }
-        other => panic!("expected a fault, got {other:?}"),
+        Err(DigitalError::Unsettled { code: "E0511", drives, .. }) => assert_eq!(drives, ["x"], "the loop's drive is named"),
+        other => panic!("expected E0511, got {other:?}"),
     }
 }
 

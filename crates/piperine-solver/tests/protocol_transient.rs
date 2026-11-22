@@ -9,8 +9,7 @@
 //! param write); with no unknown no attempt is made; settle runs at time
 //! points and the stop time only; a resume off the grid steps on from the
 //! tick its discrete side ran at, and a stop inside that tick is an error; on a real discrete
-//! side, a relaxation step that never settles reaches the owner as one `Unsettled` observation
-//! (spec §8.2.3 step 4).
+//! side, a loop that never settles stops the run with `E0511` (spec §8.2.3 step 4).
 
 #[allow(dead_code)]
 #[path = "support/stub_sides.rs"]
@@ -709,9 +708,10 @@ impl Device for Flipper {
 }
 
 #[test]
-fn an_unsettled_loop_is_a_fault_naming_its_net() {
-    // abi.md §9 D1: a net that still moves after the bounded passes is a fault of the run, naming
-    // the net; the bytes of a layout hold only values, so there is nothing to zero
+fn an_unsettled_loop_is_e0511_naming_its_drives() {
+    // abi.md §9 D1: a loop that still moves after the bounded passes stops the run with `E0511`,
+    // naming the loop's drives; the bytes of a layout hold only values, so there is nothing to
+    // zero
     let mut builder = CircuitBuilder::new("unsettled");
     builder.device(
         FLIPPER.get_or_init(|| module::<Flipper>("Flipper")),
@@ -724,7 +724,7 @@ fn an_unsettled_loop_is_a_fault_naming_its_net() {
         .with_sink(Box::new(Collect(Rc::new(RefCell::new(Vec::new())))))
         .build();
     let error = solver.tran().expect("transient").solve().expect_err("a loop that does not settle fails the run");
-    assert!(error.to_string().contains("`x` did not settle"), "{error}");
+    assert!(error.to_string().contains("E0511") && error.to_string().contains("did not settle; its drives: x"), "{error}");
 }
 
 /// SAI-15: the target's own device passes the partials verifier (the guard of `abi_devices.rs`).

@@ -301,10 +301,9 @@ fn walk(
 }
 
 /// The cycle of `fns` through the `RELAX` nets `nets` (abi.md §9 D1): those nets start at zero
-/// bytes, the functions run in order until no byte changes, at most `nets.len() + 1` passes; what
-/// still moves is zeroed where it has a known byte and a fault where it has none. A step that
-/// does not settle is one `Unsettled` observation naming every `RELAX` net of the step in name
-/// order (spec §8.2.3 step 4).
+/// bytes (every drive absent: `driving` 0), the functions run in order until no byte changes, at
+/// most `nets.len() + 1` passes. A cycle that still moves after them is `E0511`, naming the loop's
+/// drives in name order (spec §8.2.3 step 4).
 fn relax(
     plan: &DigitalPlan,
     store: &mut Store,
@@ -333,9 +332,9 @@ fn relax(
     let mut fires: Vec<NetId> = Vec::new();
     let bound = nets.len() + 1;
     let mut settled = false;
-    let (mut before, mut after) = (snapshot(store), snapshot(store));
+    let mut after = snapshot(store);
     for _ in 0..bound {
-        before = snapshot(store);
+        let before = snapshot(store);
         for f in fns {
             let outs = call_function(plan, store, at, ambient, *f, cone)?;
             for o in outs {
@@ -355,15 +354,9 @@ fn relax(
         }
     }
     if !settled {
-        let mut moving: Vec<String> =
-            written.iter().enumerate().filter(|(i, _)| before[*i] != after[*i]).map(|(_, n)| plan.nets[n.0 as usize].name.clone()).collect();
-        moving.sort();
-        return Err(Stop::Error(DigitalError::Fault {
-            code: 0,
-            message: format!("{} did not settle in {bound} passes (D1)", moving.iter().map(|n| format!("`{n}`")).collect::<Vec<_>>().join(", ")),
-            tick: at.0.0,
-            instance: plan.dag().function(fns[0]).name.clone(),
-        }));
+        let mut drives: Vec<String> = nets.iter().map(|n| plan.nets[n.0 as usize].name.clone()).collect();
+        drives.sort();
+        return Err(Stop::Error(DigitalError::Unsettled { code: "E0511", tick: at.0.0, drives }));
     }
     // the run sees one change per net: from the value it had before the group, to the settled one
     for (i, net) in written.iter().enumerate() {

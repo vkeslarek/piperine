@@ -131,7 +131,7 @@ fn every_change_commit_and_record_is_observed_in_order() {
     let mut last = (Tick(i64::MIN), 0);
     for o in d.drain_observations() {
         let at = match o {
-            Observation::Change { at, .. } | Observation::Fire { at, .. } | Observation::Record { at, .. } | Observation::Unsettled { at, .. } => at,
+            Observation::Change { at, .. } | Observation::Fire { at, .. } | Observation::Record { at, .. } => at,
             Observation::Commit { made, .. } => made,
         };
         assert!(at >= last, "{at:?} after {last:?}");

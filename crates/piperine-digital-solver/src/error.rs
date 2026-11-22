@@ -15,6 +15,9 @@ pub enum DigitalError {
     NanDelay { code: &'static str, instance: String, statement: u32 },
     /// E0501: an instant that did not go quiet; the nets still changing.
     NotQuiet { code: &'static str, tick: i64, nets: Vec<String> },
+    /// A relaxing cycle that still moved after its bounded passes (spec §8.2.3 step 4; abi.md §9
+    /// D1): the loop's drives, in name order. The run stops; no level is made up.
+    Unsettled { code: &'static str, tick: i64, drives: Vec<String> },
     /// A device returned `FAULT` (or `RESHAPE` outside the parameter cone), or
     /// the engine caught a commit that breaks its statement's promise.
     Fault { code: u32, message: String, tick: i64, instance: String },
@@ -43,6 +46,9 @@ impl fmt::Display for DigitalError {
             }
             DigitalError::NanDelay { code, instance, statement } => {
                 write!(f, "{code}: NaN delay in statement {statement} of `{instance}`")
+            }
+            DigitalError::Unsettled { code, tick, drives } => {
+                write!(f, "{code}: the loop at tick {tick} did not settle; its drives: {}", drives.join(", "))
             }
             DigitalError::NotQuiet { code, tick, nets } => {
                 write!(f, "{code}: the instant at tick {tick} did not go quiet; still changing: {}", nets.join(", "))

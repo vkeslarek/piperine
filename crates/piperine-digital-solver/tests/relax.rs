@@ -2,8 +2,8 @@
 //! §5.2.12; abi.md §9 D1 and its drive presence field, design D3): a relaxing cycle starts with
 //! every drive absent, stops within the drive count plus one passes, keeps no level of an earlier
 //! microstep once released, leaves an absent drive out of what `resolve` receives and passes a
-//! present one of any value; a step that never settles is a fault naming the `RELAX` nets that
-//! still move. The devices are stubs built on `ShapeBuf`: a driver writes the value and
+//! present one of any value, ends with a plain `driving` byte; a loop that never settles is `E0511`
+//! naming its drives. The devices are stubs built on `ShapeBuf`: a driver writes the value and
 //! `driving`, a resolver reads `driving` per drive and folds the present ones.
 
 #[path = "support/devices.rs"]
@@ -426,12 +426,36 @@ fn an_absent_drive_is_left_out_and_a_present_one_is_passed_whatever_its_value() 
 }
 
 #[test]
-fn an_unsettled_step_is_a_fault_naming_the_nets_that_move() {
-    // §8.2.3 step 4, abi.md §9 D1: a step still moving after its last pass is a fault of the run,
-    // not a level made up: it names every net that moves, in name order
+fn an_unsettled_loop_is_e0511_naming_its_drives() {
+    // §8.2.3 step 4, abi.md §9 D1: a loop still moving after its last pass stops the run with
+    // `E0511`, not a level made up: it names the loop's drives, in name order
     let mut run = Loop::oscillating();
     run.dirty = DirtySet::all(&run.plan);
-    let error = run.run().expect_err("a loop that does not settle is a fault");
-    let text = error.to_string();
-    assert!(text.contains("`alpha`, `v`, `zeta` did not settle"), "{text}");
+    let error = run.run().expect_err("a loop that does not settle is E0511");
+    assert!(matches!(&error, DigitalError::Unsettled { code: "E0511", drives, .. } if drives == &["alpha", "zeta"]), "{error:?}");
+    assert!(error.to_string().contains("E0511") && error.to_string().contains("alpha, zeta"), "{error}");
+}
+
+#[test]
+fn a_drive_pin_ends_with_a_plain_driving_byte() {
+    // EU-16 AC 3, abi.md §9 D1: a drive pin is the bytes of its driven type, then `driving: BOOL`,
+    // 0 for absent; nothing else is in it. A present drive of a zero value is `[0, 1]`, an absent
+    // one is `[0, 0]`: the byte, not the value, says whether it drives
+    let mut run = Loop::new();
+    run.write("en", &HIGH);
+    run.write("a", &HIGH);
+    run.run().expect("the loop runs");
+    assert_eq!(run.value("d1"), [1, 1], "the source's drive: the value, then `driving` 1");
+    assert_eq!(run.value("d0"), [1, 1], "the keeper's drive, present once the level is read");
+    let mut zero = Loop::new();
+    zero.write("en", &HIGH);
+    zero.write("a", &LOW);
+    zero.run().expect("the loop runs");
+    assert_eq!(zero.value("d1"), [0, 1], "a present drive of the zero value: `driving` is 1");
+    let mut absent = Loop::new();
+    absent.write("en", &LOW);
+    absent.write("a", &HIGH);
+    absent.dirty = DirtySet::all(&absent.plan);
+    absent.run().expect("the loop runs");
+    assert_eq!(absent.value("d1"), [0, 0], "an absent drive: `driving` 0 and no value");
 }

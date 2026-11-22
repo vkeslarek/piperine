@@ -19,10 +19,6 @@ pub enum Observation {
     /// the statement that made it (abi.md C5): a record names its own site, whatever order the
     /// records and commits of one microstep are delivered in.
     Record { stream: String, reaction: u32, statement: u32, at: Instant, bytes: Vec<u8> },
-    /// A relaxation step still moving after its last pass (spec §8.2.3 step 4; abi.md §9 D1): its
-    /// moving fields with a known byte were zeroed. One observation per step, naming every `RELAX`
-    /// net of the step in name order.
-    Unsettled { nets: Vec<String>, at: Instant },
 }
 
 impl Observation {
@@ -31,9 +27,8 @@ impl Observation {
         match self {
             Observation::Change { net, .. } => (0, net, 0),
             Observation::Fire { net, .. } => (1, net, 0),
-            Observation::Unsettled { nets, .. } => (2, nets.first().map_or("", String::as_str), 0),
-            Observation::Commit { instance, statement, .. } => (3, instance, *statement),
-            Observation::Record { stream, .. } => (4, stream, 0),
+            Observation::Commit { instance, statement, .. } => (2, instance, *statement),
+            Observation::Record { stream, .. } => (3, stream, 0),
         }
     }
 }
