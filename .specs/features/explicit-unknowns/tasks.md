@@ -1496,16 +1496,16 @@ Proof: run hygiene | test no_source_uses_a_removed_unknown_form ... ok
 Proof: run hygiene | test every_unknown_test_has_a_successor ... ok
 
 **C88** - `std` builds with no diagnostic and every Part VII fence is consecutive lines of its file (EU-20, AC 3; T23)
-Proof: run excerpts | test every_fence_is_an_excerpt_of_std ... ok
+Proof: run excerpts | test every_part_vii_fence_is_in_its_file ... ok
 
 **C89** - The 7 twins print the bytes they printed before (EU-21, AC 1; T40)
-Proof: run twins | test every_twin_matches_its_golden ... ok
+Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
 
 **C90** - Every buck target passes with its waveform asserts unchanged (EU-21, AC 2; T24)
-Proof: run buckcli | test the_buck_runs_from_the_cli ... ok
+Proof: run buckcli | test piperine_test_passes_on_the_buck ... ok
 
 **C91** - Both integrated suites pass (EU-21, AC 3; T40)
-Proof: run integrated | test the_integrated_suite_passes ... ok
+Proof: run integrated | test the_runs_execute_at_once_in_their_own_build_directories ... ok
 
 **C92** - A carrier driven by an undelayed definition, or by a child's `out` port that gives the initial value, is not `E0187`; one driven only by a delayed definition is (EU-04, AC 7; T30)
 Proof: run types | test a_definition_or_a_child_out_port_specifies_the_value ... ok
