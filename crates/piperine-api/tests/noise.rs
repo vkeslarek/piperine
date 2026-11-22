@@ -167,7 +167,7 @@ mod run {
 
     #[test]
     fn the_library_returns_rows_totals_and_group_densities() {
-        // AO-05 AC 7: the report carries the rows, the totals, the unit and the groups (none: no
+        // AO-05 AC 8: the report carries the rows, the totals, the unit and the groups (none: no
         // device of the design has a noise source).
         let (session, _) = run(Some("v1"));
         let report = session.noise_report().expect("a report");
@@ -183,5 +183,45 @@ mod run {
         // AO-05 edge case: no source means a density of 0 at every frequency, not a failure.
         let (_, table) = run(None);
         assert!(table.rows.iter().all(|row| row[1] == Cell::Real(0.0)), "{:?}", table.rows);
+    }
+}
+
+mod report {
+    //! `NoiseReport::of` on a result built by hand, so every density is nonzero and the grouping,
+    //! the roots and the totals can each be wrong.
+    use piperine_api::noise::NoiseReport;
+    use piperine_solver::prelude::{NoiseAnalysisResult, NoiseContribution, NoiseKind};
+
+    /// One contribution of `element`, named `source` (empty: unnamed), with the power density `psd`.
+    fn contribution(element: &str, source: &str, psd: &[f64]) -> NoiseContribution {
+        NoiseContribution { element: element.into(), source: source.into(), kind: NoiseKind::Thermal, integrated_sq: 0.0, psd: psd.to_vec() }
+    }
+
+    #[test]
+    fn the_report_takes_roots_groups_by_name_else_instance_and_carries_the_totals() {
+        // AO-05 AC 8: densities are the roots of the solver's powers; contributions sharing a
+        // source name are one group whose power is the sum; an unnamed one is grouped by its
+        // instance path; groups keep their first-seen order; the totals are carried unchanged.
+        let result = NoiseAnalysisResult {
+            frequencies: vec![1.0, 10.0],
+            out_noise_sq: vec![25.0, 36.0],
+            integrated_noise: 0.0,
+            output_total: 7.5,
+            input_noise_sq: Some(vec![4.0, 9.0]),
+            input_total: Some(2.5),
+            contributions: vec![
+                contribution("top.r1", "thermal", &[9.0, 16.0]),
+                contribution("top.m1", "", &[4.0, 4.0]),
+                contribution("top.r2", "thermal", &[7.0, 9.0]),
+            ],
+        };
+        let report = NoiseReport::of(&result, "V/sqrt(Hz)");
+        assert_eq!(report.frequencies, [1.0, 10.0]);
+        assert_eq!(report.output, [5.0, 6.0]);
+        assert_eq!(report.input, Some(vec![2.0, 3.0]));
+        assert_eq!((report.output_total, report.input_total), (7.5, Some(2.5)));
+        assert_eq!(report.unit, "V/sqrt(Hz)");
+        // thermal: sqrt(9 + 7) = 4 and sqrt(16 + 9) = 5, a sum of powers, not of amplitudes
+        assert_eq!(report.groups, [("thermal".to_string(), vec![4.0, 5.0]), ("top.m1".to_string(), vec![2.0, 2.0])]);
     }
 }
