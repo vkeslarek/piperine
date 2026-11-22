@@ -575,9 +575,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] The `**Build**` line and `cargo test` at the root pass
-- [ ] The Handoff names every moved anchor
-- [ ] Gate check passes: Build
+- [x] The `**Build**` line passes (zero warnings); `cargo test` at the root runs once at the end of B5 (user gate policy)
+- [x] The Handoff names every moved anchor
+- [x] Gate check passes: Build
 
 **Tests**: none
 **Gate**: build
@@ -632,7 +632,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T22: Elaborator: a carrier starts at its written value or its default
 
-**What**: `InitialValue`: every carrier pin gets init bytes, from `= value` or from `Default::default()` of its value type (`None`, the derived struct). An `Option<T>` param no instance binds is `None`. An array element never committed reads its initial value (sparse storage kept). The commit of the initial value at `(0, 0)` is a change, and the `PREVIOUS` part of a carrier is seeded with the same bytes, so `prev()` reads the initial value until a later change (D8). A carrier of a type without `Default` and no value still elaborates here, with zero bytes; T30 refuses it.
+**What**: `InitialValue`: every carrier pin gets init bytes, from `= value` or from `Default::default()` of its value type (`None`, the derived struct). An `Option<T>` param no instance binds is `None`. An array element never committed reads its initial value (sparse storage kept). The commit of the initial value at `(0, 0)` is a change, and the `PREVIOUS` part of a carrier is seeded with the same bytes, so `prev()` reads the initial value until a later change (D8). A carrier of a type without `Default` and no value still elaborates here, with zero bytes; T30 refuses it. A composite carrier (`Bit<Pair>`, `Bit<(u8, u8)>`, `Bit<[T; N]>`, `Bit<Option<T>>`) is committed its initial value the same way, so the run fault of `GAPS.md` L64 cannot arise on a plain read.
 **Where**: `crates/piperine-lang/src/elab/carriers.rs`
 **Depends on**: T21
 **Reuses**: `elab/consts.rs`; the `HAS_INIT` pins of `piperine-plan`
@@ -785,7 +785,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T29: Checker: the flag methods are gone
 
-**What**: Delete `level`, `known`, `known_or`, `is_known`, `high` and `merge` from `types/intrinsic.rs` and `elab/intrinsics.rs`; a call is `E0161` naming the method and the type, with the help. `logic` and `matches_bits` are refused by name with `P0001` (`GAPS.md` L58) until T45. The `level` statement of `docs/pom/mapping.md` and its `pom_docs::DocAheadOfTheCode::WAITING` entry leave with it.
+**What**: Delete `level`, `known`, `known_or`, `is_known`, `high` and `merge` from `types/intrinsic.rs` and `elab/intrinsics.rs`; a call is `E0161` naming the method and the type, with the help. `logic` and `matches_bits` are refused by name with `P0001` (`GAPS.md` L58) until T45. The flag reads of a composite carrier and of an `Option` (`composite-values` T57, `Typing::read_of` in `piperine-ir/src/typing.rs`, `lower_flag_receiver` in `elab/known.rs`, `GAPS.md` L65) leave with the methods. The `level` statement of `docs/pom/mapping.md` and its `pom_docs::DocAheadOfTheCode::WAITING` entry leave with it.
 **Where**: `crates/piperine-lang/src/types/intrinsic.rs`
 **Depends on**: T28
 **Reuses**: `RemovedName`
@@ -875,7 +875,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T33: Generated code: no flag and no merge
 
-**What**: Delete `rt/flag.rs` and the merge of `rt/control.rs`; remove the flagged paths of `print/value.rs`, `shape.rs`, `cross.rs`, `digital.rs`, `reaction.rs`, `analog.rs`, `site.rs`, `contribution.rs` and of `rt/real.rs`. `analog_merge.rs` and the merge tests of `reaction.rs` and `amended.rs` are replaced by one-path tests. Regenerate the transpile goldens once: the only diff allowed is the removal of flag and merge code.
+**What**: Delete `rt/flag.rs` (with `Flagged::recast` and `known_or_refuse`, and its test `a_tag_naming_no_variant_reads_unknown`: a payload enum cast is plain) and the merge of `rt/control.rs`; the composite read prints the value, never `.known_or(Default::default())` and never `Flagged::<T>::decode(..).known_or_refuse(..)` (`print/value.rs`, `print/digital.rs`, `print/analog.rs`); remove the flagged paths of `print/value.rs`, `shape.rs`, `cross.rs`, `digital.rs`, `reaction.rs`, `analog.rs`, `site.rs`, `contribution.rs` and of `rt/real.rs`. `analog_merge.rs` and the merge tests of `reaction.rs` and `amended.rs` are replaced by one-path tests. Regenerate the transpile goldens once: the only diff allowed is the removal of flag and merge code.
 **Where**: `crates/piperine-transpile/src/rt/flag.rs`
 **Depends on**: T32
 **Reuses**: `crates/piperine-transpile/tests/golden.rs`
@@ -942,7 +942,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T36: ABI: layouts hold the value only, still major 1
 
-**What**: `Field` becomes `{ name, leaf, offset, count }`; `HAS_KNOWN` and `known_of` go; `BIT`, `BYTE` and `F64` are the shipped layouts and `REAL` is deleted; `MAJOR` stays 1 and the symbol `piperine_abi_1`, `MINOR` becomes 0; `validate.rs` and `verify.rs` follow. `piperine-plan` lays every carrier as its value leaf and `Option<T>` as presence then payload; the printer's shapes, `piperine-solver/src/core/bind.rs` and every hand-written test device follow. The cache key of `piperine-transpile/src/cache.rs` holds a hash of the contract's source, so an entry built against the earlier contract is rebuilt. This is the one task whose change spans crates: no layer above produces a flag any more, so it is one byte dropped per leaf.
+**What**: `Field` becomes `{ name, leaf, offset, count }`; `HAS_KNOWN` and `known_of` go; `BIT`, `BYTE` and `F64` are the shipped layouts and `REAL` is deleted; `MAJOR` stays 1 and the symbol `piperine_abi_1`, `MINOR` becomes 0; `validate.rs` and `verify.rs` follow. `piperine-plan` lays every carrier as its value leaf and `Option<T>` as presence then payload; `CompositeLayout` (`piperine-plan/src/composite.rs`) drops its one trailing known byte: a composite pin is the parts' value bytes packed, alignment 1, size = width, and every field of it keeps its own offset (`composite-values` T56 laid it as width + 1); the composite `Params` bytes (`ParamValue::Bytes` of a composite param) follow; the printer's shapes, `piperine-solver/src/core/bind.rs` and every hand-written test device follow. The cache key of `piperine-transpile/src/cache.rs` holds a hash of the contract's source, so an entry built against the earlier contract is rebuilt. This is the one task whose change spans crates: no layer above produces a flag any more, so it is one byte dropped per leaf.
 **Where**: `crates/piperine-abi/src/layout.rs`
 **Depends on**: T35
 **Reuses**: abi.md as T10 wrote it; `piperine-transpile/src/abi_source.rs`
@@ -988,7 +988,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T38: Host: a cell is a value
 
-**What**: `piperine-api/src/{table,probe,plot,request,backend}.rs`: no unknown cell; `None` is a cell of its own. A top-level `in` port with no initial value, no `Default` and no host value when an analysis starts refuses the analysis with `E0187` naming the port.
+**What**: `piperine-api/src/{table,probe,plot,request,backend}.rs`: no unknown cell, and `CellShape::decode` (`piperine-api/src/composite.rs`) reads the composite pin without its known byte; `None` is a cell of its own. A top-level `in` port with no initial value, no `Default` and no host value when an analysis starts refuses the analysis with `E0187` naming the port.
 **Where**: `crates/piperine-api/src/table.rs`
 **Depends on**: T37
 **Reuses**: `crates/piperine-api/tests/session.rs`, `probes.rs`
@@ -1032,7 +1032,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T40: Phase A closure
 
-**What**: `GAPS.md`: S8 removed; the clauses of L3, L5, L24 about unknown indexes and loops removed; L59 keeps its non-literal `map`/`and_then`/`then` closure and non-literal `expect` message clauses (the code still refuses them with `P0001`), its unknown clause is gone; the conformance rows updated; counts. Appendix G.72 loses "the reference implementation does not meet this yet" for everything but `Logic`, which names phase B. Book status boxes: the listings that now run flip, each with its test. **The Book rows T40 flips, exactly these** (inventory verdict `refused` or `unraised` becomes `run` or `holds`, the GAPS.md section 11 row is deleted, the test that asserted the refusal asserts the run): the E0150 listings welcome#17, analog#9, modules#9, mixed#8, mixed#10, mixed#14, values#21 (T20; their `Model::earlier` edits; the two E0150 output blocks welcome#19 and the buck's were refilled in T30); the E0187 and Default rows values~23c03fc8, values~39ba3a1d, errors~39ba3a1d, errors~385c354c (T21, T22, T30) and values~37a548f2 (T38: the analysis refuses an undriven top `in` port without a `Default`); and the `Option` listings values#14 and its sentence values~2bbc575e (an `Option` carried on a signal). `.specs/STATE.md`: MD-78's status line. `code_owners.tsv`.
+**What**: `GAPS.md`: S8 removed; the clauses of L3, L5, L24 about unknown indexes and loops removed; L64 (a plain read of an unknown composite carrier is a run fault) and L65 (a flag read on an `Option`) removed, both owned by this phase (`composite-values` verifier: T22 starts every carrier at a value, T29 deletes the flag reads); L59 keeps its non-literal `map`/`and_then`/`then` closure and non-literal `expect` message clauses (the code still refuses them with `P0001`), its unknown clause is gone; the conformance rows updated; counts. Appendix G.72 loses "the reference implementation does not meet this yet" for everything but `Logic`, which names phase B. Book status boxes: the listings that now run flip, each with its test. **The Book rows T40 flips, exactly these** (inventory verdict `refused` or `unraised` becomes `run` or `holds`, the GAPS.md section 11 row is deleted, the test that asserted the refusal asserts the run): the E0150 listings welcome#17, analog#9, modules#9, mixed#8, mixed#10, mixed#14, values#21 (T20; their `Model::earlier` edits; the two E0150 output blocks welcome#19 and the buck's were refilled in T30); the E0187 and Default rows values~23c03fc8, values~39ba3a1d, errors~39ba3a1d, errors~385c354c (T21, T22, T30) and values~37a548f2 (T38: the analysis refuses an undriven top `in` port without a `Default`); and the `Option` listings values#14 and its sentence values~2bbc575e (an `Option` carried on a signal). `.specs/STATE.md`: MD-78's status line. `code_owners.tsv`.
 **Where**: `GAPS.md`
 **Depends on**: T39
 **Reuses**: `value-semantics` T15
@@ -1209,7 +1209,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T48: Phase B closure
 
-**What**: `GAPS.md`: L58's `Logic`, `cast`, `same` entries; counts. Appendix G.72 loses its last "does not meet" sentence. Book: **exactly these rows flip** to running, each with its test and its GAPS.md section 11 row deleted: values#18 and its sentences values~c30bad4d, and the E0180 rows values~13ffaea6, analog~39ba351d, mixed~39ba351d (a `Logic` where an `f64` or a `bool` is required); the `Logic<4>` and `Option<Logic<N>>` lines of natures#2 run with the rest of that block only when `resolved-nets` has flipped it (it needs the array of `composite-values` and `Sda`'s `Resolve<Driven>`); T48 re-pins the row. `.specs/STATE.md`: MD-78 status delivered. A note in `.specs/features/resolved-nets/tasks.md` Handoff that `Logic` runs, that its spec is to be revised for `Resolve<X, V>` before B3, and that T27 starts from `Driven`.
+**What**: `GAPS.md`: L58's `Logic`, `cast`, `same` entries; counts. Appendix G.72 loses its last "does not meet" sentence. Book: **exactly these rows flip** to running, each with its test and its GAPS.md section 11 row deleted: values#18 and its sentences values~c30bad4d, (the three E0180 rows values~13ffaea6, analog~39ba351d, mixed~39ba351d already hold on `main`: `Logic` is a struct type since `composite-values` CV-09, so a `Logic` where an `f64` or a `bool` is required is `E0180` today and no row of T48 flips them); the `Logic<4>` and `Option<Logic<N>>` lines of natures#2 run with the rest of that block only when `resolved-nets` has flipped it (it needs the array of `composite-values` and `Sda`'s `Resolve<Driven>`); T48 re-pins the row. `.specs/STATE.md`: MD-78 status delivered. A note in `.specs/features/resolved-nets/tasks.md` Handoff that `Logic` runs, that its spec is to be revised for `Resolve<X, V>` before B3, and that T27 starts from `Driven`.
 **Where**: `GAPS.md`
 **Depends on**: T47
 **Reuses**: T40
@@ -1533,6 +1533,8 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **Rows other features must flip (ROADMAP.md, "Every Book listing runs before item 13"; each names its owner in GAPS.md section 11):** `resolved-nets` B3 and later (T27 to T32) flips digital#16, digital#17, digital#18, digital#19, digital#20, natures#3 with its sentences natures~e99c1920 and natures~91c3bffe, core-std#6 and natures#2 (gap L21: `Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`; natures#2's `Sda` is the chapter's `impl Resolve<Driven>` nature, and its `[Bit; 8]`, `Option` and `Logic` lines need composite-values and explicit-unknowns phases A and B first, which only re-pin the row). `composite-values` re-pins natures#2, it does not flip it. When a row flips its test fails with "now runs": make the row `run`, delete its section 11 line.
 
 **Spec ahead of the code, registered (stale entries fail loud):** `AHEAD_OF_STD`/`BEHIND_SPEC` in `std_excerpts.rs`; `INDEX_AHEAD_OF_STD`, `INDEX_MEMBERS_AHEAD_OF_STD`, `STD_BEHIND_THE_INDEX` in `std_library.rs` (T23, T44); `STD_BEHIND_THE_BOOK` and `BLOCKS_AHEAD_OF_STD` in `book.rs` (T23; resolved-nets); `SPEC_TRAITS_AHEAD_OF_THE_TABLE` (`From`) in `pom_resolve.rs` (T42); `RETIRED_AHEAD_OF_THE_PARSER` gains `E0908` (T28); `docs/pom/mapping.md` lists 62 constructs while the POM still maps `resolve`, `Unknown`, `level` (T28, T29).
+
+**T19 (B4, 2026-11-22): rebase and re-read at `origin/main` `20c285b8`.** Nothing was unmerged (`git log origin/main..HEAD` empty), so the branch was set with `git checkout -B feature/explicit-unknowns origin/main`; no conflict to resolve in `content.html`, `inventory.tsv`, `GAPS.md` or `spec_text.rs`. What `composite-values` (merged, MD-79) changed for this phase, and where each lands: (1) `GAPS.md` L64 (a plain read of a composite carrier holding no value yet fails the run) and L65 (a flag read on an `Option`) are owned by this phase: T22 removes the case (every carrier starts at a value), T29 deletes the flag reads, and **T40 removes both rows**. (2) The three E0180 rows (values~13ffaea6, analog~39ba351d, mixed~39ba351d) already hold on `main` (`Logic` is a struct type since CV-09): **removed from T48's flip list**. (3) The composite pin layout is packed, alignment 1, plus ONE trailing known byte per composite (`CompositeLayout`, `piperine-plan/src/composite.rs`): T36 removes that byte. (4) Every place that reaches the hidden flag of a composite, and its owner: `CompositeLayout` and the composite `Params` bytes (T36), `CellShape::decode` in `piperine-api/src/composite.rs` (T38), `Typing::read_of` in `piperine-ir/src/typing.rs` (T32), `lower_flag_receiver` in `elab/known.rs` (T29 for the methods, deleted with the file in T31), the printer's `.known_or(Default::default())` for a composite read and `Flagged::<T>::decode(..).known_or_refuse(..)` in `print/{value,digital,analog}.rs` (T33), `Flagged::recast` and `known_or_refuse` in `rt/flag.rs` (T33, the file goes). (5) `composite-values` T52 was NOT amended in place: `Default` for `bool` and the numbers still holds on `main`; T21 changes the table. (6) Anchors that moved: none of design.md's "What exists" paths; `Defaults` lives with the derive table in `types/derives.rs` (`composite-values` T44), not `types/compound.rs`; the E0150 rule is in `types/result.rs` (`analog_reads`), not `types/analog.rs`, and the elaborator's twin is `known_in_analog` in `elab/known.rs`; `elab/carriers.rs` has `Frame` at line 48. (7) The two doc fixes the orchestrator made on `main` without a review are right: `docs/pom/mapping.md` says "The 62 constructs" and Appendix B.1.2 holds exactly 62 numbered rows; the `pom_docs.rs` WAITING entry for the `resolution.md` E0261 row ("a discrete nature without `resolve`", line 338) names a statement that is on the page and a `Resolve { meta, expr }` form that is in `pom/decl.rs`, so the entry is live and owned by `resolved-nets` T16.
 
 **Dispatched:** none. **Walked:** none (the verifier of B1 to B3 is the caller's).
 
