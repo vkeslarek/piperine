@@ -329,3 +329,33 @@ fn only_an_irreversible_reaction_and_a_host_waiter_are_not_time_points() {
         assert_eq!(cause.is_time_point(), time_point, "{cause:?}");
     }
 }
+
+/// Whether reaction 0 of instance `instance` is flagged `(probes, samples)` by the plan of `engine`.
+fn flags(engine: &Digital, instance: u32) -> (bool, bool) {
+    let analysis = engine.plan().analysis();
+    (analysis.probes(instance, 0), analysis.samples(instance, 0))
+}
+
+#[test]
+fn a_reaction_that_reads_a_continuous_pin_samples_and_probes() {
+    let d = engine_with(vec![("sm", sampler(), vec![("v", "node"), ("go", "g"), ("s", "out")])], &[]);
+    assert_eq!(flags(&d, 0), (true, true));
+}
+
+#[test]
+fn a_reaction_that_only_writes_a_reaching_net_probes_and_does_not_sample() {
+    let d = engine_with(
+        vec![
+            ("cmp", setter(), vec![("up", "cross"), ("out", "above")]),
+            ("buf", and2(), vec![("a", "above"), ("b", "above"), ("y", "d")]),
+        ],
+        &["d"],
+    );
+    assert_eq!(flags(&d, 0), (true, false));
+}
+
+#[test]
+fn a_reaction_that_reaches_nothing_neither_probes_nor_samples() {
+    let d = engine_with(vec![("cmp", setter(), vec![("up", "cross"), ("out", "above")])], &[]);
+    assert_eq!(flags(&d, 0), (false, false));
+}
