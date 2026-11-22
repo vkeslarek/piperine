@@ -103,7 +103,7 @@ input. A **param** is a value fixed during a solve: the model reads it, the host
 | Port | Written | Connected to |
 | --- | --- | --- |
 | carrier of a one-driver discrete nature | `in a: Bit<T>`, `out q: Bit<T> [= initial]` | a carrier; an `in` port also takes a discrete expression, which is an anonymous definition (§8.2.9) |
-| carrier of any other nature | `p: Electrical`, `sda: Wire [= initial drive]` | a carrier (a net) |
+| carrier of any other nature | `p: Electrical`, `sda: Sda [= initial drive]` (`Sda` a nature that implements `Resolve`) | a carrier (a net) |
 | bundle | `tx: Stream<T>`, `rx: flip Stream<T>`, `in s: Stream<T>` | a bundle carrier or a bundle literal (§7) |
 | value input | `x: f64` | an expression (§8.3) |
 
@@ -440,9 +440,9 @@ a result that does.
 
 ```rust
 /// Clock buffer and two flip-flops: the buffer settles before either reaction runs.
-module Shift2(in clk: Bit, in d: Bit, out q2: Bit) {
+module Shift2(in clk: Bit, in d: Bit, out q2: Bit = false) {
     signal clk2: Bit;
-    signal q1: Bit;
+    signal q1: Bit = false;
     clk2 = clk;
 }
 digital for Shift2 {
@@ -452,15 +452,15 @@ digital for Shift2 {
 
 /// Shift register, LSB first: the register is the array, the byte a cast of it.
 module UartShift(in clk: Bit, in rx: Bit, out byte: Bit<u8>) {
-    signal sh: [Bit; 8];
-    byte = cast(sh);
+    signal sh: [Bit; 8] = [false; 8];
+    byte = cast(sh).unwrap();
 }
 digital for UartShift { on clk.rise() { sh[7] <- rx; for k in 0..7 { sh[k] <- sh[k + 1]; } } }
 
-/// Bidirectional pass gate: a legal loop when two gates join the same wires (§22.3).
-module Tran(a: Wire, b: Wire, in en: Bit) {
-    a = if en { b.others() } else { Logic::Z };
-    b = if en { a.others() } else { Logic::Z };
+/// Bidirectional pass gate: a legal loop when two gates join the same nets (§22.3).
+module Tran<W: Nature + Resolve<Driven>>(a: W, b: W, in en: Bit) {
+    a = if en { b.others() } else { Driven::Z };
+    b = if en { a.others() } else { Driven::Z };
 }
 ```
 

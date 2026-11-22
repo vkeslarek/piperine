@@ -2120,6 +2120,10 @@ fn the_removed_words_are_absent_from_the_specification() {
                 found.push(format!("{name}: {word}"));
             }
         }
+        // the library net `Wire`, not the tail of a longer name (`AndWire`)
+        if flat_text.match_indices("Wire").any(|(at, _)| !flat_text[..at].ends_with(|c: char| c.is_ascii_alphabetic())) {
+            found.push(format!("{name}: Wire"));
+        }
     }
     assert!(found.is_empty(), "the specification still says: {found:#?}");
 }

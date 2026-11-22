@@ -137,9 +137,9 @@ Running Yosys netlists needs its own part: the netlist form consumed (RTLIL or c
 | Cell | Maps to |
 | --- | --- |
 | `$mux` | `if` |
-| `$tribuf` | `Tribuf` on a `Wire` (§22.3.5) |
+| `$tribuf` | `Tribuf` on a net of a `Resolve<Driven>` nature (§22.3.5) |
 | `$dff` | a reaction |
-| `inout` | a `Wire` port |
+| `inout` | a port of a `Resolve<Driven>` nature |
 
 Several writers in a behavioral netlist are several drives of a resolved carrier (§5.2).
 
@@ -290,7 +290,7 @@ A traced example is wanted so that the definition is exercised. `SampleHold` (§
 
 **Status: Closed.**
 The standard library is source: `crates/piperine-lang/std/*.msl` compile with zero diagnostics in the POM, and Part VII's fences are excerpts of them (§22). Two guards keep that true. `std_excerpts` ties each Part VII fence to its `std` file and each `std` item to a fence. `std_galleries` builds the 18 gallery fences of Appendices D, E and F against the embedded library and requires no diagnostic, a sound design and no unresolved member.
-What the gates prove is a front end: the library and the galleries are parsed and resolved, and nothing is type-checked, elaborated or executed. The conformance set for the first compiler pass is in Appendix C.2.3: `transition`, `zi_nd`, `inertial`, relaxation of `Tran` on `Wire`s, and the trace of §15.1.
+What the gates prove is a front end: the library and the galleries are parsed and resolved, and nothing is type-checked, elaborated or executed. The conformance set for the first compiler pass is in Appendix C.2.3: `transition`, `zi_nd`, `inertial`, relaxation of `Tran` on nets of a `Resolve<Driven>` nature, and the trace of §15.1.
 
 ### G.39 Size of the addition
 

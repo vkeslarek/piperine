@@ -225,7 +225,7 @@ with a result, core or stdlib ([§8.3](part_iii_structure.md#83-instances-inside
 
 ```rust
 /// A comparator with hysteresis that drives a flip-flop.
-module Front(vin: Electrical, in clk: Bit, out q: Bit) {
+module Front(vin: Electrical, in clk: Bit, out q: Bit = false) {
     vth: f64 = 0.6;
     hyst: f64 = 50m;
     signal above_th: Bit = false;        // state: a signal
