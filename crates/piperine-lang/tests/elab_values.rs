@@ -227,6 +227,186 @@ fn a_constant_division_by_zero_is_e0104() {
     Elab::ir(&reaching("fn f(d: u8) -> u8 { 7 / d }", &["f(0)"]), "Top");
 }
 
+/// The `local` lines of the structural print of an owner: `name: type` for each.
+fn locals_in(text: &str) -> Vec<String> {
+    text.lines().filter_map(|l| l.trim().strip_prefix("local ")).map(str::to_string).collect()
+}
+
+#[test]
+fn an_enum_is_its_tag_and_a_match_is_an_if_chain() {
+    // DIG-08 AC 9 (the name is kept: msl-digital C72 cites it), §2 rule 5, CV-20 AC 4: the enum is an IR enum.
+    let items = "#[derive(Repr, PartialEq)]\npub enum Mode { Off, SoftStart, Regulate, Hiccup }\n\
+                 #[derive(Repr, PartialEq)]\npub enum Fault { Clear, OverCurrent, OverVoltage }\n\
+                 fn hiccup() -> Mode { Mode::Hiccup }\n\
+                 fn clear() -> Fault { Fault::Clear }\n\
+                 fn warning(s: Severity) -> bool { s == Severity::Warning }\n\
+                 fn next(m: Mode, ok: bool) -> Mode {\n\
+                   match m {\n\
+                     Mode::SoftStart | Mode::Regulate => Mode::Regulate,\n\
+                     Mode::Off => if ok { Mode::SoftStart } else { Mode::Off },\n\
+                     Mode::Hiccup => Mode::SoftStart,\n\
+                   }\n\
+                 }\n\
+                 fn severe(f: Fault) -> Severity { match f { Fault::Clear => Severity::Info, _ => Severity::Error } }\n\
+                 fn once(f: Fault) -> u8 { match severe(f) { Severity::Info => 0, Severity::Warning => 1, Severity::Error => 2 } }";
+    let calls = ["hiccup()", "clear()", "warning(Severity::Warning)", "next(Mode::Off, true)", "once(Fault::Clear)"];
+    let ir = Elab::ir(&reaching(items, &calls), "Top");
+    let read = Read { ir: &ir };
+    let function = |name: &str| ir.functions().find(|f| f.name() == name).unwrap_or_else(|| panic!("no {name}"));
+
+    // §2 rule 5: an enum of `V` unit variants has a tag of `ceil(log2 V)` levels; a `match` is an `if`
+    // chain that reads its scrutinee once. The enums are the buck's (examples/buck/src/supervisor.msl)
+    // and the stdlib's `Severity` (std/io.msl). `Mode`, `Fault` and `Severity` are IR enums since composite-values T48: a function's result and
+    // parameter have the enum's arena type, `Hiccup` is `VariantOf` its 4th variant (discriminant 3).
+    let enum_named = |name: &str| ValueType::Enum(piperine_ir::TypeId(ir.types().iter().position(|t| t.name == name).unwrap_or_else(|| panic!("no type {name}")) as u32));
+    assert_eq!(*function("hiccup").ret(), enum_named("Mode"));
+    assert!(matches!(ir.expr(read.body_of("hiccup")), Expr::VariantOf { variant: 3, fields, .. } if fields.is_empty()));
+    assert_eq!(*function("clear").ret(), enum_named("Fault"));
+    assert!(matches!(ir.expr(read.body_of("clear")), Expr::VariantOf { variant: 0, fields, .. } if fields.is_empty()));
+    assert_eq!(function("warning").params()[0].ty, enum_named("Severity"));
+    assert!(read.function_text("warning").contains("(s == (Severity::Warning() : t"), "{}", read.function_text("warning"));
+    assert_eq!(function("next").params().iter().map(|p| p.ty.clone()).collect::<Vec<_>>(), [enum_named("Mode"), ValueType::Bool]);
+
+    // The arms in order, each a variant test; an or-pattern is `||`; the last
+    // arm is the final `else`; a param is read where it is.
+    let next = read.function_text("next");
+    assert!(next.contains("if (matches!(m, Mode::SoftStart) || matches!(m, Mode::Regulate)) { (Mode::Regulate() : t"), "{next}");
+    assert!(next.contains("else { if matches!(m, Mode::Off) {"), "{next}");
+    // `_` is the final `else`.
+    assert!(read.function_text("severe").contains("if matches!(f, Fault::Clear) { (Severity::Info() : t"), "{}", read.function_text("severe"));
+    // A scrutinee that is not a plain read is bound to a local once, and read through it.
+    let once = read.function_text("once");
+    assert_eq!(once.matches("severe(f)").count(), 1, "{once}");
+    assert!(once.contains("let match$0 = severe(f)"), "{once}");
+    assert!(once.contains("if matches!(match$0, Severity::Info) { 0u8 } else { if matches!(match$0, Severity::Warning) { 1u8 } else { 2u8 } }"), "{once}");
+    // An enum of one variant has a tag of no level and is an IR enum all the same: its value is the
+    // variant (composite-values T48; it cannot be carried, the checker says so by name).
+    let src = reaching("#[derive(Repr, PartialEq)]\npub enum One { Only }\nfn only() -> One { One::Only }", &["only()"]);
+    let ir = Elab::ir(&src, "Top");
+    assert!(ir.expressions().any(|e| matches!(e, Expr::VariantOf { variant: 0, fields, .. } if fields.is_empty())));
+}
+
+#[test]
+fn an_option_is_a_flag_and_a_payload() {
+    // DIG-08 AC 10, rewritten for the explicit model (explicit-unknowns): an `Option<T>` is a `bool` (its presence)
+    // and a `T` (its payload) through `Some`, `None`, `is_some`, `is_none`, `unwrap_or`, `if let` and `match`; no IR
+    // type of value code is an `Option`. `supervise` holds `Supervisor`'s `fault_now` (examples/buck/src/supervisor.msl)
+    let items = "#[derive(Repr, PartialEq)]\npub enum Fault { Clear, OverCurrent, OverVoltage }\n\
+                 const OC_PERIODS: u4 = 8;\nconst OV_SAMPLES: u2 = 2;\n\
+                 fn supervise(oc_n: u4, ov_n: u2) -> u8 {\n\
+                   let fault_now = if oc_n >= OC_PERIODS { Some(Fault::OverCurrent) }\n\
+                                   else if ov_n >= OV_SAMPLES { Some(Fault::OverVoltage) }\n\
+                                   else { None };\n\
+                   let latched = if let Some(f) = fault_now { f } else { Fault::Clear };\n\
+                   let quiet = fault_now.is_none();\n\
+                   let tripped = fault_now.is_some();\n\
+                   let cause = fault_now.unwrap_or(Fault::Clear);\n\
+                   let code: u8 = match fault_now { Some(Fault::OverCurrent) => 1, Some(f) => if f == latched { 2 } else { 3 }, None => 0 };\n\
+                   if quiet && !tripped && cause == Fault::Clear { code } else { code + 1 }\n\
+                 }\n\
+                 fn literal() -> u8 { Some(3u8).unwrap_or(9) }\n\
+                 fn pick(o: Option<u8>) -> u8 { o.unwrap_or(5) }";
+    let ir = Elab::ir(&reaching(items, &["supervise(0, 0)", "literal()", "pick(Some(2))"]), "Top");
+    let text = ir.print_structural();
+    let read = Read { ir: &ir };
+
+    // A `let` of an `Option` binds its flag and its payload; `Some`/`None` give each.
+    let supervise = read.function_text("supervise");
+    let locals = locals_in(&supervise);
+    // `Fault` is an IR enum: the payload local holds the enum, not its tag.
+    let fault = format!("t{}", ir.types().iter().position(|t| t.name == "Fault").expect("Fault is in the arena"));
+    for local in ["fault_now.is: bool".to_string(), format!("fault_now.val: {fault}"), format!("f: {fault}"), format!("latched: {fault}"), "quiet: bool".to_string(), "tripped: bool".to_string(), format!("cause: {fault}"), "match$0.is: bool".to_string(), format!("match$0.val: {fault}")] {
+        assert!(locals.contains(&local), "local {local} in:\n{supervise}");
+    }
+    let (over_current, over_voltage, clear) = (format!("(Fault::OverCurrent() : {fault})"), format!("(Fault::OverVoltage() : {fault})"), format!("(Fault::Clear() : {fault})"));
+    for line in [
+        "let fault_now.is = if (oc_n >= 8u4) { true } else { if (ov_n >= 2u2) { true } else { false } }".to_string(),
+        format!("let fault_now.val = if (oc_n >= 8u4) {{ {over_current} }} else {{ if (ov_n >= 2u2) {{ {over_voltage} }} else {{ {clear} }} }}"),
+        // `if let`: the flag decides, the binding reads the payload.
+        format!("let latched = if fault_now.is {{ let f = fault_now.val; f }} else {{ {clear} }}"),
+        "let quiet = (!fault_now.is)".to_string(),
+        "let tripped = fault_now.is".to_string(),
+        format!("let cause = if fault_now.is {{ fault_now.val }} else {{ {clear} }}"),
+        // `match`: `Some(v)` is the flag and the payload tested for `v`, `Some(f)` binds the payload, `None` the last arm.
+        "let match$0.is = fault_now.is".to_string(),
+        "let match$0.val = fault_now.val".to_string(),
+        "if (match$0.is && matches!(match$0.val, Fault::OverCurrent)) { 1u8 } else { if match$0.is { let f = match$0.val; if (f == latched) { 2u8 } else { 3u8 } } else { 0u8 } }".to_string(),
+    ] {
+        assert!(supervise.contains(&line), "`{line}` in:\n{supervise}");
+    }
+
+    // `unwrap_or` of a literal `Some` is its payload; of a pair it is an `if` on the flag.
+    assert_eq!(ir.expr(read.body_of("literal")), &Expr::Int(3));
+    let pick = read.function_text("pick");
+    assert!(pick.contains("if o.is { o.val } else { 5u8 }"), "{pick}");
+    assert!(!text.contains("flagged"), "no value type carries a flag:\n{text}");
+
+    // The reaction form of `Supervisor` (supervisor.msl): `fault_now` is a flag and a payload, `if let Some(f) =
+    // fault_now` reads the pair, and no local is flagged.
+    let spec = std::fs::read_to_string(format!("{}/../../examples/buck/src/spec.msl", env!("CARGO_MANIFEST_DIR"))).expect("spec.msl");
+    let src = format!(
+        "{spec}\n{}\n{}\n{}\n{}\n{}",
+        buck_item("supervisor.msl", "pub enum Mode"),
+        buck_item("supervisor.msl", "pub enum Fault"),
+        buck_item("supervisor.msl", "pub fn in_window"),
+        buck_item("supervisor.msl", "pub fn ovp_threshold"),
+        buck_module("supervisor.msl", "Supervisor")
+    );
+    let ir = Elab::ir(&src, "Supervisor");
+    let text = ir.print_structural();
+    let locals = locals_in(&text);
+    let (mode, fault) = (ir.types().iter().position(|t| t.name == "Mode").expect("Mode"), ir.types().iter().position(|t| t.name == "Fault").expect("Fault"));
+    assert!(locals.contains(&"fault_now.is: bool".to_string()) && locals.contains(&format!("fault_now.val: t{fault}")), "{text}");
+    assert!(text.contains(&format!("if fault_now.is {{ let f = fault_now.val; mode <- (Mode::Hiccup() : t{mode}); fault <- f;")), "{text}");
+}
+
+/// The item of `examples/buck/src/<file>` that starts with `head`, through its closing brace.
+fn buck_item(file: &str, head: &str) -> String {
+    let text = std::fs::read_to_string(format!("{}/../../examples/buck/src/{file}", env!("CARGO_MANIFEST_DIR"))).expect("a buck source");
+    let at = text.find(head).unwrap_or_else(|| panic!("no `{head}`"));
+    let start = text[..at].rfind("#[derive").filter(|d| !text[*d..at].contains('}') && !text[*d..at].contains(";\n")).unwrap_or(at);
+    let mut depth = 0usize;
+    for (i, c) in text[at..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return text[start..at + i + 1].to_string();
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("`{head}` does not close")
+}
+
+/// A module of `examples/buck/src/<file>` with its `digital` block, as written.
+fn buck_module(file: &str, name: &str) -> String {
+    format!("{}\n{}", buck_item(file, &format!("pub module {name}(")), buck_item(file, &format!("digital for {name} ")))
+}
+
+#[test]
+fn a_tuple_let_is_one_local_per_component() {
+    // DIG-08 AC 11: `let (m, r) = (x, y);` is two locals, each typed by its own component.
+    // `in_window` of the buck (examples/buck/src/supervisor.msl).
+    let items = "pub fn in_window(meas: u10, reference: u10) -> bool {\n\
+                   let (m, r) = (meas as u11, reference as u11);\n\
+                   let half = r >> 4;\n\
+                   m + half >= r && m <= r + half\n\
+                 }\n\
+                 fn mixed(u: u8) -> u8 { let (a, b) = (u, 1u8); a + b }";
+    let ir = Elab::ir(&reaching(items, &["in_window(1, 2)", "mixed(3)"]), "Top");
+    let read = Read { ir: &ir };
+    let window = read.function_text("in_window");
+    assert!(window.contains("let m = (meas as u11)\n  let r = (reference as u11)"), "{window}");
+    let locals = locals_in(&window);
+    assert!(locals.contains(&"m: u11".to_string()) && locals.contains(&"r: u11".to_string()), "{window}");
+    let mixed = read.function_text("mixed");
+    let locals = locals_in(&mixed);
+    assert!(locals.contains(&"a: u8".to_string()) && locals.contains(&"b: u8".to_string()), "each component has its own type:\n{mixed}");
+}
+
 #[test]
 fn numeric_rows_lower_to_methods_and_checked_ops_to_pairs() {
     // CAT-01, CAT-02 (design C6): every f64 and integer row of Appendix H lowers to one
