@@ -2020,10 +2020,12 @@ fn a_drive_without_a_value_starts_at_its_default() {
 
 #[test]
 fn a_relaxing_drive_starts_absent() {
-    // EU-11 AC 7, D14: every drive of a loop starts each pass absent from what `resolve`
-    // receives, and absence is not a value of the type.
+    // EU-11 AC 7, D14: every drive of a loop starts each relaxation (each microstep it runs) absent from what `resolve`
+    // receives, the passes of one relaxation build on the previous pass, and absence is not a value of the type.
     let s = flat(&section(&spec("part_iii_structure.md"), "### 8.2 "));
-    assert!(s.contains("every drive of the loop starts each pass absent from what `resolve` receives; absence is not a value of the type"), "{s}");
+    assert!(s.contains("every drive of the loop starts each relaxation absent from what `resolve` receives (a relaxation is one run of the loop in one microstep); absence is not a value of the type"), "{s}");
+    assert!(s.contains("each from the values the previous pass left within this relaxation"), "{s}");
+    assert!(!s.contains("starts each pass absent"), "the old step 1 is gone: {s}");
 }
 
 #[test]

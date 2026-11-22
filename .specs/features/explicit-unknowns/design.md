@@ -420,7 +420,7 @@ The ABI has had no release (user: "ABI pode continuar major 1 pq não fizemos re
 - P5: a parameter that may be not given is a pin of `Option<T>`: `{ some: BOOL @0, v: T }`.
 - The empty value of a `TRACE` site not reached, and a record made in a function (C5): each `known` use is re-derived by one rule, "what may be absent has a `BOOL` presence field first".
 - C7: removed.
-- D1: a resolver instance is generated from the nature's `impl Resolve<X, V>`: one drive pin per driver, in instance-path order, flagged `RELAX`, whose layout is the layout of `X` followed by `driving: BOOL`; one value pin with the layout of `V`; one "others" pin, of `V`, per reader that needs it. Relaxation starts each pass with `driving` 0 on every drive of the cycle; a net that still moves after the bounded passes is a `FAULT` the owner reports as `E0511`.
+- D1: a resolver instance is generated from the nature's `impl Resolve<X, V>`: one drive pin per driver, in instance-path order, flagged `RELAX`, whose layout is the layout of `X` followed by `driving: BOOL`; one value pin with the layout of `V`; one "others" pin, of `V`, per reader that needs it. A relaxation starts, once per microstep it runs, with `driving` 0 on every drive of the cycle, and each pass builds on the previous pass; a net that still moves after the bounded passes is a `FAULT` the owner reports as `E0511`.
 - §14 point 6: removed. §15 rows 6 and 7: marked superseded by MD-78.
 
 ## Sequencing with the features in flight

@@ -1373,7 +1373,7 @@ Proof: run spectext | test resolve_receives_plain_values_for_every_count ... ok
 **C46** - §5.2.12 says a drive with no initial value starts at its type's default or is `E0187`, and that a resolved carrier needs none (EU-11, AC 6; T3)
 Proof: run spectext | test a_drive_without_a_value_starts_at_its_default ... ok
 
-**C47** - §8.2.3 says a relaxing drive starts each pass absent, and that absence is not a value (EU-11, AC 7; T4)
+**C47** - §8.2.3 says a relaxing drive starts each relaxation absent (the passes of one relaxation build on the previous pass), and that absence is not a value (EU-11, AC 7; T4)
 Proof: run spectext | test a_relaxing_drive_starts_absent ... ok
 
 **C48** - §8.2.3 step 4 and its error row say a loop that still moves is `E0511` naming its drives (EU-11, AC 8; T4)

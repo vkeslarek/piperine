@@ -264,7 +264,7 @@ Because nets are user natures and `Resolve` is generic over `X` (D18, D20), the 
 4. The specification SHALL state that a drive picks its `impl` by the type of the value driven, that two driven types on one carrier are `E0225`, and that a driven type no `impl` accepts is `E0180`.
 5. The specification SHALL state that `resolve` receives the present drives as an array of plain values, in instance-path order, instantiated for every count from zero to the number of drives.
 6. The specification SHALL state that a drive with no initial value starts at `Default::default()` of the driven type and is a drive from `(0, 0)` on, that its absence is `E0187` (EU-04 AC 4), and that a carrier of a resolving nature needs no initial value of its own.
-7. The specification SHALL state that in a relaxing loop every drive of the loop starts each pass absent from what `resolve` receives, and that absence is not a value of the type.
+7. The specification SHALL state that in a relaxing loop every drive of the loop starts each relaxation (each microstep it runs) absent from what `resolve` receives, the passes of one relaxation building on the previous pass, and that absence is not a value of the type.
 8. The specification SHALL state that a loop that still moves after its bounded passes stops the run with `E0511`, which names the loop's drives.
 
 **Acceptance Criteria** (EU-12, the library's part in nets; the specification text, run by `resolved-nets`):

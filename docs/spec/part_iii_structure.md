@@ -382,15 +382,16 @@ a result that does.
   elaboration error. A loop among drives of resolved carriers only is legal. *Dynamic:* a legal
   loop, one strongly connected component of the drive dependency graph, settles by
   **relaxation**. In each microstep where an input of the loop changed:
-  1. every drive of the loop starts each pass absent from what `resolve` receives; absence is
-     not a value of the type;
-  2. all drives of the loop are re-evaluated together, each from the values the previous pass left;
+  1. every drive of the loop starts each relaxation absent from what `resolve` receives (a
+     relaxation is one run of the loop in one microstep); absence is not a value of the type;
+  2. all drives of the loop are re-evaluated together, each from the values the previous pass left
+     within this relaxation;
   3. passes repeat until no drive changes, at most as many passes as the loop has drives, plus one;
   4. if drives still move after that, the run stops with `E0511`, which names the loop's
      drives. A conflict between drives is a value (a resolved `Logic` reads X); a loop that does
      not settle is an instability, and an instability is an error.
 
-  Starting from nothing every time, a loop cannot latch. Only the settled value is observable:
+  Starting from nothing at every relaxation, a loop cannot latch. Only the settled value is observable:
   `changed()` compares it with the value before the microstep.
 - **§8.2.4** `y = expr after d;` is the commit `y <- expr after d` (§12.1), made each time the
   value of `expr` changes, the first time at `(0, 0)`. The commit is made when the structure
