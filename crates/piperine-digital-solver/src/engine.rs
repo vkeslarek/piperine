@@ -138,9 +138,6 @@ pub struct Digital {
     pub(crate) suspended: Option<(Tick, u32)>,
     /// `GMIN` and `SOURCE_SCALE` as reactions and discrete functions read them.
     pub(crate) continuation: (f64, f64),
-    /// The nets whose initial value `start` queued and no instant has applied yet: each reads its
-    /// own initial value as `PREVIOUS` once it is applied.
-    pub(crate) initial_nets: Vec<NetId>,
     /// The full copies of the state `checkpoint` has taken (a diagnostic).
     pub(crate) checkpoints_taken: std::sync::atomic::AtomicU64,
 }
@@ -170,7 +167,6 @@ impl Digital {
             waited: Vec::new(),
             suspended: None,
             continuation: (0.0, 1.0),
-            initial_nets: Vec::new(),
             checkpoints_taken: std::sync::atomic::AtomicU64::new(0),
         }
     }
@@ -207,7 +203,6 @@ impl Digital {
         self.call = 0;
         self.running = true;
         self.suspended = None;
-        self.initial_nets.clear();
         for (i, net) in self.plan.nets.iter().enumerate() {
             if net.init.is_empty() {
                 continue;
@@ -218,7 +213,7 @@ impl Digital {
                 continue;
             }
             self.call += 1;
-            self.initial_nets.push(NetId(i as u32));
+            self.store.expect_initial(NetId(i as u32));
             let pending = Pending {
                 net: NetId(i as u32),
                 offset: 0,
@@ -231,6 +226,14 @@ impl Digital {
                 flags: 0,
             };
             self.queue.push(pending, false);
+        }
+        // A carrier with no initial value that an undelayed definition drives holds the definition's value from the
+        // start (part III 8.2.21): its first write is its initial value, so it is no change from a value it never held
+        for (i, net) in self.plan.nets.iter().enumerate() {
+            let defined = matches!(self.plan.analysis().writer(NetId(i as u32)), NetWriter::Function { .. });
+            if net.init.is_empty() && !net.param && defined && net.kind == NetKind::Discrete {
+                self.store.expect_initial(NetId(i as u32));
+            }
         }
         for net in self.plan.analysis().start_nets().to_vec() {
             self.fire(net, tick)?;

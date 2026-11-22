@@ -169,3 +169,13 @@ fn a_carrier_that_starts_high_has_not_risen() {
     }
     assert_eq!(nanoseconds(&edge_stream("Quiet", "init")), [0.0], "`init()` fires once at the start");
 }
+
+#[test]
+fn a_carrier_a_definition_drives_has_not_risen_at_the_start() {
+    // §8.2.21, §5.3 (EU-13 AC 5): `n = !c` with `c` starting false gives `n` the value true from `(0, 0)`, with no
+    // initial value of its own (an undelayed definition takes none). Its first value is its initial one, so it is no
+    // rise from a value it never held
+    for stream in ["defined_rise", "defined_fall"] {
+        assert!(edge_stream("Defined", stream).is_empty(), "{stream} fires on no transition");
+    }
+}

@@ -93,11 +93,6 @@ impl Digital {
         }
         for s in &mut settled {
             s.changed = write_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, s.net, 0, &s.bytes, here);
-            // the commit of an initial value is a change, and `prev()` reads that value until the next one (D8)
-            if let Some(at) = self.initial_nets.iter().position(|net| *net == s.net) {
-                self.initial_nets.swap_remove(at);
-                self.store.keep_as_previous(s.net);
-            }
         }
         Ok(settled)
     }

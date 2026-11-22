@@ -12,7 +12,8 @@ pub module SampleHold() {
     signal done: Bit;
     signal input: Electrical;
     signal hold: Electrical;
-    /// The ADC samples on the rise of `nclk`, which is the fall of the clock.
+    /// The ADC samples on the rise of `nclk`, which is the fall of the clock. `nclk` holds what its
+    /// definition gives from time 0 on (the clock starts low), so the start is no sample.
     nclk = !clk;
     pub let source = Vdc(input) { dc: 0.0 };
     pub let osc = Clock(clk) { f: 1M };

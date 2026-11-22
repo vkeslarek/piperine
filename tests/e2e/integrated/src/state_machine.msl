@@ -49,10 +49,10 @@ pub module Sequencer(
 
 digital for Sequencer {
     on clk.rise() {
-        let enabled = en.known_or(false);
-        let over = ov.known_or(false);
-        let was = phase.known_or(Phase::Idle);
-        let ticks_now = ticks.known_or(0) + 1;
+        let enabled = en;
+        let over = ov;
+        let was = phase;
+        let ticks_now = ticks + 1;
         // two edges in a row with over-voltage, in a phase that is neither idle nor a fault
         let tripped = was != Phase::Fault && was != Phase::Idle && over && ov_last;
         let next = if tripped {
@@ -62,10 +62,26 @@ digital for Sequencer {
         } else {
             match was {
                 Phase::Idle => Phase::Charge,
-                Phase::Charge => if ticks_now == 20 { Phase::Hold } else { Phase::Charge },
-                Phase::Hold => if ticks_now == 10 { Phase::Dump } else { Phase::Hold },
-                Phase::Dump => if ticks_now == 20 { Phase::Charge } else { Phase::Dump },
-                Phase::Fault => if ticks_now == 30 { Phase::Charge } else { Phase::Fault },
+                Phase::Charge => if ticks_now == 20 {
+                    Phase::Hold
+                } else {
+                    Phase::Charge
+                },
+                Phase::Hold => if ticks_now == 10 {
+                    Phase::Dump
+                } else {
+                    Phase::Hold
+                },
+                Phase::Dump => if ticks_now == 20 {
+                    Phase::Charge
+                } else {
+                    Phase::Dump
+                },
+                Phase::Fault => if ticks_now == 30 {
+                    Phase::Charge
+                } else {
+                    Phase::Fault
+                },
             }
         };
         let fault_next = if tripped {
@@ -73,17 +89,21 @@ digital for Sequencer {
         } else if was == Phase::Charge && next == Phase::Hold {
             Fault::Clear
         } else {
-            fault.known_or(Fault::Clear)
+            fault
         };
         phase <- next;
         fault <- fault_next;
-        ticks <- if next != was { 0 } else { ticks_now };
+        ticks <- if next != was {
+            0
+        } else {
+            ticks_now
+        };
         ov_last <- over;
         if next != was {
             emit!("phase", to = next);
         }
     }
-    on ov.rise() && ov.prev().is_known() {
+    on ov.rise() {
         emit!("trips", at = now());
     }
 }

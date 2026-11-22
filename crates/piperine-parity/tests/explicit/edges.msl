@@ -48,3 +48,18 @@ digital for Quiet {
     on lo.fall() { emit!("lo_fall"); }
     on first { emit!("init"); }
 }
+
+/// Announces the edges of a carrier an undelayed definition drives.
+module DefinedWatch(in n: Bit) {}
+digital for DefinedWatch {
+    on n.rise() { emit!("defined_rise"); }
+    on n.fall() { emit!("defined_fall"); }
+}
+
+/// `n` is the inverse of `c`, which starts false, so `n` holds true from the start with no initial value of its own.
+module Defined() {
+    signal c: Bit = false;
+    signal n: Bit;
+    n = !c;
+    let watch = DefinedWatch(n);
+}

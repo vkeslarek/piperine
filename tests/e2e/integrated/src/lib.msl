@@ -72,7 +72,7 @@ analog for Capacitor {
 }
 
 /// A switch a digital commit drives: a conductance that moves from `1 / roff` to `1 / ron` in 1 ps
-/// when `gate` goes high (the `PowerSwitch` pattern of `examples/buck`). An unknown gate reads as open.
+/// when `gate` goes high (the `PowerSwitch` pattern of `examples/buck`).
 pub module Switch(p: Electrical, n: Electrical, in gate: Bit) {
     /// Resistance when closed, in ohms.
     ron: f64 = 1.0 where ron > 0.0;
@@ -80,7 +80,7 @@ pub module Switch(p: Electrical, n: Electrical, in gate: Bit) {
     roff: f64 = 1G where roff > ron;
     /// 0 when open, 1 when closed, a ramp of 1 ps in between.
     let level = transition(
-        if gate.high() {
+        if gate {
             1.0
         } else {
             0.0
@@ -95,8 +95,8 @@ analog for Switch {
     i(p, n) +> (1.0 / roff + (1.0 / ron - 1.0 / roff) * level) * v(p, n);
 }
 
-/// An 8-bit ADC, mid-tread: on a rising `sample` (a change between two known values: the first commit
-/// at time 0 takes it from unknown and is no sample) it probes `ain` once, rounds to the nearest code
+/// An 8-bit ADC, mid-tread: on a rising `sample` (a transition: the first commit at time 0 of a bit that
+/// starts low is no sample) it probes `ain` once, rounds to the nearest code
 /// and, `tconv` later, presents the code with a `done` strobe of `tstrobe`. The input draws no flow.
 pub module Adc8(ain: Electrical, in sample: Bit, out code: Bit<u8> = 0, out done: Bit = false) {
     /// Full scale, in volts: one code is `vref / 256`.
@@ -108,7 +108,7 @@ pub module Adc8(ain: Electrical, in sample: Bit, out code: Bit<u8> = 0, out done
 }
 
 digital for Adc8 {
-    on sample.rise() && sample.prev().is_known() {
+    on sample.rise() {
         let q = (v(ain) / vref * 256.0 + 0.5).floor().clamp(0.0, 255.0) as u8;
         code <- q after tconv;
         done <- true after tconv;
@@ -148,7 +148,7 @@ digital for PwmCounter {
             count + 1
         };
         let latched = if wrapping {
-            duty.known_or(0)
+            duty
         } else {
             width
         };

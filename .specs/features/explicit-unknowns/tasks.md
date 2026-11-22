@@ -706,9 +706,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `cargo test -p piperine --test integrated` and `cargo test -p piperine-cli --test integrated` pass with no expected value edited
-- [ ] `git diff --stat tests/e2e/twins` is empty
-- [ ] Gate check passes: Full
+- [x] `cargo test -p piperine --test integrated` and `cargo test -p piperine-cli --test integrated` pass with no expected value edited
+- [x] `git diff --stat tests/e2e/twins` is empty
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
