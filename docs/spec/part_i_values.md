@@ -1165,7 +1165,10 @@ the error of the rule that applies (`E0161`, `E0180`, `E0187`).
   written, or `Default::default()` of the type
   ([Appendix H.8](appendix_h_library.md#h8-traits)). A type that does not
   implement `Default` requires the initial value, and its absence is `E0187` naming the
-  carrier and the trait. `Option<T>`, `Logic<N>`, `()`, and a tuple, an array or a struct whose
+  carrier and the trait. The value is given once, by the carrier's driver
+  ([§5.2.3](part_ii_carriers.md#52-drives)): `E0187` is for a driver that gives none, never for a
+  carrier an undelayed definition drives (its first evaluation, §8.2.29, is its first value) nor
+  for a signal whose `out` port in a child holds the initial value. `Option<T>`, `Logic<N>`, `()`, and a tuple, an array or a struct whose
   parts all implement `Default`, implement it; **`bool`, `UInt<N>`, `Int<N>`, `Float<N>` and
   `str` do not implement `Default`.** In this the language differs from Rust on purpose: a
   register with no reset value has no meaning that a number can express, so the source says

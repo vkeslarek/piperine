@@ -2089,3 +2089,72 @@ fn the_library_declares_no_net_nature() {
         assert!(!why.contains(dropped), "the rationale kept an unconfirmed citation: {dropped}");
     }
 }
+
+/// The words the explicit model removed (EU-17 AC 3).
+const REMOVED_WORDS: [&str; 8] = ["known flag", "`Unknown`", "`level(", "known_or", "is_known", "flag-total", "under unknown control", "maybe = true"];
+
+/// The text of `docs/spec` outside Appendix G's entry G.72, which records what was removed.
+fn spec_without_g72() -> Vec<(String, String)> {
+    all_specs()
+        .into_iter()
+        .map(|(name, text)| {
+            if name != "appendix_g_scope.md" {
+                return (name, text);
+            }
+            let a = text.find("### G.72 ").expect("G.72 exists");
+            let b = a + text[a..].find("## Closed items").expect("G.72 ends at the closed items");
+            (name, format!("{}{}", &text[..a], &text[b..]))
+        })
+        .collect()
+}
+
+#[test]
+fn the_removed_words_are_absent_from_the_specification() {
+    // EU-17 AC 3: outside G.72, none of the removed words is anywhere in docs/spec.
+    let mut found = Vec::new();
+    for (name, text) in spec_without_g72() {
+        let flat_text = flat(&text);
+        for word in REMOVED_WORDS {
+            if flat_text.contains(word) {
+                found.push(format!("{name}: {word}"));
+            }
+        }
+    }
+    assert!(found.is_empty(), "the specification still says: {found:#?}");
+}
+
+#[test]
+fn appendix_g_records_the_explicit_model() {
+    // EU-17 AC 4: G.72 lists what was removed and says the implementation does not meet it yet;
+    // G.29, G.46 and G.57 are closed by it, and no longer have an open or flagged entry.
+    let g = spec("appendix_g_scope.md");
+    let g72 = flat(&section(&g, "### G.72"));
+    for removed in ["the known flag of every level of every value, and the literal `Unknown`", "`level`, `known`, `known_or`, `is_known`, `high`, `merge`, and `Known`", "the merge of effects under unknown control", "the gate of an `analog` read", "`maybe` on a record", "the `resolve` field of a nature, and the library nets `Wire`, `Tri` and `SumNet`"] {
+        assert!(g72.contains(removed), "G.72 does not list: {removed}");
+    }
+    assert!(g72.contains("The reference implementation does not yet meet this item."), "{g72}");
+    let closed = flat(&section(&g, "### Other closed items"));
+    for item in ["G.28, G.29, G.45, G.46, G.55, G.57"] {
+        assert!(closed.contains(item), "the closed table lacks {item}");
+    }
+    assert!(!g.contains("### G.29 "), "G.29 has no open entry");
+    assert!(table_rows(&section(&g, "## Flagged resolutions")).iter().all(|r| !r[0].starts_with("G.45") && !r[0].starts_with("G.46")), "G.45 and G.46 left the flagged table");
+}
+
+#[test]
+fn the_gallery_works_four_nets() {
+    // EU-12 AC 3: F.4 holds four worked nets, each with its nature, its `impl` and its module
+    // code: a plain `bool` into a wired-AND nature, an open-drain line with a pull-up, a
+    // tri-state bus with two drivers and a keeper, and a conflict of equal strengths; plus the
+    // typed bus of D12 as a fifth listing.
+    let f = spec("appendix_f_gallery_mixed.md");
+    let s = section(&f, "## F.4");
+    for heading in ["### F.4.1 A plain `bool` into a wired-AND net", "### F.4.2 An open-drain line with a pull-up", "### F.4.3 A tri-state bus with two drivers and a keeper", "### F.4.4 A conflict of equal strengths"] {
+        assert!(s.contains(heading), "F.4 lacks {heading}");
+    }
+    let flat_s = flat(&s);
+    for needle in ["pub nature AndWire { value: bool }", "impl Resolve<bool> for AndWire", "pub nature Sda { value: Driven }", "impl Resolve<Driven> for Sda", "pub nature TriBus { value: Driven }", "impl Resolve<Driven> for TriBus", "let rp = Pullup(sda);", "let k = Keeper(line);", "pub nature DataBus { value: Data }", "impl Resolve<Option<u8>, Data> for DataBus", "`Driven { v: Logic::X, s: Strength::Strong }`", "`E0511`"] {
+        assert!(flat_s.contains(needle), "F.4 lacks {needle}");
+    }
+    assert!(!flat_s.contains(": Wire;") && !flat_s.contains(": Wire,"), "no library Wire");
+}

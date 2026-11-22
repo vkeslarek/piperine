@@ -1908,7 +1908,7 @@ pub fn fatal(msg: &str) {
 }
 ```
 
-1. Both write to the reserved global stream `sim`. The analysis ends at the instant of the record (§19 rule 5), (G.55).
+1. Both write to the reserved global stream `sim`. The analysis ends at the instant of the record (§19 rule 5).
 2. That instant is the last time point (§17.2.2).
 3. `fatal` also marks the run as failed, with a message.
 4. Both are callable from reactions only. A call from `analog` is an elaboration error (§19 rule 4).

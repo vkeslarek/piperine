@@ -4,7 +4,7 @@ module RSwitch(a: Electrical, b: Electrical, in ctl: Bit) {
 }
 
 analog for RSwitch {
-    i(a, b) +> v(a, b) / if ctl.high() {
+    i(a, b) +> v(a, b) / if ctl {
         ron
     } else {
         roff

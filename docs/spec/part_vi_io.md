@@ -84,7 +84,7 @@ named field.
 > small-signal analysis no sweep is performed.
 
 > **Resolution.** A `finish` record ends the analysis when its `finish` field is true;
-> otherwise it is recorded and the analysis goes on. The same holds for `fatal()` (G.55).
+> otherwise it is recorded and the analysis goes on. The same holds for `fatal()`.
 
 > **Resolution.** Rules 7 and 8 are stated here. A record from the settle phase carries the
 > time point's `t` and the index of its last microstep. Inside `analog`, a `fn` that calls

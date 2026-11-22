@@ -240,7 +240,7 @@ sigtype        ::= 'flip'? path generic_args? | '[' sigtype ';' expr ']'
 | --- | --- | --- |
 | `E0210` | an initial value of a signal or node of the wrong type, or one that reads a carrier or a probe | elaboration |
 | `E0211` | a carrier method applied to an array of carriers or to a bundle | elaboration |
-| [§3.7](part_i_values.md#37-traits) | a signal, an `out` port or a drive with no initial value whose value type does not implement `Default` (`E0187`, naming the carrier and `Default`) | elaboration |
+| [§3.7](part_i_values.md#37-traits) | a signal, an `out` port or a drive with no initial value whose value type does not implement `Default` and whose driver gives none (`E0187`, naming the carrier and `Default`; §3.3.4) | elaboration |
 
 **Examples**
 
