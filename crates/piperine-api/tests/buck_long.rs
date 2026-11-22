@@ -11,7 +11,8 @@ use std::rc::Rc;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table};
+use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table, TransientStatistics};
+use piperine_solver::protocol::{LandingCause, StepEnd};
 use piperine_transpile::Settings;
 
 #[path = "support/heap.rs"]
@@ -45,6 +46,8 @@ struct Start {
     /// The peak of live heap during `Session::run`, less the heap live when it began.
     peak: usize,
     wall: Duration,
+    /// How the steps of the run were spent.
+    statistics: TransientStatistics,
 }
 
 /// The one run of the whole start of this target.
@@ -68,8 +71,10 @@ fn start() -> &'static Start {
         let wall = began.elapsed();
         let peak = HEAP.peak_since(base);
         let checks = std::mem::take(&mut *checks.borrow_mut());
-        let start = Start { table, checks, peak, wall };
+        let statistics = session.statistics().cloned().expect("a transient leaves its statistics");
+        let start = Start { table, checks, peak, wall, statistics };
         eprintln!("{}", report(&start));
+        eprintln!("{}", statistics_report(&start.statistics));
         start
     })
 }
@@ -77,6 +82,47 @@ fn start() -> &'static Start {
 /// The line the run reports: its wall time and its peak live heap.
 fn report(start: &Start) -> String {
     format!("buck whole start: {} rows, wall time {:.1} s, peak live heap {} B ({:.1} MiB)", start.table.rows.len(), start.wall.as_secs_f64(), start.peak, start.peak as f64 / (1024.0 * 1024.0))
+}
+
+/// One line per count of the run: the landings by cause, how every other accepted step ended,
+/// the rejections by cause, the retakes, the jump steps, the steps at `max_step` and the instants run.
+fn statistics_report(statistics: &TransientStatistics) -> String {
+    let (steps, analog) = (statistics.steps(), statistics.analog());
+    let causes = [
+        ("analog-read changed", LandingCause::AnalogReadChanged),
+        ("continuous read", LandingCause::ContinuousRead),
+        ("declared reach only", LandingCause::DeclaredReach),
+        ("irreversible", LandingCause::Irreversible),
+        ("host waiter", LandingCause::HostWaiter),
+    ];
+    let mut lines = vec![format!("buck statistics: accepted steps {}", steps.accepted())];
+    for (name, cause) in causes {
+        lines.push(format!("buck statistics: landings, {name}: {}", steps.landings(cause)));
+    }
+    for (name, end) in [("crossing", StepEnd::Crossing), ("max_step", StepEnd::MaxStep), ("cap", StepEnd::Cap), ("stop", StepEnd::Stop), ("proposal", StepEnd::Proposal)] {
+        lines.push(format!("buck statistics: steps ended at {name}: {}", steps.ended(end)));
+    }
+    lines.push(format!("buck statistics: rejected by truncation {}", analog.rejected_truncation));
+    lines.push(format!("buck statistics: rejected by Newton {}", analog.rejected_newton));
+    lines.push(format!("buck statistics: steps retaken toward a crossing {}", steps.retaken()));
+    lines.push(format!("buck statistics: jump steps {}, jump retakes {}", analog.jump_steps, analog.jump_retakes));
+    lines.push(format!("buck statistics: steps at max_step {}", analog.steps_at_max_step));
+    lines.push(format!("buck statistics: instants run {}", steps.instants_run()));
+    lines.push(format!("buck statistics: sampling share {:.6}", steps.sampling_share()));
+    lines.join("\n")
+}
+
+#[test]
+fn the_statistics_of_the_whole_start_are_reported() {
+    // TP-01 AC 5: every count is printed, and the ends add up to the accepted steps
+    let start = start();
+    let report = statistics_report(&start.statistics);
+    eprintln!("{report}");
+    let steps = start.statistics.steps();
+    let ended: u64 = StepEnd::ALL.iter().map(|end| steps.ended(*end)).sum();
+    assert_eq!(ended, steps.accepted());
+    assert!(report.contains(&format!("accepted steps {}", steps.accepted())), "{report}");
+    assert!(report.contains("rejected by truncation") && report.contains("instants run"), "{report}");
 }
 
 #[test]

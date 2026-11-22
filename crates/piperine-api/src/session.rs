@@ -38,6 +38,7 @@ use crate::table::Table;
 use crate::project::Project;
 use crate::request::{Analysis, Grid, Options, RunSpec};
 use crate::source::NodeSources;
+use crate::statistics::TransientStatistics;
 
 /// How the design of a session was built.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,6 +87,8 @@ pub struct Session {
     pub(crate) sources: NodeSources,
     /// The value of every param of every instance, which a `set` keeps with what derives from it.
     pub(crate) params: Params,
+    /// The counts of the transient this session took, `None` before it and for any other analysis.
+    statistics: Option<TransientStatistics>,
 }
 
 /// The input and the output of a `tf` or `pz` run, by what the solver knows them by.
@@ -308,7 +311,7 @@ impl Session {
                 None => Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &path.param, *value)?,
             }
         }
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, noise, noise_report: None, wrt, actions: Vec::new(), timed_sets: Vec::new(), sources: NodeSources::default(), params: table })
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, noise, noise_report: None, wrt, actions: Vec::new(), timed_sets: Vec::new(), sources: NodeSources::default(), params: table, statistics: None })
     }
 
     /// Sets `path` to `value` on `circuit` and, through `table`, every param derived from it, in
@@ -445,6 +448,12 @@ impl Session {
                 Ok(InitialValue { reference: reference.clone(), value: *value })
             })
             .collect()
+    }
+
+    /// How the steps of this session's transient were spent: `None` before it ran, and for any
+    /// analysis but a transient.
+    pub fn statistics(&self) -> Option<&TransientStatistics> {
+        self.statistics.as_ref()
     }
 
     /// The context every analysis of this session takes.
@@ -589,7 +598,7 @@ impl Session {
                     .with_sink(delivery)
                     .with_step_observer(Box::new(Tap(recorder.clone())))
                     .build();
-                solver
+                let result = solver
                     .tran()
                     .and_then(|mut tran| {
                         for action in &timed {
@@ -601,6 +610,7 @@ impl Session {
                         tran.solve()
                     })
                     .map_err(|error| Failure::from_fault("transient", error, recorder.borrow().reached()))?;
+                self.statistics = Some(TransientStatistics::new(result.statistics().clone(), result.stats.clone()));
                 // CLI-05 AC 11: a run that stopped short has no table to give. How far it got is the
                 // last step the observer saw, which a design with no analog unknown reaches too (its
                 // result holds no analog accept, HII-17). A model that wrote `finish` ended the run at

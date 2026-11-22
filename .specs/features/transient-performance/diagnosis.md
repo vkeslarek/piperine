@@ -210,3 +210,40 @@ The idea pays in a different design: one whose samplers fire at a rate near the 
 through the step's start, its `γh` stage and its end. The same interpolant would let the print grid
 drop `max_step`. Both are specified as deferred items (TP-D1, TP-D2) with the statistic that tells
 when they are worth building: sampling landings as a share of accepted steps (TP-01 reports it).
+
+## 8. Baseline of the 600 µs start
+
+Measured by `buck_long` (`cargo test -p piperine-api --test buck_long -- --nocapture`) on the
+statistics of T1 to T5, on `feature/transient-performance` merged with main `754784a1` (so with
+`analog-operators` T9: the step that reads a jump is first order), before any landing or test
+changes. The rule is the declared one, the only one there is until T15. Wall time 151.9 s (printed,
+never asserted), peak live heap 11.3 MiB.
+
+| Count | 600 µs start |
+| ----- | ------------ |
+| accepted steps | 804 136 |
+| landings, an analog-read net changed | 1 182 |
+| landings, a firing reaction reads a continuous pin | 0 |
+| landings, declared reach only | 238 803 |
+| landings, `IRREVERSIBLE` or host waiter | 0 |
+| steps ended at a located crossing | 0 |
+| steps ended at `max_step` | 0 |
+| steps ended at a `bound_step` cap | 0 |
+| steps ended at the stop | 1 |
+| steps ended at the controller's proposal | 564 150 |
+| attempts rejected by the truncation test | 2 062 |
+| attempts rejected by Newton | 0 |
+| steps retaken toward a crossing | 0 |
+| steps that read a jump | 2 363 |
+| jump steps retaken | 0 |
+| steps at `max_step` (analog side) | 0 |
+| instants run | 804 136 |
+| sampling share | 0.000000 |
+
+The accepted steps are 804 136, not the 675 000 the plan (section 2 and the goals) quotes: the
+plan's count predates `analog-operators` T9 on main. The gate of 300 000 is unchanged. A landing is
+counted under the first cause that holds, in this order: an analog-read net changed, a firing
+reaction reads a continuous pin, the declared reach only. The share of sampling landings is 0 here;
+that the ADC's sampling instants (50 per 100 µs, section 7) do not show as `continuous read` is not yet
+explained (the cause is picked after the analog-read test, so they may be counted there) and T15's
+tests settle it.
