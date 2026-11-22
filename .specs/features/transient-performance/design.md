@@ -162,10 +162,11 @@ The analog side tells the protocol how a step ended when it was its own choice: 
 **The estimate.** With T9 the step that reads a jump runs backward Euler over `γh` to `q_γ` and
 backward Euler over `h` to `q_1`, both from `q_0`. Backward Euler's local error over `h` is
 `(h²/2)·q''`. The two stages give two slopes, `s_γ = (q_γ − q_0)/(γh)` and `s_1 = (q_1 − q_0)/h`,
-each the derivative at the end of its own interval, so `q'' ≈ (s_1 − s_γ)/((1 − γ)h)` and
+each the secant over its own interval (the derivative at that interval's midpoint, so the two
+midpoints are `(1 − γ)h/2` apart), so `q'' ≈ 2(s_1 − s_γ)/((1 − γ)h)` and
 
 ```
-error(state) = h · |s_1 − s_γ| / (2·(1 − γ))
+error(state) = h · |s_1 − s_γ| / (1 − γ)
 jump_lte     = max over states of error(state) / bound(state)
 bound(state) = max( h·(abstol + reltol·max|i|), reltol·max(|q|, chgtol) )      (state_lte's own)
 ```
