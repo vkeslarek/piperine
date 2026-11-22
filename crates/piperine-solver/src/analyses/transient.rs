@@ -1929,11 +1929,12 @@ impl DeviceRun {
             .with_unknowns(run.unknowns.clone())
     }
 
-    /// The time of the last attempt.
+    /// What cut the proposal the last `device_propose` returned.
     pub(crate) fn proposal_bound(&self) -> ProposalBound {
         self.bound
     }
 
+    /// The time of the last attempt, in seconds since the run's start.
     pub(crate) fn attempted(&self) -> f64 {
         self.st.origin + self.attempted
     }
