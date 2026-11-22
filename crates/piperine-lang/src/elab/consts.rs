@@ -8,14 +8,10 @@
 //! integer division or remainder by zero, a shift by a negative amount and a `clamp` with its
 //! bounds crossed are panics (§1 rule 11): `E0104` at elaboration.
 //!
-//! A value may be unknown (§3.3): [`Folded`] is a known [`Constant`] or `Unknown`, and the
-//! operators fold it by the rules of the compiled code (`rt::Flagged`, §3.3.2): all-or-nothing
-//! for arithmetic, comparison and `^`, per level for `&`, `|`, `&&` and `||` (a known all-false
-//! operand decides `&`, a known all-true operand decides `|`), a shift of an unknown value by `N`
-//! or more is known 0. An `if` on an unknown condition is the merge of its arms (§3.3.3), a panic
-//! on one of them making it unknown (§1 rule 13). [`ConstEval::value`] gives a [`Constant`], so a
-//! result that is unknown is [`ConstFault::Unknown`]; [`ConstEval::folded`] gives the result as
-//! it is, for a caller that accepts an unknown.
+//! A value may have no constant at elaboration: [`Folded`] is a known [`Constant`] or `Unknown`, the
+//! value of a function argument the caller gave none (a value is never unknown at run time, §3.3).
+//! [`ConstEval::value`] gives a [`Constant`], so a result with none is [`ConstFault::Unknown`];
+//! [`ConstEval::folded`] gives the result as it is, for a caller that accepts one.
 //!
 //! A `const` item is evaluated once and remembered. A param is read through the caller's
 //! [`Bindings`]; a read with no binding, an environment function, a probe or a node is *not
@@ -105,9 +101,8 @@ impl Bindings {
     }
 }
 
-/// What an expression folds to: a known value, or `Unknown` (§3.3). One flag per value, as the
-/// compiled code has it (G6, provisional): the per-level spec (`unknown-semantics-per-level`)
-/// adds a partial form here.
+/// What an expression folds to: a known value, or `Unknown`, no constant at elaboration (the argument
+/// of a function that was given none).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Folded {
     /// A known value.
@@ -149,8 +144,8 @@ pub enum ConstFault {
     /// A panic of the evaluation (§1 rule 11): an integer division or remainder by zero, a shift
     /// by a negative amount, a `clamp` whose bounds are crossed. `E0104` at elaboration.
     Panic { expr: ExprId, what: String },
-    /// The value is unknown (§3.3) where a known one is required: the caller says what it
-    /// decides (`E0151` when it fixes structure, §3.3.8).
+    /// The value has no constant at elaboration where one is required: the caller says what it
+    /// decides (`E0321`).
     Unknown { expr: ExprId },
     /// The initializer of the `const` item `constant` reads, at `expr`, something only a run gives
     /// (`what`): the `const` is not a const expression (§3.9.2, `E0188`).

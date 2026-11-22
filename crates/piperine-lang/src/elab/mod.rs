@@ -34,7 +34,6 @@ mod host_sources;
 mod inflow;
 mod intrinsics;
 mod iterators;
-mod known;
 mod lower;
 mod nature;
 mod origin;

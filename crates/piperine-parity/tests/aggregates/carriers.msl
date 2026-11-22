@@ -29,8 +29,8 @@ digital for Commits {
 module Moves(in clk: Bit, out u: Bit<Pair> = Pair { a: 6, b: false }, out step: Bit<u8> = 7, out good: Bit<Tx> = Tx::Idle) {}
 digital for Moves {
     on clk.rise() {
-        u <- Pair { a: step.known_or(7), b: false };
-        step <- step.known_or(7) + 1;
+        u <- Pair { a: step, b: false };
+        step <- step + 1;
         good <- cast::<u5, Tx>(13);
     }
 }
@@ -53,7 +53,7 @@ digital for Reads {
         r_t <- t.0;
         r_arr <- arr[1];
         r_opt <- opt.unwrap_or(0);
-        r_tx <- match tx.known_or(Tx::Idle) { Tx::Data { n } => n as u8, _ => 99 };
+        r_tx <- match tx { Tx::Data { n } => n as u8, _ => 99 };
     }
 }
 

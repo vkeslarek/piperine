@@ -311,8 +311,8 @@ pub struct Pins {
     pub tolerances: Vec<(Option<u32>, Option<u32>)>,
     /// The `CAP` watch of each `bound_step` site, as `(site, watch)`, after the `CROSS` watches.
     pub caps: Vec<(u32, u32)>,
-    /// The `GLOBAL` `RESOLUTION` pin, after the tolerance pins, when a reaction of the body
-    /// decides on a value that may be unknown.
+    /// The `GLOBAL` `RESOLUTION` pin: no reaction decides on an unknown any more, so none is added; the field
+    /// leaves with `Source::Resolution` and its printers (`explicit-unknowns` T33).
     pub resolution: Option<u32>,
     /// The private `abstol` pin `d<k>.abstol` of each derivative site that gives one, after the
     /// tolerance pins; `None` for a site with the default tolerance.
@@ -540,7 +540,6 @@ impl BodyPlan {
         let rearms = Digital::rearm_pins(&mut s, body);
         let records = Digital::record_pins(&mut s, body);
         let tolerances = Digital::tolerance_pins(&mut s, body);
-        let resolution = Digital::resolution_pin(&mut s, body);
         let derivative_abstols = Digital::derivative_abstol_pins(&mut s, body);
         let settle = Digital::settle_pin(&mut s, body);
         let watches = Digital::watches(&mut s, body, &events, &crossed, &tolerances);
@@ -563,7 +562,7 @@ impl BodyPlan {
             records,
             tolerances,
             caps,
-            resolution,
+            resolution: None,
             derivative_abstols,
             settle,
         };

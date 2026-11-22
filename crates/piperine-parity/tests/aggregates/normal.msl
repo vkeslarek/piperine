@@ -39,7 +39,7 @@ pub module JitterClock(out clk: Bit = false) {
 }
 digital for JitterClock {
     on clk.changed() {
-        let (j, next) = normal(rng.known_or(7), 0.0, jitter);
+        let (j, next) = normal(rng, 0.0, jitter);
         rng <- next;
         clk <- !clk after period / 2.0 + j;
     }

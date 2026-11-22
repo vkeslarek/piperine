@@ -209,7 +209,7 @@ impl Elaboration<'_, '_> {
             None => {
                 let mut lowered = Vec::new();
                 for arg in args {
-                    lowered.push(self.lower_expr(scope, *arg).and_then(|v| self.known_in_analog(scope.file, *arg, v, "an argument of `limit`")));
+                    lowered.push(self.lower_expr(scope, *arg));
                 }
                 let mut lowered = lowered.into_iter();
                 (lowered.next()??, lowered.next()??, lowered.next().flatten())
@@ -217,10 +217,10 @@ impl Elaboration<'_, '_> {
             Some(_) => {
                 // `f` is a closure whose parameters are locals of the body: it stays where it is.
                 let mut standalone = Self::standalone_scope(scope);
-                let x = self.lower_expr(&mut standalone, *args.first()?).and_then(|v| self.known_in_analog(scope.file, *args.first()?, v, "an argument of `limit`"));
+                let x = self.lower_expr(&mut standalone, *args.first()?);
                 let f = self.lower_expr(scope, *args.get(1)?);
                 let seed = match args.get(2) {
-                    Some(seed) => Some(self.lower_expr(&mut standalone, *seed).and_then(|v| self.known_in_analog(scope.file, *seed, v, "an argument of `limit`"))),
+                    Some(seed) => Some(self.lower_expr(&mut standalone, *seed)),
                     None => None,
                 };
                 if !standalone.locals.is_empty() {
@@ -252,7 +252,7 @@ impl Elaboration<'_, '_> {
         let mut lowered = Vec::new();
         for arg in args {
             let value = if guarded { self.lower_expr(&mut standalone, *arg) } else { self.lower_expr(scope, *arg) };
-            lowered.push(value.and_then(|v| self.known_in_analog(scope.file, *arg, v, "an argument of `ac_stim`")));
+            lowered.push(value);
         }
         if !standalone.locals.is_empty() {
             self.unsupported(scope.file, span, "a guarded `ac_stim` whose input binds a local");

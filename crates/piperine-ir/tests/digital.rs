@@ -912,11 +912,10 @@ fn a_defective_digital_body_gives_one_entry_per_defect() {
     one("body Bad drive en", 3, "drives the `in` port en: an input is written outside the body");
     one("body Bad reaction 0", 8, "commits to the `in` port stop: an input is written outside the body");
     one("body Bad carrier q", 1, "carrier q has both a drive and a commit");
-    one("body Bad", 11, "`analog` reads carrier en outside `known_or`, `is_known` and `high` (§3.3.5)");
     one("body Bad reaction 0", 7, "waits on event 7, out of range (2 events)");
     one("body Bad", 10, "a commit outside a reaction");
     one("body Bad event 1", 6, "a `cross` watches a real, found flagged<u4>");
-    assert_eq!(broken.len(), 7, "{broken:#?}");
+    assert_eq!(broken.len(), 6, "{broken:#?}");
 }
 
 #[test]
@@ -1179,50 +1178,3 @@ fn the_unknown_nodes_type_print_and_check() {
     assert_eq!(broken.len(), 6, "{broken:#?}");
 }
 
-#[test]
-fn analog_reads_a_carrier_through_level_and_same_only() {
-    // §3.3.5, §3.3.6: `analog` may read a carrier as the receiver of `level` (the stdlib's
-    // `known`, `known_or` and `high` are built on it) and as an argument of `same`, which is
-    // flag-total (§22.1.4); `merge` gives a value that may be unknown, so a bare carrier read as
-    // its operand is refused (§3.3.5). `read` builds the condition of the contribution's factor.
-    let check = |read: &dyn Fn(&mut Dx<'_>, piperine_ir::ExprId) -> piperine_ir::ExprId| {
-        let mut b = IrBuilder::new();
-        let el = Buck::electrical(&mut b);
-        let mut x = Dx::new(&mut b, Levels::F, 9, 5);
-        let v = x.probe(Terminal::Node(0), Terminal::Node(1));
-        let en = x.carrier(0, Ty::u(8));
-        let cond = read(&mut x, en);
-        let (one, zero) = (x.real(1.0), x.real(0.0));
-        let factor = x.if_(cond, one, zero, ValueType::F64);
-        let value = x.bin(BinaryOp::Mul, v, factor, ValueType::F64);
-        let contribution = b.stmt(Stmt::Contribute { branch: 0, quantity: QuantityRole::Flow, addends: vec![Addend { operator: Operator::Direct, negated: false, value }] });
-        let port = |name: &str, col: u32| piperine_ir::BodyNode { name: name.into(), nature: el, role: piperine_ir::NodeRole::Port, init: None, origin: Design::origin(Levels::F, 1, col) };
-        let body = b.body(BodySpec {
-            nodes: vec![port("p", 12), port("n", 27)],
-            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
-            analog: Some(vec![contribution]),
-            ..Buck::spec("Reads", Levels::F, 1)
-        });
-        b.carrier(body, Buck::carrier("en", Ty::u(8), CarrierRole::In, None, Levels::F, 1, 42));
-        let top = b.next_instance_id();
-        let net = b.net(NetSpec { path: "Reads.en".into(), ty: Ty::u(8), declared_by: top, init: None, origin: Design::origin(Levels::F, 1, 1) });
-        let p = b.node(NodeSpec { path: "Reads.p".into(), nature: el, declared_by: top, init: None, origin: Design::origin(Levels::F, 1, 12) });
-        let top = Stage::instance(&mut b, "Reads", body, None, vec![NodeRef::Node(p), NodeRef::Ground], vec![], vec![net], 1);
-        b.finish(top).check()
-    };
-    let zero = |x: &mut Dx<'_>| x.int(0, Ty::u(32));
-    // `x.level(0)` of a carrier: its two halves are known for a known index
-    assert_eq!(check(&|x, en| { let k = zero(x); x.level(en, k, LevelPart::Is, ValueType::Bool) }), vec![]);
-    assert_eq!(check(&|x, en| { let k = zero(x); x.level(en, k, LevelPart::Value, ValueType::Bool) }), vec![]);
-    // `same(en, en)` is always known
-    assert_eq!(check(&|x, en| x.same(en, en)), vec![]);
-    // `merge(en, en)` reads the bare carrier, and is itself unknown: refused
-    let broken = check(&|x, en| {
-        let merged = x.merge(en, en, Ty::flagged(Ty::u(8)));
-        let one = x.int(1, Ty::u(8));
-        let known = x.known_or(merged, one, Ty::u(8));
-        x.bin(BinaryOp::Eq, known, one, ValueType::Bool)
-    });
-    assert_eq!(broken.len(), 1, "{broken:#?}");
-    assert!(broken[0].what.contains("`analog` reads carrier en outside"), "{broken:#?}");
-}

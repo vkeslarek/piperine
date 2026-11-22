@@ -4,6 +4,9 @@
 //! this file, one constant each; `Buck` elaborates with no diagnostic, an empty `check()` and the
 //! structural print pinned in `tests/fixtures/elab/buck.txt`.
 
+#[allow(dead_code)]
+#[path = "support/buck.rs"]
+mod buck;
 #[path = "support/elab.rs"]
 #[allow(dead_code)]
 mod support;
@@ -26,8 +29,7 @@ fn buck_ir() -> Ir {
 }
 
 fn fixture(name: &str) -> String {
-    let path = format!("{}/../piperine-ir/tests/golden/buck/{name}.txt", env!("CARGO_MANIFEST_DIR"));
-    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+    buck::golden(name)
 }
 
 /// The lines of the item of a print whose header line is `header` (`body Osc`, `fn name(..`): the
@@ -39,45 +41,33 @@ fn item(print: &str, header: &str) -> Vec<String> {
 }
 
 /// The first difference listed in `tasks.md` T37 (ruling 2, A7): the fixtures guard a `rise` with
-/// `c.high()`; the source gives the stdlib's two-condition form over the previous value.
+/// `c.high()`; the source gives the stdlib's form over the previous value (`!c.prev() && c`, D9).
 fn stdlib_rise_guard(carrier: &str) -> (String, String) {
     (
         format!("guard {carrier}.high()"),
-        format!("guard ((!{carrier}.prev().high()) & ((!{carrier}.is_known()) | {carrier}.known_or(false)))"),
+        format!("guard ((!{carrier}.prev()) && {carrier})"),
     )
 }
 
 /// The second: `Pid` folds `DUTY_MAX as i32` where the fixture writes the cast (DIG-08 AC 2).
 const PID_FOLD: (&str, &str) = ("(2880u12 as i32)", "2880i32");
 
-/// The reads of `examples/buck` that the explicit model made plain (explicit-unknowns T24): the fixtures, the hand
-/// transcription of the earlier source, read a carrier through `known_or` or `high()`; the source reads it directly.
-/// `Dpwm` (`run`, `duty`, `oc`, `sink_oc`), the call it makes (`dithered_width` has one variant per flag pattern, and
-/// `duty` is flagged now), `SetpointReg` (no `known()` test), `RefRamp` and `Pid` (`run`, `reference`, `meas`).
-const DPWM_PLAIN_READS: [(&str, &str); 5] = [
-    ("    local enabled: bool", "    local enabled: flagged<bool>"),
-    ("let enabled = run.known_or(false)", "let enabled = run"),
-    ("\"dithered_width~01\"(duty.known_or(0u12), (frame + 1u3))", "\"dithered_width~11\"(duty, (frame + 1u3))"),
-    ("(hs & oc.known_or(true))", "(hs & oc)"),
-    ("(ls & sink_oc.known_or(true))", "(ls & sink_oc)"),
+/// The operators and the names of `Dpwm`, which reads its carriers directly: the fixture's `&` and `|` over values that
+/// may be unknown are `&&` and `||` over plain ones, and the functions carry no flag pattern in their names.
+const DPWM_PLAIN: [(&str, &str); 6] = [
+    ("\"dithered_width~01\"(duty, (frame + 1u3))", "dithered_width(duty, (frame + 1u3))"),
+    ("((!wrap) & (hs_cut | (hs & oc)))", "((!wrap) && (hs_cut || (hs && oc)))"),
+    ("((!wrap) & (ls_cut | (ls & sink_oc)))", "((!wrap) && (ls_cut || (ls && sink_oc)))"),
+    ("((enabled & (!hs_trip)) & (next < w))", "((enabled && (!hs_trip)) && (next < w))"),
+    ("(hs & (!hs_next))", "(hs && (!hs_next))"),
+    ("((((enabled & (!hs_next)) & (!ls_trip)) & (next >= (off_at + 4u9))) & (next < 396u9))", "((((enabled && (!hs_next)) && (!ls_trip)) && (next >= (off_at + 4u9))) && (next < 396u9))"),
 ];
 /// The one difference of `GateDriver`: its delayed definitions give no value to its `out` ports, so each writes its
 /// initial value (explicit-unknowns T30, §3.3.4) and the fixture, the earlier transcription, has none.
 const GATE_DRIVER_INITIAL_VALUES: [(&str, &str); 2] = [("carrier hs_gate: bool out", "carrier hs_gate: bool out init false"), ("carrier ls_gate: bool out", "carrier ls_gate: bool out init false")];
-const DITHERED_WIDTH_PLAIN: [(&str, &str); 4] = [
-    ("fn \"dithered_width~01\"(duty: u12, frame: flagged<u3>) -> flagged<u9>", "fn \"dithered_width~11\"(duty: flagged<u12>, frame: flagged<u3>) -> flagged<u9>"),
-    ("  local coarse: u9", "  local coarse: flagged<u9>"),
-    ("  local duty: u12", "  local duty: flagged<u12>"),
-    ("  local fine: u3", "  local fine: flagged<u3>"),
-];
-const SETPOINT_PLAIN: (&str, &str) = ("if data.is_known() { let d = data.known_or(0u8); code <- d.min(168u8) } else { () }", "code <- data.min(168u8)");
-const RAMP_PLAIN: (&str, &str) = ("(!run.known_or(false))", "(!run)");
-const PID_PLAIN_READS: [(&str, &str); 4] = [
-    ("    local e: i16", "    local e: flagged<i16>"),
-    ("    local p: i32", "    local p: flagged<i32>"),
-    ("(!run.known_or(false))", "(!run)"),
-    ("(reference.known_or(0u10) as i16) - (meas.known_or(1023u10) as i16)", "(reference as i16) - (meas as i16)"),
-];
+/// `Pid`'s `windup` joins plain comparisons: `&&` and `||` where the fixture, over values that may be unknown, has `&` and `|`.
+const PID_WINDUP: (&str, &str) = ("(((u > u_max) & (e > 0i16)) | ((u < 0i32) & (e < 0i16)))", "(((u > u_max) && (e > 0i16)) || ((u < 0i32) && (e < 0i16)))");
+const SETPOINT_PLAIN: (&str, &str) = ("if data.is_known() { let d = data; code <- d.min(168u8) } else { () }", "code <- data.min(168u8)");
 
 /// Replace `from` by `to` in `lines`, which must hold `from` exactly once: a listed difference is
 /// one place, never a blanket rewrite.
@@ -101,13 +91,12 @@ fn six_slice_bodies_equal_their_hand_built_fixtures() {
     // (SetpointReg `wr`, RefRamp `tick`, Adc `sample`, Pid `tick`) and Pid also by the fold.
     let ir = buck_ir();
     let print = ir.print_structural();
-    let mut pid = vec![stdlib_rise_guard("tick"), pair(PID_FOLD)];
-    pid.extend(PID_PLAIN_READS.map(pair));
+    let pid = vec![stdlib_rise_guard("tick"), pair(PID_FOLD), pair(PID_WINDUP)];
     let cases: [(&str, &str, Vec<(String, String)>); 6] = [
         ("osc", "Osc", vec![]),
         ("gate_driver", "GateDriver", GATE_DRIVER_INITIAL_VALUES.map(pair).to_vec()),
         ("setpoint_reg", "SetpointReg", vec![stdlib_rise_guard("wr"), pair(SETPOINT_PLAIN)]),
-        ("ref_ramp", "RefRamp", vec![stdlib_rise_guard("tick"), pair(RAMP_PLAIN)]),
+        ("ref_ramp", "RefRamp", vec![stdlib_rise_guard("tick")]),
         ("adc", "Adc", vec![stdlib_rise_guard("sample")]),
         ("pid", "Pid", pid),
     ];
@@ -154,17 +143,19 @@ fn dpwm_and_a2d_differ_only_as_listed() {
     ];
     let elaborated = item(&print, "body Dpwm");
     let mut expected = replace_once(&item(&fixture("dpwm"), "body Dpwm"), &stdlib_rise_guard("clk"));
-    for difference in DPWM_PLAIN_READS {
+    for difference in DPWM_PLAIN {
         expected = replace_once(&expected, &pair(difference));
     }
     assert_same("Dpwm", &expected, &without(&elaborated, &dpwm_extras));
-    // Its two functions are the fixture's, `dithered_width` for the flag pattern its call now has.
-    let mut dithered = item(&fixture("dpwm"), "fn \"dithered_width~01\"");
-    for difference in DITHERED_WIDTH_PLAIN {
-        dithered = replace_once(&dithered, &pair(difference));
+    // Its two functions are the fixture's, named without the flag pattern the fixture's call had.
+    let dithered = [pair(("\"dithered_width~01\"", "dithered_width")), pair(("\"rev3~1\"", "rev3"))];
+    let mut expected = item(&fixture("dpwm"), "fn \"dithered_width~01\"");
+    for difference in &dithered {
+        expected = replace_once(&expected, difference);
     }
-    assert_same("dithered_width", &dithered, &item(&print, "fn \"dithered_width~11\""));
-    assert_same("rev3", &item(&fixture("dpwm"), "fn \"rev3~1\""), &item(&print, "fn \"rev3~1\""));
+    assert_same("dithered_width", &expected, &item(&print, "fn dithered_width"));
+    let renamed = replace_once(&item(&fixture("dpwm"), "fn \"rev3~1\""), &pair(("\"rev3~1\"", "rev3")));
+    assert_same("rev3", &renamed, &item(&print, "fn rev3"));
 
     // A2D (the fixture `comparator`) adds the `init` of each `above`: two signals and an event for
     // each, numbered after the cross, so the second cross is E2 where the fixture has E1. Each

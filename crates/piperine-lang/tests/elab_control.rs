@@ -41,8 +41,8 @@ fn let_mut_lowers_to_mutable_locals_and_assignments() {
 
 #[test]
 fn loops_lower_to_the_loops_of_the_ir() {
-    // §1.8.7 to §1.8.12: every form stays the IR's own loop in a function, where no decision may
-    // be unknown; `break value` gives the loop its value's type.
+    // §1.8.7 to §1.8.12: every form stays the IR's own loop in a function;
+    // `break value` gives the loop its value's type.
     let items = "fn work(n: u8) -> u8 {\n\
                  let s = 0u8; let i = 0u8;\n\
                  while i < n { s += i; i += 1; }\n\
@@ -56,12 +56,12 @@ fn loops_lower_to_the_loops_of_the_ir() {
         assert!(text.contains(printed), "`{printed}` in:\n{text}");
     }
 
-    // In a reaction, whose values may be unknown, a `for` that leaves early is the `while` that
-    // counts a mutable local, taking the next value before the body so `continue` still counts.
+    // In a reaction a `for` that leaves early is the IR's own `for` as well: no value may be unknown (§3.3), so
+    // there is no counting `while` to merge.
     let body = "let hit = 0u8; for k in 0..9u8 { if k > 3 { hit = k; break; } } q <- hit;";
     let ir = Elab::ir(&ElabSource::reacting("", body), "Top");
     let text = ir.print_structural();
-    assert!(text.contains("while") && !text.contains("for k in"), "{text}");
+    assert!(text.contains("for k in") && !text.contains("while"), "{text}");
 }
 
 #[test]

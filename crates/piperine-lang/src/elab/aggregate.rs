@@ -9,13 +9,11 @@
 //! order, so assigning, passing or returning it copies it (§1.4.6). The fields of a struct
 //! expression are evaluated in the order they are written (§1.3.11): when that is not declaration
 //! order and a field is more than a read, each field is bound to a local first, in written order.
-//! A part that may be unknown is refused by name: a struct or a tuple is not a value a flag rides on.
 
 use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Place, Projection, Stmt, TypeId, ValueType};
 
 use super::compound::EnumLayout;
 use super::elaborator::Elaboration;
-use super::known::Flag;
 use super::lower::Scope;
 use super::patterns::{PatternTest, Subject};
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FieldInit, FieldPatNode, PatId, PatKind, Resolution};
@@ -172,18 +170,13 @@ impl Elaboration<'_, '_> {
         self.lower_expr(scope, value)
     }
 
-    /// One part lowered: a value that may be unknown cannot be a part, which is a plain value.
+    /// One part lowered.
     fn lower_part(&mut self, scope: &mut Scope, value: ExprId, wanted: Option<&ValueType>) -> Option<LoweredExpr> {
         // An `Option` held as one value is the pair of value code packed (D8).
         if let Some(option @ ValueType::Option(_)) = wanted {
             return self.lower_stored(scope, value, option);
         }
-        let lowered = self.lower_expr(scope, value)?;
-        if self.flag(lowered) == Flag::Flagged && wanted.is_none_or(|w| Flag::of(w) == Flag::Plain) {
-            self.unsupported(scope.file, self.design.expr_node(value).span, "a field of a struct or a tuple whose value may be unknown");
-            return None;
-        }
-        Some(lowered)
+        self.lower_expr(scope, value)
     }
 
     /// `recv.name`, the field of a struct or the component of a tuple, as a value of type `ty`.
@@ -254,14 +247,12 @@ impl Elaboration<'_, '_> {
         Some(ty)
     }
 
-    /// `[a, b, ..]`: an array of its operands. When one may be unknown every element is held as a
-    /// value that may be (a known one merged with itself), so the array has one element type.
+    /// `[a, b, ..]`: an array of its operands.
     pub(super) fn lower_array(&mut self, scope: &mut Scope, items: &[ExprId], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let mut parts = Vec::with_capacity(items.len());
         for item in items {
             parts.push(self.lower_expr(scope, *item)?);
         }
-        let parts = self.alike(scope, parts);
         let element = match parts.first() {
             Some(first) => self.type_of(*first),
             None => match &ty {
@@ -292,7 +283,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `base[index]`: the element, or, for a range index with constant bounds, the array of the
-    /// elements in range. An index that may be unknown needs elements that may be (§3.3.13).
+    /// elements in range.
     pub(super) fn lower_index(&mut self, scope: &mut Scope, expr: ExprId, base: ExprId, index: ExprId, origin: Origin) -> Option<LoweredExpr> {
         let span = self.design.expr_node(expr).span;
         let whole = self.lower_expr(scope, base)?;
@@ -304,10 +295,6 @@ impl Elaboration<'_, '_> {
             return self.lower_range_index(scope, span, whole, (*element).clone(), length, (lo, hi, inclusive), origin);
         }
         let at = self.lower_expr(scope, index)?;
-        if matches!(self.type_of(at), ValueType::Flagged(_)) && !matches!(*element, ValueType::Flagged(_)) {
-            self.unsupported(scope.file, span, "an index that may be unknown over elements that cannot be");
-            return None;
-        }
         Some(self.emit(Expr::Index { expr: whole, index: at }, *element, origin))
     }
 
@@ -336,23 +323,6 @@ impl Elaboration<'_, '_> {
             })
             .collect();
         Some(self.emit(Expr::Array(parts), ValueType::Array(Box::new(element), high - low), origin))
-    }
-
-    /// `parts` held as one type: when one may be unknown, each is merged with itself so all may be.
-    fn alike(&mut self, scope: &mut Scope, parts: Vec<LoweredExpr>) -> Vec<LoweredExpr> {
-        if !parts.iter().any(|part| self.flag(*part) == Flag::Flagged) {
-            return parts;
-        }
-        parts
-            .into_iter()
-            .map(|part| {
-                let base = match self.type_of(part) {
-                    ValueType::Flagged(inner) => *inner,
-                    other => other,
-                };
-                self.coerced_to(scope, part, &Flag::Flagged.wrap(base))
-            })
-            .collect()
     }
 
     /// The tests of a tuple, tuple-struct or struct pattern over `subject` of the aggregate type
@@ -407,10 +377,6 @@ impl Elaboration<'_, '_> {
         };
         let position = EnumLayout::variant_tag(self.design, variant)? as u32;
         let whole = self.read_subject(scope, subject, origin.clone())?;
-        if matches!(self.type_of(whole), ValueType::Flagged(_)) {
-            self.unsupported(scope.file, node.span, "a variant with fields of a value that may be unknown");
-            return None;
-        }
         let part_types = self.type_arena.variant_field_types(*id, position).to_vec();
         let fields = match &node.kind {
             PatKind::TupleStruct { pats, .. } => self.positional(pats, part_types.len()),

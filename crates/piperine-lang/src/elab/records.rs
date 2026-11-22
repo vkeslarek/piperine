@@ -72,10 +72,7 @@ impl Elaboration<'_, '_> {
                 ok = false;
                 continue;
             };
-            let ty = match self.type_of(value) {
-                piperine_ir::ValueType::Flagged(inner) => *inner,
-                other => other,
-            };
+            let ty = self.type_of(value);
             let fields_of = &mut self.structure.streams[index].fields;
             let at = match fields_of.iter().position(|f| f.name == field.name.text) {
                 Some(at) => at,

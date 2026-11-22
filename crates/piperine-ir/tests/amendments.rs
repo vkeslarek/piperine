@@ -646,9 +646,8 @@ fn a_previous_value_read_prints_and_checks() {
     assert_eq!(edge.previous_reads(Target::Reaction(0)), Vec::<u32>::new());
     assert_eq!(edge.dependencies(Target::Guard(1)), Deps::default());
 
-    // `analog` reads a previous value only as the receiver of a flag read, as it reads a carrier
-    // (§3.3.5); a carrier out of range and a read typed against its form are entries too. One entry
-    // each: `if clk.prev().high() { 1.0 } else { 2.0 }` is accepted, the bare read is not.
+    // a carrier out of range and a read typed against its form are entries; a read of the previous value in
+    // `analog` is as plain as any other (§3.3.6).
     const B: &str = "bad.msl";
     let mut b = IrBuilder::new();
     let nodes = Design::ports(&mut b, B);
@@ -688,10 +687,9 @@ fn a_previous_value_read_prints_and_checks() {
         assert_eq!(hits.len(), 1, "{what}: {broken:#?}");
         assert_eq!(hits[0].origin.line, line, "{what}");
     };
-    one("`analog` reads the previous value of carrier clk outside `known_or`, `is_known` and `high` (§3.3.5)", 3);
     one("previous value of carrier 9, out of range (1 carriers)", 4);
-    one("expression is typed flagged<f64>, its form gives flagged<bool>", 5);
-    assert_eq!(broken.len(), 3, "{broken:#?}");
+    one("expression is typed flagged<f64>, its form gives bool", 5);
+    assert_eq!(broken.len(), 2, "{broken:#?}");
 }
 
 /// A parent that hands its own param to a child, beside one that gives a constant.

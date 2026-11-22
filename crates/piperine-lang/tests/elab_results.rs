@@ -112,7 +112,7 @@ fn value_inputs_are_substituted_at_each_read() {
     let ps = body(&ir, "PowerSwitch");
     let x = index_of(&ps, "gate.x");
     let analog = analog_exprs(&ir, &ps);
-    assert!(analog.iter().any(|e| matches!(ir.expr(*e), Expr::KnownOr { value, .. } if ir.expr(*value) == &Expr::Carrier(x))), "`x.known_or(0.0)` reads `gate.x`");
+    assert!(analog.iter().any(|e| ir.expr(*e) == &Expr::Carrier(x)), "`x` reads `gate.x`");
     assert!(analog.iter().any(|e| ir.expr(*e) == &Expr::Env(Env::Time)) && analog.iter().any(|e| ir.expr(*e) == &Expr::Env(Env::Static)), "the result reads `now()` and `analysis(Static)`");
     let tsw = ps.params().iter().position(|p| p.name == "tsw").expect("tsw") as u32;
     // `dt <- if to > y { tr.unwrap_or(0.0) } else if to < y { tf.unwrap_or(0.0) } else { 0.0 }`.

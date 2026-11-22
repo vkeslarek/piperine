@@ -1025,7 +1025,7 @@ impl<'a> Printer<'a> {
                 let args: Option<Vec<ValueType>> = args.iter().map(ty).collect();
                 Typing::math(&args?.iter().collect::<Vec<_>>())
             }
-            Expr::Carrier(i) | Expr::Previous(i) => scope.carriers.get(*i as usize).map(|c| ValueType::Flagged(Box::new(c.ty.clone()))),
+            Expr::Carrier(i) | Expr::Previous(i) => scope.carriers.get(*i as usize).map(|c| Typing::read_of(&c.ty, &data.ty)),
             Expr::KnownOr { value, default } => Typing::known_or(&ty(value)?, &ty(default)?),
             Expr::IsKnown(value) => Typing::flag_read(false, &ty(value)?),
             Expr::High(value) => Typing::flag_read(true, &ty(value)?),

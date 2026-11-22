@@ -840,9 +840,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `source_explicit::control_on_a_carrier_runs_one_path`, `settle_runs_as_before`, `an_event_read_is_a_bool`, `a_false_guard_runs_nothing` pass
-- [ ] `suite_hygiene::retired_unknown_codes_are_raised_nowhere` passes
-- [ ] Gate check passes: Full
+- [x] `source_explicit::control_on_a_carrier_runs_one_path`, `settle_runs_as_before`, `an_event_read_is_a_bool`, `a_false_guard_runs_nothing` pass
+- [x] `suite_hygiene::retired_unknown_codes_are_raised_nowhere` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

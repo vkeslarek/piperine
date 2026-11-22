@@ -53,13 +53,11 @@ impl Typing {
         Typing::scalar(t) || matches!(t, ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Struct(_) | ValueType::Option(_))
     }
 
-    /// The type of a read of a carrier holding `held`: flagged, as every read may be unknown
-    /// (§3.3.1). A tuple, an array, a struct or an `Option` rides no flag in value code, so its read
-    /// is the value (unknown reads as the default) unless `written` says the read is flagged, as
-    /// the receiver of a flag read (`level`, `is_known`, `known_or`) is.
+    /// The type of a read of a carrier holding `held`: the value (a carrier always holds one, §3.3.4).
+    /// A read `written` as flagged is still accepted until the flagged type leaves the IR (`explicit-unknowns` T32).
     pub(crate) fn read_of(held: &ValueType, written: &ValueType) -> ValueType {
         let flagged = ValueType::Flagged(Box::new(held.clone()));
-        if Typing::scalar(held) || *written == flagged { flagged } else { held.clone() }
+        if *written == flagged { flagged } else { held.clone() }
     }
 
     /// The operators M1 does not have: they are typed by these rules whatever their operands.

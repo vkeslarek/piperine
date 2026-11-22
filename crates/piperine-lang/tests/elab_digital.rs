@@ -223,13 +223,13 @@ fn a_definition_is_a_drive() {
     let text = body_text(&ir, "GateDriver");
     assert!(text.contains("  drive hs_gate = (hs_cmd & (!ls_cmd)) after tpd\n  drive ls_gate = (ls_cmd & (!hs_cmd)) after tpd\n"), "{text}");
     // An undelayed definition has no `after`: `RefRamp`'s `at_target = reference == target;`, a
-    // comparison of two carrier reads, which may be unknown (§3.3).
+    // comparison of two carrier reads.
     let ir = Elab::ir(&buck::item("control.msl", "pub module RefRamp("), "RefRamp");
     let read = Read { ir: &ir };
     let body = read.body("RefRamp");
     assert_eq!(body.drives().len(), 1);
     assert_eq!(body.drives()[0].after, None);
-    assert_eq!(ir.expr_type(body.drives()[0].value), &ValueType::Flagged(Box::new(ValueType::Bool)));
+    assert_eq!(ir.expr_type(body.drives()[0].value), &ValueType::Bool);
     assert!(body_text(&ir, "RefRamp").contains("  drive at_target = (reference == target)\n"));
 }
 
@@ -262,7 +262,7 @@ fn an_expression_at_an_in_port_is_a_carrier_and_a_drive() {
     let drives: Vec<_> = body.drives().iter().filter(|d| d.carrier == at as u32).collect();
     assert_eq!(drives.len(), 1, "one drive of `ramp.target`");
     assert_eq!(drives[0].after, None);
-    assert!(body_text(&ir, "Controller").contains("  drive ramp.target = \"target_codes~1\"(setpoint)\n"), "{}", body_text(&ir, "Controller"));
+    assert!(body_text(&ir, "Controller").contains("  drive ramp.target = target_codes(setpoint)\n"), "{}", body_text(&ir, "Controller"));
     let ramp = body.children().iter().position(|c| c.name == "ramp").expect("the child `ramp`");
     let setpoint = body.carriers().iter().position(|c| c.name == "setpoint").map(|i| i as u32);
     let (done, run, reference, at_target) = ["done", "run", "reference", "at_target"].map(|n| body.carriers().iter().position(|c| c.name == n).map(|i| i as u32)).into();
@@ -276,32 +276,18 @@ fn an_expression_at_an_in_port_is_a_carrier_and_a_drive() {
 }
 
 /// A known or unknown `bool`: `None` is unknown (§3.3).
-type Level = Option<bool>;
-
 /// The value of a lowered event guard over the previous and the present value of the carrier
-/// `c` it reads: the flag-total reads of §3.3.4 as the spec defines them. Any other form is a
-/// failure of the test, never a guess.
-fn guard_value(ir: &Ir, e: piperine_ir::ExprId, c: u32, prev: Level, cur: Level) -> Level {
+/// `c` it reads. Any other form is a failure of the test, never a guess.
+fn guard_value(ir: &Ir, e: piperine_ir::ExprId, c: u32, prev: bool, cur: bool) -> bool {
     use piperine_ir::{BinaryOp, Expr, UnaryOp};
     let value = |e| guard_value(ir, e, c, prev, cur);
     match ir.expr(e) {
-        Expr::Bool(b) => Some(*b),
+        Expr::Bool(b) => *b,
         Expr::Carrier(k) if *k == c => cur,
         Expr::Previous(k) if *k == c => prev,
-        Expr::IsKnown(x) => Some(value(*x).is_some()),
-        Expr::High(x) => Some(value(*x) == Some(true)),
-        Expr::KnownOr { value: x, default } => value(*x).or(value(*default)),
-        Expr::Unary { op: UnaryOp::Not, expr } => value(*expr).map(|b| !b),
-        Expr::Binary { op: BinaryOp::BitAnd, lhs, rhs } => match (value(*lhs), value(*rhs)) {
-            (Some(false), _) | (_, Some(false)) => Some(false),
-            (Some(true), Some(true)) => Some(true),
-            _ => None,
-        },
-        Expr::Binary { op: BinaryOp::BitOr, lhs, rhs } => match (value(*lhs), value(*rhs)) {
-            (Some(true), _) | (_, Some(true)) => Some(true),
-            (Some(false), Some(false)) => Some(false),
-            _ => None,
-        },
+        Expr::Unary { op: UnaryOp::Not, expr } => !value(*expr),
+        Expr::Binary { op: BinaryOp::And, lhs, rhs } => value(*lhs) && value(*rhs),
+        Expr::Binary { op: BinaryOp::Or, lhs, rhs } => value(*lhs) || value(*rhs),
         other => panic!("a form an edge guard does not hold: {other:?}"),
     }
 }
@@ -336,14 +322,13 @@ fn changed_rise_fall_and_cross_lower_to_events() {
     assert_eq!(ir.expr_type(rise), &ValueType::Bool, "the guard is never unknown");
     assert_eq!(ir.expr_type(fall), &ValueType::Bool);
     let text = ir.print_structural();
-    assert!(text.contains("guard ((!c.prev().high()) & ((!c.is_known()) | c.known_or(false)))"), "{text}");
-    assert!(text.contains("guard ((!(c.prev().is_known() & (!c.prev().known_or(true)))) & (!c.high()))"), "{text}");
-    // IEEE 1364 posedge and negedge (§22.1): rise on 0→1, 0→x, x→1; fall on 1→0, 1→x, x→0; neither
-    // on any other change.
-    let (lo, hi, x) = (Some(false), Some(true), None);
-    for (prev, cur, rises, falls) in [(lo, hi, true, false), (lo, x, true, false), (x, hi, true, false), (hi, lo, false, true), (hi, x, false, true), (x, lo, false, true)] {
-        assert_eq!(guard_value(&ir, rise, c, prev, cur), Some(rises), "rise on {prev:?} -> {cur:?}");
-        assert_eq!(guard_value(&ir, fall, c, prev, cur), Some(falls), "fall on {prev:?} -> {cur:?}");
+    assert!(text.contains("guard ((!c.prev()) && c)"), "{text}");
+    assert!(text.contains("guard (c.prev() && (!c))"), "{text}");
+    // §22.1 (D9): rise on false to true, fall on true to false; neither on any other change.
+    let (lo, hi) = (false, true);
+    for (prev, cur, rises, falls) in [(lo, hi, true, false), (hi, lo, false, true), (lo, lo, false, false), (hi, hi, false, false)] {
+        assert_eq!(guard_value(&ir, rise, c, prev, cur), rises, "rise on {prev:?} -> {cur:?}");
+        assert_eq!(guard_value(&ir, fall, c, prev, cur), falls, "fall on {prev:?} -> {cur:?}");
     }
     // `cross(e)` watches `e`.
     let EventSource::Cross { e: watched, .. } = events[3].source else { panic!("a cross: {:?}", events[3].source) };
@@ -387,11 +372,10 @@ fn a_guard_splits_into_its_discrete_and_continuous_parts() {
     let probe = wrapped(1);
     assert!(matches!(ir.expr(probe), Expr::Binary { .. }) && ir.print_structural().contains("if (probe(a, gnd) > 0.5) {"));
     assert_eq!(ir.expr(m.events()[1].guard.expect("en")), &Expr::Carrier(en), "`en` on the event");
-    // A guard that may be unknown is kept as written: no `known_or` is added, the generated code
-    // decides it (ir-rust RS-11 AC 5).
-    let flagged = m.events()[2].guard.expect("a guard");
-    assert_eq!(ir.expr(flagged), &Expr::Carrier(en));
-    assert_eq!(ir.expr_type(flagged), &ValueType::Flagged(Box::new(ValueType::Bool)));
+    // A guard that is a carrier is kept as written (ir-rust RS-11 AC 5).
+    let carrier_guard = m.events()[2].guard.expect("a guard");
+    assert_eq!(ir.expr(carrier_guard), &Expr::Carrier(en));
+    assert_eq!(ir.expr_type(carrier_guard), &ValueType::Bool);
     assert!(!matches!(ir.stmt(m.reactions()[2].stmts[0]), Stmt::Expr(_)), "no `if` without a continuous conjunct");
 }
 
@@ -492,10 +476,9 @@ fn an_event_read_as_a_bool_in_a_body_lowers_to_fired() {
 }
 
 /// The text of a golden print of `crates/piperine-ir/tests/golden/buck/` (`ir-rust` T29): the
-/// slice transcribed by hand from the buck's `.msl`.
+/// slice transcribed by hand from the buck's `.msl`, without the flag the explicit model removed.
 fn golden(name: &str) -> String {
-    let path = format!("{}/../piperine-ir/tests/golden/buck/{name}.txt", env!("CARGO_MANIFEST_DIR"));
-    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+    buck::golden(name)
 }
 
 /// The lines of the reaction `R<k>` of a body print: its header, its locals and its statements.
@@ -546,13 +529,11 @@ fn a_reaction_body_lowers_in_source_order() {
     // its one listed difference, `DUTY_MAX as i32` folded to `2880i32` (DIG-08 AC 2).
     let src = format!("{}\n{}", buck::spec(), buck::module_with_digital("control.msl", "Pid"));
     let ir = Elab::ir(&src, "Pid");
-    // `Pid` reads `run`, `reference` and `meas` directly (explicit-unknowns T24): the fixture's `known_or` reads are plain
+    // `Pid` reads `run`, `reference` and `meas` directly (explicit-unknowns T24, T31): the fixture, the earlier
+    // transcription, is read without its flag (`golden`) and joins `windup` with `&&` and `||`
     let expected = reaction_text(&golden("pid"), 0)
         .replace("(2880u12 as i32)", "2880i32")
-        .replace("(!run.known_or(false))", "(!run)")
-        .replace("(reference.known_or(0u10) as i16) - (meas.known_or(1023u10) as i16)", "(reference as i16) - (meas as i16)")
-        .replace("    local e: i16", "    local e: flagged<i16>")
-        .replace("    local p: i32", "    local p: flagged<i32>");
+        .replace("(((u > u_max) & (e > 0i16)) | ((u < 0i32) & (e < 0i16)))", "(((u > u_max) && (e > 0i16)) || ((u < 0i32) && (e < 0i16)))");
     assert_eq!(reaction_text(&body_text(&ir, "Pid"), 0), expected);
 
     // `Dpwm`'s reaction (dpwm.msl), statement by statement against the same transcription; the
@@ -565,13 +546,15 @@ fn a_reaction_body_lowers_in_source_order() {
     let dpwm: String = lines.iter().enumerate().filter(|(k, _)| *k != at && !(*k + 1 == at && lines[*k].trim_start().starts_with("///"))).map(|(_, l)| *l).collect::<Vec<_>>().join("\n");
     let src = format!("{}\n{}\n{}\n{dpwm}", buck::spec(), buck::item("dpwm.msl", "fn rev3"), buck::item("dpwm.msl", "fn dithered_width"));
     let ir = Elab::ir(&src, "Dpwm");
-    // `Dpwm` reads `run`, `duty`, `oc` and `sink_oc` directly (explicit-unknowns T24): the fixture's `known_or` reads are plain
+    // `Dpwm` reads `run`, `duty`, `oc` and `sink_oc` directly (explicit-unknowns T24, T31): the fixture is read without
+    // its flag, and its `&` and `|` over values that may be unknown are `&&` and `||` over plain ones
     let expected = reaction_text(&golden("dpwm"), 0)
-        .replace("    local enabled: bool", "    local enabled: flagged<bool>")
-        .replace("let enabled = run.known_or(false)", "let enabled = run")
-        .replace("\"dithered_width~01\"(duty.known_or(0u12), (frame + 1u3))", "\"dithered_width~11\"(duty, (frame + 1u3))")
-        .replace("(hs & oc.known_or(true))", "(hs & oc)")
-        .replace("(ls & sink_oc.known_or(true))", "(ls & sink_oc)");
+        .replace("\"dithered_width~01\"(duty, (frame + 1u3))", "dithered_width(duty, (frame + 1u3))")
+        .replace("((!wrap) & (hs_cut | (hs & oc)))", "((!wrap) && (hs_cut || (hs && oc)))")
+        .replace("((!wrap) & (ls_cut | (ls & sink_oc)))", "((!wrap) && (ls_cut || (ls && sink_oc)))")
+        .replace("((enabled & (!hs_trip)) & (next < w))", "((enabled && (!hs_trip)) && (next < w))")
+        .replace("(hs & (!hs_next))", "(hs && (!hs_next))")
+        .replace("((((enabled & (!hs_next)) & (!ls_trip)) & (next >= (off_at + 4u9))) & (next < 396u9))", "((((enabled && (!hs_next)) && (!ls_trip)) && (next >= (off_at + 4u9))) && (next < 396u9))");
     assert_eq!(reaction_text(&body_text(&ir, "Dpwm"), 0), expected);
 }
 

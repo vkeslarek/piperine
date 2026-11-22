@@ -71,10 +71,7 @@ impl Elaboration<'_, '_> {
                 }
             },
             DeclKind::Port(_) | DeclKind::Signal(_) => match self.frame_carrier(frame, item) {
-                Some(index) => {
-                    let read = self.carrier_read(index, origin.clone());
-                    Some(self.analog_value(scope, read, origin))
-                }
+                Some(index) => Some(self.carrier_read(index, origin)),
                 None => {
                     self.unsupported(scope.file, span, "a node of a child read as a value");
                     None

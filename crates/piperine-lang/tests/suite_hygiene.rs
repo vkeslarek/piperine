@@ -1188,13 +1188,6 @@ impl RemovedUnknownForms {
     /// The spellings of the earlier flag: `Unknown`, `known_or`, `is_known`, `.known()`, `.high()`, `.level(` and `merge(`.
     const NAMES: [&'static str; 7] = ["Unknown", "known_or", "is_known", ".known()", ".high()", ".level(", "merge("];
 
-    /// The `.msl` files that still use a removed name, with the task that removes it: a plain read of a carrier inside a struct, a variant or a tuple needs the elaborator without the
-    /// flag (T31). The list shrinks to nothing there; `the_removed_name_exceptions_are_still_needed` fails on a stale entry.
-    const PENDING: [(&'static str, &'static str); 2] = [
-        ("crates/piperine-parity/tests/aggregates/carriers.msl", "T31: a plain carrier read inside `Pair { .. }` and a `match` on a carrier"),
-        ("crates/piperine-parity/tests/aggregates/normal.msl", "T31: a plain carrier read as the argument of a tuple-returning call"),
-    ];
-
     /// The `.msl` files of std, the examples and every test tree, as `(repo-relative path, text)`.
     fn sources() -> Vec<(String, String)> {
         let root = repo_root();
@@ -1286,21 +1279,15 @@ impl RemovedUnknownForms {
 #[test]
 fn no_source_uses_a_removed_unknown_form() {
     // EU-20 AC 1 (C86): no `.msl` under std, examples, tests or crates/*/tests spells `Unknown`, `known_or`, `is_known`,
-    // `.known()`, `.high()`, `.level(` or `merge(` in code, except the three files PENDING names, each with its task
+    // `.known()`, `.high()`, `.level(` or `merge(` in code
     let mut offences = Vec::new();
     for (path, text) in RemovedUnknownForms::sources() {
         let spelled = RemovedUnknownForms::spelled(&text);
-        if !spelled.is_empty() && !RemovedUnknownForms::PENDING.iter().any(|(pending, _)| *pending == path) {
+        if !spelled.is_empty() {
             offences.push(format!("{path} spells {spelled:?}"));
         }
     }
     assert!(offences.is_empty(), "sources that use a removed unknown form:\n  {}", offences.join("\n  "));
-    // the exceptions are honest: each still spells a removed name
-    let sources = RemovedUnknownForms::sources();
-    for (pending, why) in RemovedUnknownForms::PENDING {
-        let still = sources.iter().any(|(path, text)| path == pending && !RemovedUnknownForms::spelled(text).is_empty());
-        assert!(still, "{pending} spells no removed name now: drop it from PENDING ({why})");
-    }
 }
 
 #[test]

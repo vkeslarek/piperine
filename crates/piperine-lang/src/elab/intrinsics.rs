@@ -12,7 +12,6 @@
 use piperine_ir::{Expr, ExprId as LoweredExpr, Origin, ValueType};
 
 use super::elaborator::Elaboration;
-use super::known::Flag;
 use super::lower::Scope;
 use crate::pom::ExprId;
 use crate::types::{Intrinsic, Ty};
@@ -28,13 +27,12 @@ impl Elaboration<'_, '_> {
             }
             (Intrinsic::Cast, [value]) => {
                 let operand = self.lower_expr(scope, *value)?;
-                // an enum target decodes only the tags of its variants, so any other pattern is
-                // `Unknown` and the result may be unknown whatever the operand was
-                let (tags, flag) = match self.types.ty(expr) {
-                    Some(Ty::Enum(decl)) => (self.types.enum_tag(*decl).map(|t| t.discriminants.clone()), Flag::Flagged),
-                    _ => (None, self.flag(operand)),
+                // an enum target decodes the tags of its variants
+                let tags = match self.types.ty(expr) {
+                    Some(Ty::Enum(decl)) => self.types.enum_tag(*decl).map(|t| t.discriminants.clone()),
+                    _ => None,
                 };
-                Some(self.emit(Expr::LevelCast { expr: operand, to: ty.clone(), tags }, flag.wrap(ty), origin))
+                Some(self.emit(Expr::LevelCast { expr: operand, to: ty.clone(), tags }, ty, origin))
             }
             _ => {
                 self.unsupported(scope.file, self.design.expr_node(expr).span, "a function of §22.1 called with the wrong number of arguments");

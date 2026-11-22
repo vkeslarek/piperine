@@ -1033,7 +1033,6 @@ impl<'a> Checker<'a> {
         let ir = self.ir;
         for body in &ir.bodies {
             self.writes(body);
-            self.analog_reads(body);
             self.ambient_reads(body);
             let item = format!("body {}", body.name);
             for (k, reaction) in body.reactions.iter().enumerate() {
@@ -1157,40 +1156,6 @@ impl<'a> Checker<'a> {
         for c in driven.intersection(&committed) {
             if let Some(carrier) = body.carriers.get(*c as usize) {
                 self.report(format!("{item} carrier {}", carrier.name), carrier.origin.clone(), format!("carrier {} has both a drive and a commit", carrier.name));
-            }
-        }
-    }
-
-    /// §3.3.5: `analog` reads a carrier only as the receiver of `known_or`, `is_known` or `high`.
-    fn analog_reads(&mut self, body: &BodyData) {
-        let Some(analog) = &body.analog else { return };
-        let (exprs, _) = self.reach(analog, &[]);
-        let ir = self.ir;
-        let mut allowed: HashSet<ExprId> = HashSet::new();
-        for e in &exprs {
-            // `level` and `same` read the flag and give a known result for a known index (§3.3.14,
-            // §22.1.4), as `known_or`, `is_known` and `high` do (§3.3.5, §3.3.6)
-            let reads: Vec<ExprId> = match &ir.exprs[e.index()].kind {
-                Expr::KnownOr { value: read, .. } | Expr::IsKnown(read) | Expr::High(read) | Expr::Level { value: read, .. } => vec![*read],
-                Expr::Same { a, b } => vec![*a, *b],
-                _ => Vec::new(),
-            };
-            for read in reads {
-                if matches!(ir.exprs.get(read.index()).map(|d| &d.kind), Some(Expr::Carrier(_) | Expr::Previous(_))) {
-                    allowed.insert(read);
-                }
-            }
-        }
-        for e in exprs {
-            let (c, read) = match ir.exprs[e.index()].kind {
-                Expr::Carrier(c) => (c, "carrier"),
-                Expr::Previous(c) => (c, "the previous value of carrier"),
-                _ => continue,
-            };
-            if !allowed.contains(&e) {
-                let name = body.carriers.get(c as usize).map_or_else(|| format!("{c}"), |c| c.name.clone());
-                let origin = self.expr_origin(e);
-                self.report(format!("body {}", body.name), origin, format!("`analog` reads {read} {name} outside `known_or`, `is_known` and `high` (§3.3.5)"));
             }
         }
     }

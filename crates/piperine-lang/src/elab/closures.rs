@@ -3,14 +3,11 @@
 //! A closure lowers to `Expr::Closure`; the mutable locals it reads are copied where it is written
 //! (`let name$copy = name;` before it), so a later assignment does not reach it: a closure captures
 //! by value. A function's name used as a value is `Expr::FunctionRef`; a call of a local of
-//! function type is `Expr::CallValue`. The IR types a call through a value by its function type, so
-//! an argument that may be unknown goes only where the target is known: a local bound to a function
-//! name selects the flagged variant of that function; any other value refuses the call by name.
+//! function type is `Expr::CallValue`. The IR types a call through a value by its function type.
 
 use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Stmt, StmtId as LoweredStmt, ValueType};
 
 use super::elaborator::Elaboration;
-use super::known::Flag;
 use super::lower::Scope;
 use super::variants::Half;
 use crate::msl::Span;
@@ -73,7 +70,7 @@ impl Elaboration<'_, '_> {
         (copies, lets)
     }
 
-    /// A function's name used as a value: `Expr::FunctionRef` of its variant for known arguments.
+    /// A function's name used as a value: `Expr::FunctionRef` of its function.
     pub(super) fn lower_function_value(&mut self, scope: &mut Scope, function: DeclId, ty: ValueType, span: Span, origin: Origin) -> Option<LoweredExpr> {
         let parameters = self.design.decl_data(function).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::FnParam(_))).count();
         let ValueType::Fn(types, _) = &ty else { return None };
@@ -81,7 +78,7 @@ impl Elaboration<'_, '_> {
             self.unsupported(scope.file, span, "a function with an `Option` parameter or result used as a value");
             return None;
         }
-        let (id, ret) = self.request(function, vec![Flag::Plain; parameters], Half::Whole)?;
+        let (id, ret) = self.request(function, Half::Whole)?;
         let ValueType::Fn(types, _) = ty else { return None };
         Some(self.emit(Expr::FunctionRef(id), ValueType::Fn(types, Box::new(ret)), origin))
     }
@@ -103,9 +100,6 @@ impl Elaboration<'_, '_> {
         for arg in args {
             lowered.push(self.lower_expr(scope, *arg)?);
         }
-        if self.flags(&lowered) == Flag::Flagged {
-            return self.lower_call_to_target(scope, decl, lowered, span, origin);
-        }
         let index = scope.local_index[&decl];
         let callee_ty = scope.locals[index as usize].ty.clone();
         let ValueType::Fn(_, ret) = &callee_ty else {
@@ -115,27 +109,6 @@ impl Elaboration<'_, '_> {
         let ret = (**ret).clone();
         let callee = self.emit(Expr::Local(index), callee_ty, origin.clone());
         Some(self.emit(Expr::CallValue { callee, args: lowered }, ret, origin))
-    }
-
-    /// A call through the local `decl` with an argument that may be unknown: the variant of the
-    /// function the local was bound to, or the call is refused naming it.
-    fn lower_call_to_target(&mut self, scope: &mut Scope, decl: DeclId, args: Vec<LoweredExpr>, span: Span, origin: Origin) -> Option<LoweredExpr> {
-        let Some(function) = scope.fn_targets.get(&decl).copied() else {
-            self.unsupported(scope.file, span, "a call through a function value with an argument that may be unknown");
-            return None;
-        };
-        let pattern: Vec<Flag> = args.iter().map(|a| self.flag(*a)).collect();
-        let (id, ret) = self.request(function, pattern, Half::Whole)?;
-        Some(self.emit(Expr::Call { function: id, args }, ret, origin))
-    }
-
-    /// The function a `let` initializer names, when it is a function's name.
-    pub(super) fn named_function(&self, init: ExprId) -> Option<DeclId> {
-        let ExprKind::Path(path) = &self.design.expr_node(self.peel_parens(init)).kind else { return None };
-        match self.design.path_node(*path).segments.last().map(|s| s.res) {
-            Some(Resolution::Decl(decl)) if matches!(self.design.decl_data(decl).kind, DeclKind::Fn(_)) => Some(decl),
-            _ => None,
-        }
     }
 
     /// Whether the function `decl` returns an `Option`.
