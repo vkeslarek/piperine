@@ -1,5 +1,6 @@
 //! Resolved nets (§22.3): strengths, `Logic`, `Wire`, `tri`, `sum`, the drivers and pass gates.
 
+/// How hard a drive holds its level. Verilog's drive strengths (IEEE 1364), without charge storage.
 #[derive(Repr, PartialEq, PartialOrd)]
 pub enum Strength {
     HighZ,
@@ -16,7 +17,7 @@ pub struct Logic {
 }
 
 impl Logic {
-    pub const Z: Logic = Logic { v: Unknown, s: Strength::HighZ }; // not driving
+    pub const Z: Logic = Logic { v: false, s: Strength::HighZ }; // not driving
     pub fn strong(v: bool) -> Logic {
         Logic { v, s: Strength::Strong }
     }
@@ -40,8 +41,10 @@ impl Logic {
                 x
             } else if x.s < a.s {
                 a
+            } else if a.v == x.v {
+                a
             } else {
-                Logic { v: merge(a.v, x.v), s: a.s }
+                Logic { v: false, s: a.s }
             },
         )
     }
@@ -57,7 +60,7 @@ pub fn tri<T: Repr, const N: usize>(d: [Option<T>; N]) -> Option<T> {
         None,
         |a, x| match (a, x) {
             (None, y) | (y, None) => y,
-            _ => Some(Unknown),
+            _ => None,
         },
     )
 }
@@ -93,7 +96,7 @@ pub module Pulldown(w: Wire) {
 }
 
 pub module Keeper(w: Wire) {
-    signal last: Bit;
+    signal last: Bit = false;
     w = Logic::weak(last);
 }
 

@@ -187,7 +187,10 @@ impl Elaboration<'_, '_> {
             return read;
         }
         let base = *base;
-        let default = self.emit(Expr::Default(base.clone()), base.clone(), origin.clone());
+        let default = match self.zero(&base, origin.clone()) {
+            Some(zero) => zero,
+            None => self.emit(Expr::Default(base.clone()), base.clone(), origin.clone()),
+        };
         self.emit(Expr::KnownOr { value: read, default }, base, origin)
     }
 

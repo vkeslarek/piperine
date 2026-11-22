@@ -87,7 +87,7 @@ fn the_first_commit_is_a_change() {
     let written = stream("WrittenBench", "changed");
     assert_eq!(written.len(), 1, "one change, at the start: {written:?}");
     assert_eq!(written[0].time, 0.0, "at (0, 0)");
-    assert_eq!(integers(&Record { fields: written[0].fields[1..].to_vec(), ..written[0].clone() }), [7], "the value committed");
+    assert_eq!(written[0].fields[1].1, Field::Int(7), "the value committed");
     let defaulted = stream("DefaultBench", "optional_changed");
     assert_eq!(defaulted.len(), 1, "one change, at the start: {defaulted:?}");
     assert_eq!(defaulted[0].time, 0.0, "at (0, 0)");
@@ -128,4 +128,44 @@ fn an_unbound_option_param_waits_for_params_and_io() {
         Err(report) => report.to_string(),
     };
     assert!(refused.contains("P0001") && refused.contains("param of type `Option<u8>` is not supported yet"), "{refused}");
+}
+
+/// The records of the stream `name` the transient of `top` of `edges.msl` made, in order.
+fn edge_stream(top: &str, name: &str) -> Vec<Record> {
+    RUN.records_of("edges.msl", top).into_iter().filter(|record| record.stream == name).collect()
+}
+
+/// The instants of `records`, in nanoseconds rounded to a tenth.
+fn nanoseconds(records: &[Record]) -> Vec<f64> {
+    records.iter().map(|record| (record.time * 1e10).round() / 10.0).collect()
+}
+
+#[test]
+fn a_change_is_a_different_value() {
+    // §5.3.4, D8 (EU-13 AC 1): `s` starts at 1, and is committed 2, 2 and 3 at the first three rising edges. The first
+    // commit of each value is a change; the second 2 is the held value and is not. So `changed()` fires at `(0, 0)`
+    // for the initial 1, after the first edge for 2, and after the third for 3
+    let changes = edge_stream("Bench", "changed");
+    assert_eq!(nanoseconds(&changes), [0.0, 0.5, 2.5], "the instants of the changes: {changes:?}");
+    let values: Vec<Field> = changes.iter().map(|record| record.fields.iter().find(|(name, _)| name == "value").map(|(_, field)| field.clone()).expect("a value field")).collect();
+    assert_eq!(values, [Field::Int(1), Field::Int(2), Field::Int(3)], "the value each change committed");
+}
+
+#[test]
+fn an_edge_is_a_transition() {
+    // §22.1.5 (EU-13 AC 4): `b` starts false and toggles at each rising edge of the clock (0.5, 1.5, 2.5, 3.5 ns).
+    // `rise()` fires on false to true, at the first and third; `fall()` on true to false, at the second and fourth
+    assert_eq!(nanoseconds(&edge_stream("Bench", "rise")), [0.5, 2.5], "false to true");
+    assert_eq!(nanoseconds(&edge_stream("Bench", "fall")), [1.5, 3.5], "true to false");
+}
+
+#[test]
+fn a_carrier_that_starts_high_has_not_risen() {
+    // §5.3, D9 (EU-13 AC 5): a `Bit` that starts true fires no `rise()` at `(0, 0)`, and one that starts false no
+    // `fall()`; nothing commits either, so no edge fires at all. `init()` still fires once, at `(0, 0)`: the first
+    // commit of its carrier is a change (§22.1.6)
+    for stream in ["hi_rise", "hi_fall", "lo_rise", "lo_fall"] {
+        assert!(edge_stream("Quiet", stream).is_empty(), "{stream} fires on no transition");
+    }
+    assert_eq!(nanoseconds(&edge_stream("Quiet", "init")), [0.0], "`init()` fires once at the start");
 }

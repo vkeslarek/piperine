@@ -19,7 +19,7 @@ pub fn fatal(msg: str) {
     emit!("sim", finish = true, failed = true, msg = msg);
 }
 
-/// A condition that must hold. Unknown is reported as unknown, not as a pass.
+/// A condition that must hold: a pass or a failure.
 pub fn require(name: str, pass: bool) {
     emit!("checks", kind = "require", name = name, pass = pass);
 }

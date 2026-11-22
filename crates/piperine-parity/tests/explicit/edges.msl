@@ -1,0 +1,50 @@
+//! Changes and edges (part II §5.3, part VII §22.1.5): a change is a commit of a different value, the first
+//! commit at `(0, 0)` included; an edge is a transition. A 1 GHz oscillator gives the rising edges the
+//! drivers run on (0.5 ns, 1.5 ns, ...).
+
+/// A free-running oscillator, its first change at half a period.
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// Commits 2, 2 and 3 to `s` at the first three rising edges, and toggles `b` at every one.
+module Driver(in clk: Bit, out s: Bit<u8> = 1, out b: Bit = false) {
+    signal k: Bit<u8> = 0;
+}
+digital for Driver {
+    on clk.rise() {
+        k <- k + 1;
+        s <- if k < 2 { 2 } else { 3 };
+        b <- !b;
+    }
+}
+
+/// Announces each change of `s` and each edge of `b`.
+module Watch(in s: Bit<u8>, in b: Bit) {}
+digital for Watch {
+    on s.changed() { emit!("changed", at = now(), value = s); }
+    on b.rise() { emit!("rise", at = now()); }
+    on b.fall() { emit!("fall", at = now()); }
+}
+
+/// A driver and its watcher.
+module Bench() {
+    signal clk: Bit; signal s: Bit<u8>; signal b: Bit;
+    let osc = Osc(clk) { f: 1G };
+    let driver = Driver(clk, s, b);
+    let watch = Watch(s, b);
+}
+
+/// A bit that starts high and one that starts low, which no model commits, and `init()`.
+module Quiet() {
+    signal hi: Bit = true; signal lo: Bit = false;
+    let first = init();
+}
+digital for Quiet {
+    on hi.rise() { emit!("hi_rise"); }
+    on hi.fall() { emit!("hi_fall"); }
+    on lo.rise() { emit!("lo_rise"); }
+    on lo.fall() { emit!("lo_fall"); }
+    on first { emit!("init"); }
+}

@@ -662,9 +662,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `source_explicit::a_change_is_a_different_value`, `an_edge_is_a_transition`, `a_carrier_that_starts_high_has_not_risen` pass
-- [ ] `std_excerpts::every_fence_is_an_excerpt_of_std` and `std_library` pass
-- [ ] Gate check passes: Full
+- [x] `source_explicit::a_change_is_a_different_value`, `an_edge_is_a_transition`, `a_carrier_that_starts_high_has_not_risen` pass
+- [x] `std_excerpts::every_fence_is_an_excerpt_of_std` and `std_library` pass
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

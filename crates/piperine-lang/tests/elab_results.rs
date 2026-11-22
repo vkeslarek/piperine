@@ -88,7 +88,7 @@ fn a_placement_is_hoisted_under_its_name() {
     assert_eq!(hoisted, ["gate.x", "gate.xd", "gate.y0", "gate.y1", "gate.t0", "gate.dt"]);
     assert!(ps.carriers().iter().filter(|c| c.name.starts_with("gate.")).all(|c| c.role == CarrierRole::Signal && c.ty == ValueType::F64));
     let init = |n: &str| ps.carriers()[index_of(&ps, n) as usize].init;
-    assert_eq!((init("gate.t0"), init("gate.dt"), init("gate.y0")), (Some(piperine_ir::Constant::Real(piperine_ir::Real::new(0.0))), Some(piperine_ir::Constant::Real(piperine_ir::Real::new(0.0))), None), "`t0` and `dt` start at 0.0 as `transition` writes");
+    assert_eq!((init("gate.t0"), init("gate.dt"), init("gate.y0")), (Some(piperine_ir::Constant::Real(piperine_ir::Real::new(0.0))), Some(piperine_ir::Constant::Real(piperine_ir::Real::new(0.0))), Some(piperine_ir::Constant::Real(piperine_ir::Real::new(0.0)))), "`t0`, `dt` and `y0` start at 0.0 as `transition` writes");
     // A placement with no `let` of its own is `<module>$<k>`, `k` counting its placements in
     // source order; one inside a hoisted module nests under it: `A2D`'s two `above` heads and the
     // `init` each places.
@@ -208,24 +208,20 @@ fn an_expression_at_a_discrete_input_drives_the_hoisted_carrier() {
 }
 
 #[test]
-fn the_stdlib_d2a_reads_its_match_scrutinee_at_each_test() {
-    // msl-digital T66: the stdlib `D2A` gives `transition` the value `match d.known() {
-    // Some(true) => 1.0, Some(false) => 0.0, None => 0.5 }` at its discrete input, which is a
-    // drive of `ramp.x` (DIG-10 AC 6). A drive has no local, so the `match` is an `if` chain that
-    // reads `d.known()` again at each test (an IR expression has no effect): `Some(true)` is
-    // "known and true", `Some(false)` "known and false", `None` the final `else`.
+fn the_stdlib_d2a_gives_transition_the_level_of_its_input() {
+    // msl-digital T66, as part VII 22.4.1 writes `D2A` since explicit-unknowns T23 (replaces
+    // `the_stdlib_d2a_reads_its_match_scrutinee_at_each_test`, which held `match d.known() { Some(true) => 1.0,
+    // Some(false) => 0.0, None => 0.5 }`): `transition` gets `if d { 1.0 } else { 0.0 }` at its discrete input, a
+    // drive of `ramp.x` (DIG-10 AC 6). A drive has no local, and `d` is read once, by the `if`.
     let ir = Elab::ir("module Top() { signal d: Bit = false; signal a: Electrical; signal vdd: Electrical; let x = D2A(d, a, vdd); }", "Top");
     let d2a = body(&ir, "D2A");
     let (x, d) = (index_of(&d2a, "ramp.x"), index_of(&d2a, "d"));
     let drive = d2a.drives().iter().find(|v| v.carrier == x).expect("the drive of `ramp.x`");
     let reached = reach(&ir, drive.value);
     assert!(!reached.iter().any(|e| matches!(ir.expr(*e), Expr::Local(_) | Expr::Block { .. })), "no local in a drive");
-    assert_eq!(reached.iter().filter(|e| ir.expr(**e) == &Expr::Carrier(d)).count(), 4, "`d` read twice per tested arm");
+    assert_eq!(reached.iter().filter(|e| ir.expr(**e) == &Expr::Carrier(d)).count(), 1, "`d` is read once");
     let text = ir.print_structural();
-    assert!(
-        text.contains("drive ramp.x = if (d.is_known() && (d.known_or(false) == true)) { 1.0 } else { if (d.is_known() && (d.known_or(false) == false)) { 0.0 } else { 0.5 } }"),
-        "{text}"
-    );
+    assert!(text.contains("drive ramp.x = if d { 1.0 } else { 0.0 }"), "{text}");
     // A binding inside `Some` would need a local: `P0001` by name.
     let src = "module M(in d: Bit, a: Electrical) { let r = transition(match d.known() { Some(b) => if b { 1.0 } else { 0.0 }, None => 0.5 }, 0.0, 1n, 1n); }\n\
                analog for M { i(a) +> v(a) * r; }\n\

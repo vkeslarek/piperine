@@ -109,6 +109,11 @@ fn embedded_std_has_no_diagnostics() {
     assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
 }
 
+/// Member slots of `std` that the POM leaves `Unresolved` because the receiver is a carrier whose value has the
+/// method (STD-06 AC 4: a known receiver with no linking rule stays `Unresolved`; the type checker finds the method
+/// of the carried value). Part VII writes `base.unwrap_or(start)` over a `Bit<Option<f64>>` (§22.2.9).
+const UNRESOLVED_METHODS_OF_A_CARRIED_VALUE: [&str; 2] = ["analog::idtmod: `base.unwrap_or(start)`", "analog::idtmod: `base.unwrap_or(start)`"];
+
 #[test]
 fn std_has_no_unresolved_member() {
     let design = embedded();
@@ -120,7 +125,13 @@ fn std_has_no_unresolved_member() {
             }
         }
     }
-    assert!(unresolved.is_empty(), "member slots left Unresolved in std: {unresolved:?}");
+    let mut allowed: Vec<String> = UNRESOLVED_METHODS_OF_A_CARRIED_VALUE.iter().map(|m| m.to_string()).collect();
+    allowed.sort();
+    let mut listed = unresolved.clone();
+    listed.sort();
+    let unexpected: Vec<&String> = unresolved.iter().filter(|u| !UNRESOLVED_METHODS_OF_A_CARRIED_VALUE.contains(&u.as_str())).collect();
+    assert!(unexpected.is_empty(), "member slots left Unresolved in std: {unexpected:?}");
+    assert_eq!(listed, allowed, "every allowed slot is still unresolved: drop the stale entry");
 }
 
 #[test]

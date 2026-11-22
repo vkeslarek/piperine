@@ -318,8 +318,8 @@ fn edges(digital: &str) -> String {
 fn changed_rise_fall_and_cross_lower_to_events() {
     // DIG-09 AC 6, C80. The stdlib's own text (§22.1) is what `rise` and `fall` mean.
     let values = std::fs::read_to_string(format!("{}/std/values.msl", env!("CARGO_MANIFEST_DIR"))).expect("std/values.msl");
-    assert!(values.contains("self.changed() && self.prev().level(0) != Some(true) && self.level(0) != Some(false)"), "the stdlib `rise` is the oracle");
-    assert!(values.contains("self.changed() && self.prev().level(0) != Some(false) && self.level(0) != Some(true)"), "the stdlib `fall` is the oracle");
+    assert!(values.contains("self.changed() && !self.prev() && self"), "the stdlib `rise` is the oracle");
+    assert!(values.contains("self.changed() && self.prev() && !self"), "the stdlib `fall` is the oracle");
     let src = edges("on c.changed() { q <- true; }\non c.rise() { q <- true; }\non c.fall() { q <- false; }\non cross(v(a) - 0.5) { q <- true; }\non d.changed() && d.prev().known_or(0) == 3 { q <- d.prev().is_known(); }");
     let ir = Elab::ir(&src, "Top");
     let read = Read { ir: &ir };
