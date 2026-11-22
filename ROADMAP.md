@@ -39,7 +39,7 @@ Opus or Fable; a feature merges to `main` and upstream when its verifier passes.
 | --- | --- | --- | --- |
 | 1 | `explicit-unknowns` phase A (B4–B7) | No hidden known flag: values are what their type says, `Default` decides whether a carrier may start without a value (`E0187`), `analog` reads binary carriers directly, the ABI without known bytes (still major 1), `E0511`; the spec and Book amendment (B1–B3) merges to `main` first (MD-78, user 2026-11-21) | composite-values |
 | 2 | `generics` | Generic structs, enums, functions and traits, const generics, `Fn` values (L4, L7, L8, L29–L32, L58, S3, X6); tasks amended for value semantics and explicit unknowns (`impl` on natures) | explicit-unknowns A |
-| 3 | `explicit-unknowns` phase B (B8) | Operator traits, `Logic<N>` from source in `std/logic.msl` (L67: `Logic`, `logic`, `matches_bits`) | generics A |
+| 3 | `explicit-unknowns` phase B (B8) | Operator traits, `Logic<N>` from source in `std/logic.msl` (L68: `Logic`, `logic`, `matches_bits`) | generics A |
 | 4 | `analog-operators` | B1–B3 (solver, host: noise per source, the `tnom` key and the `simparam` flag, the jump-step first-order rule, user-nature `abstol`) built and verified, to merge ahead of B4–B7; B4–B7: `simparam`, `tnom`, noise sources and the noise analysis, the `laplace`/`zi` family (L43–L45, L47, L49, U7) | composite-values |
 | 5 | `unknown-semantics-events` | B5: L51, L53, in the explicit model | generics A–B |
 | 6 | `params-and-io` | B5–B6: integer, enum and `Option` params, `E0122`, `parse_table`, `parse_hex`, `table_model` | composite-values, explicit-unknowns A |
