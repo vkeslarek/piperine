@@ -322,8 +322,12 @@ fn flags(args: &[&str]) -> piperine_api::Overrides {
 
 #[test]
 fn tnom_key_and_flag_default_to_27() {
-    // AO-08 AC 1: `--tnom` takes degrees Celsius; the divider has no temperature dependence, so
-    // a run with `--tnom 50` prints the same operating point as the run with none.
+    // AO-08 AC 1: `--tnom` takes degrees Celsius and reaches the run's settings, whatever the
+    // design reads: with the flag the request holds 50, without it the table's value stands, and
+    // a run with the flag prints the divider's operating point like one without (it reads no `tnom`).
+    assert_eq!(flags(&["--tnom", "50"]).tnom, Some(50.0));
+    assert_eq!(flags(&["--tnom", "-10"]).tnom, Some(-10.0));
+    assert_eq!(flags(&[]).tnom, None);
     let dir = tempfile::tempdir().expect("tmp");
     let plain = stdout_of(&piperine_in(dir.path(), &["run", twin("divider.msl").to_str().expect("path"), "--analysis", "op"]));
     let hot = stdout_of(&piperine_in(dir.path(), &["run", twin("divider.msl").to_str().expect("path"), "--analysis", "op", "--tnom", "50"]));

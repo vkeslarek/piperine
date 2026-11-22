@@ -426,8 +426,9 @@ mod tests {
             "piperine", "run", "x", "--bench", "b.msl", "--top", "Top", "--analysis", "transient", "--stop", "1e-3", "--max-step", "1e-6", "--print-step", "1e-5", "--sweep", "v1.dc", "--from", "-1", "--to", "5",
             "--step", "0.5", "--per-decade", "10", "--points", "20", "--print", "a", "--print", "b", "--stream", "s1", "--stream", "s2", "--param", "r1.r=2000", "--param", "c1.c=1e-9", "--backend", "interp",
             "--csv", "o.csv", "--records", "r.jsonl", "--plot", "p.svg", "--all-checks",
-            "--reltol", "1e-4", "--abstol", "1e-13", "--vntol", "2e-6", "--trtol", "5", "--temp", "-40", "--resolution", "1e-12", "--maxrounds", "30", "--maxmicro", "500", "--max-steps", "4000000", "--nodeset", "Top.a=1.5",
+            "--reltol", "1e-4", "--abstol", "1e-13", "--vntol", "2e-6", "--trtol", "5", "--temp", "-40", "--tnom", "50", "--resolution", "1e-12", "--maxrounds", "30", "--maxmicro", "500", "--max-steps", "4000000", "--nodeset", "Top.a=1.5",
             "--nodeset", "Top.b=0", "--input", "v1", "--output", "Top.out", "--wrt", "r1.r", "--wrt", "r2.r", "--period", "1e-3", "--tstab", "5e-3",
+            "--simparam", "gain=2", "--simparam", "bias=0.5",
         ];
         let Ok(Invocation::Run { target, overrides, .. }) = Cli::parse(args) else { panic!("the flags parse as a run") };
         assert_eq!(target.as_deref(), Some("x"));
@@ -457,7 +458,7 @@ mod tests {
             vntol: Some(2e-6),
             trtol: Some(5.0),
             temp: Some(-40.0),
-            tnom: None,
+            tnom: Some(50.0),
             resolution: Some(1e-12),
             maxrounds: Some(30),
             maxmicro: Some(500),
@@ -468,7 +469,7 @@ mod tests {
             period: Some(1e-3),
             tstab: Some(5e-3),
             nodeset: vec![("Top.a".into(), 1.5), ("Top.b".into(), 0.0)],
-            simparam: vec![],
+            simparam: vec![("gain".into(), 2.0), ("bias".into(), 0.5)],
         };
         assert_eq!(overrides, want);
         // a flag not given leaves its field alone, and a bad value is a usage error
