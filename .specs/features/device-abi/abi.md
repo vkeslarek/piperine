@@ -5,6 +5,12 @@ blocker, plus the fixes `critique_v3.md` asked for before closing. Complete and 
 Nothing here has been compiled; §15 lists the language-spec amendments that await a decision. Home: crate `piperine-abi`
 (no dependency), the only crate a device links against.
 
+**Unreleased.** This ABI has had no release (user, 2026-11-21: "ABI pode continuar major 1 pq
+não fizemos release ainda"). Until the first release it changes in place: `MAJOR` stays 1, the
+symbol stays `piperine_abi_1`, and a compiled model is always rebuilt against the contract it is
+loaded by, never loaded against another. The change of explicit-unknowns (MD-78) removed the
+per-value flag byte and the flagged commit entry this way.
+
 ---
 
 ## 0. The idea
@@ -62,7 +68,7 @@ Not concepts, and where they went:
 | checkpoint / restore; capability flags | none |
 | Jacobian mechanism (O1) | invisible (§8) |
 
-## 2. Entry points (7), each with one contract
+## 2. Entry points (6), each with one contract
 
 | # | Entry | Side | Contract |
 | - | ----- | ---- | -------- |
@@ -72,7 +78,6 @@ Not concepts, and where they went:
 | 4 | `eval(instance, k, frame) -> Status` | device | run function `k`: read `input[]`, write `output[]` and seeded `jac[]` |
 | 5 | `react(instance, k, frame) -> Status` | device | run reaction `k`: read `input[]`, call `commit` |
 | 6 | `commit(statement, offset, len, bytes, after) -> Status` | solver | queue one write of the calling reaction (§6). Nothing else calls it, and it does nothing else. |
-| 7 | `commit_with(statement, offset, len, bytes, after, flags) -> Status` | solver | minor 1: `commit` for a write made under unknown control; `flags` are `commit_flag::MAYBE` and `MERGE` (C7). Offered only when `Host.size` reaches it. |
 
 No function may unwind across the boundary.
 
@@ -132,9 +137,9 @@ enumeration is a `u32` with named constants, never a Rust `enum`.
 }
 
 #[repr(C)] pub struct Layout { size: u32, align: u32, fields: List<Field> }
-#[repr(C)] pub struct Field  { name: Str, leaf: u32, offset: u32, count: u32, flags: u32, known: u32 }
+#[repr(C)] pub struct Field  { name: Str, leaf: u32, offset: u32, count: u32 }
 // leaf: BOOL U8 U16 U32 U64 I8 I16 I32 I64 F32 F64, little-endian. count: array length. Nested structs are
-// flattened, names dotted. flags & HAS_KNOWN: `known` is the offset of one byte per element; 0 = no value.
+// flattened, names dotted. A field holds a value of its leaf and nothing else: there is no flag byte.
 
 #[repr(C)] pub struct Term  { name: Str, origin: Str, op: u32,        // FLOW | DDT | DELAY
                               plus: u32, minus: u32,                  // a continuous pin, or GROUND
@@ -170,7 +175,6 @@ validation:
 | `global` | `TEMPERATURE` 1, `RESOLUTION` 2, `DC` 3, `TRAN` 4, `AC` 5, `NOISE` 6, `START` 7, `SETTLE` 8, `NAMED` 9 |
 | `Pin.flags` | `STRUCTURAL` 1, `OPTIONAL` 2, `HAS_INIT` 4, `HAS_CHECK` 8, `QUIET` 16, `RECORD` 32, `RELAX` 64 |
 | `leaf` | `BOOL` 1, `U8` 2, `U16` 3, `U32` 4, `U64` 5, `I8` 6, `I16` 7, `I32` 8, `I64` 9, `F32` 10, `F64` 11 |
-| `Field.flags` | `HAS_KNOWN` 1 |
 | `op` | `FLOW` 1, `DDT` 2, `DELAY` 3 |
 | `Input.kind` | `LIMIT` 1, `NOISE` 2, `STIM` 3 |
 | `Watch.kind` | `VAR` 1, `CROSS` 2, `CAP` 3, `TRACE` 4 |
@@ -180,14 +184,12 @@ validation:
 | `Function.flags` | `OWNS_CORRECTION` 1 |
 | `Reaction.flags` | `IRREVERSIBLE` 1 |
 | `Statement.flags` | `LATER` 1, `REPLACE` 2 |
-| `commit_with` flags (`commit_flag`) | `MAYBE` 1, `MERGE` 2 |
 | status | `OK` 1, `FAULT` 2, `RESHAPE` 3, `FINISH` 4 |
 | indices | `GROUND` = `u32::MAX` (a term's `plus`/`minus`), `DEFAULT` = `u32::MAX − 1` (a tolerance or bound pin) |
-| version | `MAJOR` 1, `MINOR` 1, symbol `piperine_abi_1`; `Note.text` holds 248 bytes |
+| version | `MAJOR` 1, `MINOR` 0, symbol `piperine_abi_1`; `Note.text` holds 248 bytes |
 
-`piperine-abi` also ships two layouts beside those of P3: `F64` (`{ v: F64 @0 }`, size 8,
-align 8, no known byte: the layout of every continuous pin) and `NONE` (size 0, align 1, no
-field: the layout of every event pin).
+`piperine-abi` also ships `NONE` (size 0, align 1, no field: the layout of every event pin)
+beside the layouts of P3, among them `F64` (the layout of every continuous pin).
 
 The two frames. Every pointer is non-null and has the length the shape says.
 
@@ -210,9 +212,6 @@ The two frames. Every pointer is non-null and has the length the shape says.
     size: u32,                    // a later minor may append (a commit that also carries tangent bytes, §14.4)
     commit: unsafe extern "C" fn(*mut c_void, statement: u32, offset: u32, len: u32,
                                  bytes: *const u8, after: f64) -> u32,
-    // minor 1, appended: `commit` plus the `commit_flag` bits of C7 (offered when `size` reaches it)
-    commit_with: unsafe extern "C" fn(*mut c_void, statement: u32, offset: u32, len: u32,
-                                      bytes: *const u8, after: f64, flags: u32) -> u32,
 }
 ```
 
@@ -240,14 +239,19 @@ Rules that hold for every pin, whatever its role:
   microstep and is seen by every reader there. A `GLOBAL` or `PARAM` net the host rewrites
   between analyses or sweep points changes at microstep 0 of the next point, like any host
   commit: a function that reads `TEMPERATURE` re-runs there and what it writes changes there.
-- **P3. Zero is "nothing".** Discrete storage starts all zero. A field with `HAS_KNOWN` whose
-  known byte is 0 holds no value and its value bytes are zero; debug sessions check this
-  canonical form on every write. `piperine-abi` ships the common layouts as constants
-  (`BIT`, `REAL`, `BYTE`), so an external author does not re-derive them. Each has one field `v` with a known byte:
-  `BIT` is `{ v: BOOL @0, known @1 }` (size 2, align 1), `REAL` is `{ v: F64 @0, known @8 }`
-  (size 16, align 8), `BYTE` is `{ v: U8 @0, known @1 }` (size 2, align 1).
+- **P3. A value is its bytes.** A pin holds the bytes of its type and nothing else: no field
+  says whether a value is established. Discrete storage starts all zero, which no model reads:
+  the elaborator gives every carrier pin init bytes (`HAS_INIT`), the written initial value or
+  the bytes of `Default::default()` of its type (all zero for `Logic::X`, for `None` and for a
+  derived `Default`), which the owner commits at `(0, 0)`. `piperine-abi` ships the common
+  layouts as constants (`BIT`, `BYTE`, `F64`), so an external author does not re-derive them.
+  Each has one field `v`: `BIT` is `{ v: BOOL @0 }` (size 1, align 1), `BYTE` is `{ v: U8 @0 }`
+  (size 1, align 1), `F64` is `{ v: F64 @0 }` (size 8, align 8). What may be absent is a field:
+  an `Option<T>` is `{ some: BOOL @0, v: T }` (P5), and a `Logic<N>` is two fields of the leaf of
+  `UInt<N>`, `binary` at offset 0 and `value` at the size of `UInt<N>`, the whole of twice that
+  size and of that alignment: two bits per level, no byte for a flag.
 - **P4. Layout equality.** Pins on one net have equal layouts (size, alignment, and per field
-  leaf, offset, count, known). Names do not count.
+  leaf, offset, count). Names do not count.
 - **P5. Params.** `Module.prototype` lists the `PARAM` pins with layouts and defaults; that is
   how the host encodes `Value`s and how the elaborator checks an `extern` declaration without
   creating anything. `create` gets initial values for any subset; the solver, not the shape,
@@ -255,8 +259,8 @@ Rules that hold for every pin, whatever its role:
   model card): a `set` of one parameter is a commit of one field, and instances of one model
   bind the pin to one shared net. `PARAM` pins come first in every shape of a module, in
   the prototype's order, so `Value.pin` means the same pin everywhere. A parameter that may
-  be "not given" is a field with a known byte: 0 means not given, and the device's own
-  setup function resolves its default (which may depend on other parameters). Binding a
+  be "not given" is a pin of `Option<T>`, `{ some: BOOL @0, v: T }`: 0 in `some` means not
+  given, and the device's own setup function resolves its default (which may depend on other parameters). Binding a
   `PARAM` or `GLOBAL` net before the run is not a change, and neither is the flip of
   `DC`/`TRAN`/`AC`/`NOISE` by an analysis run at a transient's last instant. A host write to a
   `STRUCTURAL` pin during a run is refused; between runs it is `destroy` + `create` + bind.
@@ -409,10 +413,11 @@ Watches, by who reads them and when:
 - **A4. Non-finite.** A non-finite value in a cell the current solve reads fails the solve,
   naming instance, cell and `origin`. Strengths are needed only by the sweep that reads them,
   so `k / freq` is never evaluated at `freq = 0`. The one exception is a `CROSS` watch: a NaN
-  value is unknown (a `Flagged` carrier whose value is not known), so it fires neither at its
-  solution nor at the next one, and only plus or minus infinity fails the solve.
+  value is neither `≤ 0` nor `> 0` (an IEEE comparison with NaN is false), so it fires neither
+  at its solution nor at the next one, and only plus or minus infinity fails the solve.
 - **A5. Trace.** A `TRACE` watch has a record layout. "Not written in this evaluation" is the
-  canonical empty value of P3: every known byte 0. A site inside a loop is an array field
+  empty record: the record layout begins with a `BOOL` presence field, 0, and its value bytes are
+  zero. What may be absent has a `BOOL` presence field first, by one rule. A site inside a loop is an array field
   with a declared maximum `count` and a count field; exceeding the maximum is a `FAULT`. The
   sink delivers each written record, stamped with the Newton iteration, whatever happens to
   the step.
@@ -511,8 +516,8 @@ step 5 nothing is undone: the discontinuity handling restarts the *next* step.
 - **C4. Events.** A statement on an event pin has `len = 0`; the pin fires when it applies.
 - **C5. Records.** The owner's sink sees every commit, with the instance, reaction, statement,
   the instant it was made and the instant it is due. A record is nothing more than a commit
-  to a `RECORD` pin (one per stream and instance; a field absent from a site is a field with
-  its known byte 0): the host receives it stamped with the instant it was *made*, in
+  to a `RECORD` pin (one per stream and instance; a field absent from a site is zero bytes, and
+  one that may be absent has a `BOOL` presence field): the host receives it stamped with the instant it was *made*, in
   (instant, instance path, statement index) order. The stream is the pin's
   name under the instance path; which names are global (`sim`, `checks`) is the host's
   convention. Delivery is at the time the commit is *made*, so the transport removal of C3
@@ -522,18 +527,6 @@ step 5 nothing is undone: the discontinuity handling restarts the *next* step.
 - **C6. The solver writes the same way.** A located crossing is a commit to the watch's event
   pin due at `(t, 0)`; a crossing between rounds is due at the next microstep; a host `set`
   or drive is a commit by the host.
-- **C7. Commits under unknown control.** A path taken because a condition, a scrutinee, a guard
-  or a delay is unknown (part I §3.3.3) commits through `commit_with` with `flags`:
-  `MERGE` (2): at the due microstep the committed bytes are merged, level by level, with the
-  bytes the net holds at that point of the C2 order (`layout::Merge`, per field with
-  `HAS_KNOWN`: equal and known is kept, anything else is zeroed, P3); `MAYBE` (1): the commit
-  may not have happened, so transport (C3, §12.1.4) does not remove the pending commits of the
-  same statement and byte range that it would remove, it turns them into `MERGE` commits (on
-  the path that ran they were removed, on the path that did not they apply, and their merge is
-  the value). A commit through plain `commit` has no flags, and a design with no unknown
-  control never calls `commit_with`. A `Host` whose `size` does not reach the entry is a
-  minor-0 owner: the first call is a `FAULT` naming the statement. An unknown flag bit is a
-  `FAULT`. A rejected step undoes a conversion with the commits it undoes.
 
 ---
 
@@ -628,17 +621,19 @@ dlopen ─► piperine_abi_1()        major = symbol; check Library.size / minor
 
 **D1. Cycles** (resolved nets). The elaborator lowers a resolved carrier to one-writer nets
 plus a resolver *instance* generated from the nature: one drive pin per driver in
-instance-path order, flagged `RELAX`, whose layout is the value's layout followed by one field
-`driving: BOOL` with a known byte (a driver writes `driving` known true with every value it
-writes; zero bytes read as `driving` unknown, a drive *absent*, which the resolver leaves out of
-what it receives, while a present drive whose value is unknown is passed); one value pin; one
+instance-path order, flagged `RELAX`, whose layout is the layout of the driven type `X` of the
+nature's `impl Resolve<X, V>` followed by one field
+`driving: BOOL` (a driver writes `driving` 1 with every value it writes; 0 is a drive *absent*,
+which the resolver leaves out of what it receives, while a present drive of any value is
+passed; absence is not a value and is not Z); one value pin; one
 "others" pin per reader that needs
-it. An external device joins by ordinary binding. A cycle of functions through `RELAX` nets is
-relaxed: those nets start the microstep at zero bytes (P3: not driving); the cycle's functions
-run in order until no byte changes, at most (`RELAX` nets in the cycle + 1) passes; a field with a
-known byte that still moves is zeroed (P3: no value) and one record goes to the resolver's
-log pin; a field without one that still moves is a fault. A cycle through no `RELAX` net (two
-cross-coupled gates written as functions) is a bind error.
+it. The value pin has the layout of the nature's `value` type `V`. An external device joins by
+ordinary binding. A cycle of functions through `RELAX` nets is relaxed: those nets start each
+pass with `driving` 0 (not driving); the cycle's functions run in order until no byte changes,
+at most (`RELAX` nets in the cycle + 1) passes; a net that still moves after that is a `FAULT`
+that the owner reports as `E0511`, naming the loop's drives (language spec §8.2.3): the solver
+no longer acts on a layout's fields. A cycle through no `RELAX` net (two cross-coupled gates
+written as functions) is a bind error.
 
 ---
 
@@ -688,8 +683,8 @@ answer to an event, they come from the host's reaction (R7).
 ## 11. Worked examples
 
 Rust lens; partials by hand so the contract shows. Shapes are comments: `reads`/`writes` in
-order, partials as `(write ← read)`. `BIT` is the shipped layout `{ v: BOOL @0, known @1 }`;
-`LOW = [0,1]`, `HIGH = [1,1]`.
+order, partials as `(write ← read)`. `BIT` is the shipped layout `{ v: BOOL @0 }`;
+`LOW = [0]`, `HIGH = [1]`.
 
 ### 11.1 Resistor
 
@@ -855,7 +850,7 @@ fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
     match stop {
         Stop::PadWrite { pad, level } => cx.commit(1 + pad, &level, dt)?,   // the edge keeps its exact time
         Stop::AdcStart                => cx.commit(10, &[], dt)?,           // fire `sample` then
-        Stop::Break { pc }            => cx.commit(11, bytes_of(&Log { pc, known: 1 }), 0.0)?,   // a record
+        Stop::Break { pc }            => cx.commit(11, bytes_of(&Log { pc }), 0.0)?,   // a record
         Stop::Horizon | Stop::Sleep   => {}
     }
     cx.commit(9, &[], cpu.next_wake(now, res))?;               // "advance me to": REPLACE re-arms
@@ -909,7 +904,7 @@ a commit of eight bytes to the shared `card` net; `setup_model` runs once, each 
 Both setups are in the parameter cone (their inputs are `PARAM` and `GLOBAL` nets and each
 other), so before that commit P6 has run `setup_model` and every downstream `setup` on a shadow: if one
 of them reports another collapse, the `set` is refused in a transient, and re-creates that
-instance at a sweep point. A parameter the netlist did not give has known byte 0 in `card`
+instance at a sweep point. A parameter the netlist did not give has presence byte 0 in `card`
 or `inst`, and `setup` applies the model's own default.
 
 ---
@@ -931,7 +926,10 @@ absent `OPTIONAL` pin reads as zeros through a valid pointer and the lens return
 The shape is validated at bind before any constant is interpreted. In `piperine-abi`, `Str`, `Bytes`, `List` and `Module` keep their pointer fields private: safe code builds only valid ones, and a view of foreign memory is made through an `unsafe fn from_raw_parts` (or an `unsafe` dereference of the producer's pointer), which is the trust boundary. Each view also carries the lifetime of the memory it borrows (`Str<'a>`, `Bytes<'a>`, `List<'a, T>`, and so `Shape<'a>`, `Pin<'a>`, … through a zero-sized marker, the C layout unchanged): `List::from_slice` borrows its slice, and a shape copied out of a `ShapeRef` cannot outlive it. Debug sessions poison and
 guard output buffers. A device leaves the floating-point environment and signals alone.
 
-**Versioning.** Major is the symbol name. A minor may add fields at the end of any struct
+**Versioning.** Major is the symbol name. The ABI is unreleased: until the first release a
+change of the contract is made in place, with the minor at 0, and the cache of compiled models
+is keyed by the contract's own source, so a model built before the change is rebuilt, never
+loaded. After the first release a minor may add fields at the end of any struct
 (`size`, `stride`), a constant, a `global` constant. Reserved names are constants, so a host
 session parameter can never collide with a later one. An unknown constant from a newer device
 is a bind error naming it; an older device never receives one, because every value it is
@@ -975,7 +973,7 @@ given is one its own shape declared.
 | versioning, `cdylib` safety, debuggability | §12 |
 
 **Counts.** Concepts: 13, with Cell and Partial counted as the critic counts them.
-Entry points: 7, each with one contract.
+Entry points: 6, each with one contract.
 
 ## 14. Known weak points
 
@@ -991,14 +989,12 @@ Entry points: 7, each with one contract.
    so that entry can be appended.
 5. A `TRACE` site in a loop is bounded by a maximum the elaborator declares; past it the
    evaluation faults.
-6. D1's "a moving field with a known byte is zeroed" is the one place the solver acts on a
-   layout's fields.
-7. `Pin` carries fields that apply to a subset of kind × role (`global`, `check`, `init`,
+6. `Pin` carries fields that apply to a subset of kind × role (`global`, `check`, `init`,
    `abstol`); it is one struct on purpose, and it is where a future field would land.
-8. P6's shadow costs one pass of the cone downstream of a written param (10 000 `setup`
+7. P6's shadow costs one pass of the cone downstream of a written param (10 000 `setup`
    calls for a model-card `set`); the committed pass can reuse its results. Host drives of
    ports cost nothing extra.
-9. Two limit forms exist (A2, A3) because one foreign format limits inside its own call.
+8. Two limit forms exist (A2, A3) because one foreign format limits inside its own call.
 
 ---
 
@@ -1016,8 +1012,8 @@ the critic's, from `critique_v3.md`; the last column is what this document assum
 | 3b | `part_iii_structure.md` §8.5.11, §8.5.15, §8.5.16 | Let a `"cosim"` module have continuous ports and read them; move the port restriction to the adapter. | **Defer to the user**: a language scope change the ABI does not need; §8.5.15 and §8.5.16 would have to change with it. | *not* amended. The ABI allows a reaction to read a continuous pin (the AVR of §11.7 does); whether the language's `extern "cosim"` may declare one is separate. |
 | 4 | `part_iii_structure.md` §8.5.10; `part_viii_host.md` §23.1 rule 7 (`E0803`) | A `set` that would change the structure of an extern module is refused like a structural param; in a `Dc` sweep that point re-elaborates the instance. | **Approve.** | amended (`RESHAPE`, P6). |
 | 5 | `part_vi_io.md` §19 rule 3; `part_iv_behavior.md` §11 rule 12 | Require a constant trip count for `emit!` in an `analog` loop. | **Reject as proposed**: it bends the language to fit a cell. Use an array field with a declared maximum. | rejected; A5 carries a bounded array instead, no language change. |
-| 6 | `part_i_values.md` §2 (`Repr`); `part_ii_carriers.md` §5.3.4–§5.3.6 | State the canonical byte form of a value. | **Trim.** Approve two sentences: *all-zero bytes are the all-unknown value*; *an unknown level's value bytes are zero*. Reject "one known byte per level": where the flags live is what `Layout` prints, not a language guarantee. | the two sentences (P3). The byte-per-element choice stays in `Field.known`, an ABI matter. |
-| 7 | `part_iii_structure.md` §8.2.3 step 4 | A level of a type with no unknown that still moves is a run error. | **Reject**: the language cannot produce that case; it is D1's own rule. | rejected; the rule lives in D1 only. |
+| 6 | `part_i_values.md` §2 (`Repr`); `part_ii_carriers.md` §5.3 | State the canonical byte form of a value. | *Superseded by MD-78* (explicit-unknowns): all-zero bytes are the bytes of `Logic::X`, of `None` and of every derived `Default` (spec §2 rule 11); there is no unknown level and no flag byte. | the sentence of §2 rule 11 (P3). |
+| 7 | `part_iii_structure.md` §8.2.3 step 4 | A loop that does not settle. | *Superseded by MD-78*: the run stops with `E0511`, naming the loop's drives; the owner reports the `FAULT` of D1. | the amended rule (D1). |
 | 8 | `part_iv_behavior.md` §14.4.6 | Give models access to the continuation variables. | **Rework — user decision.** As `simparam` names it contradicts §14.4.1 (they change between solves). Options: (a) two core environment functions `gmin()`, `source_scale()` in the class of `now()`/`freq()`; (b) no language change: independent sources are scaled by the solver, gmin is the solver's shunt only. ngspice parity for junction gmin argues for (a). | (a): the ambient inputs `GMIN` and `SOURCE_SCALE` exist. Under (b) they are deleted and `Term` gains nothing: the solver scales terms it is told are sources — that would need one flag on `Term`. |
 | 9 | `part_vi_io.md` §19 rule 1 | No text change: a note that records travel as commits to quiet pins and add no microstep. | **Fine**; belongs in Appendix C, not here. | a note for Appendix C. |
 

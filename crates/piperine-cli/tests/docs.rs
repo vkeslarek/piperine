@@ -339,18 +339,22 @@ fn state_records_the_unknown_semantics_decision() {
 }
 
 #[test]
-fn abi_states_commits_under_unknown_control() {
-    // US-07: abi.md gives `Host` the entry `commit_with`, lists `commit_flag` (`MAYBE` 1, `MERGE` 2)
-    // and `MINOR` 1 in its constants, and states rule C7 (merge at the due microstep in C2 order;
-    // transport converts under `MAYBE`)
+fn abi_md_describes_the_unreleased_contract() {
+    // EU-16, EU-17 AC 5 (replaces `abi_states_commits_under_unknown_control`, which pinned
+    // `commit_with`, `commit_flag` and rule C7): the contract is still major 1 and says it is
+    // unreleased; `MINOR` is 0; `Field` has four fields; the shipped layouts hold no flag byte;
+    // a drive pin carries the driven value and a plain `driving` byte; one `commit`.
     let abi = read(".specs/features/device-abi/abi.md");
-    assert!(abi.contains("commit_with: unsafe extern \"C\" fn"), "the Host struct has commit_with");
-    assert!(abi.contains("| `commit_with` flags (`commit_flag`) | `MAYBE` 1, `MERGE` 2 |"), "the constants table lists the flags");
-    assert!(abi.contains("`MAJOR` 1, `MINOR` 1"), "MINOR is 1");
-    let at = abi.find("- **C7. Commits under unknown control.**").expect("abi.md has rule C7");
-    let rule = abi[at..].split("\n---").next().expect("a rule").split_whitespace().collect::<Vec<_>>().join(" ");
-    for fact in ["merged, level by level, with the bytes the net holds at that point of the C2 order", "transport (C3, §12.1.4) does not remove the pending commits", "turns them into `MERGE` commits"] {
-        assert!(rule.contains(fact), "C7 lacks \"{fact}\"");
+    let flat = abi.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(flat.contains("| version | `MAJOR` 1, `MINOR` 0, symbol `piperine_abi_1`;"), "major 1, minor 0, symbol piperine_abi_1");
+    assert!(flat.contains("pub struct Field { name: Str, leaf: u32, offset: u32, count: u32 }"), "Field has four fields");
+    assert!(flat.contains("`BIT` is `{ v: BOOL @0 }` (size 1, align 1)") && flat.contains("`BYTE` is `{ v: U8 @0 }` (size 1, align 1)") && flat.contains("`F64` is `{ v: F64 @0 }` (size 8, align 8)"), "the three shipped layouts");
+    assert!(flat.contains("`driving: BOOL`") && flat.contains("0 is a drive *absent*"), "the drive pin carries a plain `driving` byte");
+    assert!(flat.contains("**Unreleased.** This ABI has had no release"), "abi.md says it is unreleased");
+    assert!(flat.contains("Until the first release it changes in place"), "abi.md says it changes in place until the first release");
+    assert!(flat.contains("## 2. Entry points (6)"), "six entry points");
+    for gone in ["HAS_KNOWN", "commit_with", "commit_flag", "known byte", "- **C7."] {
+        assert!(!abi.contains(gone), "abi.md still says {gone}");
     }
 }
 
