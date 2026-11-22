@@ -1378,8 +1378,8 @@ T63
 
 **Done when**:
 
-- [ ] `derived_repr_layout_and_width_follow_section_2`, `composite_carriers_initialize_define_commit_and_change`, `committing_an_equal_composite_fires_no_change` and `a_tag_naming_no_variant_reads_unknown` pass under `**Run srcagg**`
-- [ ] Gate check passes: Full
+- [x] `derived_repr_layout_and_width_follow_section_2`, `composite_carriers_initialize_define_commit_and_change`, `committing_an_equal_composite_fires_no_change` and `a_tag_naming_no_variant_reads_unknown` pass under `**Run srcagg**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

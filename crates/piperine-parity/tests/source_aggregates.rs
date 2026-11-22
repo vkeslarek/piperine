@@ -19,6 +19,7 @@ mod mixed;
 #[path = "buck/support.rs"]
 mod support;
 
+use mixed::Seen;
 use support::{build, transient};
 
 /// One nanosecond in ticks.
@@ -690,4 +691,136 @@ fn the_jitter_clock_repeats_with_its_seed() {
         wanted.push(now);
     }
     assert_eq!(first, wanted, "the edges are the spec's draws placed one after the other");
+}
+
+/// The carriers of the model `carriers.msl`, as the plan lays a composite pin out (`CompositeLayout`):
+/// the value bytes of the parts one after another, the first lowest, then the known byte.
+struct Carriers {
+    seen: Seen,
+}
+
+impl Carriers {
+    /// `Bench` of `carriers.msl`, run for two rising edges (2.5 ns and 7.5 ns).
+    fn run() -> Carriers {
+        Carriers { seen: build(&project("carriers.msl"), "Bench").run(10e-9, 1e-9) }
+    }
+
+    /// Every change of the carrier `name` during the transient: instant in ticks and bytes.
+    fn changes(&self, name: &str) -> Vec<(i64, Vec<u8>)> {
+        transient(&self.seen, &format!("Bench.{name}"))
+    }
+
+    /// The only change of `name`, which must be at the first rising edge.
+    fn once(&self, name: &str) -> Vec<u8> {
+        let changes = self.changes(name);
+        assert_eq!(changes.len(), 1, "{name} changes once: {changes:?}");
+        assert_eq!(changes[0].0, 5 * NS / 2, "{name} changes at the first rising edge");
+        changes[0].1.clone()
+    }
+
+    /// `value`, the bytes of a known composite, as its pin holds it: the known byte after them.
+    fn known(value: &[u8]) -> Vec<u8> {
+        let mut bytes = value.to_vec();
+        bytes.push(1);
+        bytes
+    }
+}
+
+/// A value whose levels §2 lays out, so a test computes what `T::WIDTH` and `level(k)` give.
+struct Levels {
+    bits: Vec<bool>,
+}
+
+impl Levels {
+    /// The levels of an unsigned integer of `width` levels, level 0 the least significant bit.
+    fn unsigned(value: u64, width: u32) -> Levels {
+        Levels { bits: (0..width).map(|k| value >> k & 1 == 1).collect() }
+    }
+
+    /// `self` then `next`: the fields of a struct, first field lowest (§2 rule 2).
+    fn then(mut self, next: Levels) -> Levels {
+        self.bits.extend(next.bits);
+        self
+    }
+
+    /// An enum value of `variant` of `variants`, its payload padded with false levels to `widest` (§2 rules 5 and 6).
+    fn tagged(variant: u64, variants: u64, payload: Levels, widest: u32) -> Levels {
+        let tag_width = u64::BITS - variants.saturating_sub(1).leading_zeros();
+        let mut padded = payload;
+        padded.bits.resize(widest as usize, false);
+        Levels::unsigned(variant, tag_width).then(padded)
+    }
+}
+
+#[test]
+fn derived_repr_layout_and_width_follow_section_2() {
+    // CV-17 AC 1 (§2 rules 2, 5 and 6): a struct is its fields' levels, first field lowest; an
+    // enum a tag of ceil(log2 V) levels, then the widest payload; `T::WIDTH` is that width and
+    // `level(k)` reads level k.
+    let pair = Levels::unsigned(8, 8).then(Levels::unsigned(0, 1));
+    let tuple_field = Levels::unsigned(0, 8).then(Levels::unsigned(0, 1));
+    let array_field = Levels::unsigned(0, 24);
+    let option_field = Levels::unsigned(0, 9);
+    let wrap = tuple_field.then(array_field).then(option_field);
+    let data = Levels::tagged(1, 3, Levels::unsigned(5, 3), 3);
+    let carriers = Carriers::run();
+    assert_eq!(carriers.once("w_pair"), vec![pair.bits.len() as u8, 1], "Pair is u8 then bool: 9 levels");
+    assert_eq!(carriers.once("w_enum"), vec![data.bits.len() as u8, 1], "Tx is a 2-level tag then 3 levels of payload");
+    assert_eq!(carriers.once("w_wrap"), vec![wrap.bits.len() as u8, 1], "Wrap is (u8, bool), [u8; 3] and Option<u8>: 9 + 24 + 9");
+    // the levels of `Tx::Data { n: 5 }`, read one by one
+    let read: Vec<u8> = carriers.once("r_levels");
+    assert_eq!(read, Carriers::known(&data.bits.iter().map(|b| u8::from(*b)).collect::<Vec<_>>()), "level(k) of the enum value is level k of §2's layout");
+    // the levels of a struct: level 0 of `Pair { a: 7, b: true }` is the least significant bit of `a`, level 8 is `b`
+    let seven = Levels::unsigned(7, 8).then(Levels::unsigned(1, 1));
+    assert_eq!(carriers.once("level_a0"), vec![u8::from(seven.bits[0]), 1]);
+    assert_eq!(carriers.once("level_b"), vec![u8::from(seven.bits[8]), 1]);
+    // the bytes a pin holds: the parts' values in field order (the tag first), then the known byte
+    assert_eq!(carriers.once("s"), Carriers::known(&[7, 1]));
+    assert_eq!(carriers.once("tx"), Carriers::known(&[1, 5]), "the tag of Data, then n");
+}
+
+#[test]
+fn composite_carriers_initialize_define_commit_and_change() {
+    // CV-17 AC 3 (§2, §12.1): an initial value, a definition, a commit of each composite shape, a
+    // read of the whole value and of its parts, `changed()` and `prev()` over the whole value.
+    let carriers = Carriers::run();
+    let at_start = |name: &str| carriers.seen.series_of(&format!("Bench.{name}"))[0].clone();
+    assert_eq!(at_start("first"), (0, Carriers::known(&[3, 1])), "the initial value Pair {{ a: 3, b: true }}");
+    assert_eq!(at_start("defined"), (0, Carriers::known(&[1, 1])), "the definition Pair {{ a: 1, b: true }}");
+    assert_eq!(carriers.once("s"), Carriers::known(&[7, 1]));
+    assert_eq!(carriers.once("t"), Carriers::known(&[9, 0]));
+    assert_eq!(carriers.once("arr"), Carriers::known(&[1, 2, 3]));
+    assert_eq!(carriers.once("tx"), Carriers::known(&[1, 5]));
+    assert_eq!(carriers.once("opt"), Carriers::known(&[1, 4]), "Some(4): the tag byte, then the payload");
+    // a part of each, read where the carrier changed
+    assert_eq!(carriers.once("r_t"), byte(9));
+    assert_eq!(carriers.once("r_arr"), byte(2));
+    assert_eq!(carriers.once("r_opt"), byte(4));
+    assert_eq!(carriers.once("r_tx"), byte(5));
+    // `changed()` fires for each change of the whole value, and `prev()` is the value before the change
+    let rise = |k: i64| 5 * NS / 2 + 5 * NS * k;
+    assert_eq!(carriers.changes("u"), vec![(rise(0), Carriers::known(&[7, 0])), (rise(1), Carriers::known(&[8, 0]))]);
+    assert_eq!(carriers.changes("now_a"), vec![(rise(0), byte(7)), (rise(1), byte(8))], "u.a where u changed");
+    assert_eq!(carriers.changes("before_a"), vec![(rise(0), byte(0)), (rise(1), byte(7))], "u.prev().a: the default before the first change, then 7");
+}
+
+#[test]
+fn committing_an_equal_composite_fires_no_change() {
+    // CV-17 AC 4 (§12.1): `s` is committed the same `Pair` at both rising edges; the second commit
+    // changes nothing, so the net has one change and `s.changed()` fired once.
+    let carriers = Carriers::run();
+    assert_eq!(carriers.changes("s"), vec![(5 * NS / 2, Carriers::known(&[7, 1]))], "one change for two commits of one value");
+    assert_eq!(carriers.once("s_changes"), byte(1), "`changed()` fired once");
+}
+
+#[test]
+fn a_tag_naming_no_variant_reads_unknown() {
+    // CV-17 AC 5 (§2 rule 9): `Tx` has the tags 0, 1 and 2. `cast::<u5, Tx>(13)` has tag 1 and n = 3,
+    // a value; `cast::<u5, Tx>(3)` has tag 3, which names no variant, so it is unknown: the net never
+    // holds a value and `is_known()` reads false.
+    let carriers = Carriers::run();
+    assert_eq!(carriers.once("good"), Carriers::known(&[1, 3]), "tag 1, n = 3");
+    assert_eq!(carriers.changes("bad"), vec![], "an unknown value commits nothing the net had not");
+    assert_eq!(carriers.once("good_known"), byte(1));
+    assert_eq!(carriers.once("bad_known"), byte(0), "a tag naming no variant reads unknown");
 }

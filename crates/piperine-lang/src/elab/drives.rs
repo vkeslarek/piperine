@@ -3,7 +3,7 @@
 //! at an `in` carrier port of a placement is an anonymous definition: a signal carrier of the
 //! parent named `<instance>.<port>`, its drive, and the child's port bound to it (DIG-09 AC 3).
 
-use piperine_ir::{Carrier, CarrierRole, Drive, ExprId as LoweredExpr};
+use piperine_ir::{Carrier, CarrierRole, Drive, ExprId as LoweredExpr, ValueType};
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
@@ -28,7 +28,8 @@ impl Elaboration<'_, '_> {
             let DeclKind::Definition(definition) = &data.kind else { continue };
             let Some(carrier) = self.drive_target(scope, definition.place) else { continue };
             let origin = self.locator.decl(child);
-            if let Some((value, after)) = self.lower_drive_value(scope, definition.value, definition.after) {
+            let wanted = self.structure.carriers.get(carrier as usize).map(|c| c.ty.clone());
+            if let Some((value, after)) = self.lower_drive_value(scope, definition.value, definition.after, wanted.as_ref()) {
                 self.structure.drives.push(Drive { carrier, value, after, origin });
             }
         }
@@ -51,10 +52,13 @@ impl Elaboration<'_, '_> {
     /// The value and the delay of a drive, each lowered in a scope of its own: a drive has no
     /// local (the IR's `Drive` holds expressions only), so a `match` reads its scrutinee at each
     /// test and a `let` inside one is `P0001`.
-    pub(super) fn lower_drive_value(&mut self, scope: &Scope, value: ExprId, after: Option<ExprId>) -> Option<(LoweredExpr, Option<LoweredExpr>)> {
+    pub(super) fn lower_drive_value(&mut self, scope: &Scope, value: ExprId, after: Option<ExprId>, wanted: Option<&ValueType>) -> Option<(LoweredExpr, Option<LoweredExpr>)> {
         let mut sub = Self::sub_scope(scope);
         sub.no_locals = true;
-        let lowered = self.lower_expr(&mut sub, value);
+        let lowered = match wanted {
+            Some(ty) => self.lower_stored(&mut sub, value, ty),
+            None => self.lower_expr(&mut sub, value),
+        };
         let delay = match after {
             Some(after) => Some(self.lower_expr(&mut sub, after)),
             None => None,
@@ -78,7 +82,7 @@ impl Elaboration<'_, '_> {
         let ty = self.carried_type(port)?;
         let port_name = self.design.decl_data(port).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let origin = self.expr_origin(value);
-        let (lowered, _) = self.lower_drive_value(scope, value, None)?;
+        let (lowered, _) = self.lower_drive_value(scope, value, None, Some(&ty))?;
         let name = format!("{}{instance}.{port_name}", self.frames[scope.frame].prefix);
         let carrier = self.add_carrier(Carrier { name, ty, role: CarrierRole::Signal, init: None, origin: origin.clone() });
         self.structure.drives.push(Drive { carrier, value: lowered, after: None, origin });

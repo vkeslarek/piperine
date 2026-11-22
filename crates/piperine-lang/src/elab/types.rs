@@ -123,6 +123,19 @@ impl Elaboration<'_, '_> {
         }
     }
 
+    /// The IR type of a value held as one value, which a carrier, a param or a record field is: as
+    /// `value_type`, with an `Option` kept as `ValueType::Option` (the pair of value code is for
+    /// code that reads its halves) at any depth of a tuple or an array. `None` for a type no
+    /// value has.
+    pub(super) fn stored_type(&self, ty: &Ty) -> Option<ValueType> {
+        match ty {
+            Ty::Option(inner) => self.stored_type(inner).map(|inner| ValueType::Option(Box::new(inner))),
+            Ty::Tuple(items) => items.iter().map(|item| self.stored_type(item)).collect::<Option<Vec<_>>>().map(ValueType::Tuple),
+            Ty::Array(element, length) => self.stored_type(element).map(|element| ValueType::Array(Box::new(element), *length)),
+            other => self.value_type(other),
+        }
+    }
+
     /// The tag and the variants of the enum `decl`.
     fn enum_kind(&self, decl: DeclId) -> TypeKind {
         let tag = self.types.enum_tag(decl);

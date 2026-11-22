@@ -176,6 +176,33 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// Whether a pin can hold a value of `ty`: a scalar, or a tuple, an array, a struct, an enum's
+    /// payload or an `Option` whose parts a pin can hold (§2: every part has a `Repr`).
+    fn carriable(&self, ty: &ValueType) -> bool {
+        let mut stack = vec![ty];
+        let mut seen = BTreeSet::new();
+        while let Some(t) = stack.pop() {
+            match t {
+                ValueType::Tuple(items) => stack.extend(items),
+                ValueType::Array(element, _) => stack.push(element),
+                ValueType::Option(inner) => stack.push(inner),
+                ValueType::Struct(id) | ValueType::Enum(id) => {
+                    let Some(data) = self.ir.types.get(id.index()) else { return false };
+                    if !seen.insert(id.index()) {
+                        continue;
+                    }
+                    match &data.kind {
+                        TypeKind::Struct { fields, .. } => stack.extend(fields.iter().map(|(_, field)| field)),
+                        TypeKind::Enum { variants, .. } => stack.extend(variants.iter().flat_map(|v| v.fields.iter().map(|(_, field)| field))),
+                    }
+                }
+                scalar if Typing::scalar(scalar) => {}
+                _ => return false,
+            }
+        }
+        true
+    }
+
     /// The branches with a private flow unknown a flow probe may read: those `body`'s `analog`
     /// block contributes a potential to, wherever the contribution stands, and every switch
     /// branch (it has the unknown whichever kind a solve enables).
@@ -768,8 +795,12 @@ impl<'a> Checker<'a> {
                 }
             }
             for c in &body.carriers {
-                if !Typing::scalar(&c.ty) {
-                    self.report(format!("{item} carrier {}", c.name), c.origin.clone(), format!("a carrier holds `bool`, `f64` or an integer type, found {}", c.ty));
+                if !self.carriable(&c.ty) {
+                    self.report(
+                        format!("{item} carrier {}", c.name),
+                        c.origin.clone(),
+                        format!("a carrier holds `bool`, `f64`, an integer type, an enum, or a tuple, array, struct or `Option` of them, found {}", c.ty),
+                    );
                 } else if let Some(init) = c.init
                     && !self.holds(&c.ty, init)
                 {
@@ -813,7 +844,7 @@ impl<'a> Checker<'a> {
                 ValueType::UInt(n) | ValueType::Int(n) if !(1..=64).contains(n) => {
                     return Some(format!("type {t} has a width outside 1..=64"));
                 }
-                ValueType::Flagged(inner) if !Typing::scalar(inner) => {
+                ValueType::Flagged(inner) if !Typing::laid_out(inner) => {
                     return Some(format!("type {t}: only `bool`, `f64` and an integer type may be unknown"));
                 }
                 ValueType::Flagged(inner) => stack.push(inner),
@@ -1921,7 +1952,7 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin, "carrier read outside a body".to_string());
                     } else {
                         match w.owner.carriers.get(*i as usize) {
-                            Some(c) => self.own(w, &origin, ty, &ValueType::Flagged(Box::new(c.clone()))),
+                            Some(c) => self.own(w, &origin, ty, &Typing::read_of(c, ty)),
                             None => self.wrong(w, origin, format!("carrier {i} out of range ({} carriers)", w.owner.carriers.len())),
                         }
                     }
@@ -1933,7 +1964,7 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin, "a previous-value read outside a body".to_string());
                     } else {
                         match w.owner.carriers.get(*i as usize) {
-                            Some(c) => self.own(w, &origin, ty, &ValueType::Flagged(Box::new(c.clone()))),
+                            Some(c) => self.own(w, &origin, ty, &Typing::read_of(c, ty)),
                             None => self.wrong(w, origin, format!("previous value of carrier {i}, out of range ({} carriers)", w.owner.carriers.len())),
                         }
                     }

@@ -112,7 +112,7 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(decl);
         let (file, span) = (data.file, data.span);
         let carried = match self.types.carrier(decl) {
-            Some(Ty::Carrier { value, .. }) => self.value_type(value),
+            Some(Ty::Carrier { value, .. }) => self.stored_type(value),
             _ => None,
         };
         if carried.is_none() {
@@ -147,7 +147,10 @@ impl Elaboration<'_, '_> {
     /// one is an initial value that is `Unknown`, which is the same as none: every level unknown
     /// at `(0, 0)` and no `changed()` there (§3.3).
     fn carrier_init(&mut self, expr: ExprId, frame: usize) -> Option<Option<Constant>> {
-        match self.consts.folded(expr, &self.frame_bindings(frame)) {
+        let bindings = self.frame_bindings(frame);
+        // a composite folds to a constant of the IR's arena (`consts/imported.rs`)
+        let folded = if self.types.ty(expr).is_some_and(Ty::is_composite) { self.composite_constant(expr, &bindings).map(Folded::Known) } else { self.consts.folded(expr, &bindings) };
+        match folded {
             Ok(Folded::Known(value)) => Some(Some(value)),
             Ok(Folded::Unknown) => Some(None),
             Err(fault) => {

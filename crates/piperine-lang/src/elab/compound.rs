@@ -318,6 +318,17 @@ impl Elaboration<'_, '_> {
                     // A body `let` or a `const` of `Option` type reads its initializer where it is
                     // read: it holds only literals and consts, so every read has the same levels
                     // (§3.3.9)
+                    // A carrier holding an `Option`: the two halves of its value, each unpacked from
+                    // the read where it stands.
+                    (None, None) if let Some(carrier) = self.frame_carrier(scope.frame, decl) => {
+                        let half = |this: &mut Self, part: LevelPart, ty: ValueType| {
+                            let packed = this.carrier_read(carrier, origin.clone());
+                            Some(this.emit(Expr::OptionPart { option: packed, part }, ty, origin.clone()))
+                        };
+                        let is = half(self, LevelPart::Is, ValueType::Bool)?;
+                        let val = half(self, LevelPart::Value, payload.clone())?;
+                        Some(Pair { is, val, literal: None })
+                    }
                     (None, None) => match self.body_let_value(decl).or_else(|| self.const_value(decl)) {
                         Some(value) => self.lower_option(scope, value),
                         None => unsupported(self),
@@ -360,9 +371,9 @@ impl Elaboration<'_, '_> {
             }
             // `x.known()`: the two flag-total reads of `x`, each reading `x` where it stands.
             ExprKind::MethodCall { recv, .. } if self.types.builtin(expr) == Some(Builtin::Known) => {
-                let read = self.lower_expr(scope, *recv)?;
+                let read = self.lower_flag_receiver(scope, *recv)?;
                 let is = self.emit(Expr::IsKnown(read), ValueType::Bool, origin.clone());
-                let read = self.lower_expr(scope, *recv)?;
+                let read = self.lower_flag_receiver(scope, *recv)?;
                 let Some(zero) = self.zero(&payload, origin.clone()) else { return unsupported(self) };
                 let val = self.emit(Expr::KnownOr { value: read, default: zero }, payload, origin);
                 Some(Pair { is, val, literal: None })
@@ -373,7 +384,7 @@ impl Elaboration<'_, '_> {
             ExprKind::MethodCall { recv, args, .. } if self.types.builtin(expr) == Some(Builtin::Level) => {
                 let [index] = args.as_slice() else { return unsupported(self) };
                 let mut half = |this: &mut Self, part: LevelPart| {
-                    let value = this.lower_expr(scope, *recv)?;
+                    let value = this.lower_flag_receiver(scope, *recv)?;
                     let index = this.lower_expr(scope, index.value)?;
                     let ty = this.flag(index).wrap(ValueType::Bool);
                     Some(this.emit(Expr::Level { value, index, part }, ty, origin.clone()))

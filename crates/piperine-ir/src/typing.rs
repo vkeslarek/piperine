@@ -47,6 +47,21 @@ impl Typing {
         matches!(t, ValueType::Bool | ValueType::F64 | ValueType::Enum(_)) || t.is_integer()
     }
 
+    /// A scalar, or a tuple, an array, a struct or an `Option`: a value with a `Repr` layout (§2),
+    /// which `level`, `cast` and the flag reads take. Only a scalar rides a flag (`flag`).
+    pub(crate) fn laid_out(t: &ValueType) -> bool {
+        Typing::scalar(t) || matches!(t, ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Struct(_) | ValueType::Option(_))
+    }
+
+    /// The type of a read of a carrier holding `held`: flagged, as every read may be unknown
+    /// (§3.3.1). A tuple, an array, a struct or an `Option` rides no flag in value code, so its read
+    /// is the value (unknown reads as the default) unless `written` says the read is flagged, as
+    /// the receiver of a flag read (`level`, `is_known`, `known_or`) is.
+    pub(crate) fn read_of(held: &ValueType, written: &ValueType) -> ValueType {
+        let flagged = ValueType::Flagged(Box::new(held.clone()));
+        if Typing::scalar(held) || *written == flagged { flagged } else { held.clone() }
+    }
+
     /// The operators M1 does not have: they are typed by these rules whatever their operands.
     pub(crate) fn digital_op(op: BinaryOp) -> bool {
         matches!(op, BinaryOp::Rem | BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr)
@@ -159,7 +174,7 @@ impl Typing {
     /// One half of `value.level(index)`: a `bool` of a `u32` index, known when the index is and
     /// flagged when it is not (§3.3.14, §3.3.13).
     pub(crate) fn level(value: &ValueType, index: &ValueType) -> Option<ValueType> {
-        let fits = Typing::scalar(Typing::base(value)) && *Typing::base(index) == ValueType::UInt(32);
+        let fits = Typing::laid_out(Typing::base(value)) && *Typing::base(index) == ValueType::UInt(32);
         fits.then(|| Typing::flag(ValueType::Bool, Typing::flagged(index)))
     }
 
@@ -178,14 +193,14 @@ impl Typing {
     /// `cast::<A, B>(value)`: `to`, when it has the level count of the value's type (§22.1.3
     /// rule 3); flagged when the value is, or when `tags` may leave the result without a variant.
     pub(crate) fn level_cast(value: &ValueType, to: &ValueType, tags: bool, types: &[TypeData]) -> Option<ValueType> {
-        let fits = Typing::scalar(to) && Typing::levels_in(value, types).is_some() && Typing::levels_in(value, types) == Typing::levels_in(to, types);
+        let fits = Typing::laid_out(to) && Typing::levels_in(value, types).is_some() && Typing::levels_in(value, types) == Typing::levels_in(to, types);
         fits.then(|| Typing::flag(to.clone(), tags || Typing::flagged(value)))
     }
 
     /// `value.is_known()` of any carried value, `value.high()` of a `bool`: a known `bool`.
     pub(crate) fn flag_read(high: bool, value: &ValueType) -> Option<ValueType> {
         let base = Typing::base(value);
-        let fits = if high { *base == ValueType::Bool } else { Typing::scalar(base) };
+        let fits = if high { *base == ValueType::Bool } else { Typing::laid_out(base) };
         fits.then_some(ValueType::Bool)
     }
 

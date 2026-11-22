@@ -160,13 +160,23 @@ impl Elaboration<'_, '_> {
         }
     }
 
+    /// `value` lowered as a value of the type `wanted` held as one value (a carrier, a param, a
+    /// record field): an `Option` is the pair of value code packed (D8), anything else is the
+    /// expression itself.
+    pub(super) fn lower_stored(&mut self, scope: &mut Scope, value: ExprId, wanted: &ValueType) -> Option<LoweredExpr> {
+        if let ValueType::Option(_) = wanted {
+            let pair = self.lower_option(scope, value)?;
+            let origin = self.expr_origin(value);
+            return Some(self.emit(Expr::OptionPack { is: pair.is, value: pair.val }, wanted.clone(), origin));
+        }
+        self.lower_expr(scope, value)
+    }
+
     /// One part lowered: a value that may be unknown cannot be a part, which is a plain value.
     fn lower_part(&mut self, scope: &mut Scope, value: ExprId, wanted: Option<&ValueType>) -> Option<LoweredExpr> {
         // An `Option` held as one value is the pair of value code packed (D8).
-        if let Some(ValueType::Option(_)) = wanted {
-            let pair = self.lower_option(scope, value)?;
-            let origin = self.expr_origin(value);
-            return Some(self.emit(Expr::OptionPack { is: pair.is, value: pair.val }, wanted?.clone(), origin));
+        if let Some(option @ ValueType::Option(_)) = wanted {
+            return self.lower_stored(scope, value, option);
         }
         let lowered = self.lower_expr(scope, value)?;
         if self.flag(lowered) == Flag::Flagged && wanted.is_none_or(|w| Flag::of(w) == Flag::Plain) {

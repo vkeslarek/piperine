@@ -29,7 +29,7 @@ use std::collections::BTreeSet;
 
 use piperine_ir::{Addend, AnalysisKind, LevelPart,
     BinaryOp, Body, EmitField, Env, Expr, ExprId, FunctionId, Ir, Local, MathFn, Method, Origin, Param, Stmt, StmtId, Stream, TypeData,
-    QuantityRole, Terminal, UnaryOp, ValueType,
+    QuantityRole, Terminal, TypeKind, UnaryOp, ValueType,
 };
 
 use piperine_plan::{RecordLayout, StatementPlan};
@@ -350,6 +350,13 @@ impl<'a> ValuePrinter<'a> {
     pub(crate) fn read(&self, name: &str) -> String {
         self.used.borrow_mut().insert(name.to_string());
         name.to_string()
+    }
+
+    /// The read `variable` of a carrier or its previous value, as the expression `e` types it: the
+    /// flagged variable itself, or, for a tuple, an array, a struct or an `Option` (a flag rides
+    /// only on a scalar), its value, an unknown one reading as the type's default.
+    fn carried(&self, e: ExprId, variable: String) -> String {
+        if Self::is_flagged(self.ir.expr_type(e)) { variable } else { format!("{variable}.known_or(Default::default())") }
     }
 
     /// The printed name of local `i`.
@@ -746,7 +753,7 @@ impl<'a> ValuePrinter<'a> {
                 atom(format!("rt::Unwrap::of({}, {}, {message})", self.expr(*is)?, self.expr(*value)?))
             }
             Expr::Carrier(c) => match self.analog.as_ref().and_then(|r| r.carriers.get(*c as usize)) {
-                Some(name) => atom(self.read(name)),
+                Some(name) => atom(self.carried(e, self.read(name))),
                 None => Err(self.unsupported(e, "a carrier read")),
             },
             Expr::Unknown => {
@@ -827,7 +834,7 @@ impl<'a> ValuePrinter<'a> {
                 None => Err(self.unsupported(e, "the flow of a potential branch")),
             },
             Expr::Previous(c) => match self.analog.as_ref().and_then(|r| r.previous.get(*c as usize)) {
-                Some(name) => atom(self.read(name)),
+                Some(name) => atom(self.carried(e, self.read(name))),
                 None => Err(self.unsupported(e, "the previous value of a carrier")),
             },
             Expr::Limit { site, .. } => match self.analog.as_ref().and_then(|r| r.limits.get(*site as usize)) {
@@ -913,12 +920,23 @@ impl<'a> ValuePrinter<'a> {
     fn level_cast(&self, e: ExprId, expr: ExprId, to: &ValueType, tags: Option<&[i128]>) -> Result<Piece, Error> {
         let target = self.pin_type(to)?;
         let tags = match tags {
-            Some(tags) => format!("Some(&[{}][..])", tags.iter().map(|t| format!("{t}i128")).collect::<Vec<_>>().join(", ")),
+            Some(tags) => format!("Some((&[{}][..], {}))", tags.iter().map(|t| format!("{t}i128")).collect::<Vec<_>>().join(", "), self.tag_levels(to)),
             None => "None".to_string(),
         };
         let call = format!("{}.recast::<{target}>({tags})", self.flagged(expr)?.at(Prec::Atom));
         let text = if Self::is_flagged(self.ir.expr_type(e)) { call } else { format!("{call}.known_or(Default::default())") };
         Ok(Piece::new(text, Prec::Atom))
+    }
+
+    /// The width of the tag of the enum `ty` in levels (§2 rule 5); 0 for any other type.
+    fn tag_levels(&self, ty: &ValueType) -> u32 {
+        match Self::base(ty) {
+            ValueType::Enum(id) => match &self.ir.type_data(*id).kind {
+                TypeKind::Enum { tag_levels, .. } => *tag_levels,
+                TypeKind::Struct { .. } => 0,
+            },
+            _ => 0,
+        }
     }
 
     /// `file:line:col` of `e`.

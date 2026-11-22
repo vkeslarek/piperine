@@ -241,7 +241,8 @@ impl Elaboration<'_, '_> {
         for (port, arg) in ports.iter().zip(args) {
             let Some(carrier) = self.frames[index].carriers.get(port).copied() else { continue };
             let origin = self.expr_origin(arg.value);
-            if let Some((value, _)) = self.lower_drive_value(scope, arg.value, None) {
+            let wanted = self.structure.carriers.get(carrier as usize).map(|c| c.ty.clone());
+            if let Some((value, _)) = self.lower_drive_value(scope, arg.value, None, wanted.as_ref()) {
                 self.structure.drives.push(Drive { carrier, value, after: None, origin });
             }
         }

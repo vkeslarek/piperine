@@ -162,12 +162,11 @@ impl Checker<'_> {
         Some(width)
     }
 
-    /// Whether `ty` is a scalar or a fieldless enum: what the unknown literal and the flag reads
-    /// take today. A carrier holds any type with a `Repr` (`Checker::repr_levels`).
-    pub(super) fn repr_ok(&self, ty: &Ty) -> bool {
-        match ty {
-            Ty::Enum(decl) => !self.has_payload(*decl),
-            other => other.has_repr(),
-        }
+    /// Whether `ty` has a `Repr` layout (§2): what the unknown literal and the flag reads
+    /// (`known_or`, `is_known`, `level`, `cast`, ..) take: a scalar, an enum, or a tuple, an array,
+    /// a struct whose parts have one. An `Option` is not among them: value code holds it as a pair, and its
+    /// flag reads stay refused.
+    pub(super) fn repr_ok(&mut self, ty: &Ty) -> bool {
+        !matches!(ty, Ty::Option(_)) && self.repr_levels(ty).is_some()
     }
 }

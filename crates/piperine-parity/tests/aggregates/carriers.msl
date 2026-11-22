@@ -1,0 +1,99 @@
+//! Composite carriers (CV-17, §2): a struct, a tuple, an array, a payload enum and an `Option`
+//! held by a `Bit<T>`, with an initial value, a definition, commits, reads, `changed()` and
+//! `prev()` over the whole value, the widths of §2 and a tag that names no variant. The expected
+//! bytes are computed by Rust in `source_aggregates.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(Repr, PartialEq)]
+struct Pair { a: u8, b: bool }
+#[derive(Repr, PartialEq)]
+enum Tx { Idle, Data { n: u3 }, Stop }
+#[derive(Repr, PartialEq)]
+struct Wrap { t: (u8, bool), a: [u8; 3], o: Option<u8> }
+
+// Commits of every composite shape, the same value at both rising edges (2.5 ns and 7.5 ns).
+module Commits(in clk: Bit, out s: Bit<Pair>, out t: Bit<(u8, bool)>, out arr: Bit<[u8; 3]>, out tx: Bit<Tx>, out opt: Bit<Option<u8>>) {}
+digital for Commits {
+    on clk.rise() {
+        s <- Pair { a: 7, b: true };
+        t <- (9, false);
+        arr <- [1, 2, 3];
+        tx <- Tx::Data { n: 5 };
+        opt <- Some(4);
+    }
+}
+
+// A value that changes at the second edge, and the levels of a tag a variant names (1, with n = 3)
+// and of one none does (3 of the tags 0, 1, 2).
+module Moves(in clk: Bit, out u: Bit<Pair>, out step: Bit<u8>, out good: Bit<Tx>, out bad: Bit<Tx>) {}
+digital for Moves {
+    on clk.rise() {
+        u <- Pair { a: step.known_or(7), b: false };
+        step <- step.known_or(7) + 1;
+        good <- cast::<u5, Tx>(13);
+        bad <- cast::<u5, Tx>(3);
+    }
+}
+
+// Reads of the whole value: how often it changed, its fields and the value before the change.
+module Watch(in u: Bit<Pair>, in s: Bit<Pair>, out now_a: Bit<u8>, out before_a: Bit<u8>, out s_changes: Bit<u8>) {}
+digital for Watch {
+    on u.changed() {
+        now_a <- u.a;
+        before_a <- u.prev().a;
+    }
+    on s.changed() { s_changes <- s_changes.known_or(0) + 1; }
+}
+
+// Reads of a tuple, an array, an `Option` and a payload enum, whole and by part, and the flag
+// reads of an enum whose tag a variant names and of one whose tag none does.
+module Reads(in t: Bit<(u8, bool)>, in arr: Bit<[u8; 3]>, in opt: Bit<Option<u8>>, in tx: Bit<Tx>, in good: Bit<Tx>, in bad: Bit<Tx>,
+             out r_t: Bit<u8>, out r_arr: Bit<u8>, out r_opt: Bit<u8>, out r_tx: Bit<u8>, out r_levels: Bit<[bool; 5]>, out good_known: Bit<bool>, out bad_known: Bit<bool>) {}
+digital for Reads {
+    on tx.changed() {
+        r_t <- t.0;
+        r_arr <- arr[1];
+        r_opt <- opt.unwrap_or(0);
+        r_tx <- match tx.known_or(Tx::Idle) { Tx::Data { n } => n as u8, _ => 99 };
+        r_levels <- [tx.level(0).unwrap_or(false), tx.level(1).unwrap_or(true), tx.level(2).unwrap_or(false), tx.level(3).unwrap_or(true), tx.level(4).unwrap_or(false)];
+        good_known <- good.is_known();
+        bad_known <- bad.is_known();
+    }
+}
+
+// The width of each type and a level of a value, §2.
+module Widths(in clk: Bit, in s: Bit<Pair>, out w_pair: Bit<u8>, out w_enum: Bit<u8>, out w_wrap: Bit<u8>, out level_a0: Bit<bool>, out level_b: Bit<bool>) {}
+digital for Widths {
+    on clk.rise() {
+        w_pair <- Pair::WIDTH as u8;
+        w_enum <- Tx::WIDTH as u8;
+        w_wrap <- Wrap::WIDTH as u8;
+    }
+    on s.changed() {
+        level_a0 <- s.level(0).unwrap_or(false);
+        level_b <- s.level(8).unwrap_or(false);
+    }
+}
+
+// An initial value, and a definition.
+module Defined(out first: Bit<Pair> = Pair { a: 3, b: true }, out defined: Bit<Pair>) { defined = Pair { a: 1, b: true }; }
+
+module Bench() {
+    signal clk: Bit;
+    signal s: Bit<Pair>; signal t: Bit<(u8, bool)>; signal arr: Bit<[u8; 3]>; signal tx: Bit<Tx>; signal opt: Bit<Option<u8>>;
+    signal u: Bit<Pair>; signal step: Bit<u8>; signal good: Bit<Tx>; signal bad: Bit<Tx>;
+    signal r_t: Bit<u8>; signal r_arr: Bit<u8>; signal r_opt: Bit<u8>; signal r_tx: Bit<u8>; signal r_levels: Bit<[bool; 5]>; signal good_known: Bit<bool>; signal bad_known: Bit<bool>;
+    signal now_a: Bit<u8>; signal before_a: Bit<u8>; signal s_changes: Bit<u8>;
+    signal w_pair: Bit<u8>; signal w_enum: Bit<u8>; signal w_wrap: Bit<u8>;
+    signal level_a0: Bit<bool>; signal level_b: Bit<bool>;
+    signal first: Bit<Pair>; signal defined: Bit<Pair>;
+    let osc = Osc(clk) { f: 200M };
+    let commits = Commits(clk, s, t, arr, tx, opt);
+    let moves = Moves(clk, u, step, good, bad);
+    let watch = Watch(u, s, now_a, before_a, s_changes);
+    let reads = Reads(t, arr, opt, tx, good, bad, r_t, r_arr, r_opt, r_tx, r_levels, good_known, bad_known);
+    let widths = Widths(clk, s, w_pair, w_enum, w_wrap, level_a0, level_b);
+    let defs = Defined(first, defined);
+}

@@ -655,7 +655,7 @@ impl Elaboration<'_, '_> {
         match &self.design.expr_node(expr).kind {
             ExprKind::Lit(lit) => matches!(lit.kind, LitKind::Int(_) | LitKind::Float { .. } | LitKind::Bool(_)),
             ExprKind::Paren(inner) => self.constant_form(*inner),
-            ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if matches!(self.design.decl_data(d).kind, DeclKind::Const(_) | DeclKind::Variant(_))),
+            ExprKind::Path(path) => self.types.width(expr).is_some() || matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if matches!(self.design.decl_data(d).kind, DeclKind::Const(_) | DeclKind::Variant(_))),
             ExprKind::Unary { op: UnOp::Neg | UnOp::Not, expr: operand } => self.constant_form(*operand),
             ExprKind::Binary { lhs, rhs, .. } => self.constant_form(*lhs) && self.constant_form(*rhs),
             ExprKind::Cast { expr: operand, .. } => self.constant_form(*operand),

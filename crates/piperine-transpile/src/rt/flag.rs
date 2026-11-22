@@ -660,16 +660,17 @@ impl<T: Carried> Flagged<T> {
     }
 
     /// `cast::<T, U>(x)` (§22.1.3): the same levels under another type of the same level count,
-    /// with their flag. `tags` lists the tags `U` decodes when it is an enum: any other
-    /// pattern has no variant, and the result is `Unknown` (rule 2).
-    pub fn recast<U: Carried>(self, tags: Option<&[i128]>) -> Flagged<U> {
+    /// with their flag. `tags` lists the tags `U` decodes when it is an enum, and the width of
+    /// its tag in levels: a value whose tag levels (the lowest ones, §2) are any other pattern
+    /// has no variant, and the result is `Unknown` (rule 2).
+    pub fn recast<U: Carried>(self, tags: Option<(&[i128], u32)>) -> Flagged<U> {
         if !self.known {
             return Flagged::unknown();
         }
         let words = self.value.to_levels();
         match tags {
-            // a tag is at most 64 levels: a value of more levels is read through its low word
-            Some(tags) if !tags.contains(&i128::from(words.low())) => Flagged::unknown(),
+            // a tag is at most 64 levels: it is read through one word
+            Some((tags, tag_levels)) if !tags.contains(&i128::from(words.slice(0, tag_levels).low())) => Flagged::unknown(),
             _ => Flagged::known(U::from_levels(&words)),
         }
     }
@@ -1624,9 +1625,13 @@ mod tests {
         assert_eq!(u::<UInt<4>>().recast::<Int<4>>(None), u(), "an unknown value stays unknown");
         // rule 2: a tag the target has no variant for is `Unknown`
         let tags = [0, 1, 2];
-        assert_eq!(k(UInt::<2>::new(2)).recast::<UInt<2>>(Some(&tags)), k(UInt::<2>::new(2)));
-        assert_eq!(k(UInt::<2>::new(3)).recast::<UInt<2>>(Some(&tags)), u());
-        assert_eq!(u::<UInt<2>>().recast::<UInt<2>>(Some(&tags)), u());
+        assert_eq!(k(UInt::<2>::new(2)).recast::<UInt<2>>(Some((&tags, 2))), k(UInt::<2>::new(2)));
+        assert_eq!(k(UInt::<2>::new(3)).recast::<UInt<2>>(Some((&tags, 2))), u());
+        assert_eq!(u::<UInt<2>>().recast::<UInt<2>>(Some((&tags, 2))), u());
+        // rule 2 reads the tag in the lowest levels (§2): a payload above it does not make it another tag
+        assert_eq!(k(UInt::<5>::new(0b01101)).recast::<UInt<5>>(Some((&tags, 2))), k(UInt::<5>::new(0b01101)), "tag 1, payload 3");
+        assert_eq!(k(UInt::<5>::new(0b01100)).recast::<UInt<5>>(Some((&tags, 2))), k(UInt::<5>::new(0b01100)), "tag 0, payload 3");
+        assert_eq!(k(UInt::<5>::new(0b00111)).recast::<UInt<5>>(Some((&tags, 2))), u(), "tag 3 names no variant whatever the payload");
     }
 
     #[test]
