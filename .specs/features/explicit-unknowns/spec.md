@@ -1,6 +1,6 @@
 # Explicit Unknowns Specification
 
-**Approved**: pending. The rules R1 to R10 are approved (user, 2026-11-21); Q1 to Q3 are answered (same day, quoted under "Answers"); D1 to D11, D15 and D16 stand with no objection from the user. Q4 and Q5 are new and wait for the user, so no approval of the whole spec is written yet.
+**Approved**: 2026-11-21 - user, 2026-11-21: "Aceito os recomendados" (Q4: no separate strength trait, `impl Resolve<Driven>` carries it; Q5: Strength set B, five levels HighZ < Weak < Pull < Strong < Supply), after R1–R10, Q1–Q3 and the ABI (major 1, edited in place) the same day; D1–D21 stand.
 
 ## Decision (user, 2026-11-21)
 
@@ -104,10 +104,10 @@ The planner's decisions where the approved rules left a choice. Each is the simp
 | D19: how a drive picks its `impl` | By the type of the value it drives. Every drive of one carrier has the same `X`; two driven types on one carrier are `E0225` naming both modules; a drive whose type no `impl` accepts is `E0180`; a literal that fits several is `E0181` | one `resolve` call combines one array type. Mixing would need a conversion nobody wrote | n |
 | D20: the library's nets | No library net nature: `Wire`, `Tri<T>` and `SumNet` are removed. The library keeps `Strength`, `Driven`, the resolution function `Driven::strongest`, `sum`, and the modules `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir`, `TribufDelayed`, each generic over `W: Nature + Resolve<Driven>`. A user writes `pub nature Sda { value: Driven }` and `impl Resolve<Driven> for Sda { .. }` | user: "pq tem Wire? Pq eu simplesmente não declaro a Nature ABC com um resolve específico e uso o tipo dela como normal?". A library module asks for a capability, never for a library net | n |
 | D21: one drive or many | A carrier whose nature does not implement `Resolve` takes one drive; a second is `E0220`, whose text now names the nature and `Resolve`. A carrier whose nature implements it takes any number, zero included, and its value is always `resolve` of its present drives. Its ports take no direction, as a resolved nature's do today | user: "nós discretos só podem ser ligados a multiplos outputs com a trait Resolve". `E0220` already is "a second drive"; only its message changes | y - user |
-| Q4: does strength need a trait of its own | **Recommended: no.** `Resolve<X, V>` already says it: a strength-aware nature is `impl Resolve<Driven> for Sda`, whose drives are a level and a strength. Alternative: a second trait `ResolveStrength<X, V = X>` whose function receives `[(X, Strength); N]` | See "Q4" below | n |
-| Q5: the set of `Strength` | **Recommended: B, five values** `HighZ < Weak < Pull < Strong < Supply` (today's set). A: three (`HighZ`, `Weak`, `Strong`). C: the eight of IEEE 1364 with charge storage | See "Q5" below | n |
+| Q4: does strength need a trait of its own | **Recommended: no.** `Resolve<X, V>` already says it: a strength-aware nature is `impl Resolve<Driven> for Sda`, whose drives are a level and a strength. Alternative: a second trait `ResolveStrength<X, V = X>` whose function receives `[(X, Strength); N]` | See "Q4" below | y - user 2026-11-21 "Aceito os recomendados": no |
+| Q5: the set of `Strength` | **Recommended: B, five values** `HighZ < Weak < Pull < Strong < Supply` (today's set). A: three (`HighZ`, `Weak`, `Strong`). C: the eight of IEEE 1364 with charge storage | See "Q5" below | y - user 2026-11-21 "Aceito os recomendados": B |
 
-**Open questions:** Q4 and Q5. Q1 to Q3 are answered above.
+**Open questions:** none. Q1 to Q5 are answered (Q4 and Q5: user, 2026-11-21, "Aceito os recomendados").
 
 ### Q4: a second trait for strength?
 

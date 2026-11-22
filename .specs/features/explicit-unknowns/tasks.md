@@ -10,7 +10,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 **Design**: `.specs/features/explicit-unknowns/design.md`
 **Status**: Draft
-**Approved**: pending. No approval is written until the user gives it; spec.md Q4 and Q5 wait with it. Revised 2026-11-21 for the user's answers to Q1 to Q3 and on the ABI.
+**Approved**: 2026-11-21 - user, 2026-11-21: "Aceito os recomendados" (Q4: no separate strength trait, `impl Resolve<Driven>` carries it; Q5: Strength set B, five levels HighZ < Weak < Pull < Strong < Supply), after R1–R10, Q1–Q3 and the ABI (major 1, edited in place) the same day; D1–D21 stand.
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run docs**: `cargo test -p piperine-cli --test docs`
