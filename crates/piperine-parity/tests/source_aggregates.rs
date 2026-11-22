@@ -620,3 +620,74 @@ fn the_zi_nd_reaction_value_code_runs_as_a_function() {
     let zi = IteratorRows::wanted().into_iter().filter(|(name, _)| *name == "zi_nd").collect::<Vec<_>>();
     assert_commits("iterators.msl", &["zi_nd"], &[zi[0].1.clone()]);
 }
+
+/// A known `u64` carrier value as the plan lays it out: the value, then the known byte.
+fn u64_bytes(v: u64) -> Vec<u8> {
+    let mut bytes = vec![0u8; 16];
+    bytes[..8].copy_from_slice(&v.to_le_bytes());
+    bytes[8] = 1;
+    bytes
+}
+
+/// §22.2.17's generator, written as the spec writes it and compiled by Rust.
+struct SpecGenerator;
+
+impl SpecGenerator {
+    /// One step of SplitMix64: a uniform real in [0, 1) and the next state.
+    fn uniform(rng: u64) -> (f64, u64) {
+        let s = rng.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let z = (s ^ (s >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        let z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        let z = z ^ (z >> 31);
+        ((z >> 11) as f64 / 9_007_199_254_740_992.0, s)
+    }
+
+    /// `normal`: two uniform draws and Box-Muller; the sample and the next state.
+    fn normal(rng: u64, mean: f64, sigma: f64) -> (f64, u64) {
+        let (a, s1) = Self::uniform(rng);
+        let (b, s2) = Self::uniform(s1);
+        let z = (-2.0 * (1.0 - a).ln()).sqrt() * (2.0 * std::f64::consts::PI * b).cos();
+        (mean + sigma * z, s2)
+    }
+}
+
+#[test]
+fn normal_matches_the_spec_text_bit_for_bit() {
+    // CV-16 AC 1 (§22.2.17 rules 1 and 2): the sample and the next state are those of the spec's SplitMix64 and
+    // Box-Muller text compiled by Rust, bit for bit.
+    let spec = |seed: u64| SpecGenerator::normal(seed, 1.5, 0.25);
+    assert_commits(
+        "normal.msl",
+        &["s0", "s1", "s2", "n0", "n1"],
+        &[real_bytes(spec(0).0), real_bytes(spec(42).0), real_bytes(spec(0xDEAD_BEEF_CAFE_F00D).0), u64_bytes(spec(0).1), u64_bytes(spec(42).1)],
+    );
+}
+
+#[test]
+fn normal_with_zero_sigma_returns_the_mean() {
+    // CV-16 AC 2 (§22.2.17 rule 3): with `sigma == 0.0` the sample is `mean`, whatever the seed.
+    assert_commits("normal.msl", &["f0", "f1"], &[real_bytes(3.0), real_bytes(3.0)]);
+}
+
+#[test]
+fn the_jitter_clock_repeats_with_its_seed() {
+    // CV-16 AC 3 (§22.2.17 rule 4): the clock whose edges the state of `normal` places gives the same edge times on
+    // every run with one seed, and the edges are not on a regular grid (the jitter is there).
+    let edges = |top: &str| transient(&build(&project("normal.msl"), top).run(200e-9, 1e-9), &format!("{top}.clk")).into_iter().map(|(tick, _)| tick).collect::<Vec<i64>>();
+    let first = edges("JitterBench");
+    let second = edges("JitterBench");
+    assert!(first.len() > 10, "the clock runs: {first:?}");
+    assert_eq!(first, second, "one seed, one sequence of edge times");
+    let gaps: Vec<i64> = first.windows(2).map(|pair| pair[1] - pair[0]).collect();
+    assert!(gaps.iter().any(|gap| *gap != gaps[0]), "the jitter moves the edges: {gaps:?}");
+    // the same sequence Rust gives: each edge is placed half a period plus one draw after the last, each
+    // delay rounded to the nearest tick (a femtosecond) when it is scheduled
+    let (mut state, mut now, mut wanted) = (7u64, 0i64, Vec::new());
+    for _ in 0..first.len() {
+        let (jitter, next) = SpecGenerator::normal(state, 0.0, 1e-9);
+        state = next;
+        now += ((10e-9 / 2.0 + jitter) / 1e-15).round() as i64;
+        wanted.push(now);
+    }
+    assert_eq!(first, wanted, "the edges are the spec's draws placed one after the other");
+}

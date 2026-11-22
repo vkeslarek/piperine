@@ -789,7 +789,9 @@ impl<'a> ValuePrinter<'a> {
                 // a local (a struct field) leaves it open, so the call names it
                 let ret = self.ir.function(*function).ret();
                 let aggregate_result = matches!(ret, ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Option(_)) && items.holds_real(ret);
-                let fixed = params.iter().any(|p| items.holds_real(&p.ty)) || (items.holds_real(ret) && !aggregate_result) || !Self::env_reads(self.ir, *function).is_empty();
+                // in reaction code (`plain`) a result alone does not fix it: a value that goes on through a
+                // generic call (`Flagged::known(f(x))`) leaves it open
+                let fixed = params.iter().any(|p| items.holds_real(&p.ty)) || (items.holds_real(ret) && !aggregate_result && !(self.plain && Self::computes_real_value(self.ir, *function))) || !Self::env_reads(self.ir, *function).is_empty();
                 let real = if (printed.is_empty() || !fixed) && Self::is_generic(self.ir, *function) { format!("::<{}>", if self.plain { "f64" } else { "R" }) } else { String::new() };
                 atom(format!("{}{real}({})", Text::ident(self.ir.function(*function).name()), printed.join(", ")))
             }
