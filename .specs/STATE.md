@@ -1815,14 +1815,16 @@ It supersedes MD-70 whole and MD-64 in its analysis of unknown-ness; it moves MD
 
 ### MD-80: the solver lands by the observable rule; every step is tested; time is a tick epoch
 
-`transient-performance` (2026-11-22; the number follows MD-79, `composite-values`, which is not yet on `main`; a
-collision at merge is renumbered by whoever merges second). It extends MD-73's solver and supersedes nothing.
+`transient-performance` (2026-11-22; the number follows MD-79, `composite-values`; a collision at merge is
+renumbered by whoever merges second). It extends MD-62's owner protocol (the one device contract and the transient
+protocol over its two sides) and MD-74's rule for `settle`, and supersedes nothing.
 
 1. **Landings.** The discrete side lands the analog step only where something observable happens: an analog-read
    net changed, a firing reaction reads a continuous pin, an `IRREVERSIBLE` reaction or a host waiter (the
    `Observable` `TimePointRule`, the solver's default; `Declared` is the reference mode, a host option with no run
    key). The step that ends on a landing is tested for truncation, and the step that reads a jump is
-   error-controlled by a first-order estimate: the two exemptions of Part V §15.2 are gone.
+   error-controlled by a first-order estimate: the two exemptions of Part V §15.2 that rules 1 and 6 name are gone. The
+   step retaken to the same time after its crossings (§15.2 rule 4) stays exempt, since it cannot be taken smaller.
 2. **Idle steps.** An accepted step where nothing is due, no crossing fired and nothing listens to `settle` runs no
    instant (`DiscreteSide::is_idle_at`).
 3. **Per-step cost.** Newton reads the clock only when `PIPERINE_TRACE_TIMING` is set; a `Handle` validates a
