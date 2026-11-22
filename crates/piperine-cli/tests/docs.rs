@@ -677,6 +677,22 @@ fn the_scenario_package_states_its_measured_step_count() {
     for column in ["Old", "New", "Requirement"] {
         assert!(header.contains(column), "moved.md lacks the column `{column}`: {header}");
     }
+    // every moved golden is a row of cells, none of them empty, and none of them a record or a digital column
+    let rows: Vec<Vec<&str>> = moved
+        .lines()
+        .filter(|line| line.starts_with("| T") && !line.starts_with("| Task |"))
+        .map(|line| line.trim_matches('|').split(" | ").map(str::trim).collect())
+        .collect();
+    assert!(!rows.is_empty(), "moved.md lists its moved goldens");
+    for row in &rows {
+        assert_eq!(row.len(), 5, "a moved golden has task, golden, old, new and requirement: {row:?}");
+        assert!(row.iter().all(|cell| !cell.is_empty()), "a cell of a moved golden is empty: {row:?}");
+        assert!(!row[1].contains("record") && !row[1].contains("column"), "a record or a digital column moved: {row:?}");
+    }
+    let monitor = rows.iter().find(|row| row[0] == "T16").expect("the T16 row of the monitor listing");
+    assert!(monitor[1].contains("monitor.msl"), "the T16 row names the monitor listing: {monitor:?}");
+    assert!(monitor[3].contains("`zone` records are equal"), "the T16 row says its records did not move: {monitor:?}");
+    assert!(monitor[4].contains("TP-03"), "the T16 row names its requirement: {monitor:?}");
 }
 
 #[test]
