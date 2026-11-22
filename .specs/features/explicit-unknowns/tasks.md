@@ -1212,7 +1212,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T48: Phase B closure
 
-**What**: `GAPS.md`: L58's `Logic`, `cast`, `same` entries; counts. Appendix G.72 loses its last "does not meet" sentence. Book: **exactly these rows flip** to running, each with its test and its GAPS.md section 11 row deleted: values#18 and its sentences values~c30bad4d, (the three E0180 rows values~13ffaea6, analog~39ba351d, mixed~39ba351d already hold on `main`: `Logic` is a struct type since `composite-values` CV-09, so a `Logic` where an `f64` or a `bool` is required is `E0180` today and no row of T48 flips them); the `Logic<4>` and `Option<Logic<N>>` lines of natures#2 run with the rest of that block only when `resolved-nets` has flipped it (it needs the array of `composite-values` and `Sda`'s `Resolve<Driven>`); T48 re-pins the row. `.specs/STATE.md`: MD-78 status delivered. A note in `.specs/features/resolved-nets/tasks.md` Handoff that `Logic` runs, that its spec is to be revised for `Resolve<X, V>` before B3, and that T27 starts from `Driven`.
+**What**: Remove the checker's own `cast` and `same` (`Intrinsic::{Same, Cast}` in `types/intrinsic.rs`, `elab/intrinsics.rs`, `lower_cast`) and compile them from `std/values.msl` now that `generics` A is on `main`, a differential test running the stdlib source against the lowering first; the `cast` to a tuple or an array holding an enum then runs. `GAPS.md`: L58's `cast` and `same` entries and L68 (`Logic`, `logic`, `matches_bits`); counts. Appendix G.72 loses its last "does not meet" sentence. Book: **exactly these rows flip** to running, each with its test and its GAPS.md section 11 row deleted: values#18 and its sentences values~c30bad4d, (the three E0180 rows values~13ffaea6, analog~39ba351d, mixed~39ba351d already hold on `main`: `Logic` is a struct type since `composite-values` CV-09, so a `Logic` where an `f64` or a `bool` is required is `E0180` today and no row of T48 flips them); the `Logic<4>` and `Option<Logic<N>>` lines of natures#2 run with the rest of that block only when `resolved-nets` has flipped it (it needs the array of `composite-values` and `Sda`'s `Resolve<Driven>`); T48 re-pins the row. `.specs/STATE.md`: MD-78 status delivered. A note in `.specs/features/resolved-nets/tasks.md` Handoff that `Logic` runs, that its spec is to be revised for `Resolve<X, V>` before B3, and that T27 starts from `Driven`.
 **Where**: `GAPS.md`
 **Depends on**: T47
 **Reuses**: T40
@@ -1221,6 +1221,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
+- [ ] `cast` and `same` compile from `std/values.msl`; `Intrinsic::Cast` and `Intrinsic::Same` are gone from the tree
 - [ ] All `book_*` targets pass
 - [ ] `twins::every_twin_matches_its_golden` and both integrated suites pass
 - [ ] Gate check passes: Batch
