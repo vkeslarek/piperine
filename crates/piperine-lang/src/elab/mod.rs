@@ -52,7 +52,7 @@ mod unlowered;
 mod unroll;
 mod variants;
 
-pub use consts::{Bindings, ConstEval, ConstFault, Exit, Folded};
+pub use consts::{Bindings, ConstEval, ConstFault, Exit};
 pub use files::{FileFault, IncludedFiles};
 pub use elaborator::Elaborator;
 pub use host_sources::HostSourceParam;

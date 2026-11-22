@@ -57,10 +57,6 @@ impl Elaboration<'_, '_> {
             }
             ConstFault::Unsupported { what, .. } => self.unsupported(file, span, &format!("{what} in {position}")),
             ConstFault::NoValue { .. } => self.unsupported(file, span, &format!("a `const` without a value in {position}")),
-            ConstFault::Unknown { .. } => {
-                let message = format!("{position} is not an expression over params and constants: it reads a value only a run gives");
-                self.report(file, Diagnostic::new("E0321", message, span, "not constant"));
-            }
             ConstFault::Leaves { .. } => self.unsupported(file, span, &format!("a `break`, `continue` or `return` outside the loop or function it leaves in {position}")),
             ConstFault::Panic { what, .. } => {
                 let message = format!("{position} panics while it is evaluated at elaboration: {what}");

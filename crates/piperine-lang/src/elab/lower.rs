@@ -14,7 +14,7 @@ use super::compound::EnumLayout;
 use super::control::LoopFrame;
 use super::returns::FunctionResult;
 use super::variants::Half;
-use super::consts::{Bindings, Folded};
+use super::consts::Bindings;
 use super::unroll::Expansion;
 use super::elaborator::Elaboration;
 use super::selectors::{ArmCondition, ContributionRecord};
@@ -231,12 +231,8 @@ impl Elaboration<'_, '_> {
             return self.lower_event_read(scope, expr);
         }
         if ty.is_integer() && self.constant_form(expr) {
-            return match self.consts.folded(expr, &Bindings::new()) {
-                Ok(Folded::Known(value)) => Some(self.constant_expr(value, ty, origin)),
-                Ok(Folded::Unknown) => {
-                    self.unsupported(file, node.span, "a constant expression that has no value at elaboration");
-                    None
-                }
+            return match self.consts.value(expr, &Bindings::new()) {
+                Ok(value) => Some(self.constant_expr(value, ty, origin)),
                 Err(fault) => {
                     self.const_fault(&fault, "a constant expression");
                     None
@@ -670,12 +666,8 @@ impl Elaboration<'_, '_> {
         match &self.design.decl_data(decl).kind {
             // A composite `const` is written out where it is read (`consts/imported.rs`).
             DeclKind::Const(_) if self.consts.is_composite_constant(decl) => self.lower_composite_constant(scope, decl, expr, ty, origin),
-            DeclKind::Const(_) => match self.consts.folded_constant(decl) {
-                Ok(Folded::Known(value)) => Some(self.constant_expr(value, ty, origin)),
-                Ok(Folded::Unknown) => {
-                    self.unsupported(scope.file, node.span, "a `const` that has no value at elaboration");
-                    None
-                }
+            DeclKind::Const(_) => match self.consts.constant(decl) {
+                Ok(value) => Some(self.constant_expr(value, ty, origin)),
                 Err(fault) => {
                     self.const_fault(&fault, "a `const`");
                     None

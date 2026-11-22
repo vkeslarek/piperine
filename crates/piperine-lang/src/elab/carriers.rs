@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use piperine_ir::{AggregateData, BodyId, BodyNode, Carrier, CarrierRole, ChildValue, Constant, Derivative, Drive, Event, Hoisted, Reach, Reaction, Stream, Terminal, ValueType};
 
 use super::body::NodePlan;
-use super::consts::{Bindings, Folded};
+use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use crate::pom::{DeclId, DeclKind, Dir, ExprId};
 use crate::types::Ty;
@@ -134,7 +134,10 @@ impl Elaboration<'_, '_> {
         };
         let ty = self.carried_type(decl)?;
         let init = match init {
-            Some(expr) => self.carrier_init(expr, frame)?.map(|value| self.ir_constant(value, &ty)),
+            Some(expr) => {
+                let value = self.carrier_init(expr, frame)?;
+                Some(self.ir_constant(value, &ty))
+            }
             None if frame == 0 || matches!(data.kind, DeclKind::Signal(_)) => self.default_initial_value(decl, &ty),
             None => None,
         };
@@ -144,15 +147,13 @@ impl Elaboration<'_, '_> {
 
     /// The initial value of a carrier, folded: a constant expression over literals, `const`s and the
     /// params of its frame (§5.2.3, §5.1.5): a param it reads is a key param of the body, so each
-    /// variant folds its own value (`structural.rs`). The outer `None` is a diagnostic; the inner
-    /// one is a constant with no value at elaboration, which is the same as none.
-    fn carrier_init(&mut self, expr: ExprId, frame: usize) -> Option<Option<Constant>> {
+    /// variant folds its own value (`structural.rs`). `None` is a diagnostic.
+    fn carrier_init(&mut self, expr: ExprId, frame: usize) -> Option<Constant> {
         let bindings = self.frame_bindings(frame);
         // a composite folds to a constant of the IR's arena (`consts/imported.rs`)
-        let folded = if self.types.ty(expr).is_some_and(Ty::is_composite) { self.composite_constant(expr, &bindings).map(Folded::Known) } else { self.consts.folded(expr, &bindings) };
+        let folded = if self.types.ty(expr).is_some_and(Ty::is_composite) { self.composite_constant(expr, &bindings) } else { self.consts.value(expr, &bindings) };
         match folded {
-            Ok(Folded::Known(value)) => Some(Some(value)),
-            Ok(Folded::Unknown) => Some(None),
+            Ok(value) => Some(value),
             Err(fault) => {
                 self.const_fault(&fault, "a carrier's initial value");
                 None
