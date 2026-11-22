@@ -21,7 +21,7 @@ mod support {
 use piperine::{Cell, Field, Overrides};
 use support::chapter::Chapter;
 use support::faulty::Faulty;
-use support::model::Model;
+use support::model::{Earlier, Model};
 use support::printed::Printed;
 use support::records::Fields;
 use support::refusal::Refusal;
@@ -75,7 +75,7 @@ impl Buck {
         let text = chapter.text("mixed#8");
         let from = "ki: f64 = 1m where ki > 0.0;";
         assert!(text.contains(from), "the Book's text holds `{from}`");
-        Model::written("buck.msl", &text.replace(from, &format!("ki: f64 = {ki} where ki > 0.0;")))
+        Model::written("buck.msl", &Earlier::gate(&text.replace(from, &format!("ki: f64 = {ki} where ki > 0.0;"))))
     }
 }
 
@@ -118,7 +118,7 @@ fn the_math_methods_and_the_settle_event_run() {
     // the `settle` check (mixed#10), since unknown-semantics-events T5 (L52); the sentence is gone (T22)
     let chapter = Chapter::read();
     CycleCounter::model(&chapter).run(Commands::cycles()).unwrap_or_else(|failure| panic!("`sin` runs: {failure}"));
-    chapter.marked("buck.msl", "mixed#10").run(Commands::buck()).unwrap_or_else(|failure| panic!("the `settle` check runs (mixed#10): {failure}"));
+    chapter.marked("buck.msl", "mixed#10").earlier("buck.msl").run(Commands::buck()).unwrap_or_else(|failure| panic!("the `settle` check runs (mixed#10): {failure}"));
 }
 
 #[test]
@@ -137,21 +137,24 @@ fn the_comparator_without_hysteresis_reads_its_event_as_a_bool() {
 }
 
 #[test]
-fn the_digital_to_analog_converter_drives_half_the_supply_for_unknown() {
-    // mixed#7 (run): `D2A`; mixed~e784c042 "d.known() gives three cases, and the model drives half the supply
-    // for 'don't know'"; mixed~f53cc3cb "That is the choice E0150 forces every analog reader to make.
-    // transition turns the stepped level into a ramp of duration tr, so the output has a real edge": with
-    // vdd = 2 V and `tr` = 1 us, an unknown input gives 1 V, a high at 1 us ramps to 2 V (1.5 V halfway) and a
-    // low at 3 us ramps back to 0 V
+fn the_digital_to_analog_converter_drives_the_supply_or_ground() {
+    // mixed#7 (run): `D2A`; mixed~e784c042 "d is a bool, so the output goes to the supply or to
+    // ground" (replaces the sentence "d.known() gives three cases, and the model drives half the supply for
+    // 'don't know'", whose test `the_digital_to_analog_converter_drives_half_the_supply_for_unknown` ran the
+    // unknown input); mixed~f53cc3cb "A converter for a Logic input makes the other choice in its own text,
+    // d.to_volts(1.0), which gives half the supply for x and z" (refused with it: `Logic` is not in the library
+    // yet). transition turns the stepped level into a ramp of duration tr, so the output has a real edge: with
+    // vdd = 2 V and `tr` = 1 us, a low input gives 0 V, a high at 1 us ramps to 2 V (1.5 V halfway) and a low at
+    // 3 us ramps back to 0 V. `D2A` reads `d` in a `let` of its body, which the earlier front end accepts: the row stays `run`
     let chapter = Chapter::read();
-    let after = format!("{SOURCE}module Top() {{ signal d: Bit; signal a: Electrical; signal vdd: Electrical; let s = Vdc(vdd) {{ dc: 2.0 }}; let c = D2A(d, a, vdd) {{ tr: 1u }}; }}\ndigital for Top {{ on at(1u) {{ d <- true; }} on at(3u) {{ d <- false; }} }}\n");
+    let after = format!("{SOURCE}module Top() {{ signal d: Bit = false; signal a: Electrical; signal vdd: Electrical; let s = Vdc(vdd) {{ dc: 2.0 }}; let c = D2A(d, a, vdd) {{ tr: 1u }}; }}\ndigital for Top {{ on at(1u) {{ d <- true; }} on at(3u) {{ d <- false; }} }}\n");
     let ran = chapter.wrapped("d2a.msl", "", "mixed#7", &after).run(Commands::transient("Top", 5e-6, Some(5e-7))).unwrap_or_else(|failure| panic!("{failure}"));
     let level = |microseconds: f64| {
         let row = ran.table.rows.iter().position(|row| matches!(row[0], Cell::Real(time) if (time - microseconds * 1e-6).abs() < 1e-9)).unwrap_or_else(|| panic!("no row at {microseconds} us"));
         ran.real(row, "Top.a")
     };
-    assert!((level(0.5) - 1.0).abs() < 1e-6, "unknown drives half the supply: {}", level(0.5));
-    assert!((level(1.5) - 1.5).abs() < 1e-6, "halfway up the ramp of `tr`: {}", level(1.5));
+    assert!(level(0.5).abs() < 1e-6, "a low input is ground: {}", level(0.5));
+    assert!((level(1.5) - 1.0).abs() < 1e-6, "halfway up the ramp of `tr`: {}", level(1.5));
     assert!((level(2.5) - 2.0).abs() < 1e-6, "high is the supply: {}", level(2.5));
     assert!((level(4.5)).abs() < 1e-6, "low is zero: {}", level(4.5));
 }
@@ -171,7 +174,8 @@ fn the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28() {
     let chapter = Chapter::read();
     let mut with_checks = Commands::buck();
     with_checks.streams.push("checks".to_string());
-    let checked = chapter.marked("buck.msl", "mixed#10").run(with_checks).unwrap_or_else(|failure| panic!("mixed#10, the converter with its `settle` check: {failure}"));
+    Refusal::expect(chapter.marked("buck.msl", "mixed#10").run(with_checks.clone()), "mixed#10", "E0150", "an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
+    let checked = chapter.marked("buck.msl", "mixed#10").earlier("buck.msl").run(with_checks).unwrap_or_else(|failure| panic!("mixed#10, the converter with its `settle` check: {failure}"));
     // UE-06 AC 2: every `regulated` check record after 10 ms is a pass (the bound is 50 mV, the Book's own)
     let regulated: Vec<&_> = checked.stream("checks").into_iter().filter(|record| matches!(Fields::of(record, "name"), Field::Text(name) if name == "regulated")).collect();
     assert!(!regulated.is_empty(), "the check runs at the time points after 10 ms");
@@ -179,7 +183,8 @@ fn the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28() {
         assert!(record.time > 10e-3, "the check is guarded by now() > 10m: {}", record.time);
         assert_eq!(Fields::of(record, "pass"), &Field::Bool(true), "regulated at {:e} s: {:?}", record.time, record.fields);
     }
-    let records = Buck::loop_records(&chapter.marked("buck.msl", "mixed#8"));
+    Refusal::expect(chapter.marked("buck.msl", "mixed#8").run(Commands::buck()), "mixed#8", "E0150", "an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
+    let records = Buck::loop_records(&chapter.marked("buck.msl", "mixed#8").earlier("buck.msl"));
     assert_eq!(records.len(), 1201, "one record per switching period of 10 us over 12 ms, the first at 0");
     assert!((records[1].0 - 1e-5).abs() < 1e-12 && (records[1200].0 - 12e-3).abs() < 1e-9, "the periods");
     let (_, vout, err, duty) = records[1200];
@@ -206,7 +211,7 @@ fn the_buck_starts_from_the_operating_point_with_the_first_tick_applied() {
     // is solved again with the switch closed, so the transient starts from 11.8 V. The first record is the
     // sample before that commit (vout 0, err 3.3, duty 0.0033)
     let chapter = Chapter::read();
-    let model = chapter.marked("buck.msl", "mixed#8");
+    let model = chapter.marked("buck.msl", "mixed#8").earlier("buck.msl");
     let records = Buck::loop_records(&model);
     Printed::holds("3.299960e0", records[0].2, "the first error, the Book's 3.300");
     Printed::holds("3.299960e-3", records[0].3, "the first duty, the Book's 0.0033");
@@ -252,7 +257,8 @@ fn the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero() {
     let clock = chapter.text("values#1");
     let clock = clock.split_once("/// Counts rising edges").expect("the clock comes first").0;
     let after = format!("{SOURCE}module Top() {{ signal vin: Electrical; signal clk: Bit; signal bit: Bit; let s = Vdc(vin) {{ dc: 0.3 }}; let m = DeltaSigma1(vin, clk, bit); let o = Osc(clk) {{ f: 1M }}; }}\n{clock}");
-    let model = chapter.wrapped("delta_sigma.msl", "", "mixed#14", &after);
+    Refusal::expect(chapter.wrapped("delta_sigma.msl", "", "mixed#14", &after).run(Commands::transient("Top", 200e-6, Some(1e-6))), "mixed#14", "E0150", "an `analog` block reads the discrete carrier `bit` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
+    let model = chapter.wrapped("delta_sigma.msl", "", "mixed#14", &after).earlier("delta_sigma.msl");
     let ran = model.run(Commands::transient("Top", 200e-6, Some(1e-6))).unwrap_or_else(|failure| panic!("{failure}"));
     let high = (0..ran.table.rows.len()).filter(|row| ran.cell(*row, "Top.bit") == &Cell::Bool(true)).count();
     let density = high as f64 / ran.table.rows.len() as f64;
@@ -359,4 +365,14 @@ fn e0504_the_step_after_a_jump_that_does_not_converge_names_the_carrier() {
     assert_eq!(given.len(), 1, "{given:?}");
     assert_eq!(given[0].0, "E0504");
     assert!(given[0].1.contains("the step after a jump fails at the smallest step; it reads the delivery of Top.lvl"), "{}", given[0].1);
+}
+
+#[test]
+fn e0180_is_not_raised_for_a_logic_read_in_analog_yet() {
+    // mixed~39ba351d (`unraised`, GAPS.md S8): the mistakes table's "E0180 if flags { … } in analog, flags a Bit<Logic>":
+    // a `Logic` where a `bool` is required is E0180 in the explicit model. Today the library struct `Logic` is
+    // not taken as a type (`P0001`), so the code is not raised; the test fails when E0180 is.
+    let faulty = Faulty::running("mixed~39ba351d", "module Top(in flags: Bit<Logic>) { signal a: Electrical; }\nanalog for Top { if flags { v(a) +> 1.0; } }\n", Faulty::operating_point_of("Top"));
+    assert!(faulty.given.iter().all(|reported| reported.code != "E0180"), "E0180 is not raised yet: {:?}", faulty.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
+    assert!(faulty.given.iter().any(|reported| reported.code == "P0001"), "`Logic` is refused by name: {:?}", faulty.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
 }

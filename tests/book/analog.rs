@@ -196,7 +196,8 @@ fn the_switch_shorts_its_nodes_while_its_control_is_high() {
     let chapter = Chapter::read();
     let top = |ctl: &str| format!("module Top() {{ signal s: Electrical; signal a: Electrical; signal c: Bit = {ctl}; let v1 = Vdc(s) {{ dc: 1.0 }}; let r = R(s, a) {{ r: 1k }}; let sw = Switch(a, gnd, c); }}\n");
     for (ctl, volts) in [("true", 0.0), ("false", 1.0)] {
-        let model = chapter.wrapped("switch.msl", Bench::PARTS, "analog#9", &top(ctl));
+        Refusal::expect(chapter.wrapped("switch.msl", Bench::PARTS, "analog#9", &top(ctl)).run(Commands::operating_point()), "analog#9", "E0150", "an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
+        let model = chapter.wrapped("switch.msl", Bench::PARTS, "analog#9", &top(ctl)).earlier("switch.msl");
         let ran = model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
         assert!((ran.signal("Top.a") - volts).abs() < 1e-6, "control {ctl}: v(a) = {:e}, wanted {volts}", ran.signal("Top.a"));
     }
@@ -262,7 +263,8 @@ fn the_sampling_time_constant_of_a_switch_is_a_tenth_of_a_nanosecond() {
     let chapter = Chapter::read();
     let capacitor = "module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }\nanalog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }\n";
     let after = "module Top(in clk: Bit) { signal a: Electrical; signal b: Electrical; let s = ScIntegrator(a, b, clk); }\n";
-    let ran = chapter.wrapped("sc.msl", capacitor, "modules#9", after).run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
+    Refusal::expect(chapter.wrapped("sc.msl", capacitor, "modules#9", after).run(Commands::operating_point()), "modules#9", "E0150", "an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
+    let ran = chapter.wrapped("sc.msl", capacitor, "modules#9", after).earlier("sc.msl").run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
     let param = |path: &str| match ran.metadata.params.iter().find(|param| param.path == path).unwrap_or_else(|| panic!("no param {path}")).value {
         Cell::Real(value) => value,
         ref other => panic!("{path}: a real number, found {other:?}"),
@@ -348,4 +350,14 @@ fn e0507_a_non_finite_contribution_is_a_run_error_naming_it() {
     assert_eq!(given.len(), 1, "{given:?}");
     assert_eq!(given[0].0, "E0507");
     assert!(given[0].1.contains("term `b1.flow`") && given[0].1.contains("is not finite"), "the error names the contribution: {}", given[0].1);
+}
+
+#[test]
+fn e0180_is_not_raised_for_a_logic_read_in_analog_yet() {
+    // analog~39ba351d (`unraised`, GAPS.md S8): the mistakes table's "E0180 if flags { … } in analog, flags a Bit<Logic>":
+    // a `Logic` where a `bool` is required is E0180 in the explicit model. Today the library struct `Logic` is
+    // not taken as a type (`P0001`), so the code is not raised; the test fails when E0180 is.
+    let faulty = Faulty::running("analog~39ba351d", "module Top(in flags: Bit<Logic>) { signal a: Electrical; }\nanalog for Top { if flags { v(a) +> 1.0; } }\n", Faulty::operating_point_of("Top"));
+    assert!(faulty.given.iter().all(|reported| reported.code != "E0180"), "E0180 is not raised yet: {:?}", faulty.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
+    assert!(faulty.given.iter().any(|reported| reported.code == "P0001"), "`Logic` is refused by name: {:?}", faulty.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
 }

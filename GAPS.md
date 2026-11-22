@@ -505,12 +505,20 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | natures#2 | S8 | `explicit-unknowns` | `[Bit; 8]` is `P0001` (array type), `Bit<Option<u8>>` is `E0112` (no `Repr`), `Bit<Logic<4>>` is `P0001` (`struct` item used as a type) and `Sda`, declared further on in the chapter, is `E0161` when the block stands alone |
 | natures#3 | S8 | `explicit-unknowns` | `alarm.msl` is `E0161`: `Driven`, `Resolve`, `Pullup` and the `Logic` behind them are not in the library yet, so a nature that implements `Resolve<Driven>` is not read |
 | natures~e99c1920 | S8 | `explicit-unknowns` | the command refuses `alarm.msl` and runs nothing, as the sentence says: held with natures#3 |
-| natures~6a449552 | S8 | `explicit-unknowns` | the `Pulldown` variant of the alarm needs the same nature: refused with natures#3 |
 | digital#16 | S8 | `explicit-unknowns` | `IrqLine`, a nature the model declares with `impl Resolve<Driven>`: `Driven` is `E0161` (not in the library yet) |
 | digital#17 | S8 | `explicit-unknowns` | `AndWire` and `impl Resolve<bool>`: `Resolve` is `E0161` (not in the library yet) |
 | digital#18 | S8 | `explicit-unknowns` | `Sda` and its pull-up: `Driven` is `E0161` (not in the library yet) |
 | digital#19 | S8 | `explicit-unknowns` | `TriBus` with `Tribuf` and `Keeper`: `Driven` is `E0161` (not in the library yet) |
 | digital#20 | S8 | `explicit-unknowns` | `DataBus` and `impl Resolve<Option<u8>, Data>`: `Resolve` is `E0161` (not in the library yet) |
+| welcome#17 | S8 | `explicit-unknowns` | `StepSource` reads `fired` in `analog` with no gate: `E0150`, the earlier front end still asks for one |
+| analog#9 | S8 | `explicit-unknowns` | the ideal switch reads `ctl` with no gate: `E0150` |
+| modules#9 | S8 | `explicit-unknowns` | `RSwitch` reads `ctl` with no gate: `E0150` |
+| mixed#8 | S8 | `explicit-unknowns` | the buck's `RSwitch` reads `ctl` with no gate: `E0150` |
+| mixed#10 | S8 | `explicit-unknowns` | the buck with its `settle` check reads `ctl` with no gate: `E0150` |
+| mixed#14 | S8 | `explicit-unknowns` | `DeltaSigma1` reads `bit` with no gate: `E0150` |
+| natures~91c3bffe | S8 | `explicit-unknowns` | the `Pulldown` variant of the alarm needs the same nature: refused with natures#3 |
+| analog~39ba351d | S8 | `explicit-unknowns` | `E0180` is not raised: a `Bit<Logic>` is `P0001` (the library struct is not taken as a type yet) |
+| mixed~39ba351d | S8 | `explicit-unknowns` | `E0180` is not raised: a `Bit<Logic>` is `P0001` (the library struct is not taken as a type yet) |
 
 Three observations the root tests made are no Book row, so they are not above: they are entries of §7,
 each with its owner. A run has no key or flag for `dt_min` (H16, `host-analyses`); a `--stream` named like
