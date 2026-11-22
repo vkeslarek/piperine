@@ -1961,6 +1961,7 @@ fn a_drive_without_a_value_starts_at_its_default() {
     assert!(drives.contains("needs no initial value of its own"), "{drives}");
     let ii = flat(&section(&spec("part_ii_carriers.md"), "### 5.1 "));
     assert!(ii.contains("starts at `Default::default()` of its value type"), "{ii}");
+    assert!(drives.contains("a type without it is `E0187` (§5.1 errors)"), "{drives}");
 }
 
 #[test]
