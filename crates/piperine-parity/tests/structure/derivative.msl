@@ -105,7 +105,7 @@ module Bounded(p: Electrical, n: Electrical) {
     let drift = v(p, n) * 1e-3;
 }
 analog for Bounded {
-    if at_hi.high() { pos(xs) +> hi; } else { rate(xs) +> ddt(pos(xs)) - drift; }
+    if at_hi { pos(xs) +> hi; } else { rate(xs) +> ddt(pos(xs)) - drift; }
 }
 digital for Bounded {
     on above(pos(xs) - hi) { at_hi <- true; }

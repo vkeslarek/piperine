@@ -30,7 +30,7 @@ module Script(
 
 digital for Script {
     on clk.fall() || init() {
-        let s = n.known_or(0);
+        let s = n;
         n <- s + 1;
         en <- !(s < 5 || (s >= 2300 && s < 2305));
         vin_ok <- !(s >= 1500 && s < 1505);

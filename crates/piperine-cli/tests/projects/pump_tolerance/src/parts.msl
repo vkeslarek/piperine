@@ -66,7 +66,7 @@ pub module Contact(a: Electrical, b: Electrical, in closed: Bit) {
     tsw: f64 = 10u where tsw > 0.0;
     /// 0 open, 1 closed.
     let k = transition(
-        if closed.high() {
+        if closed {
             1.0
         } else {
             0.0

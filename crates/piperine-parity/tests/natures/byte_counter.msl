@@ -14,11 +14,11 @@ digital for Counter { on clk.rise() { count <- count + 1; } }
 
 /// Writes the count it reads at each rising edge of the clock.
 module Reader(in clk: Bit, in count: Byte) { }
-digital for Reader { on clk.rise() { emit!("seen", count = count.known_or(0)); } }
+digital for Reader { on clk.rise() { emit!("seen", count = count); } }
 
 /// Writes each change of the count it reads, with the value the carrier held before it (§5.3).
 module Watcher(in count: Byte) { }
-digital for Watcher { on count.changed() { emit!("changes", count = count.known_or(0), before = count.prev().known_or(255)); } }
+digital for Watcher { on count.changed() { emit!("changes", count = count, before = count.prev()); } }
 
 /// A definition (§8.2.4) over a `Byte`: `twice` is always the count added to itself.
 module Doubler(in count: Byte, out twice: Byte) { twice = count + count; }

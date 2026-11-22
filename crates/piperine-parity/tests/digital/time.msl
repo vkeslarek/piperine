@@ -21,7 +21,7 @@ module Walk(in clk: Bit, out q: Bit = false) {
 }
 digital for Walk {
     on clk.rise() {
-        let s = n.known_or(0);
+        let s = n;
         n <- s + 1;
         if s == 0 { q <- false; }
         if s == 1 { q <- Unknown; }
@@ -34,9 +34,9 @@ digital for Walk {
 
 /// One count per run of a reaction on `rise()`, one per run of a reaction on `fall()`.
 module Rises(in q: Bit, out n: Bit<u8> = 0) {}
-digital for Rises { on q.rise() { n <- n.known_or(0) + 1; } }
+digital for Rises { on q.rise() { n <- n + 1; } }
 module Falls(in q: Bit, out n: Bit<u8> = 0) {}
-digital for Falls { on q.fall() { n <- n.known_or(0) + 1; } }
+digital for Falls { on q.fall() { n <- n + 1; } }
 
 module TimerBench() {
     signal hit: Bit;

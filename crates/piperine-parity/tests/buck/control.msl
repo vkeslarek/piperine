@@ -28,7 +28,7 @@ module Script(
 
 digital for Script {
     on clk.fall() || init() {
-        let s = n.known_or(0);
+        let s = n;
         n <- s + 1;
         run <- if s < 8 {
             false
@@ -81,7 +81,7 @@ module Writes(in clk: Bit, out wr: Bit = false, out data: Bit<u8> = 0) {
 
 digital for Writes {
     on clk.rise() {
-        let s = n.known_or(0);
+        let s = n;
         n <- s + 1;
         if s == 0 {
             data <- 7;

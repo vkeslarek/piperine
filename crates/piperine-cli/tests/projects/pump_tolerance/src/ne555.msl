@@ -54,7 +54,7 @@ pub module Ne555(
     pub signal q: Bit = false;
     /// 0 with the output low, 1 with it high.
     let drive = transition(
-        if q.high() {
+        if q {
             1.0
         } else {
             0.0

@@ -728,9 +728,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] Every `source_*` target of `piperine-parity` and `cargo test -p piperine-lang` pass
-- [ ] No expected value of a source test is edited; a test whose meaning was an unknown is listed on the Handoff for T27
-- [ ] Gate check passes: Full
+- [x] Every `source_*` target of `piperine-parity` and `cargo test -p piperine-lang` pass
+- [x] No expected value of a source test is edited; a test whose meaning was an unknown is listed on the Handoff for T27
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
