@@ -636,9 +636,14 @@ fn every_listing_that_does_not_run_names_its_gap() {
         }
     }
     assert!(offences.is_empty(), "{}", offences.join("\n  "));
-    // every block that explicit-unknowns could not run today is among them with gap S8
-    let s8: Vec<&str> = tree.inventory.rows().iter().filter(|row| row.gap == "S8").map(|row| row.id.as_str()).collect();
-    for id in ["values#14", "values#18", "values#21", "natures#3", "digital#16", "digital#20", "welcome#17", "mixed#8", "core-std#6"] {
-        assert!(s8.contains(&id), "{id} is registered with S8: {s8:?}");
+    // the gap of each is the feature that really makes it run (ROADMAP.md, "Every Book listing runs before item 13"):
+    // explicit-unknowns phase A or B (S8), `resolved-nets` (L21), `composite-values` (L24 for the array)
+    let gap_of = |id: &str| tree.inventory.rows().iter().find(|row| row.id == id).map(|row| row.gap.clone()).unwrap_or_else(|| panic!("a row {id}"));
+    for id in ["welcome#17", "analog#9", "modules#9", "mixed#8", "mixed#10", "mixed#14", "values#21", "values#14", "values#18"] {
+        assert_eq!(gap_of(id), "S8", "{id}: explicit-unknowns");
     }
+    for id in ["natures#3", "digital#16", "digital#17", "digital#18", "digital#19", "digital#20", "core-std#6"] {
+        assert_eq!(gap_of(id), "L21", "{id}: resolved-nets");
+    }
+    assert_eq!(gap_of("natures#2"), "L24", "natures#2: composite-values");
 }

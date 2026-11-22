@@ -492,35 +492,35 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function need a generic module: `P0001` |
 | cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
 | cheatsheet#10 | L57 | `composite-values` | with its `emit!` the card is `E0601` (a statement among items); without it `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` a reference type |
-| values#14 | S8 | `explicit-unknowns` | `Option<u8>` has no `Repr` (`E0112`) for the port `b: Bit<Option<u8>>`: an `Option` is not a carried type yet |
-| values#18 | S8 | `explicit-unknowns` | `Logic<4>` is `P0001`: the library struct `Logic` is not taken as a type yet |
-| values#21 | S8 | `explicit-unknowns` | `analog` reading `held` with no gate is `E0150`: the earlier front end still refuses a plain read of a discrete carrier |
-| values~23c03fc8 | S8 | `explicit-unknowns` | `E0187` is not raised: `signal en: Bit;` elaborates and starts unknown |
-| values~37a548f2 | S8 | `explicit-unknowns` | `E0187` is not raised for an undriven top-level `in` port of a type with no default: the run starts it unknown |
-| values~13ffaea6 | S8 | `explicit-unknowns` | `E0180` for a `Logic` where an `f64` is required is not raised: `Logic` is refused by name first |
-| values~39ba3a1d | S8 | `explicit-unknowns` | `E0187` is not raised (the row of the mistakes table) |
-| values~2bbc575e | S8 | `explicit-unknowns` | held with values#14: the adder's `Bit<Option<u8>>` port is `E0112` |
-| values~c30bad4d | S8 | `explicit-unknowns` | held with values#18: `Logic<4>` is `P0001` |
-| natures#2 | S8 | `explicit-unknowns` | `[Bit; 8]` is `P0001` (array type), `Bit<Option<u8>>` is `E0112` (no `Repr`), `Bit<Logic<4>>` is `P0001` (`struct` item used as a type) and `Sda`, declared further on in the chapter, is `E0161` when the block stands alone |
-| natures#3 | S8 | `explicit-unknowns` | `alarm.msl` is `E0161`: `Driven`, `Resolve`, `Pullup` and the `Logic` behind them are not in the library yet, so a nature that implements `Resolve<Driven>` is not read |
-| natures~e99c1920 | S8 | `explicit-unknowns` | the command refuses `alarm.msl` and runs nothing, as the sentence says: held with natures#3 |
-| digital#16 | S8 | `explicit-unknowns` | `IrqLine`, a nature the model declares with `impl Resolve<Driven>`: `Driven` is `E0161` (not in the library yet) |
-| digital#17 | S8 | `explicit-unknowns` | `AndWire` and `impl Resolve<bool>`: `Resolve` is `E0161` (not in the library yet) |
-| digital#18 | S8 | `explicit-unknowns` | `Sda` and its pull-up: `Driven` is `E0161` (not in the library yet) |
-| digital#19 | S8 | `explicit-unknowns` | `TriBus` with `Tribuf` and `Keeper`: `Driven` is `E0161` (not in the library yet) |
-| digital#20 | S8 | `explicit-unknowns` | `DataBus` and `impl Resolve<Option<u8>, Data>`: `Resolve` is `E0161` (not in the library yet) |
-| welcome#17 | S8 | `explicit-unknowns` | `StepSource` reads `fired` in `analog` with no gate: `E0150`, the earlier front end still asks for one |
-| analog#9 | S8 | `explicit-unknowns` | the ideal switch reads `ctl` with no gate: `E0150` |
-| modules#9 | S8 | `explicit-unknowns` | `RSwitch` reads `ctl` with no gate: `E0150` |
-| mixed#8 | S8 | `explicit-unknowns` | the buck's `RSwitch` reads `ctl` with no gate: `E0150` |
-| mixed#10 | S8 | `explicit-unknowns` | the buck with its `settle` check reads `ctl` with no gate: `E0150` |
-| mixed#14 | S8 | `explicit-unknowns` | `DeltaSigma1` reads `bit` with no gate: `E0150` |
-| natures~91c3bffe | S8 | `explicit-unknowns` | the `Pulldown` variant of the alarm needs the same nature: refused with natures#3 |
-| analog~39ba351d | S8 | `explicit-unknowns` | `E0180` is not raised: a `Bit<Logic>` is `P0001` (the library struct is not taken as a type yet) |
-| mixed~39ba351d | S8 | `explicit-unknowns` | `E0180` is not raised: a `Bit<Logic>` is `P0001` (the library struct is not taken as a type yet) |
-| core-std#6 | S8 | `explicit-unknowns` | `IrqLine`, a nature the model declares with `impl Resolve<Driven>`: `Driven` is `E0161` (not in the library yet) |
-| errors~39ba3a1d | S8 | `explicit-unknowns` | `E0187` is not raised (the row of the codes table) |
-| errors~385c354c | S8 | `explicit-unknowns` | `E0187` is not raised: `signal held: Bit<f64>;` elaborates and `vout` sits at 0 V |
+| values#14 | S8 | `explicit-unknowns` | `Option<u8>` has no `Repr` (`E0112`) for the port `b: Bit<Option<u8>>`: an `Option` is not a carried type yet (made to run by explicit-unknowns, phase A: T21, T22 and T30 (the `Default` table, initial values, E0187; `Option` as a carried type)) |
+| values#18 | S8 | `explicit-unknowns` | `Logic<4>` is `P0001`: the library struct `Logic` is not taken as a type yet (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
+| values#21 | S8 | `explicit-unknowns` | `analog` reading `held` with no gate is `E0150`: the earlier front end still refuses a plain read of a discrete carrier (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
+| values~23c03fc8 | S8 | `explicit-unknowns` | `E0187` is not raised: `signal en: Bit;` elaborates and starts unknown (made to run by explicit-unknowns, phase A: T21, T22 and T30 (the `Default` table, initial values, E0187; `Option` as a carried type)) |
+| values~37a548f2 | S8 | `explicit-unknowns` | `E0187` is not raised for an undriven top-level `in` port of a type with no default: the run starts it unknown (made to run by explicit-unknowns, phase A: T21, T22 and T30 (the `Default` table, initial values, E0187; `Option` as a carried type)) |
+| values~13ffaea6 | S8 | `explicit-unknowns` | `E0180` for a `Logic` where an `f64` is required is not raised: `Logic` is refused by name first (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
+| values~39ba3a1d | S8 | `explicit-unknowns` | `E0187` is not raised (the row of the mistakes table) (made to run by explicit-unknowns, phase A: T21, T22 and T30 (the `Default` table, initial values, E0187; `Option` as a carried type)) |
+| values~2bbc575e | S8 | `explicit-unknowns` | held with values#14: the adder's `Bit<Option<u8>>` port is `E0112` (made to run by explicit-unknowns, phase A: T21, T22 and T30 (the `Default` table, initial values, E0187; `Option` as a carried type)) |
+| values~c30bad4d | S8 | `explicit-unknowns` | held with values#18: `Logic<4>` is `P0001` (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
+| natures#2 | L24 | `composite-values` | `[Bit; 8]` is `P0001` (array type), `Bit<Option<u8>>` is `E0112` (no `Repr`), `Bit<Logic<4>>` is `P0001` (`struct` item used as a type) and `Sda`, declared further on in the chapter, is `E0161` when the block stands alone (made to run by composite-values, the array of carriers (`[Bit; 8]`); the `Option` and `Logic` listings of the block follow explicit-unknowns phases A and B) |
+| natures#3 | L21 | `resolved-nets` | `alarm.msl` is `E0161`: `Driven`, `Resolve`, `Pullup` and the `Logic` behind them are not in the library yet, so a nature that implements `Resolve<Driven>` is not read (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| natures~e99c1920 | L21 | `resolved-nets` | the command refuses `alarm.msl` and runs nothing, as the sentence says: held with natures#3 (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| digital#16 | L21 | `resolved-nets` | `IrqLine`, a nature the model declares with `impl Resolve<Driven>`: `Driven` is `E0161` (not in the library yet) (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| digital#17 | L21 | `resolved-nets` | `AndWire` and `impl Resolve<bool>`: `Resolve` is `E0161` (not in the library yet) (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| digital#18 | L21 | `resolved-nets` | `Sda` and its pull-up: `Driven` is `E0161` (not in the library yet) (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| digital#19 | L21 | `resolved-nets` | `TriBus` with `Tribuf` and `Keeper`: `Driven` is `E0161` (not in the library yet) (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| digital#20 | L21 | `resolved-nets` | `DataBus` and `impl Resolve<Option<u8>, Data>`: `Resolve` is `E0161` (not in the library yet) (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| welcome#17 | S8 | `explicit-unknowns` | `StepSource` reads `fired` in `analog` with no gate: `E0150`, the earlier front end still asks for one (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
+| analog#9 | S8 | `explicit-unknowns` | the ideal switch reads `ctl` with no gate: `E0150` (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
+| modules#9 | S8 | `explicit-unknowns` | `RSwitch` reads `ctl` with no gate: `E0150` (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
+| mixed#8 | S8 | `explicit-unknowns` | the buck's `RSwitch` reads `ctl` with no gate: `E0150` (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
+| mixed#10 | S8 | `explicit-unknowns` | the buck with its `settle` check reads `ctl` with no gate: `E0150` (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
+| mixed#14 | S8 | `explicit-unknowns` | `DeltaSigma1` reads `bit` with no gate: `E0150` (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
+| natures~91c3bffe | L21 | `resolved-nets` | the `Pulldown` variant of the alarm needs the same nature: refused with natures#3 (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| analog~39ba351d | S8 | `explicit-unknowns` | `E0180` is not raised: a `Bit<Logic>` is `P0001` (the library struct is not taken as a type yet) (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
+| mixed~39ba351d | S8 | `explicit-unknowns` | `E0180` is not raised: a `Bit<Logic>` is `P0001` (the library struct is not taken as a type yet) (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
+| core-std#6 | L21 | `resolved-nets` | `IrqLine`, a nature the model declares with `impl Resolve<Driven>`: `Driven` is `E0161` (not in the library yet) (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| errors~39ba3a1d | S8 | `explicit-unknowns` | `E0187` is not raised (the row of the codes table) (made to run by explicit-unknowns, phase A: T21, T22 and T30 (the `Default` table, initial values, E0187; `Option` as a carried type)) |
+| errors~385c354c | S8 | `explicit-unknowns` | `E0187` is not raised: `signal held: Bit<f64>;` elaborates and `vout` sits at 0 V (made to run by explicit-unknowns, phase A: T21, T22 and T30 (the `Default` table, initial values, E0187; `Option` as a carried type)) |
 
 Three observations the root tests made are no Book row, so they are not above: they are entries of §7,
 each with its owner. A run has no key or flag for `dt_min` (H16, `host-analyses`); a `--stream` named like

@@ -91,8 +91,8 @@ block	values#20	069f955aa9090719	held	piperine-cli/book::every_cli_listing_of_th
 block	values#21	1c36af9fee8a108e	refused	piperine/book_values::analog_reads_a_digital_carrier_directly	S8	-
 block	values#22	fb8add290ef4024e	refused	piperine/book_values::an_extern_function_is_refused_with_or_without_its_derivative	L12	-
 block	natures#1	a19f95185defd84a	run	piperine/book_natures::the_book_shows_the_natures_the_standard_library_gives	-	-
-block	natures#2	3d0da9268a0e2cbc	refused	piperine/book_natures::signals_of_every_family_are_refused_for_the_arrays_the_option_the_logic_and_the_net	S8	-
-block	natures#3	bc658ea2dad63ed4	refused	piperine/book_natures::the_open_drain_line_is_refused_until_a_nature_can_implement_resolve	S8	-
+block	natures#2	3d0da9268a0e2cbc	refused	piperine/book_natures::signals_of_every_family_are_refused_for_the_arrays_the_option_the_logic_and_the_net	L24	-
+block	natures#3	bc658ea2dad63ed4	refused	piperine/book_natures::the_open_drain_line_is_refused_until_a_nature_can_implement_resolve	L21	-
 block	natures#4	3544f7a10903596f	shown	-	-	-
 block	natures#5	c62d8033ca3aff49	shown	-	-	-
 block	natures#6	acda13a1a5efeb66	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run alarm.msl --analysis transient --stop 4e-6 --stream line
@@ -138,7 +138,7 @@ block	digital#12	876ecd1fe59ada97	shown	-	-	-
 block	digital#13	ce1e260f082069aa	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run pwm.msl --analysis transient --stop 450e-6 --stream cycle
 block	digital#14	1211c7f06efc588a	refused	piperine/book_digital::the_pwm_check_is_refused_for_its_integer_params	L28	-
 block	digital#15	2525e0948e3c847b	shown	-	-	-
-block	digital#16	32e20e7026d4fcdb	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	S8	-
+block	digital#16	32e20e7026d4fcdb	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	L21	-
 block	digital#21	d7e1731297196c91	refused	piperine/book_digital::the_flip_flop_is_refused_for_its_generic_module	L30	-
 block	digital#22	5857ae3c7d886c0f	run	piperine/book_digital::a_pipeline_in_one_reaction_reads_every_register_before_the_edge	-	-
 block	mixed#1	8f2566e772665b48	run	piperine/book_mixed::the_cycle_counter_counts_the_located_crossings_of_the_sine	-	-
@@ -176,7 +176,7 @@ block	core-std#2	ffbc2ff18dccbb7f	run	piperine/book_core_std::a_constant_of_std_
 block	core-std#3	9de7bc92b15444b7	run	piperine/book_core_std::the_rc_module_of_the_carriers_part_runs	-	-
 block	core-std#4	1cb038700030c8c4	run	piperine/book_core_std::the_latch_takes_its_input_at_the_rising_edge	-	-
 block	core-std#5	7dfd7bc254fb3c54	run	piperine/book_core_std::the_dac_ramp_scales_its_code_by_the_reference	-	-
-block	core-std#6	1fe178b5474b2090	refused	piperine/book_core_std::the_resolved_line_is_refused_until_a_nature_can_implement_resolve	S8	-
+block	core-std#6	1fe178b5474b2090	refused	piperine/book_core_std::the_resolved_line_is_refused_until_a_nature_can_implement_resolve	L21	-
 block	core-std#7	73e0cf5006f6d85d	run	piperine/book_core_std::the_pad_drives_its_node_and_reads_it_back	-	-
 block	core-std#8	6994862452a71c4a	refused	piperine/book_core_std::the_register_with_a_setup_check_is_refused_for_the_generic_monitor	L30	-
 block	core-std#9	8df4b148eabfdf77	run	piperine/book_core_std::the_probe_writes_a_check_and_a_log_record	-	-
@@ -371,7 +371,7 @@ claim	natures~cd4205d5	cd4205d55ed90e62	prose	-	-	Every carrier has a nature, an
 claim	natures~c82d9d81	c82d9d814a2989c0	prose	-	-	A circuit node has no "driver" at all: every element connected to it pushes or pulls current, and Kirchhoff's law settles the voltage.
 claim	natures~eb8db94c	eb8db94ced8b3207	holds	piperine/book_natures::an_out_port_gives_the_initial_value	-	That module also gives the initial value.
 claim	natures~8ebfe866	8ebfe866aadcea4e	holds	piperine/book_natures::a_module_reaches_other_nodes_only_through_its_ports_and_gnd_is_everywhere	-	It is not a global net you can abuse: a module reaches any other node only through its ports.
-claim	natures~e99c1920	e99c1920bfe79d2e	refused	natures#3	S8	Today the command refuses the file and runs nothing:
+claim	natures~e99c1920	e99c1920bfe79d2e	refused	natures#3	L21	Today the command refuses the file and runs nothing:
 claim	natures~52790298	5279029848b66589	refused	natures#8	L25	Directions are written once, from the producer's side, and flip gives the consumer's view.
 claim	natures~5c7f5269	5c7f5269612c5fc2	holds	piperine/book_natures::behavior_crosses_freely_inside_one_module	-	Inside one module, behavior crosses freely: analog reads digital carriers, and reactions probe voltages, as Step and WindowMonitor already did.
 claim	natures~42ae741d	42ae741dc13997e4	holds	piperine/book_natures::e0220_a_bit_has_one_driver	-	E0220
@@ -806,12 +806,12 @@ claim	digital~7043b74c	7043b74c6cecee25	prose	-	-	Driven::strongest gives x at S
 claim	digital~5b9db6d2	5b9db6d2361d0559	prose	-	-	An instability is a different thing: a loop of drives through others(), with no reaction and no after in it, that never stops changing, such as two modules that each drive the inverse of what the other drives.
 claim	digital~3342854e	3342854e3d8ed4a0	prose	-	-	After its bounded passes the run stops with error E0511, naming the two drives.
 claim	digital~0566fbc2	0566fbc2d0e7d2c9	prose	-	-	Each drive of a net has one type, and the nature picks its impl by that type: two modules that drove different types into one DataBus would be error E0225, naming both.
-block	digital#17	92bd65e1da0d2057	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	S8	-
-block	digital#18	daa3f16a70d5d389	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	S8	-
-block	digital#19	1cea38fcad18c9b2	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	S8	-
-block	digital#20	bcac1d0094b1326d	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	S8	-
+block	digital#17	92bd65e1da0d2057	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	L21	-
+block	digital#18	daa3f16a70d5d389	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	L21	-
+block	digital#19	1cea38fcad18c9b2	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	L21	-
+block	digital#20	bcac1d0094b1326d	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	L21	-
 claim	welcome~4623a9b2	4623a9b2d4d858a7	prose	-	-	So the terminal shows a checks record only when it fails.
-claim	natures~91c3bffe	91c3bffedec5bb6f	refused	natures#3	S8	Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream for the same stimulus. (One record at time zero, level = 0, strength = Pull; then at 1 µs the strength becomes Strong with the level still low, and at 3 µs it returns to Pull.
+claim	natures~91c3bffe	91c3bffedec5bb6f	refused	natures#3	L21	Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream for the same stimulus. (One record at time zero, level = 0, strength = Pull; then at 1 µs the strength becomes Strong with the level still low, and at 3 µs it returns to Pull.
 claim	analog~39ba351d	39ba351dbc1213b3	unraised	piperine/book_analog::e0180_is_not_raised_for_a_logic_read_in_analog_yet	S8	E0180
 claim	analog~f8d4880c	f8d4880c2eb68bd6	prose	-	-	Decide with a function that returns one: if flags.is_high() { … }
 claim	mixed~9d92e73f	9d92e73f5af1700c	prose	-	-	A converter for a Logic input makes the other choice in its own text, d.to_volts(1.0), which gives half the supply for x and z: the model says what "not determined" means electrically, and the language does not guess. transition turns the stepped level into a ramp of duration tr, so the output has a real edge.
