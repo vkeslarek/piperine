@@ -172,11 +172,23 @@ impl Elaboration<'_, '_> {
     /// struct or an `Option`: a flag rides on no value of those in value code (a read is the value,
     /// unknown reading as the default), so the flag read takes the carrier's own flagged read.
     pub(super) fn lower_flag_receiver(&mut self, scope: &mut Scope, recv: ExprId) -> Option<LoweredExpr> {
-        let held = self.types.ty(recv).filter(|ty| ty.is_composite() && !matches!(ty, Ty::Enum(_))).is_some();
-        if held && let Some(read) = self.flagged_carrier_read(scope, recv) {
+        if let Some(read) = self.flagged_carrier_read(scope, recv) {
             return Some(read);
         }
         self.lower_expr(scope, recv)
+    }
+
+    /// `read`, a carrier read or a `prev()` as `analog` takes it (§3.3.6): the value. While the
+    /// earlier flag is still carried the read is `known_or` its type's default, which no model
+    /// observes, because a carrier starts at a value (§3.3.4). Any other value is as it stands.
+    pub(super) fn analog_value(&mut self, scope: &Scope, read: LoweredExpr, origin: Origin) -> LoweredExpr {
+        let ValueType::Flagged(base) = self.type_of(read) else { return read };
+        if !scope.analog {
+            return read;
+        }
+        let base = *base;
+        let default = self.emit(Expr::Default(base.clone()), base.clone(), origin.clone());
+        self.emit(Expr::KnownOr { value: read, default }, base, origin)
     }
 
     /// The flagged read of the carrier `expr` names or whose previous value it is; `None` when it is
@@ -186,7 +198,10 @@ impl Elaboration<'_, '_> {
         let origin = self.expr_origin(peeled);
         let (carrier, previous) = match &self.design.expr_node(peeled).kind {
             ExprKind::MethodCall { recv, .. } if self.types.builtin(peeled) == Some(Builtin::Prev) => (self.carrier_of(scope, *recv)?, true),
-            ExprKind::Path(_) => (self.carrier_of(scope, peeled)?, false),
+            ExprKind::Path(path) => {
+                let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else { return None };
+                (self.frame_carrier(scope.frame, decl)?, false)
+            }
             _ => return None,
         };
         let ty = ValueType::Flagged(Box::new(self.structure.carriers[carrier as usize].ty.clone()));
@@ -216,7 +231,7 @@ impl Elaboration<'_, '_> {
                 Some(self.emit(Expr::IsKnown(value), base, origin))
             }
             Builtin::High => {
-                let value = self.lower_expr(scope, recv)?;
+                let value = self.lower_flag_receiver(scope, recv)?;
                 Some(self.emit(Expr::High(value), base, origin))
             }
             Builtin::Known => {
@@ -232,7 +247,8 @@ impl Elaboration<'_, '_> {
             Builtin::Prev if let Some(param) = self.param_of(scope, recv) => Some(self.emit(Expr::ParamPrevious(param), base, origin)),
             Builtin::Prev => {
                 let carrier = self.carrier_of(scope, recv)?;
-                Some(self.previous(carrier, origin))
+                let read = self.previous(carrier, origin.clone());
+                Some(self.analog_value(scope, read, origin))
             }
             Builtin::Inflow => self.lower_inflow(scope, recv, origin),
             // An event read is `fired(k)` (`event_reads.rs`, §13 rule 2) before it gets here; an

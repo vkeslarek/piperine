@@ -1,8 +1,9 @@
-//! The checker's side of `unknown-semantics` (part I §3.3, §22.1): `x.level(k)` and `T::WIDTH`
-//! typed on `Repr` values, the five stdlib functions of §22.1 typed by their contract at the
-//! concrete type (`E0701`, `E0702`), and the flag-total functions `analog` may read a carrier
-//! through (§3.3.6). One positive and one negative source per rule, over the embedded standard
-//! library (the five functions are the stdlib's own items).
+//! The checker's side of the explicit model of unknowns (part I §3.3, §22.1): `analog` reads a
+//! discrete carrier like any expression (§3.3.6), directly, through a `let`, a function or a
+//! placement; and, while the earlier forms are still accepted, `x.level(k)` and `T::WIDTH` typed on
+//! `Repr` values and the five stdlib functions of §22.1 typed by their contract at the concrete
+//! type (`E0701`, `E0702`). One positive and one negative source per rule, over the embedded
+//! standard library (the five functions are the stdlib's own items).
 
 use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::{Ty, Types};
@@ -115,14 +116,14 @@ fn a_bad_pattern_is_e0702() {
 }
 
 /// A stage reading `c` in `analog` through the function `f`, over the electrical nature.
-fn flag_total_source(function: &str, call: &str) -> String {
+fn carrier_read_source(function: &str, call: &str) -> String {
     format!("{function}\nmodule Amp(x: f64, p: Electrical) {{ }}\nanalog for Amp {{ v(p) +> x; }}\nmodule Top(in c: Bit<f64>, p: Electrical) {{ }}\nanalog for Top {{ {call} }}")
 }
 
 #[test]
-fn a_flag_total_function_may_take_a_carrier_in_analog() {
-    // §3.3.6: every use of the parameter passes through `level`, directly, through `known_or`,
-    // or as the argument of another flag-total function: `analog` may pass it a carrier.
+fn a_function_that_reads_through_flags_takes_a_carrier_in_analog() {
+    // §3.3.6: `analog` hands a function a discrete carrier whatever the function does with it; the
+    // sources the earlier text called flag-total are accepted as they were
     for function in [
         "fn low(x: f64) -> bool { x.level(0).is_some() }",
         "fn known_sum(x: f64) -> f64 { x.known_or(0.0) + x.known_or(1.0) }",
@@ -130,30 +131,25 @@ fn a_flag_total_function_may_take_a_carrier_in_analog() {
         "fn spin(x: f64) -> bool { spin(x) }",
     ] {
         let name = function.split('(').next().unwrap().rsplit(' ').next().unwrap().to_string();
-        let src = flag_total_source(function, &format!("let a = {name}(c);"));
+        let src = carrier_read_source(function, &format!("let a = {name}(c);"));
         let design = design_of(&src);
         Types::check(&design, "Top").unwrap_or_else(|d| panic!("{function}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
     }
 }
 
 #[test]
-fn a_function_that_reads_its_parameter_bare_is_not_flag_total() {
-    // §3.3.6 and §3.3.5: one bare use of the parameter, beside a `level` read or on its own, keeps
-    // the call `E0150`, naming the carrier at the argument.
+fn a_function_that_reads_its_parameter_bare_takes_a_carrier_in_analog() {
+    // §3.3.6, EU-01 AC 1: the sources that were `E0150` (one bare use of the parameter, beside a
+    // `level` read or on its own, or forwarded) are accepted
     for function in [
         "fn twice(x: f64) -> f64 { x * 2.0 }",
         "fn mixed(x: f64) -> f64 { if x.level(0).is_some() { x } else { 0.0 } }",
         "fn forwards(x: f64) -> f64 { twice(x) }\nfn twice(x: f64) -> f64 { x * 2.0 }",
     ] {
         let name = function.split('(').next().unwrap().rsplit(' ').next().unwrap().to_string();
-        let src = flag_total_source(function, &format!("let a = {name}(c);"));
-        let (src, d) = {
-            let design = design_of(&src);
-            (src.clone(), Types::check(&design, "Top").expect_err("a bare read is refused"))
-        };
-        assert_eq!(codes_of(&d), ["E0150"], "{function}");
-        assert_eq!(&src[d[0].diagnostic.span().range()], "c", "{function}");
-        assert!(d[0].diagnostic.message.contains("`c`"), "the carrier is named: {}", d[0].diagnostic.message);
+        let src = carrier_read_source(function, &format!("let a = {name}(c);"));
+        let design = design_of(&src);
+        Types::check(&design, "Top").unwrap_or_else(|d| panic!("{function}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
     }
 }
 

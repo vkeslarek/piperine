@@ -597,9 +597,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `types_explicit.rs` exists with a `//!` header; `types_unknowns.rs` is gone; each replaced test is named in the commit body
-- [ ] `source_explicit::a_binary_carrier_is_read_as_its_value` passes (the target is created here with this one test)
-- [ ] Gate check passes: Full
+- [x] `types_explicit.rs` exists with a `//!` header; `types_unknowns.rs` is gone; each replaced test is named in the commit body
+- [x] `source_explicit::a_binary_carrier_is_read_as_its_value` passes (the target is created here with this one test)
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

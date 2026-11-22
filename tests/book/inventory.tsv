@@ -24,7 +24,7 @@ block	welcome#13	dc51665e9993af1f	held	piperine-cli/book::every_cli_listing_of_t
 block	welcome#14	8769e4c74279e487	shown	-	-	-
 block	welcome#15	22bdfa847a6e9e8b	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run step --all-checks
 block	welcome#16	09a7d97e5c52020f	shown	-	-	-
-block	welcome#17	1a8a3eed35a9b41a	refused	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	S8	-
+block	welcome#17	1a8a3eed35a9b41a	run	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	-
 block	welcome#18	dddafa2050e950cd	shown	-	-	-
 block	welcome#19	764e385da5e0dc10	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run benches/delayed.msl --analysis transient --stop 5e-6 --print-step 1e-6
 block	welcome#20	5a43010c6903b85d	shown	-	-	-
@@ -88,7 +88,7 @@ block	values#17	22792880fbef6fa1	held	piperine-cli/book::every_cli_listing_of_th
 block	values#18	cf6cf170a04f408d	refused	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic	S8	-
 block	values#19	4bcc7aec0a6efc87	shown	-	-	-
 block	values#20	91e20d2ed735e545	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream compare
-block	values#21	1c36af9fee8a108e	refused	piperine/book_values::analog_reads_a_digital_carrier_directly	S8	-
+block	values#21	1c36af9fee8a108e	run	piperine/book_values::analog_reads_a_digital_carrier_directly	-	-
 block	values#22	fb8add290ef4024e	refused	piperine/book_values::an_extern_function_is_refused_with_or_without_its_derivative	L12	-
 block	natures#1	a19f95185defd84a	run	piperine/book_natures::the_book_shows_the_natures_the_standard_library_gives	-	-
 block	natures#2	3d0da9268a0e2cbc	refused	piperine/book_natures::signals_of_every_family_are_refused_for_the_arrays_the_option_the_logic_and_the_net	L21	-
@@ -106,7 +106,7 @@ block	modules#5	a0d616b7b3da06dd	held	piperine-cli/book::every_cli_listing_of_th
 block	modules#6	7c3db491e9d50314	refused	piperine/book_modules::the_lowpass_module_is_refused_for_the_generic_integrator	L30	-
 block	modules#7	785f58bd27638c90	run	piperine/book_modules::the_book_shows_the_integrator_the_standard_library_gives	-	-
 block	modules#8	f26832ff2564dcd3	refused	piperine/book_modules::the_pi_controller_is_refused_only_for_its_generic_idt	L30	-
-block	modules#9	76ab743eefe57ede	refused	piperine/book_modules::the_switched_capacitor_integrator_is_a_netlist_that_runs	S8	-
+block	modules#9	76ab743eefe57ede	run	piperine/book_modules::the_switched_capacitor_integrator_is_a_netlist_that_runs	-	-
 block	modules#10	6d51419f2d5b4317	refused	piperine/book_modules::the_memory_bank_is_refused_for_its_struct_arrays_and_generics	L32	-
 block	modules#11	6a4250f9fc568cc7	fragment	modules#10	-	-
 block	modules#12	7d514f590b39e281	refused	piperine/book_modules::a_function_that_returns_a_template_is_refused_where_it_is_placed	L32	-
@@ -120,7 +120,7 @@ block	analog#5	f0d9aa24342fc413	shown	-	-	-
 block	analog#6	86627a9b1ef08bf0	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run clipper.msl --analysis transient --stop 2e-3 --print vin --print vout --stream clip --plot clipper.svg
 block	analog#7	2dcf8ccdabaf5fbf	refused	piperine/book_analog::the_diode_with_a_trace_is_refused	L49	-
 block	analog#8	c75a64c2f73e0062	shown	-	-	-
-block	analog#9	ad5153ed8a776aa7	refused	piperine/book_analog::the_switch_shorts_its_nodes_while_its_control_is_high	S8	-
+block	analog#9	ad5153ed8a776aa7	run	piperine/book_analog::the_switch_shorts_its_nodes_while_its_control_is_high	-	-
 block	analog#10	680ede3e2ac2fe51	run	piperine/book_analog::the_nullor_drives_its_output_to_a_virtual_short_and_coupled_inductors_couple	-	-
 block	analog#11	35b144b2c97d9575	refused	piperine/book_analog::the_noise_source_is_refused	L45	-
 block	digital#1	b6a2c3d854639e4c	run	piperine/book_digital::the_counter_raises_full_exactly_while_the_count_is_255	-	-
@@ -148,13 +148,13 @@ block	mixed#4	deaaff1240929f70	shown	-	-	-
 block	mixed#5	fcb6886bd9a6e240	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run cycles.msl --analysis transient --stop 3e-3 --print-step 1e-3 --print count --stream pulse
 block	mixed#6	3506ea56c1ecbede	run	piperine/book_mixed::the_comparator_without_hysteresis_reads_its_event_as_a_bool	-	-
 block	mixed#7	0caceac69ff3d1c2	run	piperine/book_mixed::the_digital_to_analog_converter_drives_the_supply_or_ground	-	-
-block	mixed#8	f4daee17305c9676	refused	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	S8	-
+block	mixed#8	f4daee17305c9676	run	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	-	-
 block	mixed#9	e34a5f2d8cee81d3	shown	-	-	-
-block	mixed#10	dcd6e04b0acbdb87	refused	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	S8	-
+block	mixed#10	dcd6e04b0acbdb87	run	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	-	-
 block	mixed#11	d9f0417b5399de0c	shown	-	-	-
 block	mixed#12	063828848af5ddc2	shown	-	-	-
 block	mixed#13	4a98a0af69eade7f	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop
-block	mixed#14	4479d1916b290544	refused	piperine/book_mixed::the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero	S8	-
+block	mixed#14	4479d1916b290544	run	piperine/book_mixed::the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero	-	-
 block	mixed#15	ea28fe2bc18e8e9d	run	piperine/book_mixed::the_sar_adc_runs_with_its_comparator_and_its_field_access	-	-
 block	packages#1	4d5e7db8c23bc8e3	shown	-	-	-
 block	packages#2	3ec48f5cf74f6fa3	run	piperine/book_packages::the_lowpass_project_runs_as_the_book_assembles_it	-	-

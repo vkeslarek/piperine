@@ -21,7 +21,7 @@ mod support {
 use piperine::{Cell, Field, Overrides};
 use support::chapter::Chapter;
 use support::faulty::Faulty;
-use support::model::{Earlier, Model};
+use support::model::Model;
 use support::printed::Printed;
 use support::records::Fields;
 use support::refusal::Refusal;
@@ -75,7 +75,7 @@ impl Buck {
         let text = chapter.text("mixed#8");
         let from = "ki: f64 = 1m where ki > 0.0;";
         assert!(text.contains(from), "the Book's text holds `{from}`");
-        Model::written("buck.msl", &Earlier::gate(&text.replace(from, &format!("ki: f64 = {ki} where ki > 0.0;"))))
+        Model::written("buck.msl", &text.replace(from, &format!("ki: f64 = {ki} where ki > 0.0;")))
     }
 }
 
@@ -118,7 +118,7 @@ fn the_math_methods_and_the_settle_event_run() {
     // the `settle` check (mixed#10), since unknown-semantics-events T5 (L52); the sentence is gone (T22)
     let chapter = Chapter::read();
     CycleCounter::model(&chapter).run(Commands::cycles()).unwrap_or_else(|failure| panic!("`sin` runs: {failure}"));
-    chapter.marked("buck.msl", "mixed#10").earlier("buck.msl").run(Commands::buck()).unwrap_or_else(|failure| panic!("the `settle` check runs (mixed#10): {failure}"));
+    chapter.marked("buck.msl", "mixed#10").run(Commands::buck()).unwrap_or_else(|failure| panic!("the `settle` check runs (mixed#10): {failure}"));
 }
 
 #[test]
@@ -174,8 +174,7 @@ fn the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28() {
     let chapter = Chapter::read();
     let mut with_checks = Commands::buck();
     with_checks.streams.push("checks".to_string());
-    Refusal::expect(chapter.marked("buck.msl", "mixed#10").run(with_checks.clone()), "mixed#10", "E0150", "an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
-    let checked = chapter.marked("buck.msl", "mixed#10").earlier("buck.msl").run(with_checks).unwrap_or_else(|failure| panic!("mixed#10, the converter with its `settle` check: {failure}"));
+    let checked = chapter.marked("buck.msl", "mixed#10").run(with_checks).unwrap_or_else(|failure| panic!("mixed#10, the converter with its `settle` check: {failure}"));
     // UE-06 AC 2: every `regulated` check record after 10 ms is a pass (the bound is 50 mV, the Book's own)
     let regulated: Vec<&_> = checked.stream("checks").into_iter().filter(|record| matches!(Fields::of(record, "name"), Field::Text(name) if name == "regulated")).collect();
     assert!(!regulated.is_empty(), "the check runs at the time points after 10 ms");
@@ -183,8 +182,7 @@ fn the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28() {
         assert!(record.time > 10e-3, "the check is guarded by now() > 10m: {}", record.time);
         assert_eq!(Fields::of(record, "pass"), &Field::Bool(true), "regulated at {:e} s: {:?}", record.time, record.fields);
     }
-    Refusal::expect(chapter.marked("buck.msl", "mixed#8").run(Commands::buck()), "mixed#8", "E0150", "an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
-    let records = Buck::loop_records(&chapter.marked("buck.msl", "mixed#8").earlier("buck.msl"));
+    let records = Buck::loop_records(&chapter.marked("buck.msl", "mixed#8"));
     assert_eq!(records.len(), 1201, "one record per switching period of 10 us over 12 ms, the first at 0");
     assert!((records[1].0 - 1e-5).abs() < 1e-12 && (records[1200].0 - 12e-3).abs() < 1e-9, "the periods");
     let (_, vout, err, duty) = records[1200];
@@ -211,7 +209,7 @@ fn the_buck_starts_from_the_operating_point_with_the_first_tick_applied() {
     // is solved again with the switch closed, so the transient starts from 11.8 V. The first record is the
     // sample before that commit (vout 0, err 3.3, duty 0.0033)
     let chapter = Chapter::read();
-    let model = chapter.marked("buck.msl", "mixed#8").earlier("buck.msl");
+    let model = chapter.marked("buck.msl", "mixed#8");
     let records = Buck::loop_records(&model);
     Printed::holds("3.299960e0", records[0].2, "the first error, the Book's 3.300");
     Printed::holds("3.299960e-3", records[0].3, "the first duty, the Book's 0.0033");
@@ -257,8 +255,7 @@ fn the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero() {
     let clock = chapter.text("values#1");
     let clock = clock.split_once("/// Counts rising edges").expect("the clock comes first").0;
     let after = format!("{SOURCE}module Top() {{ signal vin: Electrical; signal clk: Bit; signal bit: Bit; let s = Vdc(vin) {{ dc: 0.3 }}; let m = DeltaSigma1(vin, clk, bit); let o = Osc(clk) {{ f: 1M }}; }}\n{clock}");
-    Refusal::expect(chapter.wrapped("delta_sigma.msl", "", "mixed#14", &after).run(Commands::transient("Top", 200e-6, Some(1e-6))), "mixed#14", "E0150", "an `analog` block reads the discrete carrier `bit` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
-    let model = chapter.wrapped("delta_sigma.msl", "", "mixed#14", &after).earlier("delta_sigma.msl");
+    let model = chapter.wrapped("delta_sigma.msl", "", "mixed#14", &after);
     let ran = model.run(Commands::transient("Top", 200e-6, Some(1e-6))).unwrap_or_else(|failure| panic!("{failure}"));
     let high = (0..ran.table.rows.len()).filter(|row| ran.cell(*row, "Top.bit") == &Cell::Bool(true)).count();
     let density = high as f64 / ran.table.rows.len() as f64;
@@ -318,12 +315,15 @@ fn e0316_an_in_port_takes_a_digital_expression_only() {
 }
 
 #[test]
-fn e0150_an_unknown_switch_control_is_read_with_high() {
-    // mixed~39a9371d: "E0150 i(a, b) +> v(a, b) / if ctl { ron } else { roff };": say what an unknown ctl
-    // means, `ctl.high()`
-    let source = "module Sw(a: Electrical, b: Electrical, in ctl: Bit) { ron: f64 = 50m; roff: f64 = 1M; }\nanalog for Sw { i(a, b) +> v(a, b) / if ctl { ron } else { roff }; }\nmodule Top(in c: Bit) { signal a: Electrical; signal b: Electrical; let s = Sw(a, b, c); }\n";
-    let faulty = Faulty::elaborating("mixed~39a9371d", source, "Top");
-    assert!(faulty.first("E0150").message.contains("reads the discrete carrier `ctl`"), "{}", faulty.first("E0150").message);
+fn a_bit_control_in_a_division_is_read_as_its_value() {
+    // mixed~39a9371d (the former E0150 row, `i(a, b) +> v(a, b) / if ctl { ron } else { roff };`): the read needs
+    // no gate (part I section 3.3.6). From 1 V through the switch into 1 MOhm, `a` sits at 1 MOhm / (1 MOhm + ron)
+    // with the control high and at half of 1 V with it low
+    let top = |ctl: &str| format!("module Sw(a: Electrical, b: Electrical, in ctl: Bit) {{ ron: f64 = 50m; roff: f64 = 1M; }}\nanalog for Sw {{ i(a, b) +> v(a, b) / if ctl {{ ron }} else {{ roff }}; }}\nmodule Src(p: Electrical) {{ dc: f64 = 1.0; }}\nanalog for Src {{ v(p) +> dc; }}\nmodule Load(p: Electrical) {{ r: f64 = 1M; }}\nanalog for Load {{ i(p, gnd) +> v(p, gnd) / r; }}\nmodule Top() {{ signal s: Electrical; signal a: Electrical; signal c: Bit = {ctl}; let v1 = Src(s); let sw = Sw(s, a, c); let l = Load(a); }}\n");
+    for (ctl, volts) in [("true", 1e6 / (1e6 + 50e-3)), ("false", 0.5)] {
+        let ran = Model::written("m.msl", &top(ctl)).run(Faulty::operating_point_of("Top")).unwrap_or_else(|failure| panic!("{failure}"));
+        assert!((ran.signal("Top.a") - volts).abs() < 1e-6, "control {ctl}: v(a) = {:e}, wanted {volts}", ran.signal("Top.a"));
+    }
 }
 
 #[test]

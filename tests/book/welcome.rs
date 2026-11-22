@@ -141,10 +141,7 @@ fn the_delayed_bench_steps_at_one_microsecond() {
     // written when vout rises through 63.2 % of the step"; welcome~ca1522ff "One time constant after
     // the step: vout is 1 − 1/e to the digit, at 0.07 ns before 2 µs"
     let overrides = Overrides { analysis: Some("transient".to_string()), stop: Some(5e-6), print_step: Some(1e-6), ..Overrides::default() };
-    let model = Chapter::read().marked("rc/benches/delayed.msl", "welcome#17");
-    Refusal::expect(model.run(overrides.clone()), "welcome#17", "E0150", "an `analog` block reads the discrete carrier `fired` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
-    // the physics, on the front end as it stands: the earlier gate is added to the Book's text
-    let ran = Chapter::read().marked("rc/benches/delayed.msl", "welcome#17").earlier("delayed.msl").run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
+    let ran = Chapter::read().marked("rc/benches/delayed.msl", "welcome#17").run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
     assert_eq!(ran.real(1, "Delayed.vin"), 0.0, "the source is at 0 V until t0 = 1 us");
     assert_eq!(ran.real(2, "Delayed.vin"), 1.0, "and at v1 = 1 V after it");
     Printed::holds("6.321468e-1", ran.real(2, "Delayed.vout"), "vout one time constant after the step");

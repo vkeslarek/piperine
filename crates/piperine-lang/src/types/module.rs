@@ -279,7 +279,6 @@ impl Checker<'_> {
                 // A value input: any expression of its type, a probe included (§8.1.13).
                 Some(value) => {
                     self.check_argument(arg.value, &value);
-                    self.analog_value_input(module, port_decl, arg.value);
                     self.definition_value_input(expr, module, port_decl, arg.value);
                 }
                 None => {

@@ -94,7 +94,7 @@ change of the IR or the ABI.
   (one flag per value where the text said one per level) closed with it: the redesign removes the
   flag instead of finishing it, and `unknown-semantics-per-level` is dropped. The implementation is
   the earlier model. The layers: the lexer and parser (`Token::Unknown`, `LitKind::Unknown`);
-  the checker (`flag_total.rs`, `E0150`, `E0151`, `level`, `known`, `known_or`, `is_known`, `high`,
+  the checker (`E0150` of a `const` holding `Unknown`, `E0151`, `level`, `known`, `known_or`, `is_known`, `high`,
   `merge`); the elaborator (`elab/known.rs`, the merge lowering, the unknown index); the IR
   (`ValueType::Flagged`); the plan (the known byte of every layout, `maybe`); the generated code
   (`rt/flag.rs`, the merge of paths, `commit_with`); the device ABI (`Field.known`, `HAS_KNOWN`,
@@ -463,7 +463,6 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | cheatsheet#10 | L57 | `composite-values` | with its `emit!` the card is `E0601` (a statement among items); without it `parse_table(include_str!(..))` is `P0001`, a generic function, and `table_model(.., IV, ..)` an array whose length is a generic parameter |
 | values#14 | S8 | `explicit-unknowns` | the adder's `Bit<Option<u8>>` port `b`, undriven, is read: the run fails with `E0105` naming `b` (a composite that holds no value yet; L64); made to run by explicit-unknowns, phase A: T21, T22 and T30 (`Option` as a carried type that starts at a value) |
 | values#18 | S8 | `explicit-unknowns` | `Logic<4>` is `P0001`: the library struct `Logic` has no generic parameter yet (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
-| values#21 | S8 | `explicit-unknowns` | `analog` reading `held` with no gate is `E0150`: the earlier front end still refuses a plain read of a discrete carrier (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
 | values~23c03fc8 | S8 | `explicit-unknowns` | `E0187` is not raised: `signal en: Bit;` elaborates and starts unknown (made to run by explicit-unknowns, phase A: T21, T22 and T30 (the `Default` table, initial values, E0187; `Option` as a carried type)) |
 | values~37a548f2 | S8 | `explicit-unknowns` | the run does not refuse an undriven top-level `in` port of a type with no `Default`: it starts it unknown (made to run by explicit-unknowns, phase A: T38 (EU-04 AC 6: the analysis refuses the port)) |
 | values~39ba3a1d | S8 | `explicit-unknowns` | `E0187` is not raised (the row of the mistakes table) (made to run by explicit-unknowns, phase A: T21, T22 and T30 (the `Default` table, initial values, E0187; `Option` as a carried type)) |
@@ -477,12 +476,6 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | digital#18 | L21 | `resolved-nets` | `Sda` and its pull-up: `Driven` is `E0161` (not in the library yet) (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
 | digital#19 | L21 | `resolved-nets` | `TriBus` with `Tribuf` and `Keeper`: `Driven` is `E0161` (not in the library yet) (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
 | digital#20 | L21 | `resolved-nets` | `DataBus` and `impl Resolve<Option<u8>, Data>`: `Resolve` is `E0161` (not in the library yet) (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
-| welcome#17 | S8 | `explicit-unknowns` | `StepSource` reads `fired` in `analog` with no gate: `E0150`, the earlier front end still asks for one (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
-| analog#9 | S8 | `explicit-unknowns` | the ideal switch reads `ctl` with no gate: `E0150` (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
-| modules#9 | S8 | `explicit-unknowns` | `RSwitch` reads `ctl` with no gate: `E0150` (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
-| mixed#8 | S8 | `explicit-unknowns` | the buck's `RSwitch` reads `ctl` with no gate: `E0150` (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
-| mixed#10 | S8 | `explicit-unknowns` | the buck with its `settle` check reads `ctl` with no gate: `E0150` (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
-| mixed#14 | S8 | `explicit-unknowns` | `DeltaSigma1` reads `bit` with no gate: `E0150` (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
 | natures~91c3bffe | L21 | `resolved-nets` | the `Pulldown` variant of the alarm needs the same nature: refused with natures#3 (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
 | core-std#6 | L21 | `resolved-nets` | `IrqLine`, a nature the model declares with `impl Resolve<Driven>`: `Driven` is `E0161` (not in the library yet) (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
 | errors~39ba3a1d | S8 | `explicit-unknowns` | `E0187` is not raised (the row of the codes table) (made to run by explicit-unknowns, phase A: T21, T22 and T30 (the `Default` table, initial values, E0187; `Option` as a carried type)) |

@@ -738,7 +738,10 @@ impl Elaboration<'_, '_> {
             },
             DeclKind::Port(_) | DeclKind::Signal(_) => match (self.frame_carrier(scope.frame, decl), self.input_of(scope, decl)) {
                 // A read of a carrier may be unknown (§3.3): its type is flagged.
-                (Some(index), _) => Some(self.carrier_read(index, origin)),
+                (Some(index), _) => {
+                    let read = self.carrier_read(index, origin.clone());
+                    Some(self.analog_value(scope, read, origin))
+                }
                 // A value input of a hoisted module: the caller's expression, in the caller's frame.
                 (None, Some(Some(given))) => self.in_caller(scope, |this, scope| this.lower_expr(scope, given)),
                 (None, Some(None)) => {

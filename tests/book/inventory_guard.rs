@@ -639,7 +639,7 @@ fn every_listing_that_does_not_run_names_its_gap() {
     // the gap of each is the feature that really makes it run (ROADMAP.md, "Every Book listing runs before item 13"):
     // explicit-unknowns phase A or B (S8), `resolved-nets` (L21: also natures#2, which needs phases A and B and `composite-values` first)
     let gap_of = |id: &str| tree.inventory.rows().iter().find(|row| row.id == id).map(|row| row.gap.clone()).unwrap_or_else(|| panic!("a row {id}"));
-    for id in ["welcome#17", "analog#9", "modules#9", "mixed#8", "mixed#10", "mixed#14", "values#21", "values#14", "values#18"] {
+    for id in ["values#14", "values#18"] {
         assert_eq!(gap_of(id), "S8", "{id}: explicit-unknowns");
     }
     for id in ["natures#2", "natures#3", "digital#16", "digital#17", "digital#18", "digital#19", "digital#20", "core-std#6"] {

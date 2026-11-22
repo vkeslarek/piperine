@@ -296,15 +296,16 @@ fn the_values_chapter_teaches_the_explicit_model() {
 
 #[test]
 fn analog_reads_a_digital_carrier_directly() {
-    // values#21 (refused, GAPS.md S8): the sample-and-hold of the Book reads `held` with no gate. The
-    // earlier front end still reports E0150 for the read (replaces
-    // `analog_reads_a_digital_carrier_through_known_or`, which ran the listing with `held.known_or(0.0)`);
-    // the test fails when the read is accepted. values~267f8cfe is now the sentence "held is a real number
-    // from the first instant, so the contribution needs no gate"
+    // values#21 (run since `explicit-unknowns` T20): the sample-and-hold of the Book reads `held` with no gate
+    // (replaces `analog_reads_a_digital_carrier_through_known_or` and the refusal of the read).
+    // values~267f8cfe is the sentence "held is a real number from the first instant, so the contribution needs no gate"
     let chapter = Chapter::read();
     let after = "module Source(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Source { v(p, n) +> dc; }\nmodule Top() { signal a: Electrical; signal b: Electrical; signal c: Bit = false; let s = Source(a, gnd); let h = SampleHold(a, b, c); }\ndigital for Top { on at(1u) { c <- true; } }\n";
     let model = chapter.wrapped("sample_hold.msl", "", "values#21", after);
-    Refusal::expect(model.run(Transient::of("Top", 3e-6)), "values#21", "E0150", "an `analog` block reads the discrete carrier `held` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
+    let ran = model.run(Transient::of("Top", 3e-6)).unwrap_or_else(|failure| panic!("{failure}"));
+    let last = ran.table.rows.len() - 1;
+    assert!((ran.real(0, "Top.b") - 0.0).abs() < 1e-9, "`held` starts at 0.0 and the output with it: {:e}", ran.real(0, "Top.b"));
+    assert!((ran.real(last, "Top.b") - 1.0).abs() < 1e-9, "the output follows `held` after the sample at 1 us: {:e}", ran.real(last, "Top.b"));
 }
 
 #[test]

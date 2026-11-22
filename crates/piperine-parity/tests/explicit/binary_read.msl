@@ -1,0 +1,18 @@
+//! A binary carrier read in `analog` as its value (part I §3.3.6): a `Bit<f64>` and a `Bit`
+//! drive a voltage with no flag read in between.
+
+/// Forces `p` to the level `r` holds.
+module Level(p: Electrical, in r: Bit<f64>) {}
+analog for Level { v(p) +> r; }
+
+/// Forces `q` to 2 when `en` is true and to 0 when it is false.
+module Gate(q: Electrical, in en: Bit) {}
+analog for Gate { v(q) +> if en { 2.0 } else { 0.0 }; }
+
+/// A real carrier that holds 3.5 and a bit that holds true, each read by an `analog` block.
+module Bench() {
+    signal a: Electrical; signal b: Electrical;
+    signal r: Bit<f64> = 3.5; signal en: Bit = true;
+    let level = Level(a, r);
+    let gate = Gate(b, en);
+}

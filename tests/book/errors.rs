@@ -58,12 +58,11 @@ fn a_refusal_that_runs_fails_naming_its_row() {
 fn the_worked_sample_hold_is_refused_with_its_three_codes() {
     // errors#3: the Book's faulty sample-and-hold, placed in a bench, "has three mistakes that
     // elaboration finds": E0310 on `clk: Bit`, E0210 on `= 0`, E0430 on `on clk`, sorted by position. The
-    // earlier front end adds a fourth, E0150 for the direct read `+> held` (S8), which the Book's text does
-    // not have: it is left out of the comparison
+    // direct read `+> held` is no error (part I section 3.3.6), so the run gives these three and no other
     let chapter = Chapter::read();
     let model = chapter.lone("sample_hold.msl", &["errors#3"]).with_source("sample_hold.msl", SAMPLE_HOLD_BENCH);
     let given = Refusal::of(model.run(Faulty::operating_point_of("Top")), "errors#3");
-    let codes: Vec<&str> = given.iter().map(|(code, _)| code.as_str()).filter(|code| *code != "E0150").collect();
+    let codes: Vec<&str> = given.iter().map(|(code, _)| code.as_str()).collect();
     assert_eq!(codes, ["E0310", "E0210", "E0430"], "the three mistakes, top to bottom: {given:?}");
     Refusal::expect(model.run(Faulty::operating_point_of("Top")), "errors#3", "E0310", "a port of a discrete nature takes `in` or `out` (§8.1.5)");
 }
@@ -125,12 +124,11 @@ fn e0430_is_found_on_the_head_of_the_worked_example_s_reaction() {
 }
 
 #[test]
-fn e0150_is_found_on_the_read_of_the_carrier_in_the_worked_example() {
-    // errors~4cc71bd2: "E0150 on `+> held`: `analog` reads a digital carrier without saying what
-    // unknown means": the label sits on `held`, and the message says what the read lacks
+fn the_read_of_the_carrier_in_the_worked_example_is_no_error() {
+    // errors~4cc71bd2 (the former E0150 row, "on `+> held`: `analog` reads a digital carrier without saying what
+    // unknown means"): the read is the value, so the worked example's `held` is pointed at by no diagnostic
     let worked = Chapter::read().worked_example("errors~4cc71bd2");
-    assert_eq!(worked.pointed_at("E0150"), "held");
-    assert!(worked.first("E0150").message.contains("other than through `known`, `known_or`, `is_known` or `high`"), "{}", worked.first("E0150").message);
+    assert!(worked.given.iter().all(|reported| reported.code != "E0150"), "no E0150: {:?}", worked.given.iter().map(|reported| &reported.code).collect::<Vec<_>>());
 }
 
 #[test]
@@ -218,10 +216,11 @@ fn e0143_is_a_default_in_a_signature_or_an_overload() {
 }
 
 #[test]
-fn e0150_is_an_analog_read_of_a_digital_carrier() {
-    // errors~39a9371d: "E0150: `analog` reads a digital carrier without `known_or` / `high()`"
+fn an_analog_read_of_a_digital_carrier_is_no_error() {
+    // errors~39a9371d (the former E0150 row): `analog` reads a digital carrier without `known_or` or `high()`, and
+    // the worked example's read of `held` is not reported
     let worked = Chapter::read().worked_example("errors~39a9371d");
-    assert!(worked.first("E0150").message.contains("an `analog` block reads the discrete carrier `held`"), "{}", worked.first("E0150").message);
+    assert!(worked.given.iter().all(|reported| reported.code != "E0150"), "no E0150: {:?}", worked.given.iter().map(|reported| &reported.code).collect::<Vec<_>>());
 }
 
 #[test]

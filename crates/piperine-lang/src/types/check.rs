@@ -637,7 +637,6 @@ impl<'d> Checker<'d> {
                     self.context = Context::Analog;
                     self.statements(&bd.body, None);
                     self.context = Context::Module;
-                    self.analog_reads(&bd.body);
                 }
                 BehaviorKind::Digital => self.digital_block(behavior),
             }
