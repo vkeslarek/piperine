@@ -4,6 +4,7 @@
 
 use crate::engine::{Digital, Horizon, Mode, Outcome};
 use crate::instant::Stepped;
+use crate::landing::LandingCause;
 use crate::tick::Tick;
 use crate::error::DigitalError;
 
@@ -12,9 +13,9 @@ use crate::error::DigitalError;
 pub enum Advance {
     /// Every due instant strictly before the target ran and none was a landing.
     Reached,
-    /// The instant at `tick` is a landing and is untouched: a time point (R4), or, when
-    /// `time_point` is false, only an `IRREVERSIBLE` reaction (R6) fires there.
-    Landing { tick: Tick, time_point: bool },
+    /// The instant at `tick` is a landing and is untouched; `cause` says why (a time point of R4,
+    /// an `IRREVERSIBLE` reaction of R6 or a host waiter of R7).
+    Landing { tick: Tick, cause: LandingCause },
     /// A reaction at the instant returned `FINISH`: the instant is untouched, and the step must land there.
     Final(Tick),
 }
@@ -37,7 +38,7 @@ impl Digital {
             }
             self.release(sub);
             match stepped? {
-                Stepped::Landing { time_point } => return Ok(Advance::Landing { tick: s, time_point }),
+                Stepped::Landing { cause } => return Ok(Advance::Landing { tick: s, cause }),
                 Stepped::Done(outcome) if outcome.finish => return Ok(Advance::Final(s)),
                 Stepped::Done(_) => {}
             }

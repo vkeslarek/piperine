@@ -7,6 +7,7 @@
 use std::collections::BTreeSet;
 
 use crate::engine::{Digital, Horizon, Mode, Outcome};
+use crate::landing::LandingCause;
 use crate::net::{NetId, NetKind};
 use crate::queue::{Instant, Writer};
 use crate::run::{Phase, check_canonical, fire_net, fired_reactions, run_functions, run_reactions, write_net};
@@ -18,9 +19,8 @@ use crate::error::DigitalError;
 /// How a pass over an instant ended.
 pub(crate) enum Stepped {
     Done(Outcome),
-    /// A look-ahead stopped: the instant is a landing; `time_point` is false when only an
-    /// `IRREVERSIBLE` reaction made it one.
-    Landing { time_point: bool },
+    /// A look-ahead stopped: the instant is a landing, for `cause`.
+    Landing { cause: LandingCause },
 }
 
 /// What the settle phase of an instant reported (`Digital::settle_phase`).
@@ -175,17 +175,29 @@ impl Digital {
             }
             if lookahead {
                 let firing = fired_reactions(&self.plan.instances, Phase::Microstep, &self.store);
-                let probing = firing.iter().any(|f| self.plan.analysis().probes(f.instance as u32, f.reaction as u32));
+                let analysis = self.plan.analysis();
+                let probing = firing.iter().any(|f| analysis.probes(f.instance as u32, f.reaction as u32));
+                let sampling = firing.iter().any(|f| analysis.samples(f.instance as u32, f.reaction as u32));
                 let irreversible = firing.iter().any(|f| {
                     let shape = self.plan.instances[f.instance].handle.shape();
                     shape.reactions.get(f.reaction).is_some_and(|r| r.flags & reaction_flag::IRREVERSIBLE != 0)
                 });
-                if analog_now || probing {
-                    return Ok(Stepped::Landing { time_point: true });
-                }
                 let waited = self.waited.iter().any(|w| self.store.fired(*w));
-                if irreversible || waited {
-                    return Ok(Stepped::Landing { time_point: false });
+                let cause = if analog_now {
+                    Some(LandingCause::AnalogReadChanged)
+                } else if sampling {
+                    Some(LandingCause::ContinuousRead)
+                } else if probing {
+                    Some(LandingCause::DeclaredReach)
+                } else if irreversible {
+                    Some(LandingCause::Irreversible)
+                } else if waited {
+                    Some(LandingCause::HostWaiter)
+                } else {
+                    None
+                };
+                if let Some(cause) = cause {
+                    return Ok(Stepped::Landing { cause });
                 }
             }
             let ran = run_reactions(

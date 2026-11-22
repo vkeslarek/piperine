@@ -10,6 +10,7 @@ mod devices;
 use devices::*;
 use piperine_abi::layout::{HIGH, LOW};
 use piperine_digital_solver::advance::Advance;
+use piperine_digital_solver::landing::LandingCause;
 use piperine_digital_solver::engine::{Digital, Horizon, Mode};
 use piperine_digital_solver::net::{NetId, NetSpec};
 use piperine_digital_solver::observe::Observation;
@@ -48,13 +49,13 @@ fn advance_stops_before_the_first_time_point_and_leaves_it_untouched() {
     d.host_commit(net(&d, "a"), 0, &LOW, Tick(9)).unwrap();
     let before = d.checkpoint();
     let observed = d.observations().to_vec();
-    assert_eq!(d.advance(Tick(20)).unwrap(), Advance::Landing { tick: Tick(5), time_point: true });
+    assert_eq!(d.advance(Tick(20)).unwrap(), Advance::Landing { tick: Tick(5), cause: LandingCause::AnalogReadChanged });
     assert_eq!(d.checkpoint(), before, "store, queue and bookkeeping are those before the instant");
     assert_eq!(d.observations(), observed.as_slice());
     // the owner then runs the instant whole
     let out = d.run_instant(Tick(5), &[], Horizon::uniform(Tick(20)), Mode::default()).unwrap();
     assert_eq!(out.boundary, [(net(&d, "y"), LOW.to_vec())]);
-    assert_eq!(d.advance(Tick(20)).unwrap(), Advance::Landing { tick: Tick(9), time_point: true }, "the next one is a landing too");
+    assert_eq!(d.advance(Tick(20)).unwrap(), Advance::Landing { tick: Tick(9), cause: LandingCause::AnalogReadChanged }, "the next one is a landing too");
 }
 
 #[test]
@@ -63,12 +64,12 @@ fn each_clause_of_the_time_point_test_stops_advance() {
     // 1. a net the analog side reads changes
     let mut d = started(engine_with(vec![("inv", inverter(), vec![("a", "a"), ("y", "y")])], &["y"]));
     d.host_commit(net(&d, "a"), 0, &HIGH, Tick(4)).unwrap();
-    assert_eq!(d.advance(Tick(10)).unwrap(), Advance::Landing { tick: Tick(4), time_point: true });
+    assert_eq!(d.advance(Tick(10)).unwrap(), Advance::Landing { tick: Tick(4), cause: LandingCause::AnalogReadChanged });
 
     // 2. a reaction that reads a continuous pin fires
     let mut d = started(engine_with(vec![("sm", sampler(), vec![("v", "node"), ("go", "g"), ("s", "out")])], &[]));
     d.fire(net(&d, "g"), Tick(4)).unwrap();
-    assert_eq!(d.advance(Tick(10)).unwrap(), Advance::Landing { tick: Tick(4), time_point: true });
+    assert_eq!(d.advance(Tick(10)).unwrap(), Advance::Landing { tick: Tick(4), cause: LandingCause::ContinuousRead });
 
     // 3. a reaction with a statement without LATER whose net reaches an analog-read net fires
     let mut d = started(engine_with(
@@ -79,13 +80,13 @@ fn each_clause_of_the_time_point_test_stops_advance() {
         &["d"],
     ));
     d.fire(net(&d, "cross"), Tick(4)).unwrap();
-    assert_eq!(d.advance(Tick(10)).unwrap(), Advance::Landing { tick: Tick(4), time_point: true });
+    assert_eq!(d.advance(Tick(10)).unwrap(), Advance::Landing { tick: Tick(4), cause: LandingCause::DeclaredReach });
     assert!(d.read(net(&d, "above")) != HIGH, "the reaction did not run ahead");
 
     // 4. an IRREVERSIBLE reaction fires: a landing that is not a time point
     let mut d = started(engine_with(vec![("st", stub(), vec![("go", "g"), ("out", "out")])], &[]));
     d.fire(net(&d, "g"), Tick(4)).unwrap();
-    assert_eq!(d.advance(Tick(10)).unwrap(), Advance::Landing { tick: Tick(4), time_point: false });
+    assert_eq!(d.advance(Tick(10)).unwrap(), Advance::Landing { tick: Tick(4), cause: LandingCause::Irreversible });
 }
 
 #[test]
@@ -122,7 +123,7 @@ fn a_later_statement_does_not_make_its_instant_a_time_point() {
     ));
     d.fire(net(&d, "go"), Tick(NS)).unwrap();
     let advanced = d.advance(Tick(10 * NS)).unwrap();
-    assert_eq!(advanced, Advance::Landing { tick: Tick(3 * NS), time_point: true }, "the commit's own instant is the landing");
+    assert_eq!(advanced, Advance::Landing { tick: Tick(3 * NS), cause: LandingCause::AnalogReadChanged }, "the commit's own instant is the landing");
     assert!(
         d.observations().iter().any(|o| matches!(o, Observation::Commit { instance, .. } if instance == "dl")),
         "the instant that made the commit ran inside advance"
@@ -147,7 +148,7 @@ fn a_landing_found_at_a_later_microstep_restores_the_whole_instant() {
     d.fire(net(&d, "up"), Tick(5)).unwrap();
     let before = d.checkpoint();
     let observed = d.observations().to_vec();
-    assert_eq!(d.advance(Tick(9)).unwrap(), Advance::Landing { tick: Tick(5), time_point: false });
+    assert_eq!(d.advance(Tick(9)).unwrap(), Advance::Landing { tick: Tick(5), cause: LandingCause::Irreversible });
     assert_eq!(d.checkpoint(), before, "microstep 0 ran and was undone with the rest");
     assert_eq!(d.observations(), observed.as_slice());
     assert_eq!(d.next_due(), Some(Tick(5)), "the fire is pending again");
@@ -262,4 +263,69 @@ fn advance_returns_final_at_a_finish() {
     let before = d.checkpoint();
     assert_eq!(d.advance(Tick(50)).unwrap(), Advance::Final(Tick(6)));
     assert_eq!(d.checkpoint(), before, "the instant is untouched: the owner runs it at the accepted time");
+}
+
+/// The landing `advance` finds for a design whose analog-read nets are `analog`, with `fire` fired at tick 4.
+fn landing_cause(devices: Vec<Placed<'_>>, analog: &[&str], fire: &str) -> LandingCause {
+    let mut d = started(engine_with(devices, analog));
+    d.fire(net(&d, fire), Tick(4)).unwrap();
+    match d.advance(Tick(10)).unwrap() {
+        Advance::Landing { cause, .. } => cause,
+        other => panic!("expected a landing, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_changed_analog_read_net_lands_by_analog_read_changed() {
+    let mut d = started(engine_with(vec![("inv", inverter(), vec![("a", "a"), ("y", "y")])], &["y"]));
+    d.host_commit(net(&d, "a"), 0, &HIGH, Tick(4)).unwrap();
+    assert_eq!(d.advance(Tick(10)).unwrap(), Advance::Landing { tick: Tick(4), cause: LandingCause::AnalogReadChanged });
+}
+
+#[test]
+fn a_reaction_that_reads_a_continuous_pin_lands_by_continuous_read() {
+    let cause = landing_cause(vec![("sm", sampler(), vec![("v", "node"), ("go", "g"), ("s", "out")])], &[], "g");
+    assert_eq!(cause, LandingCause::ContinuousRead);
+}
+
+#[test]
+fn a_reaction_reaching_the_analog_side_lands_by_declared_reach() {
+    let cause = landing_cause(
+        vec![
+            ("cmp", setter(), vec![("up", "cross"), ("out", "above")]),
+            ("buf", and2(), vec![("a", "above"), ("b", "above"), ("y", "d")]),
+        ],
+        &["d"],
+        "cross",
+    );
+    assert_eq!(cause, LandingCause::DeclaredReach, "the reach flag alone: the reaction reads no continuous pin");
+}
+
+#[test]
+fn an_irreversible_reaction_lands_by_irreversible() {
+    let cause = landing_cause(vec![("st", stub(), vec![("go", "g"), ("out", "out")])], &[], "g");
+    assert_eq!(cause, LandingCause::Irreversible);
+}
+
+#[test]
+fn a_host_waiter_lands_by_host_waiter() {
+    let mut d = started(engine_with(vec![("set", setter(), vec![("up", "up"), ("out", "out")])], &[]));
+    let up = net(&d, "up");
+    d.wait(up);
+    d.fire(up, Tick(4)).unwrap();
+    assert_eq!(d.advance(Tick(10)).unwrap(), Advance::Landing { tick: Tick(4), cause: LandingCause::HostWaiter });
+}
+
+#[test]
+fn only_an_irreversible_reaction_and_a_host_waiter_are_not_time_points() {
+    use LandingCause::*;
+    for (cause, time_point) in [
+        (AnalogReadChanged, true),
+        (ContinuousRead, true),
+        (DeclaredReach, true),
+        (Irreversible, false),
+        (HostWaiter, false),
+    ] {
+        assert_eq!(cause.is_time_point(), time_point, "{cause:?}");
+    }
 }

@@ -185,7 +185,7 @@ impl DiscreteSide for DigitalSide {
         let microsteps = self.microsteps;
         Ok(match self.digital.advance(DigitalTick(to)).map_err(|e| instant_error(e, microsteps))? {
             DigitalAdvance::Reached => Advance::Reached,
-            DigitalAdvance::Landing { tick, time_point } => Advance::Landing { tick: tick.0, time_point },
+            DigitalAdvance::Landing { tick, cause } => Advance::Landing { tick: tick.0, time_point: cause.is_time_point() },
             DigitalAdvance::Final(tick) => Advance::Final(tick.0),
         })
     }
