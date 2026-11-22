@@ -498,6 +498,15 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function need a generic module: `P0001` |
 | cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
 | cheatsheet#10 | L57 | `composite-values` | with its `emit!` the card is `E0601` (a statement among items); without it `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` a reference type |
+| values#14 | S8 | `explicit-unknowns` | `Option<u8>` has no `Repr` (`E0112`) for the port `b: Bit<Option<u8>>`: an `Option` is not a carried type yet |
+| values#18 | S8 | `explicit-unknowns` | `Logic<4>` is `P0001`: the library struct `Logic` is not taken as a type yet |
+| values#21 | S8 | `explicit-unknowns` | `analog` reading `held` with no gate is `E0150`: the earlier front end still refuses a plain read of a discrete carrier |
+| values~23c03fc8 | S8 | `explicit-unknowns` | `E0187` is not raised: `signal en: Bit;` elaborates and starts unknown |
+| values~37a548f2 | S8 | `explicit-unknowns` | `E0187` is not raised for an undriven top-level `in` port of a type with no default: the run starts it unknown |
+| values~13ffaea6 | S8 | `explicit-unknowns` | `E0180` for a `Logic` where an `f64` is required is not raised: `Logic` is refused by name first |
+| values~39ba3a1d | S8 | `explicit-unknowns` | `E0187` is not raised (the row of the mistakes table) |
+| values~2bbc575e | S8 | `explicit-unknowns` | held with values#14: the adder's `Bit<Option<u8>>` port is `E0112` |
+| values~c30bad4d | S8 | `explicit-unknowns` | held with values#18: `Logic<4>` is `P0001` |
 
 Three observations the root tests made are no Book row, so they are not above: they are entries of §7,
 each with its owner. A run has no key or flag for `dt_min` (H16, `host-analyses`); a `--stream` named like

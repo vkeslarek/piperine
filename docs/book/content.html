@@ -1435,7 +1435,7 @@ fn clean(v: f64) -> f64 { corrected(v, remove_offset) }</pre>
 
 <div class="callout goal">
   <p class="callout-label">Goal</p>
-  <p>By the end of this chapter you can say where a computation stops and hardware begins, report what a model does with <code>emit!</code>, make a type of your own travel on a signal, and explain what an <em>unknown</em> value is, where it comes from and how to catch one.</p>
+  <p>By the end of this chapter you can say where a computation stops and hardware begins, report what a model does with <code>emit!</code>, make a type of your own travel on a signal, and say what a type may hold: a plain value, an <code>Option</code> for absence, a <code>Logic</code> for the <code>x</code> and <code>z</code> of digital logic.</p>
 </div>
 
 <p>A <strong>value</strong> is data with no time: a number, a flag, an enum, a struct. Chapters 2 to 4 gave the rules of values. Everything a model computes with is a value; what it <em>connects to</em> is hardware, which exists for the whole simulation. This chapter stands on the line between the two: how a value is driven onto a signal, how it is reported, which types a signal can carry, and what a signal holds before anything has driven it.</p>
@@ -1538,7 +1538,7 @@ time         Blinky.count
 <tr><td>What is attached</td><td>The instance path, the analysis and the instant, on every record.</td></tr>
 <tr><td>When it runs</td><td>When the code around it runs: once per firing in a reaction, at every evaluation in <code>analog</code>.</td></tr>
 <tr><td>A step the solver takes back</td><td>A reaction's record from that step does not exist.</td></tr>
-<tr><td>An unknown value</td><td>The field is recorded as unknown, never as a guess.</td></tr>
+<tr><td>An <code>Option</code> or a <code>Logic</code></td><td>The field is <code>None</code> or the value, or the characters <code>0</code>, <code>1</code>, <code>x</code>, <code>z</code>.</td></tr>
 <tr><td>Effect on the model</td><td>None: no expression can read a stream.</td></tr>
 <tr><td>Where it is allowed</td><td>In a reaction, in <code>analog</code>, and in a <code>fn</code> called from them.</td></tr>
 </tbody></table></div>
@@ -1547,7 +1547,7 @@ time         Blinky.count
 
 <pre data-lang="msl">emit!("log", msg = "overrange", vin = v(inp));</pre>
 
-<p>The fields are your choice, with three limits: field names within one <code>emit!</code> are distinct, a field of one name has the same type everywhere a stream is written, and the name <code>maybe</code> is taken. The simulator sets <code>maybe = true</code> on a record that was reached under an unknown condition, for example inside an <code>if</code> whose test was unknown. Such a record says "this may have happened", and a host never counts it as a fact.</p>
+<p>The fields are your choice, with two limits: field names within one <code>emit!</code> are distinct, and a field of one name has the same type everywhere a stream is written. A record is its fields and the instance, the analysis and the instant: control takes a <code>bool</code>, so a site is reached or it is not.</p>
 
 <p>Two stream names are reserved and global: <code>sim</code> and <code>checks</code>. You do not write to them directly. The standard library does it for you: <code>finish()</code> ends the analysis, and <code>require(name, pass)</code> records a check the host judges. Both are ordinary functions over <code>emit!</code>, and chapter 9 uses them. For a plain message there is <code>log(Severity::Info, "text")</code>, which writes to the instance's <code>log</code> stream.</p>
 
@@ -1788,102 +1788,207 @@ time         MonitorTop.x  MonitorTop.clk  MonitorTop.zone
   <p>Three record lines from <code>MonitorTop.mon</code>, at 0.5, 1.5 and 2.5&nbsp;µs. Check the <code>from</code> and <code>to</code> fields against the table above. The command prints an enum field as the number of its variant, counted from 0 in the order of the declaration: <code>Under</code> is 0, <code>Ok</code> 1 and <code>Over</code> 2, so <code>from=1 to=0</code> is <code>Ok</code> to <code>Under</code>.</p>
 </div>
 
-<h3>Known and unknown</h3>
+<h3>What a type may hold</h3>
 
-<p>Every level of every value is either <strong>known</strong> or <strong>unknown</strong>. This is how MSL models the <code>x</code> of digital logic, and it is not a special kind of wire: the flag travels with the value everywhere, into locals and function arguments too.</p>
+<p>A value is what its type says it is. A <code>bool</code> is true or false, a <code>u8</code> is one of 256 numbers, an <code>f64</code> is a real number, and the same holds for enums, structs, tuples and arrays made of them. Nothing hides behind a read: you use the value, and an <code>if</code> on it runs exactly one branch.</p>
 
-<p>Unknown enters a design in only three ways: a carrier that has no value yet, the literal <code>Unknown</code>, or a failed <code>decode</code>. From there it spreads by two rules:</p>
+<p>Digital design also needs two things that a plain number cannot say: "this wire is not driven" and "this value is not determined". MSL does not give every value a hidden mood for them. When a model needs one, the type says so in its declaration, and a reader of the declaration knows it. There are two such types, and each answers one question.</p>
 
 <ul>
-<li><strong>Logic works level by level.</strong> <code>unknown &amp; false</code> is <code>false</code> and <code>unknown | true</code> is <code>true</code>: a known input that decides the result still decides it.</li>
-<li><strong>Everything else is all-or-nothing.</strong> Arithmetic, comparisons and <code>as</code> give a wholly unknown result if any level of any operand is unknown. <code>a == b</code> is unknown when either side has an unknown level.</li>
+<li><strong><code>Option&lt;T&gt;</code> answers "is there a value at all?"</strong> It is <code>None</code> or <code>Some(x)</code>. <code>Option&lt;u8&gt;</code> and <code>Option&lt;f64&gt;</code> are different types, and <code>Option&lt;Logic&lt;4&gt;&gt;</code> is either wholly absent or a present four-state vector.</li>
+<li><strong><code>Logic</code> answers "what does the wire carry?"</strong> Each level of a <code>Logic</code> is <code>0</code>, <code>1</code>, <code>x</code> (not determined) or <code>z</code> (not driven), as in a Verilog waveform. <code>Logic</code> alone has one level and <code>Logic&lt;4&gt;</code> has four. The type is not special to the language: it is a library struct, and its operators are written in the library as ordinary functions of the operator traits.</li>
 </ul>
 
-<p>An <code>if</code> on an unknown condition does not pick a branch. Both branches run, and their effects are <em>merged</em>: levels on which they agree stay known, the rest become unknown. This is stricter than Verilog, which silently takes the <code>else</code>. When you want that behavior, you say so: <code>if c.known_or(false) { … }</code>.</p>
+<p>The operators of <code>Logic</code> follow four-state tables, level by level. In the tables, <code>x</code> stands for an <code>x</code> or a <code>z</code> operand, and a result is never <code>z</code>:</p>
 
-<p>You read the flag with three methods every <code>Repr</code> value has: <code>x.known()</code> gives an <code>Option</code> (<code>None</code> when any level is unknown), <code>x.known_or(d)</code> gives the value or a default, and <code>x.is_known()</code> a <code>bool</code>.</p>
+<div class="table-wrap"><table class="codes">
+<thead><tr><th><code>a &amp; b</code></th><th>0</th><th>1</th><th>x</th><th></th><th><code>a | b</code></th><th>0</th><th>1</th><th>x</th><th></th><th><code>a ^ b</code></th><th>0</th><th>1</th><th>x</th></tr></thead>
+<tbody>
+<tr><td><b>0</b></td><td>0</td><td>0</td><td>0</td><td></td><td><b>0</b></td><td>0</td><td>1</td><td>x</td><td></td><td><b>0</b></td><td>0</td><td>1</td><td>x</td></tr>
+<tr><td><b>1</b></td><td>0</td><td>1</td><td>x</td><td></td><td><b>1</b></td><td>1</td><td>1</td><td>1</td><td></td><td><b>1</b></td><td>1</td><td>0</td><td>x</td></tr>
+<tr><td><b>x</b></td><td>0</td><td>x</td><td>x</td><td></td><td><b>x</b></td><td>x</td><td>1</td><td>x</td><td></td><td><b>x</b></td><td>x</td><td>x</td><td>x</td></tr>
+</tbody></table></div>
 
-<h3>Catching an unknown with <code>emit!</code></h3>
+<p>A 0 still decides an <code>&amp;</code> and a 1 still decides an <code>|</code>, whatever stands on the other side. <code>!a</code> turns 0 into 1, 1 into 0, and <code>x</code> and <code>z</code> into <code>x</code>. A shift moves the levels with their states and fills with 0.</p>
 
-<p>The classic bug: an input nobody drives. This adder is placed in a top that gives <code>a</code> the constant 3 and takes <code>b</code> from an <code>in</code> port of its own, which nothing drives. (<code>Osc</code> is the clock from the file above.)</p>
+<p>A <code>Logic</code> and a binary value mix level by level: <code>a &amp; 0b1111u4</code> converts the binary operand first, and the conversion is total, because every number is four-state logic with no <code>x</code> in it. The way back can fail, so it returns an <code>Option</code>: <code>a.to_bits()</code> is <code>Some(n)</code> when every level is 0 or 1 and <code>None</code> otherwise.</p>
+
+<h3>A signal starts with a value</h3>
+
+<p>Every signal has a value from the first instant, and the source says which. Either you write it, <code>signal en: Bit = false;</code>, or the type has a <strong>default</strong>, a value that means "nothing yet", and the signal starts at it:</p>
+
+<div class="table-wrap"><table class="codes">
+<thead><tr><th>Type</th><th>Starts at, with no <code>= value</code></th></tr></thead>
+<tbody>
+<tr><td><code>Option&lt;T&gt;</code></td><td><code>None</code></td></tr>
+<tr><td><code>Logic&lt;N&gt;</code></td><td><code>x</code> on every level</td></tr>
+<tr><td>a tuple, an array, or a struct deriving <code>Default</code>, whose parts all have a default</td><td>the default of each part</td></tr>
+<tr><td><code>bool</code>, <code>u8</code> and every integer, <code>f64</code> and every float</td><td>no default: the value must be written</td></tr>
+</tbody></table></div>
+
+<p>The last row is a deliberate choice, and one place where MSL differs from languages in which <code>u8::default()</code> is zero. A register with no reset value has no meaning that a number could express, because zero is a value like any other. So <code>signal en: Bit;</code> is error E0187, naming the signal and the trait <code>Default</code>, and the fix is to write the first value. A register that may be absent writes <code>Bit&lt;Option&lt;u8&gt;&gt;</code>; one that may be undetermined writes <code>Bit&lt;Logic&lt;4&gt;&gt;</code> and starts at <code>xxxx</code>.</p>
+
+<h3>Catching an absent input with <code>emit!</code></h3>
+
+<p>The classic bug: an input nobody drives. This adder says in its port type that <code>b</code> may be absent. It is placed in a top that gives <code>a</code> the constant 3 and takes <code>b</code> from an <code>in</code> port of its own, which nothing drives, so <code>b</code> starts at <code>None</code>. (<code>Osc</code> is the clock from the file above.)</p>
 
 <!-- cli-file: monitor.msl -->
-<pre data-lang="msl">/// Registers a + b on every clock edge.
-module Adder(in clk: Bit, in a: Bit<u8>, in b: Bit<u8>, out sum: Bit<u8> = 0) {}
+<pre data-lang="msl">/// Registers a + b on every clock edge, and says so when b is absent.
+module Adder(in clk: Bit, in a: Bit<u8>, in b: Bit<Option<u8>>, out sum: Bit<u8> = 0) {}
 digital for Adder {
-    on clk.rise() { sum <- a + b; }
-
-    // The debug reaction: fires when `sum` changes and is no longer known.
-    on sum.changed() && !sum.is_known() {
-        emit!("lost", t = now(), a = a, b = b);
+    on clk.rise() {
+        match b {
+            Some(v) => { sum <- a + v; }
+            None => { emit!("absent", t = now(), a = a); }
+        }
     }
 }
 
-module AdderTop(in b: Bit<u8>) {
+module AdderTop(in b: Bit<Option<u8>>) {
     signal clk: Bit;
     pub signal sum: Bit<u8>;
     let osc = Osc(clk);
     let add = Adder(clk, 3, b, sum);
 }</pre>
 
-<p>An <code>in</code> port may be connected to an expression, here the literal <code>3</code>. A top-level <code>in</code> port that nothing drives stays unknown. On the first clock edge the adder computes <code>3 + unknown</code>, which is unknown, and commits it: <code>sum</code> goes from 0 to unknown. Going from known to unknown is a change, so the second reaction fires. Its guard, <code>!sum.is_known()</code>, is an ordinary <code>bool</code>. The record tells you which input to blame, because a field keeps its known flag:</p>
+<p>An <code>in</code> port may be connected to an expression, here the literal <code>3</code>. A top-level <code>in</code> port that nothing drives starts at its type's default, here <code>None</code>; for a type with no default, such as <code>Bit&lt;u8&gt;</code>, the run refuses to start and names the port. At each rising edge the <code>match</code> takes exactly one arm, and the record names what was missing:</p>
 
-<pre data-lang="text">stream AdderTop.add.lost
+<pre data-lang="text">stream AdderTop.add.absent
   instant        fields
-  (0.5 µs, 1)    t = 5.0e-7   a = 3   b = unknown</pre>
+  (0.5 µs, 0)    t = 5.0e-7   a = 3
+  (1.5 µs, 0)    t = 1.5e-6   a = 3
+  (2.5 µs, 0)    t = 2.5e-6   a = 3</pre>
 
-<p>The instant is <code>(0.5 µs, 1)</code>, not <code>(0.5 µs, 0)</code>: the clock edge is microstep 0, and the commit to <code>sum</code> applies one microstep later. Only one record is written, because unknown to unknown is not a change.</p>
+<p>The instant is <code>(0.5 µs, 0)</code>: the reaction runs in the microstep of the clock edge, and <code>sum</code> stays at 0 because no commit is made.</p>
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
-  <p>Add the two modules to <code>monitor.msl</code>. The file now has two candidates for the top, so name the one you want. Its <code>in</code> port is left undriven, which is the bug under study:</p>
-<pre data-lang="sh">piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream lost</pre>
-<pre data-lang="text" data-cli-output="piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream lost">run monitor: transient, top AdderTop, backend rust
-@5.000000e-7 AdderTop.add lost t=5.000000e-7 a=3 b=x
+  <p>Add the two modules to <code>monitor.msl</code>. The file now has two candidates for the top, so name the one you want. Its <code>in</code> port is left undriven, which is the bug under study. That is, once an <code>Option</code> can be carried on a signal. Today the command refuses the file and runs nothing:</p>
+<pre data-lang="sh">piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream absent</pre>
+<pre data-lang="text" data-cli-output="piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream absent" data-cli-stream="stderr" data-cli-lines="1-3">E0112
 
-time         AdderTop.b  AdderTop.clk  AdderTop.sum  AdderTop.add.a
-0.000000e0   x           false         0             3
-3.000000e-6  x           false         x             3</pre>
-  <p>An unknown value prints as <code>x</code>. One look at the line names the input nobody drives. The table that follows shows the same at the end of the run: <code>sum</code> is <code>x</code> at 3&nbsp;µs.</p>
+  × `Option&lt;u8&gt;` has no `Repr`: a carrier holds only a type that implements it (part I §2)
+    ╭─[monitor.msl:40:52]
+ 39 │ /// Registers a + b on every clock edge, and says so when b is absent.
+ 40 │ module Adder(in clk: Bit, in a: Bit&lt;u8&gt;, in b: Bit&lt;Option&lt;u8&gt;&gt;, out sum: Bit&lt;u8&gt; = 0) {}
+    ·                                                    ─────┬────
+    ·                                                         ╰── no `Repr`
+ 41 │ digital for Adder {
+    ╰────
+
+P0001
+
+  × a name whose type is unknown is not supported yet
+    ╭─[monitor.msl:44:37]
+ 43 │         match b {
+ 44 │             Some(v) =&gt; { sum &lt;- a + v; }
+    ·                                     ┬
+    ·                                     ╰── a name whose type is unknown is outside the M1 subset
+ 45 │             None =&gt; { emit!("absent", t = now(), a = a); }
+    ╰────
+
+E0112
+
+  × `Option&lt;u8&gt;` has no `Repr`: a carrier holds only a type that implements it (part I §2)
+    ╭─[monitor.msl:50:27]
+ 49 │ 
+ 50 │ module AdderTop(in b: Bit&lt;Option&lt;u8&gt;&gt;) {
+    ·                           ─────┬────
+    ·                                ╰── no `Repr`
+ 51 │     signal clk: Bit;
+    ╰────
+
+error: typeck failed with 3 diagnostic(s)</pre>
+  <p>Count the record lines from <code>AdderTop.add</code> when it runs: one at each rising edge, three in all.</p>
 </div>
 
-<p>A second flavor of the same tool: a record reached under an unknown condition is written with <code>maybe = true</code>. The model cannot tell whether <code>a &gt; b</code> when <code>b</code> is unknown, so it takes both paths and says so on the record instead of guessing. Add this to <code>monitor.msl</code>:</p>
+<h3>Deciding on a <code>Logic</code></h3>
+
+<p>An <code>if</code>, a <code>while</code>, a guard and the operands of <code>&amp;&amp;</code> and <code>||</code> take a <code>bool</code> and nothing else. A <code>Logic</code> cannot decide by itself, so a model says how it wants to decide. <code>a == b</code> on two <code>Logic</code> values is itself a <code>Logic</code>: it is <code>x</code> when a compared level is <code>x</code> or <code>z</code>, since nobody can say whether they are equal. The four ways to turn a <code>Logic</code> into a decision are all functions that return a <code>bool</code>:</p>
+
+<ul>
+<li><code>x.is_high()</code>, <code>x.is_low()</code>, <code>x.is_x()</code> and <code>x.is_z()</code> are true exactly when every level is 1, 0, <code>x</code> or <code>z</code>.</li>
+<li><code>same(a, b)</code> is true when every level holds the same one of the four states in both: two <code>x</code> levels are the same, and an <code>x</code> is not a <code>z</code>.</li>
+<li><code>match x.at(0) { … }</code> covers the four states of level 0 with four arms.</li>
+<li><code>x.to_bits()</code> and <code>x.to_bit()</code> give an <code>Option</code>, which a <code>match</code> or <code>if let</code> opens.</li>
+</ul>
 
 <!-- cli-file: monitor.msl -->
-<pre data-lang="msl">module Peek(in clk: Bit, in a: Bit<u8>, in b: Bit<u8>) {}
+<pre data-lang="msl">module Peek(in clk: Bit, in a: Bit<Logic<4>>, in b: Bit<Logic<4>>) {}
 digital for Peek {
-    on clk.rise() { if a > b { emit!("bigger", a = a); } }
+    on clk.rise() {
+        emit!("compare", eq = a == b, same = same(a, b), sure = (a == b).is_high());
+    }
 }
 
-module PeekTop(in b: Bit<u8>) {
+module PeekTop(in b: Bit<Logic<4>>) {
     signal clk: Bit;
     let osc = Osc(clk);
-    let peek = Peek(clk, 3, b);
+    let peek = Peek(clk, logic("1010"), b);
 }</pre>
+
+<p><code>logic("1010")</code> writes a four-state value one character per level, highest level first, from <code>0</code>, <code>1</code>, <code>x</code> and <code>z</code>. The undriven <code>b</code> starts at <code>xxxx</code>, so each edge compares <code>1010</code> with <code>xxxx</code>: <code>a == b</code> prints <code>x</code>, <code>same(a, b)</code> is false and <code>sure</code> is false. A host prints a four-state cell as its characters, <code>0</code>, <code>1</code>, <code>x</code>, <code>z</code>, highest level first.</p>
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
-<pre data-lang="sh">piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream bigger</pre>
-<pre data-lang="text" data-cli-output="piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream bigger">run monitor: transient, top PeekTop, backend rust
-@5.000000e-7 PeekTop.peek bigger a=3 maybe=true
-@1.500000e-6 PeekTop.peek bigger a=3 maybe=true
-@2.500000e-6 PeekTop.peek bigger a=3 maybe=true
+<pre data-lang="sh">piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream compare</pre>
+<pre data-lang="text" data-cli-output="piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream compare" data-cli-stream="stderr" data-cli-lines="1-3">P0001
 
-time         PeekTop.b  PeekTop.clk  PeekTop.peek.a
-0.000000e0   x          false        3
-3.000000e-6  x          false        3</pre>
-  <p>Each rising edge writes a record, marked <code>maybe=true</code>, because <code>a &gt; b</code> was unknown: the run does not stop and does not pick a branch. A <code>fatal</code> record that is <code>maybe</code> does not end the run either, and a check that is <code>maybe</code> is judged as unknown.</p>
+  × `struct` item used as a type is not supported yet
+    ╭─[monitor.msl:57:36]
+ 56 │ 
+ 57 │ module Peek(in clk: Bit, in a: Bit&lt;Logic&lt;4&gt;&gt;, in b: Bit&lt;Logic&lt;4&gt;&gt;) {}
+    ·                                    ────┬───
+    ·                                        ╰── `struct` item used as a type is outside the M1 subset
+ 58 │ digital for Peek {
+    ╰────
+
+P0001
+
+  × `struct` item used as a type is not supported yet
+    ╭─[monitor.msl:57:57]
+ 56 │ 
+ 57 │ module Peek(in clk: Bit, in a: Bit&lt;Logic&lt;4&gt;&gt;, in b: Bit&lt;Logic&lt;4&gt;&gt;) {}
+    ·                                                         ────┬───
+    ·                                                             ╰── `struct` item used as a type is outside the M1 subset
+ 58 │ digital for Peek {
+    ╰────
+
+E0161
+
+  × no method `is_high` on `bool`
+    ╭─[monitor.msl:60:74]
+ 59 │     on clk.rise() {
+ 60 │         emit!("compare", eq = a == b, same = same(a, b), sure = (a == b).is_high());
+    ·                                                                          ───┬───
+    ·                                                                             ╰── `bool` has no such method (Appendix H)
+ 61 │     }
+    ╰────
+
+P0001
+
+  × `struct` item used as a type is not supported yet
+    ╭─[monitor.msl:64:26]
+ 63 │ 
+ 64 │ module PeekTop(in b: Bit&lt;Logic&lt;4&gt;&gt;) {
+    ·                          ────┬───
+    ·                              ╰── `struct` item used as a type is outside the M1 subset
+ 65 │     signal clk: Bit;
+    ╰────
+
+error: typeck failed with 4 diagnostic(s)</pre>
+  <p>When it runs, each rising edge writes one record, <code>eq=x same=false sure=false</code>, three in all. Today the library type <code>Logic</code> is refused by name.</p>
 </div>
 
-<h3>Analog code has no unknowns</h3>
+<h3>Analog code reads values</h3>
 
-<p>The analog solver computes with real numbers only, so an <code>analog</code> block must say what an unknown means electrically. It reads a digital carrier through <code>known()</code>, <code>known_or(d)</code> or, for a <code>Bit</code>, <code>high()</code> (known and true):</p>
+<p>The analog solver computes with real numbers, so an <code>analog</code> block reads a discrete signal like any other expression when its type is a number or a <code>bool</code>:</p>
 
 <pre data-lang="msl">module SampleHold(vin: Electrical, vout: Electrical, in clk: Bit) { signal held: Bit<f64> = 0.0; }
 digital for SampleHold { on clk.rise() { held <- v(vin); } }
-analog for SampleHold { v(vout) +> held.known_or(0.0); }</pre>
+analog for SampleHold { v(vout) +> held; }</pre>
 
-<p>Writing <code>v(vout) +> held;</code> instead is error E0150, and the diagnostic names the carrier. The model says what an unknown means electrically; the language does not guess. This holds even for a carrier that, like <code>held</code>, can never be unknown: the rule is about what you wrote, not about what the compiler can prove.</p>
+<p><code>held</code> is a real number from the first instant, so the contribution needs no gate. A <code>Logic</code> is not a number, so it reaches an <code>analog</code> block through a function that returns one: <code>x.to_volts(vdd)</code> gives <code>vdd</code> for 1, 0 for 0 and half of <code>vdd</code> for <code>x</code> and <code>z</code>, and <code>x.is_high()</code> gives a <code>bool</code>. The model says what <code>x</code> means electrically, by choosing the function. Using a <code>Logic</code> where an <code>f64</code> or a <code>bool</code> is required is error E0180.</p>
 
 <h3>Foreign functions</h3>
 
@@ -1901,7 +2006,7 @@ extern "C" fn erfcx_dx(x: f64) -> f64;</pre>
   <tr><td>E0602</td><td><code>emit!("edge {}", count);</code></td><td>There is no format string, and a field needs a name: <code>emit!("edge", count = count);</code></td></tr>
   <tr><td>E0604</td><td><code>emit!("edge", t = now(), t = count);</code></td><td>A field name is used twice. Rename one.</td></tr>
   <tr><td>E0601</td><td><code>emit!("hello");</code> in a module body</td><td>Output runs when behavior runs. Put it in a reaction: <code>on init() { emit!("hello"); }</code></td></tr>
-  <tr><td>E0150</td><td><code>v(vout) +&gt; held;</code></td><td><code>analog</code> reads a digital carrier raw. Say what unknown means: <code>held.known_or(0.0)</code>.</td></tr>
+  <tr><td>E0187</td><td><code>signal en: Bit;</code></td><td>A <code>bool</code> has no default value. Write the first value: <code>signal en: Bit = false;</code>.</td></tr>
   <tr><td>E0112</td><td><code>out zone: Bit&lt;Zone&gt;</code> with <code>Zone</code> not deriving <code>Repr</code></td><td>A carried type needs a layout. Add <code>#[derive(Repr)]</code> to the enum.</td></tr>
   <tr><td>E0350</td><td><code>fn slope(x: f64) -&gt; f64 { ddt(x) }</code></td><td><code>ddt</code> is an instance with memory, and a <code>fn</code> has none. Make it a <code>module slope(x: f64) -&gt; f64</code>.</td></tr>
   <tr><td>E0123</td><td><code>extern "C" fn erfcx(x: f64) -&gt; f64;</code> called in <code>analog</code></td><td>Add <code>#[derivative(erfcx_dx)]</code> so the solver has a Jacobian.</td></tr>
@@ -1911,7 +2016,7 @@ extern "C" fn erfcx_dx(x: f64) -> f64;</pre>
 <div class="callout try">
   <p class="callout-label">Try it</p>
   <p>In <code>Counter</code>, move the <code>emit!</code> line above the commit. What changes in the stream? (Nothing: both lines read the values from before the edge.) Then add a field <code>half = count &gt;= 128</code> and predict the time of the first record where it is true. (The 129th rising edge, at 128.5&nbsp;µs.)</p>
-  <p>In <code>Adder</code>, replace <code>a + b</code> with <code>a &amp; b</code> and change the constant <code>3</code> to <code>0</code>, leaving <code>b</code> undriven. Does the <code>lost</code> record still appear? (No: <code>0 &amp; unknown</code> is 0 on every level, so <code>sum</code> stays known.) Then put the <code>3</code> back and say which levels of <code>sum</code> are unknown. (The two lowest: the levels where <code>a</code> is 1.)</p>
+  <p>In <code>PeekTop</code>, replace <code>logic("1010")</code> with <code>logic("10xz")</code>. What does <code>same(a, a)</code> give? (True: each level holds the same state on both sides, even <code>x</code> and <code>z</code>.) And <code>a &amp; 0b1111u4</code>, written as a <code>Logic</code> pattern? (<code>10xx</code>: the 1 and the 0 are decided, the <code>x</code> and the <code>z</code> are not.)</p>
 </div>
 </section>
 
