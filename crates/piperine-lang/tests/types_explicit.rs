@@ -79,19 +79,17 @@ fn width_is_typed_u32_on_a_concrete_type() {
 fn the_intrinsics_are_typed_at_the_concrete_type() {
     // §22.1.2 to §22.1.4: each function is typed at the concrete type of its arguments, its
     // turbofish or the type the context expects (US-03).
-    let body = "let a = merge(1.0, 2.0); let b = same(3_u8, 4_u8); let c: u2 = cast::<Mode, u2>(Mode::Run); \
+    let body = "let b = same(3_u8, 4_u8); let c: u2 = cast::<Mode, u2>(Mode::Run); \
                 let d = cast::<u8, i8>(3_u8); let e: u4 = logic(\"10xx\"); let f = logic::<Mode>(\"x1\"); \
-                let g = matches_bits(5_u4, \"01x1\"); let h = merge(Mode::Idle, Mode::Halt);";
-    let t = local_types(MODE, body, &["a", "b", "c", "d", "e", "f", "g", "h"]);
-    let mode = t[5].clone();
+                let g = matches_bits(5_u4, \"01x1\");";
+    let t = local_types(MODE, body, &["b", "c", "d", "e", "f", "g"]);
+    let mode = t[4].clone();
     assert!(matches!(mode, Ty::Enum(_)), "logic::<Mode> is a Mode: {mode:?}");
-    assert_eq!(t[0], Ty::F64);
-    assert_eq!(t[1], Ty::Bool);
-    assert_eq!(t[2], Ty::UInt(2));
-    assert_eq!(t[3], Ty::Int(8));
-    assert_eq!(t[4], Ty::UInt(4));
-    assert_eq!(t[6], Ty::Bool);
-    assert_eq!(t[7], mode);
+    assert_eq!(t[0], Ty::Bool);
+    assert_eq!(t[1], Ty::UInt(2));
+    assert_eq!(t[2], Ty::Int(8));
+    assert_eq!(t[3], Ty::UInt(4));
+    assert_eq!(t[5], Ty::Bool);
 }
 
 #[test]
@@ -160,18 +158,24 @@ fn a_function_that_reads_its_parameter_bare_takes_a_carrier_in_analog() {
 }
 
 #[test]
-fn unknown_with_no_inferable_type_is_e0906() {
-    // A.6 (`E0906`): `Unknown` where no type can be inferred, in a module body and in a reaction
-    // body; where a `Repr` type is expected it types as that type.
-    let src = "module Top(in clk: Bit) { let x = Unknown; }";
-    let design = design_of(src);
-    let d = Types::check(&design, "Top").expect_err("no type for `Unknown`");
-    assert_eq!(d.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0906"]);
-    assert_eq!(&src[d[0].diagnostic.span().range()], "Unknown");
-    let src = "module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let x = Unknown; } }";
-    let design = design_of(src);
-    let d = Types::check(&design, "Top").expect_err("no type for `Unknown`");
-    assert_eq!(d.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0906"], "{:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+fn unknown_is_a_name_that_does_not_resolve() {
+    // EU-02 AC 1 (C4): `Unknown` is no literal, so it is looked up like any name and found nowhere: `E0161` at the
+    // name, with a help naming an initial value, `Option<T>` and `Logic`; nowhere `E0906`, `E0908` or `E0150`
+    for (src, at) in [
+        ("module Top(in clk: Bit) { let x = Unknown; }", "Unknown"),
+        ("module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let x: u8 = Unknown; } }", "Unknown"),
+        ("module Top() { }\nanalog for Top { let x = Unknown; }", "Unknown"),
+    ] {
+        let design = Design::builder().source("top.msl", src).build();
+        let diagnostics = design.diagnostics();
+        assert_eq!(diagnostics.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0161"], "{src}");
+        let found = &diagnostics[0].diagnostic;
+        assert_eq!(&src[found.span().range()], at, "the error sits at the name");
+        let help = found.help.as_deref().unwrap_or_default();
+        for word in ["initial value", "Option<T>", "Logic"] {
+            assert!(help.contains(word), "the help names `{word}`: {help}");
+        }
+    }
 }
 
 use checked_source::CheckedSource;

@@ -75,20 +75,6 @@ fn a_function_returning_an_option_is_two_ir_functions() {
     assert_eq!(names, vec!["halved.is".to_string(), "halved.val".to_string()]);
 }
 
-#[test]
-fn a_function_value_called_with_an_unknown_is_the_flagged_variant_or_p0001() {
-    // §3.3 with §1.5.10: a local bound to a function's name calls the variant for an argument that
-    // may be unknown; a closure, whose type is fixed where it is written, cannot take one, and the
-    // refusal names the call.
-    let named = ElabSource::reacting("fn id(x: u8) -> u8 { x }", "let f = id; let u: u8 = Unknown; q <- f(u).known_or(0);");
-    let ir = Elab::ir(&named, "Top");
-    assert!(ir.functions().any(|f| f.name() == "id~1"), "{}", ir.print_structural());
-    let closure = ElabSource::reacting("", "let f = |x: u8| x; let u: u8 = Unknown; q <- f(u).known_or(0);");
-    let refused = Elab::run(&closure, "Top").expect_err("a closure takes no unknown");
-    assert_eq!(Elab::codes(&refused), ["P0001"]);
-    assert!(refused[0].diagnostic.message.contains("a call through a function value"), "{:?}", refused[0].diagnostic.message);
-}
-
 /// `Lag` of AS-09: a result that reads its own node, hoisted into each body that places it.
 const LAG: &str = "module Lag(x: f64) -> f64 { tau: f64 = 1m; signal y: State; potential(y) }\nanalog for Lag { flow(y) +> tau * ddt(potential(y)) + potential(y) - x; }\n";
 

@@ -399,7 +399,6 @@ impl<'d, 't> ConstEval<'d, 't> {
                 (Some(width), Some(value)) => known(width.wrap(value as i128)),
                 _ => Err(ConstFault::Unsupported { expr, what: "an integer literal".to_string() }),
             },
-            LitKind::Unknown => Ok(Folded::Unknown),
             LitKind::Str { .. } => Err(ConstFault::Unsupported { expr, what: "this literal".to_string() }),
         }
     }

@@ -772,9 +772,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `types_explicit::unknown_is_a_name_that_does_not_resolve` passes
-- [ ] `msl_lexer`, `msl_parser`, `msl_errors`, `msl_print`, `pom_resolve` pass with their `Unknown` cases replaced
-- [ ] Gate check passes: Quick
+- [x] `types_explicit::unknown_is_a_name_that_does_not_resolve` passes
+- [x] `msl_lexer`, `msl_parser`, `msl_errors`, `msl_print`, `pom_resolve` pass with their `Unknown` cases replaced
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

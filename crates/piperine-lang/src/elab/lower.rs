@@ -249,7 +249,6 @@ impl Elaboration<'_, '_> {
             };
         }
         match &node.kind {
-            ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Unknown) => Some(self.unknown_expr(ty, origin)),
             ExprKind::Lit(_) => match self.consts.value(expr, &Bindings::new()) {
                 Ok(value) => Some(self.constant_expr(value, ty, origin)),
                 Err(fault) => {

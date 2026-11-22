@@ -299,8 +299,6 @@ pub enum LitKind {
     /// its body with backslash and quote escaped, and its number of `#`.
     Str { text: String, raw_hashes: Option<u8> },
     Bool(bool),
-    /// The `Unknown` literal (A.3).
-    Unknown,
 }
 
 /// The serialized shape of a [`LitKind`]: every variant as is, a float as its
@@ -311,7 +309,6 @@ pub enum LitKindRepr {
     Float { raw: String },
     Str { text: String, raw_hashes: Option<u8> },
     Bool(bool),
-    Unknown,
 }
 
 impl From<LitKindRepr> for LitKind {
@@ -321,7 +318,6 @@ impl From<LitKindRepr> for LitKind {
             LitKindRepr::Float { raw } => LitKind::Float { value: super::lexer::float_value(&raw), raw },
             LitKindRepr::Str { text, raw_hashes } => LitKind::Str { text, raw_hashes },
             LitKindRepr::Bool(b) => LitKind::Bool(b),
-            LitKindRepr::Unknown => LitKind::Unknown,
         }
     }
 }
@@ -333,7 +329,6 @@ impl From<LitKind> for LitKindRepr {
             LitKind::Float { raw, .. } => LitKindRepr::Float { raw },
             LitKind::Str { text, raw_hashes } => LitKindRepr::Str { text, raw_hashes },
             LitKind::Bool(b) => LitKindRepr::Bool(b),
-            LitKind::Unknown => LitKindRepr::Unknown,
         }
     }
 }

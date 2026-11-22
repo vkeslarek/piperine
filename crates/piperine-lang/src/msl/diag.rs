@@ -12,6 +12,10 @@ use super::span::Span;
 /// The help of the `E0161` for `Clone`, `Copy` and `clone` (§1.4.6): every value is copied where it is used.
 pub const COPY_HELP: &str = "every value is copied; delete the name";
 
+/// The help of the `E0161` for `Unknown` and the flag methods (§3.3): a value is always known, and what
+/// the flag modelled has three explicit forms.
+pub const UNKNOWN_HELP: &str = "no value is unknown: give the carrier an initial value, hold an absence in an `Option<T>`, or use `Logic` for the four-state level";
+
 /// An MSL error: a spec code (`E09xx`, `E0121`, ...), a one-line message, a
 /// primary label at the offending span, optional secondary labels and an
 /// optional help line naming the correct form.

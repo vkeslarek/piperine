@@ -1577,7 +1577,7 @@ Shape: `pub kind: LitKind`, `pub span: Loc`.
 
 *enum*. The literal forms. `Int` keeps the text with its type suffix; `Float` keeps the SI-scaled value and the raw text (serialized as the raw text only: the value is recomputed from it on read, so `1e999` round-trips through JSON); `Str` keeps escapes unprocessed.
 
-Shape: `Int(String)`, `Float { value: f64, raw: String }`, `Str(String)`, `Bool(bool)`, `Unknown`.
+Shape: `Int(String)`, `Float { value: f64, raw: String }`, `Str(String)`, `Bool(bool)`.
 
 ### `UnOp`
 

@@ -242,11 +242,11 @@ const AHEAD_OF_STD: [&str; 13] = [
 ];
 
 /// The units of `std` (file, line, label) that have no fence: the earlier forms the specification rewrote or
-/// removed, which stay while something still reads them. `Known`, `merge` and the second `impl Bit` with `high` (the flag methods, T29), the library
+/// removed, which stay while something still reads them. `Known` and the second `impl Bit` with `high` (the flag methods, T29), the library
 /// nets and the modules over them (`Wire`, `Tri`, `SumNet`, `Tribuf` and the rest, `Bidir`, `TribufDelayed`:
 /// `resolved-nets`), `Logic` of `nets` (T44), `matches_bits` and `logic` over `Logic<N>` (T45). Nothing in these
 /// units reads a known flag by a form T28 removes. The list is empty when they are gone.
-const BEHIND_SPEC: [(&str, usize, &str); 22] = [
+const BEHIND_SPEC: [(&str, usize, &str); 21] = [
     ("convert.msl", 36, "module Bidir"),
     ("monitor.msl", 87, "module TribufDelayed"),
     ("nets.msl", 13, "struct Logic"),
@@ -264,10 +264,9 @@ const BEHIND_SPEC: [(&str, usize, &str); 22] = [
     ("nets.msl", 122, "module Tgate"),
     ("values.msl", 4, "trait Known"),
     ("values.msl", 20, "impl"),
-    ("values.msl", 22, "fn merge"),
-    ("values.msl", 42, "fn matches_bits"),
-    ("values.msl", 44, "fn logic"),
-    ("values.msl", 57, "impl"),
+    ("values.msl", 32, "fn matches_bits"),
+    ("values.msl", 34, "fn logic"),
+    ("values.msl", 47, "impl"),
     ("nets.msl", 103, "Digital block"),
 ];
 

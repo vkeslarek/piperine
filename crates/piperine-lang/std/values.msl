@@ -1,4 +1,4 @@
-//! Values and `Bit` (§22.1): `Known`, `merge`, `cast`, `same`, the engine-implemented pattern
+//! Values and `Bit` (§22.1): `Known`, `cast`, `same`, the engine-implemented pattern
 //! functions, the edges of `Bit`, `init`, `every` and `since`.
 
 pub trait Known: Repr {
@@ -18,16 +18,6 @@ pub trait Known: Repr {
 }
 
 impl<T: Repr> Known for T {}
-
-/// Level by level: equal known levels kept, the rest unknown.
-pub fn merge<T: Repr>(a: T, b: T) -> T {
-    let c: bool = Unknown;
-    if c {
-        a
-    } else {
-        b
-    }
-}
 
 /// The same levels under another type of the same width, or `None` when `B` rejects them.
 pub fn cast<A: Repr, B: Repr>(a: A) -> Option<B> where A::WIDTH == B::WIDTH {
