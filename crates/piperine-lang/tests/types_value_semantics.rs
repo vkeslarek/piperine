@@ -26,7 +26,7 @@ fn a_let_without_mut_is_assigned_with_every_operator() {
 #[test]
 fn a_parameter_a_capture_and_a_body_let_are_not_places() {
     // §1.5.12, §3.1.10 (VS-03 AC 2): a parameter of a function or of a closure, a name a closure captures, a
-    // body `let`, a `const`, a param: each is `E0183`, naming the target and what it is.
+    // body `let`, a `const`, a param, a carrier: each is `E0183`, naming the target and what it is.
     let items = "const K: f64 = 1.0;";
     let top = |body: &str| format!("{items}\nmodule Top() {{ r: f64; let w = 1.0; }}\nanalog for Top {{ {body} }}");
     CheckedSource::assert_refused(&CheckedSource::source("fn f(p: f64) -> f64 { p = 1.0; p }", "let y = f(1.0);"), "E0183", "cannot assign to `p`: it is a function parameter");
@@ -35,6 +35,11 @@ fn a_parameter_a_capture_and_a_body_let_are_not_places() {
     CheckedSource::assert_refused(&top("w = 2.0;"), "E0183", "cannot assign to `w`: it is a body `let`");
     CheckedSource::assert_refused(&top("r = 2.0;"), "E0183", "cannot assign to `r`: it is a param");
     CheckedSource::assert_refused(&top("K = 2.0;"), "E0183", "cannot assign to `K`: it is a `const`");
+    // a carrier, written in a reaction body (`Bit` is in the standard library): VS-03 AC 2 names it too. `self` is the
+    // eighth target; it cannot be written until `generics` brings methods, and that feature proves it then.
+    let carrier = "module Top(in clk: Bit, out q: Bit<bool> = false) { }\ndigital for Top { on clk.rise() { q = true; } }";
+    let found = Types::check(&CheckedSource::standard_design_of(carrier), "Top").err().unwrap_or_default();
+    assert!(found.iter().any(|d| d.diagnostic.code == "E0183" && d.diagnostic.message.contains("cannot assign to `q`: it is a carrier")), "{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
 }
 
 #[test]
