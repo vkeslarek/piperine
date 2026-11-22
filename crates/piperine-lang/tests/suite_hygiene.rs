@@ -1195,6 +1195,10 @@ impl RemovedUnknownForms {
         for base in ["crates/piperine-lang/std", "examples", "tests", "crates"] {
             Self::collect(&root.join(base), &root, &mut found);
         }
+        // the README shows code and teaches the model: it is held to the same walk
+        if let Ok(text) = fs::read_to_string(root.join("README.md")) {
+            found.push(("README.md".to_string(), text));
+        }
         found
     }
 
@@ -1358,7 +1362,7 @@ impl RemovedUnknownForms {
 
 #[test]
 fn no_source_uses_a_removed_unknown_form() {
-    // EU-20 AC 1 (C86): no `.msl` under std, examples, tests or crates/*/tests spells `Unknown`, `known_or`, `is_known`,
+    // EU-20 AC 1 (C86): no `.msl` under std, examples, tests or crates/*/tests, and not the README, spells `Unknown`, `known_or`, `is_known`,
     // `.known()`, `.high()`, `.level(` or `merge(` in code
     let mut offences = Vec::new();
     for (path, text) in RemovedUnknownForms::sources() {

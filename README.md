@@ -30,7 +30,7 @@ module SampleHold(vin: Electrical, vout: Electrical, in clk: Bit) {
 }
 
 digital for SampleHold { on clk.rise() { held <- v(vin); } }
-analog  for SampleHold { v(vout) +> held.known_or(0.0); }
+analog  for SampleHold { v(vout) +> held; }
 ```
 
 MSL has eleven concepts, each with one rule:
@@ -57,7 +57,7 @@ circuit on the other:
 ```rust
 analog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }
 analog for Inductor  { v(p, n) +> ddt(l * i(p, n)); }
-analog for Switch    { if ctl.high() { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; } }
+analog for Switch    { if ctl { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; } }
 ```
 
 A junction diode: params with conditions, an optional series resistance, Newton
@@ -135,9 +135,10 @@ fn dithered_width(duty: u12, frame: u3) -> u9 {
 }
 ```
 
-**Unknown values.** Every level of every value is known or unknown, as for a
-register nobody reset: `u & false` is `false`, `u + 1` is unknown, an `if` on an
-unknown merges both paths, and analog reads must decide (`held.known_or(0.0)`).
+**Values.** Every value is a value of its type, from the first instant: a carrier
+starts at the initial value written or at the `Default` of its type (a number has
+none, so it is written), and `analog` reads a carrier directly (`held`). What may be
+absent is an `Option<T>`, and a net with four states is a `Logic<N>`.
 
 ## Structure
 
