@@ -2322,3 +2322,33 @@ fn appendix_d_and_f_restart_rows_say_the_step_to_the_landing_is_ordinary() {
         assert!(!text.contains("so it is exempt from the truncation-error test"), "{file} keeps the old exemption");
     }
 }
+
+#[test]
+fn appendix_c_2_time_points_row_names_the_dynamic_test_its_exceptions_and_the_reference_mode() {
+    // TP-10 AC 2: the "time points" row.
+    let text = flat(&spec("appendix_c_implementation.md"));
+    let start = text.find("| time points (§17.2) |").expect("the time points row");
+    let row = &text[start..start + text[start..].find(" | |").expect("the end of the row")];
+    for fact in [
+        "lands on it only when a carrier `analog` reads changed or a firing reaction reads a continuous pin (the dynamic test)",
+        "a reaction on `settle`, a host waiter or a host probe",
+        "the solver's reference mode (`TimePointRule::Declared`)",
+        "no model can observe a landing that is skipped",
+    ] {
+        assert!(row.contains(fact), "the time points row lacks \"{fact}\"");
+    }
+}
+
+#[test]
+fn abi_section_5_states_r4_as_implemented() {
+    // TP-10 AC 2: abi.md carries the paragraph (§17.2 rule 2 is not edited).
+    let abi = std::fs::read_to_string(root().join(".specs/features/device-abi/abi.md")).expect("abi.md");
+    let text = flat(&abi);
+    for fact in [
+        "**R4 as implemented.**",
+        "It keeps the static reach set as the rule in three cases: a reaction on `settle`, a host waiter, a host probe at that time",
+        "The protocol text below is unchanged",
+    ] {
+        assert!(text.contains(fact), "abi.md lacks \"{fact}\"");
+    }
+}
