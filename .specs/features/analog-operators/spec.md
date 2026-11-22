@@ -223,6 +223,8 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 2. WHEN a branch is of a nature whose flow `abstol` is 1n THEN the bound circuit SHALL give its flow unknown and its row the tolerance 1n.
 3. WHEN a port of `Electrical` and a port of a compatible nature `HvElectrical` (same potential and flow names, potential `abstol` 1m) meet at one node THEN the system SHALL give that node the smaller potential `abstol` (1 µV), and the operating point of a divider made of one resistor of each nature SHALL equal the all-`Electrical` divider within `DC_VOLTAGE`.
 4. IF two natures whose flow names differ meet at a port THEN the system SHALL report `E0251`.
+5. WHEN a branch's nature gives a flow `abstol` and the session gives `abstol` THEN the bound circuit SHALL give the branch's flow unknown and its row the smaller of the two (a nature can only tighten the session value; AC 2 reads the nature's value where it is the smaller), decided 2026-11-22.
+6. WHEN a nature's `abstol` and the session's value both apply THEN the bound circuit SHALL give the unknown and its row the smaller of the two, for nodes (`vntol` against the potential `abstol`) and for branches (`abstol` against the flow `abstol`): a nature only tightens, and `--vntol` and `--abstol` always take effect. The user chose it on 2026-11-22 ("Menor dos dois"). A looser nature, such as `HvElectrical`'s 1 mV, no longer loosens the default, and AC 1 and AC 2 read "carries" for the nature's value and "effective" for the smaller.
 
 **Independent Test**: a `piperine-api` test that binds the designs and reads the bound circuit's tolerances, plus the divider's operating point.
 
@@ -253,6 +255,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 **Acceptance Criteria** (AO-13, from analog-structure, user 2026-11-19):
 
 1. WHEN the stdlib `slew(v(in), 1M, 1M)` follows a 0 to 1 V ideal step (a carrier change at 1 µs, no edge) THEN the system SHALL give 0 V before 1 µs, a ramp of 1 V/µs and 1 V from 2 µs, within `TRAN_VOLTAGE`. Today §15.2 rule 4 fires a jump's crossing after the solve of the step that reads the jump, so the output passes the jump in one step; the fix is to retake the step when a jump-crossing flips a carrier that `analog` reads (a change to §15.2 rule 4 and the engine).
+2. WHEN the step that arrives at a time point reads a settle commit (§15 S2, S3) and a crossing it makes changes a carrier `analog` reads THEN the system SHALL retake that step like any step that reads a jump, and WHEN an instant is retaken THEN its settle phase SHALL run once, after its last round, and the settle commits it holds SHALL be the ones delivered to the analog side (§15 step 4).
 
 ---
 

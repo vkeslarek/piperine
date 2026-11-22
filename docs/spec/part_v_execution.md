@@ -286,19 +286,35 @@ of its own.
    3 pF one at 0 V gives 0.25 V on both at the first step that reads the jump (Appendix F.5).
 3. **A state multiplied by a carrier keeps the product.** In `ddt(c * v(p, n))` with `c` a
    `Bit<f64>` that jumps, `c·v` is carried and `v` moves. Charge is conserved.
-4. **Probes and `cross` read solutions that exist.** There is no second pass. A reaction at
-   `(t, n)` reads the latest solution (§15 step 3.3), which is the left value until a
-   step has read the change. A crossing that a change makes is found between the left value and
-   the right value. It is not located (§17.3): it fires at the time point of the step that
-   reads the change, at the microstep after that step's solve (§15 step 3.4), so never before
-   the change that caused it.
+4. **Probes and `cross` read solutions that exist.** A reaction at `(t, n)` reads the latest
+   solution (§15 step 3.3), which is the left value until a step has read the change. A crossing
+   that a change makes is found between the left value and the right value. It is not located
+   (§17.3): it fires at the time point of the step that reads the change, at the microstep after
+   that step's solve (§15 step 3.4), so never before the change that caused it. **When the
+   reactions of that crossing change a carrier or a param that `analog` reads, the step is
+   retaken to the same time `t` with the change, and the retaken solution replaces the first.**
+   The retaken step is exempt from the truncation-error test and restarts the integrator, like
+   the step that reads a host `set`. The reactions that ran are not run again. A crossing that
+   the retaken solution makes, and the first did not, fires at the next microstep of `t` and may
+   retake again. A step that reads no jump never retakes, and neither does a crossing whose
+   reactions change nothing `analog` reads. More retakes at one `t` than the operating point's
+   round bound fail as `E0504`, naming the instant. A change due before the solve that a settle
+   commit makes (S2, S3) is a jump like any other: the step that reads it retakes by this rule.
+   The instant's microstep numbering goes on across the rounds: a crossing only a retaken solution makes fires at the next microstep of `t`, and the settle phase that follows runs after the last microstep, so its records are stamped `(t, last)` (§19). The instant's settle phase runs once, after its last round, so a retake never runs an
+   `on settle` reaction twice at `t`, and the settle commits it holds are the ones the analog side
+   is given.
 5. **Other instance state is untouched.** `delay` keeps its history and `limit` its last
    value. `idt`, `slew` and `transition` have no rule of their own: their state is a node
    under `ddt` and discrete carriers.
 6. **The integrator restarts after a landing and after a host `set`.** Three steps restart
    the integrator: the first step after the operating point (H2), the step after one that
    landed on `t` because something was due there, and the step that reads a host `set`. Restarting, the trapezoidal stage drops the previous
-   derivative and runs as backward Euler over its sub-step. A change made after the solve of
+   derivative and runs as backward Euler over its sub-step. **The step that reads a jump is
+   first order throughout: its second stage also runs as backward Euler, over the whole step
+   from the step's start, so the derivative it ends with is the change of each state across
+   the step divided by the step. The step after it takes that derivative as its previous
+   derivative.** The first step after the operating point keeps its BDF2 stage unless the
+   operating point holds a settle commit, which that step reads as a jump (S3) and takes first order. A change made after the solve of
    `t` restarts nothing. After a host `set` the step size also restarts
    at 10⁻³ of the last step (Appendix C.2). **The step that restarts the integrator after a
    landing or a host `set` is at most a tenth of the smaller of the last accepted step and the
@@ -324,7 +340,7 @@ of its own.
 | Code | Condition | Phase |
 | --- | --- | --- |
 | `E0503` | A solve of any kind is singular. The report names the branches, or the node, that make it so. | run |
-| `E0504` | A transient step that reads a jump does not converge (§17.1). The report names the instant and the carriers or params whose change caused it. | run |
+| `E0504` | A transient step that reads a jump does not converge (§17.1), or the crossings of one instant retake the step more often than the round bound (rule 4). The report names the instant and the carriers or params whose change caused it. | run |
 
 **Example.** Appendix F.5 traces the charge-sharing jump row by row.
 
@@ -557,13 +573,16 @@ Every solve but a small-signal sweep is a Newton iteration. It has **converged**
 three hold:
 
 1. **Update.** Every unknown moved by at most `reltol · max(|x|, |x_old|) + abstol`. `abstol`
-   is the nature's: for a node, the smallest potential `abstol` of the natures meeting there;
-   for a branch unknown, its flow `abstol`.
-2. **Residual.** Every row's imbalance is at most `abstol + reltol · scale`. A node's row is
-   tested against the potential `abstol` of that node (the smallest potential `abstol` of the
-   natures meeting there, default 1 µV). A branch row is tested against the flow `abstol`
-   (default 1 pA). This is the mapping the reference implementation's ngspice parity was
-   validated with.
+   is the smaller of the session's and the nature's: for a node, the session `vntol` and the
+   smallest potential `abstol` of the natures meeting there; for a branch unknown, the session
+   `abstol` and its flow `abstol`. A nature can only tighten the session's value: `--vntol` and
+   `--abstol` always take effect, and a looser nature (a potential `abstol` of 1 mV) does not
+   loosen the default.
+2. **Residual.** Every row's imbalance is at most `abstol + reltol · scale`, with the `abstol`
+   of rule 1. A node's row is tested against the smaller of the session `vntol` and the
+   smallest potential `abstol` of the natures meeting there (default 1 µV). A branch row is
+   tested against the smaller of the session `abstol` and its flow `abstol` (default 1 pA).
+   This is the mapping the reference implementation's ngspice parity was validated with.
 3. **Limiting.** No `limit` instance is active (§18 rule 5).
 4. A non-finite value in an unknown, a residual or a Jacobian entry fails the solve
    (`E0507`).

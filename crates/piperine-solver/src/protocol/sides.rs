@@ -76,6 +76,17 @@ pub struct Outcome {
     pub settle_boundary: Vec<Boundary>,
 }
 
+impl Outcome {
+    /// Joins the outcome `settled` of the settle phase run after the instant's rounds: what the
+    /// phase changed and finished is added, and the settle commits it reports are the ones held.
+    pub(super) fn absorb_settle(&mut self, settled: Outcome) {
+        self.boundary.extend(settled.boundary);
+        self.host_param_write |= settled.host_param_write;
+        self.finish |= settled.finish;
+        self.settle_boundary = settled.settle_boundary;
+    }
+}
+
 /// The discrete side's answer to a host write checked on a shadow (abi.md P6).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Shadow {
@@ -175,6 +186,11 @@ pub trait DiscreteSide {
     fn advance(&mut self, to: Tick) -> Result<Advance>;
     /// Commits a firing of event pin `net` due at microstep 0 of `at` (C6).
     fn fire(&mut self, net: u32, at: Tick) -> Result<()>;
+    /// Reopens the instant `at` that `run_instant` just ran to its end, so the next `run_instant(at)`
+    /// and a `fire` made before it continue its microstep numbering: at the microstep after its last
+    /// one (`next_microstep`) or at its last one (the settle phase after the rounds, §19 Resolution).
+    /// A side that does not number its microsteps does nothing.
+    fn reopen(&mut self, _at: Tick, _next_microstep: bool) {}
     /// Runs (or, after a suspension, continues) the instant `at`. `samples` are
     /// the accepted continuous values reactions read; `limit` bounds each
     /// reaction's `HORIZON` (R5): `limit.crossing` for one a `CROSS` watch can
@@ -237,6 +253,12 @@ pub trait AnalogSide {
     fn equilibrium(&mut self) -> Result<Accepted>;
     fn mark(&self) -> Self::Mark;
     fn restore(&mut self, mark: &Self::Mark);
+    /// Takes back the last `accept` and puts the side back as `mark` found it, so the same step
+    /// can be attempted again after a delivery (§15.2 rule 4). A side whose `accept` keeps nothing
+    /// beyond what `restore` undoes needs no more than the default.
+    fn retake(&mut self, mark: &Self::Mark) {
+        self.restore(mark);
+    }
     /// Moves the trace records of the attempts since the last drain into `out`.
     fn drain_traces(&mut self, out: &mut Vec<Observation>);
     /// The solution as it stands, indexed as `AnalogReference::idx` (empty: the side does not

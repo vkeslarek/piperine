@@ -209,6 +209,9 @@ impl Digital {
             n += 1;
         }
 
+        if !lookahead {
+            self.last_run = Some((at, n));
+        }
         if mode.settle {
             let settled = self.settle_phase(at, n, samples, limit, mode)?;
             out.finish |= settled.finish;

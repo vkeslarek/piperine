@@ -31,7 +31,7 @@ pub mod vsource {
                 // pin 3 `n` @ devices.msl:17:35
                 s.pin(PinSpec { origin: "devices.msl:17:35", abstol: [1e-6, 1e-12], ..PinSpec::continuous("n", role::PORT) });
                 // pin 4 `b0.flow` @ devices.msl:21:30
-                s.pin(PinSpec { origin: "devices.msl:21:30", ..PinSpec::continuous("b0.flow", role::PRIVATE) });
+                s.pin(PinSpec { origin: "devices.msl:21:30", abstol: [1e-6, 1e-12], ..PinSpec::continuous("b0.flow", role::PRIVATE) });
                 // term 0 `b0.flow` @ devices.msl:21:30
                 s.term(TermSpec { name: "b0.flow", origin: "devices.msl:21:30", op: op::FLOW, plus: 2, minus: 3, abstol: DEFAULT, max: DEFAULT });
                 // term 1 `b0.eq` @ devices.msl:21:30

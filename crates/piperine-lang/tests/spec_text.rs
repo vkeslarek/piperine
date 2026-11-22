@@ -1193,6 +1193,21 @@ fn jump_has_no_solve_of_its_own() {
 }
 
 #[test]
+fn the_step_that_reads_a_jump_is_first_order() {
+    let exec = spec("part_v_execution.md");
+    let s = flat(&section(&exec, "### 15.2"));
+    let r6 = &s[s.find(" 6. ").expect("rule 6")..s.find(" 7. ").expect("rule 7")];
+    assert!(r6.contains("The step that reads a jump is first order throughout"), "{r6}");
+    assert!(r6.contains("The step after it takes that derivative as its previous derivative."), "{r6}");
+    assert!(r6.contains("keeps its BDF2 stage unless the operating point holds a settle commit, which that step reads as a jump (S3)"), "{r6}");
+    let behavior = flat(&spec("part_iv_behavior.md"));
+    assert!(
+        behavior.contains("that step's derivative, which is the change of `x` across the step divided by the step"),
+        "§14.5.4 names the secant"
+    );
+}
+
+#[test]
 fn reference_rows_describe_the_kept_jump() {
     let c = spec("appendix_c_implementation.md");
     let jumps: Vec<&str> = c.lines().filter(|l| l.starts_with("| the jump")).collect();
@@ -2234,4 +2249,37 @@ fn the_host_fails_loud_and_names_the_absent_cell() {
     assert!(s.contains("the payload of a `None`, a field of another variant"), "{s}");
     assert!(s.contains("a param no placement has given a value"), "{s}");
     assert!(s.contains("an empty field in a text table and in CSV, `null` in JSON Lines, and nothing in a plot"), "{s}");
+}
+
+#[test]
+fn part_v_retakes_the_step_a_jump_crossing_changes() {
+    // AO-13 (D16): §15.2 rule 4 says a crossing made by a jump still fires after the step that read
+    // it, but when its reactions change what `analog` reads, that step is retaken to the same time
+    let text = spec("part_v_execution.md");
+    let rule = flat(&section(&text, "### 15.2 "));
+    for fact in [
+        "it fires at the time point of the step that reads the change, at the microstep after that step's solve",
+        "the step is retaken to the same time `t` with the change, and the retaken solution replaces the first",
+        "The reactions that ran are not run again",
+        "fires at the next microstep of `t` and may retake again",
+        "A step that reads no jump never retakes",
+        "fail as `E0504`, naming the instant",
+    ] {
+        assert!(rule.contains(fact), "§15.2 lacks \"{fact}\"");
+    }
+    assert!(!rule.contains("There is no second pass."), "rule 4's \"no second pass\" is gone");
+}
+
+#[test]
+fn part_v_convergence_tests_both_rows_against_the_smaller_abstol() {
+    // §17.1 rules 1 and 2: the update test and the residual test use one effective tolerance, the
+    // smaller of the session value and the nature's, for nodes and for branches (AO-10 AC 6).
+    let exec = flat(&spec("part_v_execution.md"));
+    let rule1 = &exec[exec.find("1. **Update.**").expect("rule 1")..exec.find("2. **Residual.**").expect("rule 2")];
+    assert!(rule1.contains("is the smaller of the session's and the nature's"), "{rule1}");
+    assert!(rule1.contains("A nature can only tighten the session's value"), "{rule1}");
+    let rule2 = &exec[exec.find("2. **Residual.**").expect("rule 2")..exec.find("3. **Limiting.**").expect("rule 3")];
+    assert!(rule2.contains("with the `abstol` of rule 1"), "{rule2}");
+    assert!(rule2.contains("the smaller of the session `vntol` and the smallest potential `abstol`"), "{rule2}");
+    assert!(rule2.contains("the smaller of the session `abstol` and its flow `abstol`"), "{rule2}");
 }

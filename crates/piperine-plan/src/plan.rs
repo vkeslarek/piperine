@@ -28,7 +28,7 @@ use crate::digital::{CarrierLayout, Digital, ReactionPlan};
 use crate::pin::PinLayout;
 use piperine_abi::raw::{Cell, DEFAULT, GROUND, Partial, ambient, cell, global, input, op, part, pin_flag, role};
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
-use piperine_ir::{AnalysisKind, Body, BranchKind, Constant, Deps, Env, Operator, Origin, Stmt, Target as Query, Terminal, ValueType};
+use piperine_ir::{AnalysisKind, Body, Branch, BranchKind, Constant, Deps, Env, Operator, Origin, Stmt, Target as Query, Terminal, ValueType};
 
 /// What one term of the shape computes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -481,7 +481,8 @@ impl BodyPlan {
                 // A switch branch has a potential branch's private flow unknown (§11 rule 2).
                 BranchKind::Potential | BranchKind::Switch => {
                     let at = branch_origin(b);
-                    Some(s.pin(PinSpec { origin: &at, ..PinSpec::continuous(&format!("b{b}.flow"), role::PRIVATE) }))
+                    let abstol = Self::branch_abstol(body, branch);
+                    Some(s.pin(PinSpec { origin: &at, abstol, ..PinSpec::continuous(&format!("b{b}.flow"), role::PRIVATE) }))
                 }
             });
         }
@@ -832,6 +833,26 @@ impl BodyPlan {
                 _ => None,
             })
             .collect()
+    }
+
+    /// The tolerances of a branch's private flow unknown, `[potential, flow]` as a node pin's are:
+    /// the smaller of the two ends' natures' `abstol` (§17.1 rules 1 and 2 give a branch unknown
+    /// and its row the nature's flow `abstol`). An end that is ground contributes none; a branch
+    /// between two grounds, or of a nature without `flow`, leaves the slot zero (the session's).
+    fn branch_abstol(body: Body<'_>, branch: &Branch) -> [f64; 2] {
+        let ir = body.ir();
+        let mut abstol = [0.0_f64; 2];
+        for end in [branch.plus, branch.minus] {
+            let Terminal::Node(i) = end else { continue };
+            let nature = ir.nature(body.nodes()[i as usize].nature);
+            let ends = [nature.potential().abstol.get(), nature.flow().map_or(0.0, |q| q.abstol.get())];
+            for (slot, tolerance) in abstol.iter_mut().zip(ends) {
+                if tolerance > 0.0 && (*slot == 0.0 || tolerance < *slot) {
+                    *slot = tolerance;
+                }
+            }
+        }
+        abstol
     }
 
     /// Whether any target of the body reads `temperature()`.

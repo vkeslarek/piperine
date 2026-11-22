@@ -232,7 +232,7 @@ fn module_helpers(text: &str) -> Vec<(String, String)> {
 /// The devices whose own module a check of `text` verifies. A check is a call of a
 /// `verify_every_function*` with a label and a module, or, when `rows` is set, a
 /// `("label", module, ..)` row of a table; the device is the one its module argument builds
-/// (`module::<X>(..)`) or the one a helper it calls (`helper()`) builds, never the label.
+/// (`module::<X>(..)`) or the one a helper it calls (`helper()` or `X::helper()`) builds, never the label.
 fn checked_devices(text: &str, helpers: &str, rows: bool) -> std::collections::BTreeSet<String> {
     let helper_fns = module_helpers(helpers);
     let mut checks: Vec<&str> = text
@@ -256,7 +256,10 @@ fn checked_devices(text: &str, helpers: &str, rows: bool) -> std::collections::B
             named.insert(device);
         }
         for (helper, device) in &helper_fns {
-            if module.trim().strip_prefix(helper.as_str()).is_some_and(|r| r.starts_with("()")) {
+            let free = module.trim().strip_prefix(helper.as_str()).is_some_and(|r| r.starts_with("()"));
+            // an associated helper, `Device::module()`, names the device it is called on
+            let associated = module.trim() == format!("{device}::{helper}()");
+            if free || associated {
                 named.insert(device.clone());
             }
         }

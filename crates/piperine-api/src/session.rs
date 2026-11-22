@@ -18,13 +18,14 @@ use piperine_lang::types::Types;
 use piperine_plan::{Netlist, ParamReads};
 use piperine_solver::abi::InitialValue;
 use piperine_solver::prelude::{
-    AcSweepAnalysisOptions, AnalogVariable, BranchIdentifier, CircuitInstance, Context, Keep, Net, NodeIdentifier, PoleZeroOptions, PoleZeroResult, SensAnalysisOptions, Solver, TransferFunctionAnalysisOptions, PssAnalysisOptions,
+    AcSweepAnalysisOptions, AnalogVariable, BranchIdentifier, CircuitInstance, Context, Keep, Net, NodeIdentifier, NoiseAnalysisOptions, PoleZeroOptions, PoleZeroResult, SensAnalysisOptions, Solver, TransferFunctionAnalysisOptions, PssAnalysisOptions,
     TransientAnalysisOptions,
 };
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
 use crate::backend::Backend;
 use crate::failure::Failure;
+use crate::noise::{NoiseOutput, NoiseProbe, NoiseReport};
 use crate::held::Held;
 use crate::host::{HostAction, TimedChange, TimedSet};
 use crate::metadata::Metadata;
@@ -70,6 +71,10 @@ pub struct Session {
     context: Context,
     /// The source and the node of a `tf` or `pz` run, resolved against the design.
     transfer: Option<Transfer>,
+    /// The output and input a `noise` run resolved at open.
+    noise: Option<NoiseProbe>,
+    /// The report of the `noise` run this session took.
+    noise_report: Option<NoiseReport>,
     /// The params a `sens` run differentiates by, resolved against the design, in the order given.
     wrt: Vec<ParamPath>,
     /// The host's drives due after the start of the transient, in the order given.
@@ -263,6 +268,10 @@ impl Session {
         let mut context = Session::context_of(&spec.options);
         let nodeset = Session::nodeset_of(&ir, spec)?;
         let (transfer, wrt) = Session::small_signal_of(&ir, spec, &probes)?;
+        let noise = match &spec.analysis {
+            Analysis::Noise { output, input, .. } => Some(NoiseProbe::resolve(&ir, ir.top().path(), output, input.as_deref())?),
+            _ => None,
+        };
         let netlist = Session::netlist_of(&ir, &spec.options);
         let (mut circuit, compiled) = match backend {
             Backend::Interp => {
@@ -299,7 +308,7 @@ impl Session {
                 None => Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &path.param, *value)?,
             }
         }
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, wrt, actions: Vec::new(), timed_sets: Vec::new(), sources: NodeSources::default(), params: table })
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, noise, noise_report: None, wrt, actions: Vec::new(), timed_sets: Vec::new(), sources: NodeSources::default(), params: table })
     }
 
     /// Sets `path` to `value` on `circuit` and, through `table`, every param derived from it, in
@@ -339,6 +348,9 @@ impl Session {
             if let Some(value) = given {
                 *slot = value;
             }
+        }
+        if let Some(celsius) = options.tnom {
+            tolerances.tnom = celsius + 273.15;
         }
         if let Some(celsius) = options.temp {
             tolerances.temperature = celsius + 273.15;
@@ -460,6 +472,17 @@ impl Session {
             Ok(ir) => Ok((Arc::new(ir), top)),
             Err(found) => Err(Session::diagnosed("elaborate", design, found)),
         }
+    }
+
+    /// What a `noise` run measures and refers to, resolved at open; `None` for any other analysis.
+    pub fn noise_probe(&self) -> Option<&NoiseProbe> {
+        self.noise.as_ref()
+    }
+
+    /// The report of the noise run this session took: its densities, totals and groups; `None`
+    /// before the run and for any other analysis.
+    pub fn noise_report(&self) -> Option<&NoiseReport> {
+        self.noise_report.as_ref()
     }
 
     /// The top module's name.
@@ -684,6 +707,27 @@ impl Session {
                     Some(step) => table.on_grid(*step, *tstab, tstab + period),
                     None => Ok(table),
                 }
+            }
+            Analysis::Noise { from, to, grid, .. } => {
+                let probe = self.noise.as_ref().ok_or_else(|| Failure::Backend("a noise run resolved no output".into()))?;
+                let sweep_options = AcSweepAnalysisOptions {
+                    start_frequency: *from,
+                    stop_frequency: *to,
+                    steps: grid.steps(*from, *to),
+                    logarithmic: matches!(grid, Grid::PerDecade(_)),
+                };
+                let (output_node, reference_node, output_flow) = match &probe.output {
+                    NoiseOutput::Potential { plus, minus } => (plus.clone(), minus.clone(), None),
+                    NoiseOutput::Flow(flow) => (NodeIdentifier::Gnd, NodeIdentifier::Gnd, Some(flow.clone())),
+                };
+                let options = NoiseAnalysisOptions { sweep_options, output_node, reference_node, input_source_name: probe.input.clone(), output_flow };
+                let unit = probe.unit();
+                let mut solver = Solver::new(circuit).with_context(self.context.clone()).with_sink(delivery).build();
+                let result = solver.noise(options).and_then(|mut noise| noise.solve()).map_err(|error| Failure::Solver { analysis: "noise", error })?;
+                let report = NoiseReport::of(&result, unit);
+                let table = Table::noise(&report);
+                self.noise_report = Some(report);
+                Ok(table)
             }
             Analysis::Sens { .. } => {
                 let mut circuit = circuit;

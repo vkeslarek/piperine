@@ -24,7 +24,7 @@ use circuit::{at, f64_bytes, f64_of, instance, netlist, tagged};
 use devices::{K_B, Q, VT, calls, modules};
 use piperine_analog_solver::device::AnalogBinding::{Discrete, Ground};
 use piperine_analog_solver::tolerances::Tolerances;
-use piperine_analog_solver::device::{AnalogPlan, Assembly, Stage};
+use piperine_analog_solver::device::{AnalogPlan, Assembly, JumpPosition, Stage};
 use piperine_analog_solver::math::integration::{TrBdf2, TrBdf2Phase};
 use piperine_analog_solver::math::iv::InitialValue;
 use system::{Solver, Tran, at_rest, at_time, close, dense, matrix_positions, size, solve_dc, solve_stage};
@@ -53,7 +53,7 @@ fn a_ddt_term_is_silent_in_an_equilibrium_solve() {
     // A step that is not positive adds nothing either, as `C::load_transient`.
     asm.push_stage(&[0.5, 0.1], at_time(0.0)).expect("push");
     for h in [0.0, -1e-6] {
-        let stage = Stage { phase: TrBdf2Phase::Trapezoidal, h, prev_h: 1e-6 };
+        let stage = Stage { phase: TrBdf2Phase::Trapezoidal, h, prev_h: 1e-6, jump: JumpPosition::None };
         let stamps = asm.assemble_tran(&[0.8, 0.3], at_time(1e-6), stage).expect("assemble");
         let (a, b) = dense(&stamps, 2);
         assert_eq!((a, b), (vec![vec![0.0; 2]; 2], vec![0.0; 2]), "h = {h}");
@@ -79,7 +79,7 @@ fn a_ddt_term_stamps_the_capacitor_companion() {
         for r in &rows {
             asm.push_stage(r, at_time(0.0)).expect("push");
         }
-        let stamps = asm.assemble_tran(&x, at_time(h), Stage { phase, h, prev_h }).expect("assemble");
+        let stamps = asm.assemble_tran(&x, at_time(h), Stage { phase, h, prev_h, jump: JumpPosition::None }).expect("assemble");
 
         // C::load_transient, term for term.
         let (c0, c1, c2) = TrBdf2::stage_coeffs(phase, h, prev_h);
@@ -118,7 +118,7 @@ fn an_rc_step_reads_one_minus_exp() {
 
     // The initial row: the source at 1 V, the capacitor uncharged.
     let x0 = [1.0, 0.0, 0.0];
-    let first = Stage { phase: TrBdf2Phase::Trapezoidal, h: tau / 100.0, prev_h: 0.0 };
+    let first = Stage { phase: TrBdf2Phase::Trapezoidal, h: tau / 100.0, prev_h: 0.0, jump: JumpPosition::None };
     let mut solver = Solver::new(&mut Tran { asm: &mut asm, net: &net, amb: at_time(0.0), stage: first }, size(&net), 4)
         .expect("dry run");
     let ivs = n.iter().zip(x0).map(|(r, value)| InitialValue { reference: r.clone(), value }).collect();
@@ -130,9 +130,9 @@ fn an_rc_step_reads_one_minus_exp() {
     let mut x = x0.to_vec();
     for _ in 0..steps {
         let gamma = TrBdf2::GAMMA * dt;
-        let trap = Stage { phase: TrBdf2Phase::Trapezoidal, h: dt, prev_h };
+        let trap = Stage { phase: TrBdf2Phase::Trapezoidal, h: dt, prev_h, jump: JumpPosition::None };
         solve_stage(&mut solver, &mut asm, &net, at_time(t + gamma), trap);
-        let bdf2 = Stage { phase: TrBdf2Phase::Bdf2, h: dt, prev_h };
+        let bdf2 = Stage { phase: TrBdf2Phase::Bdf2, h: dt, prev_h, jump: JumpPosition::None };
         x = solve_stage(&mut solver, &mut asm, &net, at_time(t + dt), bdf2).to_vec();
         t += dt;
         prev_h = dt;
@@ -146,7 +146,7 @@ fn an_rc_step_reads_one_minus_exp() {
 #[test]
 fn a_restore_returns_histories_and_limit_state() {
     let x = [0.70, 0.20];
-    let stage = Stage { phase: TrBdf2Phase::Trapezoidal, h: 2e-6, prev_h: 1e-6 };
+    let stage = Stage { phase: TrBdf2Phase::Trapezoidal, h: 2e-6, prev_h: 1e-6, jump: JumpPosition::None };
     let mut asm = capacitor();
     asm.push_stage(&[0.1, 0.0], at_time(0.0)).expect("push");
     asm.push_stage(&[0.3, 0.1], at_time(1e-6)).expect("push");
@@ -206,7 +206,7 @@ fn a_nonlinear_charge_through_a_limit_keeps_the_operating_point() {
     let a = n[1].idx().expect("a");
     let x_op = solve_dc(&mut asm, &net, &[1.0, 0.0, 0.0]).to_vec();
     let h = 1e-7;
-    let first = Stage { phase: TrBdf2Phase::Trapezoidal, h, prev_h: 0.0 };
+    let first = Stage { phase: TrBdf2Phase::Trapezoidal, h, prev_h: 0.0, jump: JumpPosition::None };
     let mut solver = Solver::new(&mut Tran { asm: &mut asm, net: &net, amb: at_time(0.0), stage: first }, size(&net), 4)
         .expect("dry run");
     let ivs: Vec<_> = n.iter().zip(&x_op).map(|(r, value)| InitialValue { reference: r.clone(), value: *value }).collect();
@@ -219,9 +219,9 @@ fn a_nonlinear_charge_through_a_limit_keeps_the_operating_point() {
     let tol = Tolerances::default();
     let (mut t, mut prev_h) = (0.0, 0.0);
     for step in 0..5 {
-        let trap = Stage { phase: TrBdf2Phase::Trapezoidal, h, prev_h };
+        let trap = Stage { phase: TrBdf2Phase::Trapezoidal, h, prev_h, jump: JumpPosition::None };
         solve_stage(&mut solver, &mut asm, &net, at_time(t + TrBdf2::GAMMA * h), trap);
-        let bdf2 = Stage { phase: TrBdf2Phase::Bdf2, h, prev_h };
+        let bdf2 = Stage { phase: TrBdf2Phase::Bdf2, h, prev_h, jump: JumpPosition::None };
         let x = solve_stage(&mut solver, &mut asm, &net, at_time(t + h), bdf2);
         t += h;
         prev_h = h;
@@ -233,7 +233,7 @@ fn a_nonlinear_charge_through_a_limit_keeps_the_operating_point() {
 #[test]
 fn the_ddt_history_holds_the_charge_at_the_solution() {
     let m = modules();
-    let stage = Stage { phase: TrBdf2Phase::Trapezoidal, h: 1e-7, prev_h: 0.0 };
+    let stage = Stage { phase: TrBdf2Phase::Trapezoidal, h: 1e-7, prev_h: 0.0, jump: JumpPosition::None };
     let diode = || {
         let (net, n) = netlist(1, &[]);
         let d1 = instance("d1", m.charge_diode, vec![Discrete(0), Discrete(1), Discrete(2), at(&n[0]), Ground, Discrete(3)]);
@@ -294,10 +294,10 @@ fn the_assembly_reports_each_ddt_state_after_a_step() {
         asm.assemble_dc(&x_op, at_rest()).expect("the equilibrium solve");
         asm.push_stage(&x_op, at_rest()).expect("push the operating point");
         asm.push_stage(&x_op, at_rest()).expect("push the operating point");
-        let trap = Stage { phase: TrBdf2Phase::Trapezoidal, h, prev_h: 0.0 };
+        let trap = Stage { phase: TrBdf2Phase::Trapezoidal, h, prev_h: 0.0, jump: JumpPosition::None };
         asm.assemble_tran(&x_g, at_time(TrBdf2::GAMMA * h), trap).expect("trapezoidal stage");
         asm.push_stage(&x_g, at_time(TrBdf2::GAMMA * h)).expect("push the trapezoidal stage");
-        let bdf2 = Stage { phase: TrBdf2Phase::Bdf2, h, prev_h: 0.0 };
+        let bdf2 = Stage { phase: TrBdf2Phase::Bdf2, h, prev_h: 0.0, jump: JumpPosition::None };
         asm.assemble_tran(&x_1, at_time(h), bdf2).expect("BDF2 stage");
         asm.push_stage(&x_1, at_time(h)).expect("push the BDF2 stage");
 

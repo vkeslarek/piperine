@@ -924,7 +924,9 @@ same.
   equations allow (§15.2.1). The history is kept across a jump; the previous derivative is
   dropped only in the steps §15.2.6 restarts.
 - **§14.5.4** Read in a reaction or an event argument, the result is the derivative in the
-  solution read: 0 at an equilibrium solution, the derivative of the step that read the jump, after one (§15.2.4).
+  solution read: 0 at an equilibrium solution; after the step that read a jump, that step's
+  derivative, which is the change of `x` across the step divided by the step (§15.2.6), so it
+  has the sign of the change.
 - **§14.5.5** In `Noise`, `ddt(n)` of a noise result is `jω·n` (§11.1.9).
 
 ### 14.6 `delay`

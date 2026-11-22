@@ -13,6 +13,10 @@
 //! 6. t := t_c; a Final mark or a FINISH ends the analysis after this instant
 //! ```
 //!
+//! Step 5 has one more case (§15.2 rule 4, `retake`): when the step read a jump, a crossing of
+//! its own fired and the instant changed what analog reads, the step is retaken to t_c with the
+//! change and the retaken solution replaces the first.
+//!
 //! The order of steps 3 and 5 is the user's (solver-completeness context.md,
 //! 2026-11-15: "ABI order: solve, then react"); the jump handling is the kept one.
 //!
@@ -21,6 +25,7 @@
 use piperine_analog_solver::error::{Error, Result, SolverDomain};
 
 use super::host::Waiter;
+use super::retake::JumpRetake;
 use super::sides::{Advance, AnalogSide, AnalysisKind, Attempt, DiscreteSide, Horizon, InstantMode, Outcome, Restart, Tick};
 use super::sink::{Delivery, Sink};
 use super::step::{StepObserver, observe};
@@ -292,6 +297,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         };
         let mut forced: Option<Tick> = None;
         let mut rejections = 0u32;
+        let mut jump = JumpRetake::new(self.exempt_next);
         while self.now_tick < stop_tick {
             let c = self.checkpoint();
             let now_tick = self.now_tick;
@@ -329,6 +335,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             self.collect(AnalysisKind::Transient);
 
             // Steps 3 and 4: one analog attempt to t_c.
+            let mut crossings = Vec::new();
             let samples = if unknowns {
                 let exempt = !matches!(advanced, Advance::Reached) || self.exempt_next;
                 let attempt = self.analog.attempt(t_c, exempt).map_err(|e| at(t_c, e))?;
@@ -377,6 +384,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                 for net in &accepted.fired {
                     self.discrete.fire(*net, tick_c).map_err(|e| at(t_c, e))?;
                 }
+                crossings = accepted.fired;
                 accepted.samples
             } else {
                 Vec::new()
@@ -386,7 +394,24 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             let crossing = if unknowns { tick_c } else { stop_tick };
             let limit = Horizon { stop: stop_tick, crossing };
             self.land_settle_commits(tick_c, settle);
-            let outcome = self.run_whole_instant(tick_c, &samples, limit, mode).map_err(|e| at(t_c, e))?;
+            // A step that may be retaken settles once, after its last round (§15 step 4): its
+            // instant runs without the settle phase, and the phase follows the retakes.
+            let deferred = unknowns && settle && jump.possible(&crossings);
+            let rounds = InstantMode { settle: settle && !deferred, ..mode };
+            let mut outcome = self.run_whole_instant(tick_c, &samples, limit, rounds).map_err(|e| at(t_c, e))?;
+            if unknowns && jump.wanted(&crossings, &outcome) {
+                outcome = self.retake_step(&c.analog, tick_c, crossings, outcome, limit, rounds).map_err(|e| at(t_c, e))?;
+            }
+            if deferred {
+                // the settle phase follows the instant's last microstep: its records are stamped `(t, last)`
+                self.discrete.reopen(tick_c, false);
+                let samples = self.samples.clone();
+                let settled = self.run_whole_instant(tick_c, &samples, limit, mode).map_err(|e| at(t_c, e))?;
+                outcome.absorb_settle(settled);
+            }
+            if unknowns {
+                jump.delivered(&outcome.boundary, &outcome.settle_boundary);
+            }
             if unknowns && !outcome.boundary.is_empty() {
                 let restart = if outcome.host_param_write { Restart::IntegratorSmall } else { Restart::Integrator };
                 self.analog.deliver(&outcome.boundary, restart);

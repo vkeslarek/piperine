@@ -196,6 +196,10 @@ impl DiscreteSide for DigitalSide {
         self.digital.fire(NetId(net), DigitalTick(at)).map_err(digital_error)
     }
 
+    fn reopen(&mut self, at: Tick, next_microstep: bool) {
+        self.digital.reopen(DigitalTick(at), next_microstep);
+    }
+
     fn run_instant(&mut self, at: Tick, samples: &[f64], limit: Horizon, mode: InstantMode) -> Result<Outcome> {
         let limit = DigitalHorizon { stop: DigitalTick(limit.stop), crossing: DigitalTick(limit.crossing) };
         let mode = Mode { is_static: mode.is_static, settle: mode.settle };
@@ -442,6 +446,11 @@ impl AnalogSide for TransientSide<'_, '_> {
     }
 
     fn restore(&mut self, mark: &DeviceMark) {
+        self.tran.device_restore(mark);
+    }
+
+    fn retake(&mut self, mark: &DeviceMark) {
+        self.tran.device_unaccept(&mut self.run);
         self.tran.device_restore(mark);
     }
 

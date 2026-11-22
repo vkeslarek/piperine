@@ -22,6 +22,7 @@ mod held;
 mod host;
 pub mod prelude;
 pub mod metadata;
+pub mod noise;
 pub mod params;
 pub mod plot;
 pub mod probe;
