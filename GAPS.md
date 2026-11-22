@@ -110,7 +110,7 @@ quotes the text after `P0001:` unless another code is shown.
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L21 | natures that implement `Resolve<X, V>` (declared by the model; the library has no net nature); `others()`; relaxation of loops through the nets of such a nature (a loop that does not settle is `E0511`, raised by the digital engine) | §4 rule 2, §5.2.2, §8.2.3 | `resolved nature Wire` | L |
+| L21 | natures that implement `Resolve<X, V>` (declared by the model; the library has no net nature); `others()`; relaxation of loops through the nets of such a nature (a loop that does not settle is `E0511`, raised by the digital engine); also owes `explicit-unknowns` EU-04 AC 4 for a drive of a resolved carrier (`E0187` when its drive has no initial value and its type no `Default`: `types/module.rs` skips every carrier whose nature is not one-driver, so no test can reach it until a resolved nature runs; check C14's drive half) | §4 rule 2, §5.2.2, §8.2.3 | `resolved nature Wire` | L |
 | L24 | arrays of carriers (`[Bit; 8]`, `[Electrical; 4]`); element and field commits (`bits[3] <- true`) and definitions; also owes `explicit-unknowns` EU-04 AC 3 (an element of `[Bit<Option<u8>>; 1 << 20]` never committed reads its initial value, with storage for the written elements only: check C13) | §5.1.4, §12.1 | `array type`; `an element or field commit` | L, with L3 |
 | L25 | bundles: a `struct` of carriers, `flip`, bundle literals, `impl` on a bundle | §7 | `struct item used as a type`, `flip type` | L |
 
