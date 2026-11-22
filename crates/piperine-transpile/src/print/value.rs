@@ -354,9 +354,10 @@ impl<'a> ValuePrinter<'a> {
 
     /// The read `variable` of a carrier or its previous value, as the expression `e` types it: the
     /// flagged variable itself, or, for a tuple, an array, a struct or an `Option` (a flag rides
-    /// only on a scalar), its value; an unknown one is refused by name (`known_or_refuse`).
-    fn carried(&self, e: ExprId, variable: String) -> String {
-        if Self::is_flagged(self.ir.expr_type(e)) { variable } else { format!("{variable}.known_or_refuse({variable:?})") }
+    /// only on a scalar), its value; an unknown one is refused by the name `source` the model writes
+    /// (`un`, `un.prev()`), not the printer's variable (`known_or_refuse`).
+    fn carried(&self, e: ExprId, variable: String, source: &str) -> String {
+        if Self::is_flagged(self.ir.expr_type(e)) { variable } else { format!("{variable}.known_or_refuse({source:?})") }
     }
 
     /// The printed name of local `i`.
@@ -753,7 +754,7 @@ impl<'a> ValuePrinter<'a> {
                 atom(format!("rt::Unwrap::of({}, {}, {message})", self.expr(*is)?, self.expr(*value)?))
             }
             Expr::Carrier(c) => match self.analog.as_ref().and_then(|r| r.carriers.get(*c as usize)) {
-                Some(name) => atom(self.carried(e, self.read(name))),
+                Some(name) => atom(self.carried(e, self.read(name), name)),
                 None => Err(self.unsupported(e, "a carrier read")),
             },
             Expr::Unknown => {
@@ -834,7 +835,10 @@ impl<'a> ValuePrinter<'a> {
                 None => Err(self.unsupported(e, "the flow of a potential branch")),
             },
             Expr::Previous(c) => match self.analog.as_ref().and_then(|r| r.previous.get(*c as usize)) {
-                Some(name) => atom(self.carried(e, self.read(name))),
+                Some(name) => {
+                    let source = self.analog.as_ref().and_then(|r| r.carriers.get(*c as usize)).map_or(name.as_str(), String::as_str);
+                    atom(self.carried(e, self.read(name), &format!("{source}.prev()")))
+                }
                 None => Err(self.unsupported(e, "the previous value of a carrier")),
             },
             Expr::Limit { site, .. } => match self.analog.as_ref().and_then(|r| r.limits.get(*site as usize)) {

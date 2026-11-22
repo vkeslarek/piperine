@@ -856,6 +856,16 @@ fn an_unknown_composite_is_refused_by_name() {
 }
 
 #[test]
+fn an_unknown_previous_composite_is_refused_by_the_carrier() {
+    // §5.1.8: the `prev()` of a composite carrier before its first change holds no value; the fault names the
+    // carrier as the model writes it (`un.prev()`), not the printer's variable (`un_previous_`).
+    let fault = RUN.the_fault("carriers.msl", "UnknownPrevBench");
+    assert!(fault.contains("`un.prev()`"), "the fault names the carrier: {fault}");
+    assert!(!fault.contains("un_previous_"), "the fault does not name the printer's variable: {fault}");
+    assert!(fault.contains("holds no value"), "the fault says why: {fault}");
+}
+
+#[test]
 fn committing_an_equal_composite_fires_no_change() {
     // CV-17 AC 4 (§12.1): `s` is committed the same `Pair` at both rising edges; the second commit
     // changes nothing, so the net has one change and `s.changed()` fired once.

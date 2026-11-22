@@ -103,6 +103,13 @@ module Bench() {
 // scalar `ux` of the same reaction reads unknown (§3.3.2, §5.1.1).
 module UnknownRead(in clk: Bit, in un: Bit<Pair>, out y: Bit<u8>) {}
 digital for UnknownRead { on clk.rise() { y <- un.a; } }
+module UnknownPrevRead(in clk: Bit, in un: Bit<Pair>, out y: Bit<u8>) {}
+digital for UnknownPrevRead { on clk.rise() { y <- un.prev().a; } }
+module UnknownPrevBench() {
+    signal clk: Bit; signal un: Bit<Pair>; signal y: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let read = UnknownPrevRead(clk, un, y);
+}
 module UnknownBench() {
     signal clk: Bit; signal un: Bit<Pair>; signal y: Bit<u8>;
     let osc = Osc(clk) { f: 200M };
