@@ -298,7 +298,11 @@ of its own.
    the retaken solution makes, and the first did not, fires at the next microstep of `t` and may
    retake again. A step that reads no jump never retakes, and neither does a crossing whose
    reactions change nothing `analog` reads. More retakes at one `t` than the operating point's
-   round bound fail as `E0504`, naming the instant.
+   round bound fail as `E0504`, naming the instant. A change due before the solve that a settle
+   commit makes (S2, S3) is a jump like any other: the step that reads it retakes by this rule.
+   The instant's settle phase runs once, after its last round, so a retake never runs an
+   `on settle` reaction twice at `t`, and the settle commits it holds are the ones the analog side
+   is given.
 5. **Other instance state is untouched.** `delay` keeps its history and `limit` its last
    value. `idt`, `slew` and `transition` have no rule of their own: their state is a node
    under `ddt` and discrete carriers.

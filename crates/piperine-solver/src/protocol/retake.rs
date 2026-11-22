@@ -11,26 +11,36 @@ use super::transient::Protocol;
 
 /// Whether the step being taken reads a jump: the previous instant of the transient delivered a
 /// change the analog side reads. It is the owner's whole memory of AO-13 between two steps.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub(super) struct JumpRetake {
     reads_jump: bool,
 }
 
 impl JumpRetake {
-    /// A transient's start: its first step reads no jump.
-    pub(super) fn new() -> JumpRetake {
-        JumpRetake::default()
+    /// A transient's start: its first step reads a jump when the operating point it follows holds
+    /// a settle commit (`settle_pending`: that step is exempt, §15 S3), and none otherwise.
+    pub(super) fn new(settle_pending: bool) -> JumpRetake {
+        JumpRetake { reads_jump: settle_pending }
     }
 
-    /// Records what the instant just run delivered: the next step reads a jump when it is not empty.
-    pub(super) fn delivered(&mut self, boundary: &[Boundary]) {
-        self.reads_jump = !boundary.is_empty();
+    /// Records what the instant just run delivered: the next step reads a jump when the instant
+    /// changed something `analog` reads (`boundary`), or its settle phase holds a commit the next
+    /// solve reads (`settle_boundary`, §15 S2 and S3: a change due before that solve).
+    pub(super) fn delivered(&mut self, boundary: &[Boundary], settle_boundary: &[Boundary]) {
+        self.reads_jump = !boundary.is_empty() || !settle_boundary.is_empty();
+    }
+
+    /// Whether the instant after the accepted step that made the crossings `fired` may have to
+    /// retake it: the step read a jump and a crossing of its own fired. The owner then defers the
+    /// settle phase of the instant until the retakes are over.
+    pub(super) fn possible(&self, fired: &[u32]) -> bool {
+        self.reads_jump && !fired.is_empty()
     }
 
     /// Whether the instant after the accepted step `fired` crossings must retake that step: it
     /// read a jump, a crossing of its own fired, and the instant changed what `analog` reads.
     pub(super) fn wanted(&self, fired: &[u32], outcome: &Outcome) -> bool {
-        self.reads_jump && !fired.is_empty() && !outcome.boundary.is_empty()
+        self.possible(fired) && !outcome.boundary.is_empty()
     }
 }
 

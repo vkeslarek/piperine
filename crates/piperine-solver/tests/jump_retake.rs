@@ -20,10 +20,10 @@ use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 
 use abi_devices::{add_vsrc, node_id, vramp};
-use abi_mixed::{comparator, delay, reactions};
+use abi_mixed::{comparator, delay, reactions, settle_time, settle_times};
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::layout::{BIT, F64, HIGH, LOW};
-use piperine_abi::raw::{Cell, DEFAULT, GROUND, Module, Partial, Shape, Statement, cell, op, part, pin_flag, role};
+use piperine_abi::raw::{Cell, DEFAULT, GROUND, Module, Partial, Shape, Statement, cell, global, op, part, pin_flag, role};
 use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_abi::thunk::module;
 use piperine_solver::abi::{AnalogReference, ParamValue, Port};
@@ -143,6 +143,92 @@ fn setter() -> &'static Module {
     SETTER.get_or_init(|| module::<Setter>("Setter"))
 }
 
+/// Sets `out` HIGH in the settle phase of every time point: a settle commit (§15 S1), read by the
+/// step that arrives at the next time point.
+/// pins: settle=0 (GLOBAL SETTLE event); out=1 (PORT BIT, init LOW)   reaction 0: on [settle] writes [S0 {out}]
+struct SettleSetter;
+static SETTLE_SETTER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static SETTLE_SETTER: OnceLock<Module> = OnceLock::new();
+
+fn settle_setter_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let settle = s.pin(PinSpec { global: global::SETTLE, ..PinSpec::event("settle", role::GLOBAL) });
+    let out = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &LOW, ..PinSpec::discrete("out", role::PORT, &BIT) });
+    s.reaction(ReactionSpec {
+        name: "set",
+        origin: ORIGIN,
+        on: vec![settle],
+        writes: vec![Statement { pin: out, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for SettleSetter {
+    fn prototype() -> &'static Shape<'static> {
+        SETTLE_SETTER_SHAPE.get_or_init(settle_setter_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((SettleSetter, Arc::clone(SETTLE_SETTER_SHAPE.get_or_init(settle_setter_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        cx.commit(0, &HIGH, 0.0)?;
+        Ok(Flow::Continue)
+    }
+}
+
+fn settle_setter() -> &'static Module {
+    SETTLE_SETTER.get_or_init(|| module::<SettleSetter>("SettleSetter"))
+}
+
+/// Copies `src` to `dst` in the settle phase of every time point, as a settle commit: it writes
+/// the final discrete state of the instant.
+/// pins: settle=0 (GLOBAL SETTLE event); src=1 (PORT BIT); dst=2 (PORT BIT, init LOW)
+/// reaction 0: on [settle] reads [src] writes [S0 {dst}]
+struct SettleMirror;
+static SETTLE_MIRROR_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static SETTLE_MIRROR: OnceLock<Module> = OnceLock::new();
+
+fn settle_mirror_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let settle = s.pin(PinSpec { global: global::SETTLE, ..PinSpec::event("settle", role::GLOBAL) });
+    let src = s.pin(PinSpec::discrete("src", role::PORT, &BIT));
+    let dst = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &LOW, ..PinSpec::discrete("dst", role::PORT, &BIT) });
+    s.reaction(ReactionSpec {
+        name: "copy",
+        origin: ORIGIN,
+        on: vec![settle],
+        reads: vec![pin(src)],
+        writes: vec![Statement { pin: dst, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for SettleMirror {
+    fn prototype() -> &'static Shape<'static> {
+        SETTLE_MIRROR_SHAPE.get_or_init(settle_mirror_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((SettleMirror, Arc::clone(SETTLE_MIRROR_SHAPE.get_or_init(settle_mirror_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        let value = [cx.bytes(0)[0], cx.bytes(0)[1]];
+        cx.commit(0, &value, 0.0)?;
+        Ok(Flow::Continue)
+    }
+}
+
+fn settle_mirror() -> &'static Module {
+    SETTLE_MIRROR.get_or_init(|| module::<SettleMirror>("SettleMirror"))
+}
+
 fn net(name: &str) -> Port {
     Port::Net(name.to_string())
 }
@@ -154,14 +240,36 @@ enum Watched {
     Ramp,
 }
 
-/// The gate's output node and the circuit: the code is set `code_at` seconds after the start,
-/// and one comparator per level sets the mode carrier `m<k>` when its watched node crosses it.
-fn circuit(levels: &[f64], watched: Watched, code_at: f64) -> (CircuitBuilder, AnalogReference) {
+/// What sets the gate's code.
+#[derive(Clone, Copy)]
+enum Trigger {
+    /// A one-shot `delay` fires `at` seconds after the start and a setter sets the code on it.
+    At(f64),
+    /// A device on `settle` sets the code in the settle phase of every time point (a settle commit).
+    Settle,
+}
+
+/// The gate's output node and the circuit: the code is set by `trigger`, and one comparator per
+/// level sets the mode carrier `m<k>` when its watched node crosses it. With `mirrored`, a
+/// device copies the first mode carrier to the third in the settle phase (a settle commit that
+/// reads the final state of the instant), and one `settle_time` device stamps every settle phase.
+fn circuit(levels: &[f64], watched: Watched, trigger: Trigger, mirrored: bool) -> (CircuitBuilder, AnalogReference) {
     let mut b = CircuitBuilder::new("jump retake");
     let gnd = b.ground();
     let out = b.node("o");
-    b.device(delay(), "kick", &[("at", ParamValue::Real(code_at))], &[net("go")]);
-    b.device(setter(), "set", &[], &[net("go"), net("code")]);
+    match trigger {
+        Trigger::At(code_at) => {
+            b.device(delay(), "kick", &[("at", ParamValue::Real(code_at))], &[net("go")]);
+            b.device(setter(), "set", &[], &[net("go"), net("code")]);
+        }
+        Trigger::Settle => {
+            b.device(settle_setter(), "set", &[], &[net("code")]);
+        }
+    }
+    if mirrored {
+        b.device(settle_mirror(), "mirror", &[], &[net("m2"), net("m3")]);
+        b.device(settle_time(), "stamp", &[], &[]);
+    }
     b.device(gate(), "gate", &[], &[net("code"), net("m1"), net("m2"), net("m3"), Port::Node(out.clone())]);
     let ramp = b.node("a");
     b.device(vramp(), "ramp", &[], &[Port::Node(ramp.clone()), Port::Node(gnd.clone())]);
@@ -184,6 +292,8 @@ fn circuit(levels: &[f64], watched: Watched, code_at: f64) -> (CircuitBuilder, A
 fn its_devices_pass_the_partials_verifier() {
     partials::verify_every_function("Gate", gate());
     partials::verify_every_function("Setter", setter());
+    partials::verify_every_function("SettleSetter", settle_setter());
+    partials::verify_every_function("SettleMirror", settle_mirror());
 }
 
 struct Collect(Rc<RefCell<Vec<Observation>>>);
@@ -196,8 +306,8 @@ impl Sink for Collect {
 
 /// The accepted `(time, value of o)` of a transient to `stop`, and the times the first
 /// comparator's `up` crossing fired at.
-fn run(levels: &[f64], watched: Watched, code_at: f64, stop: f64, context: Context) -> Result<(Vec<(f64, f64)>, Vec<f64>), String> {
-    let (b, out) = circuit(levels, watched, code_at);
+fn run(levels: &[f64], watched: Watched, trigger: Trigger, mirrored: bool, stop: f64, context: Context) -> Result<(Vec<(f64, f64)>, Vec<f64>), String> {
+    let (b, out) = circuit(levels, watched, trigger, mirrored);
     let seen = Rc::new(RefCell::new(Vec::new()));
     let mut solver = Solver::new(b.build().expect("build"))
         .with_context(context)
@@ -220,7 +330,7 @@ fn a_crossing_made_by_a_jump_retakes_the_step() {
     // AO-13: the code jumps at 1 us; the first step after it reads 1 V, which crosses the 0.5 V
     // comparator; its reaction sets m1; that step is retaken, so no accepted solution after the
     // jump holds the stale 1 V and the step the crossing fired in holds 2 V.
-    let (steps, crossings) = run(&[0.5], Watched::Output, JUMP_AT, 3.0e-6, Context::default()).expect("tran");
+    let (steps, crossings) = run(&[0.5], Watched::Output, Trigger::At(JUMP_AT), false, 3.0e-6, Context::default()).expect("tran");
     assert_eq!(crossings.len(), 1, "the crossing fires once: {crossings:?}");
     let after: Vec<&(f64, f64)> = steps.iter().filter(|(t, _)| *t > JUMP_AT + 1.0e-12).collect();
     let first = after.first().expect("a step after the jump");
@@ -237,7 +347,7 @@ fn a_step_that_reads_no_jump_never_retakes() {
     // AO-13 control: the code is set at the start, so the ramp's crossing of 0.5 V at 0.5 ms is
     // made by a step that reads no jump: its reaction's change waits for the next step (o is
     // 1 V in the crossing's step, 2 V after).
-    let (steps, crossings) = run(&[0.5], Watched::Ramp, 0.0, 1.0e-3, Context::default()).expect("tran");
+    let (steps, crossings) = run(&[0.5], Watched::Ramp, Trigger::At(0.0), false, 1.0e-3, Context::default()).expect("tran");
     assert_eq!(crossings.len(), 1, "{crossings:?}");
     let at = steps.iter().position(|(t, _)| *t == crossings[0]).expect("a step at the crossing");
     assert!((steps[at].1 - 1.0).abs() < 1e-9, "the crossing's step holds {} V, not 1 V", steps[at].1);
@@ -251,12 +361,43 @@ fn endless_retakes_fail_with_e0504() {
     // `E0504` naming the instant, and the default bound lets it settle at 4 V (the control).
     let levels = [0.5, 1.5, 2.5];
     let context = Context { max_rounds: 2, ..Context::default() };
-    let error = run(&levels, Watched::Output, JUMP_AT, 3.0e-6, context).expect_err("two rounds are not enough");
+    let error = run(&levels, Watched::Output, Trigger::At(JUMP_AT), false, 3.0e-6, context).expect_err("two rounds are not enough");
     assert!(error.contains("E0504"), "{error}");
     assert!(error.contains("more than 2 times"), "{error}");
     assert!(error.contains("t = 1"), "the instant is named: {error}");
 
-    let (steps, _) = run(&levels, Watched::Output, JUMP_AT, 3.0e-6, Context::default()).expect("the default bound settles");
+    let (steps, _) = run(&levels, Watched::Output, Trigger::At(JUMP_AT), false, 3.0e-6, Context::default()).expect("the default bound settles");
     let last = steps.last().expect("steps");
     assert!((last.1 - 4.0).abs() < 1e-9, "o = {} V", last.1);
+}
+
+#[test]
+fn a_crossing_made_by_a_step_that_reads_a_settle_commit_retakes_it() {
+    // §15 S2, S3 and §15.2 rule 4: the settle phase of the first time point commits the code; the
+    // step to the next time point reads it as a jump (0 to 1 V, crossing the 0.5 V comparator), its
+    // reaction sets m1, and that step is retaken: no accepted solution holds the stale 1 V.
+    let (steps, crossings) = run(&[0.5], Watched::Output, Trigger::Settle, false, 3.0e-6, Context::default()).expect("tran");
+    assert_eq!(crossings.len(), 1, "the crossing fires once: {crossings:?}");
+    let at = steps.iter().position(|(t, _)| *t == crossings[0]).expect("a step at the crossing");
+    for (time, value) in &steps[at..] {
+        assert!((value - 2.0).abs() < 1e-9, "o = {value} at {time:e}: the step that read the settle commit holds the stale 1 V");
+    }
+    assert_eq!(steps.iter().filter(|(t, _)| *t == crossings[0]).count(), 1, "the retaken solution replaces the first");
+    assert_eq!(reactions("comparator"), 1, "the reaction that ran is not run again");
+}
+
+#[test]
+fn a_second_round_retake_runs_settle_once_and_delivers_its_settle_commits() {
+    // §15 step 4 ("once") and S2: at the jump the first retaken solution (2 V) crosses the 1.5 V
+    // comparator, so the instant runs a second round. Its settle phase runs once, after the last
+    // round, and its settle commit (m3 <- m2, the final state) reaches the step that follows: o = 4 V
+    // there (code, m1, m2 and m3), not 3 V from the state the first round left.
+    let (steps, _) = run(&[0.5, 1.5], Watched::Output, Trigger::At(JUMP_AT), true, 3.0e-6, Context::default()).expect("tran");
+    let times = settle_times();
+    for pair in times.windows(2) {
+        assert!(pair[1] > pair[0], "a settle phase ran twice at t = {:e}: {times:?}", pair[0]);
+    }
+    let jump = steps.iter().position(|(t, v)| *t > JUMP_AT && (v - 3.0).abs() < 1e-9).expect("the retaken step holds 3 V");
+    let following = &steps[jump + 1];
+    assert!((following.1 - 4.0).abs() < 1e-9, "o = {} V at {:e}: the settle commit of the last round did not reach the analog side", following.1, following.0);
 }

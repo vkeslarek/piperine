@@ -76,6 +76,17 @@ pub struct Outcome {
     pub settle_boundary: Vec<Boundary>,
 }
 
+impl Outcome {
+    /// Joins the outcome `settled` of the settle phase run after the instant's rounds: what the
+    /// phase changed and finished is added, and the settle commits it reports are the ones held.
+    pub(super) fn absorb_settle(&mut self, settled: Outcome) {
+        self.boundary.extend(settled.boundary);
+        self.host_param_write |= settled.host_param_write;
+        self.finish |= settled.finish;
+        self.settle_boundary = settled.settle_boundary;
+    }
+}
+
 /// The discrete side's answer to a host write checked on a shadow (abi.md P6).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Shadow {

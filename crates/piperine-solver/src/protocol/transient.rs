@@ -297,7 +297,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         };
         let mut forced: Option<Tick> = None;
         let mut rejections = 0u32;
-        let mut jump = JumpRetake::new();
+        let mut jump = JumpRetake::new(self.exempt_next);
         while self.now_tick < stop_tick {
             let c = self.checkpoint();
             let now_tick = self.now_tick;
@@ -394,12 +394,21 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             let crossing = if unknowns { tick_c } else { stop_tick };
             let limit = Horizon { stop: stop_tick, crossing };
             self.land_settle_commits(tick_c, settle);
-            let mut outcome = self.run_whole_instant(tick_c, &samples, limit, mode).map_err(|e| at(t_c, e))?;
+            // A step that may be retaken settles once, after its last round (§15 step 4): its
+            // instant runs without the settle phase, and the phase follows the retakes.
+            let deferred = unknowns && settle && jump.possible(&crossings);
+            let rounds = InstantMode { settle: settle && !deferred, ..mode };
+            let mut outcome = self.run_whole_instant(tick_c, &samples, limit, rounds).map_err(|e| at(t_c, e))?;
             if unknowns && jump.wanted(&crossings, &outcome) {
-                outcome = self.retake_step(&c.analog, tick_c, crossings, outcome, limit, mode).map_err(|e| at(t_c, e))?;
+                outcome = self.retake_step(&c.analog, tick_c, crossings, outcome, limit, rounds).map_err(|e| at(t_c, e))?;
+            }
+            if deferred {
+                let samples = self.samples.clone();
+                let settled = self.run_whole_instant(tick_c, &samples, limit, mode).map_err(|e| at(t_c, e))?;
+                outcome.absorb_settle(settled);
             }
             if unknowns {
-                jump.delivered(&outcome.boundary);
+                jump.delivered(&outcome.boundary, &outcome.settle_boundary);
             }
             if unknowns && !outcome.boundary.is_empty() {
                 let restart = if outcome.host_param_write { Restart::IntegratorSmall } else { Restart::Integrator };
