@@ -42,7 +42,7 @@ pub use probe::{Column, Probe};
 pub use project::{Checked, Project};
 pub use record::{Field, Record, RecordSink, Streams};
 pub use request::{Analysis, Grid, Overrides, RunSpec};
-pub use session::{Built, ParamPath, Session};
+pub use session::{Built, ParamPath, ParamTarget, Session};
 pub use source::NodeSource;
 pub use params::{Changed, Derive, Params};
 pub use piperine_solver::prelude::ParamValue;

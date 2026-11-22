@@ -73,7 +73,13 @@ impl Values {
         if path.is_empty() {
             return Err(format!("`{text}` names no path"));
         }
-        Ok((path.to_string(), Values::real(value)?))
+        // a `bool` leaf of a composite param is given as `true` or `false`
+        let value = match value {
+            "true" => 1.0,
+            "false" => 0.0,
+            other => Values::real(other)?,
+        };
+        Ok((path.to_string(), value))
     }
 }
 

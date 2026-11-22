@@ -148,6 +148,81 @@ impl ParamPath {
     }
 }
 
+/// A param, or one leaf of a composite param, as a host names it: `Top.r`, `Top.f.num[2]`,
+/// `Top.p.x`, `Top.t.0`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParamTarget {
+    /// The param.
+    pub param: ParamPath,
+    /// The leaf of a composite param, as its layout names it; `None` for a param of one value.
+    pub leaf: Option<String>,
+}
+
+impl ParamTarget {
+    /// `entry` as a param of `ir`, or as a leaf of a composite param (`<instance>.<param>.<leaf>`,
+    /// the instance in full or relative to `top`). `E0801` when it names neither; a composite
+    /// param named without a leaf is `E0802` listing its leaves.
+    pub fn resolve(ir: &Ir, top: &str, entry: &str) -> Result<ParamTarget, Failure> {
+        match ParamPath::resolve(ir, top, entry) {
+            Ok(param) => {
+                let composite = ir.instance_at(&param.instance).and_then(|i| i.body().params().iter().find(|p| p.name == param.param).map(|p| p.ty.is_composite()));
+                if composite == Some(true) {
+                    return Err(Failure::Host { code: "E0802", message: format!("`{entry}` is a composite param: name one of its leaves, `{entry}.<leaf>`") });
+                }
+                Ok(ParamTarget { param, leaf: None })
+            }
+            Err(named) => ParamTarget::leaf(ir, top, entry).ok_or(named),
+        }
+    }
+
+    /// `entry` as `<instance>.<param><leaf>`: the longest instance path, then a composite param of
+    /// it, then what remains as the leaf (`num[2]`, `x`, `0`, `[1]`).
+    fn leaf(ir: &Ir, top: &str, entry: &str) -> Option<ParamTarget> {
+        let segments: Vec<&str> = entry.split('.').collect();
+        for split in (1..segments.len()).rev() {
+            let path = segments[..split].join(".");
+            let rest = segments[split..].join(".");
+            let name_end = rest.find(['.', '[']).unwrap_or(rest.len());
+            let (name, leaf) = rest.split_at(name_end);
+            let leaf = leaf.strip_prefix('.').unwrap_or(leaf);
+            let Some(instance) = [path.clone(), format!("{top}.{path}")].into_iter().find_map(|p| ir.instance_at(&p)) else { continue };
+            if leaf.is_empty() || !instance.body().params().iter().any(|p| p.name == name && p.ty.is_composite()) {
+                continue;
+            }
+            return Some(ParamTarget { param: ParamPath { instance: instance.path().to_string(), param: name.to_string() }, leaf: Some(leaf.to_string()) });
+        }
+        None
+    }
+
+    /// The full path, `<instance>.<param>` and the leaf.
+    pub fn label(&self) -> String {
+        match &self.leaf {
+            Some(leaf) => format!("{}.{leaf}", self.param.label()),
+            None => self.param.label(),
+        }
+    }
+}
+
+impl Session {
+    /// Writes `value` to `leaf` of the composite param `path` names: the whole value after the write
+    /// is checked against the param's `where` (`E0317`) before anything is changed, then written.
+    pub(crate) fn set_leaf(table: &mut Params, circuit: &mut CircuitInstance, path: &ParamPath, leaf: &str, value: f64) -> Result<(), Failure> {
+        let change = table.leaf_change(&path.instance, &path.param, leaf, value)?;
+        let label = change.label();
+        circuit.check_set(&path.instance, &path.param, &change.param_value()).map_err(|error| {
+            let text = error.to_string();
+            if text.contains("is refused, check") {
+                Failure::Host { code: "E0317", message: format!("the `where` of the param `{}.{}` is false for the value {} written at `{label}`", path.instance, path.param, value) }
+            } else {
+                Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {value}: {text}") }
+            }
+        })?;
+        circuit.set(&path.instance, &path.param, change.param_value()).map_err(|error| Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {value}: {error}") })?;
+        table.apply_leaf(&change);
+        Ok(())
+    }
+}
+
 impl Session {
     /// `spec` of `project`, from source to a bound circuit on the backend `spec.backend` names
     /// (`rust` when it names none); `settings` locate `rustc` and the cache.
@@ -184,7 +259,7 @@ impl Session {
             _ => None,
         };
         // every param path resolves before anything compiles: a typo costs no `rustc`
-        let params = spec.params.iter().map(|(entry, value)| Ok((ParamPath::resolve(&ir, ir.top().path(), entry)?, entry, *value))).collect::<Result<Vec<_>, Failure>>()?;
+        let params = spec.params.iter().map(|(entry, value)| Ok((ParamTarget::resolve(&ir, ir.top().path(), entry)?, entry, *value))).collect::<Result<Vec<_>, Failure>>()?;
         let mut context = Session::context_of(&spec.options);
         let nodeset = Session::nodeset_of(&ir, spec)?;
         let (transfer, wrt) = Session::small_signal_of(&ir, spec, &probes)?;
@@ -219,7 +294,10 @@ impl Session {
         // refuse a value, and then no analysis runs
         let mut table = Params::of(&ir);
         for (path, _, value) in &params {
-            Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, path, *value)?;
+            match &path.leaf {
+                Some(leaf) => Session::set_leaf(&mut table, &mut circuit, &path.param, leaf, *value)?,
+                None => Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &path.param, *value)?,
+            }
         }
         Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, wrt, actions: Vec::new(), timed_sets: Vec::new(), sources: NodeSources::default(), params: table })
     }
@@ -680,8 +758,16 @@ impl Session {
         let mut table = Params::of(&ir);
         let derive = Evaluated::new(&ir, table.plan());
         for (entry, value) in &spec.params {
-            let path = ParamPath::resolve(&ir, ir.top().path(), entry)?;
-            table.set(&path.instance, &path.param, *value, Some(&derive), &mut |_| Ok(()))?;
+            let target = ParamTarget::resolve(&ir, ir.top().path(), entry)?;
+            match &target.leaf {
+                Some(leaf) => {
+                    let change = table.leaf_change(&target.param.instance, &target.param.param, leaf, *value)?;
+                    table.apply_leaf(&change);
+                }
+                None => {
+                    table.set(&target.param.instance, &target.param.param, *value, Some(&derive), &mut |_| Ok(()))?;
+                }
+            }
         }
         Ok((top, Metadata::of(&ir, &table)))
     }

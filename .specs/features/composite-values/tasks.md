@@ -1420,8 +1420,8 @@ T63
 
 **Done when**:
 
-- [ ] `a_host_sets_a_composite_param_by_leaf_and_checks_its_where` passes under `**Run apicomp**`
-- [ ] Gate check passes: Full
+- [x] `a_host_sets_a_composite_param_by_leaf_and_checks_its_where` passes under `**Run apicomp**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
