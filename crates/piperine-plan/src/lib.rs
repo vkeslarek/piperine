@@ -4,12 +4,16 @@
 //! transpiler (`piperine-transpile`) read one plan, so pins, read order, partial order and affine
 //! flags cannot drift between them.
 
+mod composite;
 mod derive;
 mod digital;
 mod netlist;
+mod pin;
 mod plan;
 
+pub use composite::{CompositeLayout, CompositeLeaf};
 pub use derive::{Binding, DerivePlan, ParamReads};
 pub use digital::{CarrierLayout, ReactionMode, ReactionPlan, RecordLayout, StatementPlan};
 pub use netlist::{Modules, Netlist};
+pub use pin::PinLayout;
 pub use plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, Source, Target, Term};

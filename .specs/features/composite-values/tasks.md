@@ -1357,8 +1357,8 @@ T63
 
 **Done when**:
 
-- [ ] `composite_layouts_list_their_leaves`, `two_pins_of_a_composite_net_have_equal_layouts`, `a_one_variant_enum_lays_out_its_payload_only` and `an_empty_struct_is_carried_with_zero_levels` pass under `**Run plancomp**`
-- [ ] Gate check passes: Full
+- [x] `composite_layouts_list_their_leaves`, `two_pins_of_a_composite_net_have_equal_layouts`, `a_one_variant_enum_lays_out_its_payload_only` and `an_empty_struct_is_carried_with_zero_levels` pass under `**Run plancomp**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

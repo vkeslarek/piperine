@@ -137,8 +137,9 @@ impl Params {
                             Constant::Real(r) => r.get(),
                             Constant::Bool(b) => f64::from(u8::from(*b)),
                             Constant::Int(v) => *v as f64,
-                            // The elaborator folds no composite param value yet; the host table gains cells for them in phase B's API task.
-                            Constant::Aggregate(id) => panic!("param {} holds the composite constant agg{}, which the scalar host table has no cell for", param.name, id.0),
+                            // The scalar table holds no leaf of a composite: its place is kept so the
+                            // declaration order the derive functions read stays, and `get` reads none.
+                            Constant::Aggregate(_) => f64::NAN,
                         };
                         (param.name.clone(), param.ty.clone(), value)
                     })
@@ -150,7 +151,7 @@ impl Params {
 
     /// The value of `param` of `instance`; `None` when the design has no such param.
     pub fn get(&self, instance: &str, param: &str) -> Option<f64> {
-        self.slot(instance)?.params.iter().find(|(n, _, _)| n == param).map(|(_, _, v)| *v)
+        self.slot(instance)?.params.iter().find(|(n, ty, _)| n == param && !ty.is_composite()).map(|(_, _, v)| *v)
     }
 
     /// The derive plan of the design.

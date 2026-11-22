@@ -82,6 +82,7 @@ use piperine_abi::raw::{
 use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf, WatchSpec};
 use piperine_ir::{Body, CarrierRole, Constant, EventSource, Expr, ExprId, Ir, Origin, Stmt, Stream, Target as Query, ValueType};
 
+use crate::pin::PinLayout;
 use crate::plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, ReadSet, Source, Target};
 
 /// What a reaction of the shape runs.
@@ -264,50 +265,88 @@ impl CarrierLayout {
     }
 }
 
-/// The layout of a stream's `RECORD` pin: each value field laid out as a carrier of its type
-/// (`CarrierLayout`), in the stream's order, at the next offset its alignment allows, then the
-/// `maybe` field (§19 rule 1: whether the record was reached under unknown control), a `bool`
-/// laid out as a carrier; the size rounded up to the largest alignment.
+/// The layout of a stream's `RECORD` pin: each value field laid out as a pin of its type
+/// (`PinLayout`: a carrier's scalar layout, or a composite's), in the stream's order, at the
+/// next offset its alignment allows, then the `maybe` field (§19 rule 1: whether the record was
+/// reached under unknown control), a `bool` laid out as a carrier; the size rounded up to the
+/// largest alignment.
 #[derive(Clone, Debug)]
 pub struct RecordLayout {
     pub size: u32,
     pub align: u32,
-    /// Per value field of the stream: its offset and the carrier layout it is laid out as. The
-    /// `maybe` field is not among them: it is no field of the stream (`maybe_offset`).
-    pub fields: Vec<(u32, &'static Layout<'static>)>,
+    /// Per value field of the stream: its offset and the layout it is laid out as. The `maybe`
+    /// field is not among them: it is no field of the stream (`maybe_offset`).
+    pub fields: Vec<(u32, PinLayout)>,
     /// The offset of the `maybe` field.
     maybe: u32,
+    /// Every leaf of the layout as an ABI field, the `maybe` field last.
+    leaves: Vec<RecordLeaf>,
+}
+
+/// One ABI field of a record layout: a scalar leaf of a value field, named by the field.
+#[derive(Clone, Debug)]
+struct RecordLeaf {
+    name: String,
+    leaf: u32,
+    offset: u32,
+    known: u32,
 }
 
 impl RecordLayout {
     /// The layout of `stream`'s pin; `None` when a field holds a type no carrier holds
-    /// (`check()` refuses it).
+    /// (`check()` refuses it). A composite field needs the type arena: use [`in_ir`](Self::in_ir).
     pub fn of(stream: &Stream) -> Option<RecordLayout> {
-        Self::laid_out(stream, |ty| ty.clone())
+        Self::laid_out(stream, |ty| CarrierLayout::of(ty).map(PinLayout::Scalar))
     }
 
     /// [`of`](Self::of) in the design `ir`: a field holding an enum without fields is laid out as
-    /// its tag.
+    /// its tag, a composite field as its leaves.
     pub fn in_ir(ir: &Ir, stream: &Stream) -> Option<RecordLayout> {
-        Self::laid_out(stream, |ty| ir.carried(ty))
+        Self::laid_out(stream, |ty| PinLayout::in_ir(ir, ty))
     }
 
-    /// The layout of `stream`'s pin with each field laid out as the scalar `carried` gives for its type.
-    fn laid_out(stream: &Stream, carried: impl Fn(&ValueType) -> ValueType) -> Option<RecordLayout> {
+    /// The layout of `stream`'s pin with each field laid out as `pin` gives for its type.
+    fn laid_out(stream: &Stream, pin: impl Fn(&ValueType) -> Option<PinLayout>) -> Option<RecordLayout> {
         let (mut end, mut align) = (0u32, 1u32);
         let mut fields = Vec::with_capacity(stream.fields.len());
+        let mut leaves = Vec::new();
         for f in &stream.fields {
-            let layout = CarrierLayout::of(&carried(&f.ty))?;
-            let offset = end.next_multiple_of(layout.align);
+            let layout = pin(&f.ty)?;
+            let offset = end.next_multiple_of(layout.align());
+            leaves.extend(Self::leaves_of(&f.name, offset, &layout)?);
+            end = offset + layout.size();
+            align = align.max(layout.align());
             fields.push((offset, layout));
-            end = offset + layout.size;
-            align = align.max(layout.align);
         }
-        let maybe_layout = CarrierLayout::of(&ValueType::Bool)?;
-        let maybe = end.next_multiple_of(maybe_layout.align);
-        end = maybe + maybe_layout.size;
-        align = align.max(maybe_layout.align);
-        Some(RecordLayout { size: end.next_multiple_of(align), align, fields, maybe })
+        let maybe_layout = pin(&ValueType::Bool)?;
+        let maybe = end.next_multiple_of(maybe_layout.align());
+        leaves.extend(Self::leaves_of("maybe", maybe, &maybe_layout)?);
+        end = maybe + maybe_layout.size();
+        align = align.max(maybe_layout.align());
+        Some(RecordLayout { size: end.next_multiple_of(align), align, fields, maybe, leaves })
+    }
+
+    /// The ABI fields of the value field `name` laid out as `layout` at `offset`: the leaf of a
+    /// scalar is named by the field, a composite's leaves by the field and their own path.
+    fn leaves_of(name: &str, offset: u32, layout: &PinLayout) -> Option<Vec<RecordLeaf>> {
+        match layout {
+            PinLayout::Scalar(scalar) => {
+                let v = scalar.fields.get(0)?;
+                Some(vec![RecordLeaf { name: name.to_string(), leaf: v.leaf, offset, known: offset + v.known }])
+            }
+            PinLayout::Composite(composite) => Some(
+                composite
+                    .leaves()
+                    .iter()
+                    .map(|l| RecordLeaf {
+                        name: if l.name.is_empty() { name.to_string() } else if l.name.starts_with('[') { format!("{name}{}", l.name) } else { format!("{name}.{}", l.name) },
+                        leaf: l.leaf,
+                        offset: offset + l.offset,
+                        known: offset + composite.known_offset(),
+                    })
+                    .collect(),
+            ),
+        }
     }
 
     /// The offset of the `maybe` field: a `bool` carrier (its value byte, then its known byte)
@@ -316,17 +355,13 @@ impl RecordLayout {
         self.maybe
     }
 
-    /// The ABI fields of the layout, named after `stream`'s fields, then `maybe` (§19 rule 1).
-    fn abi_fields<'s>(&self, stream: &'s Stream) -> Vec<Field<'s>> {
-        let value_fields = self.fields.iter().zip(&stream.fields).filter_map(|((offset, layout), f)| Self::abi_field(&f.name, *offset, layout));
-        let maybe = CarrierLayout::of(&ValueType::Bool).and_then(|layout| Self::abi_field("maybe", self.maybe, layout));
-        value_fields.chain(maybe).collect()
-    }
-
-    /// The ABI field named `name` of a carrier laid out as `layout` at `offset`.
-    fn abi_field<'s>(name: &'s str, offset: u32, layout: &Layout<'_>) -> Option<Field<'s>> {
-        let v = layout.fields.get(0)?;
-        Some(Field { name: Str::from_str(name), leaf: v.leaf, offset, count: 1, flags: field_flag::HAS_KNOWN, known: offset + v.known })
+    /// The ABI fields of the layout: each value field's leaves, named after the stream's fields,
+    /// then `maybe` (§19 rule 1).
+    fn abi_fields(&self) -> Vec<Field<'_>> {
+        self.leaves
+            .iter()
+            .map(|l| Field { name: Str::from_str(&l.name), leaf: l.leaf, offset: l.offset, count: 1, flags: field_flag::HAS_KNOWN, known: l.known })
+            .collect()
     }
 }
 
@@ -341,18 +376,20 @@ impl Digital {
         let first = s.shape().pins.len() as u32;
         for (i, c) in body.carriers().iter().enumerate() {
             let at = format!("{}:{}:{}", c.origin.file, c.origin.line, c.origin.col);
-            let Some(layout) = CarrierLayout::in_ir(body.ir(), &c.ty) else {
+            let Some(layout) = PinLayout::in_ir(body.ir(), &c.ty) else {
                 panic!("body {}: carrier {} at {at} holds {}, which no pin holds; check() refuses it", body.name(), c.name, c.ty)
             };
             let init = match c.init {
-                Some(value) => CarrierLayout::bytes_in(body.ir(), &c.ty, value).unwrap_or_else(|| {
+                Some(value) => PinLayout::bytes_in(body.ir(), &c.ty, value).unwrap_or_else(|| {
                     panic!("body {}: carrier {} at {at}: initial value {value:?} is not a value of {}; check() refuses it", body.name(), c.name, c.ty)
                 }),
                 None => Vec::new(),
             };
             let pin_role = if Self::is_port(body, i as u32) { role::PORT } else { role::PRIVATE };
             let flags = if init.is_empty() { 0 } else { pin_flag::HAS_INIT };
-            let pin = s.pin(PinSpec { origin: &at, flags, init: &init, ..PinSpec::discrete(&c.name, pin_role, layout) });
+            let fields = layout.fields();
+            let abi = layout.layout(&fields);
+            let pin = s.pin(PinSpec { origin: &at, flags, init: &init, ..PinSpec::discrete(&c.name, pin_role, &abi) });
             debug_assert_eq!(pin, first + i as u32);
         }
         first
@@ -486,9 +523,11 @@ impl Digital {
             .map(|d| {
                 d.after?;
                 let name = Self::carrier_name(body, d.carrier);
-                let layout = body.carriers().get(d.carrier as usize).and_then(|c| CarrierLayout::in_ir(body.ir(), &c.ty))?;
+                let layout = body.carriers().get(d.carrier as usize).and_then(|c| PinLayout::in_ir(body.ir(), &c.ty))?;
                 let at = Self::at(&d.origin);
-                let value = s.pin(PinSpec { origin: &at, ..PinSpec::discrete(&format!("drive:{name}.now"), role::PRIVATE, layout) });
+                let fields = layout.fields();
+                let abi = layout.layout(&fields);
+                let value = s.pin(PinSpec { origin: &at, ..PinSpec::discrete(&format!("drive:{name}.now"), role::PRIVATE, &abi) });
                 let event = s.pin(PinSpec { origin: &at, ..PinSpec::event(&format!("drive:{name}.changed"), role::PRIVATE) });
                 Some(DelayedPins { value, event })
             })
@@ -574,7 +613,7 @@ impl Digital {
                 let Some(record) = RecordLayout::in_ir(body.ir(), stream) else {
                     panic!("body {}: stream {} holds a field no pin holds; check() refuses it", body.name(), stream.name)
                 };
-                let fields = record.abi_fields(stream);
+                let fields = record.abi_fields();
                 let layout = Layout { size: record.size, align: record.align, fields: List::from_slice(&fields) };
                 s.pin(PinSpec { origin: &at, flags: pin_flag::RECORD, ..PinSpec::discrete(&stream.name, role::PRIVATE, &layout) })
             })
@@ -743,7 +782,7 @@ impl Digital {
             .map(|st| {
                 let (pin, len) = match st.target {
                     Target::Carrier(c) => {
-                        (pins.carrier(c), body.carriers().get(c as usize).and_then(|x| CarrierLayout::in_ir(body.ir(), &x.ty)).map_or(0, |l| l.size))
+                        (pins.carrier(c), body.carriers().get(c as usize).and_then(|x| PinLayout::in_ir(body.ir(), &x.ty)).map_or(0, |l| l.size()))
                     }
                     Target::EventPin(k) => (pins.events.get(k as usize).copied().unwrap_or(GROUND), 0),
                     Target::Timer(k) => (pins.timer(k), 0),

@@ -154,8 +154,8 @@ impl Streams {
         }
         let value = |field: u32| -> Result<(String, Field), Failure> {
             let f = stream.fields.get(field as usize).ok_or_else(|| refused(format!("no value field {field}")))?;
-            let (offset, carrier) = layout.fields[field as usize];
-            let slice = &bytes[offset as usize..(offset + carrier.size) as usize];
+            let (offset, carrier) = &layout.fields[field as usize];
+            let slice = &bytes[*offset as usize..(offset + carrier.size()) as usize];
             Ok((f.name.clone(), Field::of(Cell::decode(&self.ir.carried(&f.ty), slice)?)))
         };
         // `maybe` is always known (§19 rule 1); a clear known byte, which no run writes, reads as

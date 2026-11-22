@@ -25,6 +25,7 @@ use std::collections::BTreeSet;
 use piperine_abi::layout::{BIT, F64};
 
 use crate::digital::{CarrierLayout, Digital, ReactionPlan};
+use crate::pin::PinLayout;
 use piperine_abi::raw::{Cell, DEFAULT, GROUND, Partial, ambient, cell, global, input, op, part, pin_flag, role};
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_ir::{AnalysisKind, Body, BranchKind, Constant, Deps, Env, Operator, Origin, Stmt, Target as Query, Terminal, ValueType};
@@ -424,8 +425,8 @@ impl BodyPlan {
                 Some(Constant::Bool(b)) => vec![u8::from(b), 1],
                 // An integer param has a carrier's layout and bytes (`digital.rs`).
                 Some(c @ Constant::Int(_)) => CarrierLayout::bytes(&p.ty, c).unwrap_or_default(),
-                // The elaborator folds no composite value yet; the plan lays one out from T55.
-                Some(Constant::Aggregate(id)) => panic!("param {} defaults to the composite constant agg{}, which has no layout yet", p.name, id.0),
+                // A composite param has the layout and bytes of a composite carrier (`composite.rs`).
+                Some(c @ Constant::Aggregate(_)) => PinLayout::bytes_in(ir, &p.ty, c).unwrap_or_default(),
                 None => Vec::new(),
             })
             .collect();
@@ -440,11 +441,18 @@ impl BodyPlan {
         let mut next_check = pin_count as u32;
         let mut check_pins = Vec::with_capacity(body.params().len());
         for (p, init) in body.params().iter().zip(&defaults) {
-            let layout = match &p.ty {
+            let composite = match PinLayout::in_ir(ir, &p.ty) {
+                Some(layout @ PinLayout::Composite(_)) => Some(layout),
+                _ => None,
+            };
+            let composite_fields = composite.as_ref().map(PinLayout::fields).unwrap_or_default();
+            let composite_layout = composite.as_ref().map(|c| c.layout(&composite_fields));
+            let scalar = match &p.ty {
                 ValueType::Bool => &BIT,
                 ty if ty.is_integer() => CarrierLayout::of(ty).unwrap_or(&F64),
                 _ => &F64,
             };
+            let layout = composite_layout.as_ref().unwrap_or(scalar);
             let mut flags = if init.is_empty() { 0 } else { pin_flag::HAS_INIT };
             if p.structural {
                 flags |= pin_flag::STRUCTURAL;

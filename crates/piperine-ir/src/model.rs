@@ -906,6 +906,13 @@ pub struct VariantData {
 }
 
 impl ValueType {
+    /// Whether this is a tuple, an array, a struct or an `Option`: a value of parts, which a
+    /// param or a pin holds as bytes rather than as one scalar. An enum is not counted (its
+    /// params belong to `params-and-io`).
+    pub fn is_composite(&self) -> bool {
+        matches!(self, ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Struct(_) | ValueType::Option(_))
+    }
+
     /// Whether this is `UInt<N>` or `Int<N>`.
     pub fn is_integer(&self) -> bool {
         matches!(self, ValueType::UInt(_) | ValueType::Int(_))
