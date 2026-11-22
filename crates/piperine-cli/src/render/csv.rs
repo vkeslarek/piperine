@@ -17,7 +17,7 @@ impl CsvTable {
     /// quoted, its quotes doubled (RFC 4180).
     pub fn write(table: &Table, out: &mut dyn Write) -> io::Result<()> {
         // a column of composite values is one column per dotted leaf (D13)
-        let table = &table.expanded(true);
+        let table = &table.expanded(true).map_err(|failure| io::Error::other(failure.to_string()))?;
         let header: Vec<String> = table.columns.iter().map(|c| CsvTable::cell(c)).collect();
         writeln!(out, "{}", header.join(","))?;
         for row in &table.rows {

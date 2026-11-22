@@ -2221,3 +2221,17 @@ fn the_gallery_works_four_nets() {
     }
     assert!(!flat_s.contains(": Wire;") && !flat_s.contains(": Wire,"), "no library Wire");
 }
+
+#[test]
+fn the_host_fails_loud_and_names_the_absent_cell() {
+    // EU-15 (D15, finding 34): a host that cannot read a cell fails and never fills it; the two cells with no value of
+    // their own are absent, not unknown, and each format spells that one cell
+    let part = spec("part_viii_host.md");
+    let s = flat(&part.replace("\n> ", "\n"));
+    assert!(s.contains("a host that cannot read one fails with the cause"), "{s}");
+    assert!(s.contains("It never fills the cell in."), "{s}");
+    assert!(s.contains("are **absent**, which is not an unknown value"), "{s}");
+    assert!(s.contains("the payload of a `None`, a field of another variant"), "{s}");
+    assert!(s.contains("a param no placement has given a value"), "{s}");
+    assert!(s.contains("an empty field in a text table and in CSV, `null` in JSON Lines, and nothing in a plot"), "{s}");
+}

@@ -71,8 +71,8 @@ impl Metadata {
                     (None, Some(Constant::Bool(_)), Some(now)) => Cell::Bool(now != 0.0),
                     (None, Some(Constant::Int(_)), Some(now)) => Cell::Int(now as i128),
                     (None, Some(_), Some(now)) => Cell::Real(now),
-                    // a param with no default holds no value until a placement gives it one
-                    (None, _, _) => Cell::Text(String::new()),
+                    // a param with no default holds no value until a placement gives it one: the absent cell
+                    (None, _, _) => Cell::Absent,
                 };
                 params.push(ParamInfo {
                     name: param.name.clone(),
@@ -104,5 +104,28 @@ impl Metadata {
             }
         }
         Metadata { params, ports, streams }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use piperine_ir::{BodySpec, InstanceSpec, IrBuilder, Origin, Param, ValueType};
+
+    #[test]
+    fn a_param_no_placement_gave_a_value_is_the_absent_cell() {
+        // part VIII: a param with no value shows the absent cell (an empty field, `null` in JSON), never an empty text
+        // standing in for a value; a param that has one shows it
+        let origin = Origin { file: "top.msl".into(), line: 1, col: 1 };
+        let mut b = IrBuilder::new();
+        let param = |name: &str| Param { name: name.into(), ty: ValueType::F64, default: None, check: None, structural: false, origin: origin.clone() };
+        let body = b.body(BodySpec { name: "Top".into(), origin: origin.clone(), params: vec![param("given"), param("missing")], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
+        let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes: vec![], params: vec![Constant::Real(piperine_ir::Real::new(2.0))], origin });
+        let ir = b.finish(top);
+        let metadata = Metadata::of(&ir, &Params::of(&ir));
+        let values: Vec<(&str, &Cell)> = metadata.params.iter().map(|p| (p.name.as_str(), &p.value)).collect();
+        assert_eq!(values.len(), 2, "{values:?}");
+        assert!(values.iter().any(|(name, value)| *name == "missing" && **value == Cell::Absent), "{values:?}");
+        assert!(values.iter().all(|(_, value)| **value != Cell::Text(String::new())), "no empty text stands for a value: {values:?}");
     }
 }

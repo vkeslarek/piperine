@@ -394,6 +394,7 @@ mod tests {
                 Cell::Int(v) => v.to_string(),
                 Cell::Text(v) => v.clone(),
                 Cell::Composite(_) => "composite".into(),
+                Cell::Absent => "absent".into(),
             }
         }
     }

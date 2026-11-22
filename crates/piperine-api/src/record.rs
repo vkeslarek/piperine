@@ -159,7 +159,7 @@ impl Streams {
                 Some(shape) if !matches!(shape, CellShape::Scalar(_)) => shape.decode(slice)?,
                 _ => Cell::decode(&self.ir.carried(&f.ty), slice)?,
             };
-            Ok((f.name.clone(), Field::of(cell)))
+            Ok((f.name.clone(), Field::of(cell)?))
         };
         let fields = match site {
             Some((reaction, statement)) => {
@@ -191,14 +191,15 @@ impl Record {
 }
 
 impl Field {
-    fn of(cell: Cell) -> Field {
-        match cell {
+    fn of(cell: Cell) -> Result<Field, Failure> {
+        Ok(match cell {
             Cell::Real(v) => Field::Real(v),
             Cell::Bool(v) => Field::Bool(v),
             Cell::Int(v) => Field::Int(v),
             Cell::Text(v) => Field::Variant(v),
             Cell::Composite(v) => Field::Composite(v),
-        }
+            Cell::Absent => return Err(Failure::Backend("a record field decoded from its bytes is a value, never the absent cell".into())),
+        })
     }
 }
 

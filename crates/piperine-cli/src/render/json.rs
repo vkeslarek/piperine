@@ -38,7 +38,7 @@ impl JsonRecord {
             Cell::Bool(v) => v.to_string(),
             Cell::Int(v) => v.to_string(),
             Cell::Text(v) => JsonRecord::string(v),
-            Cell::Composite(_) => "null".to_string(),
+            Cell::Composite(_) | Cell::Absent => "null".to_string(),
         }
     }
 
@@ -81,6 +81,13 @@ mod tests {
         let mut out = Vec::new();
         JsonRecord::write(record, &mut out).expect("a vector takes writes");
         String::from_utf8(out).expect("text")
+    }
+
+    #[test]
+    fn the_absent_cell_is_null() {
+        // part VIII: a leaf a value does not hold (the payload of a `None`) is `null` in JSON, as an empty field in
+        // text and CSV: the same cell, three spellings, never a value in its place
+        assert_eq!(JsonRecord::scalar(&Cell::Absent), "null");
     }
 
     #[test]

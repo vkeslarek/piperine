@@ -523,7 +523,7 @@ mod tests {
             Cell::Bool(v) => out[at] = u8::from(*v),
             Cell::Real(v) => out[at..at + 8].copy_from_slice(&v.to_le_bytes()),
             Cell::Int(v) => out[at..at + 4].copy_from_slice(&(*v as i32).to_le_bytes()),
-            Cell::Text(_) | Cell::Composite(_) => panic!("no scalar net holds text or a composite"),
+            Cell::Text(_) | Cell::Composite(_) | Cell::Absent => panic!("no scalar net holds text, a composite or an absent cell"),
         }
         out
     }

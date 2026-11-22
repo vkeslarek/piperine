@@ -135,10 +135,10 @@ impl Probe {
         let value = shape.decode(bytes)?;
         match (leaf, value) {
             (None, value) => Ok(value),
-            // a leaf of a variant the value does not hold, or the `value` of an absent `Option`, shows an empty text at this row
+            // a leaf of a variant the value does not hold, or the `value` of an absent `Option`, is the absent cell at this row
             (Some(leaf), Cell::Composite(whole)) => match whole.leaf(leaf) {
                 Some(cell) => Ok(cell),
-                None if shape.can_hold_leaf(leaf) => Ok(Cell::Text(String::new())),
+                None if shape.can_hold_leaf(leaf) => Ok(Cell::Absent),
                 None => Err(Failure::Backend(format!("the value has no leaf `{leaf}`"))),
             },
             (Some(leaf), other) => (leaf.is_empty()).then_some(other).ok_or_else(|| Failure::Backend(format!("the value has no leaf `{leaf}`"))),
