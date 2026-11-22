@@ -9,7 +9,7 @@ use piperine_api::{Record, Streams};
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier, Solver, TransientAnalysisOptions};
 
-use crate::support::{build, first_edge_value, transient};
+use crate::support::{build, first_edge_value};
 
 /// The model files of one directory of `tests/`.
 pub struct SourceRun {

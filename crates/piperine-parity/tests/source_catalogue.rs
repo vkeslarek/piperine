@@ -22,10 +22,7 @@ mod mixed;
 #[path = "buck/support.rs"]
 mod support;
 
-use support::{build, first_edge_value, transient};
-
-/// One nanosecond in ticks.
-const NS: i64 = 1_000_000;
+use support::{build, first_edge_value};
 
 /// How far the solver may move a value it was given as a current into 1 ohm: its `gmin` and
 /// round-off, not a tolerance of the rows (the rows' values are bit for bit in a reaction).
@@ -47,9 +44,8 @@ fn project(name: &str, source: &str) -> Project {
 /// A reaction's output: the type of its carrier and what the row writes to it.
 struct Row {
     ty: &'static str,
-    /// The initial value of the carrier: the type's zero unless the row names one (a carrier has a
-    /// value from the start, §3.3.4).
-    init: Option<&'static str>,
+    /// The initial value of the carrier: the type's zero (a carrier has a value from the start, §3.3.4).
+    init: &'static str,
     expr: String,
 }
 
@@ -60,21 +56,17 @@ impl Row {
             "f64" => "0.0",
             _ => "0",
         };
-        Row { ty, init: Some(zero), expr: expr.into() }
-    }
-
-    fn starting_at(ty: &'static str, init: &'static str, expr: impl Into<String>) -> Row {
-        Row { ty, init: Some(init), expr: expr.into() }
+        Row { ty, init: zero, expr: expr.into() }
     }
 
     /// `Bit<ty>`, or `Bit` for a `bool`; the initial value on the declaring module's `out` port
     /// only (a signal handed to an `out` port with an initial value is `E0223`, §5.2.6).
     fn carrier(&self, with_init: bool) -> String {
-        match (self.ty, self.init.filter(|_| with_init)) {
-            ("bool", Some(init)) => format!("Bit = {init}"),
-            ("bool", None) => "Bit".to_string(),
-            (ty, Some(init)) => format!("Bit<{ty}> = {init}"),
-            (ty, None) => format!("Bit<{ty}>"),
+        match (self.ty, with_init) {
+            ("bool", true) => format!("Bit = {}", self.init),
+            ("bool", false) => "Bit".to_string(),
+            (ty, true) => format!("Bit<{ty}> = {}", self.init),
+            (ty, false) => format!("Bit<{ty}>"),
         }
     }
 }
