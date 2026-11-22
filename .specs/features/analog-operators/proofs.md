@@ -1,6 +1,6 @@
 # analog-operators proofs
 
-**HEAD**: 9687036f
+**HEAD**: fa580cf6
 **Tree**: clean
 **Shell**: /bin/sh
 **Result**: 45 pass, 72 fail
@@ -188,17 +188,17 @@ help: available test targets:
 
 ```
 test the_transient_step_cap_is_a_tenth_of_the_print_step ... ok
-test tran_floor ... ok
-test tran_corner ... ok
-test uic_rc ... ok
-test tran_jump ... ok
-test tran_clipper ... ok
 test uic_rc_runs_and_prints_the_skip_line_without_ngspice ... ok
+test uic_rc ... ok
+test tran_floor ... ok
+test tran_clipper ... ok
+test tran_jump ... ok
 test tran_rc_with_a_scaled_derivative ... ok
+test tran_corner ... ok
 test tran_rc ... ok
 test tran_dq ... ok
 
-test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.64s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.26s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/parity_tran.rs (/var/tmp/piperine-target-d/debug/deps/parity_tran-1f68c93d92106e3e)
@@ -271,7 +271,7 @@ running 2 tests
 test ac_rc_with_a_scaled_derivative ... ok
 test ac_rc ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.03s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.08s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/parity_ac.rs (/var/tmp/piperine-target-d/debug/deps/parity_ac-ddd91a46c3793786)
@@ -290,13 +290,13 @@ help: a target with a similar name exists: `source_host`
 ```
 running 8 tests
 test its_device_passes_the_partials_verifier ... ok
-test two_inputs_sharing_a_name_sum_into_one_series ... ok
-test an_input_with_no_stimulus_is_refused_by_name ... ok
-test the_band_total_integrates_the_density_as_ngspice_does ... ok
-test a_term_output_adds_its_direct_noise_to_the_circuit_path ... ok
 test a_flow_output_reads_amperes_per_root_hertz ... ok
-test the_input_referred_density_divides_by_the_transfer_from_the_input ... ok
+test a_term_output_adds_its_direct_noise_to_the_circuit_path ... ok
+test an_input_with_no_stimulus_is_refused_by_name ... ok
 test a_differential_output_reads_the_pair ... ok
+test two_inputs_sharing_a_name_sum_into_one_series ... ok
+test the_band_total_integrates_the_density_as_ngspice_does ... ok
+test the_input_referred_density_divides_by_the_transfer_from_the_input ... ok
 
 test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
@@ -313,7 +313,7 @@ test a_construct_outside_the_subset_is_p0001 ... ok
 test p0001_names_the_construct ... ok
 test std_types_outside_the_subset_are_p0001 ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.58s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.60s
 
     Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/types_subset.rs (/var/tmp/piperine-target-d/debug/deps/types_subset-57a42cb007e51583)
@@ -324,16 +324,16 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ```
 running 9 tests
 test report::the_report_takes_roots_groups_by_name_else_instance_and_carries_the_totals ... ok
-test the_output_and_input_flags_win_over_the_keys ... ok
-test a_noise_run_without_output_or_sweep_is_p0010 ... ok
 test a_key_of_another_analysis_is_p0010_in_a_noise_run ... ok
+test a_noise_run_without_output_or_sweep_is_p0010 ... ok
+test the_output_and_input_flags_win_over_the_keys ... ok
 test resolution::an_output_or_input_that_names_nothing_is_e0801 ... ok
-test run::an_input_adds_inoise_and_its_total ... ok
-test run::the_library_returns_rows_totals_and_group_densities ... ok
-test run::a_design_with_no_noise_source_prints_zero_and_succeeds ... ok
 test run::a_noise_run_prints_freq_onoise_and_the_total ... ok
+test run::an_input_adds_inoise_and_its_total ... ok
+test run::a_design_with_no_noise_source_prints_zero_and_succeeds ... ok
+test run::the_library_returns_rows_totals_and_group_densities ... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.51s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.52s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/noise.rs (/var/tmp/piperine-target-d/debug/deps/noise-de9847af3e7fa6ea)
@@ -348,7 +348,7 @@ test the_new_keys_have_flags ... ok
 test each_new_analysis_writes_csv ... ok
 test each_new_analysis_prints_header_records_and_table ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.68s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.63s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/analyses.rs (/var/tmp/piperine-target-d/debug/deps/analyses-3e9aa3dc5dbc2976)
@@ -417,18 +417,18 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run clioptions` - exit 0
 
 ```
+test csv_writes_the_table_and_prints_wrote ... ok
 test records_go_to_the_file_as_json_lines_and_not_to_stdout ... ok
 test a_passing_check_is_hidden_a_failing_one_shown_and_all_checks_shows_both ... ok
-test csv_writes_the_table_and_prints_wrote ... ok
-test a_relative_output_path_is_under_the_project ... ok
 test simparam_flag_is_repeatable_and_a_non_number_is_p0010 ... ok
+test a_relative_output_path_is_under_the_project ... ok
 test the_divider_with_r2_at_1k_gives_5 ... ok
 test the_stream_flag_keeps_only_that_stream ... ok
 test tnom_key_and_flag_default_to_27 ... ok
 test a_param_is_checked_at_equality_and_against_the_others ... ok
 test a_long_transient_at_the_default_resolution_lands_its_crossings ... ok
 
-test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.56s
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.22s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/options.rs (/var/tmp/piperine-target-d/debug/deps/options-d07736c36fa4a077)
@@ -437,7 +437,7 @@ test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run apioptions` - exit 0
 
 ```
-test temp_is_celsius_read_by_temperature ... ok
+test tolerance_keys_reach_the_context ... ok
 test tnom_key_and_flag_default_to_27 ... ok
 test the_tnom_key_of_a_run_table_reaches_the_session_context ... ok
 test a_smaller_trtol_takes_more_steps ... ok
@@ -448,7 +448,7 @@ test maxrounds_bounds_the_operating_point ... ok
 test a_twenty_second_transient_runs_at_the_default_resolution ... ok
 test a_hundred_second_transient_runs_at_the_default_resolution ... ok
 
-test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.77s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.69s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/options.rs (/var/tmp/piperine-target-d/debug/deps/options-5b5980cc81321f7a)
@@ -458,16 +458,16 @@ test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 running 6 tests
-test isrc_r ... ok
-test diode_rs ... ok
 test diode_rs_runs_and_prints_the_skip_line_without_ngspice ... ok
-test diode_series ... ok
+test diode_rs ... ok
+test isrc_r ... ok
 test divider ... ok
+test diode_series ... ok
 test diode_rs_with_rs_zero_merges_and_matches_rdiode ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.03s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.97s
 
-    Finished `test` profile [unoptimized] target(s) in 0.10s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/parity_op.rs (/var/tmp/piperine-target-d/debug/deps/parity_op-eac8afb1dbfbcbd7)
 ```
 
@@ -503,15 +503,15 @@ help: a target with a similar name exists: `probes`
 
 ```
 running 5 tests
-test natures_with_different_flow_names_at_a_port_are_e0251 ... ok
 test a_flow_abstol_of_one_nanoampere_reaches_its_branch ... ok
+test natures_with_different_flow_names_at_a_port_are_e0251 ... ok
 test a_nature_only_tightens_the_session_abstol_of_a_branch ... ok
 test a_potential_abstol_of_one_millivolt_reaches_its_node ... ok
 test compatible_natures_take_the_smaller_abstol_and_the_divider_holds ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
 
-    Finished `test` profile [unoptimized] target(s) in 0.10s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/natures.rs (/var/tmp/piperine-target-d/debug/deps/natures-edaace15ba5a99ea)
 ```
 
@@ -522,16 +522,16 @@ running 9 tests
 test a_settle_event_is_refused_by_name ... ok
 test a_host_source_body_is_rejected_by_name ... ok
 test a_body_with_an_amended_form_is_rejected_by_name ... ok
-test the_unknown_nodes_are_refused_by_name ... ok
-test the_interpreter_refuses_each_analog_structure_form_by_name ... ok
 test a_digital_body_is_rejected_by_name ... ok
 test each_composite_values_form_is_refused_by_name ... ok
+test the_unknown_nodes_are_refused_by_name ... ok
+test the_interpreter_refuses_each_analog_structure_form_by_name ... ok
 test an_analog_body_without_new_forms_still_runs_on_the_interpreter ... ok
 test the_interpreter_refuses_each_new_form_by_name ... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 
-    Finished `test` profile [unoptimized] target(s) in 0.09s
+    Finished `test` profile [unoptimized] target(s) in 0.08s
      Running tests/frozen.rs (/var/tmp/piperine-target-d/debug/deps/frozen-1902f3691d3ff8e6)
 ```
 
@@ -539,18 +539,16 @@ test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 running 6 tests
-test tran_rc_prints_the_bytes_it_printed_before_the_long_run ... ok
 test the_three_op_twins_run_on_both_backends ... ok
-test the_two_backends_print_the_same_bytes ... ok
 test the_sweep_and_transient_twins_run_on_both_backends ... ok
-test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok
+test tran_rc_prints_the_bytes_it_printed_before_the_long_run ... ok
+test the_two_backends_print_the_same_bytes ... ok
 test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
+test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 23.30s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 22.46s
 
-    Blocking waiting for file lock on package cache
-    Blocking waiting for file lock on package cache
-    Finished `test` profile [unoptimized] target(s) in 0.14s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/twins.rs (/var/tmp/piperine-target-d/debug/deps/twins-9b01bd7200d69219)
 ```
 
@@ -560,15 +558,15 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 7 tests
 test a_keyword_identifier_is_raw_and_the_abi_name_is_not ... ok
 test a_body_without_analog_prints_no_terms_function ... ok
+test each_function_is_a_generic_fn_and_each_body_a_device_mod ... ok
 test the_five_m1_bodies_print_as_the_golden_files ... ok
 test every_item_sits_under_its_path_and_origin ... ok
-test each_function_is_a_generic_fn_and_each_body_a_device_mod ... ok
 test transpiling_twice_gives_the_same_bytes ... ok
 test a_design_with_nothing_to_run_has_no_module ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.14s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.17s
 
-    Finished `test` profile [unoptimized] target(s) in 0.24s
+    Finished `test` profile [unoptimized] target(s) in 0.08s
      Running tests/golden.rs (/var/tmp/piperine-target-d/debug/deps/golden-ab85f3ee5d658ee1)
 ```
 
@@ -588,17 +586,17 @@ help: available test targets:
 
 ```
 running 7 tests
-test contract::tests::phase_is_gated_on_the_magnitude_floor ... ok
-test contract::tests::a_rejection_names_the_ngspice_version ... ok
 test contract::tests::holds_is_abstol_plus_reltol_of_the_larger ... ok
+test contract::tests::a_rejection_names_the_ngspice_version ... ok
+test contract::tests::phase_is_gated_on_the_magnitude_floor ... ok
 test contract::tests::new_domains_carry_a_rationale ... ok
-test contract::tests::a_rejection_names_point_values_bound_and_rationale ... ok
 test contract::tests::two_zeros_are_accepted ... ok
 test contract::tests::the_five_contracts_carry_bounds_and_rationale ... ok
+test contract::tests::a_rejection_names_point_values_bound_and_rationale ... ok
 
 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 41 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
+    Finished `test` profile [unoptimized] target(s) in 0.10s
      Running unittests src/lib.rs (/var/tmp/piperine-target-d/debug/deps/piperine_parity-6187a033365891a7)
 ```
 
@@ -615,23 +613,23 @@ test the_layout_guards_report_planted_trees ... ok
 test every_twin_has_its_files_in_one_scenario_directory ... ok
 test every_twin_has_a_cir_and_a_test ... ok
 
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-    Finished `test` profile [unoptimized] target(s) in 0.10s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/parity_corpus.rs (/var/tmp/piperine-target-d/debug/deps/parity_corpus-0b598b4d30604325)
 ```
 
 `Run docs` - exit 0
 
 ```
-test the_buck_readme_says_when_to_run_the_buck_on_demand ... ok
-test the_instructions_name_the_integrated_gate_and_the_buck_on_demand ... ok
-test state_holds_the_explicit_unknowns_decision ... ok
-test the_buck_spec_holds_the_bench_bounds ... ok
 test the_per_level_feature_is_recorded_as_dropped ... ok
+test the_instructions_name_the_integrated_gate_and_the_buck_on_demand ... ok
+test the_buck_readme_says_when_to_run_the_buck_on_demand ... ok
 test the_instruction_files_say_the_host_crates_build ... ok
-test state_records_the_unknown_semantics_decision ... ok
 test the_roadmap_is_forward_looking ... ok
+test state_records_root_e2e ... ok
+test the_buck_spec_holds_the_bench_bounds ... ok
+test state_records_the_derived_param_decision ... ok
 test abi_md_describes_the_unreleased_contract ... ok
 test the_book_no_longer_says_settle_is_not_compiled ... ok
 
@@ -646,16 +644,16 @@ test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ```
 test the_chapter_shows_fmt_and_says_comments_stay ... ok
 test the_chapter_shows_the_session_options ... ok
-test blinky_runs_to_its_stop_in_the_book ... ok
-test the_cycle_counter_prints_three_pulses ... ok
 test a_plot_draws_a_curve_and_a_legend_per_real_signal_and_a_lane_per_digital_one ... ok
-test the_plot_in_the_chapter_is_the_file_the_binary_writes ... ok
+test the_cycle_counter_prints_three_pulses ... ok
 test the_clipper_runs_as_the_book_prints ... ok
+test the_plot_in_the_chapter_is_the_file_the_binary_writes ... ok
+test blinky_runs_to_its_stop_in_the_book ... ok
 test the_chapter_runs_each_new_analysis ... ok
 test the_rc_output_blocks_are_what_the_binary_prints ... ok
 test every_cli_listing_of_the_book_is_what_the_binary_prints ... ok
 
-test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 39.73s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 39.49s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/book.rs (/var/tmp/piperine-target-d/debug/deps/book-a1f18a8423c7ed6b)
@@ -664,20 +662,20 @@ test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 `Run inventory` - exit 0
 
 ```
+test the_owner_and_disputed_rules_name_what_they_break ... ok
 test a_model_across_blocks_names_one_test ... ok
-test every_block_of_the_book_has_one_row ... ok
-test no_row_diverges ... ok
+test refused_rows_name_tests_that_expect_their_refusal ... ok
 test run_rows_name_tests_that_run_their_model ... ok
-test no_block_row_is_pending ... ok
+test every_block_of_the_book_has_one_row ... ok
 test every_listing_that_does_not_run_names_its_gap ... ok
 test refused_rows_and_gaps_section_11_agree ... ok
 test every_row_names_an_existing_test ... ok
 test the_book_reads_every_block ... ok
 test the_book_uses_no_removed_name ... ok
 
-test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/book/inventory_guard.rs (/var/tmp/piperine-target-d/debug/deps/book_inventory-1a21c47b4e1a6a60)
 ```
 
@@ -687,7 +685,7 @@ test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 running 1 test
 test slew_limits_an_ideal_step_to_its_rate ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.10s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.13s
 
     Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/source_slew.rs (/var/tmp/piperine-target-d/debug/deps/source_slew-5ffa113f3c8c4d72)
@@ -698,14 +696,14 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ```
 running 7 tests
 test its_devices_pass_the_partials_verifier ... ok
-test a_step_that_reads_no_jump_never_retakes ... ok
-test the_first_step_after_an_operating_point_that_holds_a_settle_commit_is_first_order ... ok
 test a_crossing_made_by_a_jump_retakes_the_step ... ok
-test endless_retakes_fail_with_e0504 ... ok
+test a_step_that_reads_no_jump_never_retakes ... ok
 test a_crossing_made_by_a_step_that_reads_a_settle_commit_retakes_it ... ok
+test the_first_step_after_an_operating_point_that_holds_a_settle_commit_is_first_order ... ok
+test endless_retakes_fail_with_e0504 ... ok
 test a_second_round_retake_runs_settle_once_and_delivers_its_settle_commits ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
 
     Finished `test` profile [unoptimized] target(s) in 0.08s
      Running tests/jump_retake.rs (/var/tmp/piperine-target-d/debug/deps/jump_retake-313fbf3cb14da38c)
@@ -714,10 +712,10 @@ test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run spectext` - exit 0
 
 ```
-test time_point_runs_the_procedure ... ok
-test the_step_that_reads_a_jump_is_first_order ... ok
-test the_library_declares_no_net_nature ... ok
+test the_host_drives_a_tops_node_ports_e0810_e0811 ... ok
 test tran_in_fences_is_the_module ... ok
+test the_library_declares_no_net_nature ... ok
+test the_step_that_reads_a_jump_is_first_order ... ok
 test section_22_no_longer_says_std_is_in_the_earlier_spelling ... ok
 test there_is_no_slice_and_no_borrow_in_the_grammar ... ok
 test zero_bytes_are_the_default_value ... ok
@@ -725,7 +723,7 @@ test no_spec_text_says_stimulus_is_host_only ... ok
 test every_error_code_is_defined_exactly_once ... ok
 test the_removed_words_are_absent_from_the_specification ... ok
 
-test result: ok. 120 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+test result: ok. 120 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
 
     Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/spec_text.rs (/var/tmp/piperine-target-d/debug/deps/spec_text-909ae6bbf798e8b5)
@@ -734,18 +732,18 @@ test result: ok. 120 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fi
 `Run digital` - exit 0
 
 ```
-test a_reopened_instant_settles_at_its_last_microstep ... ok
-test a_settled_change_is_one_observation ... ok
+test a_settle_commit_with_an_advancing_delay_is_an_ordinary_commit ... ok
 test an_instant_reports_boundary_fired_and_final ... ok
+test a_settled_change_is_one_observation ... ok
 test previous_is_the_value_before_the_microstep ... ok
-test settle_records_carry_the_last_microstep_index ... ok
 test start_at_commits_init_at_its_tick ... ok
-test start_commits_inits_and_fires_start ... ok
-test the_traced_instant_of_section_15_1 ... ok
+test settle_records_carry_the_last_microstep_index ... ok
 test two_commits_to_one_net_settle_to_one_write ... ok
+test the_traced_instant_of_section_15_1 ... ok
+test start_commits_inits_and_fires_start ... ok
 test an_instant_that_never_goes_quiet_is_e0501_naming_the_nets ... ok
 
-test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
     Finished `test` profile [unoptimized] target(s) in 0.04s
      Running tests/instant.rs (/var/tmp/piperine-target-d/debug/deps/instant-cf6184e72773bc7c)
@@ -755,18 +753,15 @@ test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 running 5 tests
-test the_power_law_integral_is_exact_on_power_laws ... ok
 test a_zero_density_takes_the_plain_rectangle ... ok
-test a_stimulus_column_carries_its_partials_and_phase ... ok
+test the_power_law_integral_is_exact_on_power_laws ... ok
 test a_term_linearization_carries_its_unknown_and_noise_partials ... ok
+test a_stimulus_column_carries_its_partials_and_phase ... ok
 test the_power_law_integral_tracks_a_two_pole_sum_against_a_fine_trapezoid ... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 
-    Blocking waiting for file lock on package cache
-    Blocking waiting for file lock on package cache
-    Blocking waiting for file lock on package cache
-    Finished `test` profile [unoptimized] target(s) in 0.15s
+    Finished `test` profile [unoptimized] target(s) in 0.07s
      Running tests/noise_numerics.rs (/var/tmp/piperine-target-d/debug/deps/noise_numerics-8567472147f9a2de)
 ```
 
@@ -774,9 +769,9 @@ test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 running 4 tests
+test a_resistor_divider_has_its_thermal_noise_on_devices ... ok
 test its_devices_pass_the_partials_verifier ... ok
 test test_per_source_noise_reporting_and_conservation ... ok
-test a_resistor_divider_has_its_thermal_noise_on_devices ... ok
 test a_shared_noise_input_cancels_across_the_pair ... ok
 
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
