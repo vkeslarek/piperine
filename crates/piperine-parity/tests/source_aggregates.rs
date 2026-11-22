@@ -76,6 +76,38 @@ fn struct_expressions_give_rusts_values() {
 }
 
 #[test]
+fn a_braced_literal_in_a_condition_keeps_its_parentheses() {
+    // CV-09 AC 2 (round 2, finding 9): `p == (Pair { .. })` in an `if` of a function, a variant one, a `while` and an
+    // `if` of a reaction runs as Rust runs it; the generated Rust keeps the parentheses Rust asks for.
+    #[derive(PartialEq)]
+    struct Pair {
+        a: u8,
+        b: bool,
+    }
+    #[derive(PartialEq)]
+    enum Shape {
+        Dot,
+        Rect { w: u8, h: u8 },
+    }
+    let p = Pair { a: 3, b: false };
+    let in_if = if p == (Pair { a: 3, b: false }) { 1u8 } else { 2 };
+    let in_variant = if (Shape::Rect { w: 1, h: 3 }) == (Shape::Rect { w: 1, h: 2 }) { 1u8 } else { 2 };
+    let mut counted = Pair { a: 0, b: false };
+    let mut trips = 0u8;
+    while counted != (Pair { a: 3, b: false }) {
+        counted.a += 1;
+        trips += 1;
+    }
+    let in_reaction = if p == (Pair { a: 3, b: false }) { 1u8 } else { 2 };
+    let dot = if Shape::Dot == (Shape::Rect { w: 1, h: 2 }) { 1u8 } else { 2 };
+    RUN.assert_commits(
+        "literal_conditions.msl",
+        &["f0", "f1", "f2", "r0", "r1"],
+        &[CarrierBytes::byte(in_if), CarrierBytes::byte(in_variant), CarrierBytes::byte(trips), CarrierBytes::byte(in_reaction), CarrierBytes::byte(dot)],
+    );
+}
+
+#[test]
 fn field_reads_give_the_fields() {
     // CV-09 AC 3, CV-10 AC 1 (§1.3.4): `s.x` and `t.0` read a field, and a field of a field.
     let t = (1u8, 2.5f64, true);

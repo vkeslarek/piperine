@@ -53,7 +53,7 @@ impl ValuePrinter<'_> {
             Expr::VariantField { expr, variant, field } => {
                 let (name, fields) = self.variant_label(self.ir.expr_type(*expr), *variant).ok_or_else(|| self.unsupported(e, "a variant field of a value that is not an enum"))?;
                 let label = fields.get(*field as usize).map(|(label, _)| label.clone()).ok_or_else(|| self.unsupported(e, "a variant field out of range"))?;
-                atom(format!("match {} {{ {name} {{ {label}: field_, .. }} => field_, _ => rt::Panic::raise({:?}.to_string()) }}", self.piece(*expr)?.text, format!("{}: the value is not the variant {name}", self.site(e))))
+                atom(format!("match {} {{ {name} {{ {label}: field_, .. }} => field_, _ => rt::Panic::raise({:?}.to_string()) }}", self.piece(*expr)?.at(Prec::Atom), format!("{}: the value is not the variant {name}", self.site(e))))
             }
             Expr::OptionPack { is, value } => {
                 let ValueType::Option(inner) = self.ir.expr_type(e) else { return Err(self.unsupported(e, "an option that is not typed as an Option")) };
@@ -109,7 +109,7 @@ impl ValuePrinter<'_> {
         let types: Vec<ValueType> = declared.iter().map(|(_, ty)| ty.clone()).collect();
         let values = self.parts(fields, &types)?;
         let name = TypeItems::new(self.ir).name(ty).to_string();
-        Ok(Piece::new(self.constructed(&name, *form, declared, &values), Prec::Atom))
+        Ok(Piece::new(self.constructed(&name, *form, declared, &values), Self::literal_prec(*form)))
     }
 
     /// `E::V { n: x }`, `E::V(x)` or `E::V` for variant `variant` of the enum `ty`.
@@ -124,7 +124,14 @@ impl ValuePrinter<'_> {
         let real = if self.plain { "f64" } else { "R" };
         let owner = if items.holds_real(&ValueType::Enum(ty)) { format!("{}::<{real}>", items.name(ty)) } else { items.name(ty).to_string() };
         let name = format!("{owner}::{}", Text::ident(&chosen.name));
-        Ok(Piece::new(self.constructed(&name, chosen.form, &chosen.fields, &values), Prec::Atom))
+        Ok(Piece::new(self.constructed(&name, chosen.form, &chosen.fields, &values), Self::literal_prec(chosen.form)))
+    }
+
+    /// How strongly a literal of `form` binds: a braced one (`S { a: x }`) is no atom, because Rust
+    /// refuses it bare in the head of an `if`, a `while` or a `match`, so it is parenthesized wherever
+    /// it is an operand or a scrutinee; a unit or a tuple one is an atom.
+    fn literal_prec(form: piperine_ir::FieldsForm) -> Prec {
+        if form == piperine_ir::FieldsForm::Named { Prec::Low } else { Prec::Atom }
     }
 
     /// `name` built from `values` the way `form` writes it.
