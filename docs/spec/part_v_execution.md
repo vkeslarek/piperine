@@ -176,10 +176,12 @@ next microstep under T3. It is an ordinary commit with one fixed due instant.
   arrives at `t_next` is solved (step 3.4). That step reads the value `(t_next, 0)` applies to
   that carrier, and the definitions and `resolve`s that follow from it. When other commits to
   the same level are due at `(t_next, 0)`, the step reads the winner under §12.1.2.
-- **S3.** The solver has no settle commit yet. A commit due at `t_next` enters its queue as a
-  digital event, which is a landing (`predict_step`): the step that arrives at `t_next` is
-  an ordinary step, tested for truncation error, and the step that reads the change restarts
-  the integrator, as for any change due before the solve (§15.2). A settle commit is an explicit lag of one step.
+- **S3.** The solver delivers a settle commit to the analog side when the settle phase of `t`
+  ends, with the integrator's restart: the step that arrives at `t_next` is a landing and reads
+  it, so it is the step that reads a jump (§15.2 rule 6), first order and sized and tested by
+  that rule. The first step after an operating point that holds a settle commit is treated the
+  same way. A commit due at `t_next` that is not a settle commit is run after the solve of
+  `t_next` like any other change at `t_next` (§15.2).
 - **S4.** Event times strictly between `t` and `t_next` read the old value.
 - **S5.** If the step to `t_next` is rejected, the commit moves with `t_next`.
 - **S6.** Where time does not advance, the next time point is the next sweep point (§16.1).
@@ -238,31 +240,27 @@ output reaches `q` at the next clock edge.
 
 A **jump** is the change, at one time `t`, of something `analog` reads at `(t, n)`: a discrete
 carrier or a param. The last solution accepted before the change is its **left value**: the
-solution of the previous time point for a change made before step 3.4 of §15 solves `t`, the
-solution at `t` for a change made after it. The **right value** is the solution of the first
+solution at the time point whose instant makes the change. The **right value** is the solution of the first
 transient step that reads the change. One rule defines the jump:
 
 **A jump has no solve of its own.** The change is read by a transient step (§17.2) and by
 nothing else. The solver lands exactly on the time `t` of the change (§17.2.2). Which step reads
-it, and how, depends on when the change is made:
+it depends on when the change is made:
 
-- **Before the solve of `t`.** What is due at microstep 0 of `t` (a commit, an `at`), and every
-  change the microsteps before §15 step 3.4 make from it through commits with no delay,
-  definitions and `resolve`s, is applied before the step that arrives at `t` is solved, so
-  that step reads it. The step that reads the change is the one treated specially
-  (rule 6): a step that arrives at a landing and reads no change is an ordinary step, tested
-  for truncation error like any other (§17.2.1), and the step that reads the change restarts
-  the integrator.
-- **After the solve of `t`.** A change made by a reaction that reads the solution at `t` (a
-  crossing found by that solve, a converter's threshold, a probe after step 3.4), and by the
-  microsteps that follow from it, is read by the first step after `t`. That step is an
-  ordinary one: it is tested for truncation error and the integrator does not restart. A
-  settle commit is a change due before the solve of `t_next` (§15 S3).
+- **At `t`.** The step that arrives at `t` solves on the left value, the discrete state as
+  it stood before `t`, and reads no change: it is an ordinary step, tested for truncation
+  error like any other (§17.2.1). What is due at microstep 0 of `t` (a commit, an `at`), the
+  microsteps that follow from it (commits with no delay, definitions and `resolve`s) and every
+  change a reaction that reads the solution at `t` makes (a crossing found by that solve, a
+  converter's threshold, a probe) run after that solve is accepted. The first step after `t`
+  reads all of them: it restarts the integrator and is sized and tested by rule 6. A settle
+  commit is a change due before the solve of `t_next` (§15 S3): the step that arrives at the
+  next time point reads it, and rule 6 sizes and tests that step likewise.
 - **A host `set`** is read by the first step after `t`, with the exemption and the restarts
   of the paragraph below.
 
 When several changes occur at one `t`, in successive microsteps, the step that reads the first
-of them reads them all, unless step 3.4 solves `t` between two of them.
+of them reads them all.
 
 **Host `set`.** A `set` due at `t` lands the solver on `t` but is not applied before the step
 that arrives there: that step is tested for truncation error like any other and does not read

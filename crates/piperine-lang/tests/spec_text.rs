@@ -1187,9 +1187,16 @@ fn jump_has_no_solve_of_its_own() {
     let r6 = &s[s.find(" 6. ").expect("rule 6")..s.find(" 7. ").expect("rule 7")];
     assert!(r6.contains("backward Euler"), "{r6}");
     assert!(r6.contains("drops the previous derivative"), "{r6}");
-    let landing = &s[s.find("**Before the solve of `t`.**").expect("before-the-solve case")
-        ..s.find("**After the solve of `t`.**").expect("after-the-solve case")];
-    assert!(landing.contains("is an ordinary step, tested for truncation error like any other"), "{landing}");
+    assert!(!s.contains("**Before the solve of `t`.**") && !s.contains("**After the solve of `t`.**"), "the two cases are one: the step solves, then the instant runs");
+    let at = &s[s.find("**At `t`.**").expect("the case of a change at `t`")..s.find("**A host `set`** is read").expect("the host set case")];
+    for fact in [
+        "The step that arrives at `t` solves on the left value, the discrete state as it stood before `t`, and reads no change: it is an ordinary step, tested for truncation error like any other",
+        "run after that solve is accepted",
+        "The first step after `t` reads all of them: it restarts the integrator and is sized and tested by rule 6",
+    ] {
+        assert!(at.contains(fact), "§15.2 lacks \"{fact}\": {at}");
+    }
+    assert!(!s.contains("is applied before the step that arrives at `t` is solved"), "the old order is gone");
 }
 
 #[test]
@@ -2281,18 +2288,18 @@ fn part_v_rule_6_tests_the_step_that_reads_a_jump_with_the_first_order_estimate(
 
 #[test]
 fn part_v_the_step_that_arrives_at_a_landing_is_an_ordinary_step() {
-    // TP-04 AC 3: §15.2 "Before the solve of `t`" and §15 S3 no longer exempt the arriving step.
+    // TP-04 AC 3: §15.2 "At `t`" and §15 S3 no longer exempt the arriving step.
     let text = spec("part_v_execution.md");
     let jump = flat(&section(&text, "### 15.2 "));
     assert!(
-        jump.contains("a step that arrives at a landing and reads no change is an ordinary step, tested for truncation error like any other"),
-        "§15.2 \"Before the solve\" lacks the ordinary landing step"
+        jump.contains("it is an ordinary step, tested for truncation error like any other (§17.2.1)"),
+        "§15.2 \"At `t`\" lacks the ordinary landing step"
     );
     assert!(!jump.contains("so that step is exempt from the truncation-error test"), "the old exemption is gone");
     let settle = flat(&text);
     assert!(
-        settle.contains("the step that arrives at `t_next` is an ordinary step, tested for truncation error"),
-        "S3 lacks the tested arriving step"
+        settle.contains("it is the step that reads a jump (§15.2 rule 6), first order and sized and tested by that rule"),
+        "S3 lacks the step that reads the settle commit"
     );
 }
 
@@ -2301,7 +2308,7 @@ fn appendix_c_2_tests_the_landing_step_and_the_jump_step() {
     // TP-04 AC 3, TP-05 AC 6: the "the jump", "truncation error" and restart-constant rows.
     let text = flat(&spec("appendix_c_implementation.md"));
     for fact in [
-        "the step that arrives there reads no change and is an ordinary step, tested for truncation error like any other",
+        "the step that arrives there solves on the value before the instant (the left value, `AnalogSide::attempt`), reads no change and is an ordinary step, tested for truncation error like any other",
         "a step that ends on a landing and reads no jump is tested like any other",
         "tested with a first-order estimate taken from its own two backward-Euler stages (`jump_lte`)",
         "the step is tested with the first-order estimate, retaken at an eighth",
@@ -2315,7 +2322,7 @@ fn appendix_c_2_tests_the_landing_step_and_the_jump_step() {
 fn appendix_d_and_f_restart_rows_say_the_step_to_the_landing_is_ordinary() {
     // TP-04 AC 3: the two gallery "Restart" rows.
     for (file, fact) in [
-        ("appendix_d_gallery_analog.md", "The step to `t` is an ordinary step, tested for truncation error. The step after it reads the change"),
+        ("appendix_d_gallery_analog.md", "The step to `t` is an ordinary step, tested for truncation error. The step after it reads the change, is first order, is sized and tested by rule 6"),
         ("appendix_f_gallery_mixed.md", "The step to `t` is an ordinary step, tested for truncation error; the step after it reads the change"),
     ] {
         let text = flat(&spec(file));
