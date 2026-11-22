@@ -204,12 +204,23 @@ fn the_chapter_has_a_part_per_namespace() {
     assert!(absent.is_empty(), "no heading with `std::<name>` for: {absent:?}; headings: {heads:?}");
 }
 
+/// Prelude exports the Book no longer names because the explicit model removed them (`Known`, `merge`,
+/// `Wire`, `Tri`, `tri`, `SumNet`) while `std` still declares them; owned by explicit-unknowns T23.
+const STD_BEHIND_THE_BOOK: [&str; 5] = ["Known", "merge", "tri", "Tri", "SumNet"];
+
 #[test]
 fn the_chapter_names_every_prelude_export() {
     let exports = prelude_exports(&embedded());
     assert!(exports.len() >= 80, "the prelude exports {} names", exports.len());
-    let absent = missing(&chapter(&content(), "core-std"), &exports);
+    let html = chapter(&content(), "core-std");
+    let absent: Vec<String> = missing(&html, &exports).into_iter().filter(|name| !STD_BEHIND_THE_BOOK.contains(&name.as_str())).collect();
     assert!(absent.is_empty(), "the chapter does not name these prelude exports: {absent:?}");
+    // the exceptions are honest: each is still exported and still unnamed (explicit-unknowns removed it from
+    // the Book ahead of the files; its task T23 deletes it from `std` and empties the list)
+    for name in STD_BEHIND_THE_BOOK {
+        assert!(exports.iter().any(|e| e == name), "{name} is no longer exported: drop it from STD_BEHIND_THE_BOOK");
+        assert!(missing(&html, &[name.to_string()]).len() == 1, "the chapter names {name} again: drop it from STD_BEHIND_THE_BOOK");
+    }
 }
 
 #[test]
@@ -230,6 +241,10 @@ fn the_chapter_explains_the_prelude_and_the_engine_items() {
     assert!(code_spans(part.split("<h3>").next().unwrap()).iter().any(|s| s == "std::prelude"), "the part on the engine names `std::prelude`");
 }
 
+/// Markers of chapter blocks that use library names the standard library does not hold yet (core-std#6, owned by
+/// `resolved-nets` B3 and later, tasks T27 to T32 of the roadmap).
+const BLOCKS_AHEAD_OF_STD: [&str; 1] = ["pub nature IrqLine"];
+
 #[test]
 fn chapter_blocks_build_against_std() {
     let html = chapter(&content(), "core-std");
@@ -238,6 +253,12 @@ fn chapter_blocks_build_against_std() {
     for text in msl {
         let design = Design::builder().source("top.msl", &text).build();
         let found: Vec<String> = design.diagnostics().iter().map(|d| format!("{}: {}", d.diagnostic.code, d.diagnostic.message)).collect();
+        // a block that needs `Driven` and `Resolve` (core-std#6) is registered in GAPS.md section 11 as
+        // refused until the feature `resolved-nets` adds them: it must still fail with E0161 on exactly those names
+        if BLOCKS_AHEAD_OF_STD.iter().any(|marker| text.contains(marker)) {
+            assert!(!found.is_empty() && found.iter().all(|f| f.starts_with("E0161")), "a block ahead of std now builds or fails otherwise: drop it from BLOCKS_AHEAD_OF_STD: {found:?}");
+            continue;
+        }
         assert!(found.is_empty(), "a chapter block does not build against std: {found:?}\n{text}");
     }
 }
