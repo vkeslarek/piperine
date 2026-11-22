@@ -84,6 +84,24 @@ fn the_flag_methods_do_not_resolve() {
 }
 
 #[test]
+fn unknown_is_a_name_that_does_not_resolve() {
+    // EU-02 AC 1 (C4): `Unknown` in a value position is no name: `E0161` at the name, whose help names the three ways to
+    // say what a carrier holds before a drive, an initial value, `Option<T>` and `Logic`
+    for (src, name) in [
+        ("module Top() { }\nanalog for Top { let a = Unknown; }", "Unknown"),
+        ("module Top() { signal s: Bit<u8> = Unknown; }", "Unknown"),
+    ] {
+        let design = Design::builder().source("top.msl", src).build();
+        assert_eq!(codes_of(design.diagnostics()), ["E0161"], "{src}");
+        let found = &design.diagnostics()[0].diagnostic;
+        let span = found.span();
+        assert_eq!(&src[span.start..span.end], name, "the error sits at the name: {src}");
+        let help = found.help.as_deref().unwrap_or_default();
+        assert!(["initial value", "Option<T>", "Logic"].iter().all(|word| help.contains(word)), "{src}: the help: {help}");
+    }
+}
+
+#[test]
 fn logic_and_matches_bits_wait_for_logic() {
     // EU-02 (GAPS L58): until `Logic` (T45) the two functions of §22.1.4 are refused by name with `P0001`
     for call in ["let e: u4 = logic(\"10xx\");", "let g = matches_bits(5_u4, \"01x1\");"] {
