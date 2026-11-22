@@ -1143,7 +1143,7 @@ idt(x, 1.0, reset: rst)
 A value is what its type says it is. A binary type holds binary values and nothing else. A type
 that may hold "not determined" or "nothing" says so in its declaration: `Logic<N>`
 ([§22.1](part_vii_stdlib.md#221-values-and-bit)) for the first, `Option<T>` for the second.
-This section states the six rules that follow. It has no errors of its own: each refusal is
+This section states the seven rules that follow. It has no errors of its own: each refusal is
 the error of the rule that applies (`E0161`, `E0180`, `E0187`).
 
 **Static semantics**
