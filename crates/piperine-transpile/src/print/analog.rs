@@ -384,8 +384,8 @@ impl<'a> AnalogPrinter<'a> {
                     self.values.pin_type(ty)?,
                     ValuePrinter::zero(ty)
                 ),
-                // a composite param is the bytes of a composite pin: its default where nothing wrote it
-                Some(ty) if ty.is_composite() => format!("let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i})).known_or(Default::default());", RealLift::new(self.body.ir(), &TypeItems::new(self.body.ir())).concrete_type(ty)),
+                // a composite param is the bytes of a composite pin; one nothing wrote is refused by name
+                Some(ty) if ty.is_composite() => format!("let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i})).known_or_refuse({name:?});", RealLift::new(self.body.ir(), &TypeItems::new(self.body.ir())).concrete_type(ty)),
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
             Source::Carrier(c) | Source::CarrierPrevious(c) => match self.body.carriers().get(c as usize) {

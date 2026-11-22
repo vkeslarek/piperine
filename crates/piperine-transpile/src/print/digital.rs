@@ -120,8 +120,8 @@ impl<'a> DigitalPrinter<'a> {
                     let (rust, zero) = (values.type_of(ty)?, ValuePrinter::zero(ty));
                     format!("let {name} = rt::Flagged::<{rust}>::decode({cx}.bytes({i})).known_or({zero});")
                 }
-                // a composite param is the bytes of a composite pin: its default where nothing wrote it
-                Some(ty) if ty.is_composite() => format!("let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i})).known_or(Default::default());", values.pin_type(ty)?),
+                // a composite param is the bytes of a composite pin; one nothing wrote is refused by name
+                Some(ty) if ty.is_composite() => format!("let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i})).known_or_refuse({name:?});", values.pin_type(ty)?),
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
             Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::LimitLast(_) | Source::LimitAge(_) => {

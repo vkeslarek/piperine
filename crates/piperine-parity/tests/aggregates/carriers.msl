@@ -38,11 +38,12 @@ digital for Moves {
 }
 
 // Reads of the whole value: how often it changed, its fields and the value before the change.
-module Watch(in u: Bit<Pair>, in s: Bit<Pair>, out now_a: Bit<u8>, out before_a: Bit<u8>, out s_changes: Bit<u8>) {}
+module Watch(in u: Bit<Pair>, in s: Bit<Pair>, out now_a: Bit<u8>, out before_a: Bit<u8>, out before_known: Bit<bool>, out s_changes: Bit<u8>) {}
 digital for Watch {
     on u.changed() {
         now_a <- u.a;
-        before_a <- u.prev().a;
+        before_known <- u.prev().is_known();
+        if u.prev().is_known() { before_a <- u.prev().a; }
     }
     on s.changed() { s_changes <- s_changes.known_or(0) + 1; }
 }
@@ -85,15 +86,25 @@ module Bench() {
     signal s: Bit<Pair>; signal t: Bit<(u8, bool)>; signal arr: Bit<[u8; 3]>; signal tx: Bit<Tx>; signal opt: Bit<Option<u8>>;
     signal u: Bit<Pair>; signal step: Bit<u8>; signal good: Bit<Tx>; signal bad: Bit<Tx>;
     signal r_t: Bit<u8>; signal r_arr: Bit<u8>; signal r_opt: Bit<u8>; signal r_tx: Bit<u8>; signal r_levels: Bit<[bool; 5]>; signal good_known: Bit<bool>; signal bad_known: Bit<bool>;
-    signal now_a: Bit<u8>; signal before_a: Bit<u8>; signal s_changes: Bit<u8>;
+    signal now_a: Bit<u8>; signal before_a: Bit<u8>; signal before_known: Bit<bool>; signal s_changes: Bit<u8>;
     signal w_pair: Bit<u8>; signal w_enum: Bit<u8>; signal w_wrap: Bit<u8>;
     signal level_a0: Bit<bool>; signal level_b: Bit<bool>;
     signal first: Bit<Pair>; signal defined: Bit<Pair>;
     let osc = Osc(clk) { f: 200M };
     let commits = Commits(clk, s, t, arr, tx, opt);
     let moves = Moves(clk, u, step, good, bad);
-    let watch = Watch(u, s, now_a, before_a, s_changes);
+    let watch = Watch(u, s, now_a, before_a, before_known, s_changes);
     let reads = Reads(t, arr, opt, tx, good, bad, r_t, r_arr, r_opt, r_tx, r_levels, good_known, bad_known);
     let widths = Widths(clk, s, w_pair, w_enum, w_wrap, level_a0, level_b);
     let defs = Defined(first, defined);
+}
+
+// A field of a composite that holds no value yet (`un` is never driven) is refused by name, where the
+// scalar `ux` of the same reaction reads unknown (§3.3.2, §5.1.1).
+module UnknownRead(in clk: Bit, in un: Bit<Pair>, out y: Bit<u8>) {}
+digital for UnknownRead { on clk.rise() { y <- un.a; } }
+module UnknownBench() {
+    signal clk: Bit; signal un: Bit<Pair>; signal y: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let read = UnknownRead(clk, un, y);
 }

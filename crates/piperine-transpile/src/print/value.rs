@@ -354,9 +354,9 @@ impl<'a> ValuePrinter<'a> {
 
     /// The read `variable` of a carrier or its previous value, as the expression `e` types it: the
     /// flagged variable itself, or, for a tuple, an array, a struct or an `Option` (a flag rides
-    /// only on a scalar), its value, an unknown one reading as the type's default.
+    /// only on a scalar), its value; an unknown one is refused by name (`known_or_refuse`).
     fn carried(&self, e: ExprId, variable: String) -> String {
-        if Self::is_flagged(self.ir.expr_type(e)) { variable } else { format!("{variable}.known_or(Default::default())") }
+        if Self::is_flagged(self.ir.expr_type(e)) { variable } else { format!("{variable}.known_or_refuse({variable:?})") }
     }
 
     /// The printed name of local `i`.
@@ -924,7 +924,7 @@ impl<'a> ValuePrinter<'a> {
             None => "None".to_string(),
         };
         let call = format!("{}.recast::<{target}>({tags})", self.flagged(expr)?.at(Prec::Atom));
-        let text = if Self::is_flagged(self.ir.expr_type(e)) { call } else { format!("{call}.known_or(Default::default())") };
+        let text = if Self::is_flagged(self.ir.expr_type(e)) { call } else { format!("{call}.known_or_refuse(\"a `cast`\")") };
         Ok(Piece::new(text, Prec::Atom))
     }
 

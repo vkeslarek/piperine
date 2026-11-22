@@ -22,7 +22,7 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 2 silent, 2 broken, 28 loud (L1 to L63 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the two `params-and-io` (L20, L39) and the eight `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63) and the two `resolved-nets` rows (L22, L23) closed, L9 narrowed to its `generics` part and L4 to generic enums, in six tables) plus
+**Counts.** 2 silent, 2 broken, 29 loud (L1 to L64 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the two `params-and-io` (L20, L39) and the eight `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63) and the two `resolved-nets` rows (L22, L23) closed, L9 narrowed to its `generics` part and L4 to generic enums, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 9 unproven.
 
@@ -120,6 +120,7 @@ quotes the text after `P0001:` unless another code is shown.
 | L21 | natures with `resolve`: `Wire`, `Tri`, `SumNet`; `others()`; relaxation of loops | §4 rule 2, §5.2.2, §8.2.3 | `resolved nature Wire` | L |
 | L24 | arrays of carriers (`[Bit; 8]`, `[Electrical; 4]`); element and field commits (`bits[3] <- true`) and definitions (an index that may be unknown merges every element it may name, §3.3.3: `unknown-semantics` US-04 AC 12 travels with this row) | §5.1.4, §12.1 | `array type`; `an element or field commit` | L, with L3 |
 | L25 | bundles: a `struct` of carriers, `flip`, bundle literals, `impl` on a bundle | §7 | `struct item used as a type`, `flip type` | L |
+| L64 | a plain read of a composite carrier that holds no value yet (a field, a copy, `prev()` before the first change of a `Bit<Pair>`, `Bit<(u8, u8)>`, `Bit<[T; N]>`, `Bit<Option<T>>`): it fails the run naming the instance and the carrier (`is_known()` first reads the flag). A composite carries one known byte, not a flag per field, and a scalar carrier in the same place reads unknown (§3.3.2, §5.1.1, §5.1.8). Owned by `explicit-unknowns` phase A (MD-78), which starts every carrier at a value or a `Default::default()` and so removes the case | §3.3.2, §5.1.1, §5.1.8 | run fault: `` `un` is a composite that holds no value yet `` | `explicit-unknowns` A |
 
 Works, by probe: continuous natures with their own access names (`State` runs; `Thermal` and a
 project's nature pass the checker), `potential`/`flow`, a flow probe of a potential branch, a

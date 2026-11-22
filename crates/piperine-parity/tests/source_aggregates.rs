@@ -809,7 +809,20 @@ fn composite_carriers_initialize_define_commit_and_change() {
     let rise = |k: i64| 5 * NS / 2 + 5 * NS * k;
     assert_eq!(carriers.changes("u"), vec![(rise(0), Carriers::known(&[7, 0])), (rise(1), Carriers::known(&[8, 0]))]);
     assert_eq!(carriers.changes("now_a"), vec![(rise(0), byte(7)), (rise(1), byte(8))], "u.a where u changed");
-    assert_eq!(carriers.changes("before_a"), vec![(rise(0), byte(0)), (rise(1), byte(7))], "u.prev().a: the default before the first change, then 7");
+    // §5.1.8: before the first change `u.prev()` is unknown, so the model reads no field of it (a plain read of it is
+    // refused by name, `an_unknown_composite_is_refused_by_name`) and `u.prev().a` is 7 only at the second change
+    assert_eq!(carriers.changes("before_known"), vec![(rise(0), byte(0)), (rise(1), byte(1))], "u.prev().is_known(): unknown before the first change");
+    assert_eq!(carriers.changes("before_a"), vec![(rise(1), byte(7))], "u.prev().a: nothing before the first change, then 7");
+}
+
+#[test]
+fn an_unknown_composite_is_refused_by_name() {
+    // §3.3.2, §5.1.1: a composite carrier nothing drove holds no value, so a field of it is no known
+    // value; it fails the run naming the instance and the carrier, never a default.
+    let fault = the_fault("carriers.msl", "UnknownBench");
+    assert!(fault.contains("UnknownBench.read"), "the fault names the instance: {fault}");
+    assert!(fault.contains("`un`"), "the fault names the carrier: {fault}");
+    assert!(fault.contains("holds no value"), "the fault says why: {fault}");
 }
 
 #[test]

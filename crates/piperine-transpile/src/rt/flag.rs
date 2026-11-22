@@ -418,6 +418,18 @@ impl<T: Carried> Flagged<T> {
         if bytes[T::WIDTH] == 0 || !T::is_valid(bytes) { Flagged::unknown() } else { Flagged::known(T::decode(bytes)) }
     }
 
+    /// The value of a composite pin read plainly (a field, a copy, `prev()`): a composite
+    /// carries one known byte, not a flag per field, so an unknown one has no field to read (§3.3.2).
+    /// It is refused by name, never read as the type's default (`explicit-unknowns` phase A removes
+    /// the case, every carrier then starting with a value). Under unknown control the panic makes
+    /// the path unknown (§1 rule 13).
+    pub fn known_or_refuse(self, carrier: &str) -> T {
+        if !self.known {
+            Panic::raise(format!("`{carrier}` is a composite that holds no value yet, so it has no field or copy to read; test `{carrier}.is_known()` first"));
+        }
+        self.value
+    }
+
     /// Writes the pin's bytes (`encode`) at the start of `out`, the buffer of a write cell.
     pub fn write(self, out: &mut [u8]) {
         let bytes = self.encode();
