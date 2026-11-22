@@ -23,13 +23,13 @@ use support::model::Model;
 #[test]
 fn the_buck_bench_starts_with_the_supervisor_off() {
     // cli#44 (run): the buck's `benches/startup.msl`, which the package of examples/buck runs as `startup`:
-    // the first rows of its table (a short run of the same top) have the supervisor off (mode 0) and the
+    // the first rows of its table (a short run of the same top) have the supervisor off (mode `Off`) and the
     // reference at 0, as the chapter says of the listing
     let buck = Model::example("buck");
     let ran = buck.of_run("startup").run(Overrides { stop: Some(2e-6), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{failure}"));
     assert_eq!(ran.table.rows.len(), 5, "0 to 2 us on the 0.5 us grid of the run");
     for row in 0..5 {
-        assert_eq!(ran.cell(row, "Startup.mode"), &Cell::Int(0), "row {row}: the supervisor is off");
+        assert_eq!(ran.cell(row, "Startup.mode"), &Cell::Text("Off".into()), "row {row}: the supervisor is off");
         assert_eq!(ran.cell(row, "Startup.buck.ctl.reference"), &Cell::Int(0), "row {row}: the reference is 0");
     }
 }

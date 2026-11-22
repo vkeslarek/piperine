@@ -5,9 +5,9 @@
 //! rules and fed what the table holds before each edge; the capacitor is judged against
 //! [`PiecewiseRc`] built on the reference's phases, under TRAN_VOLTAGE.
 
-use piperine::{Field, ParamValue, Record};
+use piperine::{Cell, Field, ParamValue, Record};
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
-use piperine_parity::scenario::{CompletedRun, Stimulus};
+use piperine_parity::scenario::{CompletedRun, NamedColumn, Stimulus};
 
 use crate::clock::ClockEdges;
 use crate::rc::{PiecewiseRc, RcSegment};
@@ -217,22 +217,50 @@ impl Stream {
         records.iter().filter(|record| record.stream == stream).collect()
     }
 
-    /// The integer field `name` of `record`.
-    fn integer(record: &Record, name: &str) -> i128 {
+    /// The declaration index of the phase the field `name` of `record` names.
+    fn phase(record: &Record, name: &str) -> i128 {
         match record.fields.iter().find(|(label, _)| label == name).map(|(_, value)| value) {
-            Some(Field::Int(value)) => *value,
-            other => panic!("the `{}` record at {:e} s has no integer `{name}`: {other:?}", record.stream, record.time),
+            Some(Field::Variant(variant)) => Printed::index("phase", variant),
+            other => panic!("the `{}` record at {:e} s has no variant `{name}`: {other:?}", record.stream, record.time),
         }
     }
 }
 
-/// The printed integer column `name` as a vector indexed by row.
+/// The printed column `name` of an enum as a vector indexed by row: the declaration index of the variant each
+/// row prints (a host reads the variant's name since composite-values CV-22).
 struct Printed;
 
 impl Printed {
-    /// The value of each row of `name`; an unknown row panics.
+    /// The variants of the enum column `name`, in declaration order.
+    fn variants(name: &str) -> &'static [&'static str] {
+        match name {
+            "phase" => &["Idle", "Charge", "Hold", "Dump", "Fault"],
+            "fault" => &["Clear", "OverVoltage"],
+            other => panic!("`{other}` is no enum column of the sequencer"),
+        }
+    }
+
+    /// The declaration index of the variant named `variant` of the enum column `name`.
+    fn index(name: &str, variant: &str) -> i128 {
+        Printed::variants(name).iter().position(|candidate| *candidate == variant).unwrap_or_else(|| panic!("`{variant}` is no variant of `{name}`")) as i128
+    }
+
+    /// The value of each row of `name`: the declaration index of the variant an enum column prints, the
+    /// integer or the 0 or 1 of any other; an unknown row panics.
     fn column(ran: &CompletedRun, name: &str) -> Vec<i128> {
-        PrintedColumn::integers(&ran.table, name).into_iter().enumerate().map(|(row, (_, value))| value.unwrap_or_else(|| panic!("`{name}` is unknown at row {row}"))).collect()
+        if !["phase", "fault"].contains(&name) {
+            return PrintedColumn::integers(&ran.table, name).into_iter().enumerate().map(|(row, (_, value))| value.unwrap_or_else(|| panic!("`{name}` is unknown at row {row}"))).collect();
+        }
+        let column = NamedColumn::find(&ran.table, name);
+        ran.table
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(row, cells)| match &cells[column.index()] {
+                Cell::Text(variant) => Printed::index(name, variant),
+                other => panic!("`{name}` is not a variant's name at row {row}: {other:?}"),
+            })
+            .collect()
     }
 }
 
@@ -256,7 +284,7 @@ fn the_phase_follows_the_reference_at_every_edge() {
 
 #[test]
 fn the_enums_print_as_their_variant_indices() {
-    // IT-07 AC 2: `phase` prints 0 (Idle) to 4 (Fault) and `fault` 0 (Clear) or 1 (OverVoltage), by declaration order
+    // IT-07 AC 2: `phase` prints the names Idle to Fault and `fault` Clear or OverVoltage; their declaration order is the index
     let ran = Suite::get().ran(StateMachineScenario::RUN);
     let mut phases: Vec<i128> = Printed::column(ran, "phase");
     phases.sort_unstable();
@@ -361,6 +389,6 @@ fn one_phase_record_per_change_at_its_edge() {
     assert_eq!(records.len(), changes.len(), "one record per change");
     for (record, edge) in records.iter().zip(changes) {
         assert!((record.time - Timeline::clock().rising(edge)).abs() < 1e-12, "the record at {:e} s is at edge {edge} ({:e} s)", record.time, Timeline::clock().rising(edge));
-        assert_eq!(Stream::integer(record, "to"), phase[edge], "the new phase of edge {edge}");
+        assert_eq!(Stream::phase(record, "to"), phase[edge], "the new phase of edge {edge}");
     }
 }

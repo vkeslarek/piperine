@@ -143,7 +143,7 @@ fn the_register_with_a_setup_check_is_refused_for_the_generic_monitor() {
 #[test]
 fn the_probe_writes_a_check_and_a_log_record() {
     // core-std#9 (run): `Probe`: `require("ok_at_edge", ok)` and `log(Severity::Info, "edge")` on the rising
-    // edge: a `checks` record that passes and a `log` record with severity 0 and the message
+    // edge: a `checks` record that passes and a `log` record with severity `Info` and the message
     let chapter = Chapter::read();
     let after = "module Top() { signal clk: Bit = false; signal ok: Bit = true; let p = Probe(clk, ok); }\ndigital for Top { on at(1u) { clk <- true; } }\n";
     let ran = chapter.wrapped("probe.msl", "", "core-std#9", after).run(Commands::transient(3e-6, None)).unwrap_or_else(|failure| panic!("{failure}"));
@@ -154,7 +154,7 @@ fn the_probe_writes_a_check_and_a_log_record() {
     let logs = ran.stream("log");
     assert_eq!(logs.len(), 1);
     assert_eq!(Fields::of(logs[0], "msg"), &Field::Text("edge".to_string()));
-    assert_eq!(Fields::of(logs[0], "severity"), &Field::Int(0), "Severity::Info");
+    assert_eq!(Fields::of(logs[0], "severity"), &Field::Variant("Info".to_string()), "Severity::Info is read by its name (CV-22)");
 }
 
 #[test]

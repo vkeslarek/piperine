@@ -202,7 +202,7 @@ fn the_reporting_functions_emit_the_same_records() {
     let first = |stream: &str| records.iter().filter(|r| r.stream == stream).map(|r| r.fields.clone()).collect::<Vec<_>>();
     let text = |value: &str| Field::Text(value.to_string());
     let field = |name: &str, value: Field| (name.to_string(), value);
-    assert_eq!(first("log")[0], vec![field("severity", Field::Int(1)), field("msg", text("hello"))], "log: Severity::Warning is the second variant");
+    assert_eq!(first("log")[0], vec![field("severity", Field::Variant("Warning".to_string())), field("msg", text("hello"))], "log: Severity::Warning is read by its name (CV-22)");
     let checks = first("checks");
     assert_eq!(checks[0], vec![field("kind", text("require")), field("name", text("held")), field("pass", Field::Bool(true))]);
     assert_eq!(checks[1], vec![field("kind", text("cover")), field("name", text("seen")), field("pass", Field::Bool(true))]);
