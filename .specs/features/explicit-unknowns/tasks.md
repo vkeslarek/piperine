@@ -1241,7 +1241,7 @@ Proof: run src | test a_binary_carrier_is_read_as_its_value ... ok
 Proof: run src | test control_on_a_carrier_runs_one_path ... ok
 
 **C3** - The IR builds no flagged value type and the generated reaction holds no merge (EU-01, AC 3; T32)
-Proof: run ir | test no_value_type_is_flagged ... ok
+Proof: run src | test the_buck_elaborated_from_source_holds_no_flag_and_no_merge ... ok
 
 **C4** - `Unknown` is `E0161` with a help naming an initial value, `Option<T>` and `Logic` (EU-02, AC 1; T28)
 Proof: run types | test unknown_is_a_name_that_does_not_resolve ... ok

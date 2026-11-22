@@ -18,7 +18,10 @@ mod support;
 #[path = "source/run.rs"]
 mod run;
 
+use std::path::Path;
+
 use piperine_api::{Field, Record};
+use piperine_parity::project::Project;
 use mixed::Seen;
 use run::SourceRun;
 use support::{build, series, transient};
@@ -49,6 +52,23 @@ fn a_binary_carrier_of_any_shape_is_read_as_its_value_everywhere() {
     for record in seen {
         let values: Vec<Field> = record.fields.iter().map(|(_, field)| field.clone()).collect();
         assert_eq!(values, [Field::Int(5), Field::Int(10), Field::Int(9), Field::Int(7), Field::Int(6), Field::Int(8)], "n, twice(n), g.hi, spread(g), a[1], third(a) in a reaction");
+    }
+}
+
+#[test]
+fn the_buck_elaborated_from_source_holds_no_flag_and_no_merge() {
+    // EU-01 AC 3 (C3): the buck, elaborated from `examples/buck` (every digital and mixed form the model uses), prints
+    // an IR and generates Rust that name no flag, no merge and no known byte: not in a type, a read, a commit or a
+    // reaction. The words are the removed forms of the old model (`flagged`, `known_or`, `commit_with`, `maybe`, ...)
+    let project = Project::new(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck/src/lib.msl"));
+    let ir = std::sync::Arc::new(project.elaborate("Buck").unwrap_or_else(|rejection| panic!("{rejection}")));
+    let generated = piperine_transpile::Transpiler::new(ir.clone()).expect("the buck transpiles").source().expect("its source");
+    let printed = format!("{}\n{}", ir.print_structural(), ir);
+    assert!(printed.lines().count() > 200 && generated.lines().count() > 200, "a real model: {} IR lines, {} generated lines", printed.lines().count(), generated.lines().count());
+    let removed = ["flagged", "known_or", "is_known", ".high()", "Unknown", "merge(", "level_is", "level_value", "commit_with", "commit_flag", "Flagged", "HAS_KNOWN", "known_of", "maybe", "MAYBE", "unknown"];
+    for form in removed {
+        assert!(!printed.contains(form), "the IR prints `{form}`");
+        assert!(!generated.contains(form), "the generated Rust holds `{form}`: {}", generated.lines().find(|l| l.contains(form)).unwrap_or_default());
     }
 }
 
