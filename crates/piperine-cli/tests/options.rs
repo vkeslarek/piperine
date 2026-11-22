@@ -311,12 +311,17 @@ fn an_unwritable_plot_names_the_path_and_exits_1() {
     assert!(!project.path().join("op.svg").exists());
 }
 
-/// The settings the flags `args` of `piperine run` give, as the command line reads them.
-fn flags(args: &[&str]) -> piperine_api::Overrides {
-    let line: Vec<&str> = ["piperine", "run", "x"].iter().chain(args).copied().collect();
-    match piperine_cli::Cli::parse(line) {
-        Ok(piperine_cli::Invocation::Run { overrides, .. }) => overrides,
-        other => panic!("{args:?} parse as a run, found {:?}", other.err()),
+/// The command line of `piperine run`, as the library reads it.
+struct CommandLine;
+
+impl CommandLine {
+    /// The settings the flags `args` of `piperine run` give, as the command line reads them.
+    fn flags(args: &[&str]) -> piperine_api::Overrides {
+        let line: Vec<&str> = ["piperine", "run", "x"].iter().chain(args).copied().collect();
+        match piperine_cli::Cli::parse(line) {
+            Ok(piperine_cli::Invocation::Run { overrides, .. }) => overrides,
+            other => panic!("{args:?} parse as a run, found {:?}", other.err()),
+        }
     }
 }
 
@@ -325,9 +330,9 @@ fn tnom_key_and_flag_default_to_27() {
     // AO-08 AC 1: `--tnom` takes degrees Celsius and reaches the run's settings, whatever the
     // design reads: with the flag the request holds 50, without it the table's value stands, and
     // a run with the flag prints the divider's operating point like one without (it reads no `tnom`).
-    assert_eq!(flags(&["--tnom", "50"]).tnom, Some(50.0));
-    assert_eq!(flags(&["--tnom", "-10"]).tnom, Some(-10.0));
-    assert_eq!(flags(&[]).tnom, None);
+    assert_eq!(CommandLine::flags(&["--tnom", "50"]).tnom, Some(50.0));
+    assert_eq!(CommandLine::flags(&["--tnom", "-10"]).tnom, Some(-10.0));
+    assert_eq!(CommandLine::flags(&[]).tnom, None);
     let dir = tempfile::tempdir().expect("tmp");
     let plain = stdout_of(&piperine_in(dir.path(), &["run", twin("divider.msl").to_str().expect("path"), "--analysis", "op"]));
     let hot = stdout_of(&piperine_in(dir.path(), &["run", twin("divider.msl").to_str().expect("path"), "--analysis", "op", "--tnom", "50"]));
@@ -358,7 +363,7 @@ fn simparam_flag_is_repeatable_and_a_non_number_is_p0010() {
     // AO-07 AC 5: `--simparam <name>=<value>` repeats, each entry reaching the request in the order
     // given (the divider reads no session parameter, so a run cannot show it); a value that is no
     // number is a P0010 naming the entry, exit 1, and nothing runs.
-    assert_eq!(flags(&["--simparam", "gain=2", "--simparam", "bias=0.5"]).simparam, [("gain".to_string(), 2.0), ("bias".to_string(), 0.5)]);
+    assert_eq!(CommandLine::flags(&["--simparam", "gain=2", "--simparam", "bias=0.5"]).simparam, [("gain".to_string(), 2.0), ("bias".to_string(), 0.5)]);
     let dir = tempfile::tempdir().expect("tmp");
     let divider = twin("divider.msl");
     let divider = divider.to_str().expect("path");

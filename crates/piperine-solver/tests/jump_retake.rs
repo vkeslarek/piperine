@@ -286,10 +286,10 @@ enum Trigger {
 /// `abi_devices.rs` holds each device to it).
 #[test]
 fn its_devices_pass_the_partials_verifier() {
-    partials::verify_every_function("Gate", Box::leak(Box::new(module::<Gate>("Gate"))));
-    partials::verify_every_function("Setter", Box::leak(Box::new(module::<Setter>("Setter"))));
-    partials::verify_every_function("SettleSetter", Box::leak(Box::new(module::<SettleSetter>("SettleSetter"))));
-    partials::verify_every_function("SettleMirror", Box::leak(Box::new(module::<SettleMirror>("SettleMirror"))));
+    partials::verify_every_function("Gate", Gate::module());
+    partials::verify_every_function("Setter", Setter::module());
+    partials::verify_every_function("SettleSetter", SettleSetter::module());
+    partials::verify_every_function("SettleMirror", SettleMirror::module());
 }
 
 struct Collect(Rc<RefCell<Vec<Observation>>>);

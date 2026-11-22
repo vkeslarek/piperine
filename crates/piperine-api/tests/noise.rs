@@ -63,33 +63,38 @@ mod resolution {
     use piperine_api::{Failure, Overrides, Project, Session};
     use piperine_transpile::Settings;
 
-    /// Opens a noise run of the AC RC twin with `output` and `input`.
-    fn open(output: &str, input: Option<&str>) -> Result<Session, Failure> {
-        let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/ac_rc.msl");
-        let project = Project::file(&path).unwrap_or_else(|f| panic!("{f}"));
-        let overrides = Overrides {
-            analysis: Some("noise".into()),
-            output: Some(output.into()),
-            input: input.map(str::to_string),
-            from: Some(1.0),
-            to: Some(1e6),
-            per_decade: Some(5),
-            backend: Some("interp".into()),
-            ..Overrides::default()
-        };
-        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-        let settings = Settings { rustc: None, cache: std::env::temp_dir() };
-        Session::open(&project, &spec, &settings)
+    /// The AC RC twin, opened for noise runs.
+    struct Twin;
+
+    impl Twin {
+        /// Opens a noise run of the AC RC twin with `output` and `input`.
+        fn open(output: &str, input: Option<&str>) -> Result<Session, Failure> {
+            let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/ac_rc.msl");
+            let project = Project::file(&path).unwrap_or_else(|f| panic!("{f}"));
+            let overrides = Overrides {
+                analysis: Some("noise".into()),
+                output: Some(output.into()),
+                input: input.map(str::to_string),
+                from: Some(1.0),
+                to: Some(1e6),
+                per_decade: Some(5),
+                backend: Some("interp".into()),
+                ..Overrides::default()
+            };
+            let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+            let settings = Settings { rustc: None, cache: std::env::temp_dir() };
+            Session::open(&project, &spec, &settings)
+        }
     }
 
     #[test]
     fn an_output_or_input_that_names_nothing_is_e0801() {
         // AO-05 AC 5: an output node, a `v(a, b)` leg, an `i(..)` instance and an input that
         // match nothing, and an input with no `ac_stim` (the resistor), are each E0801.
-        let probe = open("out", Some("v1")).expect("the output node and the source");
+        let probe = Twin::open("out", Some("v1")).expect("the output node and the source");
         assert_eq!(probe.noise_probe().and_then(|p| p.input.as_deref()), Some("AcRc.v1"));
         for (output, input) in [("nowhere", None), ("v(out, nowhere)", None), ("i(nobody)", None), ("out", Some("nobody")), ("out", Some("r1"))] {
-            match open(output, input) {
+            match Twin::open(output, input) {
                 Err(Failure::Host { code, .. }) => assert_eq!(code, "E0801", "{output} {input:?}"),
                 Err(other) => panic!("{output} {input:?}: {other}"),
                 Ok(_) => panic!("{output} {input:?} opened"),
@@ -117,37 +122,47 @@ mod run {
         fn record(&mut self, _: &Record) {}
     }
 
-    fn settings() -> Settings {
-        static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-        let dir = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
-        Settings { rustc: None, cache: dir.path().to_path_buf() }
+    /// The compile cache shared by the runs of this module.
+    struct Cache;
+
+    impl Cache {
+        fn settings() -> Settings {
+            static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
+            let dir = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
+            Settings { rustc: None, cache: dir.path().to_path_buf() }
+        }
     }
 
-    /// The finished session of a noise run of the AC RC twin from 1 kHz to 1 MHz, 1 point per
-    /// decade (`round(1 * 3) + 1 = 4` frequencies), and its table.
-    fn run(input: Option<&str>) -> (Session, Table) {
-        let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/ac_rc.msl");
-        let project = Project::file(&path).unwrap_or_else(|f| panic!("{f}"));
-        let overrides = Overrides {
-            analysis: Some("noise".into()),
-            output: Some("out".into()),
-            input: input.map(str::to_string),
-            from: Some(1e3),
-            to: Some(1e6),
-            per_decade: Some(1),
-            ..Overrides::default()
-        };
-        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-        let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
-        let table = session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
-        (session, table)
+    /// A finished noise run of the AC RC twin.
+    struct NoiseRun;
+
+    impl NoiseRun {
+        /// The finished session of a noise run of the AC RC twin from 1 kHz to 1 MHz, 1 point per
+        /// decade (`round(1 * 3) + 1 = 4` frequencies), and its table.
+        fn run(input: Option<&str>) -> (Session, Table) {
+            let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/ac_rc.msl");
+            let project = Project::file(&path).unwrap_or_else(|f| panic!("{f}"));
+            let overrides = Overrides {
+                analysis: Some("noise".into()),
+                output: Some("out".into()),
+                input: input.map(str::to_string),
+                from: Some(1e3),
+                to: Some(1e6),
+                per_decade: Some(1),
+                ..Overrides::default()
+            };
+            let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+            let mut session = Session::open(&project, &spec, &Cache::settings()).unwrap_or_else(|f| panic!("{f}"));
+            let table = session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
+            (session, table)
+        }
     }
 
     #[test]
     fn a_noise_run_prints_freq_onoise_and_the_total() {
         // AO-05 AC 1: columns `freq`, `onoise`; one row per frequency, 1e3 to 1e6 at one point
         // per decade is 4 rows; the summary is `onoise_total` alone.
-        let (session, table) = run(None);
+        let (session, table) = NoiseRun::run(None);
         assert_eq!(table.columns, ["freq", "onoise"]);
         let frequencies: Vec<f64> = table.rows.iter().map(|row| match row[0] { Cell::Real(f) => f, _ => panic!("a frequency") }).collect();
         assert_eq!(frequencies.len(), 4);
@@ -163,7 +178,7 @@ mod run {
     fn an_input_adds_inoise_and_its_total() {
         // AO-05 AC 2: with `input = v1` the table gains `inoise`, the summary `inoise_total`.
         // A noiseless circuit refers 0 to the input: 0 / |H|^2 = 0.
-        let (session, table) = run(Some("v1"));
+        let (session, table) = NoiseRun::run(Some("v1"));
         assert_eq!(table.columns, ["freq", "onoise", "inoise"]);
         let report = session.noise_report().expect("a report");
         let names: Vec<String> = Table::summary(report).into_iter().map(|(name, _)| name).collect();
@@ -174,7 +189,7 @@ mod run {
     fn the_library_returns_rows_totals_and_group_densities() {
         // AO-05 AC 8: the report carries the rows, the totals, the unit and the groups (none: no
         // device of the design has a noise source).
-        let (session, _) = run(Some("v1"));
+        let (session, _) = NoiseRun::run(Some("v1"));
         let report = session.noise_report().expect("a report");
         assert_eq!(report.frequencies.len(), 4);
         assert_eq!(report.output.len(), 4);
@@ -186,7 +201,7 @@ mod run {
     #[test]
     fn a_design_with_no_noise_source_prints_zero_and_succeeds() {
         // AO-05 edge case: no source means a density of 0 at every frequency, not a failure.
-        let (_, table) = run(None);
+        let (_, table) = NoiseRun::run(None);
         assert!(table.rows.iter().all(|row| row[1] == Cell::Real(0.0)), "{:?}", table.rows);
     }
 }
@@ -197,9 +212,14 @@ mod report {
     use piperine_api::noise::NoiseReport;
     use piperine_solver::prelude::{NoiseAnalysisResult, NoiseContribution, NoiseKind};
 
-    /// One contribution of `element`, named `source` (empty: unnamed), with the power density `psd`.
-    fn contribution(element: &str, source: &str, psd: &[f64]) -> NoiseContribution {
-        NoiseContribution { element: element.into(), source: source.into(), kind: NoiseKind::Thermal, integrated_sq: 0.0, psd: psd.to_vec() }
+    /// The contributions of a hand-built noise result.
+    struct Contributions;
+
+    impl Contributions {
+        /// One contribution of `element`, named `source` (empty: unnamed), with the power density `psd`.
+        fn contribution(element: &str, source: &str, psd: &[f64]) -> NoiseContribution {
+            NoiseContribution { element: element.into(), source: source.into(), kind: NoiseKind::Thermal, integrated_sq: 0.0, psd: psd.to_vec() }
+        }
     }
 
     #[test]
@@ -215,9 +235,9 @@ mod report {
             input_noise_sq: Some(vec![4.0, 9.0]),
             input_total: Some(2.5),
             contributions: vec![
-                contribution("top.r1", "thermal", &[9.0, 16.0]),
-                contribution("top.m1", "", &[4.0, 4.0]),
-                contribution("top.r2", "thermal", &[7.0, 9.0]),
+                Contributions::contribution("top.r1", "thermal", &[9.0, 16.0]),
+                Contributions::contribution("top.m1", "", &[4.0, 4.0]),
+                Contributions::contribution("top.r2", "thermal", &[7.0, 9.0]),
             ],
         };
         let report = NoiseReport::of(&result, "V/sqrt(Hz)");

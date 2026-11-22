@@ -140,7 +140,7 @@ impl TwinFlicker {
 /// The partials verifier holds this target's own device to the same guard as the helpers.
 #[test]
 fn its_device_passes_the_partials_verifier() {
-    partials::verify_every_function("TwinFlicker", Box::leak(Box::new(module::<TwinFlicker>("TwinFlicker"))));
+    partials::verify_every_function("TwinFlicker", TwinFlicker::module());
 }
 
 impl TwinFlicker {
