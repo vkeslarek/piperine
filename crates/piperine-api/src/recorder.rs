@@ -72,8 +72,11 @@ impl Recorder {
     pub(crate) fn new(columns: Vec<Column>, labels: Vec<String>, from: f64) -> Recorder {
         let mut by_path: HashMap<String, Vec<usize>> = HashMap::new();
         for (at, (column, label)) in columns.iter().zip(&labels).enumerate() {
-            if matches!(column, Column::Net { .. } | Column::Shaped { .. }) {
-                by_path.entry(label.clone()).or_default().push(at);
+            match column {
+                Column::Net { .. } => by_path.entry(label.clone()).or_default().push(at),
+                // a column showing one leaf of a net is still changed by the net's path
+                Column::Shaped { path, .. } => by_path.entry(path.clone()).or_default().push(at),
+                Column::Unknown { .. } | Column::Param { .. } | Column::Held { .. } => {}
             }
         }
         let held = vec![Cell::Unknown; columns.len()];
@@ -302,7 +305,7 @@ impl StepObserver for Tap {
         self.0.borrow_mut().step(step.time(), &|column| match column {
             Column::Unknown { index } => Ok(step.unknown(*index).map(Cell::Real)),
             Column::Net { id, ty } => step.net(*id).map(|bytes| Cell::decode(ty, bytes)).transpose(),
-            Column::Shaped { id, shape, leaf } => step.net(*id).map(|bytes| Probe::shown(shape, leaf.as_deref(), bytes)).transpose(),
+            Column::Shaped { id, shape, leaf, .. } => step.net(*id).map(|bytes| Probe::shown(shape, leaf.as_deref(), bytes)).transpose(),
             Column::Param { id, ty } => step.net(*id).map(|bytes| Cell::decode_param(ty, bytes)).transpose(),
             Column::Held { held } => Ok(Some(held.cell_at(step.time()))),
         });

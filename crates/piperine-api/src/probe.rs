@@ -39,8 +39,9 @@ pub enum Column {
     Unknown { index: usize },
     /// A discrete net, by its id in the digital plan, with its type.
     Net { id: u32, ty: ValueType },
-    /// A discrete net holding a composite or an enum, by its id in the digital plan, and how to read it.
-    Shaped { id: u32, shape: CellShape, leaf: Option<String> },
+    /// A discrete net holding a composite or an enum, by its id in the digital plan and its path (the
+    /// net's own, whatever leaf the column shows), and how to read it.
+    Shaped { id: u32, path: String, shape: CellShape, leaf: Option<String> },
     /// A param, by the id of its net in the digital plan, with its type: the value with no known byte.
     Param { id: u32, ty: ValueType },
     /// A param no net holds, read from the host's table over the run.
@@ -177,7 +178,7 @@ impl Probe {
             Probe::Shaped { path, shape, leaf } => {
                 let bound = circuit.bound().ok_or_else(|| none("the circuit binds no design"))?;
                 let at = bound.digital.plan().nets.iter().position(|n| n.name == *path).ok_or_else(|| none("no net of the digital plan has that path"))? as u32;
-                Ok(Column::Shaped { id: at, shape: shape.clone(), leaf: leaf.clone() })
+                Ok(Column::Shaped { id: at, path: path.clone(), shape: shape.clone(), leaf: leaf.clone() })
             }
             Probe::Net { path, ty } | Probe::Param { path, ty } => {
                 let bound = circuit.bound().ok_or_else(|| none("the circuit binds no design"))?;
