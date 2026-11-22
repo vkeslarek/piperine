@@ -117,7 +117,7 @@ pub(crate) mod tests {
         });
         assert_eq!(
             made,
-            [(2, vec![44, 1, 1, 0], 5e-9), (0, vec![1, 1], 0.0), (4, vec![7, 1, 1, 1], 0.0), (0, LOW.to_vec(), 1e-9)]
+            [(2, vec![44, 1], 5e-9), (0, vec![1], 0.0), (4, vec![7, 1, 1, 1], 0.0), (0, LOW.to_vec(), 1e-9)]
         );
         let made = react_with(|_| {
             let mut commits = Commits::new();

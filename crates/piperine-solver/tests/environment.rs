@@ -273,7 +273,7 @@ impl Device for FlagProbe {
         Ok(())
     }
     fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
-        let read = [0, 1, 2, 3].map(|i| cx.bytes(i) == [1, 1]);
+        let read = [0, 1, 2, 3].map(|i| cx.bytes(i) == [1]);
         FLAGS.with(|f| f.borrow_mut().push(read));
         Ok(Flow::Continue)
     }

@@ -39,7 +39,6 @@ fn every_constant_has_its_pinned_value() {
             (leaf::I8, 6), (leaf::I16, 7), (leaf::I32, 8), (leaf::I64, 9), (leaf::F32, 10),
             (leaf::F64, 11),
         ]),
-        ("field_flag", &[(field_flag::HAS_KNOWN, 1)]),
         ("op", &[(op::FLOW, 1), (op::DDT, 2), (op::DELAY, 3)]),
         ("input", &[(input::LIMIT, 1), (input::NOISE, 2), (input::STIM, 3)]),
         ("watch", &[(watch::VAR, 1), (watch::CROSS, 2), (watch::CAP, 3), (watch::TRACE, 4)]),

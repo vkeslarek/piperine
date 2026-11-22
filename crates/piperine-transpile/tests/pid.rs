@@ -216,10 +216,8 @@ fn value_at(series: &[(i64, Vec<u8>)], at: i64) -> &[u8] {
     &series.iter().rev().find(|(t, _)| *t <= at).expect("an initial value").1
 }
 
-/// A little-endian integer of `bytes` bytes, sign-extended when `signed`; its known byte must
-/// be set (a net the loop wrote is never unknown here).
+/// A little-endian integer of `bytes` bytes, sign-extended when `signed`.
 fn decode(raw: &[u8], bytes: usize, signed: bool) -> i32 {
-    assert_eq!(raw[bytes], 1, "the value is known: {raw:?}");
     let mut buf = [0u8; 4];
     buf[..bytes].copy_from_slice(&raw[..bytes]);
     let v = u32::from_le_bytes(buf);

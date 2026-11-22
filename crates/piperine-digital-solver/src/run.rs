@@ -7,8 +7,7 @@
 
 use piperine_abi::caller::{CallError, Commit};
 use piperine_abi::device::{Access, Flow, cell_lens};
-use piperine_abi::layout::{is_canonical, leaf_size};
-use piperine_abi::raw::{Cell, Statement, cell, field_flag, reaction_flag, statement_flag, status};
+use piperine_abi::raw::{Cell, Statement, cell, reaction_flag, statement_flag, status};
 
 use crate::dag::Step;
 use crate::net::{NetId, NetKind};
@@ -125,23 +124,6 @@ pub fn fire_net(plan: &DigitalPlan, store: &mut Store, dirty: &mut DirtySet, obs
     dirty.mark_net(plan, net);
 }
 
-/// P3 on a net after a write: a field whose known byte is 0 holds no value, so its value bytes are
-/// zero. `who` names the writer.
-pub fn check_canonical(plan: &DigitalPlan, store: &Store, net: NetId, at: Tick, who: &str) -> Result<(), DigitalError> {
-    let spec = &plan.nets[net.0 as usize];
-    match plan.net_layout(net) {
-        Some(layout) if spec.kind == NetKind::Discrete && !is_canonical(layout, store.value(net)) => {
-            Err(DigitalError::Fault {
-                code: 0,
-                message: format!("net `{}` holds non-canonical bytes after a write (P3: a field with a known byte of 0 is all zero)", spec.name),
-                tick: at.0,
-                instance: who.to_string(),
-            })
-        }
-        _ => Ok(()),
-    }
-}
-
 /// One input or output buffer of `len` bytes, filled with what `cell` names.
 fn cell_bytes(
     pins: &[Binding],
@@ -229,17 +211,8 @@ fn call_function(
     let mut out = Vec::new();
     for (c, buf) in func.writes.iter().zip(&outputs) {
         let Binding::Net(net) = inst.pins[c.index as usize] else { continue };
-        let pin = shape.pins.get(c.index as usize).expect("bind validated the index");
         let event = plan.nets[net.0 as usize].kind == NetKind::Event;
         let bytes = buf.bytes().to_vec();
-        if !event && !is_canonical(&pin.layout, &bytes) {
-            return Err(Stop::Error(DigitalError::Fault {
-                code: 0,
-                message: format!("function {} wrote non-canonical bytes to pin {} (P3)", func.name.as_str(), pin.name.as_str()),
-                tick: at.0.0,
-                instance: inst.path.clone(),
-            }));
-        }
         out.push(Out { net, event, bytes });
     }
     Ok(out)
@@ -382,43 +355,15 @@ fn relax(
         }
     }
     if !settled {
-        for (i, net) in written.iter().enumerate() {
-            if before[i] == after[i] {
-                continue;
-            }
-            let name = &plan.nets[net.0 as usize].name;
-            let layout = plan.net_layout(*net).expect("a written net has a pin");
-            let mut value = after[i].clone();
-            for field in layout.fields.iter() {
-                let width = leaf_size(field.leaf).expect("bind validated the layout");
-                for e in 0..field.count as usize {
-                    let at_v = field.offset as usize + e * width..field.offset as usize + (e + 1) * width;
-                    let known = field.known as usize + e;
-                    let has_known = field.flags & field_flag::HAS_KNOWN != 0;
-                    let moved = before[i][at_v.clone()] != after[i][at_v.clone()]
-                        || (has_known && before[i][known] != after[i][known]);
-                    if !moved {
-                        continue;
-                    }
-                    if !has_known {
-                        let instance = plan.dag().function(fns[0]).name.clone();
-                        return Err(Stop::Error(DigitalError::Fault {
-                            code: 0,
-                            message: format!("net `{name}` did not settle and its field holds no known byte (D1)"),
-                            tick: at.0.0,
-                            instance,
-                        }));
-                    }
-                    value[at_v].fill(0);
-                    value[known] = 0;
-                }
-            }
-            store.write(*net, 0, &value);
-            after[i] = value;
-        }
-        let mut names: Vec<String> = nets.iter().map(|n| plan.nets[n.0 as usize].name.clone()).collect();
-        names.sort();
-        obs.push(Observation::Unsettled { nets: names, at });
+        let mut moving: Vec<String> =
+            written.iter().enumerate().filter(|(i, _)| before[*i] != after[*i]).map(|(_, n)| plan.nets[n.0 as usize].name.clone()).collect();
+        moving.sort();
+        return Err(Stop::Error(DigitalError::Fault {
+            code: 0,
+            message: format!("{} did not settle in {bound} passes (D1)", moving.iter().map(|n| format!("`{n}`")).collect::<Vec<_>>().join(", ")),
+            tick: at.0.0,
+            instance: plan.dag().function(fns[0]).name.clone(),
+        }));
     }
     // the run sees one change per net: from the value it had before the group, to the settled one
     for (i, net) in written.iter().enumerate() {

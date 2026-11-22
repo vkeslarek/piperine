@@ -210,8 +210,6 @@ impl ShapeBuf {
                 leaf: f.leaf,
                 offset: f.offset,
                 count: f.count,
-                flags: f.flags,
-                known: f.known,
             })
             .collect();
         let owned: Box<[Field<'static>]> = fields.into();

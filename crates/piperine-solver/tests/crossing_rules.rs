@@ -82,7 +82,7 @@ fn riser_shape() -> ShapeRef {
         partials: vec![partial(0, 1), partial(1, 0)],
         ..FunctionSpec::default()
     });
-    let st = Statement { pin: hi, offset: 0, len: 2, flags: 0, min_after: 0.0 };
+    let st = Statement { pin: hi, offset: 0, len: 1, flags: 0, min_after: 0.0 };
     s.reaction(ReactionSpec { name: "rise", origin: ORIGIN, on: vec![start], writes: vec![st], ..ReactionSpec::default() });
     s.freeze()
 }

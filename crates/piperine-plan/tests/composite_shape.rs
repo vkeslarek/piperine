@@ -2,10 +2,10 @@
 //! spec §2, abi.md P3 and P4): the leaves a composite pin lists, the equality of two pins of one
 //! net, a one-variant enum's payload-only layout and the zero levels of an empty struct. Each
 //! expected offset is the byte offset §2's table gives: the parts' value bytes one after another,
-//! the first lowest, then one known byte.
+//! the first lowest, and nothing else (abi.md P3).
 
 use piperine_abi::layout::layout_eq;
-use piperine_abi::raw::{field_flag, leaf};
+use piperine_abi::raw::leaf;
 use piperine_ir::{
     AggregateData, BodySpec, Constant, Derives, FieldsForm, InstanceSpec, Ir, IrBuilder, Origin, Real, TypeData, TypeId, TypeKind, ValueType, VariantData,
 };
@@ -97,7 +97,7 @@ struct Leaves;
 impl Leaves {
     fn of(ir: &Ir, ty: &ValueType) -> (Vec<(String, u32, u32)>, u32) {
         let layout = CompositeLayout::of(ir, ty).expect("a layout");
-        (layout.leaves().iter().map(|l| (l.name.clone(), l.leaf, l.offset)).collect(), layout.size())
+        (layout.leaves().iter().map(|l| (l.name.clone(), l.leaf, l.offset)).collect(), layout.width())
     }
 
     fn named(rows: &[(&str, u32, u32)]) -> Vec<(String, u32, u32)> {
@@ -112,26 +112,26 @@ fn composite_layouts_list_their_leaves() {
     // then the payload (CV-17 AC 1)
     let (ir, t) = Design::of(|_, _| {});
     let pair = ValueType::Struct(t.pair);
-    assert_eq!(Leaves::of(&ir, &pair), (Leaves::named(&[("a", leaf::F64, 0), ("b", leaf::BOOL, 8)]), 10), "struct Pair: a at 0, b at 8, the known byte at 9");
+    assert_eq!(Leaves::of(&ir, &pair), (Leaves::named(&[("a", leaf::F64, 0), ("b", leaf::BOOL, 8)]), 9), "struct Pair: a at 0, b at 8, nine bytes");
     let nested = ValueType::Tuple(vec![ValueType::UInt(12), pair.clone()]);
     assert_eq!(
         Leaves::of(&ir, &nested),
-        (Leaves::named(&[("0", leaf::U16, 0), ("1.a", leaf::F64, 2), ("1.b", leaf::BOOL, 10)]), 12),
+        (Leaves::named(&[("0", leaf::U16, 0), ("1.a", leaf::F64, 2), ("1.b", leaf::BOOL, 10)]), 11),
         "a tuple's item 1 is the nested struct"
     );
     let array = ValueType::Array(Box::new(ValueType::Int(16)), 3);
-    assert_eq!(Leaves::of(&ir, &array), (Leaves::named(&[("[0]", leaf::I16, 0), ("[1]", leaf::I16, 2), ("[2]", leaf::I16, 4)]), 7), "an array has one field per element");
+    assert_eq!(Leaves::of(&ir, &array), (Leaves::named(&[("[0]", leaf::I16, 0), ("[1]", leaf::I16, 2), ("[2]", leaf::I16, 4)]), 6), "an array has one field per element");
     let option = ValueType::Option(Box::new(ValueType::F64));
-    assert_eq!(Leaves::of(&ir, &option), (Leaves::named(&[("some", leaf::U8, 0), ("value", leaf::F64, 1)]), 10), "an option is its presence byte then its payload");
+    assert_eq!(Leaves::of(&ir, &option), (Leaves::named(&[("some", leaf::BOOL, 0), ("value", leaf::F64, 1)]), 9), "an option is its presence byte then its payload");
     let tx = ValueType::Enum(t.tx);
     assert_eq!(
         Leaves::of(&ir, &tx),
-        (Leaves::named(&[("tag", leaf::U8, 0), ("Data.n", leaf::U8, 1)]), 3),
+        (Leaves::named(&[("tag", leaf::U8, 0), ("Data.n", leaf::U8, 1)]), 2),
         "a payload enum is the tag, then the widest payload (Data's u3)"
     );
     let layout = CompositeLayout::of(&ir, &pair).expect("a layout");
     assert_eq!(layout.width(), 9);
-    assert!(layout.abi_fields().iter().all(|f| f.flags == field_flag::HAS_KNOWN && f.known == 9 && f.count == 1), "every leaf holds the known byte after the value bytes");
+    assert!(layout.abi_fields().iter().all(|f| f.count == 1), "every leaf is one scalar");
 }
 
 #[test]
@@ -150,25 +150,25 @@ fn two_pins_of_a_composite_net_have_equal_layouts() {
 
 #[test]
 fn a_one_variant_enum_lays_out_its_payload_only() {
-    // §2 rule 5: one variant needs no tag, so the layout is the payload and the known byte
+    // §2 rule 5: one variant needs no tag, so the layout is the payload
     let (ir, t) = Design::of(|_, _| {});
-    assert_eq!(Leaves::of(&ir, &ValueType::Enum(t.single)), (Leaves::named(&[("One.n", leaf::U8, 0)]), 2), "no `tag` leaf");
+    assert_eq!(Leaves::of(&ir, &ValueType::Enum(t.single)), (Leaves::named(&[("One.n", leaf::U8, 0)]), 1), "no `tag` leaf");
 }
 
 #[test]
 fn an_empty_struct_is_carried_with_zero_levels() {
-    // CV-17 edge: an empty struct and `()` hold no value byte: no leaf, only the known byte
+    // CV-17 edge: an empty struct and `()` hold no value byte: no leaf, no byte
     let (ir, t) = Design::of(|_, _| {});
     for ty in [ValueType::Struct(t.marker), ValueType::Tuple(vec![])] {
         let layout = CompositeLayout::of(&ir, &ty).expect("a layout");
-        assert_eq!((layout.leaves().len(), layout.width(), layout.size()), (0, 0, 1), "{ty}: no leaf, the known byte only");
+        assert_eq!((layout.leaves().len(), layout.width()), (0, 0), "{ty}: no leaf, no byte");
     }
 }
 
 #[test]
 fn a_constant_is_the_bytes_the_layout_names() {
-    // the canonical bytes of a default (abi.md P3): the value bytes at the leaves' offsets, the
-    // known byte 1, an enum's unused payload zero
+    // the bytes of a default (abi.md P3): the value bytes at the leaves' offsets, an enum's
+    // unused payload zero
     let (ir, t, pair_value, data_value) = {
         let mut ids = None;
         let (ir, t) = Design::of(|b, t| {
@@ -180,8 +180,8 @@ fn a_constant_is_the_bytes_the_layout_names() {
         (ir, t, Constant::Aggregate(pair), Constant::Aggregate(data))
     };
     let mut expected = 1.5f64.to_le_bytes().to_vec();
-    expected.extend([1, 1]);
+    expected.push(1);
     assert_eq!(CompositeLayout::bytes(&ir, &ValueType::Struct(t.pair), pair_value), Some(expected));
-    assert_eq!(CompositeLayout::bytes(&ir, &ValueType::Enum(t.tx), data_value), Some(vec![1, 5, 1]), "tag 1 (Data), n = 5, the known byte");
+    assert_eq!(CompositeLayout::bytes(&ir, &ValueType::Enum(t.tx), data_value), Some(vec![1, 5]), "tag 1 (Data), n = 5");
     assert_eq!(CompositeLayout::bytes(&ir, &ValueType::Enum(t.tx), pair_value), None, "a struct constant is no enum value");
 }

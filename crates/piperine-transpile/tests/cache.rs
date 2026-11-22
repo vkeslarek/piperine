@@ -9,7 +9,7 @@ use std::sync::{Arc, Barrier};
 use std::time::Duration;
 
 use piperine_ir::IrBuilder;
-use piperine_transpile::{Cache, Entry, Error, Key, Settings, Transpiler};
+use piperine_transpile::{AbiSource, Cache, Entry, Error, Key, Settings, Transpiler};
 
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/devices.rs"]
@@ -147,6 +147,36 @@ fn the_key_changes_with_any_part() {
     }
     // the parts are not run together
     assert_ne!(Key::of(&[b"ab", b"c"]), Key::of(&[b"a", b"bc"]));
+}
+
+// EU-16 AC 1 (T36): the contract is edited in place and stays major 1, so the cache key holds the
+// contract's own source: an entry built against the earlier contract (a `Field` that still had
+// `flags` and `known`) is keyed differently, is not found by the current key, and is rebuilt.
+#[test]
+fn an_entry_of_the_earlier_contract_is_rebuilt() {
+    let root = tempfile::tempdir().unwrap();
+    let cache = Cache::at(root.path()).unwrap();
+    // the key of a design, as `Transpiler::compile` forms it: the design's source, then the file
+    // names and texts of the ABI crate
+    let key_of = |abi: &[(&str, String)]| {
+        let mut parts: Vec<&[u8]> = vec![b"design source"];
+        for (name, text) in abi {
+            parts.push(name.as_bytes());
+            parts.push(text.as_bytes());
+        }
+        Key::of(&parts)
+    };
+    let current: Vec<(&str, String)> = AbiSource::FILES.iter().map(|(name, text)| (*name, text.to_string())).collect();
+    let earlier: Vec<(&str, String)> = current
+        .iter()
+        .map(|(name, text)| (*name, if *name == "raw.rs" { text.replace("pub count: u32,\n}", "pub count: u32,\n    pub flags: u32,\n    pub known: u32,\n}") } else { text.clone() }))
+        .collect();
+    assert_ne!(current, earlier, "the earlier contract's `Field` is found in `raw.rs` to be replaced");
+    let (current_key, earlier_key) = (key_of(&current), key_of(&earlier));
+    assert_ne!(current_key, earlier_key, "a changed contract is a changed key");
+    cache.build(&earlier_key, "rustc 1.98.0", &[], |staging| fill(staging, "built against the earlier contract")).expect("the earlier entry");
+    assert!(cache.entry(&earlier_key).is_some(), "the earlier entry is present under its own key");
+    assert!(cache.entry(&current_key).is_none(), "the current key finds none: the library is rebuilt, never loaded");
 }
 
 // RS-04 AC 8 / the design: a cache directory is created private, 0700 on Unix.

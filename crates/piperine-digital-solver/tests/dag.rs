@@ -20,7 +20,7 @@ fn func(name: &str, instance: u32, k: u32, reads: &[u32], writes: &[u32]) -> FnN
 
 fn nets(n: usize, relax: &[usize]) -> Vec<NetSpec> {
     (0..n)
-        .map(|i| NetSpec { relax: relax.contains(&i), ..NetSpec::discrete(&format!("n{i}"), 2, 1) })
+        .map(|i| NetSpec { relax: relax.contains(&i), ..NetSpec::discrete(&format!("n{i}"), 1, 1) })
         .collect()
 }
 

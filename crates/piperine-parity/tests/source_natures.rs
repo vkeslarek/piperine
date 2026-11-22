@@ -136,9 +136,9 @@ impl Model {
             .collect()
     }
 
-    /// The value of a known `Byte` as the net holds it: the value byte, then its known byte.
+    /// The value of a `Byte` as the net holds it: the value byte.
     fn known_byte(value: u8) -> Vec<u8> {
-        vec![value, 1]
+        vec![value]
     }
 }
 

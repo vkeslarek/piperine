@@ -301,10 +301,9 @@ fn a_param_change_fires_its_event() {
 #[test]
 fn a_param_previous_decodes_its_previous_bytes() {
     // `seen = tol.prev();` as a drive of an `out seen: f64` carrier: `drive:seen` reads the
-    // `PREVIOUS` part of the param pin, in the param's own layout (an `F64`), and writes the known
-    // value `0.375` into the carrier's pin (the value at 0, the known byte at 8, abi.md P3).
+    // `PREVIOUS` part of the param pin, in the param's own layout (an `F64`), and writes the value
+    // `0.375` into the carrier's pin (its eight bytes, abi.md P3).
     let device = Device::of_body(ParamEvents::previous_drive(), "Lag");
     let (cells, _) = device.run_cells("drive:seen", &[&Bytes::real(0.375)]).expect("drive");
     assert_eq!(f64::from_le_bytes(cells[0][..8].try_into().expect("the value")), 0.375);
-    assert_eq!(cells[0][8], 1, "the previous value of a param is known");
 }

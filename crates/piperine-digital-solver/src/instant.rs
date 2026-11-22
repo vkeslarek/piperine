@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use crate::engine::{Digital, Horizon, Mode, Outcome};
 use crate::net::{NetId, NetKind};
 use crate::queue::{Instant, Writer};
-use crate::run::{Phase, check_canonical, fire_net, fired_reactions, run_functions, run_reactions, write_net};
+use crate::run::{Phase, fire_net, fired_reactions, run_functions, run_reactions, write_net};
 use piperine_abi::raw::reaction_flag;
 use crate::tick::Tick;
 use crate::error::DigitalError;
@@ -37,8 +37,6 @@ struct Settled {
     net: NetId,
     /// The whole net: its value before the microstep, each commit's bytes laid over it in order.
     bytes: Vec<u8>,
-    /// The writer of the last commit, whose bytes the net holds.
-    last: Writer,
     /// A commit came from the host.
     host: bool,
     /// The settled bytes differ from the value before the microstep.
@@ -62,28 +60,19 @@ impl Digital {
                 Some(i) => i,
                 None => {
                     let bytes = self.store.value(p.net).to_vec();
-                    settled.push(Settled { net: p.net, bytes, last: p.writer, host: false, changed: false });
+                    settled.push(Settled { net: p.net, bytes, host: false, changed: false });
                     settled.len() - 1
                 }
             };
             let offset = p.offset as usize;
             let s = &mut settled[at];
             s.bytes[offset..offset + p.bytes.len()].copy_from_slice(&p.bytes);
-            s.last = p.writer;
             s.host |= p.writer == Writer::Host;
         }
         for s in &mut settled {
             s.changed = write_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, s.net, 0, &s.bytes, here);
         }
         settled
-    }
-
-    /// Who made a commit, for an error: the instance's path, or the host.
-    fn writer_name(&self, writer: Writer) -> String {
-        match writer {
-            Writer::Host => "host".to_string(),
-            Writer::Reaction { instance, .. } => self.plan.instances[instance as usize].path.clone(),
-        }
     }
 
     /// `HORIZON`: the last tick before the earliest pending commit and before `limit`, never
@@ -136,7 +125,6 @@ impl Digital {
             self.call = 0;
             for s in self.apply_due(here) {
                 out.host_param_write |= s.changed && s.host && self.plan.analysis().is_param_net(s.net);
-                check_canonical(&self.plan, &self.store, s.net, at, &self.writer_name(s.last))?;
             }
             let mut ambient = self.ambient(at);
             ambient.is_static = mode.is_static;
@@ -203,9 +191,7 @@ impl Digital {
                 .any(|p| !self.plan.nets[p.net.0 as usize].is_quiet());
             if !live {
                 // what is left for this instant applies as it exits
-                for s in self.apply_due(next) {
-                    check_canonical(&self.plan, &self.store, s.net, at, &self.writer_name(s.last))?;
-                }
+                self.apply_due(next);
                 self.obs.flush();
                 break;
             }
@@ -268,9 +254,7 @@ impl Digital {
         phase.finish = ran.finish;
         // what the phase left for the instant, its records, applies as the instant exits, as at the
         // end of the loop: a record left queued would be a commit due at this tick forever
-        for s in self.apply_due((at, last + 1)) {
-            check_canonical(&self.plan, &self.store, s.net, at, &self.writer_name(s.last))?;
-        }
+        self.apply_due((at, last + 1));
         self.obs.flush();
         Ok(phase)
     }

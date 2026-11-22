@@ -74,7 +74,7 @@ fn a_buck_that_is_not_enabled_stays_off_with_vin_ok_high() {
     // DIG-15 AC 6, SPEC §8: with `en` unknown the supervisor is `Off` (tag 0, its initial value)
     // at every sample, power-good stays low, and nothing commits another value
     let mode = series(&seen, "Buck.mode");
-    assert_eq!(mode, vec![(0, vec![0, 1])], "mode is Off, known, from the first instant and never changes");
+    assert_eq!(mode, vec![(0, vec![0])], "mode is Off from the first instant and never changes");
     let pgood = series(&seen, "Buck.pgood");
     assert_eq!(pgood, vec![(0, LOW.to_vec())], "pgood is false from the first instant and never changes");
     // the DPWM does not switch while `run` is low (SPEC §8: `Off` holds both switches off), so

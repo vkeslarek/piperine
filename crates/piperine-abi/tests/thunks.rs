@@ -71,7 +71,7 @@ fn probe_shape() -> ShapeRef {
         origin: "probe:7:1",
         on: vec![e],
         reads: vec![pin(x, part::VALUE)],
-        writes: vec![Statement { pin: q, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+        writes: vec![Statement { pin: q, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
         ..ReactionSpec::default()
     });
     s.reaction(ReactionSpec {
@@ -312,7 +312,7 @@ fn commit_reaches_the_host_once() {
     let x = 0.5f64.to_le_bytes();
     let (s, seen) = react_with(&m, &inst, 0, &[&x], status::OK, &mut note);
     assert_eq!(s, status::OK);
-    assert_eq!(seen, [(0, 0, 2, HIGH.to_vec(), 1e-9)], "statement 0, offset 0, two bytes, after");
+    assert_eq!(seen, [(0, 0, 1, HIGH.to_vec(), 1e-9)], "statement 0, offset 0, one byte, after");
     destroy(&m, &inst);
 }
 

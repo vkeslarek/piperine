@@ -41,10 +41,7 @@ fn clock(w: &mut Wire) {
 
 /// The bytes of a known `f64` in its pin (abi.md P3, `REAL`: the value at 0, known at 8).
 fn real_bytes(v: f64) -> Vec<u8> {
-    let mut bytes = vec![0u8; 16];
-    bytes[..8].copy_from_slice(&v.to_le_bytes());
-    bytes[8] = 1;
-    bytes
+    v.to_le_bytes().to_vec()
 }
 
 /// An environment read at the origin of `x`.
@@ -276,8 +273,8 @@ fn counted(rearm: bool) -> Vec<(i64, Vec<u8>)> {
 fn at_fires_once_at_its_time() {
     // part IV §13 `at(t)`: the event fires once, at `t`. Armed at the start with t0 = 10 ns and
     // dt = 5 ns, it fires at 15 ns and the counter, which adds one per firing, reads 1 from then
-    // on (`Bit<u8>`: the value, then its known byte)
-    assert_eq!(counted(false), [(15 * NS, vec![1, 1])]);
+    // on (`Bit<u8>`: its value byte)
+    assert_eq!(counted(false), [(15 * NS, vec![1])]);
 }
 
 #[test]
@@ -285,7 +282,7 @@ fn a_rearmed_at_drops_the_earlier_firing() {
     // part IV §13: `at(t)` re-arms when `t` changes; abi.md C3: the arming statement is `REPLACE`,
     // so the firing armed for 15 ns is removed when `dt <- 20n` at 12 ns re-arms the timer for
     // t0 + dt = 30 ns: no firing at 15 ns, one at 30 ns
-    assert_eq!(counted(true), [(30 * NS, vec![1, 1])]);
+    assert_eq!(counted(true), [(30 * NS, vec![1])]);
 }
 
 /// What a timed signal `t` of `Late` holds when the clock first rises.
@@ -420,15 +417,14 @@ fn an_emit_commits_one_record_and_adds_no_microstep() {
             _ => None,
         })
         .collect();
-    // the layout of `trace` (msl-digital A4): `code` a `BYTE` at 0, `level` a `REAL` at 8, 24
-    // bytes; the site writes `code = 7` (known), and `level`, which it leaves out, stays all
-    // zero, its known byte 0 (C5: "a field absent from a site is a field with its known byte 0")
-    let mut bytes = vec![0u8; 24];
-    bytes[..2].copy_from_slice(&[7, 1]);
+    // the layout of `trace` (msl-digital A4): `code` a `BYTE` at 0, `level` an `F64` at 8, 16
+    // bytes; the site writes `code = 7`, and `level`, which it leaves out, stays all zero (C5)
+    let mut bytes = vec![0u8; 16];
+    bytes[0] = 7;
     assert_eq!(records, [(5 * NS / 2, bytes)]);
     // the commit beside it applies as before: n counts the rise (the clock's initial `false` at the
     // operating point is no rise), 0 to 1
-    assert_eq!(seen.transient("n"), [(5 * NS / 2, vec![1, 1])]);
+    assert_eq!(seen.transient("n"), [(5 * NS / 2, vec![1])]);
 
     // P7: a RECORD pin is QUIET, so its commit never keeps an instant's microstep loop alive:
     // every instant through the rise runs as many microsteps as without the emit
@@ -573,11 +569,11 @@ fn a_previous_value_is_read_in_a_guard_and_in_a_reaction() {
     w.place("seq", body, vec![], &[("x", u8.clone()), ("p", u8), ("g", BIT)]);
     let seen = Built::new(w.finish()).run(4e-9, 1e-9);
     // x takes 3 at 1 ns and 5 at 2 ns
-    assert_eq!(seen.transient("x"), [(NS, vec![3, 1]), (2 * NS, vec![5, 1])]);
+    assert_eq!(seen.transient("x"), [(NS, vec![3]), (2 * NS, vec![5])]);
     // part II §5.3.8: the first commit is a change; `prev()` is the value before the most recent
     // change, so the initial value at the first (the carrier held no other before it): the
     // reaction commits 0 to p at 1 ns, and 3 at 2 ns
-    assert_eq!(seen.transient("p"), [(NS, vec![0, 1]), (2 * NS, vec![3, 1])]);
+    assert_eq!(seen.transient("p"), [(NS, vec![0]), (2 * NS, vec![3])]);
     // the guard reads the same previous value: 0 at 1 ns (no firing), 3 at 2 ns
     assert_eq!(seen.transient("g"), [(2 * NS, HIGH.to_vec())]);
 }

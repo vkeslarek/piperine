@@ -440,9 +440,9 @@ impl Design {
 struct LooperReaction;
 
 impl LooperReaction {
-    /// The bytes of a `Bit<u8>` or `Bit` pin holding `value`: the value, then the known byte 1.
+    /// The bytes of a `Bit<u8>` or `Bit` pin holding `value`: the value.
     fn pin(value: u8) -> Vec<u8> {
-        vec![value, 1]
+        vec![value]
     }
 
     /// Runs the reaction with `stop` and returns what it committed: statement, bytes, delay.

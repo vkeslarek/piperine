@@ -236,7 +236,7 @@ impl Interpreted {
         Ok(())
     }
 
-    /// The `where` of param `p`: the condition over the params it reads, written as a known `BIT`.
+    /// The `where` of param `p`: the condition over the params it reads, written as a `BIT`.
     fn check(&self, f: &FunctionPlan, p: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
         let body = self.body();
         let Some(condition) = body.params().get(p as usize).and_then(|x| x.check) else {

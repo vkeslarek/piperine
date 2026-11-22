@@ -382,7 +382,7 @@ use rt::pin::Carried;
 fn cross<T: Carried + std::fmt::Debug>(values: &[T]) -> usize {
     for &v in values {
         let bytes = v.pin();
-        assert_eq!(bytes.len(), T::SIZE);
+        assert_eq!(bytes.len(), T::WIDTH);
         assert_eq!(T::from_pin(&bytes), v, \"{v:?} through the bytes\");
         assert_eq!(T::from_levels(&v.to_levels()), v, \"{v:?} through the levels\");
         assert_eq!(v.to_levels().len(), T::LEVELS);
@@ -453,7 +453,7 @@ fn main() {
     let expected = [
         "idle 5 0 false",
         "stop 3 false",
-        "bytes [3, 0, 1] [0, 0, 1]",
+        "bytes [3, 0] [0, 0]",
         "ignored true true",
         "levels true true",
         &format!("widest {}", 2 | (7 << 2)),

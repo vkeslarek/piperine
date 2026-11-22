@@ -2,8 +2,8 @@
 //! a carried tuple, array, struct, enum or `Option` decoded with the IR's type arena into a
 //! `CompositeCell`, which renders as the language's literal syntax, as nested JSON and as dotted
 //! leaves, and names an enum's variant (the variant names live in the arena, never in the net's
-//! bytes). A pin of such a value is the bytes of its parts one after another and then one known
-//! byte (`piperine_plan::CompositeLayout`); `CellShape` is the type read once from the arena, so a
+//! bytes). A pin of such a value is the bytes of its parts one after another and nothing else
+//! (`piperine_plan::CompositeLayout`); `CellShape` is the type read once from the arena, so a
 //! decoder needs no `Ir`.
 
 use piperine_ir::{FieldsForm, Ir, TypeKind, ValueType};
@@ -121,7 +121,7 @@ impl CellShape {
         }
     }
 
-    /// The width of the value bytes of a value of this shape, before the known byte.
+    /// The width of the value bytes of a value of this shape, which is the size of its pin.
     pub fn width(&self) -> usize {
         match self {
             CellShape::Scalar(ValueType::Bool) => 1,
@@ -136,16 +136,13 @@ impl CellShape {
         }
     }
 
-    /// The value of a pin's `bytes`: `Cell::Unknown` when the known byte is clear or an enum's tag
-    /// names no variant (§2 rule 9), the variant's bare name for an enum with no payload, a
-    /// `Cell::Composite` for any other. A length shorter than the value and its known byte is a `Failure`.
+    /// The value of a pin's `bytes`: `Cell::Unknown` when an enum's tag names no variant (§2 rule
+    /// 9), the variant's bare name for an enum with no payload, a `Cell::Composite` for any
+    /// other. A length shorter than the value is a `Failure`.
     pub fn decode(&self, bytes: &[u8]) -> Result<Cell, Failure> {
         let width = self.width();
-        if bytes.len() <= width {
-            return Err(Failure::Backend(format!("cannot decode a composite value of {width} bytes and a known byte from {} bytes", bytes.len())));
-        }
-        if bytes[width] == 0 {
-            return Ok(Cell::Unknown);
+        if bytes.len() < width {
+            return Err(Failure::Backend(format!("cannot decode a composite value of {width} bytes from {} bytes", bytes.len())));
         }
         let mut at = 0;
         let Some(read) = self.read(bytes, &mut at) else { return Ok(Cell::Unknown) };
@@ -402,32 +399,33 @@ mod tests {
 
     #[test]
     fn a_struct_reads_its_fields_and_prints_as_a_literal() {
-        let Cell::Composite(value) = Shapes::pair().decode(&[7, 1, 1]).expect("decodes") else { panic!("a composite") };
+        let Cell::Composite(value) = Shapes::pair().decode(&[7, 1]).expect("decodes") else { panic!("a composite") };
         assert_eq!(value.literal(&Shapes::text), "Pair { a: 7, b: true }");
         assert_eq!(value.leaves().iter().map(|(n, c)| format!("{n}={}", Shapes::text(c))).collect::<Vec<_>>(), ["a=7", "b=true"]);
         assert_eq!(value.leaf("b"), Some(Cell::Bool(true)));
         assert_eq!(value.leaf("zz"), None);
-        assert_eq!(Shapes::pair().decode(&[0, 0, 0]).expect("decodes"), Cell::Unknown, "a clear known byte is unknown");
+        let Cell::Composite(zero) = Shapes::pair().decode(&[0, 0]).expect("decodes") else { panic!("a composite") };
+        assert_eq!(zero.literal(&Shapes::text), "Pair { a: 0, b: false }", "all-zero bytes are a value, not an unknown");
     }
 
     #[test]
     fn an_enum_reads_its_variant_name_and_a_tag_no_variant_names_reads_unknown() {
-        let Cell::Composite(value) = Shapes::tx().decode(&[1, 5, 1]).expect("decodes") else { panic!("a composite") };
+        let Cell::Composite(value) = Shapes::tx().decode(&[1, 5]).expect("decodes") else { panic!("a composite") };
         assert_eq!(value.literal(&Shapes::text), "Tx::Data { n: 5 }");
         assert_eq!(value.leaves().iter().map(|(n, c)| format!("{n}={}", Shapes::text(c))).collect::<Vec<_>>(), ["=Data", "Data.n=5"]);
         assert_eq!(value.json(&Shapes::text, &|s| format!("\"{s}\"")), "{\"Data\":{\"n\":5}}");
-        assert_eq!(Shapes::tx().decode(&[2, 0, 1]).expect("decodes"), Cell::Unknown, "tag 2 names no variant");
+        assert_eq!(Shapes::tx().decode(&[2, 0]).expect("decodes"), Cell::Unknown, "tag 2 names no variant");
         let units = CellShape::Enum {
             name: "Mode".into(),
             tag_width: 1,
             variants: vec![VariantShape { name: "Off".into(), discriminant: 0, form: FieldsForm::Unit, fields: vec![] }, VariantShape { name: "Run".into(), discriminant: 2, form: FieldsForm::Unit, fields: vec![] }],
         };
-        assert_eq!(units.decode(&[2, 1]).expect("decodes"), Cell::Text("Run".into()), "an enum with no payload reads as its variant's name");
+        assert_eq!(units.decode(&[2]).expect("decodes"), Cell::Text("Run".into()), "an enum with no payload reads as its variant's name");
     }
 
     #[test]
     fn a_shape_holds_the_payload_leaf_of_a_variant_the_value_does_not_hold() {
-        let Cell::Composite(idle) = Shapes::tx().decode(&[0, 0, 1]).expect("decodes") else { panic!("a composite") };
+        let Cell::Composite(idle) = Shapes::tx().decode(&[0, 0]).expect("decodes") else { panic!("a composite") };
         assert_eq!(idle.leaf("Data.n"), None, "the value holds Idle");
         assert!(Shapes::tx().can_hold_leaf("Data.n"), "the shape holds the leaf of Data");
         assert!(!Shapes::tx().can_hold_leaf("Data.m"), "no variant has an `m`");

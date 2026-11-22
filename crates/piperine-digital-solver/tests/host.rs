@@ -41,7 +41,7 @@ fn a_host_write_is_a_commit_at_microstep_zero() {
     // C39
     let mut d = started(engine_with(vec![("inv", inverter(), vec![("a", "a"), ("y", "y")])], |_| {}));
     d.host_commit(net(&d, "a"), 0, &HIGH, Tick(5)).unwrap();
-    assert_eq!(d.read(net(&d, "a")), [0, 0], "queued, not applied");
+    assert_eq!(d.read(net(&d, "a")), [0], "queued, not applied");
     assert_eq!(d.next_due(), Some(Tick(5)));
     d.run_instant(Tick(5), &[], Horizon::uniform(Tick(10)), Mode::default()).unwrap();
     assert_eq!(d.read(net(&d, "a")), HIGH);
@@ -141,12 +141,12 @@ fn a_waited_event_suspends_its_instant_until_the_host_answers() {
     d.fire(up, Tick(5)).unwrap();
     // The look-ahead stops before the instant, untouched: a landing that is not a time point.
     assert_eq!(d.advance(Tick(10)).unwrap(), Advance::Landing { tick: Tick(5), time_point: false });
-    assert_eq!(d.read(net(&d, "out")), [0, 0]);
+    assert_eq!(d.read(net(&d, "out")), [0]);
 
     let limit = Horizon::uniform(Tick(10));
     let first = d.run_instant(Tick(5), &[], limit, Mode::default()).unwrap();
     assert_eq!(first.host_events, vec![up], "suspended after the microstep `up` fired in");
-    assert_eq!(d.read(net(&d, "out")), [0, 0], "the setter's commit waits for the next microstep");
+    assert_eq!(d.read(net(&d, "out")), [0], "the setter's commit waits for the next microstep");
     // The host answers: its write is due at the microstep the instant continues at.
     d.host_commit(net(&d, "a"), 0, &HIGH, Tick(5)).unwrap();
     let rest = d.run_instant(Tick(5), &[], limit, Mode::default()).unwrap();

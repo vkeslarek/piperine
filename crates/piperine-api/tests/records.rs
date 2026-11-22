@@ -71,8 +71,8 @@ fn an_emit_gives_one_record_with_time_instance_stream_and_fields() {
     assert_eq!(r.fields, [("a".to_string(), Field::Real(1.5)), ("b".to_string(), Field::Bool(true))]);
 
     // task T14: bytes of another length than the stream's layout are a failure, never a
-    // truncated record. `s` is `a: f64` (16 bytes: value, known byte, padding) then `b: bool`
-    // (2 bytes), 24 bytes in all; the record above is decoded from such bytes, one short is not
+    // truncated record. `s` is `a: f64` (8 bytes) then `b: bool` (1 byte at 8), rounded up to the
+    // alignment 8: 16 bytes in all; the record above is decoded from such bytes, one short is not
     let dir = tempfile::tempdir().expect("tmp");
     let file = dir.path().join("bench.msl");
     std::fs::write(&file, &text).expect("write");
@@ -83,10 +83,9 @@ fn an_emit_gives_one_record_with_time_instance_stream_and_fields() {
                 Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"))
     };
     let streams = Streams::of(Arc::new(session.ir().clone()));
-    let mut bytes = vec![0u8; 24];
+    let mut bytes = vec![0u8; 16];
     bytes[..8].copy_from_slice(&1.5f64.to_le_bytes());
     bytes[8] = 1;
-    bytes[16..18].copy_from_slice(&[1, 1]);
     let observation = |bytes: Vec<u8>| Observation {
         path: "Top.m.s".into(),
         analysis: AnalysisKind::Transient,
@@ -94,19 +93,19 @@ fn an_emit_gives_one_record_with_time_instance_stream_and_fields() {
         kind: ObservationKind::Record { site: Some((0, 0)), bytes },
     };
     let whole = streams.decode(&observation(bytes.clone())).expect("a record").unwrap_or_else(|f| panic!("{f}"));
-    assert_eq!(whole.fields, r.fields, "24 bytes decode as the run's record");
+    assert_eq!(whole.fields, r.fields, "16 bytes decode as the run's record");
     bytes.pop();
     let short = streams.decode(&observation(bytes)).expect("a record observation");
-    assert!(matches!(&short, Err(Failure::Backend(m)) if m.contains("23 bytes")), "{short:?}");
+    assert!(matches!(&short, Err(Failure::Backend(m)) if m.contains("15 bytes")), "{short:?}");
 }
 
 #[test]
 fn a_record_holds_its_declared_fields_only() {
     // EU-15 AC 1 (§19): a stream's record layout is its declared fields, laid out at the next
     // offset their alignment allows, and nothing after them. `s` is `ok: bool` alone: a `bool`
-    // carrier is 2 bytes (the value, then its known byte), so the record is 2 bytes; two bytes
-    // decode as the record, and the four bytes the layout once held (a trailing `maybe`) are a
-    // failure, never a truncated or a padded record
+    // carrier is its one value byte, so the record is 1 byte; one byte decodes as the record, and
+    // the two bytes the layout once held (a value, then a trailing `maybe`) are a failure, never
+    // a truncated or a padded record
     let text = design("module M() {}\ndigital for M { on at(1u) { emit!(\"s\", ok = true); } }\n", "    let m = M();\n");
     let dir = tempfile::tempdir().expect("tmp");
     let file = dir.path().join("bench.msl");
@@ -120,10 +119,10 @@ fn a_record_holds_its_declared_fields_only() {
         let observation = Observation { path: "Top.m.s".into(), analysis: AnalysisKind::Transient, time: 1e-6, kind: ObservationKind::Record { site: Some((0, 0)), bytes } };
         streams.decode(&observation).expect("a record observation")
     };
-    let record = decode(vec![1, 1]).unwrap_or_else(|f| panic!("{f}"));
+    let record = decode(vec![1]).unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(record.fields, [("ok".to_string(), Field::Bool(true))], "the declared field and no other");
-    let long = decode(vec![1, 1, 0, 1]);
-    assert!(matches!(&long, Err(Failure::Backend(m)) if m.contains("4 bytes where the stream's layout holds 2")), "{long:?}");
+    let long = decode(vec![1, 0]);
+    assert!(matches!(&long, Err(Failure::Backend(m)) if m.contains("2 bytes where the stream's layout holds 1")), "{long:?}");
 }
 
 #[test]

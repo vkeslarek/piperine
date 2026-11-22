@@ -480,10 +480,6 @@ pub struct Field<'a> {
     pub offset: u32,
     /// Array length.
     pub count: u32,
-    /// `field_flag::*` bits.
-    pub flags: u32,
-    /// `HAS_KNOWN`: the offset of one byte per element; 0 there = no value.
-    pub known: u32,
 }
 
 /// A real value added to a row through an operator.
@@ -698,11 +694,6 @@ pub mod leaf {
     pub const I64: u32 = 9;
     pub const F32: u32 = 10;
     pub const F64: u32 = 11;
-}
-
-/// `Field.flags` bits.
-pub mod field_flag {
-    pub const HAS_KNOWN: u32 = 1 << 0;
 }
 
 /// `Term.op`.
@@ -939,13 +930,11 @@ mod tests {
             ("align", offset_of!(Layout, align), 4),
             ("fields", offset_of!(Layout, fields), 8),
         ]);
-        check("Field", (size_of::<Field>(), 40), (align_of::<Field>(), 8), &[
+        check("Field", (size_of::<Field>(), 32), (align_of::<Field>(), 8), &[
             ("name", offset_of!(Field, name), 0),
             ("leaf", offset_of!(Field, leaf), 16),
             ("offset", offset_of!(Field, offset), 20),
             ("count", offset_of!(Field, count), 24),
-            ("flags", offset_of!(Field, flags), 28),
-            ("known", offset_of!(Field, known), 32),
         ]);
         check("Term", (size_of::<Term>(), 56), (align_of::<Term>(), 8), &[
             ("name", offset_of!(Term, name), 0),

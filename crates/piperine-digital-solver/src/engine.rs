@@ -259,6 +259,13 @@ impl Digital {
         self.store.seed(net, bytes);
     }
 
+    /// Marks the carrier `net` as holding no value yet, so the host's write that starts the run is
+    /// its initial value (§5.3, D8): a change whatever the bytes, `PREVIOUS` the same bytes. Only
+    /// before the first instant.
+    pub fn expect_initial(&mut self, net: NetId) {
+        self.store.expect_initial(net);
+    }
+
     /// A commit by the host, due at microstep 0 of `at` (abi.md §6 C6); while the instant `at` is
     /// suspended for the host's waiters, due at the microstep it continues at (R7).
     ///

@@ -185,9 +185,9 @@ fn a_carrier_a_definition_drives_has_not_risen_at_the_start() {
 /// One nanosecond in ticks.
 const NS: i64 = 1_000_000;
 
-/// A known byte of a one-byte carrier.
+/// The byte of a one-byte carrier.
 fn byte(value: u8) -> Vec<u8> {
-    vec![value, 1]
+    vec![value]
 }
 
 /// The 4 ns transient of `Paths` of `paths.msl`.

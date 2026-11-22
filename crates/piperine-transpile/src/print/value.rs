@@ -1068,7 +1068,7 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// An emit site (msl-digital A4): the record's bytes in its stream's layout (`RecordLayout`),
-    /// all zero first so a field the site leaves out has its known byte 0 (abi.md C5), each value
+    /// all zero first so a field the site leaves out has its zero (abi.md C5), each value
     /// field written where the layout puts it, and the record committed through the site's
     /// statement. The text fields stay in the IR (`Body::record_site`): a comment names them.
     fn emit(&self, s: StmtId, stream: u32, fields: &[EmitField]) -> Result<String, Error> {

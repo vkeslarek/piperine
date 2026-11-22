@@ -760,11 +760,9 @@ impl Carriers {
         first_edge_value(&self.seen, &format!("Bench.{name}"))
     }
 
-    /// `value`, the bytes of a known composite, as its pin holds it: the known byte after them.
+    /// `value`, the bytes of a composite, as its pin holds it: those bytes and nothing else.
     fn known(value: &[u8]) -> Vec<u8> {
-        let mut bytes = value.to_vec();
-        bytes.push(1);
-        bytes
+        value.to_vec()
     }
 }
 
@@ -806,9 +804,9 @@ fn derived_repr_layout_and_width_follow_section_2() {
     let wrap = tuple_field.then(array_field).then(option_field);
     let data = Levels::tagged(1, 3, Levels::unsigned(5, 3), 3);
     let carriers = Carriers::run();
-    assert_eq!(carriers.once("w_pair"), vec![pair.bits.len() as u8, 1], "Pair is u8 then bool: 9 levels");
-    assert_eq!(carriers.once("w_enum"), vec![data.bits.len() as u8, 1], "Tx is a 2-level tag then 3 levels of payload");
-    assert_eq!(carriers.once("w_wrap"), vec![wrap.bits.len() as u8, 1], "Wrap is (u8, bool), [u8; 3] and Option<u8>: 9 + 24 + 9");
+    assert_eq!(carriers.once("w_pair"), vec![pair.bits.len() as u8], "Pair is u8 then bool: 9 levels");
+    assert_eq!(carriers.once("w_enum"), vec![data.bits.len() as u8], "Tx is a 2-level tag then 3 levels of payload");
+    assert_eq!(carriers.once("w_wrap"), vec![wrap.bits.len() as u8], "Wrap is (u8, bool), [u8; 3] and Option<u8>: 9 + 24 + 9");
     // the bytes a pin holds: the parts' values in field order (the tag first), then the known byte
     assert_eq!(carriers.once("s"), Carriers::known(&[7, 1]));
     assert_eq!(carriers.once("tx"), Carriers::known(&[1, 5]), "the tag of Data, then n");
@@ -922,22 +920,18 @@ fn a_record_carries_a_composite_field_and_its_type() {
     solver.tran().unwrap_or_else(|e| panic!("{e}")).solve().unwrap_or_else(|e| panic!("{e}"));
     let records = out.borrow().clone();
     assert_eq!(records.len(), 2, "one record per rising edge: {records:?}");
-    // the fields in order: t (f64, 16), pair (u8, f64 + known), arr (3 u8 + known), tup (u8, bool + known),
-    // tx (tag 1 = Data, n = 5 + known): each at the next offset its alignment allows
+    // the fields in order: t (f64, 8), pair (u8, f64), arr (3 u8), tup (u8, bool),
+    // tx (tag 1 = Data, n = 5): each at the next offset its alignment allows
     let mut wanted: Vec<u8> = Vec::new();
     let pad = |bytes: &mut Vec<u8>, align: usize| bytes.resize(bytes.len().next_multiple_of(align), 0);
     // `t` is the time of the edge: read it back from the record rather than compute it
     let time = &records[0][..8];
     wanted.extend_from_slice(time);
-    wanted.push(1);
-    // an `f64` field is the 16 bytes of `REAL`: the value, the known byte, padding to its alignment
-    pad(&mut wanted, 16);
     wanted.push(7);
     wanted.extend_from_slice(&0.5f64.to_le_bytes());
-    wanted.push(1);
-    wanted.extend_from_slice(&[1, 2, 3, 1]);
-    wanted.extend_from_slice(&[9, 1, 1]);
-    wanted.extend_from_slice(&[1, 5, 1]);
+    wanted.extend_from_slice(&[1, 2, 3]);
+    wanted.extend_from_slice(&[9, 1]);
+    wanted.extend_from_slice(&[1, 5]);
     pad(&mut wanted, 8);
     assert_eq!(records[0], wanted, "the record of the first edge");
     assert_eq!(f64::from_le_bytes(time.try_into().expect("eight bytes")), 2.5e-9, "t = now() at the first rising edge");

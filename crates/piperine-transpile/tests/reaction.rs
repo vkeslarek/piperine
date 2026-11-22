@@ -246,20 +246,14 @@ fn items<T: Copy>(list: &List<'_, T>) -> Vec<T> {
     (0..list.len()).map(|i| *list.get(i).expect("a readable element")).collect()
 }
 
-/// The bytes of a `Bit<T>` pin holding `value`: its layout's size, value first, the known byte
-/// after it (abi.md P3), which every write sets to 1.
-fn known(value: &[u8]) -> Vec<u8> {
-    let mut bytes = value.to_vec();
-    bytes.push(1);
-    bytes
+/// The bytes of a `Bit<T>` pin holding `value`: the value and nothing else (abi.md P3).
+fn pin_bytes(value: &[u8]) -> Vec<u8> {
+    value.to_vec()
 }
 
-/// The bytes of a `Bit<f64>` pin holding `value`: the value, the known byte, padding to 16.
-fn known_real(value: f64) -> Vec<u8> {
-    let mut bytes = value.to_le_bytes().to_vec();
-    bytes.push(1);
-    bytes.resize(16, 0);
-    bytes
+/// The bytes of a `Bit<f64>` pin holding `value`: its eight bytes.
+fn real_pin_bytes(value: f64) -> Vec<u8> {
+    value.to_le_bytes().to_vec()
 }
 
 /// Runs reaction `k` of `handle` with each read cell given by the name of its pin; returns what
@@ -305,19 +299,19 @@ fn a_reaction_commits_in_source_order() {
     assert_eq!(later, [(false, 0.0), (false, 0.0), (false, 0.0), (true, 1e-9)]);
 
     // clk high: the `then` arm; every commit in the order the source makes them, the bytes of
-    // each carrier's pin (value, known byte 1), the delay as written
-    let (result, made) = react(&mut h, 0, &[("clk", known(&[1]))]);
+    // each carrier's pin (its value), the delay as written
+    let (result, made) = react(&mut h, 0, &[("clk", pin_bytes(&[1]))]);
     result.expect("the reaction runs");
     assert_eq!(
         made,
-        [(0, known(&[1]), 0.0), (1, known(&[2]), 0.0), (3, known(&[1]), 1e-9)],
+        [(0, pin_bytes(&[1]), 0.0), (1, pin_bytes(&[2]), 0.0), (3, pin_bytes(&[1]), 1e-9)],
         "a <- 1; b <- 2 (statement 1); c <- true after 1e-9"
     );
 
     // clk low: the `else` arm is statement 2; `c` is still statement 3
-    let (result, made) = react(&mut h, 0, &[("clk", known(&[0]))]);
+    let (result, made) = react(&mut h, 0, &[("clk", pin_bytes(&[0]))]);
     result.expect("the reaction runs");
-    assert_eq!(made, [(0, known(&[1]), 0.0), (2, known(&[3]), 0.0), (3, known(&[1]), 1e-9)]);
+    assert_eq!(made, [(0, pin_bytes(&[1]), 0.0), (2, pin_bytes(&[3]), 0.0), (3, pin_bytes(&[1]), 1e-9)]);
 }
 
 #[test]
@@ -325,12 +319,12 @@ fn an_if_commits_through_the_arm_it_takes() {
     // `if d { q <- true } else { q <- false }`: one path, the arm the condition names; `r <- 9`,
     // made before the `if`, is statement 0
     let mut h = instance("Guarded");
-    let (result, made) = react(&mut h, 0, &[("clk", known(&[1])), ("d", known(&[1]))]);
+    let (result, made) = react(&mut h, 0, &[("clk", pin_bytes(&[1])), ("d", pin_bytes(&[1]))]);
     result.expect("the reaction runs");
-    assert_eq!(made, [(0, known(&[9]), 0.0), (1, known(&[1]), 0.0)]);
-    let (result, made) = react(&mut h, 0, &[("clk", known(&[1])), ("d", known(&[0]))]);
+    assert_eq!(made, [(0, pin_bytes(&[9]), 0.0), (1, pin_bytes(&[1]), 0.0)]);
+    let (result, made) = react(&mut h, 0, &[("clk", pin_bytes(&[1])), ("d", pin_bytes(&[0]))]);
     result.expect("the reaction runs");
-    assert_eq!(made, [(0, known(&[9]), 0.0), (2, known(&[0]), 0.0)], "the `else` arm is statement 2");
+    assert_eq!(made, [(0, pin_bytes(&[9]), 0.0), (2, pin_bytes(&[0]), 0.0)], "the `else` arm is statement 2");
 }
 
 #[test]
@@ -340,25 +334,25 @@ fn same_cast_and_math_compute_their_tables() {
     // bits, so 5 as an `i8`; `exp(0.0)` is 1.0
     let mut h = instance("Tables");
     let mut run = |a: u8, b: u8, x: f64| {
-        let (result, made) = react(&mut h, 0, &[("clk", known(&[1])), ("a", known(&[a])), ("b", known(&[b])), ("x", known_real(x))]);
+        let (result, made) = react(&mut h, 0, &[("clk", pin_bytes(&[1])), ("a", pin_bytes(&[a])), ("b", pin_bytes(&[b])), ("x", real_pin_bytes(x))]);
         result.expect("the reaction runs");
         made.into_iter().map(|(statement, bytes, _)| (statement, bytes)).collect::<Vec<_>>()
     };
-    assert_eq!(run(5, 6, 0.0), [(0, known(&[0])), (1, known(&[5])), (2, known_real(1.0))]);
+    assert_eq!(run(5, 6, 0.0), [(0, pin_bytes(&[0])), (1, pin_bytes(&[5])), (2, real_pin_bytes(1.0))]);
     // equal values are the same (§22.1.4); a byte above 127 is negative as an `i8`
-    assert_eq!(run(200, 200, 0.0), [(0, known(&[1])), (1, known(&[200])), (2, known_real(1.0))]);
+    assert_eq!(run(200, 200, 0.0), [(0, pin_bytes(&[1])), (1, pin_bytes(&[200])), (2, real_pin_bytes(1.0))]);
 }
 
 #[test]
 fn a_commit_is_made_after_the_delay_it_names() {
     // `q <- true after t` commits `true` after `t` seconds
     let mut h = instance("Late");
-    let (result, made) = react(&mut h, 0, &[("clk", known(&[1])), ("t", known_real(2.5e-9))]);
+    let (result, made) = react(&mut h, 0, &[("clk", pin_bytes(&[1])), ("t", real_pin_bytes(2.5e-9))]);
     result.expect("the reaction runs");
-    assert_eq!(made, [(0, known(&[1]), 2.5e-9)]);
-    let (result, made) = react(&mut h, 0, &[("clk", known(&[1])), ("t", known_real(0.0))]);
+    assert_eq!(made, [(0, pin_bytes(&[1]), 2.5e-9)]);
+    let (result, made) = react(&mut h, 0, &[("clk", pin_bytes(&[1])), ("t", real_pin_bytes(0.0))]);
     result.expect("the reaction runs");
-    assert_eq!(made, [(0, known(&[1]), 0.0)], "a delay of 0 is the next microstep");
+    assert_eq!(made, [(0, pin_bytes(&[1]), 0.0)], "a delay of 0 is the next microstep");
 }
 
 #[test]
@@ -377,8 +371,8 @@ fn a_panic_in_compiled_code_is_a_fault_and_the_instance_survives() {
         let reads: Vec<Vec<u8>> = items(&function.reads)
             .iter()
             .map(|c: &Cell| match items(&shape.pins)[c.index as usize].name.as_str() {
-                "a" => known(&[a]),
-                _ => known(&[b]),
+                "a" => pin_bytes(&[a]),
+                _ => pin_bytes(&[b]),
             })
             .collect();
         let reads: Vec<&[u8]> = reads.iter().map(Vec::as_slice).collect();
@@ -390,7 +384,7 @@ fn a_panic_in_compiled_code_is_a_fault_and_the_instance_survives() {
     let error = call(8, 0).expect_err("a division by zero is a fault");
     assert_eq!(error.status, status::FAULT);
     assert!(error.message.contains("division by zero"), "the fault carries the panic message: {}", error.message);
-    assert_eq!(call(8, 2).expect("the instance survives"), known(&[4]));
+    assert_eq!(call(8, 2).expect("the instance survives"), pin_bytes(&[4]));
 }
 
 #[test]
@@ -492,7 +486,7 @@ fn a_settle_event_function_fires_on_the_settle_pin_and_its_guard() {
     // when the `SETTLE` pin fired (its `CHANGED` byte, abi.md §4) and the guard holds there
     let handle = instance("Settling");
     let fire = |settle: u8, ready_high: bool| {
-        let ready = known(&[u8::from(ready_high)]);
+        let ready = pin_bytes(&[u8::from(ready_high)]);
         run_event(&handle, "event:0", &[("ready", part::VALUE, ready), ("settle", part::CHANGED, vec![settle])])
     };
     assert_eq!(fire(1, true), 1, "the settle phase, the guard holds");

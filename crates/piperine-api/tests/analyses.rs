@@ -67,7 +67,7 @@ fn an_operating_point_is_signal_and_value_in_print_order() {
     // convention, which the spec does not fix, so the magnitude is asserted
     assert!((real(&table.rows[2][1]).abs() - 2.5e-3).abs() <= 1e-9, "{:?}", table.rows[2][1]);
     // a discrete net is decoded by its type: `flag` holds its initial `false`, the undriven
-    // in-port `en` is unknown (spec edge 5)
+    // in-port `en` holds its zero bytes (spec edge 5)
     let dir = tempfile::tempdir().expect("tmp");
     let file = dir.path().join("mixed.msl");
     let text = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n\nmodule Top(in en: Bit) {\n    signal a: Electrical;\n    signal flag: Bit = false;\n    let v1 = Vsource(a, gnd) { dc: 2.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n}\n";
@@ -77,7 +77,7 @@ fn an_operating_point_is_signal_and_value_in_print_order() {
     assert_eq!(table.rows, [
         vec![Cell::Text("Top.flag".into()), Cell::Bool(false)],
         vec![Cell::Text("Top.a".into()), table.rows[1][1].clone()],
-        vec![Cell::Text("Top.en".into()), Cell::Unknown],
+        vec![Cell::Text("Top.en".into()), Cell::Bool(false)],
     ]);
     assert!((real(&table.rows[1][1]) - 2.0).abs() <= 1e-9, "a is the source's 2 V");
 }

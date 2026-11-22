@@ -88,17 +88,14 @@ fn reaction_design(items: &str, lets: &str, rows: &[Row]) -> String {
     )
 }
 
-/// The bytes of a known `f64` carrier value: the value, then the known byte.
+/// The bytes of an `f64` carrier value: its eight bytes.
 fn real_bytes(v: f64) -> Vec<u8> {
-    let mut bytes = vec![0u8; 16];
-    bytes[..8].copy_from_slice(&v.to_le_bytes());
-    bytes[8] = 1;
-    bytes
+    v.to_le_bytes().to_vec()
 }
 
-/// The bytes of a known one-byte carrier value (`u8`, `i8`, `bool`).
+/// The bytes of a one-byte carrier value (`u8`, `i8`, `bool`).
 fn byte(v: u8) -> Vec<u8> {
-    vec![v, 1]
+    vec![v]
 }
 
 /// The value of each `rN` once the first rising edge has committed, in row order: its bytes.

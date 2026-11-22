@@ -25,9 +25,9 @@ use digital::{Buck, Dx, Ty};
 use mixed::{Built, Wire};
 
 const BIT: ValueType = ValueType::Bool;
-/// A known true and a known false `Bit`: `{ v @0, known @1 }` (abi.md §3.1).
-const HIGH: [u8; 2] = [1, 1];
-const LOW: [u8; 2] = [0, 1];
+/// A true and a false `Bit`: `{ v @0 }` (abi.md §3.1).
+const HIGH: [u8; 1] = [1];
+const LOW: [u8; 1] = [0];
 /// One nanosecond in ticks (the solver's one femtosecond).
 const NS: i64 = 1_000_000;
 
@@ -72,7 +72,7 @@ fn the_adc_commits_the_rounded_code_after_tconv() {
         // the code appears after `tconv` from the rising edge, and not before: a code of 0 is
         // the value it already holds, so it commits nothing visible
         let changes = seen.transient(&format!("code{i}"));
-        let wanted: Vec<(i64, Vec<u8>)> = if code == 0 { vec![] } else { vec![(sample + 500 * NS, vec![code.to_le_bytes()[0], code.to_le_bytes()[1], 1, 0])] };
+        let wanted: Vec<(i64, Vec<u8>)> = if code == 0 { vec![] } else { vec![(sample + 500 * NS, code.to_le_bytes().to_vec())] };
         assert_eq!(changes, wanted, "code of {v} V");
         // `done` is true from `tconv` for `tstrobe`
         assert_eq!(

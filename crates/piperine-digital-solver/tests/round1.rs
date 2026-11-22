@@ -83,7 +83,7 @@ fn a_host_write_outside_its_net_fails_loud_and_changes_nothing() {
     use piperine_digital_solver::plan::DigitalPlan;
     use piperine_digital_solver::error::DigitalError;
     let plan = DigitalPlan::bind(
-        vec![NetSpec::discrete("n", 2, 1), NetSpec::event("ev")],
+        vec![NetSpec::discrete("n", 1, 1), NetSpec::event("ev")],
         vec![],
         Resolution::default(),
     )
@@ -91,50 +91,16 @@ fn a_host_write_outside_its_net_fails_loud_and_changes_nothing() {
     let mut d = Digital::new(plan, DigitalLimits::default());
     d.start().unwrap();
     let before = d.checkpoint();
-    for (net, offset, bytes) in [(0u32, 1u32, &[1u8, 1, 1][..]), (0, 3, &[1][..]), (0, u32::MAX, &[1, 1][..]), (1, 0, &[1][..]), (9, 0, &[][..])] {
+    for (net, offset, bytes) in [(0u32, 1u32, &[1u8, 1][..]), (0, 2, &[1][..]), (0, u32::MAX, &[1, 1][..]), (1, 0, &[1][..]), (9, 0, &[][..])] {
         match d.host_commit(NetId(net), offset, bytes, Tick(1)) {
             Err(DigitalError::HostWrite { .. }) => {}
             other => panic!("net {net} offset {offset} len {}: expected a refusal, got {other:?}", bytes.len()),
         }
     }
     assert_eq!(d.checkpoint(), before, "nothing was queued");
-    d.host_commit(NetId(0), 1, &[1], Tick(1)).expect("the last byte of the net is in range");
-    d.host_commit(NetId(0), 0, &[1, 1], Tick(1)).expect("the whole net is in range");
+    d.host_commit(NetId(0), 0, &[1], Tick(1)).expect("the last byte of the net is in range");
+    d.host_commit(NetId(0), 0, &[1], Tick(1)).expect("the whole net is in range");
     instant(&mut d, Tick(1));
-}
-
-#[test]
-fn a_non_canonical_write_is_a_fault_through_a_function_a_commit_and_the_host() {
-    // finding 6, abi.md P3: a field whose known byte is 0 holds no value, so its value bytes are zero.
-    // Checked on every write, in release builds too.
-    use piperine_digital_solver::error::DigitalError;
-    let fault = |r: Result<_, DigitalError>, what: &str| match r {
-        Err(DigitalError::Fault { message, .. }) => assert!(message.contains("P3") && message.contains(what), "{message}"),
-        other => panic!("expected a P3 fault naming {what}, got {other:?}"),
-    };
-    let mut d = engine(vec![("s", sloppy(), vec![("a", "a"), ("y", "y"), ("z", "z"), ("go", "go")])]);
-    d.start().unwrap();
-    d.host_commit(net(&d, "a"), 0, &HIGH, Tick(1)).unwrap();
-    fault(d.run_instant(Tick(1), &[], Horizon::uniform(Tick(9)), Mode::default()), "y");
-
-    let mut d = engine(vec![("s", sloppy(), vec![("a", "a"), ("y", "y"), ("z", "z"), ("go", "go")])]);
-    d.start().unwrap();
-    d.fire(net(&d, "go"), Tick(1)).unwrap();
-    fault(d.run_instant(Tick(1), &[], Horizon::uniform(Tick(9)), Mode::default()), "z");
-
-    // a host commit is a write too
-    let mut d = engine(vec![("inv", inverter(), vec![("a", "a"), ("y", "y")])]);
-    d.start().unwrap();
-    d.host_commit(net(&d, "a"), 0, &[1, 0], Tick(1)).unwrap();
-    fault(d.run_instant(Tick(1), &[], Horizon::uniform(Tick(9)), Mode::default()), "a");
-
-    // canonical bytes pass: known high, and no value at all
-    let mut d = engine(vec![("inv", inverter(), vec![("a", "a"), ("y", "y")])]);
-    d.start().unwrap();
-    d.host_commit(net(&d, "a"), 0, &HIGH, Tick(1)).unwrap();
-    d.host_commit(net(&d, "a"), 0, &[0, 0], Tick(2)).unwrap();
-    instant(&mut d, Tick(1));
-    instant(&mut d, Tick(2));
 }
 
 /// What the clockwatch of the instant at 10 ns read as `HORIZON`, with a timer re-arming the event it

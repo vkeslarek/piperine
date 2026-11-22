@@ -84,7 +84,7 @@ fn finish_ends_after_its_instant_and_is_dropped_on_an_earlier_landing() {
 }
 
 /// A protocol whose instant at tick 2 fires host event 4, with a waiter that
-/// logs `Waiter(4)` and writes `[1, 1]` to net 9.
+/// logs `Waiter(4)` and writes `[1]` to net 9.
 fn waited(log: &Log, mut d: ScriptedDiscrete, mut a: ScriptedAnalog) -> (Protocol<ScriptedDiscrete, ScriptedAnalog>, Rc<std::cell::RefCell<Vec<SetOutcome>>>) {
     d.advances.push_back(Advance::Landing { tick: 2, time_point: false });
     d.instants.push_back(Outcome { host_events: vec![4], ..Outcome::default() });
@@ -95,7 +95,7 @@ fn waited(log: &Log, mut d: ScriptedDiscrete, mut a: ScriptedAnalog) -> (Protoco
     p.on_event(4, Box::new(move |cx| {
         log.borrow_mut().push(Call::Waiter(cx.event()));
         assert_eq!(cx.time(), 1.0);
-        out.borrow_mut().push(cx.set(9, 0, &[1, 1]).unwrap());
+        out.borrow_mut().push(cx.set(9, 0, &[1]).unwrap());
     }));
     (p, results)
 }
@@ -114,9 +114,9 @@ fn a_host_waiter_runs_once_and_its_writes_are_due_next_microstep() {
             Call::Wait(4),
             Call::RunInstant { at: 2, samples: vec![], limit: horizon(4, 2), mode: FORCED },
             Call::Waiter(4),
-            Call::Shadow(9, vec![1, 1]),
+            Call::Shadow(9, vec![1]),
             // Due at the instant's own tick: the next microstep.
-            Call::HostCommit { net: 9, offset: 0, bytes: vec![1, 1], at: 2 },
+            Call::HostCommit { net: 9, offset: 0, bytes: vec![1], at: 2 },
             // The instant continues.
             Call::RunInstant { at: 2, samples: vec![], limit: horizon(4, 2), mode: FORCED },
             Call::RunInstant { at: 4, samples: vec![], limit: horizon(4, 4), mode: STEP },
@@ -201,8 +201,8 @@ fn reshape_is_refused_in_a_transient_and_reported_outside_one() {
 fn a_scheduled_write_is_a_host_commit_at_its_tick() {
     let (log, d, a) = sides();
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
-    assert_eq!(p.set(7, 0, &[1, 1], Some(2.5)).unwrap(), SetOutcome::Committed);
-    assert_eq!(commits(&log), [Call::HostCommit { net: 7, offset: 0, bytes: vec![1, 1], at: 5 }]);
+    assert_eq!(p.set(7, 0, &[1], Some(2.5)).unwrap(), SetOutcome::Committed);
+    assert_eq!(commits(&log), [Call::HostCommit { net: 7, offset: 0, bytes: vec![1], at: 5 }]);
 }
 
 #[test]

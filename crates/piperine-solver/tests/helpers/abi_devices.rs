@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::layout::{F64, REAL};
+use piperine_abi::layout::F64;
 use piperine_abi::raw::{
     Cell, DEFAULT, GROUND, Module, Partial, Shape, ambient, cell, op, part, pin_flag, role,
 };
@@ -244,20 +244,21 @@ pub fn resistor() -> &'static Module {
 ///     end
 /// endmodule
 /// ```
-/// `w` is presence-queried: a `REAL` field whose known byte is 0 was not given.
-/// Changing whether it is given is a rebuild, so the pin is `STRUCTURAL`.
-/// pins: r=0 (PARAM F64); w=1 (PARAM REAL, STRUCTURAL); p=2, n=3 (PORT)
+/// `w` defaults to 1 mS; a structural param, so changing it is a rebuild.
+/// pins: r=0 (PARAM F64); w=1 (PARAM F64, STRUCTURAL, default 1 mS); p=2, n=3 (PORT)
 /// terms: T0 FLOW{p, n} "i"
 /// fn 0 "i": reads [p, n, w] writes [T0] partials (0<-0) (0<-1); none against a param,
 /// so a sensitivity to `w` or `r` takes the finite-difference fallback.
 pub struct ROpt;
+/// The default of `ROpt`'s `w`: 1 mS, as little-endian bytes.
+static W_DEFAULT: [u8; 8] = 1.0e-3f64.to_le_bytes();
 static ROPT_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static ROPT_MODULE: OnceLock<Module> = OnceLock::new();
 
 fn ropt_shape() -> ShapeRef {
     let mut s = ShapeBuf::new();
     s.pin(real_param("r", &R_DEFAULT));
-    let w = s.pin(PinSpec { flags: pin_flag::STRUCTURAL, ..PinSpec::discrete("w", role::PARAM, &REAL) });
+    let w = s.pin(PinSpec { flags: pin_flag::STRUCTURAL | pin_flag::HAS_INIT, init: &W_DEFAULT, ..PinSpec::discrete("w", role::PARAM, &F64) });
     let p = s.pin(PinSpec::continuous("p", role::PORT));
     let n = s.pin(PinSpec::continuous("n", role::PORT));
     let t0 = s.term(flow("i", op::FLOW, p, n));
@@ -280,8 +281,7 @@ impl Device for ROpt {
         Ok((ROpt, Arc::clone(shape_of(&ROPT_SHAPE, ropt_shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let given = cx.bytes(2)[8] != 0;
-        let g = if given { cx.f64(2) } else { 1.0e-3 };
+        let g = cx.f64(2);
         cx.set(0, (cx.f64(0) - cx.f64(1)) * g);
         cx.jac().copy_from_slice(&[g, -g]);
         Ok(())

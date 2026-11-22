@@ -415,7 +415,7 @@ impl BodyPlan {
             .iter()
             .map(|p| match p.default {
                 Some(Constant::Real(r)) => r.get().to_le_bytes().to_vec(),
-                Some(Constant::Bool(b)) => vec![u8::from(b), 1],
+                Some(Constant::Bool(b)) => vec![u8::from(b)],
                 // An integer param has a carrier's layout and bytes (`digital.rs`).
                 Some(c @ Constant::Int(_)) => CarrierLayout::bytes(&p.ty, c).unwrap_or_default(),
                 // A composite param has the layout and bytes of a composite carrier (`composite.rs`).

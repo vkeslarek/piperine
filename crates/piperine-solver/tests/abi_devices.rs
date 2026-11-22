@@ -37,23 +37,18 @@ fn reals(point: &[f64]) -> Vec<Vec<u8>> {
 }
 
 /// A `BIT` read followed by `F64` reads.
-fn bit_then(bit: &[u8; 2], point: &[f64]) -> Vec<Vec<u8>> {
+fn bit_then(bit: &[u8; 1], point: &[f64]) -> Vec<Vec<u8>> {
     std::iter::once(bit.to_vec()).chain(reals(point)).collect()
 }
 
 /// `F64` reads followed by a `BIT` read.
-fn reals_then(point: &[f64], bit: &[u8; 2]) -> Vec<Vec<u8>> {
+fn reals_then(point: &[f64], bit: &[u8; 1]) -> Vec<Vec<u8>> {
     reals(point).into_iter().chain(std::iter::once(bit.to_vec())).collect()
 }
 
-/// `ROpt`'s third read is a `REAL`: the value and its known byte.
+/// `ROpt`'s third read is its `w`, an `F64` that is 1 mS when the point gives none.
 fn ropt_point(vp: f64, vn: f64, w: Option<f64>) -> Vec<Vec<u8>> {
-    let mut real = vec![0u8; 16];
-    if let Some(w) = w {
-        real[..8].copy_from_slice(&w.to_le_bytes());
-        real[8] = 1;
-    }
-    vec![vp.to_le_bytes().to_vec(), vn.to_le_bytes().to_vec(), real]
+    vec![vp.to_le_bytes().to_vec(), vn.to_le_bytes().to_vec(), w.unwrap_or(1.0e-3).to_le_bytes().to_vec()]
 }
 
 /// (name, module, function, operating points): reads in the order the shape lists them.
@@ -97,9 +92,9 @@ fn table() -> Vec<(&'static str, &'static Module, u32, Vec<Vec<Vec<u8>>>)> {
         // abi_mixed.rs. reads: inp, inn
         ("Comparator", comparator(), 0, vec![reals(&[0.7, 0.5]), reals(&[-1.0, 2.0])]),
         // reads: code (BIT), out, f, vref
-        ("Dac", dac(), 0, vec![bit_then(&[1, 1], &[0.4, 0.01, 1.0]), bit_then(&[0, 1], &[-0.2, 0.0, 3.3])]),
+        ("Dac", dac(), 0, vec![bit_then(&[1], &[0.4, 0.01, 1.0]), bit_then(&[0], &[-0.2, 0.0, 3.3])]),
         // reads: clk_a, gnd, f, hi (BIT)
-        ("ClockSrc", clock_src(), 0, vec![reals_then(&[1.0, 0.0, 0.02], &[1, 1]), reals_then(&[0.3, 0.1, -0.5], &[0, 1])]),
+        ("ClockSrc", clock_src(), 0, vec![reals_then(&[1.0, 0.0, 0.02], &[1]), reals_then(&[0.3, 0.1, -0.5], &[0])]),
         // reads: p
         ("Tracer", tracer(), 0, vec![reals(&[0.7]), reals(&[-3.0])]),
         // reads: p, n, TIME (never armed in this target)

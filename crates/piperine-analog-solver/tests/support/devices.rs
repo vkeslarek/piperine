@@ -9,10 +9,10 @@ use std::ptr::NonNull;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::layout::{BIT, BYTE, F64, HIGH, LOW, REAL};
+use piperine_abi::layout::{BIT, BYTE, F64, HIGH, LOW};
 use piperine_abi::raw::{
     Cell, Created, DEFAULT, Eval as RawEval, GROUND, Instance, List, Module, Note, Partial, React as RawReact, Shape,
-    Statement, Str, Value, ambient, cell, fn_flag, global, input, op, part, pin_flag, role, status, watch,
+    Field, Layout, Statement, Str, Value, ambient, cell, fn_flag, global, input, op, part, pin_flag, role, status, watch,
 };
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec, WatchSpec};
 use piperine_abi::thunk::module;
@@ -342,7 +342,7 @@ fn flip_flop_shape() -> ShapeRef {
         name: "sample",
         on: vec![rise],
         reads: vec![pin(d)],
-        writes: vec![Statement { pin: q, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+        writes: vec![Statement { pin: q, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -404,7 +404,7 @@ fn comparator_shape() -> ShapeRef {
         s.reaction(ReactionSpec {
             name,
             on: vec![on],
-            writes: vec![Statement { pin: out, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+            writes: vec![Statement { pin: out, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
             ..ReactionSpec::default()
         });
     }
@@ -1567,11 +1567,18 @@ impl Device for Capper {
 
 /// A conductance that traces its voltage whenever it exceeds 0.5 V.
 /// pins: p=0 (PORT continuous)
-/// terms: T0 FLOW {p, GROUND} "g" = v(p)     watches: W0 TRACE "hi" (layout REAL)
-/// fn 0 "g": reads [p] writes [T0, W0] partials (0←0)=1; W0 = {v, known} when v > 0.5,
-///           else left empty (all zero, P3)
+/// terms: T0 FLOW {p, GROUND} "g" = v(p)     watches: W0 TRACE "hi" (layout `HI`)
+/// fn 0 "g": reads [p] writes [T0, W0] partials (0←0)=1; W0 = {some: 1, v} when v > 0.5,
+///           else left empty (all zero, A5)
 pub struct Tracer;
 static TRACER: OnceLock<ShapeRef> = OnceLock::new();
+
+static HI_FIELDS: [Field; 2] = [
+    Field { name: Str::from_static("some"), leaf: piperine_abi::raw::leaf::BOOL, offset: 0, count: 1 },
+    Field { name: Str::from_static("v"), leaf: piperine_abi::raw::leaf::F64, offset: 8, count: 1 },
+];
+/// The record of `Tracer`: a `BOOL` presence field, then the traced `F64` (abi.md A5).
+pub static HI: Layout = Layout { size: 16, align: 8, fields: piperine_abi::raw::List::from_slice(&HI_FIELDS) };
 
 fn tracer_shape() -> ShapeRef {
     let mut s = ShapeBuf::new();
@@ -1581,7 +1588,7 @@ fn tracer_shape() -> ShapeRef {
         name: "hi",
         origin: "fixture:tracer:W0",
         kind: watch::TRACE,
-        layout: &REAL,
+        layout: &HI,
         event: 0,
         ttol: DEFAULT,
         etol: DEFAULT,
@@ -1609,8 +1616,8 @@ impl Device for Tracer {
         cx.jac()[0] = 1.0;
         if v > 0.5 {
             let rec = cx.out_bytes(1);
-            rec[..8].copy_from_slice(&v.to_le_bytes());
-            rec[8] = 1;
+            rec[0] = 1;
+            rec[8..16].copy_from_slice(&v.to_le_bytes());
         }
         Ok(())
     }
@@ -1620,7 +1627,7 @@ impl Device for Tracer {
 }
 
 /// A sample-and-hold: a reaction reads a continuous pin.
-/// pins: inp=0 (PORT continuous); clk=1 (PORT event); out=2 (PORT REAL)
+/// pins: inp=0 (PORT continuous); clk=1 (PORT event); out=2 (PORT F64)
 /// reaction 0 "sample": on [clk] reads [inp] writes [S0 {out}]
 pub struct SampleHold;
 static SAMPLE_HOLD: OnceLock<ShapeRef> = OnceLock::new();
@@ -1629,12 +1636,12 @@ fn sample_hold_shape() -> ShapeRef {
     let mut s = ShapeBuf::new();
     let inp_ = s.pin(PinSpec::continuous("inp", role::PORT));
     let clk = s.pin(PinSpec::event("clk", role::PORT));
-    let out = s.pin(PinSpec::discrete("out", role::PORT, &REAL));
+    let out = s.pin(PinSpec::discrete("out", role::PORT, &F64));
     s.reaction(ReactionSpec {
         name: "sample",
         on: vec![clk],
         reads: vec![pin(inp_)],
-        writes: vec![Statement { pin: out, offset: 0, len: 16, flags: 0, min_after: 0.0 }],
+        writes: vec![Statement { pin: out, offset: 0, len: 8, flags: 0, min_after: 0.0 }],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -1651,10 +1658,7 @@ impl Device for SampleHold {
         Ok(())
     }
     fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
-        let mut real = [0u8; 16];
-        real[..8].copy_from_slice(&cx.f64(0).to_le_bytes());
-        real[8] = 1;
-        cx.commit(0, &real, 0.0)?;
+        cx.commit(0, &cx.f64(0).to_le_bytes(), 0.0)?;
         Ok(Flow::Continue)
     }
 }

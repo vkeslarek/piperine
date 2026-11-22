@@ -1,7 +1,6 @@
 //! `Table`: the result of an analysis as named columns and rows of typed cells (CLI-05 AC 1, 2
 //! and 7). A discrete net is decoded by its carrier type from the bytes the solver holds: the
-//! value little-endian at its field's offset, its known byte beside it (`CarrierLayout`,
-//! contract D3); a known byte of 0 is `Cell::Unknown`.
+//! value little-endian at its field's offset and nothing else (`CarrierLayout`, contract D3).
 
 use piperine_abi::raw::leaf;
 use piperine_ir::ValueType;
@@ -37,8 +36,7 @@ pub struct Table {
 }
 
 impl Cell {
-    /// The value of the net of a param: the bytes of the value itself, with no known byte (a
-    /// param is never unknown). A length other than the type's is a `Failure`.
+    /// The value of the net of a param: the bytes of the value itself. A length other than the type's is a `Failure`.
     pub fn decode_param(ty: &ValueType, bytes: &[u8]) -> Result<Cell, Failure> {
         let wrong = || Failure::Backend(format!("cannot decode a param of type {ty} from {} bytes", bytes.len()));
         let width = match ty {
@@ -73,9 +71,6 @@ impl Cell {
             return Err(refused(format!("{} bytes where its layout holds {}", bytes.len(), layout.size)));
         }
         let field = layout.fields.get(0).ok_or_else(|| refused("its layout has no field".into()))?;
-        if bytes[field.known as usize] == 0 {
-            return Ok(Cell::Unknown);
-        }
         let at = field.offset as usize;
         let le = |n: usize| {
             let mut word = [0u8; 8];

@@ -1,21 +1,16 @@
 //! `Carried`: the types a pin carries (spec RS-11, abi.md P3), their byte form and their level
 //! form. The commits of a reaction are `rt/commits.rs`.
 //!
-//! A pin holds the value bytes of its type, little-endian at offset 0, then one byte the contract
-//! still names `known`. Generated code writes 1 there with every value and ignores it when it
-//! reads: no layer above produces an unknown value, and the ABI drops the byte with the layouts
-//! (`explicit-unknowns` T36). The level form (`to_levels`, `from_levels`) is what `same` compares
+//! A pin holds the value bytes of its type, little-endian at offset 0, and nothing else (abi.md
+//! P3: a value is its bytes). The level form (`to_levels`, `from_levels`) is what `same` compares
 //! and `cast` moves between types of one level count (§22.1).
 
 use super::int::{Int, UInt};
 
-/// A type a pin carries: its value bytes little-endian at offset 0, then one known byte; the
-/// layouts of the plan (`piperine_plan::CarrierLayout`, spec RS-12 AC 1).
+/// A type a pin carries: its value bytes little-endian at offset 0; the layouts of the plan (`piperine_plan::CarrierLayout`, spec RS-12 AC 1).
 pub trait Carried: Copy + Default + PartialEq {
-    /// The width of the value bytes.
+    /// The width of the value bytes, which is the pin's size.
     const WIDTH: usize;
-    /// The pin's size: the known byte after the value, rounded to the value's alignment.
-    const SIZE: usize;
     /// Writes the value bytes into `out[..WIDTH]`.
     fn encode(self, out: &mut [u8]);
     /// The value of `bytes[..WIDTH]`.
@@ -31,17 +26,16 @@ pub trait Carried: Copy + Default + PartialEq {
 
     /// The value of a pin's bytes.
     fn from_pin(bytes: &[u8]) -> Self {
-        if bytes.len() < Self::SIZE {
-            panic!("a pin of {} bytes read as a value of {} bytes", bytes.len(), Self::SIZE);
+        if bytes.len() < Self::WIDTH {
+            panic!("a pin of {} bytes read as a value of {} bytes", bytes.len(), Self::WIDTH);
         }
         Self::decode(bytes)
     }
 
-    /// The pin's bytes: the value, then the known byte 1.
+    /// The pin's bytes: the value.
     fn pin(self) -> Vec<u8> {
-        let mut bytes = vec![0u8; Self::SIZE];
+        let mut bytes = vec![0u8; Self::WIDTH];
         self.encode(&mut bytes);
-        bytes[Self::WIDTH] = 1;
         bytes
     }
 
@@ -171,7 +165,6 @@ impl Field {
 
 impl Carried for bool {
     const WIDTH: usize = 1;
-    const SIZE: usize = 2;
     fn encode(self, out: &mut [u8]) {
         out[0] = u8::from(self);
     }
@@ -189,7 +182,6 @@ impl Carried for bool {
 
 impl Carried for f64 {
     const WIDTH: usize = 8;
-    const SIZE: usize = 16;
     fn encode(self, out: &mut [u8]) {
         out[..8].copy_from_slice(&self.to_le_bytes());
     }
@@ -234,7 +226,6 @@ impl Word {
 
 impl<const N: u32> Carried for UInt<N> {
     const WIDTH: usize = Word::width(N);
-    const SIZE: usize = 2 * Word::width(N);
     fn encode(self, out: &mut [u8]) {
         out[..Self::WIDTH].copy_from_slice(&self.get().to_le_bytes()[..Self::WIDTH]);
     }
@@ -252,7 +243,6 @@ impl<const N: u32> Carried for UInt<N> {
 
 impl<const N: u32> Carried for Int<N> {
     const WIDTH: usize = Word::width(N);
-    const SIZE: usize = 2 * Word::width(N);
     fn encode(self, out: &mut [u8]) {
         out[..Self::WIDTH].copy_from_slice(&self.get().to_le_bytes()[..Self::WIDTH]);
     }
@@ -305,11 +295,10 @@ impl Tag {
 // ---- composite carried types (§2): tuples, arrays and `Option` ----------------------------------------------
 //
 // The value bytes of a composite are those of its parts one after another, the first lowest, then
-// the one known byte of the whole value; its levels are the parts' levels in the same order.
+// its levels are the parts' levels in the same order.
 
 impl<A: Carried> Carried for (A,) {
     const WIDTH: usize = A::WIDTH;
-    const SIZE: usize = Self::WIDTH + 1;
     fn encode(self, out: &mut [u8]) {
         let mut at = 0;
         Field::write(self.0, out, &mut at);
@@ -330,7 +319,6 @@ impl<A: Carried> Carried for (A,) {
 
 impl<A: Carried, B: Carried> Carried for (A, B) {
     const WIDTH: usize = A::WIDTH + B::WIDTH;
-    const SIZE: usize = Self::WIDTH + 1;
     fn encode(self, out: &mut [u8]) {
         let mut at = 0;
         Field::write(self.0, out, &mut at);
@@ -352,7 +340,6 @@ impl<A: Carried, B: Carried> Carried for (A, B) {
 
 impl<A: Carried, B: Carried, C: Carried> Carried for (A, B, C) {
     const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH;
-    const SIZE: usize = Self::WIDTH + 1;
     fn encode(self, out: &mut [u8]) {
         let mut at = 0;
         Field::write(self.0, out, &mut at);
@@ -375,7 +362,6 @@ impl<A: Carried, B: Carried, C: Carried> Carried for (A, B, C) {
 
 impl<A: Carried, B: Carried, C: Carried, D: Carried> Carried for (A, B, C, D) {
     const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH;
-    const SIZE: usize = Self::WIDTH + 1;
     fn encode(self, out: &mut [u8]) {
         let mut at = 0;
         Field::write(self.0, out, &mut at);
@@ -399,7 +385,6 @@ impl<A: Carried, B: Carried, C: Carried, D: Carried> Carried for (A, B, C, D) {
 
 impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried> Carried for (A, B, C, D, E) {
     const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH + E::WIDTH;
-    const SIZE: usize = Self::WIDTH + 1;
     fn encode(self, out: &mut [u8]) {
         let mut at = 0;
         Field::write(self.0, out, &mut at);
@@ -424,7 +409,6 @@ impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried> Carried for (A,
 
 impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried> Carried for (A, B, C, D, E, F) {
     const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH + E::WIDTH + F::WIDTH;
-    const SIZE: usize = Self::WIDTH + 1;
     fn encode(self, out: &mut [u8]) {
         let mut at = 0;
         Field::write(self.0, out, &mut at);
@@ -450,7 +434,6 @@ impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried> Car
 
 impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: Carried> Carried for (A, B, C, D, E, F, G) {
     const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH + E::WIDTH + F::WIDTH + G::WIDTH;
-    const SIZE: usize = Self::WIDTH + 1;
     fn encode(self, out: &mut [u8]) {
         let mut at = 0;
         Field::write(self.0, out, &mut at);
@@ -477,7 +460,6 @@ impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: 
 
 impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: Carried, H: Carried> Carried for (A, B, C, D, E, F, G, H) {
     const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH + E::WIDTH + F::WIDTH + G::WIDTH + H::WIDTH;
-    const SIZE: usize = Self::WIDTH + 1;
     fn encode(self, out: &mut [u8]) {
         let mut at = 0;
         Field::write(self.0, out, &mut at);
@@ -505,7 +487,6 @@ impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: 
 
 impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: Carried, H: Carried, I: Carried> Carried for (A, B, C, D, E, F, G, H, I) {
     const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH + E::WIDTH + F::WIDTH + G::WIDTH + H::WIDTH + I::WIDTH;
-    const SIZE: usize = Self::WIDTH + 1;
     fn encode(self, out: &mut [u8]) {
         let mut at = 0;
         Field::write(self.0, out, &mut at);
@@ -534,7 +515,6 @@ impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: 
 
 impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: Carried, H: Carried, I: Carried, J: Carried> Carried for (A, B, C, D, E, F, G, H, I, J) {
     const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH + E::WIDTH + F::WIDTH + G::WIDTH + H::WIDTH + I::WIDTH + J::WIDTH;
-    const SIZE: usize = Self::WIDTH + 1;
     fn encode(self, out: &mut [u8]) {
         let mut at = 0;
         Field::write(self.0, out, &mut at);
@@ -564,7 +544,6 @@ impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: 
 
 impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: Carried, H: Carried, I: Carried, J: Carried, K: Carried> Carried for (A, B, C, D, E, F, G, H, I, J, K) {
     const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH + E::WIDTH + F::WIDTH + G::WIDTH + H::WIDTH + I::WIDTH + J::WIDTH + K::WIDTH;
-    const SIZE: usize = Self::WIDTH + 1;
     fn encode(self, out: &mut [u8]) {
         let mut at = 0;
         Field::write(self.0, out, &mut at);
@@ -595,7 +574,6 @@ impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: 
 
 impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: Carried, H: Carried, I: Carried, J: Carried, K: Carried, L: Carried> Carried for (A, B, C, D, E, F, G, H, I, J, K, L) {
     const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH + E::WIDTH + F::WIDTH + G::WIDTH + H::WIDTH + I::WIDTH + J::WIDTH + K::WIDTH + L::WIDTH;
-    const SIZE: usize = Self::WIDTH + 1;
     fn encode(self, out: &mut [u8]) {
         let mut at = 0;
         Field::write(self.0, out, &mut at);
@@ -632,7 +610,6 @@ where
     [T; N]: Default,
 {
     const WIDTH: usize = N * T::WIDTH;
-    const SIZE: usize = Self::WIDTH + 1;
     fn encode(self, out: &mut [u8]) {
         let mut at = 0;
         for element in self {
@@ -661,7 +638,6 @@ where
 /// bytes are a tag byte, then `T`'s value bytes (all zero for `None`).
 impl<T: Carried> Carried for Option<T> {
     const WIDTH: usize = 1 + T::WIDTH;
-    const SIZE: usize = Self::WIDTH + 1;
     fn encode(self, out: &mut [u8]) {
         out[..Self::WIDTH].fill(0);
         if let Some(value) = self {
@@ -742,7 +718,7 @@ mod tests {
     }
 
     #[test]
-    fn a_pin_holds_the_value_then_a_known_byte_of_one() {
+    fn a_pin_holds_the_value_and_nothing_else() {
         // RS-12 AC 1: the plan's canonical bytes for the same type and value
         assert_eq!(true.pin(), HIGH);
         assert_eq!(false.pin(), LOW);
@@ -754,18 +730,18 @@ mod tests {
         assert_eq!(UInt::<64>::new(u64::MAX).pin(), plan(ValueType::UInt(64), Constant::Int(i128::from(u64::MAX))));
         assert_eq!(Int::<1>::new(-1).pin(), plan(ValueType::Int(1), Constant::Int(-1)));
         // and read back
-        assert_eq!(UInt::<9>::from_pin(&[44, 1, 1, 0]), UInt::new(300));
-        assert_eq!(Int::<9>::from_pin(&[254, 255, 1, 0]), Int::new(-2));
+        assert_eq!(UInt::<9>::from_pin(&[44, 1]), UInt::new(300));
+        assert_eq!(Int::<9>::from_pin(&[254, 255]), Int::new(-2));
         assert_eq!(bool::from_pin(&HIGH), true);
         assert_eq!(f64::from_pin(&(-0.25f64).pin()), -0.25);
-        // the bytes of a composite: the parts' value bytes one after another, then the known byte
+        // the bytes of a composite: the parts' value bytes one after another
         let pair = (UInt::<3>::new(0b101), true);
         assert_eq!(<(UInt<3>, bool)>::WIDTH, 2);
-        assert_eq!(pair.pin(), vec![0b101, 1, 1]);
-        assert_eq!(<(UInt<3>, bool)>::from_pin(&[0b101, 1, 1]), pair);
-        assert_eq!([UInt::<2>::new(1), UInt::<2>::new(2), UInt::<2>::new(3)].pin(), vec![1, 2, 3, 1]);
+        assert_eq!(pair.pin(), vec![0b101, 1]);
+        assert_eq!(<(UInt<3>, bool)>::from_pin(&[0b101, 1]), pair);
+        assert_eq!([UInt::<2>::new(1), UInt::<2>::new(2), UInt::<2>::new(3)].pin(), vec![1, 2, 3]);
         assert_eq!(<Option<UInt<3>>>::from_pin(&Some(UInt::<3>::new(6)).pin()), Some(UInt::<3>::new(6)));
-        assert_eq!(None::<UInt<3>>.pin(), vec![0, 0, 1]);
+        assert_eq!(None::<UInt<3>>.pin(), vec![0, 0]);
         let mut padded = [9u8, 9];
         None::<UInt<3>>.encode(&mut padded);
         assert_eq!(padded, [0, 0], "None encodes its payload as zeros");

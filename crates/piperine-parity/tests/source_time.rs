@@ -46,11 +46,9 @@ fn every_from_the_stdlib_fires_once_per_period() {
     assert_eq!(transient(&seen, "TimerBench.hit"), wanted);
 }
 
+/// The eight bytes of an `f64` carrier value.
 fn real_bytes(v: f64) -> Vec<u8> {
-    let mut bytes = vec![0u8; 16];
-    bytes[..8].copy_from_slice(&v.to_le_bytes());
-    bytes[8] = 1;
-    bytes
+    v.to_le_bytes().to_vec()
 }
 
 #[test]

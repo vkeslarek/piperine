@@ -299,7 +299,7 @@ fn flip_flop_shape() -> ShapeRef {
         name: "sample",
         on: vec![rise],
         reads: vec![pin(d)],
-        writes: vec![Statement { pin: q, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+        writes: vec![Statement { pin: q, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
         ..ReactionSpec::default()
     });
     s.freeze()
@@ -361,7 +361,7 @@ fn comparator_shape() -> ShapeRef {
         s.reaction(ReactionSpec {
             name,
             on: vec![on],
-            writes: vec![Statement { pin: out, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+            writes: vec![Statement { pin: out, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
             ..ReactionSpec::default()
         });
     }

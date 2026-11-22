@@ -307,7 +307,7 @@ fn run_clocked(circuit: &mut CircuitInstance, from: Option<&TransientStep>) -> T
 
 /// The clock's value and the rising edges counted at a step's time, after the
 /// instant at that time ran (edges at every multiple of `HALF`, the first HIGH).
-fn expected_at(t: f64) -> ([u8; 2], u32) {
+fn expected_at(t: f64) -> ([u8; 1], u32) {
     let ticks = (t / 1.0e-15).round() as u64;
     let k = ticks / (HALF / 1.0e-15).round() as u64;
     let clk = if k % 2 == 1 { HIGH } else { LOW };

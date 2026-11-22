@@ -29,7 +29,6 @@ fn every_fixture_shape_is_valid() {
         ("stub", stub()),
         ("odd", odd()),
         ("rogue", rogue()),
-        ("sloppy", sloppy()),
         ("rearm", rearm()),
         ("setter", setter()),
         ("settler", settler()),
@@ -62,5 +61,5 @@ fn fixtures_bind_into_a_plan() {
     assert!(plan.dag().order().iter().all(|s| matches!(s, Step::Run(_))));
     assert!(!plan.analysis().later(0, 0, 0), "the timer promises no LATER");
     // the flip-flop's q starts LOW through its init
-    assert_eq!(plan.nets[net_named(&plan, "q").0 as usize].init, [0, 1]);
+    assert_eq!(plan.nets[net_named(&plan, "q").0 as usize].init, [0]);
 }

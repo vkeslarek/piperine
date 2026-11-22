@@ -133,7 +133,7 @@ fn rc_with_a_dac(reject: Option<usize>) -> (f64, f64) {
     asm.push_stage(&op, at_rest()).expect("the operating point's row");
 
     // A boundary event: the code goes to full scale.
-    asm.set_discrete(1, &[255, 1]);
+    asm.set_discrete(1, &[255]);
     let dt = r * c / 50.0;
     let first = Stage { phase: TrBdf2Phase::Trapezoidal, h: dt, prev_h: 0.0 };
     let mut solver = Solver::new(&mut Tran { asm: &mut asm, net: &net, amb: at_time(0.0), stage: first }, size(&net), 4)

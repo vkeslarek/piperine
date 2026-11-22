@@ -185,7 +185,7 @@ fn the_setpoint_register_takes_known_data_and_saturates() {
     let code = transient(&seen, "SetpointBench.code");
     assert_eq!(
         code,
-        vec![(rise(2), vec![7, 1]), (rise(5), vec![100, 1]), (rise(8), vec![168, 1])],
+        vec![(rise(2), vec![7]), (rise(5), vec![100]), (rise(8), vec![168])],
         "the register's code changes at the three first writes and at no other time"
     );
     // the fourth write rose `wr` at the 11th edge and committed the held 168: `wr` rose there, and the

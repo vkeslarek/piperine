@@ -512,8 +512,8 @@ mod tests {
         Column::Net { id, ty }
     }
 
-    /// The bytes of `cell` as a carrier of `ty` holds them: the value at its offset, the known
-    /// byte beside it (clear for `Unknown`).
+    /// The bytes of `cell` as a carrier of `ty` holds them: the value at its offset (all zero for
+    /// `Unknown`, which no carrier holds).
     fn bytes(ty: &ValueType, cell: &Cell) -> Vec<u8> {
         let layout = CarrierLayout::of(ty).expect("a carrier");
         let field = layout.fields.get(0).expect("a field");
@@ -526,7 +526,6 @@ mod tests {
             Cell::Int(v) => out[at..at + 4].copy_from_slice(&(*v as i32).to_le_bytes()),
             Cell::Text(_) | Cell::Composite(_) => panic!("no scalar net holds text or a composite"),
         }
-        out[field.known as usize] = 1;
         out
     }
 
@@ -680,17 +679,17 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_net_value_is_an_unknown_cell() {
-        // LR-05: a net whose known byte is clear is `Cell::Unknown`, at the start and after a
-        // change
+    fn a_zero_net_value_is_a_value() {
+        // LR-05 with the explicit model: a net's bytes are its value, so all-zero bytes are `false`,
+        // at the start and after a change
         let ty = ValueType::Bool;
         let mut recorder = with_net(&ty, 0.5, 1.0);
-        recorder.step(0.0, &reading(0.0, &[Cell::Unknown]));
+        recorder.step(0.0, &reading(0.0, &[Cell::Bool(false)]));
         recorder.change("T.q", 0.5, &bytes(&ty, &Cell::Bool(true)));
-        recorder.change("T.q", 0.75, &bytes(&ty, &Cell::Unknown));
-        recorder.step(1.0, &reading(0.0, &[Cell::Unknown]));
+        recorder.change("T.q", 0.75, &bytes(&ty, &Cell::Bool(false)));
+        recorder.step(1.0, &reading(0.0, &[Cell::Bool(false)]));
         let table = recorder.finish().expect("table");
-        assert_eq!(q(&table), [Cell::Unknown, Cell::Bool(true), Cell::Unknown]);
+        assert_eq!(q(&table), [Cell::Bool(false), Cell::Bool(true), Cell::Bool(false)]);
     }
 
     #[test]

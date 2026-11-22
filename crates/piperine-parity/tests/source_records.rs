@@ -104,8 +104,8 @@ fn never_reports_each_rising_edge() {
         assert_eq!(r.stream, "checks");
         assert_eq!(r.texts, vec![("kind".to_string(), "require".to_string()), ("name".to_string(), "never".to_string())]);
         assert_eq!(r.made, rise(k as i64 + 1), "made at rising edge {}", k + 1);
-        // `pass` is the one value field, a known `bool`: `{ v @0, known @1 }`
-        assert_eq!(r.bytes[1], 1, "pass is known at edge {}: {:?}", k + 1, r.bytes);
+        // `pass` is the one value field, a `bool`: `{ v @0 }`
+        assert_eq!(r.bytes.len(), 1, "pass is the whole record at edge {}: {:?}", k + 1, r.bytes);
     }
     // `Bad` drives `bad` true at the third rising edge, so `Never` reads it false at edges 1 to 3
     // (a pass) and true at edges 4 to 6 (a failure): each read is of the value before the edge
@@ -126,7 +126,7 @@ fn log_carries_its_severity_and_its_text() {
         assert_eq!(r.stream, "log");
         assert_eq!(r.texts, vec![("msg".to_string(), text.to_string())]);
         assert_eq!(r.bytes[0], severity, "severity of record {k}: {:?}", r.bytes);
-        assert_eq!(r.bytes[1], 1, "severity is known: {:?}", r.bytes);
+        assert_eq!(r.bytes.len(), 1, "severity is the whole record: {:?}", r.bytes);
         assert_eq!(r.made, rise(k as i64 / 2 + 1));
     }
 }
@@ -146,7 +146,7 @@ fn records_of_two_reactions_are_told_apart() {
         assert_eq!(r.instance, "TwoBench.talk");
         assert_eq!(r.stream, "log");
         assert_eq!(r.texts, vec![("msg".to_string(), text.to_string())], "record {k}");
-        assert_eq!((r.bytes[0], r.bytes[1]), (severity, 1), "severity of record {k}: {:?}", r.bytes);
+        assert_eq!(r.bytes, vec![severity], "severity of record {k}");
         assert_eq!(r.made, rise(k as i64 / 2 + 1));
     }
 }
@@ -156,7 +156,7 @@ fn logged(all: &[Decoded]) -> Vec<(i64, u8, String)> {
     all.iter()
         .map(|r| {
             assert_eq!(r.stream, "log");
-            assert_eq!(r.bytes[1], 1, "severity is known: {r:?}");
+            assert_eq!(r.bytes.len(), 1, "severity is the whole record: {r:?}");
             let [(field, text)] = r.texts.as_slice() else { panic!("one text field: {r:?}") };
             assert_eq!(field, "msg");
             (r.made, r.bytes[0], text.clone())

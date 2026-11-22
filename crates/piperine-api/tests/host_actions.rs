@@ -70,7 +70,7 @@ fn field<'a>(record: &'a Record, name: &str) -> &'a Field {
 #[test]
 fn a_drive_at_zero_is_the_initial_value() {
     // HII-12 AC 1 (§23.1 rule 4): the value driven before the run is the port's initial value, so
-    // an operating point reads it; HII-12 AC 5 (rule 9): a port never driven stays unknown
+    // an operating point reads it; HII-12 AC 5 (rule 9): a port never driven holds its zero bytes
     let mut driven = session("op", Overrides { print: vec!["clk".into(), "level".into()], ..Overrides::default() });
     driven.drive("clk", ParamValue::Bool(true), 0.0).expect("drive clk");
     driven.drive("Top.level", ParamValue::Int(5), 0.0).expect("drive level, written in full");
@@ -79,7 +79,7 @@ fn a_drive_at_zero_is_the_initial_value() {
     assert_eq!(table.rows[1][1], Cell::Int(5));
     let mut undriven = session("op", Overrides { print: vec!["clk".into(), "level".into()], ..Overrides::default() });
     let (table, _) = run(&mut undriven).unwrap_or_else(|f| panic!("{f}"));
-    assert_eq!((&table.rows[0][1], &table.rows[1][1]), (&Cell::Unknown, &Cell::Unknown));
+    assert_eq!((&table.rows[0][1], &table.rows[1][1]), (&Cell::Bool(false), &Cell::Int(0)));
 }
 
 #[test]
@@ -129,14 +129,14 @@ fn a_drive_of_the_wrong_type_is_e0802() {
 }
 
 #[test]
-fn an_undriven_top_input_is_unknown() {
+fn an_undriven_top_input_holds_its_zero_bytes() {
     // HII-12 AC 5 (§23.1 rule 9): a transient whose host drives `level` and never `clk` has no
-    // edge on `clk`, and `clk` is unknown in every row
+    // edge on `clk`, and `clk` holds its zero bytes in every row
     let mut s = transient(1e-6, &["clk", "level"]);
     s.drive("level", ParamValue::Int(3), 0.0).expect("level");
     let (table, records) = run(&mut s).unwrap_or_else(|f| panic!("{f}"));
     assert!(edges(&records).is_empty(), "{records:?}");
-    assert!(table.rows.iter().all(|row| row[1] == Cell::Unknown && row[2] == Cell::Int(3)), "{table:?}");
+    assert!(table.rows.iter().all(|row| row[1] == Cell::Bool(false) && row[2] == Cell::Int(3)), "{table:?}");
 }
 
 #[test]

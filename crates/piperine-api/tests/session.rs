@@ -164,7 +164,7 @@ fn a_run_compiles_once_and_never_during_an_analysis() {
 }
 
 #[test]
-fn a_top_with_discrete_in_ports_runs_with_them_unknown() {
+fn a_top_with_discrete_in_ports_runs_with_their_zero_bytes() {
     // spec edge 5: the port `en` is a net of the top that nothing writes (contract "The top")
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let cache = tempfile::tempdir().expect("tmp");
@@ -176,11 +176,11 @@ fn a_top_with_discrete_in_ports_runs_with_them_unknown() {
     assert!(session.ir().net_at("Top.en").is_some(), "the port is a net of the top");
     let circuit = session.circuit().expect("a circuit");
     let result = circuit.transient(TransientAnalysisOptions::new(1e-9, 1e-10), Context::default()).expect("tran").solve().unwrap_or_else(|e| panic!("{e}"));
-    // the first step is the operating point; a `Bit` is laid out as its value then its known
-    // byte (abi.md §2): known byte 0 is unknown
+    // the first step is the operating point; a `Bit` is laid out as its value byte (abi.md P3):
+    // nothing wrote `en`, so it holds its zero byte
     let first = result.get(0).expect("the operating point");
     let en = first.digital_named("Top.en").expect("the net `Top.en` in the result");
-    assert_eq!(en.get(1), Some(&0), "`en` is unknown: {en:?}");
+    assert_eq!(en.get(0), Some(&0), "`en` holds its zero byte: {en:?}");
 }
 
 #[test]

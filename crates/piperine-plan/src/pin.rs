@@ -37,7 +37,7 @@ impl PinLayout {
     pub fn size(&self) -> u32 {
         match self {
             PinLayout::Scalar(layout) => layout.size,
-            PinLayout::Composite(layout) => layout.size(),
+            PinLayout::Composite(layout) => layout.width(),
         }
     }
 

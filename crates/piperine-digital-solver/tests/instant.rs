@@ -30,11 +30,8 @@ fn instant(d: &mut Digital, at: Tick) -> piperine_digital_solver::engine::Outcom
     d.run_instant(at, &[], Horizon::uniform(Tick(i64::MAX)), Mode::default()).expect("the instant runs")
 }
 
-fn real(v: f64) -> [u8; 16] {
-    let mut b = [0u8; 16];
-    b[..8].copy_from_slice(&v.to_le_bytes());
-    b[8] = 1;
-    b
+fn real(v: f64) -> [u8; 8] {
+    v.to_le_bytes()
 }
 
 #[test]
@@ -47,14 +44,14 @@ fn start_commits_inits_and_fires_start() {
     // garbage before the start is dropped by it
     d.host_commit(net(&d, "d"), 0, &HIGH, Tick(3)).unwrap();
     d.start().unwrap();
-    assert_eq!(d.read(net(&d, "q")), [0, 0], "the store is zeroed until the first instant applies the inits");
+    assert_eq!(d.read(net(&d, "q")), [0], "the store is zeroed until the first instant applies the inits");
     assert_eq!(d.next_due(), Some(Tick(0)), "inits and START are due at (0, 0); d's commit was dropped");
     let out = instant(&mut d, Tick(0));
     assert_eq!(d.read(net(&d, "q")), LOW, "q's init");
     assert_eq!(d.read(net(&d, "clk")), LOW, "the timer's out init");
     assert_eq!(d.read(net(&d, "clock.half")), 1e-8f64.to_le_bytes(), "the param's default");
     assert!(out.fired.contains(&net(&d, "global:7")), "START fired");
-    assert_eq!(d.read(net(&d, "d")), [0, 0], "the dropped commit never applied");
+    assert_eq!(d.read(net(&d, "d")), [0], "the dropped commit never applied");
     // the timer reacted to START: its edge and its tick are due at 10 ns
     assert_eq!(d.next_due(), Some(Tick(10 * NS)));
 }
@@ -79,7 +76,7 @@ fn start_at_commits_init_at_its_tick() {
 #[test]
 fn a_plan_with_no_code_applies_host_commits_only() {
     let plan = piperine_digital_solver::plan::DigitalPlan::bind(
-        vec![NetSpec::discrete("n", 2, 1)],
+        vec![NetSpec::discrete("n", 1, 1)],
         vec![],
         Resolution::default(),
     )
@@ -146,9 +143,8 @@ fn the_traced_instant_of_section_15_1() {
         [
             &Observation::Change { net: "above".into(), at: at(1), bytes: HIGH.to_vec() },
             &Observation::Change { net: "d".into(), at: at(1), bytes: HIGH.to_vec() },
-            &Observation::Change { net: "q".into(), at: at(1), bytes: vec![0, 0] },
         ],
-        "q took d from before the edge (still unknown), above and d changed after it"
+        "q took d from before the edge (still zero): no change; above and d changed after it"
     );
     assert!(seen.iter().all(|o| !matches!(o, Observation::Change { at: a, .. } | Observation::Fire { at: a, .. } if a.1 >= 2)));
     assert_eq!(out.microsteps, 2, "(10 ns, 2) has nothing pending: the loop exits");
@@ -218,7 +214,7 @@ fn a_settle_commit_is_held_until_it_is_landed() {
     let out = d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), SETTLING).expect("a settle commit is held");
     assert!(d.holds_settle_commits(), "held");
     assert_eq!(d.next_due(), None, "it is due at no instant until it lands");
-    assert_eq!(d.read(net(&d, "out")), [0, 0], "the net keeps its unset value (S4)");
+    assert_eq!(d.read(net(&d, "out")), [0], "the net keeps its unset value (S4)");
     assert_eq!(out.settle_boundary, vec![(net(&d, "out"), HIGH.to_vec())], "the boundary the next solve reads (S2)");
     // without a settle phase no reaction runs and nothing is held
     let mut d = settler_engine(0.0);
@@ -253,7 +249,7 @@ fn a_dropped_settle_commit_never_applies() {
     assert!(!d.holds_settle_commits());
     d.land_settle_commits(Tick(5));
     assert_eq!(d.next_due(), None, "nothing to land");
-    assert_eq!(d.read(net(&d, "out")), [0, 0], "it never applied");
+    assert_eq!(d.read(net(&d, "out")), [0], "it never applied");
 }
 
 #[test]
@@ -355,7 +351,7 @@ fn a_record_from_the_settle_phase_is_stamped_with_the_last_microstep() {
     d.run_instant(Tick(2), &[], Horizon::uniform(Tick(10 * NS)), Mode { is_static: false, settle: true }).expect("a record is no settle commit");
     let seen = d.drain_observations();
     let records: Vec<&Observation> = seen.iter().filter(|o| matches!(o, Observation::Record { .. })).collect();
-    assert_eq!(records, [&Observation::Record { stream: "sr.log".into(), reaction: 0, statement: 0, at: (Tick(2), 1), bytes: vec![7, 1] }], "{seen:?}");
+    assert_eq!(records, [&Observation::Record { stream: "sr.log".into(), reaction: 0, statement: 0, at: (Tick(2), 1), bytes: vec![7] }], "{seen:?}");
     assert_eq!(d.next_due(), None, "the record applied as the instant exited: nothing stays due at this tick");
 }
 
@@ -401,20 +397,20 @@ fn changes(seen: &[Observation], name: &str, t: Tick, n: u32) -> Vec<Vec<u8>> {
 #[test]
 fn two_commits_to_one_net_settle_to_one_write() {
     // DSV-01 AC 1 (§12.1.1, §12.1.2): the commits of a microstep apply together, the later one
-    // winning each byte it writes. `d` holds [0, 0]; HIGH ([1, 1]) then a one-byte 0 at offset 0
-    // settle to [0, 1], LOW: one write, one change
+    // winning each byte it writes. `d` holds [0]; LOW ([0]) then HIGH ([1]) settle to HIGH: one
+    // write, one change
     let mut d = engine(vec![("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")])]);
     d.start().unwrap();
     instant(&mut d, Tick(0));
-    assert_eq!(d.read(net(&d, "d")), [0, 0]);
+    assert_eq!(d.read(net(&d, "d")), [0]);
     d.drain_observations();
     let t = Tick(5 * NS);
+    d.host_commit(net(&d, "d"), 0, &LOW, t).unwrap();
     d.host_commit(net(&d, "d"), 0, &HIGH, t).unwrap();
-    d.host_commit(net(&d, "d"), 0, &[0], t).unwrap();
     instant(&mut d, t);
-    assert_eq!(d.read(net(&d, "d")), LOW, "the later commit wins its byte, the earlier keeps the other");
+    assert_eq!(d.read(net(&d, "d")), HIGH, "the later commit wins its byte");
     let seen = d.drain_observations();
-    assert_eq!(changes(&seen, "d", t, 0), vec![LOW.to_vec()], "one change, to the settled value: {seen:?}");
+    assert_eq!(changes(&seen, "d", t, 0), vec![HIGH.to_vec()], "one change, to the settled value: {seen:?}");
 }
 
 #[test]
@@ -565,7 +561,7 @@ struct Driver {
 
 impl Driver {
     /// A driver of `commits` to a `BIT`, leaked so its module can borrow it.
-    fn handle(commits: &[[u8; 2]]) -> piperine_abi::caller::Handle {
+    fn handle(commits: &[[u8; 1]]) -> piperine_abi::caller::Handle {
         Driver::on(&BIT, commits.iter().map(|value| value.to_vec()).collect())
     }
 
@@ -609,7 +605,7 @@ impl piperine_abi::device::Factory for Driver {
 
 /// The value of net `q` after one reaction made `commits` to it, in statement order, in one
 /// microstep, when `q` held `held` before; and what the run observed.
-fn driven(held: [u8; 2], commits: &[[u8; 2]]) -> (Vec<u8>, Vec<Observation>) {
+fn driven(held: [u8; 1], commits: &[[u8; 1]]) -> (Vec<u8>, Vec<Observation>) {
     let mut d = engine(vec![("d", Driver::handle(commits), vec![("go", "go"), ("out", "q")])]);
     d.start().unwrap();
     instant(&mut d, Tick(0));

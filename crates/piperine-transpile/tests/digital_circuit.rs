@@ -265,6 +265,6 @@ fn a_net_starts_at_its_own_init() {
     };
     assert_eq!(clk_at_start(Some(false)), LOW, "the net's init, false");
     assert_eq!(clk_at_start(Some(true)), HIGH, "the net's init, true");
-    // with no init the net holds no value at (0, 0): all zero, unknown (abi.md P3)
-    assert_eq!(clk_at_start(None), [0, 0]);
+    // with no init the net holds its zero bytes at (0, 0) (abi.md P3)
+    assert_eq!(clk_at_start(None), [0]);
 }

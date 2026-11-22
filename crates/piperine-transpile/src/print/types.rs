@@ -292,7 +292,6 @@ impl TypeItems<'_> {
         let shape = self.shape(printer, data, self.name(id).to_string(), form, fields)?;
         let accessors: Vec<String> = fields.iter().map(|(field, _)| format!("self.{}", Self::label(field))).collect();
         t.line(&format!("const WIDTH: usize = {};", Self::sum(&shape.types, "WIDTH")));
-        t.line("const SIZE: usize = Self::WIDTH + 1;");
         t.line(&format!("const LEVELS: u32 = {};", Self::sum(&shape.types, "LEVELS")));
         t.line("fn encode(self, out: &mut [u8]) {");
         t.indented(|t| {
@@ -333,7 +332,6 @@ impl TypeItems<'_> {
         let widths: Vec<String> = shapes.iter().map(|(_, shape)| Self::sum(&shape.types, "WIDTH")).collect();
         let levels: Vec<String> = shapes.iter().map(|(_, shape)| format!("({}) as usize", Self::sum(&shape.types, "LEVELS"))).collect();
         t.line(&format!("const WIDTH: usize = {tag_bytes} + rt::pin::Tag::widest(&[{}]);", widths.join(", ")));
-        t.line("const SIZE: usize = Self::WIDTH + 1;");
         t.line(&format!("const LEVELS: u32 = {tag_levels} + rt::pin::Tag::widest(&[{}]) as u32;", levels.join(", ")));
         t.line("fn encode(self, out: &mut [u8]) {");
         t.indented(|t| {

@@ -171,6 +171,8 @@ impl DiscreteSide for DigitalSide {
             if self.digital.plan().nets[net.0 as usize].param {
                 self.digital.seed_param(*net, bytes);
             } else {
+                // a value the host gave before the run is the carrier's initial value (§5.3, D8)
+                self.digital.expect_initial(*net);
                 self.digital.host_commit(*net, 0, bytes, DigitalTick(at)).map_err(digital_error)?;
             }
         }
