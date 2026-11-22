@@ -196,6 +196,7 @@ Because nets are user natures and `Resolve` is generic over `X` (D18, D20), the 
 4. IF a signal, an `out` port, or a drive of a resolved carrier has no initial value and its value type does not implement `Default` THEN the system SHALL report `E0187` at the declaration, naming the carrier and `Default`.
 5. IF a one-driver carrier has no drive and its value type does not implement `Default` THEN the system SHALL report `E0187` naming the carrier.
 6. IF a top-level `in` port has no initial value, its value type does not implement `Default`, and the host has given it no value when an analysis starts THEN the system SHALL refuse the analysis with `E0187` naming the port.
+7. IF a signal is driven by an undelayed definition, or an `out` port of a child instance gives its initial value (the one driver of the carrier), THEN the system SHALL NOT report `E0187` for the carrier on account of a missing initial value; a signal driven only by a delayed definition is not exempt. *Amended (AFK default, to show the user): added after the approval of AC 4, which it narrows; the user's rule stands (a value that has a Default may start without one, one that has none must be specified): the definition or the child's port specifies it, once, from `(0, 0)`. An undelayed definition forbids an initial value on the signal (`E0338`), so without this exemption a `bool` carrier with a definition could be written neither way.*
 
 **Acceptance Criteria** (EU-05, which types have a default):
 

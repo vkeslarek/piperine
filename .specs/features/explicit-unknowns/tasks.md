@@ -817,6 +817,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 **Done when**:
 
 - [ ] `types_explicit::a_missing_initial_value_is_e0187_naming_the_carrier` and `an_undriven_carrier_without_default_is_e0187` pass
+- [ ] `types_explicit::a_definition_or_a_child_out_port_specifies_the_value` passes: no `E0187` for a carrier an undelayed definition drives or a child's `out` port holds, `E0187` for a delayed definition without an initial value (C92)
 - [ ] `book_inventory::the_book_uses_no_removed_name` passes with no exempt block (C79)
 - [ ] The tree builds: T23 to T27 left no such carrier
 - [ ] Gate check passes: Full
@@ -1504,6 +1505,9 @@ Proof: run buckcli | test the_buck_runs_from_the_cli ... ok
 
 **C91** - Both integrated suites pass (EU-21, AC 3; T40)
 Proof: run integrated | test the_integrated_suite_passes ... ok
+
+**C92** - A carrier driven by an undelayed definition, or by a child's `out` port that gives the initial value, is not `E0187`; one driven only by a delayed definition is (EU-04, AC 7; T30)
+Proof: run types | test a_definition_or_a_child_out_port_specifies_the_value ... ok
 
 ---
 
