@@ -361,6 +361,22 @@ impl Scenario {
             .collect();
         Ok((steps, crossings))
     }
+
+    /// The error of a transient to 3 us of the jump scenario with an RC behind the gate: `o`
+    /// feeds a 1 kOhm resistor, and a capacitor of `time_constant` seconds on it ties the far end
+    /// to a 1 V bias, so the capacitor is precharged and the retaken step moves its charge.
+    fn precharged_rc(time_constant: f64) -> Result<(), String> {
+        let resistance = 1.0e3;
+        let (mut builder, out) = Scenario::circuit(&[0.5], Watched::Output, Trigger::At(JUMP_AT), false);
+        let ground = builder.ground();
+        let bias = builder.node("bias");
+        let far = builder.node("far");
+        add_vsrc(&mut builder, "vb", 1.0, &bias, &ground);
+        abi_devices::add_resistor(&mut builder, "r1", resistance, &out, &far);
+        abi_devices::add_capacitor(&mut builder, "c1", time_constant / resistance, &far, &bias);
+        let mut solver = Solver::new(builder.build().expect("build")).with_context(Context::default()).with_tran_opts(TransientAnalysisOptions::new(3.0e-6, 6.0e-8)).build();
+        solver.tran().expect("tran").solve().map(|_| ()).map_err(|e| format!("{e}"))
+    }
 }
 
 
@@ -459,4 +475,18 @@ fn the_first_step_after_an_operating_point_that_holds_a_settle_commit_is_first_o
     let current = first.get_branch(piperine_solver::abi::BranchIdentifier::new("gate", "f")).expect("the gate's branch");
     let secant = -capacitance * 1.0 / first.time();
     assert!((current - secant).abs() < 1e-6 * secant.abs(), "the first step's derivative is the secant: {current:e} against {secant:e}");
+}
+
+#[test]
+fn a_retaken_step_is_never_rejected_by_the_jump_estimate_whatever_the_time_constant() {
+    // §15.2 rule 4: the retaken step is exempt from the truncation-error test, since it lands on
+    // the same time and cannot be taken smaller. A capacitor precharged to a 1 V bias behind the
+    // gate gives the jump estimate of the step a size that, for some time constants, exceeds the
+    // tolerance: the run must go through all of them (80 over three decades, 1 ns to 1.9 us).
+    for index in 0..80 {
+        let time_constant = 1.0e-9 * 1.1_f64.powi(index);
+        if let Err(error) = Scenario::precharged_rc(time_constant) {
+            panic!("tau = {time_constant:e} s: {error}");
+        }
+    }
 }

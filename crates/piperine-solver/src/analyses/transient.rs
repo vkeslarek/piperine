@@ -448,6 +448,9 @@ enum StepKind {
     Ordinary,
     /// The step that reads a jump (a delivery under a restart, §15.2 rule 6).
     ReadsJump,
+    /// The step taken again at the same time after its crossings changed what `analog` reads
+    /// (§15.2 rule 4): exempt from the truncation-error test, since it cannot be retaken smaller.
+    Retake,
 }
 
 impl StepKind {
@@ -456,9 +459,9 @@ impl StepKind {
         if sets_just_applied { Self::ReadsJump } else { Self::Ordinary }
     }
 
-    /// Whether the step reads a jump.
+    /// Whether the step reads a jump (a retaken step reads the change its crossings made).
     fn reads_jump(self) -> bool {
-        self == Self::ReadsJump
+        self != Self::Ordinary
     }
 }
 
@@ -850,6 +853,7 @@ impl<'a> TransientSolver<'a> {
         let error = match prediction.kind {
             StepKind::Ordinary => TrBdf2::state_lte(&states, tolerances, prediction.dt_actual),
             StepKind::ReadsJump => TrBdf2::jump_lte(&states, tolerances, prediction.dt_actual),
+            StepKind::Retake => return StepAssessment { milne: 0.0, accept: true },
         };
         StepAssessment { milne: error, accept: error <= tolerances.trtol }
     }
@@ -1044,6 +1048,8 @@ pub(crate) struct DeviceRun {
     /// What the last acceptance changed, until the next one: a step retaken after its crossings
     /// changed what `analog` reads takes it back (§15.2 rule 4).
     undo: Option<AcceptUndo>,
+    /// The last acceptance was taken back, and the step to be attempted next is its retake.
+    retaking: bool,
 }
 
 /// What `device_accept` changes in the run, kept so `device_unaccept` can put it back: the time
@@ -1230,6 +1236,7 @@ impl TransientSolver<'_> {
             located: None,
             retaken: None,
             undo: None,
+            retaking: false,
         };
         let (start, stop) = (self.options.start_time, self.options.stop_time);
         let hooks = self.host.clone();
@@ -1625,7 +1632,7 @@ impl TransientSolver<'_> {
             t_next,
             dt_actual: t_next - st.current_time,
             dt_proposed: st.dt,
-            kind: StepKind::of(st.sets_just_applied),
+            kind: if run.retaking { StepKind::Retake } else { StepKind::of(st.sets_just_applied) },
         };
         self.system.jump = if st.sets_just_applied {
             JumpPosition::Reads
@@ -1761,6 +1768,7 @@ impl TransientSolver<'_> {
     pub(crate) fn device_accept(&mut self, run: &mut DeviceRun) -> crate::core::result::Result<crate::protocol::Accepted> {
         let PendingStep { prediction, snapshot, milne, over_error_at_floor } =
             run.pending.take().expect("accept follows a converged attempt");
+        run.retaking = false;
         run.undo = Some(AcceptUndo {
             st: run.st.clone(),
             prev_h: self.system.prev_h,
@@ -1817,6 +1825,7 @@ impl TransientSolver<'_> {
     /// The solution history and the assembly come back with `device_restore`.
     pub(crate) fn device_unaccept(&mut self, run: &mut DeviceRun) {
         let undo = run.undo.take().expect("a retake follows an acceptance");
+        run.retaking = true;
         run.st = undo.st;
         self.system.prev_h = undo.prev_h;
         self.system.last_read_jump = undo.last_read_jump;
