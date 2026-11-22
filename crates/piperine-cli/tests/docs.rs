@@ -356,6 +356,9 @@ fn state_holds_the_explicit_unknowns_decision() {
     ] {
         assert!(decision.contains(fact), "MD-78 lacks {fact}");
     }
+    let md70_at = state.find("### MD-70:").expect("STATE.md holds MD-70");
+    let md70 = state[md70_at..].split("\n### ").next().expect("MD-70 body");
+    assert!(md70.contains("Superseded whole by MD-78"), "MD-70 is marked superseded");
     let md64 = state[state.find("### MD-64:").expect("MD-64")..].split("\n---").next().expect("MD-64 body").to_string();
     assert!(md64.contains("Superseded in part by MD-78"), "MD-64 is marked");
 }
