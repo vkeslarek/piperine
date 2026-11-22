@@ -1,7 +1,7 @@
 # Explicit Unknowns Design
 
-**Spec**: `.specs/features/explicit-unknowns/spec.md` (EU-01 to EU-21, R1 to R10, D1 to D16, Q1 to Q3)
-**Status**: Draft. It takes the recommended option of Q1, Q2 and Q3; "If the user answers otherwise" at the end says what moves.
+**Spec**: `.specs/features/explicit-unknowns/spec.md` (EU-01 to EU-21, R1 to R10, D1 to D21, Q4, Q5)
+**Status**: Draft, revised 2026-11-21 for the user's answers (Q1 = B extended, `Resolve<X>`, no library `Wire`, Q3 = A, the ABI stays major 1). It takes the recommended option of Q4 and Q5; "If the user answers otherwise" at the end says what moves.
 
 ---
 
@@ -29,7 +29,7 @@ flowchart LR
     G -->|merge| M4((main))
     M4 --> PB[B8 phase B<br/>Logic, operator traits]
     PB -->|merge| M5((main))
-    M5 --> RN[resolved-nets B3+<br/>Wire on Logic]
+    M5 --> RN[resolved-nets B3+<br/>natures that implement Resolve]
     M3 --> PIO[params-and-io B5-B6]
 ```
 
@@ -52,8 +52,9 @@ flowchart LR
 | Initial values | a carrier with no `= value` starts at zero bytes, which read as unknown (P3) | the elaborator emits init bytes for every carrier: the written value or `Default::default()`. Zero bytes are storage before `(0, 0)`, which no model reads |
 | Records | every stream's layout ends with `maybe` (`RecordLayout` in `piperine-plan`); `Record::surely`, an unknown verdict (`piperine-api/src/verdict.rs`, `record.rs`); the CLI prints it (`render/record.rs`, `render/json.rs`) | no field, no `surely`, two verdicts |
 | Commits | `Host.commit_with(.., flags)`, `commit_flag::{MAYBE, MERGE}`; `layout::Merge`; the digital solver's queue converts pending commits under `MAYBE` (`queue.rs`) | `commit` only |
-| ABI | major 1, minor 1; `Field { .., flags, known }`; `HAS_KNOWN`; `BIT` size 2, `REAL` size 16, `BYTE` size 2 | major 2, minor 0; `Field { name, leaf, offset, count }`; `BIT` size 1, `BYTE` size 1, `F64` size 8. `REAL` is deleted: it was `F64` with a known byte |
-| Relaxation | drive pin = value + `driving: BOOL` with a known byte; zero bytes are "absent"; a field with a known byte that still moves is zeroed, one without is a fault (abi.md D1) | drive pin = value + plain `driving: BOOL`; 0 is absent. A loop that still moves is `E0511` (Q3 = A): the solver no longer acts on a layout's fields, which closes abi.md §14 point 6 |
+| ABI | major 1, minor 1; `Field { .., flags, known }`; `HAS_KNOWN`; `BIT` size 2, `REAL` size 16, `BYTE` size 2 | still major 1, edited in place (unreleased), minor 0; `Field { name, leaf, offset, count }`; `BIT` size 1, `BYTE` size 1, `F64` size 8. `REAL` is deleted: it was `F64` with a known byte |
+| Relaxation | drive pin = value + `driving: BOOL` with a known byte; zero bytes are "absent"; a field with a known byte that still moves is zeroed, one without is a fault (abi.md D1) | drive pin = the driven type `X` + plain `driving: BOOL`; 0 is absent; the value pin is the nature's `V`. A loop that still moves is `E0511`: the solver no longer acts on a layout's fields, which closes abi.md §14 point 6 |
+| Which carriers take many drives | a nature with a `resolve` field (`resolved-nets` B1, B2 on `main`); `E0203` checks the named function's signature | a nature that implements `Resolve<X, V>`; the field, the keyword and the library nets are gone (D17 to D21) |
 | Host cells | a cell may be unknown (`table.rs`, `probe.rs`, `plot.rs`, `recorder.rs`, `request.rs`) | a cell is a value. `None` prints `None`; `Logic<N>` prints its pattern (phase B) |
 | `rise`, `fall` | `changed() && prev().level(0) != Some(true) && level(0) != Some(false)`; a `Bit` that starts high rises at `(0, 0)` | `changed() && !prev() && value`; `prev()` at `(0, 0)` is the initial value, so no edge there (D9) |
 | `Default` | `composite-values` T44 and T52 give `false`, zero, `None` | the table of D4; `E0187` for the rest |
@@ -195,42 +196,191 @@ impl Bit<Logic> {
 
 `init` (§22.1.6) is unchanged: `signal up: Bit = true; up.changed()` fires at `(0, 0)` because the first commit is a change (D8).
 
-### Part VII §22.3 (Q2 = A)
+### Traits are capabilities (Part I §3.1, §3.7; Part II §4)
+
+The principle, stated once in §3.7 and used everywhere after: **a trait is a capability.** What a type or a nature can do is the set of traits it implements; a rule of the language that needs a capability asks for the trait and names it in its diagnostic. `Repr` is the capability of being carried, `Default` of starting without a value, `BitAnd` of `&`, `Resolve` of taking several drives.
+
+Part I §3.1: the table's nature row reads "methods, events, capabilities". §3.1.9 becomes "`impl Trait for T` is accepted for a value type and for a nature. For a nature, `self` is a handle (rule 1), and the `impl` holds exactly the items of the trait". `E0134` is "`impl Trait for` a bundle". `E0132` keeps its inherent-`impl` meaning. A carrier calls what its nature implements, `abc.celsius()` with `abc: Thermal`, by the lookup order of §3.1.7, where "the `impl` blocks of its nature" now includes its trait `impl`s.
+
+What `E0134` protected, and what replaces it: a trait function's `self` was taken to be a copy of a value, and a bound to stand for a value type. Rule 1 (a handle) answers the first. For the second, §3.8.2 already lets a parameter stand for a nature when it is bound by `Nature`; a further bound on it, `W: Nature + Resolve<Driven>`, is satisfied by the nature's `impl`s.
+
+Part II §4, the kinds table: the columns "discrete, no `resolve`" and "discrete with `resolve`" become "discrete" and "discrete that implements `Resolve`". The `nature_field` production loses its `resolve` line. Rules:
+
+- **§4 rule 1.** A discrete nature declares `value`. It may implement `Resolve` (rule 8).
+- **§4 rule 2.** `resolve` receives the drives in the order of their instance paths; it is called with an empty array for a carrier nobody drives.
+- **§4 rule 6.** `value` does not mix with `potential` and `flow`.
+- **§4 rule 8.** The capability of taking several drives:
+
+  ```rust
+  pub trait Resolve<X: Repr, V: Repr = X> {
+      fn resolve<const N: usize>(drives: [X; N]) -> V;
+  }
+  ```
+
+  `X` is the type a module drives into the carrier; `V` is the nature's `value` type, what a reader sees. An `impl` whose `V` is another type, or for a continuous nature, is `E0203`. The function is of class pure. Elaboration instantiates it with `N` the number of drives a call receives, zero included (§8.2.3). A nature may implement `Resolve` for several `X`.
+- **§4 rule 15.** `resolve` is called in the microstep in which any drive of the carrier changes; it receives every present drive as a plain value.
+- **§5.2**: a **one-driver carrier** is a carrier whose nature does not implement `Resolve`; a **resolved carrier** one whose nature does. §5.2.1: a second drive of a one-driver carrier is `E0220`, and the diagnostic names the nature and `Resolve`. §5.2.2: any module that sees a resolved carrier may hold a drive. New §5.2.15: a drive picks its `impl` by the type of the value it drives; every drive of one carrier has the same `X` (`E0225` names the two modules and their types); a type no `impl` accepts is `E0180`. §5.2.9 and §5.2.10: the value of a resolved carrier is always `resolve` of its present drives, also when there is one. §5.2.3: `= value` on a resolved signal is the first commit of the declaring module's drive, of type `X`; a resolved carrier with no drive of the declaring module needs no initial value.
+- `s.others()` gives a `V`: `resolve` of every drive but this module's own.
+
+### Part VII §22.3 (Q4 = A, Q5 = B)
+
+The section's title becomes "Strengths and ready-made net modules". It declares no nature.
 
 ```rust
+/// How hard a drive holds its level. Verilog's drive strengths (IEEE 1364 §7.9), without charge storage.
 #[derive(Repr, PartialEq, PartialOrd)]
-pub enum Strength { Weak, Pull, Strong, Supply }
+pub enum Strength { HighZ, Weak, Pull, Strong, Supply }
 
+/// What a module drives into a net that resolves by strength: a level and how hard it is held.
 #[derive(Repr)]
 pub struct Driven { pub v: Logic, pub s: Strength }
 
 impl Driven {
-    pub const Z: Driven = Driven { v: Logic::Z, s: Strength::Weak }; // not driving
+    pub const Z: Driven = Driven { v: Logic::Z, s: Strength::HighZ }; // not driving
     pub fn strong(v: bool) -> Driven { Driven { v: Logic::from(v), s: Strength::Strong } }
-    // pull, weak, supply alike
-    /// The strongest drive wins; equal strongest drives that disagree give X. A Z drive is left out.
-    pub fn wired<const N: usize>(d: [Driven; N]) -> Driven {
-        d.iter().filter(|x| !x.v.is_z()).fold(Driven::Z, |a, x|
-            if a.v.is_z() || x.s > a.s { x }
+    pub fn pull(v: bool) -> Driven { Driven { v: Logic::from(v), s: Strength::Pull } }
+    pub fn weak(v: bool) -> Driven { Driven { v: Logic::from(v), s: Strength::Weak } }
+    pub fn supply(v: bool) -> Driven { Driven { v: Logic::from(v), s: Strength::Supply } }
+    /// The strongest drive wins; equal strongest drives that disagree give X. A HighZ drive is left out.
+    pub fn strongest<const N: usize>(d: [Driven; N]) -> Driven {
+        d.iter().filter(|x| x.s != Strength::HighZ).fold(Driven::Z, |a, x|
+            if x.s > a.s { x }
             else if x.s < a.s { a }
             else if same(a.v, x.v) { a }
             else { Driven { v: Logic::X, s: a.s } })
     }
 }
-pub nature Wire { value: Driven, resolve: Driven::wired }
 
-#[derive(Repr, PartialEq)]
-pub enum Tristate<T> { Free, Driven(T), Contended }
-pub fn tri<T: Repr, const N: usize>(d: [Tristate<T>; N]) -> Tristate<T> {
-    d.iter().fold(Tristate::Free, |a, x| match (a, x) {
-        (Tristate::Free, y) | (y, Tristate::Free) => y,
-        _ => Tristate::Contended,
-    })
+pub fn sum<const N: usize>(d: [f64; N]) -> f64 { d.iter().sum() }
+
+pub module Tribuf<W: Nature + Resolve<Driven>>(w: W, in d: Bit, in oe: Bit) {
+    w = if oe { Driven::strong(d) } else { Driven::Z };
 }
-pub nature Tri<T: Repr> { value: Tristate<T>, resolve: tri }
+pub module Pullup<W: Nature + Resolve<Driven>>(w: W) { w = Driven::pull(true); }
+pub module Pulldown<W: Nature + Resolve<Driven>>(w: W) { w = Driven::pull(false); }
 ```
 
-`Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir` and `TribufDelayed` keep their bodies with `Driven` for the earlier `Logic`, `w.v.is_high()` or `w.v.to_bit()` where they read `w.v` as a `bool`, and an explicit initial drive `= Driven::Z`. Appendix F.4's three cases read: undriven is `v.is_z()`, contended is `v.is_x()`, kept is a level at `Strength::Weak`.
+`Keeper`, `Tran`, `Tgate`, `Bidir` and `TribufDelayed` take the same bound and keep their bodies, reading `w.others().v` and `.s`. `Wire`, `Tri<T>`, `tri` and `SumNet` are removed; `Logic::wired` is `Driven::strongest`. A short rationale under the section cites the survey of spec.md Q5 for the set of `Strength`.
+
+| Drives | `strongest` |
+| --- | --- |
+| none, or all `HighZ` | `Driven::Z` |
+| one strongest drive | that drive |
+| several of the greatest strength, same level | that level, that strength |
+| several of the greatest strength, levels differ | X, that strength |
+
+### The worked nets (Appendix F.4 and the Book's "Driving with strength")
+
+**1. A plain bit into a wired-AND net.** No strength, no `Logic`: the nature's `impl` says a missing driver reads high, which is the pull-up.
+
+```rust
+pub nature AndWire { value: bool }
+impl Resolve<bool> for AndWire {
+    fn resolve<const N: usize>(drives: [bool; N]) -> bool { drives.iter().all(|d| d) }
+}
+
+module IrqSource(irq_n: AndWire, in pending: Bit) { irq_n = !pending; }   // drives a plain bool
+
+module Board(in a: Bit, in b: Bit) {
+    signal irq_n: AndWire;             // no value of its own: it is resolve of its drives
+    let s0 = IrqSource(irq_n, a);
+    let s1 = IrqSource(irq_n, b);
+}
+```
+
+`irq_n` is low when either source pulls it low and high when both release it or nobody drives it. A third module that drove a `Logic` into `irq_n` is `E0180`: `AndWire` has no `Resolve<Logic>`.
+
+**2. An open-drain line with a pull-up.** The pull-up is a module, and the line shows Z when it is missing.
+
+```rust
+pub nature Sda { value: Driven }
+impl Resolve<Driven> for Sda {
+    fn resolve<const N: usize>(drives: [Driven; N]) -> Driven { Driven::strongest(drives) }
+}
+
+module OpenDrainPin(sda: Sda, in pull_low: Bit) {
+    sda = if pull_low { Driven::strong(false) } else { Driven::Z };
+}
+
+module I2cBus(in m: Bit, in s: Bit) {
+    signal sda: Sda;
+    let master = OpenDrainPin(sda, m);
+    let slave = OpenDrainPin(sda, s);
+    let rp = Pullup(sda);              // Driven::pull(true)
+}
+```
+
+| `master` | `slave` | `rp` | `sda` |
+| --- | --- | --- | --- |
+| Z | Z | pull 1 | 1 at `Pull` |
+| strong 0 | Z | pull 1 | 0 at `Strong` |
+| strong 0 | strong 0 | pull 1 | 0 at `Strong` |
+| Z | Z | (no `Pullup` instance) | `Driven::Z`: `sda.v.is_z()` |
+
+The analog pull-up resistor of a mixed model is the same line read from `analog`: `i(vdd, pad) +> (v(vdd, pad)) / rp` beside `v(pad) +> sda.v.to_volts(v(vdd))` in a converter module (§22.4 `Bidir` is that module).
+
+**3. A tri-state bus with two drivers and a keeper.**
+
+```rust
+pub nature TriBus { value: Driven }
+impl Resolve<Driven> for TriBus {
+    fn resolve<const N: usize>(drives: [Driven; N]) -> Driven { Driven::strongest(drives) }
+}
+
+module Keeper<W: Nature + Resolve<Driven>>(w: W) {
+    signal last: Bit<Logic> = Logic::X;
+    on w.changed() {
+        let seen = w.others().v;                      // what the others drive, without this keeper
+        if seen.to_bit().is_some() { last <- seen; }  // remember only a 0 or a 1
+    }
+    w = Driven { v: last, s: Strength::Weak };
+}
+
+module Bus(in d0: Bit, in oe0: Bit, in d1: Bit, in oe1: Bit) {
+    signal line: TriBus;
+    let a = Tribuf(line, d0, oe0);
+    let b = Tribuf(line, d1, oe1);
+    let k = Keeper(line);
+}
+```
+
+With one buffer enabled the line is its level at `Strong`. With none, the keeper's `Weak` level holds the last one. Before any buffer has driven, `last` is X and the line reads X at `Weak`: the model says it has never been driven, which a `bool` could not.
+
+**4. A conflict of equal strengths.** Both buffers of example 3 enabled, `d0` true and `d1` false: two `Strong` drives that disagree, so `strongest` gives `Driven { v: Logic::X, s: Strength::Strong }`. A reader sees `line.v.is_x()`; `line.v.to_bit()` is `None`; nothing stops. That is a conflict, a value. An instability is something else: a loop of drives through `others()` with no reaction and no `after` that never stops changing (two modules that each drive the inverse of what the other drives). After its bounded passes the run stops with `E0511`, naming the two drives (§8.2.3, Q3).
+
+A typed bus that allows one driver at a time (D12) is the same pattern with the author's own result type:
+
+```rust
+#[derive(Repr, PartialEq)]
+pub enum Data { Free, Byte(u8), Contended }
+pub nature DataBus { value: Data }
+impl Resolve<Option<u8>, Data> for DataBus {
+    fn resolve<const N: usize>(drives: [Option<u8>; N]) -> Data {
+        drives.iter().fold(Data::Free, |a, x| match (a, x) {
+            (y, None) => y,
+            (Data::Free, Some(b)) => Data::Byte(b),
+            _ => Data::Contended,
+        })
+    }
+}
+```
+
+### Capabilities later (inventory only; nothing here is built by this feature)
+
+Rules that today ask "which kind of nature or type is this" and could ask for a trait instead:
+
+| Rule today | Where | A capability it could become |
+| ---------- | ----- | ---------------------------- |
+| Discrete or continuous, from the fields `value` or `potential` | §4 rule 1 | `Discrete`, `Continuous` |
+| Conservative or signal-flow, from the field `flow` | §4, §6 rule 2 | `Conservative` |
+| A port's direction is required or forbidden by the kind of nature | §4 table, §7 rule 2 | follows from `Resolve` already; could follow from `Conservative` |
+| `access`, `units`, `abstol`: a closed set of quantity attributes | §4 rules 3, 9, 10 | probe names as functions of an `impl` (`impl Electrical { fn v(self) .. }`), tolerances as trait constants |
+| Compatible natures: equal quantity names | §4 rules 5, 13 | `Connects<Other>` |
+| Carrier methods with reserved names: `changed`, `prev`, `others`, `inflow` (`E0131`) | §3.1.3, §5.3, §14 | `History` (`changed`, `prev`), `others` given by `Resolve`, `inflow` by `Conservative` |
+| Crossing between a discrete and a continuous carrier only through converter modules | §6.1, §22.4 | `Convert<To>` |
+| `rise` and `fall` exist on `Bit<bool>` only | §22.1.5 | already an `impl`; an `Edges` trait would let `Bit<Logic>` and user natures share generic monitors |
+| Arithmetic and ordering operators apply to the built-in numbers only | §1.5, H.10 rule 5 | `Add`, `Sub`, `Mul`, `PartialOrd<Rhs, Out>` |
+| A type may be carried, may start without a value | §2, H.8 | `Repr`, `Default`: capabilities today |
 
 ### Carriers (Part II §5)
 
@@ -240,7 +390,7 @@ pub nature Tri<T: Repr> { value: Tristate<T>, resolve: tri }
 - §5.2.8: a one-driver carrier with no drive holds its initial value in every analysis; its type implements `Default` or it is `E0187`.
 - §5.2.12: a drive with no initial value starts at `Default::default()`; a type without it is `E0187`.
 - §5.3 table and §5.3.4 to §5.3.8, §5.3.11: the text of D8 and EU-13. §5.3.12 (the value bytes of an unknown level) goes.
-- Examples: `signal en: Bit = false;`, `signal bus: Bit<Logic<4>> = logic("10xx");`, `signal sda: Wire = Driven::Z;`.
+- Examples: `signal en: Bit = false;`, `signal bus: Bit<Logic<4>> = logic("10xx");`, `signal sda: Sda;` with the `nature Sda` of the worked nets.
 
 ### Other parts
 
@@ -248,7 +398,7 @@ pub nature Tri<T: Repr> { value: Tristate<T>, resolve: tri }
 | ---------- | ------- |
 | §2 rule 9 (a `None` from `decode` reads as unknown), rule 11 (all-zero bytes are all-unknown) | rule 9: the caller receives the `None`. Rule 11: the bytes of `Logic::X`, of `None` and of every derived `Default` are all zero |
 | §8.1 "a level no definition names stays unknown" | holds the carrier's initial value |
-| §8.2.3 step 4 | the run stops with `E0511` naming the loop's drives (Q3 = A); the error-table row "is not an error" is replaced by the `E0511` row |
+| §8.2.3 step 4 | the run stops with `E0511` naming the loop's drives (the user: "instabilidade é erro"); the error-table row "is not an error" is replaced by the `E0511` row |
 | §8.2.28, §8.3.18 (a value read through a `let`, an input or a result keeps its flags) | removed |
 | §8.2.30 (an unknown delay commits `Unknown`), §12.1.19 | removed: a delay is an `f64` |
 | §8.5 (an input with an unknown level: the foreign simulator is not run) | removed: an `extern` module receives the bytes of the types it declares |
@@ -259,16 +409,18 @@ pub nature Tri<T: Repr> { value: Tristate<T>, resolve: tri }
 | §19 rule 1 (`maybe`), rule 11 (the name is reserved), §23.2 rules 3 and 4, §23.3 rule 4g | removed |
 | §23.1 rule 9 | a top-level `in` port follows §3.3.4: its `= value`, the host's value before the analysis, or its type's default; none of the three is `E0187` when the analysis starts |
 
-### `abi.md`, major 2
+### `abi.md`, still major 1, edited in place
 
-- §2: seven entry points become six; `commit_with` is removed. The symbol is `piperine_abi_2`.
-- §3: `Field { name: Str, leaf: u32, offset: u32, count: u32 }`. The constants `HAS_KNOWN` and `commit_flag` go. `MAJOR` 2, `MINOR` 0.
+The ABI has had no release (user: "ABI pode continuar major 1 pq não fizemos release ainda"), so nothing is promised to an out-of-tree device and the document is rewritten where it stands.
+
+- A sentence at the top and in §12: the ABI is unreleased; until the first release it changes in place, and a compiled model is always rebuilt against the contract it is loaded by.
+- §2: seven entry points become six; `commit_with` is removed. The symbol stays `piperine_abi_1`.
+- §3: `Field { name: Str, leaf: u32, offset: u32, count: u32 }`. The constants `HAS_KNOWN` and `commit_flag` go. `MAJOR` 1, `MINOR` 0: a minor counts what was appended to the major's base, the base is rewritten, and the one appended entry is gone. `Host.size` stays, so a later minor can append.
 - P3: discrete storage starts all zero and no model reads it: the elaborator gives every carrier pin init bytes, which the owner commits at `(0, 0)`. The shipped layouts are `BIT`, `BYTE`, `F64` and `NONE`.
 - P5: a parameter that may be not given is a pin of `Option<T>`: `{ some: BOOL @0, v: T }`.
 - The empty value of a `TRACE` site not reached, and a record made in a function (C5): each `known` use is re-derived by one rule, "what may be absent has a `BOOL` presence field first".
 - C7: removed.
-- D1: the text of D14 and of Q3 = A. Relaxation starts each pass with `driving` 0 on every drive of the cycle; a net that still moves after the bounded passes is a `FAULT` the owner reports as `E0511`.
-- §12 Versioning: one paragraph on why this is a major (a field and an entry were removed).
+- D1: a resolver instance is generated from the nature's `impl Resolve<X, V>`: one drive pin per driver, in instance-path order, flagged `RELAX`, whose layout is the layout of `X` followed by `driving: BOOL`; one value pin with the layout of `V`; one "others" pin, of `V`, per reader that needs it. Relaxation starts each pass with `driving` 0 on every drive of the cycle; a net that still moves after the bounded passes is a `FAULT` the owner reports as `E0511`.
 - §14 point 6: removed. §15 rows 6 and 7: marked superseded by MD-78.
 
 ## Sequencing with the features in flight
@@ -291,6 +443,8 @@ It merges as planned; this feature does not ask it to stop. What it built on the
 | ---- | ------- | ------ |
 | T12 Printer: `Carried` through `encode` and `decode` | **change** | no flag moves with the levels; a `decode` that gives `None` is returned to the caller (§2 rule 9 as amended) |
 | T16 `GenericSignature`, T19 what a bound gives | **change** | `Default` is given by the table of D4; `T: Default` no longer holds for the numeric types |
+| T26, T27 the declaration rules of `impl` and of a trait `impl` | **change** | `impl Tr for N` is accepted for a nature (`E0134` for a bundle only); `self` there is a handle; the items are the trait's |
+| T46 `impl` on a nature and the lookup order; T48 a function generic over a nature | **change** | the lookup order includes the nature's trait `impl`s; a parameter bound `W: Nature + Tr<..>` is satisfied by them, for functions and for modules |
 | T27 to T29 trait `impl`s, T36 static dispatch | **keep, one addition** | a trait may have type parameters with defaults (`PartialEq<Rhs = Self, Out = bool>`); the overlap rule compares the trait's arguments too. Operator dispatch itself is this feature's T42 and T43 |
 | T30, T39 a hand-written `impl Repr` | **change** | drop "a `None` from `decode` makes the value unknown" |
 | T41 Gallery fences and Book listings; the deletion of `elab/intrinsics.rs` | **change** | `std/values.msl` holds `same` and `cast` only; `level` and `merge` are already gone. The listings are those the amendment wrote |
@@ -309,25 +463,38 @@ It merges as planned; this feature does not ask it to stop. What it built on the
 
 ### `resolved-nets` (B1, B2 on `main`; B3 onward waiting: T11 to T36)
 
-It runs after `generics` phase A **and** this feature's phase B, since `Wire` needs `Logic`.
+Its plan changes most. It runs after `generics` (both phases: it needs trait `impl`s on natures and bounds over them) **and** this feature's phase B, since `Driven` holds a `Logic`. Its specification (`spec.md`) is revised before B3 starts: the requirement "a nature with a `resolve` field" becomes "a nature that implements `Resolve<X, V>`", and the library nets become library modules over a capability.
 
 | Task | Change |
 | ---- | ------ |
-| T7 (done) the drive presence field | reworked by this feature's T37: `driving` is a plain `BOOL` |
-| T8, T9 (done) `Unsettled` | under Q3 = A the observation becomes the `E0511` fault; T37 |
-| T12 to T15 IR, plan, printer, netlist | no flagged drive; the drive pin is D14's layout |
-| T16, T19 resolved natures, `ResolverBodies` | unchanged under Q1 = A: `resolve` names a const-generic function, instantiated per drive count `0..=N` |
-| T20 initial values of resolved carriers | §5.2.12 as amended: `Default` or `E0187` |
-| T24, T25 relaxation and its `log` record | the record is replaced by `E0511` (Q3 = A) |
-| T27 `Logic`, `Strength`, `Wire` | becomes `Strength`, `Driven`, `Wire`; `Logic` already runs (this feature's T44) |
-| T28 `Tri<T>` | over `Tristate<T>` |
-| T29 to T32 `Tribuf` to `Bidir` | the bodies of §22.3 as amended |
-| T33 edge cases | drop "an unknown strength merges the arms"; add a Z drive of any strength is left out |
-| T34, T35 the Book's alarm | the listing the amendment wrote |
+| T1, T2 (done) carriers of any discrete nature | keep |
+| T3 (done) `others()` on a one-driver carrier, `E0224` | keep; "one-driver" now means "the nature does not implement `Resolve`" |
+| T7 (done) the drive presence field | reworked by this feature's T37: `driving` is a plain `BOOL` after the bytes of `X` |
+| T8, T9 (done) `Unsettled` | the observation becomes the `E0511` fault; this feature's T37 |
+| T12 IR: resolved carriers, `Others`, `Resolve` | the resolution of a net names an instance of the trait function for one `X`; a drive has type `X`, the carrier and `Others` type `V` |
+| T13 to T15 plan, printer, netlist | drive pins laid out as `X` and `driving`; value and others pins as `V` |
+| T16 Checker: resolved natures and their carriers | **rewritten**: a nature is resolved when an `impl Resolve<X, V>` exists for it; `E0203` for a `V` that is not its `value` or for a continuous nature; no `resolve` field (the parser refuses it as an unknown nature field) |
+| T17 Checker: `others()`, `E0221`, loops | keep; add `E0220` naming the nature and `Resolve`, a drive's type picking the `impl` (`E0180`, `E0181`), and `E0225` across modules |
+| T19 Elaborator: `ResolverBodies` | the instances of `Resolve::resolve` per drive count `0..=N`, for the one `X` of each net |
+| T20 initial values of resolved carriers | §5.2.3 and §5.2.12 as amended: a drive's `Default` or `E0187`; the carrier itself needs none |
+| T24, T25 relaxation and its `log` record | the record is replaced by `E0511` |
+| T26 resolved nets in every analysis | keep |
+| T27 `Logic`, `Strength`, `Wire` | becomes "`Strength`, `Driven`, `Driven::strongest`"; `Logic` already runs (this feature's T44). No `Wire` |
+| T28 `Tri<T>` and generic discrete natures | becomes "a nature that implements `Resolve` for two `X`, and the typed bus of the gallery (`DataBus`)"; `Tri` and `tri` are not built |
+| T29 to T32 `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir` | each is a module generic over `W: Nature + Resolve<Driven>`; the tests declare their own nature |
+| T33 edge cases | drop "an unknown strength merges the arms"; add: a `HighZ` drive of any level is left out; one driver on a resolving nature still goes through `resolve`; a `Logic` driven into `AndWire` is `E0180` |
+| T34, T35 the Book's alarm and the other rows | the listings the amendment wrote: the four worked nets |
+| T36 records | `GAPS.md` L21 and L58 name `Resolve`, `Driven` and the modules, no `Wire` |
 
 ### `resolved-nets-bundles` (B2 onward waiting: T5 to T21)
 
-No task changes meaning. Two notes for its rebase (T5): every fixture that declares a `Bit` field or signal with no initial value gains one (`E0187` otherwise), and T15 (a bundle field of a resolved nature) uses `Driven`.
+| Task | Change |
+| ---- | ------ |
+| T5 rebase | every fixture that declares a `Bit` field or signal with no initial value gains one (`E0187` otherwise) |
+| T6, T7 checker: bundle types, views, literals | a field's direction is required when its nature does not implement `Resolve` (§7 rule 2 reworded by this feature's T3) |
+| T15 a bundle field of a resolved nature | the fixture declares its own nature with `impl Resolve<Driven>`; no `Wire` |
+| T17, T18 functions and event functions on a bundle | keep; `impl Trait for` a bundle stays `E0134` (D17 narrows it, it does not lift it) |
+| the rest | keep |
 
 ### `params-and-io` (B5, B6 waiting: T29 to T44)
 
@@ -393,7 +560,9 @@ Every new type and method carries a `///` comment; no free function; names are w
 | ---- | ----- | ------ | ------ |
 | D9 changes when an edge fires at `(0, 0)` | every model with `on x.rise()` or `on x.fall()` and no `prev().is_known()` filter: `examples/buck`, the parity models, the Book | a buck assert or a source test moves in T23 to T26 | T23 changes `rise`/`fall` and lists on the Handoff every model whose output moved; each is rewritten so its output is unchanged (`on x.fall() \|\| init() && !x`), never by editing an expected value. If the list is long, stop and report: the user may prefer the earlier `changed() && value` |
 | A model relied on a carrier being unknown at the start | `tests/e2e/integrated/src/*.msl`, `examples/buck/src/supervisor.msl` ("unknown control is read on the safe side") | `known_or(d)` with a `d` that differs from the first value committed | T24, T25: the carrier gets `= d` as its initial value, which is what the model read until its first commit |
-| The ABI major breaks an out-of-tree device | `piperine_abi_1` libraries, the cache of compiled models (`piperine-transpile/src/cache.rs`) | a cached `.so` built before T36 | the cache key holds the ABI major; T36 asserts a major-1 library is refused by name, never loaded |
+| The contract changes under an unchanged major | the cache of compiled models (`piperine-transpile/src/cache.rs`); any device built by hand | a cached library built before T36 loads with the earlier layouts | the cache key holds a hash of the contract's source (`abi_source.rs`); T36 asserts an entry keyed by the earlier contract is rebuilt. No release exists, so no out-of-tree device is promised anything; `abi.md` says so |
+| A nature's kind is no longer in its declaration | every rule that asked "has it a `resolve` field" (port directions, `others()`, `E0220`) | a reader cannot tell from `nature X { value: T }` whether it takes many drives | the orphan rule (§3.7.7) keeps the `impl` in the nature's own crate; `piperine info` and the object model list a nature's capabilities; the Book says to write the `impl` under the nature |
+| `Resolve` has two type parameters and a function with a const parameter | `generics` T27 to T29 (trait parameters with defaults), T18 to T23 (const-generic functions) | the first trait in the tree with all three | the worked nets are the acceptance tests of `resolved-nets` B3; nothing in this feature's phases A or B runs a resolved net |
 | The removal is one coupled change across five crates | T36 (`Field`, the plan's layouts, the printer's shapes, the solver's bind, the hand-written test devices) | the workspace does not build between two commits | the order of B6 and B7: nothing above the ABI produces a flag by the time T36 runs, so T36 is a mechanical drop of one byte per leaf; it is the one task whose `Where` is a crate, not a file |
 | Operator traits meet the built-in operators | `types/expr.rs` (phase B) | `a & b` on integers becomes slower to check or changes a diagnostic | T42 dispatches to a trait only when the left operand is a struct or an enum; §1.5 keeps the built-in path |
 | `Logic<N>` for `N` > 64 | the plan's layout of `UInt<N>` | a wide `Logic` bus | it is `UInt<N>`'s layout twice; no rule of its own. T44's source test covers `N` = 1, 4, 64 and 100 |
@@ -404,6 +573,6 @@ Every new type and method carries a `///` comment; no free function; names are w
 
 | Answer | What moves |
 | ------ | ---------- |
-| Q1 = B (a trait the nature implements) | T3 rewrites §4 (grammar line, table, rules 2, 6, 8, `E0203`) and §3.7 gains the exception to `E0134`; T7 writes `impl Resolve for Wire`; T8 changes Appendix B's `resolve` row; T14 the Book's listings; `resolved-nets` T16 and T19 read the `impl` instead of the field. No task of phase A or B changes |
-| Q2 = B (a plain `Wire`) | T7 writes `Wire { value: Logic, resolve: Logic::wired }` and redesigns §22.3.5 to §22.3.8 around an `OpenDrain` nature; T9 Appendix F.4; T14 the Book's alarm; `resolved-nets` T27, T29 to T32 |
-| Q3 = B (`Default` where it exists) | T4 (§8.2.3 step 4), T10 (D1), T37, and `Driven`, `Strength` and `Tristate` each need a `Default`; `resolved-nets` T24, T25 keep their `log` record |
+| Q4 = B (a second trait for strength) | T3 adds `ResolveStrength<X, V = X>` to §4 rule 8 and a rule for a nature that implements both; T7 writes the library modules over `W: Nature + ResolveStrength<Logic>` and drives as pairs; T9 and T14 respell the worked nets; `resolved-nets` T16 looks for two traits. `Driven` leaves the library |
+| Q5 = A (three strengths) | T7: `Strength { HighZ, Weak, Strong }`; `Keeper` is redesigned or leaves (it cannot sit under a pull-up); T9 and T14, worked net 3 |
+| Q5 = C (eight strengths) | T7: the eight values, the reduction table for `Tran` and `Tgate` as resistive switches, and a charge-storage module; new acceptance criteria for the table; `resolved-nets` T31 grows |
