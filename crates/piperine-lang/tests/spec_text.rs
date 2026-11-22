@@ -2184,14 +2184,16 @@ fn the_removed_words_are_absent_from_the_specification() {
 
 #[test]
 fn appendix_g_records_the_explicit_model() {
-    // EU-17 AC 4: G.72 lists what was removed and says the implementation does not meet it yet;
+    // EU-17 AC 4: G.72 lists what was removed; since phase A of `explicit-unknowns` it says the
+    // implementation meets it in every layer and names `Logic<N>` as phase B (T40);
     // G.29, G.46 and G.57 are closed by it, and no longer have an open or flagged entry.
     let g = spec("appendix_g_scope.md");
     let g72 = flat(&section(&g, "### G.72"));
     for removed in ["the known flag of every level of every value, and the literal `Unknown`", "`level`, `known`, `known_or`, `is_known`, `high`, `merge`, and `Known`", "the merge of effects under unknown control", "the gate of an `analog` read", "`maybe` on a record", "the `resolve` field of a nature, and the library nets `Wire`, `Tri` and `SumNet`"] {
         assert!(g72.contains(removed), "G.72 does not list: {removed}");
     }
-    assert!(g72.contains("The reference implementation does not yet meet this item."), "{g72}");
+    assert!(!g72.contains("does not yet meet this item"), "G.72 says the implementation still falls short: {g72}");
+    assert!(g72.contains("The reference implementation meets this item in every layer") && g72.contains("`Logic<N>`") && g72.contains("phase B of `explicit-unknowns`"), "{g72}");
     let closed = flat(&section(&g, "### Other closed items"));
     for item in ["G.28, G.29, G.45, G.46, G.55, G.57"] {
         assert!(closed.contains(item), "the closed table lacks {item}");

@@ -906,10 +906,10 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `records::a_record_holds_its_declared_fields_only`, `a_require_is_a_pass_or_a_fail`, `a_fatal_record_ends_the_run` pass
-- [ ] `types_explicit::maybe_is_an_ordinary_field_name` passes
-- [ ] Record goldens lose the `maybe` column and nothing else
-- [ ] Gate check passes: Full
+- [x] `records::a_record_holds_its_declared_fields_only`, `a_require_is_a_pass_or_a_fail`, `a_fatal_record_ends_the_run` pass
+- [x] `types_explicit::maybe_is_an_ordinary_field_name` passes
+- [x] Record goldens lose the `maybe` column and nothing else
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -929,9 +929,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `contract::the_host_has_one_commit` passes
-- [ ] `cargo test -p piperine-abi -p piperine-digital-solver` passes with the `MERGE` tests of `queue.rs` and `instant.rs` replaced by plain-commit tests
-- [ ] Gate check passes: Full
+- [x] `contract::the_host_has_one_commit` passes
+- [x] `cargo test -p piperine-abi -p piperine-digital-solver` passes with the `MERGE` tests of `queue.rs` and `instant.rs` replaced by plain-commit tests
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -951,10 +951,10 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `layouts::the_shipped_layouts_hold_the_value_only` and `an_option_pin_is_presence_then_payload` pass
-- [ ] `cache::an_entry_of_the_earlier_contract_is_rebuilt` passes
-- [ ] The `**Build**` line passes; every buck target passes with its known-byte asserts rewritten to the value
-- [ ] Gate check passes: Full, with the buck
+- [x] `layouts::the_shipped_layouts_hold_the_value_only` and `an_option_pin_is_presence_then_payload` pass
+- [x] `cache::an_entry_of_the_earlier_contract_is_rebuilt` passes
+- [x] The `**Build**` line passes; every buck target passes with its known-byte asserts rewritten to the value
+- [x] Gate check passes: Full, with the buck
 
 **Tests**: integration
 **Gate**: full
@@ -974,10 +974,10 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `relax::a_drive_pin_ends_with_a_plain_driving_byte` passes
-- [ ] The `relax.rs` tests of zeroing are replaced by the `E0511` test, both names in the commit body
-- [ ] `cargo test -p piperine-digital-solver -p piperine-solver` passes
-- [ ] Gate check passes: Full
+- [x] `relax::a_drive_pin_ends_with_a_plain_driving_byte` passes
+- [x] The `relax.rs` tests of zeroing are replaced by the `E0511` test, both names in the commit body
+- [x] `cargo test -p piperine-digital-solver -p piperine-solver` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -997,9 +997,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `session::an_undriven_top_port_without_default_refuses_the_analysis` passes
-- [ ] `cargo test -p piperine-api` passes with the unknown-cell tests replaced
-- [ ] Gate check passes: Full
+- [x] `session::an_undriven_top_port_without_default_refuses_the_analysis` passes
+- [x] `cargo test -p piperine-api` passes with the unknown-cell tests replaced
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1019,9 +1019,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `run::an_option_cell_prints_none_or_the_value` passes
-- [ ] `cargo test -p piperine-cli` passes
-- [ ] Gate check passes: Full
+- [x] `run::an_option_cell_prints_none_or_the_value` passes
+- [x] `cargo test -p piperine-cli` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1041,10 +1041,10 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `docs.rs::gaps_closes_s6_and_tracks_the_flag` passes
-- [ ] `twins::every_twin_matches_its_golden` and both integrated suites pass
-- [ ] `grep -rE 'Flagged|HAS_KNOWN|commit_with|MAYBE' crates/*/src` finds nothing
-- [ ] Gate check passes: Batch
+- [x] `docs.rs::gaps_closes_s6_and_tracks_the_flag` passes
+- [x] `twins::every_twin_matches_its_golden` and both integrated suites pass
+- [x] `grep -rE 'Flagged|HAS_KNOWN|commit_with|MAYBE' crates/*/src` finds nothing
+- [x] Gate check passes: Batch
 
 **Tests**: integration
 **Gate**: full
@@ -1548,6 +1548,16 @@ The feature's live state, written as it happens - a compaction gives no warning.
 - **Generated code and IR without a flag (T32, T33, B6).** `ValueType::Flagged` and `Expr::{Unknown, KnownOr, IsKnown, High, Merge, Level}` are gone from the IR; `rt/flag.rs` is deleted and what it held that is no flag stays as `rt/pin.rs` (`Carried`, `LevelWords`, `Field`, `Tag`: the pin codec, with `from_pin`, `pin` and `write_pin`, which still set the known byte to 1 until T36). `rt/commits.rs` is `Commits::{commit, record, arm, finish, flow, flush}` and nothing else (no `Due`, no join, no `controlled`, no `maybe`); `rt/control.rs` keeps `Panic`, `Trips`, `Depth`, `Index::{of, at}`. `same` and `cast` print as `to_levels` compared and `from_levels` moved (a tag naming no variant decodes as the enum's `Default`, a payload enum cast is plain); a `cast` result no longer carries `tags` in its print. `Source::Resolution` and `Pins.resolution` are removed from `piperine-plan` (and the interpreter's arm). A record's `maybe` field is still in the layout (T34) and the generated code writes it false. The array-length check of the type checker raised the retired `E0151`: it is `E0188` now (the code the spec gives an array length that is no const), `suite_hygiene::retired_unknown_codes_are_raised_nowhere` guards it. The hand fixtures of the buck (`crates/piperine-ir/tests/support/digital.rs`) follow the migrated source: `&&`/`||` of the dpwm and the pid windup are `And`/`Or`, `rev3~1` and `dithered_width~01` are gone, `elab_buck.rs` lists only the rise guard, the pid fold, the GateDriver initial values and the A2D/Never additions; `buck::golden` no longer strips a flag. `crates/piperine-transpile/tests/analog_merge.rs` became `analog_if.rs` (one path). Tests that pinned a flag are listed in the commit body.
 - **B6 batch gate, 2026-11-22 (T32 and T33 committed; first run red, closed below: the gate is GREEN, B7 starts from `origin` of this branch).** Closed after the first run, one commit per group: the Book (`test(book)`: welcome#21 and pom#2 give their out port a first value, inline models read directly, E0187 rows become `holds`, core-std~6e04c51d `unraised` under T45), the T45 successor row for `the_library_items_that_took_borrows_give_the_same_results`, `fix(api)` (a leaf of a variant the value does not hold has no cell yet: `CellShape::can_hold_leaf`), and the cli run/docs targets (GAPS section 10 lists E0702). Final run `env -u PIPERINE_NGSPICE cargo test --workspace --exclude piperine-lang-server --no-fail-fast`: every target ok. The list that was red at the first run: Green: the `**Build**` line (zero warnings), `piperine --test integrated`, `piperine-cli --test integrated`, `piperine-cli --test twins` and `piperine-parity --test twins` (ngspice present, no SKIP line), `piperine-cli --test buck` (8 tests), every `buck_*` target of `piperine-parity`, `piperine-ir`, `-transpile`, `-plan`, `-interp`, `-lang` (except `piperine-lang-server`, which does not build on `main` either: it names `piperine_lang::ast` and friends). Fixed after the gate, one commit per group: the transpiler texts of an emit value, a commit value and a last assignment (`cbfa7d44`), the parity models and helpers (`ae92deca`, `7c51857f`: every `out` port and `signal` starts at a value, an initial value goes on the declaring `out` port and never on the signal handed to it (E0223), `first_edge_value` reads the value after the first edge), the api host tests (`4e199fbc`). Still red, none of them a flag in the code: (1) the root Book targets `book_cheatsheet`, `book_cli`, `book_compiler`, `book_core_std`, `book_digital`, `book_errors`, `book_mixed`, `book_natures`, `book_pom`, `book_solver`, `book_values`, `book_welcome` and `piperine-cli --test book`: Book listings and the inline sources of `tests/book/*.rs` still spell `.high()`, `known_or`, a carrier with no initial value (e.g. welcome#21's `Inv` out port `y` with a delayed definition, the SAR ADC, the digital card) so they fail E0161 or E0187; each needs its listing refilled in `docs/book/content.html` and `inventory.tsv`, with the output blocks regenerated, in one commit per chapter; (2) `piperine-cli --test docs` (`gaps_no_longer_lists_x5_l20_l39_h12`: GAPS section 10 against `code_owners.tsv`) and `piperine-cli --test run` (three tests, inline models); (3) `piperine-api --test composites::a_carried_enum_reads_as_its_variant_name` ("the value has no leaf `Data.n`": the printed `tx` is not the committed `Data { n: 5 }`; not diagnosed); (4) `piperine-parity --test source_value_semantics::the_library_items_that_took_borrows_give_the_same_results` and the Book test `e0702_is_raised_for_a_logic_pattern_with_z`: `logic` and `matches_bits` are generic `std` items refused `P0001` until T45. `tools` used to fix the models were throwaway scripts (not kept): the rule they applied is E0187 -> `= zero` on the `out` port (or the `signal` when no child out port holds it), E0223 -> no initial value on the placing module's declaration.
 - **Process notes.** One shell call without the lane A environment ran two `cargo` commands in `/var/tmp/piperine-target` early in T20 (no build was left running there). T20's CLI Book listings and T22's `source_natures` compile fix are folded into T22 (the first as part of its commit, the second as a fixup squashed into it).
+
+- **Delivered (batch B7, T34 to T40, 2026-11-22; phase A closes).** Settled defaults a later task starts from:
+  - **T34.** A record is its declared fields: `RecordLayout::maybe_offset`, `Record::maybe`, `Record::surely` (now `Record::holds`) and the `maybe` column of both renderers are gone; `E0604` keeps "repeated". A stream with no value field prints `let record_`, not `let mut`.
+  - **T35.** The host is `{ size, commit }`, minor 0: `commit_with`, `commit_flag`, `Commit::flags`, `layout::Merge`, `DigitalError::Merge` and the `MAYBE`/`MERGE` queue code are removed.
+  - **T36.** `Field` is `{ name, leaf, offset, count }`; `BIT` and `BYTE` are one byte, `F64` eight, `REAL` is deleted; `is_canonical` and the P3 canonical check go with the byte. A composite pin is its parts' value bytes (alignment 1, size = width), an `Option`'s presence field is a `BOOL`, `rt::pin::Carried` has no `SIZE`. The cache key already hashes the contract's source (`cache::an_entry_of_the_earlier_contract_is_rebuilt`). The host's write before a run is the carrier's initial value (`Digital::expect_initial` at `start`). The hand-written test devices of the solver crates lost their three-valued logic; `ROpt`'s `w` is an `F64` with a default (an `Option` param is still L28). Tests the removed byte deleted are listed in `solver-abi-integration/removed.txt`.
+  - **T37.** `DigitalError::Unsettled` (`E0511`, naming the loop's drives in name order); `Observation::Unsettled` and `ObservationKind::Unsettled` are gone. A relaxing cycle still starts with every drive absent (zeroed once, then relaxed to a fixed point), not at each pass.
+  - **T38.** `Cell::Unknown` and `Field::Unknown` are gone. A leaf a value does not hold shows an empty text; `CellShape::decode` fails on a tag that names no variant. A top `in` port with no initial value, `Default` or host write refuses `Session::run` with `E0187` (`CircuitInstance::net_written`); the `in` ports of the test designs got initial values. values~37a548f2 flipped to `holds` here (its test failed with the refusal), and the three phase B rows (values#18, values~c30bad4d, core-std~6e04c51d) point at L58.
+  - **T39.** The renderers have no unknown arm; an absent `Option` prints `None` (table, record line), `null` (JSON Lines) or an empty `value` leaf (CSV). An `emit!` field of type `Option` is outside the M1 subset ("an expression the type checker gave no value type"): the record forms are held by the render unit tests.
+  - **T40.** `GAPS.md`: S8, L64 and L65 removed (1 silent, 2 broken, 28 loud); G.72 says the implementation meets the item in every layer and names `Logic<N>` (phase B, L58) and `Resolve` (`resolved-nets`, L21); `docs.rs::gaps_closes_s6_and_tracks_the_flag` replaces `gaps_closes_s6_and_g6_by_the_redesign`; the `E0511` row left `code_owners.tsv` (a source raises it); MD-78's status line says phase A is delivered. The Book rows of the T40 list were all flipped by their own tasks (T20, T21, T22, T30, T38); T40 re-checked each against `inventory.tsv`.
+  - **Gate (B7).** The full workspace suite, the integrated suites, the twins, parity with ngspice and the buck run once at the end of the batch: see the commit "docs(specs): the b7 gate" for its result.
 
 **Dispatched:** none. **Walked:** none (the verifier of B1 to B3 is the caller's).
 

@@ -1780,7 +1780,7 @@ integrated; cargo test -p piperine-parity --test source_commits --test source_re
 It supersedes MD-70 whole and MD-64 in its analysis of unknown-ness; it moves MD-76's D7 into the trait. MD-74 stands. The specification, `abi.md`, the records and the Book are amended first (batches B1 to B3, on `main` ahead of the code); phase A removes the flag from every layer, phase B writes `Logic<N>` from `std` after `generics`.
 
 **Scope:** `docs/spec`, `docs/book`, `crates/piperine-{lang,ir,plan,transpile,abi,digital-solver,solver,api,cli,parity}`, `examples/`, `tests/`.
-**Status:** Accepted (2026-11-21), from the approved `.specs/features/explicit-unknowns/spec.md`. Delivered so far: the specification, `abi.md` and the records (S8 in `GAPS.md` tracks the code).
+**Status:** Accepted (2026-11-21), from the approved `.specs/features/explicit-unknowns/spec.md`. Delivered: the specification, `abi.md`, the records and phase A, the code (T19 to T40, 2026-11-22: no layer carries a known flag, the device ABI is major 1, minor 0, edited in place, `E0511` stops a loop that does not settle, a top `in` port needs its first value; S8 of `GAPS.md` is closed). Phase B (T41 to T48: the operator traits and `Logic<N>` from `std`) waits for `generics` phase A.
 
 ---
 

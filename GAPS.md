@@ -22,15 +22,15 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 2 silent, 2 broken, 30 loud (L1 to L66 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the two `params-and-io` (L20, L39) and the nine `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63, L66) and the two `resolved-nets` rows (L22, L23) closed, L9 narrowed to its `generics` part and L4 to generic enums, in six tables) plus
+**Counts.** 1 silent, 2 broken, 28 loud (L1 to L66 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the two `params-and-io` (L20, L39) and the nine `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63, L66), the two `resolved-nets` rows (L22, L23) and the two `explicit-unknowns` rows (L64, L65) closed, S8 closed by `explicit-unknowns` phase A, L9 narrowed to its `generics` part and L4 to generic enums, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 9 unproven.
 
 | Section | Ids |
 | ------- | --- |
 | §2 Broken | B3, B4 |
-| §3 Silent (read this first) | S3, S8 (S6 closed by `explicit-unknowns`) |
-| §4 Loud | L1–L66 (L11, L14, L15, L17, L18, L19, L20, L39, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L22, L23 closed; L9 and L4 narrowed; L64 to L66 found by `composite-values`) |
+| §3 Silent (read this first) | S3 (S6 and S8 closed by `explicit-unknowns`) |
+| §4 Loud | L1–L66 (L64 and L65 closed by `explicit-unknowns`; L11, L14, L15, L17, L18, L19, L20, L39, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L22, L23 closed; L9 and L4 narrowed; L64 to L66 found by `composite-values`) |
 | §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X1, X2, X6 (X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
 | §6 Solver, numerics, performance | V12, V13, V16 |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
@@ -86,31 +86,6 @@ change of the IR or the ABI.
   in elaboration, of the whole model.
 - Generic items need an instantiation to check (X6); the others do not.
 
-### S8. The implementation still carries the known flag — size L (`explicit-unknowns`, phases A and B)
-
-- **What.** The spec was amended on 2026-11-21 (Appendix G.72, MD-78): no value carries a flag,
-  `Logic<N>` and `Option<T>` say what a type may hold, a carrier starts at its written value or
-  its type's `Default`, and a nature that implements `Resolve<X, V>` takes many drives. S6 and G6
-  (one flag per value where the text said one per level) closed with it: the redesign removes the
-  flag instead of finishing it, and `unknown-semantics-per-level` is dropped. The implementation is
-  the earlier model. The layers: the lexer and parser (`Token::Unknown`, `LitKind::Unknown`);
-  the checker (`E0150` of a `const` holding `Unknown`, `E0151`, `level`, `known`, `known_or`, `is_known`, `high`,
-  `merge`); the elaborator (`elab/known.rs`, the merge lowering, the unknown index); the IR
-  (`ValueType::Flagged`); the plan (the known byte of every layout, `maybe`); the generated code
-  (`rt/flag.rs`, the merge of paths, `commit_with`); the device ABI (`Field.known`, `HAS_KNOWN`,
-  `commit_flag`, `layout::Merge`, `MINOR` 1); the engines (the `MERGE` and `MAYBE` commits, relaxation
-  zeroing a known byte); the host (an unknown cell, `Record::surely`); the `resolve` field of a nature
-  and the library nets `Wire`, `Tri` and `SumNet`; and `std`, `examples/` and the tests, which use the
-  removed names.
-- **Where it shows.** Every model that reads `known_or(d)`, `high()` or `.is_known()` runs; a
-  carrier with no initial value starts unknown where the spec says it starts at its `Default`
-  (`E0187`) when it has no `Default`; a loop that
-  does not settle writes a `log` record where §8.2.3 stops the run with `E0511`.
-- **Fix.** Phase A (B4 to B7 of `.specs/features/explicit-unknowns/tasks.md`) removes the flag from
-  every layer in three moves (accept, rewrite the tree, refuse and remove); phase B (B8) writes
-  `Logic<N>` and the operator traits in `std` after `generics`. This row is deleted when phase A lands
-  (T40).
-
 ---
 
 ## 4. Loud — refused, though the spec allows it
@@ -130,16 +105,14 @@ quotes the text after `P0001:` unless another code is shown.
 | L9 | a capturing closure passed to a user `fn` parameter (it needs an `Fn` bound: `generics` GN-01) | §3 rule 3 | `P0001` naming the form | with L7 |
 | L12 | `extern "C" fn`, `#[derivative]` | §3 rules 2, 10, 11 | `extern function` | M |
 | L13 | `f16`, `f32`, `f128`; integers wider than 64 bits | §1 rule 5 | `type f32`; `integer type u128` | M |
-| L65 | a flag read on an `Option` (`Some(1.0).level(0)`, `o.is_known()`, `o.known_or(..)`, over an `Option` value rather than a carrier of one): the §2 table gives `Option<T>` a `Repr` (`1 + T::WIDTH`), but the read has no lowering. Owned by `explicit-unknowns` (MD-78), where flag reads disappear | §2, §22.1 | `P0001` naming the flag read | `explicit-unknowns` |
 
 ### 4.2 Carriers (Part II §4–§7)
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L21 | natures that implement `Resolve<X, V>` (declared by the model; the library has no net nature); `others()`; relaxation of loops; `E0511` | §4 rule 2, §5.2.2, §8.2.3 | `resolved nature Wire` | L |
+| L21 | natures that implement `Resolve<X, V>` (declared by the model; the library has no net nature); `others()`; relaxation of loops through the nets of such a nature (a loop that does not settle is `E0511`, raised by the digital engine) | §4 rule 2, §5.2.2, §8.2.3 | `resolved nature Wire` | L |
 | L24 | arrays of carriers (`[Bit; 8]`, `[Electrical; 4]`); element and field commits (`bits[3] <- true`) and definitions | §5.1.4, §12.1 | `array type`; `an element or field commit` | L, with L3 |
 | L25 | bundles: a `struct` of carriers, `flip`, bundle literals, `impl` on a bundle | §7 | `struct item used as a type`, `flip type` | L |
-| L64 | a plain read of a composite carrier that holds no value yet (a field, a copy, `prev()` before the first change of a `Bit<Pair>`, `Bit<(u8, u8)>`, `Bit<[T; N]>`, `Bit<Option<T>>`): it fails the run naming the instance and the carrier (`is_known()` reads the flag first). A composite carries one known byte, not a flag per field, and a scalar carrier in the same place reads unknown (§3.3.2, §5.1.1, §5.1.8). Owned by `explicit-unknowns` phase A (MD-78), which starts every carrier at a value or a `Default::default()` and so removes the case | §3.3.2, §5.1.1, §5.1.8 | run fault: `` `un` is a composite that holds no value yet `` | `explicit-unknowns` A |
 
 Works, by probe: continuous natures with their own access names (`State` runs; `Thermal` and a
 project's nature pass the checker), `potential`/`flow`, a flow probe of a potential branch, a
@@ -336,9 +309,9 @@ does not count.
 | Part | Runs | Biggest holes |
 | ---- | ---- | ------------- |
 | I §1–§2 values, `Repr` | 60 % | floats other than `f64`, widths over 64, generic enums; `let mut`, assignment, patterns, structs, tuples, arrays and payload enums run |
-| I §3–§3.3 functions, calls, uncertainty and absence | 45 % | generics, `impl`, traits, handles; loops, recursion, closures, function values, arrays, composites and the level reads run; the known flag is still carried (S8) |
+| I §3–§3.3 functions, calls, uncertainty and absence | 45 % | generics, `impl`, traits, handles; loops, recursion, closures, function values, arrays, composites and the level reads run |
 | I §3.4–§3.6 files, crates, packages | 95 % | the check of unreached items (S3) |
-| II §4–§5 natures, discrete carriers | 40 % | `Resolve`, arrays, user discrete natures, initial values by `Default` (S8) |
+| II §4–§5 natures, discrete carriers | 40 % | `Resolve`, arrays, user discrete natures, initial values by `Default` run (`explicit-unknowns` phase A) |
 | II §6 nodes, probes | 85 % | signal-flow |
 | II §7 bundles | 0 % | all |
 | III §8–§8.2 modules, ports, params, the body | 60 % | generics, generation, params that are not `f64` or `bool` |
@@ -360,13 +333,13 @@ does not count.
 
 ## 10. Reference lists
 
-**Error codes of the spec that no source file mentions (35 of 189).** A code counts as mentioned when it is spelled
+**Error codes of the spec that no source file mentions (34 of 189).** A code counts as mentioned when it is spelled
 outside a comment in `crates/*/src` (a literal, or an enum variant's `as_str`); `E0375` is named in a doc
 comment only (`pom/builtin.rs`), so it is on the list, and `E0702` is on it since `logic` is refused `P0001` until T45 raises it again. `E0503`, `E0504`, `E0505`, `E0507` and `E0508` are
 raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`). `E0803` to `E0806` are raised
 by `session.rs` and `host.rs`; `E0701` by the elaborator.
 `E0123 E0124 E0127 E0131 E0132 E0133 E0134 E0203 E0225 E0313 E0322 E0340 E0342
-E0360 E0362 E0371 E0372 E0373 E0374 E0375 E0451 E0452 E0453 E0454 E0456 E0511 E0614
+E0360 E0362 E0371 E0372 E0373 E0374 E0375 E0451 E0452 E0453 E0454 E0456 E0614
 E0702 E0703 E0704 E0705 E0706 E0807 E0808 E0809`
 
 **Entries of the previous file that changed.**
@@ -390,7 +363,7 @@ E0702 E0703 E0704 E0705 E0706 E0807 E0808 E0809`
 | Composite values | L24, L57, and L4 for generic enums (phases A and B closed L1 to L3, L5, L6, L10, L16 and the part of L9 that is not `generics`; MD-79) | L |
 | Generics and generation | L7, L30, L31, L32, S3 for generic items: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
 | Resolved nets and bundles | L21, L25: natures that implement `Resolve`, `Tribuf`, `Tran`, `Bidir` | L |
-| Unknown semantics | S8 (explicit unknowns), L53, L8 (L18 and L19 closed by `unknown-semantics`; L51 and L52 by `unknown-semantics-events`; S6 and G6 closed by `explicit-unknowns`) | L |
+| Unknown semantics | L53, L8 (L18 and L19 closed by `unknown-semantics`; L51 and L52 by `unknown-semantics-events`; S6, S8 and G6 closed by `explicit-unknowns`; its phase B is `Logic<N>`, L58) | L |
 | Host II (delivered in part by `host-ii`) | H1, H3, H6, H9, then B4 (Python) | L |
 | Speed | V12, V13, V16, PSS on the device ABI | L |
 | Foreign models | L12, L33 | L |
@@ -461,9 +434,9 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function need a generic module: `P0001` |
 | cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
 | cheatsheet#10 | L57 | `composite-values` | with its `emit!` the card is `E0601` (a statement among items); without it `parse_table(include_str!(..))` is `P0001`, a generic function, and `table_model(.., IV, ..)` an array whose length is a generic parameter |
-| values#18 | S8 | `explicit-unknowns` | `Logic<4>` is `P0001`: the library struct `Logic` has no generic parameter yet (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
-| values~c30bad4d | S8 | `explicit-unknowns` | held with values#18: `Logic<4>` is `P0001` (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
-| core-std~6e04c51d | S8 | `explicit-unknowns` | `E0702` is not raised: `logic("10z1")` is `P0001`, because `logic` is a generic `std` function (made to run by explicit-unknowns, phase B: T45 (`logic` and `matches_bits` as generic `std` items)) |
+| values#18 | L58 | `explicit-unknowns` | `Logic<4>` is `P0001`: the library struct `Logic` has no generic parameter yet (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
+| values~c30bad4d | L58 | `explicit-unknowns` | held with values#18: `Logic<4>` is `P0001` (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
+| core-std~6e04c51d | L58 | `explicit-unknowns` | `E0702` is not raised: `logic("10z1")` is `P0001`, because `logic` is a generic `std` function (made to run by explicit-unknowns, phase B: T45 (`logic` and `matches_bits` as generic `std` items)) |
 | natures#2 | L21 | `resolved-nets` | `[Bit; 8]` is `P0001` (an array of carriers, L24) and `Bit<Logic<4>>` is `P0001` (`Logic` has no generic parameter yet); `Bit<Option<u8>>` is a carried type and runs, and `Sda`, declared further on in the chapter, is `E0161` when the block stands alone (made to run by resolved-nets, which lands after explicit-unknowns phase B (`Logic<4>`): `Sda` is the chapter's own `impl Resolve<Driven>` nature, which needs `Resolve` and `Driven` (T27 to T32)) |
 | natures#3 | L21 | `resolved-nets` | `alarm.msl` is `E0161`: `Driven`, `Resolve`, `Pullup` and the `Logic` behind them are not in the library yet, so a nature that implements `Resolve<Driven>` is not read (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
 | natures~e99c1920 | L21 | `resolved-nets` | the command refuses `alarm.msl` and runs nothing, as the sentence says: held with natures#3 (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
