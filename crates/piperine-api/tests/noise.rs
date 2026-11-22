@@ -13,10 +13,18 @@ fn spec(keys: &str) -> Result<RunSpec, String> {
 
 #[test]
 fn a_noise_run_without_output_or_sweep_is_p0010() {
-    // AO-05 AC 4 and 6: `output` and the sweep (`from`, `to`, one grid) are required.
-    for keys in ["from = 1.0\nto = 1e3\nper_decade = 5\n", "output = \"o\"\nto = 1e3\nper_decade = 5\n", "output = \"o\"\nfrom = 1.0\nto = 1e3\n"] {
+    // AO-05 AC 4 and 6: `output` and the sweep (`from`, `to`, one grid) are required, and the
+    // report names the one that is missing.
+    let cases = [
+        ("from = 1.0\nto = 1e3\nper_decade = 5\n", "needs `output`"),
+        ("output = \"o\"\nto = 1e3\nper_decade = 5\n", "needs `from`"),
+        ("output = \"o\"\nfrom = 1.0\nper_decade = 5\n", "needs `to`"),
+        ("output = \"o\"\nfrom = 1.0\nto = 1e3\n", "exactly one of `per_decade` and `points`"),
+    ];
+    for (keys, naming) in cases {
         let message = spec(keys).expect_err(keys);
         assert!(message.contains("P0010"), "{keys}: {message}");
+        assert!(message.contains(naming), "{keys}: the report names the missing key ({naming}): {message}");
     }
     let ok = spec("output = \"o\"\nfrom = 1.0\nto = 1e3\nper_decade = 5\n").expect("a complete noise run");
     assert!(matches!(ok.analysis, Analysis::Noise { ref output, input: None, .. } if output == "o"));
