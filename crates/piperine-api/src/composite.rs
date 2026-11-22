@@ -91,6 +91,36 @@ impl CellShape {
         matches!(self, CellShape::Enum { variants, .. } if variants.iter().all(|v| v.fields.is_empty()))
     }
 
+    /// Whether a value of this shape can have the leaf `path` (named as `CompositeCell::leaves` names it): the
+    /// payload leaf of a variant is one of the shape although the value holds another variant, and so is the
+    /// `value` of an `Option` that holds nothing.
+    pub fn can_hold_leaf(&self, path: &str) -> bool {
+        let mut paths = Vec::new();
+        self.collect_leaf_paths("", &mut paths);
+        paths.iter().any(|candidate| candidate == path)
+    }
+
+    /// Adds to `found` every leaf path of this shape, named under `prefix`.
+    fn collect_leaf_paths(&self, prefix: &str, found: &mut Vec<String>) {
+        let join = |part: &str| if prefix.is_empty() { part.to_string() } else if part.is_empty() { prefix.to_string() } else { format!("{prefix}.{part}") };
+        match self {
+            CellShape::Scalar(_) => found.push(prefix.to_string()),
+            CellShape::Struct { fields, .. } => fields.iter().for_each(|(name, shape)| shape.collect_leaf_paths(&join(name), found)),
+            CellShape::Tuple(parts) => parts.iter().enumerate().for_each(|(k, shape)| shape.collect_leaf_paths(&join(&k.to_string()), found)),
+            CellShape::Array(element, length) => (0..*length).for_each(|k| element.collect_leaf_paths(&format!("{prefix}[{k}]"), found)),
+            CellShape::Enum { variants, .. } => {
+                found.push(prefix.to_string());
+                for variant in variants {
+                    variant.fields.iter().for_each(|(name, shape)| shape.collect_leaf_paths(&join(&format!("{}.{name}", variant.name)), found));
+                }
+            }
+            CellShape::Option(inner) => {
+                found.push(join("some"));
+                inner.collect_leaf_paths(&join("value"), found);
+            }
+        }
+    }
+
     /// The width of the value bytes of a value of this shape, before the known byte.
     pub fn width(&self) -> usize {
         match self {
@@ -393,5 +423,14 @@ mod tests {
             variants: vec![VariantShape { name: "Off".into(), discriminant: 0, form: FieldsForm::Unit, fields: vec![] }, VariantShape { name: "Run".into(), discriminant: 2, form: FieldsForm::Unit, fields: vec![] }],
         };
         assert_eq!(units.decode(&[2, 1]).expect("decodes"), Cell::Text("Run".into()), "an enum with no payload reads as its variant's name");
+    }
+
+    #[test]
+    fn a_shape_holds_the_payload_leaf_of_a_variant_the_value_does_not_hold() {
+        let Cell::Composite(idle) = Shapes::tx().decode(&[0, 0, 1]).expect("decodes") else { panic!("a composite") };
+        assert_eq!(idle.leaf("Data.n"), None, "the value holds Idle");
+        assert!(Shapes::tx().can_hold_leaf("Data.n"), "the shape holds the leaf of Data");
+        assert!(!Shapes::tx().can_hold_leaf("Data.m"), "no variant has an `m`");
+        assert!(Shapes::pair().can_hold_leaf("b") && !Shapes::pair().can_hold_leaf("c"));
     }
 }

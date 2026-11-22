@@ -136,7 +136,12 @@ impl Probe {
         match (leaf, value) {
             (None, value) => Ok(value),
             (Some(_), Cell::Unknown) => Ok(Cell::Unknown),
-            (Some(leaf), Cell::Composite(whole)) => whole.leaf(leaf).ok_or_else(|| Failure::Backend(format!("the value has no leaf `{leaf}`"))),
+            // a leaf of a variant the value does not hold, or the `value` of an absent `Option`, has no cell at this row
+            (Some(leaf), Cell::Composite(whole)) => match whole.leaf(leaf) {
+                Some(cell) => Ok(cell),
+                None if shape.can_hold_leaf(leaf) => Ok(Cell::Unknown),
+                None => Err(Failure::Backend(format!("the value has no leaf `{leaf}`"))),
+            },
             (Some(leaf), other) => (leaf.is_empty()).then_some(other).ok_or_else(|| Failure::Backend(format!("the value has no leaf `{leaf}`"))),
         }
     }
