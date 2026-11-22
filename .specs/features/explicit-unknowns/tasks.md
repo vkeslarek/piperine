@@ -1030,7 +1030,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T40: Phase A closure
 
-**What**: `GAPS.md`: S8 removed; the clauses of L3, L5, L24 about unknown indexes and loops removed; L59 closed; the conformance rows updated; counts. Appendix G.72 loses "the reference implementation does not meet this yet" for everything but `Logic`, which names phase B. Book status boxes: the listings that now run flip, each with its test. `.specs/STATE.md`: MD-78's status line. `code_owners.tsv`.
+**What**: `GAPS.md`: S8 removed; the clauses of L3, L5, L24 about unknown indexes and loops removed; L59 closed; the conformance rows updated; counts. Appendix G.72 loses "the reference implementation does not meet this yet" for everything but `Logic`, which names phase B. Book status boxes: the listings that now run flip, each with its test. **The Book rows T40 flips, exactly these** (inventory verdict `refused` or `unraised` becomes `run` or `holds`, the GAPS.md section 11 row is deleted, the test that asserted the refusal asserts the run): the E0150 listings welcome#17, analog#9, modules#9, mixed#8, mixed#10, mixed#14, values#21 (T20; their `Model::earlier` edits and the two E0150 output blocks welcome#19 and the buck's are refilled with the real run, and the exempt count of `the_book_uses_no_removed_name` goes to 0); the E0187 and Default rows values~23c03fc8, values~37a548f2, values~39ba3a1d, errors~39ba3a1d, errors~385c354c (T21, T22, T30); and the `Option` listings values#14 and its sentence values~2bbc575e (an `Option` carried on a signal). `.specs/STATE.md`: MD-78's status line. `code_owners.tsv`.
 **Where**: `GAPS.md`
 **Depends on**: T39
 **Reuses**: `value-semantics` T15
@@ -1207,7 +1207,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T48: Phase B closure
 
-**What**: `GAPS.md`: L58's `Logic`, `cast`, `same` entries; counts. Appendix G.72 loses its last "does not meet" sentence. Book: the `Logic` listings flip to running, each with its test. `.specs/STATE.md`: MD-78 status delivered. A note in `.specs/features/resolved-nets/tasks.md` Handoff that `Logic` runs, that its spec is to be revised for `Resolve<X, V>` before B3, and that T27 starts from `Driven`.
+**What**: `GAPS.md`: L58's `Logic`, `cast`, `same` entries; counts. Appendix G.72 loses its last "does not meet" sentence. Book: **exactly these rows flip** to running, each with its test and its GAPS.md section 11 row deleted: values#18 and its sentences values~c30bad4d, and the E0180 rows values~13ffaea6, analog~39ba351d, mixed~39ba351d (a `Logic` where an `f64` or a `bool` is required); the `Logic<4>` and `Option<Logic<N>>` lines of natures#2 run with the rest of that block only when `composite-values` has flipped it (the array). `.specs/STATE.md`: MD-78 status delivered. A note in `.specs/features/resolved-nets/tasks.md` Handoff that `Logic` runs, that its spec is to be revised for `Resolve<X, V>` before B3, and that T27 starts from `Driven`.
 **Where**: `GAPS.md`
 **Depends on**: T47
 **Reuses**: T40
@@ -1524,6 +1524,10 @@ The feature's live state, written as it happens - a compaction gives no warning.
 - **The Book may print the earlier front end's own words only in two listings** (the E0150 refusals welcome#19 and the buck's, held to the binary by `piperine-cli`'s book target): `the_book_uses_no_removed_name` lists the exception and counts it; T30 refills both and the test's exempt count goes to 0.
 - **`examples/buck/benches/startup.msl` already reads `n` directly** (the Book's cli#44 is held equal to the file, so the line moved in T16; its preformat twin too). T24 has that file done.
 - **Tests that still pin the earlier behavior and stay until their code task:** `e0150_*` in `tests/book/analog.rs`, `mixed.rs`, `errors.rs`; `a_reaction_on_a_changed_unknown_emits_the_inputs` and `without_an_initial_value_...` neighbors in `errors.rs`; the unknown tests of `crates/*/tests` (types_unknowns, elab_unknowns, source_unknowns, abi layouts) are untouched.
+
+**Rows other features must flip (ROADMAP.md, "Every Book listing runs before item 13"; each names its owner in GAPS.md section 11):** `resolved-nets` B3 and later (T27 to T32) flips digital#16, digital#17, digital#18, digital#19, digital#20, natures#3 with its sentences natures~e99c1920 and natures~91c3bffe, and core-std#6 (gap L21: `Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`); `composite-values` flips natures#2 (gap L24: the array `[Bit; 8]`; its `Option` and `Logic` lines also need explicit-unknowns phases A and B). When a row flips its test fails with "now runs": make the row `run`, delete its section 11 line.
+
+**Spec ahead of the code, registered (stale entries fail loud):** `AHEAD_OF_STD`/`BEHIND_SPEC` in `std_excerpts.rs`; `INDEX_AHEAD_OF_STD`, `INDEX_MEMBERS_AHEAD_OF_STD`, `STD_BEHIND_THE_INDEX` in `std_library.rs` (T23, T44); `STD_BEHIND_THE_BOOK` and `BLOCKS_AHEAD_OF_STD` in `book.rs` (T23; resolved-nets); `SPEC_TRAITS_AHEAD_OF_THE_TABLE` (`From`) in `pom_resolve.rs` (T42); `RETIRED_AHEAD_OF_THE_PARSER` gains `E0908` (T28); `docs/pom/mapping.md` lists 62 constructs while the POM still maps `resolve`, `Unknown`, `level` (T28, T29).
 
 **Dispatched:** none. **Walked:** none (the verifier of B1 to B3 is the caller's).
 
