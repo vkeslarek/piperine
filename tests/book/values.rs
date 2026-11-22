@@ -255,11 +255,11 @@ fn the_monitor_file_runs_its_window_monitor_and_its_adder() {
     let monitor = chapter.marked("monitor.msl", "values#10").run(Transient::of("MonitorTop", 3e-6)).unwrap_or_else(|failure| panic!("{failure}"));
     let zones = monitor.stream("zone");
     assert_eq!(zones.len(), 3, "one record per change of zone: {:?}", monitor.records);
-    for (record, (instant, near, from, to)) in zones.iter().zip([("5.000000e-7", 0.5, 1, 0), ("1.500000e-6", 1.5, 0, 1), ("2.500000e-6", 2.5, 1, 2)]) {
+    for (record, (instant, near, from, to)) in zones.iter().zip([("5.000000e-7", 0.5, "Ok", "Under"), ("1.500000e-6", 1.5, "Under", "Ok"), ("2.500000e-6", 2.5, "Ok", "Over")]) {
         assert_eq!(record.instance, "MonitorTop.mon");
         Printed::holds(instant, record.time, "the clock edge");
         assert!(matches!(Fields::of(record, "v"), Field::Real(v) if (v - near).abs() < 0.01), "v is near {near}: {:?}", Fields::of(record, "v"));
-        assert_eq!((Fields::of(record, "from"), Fields::of(record, "to")), (&Field::Int(from), &Field::Int(to)), "Under is 0, Ok 1 and Over 2");
+        assert_eq!((Fields::of(record, "from"), Fields::of(record, "to")), (&Field::Variant(from.to_string()), &Field::Variant(to.to_string())), "the variants by name");
     }
     let longer = chapter.marked("monitor.msl", "values#10").run(Transient::of("MonitorTop", 5e-6)).unwrap_or_else(|failure| panic!("{failure}"));
     assert_eq!(longer.stream("zone").len(), 3, "the edges at 3.5 and 4.5 us find the zone unchanged and print nothing");

@@ -49,7 +49,7 @@ block	types#4	12b765caa91c5cbd	run	piperine/book_types::optional_arguments_may_b
 block	types#5	2bbe7594bd207d1e	fragment	types#4	-	-
 block	types#6	752d2a198d304f5c	run	piperine/book_types::tuples_and_structs_run_where_a_top_reaches_them	-	-
 block	types#7	3b9b74b50cece325	refused	piperine/book_types::the_listings_still_on_the_way_are_refused_where_a_top_reaches_them	L3	-
-block	types#8	b63a21346a74deb1	run	piperine/book_types::an_enum_is_matched_compared_and_printed_by_the_number_of_its_variant	-	-
+block	types#8	b63a21346a74deb1	run	piperine/book_types::an_enum_is_matched_compared_and_printed_by_the_name_of_its_variant	-	-
 block	types#9	0a7d56d69e848349	shown	-	-	-
 block	types#10	91e2ced8255df292	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run levels.msl --analysis transient --stop 2e-6
 block	types#11	febab19eac3f694a	refused	piperine/book_types::the_listings_still_on_the_way_are_refused_where_a_top_reaches_them	L4	-
@@ -320,7 +320,7 @@ claim	types~4b156a2d	4b156a2da44bc9e4	holds	piperine/book_types::optional_argume
 claim	types~a1ff299b	a1ff299b2ebb3e21	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The command prints an enum field as the name of its variant, so seen=High is High.
 claim	types~545f1643	545f1643d584ba9b	holds	piperine/book_types::a_match_that_misses_a_variant_stops_the_build	-	Add a fourth variant later and this match stops the build until it has an arm for it, so a new case cannot be forgotten silently.
 claim	types~61763362	6176336202534a2d	prose	-	-	A function that should accept a table of any length gives the length a name of its own, <const N: usize>, and takes [f64; N].
-claim	types~10cb5d87	10cb5d87fc98b669	holds	piperine/book_types::an_enum_is_matched_compared_and_printed_by_the_number_of_its_variant	-	The line above the enum is an attribute. #[derive(…)] asks the compiler to write standard behavior for the type that follows: PartialEq gives it == and !=, PartialOrd gives it < and > in the order of the declaration, and Repr gives it a layout in bits, which a signal needs to carry it.
+claim	types~10cb5d87	10cb5d87fc98b669	holds	piperine/book_types::an_enum_is_matched_compared_and_printed_by_the_name_of_its_variant	-	The line above the enum is an attribute. #[derive(…)] asks the compiler to write standard behavior for the type that follows: PartialEq gives it == and !=, PartialOrd gives it < and > in the order of the declaration, and Repr gives it a layout in bits, which a signal needs to carry it.
 claim	types~e26b60ff	e26b60ff8c87e786	prose	-	-	It fits a value or it does not, and when it fits it gives names to the parts you want.
 claim	types~1c8de7ec	1c8de7ecca03f031	holds	piperine/book_types::an_impl_gives_a_type_its_constants_and_functions	-	The same notation reaches into a namespace, as in std::constants::PI. use path; gives the last name of a path a short name in the file that writes it.
 claim	types~95095180	950951807bc5b336	holds	piperine/book_types::only_two_built_in_bang_forms_exist	-	Only two built-in ! forms: emit! for output and include_str! for data (E0901).

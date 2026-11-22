@@ -73,14 +73,14 @@ fn an_option_is_read_with_its_methods_a_match_and_an_if_let() {
 }
 
 #[test]
-fn an_enum_is_matched_compared_and_printed_by_the_number_of_its_variant() {
+fn an_enum_is_matched_compared_and_printed_by_the_name_of_its_variant() {
     // types#8 (run, `levels.msl`) with its listing types#10; types~10cb5d87 "The line above the enum is an
     // attribute. #[derive(..)] asks the compiler to write standard behavior for the type that follows:
     // PartialEq gives it == and !=, PartialOrd gives it < and >
     // in the order of the declaration, and Repr gives it a layout in bits" (the field `seen` is the variant's
-    // number, `high` uses `==`, `above` uses `>`); a `use Level::*;` names the variants bare
+    // name since composite-values CV-22, `high` uses `==`, `above` uses `>`); a `use Level::*;` names the variants bare
     let record = ValueFile::only(Chapter::read().marked("levels.msl", "types#8").run(ValueFile::transient()), "levels");
-    ValueFile::int(&record, "seen", 2);
+    ValueFile::variant(&record, "seen", "High");
     ValueFile::flag(&record, "high", true);
     ValueFile::flag(&record, "above", true);
     ValueFile::int(&record, "weight", 2);

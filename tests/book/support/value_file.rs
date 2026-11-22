@@ -47,6 +47,11 @@ impl ValueFile {
         assert_eq!(Fields::of(record, name), &Field::Int(value), "the field `{name}`");
     }
 
+    /// Asserts that the field `name` of `record` is the variant named `variant` of an enum with no payload.
+    pub fn variant(record: &Record, name: &str, variant: &str) {
+        assert_eq!(Fields::of(record, name), &Field::Variant(variant.to_string()), "the field `{name}`");
+    }
+
     /// Asserts that the field `name` of `record` is the bool `value`.
     pub fn flag(record: &Record, name: &str, value: bool) {
         assert_eq!(Fields::of(record, name), &Field::Bool(value), "the field `{name}`");
