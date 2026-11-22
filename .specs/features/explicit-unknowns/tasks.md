@@ -10,7 +10,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 **Design**: `.specs/features/explicit-unknowns/design.md`
 **Status**: Draft
-**Approved**: pending. No approval is written until the user gives it; spec.md D1 to D16 and Q1 to Q3 wait with it.
+**Approved**: pending. No approval is written until the user gives it; spec.md Q4 and Q5 wait with it. Revised 2026-11-21 for the user's answers to Q1 to Q3 and on the ABI.
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run docs**: `cargo test -p piperine-cli --test docs`
@@ -23,6 +23,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run src**: `cargo test -p piperine-parity --test source_explicit`
 **Run ir**: `cargo test -p piperine-ir --test digital`
 **Run abi**: `cargo test -p piperine-abi --test layouts`
+**Run cache**: `cargo test -p piperine-transpile --test cache`
 **Run abicontract**: `cargo test -p piperine-abi --test contract`
 **Run relax**: `cargo test -p piperine-digital-solver --test relax`
 **Run records**: `cargo test -p piperine-api --test records`
@@ -98,13 +99,13 @@ Phases are ordered and run sequentially - each phase completes before the next b
 
 | Batch | Tasks | Starts on | Delivers |
 | ----- | ----- | --------- | -------- |
-| B1 | T1 to T6 | `main` at `8b5596ed`, once the spec is approved | the specification's normative parts in the explicit model |
-| B2 | T7 to T11 | B1 | Part VII, the appendices, `abi.md` major 2, MD-78, `GAPS.md` S8 |
-| B3 | T12 to T18 | B2 | the Book. **B1 to B3 merge to `main` together, ahead of every code batch** |
+| B1 | T1 to T6 | `main` at `8b5596ed`, once the spec is approved | the specification's normative parts: the explicit model, traits as capabilities, `Resolve<X, V>` |
+| B2 | T7 to T11 | B1 | Part VII (`Logic`, strengths, net modules), the appendices, the four worked nets in the gallery, `abi.md` edited in place, MD-78, `GAPS.md` S8 |
+| B3 | T12 to T18 | B2 | the Book, with "Driving with strength". **B1 to B3 merge to `main` together, ahead of every code batch** |
 | B4 | T19 to T22 | B3 on `main` **and** `composite-values` on `main` | plain analog reads, the `Default` table, initial values |
 | B5 | T23 to T27 | B4 | `std`, the buck, the e2e packages, the fixtures and the unknown tests in the explicit form |
 | B6 | T28 to T33 | B5 | the names refused; no flag in the elaborator, the IR and the generated code |
-| B7 | T34 to T40 | B6 | records, ABI 2, relaxation, host, CLI; S8 closed. **Phase A merges to `main` here, before `generics`** |
+| B7 | T34 to T40 | B6 | records, the ABI without known bytes (still major 1), relaxation and `E0511`, host, CLI; S8 closed. **Phase A merges to `main` here, before `generics`** |
 | B8 | T41 to T48 | B7 on `main` **and** `generics` phase A on `main` | operator traits, `Logic<N>` from source, four-state cells |
 
 ### Phase 1: The specification: values, carriers, structure, behavior (B1)
@@ -143,7 +144,7 @@ T23 → T24 → T25 → T26 → T27
 T28 → T29 → T30 → T31 → T32 → T33
 ```
 
-### Phase 7: Phase A: records, ABI 2, engines, host (B7)
+### Phase 7: Phase A: records, the ABI, engines, host (B7)
 
 ```
 T34 → T35 → T36 → T37 → T38 → T39 → T40
@@ -159,9 +160,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ## Task Breakdown
 
-### T1: Part I: §3.3 is the explicit model
+### T1: Part I: §3.3 is the explicit model, a nature takes trait impls
 
-**What**: Rewrite `part_i_values.md` §3.3 as design.md "Part I §3.3" (title "Uncertainty and absence", rules §3.3.1 to §3.3.6, no error of its own, new examples). Amend §1 rule 13, §2's opening and rules 7 to 11, the §1.5 and §1.8 sentences on unknown operands and control, and §3.7.5's `Known` example. Replace the `spec_text.rs` assertions that quote the earlier §3.3.
+**What**: Amend §3.1 (the table, §3.1.9, `E0134` for a bundle only), §3.7 (the sentence "a trait is a capability", §3.7.12 lists `Resolve`, the `E0134` row) as design.md "Traits are capabilities". Rewrite `part_i_values.md` §3.3 as design.md "Part I §3.3" (title "Uncertainty and absence", rules §3.3.1 to §3.3.6, no error of its own, new examples). Amend §1 rule 13, §2's opening and rules 7 to 11, the §1.5 and §1.8 sentences on unknown operands and control, and §3.7.5's `Known` example. Replace the `spec_text.rs` assertions that quote the earlier §3.3.
 **Where**: `docs/spec/part_i_values.md`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: design.md "The explicit model"; `value-semantics` `cc3599bf` as the form of an amendment
@@ -171,7 +172,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 **Done when**:
 
 - [ ] §3.3 holds the six rules, each numbered, and the sentence that `bool`, `UInt<N>`, `Int<N>`, `Float<N>` and `str` do not implement `Default` and that this differs from Rust
-- [ ] `spec_text.rs::section_3_3_states_the_explicit_model` passes; the tests it replaces are named in the commit body
+- [ ] `spec_text.rs::section_3_3_states_the_explicit_model` and `a_nature_takes_trait_impls` pass; the tests it replaces are named in the commit body
 - [ ] Every anchor `#33-unknown-values` in `docs/spec` still resolves (the heading keeps an explicit anchor or every link moves)
 - [ ] Gate check passes: Quick
 
@@ -204,25 +205,25 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ---
 
-### T3: Part II: carriers start with a value
+### T3: Part II: carriers start with a value, `Resolve` is a capability
 
-**What**: Amend `part_ii_carriers.md` as design.md "Carriers": §4 rule 15, §5.1.1, §5.1.5, §5.1.6, §5.1.8, the §5.1 examples and error table (`E0187`), §5.2.8, §5.2.10, §5.2.12, the §5.3 table, §5.3.4 to §5.3.8, §5.3.11, §5.3.12 removed, §6 rule 16. Under Q1 = A the grammar line and §4 rule 8 stay.
+**What**: Amend `part_ii_carriers.md` as design.md "Traits are capabilities" and "Carriers". §4: the `nature_field` production loses `resolve`; the kinds table; rules 1, 2, 6, 8 (the trait `Resolve<X: Repr, V: Repr = X>`), 15; `E0203`. §5.2: the two definitions, §5.2.1 to §5.2.3, §5.2.9, §5.2.10, §5.2.12, new §5.2.15, `E0220` reworded, new `E0225`. §5.1.1, §5.1.5, §5.1.6, §5.1.8, the §5.1 examples and error table (`E0187`), §5.2.8, the §5.3 table, §5.3.4 to §5.3.8, §5.3.11, §5.3.12 removed, §6 rule 16, §7 rule 2 (a field's direction by whether its nature implements `Resolve`).
 **Where**: `docs/spec/part_ii_carriers.md`
 **Depends on**: T2
-**Reuses**: design.md "Carriers", spec.md D8, D9
+**Reuses**: design.md "Traits are capabilities", "Carriers"; spec.md D8, D9, D17 to D21
 **Requirement**: EU-11
 **Executor**: Sonnet
 
 **Done when**:
 
-- [ ] The rules read as design.md gives them; no sentence mentions a flag
-- [ ] `spec_text.rs::resolve_receives_plain_values_for_every_count` and `a_drive_without_a_value_starts_at_its_default` pass
+- [ ] The rules read as design.md gives them; no sentence mentions a flag or a `resolve` field
+- [ ] `spec_text.rs::resolve_is_a_trait_of_two_parameters`, `many_drives_need_the_resolve_capability`, `a_drive_picks_its_impl_by_its_type`, `resolve_receives_plain_values_for_every_count` and `a_drive_without_a_value_starts_at_its_default` pass
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
 
-**Commit**: `docs(spec): part ii, a carrier starts with a value`
+**Commit**: `docs(spec): part ii, resolve is a capability of a nature`
 
 ---
 
@@ -231,7 +232,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 **What**: Amend `part_iii_structure.md` by design.md "Other parts": §8.1 (a level no definition names), §8.2.3 steps 1 and 4 and the error table (`E0511`, phase run), §8.2.28, §8.2.30, §8.3.18, §8.5, the two `known_or` examples (`DigiPot`, `LaggedResistor` read `r` directly).
 **Where**: `docs/spec/part_iii_structure.md`
 **Depends on**: T3
-**Reuses**: design.md "Other parts"; Q3 = A
+**Reuses**: design.md "Other parts"
 **Requirement**: EU-11
 **Executor**: Sonnet
 
@@ -293,32 +294,33 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ---
 
-### T7: Part VII: `Logic`, the tables and the nets
+### T7: Part VII: `Logic`, the tables, strengths and the net modules
 
-**What**: Rewrite `part_vii_stdlib.md` §22.1 (remove `Known` and `merge`; `cast`, `same`, `matches_bits`, `logic`, `impl Bit`, `impl Bit<Logic>`; new units for `Logic`, `LogicState`, the operator `impl`s and the printed tables) and §22.3.1 to §22.3.8 (`Strength`, `Driven`, `Wire`, `Tristate`, `Tri`, `SumNet`, the eight modules), as design.md gives the source. Amend §22.4 converters and §22.5 monitors where they read a flag, the index, and the error table. The fences of units that `std` does not hold yet are marked as the section's own convention marks them, and `std_excerpts.rs` lists them as ahead of `std` until T23 and T44.
+**What**: Rewrite `part_vii_stdlib.md` §22.1 (remove `Known` and `merge`; `cast`, `same`, `matches_bits`, `logic`, `impl Bit`, `impl Bit<Logic>`; new units for `Logic`, `LogicState`, the operator `impl`s and the printed tables) and §22.3 as design.md "Part VII §22.3": `Strength`, `Driven`, `Driven::strongest` and its table, `sum`, the eight modules generic over `W: Nature + Resolve<Driven>`; `Wire`, `Tri`, `tri`, `SumNet` and `Logic::wired` removed. Under §22.3, a rationale of at most fifteen lines for the set of `Strength`, citing the survey of spec.md Q5: **each citation is checked against its document first** (IEEE 1364 §7, IEEE 1800 §6.6.7 and §28, IEEE 1164, IEEE 1666, the ngspice manual, the Logisim and Digital documentation), and one that cannot be confirmed is dropped and reported, never kept. Amend §22.4 converters and §22.5 monitors where they read a flag or name `Wire`, the index, and the error table. The fences of units that `std` does not hold yet are marked by the section's own convention, and `std_excerpts.rs` lists them as ahead of `std` until T23 and T44.
 **Where**: `docs/spec/part_vii_stdlib.md`
 **Depends on**: None (its phase follows the previous one)
-**Reuses**: design.md "Part VII §22.1", "Part VII §22.3"; Q2 = A
+**Reuses**: design.md "Part VII §22.1", "Part VII §22.3"; Q4 = A, Q5 = B
 **Requirement**: EU-12
 **Executor**: Sonnet
 
 **Done when**:
 
 - [ ] §22.1 prints the four tables beside the source
-- [ ] `spec_text.rs::section_22_1_holds_the_four_state_tables`, `wire_carries_a_driven_value`, `tri_carries_a_tristate`, `sum_net_has_no_unknown_rule` pass
+- [ ] `spec_text.rs::section_22_1_holds_the_four_state_tables`, `strongest_resolves_by_strength`, `the_library_declares_no_net_nature` pass
 - [ ] `std_excerpts` passes with the fences ahead of `std` listed by name
+- [ ] The commit body lists each citation and where it was confirmed
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
 
-**Commit**: `docs(spec): part vii, logic with four states and the nets`
+**Commit**: `docs(spec): part vii, logic, strengths and net modules`
 
 ---
 
 ### T8: Appendices A, B, C and the index
 
-**What**: `appendix_a_lexical.md`: remove A.3, retire `E0906` and `E0908`, the `IDENT` and literal productions. `appendix_b_grammar.md`: row 21, the literal count, the placement-matrix row, the `literal` production. `appendix_c_implementation.md`: the `signal` row of C.1, the "unknown control" row of C.2, the loop bound of C.2.1. `index.md`: the concept and glossary rows (known, unknown, flag-total, merge leave; `Logic`, absence, `Default` enter).
+**What**: `appendix_a_lexical.md`: remove A.3, retire `E0906` and `E0908`, the `IDENT` and literal productions. `appendix_b_grammar.md`: row 21, the literal count, the placement-matrix row, the `literal` production; row 15 (`resolve`), the contextual-keyword list and the `nature_field` production lose `resolve`, as does A.1's list. `appendix_c_implementation.md`: the `signal` row of C.1, the "unknown control" row of C.2, the loop bound of C.2.1. `index.md`: the concept and glossary rows (known, unknown, flag-total, merge leave; `Logic`, absence, `Default` enter).
 **Where**: `docs/spec/appendix_a_lexical.md`
 **Depends on**: T7
 **Reuses**: spec.md "Inventory"
@@ -327,8 +329,8 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `Unknown` is in no production
-- [ ] Appendix B's count of additions is one lower and its sum still matches its rows
+- [ ] `Unknown` and `resolve` are in no production and no keyword list
+- [ ] Appendix B's count of additions is two lower and its sum still matches its rows
 - [ ] The `spec_text.rs` tests `appendix_c_states_the_loop_bound_under_unknown_control` and `appendix_c_lists_the_loop_bound_among_the_defaults` are replaced by a test that C.2 holds no such row
 - [ ] Gate check passes: Quick
 
@@ -341,7 +343,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T9: Galleries D, E, F and Appendix G
 
-**What**: Rewrite every listing and note of `appendix_d_gallery_analog.md`, `appendix_e_gallery_digital.md` and `appendix_f_gallery_mixed.md` that reads a flag or leaves a carrier without a value (E.5's unknown index becomes a plain index; F.4's three cases read `v.is_z()`, `v.is_x()` and the strength). `appendix_g_scope.md`: new G.72 (what was removed, R1 to R10, "the reference implementation does not meet this yet"), G.29, G.46 and G.57 moved to the closed items. Add the absence test over the whole of `docs/spec`.
+**What**: Rewrite every listing and note of `appendix_d_gallery_analog.md`, `appendix_e_gallery_digital.md` and `appendix_f_gallery_mixed.md` that reads a flag or leaves a carrier without a value (E.5's unknown index becomes a plain index). Rewrite F.4 as the four worked nets of design.md "The worked nets", with the `DataBus` of D12 as a fifth listing: each with its nature, its `impl`, its module code and its table of outcomes; every gallery that used `Wire` declares its own nature. `appendix_g_scope.md`: new G.72 (what was removed, R1 to R10, "the reference implementation does not meet this yet"), G.29, G.46 and G.57 moved to the closed items. Add the absence test over the whole of `docs/spec`.
 **Where**: `docs/spec/appendix_g_scope.md`
 **Depends on**: T8
 **Reuses**: G.71 as the form of an amendment entry
@@ -351,7 +353,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 **Done when**:
 
 - [ ] `spec_text.rs::the_removed_words_are_absent_from_the_specification` walks every file of `docs/spec` and exempts G.72 only
-- [ ] `appendix_g_records_the_explicit_model` passes
+- [ ] `appendix_g_records_the_explicit_model` and `the_gallery_works_four_nets` pass
 - [ ] `std_galleries` passes, with the gallery fixtures that changed regenerated
 - [ ] Gate check passes: Quick
 
@@ -362,30 +364,30 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ---
 
-### T10: `abi.md`: major 2
+### T10: `abi.md`: the contract edited in place
 
-**What**: Rewrite `.specs/features/device-abi/abi.md` as design.md "`abi.md`, major 2": §2 (six entries), §3 (`Field`, constants, version), P3, P5, the `TRACE` and C5 presence fields, C7 removed, D1, the worked examples of §11 that show a known byte, §12 versioning, §14 point 6 removed, §15 rows 6 and 7.
+**What**: Rewrite `.specs/features/device-abi/abi.md` as design.md "`abi.md`, still major 1, edited in place": the unreleased sentence at the top and in §12, §2 (six entries), §3 (`Field`, constants, `MAJOR` 1, `MINOR` 0), P3, P5, the `TRACE` and C5 presence fields, C7 removed, D1 (drive pins of `X`, value pin of `V`, `E0511`), the worked examples of §11 that show a known byte, §14 point 6 removed, §15 rows 6 and 7.
 **Where**: `.specs/features/device-abi/abi.md`
 **Depends on**: T9
-**Reuses**: design.md "`abi.md`, major 2"
+**Reuses**: design.md "`abi.md`, still major 1, edited in place"
 **Requirement**: EU-17
 **Executor**: Sonnet
 
 **Done when**:
 
-- [ ] `docs.rs::abi_md_describes_major_two` passes: the symbol, the four-field `Field`, the three shipped layouts, the `driving` byte, and the absence of `HAS_KNOWN`, `commit_with` and `known byte`
+- [ ] `docs.rs::abi_md_describes_the_unreleased_contract` passes: the symbol `piperine_abi_1`, minor 0, the four-field `Field`, the three shipped layouts, the `driving` byte, the unreleased sentence, and the absence of `HAS_KNOWN`, `commit_with` and `known byte`
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
 
-**Commit**: `docs(abi): major 2, no known byte and no commit_with`
+**Commit**: `docs(abi): no known byte, no commit_with, still major 1`
 
 ---
 
 ### T11: Records of the amendment
 
-**What**: `.specs/STATE.md`: append MD-78 (spec.md "MD entry"; renumber if `composite-values` took the number), mark MD-70 superseded and MD-64 superseded in part. `GAPS.md`: S6 and G6 closed by redesign, new S8 ("the implementation still carries the known flag", with the layers of spec.md's code inventory), the rows of spec.md "`GAPS.md`". `.specs/features/unknown-semantics-per-level/spec.md`: a first line that says dropped, by the user, 2026-11-21, MD-78. `ROADMAP.md`: the `KNOWN_LEVELS` line removed. `crates/piperine-lang/tests/support/code_owners.tsv`: `E0511` owned by `explicit-unknowns`, `E0150`, `E0151`, `E0906`, `E0908` out.
+**What**: `.specs/STATE.md`: append MD-78 (spec.md "MD entry"; renumber if `composite-values` took the number), mark MD-70 superseded and MD-64 superseded in part. `GAPS.md`: S6 and G6 closed by redesign, new S8 ("the implementation still carries the known flag", with the layers of spec.md's code inventory), the rows of spec.md "`GAPS.md`". `.specs/features/unknown-semantics-per-level/spec.md`: a first line that says dropped, by the user, 2026-11-21, MD-78. `ROADMAP.md`: the `KNOWN_LEVELS` line removed. `crates/piperine-lang/tests/support/code_owners.tsv`: `E0511` and `E0225` owned by `explicit-unknowns`, `E0150`, `E0151`, `E0906`, `E0908` out.
 **Where**: `.specs/STATE.md`
 **Depends on**: T10
 **Reuses**: MD-76 as the form of an entry; `spec_codes.rs`
@@ -451,26 +453,26 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ---
 
-### T14: Book: natures, carriers and resolved nets
+### T14: Book: natures, capabilities and driving with strength
 
-**What**: "Natures and carriers": the start of a carrier, `prev()` and edges as D8 and D9 (a clock that starts high has not risen; `init()` for an action at the start). "Digital behavior", "Many drivers: resolved nets": the alarm on `Wire` over `Driven` with `resolve: Driven::wired`, Z as a value a driver holds, contention as X, the open-drain line with its pull-up, `Tri` over `Tristate`; `Pfd3` with an initial `state`. Prose answers "why is `resolve` a function and not a module".
+**What**: "Natures and carriers": the start of a carrier, `prev()` and edges as D8 and D9 (a clock that starts high has not risen; `init()` for an action at the start); a section "What a nature can do: traits as capabilities" (an `impl` on a nature gives its carriers methods, `abc.celsius()`; a trait a nature implements is something its carriers can do; one driver unless the nature implements `Resolve`, with the `E0220` message quoted). "Digital behavior", "Many drivers: resolved nets" is rewritten around a nature the reader declares, and gains the section "Driving with strength" with the four worked nets of design.md, in this order: a plain bit into `AndWire`; the open-drain line with its pull-up (the table of outcomes, and what the line reads without the pull-up); the tri-state bus with two drivers and a keeper; the conflict of equal strengths, and beside it the loop that does not settle (`E0511`), so the reader sees a conflict is a value and an instability an error. Prose answers "why is `resolve` a function and not a module" and "why is there no `Wire` in the library". `Pfd3` with an initial `state`. Fundamentals first (examples 1 and 2), In depth after (3, 4, `Resolve<X, V>` with two types).
 **Where**: `docs/book/content.html`
 **Depends on**: T13
-**Reuses**: `tests/book/natures.rs`, `digital.rs`; `GAPS.md` L21 rows natures#3, digital#16
+**Reuses**: `tests/book/natures.rs`, `digital.rs`; `GAPS.md` L21 rows natures#3, digital#16; design.md "The worked nets"
 **Requirement**: EU-18
 **Executor**: Sonnet
 
 **Done when**:
 
-- [ ] `book_natures::the_book_resolves_a_wire_of_driven_values` passes
-- [ ] The alarm listings keep their L21 rows with the new refusal text asserted
-- [ ] `book_digital`, `book_inventory` pass
+- [ ] `book_natures::the_book_drives_nets_with_strength` passes
+- [ ] Each worked net has its inventory row; all four name L21 and their tests assert today's refusal text
+- [ ] `book_digital`, `book_inventory`, `book_claims` pass
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
 
-**Commit**: `docs(book): carriers start with a value, wires carry driven`
+**Commit**: `docs(book): natures have capabilities, driving with strength`
 
 ---
 
@@ -520,7 +522,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T17: Book: device ABI, solver and compiler chapters
 
-**What**: "Device ABI": major 2 as T10 wrote it (the four-field `Field`, the one-byte `BIT`, `Option` as presence and payload, `Logic` as two planes, the `driving` byte, one `commit`). "The solver" and "From source to solver": relaxation without zeroing, no merge of commits, no flagged type in the IR walk-through. "The object model": the `Unknown` literal leaves.
+**What**: "Device ABI": the contract as T10 wrote it, still major 1 and said to be unreleased (the four-field `Field`, the one-byte `BIT`, `Option` as presence and payload, `Logic` as two planes, the `driving` byte, one `commit`). "The solver" and "From source to solver": relaxation without zeroing, no merge of commits, no flagged type in the IR walk-through. "The object model": the `Unknown` literal leaves.
 **Where**: `docs/book/content.html`
 **Depends on**: T16
 **Reuses**: `tests/book/abi.rs`, `solver.rs`, `compiler.rs`, `pom.rs`
@@ -529,14 +531,14 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `book_abi::the_abi_chapter_describes_major_two` passes
+- [ ] `book_abi::the_abi_chapter_describes_the_unreleased_contract` passes
 - [ ] `book_solver`, `book_compiler`, `book_pom` pass
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
 
-**Commit**: `docs(book): abi major 2 and the solver without flags`
+**Commit**: `docs(book): the abi without known bytes, the solver without flags`
 
 ---
 
@@ -651,7 +653,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T23: `std` in the explicit form
 
-**What**: `std/values.msl`: `Known` and `merge` deleted; `same` and `cast` as D10, D11. `std/carriers.msl`: `rise` and `fall` as D9, `high` deleted. `std/nets.msl`, `convert.msl`, `monitor.msl`, `analog.msl`: the text of Part VII as amended (the nets stay refused with `P0001` until `resolved-nets`). Regenerate `fixtures/preformat/crates/piperine-lang/std/*.pre`. Write on the Handoff every model in the tree whose output moves because an edge no longer fires at `(0, 0)`.
+**What**: `std/values.msl`: `Known` and `merge` deleted; `same` and `cast` as D10, D11. `std/carriers.msl`: `rise` and `fall` as D9, `high` deleted. `std/nets.msl`, `convert.msl`, `monitor.msl`, `analog.msl`: the text of Part VII as amended: `nets.msl` holds `Strength`, `Driven`, `strongest`, `sum` and the generic modules, and no `Wire`, `Tri` or `SumNet` (they stay refused with `P0001` until `resolved-nets`). Regenerate `fixtures/preformat/crates/piperine-lang/std/*.pre`. Write on the Handoff every model in the tree whose output moves because an edge no longer fires at `(0, 0)`.
 **Where**: `crates/piperine-lang/std/carriers.msl`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: Part VII §22.1.5 as T7 wrote it
@@ -936,32 +938,32 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ---
 
-### T36: ABI major 2: layouts hold the value only
+### T36: ABI: layouts hold the value only, still major 1
 
-**What**: `Field` becomes `{ name, leaf, offset, count }`; `HAS_KNOWN` and `known_of` go; `BIT`, `BYTE` and `F64` are the shipped layouts and `REAL` is deleted; `MAJOR` 2, `MINOR` 0, symbol `piperine_abi_2`; `validate.rs` and `verify.rs` follow. `piperine-plan` lays every carrier as its value leaf and `Option<T>` as presence then payload; the printer's shapes, `piperine-solver/src/core/bind.rs`, the cache key of `piperine-transpile/src/cache.rs` and every hand-written test device follow. This is the one task whose change spans crates: no layer above produces a flag any more, so it is one byte dropped per leaf.
+**What**: `Field` becomes `{ name, leaf, offset, count }`; `HAS_KNOWN` and `known_of` go; `BIT`, `BYTE` and `F64` are the shipped layouts and `REAL` is deleted; `MAJOR` stays 1 and the symbol `piperine_abi_1`, `MINOR` becomes 0; `validate.rs` and `verify.rs` follow. `piperine-plan` lays every carrier as its value leaf and `Option<T>` as presence then payload; the printer's shapes, `piperine-solver/src/core/bind.rs` and every hand-written test device follow. The cache key of `piperine-transpile/src/cache.rs` holds a hash of the contract's source, so an entry built against the earlier contract is rebuilt. This is the one task whose change spans crates: no layer above produces a flag any more, so it is one byte dropped per leaf.
 **Where**: `crates/piperine-abi/src/layout.rs`
 **Depends on**: T35
-**Reuses**: abi.md as T10 wrote it
+**Reuses**: abi.md as T10 wrote it; `piperine-transpile/src/abi_source.rs`
 **Requirement**: EU-16
 **Executor**: Sonnet
 
 **Done when**:
 
 - [ ] `layouts::the_shipped_layouts_hold_the_value_only` and `an_option_pin_is_presence_then_payload` pass
-- [ ] `contract::a_major_one_library_is_refused_by_name` passes
+- [ ] `cache::an_entry_of_the_earlier_contract_is_rebuilt` passes
 - [ ] The `**Build**` line passes; every buck target passes with its known-byte asserts rewritten to the value
 - [ ] Gate check passes: Full, with the buck
 
 **Tests**: integration
 **Gate**: full
 
-**Commit**: `feat(abi): major 2, a pin holds the bytes of its type`
+**Commit**: `feat(abi): a pin holds the bytes of its type, still major 1`
 
 ---
 
 ### T37: Digital solver: relaxation on a plain `driving` byte
 
-**What**: A drive pin ends with `driving: BOOL`, 0 for absent. Each pass of a relaxing cycle starts with `driving` 0 on the cycle's drives. A net that still moves after the bounded passes is a `FAULT` the owner reports as `E0511` naming the loop's drives; `ObservationKind::Unsettled` and the zeroing of a moving field go.
+**What**: A drive pin is the bytes of its driven type and then `driving: BOOL`, 0 for absent. Each pass of a relaxing cycle starts with `driving` 0 on the cycle's drives. A net that still moves after the bounded passes is a `FAULT` the owner reports as `E0511` naming the loop's drives; `ObservationKind::Unsettled` and the zeroing of a moving field go.
 **Where**: `crates/piperine-digital-solver/src/settle.rs`
 **Depends on**: T36
 **Reuses**: `resolved-nets` T7 to T9
@@ -1205,7 +1207,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T48: Phase B closure
 
-**What**: `GAPS.md`: L58's `Logic`, `cast`, `same` entries; counts. Appendix G.72 loses its last "does not meet" sentence. Book: the `Logic` listings flip to running, each with its test. `.specs/STATE.md`: MD-78 status delivered. A note in `.specs/features/resolved-nets/tasks.md` Handoff that `Logic` runs and T27 starts from `Driven`.
+**What**: `GAPS.md`: L58's `Logic`, `cast`, `same` entries; counts. Appendix G.72 loses its last "does not meet" sentence. Book: the `Logic` listings flip to running, each with its test. `.specs/STATE.md`: MD-78 status delivered. A note in `.specs/features/resolved-nets/tasks.md` Handoff that `Logic` runs, that its spec is to be revised for `Resolve<X, V>` before B3, and that T27 starts from `Driven`.
 **Where**: `GAPS.md`
 **Depends on**: T47
 **Reuses**: T40
@@ -1349,145 +1351,157 @@ Proof: run logic | test a_logic_converts_to_an_option_of_bits ... ok
 **C40** - `to_volts(1.8)` gives 1.8, 0.0 and 0.9 for 1, 0 and X or Z, and drives a node from `analog` (EU-10, AC 3; T46)
 Proof: run logic | test to_volts_gives_the_level_of_each_state ... ok
 
-**C41** - §4 rule 15 and §5.2.10 say `resolve` receives the present drives as plain values, for every count from zero (EU-11, AC 1; T3)
+**C41** - §3.1 and §3.7 say a nature takes trait `impl`s, that a trait is a capability, and that `E0134` is for a bundle only (EU-11, AC 1; T1)
+Proof: run spectext | test a_nature_takes_trait_impls ... ok
+
+**C42** - §4 declares `Resolve<X: Repr, V: Repr = X>` with its one function, `V` the nature's value (`E0203`), and no `resolve` field or keyword is left (EU-11, AC 2; T3)
+Proof: run spectext | test resolve_is_a_trait_of_two_parameters ... ok
+
+**C43** - §5.2 says many drives need `Resolve`, and that `E0220` names the nature and the trait (EU-11, AC 3; T3)
+Proof: run spectext | test many_drives_need_the_resolve_capability ... ok
+
+**C44** - §5.2.15 says a drive picks its `impl` by its type, with `E0225` and `E0180` (EU-11, AC 4; T3)
+Proof: run spectext | test a_drive_picks_its_impl_by_its_type ... ok
+
+**C45** - §4 rule 15 and §5.2.10 say `resolve` receives the present drives as plain values, for every count from zero (EU-11, AC 5; T3)
 Proof: run spectext | test resolve_receives_plain_values_for_every_count ... ok
 
-**C42** - §5.2.12 says a drive with no initial value starts at its type's default, or is `E0187` (EU-11, AC 2; T3)
+**C46** - §5.2.12 says a drive with no initial value starts at its type's default or is `E0187`, and that a resolved carrier needs none (EU-11, AC 6; T3)
 Proof: run spectext | test a_drive_without_a_value_starts_at_its_default ... ok
 
-**C43** - §8.2.3 says a relaxing drive starts each pass absent, and that absence is not a value (EU-11, AC 3; T4)
+**C47** - §8.2.3 says a relaxing drive starts each pass absent, and that absence is not a value (EU-11, AC 7; T4)
 Proof: run spectext | test a_relaxing_drive_starts_absent ... ok
 
-**C44** - §8.2.3 step 4 and its error row say a loop that still moves is `E0511` naming its drives (EU-11, AC 4; T4)
+**C48** - §8.2.3 step 4 and its error row say a loop that still moves is `E0511` naming its drives (EU-11, AC 8; T4)
 Proof: run spectext | test a_loop_that_does_not_settle_is_e0511 ... ok
 
-**C45** - §22.3 defines `Wire` over `Driven`: Z left out, strongest wins, equal strongest that disagree give X (EU-12, AC 1; T7)
-Proof: run spectext | test wire_carries_a_driven_value ... ok
+**C49** - §22.3 defines `Strength`, `Driven` and `Driven::strongest` with its four-row table (EU-12, AC 1; T7)
+Proof: run spectext | test strongest_resolves_by_strength ... ok
 
-**C46** - §22.3 defines `Tri<T>` over `Tristate<T>` with `Free`, `Driven`, `Contended` (EU-12, AC 2; T7)
-Proof: run spectext | test tri_carries_a_tristate ... ok
+**C50** - §22.3 declares no `Wire`, `Tri` or `SumNet`, and its modules are generic over `W: Nature + Resolve<Driven>` (EU-12, AC 2; T7)
+Proof: run spectext | test the_library_declares_no_net_nature ... ok
 
-**C47** - §22.3.4 holds no rule about an unknown drive (EU-12, AC 3; T7)
-Proof: run spectext | test sum_net_has_no_unknown_rule ... ok
+**C51** - Appendix F.4 holds the four worked nets, each with nature, `impl` and module code (EU-12, AC 3; T9)
+Proof: run spectext | test the_gallery_works_four_nets ... ok
 
-**C48** - A commit of another value is a change; a commit of the held value is not (EU-13, AC 1; T23)
+**C52** - A commit of another value is a change; a commit of the held value is not (EU-13, AC 1; T23)
 Proof: run src | test a_change_is_a_different_value ... ok
 
-**C49** - `changed()` fires at `(0, 0)` for a carrier with a written value and for one at its default (EU-13, AC 2; T22)
+**C53** - `changed()` fires at `(0, 0)` for a carrier with a written value and for one at its default (EU-13, AC 2; T22)
 Proof: run src | test the_first_commit_is_a_change ... ok
 
-**C50** - `prev()` is the initial value until the first later change (EU-13, AC 3; T22)
+**C54** - `prev()` is the initial value until the first later change (EU-13, AC 3; T22)
 Proof: run src | test prev_is_the_initial_value_before_a_change ... ok
 
-**C51** - `rise()` fires on false to true and `fall()` on true to false (EU-13, AC 4; T23)
+**C55** - `rise()` fires on false to true and `fall()` on true to false (EU-13, AC 4; T23)
 Proof: run src | test an_edge_is_a_transition ... ok
 
-**C52** - A `Bit` that starts `true` fires no `rise()` at `(0, 0)`, and one that starts `false` no `fall()` (EU-13, AC 5; T23)
+**C56** - A `Bit` that starts `true` fires no `rise()` at `(0, 0)`, and one that starts `false` no `fall()` (EU-13, AC 5; T23)
 Proof: run src | test a_carrier_that_starts_high_has_not_risen ... ok
 
-**C53** - `on settle` runs once per time point and its commits land at the next instant (EU-14, AC 1; T31)
+**C57** - `on settle` runs once per time point and its commits land at the next instant (EU-14, AC 1; T31)
 Proof: run src | test settle_runs_as_before ... ok
 
-**C54** - An event read as a `bool` is whether it fired in this microstep (EU-14, AC 2; T31)
+**C58** - An event read as a `bool` is whether it fired in this microstep (EU-14, AC 2; T31)
 Proof: run src | test an_event_read_is_a_bool ... ok
 
-**C55** - A reaction whose guard is false does not run, and the plan marks no reaction as a maybe (EU-14, AC 3; T31)
+**C59** - A reaction whose guard is false does not run, and the plan marks no reaction as a maybe (EU-14, AC 3; T31)
 Proof: run src | test a_false_guard_runs_nothing ... ok
 
-**C56** - A stream's record layout is its declared fields, with no `maybe` (EU-15, AC 1; T34)
+**C60** - A stream's record layout is its declared fields, with no `maybe` (EU-15, AC 1; T34)
 Proof: run records | test a_record_holds_its_declared_fields_only ... ok
 
-**C57** - A `require` record is a pass or a fail (EU-15, AC 2; T34)
+**C61** - A `require` record is a pass or a fail (EU-15, AC 2; T34)
 Proof: run records | test a_require_is_a_pass_or_a_fail ... ok
 
-**C58** - A `fatal` record ends the run (EU-15, AC 3; T34)
+**C62** - A `fatal` record ends the run (EU-15, AC 3; T34)
 Proof: run records | test a_fatal_record_ends_the_run ... ok
 
-**C59** - A `Logic<4>` cell prints `10xz` in a table, a record and JSON Lines (EU-15, AC 4; T47)
+**C63** - A `Logic<4>` cell prints `10xz` in a table, a record and JSON Lines (EU-15, AC 4; T47)
 Proof: run clirun | test a_logic_cell_prints_its_pattern ... ok
 
-**C60** - An `Option` cell prints `None` or the value; no output format has an unknown cell (EU-15, AC 5; T39)
+**C64** - An `Option` cell prints `None` or the value; no output format has an unknown cell (EU-15, AC 5; T39)
 Proof: run clirun | test an_option_cell_prints_none_or_the_value ... ok
 
-**C61** - The library exports `piperine_abi_2` with major 2, minor 0; a major-1 library is refused naming both (EU-16, AC 1; T36)
-Proof: run abicontract | test a_major_one_library_is_refused_by_name ... ok
+**C65** - The library exports `piperine_abi_1` with major 1, minor 0; a cache entry keyed by the earlier contract is rebuilt, never loaded (EU-16, AC 1; T36)
+Proof: run cache | test an_entry_of_the_earlier_contract_is_rebuilt ... ok
 
-**C62** - `Field` is `{ name, leaf, offset, count }`; `BIT` is size 1, `BYTE` size 1, `F64` size 8 align 8 (EU-16, AC 2; T36)
+**C66** - `Field` is `{ name, leaf, offset, count }`; `BIT` is size 1, `BYTE` size 1, `F64` size 8 align 8 (EU-16, AC 2; T36)
 Proof: run abi | test the_shipped_layouts_hold_the_value_only ... ok
 
-**C63** - `Host` offers `commit` and no `commit_with`; no `commit_flag` exists (EU-16, AC 3; T35)
+**C67** - `Host` offers `commit` and no `commit_with`; no `commit_flag` exists (EU-16, AC 3; T35)
 Proof: run abicontract | test the_host_has_one_commit ... ok
 
-**C64** - An `Option<u8>` pin is a `BOOL` presence field then `U8` (EU-16, AC 4; T36)
+**C68** - An `Option<u8>` pin is a `BOOL` presence field then `U8` (EU-16, AC 4; T36)
 Proof: run abi | test an_option_pin_is_presence_then_payload ... ok
 
-**C65** - A `Logic<4>` pin is two `U8` fields, `binary` at 0 and `value` at 1, size 2, align 1; `Logic<64>` is size 16, align 8 (EU-16, AC 5; T47)
+**C69** - A `Logic<4>` pin is two `U8` fields, `binary` at 0 and `value` at 1, size 2, align 1; `Logic<64>` is size 16, align 8 (EU-16, AC 5; T47)
 Proof: run abi | test a_logic_pin_is_two_planes ... ok
 
-**C66** - A drive pin is the value's layout then `driving: BOOL`; 0 leaves the drive out of the resolver (EU-16, AC 6; T37)
+**C70** - A drive pin is the driven type's layout then `driving: BOOL`; 0 leaves the drive out of the resolver (EU-16, AC 6; T37)
 Proof: run relax | test a_drive_pin_ends_with_a_plain_driving_byte ... ok
 
-**C67** - Part I §3.3 holds the six rules of the explicit model and says no primitive numeric type implements `Default`, unlike Rust (EU-17, AC 1; T1)
+**C71** - Part I §3.3 holds the six rules of the explicit model and says no primitive numeric type implements `Default`, unlike Rust (EU-17, AC 1; T1)
 Proof: run spectext | test section_3_3_states_the_explicit_model ... ok
 
-**C68** - Part VII §22.1 holds the tables of `&`, `|`, `^`, `!`, `==` beside the `Logic` source (EU-17, AC 2; T7)
+**C72** - Part VII §22.1 holds the tables of `&`, `|`, `^`, `!`, `==` beside the `Logic` source (EU-17, AC 2; T7)
 Proof: run spectext | test section_22_1_holds_the_four_state_tables ... ok
 
-**C69** - No file of `docs/spec` outside G.72 holds a removed word (EU-17, AC 3; T9)
+**C73** - No file of `docs/spec` outside G.72 holds a removed word (EU-17, AC 3; T9)
 Proof: run spectext | test the_removed_words_are_absent_from_the_specification ... ok
 
-**C70** - Appendix G holds G.72 and marks G.29, G.46, G.57 closed by it (EU-17, AC 4; T9)
+**C74** - Appendix G holds G.72 and marks G.29, G.46, G.57 closed by it (EU-17, AC 4; T9)
 Proof: run spectext | test appendix_g_records_the_explicit_model ... ok
 
-**C71** - `abi.md` describes major 2: `Field`, P3, P5, D1 rewritten, C7 and weak point 6 removed (EU-17, AC 5; T10)
-Proof: run docs | test abi_md_describes_major_two ... ok
+**C75** - `abi.md` describes the contract without known bytes, with C7 and weak point 6 removed, and says the ABI is unreleased and changes in place (EU-17, AC 5; T10)
+Proof: run docs | test abi_md_describes_the_unreleased_contract ... ok
 
-**C72** - Appendix H holds the `Default` table, `From`, `PartialEq<Rhs, Out>` and H.10 (EU-17, AC 6; T2)
+**C76** - Appendix H holds the `Default` table, `From`, `PartialEq<Rhs, Out>` and H.10 (EU-17, AC 6; T2)
 Proof: run spectext | test appendix_h_holds_default_from_and_the_operator_traits ... ok
 
-**C73** - The Book's "Values in hardware" teaches the explicit model in its three rewritten sections (EU-18, AC 1; T12)
+**C77** - The Book's "Values in hardware" teaches the explicit model in its three rewritten sections (EU-18, AC 1; T12)
 Proof: run bookvalues | test the_values_chapter_teaches_the_explicit_model ... ok
 
-**C74** - The Book lists "no primitive numeric type has a default" among its differing rules, without "same as Rust" (EU-18, AC 2; T13)
+**C78** - The Book lists "no primitive numeric type has a default" among its differing rules, without "same as Rust" (EU-18, AC 2; T13)
 Proof: run booklang | test the_book_says_numbers_have_no_default ... ok
 
-**C75** - No Book listing or sentence uses a removed name (EU-18, AC 3; T18)
+**C79** - No Book listing or sentence uses a removed name (EU-18, AC 3; T18)
 Proof: run bookinv | test the_book_uses_no_removed_name ... ok
 
-**C76** - The Book's resolved-net material uses the `resolve` field and the `Wire` over `Driven` (EU-18, AC 4; T14)
-Proof: run booknatures | test the_book_resolves_a_wire_of_driven_values ... ok
+**C80** - The Book teaches a trait as a capability, `impl Resolve<X> for` a nature, and "Driving with strength" with the four worked nets; it names no library `Wire` (EU-18, AC 4; T14)
+Proof: run booknatures | test the_book_drives_nets_with_strength ... ok
 
-**C77** - Every Book listing that cannot run names its `GAPS.md` row and its test fails loud on any change (EU-18, AC 5; T18)
+**C81** - Every Book listing that cannot run names its `GAPS.md` row and its test fails loud on any change (EU-18, AC 5; T18)
 Proof: run bookinv | test every_listing_that_does_not_run_names_its_gap ... ok
 
-**C78** - The Book's "Device ABI" chapter describes major 2 (EU-18, AC 6; T17)
-Proof: run bookabi | test the_abi_chapter_describes_major_two ... ok
+**C82** - The Book's "Device ABI" chapter describes the contract without known bytes and says it is unreleased (EU-18, AC 6; T17)
+Proof: run bookabi | test the_abi_chapter_describes_the_unreleased_contract ... ok
 
-**C79** - `STATE.md` holds MD-78 and marks MD-70 superseded by it (EU-19, AC 1; T11)
+**C83** - `STATE.md` holds MD-78 and marks MD-70 superseded by it (EU-19, AC 1; T11)
 Proof: run docs | test state_holds_the_explicit_unknowns_decision ... ok
 
-**C80** - `GAPS.md` closes S6 and G6 by redesign; S8 exists after the amendment and is gone after phase A (EU-19, AC 2; T40)
+**C84** - `GAPS.md` closes S6 and G6 by redesign; S8 exists after the amendment and is gone after phase A (EU-19, AC 2; T40)
 Proof: run docs | test gaps_closes_s6_and_tracks_the_flag ... ok
 
-**C81** - The per-level feature's spec opens with its dropped line (EU-19, AC 3; T11)
+**C85** - The per-level feature's spec opens with its dropped line (EU-19, AC 3; T11)
 Proof: run docs | test the_per_level_feature_is_recorded_as_dropped ... ok
 
-**C82** - No `.msl` under `std`, `examples`, `tests` or `crates/*/tests` uses a removed name outside a refusal test (EU-20, AC 1; T27)
+**C86** - No `.msl` under `std`, `examples`, `tests` or `crates/*/tests` uses a removed name outside a refusal test (EU-20, AC 1; T27)
 Proof: run hygiene | test no_source_uses_a_removed_unknown_form ... ok
 
-**C83** - Every test that pinned an unknown behavior has a named successor (EU-20, AC 2; T27)
+**C87** - Every test that pinned an unknown behavior has a named successor (EU-20, AC 2; T27)
 Proof: run hygiene | test every_unknown_test_has_a_successor ... ok
 
-**C84** - `std` builds with no diagnostic and every Part VII fence is consecutive lines of its file (EU-20, AC 3; T23)
+**C88** - `std` builds with no diagnostic and every Part VII fence is consecutive lines of its file (EU-20, AC 3; T23)
 Proof: run excerpts | test every_fence_is_an_excerpt_of_std ... ok
 
-**C85** - The 7 twins print the bytes they printed before (EU-21, AC 1; T40)
+**C89** - The 7 twins print the bytes they printed before (EU-21, AC 1; T40)
 Proof: run twins | test every_twin_matches_its_golden ... ok
 
-**C86** - Every buck target passes with its waveform asserts unchanged (EU-21, AC 2; T24)
+**C90** - Every buck target passes with its waveform asserts unchanged (EU-21, AC 2; T24)
 Proof: run buckcli | test the_buck_runs_from_the_cli ... ok
 
-**C87** - Both integrated suites pass (EU-21, AC 3; T40)
+**C91** - Both integrated suites pass (EU-21, AC 3; T40)
 Proof: run integrated | test the_integrated_suite_passes ... ok
 
 ---
@@ -1496,7 +1510,7 @@ Proof: run integrated | test the_integrated_suite_passes ... ok
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none. Waiting for the user: the approval of spec.md, D1 to D16, Q1 (the spelling of `resolve`), Q2 (strengths), Q3 (a loop that does not settle).
+**Settled mid-build:** none. Answered 2026-11-21 (in spec.md "Answers"): Q1 = B extended (natures take trait `impl`s, `Resolve<X, V>`, no `resolve` field, no library `Wire`), Q2 (strengths kept), Q3 = A (`E0511`), the ABI stays major 1. Waiting for the user: Q4 (a second trait for strength; the plan takes "no"), Q5 (the set of `Strength`; the plan takes five), and the approval of spec.md and of these tasks.
 **Dispatched:** none.
 **Walked:** none.
 
@@ -1525,20 +1539,20 @@ Execution is strictly sequential. Phases 1 to 3 merge to `main` first. Phases 4 
 
 | Task | Scope | Status |
 | ---- | ----- | ------ |
-| T1: Part I: §3.3 is the explicit model | 1 file or 1 unit, 1 concern | ✅ Granular |
+| T1: Part I: §3.3 is the explicit model, a nature takes trait impls | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T2: Appendix H: `Default`, `From`, `PartialEq<Rhs, Out>`, operator traits | 1 file or 1 unit, 1 concern | ✅ Granular |
-| T3: Part II: carriers start with a value | 1 file or 1 unit, 1 concern | ✅ Granular |
+| T3: Part II: carriers start with a value, `Resolve` is a capability | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T4: Part III: structure without unknown levels | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T5: Part IV: behavior reads values | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T6: Parts V, VI and VIII: execution, output and the host | three files, each under ten lines of change | ⚠️ cohesive, kept whole |
-| T7: Part VII: `Logic`, the tables and the nets | 1 file or 1 unit, 1 concern | ✅ Granular |
+| T7: Part VII: `Logic`, the tables, strengths and the net modules | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T8: Appendices A, B, C and the index | three appendices and the index, small edits of one concern | ⚠️ cohesive, kept whole |
 | T9: Galleries D, E, F and Appendix G | three galleries and Appendix G: one concern, the listings | ⚠️ cohesive, kept whole |
-| T10: `abi.md`: major 2 | 1 file or 1 unit, 1 concern | ✅ Granular |
+| T10: `abi.md`: the contract edited in place | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T11: Records of the amendment | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T12: Book: "Values in hardware" teaches the explicit model | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T13: Book: language basics, types and traits | 1 file or 1 unit, 1 concern | ✅ Granular |
-| T14: Book: natures, carriers and resolved nets | 1 file or 1 unit, 1 concern | ✅ Granular |
+| T14: Book: natures, capabilities and driving with strength | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T15: Book: analog, mixed-signal and simulation listings | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T16: Book: standard library, errors, CLI and cheat sheet | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T17: Book: device ABI, solver and compiler chapters | 1 file or 1 unit, 1 concern | ✅ Granular |
@@ -1560,7 +1574,7 @@ Execution is strictly sequential. Phases 1 to 3 merge to `main` first. Phases 4 
 | T33: Generated code: no flag and no merge | one deleted runtime unit and its printer arms | ⚠️ cohesive, kept whole |
 | T34: Records hold their declared fields | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T35: ABI: one `commit` | 1 file or 1 unit, 1 concern | ✅ Granular |
-| T36: ABI major 2: layouts hold the value only | one layout change across the crates that share it (design.md Risks) | ⚠️ cohesive, kept whole |
+| T36: ABI: layouts hold the value only, still major 1 | one layout change across the crates that share it (design.md Risks) | ⚠️ cohesive, kept whole |
 | T37: Digital solver: relaxation on a plain `driving` byte | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T38: Host: a cell is a value | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T39: CLI: output without unknown | 1 file or 1 unit, 1 concern | ✅ Granular |
