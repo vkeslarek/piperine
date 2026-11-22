@@ -10,7 +10,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 **Design**: `.specs/features/transient-performance/design.md`
 **Status**: Draft
-**Approved**: 2026-11-20 - under the user's standing AFK rule (2026-11-19: "Tu sempre assume o default mais razoável e depois me conta pois vou ficar afk"); the user asked for the feature on 2026-11-20 ("quero uma feature de melhora de performance"). Nothing is dispatched yet.
+**Approved**: 2026-11-22 - user: "Coloca a otimização de performance do solver na frente please!". The spec was approved on 2026-11-20 with "Ok! Coloca em uma spec e priorizamos depois da análise de gaps"; the tasks follow the defaults the user left to the planner (standing AFK rule of 2026-11-19: "Tu sempre assume o default mais razoável e depois me conta pois vou ficar afk").
 **Build**: `cargo build -p piperine -p piperine-abi -p piperine-analog-solver -p piperine-digital-solver -p piperine-solver -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape`
 **Run digital**: `cargo test -p piperine-digital-solver --test advance`
 **Run protocol**: `cargo test -p piperine-solver --lib protocol::statistics::`
