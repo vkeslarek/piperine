@@ -68,7 +68,7 @@ impl Metadata {
                 };
                 params.push(ParamInfo {
                     name: param.name.clone(),
-                    ty: param.ty.to_string(),
+                    ty: ir.written(&param.ty),
                     value,
                     check: body.param_check_text(i),
                     structural: param.structural,
@@ -91,7 +91,7 @@ impl Metadata {
         let mut streams = Vec::new();
         for instance in ir.instances() {
             for stream in instance.body().streams() {
-                let fields = stream.fields.iter().map(|f| (f.name.clone(), f.ty.to_string())).collect();
+                let fields = stream.fields.iter().map(|f| (f.name.clone(), ir.written(&f.ty))).collect();
                 streams.push(StreamInfo { path: format!("{}.{}", instance.path(), stream.name), fields });
             }
         }

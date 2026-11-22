@@ -1441,8 +1441,8 @@ T63
 
 **Done when**:
 
-- [ ] `a_record_carries_a_composite_field_and_its_type` passes under `**Run srcagg**`
-- [ ] Gate check passes: Full
+- [x] `a_record_carries_a_composite_field_and_its_type` passes under `**Run srcagg**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

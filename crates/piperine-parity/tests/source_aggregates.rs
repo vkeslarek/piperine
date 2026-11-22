@@ -20,6 +20,7 @@ mod mixed;
 mod support;
 
 use mixed::Seen;
+use piperine_solver::protocol::{AnalysisKind, ObservationKind};
 use support::{build, transient};
 
 /// One nanosecond in ticks.
@@ -864,4 +865,66 @@ fn composite_params_bind_and_read_everywhere() {
     // the `where` is checked on the value a placement binds (E0317)
     let refused = project("params_where.msl").elaborate("Bench").err().expect("a false where is refused");
     assert!(refused.to_string().contains("E0317"), "{refused}");
+}
+
+/// A sink that keeps the bytes of every record of the transient.
+struct RecordBytes {
+    out: std::rc::Rc<std::cell::RefCell<Vec<Vec<u8>>>>,
+}
+
+impl piperine_solver::protocol::Sink for RecordBytes {
+    fn observe(&mut self, o: &piperine_solver::protocol::Observation) {
+        if let (AnalysisKind::Transient, ObservationKind::Record { bytes, .. }) = (&o.analysis, &o.kind) {
+            self.out.borrow_mut().push(bytes.clone());
+        }
+    }
+}
+
+#[test]
+fn a_record_carries_a_composite_field_and_its_type() {
+    // CV-19 AC 1 (§19, rule 13): `emit!` writes a struct, an array, a tuple and a payload enum as
+    // fields of the stream `sample`; the record is delivered with each field's bytes laid out as a
+    // composite pin (the parts' values, then the known byte) at the offset the layout gives, and the
+    // stream's metadata names each field's type as the source writes it.
+    let built = build(&project("records.msl"), "Bench");
+    let out = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
+    let mut options = piperine_solver::prelude::TransientAnalysisOptions::new(10e-9, 1e-9);
+    options.dt_max = 1e-9;
+    let sink = RecordBytes { out: out.clone() };
+    let mut solver = piperine_solver::prelude::Solver::new(circuit).with_tran_opts(options).with_sink(Box::new(sink)).build();
+    solver.tran().unwrap_or_else(|e| panic!("{e}")).solve().unwrap_or_else(|e| panic!("{e}"));
+    let records = out.borrow().clone();
+    assert_eq!(records.len(), 2, "one record per rising edge: {records:?}");
+    // the fields in order: t (f64, 16), pair (u8, f64 + known), arr (3 u8 + known), tup (u8, bool + known),
+    // tx (tag 1 = Data, n = 5 + known), then `maybe` (bool + known): each at the next offset its alignment allows
+    let mut wanted: Vec<u8> = Vec::new();
+    let pad = |bytes: &mut Vec<u8>, align: usize| bytes.resize(bytes.len().next_multiple_of(align), 0);
+    // `t` is the time of the edge: read it back from the record rather than compute it
+    let time = &records[0][..8];
+    wanted.extend_from_slice(time);
+    wanted.push(1);
+    // an `f64` field is the 16 bytes of `REAL`: the value, the known byte, padding to its alignment
+    pad(&mut wanted, 16);
+    wanted.push(7);
+    wanted.extend_from_slice(&0.5f64.to_le_bytes());
+    wanted.push(1);
+    wanted.extend_from_slice(&[1, 2, 3, 1]);
+    wanted.extend_from_slice(&[9, 1, 1]);
+    wanted.extend_from_slice(&[1, 5, 1]);
+    wanted.extend_from_slice(&[0, 1]);
+    pad(&mut wanted, 8);
+    assert_eq!(records[0], wanted, "the record of the first edge");
+    assert_eq!(f64::from_le_bytes(time.try_into().expect("eight bytes")), 2.5e-9, "t = now() at the first rising edge");
+    let body = built.ir.instance_at("Bench.logger").expect("the logger").body();
+    let types: Vec<String> = body.streams()[0].fields.iter().map(|f| built.ir.written(&f.ty)).collect();
+    assert_eq!(types, ["f64", "Pair", "[u8; 3]", "(u8, bool)", "Tx"], "the types as the source writes them");
+}
+
+#[test]
+fn two_sites_giving_a_field_different_composite_types_are_refused() {
+    // CV-19 AC 2 (§19 rule 2): the field `v` of `sample` is a `Pair` at one site and a `(u8, u8)` at
+    // another, which is E0605
+    let refused = project("records_conflict.msl").elaborate("Bench").err().expect("the conflict is refused");
+    assert!(refused.to_string().contains("E0605"), "{refused}");
 }

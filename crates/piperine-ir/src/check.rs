@@ -785,7 +785,7 @@ impl<'a> Checker<'a> {
                 let mut names: BTreeSet<&str> = BTreeSet::new();
                 for f in &stream.fields {
                     let at = format!("{item} stream {}", stream.name);
-                    if !Typing::scalar(&f.ty) {
+                    if !self.carriable(&f.ty) {
                         self.report(at.clone(), body.origin.clone(), format!("a stream field holds `bool`, `f64` or an integer type, found {} for {}", f.ty, f.name));
                     }
                     if !names.insert(f.name.as_str()) {

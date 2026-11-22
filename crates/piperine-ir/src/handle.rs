@@ -39,6 +39,22 @@ impl Ir {
         }
     }
 
+    /// `ty` as the source writes it: `f64`, `u8`, `Gains` for a struct (its bare name), `[f64; 3]`,
+    /// `(u8, bool)`, `Option<u8>`. A type the source cannot write is spelt as `Display` spells it.
+    pub fn written(&self, ty: &ValueType) -> String {
+        match ty {
+            ValueType::Flagged(inner) => self.written(inner),
+            ValueType::Tuple(parts) => {
+                let parts: Vec<String> = parts.iter().map(|part| self.written(part)).collect();
+                if parts.len() == 1 { format!("({},)", parts[0]) } else { format!("({})", parts.join(", ")) }
+            }
+            ValueType::Array(element, length) => format!("[{}; {length}]", self.written(element)),
+            ValueType::Option(inner) => format!("Option<{}>", self.written(inner)),
+            ValueType::Struct(id) | ValueType::Enum(id) => self.types[id.index()].name.clone(),
+            other => other.to_string(),
+        }
+    }
+
     /// The discriminant a constant of the enum type `ty` holds: the tag a pin carries for it.
     pub fn discriminant(&self, ty: &ValueType, value: Constant) -> Option<i128> {
         let (ValueType::Enum(id), Constant::Aggregate(aggregate)) = (ty, value) else { return None };
