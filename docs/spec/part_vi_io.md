@@ -39,7 +39,6 @@ named field.
 10. `emit!` is allowed in a reaction and in `analog` (`E0601`). A `fn` that calls it is
     callable only where `emit!` is (§3, Appendix B.2).
 11. A field expression has a value type (§1). Field names are distinct within one `emit!`.
-    The name `maybe` is reserved (rule 1).
 12. Within one stream, fields of the same name have the same type at every site.
 13. The types and field names of every site are metadata (§21).
 14. A site reached from `analog` that writes `sim` or `checks` is `E0603` (rule 4). The check
@@ -48,14 +47,14 @@ named field.
     (§22.6): on `sim`, `finish: bool`, `failed: bool`, `msg: str`; on `checks`, `kind: str`,
     `name: str`, `pass: bool`, `margin: f64`. Other fields are free.
 
-> **Resolution.** Rule 11's reservation of `maybe`, rule 12 and rule 15 are stated here.
+> **Resolution.** Rules 12 and 15 are stated here.
 
 **Dynamic semantics.**
 
 1. **What a record carries.** Besides its fields, every record carries the instance path of
-   its site, the analysis, the instant `(t, n)`, inside `analog` the Newton iteration, and
-   `maybe = true` when it was reached under unknown control (§3.3.3). A field keeps its
-   known flags: an unknown condition is recorded as unknown.
+   its site, the analysis, the instant `(t, n)` and, inside `analog`, the Newton iteration. A
+   record is its declared fields and that context, and nothing else (§3.3.1): control takes a
+   `bool` (§3.3.5), so a site is reached or it is not.
 2. **Names.** Stream names are relative to the instance: `emit!("conv", …)` in `top.adc`
    writes `top.adc.conv`. Two names are a **reserved stream** each, and global: `sim` and
    `checks`. The simulator's own records go to the `log` stream of the instance concerned,
@@ -84,9 +83,8 @@ named field.
 > (§15 S6). In a `Dc` sweep the sweep ends at that point. In the operating point of a
 > small-signal analysis no sweep is performed.
 
-> **Resolution.** A `finish` record ends the analysis only when its `finish` field is known
-> true and `maybe` is false. Otherwise it is recorded and the analysis goes on: the language
-> does not guess (§3.3.5). The same holds for `fatal()` (G.55).
+> **Resolution.** A `finish` record ends the analysis when its `finish` field is true;
+> otherwise it is recorded and the analysis goes on. The same holds for `fatal()` (G.55).
 
 > **Resolution.** Rules 7 and 8 are stated here. A record from the settle phase carries the
 > time point's `t` and the index of its last microstep. Inside `analog`, a `fn` that calls
@@ -96,7 +94,7 @@ Continuing a transient that ended on a `finish` record is open (G.35).
 
 **Checks.** A **check** is a record on `checks`. It is written by an ordinary reaction,
 through `require`, `cover` or `target` (§22.6). The language gives a check no meaning; the
-host does (§23.2). An unknown `pass` is reported as unknown, not as a pass.
+host does (§23.2). A `require` record is a pass or a fail: its `pass` field is a `bool`.
 
 **Reductions.** A **reduction** over an analysis (a peak, a count, an integral of samples) is
 an explicit signal written by a reaction. There is no end-of-analysis event: the host keeps
@@ -110,7 +108,7 @@ so a reduction reports the value it computed, not the one it stored.
 | `E0601` | `emit!` written outside a reaction, `analog` or a `fn`. A call of an emitting `fn` in a wrong position is `E0122` (§3). | elaboration |
 | `E0602` | The first argument of `emit!` is not a string literal, or a field is not `IDENT = expr`. | parse |
 | `E0603` | A site reached from `analog` writes `sim` or `checks`. | elaboration |
-| `E0604` | A field name is repeated in one `emit!`, or is `maybe`. | elaboration |
+| `E0604` | A field name is repeated in one `emit!`. | elaboration |
 | `E0605` | A field's type conflicts with another site of the same stream, or with a reserved stream's field (rule 15). | elaboration |
 | `E0606` | A field expression is not of a value type. | elaboration |
 
@@ -165,7 +163,7 @@ include_str    ::= 'include_str' '!' '(' STRING ')'                            /
 4. The file **MUST** be valid UTF-8.
 5. The length of a parsed array is the `const`'s type. A file that does not fit that type, in
    its rows or in their number, is an elaboration error.
-6. A value read this way is a constant: known at every level (§3.3.1), not a param, with
+6. A value read this way is a constant (§3.3.1), not a param, with
    no gradient (§21).
 
 **Dynamic semantics.** None. No file is opened in any analysis, and no primitive reads one

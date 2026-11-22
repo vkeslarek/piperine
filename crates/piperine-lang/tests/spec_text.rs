@@ -1997,3 +1997,24 @@ fn part_iv_reads_values_and_the_first_commit_is_a_change() {
         assert!(!s.contains(gone), "Part IV still says {gone}");
     }
 }
+
+#[test]
+fn records_and_the_host_hold_values_only() {
+    // EU-15 AC 1 to 3, EU-04 AC 6: a record is its declared fields, a `require` is a pass or a
+    // fail, a `fatal` ends the run, a top-level `in` port follows 3.3.4 (§19, §23.1 rule 9,
+    // §23.2 rules 3 and 4).
+    let vi = flat(&spec("part_vi_io.md"));
+    assert!(vi.contains("A record is its declared fields and that context, and nothing else"), "{vi}");
+    assert!(vi.contains("A `require` record is a pass or a fail: its `pass` field is a `bool`."), "{vi}");
+    assert!(vi.contains("| `E0604` | A field name is repeated in one `emit!`. |"), "{vi}");
+    let viii = flat(&spec("part_viii_host.md"));
+    assert!(viii.contains("else `Default::default()` of its type. When none of the three exists the analysis is refused with `E0187` naming the port."), "{viii}");
+    assert!(viii.contains("3. A `require` record is a pass or a fail (§19): its `pass` field is a `bool`, and there is no third verdict. 4. A `fatal` record ends the run (§19)."), "{viii}");
+    for (name, text) in [("part_v_execution.md", flat(&spec("part_v_execution.md"))), ("part_vi_io.md", vi), ("part_viii_host.md", viii)] {
+        for gone in ["known_or", "`maybe`", "maybe =", "`Unknown`", "flag-total", "unknown control", "known flag"] {
+            assert!(!text.contains(gone), "{name} still says {gone}");
+        }
+    }
+    let v = flat(&spec("part_v_execution.md"));
+    assert!(v.contains("| §8.2.3 | A loop of resolved drives still moves after its bounded passes (`E0511`)"), "Part V lists E0511 among the run codes");
+}

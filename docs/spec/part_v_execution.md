@@ -210,6 +210,7 @@ The operating point and the instant an analysis ends are always time points (§1
 | --- | --- | --- |
 | `E0501` | The microstep loop at one time does not go quiet within the session's bound. The report names the carriers that kept changing. | run |
 | `E0502` | A scheduled time lies outside the tick range. The report names the `at`, commit or host action. | run |
+| §8.2.3 | A loop of resolved drives still moves after its bounded passes (`E0511`). The report names the loop's drives. | run |
 
 ### 15.1 An instant, traced
 
@@ -339,8 +340,9 @@ starts another round (step 4) instead of waiting for a step.
 
 **Procedure.**
 
-1. *Elaborate*: check params, run generation. Every level of every discrete carrier is
-   unknown.
+1. *Elaborate*: check params, run generation. Every discrete carrier is given its initial
+   value, written or `Default::default()` (§3.3.4); a carrier whose type has no `Default` and
+   no initial value is `E0187`.
 2. *Commit the initial values* at `(0, 0)`: every `= value` of the design, and every drive
    the host made before the run (§23.1.4). This is step 3.1 of §15. Definitions and
    `resolve`s settle and `changed()` fires (step 3.2; §13 rule 6). A `set` made before the
@@ -476,7 +478,7 @@ not executed.
    There `now()` is the point's time and a real carrier is as in §23.3.4.
 3. In an analysis run at a transient's last instant (§16.4), `now()` is that instant in every
    column.
-4. `analog` computes with known reals in every column (§3.3.5).
+4. `analog` computes with reals in every column (§3.3.6).
 
 The second table is what happens at instants. A sweep over frequency has none.
 
@@ -685,13 +687,12 @@ time points, and whose time the solver finds.
 4. When several crossings fall in one step the solver lands on the earliest. Crossings that
    round to the same tick fire together, at the microstep after the solve of `t` (§15 step
    3.4).
-5. An expression that is unknown does not fire and is not located.
-6. A `cross` under a guard made only of discrete carriers is not located while the guard is
+5. A `cross` under a guard made only of discrete carriers is not located while the guard is
    false (§13 rule 5).
-7. A corner of a waveform computed from `now()` is invisible to the error estimate. It
+6. A corner of a waveform computed from `now()` is invisible to the error estimate. It
    **MUST** be written as a carrier change (§9, case D), which makes it a time point and a
    jump.
-8. A crossing between the two solutions a jump separates is not located. It fires at the
+7. A crossing between the two solutions a jump separates is not located. It fires at the
    time point of the step that reads the jump, after that step's solve (§15.2.4).
 
 > **Resolution.** The crossing of rule 1 is the crossing of the numerical solution: `ttol` bounds the distance between the landing and where the computed `e` crosses zero, never the distance to the closed form of the model. The solution is accurate to the step's truncation tolerance (`reltol`, `trtol`), so an event may differ from an analytic crossing by what that tolerance allows; a closed-form check caps the step so the two agree.
@@ -699,10 +700,10 @@ time points, and whose time the solver finds.
 > **Resolution.** Rule 3's guarantee is stated as: the landing time exceeds the true crossing
 > time by at most `ttol` plus one tick, or `e < etol` holds there. Rule 4 is stated here.
 
-> **Resolution.** A `ttol` or `etol` argument that is known and not finite and positive is
-> error `E0510`. An unknown one falls under rule 5. A tolerance the discrete side has not
-> written yet, as at the operating point's first solve, which comes before the parameter cone's
-> first run, is unknown: that solve uses the default tolerance.
+> **Resolution.** A `ttol` or `etol` argument that is not finite and positive is error
+> `E0510`. An argument that is `None` uses the default tolerance. A tolerance the discrete side
+> has not written yet, as at the operating point's first solve, which comes before the
+> parameter cone's first run, has its carrier's initial value (§3.3.4).
 
 **Errors**
 

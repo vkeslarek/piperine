@@ -80,7 +80,9 @@ param by path. A **host drive** writes one of the drives the host holds (rule 1)
    (§8.1.2). A `set` that would change the structure of an extern module (§8.5.10) is
    refused the same way, with `E0803`; in a `Dc` sweep that point re-elaborates the instance.
 8. A `set` of a non-structural param during a run follows §9 rule 4.
-9. A top-level `in` port the host never drives has no initial value and stays unknown (§5.2).
+9. A top-level `in` port starts as §3.3.4 says: its `= value`, else the value the host gave it
+   before the analysis, else `Default::default()` of its type. When none of the three exists
+   the analysis is refused with `E0187` naming the port.
 10. At time 0, a reset held low by the host and one held low by `= false` inside the design
     are the same thing (rule 4; §13 rule 6).
 11. Between two analyses, a host `set` or drive follows §16.4: at a transient's last instant
@@ -164,16 +166,15 @@ The language already states an optimization problem; the host solves it.
    the model writes only the margin.
 2. The host keeps each target's last record of a run (§22.6). That record is the value of the
    objective or constraint for the run.
-3. A `require` whose `pass` is unknown is neither a pass nor a fail: it is reported as
-   unknown (§19).
-4. A record with `maybe = true` (§19 rule 1) was reached under unknown control. The host
-   **MUST NOT** count it as a definite pass, hit or margin.
+3. A `require` record is a pass or a fail (§19): its `pass` field is a `bool`, and there is
+   no third verdict.
+4. A `fatal` record ends the run (§19).
 5. The host reads a param's `where` as its bounds. A candidate that fails a `where` is never
    simulated (§23.1.6).
 6. Varying a structural param re-elaborates (§8.1.2); it has no gradient (§23.3.6).
 
-> **Resolution.** Rules 3–4 extend "unknown is reported as unknown" (§22.6) to how a host
-> counts records.
+> **Resolution.** Rules 3–4 state how a host counts records: each `require` is counted as a
+> pass or a fail, and a `fatal` ends the run.
 
 ```python
 opt = pp.Optimize(sim, vary=["w", "l"], objectives=["gain_db"], constraints=["ipk_lim"], mc=200)
@@ -224,7 +225,7 @@ piece by piece:
 - **4c.** Every reader differentiates through `q` with `s_q`. `analog` adds
   `(∂/∂q) · s_q` to the sensitivity of each contribution that reads `q`. A reaction's
   expression over `q` carries it by the chain rule into its own commits. A real-valued
-  definition and a real-valued `resolve` (`SumNet`, §22.3) carry it the same way.
+  definition and a real-valued `impl Resolve` of a summing nature the model declares (`sum`, §22.3) carry it the same way.
 - **4d.** A delayed commit `q <- x after d` carries the sensitivity taken at the instant the
   commit was made. Its due time moves by `dt*/dp + ∂d/∂p` (rule 3).
 - **4e.** A settle commit (§15) carries `∂x/∂p` at its time point. The time point does not
@@ -233,8 +234,9 @@ piece by piece:
 - **4f.** A commit of a non-real value (`bool`, an integer, an `enum`) sets no sensitivity.
   Its effect on a record is the motion of the event times it causes, by rules 2 and 3.
   `bit <- v(x) > 0.0` carries none; the edges that `bit` later causes move.
-- **4g.** An unknown level has no sensitivity. `q.known_or(d)` has `s_q` where `q` is known
-  and the sensitivity of `d` where it is not.
+- **4g.** A `Logic` or an `Option` carrier has no sensitivity: a `Logic` reaches a real
+  expression through a function that returns an `f64` (§3.3.6), and that expression carries
+  the sensitivity of what it reads.
 - **4h.** In a periodic small-signal or periodic noise analysis (§16.3) the same rules hold
   with the perturbation phasor in place of `dp`. A real carrier then carries the perturbation
   committed to it and event times move with it. `SampleHold` (§12.1) has its zero-order-hold
