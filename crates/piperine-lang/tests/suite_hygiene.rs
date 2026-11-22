@@ -1309,3 +1309,26 @@ fn every_unknown_test_has_a_successor() {
     }
     assert!(offences.is_empty(), "{}", offences.join("\n"));
 }
+
+#[test]
+fn retired_unknown_codes_are_raised_nowhere() {
+    // EU-02 AC 4 (C7): `E0150`, `E0151`, `E0906` and `E0908` are retired with the model of
+    // unknowns and never reused (§0.2), so no library source of any crate spells one as a code it
+    // raises: the string literal of a code is how every raise names it.
+    let retired = ["E0150", "E0151", "E0906", "E0908"];
+    let mut offences = Vec::new();
+    for (path, text) in library_sources() {
+        for (n, line) in text.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if trimmed.starts_with("//") {
+                continue;
+            }
+            for code in retired {
+                if line.contains(&format!("\"{code}\"")) {
+                    offences.push(format!("{path}:{}: raises the retired {code}", n + 1));
+                }
+            }
+        }
+    }
+    assert!(offences.is_empty(), "{}", offences.join("\n"));
+}

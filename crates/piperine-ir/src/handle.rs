@@ -27,10 +27,8 @@ impl Ir {
 
     /// The scalar a pin holds for a value of `ty`: an enum whose variants have no fields is its tag
     /// (§2 rule 5), `UInt<tag_levels>`, so carried bytes are the tag's; any other type is itself.
-    /// A flag is the pin's known byte, not part of the type.
     pub fn carried(&self, ty: &ValueType) -> ValueType {
         match ty {
-            ValueType::Flagged(inner) => self.carried(inner),
             ValueType::Enum(id) => match &self.types[id.index()].kind {
                 TypeKind::Enum { tag_levels, variants } if *tag_levels > 0 && variants.iter().all(|v| v.fields.is_empty()) => ValueType::UInt(*tag_levels),
                 _ => ty.clone(),
@@ -43,7 +41,6 @@ impl Ir {
     /// `(u8, bool)`, `Option<u8>`. A type the source cannot write is spelt as `Display` spells it.
     pub fn written(&self, ty: &ValueType) -> String {
         match ty {
-            ValueType::Flagged(inner) => self.written(inner),
             ValueType::Tuple(parts) => {
                 let parts: Vec<String> = parts.iter().map(|part| self.written(part)).collect();
                 if parts.len() == 1 { format!("({},)", parts[0]) } else { format!("({})", parts.join(", ")) }

@@ -63,7 +63,7 @@ impl DerivePrinter {
             return Err(Error::Unsupported { form: "a derived param whose parent is no instance".into(), path: binding.child.clone(), origin: ir.top().body().origin().clone() });
         };
         let printer = ValuePrinter::of_placement(ir, parent);
-        let value = printer.expr_as(binding.expr, &binding.ty)?;
+        let value = printer.expr(binding.expr)?;
         let params = Text::generated("params");
         let at = parent.origin();
         let unsupported = |form: String| Error::Unsupported { form, path: format!("{}.{}", binding.child, binding.param), origin: at.clone() };

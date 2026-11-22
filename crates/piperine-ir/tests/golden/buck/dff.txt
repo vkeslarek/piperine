@@ -2,7 +2,7 @@ body Dff
   carrier clk: bool in
   carrier d: bool in
   carrier q: bool out init false
-  event E0 changed clk guard clk.high()
+  event E0 changed clk guard clk
   reaction R0 on (E0)
     q <- d
 body Top

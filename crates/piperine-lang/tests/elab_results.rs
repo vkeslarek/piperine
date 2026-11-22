@@ -35,9 +35,8 @@ fn reach(ir: &Ir, root: ExprId) -> Vec<ExprId> {
     while let Some(e) = stack.pop() {
         out.push(e);
         match ir.expr(e) {
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack.push(*expr),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => stack.push(*expr),
             Expr::Binary { lhs, rhs, .. } => stack.extend([*lhs, *rhs]),
-            Expr::KnownOr { value, default } => stack.extend([*value, *default]),
             Expr::If { cond, then, otherwise } => stack.extend([*cond, *then, *otherwise]),
             Expr::Method { receiver, args, .. } => stack.extend(std::iter::once(*receiver).chain(args.iter().copied())),
             Expr::Call { args, .. } | Expr::Math { args, .. } => stack.extend(args.iter().copied()),

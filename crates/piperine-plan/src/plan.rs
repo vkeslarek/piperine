@@ -136,10 +136,6 @@ pub enum Source {
     /// The `CHANGED` byte of the event pin of event `k`: whether the event fired in this
     /// microstep (`Expr::Fired`, abi.md §4.1).
     Fired(u32),
-    /// The `GLOBAL` `RESOLUTION` pin: the session's tick length in seconds. A reaction that
-    /// decides on a value that may be unknown reads it, to key its commits by the instant they
-    /// come due (§3.3.3, abi.md C1).
-    Resolution,
     /// The `CHANGED` byte of the `GLOBAL` `SETTLE` pin: whether the settle phase of this
     /// instant is running (§15 step 4). The event function of each `settle` event reads it
     /// (§13 rule 17).
@@ -311,9 +307,6 @@ pub struct Pins {
     pub tolerances: Vec<(Option<u32>, Option<u32>)>,
     /// The `CAP` watch of each `bound_step` site, as `(site, watch)`, after the `CROSS` watches.
     pub caps: Vec<(u32, u32)>,
-    /// The `GLOBAL` `RESOLUTION` pin: no reaction decides on an unknown any more, so none is added; the field
-    /// leaves with `Source::Resolution` and its printers (`explicit-unknowns` T33).
-    pub resolution: Option<u32>,
     /// The private `abstol` pin `d<k>.abstol` of each derivative site that gives one, after the
     /// tolerance pins; `None` for a site with the default tolerance.
     pub derivative_abstols: Vec<Option<u32>>,
@@ -562,7 +555,6 @@ impl BodyPlan {
             records,
             tolerances,
             caps,
-            resolution: None,
             derivative_abstols,
             settle,
         };
@@ -802,7 +794,6 @@ impl BodyPlan {
             Source::Freq => value(cell::AMBIENT, ambient::FREQ),
             Source::Analysis(kind) => value(cell::PIN, pins.analysis.iter().find(|(k, _)| *k == kind).map_or(GROUND, |(_, pin)| *pin)),
             Source::Fired(k) => at(cell::PIN, pins.events.get(k as usize).copied().unwrap_or(GROUND), part::CHANGED),
-            Source::Resolution => value(cell::PIN, pins.resolution.unwrap_or(GROUND)),
             Source::Settle => at(cell::PIN, pins.settle.unwrap_or(GROUND), part::CHANGED),
         }
     }

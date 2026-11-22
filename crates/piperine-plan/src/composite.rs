@@ -157,7 +157,6 @@ impl LeafWalk<'_> {
             ValueType::F64 => self.scalar(leaf::F64, 8, name),
             ValueType::UInt(n) => self.integer(*n, false, name),
             ValueType::Int(n) => self.integer(*n, true, name),
-            ValueType::Flagged(inner) => self.place(inner, name)?,
             ValueType::Tuple(items) => {
                 for (k, item) in items.iter().enumerate() {
                     self.place(item, &LeafName::join(name, &k.to_string()))?;
@@ -242,7 +241,6 @@ impl ConstantBytes<'_> {
     /// is not a value of `ty`.
     fn write(&mut self, ty: &ValueType, value: Constant, at: &mut usize) -> Option<()> {
         match (ty, value) {
-            (ValueType::Flagged(inner), _) => self.write(inner, value, at),
             (ValueType::Bool, Constant::Bool(b)) => self.put(&[u8::from(b)], at),
             (ValueType::F64, Constant::Real(r)) => self.put(&r.get().to_le_bytes(), at),
             (ValueType::UInt(n) | ValueType::Int(n), Constant::Int(v)) => {

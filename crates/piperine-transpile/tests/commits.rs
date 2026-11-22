@@ -177,7 +177,7 @@ fn count(b: &mut IrBuilder) -> BodyId {
     let mut x = Dx::new(b, F, 11, 22);
     let n = x.carrier(1, Ty::u(8));
     let one = x.int(1, Ty::u(8));
-    let next = x.bin(BinaryOp::Add, n, one, Ty::flagged(Ty::u(8)));
+    let next = x.bin(BinaryOp::Add, n, one, Ty::u(8));
     let commit = x.commit(1, next, None);
     Buck::reaction(b, body, vec![changed], vec![commit], vec![], F, 11);
     body

@@ -5,8 +5,8 @@ body RefRamp
   carrier reference: u10 out init 0
   carrier at_target: bool out
   drive at_target = (reference == target)
-  event E0 changed tick guard tick.high()
+  event E0 changed tick guard tick
   reaction R0 on (E0)
-    if (!run.known_or(false)) { reference <- 0u10 } else { if (reference < target) { reference <- (reference + 1u10) } else { if (reference > target) { reference <- (reference - 1u10) } else { () } } }
+    if (!run) { reference <- 0u10 } else { if (reference < target) { reference <- (reference + 1u10) } else { if (reference > target) { reference <- (reference - 1u10) } else { () } } }
 body Top
 instance Top: Top  nodes ()  params ()  top

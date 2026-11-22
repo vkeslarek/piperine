@@ -335,7 +335,7 @@ fn an_event_is_an_event_pin_and_its_function() {
     assert_eq!(reads, [pin(clk, part::VALUE), pin(clk, part::CHANGED)]);
     assert_eq!(writes, [pin(Find::pin(shape, "event:0"), part::CHANGED)]);
 
-    // A guard reading another carrier and a param: `on clk.changed() if en.high() && k > 0.0`
+    // A guard reading another carrier and a param: `on clk.changed() if en && k > 0.0`
     // reads the VALUE of `en` and the param `k` besides `clk`'s two cells.
     fn guarded(b: &mut IrBuilder) -> BodyId {
         let body = b.body(BodySpec { params: vec![Buck::param("k", "g.msl", 1, Some(1.0), None)], ..Buck::spec("Guarded", "g.msl", 1) });
@@ -343,11 +343,10 @@ fn an_event_is_an_event_pin_and_its_function() {
         b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, "g.msl", 1, 30));
         let mut x = Dx::new(b, "g.msl", 2, 22);
         let en = x.carrier(1, ValueType::Bool);
-        let high = x.high(en);
         let k = x.param(0, ValueType::F64);
         let zero = x.real(0.0);
         let positive = x.bin(piperine_ir::BinaryOp::Gt, k, zero, ValueType::Bool);
-        let guard = x.bin(piperine_ir::BinaryOp::And, high, positive, ValueType::Bool);
+        let guard = x.bin(piperine_ir::BinaryOp::And, en, positive, ValueType::Bool);
         b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Buck::origin("g.msl", 2, 8) });
         body
     }
@@ -476,7 +475,6 @@ fn an_if_lists_its_then_statement_before_its_else() {
         let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin("a.msl", 2, 8) });
         let mut x = Dx::new(b, "a.msl", 3, 9);
         let c = x.carrier(1, ValueType::Bool);
-        let c = x.high(c);
         let two = x.int(2, Ty::u(8));
         let one_ns = x.real(1e-9);
         let then = x.commit(2, two, Some(one_ns));
@@ -631,7 +629,7 @@ fn a_cross_event_is_a_watch_with_partials() {
     assert_eq!(Find::reaction(shape, "reaction:0"), (vec![up], vec![], vec![(d, 0, 2, 0, 0.0)]));
     assert_eq!(Find::reaction(shape, "reaction:1"), (vec![down], vec![], vec![(d, 0, 2, 0, 0.0)]));
 
-    // A guarded `cross` (`on cross(v(a)) if en.high()`): the watch fires a private event pin
+    // A guarded `cross` (`on cross(v(a)) if en`): the watch fires a private event pin
     // `cross:0`, and the event function fires the event pin when that pin fired and the guard
     // holds (R1: the non-probing part of a guard is a discrete function).
     fn guarded(b: &mut IrBuilder) -> BodyId {
@@ -644,7 +642,7 @@ fn a_cross_event_is_a_watch_with_partials() {
         let mut x = Dx::new(b, "gc.msl", 2, 12);
         let v = x.probe(piperine_ir::Terminal::Node(0), piperine_ir::Terminal::Ground);
         let en = x.carrier(0, ValueType::Bool);
-        let guard = x.high(en);
+        let guard = en;
         b.event(body, Event { source: EventSource::Cross { e: v, ttol: None, etol: None }, guard: Some(guard), origin: Buck::origin("gc.msl", 2, 8) });
         body
     }
@@ -663,7 +661,7 @@ fn a_cross_event_is_a_watch_with_partials() {
 
 #[test]
 fn an_analog_read_of_a_carrier_is_a_read_of_terms() {
-    // RS-12 AC 7 on the switch (`i(p, n) +> v(p, n) * if g.high() { 1.0 / ron } else { 1.0 /
+    // RS-12 AC 7 on the switch (`i(p, n) +> v(p, n) * if g { 1.0 / ron } else { 1.0 /
     // roff }`): `terms` reads the carrier `g`'s VALUE beside the nodes and params, with no
     // partial against it (a discrete value is no differentiable read); the term stays affine.
     let (ir, body) = Alone::design(Buck::switch);
@@ -797,28 +795,24 @@ impl Merging {
         Buck::reaction(b, body, vec![changed], vec![commit], vec![], Merging::F, 2);
     }
 
-    /// `on go.changed() && <guard> { q <- true; }` with the guard `en` (a value that may be
-    /// unknown), `en.high()` (a known `bool`) or none.
-    fn guarded(b: &mut IrBuilder, name: &str, guard: Option<bool>) -> BodyId {
+    /// `on go.changed() && <guard> { q <- true; }` with the guard `en` when `guarded`, or none.
+    fn guarded(b: &mut IrBuilder, name: &str, guarded: bool) -> BodyId {
         let body = Merging::body(b, name);
         let mut x = Dx::new(b, Merging::F, 2, 20);
         let en = x.carrier(1, ValueType::Bool);
-        let guard = guard.map(|may_be_unknown| if may_be_unknown { en } else { x.high(en) });
+        let guard = guarded.then_some(en);
         let yes = Dx::new(b, Merging::F, 3, 14).boolean(true);
         Merging::react(b, body, guard, yes);
         body
     }
 
-    /// `on go.changed() { q <- if <en> { true } else { false }; }`, the condition `en` (which may
-    /// be unknown) or `en.high()` (a known `bool`).
-    fn deciding(b: &mut IrBuilder, name: &str, may_be_unknown: bool) -> BodyId {
+    /// `on go.changed() { q <- if en { true } else { false }; }`.
+    fn deciding(b: &mut IrBuilder, name: &str) -> BodyId {
         let body = Merging::body(b, name);
         let mut x = Dx::new(b, Merging::F, 3, 14);
-        let en = x.carrier(1, ValueType::Bool);
-        let cond = if may_be_unknown { en } else { x.high(en) };
+        let cond = x.carrier(1, ValueType::Bool);
         let (yes, no) = (x.boolean(true), x.boolean(false));
-        let ty = if may_be_unknown { Ty::flagged(ValueType::Bool) } else { ValueType::Bool };
-        let value = x.if_(cond, yes, no, ty);
+        let value = x.if_(cond, yes, no, ValueType::Bool);
         Merging::react(b, body, None, value);
         body
     }
@@ -834,8 +828,8 @@ fn a_guard_or_a_decision_adds_no_read_and_no_resolution_pin() {
     // §3.3, §13 rule 1: a value is never unknown, so a guard and a decision on a `bool` leave the reads a reaction
     // had: what its body reads and nothing of the guard, and no `RESOLUTION` pin
     for (name, make) in [
-        ("Sure", (|b: &mut IrBuilder| Merging::guarded(b, "Sure", Some(false))) as fn(&mut IrBuilder) -> BodyId),
-        ("Plain", |b: &mut IrBuilder| Merging::guarded(b, "Plain", None)),
+        ("Sure", (|b: &mut IrBuilder| Merging::guarded(b, "Sure", true)) as fn(&mut IrBuilder) -> BodyId),
+        ("Plain", |b: &mut IrBuilder| Merging::guarded(b, "Plain", false)),
     ] {
         let (ir, body) = Alone::design(make);
         let plan = BodyPlan::new(ir.body(body));
@@ -844,7 +838,7 @@ fn a_guard_or_a_decision_adds_no_read_and_no_resolution_pin() {
         assert_eq!(Find::reaction(shape, "reaction:0").1, [], "{name}");
         assert!(!has_pin(shape, "resolution"), "{name}");
     }
-    let (ir, body) = Alone::design(|b| Merging::deciding(b, "Known", false));
+    let (ir, body) = Alone::design(|b| Merging::deciding(b, "Known"));
     let plan = BodyPlan::new(ir.body(body));
     let shape = plan.shape().shape();
     assert_eq!(plan.reactions()[0].reads, [Source::Carrier(1)]);
@@ -858,14 +852,14 @@ struct Settling;
 impl Settling {
     const F: &'static str = "settling.msl";
 
-    /// `on settle { q <- true; }`, or `on settle && ready.high() { q <- true; }` when `guarded`.
+    /// `on settle { q <- true; }`, or `on settle && ready { q <- true; }` when `guarded`.
     fn body(b: &mut IrBuilder, guarded: bool) -> BodyId {
         let body = b.body(Buck::spec("Settling", Settling::F, 1));
         b.carrier(body, Buck::carrier("ready", ValueType::Bool, CarrierRole::In, None, Settling::F, 1, 14));
         b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Settling::F, 1, 28));
         let mut x = Dx::new(b, Settling::F, 2, 20);
         let ready = x.carrier(0, ValueType::Bool);
-        let guard = guarded.then(|| x.high(ready));
+        let guard = guarded.then_some(ready);
         let event = b.event(body, Event { source: EventSource::Settle, guard, origin: Buck::origin(Settling::F, 2, 8) });
         let yes = Dx::new(b, Settling::F, 3, 14).boolean(true);
         let commit = Dx::new(b, Settling::F, 3, 9).commit(1, yes, None);

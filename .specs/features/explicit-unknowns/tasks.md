@@ -862,8 +862,8 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `cargo test -p piperine-ir` passes; `digital::no_value_type_is_flagged` passes
-- [ ] The golden diff is reviewed line by line and described in the commit body
+- [x] `cargo test -p piperine-ir` passes; `digital::no_value_type_is_flagged` passes
+- [x] The golden diff is reviewed line by line and described in the commit body
 - [ ] Gate check passes: Full
 
 **Tests**: integration
@@ -884,7 +884,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `cargo test -p piperine-transpile` passes
+- [x] `cargo test -p piperine-transpile` passes
 - [ ] The golden diff is described in the commit body; every buck target passes
 - [ ] Gate check passes: Batch, with the buck (the generated code moved)
 
@@ -1545,6 +1545,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 - **std (T23).** `Known`, `merge` and `high` STAY in std until T29; the library nets, `Bidir`, `TribufDelayed` and the old `Logic` stay (flag-free bodies) until `resolved-nets` and T44 because `Driven`, `Logic<N>` and `Resolve` cannot compile yet: `AHEAD_OF_STD` has 13 entries, `BEHIND_SPEC` 22, `INDEX_AHEAD_OF_STD` 3. The task text asked for `Driven`, `strongest` and the generic net modules in `nets.msl`: not buildable now. Part VII 22.4.1's D2A fence is the formatter's form. `std_has_no_unresolved_member` allows `base.unwrap_or(start)`.
 - **Buck (T24).** The hand fixtures `crates/piperine-ir/tests/golden/buck/**` are untouched; `elab_buck.rs`'s listed differences grew (plain reads, `dithered_width~11`). `fixtures/elab/buck.txt` moved 57 lines (plain reads, `flagged<..>` locals, `init 0.0` on `transition`'s carriers).
 - **Tests pending a task:** `PENDING` in `suite_hygiene::RemovedUnknownForms` (std/values.msl T29; aggregates/carriers.msl and normal.msl T31: a plain carrier read inside a struct, a variant or a tuple-returning call is refused while the flag is carried); `SUCCESSORS` marks the `level`/`merge`/`same`/`cast`/`logic`/`matches_bits` tests Some("T45"/"T46"). `pom_reflect::nature_impls_lists_its_impl_blocks` expects two `impl Bit` until T29 removes `high`. T36 must keep a zero initial value a change (the store marker already does).
+- **Generated code and IR without a flag (T32, T33, B6).** `ValueType::Flagged` and `Expr::{Unknown, KnownOr, IsKnown, High, Merge, Level}` are gone from the IR; `rt/flag.rs` is deleted and what it held that is no flag stays as `rt/pin.rs` (`Carried`, `LevelWords`, `Field`, `Tag`: the pin codec, with `from_pin`, `pin` and `write_pin`, which still set the known byte to 1 until T36). `rt/commits.rs` is `Commits::{commit, record, arm, finish, flow, flush}` and nothing else (no `Due`, no join, no `controlled`, no `maybe`); `rt/control.rs` keeps `Panic`, `Trips`, `Depth`, `Index::{of, at}`. `same` and `cast` print as `to_levels` compared and `from_levels` moved (a tag naming no variant decodes as the enum's `Default`, a payload enum cast is plain); a `cast` result no longer carries `tags` in its print. `Source::Resolution` and `Pins.resolution` are removed from `piperine-plan` (and the interpreter's arm). A record's `maybe` field is still in the layout (T34) and the generated code writes it false. The array-length check of the type checker raised the retired `E0151`: it is `E0188` now (the code the spec gives an array length that is no const), `suite_hygiene::retired_unknown_codes_are_raised_nowhere` guards it. The hand fixtures of the buck (`crates/piperine-ir/tests/support/digital.rs`) follow the migrated source: `&&`/`||` of the dpwm and the pid windup are `And`/`Or`, `rev3~1` and `dithered_width~01` are gone, `elab_buck.rs` lists only the rise guard, the pid fold, the GateDriver initial values and the A2D/Never additions; `buck::golden` no longer strips a flag. `crates/piperine-transpile/tests/analog_merge.rs` became `analog_if.rs` (one path). Tests that pinned a flag are listed in the commit body.
 - **Process notes.** One shell call without the lane A environment ran two `cargo` commands in `/var/tmp/piperine-target` early in T20 (no build was left running there). T20's CLI Book listings and T22's `source_natures` compile fix are folded into T22 (the first as part of its commit, the second as a fixup squashed into it).
 
 **Dispatched:** none. **Walked:** none (the verifier of B1 to B3 is the caller's).

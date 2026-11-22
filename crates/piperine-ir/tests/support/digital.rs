@@ -6,7 +6,7 @@
 
 use piperine_ir::{
     Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Constant, Drive, Event,
-    EventSource, Expr, ExprId, FunctionId, IrBuilder, LevelPart, MathFn, Method, NatureId, NodeRole, Operator, Origin, Param, Quantity,
+    EventSource, Expr, ExprId, FunctionId, IrBuilder, MathFn, Method, NatureId, NodeRole, Operator, Origin, Param, Quantity,
     QuantityRole, Reaction, Real, Stmt, StmtId, Terminal, UnaryOp, ValueType,
 };
 
@@ -20,16 +20,6 @@ impl Ty {
 
     pub fn i(n: u32) -> ValueType {
         ValueType::Int(n)
-    }
-
-    /// A value that may be unknown: the type of a carrier read and what is computed from one.
-    pub fn flagged(t: ValueType) -> ValueType {
-        ValueType::Flagged(Box::new(t))
-    }
-
-    /// `t` flagged when `flagged` holds.
-    pub fn maybe(t: ValueType, flagged: bool) -> ValueType {
-        if flagged { Ty::flagged(t) } else { t }
     }
 }
 
@@ -121,32 +111,6 @@ impl<'b> Dx<'b> {
         self.b.stmt(Stmt::Expr(e))
     }
 
-    pub fn unknown(&mut self, ty: ValueType) -> ExprId {
-        self.emit(Expr::Unknown, ty)
-    }
-
-    pub fn known_or(&mut self, value: ExprId, default: ExprId, ty: ValueType) -> ExprId {
-        self.emit(Expr::KnownOr { value, default }, ty)
-    }
-
-    pub fn is_known(&mut self, value: ExprId) -> ExprId {
-        self.emit(Expr::IsKnown(value), ValueType::Bool)
-    }
-
-    pub fn high(&mut self, value: ExprId) -> ExprId {
-        self.emit(Expr::High(value), ValueType::Bool)
-    }
-
-    /// One half of `value.level(index)`; `ty` is the type of the half.
-    pub fn level(&mut self, value: ExprId, index: ExprId, part: LevelPart, ty: ValueType) -> ExprId {
-        self.emit(Expr::Level { value, index, part }, ty)
-    }
-
-    /// `merge(a, b)`.
-    pub fn merge(&mut self, a: ExprId, b: ExprId, ty: ValueType) -> ExprId {
-        self.emit(Expr::Merge { a, b }, ty)
-    }
-
     /// `same(a, b)`.
     pub fn same(&mut self, a: ExprId, b: ExprId) -> ExprId {
         self.emit(Expr::Same { a, b }, ValueType::Bool)
@@ -162,9 +126,9 @@ impl<'b> Dx<'b> {
         self.emit(Expr::Math { f, args: vec![arg] }, ty)
     }
 
-    /// A read of carrier `i`, which holds `ty`: unknown until first written.
+    /// A read of carrier `i`, which holds `ty`.
     pub fn carrier(&mut self, i: u32, ty: ValueType) -> ExprId {
-        self.emit(Expr::Carrier(i), Ty::flagged(ty))
+        self.emit(Expr::Carrier(i), ty)
     }
 
     pub fn probe(&mut self, plus: Terminal, minus: Terminal) -> ExprId {
@@ -254,12 +218,11 @@ impl Buck {
         b.nature("Electrical", voltage, Some(current))
     }
 
-    /// `c.rise()` of a `Bit` carrier: `Changed(c)` guarded by `c.high()` (spec, "`rise()`,
-    /// `fall()` in the IR").
+    /// `c.rise()` of a `Bit` carrier: `Changed(c)` guarded by `c` (spec, "`rise()`, `fall()` in the IR").
     pub fn rise(b: &mut IrBuilder, body: BodyId, carrier: u32, file: &'static str, line: u32, col: u32) -> u32 {
         let mut x = Dx::new(b, file, line, col);
         let c = x.carrier(carrier, ValueType::Bool);
-        let guard = x.high(c);
+        let guard = c;
         b.event(body, Event { source: EventSource::Changed(carrier), guard: Some(guard), origin: Buck::origin(file, line, col) })
     }
 
@@ -283,7 +246,7 @@ impl Buck {
         let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(F, 10, 22) });
         let mut x = Dx::new(b, F, 10, 45);
         let clk = x.carrier(0, ValueType::Bool);
-        let toggled = x.un(UnaryOp::Not, clk, Ty::flagged(ValueType::Bool));
+        let toggled = x.un(UnaryOp::Not, clk, ValueType::Bool);
         x.at(10, 57);
         let half = x.real(0.5);
         let f = x.param(0, ValueType::F64);
@@ -302,7 +265,7 @@ impl Buck {
     /// }
     /// digital for RefRamp {
     ///     on tick.rise() {
-    ///         if !run.known_or(false) { reference <- 0; }
+    ///         if !run { reference <- 0; }
     ///         else if reference < target { reference <- reference + 1; }
     ///         else if reference > target { reference <- reference - 1; }
     ///     }
@@ -325,31 +288,29 @@ impl Buck {
         let mut x = Dx::new(b, F, 24, 17);
         let r = x.carrier(reference, word.clone());
         let t = x.carrier(target, word.clone());
-        let same = x.bin(BinaryOp::Eq, r, t, Ty::flagged(ValueType::Bool));
+        let same = x.bin(BinaryOp::Eq, r, t, ValueType::Bool);
         b.drive(body, Drive { carrier: at_target, value: same, after: None, origin: Buck::origin(F, 24, 5) });
         let rise = Buck::rise(b, body, tick, F, 27, 8);
         let mut x = Dx::new(b, F, 30, 14);
         let r = x.carrier(reference, word.clone());
         let t = x.carrier(target, word.clone());
-        let above = x.bin(BinaryOp::Gt, r, t, Ty::flagged(ValueType::Bool));
+        let above = x.bin(BinaryOp::Gt, r, t, ValueType::Bool);
         let r = x.carrier(reference, word.clone());
         let one = x.int(1, word.clone());
-        let down = x.bin(BinaryOp::Sub, r, one, Ty::flagged(word.clone()));
+        let down = x.bin(BinaryOp::Sub, r, one, word.clone());
         let commit_down = x.commit(reference, down, None);
         let third = x.when(above, vec![commit_down], None);
         x.at(29, 14);
         let r = x.carrier(reference, word.clone());
         let t = x.carrier(target, word.clone());
-        let below = x.bin(BinaryOp::Lt, r, t, Ty::flagged(ValueType::Bool));
+        let below = x.bin(BinaryOp::Lt, r, t, ValueType::Bool);
         let r = x.carrier(reference, word.clone());
         let one = x.int(1, word.clone());
-        let up = x.bin(BinaryOp::Add, r, one, Ty::flagged(word.clone()));
+        let up = x.bin(BinaryOp::Add, r, one, word.clone());
         let commit_up = x.commit(reference, up, None);
         let second = x.when(below, vec![commit_up], Some(third));
         x.at(28, 12);
-        let run_c = x.carrier(run, ValueType::Bool);
-        let no = x.boolean(false);
-        let running = x.known_or(run_c, no, ValueType::Bool);
+        let running = x.carrier(run, ValueType::Bool);
         let stopped = x.un(UnaryOp::Not, running, ValueType::Bool);
         let zero = x.int(0, word.clone());
         let rest = x.commit(reference, zero, None);
@@ -497,15 +458,13 @@ impl Buck {
         body
     }
 
-    /// `control.msl:9-14`, `if let Some(d) = data.known()` in msl-digital's lowering
-    /// (`x.known()` is `(x.is_known(), x.known_or(zero))`), `SETPOINT_RESET` 100 and
-    /// `SETPOINT_MAX` 168 folded (`spec.msl:22-24`):
+    /// `control.msl:9-14`, `SETPOINT_RESET` 100 and `SETPOINT_MAX` 168 folded (`spec.msl:22-24`):
     ///
     /// ```text
     /// pub module SetpointReg(in wr: Bit, in data: Bit<u8>, out code: Bit<u8> = SETPOINT_RESET) {}
     /// digital for SetpointReg {
     ///     on wr.rise() {
-    ///         if let Some(d) = data.known() { code <- d.min(SETPOINT_MAX); }
+    ///         code <- data.min(SETPOINT_MAX);
     ///     }
     /// }
     /// ```
@@ -519,25 +478,15 @@ impl Buck {
         let rise = Buck::rise(b, body, 0, F, 11, 8);
         let mut x = Dx::new(b, F, 12, 12);
         let data = x.carrier(1, u8_.clone());
-        let known = x.is_known(data);
-        let data = x.carrier(1, u8_.clone());
-        let zero = x.int(0, u8_.clone());
-        let value = x.known_or(data, zero, u8_.clone());
-        let let_d = x.let_(0, value);
-        x.at(12, 41);
-        let d = x.local(0, u8_.clone());
         let max = x.int(168, u8_.clone());
-        let capped = x.method(Method::Min, d, vec![max], u8_.clone());
+        let capped = x.method(Method::Min, data, vec![max], u8_.clone());
         let commit = x.commit(2, capped, None);
-        let taken = x.when(known, vec![let_d, commit], None);
-        let stmt = x.stmt(taken);
-        Buck::reaction(b, body, vec![rise], vec![stmt], vec![Buck::local("d", u8_)], F, 11);
+        Buck::reaction(b, body, vec![rise], vec![commit], vec![], F, 11);
         body
     }
 
-    /// `dpwm.msl:40-80`, with the functions it calls (`rev3~1`, `dithered_width~01`: the frame
-    /// index `frame + 1` may be unknown). `&&` and `||` over values that may be unknown are `&`
-    /// and `|` (msl-digital: §3.3.12 gives them one table); `N_PERIOD - 1`, `SAMPLE_COUNT`,
+    /// `dpwm.msl:40-80`, with the functions it calls (`rev3`, `dithered_width`). `&&` and `||` over
+    /// carriers are `&` and `|` (the lowering of a read of a carrier); `N_PERIOD - 1`, `SAMPLE_COUNT`,
     /// `DEAD_COUNTS` and `N_PERIOD - DEAD_COUNTS` are folded to 399, 0, 4 and 396 (`spec.msl`).
     /// The `Never` monitor of line 53 is a stdlib module with an `emit!`, out of this slice.
     ///
@@ -552,10 +501,10 @@ impl Buck {
     ///     on clk.rise() {
     ///         let wrap = count == N_PERIOD - 1;
     ///         let next = if wrap { 0 } else { count + 1 };
-    ///         let enabled = run.known_or(false);
-    ///         let w = if wrap { dithered_width(duty.known_or(0), frame + 1) } else { width };
-    ///         let hs_trip = !wrap && (hs_cut || (hs && oc.known_or(true)));
-    ///         let ls_trip = !wrap && (ls_cut || (ls && sink_oc.known_or(true)));
+    ///         let enabled = run;
+    ///         let w = if wrap { dithered_width(duty, frame + 1) } else { width };
+    ///         let hs_trip = !wrap && (hs_cut || (hs && oc));
+    ///         let ls_trip = !wrap && (ls_cut || (ls && sink_oc));
     ///         let hs_next = enabled && !hs_trip && next < w;
     ///         let off_at = if wrap { w } else if hs && !hs_next { next } else { hs_off };
     ///         let ls_next = enabled && !hs_next && !ls_trip
@@ -568,8 +517,8 @@ impl Buck {
     /// ```
     pub fn dpwm(b: &mut IrBuilder) -> BodyId {
         const F: &str = "dpwm.msl";
-        let rev3 = Buck::rev3_flagged(b);
-        let dithered = Buck::dithered_width_flagged(b, rev3);
+        let rev3 = Buck::rev3(b);
+        let dithered = Buck::dithered_width(b, rev3);
         let body = b.body(Buck::spec("Dpwm", F, 40));
         let (bit, u9, u3, u12) = (ValueType::Bool, Ty::u(9), Ty::u(3), Ty::u(12));
         let no = || Some(Constant::Bool(false));
@@ -595,8 +544,8 @@ impl Buck {
         }
         let (clk, run, duty, oc, sink_oc, hs, ls, sample, cut) = (0, 1, 2, 3, 4, 5, 6, 7, 8);
         let (count, width, frame, hs_off, hs_cut, ls_cut) = (9, 10, 11, 12, 13, 14);
-        let fb = Ty::flagged(bit.clone());
-        let f9 = Ty::flagged(u9.clone());
+        let fb = bit.clone();
+        let f9 = u9.clone();
 
         // sample = count == SAMPLE_COUNT;
         let mut x = Dx::new(b, F, 51, 14);
@@ -634,39 +583,33 @@ impl Buck {
         let step = x.bin(BinaryOp::Add, c, one, f9.clone());
         let v = x.if_(cond, restart, step, f9.clone());
         stmts.push(x.let_(next, v));
-        // let enabled = run.known_or(false);
+        // let enabled = run;
         x.at(59, 23);
-        let r = x.carrier(run, bit.clone());
-        let off = x.boolean(false);
-        let v = x.known_or(r, off, bit.clone());
+        let v = x.carrier(run, bit.clone());
         stmts.push(x.let_(enabled, v));
-        // let w = if wrap { dithered_width(duty.known_or(0), frame + 1) } else { width };
+        // let w = if wrap { dithered_width(duty, frame + 1) } else { width };
         x.at(61, 17);
         let cond = x.local(wrap, fb.clone());
-        let d = x.carrier(duty, u12.clone());
-        let z = x.int(0, u12.clone());
-        let word = x.known_or(d, z, u12.clone());
+        let word = x.carrier(duty, u12.clone());
         let fr = x.carrier(frame, u3.clone());
         let one = x.int(1, u3.clone());
-        let following = x.bin(BinaryOp::Add, fr, one, Ty::flagged(u3.clone()));
+        let following = x.bin(BinaryOp::Add, fr, one, u3.clone());
         let latched = x.call(dithered, vec![word, following], f9.clone());
         let held = x.carrier(width, u9.clone());
         let v = x.if_(cond, latched, held, f9.clone());
         stmts.push(x.let_(w, v));
-        // let hs_trip = !wrap && (hs_cut || (hs && oc.known_or(true)));
-        // let ls_trip = !wrap && (ls_cut || (ls && sink_oc.known_or(true)));
+        // let hs_trip = !wrap && (hs_cut || (hs && oc));
+        // let ls_trip = !wrap && (ls_cut || (ls && sink_oc));
         for (local, cut_flag, side, trip, line) in [(hs_trip, hs_cut, hs, oc, 62), (ls_trip, ls_cut, ls, sink_oc, 63)] {
             x.at(line, 23);
             let wr = x.local(wrap, fb.clone());
             let not_wrap = x.un(UnaryOp::Not, wr, fb.clone());
             let cf = x.carrier(cut_flag, bit.clone());
             let on = x.carrier(side, bit.clone());
-            let t = x.carrier(trip, bit.clone());
-            let assume = x.boolean(true);
-            let tripped = x.known_or(t, assume, bit.clone());
-            let on_and_tripped = x.bin(BinaryOp::BitAnd, on, tripped, fb.clone());
-            let either = x.bin(BinaryOp::BitOr, cf, on_and_tripped, fb.clone());
-            let v = x.bin(BinaryOp::BitAnd, not_wrap, either, fb.clone());
+            let tripped = x.carrier(trip, bit.clone());
+            let on_and_tripped = x.bin(BinaryOp::And, on, tripped, fb.clone());
+            let either = x.bin(BinaryOp::Or, cf, on_and_tripped, fb.clone());
+            let v = x.bin(BinaryOp::And, not_wrap, either, fb.clone());
             stmts.push(x.let_(local, v));
         }
         // let hs_next = enabled && !hs_trip && next < w;
@@ -674,11 +617,11 @@ impl Buck {
         let en = x.local(enabled, bit.clone());
         let t = x.local(hs_trip, fb.clone());
         let not_t = x.un(UnaryOp::Not, t, fb.clone());
-        let a = x.bin(BinaryOp::BitAnd, en, not_t, fb.clone());
+        let a = x.bin(BinaryOp::And, en, not_t, fb.clone());
         let n = x.local(next, f9.clone());
         let wl = x.local(w, f9.clone());
         let inside = x.bin(BinaryOp::Lt, n, wl, fb.clone());
-        let v = x.bin(BinaryOp::BitAnd, a, inside, fb.clone());
+        let v = x.bin(BinaryOp::And, a, inside, fb.clone());
         stmts.push(x.let_(hs_next, v));
         // let off_at = if wrap { w } else if hs && !hs_next { next } else { hs_off };
         x.at(65, 22);
@@ -687,7 +630,7 @@ impl Buck {
         let on = x.carrier(hs, bit.clone());
         let hn = x.local(hs_next, fb.clone());
         let not_hn = x.un(UnaryOp::Not, hn, fb.clone());
-        let falls = x.bin(BinaryOp::BitAnd, on, not_hn, fb.clone());
+        let falls = x.bin(BinaryOp::And, on, not_hn, fb.clone());
         let n = x.local(next, f9.clone());
         let kept = x.carrier(hs_off, u9.clone());
         let inner = x.if_(falls, n, kept, f9.clone());
@@ -698,21 +641,21 @@ impl Buck {
         let en = x.local(enabled, bit.clone());
         let hn = x.local(hs_next, fb.clone());
         let not_hn = x.un(UnaryOp::Not, hn, fb.clone());
-        let a = x.bin(BinaryOp::BitAnd, en, not_hn, fb.clone());
+        let a = x.bin(BinaryOp::And, en, not_hn, fb.clone());
         let lt = x.local(ls_trip, fb.clone());
         let not_lt = x.un(UnaryOp::Not, lt, fb.clone());
-        let a = x.bin(BinaryOp::BitAnd, a, not_lt, fb.clone());
+        let a = x.bin(BinaryOp::And, a, not_lt, fb.clone());
         x.at(67, 16);
         let n = x.local(next, f9.clone());
         let oa = x.local(off_at, f9.clone());
         let dead = x.int(4, u9.clone());
         let start = x.bin(BinaryOp::Add, oa, dead, f9.clone());
         let after_dead = x.bin(BinaryOp::Ge, n, start, fb.clone());
-        let a = x.bin(BinaryOp::BitAnd, a, after_dead, fb.clone());
+        let a = x.bin(BinaryOp::And, a, after_dead, fb.clone());
         let n = x.local(next, f9.clone());
         let end = x.int(396, u9.clone());
         let before_end = x.bin(BinaryOp::Lt, n, end, fb.clone());
-        let v = x.bin(BinaryOp::BitAnd, a, before_end, fb.clone());
+        let v = x.bin(BinaryOp::And, a, before_end, fb.clone());
         stmts.push(x.let_(ls_next, v));
         // count <- next; width <- w; hs_off <- off_at; hs_cut <- hs_trip; ls_cut <- ls_trip; hs <- hs_next; ls <- ls_next;
         for (line, carrier, local, ty) in [
@@ -732,7 +675,7 @@ impl Buck {
         x.at(76, 13);
         let fr = x.carrier(frame, u3.clone());
         let one = x.int(1, u3.clone());
-        let advanced = x.bin(BinaryOp::Add, fr, one, Ty::flagged(u3.clone()));
+        let advanced = x.bin(BinaryOp::Add, fr, one, u3.clone());
         let advance = x.commit(frame, advanced, None);
         x.at(77, 13);
         let was_cut = x.carrier(hs_cut, bit.clone());
@@ -748,7 +691,7 @@ impl Buck {
 
     /// `control.msl:46-75`, the constants folded (`spec.msl`: `KP_Q4` 64, `KI_Q4` 8, `KD_Q4`
     /// 1024, `D_POLE_SHIFT` 2, `Q_SHIFT` 4, `E_MIN` -256, `E_MAX` 255, `DUTY_MAX` 2880) and `&&`,
-    /// `||` over values that may be unknown written `&`, `|`:
+    /// `||` over carriers written `&`, `|`:
     ///
     /// ```text
     /// pub module Pid(in tick: Bit, in run: Bit, in reference: Bit<u10>, in meas: Bit<u10>,
@@ -757,10 +700,10 @@ impl Buck {
     /// }
     /// digital for Pid {
     ///     on tick.rise() {
-    ///         if !run.known_or(false) {
+    ///         if !run {
     ///             integ <- 0; deriv <- 0; e_prev <- 0; duty <- 0;
     ///         } else {
-    ///             let e = ((reference.known_or(0) as i16) - (meas.known_or(1023) as i16)).clamp(E_MIN, E_MAX);
+    ///             let e = ((reference as i16) - (meas as i16)).clamp(E_MIN, E_MAX);
     ///             let p = KP_Q4 * (e as i32);
     ///             let d = (deriv >> D_POLE_SHIFT) + KD_Q4 * ((e - e_prev) as i32);
     ///             let u = (p + integ + d) >> Q_SHIFT;
@@ -795,15 +738,13 @@ impl Buck {
         }
         let (tick, run, reference, meas, duty, integ, deriv, e_prev) = (0, 1, 2, 3, 4, 5, 6, 7);
         let rise = Buck::rise(b, body, tick, F, 56, 8);
-        let (fb, f32_) = (Ty::flagged(bit.clone()), Ty::flagged(i32_.clone()));
+        let (fb, f32_) = (bit.clone(), i32_.clone());
         let locals = [("e", i16_.clone()), ("p", i32_.clone()), ("d", f32_.clone()), ("u", f32_.clone()), ("u_max", i32_.clone()), ("windup", fb.clone())];
         let (e, p, d, u, u_max, windup) = (0, 1, 2, 3, 4, 5);
 
-        // if !run.known_or(false) { integ <- 0; deriv <- 0; e_prev <- 0; duty <- 0; }
+        // if !run { integ <- 0; deriv <- 0; e_prev <- 0; duty <- 0; }
         let mut x = Dx::new(b, F, 57, 12);
-        let r = x.carrier(run, bit.clone());
-        let off = x.boolean(false);
-        let running = x.known_or(r, off, bit.clone());
+        let running = x.carrier(run, bit.clone());
         let stopped = x.un(UnaryOp::Not, running, bit.clone());
         x.at(58, 13);
         let mut reset = Vec::new();
@@ -814,16 +755,12 @@ impl Buck {
         let reset = x.block(reset, None, ValueType::Unit);
 
         let mut run_stmts = Vec::new();
-        // let e = ((reference.known_or(0) as i16) - (meas.known_or(1023) as i16)).clamp(E_MIN, E_MAX);
+        // let e = ((reference as i16) - (meas as i16)).clamp(E_MIN, E_MAX);
         x.at(61, 21);
         let rf = x.carrier(reference, u10.clone());
-        let z = x.int(0, u10.clone());
-        let rk = x.known_or(rf, z, u10.clone());
-        let rs = x.cast(rk, i16_.clone(), i16_.clone());
+        let rs = x.cast(rf, i16_.clone(), i16_.clone());
         let m = x.carrier(meas, u10.clone());
-        let full = x.int(1023, u10.clone());
-        let mk = x.known_or(m, full, u10.clone());
-        let ms = x.cast(mk, i16_.clone(), i16_.clone());
+        let ms = x.cast(m, i16_.clone(), i16_.clone());
         let diff = x.bin(BinaryOp::Sub, rs, ms, i16_.clone());
         let lo = x.int(-256, i16_.clone());
         let hi = x.int(255, i16_.clone());
@@ -844,7 +781,7 @@ impl Buck {
         let kd = x.int(1024, i32_.clone());
         let el = x.local(e, i16_.clone());
         let ep = x.carrier(e_prev, i16_.clone());
-        let de = x.bin(BinaryOp::Sub, el, ep, Ty::flagged(i16_.clone()));
+        let de = x.bin(BinaryOp::Sub, el, ep, i16_.clone());
         let dw = x.cast(de, i32_.clone(), f32_.clone());
         let kick = x.bin(BinaryOp::Mul, kd, dw, f32_.clone());
         let v = x.bin(BinaryOp::Add, filtered, kick, f32_.clone());
@@ -872,15 +809,15 @@ impl Buck {
         let el = x.local(e, i16_.clone());
         let z = x.int(0, i16_.clone());
         let pos = x.bin(BinaryOp::Gt, el, z, bit.clone());
-        let high = x.bin(BinaryOp::BitAnd, over, pos, fb.clone());
+        let high = x.bin(BinaryOp::And, over, pos, fb.clone());
         let ul = x.local(u, f32_.clone());
         let z = x.int(0, i32_.clone());
         let under = x.bin(BinaryOp::Lt, ul, z, fb.clone());
         let el = x.local(e, i16_.clone());
         let z = x.int(0, i16_.clone());
         let neg = x.bin(BinaryOp::Lt, el, z, bit.clone());
-        let low = x.bin(BinaryOp::BitAnd, under, neg, fb.clone());
-        let v = x.bin(BinaryOp::BitOr, high, low, fb.clone());
+        let low = x.bin(BinaryOp::And, under, neg, fb.clone());
+        let v = x.bin(BinaryOp::Or, high, low, fb.clone());
         run_stmts.push(x.let_(windup, v));
         // if !windup { integ <- (integ + KI_Q4 * (e as i32)).clamp(0, u_max << Q_SHIFT); }
         x.at(68, 26);
@@ -913,7 +850,7 @@ impl Buck {
         let z = x.int(0, i32_.clone());
         let um = x.local(u_max, i32_.clone());
         let bounded = x.method(Method::Clamp, ul, vec![z, um], f32_.clone());
-        let word = x.cast(bounded, u12.clone(), Ty::flagged(u12.clone()));
+        let word = x.cast(bounded, u12.clone(), u12.clone());
         run_stmts.push(x.commit(duty, word, None));
         x.at(59, 16);
         let running_block = x.block(run_stmts, None, ValueType::Unit);
@@ -946,8 +883,8 @@ impl Buck {
             let mut x = Dx::new(b, F, line, 15);
             let cmd = x.carrier(own, ValueType::Bool);
             let blocker = x.carrier(other, ValueType::Bool);
-            let not = x.un(UnaryOp::Not, blocker, Ty::flagged(ValueType::Bool));
-            let value = x.bin(BinaryOp::BitAnd, cmd, not, Ty::flagged(ValueType::Bool));
+            let not = x.un(UnaryOp::Not, blocker, ValueType::Bool);
+            let value = x.bin(BinaryOp::BitAnd, cmd, not, ValueType::Bool);
             x.at(line, 38);
             let after = x.param(0, ValueType::F64);
             b.drive(body, Drive { carrier: target, value, after: Some(after), origin: Buck::origin(F, line, 5) });
@@ -964,7 +901,7 @@ impl Buck {
     ///     ron: f64 = 20m where ron > 0.0;
     ///     roff: f64 = 1M where roff > ron;
     /// }
-    /// analog for Switch { i(p, n) +> v(p, n) * if g.high() { 1.0 / ron } else { 1.0 / roff }; }
+    /// analog for Switch { i(p, n) +> v(p, n) * if g { 1.0 / ron } else { 1.0 / roff }; }
     /// ```
     pub fn switch(b: &mut IrBuilder) -> BodyId {
         const F: &str = "switch.msl";
@@ -975,7 +912,7 @@ impl Buck {
         let mut x = Dx::new(b, F, 5, 21);
         let v = x.probe(Terminal::Node(0), Terminal::Node(1));
         let g = x.carrier(0, ValueType::Bool);
-        let on = x.high(g);
+        let on = g;
         let one = x.real(1.0);
         let r = x.param(0, ValueType::F64);
         let g_on = x.bin(BinaryOp::Div, one, r, ValueType::F64);
@@ -1004,17 +941,7 @@ impl Buck {
     /// `dpwm.msl:14`: `fn rev3(k: u3) -> u3 { ((k & 1) << 2) | (k & 2) | ((k >> 2) & 1) }`. A shift
     /// amount literal is `i32`, Rust's fallback for an unconstrained shift operand.
     pub fn rev3(b: &mut IrBuilder) -> FunctionId {
-        Buck::rev3_with(b, "rev3", false)
-    }
-
-    /// `rev3` lowered for an argument that may be unknown (msl-digital's variant `rev3~1`): every
-    /// operator over `k` may be unknown too.
-    pub fn rev3_flagged(b: &mut IrBuilder) -> FunctionId {
-        Buck::rev3_with(b, "rev3~1", true)
-    }
-
-    fn rev3_with(b: &mut IrBuilder, name: &str, flagged: bool) -> FunctionId {
-        let k_ty = Ty::maybe(Ty::u(3), flagged);
+        let k_ty = Ty::u(3);
         let mut x = Dx::new(b, "dpwm.msl", 14, 24);
         let k = x.local(0, k_ty.clone());
         let one = x.int(1, Ty::u(3));
@@ -1033,7 +960,7 @@ impl Buck {
         let body = x.bin(BinaryOp::BitOr, high_low, low, k_ty.clone());
         let origin = Origin { file: "dpwm.msl".into(), line: 14, col: 1 };
         b.function(piperine_ir::FunctionSpec {
-            name: name.into(),
+            name: "rev3".into(),
             origin,
             params: vec![Buck::local("k", k_ty.clone())],
             ret: k_ty.clone(),
@@ -1052,19 +979,8 @@ impl Buck {
     /// }
     /// ```
     pub fn dithered_width(b: &mut IrBuilder, rev3: FunctionId) -> FunctionId {
-        Buck::dithered_width_with(b, "dithered_width", rev3, false)
-    }
-
-    /// `dithered_width` lowered for a frame index that may be unknown (msl-digital's variant
-    /// `dithered_width~01`, reached by `dithered_width(duty.known_or(0), frame + 1)`), calling
-    /// `rev3~1`: the comparison, and so the width, may be unknown.
-    pub fn dithered_width_flagged(b: &mut IrBuilder, rev3_flagged: FunctionId) -> FunctionId {
-        Buck::dithered_width_with(b, "dithered_width~01", rev3_flagged, true)
-    }
-
-    fn dithered_width_with(b: &mut IrBuilder, name: &str, rev3: FunctionId, flagged: bool) -> FunctionId {
-        let frame_ty = Ty::maybe(Ty::u(3), flagged);
-        let width_ty = Ty::maybe(Ty::u(9), flagged);
+        let frame_ty = Ty::u(3);
+        let width_ty = Ty::u(9);
         let mut x = Dx::new(b, "dpwm.msl", 19, 18);
         let duty = x.local(0, Ty::u(12));
         let three = x.int(3, Ty::i(32));
@@ -1081,7 +997,7 @@ impl Buck {
         let frame = x.local(1, frame_ty.clone());
         let rev = x.call(rev3, vec![frame], frame_ty.clone());
         let fine = x.local(3, Ty::u(3));
-        let cond = x.bin(BinaryOp::Lt, rev, fine, Ty::maybe(ValueType::Bool, flagged));
+        let cond = x.bin(BinaryOp::Lt, rev, fine, ValueType::Bool);
         let coarse = x.local(2, Ty::u(9));
         let one = x.int(1, Ty::u(9));
         let wider = x.bin(BinaryOp::Add, coarse, one, Ty::u(9));
@@ -1091,7 +1007,7 @@ impl Buck {
         let body = x.block(vec![let_coarse, let_fine], Some(width), width_ty.clone());
         let origin = Origin { file: "dpwm.msl".into(), line: 18, col: 1 };
         b.function(piperine_ir::FunctionSpec {
-            name: name.into(),
+            name: "dithered_width".into(),
             origin,
             params: vec![Buck::local("duty", Ty::u(12)), Buck::local("frame", frame_ty.clone())],
             ret: width_ty,

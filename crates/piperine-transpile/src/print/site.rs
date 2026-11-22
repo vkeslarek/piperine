@@ -65,14 +65,14 @@ impl<'a> AnalogPrinter<'a> {
     }
 
     /// The `let` that binds each read of a site function from `cx_`, as `decode` does: a real, a
-    /// `bool`, an integer, or a carrier's pin decoded into a value that may be unknown (abi.md F2:
+    /// `bool`, an integer, or a carrier's pin decoded into its value (abi.md F2:
     /// an analog function may read discrete pins).
     pub(crate) fn bind_reads(&self, reads: &[(usize, Source)]) -> Result<Vec<String>, Error> {
         reads.iter().map(|(i, s)| self.decode("cx_", *i, *s)).collect()
     }
 
     /// The parameters of a block over the reads it uses, typed as `block_type` types them: `R` for a
-    /// real, `bool`, an integer, `rt::Flagged<T>` for a carrier.
+    /// real, `bool`, an integer, the carrier's own `T` for a carrier.
     pub(crate) fn block_params(&self, reads: &[(usize, Source)]) -> Result<String, Error> {
         let params: Result<Vec<String>, Error> = reads.iter().map(|(_, s)| Ok(format!("{}: {}", self.read_name(*s), self.block_type(*s)?))).collect();
         Ok(params?.join(", "))

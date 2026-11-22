@@ -1,5 +1,5 @@
 //! Scope: the digital node set of the IR (ir-rust phase B, RS-09): integer types and their
-//! operators, unknown values and their reads, carriers, drives, nets, events, reactions and
+//! operators, carriers, drives, nets, events, reactions and
 //! commits, each an IR node that `Ir::check` types and the printer writes; the `check()` entries
 //! of a defective digital body; the M1 prints unchanged; the buck-slice bodies pinned as golden
 //! texts. Expected texts are written from the MSL source each fixture transcribes.
@@ -16,7 +16,7 @@ use digital::{Buck, Dx, Ty};
 use devices::Devices;
 use piperine_ir::{
     Addend, BinaryOp, BodyId, BodySpec, Branch, BranchKind, CarrierRole, Child, Constant, Deps, Drive, FunctionId, FunctionSpec, InstanceId,
-    InstanceSpec, Ir, IrBuilder, LevelPart, Local, MathFn, Method, NetId, NetSpec, NodeRef, NodeSpec, Operator, Origin, QuantityRole, Real,
+    InstanceSpec, Ir, IrBuilder, Local, Method, NetId, NetSpec, NodeRef, NodeSpec, Operator, Origin, QuantityRole, Real,
     Stmt, Target, Terminal, UnaryOp, ValueType,
 };
 
@@ -314,181 +314,101 @@ fn integers_and_their_operators_print() {
     assert!(ir.print_structural().contains("((((8u3 + 3u9) : u3) & 1u3) : u9)"), "{}", ir.print_structural());
 }
 
-/// Functions over values that may be unknown, each beside the MSL it transcribes.
-struct Unknowns;
+/// Functions over integers and bits, each beside the MSL it transcribes.
+struct Functions;
 
-impl Unknowns {
+impl Functions {
     fn function(b: &mut IrBuilder, name: &str, file: &str, line: u32, params: Vec<Local>, ret: ValueType, extra: Vec<Local>, body: piperine_ir::ExprId) -> FunctionId {
         let mut locals = params.clone();
         locals.extend(extra);
         b.function(FunctionSpec { name: name.into(), origin: Design::origin(file, line, 1), params, ret, locals, body })
     }
 
-    /// `control.msl:12-14`, `SetpointReg`'s step written as a value, `data.known()` and
-    /// `if let Some(d)` in msl-digital's lowering (`(x.is_known(), x.known_or(zero))`):
-    /// `fn setpoint_next(data: Bit<u8>, code: Bit<u8>) -> u8 { if data.is_known() { let d = data.known_or(0); d.min(SETPOINT_MAX) } else { code } }`.
-    fn setpoint_next(b: &mut IrBuilder) -> FunctionId {
-        let u8_ = Ty::u(8);
-        let mut x = Dx::new(b, "control.msl", 13, 9);
-        let data = x.local(0, Ty::flagged(u8_.clone()));
-        let cond = x.is_known(data);
-        let data = x.local(0, Ty::flagged(u8_.clone()));
-        let zero = x.int(0, u8_.clone());
-        let d = x.known_or(data, zero, u8_.clone());
-        let let_d = x.let_(2, d);
-        let d = x.local(2, u8_.clone());
-        let max = x.int(168, u8_.clone());
-        let min = x.method(Method::Min, d, vec![max], u8_.clone());
-        let then = x.block(vec![let_d], Some(min), u8_.clone());
-        let code = x.local(1, Ty::flagged(u8_.clone()));
-        let body = x.if_(cond, then, code, Ty::flagged(u8_.clone()));
-        let params = vec![Design::local("data", Ty::flagged(u8_.clone())), Design::local("code", Ty::flagged(u8_.clone()))];
-        Unknowns::function(b, "setpoint_next", "control.msl", 12, params, Ty::flagged(u8_.clone()), vec![Design::local("d", u8_)], body)
-    }
-
-    /// `power.msl:65`, the gate level of `PowerSwitch`: `fn gate_level(g: Bit) -> f64 { if g.high() { 1.0 } else { 0.0 } }`.
+    /// `power.msl:65`, the gate level of `PowerSwitch`: `fn gate_level(g: Bit) -> f64 { if g { 1.0 } else { 0.0 } }`.
     fn gate_level(b: &mut IrBuilder) -> FunctionId {
         let mut x = Dx::new(b, "power.msl", 65, 27);
-        let g = x.local(0, Ty::flagged(ValueType::Bool));
-        let cond = x.high(g);
+        let cond = x.local(0, ValueType::Bool);
         let on = x.real(1.0);
         let off = x.real(0.0);
         let body = x.if_(cond, on, off, ValueType::F64);
-        Unknowns::function(b, "gate_level", "power.msl", 65, vec![Design::local("g", Ty::flagged(ValueType::Bool))], ValueType::F64, vec![], body)
+        Functions::function(b, "gate_level", "power.msl", 65, vec![Design::local("g", ValueType::Bool)], ValueType::F64, vec![], body)
     }
 
-    /// `power.msl:76`, the interlock of `GateDriver` over levels that may be unknown:
+    /// `power.msl:76`, the interlock of `GateDriver`:
     /// `fn interlock(hs_cmd: Bit, ls_cmd: Bit) -> Bit { hs_cmd & !ls_cmd }`.
     fn interlock(b: &mut IrBuilder) -> FunctionId {
-        let level = Ty::flagged(ValueType::Bool);
+        let level = ValueType::Bool;
         let mut x = Dx::new(b, "power.msl", 76, 15);
         let hs = x.local(0, level.clone());
         let ls = x.local(1, level.clone());
         let not_ls = x.un(UnaryOp::Not, ls, level.clone());
         let body = x.bin(BinaryOp::BitAnd, hs, not_ls, level.clone());
         let params = vec![Design::local("hs_cmd", level.clone()), Design::local("ls_cmd", level.clone())];
-        Unknowns::function(b, "interlock", "power.msl", 76, params, level, vec![], body)
-    }
-
-    /// §3.3.1 and §3.3.3: the literal `Unknown`, under a condition that may itself be unknown:
-    /// `fn clear(run: Bit, x: Bit<u9>) -> Bit<u9> { if run { x } else { Unknown } }`.
-    fn clear(b: &mut IrBuilder) -> FunctionId {
-        let word = Ty::flagged(Ty::u(9));
-        let mut x = Dx::new(b, "unknown.msl", 1, 45);
-        let run = x.local(0, Ty::flagged(ValueType::Bool));
-        let v = x.local(1, word.clone());
-        let unknown = x.unknown(word.clone());
-        let body = x.if_(run, v, unknown, word.clone());
-        let params = vec![Design::local("run", Ty::flagged(ValueType::Bool)), Design::local("x", word.clone())];
-        Unknowns::function(b, "clear", "unknown.msl", 1, params, word, vec![], body)
+        Functions::function(b, "interlock", "power.msl", 76, params, level, vec![], body)
     }
 }
 
 #[test]
-fn unknown_values_and_their_reads_print() {
+fn integer_and_bit_functions_print() {
     let mut b = IrBuilder::new();
-    let rev3 = Buck::rev3_flagged(&mut b);
-    Buck::dithered_width_flagged(&mut b, rev3);
-    Unknowns::setpoint_next(&mut b);
-    Unknowns::gate_level(&mut b);
-    Unknowns::interlock(&mut b);
-    Unknowns::clear(&mut b);
+    let rev3 = Buck::rev3(&mut b);
+    Buck::dithered_width(&mut b, rev3);
+    Functions::gate_level(&mut b);
+    Functions::interlock(&mut b);
     let ir = Design::finish(b);
     assert_eq!(ir.check(), vec![]);
 
-    // An unknown operand makes the result unknown (§3.3.2): the flagged frame index flags the
-    // comparison and the width; the known `duty` keeps `coarse` and `fine` known.
-    Printed::holds(&ir, &["fn \"rev3~1\"(k: flagged<u3>) -> flagged<u3>", "  local k: flagged<u3>", "  ((((k & 1u3) << 2i32) | (k & 2u3)) | ((k >> 2i32) & 1u3))"]);
+    // Every operand has its plain type: the frame index keeps `rev3` and the width in `u3` and `u9`.
+    Printed::holds(&ir, &["fn rev3(k: u3) -> u3", "  local k: u3", "  ((((k & 1u3) << 2i32) | (k & 2u3)) | ((k >> 2i32) & 1u3))"]);
     Printed::holds(
         &ir,
         &[
-            "fn \"dithered_width~01\"(duty: u12, frame: flagged<u3>) -> flagged<u9>",
+            "fn dithered_width(duty: u12, frame: u3) -> u9",
             "  local coarse: u9",
             "  local duty: u12",
             "  local fine: u3",
-            "  local frame: flagged<u3>",
+            "  local frame: u3",
             "  let coarse = ((duty >> 3i32) as u9)",
             "  let fine = ((duty & 7u12) as u3)",
-            "  if (\"rev3~1\"(frame) < fine) { (coarse + 1u9) } else { coarse }",
+            "  if (rev3(frame) < fine) { (coarse + 1u9) } else { coarse }",
         ],
     );
-    // `known_or` and `is_known` are known whatever their operand (§3.3.4); an arm that may be
-    // unknown flags the `if`.
-    Printed::holds(
-        &ir,
-        &[
-            "fn setpoint_next(data: flagged<u8>, code: flagged<u8>) -> flagged<u8>",
-            "  local code: flagged<u8>",
-            "  local d: u8",
-            "  local data: flagged<u8>",
-            "  if data.is_known() { let d = data.known_or(0u8); d.min(168u8) } else { code }",
-        ],
-    );
-    Printed::holds(&ir, &["fn gate_level(g: flagged<bool>) -> f64", "  local g: flagged<bool>", "  if g.high() { 1.0 } else { 0.0 }"]);
-    Printed::holds(&ir, &["fn interlock(hs_cmd: flagged<bool>, ls_cmd: flagged<bool>) -> flagged<bool>"]);
-    Printed::holds(&ir, &["  (hs_cmd & (!ls_cmd))"]);
-    // `Unknown` has no type of its own: the structural form writes the one it is given.
-    Printed::holds(&ir, &["fn clear(run: flagged<bool>, x: flagged<u9>) -> flagged<u9>"]);
-    Printed::holds(&ir, &["  if run { x } else { (Unknown : flagged<u9>) }"]);
-
+    Printed::holds(&ir, &["fn gate_level(g: bool) -> f64", "  local g: bool", "  if g { 1.0 } else { 0.0 }"]);
+    Printed::holds(&ir, &["fn interlock(hs_cmd: bool, ls_cmd: bool) -> bool", "  local hs_cmd: bool", "  local ls_cmd: bool", "  (hs_cmd & (!ls_cmd))"]);
     let full = ir.to_string();
-    for form in [": flagged<u9> = unknown  @unknown.msl:1:45", ": u8 = known_or e", ": bool = is_known e", ": bool = high e", ": flagged<bool> = bitand e"] {
+    for form in [": bool = bitand e", ": f64 = if e"] {
         assert!(full.contains(form), "{form} missing from:\n{full}");
     }
+}
 
-    // Each misuse is one entry at its origin.
+#[test]
+fn no_value_type_is_flagged() {
+    // EU-01: a carrier read, a `prev()` and everything computed from them have the type the carrier
+    // holds, so no printed form of the IR names a flag: the buck slice (every digital and mixed
+    // form the IR has) prints none of `flagged`, `known_or`, `is_known`, `high` or `Unknown`.
     let mut b = IrBuilder::new();
-    let level = Ty::flagged(ValueType::Bool);
-    let mut x = Dx::new(&mut b, "bad.msl", 1, 1);
-    // `&&` decides control: an operand that may be unknown is lowered to `&` (§3.3.12).
-    let a = x.local(0, level.clone());
-    let c = x.local(0, level.clone());
-    let and = x.bin(BinaryOp::And, a, c, ValueType::Bool);
-    let s1 = x.stmt(and);
-    // `known_or`'s default must have the value's base type; it may itself be unknown (§22.1.1
-    // rule 4), so a flagged default of the same base type is no misuse (`fallback` below).
-    x.at(2, 1);
-    let a = x.local(0, level.clone());
-    let d = x.int(1, Ty::u(8));
-    let ko = x.known_or(a, d, ValueType::Bool);
-    let s2 = x.stmt(ko);
-    // `Unknown` must have a flagged type.
-    x.at(3, 1);
-    let u = x.unknown(Ty::u(9));
-    let s3 = x.stmt(u);
-    // `high()` reads a `bool`.
-    x.at(4, 1);
-    let w = x.int(3, Ty::u(8));
-    let h = x.high(w);
-    let s4 = x.stmt(h);
-    // An `if` on a condition that may be unknown is itself unknown.
-    x.at(5, 1);
-    let a = x.local(0, level.clone());
-    let one = x.int(1, Ty::u(9));
-    let two = x.int(2, Ty::u(9));
-    let dropped = x.if_(a, one, two, Ty::u(9));
-    let s5 = x.stmt(dropped);
-    x.at(6, 1);
-    let unit = x.unit();
-    let body = x.block(vec![s1, s2, s3, s4, s5], Some(unit), ValueType::Unit);
-    b.function(FunctionSpec {
-        name: "bad".into(),
-        origin: Design::origin("bad.msl", 9, 1),
-        params: vec![Design::local("a", level.clone())],
-        ret: ValueType::Unit,
-        locals: vec![Design::local("a", level), Design::local("nothing", Ty::flagged(ValueType::Unit))],
-        body,
-    });
+    let rev3 = Buck::rev3(&mut b);
+    Buck::dithered_width(&mut b, rev3);
+    let slice: [fn(&mut IrBuilder) -> BodyId; 10] = [
+        Buck::osc,
+        Buck::ref_ramp,
+        Buck::adc,
+        Buck::setpoint_reg,
+        Buck::dpwm,
+        Buck::pid,
+        Buck::gate_driver,
+        Buck::comparator,
+        Buck::switch,
+        Buck::dff,
+    ];
+    for make in slice {
+        make(&mut b);
+    }
     let ir = Design::finish(b);
-    let broken = ir.check();
-    let at = |line: u32, what: &str| broken.iter().filter(|e| e.origin.line == line && e.what.contains(what)).count();
-    assert_eq!(at(1, "the operands of a binary operator do not fit its types"), 1, "{broken:#?}");
-    assert_eq!(at(2, "the operands of `known_or` do not fit its types"), 1, "{broken:#?}");
-    assert_eq!(at(3, "the literal `Unknown` must have a flagged type, found u9"), 1, "{broken:#?}");
-    assert_eq!(at(4, "the operands of `high` do not fit its types"), 1, "{broken:#?}");
-    assert_eq!(at(5, "expression is typed u9, its form gives flagged<u9>"), 1, "{broken:#?}");
-    assert_eq!(at(9, "type flagged<()>: only `bool`, `f64` and an integer type may be unknown"), 1, "{broken:#?}");
-    assert_eq!(broken.len(), 6, "{broken:#?}");
+    let (structural, full) = (ir.print_structural(), ir.to_string());
+    for form in ["flagged", "known_or", "is_known", ".high()", "Unknown", "merge(", "level_is", "level_value"] {
+        assert!(!structural.contains(form) && !full.contains(form), "`{form}` is printed:\n{structural}");
+    }
 }
 
 /// The power stage of `power.msl:125-143`, cut to its gate path: the driver and the two switches
@@ -589,7 +509,7 @@ fn carriers_and_drives_print() {
             "  carrier g: bool in",
             "  branch b0 (p, n) flow",
             "  analog",
-            "    b0.flow +> direct (probe(p, n) * if g.high() { (1.0 / ron) } else { (1.0 / roff) })",
+            "    b0.flow +> direct (probe(p, n) * if g { (1.0 / ron) } else { (1.0 / roff) })",
         ],
     );
     Printed::holds(&ir, &["  carrier hs_cmd: bool in", "  carrier ls_cmd: bool in", "  carrier hs_gate: bool signal", "  carrier ls_gate: bool signal"]);
@@ -656,7 +576,7 @@ fn carriers_and_drives_print() {
     assert_eq!(broken.len(), 3, "{broken:#?}");
 }
 
-/// §13 rule 17: `on settle { q <- true; }` and `on settle && ready.high() { .. }` build, pass
+/// §13 rule 17: `on settle { q <- true; }` and `on settle && ready { .. }` build, pass
 /// `Ir::check` (a guard is a `bool`, `settle` reads no expression) and print as `settle`.
 #[test]
 fn a_settle_event_is_built_checked_and_printed() {
@@ -667,7 +587,7 @@ fn a_settle_event_is_built_checked_and_printed() {
     let bare = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Settle, guard: None, origin: Design::origin("settle.msl", 2, 8) });
     let mut x = Dx::new(&mut b, "settle.msl", 3, 9);
     let ready = x.carrier(1, ValueType::Bool);
-    let guard = x.high(ready);
+    let guard = ready;
     let guarded = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Settle, guard: Some(guard), origin: Design::origin("settle.msl", 4, 8) });
     let mut x = Dx::new(&mut b, "settle.msl", 5, 9);
     let yes = x.boolean(true);
@@ -676,7 +596,7 @@ fn a_settle_event_is_built_checked_and_printed() {
     let top = Slice::design(&mut b, &[("sampler", body, 0, vec![ValueType::Bool, ValueType::Bool], vec![])]);
     let ir = b.finish(top);
     assert_eq!(ir.check(), vec![], "§13 rule 17: settle is an event with no expression of its own");
-    Printed::holds(&ir, &["body Sampler", "  carrier q: bool out", "  carrier ready: bool in", "  event E0 settle", "  event E1 settle guard ready.high()", "  reaction R0 on (E0, E1)"]);
+    Printed::holds(&ir, &["body Sampler", "  carrier q: bool out", "  carrier ready: bool in", "  event E0 settle", "  event E1 settle guard ready", "  reaction R0 on (E0, E1)"]);
     assert!(ir.to_string().contains("(settle -)"), "the structural form names a bare settle:\n{ir}");
 }
 
@@ -742,7 +662,7 @@ fn events_and_reactions_print() {
             "    clk <- (!clk) after (0.5 / f)",
         ],
     );
-    // `tick.rise()` is `changed` guarded by `high()`; `if`, `else if` and the commits of
+    // `tick.rise()` is `changed` guarded by the carrier's own read; `if`, `else if` and the commits of
     // control.msl:28-30, an `if` with no `else` closing on `()`.
     Printed::holds(
         &ir,
@@ -754,16 +674,16 @@ fn events_and_reactions_print() {
             "  carrier reference: u10 out init 0",
             "  carrier at_target: bool out",
             "  drive at_target = (reference == target)",
-            "  event E0 changed tick guard tick.high()",
+            "  event E0 changed tick guard tick",
             "  reaction R0 on (E0)",
-            "    if (!run.known_or(false)) { reference <- 0u10 } else { if (reference < target) { reference <- (reference + 1u10) } else { if (reference > target) { reference <- (reference - 1u10) } else { () } } }",
+            "    if (!run) { reference <- 0u10 } else { if (reference < target) { reference <- (reference + 1u10) } else { if (reference > target) { reference <- (reference - 1u10) } else { () } } }",
         ],
     );
     // A reaction's own `let`, a probe in a reaction, two commits to one carrier (sense.msl:28-33).
     Printed::holds(
         &ir,
         &[
-            "  event E0 changed sample guard sample.high()",
+            "  event E0 changed sample guard sample",
             "  reaction R0 on (E0)",
             "    local q: u10",
             "    let q = ((((probe(ain, gnd) / vref) * 1024.0) + 0.5).floor().clamp(0.0, 1023.0) as u10)",
@@ -835,7 +755,7 @@ fn a_defective_digital_body_gives_one_entry_per_defect() {
     //   module Bad(p: Electrical, n: Electrical, in en: Bit, out q: Bit, out aux: Bit, in stop: Bit) {   // line 1
     //       signal count: Bit<u4> = 0;                                                     // line 2
     //       en = true;                                      // line 3: drives an `in` port
-    //       q = en.known_or(false);                         // line 4: q is driven ...
+    //       q = en;                                         // line 4: q is driven ...
     //   }
     //   on en.changed() ... on cross(count) ...             // lines 5, 6: a cross over an integer
     //   on E0, E7 {                                         // line 7: event 7 does not exist
@@ -843,7 +763,7 @@ fn a_defective_digital_body_gives_one_entry_per_defect() {
     //       q <- true;                                      // line 9: ... and committed
     //   }
     //   analog { aux <- true;                               // line 10: a commit outside a reaction
-    //            i(p, n) +> v(p, n) * if (en & true).known_or(false) { 1.0 } else { 0.0 }; }  // line 11
+    //            i(p, n) +> v(p, n) * if (en & true) { 1.0 } else { 0.0 }; }  // line 11
     const F: &str = "bad.msl";
     let mut b = IrBuilder::new();
     let el = Buck::electrical(&mut b);
@@ -855,9 +775,7 @@ fn a_defective_digital_body_gives_one_entry_per_defect() {
     let v = x.probe(Terminal::Node(0), Terminal::Node(1));
     let en = x.carrier(0, ValueType::Bool);
     let yes = x.boolean(true);
-    let masked = x.bin(BinaryOp::BitAnd, en, yes, Ty::flagged(ValueType::Bool));
-    let no = x.boolean(false);
-    let level = x.known_or(masked, no, ValueType::Bool);
+    let level = x.bin(BinaryOp::BitAnd, en, yes, ValueType::Bool);
     let one = x.real(1.0);
     let zero = x.real(0.0);
     let factor = x.if_(level, one, zero, ValueType::F64);
@@ -881,9 +799,7 @@ fn a_defective_digital_body_gives_one_entry_per_defect() {
     let yes = Dx::new(&mut b, F, 3, 10).boolean(true);
     b.drive(body, Drive { carrier: 0, value: yes, after: None, origin: Design::origin(F, 3, 5) });
     let mut x = Dx::new(&mut b, F, 4, 9);
-    let en = x.carrier(0, ValueType::Bool);
-    let no = x.boolean(false);
-    let q = x.known_or(en, no, ValueType::Bool);
+    let q = x.carrier(0, ValueType::Bool);
     b.drive(body, Drive { carrier: 2, value: q, after: None, origin: Design::origin(F, 4, 5) });
     let changed = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Changed(0), guard: None, origin: Design::origin(F, 5, 8) });
     let count = Dx::new(&mut b, F, 6, 14).carrier(4, Ty::u(4));
@@ -914,7 +830,7 @@ fn a_defective_digital_body_gives_one_entry_per_defect() {
     one("body Bad carrier q", 1, "carrier q has both a drive and a commit");
     one("body Bad reaction 0", 7, "waits on event 7, out of range (2 events)");
     one("body Bad", 10, "a commit outside a reaction");
-    one("body Bad event 1", 6, "a `cross` watches a real, found flagged<u4>");
+    one("body Bad event 1", 6, "a `cross` watches a real, found u4");
     assert_eq!(broken.len(), 6, "{broken:#?}");
 }
 
@@ -1009,12 +925,12 @@ fn the_buck_slice_bodies_pass_check_and_print_as_their_golden_texts() {
         let ir = Design::finish(b);
         assert_eq!(ir.check(), vec![], "{name}");
         let body = ir.body(body);
-        // `rise()` is `changed` guarded by `high()` of the same carrier; `above(e)` is `cross(e)`
+        // `rise()` is `changed` guarded by a read of the same carrier; `above(e)` is `cross(e)`
         // with no guard.
         for event in body.events() {
             match (&event.source, event.guard.map(|g| ir.expr(g))) {
-                (piperine_ir::EventSource::Changed(c), Some(piperine_ir::Expr::High(read))) => {
-                    assert_eq!(ir.expr(*read), &piperine_ir::Expr::Carrier(*c), "{name}: a rise reads its own carrier");
+                (piperine_ir::EventSource::Changed(c), Some(read)) => {
+                    assert_eq!(read, &piperine_ir::Expr::Carrier(*c), "{name}: a rise reads its own carrier");
                 }
                 (piperine_ir::EventSource::Changed(_), None) => assert_eq!(name, "osc", "only the oscillator waits on a bare change"),
                 (piperine_ir::EventSource::Cross { .. }, None) => assert_eq!(name, "comparator", "only the comparator crosses"),
@@ -1033,148 +949,68 @@ fn the_buck_slice_bodies_pass_check_and_print_as_their_golden_texts() {
     }
 }
 
-/// Functions over `level`, `merge`, `same` and `cast`, each beside the MSL it transcribes.
+/// Functions over `same` and `cast`, each beside the MSL it transcribes.
 struct Levels;
 
 impl Levels {
     const F: &'static str = "levels.msl";
 
-    /// `fn flag(x: u8, k: u32) -> bool { x.level(k).is_some() }` and the value half: known when
-    /// the index is (§3.3.14), flagged when it is not (§3.3.13).
-    fn level_halves(b: &mut IrBuilder) {
-        for (name, line, flagged) in [("known_index", 1, false), ("unknown_index", 2, true)] {
-            let index_ty = Ty::maybe(Ty::u(32), flagged);
-            let result = Ty::maybe(ValueType::Bool, flagged);
-            let mut x = Dx::new(b, Levels::F, line, 9);
-            let value = x.local(0, Ty::flagged(Ty::u(8)));
-            let index = x.local(1, index_ty.clone());
-            let is = x.level(value, index, LevelPart::Is, result.clone());
-            let index = x.local(1, index_ty.clone());
-            let value = x.local(0, Ty::flagged(Ty::u(8)));
-            let held = x.level(value, index, LevelPart::Value, result.clone());
-            let body = x.bin(BinaryOp::BitAnd, is, held, result.clone());
-            let params = vec![Design::local("x", Ty::flagged(Ty::u(8))), Design::local("k", index_ty)];
-            Unknowns::function(b, name, Levels::F, line, params, result, vec![], body);
-        }
-    }
-
-    /// `fn joined(a: u8, b: u8) -> Bit<u8> { merge(a, b) }`.
-    fn joined(b: &mut IrBuilder) {
-        let mut x = Dx::new(b, Levels::F, 3, 9);
-        let (l, r) = (x.local(0, Ty::u(8)), x.local(1, Ty::u(8)));
-        let body = x.merge(l, r, Ty::flagged(Ty::u(8)));
-        let params = vec![Design::local("a", Ty::u(8)), Design::local("b", Ty::u(8))];
-        Unknowns::function(b, "joined", Levels::F, 3, params, Ty::flagged(Ty::u(8)), vec![], body);
-    }
-
-    /// `fn alike(a: Bit<u8>, b: Bit<u8>) -> bool { same(a, b) }`: always known.
+    /// `fn alike(a: Bit<u8>, b: Bit<u8>) -> bool { same(a, b) }`.
     fn alike(b: &mut IrBuilder) {
-        let word = Ty::flagged(Ty::u(8));
+        let word = Ty::u(8);
         let mut x = Dx::new(b, Levels::F, 4, 9);
         let (l, r) = (x.local(0, word.clone()), x.local(1, word.clone()));
         let body = x.same(l, r);
         let params = vec![Design::local("a", word.clone()), Design::local("b", word)];
-        Unknowns::function(b, "alike", Levels::F, 4, params, ValueType::Bool, vec![], body);
+        Functions::function(b, "alike", Levels::F, 4, params, ValueType::Bool, vec![], body);
     }
 
     /// `fn recode(a: u4) -> i4 { cast::<u4, i4>(a) }` and, to a type that decodes only some tags,
-    /// `fn tagged(a: u2) -> Bit<u2> { cast::<u2, State>(a) }` (tags 0, 1, 2).
+    /// `fn tagged(a: u2) -> u2 { cast::<u2, State>(a) }` (tags 0, 1, 2).
     fn casts(b: &mut IrBuilder) {
         let mut x = Dx::new(b, Levels::F, 5, 9);
         let a = x.local(0, Ty::u(4));
         let body = x.level_cast(a, Ty::i(4), None, Ty::i(4));
-        Unknowns::function(b, "recode", Levels::F, 5, vec![Design::local("a", Ty::u(4))], Ty::i(4), vec![], body);
+        Functions::function(b, "recode", Levels::F, 5, vec![Design::local("a", Ty::u(4))], Ty::i(4), vec![], body);
         let mut x = Dx::new(b, Levels::F, 6, 9);
         let a = x.local(0, Ty::u(2));
-        let body = x.level_cast(a, Ty::u(2), Some(vec![0, 1, 2]), Ty::flagged(Ty::u(2)));
-        Unknowns::function(b, "tagged", Levels::F, 6, vec![Design::local("a", Ty::u(2))], Ty::flagged(Ty::u(2)), vec![], body);
-    }
-
-    /// `fn root(x: Bit<f64>) -> Bit<f64> { x.sqrt() }` and
-    /// `fn fallback(x: Bit<f64>, d: Bit<f64>) -> Bit<f64> { x.known_or(d) }` (§3.3.2, §22.1.1 rule 4).
-    fn flagged_math(b: &mut IrBuilder) {
-        let real = Ty::flagged(ValueType::F64);
-        let mut x = Dx::new(b, Levels::F, 7, 9);
-        let v = x.local(0, real.clone());
-        let body = x.math(MathFn::Sqrt, v, real.clone());
-        Unknowns::function(b, "root", Levels::F, 7, vec![Design::local("x", real.clone())], real.clone(), vec![], body);
-        let mut x = Dx::new(b, Levels::F, 8, 9);
-        let (v, d) = (x.local(0, real.clone()), x.local(1, real.clone()));
-        let body = x.known_or(v, d, real.clone());
-        let params = vec![Design::local("x", real.clone()), Design::local("d", real.clone())];
-        Unknowns::function(b, "fallback", Levels::F, 8, params, real, vec![], body);
+        let body = x.level_cast(a, Ty::u(2), Some(vec![0, 1, 2]), Ty::u(2));
+        Functions::function(b, "tagged", Levels::F, 6, vec![Design::local("a", Ty::u(2))], Ty::u(2), vec![], body);
     }
 }
 
 #[test]
-fn the_unknown_nodes_type_print_and_check() {
+fn same_and_cast_type_print_and_check() {
     let mut b = IrBuilder::new();
-    Levels::level_halves(&mut b);
-    Levels::joined(&mut b);
     Levels::alike(&mut b);
     Levels::casts(&mut b);
-    Levels::flagged_math(&mut b);
     let ir = Design::finish(b);
-    assert_eq!(ir.check(), vec![], "every form is typed as §3.3.13, §3.3.14, §22.1.2 to §22.1.4 and §3.3.2 give");
+    assert_eq!(ir.check(), vec![], "every form is typed as §22.1.3 and §22.1.4 give");
 
     // The structural print writes each node by the name the source gives it, and a type only
     // where it differs from the one the form implies.
-    Printed::holds(&ir, &["fn known_index(x: flagged<u8>, k: u32) -> bool", "  local k: u32", "  local x: flagged<u8>", "  (level_is(x, k) & level_value(x, k))"]);
-    Printed::holds(&ir, &["fn unknown_index(x: flagged<u8>, k: flagged<u32>) -> flagged<bool>", "  local k: flagged<u32>", "  local x: flagged<u8>", "  (level_is(x, k) & level_value(x, k))"]);
-    Printed::holds(&ir, &["fn joined(a: u8, b: u8) -> flagged<u8>", "  local a: u8", "  local b: u8", "  merge(a, b)"]);
-    Printed::holds(&ir, &["fn alike(a: flagged<u8>, b: flagged<u8>) -> bool", "  local a: flagged<u8>", "  local b: flagged<u8>", "  same(a, b)"]);
+    Printed::holds(&ir, &["fn alike(a: u8, b: u8) -> bool", "  local a: u8", "  local b: u8", "  same(a, b)"]);
     Printed::holds(&ir, &["fn recode(a: u4) -> i4", "  local a: u4", "  cast::<i4>(a)"]);
-    Printed::holds(&ir, &["fn tagged(a: u2) -> flagged<u2>", "  local a: u2", "  cast::<u2 in [0, 1, 2]>(a)"]);
-    Printed::holds(&ir, &["fn root(x: flagged<f64>) -> flagged<f64>", "  local x: flagged<f64>", "  sqrt(x)"]);
-    Printed::holds(&ir, &["fn fallback(x: flagged<f64>, d: flagged<f64>) -> flagged<f64>", "  local d: flagged<f64>", "  local x: flagged<f64>", "  x.known_or(d)"]);
+    Printed::holds(&ir, &["fn tagged(a: u2) -> u2", "  local a: u2", "  cast::<u2 in [0, 1, 2]>(a)"]);
     let full = ir.to_string();
-    for form in [
-        ": bool = level_is e",
-        ": bool = level_value e",
-        ": flagged<bool> = level_is e",
-        ": flagged<u8> = merge e",
-        ": bool = same e",
-        ": i4 = level_cast e",
-        ": flagged<u2> = level_cast e",
-        "tags [0, 1, 2]",
-    ] {
+    for form in [": bool = same e", ": i4 = level_cast e", ": u2 = level_cast e", "tags [0, 1, 2]"] {
         assert!(full.contains(form), "{form} missing from:\n{full}");
     }
 
     // Each form whose operands fit no rule is one entry at its origin.
     let mut b = IrBuilder::new();
     let mut x = Dx::new(&mut b, Levels::F, 1, 9);
-    let (v, i) = (x.local(0, Ty::u(8)), x.local(1, Ty::i(32)));
-    let level = x.level(v, i, LevelPart::Is, ValueType::Bool);
-    Unknowns::function(&mut b, "bad_index", Levels::F, 1, vec![Design::local("x", Ty::u(8)), Design::local("k", Ty::i(32))], ValueType::Bool, vec![], level);
-    let mut x = Dx::new(&mut b, Levels::F, 2, 9);
-    let (l, r) = (x.local(0, Ty::u(8)), x.local(1, Ty::u(9)));
-    let merged = x.merge(l, r, Ty::flagged(Ty::u(8)));
-    Unknowns::function(&mut b, "bad_merge", Levels::F, 2, vec![Design::local("a", Ty::u(8)), Design::local("b", Ty::u(9))], Ty::flagged(Ty::u(8)), vec![], merged);
-    let mut x = Dx::new(&mut b, Levels::F, 3, 9);
     let (l, r) = (x.local(0, ValueType::Bool), x.local(1, Ty::u(1)));
     let alike = x.same(l, r);
-    Unknowns::function(&mut b, "bad_same", Levels::F, 3, vec![Design::local("a", ValueType::Bool), Design::local("b", Ty::u(1))], ValueType::Bool, vec![], alike);
-    let mut x = Dx::new(&mut b, Levels::F, 4, 9);
+    Functions::function(&mut b, "bad_same", Levels::F, 1, vec![Design::local("a", ValueType::Bool), Design::local("b", Ty::u(1))], ValueType::Bool, vec![], alike);
+    let mut x = Dx::new(&mut b, Levels::F, 2, 9);
     let a = x.local(0, Ty::u(4));
     let wide = x.level_cast(a, Ty::u(5), None, Ty::u(5));
-    Unknowns::function(&mut b, "bad_cast", Levels::F, 4, vec![Design::local("a", Ty::u(4))], Ty::u(5), vec![], wide);
-    let mut x = Dx::new(&mut b, Levels::F, 5, 9);
-    let a = x.local(0, Ty::u(2));
-    let unflagged = x.level_cast(a, Ty::u(2), Some(vec![0, 1]), Ty::u(2));
-    Unknowns::function(&mut b, "tags_without_flag", Levels::F, 5, vec![Design::local("a", Ty::u(2))], Ty::u(2), vec![], unflagged);
-    let mut x = Dx::new(&mut b, Levels::F, 6, 9);
-    let v = x.local(0, Ty::flagged(ValueType::F64));
-    let plain = x.math(MathFn::Exp, v, ValueType::F64);
-    Unknowns::function(&mut b, "math_without_flag", Levels::F, 6, vec![Design::local("x", Ty::flagged(ValueType::F64))], ValueType::F64, vec![], plain);
+    Functions::function(&mut b, "bad_cast", Levels::F, 2, vec![Design::local("a", Ty::u(4))], Ty::u(5), vec![], wide);
     let broken = Design::finish(b).check();
     let at = |line: u32, what: &str| broken.iter().filter(|e| e.origin.line == line && e.what.contains(what)).count();
-    assert_eq!(at(1, "the operands of `level` do not fit its types"), 1, "{broken:#?}");
-    assert_eq!(at(2, "the operands of `merge` do not fit its types"), 1, "{broken:#?}");
-    assert_eq!(at(3, "the operands of `same` do not fit its types"), 1, "{broken:#?}");
-    assert_eq!(at(4, "the operands of `cast` do not fit its types"), 1, "{broken:#?}");
-    assert_eq!(at(5, "expression is typed u2, its form gives flagged<u2>"), 1, "{broken:#?}");
-    assert_eq!(at(6, "expression is typed f64, its form gives flagged<f64>"), 1, "{broken:#?}");
-    assert_eq!(broken.len(), 6, "{broken:#?}");
+    assert_eq!(at(1, "the operands of `same` do not fit its types"), 1, "{broken:#?}");
+    assert_eq!(at(2, "the operands of `cast` do not fit its types"), 1, "{broken:#?}");
+    assert_eq!(broken.len(), 2, "{broken:#?}");
 }
 

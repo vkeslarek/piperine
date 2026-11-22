@@ -37,7 +37,7 @@ fn every_struct_form_is_a_value_type() {
     // a generic struct stays outside the subset (`generics`)
     CheckedSource::assert_refused(&CheckedSource::source("struct G<T> { t: f64 }\nfn f(g: G<f64>) {}", "let h = f;"), "P0001", "generic struct `G`");
     // §1.2.5: the length of an array type is a constant
-    CheckedSource::assert_refused(&CheckedSource::source("const F: f64 = 1.0;\nfn f(v: [u8; F]) {}", "let h = f;"), "E0151", "constant");
+    CheckedSource::assert_refused(&CheckedSource::source("const F: f64 = 1.0;\nfn f(v: [u8; F]) {}", "let h = f;"), "E0188", "constant");
 }
 
 #[test]

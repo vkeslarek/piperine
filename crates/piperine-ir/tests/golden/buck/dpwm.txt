@@ -15,26 +15,26 @@ body Dpwm
   carrier hs_cut: bool signal init false
   carrier ls_cut: bool signal init false
   drive sample = (count == 0u9)
-  event E0 changed clk guard clk.high()
+  event E0 changed clk guard clk
   reaction R0 on (E0)
     local enabled: bool
-    local hs_next: flagged<bool>
-    local hs_trip: flagged<bool>
-    local ls_next: flagged<bool>
-    local ls_trip: flagged<bool>
-    local next: flagged<u9>
-    local off_at: flagged<u9>
-    local w: flagged<u9>
-    local wrap: flagged<bool>
+    local hs_next: bool
+    local hs_trip: bool
+    local ls_next: bool
+    local ls_trip: bool
+    local next: u9
+    local off_at: u9
+    local w: u9
+    local wrap: bool
     let wrap = (count == 399u9)
     let next = if wrap { 0u9 } else { (count + 1u9) }
-    let enabled = run.known_or(false)
-    let w = if wrap { "dithered_width~01"(duty.known_or(0u12), (frame + 1u3)) } else { width }
-    let hs_trip = ((!wrap) & (hs_cut | (hs & oc.known_or(true))))
-    let ls_trip = ((!wrap) & (ls_cut | (ls & sink_oc.known_or(true))))
-    let hs_next = ((enabled & (!hs_trip)) & (next < w))
-    let off_at = if wrap { w } else { if (hs & (!hs_next)) { next } else { hs_off } }
-    let ls_next = ((((enabled & (!hs_next)) & (!ls_trip)) & (next >= (off_at + 4u9))) & (next < 396u9))
+    let enabled = run
+    let w = if wrap { dithered_width(duty, (frame + 1u3)) } else { width }
+    let hs_trip = ((!wrap) && (hs_cut || (hs && oc)))
+    let ls_trip = ((!wrap) && (ls_cut || (ls && sink_oc)))
+    let hs_next = ((enabled && (!hs_trip)) && (next < w))
+    let off_at = if wrap { w } else { if (hs && (!hs_next)) { next } else { hs_off } }
+    let ls_next = ((((enabled && (!hs_next)) && (!ls_trip)) && (next >= (off_at + 4u9))) && (next < 396u9))
     count <- next
     width <- w
     hs_off <- off_at
@@ -44,15 +44,15 @@ body Dpwm
     ls <- ls_next
     if wrap { frame <- (frame + 1u3); cut <- hs_cut } else { () }
 body Top
-fn "dithered_width~01"(duty: u12, frame: flagged<u3>) -> flagged<u9>
+fn dithered_width(duty: u12, frame: u3) -> u9
   local coarse: u9
   local duty: u12
   local fine: u3
-  local frame: flagged<u3>
+  local frame: u3
   let coarse = ((duty >> 3i32) as u9)
   let fine = ((duty & 7u12) as u3)
-  if ("rev3~1"(frame) < fine) { (coarse + 1u9) } else { coarse }
-fn "rev3~1"(k: flagged<u3>) -> flagged<u3>
-  local k: flagged<u3>
+  if (rev3(frame) < fine) { (coarse + 1u9) } else { coarse }
+fn rev3(k: u3) -> u3
+  local k: u3
   ((((k & 1u3) << 2i32) | (k & 2u3)) | ((k >> 2i32) & 1u3))
 instance Top: Top  nodes ()  params ()  top

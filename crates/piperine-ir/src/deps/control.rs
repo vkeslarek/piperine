@@ -17,7 +17,7 @@ use std::collections::BTreeSet;
 
 use super::{Class, Sources, Task, Value, Walk};
 use crate::ids::{ExprId, FunctionId};
-use crate::model::{BinaryOp, Expr, ValueType};
+use crate::model::{BinaryOp, Expr};
 
 /// One loop being walked: what decides its trip count and which locals its body assigns.
 pub(super) struct LoopFrame {
@@ -150,17 +150,11 @@ impl<'a> Walk<'a> {
         frame.variable = variable;
     }
 
-    /// The condition of the `while` `id` is on the stack: it decides the trip count, and a
-    /// condition that may be unknown is a decision on an unknown value (§3.3.3).
+    /// The condition of the `while` `id` is on the stack: it decides the trip count.
     pub(super) fn loop_condition(&mut self, id: ExprId) {
         let condition = self.pop();
-        let unknown = match &self.ir.exprs[id.index()].kind {
-            Expr::While { cond, .. } => matches!(self.ir.exprs[cond.index()].ty, ValueType::Flagged(_)),
-            _ => false,
-        };
         let frame = self.frame(id);
         frame.exits.join(&condition.sources);
-        frame.exits.unknown_control |= unknown;
     }
 
     /// A pass over the body of `id` ended with the locals `before` held at its start (`None`

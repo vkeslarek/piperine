@@ -82,7 +82,6 @@ impl Display for ValueType {
             }
             ValueType::UInt(n) => write!(f, "u{n}"),
             ValueType::Int(n) => write!(f, "i{n}"),
-            ValueType::Flagged(inner) => write!(f, "flagged<{inner}>"),
             ValueType::Tuple(parts) if parts.len() == 1 => write!(f, "({},)", parts[0]),
             ValueType::Tuple(parts) => {
                 let parts: Vec<String> = parts.iter().map(ToString::to_string).collect();
@@ -918,23 +917,12 @@ impl<'a> Printer<'a> {
                 Printer::list(next, args);
                 next.push(text(")".into()));
             }
-            Expr::Unknown => next.push(text("Unknown".into())),
-            Expr::KnownOr { value, default } => {
-                next.extend([Piece::Expr(*value), text(".known_or(".into()), Piece::Expr(*default), text(")".into())]);
-            }
-            Expr::IsKnown(value) => next.extend([Piece::Expr(*value), text(".is_known()".into())]),
-            Expr::High(value) => next.extend([Piece::Expr(*value), text(".high()".into())]),
             Expr::Carrier(i) => next.push(text(Printer::carrier(scope, *i))),
             Expr::Flow { branch } => next.push(text(format!("flow(b{branch})"))),
             Expr::Previous(i) => next.push(text(format!("{}.prev()", Printer::carrier(scope, *i)))),
             Expr::Derivative(k) => next.push(text(format!("rate(D{k})"))),
             Expr::ParamPrevious(i) => next.push(text(format!("{}.prev()", scope.params.get(*i as usize).map_or(format!("<bad param {i}>"), |p| Printer::name(&p.name))))),
             Expr::Fired(e) => next.push(text(format!("fired(E{e})"))),
-            Expr::Level { value, index, part } => {
-                let name = if *part == LevelPart::Is { "level_is" } else { "level_value" };
-                next.extend([text(format!("{name}(")), Piece::Expr(*value), text(", ".into()), Piece::Expr(*index), text(")".into())]);
-            }
-            Expr::Merge { a, b } => next.extend([text("merge(".into()), Piece::Expr(*a), text(", ".into()), Piece::Expr(*b), text(")".into())]),
             Expr::Same { a, b } => next.extend([text("same(".into()), Piece::Expr(*a), text(", ".into()), Piece::Expr(*b), text(")".into())]),
             Expr::LevelCast { expr, to, tags } => {
                 let tags = tags.as_ref().map(|t| format!(" in {t:?}")).unwrap_or_default();
@@ -1016,22 +1004,9 @@ impl<'a> Printer<'a> {
                 let args = args?;
                 Typing::method(*method, &ty(receiver)?, &args.iter().collect::<Vec<_>>())
             }
-            Expr::Unknown => None,
-            Expr::Level { value, index, .. } => Typing::level(&ty(value)?, &ty(index)?),
-            Expr::Merge { a, b } => Typing::merge(&ty(a)?, &ty(b)?),
             Expr::Same { a, b } => Typing::same(&ty(a)?, &ty(b)?),
-            Expr::LevelCast { expr, to, tags } => Typing::level_cast(&ty(expr)?, to, tags.is_some(), &ir.types),
-            Expr::Math { args, .. } if args.iter().any(|a| ty(a).is_some_and(|t| Typing::flagged(&t))) => {
-                let args: Option<Vec<ValueType>> = args.iter().map(ty).collect();
-                Typing::math(&args?.iter().collect::<Vec<_>>())
-            }
-            Expr::Carrier(i) | Expr::Previous(i) => scope.carriers.get(*i as usize).map(|c| Typing::read_of(&c.ty, &data.ty)),
-            Expr::KnownOr { value, default } => Typing::known_or(&ty(value)?, &ty(default)?),
-            Expr::IsKnown(value) => Typing::flag_read(false, &ty(value)?),
-            Expr::High(value) => Typing::flag_read(true, &ty(value)?),
-            Expr::If { cond, then, otherwise } if [cond, then, otherwise].iter().any(|e| ty(e).is_some_and(|t| matches!(t, ValueType::Flagged(_)))) => {
-                Typing::if_(&ty(cond)?, &ty(then)?, &ty(otherwise)?)
-            }
+            Expr::LevelCast { expr, to, .. } => Typing::level_cast(&ty(expr)?, to, &ir.types),
+            Expr::Carrier(i) | Expr::Previous(i) => scope.carriers.get(*i as usize).map(|c| Typing::read_of(&c.ty)),
             Expr::Unary { op, expr } if ty(expr).is_some_and(|t| Typing::digital(&t)) => Typing::unary(*op, &ty(expr)?),
             Expr::Binary { op, lhs, rhs }
                 if Typing::digital_op(*op) || [lhs, rhs].iter().any(|e| ty(e).is_some_and(|t| Typing::digital(&t))) =>
@@ -1067,8 +1042,8 @@ impl<'a> Printer<'a> {
                 Some(ValueType::Fn(params?, Box::new(ty(body)?)))
             }
             Expr::Int(_) | Expr::Cast { .. } | Expr::Method { .. } => None,
-            Expr::Unknown | Expr::KnownOr { .. } | Expr::IsKnown(_) | Expr::High(_) | Expr::Carrier(_) | Expr::Previous(_) => None,
-            Expr::Level { .. } | Expr::Merge { .. } | Expr::Same { .. } | Expr::LevelCast { .. } => None,
+            Expr::Carrier(_) | Expr::Previous(_) => None,
+            Expr::Same { .. } | Expr::LevelCast { .. } => None,
             Expr::Unwrap { value, .. } => ty(value),
             Expr::While { .. } | Expr::ForRange { .. } => Some(ValueType::Unit),
             // A diverging form fits any type, and a loop is typed by its breaks: both write theirs.
@@ -1257,18 +1232,12 @@ impl<'a> Printer<'a> {
             Expr::Int(v) => format!("int {v}"),
             Expr::Cast { expr, to } => format!("cast {} to {to}", e(expr)),
             Expr::Method { method, receiver, args } => format!("{} {} ({})", Printer::method_name(*method), e(receiver), ids(args)),
-            Expr::Unknown => "unknown".to_string(),
-            Expr::KnownOr { value, default } => format!("known_or {} {}", e(value), e(default)),
-            Expr::IsKnown(value) => format!("is_known {}", e(value)),
-            Expr::High(value) => format!("high {}", e(value)),
             Expr::Carrier(i) => format!("carrier {i}"),
             Expr::Flow { branch } => format!("flow b{branch}"),
             Expr::Previous(i) => format!("previous {i}"),
             Expr::Derivative(k) => format!("derivative D{k}"),
             Expr::ParamPrevious(i) => format!("param_previous {i}"),
             Expr::Fired(i) => format!("fired {i}"),
-            Expr::Level { value, index, part } => format!("{} {} {}", if *part == LevelPart::Is { "level_is" } else { "level_value" }, e(value), e(index)),
-            Expr::Merge { a, b } => format!("merge {} {}", e(a), e(b)),
             Expr::Same { a, b } => format!("same {} {}", e(a), e(b)),
             Expr::LevelCast { expr, to, tags } => match tags {
                 Some(tags) => format!("level_cast {} to {to} tags {tags:?}", e(expr)),

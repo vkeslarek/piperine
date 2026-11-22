@@ -176,7 +176,7 @@ fn an_at_event_is_a_pin_an_arming_reaction_and_a_replace_statement() {
     // }
     // digital for Timer {
     //     on at(t0 + dt) { fired <- true; }
-    //     on at(dt) if dt.known_or(0.0) > 0.0 { fired <- false; }
+    //     on at(dt) if dt > 0.0 { fired <- false; }
     // }
     // ```
     let (ir, body) = Alone::design(|b| {
@@ -187,7 +187,7 @@ fn an_at_event_is_a_pin_an_arming_reaction_and_a_replace_statement() {
         b.carrier(body, Buck::carrier("fired", ValueType::Bool, CarrierRole::Out, None, F, 1, 14));
         let mut x = Dx::new(b, F, 5, 11);
         let (t0, dt) = (x.carrier(0, ValueType::F64), x.carrier(1, ValueType::F64));
-        let sum = x.bin(piperine_ir::BinaryOp::Add, t0, dt, digital::Ty::flagged(ValueType::F64));
+        let sum = x.bin(piperine_ir::BinaryOp::Add, t0, dt, ValueType::F64);
         let at = b.event(body, Event { source: EventSource::At(sum), guard: None, origin: Buck::origin(F, 5, 8) });
         let mut x = Dx::new(b, F, 5, 22);
         let yes = x.boolean(true);
@@ -195,10 +195,9 @@ fn an_at_event_is_a_pin_an_arming_reaction_and_a_replace_statement() {
         Buck::reaction(b, body, vec![at], vec![commit], vec![], F, 5);
         let mut x = Dx::new(b, F, 6, 11);
         let dt = x.carrier(1, ValueType::F64);
-        let (zero, dt_guard) = (x.real(0.0), x.carrier(1, ValueType::F64));
-        let known = x.known_or(dt_guard, zero, ValueType::F64);
+        let dt_guard = x.carrier(1, ValueType::F64);
         let zero = x.real(0.0);
-        let positive = x.bin(piperine_ir::BinaryOp::Gt, known, zero, ValueType::Bool);
+        let positive = x.bin(piperine_ir::BinaryOp::Gt, dt_guard, zero, ValueType::Bool);
         let guarded = b.event(body, Event { source: EventSource::At(dt), guard: Some(positive), origin: Buck::origin(F, 6, 8) });
         let mut x = Dx::new(b, F, 6, 40);
         let no = x.boolean(false);
@@ -399,12 +398,12 @@ fn a_flow_read_is_the_branch_pin_and_a_potential_ddt_is_a_ddt_term() {
 #[test]
 fn a_previous_value_is_the_previous_part_of_the_pin() {
     // the flip-flop of abi.md §11.4 with `rise()` as the stdlib writes it (design A7, part IV
-    // §22.1): the previous level is not `Some(true)` and the level is not `Some(false)`
+    // §22.1): the previous level is low and the level is high
     //
     // ```text
     // module Dff(in clk: Bit, in d: Bit, out q: Bit) {}
     // digital for Dff {
-    //     on clk.changed() if !clk.prev().high() && (!clk.is_known() || clk.known_or(false)) { q <- d; }
+    //     on clk.changed() if !clk.prev() && clk { q <- d; }
     //     on d.changed() { q <- d.prev(); }
     // }
     // ```
@@ -413,20 +412,12 @@ fn a_previous_value_is_the_previous_part_of_the_pin() {
         for (name, role, col) in [("clk", CarrierRole::In, 12), ("d", CarrierRole::In, 25), ("q", CarrierRole::Out, 36)] {
             b.carrier(body, Buck::carrier(name, ValueType::Bool, role, None, F, 1, col));
         }
-        let flagged = digital::Ty::flagged(ValueType::Bool);
         let mut x = Dx::new(b, F, 3, 25);
         let o = x.origin();
-        let prev = x.b.expr(Expr::Previous(0), flagged.clone(), o);
-        let was_high = x.high(prev);
-        let not_was_high = x.un(piperine_ir::UnaryOp::Not, was_high, ValueType::Bool);
+        let prev = x.b.expr(Expr::Previous(0), ValueType::Bool, o);
+        let not_was_high = x.un(piperine_ir::UnaryOp::Not, prev, ValueType::Bool);
         let clk = x.carrier(0, ValueType::Bool);
-        let known = x.is_known(clk);
-        let unknown = x.un(piperine_ir::UnaryOp::Not, known, ValueType::Bool);
-        let clk = x.carrier(0, ValueType::Bool);
-        let low = x.boolean(false);
-        let level = x.known_or(clk, low, ValueType::Bool);
-        let not_low = x.bin(piperine_ir::BinaryOp::Or, unknown, level, ValueType::Bool);
-        let guard = x.bin(piperine_ir::BinaryOp::And, not_was_high, not_low, ValueType::Bool);
+        let guard = x.bin(piperine_ir::BinaryOp::And, not_was_high, clk, ValueType::Bool);
         let rise = b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Buck::origin(F, 3, 8) });
         let mut x = Dx::new(b, F, 3, 90);
         let d = x.carrier(1, ValueType::Bool);
@@ -435,7 +426,7 @@ fn a_previous_value_is_the_previous_part_of_the_pin() {
         let changed = b.event(body, Event { source: EventSource::Changed(1), guard: None, origin: Buck::origin(F, 4, 8) });
         let mut x = Dx::new(b, F, 4, 30);
         let o = x.origin();
-        let prev = x.b.expr(Expr::Previous(1), flagged, o);
+        let prev = x.b.expr(Expr::Previous(1), ValueType::Bool, o);
         let commit = x.commit(2, prev, None);
         Buck::reaction(b, body, vec![changed], vec![commit], vec![], F, 4);
         body

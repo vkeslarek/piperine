@@ -59,7 +59,6 @@ impl CellShape {
     /// The shape of a pin holding `ty` in `ir`; `None` for a type no pin holds.
     pub fn of(ir: &Ir, ty: &ValueType) -> Option<CellShape> {
         match ty {
-            ValueType::Flagged(inner) => CellShape::of(ir, inner),
             ValueType::Bool | ValueType::F64 | ValueType::UInt(_) | ValueType::Int(_) => Some(CellShape::Scalar(ty.clone())),
             ValueType::Tuple(parts) => parts.iter().map(|part| CellShape::of(ir, part)).collect::<Option<Vec<_>>>().map(CellShape::Tuple),
             ValueType::Array(element, length) => Some(CellShape::Array(Box::new(CellShape::of(ir, element)?), usize::try_from(*length).ok()?)),

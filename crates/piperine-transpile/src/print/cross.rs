@@ -6,31 +6,15 @@
 //! the block over `Dual<N>` at the iterate (`N` the function's differentiable reads, the
 //! continuous pins), writes the watch's value, and writes each partial the plan declares from
 //! the dual's tangent. A param is a constant of the dual and a carrier read is passed as it is
-//! (an `rt::Flagged<T>`, not differentiable, like every read of `terms` that is no pin).
+//! (a plain `T`, not differentiable, like every read of `terms` that is no pin).
 
-use piperine_ir::{EventSource, ValueType};
+use piperine_ir::EventSource;
 use piperine_plan::Mode;
 
 use crate::Error;
 use crate::print::{DigitalPrinter, Text, ValuePrinter};
 
 impl<'a> DigitalPrinter<'a> {
-    /// Whether read `s` is a carrier that holds a real.
-    fn is_real_carrier(&self, s: piperine_plan::Source) -> bool {
-        matches!(s, piperine_plan::Source::Carrier(c) | piperine_plan::Source::CarrierPrevious(c)
-            if self.body.carriers().get(c as usize).is_some_and(|x| x.ty == ValueType::F64))
-    }
-
-    /// The type of read `s` in the watch block: as in `terms`, but a real carrier is a
-    /// `rt::Flagged<R>` when the value may be unknown.
-    fn block_param(&self, values: &ValuePrinter<'_>, s: piperine_plan::Source, maybe_unknown: bool) -> Result<String, Error> {
-        if maybe_unknown && self.is_real_carrier(s) {
-            return Ok("rt::Flagged<R>".to_string());
-        }
-        let _ = values;
-        self.names.block_type(s)
-    }
-
     /// Function `k` of the plan, which runs `Mode::Cross`: the watch's value and its partials.
     pub fn cross(&self, k: usize) -> Result<String, Error> {
         let unsupported = |form: String| Error::Unsupported {
@@ -52,10 +36,6 @@ impl<'a> DigitalPrinter<'a> {
         };
         // the expression is code over reals: generic, like an `analog` block
         let values = ValuePrinter::of_body(self.ir, self.body).with_reads(self.reads());
-        // an expression that may be unknown computes on `rt::Flagged<R>`, so the tangent of each
-        // probe it reads survives (design C8)
-        let maybe_unknown = matches!(self.ir.expr_type(crossed), ValueType::Flagged(_));
-        let values = if maybe_unknown { values.with_flagged_reals() } else { values };
         let expr = values.expr(crossed)?;
         let reads: Vec<(usize, _)> =
             f.reads.iter().copied().enumerate().filter(|(_, s)| values.uses(&self.names.read_name(*s))).collect();
@@ -63,7 +43,7 @@ impl<'a> DigitalPrinter<'a> {
         let mut params = Vec::with_capacity(reads.len());
         let mut binds = Vec::with_capacity(reads.len());
         for (i, s) in &reads {
-            params.push(format!("{}: {}", self.names.read_name(*s), self.block_param(&values, *s, maybe_unknown)?));
+            params.push(format!("{}: {}", self.names.read_name(*s), self.names.block_type(*s)?));
             binds.push(self.names.decode("cx_", *i, *s)?);
         }
         let names: Vec<String> = f.reads.iter().map(|s| self.names.read_name(*s)).collect();
@@ -74,8 +54,6 @@ impl<'a> DigitalPrinter<'a> {
             .map(|(i, s)| {
                 if *i < f.slots {
                     format!("Dual::<{}>::seeded({}, {i})", f.slots, names[*i])
-                } else if maybe_unknown && self.is_real_carrier(*s) {
-                    format!("{}.map(Dual::<{}>::constant)", names[*i], f.slots)
                 } else if self.names.is_plain(*s) {
                     names[*i].clone()
                 } else {
@@ -86,8 +64,7 @@ impl<'a> DigitalPrinter<'a> {
 
         let mut t = Text::new();
         t.comment(&format!("{}.cross {e}: the value the watch crosses zero on", self.body.name()), &event.origin);
-        let returns = if maybe_unknown { "rt::Flagged<R>" } else { "R" };
-        t.line(&format!("fn {name}_block<R: Real>({}) -> {returns} {{", params.join(", ")));
+                t.line(&format!("fn {name}_block<R: Real>({}) -> R {{", params.join(", ")));
         t.indented(|t| t.line(&expr));
         t.line("}");
         t.line("");
@@ -99,22 +76,13 @@ impl<'a> DigitalPrinter<'a> {
             }
             t.line("// the evaluation at the iterate");
             t.line(&format!("let at_iterate_ = Self::{name}_block({});", args.join(", ")));
-            if maybe_unknown {
-                t.line("// an unknown value is NaN to the solver (abi.md A4), and its partials are 0");
-                t.line("let known_ = at_iterate_.is_known();");
-                t.line(&format!("let at_iterate_ = at_iterate_.known_or(Dual::<{}>::constant(f64::NAN));", f.slots));
-            }
             t.line(&format!("// the watch `{write}`: its value"));
-            // abi.md A4: only an unknown value is NaN to the solver; a NaN computed from a known
-            // value is a defect, written as an infinity so the solve fails on it
-            let defect = if maybe_unknown { "known_ && at_iterate_.v.is_nan()" } else { "at_iterate_.v.is_nan()" };
             t.line("// a NaN computed from known values is a defect: an infinity, which fails the solve (abi.md A4)");
-            t.line(&format!("cx_.set(0, if {defect} {{ f64::INFINITY }} else {{ at_iterate_.v }});"));
+            t.line("cx_.set(0, if at_iterate_.v.is_nan() { f64::INFINITY } else { at_iterate_.v });");
             for (p, (_, slot)) in f.partials.iter().enumerate() {
                 t.line(&format!("// partial {p}: d {write} / d {}", names[*slot]));
                 t.line(&format!("if cx_.wanted({p}) {{"));
-                let tangent = if maybe_unknown { format!("if known_ {{ at_iterate_.d[{slot}] }} else {{ 0.0 }}") } else { format!("at_iterate_.d[{slot}]") };
-                t.indented(|t| t.line(&format!("cx_.jac()[{p}] = {tangent};")));
+                t.indented(|t| t.line(&format!("cx_.jac()[{p}] = at_iterate_.d[{slot}];")));
                 t.line("}");
             }
             t.line("Ok(())");
@@ -201,20 +169,19 @@ fn cross1(cx_: &mut Eval<'_>) -> Result<(), Fault> {
 
     #[test]
     fn terms_reads_a_carrier_as_a_plain_value() {
-        // switch.msl:5 `i(p, n) +> v(p, n) * if g.high() { 1.0 / ron } else { 1.0 / roff }`: the
-        // carrier `g` is decoded once from its pin, as the value that may be unknown it is, and
-        // passed to `terms_block` as it is: no `Dual`, no partial (RS-12 AC 7); `g.high()` is
-        // the known-and-true read of §3.3.4. Both partials are the node pins', and the term
-        // stays affine in them (a carrier is constant in the node potentials)
+        // switch.msl:5 `i(p, n) +> v(p, n) * if g { 1.0 / ron } else { 1.0 / roff }`: the carrier
+        // `g` is decoded once from its pin and passed to `terms_block` as it is: no `Dual`, no
+        // partial (RS-12 AC 7). Both partials are the node pins', and the term stays affine in
+        // them (a carrier is constant in the node potentials)
         let (ir, body) = Alone::design(Buck::switch);
         let plan = BodyPlan::new(ir.body(body));
         let k = plan.functions().iter().position(|f| f.mode == Mode::Terms).expect("a terms function");
         let text = AnalogPrinter::new(ir.body(body), &plan).terms(k).unwrap_or_else(|e| panic!("{e}"));
         let expected = "\
 // Switch.analog @ switch.msl:1:1
-fn terms_block<R: Real>(p: R, n: R, ron: R, roff: R, g: rt::Flagged<bool>) -> [R; 1] {
+fn terms_block<R: Real>(p: R, n: R, ron: R, roff: R, g: bool) -> [R; 1] {
     // contribution to i(p, n), branch b0 @ switch.msl:5:21
-    let b0_flow_ = (p - n) * (if g.high() {
+    let b0_flow_ = (p - n) * (if g {
         R::constant(1.0) / ron
     } else {
         R::constant(1.0) / roff
@@ -228,7 +195,7 @@ fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     let n = cx_.f64(1);
     let ron = cx_.f64(2);
     let roff = cx_.f64(3);
-    let g = rt::Flagged::<bool>::decode(cx_.bytes(4));
+    let g = <bool as rt::Carried>::from_pin(cx_.bytes(4));
     // the evaluation with every continuous pin read as 0 (the affine rule)
     let at_zero_ = Self::terms_block(Dual::<2>::seeded(0.0, 0), Dual::<2>::seeded(0.0, 1), Dual::<2>::constant(ron), Dual::<2>::constant(roff), g);
     // term 0 `b0.flow`: affine, c + Σ g·x from the evaluation at 0, folded from 0.0

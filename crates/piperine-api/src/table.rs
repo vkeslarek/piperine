@@ -67,10 +67,6 @@ impl Cell {
     /// The value of `bytes`, laid out as a carrier of `ty`. Bytes of another length than the
     /// layout's are a `Failure`, never a truncated value.
     pub fn decode(ty: &ValueType, bytes: &[u8]) -> Result<Cell, Failure> {
-        let ty = match ty {
-            ValueType::Flagged(inner) => inner,
-            other => other,
-        };
         let refused = |why: String| Failure::Backend(format!("cannot decode a value of type {ty}: {why}"));
         let layout = CarrierLayout::of(ty).ok_or_else(|| refused("no carrier holds it".into()))?;
         if bytes.len() != layout.size as usize {

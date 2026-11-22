@@ -206,7 +206,7 @@ fn parent_clocked(bound: bool, init: Option<bool>) -> Ir {
     let changed = b.event(top_body, Event { source: EventSource::Changed(0), guard: None, origin: at() });
     let mut x = digital::Dx::new(&mut b, "top.msl", 6, 40);
     let clk = x.carrier(0, ValueType::Bool);
-    let toggled = x.un(UnaryOp::Not, clk, digital::Ty::flagged(ValueType::Bool));
+    let toggled = x.un(UnaryOp::Not, clk, ValueType::Bool);
     let half = x.real(2.5e-9);
     let commit = x.commit(0, toggled, Some(half));
     b.reaction(top_body, Reaction { on: vec![changed], stmts: vec![commit], locals: vec![], origin: at() });
