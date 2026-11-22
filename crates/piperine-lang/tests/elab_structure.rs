@@ -395,7 +395,7 @@ fn an_enum_param_is_refused_by_name_until_params_and_io() {
         let design = Elab::design(&src);
         let found = piperine_lang::types::Types::check(&design, "Top").expect_err("the enum param is refused");
         assert_eq!(Elab::codes(&found), ["P0001"], "{param}");
-        assert!(found[0].diagnostic.message.contains(&format!("param of type `enum `{named}``")), "{param}: {}", found[0].diagnostic.message);
+        assert!(found[0].diagnostic.message.contains(&format!("param of type `{named}`")), "{param}: {}", found[0].diagnostic.message);
     }
 }
 

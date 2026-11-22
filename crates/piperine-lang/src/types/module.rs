@@ -408,22 +408,10 @@ impl Checker<'_> {
                 continue;
             }
             let name = item.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-            let found = Self::bare_type_name(&value.name(self.design));
+            let found = value.name(self.design);
             let message = format!("`{name}` has no initial value and its type `{found}` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)");
             self.report(item.file, Diagnostic::new("E0187", message, item.span, "no initial value").with_help(format!("write `= value` after the type of `{name}`, or carry an `Option<{found}>`")));
         }
-    }
-
-    /// `name` as a type is written, for a message that puts it between backticks: `enum `Mode`` is `Mode`.
-    fn bare_type_name(name: &str) -> String {
-        let mut bare = name.to_string();
-        while let Some(at) = bare.find("enum `") {
-            bare.replace_range(at..at + "enum `".len(), "");
-            if let Some(close) = bare[at..].find('`') {
-                bare.remove(at + close);
-            }
-        }
-        bare
     }
 
     /// A template `Name { params }` where a value of module type is expected (PI-04): its params

@@ -138,6 +138,9 @@ fn a_cast_into_a_sequence_that_holds_an_enum_is_refused() {
     assert_eq!(codes_of(&d), ["P0001"], "{src}");
     let (src, d) = diagnostics(MODE, "let a = cast::<u4, [Mode; 2]>(5_u4);");
     assert_eq!(codes_of(&d), ["P0001"], "{src}");
+    // the type is named bare in the message, with no backtick inside the backticks
+    let (src, d) = diagnostics(MODE, "let a = cast::<u4, (Mode, Mode)>(15_u4);");
+    assert!(d[0].diagnostic.message.contains("`cast` to `(Mode, Mode)`"), "{src}: {}", d[0].diagnostic.message);
 }
 
 #[test]
@@ -248,7 +251,7 @@ fn a_missing_initial_value_is_e0187_naming_the_carrier() {
         assert!(found[0].1.contains(&format!("`{name}`")) && found[0].1.contains("`Default`"), "{src}: names the carrier and `Default`: {}", found[0].1);
         assert_eq!(found.len(), src.matches(": Bit").count(), "{src}: one error per declaration: {found:?}");
     }
-    // a type that prints as `enum `Mode`` elsewhere is named bare, with no backtick inside the backticks
+    // an enum is named bare by `Ty::name`, so no message holds a backtick inside backticks
     let found = top_outcome("#[derive(Repr)] enum Mode { Idle, Run }\nmodule Top() { signal m: Bit<Mode>; }");
     assert_eq!(found.first().map(|(code, _)| code.as_str()), Some("E0187"), "{found:?}");
     assert!(found[0].1.contains("its type `Mode` does not implement `Default`"), "the bare type name: {}", found[0].1);

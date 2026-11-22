@@ -98,7 +98,7 @@ fn a_match_that_misses_a_variant_stops_the_build() {
     let source = Chapter::read().text("types#8").replace("enum Level { Low, Between, High }", "enum Level { Low, Between, High, Over }");
     let faulty = Faulty::elaborating("types~545f1643", &source, "Levels");
     // E0184 since composite-values T14: the exhaustiveness check names a pattern the arms miss (§1.8.6)
-    assert_eq!(faulty.first("E0184").message, "a `match` over `enum `Level`` is not exhaustive: `Level::Over` is not covered (§1.8.6)");
+    assert_eq!(faulty.first("E0184").message, "a `match` over `Level` is not exhaustive: `Level::Over` is not covered (§1.8.6)");
     // the first row of the table: an `Option<f64>` is not an `f64`
     let added = ValueFile::refused("types~39ba351d", "", "let limit: Option<f64> = Some(3.3); let x = limit + 1.0; emit!(\"r\", x = x);");
     assert_eq!(added.first("E0180").message, "mismatched types: expected `f64`, found `Option<f64>`");
@@ -135,7 +135,7 @@ fn the_listings_still_on_the_way_are_refused_where_a_top_reaches_them() {
     // When one of them runs this test fails and its row moves to `run`
     Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = mean(TAPS));"), "types#7", "P0001", "generic function is not supported yet");
     let family = "#[derive(PartialEq, Repr)]\nenum Family { Cmos, Ttl }\n";
-    Refusal::expect(Reached::run("types#16", family, "emit!(\"r\", s = reads_high(Family::Cmos, 2.0, 3.3));"), "types#16", "P0001", "method `switches_at` on `enum `Family`` is not supported yet");
+    Refusal::expect(Reached::run("types#16", family, "emit!(\"r\", s = reads_high(Family::Cmos, 2.0, 3.3));"), "types#16", "P0001", "method `switches_at` on `Family` is not supported yet");
 }
 
 #[test]
@@ -178,7 +178,7 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
     // T48 to T51, `tuples_and_structs_run_where_a_top_reaches_them`)
     let level = "#[derive(PartialEq, Repr)] enum Z { A, B }";
     for (items, statements, named) in [
-        (level, "emit!(\"r\", y = Z::B.next() == Z::A);", "method `next` on `enum `Z`` is not supported yet"),
+        (level, "emit!(\"r\", y = Z::B.next() == Z::A);", "method `next` on `Z` is not supported yet"),
     ] {
         let items = if statements.contains(".next()") { format!("{items}\nimpl Z {{ fn next(self) -> Z {{ match self {{ Z::A => Z::B, Z::B => Z::A }} }} }}") } else { items.to_string() };
         let faulty = ValueFile::refused("types~5628120b", &items, statements);
