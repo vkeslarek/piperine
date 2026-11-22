@@ -68,7 +68,19 @@ impl Elaboration<'_, '_> {
                 }
                 continue;
             }
-            let Some(value) = self.lower_expr(scope, field.value) else {
+            // an `Option` field is its presence and its payload, packed as one value (§19 rule 11, D8)
+            let lowered_value = match self.types.ty(field.value).cloned() {
+                Some(Ty::Option(payload)) => match self.value_type(&payload) {
+                    Some(payload) => self.lower_stored(scope, field.value, &ValueType::Option(Box::new(payload))),
+                    None => {
+                        let span = self.design.expr_node(field.value).span;
+                        self.unsupported(scope.file, span, "an `Option` record field whose payload has no value in the IR");
+                        None
+                    }
+                },
+                _ => self.lower_expr(scope, field.value),
+            };
+            let Some(value) = lowered_value else {
                 ok = false;
                 continue;
             };

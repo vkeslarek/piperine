@@ -581,16 +581,15 @@ fn composites_print_in_each_output_format() {
 /// first rising edge of a clock.
 const OPTIONS: &str = "pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }\ndigital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }\n\
 module Logger(in clk: Bit, out o: Bit<Option<u8>>) {}\n\
-digital for Logger {\n    on clk.rise() {\n        o <- Some(7);\n    }\n}\n\
+digital for Logger {\n    on clk.rise() {\n        emit!(\"seen\", o = o);\n        o <- Some(7);\n        emit!(\"set\", o = Some(7));\n    }\n}\n\
 module Top() {\n    signal clk: Bit;\n    signal o: Bit<Option<u8>>;\n    let osc = Osc(clk) { f: 200M };\n    let logger = Logger(clk, o);\n}\n";
 
 #[test]
 fn an_option_cell_prints_none_or_the_value() {
     // EU-15 AC 5 (explicit-unknowns T39): an absent `Option` is written `None`, a present one `Some(x)`,
     // and no format has an unknown cell: the text table and CSV (one column per leaf, `some` and `value`);
-    // the record line and JSON Lines (`None` as `None` and `null`, `Some` as its payload) are held by
-    // the unit tests of `render/record.rs` and `render/json.rs`, for an `emit!` field of type
-    // `Option` is not in the M1 subset
+    // the record line and JSON Lines (`None` as `None` and `null`, `Some` as its payload) are held by an `emit!`
+    // field of type `Option` (§19 rule 11): the record before the commit is `None`, after it `Some(7)`
     let dir = written(&[("bench.msl", OPTIONS)]);
     let args = ["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "o"];
     let stdout = stdout_of(&piperine_in(dir.path(), shared_cache(), &args));
@@ -598,6 +597,8 @@ fn an_option_cell_prints_none_or_the_value() {
     assert!(table.get(1).is_some_and(|row| row.ends_with("None")), "the first row holds the initial `None`: {table:?}");
     assert!(table.iter().rev().find(|row| !row.is_empty()).is_some_and(|row| row.ends_with("Some(7)")), "the last row holds the committed value: {table:?}");
     assert!(!table.iter().any(|row| row.split_whitespace().any(|cell| cell == "x")), "no unknown cell: {stdout}");
+    assert!(stdout.lines().any(|l| l.contains("Top.logger seen o=None")), "the record of an absent `Option` field: {stdout}");
+    assert!(stdout.lines().any(|l| l.contains("Top.logger set o=Some(7)")), "the record of a present one is `Some`: {stdout}");
     piperine_in(dir.path(), shared_cache(), &["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "o", "--csv", "out.csv"]);
     let csv = std::fs::read_to_string(dir.path().join("out.csv")).expect("out.csv");
     let mut rows = csv.lines();
