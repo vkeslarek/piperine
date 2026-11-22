@@ -1,6 +1,6 @@
 # Value Semantics Tasks
 
-**Approved**: 2026-11-20 - user confirmed the plan and D1, D2, D5, D7 ("Ok, perfeito!" to the sequencing: composite-values pauses after B7, value-semantics B1-B2 run on its tip, then composite-values B8-B10 resume with amended tasks).
+**Approved**: 2026-11-20 - user: "Ok, perfeito!" (to the sequencing and to D1, D2, D5, D7: composite-values pauses after B7, value-semantics B1-B2 run on its tip, then composite-values B8-B10 resume with amended tasks)
 
 ## Execution Protocol (MANDATORY -- do not skip)
 
@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/value-semantics/design.md`
-**Status**: awaiting approval (spec.md D1 to D8 wait for the user's confirmation; no `**Approved**` line is written until the user gives it)
+**Status**: Approved
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
 **Run errors**: `cargo test -p piperine-lang --test msl_errors`
 **Run typesvs**: `cargo test -p piperine-lang --test types_value_semantics`
@@ -127,9 +127,9 @@ T14 → T15
 
 **Done when**:
 
-- [ ] The rebase is clean or its conflicts are resolved without changing behaviour; the `**Build**` line and `cargo test` at the root pass
-- [ ] The Handoff names what B7 left of T42 and T43 and each anchor that moved
-- [ ] Gate check passes: Build
+- [x] The rebase is clean or its conflicts are resolved without changing behaviour; the `**Build**` line and `cargo test` at the root pass
+- [x] The Handoff names what B7 left of T42 and T43 and each anchor that moved
+- [x] Gate check passes: Build
 
 **Tests**: none
 **Gate**: build
@@ -149,8 +149,8 @@ T14 → T15
 
 **Done when**:
 
-- [ ] `a_let_without_mut_is_assigned_with_every_operator`, `a_parameter_a_capture_and_a_body_let_are_not_places`, `a_pattern_bound_name_is_a_place` and `a_deferred_let_is_assigned_twice_and_never_read_first` pass under `**Run typesvs**`
-- [ ] Gate check passes: Quick
+- [x] `a_let_without_mut_is_assigned_with_every_operator`, `a_parameter_a_capture_and_a_body_let_are_not_places`, `a_pattern_bound_name_is_a_place` and `a_deferred_let_is_assigned_twice_and_never_read_first` pass under `**Run typesvs**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -170,10 +170,10 @@ T14 → T15
 
 **Done when**:
 
-- [ ] `a_let_without_mut_runs_in_a_function_a_reaction_and_analog`, `an_assigned_loop_variable_does_not_change_the_loop`, `a_closure_keeps_the_value_it_captured`, `a_callee_cannot_change_the_callers_local` and `a_value_is_read_twice` pass under `**Run srcvs**`
-- [ ] `a_local_is_assignable_exactly_when_its_body_assigns_it` passes under `**Run iragg**`
-- [ ] `**Run goldens**` is green with no golden edited
-- [ ] Gate check passes: Full
+- [x] `a_let_without_mut_runs_in_a_function_a_reaction_and_analog`, `an_assigned_loop_variable_does_not_change_the_loop`, `a_closure_keeps_the_value_it_captured`, `a_callee_cannot_change_the_callers_local` and `a_value_is_read_twice` pass under `**Run srcvs**`
+- [x] `a_local_is_assignable_exactly_when_its_body_assigns_it` passes under `**Run iragg**`
+- [x] `**Run goldens**` is green with no golden edited
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -193,9 +193,9 @@ T14 → T15
 
 **Done when**:
 
-- [ ] `str_is_a_value_type_in_every_position` passes under `**Run typesvs**`
-- [ ] `a_string_is_passed_and_compared_by_value` and `the_reporting_functions_emit_the_same_records` pass under `**Run srcvs**`
-- [ ] Gate check passes: Full
+- [x] `str_is_a_value_type_in_every_position` passes under `**Run typesvs**`
+- [x] `a_string_is_passed_and_compared_by_value` and `the_reporting_functions_emit_the_same_records` pass under `**Run srcvs**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -215,8 +215,8 @@ T14 → T15
 
 **Done when**:
 
-- [ ] `a_range_index_is_an_array_of_the_folded_length`, `a_range_bound_that_is_not_const_is_e0188`, `a_range_index_out_of_the_array_is_refused`, `an_array_rest_pattern_binds_an_array` and `an_array_is_passed_as_itself` pass under `**Run typesvs**`
-- [ ] Gate check passes: Quick
+- [x] `a_range_index_is_an_array_of_the_folded_length`, `a_range_bound_that_is_not_const_is_e0188`, `a_range_index_out_of_the_array_is_refused`, `an_array_rest_pattern_binds_an_array` and `an_array_is_passed_as_itself` pass under `**Run typesvs**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -236,11 +236,11 @@ T14 → T15
 
 **Done when**:
 
-- [ ] `every_part_vii_fence_is_in_its_file` and `every_std_item_is_in_a_fence` (the existing two guards) pass under `**Run excerpts**`
-- [ ] `embedded_std_has_no_diagnostics` and `std_holds_no_removed_form` pass under `**Run stdlib**`
-- [ ] `section_22_no_longer_says_std_is_in_the_earlier_spelling` passes under `**Run spectext**`
-- [ ] `the_library_items_that_took_borrows_give_the_same_results` passes under `**Run srcvs**`
-- [ ] Gate check passes: Full
+- [x] `every_part_vii_fence_is_in_its_file` and `every_std_item_is_in_a_fence` (the existing two guards) pass under `**Run excerpts**`
+- [x] `embedded_std_has_no_diagnostics` and `std_holds_no_removed_form` pass under `**Run stdlib**`
+- [x] `section_22_no_longer_says_std_is_in_the_earlier_spelling` passes under `**Run spectext**`
+- [x] `the_library_items_that_took_borrows_give_the_same_results` passes under `**Run srcvs**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -260,9 +260,9 @@ T14 → T15
 
 **Done when**:
 
-- [ ] `**Run buckcli**` is green with no expected output edited
-- [ ] The buck targets pass
-- [ ] Gate check passes: Full
+- [x] `**Run buckcli**` is green with no expected output edited
+- [x] The buck targets pass
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -282,9 +282,9 @@ T14 → T15
 
 **Done when**:
 
-- [ ] `no_msl_file_uses_a_removed_form` passes under `**Run hygiene**` and fails on a planted file
-- [ ] `cargo test` at the root passes
-- [ ] Gate check passes: Build
+- [x] `no_msl_file_uses_a_removed_form` passes under `**Run hygiene**` and fails on a planted file
+- [x] `cargo test` at the root passes
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build
@@ -304,9 +304,9 @@ T14 → T15
 
 **Done when**:
 
-- [ ] `the_markers_are_reserved_words_with_a_help_each`, `let_mut_in_a_module_body_is_e0903` and `e0102_and_e0331_are_raised_nowhere` pass under `**Run errors**`
-- [ ] `every_parse_phase_row_has_a_fixture` passes with no exception list
-- [ ] Gate check passes: Full
+- [x] `the_markers_are_reserved_words_with_a_help_each`, `let_mut_in_a_module_body_is_e0903` and `e0102_and_e0331_are_raised_nowhere` pass under `**Run errors**`
+- [x] `every_parse_phase_row_has_a_fixture` passes with no exception list
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -326,9 +326,9 @@ T14 → T15
 
 **Done when**:
 
-- [ ] `every_reference_form_is_e0101_once`, `a_lifetime_is_e0905_static_included`, `a_slice_type_does_not_parse` and `binary_ampersand_and_star_still_parse` pass under `**Run errors**`
-- [ ] `every_b36_row_has_a_fixture` passes with no exception list
-- [ ] Gate check passes: Full
+- [x] `every_reference_form_is_e0101_once`, `a_lifetime_is_e0905_static_included`, `a_slice_type_does_not_parse` and `binary_ampersand_and_star_still_parse` pass under `**Run errors**`
+- [x] `every_b36_row_has_a_fixture` passes with no exception list
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -348,9 +348,9 @@ T14 → T15
 
 **Done when**:
 
-- [ ] `the_printer_and_the_object_model_hold_no_removed_form` passes under `**Run print**`
-- [ ] `cargo test -p piperine-lang` passes
-- [ ] Gate check passes: Full
+- [x] `the_printer_and_the_object_model_hold_no_removed_form` passes under `**Run print**`
+- [x] `cargo test -p piperine-lang` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -370,9 +370,9 @@ T14 → T15
 
 **Done when**:
 
-- [ ] `the_ir_holds_no_slice` passes under `**Run iragg**`
-- [ ] `cargo test -p piperine-ir -p piperine-interp -p piperine-transpile -p piperine-lang` passes
-- [ ] Gate check passes: Full
+- [x] `the_ir_holds_no_slice` passes under `**Run iragg**`
+- [x] `cargo test -p piperine-ir -p piperine-interp -p piperine-transpile -p piperine-lang` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -392,10 +392,10 @@ T14 → T15
 
 **Done when**:
 
-- [ ] `builtin_table_matches_appendix_h` passes under `**Run resolve**` with no added name
-- [ ] `clone_and_copy_are_e0161_with_a_help` and `clone_as_a_method_is_e0161` pass under `**Run typesvs**`
-- [ ] `an_enum_without_copy_is_carried_and_compared` passes under `**Run srcvs**`
-- [ ] Gate check passes: Full
+- [x] `builtin_table_matches_appendix_h` passes under `**Run resolve**` with no added name
+- [x] `clone_and_copy_are_e0161_with_a_help` and `clone_as_a_method_is_e0161` pass under `**Run typesvs**`
+- [x] `an_enum_without_copy_is_carried_and_compared` passes under `**Run srcvs**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -415,10 +415,10 @@ T14 → T15
 
 **Done when**:
 
-- [ ] `e0903_mut_is_not_a_word_of_the_language` passes under `**Run booklang**`
-- [ ] `e0101_nothing_is_lent` and `e0161_copying_is_not_a_trait` pass under `**Run booktypes**`
-- [ ] `cargo test -p piperine --test 'book_*'` and `cargo test -p piperine-cli --test book` pass
-- [ ] Gate check passes: Build
+- [x] `e0903_mut_is_not_a_word_of_the_language` passes under `**Run booklang**`
+- [x] `e0101_nothing_is_lent` and `e0161_copying_is_not_a_trait` pass under `**Run booktypes**`
+- [x] `cargo test -p piperine --test 'book_*'` and `cargo test -p piperine-cli --test book` pass
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build
@@ -438,10 +438,10 @@ T14 → T15
 
 **Done when**:
 
-- [ ] `gaps_drops_the_value_semantics_gap` passes under `**Run docs**`
-- [ ] `g71_is_closed_and_names_no_implementation_gap` passes under `**Run spectext**`
-- [ ] `**Run twins**` is green with no golden edited
-- [ ] Gate check passes: Build
+- [x] `gaps_drops_the_value_semantics_gap` passes under `**Run docs**`
+- [x] `g71_is_closed_and_names_no_implementation_gap` passes under `**Run spectext**`
+- [x] `**Run twins**` is green with no golden edited
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build
