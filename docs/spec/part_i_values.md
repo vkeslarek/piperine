@@ -14,7 +14,7 @@ language refers to another value ([§1.4.6](#14-typing-inference-and-conversion)
 Error codes of this part: `E01xx`.
 
 **Terms defined here:** value, value type, level, `Repr`, function class, closure, handle,
-known, unknown, known flag, merge, flag-total function, panic, optional parameters, namespace
+uncertainty, absence, initial value, panic, optional parameters, namespace
 module, prelude, crate, crate root, dependency name, package, manifest, dependency,
 lockfile, copy, identity, place, local, irrefutable pattern, refutable pattern, const expression.
 
@@ -110,8 +110,8 @@ pub const inf: f64 = 1.0 / 0.0;
 - **§1 rule 12.** A float division by zero does not panic. It yields an infinity or a NaN, as
   IEEE 754 defines. A non-finite value that reaches a solve fails it
   ([§17.1](part_v_execution.md#171-convergence)).
-- **§1 rule 13.** A panic on a path taken under unknown control ([§3.3.3](#33-unknown-values))
-  is not an error. Every effect of that merge becomes unknown.
+- **§1 rule 13.** A panic is the failure of the path that runs. A path that control does not
+  select does not run, so it cannot panic ([§3.3.8](#33-uncertainty-and-absence)).
 - **§1 rule 14.** A plain identifier pattern, with no `@`, whose name resolves
   to a constant, a unit variant or a unit struct is a path to that item and binds nothing.
   Any other identifier pattern binds a new name ([§1.6.2](#16-patterns)).
@@ -120,10 +120,9 @@ pub const inf: f64 = 1.0 / 0.0;
 > `None`; it does not bind a name `None`. A name that resolves to a local or a `fn` is a
 > binding that shadows it.
 
-> **Resolution.** Rules 11–13 are not in the design, which is silent on panics. Rule 13
-> follows the unknown rule: whether the failing path runs is not known, so nothing it could
-> have written is known. An unknown index selects only among existing elements
-> ([§3.3.3](#33-unknown-values)), so it never panics.
+> **Resolution.** Rules 11–13 are not in the design, which is silent on panics. Control takes a
+> `bool` ([§3.3.5](#33-uncertainty-and-absence)), so which path runs is always decided and a
+> panic is always on a path that runs.
 
 **Errors**
 
@@ -132,7 +131,7 @@ pub const inf: f64 = 1.0 / 0.0;
 | `E0101` | a syntactic form left out by rule 2: a reference or a pointer in a type, an expression or a pattern (`&T`, `&mut T`, `&x`, `*x`, `&p`, `&self`), `unsafe`, `async`, `dyn`. The markers `mut`, `ref` and `move` are reserved words (`E0903`, [A.1](appendix_a_lexical.md#a1-source-text-and-tokens)) and a lifetime is a token of a dropped class (`E0905`, [A.6](appendix_a_lexical.md)). A heap type or a thread API is a path that does not resolve (`E0161`) | parse |
 | `E0103` | an integer width that is not a const expression `>= 1`, or a float width outside {16, 32, 64, 128} | elaboration |
 | `E0104` | a panic while evaluating a const expression, a param default, a `where` or generation | elaboration |
-| `E0105` | a panic under known control during a run | run |
+| `E0105` | a panic during a run | run |
 
 > **Resolution.** `E0102` is retired. It reported a `&` outside the positions where earlier
 > revisions allowed a borrow. No position allows one now: a `&` that is not the bitwise
@@ -357,7 +356,7 @@ fn origin() -> Point { Point { x: 0.0, y: 0.0 } }
 - **§1.4.4** Inference is local to one body: a function body, the initializer of a `const`, or
   one expression of a module body. A `let` without a type takes the type of its initializer.
   Where the initializer does not fix its own type (a literal without a suffix, `None`,
-  `Unknown`, an empty array `[]`, a closure parameter), the uses of the binding in the same
+  an empty array `[]`, a closure parameter), the uses of the binding in the same
   body fix it. A type that the body does not fix, other than by the defaults of rule 2, is
   `E0181`.
 - **§1.4.5** `expr as T` converts between the types of the table. Any other pair is `E0182`.
@@ -541,13 +540,14 @@ The table gives the operators from the tightest binding to the loosest.
   field in order, and order lexicographically. `None` is less than every `Some`, and two
   `Some` compare by their payloads. Strings order by their scalar values.
 - **§1.5.24** `a && b` evaluates `b` only when `a` is `true`; `a || b` evaluates `b` only when
-  `a` is `false`. With an unknown operand the rule is [§3.3.12](#33-unknown-values).
+  `a` is `false`. Both operands are `bool` ([§3.3.5](#33-uncertainty-and-absence)).
 - **§1.5.25** An index outside `0 .. len`, a negative index included, is a panic. So is a
   range index that ends beyond the length or whose start exceeds its end.
 - **§1.5.26** `e?` evaluates `e`. On `Some(v)` its value is `v`. On `None` the enclosing
   function or closure returns `None` at once.
-- **§1.5.27** Operators on values with unknown levels follow
-  [§3.3.2](#33-unknown-values).
+- **§1.5.27** Operators on a library type, `Logic` included, are the functions of its
+  operator-trait `impl`s ([Appendix H.10](appendix_h_library.md#h10-operator-traits)); the
+  operators of this section are those of the built-in types.
 
 > **Resolution.** Rules 1.5.20 and 1.5.21 complete [§1](#1-value-types) rule 6: no integer
 > operator has an overflow error, and a shift by the width or more gives the mathematical
@@ -594,8 +594,7 @@ pat_bound      ::= '-'? ( INT_LITERAL | FLOAT_LITERAL ) | STRING | 'true' | 'fal
   [§1](#1-value-types) rule 14 makes it a path. `x @ p` matches when `p` matches and binds `x`
   to the whole value.
 - **§1.6.3** A literal pattern is an integer, a float, a string, `true` or `false`; a number
-  may carry a `-`. It matches the value that `==` finds equal to it. `Unknown` is not a
-  pattern.
+  may carry a `-`. It matches the value that `==` finds equal to it.
 - **§1.6.4** A range pattern is `lo..=hi` (through `hi`), `lo..hi` (below `hi`), `lo..` or
   `..=hi`. A bound is a literal or a path to a `const`, of an integer or a float type. The
   range **MUST NOT** be empty. There is no form `..hi`
@@ -629,8 +628,8 @@ pat_bound      ::= '-'? ( INT_LITERAL | FLOAT_LITERAL ) | STRING | 'true' | 'fal
 
 - **§1.6.13** Matching reads the value and has no other effect. Sub-patterns are tried left to
   right. A float pattern never matches NaN.
-- **§1.6.14** A value with unknown levels is matched under
-  [§3.3.3](#33-unknown-values): the match is control.
+- **§1.6.14** A match is control: it runs the one arm the value selects
+  ([§3.3.8](#33-uncertainty-and-absence)).
 
 **Errors**
 
@@ -765,8 +764,8 @@ for_expr       ::= 'for' pat1 'in' expr block                                  /
 
 **Dynamic semantics**
 
-- **§1.8.14** Exactly one branch of an `if` and one arm of a `match` runs. With an unknown
-  condition or scrutinee the rule is [§3.3.3](#33-unknown-values).
+- **§1.8.14** Exactly one branch of an `if` and one arm of a `match` runs
+  ([§3.3.8](#33-uncertainty-and-absence)).
 - **§1.8.15** A `for` evaluates `e` once, before the first iteration. An empty range or array
   runs the block zero times; `a..b` is empty when `a >= b`.
 - **§1.8.16** A `while` evaluates its condition before each iteration.
@@ -805,8 +804,8 @@ fn sum_to(n: u32) -> u32 {
 ## 2. `Repr`
 
 **`Repr`** lays a value type out on levels. It is the only bridge from values to carriers. A
-**level** is one boolean position of that layout; each level has its own known flag
-([§3.3](#33-unknown-values)).
+**level** is one boolean position of that layout. A level holds `false` or `true` and nothing
+else ([§3.3](#33-uncertainty-and-absence)).
 
 ```rust
 pub trait Repr {
@@ -843,23 +842,21 @@ pub trait Repr {
 - **§2 rule 6.** A variant's payload is its fields concatenated, first field lowest. A payload
   narrower than the widest is padded with false levels by `encode`; `decode` ignores the
   padding. The payload of `None` is all false.
-- **§2 rule 7.** For known values, behavior never depends on the encoding, except through
-  `level`, `encode`, `decode` and `cast`. The encoding decides which levels a merge can keep
-  ([§3.3.3](#33-unknown-values)).
+- **§2 rule 7.** Behavior never depends on the encoding, except through `encode`, `decode`
+  and `cast`.
 
 > **Resolution.** Rules 5–6, and the element order of arrays and tuples, complete the layout
 > the design gives by example (`Tx`: a 2-level tag and a 3-level payload).
 
 **Dynamic semantics**
 
-- **§2 rule 8.** The built-in and derived `encode` and `decode` move levels with their flags
-  ([§3.3.2](#33-unknown-values)).
-- **§2 rule 9.** A derived `decode` returns `None` for a tag that names no variant. A `None`
-  from any `decode` reads as unknown: every level of the value is unknown
-  ([§3.3.1](#33-unknown-values)).
-- **§2 rule 10.** A hand-written `encode` or `decode` propagates flags through its body by the
-  ordinary rules of [§3.3](#33-unknown-values). It has no rule of its own.
-- **§2 rule 11.** In the byte form of a value, all-zero bytes are the all-unknown value of a `Repr` type.
+- **§2 rule 8.** The built-in and derived `encode` and `decode` move levels unchanged.
+- **§2 rule 9.** A derived `decode` returns `None` for a tag that names no variant. The caller
+  receives that `None`; no carrier is changed by it ([§3.3.9](#33-uncertainty-and-absence)).
+- **§2 rule 10.** A hand-written `encode` or `decode` is an ordinary function. It has no rule
+  of its own.
+- **§2 rule 11.** In the byte form of a value, all-zero bytes are the bytes of `Logic::X`, of
+  `None` and of the `Default` of every derived type that has one.
 
 **Errors**
 
@@ -963,8 +960,9 @@ of the functions it calls. A function may belong to several classes; the restric
 - **§3 rule 14.** A function has the same meaning in every analysis. What differs between
   analyses is what the probes and the environment it reads return
   ([§16.2](part_v_execution.md#162-every-primitive-in-every-solve)).
-- **§3 rule 15.** Known flags travel through arguments, locals and results
-  ([§3.3](#33-unknown-values)). An `extern` function is all-or-nothing.
+- **§3 rule 15.** An argument, a local and a result are values of their types
+  ([§3.3.1](#33-uncertainty-and-absence)). An `extern` function receives and returns the bytes
+  of the types it declares.
 - **§3 rule 16.** A function of class event, used as a `bool` inside a reaction, says whether
   its event fired in this microstep ([§13](part_iv_behavior.md#13-events) rule 2).
 
@@ -1006,7 +1004,7 @@ impl_item      ::= attrs 'pub'? ( fn_decl | const_item )
 | `impl` on | `self` is | Typical use |
 | --- | --- | --- |
 | value type | the value | methods, trait implementations |
-| a nature | one carrier, read through a handle | events: `rise`, `fall` |
+| a nature | one carrier, read through a handle | events: `rise`, `fall`; capabilities: `Resolve` |
 | a bundle ([§7](part_ii_carriers.md#7-bundles)) | the bundle | events and queries over several carriers |
 
 A **handle** is a read-only reference to one carrier or bundle, bound at elaboration. It is
@@ -1022,31 +1020,39 @@ only reference a function holds, and it is not a value.
   body ([§8.2](part_iii_structure.md#82-the-body)).
 - **§3.1.5** A handle may be read, probed, passed to another function, and have carrier
   methods called on it. It **MUST NOT** be returned, stored in a value, or written through.
-- **§3.1.6** Reading a handle of a discrete carrier yields the carrier's value with its flags
+- **§3.1.6** Reading a handle of a discrete carrier yields the carrier's value
   ([§5.1.1](part_ii_carriers.md#51-declaring-and-reading)). Through a handle, `others()` is
   taken from the module that made the call.
 - **§3.1.7** A method call on a carrier expression is looked up in this order: the carrier
-  methods ([§14](part_iv_behavior.md#14-core-primitives)), the `impl` blocks of its nature,
-  then the methods of the value it reads.
+  methods ([§14](part_iv_behavior.md#14-core-primitives)), the `impl` blocks of its nature
+  (trait `impl`s included, rule 9), then the methods of the value it reads.
 - **§3.1.8** An `impl` on a nature with a defaulted type argument and no argument list is the
   `impl` of the default: `impl Bit` is `impl Bit<bool>`.
-- **§3.1.9** `impl Trait for Type` is accepted for a value type only.
+- **§3.1.9** `impl Trait for Type` is accepted for a value type and for a nature. For a
+  nature, `self`, where a function has one, is a handle (rule 1), and the `impl` holds exactly
+  the items of the trait. A trait that a nature implements is a **capability** of every
+  carrier of that nature ([§3.7.13](#37-traits)): `Resolve` is the capability of taking
+  several drives ([§4](part_ii_carriers.md#4-natures) rule 8). `impl Trait for` a bundle is
+  `E0134`.
 - **§3.1.10** On a value type, `self` is a copy of the receiver
   ([§1.4.6](#14-typing-inference-and-conversion)) and, like every parameter, not a place
   ([§1.5.12](#15-expressions)). A method that changes a value returns the new one, and the
   caller assigns it: `s = s.step(x);`. There is no other receiver form and no shorthand for
   that assignment.
 
-> **Resolution.** `level` is added to the names of rule 3: it is a method of every `Repr`
-> value, and so of every carrier read ([Appendix B.1](appendix_b_grammar.md)).
-
 > **Resolution.** An `impl` on a value type may hold associated `const` items
 > ([§3.9](#39-constants)), read as `Type::NAME` (`Logic::Z`,
-> [§22.3](part_vii_stdlib.md#223-resolved-nets)). On a nature or bundle an `impl` holds
+> [§22.1](part_vii_stdlib.md#221-values-and-bit)). On a nature or bundle an `impl` holds
 > functions only (`E0132`).
 
 > **Resolution.** Rules 5–9 define the handle and the lookup order, which the design uses
 > (`clk.rise()`, `ipk.max(x)`, `w.s`) without stating.
+
+> **Resolution.** An earlier revision refused every trait `impl` on a nature (`E0134`) because a
+> trait function's `self` was taken to be a copy of a value and a bound to stand for a value
+> type. A handle (rule 1) answers the first, and a parameter bound by `Nature`
+> ([§3.8.2](#38-generics-and-bounds)) may carry a further bound, `W: Nature + Resolve<Driven>`,
+> that the nature's `impl`s satisfy. Only a bundle, which is not a carrier, keeps the refusal.
 
 > **Resolution.** Rule 10 gives a method no way to change its receiver in place. A parameter
 > that could be assigned would make `fn bump(self) { self.count += 1; }` legal and silent: the
@@ -1058,10 +1064,10 @@ only reference a function holds, and it is not a value.
 | Code | Condition | Phase |
 | --- | --- | --- |
 | `E0130` | an `impl` on a module | elaboration |
-| `E0131` | a method named `changed`, `prev`, `others`, `inflow` or `level` | elaboration |
+| `E0131` | a method named `changed`, `prev`, `others` or `inflow` | elaboration |
 | `E0132` | an item other than a function in an `impl` on a nature or bundle | elaboration |
 | `E0133` | a handle returned, stored in a value, or written through | elaboration |
-| `E0134` | `impl Trait for` a nature or a bundle | elaboration |
+| `E0134` | `impl Trait for` a bundle | elaboration |
 
 **Examples**
 
@@ -1132,131 +1138,93 @@ idt(x)                      // an integrator, no initial condition, no reset
 idt(x, 1.0, reset: rst)
 ```
 
-### 3.3 Unknown values
+### 3.3 Uncertainty and absence
 
-Every level of every value is **known** or **unknown**. Unknown is not a third level: it is
-the record that the level is not established. The **known flag** of a level is that record.
-One rule covers carriers, locals, function arguments, closures and library code alike, because
-the flag travels with the value.
+A value is what its type says it is. A binary type holds binary values and nothing else. A type
+that may hold "not determined" or "nothing" says so in its declaration: `Logic<N>`
+([§22.1](part_vii_stdlib.md#221-values-and-bit)) for the first, `Option<T>` for the second.
+This section states the six rules that follow. It has no errors of its own: each refusal is
+the error of the rule that applies (`E0161`, `E0180`, `E0187`).
 
 **Static semantics**
 
-- **§3.3.5 `analog` has no unknowns.** The solver computes with known reals. Whatever an
-  `analog` block reads from a discrete carrier, directly or through a `let` or a value input,
-  passes through `level`: in practice through the stdlib's `known()`, `known_or(d)` or, for a
-  `Bit`, `high()` ([§22.1](part_vii_stdlib.md#221-values-and-bit)), after field access and
-  indexing at most. Anything else is an elaboration error naming the carrier. An expression
-  bound to an `in` port is a definition
-  ([§8.1](part_iii_structure.md#81-ports-and-params)): it is discrete and outside this rule.
-  The model says what an unknown means electrically; the language does not guess.
-- **§3.3.6** The check of rule 5 is syntactic. A carrier read is accepted when, after field
-  access and indexing at most, it is the receiver of `level`, or the receiver or argument of a
-  flag-total function. A **flag-total function** is one whose result is known for every
-  argument, because every use of that parameter in its body passes through `level`.
-- **§3.3.7** An implementation **MUST** treat the stdlib's own `known`, `known_or`,
-  `is_known` and `high` as flag-total. A project's replacement of one
-  ([§22](part_vii_stdlib.md#22-standard-library) rule 3) is checked under rule 6 like any
-  function. An implementation **MUST NOT** waive rule 5 because a carrier is provably always
-  known ([G.29](appendix_g_scope.md)).
-- **§3.3.8** A decision that fixes structure **MUST** be known: a generation condition, a
-  loop bound of generation, a const generic, an array length, a `where` condition.
+- **§3.3.1 A value is a value.** A value of every type is a value of that type. No level and
+  no value carries a record of being established or not. `bool`, `UInt<N>`, `Int<N>`,
+  `Float<N>`, enums, structs, tuples and arrays are always determined, and a read of one yields
+  it with no method between the read and its use.
+- **§3.3.2 Uncertainty is a type.** A type that may hold "not determined" declares it.
+  `Logic<N>` has the four states 0, 1, X and Z on each of its `N` levels. Its operators are
+  ordinary library `impl`s of the operator traits of
+  [Appendix H.10](appendix_h_library.md#h10-operator-traits) and follow four-state tables; no
+  rule of the language names `Logic`. Converting a binary value to a `Logic` is total
+  (`From`); converting a `Logic` to a binary value gives an `Option`, `None` for X or Z.
+- **§3.3.3 Absence is a type.** A type that may hold "nothing" declares it: `Option<T>` is
+  `None` or `Some(x)`. `Option<Logic<64>>` is wholly `None` or a present four-state vector;
+  the two forms of absence never mix inside one value.
+- **§3.3.4 A carrier, a drive and a param start with a value.** The value is the initial value
+  written, or `Default::default()` of the type
+  ([Appendix H.8](appendix_h_library.md#h8-traits)). A type that does not
+  implement `Default` requires the initial value, and its absence is `E0187` naming the
+  carrier and the trait. `Option<T>`, `Logic<N>`, `()`, and a tuple, an array or a struct whose
+  parts all implement `Default`, implement it; **`bool`, `UInt<N>`, `Int<N>`, `Float<N>` and
+  `str` do not implement `Default`.** In this the language differs from Rust on purpose: a
+  register with no reset value has no meaning that a number can express, so the source says
+  which one it has.
+- **§3.3.5 Control takes a `bool`.** The condition of an `if` or a `while`, a guard, and an
+  operand of `&&` or `||` have the type `bool`; any other type is `E0180` naming the type
+  found and `bool`. A `Logic` therefore decides nothing by itself: a model writes how, with
+  `x.is_high()`, `same(a, b)`, `match x.at(0) { .. }` or `x.to_bit()`. `a == b` on two `Logic`
+  values is a `Logic` (X when a compared level is X or Z), and `same(a, b)` is the `bool`
+  that says the four states are equal level by level.
+- **§3.3.6 `analog` reads values.** `analog` reads a discrete carrier like any expression: a
+  carrier of `bool`, an integer, a float or an enum is read directly, with no gate. A solve
+  computes with reals and `bool`s, so a `Logic` reaches it through a function that returns one
+  (`x.to_volts(vdd)`, `x.is_high()`); a `Logic` where an `f64` or a `bool` is required is
+  `E0180`.
+- **§3.3.7** A decision that fixes structure (a generation condition, a loop bound of
+  generation, a const generic, an array length, a `where` condition) is a `bool` or an
+  integer, so it is determined by its type. A `const` of type `Logic` takes part in one only
+  through `is_high()`, `same` or a `match`.
 
-> **Resolution.** Rule 6 turns "passes through `level`" into a check an implementation can
-> run. Rule 7 names the functions every implementation must accept, so that conforming models
-> do not depend on the strength of one implementation's analysis
-> ([G.57](appendix_g_scope.md)).
-
-> **Resolution.** Rule 8: a const may hold unknown levels (`Logic::Z`), so elaboration can
-> meet one. Structure that depends on it has no meaning.
+> **Resolution.** An earlier revision gave every level of every value a hidden record of
+> whether it was established, and merged the effects of a branch that such a value decided.
+> Everything that model described is what a type already says: a model that wants "may be X or Z" writes `Logic`, and one that
+> wants "may be absent" writes `Option`. Appendix G.72 records the change. `E0150` is retired and `E0151` is retired, the codes of that model (§0.2: numbers are not reused).
 
 **Dynamic semantics**
 
-- **§3.3.1 Sources.** Literals, params, constants, probes and the environment are known.
-  Unknown enters only through a carrier with no initial value, the literal `Unknown` (all
-  levels unknown, of any `Repr` type), or a `decode` that returns `None`. A value of a type
-  without `Repr` has one flag for the whole value.
-- **§3.3.2 Operators.** `&`, `|`, `^`, `!` work per level: `unknown & false == false`,
-  `unknown | true == true`, otherwise unknown. Field access, indexing by a known index, shifts
-  by a known amount, `cast` and the built-in and derived `encode`/`decode` move levels with
-  their flags. Every other operator (arithmetic, comparisons, `as`, a shift by an unknown
-  amount, an `extern fn`) is all-or-nothing: one unknown level in any operand makes the whole
-  result unknown.
-- **§3.3.3 Control flow.** When what decides control is unknown (an `if` or `while` condition,
-  a `match` scrutinee, a guard, a short-circuit operand, a loop bound, an index), every path
-  the known levels do not exclude is taken, and **every effect is merged level by level**:
-  equal known levels are kept, the rest become unknown. This combination is the **merge**.
-  Effects are the value yielded, each local written, and each commit. A path that does not
-  make a commit counts as committing, for the same time, the value the carrier would hold
-  then. A commit whose delay is unknown commits `Unknown` at the next microstep: when is not
-  known, so from now on the value is not. A loop is its unrolling, merged exit by exit. A loop
-  whose exit is still unknown after a bounded number of iterations is cut there, and what its
-  body writes becomes unknown; this is the one place where the merge is rounded up. An `emit!`
-  reached this way carries `maybe = true`.
-- **§3.3.4 Reading the flag.** `x.level(k)` reads level `k` of any `Repr` value as a known
-  `Option<bool>`: `None` when unknown. The stdlib builds `x.known() -> Option<T>` (all levels
-  known, or `None`), `x.known_or(d)`, `x.is_known()`, `same(a, b)` and `merge(a, b)` on it
-  ([§22.1](part_vii_stdlib.md#221-values-and-bit)).
-- **§3.3.9** A const whose expression uses `Unknown` is the exception to rule 1's "constants
-  are known". NaN is a known value: it is not a form of unknown.
-- **§3.3.10** A comparison is all-or-nothing (rule 2): `a == b` is unknown when any level of
-  either operand is unknown, even if known levels already differ. `same(a, b)` compares
-  levels and flags and is always known.
-- **§3.3.11** A shift by a known amount fills with known levels: false, or for an arithmetic
-  right shift, the sign level with its flag.
-- **§3.3.12** `&&` and `||` on `bool` are control (rule 3). The merge gives
-  `unknown && false == false` and `unknown || true == true`, as rule 2 gives for `&` and `|`.
-- **§3.3.13** An unknown index selects among the existing elements that its known levels do
-  not exclude. A read is the merge of those elements. A write merges the written value into
-  each of them ([Appendix E.5](appendix_e_gallery_digital.md)).
-- **§3.3.14** In `x.level(k)`, `k` is an index: an out-of-range `k` is a panic
-  ([§1](#1-value-types) rule 11), and an unknown `k` is an unknown index (§3.3.13). With a
-  known `k` the result of `level` is known.
-- **§3.3.15** Two values of a type without `Repr` merge to a known value only when both are
-  known and equal. Otherwise the merge is unknown. Any operation on such an unknown value is
-  all-or-nothing.
-- **§3.3.16** The bound on loop iterations in rule 3 is implementation-defined. An
-  implementation **MUST** document it and apply the same bound in every analysis. A larger
-  bound only keeps more levels known.
-
-> **Resolution.** Rules 9–16 spell out consequences and corner cases of rules 1–4. Under
-> rule 16 two conforming implementations may differ in a result, but only in how many levels
-> stay known ([G.46](appendix_g_scope.md)).
-
-Rule 3 does not depend on how the code is written. `q <- if c { a } else { b };` and
-`if c { q <- a; } else { q <- b; }` are the same. `if c { s += 1; }` on a local is the merge
-of `s` and `s + 1`. An exhaustive `match` on an unknown enum merges all its arms.
-`iter().filter(|d| d.oe).count()` over an unknown `oe` is unknown, because `filter` is written
-with an `if`.
-
-This is stricter than Verilog's `if`, which takes the `else` branch on an unknown condition
-and hides the unknown. A model that wants that writes it: `if c.known_or(false) { … }`.
+- **§3.3.8** An `if`, a `while`, a `match`, a guard and a short-circuit operand run exactly
+  one path: the one the value of a `bool` or an enum selects. A path that is not selected does
+  not run and cannot fail.
+- **§3.3.9** A value that a hand-written `decode` rejects is the `None` the function returns
+  ([§2](#2-repr) rule 9); no carrier is changed by it.
 
 **Interactions**
 
 | With | Rule | Defined in |
 | --- | --- | --- |
-| carriers | every level is unknown until the first commit; `q <- Unknown;` commits unknown | [§5.1.1](part_ii_carriers.md#51-declaring-and-reading) |
-| changes | a level that goes between known and unknown has changed; unknown to unknown has not | [§5.3](part_ii_carriers.md#53-history) |
-| events | an unknown guard runs the reaction under rule 3; an unknown `at` time and an unknown `cross` expression do not fire | [§13](part_iv_behavior.md#13-events), [§17.3](part_v_execution.md#173-locating-crossings) |
-| `analog` and every solve | no unknown is read (rule 5) | this section |
-| small-signal | a discrete carrier is a known constant of the linearization | [§11.1](part_iv_behavior.md#111-one-block-every-analysis) |
-| output | a field keeps its flags; a record reached under unknown control has `maybe = true` | [§19](part_vi_io.md#19-streams-and-checks) rule 1 |
-| elaboration | structure must be known (rule 8) | this section |
-
-**Errors**
-
-| Code | Condition | Phase |
-| --- | --- | --- |
-| `E0150` | `analog` reads a discrete carrier, directly or through a `let` or a value input, other than through `level` or a flag-total function; the diagnostic names the carrier | elaboration |
-| `E0151` | a decision that fixes structure evaluates to unknown | elaboration |
+| carriers | the initial value, written or `Default::default()`, is committed at `(0, 0)` | [§5.1.1](part_ii_carriers.md#51-declaring-and-reading) |
+| changes | a commit that changes at least one level is a change; before a later change `prev()` is the initial value | [§5.3](part_ii_carriers.md#53-history) |
+| events | a guard is a `bool`; a reaction whose guard is false does not run | [§13](part_iv_behavior.md#13-events) |
+| `analog` and every solve | a discrete carrier is read directly; a `Logic` through a function (rule 6) | this section |
+| small-signal | a discrete carrier is a constant of the linearization | [§11.1](part_iv_behavior.md#111-one-block-every-analysis) |
+| output | a field holds exactly the bytes of its type | [§19](part_vi_io.md#19-streams-and-checks) |
+| elaboration | structure is decided by a `bool` or an integer (rule 7) | this section |
 
 **Examples**
 
 ```rust,fragment
-on fref.rise() || fvco.rise() {          // state has no initial value here
-    let s = state;                       // s: i2, all levels unknown
-    if fref.rise() && s < 1 { s += 1; }  // condition unknown: s = merge(s, s + 1) = unknown
-    state <- s;                          // stays unknown until something resets it
+signal en: Bit = false;               // a number or a bool has no default: the value is written
+signal last: Bit<Option<u8>>;         // starts at None, Option has a default
+signal bus: Bit<Logic<4>>;            // starts at xxxx, Logic has a default
+
+on clk.rise() {
+    if en { last <- Some(1); }        // `if` takes a bool: one path runs
+    if same(bus, Logic::X) { en <- true; }  // a Logic decides through a function
+    match last {
+        Some(v) => last <- Some(v + 1),
+        None => {}
+    }
 }
 ```
 
@@ -1550,12 +1518,12 @@ impl_item      ::= attrs 'pub'? ( fn_decl | const_item )
 - **§3.7.3** `trait A: B + C` makes `B` and `C` supertraits of `A`: a type that implements `A`
   **MUST** implement `B` and `C`, and the items of `B` and `C` may be used on `Self` inside
   `A`.
-- **§3.7.4** `impl Tr for T { … }` implements the trait `Tr` for the value type `T`
+- **§3.7.4** `impl Tr for T { … }` implements the trait `Tr` for the value type or nature `T`
   ([§3.1.9](#31-impl)). It defines every item of the trait that has no default and may define
   the others; it defines no item the trait does not have. Each item has the signature the
   trait gives, with `Self` standing for `T`.
 - **§3.7.5** An `impl` may be generic, and its type may be a generic parameter:
-  `impl<T: Repr> Known for T {}` implements `Known` for every type that implements `Repr`.
+  `impl<T: Repr> Describe for T {}` implements `Describe` for every type that implements `Repr`.
 - **§3.7.6** For one trait and one type at most one `impl` applies. Two `impl`s of a trait
   that both apply to some type are an error, whether or not that type is used.
 - **§3.7.7** `impl Tr for T` is written in the crate that declares `Tr` or in the crate that
@@ -1578,7 +1546,14 @@ impl_item      ::= attrs 'pub'? ( fn_decl | const_item )
 - **§3.7.12** The traits of the language itself are `Repr` ([§2](#2-repr)), `Nature`
   ([§4](part_ii_carriers.md#4-natures)), the `Fn` bounds
   ([§3.8.6](#38-generics-and-bounds), [§8.4](part_iii_structure.md#84-templates-and-swappable-modules))
-  and those of [Appendix H](appendix_h_library.md), H.8. `Nature` and `Fn` take no `impl`.
+  and those of [Appendix H](appendix_h_library.md), H.8 and H.10, and `Resolve`
+  ([§4](part_ii_carriers.md#4-natures) rule 8). `Nature` and `Fn` take no `impl`.
+- **§3.7.13** A trait is a **capability**. What a type or a nature can do is the set of traits
+  it implements, and a rule of the language that needs a capability asks for the trait and
+  names it in its diagnostic: `Repr` is the capability of being carried, `Default` of starting
+  without a value, `BitAnd` of `&`, `Resolve` of taking several drives. A generic parameter
+  bounds a type or a nature by its capabilities (`T: Repr + Default`,
+  `W: Nature + Resolve<Driven>`).
 
 > **Resolution.** Rules 6 and 7 keep the set of `impl`s that apply to a type the same in every
 > crate that sees it, so a model means the same wherever it is compiled.
@@ -1588,7 +1563,7 @@ impl_item      ::= attrs 'pub'? ( fn_decl | const_item )
 | Code | Condition | Phase |
 | --- | --- | --- |
 | `E0187` | an `impl Tr for T` that leaves out an item without a default, defines an item the trait does not have, or gives an item another signature; a type that does not implement a supertrait; two `impl`s that overlap (§3.7.6); an `impl` in a crate that §3.7.7 does not allow; `self` outside an `impl` or a trait, or not first; a generic argument that does not satisfy its bound, or a wrong number of generic arguments ([§3.8](#38-generics-and-bounds)); a `pub` on an item of an `impl Tr for T` | elaboration |
-| [§3.1](#31-impl) | `impl Tr for` a nature or a bundle (`E0134`) | elaboration |
+| [§3.1](#31-impl) | `impl Tr for` a bundle (`E0134`) | elaboration |
 
 **Examples**
 
@@ -1700,7 +1675,7 @@ const_item     ::= 'const' IDENT ':' type ( '=' expr )? ';'
   and the value is a const expression of that type. Only a constant of a trait may leave the
   value out ([§3.7.1](#37-traits)).
 - **§3.9.2** A **const expression** is an expression that elaboration can evaluate. It is
-  built from literals, `Unknown`, constants, const parameters, params where the position
+  built from literals, constants, const parameters, params where the position
   allows them ([§8.1](part_iii_structure.md#81-ports-and-params)), the operators and
   conversions of [§1.5](#15-expressions), tuple, array and struct expressions, field accesses
   and indexes, blocks, `if`, `match` and loops, closures, the methods of

@@ -176,7 +176,7 @@ fn every_error_code_is_defined_exactly_once() {
 
 /// The codes value semantics retired (Appendix G.71): each is named by the Resolution that
 /// retires it and by G.71, and by no defining row.
-const RETIRED_CODES: [&str; 2] = ["E0102", "E0331"];
+const RETIRED_CODES: [&str; 4] = ["E0102", "E0331", "E0150", "E0151"];
 
 #[test]
 fn b1_still_counts_65_constructs() {
@@ -1143,11 +1143,11 @@ fn structure_changing_set_is_refused() {
 
 
 #[test]
-fn zero_bytes_are_the_unknown_value() {
-    assert!(flat(&spec("part_i_values.md")).contains("all-zero bytes"));
-    let carriers = spec("part_ii_carriers.md");
-    let s = flat(&section(&carriers, "### 5.3 "));
-    assert!(s.contains("value bytes"), "{s}");
+fn zero_bytes_are_the_default_value() {
+    // EU-17 AC 1 (replaces `zero_bytes_are_the_unknown_value`): §2 rule 11, all-zero bytes are
+    // the bytes of `Logic::X`, of `None` and of every derived `Default`.
+    let s = flat(&spec("part_i_values.md"));
+    assert!(s.contains("all-zero bytes are the bytes of `Logic::X`, of `None`"), "{s}");
 }
 
 #[test]
@@ -1843,4 +1843,38 @@ fn the_analog_step_floor_past_2_52_ticks_is_a_recorded_deviation() {
     let row = c.lines().find(|l| l.starts_with("| analog step floor past 2^52 ticks")).expect("step floor row");
     assert!(row.contains("256 `f64` spacings"), "{row}");
     assert!(row.contains("transient-performance T25"), "{row}");
+}
+
+// ---- explicit unknowns: EU-17 ----
+
+#[test]
+fn section_3_3_states_the_explicit_model() {
+    // EU-17 AC 1 (replaces the assertions that quoted the known-flag §3.3): R1 to R6 as numbered
+    // rules, and the sentence that no primitive numeric type implements `Default`.
+    let s = flat(&section(&spec("part_i_values.md"), "### 3.3 "));
+    assert!(s.starts_with("### 3.3 Uncertainty and absence"), "{s}");
+    for rule in ["**§3.3.1 A value is a value.**", "**§3.3.2 Uncertainty is a type.**", "**§3.3.3 Absence is a type.**", "**§3.3.4 A carrier, a drive and a param start with a value.**", "**§3.3.5 Control takes a `bool`.**", "**§3.3.6 `analog` reads values.**"] {
+        assert!(s.contains(rule), "§3.3 lacks {rule}");
+    }
+    assert!(s.contains("**`bool`, `UInt<N>`, `Int<N>`, `Float<N>` and `str` do not implement `Default`.**"), "R4: {s}");
+    assert!(s.contains("differs from Rust on purpose"), "R4 says it differs from Rust");
+    assert!(s.contains("`E0187`") && s.contains("`E0180`"), "R4 and R5 name their codes");
+    assert!(s.contains("`a == b` on two `Logic` values is a `Logic`"), "R5");
+    assert!(s.contains("converting a `Logic` to a binary value gives an `Option`"), "R6 conversions");
+}
+
+#[test]
+fn a_nature_takes_trait_impls() {
+    // EU-11 AC 1, D17: §3.1.9 accepts `impl Trait for` a nature, `self` is a handle, E0134 is a
+    // bundle's, and a trait is a capability (§3.7.13).
+    let i = spec("part_i_values.md");
+    let s31 = flat(&section(&i, "### 3.1 "));
+    assert!(s31.contains("`impl Trait for Type` is accepted for a value type and for a nature"), "{s31}");
+    assert!(s31.contains("`self`, where a function has one, is a handle"), "{s31}");
+    assert!(s31.contains("`impl Trait for` a bundle is `E0134`"), "{s31}");
+    let e0134 = table_rows(&section(&i, "### 3.1 ")).into_iter().find(|r| r[0] == "`E0134`").expect("E0134 row");
+    assert_eq!(e0134[1], "`impl Trait for` a bundle", "{e0134:?}");
+    let s37 = flat(&section(&i, "### 3.7 "));
+    assert!(s37.contains("**§3.7.13** A trait is a **capability**"), "{s37}");
+    assert!(s37.contains("`W: Nature + Resolve<Driven>`"), "{s37}");
 }
