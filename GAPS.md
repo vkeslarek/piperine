@@ -22,7 +22,7 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 2 silent, 2 broken, 30 loud (L1 to L65 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the two `params-and-io` (L20, L39) and the eight `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63) and the two `resolved-nets` rows (L22, L23) closed, L9 narrowed to its `generics` part and L4 to generic enums, in six tables) plus
+**Counts.** 2 silent, 2 broken, 31 loud (L1 to L66 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the two `params-and-io` (L20, L39) and the eight `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63) and the two `resolved-nets` rows (L22, L23) closed, L9 narrowed to its `generics` part and L4 to generic enums, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 9 unproven.
 
@@ -113,6 +113,7 @@ quotes the text after `P0001:` unless another code is shown.
 | L12 | `extern "C" fn`, `#[derivative]` | §3 rules 2, 10, 11 | `extern function` | M |
 | L13 | `f16`, `f32`, `f128`; integers wider than 64 bits | §1 rule 5 | `type f32`; `integer type u128` | M |
 | L65 | a flag read on an `Option` (`Some(1.0).level(0)`, `o.is_known()`, `o.known_or(..)`, over an `Option` value rather than a carrier of one): the §2 table gives `Option<T>` a `Repr` (`1 + T::WIDTH`), but the read has no lowering. Owned by `explicit-unknowns` (MD-78), where flag reads disappear | §2, §22.1 | `P0001` naming the flag read | `explicit-unknowns` |
+| L66 | a `match` or an `if let` expression whose value is an `Option` (`fn f(k: u8) -> Option<u8> { match k { 0 => Some(1), _ => None } }`): an `if`/`else` chain of `Option`s, a call, a field, a method and a block run. Found by `composite-values` finding 6, which wrote the `if` form | §1.8.6, H.3 | `P0001` "this form of an `Option` value is not supported yet" | `composite-values` |
 
 ### 4.2 Carriers (Part II §4–§7)
 

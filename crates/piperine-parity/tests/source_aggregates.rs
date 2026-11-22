@@ -263,8 +263,9 @@ fn discriminants_are_the_tag_and_the_cast() {
 
 #[test]
 fn options_of_aggregates_behave_as_enums() {
-    // CV-11 AC 5 (§3.2): an `Option` of a struct is matched, tested and unwrapped like any `Option`, and one
-    // held as a field of a struct (one value, not a pair) reads back as it was written.
+    // CV-11 AC 5 (§3.2): an `Option` of a struct, a tuple, an array or an enum with a payload variant is matched,
+    // tested and unwrapped like any `Option`, and one held as a field of a struct (one value, not a pair) reads
+    // back as it was written.
     struct P {
         _x: f64,
         y: u8,
@@ -283,6 +284,56 @@ fn options_of_aggregates_behave_as_enums() {
         "enums.msl",
         &["o0", "o1", "o4", "o5"],
         &[CarrierBytes::byte(pick_y(true)), CarrierBytes::byte(pick_y(false)), CarrierBytes::byte(match wrapped.inner { Some(p) => p.y, None => 0 }), CarrierBytes::byte(u8::from(empty.inner.is_none()))],
+    );
+    // an `Option` of a tuple, of an array and of an enum with a payload variant, each built, matched and compared
+    // with Rust's own
+    let tuple = |b: bool| if b { Some((3u8, 4u8)) } else { None };
+    let tuple_weight = |b: bool| match tuple(b) {
+        Some((x, y)) => x * 10 + y,
+        None => 0,
+    };
+    let array = |b: bool| if b { Some([5u8, 6]) } else { None };
+    let array_sum = |b: bool| match array(b) {
+        Some(a) => a[0] + a[1],
+        None => 0,
+    };
+    #[derive(Clone, Copy)]
+    enum Msg {
+        Quit,
+        Move(u8, u8),
+        Say { len: u8 },
+    }
+    let message = |k: u8| {
+        if k == 0 {
+            Some(Msg::Move(1, 2))
+        } else if k == 1 {
+            Some(Msg::Say { len: 9 })
+        } else if k == 2 {
+            Some(Msg::Quit)
+        } else {
+            None
+        }
+    };
+    let message_weight = |k: u8| match message(k) {
+        Some(Msg::Move(a, b)) => a * 10 + b,
+        Some(Msg::Say { len }) => len,
+        Some(Msg::Quit) => 1,
+        None => 0,
+    };
+    RUN.assert_commits(
+        "enums.msl",
+        &["p0", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p8"],
+        &[
+            CarrierBytes::byte(tuple_weight(true)),
+            CarrierBytes::byte(tuple_weight(false)),
+            CarrierBytes::byte(array_sum(true)),
+            CarrierBytes::byte(array_sum(false)),
+            CarrierBytes::byte(message_weight(0)),
+            CarrierBytes::byte(message_weight(1)),
+            CarrierBytes::byte(message_weight(2)),
+            CarrierBytes::byte(u8::from(message(1).is_some())),
+            CarrierBytes::byte(message_weight(3)),
+        ],
     );
 }
 

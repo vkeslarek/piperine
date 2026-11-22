@@ -301,13 +301,13 @@ fn gaps_drops_what_msl_fixes_closed() {
     // `analog-structure` (nine loud rows and S4) after that, `unknown-semantics-events` (L52) after
     // that: 2 silent, 2 broken, 40 loud; `params-and-io` (L20, L39) took the loud rows to 38, `composite-values`
     // phase A (L5, L6, L10) and L63 to 35, `Pfd3` (L51: its event reads ran, its assignment now does) to 34, `resolved-nets` (L22, L23) to 32, and `value-semantics` closed S7 (the spec amendment had added it)
-    // and `composite-values` phase B (L1, L2, L3, L16) to 28, L64 (an unknown composite carrier read) to 29 and L65 (a flag read on an `Option`) to 30
-    assert!(gaps.contains("2 silent, 2 broken, 30 loud"), "the counts of §9 follow");
+    // and `composite-values` phase B (L1, L2, L3, L16) to 28, L64 (an unknown composite carrier read) to 29 L65 (a flag read on an `Option`) to 30 and L66 (a `match` whose value is an `Option`) to 31
+    assert!(gaps.contains("2 silent, 2 broken, 31 loud"), "the counts of §9 follow");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
     assert_eq!(rows("## 3. Silent", "## 4."), 2, "two silent entries");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 30, "thirty loud rows");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 31, "thirty-one loud rows");
 }
 
 #[test]
@@ -318,7 +318,7 @@ fn gaps_drops_the_value_semantics_gap() {
     assert!(!gaps.contains("### S7."), "S7 is closed");
     assert!(!gaps.contains("| S3, S6, S7 |") && gaps.contains("| S3, S6 |"), "the section table lists S3 and S6");
     assert!(!gaps.contains("E0331") && !gaps.contains("(`value-semantics`)"), "no entry names the retired code or the plan");
-    assert!(gaps.contains("2 silent, 2 broken, 30 loud"), "the counts are restored (28 since composite-values phase B closed L1 to L3 and L16, 29 with L64, 30 with L65)");
+    assert!(gaps.contains("2 silent, 2 broken, 31 loud"), "the counts are restored (28 since composite-values phase B closed L1 to L3 and L16, 29 with L64, 30 with L65, 31 with L66)");
 }
 
 #[test]
@@ -494,7 +494,7 @@ fn gaps_drops_what_composite_values_phase_a_closed() {
     let values = coverage.lines().find(|l| l.starts_with("| I §1–§2 ")).expect("the coverage row of §1 and §2");
     assert!(values.contains("`let mut`, assignment, patterns"), "{values}");
     // the counts follow: 39 loud, then 38 when `composite-values` closed L63 (§1.4.4 literal typing), 35 with `params-and-io`
-    assert!(gaps.contains("30 loud"), "the loud count is 30 (28 once `params-and-io`, `composite-values`, `resolved-nets` and the last of `unknown-semantics-events` closed rows, then L64 for a composite carrier read before it holds a value and L65 for a flag read on an `Option`)");
+    assert!(gaps.contains("31 loud"), "the loud count is 31 (28 once `params-and-io`, `composite-values`, `resolved-nets` and the last of `unknown-semantics-events` closed rows, then L64 for a composite carrier read before it holds a value L65 for a flag read on an `Option` and L66 for a `match` whose value is an `Option`)");
 }
 
 #[test]
@@ -599,7 +599,7 @@ fn gaps_drops_what_composite_values_phase_b_closed() {
     assert!(stdlib.contains("`normal` runs"), "{stdlib}");
     let inherited = coverage.lines().find(|l| l.starts_with("| H inherited library")).expect("the coverage row of H");
     assert!(inherited.contains("100 %") && inherited.contains("H.5 to H.7 run"), "{inherited}");
-    assert!(gaps.contains("30 loud"), "the loud count follows");
+    assert!(gaps.contains("31 loud"), "the loud count follows");
 }
 
 #[test]
