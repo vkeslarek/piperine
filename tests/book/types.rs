@@ -127,12 +127,12 @@ fn an_impl_gives_a_type_its_constants_and_functions() {
 
 #[test]
 fn the_listings_still_on_the_way_are_refused_where_a_top_reaches_them() {
-    // types#7 (refused, L3): the table `TAPS` and `mean`; types#11 (refused, L4): `Shape`, an enum with fields
-    // and no `Repr`; types#16 (refused, L7): the method `switches_at`. (types#6, the tuple `ordered`, and
-    // types#12, the structs `Reading` and `Volts`, run since composite-values T48 to T51: see
-    // `tuples_and_structs_run_where_a_top_reaches_them`.)
+    // types#7 (refused, L3): `mean`, generic over the length; types#11 (refused, L4): `Shape`, an enum with
+    // fields and no `Repr`; types#16 (refused, L7): the method `switches_at`. (types#6, the tuple `ordered`, and
+    // types#12, the structs `Reading` and `Volts`, run since composite-values T48 to T51, and the table `TAPS`
+    // with `smoothed` of types#7 since T55: see `tuples_and_structs_run_where_a_top_reaches_them` and
+    // `a_table_const_runs_where_a_top_reaches_it`.)
     // When one of them runs this test fails and its row moves to `run`
-    Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = smoothed([1.0, 2.0, 3.0]));"), "types#7", "P0001", "this form in a const expression in a `const` is not supported yet");
     Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = mean(TAPS));"), "types#7", "P0001", "generic function is not supported yet");
     Refusal::expect(Reached::run("types#11", "", "emit!(\"r\", s = area(Shape::Circle(1.0)));"), "types#11", "P0001", "enum `Shape` without `#[derive(Repr)]` is not supported yet");
     let family = "#[derive(PartialEq, Repr)]\nenum Family { Cmos, Ttl }\n";
@@ -149,6 +149,14 @@ fn tuples_and_structs_run_where_a_top_reaches_them() {
     let scaled = ValueFile::only(Chapter::read().wrapped("reached.msl", "", "types#12", &Reached::top(statements)).run(Reached::overrides()), "r");
     Printed::holds("1.500000e0", Fields::real(&scaled, "s"), "scaled");
     ValueFile::flag(&scaled, "ok", true);
+}
+
+#[test]
+fn a_table_const_runs_where_a_top_reaches_it() {
+    // types#7 (run, composite-values T55): `smoothed` reads the table `TAPS` of the chapter, a `const` array written
+    // out where it is read, and sums `TAPS[k] * x[k]`: 0.25 * 1 + 0.5 * 2 + 0.25 * 3
+    let smoothed = ValueFile::only(Chapter::read().wrapped("reached.msl", "", "types#7", &Reached::top("emit!(\"r\", s = smoothed([1.0, 2.0, 3.0]));")).run(Reached::overrides()), "r");
+    Printed::holds("2.000000e0", Fields::real(&smoothed, "s"), "smoothed");
 }
 
 #[test]
