@@ -808,6 +808,9 @@ fn embedded_std_declares_no_core_name() {
 
 /// The first cell of every row of the table under the heading starting `heading` in Appendix H,
 /// without its backticks and generic arguments (`UInt<N>` gives `UInt`).
+/// Traits of Appendix H.8 that the built-in table does not hold yet (explicit-unknowns T42).
+const SPEC_TRAITS_AHEAD_OF_THE_TABLE: [&str; 1] = ["From"];
+
 fn appendix_h_names(heading: &str) -> Vec<String> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/spec/appendix_h_library.md");
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
@@ -853,6 +856,8 @@ fn catalogue_traits_and_types_resolve() {
         assert_eq!(found, vec![("E0161".to_string(), at)], "derive({name})");
     }
     let mut src = String::new();
+    // `From` is in Appendix H.8 ahead of the built-in table (explicit-unknowns; its task T42 adds it)
+    let traits: Vec<String> = traits.into_iter().filter(|t| !SPEC_TRAITS_AHEAD_OF_THE_TABLE.contains(&t.as_str())).collect();
     for (i, t) in traits.iter().enumerate() {
         src.push_str(&format!("fn t{i}<T: {t}>(a: T) {{}}\n"));
     }
@@ -885,6 +890,12 @@ fn builtin_table_matches_appendix_h() {
     // `Clone` and `Copy` left Appendix H with value semantics (G.71, H.8 rule 1) ahead of the
     // built-in table (`GAPS.md` S7); the feature `value-semantics` drops both rows and this line.
     traits.extend(own(&["Clone", "Copy"]));
+    // `From` joined H.8 with explicit-unknowns (D3) ahead of the table; its task T42 adds the row and
+    // empties `SPEC_TRAITS_AHEAD_OF_THE_TABLE`. A stale entry fails here.
+    for ahead in SPEC_TRAITS_AHEAD_OF_THE_TABLE {
+        assert!(traits.remove(ahead), "{ahead} is no longer in Appendix H.8: drop it from the list");
+        assert!(!rows(BuiltinKind::Trait).contains(ahead), "{ahead} is now a built-in row: drop it from SPEC_TRAITS_AHEAD_OF_THE_TABLE");
+    }
     assert_eq!(rows(BuiltinKind::Trait), traits);
     // Types: every H.9 type has a row; the others are the sized families, `usize`/`isize`, `Event` and `Analysis`.
     let types = rows(BuiltinKind::Type);
