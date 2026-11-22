@@ -7,7 +7,7 @@ pub module Osc(out clk: Bit = false) {
 }
 digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
 
-#[derive(Repr, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Repr, PartialEq, PartialOrd)]
 enum Md { Lo, Hi }
 
 /// `lt` starts false and `le` true, so each commit below is a change.

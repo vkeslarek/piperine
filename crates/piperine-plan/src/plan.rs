@@ -25,6 +25,7 @@ use std::collections::BTreeSet;
 use piperine_abi::layout::{BIT, F64};
 
 use crate::digital::{CarrierLayout, Digital, ReactionPlan};
+use crate::pin::PinLayout;
 use piperine_abi::raw::{Cell, DEFAULT, GROUND, Partial, ambient, cell, global, input, op, part, pin_flag, role};
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_ir::{AnalysisKind, Body, Branch, BranchKind, Constant, Deps, Env, Operator, Origin, Stmt, Target as Query, Terminal, ValueType};
@@ -139,6 +140,10 @@ pub enum Source {
     /// decides on a value that may be unknown reads it, to key its commits by the instant they
     /// come due (§3.3.3, abi.md C1).
     Resolution,
+    /// The `CHANGED` byte of the `GLOBAL` `SETTLE` pin: whether the settle phase of this
+    /// instant is running (§15 step 4). The event function of each `settle` event reads it
+    /// (§13 rule 17).
+    Settle,
 }
 
 impl Source {
@@ -312,6 +317,9 @@ pub struct Pins {
     /// The private `abstol` pin `d<k>.abstol` of each derivative site that gives one, after the
     /// tolerance pins; `None` for a site with the default tolerance.
     pub derivative_abstols: Vec<Option<u32>>,
+    /// The `GLOBAL` `SETTLE` pin, after the derivative abstol pins, when the body has a `settle`
+    /// event (§13 rule 17): the engine fires it in the settle phase (§15 step 4).
+    pub settle: Option<u32>,
 }
 
 /// The pins of a drive with `after` (RS-12 AC 5).
@@ -417,6 +425,8 @@ impl BodyPlan {
                 Some(Constant::Bool(b)) => vec![u8::from(b), 1],
                 // An integer param has a carrier's layout and bytes (`digital.rs`).
                 Some(c @ Constant::Int(_)) => CarrierLayout::bytes(&p.ty, c).unwrap_or_default(),
+                // A composite param has the layout and bytes of a composite carrier (`composite.rs`).
+                Some(c @ Constant::Aggregate(_)) => PinLayout::bytes_in(ir, &p.ty, c).unwrap_or_default(),
                 None => Vec::new(),
             })
             .collect();
@@ -431,11 +441,18 @@ impl BodyPlan {
         let mut next_check = pin_count as u32;
         let mut check_pins = Vec::with_capacity(body.params().len());
         for (p, init) in body.params().iter().zip(&defaults) {
-            let layout = match &p.ty {
+            let composite = match PinLayout::in_ir(ir, &p.ty) {
+                Some(layout @ PinLayout::Composite(_)) => Some(layout),
+                _ => None,
+            };
+            let composite_fields = composite.as_ref().map(PinLayout::fields).unwrap_or_default();
+            let composite_layout = composite.as_ref().map(|c| c.layout(&composite_fields));
+            let scalar = match &p.ty {
                 ValueType::Bool => &BIT,
                 ty if ty.is_integer() => CarrierLayout::of(ty).unwrap_or(&F64),
                 _ => &F64,
             };
+            let layout = composite_layout.as_ref().unwrap_or(scalar);
             let mut flags = if init.is_empty() { 0 } else { pin_flag::HAS_INIT };
             if p.structural {
                 flags |= pin_flag::STRUCTURAL;
@@ -526,6 +543,7 @@ impl BodyPlan {
         let tolerances = Digital::tolerance_pins(&mut s, body);
         let resolution = Digital::resolution_pin(&mut s, body);
         let derivative_abstols = Digital::derivative_abstol_pins(&mut s, body);
+        let settle = Digital::settle_pin(&mut s, body);
         let watches = Digital::watches(&mut s, body, &events, &crossed, &tolerances);
         let caps = Digital::cap_watches(&mut s, body);
         let pins = Pins {
@@ -548,6 +566,7 @@ impl BodyPlan {
             caps,
             resolution,
             derivative_abstols,
+            settle,
         };
 
         // Terms, branch by branch.
@@ -786,6 +805,7 @@ impl BodyPlan {
             Source::Analysis(kind) => value(cell::PIN, pins.analysis.iter().find(|(k, _)| *k == kind).map_or(GROUND, |(_, pin)| *pin)),
             Source::Fired(k) => at(cell::PIN, pins.events.get(k as usize).copied().unwrap_or(GROUND), part::CHANGED),
             Source::Resolution => value(cell::PIN, pins.resolution.unwrap_or(GROUND)),
+            Source::Settle => at(cell::PIN, pins.settle.unwrap_or(GROUND), part::CHANGED),
         }
     }
 

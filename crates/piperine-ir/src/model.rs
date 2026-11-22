@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::deps::DepsMemo;
-use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
+use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
 use crate::real::Real;
 
 /// A source position, printed `file:line:col`.
@@ -36,6 +36,13 @@ pub struct Ir {
     /// The authored paths of the nodes a merge removed, each with the node that stands for it now.
     #[serde(default)]
     pub(crate) aliases: Vec<NodeAlias>,
+    /// The source structs and enums the values of the design are typed by: `ValueType::Struct` and
+    /// `ValueType::Enum` name an entry.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) types: Vec<TypeData>,
+    /// The composite constants: `Constant::Aggregate` names an entry.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) aggregates: Vec<AggregateData>,
 }
 
 /// The authored path of a node that a merge (a fixed zero-potential branch) removed from the arena,
@@ -237,6 +244,9 @@ pub enum EventSource {
     /// `p.changed()` of a param `p` of the body (§5.3.1): fires when the param's pin changes, a
     /// host `set` during the run (a binding before the run is not a change).
     ParamChanged(u32),
+    /// `settle` (§13 rule 17): fires once per time point, in the settle phase that closes the
+    /// instant (§15 step 4), when its guard, if any, holds.
+    Settle,
 }
 
 /// `on <events> { … }`: statements run when any of the events fires. Its `let`s bind `locals`,
@@ -354,6 +364,11 @@ pub struct Inflow {
 pub struct Local {
     pub name: String,
     pub ty: ValueType,
+    /// Whether the body assigns the local (§1.5.12), whatever its `let` wrote: only an assignable
+    /// local is the target of a `Stmt::Assign`. A function parameter and a loop variable are never
+    /// assignable, and a generated `let` keeps `mut` exactly for a local that is.
+    #[serde(default)]
+    pub mutable: bool,
 }
 
 /// An authored placement inside a body (the tree the device author wrote).
@@ -467,6 +482,94 @@ pub enum Expr {
     /// them is `Unknown`, so the result is `Flagged`; with no `tags` it is flagged only when
     /// `expr` is.
     LevelCast { expr: ExprId, to: ValueType, tags: Option<Vec<i128>> },
+    /// `loop { body }` (§1.8): runs `body` until a `Break`. Its type is its breaks' value type,
+    /// `()` for a `break` with no value.
+    Loop { body: Vec<StmtId> },
+    /// `while cond { body }`: runs `body` while `cond`, a `bool`, holds. Its type is `()`.
+    While { cond: ExprId, body: Vec<StmtId> },
+    /// `for local in low..high { body }`, `..=` when `inclusive`, walked from the top down when
+    /// `reverse` (`.rev()`): `local` takes each integer of the range, `low` and `high` have one
+    /// integer type. Its type is `()`.
+    ForRange { local: u32, low: ExprId, high: ExprId, inclusive: bool, reverse: bool, body: Vec<StmtId> },
+    /// `break` or `break value`: leaves the innermost loop; a value only out of a `Loop`. It
+    /// fits any expected type, as it never produces one.
+    Break(Option<ExprId>),
+    /// `continue`: starts the innermost loop's next iteration. It fits any expected type.
+    Continue,
+    /// `return` or `return value` in a function body: the value has the function's result type.
+    /// It fits any expected type.
+    Return(Option<ExprId>),
+    /// A function used as a value (§1.5.10): the name of a function, of type `Fn`.
+    FunctionRef(FunctionId),
+    /// `callee(args)` where `callee` is a value of type `Fn`, not a named function.
+    CallValue { callee: ExprId, args: Vec<ExprId> },
+    /// `(a, b, ..)`: a tuple of the operands, lowest field first. Its type is `Tuple`.
+    Tuple(Vec<ExprId>),
+    /// `[a, b, ..]`: an array of the operands, all of one type. Its type is `Array`.
+    Array(Vec<ExprId>),
+    /// `[element; count]`: `count` copies of one value (§1.5.25).
+    ArrayRepeat { element: ExprId, count: u64 },
+    /// `S { x: a, y: b }` or `S(a, b)`: a struct of the arena, its fields in declaration order.
+    StructOf { ty: TypeId, fields: Vec<ExprId> },
+    /// A variant of an enum of the arena with its fields in declaration order.
+    VariantOf { ty: TypeId, variant: u32, fields: Vec<ExprId> },
+    /// `expr.field`, `expr.0`: field `index` of a struct or a tuple.
+    Field { expr: ExprId, index: u32 },
+    /// `expr[index]`: an element of an array; `index` has an integer type.
+    Index { expr: ExprId, index: ExprId },
+    /// `expr.len()`: the length of an array, a `UInt<64>`.
+    Length(ExprId),
+    /// `matches!(expr, Enum::Variant ..)`: whether the enum value is variant `variant`. A `bool`.
+    IsVariant { expr: ExprId, variant: u32 },
+    /// Field `field` of variant `variant` of an enum value: defined where `IsVariant` holds.
+    VariantField { expr: ExprId, variant: u32, field: u32 },
+    /// The `Option<T>` made from the pair `(is, value)` that value code keeps (MD-67): `is` a
+    /// `bool`, `value` a `T`.
+    OptionPack { is: ExprId, value: ExprId },
+    /// One half of an `Option<T>` as the pair: `Is` gives a `bool`, `Value` the `T`.
+    OptionPart { option: ExprId, part: LevelPart },
+    /// `T::default()` (H.8 rule 4): the type is the one written.
+    Default(ValueType),
+}
+
+impl Expr {
+    /// The expressions the form evaluates directly, in evaluation order: not the statements of a
+    /// block or a loop body (`Expr::statements`).
+    pub fn operands(&self) -> Vec<ExprId> {
+        match self {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Unknown => Vec::new(),
+            Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::ParamPrevious(_) | Expr::Derivative(_) | Expr::Fired(_) | Expr::Continue | Expr::FunctionRef(_) => Vec::new(),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::LevelCast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => vec![*expr],
+            Expr::Binary { lhs: a, rhs: b, .. } | Expr::KnownOr { value: a, default: b } | Expr::Unwrap { is: a, value: b, .. } | Expr::Level { value: a, index: b, .. } | Expr::Merge { a, b } | Expr::Same { a, b } => vec![*a, *b],
+            Expr::If { cond, then, otherwise } => vec![*cond, *then, *otherwise],
+            Expr::Block { value, .. } => value.iter().copied().collect(),
+            Expr::Call { args, .. } | Expr::Math { args, .. } => args.clone(),
+            Expr::Closure { body, .. } => vec![*body],
+            Expr::Method { receiver, args, .. } => [*receiver].into_iter().chain(args.iter().copied()).collect(),
+            Expr::Limit { x, f, seed, .. } => [*x, *f].into_iter().chain(*seed).collect(),
+            Expr::Stim { mag, phase, .. } => [*mag].into_iter().chain(*phase).collect(),
+            Expr::Loop { .. } => Vec::new(),
+            Expr::While { cond, .. } => vec![*cond],
+            Expr::ForRange { low, high, .. } => vec![*low, *high],
+            Expr::Break(value) | Expr::Return(value) => value.iter().copied().collect(),
+            Expr::CallValue { callee, args } => [*callee].into_iter().chain(args.iter().copied()).collect(),
+            Expr::Tuple(parts) | Expr::Array(parts) | Expr::StructOf { fields: parts, .. } | Expr::VariantOf { fields: parts, .. } => parts.clone(),
+            Expr::ArrayRepeat { element, .. } => vec![*element],
+            Expr::Field { expr, .. } | Expr::Length(expr) | Expr::IsVariant { expr, .. } | Expr::VariantField { expr, .. } => vec![*expr],
+            Expr::OptionPack { is, value } => vec![*is, *value],
+            Expr::OptionPart { option, .. } => vec![*option],
+            Expr::Default(_) => Vec::new(),
+            Expr::Index { expr, index } => vec![*expr, *index],
+        }
+    }
+
+    /// The statements the form runs: a block's, a loop's body; none for any other form.
+    pub fn statements(&self) -> &[StmtId] {
+        match self {
+            Expr::Block { stmts: body, .. } | Expr::Loop { body } | Expr::While { body, .. } | Expr::ForRange { body, .. } => body,
+            _ => &[],
+        }
+    }
 }
 
 /// Which half of the `Option<bool>` of `x.level(k)` an `Expr::Level` reads.
@@ -494,6 +597,37 @@ pub enum Stmt {
     /// step whose solution did not execute the call (`when` false) is capped by nothing
     /// (§14.10.2). `None` for an unconditional call.
     BoundStep { site: u32, value: ExprId, when: Option<ExprId> },
+    /// `place = value;`, or `place op= value;` when `op` is set (§1.5.12): the target is a place
+    /// of a `mutable` local. Not an ABI statement: it writes a local, never the outside.
+    Assign { place: Place, op: Option<BinaryOp>, value: ExprId },
+}
+
+/// The target of an assignment: a local and the projections that reach inside it (`s.f`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Place {
+    /// The index of the local the assignment writes.
+    pub local: u32,
+    /// The steps from the local to the written part, outermost first; empty for the whole local.
+    pub path: Vec<Projection>,
+}
+
+/// One step into a value from a place: a field of a struct or a tuple, by index.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Projection {
+    /// `.n` or `.name`: the field at this index of a struct or a tuple.
+    Field(u32),
+    /// `[index]`: an element of an array, the index an expression of an integer type.
+    Index(ExprId),
+}
+
+impl Place {
+    /// The index expressions of the place's projections, outermost first.
+    pub fn index_operands(&self) -> impl Iterator<Item = ExprId> + '_ {
+        self.path.iter().filter_map(|step| match step {
+            Projection::Index(index) => Some(*index),
+            Projection::Field(_) => None,
+        })
+    }
 }
 
 impl Stmt {
@@ -503,6 +637,7 @@ impl Stmt {
         match self {
             Stmt::Let { init, .. } => vec![*init],
             Stmt::Expr(e) => vec![*e],
+            Stmt::Assign { place, value, .. } => [*value].into_iter().chain(place.index_operands()).collect(),
             Stmt::Contribute { addends, .. } => addends.iter().map(|a| a.value).collect(),
             Stmt::Commit { value, after, .. } => [*value].into_iter().chain(*after).collect(),
             Stmt::BoundStep { value, when, .. } => [*value].into_iter().chain(*when).collect(),
@@ -703,9 +838,84 @@ pub enum ValueType {
     /// A value that may be unknown (§3.3): the type of a carrier read and of everything computed
     /// from one. The inner type is `bool`, `f64` or an integer type.
     Flagged(Box<ValueType>),
+    /// A tuple `(A, B, ..)`: its fields, lowest first.
+    Tuple(Vec<ValueType>),
+    /// An array `[T; N]`: the element type and the length.
+    Array(Box<ValueType>, u64),
+    /// A source struct, named by its entry of the type arena.
+    Struct(TypeId),
+    /// A source enum, named by its entry of the type arena.
+    Enum(TypeId),
+    /// An `Option<T>` held as one value: a field, an element, an item, a carrier.
+    Option(Box<ValueType>),
+}
+
+/// How the fields of a struct or a variant are written in the source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FieldsForm {
+    /// `{ x: f64, y: f64 }`: the fields have names.
+    Named,
+    /// `(f64, f64)`: the fields are numbered, `0`, `1`, ...
+    Tuple,
+    /// No fields.
+    Unit,
+}
+
+/// The traits of Appendix H.8 a source type derives, one flag each.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Derives {
+    pub clone: bool,
+    pub copy: bool,
+    pub partial_eq: bool,
+    pub eq: bool,
+    pub partial_ord: bool,
+    pub ord: bool,
+    pub default: bool,
+    pub debug: bool,
+    pub hash: bool,
+    /// `Repr` (§2): the type crosses the device ABI.
+    pub repr: bool,
+}
+
+/// One source struct or enum: its name, where it was written, and its fields or variants.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TypeData {
+    /// The bare name, `Pair`.
+    pub name: String,
+    /// The path of the declaration in the source, `bus::Pair`.
+    pub path: String,
+    pub origin: Origin,
+    pub kind: TypeKind,
+    pub derives: Derives,
+}
+
+/// The shape of a source type.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum TypeKind {
+    /// A struct and its fields, named or numbered (the names of a tuple struct are `0`, `1`, ..).
+    Struct { form: FieldsForm, fields: Vec<(String, ValueType)> },
+    /// An enum: the width of its tag in levels (§2 rule 5) and its variants.
+    Enum { tag_levels: u32, variants: Vec<VariantData> },
+}
+
+/// One variant of an enum.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VariantData {
+    pub name: String,
+    /// The tag value of the variant (§1.3.7).
+    pub discriminant: i128,
+    pub form: FieldsForm,
+    pub fields: Vec<(String, ValueType)>,
 }
 
 impl ValueType {
+    /// Whether this is a tuple, an array, a struct or an `Option`: a value of parts, which a
+    /// param or a pin holds as bytes rather than as one scalar. An enum is not counted (its
+    /// params belong to `params-and-io`).
+    pub fn is_composite(&self) -> bool {
+        matches!(self, ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Struct(_) | ValueType::Option(_))
+    }
+
     /// Whether this is `UInt<N>` or `Int<N>`.
     pub fn is_integer(&self) -> bool {
         matches!(self, ValueType::UInt(_) | ValueType::Int(_))
@@ -727,6 +937,22 @@ pub enum Constant {
     Bool(bool),
     /// An integer; its width and sign are the type of the param or carrier it initializes.
     Int(i128),
+    /// A composite value (a tuple, an array, a struct, an enum variant, an `Option`): an entry of
+    /// the arena of composite constants. The handle keeps `Constant` `Copy`.
+    Aggregate(AggregateId),
+}
+
+/// One composite constant: its type and its parts in declaration order (§1.5.25). A part is
+/// itself a `Constant`, so aggregates nest through `Constant::Aggregate`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AggregateData {
+    /// The type of the value: a tuple, an array, a struct, an enum or an `Option`.
+    pub ty: ValueType,
+    /// The variant of an enum value; `None` for every other type.
+    pub variant: Option<u32>,
+    /// The fields, the elements, or the fields of the variant. An `Option` has none (`None`) or
+    /// one (`Some`).
+    pub parts: Vec<Constant>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

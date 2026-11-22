@@ -1,0 +1,56 @@
+//! `let mut`, assignment and every compound operator (CV-01), in a function, in a reaction and
+//! in an `analog` block. The expected values are computed by Rust in `source_control.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn real_ops(a: f64) -> f64 { let x = a; x += 1.5; x -= 0.25; x *= 3.0; x /= 2.0; x }
+fn int_ops(a: u8) -> u8 { let n = a; n += 3; n -= 1; n *= 2; n /= 3; n %= 5; n &= 7; n |= 8; n ^= 5; n <<= 1; n >>= 1; n }
+fn bool_ops(a: bool, b: bool) -> bool { let t = a; t &= b; t |= !b; t ^= true; t }
+fn deferred(c: bool) -> u8 { let r: u8; if c { r = 1; } else { r = 2; } r }
+fn reassigned(a: f64) -> f64 { let x = a; x = x * x; x = x + a; x }
+
+module Rows(in clk: Bit, out f: Bit<f64>, out g: Bit<u8>, out h: Bit, out d1: Bit<u8>, out d2: Bit<u8>,
+            out r: Bit<f64>, out local_n: Bit<u8>, out local_x: Bit<f64>, out local_b: Bit) {}
+digital for Rows {
+    on clk.rise() {
+        f <- real_ops(2.0);
+        g <- int_ops(20);
+        h <- bool_ops(true, false);
+        d1 <- deferred(true);
+        d2 <- deferred(false);
+        r <- reassigned(3.0);
+        // The same operators on the locals of the reaction itself.
+        let n = 20u8; n += 3; n -= 1; n *= 2; n /= 3; n %= 5; n &= 7; n |= 8; n ^= 5; n <<= 1; n >>= 1;
+        local_n <- n;
+        let x = 2.0; x += 1.5; x -= 0.25; x *= 3.0; x /= 2.0;
+        local_x <- x;
+        let t = true; t &= false; t |= true; t ^= true;
+        local_b <- t;
+    }
+}
+
+module Bench() {
+    signal clk: Bit; signal f: Bit<f64>; signal g: Bit<u8>; signal h: Bit; signal d1: Bit<u8>; signal d2: Bit<u8>;
+    signal r: Bit<f64>; signal local_n: Bit<u8>; signal local_x: Bit<f64>; signal local_b: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, f, g, h, d1, d2, r, local_n, local_x, local_b);
+}
+
+module Load(p: Electrical, n: Electrical) {}
+analog for Load { i(p, n) +> v(p, n); }
+
+module Currents(a: Electrical, b: Electrical, c: Electrical) {}
+analog for Currents {
+    let x = 2.0; x += 1.5; x -= 0.25; x *= 3.0; x /= 2.0;
+    i(gnd, a) +> x;
+    let y = 20.0; y -= 7.0; y += 1.0;
+    i(gnd, b) +> y;
+    i(gnd, c) +> real_ops(2.0);
+}
+
+module AnalogBench() {
+    signal a: Electrical; signal b: Electrical; signal c: Electrical;
+    let rows = Currents(a, b, c);
+    let la = Load(a, gnd); let lb = Load(b, gnd); let lc = Load(c, gnd);
+}

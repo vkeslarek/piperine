@@ -190,3 +190,25 @@ fn an_initial_value_that_reads_a_carrier_is_e0210() {
         Types::check(&design_of(&src), "Top").unwrap_or_else(|d| panic!("{init}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
     }
 }
+
+#[test]
+fn an_attribute_a1_does_not_list_is_e0904() {
+    // A.1: an attribute outside the table is `E0904`, `#[cfg]` and `#[allow]` included.
+    for attribute in ["#[cfg(test)]", "#[allow(dead_code)]", "#[inline]"] {
+        let src = format!("{attribute}\nmodule Top() {{ }}");
+        let d = diagnostics(&src);
+        assert_eq!(d.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0904"], "{attribute}");
+        assert!(d[0].diagnostic.message.contains(&attribute[2..attribute.find('(').unwrap_or(attribute.len() - 1)]), "{}", d[0].diagnostic.message);
+    }
+}
+
+#[test]
+fn a_listed_attribute_on_the_wrong_item_is_e0904() {
+    // A.1: `#[link]` is for an `extern` module, `#[repr(uN)]` for an `enum`, `#[derive]` for a type.
+    for (attribute, item) in [("#[link(\"x.osdi\")]", "fn f() { }"), ("#[repr(u2)]", "struct S { x: f64 }"), ("#[derive(Repr)]", "fn g() { }")] {
+        let src = format!("{attribute}\n{item}\nmodule Top() {{ }}");
+        let d = diagnostics(&src);
+        assert_eq!(d.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0904"], "{attribute}");
+        assert!(d[0].diagnostic.message.contains("A.1 allows it only on"), "{}", d[0].diagnostic.message);
+    }
+}

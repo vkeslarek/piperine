@@ -469,6 +469,45 @@ pub fn recorder() -> Handle {
     make::<Recorder>(&RECORDER, "recorder")
 }
 
+// ─── Settle recorder ────────────────────────────────────────────────────────
+
+/// `on settle { emit!(..) }`: one record when the settle phase runs.
+///
+/// pins: log=0 (PORT BYTE, RECORD); settle=1 (GLOBAL SETTLE event)
+/// reaction 0: on [settle] writes [S0 {log}]; commits `[7, known]`, no delay
+pub struct SettleRecorder;
+static SETTLE_RECORDER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static SETTLE_RECORDER: OnceLock<Module> = OnceLock::new();
+
+fn settle_recorder_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let log = s.pin(PinSpec { flags: pin_flag::RECORD, ..PinSpec::discrete("log", role::PORT, &BYTE) });
+    let settle = s.pin(PinSpec { global: global::SETTLE, ..PinSpec::event("settle", role::GLOBAL) });
+    s.reaction(ReactionSpec { name: "emit", on: vec![settle], writes: vec![statement(log, 2, 0)], ..ReactionSpec::default() });
+    s.freeze()
+}
+
+impl Device for SettleRecorder {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&SETTLE_RECORDER_SHAPE, settle_recorder_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((SettleRecorder, Arc::clone(shared(&SETTLE_RECORDER_SHAPE, settle_recorder_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("settle_recorder", true);
+        cx.commit(0, &[7, 1], 0.0)?;
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn settle_recorder() -> Handle {
+    make::<SettleRecorder>(&SETTLE_RECORDER, "settle_recorder")
+}
+
 // ─── Checked ────────────────────────────────────────────────────────────────
 
 /// A parameter with a `where r > 0` check, and a setup function that asks for another
@@ -845,6 +884,67 @@ impl Device for Settler {
 
 pub fn settler() -> Handle {
     make::<Settler>(&SETTLER, "settler")
+}
+
+// ─── Settle event ───────────────────────────────────────────────────────────
+
+/// `on settle && en.high() { out <- HIGH after delay }` as the plan builds it (§13 rule 17): an
+/// event function reads the `SETTLE` pin's `CHANGED` byte and the guard, and fires a private event
+/// pin the reaction listens to; the reaction never names `SETTLE`.
+///
+/// pins: delay=0 (PARAM F64, default 0); en=1 (PORT BIT); out=2 (PORT BIT); settle=3 (GLOBAL SETTLE
+///       event); seen=4 (PRIVATE event)
+/// fn 0 "settle_event": reads [en.VALUE, settle.CHANGED] writes [seen]; fires when both hold
+/// reaction 0: on [seen] reads [delay] writes [S0 {out}]; out <- HIGH after delay
+pub struct SettleEvent;
+static SETTLE_EVENT_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static SETTLE_EVENT: OnceLock<Module> = OnceLock::new();
+
+fn settle_event_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let delay = s.pin(PinSpec::discrete("delay", role::PARAM, &F64));
+    let en = s.pin(PinSpec::discrete("en", role::PORT, &BIT));
+    let out = s.pin(PinSpec::discrete("out", role::PORT, &BIT));
+    let settle = s.pin(PinSpec { global: global::SETTLE, ..PinSpec::event("settle", role::GLOBAL) });
+    let seen = s.pin(PinSpec::event("seen", role::PRIVATE));
+    s.function(FunctionSpec {
+        name: "settle_event",
+        reads: vec![pin(en), pin_part(settle, part::CHANGED)],
+        writes: vec![pin_part(seen, part::CHANGED)],
+        ..FunctionSpec::default()
+    });
+    s.reaction(ReactionSpec {
+        name: "on_seen",
+        on: vec![seen],
+        reads: vec![pin(delay)],
+        writes: vec![statement(out, 2, 0)],
+        ..ReactionSpec::default()
+    });
+    s.freeze()
+}
+
+impl Device for SettleEvent {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&SETTLE_EVENT_SHAPE, settle_event_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((SettleEvent, Arc::clone(shared(&SETTLE_EVENT_SHAPE, settle_event_shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        let guard_holds = cx.bytes(0) == HIGH;
+        let settling = cx.bytes(1) == [1];
+        cx.set(0, (guard_holds && settling) as u8);
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("settle_event", true);
+        cx.commit(0, &HIGH, cx.f64(0))?;
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn settle_event() -> Handle {
+    make::<SettleEvent>(&SETTLE_EVENT, "settle_event")
 }
 
 // ─── Delayed ────────────────────────────────────────────────────────────────

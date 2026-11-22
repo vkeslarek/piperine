@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use piperine_ir::{Body, BodyId, Ir};
+use piperine_ir::{Body, BodyId, Expr, Ir};
 use piperine_plan::BodyPlan;
 
 use crate::print::LibraryPrinter;
@@ -96,6 +96,14 @@ impl Transpiler {
     /// of `rt` and not `real.rs` alone.
     pub fn digital(&self) -> bool {
         self.ir.bodies().any(Transpiler::has_digital_form)
+    }
+
+    /// Whether the design holds a loop or a recursive function, whose printed forms count with
+    /// `rt::Trips` and `rt::Depth` (`rt/control.rs`): its runtime is the files of `rt` and not
+    /// `real.rs` alone.
+    pub fn loops(&self) -> bool {
+        self.ir.expressions().any(|e| matches!(e, Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. }))
+            || self.ir.functions().any(|f| print::ValuePrinter::is_recursive(&self.ir, f.id()))
     }
 
     /// The design as one Rust source text (`design.rs`); a form with no lowering is

@@ -10,6 +10,10 @@ extra:
 exclude_docs: |
   book/
 
+# The MSL Book is built from docs/book/ by this hook and published at book/index.html.
+hooks:
+  - hooks/book.py
+
 theme:
   name: material
 
@@ -19,6 +23,7 @@ plugins:
 
 nav:
   - Home: index.md
+  - The MSL Book: book/index.html
   - Specification:
       - Overview: spec/index.md
       - "I. Values": spec/part_i_values.md

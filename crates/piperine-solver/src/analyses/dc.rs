@@ -174,6 +174,9 @@ pub struct DcSolver<'a> {
     /// The analysis global (`global::DC`, `TRAN`, `AC` or `NOISE`) the operating point's
     /// digital side carries: the analysis the operating point is for.
     analysis: u32,
+    /// Another point of a sweep follows this one, so the settle commits it holds are kept for it
+    /// (§15 S6); otherwise `solve` drops them.
+    more_points: bool,
 }
 
 impl<'a> DcSolver<'a> {
@@ -211,6 +214,7 @@ impl<'a> DcSolver<'a> {
             homotopy_strategy: None,
             host: Default::default(),
             analysis: piperine_abi::raw::global::DC,
+            more_points: false,
         };
         // every analysis that takes an operating point of its own builds this solver, so the
         // context's nodeset reaches them all (ac, transient, tf, pz, sens, pss)
@@ -238,6 +242,13 @@ impl<'a> DcSolver<'a> {
         let mut dc = Self::new(circuit, context)?;
         dc.analysis = analysis;
         Ok(dc)
+    }
+
+    /// Whether another point of a sweep follows this solve (§15 S6): the settle commits this
+    /// point's reactions made then land at the next point's first instant instead of being dropped.
+    pub fn followed_by_another_point(mut self, more_points: bool) -> Self {
+        self.more_points = more_points;
+        self
     }
 
     /// Replace the convergence plan: its Newton strategy and homotopies drive every solve.
@@ -286,6 +297,7 @@ impl<'a> DcSolver<'a> {
         use crate::protocol::{Protocol, ProtocolOptions};
         self.solver.reset_iteration_counter();
         self.newton_calls = 0;
+        let more_points = self.more_points;
         let bound = self.system.circuit.abi.as_mut().expect("a circuit of devices");
         let spt = bound.digital.plan().resolution.seconds_per_tick;
         let mut digital = std::mem::replace(&mut bound.digital, empty_digital(spt)?);
@@ -299,6 +311,9 @@ impl<'a> DcSolver<'a> {
         let protocol = Protocol::new(side, EquilibriumSide { dc: self, solution: None }, options);
         let mut protocol = hooks.install(protocol, nets.as_deref().unwrap_or(&[]));
         let ran = nets.and_then(|_| protocol.operating_point());
+        if !more_points {
+            protocol.end_sweep();
+        }
         let (side, analog) = protocol.into_sides();
         let solution = analog.solution;
         if let Some(bound) = self.system.circuit.abi.as_mut() {

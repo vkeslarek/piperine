@@ -241,6 +241,10 @@ impl CircuitInstance {
                 if let Some(slot) = bound.names.slots.get(&net) {
                     bound.analog.set_discrete(*slot, &bytes);
                 }
+                // The idle engine holds the value too, so the next write's `where` reads it.
+                if bound.digital.plan().nets[net.0 as usize].param {
+                    bound.digital.seed_param(net, &bytes);
+                }
                 bound.host_writes.push((net, bytes));
             }
             Shadow::Accept | Shadow::Reshape { .. } => {}

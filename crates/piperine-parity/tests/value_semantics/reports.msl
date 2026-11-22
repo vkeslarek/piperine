@@ -1,0 +1,21 @@
+//! The reporting functions of the standard library take a `str` (VS-07 AC 2): one record each, as
+//! before. The expected records are written in `source_value_semantics.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+module Reporting(in clk: Bit) {}
+digital for Reporting {
+    on clk.rise() {
+        log(Severity::Warning, "hello");
+        require("held", true);
+        cover("seen", true);
+        target("margin", 0.25);
+    }
+}
+
+module ReportBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Reporting(clk);
+}

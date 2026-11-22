@@ -1,0 +1,17 @@
+* tran_square_rc: transient cross-check of a piecewise-linear square into the RC of tran_pwl_rc.
+* The square is the one of the integrated suite's `threshold` run: 0 to 1 V at 5 us, back at 10 us, and
+* so on to 40 us, with edges of 20 ps. The source is the host's in piperine (a node port of the top), so
+* there is no `.msl` twin and no `.command`: `source_host.rs` drives the same corners with
+* `Session::source`. The cap starts discharged (`uic`). `.options interp` makes ngspice record on the
+* print grid (multiples of tstep), as in tran_pwl_rc.
+* Fair configuration, not retuning: the piperine run caps its step at 1e-8, so ngspice's TMAX is set to
+* the same 10n explicitly (the same step configuration on both sides, nothing else). No tolerance changes.
+V1 vin 0 PWL(0p 0 5000000p 0 5000020p 1 10000000p 1 10000020p 0 15000000p 0 15000020p 1 20000000p 1 20000020p 0 25000000p 0 25000020p 1 30000000p 1 30000020p 0 35000000p 0 35000020p 1 40000000p 1 40000020p 0)
+R1 vin out 1000
+C1 out 0 1.5915494309189535e-9
+.options interp
+.control
+tran 0.1u 42u 0 10n uic
+wrdata tran_square_rc_tran v(out)
+.endc
+.end

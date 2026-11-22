@@ -1,6 +1,6 @@
 # Resolved Nets Specification
 
-**Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)
+**Approved**: 2026-11-21 - under the user's standing AFK rule - user: "Eu gostaria que engatilhasse até o 12" and, 2026-11-21, "pode ir tocando como previsto, parando só depois da revisão no item 13" (the amendment of 2026-11-21 below; the criteria of 2026-11-18 stand under the user's "Sobre as open questions, vou de aceito todas ok?")
 
 Natures other than `Bit` and the continuous ones with a flow: discrete natures a project
 declares (L22), natures with `resolve` (L21: `Wire`, `Tri`, `SumNet`, `others()`, relaxation of
@@ -14,6 +14,19 @@ loops), and signal-flow natures (L23, `VSignal`). With them come the stdlib of �
 | # | Question | Options | Recommendation |
 | - | -------- | ------- | -------------- |
 | Q1 | The stdlib nets are written with forms other features deliver: `Logic` is a `struct` (`composite-values`, L1), `resolve` takes a slice `&[T]` and folds over it (L3, L9, L16), `impl Logic` and `Tri<T>` are generic or `impl` on a value type (`generics`, L7), `Logic::Z` and `Logic::wired` use `Unknown` and `merge` (`unknown-semantics`). How is this feature delivered against them? | **A. One delivery after every dependency.** Nothing ships until `composite-values`, `generics` and `unknown-semantics` have merged. **B. Three phases, each when its dependencies are in.** Phase 1, no dependency: project discrete natures (L22) and signal-flow natures (L23). Phase 2, after `composite-values` and `unknown-semantics`: the resolution machinery (drives, the generated resolver, `others()`, relaxation, the `log` record), proven with project natures over scalars (`fn sum(d: &[f64]) -> f64`, a wired-AND over `bool`). Phase 3, after `generics`: `Logic`, `Wire`, `Tri`, the §22.3 modules, `Bidir` and the alarm. **C. Built-in nets first.** The elaborator treats `Logic`, `Strength`, `Wire` and `Logic::wired` as built-ins now, so the alarm runs before its dependencies; the stdlib source replaces them later. | **B.** Each phase is useful alone, and none of them duplicates the stdlib. C contradicts MD-56 D4 (the stdlib is a normative source) and leaves a special case to delete. A holds L22 and L23, which need nothing, behind the largest features of the queue. |
+
+## Amendment of 2026-11-21 (planning, user AFK)
+
+Written when design and tasks were planned (ROADMAP execution order, item 12). Each change is a
+D-numbered default of `design.md` "Decisions taken (user AFK)".
+
+| # | What changed since 2026-11-18 | Effect on this spec |
+| - | ----------------------------- | ------------------- |
+| A1 | Pure value semantics (G.71, `value-semantics` D7, commit `cc3599bf`): there is no slice and no borrow. `resolve` names `fn f<const N: usize>(drives: [T; N]) -> T`, instantiated at elaboration with `N` the number of drives a call receives (§4 rule 8). `value-semantics` rewrites `std/nets.msl` to that spelling; this feature owns the instantiation | RN-02 AC 1 and AC 3, RN-06 AC 2 and the edge cases are written with arrays; RN-05 AC 7 is added: what `resolve` receives in a relaxation pass |
+| A2 | Delivered since: `msl-fixes` (L17, `<` on a `PartialOrd` enum), `analog-structure` (L40, a contribution under an `if`), `host-ii` (L56, a digital-only transient), `unknown-semantics` (`Unknown`, `merge`) | Phase 3 waits on `generics` phase A only; RN-09 AC 1 loses its WHERE (design D18) |
+| A3 | Q1 = B becomes four steps (design D1): phase 1 now, beside and below the language (RN-01, RN-08, `E0224`, the drive presence and the record of a loop that does not settle below the language); phases 2 and 3 wait for `composite-values` A–B and `generics` A on `main`; phase 4 is the Book and the records | Dependencies and Size rewritten |
+| A4 | The spec-code guard of `params-and-io` (`crates/piperine-lang/tests/support/code_owners.tsv`, PI-13, not yet on `main`) assigns `E0203`, `E0224`, `E0242`, `E0413` to this feature and `E0260`, `E0261`, `E0262`, `E0264` to `resolved-nets-bundles` | RN-10 AC 3 is added |
+| A5 | `resolved-nets` and `resolved-nets-bundles` are planned on one branch, `feature/resolved-nets`, each with its own folder, checks and verification (design D2) | none |
 
 ---
 
@@ -47,8 +60,8 @@ elaborator, the IR and the generated Rust.
 | ------- | ------ |
 | Bundles: a `struct` of carriers, `flip`, bundle literals, `impl` on a bundle (L25) | `resolved-nets-bundles` |
 | Arrays of carriers, `[Wire; 8]` (L24) | `composite-values` |
-| Structs, slices, iterators, closures (L1, L3, L9, L16) | `composite-values`; this feature uses them |
-| Generic natures and functions, `impl` on a value type (L7, L30) | `generics`; `Tri<T>` and `impl Logic` use them |
+| Structs, arrays, iterators, closures (L1, L3, L9, L16) | `composite-values`; this feature uses them |
+| Generic functions, const parameters, `impl` on a value type (L7) | `generics` phase A; `resolve`, `tri` and `impl Logic` use them. A generic discrete nature (`Tri<T>`, a project's `nature Word<T: Repr>`) is this feature's (RN-01 AC 7, RN-06 AC 3) |
 | `Unknown`, `merge`, the merge of unknown control | `unknown-semantics` |
 | Per-level flags: which levels of a non-settling loop become unknown | `unknown-semantics-per-level`. With one flag per value the whole field becomes unknown |
 | A digital-only transient (L56) | `host-ii` (lane B); the alarm needs it |
@@ -65,12 +78,12 @@ elaborator, the IR and the generated Rust.
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --------------------- | -------------- | --------- | ---------- |
-| Q1: delivery against the dependencies | Pending (recommended B) | Open question at the top | n |
-| How a resolved carrier reaches the solver | abi.md §9 D1 as written: one-driver nets per drive in instance-path order, flagged `RELAX`, and a resolver instance generated from the nature, with one value pin and one `others` pin per reader that needs it | The ABI already defines it and the digital sub-solver implements the relaxation | n - planner |
-| The POM | Keeps every resolved carrier, drive and `others()` call as written; the resolver instance exists in the IR only | The navigability rule (MD-25, MD-54) | n - planner |
-| The bound on relaxation passes | The loop's drive count plus one (§8.2.3 step 3, Appendix C.2) | The spec fixes it | n - planner |
-| Where the record of a loop that does not settle goes | The `log` stream of the instance of the loop's first drive in instance-path order, once per loop and analysis, naming every drive of the loop (§8.2.3 step 4, §19 rule 2) | The spec fixes it | n - planner |
-| A signal-flow node that meets a nature with `flow` at one net | Conservative, with KCL (§4 rule 13 Resolution, §6 rule 2 Resolution) | The spec fixes it | n - planner |
+| Q1: delivery against the dependencies | B, in four steps (amendment A3, design D1) | Answered 2026-11-18; the steps follow the dependencies delivered since | y |
+| How a resolved carrier reaches the solver | abi.md §9 D1 as written: one-driver nets per drive in instance-path order, flagged `RELAX`, and a resolver instance generated from the nature, with one value pin and one `others` pin per reader that needs it | The ABI already defines it and the digital sub-solver implements the relaxation; how an absent drive differs from an unknown one is design D3 | y - AFK default (design D3 to D6) |
+| The POM | Keeps every resolved carrier, drive and `others()` call as written; the resolver instance exists in the IR only | The navigability rule (MD-25, MD-54) | y - AFK default (design D5) |
+| The bound on relaxation passes | The loop's drive count plus one (§8.2.3 step 3, Appendix C.2) | The spec fixes it | y |
+| Where the record of a loop that does not settle goes | The `log` stream of the instance of the loop's first drive in instance-path order, once per loop and analysis, naming every drive of the loop (§8.2.3 step 4, §19 rule 2) | The spec fixes it | y |
+| A signal-flow node that meets a nature with `flow` at one net | Conservative, with KCL (§4 rule 13 Resolution, §6 rule 2 Resolution) | The spec fixes it | y |
 
 **Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
@@ -94,6 +107,7 @@ elaborator, the IR and the generated Rust.
 4. IF a carrier of one discrete nature is connected to a port of another (`Byte` to `Bit<u8>`) THEN the system SHALL report `E0251` naming both natures.
 5. IF a discrete nature's `value` type does not implement `Repr` THEN the system SHALL report `E0112`.
 6. WHEN a second module drives a carrier of a discrete nature without `resolve` THEN the system SHALL report `E0220`, as for `Bit`.
+7. WHEN a project declares a generic discrete nature (`nature Word<T: Repr = u8> { value: T }`) THEN the system SHALL accept `Word<u16>` and `Word` (its default) as carrier types holding `u16` and `u8`, as for `Bit<T>` (§4 rule 12).
 
 **Independent Test**: A compiled run of a counter over a `Byte` carrier, and elaboration tests for `E0251`, `E0310` and `E0220`.
 
@@ -107,9 +121,10 @@ elaborator, the IR and the generated Rust.
 
 **Acceptance Criteria** (RN-02):
 
-1. WHEN a nature declares `value: T` and `resolve: f` with `f` a pure function of type `fn(&[T]) -> T` THEN the system SHALL accept it as a resolved nature.
+1. WHEN a nature declares `value: T` and `resolve: f` with `f` a pure function with one const parameter, `fn f<const N: usize>(drives: [T; N]) -> T` THEN the system SHALL accept it as a resolved nature (§4 rule 8).
 2. WHEN `resolve` names an associated function (`Logic::wired`) or a const of function type THEN the system SHALL accept it (§4 rule 8).
-3. IF `resolve` is not a pure function of type `fn(&[T]) -> T` THEN the system SHALL report `E0203`.
+3. IF `resolve` is not a pure function with exactly one const parameter `N: usize`, one parameter `[T; N]` and the result `T` THEN the system SHALL report `E0203` naming the nature and the function.
+7. WHEN a resolved carrier is elaborated THEN the system SHALL instantiate its nature's `resolve` once per drive count its resolver can receive, `0` to the number of drives of the carrier, and SHALL lower no other instance (§4 rule 8, design D4).
 4. IF a nature declares `resolve` without `value`, or mixes it with `potential` or `flow` THEN the system SHALL report `E0201`.
 5. IF a port of a resolved nature is written with `in` or `out` THEN the system SHALL report `E0310`.
 6. WHEN a signal of a resolved nature is declared with `= v` THEN the system SHALL make the declaring module hold a drive of it whose first commit is `v` at `(0, 0)` (§5.2.3).
@@ -127,7 +142,7 @@ elaborator, the IR and the generated Rust.
 **Acceptance Criteria** (RN-03):
 
 1. WHEN several modules drive one resolved carrier, each by a definition or by commits THEN the system SHALL give the carrier `resolve` of all the drives, recomputed in the microstep any drive changes (§5.2.10).
-2. WHEN nobody drives a resolved carrier THEN the system SHALL give it `resolve(&[])`: `0.0` for `SumNet`, `Logic::Z` for `Wire`.
+2. WHEN nobody drives a resolved carrier THEN the system SHALL give it `resolve([])`, the instance with `N = 0`: `0.0` for `SumNet`, `Logic::Z` for `Wire`.
 3. The system SHALL pass the drives to `resolve` in the lexicographic order of the instance paths that hold them, with the host's drive of a top-level carrier first, whatever the order of evaluation (§4 rule 2, Resolution).
 4. WHEN a drive has no initial value THEN the system SHALL pass it to `resolve` as unknown from `(0, 0)` until its first commit (§5.2.12).
 5. WHEN a drive changes and the resolved value does not THEN the system SHALL NOT fire the carrier's `changed()` (§5.2.10).
@@ -168,6 +183,7 @@ elaborator, the IR and the generated Rust.
 4. IF drives still move after the last pass THEN the system SHALL make the moving levels unknown and write one record naming the loop's drives on the `log` stream of the first drive's instance, once per loop and analysis (§8.2.3 step 4).
 5. IF a loop passes through a one-driver carrier THEN the system SHALL report `E0339`, as today.
 6. WHEN a loop is released (no drive left in it) THEN the system SHALL NOT keep a level from an earlier microstep: a loop cannot latch.
+7. WHILE a relaxation pass has drives of the loop not yet evaluated THEN the system SHALL pass `resolve` only the drives present, in instance-path order, and SHALL pass a drive whose value is unknown as present (§8.2.3 step 1, §5.2.12; design D3).
 
 **Independent Test**: The conformance item of Appendix C.2.3: `Tran` gates in parallel and in a ring on `Wire`s, and two `Bidir` pads alone on a wire for AC 4.
 
@@ -182,7 +198,7 @@ elaborator, the IR and the generated Rust.
 **Acceptance Criteria** (RN-06):
 
 1. WHEN `Wire` is resolved THEN the system SHALL give the table of §22.3.2: no drive `Logic::Z`; one strongest drive that drive; several of the greatest strength with the same level that level and strength; several of the greatest strength with different levels an unknown level with that strength.
-2. WHEN `wired(&[x, x])` is evaluated THEN the system SHALL give `x`, and SHALL give the same result for any order of the drives.
+2. WHEN `wired([x, x])` is evaluated THEN the system SHALL give `x`, and SHALL give the same result for any order of the drives.
 3. WHEN `Tri<T>` is resolved THEN the system SHALL give `None` for no drive or only `None`s, `Some(x)` for exactly one `Some(x)`, and `Some(Unknown)` for two or more `Some` (§22.3.3).
 4. WHEN `Tribuf` has `oe` high, low or unknown THEN its drive SHALL be `Logic::strong(d)`, `Logic::Z`, or the merge of the two (strength and level unknown) (§22.3.5).
 5. WHEN `Pullup` and a strong driver drive one `Wire` THEN the system SHALL give the strong drive while it drives and the pull while every stronger drive is released.
@@ -209,6 +225,7 @@ elaborator, the IR and the generated Rust.
 4. IF a module contributes a flow to a node of a nature without `flow` THEN the system SHALL report `E0413`.
 5. WHEN a `VSignal` node is connected to an `Electrical` port THEN the system SHALL accept the connection and treat the net as conservative, with KCL (§4 rule 13).
 6. IF `i(n)` or `flow(n)` probes a node of a nature without `flow` THEN the system SHALL report `E0206`.
+7. WHEN a `VSignal` port of the top has no driver in the design THEN the system SHALL elaborate it, because the host drives the top's node ports (`params-and-io`, §23.1 rule 1), and a run that gives it no host source SHALL be `E0810`. (Added by the fix round of the partial merge, 2026-11-21; AC 4 covers a contribution spelled `flow(n)` or with another nature's access name, as `i(n)`.)
 
 **Independent Test**: A compiled op, ac and transient of the gain chain, and elaboration tests for `E0242`, `E0413` and `E0206`.
 
@@ -240,7 +257,7 @@ elaborator, the IR and the generated Rust.
 
 **Acceptance Criteria** (RN-09):
 
-1. WHERE a digital-only transient runs (L56) WHEN `piperine run alarm.msl --analysis transient --stop 4e-6 --stream line` runs THEN the system SHALL print three records of `Alarm.watch.line`: at 0 `level = true, strength = Pull`; at 1 µs `level = false, strength = Strong`; at 3 µs `level = true, strength = Pull`; and none at 2 µs.
+1. WHEN `piperine run alarm.msl --analysis transient --stop 4e-6 --stream line` runs THEN the system SHALL print three records of `Alarm.watch.line`: at 0 `level = true, strength = Pull`; at 1 µs `level = false, strength = Strong`; at 3 µs `level = true, strength = Pull`; and none at 2 µs.
 2. WHEN the alarm runs THEN the Book's listing SHALL be the binary's output and `piperine-cli/tests/book.rs` SHALL pass.
 3. WHEN `Pullup` is replaced by `Pulldown` THEN the system SHALL print the records of the Book's exercise answer.
 
@@ -258,6 +275,7 @@ elaborator, the IR and the generated Rust.
 
 1. WHEN this feature merges THEN `GAPS.md` SHALL no longer list L21, L22, L23, nor the resolved-net group of L58 except the items whose other dependency is still open.
 2. WHEN this feature merges THEN Appendix C.2.3 and Appendix G.38 SHALL say that `Tran` on `Wire`s runs, with a `spec_text` guard (MD-57).
+3. WHEN a task first raises a code that `crates/piperine-lang/tests/support/code_owners.tsv` assigns to `resolved-nets` (`E0203`, `E0224`, `E0242`, `E0413`) THEN that commit SHALL delete the code's row, so the guard `spec_codes` passes (design D16).
 
 **Independent Test**: `cargo test -p piperine-lang --test spec_text` and `cargo test -p piperine-cli --test docs`.
 
@@ -266,7 +284,7 @@ elaborator, the IR and the generated Rust.
 ## Edge Cases
 
 - WHEN a resolved carrier is a top-level `in` port THEN the system SHALL pass the host's drive first (§4 rule 2, Resolution).
-- WHEN `resolve` itself panics (`xs[0]` on an empty slice) THEN the system SHALL report the panic as a run fault naming the nature and the carrier.
+- WHEN `resolve` itself panics (`xs[0]` on the empty array of a carrier nobody drives) THEN the system SHALL report the panic as a run fault naming the nature and the carrier.
 - WHEN a `SumNet` drive is unknown THEN the system SHALL make the sum unknown (§22.3.4 rule 3).
 - WHEN a resolved carrier is a child's `pub` signal THEN the parent SHALL be allowed to drive it (§5.2.2: any module that sees it).
 - WHEN a loop's drives settle on the first pass THEN the system SHALL write no `log` record.
@@ -277,18 +295,18 @@ elaborator, the IR and the generated Rust.
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| RN-01 | P1: A project declares its own discrete nature | - | Pending |
-| RN-02 | P1: A nature with `resolve` is declared and checked | - | Pending |
-| RN-03 | P1: Drives combine through `resolve` | - | Pending |
-| RN-04 | P1: `others()` | - | Pending |
-| RN-05 | P1: Loops among resolved drives settle by relaxation | - | Pending |
-| RN-06 | P1: The stdlib nets of §22.3 | - | Pending |
-| RN-07 | P1: `Bidir` | - | Pending |
-| RN-08 | P1: A signal-flow node | - | Pending |
-| RN-09 | P2: The Book's alarm line | - | Pending |
-| RN-10 | P3: The documents say what is true | - | Pending |
+| RN-01 | P1: A project declares its own discrete nature | T1–T2 | In Tasks |
+| RN-02 | P1: A nature with `resolve` is declared and checked | T11, T16, T19, T20 | In Tasks |
+| RN-03 | P1: Drives combine through `resolve` | T12–T14, T17, T18, T22, T33 | In Tasks |
+| RN-04 | P1: `others()` | T3, T15, T23 | In Tasks |
+| RN-05 | P1: Loops among resolved drives settle by relaxation | T7–T9, T21, T24, T25 | In Tasks |
+| RN-06 | P1: The stdlib nets of §22.3 | T26–T31 | In Tasks |
+| RN-07 | P1: `Bidir` | T32 | In Tasks |
+| RN-08 | P1: A signal-flow node | T4–T6 | In Tasks |
+| RN-09 | P2: The Book's alarm line | T34, T35 | In Tasks |
+| RN-10 | P3: The documents say what is true | T10, T36 | In Tasks |
 
-**Coverage:** 10 total, 0 mapped to tasks, 10 unmapped (no tasks yet).
+**Coverage:** 10 total, 10 mapped to tasks (tasks.md, T1–T36), 0 unmapped.
 
 ### Gaps closed
 
@@ -303,15 +321,17 @@ elaborator, the IR and the generated Rust.
 
 ## Dependencies
 
-- Phase 1 (RN-01, RN-08): none.
-- Phase 2 (RN-02 to RN-05 over project natures): `composite-values` (L1 structs, L3 slices, L9 closures, L16 iterators) and `unknown-semantics` (US-01 `Unknown`, US-03 `merge`, US-04 the merge of unknown control).
-- Phase 3 (RN-06, RN-07, RN-09): `generics` (L7 `impl Logic`, generic `tri` and `Tri<T>`), `msl-fixes` L17 (strength comparisons), `analog-structure` L40 (`Bidir`'s conditional contribution), `host-ii` L56 (the alarm is digital-only).
+- Phase 1 (RN-01, RN-08, RN-04 AC 3, RN-05 AC 2, AC 6 and AC 7 below the language): none; starts from `main` at `7df9e17c`.
+- Phase 2 (RN-02 to RN-05 over `SumNet` and project natures): `composite-values` phases A–B (structs, arrays `[T; N]`, iterators H.7, closures, carried composites T57) and `generics` phase A (const-generic functions and their `Instantiations`), both on `main`; `value-semantics` (on `main` with `composite-values`) for the `std/nets.msl` spelling.
+- Phase 3 (RN-06, RN-07): phase 2, and `generics` phase A's `impl` on a value type with associated constants (`impl Logic`, `Logic::Z`).
+- Phase 4 (RN-09, RN-10): phases 1 to 3.
+- Already delivered: `msl-fixes` L17, `analog-structure` L40, `host-ii` L56, `unknown-semantics` US-01 to US-04.
 - Benefits from, does not wait for: `unknown-semantics-per-level` (exact levels in RN-05 AC 4).
-- Downstream: `resolved-nets-bundles` (a bundle field of a resolved nature has no direction).
+- Downstream: `resolved-nets-bundles` (a bundle field of a resolved nature has no direction), on the same branch.
 
 ## Size
 
-**L.** About 30 tasks: phase 1 7 (RN-01 3, RN-08 4), phase 2 11 (RN-02 2, RN-03 4, RN-04 2, RN-05 3), phase 3 12 (RN-06 7, RN-07 2, RN-09 1, RN-10 2).
+**L.** 36 tasks in 9 phases, 7 batches (tasks.md): 10 independent (phases 1 to 3, T1 to T10), 23 waiting for `composite-values` A–B and `generics` A (phases 4 to 8), 3 for the Book and the records (phase 9).
 
 ## Sources
 

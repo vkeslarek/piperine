@@ -123,6 +123,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         loop {
             let part = self.discrete.run_instant(at, samples, limit, mode)?;
             whole.boundary.extend(part.boundary);
+            whole.settle_boundary.extend(part.settle_boundary);
             whole.host_param_write |= part.host_param_write;
             whole.finish |= part.finish;
             if part.host_events.is_empty() {

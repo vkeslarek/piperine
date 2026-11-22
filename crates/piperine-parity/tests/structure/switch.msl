@@ -40,7 +40,7 @@ module HalvedBench() {
 
 // -- AS-01 AC 2: a `match` on a `Bit<Mode>` carrier
 
-#[derive(Repr, Clone, Copy, PartialEq)]
+#[derive(Repr, PartialEq)]
 enum Mode { Fast, Slow }
 
 module Moded(a: Electrical, in mode: Bit<Mode>) {}

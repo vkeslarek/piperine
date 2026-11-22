@@ -9,6 +9,7 @@ use piperine_abi::raw::pin_flag;
 use crate::plan::{Binding, DigitalPlan, NetWriter};
 use crate::queue::{Pending, Queue, QueueMark, Writer};
 use crate::run::{Ambient, DirtySet, run_cone, write_net};
+use crate::settle::SettleCommits;
 use crate::store::{Store, StoreMark};
 use crate::tick::Tick;
 use crate::error::DigitalError;
@@ -68,6 +69,9 @@ pub struct Outcome {
     /// not empty the instant is suspended: host commits made now are due at its next microstep,
     /// and the next `run_instant` at the same tick continues it (abi.md §5 R7).
     pub host_events: Vec<NetId>,
+    /// The nets the analog side reads and the bytes the held settle commits will give them: the
+    /// solve that arrives at the next time point reads these (§15 S2).
+    pub settle_boundary: Vec<(NetId, Vec<u8>)>,
 }
 
 /// The engine's state at one point: the store, the queue, how many observations existed, and the
@@ -82,6 +86,9 @@ pub struct Checkpoint {
     call: u32,
     running: bool,
     suspended: Option<(Tick, u32)>,
+    /// The settle commits held when it was taken: a restore brings them back, so a rejected step
+    /// keeps them for the retried time point and a landing it made is taken back (§15 S5).
+    settle_commits: SettleCommits,
 }
 
 /// A place of the engine to rewind to without a copy of its state (HYG-14): the journal
@@ -97,6 +104,9 @@ pub struct Mark {
     call: u32,
     running: bool,
     suspended: Option<(Tick, u32)>,
+    /// The settle commits held when it was taken: a restore brings them back, so a rejected step
+    /// keeps them for the retried time point and a landing it made is taken back (§15 S5).
+    settle_commits: SettleCommits,
 }
 
 impl Checkpoint {
@@ -117,6 +127,8 @@ pub struct Digital {
     pub(crate) dirty: DirtySet,
     /// The tick of the last instant entered.
     pub(crate) now: Tick,
+    /// The commits of the settle phase held for the next time point (§15 S1).
+    pub(crate) settle_commits: SettleCommits,
     /// Numbers the commits of a microstep (abi.md §6 C2).
     pub(crate) call: u32,
     pub(crate) running: bool,
@@ -132,7 +144,14 @@ pub struct Digital {
 
 impl Digital {
     pub fn new(plan: DigitalPlan, limits: DigitalLimits) -> Digital {
-        let store = Store::new(&plan.nets);
+        let mut store = Store::new(&plan.nets);
+        // A param holds its initial value from the start, before any run (§5.3.1): a host `set`
+        // checks its `where` against the other params' values, which a zeroed store would not give.
+        for (index, net) in plan.nets.iter().enumerate() {
+            if net.param && !net.init.is_empty() {
+                store.seed(NetId(index as u32), &net.init);
+            }
+        }
         let dirty = DirtySet::all(&plan);
         Digital {
             plan,
@@ -142,6 +161,7 @@ impl Digital {
             obs: Obs::new(),
             dirty,
             now: Tick(0),
+            settle_commits: SettleCommits::default(),
             call: 0,
             running: false,
             waited: Vec::new(),
@@ -165,7 +185,9 @@ impl Digital {
     }
 
     /// An analysis from initial values (abi.md §9): zero the store, drop the queue, commit every
-    /// `init` at (0, 0) and fire `START`. No device is called; the first instant applies them.
+    /// `init` at (0, 0) and fire `START`. No device is called; the first instant applies them. The
+    /// held settle commits stay: those of the previous sweep point land at this point (§15 S6),
+    /// and the owner drops them at a sweep's end (`drop_settle_commits`).
     pub fn start(&mut self) -> Result<(), DigitalError> {
         self.start_at(Tick(0))
     }
@@ -275,6 +297,23 @@ impl Digital {
         }
     }
 
+    /// Makes the held settle commits due at microstep 0 of `tick`, the next time point (§15 S1, S6),
+    /// where `changed()` fires for what they change. The owner calls it when it accepts that time
+    /// point, before it runs the instant.
+    pub fn land_settle_commits(&mut self, tick: Tick) {
+        self.settle_commits.land(tick, &mut self.queue);
+    }
+
+    /// Forgets the held settle commits: the stop time was reached or the last sweep point ran (§15 S6).
+    pub fn drop_settle_commits(&mut self) {
+        self.settle_commits.drop_all();
+    }
+
+    /// Whether a settle commit is held, waiting for the next time point.
+    pub fn holds_settle_commits(&self) -> bool {
+        !self.settle_commits.is_empty()
+    }
+
     /// Fires event net `net`: a commit due at microstep 0 of `at` (abi.md §6 C6).
     pub fn fire(&mut self, net: NetId, at: Tick) -> Result<(), DigitalError> {
         if self.plan.nets[net.0 as usize].kind != NetKind::Event {
@@ -298,6 +337,7 @@ impl Digital {
             call: self.call,
             running: self.running,
             suspended: self.suspended,
+            settle_commits: self.settle_commits.clone(),
         }
     }
 
@@ -313,6 +353,7 @@ impl Digital {
             call: self.call,
             running: self.running,
             suspended: self.suspended,
+            settle_commits: self.settle_commits.clone(),
         }
     }
 
@@ -327,6 +368,7 @@ impl Digital {
         self.call = mark.call;
         self.running = mark.running;
         self.suspended = mark.suspended;
+        self.settle_commits = mark.settle_commits.clone();
     }
 
     /// Ends the newest open mark; the journals empty with the outermost.
@@ -358,10 +400,12 @@ impl Digital {
         self.call = cp.call;
         self.running = cp.running;
         self.suspended = cp.suspended;
+        self.settle_commits = cp.settle_commits.clone();
     }
 
     /// Checks a host write to a `PARAM` or `GLOBAL` net before it is committed (abi.md P6): the
-    /// parameter cone downstream of the net runs on a copy of the store. A false `check` pin refuses
+    /// parameter cone downstream of the net runs on a copy of the store. A false `check` pin anywhere
+    /// in the design (every dependent `where` is re-checked, §8.1.23) refuses
     /// the write and names the pin; a `RESHAPE` names the instance. Nothing of the engine changes.
     pub fn shadow(&self, net: NetId, offset: u32, bytes: &[u8]) -> Result<Shadow, DigitalError> {
         let analysis = self.plan.analysis();
@@ -369,18 +413,22 @@ impl Digital {
             return Ok(Shadow::Accept);
         }
         let mut store = self.store.clone();
-        let mut dirty = DirtySet::none(&self.plan);
+        // The functions still waiting for a first evaluation run too, and the cone of the written
+        // net runs whether or not the value changed: a check reads the other params as they are
+        // now, so a write of the value a param already holds is still checked against them.
+        let mut dirty = self.dirty.clone();
         let mut obs = Obs::new();
         let here = (self.now, 0);
         write_net(&self.plan, &mut store, &mut dirty, &mut obs, net, offset, bytes, here);
+        dirty.mark_net(&self.plan, net);
         let ambient = self.ambient(self.now);
         if let Some(instance) = run_cone(&self.plan, &mut store, &mut dirty, here, &ambient, &mut obs)? {
             return Ok(Shadow::Reshape { instance });
         }
         for inst in &self.plan.instances {
             let shape = inst.handle.shape();
-            for (i, pin) in shape.pins.iter().enumerate() {
-                if inst.pins[i] != Binding::Net(net) || pin.flags & pin_flag::HAS_CHECK == 0 {
+            for pin in shape.pins.iter() {
+                if pin.flags & pin_flag::HAS_CHECK == 0 {
                     continue;
                 }
                 let Some(check) = shape.pins.get(pin.check as usize) else { continue };

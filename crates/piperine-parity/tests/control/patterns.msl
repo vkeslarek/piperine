@@ -1,0 +1,78 @@
+//! Guards, range patterns, or-patterns with names, `@` and refutable patterns in `if let`,
+//! `while let` and `let ... else` (CV-04). Each function is called from a reaction that commits the
+//! results; the expected values are computed by Rust in `source_control.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn guard_class(x: i16) -> u8 { match x { n if n < 0 => 0, 0 => 1, n if n % 2 == 0 => 2, _ => 3 } }
+fn range_class(x: u8) -> u8 { match x { 0..=9 => 1, 10..100 => 2, 100.. => 3 } }
+fn real_class(x: f64) -> u8 { match x { 0.0..=1.0 => 1, -1.0..0.0 => 0, _ => 2 } }
+fn or_class(x: u8) -> u8 { match x { 1 | 2 | 3 => 10, 4 | 5 => 20, n @ 6..=9 => n, _ => 0 } }
+fn at_class(x: u8) -> u8 { match x { n @ (1 | 2) => n * 10, n @ 3..=5 => n, _ => 0 } }
+fn option_class(o: Option<u8>) -> u8 { match o { Some(n @ 1..=5) => n, Some(n) if n > 100 => 100, Some(_) => 50, None => 0 } }
+fn option_exact(o: Option<u8>) -> u8 { match o { Some(1) => 10, Some(2) | Some(3) => 20, Some(n) if n > 100 => 30, None => 40, _ => 50 } }
+fn option_wild(o: Option<u8>) -> u8 { match o { Some(1) => 10, _ => 20 } }
+fn option_bound(o: Option<u8>) -> u8 { match o { whole @ Some(7) => whole.unwrap_or(0) + 1, other => other.unwrap_or(9) } }
+fn option_nested(o: Option<(u8, bool)>) -> u8 { match o { Some((n, true)) => n, Some((_, false)) => 1, None => 0 } }
+fn if_let(o: Option<u8>) -> u8 { if let Some(v) = o { v + 1 } else { 0 } }
+fn if_let_range(x: u8) -> u8 { if let n @ 3..=5 = x { n * 2 } else { 0 } }
+fn if_let_option_range(o: Option<u8>) -> u8 { if let Some(1..=3) = o { 1 } else { 0 } }
+fn option_by_key(k: u8) -> Option<u8> { match k { 0 => Some(1), 1 => Some(k + 10), _ => None } }
+fn option_by_guard(o: Option<u8>) -> Option<u8> { match o { Some(n) if n > 5 => Some(n * 2), Some(_) => Some(0), None => None } }
+fn option_if_let(o: Option<u8>) -> Option<u8> { if let Some(n) = o { Some(n + 1) } else { None } }
+fn let_else(o: Option<u8>) -> u8 { let Some(v) = o else { return 77; }; v * 2 }
+fn small_sum(limit: u8) -> u8 {
+    let i = 0u8;
+    let sum = 0u8;
+    while let Some(v @ 0..=4) = (i < limit).then_some(i) { sum += v; i += 1; }
+    sum
+}
+
+module Rows(in clk: Bit, out g0: Bit<u8>, out g1: Bit<u8>, out g2: Bit<u8>, out g3: Bit<u8>, out r0: Bit<u8>, out r1: Bit<u8>, out r2: Bit<u8>, out r3: Bit<u8>, out r4: Bit<u8>, out r5: Bit<u8>, out q0: Bit<u8>, out q1: Bit<u8>, out q2: Bit<u8>, out q3: Bit<u8>, out o0: Bit<u8>, out o1: Bit<u8>, out o2: Bit<u8>, out o3: Bit<u8>, out a0: Bit<u8>, out a1: Bit<u8>, out a2: Bit<u8>, out p0: Bit<u8>, out p1: Bit<u8>, out p2: Bit<u8>, out p3: Bit<u8>, out l0: Bit<u8>, out l1: Bit<u8>, out l2: Bit<u8>, out l3: Bit<u8>, out l4: Bit<u8>, out l5: Bit<u8>, out l6: Bit<u8>, out l7: Bit<u8>, out l8: Bit<u8>, out l9: Bit<u8>, out w0: Bit<u8>, out t0: Bit<u8>, out t1: Bit<u8>) {}
+digital for Rows {
+    on clk.rise() {
+        g0 <- guard_class(-3); g1 <- guard_class(0); g2 <- guard_class(4); g3 <- guard_class(5);
+        r0 <- range_class(0); r1 <- range_class(9); r2 <- range_class(10); r3 <- range_class(99); r4 <- range_class(100); r5 <- range_class(255);
+        q0 <- real_class(0.5); q1 <- real_class(-0.5); q2 <- real_class(2.0); q3 <- real_class(1.0);
+        o0 <- or_class(2); o1 <- or_class(5); o2 <- or_class(7); o3 <- or_class(0);
+        a0 <- at_class(2); a1 <- at_class(4); a2 <- at_class(9);
+        p0 <- option_class(Some(3)); p1 <- option_class(Some(200)); p2 <- option_class(Some(50)); p3 <- option_class(None);
+        l0 <- if_let(Some(4)); l1 <- if_let(None);
+        l2 <- if_let_range(4); l3 <- if_let_range(6);
+        l4 <- if_let_option_range(Some(2)); l5 <- if_let_option_range(Some(9)); l6 <- if_let_option_range(None);
+        l7 <- let_else(Some(5)); l8 <- let_else(None);
+        l9 <- small_sum(10);
+        w0 <- small_sum(3);
+        // The same patterns on the locals of the reaction itself.
+        let local = 7u8;
+        t0 <- match local { n if n > 5 => n + 1, 0..=5 => 0, _ => 99 };
+        let found = (local < 9).then_some(local);
+        let got = 0u8;
+        if let Some(n @ 6..=8) = found { got = n; }
+        t1 <- got;
+    }
+}
+
+module OptionRows(in clk: Bit, out s0: Bit<u8>, out s1: Bit<u8>, out s2: Bit<u8>, out s3: Bit<u8>, out s4: Bit<u8>, out s5: Bit<u8>, out s6: Bit<u8>, out s7: Bit<u8>, out s8: Bit<u8>, out s9: Bit<u8>, out s10: Bit<u8>, out s11: Bit<u8>, out s12: Bit<u8>, out s13: Bit<u8>, out m0: Bit<u8>, out m1: Bit<u8>, out m2: Bit<u8>, out m3: Bit<u8>, out m4: Bit<u8>, out m5: Bit<u8>, out m6: Bit<u8>, out m7: Bit<u8>) {}
+digital for OptionRows {
+    on clk.rise() {
+        s0 <- option_exact(Some(1)); s1 <- option_exact(Some(3)); s2 <- option_exact(Some(200)); s3 <- option_exact(None); s4 <- option_exact(Some(5));
+        s5 <- option_wild(Some(1)); s6 <- option_wild(Some(2)); s7 <- option_wild(None);
+        s8 <- option_bound(Some(7)); s9 <- option_bound(Some(3)); s10 <- option_bound(None);
+        s11 <- option_nested(Some((4, true))); s12 <- option_nested(Some((4, false))); s13 <- option_nested(None);
+        m0 <- option_by_key(0).unwrap_or(99); m1 <- option_by_key(1).unwrap_or(99); m2 <- option_by_key(2).unwrap_or(99);
+        m3 <- option_by_guard(Some(7)).unwrap_or(99); m4 <- option_by_guard(Some(3)).unwrap_or(99); m5 <- option_by_guard(None).unwrap_or(99);
+        m6 <- option_if_let(Some(4)).unwrap_or(99); m7 <- option_if_let(None).unwrap_or(99);
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal g0: Bit<u8>; signal g1: Bit<u8>; signal g2: Bit<u8>; signal g3: Bit<u8>; signal r0: Bit<u8>; signal r1: Bit<u8>; signal r2: Bit<u8>; signal r3: Bit<u8>; signal r4: Bit<u8>; signal r5: Bit<u8>; signal q0: Bit<u8>; signal q1: Bit<u8>; signal q2: Bit<u8>; signal q3: Bit<u8>; signal o0: Bit<u8>; signal o1: Bit<u8>; signal o2: Bit<u8>; signal o3: Bit<u8>; signal a0: Bit<u8>; signal a1: Bit<u8>; signal a2: Bit<u8>; signal p0: Bit<u8>; signal p1: Bit<u8>; signal p2: Bit<u8>; signal p3: Bit<u8>; signal l0: Bit<u8>; signal l1: Bit<u8>; signal l2: Bit<u8>; signal l3: Bit<u8>; signal l4: Bit<u8>; signal l5: Bit<u8>; signal l6: Bit<u8>; signal l7: Bit<u8>; signal l8: Bit<u8>; signal l9: Bit<u8>; signal w0: Bit<u8>; signal t0: Bit<u8>; signal t1: Bit<u8>;
+    signal s0: Bit<u8>; signal s1: Bit<u8>; signal s2: Bit<u8>; signal s3: Bit<u8>; signal s4: Bit<u8>; signal s5: Bit<u8>; signal s6: Bit<u8>; signal s7: Bit<u8>; signal s8: Bit<u8>; signal s9: Bit<u8>; signal s10: Bit<u8>; signal s11: Bit<u8>; signal s12: Bit<u8>; signal s13: Bit<u8>;
+    signal m0: Bit<u8>; signal m1: Bit<u8>; signal m2: Bit<u8>; signal m3: Bit<u8>; signal m4: Bit<u8>; signal m5: Bit<u8>; signal m6: Bit<u8>; signal m7: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let option_rows = OptionRows(clk, s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13, m0, m1, m2, m3, m4, m5, m6, m7);
+    let rows = Rows(clk, g0, g1, g2, g3, r0, r1, r2, r3, r4, r5, q0, q1, q2, q3, o0, o1, o2, o3, a0, a1, a2, p0, p1, p2, p3, l0, l1, l2, l3, l4, l5, l6, l7, l8, l9, w0, t0, t1);
+}

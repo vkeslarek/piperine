@@ -2,12 +2,14 @@
 
 pub module AckWithin(in clk: Bit, in req: Bit, in ack: Bit) {
     n: u32 = 4;
-    signal waiting: Bit<u32> = 0;      // cycles since an unanswered req; 0 is idle
+    signal waiting: Bit<u32> = 0; // cycles since an unanswered req; 0 is idle
 }
+
 digital for AckWithin {
     on clk.rise() {
-        if ack { waiting <- 0; }
-        else if waiting > 0 || req {
+        if ack {
+            waiting <- 0;
+        } else if waiting > 0 || req {
             require("ack_within_n", waiting < n);
             waiting <- waiting + 1;
         }
@@ -15,41 +17,86 @@ digital for AckWithin {
 }
 
 pub module Never(in clk: Bit, in bad: Bit) {}
-digital for Never { on clk.rise() { require("never", !bad); } }
+
+digital for Never {
+    on clk.rise() {
+        require("never", !bad);
+    }
+}
 
 pub module Stable<T: Repr>(in en: Bit, in d: Bit<T>) {}
-digital<T> for Stable<T> { on d.changed() && en && !en.changed() { require("stable", false); } }
+
+digital<T> for Stable<T> {
+    on d.changed() && en && !en.changed() {
+        require("stable", false);
+    }
+}
 
 pub module Setup<T: Repr>(in clk: Bit, in d: Bit<T>, out viol: Bit = false) {
     ts: f64 where ts > 0.0;
     let age = since(d);
 }
+
 digital<T> for Setup<T> {
-    on clk.rise() { require("setup", age >= ts); viol <- age < ts; }
+    on clk.rise() {
+        require("setup", age >= ts);
+        viol <- age < ts;
+    }
 }
 
 pub module Hold<T: Repr>(in clk: Bit, in d: Bit<T>) {
     th: f64 where th > 0.0;
-    let high_for = since(clk);          // clk high: its last change was a rise
-}
-digital<T> for Hold<T> {
-    on d.changed() && clk && d.prev().is_known() { require("hold", !clk.changed() && high_for >= th); }
+    let high_for = since(clk); // clk high: its last change was a rise
 }
 
-pub module MinPulse(in d: Bit) { w: f64 where w > 0.0; let width = since(d); }
-digital for MinPulse { on d.changed() { require("min_pulse", width >= w); } }
+digital<T> for Hold<T> {
+    on d.changed() && clk && d.prev().is_known() {
+        require("hold", !clk.changed() && high_for >= th);
+    }
+}
+
+pub module MinPulse(in d: Bit) {
+    w: f64 where w > 0.0;
+    let width = since(d);
+}
+
+digital for MinPulse {
+    on d.changed() {
+        require("min_pulse", width >= w);
+    }
+}
 
 pub module inertial<T: Repr>(in x: Bit<T>, tpd: f64) -> T {
     signal y: Bit<T>;
     signal seen: Bit<f64>;
     y
 }
+
 digital<T> for inertial<T> {
-    on x.changed() { seen <- now(); if analysis(Static) { y <- x; } }
-    on at(seen + tpd) { y <- x; }           // re-armed by every change: only the last one survives
+    on x.changed() {
+        seen <- now();
+        if analysis(Static) {
+            y <- x;
+        }
+    }
+    on at(seen + tpd) {
+        y <- x;
+    } // re-armed by every change: only the last one survives
 }
 
 pub module TribufDelayed(in d: Bit, in oe: Bit, y: Wire) {
-    ton: f64 = 100p; toff: f64 = 300p;
-    y = inertial(if oe { Logic::strong(d) } else { Logic::Z }, if oe { ton } else { toff });
+    ton: f64 = 100p;
+    toff: f64 = 300p;
+    y = inertial(
+        if oe {
+            Logic::strong(d)
+        } else {
+            Logic::Z
+        },
+        if oe {
+            ton
+        } else {
+            toff
+        },
+    );
 }

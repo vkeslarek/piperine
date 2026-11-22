@@ -7,7 +7,8 @@ pub struct Number;
 
 impl Number {
     /// A real as `{:.6e}`, a `bool` as `true` or `false`, an integer in decimal, a name as it
-    /// is, an unknown value as `x`.
+    /// is, an unknown value as `x`, a composite value in the language's literal syntax
+    /// (`Pair { a: 7, b: true }`, `[1, 2, 3]`, `Tx::Data { n: 5 }`) with each scalar written the same way.
     pub fn text(cell: &Cell) -> String {
         match cell {
             Cell::Real(v) => format!("{v:.6e}"),
@@ -15,6 +16,7 @@ impl Number {
             Cell::Int(v) => v.to_string(),
             Cell::Text(v) => v.clone(),
             Cell::Unknown => "x".to_string(),
+            Cell::Composite(value) => value.literal(&Number::text),
         }
     }
 }

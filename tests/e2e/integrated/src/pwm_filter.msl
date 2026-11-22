@@ -1,0 +1,21 @@
+//! `pwm_filter`: a 100 MHz clock and a counter PWM with dead time whose high side drives an RC filter
+//! (tau = 10 us) through `D2A`. The duty is a port the host drives.
+
+use crate::{Capacitor, Clock, PwmCounter, Resistor, Vdc};
+
+/// The PWM and its filter: `hs` through `D2A` (100 ohm) and 900 ohm into 10 nF.
+pub module PwmFilter(in duty: Bit<u8>) {
+    signal clk: Bit;
+    signal hs: Bit;
+    signal ls: Bit;
+    signal wrap: Bit;
+    signal rail: Electrical;
+    signal drive: Electrical;
+    signal filtered: Electrical;
+    pub let source = Vdc(rail) { dc: 1.0 };
+    pub let osc = Clock(clk) { f: 100M };
+    pub let counter = PwmCounter(clk, duty, hs, ls, wrap);
+    pub let driver = D2A(hs, drive, rail) { rout: 100.0, tr: 20p };
+    pub let series = Resistor(drive, filtered) { r: 900.0 };
+    pub let storage = Capacitor(filtered, gnd) { c: 10n };
+}

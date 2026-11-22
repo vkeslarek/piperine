@@ -191,8 +191,8 @@ fn a_reaction_with_no_carrier_runs_and_its_record_arrives() {
     // and equal to the level it crossed
     let body = ir.instance_at("Step.mon").expect("the monitor instance").body();
     let layout = RecordLayout::of(&body.streams()[0]).expect("a layout for `trip`");
-    let (offset, carrier) = layout.fields[0];
-    let leaf = carrier.fields.get(0).expect("the value leaf of an `f64`");
+    let (offset, carrier) = &layout.fields[0];
+    let leaf = carrier.fields().into_iter().next().expect("the value leaf of an `f64`");
     let (value_at, known_at) = ((offset + leaf.offset) as usize, (offset + leaf.known) as usize);
     assert_eq!(bytes.len(), layout.size as usize, "the record is the layout's size");
     let value = f64::from_le_bytes(bytes[value_at..value_at + 8].try_into().expect("eight bytes"));

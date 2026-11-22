@@ -6,7 +6,7 @@ what every analysis sees.
 
 **Layout of each entry.** Purpose, code, then a *Semantics walkthrough* with these rows where
 they apply: drives, events, the operating point and `(0, ·)`, transient instants, time points,
-`Dc`, `Ac`, `Noise`, unknown values.
+`Dc`, `Ac`, `Noise`.
 
 **Models referenced from the normative parts.**
 
@@ -32,17 +32,23 @@ is a carrier change that `analog` reads, so the solver lands on it (§17.3).
 
 ```rust
 module Pwl<const N: usize>(p: Electrical, n: Electrical) where N >= 1 {
-    points: [(f64, f64); N];          // (time, value), times strictly increasing
+    points: [(f64, f64); N]; // (time, value), times strictly increasing
     signal seg: Bit<u32> = 0;
 }
 
 digital<N> for Pwl<N> {
-    for k in 1..N { on at(points[k].0) { seg <- k as u32; } }
+    for k in 1..N {
+        on at(points[k].0) {
+            seg <- k as u32;
+        }
+    }
 }
 
 analog<N> for Pwl<N> {
-    let k = seg.known_or(0) as usize;
-    let y = if k + 1 >= N { points[N - 1].1 } else {
+    let k = seg as usize;
+    let y = if k + 1 >= N {
+        points[N - 1].1
+    } else {
         let ((t0, y0), (t1, y1)) = (points[k], points[k + 1]);
         y0 + (y1 - y0) * ((now() - t0) / (t1 - t0)).clamp(0.0, 1.0)
     };
@@ -69,7 +75,6 @@ analog<N> for Pwl<N> {
 | `Dc` | `at` never fires (§16.1.3). `seg` stays 0 and `now()` is 0: the source holds its value at time 0. |
 | `Ac` | The contribution has no dependence on a probe and no `ac_stim`. The branch is a potential source of zero small-signal value: a short. |
 | `Noise` | No `noise` instance: no contribution. |
-| Unknown | `seg` is always known. §3.3.5 still requires `known_or` (G.29). |
 | Host `set` of `points` | A jump (§9). Each `at` is re-armed; a corner moved to a time already past does not fire again (§13 rule 4). |
 | Failure modes | Two equal times make `t1 − t0` zero. The resulting non-finite value fails the solve (§17.1). |
 
@@ -81,7 +86,7 @@ its cost to the solver depends on who reads `clk`.
 ```rust
 module ClockGen(out clk: Bit = false) {
     period: f64 where period > 0.0;
-    jitter: f64 = 0.0 where jitter < period / 10.0;    // keeps every half period positive in practice
+    jitter: f64 = 0.0 where jitter < period / 10.0; // keeps every half period positive in practice
     seed: u64 = 1;
     signal rng: Bit<u64> = seed;
 }
@@ -111,7 +116,6 @@ digital for ClockGen {
 | `Dc` sweep | Initial values are committed at the first point only (§16.1.2). The reaction does not run again. |
 | Small-signal sweep | No instants (§16.2). The module has no `analog` block and contributes nothing. |
 | Continued transient | The pending edge stays in the queue (§16.4.1). The clock keeps ticking with the same `rng` sequence. |
-| Unknown | `clk` and `rng` are always known. The delay is known, so no commit is `Unknown` (§3.3.3). |
 | Gradients | Edge times move with `period` by their own derivative (§23.3.3). |
 
 ## D.3 Voltage-controlled oscillator
@@ -123,15 +127,21 @@ crossings half a cycle apart, never the wrap itself.
 module Vco(vctl: Electrical, out clk: Bit = false) {
     f0: f64 = 1G;
     kvco: f64 = 100M;
-    let ph = idtmod(f0 + kvco * v(vctl), 0.0, 1.0, -0.5);    // phase in [-0.5, 0.5)
+    let ph = idtmod(f0 + kvco * v(vctl), 0.0, 1.0, -0.5); // phase in [-0.5, 0.5)
 }
 
 digital for Vco {
-    on above(ph + 0.25) { clk <- true; }      // above: ph starts at 0, already inside the high half
-    on cross(ph - 0.25) { clk <- false; }
+    on above(ph + 0.25) {
+        clk <- true;
+    } // above: ph starts at 0, already inside the high half
+    on cross(ph - 0.25) {
+        clk <- false;
+    }
 }
 
-analog for Vco { bound_step(0.05 / f0); }
+analog for Vco {
+    bound_step(0.05 / f0);
+}
 ```
 
 **Semantics walkthrough.**
@@ -141,7 +151,7 @@ analog for Vco { bound_step(0.05 / f0); }
 | Instances | `ph` names one `idtmod` instance, placed by the body `let` (§8.2, §8.3.3). Inside it: one `idt` on a `State` node and two `cross` instances. `Vco` adds one `above` and one `cross`. |
 | Branches | `Vco` contributes to no branch. `vctl` is probed only, so the module draws no flow from it (§11 rule 4). |
 | Arguments | `ic = 0.0`, `modulus = 1.0`, `offset = −0.5` (§3.2). Then `lo = −0.5` and `start = −0.5 + 0.5.rem_euclid(1.0) = 0.0`. |
-| Operating point | `idt` has an `ic` and `analysis(Static)` holds, so its node is held at `base.known_or(start) = 0.0` (§8.3). `ph = 0`. |
+| Operating point | `idt` has an `ic` and `analysis(Static)` holds, so its node is held at `base.unwrap_or(start) = 0.0` (§8.3): `base` starts at `None`. `ph = 0`. |
 | `(0, 0)` | `clk ← false` is committed. `above(ph + 0.25)` fires through its `init() && e > 0.0` arm, since `0.25 > 0` (§22.2). `cross(ph − 0.25)` cannot fire on a first solution (§16). The reaction commits `clk <- true`. |
 | `(0, 1)` | `clk ← true` applies. `clk.rise()` fires for readers of `clk`. |
 | Rising edge | When `ph` rises through −0.25 the `cross` inside `above` is located (§17.3). The instant is rounded up to a tick and is a time point. |
@@ -155,7 +165,7 @@ analog for Vco { bound_step(0.05 / f0); }
 | `Dc` | Same as the operating point: `ph = 0`, `clk` goes high at `(0, 1)`. `bound_step` does nothing (§16.2). |
 | `Ac` | Under the sweep's flags `idt` is `1/jω` (§11.1): `ph = kvco · v(vctl) / jω`. `clk` is a discrete carrier and has no response. The edge-time modulation is reached only by a periodic analysis (§16.3, G.30). |
 | `Noise` | No `noise` instance. |
-| Unknown | `base` starts unknown and is read through `known_or(start)`; `seat` through `known_or(false)` (§3.3.5). |
+| Start | `base` starts at `None` until the first wrap and `seat` at false (§22.2.9); nothing reads an unestablished value. |
 | Gradients | Each edge time moves as a located event: `dt*/dp = −(∂e/∂p)/(de/dt)` (§23.3.2). |
 
 **Operating range.** The trace assumes `f0 + kvco · v(vctl) > 0`. With a negative frequency the
@@ -172,21 +182,25 @@ output.
 
 ```rust
 module DacRamp(in code: Bit<u8>, vout: Electrical) {
-    vref: f64 = 1.0; tedge: f64 = 100p;
+    vref: f64 = 1.0;
+    tedge: f64 = 100p;
     let ramp = transition(vref * (code as f64) / 256.0, 0.0, tedge, tedge);
 }
-analog for DacRamp { v(vout) +> ramp; }
+
+analog for DacRamp {
+    v(vout) +> ramp;
+}
 ```
 
 **Semantics walkthrough.**
 
 | Aspect | Trace |
 | --- | --- |
-| The first argument | `x` is an `in` port of `transition`. The expression bound to it is an anonymous definition (§8.1): discrete, recomputed when `code` changes, and outside §3.3.5. It reads no probe (§8.2.5). |
+| The first argument | `x` is an `in` port of `transition`. The expression bound to it is an anonymous definition (§8.1): discrete and recomputed when `code` changes. It reads no probe (§8.2.5). |
 | The other arguments | `td`, `tr`, `tf` are value inputs of type `Option<f64>`; each `f64` argument becomes `Some` (§3.2). |
 | Drives | The anonymous definition is the parent's drive of `x`. `transition` drives its own `xd`, `y0`, `y1`, `t0`, `dt`. `DacRamp` contributes potential to `(vout, gnd)`. |
-| `(0, 0)`, `code` known | `x` settles to `vref · code / 256`; `x.changed()` fires (§13 rule 6). `xd = x after 0` makes its first commit for `(0, 1)` (§8.2.4). The reaction `on x.changed() && analysis(Static)` commits `y0 <- x; y1 <- x`. |
-| Operating point | The result is `x.known_or(0.0)` while `analysis(Static)` holds. The output equals the code's level, with no ramp. |
+| `(0, 0)` | `x` settles to `vref · code / 256`; `x.changed()` fires (§13 rule 6). `xd = x after 0` makes its first commit for `(0, 1)` (§8.2.4). The reaction `on x.changed() && analysis(Static)` commits `y0 <- x; y1 <- x`. |
+| Operating point | The result is `x` while `analysis(Static)` holds. The output equals the code's level, with no ramp. |
 | `(0, 1)` | `xd`, `y0`, `y1` apply. `xd.changed()` fires, but its reaction is guarded by `!analysis(Static)` and does not run. `analog` reads carriers that changed, so the equilibrium is solved again and gives the same answer (§16 step 4). |
 | First step | `analysis(Static)` is false and `dt = 0`, so the result is `y1`, which equals `x`. The release is not a discontinuity. |
 | Code change at `(t, n)` | `x` is recomputed in microstep `n` (§8.2.1). `xd` follows at `n + 1`. Its reaction commits `y0 <- y`, `y1 <- to`, `t0 <- now()`, `dt <- tr` or `tf`, read at that instant (§8.2, `let`). |
@@ -198,8 +212,7 @@ analog for DacRamp { v(vout) +> ramp; }
 | `Dc` sweep | Each code change runs `on x.changed() && analysis(Static)`. The output follows the code at every point (§16.1). |
 | `Ac` | The sweep runs with `analysis(Static)` false and `dt = 0`: the result is the constant `y1`. The branch is a potential source of zero small-signal value. |
 | `Noise` | No `noise` instance. |
-| Unknown `code`, transient | `code as f64` is all-or-nothing, so `x` is unknown (§3.3.2). `xd.known()` is `None` and the reaction commits nothing: the output holds. |
-| Unknown `code`, equilibrium | The result is `x.known_or(0.0)`, so the output is 0.0 in that solve, whatever was held before. A code that was never known gives 0.0 in every solve. |
+| Initial state | `xd`, `y0`, `y1`, `t0` and `dt` start at `0.0` (§22.2.11 rules 7 and 8): before the first edge the output rests at `0.0`. |
 
 ## D.5 Sampling at a clock edge: delta-sigma modulator
 
@@ -208,17 +221,25 @@ by a reaction, and feedback through a discrete carrier.
 
 ```rust
 module DeltaSigma1(vin: Electrical, in clk: Bit, out bit: Bit = false) {
-    r: f64 = 100k; c: f64 = 1p; vref: f64 = 1.0;
+    r: f64 = 100k;
+    c: f64 = 1p;
+    vref: f64 = 1.0;
     signal x: Electrical = 0.0;
 }
 
 analog for DeltaSigma1 {
-    let fb = if bit.high() { vref } else { -vref };
+    let fb = if bit {
+        vref
+    } else {
+        -vref
+    };
     i(x) +> ddt(c * v(x)) - (v(vin) - fb) / r;
 }
 
 digital for DeltaSigma1 {
-    on clk.rise() { bit <- v(x) > 0.0; }
+    on clk.rise() {
+        bit <- v(x) > 0.0;
+    }
 }
 ```
 
@@ -230,7 +251,7 @@ digital for DeltaSigma1 {
 | The equation | `x` has this one branch, so KCL gives `c · dv(x)/dt = (v(vin) − fb) / r`. |
 | No DC path | In an equilibrium solve `ddt` is 0 (§16.2). The row of `x` then does not contain `v(x)`. |
 | Operating point of `Transient` | `x` has `= 0.0`, so it is held at 0 V by a source to `gnd` (§16). The hold's flow balances `(v(vin) − fb) / r`. `fb = −vref`, since `bit` starts false. |
-| `(0, 0)` | `bit ← false` is committed. If `clk` starts high, `clk.rise()` fires (§13 rule 6): the reaction reads `v(x) = 0` and commits `false`, which changes nothing. |
+| `(0, 0)` | `bit ← false` is committed. If `clk` starts high it has not risen: `clk.rise()` does not fire at `(0, 0)` (§13 rule 6). |
 | First step | The hold is removed. `c · v(x)` is a `ddt` state, so the step starts from 0 V with no jump (§16, §15.2.1). |
 | Rising edge, `(t, 0)` | `t` is a time point: the reaction probes (§12.1.5, §17.2.2). The reaction runs before the step to `t` is solved and reads the solution of the previous time point (§15 step 3.3). It commits `bit`. |
 | Rising edge, `(t, 1)` | If `bit` changed, `analog` reads the change: a jump (§15 step 3.4). `c · v(x)` stays (§15.2.1). The flow term changes by `2 · vref / r`. |
@@ -239,7 +260,6 @@ digital for DeltaSigma1 {
 | Falling edge | No reaction fires and `analog` does not read `clk`. Not a time point (guarded instant). |
 | `Dc` | Nothing is held outside a transient's operating point. The solve is singular and names `x` (§16). |
 | `Ac`, `Noise` | Their operating point is an equilibrium solve with nothing held: they fail the same way. This also holds when run at a transient's last instant (§16.4.2). The loop's response needs a periodic analysis (§16.3, G.30). |
-| Unknown | The probe is known, so `bit` is always known. `bit.high()` satisfies §3.3.5. |
 | Gradients | `bit` is not real: it carries no sensitivity and acts through event times only (§23.3.4). |
 
 ## D.6 Switched-capacitor integrator
@@ -248,22 +268,46 @@ digital for DeltaSigma1 {
 two delayed definitions, four resistive switches, two capacitors and an amplifier.
 
 ```rust
-module RSwitch(a: Electrical, b: Electrical, in ctl: Bit) { ron: f64 = 100.0; roff: f64 = 1G; }
-analog for RSwitch { i(a, b) +> v(a, b) / if ctl.high() { ron } else { roff }; }
+module RSwitch(a: Electrical, b: Electrical, in ctl: Bit) {
+    ron: f64 = 100.0;
+    roff: f64 = 1G;
+}
 
-module OpAmpIdeal(inp: Electrical, inn: Electrical, vout: Electrical) { a0: f64 = 1e5; }
-analog for OpAmpIdeal { v(vout) +> a0 * v(inp, inn); }
+analog for RSwitch {
+    i(a, b) +> v(a, b) / if ctl {
+        ron
+    } else {
+        roff
+    };
+}
+
+module OpAmpIdeal(inp: Electrical, inn: Electrical, vout: Electrical) {
+    a0: f64 = 1e5;
+}
+
+analog for OpAmpIdeal {
+    v(vout) +> a0 * v(inp, inn);
+}
 
 /// Non-overlapping two-phase clock: pure structure.
 module TwoPhase(in clk: Bit, out phi1: Bit = false, out phi2: Bit = false) {
     gap: f64 = 50p;
-    phi1 = clk after if clk { gap } else { 0.0 };      // rises gap after clk, falls with it
-    phi2 = !clk after if clk { 0.0 } else { gap };     // the mirror
+    phi1 = clk after if clk {
+        gap
+    } else {
+        0.0
+    }; // rises gap after clk, falls with it
+    phi2 = !clk after if clk {
+        0.0
+    } else {
+        gap
+    }; // the mirror
 }
 
 /// Stray-insensitive SC integrator: structure only.
 module ScIntegrator(vin: Electrical, vout: Electrical, in clk: Bit) {
-    cs: f64 = 1p; cf: f64 = 4p;
+    cs: f64 = 1p;
+    cf: f64 = 4p;
     signal phi1: Bit;
     signal phi2: Bit;
     signal x: Electrical;
@@ -296,7 +340,6 @@ module ScIntegrator(vin: Electrical, vout: Electrical, in clk: Bit) {
 | Non-overlap | Both phases are low for `gap` after every `clk` edge. They are never high together. |
 | Short pulse | If `clk` falls before `gap` has elapsed, the fall is made for now. It removes the pending rise, which the same statement made (§12.1.4). `phi1` never sticks high. |
 | Where time does not advance | The `after gap` commits never come due (§16.1.3). With `clk` low at the first point, both phases stay low through the analysis (G.32). |
-| Unknown `clk` | The delay is unknown, so the statement commits `Unknown` at the next microstep (§3.3.3). |
 
 **Semantics walkthrough: `ScIntegrator`.**
 
@@ -312,7 +355,6 @@ module ScIntegrator(vin: Electrical, vout: Electrical, in clk: Bit) {
 | `Dc` | Solvable, by the operating point above. It is the all-switches-off circuit, not the sampled system. |
 | `Ac` | Linearized with both phases low (§11.1). The sampled transfer function needs a periodic analysis (§16.3). |
 | `Noise` | `RSwitch` and `OpAmpIdeal` place no `noise` instance. |
-| Unknown | A phase that is unknown reads as low through `high()` (§22.1): the switch is off. |
 
 **Variant with ideal switches.** With `Switch` (§11) in place of `RSwitch`, each phase edge is a
 jump in which a potential constraint forces capacitor states to move, and charge is conserved
@@ -327,11 +369,11 @@ Each guideline restates a consequence of a normative rule.
 | Guideline | Follows from |
 | --- | --- |
 | Read a discrete carrier in `analog` only when the analog behavior depends on it. Each change is then a time point and a jump. | §15.2, §17.2 |
-| Say what unknown means electrically, with `known_or` or `high()`. | §3.3.5 |
+| Decide on a `Logic` through a function (`is_high()`, `to_volts(vdd)`) before `analog` reads it. | §3.3.6, §22.1.1 |
 | Prefer known times (`at`, `after`) to crossings. A scheduled time costs no location. | §17.2, §17.3 |
 | Sample at a clock edge with a reaction, not with `cross` on the clock's analog image. | §12.1.5 |
 | Make the edges of a phase with offset crossings, not with the wrap of `idtmod`. | D.3, §13 rule 5 |
 | Give edges a duration (`transition`) when the edge rate matters to the analog side. | D.4, §22.2 |
 | Make every corner of a `now()` waveform a carrier change. | §17.3, §9 case D |
 | Give a node with no DC path an `= value`, and expect its `Dc` to fail. | §16 |
-| Guard a reaction with `s.prev().is_known()` when the first commit must not count as an edge. | §13 rule 6, §12.1 |
+| Write `init()` when an action must happen at the start: a carrier that starts high has not risen. | §13 rule 6, §22.1.6 |

@@ -1,3 +1,5 @@
+> **DROPPED** by the user on 2026-11-21: the decision `explicit-unknowns` (MD-78) removes the known flag instead of finishing it (`KNOWN_LEVELS` and branch `feature/unknown-semantics-per-level` are not merged). `GAPS.md` S6 and G6 close by that redesign.
+
 # Unknown Semantics: Per-Level Flags Specification
 
 **Approved**: 2026-11-18 - user: "Sobre as open questions, vou de aceito todas ok?" (every open question takes its recommended option; exceptions noted where the user decided otherwise)

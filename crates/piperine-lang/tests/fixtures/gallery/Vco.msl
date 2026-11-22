@@ -1,12 +1,18 @@
 module Vco(vctl: Electrical, out clk: Bit = false) {
     f0: f64 = 1G;
     kvco: f64 = 100M;
-    let ph = idtmod(f0 + kvco * v(vctl), 0.0, 1.0, -0.5);    // phase in [-0.5, 0.5)
+    let ph = idtmod(f0 + kvco * v(vctl), 0.0, 1.0, -0.5); // phase in [-0.5, 0.5)
 }
 
 digital for Vco {
-    on above(ph + 0.25) { clk <- true; }      // above: ph starts at 0, already inside the high half
-    on cross(ph - 0.25) { clk <- false; }
+    on above(ph + 0.25) {
+        clk <- true;
+    } // above: ph starts at 0, already inside the high half
+    on cross(ph - 0.25) {
+        clk <- false;
+    }
 }
 
-analog for Vco { bound_step(0.05 / f0); }
+analog for Vco {
+    bound_step(0.05 / f0);
+}

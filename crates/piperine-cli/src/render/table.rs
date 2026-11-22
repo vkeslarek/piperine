@@ -46,7 +46,7 @@ mod tests {
 
     #[test]
     fn a_table_is_left_aligned_two_spaces_no_trailing_space() {
-        // CLI-07 AC 2: the operating point of the Book's RC (chapter 16), column by column
+        // CLI-07 AC 2: the operating point of the Book's RC (chapter 13), column by column
         let op = Table {
             columns: vec!["signal".into(), "value".into()],
             rows: vec![

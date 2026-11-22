@@ -101,29 +101,22 @@ fn unit_enums_and_their_variants_are_typed() {
 
     // Two enums do not compare, and one without `PartialEq` does not compare at all.
     let (src, d) = diagnostics(&items, "let x = Mode::Off == Fault::Clear;");
-    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(codes(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "Fault::Clear");
     let (_, d) = diagnostics("#[derive(Repr)]\nenum E { A, B }", "let x = E::A == E::B;");
-    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(codes(&d), ["E0180"]);
     assert!(d[0].diagnostic.message.contains("PartialEq"), "{}", d[0].diagnostic.message);
 }
 
 #[test]
-fn an_enum_outside_the_subset_is_p0001() {
-    // DIG-03 AC 2: a variant with a payload, an explicit discriminant or `#[repr]` is `P0001`
-    // naming the form; so is an enum that does not derive `Repr`.
-    for (items, names) in [
-        ("#[derive(Repr, PartialEq)]\nenum E { A(f64), B }", "payload"),
-        ("#[derive(Repr, PartialEq)]\nenum E { A { x: f64 }, B }", "payload"),
-        ("#[derive(Repr, PartialEq)]\nenum E { A = 3, B }", "discriminant"),
-        ("#[derive(Repr, PartialEq)]\n#[repr(u8)]\nenum E { A, B }", "#[repr]"),
-        ("#[derive(PartialEq)]\nenum E { A, B }", "#[derive(Repr)]"),
-    ] {
-        let (src, d) = diagnostics(items, "let x = E::B;");
-        assert_eq!(codes(&d), ["P0001"], "{src}");
-        assert!(d[0].diagnostic.message.contains(names), "{src}: {}", d[0].diagnostic.message);
-        assert_eq!(snippet(&src, &d[0]), "E::B", "{src}");
-    }
+fn an_enum_that_derives_no_repr_is_a_value() {
+    // DIG-03 AC 2 as amended by composite-values CV-11 (part I section 1.3 and 2: every enum is a value type): an enum
+    // that does not derive `Repr` is built and compared like any other, and only a carrier of it needs the `Repr`
+    // (`a_carried_type_without_repr_is_e0112`); a payload, an explicit discriminant and `#[repr]` are accepted since
+    // composite-values T41.
+    let src = source("#[derive(PartialEq)]\nenum E { A, B }", "let x = E::B; let y = x == E::A;");
+    let design = design_of(&src);
+    checked(&design, &src);
 }
 
 #[test]
@@ -147,10 +140,10 @@ fn option_values_and_their_methods_are_typed() {
 
     // `None` with nothing to take a type from, and `unwrap_or` of another type, are mismatches.
     let (src, d) = diagnostics("", "let x = None;");
-    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(codes(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "None");
     let (src, d) = diagnostics("", "let o: Option<u8> = Some(1); let x = o.unwrap_or(1.0);");
-    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(codes(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "1.0");
     // A method `Option` has no row for is named with the type (`E0161`, Appendix H rule 1: the
     // `Option` catalogue is complete since `unwrap` is a row).
@@ -176,16 +169,18 @@ fn a_tuple_let_names_each_component() {
     let types = checked(&design, src);
     assert_eq!([types.local(decl(&design, "a", false)), types.local(decl(&design, "b", false))], [Some(&Ty::F64), Some(&Ty::F64)]);
 
-    // A tuple anywhere but the two sides of a `let` is outside the subset; a count that differs
-    // is a mismatch.
-    for (body, names) in [("let t = (1.0, 2.0);", "tuple expression"), ("let x = (1.0, 2.0); let (a, b) = x;", "tuple expression"), ("let t: (f64, f64) = 1.0;", "tuple type")] {
-        let (src, d) = diagnostics("", body);
-        assert_eq!(codes(&d)[0], "P0001", "{src}");
-        assert!(d[0].diagnostic.message.contains(names), "{src}: {}", d[0].diagnostic.message);
+    // A tuple is a value anywhere (§1.2.4, composite-values T40): bound whole, destructured from a
+    // variable, and a type that is not a tuple is a plain mismatch; a count that differs is a
+    // mismatch at the pattern.
+    for body in ["let t = (1.0, 2.0);", "let x = (1.0, 2.0); let (a, b) = x;"] {
+        let src = source("", body);
+        checked(&design_of(&src), &src);
     }
+    let (src, d) = diagnostics("", "let t: (f64, f64) = 1.0;");
+    assert_eq!(codes(&d), ["E0180"], "{src}");
     let (src, d) = diagnostics("", "let (a, b) = (1.0, 2.0, 3.0);");
-    assert_eq!(codes(&d), ["P0002"]);
-    assert_eq!(snippet(&src, &d[0]), "(1.0, 2.0, 3.0)");
+    assert_eq!(codes(&d), ["E0180"]);
+    assert_eq!(snippet(&src, &d[0]), "(a, b)");
 }
 
 #[test]
@@ -212,7 +207,7 @@ fn a_value_for_an_option_parameter_is_some_of_it() {
 
     // A value of another type is a mismatch naming the parameter's type.
     let (src, d) = diagnostics(items, "let a = pick(true);");
-    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(codes(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "true");
     assert!(d[0].diagnostic.message.contains("Option<f64>"), "{}", d[0].diagnostic.message);
 }
@@ -264,23 +259,22 @@ fn match_is_typed_over_enums_bools_integers_and_options() {
     assert_eq!(types.literal(lit), Some(&Ty::UInt(9)));
 
     // §1 rule 14: a name that resolves to a constant is a path pattern and binds nothing; a name
-    // that resolves to nothing would bind, which a `match` arm of the subset does not do.
-    let (src, d) = diagnostics("", "let k: u2 = 1; let i = match k { x => 1.0 };");
-    assert_eq!(codes(&d), ["P0001"], "{src}");
-    assert_eq!(snippet(&src, &d[0]), "x");
+    // that resolves to nothing binds, at any depth (§1.6.2).
+    let src = source("", "let k: u2 = 1; let i = match k { x => 1.0 };");
+    checked(&design_of(&src), &src);
 
     // Arms of different types, and a pattern of another type, are mismatches.
     let (src, d) = diagnostics("", "let b = match true { true => 1.0, false => false };");
-    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(codes(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "false");
     let (src, d) = diagnostics(&supervisor_items(), "let m = Mode::Off; let x = match m { Fault::Clear => 1.0, _ => 2.0 };");
-    assert_eq!(codes(&d), ["P0002"]);
+    assert_eq!(codes(&d), ["E0180"]);
     assert_eq!(snippet(&src, &d[0]), "Fault::Clear");
 }
 
 #[test]
-fn a_match_that_is_not_exhaustive_is_p0002() {
-    // DIG-03 AC 5: a `match` that does not cover every value of its scrutinee is `P0002`.
+fn a_match_that_is_not_exhaustive_is_e0180() {
+    // DIG-03 AC 5: a `match` that does not cover every value of its scrutinee is `E0180`.
     for body in [
         "let m = Mode::Off; let x = match m { Mode::Off => 1.0, Mode::SoftStart => 2.0, Mode::Regulate => 3.0 };",
         "let x = match true { true => 1.0 };",
@@ -291,7 +285,7 @@ fn a_match_that_is_not_exhaustive_is_p0002() {
         "let s: i2 = 0; let x = match s { -1 => 1.0, 0 => 2.0, 1 => 3.0 };",
     ] {
         let (src, d) = diagnostics(&supervisor_items(), body);
-        assert_eq!(codes(&d), ["P0002"], "{src}");
+        assert_eq!(codes(&d), ["E0184"], "{src}");
         assert!(snippet(&src, &d[0]).starts_with("match "), "{src}: {}", snippet(&src, &d[0]));
     }
     // Every value, and only then, passes: all four variants; every value of a `u2` by literals;
@@ -312,13 +306,13 @@ fn a_nested_pattern_inside_some_covers_its_payload() {
     let ok = source(&supervisor_items(), "let o: Option<bool> = None; let x = match o { Some(true) => 1.0, Some(false) => 0.0, None => 0.5 }; \
                                          let f: Option<Fault> = None; let y = match f { Some(Fault::Clear) => 1, Some(Fault::OverCurrent) | Some(Fault::OverVoltage) => 2, None => 3 };");
     checked(&design_of(&ok), &ok);
-    // A payload left out is still a missing value: `P0002` at the `match`.
+    // A payload left out is still a missing value: `E0184` at the `match` (§1.8.6).
     for body in [
         "let o: Option<bool> = None; let x = match o { Some(true) => 1.0, None => 0.5 };",
         "let f: Option<Fault> = None; let y = match f { Some(Fault::Clear) => 1, Some(Fault::OverCurrent) => 2, None => 3 };",
     ] {
         let (src, d) = diagnostics(&supervisor_items(), body);
-        assert_eq!(codes(&d), ["P0002"], "{src}");
+        assert_eq!(codes(&d), ["E0184"], "{src}");
         assert!(snippet(&src, &d[0]).starts_with("match "), "{src}: {}", snippet(&src, &d[0]));
     }
     // The stdlib `D2A` writes the nested `match` in a module-body `let`: its `None` is the
@@ -341,10 +335,11 @@ fn if_let_some_binds_the_payload() {
 
     // The value must be an `Option`; the pattern must be `Some(p)`.
     let (src, d) = diagnostics("", "let x = 1.0; let y = if let Some(v) = x { v } else { 0.0 };");
-    assert_eq!(codes(&d)[0], "P0002", "{src}");
+    assert_eq!(codes(&d)[0], "E0180", "{src}");
     assert_eq!(snippet(&src, &d[0]), "x");
-    let (src, d) = diagnostics("", "let o: Option<f64> = None; let y = if let None = o { 1.0 } else { 0.0 };");
-    assert_eq!(codes(&d), ["P0001"], "{src}");
+    // `if let` takes any refutable pattern (§1.8.2): `None` is one.
+    let src = source("", "let o: Option<f64> = None; let y = if let None = o { 1.0 } else { 0.0 };");
+    checked(&design_of(&src), &src);
 }
 
 #[test]
@@ -379,19 +374,19 @@ fn every_option_and_bool_row_types_with_a_closure_or_value() {
     // The closure of `map` has the payload as its parameter: `x` is a `u8`, so `x + 2.5` is a
     // mismatch; the body of `and_then` must be an `Option`.
     let (src, d) = diagnostics("", "let o: Option<u8> = Some(3); let r = o.map(|x| x + 2.5);");
-    assert_eq!(codes(&d), ["P0002"], "{src}");
+    assert_eq!(codes(&d), ["E0180"], "{src}");
     let (src, d) = diagnostics("", "let o: Option<u8> = Some(3); let r = o.and_then(|x| x);");
-    assert_eq!(codes(&d), ["P0002"], "{src}");
+    assert_eq!(codes(&d), ["E0180"], "{src}");
     // A default that is not the payload's type is a mismatch.
     let (src, d) = diagnostics("", "let o: Option<u8> = Some(3); let r = o.unwrap_or_else(|| 2.5);");
-    assert_eq!(codes(&d), ["P0002"], "{src}");
+    assert_eq!(codes(&d), ["E0180"], "{src}");
 }
 
 #[test]
 fn expect_with_a_non_literal_message_is_p0001() {
     // CAT-03 AC 8: the message of `expect` is a string literal, so the fault names it at compile
     // time; anything else is `P0001` naming `expect`.
-    let (src, d) = diagnostics("fn h(o: Option<u8>, s: &str) -> u8 { o.expect(s) }", "let r = h(Some(3), \"msg\");");
+    let (src, d) = diagnostics("fn h(o: Option<u8>, s: str) -> u8 { o.expect(s) }", "let r = h(Some(3), \"msg\");");
     assert_eq!(codes(&d), ["P0001"], "{src}");
     assert!(d[0].diagnostic.message.contains("expect"), "{}", d[0].diagnostic.message);
     assert_eq!(snippet(&src, &d[0]), "s");

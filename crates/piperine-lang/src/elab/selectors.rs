@@ -58,6 +58,8 @@ pub(super) enum ArmCondition {
     MatchArm { scrutinee: ExprId, earlier: Vec<PatId>, pat: Option<PatId> },
     /// An arm of `if let`, whose test is the pair of an `Option` read once.
     IfLet,
+    /// An arm of a `match` with a guard: its test reads the names the pattern binds.
+    Guarded,
 }
 
 impl ContributionRecord {
@@ -226,6 +228,10 @@ impl Elaboration<'_, '_> {
                 ArmCondition::MatchArm { scrutinee, earlier, pat } => tests.extend(self.standalone_arm_tests(&mut standalone, *scrutinee, earlier, *pat)?),
                 ArmCondition::IfLet => {
                     self.unsupported(scope.file, span, &format!("{what} under an `if let`"));
+                    return None;
+                }
+                ArmCondition::Guarded => {
+                    self.unsupported(scope.file, span, &format!("{what} under a `match` arm with a guard"));
                     return None;
                 }
             }

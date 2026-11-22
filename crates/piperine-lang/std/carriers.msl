@@ -1,16 +1,26 @@
 //! The carrier natures of §4 and the module `Short` of §11.
 
-pub nature Bit<T: Repr = bool> { value: T }
+pub nature Bit<T: Repr = bool> {
+    value: T,
+}
+
 pub nature Electrical {
     potential: Voltage { access: v, units: "V", abstol: 1u },
-    flow:      Current { access: i, units: "A", abstol: 1p },
+    flow: Current { access: i, units: "A", abstol: 1p },
 }
+
 pub nature Thermal {
     potential: Temperature { access: temp, units: "K", abstol: 1m },
-    flow:      Power       { access: pwr,  units: "W", abstol: 1n },
+    flow: Power { access: pwr, units: "W", abstol: 1n },
 }
-pub nature VSignal { potential: Voltage { access: v, units: "V", abstol: 1u } }
+
+pub nature VSignal {
+    potential: Voltage { access: v, units: "V", abstol: 1u },
+}
 
 /// Two nodes made one: with no selector the kind is fixed, and the nodes merge at elaboration.
 pub module Short<N: Nature>(a: N, b: N) {}
-analog<N> for Short<N> { potential(a, b) +> 0.0; }
+
+analog<N> for Short<N> {
+    potential(a, b) +> 0.0;
+}

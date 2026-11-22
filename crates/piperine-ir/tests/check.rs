@@ -66,7 +66,7 @@ impl Shape {
             branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
             limits: vec![],
             stims: vec![],
-            locals: (0..locals).map(|i| Local { name: format!("x{i}"), ty: ValueType::F64 }).collect(),
+            locals: (0..locals).map(|i| Local { name: format!("x{i}"), ty: ValueType::F64, mutable: false }).collect(),
             analog: Some(stmts),
             children: vec![],
         });
@@ -104,7 +104,7 @@ impl Shape {
         let mut e = Ex::new(b, Self::FILE, 9, 1);
         let x = e.local(0);
         let body = e.call(callee, vec![x]);
-        let x = Local { name: "x".into(), ty: ValueType::F64 };
+        let x = Local { name: "x".into(), ty: ValueType::F64, mutable: false };
         b.function(FunctionSpec {
             name: name.into(),
             origin: Origin { file: Self::FILE.into(), line: 9, col: 1 },

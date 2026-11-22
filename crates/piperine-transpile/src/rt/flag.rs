@@ -34,10 +34,133 @@ pub trait Carried: Copy + Default + PartialEq + Levelwise {
     /// How many levels the type has (§2): the `T::WIDTH` of MSL, not the byte width above.
     const LEVELS: u32;
     /// The levels as bits, level `k` being bit `k`: the form `level` reads and `cast` moves
-    /// between types of the same level count (§22.1.3).
-    fn to_levels(self) -> u64;
-    /// The value whose levels are the low `LEVELS` bits of `bits`.
-    fn from_levels(bits: u64) -> Self;
+    /// between types of the same level count (§22.1.3). A type of more than 64 levels has more
+    /// than one word.
+    fn to_levels(self) -> LevelWords;
+    /// The value whose levels are the first `LEVELS` levels of `words`.
+    fn from_levels(words: &LevelWords) -> Self;
+    /// Whether `bytes[..WIDTH]` decode to a value of the type: false for a tag that names no
+    /// variant, which reads as unknown (§2 rule 9). Every byte pattern of a built-in is a value.
+    fn is_valid(_bytes: &[u8]) -> bool {
+        true
+    }
+}
+
+/// The levels of a value as bits, level `k` being bit `k`, in as many 64-bit words as the value's
+/// level count needs (§2): the form a composite wider than 64 levels moves between types, reads
+/// a level of and compares. Bits at and above `len` are always 0, so two values of one type are
+/// equal as words exactly when their levels are.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LevelWords {
+    words: Vec<u64>,
+    len: u32,
+}
+
+impl LevelWords {
+    /// No levels: the start of a concatenation.
+    pub fn empty() -> LevelWords {
+        LevelWords { words: Vec::new(), len: 0 }
+    }
+
+    /// The low `len` bits of `bits` as `len` levels (`len` at most 64).
+    pub fn of(bits: u64, len: u32) -> LevelWords {
+        let kept = if len >= 64 { bits } else { bits & ((1u64 << len) - 1) };
+        LevelWords { words: if len == 0 { Vec::new() } else { vec![kept] }, len }
+    }
+
+    /// `len` levels, all false: the padding of a narrower payload and the payload of `None` (§2 rule 6).
+    pub fn zeros(len: u32) -> LevelWords {
+        LevelWords { words: vec![0; len.div_ceil(64) as usize], len }
+    }
+
+    /// How many levels.
+    pub fn len(&self) -> u32 {
+        self.len
+    }
+
+    /// Whether there are no levels.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Level `k`; a level at or past `len` is false.
+    pub fn get(&self, k: u32) -> bool {
+        k < self.len && self.words[(k / 64) as usize] >> (k % 64) & 1 != 0
+    }
+
+    /// The lowest 64 levels as one word: the whole value when it has at most 64.
+    pub fn low(&self) -> u64 {
+        self.words.first().copied().unwrap_or(0)
+    }
+
+    /// `self` followed by `other`: `other`'s level 0 becomes level `self.len()`.
+    pub fn append(&mut self, other: &LevelWords) {
+        let start = self.len;
+        self.len += other.len;
+        self.words.resize(self.len.div_ceil(64) as usize, 0);
+        for k in 0..other.len {
+            if other.get(k) {
+                let at = start + k;
+                self.words[(at / 64) as usize] |= 1 << (at % 64);
+            }
+        }
+    }
+
+    /// The parts joined in order, the first lowest.
+    pub fn concat<const N: usize>(parts: [LevelWords; N]) -> LevelWords {
+        let mut joined = LevelWords::empty();
+        for part in &parts {
+            joined.append(part);
+        }
+        joined
+    }
+
+    /// `self` followed by false levels up to `len` levels: the payload of a variant narrower than the
+    /// widest (§2 rule 6). Already `len` levels or more, `self` as it is.
+    pub fn padded(mut self, len: u32) -> LevelWords {
+        if self.len < len {
+            self.append(&LevelWords::zeros(len - self.len));
+        }
+        self
+    }
+
+    /// The `count` levels starting at level `from`, as their own value.
+    pub fn slice(&self, from: u32, count: u32) -> LevelWords {
+        let mut part = LevelWords { words: vec![0; count.div_ceil(64) as usize], len: count };
+        for k in 0..count {
+            if self.get(from + k) {
+                part.words[(k / 64) as usize] |= 1 << (k % 64);
+            }
+        }
+        part
+    }
+}
+
+/// One field of a composite value read or written in order: the cursor of the byte form and of the
+/// level form of a tuple, an array, an `Option` or a derived struct or enum (the generated `Carried`
+/// impls of `print/types.rs` call it too).
+pub struct Field;
+
+impl Field {
+    /// Writes `value`'s bytes at `*at`, then moves `*at` past them.
+    pub fn write<T: Carried>(value: T, out: &mut [u8], at: &mut usize) {
+        value.encode(&mut out[*at..*at + T::WIDTH]);
+        *at += T::WIDTH;
+    }
+
+    /// The value whose bytes start at `*at`; moves `*at` past them.
+    pub fn read<T: Carried>(bytes: &[u8], at: &mut usize) -> T {
+        let value = T::decode(&bytes[*at..*at + T::WIDTH]);
+        *at += T::WIDTH;
+        value
+    }
+
+    /// The value whose levels start at level `*at`; moves `*at` past them.
+    pub fn levels<T: Carried>(words: &LevelWords, at: &mut u32) -> T {
+        let value = T::from_levels(&words.slice(*at, T::LEVELS));
+        *at += T::LEVELS;
+        value
+    }
 }
 
 /// A value two paths of an unknown `if` can be compared on (§3.3.3): the carried types, and the
@@ -89,11 +212,11 @@ impl Carried for bool {
         bytes[0] != 0
     }
     const LEVELS: u32 = 1;
-    fn to_levels(self) -> u64 {
-        u64::from(self)
+    fn to_levels(self) -> LevelWords {
+        LevelWords::of(u64::from(self), 1)
     }
-    fn from_levels(bits: u64) -> bool {
-        bits & 1 != 0
+    fn from_levels(words: &LevelWords) -> bool {
+        words.get(0)
     }
 }
 
@@ -115,11 +238,11 @@ impl Carried for f64 {
         f64::from_le_bytes(b)
     }
     const LEVELS: u32 = 64;
-    fn to_levels(self) -> u64 {
-        self.to_bits()
+    fn to_levels(self) -> LevelWords {
+        LevelWords::of(self.to_bits(), 64)
     }
-    fn from_levels(bits: u64) -> f64 {
-        f64::from_bits(bits)
+    fn from_levels(words: &LevelWords) -> f64 {
+        f64::from_bits(words.low())
     }
 }
 
@@ -158,11 +281,11 @@ impl<const N: u32> Carried for UInt<N> {
         UInt::new(Word::read(bytes, Self::WIDTH))
     }
     const LEVELS: u32 = N;
-    fn to_levels(self) -> u64 {
-        self.get()
+    fn to_levels(self) -> LevelWords {
+        LevelWords::of(self.get(), N)
     }
-    fn from_levels(bits: u64) -> UInt<N> {
-        UInt::new(bits)
+    fn from_levels(words: &LevelWords) -> UInt<N> {
+        UInt::new(words.low())
     }
 }
 
@@ -184,12 +307,12 @@ impl<const N: u32> Carried for Int<N> {
         Int::new(((Word::read(bytes, Self::WIDTH) << shift) as i64) >> shift)
     }
     const LEVELS: u32 = N;
-    fn to_levels(self) -> u64 {
+    fn to_levels(self) -> LevelWords {
         // the low `N` bits of the two's complement value
-        (self.get() as u64) & UInt::<N>::MAX
+        LevelWords::of((self.get() as u64) & UInt::<N>::MAX, N)
     }
-    fn from_levels(bits: u64) -> Int<N> {
-        Int::new(bits as i64)
+    fn from_levels(words: &LevelWords) -> Int<N> {
+        Int::new(words.low() as i64)
     }
 }
 
@@ -292,7 +415,19 @@ impl<T: Carried> Flagged<T> {
         if bytes.len() < T::SIZE {
             panic!("a pin of {} bytes read as a value of {} bytes", bytes.len(), T::SIZE);
         }
-        if bytes[T::WIDTH] == 0 { Flagged::unknown() } else { Flagged::known(T::decode(bytes)) }
+        if bytes[T::WIDTH] == 0 || !T::is_valid(bytes) { Flagged::unknown() } else { Flagged::known(T::decode(bytes)) }
+    }
+
+    /// The value of a composite pin read plainly (a field, a copy, `prev()`): a composite
+    /// carries one known byte, not a flag per field, so an unknown one has no field to read (§3.3.2).
+    /// It is refused by name, never read as the type's default (`explicit-unknowns` phase A removes
+    /// the case, every carrier then starting with a value). Under unknown control the panic makes
+    /// the path unknown (§1 rule 13).
+    pub fn known_or_refuse(self, carrier: &str) -> T {
+        if !self.known {
+            Panic::raise(format!("`{carrier}` is a composite that holds no value yet, so it has no field or copy to read; drive it or give it an initial value first"));
+        }
+        self.value
     }
 
     /// Writes the pin's bytes (`encode`) at the start of `out`, the buffer of a write cell.
@@ -349,6 +484,152 @@ impl Merge for () {
     fn unknown() {}
 }
 
+/// The written-local tuples of a merged `if` or loop merge field by field (§3.3.3: the effects of
+/// a path are its value and each local it writes). One impl per arity, 1 to 12, written out: no
+/// macro (AGENTS.md rule 5).
+impl<A: Merge> Merge for (A,) {
+    /// One field: its merge.
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0),)
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(),)
+    }
+}
+
+impl<A: Merge, B: Merge> Merge for (A, B) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge> Merge for (A, B, C) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge> Merge for (A, B, C, D) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge, E: Merge> Merge for (A, B, C, D, E) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3), self.4.merge(other.4))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown(), E::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge, E: Merge, F: Merge> Merge for (A, B, C, D, E, F) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3), self.4.merge(other.4), self.5.merge(other.5))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown(), E::unknown(), F::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge, E: Merge, F: Merge, G: Merge> Merge for (A, B, C, D, E, F, G) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3), self.4.merge(other.4), self.5.merge(other.5), self.6.merge(other.6))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown(), E::unknown(), F::unknown(), G::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge, E: Merge, F: Merge, G: Merge, H: Merge> Merge for (A, B, C, D, E, F, G, H) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3), self.4.merge(other.4), self.5.merge(other.5), self.6.merge(other.6), self.7.merge(other.7))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown(), E::unknown(), F::unknown(), G::unknown(), H::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge, E: Merge, F: Merge, G: Merge, H: Merge, I: Merge> Merge for (A, B, C, D, E, F, G, H, I) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3), self.4.merge(other.4), self.5.merge(other.5), self.6.merge(other.6), self.7.merge(other.7), self.8.merge(other.8))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown(), E::unknown(), F::unknown(), G::unknown(), H::unknown(), I::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge, E: Merge, F: Merge, G: Merge, H: Merge, I: Merge, J: Merge> Merge for (A, B, C, D, E, F, G, H, I, J) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3), self.4.merge(other.4), self.5.merge(other.5), self.6.merge(other.6), self.7.merge(other.7), self.8.merge(other.8), self.9.merge(other.9))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown(), E::unknown(), F::unknown(), G::unknown(), H::unknown(), I::unknown(), J::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge, E: Merge, F: Merge, G: Merge, H: Merge, I: Merge, J: Merge, K: Merge> Merge for (A, B, C, D, E, F, G, H, I, J, K) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3), self.4.merge(other.4), self.5.merge(other.5), self.6.merge(other.6), self.7.merge(other.7), self.8.merge(other.8), self.9.merge(other.9), self.10.merge(other.10))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown(), E::unknown(), F::unknown(), G::unknown(), H::unknown(), I::unknown(), J::unknown(), K::unknown())
+    }
+}
+
+impl<A: Merge, B: Merge, C: Merge, D: Merge, E: Merge, F: Merge, G: Merge, H: Merge, I: Merge, J: Merge, K: Merge, L: Merge> Merge for (A, B, C, D, E, F, G, H, I, J, K, L) {
+    /// Field by field: each is the merge of the two fields (§3.3.3, a path's effects are each local
+    /// it writes).
+    fn merge(self, other: Self) -> Self {
+        (self.0.merge(other.0), self.1.merge(other.1), self.2.merge(other.2), self.3.merge(other.3), self.4.merge(other.4), self.5.merge(other.5), self.6.merge(other.6), self.7.merge(other.7), self.8.merge(other.8), self.9.merge(other.9), self.10.merge(other.10), self.11.merge(other.11))
+    }
+
+    fn unknown() -> Self {
+        (A::unknown(), B::unknown(), C::unknown(), D::unknown(), E::unknown(), F::unknown(), G::unknown(), H::unknown(), I::unknown(), J::unknown(), K::unknown(), L::unknown())
+    }
+}
+
 impl<T: Carried> Flagged<T> {
     /// `same(a, b)` (§22.1.4): every level has the same flag and, where known, the same value.
     /// Always known, so a plain `bool`; two unknown values are the same, unlike `==` (§3.3.10).
@@ -387,20 +668,22 @@ impl<T: Carried> Flagged<T> {
 
     /// Level `k` (below `T::LEVELS`) as the known pair of `level`.
     fn level_at(self, k: u32) -> (Flagged<bool>, Flagged<bool>) {
-        (Flagged::known(self.known), Flagged::known(self.known && (self.value.to_levels() >> k) & 1 != 0))
+        (Flagged::known(self.known), Flagged::known(self.known && self.value.to_levels().get(k)))
     }
 
     /// `cast::<T, U>(x)` (§22.1.3): the same levels under another type of the same level count,
-    /// with their flag. `tags` lists the tags `U` decodes when it is an enum: any other
-    /// pattern has no variant, and the result is `Unknown` (rule 2).
-    pub fn recast<U: Carried>(self, tags: Option<&[i128]>) -> Flagged<U> {
+    /// with their flag. `tags` lists the tags `U` decodes when it is an enum, and the width of
+    /// its tag in levels: a value whose tag levels (the lowest ones, §2) are any other pattern
+    /// has no variant, and the result is `Unknown` (rule 2).
+    pub fn recast<U: Carried>(self, tags: Option<(&[i128], u32)>) -> Flagged<U> {
         if !self.known {
             return Flagged::unknown();
         }
-        let bits = self.value.to_levels();
+        let words = self.value.to_levels();
         match tags {
-            Some(tags) if !tags.contains(&i128::from(bits)) => Flagged::unknown(),
-            _ => Flagged::known(U::from_levels(bits)),
+            // a tag is at most 64 levels: it is read through one word
+            Some((tags, tag_levels)) if !tags.contains(&i128::from(words.slice(0, tag_levels).low())) => Flagged::unknown(),
+            _ => Flagged::known(U::from_levels(&words)),
         }
     }
 }
@@ -564,9 +847,513 @@ where
     }
 }
 
+/// The tag of a derived enum in the byte form: its value in the low `width` bytes, little-endian
+/// (none for an enum of one variant), and the widths a derived enum's layout takes the widest of.
+pub struct Tag;
+
+impl Tag {
+    /// Writes `tag` into `out[..width]`.
+    pub fn put(tag: u64, out: &mut [u8], width: usize) {
+        out[..width].copy_from_slice(&tag.to_le_bytes()[..width]);
+    }
+
+    /// The tag in `bytes[..width]`.
+    pub fn get(bytes: &[u8], width: usize) -> u64 {
+        let mut word = [0u8; 8];
+        word[..width].copy_from_slice(&bytes[..width]);
+        u64::from_le_bytes(word)
+    }
+
+    /// The widest of `widths`: the payload of a derived enum is as wide as its widest variant's.
+    pub const fn widest(widths: &[usize]) -> usize {
+        let mut widest = 0;
+        let mut at = 0;
+        while at < widths.len() {
+            if widths[at] > widest {
+                widest = widths[at];
+            }
+            at += 1;
+        }
+        widest
+    }
+}
+
+// ---- composite carried types (§2): tuples, arrays and `Option` ----------------------------------------------
+//
+// The value bytes of a composite are those of its parts one after another, the first lowest, then
+// the one known byte of the whole value; its levels are the parts' levels in the same order.
+
+impl<A: Carried> Carried for (A,) {
+    const WIDTH: usize = A::WIDTH;
+    const SIZE: usize = Self::WIDTH + 1;
+    fn encode(self, out: &mut [u8]) {
+        let mut at = 0;
+        Field::write(self.0, out, &mut at);
+    }
+    fn decode(bytes: &[u8]) -> (A,) {
+        let mut at = 0;
+        (Field::read(bytes, &mut at),)
+    }
+    const LEVELS: u32 = A::LEVELS;
+    fn to_levels(self) -> LevelWords {
+        LevelWords::concat([self.0.to_levels()])
+    }
+    fn from_levels(words: &LevelWords) -> (A,) {
+        let mut at = 0;
+        (Field::levels(words, &mut at),)
+    }
+}
+
+impl<A: Carried, B: Carried> Carried for (A, B) {
+    const WIDTH: usize = A::WIDTH + B::WIDTH;
+    const SIZE: usize = Self::WIDTH + 1;
+    fn encode(self, out: &mut [u8]) {
+        let mut at = 0;
+        Field::write(self.0, out, &mut at);
+        Field::write(self.1, out, &mut at);
+    }
+    fn decode(bytes: &[u8]) -> (A, B) {
+        let mut at = 0;
+        (Field::read(bytes, &mut at), Field::read(bytes, &mut at))
+    }
+    const LEVELS: u32 = A::LEVELS + B::LEVELS;
+    fn to_levels(self) -> LevelWords {
+        LevelWords::concat([self.0.to_levels(), self.1.to_levels()])
+    }
+    fn from_levels(words: &LevelWords) -> (A, B) {
+        let mut at = 0;
+        (Field::levels(words, &mut at), Field::levels(words, &mut at))
+    }
+}
+
+impl<A: Carried, B: Carried, C: Carried> Carried for (A, B, C) {
+    const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH;
+    const SIZE: usize = Self::WIDTH + 1;
+    fn encode(self, out: &mut [u8]) {
+        let mut at = 0;
+        Field::write(self.0, out, &mut at);
+        Field::write(self.1, out, &mut at);
+        Field::write(self.2, out, &mut at);
+    }
+    fn decode(bytes: &[u8]) -> (A, B, C) {
+        let mut at = 0;
+        (Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at))
+    }
+    const LEVELS: u32 = A::LEVELS + B::LEVELS + C::LEVELS;
+    fn to_levels(self) -> LevelWords {
+        LevelWords::concat([self.0.to_levels(), self.1.to_levels(), self.2.to_levels()])
+    }
+    fn from_levels(words: &LevelWords) -> (A, B, C) {
+        let mut at = 0;
+        (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
+    }
+}
+
+impl<A: Carried, B: Carried, C: Carried, D: Carried> Carried for (A, B, C, D) {
+    const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH;
+    const SIZE: usize = Self::WIDTH + 1;
+    fn encode(self, out: &mut [u8]) {
+        let mut at = 0;
+        Field::write(self.0, out, &mut at);
+        Field::write(self.1, out, &mut at);
+        Field::write(self.2, out, &mut at);
+        Field::write(self.3, out, &mut at);
+    }
+    fn decode(bytes: &[u8]) -> (A, B, C, D) {
+        let mut at = 0;
+        (Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at))
+    }
+    const LEVELS: u32 = A::LEVELS + B::LEVELS + C::LEVELS + D::LEVELS;
+    fn to_levels(self) -> LevelWords {
+        LevelWords::concat([self.0.to_levels(), self.1.to_levels(), self.2.to_levels(), self.3.to_levels()])
+    }
+    fn from_levels(words: &LevelWords) -> (A, B, C, D) {
+        let mut at = 0;
+        (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
+    }
+}
+
+impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried> Carried for (A, B, C, D, E) {
+    const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH + E::WIDTH;
+    const SIZE: usize = Self::WIDTH + 1;
+    fn encode(self, out: &mut [u8]) {
+        let mut at = 0;
+        Field::write(self.0, out, &mut at);
+        Field::write(self.1, out, &mut at);
+        Field::write(self.2, out, &mut at);
+        Field::write(self.3, out, &mut at);
+        Field::write(self.4, out, &mut at);
+    }
+    fn decode(bytes: &[u8]) -> (A, B, C, D, E) {
+        let mut at = 0;
+        (Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at))
+    }
+    const LEVELS: u32 = A::LEVELS + B::LEVELS + C::LEVELS + D::LEVELS + E::LEVELS;
+    fn to_levels(self) -> LevelWords {
+        LevelWords::concat([self.0.to_levels(), self.1.to_levels(), self.2.to_levels(), self.3.to_levels(), self.4.to_levels()])
+    }
+    fn from_levels(words: &LevelWords) -> (A, B, C, D, E) {
+        let mut at = 0;
+        (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
+    }
+}
+
+impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried> Carried for (A, B, C, D, E, F) {
+    const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH + E::WIDTH + F::WIDTH;
+    const SIZE: usize = Self::WIDTH + 1;
+    fn encode(self, out: &mut [u8]) {
+        let mut at = 0;
+        Field::write(self.0, out, &mut at);
+        Field::write(self.1, out, &mut at);
+        Field::write(self.2, out, &mut at);
+        Field::write(self.3, out, &mut at);
+        Field::write(self.4, out, &mut at);
+        Field::write(self.5, out, &mut at);
+    }
+    fn decode(bytes: &[u8]) -> (A, B, C, D, E, F) {
+        let mut at = 0;
+        (Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at))
+    }
+    const LEVELS: u32 = A::LEVELS + B::LEVELS + C::LEVELS + D::LEVELS + E::LEVELS + F::LEVELS;
+    fn to_levels(self) -> LevelWords {
+        LevelWords::concat([self.0.to_levels(), self.1.to_levels(), self.2.to_levels(), self.3.to_levels(), self.4.to_levels(), self.5.to_levels()])
+    }
+    fn from_levels(words: &LevelWords) -> (A, B, C, D, E, F) {
+        let mut at = 0;
+        (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
+    }
+}
+
+impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: Carried> Carried for (A, B, C, D, E, F, G) {
+    const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH + E::WIDTH + F::WIDTH + G::WIDTH;
+    const SIZE: usize = Self::WIDTH + 1;
+    fn encode(self, out: &mut [u8]) {
+        let mut at = 0;
+        Field::write(self.0, out, &mut at);
+        Field::write(self.1, out, &mut at);
+        Field::write(self.2, out, &mut at);
+        Field::write(self.3, out, &mut at);
+        Field::write(self.4, out, &mut at);
+        Field::write(self.5, out, &mut at);
+        Field::write(self.6, out, &mut at);
+    }
+    fn decode(bytes: &[u8]) -> (A, B, C, D, E, F, G) {
+        let mut at = 0;
+        (Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at))
+    }
+    const LEVELS: u32 = A::LEVELS + B::LEVELS + C::LEVELS + D::LEVELS + E::LEVELS + F::LEVELS + G::LEVELS;
+    fn to_levels(self) -> LevelWords {
+        LevelWords::concat([self.0.to_levels(), self.1.to_levels(), self.2.to_levels(), self.3.to_levels(), self.4.to_levels(), self.5.to_levels(), self.6.to_levels()])
+    }
+    fn from_levels(words: &LevelWords) -> (A, B, C, D, E, F, G) {
+        let mut at = 0;
+        (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
+    }
+}
+
+impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: Carried, H: Carried> Carried for (A, B, C, D, E, F, G, H) {
+    const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH + E::WIDTH + F::WIDTH + G::WIDTH + H::WIDTH;
+    const SIZE: usize = Self::WIDTH + 1;
+    fn encode(self, out: &mut [u8]) {
+        let mut at = 0;
+        Field::write(self.0, out, &mut at);
+        Field::write(self.1, out, &mut at);
+        Field::write(self.2, out, &mut at);
+        Field::write(self.3, out, &mut at);
+        Field::write(self.4, out, &mut at);
+        Field::write(self.5, out, &mut at);
+        Field::write(self.6, out, &mut at);
+        Field::write(self.7, out, &mut at);
+    }
+    fn decode(bytes: &[u8]) -> (A, B, C, D, E, F, G, H) {
+        let mut at = 0;
+        (Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at))
+    }
+    const LEVELS: u32 = A::LEVELS + B::LEVELS + C::LEVELS + D::LEVELS + E::LEVELS + F::LEVELS + G::LEVELS + H::LEVELS;
+    fn to_levels(self) -> LevelWords {
+        LevelWords::concat([self.0.to_levels(), self.1.to_levels(), self.2.to_levels(), self.3.to_levels(), self.4.to_levels(), self.5.to_levels(), self.6.to_levels(), self.7.to_levels()])
+    }
+    fn from_levels(words: &LevelWords) -> (A, B, C, D, E, F, G, H) {
+        let mut at = 0;
+        (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
+    }
+}
+
+impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: Carried, H: Carried, I: Carried> Carried for (A, B, C, D, E, F, G, H, I) {
+    const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH + E::WIDTH + F::WIDTH + G::WIDTH + H::WIDTH + I::WIDTH;
+    const SIZE: usize = Self::WIDTH + 1;
+    fn encode(self, out: &mut [u8]) {
+        let mut at = 0;
+        Field::write(self.0, out, &mut at);
+        Field::write(self.1, out, &mut at);
+        Field::write(self.2, out, &mut at);
+        Field::write(self.3, out, &mut at);
+        Field::write(self.4, out, &mut at);
+        Field::write(self.5, out, &mut at);
+        Field::write(self.6, out, &mut at);
+        Field::write(self.7, out, &mut at);
+        Field::write(self.8, out, &mut at);
+    }
+    fn decode(bytes: &[u8]) -> (A, B, C, D, E, F, G, H, I) {
+        let mut at = 0;
+        (Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at))
+    }
+    const LEVELS: u32 = A::LEVELS + B::LEVELS + C::LEVELS + D::LEVELS + E::LEVELS + F::LEVELS + G::LEVELS + H::LEVELS + I::LEVELS;
+    fn to_levels(self) -> LevelWords {
+        LevelWords::concat([self.0.to_levels(), self.1.to_levels(), self.2.to_levels(), self.3.to_levels(), self.4.to_levels(), self.5.to_levels(), self.6.to_levels(), self.7.to_levels(), self.8.to_levels()])
+    }
+    fn from_levels(words: &LevelWords) -> (A, B, C, D, E, F, G, H, I) {
+        let mut at = 0;
+        (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
+    }
+}
+
+impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: Carried, H: Carried, I: Carried, J: Carried> Carried for (A, B, C, D, E, F, G, H, I, J) {
+    const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH + E::WIDTH + F::WIDTH + G::WIDTH + H::WIDTH + I::WIDTH + J::WIDTH;
+    const SIZE: usize = Self::WIDTH + 1;
+    fn encode(self, out: &mut [u8]) {
+        let mut at = 0;
+        Field::write(self.0, out, &mut at);
+        Field::write(self.1, out, &mut at);
+        Field::write(self.2, out, &mut at);
+        Field::write(self.3, out, &mut at);
+        Field::write(self.4, out, &mut at);
+        Field::write(self.5, out, &mut at);
+        Field::write(self.6, out, &mut at);
+        Field::write(self.7, out, &mut at);
+        Field::write(self.8, out, &mut at);
+        Field::write(self.9, out, &mut at);
+    }
+    fn decode(bytes: &[u8]) -> (A, B, C, D, E, F, G, H, I, J) {
+        let mut at = 0;
+        (Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at))
+    }
+    const LEVELS: u32 = A::LEVELS + B::LEVELS + C::LEVELS + D::LEVELS + E::LEVELS + F::LEVELS + G::LEVELS + H::LEVELS + I::LEVELS + J::LEVELS;
+    fn to_levels(self) -> LevelWords {
+        LevelWords::concat([self.0.to_levels(), self.1.to_levels(), self.2.to_levels(), self.3.to_levels(), self.4.to_levels(), self.5.to_levels(), self.6.to_levels(), self.7.to_levels(), self.8.to_levels(), self.9.to_levels()])
+    }
+    fn from_levels(words: &LevelWords) -> (A, B, C, D, E, F, G, H, I, J) {
+        let mut at = 0;
+        (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
+    }
+}
+
+impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: Carried, H: Carried, I: Carried, J: Carried, K: Carried> Carried for (A, B, C, D, E, F, G, H, I, J, K) {
+    const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH + E::WIDTH + F::WIDTH + G::WIDTH + H::WIDTH + I::WIDTH + J::WIDTH + K::WIDTH;
+    const SIZE: usize = Self::WIDTH + 1;
+    fn encode(self, out: &mut [u8]) {
+        let mut at = 0;
+        Field::write(self.0, out, &mut at);
+        Field::write(self.1, out, &mut at);
+        Field::write(self.2, out, &mut at);
+        Field::write(self.3, out, &mut at);
+        Field::write(self.4, out, &mut at);
+        Field::write(self.5, out, &mut at);
+        Field::write(self.6, out, &mut at);
+        Field::write(self.7, out, &mut at);
+        Field::write(self.8, out, &mut at);
+        Field::write(self.9, out, &mut at);
+        Field::write(self.10, out, &mut at);
+    }
+    fn decode(bytes: &[u8]) -> (A, B, C, D, E, F, G, H, I, J, K) {
+        let mut at = 0;
+        (Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at))
+    }
+    const LEVELS: u32 = A::LEVELS + B::LEVELS + C::LEVELS + D::LEVELS + E::LEVELS + F::LEVELS + G::LEVELS + H::LEVELS + I::LEVELS + J::LEVELS + K::LEVELS;
+    fn to_levels(self) -> LevelWords {
+        LevelWords::concat([self.0.to_levels(), self.1.to_levels(), self.2.to_levels(), self.3.to_levels(), self.4.to_levels(), self.5.to_levels(), self.6.to_levels(), self.7.to_levels(), self.8.to_levels(), self.9.to_levels(), self.10.to_levels()])
+    }
+    fn from_levels(words: &LevelWords) -> (A, B, C, D, E, F, G, H, I, J, K) {
+        let mut at = 0;
+        (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
+    }
+}
+
+impl<A: Carried, B: Carried, C: Carried, D: Carried, E: Carried, F: Carried, G: Carried, H: Carried, I: Carried, J: Carried, K: Carried, L: Carried> Carried for (A, B, C, D, E, F, G, H, I, J, K, L) {
+    const WIDTH: usize = A::WIDTH + B::WIDTH + C::WIDTH + D::WIDTH + E::WIDTH + F::WIDTH + G::WIDTH + H::WIDTH + I::WIDTH + J::WIDTH + K::WIDTH + L::WIDTH;
+    const SIZE: usize = Self::WIDTH + 1;
+    fn encode(self, out: &mut [u8]) {
+        let mut at = 0;
+        Field::write(self.0, out, &mut at);
+        Field::write(self.1, out, &mut at);
+        Field::write(self.2, out, &mut at);
+        Field::write(self.3, out, &mut at);
+        Field::write(self.4, out, &mut at);
+        Field::write(self.5, out, &mut at);
+        Field::write(self.6, out, &mut at);
+        Field::write(self.7, out, &mut at);
+        Field::write(self.8, out, &mut at);
+        Field::write(self.9, out, &mut at);
+        Field::write(self.10, out, &mut at);
+        Field::write(self.11, out, &mut at);
+    }
+    fn decode(bytes: &[u8]) -> (A, B, C, D, E, F, G, H, I, J, K, L) {
+        let mut at = 0;
+        (Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at), Field::read(bytes, &mut at))
+    }
+    const LEVELS: u32 = A::LEVELS + B::LEVELS + C::LEVELS + D::LEVELS + E::LEVELS + F::LEVELS + G::LEVELS + H::LEVELS + I::LEVELS + J::LEVELS + K::LEVELS + L::LEVELS;
+    fn to_levels(self) -> LevelWords {
+        LevelWords::concat([self.0.to_levels(), self.1.to_levels(), self.2.to_levels(), self.3.to_levels(), self.4.to_levels(), self.5.to_levels(), self.6.to_levels(), self.7.to_levels(), self.8.to_levels(), self.9.to_levels(), self.10.to_levels(), self.11.to_levels()])
+    }
+    fn from_levels(words: &LevelWords) -> (A, B, C, D, E, F, G, H, I, J, K, L) {
+        let mut at = 0;
+        (Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at), Field::levels(words, &mut at))
+    }
+}
+
+impl<A: Levelwise> Levelwise for (A,) {
+    fn same_levels(self, other: (A,)) -> bool {
+        self.0.same_levels(other.0)
+    }
+}
+
+impl<A: Levelwise, B: Levelwise> Levelwise for (A, B) {
+    fn same_levels(self, other: (A, B)) -> bool {
+        self.0.same_levels(other.0) && self.1.same_levels(other.1)
+    }
+}
+
+impl<A: Levelwise, B: Levelwise, C: Levelwise> Levelwise for (A, B, C) {
+    fn same_levels(self, other: (A, B, C)) -> bool {
+        self.0.same_levels(other.0) && self.1.same_levels(other.1) && self.2.same_levels(other.2)
+    }
+}
+
+impl<A: Levelwise, B: Levelwise, C: Levelwise, D: Levelwise> Levelwise for (A, B, C, D) {
+    fn same_levels(self, other: (A, B, C, D)) -> bool {
+        self.0.same_levels(other.0) && self.1.same_levels(other.1) && self.2.same_levels(other.2) && self.3.same_levels(other.3)
+    }
+}
+
+impl<A: Levelwise, B: Levelwise, C: Levelwise, D: Levelwise, E: Levelwise> Levelwise for (A, B, C, D, E) {
+    fn same_levels(self, other: (A, B, C, D, E)) -> bool {
+        self.0.same_levels(other.0) && self.1.same_levels(other.1) && self.2.same_levels(other.2) && self.3.same_levels(other.3) && self.4.same_levels(other.4)
+    }
+}
+
+impl<A: Levelwise, B: Levelwise, C: Levelwise, D: Levelwise, E: Levelwise, F: Levelwise> Levelwise for (A, B, C, D, E, F) {
+    fn same_levels(self, other: (A, B, C, D, E, F)) -> bool {
+        self.0.same_levels(other.0) && self.1.same_levels(other.1) && self.2.same_levels(other.2) && self.3.same_levels(other.3) && self.4.same_levels(other.4) && self.5.same_levels(other.5)
+    }
+}
+
+impl<A: Levelwise, B: Levelwise, C: Levelwise, D: Levelwise, E: Levelwise, F: Levelwise, G: Levelwise> Levelwise for (A, B, C, D, E, F, G) {
+    fn same_levels(self, other: (A, B, C, D, E, F, G)) -> bool {
+        self.0.same_levels(other.0) && self.1.same_levels(other.1) && self.2.same_levels(other.2) && self.3.same_levels(other.3) && self.4.same_levels(other.4) && self.5.same_levels(other.5) && self.6.same_levels(other.6)
+    }
+}
+
+impl<A: Levelwise, B: Levelwise, C: Levelwise, D: Levelwise, E: Levelwise, F: Levelwise, G: Levelwise, H: Levelwise> Levelwise for (A, B, C, D, E, F, G, H) {
+    fn same_levels(self, other: (A, B, C, D, E, F, G, H)) -> bool {
+        self.0.same_levels(other.0) && self.1.same_levels(other.1) && self.2.same_levels(other.2) && self.3.same_levels(other.3) && self.4.same_levels(other.4) && self.5.same_levels(other.5) && self.6.same_levels(other.6) && self.7.same_levels(other.7)
+    }
+}
+
+impl<A: Levelwise, B: Levelwise, C: Levelwise, D: Levelwise, E: Levelwise, F: Levelwise, G: Levelwise, H: Levelwise, I: Levelwise> Levelwise for (A, B, C, D, E, F, G, H, I) {
+    fn same_levels(self, other: (A, B, C, D, E, F, G, H, I)) -> bool {
+        self.0.same_levels(other.0) && self.1.same_levels(other.1) && self.2.same_levels(other.2) && self.3.same_levels(other.3) && self.4.same_levels(other.4) && self.5.same_levels(other.5) && self.6.same_levels(other.6) && self.7.same_levels(other.7) && self.8.same_levels(other.8)
+    }
+}
+
+impl<A: Levelwise, B: Levelwise, C: Levelwise, D: Levelwise, E: Levelwise, F: Levelwise, G: Levelwise, H: Levelwise, I: Levelwise, J: Levelwise> Levelwise for (A, B, C, D, E, F, G, H, I, J) {
+    fn same_levels(self, other: (A, B, C, D, E, F, G, H, I, J)) -> bool {
+        self.0.same_levels(other.0) && self.1.same_levels(other.1) && self.2.same_levels(other.2) && self.3.same_levels(other.3) && self.4.same_levels(other.4) && self.5.same_levels(other.5) && self.6.same_levels(other.6) && self.7.same_levels(other.7) && self.8.same_levels(other.8) && self.9.same_levels(other.9)
+    }
+}
+
+impl<A: Levelwise, B: Levelwise, C: Levelwise, D: Levelwise, E: Levelwise, F: Levelwise, G: Levelwise, H: Levelwise, I: Levelwise, J: Levelwise, K: Levelwise> Levelwise for (A, B, C, D, E, F, G, H, I, J, K) {
+    fn same_levels(self, other: (A, B, C, D, E, F, G, H, I, J, K)) -> bool {
+        self.0.same_levels(other.0) && self.1.same_levels(other.1) && self.2.same_levels(other.2) && self.3.same_levels(other.3) && self.4.same_levels(other.4) && self.5.same_levels(other.5) && self.6.same_levels(other.6) && self.7.same_levels(other.7) && self.8.same_levels(other.8) && self.9.same_levels(other.9) && self.10.same_levels(other.10)
+    }
+}
+
+impl<A: Levelwise, B: Levelwise, C: Levelwise, D: Levelwise, E: Levelwise, F: Levelwise, G: Levelwise, H: Levelwise, I: Levelwise, J: Levelwise, K: Levelwise, L: Levelwise> Levelwise for (A, B, C, D, E, F, G, H, I, J, K, L) {
+    fn same_levels(self, other: (A, B, C, D, E, F, G, H, I, J, K, L)) -> bool {
+        self.0.same_levels(other.0) && self.1.same_levels(other.1) && self.2.same_levels(other.2) && self.3.same_levels(other.3) && self.4.same_levels(other.4) && self.5.same_levels(other.5) && self.6.same_levels(other.6) && self.7.same_levels(other.7) && self.8.same_levels(other.8) && self.9.same_levels(other.9) && self.10.same_levels(other.10) && self.11.same_levels(other.11)
+    }
+}
+
+/// An array is carried where Rust gives it a `Default` (up to 32 elements): element 0 is the
+/// lowest.
+impl<T: Carried, const N: usize> Carried for [T; N]
+where
+    [T; N]: Default,
+{
+    const WIDTH: usize = N * T::WIDTH;
+    const SIZE: usize = Self::WIDTH + 1;
+    fn encode(self, out: &mut [u8]) {
+        let mut at = 0;
+        for element in self {
+            Field::write(element, out, &mut at);
+        }
+    }
+    fn decode(bytes: &[u8]) -> [T; N] {
+        let mut at = 0;
+        std::array::from_fn(|_| Field::read(bytes, &mut at))
+    }
+    const LEVELS: u32 = N as u32 * T::LEVELS;
+    fn to_levels(self) -> LevelWords {
+        let mut joined = LevelWords::empty();
+        for element in self {
+            joined.append(&element.to_levels());
+        }
+        joined
+    }
+    fn from_levels(words: &LevelWords) -> [T; N] {
+        let mut at = 0;
+        std::array::from_fn(|_| Field::levels(words, &mut at))
+    }
+}
+
+impl<T: Levelwise, const N: usize> Levelwise for [T; N]
+where
+    [T; N]: Default,
+{
+    fn same_levels(self, other: [T; N]) -> bool {
+        self.iter().zip(other).all(|(a, b)| a.same_levels(b))
+    }
+}
+
+/// `Option<T>`: level 0 is the tag, true for `Some`, then `T`'s levels (all false for `None`); the
+/// bytes are a tag byte, then `T`'s value bytes (all zero for `None`).
+impl<T: Carried> Carried for Option<T> {
+    const WIDTH: usize = 1 + T::WIDTH;
+    const SIZE: usize = Self::WIDTH + 1;
+    fn encode(self, out: &mut [u8]) {
+        out[..Self::WIDTH].fill(0);
+        if let Some(value) = self {
+            out[0] = 1;
+            value.encode(&mut out[1..Self::WIDTH]);
+        }
+    }
+    fn decode(bytes: &[u8]) -> Option<T> {
+        (bytes[0] != 0).then(|| T::decode(&bytes[1..Self::WIDTH]))
+    }
+    const LEVELS: u32 = 1 + T::LEVELS;
+    fn to_levels(self) -> LevelWords {
+        match self {
+            Some(value) => LevelWords::concat([LevelWords::of(1, 1), value.to_levels()]),
+            None => LevelWords::concat([LevelWords::of(0, 1), LevelWords::zeros(T::LEVELS)]),
+        }
+    }
+    fn from_levels(words: &LevelWords) -> Option<T> {
+        words.get(0).then(|| T::from_levels(&words.slice(1, T::LEVELS)))
+    }
+}
+
+impl<T: Levelwise> Levelwise for Option<T> {
+    fn same_levels(self, other: Option<T>) -> bool {
+        match (self, other) {
+            (Some(a), Some(b)) => a.same_levels(b),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Flagged, Merge};
+    use super::{Carried, Flagged, LevelWords, Merge};
     use crate::rt::commits::{Commits, tests::react_with};
     use crate::rt::int::{Int, UInt};
     use piperine_abi::layout::{HIGH, LOW};
@@ -581,6 +1368,55 @@ mod tests {
 
     fn u<T: Copy + Default>() -> Flagged<T> {
         Flagged::unknown()
+    }
+
+    #[test]
+    fn composite_levels_follow_the_section_2_table() {
+        // §2 table: a tuple concatenates its fields, `.0` lowest; an array its elements, element 0
+        // lowest; `Option<T>` has the tag at level 0 (true for `Some`), then `T`
+        let pair = (UInt::<3>::new(0b101), true);
+        assert_eq!(<(UInt<3>, bool)>::LEVELS, 4);
+        assert_eq!(pair.to_levels(), LevelWords::of(0b1101, 4), "the tuple: .0 in levels 0 to 2, then the bool");
+        assert_eq!(<(UInt<3>, bool)>::from_levels(&LevelWords::of(0b1101, 4)), pair);
+        let elements = [UInt::<2>::new(1), UInt::<2>::new(2), UInt::<2>::new(3)];
+        assert_eq!(elements.to_levels(), LevelWords::of(0b11_10_01, 6), "the array: element 0 lowest");
+        assert_eq!(<[UInt<2>; 3]>::from_levels(&LevelWords::of(0b11_10_01, 6)), elements);
+        assert_eq!(Some(UInt::<3>::new(0b101)).to_levels(), LevelWords::of(0b1011, 4), "Some: the tag true, then the payload");
+        assert_eq!(None::<UInt<3>>.to_levels(), LevelWords::zeros(4), "None: the tag false and the payload all false");
+        assert_eq!(<Option<UInt<3>>>::from_levels(&LevelWords::of(0b1011, 4)), Some(UInt::<3>::new(0b101)));
+        assert_eq!(<Option<UInt<3>>>::from_levels(&LevelWords::of(0b1010, 4)), None, "a clear tag is None whatever the payload levels");
+
+        // more than 64 levels: a real and a byte are 72 levels in two words, read and moved by level
+        let wide = (-2.5f64, UInt::<8>::new(0b1000_0001));
+        let levels = wide.to_levels();
+        assert_eq!(levels.len(), 72);
+        assert_eq!(levels.low(), (-2.5f64).to_bits());
+        assert!(levels.get(64) && !levels.get(65) && levels.get(71), "the byte sits in levels 64 to 71");
+        assert_eq!(<(f64, UInt<8>)>::from_levels(&levels), wide);
+        let (is, value) = k(wide).level(k(UInt::<32>::new(71)), "t.msl:1:1");
+        assert_eq!((is, value), (k(true), k(true)), "`level` reads past the first word");
+        assert_eq!(k(wide).level(k(UInt::<32>::new(65)), "t.msl:1:1").1, k(false));
+        assert!(k(wide).same(k(wide)) && !k(wide).same(k((-2.5f64, UInt::<8>::new(0b1000_0011)))), "`same` compares both words");
+
+        // the bytes: the parts' value bytes one after another, then the known byte of the whole value
+        assert_eq!(<(UInt<3>, bool)>::WIDTH, 2);
+        assert_eq!(k(pair).encode(), vec![0b101, 1, 1]);
+        assert_eq!(Flagged::<(UInt<3>, bool)>::decode(&[0b101, 1, 1]), k(pair));
+        assert_eq!(Flagged::<(UInt<3>, bool)>::decode(&[0, 0, 0]), u());
+        assert_eq!(k(elements).encode(), vec![1, 2, 3, 1]);
+        assert_eq!(Flagged::<Option<UInt<3>>>::decode(&k(Some(UInt::<3>::new(6))).encode()), k(Some(UInt::<3>::new(6))));
+        assert_eq!(k(None::<UInt<3>>).encode(), vec![0, 0, 1]);
+        let mut padded = [9u8, 9];
+        None::<UInt<3>>.encode(&mut padded);
+        assert_eq!(padded, [0, 0], "None encodes its payload as zeros");
+
+        // a composite is one value with one flag: a merge keeps it only when both are known and equal; `cast`
+        // moves the levels under another type of four levels
+        assert_eq!(k(pair).merge(k(pair)), k(pair));
+        assert_eq!(k(pair).merge(k((UInt::<3>::new(5), false))), u());
+        assert_eq!(k(pair).recast::<UInt<4>>(None), k(UInt::<4>::new(0b1101)));
+        assert_eq!(k(UInt::<4>::new(0b1101)).recast::<(UInt<3>, bool)>(None), k(pair));
+        assert_eq!(k(Some(UInt::<3>::new(2))).merge(k(None)), u(), "Some and None differ in the tag level");
     }
 
     #[test]
@@ -801,9 +1637,13 @@ mod tests {
         assert_eq!(u::<UInt<4>>().recast::<Int<4>>(None), u(), "an unknown value stays unknown");
         // rule 2: a tag the target has no variant for is `Unknown`
         let tags = [0, 1, 2];
-        assert_eq!(k(UInt::<2>::new(2)).recast::<UInt<2>>(Some(&tags)), k(UInt::<2>::new(2)));
-        assert_eq!(k(UInt::<2>::new(3)).recast::<UInt<2>>(Some(&tags)), u());
-        assert_eq!(u::<UInt<2>>().recast::<UInt<2>>(Some(&tags)), u());
+        assert_eq!(k(UInt::<2>::new(2)).recast::<UInt<2>>(Some((&tags, 2))), k(UInt::<2>::new(2)));
+        assert_eq!(k(UInt::<2>::new(3)).recast::<UInt<2>>(Some((&tags, 2))), u());
+        assert_eq!(u::<UInt<2>>().recast::<UInt<2>>(Some((&tags, 2))), u());
+        // rule 2 reads the tag in the lowest levels (§2): a payload above it does not make it another tag
+        assert_eq!(k(UInt::<5>::new(0b01101)).recast::<UInt<5>>(Some((&tags, 2))), k(UInt::<5>::new(0b01101)), "tag 1, payload 3");
+        assert_eq!(k(UInt::<5>::new(0b01100)).recast::<UInt<5>>(Some((&tags, 2))), k(UInt::<5>::new(0b01100)), "tag 0, payload 3");
+        assert_eq!(k(UInt::<5>::new(0b00111)).recast::<UInt<5>>(Some((&tags, 2))), u(), "tag 3 names no variant whatever the payload");
     }
 
     #[test]
@@ -864,5 +1704,21 @@ mod tests {
             drop(commits);
         });
         assert_eq!(made, [], "a dropped `Commits`, as after a fault, commits nothing");
+    }
+
+    #[test]
+    fn tuples_merge_field_by_field() {
+        // §3.3.3: the effects of a path are each local it writes; two tuples merge as each of their
+        // fields does. Arity 1, 2 and 12 here; the impls of the others are the same text
+        let (five, six): (Flagged<UInt<8>>, Flagged<UInt<8>>) = (k(UInt::new(5)), k(UInt::new(6)));
+        let unknown = Flagged::<UInt<8>>::unknown();
+        assert_eq!((five,).merge((five,)), (five,));
+        assert_eq!((five,).merge((six,)), (unknown,));
+        assert_eq!((five, five).merge((five, six)), (five, unknown));
+        let a = (five, five, five, five, five, five, five, five, five, five, five, five);
+        let b = (five, six, five, six, five, six, five, six, five, six, five, six);
+        let merged = a.merge(b);
+        assert_eq!(merged, (five, unknown, five, unknown, five, unknown, five, unknown, five, unknown, five, unknown));
+        assert_eq!(<(Flagged<UInt<8>>, Flagged<bool>)>::unknown(), (unknown, Flagged::<bool>::unknown()));
     }
 }

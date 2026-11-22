@@ -65,12 +65,8 @@ pub enum TypeKind {
     Path(PathId),
     /// `[T; N]`: `len` is a const expression.
     Array { elem: TypeId, len: ExprId },
-    /// `[T]`
-    Slice(TypeId),
     /// `(A, B)`; the empty tuple is `()`.
     Tuple(Vec<TypeId>),
-    /// `&T` or `&'static T`.
-    Ref { static_lifetime: bool, inner: TypeId },
     /// `flip T`
     Flip(TypeId),
     /// `fn(A, B) -> R`; `ret` is `None` for `fn()`.
@@ -94,13 +90,13 @@ pub enum PatKind {
     Wild,
     /// `..`
     Rest,
-    /// `x`, `mut x`, `ref x`, `x @ p`. `binding` is the `Binding`
+    /// `x`, `x @ p`. `binding` is the `Binding`
     /// declaration the identifier introduces (the lowering cannot tell a
     /// binder from a constant name; resolution can). `res` is what a plain
     /// name resolves to when it names a constant, a unit variant or a unit
     /// struct (§1): then the pattern is a path and binds nothing. It stays
     /// `Unresolved` for a binder.
-    Ident { by_ref: bool, mutable: bool, name: Name, sub: Option<PatId>, binding: DeclId, res: Resolution },
+    Ident { name: Name, sub: Option<PatId>, binding: DeclId, res: Resolution },
     /// A literal, possibly negated.
     Lit(ExprId),
     /// A path naming a constant or a unit variant.
@@ -110,8 +106,8 @@ pub enum PatKind {
     Struct { path: PathId, fields: Vec<FieldPatNode>, rest: bool },
     Or(Vec<PatId>),
     Range { lo: Option<ExprId>, hi: Option<ExprId>, inclusive: bool },
-    Ref(PatId),
-    Slice(Vec<PatId>),
+    /// `[a, b, ..]`: an array pattern.
+    Array(Vec<PatId>),
 }
 
 /// `name: pat` in a struct pattern. The shorthand `Point { x }` has no `pat`
@@ -221,7 +217,7 @@ pub enum ExprKind {
     Break(Option<ExprId>),
     Continue,
     Return(Option<ExprId>),
-    Closure { is_move: bool, params: Vec<ClosureParam>, ret: Option<TypeId>, body: ExprId },
+    Closure { params: Vec<ClosureParam>, ret: Option<TypeId>, body: ExprId },
     /// `e?`
     Try(ExprId),
     Emit { stream: Lit, fields: Vec<FieldInit> },

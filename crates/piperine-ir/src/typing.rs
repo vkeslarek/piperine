@@ -7,7 +7,7 @@
 //! or `bool`: these rules apply once an operand is an integer, or for the operators M1 does not
 //! have.
 
-use crate::model::{BinaryOp, Method, UnaryOp, ValueType};
+use crate::model::{BinaryOp, Method, TypeData, TypeKind, UnaryOp, ValueType};
 
 pub(crate) struct Typing;
 
@@ -41,9 +41,25 @@ impl Typing {
         *t == ValueType::F64 || t.is_integer()
     }
 
-    /// A type a carrier can hold: `bool`, `f64` or an integer type.
+    /// A type a carrier can hold and a value of which may be unknown: `bool`, `f64`, an integer type
+    /// or an enum (its tag is its `Repr` layout, §2).
     pub(crate) fn scalar(t: &ValueType) -> bool {
-        matches!(t, ValueType::Bool | ValueType::F64) || t.is_integer()
+        matches!(t, ValueType::Bool | ValueType::F64 | ValueType::Enum(_)) || t.is_integer()
+    }
+
+    /// A scalar, or a tuple, an array, a struct or an `Option`: a value with a `Repr` layout (§2),
+    /// which `level`, `cast` and the flag reads take. Only a scalar rides a flag (`flag`).
+    pub(crate) fn laid_out(t: &ValueType) -> bool {
+        Typing::scalar(t) || matches!(t, ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Struct(_) | ValueType::Option(_))
+    }
+
+    /// The type of a read of a carrier holding `held`: flagged, as every read may be unknown
+    /// (§3.3.1). A tuple, an array, a struct or an `Option` rides no flag in value code, so its read
+    /// is the value (unknown reads as the default) unless `written` says the read is flagged, as
+    /// the receiver of a flag read (`level`, `is_known`, `known_or`) is.
+    pub(crate) fn read_of(held: &ValueType, written: &ValueType) -> ValueType {
+        let flagged = ValueType::Flagged(Box::new(held.clone()));
+        if Typing::scalar(held) || *written == flagged { flagged } else { held.clone() }
     }
 
     /// The operators M1 does not have: they are typed by these rules whatever their operands.
@@ -60,13 +76,24 @@ impl Typing {
             BinaryOp::Rem if same && lb.is_integer() => lb.clone(),
             BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor if same && (lb.is_integer() || *lb == ValueType::Bool) => lb.clone(),
             BinaryOp::Shl | BinaryOp::Shr if lb.is_integer() && rb.is_integer() => lb.clone(),
-            BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge if same && Typing::numeric(lb) => ValueType::Bool,
+            BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge if same && (Typing::numeric(lb) || matches!(lb, ValueType::Enum(_))) => ValueType::Bool,
             BinaryOp::Eq | BinaryOp::Ne if same && Typing::scalar(lb) => ValueType::Bool,
             // `&&` and `||` decide control: their operands are plain `bool`.
             BinaryOp::And | BinaryOp::Or if *l == ValueType::Bool && *r == ValueType::Bool => ValueType::Bool,
             _ => return None,
         };
         Some(Typing::flag(base, flagged))
+    }
+
+    /// `target op= value` (§1.5.12): Rust has a compound form for the arithmetic, bitwise and
+    /// shift operators only, never for a comparison or `&&`/`||`. The type is what `op` gives the
+    /// two types; the assignment holds when it is the target's own.
+    pub(crate) fn compound(op: BinaryOp, target: &ValueType, value: &ValueType) -> Option<ValueType> {
+        let has_compound_form = matches!(
+            op,
+            BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem | BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr
+        );
+        if has_compound_form { Typing::binary(op, target, value) } else { None }
     }
 
     pub(crate) fn unary(op: UnaryOp, t: &ValueType) -> Option<ValueType> {
@@ -78,10 +105,11 @@ impl Typing {
         fits.then(|| Typing::flag(base.clone(), Typing::flagged(t)))
     }
 
-    /// `t as to`: among integer types and `f64`, or from `bool` to an integer type.
+    /// `t as to`: among integer types and `f64`, or from `bool` or an enum to an integer type (an
+    /// enum without fields gives its discriminant, §1.3.7).
     pub(crate) fn cast(t: &ValueType, to: &ValueType) -> Option<ValueType> {
         let from = Typing::base(t);
-        let fits = Typing::numeric(to) && (Typing::numeric(from) || (*from == ValueType::Bool && to.is_integer()));
+        let fits = Typing::numeric(to) && (Typing::numeric(from) || (matches!(from, ValueType::Bool | ValueType::Enum(_)) && to.is_integer()));
         fits.then(|| Typing::flag(to.clone(), Typing::flagged(t)))
     }
 
@@ -119,10 +147,34 @@ impl Typing {
         }
     }
 
+    /// How many levels a value of this type has in the type arena `types` (§2 table): the scalars as
+    /// `levels`, a tuple, an array, an `Option` and a struct from their parts, an enum its tag then
+    /// its widest payload. `None` for a type with no `Repr`.
+    pub(crate) fn levels_in(t: &ValueType, types: &[TypeData]) -> Option<u32> {
+        let sum = |parts: &[ValueType]| parts.iter().try_fold(0u32, |total, part| total.checked_add(Typing::levels_in(part, types)?));
+        match Typing::base(t) {
+            ValueType::Tuple(parts) => sum(parts),
+            ValueType::Array(element, length) => u32::try_from(*length).ok()?.checked_mul(Typing::levels_in(element, types)?),
+            ValueType::Option(inner) => Typing::levels_in(inner, types)?.checked_add(1),
+            ValueType::Struct(id) => match &types.get(id.index())?.kind {
+                TypeKind::Struct { fields, .. } => sum(&fields.iter().map(|(_, ty)| ty.clone()).collect::<Vec<_>>()),
+                TypeKind::Enum { .. } => None,
+            },
+            ValueType::Enum(id) => match &types.get(id.index())?.kind {
+                TypeKind::Enum { tag_levels, variants } => {
+                    let widest = variants.iter().map(|v| sum(&v.fields.iter().map(|(_, ty)| ty.clone()).collect::<Vec<_>>())).try_fold(0u32, |widest, payload| Some(widest.max(payload?)))?;
+                    tag_levels.checked_add(widest)
+                }
+                TypeKind::Struct { .. } => None,
+            },
+            other => Typing::levels(other),
+        }
+    }
+
     /// One half of `value.level(index)`: a `bool` of a `u32` index, known when the index is and
     /// flagged when it is not (§3.3.14, §3.3.13).
     pub(crate) fn level(value: &ValueType, index: &ValueType) -> Option<ValueType> {
-        let fits = Typing::scalar(Typing::base(value)) && *Typing::base(index) == ValueType::UInt(32);
+        let fits = Typing::laid_out(Typing::base(value)) && *Typing::base(index) == ValueType::UInt(32);
         fits.then(|| Typing::flag(ValueType::Bool, Typing::flagged(index)))
     }
 
@@ -140,15 +192,15 @@ impl Typing {
 
     /// `cast::<A, B>(value)`: `to`, when it has the level count of the value's type (§22.1.3
     /// rule 3); flagged when the value is, or when `tags` may leave the result without a variant.
-    pub(crate) fn level_cast(value: &ValueType, to: &ValueType, tags: bool) -> Option<ValueType> {
-        let fits = Typing::scalar(to) && Typing::levels(value).is_some() && Typing::levels(value) == Typing::levels(to);
+    pub(crate) fn level_cast(value: &ValueType, to: &ValueType, tags: bool, types: &[TypeData]) -> Option<ValueType> {
+        let fits = Typing::laid_out(to) && Typing::levels_in(value, types).is_some() && Typing::levels_in(value, types) == Typing::levels_in(to, types);
         fits.then(|| Typing::flag(to.clone(), tags || Typing::flagged(value)))
     }
 
     /// `value.is_known()` of any carried value, `value.high()` of a `bool`: a known `bool`.
     pub(crate) fn flag_read(high: bool, value: &ValueType) -> Option<ValueType> {
         let base = Typing::base(value);
-        let fits = if high { *base == ValueType::Bool } else { Typing::scalar(base) };
+        let fits = if high { *base == ValueType::Bool } else { Typing::laid_out(base) };
         fits.then_some(ValueType::Bool)
     }
 

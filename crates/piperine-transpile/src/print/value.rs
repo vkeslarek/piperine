@@ -28,18 +28,19 @@ use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 
 use piperine_ir::{Addend, AnalysisKind, LevelPart,
-    BinaryOp, Body, EmitField, Env, Expr, ExprId, FunctionId, Ir, Local, MathFn, Method, Origin, Param, Stmt, StmtId, Stream,
-    QuantityRole, Terminal, UnaryOp, ValueType,
+    BinaryOp, Body, EmitField, Env, Expr, ExprId, FunctionId, Ir, Local, MathFn, Method, Origin, Param, Stmt, StmtId, Stream, TypeData,
+    QuantityRole, Terminal, TypeKind, UnaryOp, ValueType,
 };
 
 use piperine_plan::{RecordLayout, StatementPlan};
 
 use crate::Error;
-use crate::print::{ContributionSums, Text};
+use crate::print::control::LoopFrame;
+use crate::print::{ContributionSums, Text, TypeItems};
 
 /// Binding strength of a printed expression: an operand weaker than its place is parenthesized.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Prec {
+pub(super) enum Prec {
     /// An `if`, a block or a closure: parenthesized wherever it is an operand.
     Low,
     Or,
@@ -56,18 +57,18 @@ enum Prec {
 }
 
 /// A printed expression and how strongly it binds.
-struct Piece {
-    text: String,
-    prec: Prec,
+pub(super) struct Piece {
+    pub(super) text: String,
+    pub(super) prec: Prec,
 }
 
 impl Piece {
-    fn new(text: String, prec: Prec) -> Piece {
+    pub(super) fn new(text: String, prec: Prec) -> Piece {
         Piece { text, prec }
     }
 
     /// The text, parenthesized when it binds weaker than `at_least`.
-    fn at(self, at_least: Prec) -> String {
+    pub(super) fn at(self, at_least: Prec) -> String {
         if self.prec < at_least { format!("({})", self.text) } else { self.text }
     }
 }
@@ -76,13 +77,25 @@ impl Piece {
 /// drive, an event or a reaction.
 #[derive(Debug)]
 pub struct ValuePrinter<'a> {
-    ir: &'a Ir,
+    pub(super) ir: &'a Ir,
     /// The owner's IR path, prefixed to an expression's id in an error: `fn pnjlim`.
-    path: String,
+    pub(super) path: String,
     /// The printed name of each local of the owner, by index.
     locals: Vec<String>,
     /// The type of each local of the owner, by index.
-    local_types: Vec<ValueType>,
+    pub(super) local_types: Vec<ValueType>,
+    /// Whether each local of the owner was declared `let mut`, by index: only that local prints
+    /// `let mut` and is the target of an assignment (§1.5.12).
+    pub(super) mutable: Vec<bool>,
+    /// The result type of the function being printed; `None` for any other owner. A `return`
+    /// lifts its value to it.
+    pub(super) returns: Option<ValueType>,
+    /// The function being printed; `None` for any other owner. A call it makes to a function on a
+    /// call cycle with it passes a deeper `rt::Depth`.
+    pub(super) function: Option<FunctionId>,
+    /// The loops whose body is being printed, innermost last: what `break`, `continue` and
+    /// `return` print as depends on the loop they leave.
+    pub(super) loops: RefCell<Vec<LoopFrame>>,
     /// The printed name of each param of the owner's body, by index; empty for a function.
     params: Vec<String>,
     /// The type each carrier of the owner's body holds, by index; empty for a function.
@@ -90,7 +103,7 @@ pub struct ValuePrinter<'a> {
     /// The record streams of the owner's body, by index; empty for a function.
     streams: Vec<Stream>,
     /// The owner's origin: where an error with no expression of its own points.
-    origin: Origin,
+    pub(super) origin: Origin,
     /// How the analog read forms print; `None` outside an `analog` block.
     analog: Option<Reads>,
     /// The accumulators a contribution adds to, in the structured form of an `analog` block
@@ -98,12 +111,12 @@ pub struct ValuePrinter<'a> {
     sums: Option<ContributionSums>,
     /// A real is a plain `f64` (the digital printers) rather than `R` (an `analog` block, an IR
     /// function).
-    plain: bool,
+    pub(super) plain: bool,
     /// A real inside `rt::Flagged` is the code's own real `R` rather than a plain `f64`: the
     /// value of a `cross` that may be unknown, whose probe tangents must survive (design C8).
     flagged_reals: bool,
     /// Whether a commit has a place to go: the code of a reaction.
-    commits: bool,
+    pub(super) commits: bool,
     /// The carrier and `min_after` of each commit printed so far, in printing order: the order
     /// of the reaction's statements in the shape.
     committed: RefCell<Vec<StatementPlan>>,
@@ -113,7 +126,7 @@ pub struct ValuePrinter<'a> {
     finishes: Cell<bool>,
     /// Whether the code printed so far holds an `if` that joins the commits of its arms
     /// (`Commits::branch`): the reaction then builds its `Commits` with the carriers table.
-    branches: Cell<bool>,
+    pub(super) branches: Cell<bool>,
     /// The names of the reads (params, nodes, carriers, the environment) printed so far: the
     /// variables the code uses, so a function binds no read it leaves alone.
     used: RefCell<BTreeSet<String>>,
@@ -152,6 +165,10 @@ impl<'a> ValuePrinter<'a> {
             path,
             locals: Self::names(f.locals(), &[]),
             local_types: f.locals().iter().map(|l| l.ty.clone()).collect(),
+            mutable: f.locals().iter().map(|l| l.mutable).collect(),
+            returns: Some(f.ret().clone()),
+            function: Some(function),
+            loops: RefCell::new(Vec::new()),
             params: Vec::new(),
             carriers: Vec::new(),
             streams: Vec::new(),
@@ -159,6 +176,34 @@ impl<'a> ValuePrinter<'a> {
             analog: None,
             sums: None,
             plain: false,
+            flagged_reals: false,
+            commits: false,
+            committed: RefCell::new(Vec::new()),
+            finishes: Cell::new(false),
+            branches: Cell::new(false),
+            used: RefCell::new(BTreeSet::new()),
+        }
+    }
+
+    /// The printer of a type item's field types: a real is `R`, the item's own generic parameter, or
+    /// a plain `f64` for the impls written for the item at `f64` (`plain`).
+    pub fn of_type(ir: &'a Ir, data: &TypeData, plain: bool) -> ValuePrinter<'a> {
+        ValuePrinter {
+            ir,
+            path: format!("type {}", data.path),
+            locals: Vec::new(),
+            local_types: Vec::new(),
+            mutable: Vec::new(),
+            returns: None,
+            function: None,
+            loops: RefCell::new(Vec::new()),
+            params: Vec::new(),
+            carriers: Vec::new(),
+            streams: Vec::new(),
+            origin: data.origin.clone(),
+            analog: None,
+            sums: None,
+            plain,
             flagged_reals: false,
             commits: false,
             committed: RefCell::new(Vec::new()),
@@ -179,6 +224,10 @@ impl<'a> ValuePrinter<'a> {
             path,
             locals: Self::names(body.locals(), &reserved),
             local_types: body.locals().iter().map(|l| l.ty.clone()).collect(),
+            mutable: body.locals().iter().map(|l| l.mutable).collect(),
+            returns: None,
+            function: None,
+            loops: RefCell::new(Vec::new()),
             params,
             carriers: body.carriers().iter().map(|c| c.ty.clone()).collect(),
             streams: body.streams().to_vec(),
@@ -217,6 +266,7 @@ impl<'a> ValuePrinter<'a> {
             path: format!("body {} reaction {k}", body.name()),
             locals: Self::names(&reaction.locals, &reserved),
             local_types: reaction.locals.iter().map(|l| l.ty.clone()).collect(),
+            mutable: reaction.locals.iter().map(|l| l.mutable).collect(),
             origin: reaction.origin.clone(),
             commits: true,
             ..base
@@ -302,6 +352,14 @@ impl<'a> ValuePrinter<'a> {
         name.to_string()
     }
 
+    /// The read `variable` of a carrier or its previous value, as the expression `e` types it: the
+    /// flagged variable itself, or, for a tuple, an array, a struct or an `Option` (a flag rides
+    /// only on a scalar), its value; an unknown one is refused by the name `source` the model writes
+    /// (`un`, `un.prev()`), not the printer's variable (`known_or_refuse`).
+    fn carried(&self, e: ExprId, variable: String, source: &str) -> String {
+        if Self::is_flagged(self.ir.expr_type(e)) { variable } else { format!("{variable}.known_or_refuse({source:?})") }
+    }
+
     /// The printed name of local `i`.
     pub fn local(&self, i: u32) -> Option<&str> {
         self.locals.get(i as usize).map(String::as_str)
@@ -344,6 +402,10 @@ impl<'a> ValuePrinter<'a> {
             let ty = if matches!(env, Env::Static | Env::Analysis(_)) { "bool" } else { "R" };
             params.push(format!("{}: {ty}", Self::env_name(*env)));
         }
+        // a function on a call cycle carries its depth (Q5 (b)); one that is not keeps its text
+        if Self::is_recursive(ir, function) {
+            params.push("depth_: rt::Depth".to_string());
+        }
         let ret = printer.rust_type(f.ret(), &format!("{} return", printer.path))?;
         let generic = if Self::is_generic(ir, function) { "<R: Real>" } else { "" };
         let mut t = Text::new();
@@ -355,14 +417,30 @@ impl<'a> ValuePrinter<'a> {
         Ok(t.finish())
     }
 
-    /// Whether `function` is generic over `Real`: a real is among its params, its return, its
+    /// Whether `function` is generic over `Real`: a real (or a type holding one) is among its params, its return, its
     /// locals, or it reads an environment real (every read but `analysis(..)`, a `bool`).
     pub fn is_generic(ir: &Ir, function: FunctionId) -> bool {
         let f = ir.function(function);
-        let real = |ty: &ValueType| *ty == ValueType::F64;
+        let items = TypeItems::new(ir);
+        let real = |ty: &ValueType| items.holds_real(ty);
         f.params().iter().chain(f.locals()).any(|l| real(&l.ty))
             || real(f.ret())
             || Self::env_reads(ir, function).iter().any(|e| !matches!(e, Env::Static | Env::Analysis(_)))
+            || Self::computes_real_value(ir, function)
+    }
+
+    /// Whether some expression of the body of `function` (a callee's aside) has a type that holds a
+    /// real: an aggregate built and compared where no local or result holds it prints `R`.
+    fn computes_real_value(ir: &Ir, function: FunctionId) -> bool {
+        let items = TypeItems::new(ir);
+        let mut exprs = vec![ir.function(function).body()];
+        while let Some(e) = exprs.pop() {
+            if matches!(ir.expr_type(e), ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Option(_)) && items.holds_real(ir.expr_type(e)) {
+                return true;
+            }
+            Self::children(ir, ir.expr(e), &mut exprs);
+        }
+        false
     }
 
     /// The body of a function: its statements, then its value.
@@ -435,6 +513,7 @@ impl<'a> ValuePrinter<'a> {
                         functions.push(*function);
                         exprs.extend(args);
                     }
+                    Expr::FunctionRef(function) => functions.push(*function),
                     other => Self::children(ir, other, &mut exprs),
                 }
             }
@@ -482,6 +561,7 @@ impl<'a> ValuePrinter<'a> {
             Expr::LevelCast { expr, .. } => out.push(*expr),
             Expr::Method { receiver, args, .. } => out.extend([*receiver].into_iter().chain(args.iter().copied())),
             Expr::Binary { lhs, rhs, .. } => out.extend([*lhs, *rhs]),
+            aggregate @ (Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_)) => out.extend(aggregate.operands()),
             Expr::If { cond, then, otherwise } => out.extend([*cond, *then, *otherwise]),
             Expr::Block { stmts, value } => {
                 for s in stmts {
@@ -507,7 +587,14 @@ impl<'a> ValuePrinter<'a> {
             | Expr::Derivative(_)
             | Expr::ParamPrevious(_)
             | Expr::Fired(_)
-            | Expr::Previous(_) => {}
+            | Expr::Previous(_)
+            | Expr::FunctionRef(_) => {}
+            control @ (Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. }) => {
+                out.extend(control.operands());
+                for s in control.statements() {
+                    out.extend(ir.stmt(*s).operands());
+                }
+            }
         }
     }
 
@@ -528,12 +615,12 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// Whether `ty` may be unknown.
-    fn is_flagged(ty: &ValueType) -> bool {
+    pub(super) fn is_flagged(ty: &ValueType) -> bool {
         matches!(ty, ValueType::Flagged(_))
     }
 
     /// `ty` without its flag.
-    fn base(ty: &ValueType) -> &ValueType {
+    pub(super) fn base(ty: &ValueType) -> &ValueType {
         match ty {
             ValueType::Flagged(inner) => inner,
             other => other,
@@ -555,7 +642,7 @@ impl<'a> ValuePrinter<'a> {
     /// Rust lacks is `Error::Unsupported` naming it: an integer wider than 64 bits (or of no
     /// width), a function type. (The IR has no `Float<16>` or `Float<128>`: the only real is
     /// `f64`, so there is nothing of those to refuse.)
-    fn rust_type(&self, ty: &ValueType, path: &str) -> Result<String, Error> {
+    pub(super) fn rust_type(&self, ty: &ValueType, path: &str) -> Result<String, Error> {
         match ty {
             ValueType::F64 => Ok(if self.plain { "f64" } else { "R" }.to_string()),
             ValueType::Bool => Ok("bool".to_string()),
@@ -571,17 +658,30 @@ impl<'a> ValuePrinter<'a> {
                 let inner = if **inner == ValueType::F64 && !self.flagged_reals { "f64".to_string() } else { self.rust_type(inner, path)? };
                 Ok(format!("rt::Flagged<{inner}>"))
             }
-            ValueType::Fn(..) => Err(Error::Unsupported {
-                form: "a function-typed value".into(),
-                path: path.to_string(),
-                origin: self.origin.clone(),
-            }),
+            ValueType::Fn(params, ret) => self.function_type(params, ret, path),
+            ValueType::Tuple(parts) => {
+                let parts: Result<Vec<String>, Error> = parts.iter().map(|part| self.rust_type(part, path)).collect();
+                let parts = parts?;
+                Ok(if parts.len() == 1 { format!("({},)", parts[0]) } else { format!("({})", parts.join(", ")) })
+            }
+            ValueType::Array(element, length) => Ok(format!("[{}; {length}]", self.rust_type(element, path)?)),
+            ValueType::Option(inner) => Ok(format!("Option<{}>", self.rust_type(inner, path)?)),
+            // One item per arena entry (`print/types.rs`); a type that holds a real is generic over it.
+            ValueType::Struct(id) | ValueType::Enum(id) => {
+                let items = TypeItems::new(self.ir);
+                let generic = match (items.holds_real(ty), self.plain) {
+                    (false, _) => String::new(),
+                    (true, true) => "<f64>".to_string(),
+                    (true, false) => "<R>".to_string(),
+                };
+                Ok(format!("{}{generic}", items.name(*id)))
+            }
         }
     }
 
     /// `rt::UInt::<N>` or `rt::Int::<N>`: the path an integer's associated functions are called
     /// through; a width outside 1..=64 is refused as `rust_type` refuses it.
-    fn integer_path(&self, ty: &ValueType, e: ExprId) -> Result<String, Error> {
+    pub(super) fn integer_path(&self, ty: &ValueType, e: ExprId) -> Result<String, Error> {
         match ty {
             ValueType::UInt(n) | ValueType::Int(n) if (1..=64).contains(n) => {
                 Ok(format!("rt::{}::<{n}>", if matches!(ty, ValueType::UInt(_)) { "UInt" } else { "Int" }))
@@ -590,7 +690,7 @@ impl<'a> ValuePrinter<'a> {
         }
     }
 
-    fn unsupported(&self, e: ExprId, form: &str) -> Error {
+    pub(super) fn unsupported(&self, e: ExprId, form: &str) -> Error {
         Error::Unsupported {
             form: form.to_string(),
             path: format!("{} e{}", self.path, e.index()),
@@ -599,13 +699,13 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// `e` lifted to `want`: `rt::Flagged::known(e)` when `want` may be unknown and `e` is not.
-    fn typed(&self, e: ExprId, want: &ValueType) -> Result<Piece, Error> {
+    pub(super) fn typed(&self, e: ExprId, want: &ValueType) -> Result<Piece, Error> {
         let piece = self.piece(e)?;
         Ok(self.lift(piece, self.ir.expr_type(e), want))
     }
 
     /// `piece`, of type `from`, as a value of type `want`.
-    fn lift(&self, piece: Piece, from: &ValueType, want: &ValueType) -> Piece {
+    pub(super) fn lift(&self, piece: Piece, from: &ValueType, want: &ValueType) -> Piece {
         if !Self::is_flagged(want) || Self::is_flagged(from) {
             return piece;
         }
@@ -614,12 +714,12 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// `e` as a value that may be unknown.
-    fn flagged(&self, e: ExprId) -> Result<Piece, Error> {
+    pub(super) fn flagged(&self, e: ExprId) -> Result<Piece, Error> {
         let want = ValueType::Flagged(Box::new(Self::base(self.ir.expr_type(e)).clone()));
         self.typed(e, &want)
     }
 
-    fn piece(&self, e: ExprId) -> Result<Piece, Error> {
+    pub(super) fn piece(&self, e: ExprId) -> Result<Piece, Error> {
         let atom = |text: String| Ok(Piece::new(text, Prec::Atom));
         match self.ir.expr(e) {
             Expr::Real(r) if self.plain => {
@@ -654,7 +754,7 @@ impl<'a> ValuePrinter<'a> {
                 atom(format!("rt::Unwrap::of({}, {}, {message})", self.expr(*is)?, self.expr(*value)?))
             }
             Expr::Carrier(c) => match self.analog.as_ref().and_then(|r| r.carriers.get(*c as usize)) {
-                Some(name) => atom(self.read(name)),
+                Some(name) => atom(self.carried(e, self.read(name), name)),
                 None => Err(self.unsupported(e, "a carrier read")),
             },
             Expr::Unknown => {
@@ -670,6 +770,8 @@ impl<'a> ValuePrinter<'a> {
                 let sign = if *op == UnaryOp::Neg { "-" } else { "!" };
                 Ok(Piece::new(format!("{sign}{operand}"), Prec::Unary))
             }
+            // an enum value that may be unknown on either side compares as a flagged scalar does
+            Expr::Binary { op, lhs, rhs } if self.is_aggregate_operand(*lhs) && !Self::is_flagged(self.ir.expr_type(*rhs)) => self.aggregate_comparison(e, *op, *lhs, *rhs),
             Expr::Binary { op, lhs, rhs } => self.binary(e, *op, *lhs, *rhs),
             Expr::If { cond, then, otherwise } => self.if_else(e, *cond, *then, *otherwise),
             Expr::Block { stmts, value } => {
@@ -688,8 +790,17 @@ impl<'a> ValuePrinter<'a> {
                     });
                 }
                 printed.extend(Self::env_reads(self.ir, *function).into_iter().map(|env| self.read(Self::env_name(env))));
-                // a generic function called with nothing to fix its `Real` type names it
-                let real = if printed.is_empty() && Self::is_generic(self.ir, *function) { format!("::<{}>", if self.plain { "f64" } else { "R" }) } else { String::new() };
+                printed.extend(self.depth_argument(*function));
+                // a generic function called with no argument that fixes its `Real` type names it
+                let items = TypeItems::new(self.ir);
+                // `R` is fixed by what the call passes or returns; a function that holds a real only in
+                // a local (a struct field) leaves it open, so the call names it
+                let ret = self.ir.function(*function).ret();
+                let aggregate_result = matches!(ret, ValueType::Struct(_) | ValueType::Enum(_) | ValueType::Tuple(_) | ValueType::Array(..) | ValueType::Option(_)) && items.holds_real(ret);
+                // in reaction code (`plain`) a result alone does not fix it: a value that goes on through a
+                // generic call (`Flagged::known(f(x))`) leaves it open
+                let fixed = params.iter().any(|p| items.holds_real(&p.ty)) || (items.holds_real(ret) && !aggregate_result && !(self.plain && Self::computes_real_value(self.ir, *function))) || !Self::env_reads(self.ir, *function).is_empty();
+                let real = if (printed.is_empty() || !fixed) && Self::is_generic(self.ir, *function) { format!("::<{}>", if self.plain { "f64" } else { "R" }) } else { String::new() };
                 atom(format!("{}{real}({})", Text::ident(self.ir.function(*function).name()), printed.join(", ")))
             }
             Expr::Math { f, args } => {
@@ -708,16 +819,8 @@ impl<'a> ValuePrinter<'a> {
                 }
                 atom(format!("{}.{name}()", self.piece(*arg)?.at(Prec::Atom)))
             }
-            Expr::Closure { params, body } => {
-                let mut names = Vec::with_capacity(params.len());
-                for p in params {
-                    match self.locals.get(*p as usize) {
-                        Some(name) => names.push(Self::unused_prefix(self.ir, *body, *p, name)),
-                        None => return Err(self.unsupported(e, "a closure parameter out of range")),
-                    }
-                }
-                Ok(Piece::new(format!("|{}| {}", names.join(", "), self.expr(*body)?), Prec::Low))
-            }
+            // a closure is a function value, which is the reference `&dyn Fn` takes
+            Expr::Closure { .. } => Ok(Piece::new(format!("&{}", self.closure(e)?), Prec::Unary)),
             Expr::Probe { plus, minus } => self.probe_piece(*plus, *minus).ok_or_else(|| self.unsupported(e, "probe")),
             Expr::Derivative(k) => match self.analog.as_ref().and_then(|r| r.derivatives.get(*k as usize)) {
                 Some(name) => atom(self.read(name)),
@@ -732,7 +835,10 @@ impl<'a> ValuePrinter<'a> {
                 None => Err(self.unsupported(e, "the flow of a potential branch")),
             },
             Expr::Previous(c) => match self.analog.as_ref().and_then(|r| r.previous.get(*c as usize)) {
-                Some(name) => atom(self.read(name)),
+                Some(name) => {
+                    let source = self.analog.as_ref().and_then(|r| r.carriers.get(*c as usize)).map_or(name.as_str(), String::as_str);
+                    atom(self.carried(e, self.read(name), &format!("{source}.prev()")))
+                }
                 None => Err(self.unsupported(e, "the previous value of a carrier")),
             },
             Expr::Limit { site, .. } => match self.analog.as_ref().and_then(|r| r.limits.get(*site as usize)) {
@@ -776,7 +882,30 @@ impl<'a> ValuePrinter<'a> {
                     self.piece(*value)
                 }
             }
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } => self.loop_expr(e),
+            Expr::Break(value) => self.leave_loop(e, *value),
+            Expr::Continue => self.continue_loop(e),
+            Expr::Return(value) => self.return_from_function(e, *value),
+            Expr::FunctionRef(function) => self.function_value(*function),
+            Expr::CallValue { callee, args } => self.call_value(e, *callee, args),
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => self.aggregate(e),
         }
+    }
+
+    /// The closure `e` as the closure itself: `move |a, b| body`, which captures by value
+    /// (§1.5.14). A `limit` function is this text; as a value it is the reference to it.
+    pub fn closure(&self, e: ExprId) -> Result<String, Error> {
+        let Expr::Closure { params, body } = self.ir.expr(e) else {
+            return Err(self.unsupported(e, "a form that is not a closure"));
+        };
+        let mut names = Vec::with_capacity(params.len());
+        for p in params {
+            match self.locals.get(*p as usize) {
+                Some(name) => names.push(Self::unused_prefix(self.ir, *body, *p, name)),
+                None => return Err(self.unsupported(e, "a closure parameter out of range")),
+            }
+        }
+        Ok(format!("move |{}| {}", names.join(", "), self.expr(*body)?))
     }
 
     /// One half of `value.level(index)` (§3.3.4): `.0` says the level is known, `.1` is its value.
@@ -795,12 +924,23 @@ impl<'a> ValuePrinter<'a> {
     fn level_cast(&self, e: ExprId, expr: ExprId, to: &ValueType, tags: Option<&[i128]>) -> Result<Piece, Error> {
         let target = self.pin_type(to)?;
         let tags = match tags {
-            Some(tags) => format!("Some(&[{}][..])", tags.iter().map(|t| format!("{t}i128")).collect::<Vec<_>>().join(", ")),
+            Some(tags) => format!("Some((&[{}][..], {}))", tags.iter().map(|t| format!("{t}i128")).collect::<Vec<_>>().join(", "), self.tag_levels(to)),
             None => "None".to_string(),
         };
         let call = format!("{}.recast::<{target}>({tags})", self.flagged(expr)?.at(Prec::Atom));
-        let text = if Self::is_flagged(self.ir.expr_type(e)) { call } else { format!("{call}.known_or(Default::default())") };
+        let text = if Self::is_flagged(self.ir.expr_type(e)) { call } else { format!("{call}.known_or_refuse(\"a `cast`\")") };
         Ok(Piece::new(text, Prec::Atom))
+    }
+
+    /// The width of the tag of the enum `ty` in levels (§2 rule 5); 0 for any other type.
+    fn tag_levels(&self, ty: &ValueType) -> u32 {
+        match Self::base(ty) {
+            ValueType::Enum(id) => match &self.ir.type_data(*id).kind {
+                TypeKind::Enum { tag_levels, .. } => *tag_levels,
+                TypeKind::Struct { .. } => 0,
+            },
+            _ => 0,
+        }
     }
 
     /// `file:line:col` of `e`.
@@ -833,6 +973,9 @@ impl<'a> ValuePrinter<'a> {
             (ValueType::Bool, ValueType::UInt(_) | ValueType::Int(_)) => {
                 format!("{}::from_bool({operand})", self.integer_path(target, e)?)
             }
+            // an enum without fields converts to its discriminant, which Rust gives as the enum cast to an integer
+            (ValueType::Enum(_), ValueType::UInt(_)) => format!("{}::new(({operand} as i64) as u64)", self.integer_path(target, e)?),
+            (ValueType::Enum(_), ValueType::Int(_)) => format!("{}::new({operand} as i64)", self.integer_path(target, e)?),
             (ValueType::UInt(_) | ValueType::Int(_), ValueType::F64) => {
                 self.integer_path(source, e)?;
                 if self.plain || (flagged && !self.flagged_reals) { format!("{operand}.to_f64()") } else { format!("R::constant({operand}.to_f64())") }
@@ -891,14 +1034,10 @@ impl<'a> ValuePrinter<'a> {
         Ok(Piece::new(text, Prec::Atom))
     }
 
-    fn binary(&self, e: ExprId, op: BinaryOp, lhs: ExprId, rhs: ExprId) -> Result<Piece, Error> {
-        let (lt, rt) = (self.ir.expr_type(lhs), self.ir.expr_type(rhs));
-        let flagged = Self::is_flagged(lt) || Self::is_flagged(rt);
-        if flagged && matches!(op, BinaryOp::And | BinaryOp::Or) {
-            return Err(self.unsupported(e, "`&&` or `||` over a value that may be unknown (the source lowers it to `&` or `|`)"));
-        }
-        let real = *Self::base(lt) == ValueType::F64 && !(flagged || self.plain);
-        let (symbol, prec) = match op {
+    /// The Rust operator `op` prints as and how strongly it binds; `real` is a real in an `R`
+    /// context, which has no remainder, bit or shift operator (§12 of the analog subset).
+    pub(super) fn operator(&self, e: ExprId, op: BinaryOp, real: bool) -> Result<(&'static str, Prec), Error> {
+        Ok(match op {
             BinaryOp::Add => ("+", Prec::Add),
             BinaryOp::Sub => ("-", Prec::Add),
             BinaryOp::Mul => ("*", Prec::Mul),
@@ -920,7 +1059,17 @@ impl<'a> ValuePrinter<'a> {
             BinaryOp::Rem | BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
                 return Err(self.unsupported(e, &format!("the operator {op:?} on a real in analog code")));
             }
-        };
+        })
+    }
+
+    fn binary(&self, e: ExprId, op: BinaryOp, lhs: ExprId, rhs: ExprId) -> Result<Piece, Error> {
+        let (lt, rt) = (self.ir.expr_type(lhs), self.ir.expr_type(rhs));
+        let flagged = Self::is_flagged(lt) || Self::is_flagged(rt);
+        if flagged && matches!(op, BinaryOp::And | BinaryOp::Or) {
+            return Err(self.unsupported(e, "`&&` or `||` over a value that may be unknown (the source lowers it to `&` or `|`)"));
+        }
+        let real = *Self::base(lt) == ValueType::F64 && !(flagged || self.plain);
+        let (symbol, prec) = self.operator(e, op, real)?;
         if flagged {
             return self.flagged_binary(op, symbol, prec, lhs, rhs);
         }
@@ -981,7 +1130,7 @@ impl<'a> ValuePrinter<'a> {
         }
     }
 
-    fn stronger(prec: Prec) -> Prec {
+    pub(super) fn stronger(prec: Prec) -> Prec {
         match prec {
             Prec::Low => Prec::Or,
             Prec::Or => Prec::And,
@@ -1005,8 +1154,9 @@ impl<'a> ValuePrinter<'a> {
             return self.merged(e, cond, then, otherwise);
         }
         let ty = self.ir.expr_type(e);
-        let condition = if matches!(self.ir.expr(cond), Expr::If { .. }) {
-            // `if if a { b } else { c } { .. }` is valid Rust; parentheses around it are a warning.
+        let condition = if matches!(self.ir.expr(cond), Expr::If { .. } | Expr::Block { .. }) {
+            // `if if a { b } else { c } { .. }` and `if { s; c } { .. }` are valid Rust; parentheses
+            // around either are a warning.
             self.piece(cond)?.text
         } else {
             self.piece(cond)?.at(Prec::Or)
@@ -1036,6 +1186,12 @@ impl<'a> ValuePrinter<'a> {
     /// the code's own `R` (`Flagged<R>`, which merges as `Real::same_levels` says), so the same
     /// `choose` serves every owner.
     fn merged(&self, e: ExprId, cond: ExprId, then: ExprId, otherwise: ExprId) -> Result<Piece, Error> {
+        if self.holds_unreachable_exit(then, otherwise) {
+            return Err(self.unsupported(e, "a `break`, `continue` or `return` under a value that may be unknown, outside the statements of its loop"));
+        }
+        if !self.ir.written_locals(e).is_empty() {
+            return self.merged_with_writes(e, cond, then, otherwise);
+        }
         let ty = self.ir.expr_type(e);
         let piece = self.piece(cond)?;
         let joins = self.commits && (self.holds_effect(then) || self.holds_effect(otherwise));
@@ -1054,13 +1210,11 @@ impl<'a> ValuePrinter<'a> {
 
     /// Whether `e` holds a commit or an `emit!`: the arm of an `if` that does is a path of the
     /// reaction's `Commits`, not a pure value.
-    fn holds_effect(&self, e: ExprId) -> bool {
+    pub(super) fn holds_effect(&self, e: ExprId) -> bool {
         let mut exprs = vec![e];
         while let Some(e) = exprs.pop() {
-            if let Expr::Block { stmts, .. } = self.ir.expr(e) {
-                if stmts.iter().any(|s| matches!(self.ir.stmt(*s), Stmt::Commit { .. } | Stmt::Emit { .. })) {
-                    return true;
-                }
+            if self.ir.expr(e).statements().iter().any(|s| matches!(self.ir.stmt(*s), Stmt::Commit { .. } | Stmt::Emit { .. })) {
+                return true;
             }
             Self::children(self.ir, self.ir.expr(e), &mut exprs);
         }
@@ -1068,13 +1222,13 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// `lines` in a pair of braces, indented; `{}` when there is nothing inside.
-    fn braced(lines: &str) -> String {
+    pub(super) fn braced(lines: &str) -> String {
         if lines.is_empty() { "{}".to_string() } else { format!("{{\n{}\n}}", Self::indent(lines)) }
     }
 
     /// The inside of a pair of braces: a block's lines without its braces, any other expression
     /// as it is, its value lifted to `want`.
-    fn arm(&self, e: ExprId, want: &ValueType) -> Result<String, Error> {
+    pub(super) fn arm(&self, e: ExprId, want: &ValueType) -> Result<String, Error> {
         match self.ir.expr(e) {
             Expr::Block { stmts, value } => self.block_lines(stmts, *value, want),
             _ => Ok(self.typed(e, want)?.text),
@@ -1082,7 +1236,7 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// A block's statements, one per line, then its value lifted to `want`.
-    fn block_lines(&self, stmts: &[StmtId], value: Option<ExprId>, want: &ValueType) -> Result<String, Error> {
+    pub(super) fn block_lines(&self, stmts: &[StmtId], value: Option<ExprId>, want: &ValueType) -> Result<String, Error> {
         let mut lines = Vec::with_capacity(stmts.len() + 1);
         for s in stmts {
             lines.push(self.stmt(*s)?);
@@ -1091,6 +1245,13 @@ impl<'a> ValuePrinter<'a> {
             lines.push(self.typed(v, want)?.text);
         }
         Ok(lines.join("\n"))
+    }
+
+    /// `e` as a statement: an `if` closes with its brace; a merge is a call and takes a `;`.
+    pub(super) fn expression_statement(&self, e: ExprId) -> Result<String, Error> {
+        let piece = self.piece(e)?;
+        let block = matches!(self.ir.expr(e), Expr::If { .. }) && *self.ir.expr_type(e) == ValueType::Unit && piece.prec == Prec::Low;
+        Ok(if block { piece.text } else { format!("{};", piece.text) })
     }
 
     /// `let name = init;`, `expr;`, or a commit.
@@ -1104,14 +1265,16 @@ impl<'a> ValuePrinter<'a> {
                     Some(ty) => self.expr_as(*init, ty)?,
                     None => self.expr(*init)?,
                 };
-                Ok(format!("let {name} = {init};"))
+                // a deferred `let x;` starts at a placeholder its first assignment overwrites
+                let keyword = if self.mutable.get(*local as usize).copied().unwrap_or(false) { "#[allow(unused_assignments, unused_variables)] let mut" } else { "let" };
+                // a function value has no type of its own to infer: the local is the `&dyn Fn` it holds
+                let annotation = match self.local_types.get(*local as usize) {
+                    Some(ty @ ValueType::Fn(..)) => format!(": {}", self.rust_type(ty, &self.path)?),
+                    _ => String::new(),
+                };
+                Ok(format!("{keyword} {name}{annotation} = {init};"))
             }
-            Stmt::Expr(e) => {
-                let piece = self.piece(*e)?;
-                // an `if` statement closes with its brace; a merge is a call and takes a `;`
-                let block = matches!(self.ir.expr(*e), Expr::If { .. }) && *self.ir.expr_type(*e) == ValueType::Unit && piece.prec == Prec::Low;
-                Ok(if block { piece.text } else { format!("{};", piece.text) })
-            }
+            Stmt::Expr(e) => self.expression_statement(*e),
             Stmt::Contribute { branch, quantity, addends } => match &self.sums {
                 Some(sums) => self.contribution(sums, *branch, *quantity, addends),
                 None => Err(Error::Unsupported {
@@ -1120,6 +1283,7 @@ impl<'a> ValuePrinter<'a> {
                     origin: addends.first().map_or_else(|| self.origin.clone(), |a| self.ir.expr_origin(a.value).clone()),
                 }),
             },
+            Stmt::Assign { place, op, value } => self.assign(place, *op, *value),
             Stmt::BoundStep { value, .. } => Err(self.unsupported(*value, "`bound_step` outside the top level of the `analog` block")),
             Stmt::Emit { stream, fields } => self.emit(s, *stream, fields),
             Stmt::Commit { carrier, value, after } => {
@@ -1194,7 +1358,7 @@ impl<'a> ValuePrinter<'a> {
         let Some(declared) = self.streams.get(stream as usize) else {
             return Err(unsupported("emit! to a stream out of range"));
         };
-        let Some(layout) = RecordLayout::of(declared) else {
+        let Some(layout) = RecordLayout::in_ir(self.ir, declared) else {
             return Err(unsupported(&format!("emit! to stream `{}`, whose fields no pin holds", declared.name)));
         };
         let stream_name = declared.name.as_str();
@@ -1245,7 +1409,7 @@ impl<'a> ValuePrinter<'a> {
     }
 
     /// Every line of `text` four spaces deeper; empty lines stay empty.
-    fn indent(text: &str) -> String {
+    pub(super) fn indent(text: &str) -> String {
         text.lines().map(|l| if l.is_empty() { String::new() } else { format!("    {l}") }).collect::<Vec<_>>().join("\n")
     }
 }
@@ -1376,7 +1540,7 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
     ) -> FunctionId {
         let mut x = Dx::new(b, "dpwm.msl", 1, 1);
         let body = body(&mut x);
-        let locals: Vec<Local> = params.iter().map(|(n, t)| Local { name: (*n).to_string(), ty: t.clone() }).collect();
+        let locals: Vec<Local> = params.iter().map(|(n, t)| Local { name: (*n).to_string(), ty: t.clone(), mutable: false }).collect();
         b.function(FunctionSpec {
             name: name.into(),
             origin: Origin { file: "dpwm.msl".into(), line: 1, col: 1 },

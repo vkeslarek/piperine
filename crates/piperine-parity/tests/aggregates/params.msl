@@ -1,0 +1,47 @@
+//! Composite params (CV-18): a struct, a tuple and an array param with a default and a `where`,
+//! bound at a placement by a constant or over the parent's params, and read in a digital reaction
+//! and in an analog block. The expected values are computed by Rust in `source_aggregates.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(Repr, PartialEq)]
+struct Gains { a: u8, b: f64 }
+
+// The defaults when a placement binds nothing.
+module Leaf(in clk: Bit, out q: Bit<u8>, out r: Bit<u8>, out s: Bit<u8>, out w: Bit<u8>) {
+    g: Gains = Gains { a: 3, b: 0.5 } where g.a > 0;
+    t: (u8, u8) = (4, 5);
+    arr: [u8; 3] = [1, 2, 3];
+}
+digital for Leaf {
+    on clk.rise() {
+        q <- g.a;
+        r <- t.1;
+        s <- arr[2];
+        let scaled = g.b * 10.0;
+        w <- scaled as u8;
+    }
+}
+
+// A placement that binds a constant and one that binds an expression over the parent's params.
+module Parent(in clk: Bit, out q: Bit<u8>, out r: Bit<u8>, out s: Bit<u8>, out w: Bit<u8>) {
+    scale: f64 = 0.5;
+    let inner = Leaf(clk, q, r, s, w) { g: Gains { a: 9, b: scale * 1.5 }, t: (7, 8), arr: [4, 5, 6] };
+}
+
+// A composite param read by an analog block: a source held at four times its real field.
+module Source(p: Electrical) { g: Gains = Gains { a: 1, b: 0.25 }; }
+analog for Source { v(p, gnd) +> g.b * 4.0; }
+
+module Bench() {
+    signal clk: Bit;
+    signal dq: Bit<u8>; signal dr: Bit<u8>; signal ds: Bit<u8>; signal dw: Bit<u8>;
+    signal pq: Bit<u8>; signal pr: Bit<u8>; signal ps: Bit<u8>; signal pw: Bit<u8>;
+    signal by_default: Electrical; signal by_placement: Electrical;
+    let osc = Osc(clk) { f: 200M };
+    let defaults = Leaf(clk, dq, dr, ds, dw);
+    let parent = Parent(clk, pq, pr, ps, pw);
+    let analog_default = Source(by_default);
+    let analog_bound = Source { g: Gains { a: 2, b: 0.5 } }(by_placement);
+}

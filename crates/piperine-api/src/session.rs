@@ -37,6 +37,7 @@ use crate::recorder::{Recorder, Tap};
 use crate::table::Table;
 use crate::project::Project;
 use crate::request::{Analysis, Grid, Options, RunSpec};
+use crate::source::NodeSources;
 
 /// How the design of a session was built.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +82,8 @@ pub struct Session {
     /// The `set`s the host scheduled after the start, as given: their changes are derived in time
     /// order, against the table as of each one's time, when a call adds one and when the run starts.
     pub(crate) timed_sets: Vec<TimedSet>,
+    /// The node ports of the top the host has given a source (§23.1 rule 1).
+    pub(crate) sources: NodeSources,
     /// The value of every param of every instance, which a `set` keeps with what derives from it.
     pub(crate) params: Params,
 }
@@ -150,6 +153,81 @@ impl ParamPath {
     }
 }
 
+/// A param, or one leaf of a composite param, as a host names it: `Top.r`, `Top.f.num[2]`,
+/// `Top.p.x`, `Top.t.0`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParamTarget {
+    /// The param.
+    pub param: ParamPath,
+    /// The leaf of a composite param, as its layout names it; `None` for a param of one value.
+    pub leaf: Option<String>,
+}
+
+impl ParamTarget {
+    /// `entry` as a param of `ir`, or as a leaf of a composite param (`<instance>.<param>.<leaf>`,
+    /// the instance in full or relative to `top`). `E0801` when it names neither; a composite
+    /// param named without a leaf is `E0802` listing its leaves.
+    pub fn resolve(ir: &Ir, top: &str, entry: &str) -> Result<ParamTarget, Failure> {
+        match ParamPath::resolve(ir, top, entry) {
+            Ok(param) => {
+                let composite = ir.instance_at(&param.instance).and_then(|i| i.body().params().iter().find(|p| p.name == param.param).map(|p| p.ty.is_composite()));
+                if composite == Some(true) {
+                    return Err(Failure::Host { code: "E0802", message: format!("`{entry}` is a composite param: name one of its leaves, `{entry}.<leaf>`") });
+                }
+                Ok(ParamTarget { param, leaf: None })
+            }
+            Err(named) => ParamTarget::leaf(ir, top, entry).ok_or(named),
+        }
+    }
+
+    /// `entry` as `<instance>.<param><leaf>`: the longest instance path, then a composite param of
+    /// it, then what remains as the leaf (`num[2]`, `x`, `0`, `[1]`).
+    fn leaf(ir: &Ir, top: &str, entry: &str) -> Option<ParamTarget> {
+        let segments: Vec<&str> = entry.split('.').collect();
+        for split in (1..segments.len()).rev() {
+            let path = segments[..split].join(".");
+            let rest = segments[split..].join(".");
+            let name_end = rest.find(['.', '[']).unwrap_or(rest.len());
+            let (name, leaf) = rest.split_at(name_end);
+            let leaf = leaf.strip_prefix('.').unwrap_or(leaf);
+            let Some(instance) = [path.clone(), format!("{top}.{path}")].into_iter().find_map(|p| ir.instance_at(&p)) else { continue };
+            if leaf.is_empty() || !instance.body().params().iter().any(|p| p.name == name && p.ty.is_composite()) {
+                continue;
+            }
+            return Some(ParamTarget { param: ParamPath { instance: instance.path().to_string(), param: name.to_string() }, leaf: Some(leaf.to_string()) });
+        }
+        None
+    }
+
+    /// The full path, `<instance>.<param>` and the leaf.
+    pub fn label(&self) -> String {
+        match &self.leaf {
+            Some(leaf) => format!("{}.{leaf}", self.param.label()),
+            None => self.param.label(),
+        }
+    }
+}
+
+impl Session {
+    /// Writes `value` to `leaf` of the composite param `path` names: the whole value after the write
+    /// is checked against the param's `where` (`E0317`) before anything is changed, then written.
+    pub(crate) fn set_leaf(table: &mut Params, circuit: &mut CircuitInstance, path: &ParamPath, leaf: &str, value: f64) -> Result<(), Failure> {
+        let change = table.leaf_change(&path.instance, &path.param, leaf, value)?;
+        let label = change.label();
+        circuit.check_set(&path.instance, &path.param, &change.param_value()).map_err(|error| {
+            let text = error.to_string();
+            if text.contains("is refused, check") {
+                Failure::Host { code: "E0317", message: format!("the `where` of the param `{}.{}` is false for the value {} written at `{label}`", path.instance, path.param, value) }
+            } else {
+                Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {value}: {text}") }
+            }
+        })?;
+        circuit.set(&path.instance, &path.param, change.param_value()).map_err(|error| Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {value}: {error}") })?;
+        table.apply_leaf(&change);
+        Ok(())
+    }
+}
+
 impl Session {
     /// `spec` of `project`, from source to a bound circuit on the backend `spec.backend` names
     /// (`rust` when it names none); `settings` locate `rustc` and the cache.
@@ -186,7 +264,7 @@ impl Session {
             _ => None,
         };
         // every param path resolves before anything compiles: a typo costs no `rustc`
-        let params = spec.params.iter().map(|(entry, value)| Ok((ParamPath::resolve(&ir, ir.top().path(), entry)?, entry, *value))).collect::<Result<Vec<_>, Failure>>()?;
+        let params = spec.params.iter().map(|(entry, value)| Ok((ParamTarget::resolve(&ir, ir.top().path(), entry)?, entry, *value))).collect::<Result<Vec<_>, Failure>>()?;
         let mut context = Session::context_of(&spec.options);
         let nodeset = Session::nodeset_of(&ir, spec)?;
         let (transfer, wrt) = Session::small_signal_of(&ir, spec, &probes)?;
@@ -225,9 +303,12 @@ impl Session {
         // refuse a value, and then no analysis runs
         let mut table = Params::of(&ir);
         for (path, _, value) in &params {
-            Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, path, *value)?;
+            match &path.leaf {
+                Some(leaf) => Session::set_leaf(&mut table, &mut circuit, &path.param, leaf, *value)?,
+                None => Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &path.param, *value)?,
+            }
         }
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, noise, noise_report: None, wrt, actions: Vec::new(), timed_sets: Vec::new(), params: table })
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, noise, noise_report: None, wrt, actions: Vec::new(), timed_sets: Vec::new(), sources: NodeSources::default(), params: table })
     }
 
     /// Sets `path` to `value` on `circuit` and, through `table`, every param derived from it, in
@@ -317,7 +398,7 @@ impl Session {
                 Ok((Some(Transfer { input, output: NodeIdentifier::Anonymous(node.id().index()) }), Vec::new()))
             }
             Analysis::Sens { wrt } => {
-                if let Some(path) = probes.iter().find_map(|probe| match probe { Probe::Net { path, .. } | Probe::Param { path, .. } => Some(path.clone()), Probe::Term { instance, .. } => Some(format!("i({instance})")), _ => None }) {
+                if let Some(path) = probes.iter().find_map(|probe| match probe { Probe::Net { path, .. } | Probe::Shaped { path, .. } | Probe::Param { path, .. } => Some(path.clone()), Probe::Term { instance, .. } => Some(format!("i({instance})")), _ => None }) {
                     let message = format!("`{path}` is a discrete net, a param or a flow term: a `sens` run differentiates nodes and flows, not a discrete value");
                     return Err(Failure::Host { code: "P0010", message });
                 }
@@ -449,6 +530,9 @@ impl Session {
     /// run reach `sink` as the solver delivers them. A session runs once: the analysis takes its
     /// circuit.
     pub fn run(&mut self, sink: Rc<RefCell<dyn RecordSink>>) -> Result<Table, Failure> {
+        if self.circuit.is_some() {
+            self.sources.require_all(&self.ir)?;
+        }
         let circuit = self.circuit.take().ok_or_else(|| Failure::Backend("this session has already run: open another".into()))?;
         let failure = Rc::new(RefCell::new(None));
         let delivery = Box::new(Delivery { streams: self.streams.clone(), sink, failure: failure.clone(), recorder: None, finished: Rc::new(RefCell::new(None)) });
@@ -477,7 +561,7 @@ impl Session {
                 let result = solver
                     .dc()
                     .and_then(|mut dc| dc.solve())
-                    .map_err(|error| Failure::Solver { analysis: "op", error })?;
+                    .map_err(|error| Failure::from_fault("op", error, Some(0.0)))?;
                 let circuit = solver.circuit();
                 let net = |path: &str| Session::discrete(circuit, path).or_else(|| Session::held_bytes(&held, path));
                 let term = |instance: &str, name: &str| circuit.bound().and_then(|b| b.analog.term_value(instance, name));
@@ -516,7 +600,7 @@ impl Session {
                         }
                         tran.solve()
                     })
-                    .map_err(|error| Failure::Solver { analysis: "transient", error })?;
+                    .map_err(|error| Failure::from_fault("transient", error, recorder.borrow().reached()))?;
                 // CLI-05 AC 11: a run that stopped short has no table to give. How far it got is the
                 // last step the observer saw, which a design with no analog unknown reaches too (its
                 // result holds no analog accept, HII-17). A model that wrote `finish` ended the run at
@@ -546,8 +630,9 @@ impl Session {
                     Session::set_param(&mut self.params, self.compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, swept, value)?;
                     let result = circuit
                         .dc(self.context.clone())
-                        .and_then(|mut dc| dc.solve())
-                        .map_err(|error| Failure::Solver { analysis: "dc", error })?;
+                        // the settle commits of a point land at the next one (§15 S6)
+                        .and_then(|dc| dc.followed_by_another_point(k + 1 < count).solve())
+                        .map_err(|error| Failure::from_fault("dc", error, None))?;
                     let held = self.held_params(&circuit, &[]);
                     let net = |path: &str| Session::discrete(&circuit, path).or_else(|| Session::held_bytes(&held, path));
                     let term = |instance: &str, name: &str| circuit.bound().and_then(|b| b.analog.term_value(instance, name));
@@ -563,7 +648,7 @@ impl Session {
                     logarithmic: matches!(grid, Grid::PerDecade(_)),
                 };
                 let mut solver = Solver::new(circuit).with_context(self.context.clone()).with_sink(delivery).build();
-                let result = solver.ac().and_then(|mut ac| ac.solve_sweep(options)).map_err(|error| Failure::Solver { analysis: "ac", error })?;
+                let result = solver.ac().and_then(|mut ac| ac.solve_sweep(options)).map_err(|error| Failure::from_fault("ac", error, None))?;
                 Table::frequency(&self.probes, &result)
             }
             Analysis::Tf { .. } => {
@@ -577,7 +662,7 @@ impl Session {
                 let result = circuit
                     .transfer_function(options, self.context.clone())
                     .and_then(|mut tf| tf.solve())
-                    .map_err(|error| Failure::Solver { analysis: "tf", error })?;
+                    .map_err(|error| Failure::from_fault("tf", error, None))?;
                 Ok(Table::transfer(&result))
             }
             Analysis::Pz { .. } => {
@@ -587,7 +672,7 @@ impl Session {
                 let roots = circuit
                     .pz(options, self.context.clone())
                     .and_then(|pz| Ok(PoleZeroResult { poles: pz.poles()?, zeros: pz.zeros()? }))
-                    .map_err(|error| Failure::Solver { analysis: "pz", error })?;
+                    .map_err(|error| Failure::from_fault("pz", error, None))?;
                 Ok(Table::roots(&roots))
             }
             Analysis::Pss { period, tstab, max_step, print_step } => {
@@ -599,7 +684,7 @@ impl Session {
                 let orbit = circuit
                     .pss(options, self.context.clone())
                     .and_then(|pss| pss.solve())
-                    .map_err(|error| Failure::Solver { analysis: "pss", error })?;
+                    .map_err(|error| Failure::from_fault("pss", error, None))?;
                 // the orbit starts at `tstab` and holds one period
                 let table = Table::transient_with(&self.probes, &orbit.trace, &held)?;
                 match print_step {
@@ -636,7 +721,7 @@ impl Session {
                 let result = circuit
                     .sens(SensAnalysisOptions::new(outputs.clone(), params), self.context.clone())
                     .and_then(|sens| sens.solve())
-                    .map_err(|error| Failure::Solver { analysis: "sens", error })?;
+                    .map_err(|error| Failure::from_fault("sens", error, None))?;
                 Table::sensitivities(&self.probes, &outputs, &self.wrt, &result)
             }
         }
@@ -674,7 +759,7 @@ impl Session {
         let variable = match probe {
             Probe::Node { id, .. } => AnalogVariable::Node(id.clone()),
             Probe::Flow { branch, .. } => AnalogVariable::Branch(branch.clone()),
-            Probe::Net { path, .. } | Probe::Param { path, .. } => return Err(Failure::Backend(format!("`{path}` is a discrete net or a param: it has no solved analog net"))),
+            Probe::Net { path, .. } | Probe::Shaped { path, .. } | Probe::Param { path, .. } => return Err(Failure::Backend(format!("`{path}` is a discrete net or a param: it has no solved analog net"))),
             Probe::Term { instance, .. } => return Err(Failure::Backend(format!("`i({instance})` is a flow term: it has no solved analog net"))),
         };
         let found = nets.iter().find(|net| net.analog_variable().is_some_and(|v| **v == variable));
@@ -717,8 +802,16 @@ impl Session {
         let mut table = Params::of(&ir);
         let derive = Evaluated::new(&ir, table.plan());
         for (entry, value) in &spec.params {
-            let path = ParamPath::resolve(&ir, ir.top().path(), entry)?;
-            table.set(&path.instance, &path.param, *value, Some(&derive), &mut |_| Ok(()))?;
+            let target = ParamTarget::resolve(&ir, ir.top().path(), entry)?;
+            match &target.leaf {
+                Some(leaf) => {
+                    let change = table.leaf_change(&target.param.instance, &target.param.param, leaf, *value)?;
+                    table.apply_leaf(&change);
+                }
+                None => {
+                    table.set(&target.param.instance, &target.param.param, *value, Some(&derive), &mut |_| Ok(()))?;
+                }
+            }
         }
         Ok((top, Metadata::of(&ir, &table)))
     }

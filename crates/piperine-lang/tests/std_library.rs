@@ -578,6 +578,18 @@ fn engine_table() -> BTreeSet<String> {
     table_rows(table).into_iter().map(|row| row[0].trim_matches('`').to_string()).take_while(|n| !n.is_empty()).collect()
 }
 
+/// Pub items of `std` that the Index no longer lists (removed by explicit-unknowns; T23 deletes them
+/// from the files and empties the list). `Logic` of `nets` is the earlier struct, replaced by `values::Logic`.
+const STD_BEHIND_THE_INDEX: [(&str, &str); 7] = [("values", "Known"), ("values", "merge"), ("nets", "Logic"), ("nets", "Wire"), ("nets", "Tri"), ("nets", "tri"), ("nets", "SumNet")];
+
+/// Index items of §22 that `std` does not declare yet: the specification states the explicit model
+/// (explicit-unknowns, MD-78) before the files hold it. Each leaves with its task (T23 for `Driven`,
+/// T44 for `Logic` and `LogicState`); a stale entry fails `the_index_lists_stay_honest`.
+const INDEX_AHEAD_OF_STD: [(&str, &str); 3] = [("values", "Logic"), ("values", "LogicState"), ("nets", "Driven")];
+
+/// Members the Index lists under the items above (`Logic::..`, `Driven::strongest`).
+const INDEX_MEMBERS_AHEAD_OF_STD: [(&str, &str); 2] = [("values", "Logic"), ("nets", "strongest")];
+
 /// The names of the `pub` items of a namespace.
 fn pub_names(design: &Design, namespace: &str) -> BTreeSet<String> {
     let ns = design.std_crate().root().submodules().into_iter().find(|n| n.name() == Some(namespace)).unwrap_or_else(|| panic!("std declares the namespace `{namespace}`"));
@@ -610,7 +622,11 @@ fn each_namespace_holds_its_section() {
     assert_eq!(names("carriers"), set(&["Bit", "Electrical", "Thermal", "VSignal", "Short"]), "carriers: §4 and §11");
     for k in 1..=6 {
         let ns = namespace_of_section(k);
-        let wanted: BTreeSet<String> = index_names().into_iter().filter(|n| !n.member && n.namespace == ns).map(|n| n.name).collect();
+        let mut wanted: BTreeSet<String> = index_names().into_iter().filter(|n| !n.member && n.namespace == ns).map(|n| n.name).collect();
+        for (space, name) in INDEX_AHEAD_OF_STD.iter().filter(|(space, _)| *space == ns) {
+            assert!(wanted.remove(*name), "{space}::{name} is not an Index row any more: drop it from INDEX_AHEAD_OF_STD");
+        }
+        wanted.extend(STD_BEHIND_THE_INDEX.iter().filter(|(space, _)| *space == ns).map(|(_, name)| name.to_string()));
         assert_eq!(names(ns), wanted, "{ns}: the pub items are the Index rows of §22.{k}");
     }
 }
@@ -657,6 +673,7 @@ fn every_index_item_is_declared() {
     let design = embedded();
     let missing: Vec<String> = index_names()
         .into_iter()
+        .filter(|n| !INDEX_AHEAD_OF_STD.iter().chain(INDEX_MEMBERS_AHEAD_OF_STD.iter()).any(|(space, name)| *space == n.namespace && *name == n.name))
         .filter(|n| {
             if n.member { declared_in_file(&design, n.namespace, &n.name).is_empty() } else { design.std_crate().find(&format!("{}::{}", n.namespace, n.name)).is_none() }
         })
@@ -700,11 +717,11 @@ fn every_intrinsic_reads_a_str() {
     let mut without = Vec::new();
     for decl in design.std_crate().decls() {
         let Some(f) = decl.as_function().filter(|f| f.is_intrinsic()) else { continue };
-        if !f.params().iter().any(|p| p.ty().is_some_and(|t| t.text().contains("&str"))) {
+        if !f.params().iter().any(|p| p.ty().is_some_and(|t| t.text().contains("str"))) {
             without.push(decl.qualified_name());
         }
     }
-    assert!(without.is_empty(), "intrinsics with no `&str` parameter: {without:?}");
+    assert!(without.is_empty(), "intrinsics with no `str` parameter: {without:?}");
 }
 
 #[test]
@@ -753,6 +770,13 @@ fn prelude_exports_equal_the_index() {
     }
     let mut wanted: BTreeSet<String> = index_names().into_iter().filter(|n| !n.member).map(|n| n.name).collect();
     wanted.extend(["Bit", "Electrical", "Thermal", "VSignal", "Short", "Q", "K_B", "EPS0", "PI", "E", "inf"].map(String::from));
+    // spec-ahead and std-behind entries (explicit-unknowns, the lists above): by name across namespaces
+    for (_, name) in INDEX_AHEAD_OF_STD {
+        wanted.remove(name);
+    }
+    for (_, name) in STD_BEHIND_THE_INDEX {
+        exported.remove(name);
+    }
     let extra: Vec<&String> = exported.difference(&wanted).collect();
     let missing: Vec<&String> = wanted.difference(&exported).collect();
     assert!(extra.is_empty() && missing.is_empty(), "exported but not in the Index: {extra:?}; in the Index but not exported: {missing:?}");
@@ -795,5 +819,43 @@ fn no_pom_test_was_removed() {
         let text = std::fs::read_to_string(manifest.join("tests").join(format!("{target}.rs"))).expect("target source");
         let count = text.lines().filter(|l| l.trim() == "#[test]").count();
         assert!(count >= floor, "{target} holds {count} tests, at least {floor} are required");
+    }
+}
+
+#[test]
+fn std_holds_no_removed_form() {
+    // VS-08 AC 1 (§1.2.6, §1.4.6, §1.5.12): the files of `std` write no `&` borrow, no `*x` dereference, no `mut`,
+    // no `Clone` or `Copy` and no lifetime; the drives of a resolved net are an array under a const parameter.
+    for entry in std::fs::read_dir(std_dir()).expect("the std directory") {
+        let path = entry.expect("an entry").path();
+        let text = std::fs::read_to_string(&path).expect("a std file");
+        for (number, line) in text.lines().enumerate() {
+            let code = line.split("//").next().unwrap_or("");
+            for removed in ["&str", "&[", "&'", "let mut ", "Clone", "Copy", "(&", ", &", "= &", " *x", "(*"] {
+                assert!(!code.contains(removed), "{}:{} writes `{removed}`: {line}", path.display(), number + 1);
+            }
+        }
+    }
+    let nets = std::fs::read_to_string(std_dir().join("nets.msl")).expect("nets.msl");
+    for item in ["pub fn wired<const N: usize>(d: [Logic; N]) -> Logic", "pub fn tri<T: Repr, const N: usize>(d: [Option<T>; N]) -> Option<T>", "pub fn sum<const N: usize>(d: [f64; N]) -> f64"] {
+        assert!(nets.contains(item), "nets.msl holds `{item}`");
+    }
+}
+
+#[test]
+fn the_index_lists_stay_honest() {
+    // A stale entry would hide a divergence the day `std` catches up: each spec-ahead item is still absent
+    // from `std`, and each std-behind item is still declared there and no longer in the Index.
+    let design = embedded();
+    for (space, name) in INDEX_AHEAD_OF_STD {
+        assert!(!pub_names(&design, space).contains(name), "{space}::{name} is declared now: drop it from INDEX_AHEAD_OF_STD");
+    }
+    for (space, name) in INDEX_MEMBERS_AHEAD_OF_STD {
+        assert!(declared_in_file(&design, space, name).is_empty(), "{space}::{name} is declared now: drop it from INDEX_MEMBERS_AHEAD_OF_STD");
+    }
+    let listed: Vec<String> = index_names().into_iter().filter(|n| !n.member).map(|n| format!("{}::{}", n.namespace, n.name)).collect();
+    for (space, name) in STD_BEHIND_THE_INDEX {
+        assert!(pub_names(&design, space).contains(name), "{space}::{name} is gone from std: drop it from STD_BEHIND_THE_INDEX");
+        assert!(!listed.contains(&format!("{space}::{name}")), "{space}::{name} is an Index row again: drop it from STD_BEHIND_THE_INDEX");
     }
 }

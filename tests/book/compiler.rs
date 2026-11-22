@@ -1,4 +1,4 @@
-//! Scope: chapter 15 of the Book, "From source to solver" (feature `root-e2e`, RE-02 and RE-03): the
+//! Scope: chapter 20 of the Book, "From source to solver" (feature `root-e2e`, RE-02 and RE-03): the
 //! divider the chapter runs and the diode it can be swapped for, run through `piperine::`; the printed
 //! intermediate form, the generated Rust and the library the Rust backend loads; the three compiler
 //! codes a source can raise (`P0001` to `P0003`; `P0004` is an internal error no source raises); the
@@ -170,14 +170,12 @@ fn the_rust_backend_prints_one_source_file_and_loads_the_library_it_builds() {
 #[test]
 fn a_compiler_code_says_what_the_chapter_says() {
     // compiler~79f44db1 "P0001": valid MSL the compiler cannot run yet, naming the construct;
-    // compiler~79f450b1 "P0002": a value of the wrong type, or a call with the wrong number of arguments;
+    // (`P0002`, a value of the wrong type, is gone: a mismatch is `E0180` of chapter 11, PI-06.)
     // compiler~79f44fb1 "P0003": the top module asked for does not exist. (compiler~79f44ab1 "P0004" is
     // a bug of Piperine no source raises: a `prose` row.)
     let generic = "module Gen<const N: u32>() { }\nmodule Top() { let g = Gen::<2>(); }\n";
     let given = Refusal::of(Model::written("m.msl", generic).run(Faulty::operating_point_of("Top")), "compiler~79f44db1");
     assert!(given.iter().any(|(code, message)| code == "P0001" && message.contains("not supported yet")), "P0001 names the construct it cannot run: {given:?}");
-    let arguments = "module Top() { signal a: Electrical; }\nanalog for Top { i(a, gnd) +> (2.0).powf(); }\n";
-    Refusal::expect(Model::written("m.msl", arguments).run(Faulty::operating_point_of("Top")), "compiler~79f450b1", "P0002", "mismatched types: expected 1 argument(s), found 0");
     Refusal::expect(Model::written("m.msl", "module Top() { }\n").run(Faulty::operating_point_of("Nope")), "compiler~79f44fb1", "P0003", "`Nope` is not a module of the root crate");
 }
 

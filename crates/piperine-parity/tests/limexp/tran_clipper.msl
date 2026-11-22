@@ -1,0 +1,37 @@
+//! The model twin of `tests/e2e/twins/tran_clipper.cir`: the analog part of the Book's diode
+//! clipper (chapter 8): a sine source into a resistor and two antiparallel `limexp` diodes. Only
+//! `v(vout)` is compared, under `TRAN_VOLTAGE`, so it has no reactions. It lives here and not
+//! beside its netlist: an `.msl` beside a `.cir` is a corpus twin, which owes a `.command` and a
+//! `.stdout`, and the command-line twins stay sixteen.
+
+module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// A sine voltage source of amplitude `amp` and frequency `f`.
+module Vsin(p: Electrical, n: Electrical) {
+    amp: f64 = 1.0;
+    f: f64 = 1k where f > 0.0;
+}
+analog for Vsin {
+    v(p, n) +> amp * (2.0 * PI * f * now()).sin();
+    bound_step(0.02 / f);
+}
+
+/// Junction diode: i = is * (exp(v / (n * vt)) - 1), the exponential written with `limexp`.
+module Diode(a: Electrical, k: Electrical) {
+    is: f64 = 1e-14 where is > 0.0;
+    n: f64 = 1.0 where n > 0.0;
+}
+analog for Diode {
+    let nvt = n * vt();
+    i(a, k) +> is * (limexp(v(a, k) / nvt) - 1.0);
+}
+
+module Clipper() {
+    signal vin: Electrical;
+    pub signal vout: Electrical;
+    let src = Vsin(vin, gnd) { amp: 2.0, f: 1k };
+    let r1 = Resistor(vin, vout) { r: 1k };
+    let d1 = Diode(vout, gnd);
+    let d2 = Diode(gnd, vout);
+}

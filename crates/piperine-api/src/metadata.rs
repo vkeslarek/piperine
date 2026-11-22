@@ -5,6 +5,7 @@
 
 use piperine_ir::{CarrierRole, Constant, Ir, NodeRole};
 
+use crate::composite::CellShape;
 use crate::params::Params;
 use crate::table::Cell;
 
@@ -60,7 +61,13 @@ impl Metadata {
             for (i, param) in body.params().iter().enumerate() {
                 let path = format!("{}.{}", instance.path(), param.name);
                 let current = held.get(instance.path(), &param.name);
+                let composite = if param.ty.is_composite() {
+                    CellShape::of(ir, &param.ty).zip(held.composite_bytes(instance.path(), &param.name)).and_then(|(shape, bytes)| shape.decode(bytes).ok())
+                } else {
+                    None
+                };
                 let value = match (instance.param(i), current) {
+                    _ if composite.is_some() => composite.unwrap_or(Cell::Unknown),
                     (Some(Constant::Bool(_)), Some(now)) => Cell::Bool(now != 0.0),
                     (Some(Constant::Int(_)), Some(now)) => Cell::Int(now as i128),
                     (Some(_), Some(now)) => Cell::Real(now),
@@ -68,7 +75,7 @@ impl Metadata {
                 };
                 params.push(ParamInfo {
                     name: param.name.clone(),
-                    ty: param.ty.to_string(),
+                    ty: ir.written(&param.ty),
                     value,
                     check: body.param_check_text(i),
                     structural: param.structural,
@@ -91,7 +98,7 @@ impl Metadata {
         let mut streams = Vec::new();
         for instance in ir.instances() {
             for stream in instance.body().streams() {
-                let fields = stream.fields.iter().map(|f| (f.name.clone(), f.ty.to_string())).collect();
+                let fields = stream.fields.iter().map(|f| (f.name.clone(), ir.written(&f.ty))).collect();
                 streams.push(StreamInfo { path: format!("{}.{}", instance.path(), stream.name), fields });
             }
         }

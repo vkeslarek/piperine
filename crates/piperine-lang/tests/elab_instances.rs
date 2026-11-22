@@ -150,3 +150,65 @@ fn an_unconnected_node_stays_in_the_table() {
     let ir = Elab::ir("module Top() { signal floating: Electrical; }", "Top");
     assert!(ir.node_at("Top.floating").is_some(), "a floating node is the solver's to report (E0503)");
 }
+
+/// A cell with a required-free param `cs`, a placement of it through the param `cell` of `Top`,
+/// and a parent that may bind it (PI-04).
+const CELL: &str = "module Cell(a: Electrical) { cs: f64 = 1.0; }\nanalog for Cell { i(a, gnd) +> v(a, gnd) * cs; }\n";
+
+/// The instances of an elaborated design, read by path.
+struct Placed;
+
+impl Placed {
+    /// The value of the first param of the instance at `path`.
+    fn first_param(ir: &piperine_ir::Ir, path: &str) -> piperine_ir::Constant {
+        *ir.instance_at(path).unwrap_or_else(|| panic!("no instance {path}")).param(0).expect("the instance has a param")
+    }
+}
+
+#[test]
+fn a_placement_through_a_module_param_places_its_template() {
+    // PI-04 AC 1, §8.4.9: `cell(x)` with `cell: Cell = Cell { cs: 30.0 }` places a `Cell` with `cs`
+    // 30, the instance `Cell(x) { cs: 30.0 }` places
+    let through = Elab::ir(&format!("{CELL}module Top() {{ cell: Cell = Cell {{ cs: 30.0 }}; signal x: Electrical; let c1 = cell(x); }}"), "Top");
+    let direct = Elab::ir(&format!("{CELL}module Top() {{ signal x: Electrical; let c1 = Cell(x) {{ cs: 30.0 }}; }}"), "Top");
+    assert_eq!(Placed::first_param(&through, "Top.c1"), piperine_ir::Constant::Real(piperine_ir::Real::new(30.0)));
+    assert_eq!(Placed::first_param(&through, "Top.c1"), Placed::first_param(&direct, "Top.c1"));
+    assert_eq!(through.instance_at("Top.c1").map(|i| i.body().name().to_string()), direct.instance_at("Top.c1").map(|i| i.body().name().to_string()));
+}
+
+#[test]
+fn a_parent_binding_replaces_the_template() {
+    // PI-04 AC 2: `Top { cell: Cell { cs: 10.0 } }` replaces the default template
+    let src = format!("{CELL}module Top() {{ cell: Cell = Cell {{ cs: 30.0 }}; signal x: Electrical; let c1 = cell(x); }}\nmodule Parent() {{ let t = Top {{ cell: Cell {{ cs: 10.0 }} }}(); }}");
+    let ir = Elab::ir(&src, "Parent");
+    assert_eq!(Placed::first_param(&ir, "Parent.t.c1"), piperine_ir::Constant::Real(piperine_ir::Real::new(10.0)));
+    // the same `Top` with its default places the other template: two templates, two bodies
+    let both = format!("{CELL}module Top() {{ cell: Cell = Cell {{ cs: 30.0 }}; signal x: Electrical; let c1 = cell(x); }}\nmodule Parent() {{ let t = Top {{ cell: Cell {{ cs: 10.0 }} }}(); let u = Top(); }}");
+    let ir = Elab::ir(&both, "Parent");
+    assert_eq!(Placed::first_param(&ir, "Parent.t.c1"), piperine_ir::Constant::Real(piperine_ir::Real::new(10.0)));
+    assert_eq!(Placed::first_param(&ir, "Parent.u.c1"), piperine_ir::Constant::Real(piperine_ir::Real::new(30.0)));
+}
+
+#[test]
+fn a_template_leaving_a_required_param_unbound_is_e0319() {
+    // PI-04 AC 4, §8.4.2: a template of a module with a required param it does not bind
+    let src = "module Cell(a: Electrical) { cs: f64; }\nanalog for Cell { i(a, gnd) +> v(a, gnd) * cs; }\nmodule Top() { cell: Cell = Cell { }; signal x: Electrical; let c1 = cell(x); }";
+    let err = Elab::run(src, "Top").expect_err("the template leaves `cs` unbound");
+    assert_eq!(Elab::codes(&err), ["E0319"]);
+    assert!(err[0].diagnostic.message.contains("`cs`"), "{}", err[0].diagnostic.message);
+}
+
+#[test]
+fn the_pom_keeps_the_placement_through_the_param_and_the_ir_the_module() {
+    // PI-04 AC 6, MD-25: the POM shows `cell(x)` as written (the param `cell` and the placement
+    // `c1`, no `Cell(..)` placement); the IR holds the concrete instance of `Cell`
+    let src = format!("{CELL}module Top() {{ cell: Cell = Cell {{ cs: 30.0 }}; signal x: Electrical; let c1 = cell(x); }}");
+    let design = Elab::design(&src);
+    let before = design.dump();
+    let ir = piperine_lang::elab::Elaborator::new(&design).run("Top").unwrap_or_else(|d| panic!("{d:?}"));
+    assert_eq!(design.dump(), before, "elaboration leaves the POM as it was");
+    assert!(before.contains("Param cell") && before.contains("Binding c1"), "{before}");
+    let instance = ir.instance_at("Top.c1").expect("the concrete instance");
+    assert!(instance.body().name().starts_with("Cell"), "{}", instance.body().name());
+    assert_eq!(ir.top().children().map(|c| c.path().to_string()).collect::<Vec<_>>(), ["Top.c1"]);
+}

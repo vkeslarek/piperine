@@ -1,0 +1,54 @@
+//! The measurement chain (SPEC §4, §8.1 to §8.3): where the analog world becomes digital. The
+//! output voltage crosses through a sampled ADC (a reaction that probes, the `SampleHold` idiom);
+//! input voltage and inductor current cross through the std `A2D` comparator, whose `above`
+//! events the solver locates in time.
+
+use crate::power::Resistor;
+
+/// A resistive divider from `top` to `gnd`, tapped at `mid`.
+pub module Divider(top: Electrical, mid: Electrical) {
+    r_top: f64 where r_top > 0.0;
+    r_bot: f64 where r_bot > 0.0;
+    let upper = Resistor(top, mid) { r: r_top };
+    let lower = Resistor(mid, gnd) { r: r_bot };
+}
+
+/// A 10-bit SAR ADC (SPEC §4.1). On a rising `sample` it probes its input once, rounds to the
+/// nearest code (mid-tread, SPEC §6.5) and, `tconv` later, presents the code together with a
+/// one-clock `done` strobe. The input is a probe: it draws no flow.
+pub module Adc(ain: Electrical, in sample: Bit, out code: Bit<u10> = 0, out done: Bit = false) {
+    /// Full scale: 1.6 V, so 1.5625 mV per code at the pin.
+    vref: f64 = 1.6 where vref > 0.0;
+    /// Conversion time: 100 clock counts (SPEC §9).
+    tconv: f64 = 500n where tconv > 0.0;
+    /// Width of the `done` strobe: one 200 MHz clock.
+    tstrobe: f64 = 5n where tstrobe > 0.0;
+}
+digital for Adc {
+    on sample.rise() {
+        let q = (v(ain) / vref * 1024.0 + 0.5).floor().clamp(0.0, 1023.0) as u10;
+        code <- q after tconv;
+        done <- true after tconv;
+        done <- false after tconv + tstrobe;          // a second statement: the pair is a pulse
+    }
+}
+
+/// Everything that measures (SPEC §4, §8.1 to §8.3): the output divider and its ADC, the input
+/// divider and the UVLO comparator, and the two current-limit comparators on the sense outputs.
+pub module Sensing(vin: Electrical, vout: Electrical, isense: Electrical, isense_n: Electrical,
+                   in sample: Bit,
+                   out code: Bit<u10>, out done: Bit,
+                   out vin_ok: Bit, out oc: Bit, out sink_oc: Bit) {
+    pub signal fb: Electrical;
+    pub signal vin_div: Electrical;
+    /// Vout / 4 into the ADC: 6.25 mV per code at the output (SPEC §4.1).
+    let fb_div = Divider(vout, fb) { r_top: 30k, r_bot: 10k };
+    let adc = Adc(fb, sample, code, done);
+    /// Vin / 10: on at 8.5 V, off at 8.0 V (SPEC §8.1).
+    let uv_div = Divider(vin, vin_div) { r_top: 90k, r_bot: 10k };
+    let uvlo = A2D(vin_div, vin_ok) { vth: 0.825, hyst: 50m };
+    /// 0.1 V/A: trips at +7.5 A, releases at +7.3 A (SPEC §8.2).
+    let ocp = A2D(isense, oc) { vth: 0.74, hyst: 20m };
+    /// Inverted sense: trips at −3 A (SPEC §8.3).
+    let scp = A2D(isense_n, sink_oc) { vth: 0.29, hyst: 20m };
+}

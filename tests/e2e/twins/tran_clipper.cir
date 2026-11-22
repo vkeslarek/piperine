@@ -1,0 +1,20 @@
+* tran_clipper — transient cross-check on the Book's diode clipper (chapter 8).
+* A 2 V, 1 kHz sine drives 1 kOhm into two diodes back to back; the output is clipped near
+* +-0.65 V. Both sides start at the operating point (the source is 0 V at t = 0, so the output
+* is 0 V and no `uic` is needed). `.options interp` makes ngspice interpolate its internal
+* adaptive steps onto the print grid (multiples of tstep) before recording, so the export below
+* IS the print grid the comparison evaluates piperine's adaptive waveform on. The step cap is
+* the harness's (a tenth of the print step, `tmax` = 2u) on both sides: ngspice's default cap
+* (the print step) leaves its own interpolation 10 mV off the converged waveform at 40 us, where
+* the diodes turn on, so the twins must be given the same step configuration.
+V1 vin 0 SIN(0 2 1k)
+R1 vin vout 1000
+D1 vout 0 DMOD
+D2 0 vout DMOD
+.model DMOD D (is=1e-14 n=1 rs=0)
+.options interp
+.control
+tran 20u 2m 0 2u
+wrdata tran_clipper_tran v(vout)
+.endc
+.end

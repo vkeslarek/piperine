@@ -3,7 +3,7 @@
 
 use std::io::{self, Write};
 
-use piperine_api::{Field, Record};
+use piperine_api::{Cell, Field, Record};
 
 /// A record laid out for a file a script reads.
 pub struct JsonRecord;
@@ -24,8 +24,9 @@ impl JsonRecord {
                 Field::Real(v) => JsonRecord::real(*v),
                 Field::Bool(v) => v.to_string(),
                 Field::Int(v) => v.to_string(),
-                Field::Text(v) => JsonRecord::string(v),
+                Field::Text(v) | Field::Variant(v) => JsonRecord::string(v),
                 Field::Unknown => "null".to_string(),
+                Field::Composite(v) => v.json(&JsonRecord::scalar, &JsonRecord::string),
             };
             write!(out, "{}:{value}", JsonRecord::string(name))?;
         }
@@ -33,6 +34,17 @@ impl JsonRecord {
         // control changes
         let maybe = if record.maybe { ",\"maybe\":true" } else { "" };
         writeln!(out, "}}{maybe}}}")
+    }
+
+    /// A scalar part of a composite value as JSON: a number, a boolean, a string or `null`.
+    fn scalar(cell: &Cell) -> String {
+        match cell {
+            Cell::Real(v) => JsonRecord::real(*v),
+            Cell::Bool(v) => v.to_string(),
+            Cell::Int(v) => v.to_string(),
+            Cell::Text(v) => JsonRecord::string(v),
+            Cell::Unknown | Cell::Composite(_) => "null".to_string(),
+        }
     }
 
     fn real(value: f64) -> String {

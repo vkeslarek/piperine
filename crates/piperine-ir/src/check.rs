@@ -28,10 +28,13 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::contributions::Contributions;
 use crate::ids::{ExprId, FunctionId, StmtId};
 use crate::model::{
-    BinaryOp, BodyData, BranchKind, CarrierRole, Child, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, NodeRef, NodeRole, Origin, QuantityRole, ReachedItem, Stmt, Terminal, UnaryOp,
-    ValueType,
+    BinaryOp, BodyData, BranchKind, CarrierRole, Child, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, NodeRef, NodeRole, Origin, Place, QuantityRole, ReachedItem, Stmt, Terminal, UnaryOp,
+    TypeKind, ValueType,
 };
 use crate::typing::Typing;
+
+mod aggregates;
+mod traits;
 
 /// One broken invariant: the item, where it was written, and what is wrong.
 #[derive(Debug, Clone, PartialEq)]
@@ -50,6 +53,9 @@ impl Ir {
         checker.structure();
         checker.paths();
         checker.types();
+        checker.type_arena();
+        checker.aggregate_constants();
+        checker.composite_params();
         checker.code();
         checker.discrete();
         checker.out
@@ -61,6 +67,10 @@ struct Owner {
     item: String,
     origin: Origin,
     locals: Vec<ValueType>,
+    /// Which locals the source declared `let mut`, parallel to `locals`: only these are assigned.
+    mutable: Vec<bool>,
+    /// The result type of the function being walked: what a `return` carries. `()` in a body.
+    result: ValueType,
     params: Vec<ValueType>,
     nodes: usize,
     branches: Vec<BranchKind>,
@@ -80,6 +90,9 @@ struct Owner {
     derivatives: usize,
     /// The statements of a reaction: `fired` may appear.
     reaction: bool,
+    /// The event whose guard is walked: `fired` of another event may appear there (§13 rule 9),
+    /// never of itself.
+    event: Option<u32>,
     /// A body (probes and params are readable) rather than a function.
     in_body: bool,
     /// The `analog` block of a body: sites and contributions may appear.
@@ -116,6 +129,9 @@ struct Walk {
 struct Ctx {
     conditional: bool,
     closure: bool,
+    /// The innermost loop expression the code sits in, `None` outside every loop and inside a
+    /// closure (`break` and `continue` do not cross a closure).
+    enclosing_loop: Option<ExprId>,
 }
 
 /// One step of the iterative walk.
@@ -149,14 +165,42 @@ impl<'a> Checker<'a> {
 
     /// Whether `value` is a value of the scalar type `ty`: a `bool` for `bool`, a real for `f64`,
     /// an integer within the `N`-bit range for `UInt<N>`/`Int<N>`.
-    fn holds(ty: &ValueType, value: Constant) -> bool {
+    fn holds(&self, ty: &ValueType, value: Constant) -> bool {
         match (ty, value) {
+            (_, Constant::Aggregate(id)) => self.ir.aggregates.get(id.index()).is_some_and(|data| data.ty == *ty),
             (ValueType::Bool, Constant::Bool(_)) | (ValueType::F64, Constant::Real(_)) => true,
             (ValueType::UInt(_) | ValueType::Int(_), Constant::Int(v)) => {
                 ty.integer_range().is_some_and(|(lo, hi)| (lo..=hi).contains(&v))
             }
             _ => false,
         }
+    }
+
+    /// Whether a pin can hold a value of `ty`: a scalar, or a tuple, an array, a struct, an enum's
+    /// payload or an `Option` whose parts a pin can hold (§2: every part has a `Repr`).
+    fn carriable(&self, ty: &ValueType) -> bool {
+        let mut stack = vec![ty];
+        let mut seen = BTreeSet::new();
+        while let Some(t) = stack.pop() {
+            match t {
+                ValueType::Tuple(items) => stack.extend(items),
+                ValueType::Array(element, _) => stack.push(element),
+                ValueType::Option(inner) => stack.push(inner),
+                ValueType::Struct(id) | ValueType::Enum(id) => {
+                    let Some(data) = self.ir.types.get(id.index()) else { return false };
+                    if !seen.insert(id.index()) {
+                        continue;
+                    }
+                    match &data.kind {
+                        TypeKind::Struct { fields, .. } => stack.extend(fields.iter().map(|(_, field)| field)),
+                        TypeKind::Enum { variants, .. } => stack.extend(variants.iter().flat_map(|v| v.fields.iter().map(|(_, field)| field))),
+                    }
+                }
+                scalar if Typing::scalar(scalar) => {}
+                _ => return false,
+            }
+        }
+        true
     }
 
     /// The branches with a private flow unknown a flow probe may read: those `body`'s `analog`
@@ -177,7 +221,7 @@ impl<'a> Checker<'a> {
             Stmt::Let { init, .. } => Some(*init),
             Stmt::Expr(e) => Some(*e),
             Stmt::Contribute { addends, .. } => addends.first().map(|a| a.value),
-            Stmt::Commit { value, .. } | Stmt::BoundStep { value, .. } => Some(*value),
+            Stmt::Commit { value, .. } | Stmt::BoundStep { value, .. } | Stmt::Assign { value, .. } => Some(*value),
             Stmt::Emit { fields, .. } => fields.iter().find_map(|f| match f {
                 EmitField::Value { value, .. } => Some(*value),
                 EmitField::Text { .. } => None,
@@ -313,6 +357,7 @@ impl<'a> Checker<'a> {
             match stmt {
                 Stmt::Let { init, .. } => self.expr_id(&item, &origin, *init),
                 Stmt::Expr(e) => self.expr_id(&item, &origin, *e),
+                Stmt::Assign { value, .. } => self.expr_id(&item, &origin, *value),
                 Stmt::BoundStep { value, when, .. } => {
                     for id in [*value].into_iter().chain(*when) {
                         self.expr_id(&item, &origin, id);
@@ -417,7 +462,7 @@ impl<'a> Checker<'a> {
                     self.report(item.clone(), child.origin.clone(), format!("child {}: param {} is set twice", child.name, param.name));
                 }
                 match value {
-                    ChildValue::Const(c) if !Self::holds(&param.ty, *c) => {
+                    ChildValue::Const(c) if !self.holds(&param.ty, *c) => {
                         self.report(item.clone(), child.origin.clone(), format!("child {}: the value {c} of param {} is not a value of its type {}", child.name, param.name, param.ty));
                     }
                     ChildValue::Const(_) => {}
@@ -493,6 +538,17 @@ impl<'a> Checker<'a> {
             }
             Expr::Math { args, .. } => exprs.extend(args),
             Expr::Closure { body, .. } => exprs.push(*body),
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
+                for &s in kind.statements() {
+                    self.stmt_id(item, origin, s);
+                }
+                exprs.extend(kind.operands());
+            }
+            Expr::FunctionRef(function) => {
+                if function.index() >= ir.functions.len() {
+                    self.report(item.to_string(), origin.clone(), format!("function id {} out of range ({} functions)", function.0, ir.functions.len()));
+                }
+            }
             Expr::Limit { x, f, seed, .. } => {
                 exprs.extend([*x, *f]);
                 exprs.extend(seed);
@@ -729,7 +785,7 @@ impl<'a> Checker<'a> {
                 let mut names: BTreeSet<&str> = BTreeSet::new();
                 for f in &stream.fields {
                     let at = format!("{item} stream {}", stream.name);
-                    if !Typing::scalar(&f.ty) {
+                    if !self.carriable(&f.ty) {
                         self.report(at.clone(), body.origin.clone(), format!("a stream field holds `bool`, `f64` or an integer type, found {} for {}", f.ty, f.name));
                     }
                     if !names.insert(f.name.as_str()) {
@@ -739,10 +795,14 @@ impl<'a> Checker<'a> {
                 }
             }
             for c in &body.carriers {
-                if !Typing::scalar(&c.ty) {
-                    self.report(format!("{item} carrier {}", c.name), c.origin.clone(), format!("a carrier holds `bool`, `f64` or an integer type, found {}", c.ty));
+                if !self.carriable(&c.ty) {
+                    self.report(
+                        format!("{item} carrier {}", c.name),
+                        c.origin.clone(),
+                        format!("a carrier holds `bool`, `f64`, an integer type, an enum, or a tuple, array, struct or `Option` of them, found {}", c.ty),
+                    );
                 } else if let Some(init) = c.init
-                    && !Self::holds(&c.ty, init)
+                    && !self.holds(&c.ty, init)
                 {
                     self.report(
                         format!("{item} carrier {}", c.name),
@@ -770,21 +830,21 @@ impl<'a> Checker<'a> {
             }
         }
         for (item, origin, ty) in found {
-            if let Some(what) = Checker::malformed(&ty) {
+            if let Some(what) = self.malformed(&ty) {
                 self.report(item, origin, what);
             }
         }
     }
 
-    /// What is wrong with `ty`, read through function types.
-    fn malformed(ty: &ValueType) -> Option<String> {
+    /// What is wrong with `ty`, read through function types and aggregate parts.
+    fn malformed(&self, ty: &ValueType) -> Option<String> {
         let mut stack = vec![ty];
         while let Some(t) = stack.pop() {
             match t {
                 ValueType::UInt(n) | ValueType::Int(n) if !(1..=64).contains(n) => {
                     return Some(format!("type {t} has a width outside 1..=64"));
                 }
-                ValueType::Flagged(inner) if !Typing::scalar(inner) => {
+                ValueType::Flagged(inner) if !Typing::laid_out(inner) => {
                     return Some(format!("type {t}: only `bool`, `f64` and an integer type may be unknown"));
                 }
                 ValueType::Flagged(inner) => stack.push(inner),
@@ -792,6 +852,17 @@ impl<'a> Checker<'a> {
                     stack.extend(params);
                     stack.push(ret);
                 }
+                ValueType::Struct(id) | ValueType::Enum(id) if id.index() >= self.ir.types.len() => {
+                    return Some(format!("type {t} names a type outside the arena ({} types)", self.ir.types.len()));
+                }
+                ValueType::Struct(id) if !matches!(self.ir.types[id.index()].kind, TypeKind::Struct { .. }) => {
+                    return Some(format!("type {t} names an enum as a struct"));
+                }
+                ValueType::Enum(id) if !matches!(self.ir.types[id.index()].kind, TypeKind::Enum { .. }) => {
+                    return Some(format!("type {t} names a struct as an enum"));
+                }
+                ValueType::Tuple(parts) => stack.extend(parts),
+                ValueType::Array(element, _) | ValueType::Option(element) => stack.push(element),
                 _ => {}
             }
         }
@@ -818,6 +889,7 @@ impl<'a> Checker<'a> {
                 match stmt {
                     Stmt::Let { init, .. } => stack_e.push(*init),
                     Stmt::Expr(e) => stack_e.push(*e),
+                    Stmt::Assign { value, .. } => stack_e.push(*value),
                     Stmt::Contribute { addends, .. } => stack_e.extend(addends.iter().map(|a| a.value)),
                     Stmt::Commit { value, after, .. } => stack_e.extend([*value].into_iter().chain(*after)),
                     Stmt::BoundStep { value, when, .. } => stack_e.extend([*value].into_iter().chain(*when)),
@@ -851,6 +923,10 @@ impl<'a> Checker<'a> {
                 Expr::Call { args, .. } | Expr::Math { args, .. } => stack_e.extend(args),
                 Expr::Method { receiver, args, .. } => stack_e.extend([*receiver].into_iter().chain(args.iter().copied())),
                 Expr::Closure { body, .. } => stack_e.push(*body),
+                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
+                    stack_s.extend(data.kind.statements());
+                    stack_e.extend(data.kind.operands());
+                }
                 Expr::Limit { x, f, seed, .. } => stack_e.extend([*x, *f].into_iter().chain(*seed)),
                 Expr::Stim { mag, phase, .. } => stack_e.extend([*mag].into_iter().chain(*phase)),
             }
@@ -869,7 +945,7 @@ impl<'a> Checker<'a> {
             let (found, _) = self.reach(&[], &roots);
             roots.clear();
             for e in found {
-                if let Some(Expr::Call { function, .. }) = ir.exprs.get(e.index()).map(|d| &d.kind)
+                if let Some(Expr::Call { function, .. } | Expr::FunctionRef(function)) = ir.exprs.get(e.index()).map(|d| &d.kind)
                     && called.insert(*function)
                     && let Some(f) = ir.functions.get(function.index())
                 {
@@ -895,7 +971,7 @@ impl<'a> Checker<'a> {
         for (k, event) in body.events.iter().enumerate() {
             let at = match event.source {
                 EventSource::At(e) => Some(e),
-                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) => None,
+                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) | EventSource::Settle => None,
             };
             for e in event.guard.into_iter().chain(at) {
                 positions.push((format!("{item} event {k}"), event.origin.clone(), e));
@@ -1021,7 +1097,7 @@ impl<'a> Checker<'a> {
                 let cross = match e.source {
                     EventSource::Cross { e: x, ttol, etol } => [Some(x), ttol, etol],
                     EventSource::At(x) => [Some(x), None, None],
-                    EventSource::Changed(_) | EventSource::ParamChanged(_) => [None; 3],
+                    EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle => [None; 3],
                 };
                 cross.into_iter().flatten().chain(e.guard)
             }));
@@ -1123,11 +1199,15 @@ impl<'a> Checker<'a> {
 
     fn code(&mut self) {
         let ir = self.ir;
+        // The functions the `analog` blocks call, directly.
+        let mut analog_calls: BTreeSet<FunctionId> = BTreeSet::new();
         for body in &ir.bodies {
             let owner = |analog: bool, item: String| Owner {
                 item,
                 origin: body.origin.clone(),
                 locals: body.locals.iter().map(|l| l.ty.clone()).collect(),
+                mutable: body.locals.iter().map(|l| l.mutable).collect(),
+                result: ValueType::Unit,
                 params: body.params.iter().map(|p| p.ty.clone()).collect(),
                 nodes: body.nodes.len(),
                 branches: body.branches.iter().map(|b| b.kind).collect(),
@@ -1140,6 +1220,7 @@ impl<'a> Checker<'a> {
                 events: body.events.len(),
                 derivatives: body.derivatives.len(),
                 reaction: false,
+                event: None,
                 in_body: true,
                 analog,
             };
@@ -1168,6 +1249,7 @@ impl<'a> Checker<'a> {
                     self.walk(&mut w, Task::Stmt(stmt, Ctx::top(), true));
                 }
                 self.site_uses(&w);
+                analog_calls.extend(w.calls);
             }
             for drive in &body.drives {
                 let name = body.carriers.get(drive.carrier as usize).map_or("<bad carrier>", |c| c.name.as_str());
@@ -1182,7 +1264,9 @@ impl<'a> Checker<'a> {
                 }
             }
             for (k, event) in body.events.iter().enumerate() {
-                let mut w = Walk::new(owner(false, format!("body {} event {k}", body.name)), 0);
+                let mut guarded = owner(false, format!("body {} event {k}", body.name));
+                guarded.event = Some(k as u32);
+                let mut w = Walk::new(guarded, 0);
                 match event.source {
                     EventSource::Cross { e, ttol, etol } => {
                         for id in [e].into_iter().chain(ttol).chain(etol) {
@@ -1190,7 +1274,7 @@ impl<'a> Checker<'a> {
                         }
                     }
                     EventSource::At(e) => self.walk(&mut w, Task::Expr(e, Ctx::top())),
-                    EventSource::Changed(_) | EventSource::ParamChanged(_) => {}
+                    EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle => {}
                 }
                 if let Some(guard) = event.guard {
                     self.carried(&w, guard, &ValueType::Bool, "the guard of an event");
@@ -1216,6 +1300,7 @@ impl<'a> Checker<'a> {
                 let item = format!("body {} reaction {k}", body.name);
                 let mut owner = owner(false, item);
                 owner.locals = reaction.locals.iter().map(|l| l.ty.clone()).collect();
+                owner.mutable = reaction.locals.iter().map(|l| l.mutable).collect();
                 owner.reaction = true;
                 let mut w = Walk::new(owner, 0);
                 for &stmt in &reaction.stmts {
@@ -1229,6 +1314,8 @@ impl<'a> Checker<'a> {
                 item: format!("function {}", function.name),
                 origin: function.origin.clone(),
                 locals: function.locals.iter().map(|l| l.ty.clone()).collect(),
+                mutable: function.locals.iter().map(|l| l.mutable).collect(),
+                result: function.ret.clone(),
                 params: Vec::new(),
                 nodes: 0,
                 branches: Vec::new(),
@@ -1241,6 +1328,7 @@ impl<'a> Checker<'a> {
                 events: 0,
                 derivatives: 0,
                 reaction: false,
+                event: None,
                 in_body: false,
                 analog: false,
             };
@@ -1249,26 +1337,33 @@ impl<'a> Checker<'a> {
             self.walk(&mut w, Task::Expr(function.body, Ctx::top()));
             graph.push(w.calls);
         }
-        self.recursion(&graph);
+        self.recursion(&graph, &analog_calls);
     }
 
-    /// Every function that reaches itself through calls.
-    fn recursion(&mut self, graph: &[BTreeSet<FunctionId>]) {
-        for (i, function) in self.ir.functions.iter().enumerate() {
+    /// Every function that reaches itself through calls and is reached from an `analog` body
+    /// (`analog_calls`, the functions that code calls, directly). Recursion elsewhere is allowed
+    /// (§3 rule 12): the elaborator unrolls the recursion `analog` reaches, since a solve needs
+    /// a bounded contribution.
+    fn recursion(&mut self, graph: &[BTreeSet<FunctionId>], analog_calls: &BTreeSet<FunctionId>) {
+        let reaches = |from: Vec<usize>| -> BTreeSet<usize> {
             let mut seen: BTreeSet<usize> = BTreeSet::new();
-            let mut stack: Vec<usize> = graph[i].iter().map(|f| f.index()).collect();
-            let mut recursive = false;
+            let mut stack = from;
             while let Some(f) = stack.pop() {
-                if f == i {
-                    recursive = true;
-                    break;
-                }
                 if f < graph.len() && seen.insert(f) {
                     stack.extend(graph[f].iter().map(|g| g.index()));
                 }
             }
-            if recursive {
-                self.report(format!("function {}", function.name), function.origin.clone(), format!("function {} calls itself, directly or through other functions", function.name));
+            seen
+        };
+        let from_analog = reaches(analog_calls.iter().map(|f| f.index()).collect());
+        for (i, function) in self.ir.functions.iter().enumerate() {
+            let recursive = reaches(graph[i].iter().map(|f| f.index()).collect()).contains(&i);
+            if recursive && from_analog.contains(&i) {
+                self.report(
+                    format!("function {}", function.name),
+                    function.origin.clone(),
+                    format!("function {} calls itself, directly or through other functions, and `analog` reaches it (§3 rule 12)", function.name),
+                );
             }
         }
     }
@@ -1326,6 +1421,11 @@ impl<'a> Checker<'a> {
                 next.push(Task::Bind(*local));
             }
             Stmt::Expr(e) => next.push(Task::Expr(*e, ctx)),
+            Stmt::Assign { place, op, value } => {
+                self.assignment(w, &origin, place, *op, *value);
+                next.push(Task::Expr(*value, ctx));
+                next.extend(place.index_operands().map(|index| Task::Expr(index, ctx)));
+            }
             Stmt::BoundStep { value, when, .. } => {
                 if !top || !w.owner.analog {
                     self.report(w.owner.item.clone(), origin.clone(), "`bound_step` outside the top level of an analog block".to_string());
@@ -1344,6 +1444,9 @@ impl<'a> Checker<'a> {
                     self.report(w.owner.item.clone(), origin.clone(), "contribution outside the analog block of a body".to_string());
                 } else if ctx.closure {
                     self.report(w.owner.item.clone(), origin.clone(), "contribution inside a closure".to_string());
+                } else if ctx.enclosing_loop.is_some() {
+                    // §11 rule 12: the elaborator unrolls a loop that contributes, so none reaches the IR.
+                    self.report(w.owner.item.clone(), origin.clone(), "contribution inside a loop".to_string());
                 }
                 let kind = w.owner.branches.get(*branch as usize).copied();
                 match kind {
@@ -1499,6 +1602,7 @@ impl<'a> Checker<'a> {
                 }
                 next.push(Task::Expr(*expr, ctx));
             }
+            Expr::Binary { .. } if self.operates_on_aggregates(&data.kind) => self.aggregate_comparison(w, id, first, ctx, next),
             Expr::Binary { op, lhs, rhs }
                 if Typing::digital_op(*op) || [*lhs, *rhs].iter().any(|e| self.ty(*e).is_some_and(Typing::digital)) =>
             {
@@ -1641,7 +1745,7 @@ impl<'a> Checker<'a> {
                     }
                 }
                 w.rescope();
-                next.push(Task::Expr(*body, Ctx { closure: true, ..ctx }));
+                next.push(Task::Expr(*body, Ctx { closure: true, enclosing_loop: None, ..ctx }));
                 // The parameters end with the closure.
                 next.push(Task::Restore(outside));
             }
@@ -1792,7 +1896,7 @@ impl<'a> Checker<'a> {
             }
             Expr::LevelCast { expr, to, tags } => {
                 if first {
-                    let want = self.ty(*expr).and_then(|t| Typing::level_cast(t, to, tags.is_some()));
+                    let want = self.ty(*expr).and_then(|t| Typing::level_cast(t, to, tags.is_some(), &self.ir.types));
                     self.typed(w, &origin, ty, want, "`cast`");
                 }
                 next.push(Task::Expr(*expr, ctx));
@@ -1823,8 +1927,10 @@ impl<'a> Checker<'a> {
             Expr::Fired(e) => {
                 if first {
                     self.own(w, &origin, ty, &ValueType::Bool);
-                    if !w.owner.reaction {
-                        self.wrong(w, origin, "`fired` outside a reaction".to_string());
+                    if !w.owner.reaction && w.owner.event.is_none() {
+                        self.wrong(w, origin, "`fired` outside a reaction or the guard of an event".to_string());
+                    } else if w.owner.event == Some(*e) {
+                        self.wrong(w, origin, format!("the guard of event {e} reads its own `fired`"));
                     } else if *e as usize >= w.owner.events {
                         self.wrong(w, origin, format!("`fired` of event {e}, out of range ({} events)", w.owner.events));
                     }
@@ -1846,7 +1952,7 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin, "carrier read outside a body".to_string());
                     } else {
                         match w.owner.carriers.get(*i as usize) {
-                            Some(c) => self.own(w, &origin, ty, &ValueType::Flagged(Box::new(c.clone()))),
+                            Some(c) => self.own(w, &origin, ty, &Typing::read_of(c, ty)),
                             None => self.wrong(w, origin, format!("carrier {i} out of range ({} carriers)", w.owner.carriers.len())),
                         }
                     }
@@ -1858,11 +1964,63 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin, "a previous-value read outside a body".to_string());
                     } else {
                         match w.owner.carriers.get(*i as usize) {
-                            Some(c) => self.own(w, &origin, ty, &ValueType::Flagged(Box::new(c.clone()))),
+                            Some(c) => self.own(w, &origin, ty, &Typing::read_of(c, ty)),
                             None => self.wrong(w, origin, format!("previous value of carrier {i}, out of range ({} carriers)", w.owner.carriers.len())),
                         }
                     }
                 }
+            }
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } => self.looping(w, id, first, ctx, next),
+            Expr::Break(value) => {
+                self.leave_loop(w, &origin, ctx, *value, true);
+                next.extend(value.iter().map(|v| Task::Expr(*v, ctx)));
+            }
+            Expr::Continue => self.leave_loop(w, &origin, ctx, None, false),
+            Expr::Return(value) => {
+                if w.owner.in_body {
+                    self.wrong(w, origin.clone(), "`return` outside a function".to_string());
+                } else if ctx.closure {
+                    self.wrong(w, origin.clone(), "`return` inside a closure".to_string());
+                } else {
+                    let result = w.owner.result.clone();
+                    match value {
+                        Some(v) => self.want(w, *v, &result, "the value of a `return`"),
+                        None if result != ValueType::Unit => self.wrong(w, origin.clone(), format!("`return` without a value in a function that returns {result}")),
+                        None => {}
+                    }
+                }
+                next.extend(value.iter().map(|v| Task::Expr(*v, ctx)));
+            }
+            Expr::FunctionRef(function) => {
+                if let Some(f) = self.ir.functions.get(function.index()) {
+                    w.calls.insert(*function);
+                    if first {
+                        let want = ValueType::Fn(f.params.iter().map(|p| p.ty.clone()).collect(), Box::new(f.ret.clone()));
+                        self.own(w, &origin, ty, &want);
+                    }
+                }
+            }
+            Expr::CallValue { callee, args } => {
+                if first {
+                    match self.ty(*callee) {
+                        Some(ValueType::Fn(params, ret)) => {
+                            self.own(w, &origin, ty, ret);
+                            if params.len() != args.len() {
+                                self.wrong(w, origin.clone(), format!("calls a function value with {} args, it takes {}", args.len(), params.len()));
+                            }
+                            for (a, p) in args.iter().zip(params) {
+                                self.want(w, *a, p, "argument of a call through a function value");
+                            }
+                        }
+                        Some(other) => self.wrong(w, origin.clone(), format!("the callee of a call through a value must have a function type, found {other}")),
+                        None => {}
+                    }
+                }
+                next.push(Task::Expr(*callee, ctx));
+                next.extend(args.iter().map(|a| Task::Expr(*a, ctx)));
+            }
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
+                self.aggregate_form(w, id, first, ctx, next);
             }
             Expr::IsKnown(value) | Expr::High(value) => {
                 if first {
@@ -1874,6 +2032,87 @@ impl<'a> Checker<'a> {
             }
         }
         next.push(Task::Exit(id));
+    }
+
+    /// An assignment `place op= value` (§1.5.12): the target is a place of a `mutable` local, the
+    /// value has the target's type, and `op`, when given, is a compound operator the type has.
+    fn assignment(&mut self, w: &Walk, origin: &Origin, place: &Place, op: Option<BinaryOp>, value: ExprId) {
+        let Some(target) = w.owner.locals.get(place.local as usize).cloned() else {
+            self.wrong(w, origin.clone(), format!("assignment to local {}, out of range ({} locals)", place.local, w.owner.locals.len()));
+            return;
+        };
+        if !w.owner.mutable.get(place.local as usize).copied().unwrap_or(false) {
+            self.wrong(w, origin.clone(), format!("assignment to local {}, which is not `mutable`", place.local));
+        }
+        let Some(target) = self.place_type(w, origin, place, target) else { return };
+        match op {
+            None => self.want(w, value, &target, "the value of an assignment"),
+            Some(op) => {
+                let result = self.ty(value).and_then(|v| Typing::compound(op, &target, v));
+                if self.ty(value).is_some() && result.as_ref() != Some(&target) {
+                    self.wrong(w, origin.clone(), format!("`{op:?}` does not apply to a {target} target and this value"));
+                }
+            }
+        }
+    }
+
+    /// The walk of the loop expression `id`: the checks of its own form (when `first`), then the
+    /// tasks of its operands and its body, which run inside it (`break` and `continue` look the
+    /// loop up through `Ctx::enclosing_loop`).
+    fn looping(&mut self, w: &mut Walk, id: ExprId, first: bool, ctx: Ctx, next: &mut Vec<Task>) {
+        let Some(data) = self.ir.exprs.get(id.index()) else { return };
+        let (kind, ty, origin) = (&data.kind, &data.ty, data.origin.clone());
+        let inside = Ctx { conditional: true, enclosing_loop: Some(id), ..ctx };
+        let outside = w.bound.clone();
+        match kind {
+            Expr::While { cond, .. } => {
+                if first {
+                    self.carried(w, *cond, &ValueType::Bool, "the condition of a `while`");
+                    self.own(w, &origin, ty, &ValueType::Unit);
+                }
+                next.push(Task::Expr(*cond, ctx));
+            }
+            Expr::ForRange { local, low, high, .. } => {
+                if first {
+                    self.own(w, &origin, ty, &ValueType::Unit);
+                    if let (Some(l), Some(h)) = (self.ty(*low), self.ty(*high)) {
+                        if l != h || !l.is_integer() {
+                            self.wrong(w, origin.clone(), format!("the bounds of a `for` range must have one integer type, found {l} and {h}"));
+                        } else if w.owner.locals.get(*local as usize) != Some(l) {
+                            self.wrong(w, origin.clone(), format!("the variable of a `for` range must be a local of type {l}"));
+                        }
+                    }
+                }
+                next.extend([Task::Expr(*low, ctx), Task::Expr(*high, ctx), Task::Bind(*local)]);
+            }
+            _ => {}
+        }
+        next.extend(kind.statements().iter().map(|&s| Task::Stmt(s, inside, false)));
+        // The body's `let`s, and a range's variable, end with the loop.
+        next.push(Task::Restore(outside));
+    }
+
+    /// A `break` (`is_break`, with `value` when it carries one) or a `continue` at `origin`: it
+    /// must sit in a loop, and a `break` value only out of a `loop`, of the type the loop gives.
+    fn leave_loop(&mut self, w: &Walk, origin: &Origin, ctx: Ctx, value: Option<ExprId>, is_break: bool) {
+        let word = if is_break { "break" } else { "continue" };
+        let Some(enclosing) = ctx.enclosing_loop else {
+            self.wrong(w, origin.clone(), format!("`{word}` outside a loop"));
+            return;
+        };
+        if !is_break {
+            return;
+        }
+        let loop_ty = self.ty(enclosing).cloned();
+        match (self.ir.exprs.get(enclosing.index()).map(|d| &d.kind), value, loop_ty) {
+            (Some(Expr::Loop { .. }), Some(v), Some(ty)) => self.want(w, v, &ty, "the value of a `break`"),
+            (Some(Expr::Loop { .. }), None, Some(ty)) if ty != ValueType::Unit => {
+                self.wrong(w, origin.clone(), format!("`break` without a value out of a `loop` of type {ty}"));
+            }
+            (Some(Expr::Loop { .. }), ..) => {}
+            (_, Some(_), _) => self.wrong(w, origin.clone(), "`break` with a value out of a loop that is not `loop`".to_string()),
+            _ => {}
+        }
     }
 
     /// The recorded type `got` of a digital form must be `want`, the type its form gives its
@@ -1957,6 +2196,6 @@ impl Walk {
 
 impl Ctx {
     fn top() -> Self {
-        Ctx { conditional: false, closure: false }
+        Ctx { conditional: false, closure: false, enclosing_loop: None }
     }
 }

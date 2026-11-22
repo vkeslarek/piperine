@@ -1,0 +1,70 @@
+[package]
+name = "integrated"
+version = "0.1.0"
+description = "Six small mixed-signal designs, one run each, driven by a Rust host (tests/integrated/main.rs)"
+
+# The runs are added one scenario at a time, each with its own top in src/<run>.msl.
+
+# A 100 kHz square into a 1 us RC, watched by a comparator: four rises and four falls in 42 us.
+[run.threshold]
+top = "Threshold"
+analysis = "transient"
+stop = 42e-6
+max_step = 1e-8
+print_step = 1e-7
+print = ["Threshold.cap", "Threshold.rises", "Threshold.falls"]
+streams = ["edges"]
+
+# A source the host steps, a switch that tracks it while a 1 MHz clock is high, a 1 nF hold node and an
+# 8-bit ADC that samples it at each falling edge: 50 samples in 51 us.
+[run.sample_hold]
+top = "SampleHold"
+analysis = "transient"
+stop = 51e-6
+max_step = 1e-8
+print_step = 1e-8
+print = ["SampleHold.hold", "SampleHold.code", "SampleHold.done", "SampleHold.clk"]
+
+# A 100 MHz counter PWM (1 MHz, dead time of 2 counts) into a 10 us RC; the host drives the duty from 25 to
+# 60 at 30.3 us. One row per clock period, and the `Never` monitor's records.
+[run.pwm_filter]
+top = "PwmFilter"
+analysis = "transient"
+stop = 60e-6
+max_step = 1e-8
+print_step = 1e-8
+print = ["PwmFilter.hs", "PwmFilter.ls", "PwmFilter.filtered"]
+streams = ["checks"]
+
+# A 10 MHz sequencer over a capacitor and two switches; the host raises `en` and steps the source to 2 V and
+# back. 220 clock periods, a row every 100 ns.
+[run.state_machine]
+top = "StateMachine"
+analysis = "transient"
+stop = 22e-6
+max_step = 1e-8
+print_step = 1e-7
+print = ["StateMachine.cap", "StateMachine.phase", "StateMachine.fault", "StateMachine.charge", "StateMachine.dump", "StateMachine.en", "StateMachine.ov"]
+streams = ["phase", "trips"]
+
+# The closed loop: PWM, 10 us RC, 8-bit ADC at each wrap, a Q6 PI in a reaction; 100 samples in 100 us, a
+# row every 10 ns. `loop` records the controller's decisions, `checks` the monitors and `regulated`.
+[run.pi_loop]
+top = "PiLoop"
+analysis = "transient"
+stop = 100e-6
+max_step = 1e-8
+print_step = 1e-8
+print = ["PiLoop.code", "PiLoop.duty", "PiLoop.filtered"]
+streams = ["loop", "checks"]
+
+# A half-bridge two levels deep (HalfBridge, Leg, GateDriver): 1 us commands behind 50 ns drivers into a 1 us RL
+# load, the host ramping the supply from 0.5 to 1 V; `checks` holds the interlock's `Never` records.
+[run.half_bridge]
+top = "HalfBridge"
+analysis = "transient"
+stop = 12e-6
+max_step = 1e-8
+print_step = 1e-8
+print = ["HalfBridge.coil", "HalfBridge.hi", "HalfBridge.lo", "HalfBridge.leg.hs", "HalfBridge.leg.ls", "HalfBridge.leg.high_driver.armed"]
+streams = ["checks"]

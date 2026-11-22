@@ -146,7 +146,7 @@ impl Lab {
         let at = Origin { file: "flag.msl".into(), line: 1, col: 1 };
         let port = |name: &str| BodyNode { name: name.into(), nature: el, role: NodeRole::Port, init: None, origin: at.clone() };
         let param = |name: &str, ty, default| Param { name: name.into(), ty, default: Some(default), check: None, structural: false, origin: at.clone() };
-        let local = |name: &str| Local { name: name.into(), ty: ValueType::F64 };
+        let local = |name: &str| Local { name: name.into(), ty: ValueType::F64, mutable: false };
         let body = b.body(BodySpec {
             name: "Flag".into(),
             origin: at.clone(),

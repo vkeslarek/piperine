@@ -6,10 +6,13 @@
 
 /// Counts per switching period: 200 MHz / 400 = 500 kHz (SPEC §5.1).
 pub const N_PERIOD: u9 = 400;
+
 /// Dead time at each edge, in counts: 4 × 5 ns = 20 ns (SPEC §5.3).
 pub const DEAD_COUNTS: u9 = 4;
+
 /// Largest duty word: 90 % of 3200 duty LSBs (SPEC §5.2).
 pub const DUTY_MAX: u12 = 2880;
+
 /// The count at which the ADC samples: the start of the period (SPEC §4.1, §9).
 pub const SAMPLE_COUNT: u9 = 0;
 
@@ -17,8 +20,10 @@ pub const SAMPLE_COUNT: u9 = 0;
 
 /// ADC codes of 0.8 V at the output: 0.8 V / 6.25 mV (SPEC §4.1).
 pub const REF_BASE: u10 = 128;
+
 /// Largest setpoint code: 0.8 V + 168 × 25 mV = 5.0 V (SPEC §7.1).
 pub const SETPOINT_MAX: u8 = 168;
+
 /// Setpoint after power-up: 0.8 V + 100 × 25 mV = 3.3 V (SPEC §7.1).
 pub const SETPOINT_RESET: u8 = 100;
 
@@ -26,29 +31,40 @@ pub const SETPOINT_RESET: u8 = 100;
 
 /// Kp = 4 in Q4.
 pub const KP_Q4: i32 = 64;
+
 /// Ki = 0.5 in Q4.
 pub const KI_Q4: i32 = 8;
+
 /// Kd = 64 in Q4.
 pub const KD_Q4: i32 = 1024;
+
 /// The derivative pole a = 2^-2 is a right shift by this much.
 pub const D_POLE_SHIFT: i32 = 2;
+
 /// The Q format of the gains and the three terms.
 pub const Q_SHIFT: i32 = 4;
+
 /// Error saturation, in codes: ±1.6 V at the output (SPEC §6.3).
 pub const E_MIN: i16 = -256;
+
 pub const E_MAX: i16 = 255;
 
 // ---- Supervisor (SPEC §8) ----
 
 /// Consecutive current-limited periods that make a hard overcurrent (SPEC §8.2).
 pub const OC_PERIODS: u4 = 8;
+
 /// Consecutive samples above the OVP threshold (SPEC §8.4).
 pub const OV_SAMPLES: u2 = 2;
+
 /// The OVP floor above 112.5 % of the reference: 16 codes = 100 mV (SPEC §8.4).
 pub const OV_FLOOR: u10 = 16;
+
 /// Hiccup off time: 1000 samples = 2 ms (SPEC §8.5).
 pub const HICCUP_SAMPLES: u11 = 1000;
+
 /// Power-good assert delay: 64 samples = 128 µs (SPEC §8.6).
 pub const PG_ASSERT: u7 = 64;
+
 /// Power-good deassert deglitch: 4 samples = 8 µs (SPEC §8.6).
 pub const PG_DEASSERT: u3 = 4;

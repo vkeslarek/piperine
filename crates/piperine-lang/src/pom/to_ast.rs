@@ -151,15 +151,11 @@ impl<'d> Rebuild<'d> {
             TypeKind::Array { elem, len } => {
                 ast::TypeKind::Array { elem: Box::new(self.ty(*elem)), len: Box::new(self.expr(*len)) }
             }
-            TypeKind::Slice(inner) => ast::TypeKind::Slice(Box::new(self.ty(*inner))),
             TypeKind::Tuple(items) => ast::TypeKind::Tuple(items.iter().map(|t| self.ty(*t)).collect()),
             TypeKind::FnPtr { params, ret } => ast::TypeKind::FnPtr {
                 params: params.iter().map(|t| self.ty(*t)).collect(),
                 ret: ret.map(|r| Box::new(self.ty(r))),
             },
-            TypeKind::Ref { static_lifetime, inner } => {
-                ast::TypeKind::Ref { static_lifetime: *static_lifetime, inner: Box::new(self.ty(*inner)) }
-            }
             TypeKind::Flip(inner) => ast::TypeKind::Flip(Box::new(self.ty(*inner))),
             TypeKind::Infer => ast::TypeKind::Infer,
         };
@@ -174,12 +170,7 @@ impl<'d> Rebuild<'d> {
         let kind = match &node.kind {
             PatKind::Wild => ast::PatKind::Wild,
             PatKind::Rest => ast::PatKind::Rest,
-            PatKind::Ident { by_ref, mutable, name, sub, .. } => ast::PatKind::Ident {
-                by_ref: *by_ref,
-                mutable: *mutable,
-                name: ident(name),
-                sub: sub.map(|s| Box::new(self.pat(s))),
-            },
+            PatKind::Ident { name, sub, .. } => ast::PatKind::Ident { name: ident(name), sub: sub.map(|s| Box::new(self.pat(s))) },
             PatKind::Lit(e) => ast::PatKind::Lit(Box::new(self.expr(*e))),
             PatKind::Path(p) => ast::PatKind::Path(self.path(*p)),
             PatKind::Tuple(items) => ast::PatKind::Tuple(pats(items)),
@@ -197,8 +188,7 @@ impl<'d> Rebuild<'d> {
                 hi: hi.map(|e| Box::new(self.expr(e))),
                 inclusive: *inclusive,
             },
-            PatKind::Ref(inner) => ast::PatKind::Ref(Box::new(self.pat(*inner))),
-            PatKind::Slice(items) => ast::PatKind::Slice(pats(items)),
+            PatKind::Array(items) => ast::PatKind::Array(pats(items)),
         };
         ast::Pat { kind, span: loc(node.span) }
     }
@@ -290,8 +280,7 @@ impl<'d> Rebuild<'d> {
             ExprKind::Break(v) => ast::ExprKind::Break(self.opt_boxed(*v)),
             ExprKind::Continue => ast::ExprKind::Continue,
             ExprKind::Return(v) => ast::ExprKind::Return(self.opt_boxed(*v)),
-            ExprKind::Closure { is_move, params, ret, body } => ast::ExprKind::Closure {
-                is_move: *is_move,
+            ExprKind::Closure { params, ret, body } => ast::ExprKind::Closure {
                 params: params.iter().map(|p| self.closure_param(p)).collect(),
                 ret: ret.map(|t| self.ty(t)),
                 body: self.boxed(*body),

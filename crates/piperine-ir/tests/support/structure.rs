@@ -128,7 +128,7 @@ impl Switching {
 
     /// The two `f64` locals `new` and `old` that `halving_limit` closes over.
     pub fn limit_locals() -> Vec<Local> {
-        ["new", "old"].iter().map(|name| Local { name: (*name).into(), ty: ValueType::F64 }).collect()
+        ["new", "old"].iter().map(|name| Local { name: (*name).into(), ty: ValueType::F64, mutable: false }).collect()
     }
 
     /// `limit(v(a, gnd), |new, old| old + (new - old) * 0.5)` as site 0, over the locals of

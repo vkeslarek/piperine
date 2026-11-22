@@ -70,14 +70,14 @@ fn startup_ends_with_the_reference_at_128() {
     assert_eq!(reference.last(), Some(&"128"), "{header:?} {:?}", rows.last());
     let vout: f64 = column(&header, &rows, "Startup.buck.vout").last().expect("a row").parse().expect("a number");
     assert!((vout - 0.8).abs() <= 10e-3, "vout at the end: {vout}");
-    // the supervisor ended in `Regulate` (mode 2, after `Off` 0 and `SoftStart` 1, SPEC §8)
-    assert_eq!(column(&header, &rows, "Startup.mode").last(), Some(&"2"));
+    // the supervisor ended in `Regulate` (after `Off` and `SoftStart`, SPEC §8), printed by its name
+    assert_eq!(column(&header, &rows, "Startup.mode").last(), Some(&"Regulate"));
 }
 
 #[test]
 fn startup_ends_within_3_mv_of_0_8_volts() {
-    // Book claims held here: mixed~fef5c97a, cli~3d1453da, cli~586d4401
-    // Book chapter 16, "an output within 3 mV of 0.8 V (0.8026)" in the last row of `startup`, and chapter 8,
+    // Book claims held here: mixed~e5a35079, cli~3d1453da, cli~57d761cd
+    // Book chapter 15, "an output within 3 mV of 0.8 V (0.8025)" in the last row of `startup`, and chapter 10,
     // "regulates at 0.8 V within 3 mV": the end of the start is tighter than the 10 mV of SPEC section 2 that
     // `startup_ends_with_the_reference_at_128` holds. The run is the shared one of this target
     let (header, rows) = table(startup());
@@ -138,13 +138,13 @@ fn the_buck_runs_print_at_most_16_lines() {
 
 #[test]
 fn idle_keeps_the_mode_off() {
-    // CLI-08 AC 4: with `en` low the supervisor stays `Off`, 0 in every row (SPEC §8)
+    // CLI-08 AC 4: with `en` low the supervisor stays `Off`, printed by its name in every row (SPEC §8; CV-22)
     let out = run("idle");
     assert_eq!(out.lines().next(), Some("run idle: transient, top Idle, backend rust"));
     let (header, rows) = table(&out);
     assert!(!rows.is_empty());
     let mode = column(&header, &rows, "Idle.mode");
-    assert!(mode.iter().all(|m| *m == "0"), "a row where the mode is not 0: {:?}", mode.iter().find(|m| **m != "0"));
+    assert!(mode.iter().all(|m| *m == "Off"), "a row where the mode is not Off: {:?}", mode.iter().find(|m| **m != "Off"));
 }
 
 #[test]

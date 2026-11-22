@@ -41,7 +41,7 @@ impl Transpiler {
         let flags = Rustc::FLAGS.join(" ");
         // parts: source, runtime, compiler text, flags, then the ABI files; the ABI library's
         // own key leaves out the first two.
-        let runtime = Runtime::files(self.digital());
+        let runtime = Runtime::files(self.digital() || self.loops());
         let mut abi_parts: Vec<&[u8]> = vec![rustc.version_text().as_bytes(), flags.as_bytes()];
         for (name, text) in AbiSource::FILES {
             abi_parts.push(name.as_bytes());

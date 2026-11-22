@@ -350,6 +350,252 @@ fn the_root_manifest_names_its_test_targets() {
     assert!(RootManifest::test_paths("[dependencies]\nx = { path = \"a/b\" }\n").is_empty());
 }
 
+// ─── Targets excluded from the default run (`test = false`, MD-77) ───────────
+
+/// A manifest read for its on-demand targets: the `[[test]]` tables that carry `test = false`.
+struct OnDemandManifest;
+
+impl OnDemandManifest {
+    /// The `name` of every `[[test]]` table of manifest `text` that sets `test = false`, in order. A
+    /// `test = false` under any other table (`[lib]`, `[[bin]]`) is not a test target.
+    fn targets(text: &str) -> Vec<String> {
+        let mut targets = Vec::new();
+        let mut in_test_table = false;
+        let mut name = String::new();
+        let mut flagged = false;
+        for line in text.lines().map(Self::without_comment) {
+            if line.starts_with('[') {
+                if in_test_table && flagged {
+                    targets.push(name.clone());
+                }
+                in_test_table = line == "[[test]]";
+                name.clear();
+                flagged = false;
+            } else if in_test_table {
+                let compact: String = line.split_whitespace().collect();
+                if let Some(value) = compact.strip_prefix("name=") {
+                    name = value.trim_matches('"').to_string();
+                } else if compact == "test=false" {
+                    flagged = true;
+                }
+            }
+        }
+        if in_test_table && flagged {
+            targets.push(name);
+        }
+        targets
+    }
+
+    /// The `line` with its TOML `#` comment cut off and the ends trimmed (`test = false # slow` and
+    /// `[[test]] # x` are legal TOML: cargo reads them as the bare key and header).
+    fn without_comment(line: &str) -> &str {
+        line.split('#').next().unwrap_or("").trim()
+    }
+
+    /// Every on-demand target of the repository's manifests as `(crate directory, target)`; the root
+    /// package's directory is `.`.
+    fn declared() -> Vec<(String, String)> {
+        let root = repo_root();
+        let mut manifests = vec![(".".to_string(), root.join("Cargo.toml"))];
+        let mut crate_dirs: Vec<_> = fs::read_dir(root.join("crates"))
+            .expect("the crates directory is readable")
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .collect();
+        crate_dirs.sort();
+        for dir in crate_dirs {
+            manifests.push((format!("crates/{dir}"), root.join("crates").join(&dir).join("Cargo.toml")));
+        }
+        let mut declared = Vec::new();
+        for (dir, manifest) in manifests {
+            if let Ok(text) = fs::read_to_string(manifest) {
+                declared.extend(Self::targets(&text).into_iter().map(|target| (dir.clone(), target)));
+            }
+        }
+        declared
+    }
+}
+
+/// The targets a manifest excludes from `cargo test`, each with the reason it still exists: crate
+/// directory, target name, why. `test = false` is a way to say "by name only", never a way to
+/// switch a test off, so every flagged target is named here and in `examples/buck/README.md`'s
+/// "On demand" block (`on_demand_targets_are_registered`).
+const ON_DEMAND_TARGETS: [(&str, &str, &str); 12] = [
+    ("crates/piperine-parity", "buck_whole", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-77)"),
+    ("crates/piperine-parity", "buck_dpwm", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-77)"),
+    ("crates/piperine-parity", "buck_control", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-77)"),
+    ("crates/piperine-parity", "buck_boundary", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-77)"),
+    ("crates/piperine-parity", "buck_power", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-77)"),
+    ("crates/piperine-parity", "buck_supervisor", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-77)"),
+    ("crates/piperine-parity", "buck_closed_loop", "simulates the `examples/buck` blocks or the whole converter; run by name (MD-77)"),
+    ("crates/piperine-api", "buck_long", "the 600 us start of `examples/buck` through the host library; run by name (MD-77)"),
+    ("crates/piperine-cli", "buck", "the binary on `examples/buck`'s `idle` and `startup` runs; run by name (MD-77)"),
+    (".", "buck_scenarios", "SPEC S2 to S10 of `examples/buck` under a Rust host; run by name (MD-77)"),
+    (".", "book_buck", "the 2 us run of the Book's `cli#44` buck bench, which compiles the whole converter; run by name (MD-77)"),
+    ("crates/piperine-cli", "book_buck", "the Book's buck listing held to `piperine run startup`, the 600 us start; run by name (MD-77)"),
+];
+
+/// The registry and the README's "On demand" block, read against a set of declared targets.
+struct OnDemandRegistry<'a> {
+    /// The registry's entries: crate directory, target, why.
+    entries: &'a [(&'a str, &'a str, &'a str)],
+}
+
+impl OnDemandRegistry<'_> {
+    /// Every declared flagged target that no entry registers, named by crate and target.
+    fn unregistered(&self, declared: &[(String, String)]) -> Vec<String> {
+        declared
+            .iter()
+            .filter(|(dir, target)| !self.entries.iter().any(|(d, t, _)| d == dir && t == target))
+            .map(|(dir, target)| format!("{dir}: target `{target}` has `test = false` but is not in `ON_DEMAND_TARGETS`"))
+            .collect()
+    }
+
+    /// Every entry whose target is missing from the declared set (gone, or not flagged).
+    fn stale(&self, declared: &[(String, String)]) -> Vec<String> {
+        self.entries
+            .iter()
+            .filter(|(dir, target, _)| !declared.iter().any(|(d, t)| d == dir && t == target))
+            .map(|(dir, target, _)| format!("{dir}: registered target `{target}` is missing or has no `test = false`"))
+            .collect()
+    }
+
+    /// Every entry whose `--test <name>` the block of `readme` does not hold on a line that also
+    /// carries the entry's `-p <package>` (both as whole words: `--test buck` is not `--test
+    /// buck_whole`, and one crate's `book_buck` line is not the other's).
+    fn undocumented(&self, readme: &str) -> Vec<String> {
+        let block = Self::on_demand_block(readme);
+        self.entries
+            .iter()
+            .filter(|(dir, target, _)| !block.lines().any(|line| Self::names_target(line, Self::package_of(dir), target)))
+            .map(|(dir, target, _)| {
+                format!("{dir}: target `{target}` is not named as `-p {} --test {target}` on one line of the README's \"On demand\" block", Self::package_of(dir))
+            })
+            .collect()
+    }
+
+    /// The package name of a crate directory: `crates/<name>` is `<name>`, the root `.` is `piperine`.
+    fn package_of(dir: &str) -> &str {
+        dir.strip_prefix("crates/").unwrap_or("piperine")
+    }
+
+    /// Whether `line` holds `-p <package>` and `--test <target>` as whole words.
+    fn names_target(line: &str, package: &str, target: &str) -> bool {
+        let words: Vec<&str> = line.split_whitespace().collect();
+        let pair = |flag: &str, value: &str| words.windows(2).any(|pair| pair[0] == flag && pair[1] == value);
+        pair("-p", package) && pair("--test", target)
+    }
+
+    /// The README text from its `## On demand` heading to the next `## ` heading (empty if absent).
+    fn on_demand_block(readme: &str) -> String {
+        let mut block = String::new();
+        let mut inside = false;
+        for line in readme.lines() {
+            if line.starts_with("## ") {
+                inside = line.trim() == "## On demand";
+            }
+            if inside {
+                block.push_str(line);
+                block.push('\n');
+            }
+        }
+        block
+    }
+}
+
+/// The reader finds exactly the `[[test]]` tables flagged `test = false`, whatever the key order,
+/// and ignores a `test = false` of `[lib]`.
+#[test]
+fn the_on_demand_reader_finds_test_false() {
+    let manifest = "[lib]\ntest = false\n\n[[test]]\nname = \"fast\"\npath = \"tests/fast.rs\"\n\n\
+                    [[test]]\ntest = false\nname = \"slow\"\npath = \"tests/slow.rs\"\n";
+    assert_eq!(OnDemandManifest::targets(manifest), vec!["slow".to_string()]);
+    let last = "[[test]]\nname = \"tail\"\ntest = false\n";
+    assert_eq!(OnDemandManifest::targets(last), vec!["tail".to_string()]);
+    assert!(OnDemandManifest::targets("[lib]\ntest = false\n").is_empty());
+    let commented = "[[test]] # on demand\nname = \"slow\" # the long one\ntest = false # slow\n";
+    assert_eq!(OnDemandManifest::targets(commented), vec!["slow".to_string()]);
+}
+
+/// Every flagged target of every manifest is registered; a planted flagged target missing from a
+/// planted registry is reported by crate and target.
+#[test]
+fn on_demand_targets_are_registered() {
+    let planted = [("crates/x", "slow", "why")];
+    let declared = vec![("crates/x".to_string(), "slow".to_string()), ("crates/y".to_string(), "hidden".to_string())];
+    let offences = OnDemandRegistry { entries: &planted }.unregistered(&declared);
+    assert_eq!(offences.len(), 1, "{offences:?}");
+    assert!(offences[0].contains("crates/y") && offences[0].contains("hidden"), "{offences:?}");
+
+    let offences = OnDemandRegistry { entries: &ON_DEMAND_TARGETS }.unregistered(&OnDemandManifest::declared());
+    assert!(offences.is_empty(), "targets switched off by `test = false` without a registry entry:\n  {}", offences.join("\n  "));
+}
+
+/// Every registry entry names a target that exists and is flagged; a planted stale entry is reported.
+#[test]
+fn the_on_demand_registry_names_only_on_demand_targets() {
+    let planted = [("crates/x", "gone", "why")];
+    let declared = vec![("crates/x".to_string(), "slow".to_string())];
+    let offences = OnDemandRegistry { entries: &planted }.stale(&declared);
+    assert_eq!(offences.len(), 1, "{offences:?}");
+    assert!(offences[0].contains("crates/x") && offences[0].contains("gone"), "{offences:?}");
+
+    let offences = OnDemandRegistry { entries: &ON_DEMAND_TARGETS }.stale(&OnDemandManifest::declared());
+    assert!(offences.is_empty(), "registry entries with no flagged target:\n  {}", offences.join("\n  "));
+}
+
+/// The registry holds exactly the twelve targets of `integrated-tests` D3: the ones that simulate
+/// `examples/buck`. A thirteenth entry is a decision, so it moves this set with it.
+#[test]
+fn the_on_demand_targets_are_the_buck_set() {
+    let mut registered: Vec<String> = ON_DEMAND_TARGETS.iter().map(|(dir, target, _)| format!("{dir}:{target}")).collect();
+    registered.sort();
+    let mut expected: Vec<String> = [
+        "crates/piperine-parity:buck_whole",
+        "crates/piperine-parity:buck_dpwm",
+        "crates/piperine-parity:buck_control",
+        "crates/piperine-parity:buck_boundary",
+        "crates/piperine-parity:buck_power",
+        "crates/piperine-parity:buck_supervisor",
+        "crates/piperine-parity:buck_closed_loop",
+        "crates/piperine-api:buck_long",
+        "crates/piperine-cli:buck",
+        "crates/piperine-cli:book_buck",
+        ".:buck_scenarios",
+        ".:book_buck",
+    ]
+    .iter()
+    .map(|entry| (*entry).to_string())
+    .collect();
+    expected.sort();
+    assert_eq!(registered, expected, "the on-demand set is the buck set of D3 (MD-77)");
+}
+
+/// The buck README's "On demand" block names each registered target as `--test <name>`; a planted
+/// block that omits one is reported by target.
+#[test]
+fn the_buck_readme_names_every_on_demand_target() {
+    let planted = [("crates/x", "slow", "why")];
+    let offences = OnDemandRegistry { entries: &planted }.undocumented("# t\n\n## On demand\n\ncargo test --test fast\n\n## Next\n--test slow\n");
+    assert_eq!(offences.len(), 1, "{offences:?}");
+    assert!(offences[0].contains("slow"), "{offences:?}");
+
+    let prefix = [("crates/x", "buck", "why")];
+    let offences = OnDemandRegistry { entries: &prefix }.undocumented("## On demand\n\ncargo test -p x --test buck_whole\n");
+    assert_eq!(offences.len(), 1, "a longer target name is not the prefix target: {offences:?}");
+    let whole = [("crates/x", "buck_whole", "why")];
+    let offences = OnDemandRegistry { entries: &whole }.undocumented("## On demand\n\ncargo test -p x --test buck --test buck_whole\n");
+    assert!(offences.is_empty(), "{offences:?}");
+    let twins = [("crates/a", "book_buck", "why"), ("crates/b", "book_buck", "why")];
+    let offences = OnDemandRegistry { entries: &twins }.undocumented("## On demand\n\ncargo test -p a --test book_buck\n");
+    assert_eq!(offences.len(), 1, "the other package's line is missing: {offences:?}");
+    assert!(offences[0].contains("-p b"), "{offences:?}");
+
+    let readme = fs::read_to_string(repo_root().join("examples/buck/README.md")).expect("the buck README is readable");
+    let offences = OnDemandRegistry { entries: &ON_DEMAND_TARGETS }.undocumented(&readme);
+    assert!(offences.is_empty(), "on-demand targets the buck README does not name:\n  {}", offences.join("\n  "));
+}
+
 // ─── 4a. LRM-COVERS declarations are well-formed (T6, lrm-conformance-wave2) ──
 
 /// Whether one `//! LRM-COVERS:` line is malformed: not the canonical
@@ -561,7 +807,7 @@ fn mod_rs_files() -> Vec<(String, usize, String)> {
 /// reason for the ones that remain.
 fn registered_oversized_mod_rs(path: &str) -> Option<&'static str> {
     Some(match path {
-        // Follow-up (ROADMAP.md): refactor these three into named modules after msl-stdlib merges.
+        // Follow-up (ROADMAP.md, `code-clarity`): refactor these three into named modules.
         "crates/piperine-lang/src/pom/resolve/mod.rs" => "name-resolution stages; split pending",
         "crates/piperine-lang/src/pom/reflect/mod.rs" => "POM reflection surface; split pending",
         "crates/piperine-lang/src/pom/lower/mod.rs" => "lowering driver; split pending",
@@ -803,4 +1049,133 @@ fn phdl_corpus_does_not_grow() {
             .collect::<Vec<_>>()
             .join("\n  ")
     );
+}
+
+// ---- value semantics: no source of the tree writes a removed form (VS-09) -------------------
+
+/// The forms the amended language removed (Appendix G.71), found in the text of an MSL source: `let mut`, a
+/// `&` or `*` that starts an operand, `Clone` or `Copy` in a derive, and a `'static` lifetime.
+struct RemovedForms;
+
+impl RemovedForms {
+    /// The characters after which an operator is a prefix operator: the start of an operand.
+    const OPERAND_START: [char; 6] = ['(', '[', ',', '=', '{', ':'];
+
+    /// The line without its `//` comment and without the text of its string literals.
+    fn code_of(line: &str) -> String {
+        let mut code = String::new();
+        let mut in_string = false;
+        let mut previous = ' ';
+        for c in line.chars() {
+            if !in_string && c == '/' && previous == '/' {
+                code.pop();
+                break;
+            }
+            if c == '"' && previous != '\\' {
+                in_string = !in_string;
+            } else if !in_string {
+                code.push(c);
+            }
+            previous = c;
+        }
+        code
+    }
+
+    /// Whether `code` has a `&` or a `*` where an operand starts (a borrow or a dereference, not the binary operator).
+    fn has_prefix_operator(code: &str) -> bool {
+        let chars: Vec<char> = code.chars().collect();
+        (0..chars.len()).any(|at| {
+            let c = chars[at];
+            if c != '&' && c != '*' {
+                return false;
+            }
+            let after = chars.get(at + 1).copied();
+            let glued = after == Some('=') || (c == '&' && (after == Some('&') || (at > 0 && chars[at - 1] == '&')));
+            let before: String = chars[..at].iter().collect::<String>().trim_end().to_string();
+            let starts = before.is_empty() || before.ends_with("->") || before.chars().last().is_some_and(|b| Self::OPERAND_START.contains(&b));
+            let operand = after.is_some_and(|a| a.is_alphanumeric() || matches!(a, '_' | '(' | '[' | '\''));
+            !glued && starts && operand
+        })
+    }
+
+    /// The removed forms a line of MSL writes, by name.
+    fn in_line(line: &str) -> Vec<&'static str> {
+        let code = Self::code_of(line);
+        let mut found = Vec::new();
+        if code.contains("let mut ") {
+            found.push("let mut");
+        }
+        if code.contains("derive(") && code.split(|c: char| !c.is_alphanumeric() && c != '_').any(|word| word == "Clone" || word == "Copy") {
+            found.push("Clone or Copy in a derive");
+        }
+        if code.contains("'static") {
+            found.push("'static");
+        }
+        if Self::has_prefix_operator(&code) {
+            found.push("a prefix `&` or `*`");
+        }
+        found
+    }
+
+    /// Every `.msl` file of `std/`, `examples/` and the `tests/` trees of the crates, recursively.
+    fn msl_files() -> Vec<PathBuf> {
+        let root = repo_root();
+        let mut files = Vec::new();
+        Self::collect(&root.join("examples"), &mut files);
+        if let Ok(crates) = fs::read_dir(root.join("crates")) {
+            for krate in crates.flatten() {
+                Self::collect(&krate.path().join("std"), &mut files);
+                Self::collect(&krate.path().join("tests"), &mut files);
+            }
+        }
+        files
+    }
+
+    /// Appends the `.msl` files under `dir` to `out`.
+    fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                Self::collect(&path, out);
+            } else if path.extension().is_some_and(|e| e == "msl") {
+                out.push(path);
+            }
+        }
+    }
+}
+
+#[test]
+fn no_msl_file_uses_a_removed_form() {
+    // VS-09 AC 1: the tree is written in the amended language, so the parser can refuse the earlier one.
+    let files = RemovedForms::msl_files();
+    assert!(files.len() > 40, "the walk found only {} `.msl` files: the layout moved and the guard is blind", files.len());
+    let mut offences = Vec::new();
+    for file in &files {
+        let text = fs::read_to_string(file).expect("an `.msl` file");
+        for (number, line) in text.lines().enumerate() {
+            for form in RemovedForms::in_line(line) {
+                offences.push(format!("{}:{}: {form}: {}", file.display(), number + 1, line.trim()));
+            }
+        }
+    }
+    assert!(offences.is_empty(), "removed forms in the tree:\n  {}", offences.join("\n  "));
+}
+
+#[test]
+fn the_removed_form_walk_fails_on_a_planted_line() {
+    // The detector finds each removed form and passes the neighbouring forms that stay (binary `&`, `&&`, `*`).
+    for (line, form) in [
+        ("fn f() { let mut x = 1.0; }", "let mut"),
+        ("#[derive(Repr, Clone, Copy)]", "Clone or Copy in a derive"),
+        ("fn f(s: &'static str) {}", "'static"),
+        ("let y = f(&x);", "a prefix `&` or `*`"),
+        ("let y = *x + 1;", "a prefix `&` or `*`"),
+        ("fn f(xs: &[f64]) -> f64 { 0.0 }", "a prefix `&` or `*`"),
+    ] {
+        assert!(RemovedForms::in_line(line).contains(&form), "`{line}` is not found as {form}");
+    }
+    for line in ["let y = a & -b;", "let y = a && !b;", "let y = a * (b);", "n &= 7; m *= 2;", "// let mut x = &y;", "let s = \"let mut &x\";", "#[derive(Repr, PartialEq)]"] {
+        assert!(RemovedForms::in_line(line).is_empty(), "`{line}` writes no removed form: {:?}", RemovedForms::in_line(line));
+    }
 }

@@ -5,10 +5,10 @@ use std::collections::BTreeMap;
 
 use crate::real::Real;
 use crate::deps::DepsMemo;
-use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
-use crate::model::{NodeAlias, 
+use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
+use crate::model::{AggregateData, NodeAlias, 
     BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, Derivative, Drive, Event, Expr, ExprData, FunctionData, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
-    Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, Terminal, ValueType,
+    Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, Terminal, TypeData, ValueType,
 };
 
 /// The parts of a body, in the order a handle lists them.
@@ -122,6 +122,10 @@ pub struct IrBuilder {
     nets: Vec<NetData>,
     /// The paths of the merged nodes, set when `finish` applies the merges.
     aliases: Vec<NodeAlias>,
+    /// The source structs and enums, by `TypeId`.
+    types: Vec<TypeData>,
+    /// The composite constants, by `AggregateId`.
+    aggregates: Vec<AggregateData>,
     /// The merges `merge_nodes` asked for, applied by `finish`.
     union: NodeUnion,
 }
@@ -129,6 +133,23 @@ pub struct IrBuilder {
 impl IrBuilder {
     pub fn new() -> Self {
         IrBuilder::default()
+    }
+
+    /// Adds a source struct or enum to the type arena; `ValueType::Struct`/`Enum` name it by the id.
+    pub fn type_data(&mut self, data: TypeData) -> TypeId {
+        self.types.push(data);
+        TypeId((self.types.len() - 1) as u32)
+    }
+
+    /// The composite constant `id` names, as added.
+    pub fn aggregate_at(&self, id: AggregateId) -> &AggregateData {
+        &self.aggregates[id.index()]
+    }
+
+    /// Adds a composite constant; `Constant::Aggregate` names it by the id.
+    pub fn aggregate(&mut self, data: AggregateData) -> AggregateId {
+        self.aggregates.push(data);
+        AggregateId((self.aggregates.len() - 1) as u32)
     }
 
     pub fn nature(&mut self, name: &str, potential: Quantity, flow: Option<Quantity>) -> NatureId {
@@ -461,6 +482,8 @@ impl IrBuilder {
             top,
             nets: self.nets,
             aliases: self.aliases,
+            types: self.types,
+            aggregates: self.aggregates,
         }
     }
 }

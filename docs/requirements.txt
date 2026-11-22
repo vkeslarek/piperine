@@ -1,0 +1,6 @@
+# The documentation build (docs.yml): MkDocs, its plugins and the PDF renderer.
+mkdocs==1.6.1
+mkdocs-material==9.8.2
+mkdocs-macros-plugin==1.5.0
+mkdocs-with-pdf==0.9.3
+weasyprint==70.0

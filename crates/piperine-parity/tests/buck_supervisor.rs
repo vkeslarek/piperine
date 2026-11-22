@@ -139,7 +139,9 @@ impl Reference {
                         // is latched on entry
                         self.mode = HICCUP;
                         self.fault = f;
-                        self.hiccup_left = 1000;
+                        // SPEC §8.5: 1000 samples of `Hiccup` counting the entry's own, so 999 are
+                        // left to count
+                        self.hiccup_left = 999;
                     } else if was == SOFT_START && i.at_target {
                         // the state table: `Regulate` when the ramp reaches the target; §8.5: the
                         // fault code is cleared when a start reaches `Regulate`
@@ -292,4 +294,24 @@ fn power_good_asserts_after_64_and_drops_after_4() {
     for s in 0..SAMPLES as usize {
         assert_eq!(at(s), expected[s].pgood, "pgood at sample {s}");
     }
+}
+
+#[test]
+fn each_hiccup_lasts_1000_samples() {
+    // BS-09 AC 1, SPEC §8.5: `Hiccup` lasts 1000 samples (2 ms at 500 kHz), so the retry's
+    // `SoftStart` shows at the 1000th sample after the entry. The count is taken from the
+    // supervisor's own observed run against SPEC's number, not against `Reference`, which
+    // carried the same off-by-one as the model (a hiccup of 1001 samples) and so could not
+    // see it.
+    let (_, seen) = run();
+    let shown = observed(&seen);
+    let entries: Vec<usize> = (1..shown.len()).filter(|&s| shown[s].mode == HICCUP && shown[s - 1].mode != HICCUP).collect();
+    assert_eq!(entries.len(), 2, "the script enters `Hiccup` twice");
+    // a hiccup ends in `SoftStart`, or is cut short by a brown-out into `Off` (the second one is,
+    // at sample 1500); only the first reaches its retry
+    let lengths: Vec<usize> = entries
+        .iter()
+        .filter_map(|&entry| shown[entry..].iter().position(|s| s.mode != HICCUP).filter(|&length| shown[entry + length].mode == SOFT_START))
+        .collect();
+    assert_eq!(lengths, vec![1000], "samples from each entry into `Hiccup` to the retry's `SoftStart`");
 }

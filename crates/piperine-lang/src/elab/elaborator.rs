@@ -8,8 +8,11 @@ use piperine_ir::{BodyId, Ir, IrBuilder, NatureId, ValueType};
 use super::body::{ModulePlan, ParamPlan};
 use super::carriers::{Frame, Structure};
 use super::consts::{Bindings, ConstEval};
+use super::exits::Divergences;
 use super::origin::Locator;
+use super::signal_flow::SignalFlowCheck;
 use super::structural::{BodyKey, BodyVariants, KeyParams, Overrides};
+use super::unroll::CallCycles;
 use super::variants::Variants;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, Design, DesignDiagnostic, FileId};
@@ -26,11 +29,12 @@ impl<'d> Elaborator<'d> {
         Elaborator { design }
     }
 
-    /// Elaborate `top`, a module of the root crate whose ports, if any, are discrete.
+    /// Elaborate `top`, a module of the root crate.
     ///
     /// The front-end and type-check diagnostics come back unchanged; an unknown top is one
-    /// diagnostic naming it, and so is a top with a continuous port (a node of a top has nothing
-    /// to connect to). A discrete port of the top is a net the host drives (§5.2.3).
+    /// diagnostic naming it, and so is a top with a value input (`E0811`). A discrete port of the
+    /// top is a net the host drives (§5.2.3), and a node port is driven by the host source the IR
+    /// gains for it (§8.1.14, `host_sources.rs`).
     pub fn run(self, top: &str) -> Result<Ir, Vec<DesignDiagnostic>> {
         self.run_with(top, &Overrides::none())
     }
@@ -87,6 +91,19 @@ pub(super) struct Elaboration<'d, 't> {
     /// The ammeter branch of each port whose `inflow()` the body being lowered reads (`inflow.rs`).
     pub(super) ammeters: BTreeMap<crate::pom::DeclId, u32>,
     pub(super) reach_frames: BTreeMap<(usize, crate::pom::ExprId), usize>,
+    /// The diverging expressions lowered so far (`exits.rs`).
+    pub(super) divergences: Divergences,
+    /// How many placements of a module an unrolled loop has hoisted so far, by the frame that
+    /// places them (`unroll.rs`).
+    pub(super) unrolled_names: BTreeMap<(usize, DeclId), u32>,
+    /// The placements inside a loop, by module (`unroll.rs`).
+    pub(super) looped: BTreeMap<DeclId, std::collections::BTreeSet<crate::pom::ExprId>>,
+    /// The functions on a call cycle (`unroll.rs`).
+    pub(super) cycles: CallCycles,
+    /// The templates the params of module type hold (`templates.rs`).
+    pub(super) templates: super::templates::Templates,
+    /// The IR type each reached struct and enum has (`types.rs`).
+    pub(super) type_arena: super::types::TypeArena,
     pub(super) diagnostics: Vec<DesignDiagnostic>,
 }
 
@@ -116,18 +133,26 @@ impl<'d, 't> Elaboration<'d, 't> {
             body_keys: Bindings::new(),
             ammeters: BTreeMap::new(),
             reach_frames: BTreeMap::new(),
+            divergences: Divergences::default(),
+            unrolled_names: BTreeMap::new(),
+            looped: BTreeMap::new(),
+            cycles: CallCycles::default(),
+            templates: super::templates::Templates::default(),
+            type_arena: super::types::TypeArena::default(),
             diagnostics: Vec::new(),
         }
     }
 
     fn run(mut self, top: DeclId) -> Result<Ir, Vec<DesignDiagnostic>> {
-        if self.top_has_a_port(top) {
+        if self.refuse_value_inputs(top) {
             return Err(self.diagnostics);
         }
         // A module with a result or a value input gets no body: it is hoisted into each body that
         // places it. Its natures are still the IR's before any body.
         let reached: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(&self.design.decl_data(*d).kind, DeclKind::Module(_))).collect();
         let modules: Vec<DeclId> = reached.iter().copied().filter(|d| !self.is_hoisted(*d)).collect();
+        self.read_included_files();
+        self.build_type_arena();
         self.plan_params(&modules);
         self.classify_key_params(&modules);
         // An unkeyed module keeps the id of its place in first-reach order; a keyed module's
@@ -148,6 +173,10 @@ impl<'d, 't> Elaboration<'d, 't> {
         match top_instance {
             Some(instance) if self.diagnostics.is_empty() => {
                 let ir = self.ir.finish(instance);
+                self.diagnostics.extend(Self::signal_flow_diagnostics(self.design, top, &ir));
+                if !self.diagnostics.is_empty() {
+                    return Err(self.diagnostics);
+                }
                 Self::well_formed(self.design, top, ir)
             }
             _ => Err(self.diagnostics),
@@ -173,22 +202,28 @@ impl<'d, 't> Elaboration<'d, 't> {
             .collect())
     }
 
-    /// `P0001` and `true` when the top has a continuous port: a node or a value input. A discrete
-    /// port is a net of the top (DIG-09 AC 5).
-    fn top_has_a_port(&mut self, top: DeclId) -> bool {
-        let data = self.design.decl_data(top);
-        let continuous = data.children.iter().find(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Port(_)) && self.types.carrier(**c).is_none());
-        if let Some(port) = continuous {
-            let name = data.name.as_ref().map_or("", |n| n.text.as_str());
-            let port = self.design.decl_data(*port).name.as_ref().map_or("", |n| n.text.as_str());
-            let (file, span) = (data.file, data.name.as_ref().map_or(data.span, |n| n.span));
-            self.report(file, Diagnostic::new("P0001", format!("top module `{name}` has the continuous port `{port}`, which is not supported yet"), span, "a top module's ports are discrete carriers"));
-        }
-        continuous.is_some()
+    /// `E0242` for each signal-flow node of `ir` that does not have exactly one potential driver
+    /// (§6 rule 2), reported at the top module and naming the node and each driver.
+    fn signal_flow_diagnostics(design: &Design, top: DeclId, ir: &Ir) -> Vec<DesignDiagnostic> {
+        let data = design.decl_data(top);
+        let (file, span) = (data.file, data.name.as_ref().map_or(data.span, |n| n.span));
+        SignalFlowCheck::run(ir)
+            .into_iter()
+            .map(|fault| {
+                let drivers = if fault.drivers.is_empty() { "none".to_string() } else { fault.drivers.join(", ") };
+                let message = format!("the signal-flow node `{}` has {} potential driver(s), it takes exactly one (§6 rule 2); drivers: {drivers}", fault.node, fault.drivers.len());
+                DesignDiagnostic { file, diagnostic: Diagnostic::new("E0242", message, span, "a signal-flow node with the wrong number of potential drivers") }
+            })
+            .collect()
     }
 
+    /// Records `diagnostic`, once: a construct lowered in two halves (the `is` and the `val` of an `Option`)
+    /// reports the same refusal at the same place twice, which is one finding.
     pub(super) fn report(&mut self, file: FileId, diagnostic: Diagnostic) {
-        self.diagnostics.push(DesignDiagnostic { file, diagnostic });
+        let found = DesignDiagnostic { file, diagnostic };
+        if !self.diagnostics.contains(&found) {
+            self.diagnostics.push(found);
+        }
     }
 
     /// `P0001`: a construct inside the type-checked subset that M1 elaboration does not lower.

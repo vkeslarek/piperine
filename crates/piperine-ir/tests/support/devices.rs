@@ -286,7 +286,7 @@ impl Devices {
         let n = e.local(new);
         let tail = e.if_f64(new_neg, negative_branch, n);
         let body = e.if_f64(cond, junction, tail);
-        let local = |name: &str| Local { name: name.to_string(), ty: ValueType::F64 };
+        let local = |name: &str| Local { name: name.to_string(), ty: ValueType::F64, mutable: false };
         b.function(FunctionSpec {
             name: "pnjlim".into(),
             origin: Origin { file: "analog.msl".into(), line: 21, col: 1 },
@@ -464,7 +464,7 @@ impl Devices {
                 Addend { operator: Operator::Ddt, negated: false, value: charge },
             ],
         });
-        let local = |name: &str| Local { name: name.to_string(), ty: ValueType::F64 };
+        let local = |name: &str| Local { name: name.to_string(), ty: ValueType::F64, mutable: false };
         b.body(BodySpec {
             name: "Diode".into(),
             origin: Self::origin(31, 1),
@@ -505,7 +505,7 @@ impl Devices {
     /// five devices leave out.
     pub fn everything(b: &mut IrBuilder) -> BodyId {
         let el = Self::electrical(b);
-        let f64_local = |name: &str| Local { name: name.to_string(), ty: ValueType::F64 };
+        let f64_local = |name: &str| Local { name: name.to_string(), ty: ValueType::F64, mutable: false };
         // fn id(x: f64) -> f64 { x }
         let mut e = Ex::new(b, "all.msl", 2, 1);
         let x = e.local(0);

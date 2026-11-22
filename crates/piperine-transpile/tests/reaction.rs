@@ -10,6 +10,7 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use piperine_abi::caller::{CallError, Commit, Handle};
+use piperine_abi::device::{Access, cell_lens};
 use piperine_abi::raw::{Cell, List, Module, Statement, cell, commit_flag, status, statement_flag};
 use piperine_abi::raw::{ambient, part};
 use piperine_ir::{BinaryOp, BodyId, CarrierRole, Drive, Env, Event, EventSource, Expr, Ir, IrBuilder, LevelPart, MathFn, Origin, ValueType};
@@ -231,6 +232,26 @@ fn divide(b: &mut IrBuilder) -> BodyId {
     body
 }
 
+/// The `Settling` body (react.msl:50): a `settle` event gated by a guard (§13 rule 17).
+///
+/// ```text
+/// on settle && ready.high() { q <- true; }
+/// ```
+fn settling(b: &mut IrBuilder) -> BodyId {
+    let body = b.body(Buck::spec("Settling", F, 50));
+    for (name, role, col) in [("ready", CarrierRole::In, 20), ("q", CarrierRole::Out, 40)] {
+        b.carrier(body, Buck::carrier(name, ValueType::Bool, role, None, F, 50, col));
+    }
+    let mut x = Dx::new(b, F, 51, 20);
+    let ready = x.carrier(0, ValueType::Bool);
+    let guard = x.high(ready);
+    let settle = b.event(body, Event { source: EventSource::Settle, guard: Some(guard), origin: Buck::origin(F, 51, 8) });
+    let yes = Dx::new(b, F, 52, 9).boolean(true);
+    let commit = Dx::new(b, F, 52, 9).commit(1, yes, None);
+    Buck::reaction(b, body, vec![settle], vec![commit], vec![], F, 51);
+    body
+}
+
 /// The five bodies, compiled once for the binary: rustc is the cost of every test here.
 struct Design {
     compiled: Compiled,
@@ -242,7 +263,7 @@ fn design() -> &'static Mutex<Design> {
     static DESIGN: OnceLock<Mutex<Design>> = OnceLock::new();
     DESIGN.get_or_init(|| {
         let mut b = IrBuilder::new();
-        for make in [order, guarded, late, seven, divide, tables] {
+        for make in [order, guarded, late, seven, divide, tables, settling] {
             make(&mut b);
         }
         let ir = Arc::new(Alone::finish(b));
@@ -537,4 +558,43 @@ fn reactions_and_drives_read_the_environment_as_analog_code_does() {
         .unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(compiled.report().warnings, "", "the generated source compiles with no warning");
     assert!(Modules::module(&compiled, body).is_some(), "the body has a module");
+}
+
+/// Runs the event function `name` of `handle`, each cell it reads given by the name of its pin and
+/// its part (`CHANGED` is one `bool` byte, a carrier's `VALUE` its pin bytes); returns the
+/// `CHANGED` byte of the event pin it writes.
+fn run_event(handle: &Handle, name: &str, given: &[(&str, u32, Vec<u8>)]) -> u8 {
+    let shape = handle.shape();
+    let k = items(&shape.functions).iter().position(|f| f.name.as_str() == name).unwrap_or_else(|| panic!("no function `{name}`"));
+    let function = items(&shape.functions)[k];
+    let pins = items(&shape.pins);
+    let input: Vec<Vec<u8>> = items(&function.reads)
+        .iter()
+        .map(|c| {
+            let pin = pins[c.index as usize].name.as_str();
+            let (_, _, bytes) = given.iter().find(|(n, part, _)| *n == pin && *part == c.part).unwrap_or_else(|| panic!("the function reads `{pin}`: not given"));
+            bytes.clone()
+        })
+        .collect();
+    let reads: Vec<&[u8]> = input.iter().map(Vec::as_slice).collect();
+    let lens = cell_lens(shape, &function.writes, Access::FunctionWrite).expect("write lens");
+    let mut cells: Vec<Vec<u8>> = lens.iter().map(|len| vec![0u8; *len]).collect();
+    let mut writes: Vec<&mut [u8]> = cells.iter_mut().map(Vec::as_mut_slice).collect();
+    handle.eval(k as u32, &reads, &mut writes, &[], &mut []).unwrap_or_else(|e| panic!("{e}"));
+    cells[0][0]
+}
+
+#[test]
+fn a_settle_event_function_fires_on_the_settle_pin_and_its_guard() {
+    // §13 rule 17 and rule 1: the event of `settle && ready.high()` fires in a microstep exactly
+    // when the `SETTLE` pin fired (its `CHANGED` byte, abi.md §4) and the guard holds there
+    let handle = instance("Settling");
+    let fire = |settle: u8, ready_high: bool| {
+        let ready = known(&[u8::from(ready_high)]);
+        run_event(&handle, "event:0", &[("ready", part::VALUE, ready), ("settle", part::CHANGED, vec![settle])])
+    };
+    assert_eq!(fire(1, true), 1, "the settle phase, the guard holds");
+    assert_eq!(fire(1, false), 0, "the settle phase, the guard is false");
+    assert_eq!(fire(0, true), 0, "an ordinary microstep: SETTLE did not fire");
+    assert_eq!(fire(0, false), 0);
 }

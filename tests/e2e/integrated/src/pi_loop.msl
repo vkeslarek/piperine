@@ -1,0 +1,67 @@
+//! `pi_loop`: the plant of `pwm_filter` (a counter PWM into a 10 us RC) closed through an 8-bit ADC and a
+//! Q6 PI controller in a reaction. The ADC samples the filter at each wrap of the counter; the PI
+//! turns each code into the duty the counter latches at its next wrap. The target is 0.5 V (code 128).
+
+use crate::{Adc8, Capacitor, Clock, PwmCounter, Resistor, Vdc};
+
+/// A PI controller in Q6 integers, one step per `done` strobe of the ADC:
+///
+/// ```text
+/// e     = 128 - code
+/// u     = (48 * e + 5 * integ) >> 6
+/// duty  = clamp(u, 0, 100)
+/// integ = integ                    while saturated in the direction of the error
+///         clamp(integ + e, 0, 1280) otherwise
+/// ```
+///
+/// `Kp / (Kp + Ki)` = 48 / 53 cancels the plant's pole, so the loop settles in a few periods.
+pub module Pi(in done: Bit, in code: Bit<u8>, out duty: Bit<u8> = 0) {
+    /// The integral term, in codes.
+    signal integ: Bit<i32> = 0;
+}
+
+digital for Pi {
+    on done.rise() {
+        // an unknown code reads as full scale: the loop then asks for less, never more
+        let sampled = code.known_or(255);
+        let e = (128 as i16) - (sampled as i16);
+        let u = (48 * (e as i32) + 5 * integ) >> 6;
+        let windup = (u > 100 && e > 0) || (u < 0 && e < 0);
+        if !windup {
+            integ <- (integ + (e as i32)).clamp(0, 1280);
+        }
+        let decided = u.clamp(0, 100) as u8;
+        duty <- decided;
+        emit!("loop", code = sampled, err = e, duty = decided, integ = integ);
+    }
+}
+
+/// The closed loop: `Pwm` into the filter, the ADC on the filter node sampling at each wrap, the PI
+/// setting the duty.
+pub module PiLoop() {
+    signal clk: Bit;
+    signal hs: Bit;
+    signal ls: Bit;
+    signal wrap: Bit;
+    signal done: Bit;
+    signal code: Bit<u8>;
+    signal duty: Bit<u8>;
+    signal rail: Electrical;
+    signal drive: Electrical;
+    signal filtered: Electrical;
+    pub let source = Vdc(rail) { dc: 1.0 };
+    pub let osc = Clock(clk) { f: 100M };
+    pub let counter = PwmCounter(clk, duty, hs, ls, wrap);
+    pub let driver = D2A(hs, drive, rail) { rout: 100.0, tr: 20p };
+    pub let series = Resistor(drive, filtered) { r: 900.0 };
+    pub let storage = Capacitor(filtered, gnd) { c: 10n };
+    pub let converter = Adc8(filtered, wrap, code, done) { vref: 1.0, tconv: 200n, tstrobe: 50n };
+    pub let controller = Pi(done, code, duty);
+}
+
+digital for PiLoop {
+    /// After 50 us the output is within 50 mV of 0.5 V at every time point.
+    on settle && now() > 50u {
+        require("regulated", (v(filtered) - 0.5).abs() <= 50m);
+    }
+}

@@ -13,9 +13,11 @@ pub(crate) fn build<'a, I: In<'a>>(
 
     let wild = punct(Punct::Underscore).map_with(move |_, e| mk(PatKind::Wild, e.span()));
     let rest = punct(Punct::DotDot).map_with(move |_, e| mk(PatKind::Rest, e.span()));
-    let reference = punct(Punct::And)
-        .ignore_then(pat1.clone())
-        .map_with(move |p, e| mk(PatKind::Ref(Box::new(p)), e.span()));
+    // `&p`: removed (B.3.6); reported at the head, read as the pattern it borrows.
+    let reference = reference_head().then(pat1.clone()).validate(|(head, inner), _, emitter| {
+        emitter.emit(removed("references and borrows", head));
+        inner
+    });
 
     // `(p)` is p; `(p,)`, `(a, b)` and `()` are tuples.
     let tuple = pat
@@ -37,7 +39,7 @@ pub(crate) fn build<'a, I: In<'a>>(
         .allow_trailing()
         .collect::<Vec<_>>()
         .delimited_by(punct(Punct::LBracket), punct(Punct::RBracket))
-        .map_with(move |items, e| mk(PatKind::Slice(items), e.span()));
+        .map_with(move |items, e| mk(PatKind::Array(items), e.span()));
 
     // A range bound: an optionally negated literal, or a path.
     let neg_lit = punct(Punct::Minus).or_not().then(lit_expr()).map_with(|(neg, l), e| match neg {
@@ -70,10 +72,11 @@ pub(crate) fn build<'a, I: In<'a>>(
             ),
         });
 
-    // `ref x`, `mut x`, `ref mut x`, each with an optional `@ pat`.
+    // `ref x`, `mut x`, `ref mut x`: each marker is a reserved word (`E0903`), the name is read as plain.
     let binding_mods = kw(Kw::Ref)
+        .map_with(|_, e| (Kw::Ref, e.span()))
         .or_not()
-        .then(kw(Kw::Mut).or_not())
+        .then(kw(Kw::Mut).map_with(|_, e| (Kw::Mut, e.span())).or_not())
         .try_map(|(r, m), span| {
             if r.is_none() && m.is_none() {
                 Err(Rich::custom(span, Custom {
@@ -82,13 +85,16 @@ pub(crate) fn build<'a, I: In<'a>>(
                     help: None,
                 }))
             } else {
-                Ok((r.is_some(), m.is_some()))
+                Ok([r, m])
             }
         })
         .then(ident())
         .then(punct(Punct::At).ignore_then(pat1.clone()).or_not())
-        .map_with(move |(((by_ref, mutable), name), sub), e| {
-            mk(PatKind::Ident { by_ref, mutable, name, sub: sub.map(Box::new) }, e.span())
+        .validate(move |((markers, name), sub), e, emitter| {
+            for (word, span) in markers.into_iter().flatten() {
+                emitter.emit(ReservedMarker::report(word, span));
+            }
+            mk(PatKind::Ident { name, sub: sub.map(Box::new) }, e.span())
         });
 
     // A path: a binding (single segment), a unit/const path, a tuple struct,
@@ -147,11 +153,11 @@ pub(crate) fn build<'a, I: In<'a>>(
             }
             Some(Tail::At(sub)) if path.segments.len() == 1 && path.segments[0].args.is_none() => {
                 let name = path.segments[0].ident.clone();
-                mk(PatKind::Ident { by_ref: false, mutable: false, name, sub: Some(Box::new(sub)) }, span)
+                mk(PatKind::Ident { name, sub: Some(Box::new(sub)) }, span)
             }
             Some(Tail::At(_)) | None if path.segments.len() == 1 && path.segments[0].args.is_none() => {
                 let name = path.segments[0].ident.clone();
-                mk(PatKind::Ident { by_ref: false, mutable: false, name, sub: None }, span)
+                mk(PatKind::Ident { name, sub: None }, span)
             }
             _ => mk(PatKind::Path(path), span),
         }
@@ -195,10 +201,9 @@ pub(crate) fn build<'a, I: In<'a>>(
 fn binds_unknown(p: &Pat) -> Option<Span> {
     match &p.kind {
         PatKind::Lit(e) if matches!(e.kind, ExprKind::Lit(Lit { kind: LitKind::Unknown, .. })) => Some(p.span.0),
-        PatKind::Tuple(v) | PatKind::Slice(v) | PatKind::Or(v) | PatKind::TupleStruct { pats: v, .. } => {
+        PatKind::Tuple(v) | PatKind::Array(v) | PatKind::Or(v) | PatKind::TupleStruct { pats: v, .. } => {
             v.iter().find_map(binds_unknown)
         }
-        PatKind::Ref(p) => binds_unknown(p),
         PatKind::Ident { sub: Some(p), .. } => binds_unknown(p),
         PatKind::Struct { fields, .. } => fields.iter().find_map(|f| f.pat.as_ref().and_then(binds_unknown)),
         _ => None,

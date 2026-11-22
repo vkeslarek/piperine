@@ -210,7 +210,7 @@ impl Refs {
             }
             PatKind::Lit(e) => self.exprs.push(*e),
             PatKind::Path(p) => self.paths.push(*p),
-            PatKind::Tuple(items) | PatKind::Or(items) | PatKind::Slice(items) => self.pats.extend(items),
+            PatKind::Tuple(items) | PatKind::Or(items) | PatKind::Array(items) => self.pats.extend(items),
             PatKind::TupleStruct { path, pats } => {
                 self.paths.push(*path);
                 self.pats.extend(pats);
@@ -223,7 +223,6 @@ impl Refs {
                 }
             }
             PatKind::Range { lo, hi, .. } => self.exprs.extend(lo.iter().chain(hi)),
-            PatKind::Ref(p) => self.pats.push(*p),
         }
     }
 
@@ -234,7 +233,7 @@ impl Refs {
                 self.types.push(*elem);
                 self.exprs.push(*len);
             }
-            TypeKind::Slice(t) | TypeKind::Flip(t) | TypeKind::Ref { inner: t, .. } => self.types.push(*t),
+            TypeKind::Flip(t) => self.types.push(*t),
             TypeKind::Tuple(items) => self.types.extend(items),
             TypeKind::FnPtr { params, ret } => {
                 self.types.extend(params);

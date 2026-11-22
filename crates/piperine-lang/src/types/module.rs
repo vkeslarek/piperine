@@ -2,9 +2,10 @@
 //! one module in another (§8.1): node arguments by nature and count, param block by type.
 
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, LetData, ParamData, PatKind, PortData, QuantityRole, Resolution, SignalData, StructClass, TypeId};
+use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, LetData, ParamData, PatKind, PortData, Resolution, SignalData, StructClass, TypeId};
 
 use super::check::{Checker, Context};
+use super::nature_rules::NatureRules;
 use super::unsupported::Unsupported;
 use super::{Callee, Ty};
 
@@ -54,10 +55,13 @@ impl Checker<'_> {
         }
     }
 
-    /// `name: T = default where cond;` — `T` is `f64` or `bool`; `where` is `bool` (`E0318`).
+    /// `name: T = default where cond;` — `T` is `f64`, `bool`, a module (its value a template
+    /// `Name { params }`, PI-04) or a struct, tuple or array of plain data (CV-18); `where` is `bool` (`E0318`).
     pub(super) fn param(&mut self, decl: DeclId, param: &ParamData) {
         let ty = self.lower_type(param.ty).and_then(|ty| match ty {
-            Ty::F64 | Ty::Bool => Some(ty),
+            Ty::F64 | Ty::Bool | Ty::Module(_) => Some(ty),
+            // An `Option` or enum param is `params-and-io`'s (L28).
+            composite if self.is_param_composite(&composite) => Some(composite),
             other => {
                 let node = self.design.type_node(param.ty).clone();
                 let file = self.design.decl_data(node.owner).file;
@@ -117,10 +121,10 @@ impl Checker<'_> {
         let pat = self.design.pat_node(data.pat).clone();
         let file = self.design.decl_data(pat.owner).file;
         if matches!(pat.kind, PatKind::Tuple(_)) {
-            self.tuple_let(file, &pat, data.value);
+            self.let_pattern(file, data.pat, None, Some(data.value), None);
             return;
         }
-        let PatKind::Ident { by_ref: false, mutable: false, sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {
+        let PatKind::Ident { sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {
             self.unsupported(file, pat.span, Unsupported::pat(&pat.kind));
             self.infer_event_position(data.value);
             return;
@@ -128,6 +132,9 @@ impl Checker<'_> {
         self.lets_open.insert(*binding, data.value);
         let ty = self.infer_event_position(data.value);
         self.lets_open.remove(binding);
+        if let Some(closure) = self.closure_expr(data.value) {
+            self.closure_locals.insert(*binding, closure);
+        }
         match ty {
             Some(Ty::Str) => {
                 self.unsupported(file, pat.span, "a string literal bound by a `let`");
@@ -168,6 +175,15 @@ impl Checker<'_> {
         let fields: Vec<FieldInit> = match &callee_node.kind {
             ExprKind::Struct { fields, class: StructClass::Template(m), .. } if *m == module && params.is_none() => fields.clone(),
             ExprKind::Path(_) if matches!(self.design.decl_data(module).kind, DeclKind::Module(_)) && self.callee_is(*callee, module) => params.clone().unwrap_or_default(),
+            // `cell(c)` through a param of module type (§8.4.4): the module's ports are connected;
+            // the param block belongs to the template, so one on the placement is `E0361`.
+            ExprKind::Path(_) if self.callee_is_param_of(*callee, module) => {
+                if params.is_some() {
+                    let name = self.design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                    self.coded(file, "E0361", node.span, format!("a placement through a param of module `{name}` takes no param block: the template holds the params (§8.4.4)"), "param block on a placement through a template value");
+                }
+                Vec::new()
+            }
             _ => {
                 if !self.reads_poisoned(*callee) {
                     self.unsupported(file, node.span, "placement through a template value or a function");
@@ -196,6 +212,15 @@ impl Checker<'_> {
     fn reads_poisoned(&self, expr: ExprId) -> bool {
         match &self.design.expr_node(expr).kind {
             ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if self.poisoned.contains(&d)),
+            _ => false,
+        }
+    }
+
+    /// Whether `callee` names a param whose declared type is the module `module`.
+    fn callee_is_param_of(&self, callee: ExprId, module: DeclId) -> bool {
+        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return false };
+        match self.design.path_node(*path).segments.last().map(|s| s.res) {
+            Some(Resolution::Decl(d)) => matches!(&self.design.decl_data(d).kind, DeclKind::Param(p) if self.design.type_resolution(p.ty) == Resolution::Decl(module)),
             _ => false,
         }
     }
@@ -246,10 +271,10 @@ impl Checker<'_> {
                 continue;
             };
             match kind {
-                Some(Ty::Carrier { value, .. }) => self.connect_carrier(arg.value, dir, &value),
+                Some(carrier @ Ty::Carrier { .. }) => self.connect_carrier(arg.value, dir, &carrier),
                 Some(expected @ Ty::Node(_)) => {
                     let Some(found) = self.infer(arg.value) else { continue };
-                    self.connect(arg.value, &expected, &found);
+                    self.connect(arg.value, port_decl, &expected, &found);
                 }
                 // A value input: any expression of its type, a probe included (§8.1.13).
                 Some(value) => {
@@ -264,8 +289,10 @@ impl Checker<'_> {
         }
     }
 
-    /// One node argument: the nature of its port, or `gnd`.
-    fn connect(&mut self, arg: ExprId, port: &Ty, found: &Ty) {
+    /// One node argument to the port `port_decl`: the nature of its port, or `gnd`. A value (an
+    /// expression that is not a node) at a continuous carrier port is `E0315` naming the port:
+    /// only an `in` port takes an expression, and a node port is never one (§8.1.11).
+    fn connect(&mut self, arg: ExprId, port_decl: DeclId, port: &Ty, found: &Ty) {
         let file = self.file_of_expr(arg);
         let span = self.design.expr_node(arg).span;
         // A discrete carrier read as a value is typed by what it holds; the declaration tells.
@@ -275,11 +302,16 @@ impl Checker<'_> {
             return;
         }
         match (port, found) {
-            (Ty::Node(p), Ty::Node(f)) if p == f || self.natures_compatible(*p, *f) => {}
+            (Ty::Node(p), Ty::Node(f)) if NatureRules::compatible(self.design, *p, *f) => {}
             (_, Ty::AnyNode) => {}
             (Ty::Node(_), Ty::Node(_)) => {
                 let message = format!("expected {}, found {}", port.name(self.design), found.name(self.design));
                 self.coded(file, "E0251", span, format!("a node of another nature is connected: {message}"), &message);
+            }
+            (Ty::Node(_), _) => {
+                let name = self.design.decl_data(port_decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                let message = format!("an expression of type {} is connected to the node port `{name}`: only an `in` port of a discrete nature takes an expression (§8.1.11)", found.name(self.design));
+                self.coded(file, "E0315", span, message, "expression at a node port");
             }
             _ => self.mismatch(file, span, port, found),
         }
@@ -288,7 +320,7 @@ impl Checker<'_> {
     /// One argument at a carrier port holding `value`. At an `in` port a carrier of the same
     /// type or a discrete expression (an anonymous definition, §8.2.9); at an `out` port a
     /// carrier the parent may hand to one driver, and nothing else (§8.1.11).
-    fn connect_carrier(&mut self, arg: ExprId, dir: Option<crate::msl::ast::Dir>, value: &Ty) {
+    fn connect_carrier(&mut self, arg: ExprId, dir: Option<crate::msl::ast::Dir>, port: &Ty) {
         let file = self.file_of_expr(arg);
         let span = self.design.expr_node(arg).span;
         let carrier = self.declared_port(arg);
@@ -300,9 +332,9 @@ impl Checker<'_> {
             (None, _) if found == Some(Ty::AnyNode) => {
                 self.coded(file, "E0250", span, "`gnd` is connected to a port of a discrete nature (§6.1)".to_string(), "`gnd` at a discrete port");
             }
-            (Some((decl, Ty::Carrier { value: held, .. })), dir) => {
-                if **held != *value {
-                    let message = format!("a carrier of `Bit<{}>` is connected to a port of `Bit<{}>`", held.name(self.design), value.name(self.design));
+            (Some((decl, held @ Ty::Carrier { .. })), dir) => {
+                if held != port {
+                    let message = format!("a carrier of `{}` is connected to a port of `{}`", held.name(self.design), port.name(self.design));
                     self.coded(file, "E0251", span, message, "carrier of another type");
                 } else if dir == Some(crate::msl::ast::Dir::Out) {
                     self.hand_over(*decl, span, file);
@@ -314,6 +346,7 @@ impl Checker<'_> {
                 self.coded(file, "E0314", span, message, "expression at an `out` port");
             }
             (None, _) => {
+                let Ty::Carrier { value, .. } = port else { return };
                 self.check_as(arg, value, "E0337");
                 if self.continuous(arg) {
                     let message = "a continuous expression is connected to an `in` port: it reads a probe, `now()`, `freq()`, `gmin()`, `source_scale()` or `analysis(Static)` (§8.1.12)".to_string();
@@ -352,8 +385,17 @@ impl Checker<'_> {
         }
     }
 
+    /// A template `Name { params }` where a value of module type is expected (PI-04): its params
+    /// are checked like a placement's block, and its type is the module it names, so a template
+    /// of another module is a mismatch (`E0180`) naming both.
+    pub(super) fn template_value(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit]) -> Option<Ty> {
+        self.param_block(fields);
+        self.exprs[expr.index()] = Some(Ty::Module(module));
+        Some(Ty::Module(module))
+    }
+
     /// `{ name: value }` of a placement: each value against the declared type of its param.
-    fn param_block(&mut self, fields: &[FieldInit]) {
+    pub(super) fn param_block(&mut self, fields: &[FieldInit]) {
         for field in fields {
             self.no_placement_in(field.value);
             let param = match field.res {
@@ -364,32 +406,13 @@ impl Checker<'_> {
                 _ => None,
             };
             match param.and_then(|t| self.lower_type(t)) {
-                Some(ty @ (Ty::F64 | Ty::Bool)) => self.check(field.value, &ty),
+                Some(ty @ (Ty::F64 | Ty::Bool | Ty::Module(_))) => self.check(field.value, &ty),
+                Some(composite) if self.is_param_composite(&composite) => self.check(field.value, &composite),
                 _ => {
                     self.infer(field.value);
                 }
             }
         }
-    }
-}
-
-impl Checker<'_> {
-    /// The name of the `role` quantity nature `nature` declares, if it declares one.
-    fn quantity_name(&self, nature: DeclId, role: QuantityRole) -> Option<String> {
-        self.design.decl_data(nature).children.iter().find_map(|child| {
-            let data = self.design.decl_data(*child);
-            matches!(&data.kind, DeclKind::Quantity(q) if q.role == role).then(|| data.name.as_ref().map_or_else(String::new, |n| n.text.clone()))
-        })
-    }
-
-    /// Whether two continuous natures are compatible (§4 rule 13): their potential quantities
-    /// have the same name and, when both declare a `flow`, their flow quantities do too.
-    fn natures_compatible(&self, a: DeclId, b: DeclId) -> bool {
-        let same_flow = match (self.quantity_name(a, QuantityRole::Flow), self.quantity_name(b, QuantityRole::Flow)) {
-            (Some(x), Some(y)) => x == y,
-            _ => true,
-        };
-        same_flow && self.quantity_name(a, QuantityRole::Potential) == self.quantity_name(b, QuantityRole::Potential)
     }
 }
 

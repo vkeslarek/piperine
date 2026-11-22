@@ -141,7 +141,10 @@ fn the_delayed_bench_steps_at_one_microsecond() {
     // written when vout rises through 63.2 % of the step"; welcome~ca1522ff "One time constant after
     // the step: vout is 1 − 1/e to the digit, at 0.07 ns before 2 µs"
     let overrides = Overrides { analysis: Some("transient".to_string()), stop: Some(5e-6), print_step: Some(1e-6), ..Overrides::default() };
-    let ran = Chapter::read().marked("rc/benches/delayed.msl", "welcome#17").run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
+    let model = Chapter::read().marked("rc/benches/delayed.msl", "welcome#17");
+    Refusal::expect(model.run(overrides.clone()), "welcome#17", "E0150", "an `analog` block reads the discrete carrier `fired` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
+    // the physics, on the front end as it stands: the earlier gate is added to the Book's text
+    let ran = Chapter::read().marked("rc/benches/delayed.msl", "welcome#17").earlier("delayed.msl").run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
     assert_eq!(ran.real(1, "Delayed.vin"), 0.0, "the source is at 0 V until t0 = 1 us");
     assert_eq!(ran.real(2, "Delayed.vin"), 1.0, "and at v1 = 1 V after it");
     Printed::holds("6.321445e-1", ran.real(2, "Delayed.vout"), "vout one time constant after the step");
@@ -230,24 +233,26 @@ fn e0404_a_commit_belongs_in_a_reaction() {
 
 #[test]
 fn the_status_paragraph_lists_what_is_still_refused_and_one_item_runs() {
-    // welcome~a17f566a: "Parts of the language beyond that are still refused by name with P0001: in analog,
-    // noise, idt and delay; elsewhere, generic modules, params of an integer type, resolved natures such as
-    // Wire and the settle event." Every item is `P0001`; the math methods such as `sin`, which the sentence
-    // no longer lists, run
+    // welcome~e1871864: "Parts of the language beyond that are still refused by name with P0001: in analog,
+    // noise, idt and delay; elsewhere, generic modules, params of an integer type and resolved natures (a nature
+    // that implements Resolve)." Every item is `P0001`; the math methods such as `sin` and the `settle` event, which the sentence
+    // no longer lists, run (unknown-semantics-events T5 and T22)
     let p0001 = |row: &str, source: &str, message: &str| {
         let model = Model::written("refused.msl", source);
         let overrides = Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() };
         let given = Refusal::of(model.run(overrides), row);
         assert!(given.iter().any(|(code, text)| code == "P0001" && text == message), "{source:?} gives {given:?}");
     };
-    let row = "welcome~a17f566a";
+    let row = "welcome~e1871864";
     p0001(row, "module Top() { signal p: Electrical; }\nanalog for Top { i(p, gnd) +> white_noise(1e-12, \"n\"); }\n", "core primitive `noise` is not supported yet");
     p0001(row, "module Top() { signal p: Electrical; }\nanalog for Top { i(p, gnd) +> idt(v(p)); }\n", "generic module is not supported yet");
     p0001(row, "module Top() { signal p: Electrical; signal q: Electrical; }\nanalog for Top { v(q) +> delay(v(p), 1n); }\n", "core primitive `delay` is not supported yet");
     p0001(row, "module G<T: Repr>() {}\nmodule Top() { let g = G::<f64>(); }\n", "generic module is not supported yet");
     p0001(row, "module Top() { n: u8 = 3; }\n", "param of type `u8` is not supported yet");
     p0001(row, "module Top() { signal w: Wire; }\n", "resolved nature `Wire` is not supported yet");
-    p0001(row, "module Top() { }\ndigital for Top { on settle { } }\n", "built-in `settle` is not supported yet");
+    // the `settle` event is compiled since unknown-semantics-events T5 (L52)
+    let settle = Model::written("settle.msl", "module Top() { }\ndigital for Top { on settle { } }\n");
+    settle.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: `on settle` is refused: {failure}"));
     let sin = Model::written("sin.msl", "module Top() { signal p: Electrical; x: f64 = 1.0; }\nanalog for Top { v(p) +> x.sin(); }\n");
     let ran = sin.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: `sin` is refused again: {failure}"));
     Printed::holds("8.414710e-1", ran.signal("Top.p"), "sin(1.0) runs");

@@ -21,3 +21,9 @@ piperine-parity = { path = "../piperine-parity" }
 tempfile.workspace = true
 num-complex.workspace = true
 serde_json = "1"
+
+# Runs by name, not by `cargo test` (MD-77; registered in `suite_hygiene.rs`).
+[[test]]
+name = "buck_long"
+path = "tests/buck_long.rs"
+test = false

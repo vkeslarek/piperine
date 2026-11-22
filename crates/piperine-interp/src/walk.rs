@@ -325,6 +325,27 @@ impl<'a> Walk<'a> {
             Expr::Merge { .. } => "Merge",
             Expr::Same { .. } => "Same",
             Expr::LevelCast { .. } => "LevelCast",
+            Expr::Loop { .. } => "Loop",
+            Expr::While { .. } => "While",
+            Expr::ForRange { .. } => "ForRange",
+            Expr::Break(_) => "Break",
+            Expr::Continue => "Continue",
+            Expr::Return(_) => "Return",
+            Expr::FunctionRef(_) => "FunctionRef",
+            Expr::CallValue { .. } => "CallValue",
+            Expr::Tuple(_) => "Tuple",
+            Expr::Array(_) => "Array",
+            Expr::ArrayRepeat { .. } => "ArrayRepeat",
+            Expr::StructOf { .. } => "StructOf",
+            Expr::VariantOf { .. } => "VariantOf",
+            Expr::Field { .. } => "Field",
+            Expr::Index { .. } => "Index",
+            Expr::Length(_) => "Length",
+            Expr::IsVariant { .. } => "IsVariant",
+            Expr::VariantField { .. } => "VariantField",
+            Expr::OptionPack { .. } => "OptionPack",
+            Expr::OptionPart { .. } => "OptionPart",
+            Expr::Default(_) => "Default",
         }
     }
 
@@ -564,6 +585,10 @@ impl<'a> Walk<'a> {
                 Err(Fault::new(Self::UNEXECUTED, format!("the IR form `Commit` is not executed by this walk (at {at})")))
             }
             Stmt::Emit { .. } => Err(Fault::new(Self::UNEXECUTED, "the IR form `Emit` is not executed by this walk")),
+            Stmt::Assign { value, .. } => {
+                let at = Self::origin(ir.expr_origin(*value));
+                Err(Fault::new(Self::UNEXECUTED, format!("the IR form `Assign` is not executed by this walk (at {at})")))
+            }
             Stmt::BoundStep { value, .. } => {
                 let at = Self::origin(ir.expr_origin(*value));
                 Err(Fault::new(Self::UNEXECUTED, format!("the IR form `bound_step` is not executed by this walk (at {at})")))
@@ -748,9 +773,9 @@ mod tests {
         let f_a = lab.b.function(FunctionSpec {
             name: "f".into(),
             origin: Origin { file: "t.msl".into(), line: 3, col: 1 },
-            params: vec![Local { name: "a".into(), ty: ValueType::F64 }],
+            params: vec![Local { name: "a".into(), ty: ValueType::F64, mutable: false }],
             ret: ValueType::F64,
-            locals: vec![Local { name: "a".into(), ty: ValueType::F64 }],
+            locals: vec![Local { name: "a".into(), ty: ValueType::F64, mutable: false }],
             body,
         });
         let mut e = lab.ex(4, 1);
@@ -793,7 +818,7 @@ mod tests {
         let mut e = lab.ex(2, 1);
         let (a, b) = (e.local(0), e.local(1));
         let body = e.binary(BinaryOp::Sub, a, b);
-        let local = |n: &str| Local { name: n.into(), ty: ValueType::F64 };
+        let local = |n: &str| Local { name: n.into(), ty: ValueType::F64, mutable: false };
         let sub = lab.b.function(FunctionSpec {
             name: "sub".into(),
             origin: Origin { file: "t.msl".into(), line: 2, col: 1 },

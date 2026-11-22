@@ -1,0 +1,5 @@
+const T: str = include_str!("data.txt");
+const U: str = include_str!("data.txt");
+module Cell(in clk: Bit) { }
+digital for Cell { on clk.rise() { emit!("sim", msg = T); emit!("sim", msg = U); } }
+module Top() { signal clk: Bit; let c = Cell(clk); }

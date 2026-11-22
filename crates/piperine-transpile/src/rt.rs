@@ -36,7 +36,8 @@ pub mod int;
 pub mod real;
 
 pub use commits::Commits;
-pub use flag::Flagged;
+pub use control::{Depth, Index, Outcome, Panic, Step, Trips, Unrolled};
+pub use flag::{Flagged, LevelWords};
 pub use int::{Int, UInt, Unwrap};
 pub use real::{Dual, Real};
 ";
