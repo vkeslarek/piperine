@@ -79,9 +79,37 @@ struct Inner {
     module: &'static Module,
     instance: *mut Instance,
     shape: *const Shape<'static>,
+    /// The cell lengths of each function, computed once at `create`.
+    frames: Vec<FunctionFrame>,
     /// Calls on one instance never overlap (abi.md §12 "Threads"): shares of a
-    /// handle take this for the length of each `eval` and `react`.
-    calls: std::sync::Mutex<()>,
+    /// handle take this for the length of each `eval` and `react`. It holds the pointer lists
+    /// an `eval` builds, so a call after the first allocates nothing.
+    calls: std::sync::Mutex<EvalBuffers>,
+}
+
+/// The byte length of every cell a function reads and writes, from the shape, computed once.
+/// `None` when a cell breaks a rule `validate` checks; the first `eval` of the function
+/// reports it, as it always has.
+#[derive(Debug)]
+struct FunctionFrame {
+    cells: Option<(Box<[usize]>, Box<[usize]>)>,
+}
+
+impl FunctionFrame {
+    /// The frame of function `f` of `shape`.
+    fn of(shape: &Shape<'_>, f: &raw::Function<'_>) -> Self {
+        let reads = cell_lens(shape, &f.reads, Access::FunctionRead);
+        let writes = cell_lens(shape, &f.writes, Access::FunctionWrite);
+        Self { cells: reads.zip(writes).map(|(reads, writes)| (reads.into(), writes.into())) }
+    }
+}
+
+/// The pointer lists of one `eval` frame, kept between calls so that building them allocates
+/// only while they grow.
+#[derive(Debug, Default)]
+struct EvalBuffers {
+    input: Vec<*const u8>,
+    output: Vec<*mut u8>,
 }
 
 // SAFETY: abi.md §12 "Calls on different instances may run on different
@@ -156,12 +184,16 @@ impl Handle {
         if made.status != status::OK || made.instance.is_null() || made.shape.is_null() {
             return Err(CallError::from_note(made.status, &note));
         }
+        // SAFETY: abi.md §9: the shape lives until the last instance created with it is destroyed.
+        let shape: &Shape<'_> = unsafe { &*made.shape };
+        let frames = shape.functions.iter().map(|f| FunctionFrame::of(shape, f)).collect();
         Ok(Handle {
             inner: std::sync::Arc::new(Inner {
                 module,
                 instance: made.instance,
                 shape: made.shape,
-                calls: std::sync::Mutex::new(()),
+                frames,
+                calls: std::sync::Mutex::new(EvalBuffers::default()),
             }),
         })
     }
@@ -198,16 +230,14 @@ impl Handle {
         jac: &mut [f64],
     ) -> Result<(), CallError> {
         let shape = self.shape();
-        let Some(f) = shape.functions.get(k as usize) else {
+        let (Some(f), Some(frame)) = (shape.functions.get(k as usize), self.inner.frames.get(k as usize)) else {
             return Err(CallError::frame(format!("function {k} does not exist")));
         };
-        let reads = cell_lens(shape, &f.reads, Access::FunctionRead);
-        let writes = cell_lens(shape, &f.writes, Access::FunctionWrite);
-        let (Some(reads), Some(writes)) = (reads, writes) else {
+        let Some((reads, writes)) = &frame.cells else {
             return Err(CallError::frame(format!("function {k} names a cell its shape does not have")));
         };
-        check_cells("read", input.iter().map(|b| b.len()), &reads)?;
-        check_cells("write", output.iter().map(|b| b.len()), &writes)?;
+        check_cells("read", input.iter().map(|b| b.len()), reads)?;
+        check_cells("write", output.iter().map(|b| b.len()), writes)?;
         let n = f.partials.len();
         if seed.len() != n || jac.len() != n {
             return Err(CallError::frame(format!(
@@ -216,23 +246,23 @@ impl Handle {
                 jac.len()
             )));
         }
-        let input: Vec<*const u8> = input.iter().map(|b| b.as_ptr()).collect();
-        let output: Vec<*mut u8> = output.iter_mut().map(|b| b.as_mut_ptr()).collect();
+        let mut buffers = self.inner.calls.lock().unwrap_or_else(|e| e.into_inner());
+        buffers.input.clear();
+        buffers.input.extend(input.iter().map(|b| b.as_ptr()));
+        buffers.output.clear();
+        buffers.output.extend(output.iter_mut().map(|b| b.as_mut_ptr()));
         let mut note = empty_note();
         let frame = raw::Eval {
             size: size_of::<raw::Eval>() as u32,
-            input: input.as_ptr(),
-            output: output.as_ptr(),
+            input: buffers.input.as_ptr(),
+            output: buffers.output.as_ptr(),
             seed: seed.as_ptr(),
             jac: jac.as_mut_ptr(),
             note: &mut note,
         };
         // SAFETY: abi.md §3 Eval "Every pointer is non-null and has the length
         // the shape says": checked above against the function's cells.
-        let s = {
-            let _calls = self.inner.calls.lock().unwrap_or_else(|e| e.into_inner());
-            unsafe { (self.inner.module.eval)(self.inner.instance, k, &frame) }
-        };
+        let s = unsafe { (self.inner.module.eval)(self.inner.instance, k, &frame) };
         match s {
             status::OK => Ok(()),
             _ => Err(CallError::from_note(s, &note)),
