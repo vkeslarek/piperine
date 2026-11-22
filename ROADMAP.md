@@ -30,21 +30,35 @@ Opus or Fable; a feature merges to `main` and upstream when its verifier passes.
 
 | Feature | What it delivers | Progress | Lane |
 | --- | --- | --- | --- |
-| `composite-values` (+ `value-semantics`, MD-76) | Structs, tuples, payload enums, arrays and ranges, `Option` of aggregates, iterators (Appendix H.5–H.7), `normal`; value semantics: no borrows, moves, `Clone` or `Copy`, every `let` reassignable (`E0903`, `E0161`) | B1–B7 done; B8 implementing; then B9–B10, verifier, merge | C |
+| `composite-values` (+ `value-semantics`, MD-76) | Structs, tuples, payload enums, arrays and ranges, `Option` of aggregates, iterators (Appendix H.5–H.7), `normal`; value semantics: no borrows, moves, `Clone` or `Copy`, every `let` reassignable (`E0903`, `E0161`) | B1–B9 done; B10 implementing; then verifier, merge | C |
+| `explicit-unknowns` B1–B3 | The spec and Book amendment of the explicit model (MD-78): no hidden known flag, `Logic`, `Option`, `Default`, traits as capabilities, `Resolve<X, V>` on natures, strengths, the ABI without known bytes | done on the branch; user reads the Book, then Opus verifier and merge to `main` ahead of the code | A |
 
 ### Waiting, in order (all unblock when `composite-values` merges)
 
 | # | Feature | What is left | Waits on |
 | --- | --- | --- | --- |
-| 1 | `generics` | Generic structs, enums, functions and traits, const generics, `Fn` values (L4, L7, L8, L29–L32, L58, S3, X6); tasks amended for value semantics | composite-values |
-| 2 | `analog-operators` | B4–B7: `simparam`, `tnom`, noise sources and the noise analysis, the `laplace`/`zi` family (L43–L45, L47, L49, U7) | composite-values |
-| 3 | `unknown-semantics-events` | B5: L51, L53 | composite-values, generics A–B |
-| 4 | `params-and-io` | B5–B6: integer, enum and `Option` params, `E0122`, `parse_table`, `parse_hex`, `table_model` | composite-values |
-| 5 | `resolved-nets` | B3 and later: resolved nets over composite natures (L21, L58) | composite-values, generics |
-| 6 | `resolved-nets-bundles` | B2 and later: connecting and resolving bundles (L25) | composite-values, generics, resolved-nets |
-| 7 | `unknown-semantics-per-level` | B2–B6: unknowns per level (S6, G6), the `KNOWN_LEVELS` ABI flag | B1 delivered |
-| 8 | `code-clarity` | Readability and structure refactor under the seven cleanliness rules, CC-11 included (no language special cases: builtins declared in the MSL prelude), and the split of the three oversized `pom/{resolve,reflect,lower}/mod.rs`; a Fable inventory first | items 1–7 |
-| 9 | `spec-closure` (**item 13**) | Fable closure of spec ↔ implementation; G1, G2, G4, G5, X1, X2, H13 and the discrepancies logged during the run | code-clarity |
+| 1 | `explicit-unknowns` phase A (B4–B7) | No hidden known flag: values are what their type says, `Default` decides whether a carrier may start without a value (`E0187`), `analog` reads binary carriers directly, the ABI without known bytes (still major 1), `E0511`; the spec and Book amendment (B1–B3) merges to `main` first (MD-78, user 2026-11-21) | composite-values |
+| 2 | `generics` | Generic structs, enums, functions and traits, const generics, `Fn` values (L4, L7, L8, L29–L32, L58, S3, X6); tasks amended for value semantics and explicit unknowns (`impl` on natures) | explicit-unknowns A |
+| 3 | `explicit-unknowns` phase B (B8) | Operator traits, `Logic<N>` from source in `std/logic.msl` | generics A |
+| 4 | `analog-operators` | B4–B7: `simparam`, `tnom`, noise sources and the noise analysis, the `laplace`/`zi` family (L43–L45, L47, L49, U7) | composite-values |
+| 5 | `unknown-semantics-events` | B5: L51, L53, in the explicit model | generics A–B |
+| 6 | `params-and-io` | B5–B6: integer, enum and `Option` params, `E0122`, `parse_table`, `parse_hex`, `table_model` | composite-values, explicit-unknowns A |
+| 7 | `resolved-nets` | B3 and later, re-planned for `Resolve<X, V>` as a capability of a nature: `Strength` (five levels), `Driven`, `strongest`, `Pullup`, `Pulldown`, `Keeper`, `Tribuf`, `Tgate`, `Bidir`; `E0220`, `E0225`, `E0511` (L21, L58) | generics, explicit-unknowns B |
+| 8 | `resolved-nets-bundles` | B2 and later: connecting and resolving bundles (L25) | resolved-nets |
+| 9 | `code-clarity` | Readability and structure refactor under the seven cleanliness rules, CC-11 included (no language special cases: builtins declared in the MSL prelude), and the split of the three oversized `pom/{resolve,reflect,lower}/mod.rs`; a Fable inventory first | items 1–8 |
+| 10 | `spec-closure` (**item 13**) | Fable closure of spec ↔ implementation; G1, G2, G4, G5, X1, X2, H13 and the discrepancies logged during the run | code-clarity, and **no Book listing still refused by a feature** (below) |
+
+`unknown-semantics-per-level` is **dropped**: explicit unknowns replace per-level flags (user, 2026-11-21).
+
+**Every Book listing runs before item 13** (user, 2026-11-21: "as listagens que não rodam precisam rodar [...] Tem que colocar em alguma feature ANTES do spec closure"). A listing that cannot run yet is a `refused` row of `tests/book/inventory.tsv` (or an `unraised` claim) with a `GAPS.md` §11 row naming the feature that makes it run, and its test asserts today's refusal, so it fails "now runs" the day it runs. Each owning feature's closing task flips its rows; a feature does not close with one of its listings still refused. `spec-closure` does not start while any row is owned by a feature of this table. The owners of the rows the explicit-unknowns amendment left refused:
+
+| Listings | Refused today with | Made to run by |
+| --- | --- | --- |
+| welcome#17, analog#9, modules#9, mixed#8, mixed#10, mixed#14, values#21 (`analog` reads a discrete carrier directly) | `E0150` | `explicit-unknowns` phase A (T20, closed by T40) |
+| The `E0187` and `Default` initial-value sentences of the values chapter | not raised | `explicit-unknowns` phase A (T21, T22, T30) |
+| values#14 and natures#2 (`Option` as a carried type; `[Bit; 8]`) | `E0112`, `P0001` | `explicit-unknowns` phase A for `Option`; `composite-values` for the array |
+| values#18 and the other `Logic<4>` listings | `P0001` | `explicit-unknowns` phase B (T48) |
+| digital#16 to digital#20, natures#3 and its alarm, core-std#6 (`Driven`, `Resolve`, `Pullup`, `Tribuf`, `Keeper`) | `E0161` | `resolved-nets` B3 and later (T27 to T32) |
 
 **The automatic run stops after item 13** for the user's review of the closure, the spec and the
 code (user, 2026-11-18 and 2026-11-21).
