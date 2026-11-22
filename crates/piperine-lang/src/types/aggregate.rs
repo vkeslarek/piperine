@@ -76,8 +76,7 @@ impl Checker<'_> {
             return false;
         }
         let Some(fields) = self.fields_of(decl) else { return false };
-        let types: Vec<Ty> = fields.iter().map(|f| f.ty.clone()).collect();
-        self.judge_repr(decl, file, &fields) & self.judge_derives(decl, file, span, &types)
+        self.judge_repr(decl, file, &fields) & self.judge_derives(decl, file, span, &fields)
     }
 
     /// The typed fields of `owner`, a struct or an enum variant, typed on the first call and kept.

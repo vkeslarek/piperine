@@ -485,12 +485,19 @@ struct Wrap {
 }
 
 /// `struct Ordered { x: f64, y: u8 }` as `compare.msl` derives it.
-#[derive(Clone, Copy, PartialEq, PartialOrd, Default)]
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
 struct Ordered {
     /// First field.
     x: f64,
     /// Second field.
     y: u8,
+}
+
+/// `struct Slots { a: Option<u8> }` as `compare.msl` derives it.
+#[derive(Default, PartialEq)]
+struct Slots {
+    /// The one field, `None` by default.
+    a: Option<u8>,
 }
 
 #[test]
@@ -532,9 +539,9 @@ fn derived_comparisons_and_defaults_give_rusts_results() {
         flag(Some(3u8) != none),
         flag(Wrap { inner: Some(1), tag: mid(2) } < Wrap { inner: Some(1), tag: mid(3) }),
         flag(Wrap { inner: None, tag: Level::Low } == Wrap { inner: None, tag: Level::Low }),
-        CarrierBytes::byte(Ordered::default().y),
-        flag(Ordered::default().x == 0.0),
-        flag(Ordered::default() == p(0.0, 0)),
+        CarrierBytes::byte(Slots::default().a.unwrap_or(7)),
+        flag(Slots::default().a.is_none()),
+        flag(Slots::default() == Slots { a: None }),
         flag(Option::<u8>::default() == none),
     ];
     let names = [

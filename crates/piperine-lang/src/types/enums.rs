@@ -85,8 +85,7 @@ impl Checker<'_> {
                 None => ok = false,
             }
         }
-        let field_types: Vec<Ty> = typed_fields.iter().map(|f| f.ty.clone()).collect();
-        ok && self.judge_tag(decl, &variants, file, span) & self.judge_repr(decl, file, &typed_fields) & self.judge_derives(decl, file, span, &field_types)
+        ok && self.judge_tag(decl, &variants, file, span) & self.judge_repr(decl, file, &typed_fields) & self.judge_derives(decl, file, span, &typed_fields)
     }
 
     /// The tag of the enum `decl` (§2 rule 5): `#[repr(uN)]` gives `N` levels, else

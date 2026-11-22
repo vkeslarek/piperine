@@ -6,7 +6,6 @@ E0131	generics	L8 (`impl` on a nature)
 E0132	generics	L8
 E0133	generics	L8 (handles)
 E0134	generics	L7 (traits)
-E0187	generics	L7 (traits and generic arguments)
 E0203	resolved-nets	L21
 E0225	explicit-unknowns	EU-11 AC 4 (two driven types on one resolved carrier)
 E0313	composite-values	L24 (array carriers)

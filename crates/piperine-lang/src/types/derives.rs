@@ -66,9 +66,15 @@ impl DerivedTrait {
         }
     }
 
-    /// Whether `f64` implements it: no `Eq`, `Ord` or `Hash`, as NaN is not equal to itself (H.8 rule 7).
+    /// Whether `f64` implements it: no `Eq`, `Ord` or `Hash`, as NaN is not equal to itself, and no
+    /// `Default`, as no number is the value of a carrier with none (H.8 rules 4 and 7).
     fn of_float(self) -> bool {
-        !matches!(self, Self::Eq | Self::Ord | Self::Hash)
+        !matches!(self, Self::Eq | Self::Ord | Self::Hash | Self::Default)
+    }
+
+    /// Whether `bool`, `UInt<N>` and `Int<N>` implement it: all but `Default` (H.8 rules 4 and 7).
+    fn of_integer(self) -> bool {
+        self != Self::Default
     }
 
     /// Whether `str` implements it: everything but `Default` (H.8 rule 7).
@@ -78,11 +84,12 @@ impl DerivedTrait {
 }
 
 impl Checker<'_> {
-    /// Whether `ty` implements `which` (H.8 rule 7 for the built-in types, a derive for a struct
+    /// Whether `ty` implements `which` (H.8 rules 4 and 7 for the built-in types, a derive for a struct
     /// or an enum; the derive's own validity is judged where the type is declared).
     pub(super) fn implements(&self, ty: &Ty, which: DerivedTrait) -> bool {
         match ty {
-            Ty::Bool | Ty::Unit | Ty::UInt(_) | Ty::Int(_) => true,
+            Ty::Unit => true,
+            Ty::Bool | Ty::UInt(_) | Ty::Int(_) => which.of_integer(),
             Ty::F64 => which.of_float(),
             Ty::Str => which.of_text(),
             // H.8 rule 4: the default of an `Option` is `None`, whatever its payload.
@@ -96,9 +103,10 @@ impl Checker<'_> {
     }
 
     /// Judges every derive of the struct or enum `decl` whose fields are `fields` (H.8 rules 4 and
-    /// 6): `Default` on an enum, a required trait left out, and a field without the trait are
-    /// `E0180` naming the trait. `false` when one is refused.
-    pub(super) fn judge_derives(&mut self, decl: DeclId, file: FileId, span: Span, fields: &[Ty]) -> bool {
+    /// 6): a required trait left out, a field without the trait and `Default` on an enum are
+    /// `E0180` naming the trait, and a field without `Default` is `E0187` naming the field and its
+    /// type. `false` when one is refused.
+    pub(super) fn judge_derives(&mut self, decl: DeclId, file: FileId, span: Span, fields: &[FieldType]) -> bool {
         let is_enum = matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_));
         let name = if is_enum { Ty::Enum(decl) } else { Ty::Struct(decl) }.name(self.design);
         let mut clean = true;
@@ -113,9 +121,15 @@ impl Checker<'_> {
                 self.derive_refused(file, span, format!("`#[derive({trait_name})]` on {name} needs `#[derive({})]` too (H.8 rules 2 and 3)", missing.name()));
                 clean = false;
             }
-            if let Some(field) = fields.iter().find(|field| !self.implements(field, which)) {
-                let field = field.name(self.design);
-                self.derive_refused(file, span, format!("`#[derive({trait_name})]` on {name}: a field of type `{field}` does not implement `{trait_name}` (H.8 rule 6)"));
+            if let Some(field) = fields.iter().find(|field| !self.implements(&field.ty, which)) {
+                let type_name = field.ty.name(self.design);
+                if which == DerivedTrait::Default {
+                    let field_name = field.name.as_deref().unwrap_or("a positional field");
+                    let message = format!("`#[derive(Default)]` on {name}: the field `{field_name}` of type `{type_name}` does not implement `Default` (H.8 rule 4)");
+                    self.coded(file, "E0187", span, message, "a field without a default");
+                } else {
+                    self.derive_refused(file, span, format!("`#[derive({trait_name})]` on {name}: a field of type `{type_name}` does not implement `{trait_name}` (H.8 rule 6)"));
+                }
                 clean = false;
             }
         }
@@ -130,8 +144,13 @@ impl Checker<'_> {
     /// `==` or `!=` on a value of `ty` needs `PartialEq`; an ordering operator needs `PartialOrd`
     /// (§1.3.10). Reports `E0180` naming the trait when `ty` lacks it.
     pub(super) fn require_trait(&mut self, file: FileId, span: Span, ty: &Ty, which: DerivedTrait) {
-        if !self.implements(ty, which) {
-            let found = ty.name(self.design);
+        if self.implements(ty, which) {
+            return;
+        }
+        let found = ty.name(self.design);
+        if which == DerivedTrait::Default {
+            self.coded(file, "E0187", span, format!("`{found}` does not implement `Default`: `{found}::default()` has no value (H.8 rule 4)"), "a type without a default");
+        } else {
             self.mismatch_text(file, span, &format!("a type that derives `{}`", which.name()), &found);
         }
     }

@@ -619,9 +619,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `types_explicit::the_types_that_have_a_default`, `deriving_default_over_a_number_is_e0187`, `no_primitive_numeric_type_has_a_default` pass
-- [ ] Every source in the tree that called a numeric `default()` is rewritten with a literal, listed in the commit body
-- [ ] Gate check passes: Quick
+- [x] `types_explicit::the_types_that_have_a_default`, `deriving_default_over_a_number_is_e0187`, `no_primitive_numeric_type_has_a_default` pass
+- [x] Every source in the tree that called a numeric `default()` is rewritten with a literal, listed in the commit body
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

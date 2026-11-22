@@ -1,14 +1,16 @@
 //! Derived comparisons and defaults (CV-12 AC 1, H.8 rules 2 to 4): `==`, `!=`, `<`, `<=`, `>`, `>=`
-//! on structs, tuples, arrays, enums and `Option`s, and `T::default()`. Each row commits one `bool`
+//! on structs, tuples, arrays, enums and `Option`s, and `T::default()` of a struct whose fields have a default (no number does, H.8 rule 4). Each row commits one `bool`
 //! or integer; the expected values are computed by Rust in `source_aggregates.rs`.
 
 pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
 digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
 
-#[derive(PartialEq, PartialOrd, Default)]
+#[derive(PartialEq, PartialOrd)]
 struct P { x: f64, y: u8 }
 #[derive(Repr, PartialEq, PartialOrd)]
 enum Level { Low, Mid(u8), High { a: u8, b: u8 } }
+#[derive(PartialEq, Default)]
+struct Slots { a: Option<u8> }
 #[derive(PartialEq, PartialOrd)]
 struct Wrap { inner: Option<u8>, tag: Level }
 
@@ -46,9 +48,9 @@ fn option_some_ne_none() -> bool { let a: Option<u8> = None; Some(3u8) != a }
 fn nested_lt() -> bool { Wrap { inner: Some(1), tag: Level::Mid(2) } < Wrap { inner: Some(1), tag: Level::Mid(3) } }
 fn nested_eq() -> bool { Wrap { inner: None, tag: Level::Low } == Wrap { inner: None, tag: Level::Low } }
 
-fn default_y() -> u8 { P::default().y }
-fn default_x_is_zero() -> bool { P::default().x == 0.0 }
-fn default_equals_zeros() -> bool { P::default() == P { x: 0.0, y: 0 } }
+fn default_slot() -> u8 { Slots::default().a.unwrap_or(7) }
+fn default_slot_is_none() -> bool { Slots::default().a == None }
+fn default_equals_none() -> bool { Slots::default() == Slots { a: None } }
 fn default_option() -> bool { Option::<u8>::default() == None }
 
 module Rows(in clk: Bit, out r0: Bit<bool>, out r1: Bit<bool>, out r2: Bit<bool>, out r3: Bit<bool>, out r4: Bit<bool>, out r5: Bit<bool>, out r6: Bit<bool>, out t0: Bit<bool>, out t1: Bit<bool>, out t2: Bit<bool>, out t3: Bit<bool>, out a0: Bit<bool>, out a1: Bit<bool>, out a2: Bit<bool>, out a3: Bit<bool>, out e0: Bit<bool>, out e1: Bit<bool>, out e2: Bit<bool>, out e3: Bit<bool>, out e4: Bit<bool>, out e5: Bit<bool>, out o0: Bit<bool>, out o1: Bit<bool>, out o2: Bit<bool>, out o3: Bit<bool>, out o4: Bit<bool>, out n0: Bit<bool>, out n1: Bit<bool>, out d0: Bit<u8>, out d1: Bit<bool>, out d2: Bit<bool>, out d3: Bit<bool>) {}
@@ -63,7 +65,7 @@ digital for Rows {
         o0 <- option_none_lowest(); o1 <- option_some_order(); o2 <- option_eq();
         o3 <- option_none_eq(); o4 <- option_some_ne_none();
         n0 <- nested_lt(); n1 <- nested_eq();
-        d0 <- default_y(); d1 <- default_x_is_zero(); d2 <- default_equals_zeros(); d3 <- default_option();
+        d0 <- default_slot(); d1 <- default_slot_is_none(); d2 <- default_equals_none(); d3 <- default_option();
     }
 }
 

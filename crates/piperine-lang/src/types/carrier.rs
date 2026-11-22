@@ -254,6 +254,7 @@ impl Checker<'_> {
             Resolution::Builtin(id) => match (id.info().name, id.width()) {
                 ("fN", Some(64)) => Some(Ty::F64),
                 ("bool", _) => Some(Ty::Bool),
+                ("str", _) => Some(Ty::Str),
                 ("uN", Some(w)) => self.integer_type(file, span, Ty::UInt, u128::from(w), &id.name()),
                 ("iN", Some(w)) => self.integer_type(file, span, Ty::Int, u128::from(w), &id.name()),
                 ("usize", _) => Some(Ty::UInt(64)),

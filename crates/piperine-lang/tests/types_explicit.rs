@@ -5,6 +5,12 @@
 //! type (`E0701`, `E0702`). One positive and one negative source per rule, over the embedded
 //! standard library (the five functions are the stdlib's own items).
 
+#[path = "support/pom.rs"]
+mod support;
+#[allow(dead_code)]
+#[path = "support/checked.rs"]
+mod checked_source;
+
 use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::{Ty, Types};
 
@@ -166,4 +172,43 @@ fn unknown_with_no_inferable_type_is_e0906() {
     let design = design_of(src);
     let d = Types::check(&design, "Top").expect_err("no type for `Unknown`");
     assert_eq!(d.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0906"], "{:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+}
+
+use checked_source::CheckedSource;
+
+#[test]
+fn the_types_that_have_a_default() {
+    // §3.3.4, H.8 rules 4 and 7 (EU-05 AC 1): `()`, `Option<T>` for every `T`, a tuple or an array of types that
+    // have it, and a struct that derives it have `Default`; `T::default()` is typed `T`
+    let items = "#[derive(Default)]\nstruct Inner { held: Option<u8>, mark: () }\n\
+                 #[derive(Default)]\nstruct Outer { inner: Inner, pair: (Option<bool>, ()), row: [Option<u8>; 3], none: Option<f64> }";
+    let body = "let outer = Outer::default(); let inner = Inner::default(); let held: Option<u8> = Option::<u8>::default();";
+    let src = CheckedSource::source(items, body);
+    CheckedSource::assert_clean(&src);
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "outer"), Ty::Struct(CheckedSource::type_decl(&src, "Outer")), "`T::default()` has the type `T`");
+}
+
+#[test]
+fn deriving_default_over_a_number_is_e0187() {
+    // §3.3.4, H.8 rule 4 (EU-05 AC 2): a derive over a field of a type without `Default` is `E0187` naming the
+    // field and its type, for each of the types the rule excludes
+    for (field, ty) in [("count", "u8"), ("level", "i16"), ("up", "bool"), ("gain", "f64"), ("name", "str"), ("taps", "[u8; 2]")] {
+        let items = format!("#[derive(Default)]\nstruct Holder {{ {field}: {ty} }}");
+        let found = CheckedSource::outcome(&CheckedSource::source(&items, "let h = Holder::default();"));
+        assert_eq!(found.len(), 1, "{ty}: {found:?}");
+        assert_eq!(found[0].0, "E0187", "{ty}: {found:?}");
+        assert!(found[0].1.contains(&format!("`{field}`")) && found[0].1.contains(&format!("`{ty}`")), "{ty}: the field and its type are named: {}", found[0].1);
+    }
+}
+
+#[test]
+fn no_primitive_numeric_type_has_a_default() {
+    // §3.3.4, H.8 rule 4 (EU-05 AC 3): `u8::default()`, `bool::default()`, `f64::default()` and `str::default()`
+    // are `E0187` naming the type
+    for ty in ["u8", "i16", "bool", "f64", "str"] {
+        let found = CheckedSource::outcome(&CheckedSource::source("", &format!("let x = {ty}::default();")));
+        assert_eq!(found.len(), 1, "{ty}: {found:?}");
+        assert_eq!(found[0].0, "E0187", "{ty}: {found:?}");
+        assert!(found[0].1.contains(&format!("`{ty}`")), "{ty}: the type is named: {}", found[0].1);
+    }
 }
