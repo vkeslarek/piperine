@@ -28,7 +28,7 @@ fn range_inclusive() -> u8 { let a = [1u8, 2, 3, 4]; let s = a[1..=2]; s[0] * 10
 fn range_then_index() -> u8 { let a = [1u8, 2, 3, 4]; a[1..4][2] }
 fn range_is_a_copy() -> u8 { let a = [1u8, 2, 3]; let s = a[0..2]; s[0] = 9; a[0] * 10 + s[0] }
 
-module Rows(in clk: Bit, out a0: Bit<u8>, out a1: Bit<u8>, out a2: Bit<u8>, out a3: Bit<u8>, out a4: Bit<u8>, out a5: Bit<u8>, out a6: Bit<u8>, out a7: Bit<u8>, out a8: Bit<u8>, out a9: Bit<u8>, out p0: Bit<u8>, out p1: Bit<u8>, out p2: Bit<u8>, out p3: Bit<u8>, out r0: Bit<u8>, out r1: Bit<u8>, out r2: Bit<u8>, out r3: Bit<u8>, out r4: Bit<u8>) {}
+module Rows(in clk: Bit, out a0: Bit<u8> = 0, out a1: Bit<u8> = 0, out a2: Bit<u8> = 0, out a3: Bit<u8> = 0, out a4: Bit<u8> = 0, out a5: Bit<u8> = 0, out a6: Bit<u8> = 0, out a7: Bit<u8> = 0, out a8: Bit<u8> = 0, out a9: Bit<u8> = 0, out p0: Bit<u8> = 0, out p1: Bit<u8> = 0, out p2: Bit<u8> = 0, out p3: Bit<u8> = 0, out r0: Bit<u8> = 0, out r1: Bit<u8> = 0, out r2: Bit<u8> = 0, out r3: Bit<u8> = 0, out r4: Bit<u8> = 0) {}
 digital for Rows {
     on clk.rise() {
         a0 <- literal_sum();
@@ -62,7 +62,7 @@ module Bench() {
 
 // an index past the end fails the analysis, naming the instance, the instant and the index
 fn element(a: [u8; 3], i: u8) -> u8 { a[i] }
-module Overrun(in clk: Bit, out y: Bit<u8>) {}
+module Overrun(in clk: Bit, out y: Bit<u8> = 0) {}
 digital for Overrun { on clk.rise() { y <- element([1, 2, 3], 5); } }
 module OverrunBench() {
     signal clk: Bit; signal y: Bit<u8>;

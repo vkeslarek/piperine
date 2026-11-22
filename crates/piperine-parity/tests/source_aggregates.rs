@@ -28,7 +28,7 @@ use mixed::Seen;
 use piperine_solver::protocol::{AnalysisKind, ObservationKind};
 use bytes::CarrierBytes;
 use run::SourceRun;
-use support::{build, transient};
+use support::{build, first_edge_value, transient};
 
 /// One nanosecond in ticks.
 const NS: i64 = 1_000_000;
@@ -755,12 +755,9 @@ impl Carriers {
         transient(&self.seen, &format!("Bench.{name}"))
     }
 
-    /// The only change of `name`, which must be at the first rising edge.
+    /// The value of `name` once the first rising edge has committed.
     fn once(&self, name: &str) -> Vec<u8> {
-        let changes = self.changes(name);
-        assert_eq!(changes.len(), 1, "{name} changes once: {changes:?}");
-        assert_eq!(changes[0].0, 5 * NS / 2, "{name} changes at the first rising edge");
-        changes[0].1.clone()
+        first_edge_value(&self.seen, &format!("Bench.{name}"))
     }
 
     /// `value`, the bytes of a known composite, as its pin holds it: the known byte after them.

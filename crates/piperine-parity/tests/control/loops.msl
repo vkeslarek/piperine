@@ -19,8 +19,8 @@ fn drained(limit: u8) -> u16 {
 }
 fn nested(n: u8) -> u16 { let s = 0u16; for a in 0..n { for b in 0..a { s += (a * b) as u16; } } s }
 
-module Rows(in clk: Bit, out w: Bit<u16>, out l: Bit<u16>, out o: Bit<u16>, out inc: Bit<u16>, out m: Bit<u8>, out d: Bit<u16>, out nest: Bit<u16>,
-            out rw: Bit<u16>, out rl: Bit<u16>, out ro: Bit<u16>, out rm: Bit<u8>, out rd: Bit<u16>) {}
+module Rows(in clk: Bit, out w: Bit<u16> = 0, out l: Bit<u16> = 0, out o: Bit<u16> = 0, out inc: Bit<u16> = 0, out m: Bit<u8> = 0, out d: Bit<u16> = 0, out nest: Bit<u16> = 0,
+            out rw: Bit<u16> = 0, out rl: Bit<u16> = 0, out ro: Bit<u16> = 0, out rm: Bit<u8> = 0, out rd: Bit<u16> = 0) {}
 digital for Rows {
     on clk.rise() {
         w <- sum_to(10);

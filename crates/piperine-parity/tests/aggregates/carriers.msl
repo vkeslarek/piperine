@@ -14,7 +14,7 @@ enum Tx { Idle, Data { n: u3 }, Stop }
 struct Wrap { t: (u8, bool), a: [u8; 3], o: Option<u8> }
 
 // Commits of every composite shape, the same value at both rising edges (2.5 ns and 7.5 ns).
-module Commits(in clk: Bit, out s: Bit<Pair>, out t: Bit<(u8, bool)>, out arr: Bit<[u8; 3]>, out tx: Bit<Tx>, out opt: Bit<Option<u8>>) {}
+module Commits(in clk: Bit, out s: Bit<Pair> = Pair { a: 0, b: false }, out t: Bit<(u8, bool)> = (0, false), out arr: Bit<[u8; 3]> = [0, 0, 0], out tx: Bit<Tx> = Tx::Idle, out opt: Bit<Option<u8>>) {}
 digital for Commits {
     on clk.rise() {
         s <- Pair { a: 7, b: true };
@@ -42,7 +42,8 @@ digital for Watch {
         now_a <- u.a;
         before_a <- u.prev().a;
     }
-    on s.changed() { s_changes <- s_changes + 1; }
+    // the initial value is the first value of `s`, not a change from another (§3.3.4)
+    on s.changed() { if s != (Pair { a: 0, b: false }) { s_changes <- s_changes + 1; } }
 }
 
 // Reads of a tuple, an array, an `Option` and a payload enum, whole and by part.

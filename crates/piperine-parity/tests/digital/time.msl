@@ -12,7 +12,7 @@ module Timer(out hit: Bit = false) {}
 digital for Timer { on every(1u, 2u) { hit <- !hit; } }
 
 /// A reaction that commits `now()` and `analysis(Static)`.
-module Stamp(in clk: Bit, out t: Bit<f64>, out s: Bit) {}
+module Stamp(in clk: Bit, out t: Bit<f64> = 0.0, out s: Bit = false) {}
 digital for Stamp { on clk.changed() { t <- now(); s <- analysis(Static); } }
 
 /// Six commits to one `Bit`, one per rising edge: false, true, false, true, false, true.

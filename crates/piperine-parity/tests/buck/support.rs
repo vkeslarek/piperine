@@ -63,3 +63,26 @@ pub fn decode(raw: &[u8], bytes: usize, signed: bool) -> i32 {
     let v = u32::from_le_bytes(buf);
     if signed && bytes < 4 && v & (1 << (bytes * 8 - 1)) != 0 { (v | (u32::MAX << (bytes * 8))) as i32 } else { v as i32 }
 }
+
+/// The value of the net at `path` once the first rising edge (2.5 ns) has committed: the one
+/// change the transient made at it, or, when the commit wrote the value the net started at, the
+/// value of the operating point.
+pub fn first_edge_value(seen: &Seen, path: &str) -> Vec<u8> {
+    let changes = transient(seen, path);
+    match changes.as_slice() {
+        [(at, bytes)] => {
+            assert_eq!(*at, 5 * 500_000, "{path} changes at the first rising edge");
+            bytes.clone()
+        }
+        [] => seen
+            .all()
+            .into_iter()
+            .filter(|o| o.path == path && o.analysis != AnalysisKind::Transient)
+            .find_map(|o| match o.kind {
+                ObservationKind::Change { bytes } => Some(bytes),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{path} keeps no value from the operating point")),
+        _ => panic!("{path} changes once at most: {changes:?}"),
+    }
+}

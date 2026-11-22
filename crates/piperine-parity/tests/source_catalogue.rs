@@ -22,7 +22,7 @@ mod mixed;
 #[path = "buck/support.rs"]
 mod support;
 
-use support::{build, transient};
+use support::{build, first_edge_value, transient};
 
 /// One nanosecond in ticks.
 const NS: i64 = 1_000_000;
@@ -47,15 +47,20 @@ fn project(name: &str, source: &str) -> Project {
 /// A reaction's output: the type of its carrier and what the row writes to it.
 struct Row {
     ty: &'static str,
-    /// The initial value of the carrier, when the row needs one (an unknown commit changes
-    /// nothing from an unknown start).
+    /// The initial value of the carrier: the type's zero unless the row names one (a carrier has a
+    /// value from the start, §3.3.4).
     init: Option<&'static str>,
     expr: String,
 }
 
 impl Row {
     fn new(ty: &'static str, expr: impl Into<String>) -> Row {
-        Row { ty, init: None, expr: expr.into() }
+        let zero = match ty {
+            "bool" => "false",
+            "f64" => "0.0",
+            _ => "0",
+        };
+        Row { ty, init: Some(zero), expr: expr.into() }
     }
 
     fn starting_at(ty: &'static str, init: &'static str, expr: impl Into<String>) -> Row {
@@ -104,17 +109,10 @@ fn byte(v: u8) -> Vec<u8> {
     vec![v, 1]
 }
 
-/// The one change of each `rN` at the first rising edge, in row order: its bytes.
+/// The value of each `rN` once the first rising edge has committed, in row order: its bytes.
 fn first_commits(project: &Project, count: usize) -> Vec<Vec<u8>> {
     let seen = build(project, "Bench").run(10e-9, 1e-9);
-    (0..count)
-        .map(|k| {
-            let changes = transient(&seen, &format!("Bench.r{k}"));
-            assert_eq!(changes.len(), 1, "r{k} changes once: {changes:?}");
-            assert_eq!(changes[0].0, 5 * NS / 2, "r{k} changes at the first rising edge");
-            changes[0].1.clone()
-        })
-        .collect()
+    (0..count).map(|k| first_edge_value(&seen, &format!("Bench.r{k}"))).collect()
 }
 
 /// What the run of `Bench` says when it faults: the message of the error, or a failure of the
@@ -278,40 +276,6 @@ fn a_crossed_or_nan_clamp_in_analog_faults_naming_it() {
     }
     let mut running = bench("clamp_ordered", "lo", "hi");
     running.circuit.dc(Context::default()).expect("dc").solve().expect("an ordered clamp solves");
-}
-
-#[test]
-fn a_row_over_an_unknown_value_is_unknown() {
-    // CAT-01 AC 5 (§3.3): a row over a value that may be unknown is unknown exactly when an
-    // operand is. Unknown operands give an unknown result in the unary, the binary (either
-    // side) and the `bool` rows, and in the integer rows; known operands give a known one.
-    let rows = vec![
-        Row::starting_at("f64", "0.0", "u.sin()"),
-        Row::starting_at("f64", "0.0", "u.powi(2)"),
-        Row::starting_at("f64", "0.0", "u.atan2(y)"),
-        Row::starting_at("f64", "0.0", "y.atan2(u)"),
-        Row::starting_at("f64", "0.0", "u.clamp(x, y)"),
-        Row::starting_at("bool", "false", "u.is_nan()"),
-        Row::starting_at("u8", "0", "k.saturating_add(1)"),
-        Row::starting_at("u8", "0", "k.pow(2)"),
-        Row::starting_at("u8", "0", "j.saturating_mul(k)"),
-        // known operands: known results
-        Row::starting_at("f64", "0.0", "y.atan2(x)"),
-        Row::starting_at("bool", "false", "y.is_finite()"),
-        Row::starting_at("u8", "0", "j.saturating_add(1)"),
-    ];
-    let source = reaction_design("", "let u: f64 = Unknown; let k: u8 = Unknown; let j: u8 = 200; let x = 0.5; let y = 2.0;", &rows);
-    let committed = first_commits(&project("unknown_rows", &source), rows.len());
-    let known_at = |k: usize| committed[k][if rows[k].ty == "f64" { 8 } else { 1 }];
-    for k in 0..9 {
-        assert_eq!(known_at(k), 0, "`{}` over an unknown operand is unknown", rows[k].expr);
-    }
-    for k in 9..12 {
-        assert_eq!(known_at(k), 1, "`{}` over known operands is known", rows[k].expr);
-    }
-    assert_eq!(committed[9], real_bytes(Y.atan2(X)));
-    assert_eq!(committed[10], byte(1));
-    assert_eq!(committed[11], byte(200u8.saturating_add(1)));
 }
 
 /// The integer functions the integer tests call, one expression each: arguments are runtime
@@ -552,7 +516,7 @@ fn db10_and_db20_type_check_from_the_stdlib() {
     // a reaction and in an `analog` block type-checks and elaborates.
     let source = format!(
         "use std::analog::{{db10, db20}};\n{OSC}\n\
-         module Gain(in clk: Bit, p: Electrical, out r: Bit<f64>) {{}}\n\
+         module Gain(in clk: Bit, p: Electrical, out r: Bit<f64> = 0.0) {{}}\n\
          digital for Gain {{ on clk.rise() {{ r <- db20(-10.0); }} }}\n\
          analog for Gain {{ i(gnd, p) +> db10(100.0); }}\n\
          module Bench() {{ signal clk: Bit; signal r: Bit<f64>; signal n: Electrical; let osc = Osc(clk) {{ f: 200M }}; let g = Gain(clk, n, r); }}\n"

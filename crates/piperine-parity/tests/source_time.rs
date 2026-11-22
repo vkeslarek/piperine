@@ -62,9 +62,9 @@ fn a_reaction_reads_now_and_static_from_source() {
     let t = transient(&seen, "StampBench.t");
     let fifteen = t.iter().find(|(at, _)| *at == 15 * NS);
     assert_eq!(fifteen, Some(&(15 * NS, real_bytes((15 * NS) as f64 * TICK))), "t at 15 ns: {t:?}");
-    // `analysis(Static)` is true in the equilibrium solve and false at a transient instant: the
-    // clock's initial value is a change at (0, 0), so the reaction commits true there; its first
-    // change in the transient (2.5 ns) commits false
+    // `analysis(Static)` is true in the equilibrium solve and false at a transient instant: `s`
+    // starts at its initial value, false, and the clock's initial value is a change at (0, 0), so
+    // the reaction commits true there; its first change in the transient (2.5 ns) commits false
     let at_rest: Vec<Vec<u8>> = seen
         .all()
         .into_iter()
@@ -74,7 +74,7 @@ fn a_reaction_reads_now_and_static_from_source() {
             _ => None,
         })
         .collect();
-    assert_eq!(at_rest, [HIGH.to_vec()], "s at the operating point");
+    assert_eq!(at_rest, [LOW.to_vec(), HIGH.to_vec()], "s at the operating point: its initial value, then true");
     assert_eq!(transient(&seen, "StampBench.s").first(), Some(&(5 * NS / 2, LOW.to_vec())), "s at the first transient instant");
 }
 

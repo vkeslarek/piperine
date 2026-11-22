@@ -10,8 +10,8 @@ fn bool_ops(a: bool, b: bool) -> bool { let t = a; t &= b; t |= !b; t ^= true; t
 fn deferred(c: bool) -> u8 { let r: u8; if c { r = 1; } else { r = 2; } r }
 fn reassigned(a: f64) -> f64 { let x = a; x = x * x; x = x + a; x }
 
-module Rows(in clk: Bit, out f: Bit<f64>, out g: Bit<u8>, out h: Bit, out d1: Bit<u8>, out d2: Bit<u8>,
-            out r: Bit<f64>, out local_n: Bit<u8>, out local_x: Bit<f64>, out local_b: Bit) {}
+module Rows(in clk: Bit, out f: Bit<f64> = 0.0, out g: Bit<u8> = 0, out h: Bit = false, out d1: Bit<u8> = 0, out d2: Bit<u8> = 0,
+            out r: Bit<f64> = 0.0, out local_n: Bit<u8> = 0, out local_x: Bit<f64> = 0.0, out local_b: Bit = false) {}
 digital for Rows {
     on clk.rise() {
         f <- real_ops(2.0);
