@@ -313,8 +313,8 @@ of its own.
    first order throughout: its second stage also runs as backward Euler, over the whole step
    from the step's start, so the derivative it ends with is the change of each state across
    the step divided by the step. The step after it takes that derivative as its previous
-   derivative.** The first step after the operating point reads no jump and keeps its BDF2
-   stage. A change made after the solve of
+   derivative.** The first step after the operating point keeps its BDF2 stage unless the
+   operating point holds a settle commit, which that step reads as a jump (S3) and takes first order. A change made after the solve of
    `t` restarts nothing. After a host `set` the step size also restarts
    at 10⁻³ of the last step (Appendix C.2). **The step that restarts the integrator after a
    landing or a host `set` is at most a tenth of the smaller of the last accepted step and the

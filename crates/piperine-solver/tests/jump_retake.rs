@@ -440,3 +440,23 @@ fn a_second_round_retake_runs_settle_once_and_delivers_its_settle_commits() {
     let following = &steps[jump + 1];
     assert!((following.1 - 4.0).abs() < 1e-9, "o = {} V at {:e}: the settle commit of the last round did not reach the analog side", following.1, following.0);
 }
+
+#[test]
+fn the_first_step_after_an_operating_point_that_holds_a_settle_commit_is_first_order() {
+    // §15.2 rule 6, §15 S3: the operating point's settle commit sets the code, which the first step
+    // reads as a jump (0 to 1 V) across a 1 nF capacitor. A first-order step ends with the secant
+    // C * 1 V / h as its derivative, so the source gives -C / h at that step (the BDF2 stage would
+    // end with a derivative of the opposite sign or another size).
+    let capacitance = 1.0e-9;
+    let (mut builder, out) = Scenario::circuit(&[], Watched::Output, Trigger::Settle, false);
+    let ground = builder.ground();
+    abi_devices::add_capacitor(&mut builder, "c1", capacitance, &out, &ground);
+    let mut solver = Solver::new(builder.build().expect("build")).with_context(Context::default()).with_tran_opts(TransientAnalysisOptions::new(1.0e-6, 2.0e-8)).build();
+    let result = solver.tran().expect("tran").solve().expect("solve");
+    let steps: Vec<_> = result.iter().collect();
+    let first = &steps[1];
+    assert!((first.get_node(&node_id(&out)).expect("o") - 1.0).abs() < 1e-9, "the first step reads the committed code");
+    let current = first.get_branch(piperine_solver::abi::BranchIdentifier::new("gate", "f")).expect("the gate's branch");
+    let secant = -capacitance * 1.0 / first.time();
+    assert!((current - secant).abs() < 1e-6 * secant.abs(), "the first step's derivative is the secant: {current:e} against {secant:e}");
+}

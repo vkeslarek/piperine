@@ -1360,6 +1360,7 @@ Proof: run elabops | test a_noise_density_reading_an_unknown_value_is_e0150 ... 
 **C72** - A step that reads a settle commit retakes when its crossing changes what `analog` reads, and a retaken instant settles once and delivers that phase's settle commits. (AO-13, AC 2; fix round)
 Proof: run retake | test a_crossing_made_by_a_step_that_reads_a_settle_commit_retakes_it ... ok
 Proof: run retake | test a_second_round_retake_runs_settle_once_and_delivers_its_settle_commits ... ok
+Proof: run retake | test the_first_step_after_an_operating_point_that_holds_a_settle_commit_is_first_order ... ok
 
 **C70** - The band total integrates the density by ngspice's power-law rule, exact on power laws. (AO-05, AC 1, D8; T2, T3)
 Proof: run numerics | test the_power_law_integral_is_exact_on_power_laws ... ok

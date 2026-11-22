@@ -1199,6 +1199,7 @@ fn the_step_that_reads_a_jump_is_first_order() {
     let r6 = &s[s.find(" 6. ").expect("rule 6")..s.find(" 7. ").expect("rule 7")];
     assert!(r6.contains("The step that reads a jump is first order throughout"), "{r6}");
     assert!(r6.contains("The step after it takes that derivative as its previous derivative."), "{r6}");
+    assert!(r6.contains("keeps its BDF2 stage unless the operating point holds a settle commit, which that step reads as a jump (S3)"), "{r6}");
     let behavior = flat(&spec("part_iv_behavior.md"));
     assert!(
         behavior.contains("that step's derivative, which is the change of `x` across the step divided by the step"),
