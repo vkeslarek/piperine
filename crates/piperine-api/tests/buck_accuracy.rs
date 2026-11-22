@@ -43,6 +43,8 @@ struct Run {
     landings: u64,
     /// The discrete instants the protocol ran at accepted steps.
     instants: u64,
+    /// The counts of `diagnosis.md` section 2, for the table of its "After".
+    summary: String,
 }
 
 /// The run of the first 100 us with `max_step`.
@@ -62,7 +64,12 @@ fn run_with(max_step: f64) -> Run {
     let table = session.run(Rc::new(RefCell::new(Discard))).unwrap_or_else(|f| panic!("{f}"));
     let steps = session.statistics().expect("a transient leaves its statistics").steps();
     let landings = StepEnd::ALL.iter().filter(|end| matches!(end, StepEnd::Landing(_))).map(|end| steps.ended(*end)).sum();
-    Run { table, accepted_steps: steps.accepted(), landings, instants: steps.instants_run() }
+    let analog = session.statistics().expect("a transient leaves its statistics").analog().clone();
+    let summary = format!(
+        "{} rejected by truncation, {} by Newton, {} retaken toward a crossing, {} ended on the controller's proposal, {} at max_step, {} jump steps",
+        analog.rejected_truncation, analog.rejected_newton, steps.retaken(), steps.ended(StepEnd::Proposal), steps.ended(StepEnd::MaxStep), analog.jump_steps
+    );
+    Run { table, accepted_steps: steps.accepted(), landings, instants: steps.instants_run(), summary }
 }
 
 /// The two runs, made once for every test of this target: the run as the buck is run, and the
@@ -72,6 +79,7 @@ fn runs() -> &'static (Run, Run) {
     RUNS.get_or_init(|| {
         let (run, reference) = (run_with(1e-8), run_with(1e-10));
         eprintln!("buck accuracy: {} accepted steps ({} landings, {} instants run) at max_step 1e-8, {} at 1e-10", run.accepted_steps, run.landings, run.instants, reference.accepted_steps);
+        eprintln!("buck accuracy: {}", run.summary);
         (run, reference)
     })
 }

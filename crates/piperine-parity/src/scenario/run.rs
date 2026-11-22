@@ -105,6 +105,8 @@ impl ScenarioRun {
         self.stimulus.apply(&mut session).map_err(|refusal| fail("stimulus", &refusal))?;
         let delivered = Rc::new(RefCell::new(RunRecords::default()));
         let table = session.run(delivered.clone()).map_err(|failure| fail("run", &failure))?;
+        let accepted = session.statistics().map_or(0, |statistics| statistics.steps().accepted());
+        eprintln!("scenario run `{}`: {accepted} accepted steps", self.run);
         // the session holds the build's libraries: it goes before the directory does
         drop(session);
         let RunRecords { records, checks } = std::mem::take(&mut *delivered.borrow_mut());
