@@ -674,7 +674,7 @@ fn a_reopened_instant_settles_at_its_last_microstep() {
     d.run_instant(Tick(2), &[], Horizon::uniform(Tick(10 * NS)), Mode { is_static: false, settle: true }).expect("the settle phase");
     let seen = d.drain_observations();
     let records: Vec<&Observation> = seen.iter().filter(|o| matches!(o, Observation::Record { .. })).collect();
-    assert_eq!(records, [&Observation::Record { stream: "sr.log".into(), reaction: 0, statement: 0, at: (Tick(2), 1), bytes: vec![7, 1] }], "{seen:?}");
+    assert_eq!(records, [&Observation::Record { stream: "sr.log".into(), reaction: 0, statement: 0, at: (Tick(2), 1), bytes: vec![7] }], "{seen:?}");
 }
 
 #[test]

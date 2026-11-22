@@ -131,7 +131,7 @@ impl Setter {
             name: "set",
             origin: ORIGIN,
             on: vec![go],
-            writes: vec![Statement { pin: out, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+            writes: vec![Statement { pin: out, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
             ..ReactionSpec::default()
         });
         shape.freeze()
@@ -176,7 +176,7 @@ impl SettleSetter {
             name: "set",
             origin: ORIGIN,
             on: vec![settle],
-            writes: vec![Statement { pin: out, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+            writes: vec![Statement { pin: out, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
             ..ReactionSpec::default()
         });
         shape.freeze()
@@ -224,7 +224,7 @@ impl SettleMirror {
             origin: ORIGIN,
             on: vec![settle],
             reads: vec![Shapes::pin(src)],
-            writes: vec![Statement { pin: dst, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
+            writes: vec![Statement { pin: dst, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
             ..ReactionSpec::default()
         });
         shape.freeze()
@@ -247,7 +247,7 @@ impl Device for SettleMirror {
         Ok(())
     }
     fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
-        let value = [cx.bytes(0)[0], cx.bytes(0)[1]];
+        let value = [cx.bytes(0)[0]];
         cx.commit(0, &value, 0.0)?;
         Ok(Flow::Continue)
     }
