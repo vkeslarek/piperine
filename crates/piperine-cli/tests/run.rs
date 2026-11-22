@@ -577,6 +577,35 @@ fn composites_print_in_each_output_format() {
     }
 }
 
+/// A design whose carrier `o` holds an `Option<u8>` that starts at `None` and takes `Some(7)` at the
+/// first rising edge of a clock.
+const OPTIONS: &str = "pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }\ndigital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }\n\
+module Logger(in clk: Bit, out o: Bit<Option<u8>>) {}\n\
+digital for Logger {\n    on clk.rise() {\n        o <- Some(7);\n    }\n}\n\
+module Top() {\n    signal clk: Bit;\n    signal o: Bit<Option<u8>>;\n    let osc = Osc(clk) { f: 200M };\n    let logger = Logger(clk, o);\n}\n";
+
+#[test]
+fn an_option_cell_prints_none_or_the_value() {
+    // EU-15 AC 5 (explicit-unknowns T39): an absent `Option` is written `None`, a present one `Some(x)`,
+    // and no format has an unknown cell: the text table and CSV (one column per leaf, `some` and `value`);
+    // the record line and JSON Lines (`None` as `None` and `null`, `Some` as its payload) are held by
+    // the unit tests of `render/record.rs` and `render/json.rs`, for an `emit!` field of type
+    // `Option` is not in the M1 subset
+    let dir = written(&[("bench.msl", OPTIONS)]);
+    let args = ["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "o"];
+    let stdout = stdout_of(&piperine_in(dir.path(), shared_cache(), &args));
+    let table: Vec<&str> = stdout.lines().skip_while(|l| !l.starts_with("time")).collect();
+    assert!(table.get(1).is_some_and(|row| row.ends_with("None")), "the first row holds the initial `None`: {table:?}");
+    assert!(table.iter().rev().find(|row| !row.is_empty()).is_some_and(|row| row.ends_with("Some(7)")), "the last row holds the committed value: {table:?}");
+    assert!(!table.iter().any(|row| row.split_whitespace().any(|cell| cell == "x")), "no unknown cell: {stdout}");
+    piperine_in(dir.path(), shared_cache(), &["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "o", "--csv", "out.csv"]);
+    let csv = std::fs::read_to_string(dir.path().join("out.csv")).expect("out.csv");
+    let mut rows = csv.lines();
+    assert_eq!(rows.next(), Some("time,Top.o.some,Top.o.value"), "one CSV column per leaf: {csv}");
+    assert_eq!(rows.next().map(|row| row.split(',').skip(1).collect::<Vec<_>>()), Some(vec!["false", ""]), "an absent Option has no `value` leaf: {csv}");
+    assert!(csv.lines().last().is_some_and(|row| row.ends_with(",true,7")), "the last row is `Some(7)`: {csv}");
+}
+
 #[test]
 fn a_leaf_path_prints_that_leaf_alone() {
     // CV-21 AC 2: a printed path that names a field or an element prints that leaf and nothing else
