@@ -126,6 +126,14 @@ fn the_statistics_of_the_whole_start_are_reported() {
 }
 
 #[test]
+fn the_whole_start_takes_at_most_300000_steps() {
+    // TP-06 AC 1: 804 136 steps before the feature; the limit is the spec's, never read off a run
+    let accepted = start().statistics.steps().accepted();
+    eprintln!("buck steps: {accepted} accepted for the 600 us start (limit 300000)");
+    assert!(accepted <= 300_000, "{accepted} accepted steps, limit 300000");
+}
+
+#[test]
 fn the_whole_start_is_60001_rows_on_a_10_ns_grid() {
     // LR-08 AC 1: 0 to 600 us on a 10 ns grid, the time of row k being k * 1e-8
     let table = &start().table;
