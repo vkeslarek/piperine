@@ -140,9 +140,10 @@ conjunction of the conditions of the `if` and `match` arms that enclose it.
 - **§11 rule 12** An `analog` block holds value statements (`let`, assignments to locals,
   `if`, `match`, `for`, calls), contributions, `bound_step` (§14.10) and `emit!` (§19). A loop that
   contains a contribution or a placement **MUST** have a constant trip count (§8.3.4).
-- **§11 rule 13** `analog` has no unknown values. Every read of a discrete carrier passes through
-  `level` (§3.3.5). The same holds for the value inputs of `ddt`, `delay`, `limit` and `noise`,
-  wherever they are placed.
+- **§11 rule 13** `analog` reads a discrete carrier like any expression (§3.3.6): a carrier of
+  `bool`, an integer, a float or an enum is read directly, and a `Logic` through a function that
+  returns an `f64` or a `bool`. The same holds for the value inputs of `ddt`, `delay`, `limit`
+  and `noise`, wherever they are placed.
 - **§11 rule 14** There is no indirect contribution. An implicit equation is the row of an internal
   node (the `Nullor` example).
 
@@ -155,9 +156,8 @@ conjunction of the conditions of the `if` and `match` arms that enclose it.
 > **Resolution.** §11 rule 10 rejects a branch from a node to itself. §11 rule 12 requires a constant trip
 > count around a contribution, as §8.3.4 does around a placement.
 
-> **Resolution.** §11 rule 13 applies §3.3.5 to the value inputs of the four solver-evaluated core
-> modules even when the placement is in a body `let`. `cross` and `at` accept unknown arguments
-> (§13 rule 4, §13 rule 5).
+> **Resolution.** §11 rule 13 applies §3.3.6 to the value inputs of the four solver-evaluated core
+> modules even when the placement is in a body `let`.
 
 **Dynamic semantics**
 
@@ -205,7 +205,6 @@ conjunction of the conditions of the `if` and `match` arms that enclose it.
 | `E0418` | potential and flow contributions to one branch enabled in one solve (§11 rule 2) | run |
 | `E0416` | a contribution inside a loop whose trip count is not a constant (§11 rule 12) | elaboration |
 | `E0417` | the right side of `+>` is not `f64` | elaboration |
-| §3.3 | `analog` reads a discrete carrier without `level` (`E0150`) | elaboration |
 | §6 | a second potential driver of a signal-flow node (`E0242`) | elaboration |
 | §17.1 | a non-finite value in a solve (`E0507`) | run |
 
@@ -389,7 +388,7 @@ later microstep.
   field of one, that this module may drive. The table of §8.2.10 applies unchanged.
 - **§12.1.8** Within one module, a carrier driven by commits has no definition (§5.2, §8.2.20).
 - **§12.1.9** The committed expression's type **MUST** be the value type of the levels the `place`
-  names. `Unknown` is of every `Repr` type.
+  names.
 - **§12.1.10** The head of `on` **MUST** have type `Event` (§13). A `bool` alone is not an event.
 - **§12.1.11** A reaction body holds value statements (`let`, assignments to locals,
   `if`, `match`, loops, calls), commits and `emit!`. It holds no placement (§8.3.4), no
@@ -438,10 +437,7 @@ later microstep.
   due at microstep 0 of the next time point (§15).
 - **§12.1.18** A commit that changes a level of the carrier's value fires `changed()` in the
   microstep where it applies (§13). A commit that leaves the value as it was fires nothing.
-- **§12.1.19** Unknown control in a reaction follows §3.3.3: every path the known levels allow is
-  taken and every commit is merged level by level. An unknown delay commits `Unknown` at the next
-  microstep. An unknown index is control.
-- **§12.1.20** A delay of `+inf` never comes due. A known `NaN` delay is a run error.
+- **§12.1.20** A delay of `+inf` never comes due. A `NaN` delay is a run error.
 - **§12.1.21** Per analysis, reactions and commits follow the second table of §16.2. Where time
   does not advance, a commit with a positive delay is never due and is dropped when the analysis
   ends (§16.1.3).
@@ -461,7 +457,7 @@ later microstep.
 | `E0432` | a commit whose type differs from its target's (§12.1.9) | elaboration |
 | `E0433` | a delay that is not `f64` (§12.1.13) | elaboration |
 | `E0434` | a statement outside a reaction in a `digital` block (§12 rule 2) | parse |
-| `E0435` | a known `NaN` delay (§12.1.20) | run |
+| `E0435` | a `NaN` delay (§12.1.20) | run |
 | §5.2 | a commit target this module may not drive (§12.1.7; `E0220`, `E0222`); a carrier with both a definition and commits in one module (`E0221`) | elaboration |
 | §8.3 | a placement in a reaction body (`E0350`) | elaboration |
 | §15 | a microstep loop that never goes quiet (`E0501`) | run |
@@ -478,7 +474,7 @@ digital for Counter {
 }
 module SampleHold(vin: Electrical, vout: Electrical, in clk: Bit) { signal held: Bit<f64> = 0.0; }
 digital for SampleHold { on clk.rise() { held <- v(vin); } }
-analog for SampleHold { v(vout) +> held.known_or(0.0); }
+analog for SampleHold { v(vout) +> held; }
 ```
 
 A doc comment or an attribute goes before a reaction, as before any other item of a `digital`
@@ -492,8 +488,8 @@ digital for Latch {
 }
 ```
 
-A `clk` that starts high has risen at `(0, 0)` (§13 rule 6), so `Counter` counts that edge. A model that
-must ignore it says so: `on clk.rise() && clk.prev().is_known()`.
+A `clk` that starts high has not risen at `(0, 0)` (§13 rule 6, §22.1), so `Counter` does not count
+that start. A model that wants an action at the start writes it with `init()` (§22.1).
 
 Transport per statement, for `phi1 = clk after if clk { gap } else { 0.0 };` (D.6), a delayed
 definition and therefore one statement (§8.2.4):
@@ -568,8 +564,7 @@ of `&&` whose left operand is an `Event`.
 - **§13 rule 11** The argument of `at` **MUST** be a discrete expression (§8.2): no probe, no `now()`,
   no `freq()`, no `gmin()`, no `source_scale()`, no `analysis(Static)`. The check is made per instance, after value inputs are
   substituted.
-- **§13 rule 12** The argument `e` of `cross` is any `f64` expression, continuous or not. It **MAY** be
-  unknown (§13 rule 5).
+- **§13 rule 12** The argument `e` of `cross` is any `f64` expression, continuous or not.
 - **§13 rule 13** `changed()` applies to a discrete carrier, an element or field of one, a bundle
   field, and a param. A node has none (§5.3).
 - **§13 rule 14** `settle` **MAY** be combined with `&&` and `||` like any event. The phase in which a
@@ -596,14 +591,14 @@ of `&&` whose left operand is an `Event`.
   `Event` when `ev` does; `c` is a `bool`. `!` applies to `bool` only. A `bool` alone is not an
   event. *Dynamic:* `a || b` fires in a microstep when either fires. `ev && c` fires when
   `ev` fires and `c` is true. `c` is evaluated in that microstep, reading what the reaction would
-  read (§12.1.1, §12.1.5). When `c` is unknown the reaction runs under §3.3.3: its effects are
-  merged with those of not running.
+  read (§12.1.1, §12.1.5). When the guard is false the reaction does not run, and no guard is
+  neither true nor false (§3.3.5, §3.3.8).
 - **§13 rule 2** Inside a reaction, an event used as a `bool` says whether it fired in this microstep.
 - **§13 rule 4** **`at` fires once for each value of its argument.**
   1. It is armed at `(0, 0)`, after the initial values settle, with its argument's value, rounded
      to the tick (§15).
   2. It is re-armed when the carriers and params in the argument change its value.
-  3. A time already past does not fire. An unknown time does not fire. A time equal to the
+  3. A time already past does not fire. A time equal to the
      current one fires at the next microstep. A later time is a scheduled time (§17.2).
   4. `at` never fires in an analysis without time (§16.1.3).
 
@@ -619,13 +614,14 @@ of `&&` whose left operand is an `Event`.
 
   It fires when `e` was `≤ 0` in the earlier solution and is `> 0` in the later. It has no
   direction argument: a falling crossing is `cross(-e)`, either is `cross(e) || cross(-e)`. It
-  cannot fire on the first solution of an analysis. An `e` that is unknown in either solution does
-  not fire. A guard made only of discrete carriers also tells the solver not to locate the crossing
+  cannot fire on the first solution of an analysis. A guard made only of discrete carriers also tells the solver not to locate the crossing
   while the guard is false.
-- **§13 rule 6** **The first commit is a change.** At `(0, 0)` every initial value is committed onto an
-  unknown carrier (§16 step 2), whoever supplied it. So `changed()` fires there for every carrier
-  that starts known, and `rise()` for a `Bit` that starts high, as in IEEE 1364. Level-sensitive
-  logic and asynchronous resets are right from time 0 (E.1, E.2).
+- **§13 rule 6** **The first commit is a change.** At `(0, 0)` every initial value, written or
+  `Default::default()`, is committed (§16 step 2, §5.3.8) and that commit is a change of every
+  carrier. So `changed()` fires there for every carrier. `rise()` and `fall()` do not: a carrier
+  that starts high has not risen (§22.1). Level-sensitive logic and asynchronous resets are right
+  from time 0 because they read the level, and a model that wants an action at the start writes
+  `init()`.
 - **§13 rule 15** `s.changed()` fires in the microstep in which the value of `s` changed: by a commit
   that applied (§15 step 3.1) or by a definition or `resolve` that settled (§15 step 3.2). On a
   resolved carrier it follows the resolved value. On an element or field it follows those levels.
@@ -634,7 +630,7 @@ of `&&` whose left operand is an `Event`.
 - **§13 rule 17** `settle` fires once per time point, after the microstep loop has gone quiet (§15 step
   4). Its reactions read the final state. Their commits do not reopen the loop: they are due at
   microstep 0 of the next time point.
-- **§13 rule 18** An event fires in a microstep or does not; firing is always known. Two events that
+- **§13 rule 18** An event fires in a microstep or does not; firing is a `bool` (`fired(k)`, rule 2). Two events that
   fire in one microstep are simultaneous, and a reaction tells them apart under §13 rule 2.
 - **§13 rule 19** Per analysis, every event follows the second table of §16.2.
 
@@ -644,7 +640,7 @@ of `&&` whose left operand is an `Event`.
 > **Resolution.** §13 rule 4 step 1 states the initial arming. With step 3, `at(0.0)` in a transient
 > fires at `(0, 1)`, inside the operating point's instant, as §15 also states.
 
-> **Resolution.** §13 rule 16: a param is never unknown, so it has no first commit and no change at
+> **Resolution.** §13 rule 16: a param has a value from elaboration, so it has no first commit and no change at
 > `(0, 0)`, also when a `set` made before the run bound it (§5.3.11, §16 step 2; G.52).
 
 **The start is said three ways, none of them a rule of its own.**
@@ -713,7 +709,7 @@ module Water(t: Thermal) {
     cv:   f64 = 2.01k;
     hv:   f64 = 2.26M;   // J/kg
     pub signal phase: Bit<Phase> = Phase::Liquid;
-    let ph = phase.known_or(Phase::Liquid);
+    let ph = phase;
     let absorbed = idt::<Heat>(pwr(t), 0.0, reset: ph != Phase::Boiling);   // energy since boiling began
 }
 
@@ -757,7 +753,7 @@ library (§22), written in the language over this section.
 | `bound_step(dt)` | statement | the next step is at most `dt` | `analog` | 14.10 |
 | `emit!` | statement | output (§19) | reactions, `analog` | 14.11 |
 | `include_str!` | `const` expression | the text of a file, read at elaboration (§20) | `const` items | 14.11 |
-| `s.prev()`, `s.others()`, `x.level(k)` | methods | history, drives, the known flag | wherever the carrier is read | 14.12 |
+| `s.prev()`, `s.others()` | methods | history, drives | wherever the carrier is read | 14.12 |
 
 **Static semantics**
 
@@ -771,7 +767,7 @@ library (§22), written in the language over this section.
 - **§14 rule 4** "Everywhere" in the table means every position evaluated during a run. No
   environment function is allowed in a const context (§8.1.21).
 - **§14 rule 5** The value inputs of `ddt`, `delay`, `limit` and `noise` are read by the solver and
-  **MUST** be known (§11 rule 13).
+  are `f64` expressions; a `Logic` reaches one through a function (§11 rule 13).
 
 **Dynamic semantics**
 
@@ -804,7 +800,6 @@ library (§22), written in the language over this section.
 | §8.1 | an environment function in a const context (`E0323`) | elaboration |
 | §8.2 | `now()`, `freq()`, `gmin()`, `source_scale()`, `analysis(Static)` or a probe in a definition (`E0336`) | elaboration |
 | §8.3 | a core module placed in a `fn`, a closure or a reaction body (`E0350`) | elaboration |
-| §3.3 | an unknown value reaching `ddt`, `delay`, `limit` or `noise` (`E0150`) | elaboration |
 
 ### 14.1 Probes
 
@@ -823,7 +818,7 @@ entering the module at its port `p`.
 
 **Dynamic semantics**
 
-- **§14.1.4** A probe is always known (§3.3).
+- **§14.1.4** A probe is a plain `f64` (§3.3.1).
 - **§14.1.5** In `analog` a probe is the first row of §16.2. In a reaction or a guard it reads
   the solution §12.1.5 states, and makes the instant a time point. In `on settle` it reads the
   final solution of the time point; as the argument of `cross`, each successive solution
@@ -885,7 +880,7 @@ with `mag` and `phase` evaluated at the operating point.
   allowed in every run-time position, definitions included.
 - **§14.4.2** The functions of the environment of the solve form continuous expressions (§8.2).
   They are allowed everywhere but definitions, anonymous definitions and the argument of `at`.
-- **§14.4.3** All are known. All are constant during a solve, so any of them **MAY** appear in a
+- **§14.4.3** All are plain values. All are constant during a solve, so any of them **MAY** appear in a
   selector (§11 rule 3).
 - **§14.4.6** This specification names no session parameter of `simparam`. The names are the
   host's (G.66).
@@ -912,7 +907,7 @@ state of the jump rule (§15.2).
 
 **Static semantics**
 
-- **§14.5.1** `x` is a value input: any known `f64` expression (§14 rule 5). The result is a
+- **§14.5.1** `x` is a value input: any `f64` expression (§14 rule 5). The result is a
   continuous expression with a direct dependence on `x` (§8.3.6).
 - **§14.5.2** `abstol` is the absolute tolerance of the state `x` in the truncation-error test
   (§17.2.1). Left out, the simulator derives
@@ -938,7 +933,7 @@ same.
 
 **Static semantics**
 
-- **§14.6.1** `x` and `td` are value inputs and **MUST** be known (§14 rule 5).
+- **§14.6.1** `x` and `td` are value inputs: `f64` expressions (§14 rule 5).
 - **§14.6.2** Without `max`, `td` **MUST** be constant during an analysis: an expression over
   params, constants and the environment constant during an analysis. The check is made per
   instance, after value inputs are substituted (§8.3.9). With `max`, `td` **MAY** be any
@@ -1004,7 +999,7 @@ are `Event` values. §13 defines all four; this section adds their state.
 
 | Primitive | State | Arguments |
 | --- | --- | --- |
-| `cross` | `e` at the last accepted solution | `e` may be continuous and unknown; `ttol` defaults to the simulator's, `etol` to the nature's `abstol` (§17.3) |
+| `cross` | `e` at the last accepted solution | `e` may be continuous; `ttol` defaults to the simulator's, `etol` to the nature's `abstol` (§17.3) |
 | `at` | the armed time, and whether it fired | a discrete expression (§13 rule 11) |
 | `s.changed()` | none: the carrier's previous value is §5.3 | — |
 | `settle` | none | — |
@@ -1021,7 +1016,7 @@ Per analysis, all four follow §13 rule 19.
 
 **Static semantics**
 
-- **§14.10.1** `bound_step` is a statement of `analog` (§11 rule 12). `dt` is a known `f64`.
+- **§14.10.1** `bound_step` is a statement of `analog` (§11 rule 12). `dt` is an `f64`.
 
 **Dynamic semantics.** Per solve: the `bound_step` row of §16.2.
 
@@ -1041,8 +1036,7 @@ reactions and of `analog`; in `analog` it is a trace (§19 rule 4) and is not ru
 
 ### 14.12 Carrier and value methods
 
-`s.changed()` (§13 rules 15 and 16), `s.prev()` (§5.3), `s.others()` (§5.2), `x.level(k)`
-(§3.3.4) and `p.inflow()` (§6, §14.1) are defined where cited. They are allowed wherever the
+`s.changed()` (§13 rules 15 and 16), `s.prev()` (§5.3), `s.others()` (§5.2) and `p.inflow()` (§6, §14.1) are defined where cited. They are allowed wherever the
 carrier is read. `impl` names **MUST NOT** repeat them (§3.1).
 
 ### 14.13 Not core

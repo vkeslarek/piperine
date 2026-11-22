@@ -1983,3 +1983,17 @@ fn a_loop_that_does_not_settle_is_e0511() {
     let row = table_rows(&section(&iii, "### 8.2 ")).into_iter().find(|r| r[0] == "`E0511`").expect("E0511 row in 8.2");
     assert_eq!(row[2], "run", "{row:?}");
 }
+
+#[test]
+fn part_iv_reads_values_and_the_first_commit_is_a_change() {
+    // EU-13 AC 2 and 5, EU-14: §13 rule 6 says the initial value's commit at `(0, 0)` is a change
+    // of every carrier and that `rise()` does not fire for a carrier that starts high; Part IV
+    // holds none of the removed words.
+    let iv = spec("part_iv_behavior.md");
+    let s = flat(&iv);
+    assert!(s.contains("that commit is a change of every carrier. So `changed()` fires there for every carrier. `rise()` and `fall()` do not"), "{s}");
+    assert!(s.contains("When the guard is false the reaction does not run"), "§13 rule 1");
+    for gone in ["known_or", "is_known", "`level(", ".level(", "`Unknown`", "flag-total", "under unknown control", "known flag", "`E0150`"] {
+        assert!(!s.contains(gone), "Part IV still says {gone}");
+    }
+}
