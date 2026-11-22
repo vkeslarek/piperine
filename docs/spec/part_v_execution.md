@@ -573,10 +573,11 @@ Every solve but a small-signal sweep is a Newton iteration. It has **converged**
 three hold:
 
 1. **Update.** Every unknown moved by at most `reltol · max(|x|, |x_old|) + abstol`. `abstol`
-   is the nature's: for a node, the smallest potential `abstol` of the natures meeting there;
-   for a branch unknown, its flow `abstol`. A nature can only tighten the session's value: a
-   branch unknown and its row use the smaller of the session `abstol` and the nature's flow
-   `abstol`, so `--abstol` tighter than the nature's applies and a looser one does not.
+   is the smaller of the session's and the nature's: for a node, the session `vntol` and the
+   smallest potential `abstol` of the natures meeting there; for a branch unknown, the session
+   `abstol` and its flow `abstol`. A nature can only tighten the session's value: `--vntol` and
+   `--abstol` always take effect, and a looser nature (a potential `abstol` of 1 mV) does not
+   loosen the default.
 2. **Residual.** Every row's imbalance is at most `abstol + reltol · scale`. A node's row is
    tested against the potential `abstol` of that node (the smallest potential `abstol` of the
    natures meeting there, default 1 µV). A branch row is tested against the flow `abstol`

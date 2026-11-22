@@ -82,14 +82,13 @@ impl Default for Tolerances {
 }
 
 impl Tolerances {
-    /// §6.5.8's per-node potential-`abstol` (a tighter value than the flat
-    /// `vntol`, if the node has one declared) — `self.vntol` for any node
-    /// absent from `node_vntol_overrides`, unchanged from before this
-    /// field existed.
+    /// The absolute tolerance of a node: the smaller of the session's `vntol` and its nature's
+    /// potential `abstol` (in `node_vntol_overrides`, §6.5.8); a nature can only tighten the
+    /// session value (§17.1), and `self.vntol` stands for a node absent from the overrides.
     fn vntol_for(&self, variable: &crate::netlist::AnalogVariable) -> f64 {
         match variable {
             crate::netlist::AnalogVariable::Node(id) => {
-                self.node_vntol_overrides.get(id).copied().unwrap_or(self.vntol)
+                self.node_vntol_overrides.get(id).map_or(self.vntol, |nature| nature.min(self.vntol))
             }
             _ => self.vntol,
         }

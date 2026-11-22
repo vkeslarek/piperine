@@ -224,6 +224,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 3. WHEN a port of `Electrical` and a port of a compatible nature `HvElectrical` (same potential and flow names, potential `abstol` 1m) meet at one node THEN the system SHALL give that node the smaller potential `abstol` (1 µV), and the operating point of a divider made of one resistor of each nature SHALL equal the all-`Electrical` divider within `DC_VOLTAGE`.
 4. IF two natures whose flow names differ meet at a port THEN the system SHALL report `E0251`.
 5. WHEN a branch's nature gives a flow `abstol` and the session gives `abstol` THEN the bound circuit SHALL give the branch's flow unknown and its row the smaller of the two (a nature can only tighten the session value; AC 2 reads the nature's value where it is the smaller), decided 2026-11-22.
+6. WHEN a nature's `abstol` and the session's value both apply THEN the bound circuit SHALL give the unknown and its row the smaller of the two, for nodes (`vntol` against the potential `abstol`) and for branches (`abstol` against the flow `abstol`): a nature only tightens, and `--vntol` and `--abstol` always take effect. The user chose it on 2026-11-22 ("Menor dos dois"). A looser nature, such as `HvElectrical`'s 1 mV, no longer loosens the default, and AC 1 and AC 2 read "carries" for the nature's value and "effective" for the smaller.
 
 **Independent Test**: a `piperine-api` test that binds the designs and reads the bound circuit's tolerances, plus the divider's operating point.
 

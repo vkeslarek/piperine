@@ -88,10 +88,30 @@ impl Designs {
 
 #[test]
 fn a_potential_abstol_of_one_millivolt_reaches_its_node() {
-    // AO-10 AC 1: a node of `HvElectrical` (potential `abstol` 1m) has the tolerance 1m in the bound
-    // circuit, which is the update and the residual tolerance of its unknown (§17.1 rules 1, 2).
+    // AO-10 AC 1 and AC 6: a node of `HvElectrical` (potential `abstol` 1m) carries 1m in the bound
+    // circuit, and its effective update and residual tolerance is the smaller of that and the session's
+    // `vntol` (§17.1 rules 1, 2): with the default 1 uV the nature does not loosen it, and the run's
+    // `--vntol` 1e-2 is how to loosen it, down to the nature's 1m.
     let mut session = Designs::session("module Top() { signal a: HvElectrical; let r1 = HvRes(a, gnd) { r: 1k }; }\n");
     assert_eq!(Designs::node_tolerance(&mut session, "a"), 1e-3);
+    let id = Designs::node(&session, "a");
+    let circuit = session.circuit().expect("a circuit");
+    let bound = circuit.bound().expect("a bound circuit");
+    let netlist = circuit.netlist();
+    let unknowns = netlist.all_references().into_iter().filter_map(|reference| reference.idx()).count();
+    let at = netlist.reference_for(&piperine_solver::prelude::AnalogVariable::Node(id)).and_then(|reference| reference.idx()).expect("the node is an unknown");
+    let scale = vec![0.0; unknowns];
+    let accepts = |session_vntol: f64, residual_at_node: f64| {
+        let mut tolerances = Tolerances { vntol: session_vntol, ..Tolerances::default() };
+        bound.tighten(&mut tolerances);
+        let mut residual = vec![0.0; unknowns];
+        residual[at] = residual_at_node;
+        tolerances.residual_test(netlist, &residual, &scale)
+    };
+    assert!(!accepts(1e-6, 5e-4), "the nature's 1 mV does not loosen the session's 1 uV");
+    assert!(accepts(1e-2, 5e-4), "a looser --vntol loosens it down to the nature's 1 mV");
+    assert!(!accepts(1e-2, 5e-3), "and no further");
+    assert!(!accepts(1e-9, 5e-8), "a tighter --vntol applies");
     // the control: a node of `Electrical` has 1 uV
     let mut session = Designs::session("module Top() { signal a: Electrical; let r1 = Res(a, gnd) { r: 1k }; }\n");
     assert_eq!(Designs::node_tolerance(&mut session, "a"), 1e-6);
