@@ -35,6 +35,23 @@ fn a_binary_carrier_is_read_as_its_value() {
     assert!((volts[1] - 2.0).abs() < 1e-9, "a `Bit` is read as its value: {}", volts[1]);
 }
 
+#[test]
+fn a_binary_carrier_of_any_shape_is_read_as_its_value_everywhere() {
+    // §3.3.1, §3.3.6 (EU-01 AC 1): a `Bit<u8>`, a struct and an array carrier are read by `analog` directly and through a
+    // function, and by a reaction directly and through a function. `n` is 5, `g` is `Gains { lo: 2, hi: 9 }`, `a` is
+    // `[4, 6, 8]`: the nodes are 5, 10, 9, 9 - 2, 6 and 8 V, and every record reads the same values
+    let volts = RUN.operating_point("binary_read.msl", "CountsBench", &["n_node", "f_node", "g_node", "s_node", "a_node", "t_node"]);
+    for (read, (got, wanted)) in ["n", "twice(n)", "g.hi", "spread(g)", "a[1]", "third(a)"].iter().zip(volts.iter().zip([5.0, 10.0, 9.0, 7.0, 6.0, 8.0])) {
+        assert!((got - wanted).abs() < 1e-9, "`{read}` in analog: {got} V, wanted {wanted}");
+    }
+    let seen: Vec<Record> = RUN.records_of("binary_read.msl", "CountsBench").into_iter().filter(|record| record.stream == "seen").collect();
+    assert!(!seen.is_empty(), "the reaction runs at the rising edges");
+    for record in seen {
+        let values: Vec<Field> = record.fields.iter().map(|(_, field)| field.clone()).collect();
+        assert_eq!(values, [Field::Int(5), Field::Int(10), Field::Int(9), Field::Int(7), Field::Int(6), Field::Int(8)], "n, twice(n), g.hi, spread(g), a[1], third(a) in a reaction");
+    }
+}
+
 /// The records of the stream `name` the transient of `top` of `initial.msl` made, in order.
 fn stream(top: &str, name: &str) -> Vec<Record> {
     RUN.records_of("initial.msl", top).into_iter().filter(|record| record.stream == name).collect()
