@@ -12,7 +12,7 @@ use piperine_ir::{EmitField, Expr, ExprId as LoweredExpr, Origin, Stmt, Stream, 
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
-use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, FieldInit, Lit, Resolution};
+use crate::pom::{BinOp, BlockNode, DeclId, DeclKind, ExprId, ExprKind, FieldInit, Lit, Resolution};
 use crate::types::{Callee, Ty};
 
 impl Elaboration<'_, '_> {
@@ -167,6 +167,16 @@ impl Elaboration<'_, '_> {
     /// each `&str` param bound to its text, each other param to a local holding its argument,
     /// then the body's statements. `None` after a diagnostic.
     fn inline_emitting_parts(&mut self, scope: &mut Scope, function: DeclId, args: &[ExprId]) -> Option<(Vec<LoweredStmt>, Option<LoweredExpr>)> {
+        let (mut out, body) = self.bind_inlined_arguments(scope, function, args)?;
+        let (stmts, value) = self.lower_statements(scope, &body.stmts)?;
+        out.extend(stmts);
+        Some((out, value))
+    }
+
+    /// The `let`s that bind the params of `function` for a call with `args` (each `str` param to its
+    /// text, each other param to a local holding its argument), and the body to inline after them.
+    /// `None` after a diagnostic.
+    pub(super) fn bind_inlined_arguments(&mut self, scope: &mut Scope, function: DeclId, args: &[ExprId]) -> Option<(Vec<LoweredStmt>, BlockNode)> {
         let data = self.design.decl_data(function).clone();
         let DeclKind::Fn(f) = &data.kind else { return None };
         let body = f.body.clone()?;
@@ -202,8 +212,6 @@ impl Elaboration<'_, '_> {
         if !ok {
             return None;
         }
-        let (stmts, value) = self.lower_statements(scope, &body.stmts)?;
-        out.extend(stmts);
-        Some((out, value))
+        Some((out, body))
     }
 }

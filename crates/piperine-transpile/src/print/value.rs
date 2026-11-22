@@ -1154,8 +1154,9 @@ impl<'a> ValuePrinter<'a> {
             return self.merged(e, cond, then, otherwise);
         }
         let ty = self.ir.expr_type(e);
-        let condition = if matches!(self.ir.expr(cond), Expr::If { .. }) {
-            // `if if a { b } else { c } { .. }` is valid Rust; parentheses around it are a warning.
+        let condition = if matches!(self.ir.expr(cond), Expr::If { .. } | Expr::Block { .. }) {
+            // `if if a { b } else { c } { .. }` and `if { s; c } { .. }` are valid Rust; parentheses
+            // around either are a warning.
             self.piece(cond)?.text
         } else {
             self.piece(cond)?.at(Prec::Or)
@@ -1265,7 +1266,7 @@ impl<'a> ValuePrinter<'a> {
                     None => self.expr(*init)?,
                 };
                 // a deferred `let x;` starts at a placeholder its first assignment overwrites
-                let keyword = if self.mutable.get(*local as usize).copied().unwrap_or(false) { "#[allow(unused_assignments)] let mut" } else { "let" };
+                let keyword = if self.mutable.get(*local as usize).copied().unwrap_or(false) { "#[allow(unused_assignments, unused_variables)] let mut" } else { "let" };
                 // a function value has no type of its own to infer: the local is the `&dyn Fn` it holds
                 let annotation = match self.local_types.get(*local as usize) {
                     Some(ty @ ValueType::Fn(..)) => format!(": {}", self.rust_type(ty, &self.path)?),

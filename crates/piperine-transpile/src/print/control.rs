@@ -76,7 +76,9 @@ impl<'a> ValuePrinter<'a> {
     /// `target = value;` or `target = target op value;`, `target` a Rust place of type `ty`.
     pub(super) fn assign_to(&self, name: &str, ty: &ValueType, op: Option<BinaryOp>, value: ExprId) -> Result<String, Error> {
         let Some(op) = op else {
-            return Ok(format!("{name} = {};", self.expr_as(value, ty)?));
+            // a temporary an inlined `Option` call assigns may never be read (`f().is_some()`): an
+            // attribute on an assignment is unstable, on a block statement it is not
+            return Ok(format!("#[allow(unused_assignments)] {{ {name} = {}; }}", self.expr_as(value, ty)?));
         };
         let real = *Self::base(ty) == ValueType::F64 && !(Self::is_flagged(ty) || self.plain);
         let (symbol, prec) = self.operator(value, op, real)?;

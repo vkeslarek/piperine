@@ -103,11 +103,14 @@ pub(super) struct Scope {
     pub(super) decisions: u32,
     /// The recursive calls being expanded, outermost first (`unroll.rs`).
     pub(super) expanding: Vec<Expansion>,
+    /// The `let`s of the temporaries an inlined `Option` call reads (`returns.rs`), declared before the
+    /// statement being lowered so every read of the pair sees them bound.
+    pub(super) pending: Vec<LoweredStmt>,
 }
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), may_be_unknown: false, loops: Vec::new(), result: None, fn_targets: BTreeMap::new(), unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new() }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), may_be_unknown: false, loops: Vec::new(), result: None, fn_targets: BTreeMap::new(), unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new() }
     }
 }
 
@@ -542,7 +545,9 @@ impl Elaboration<'_, '_> {
         let mut out = Vec::new();
         let mut value = None;
         let mut ok = true;
+        let outer = std::mem::take(&mut scope.pending);
         for (i, stmt) in stmts.iter().enumerate() {
+            let start = out.len();
             let node = self.design.stmt_node(*stmt).clone();
             let file = self.design.decl_data(node.owner).file;
             match &node.kind {
@@ -571,7 +576,10 @@ impl Elaboration<'_, '_> {
                     ok = false;
                 }
             }
+            let declared = std::mem::take(&mut scope.pending);
+            out.splice(start..start, declared);
         }
+        scope.pending = outer;
         ok.then_some((out, value))
     }
 

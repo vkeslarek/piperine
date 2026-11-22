@@ -1,0 +1,37 @@
+//! A function that returns an `Option` and reaches `emit!` (`log`) or takes a `str` (CV finding 13,
+//! §19 rule 10, §1.2.9), called from a reaction as the subject of `unwrap_or`, a `match`, an `if let`
+//! and `is_some`: the body runs once per call. The expected values and the record count are
+//! computed by Rust in `source_control.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn probe(x: u8) -> Option<u8> {
+    log(Severity::Info, "probe");
+    if x > 1 { Some(x + 1) } else { None }
+}
+fn pick(name: str, x: u8) -> Option<u8> { if name == "go" && x > 1 { Some(x * 2) } else { None } }
+fn noted(name: str, x: u8) -> Option<u8> {
+    log(Severity::Info, "noted");
+    if name == "go" { Some(x) } else { None }
+}
+
+module Rows(in clk: Bit, out a: Bit<u8>, out b: Bit<u8>, out c: Bit<u8>, out d: Bit, out e: Bit<u8>, out f: Bit<u8>, out g: Bit<u8>) {}
+digital for Rows {
+    on clk.rise() {
+        a <- probe(3).unwrap_or(9);
+        b <- match probe(0) { Some(v) => v, None => 7 };
+        c <- if let Some(v) = probe(4) { v * 2 } else { 0 };
+        d <- probe(5).is_some();
+        e <- pick("go", 5).unwrap_or(1);
+        f <- pick("stop", 5).unwrap_or(1);
+        g <- noted("go", 6).unwrap_or(0);
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal a: Bit<u8>; signal b: Bit<u8>; signal c: Bit<u8>; signal d: Bit; signal e: Bit<u8>; signal f: Bit<u8>; signal g: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, a, b, c, d, e, f, g);
+}

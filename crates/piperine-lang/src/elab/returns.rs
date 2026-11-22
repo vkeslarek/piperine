@@ -9,7 +9,7 @@
 //! A function with a `return` or a `?` has the result type of its signature, flagged where the
 //! function may see unknowns (`FunctionResult`): every return and the tail are held to it.
 
-use piperine_ir::{Expr, ExprId as LoweredExpr, Origin, ValueType};
+use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Place, Stmt, ValueType};
 
 use super::compound::Pair;
 use super::elaborator::Elaboration;
@@ -69,7 +69,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// Whether `body` holds a `return` or a `?`.
-    fn returns_early(&self, body: &BlockNode) -> bool {
+    pub(super) fn returns_early(&self, body: &BlockNode) -> bool {
         let mut inside = Vec::new();
         for expr in crate::pom::block_exprs(self.design, body) {
             crate::pom::preorder(self.design, expr, &mut inside);
@@ -172,13 +172,11 @@ impl Elaboration<'_, '_> {
     /// The pair `(f.is(args), f.val(args))` of a call of a function that returns an `Option`: the
     /// arguments are lowered once for each half.
     ///
-    /// A function that reaches `emit!` or takes a `str` is inlined where it stands (§19 rule 10), and a
-    /// pair is two expressions of one run, so it has no such form: the call is refused by name, where each
-    /// half would run the `emit!` once more.
+    /// A function that reaches `emit!` or takes a `str` is inlined where it stands (§19 rule 10), and
+    /// its body must run once: see `lower_inlined_option_call`.
     pub(super) fn lower_option_call(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId) -> Option<Pair> {
         if self.is_inlined(function) {
-            self.unsupported(scope.file, self.design.expr_node(expr).span, "a call of a function that returns an `Option` and reaches `emit!` (`log`) or takes a `str`");
-            return None;
+            return self.lower_inlined_option_call(scope, expr, function);
         }
         let origin = self.expr_origin(expr);
         let first = self.lower_arguments(scope, expr, function)?;
@@ -189,6 +187,61 @@ impl Elaboration<'_, '_> {
         let is = self.emit(Expr::Call { function: presence, args: first }, is_ty, origin.clone());
         let val = self.emit(Expr::Call { function: payload, args: second }, val_ty, origin);
         Some(Pair { is, val, literal: None })
+    }
+
+    /// A call of an inlined function that returns an `Option` (§19 rule 10): the body runs once. Its
+    /// statements, then the tail's pair, assign two temporaries; `is` is the block that runs them and
+    /// reads the flag, `val` reads the payload, which every reader of the pair does after `is`. The
+    /// temporaries are declared before the statement being lowered (`Scope::pending`), where every read
+    /// sees them bound, so the `emit!` of the body runs exactly once per call. `None` after a diagnostic.
+    fn lower_inlined_option_call(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId) -> Option<Pair> {
+        let origin = self.expr_origin(expr);
+        let span = self.design.expr_node(expr).span;
+        let ExprKind::Call { args, .. } = self.design.expr_node(expr).kind.clone() else { return None };
+        let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
+        let (mut stmts, body) = self.bind_inlined_arguments(scope, function, &args)?;
+        if self.returns_early(&body) {
+            self.unsupported(scope.file, span, "a `return` or `?` in an inlined function that returns an `Option`");
+            return None;
+        }
+        let tail = match body.stmts.last().map(|s| self.design.stmt_node(*s).kind.clone()) {
+            Some(StmtKind::Expr { expr, semi: false }) => expr,
+            _ => {
+                self.unsupported(scope.file, span, "a function returning an `Option` with no tail value");
+                return None;
+            }
+        };
+        let (inner, _) = self.lower_statements(scope, &body.stmts[..body.stmts.len() - 1])?;
+        stmts.extend(inner);
+        let pair = self.lower_option(scope, tail)?;
+        let is_local = self.declare_temporary(scope, "option.is", pair.is, &origin)?;
+        let val_local = self.declare_temporary(scope, "option.val", pair.val, &origin)?;
+        for (local, value) in [(is_local, pair.is), (val_local, pair.val)] {
+            stmts.push(self.stmt(Stmt::Assign { place: Place { local, path: Vec::new() }, op: None, value }));
+        }
+        let is_ty = scope.locals[is_local as usize].ty.clone();
+        let val_ty = scope.locals[val_local as usize].ty.clone();
+        let read_is = self.emit(Expr::Local(is_local), is_ty.clone(), origin.clone());
+        let is = self.emit(Expr::Block { stmts, value: Some(read_is) }, is_ty, origin.clone());
+        let val = self.emit(Expr::Local(val_local), val_ty, origin);
+        Some(Pair { is, val, literal: None })
+    }
+
+    /// A new mutable local `name` of the type of `value`, declared with the zero of it in
+    /// `Scope::pending`. `None` after a diagnostic.
+    fn declare_temporary(&mut self, scope: &mut Scope, name: &str, value: LoweredExpr, origin: &Origin) -> Option<u32> {
+        let ty = self.type_of(value);
+        let base = match &ty {
+            ValueType::Flagged(inner) => (**inner).clone(),
+            other => other.clone(),
+        };
+        let zero = self.zero(&base, origin.clone())?;
+        let init = self.coerced_to(scope, zero, &ty);
+        let local = scope.locals.len() as u32;
+        scope.locals.push(Local { name: name.to_string(), ty, mutable: true });
+        let declaration = self.stmt(Stmt::Let { local, init });
+        scope.pending.push(declaration);
+        Some(local)
     }
 
     /// The function `expr` calls when its result is an `Option`.

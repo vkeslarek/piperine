@@ -204,6 +204,36 @@ fn the_question_mark_on_none_returns_none() {
     }
 }
 
+#[test]
+fn an_option_function_that_logs_or_takes_a_str_runs_its_body_once() {
+    // CV finding 13 (§19 rule 10, §1.2.9): a function returning an `Option` that reaches `emit!` or takes a
+    // `str` is inlined where it stands, once per call, whichever way the `Option` is read (`unwrap_or`,
+    // `match`, `if let`, `is_some`): its record appears once per call and the values are Rust's.
+    let probe = |x: u8| if x > 1 { Some(x + 1) } else { None };
+    let pick = |name: &str, x: u8| if name == "go" && x > 1 { Some(x * 2) } else { None };
+    let noted = |name: &str, x: u8| if name == "go" { Some(x) } else { None };
+    let matched = match probe(0) {
+        Some(v) => v,
+        None => 7,
+    };
+    let bound = if let Some(v) = probe(4) { v * 2 } else { 0 };
+    let names = ["a", "b", "c", "d", "e", "f", "g"];
+    let wanted = [
+        CarrierBytes::byte(probe(3).unwrap_or(9)),
+        CarrierBytes::byte(matched),
+        CarrierBytes::byte(bound),
+        CarrierBytes::byte(u8::from(probe(5).is_some())),
+        CarrierBytes::byte(pick("go", 5).unwrap_or(1)),
+        CarrierBytes::byte(pick("stop", 5).unwrap_or(1)),
+        CarrierBytes::byte(noted("go", 6).unwrap_or(0)),
+    ];
+    RUN.assert_commits("option_log.msl", &names, &wanted);
+    // five calls of a function that logs (`probe` four times, `noted` once), one record each
+    let records = RUN.records_of("option_log.msl", "Bench");
+    assert_eq!(records.len(), 5, "one record per call: {records:?}");
+    assert!(records.iter().all(|r| r.stream == "log" && r.instance == "Bench.rows"), "{records:?}");
+}
+
 /// The rows `patterns.msl` commits.
 struct PatternRows;
 
