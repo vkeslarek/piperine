@@ -605,13 +605,16 @@ pub enum Stmt {
 /// The target of an assignment: a local and the projections that reach inside it (`s.f`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Place {
+    /// The index of the local the assignment writes.
     pub local: u32,
+    /// The steps from the local to the written part, outermost first; empty for the whole local.
     pub path: Vec<Projection>,
 }
 
 /// One step into a value from a place: a field of a struct or a tuple, by index.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Projection {
+    /// `.n` or `.name`: the field at this index of a struct or a tuple.
     Field(u32),
     /// `[index]`: an element of an array, the index an expression of an integer type.
     Index(ExprId),

@@ -5,10 +5,6 @@
 //! and tuples, never read back from the model.
 #![cfg(unix)]
 
-use std::path::{Path, PathBuf};
-
-use piperine_parity::project::Project;
-
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/digital.rs"]
 mod digital;
@@ -18,13 +14,27 @@ mod mixed;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
+#[allow(dead_code)]
+#[path = "source/bytes.rs"]
+mod bytes;
+#[allow(dead_code)]
+#[path = "source/operators.rs"]
+mod operators;
+#[allow(dead_code)]
+#[path = "source/run.rs"]
+mod run;
 
 use mixed::Seen;
 use piperine_solver::protocol::{AnalysisKind, ObservationKind};
+use bytes::CarrierBytes;
+use run::SourceRun;
 use support::{build, transient};
 
 /// One nanosecond in ticks.
 const NS: i64 = 1_000_000;
+
+/// The model files of `tests/aggregates/`.
+const RUN: SourceRun = SourceRun::in_directory("tests/aggregates");
 
 /// A struct as the model `structs.msl` declares it, in Rust.
 #[derive(Clone, Copy)]
@@ -47,48 +57,6 @@ struct Line {
     to: P,
 }
 
-/// The lone file `file` of `tests/aggregates/`, as a project.
-fn project(file: &str) -> Project {
-    let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/aggregates").join(file);
-    Project::new(&path)
-}
-
-/// A known `f64` carrier value as the plan lays it out: the value, then the known byte.
-fn real_bytes(v: f64) -> Vec<u8> {
-    let mut bytes = vec![0u8; 16];
-    bytes[..8].copy_from_slice(&v.to_le_bytes());
-    bytes[8] = 1;
-    bytes
-}
-
-/// A known one-byte carrier value (`u8`, `bool`).
-fn byte(v: u8) -> Vec<u8> {
-    vec![v, 1]
-}
-
-/// What `Bench` of `file` committed at its first rising edge (2.5 ns of a 200 MHz oscillator): the
-/// bytes of each carrier in `names`, which must change exactly once.
-fn first_commits(file: &str, names: &[&str]) -> Vec<Vec<u8>> {
-    let seen = build(&project(file), "Bench").run(10e-9, 1e-9);
-    names
-        .iter()
-        .map(|name| {
-            let changes = transient(&seen, &format!("Bench.{name}"));
-            assert_eq!(changes.len(), 1, "{name} changes once: {changes:?}");
-            assert_eq!(changes[0].0, 5 * NS / 2, "{name} changes at the first rising edge");
-            changes[0].1.clone()
-        })
-        .collect()
-}
-
-/// The commits of `names`, each compared with the bytes Rust gives.
-fn assert_commits(file: &str, names: &[&str], wanted: &[Vec<u8>]) {
-    let committed = first_commits(file, names);
-    for (k, name) in names.iter().enumerate() {
-        assert_eq!(committed[k], wanted[k], "{name} is the value Rust gives");
-    }
-}
-
 #[test]
 fn struct_expressions_give_rusts_values() {
     // CV-09 AC 1 (§1.3.3): named fields in any order, shorthand, a tuple struct built by a call, a
@@ -100,10 +68,10 @@ fn struct_expressions_give_rusts_values() {
     #[derive(Clone, Copy)]
     struct Pair(f64, bool);
     let pair = Pair(2.5, true);
-    assert_commits(
+    RUN.assert_commits(
         "structs.msl",
         &["s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9"],
-        &[byte(make_p.y), real_bytes(make_p.x), byte(shorthand.y), real_bytes(shorthand.x), real_bytes(pair.0), byte(u8::from(pair.1)), byte(line.to.y), byte(line.from.y), real_bytes(line.to.x), byte(9)],
+        &[CarrierBytes::byte(make_p.y), CarrierBytes::real(make_p.x), CarrierBytes::byte(shorthand.y), CarrierBytes::real(shorthand.x), CarrierBytes::real(pair.0), CarrierBytes::byte(u8::from(pair.1)), CarrierBytes::byte(line.to.y), CarrierBytes::byte(line.from.y), CarrierBytes::real(line.to.x), CarrierBytes::byte(9)],
     );
 }
 
@@ -112,7 +80,7 @@ fn field_reads_give_the_fields() {
     // CV-09 AC 3, CV-10 AC 1 (§1.3.4): `s.x` and `t.0` read a field, and a field of a field.
     let t = (1u8, 2.5f64, true);
     let nested = ((1u8, 2u8), 3u8);
-    assert_commits("structs.msl", &["t0", "t1", "t2", "t7"], &[byte(t.0), real_bytes(t.1), byte(u8::from(t.2)), byte((nested.0).1 + nested.1)]);
+    RUN.assert_commits("structs.msl", &["t0", "t1", "t2", "t7"], &[CarrierBytes::byte(t.0), CarrierBytes::real(t.1), CarrierBytes::byte(u8::from(t.2)), CarrierBytes::byte((nested.0).1 + nested.1)]);
 }
 
 #[test]
@@ -136,10 +104,10 @@ fn assigning_a_field_changes_that_field_only() {
     };
     let argument = P { x: 0.0, y: 10 };
     let result = bumped(argument);
-    assert_commits(
+    RUN.assert_commits(
         "structs.msl",
         &["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"],
-        &[byte(p.y), byte(q.y), real_bytes(q.x), byte(l.to.y), byte(m.to.y), byte(compound.y), byte(argument.y), byte(result.y)],
+        &[CarrierBytes::byte(p.y), CarrierBytes::byte(q.y), CarrierBytes::real(q.x), CarrierBytes::byte(l.to.y), CarrierBytes::byte(m.to.y), CarrierBytes::byte(compound.y), CarrierBytes::byte(argument.y), CarrierBytes::byte(result.y)],
     );
 }
 
@@ -153,10 +121,10 @@ fn tuples_give_rusts_values() {
     let original = (1u8, 2u8);
     let mut copy = original;
     copy.0 = 7;
-    assert_commits(
+    RUN.assert_commits(
         "structs.msl",
         &["t0", "t1", "t2", "t3", "t4", "t5", "t6"],
-        &[byte(t.0), real_bytes(t.1), byte(u8::from(t.2)), byte(swapped.0), byte(swapped.1), byte(original.0), byte(copy.0)],
+        &[CarrierBytes::byte(t.0), CarrierBytes::real(t.1), CarrierBytes::byte(u8::from(t.2)), CarrierBytes::byte(swapped.0), CarrierBytes::byte(swapped.1), CarrierBytes::byte(original.0), CarrierBytes::byte(copy.0)],
     );
 }
 
@@ -182,21 +150,21 @@ fn tuple_patterns_bind_each_component() {
         (1, .., c) => c,
         _ => 0,
     };
-    assert_commits(
+    RUN.assert_commits(
         "structs.msl",
         &["d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8", "d9", "d10"],
         &[
-            byte(a * 10 + b),
-            byte(y + (x as u8)),
-            byte((ta as u8) + if tb { 1 } else { 0 }),
-            byte(match_tuple(1, 5)),
-            byte(match_tuple(0, 7)),
-            byte(match_tuple(2, 9)),
-            byte(match_struct(0, 4)),
-            byte(match_struct(3, 4)),
-            byte(if_let(1, 6)),
-            byte(if_let(2, 6)),
-            byte(rest),
+            CarrierBytes::byte(a * 10 + b),
+            CarrierBytes::byte(y + (x as u8)),
+            CarrierBytes::byte((ta as u8) + if tb { 1 } else { 0 }),
+            CarrierBytes::byte(match_tuple(1, 5)),
+            CarrierBytes::byte(match_tuple(0, 7)),
+            CarrierBytes::byte(match_tuple(2, 9)),
+            CarrierBytes::byte(match_struct(0, 4)),
+            CarrierBytes::byte(match_struct(3, 4)),
+            CarrierBytes::byte(if_let(1, 6)),
+            CarrierBytes::byte(if_let(2, 6)),
+            CarrierBytes::byte(rest),
         ],
     );
 }
@@ -249,24 +217,24 @@ fn payload_variants_build_and_match() {
         Msg::Say { len } => len + 100,
     };
     let data = |t: Tx| if let Tx::Data { n } = t { n } else { 99 };
-    assert_commits(
+    RUN.assert_commits(
         "enums.msl",
         &["v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "v11", "o2", "o3"],
         &[
-            byte(size(Tx::Idle)),
-            byte(size(Tx::Start)),
-            byte(size(Tx::Data { n: 5 })),
-            byte(size(Tx::Stop)),
-            byte(size(build(0))),
-            byte(size(build(1))),
-            byte(size(build(2))),
-            byte(weight(Msg::Quit)),
-            byte(weight(Msg::Move(3, 4))),
-            byte(weight(Msg::Say { len: 6 })),
-            byte(u8::from(build(1) == Tx::Data { n: 5 })),
-            byte(u8::from(build(1) == Tx::Data { n: 4 })),
-            byte(data(build(1))),
-            byte(data(build(0))),
+            CarrierBytes::byte(size(Tx::Idle)),
+            CarrierBytes::byte(size(Tx::Start)),
+            CarrierBytes::byte(size(Tx::Data { n: 5 })),
+            CarrierBytes::byte(size(Tx::Stop)),
+            CarrierBytes::byte(size(build(0))),
+            CarrierBytes::byte(size(build(1))),
+            CarrierBytes::byte(size(build(2))),
+            CarrierBytes::byte(weight(Msg::Quit)),
+            CarrierBytes::byte(weight(Msg::Move(3, 4))),
+            CarrierBytes::byte(weight(Msg::Say { len: 6 })),
+            CarrierBytes::byte(u8::from(build(1) == Tx::Data { n: 5 })),
+            CarrierBytes::byte(u8::from(build(1) == Tx::Data { n: 4 })),
+            CarrierBytes::byte(data(build(1))),
+            CarrierBytes::byte(data(build(0))),
         ],
     );
 }
@@ -286,10 +254,10 @@ fn discriminants_are_the_tag_and_the_cast() {
         _ => 0,
     };
     let _ = (Level::Low, Level::Mid);
-    assert_commits(
+    RUN.assert_commits(
         "enums.msl",
         &["c0", "c1", "c2", "c3", "c4"],
-        &[byte(Op::Add as u8), byte(Op::Sub as u8), byte(Op::Mul as u8), byte(op_code(Op::Mul)), byte(Level::High as u8)],
+        &[CarrierBytes::byte(Op::Add as u8), CarrierBytes::byte(Op::Sub as u8), CarrierBytes::byte(Op::Mul as u8), CarrierBytes::byte(op_code(Op::Mul)), CarrierBytes::byte(Level::High as u8)],
     );
 }
 
@@ -311,24 +279,11 @@ fn options_of_aggregates_behave_as_enums() {
     }
     let wrapped = Wrapped { inner: Some(P { _x: 1.0, y: 3 }) };
     let empty = Wrapped { inner: None };
-    assert_commits(
+    RUN.assert_commits(
         "enums.msl",
         &["o0", "o1", "o4", "o5"],
-        &[byte(pick_y(true)), byte(pick_y(false)), byte(match wrapped.inner { Some(p) => p.y, None => 0 }), byte(u8::from(empty.inner.is_none()))],
+        &[CarrierBytes::byte(pick_y(true)), CarrierBytes::byte(pick_y(false)), CarrierBytes::byte(match wrapped.inner { Some(p) => p.y, None => 0 }), CarrierBytes::byte(u8::from(empty.inner.is_none()))],
     );
-}
-
-/// The message of the fault the transient of `top` of `file` runs into: the run is expected to fail.
-fn the_fault(file: &str, top: &str) -> String {
-    let built = build(&project(file), top);
-    let circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
-    let mut options = piperine_solver::prelude::TransientAnalysisOptions::new(10e-9, 1e-9);
-    options.dt_max = 1e-9;
-    let mut solver = piperine_solver::prelude::Solver::new(circuit).with_context(piperine_solver::prelude::Context::default()).with_tran_opts(options).build();
-    match solver.tran().and_then(|mut t| t.solve()) {
-        Ok(_) => panic!("the run was expected to fault"),
-        Err(e) => e.to_string(),
-    }
 }
 
 #[test]
@@ -348,20 +303,20 @@ fn arrays_give_rusts_values() {
     let ten = [10u8, 20, 30];
     let mut ps = [P { x: 0.0, y: 4 }; 2];
     ps[1].y = 6;
-    assert_commits(
+    RUN.assert_commits(
         "arrays.msl",
         &["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"],
         &[
-            byte(a[0] + a[2]),
-            byte(repeated[3]),
-            byte(nested[1][0]),
-            byte(assigned[1][1] + assigned[0][1]),
-            byte((floats[0] + floats[1]) as u8),
-            byte(original[0]),
-            byte(bumped[0]),
-            byte(ten[2]),
-            byte(ten[0]),
-            byte(ps[0].y + ps[1].y),
+            CarrierBytes::byte(a[0] + a[2]),
+            CarrierBytes::byte(repeated[3]),
+            CarrierBytes::byte(nested[1][0]),
+            CarrierBytes::byte(assigned[1][1] + assigned[0][1]),
+            CarrierBytes::byte((floats[0] + floats[1]) as u8),
+            CarrierBytes::byte(original[0]),
+            CarrierBytes::byte(bumped[0]),
+            CarrierBytes::byte(ten[2]),
+            CarrierBytes::byte(ten[0]),
+            CarrierBytes::byte(ps[0].y + ps[1].y),
         ],
     );
     // array patterns: `[x, .., z]`, `[h, rest @ ..]`, literals and `..` in a `match`
@@ -373,10 +328,10 @@ fn arrays_give_rusts_values() {
         [2, n, _] => n,
         _ => 0,
     };
-    assert_commits(
+    RUN.assert_commits(
         "arrays.msl",
         &["p0", "p1", "p2", "p3"],
-        &[byte(x * 10 + z), byte(h * 100 + rest[0] * 10 + rest[1]), byte(match_literals(1)), byte(match_literals(2))],
+        &[CarrierBytes::byte(x * 10 + z), CarrierBytes::byte(h * 100 + rest[0] * 10 + rest[1]), CarrierBytes::byte(match_literals(1)), CarrierBytes::byte(match_literals(2))],
     );
 }
 
@@ -391,10 +346,10 @@ fn a_range_index_gives_the_array_of_its_elements() {
     let three = [1u8, 2, 3];
     let mut copy: [u8; 2] = three[0..2].try_into().expect("two elements");
     copy[0] = 9;
-    assert_commits(
+    RUN.assert_commits(
         "arrays.msl",
         &["r0", "r1", "r2", "r3", "r4"],
-        &[byte(mid[0] * 10 + mid[1]), byte(to[0] * 10 + to[1]), byte(inclusive[0] * 10 + inclusive[1]), byte(a[1..4][2]), byte(three[0] * 10 + copy[0])],
+        &[CarrierBytes::byte(mid[0] * 10 + mid[1]), CarrierBytes::byte(to[0] * 10 + to[1]), CarrierBytes::byte(inclusive[0] * 10 + inclusive[1]), CarrierBytes::byte(a[1..4][2]), CarrierBytes::byte(three[0] * 10 + copy[0])],
     );
 }
 
@@ -402,7 +357,7 @@ fn a_range_index_gives_the_array_of_its_elements() {
 fn an_index_out_of_range_panics_at_run_time() {
     // CV-13 AC 3 (§1 rule 11, §1.5.25): `a[5]` over three elements fails the analysis, naming the instance, the
     // instant and the index.
-    let fault = the_fault("arrays.msl", "OverrunBench");
+    let fault = RUN.the_fault("arrays.msl", "OverrunBench");
     assert!(fault.contains("OverrunBench.overrun"), "the fault names the instance: {fault}");
     assert!(fault.contains('5'), "the fault names the index: {fault}");
     assert!(fault.contains("ns") || fault.contains("e-9") || fault.contains("instant") || fault.contains("time") || fault.contains("t="), "the fault names the instant: {fault}");
@@ -413,11 +368,11 @@ fn an_unknown_index_reads_and_writes_by_merge() {
     // CV-13 AC 1 and US-04 AC 12 (§3.3.13): with `sel` never driven, reading `eq[sel]` over elements that are all
     // 5 gives 5, known; over 5, 5, 6 it is unknown; writing 5 into `w[sel]` merges 5 with each element,
     // which is 5 for the elements that held 5 and unknown for the one that held 6.
-    let seen = build(&project("arrays.msl"), "MergeBench").run(10e-9, 1e-9);
+    let seen = build(&RUN.project("arrays.msl"), "MergeBench").run(10e-9, 1e-9);
     let at_edge = |name: &str| -> Option<Vec<u8>> { transient(&seen, &format!("MergeBench.{name}")).into_iter().next().map(|(_, bytes)| bytes) };
-    assert_eq!(at_edge("same"), Some(byte(5)), "the elements all hold 5");
+    assert_eq!(at_edge("same"), Some(CarrierBytes::byte(5)), "the elements all hold 5");
     assert_eq!(at_edge("differ"), Some(vec![0, 0]), "5, 5, 6 merge to unknown");
-    assert_eq!(at_edge("w0"), Some(byte(5)), "merge(5, 5) is 5");
+    assert_eq!(at_edge("w0"), Some(CarrierBytes::byte(5)), "merge(5, 5) is 5");
     assert_eq!(at_edge("w1"), Some(vec![0, 0]), "merge(6, 5) is unknown");
 }
 
@@ -460,7 +415,7 @@ fn derived_comparisons_and_defaults_give_rusts_results() {
     // CV-12 AC 1 (H.8 rules 2 to 4, §1.5.23): derived `==`, `!=`, `<`, `<=`, `>`, `>=` on structs,
     // tuples, arrays, enums (discriminant first, then fields) and `Option`s (`None` lowest), and
     // `T::default()`, each the result Rust's derives give.
-    let flag = |b: bool| byte(u8::from(b));
+    let flag = |b: bool| CarrierBytes::byte(u8::from(b));
     let p = |x: f64, y: u8| Ordered { x, y };
     let mid = Level::Mid;
     let high = |a: u8, b: u8| Level::High { a, b };
@@ -494,7 +449,7 @@ fn derived_comparisons_and_defaults_give_rusts_results() {
         flag(Some(3u8) != none),
         flag(Wrap { inner: Some(1), tag: mid(2) } < Wrap { inner: Some(1), tag: mid(3) }),
         flag(Wrap { inner: None, tag: Level::Low } == Wrap { inner: None, tag: Level::Low }),
-        byte(Ordered::default().y),
+        CarrierBytes::byte(Ordered::default().y),
         flag(Ordered::default().x == 0.0),
         flag(Ordered::default() == p(0.0, 0)),
         flag(Option::<u8>::default() == none),
@@ -502,7 +457,7 @@ fn derived_comparisons_and_defaults_give_rusts_results() {
     let names = [
         "r0", "r1", "r2", "r3", "r4", "r5", "r6", "t0", "t1", "t2", "t3", "a0", "a1", "a2", "a3", "e0", "e1", "e2", "e3", "e4", "e5", "o0", "o1", "o2", "o3", "o4", "n0", "n1", "d0", "d1", "d2", "d3",
     ];
-    assert_commits("compare.msl", &names, &wanted);
+    RUN.assert_commits("compare.msl", &names, &wanted);
 }
 
 /// The rows of `iterators.msl`, each computed by Rust from the same text, and the names they commit.
@@ -511,16 +466,16 @@ struct IteratorRows;
 impl IteratorRows {
     /// The `(name, bytes Rust gives)` of every row, in the order the model commits them.
     fn wanted() -> Vec<(&'static str, Vec<u8>)> {
-        let flag = |b: bool| byte(u8::from(b));
+        let flag = |b: bool| CarrierBytes::byte(u8::from(b));
         vec![
-            ("len", byte({ let a = [3u8, 1, 4, 1, 5]; a.len() as u8 })),
+            ("len", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; a.len() as u8 })),
             ("is_empty", flag({ let a = [3u8, 1, 4, 1, 5]; a.is_empty() })),
             ("contains_hit", flag({ let a = [3u8, 1, 4, 1, 5]; a.contains(&4) })),
             ("contains_miss", flag({ let a = [3u8, 1, 4, 1, 5]; a.contains(&9) })),
-            ("first", byte({ let a = [3u8, 1, 4, 1, 5]; *a.first().unwrap_or(&0) })),
-            ("last", byte({ let a = [3u8, 1, 4, 1, 5]; *a.last().unwrap_or(&0) })),
-            ("get_in", byte({ let a = [3u8, 1, 4, 1, 5]; *a.get(2).unwrap_or(&99) })),
-            ("get_out", byte({ let a = [3u8, 1, 4, 1, 5]; *a.get(7).unwrap_or(&99) })),
+            ("first", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; *a.first().unwrap_or(&0) })),
+            ("last", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; *a.last().unwrap_or(&0) })),
+            ("get_in", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; *a.get(2).unwrap_or(&99) })),
+            ("get_out", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; *a.get(7).unwrap_or(&99) })),
             ("get_end_is_none", flag({ let a = [3u8, 1, 4, 1, 5]; a.get(5).is_none() && a.len() == 5 })),
             ("range_in", flag((2..5).contains(&4))),
             ("range_at_end", flag((2..5).contains(&5))),
@@ -532,49 +487,49 @@ impl IteratorRows {
             ("range_named", flag({ let r = 1..4; r.contains(&3) })),
             ("range_to", flag((..3).contains(&2))),
             ("range_from", flag((2..).contains(&1))),
-            ("map_sum", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().map(|x| x * 2).sum::<u8>() })),
-            ("filter_count", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().filter(|x| *x > 1).count() as u8 })),
-            ("fold", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().fold(0u8, |acc, x| acc * 2 + x) })),
-            ("sum", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().sum::<u8>() })),
-            ("count", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().count() as u8 })),
-            ("zip", byte({ let a = [3u8, 1, 4, 1, 5]; let b = [2u8, 0, 1, 3, 1]; a.iter().copied().zip(b.iter().copied()).map(|(x, y)| x * y).sum::<u8>() })),
-            ("zip_shorter", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().zip([7u8, 8].iter()).count() as u8 })),
-            ("enumerate", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().enumerate().fold(0u8, |acc, (i, x)| acc + (i as u8) * x) })),
-            ("rev", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().rev().fold(0u8, |acc, x| acc * 2 + x) })),
-            ("enumerate_then_rev", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().enumerate().rev().fold(0u8, |acc, (i, x)| acc * 2 + (i as u8) + x) })),
-            ("rev_then_enumerate", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().rev().enumerate().fold(0u8, |acc, (i, x)| acc * 2 + (i as u8) + x) })),
+            ("map_sum", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().map(|x| x * 2).sum::<u8>() })),
+            ("filter_count", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().filter(|x| *x > 1).count() as u8 })),
+            ("fold", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().fold(0u8, |acc, x| acc * 2 + x) })),
+            ("sum", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().sum::<u8>() })),
+            ("count", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().count() as u8 })),
+            ("zip", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; let b = [2u8, 0, 1, 3, 1]; a.iter().copied().zip(b.iter().copied()).map(|(x, y)| x * y).sum::<u8>() })),
+            ("zip_shorter", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().zip([7u8, 8].iter()).count() as u8 })),
+            ("enumerate", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().enumerate().fold(0u8, |acc, (i, x)| acc + (i as u8) * x) })),
+            ("rev", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().rev().fold(0u8, |acc, x| acc * 2 + x) })),
+            ("enumerate_then_rev", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().enumerate().rev().fold(0u8, |acc, (i, x)| acc * 2 + (i as u8) + x) })),
+            ("rev_then_enumerate", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().rev().enumerate().fold(0u8, |acc, (i, x)| acc * 2 + (i as u8) + x) })),
             ("any_hit", flag({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().any(|x| x == 4) })),
             ("any_miss", flag({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().any(|x| x > 9) })),
             ("all_hit", flag({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().all(|x| x > 0) })),
             ("all_miss", flag({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().all(|x| x > 1) })),
             ("empty_any", flag({ let e: [u8; 0] = []; e.iter().copied().any(|x| x > 0) })),
             ("empty_all", flag({ let e: [u8; 0] = []; e.iter().copied().all(|x| x > 0) })),
-            ("empty_sum", byte({ let e: [u8; 0] = []; e.iter().copied().sum::<u8>() })),
-            ("empty_fold", byte({ let e: [u8; 0] = []; e.iter().copied().fold(7u8, |acc, x| acc + x) })),
-            ("empty_len", byte({ let e: [u8; 0] = []; e.len() as u8 })),
+            ("empty_sum", CarrierBytes::byte({ let e: [u8; 0] = []; e.iter().copied().sum::<u8>() })),
+            ("empty_fold", CarrierBytes::byte({ let e: [u8; 0] = []; e.iter().copied().fold(7u8, |acc, x| acc + x) })),
+            ("empty_len", CarrierBytes::byte({ let e: [u8; 0] = []; e.len() as u8 })),
             ("empty_first_is_none", flag({ let e: [u8; 0] = []; e.first().is_none() && e.is_empty() })),
             ("empty_is_empty", flag({ let e: [u8; 0] = []; e.is_empty() })),
-            ("filter_enumerate", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().filter(|x| *x != 1).enumerate().fold(0u8, |acc, (i, x)| acc * 2 + (i as u8) * 3 + x) })),
-            ("chain", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().map(|x| x * 2).filter(|x| *x > 4).map(|x| x + 1).sum::<u8>() })),
-            ("range_map_sum", byte((1u8..5).map(|k| k * k).sum::<u8>())),
-            ("range_rev", byte((1u8..5).rev().fold(0u8, |acc, k| acc * 2 + k))),
-            ("range_filter_count", byte((0u8..10).filter(|k| k % 3 == 0).count() as u8)),
-            ("range_inclusive_sum", byte((1u8..=4).sum::<u8>())),
-            ("range_empty_sum", byte((5u8..2).sum::<u8>())),
-            ("range_zip", byte({ let a = [3u8, 1, 4, 1, 5]; (0u8..3).zip(a.iter().copied()).map(|(i, x)| i * x).sum::<u8>() })),
-            ("let_iterator", byte({ let a = [3u8, 1, 4, 1, 5]; let it = a.iter().copied().map(|x| x + 1); it.sum::<u8>() })),
-            ("signed_range_sum", byte({ let s: i8 = (-3i8..2).sum(); s as u8 })),
-            ("signed_range_count", byte((-3i8..2).count() as u8)),
-            ("for_array", byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for x in a { acc = acc * 2 + x; } acc })),
-            ("for_iter_rev", byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for x in a.iter().copied().rev() { acc = acc * 2 + x; } acc })),
-            ("for_enumerate", byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for (i, x) in a.iter().copied().enumerate() { acc = acc * 2 + (i as u8) + x; } acc })),
-            ("for_zip", byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for (x, y) in a.iter().copied().zip([1u8, 2, 3].iter().copied()) { acc = acc * 2 + x + y; } acc })),
-            ("for_filtered_range", byte({ let mut acc = 0u8; for k in (0u8..8).filter(|k| k % 2 == 0) { acc = acc * 2 + k; } acc })),
-            ("for_range_rev", byte({ let mut acc = 0u8; for k in (0u8..4).rev() { acc = acc * 2 + k; } acc })),
-            ("for_break", byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for x in a { if x == 4 { break; } acc = acc * 2 + x; } acc })),
-            ("for_continue", byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for x in a.iter().copied().filter(|x| *x != 5) { if x == 1 { continue; } acc = acc * 2 + x; } acc })),
-            ("for_named", byte({ let a = [3u8, 1, 4, 1, 5]; let it = a.iter().copied().map(|x| x * 3); let mut acc = 0u8; for x in it { acc = acc + x; } acc })),
-            ("zi_nd", real_bytes(Self::zi_acc([0.5, 0.25, 0.125], [1.5, -2.0], [0.75, -0.5], [0.3, 0.7], 2.0))),
+            ("filter_enumerate", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().filter(|x| *x != 1).enumerate().fold(0u8, |acc, (i, x)| acc * 2 + (i as u8) * 3 + x) })),
+            ("chain", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().map(|x| x * 2).filter(|x| *x > 4).map(|x| x + 1).sum::<u8>() })),
+            ("range_map_sum", CarrierBytes::byte((1u8..5).map(|k| k * k).sum::<u8>())),
+            ("range_rev", CarrierBytes::byte((1u8..5).rev().fold(0u8, |acc, k| acc * 2 + k))),
+            ("range_filter_count", CarrierBytes::byte((0u8..10).filter(|k| k % 3 == 0).count() as u8)),
+            ("range_inclusive_sum", CarrierBytes::byte((1u8..=4).sum::<u8>())),
+            ("range_empty_sum", CarrierBytes::byte((5u8..2).sum::<u8>())),
+            ("range_zip", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; (0u8..3).zip(a.iter().copied()).map(|(i, x)| i * x).sum::<u8>() })),
+            ("let_iterator", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; let it = a.iter().copied().map(|x| x + 1); it.sum::<u8>() })),
+            ("signed_range_sum", CarrierBytes::byte({ let s: i8 = (-3i8..2).sum(); s as u8 })),
+            ("signed_range_count", CarrierBytes::byte((-3i8..2).count() as u8)),
+            ("for_array", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for x in a { acc = acc * 2 + x; } acc })),
+            ("for_iter_rev", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for x in a.iter().copied().rev() { acc = acc * 2 + x; } acc })),
+            ("for_enumerate", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for (i, x) in a.iter().copied().enumerate() { acc = acc * 2 + (i as u8) + x; } acc })),
+            ("for_zip", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for (x, y) in a.iter().copied().zip([1u8, 2, 3].iter().copied()) { acc = acc * 2 + x + y; } acc })),
+            ("for_filtered_range", CarrierBytes::byte({ let mut acc = 0u8; for k in (0u8..8).filter(|k| k % 2 == 0) { acc = acc * 2 + k; } acc })),
+            ("for_range_rev", CarrierBytes::byte({ let mut acc = 0u8; for k in (0u8..4).rev() { acc = acc * 2 + k; } acc })),
+            ("for_break", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for x in a { if x == 4 { break; } acc = acc * 2 + x; } acc })),
+            ("for_continue", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for x in a.iter().copied().filter(|x| *x != 5) { if x == 1 { continue; } acc = acc * 2 + x; } acc })),
+            ("for_named", CarrierBytes::byte({ let a = [3u8, 1, 4, 1, 5]; let it = a.iter().copied().map(|x| x * 3); let mut acc = 0u8; for x in it { acc = acc + x; } acc })),
+            ("zi_nd", CarrierBytes::real(Self::zi_acc([0.5, 0.25, 0.125], [1.5, -2.0], [0.75, -0.5], [0.3, 0.7], 2.0))),
         ]
     }
 
@@ -599,7 +554,7 @@ fn every_row_of_h5_to_h7_gives_rusts_result() {
     let rows: Vec<_> = IteratorRows::wanted().into_iter().filter(|(name, _)| !name.starts_with("for_") && !name.starts_with("empty_") && *name != "zi_nd").collect();
     let names: Vec<&str> = rows.iter().map(|(name, _)| *name).collect();
     let wanted: Vec<Vec<u8>> = rows.into_iter().map(|(_, bytes)| bytes).collect();
-    assert_commits("iterators.msl", &names, &wanted);
+    RUN.assert_commits("iterators.msl", &names, &wanted);
 }
 
 #[test]
@@ -609,7 +564,7 @@ fn for_visits_elements_in_rusts_order() {
     let rows: Vec<_> = IteratorRows::wanted().into_iter().filter(|(name, _)| name.starts_with("for_")).collect();
     let names: Vec<&str> = rows.iter().map(|(name, _)| *name).collect();
     let wanted: Vec<Vec<u8>> = rows.into_iter().map(|(_, bytes)| bytes).collect();
-    assert_commits("iterators.msl", &names, &wanted);
+    RUN.assert_commits("iterators.msl", &names, &wanted);
 }
 
 #[test]
@@ -619,7 +574,7 @@ fn an_empty_array_has_length_zero_and_no_first() {
     let rows: Vec<_> = IteratorRows::wanted().into_iter().filter(|(name, _)| name.starts_with("empty_")).collect();
     let names: Vec<&str> = rows.iter().map(|(name, _)| *name).collect();
     let wanted: Vec<Vec<u8>> = rows.into_iter().map(|(_, bytes)| bytes).collect();
-    assert_commits("iterators.msl", &names, &wanted);
+    RUN.assert_commits("iterators.msl", &names, &wanted);
 }
 
 #[test]
@@ -627,15 +582,7 @@ fn the_zi_nd_reaction_value_code_runs_as_a_function() {
     // Phase A Independent Test (D18): the value code of the `zi_nd` reaction body, `acc` over `num`, `xs`,
     // `den` and `ys`, runs as a monomorphic `fn` over arrays with the value Rust gives for the same loops.
     let zi = IteratorRows::wanted().into_iter().filter(|(name, _)| *name == "zi_nd").collect::<Vec<_>>();
-    assert_commits("iterators.msl", &["zi_nd"], &[zi[0].1.clone()]);
-}
-
-/// A known `u64` carrier value as the plan lays it out: the value, then the known byte.
-fn u64_bytes(v: u64) -> Vec<u8> {
-    let mut bytes = vec![0u8; 16];
-    bytes[..8].copy_from_slice(&v.to_le_bytes());
-    bytes[8] = 1;
-    bytes
+    RUN.assert_commits("iterators.msl", &["zi_nd"], &[zi[0].1.clone()]);
 }
 
 /// §22.2.17's generator, written as the spec writes it and compiled by Rust.
@@ -665,24 +612,24 @@ fn normal_matches_the_spec_text_bit_for_bit() {
     // CV-16 AC 1 (§22.2.17 rules 1 and 2): the sample and the next state are those of the spec's SplitMix64 and
     // Box-Muller text compiled by Rust, bit for bit.
     let spec = |seed: u64| SpecGenerator::normal(seed, 1.5, 0.25);
-    assert_commits(
+    RUN.assert_commits(
         "normal.msl",
         &["s0", "s1", "s2", "n0", "n1"],
-        &[real_bytes(spec(0).0), real_bytes(spec(42).0), real_bytes(spec(0xDEAD_BEEF_CAFE_F00D).0), u64_bytes(spec(0).1), u64_bytes(spec(42).1)],
+        &[CarrierBytes::real(spec(0).0), CarrierBytes::real(spec(42).0), CarrierBytes::real(spec(0xDEAD_BEEF_CAFE_F00D).0), CarrierBytes::unsigned_64(spec(0).1), CarrierBytes::unsigned_64(spec(42).1)],
     );
 }
 
 #[test]
 fn normal_with_zero_sigma_returns_the_mean() {
     // CV-16 AC 2 (§22.2.17 rule 3): with `sigma == 0.0` the sample is `mean`, whatever the seed.
-    assert_commits("normal.msl", &["f0", "f1"], &[real_bytes(3.0), real_bytes(3.0)]);
+    RUN.assert_commits("normal.msl", &["f0", "f1"], &[CarrierBytes::real(3.0), CarrierBytes::real(3.0)]);
 }
 
 #[test]
 fn the_jitter_clock_repeats_with_its_seed() {
     // CV-16 AC 3 (§22.2.17 rule 4): the clock whose edges the state of `normal` places gives the same edge times on
     // every run with one seed, and the edges are not on a regular grid (the jitter is there).
-    let edges = |top: &str| transient(&build(&project("normal.msl"), top).run(200e-9, 1e-9), &format!("{top}.clk")).into_iter().map(|(tick, _)| tick).collect::<Vec<i64>>();
+    let edges = |top: &str| transient(&build(&RUN.project("normal.msl"), top).run(200e-9, 1e-9), &format!("{top}.clk")).into_iter().map(|(tick, _)| tick).collect::<Vec<i64>>();
     let first = edges("JitterBench");
     let second = edges("JitterBench");
     assert!(first.len() > 10, "the clock runs: {first:?}");
@@ -710,7 +657,7 @@ struct Carriers {
 impl Carriers {
     /// `Bench` of `carriers.msl`, run for two rising edges (2.5 ns and 7.5 ns).
     fn run() -> Carriers {
-        Carriers { seen: build(&project("carriers.msl"), "Bench").run(10e-9, 1e-9) }
+        Carriers { seen: build(&RUN.project("carriers.msl"), "Bench").run(10e-9, 1e-9) }
     }
 
     /// Every change of the carrier `name` during the transient: instant in ticks and bytes.
@@ -801,25 +748,25 @@ fn composite_carriers_initialize_define_commit_and_change() {
     assert_eq!(carriers.once("tx"), Carriers::known(&[1, 5]));
     assert_eq!(carriers.once("opt"), Carriers::known(&[1, 4]), "Some(4): the tag byte, then the payload");
     // a part of each, read where the carrier changed
-    assert_eq!(carriers.once("r_t"), byte(9));
-    assert_eq!(carriers.once("r_arr"), byte(2));
-    assert_eq!(carriers.once("r_opt"), byte(4));
-    assert_eq!(carriers.once("r_tx"), byte(5));
+    assert_eq!(carriers.once("r_t"), CarrierBytes::byte(9));
+    assert_eq!(carriers.once("r_arr"), CarrierBytes::byte(2));
+    assert_eq!(carriers.once("r_opt"), CarrierBytes::byte(4));
+    assert_eq!(carriers.once("r_tx"), CarrierBytes::byte(5));
     // `changed()` fires for each change of the whole value, and `prev()` is the value before the change
     let rise = |k: i64| 5 * NS / 2 + 5 * NS * k;
     assert_eq!(carriers.changes("u"), vec![(rise(0), Carriers::known(&[7, 0])), (rise(1), Carriers::known(&[8, 0]))]);
-    assert_eq!(carriers.changes("now_a"), vec![(rise(0), byte(7)), (rise(1), byte(8))], "u.a where u changed");
+    assert_eq!(carriers.changes("now_a"), vec![(rise(0), CarrierBytes::byte(7)), (rise(1), CarrierBytes::byte(8))], "u.a where u changed");
     // §5.1.8: before the first change `u.prev()` is unknown, so the model reads no field of it (a plain read of it is
     // refused by name, `an_unknown_composite_is_refused_by_name`) and `u.prev().a` is 7 only at the second change
-    assert_eq!(carriers.changes("before_known"), vec![(rise(0), byte(0)), (rise(1), byte(1))], "u.prev().is_known(): unknown before the first change");
-    assert_eq!(carriers.changes("before_a"), vec![(rise(1), byte(7))], "u.prev().a: nothing before the first change, then 7");
+    assert_eq!(carriers.changes("before_known"), vec![(rise(0), CarrierBytes::byte(0)), (rise(1), CarrierBytes::byte(1))], "u.prev().is_known(): unknown before the first change");
+    assert_eq!(carriers.changes("before_a"), vec![(rise(1), CarrierBytes::byte(7))], "u.prev().a: nothing before the first change, then 7");
 }
 
 #[test]
 fn an_unknown_composite_is_refused_by_name() {
     // §3.3.2, §5.1.1: a composite carrier nothing drove holds no value, so a field of it is no known
     // value; it fails the run naming the instance and the carrier, never a default.
-    let fault = the_fault("carriers.msl", "UnknownBench");
+    let fault = RUN.the_fault("carriers.msl", "UnknownBench");
     assert!(fault.contains("UnknownBench.read"), "the fault names the instance: {fault}");
     assert!(fault.contains("`un`"), "the fault names the carrier: {fault}");
     assert!(fault.contains("holds no value"), "the fault says why: {fault}");
@@ -831,7 +778,7 @@ fn committing_an_equal_composite_fires_no_change() {
     // changes nothing, so the net has one change and `s.changed()` fired once.
     let carriers = Carriers::run();
     assert_eq!(carriers.changes("s"), vec![(5 * NS / 2, Carriers::known(&[7, 1]))], "one change for two commits of one value");
-    assert_eq!(carriers.once("s_changes"), byte(1), "`changed()` fired once");
+    assert_eq!(carriers.once("s_changes"), CarrierBytes::byte(1), "`changed()` fired once");
 }
 
 #[test]
@@ -842,8 +789,8 @@ fn a_tag_naming_no_variant_reads_unknown() {
     let carriers = Carriers::run();
     assert_eq!(carriers.once("good"), Carriers::known(&[1, 3]), "tag 1, n = 3");
     assert_eq!(carriers.changes("bad"), vec![], "an unknown value commits nothing the net had not");
-    assert_eq!(carriers.once("good_known"), byte(1));
-    assert_eq!(carriers.once("bad_known"), byte(0), "a tag naming no variant reads unknown");
+    assert_eq!(carriers.once("good_known"), CarrierBytes::byte(1));
+    assert_eq!(carriers.once("bad_known"), CarrierBytes::byte(0), "a tag naming no variant reads unknown");
 }
 
 #[test]
@@ -851,22 +798,22 @@ fn composite_params_bind_and_read_everywhere() {
     // CV-18 AC 1 (§8.1): a struct, a tuple and an array param bind their defaults or a placement's
     // value, and every block reads them: a digital reaction (fields, elements, a real field
     // converted), an `analog` block (a real field times Rust's constant) and the `where`.
-    let built = build(&project("params.msl"), "Bench");
+    let built = build(&RUN.project("params.msl"), "Bench");
     let seen = built.run(10e-9, 1e-9);
     let at_edge = |name: &str| transient(&seen, &format!("Bench.{name}"))[0].1.clone();
     // the defaults: g = Gains { a: 3, b: 0.5 }, t = (4, 5), arr = [1, 2, 3]
     let defaults = (Gains { a: 3, b: 0.5 }, (4u8, 5u8), [1u8, 2, 3]);
-    assert_eq!(at_edge("dq"), byte(defaults.0.a), "g.a");
-    assert_eq!(at_edge("dr"), byte(defaults.1.1), "t.1");
-    assert_eq!(at_edge("ds"), byte(defaults.2[2]), "arr[2]");
-    assert_eq!(at_edge("dw"), byte((defaults.0.b * 10.0) as u8), "g.b converted");
+    assert_eq!(at_edge("dq"), CarrierBytes::byte(defaults.0.a), "g.a");
+    assert_eq!(at_edge("dr"), CarrierBytes::byte(defaults.1.1), "t.1");
+    assert_eq!(at_edge("ds"), CarrierBytes::byte(defaults.2[2]), "arr[2]");
+    assert_eq!(at_edge("dw"), CarrierBytes::byte((defaults.0.b * 10.0) as u8), "g.b converted");
     // the placement binds g, t and arr; `g.b` is over the parent's `scale = 0.5`
     let scale = 0.5f64;
     let bound = (Gains { a: 9, b: scale * 1.5 }, (7u8, 8u8), [4u8, 5, 6]);
-    assert_eq!(at_edge("pq"), byte(bound.0.a));
-    assert_eq!(at_edge("pr"), byte(bound.1.1));
-    assert_eq!(at_edge("ps"), byte(bound.2[2]));
-    assert_eq!(at_edge("pw"), byte((bound.0.b * 10.0) as u8));
+    assert_eq!(at_edge("pq"), CarrierBytes::byte(bound.0.a));
+    assert_eq!(at_edge("pr"), CarrierBytes::byte(bound.1.1));
+    assert_eq!(at_edge("ps"), CarrierBytes::byte(bound.2[2]));
+    assert_eq!(at_edge("pw"), CarrierBytes::byte((bound.0.b * 10.0) as u8));
     // the analog block: a source held at `g.b * 4.0`, by default and bound
     let (_, result) = built.run_with(10e-9, 1e-9);
     let volts = |name: &str| {
@@ -876,7 +823,7 @@ fn composite_params_bind_and_read_everywhere() {
     assert!((volts("by_default") - 0.25 * 4.0).abs() < 1e-9, "the default b = 0.25");
     assert!((volts("by_placement") - 0.5 * 4.0).abs() < 1e-9, "the bound b = 0.5");
     // the `where` is checked on the value a placement binds (E0317)
-    let refused = project("params_where.msl").elaborate("Bench").err().expect("a false where is refused");
+    let refused = RUN.project("params_where.msl").elaborate("Bench").err().expect("a false where is refused");
     assert!(refused.to_string().contains("E0317"), "{refused}");
 }
 
@@ -899,7 +846,7 @@ fn a_record_carries_a_composite_field_and_its_type() {
     // fields of the stream `sample`; the record is delivered with each field's bytes laid out as a
     // composite pin (the parts' values, then the known byte) at the offset the layout gives, and the
     // stream's metadata names each field's type as the source writes it.
-    let built = build(&project("records.msl"), "Bench");
+    let built = build(&RUN.project("records.msl"), "Bench");
     let out = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
     let circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
     let mut options = piperine_solver::prelude::TransientAnalysisOptions::new(10e-9, 1e-9);
@@ -938,6 +885,6 @@ fn a_record_carries_a_composite_field_and_its_type() {
 fn two_sites_giving_a_field_different_composite_types_are_refused() {
     // CV-19 AC 2 (§19 rule 2): the field `v` of `sample` is a `Pair` at one site and a `(u8, u8)` at
     // another, which is E0605
-    let refused = project("records_conflict.msl").elaborate("Bench").err().expect("the conflict is refused");
+    let refused = RUN.project("records_conflict.msl").elaborate("Bench").err().expect("the conflict is refused");
     assert!(refused.to_string().contains("E0605"), "{refused}");
 }

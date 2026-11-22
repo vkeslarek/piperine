@@ -7,36 +7,23 @@
 #[path = "support/elab.rs"]
 #[allow(dead_code)]
 mod support;
+#[path = "support/elab_forms.rs"]
+#[allow(dead_code)]
+mod elab_forms;
 
-use piperine_ir::Ir;
+use elab_forms::{ElabSource, IrReading};
 use support::Elab;
-
-/// A design of `Top` with `items` before it, calling each of `calls` from its `analog` block.
-fn reaching(items: &str, calls: &[&str]) -> String {
-    let lets: Vec<String> = calls.iter().enumerate().map(|(k, call)| format!("let x{k} = {call};")).collect();
-    format!("{items}\nmodule Top() {{ }}\nanalog for Top {{ {} }}", lets.join(" "))
-}
-
-/// The text of the function named `name` in the structural print.
-fn function_text(ir: &Ir, name: &str) -> String {
-    let text = ir.print_structural();
-    let head = format!("fn {name}(");
-    let start = text.find(&head).unwrap_or_else(|| panic!("no `{head}` in:\n{text}"));
-    let rest = &text[start..];
-    let end = rest[1..].find("\nfn ").or_else(|| rest[1..].find("\ninstance ")).map_or(rest.len(), |at| at + 1);
-    rest[..end].to_string()
-}
 
 #[test]
 fn let_mut_lowers_to_mutable_locals_and_assignments() {
     // §1.5.12: `let mut` is a mutable local, `x = e` and `x op= e` assign it; a plain `let` and a
     // parameter stay immutable. The IR passes its own check.
     let items = "fn work(a: f64) -> f64 { let x = a; x = x + 1.0; x += 2.0; x *= 3.0; let y = x; y }";
-    let ir = Elab::ir(&reaching(items, &["work(1.0)"]), "Top");
+    let ir = Elab::ir(&ElabSource::reaching(items, &["work(1.0)"]), "Top");
     let function = ir.functions().find(|f| f.name() == "work").expect("work");
     let flags: Vec<(String, bool)> = function.locals().iter().map(|l| (l.name.clone(), l.mutable)).collect();
     assert_eq!(flags, vec![("a".to_string(), false), ("x".to_string(), true), ("y".to_string(), false)]);
-    let text = function_text(&ir, "work");
+    let text = IrReading::function_text(&ir, "work");
     for printed in ["x = (x + 1", "x += 2", "x *= 3"] {
         assert!(text.contains(printed), "`{printed}` in:\n{text}");
     }
@@ -44,17 +31,12 @@ fn let_mut_lowers_to_mutable_locals_and_assignments() {
     // §1.7.5: `let x;` is a local first assigned later; it is assignable in the IR though the
     // source wrote no `mut`.
     let items = "fn pick(c: bool) -> u8 { let r: u8; if c { r = 1; } else { r = 2; } r }";
-    let ir = Elab::ir(&reaching(items, &["pick(true)"]), "Top");
+    let ir = Elab::ir(&ElabSource::reaching(items, &["pick(true)"]), "Top");
     let function = ir.functions().find(|f| f.name() == "pick").expect("pick");
     let flags: Vec<(String, bool)> = function.locals().iter().map(|l| (l.name.clone(), l.mutable)).collect();
     assert_eq!(flags, vec![("c".to_string(), false), ("r".to_string(), true)]);
-    let text = function_text(&ir, "pick");
+    let text = IrReading::function_text(&ir, "pick");
     assert!(text.contains("r = 1") && text.contains("r = 2"), "{text}");
-}
-
-/// A design whose `Top` has the reaction `body` on a clock `clk`.
-fn reacting(items: &str, body: &str) -> String {
-    format!("{items}\nmodule Top(in clk: Bit, out q: Bit<u8>) {{ }}\ndigital for Top {{ on clk.rise() {{ {body} }} }}")
 }
 
 #[test]
@@ -68,8 +50,8 @@ fn loops_lower_to_the_loops_of_the_ir() {
                  for k in 0..n { if k == 2 { continue; } s += k; }\n\
                  for k in 1..=n { s += k; }\n\
                  first + s }";
-    let ir = Elab::ir(&reaching(items, &["work(5)"]), "Top");
-    let text = function_text(&ir, "work");
+    let ir = Elab::ir(&ElabSource::reaching(items, &["work(5)"]), "Top");
+    let text = IrReading::function_text(&ir, "work");
     for printed in ["while (i < n)", "loop {", "break s", "continue", "for k in 0u8..n", "for k in 1u8..=n"] {
         assert!(text.contains(printed), "`{printed}` in:\n{text}");
     }
@@ -77,7 +59,7 @@ fn loops_lower_to_the_loops_of_the_ir() {
     // In a reaction, whose values may be unknown, a `for` that leaves early is the `while` that
     // counts a mutable local, taking the next value before the body so `continue` still counts.
     let body = "let hit = 0u8; for k in 0..9u8 { if k > 3 { hit = k; break; } } q <- hit;";
-    let ir = Elab::ir(&reacting("", body), "Top");
+    let ir = Elab::ir(&ElabSource::reacting("", body), "Top");
     let text = ir.print_structural();
     assert!(text.contains("while") && !text.contains("for k in"), "{text}");
 }
@@ -87,7 +69,7 @@ fn a_function_returning_an_option_is_two_ir_functions() {
     // MD-67 item 2 (CV-03): an `Option` is the pair `(is, val)`; a function that returns one is
     // the IR function of each half, and a call reads both.
     let items = "fn halved(x: Option<u8>) -> Option<u8> { let v = x?; Some(v / 2) }";
-    let src = reacting(items, "q <- halved(Some(8)).unwrap_or(99);");
+    let src = ElabSource::reacting(items, "q <- halved(Some(8)).unwrap_or(99);");
     let ir = Elab::ir(&src, "Top");
     let names: Vec<String> = ir.functions().map(|f| f.name().to_string()).collect();
     assert_eq!(names, vec!["halved.is".to_string(), "halved.val".to_string()]);
@@ -98,10 +80,10 @@ fn a_function_value_called_with_an_unknown_is_the_flagged_variant_or_p0001() {
     // §3.3 with §1.5.10: a local bound to a function's name calls the variant for an argument that
     // may be unknown; a closure, whose type is fixed where it is written, cannot take one, and the
     // refusal names the call.
-    let named = reacting("fn id(x: u8) -> u8 { x }", "let f = id; let u: u8 = Unknown; q <- f(u).known_or(0);");
+    let named = ElabSource::reacting("fn id(x: u8) -> u8 { x }", "let f = id; let u: u8 = Unknown; q <- f(u).known_or(0);");
     let ir = Elab::ir(&named, "Top");
     assert!(ir.functions().any(|f| f.name() == "id~1"), "{}", ir.print_structural());
-    let closure = reacting("", "let f = |x: u8| x; let u: u8 = Unknown; q <- f(u).known_or(0);");
+    let closure = ElabSource::reacting("", "let f = |x: u8| x; let u: u8 = Unknown; q <- f(u).known_or(0);");
     let refused = Elab::run(&closure, "Top").expect_err("a closure takes no unknown");
     assert_eq!(Elab::codes(&refused), ["P0001"]);
     assert!(refused[0].diagnostic.message.contains("a call through a function value"), "{:?}", refused[0].diagnostic.message);
@@ -165,17 +147,12 @@ fn a_contributing_analog_loop_without_a_constant_trip_count_is_e0416() {
     assert_eq!(Elab::codes(&refused), ["E0351"]);
 }
 
-/// A design of `Top` whose `analog` block contributes `call` to its node.
-fn analog_calling(items: &str, call: &str) -> String {
-    format!("{items}\nmodule Top() {{ signal o: Electrical; signal a: Electrical; }}\nanalog for Top {{ i(o) +> {call}; }}")
-}
-
 #[test]
 fn a_recursion_reached_from_analog_is_unrolled() {
     // §3 rule 12 (CV-07 AC 2): the depth is decided by constants, so the recursion is expanded where
     // it is called; the IR holds no function that calls itself (its own check passes).
     let items = "fn tri(n: u8, x: f64) -> f64 { if n == 0 { 0.0 } else { x + tri(n - 1, x) } }";
-    let ir = Elab::ir(&analog_calling(items, "tri(3, v(a))"), "Top");
+    let ir = Elab::ir(&ElabSource::analog_calling(items, "tri(3, v(a))"), "Top");
     let text = ir.print_structural();
     assert!(ir.functions().all(|f| f.name() != "tri"), "{text}");
     // `tri(3)` expands `tri(3)`, `tri(2)`, `tri(1)` and `tri(0)`, whose `n == 0` folds to the base case.
@@ -184,7 +161,7 @@ fn a_recursion_reached_from_analog_is_unrolled() {
 
     // Through a function that is not itself recursive.
     let items = "fn tri(n: u8, x: f64) -> f64 { if n == 0 { 0.0 } else { x + tri(n - 1, x) } }\nfn twice(x: f64) -> f64 { tri(2, x) + tri(2, x) }";
-    let ir = Elab::ir(&analog_calling(items, "twice(v(a))"), "Top");
+    let ir = Elab::ir(&ElabSource::analog_calling(items, "twice(v(a))"), "Top");
     assert!(ir.functions().all(|f| f.name() != "tri" && f.name() != "twice"), "{}", ir.print_structural());
 
     // A recursion no analog block reaches stays a recursion of the IR (D12).
@@ -199,22 +176,15 @@ fn an_unfoldable_recursion_from_analog_is_e0126() {
     // §3 rule 12 (CV-07 AC 3): the depth reads a probe, so the decision does not fold; the error names
     // the function.
     let items = "fn tri(n: u8, x: f64) -> f64 { if n == 0 { 0.0 } else { x + tri(n - 1, x) } }";
-    let refused = Elab::run(&analog_calling(items, "tri(v(a) as u8, v(a))"), "Top").expect_err("a depth from a probe");
+    let refused = Elab::run(&ElabSource::analog_calling(items, "tri(v(a) as u8, v(a))"), "Top").expect_err("a depth from a probe");
     assert_eq!(Elab::codes(&refused), ["E0126"]);
     assert!(refused[0].diagnostic.message.contains("`tri`"), "{:?}", refused[0].diagnostic.message);
 
     // A recursion with no decision at all runs past 1 024 calls.
     let items = "fn forever(x: f64) -> f64 { forever(x) }";
-    let refused = Elab::run(&analog_calling(items, "forever(v(a))"), "Top").expect_err("no end");
+    let refused = Elab::run(&ElabSource::analog_calling(items, "forever(v(a))"), "Top").expect_err("no end");
     assert_eq!(Elab::codes(&refused), ["E0126"]);
     assert!(refused[0].diagnostic.message.contains("`forever`"), "{:?}", refused[0].diagnostic.message);
-}
-
-/// The folded value of the `f64` param `name` of `Top`.
-fn default_of(ir: &Ir, name: &str) -> piperine_ir::Constant {
-    let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
-    let param = top.params().iter().find(|p| p.name == name).unwrap_or_else(|| panic!("no param {name}"));
-    param.default.unwrap_or_else(|| panic!("no default for {name}"))
 }
 
 #[test]
@@ -250,7 +220,7 @@ fn phase_a_forms_fold_in_const_contexts() {
         }}\nmodule Unused() {{ }}"
     );
     let ir = Elab::ir(&src, "Top");
-    let real = |name: &str| match default_of(&ir, name) {
+    let real = |name: &str| match IrReading::default_of(&ir, name) {
         piperine_ir::Constant::Real(r) => r.get(),
         other => panic!("{name} is {other:?}"),
     };
@@ -300,5 +270,5 @@ fn a_panic_in_a_const_evaluation_names_the_expression() {
     assert!(refused[0].diagnostic.message.contains("1 024"), "{:?}", refused[0].diagnostic.message);
     // the same recursion within the bound is the value
     let within = "const fn down(n: u32) -> u32 { if n == 0 { 7 } else { down(n - 1) } }\nconst X: u32 = down(1000);\nmodule Top() { a: f64 = X as f64; }";
-    assert_eq!(default_of(&Elab::ir(within, "Top"), "a"), piperine_ir::Constant::Real(piperine_ir::Real::new(7.0)));
+    assert_eq!(IrReading::default_of(&Elab::ir(within, "Top"), "a"), piperine_ir::Constant::Real(piperine_ir::Real::new(7.0)));
 }

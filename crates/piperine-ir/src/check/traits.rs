@@ -8,14 +8,23 @@ use crate::model::{Derives, TypeKind, ValueType};
 /// One of the traits of H.8 a model may derive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Trait {
+    /// `Clone`: a value is copied.
     Clone,
+    /// `Copy`: a value is copied implicitly.
     Copy,
+    /// `PartialEq`: `==` and `!=`.
     PartialEq,
+    /// `Eq`: equality that holds for every value (no NaN).
     Eq,
+    /// `PartialOrd`: `<`, `<=`, `>` and `>=`.
     PartialOrd,
+    /// `Ord`: an order that holds for every value.
     Ord,
+    /// `Default`: a value `T::default()`.
     Default,
+    /// `Debug`: accepted, with no run-time effect.
     Debug,
+    /// `Hash`: accepted, with no run-time effect.
     Hash,
 }
 
@@ -62,6 +71,8 @@ impl Checker<'_> {
         self.implements_visiting(ty, which, &mut Vec::new())
     }
 
+    /// Whether `ty` implements `which`; `visiting` holds the arena types being walked, so a type that
+    /// contains itself ends the walk.
     fn implements_visiting(&self, ty: &ValueType, which: Trait, visiting: &mut Vec<usize>) -> bool {
         match ty {
             ValueType::Bool | ValueType::Unit | ValueType::UInt(_) | ValueType::Int(_) => true,

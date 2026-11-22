@@ -48,6 +48,7 @@ pub(super) struct Coverage<'d> {
 }
 
 impl<'d> Coverage<'d> {
+    /// The coverage over `design`, with the typed fields of each struct and variant in `layouts`.
     pub(super) fn new(design: &'d Design, layouts: &'d BTreeMap<DeclId, Vec<FieldType>>) -> Self {
         Coverage { design, layouts }
     }

@@ -41,6 +41,8 @@ impl TypeArena {
         self.shapes.get(id.index()).is_some_and(|variants| variants.iter().all(Vec::is_empty))
     }
 
+    /// The types of the fields of variant `variant` of the enum `id`, in order; none for a variant of no
+    /// field or an entry the arena does not hold.
     pub(super) fn variant_field_types(&self, id: TypeId, variant: u32) -> &[ValueType] {
         self.shapes.get(id.index()).and_then(|shape| shape.get(variant as usize)).map_or(&[], Vec::as_slice)
     }

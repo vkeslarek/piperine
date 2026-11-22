@@ -33,6 +33,7 @@ struct Host {
 }
 
 impl Host {
+    /// The session of `DESIGN`, its `clk` driven low and then high at 100 ns.
     fn open() -> Host {
         static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
         let cache = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
@@ -71,6 +72,7 @@ impl Host {
 struct Seen;
 
 impl Seen {
+    /// The field `name` of `fields`; the test fails naming it when there is none.
     fn of<'a>(fields: &'a [(String, Field)], name: &str) -> &'a Field {
         &fields.iter().find(|(n, _)| n == name).unwrap_or_else(|| panic!("no field {name} in {fields:?}")).1
     }
@@ -130,6 +132,7 @@ struct Carried {
 }
 
 impl Carried {
+    /// The session of `CARRIED`, its `clk` driven low and then high at 100 ns, printing `print`.
     fn open(print: &[&str]) -> Carried {
         static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
         let cache = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));

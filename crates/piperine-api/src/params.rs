@@ -150,8 +150,11 @@ struct Slot {
 /// A composite param of an instance: its layout and the bytes its pin holds (the value, then the known byte).
 #[derive(Debug, Clone)]
 struct CompositeParam {
+    /// The param's name.
     name: String,
+    /// The layout of its pin.
     layout: CompositeLayout,
+    /// The bytes its pin holds: the value, then the known byte.
     bytes: Vec<u8>,
 }
 

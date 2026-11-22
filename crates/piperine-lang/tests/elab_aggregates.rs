@@ -6,20 +6,13 @@
 #[path = "support/elab.rs"]
 #[allow(dead_code)]
 mod support;
+#[path = "support/elab_forms.rs"]
+#[allow(dead_code)]
+mod elab_forms;
 
-use piperine_ir::{Expr, Ir, TypeKind, ValueType};
+use piperine_ir::{Expr, TypeKind, ValueType};
+use elab_forms::{ElabSource, IrReading};
 use support::Elab;
-
-/// A design of `Top` with `items` before it, calling each of `calls` from its `analog` block.
-fn reaching(items: &str, calls: &[&str]) -> String {
-    let lets: Vec<String> = calls.iter().enumerate().map(|(k, call)| format!("let x{k} = {call};")).collect();
-    format!("{items}\nmodule Top() {{ }}\nanalog for Top {{ {} }}", lets.join(" "))
-}
-
-/// The entry of the arena named `name`.
-fn arena_entry<'a>(ir: &'a Ir, name: &str) -> (usize, &'a piperine_ir::TypeData) {
-    ir.types().iter().enumerate().find(|(_, data)| data.name == name).unwrap_or_else(|| panic!("no arena type `{name}`: {:?}", ir.types().iter().map(|t| &t.name).collect::<Vec<_>>()))
-}
 
 #[test]
 fn every_reached_struct_and_enum_is_one_arena_type() {
@@ -33,20 +26,20 @@ fn every_reached_struct_and_enum_is_one_arena_type() {
                  fn active() -> Mode { Mode::Regulate }\n\
                  fn pair_x(p: Pair) -> f64 { 1.0 }\n\
                  fn is_hiccup(m: Mode) -> bool { match m { Mode::Hiccup => true, _ => false } }";
-    let ir = Elab::ir(&reaching(items, &["active()", "is_hiccup(Mode::Off)", "{ let f = pair_x; 0.0 }"]), "Top");
+    let ir = Elab::ir(&ElabSource::reaching(items, &["active()", "is_hiccup(Mode::Off)", "{ let f = pair_x; 0.0 }"]), "Top");
 
     // exactly the types the design reaches: `Never` is declared and never reached
     let names: Vec<&str> = ir.types().iter().map(|t| t.name.as_str()).collect();
     assert!(names.contains(&"Mode") && names.contains(&"Pair") && !names.contains(&"Never"), "{names:?}");
     assert_eq!(names.iter().filter(|n| **n == "Mode").count(), 1, "one entry per declaration: {names:?}");
 
-    let (mode, data) = arena_entry(&ir, "Mode");
+    let (mode, data) = IrReading::arena_entry(&ir, "Mode");
     let TypeKind::Enum { tag_levels, variants } = &data.kind else { panic!("Mode is an enum") };
     assert_eq!(*tag_levels, 2, "four variants: ceil(log2 4) levels (§2 rule 5)");
     assert_eq!(variants.iter().map(|v| (v.name.as_str(), v.discriminant)).collect::<Vec<_>>(), [("Off", 0), ("SoftStart", 1), ("Regulate", 2), ("Hiccup", 3)]);
     assert!(data.derives.repr && data.derives.partial_eq && data.derives.clone && data.derives.copy, "{:?}", data.derives);
 
-    let (_, pair) = arena_entry(&ir, "Pair");
+    let (_, pair) = IrReading::arena_entry(&ir, "Pair");
     let TypeKind::Struct { fields, .. } = &pair.kind else { panic!("Pair is a struct") };
     assert_eq!(fields.clone(), [("x".to_string(), ValueType::F64), ("n".to_string(), ValueType::UInt(8))]);
     assert!(pair.derives.partial_eq && pair.derives.partial_ord && !pair.derives.repr, "{:?}", pair.derives);
@@ -70,7 +63,7 @@ fn struct_fields_are_evaluated_in_written_order() {
     // with a part that is more than a read, each is bound to a local in written order first.
     let items = "struct P { x: f64, y: u8 }\nfn half(a: f64) -> f64 { a / 2.0 }\nfn one() -> u8 { 1 }\n\
                  fn ordered() -> P { P { x: half(1.0), y: one() } }\nfn shuffled() -> P { P { y: one(), x: half(1.0) } }";
-    let ir = Elab::ir(&reaching(items, &["ordered()", "shuffled()"]), "Top");
+    let ir = Elab::ir(&ElabSource::reaching(items, &["ordered()", "shuffled()"]), "Top");
     let text = ir.print_structural();
     let function = |name: &str| {
         let start = text.find(&format!("fn {name}(")).unwrap_or_else(|| panic!("no fn {name}"));
@@ -81,17 +74,6 @@ fn struct_fields_are_evaluated_in_written_order() {
     let shuffled = function("shuffled");
     let (first, second) = (shuffled.find("let field$").expect("a local per field"), shuffled.rfind("let field$").expect("a second"));
     assert!(first < second && shuffled[first..].find("one()").is_some_and(|at| at < shuffled[first..].find("half(").unwrap_or(usize::MAX)), "`y` runs before `x`: {shuffled}");
-}
-
-/// A design of `Top` with the const items `items` and the params `params` of `Top`.
-fn with_params(items: &str, params: &str) -> String {
-    format!("{items}\nmodule Top() {{ {params} }}")
-}
-
-/// The values of the params of `Top`, printed.
-fn param_values(src: &str) -> Vec<String> {
-    let ir = Elab::ir(src, "Top");
-    ir.instance_at("Top").expect("the top instance").params().iter().map(|c| c.to_string()).collect()
 }
 
 #[test]
@@ -135,7 +117,7 @@ fn aggregates_fold_in_const_contexts() {
                   swapped: f64 = swap(T).0 as f64; matched: f64 = pick(P) as f64; iterated: f64 = A.iter().map(|x| x * 2.0).fold(0.0, |acc, x| acc + x); \
                   first: f64 = head(A).unwrap_or(9.0); equal: bool = P == P && A != doubled(A); ranged: bool = (1..4).contains(3); \
                   sliced: f64 = A[1..3][0]; checked: f64 = 1.0 where A[0] < A[2] && P.n == 4;";
-    let values = param_values(&with_params(items, params));
+    let values = IrReading::param_values(&ElabSource::with_params(items, params));
     let real = |v: f64| format!("{:?}", v);
     assert_eq!(
         values,
@@ -165,7 +147,7 @@ fn an_index_out_of_range_in_a_const_is_e0104() {
         ("const A: [f64; 3] = [1.0, 2.0, 3.0];\nconst fn element(i: usize) -> f64 { A[i] }\nconst BAD: f64 = element(3);", "A[i]"),
         ("const A: [f64; 3] = [1.0, 2.0, 3.0];\nconst BAD: f64 = A[1..4][0];", "A[1..4]"),
     ] {
-        let src = with_params(items, "x: f64 = BAD;");
+        let src = ElabSource::with_params(items, "x: f64 = BAD;");
         let err = Elab::run(&src, "Top").expect_err("the index is out of range");
         assert_eq!(Elab::codes(&err), ["E0104"], "{items}");
         let span = err[0].diagnostic.span();
@@ -196,7 +178,7 @@ fn the_stdlib_polynomial_helpers_fold() {
         function("poly_q"),
         function("den_q")
     );
-    let values = param_values(&with_params(&items, "c1: f64 = C[1]; c2: f64 = C[2]; d0: f64 = D[0]; d1: f64 = D[1]; ok: bool = CLOSED; no: bool = OPEN;"));
+    let values = IrReading::param_values(&ElabSource::with_params(&items, "c1: f64 = C[1]; c2: f64 = C[2]; d0: f64 = D[0]; d1: f64 = D[1]; ok: bool = CLOSED; no: bool = OPEN;"));
     // the same product of `1 - rho * q` over the roots, in Rust
     let roots = [(0.5f64, 0.0f64), (0.25, 0.5)];
     let mut c = [(0.0f64, 0.0f64); 3];
@@ -219,7 +201,7 @@ fn a_folded_composite_becomes_an_aggregate_constant() {
     use piperine_ir::{Constant, Real};
     let items = "struct Pair { a: f64, n: u8 }\nconst A: [f64; 3] = [1.0, 2.0, 3.0];\nconst P: Pair = Pair { a: 0.5, n: 4 };\n\
                  const fn doubled(xs: [f64; 3]) -> [f64; 3] { let r = xs; for k in 0..3 { r[k] = xs[k] * 2.0; } r }";
-    let ir = Elab::ir(&with_params(items, "table: [f64; 3] = doubled(A); p: Pair = P; t: (f64, bool) = (1.5, true); n: ((f64, f64), [bool; 2]) = ((0.5, 1.5), [true, false]);"), "Top");
+    let ir = Elab::ir(&ElabSource::with_params(items, "table: [f64; 3] = doubled(A); p: Pair = P; t: (f64, bool) = (1.5, true); n: ((f64, f64), [bool; 2]) = ((0.5, 1.5), [true, false]);"), "Top");
     let params: Vec<Constant> = ir.instance_at("Top").expect("the top instance").params().iter().copied().collect();
     let parts = |value: &Constant| match value {
         Constant::Aggregate(id) => ir.aggregate(*id).parts.clone(),
@@ -239,7 +221,7 @@ fn a_composite_const_read_in_value_code_is_written_out() {
     // CV-36 (§1.5.25): a `const` of composite type read in a function or an `analog` block is the expression that
     // builds its value, so `A[2]` indexes an array of the constants and `P.a` reads a field of a struct of them.
     let items = "struct Pair { a: f64, n: u8 }\nconst A: [f64; 3] = [1.0, 2.0, 3.0];\nconst P: Pair = Pair { a: 0.5, n: 4 };\nfn pick(i: usize) -> f64 { A[i] + P.a }";
-    let ir = Elab::ir(&reaching(items, &["pick(1)", "A[2]"]), "Top");
+    let ir = Elab::ir(&ElabSource::reaching(items, &["pick(1)", "A[2]"]), "Top");
     assert!(ir.expressions().any(|e| matches!(e, Expr::Array(parts) if parts.len() == 3)), "the array constant is written out");
     assert!(ir.expressions().any(|e| matches!(e, Expr::StructOf { fields, .. } if fields.len() == 2)), "the struct constant is written out");
 }

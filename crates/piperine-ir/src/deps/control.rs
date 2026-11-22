@@ -21,6 +21,7 @@ use crate::model::{BinaryOp, Expr, ValueType};
 
 /// One loop being walked: what decides its trip count and which locals its body assigns.
 pub(super) struct LoopFrame {
+    /// The loop expression this frame walks.
     id: ExprId,
     /// The depth of `Walk::scopes` the loop sits at: an assignment names a local of this owner
     /// only when it is walked at the same depth.

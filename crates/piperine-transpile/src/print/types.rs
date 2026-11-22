@@ -80,6 +80,8 @@ impl<'a> TypeItems<'a> {
         self.holds_real_visiting(ty, &mut BTreeSet::new())
     }
 
+    /// Whether `ty` holds an `f64`; `visited` holds the arena entries being walked, so a type that
+    /// contains itself holds one only through its other fields.
     fn holds_real_visiting(&self, ty: &ValueType, visited: &mut BTreeSet<usize>) -> bool {
         match ty {
             ValueType::F64 => true,

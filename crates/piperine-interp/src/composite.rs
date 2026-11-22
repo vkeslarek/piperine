@@ -10,6 +10,7 @@ use piperine_ir::{Body, EventSource, Expr, ExprId, Stmt, StmtId};
 /// `analog` block, drives, events, reactions, `where` checks, derivative sites and child param
 /// expressions, and every function those call or name.
 pub(crate) struct CompositeForms<'a> {
+    /// The body being walked.
     body: Body<'a>,
     /// The forms met so far, by their position in `CompositeForms::NAMES`.
     met: [bool; 22],

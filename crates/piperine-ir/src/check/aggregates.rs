@@ -7,7 +7,7 @@ use std::collections::BTreeSet;
 use super::traits::Trait;
 use super::{Checker, Ctx, Task, Walk};
 use crate::ids::ExprId;
-use crate::model::{AggregateData, BinaryOp, Constant, Derives, Expr, FieldsForm, LevelPart, Place, Projection, TypeData, TypeKind, ValueType};
+use crate::model::{AggregateData, BinaryOp, Constant, Derives, Expr, FieldsForm, LevelPart, Origin, Place, Projection, TypeData, TypeKind, ValueType};
 use crate::typing::Typing;
 
 impl Checker<'_> {
@@ -166,103 +166,149 @@ impl Checker<'_> {
         let (kind, ty, origin) = (&data.kind, &data.ty, data.origin.clone());
         if first {
             match kind {
-                Expr::Tuple(parts) => {
-                    let types: Option<Vec<ValueType>> = parts.iter().map(|p| self.ty(*p).cloned()).collect();
-                    if let Some(types) = types {
-                        self.own(w, &origin, ty, &ValueType::Tuple(types));
-                    }
-                }
-                Expr::Array(parts) => match ty {
-                    ValueType::Array(element, length) => {
-                        if *length != parts.len() as u64 {
-                            self.wrong(w, origin.clone(), format!("an array of {length} elements is written with {}", parts.len()));
-                        }
-                        let wanted = vec![(**element).clone(); parts.len()];
-                        self.parts_have_types(w, parts, &wanted, "an element of an array");
-                    }
-                    other => self.wrong(w, origin.clone(), format!("an array expression is typed {other}, an array type is required")),
-                },
-                Expr::ArrayRepeat { element, count } => {
-                    if let Some(element_ty) = self.ty(*element) {
-                        self.own(w, &origin, ty, &ValueType::Array(Box::new(element_ty.clone()), *count));
-                    }
-                }
-                Expr::StructOf { ty: id, fields } => match self.struct_fields(*id) {
-                    Some(wanted) => {
-                        self.own(w, &origin, ty, &ValueType::Struct(*id));
-                        self.parts_have_types(w, fields, &wanted, "a field of a struct expression");
-                    }
-                    None => self.wrong(w, origin.clone(), format!("struct expression names type t{}, which is not a struct of the arena", id.0)),
-                },
-                Expr::VariantOf { ty: id, variant, fields } => match self.ir.types.get(id.index()).map(|t| &t.kind) {
-                    Some(TypeKind::Enum { variants, .. }) => match variants.get(*variant as usize) {
-                        Some(v) => {
-                            let wanted: Vec<ValueType> = v.fields.iter().map(|(_, ty)| ty.clone()).collect();
-                            self.own(w, &origin, ty, &ValueType::Enum(*id));
-                            self.parts_have_types(w, fields, &wanted, "a field of a variant");
-                        }
-                        None => self.wrong(w, origin.clone(), format!("variant {variant} out of range of enum t{}", id.0)),
-                    },
-                    _ => self.wrong(w, origin.clone(), format!("variant expression names type t{}, which is not an enum of the arena", id.0)),
-                },
-                Expr::Field { expr, index } => {
-                    if let Some(base) = self.ty(*expr) {
-                        match self.field_type(base, *index) {
-                            Some(field) => self.own(w, &origin, ty, &field),
-                            None => self.wrong(w, origin.clone(), format!("field {index} of a value of type {base}, which has no such field")),
-                        }
-                    }
-                }
-                Expr::Index { expr, index } => {
-                    self.integer_index(w, *index, "an index");
-                    if let Some(base) = self.ty(*expr) {
-                        match Checker::element_type(base) {
-                            Some(element) => self.own(w, &origin, ty, element),
-                            None => self.wrong(w, origin.clone(), format!("an index applied to a value of type {base}, which is not an array")),
-                        }
-                    }
-                }
-                Expr::Length(expr) => {
-                    if let Some(base) = self.ty(*expr) {
-                        if Checker::element_type(base).is_none() {
-                            self.wrong(w, origin.clone(), format!("`len` of a value of type {base}, which is not an array"));
-                        }
-                    }
-                    self.own(w, &origin, ty, &ValueType::UInt(64));
-                }
-                Expr::IsVariant { expr, variant } => {
-                    self.own(w, &origin, ty, &ValueType::Bool);
-                    self.variant_of(w, &origin, *expr, *variant);
-                }
-                Expr::VariantField { expr, variant, field } => {
-                    if let Some(fields) = self.variant_of(w, &origin, *expr, *variant) {
-                        match fields.get(*field as usize) {
-                            Some(field_ty) => self.own(w, &origin, ty, field_ty),
-                            None => self.wrong(w, origin.clone(), format!("field {field} of variant {variant}, which has {} fields", fields.len())),
-                        }
-                    }
-                }
-                Expr::OptionPack { is, value } => {
-                    self.want(w, *is, &ValueType::Bool, "the `is` half of an option");
-                    if let Some(inner) = self.ty(*value) {
-                        self.own(w, &origin, ty, &ValueType::Option(Box::new(inner.clone())));
-                    }
-                }
-                Expr::OptionPart { option, part } => match self.ty(*option) {
-                    Some(ValueType::Option(inner)) => self.own(w, &origin, ty, if *part == LevelPart::Is { &ValueType::Bool } else { inner }),
-                    Some(other) => self.wrong(w, origin.clone(), format!("an option part of a value of type {other}, which is not an Option")),
-                    None => {}
-                },
-                Expr::Default(wanted) => {
-                    self.own(w, &origin, ty, wanted);
-                    if !self.implements(wanted, Trait::Default) {
-                        self.wrong(w, origin.clone(), format!("`default` of type {wanted}, which does not implement Default (H.8 rule 4)"));
-                    }
-                }
+                Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } => self.construction_form(w, kind, ty, &origin),
+                Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) => self.access_form(w, kind, ty, &origin),
+                Expr::IsVariant { .. } | Expr::VariantField { .. } => self.variant_form(w, kind, ty, &origin),
+                Expr::OptionPack { .. } | Expr::OptionPart { .. } => self.option_form(w, kind, ty, &origin),
+                Expr::Default(wanted) => self.default_form(w, wanted, ty, &origin),
                 _ => {}
             }
         }
         next.extend(kind.operands().into_iter().map(|operand| Task::Expr(operand, ctx)));
+    }
+
+    /// A tuple, an array, a repeated array, a struct expression or a variant expression: the type it
+    /// is, and each part the type its place wants.
+    fn construction_form(&mut self, w: &Walk, kind: &Expr, ty: &ValueType, origin: &Origin) {
+        match kind {
+            Expr::Tuple(parts) => {
+                let types: Option<Vec<ValueType>> = parts.iter().map(|p| self.ty(*p).cloned()).collect();
+                if let Some(types) = types {
+                    self.own(w, origin, ty, &ValueType::Tuple(types));
+                }
+            }
+            Expr::Array(parts) => self.array_literal_form(w, parts, ty, origin),
+            Expr::ArrayRepeat { element, count } => {
+                if let Some(element_ty) = self.ty(*element) {
+                    self.own(w, origin, ty, &ValueType::Array(Box::new(element_ty.clone()), *count));
+                }
+            }
+            Expr::StructOf { ty: id, fields } => match self.struct_fields(*id) {
+                Some(wanted) => {
+                    self.own(w, origin, ty, &ValueType::Struct(*id));
+                    self.parts_have_types(w, fields, &wanted, "a field of a struct expression");
+                }
+                None => self.wrong(w, origin.clone(), format!("struct expression names type t{}, which is not a struct of the arena", id.0)),
+            },
+            Expr::VariantOf { ty: id, variant, fields } => self.variant_expression_form(w, *id, *variant, fields, ty, origin),
+            _ => {}
+        }
+    }
+
+    /// `[a, b, c]`: typed as an array of as many elements, each of the element type.
+    fn array_literal_form(&mut self, w: &Walk, parts: &[ExprId], ty: &ValueType, origin: &Origin) {
+        match ty {
+            ValueType::Array(element, length) => {
+                if *length != parts.len() as u64 {
+                    self.wrong(w, origin.clone(), format!("an array of {length} elements is written with {}", parts.len()));
+                }
+                let wanted = vec![(**element).clone(); parts.len()];
+                self.parts_have_types(w, parts, &wanted, "an element of an array");
+            }
+            other => self.wrong(w, origin.clone(), format!("an array expression is typed {other}, an array type is required")),
+        }
+    }
+
+    /// `Enum::Variant(..)` of the enum `id`: variant `variant` exists and each field has its type.
+    fn variant_expression_form(&mut self, w: &Walk, id: crate::ids::TypeId, variant: u32, fields: &[ExprId], ty: &ValueType, origin: &Origin) {
+        match self.ir.types.get(id.index()).map(|t| &t.kind) {
+            Some(TypeKind::Enum { variants, .. }) => match variants.get(variant as usize) {
+                Some(v) => {
+                    let wanted: Vec<ValueType> = v.fields.iter().map(|(_, ty)| ty.clone()).collect();
+                    self.own(w, origin, ty, &ValueType::Enum(id));
+                    self.parts_have_types(w, fields, &wanted, "a field of a variant");
+                }
+                None => self.wrong(w, origin.clone(), format!("variant {variant} out of range of enum t{}", id.0)),
+            },
+            _ => self.wrong(w, origin.clone(), format!("variant expression names type t{}, which is not an enum of the arena", id.0)),
+        }
+    }
+
+    /// A field read, an element read or `len`: the type of the part read.
+    fn access_form(&mut self, w: &Walk, kind: &Expr, ty: &ValueType, origin: &Origin) {
+        match kind {
+            Expr::Field { expr, index } => {
+                if let Some(base) = self.ty(*expr) {
+                    match self.field_type(base, *index) {
+                        Some(field) => self.own(w, origin, ty, &field),
+                        None => self.wrong(w, origin.clone(), format!("field {index} of a value of type {base}, which has no such field")),
+                    }
+                }
+            }
+            Expr::Index { expr, index } => {
+                self.integer_index(w, *index, "an index");
+                if let Some(base) = self.ty(*expr) {
+                    match Checker::element_type(base) {
+                        Some(element) => self.own(w, origin, ty, element),
+                        None => self.wrong(w, origin.clone(), format!("an index applied to a value of type {base}, which is not an array")),
+                    }
+                }
+            }
+            Expr::Length(expr) => {
+                if let Some(base) = self.ty(*expr) {
+                    if Checker::element_type(base).is_none() {
+                        self.wrong(w, origin.clone(), format!("`len` of a value of type {base}, which is not an array"));
+                    }
+                }
+                self.own(w, origin, ty, &ValueType::UInt(64));
+            }
+            _ => {}
+        }
+    }
+
+    /// A variant test or a variant field read.
+    fn variant_form(&mut self, w: &Walk, kind: &Expr, ty: &ValueType, origin: &Origin) {
+        match kind {
+            Expr::IsVariant { expr, variant } => {
+                self.own(w, origin, ty, &ValueType::Bool);
+                self.variant_of(w, origin, *expr, *variant);
+            }
+            Expr::VariantField { expr, variant, field } => {
+                if let Some(fields) = self.variant_of(w, origin, *expr, *variant) {
+                    match fields.get(*field as usize) {
+                        Some(field_ty) => self.own(w, origin, ty, field_ty),
+                        None => self.wrong(w, origin.clone(), format!("field {field} of variant {variant}, which has {} fields", fields.len())),
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// An `Option` packed from its two halves or one half read out.
+    fn option_form(&mut self, w: &Walk, kind: &Expr, ty: &ValueType, origin: &Origin) {
+        match kind {
+            Expr::OptionPack { is, value } => {
+                self.want(w, *is, &ValueType::Bool, "the `is` half of an option");
+                if let Some(inner) = self.ty(*value) {
+                    self.own(w, origin, ty, &ValueType::Option(Box::new(inner.clone())));
+                }
+            }
+            Expr::OptionPart { option, part } => match self.ty(*option) {
+                Some(ValueType::Option(inner)) => self.own(w, origin, ty, if *part == LevelPart::Is { &ValueType::Bool } else { inner }),
+                Some(other) => self.wrong(w, origin.clone(), format!("an option part of a value of type {other}, which is not an Option")),
+                None => {}
+            },
+            _ => {}
+        }
+    }
+
+    /// `default` of type `wanted`: the type it is, and that it implements `Default`.
+    fn default_form(&mut self, w: &Walk, wanted: &ValueType, ty: &ValueType, origin: &Origin) {
+        self.own(w, origin, ty, wanted);
+        if !self.implements(wanted, Trait::Default) {
+            self.wrong(w, origin.clone(), format!("`default` of type {wanted}, which does not implement Default (H.8 rule 4)"));
+        }
     }
 
     /// The field types of variant `variant` of the enum value `expr`; names the mistake otherwise.

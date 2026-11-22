@@ -378,13 +378,18 @@ const LIFTED_FORMS: [&str; 14] = [
     "`#[repr]`",
 ];
 
-/// The modules `text` declares, by name.
-fn declared_modules(text: &str) -> Vec<String> {
-    text.lines()
-        .filter_map(|line| line.strip_prefix("module "))
-        .filter_map(|rest| rest.split(|c: char| !(c.is_alphanumeric() || c == '_')).next())
-        .map(str::to_string)
-        .collect()
+/// The modules a source text declares.
+struct ModuleNames;
+
+impl ModuleNames {
+    /// The modules `text` declares, by name.
+    fn declared_in(text: &str) -> Vec<String> {
+        text.lines()
+            .filter_map(|line| line.strip_prefix("module "))
+            .filter_map(|rest| rest.split(|c: char| !(c.is_alphanumeric() || c == '_')).next())
+            .map(str::to_string)
+            .collect()
+    }
 }
 
 #[test]
@@ -400,7 +405,7 @@ fn the_fences_composite_values_lifted_are_checked() {
         }
         let text = assemble(&g.block.text, fixtures_of(&g.section));
         let design = build(&text);
-        for module in declared_modules(&text) {
+        for module in ModuleNames::declared_in(&text) {
             let Err(refused) = piperine_lang::types::Types::check(&design, &module) else { continue };
             for diagnostic in refused {
                 let message = diagnostic.diagnostic.message;

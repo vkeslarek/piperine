@@ -271,9 +271,14 @@ impl Library {
     }
 }
 
-/// `pick` on Rust's array: the same index, checked.
-fn pick(a: [u8; 3], i: usize) -> u8 {
-    a[i]
+/// What Rust gives for an operation the generated code is compared with.
+struct RustReference;
+
+impl RustReference {
+    /// `pick` on Rust's array: the same index, checked.
+    fn pick(a: [u8; 3], i: usize) -> u8 {
+        a[i]
+    }
 }
 
 #[test]
@@ -344,7 +349,7 @@ fn main() {{
         u30 = u(30),
     );
     let out = Probe::run(&texts, &main);
-    let rust_pick = [pick([10, 20, 30], 0), pick([10, 20, 30], 1), pick([10, 20, 30], 2)];
+    let rust_pick = [RustReference::pick([10, 20, 30], 0), RustReference::pick([10, 20, 30], 1), RustReference::pick([10, 20, 30], 2)];
     let expected = vec![
         format!("pick {} {} {}", rust_pick[0], rust_pick[1], rust_pick[2]),
         "fill 0 5 7".to_string(),
