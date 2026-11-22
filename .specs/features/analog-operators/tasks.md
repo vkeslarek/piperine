@@ -1276,6 +1276,7 @@ Proof: run apioptions | test the_tnom_key_of_a_run_table_reaches_the_session_con
 
 **C46** - A `tnom` that is not a number above −273.15 is `P0010` naming the key. (AO-08, AC 2; T15)
 Proof: run apioptions | test tnom_at_or_below_absolute_zero_is_p0010 ... ok
+Proof: run clioptions | test a_tnom_that_is_no_number_is_p0010_naming_the_flag ... ok
 
 **C47** - `simparam("tnom", None)` gives the run's `tnom` in °C. (AO-08, AC 3; T36)
 Proof: run ssession | test simparam_tnom_reads_the_run_tnom_in_celsius ... ok
