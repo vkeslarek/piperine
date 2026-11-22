@@ -47,11 +47,10 @@ impl LandingCause {
 pub enum Advance {
     /// Every due instant strictly before the target ran; none was a landing.
     Reached,
-    /// The first instant at `tick` must be a landing: R4 makes it a time point
-    /// (`time_point = true`) or it fires an `IRREVERSIBLE` reaction, a host
-    /// waiter included (`time_point = false`). That instant is untouched (the
+    /// The first instant at `tick` must be a landing, for `cause`: R4 makes it a time point, or
+    /// it fires an `IRREVERSIBLE` reaction, a host waiter included. That instant is untouched (the
     /// side restored its sub-checkpoint `c_s`); every instant before it ran.
-    Landing { tick: Tick, time_point: bool },
+    Landing { tick: Tick, cause: LandingCause },
     /// A reaction at `tick` returned `FINISH`: the step lands there and the
     /// analysis ends after that instant, which is a time point. As for
     /// `Landing`, the instant itself is untouched.
@@ -256,6 +255,20 @@ pub trait DiscreteSide {
     }
 }
 
+/// What bounded the step the analog side last proposed.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ProposalBound {
+    /// The step controller's own choice.
+    #[default]
+    Controller,
+    /// The step was cut to the analog side's `max_step`.
+    MaxStep,
+    /// The step was cut to a `bound_step` cap.
+    Cap,
+    /// The step was cut to the stop time.
+    Stop,
+}
+
 /// The analog sub-solver as the owner drives it.
 pub trait AnalogSide {
     /// A checkpoint of the solution and the histories. The step reduction a
@@ -268,6 +281,10 @@ pub trait AnalogSide {
     /// The next step's end (step control, `CAP` watches), at most `stop`. `next_due` is the next
     /// scheduled time point in seconds (the discrete side's next queued commit), when there is one.
     fn propose(&mut self, now: f64, stop: f64, next_due: Option<f64>) -> f64;
+    /// What bounded the step the last `propose` returned.
+    fn proposal_bound(&self) -> ProposalBound {
+        ProposalBound::Controller
+    }
     /// Updates the analog copy of discrete values after the accepted solution
     /// at the instant that changed them; `restart` says how the next step starts.
     fn deliver(&mut self, boundary: &[Boundary], restart: Restart);

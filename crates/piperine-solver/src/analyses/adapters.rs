@@ -17,6 +17,7 @@ use std::rc::Rc;
 use piperine_analog_solver::device::{Ambient, AssemblySnapshot};
 use piperine_analog_solver::error::{Error, Result, SolverDomain};
 use piperine_digital_solver::advance::Advance as DigitalAdvance;
+use piperine_digital_solver::landing::LandingCause as DigitalLandingCause;
 use piperine_digital_solver::engine::{
     Checkpoint, Digital, Horizon as DigitalHorizon, Mark as DigitalMark, Mode, Shadow as DigitalShadow,
 };
@@ -28,13 +29,26 @@ use piperine_digital_solver::error::DigitalError;
 use piperine_digital_solver::limits::DigitalLimits;
 
 use crate::protocol::{
-    Accepted, Advance, AnalogSide, Attempt, Boundary, DiscreteSide, Horizon, HostCx, InstantMode, Observation,
-    ObservationKind, Outcome, Protocol, Restart, Shadow, Sink, StepObserver, StepView, Tick, Waiter,
+    Accepted, Advance, AnalogSide, Attempt, Boundary, DiscreteSide, Horizon, HostCx, InstantMode, LandingCause,
+    Observation, ObservationKind, Outcome, Protocol, Restart, Shadow, Sink, StepObserver, StepView, Tick, Waiter,
 };
 use crate::analyses::dc::DcSolver;
 use crate::analyses::transient::{DeviceMark, DeviceRun, TransientSolver};
 use crate::core::bind::{Bound, NameMap, Site};
 use crate::core::result::{ReentryState, TransientStep};
+
+impl From<DigitalLandingCause> for LandingCause {
+    /// The seam's copy of the digital engine's cause, variant for variant.
+    fn from(cause: DigitalLandingCause) -> LandingCause {
+        match cause {
+            DigitalLandingCause::AnalogReadChanged => LandingCause::AnalogReadChanged,
+            DigitalLandingCause::ContinuousRead => LandingCause::ContinuousRead,
+            DigitalLandingCause::DeclaredReach => LandingCause::DeclaredReach,
+            DigitalLandingCause::Irreversible => LandingCause::Irreversible,
+            DigitalLandingCause::HostWaiter => LandingCause::HostWaiter,
+        }
+    }
+}
 
 /// An instant that does not go quiet (`E0501`) as the owner reports it, naming
 /// the bound it ran into: the engine's own text names the nets and the tick, not the bound.
@@ -185,7 +199,7 @@ impl DiscreteSide for DigitalSide {
         let microsteps = self.microsteps;
         Ok(match self.digital.advance(DigitalTick(to)).map_err(|e| instant_error(e, microsteps))? {
             DigitalAdvance::Reached => Advance::Reached,
-            DigitalAdvance::Landing { tick, cause } => Advance::Landing { tick: tick.0, time_point: cause.is_time_point() },
+            DigitalAdvance::Landing { tick, cause } => Advance::Landing { tick: tick.0, cause: cause.into() },
             DigitalAdvance::Final(tick) => Advance::Final(tick.0),
         })
     }

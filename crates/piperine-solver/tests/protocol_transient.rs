@@ -32,7 +32,7 @@ use piperine_solver::abi::Port;
 use piperine_solver::prelude::{CircuitBuilder, Solver, TransientAnalysisOptions};
 
 use piperine_solver::protocol::{
-    Accepted, Advance, AnalysisKind, Attempt, Boundary, Ended, InstantMode, Observation, ObservationKind, Outcome,
+    Accepted, Advance, LandingCause, AnalysisKind, Attempt, Boundary, Ended, InstantMode, Observation, ObservationKind, Outcome,
     Protocol, ProtocolOptions, Restart, SetOutcome, Sink,
 };
 use stub_sides::{Call, horizon, Log, ScriptedAnalog, ScriptedDiscrete, calls, new_log};
@@ -105,7 +105,7 @@ fn a_proposal_a_few_ulps_short_of_a_tick_is_that_tick() {
 fn a_landing_is_solved_on_the_left_value_then_its_instant_runs() {
     let (log, mut d, mut a) = sides();
     // An R4 landing at 1 s whose instant changes a value the analog side reads.
-    d.advances.push_back(Advance::Landing { tick: 2, time_point: true });
+    d.advances.push_back(Advance::Landing { tick: 2, cause: LandingCause::AnalogReadChanged });
     d.instants.push_back(Outcome { boundary: vec![boundary()], ..Outcome::default() });
     a.accepts.push_back(Accepted { fired: vec![], samples: vec![0.5] });
     a.proposals.extend([3.0, 3.0]);
@@ -276,9 +276,9 @@ fn no_unknowns_means_no_attempt() {
     let (log, mut d, mut a) = sides();
     a.unknowns = false;
     d.advances.extend([
-        Advance::Landing { tick: 2, time_point: false },
-        Advance::Landing { tick: 4, time_point: false },
-        Advance::Landing { tick: 6, time_point: false },
+        Advance::Landing { tick: 2, cause: LandingCause::Irreversible },
+        Advance::Landing { tick: 4, cause: LandingCause::Irreversible },
+        Advance::Landing { tick: 6, cause: LandingCause::Irreversible },
     ]);
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
     assert_eq!(p.transient(5.0).unwrap(), Ended::StopTime);
@@ -302,7 +302,7 @@ fn settle_runs_at_time_points_and_at_the_stop_time_only() {
     let (log, mut d, mut a) = sides();
     // An irreversible landing at 1 s (not a time point), an R4 landing at 2 s,
     // an ordinary accepted step at 3 s, the stop time at 4 s.
-    d.advances.extend([Advance::Landing { tick: 2, time_point: false }, Advance::Landing { tick: 4, time_point: true }]);
+    d.advances.extend([Advance::Landing { tick: 2, cause: LandingCause::Irreversible }, Advance::Landing { tick: 4, cause: LandingCause::AnalogReadChanged }]);
     a.proposals.extend([3.0, 3.0, 3.0]);
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
     p.transient(4.0).unwrap();
@@ -620,7 +620,7 @@ fn an_event_time_before_the_next_time_point_reads_the_old_value() {
     let (log, mut d, mut a) = sides();
     a.proposals.extend([1.0, 2.0]);
     d.instants.push_back(settle_outcome());
-    d.advances.extend([Advance::Reached, Advance::Landing { tick: 3, time_point: false }]);
+    d.advances.extend([Advance::Reached, Advance::Landing { tick: 3, cause: LandingCause::Irreversible }]);
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
     p.transient(2.0).unwrap();
     let lands = calls(&log, |c| matches!(c, Call::LandSettleCommits(_)));

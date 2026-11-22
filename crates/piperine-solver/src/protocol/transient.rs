@@ -26,7 +26,10 @@ use piperine_analog_solver::error::{Error, Result, SolverDomain};
 
 use super::host::Waiter;
 use super::retake::JumpRetake;
-use super::sides::{Advance, AnalogSide, AnalysisKind, Attempt, DiscreteSide, Horizon, InstantMode, Outcome, Restart, Tick};
+use super::sides::{
+    Advance, AnalogSide, AnalysisKind, Attempt, DiscreteSide, Horizon, InstantMode, Outcome, ProposalBound, Restart, Tick,
+};
+use super::statistics::{StepEnd, StepStatistics};
 use super::sink::{Delivery, Sink};
 use super::step::{StepObserver, observe};
 
@@ -87,6 +90,8 @@ pub struct Protocol<D: DiscreteSide, A: AnalogSide> {
     /// A settle commit was delivered to the analog side: the step that arrives at the next time
     /// point is exempt from the truncation test, until one is accepted (§15 S3).
     pub(super) exempt_next: bool,
+    /// How the accepted steps ended.
+    pub(super) statistics: StepStatistics,
 }
 
 /// The three marks of one checkpoint.
@@ -112,6 +117,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             waiters: Vec::new(),
             observer: None,
             exempt_next: false,
+            statistics: StepStatistics::default(),
         }
     }
 
@@ -154,6 +160,11 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
     /// The last accepted time.
     pub fn now(&self) -> f64 {
         self.now
+    }
+
+    /// How the accepted steps of the transients run so far ended.
+    pub fn statistics(&self) -> &StepStatistics {
+        &self.statistics
     }
 
     /// The observations waiting for an acceptance.
@@ -302,11 +313,14 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             let c = self.checkpoint();
             let now_tick = self.now_tick;
             let unknowns = self.analog.has_unknowns();
+            let retaken = forced.is_some();
+            let mut bound = ProposalBound::Stop;
             let mut tick_c = match forced.take() {
                 Some(t) => t,
                 None if unknowns => {
                     let next_due = self.discrete.next_due().map(|tick| self.time(tick));
                     let proposed = self.analog.propose(self.now, stop, next_due);
+                    bound = self.analog.proposal_bound();
                     self.floor_tick(proposed).clamp((now_tick + self.min_advance()).min(stop_tick), stop_tick)
                 }
                 None => stop_tick,
@@ -316,9 +330,9 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             let advanced = self.discrete.advance(tick_c).map_err(|e| at(self.time(tick_c), e))?;
             match advanced {
                 Advance::Reached => {}
-                Advance::Landing { tick, time_point } => {
+                Advance::Landing { tick, cause } => {
                     tick_c = tick;
-                    settle = time_point;
+                    settle = cause.is_time_point();
                 }
                 Advance::Final(tick) => {
                     tick_c = tick;
@@ -364,6 +378,9 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                     self.restore(&c);
                     self.release(c);
                     rejections += 1;
+                    if target.is_some() {
+                        self.statistics.record_retake();
+                    }
                     if rejections >= self.options.max_rejections {
                         return Err(Error::simple(
                             SolverDomain::Transient,
@@ -398,6 +415,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             // instant runs without the settle phase, and the phase follows the retakes.
             let deferred = unknowns && settle && jump.possible(&crossings);
             let rounds = InstantMode { settle: settle && !deferred, ..mode };
+            self.statistics.record_instant();
             let mut outcome = self.run_whole_instant(tick_c, &samples, limit, rounds).map_err(|e| at(t_c, e))?;
             if unknowns && jump.wanted(&crossings, &outcome) {
                 outcome = self.retake_step(&c.analog, tick_c, crossings, outcome, limit, rounds).map_err(|e| at(t_c, e))?;
@@ -418,6 +436,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             }
             self.deliver_settle_boundary(unknowns, &outcome);
             // Step 6.
+            self.statistics.record_end(Self::step_end(advanced, retaken, bound));
             self.collect(AnalysisKind::Transient);
             self.delivery.flush(t_c);
             self.observe_step(t_c);
@@ -434,6 +453,23 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
 }
 
 impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
+    /// How the accepted step ended: on the landing the discrete side found, on the crossing it was
+    /// retaken to, or where the analog side's proposal ended (`bound` says what cut it). A step
+    /// that ends on the instant that finishes the analysis ends at the stop.
+    fn step_end(advanced: Advance, retaken: bool, bound: ProposalBound) -> StepEnd {
+        match advanced {
+            Advance::Landing { cause, .. } => StepEnd::Landing(cause),
+            Advance::Final(_) => StepEnd::Stop,
+            Advance::Reached if retaken => StepEnd::Crossing,
+            Advance::Reached => match bound {
+                ProposalBound::Controller => StepEnd::Proposal,
+                ProposalBound::MaxStep => StepEnd::MaxStep,
+                ProposalBound::Cap => StepEnd::Cap,
+                ProposalBound::Stop => StepEnd::Stop,
+            },
+        }
+    }
+
     /// §15 S1: the accepted instant `tick` lands the settle commits the last time point held, due
     /// at its microstep 0. Only an instant that is a time point (`settle`) lands them: a forced
     /// landing that is not one runs on the old value (S4; abi.md R6), as does every instant the

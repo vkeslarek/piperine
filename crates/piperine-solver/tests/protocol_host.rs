@@ -16,7 +16,7 @@ mod stub_sides;
 use std::rc::Rc;
 
 use piperine_solver::protocol::{
-    Advance, Attempt, Ended, InstantMode, Outcome, Protocol, ProtocolOptions, SetOutcome, Shadow,
+    Advance, LandingCause, Attempt, Ended, InstantMode, Outcome, Protocol, ProtocolOptions, SetOutcome, Shadow,
 };
 use stub_sides::{Call, horizon, Log, ScriptedAnalog, ScriptedDiscrete, calls, new_log};
 
@@ -47,7 +47,7 @@ const FORCED: InstantMode = InstantMode { is_static: false, settle: false };
 fn an_irreversible_landing_runs_once_after_acceptance_and_does_not_settle() {
     let (log, mut d, mut a) = sides();
     // The instant at tick 2 fires an irreversible reaction: a landing that is no time point.
-    d.advances.extend([Advance::Landing { tick: 2, time_point: false }, Advance::Landing { tick: 2, time_point: false }]);
+    d.advances.extend([Advance::Landing { tick: 2, cause: LandingCause::Irreversible }, Advance::Landing { tick: 2, cause: LandingCause::Irreversible }]);
     a.proposals.extend([2.0, 2.0, 2.0]);
     a.attempts.push_back(Attempt::Rejected);
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
@@ -86,7 +86,7 @@ fn finish_ends_after_its_instant_and_is_dropped_on_an_earlier_landing() {
 /// A protocol whose instant at tick 2 fires host event 4, with a waiter that
 /// logs `Waiter(4)` and writes `[1, 1]` to net 9.
 fn waited(log: &Log, mut d: ScriptedDiscrete, mut a: ScriptedAnalog) -> (Protocol<ScriptedDiscrete, ScriptedAnalog>, Rc<std::cell::RefCell<Vec<SetOutcome>>>) {
-    d.advances.push_back(Advance::Landing { tick: 2, time_point: false });
+    d.advances.push_back(Advance::Landing { tick: 2, cause: LandingCause::Irreversible });
     d.instants.push_back(Outcome { host_events: vec![4], ..Outcome::default() });
     a.proposals.extend([2.0, 2.0]);
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
@@ -129,7 +129,7 @@ fn a_host_waiter_runs_once_and_its_writes_are_due_next_microstep() {
 fn a_waiter_is_never_called_during_advance() {
     let (log, mut d, mut a) = sides();
     // The landing is rejected once and replayed.
-    d.advances.push_back(Advance::Landing { tick: 2, time_point: false });
+    d.advances.push_back(Advance::Landing { tick: 2, cause: LandingCause::Irreversible });
     a.attempts.push_back(Attempt::Rejected);
     a.proposals.push_back(2.0);
     let (mut p, _) = waited(&log, d, a);
@@ -210,7 +210,7 @@ fn irreversible_reactions_are_bounded_by_the_current_instant() {
     // With analog unknowns a crossing can fire right after the instant, so a
     // reaction a CROSS watch can reach may not run its clock past it (R5).
     let (log, mut d, mut a) = sides();
-    d.advances.push_back(Advance::Landing { tick: 2, time_point: false });
+    d.advances.push_back(Advance::Landing { tick: 2, cause: LandingCause::Irreversible });
     a.proposals.extend([3.0, 3.0]);
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
     p.transient(3.0).unwrap();
@@ -226,7 +226,7 @@ fn irreversible_reactions_are_bounded_by_the_current_instant() {
     // With no unknown no crossing exists: the bound is the stop time.
     let (log, mut d, mut a) = sides();
     a.unknowns = false;
-    d.advances.push_back(Advance::Landing { tick: 2, time_point: false });
+    d.advances.push_back(Advance::Landing { tick: 2, cause: LandingCause::Irreversible });
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
     p.transient(3.0).unwrap();
     let first = calls(&log, |c| matches!(c, Call::RunInstant { .. })).remove(0);
