@@ -90,12 +90,12 @@ block	values#19	4bcc7aec0a6efc87	shown	-	-	-
 block	values#20	069f955aa9090719	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream bigger
 block	values#21	1c36af9fee8a108e	refused	piperine/book_values::analog_reads_a_digital_carrier_directly	S8	-
 block	values#22	fb8add290ef4024e	refused	piperine/book_values::an_extern_function_is_refused_with_or_without_its_derivative	L12	-
-block	natures#1	67bc373d6833923e	run	piperine/book_natures::the_book_shows_the_natures_the_standard_library_gives	-	-
-block	natures#2	6b0d8fdbd0ef2ae9	refused	piperine/book_natures::signals_of_every_family_are_refused_for_the_arrays_and_the_wire	L24	-
-block	natures#3	e27df4c2a9cfd359	refused	piperine/book_natures::the_open_drain_line_is_refused_while_resolved_natures_are_not_compiled	L21	-
-block	natures#4	1d7a141cf1811928	shown	-	-	-
+block	natures#1	a19f95185defd84a	run	piperine/book_natures::the_book_shows_the_natures_the_standard_library_gives	-	-
+block	natures#2	3d0da9268a0e2cbc	refused	piperine/book_natures::signals_of_every_family_are_refused_for_the_arrays_the_option_the_logic_and_the_net	S8	-
+block	natures#3	bc658ea2dad63ed4	refused	piperine/book_natures::the_open_drain_line_is_refused_until_a_nature_can_implement_resolve	S8	-
+block	natures#4	3544f7a10903596f	shown	-	-	-
 block	natures#5	c62d8033ca3aff49	shown	-	-	-
-block	natures#6	42ee18734437cbee	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run alarm.msl --analysis transient --stop 4e-6 --stream line
+block	natures#6	acda13a1a5efeb66	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run alarm.msl --analysis transient --stop 4e-6 --stream line
 block	natures#7	954b1af85cb67042	run	piperine/book_natures::a_resistor_that_heats_itself_finds_the_temperature_where_power_in_equals_power_out	-	-
 block	natures#8	ee25d1f515652d04	refused	piperine/book_natures::a_bundle_is_refused_where_the_solver_reaches_it	L25	-
 block	modules#1	b8d5395ceea2ea36	refused	piperine/book_modules::the_ladder_is_refused_for_its_generic_module	L30	-
@@ -129,18 +129,18 @@ block	digital#3	a594897648f9a3c9	run	piperine/book_digital::the_counter_raises_f
 block	digital#4	47d868a14e955d28	shown	-	-	-
 block	digital#5	8edf6a5eb1554578	run	piperine/book_digital::the_set_reset_latch_needs_no_reaction	-	-
 block	digital#6	6d5e2bb1132e7374	refused	piperine/book_digital::the_phase_detector_is_refused_for_assignment_alone	L5	-
-block	digital#7	522e2b665ccc0283	refused	piperine/book_digital::the_debouncer_is_refused_for_its_integer_param_alone	L28	-
+block	digital#7	903768e12324544b	refused	piperine/book_digital::the_debouncer_is_refused_for_its_integer_param_alone	L28	-
 block	digital#8	af80f7bef2680656	shown	-	-	-
 block	digital#9	21242d386fccfbe6	shown	-	-	-
 block	digital#10	5cb609119c0d8c84	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run debounce.msl --analysis transient --stop 7e-3 --stream flip
-block	digital#11	90bcce43148c165c	refused	piperine/book_digital::the_pwm_is_refused_for_its_integer_param	L28	-
+block	digital#11	54fc90b46aacd8ca	refused	piperine/book_digital::the_pwm_is_refused_for_its_integer_param	L28	-
 block	digital#12	876ecd1fe59ada97	shown	-	-	-
 block	digital#13	ce1e260f082069aa	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run pwm.msl --analysis transient --stop 450e-6 --stream cycle
 block	digital#14	1211c7f06efc588a	refused	piperine/book_digital::the_pwm_check_is_refused_for_its_integer_params	L28	-
 block	digital#15	2525e0948e3c847b	shown	-	-	-
-block	digital#16	988cde23155f6def	refused	piperine/book_digital::the_irq_line_is_refused_for_its_resolved_wire	L21	-
-block	digital#17	0a1172a93cd7e3f5	refused	piperine/book_digital::the_flip_flop_is_refused_for_its_generic_module	L30	-
-block	digital#18	de17375fb290bada	run	piperine/book_digital::a_pipeline_in_one_reaction_reads_every_register_before_the_edge	-	-
+block	digital#16	32e20e7026d4fcdb	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	S8	-
+block	digital#21	d7e1731297196c91	refused	piperine/book_digital::the_flip_flop_is_refused_for_its_generic_module	L30	-
+block	digital#22	5857ae3c7d886c0f	run	piperine/book_digital::a_pipeline_in_one_reaction_reads_every_register_before_the_edge	-	-
 block	mixed#1	8f2566e772665b48	run	piperine/book_mixed::the_cycle_counter_counts_the_located_crossings_of_the_sine	-	-
 block	mixed#2	05e4a50ddb334346	run	piperine/book_mixed::the_cycle_counter_counts_the_located_crossings_of_the_sine	-	-
 block	mixed#3	5558eb3502685c8b	shown	-	-	-
@@ -370,10 +370,9 @@ claim	values~ef061060	ef0610606942e208	prose	-	-	Reading a signal gives a value,
 claim	natures~b91f6505	b91f650573b09f15	prose	-	-	By the end of this chapter you can pick the right kind of wire for a job, declare signals and ports of every kind, and build a shared open-drain line that several modules drive, with a monitor that prints every change of it.
 claim	natures~cd4205d5	cd4205d55ed90e62	prose	-	-	Every carrier has a nature, and the nature answers two questions: what does it hold, and what happens when several modules drive it.
 claim	natures~c82d9d81	c82d9d814a2989c0	prose	-	-	A circuit node has no "driver" at all: every element connected to it pushes or pulls current, and Kirchhoff's law settles the voltage.
-claim	natures~66574051	66574051a10c52fa	holds	piperine/book_natures::the_book_shows_the_natures_the_standard_library_gives	-	These are the ones the standard library gives you:
 claim	natures~eb8db94c	eb8db94ced8b3207	holds	piperine/book_natures::an_out_port_gives_the_initial_value	-	That module also gives the initial value.
 claim	natures~8ebfe866	8ebfe866aadcea4e	holds	piperine/book_natures::a_module_reaches_other_nodes_only_through_its_ports_and_gnd_is_everywhere	-	It is not a global net you can abuse: a module reaches any other node only through its ports.
-claim	natures~e99c1920	e99c1920bfe79d2e	refused	natures#3	L21	Today the command refuses the file and runs nothing:
+claim	natures~e99c1920	e99c1920bfe79d2e	refused	natures#3	S8	Today the command refuses the file and runs nothing:
 claim	natures~52790298	5279029848b66589	refused	natures#8	L25	Directions are written once, from the producer's side, and flip gives the consumer's view.
 claim	natures~5c7f5269	5c7f5269612c5fc2	holds	piperine/book_natures::behavior_crosses_freely_inside_one_module	-	Inside one module, behavior crosses freely: analog reads digital carriers, and reactions probe voltages, as Step and WindowMonitor already did.
 claim	natures~42ae741d	42ae741dc13997e4	holds	piperine/book_natures::e0220_a_bit_has_one_driver	-	E0220
@@ -430,7 +429,6 @@ claim	digital~bc5825b1	bc5825b163fa731c	refused	digital#7	L28	One thing in it is
 claim	digital~6733ba9f	6733ba9f0625bee0	holds	piperine/book_digital::the_debouncer_flips_once_at_the_fourth_clean_sample	-	Once it runs, it prints one record line: the output flipped once, at the fourth clean sample, @5.500000e-3 Press.db flip t=5.500000e-3 to=true.
 claim	digital~107c5906	107c59067f2d20c4	holds	piperine/book_digital::the_pwm_latches_its_duty_word_at_the_wrap	-	A counter that wraps every period clocks, and an output that is high while the count is below a duty word.
 claim	digital~bdd2508f	bdd2508ffe81a52d	refused	digital#11	L28	Its period is a param of an integer type, which the compiler does not take yet, so today the command refuses the file and runs nothing:
-claim	digital~aa0c04f9	aa0c04f9964a57d6	holds	piperine/book_digital::require_writes_to_checks_and_an_unknown_pass_is_unknown	-	The library's require(name, pass) is a function over emit! that writes a record to the reserved checks stream; the host reports each one as a pass or a failure, and an unknown pass is reported as unknown, never as a pass. finish() writes to the reserved sim stream and ends the analysis at that instant.
 claim	digital~5f53905d	5f53905dcdd51af2	holds	piperine/book_digital::the_library_declares_the_monitors_and_never_runs	-	The library also has ready-made monitors built this way, such as Never(clk, bad) and Setup(clk, d) { ts: 100p }; chapter 13 lists them.
 claim	digital~a0ca3f9d	a0ca3f9d281ae3ad	refused	digital#14	L28	With the check placed in the bench, piperine run pwm.msl --analysis transient --stop 3e-3 prints each failing checks record as it is written (add --all-checks to see the passing ones too) and stops by itself at the twentieth cycle.
 claim	digital~4830dc9c	4830dc9cb816631d	binary	piperine-cli/commands::test_runs_every_run_or_the_named_ones	-	It runs every run of the project and prints one PASS or FAIL line each, with the failing check records under a FAIL.
@@ -751,7 +749,7 @@ claim	welcome~4ecc9f35	4ecc9f3574b7bae5	holds	piperine/book_welcome::the_rc_proj
 claim	welcome~6c6cac8d	6c6cac8dc767660a	holds	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	The bench has a reaction of its own this time, on a crossing again, and E is the constant e: the record is written when vout rises through 63.2 % of the step.
 claim	welcome~ca1522ff	ca1522ffac1e1026	holds	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	One time constant after the step: vout is 1 − 1/e to the digit, at 0.07 ns before 2 µs.
 claim	welcome~70f7cf01	70f7cf01582cea83	prose	-	-	Chapter 5 gives every rule of emit!, and chapter 8 shows what it does inside analog, where the second rule is different on purpose.
-claim	natures~6a449552	6a4495522518bc52	refused	natures#3	L21	Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream for the same stimulus. (One record at time zero, level = false, strength = Pull; then at 1 µs the strength becomes Strong with the level still low, and at 3 µs it returns to Pull.
+claim	natures~6a449552	6a4495522518bc52	refused	natures#3	S8	Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream for the same stimulus. (One record at time zero, level = false, strength = Pull; then at 1 µs the strength becomes Strong with the level still low, and at 3 µs it returns to Pull.
 claim	modules~d3ff187c	d3ff187cb9877521	prose	-	-	For the ladder with a 1 V step, estimate when each tap passes 0.5 V before you look at the half stream.
 claim	modules~1a89f2ad	1a89f2adc283d8ec	holds	piperine/book_modules::the_rule_of_thumb_for_the_ladder_gives_the_three_times_the_book_lists	-	A rough rule for an RC ladder is 0.69 times the Elmore delay, which here is 3, 5 and 6 times r · c for the three taps: about 2.1, 3.5 and 4.1 µs after the step.
 claim	analog~53c7822c	53c7822caf5c0ae7	holds	piperine/book_analog::the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation	-	A 2 V sine drives a resistor into two diodes back to back.
@@ -806,3 +804,20 @@ claim	values~13ffaea6	13ffaea64643a8e3	unraised	piperine/book_values::e0187_and_
 claim	values~39ba3a1d	39ba3a1dbc121c32	unraised	piperine/book_values::e0187_and_e0180_are_not_raised_yet	S8	E0187
 claim	generics~8faad162	8faad162d3b6c3df	prose	-	-	Each trait names the type of its result, so an operator need not give back what it took: Logic is a library struct whose impl BitAnd for Logic<N> follows the four-state table, and its == gives a Logic because its PartialEq says so.
 claim	language~e9d4432f	e9d4432f923f1d51	prose	-	-	A value whose levels may be 0, 1, x or z, like a Verilog wire.
+claim	natures~5e977c14	5e977c1475396fb0	prose	-	-	These are the ones the standard library gives you, and the library gives no net with several drivers: you declare yours, as the example further on does.
+claim	natures~a5975eb5	a5975eb51b10e9ec	prose	-	-	A signal of Thermal could call a method its nature gives it, t.celsius() for an impl Thermal that writes one, as a number can call its own methods.
+claim	natures~9201f85e	9201f85e5da2d6e0	prose	-	-	A signal whose nature does not implement it has exactly one driver, and a second one is error E0220: its message names the nature and Resolve.
+claim	natures~8c0221b3	8c0221b3385eaef7	prose	-	-	So the file declares the nature of the line, AlarmLine, and gives it the capability of several drivers.
+claim	digital~a45e5ec2	a45e5ec2cbe58e6e	prose	-	-	The library's require(name, pass) is a function over emit! that writes a record to the reserved checks stream; the host reports each one as a pass or a failure, and there is no third verdict. finish() writes to the reserved sim stream and ends the analysis at that instant.
+claim	digital~1a88b553	1a88b553cab18404	prose	-	-	A model declares the nature of its net and gives it the capability of several drivers, an impl Resolve (chapter 6).
+claim	digital~f719cb83	f719cb836b232c72	prose	-	-	The resolve function takes the drives that are present, as plain values, and returns the value the net holds.
+claim	digital~4b2beb4c	4b2beb4c0984fbf8	prose	-	-	A third module that drove a Logic into it is error E0180: AndWire implements Resolve for bool only, and a drive picks its impl by the type of the value it drives.
+claim	digital~62def8e9	62def8e976ab4f26	prose	-	-	Without the pull-up the line, left alone, reads Z, and a reader that decides on it says how, with sda.v.is_z() or sda.v.to_volts(vdd), which gives half of vdd for Z.
+claim	digital~7043b74c	7043b74c6cecee25	prose	-	-	Driven::strongest gives x at Strong, a reader sees line.v.is_x(), line.v.to_bit() is None, and nothing stops.
+claim	digital~5b9db6d2	5b9db6d2361d0559	prose	-	-	An instability is a different thing: a loop of drives through others(), with no reaction and no after in it, that never stops changing, such as two modules that each drive the inverse of what the other drives.
+claim	digital~3342854e	3342854e3d8ed4a0	prose	-	-	After its bounded passes the run stops with error E0511, naming the two drives.
+claim	digital~0566fbc2	0566fbc2d0e7d2c9	prose	-	-	Each drive of a net has one type, and the nature picks its impl by that type: two modules that drove different types into one DataBus would be error E0225, naming both.
+block	digital#17	92bd65e1da0d2057	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	S8	-
+block	digital#18	daa3f16a70d5d389	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	S8	-
+block	digital#19	1cea38fcad18c9b2	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	S8	-
+block	digital#20	bcac1d0094b1326d	refused	piperine/book_digital::the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve	S8	-

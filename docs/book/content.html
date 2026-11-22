@@ -2040,11 +2040,11 @@ extern "C" fn erfcx_dx(x: f64) -> f64;</pre>
 <p>Think about real wires. A logic net driven by one gate holds one value and has one owner. An open-drain bus has many drivers and a rule for combining them. A circuit node has no "driver" at all: every element connected to it pushes or pulls current, and Kirchhoff's law settles the voltage. A block-diagram signal, such as the output of an ideal amplifier, is a voltage with one source and no current. MSL has exactly these four kinds:</p>
 
 <div class="table-wrap"><table>
-<thead><tr><th></th><th>discrete</th><th>discrete with <code>resolve</code></th><th>continuous with <code>flow</code></th><th>continuous, no <code>flow</code></th></tr></thead>
+<thead><tr><th></th><th>discrete</th><th>discrete that implements <code>Resolve</code></th><th>continuous with <code>flow</code></th><th>continuous, no <code>flow</code></th></tr></thead>
 <tbody>
-<tr><td>example</td><td><code>Bit</code></td><td><code>Wire</code></td><td><code>Electrical</code></td><td><code>VSignal</code></td></tr>
+<tr><td>example</td><td><code>Bit</code></td><td>a nature you declare, such as <code>AlarmLine</code> below</td><td><code>Electrical</code></td><td><code>VSignal</code></td></tr>
 <tr><td>think of</td><td>a gate output, a register</td><td>an open-drain or tristate bus</td><td>a circuit node</td><td>a block-diagram arrow</td></tr>
-<tr><td>drivers</td><td>exactly one</td><td>any number, combined by <code>resolve</code></td><td>flows sum to zero (KCL)</td><td>exactly one</td></tr>
+<tr><td>drivers</td><td>exactly one</td><td>any number, combined by its <code>resolve</code> function</td><td>flows sum to zero (KCL)</td><td>exactly one</td></tr>
 <tr><td>written with</td><td><code>=</code>, <code><-</code></td><td><code>=</code>, <code><-</code></td><td><code>+></code></td><td><code>+></code></td></tr>
 <tr><td>port direction</td><td><code>in</code> / <code>out</code></td><td>none</td><td>none</td><td>none</td></tr>
 <tr><td>computed by</td><td>the event engine</td><td>the event engine</td><td>the analog solver</td><td>the analog solver</td></tr>
@@ -2052,10 +2052,9 @@ extern "C" fn erfcx_dx(x: f64) -> f64;</pre>
 
 <h3>How a nature is declared</h3>
 
-<p>Natures are ordinary declarations. These are the ones the standard library gives you:</p>
+<p>Natures are ordinary declarations. These are the ones the standard library gives you, and the library gives no net with several drivers: you declare yours, as the example further on does.</p>
 
 <pre data-lang="msl">nature Bit<T: Repr = bool> { value: T }                              // prelude; Bit is Bit<bool>
-nature Wire { value: Logic, resolve: Logic::wired }                  // stdlib: strengths, high impedance
 nature Electrical {
     potential: Voltage { access: v, units: "V", abstol: 1u },
     flow:      Current { access: i, units: "A", abstol: 1p },
@@ -2066,7 +2065,13 @@ nature Thermal {
 }
 nature VSignal { potential: Voltage { access: v, units: "V", abstol: 1u } }   // signal-flow</pre>
 
-<p>The body tells you the family. A <strong>discrete</strong> nature declares <code>value</code>: the type it holds. Add <code>resolve</code>, a function from all the drives to one value, and it accepts many drivers. A <strong>continuous</strong> nature declares <code>potential</code>, and usually <code>flow</code>.</p>
+<p>The body tells you the family. A <strong>discrete</strong> nature declares <code>value</code>: the type it holds. A <strong>continuous</strong> nature declares <code>potential</code>, and usually <code>flow</code>. A discrete nature accepts many drivers when it <em>implements the trait <code>Resolve</code></em>, which holds one function from all the drives to one value; the next section says what that means.</p>
+
+<h3>What a nature can do: traits as capabilities</h3>
+
+<p>A trait names something a type can do, and a nature can implement traits like a type does. What a nature implements is a <strong>capability</strong> of every signal of that nature, and the language asks for a capability by name wherever it needs one. A signal of <code>Thermal</code> could call a method its nature gives it, <code>t.celsius()</code> for an <code>impl Thermal</code> that writes one, as a number can call its own methods.</p>
+
+<p>The one capability the language itself asks for is <code>Resolve</code>, the capability of taking <em>several drivers</em>. A signal whose nature does not implement it has exactly one driver, and a second one is error E0220: its message names the nature and <code>Resolve</code>. A signal whose nature implements it takes any number of drivers, none included, and its value is always <code>resolve</code> of the drives that are present. <code>resolve</code> is a function and not a module, and the library declares no net nature, for one reason: what the drives mean is the model's business. A wired-AND, an open-drain line, a bus that allows one driver at a time and a net that adds currents are all a nature with a different <code>impl Resolve</code>, and none needs a special case in the language. Chapter 9 works four of them.</p>
 
 <p>The <code>access</code> names become the <strong>probes</strong> you already used: <code>v(a, b)</code> reads a voltage and <code>i(a, b)</code> a current on <code>Electrical</code>; <code>temp</code> and <code>pwr</code> do the same on <code>Thermal</code>. <code>units</code> is a label for people and is never checked. <code>abstol</code> is the solver's tolerance for that quantity: a voltage is "converged" to about a microvolt, a current to a picoamp. There is no inheritance between natures; a high-voltage variant of <code>Electrical</code> is a second nature.</p>
 
@@ -2074,16 +2079,17 @@ nature VSignal { potential: Voltage { access: v, units: "V", abstol: 1u } }   //
 
 <p>Inside a module, <code>signal</code> declares a carrier. An initial value is optional, and what it means depends on the family:</p>
 
-<pre data-lang="msl">signal en:    Bit;                       // starts unknown
-signal count: Bit<u8> = 0;               // starts at 0
-signal level: Bit<f64> = 0.0;            // a real number that changes in steps
-signal lines: [Bit; 8];                  // eight carriers, each with its own events
-signal bus:   Bit<u4> = logic("10xx");   // level by level; x is unknown
-signal sda:   Wire;                      // resolved: any number of drivers
-signal mid:   Electrical;                // an internal node
+<pre data-lang="msl">signal en:    Bit = false;                  // a bool has no default: write its first value
+signal last:  Bit<Option<u8>>;              // starts at None
+signal count: Bit<u8> = 0;                  // starts at 0
+signal level: Bit<f64> = 0.0;               // a real number that changes in steps
+signal lines: [Bit; 8] = [false; 8];        // eight carriers, each with its own events
+signal bus:   Bit<Logic<4>> = logic("10xx");  // four-state, level by level
+signal sda:   Sda;                          // resolved: any number of drivers, no value of its own
+signal mid:   Electrical;                   // an internal node
 signal vout:  Electrical = 0.0;          // where Newton starts; held there as a transient begins</pre>
 
-<p>A discrete signal with no initial value starts <em>unknown</em> and stays so until something commits to it. That is the honest model of a register at power-up, and chapter 5 showed how to catch it. On a node, <code>= 0.0</code> is where the solver begins its search for the operating point, and a transient analysis starts from that value.</p>
+<p>A discrete signal has a value from the first instant: the one you write, or its type's default when it has one, and a type without a default must be given a first value (chapter 5). That value is committed at the first instant, and the commit is a change, so <code>changed()</code> fires for it. Until the signal changes again, <code>prev()</code> is that initial value. An <em>edge</em> is a change that ends at a level: <code>rise()</code> is a change that ends at true, so a clock that starts high has not risen. A model that wants to act at the start says so with <code>init()</code>. On a node, <code>= 0.0</code> is where the solver begins its search for the operating point, and a transient analysis starts from that value.</p>
 
 <p>An array of carriers costs what you write into it: storage for an element exists from its first commit, so <code>[Bit&lt;u8&gt;; 1 << 32]</code> is fine as a memory.</p>
 
@@ -2095,27 +2101,37 @@ signal vout:  Electrical = 0.0;          // where Newton starts; held there as a
 <thead><tr><th>Port</th><th>Written</th><th>Connected to</th></tr></thead>
 <tbody>
 <tr><td>one-driver discrete</td><td><code>in a: Bit&lt;T&gt;</code>, <code>out q: Bit&lt;T&gt; = init</code></td><td>a carrier; an <code>in</code> port also takes an expression</td></tr>
-<tr><td>other natures</td><td><code>p: Electrical</code>, <code>sda: Wire</code></td><td>a carrier (a net)</td></tr>
+<tr><td>other natures</td><td><code>p: Electrical</code>, <code>sda: Sda</code></td><td>a carrier (a net)</td></tr>
 <tr><td>bundle</td><td><code>tx: Stream&lt;T&gt;</code>, <code>rx: flip Stream&lt;T&gt;</code></td><td>a bundle carrier or literal</td></tr>
 <tr><td>value input</td><td><code>x: f64</code></td><td>any expression</td></tr>
 </tbody></table></div>
 
-<p>Only a one-driver discrete port has a direction, because only there does "who drives it" have a single answer: the module with the <code>out</code> port. That module also gives the initial value. An <code>in</code> port is read-only for the module.</p>
+<p>Only a one-driver discrete port has a direction, because only there does "who drives it" have a single answer: the module with the <code>out</code> port. That module also gives the initial value. A port of a nature that implements <code>Resolve</code> takes no direction: any module that sees it may drive it. An <code>in</code> port is read-only for the module.</p>
 
 <p><code>gnd</code> is the reference node of every continuous nature. It is not a global net you can abuse: a module reaches any other node only through its ports.</p>
 
 <h3>A complete example: one line, many drivers</h3>
 
-<p>Two sensors share one active-low alarm line. Each may pull it low; a pull-up keeps it high when nobody does. With a <code>Bit</code> this cannot be built: a <code>Bit</code> has one driver, and the second one is an error. The line is a <code>Wire</code>.</p>
+<p>Two sensors share one active-low alarm line. Each may pull it low; a pull-up keeps it high when nobody does. With a <code>Bit</code> this cannot be built: a <code>Bit</code> has one driver, and the second one is an error. So the file declares the nature of the line, <code>AlarmLine</code>, and gives it the capability of several drivers. What is driven is a level and a strength, <code>Driven</code>, from the library.</p>
 
 <!-- cli-file: alarm.msl -->
-<pre data-lang="msl">/// Pulls the line low while `req` is high, and lets go of it otherwise.
-module OpenDrain(in req: Bit, line: Wire) {
-    line = if req { Logic::strong(false) } else { Logic::Z };
+<pre data-lang="msl">/// The nature of the alarm line: what is driven is a level and a strength.
+pub nature AlarmLine { value: Driven }
+
+impl Resolve<Driven> for AlarmLine {
+    /// The strongest drive wins; equal strongest drives that disagree give x.
+    fn resolve<const N: usize>(drives: [Driven; N]) -> Driven {
+        Driven::strongest(drives)
+    }
+}
+
+/// Pulls the line low while `req` is high, and lets go of it otherwise.
+module OpenDrain(in req: Bit, line: AlarmLine) {
+    line = if req { Driven::strong(false) } else { Driven::Z };
 }
 
 /// Reports every change of a line.
-module LineWatch(line: Wire) {}
+module LineWatch(line: AlarmLine) {}
 digital for LineWatch {
     on line.changed() {
         emit!("line", t = now(), level = line.v, strength = line.s);
@@ -2126,7 +2142,7 @@ digital for LineWatch {
 module Alarm() {
     signal door: Bit = false;
     signal window: Bit = false;
-    signal alarm_n: Wire;
+    signal alarm_n: AlarmLine;
     let pu = Pullup(alarm_n);
     let d0 = OpenDrain(door, alarm_n);
     let d1 = OpenDrain(window, alarm_n);
@@ -2141,10 +2157,10 @@ digital for Alarm {
 <p>Line by line:</p>
 
 <ul>
-<li><strong><code>line: Wire</code></strong> has no direction. Any module that sees a <code>Wire</code> may drive it, and nobody counts drivers.</li>
+<li><strong><code>line: AlarmLine</code></strong> has no direction. Any module that sees an <code>AlarmLine</code> may drive it, and nobody counts drivers. The <code>impl Resolve</code> above is what allows it.</li>
 <li><strong><code>line = if req { … } else { … };</code></strong> is a <em>definition</em>, the <code>=</code> arrow of chapter 1: it is recomputed whenever <code>req</code> changes. What it defines is this module's <strong>drive</strong> of the line, not the line itself.</li>
-<li><strong><code>Logic</code></strong> is the value a <code>Wire</code> holds: a level <code>v</code> and a strength <code>s</code>. <code>Logic::strong(false)</code> is a hard low; <code>Logic::Z</code> is "not driving". <code>Pullup</code>, from the library, drives a high of the weaker strength <code>Pull</code>: <code>Logic::pull(true)</code>.</li>
-<li><strong>The line's value</strong> is its nature's <code>resolve</code> applied to all the drives: the strongest wins, and equal strengths that disagree give unknown.</li>
+<li><strong><code>Driven</code></strong> is what a module drives into a line that resolves by strength: a level <code>v</code>, a <code>Logic</code>, and a strength <code>s</code>. <code>Driven::strong(false)</code> is a hard low; <code>Driven::Z</code> is "not driving". <code>Pullup</code>, from the library, works with any line whose nature implements <code>Resolve&lt;Driven&gt;</code> and drives a high of the weaker strength <code>Pull</code>: <code>Driven::pull(true)</code>.</li>
+<li><strong>The line's value</strong> is the nature's <code>resolve</code> applied to all the drives that are present: the strongest wins, and equal strengths that disagree give <code>x</code>.</li>
 <li><strong><code>line.v</code> and <code>line.s</code></strong> read the two fields of the resolved value, like a struct.</li>
 </ul>
 
@@ -2152,152 +2168,108 @@ digital for Alarm {
 
 <pre data-lang="text">stream Alarm.watch.line
   instant      fields
-  (0, 0)       t = 0        level = true    strength = Pull
-  (1 µs, 1)    t = 1.0e-6   level = false   strength = Strong
-  (3 µs, 1)    t = 3.0e-6   level = true    strength = Pull</pre>
+  (0, 0)       t = 0        level = 1    strength = Pull
+  (1 µs, 1)    t = 1.0e-6   level = 0    strength = Strong
+  (3 µs, 1)    t = 3.0e-6   level = 1    strength = Pull</pre>
 
 <p>Three records, not four. At 2&nbsp;µs the second driver joins, but the resolved value is still a strong low, so the line did not change and <code>changed()</code> did not fire. That is the question a debug print should answer: not "what did I write" but "what does the wire hold".</p>
 
-<p>The first record is at time zero: the initial values of a design are themselves a change, from nothing to something, so reactions on <code>changed()</code> run once at the start.</p>
+<p>The first record is at time zero: the initial values of a design are themselves a change, so reactions on <code>changed()</code> run once at the start.</p>
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
   <p>Save the file as <code>alarm.msl</code>. The bench <code>Alarm</code> is its one module without ports, so it is the top:</p>
 <pre data-lang="sh">piperine run alarm.msl --analysis transient --stop 4e-6 --stream line</pre>
-  <p>Count the record lines from <code>Alarm.watch</code>: three, at times 0, 1&nbsp;µs and 3&nbsp;µs, and none at 2&nbsp;µs. That is, once resolved natures are compiled. Today the command refuses the file and runs nothing:</p>
-<pre data-lang="text" data-cli-output="piperine run alarm.msl --analysis transient --stop 4e-6 --stream line" data-cli-stream="stderr" data-cli-lines="1-3">P0001
+  <p>Count the record lines from <code>Alarm.watch</code>: three, at times 0, 1&nbsp;µs and 3&nbsp;µs, and none at 2&nbsp;µs. That is, once a nature can implement <code>Resolve</code>. Today the command refuses the file and runs nothing:</p>
+<pre data-lang="text" data-cli-output="piperine run alarm.msl --analysis transient --stop 4e-6 --stream line" data-cli-stream="stderr" data-cli-lines="1-3">E0161
 
-  × resolved nature `Wire` is not supported yet
-   ╭─[alarm.msl:2:37]
- 1 │ /// Pulls the line low while `req` is high, and lets go of it otherwise.
- 2 │ module OpenDrain(in req: Bit, line: Wire) {
-   ·                                     ──┬─
-   ·                                       ╰── resolved nature `Wire` is outside the M1 subset
- 3 │     line = if req { Logic::strong(false) } else { Logic::Z };
+  × cannot find `Driven` in this scope
+   ╭─[alarm.msl:2:31]
+ 1 │ /// The nature of the alarm line: what is driven is a level and a strength.
+ 2 │ pub nature AlarmLine { value: Driven }
+   ·                               ───┬──
+   ·                                  ╰── not found
+ 3 │ 
    ╰────
 
-P0001
+E0161
 
-  × resolved nature `Wire` is not supported yet
-   ╭─[alarm.msl:7:24]
- 6 │ /// Reports every change of a line.
- 7 │ module LineWatch(line: Wire) {}
-   ·                        ──┬─
-   ·                          ╰── resolved nature `Wire` is outside the M1 subset
- 8 │ digital for LineWatch {
+  × cannot find `Resolve` in this scope
+   ╭─[alarm.msl:4:6]
+ 3 │ 
+ 4 │ impl Resolve&lt;Driven&gt; for AlarmLine {
+   ·      ───────┬───────
+   ·             ╰── not found
+ 5 │     /// The strongest drive wins; equal strongest drives that disagree give x.
    ╰────
 
-P0001
+E0161
 
-  × method `changed` on this receiver is not supported yet
-    ╭─[alarm.msl:9:8]
-  8 │ digital for LineWatch {
-  9 │     on line.changed() {
-    ·        ───────┬──────
-    ·               ╰── method `changed` on this receiver is outside the M1 subset
- 10 │         emit!("line", t = now(), level = line.v, strength = line.s);
+  × cannot find `Driven` in this scope
+   ╭─[alarm.msl:4:14]
+ 3 │ 
+ 4 │ impl Resolve&lt;Driven&gt; for AlarmLine {
+   ·              ───┬──
+   ·                 ╰── not found
+ 5 │     /// The strongest drive wins; equal strongest drives that disagree give x.
+   ╰────
+
+E0161
+
+  × cannot find `Driven` in this scope
+   ╭─[alarm.msl:6:41]
+ 5 │     /// The strongest drive wins; equal strongest drives that disagree give x.
+ 6 │     fn resolve&lt;const N: usize&gt;(drives: [Driven; N]) -&gt; Driven {
+   ·                                         ───┬──
+   ·                                            ╰── not found
+ 7 │         Driven::strongest(drives)
+   ╰────
+
+E0161
+
+  × cannot find `Driven` in this scope
+   ╭─[alarm.msl:6:56]
+ 5 │     /// The strongest drive wins; equal strongest drives that disagree give x.
+ 6 │     fn resolve&lt;const N: usize&gt;(drives: [Driven; N]) -&gt; Driven {
+   ·                                                        ───┬──
+   ·                                                           ╰── not found
+ 7 │         Driven::strongest(drives)
+   ╰────
+
+E0161
+
+  × cannot find `Driven` in this scope
+   ╭─[alarm.msl:7:9]
+ 6 │     fn resolve&lt;const N: usize&gt;(drives: [Driven; N]) -&gt; Driven {
+ 7 │         Driven::strongest(drives)
+   ·         ────────┬────────
+   ·                 ╰── not found
+ 8 │     }
+   ╰────
+
+E0161
+
+  × cannot find `Driven` in this scope
+    ╭─[alarm.msl:13:21]
+ 12 │ module OpenDrain(in req: Bit, line: AlarmLine) {
+ 13 │     line = if req { Driven::strong(false) } else { Driven::Z };
+    ·                     ───────┬──────
+    ·                            ╰── not found
+ 14 │ }
     ╰────
 
-P0001
+E0161
 
-  × field access is not supported yet
-    ╭─[alarm.msl:10:42]
-  9 │     on line.changed() {
- 10 │         emit!("line", t = now(), level = line.v, strength = line.s);
-    ·                                          ───┬──
-    ·                                             ╰── field access is outside the M1 subset
- 11 │     }
+  × cannot find `Driven` in this scope
+    ╭─[alarm.msl:13:52]
+ 12 │ module OpenDrain(in req: Bit, line: AlarmLine) {
+ 13 │     line = if req { Driven::strong(false) } else { Driven::Z };
+    ·                                                    ────┬────
+    ·                                                        ╰── not found
+ 14 │ }
     ╰────
 
-P0001
-
-  × field access is not supported yet
-    ╭─[alarm.msl:10:61]
-  9 │     on line.changed() {
- 10 │         emit!("line", t = now(), level = line.v, strength = line.s);
-    ·                                                             ───┬──
-    ·                                                                ╰── field access is outside the M1 subset
- 11 │     }
-    ╰────
-
-P0001
-
-  × resolved nature `Wire` is not supported yet
-    ╭─[alarm.msl:18:21]
- 17 │     signal window: Bit = false;
- 18 │     signal alarm_n: Wire;
-    ·                     ──┬─
-    ·                       ╰── resolved nature `Wire` is outside the M1 subset
- 19 │     let pu = Pullup(alarm_n);
-    ╰────
-
-P0001
-
-  × `struct` item used as a type is not supported yet
-    ╭─[nets.msl:19:18]
- 18 │ impl Logic {
- 19 │     pub const Z: Logic = Logic { v: Unknown, s: Strength::HighZ }; // not driving
-    ·                  ──┬──
-    ·                    ╰── `struct` item used as a type is outside the M1 subset
- 20 │     pub fn strong(v: bool) -&gt; Logic {
-    ╰────
-
-P0001
-
-  × `struct` item used as a type is not supported yet
-    ╭─[nets.msl:20:31]
- 19 │     pub const Z: Logic = Logic { v: Unknown, s: Strength::HighZ }; // not driving
- 20 │     pub fn strong(v: bool) -&gt; Logic {
-    ·                               ──┬──
-    ·                                 ╰── `struct` item used as a type is outside the M1 subset
- 21 │         Logic { v, s: Strength::Strong }
-    ╰────
-
-P0001
-
-  × struct expression is not supported yet
-    ╭─[nets.msl:21:9]
- 20 │     pub fn strong(v: bool) -&gt; Logic {
- 21 │         Logic { v, s: Strength::Strong }
-    ·         ────────────────┬───────────────
-    ·                         ╰── struct expression is outside the M1 subset
- 22 │     }
-    ╰────
-
-P0001
-
-  × `struct` item used as a type is not supported yet
-    ╭─[nets.msl:23:29]
- 22 │     }
- 23 │     pub fn pull(v: bool) -&gt; Logic {
-    ·                             ──┬──
-    ·                               ╰── `struct` item used as a type is outside the M1 subset
- 24 │         Logic { v, s: Strength::Pull }
-    ╰────
-
-P0001
-
-  × struct expression is not supported yet
-    ╭─[nets.msl:24:9]
- 23 │     pub fn pull(v: bool) -&gt; Logic {
- 24 │         Logic { v, s: Strength::Pull }
-    ·         ───────────────┬──────────────
-    ·                        ╰── struct expression is outside the M1 subset
- 25 │     }
-    ╰────
-
-P0001
-
-  × resolved nature `Wire` is not supported yet
-    ╭─[nets.msl:87:22]
- 86 │ 
- 87 │ pub module Pullup(w: Wire) {
-    ·                      ──┬─
-    ·                        ╰── resolved nature `Wire` is outside the M1 subset
- 88 │     w = Logic::pull(true);
-    ╰────
-
-error: typeck failed with 12 diagnostic(s)</pre>
+error: parse failed with 8 diagnostic(s)</pre>
 </div>
 
 <h3>Two continuous natures in one module</h3>
@@ -2355,7 +2327,7 @@ digital<T> for Slice<T> {
   <div class="table-wrap"><table class="codes">
   <thead><tr><th>Code</th><th>You wrote</th><th>Why, and the fix</th></tr></thead>
   <tbody>
-  <tr><td>E0220</td><td>two instances with an <code>out</code> port on the same <code>Bit</code></td><td>A <code>Bit</code> has one driver. One writer, or make the net a <code>Wire</code>.</td></tr>
+  <tr><td>E0220</td><td>two instances with an <code>out</code> port on the same <code>Bit</code></td><td>A <code>Bit</code> has one driver. One writer, or declare a nature that implements <code>Resolve</code> for the net.</td></tr>
   <tr><td>E0222</td><td><code>req &lt;- false;</code> where <code>req</code> is an <code>in</code> port</td><td>A module cannot drive its own input. Drive it from the module that owns it.</td></tr>
   <tr><td>E0310</td><td><code>module M(clk: Bit)</code></td><td>A one-driver port needs a direction: <code>in clk: Bit</code>. (And an <code>Electrical</code> port takes none.)</td></tr>
   <tr><td>E0250</td><td><code>Resistor(clk, gnd) { r: 1k }</code> with <code>clk: Bit</code></td><td>Discrete and continuous never connect. Place a <code>D2A</code> between them.</td></tr>
@@ -3168,7 +3140,7 @@ module Debounce(in clk: Bit, in raw: Bit, out clean: Bit = false) {
 digital for Debounce {
     on clk.rise() {
         emit!("state", t = now(), raw = raw, run = run, clean = clean);
-        let level = raw.known_or(clean);        // an unknown input counts as "no change"
+        let level = raw;                        // the button, a plain bool: high or low
         if level == clean {
             run <- 0;
         } else if run + 1 >= n {
@@ -3199,7 +3171,7 @@ digital for Press {
 
 <ul>
 <li><strong><code>signal run: Bit&lt;u8&gt; = 0;</code></strong> is the state register: how many samples in a row disagreed with the output.</li>
-<li><strong><code>raw.known_or(clean)</code></strong> decides what an undriven button means. Here it means "same as now", so an unknown input can never flip the output.</li>
+<li><strong><code>let level = raw;</code></strong> reads the button as what it is, a <code>bool</code>: high or low. There is no third state to decide on, so the reaction compares it with <code>clean</code> and nothing else.</li>
 <li><strong>The three arms</strong> are: agreement resets the run; the <code>n</code>-th disagreement flips the output; any other disagreement extends the run. Each arm commits <code>run</code> exactly once, so there is nothing for "last write wins" to decide.</li>
 <li><strong>Two streams.</strong> <code>state</code> is the row-per-edge debug stream. <code>flip</code> records only the interesting moments. Keeping them apart lets a host listen to <code>flip</code> alone.</li>
 </ul>
@@ -3261,7 +3233,7 @@ digital for Pwm {
     on clk.rise() {
         let last = count == period - 1;
         let next = if last { 0 } else { count + 1 };
-        let w = if last { duty.known_or(0) } else { width };    // latch at the wrap
+        let w = if last { duty } else { width };    // latch at the wrap
         count <- next;
         width <- w;
         pwm <- next < w;
@@ -3307,7 +3279,7 @@ error: typeck failed with 1 diagnostic(s)</pre>
 
 <h3>From print to check</h3>
 
-<p>Once a debug print has shown you what "right" looks like, turn it into a check. The library's <code>require(name, pass)</code> is a function over <code>emit!</code> that writes a record to the reserved <code>checks</code> stream; the host reports each one as a pass or a failure, and an unknown <code>pass</code> is reported as unknown, never as a pass. <code>finish()</code> writes to the reserved <code>sim</code> stream and ends the analysis at that instant.</p>
+<p>Once a debug print has shown you what "right" looks like, turn it into a check. The library's <code>require(name, pass)</code> is a function over <code>emit!</code> that writes a record to the reserved <code>checks</code> stream; the host reports each one as a pass or a failure, and there is no third verdict. <code>finish()</code> writes to the reserved <code>sim</code> stream and ends the analysis at that instant.</p>
 
 <pre data-lang="msl">/// Checks a PWM from outside: the duty in use never exceeds a limit, and stops after `cycles`.
 module PwmCheck(in clk: Bit, in wrap: Bit, in pwm: Bit) {
@@ -3335,49 +3307,155 @@ digital for PwmCheck {
   <p class="callout-label">Run it</p>
   <p>With the check placed in the bench, <code>piperine run pwm.msl --analysis transient --stop 3e-3</code> prints each failing <code>checks</code> record as it is written (add <code>--all-checks</code> to see the passing ones too) and stops by itself at the twentieth cycle. In a project, give the run a table in <code>Piperine.toml</code> and let one command judge it:</p>
 <pre data-lang="sh">piperine test</pre>
-  <p>It runs every run of the project and prints one <code>PASS</code> or <code>FAIL</code> line each, with the failing check records under a <code>FAIL</code>. A check whose <code>pass</code> is unknown counts as a failure.</p>
+  <p>It runs every run of the project and prints one <code>PASS</code> or <code>FAIL</code> line each, with the failing check records under a <code>FAIL</code>.</p>
 </div>
 
 <h3>Many drivers: resolved nets</h3>
 
-<p>Open-drain lines, tristate buses and wired logic are not language features. They are a nature with a <code>resolve</code> function (chapter 6). A clocked reader of such a line looks like any other reaction; it reads the resolved value:</p>
+<p>Open-drain lines, tristate buses and wired logic are not language features, and the library does not declare a net for them. A model declares the <em>nature</em> of its net and gives it the capability of several drivers, an <code>impl Resolve</code> (chapter 6). The <code>resolve</code> function takes the drives that are present, as plain values, and returns the value the net holds. A clocked reader of such a line looks like any other reaction; it reads the resolved value:</p>
 
-<pre data-lang="msl">module IrqSource(in req: Bit, irq_n: Wire) { irq_n = if req { Logic::strong(false) } else { Logic::Z }; }
+<pre data-lang="msl">pub nature IrqLine { value: Driven }
 
-module IrqController(in clk: Bit, irq_n: Wire, out pending: Bit = false) {}
-digital for IrqController { on clk.rise() { pending <- !irq_n.v; } }
+impl Resolve<Driven> for IrqLine {
+    fn resolve<const N: usize>(drives: [Driven; N]) -> Driven { Driven::strongest(drives) }
+}
+
+module IrqSource(in req: Bit, irq_n: IrqLine) { irq_n = if req { Driven::strong(false) } else { Driven::Z }; }
+
+module IrqController(in clk: Bit, irq_n: IrqLine, out pending: Bit = false) {}
+digital for IrqController { on clk.rise() { pending <- irq_n.v.is_low(); } }
 
 module Board(in clk: Bit, in req0: Bit, in req1: Bit, out pending: Bit) {
-    signal irq_n: Wire;
+    signal irq_n: IrqLine;
     let pu = Pullup(irq_n);                  // wins only while every source is released
     let s0 = IrqSource(req0, irq_n);
     let s1 = IrqSource(req1, irq_n);
     let ic = IrqController(clk, irq_n, pending);
 }</pre>
 
+<h3>Driving with strength</h3>
+
+<p>Four nets show what a nature can say. Each has its nature, its <code>impl</code> and the module that drives it, and a table of what the net holds. The first two are the ones to learn first.</p>
+
+<p><strong>1. A plain bit into a wired-AND net.</strong> Nothing here needs a strength or a <code>Logic</code>. A module drives a <code>bool</code>, and the nature says that a driver that is missing reads high, which is the pull-up:</p>
+
+<pre data-lang="msl">pub nature AndWire { value: bool }
+
+impl Resolve<bool> for AndWire {
+    fn resolve<const N: usize>(drives: [bool; N]) -> bool { drives.iter().all(|d| d) }
+}
+
+module IrqSource(irq_n: AndWire, in pending: Bit) { irq_n = !pending; }   // drives a plain bool
+
+module Board(in a: Bit, in b: Bit) {
+    signal irq_n: AndWire;                 // no value of its own: it is resolve of its drives
+    let s0 = IrqSource(irq_n, a);
+    let s1 = IrqSource(irq_n, b);
+}</pre>
+
+<div class="table-wrap"><table>
+<thead><tr><th><code>a</code></th><th><code>b</code></th><th><code>irq_n</code></th></tr></thead>
+<tbody>
+<tr><td>false</td><td>false</td><td>true</td></tr>
+<tr><td>true</td><td>false</td><td>false</td></tr>
+<tr><td>true</td><td>true</td><td>false</td></tr>
+<tr><td>no source at all</td><td></td><td>true</td></tr>
+</tbody></table></div>
+
+<p><code>irq_n</code> is low when either source pulls it low and high when both release it or nobody drives it. A third module that drove a <code>Logic</code> into it is error E0180: <code>AndWire</code> implements <code>Resolve</code> for <code>bool</code> only, and a drive picks its <code>impl</code> by the type of the value it drives.</p>
+
+<p><strong>2. An open-drain line with a pull-up.</strong> Now the net holds a level and a strength. The pull-up is a module of the library, and it works with any net whose nature implements <code>Resolve&lt;Driven&gt;</code>:</p>
+
+<pre data-lang="msl">pub nature Sda { value: Driven }
+
+impl Resolve<Driven> for Sda {
+    fn resolve<const N: usize>(drives: [Driven; N]) -> Driven { Driven::strongest(drives) }
+}
+
+module OpenDrainPin(sda: Sda, in pull_low: Bit) {
+    sda = if pull_low { Driven::strong(false) } else { Driven::Z };
+}
+
+module I2cBus(in m: Bit, in s: Bit) {
+    signal sda: Sda;
+    let master = OpenDrainPin(sda, m);
+    let slave = OpenDrainPin(sda, s);
+    let rp = Pullup(sda);                  // Driven::pull(true)
+}</pre>
+
+<div class="table-wrap"><table>
+<thead><tr><th><code>master</code></th><th><code>slave</code></th><th><code>rp</code></th><th><code>sda</code></th></tr></thead>
+<tbody>
+<tr><td>Z</td><td>Z</td><td>pull 1</td><td>1 at <code>Pull</code></td></tr>
+<tr><td>strong 0</td><td>Z</td><td>pull 1</td><td>0 at <code>Strong</code></td></tr>
+<tr><td>strong 0</td><td>strong 0</td><td>pull 1</td><td>0 at <code>Strong</code></td></tr>
+<tr><td>Z</td><td>Z</td><td>(no <code>Pullup</code> instance)</td><td><code>Driven::Z</code>: <code>sda.v.is_z()</code></td></tr>
+</tbody></table></div>
+
+<p>A pull wins only while every stronger drive is released: <code>Strong</code> beats <code>Pull</code>. Without the pull-up the line, left alone, reads Z, and a reader that decides on it says how, with <code>sda.v.is_z()</code> or <code>sda.v.to_volts(vdd)</code>, which gives half of <code>vdd</code> for Z. The five strengths, <code>HighZ</code> below <code>Weak</code>, <code>Pull</code>, <code>Strong</code> and <code>Supply</code>, are the smallest set under which every module of the library keeps its meaning; a model that needs more declares its own enum and nature.</p>
+
+<p><strong>3. A tri-state bus with two drivers and a keeper.</strong> The same nature serves a bus. The <code>Keeper</code> of the library remembers the last level that was driven and holds it weakly, so a released bus does not float:</p>
+
+<pre data-lang="msl">pub nature TriBus { value: Driven }
+
+impl Resolve<Driven> for TriBus {
+    fn resolve<const N: usize>(drives: [Driven; N]) -> Driven { Driven::strongest(drives) }
+}
+
+module Bus(in d0: Bit, in oe0: Bit, in d1: Bit, in oe1: Bit) {
+    signal line: TriBus;
+    let a = Tribuf(line, d0, oe0);
+    let b = Tribuf(line, d1, oe1);
+    let k = Keeper(line);
+}</pre>
+
+<p>With one buffer enabled the line is its level at <code>Strong</code>. With none, the keeper's <code>Weak</code> level holds the last one. Before any buffer has driven, the keeper's memory is x, and the line reads x at <code>Weak</code>: the model says it was never driven, which a <code>bool</code> could not.</p>
+
+<p><strong>4. A conflict is a value; an instability is an error.</strong> Enable both buffers of the bus with <code>d0</code> true and <code>d1</code> false: two <code>Strong</code> drives that disagree. <code>Driven::strongest</code> gives x at <code>Strong</code>, a reader sees <code>line.v.is_x()</code>, <code>line.v.to_bit()</code> is <code>None</code>, and nothing stops. That is a conflict, and it is a value like any other. An <em>instability</em> is a different thing: a loop of drives through <code>others()</code>, with no reaction and no <code>after</code> in it, that never stops changing, such as two modules that each drive the inverse of what the other drives. After its bounded passes the run stops with error E0511, naming the two drives.</p>
+
+<p>The result of <code>resolve</code> need not have the type that is driven. A bus that allows one driver at a time drives an <code>Option</code> and holds a type of its own, which is why the nature takes two types, <code>Resolve&lt;X, V&gt;</code>, the type driven and the type held:</p>
+
+<pre data-lang="msl">#[derive(Repr, PartialEq)]
+pub enum Data { Free, Byte(u8), Contended }
+
+pub nature DataBus { value: Data }
+
+impl Resolve<Option<u8>, Data> for DataBus {
+    fn resolve<const N: usize>(drives: [Option<u8>; N]) -> Data {
+        drives.iter().fold(Data::Free, |a, x| match (a, x) {
+            (y, None) => y,
+            (Data::Free, Some(b)) => Data::Byte(b),
+            _ => Data::Contended,
+        })
+    }
+}
+</pre>
+
+<p>Each drive of a net has one type, and the nature picks its <code>impl</code> by that type: two modules that drove different types into one <code>DataBus</code> would be error E0225, naming both.</p>
+
 <h3>Walkthrough: a flip-flop with async reset</h3>
 
-<pre data-lang="msl">module Dff<T: Repr>(in clk: Bit, in rst_n: Bit, in d: Bit<T>, out q: Bit<T>) { reset: T; }
+<pre data-lang="msl">module Dff<T: Repr + Default>(in clk: Bit, in rst_n: Bit, in d: Bit<T>, out q: Bit<T>) { reset: T; }
 digital<T> for Dff<T> {
     on clk.rise() || rst_n.fall() { if !rst_n { q <- reset; } else { q <- d; } }
 }</pre>
 
 <ol class="steps">
-<li><strong>Drives.</strong> <code>Dff</code> holds the one drive of <code>q</code>, by commits. <code>q</code> has no initial value, so it starts unknown.</li>
+<li><strong>Drives.</strong> <code>Dff</code> holds the one drive of <code>q</code>, by commits. <code>q</code> has no initial value, so it starts at <code>Default::default()</code> of <code>T</code>, which is why <code>T</code> is bound by <code>Default</code>.</li>
 <li><strong>Events.</strong> If the clock rises and reset falls together, the reaction still runs once.</li>
-<li><strong>Reset low from the start.</strong> The first value of <code>rst_n</code> is a change from unknown to low, so <code>fall()</code> fires at time 0 and <code>q</code> takes <code>reset</code> one microstep later.</li>
+<li><strong>Reset low from the start.</strong> A <code>rst_n</code> that starts low has not fallen: <code>fall()</code> is a change that ends low, and the initial value is where the signal begins. A model that must reset at the start adds <code>init()</code> to the event list.</li>
 <li><strong>A clock edge.</strong> The reaction reads <code>rst_n</code> and <code>d</code> as settled in that microstep; the commit applies in the next.</li>
-<li><strong>Unknown <code>rst_n</code>.</strong> Both arms run and their commits merge level by level, so <code>q</code> keeps the levels on which <code>reset</code> and <code>d</code> agree. If you want Verilog's behavior instead, write <code>if !rst_n.known_or(true)</code>.</li>
+<li><strong>One path.</strong> <code>if !rst_n</code> takes exactly one arm, because <code>rst_n</code> is a <code>bool</code>. A reset that may be <code>x</code> or <code>z</code> is a <code>Bit&lt;Logic&gt;</code>, and the model says how to read it, for example with <code>rst_n.is_low()</code>.</li>
 </ol>
 
 <p>Pipelines fall out of "reads see the past". One reaction can describe all three stages of a multiply-accumulate pipeline, in any statement order, because every right-hand side reads the registers as they were before the edge:</p>
 
 <pre data-lang="msl">module MacPipe(in clk: Bit, in a: Bit<i16>, in b: Bit<i16>, in valid_in: Bit,
                out acc: Bit<i40> = 0, out valid_out: Bit = false) {
-    signal a1: Bit<i16>;
-    signal b1: Bit<i16>;
+    signal a1: Bit<i16> = 0;
+    signal b1: Bit<i16> = 0;
     signal v1: Bit = false;
-    signal p2: Bit<i32>;
+    signal p2: Bit<i32> = 0;
     signal v2: Bit = false;
 }
 
@@ -3391,7 +3469,7 @@ digital for MacPipe {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Digital MSL runs from source, and the <code>piperine</code> command runs it. A <code>digital</code> block is type checked, elaborated and compiled to Rust (chapter 20); its reactions, commits, events, unknown values and <code>emit!</code> records run on the solver and are tested against the rules above. One form of this chapter is not compiled yet and is refused with P0001: a param of an integer type, such as <code>n: u8</code>. That stops the debouncer and the PWM for now, as their "Run it" boxes show; the counter runs. A transient of a design with no analog node runs to its stop like any other and gives its table.</p>
+  <p>Digital MSL runs from source, and the <code>piperine</code> command runs it. A <code>digital</code> block is type checked, elaborated and compiled to Rust (chapter 20); its reactions, commits, events and <code>emit!</code> records run on the solver and are tested against the rules above. One form of this chapter is not compiled yet and is refused with P0001: a param of an integer type, such as <code>n: u8</code>. That stops the debouncer and the PWM for now, as their "Run it" boxes show; the counter runs. A transient of a design with no analog node runs to its stop like any other and gives its table.</p>
 </div>
 
 <div class="callout mistake">

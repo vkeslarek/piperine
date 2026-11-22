@@ -453,12 +453,8 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | values~c389077a | L53 | `unknown-semantics-events` | the class of a function that returns `Event` does not run (`handshake`); the pure, `now()` and `emit!` classes do |
 | values#22 | L12 | `foreign-models` | an `extern "C" fn` with its `#[derivative]` is `P0001`: `extern` function is not supported yet |
 | values~3998361d | L12 | `foreign-models` | `E0123` is not raised: an `extern` function called in `analog` is `P0001` with or without the derivative |
-| natures#2 | L24 | `composite-values` | `[Bit; 8]` is `P0001` (array type), `signal sda: Wire` is `P0001` (resolved nature `Wire`) and `logic("10xx")` reaches a generic function of the standard library (`P0001`); the other lines are accepted |
-| natures#3 | L21 | `resolved-nets` | `alarm.msl` is twelve `P0001`: the `Wire` ports, `changed()` and field access on a `Wire`, the `struct` of `Logic` in `nets.msl` |
 | natures#8 | L25 | `resolved-nets-bundles` | placed in a top, the `Stream` bundle is `P0001` (`struct` item used as a type) and `Slice` is `P0001` (generic module) |
-| natures~e99c1920 | L21 | `resolved-nets` | the command refuses `alarm.msl` and runs nothing, as the sentence says: held with natures#3 |
 | natures~52790298 | L25 | `resolved-nets-bundles` | `flip` and the bundle's directions are `P0001` with natures#8 |
-| natures~6a449552 | L21 | `resolved-nets` | the `Pulldown` variant of the alarm needs the same `Wire`: refused with natures#3 |
 | modules#1 | L30 | `generics` | `ladder.msl` is `P0001`, a generic module, on `Ladder::<3>`, for an operating point and for the DC sweep |
 | modules#2 | L31 | `generics` | next to the generic ladder, generation `for` in a `digital` block is `P0001` |
 | modules#6 | L30 | `generics` | `lowpass` is `P0001`: its `idt` is a generic module; the module that returns a value with feedback through an instance is behind it (L38) |
@@ -481,8 +477,7 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | digital#7 | L28 | `params-and-io` | `param of type u8 is not supported yet` on `n: u8`; with the param written as a literal, `known_or(clean)` is `P0001` too (a `known_or` default that may be unknown, L59) |
 | digital#11 | L28 | `params-and-io` | `param of type u8 is not supported yet` on `period: u8` |
 | digital#14 | L28 | `params-and-io` | `PwmCheck` is `P0001` twice: `limit: u8` and `cycles: u32` |
-| digital#16 | L21 | `resolved-nets` | `IrqSource`, `IrqController` and `Board` are `P0001`: the resolved nature `Wire`, `.v` on it, the `Logic` struct |
-| digital#17 | L30 | `generics` | `Dff<T: Repr>` placed as `Dff::<u8>` is `P0001`: generic module |
+| digital#21 | L30 | `generics` | `Dff<T: Repr>` placed as `Dff::<u8>` is `P0001`: generic module |
 | digital~bc5825b1 | L28 | `params-and-io` | the debouncer is refused at `n: u8`, as the sentence says |
 | digital~bdd2508f | L28 | `params-and-io` | the PWM is refused at `period: u8`, as the sentence says: held with digital#11 |
 | digital~a0ca3f9d | L28 | `params-and-io` | the check does not run as the Book places it: `limit: u8` and `cycles: u32` are refused with digital#14 |
@@ -507,6 +502,15 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | values~39ba3a1d | S8 | `explicit-unknowns` | `E0187` is not raised (the row of the mistakes table) |
 | values~2bbc575e | S8 | `explicit-unknowns` | held with values#14: the adder's `Bit<Option<u8>>` port is `E0112` |
 | values~c30bad4d | S8 | `explicit-unknowns` | held with values#18: `Logic<4>` is `P0001` |
+| natures#2 | S8 | `explicit-unknowns` | `[Bit; 8]` is `P0001` (array type), `Bit<Option<u8>>` is `E0112` (no `Repr`), `Bit<Logic<4>>` is `P0001` (`struct` item used as a type) and `Sda`, declared further on in the chapter, is `E0161` when the block stands alone |
+| natures#3 | S8 | `explicit-unknowns` | `alarm.msl` is `E0161`: `Driven`, `Resolve`, `Pullup` and the `Logic` behind them are not in the library yet, so a nature that implements `Resolve<Driven>` is not read |
+| natures~e99c1920 | S8 | `explicit-unknowns` | the command refuses `alarm.msl` and runs nothing, as the sentence says: held with natures#3 |
+| natures~6a449552 | S8 | `explicit-unknowns` | the `Pulldown` variant of the alarm needs the same nature: refused with natures#3 |
+| digital#16 | S8 | `explicit-unknowns` | `IrqLine`, a nature the model declares with `impl Resolve<Driven>`: `Driven` is `E0161` (not in the library yet) |
+| digital#17 | S8 | `explicit-unknowns` | `AndWire` and `impl Resolve<bool>`: `Resolve` is `E0161` (not in the library yet) |
+| digital#18 | S8 | `explicit-unknowns` | `Sda` and its pull-up: `Driven` is `E0161` (not in the library yet) |
+| digital#19 | S8 | `explicit-unknowns` | `TriBus` with `Tribuf` and `Keeper`: `Driven` is `E0161` (not in the library yet) |
+| digital#20 | S8 | `explicit-unknowns` | `DataBus` and `impl Resolve<Option<u8>, Data>`: `Resolve` is `E0161` (not in the library yet) |
 
 Three observations the root tests made are no Book row, so they are not above: they are entries of §7,
 each with its owner. A run has no key or flag for `dt_min` (H16, `host-analyses`); a `--stream` named like
