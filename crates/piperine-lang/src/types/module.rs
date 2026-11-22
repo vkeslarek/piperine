@@ -60,8 +60,8 @@ impl Checker<'_> {
     pub(super) fn param(&mut self, decl: DeclId, param: &ParamData) {
         let ty = self.lower_type(param.ty).and_then(|ty| match ty {
             Ty::F64 | Ty::Bool | Ty::Module(_) => Some(ty),
-            // An `Option` param is `params-and-io`'s (L28).
-            composite if !matches!(composite, Ty::Option(_)) && self.is_plain_composite(&composite, false) => Some(composite),
+            // An `Option` or enum param is `params-and-io`'s (L28).
+            composite if self.is_param_composite(&composite) => Some(composite),
             other => {
                 let node = self.design.type_node(param.ty).clone();
                 let file = self.design.decl_data(node.owner).file;
@@ -407,7 +407,7 @@ impl Checker<'_> {
             };
             match param.and_then(|t| self.lower_type(t)) {
                 Some(ty @ (Ty::F64 | Ty::Bool | Ty::Module(_))) => self.check(field.value, &ty),
-                Some(composite) if !matches!(composite, Ty::Option(_)) && self.is_plain_composite(&composite, false) => self.check(field.value, &composite),
+                Some(composite) if self.is_param_composite(&composite) => self.check(field.value, &composite),
                 _ => {
                     self.infer(field.value);
                 }

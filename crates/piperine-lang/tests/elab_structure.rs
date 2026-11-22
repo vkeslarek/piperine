@@ -385,6 +385,20 @@ fn the_section_18_diode_waits_for_params_and_io() {
     assert!(found[0].diagnostic.message.contains("Option"), "the refusal names the param type: {}", found[0].diagnostic.message);
 }
 
+#[test]
+fn an_enum_param_is_refused_by_name_until_params_and_io() {
+    // CV round 2, finding 10 (GAPS L28, `md: Mode`): an enum param, unit or payload, with or without `Repr`, is `P0001`
+    // naming the enum type, never carried on to the transpiler read as an `f64`.
+    let items = "enum Mode { A, B }\n#[derive(Repr)]\nenum Kind { X(u8), Y }\n";
+    for (param, named) in [("m: Mode = Mode::A", "Mode"), ("k: Kind = Kind::Y", "Kind")] {
+        let src = format!("{items}module Top() {{ {param}; signal s: Electrical; }}");
+        let design = Elab::design(&src);
+        let found = piperine_lang::types::Types::check(&design, "Top").expect_err("the enum param is refused");
+        assert_eq!(Elab::codes(&found), ["P0001"], "{param}");
+        assert!(found[0].diagnostic.message.contains(&format!("param of type `enum `{named}``")), "{param}: {}", found[0].diagnostic.message);
+    }
+}
+
 /// `Lag` of AS-09: a result that reads its own node, hoisted into each body that places it.
 const LAG: &str = "module Lag(x: f64) -> f64 { tau: f64 = 1m; signal y: State; potential(y) }\nanalog for Lag { flow(y) +> tau * ddt(potential(y)) + potential(y) - x; }\n";
 
