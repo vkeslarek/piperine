@@ -578,7 +578,10 @@ fn engine_table() -> BTreeSet<String> {
     table_rows(table).into_iter().map(|row| row[0].trim_matches('`').to_string()).take_while(|n| !n.is_empty()).collect()
 }
 
-/// The names of the `pub` items of a namespace.
+/// Pub items of `std` that the Index no longer lists (removed by explicit-unknowns; T23 deletes them
+/// from the files and empties the list). `Logic` of `nets` is the earlier struct, replaced by `values::Logic`.
+const STD_BEHIND_THE_INDEX: [(&str, &str); 7] = [("values", "Known"), ("values", "merge"), ("nets", "Logic"), ("nets", "Wire"), ("nets", "Tri"), ("nets", "tri"), ("nets", "SumNet")];
+
 /// Index items of §22 that `std` does not declare yet: the specification states the explicit model
 /// (explicit-unknowns, MD-78) before the files hold it. Each leaves with its task (T23 for `Driven`,
 /// T44 for `Logic` and `LogicState`); a stale entry fails `the_index_lists_stay_honest`.
@@ -587,10 +590,7 @@ const INDEX_AHEAD_OF_STD: [(&str, &str); 3] = [("values", "Logic"), ("values", "
 /// Members the Index lists under the items above (`Logic::..`, `Driven::strongest`).
 const INDEX_MEMBERS_AHEAD_OF_STD: [(&str, &str); 2] = [("values", "Logic"), ("nets", "strongest")];
 
-/// Pub items of `std` that the Index no longer lists (removed by explicit-unknowns; T23 deletes them
-/// from the files and empties the list). `Logic` of `nets` is the earlier struct, replaced by `values::Logic`.
-const STD_BEHIND_THE_INDEX: [(&str, &str); 7] = [("values", "Known"), ("values", "merge"), ("nets", "Logic"), ("nets", "Wire"), ("nets", "Tri"), ("nets", "tri"), ("nets", "SumNet")];
-
+/// The names of the `pub` items of a namespace.
 fn pub_names(design: &Design, namespace: &str) -> BTreeSet<String> {
     let ns = design.std_crate().root().submodules().into_iter().find(|n| n.name() == Some(namespace)).unwrap_or_else(|| panic!("std declares the namespace `{namespace}`"));
     ns.items().into_iter().filter(|i| i.is_pub()).filter_map(|i| i.name().map(str::to_string)).collect()
@@ -829,6 +829,9 @@ fn the_index_lists_stay_honest() {
     let design = embedded();
     for (space, name) in INDEX_AHEAD_OF_STD {
         assert!(!pub_names(&design, space).contains(name), "{space}::{name} is declared now: drop it from INDEX_AHEAD_OF_STD");
+    }
+    for (space, name) in INDEX_MEMBERS_AHEAD_OF_STD {
+        assert!(declared_in_file(&design, space, name).is_empty(), "{space}::{name} is declared now: drop it from INDEX_MEMBERS_AHEAD_OF_STD");
     }
     let listed: Vec<String> = index_names().into_iter().filter(|n| !n.member).map(|n| format!("{}::{}", n.namespace, n.name)).collect();
     for (space, name) in STD_BEHIND_THE_INDEX {
