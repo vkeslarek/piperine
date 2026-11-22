@@ -237,7 +237,7 @@ fn the_bounds_of_the_solver_have_the_defaults_and_the_keys_the_chapter_gives() {
     // "A transient that needs more attempts than max_steps fails naming the budget; raise it and the same run
     // succeeds."
     let chapter = Chapter::read();
-    let ring = "module Top() { signal n: Electrical; signal d: Bit = false; }\nanalog for Top { v(n) +> transition(if d.high() { 1.0 } else { 0.0 }); }\ndigital for Top { on above(v(n) - 0.5) { d <- false; } on above(0.5 - v(n)) { d <- true; } }\n";
+    let ring = "module Top() { signal n: Electrical; signal d: Bit = false; }\nanalog for Top { v(n) +> transition(if d { 1.0 } else { 0.0 }); }\ndigital for Top { on above(v(n) - 0.5) { d <- false; } on above(0.5 - v(n)) { d <- true; } }\n";
     let rounds = |maxrounds: Option<u32>| format!("{:#}", Model::written("m.msl", ring).run(Overrides { maxrounds, ..Faulty::operating_point_of("Top") }).err().expect("never settles"));
     assert!(rounds(None).contains("did not settle in 20 rounds"), "20 by default: {}", rounds(None));
     assert!(rounds(Some(7)).contains("did not settle in 7 rounds"), "the key sets it: {}", rounds(Some(7)));

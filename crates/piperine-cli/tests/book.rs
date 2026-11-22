@@ -625,7 +625,7 @@ fn a_plot_draws_a_curve_and_a_legend_per_real_signal_and_a_lane_per_digital_one(
     // legend; every digital signal is a step trace in a lane of its own below": a node that follows a bit
     // gives one curve, one lane and a legend naming both
     let dir = tempfile::tempdir().expect("tmp");
-    let design = "module Top() { signal n: Electrical; signal d: Bit = false; }\nanalog for Top { v(n) +> transition(if d.high() { 1.0 } else { 0.0 }); }\ndigital for Top { on at(1u) { d <- true; } }\n";
+    let design = "module Top() { signal n: Electrical; signal d: Bit = false; }\nanalog for Top { v(n) +> transition(if d { 1.0 } else { 0.0 }); }\ndigital for Top { on at(1u) { d <- true; } }\n";
     write(dir.path(), "plot.msl", design);
     let out = Command::new(binary())
         .args(["run", "plot.msl", "--analysis", "transient", "--stop", "3e-6", "--print-step", "1e-6", "--print", "n", "--print", "d", "--plot", "out.svg"])

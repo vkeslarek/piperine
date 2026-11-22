@@ -114,7 +114,7 @@ fn the_digital_card_runs() {
     let chapter = Chapter::read();
     // `p` sits 0.5 V above `n`, both driven, so the check `v(p, n) <= hi` holds and the operating point is not singular
     let before = format!("{}module M(in clk: Bit, in rst_n: Bit, in d: Bit, out q: Bit = false, p: Electrical, n: Electrical, in en: Bit) {{ t0: f64 = 1u; w: f64 = 1n; hi: f64 = 1.0; }}\n", Surroundings::PARTS);
-    let after = "module Top() { signal c: Bit; signal r: Bit; signal d: Bit; signal q: Bit; signal p: Electrical; signal n: Electrical; signal e: Bit; let sp = Vdc(p) { dc: 0.5 }; let sn = Vdc(n) { dc: 0.0 }; let m = M(c, r, d, q, p, n, e); }\n";
+    let after = "module Top() { signal c: Bit = false; signal r: Bit = false; signal d: Bit = false; signal q: Bit; signal p: Electrical; signal n: Electrical; signal e: Bit = false; let sp = Vdc(p) { dc: 0.5 }; let sn = Vdc(n) { dc: 0.0 }; let m = M(c, r, d, q, p, n, e); }\n";
     let model = chapter.wrapped("digital.msl", &before, "cheatsheet#5", after);
     model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("cheatsheet#5, the digital card: {failure}"));
 }

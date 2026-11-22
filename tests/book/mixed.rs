@@ -273,7 +273,7 @@ fn the_sar_adc_runs_with_its_comparator_and_its_field_access() {
     // event as a `bool`, §13 rule 2, unknown-semantics-events), the pieces the chapter does not show
     // written by the test (a source, a sample-hold, `Dac8`, `SarLogic`)
     let chapter = Chapter::read();
-    let pieces = "module Vdc(p: Electrical) { dc: f64 = 1.0; }\nanalog for Vdc { v(p) +> dc; }\nmodule SampleHold(vin: Electrical, vout: Electrical, in clk: Bit) { signal held: Bit<f64> = 0.0; }\ndigital for SampleHold { on clk.rise() { held <- v(vin); } }\nanalog for SampleHold { v(vout) +> held.known_or(0.0); }\nmodule Dac8(in code: Bit<u8>, vout: Electrical) { pub signal core: Electrical; }\nanalog for Dac8 { v(core) +> 0.5; v(vout) +> v(core); }\nmodule SarLogic(in clk: Bit, in start: Bit, in cmp: Bit, out code: Bit<u8> = 0, out done: Bit = false) {}\n";
+    let pieces = "module Vdc(p: Electrical) { dc: f64 = 1.0; }\nanalog for Vdc { v(p) +> dc; }\nmodule SampleHold(vin: Electrical, vout: Electrical, in clk: Bit) { signal held: Bit<f64> = 0.0; }\ndigital for SampleHold { on clk.rise() { held <- v(vin); } }\nanalog for SampleHold { v(vout) +> held; }\nmodule Dac8(in code: Bit<u8>, vout: Electrical) { pub signal core: Electrical; }\nanalog for Dac8 { v(core) +> 0.5; v(vout) +> v(core); }\nmodule SarLogic(in clk: Bit, in start: Bit, in cmp: Bit, out code: Bit<u8> = 0, out done: Bit = false) {}\n";
     let after = "module Top(in clk: Bit, in start: Bit) { signal vin: Electrical; signal code: Bit<u8>; signal done: Bit; let s = Vdc(vin) { dc: 0.3 }; let a = SarAdc(vin, clk, start, code, done); }\n";
     let before = format!("{}\n{pieces}", chapter.text("mixed#6"));
     chapter.wrapped("sar.msl", &before, "mixed#15", after).run(Commands::transient("Top", 1e-6, None)).unwrap_or_else(|failure| panic!("the SAR ADC runs: {failure}"));
@@ -360,7 +360,7 @@ fn e0504_the_step_after_a_jump_that_does_not_converge_names_the_carrier() {
     // mixed~5c44ed1d: "E0504 a run error at a digital edge": a node with no solution after the carrier `lvl`
     // jumps (`v^2 + v/1k + lvl = 0` has no real root at lvl = 1) fails at the smallest step, and the error
     // names the delivery of `Top.lvl`
-    let source = "module Top() { signal b: Electrical; signal lvl: Bit<f64> = 0.0; }\nanalog for Top { i(b, gnd) +> v(b) * v(b) + v(b) / 1k + lvl.known_or(0.0); }\ndigital for Top { on at(1u) { lvl <- 1.0; } }\n";
+    let source = "module Top() { signal b: Electrical; signal lvl: Bit<f64> = 0.0; }\nanalog for Top { i(b, gnd) +> v(b) * v(b) + v(b) / 1k + lvl; }\ndigital for Top { on at(1u) { lvl <- 1.0; } }\n";
     let given = Refusal::of(Model::written("jump.msl", source).run(Commands::transient("Top", 3e-6, Some(1e-6))), "mixed~5c44ed1d");
     assert_eq!(given.len(), 1, "{given:?}");
     assert_eq!(given[0].0, "E0504");

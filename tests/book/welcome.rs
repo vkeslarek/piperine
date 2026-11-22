@@ -157,19 +157,21 @@ fn the_delayed_bench_steps_at_one_microsecond() {
 
 #[test]
 fn the_inverter_drives_its_output_a_propagation_delay_after_its_input() {
-    // welcome#21: "its one line drives the output from the input, tpd seconds later": `a` rises at
-    // 1 ns, `y` falls at 1 ns + 10 ps (and starts true 10 ps after the start)
+    // welcome#21: "its one line drives the output from the input, tpd seconds later": `y` starts at
+    // false (that first value is a change, so the reaction records it at time zero), `a` rises at
+    // 1 ns, and `y` is true 10 ps after the start and falls at 1 ns + 10 ps
     let chapter = Chapter::read();
     let top = "module Top() { signal a: Bit = false; signal y: Bit; let inv = Inv(a, y); }\ndigital for Top { on at(1n) { a <- true; } on y.changed() { emit!(\"edge\", t = now(), v = y); } }\n";
     let model = chapter.lone("inv.msl", &["welcome#21"]).with_source("inv.msl", top);
     let overrides = Overrides { analysis: Some("transient".to_string()), top: Some("Top".to_string()), stop: Some(2e-9), ..Overrides::default() };
     let ran = model.run(overrides).unwrap_or_else(|failure| panic!("{failure}"));
     let edges: Vec<(f64, &Field)> = ran.stream("edge").iter().map(|record| (record.time, &record.fields[1].1)).collect();
-    assert_eq!(edges.len(), 2, "{:?}", ran.records);
-    Printed::holds("1.000000e-11", edges[0].0, "y first drives after tpd");
-    assert_eq!(edges[0].1, &Field::Bool(true));
-    Printed::holds("1.010000e-9", edges[1].0, "y falls tpd after a rises");
-    assert_eq!(edges[1].1, &Field::Bool(false));
+    assert_eq!(edges.len(), 3, "{:?}", ran.records);
+    assert_eq!((edges[0].0, edges[0].1), (0.0, &Field::Bool(false)), "the initial value is the first change");
+    Printed::holds("1.000000e-11", edges[1].0, "y first drives after tpd");
+    assert_eq!(edges[1].1, &Field::Bool(true));
+    Printed::holds("1.010000e-9", edges[2].0, "y falls tpd after a rises");
+    assert_eq!(edges[2].1, &Field::Bool(false));
 }
 
 /// A mistake the chapter's table names: a bench of the Book written wrong.

@@ -315,14 +315,19 @@ fn analog_reads_a_digital_carrier_directly() {
 }
 
 #[test]
-fn e0187_is_not_raised_yet() {
-    // values~23c03fc8 "So signal en: Bit; is error E0187", the E0187 cell of the table (values~39ba3a1d) and values~37a548f2 (an
-    // undriven top-level in port of a type with no default) (all `unraised`, GAPS.md S8): the earlier front end
-    // starts a carrier with no value unknown, so `signal en: Bit;` elaborates and runs. The test fails when E0187
-    // is raised. (values~13ffaea6, E0180 for a `Logic`, is raised: `e0180_a_logic_is_no_f64_and_no_bool`.)
-    let source = "module Top() { signal en: Bit; }\ndigital for Top { on at(1u) { emit!(\"e\", t = now()); } }\n";
-    let ran = Transient::ran(&Model::written("no_default.msl", source), "Top", 2e-6);
-    assert_eq!(ran.stream("e").len(), 1, "a signal with no value and no default still runs: E0187 is not raised");
+fn e0187_a_signal_with_no_first_value_and_no_default_is_refused() {
+    // values~23c03fc8 "So signal en: Bit; is error E0187, naming the signal and the trait Default" and the E0187
+    // cell of the table (values~39ba3a1d): a `bool` has no default, so the first value must be written
+    let faulty = Faulty::elaborating("values~23c03fc8", "module Top() { signal en: Bit; }\n", "Top");
+    assert!(faulty.first("E0187").message.starts_with("`en` has no initial value and its type `bool` does not implement `Default`"), "{}", faulty.first("E0187").message);
+    let written = Transient::ran(&Model::written("first_value.msl", "module Top() { signal en: Bit = false; }\ndigital for Top { on at(1u) { emit!(\"e\", t = now()); } }\n"), "Top", 2e-6);
+    assert_eq!(written.stream("e").len(), 1, "with its first value written the signal runs");
+}
+
+#[test]
+fn an_undriven_top_level_in_port_with_no_default_is_not_refused_yet() {
+    // values~37a548f2 (`unraised`, GAPS.md S8, task T38): the analysis does not refuse an undriven top-level `in`
+    // port of a type with no default, it runs. The test fails when the refusal exists
     let port = Transient::ran(&Model::written("undriven.msl", "module Top(in b: Bit<u8>) { }\ndigital for Top { on at(1u) { emit!(\"p\", t = now()); } }\n"), "Top", 2e-6);
     assert_eq!(port.stream("p").len(), 1, "an undriven in port of a type with no default still runs");
 }

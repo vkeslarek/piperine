@@ -329,7 +329,7 @@ print_step = 1e-6</pre>
 
 <p>The third one, the definition, is how you write logic with no state. Here is a digital inverter with a propagation delay. It has no behavior block at all: its one line drives the output from the input, <code>tpd</code> seconds later.</p>
 
-<pre data-lang="msl">module Inv(in a: Bit, out y: Bit) {
+<pre data-lang="msl">module Inv(in a: Bit, out y: Bit = false) {
     tpd: f64 = 10p where tpd > 0.0;
     y = !a after tpd;
 }</pre>
@@ -1953,7 +1953,29 @@ P0001
  65 │     signal clk: Bit;
     ╰────
 
-error: typeck failed with 4 diagnostic(s)</pre>
+P0001
+
+  × generic function is not supported yet
+    ╭─[values.msl:16:1]
+ 15 │ 
+ 16 │ pub extern "intrinsic" fn logic&lt;T: Repr&gt;(pattern: str) -&gt; T;
+    · ──────────────────────────────┬─────────────────────────────
+    ·                               ╰── generic function is outside the M1 subset
+ 17 │ 
+    ╰────
+
+P0001
+
+  × generic parameter used as a type is not supported yet
+    ╭─[values.msl:16:59]
+ 15 │ 
+ 16 │ pub extern "intrinsic" fn logic&lt;T: Repr&gt;(pattern: str) -&gt; T;
+    ·                                                           ┬
+    ·                                                           ╰── generic parameter used as a type is outside the M1 subset
+ 17 │ 
+    ╰────
+
+error: typeck failed with 6 diagnostic(s)</pre>
   <p>When it runs, each rising edge writes one record, <code>eq=x same=false sure=false</code>, three in all. Today the library type <code>Logic</code> is refused by name.</p>
 </div>
 
@@ -9028,7 +9050,7 @@ print = ["vout"]</pre>
 <p>Take <code>Front</code>, a comparator with hysteresis that drives a flip-flop:</p>
 
 <pre data-lang="msl">/// A comparator with hysteresis that drives a flip-flop.
-module Front(vin: Electrical, in clk: Bit, out q: Bit) {
+module Front(vin: Electrical, in clk: Bit, out q: Bit = false) {
     vth: f64 = 0.6;
     hyst: f64 = 50m;
     signal above_th: Bit = false;        // state: a signal
@@ -9747,7 +9769,7 @@ fn terms_block&lt;R: Real&gt;(p: R, n: R, r: R) -&gt; [R; 1] {
     [b0_flow_]
 }</pre>
 
-<p>The block is generic over a number type: run with plain floats it gives the current, run with dual numbers it gives the current and its derivatives, which is the Jacobian. Digital code reads the same way: a reaction is a function whose commits go out together when it ends, and an <code>if</code> on a value that may be unknown runs both arms and merges what they commit.</p>
+<p>The block is generic over a number type: run with plain floats it gives the current, run with dual numbers it gives the current and its derivatives, which is the Jacobian. Digital code reads the same way: a reaction is a function whose commits go out together when it ends, and an <code>if</code> runs one arm, the one its condition selects, and only that arm commits.</p>
 
 <h3>What comes next</h3>
 

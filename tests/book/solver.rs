@@ -36,7 +36,7 @@ struct Crossing;
 
 impl Crossing {
     /// The analog side: node `n` takes 1 V when `d` is high, 0 V otherwise.
-    const ANALOG: &'static str = "module Top() { signal n: Electrical; signal d: Bit = false; }\nanalog for Top { v(n) +> transition(if d.high() { 1.0 } else { 0.0 }); }\n";
+    const ANALOG: &'static str = "module Top() { signal n: Electrical; signal d: Bit = false; }\nanalog for Top { v(n) +> transition(if d { 1.0 } else { 0.0 }); }\n";
 }
 
 #[test]

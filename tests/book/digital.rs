@@ -578,7 +578,7 @@ fn e0350_an_instance_is_not_placed_inside_a_reaction() {
 fn e0501_a_clock_with_no_delay_never_goes_quiet() {
     // digital~5c44f01d and digital~6b910006: "E0501 on clk.changed() { clk <- !clk; }": a run error, with no
     // delay the microsteps at one time never go quiet. "Add after 0.5 / f": the Osc of chapter 5 runs
-    let source = "module Top() { signal clk: Bit; }\ndigital for Top { on clk.changed() { clk <- !clk; } on at(1n) { clk <- true; } }\n";
+    let source = "module Top() { signal clk: Bit = false; }\ndigital for Top { on clk.changed() { clk <- !clk; } on at(1n) { clk <- true; } }\n";
     let given = Refusal::of(Model::written("spin.msl", source).run(Commands::transient_of("Top", 1e-6)), "digital~5c44f01d");
     assert_eq!(given.len(), 1, "{given:?}");
     assert_eq!(given[0].0, "E0501");

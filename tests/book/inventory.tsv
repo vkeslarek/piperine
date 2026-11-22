@@ -28,7 +28,7 @@ block	welcome#17	1a8a3eed35a9b41a	run	piperine/book_welcome::the_delayed_bench_s
 block	welcome#18	dddafa2050e950cd	shown	-	-	-
 block	welcome#19	21913b57ecc70534	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run benches/delayed.msl --analysis transient --stop 5e-6 --print-step 1e-6
 block	welcome#20	5a43010c6903b85d	shown	-	-	-
-block	welcome#21	40aed5bddc1b9b01	run	piperine/book_welcome::the_inverter_drives_its_output_a_propagation_delay_after_its_input	-	-
+block	welcome#21	6ff388f3f0300d5d	run	piperine/book_welcome::the_inverter_drives_its_output_a_propagation_delay_after_its_input	-	-
 block	language#1	3cea98b462d93ac1	run	piperine/book_language::the_literal_forms_have_the_values_their_comments_give	-	-
 block	language#2	5728a05dc9658ba8	shown	-	-	-
 block	language#3	eaee7d40df1af37f	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run literals.msl --analysis transient --stop 2e-6
@@ -87,7 +87,7 @@ block	values#16	d022fb86cf9de984	shown	-	-	-
 block	values#17	5814d0376b1b3267	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream absent
 block	values#18	cf6cf170a04f408d	refused	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic	S8	-
 block	values#19	4bcc7aec0a6efc87	shown	-	-	-
-block	values#20	91e20d2ed735e545	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream compare
+block	values#20	bdbdef1a888af23e	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream compare
 block	values#21	1c36af9fee8a108e	run	piperine/book_values::analog_reads_a_digital_carrier_directly	-	-
 block	values#22	fb8add290ef4024e	refused	piperine/book_values::an_extern_function_is_refused_with_or_without_its_derivative	L12	-
 block	natures#1	a19f95185defd84a	run	piperine/book_natures::the_book_shows_the_natures_the_standard_library_gives	-	-
@@ -187,7 +187,7 @@ block	errors#2	290db49dc81491b3	holds	piperine/book_errors::the_ambiguous_name_d
 block	errors#3	e4bc76897a516209	refused	piperine/book_errors::the_worked_sample_hold_is_refused_with_its_three_codes	-	-
 block	errors#4	d6f143186449ee41	shown	-	-	-
 block	pom#1	e6a2cd05f83340b4	shown	-	-	-
-block	pom#2	14322fa939347053	run	piperine/book_pom::front_runs_with_its_analog_and_digital_events	-	-
+block	pom#2	b7ce5fba7e2d63f3	run	piperine/book_pom::front_runs_with_its_analog_and_digital_events	-	-
 block	pom#3	349bd80a32a83f03	shown	-	-	-
 block	abi#1	c715b5183a7012a9	shown	-	-	-
 block	abi#2	30c3504b382a7487	run	piperine/book_abi::two_resistors_of_one_shape_divide_a_source_by_their_values	-	-
@@ -481,7 +481,7 @@ claim	core-std~39983c1d	39983c1dbbf53932	holds	piperine/book_core_std::e0125_onl
 claim	core-std~64ee8b1d	64ee8b1dd483286f	holds	piperine/book_core_std::e0603_the_reserved_streams_take_records_from_reactions_only	-	E0603
 claim	core-std~64ee891d	64ee891dd4832509	holds	piperine/book_core_std::e0605_a_reserved_stream_field_has_a_fixed_type	-	E0605
 claim	core-std~39a5d01d	39a5d01dbc00bf0a	holds	piperine/book_core_std::e0161_the_inherited_library_is_a_closed_list	-	E0161
-claim	core-std~6e04c51d	6e04c51dd9c78a87	holds	piperine/book_core_std::e0702_is_raised_for_a_logic_pattern_with_z	-	E0702
+claim	core-std~6e04c51d	6e04c51dd9c78a87	unraised	piperine/book_core_std::e0702_is_not_raised_while_logic_is_a_generic_extern	S8	E0702
 claim	errors~ed0997b0	ed0997b0b111f69a	prose	-	-	An error belongs to one of five phases: package (reading manifests and dependencies), parse, elaboration (names, types, params, the netlist), run (an analysis fails, naming the instance and the instant) and host (a host request is refused, and the analysis goes on).
 claim	errors~1f3eeee4	1f3eeee41c6df4bc	holds	piperine/book_errors::e0310_is_found_on_the_bare_port_of_the_worked_example	-	E0310 on clk: Bit.
 claim	errors~d6787e9a	d6787e9a56d74451	holds	piperine/book_errors::e0430_is_found_on_the_head_of_the_worked_example_s_reaction	-	E0430 on on clk.
@@ -775,16 +775,16 @@ claim	values~896984e6	896984e621f34222	prose	-	-	There are two such types, and e
 claim	values~8bf2170e	8bf2170e867f9351	prose	-	-	Option<T> answers "is there a value at all?" It is None or Some(x).
 claim	values~35ba1385	35ba1385b5066fa0	prose	-	-	Logic answers "what does the wire carry?" Each level of a Logic is 0, 1, x (not determined) or z (not driven), as in a Verilog waveform.
 claim	values~c57e558e	c57e558eee862c51	prose	-	-	The way back can fail, so it returns an Option: a.to_bits() is Some(n) when every level is 0 or 1 and None otherwise.
-claim	values~23c03fc8	23c03fc80dc74c12	unraised	piperine/book_values::e0187_is_not_raised_yet	S8	So signal en: Bit; is error E0187, naming the signal and the trait Default, and the fix is to write the first value.
+claim	values~23c03fc8	23c03fc80dc74c12	holds	piperine/book_values::e0187_a_signal_with_no_first_value_and_no_default_is_refused	-	So signal en: Bit; is error E0187, naming the signal and the trait Default, and the fix is to write the first value.
 claim	values~2bbc575e	2bbc575ea3dba421	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic	-	It is placed in a top that gives a the constant 3 and takes b from an in port of its own, which nothing drives, so b starts at None. (Osc is the clock from the file above.)
-claim	values~37a548f2	37a548f2bb778e5f	unraised	piperine/book_values::e0187_is_not_raised_yet	S8	A top-level in port that nothing drives starts at its type's default, here None; for a type with no default, such as Bit<u8>, the run refuses to start and names the port.
+claim	values~37a548f2	37a548f2bb778e5f	unraised	piperine/book_values::an_undriven_top_level_in_port_with_no_default_is_not_refused_yet	S8	A top-level in port that nothing drives starts at its type's default, here None; for a type with no default, such as Bit<u8>, the run refuses to start and names the port.
 claim	values~a662dfff	a662dffff606a1d9	prose	-	-	x.is_high(), x.is_low(), x.is_x() and x.is_z() are true exactly when every level is 1, 0, x or z.
 claim	values~18ae081b	18ae081bedfe4678	prose	-	-	logic("1010") writes a four-state value one character per level, highest level first, from 0, 1, x and z.
 claim	values~c30bad4d	c30bad4d9436167c	refused	values#18	S8	The undriven b starts at xxxx, so each edge compares 1010 with xxxx: a == b prints x, same(a, b) is false and sure is false.
 claim	values~14a2d197	14a2d197a5fc8548	prose	-	-	A host prints a four-state cell as its characters, 0, 1, x, z, highest level first.
 claim	values~34ab1b88	34ab1b88caa53266	prose	-	-	A Logic is not a number, so it reaches an analog block through a function that returns one: x.to_volts(vdd) gives vdd for 1, 0 for 0 and half of vdd for x and z, and x.is_high() gives a bool.
 claim	values~13ffaea6	13ffaea64643a8e3	holds	piperine/book_values::e0180_a_logic_is_no_f64_and_no_bool	-	Using a Logic where an f64 or a bool is required is error E0180.
-claim	values~39ba3a1d	39ba3a1dbc121c32	unraised	piperine/book_values::e0187_is_not_raised_yet	S8	E0187
+claim	values~39ba3a1d	39ba3a1dbc121c32	holds	piperine/book_values::e0187_a_signal_with_no_first_value_and_no_default_is_refused	-	E0187
 claim	generics~8faad162	8faad162d3b6c3df	prose	-	-	Each trait names the type of its result, so an operator need not give back what it took: Logic is a library struct whose impl BitAnd for Logic<N> follows the four-state table, and its == gives a Logic because its PartialEq says so.
 claim	language~e9d4432f	e9d4432f923f1d51	prose	-	-	A value whose levels may be 0, 1, x or z, like a Verilog wire.
 claim	natures~5e977c14	5e977c1475396fb0	prose	-	-	These are the ones the standard library gives you, and the library gives no net with several drivers: you declare yours, as the example further on does.
@@ -817,8 +817,8 @@ claim	core-std~36c3bd57	36c3bd579a227695	prose	-	-	The model declares the nature
 claim	core-std~693b618d	693b618dc750ea22	prose	-	-	A pattern holds only 0, 1, x and z, one character per level of the type.
 claim	errors~cc8e3f8d	cc8e3f8daf5d3ebb	holds	piperine/book_errors::e0210_is_found_on_the_initial_value_of_the_worked_example	-	E0210 on = 0.
 claim	errors~4a35ef2c	4a35ef2c052036a9	prose	-	-	A reaction on q.changed() that emits the inputs of q.
-claim	errors~39ba3a1d	39ba3a1dbc121c32	unraised	piperine/book_errors::e0187_is_not_raised_for_a_signal_with_no_first_value_yet	S8	E0187
-claim	errors~385c354c	385c354c6a15974a	unraised	piperine/book_errors::e0187_is_not_raised_for_a_signal_with_no_first_value_yet	S8	Which error do you expect, and what does it name? (E0187, naming held and the trait Default: a real number has no default value, so the first value must be written.)
+claim	errors~39ba3a1d	39ba3a1dbc121c32	holds	piperine/book_errors::e0187_names_the_signal_and_default_when_a_real_has_no_first_value	-	E0187
+claim	errors~385c354c	385c354c6a15974a	holds	piperine/book_errors::e0187_names_the_signal_and_default_when_a_real_has_no_first_value	-	Which error do you expect, and what does it name? (E0187, naming held and the trait Default: a real number has no default value, so the first value must be written.)
 claim	cli~d8ef198c	d8ef198c3a5817c1	prose	-	-	A real has six decimals and an exponent, 7.500000e0; a bool is true or false; an integer is decimal; a four-state Logic is its characters, 0, 1, x and z, highest level first, as in 10xz; an absent Option is None; a text field is in double quotes.
 claim	solver~95d8c226	95d8c226ae3825f3	prose	-	-	A loop of functions is accepted only if it passes through a net marked to relax, which is iterated until it stops changing; a net that still moves after its bounded passes stops the run with E0511, naming the loop's drives.
 claim	welcome~174ddaf4	174ddaf4b9e1a9cd	holds	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	The first line under the header is the record the bench wrote: one time constant after the step, vout is 1 − 1/e to the digit, at 0.07 ns before 2 µs.
