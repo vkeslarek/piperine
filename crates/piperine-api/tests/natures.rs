@@ -122,10 +122,10 @@ fn a_flow_abstol_of_one_nanoampere_reaches_its_branch() {
 
 #[test]
 fn compatible_natures_take_the_smaller_abstol_and_the_divider_holds() {
-    // AO-10 AC 3: `Electrical` and `HvElectrical` meet at `mid`, which takes the smaller potential
-    // `abstol`, 1 uV; the divider of one resistor of each nature equals the all-`Electrical`
+    // AO-10 AC 3: `mid` is declared `HvElectrical` (1 mV) and meets the `Electrical` port of `Res`
+    // (1 uV): it takes the smaller potential `abstol`, 1 uV, not its own nature's; the divider of one resistor of each nature equals the all-`Electrical`
     // divider (1 V over 1 kOhm and 3 kOhm: 0.75 V) within `DC_VOLTAGE`.
-    let mixed = "module Top() { signal s: Electrical; signal mid: Electrical; let v1 = Source(s, gnd) { dc: 1.0 }; let r1 = Res(s, mid) { r: 1k }; let r2 = HvRes(mid, gnd) { r: 3k }; }\n";
+    let mixed = "module Top() { signal s: Electrical; signal mid: HvElectrical; let v1 = Source(s, gnd) { dc: 1.0 }; let r1 = Res(s, mid) { r: 1k }; let r2 = HvRes(mid, gnd) { r: 3k }; }\n";
     let plain = "module Top() { signal s: Electrical; signal mid: Electrical; let v1 = Source(s, gnd) { dc: 1.0 }; let r1 = Res(s, mid) { r: 1k }; let r2 = Res(mid, gnd) { r: 3k }; }\n";
     let mut s = session(mixed);
     assert_eq!(node_tolerance(&mut s, "mid"), 1e-6);
