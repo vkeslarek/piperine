@@ -815,21 +815,17 @@ impl<'a> TransientSolver<'a> {
     /// `ddt` states (§15.2 rule 1, §17.2 Resolution), each normalized as ngspice's `CKTterr`
     /// does (`TrBdf2::state_lte`): Milne's difference of the state's three values over the two
     /// stages, against `max(h·(abstol + reltol·|i|), reltol·max(|q|, chgtol))`. A circuit with
-    /// no `ddt` state has no truncation error, so the controller grows the step. Steps landing
-    /// on a declared discontinuity (breakpoint or live-set edge) are exempt.
+    /// no `ddt` state has no truncation error, so the controller grows the step. Every step is
+    /// tested, whether or not it ends on a landing; the step that reads a jump is tested with the
+    /// first-order estimate of its own two stages (`TrBdf2::jump_lte`) against the same `trtol`.
     fn assess_step(&self, prediction: &StepPrediction) -> StepAssessment {
         let tolerances = &self.system.context.tolerances;
         let states = self.system.circuit.abi.as_ref().map(|bound| bound.analog.ddt_states()).unwrap_or_default();
-        let milne = TrBdf2::state_lte(&states, tolerances, prediction.dt_actual);
-        let reject = self.is_tested(prediction) && milne > tolerances.trtol;
-        StepAssessment { milne, accept: !reject }
-    }
-
-    /// Whether the accept gate applies to the step: an ordinary step is tested whether or not it
-    /// ends on a landing (it reads the left value); the step that reads a jump is exempt until it
-    /// is tested with its own estimate.
-    fn is_tested(&self, prediction: &StepPrediction) -> bool {
-        prediction.kind == StepKind::Ordinary
+        let error = match prediction.kind {
+            StepKind::Ordinary => TrBdf2::state_lte(&states, tolerances, prediction.dt_actual),
+            StepKind::ReadsJump => TrBdf2::jump_lte(&states, tolerances, prediction.dt_actual),
+        };
+        StepAssessment { milne: error, accept: error <= tolerances.trtol }
     }
 
     /// Record an accepted step's snapshot when it falls inside the
@@ -1663,7 +1659,10 @@ impl TransientSolver<'_> {
         }
         st.jump_retakes += usize::from(st.sets_just_applied);
         st.last_step_accepted = false;
-        st.dt = self.plan.stepper_mut().reject_dt(prediction.dt_proposed, &self.options.step_limits());
+        // The step that reads a jump is clamped below the controller's proposal (§15.2 rule 6), so
+        // its retake is an eighth of the step that failed, or it would be retaken at the same size.
+        let failed_from = if prediction.kind.reads_jump() { prediction.dt_actual } else { prediction.dt_proposed };
+        st.dt = self.plan.stepper_mut().reject_dt(failed_from, &self.options.step_limits());
         let falls_to_floor = st.dt <= self.options.dt_min;
         if falls_to_floor && !at_floor {
             st.dt = self.options.dt_min;

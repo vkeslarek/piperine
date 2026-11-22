@@ -257,3 +257,4 @@ about 20 % with the load of the machine.
 | ----- | -------------- | --------- | ---------------------- | ---------- | ---- |
 | baseline (section 8) | 804 136 | 151.9 s | 2 062 | 2 363 | |
 | T9, the landing step is tested | 806 491 | 143.6 s | 2 110 | 2 367 | 48 more rejections, +0.3 % steps: the landings are still 240 000, so the tested steps are the small ones |
+| T10, the jump step is error-controlled | 814 058 | 129.0 s | 1 707 | 2 367 | 769 jump retakes (0 before); every jump step starts at a tenth of the last step and is cut to an eighth of the failed step until it passes |
