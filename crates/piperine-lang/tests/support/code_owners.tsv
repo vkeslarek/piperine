@@ -36,6 +36,7 @@ E0452	analog-operators	L44 (`delay`)
 E0453	analog-operators	L44
 E0454	analog-operators	L45 (`noise`)
 E0456	analog-operators	L47 (`simparam`)
+E0511	explicit-unknowns	EU-11 AC 8 (a loop of resolved drives that does not settle)
 E0614	params-and-io	PI-09 AC 3, raised here
 E0703	params-and-io	PI-10 AC 6, raised here
 E0704	params-and-io	PI-10 AC 7, raised here

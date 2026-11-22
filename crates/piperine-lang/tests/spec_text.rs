@@ -1963,3 +1963,23 @@ fn a_drive_without_a_value_starts_at_its_default() {
     let ii = flat(&section(&spec("part_ii_carriers.md"), "### 5.1 "));
     assert!(ii.contains("starts at `Default::default()` of its value type"), "{ii}");
 }
+
+#[test]
+fn a_relaxing_drive_starts_absent() {
+    // EU-11 AC 7, D14: every drive of a loop starts each pass absent from what `resolve`
+    // receives, and absence is not a value of the type.
+    let s = flat(&section(&spec("part_iii_structure.md"), "### 8.2 "));
+    assert!(s.contains("every drive of the loop starts each pass absent from what `resolve` receives; absence is not a value of the type"), "{s}");
+}
+
+#[test]
+fn a_loop_that_does_not_settle_is_e0511() {
+    // EU-11 AC 8, Q3: the run stops with E0511 naming the loop's drives; the row replaces the
+    // "is not an error" row of the 8.2 table, and Part V lists the code among the run codes.
+    let iii = spec("part_iii_structure.md");
+    let s = flat(&section(&iii, "### 8.2 "));
+    assert!(s.contains("the run stops with `E0511`, which names the loop's drives"), "{s}");
+    assert!(!s.contains("is not an error: its levels are unknown"), "the old row is gone");
+    let row = table_rows(&section(&iii, "### 8.2 ")).into_iter().find(|r| r[0] == "`E0511`").expect("E0511 row in 8.2");
+    assert_eq!(row[2], "run", "{row:?}");
+}
