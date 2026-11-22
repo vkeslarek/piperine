@@ -35,6 +35,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run buckcli**: `cargo test -p piperine-cli --test buck`
 **Run integrated**: `cargo test -p piperine --test integrated`
+**Run cliintegrated**: `cargo test -p piperine-cli --test integrated`
 **Run ops**: `cargo test -p piperine-lang --test types_operators`
 **Run logic**: `cargo test -p piperine-parity --test source_logic`
 
@@ -1507,6 +1508,7 @@ Proof: run buckcli | test piperine_test_passes_on_the_buck ... ok
 
 **C91** - Both integrated suites pass (EU-21, AC 3; T40)
 Proof: run integrated | test the_runs_execute_at_once_in_their_own_build_directories ... ok
+Proof: run cliintegrated | test piperine_test_passes_pi_loop_and_threshold ... ok
 
 **C92** - A carrier driven by an undelayed definition, or by a child's `out` port that gives the initial value, is not `E0187`; one driven only by a delayed definition is (EU-04, AC 7; T30)
 Proof: run types | test a_definition_or_a_child_out_port_specifies_the_value ... ok
