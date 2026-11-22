@@ -280,8 +280,8 @@ adjoint and PSS (`core/circuit.rs:111` to `:172`); the host exposes four analyse
 | # | Missing | Spec | Size |
 | - | ------- | ---- | ---- |
 | H1 | **No host sequences from the command line**, and from the library only what a Rust host does: `Session::drive` of a top `in` port and `Session::set_at` (a param set at a time) are delivered, and the command line takes neither (decision X8: a bench in MSL is its stimulus), and Python is B4. Left: `force` and `release`, a wait for an event, a read at an instant. The buck's scenarios S2 to S10 run on the Rust host (`buck-scenarios`) | §23.1 rules 1–4, 8, 11 | L |
-| H2 | Analyses beyond `op`, `dc`, `ac`, `transient`, `tf`, `pz`, `sens`, `pss` (delivered by `host-ii`): `Noise` (also blocked by L45), S-parameters, Fourier and distortion, more than one sweep axis | §11.1, §16.3 | M each, on the device ABI |
-| H3 | Session options: `reltol`, `abstol`, `vntol`, `trtol`, `temp`, `resolution`, `maxrounds`, `maxmicro`, `max_steps` and `nodeset` are run keys (delivered). Left: `ttol` (each `cross` carries its own default), `tnom` (waits for `simparam`, L47) | §23 table | S |
+| H2 | Analyses beyond `op`, `dc`, `ac`, `transient`, `tf`, `pz`, `sens`, `pss` (delivered by `host-ii`) and `noise` (delivered by `analog-operators` B1 to B3: `analysis = "noise"` with `output`, `input` and the sweep, per-source totals, the library report; what stays open is a `noise()` source in a design, B6, L45): S-parameters, Fourier and distortion, more than one sweep axis | §11.1, §16.3 | M each, on the device ABI |
+| H3 | Session options: `reltol`, `abstol`, `vntol`, `trtol`, `temp`, `resolution`, `maxrounds`, `maxmicro`, `max_steps` and `nodeset` are run keys (delivered). `tnom` is a run key and a flag (delivered by `analog-operators` B3; a design reads it with `simparam("tnom")` from B6, L47). Left: `ttol` (each `cross` carries its own default) | §23 table | S |
 | H4 | Metadata: `piperine info` and `Session::metadata` list params, ports and streams (delivered), and `--print Top.r1.r` reads a param back. Left: the public items and sites; an operating-point variable (`--print Top.g.id` is `E0801`); the flow of a branch that is not a potential source in `transient`, `ac`, `pss` and `sens` (H14) | §21 table, rule 6 | S |
 | H5 | A `set` of a param that has no device pin and that nothing derives from (`--param Top.r=..` where `r` is read by nobody): `E0802: .. no PARAM pin r; the instance declares no writable parameters`. A param a child derives from is no longer in this case: a `set` recomputes it through the generated function (`host-ii`, MD-69) | §23.1 rule 6 | S |
 | H6 | Continued transients, and an analysis at a transient's last instant: both need a solver mechanism that does not exist (a transient the host can resume) | §16.4 | M |
@@ -317,7 +317,8 @@ adjoint and PSS (`core/circuit.rs:111` to `:172`); the host exposes four analyse
   rule 8), the tick rounding of T2 to T4, `E0502`, the round bound `E0506`, crossings between
   sweep points (§16.1.2), a rejected step leaving no record (§19 rule 7).
 - **U7. The `abstol` of a user nature in the convergence test, and compatible natures at one
-  node** (§4 rules 5, 13; §17.1) are not exercised from source.
+  node** (§4 rules 5, 13; §17.1) are exercised from source since `analog-operators` T10
+  (`crates/piperine-api/tests/natures.rs`); the entry leaves this list when the feature merges.
 - **U8. AC from MSL is proven on one RC.** Nothing checks an AC run of a design with a digital
   part (§16.1.4) or a DC sweep that crosses a threshold (§16.1.2).
 - **U9. The two backends agree on the M1 subset only** (`backends`, `twins`); everything else has

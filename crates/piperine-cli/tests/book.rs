@@ -569,14 +569,20 @@ fn the_chapter_shows_the_session_options() {
         ("vntol", "--vntol"),
         ("trtol", "--trtol"),
         ("temp", "--temp"),
+        ("tnom", "--tnom"),
         ("resolution", "--resolution"),
         ("maxrounds", "--maxrounds"),
         ("maxmicro", "--maxmicro"),
         ("max_steps", "--max-steps"),
         ("nodeset", "--nodeset"),
+        ("simparam", "--simparam"),
     ] {
         assert!(has(key), "the chapter names the option `{key}`");
         assert!(has(flag), "the chapter names the flag `{flag}`");
+    }
+    // the key table gives the noise analysis its keys: the sweep ends, the grid, `output` and `input`
+    for read_by_noise in ["<code>dc</code>, <code>ac</code>, <code>noise</code></td><td>The ends of the sweep", "<code>--per-decade</code></td><td><code>ac</code>, <code>noise</code>", "<code>--points</code></td><td><code>ac</code>, <code>noise</code>", "<code>tf</code>, <code>pz</code>, <code>noise</code></td><td>The voltage source that excites"] {
+        assert!(html.contains(read_by_noise), "the key table says `noise` reads the key of {read_by_noise}");
     }
     let out = run_listing("piperine run lowpass.msl --analysis op --reltol");
     let row = out.lines().find(|l| l.starts_with("Lowpass.vout")).unwrap_or_else(|| panic!("the vout row in\n{out}"));

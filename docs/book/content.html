@@ -5876,16 +5876,16 @@ tstab      = 8e-6                 # pss: the transient before the orbit</pre>
 <tbody>
 <tr><td><code>bench</code></td><td><code>--bench</code></td><td>all</td><td>The bench file, relative to the project.</td></tr>
 <tr><td><code>top</code></td><td><code>--top</code></td><td>all</td><td>The top module, by name.</td></tr>
-<tr><td><code>analysis</code></td><td><code>--analysis</code></td><td>all</td><td><code>op</code>, <code>dc</code>, <code>ac</code>, <code>transient</code>, <code>tf</code>, <code>pz</code>, <code>sens</code> or <code>pss</code>. Required.</td></tr>
+<tr><td><code>analysis</code></td><td><code>--analysis</code></td><td>all</td><td><code>op</code>, <code>dc</code>, <code>ac</code>, <code>noise</code>, <code>transient</code>, <code>tf</code>, <code>pz</code>, <code>sens</code> or <code>pss</code>. Required.</td></tr>
 <tr><td><code>stop</code></td><td><code>--stop</code></td><td><code>transient</code></td><td>The end time, in seconds. Required, greater than 0.</td></tr>
 <tr><td><code>max_step</code></td><td><code>--max-step</code></td><td><code>transient</code></td><td>The largest time step the solver may take.</td></tr>
 <tr><td><code>print_step</code></td><td><code>--print-step</code></td><td><code>transient</code></td><td>One table row per multiple of it, instead of one per solver step.</td></tr>
 <tr><td><code>from</code></td><td><code>--from</code></td><td><code>transient</code></td><td>The first time the result keeps, 0 by default. The solver still runs from 0; steps before it are computed and not kept.</td></tr>
 <tr><td><code>sweep</code></td><td><code>--sweep</code></td><td><code>dc</code></td><td>The param to step, by path.</td></tr>
-<tr><td><code>from</code>, <code>to</code></td><td><code>--from</code>, <code>--to</code></td><td><code>dc</code>, <code>ac</code></td><td>The ends of the sweep: param values, or frequencies in hertz.</td></tr>
+<tr><td><code>from</code>, <code>to</code></td><td><code>--from</code>, <code>--to</code></td><td><code>dc</code>, <code>ac</code>, <code>noise</code></td><td>The ends of the sweep: param values, or frequencies in hertz.</td></tr>
 <tr><td><code>step</code></td><td><code>--step</code></td><td><code>dc</code></td><td>The increment: points are <code>from + k · step</code> while not past <code>to</code>.</td></tr>
-<tr><td><code>per_decade</code></td><td><code>--per-decade</code></td><td><code>ac</code></td><td>A logarithmic grid with this many points per decade.</td></tr>
-<tr><td><code>points</code></td><td><code>--points</code></td><td><code>ac</code></td><td>A linear grid with this many points in all. Exactly one of the two.</td></tr>
+<tr><td><code>per_decade</code></td><td><code>--per-decade</code></td><td><code>ac</code>, <code>noise</code></td><td>A logarithmic grid with this many points per decade.</td></tr>
+<tr><td><code>points</code></td><td><code>--points</code></td><td><code>ac</code>, <code>noise</code></td><td>A linear grid with this many points in all. Exactly one of the two.</td></tr>
 <tr><td><code>print</code></td><td><code>--print</code>, repeatable</td><td>all</td><td>The signals of the table, in order.</td></tr>
 <tr><td><code>streams</code></td><td><code>--stream</code>, repeatable</td><td>all</td><td>The record streams to keep.</td></tr>
 <tr><td><code>params</code></td><td><code>--param path=value</code>, repeatable</td><td>all</td><td>Params to set before the analysis.</td></tr>
@@ -5899,12 +5899,14 @@ tstab      = 8e-6                 # pss: the transient before the orbit</pre>
 <tr><td><code>vntol</code></td><td><code>--vntol</code></td><td>all</td><td>The absolute tolerance of a voltage, in volts, 1e-6 by default.</td></tr>
 <tr><td><code>trtol</code></td><td><code>--trtol</code></td><td><code>transient</code></td><td>The factor on the truncation error a step may have and be accepted, 7 by default.</td></tr>
 <tr><td><code>temp</code></td><td><code>--temp</code></td><td>all</td><td>The temperature of the run, in degrees Celsius; 27 by default.</td></tr>
+<tr><td><code>tnom</code></td><td><code>--tnom</code></td><td>all</td><td>The nominal temperature the models' parameters are given at, in degrees Celsius; 27 by default. It does not move <code>temp</code>.</td></tr>
 <tr><td><code>resolution</code></td><td><code>--resolution</code></td><td>all</td><td>The tick of the digital engine, in seconds.</td></tr>
 <tr><td><code>maxrounds</code></td><td><code>--maxrounds</code></td><td>all</td><td>The most rounds an operating point may take before it fails, 20 by default.</td></tr>
 <tr><td><code>maxmicro</code></td><td><code>--maxmicro</code></td><td>all</td><td>The most microsteps one instant of the digital engine may take before it fails.</td></tr>
 <tr><td><code>max_steps</code></td><td><code>--max-steps</code></td><td><code>transient</code>, <code>pss</code></td><td>The budget of attempts a transient may make before it fails naming it, 2000000 by default.</td></tr>
+<tr><td><code>simparam</code></td><td><code>--simparam name=value</code>, repeatable</td><td>all</td><td>A session parameter: a name and a number. A name that is an option, such as <code>reltol</code> or <code>tnom</code>, is refused.</td></tr>
 <tr><td><code>nodeset</code></td><td><code>--nodeset node=value</code>, repeatable</td><td><code>op</code>, <code>dc</code></td><td>Seeds the first guess of an operating point. A flag replaces the table's entry of the same node.</td></tr>
-<tr><td><code>input</code>, <code>output</code></td><td><code>--input</code>, <code>--output</code></td><td><code>tf</code>, <code>pz</code></td><td>The voltage source that excites, by instance, and the node that is measured.</td></tr>
+<tr><td><code>input</code>, <code>output</code></td><td><code>--input</code>, <code>--output</code></td><td><code>tf</code>, <code>pz</code>, <code>noise</code></td><td>The voltage source that excites, by instance, and the node that is measured. A <code>noise</code> run requires <code>output</code>, a node, <code>v(a, b)</code> or <code>i(instance)</code>, and refers the noise to <code>input</code> when it is given.</td></tr>
 <tr><td><code>wrt</code></td><td><code>--wrt</code>, repeatable</td><td><code>sens</code></td><td>A param to differentiate by, by path.</td></tr>
 <tr><td><code>period</code></td><td><code>--period</code></td><td><code>pss</code></td><td>The period of the drive, in seconds. Required.</td></tr>
 <tr><td><code>tstab</code></td><td><code>--tstab</code></td><td><code>pss</code></td><td>The length of the transient that comes before the orbit, 0 by default.</td></tr>
