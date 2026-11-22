@@ -11,7 +11,7 @@ use std::rc::Rc;
 use std::sync::OnceLock;
 
 use piperine_api::{Cell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
-use piperine_solver::prelude::Context;
+use piperine_solver::prelude::{Context, TimePointRule};
 use piperine_transpile::Settings;
 
 /// Keeps every record, in the order it is handed over.
@@ -400,4 +400,29 @@ fn a_twenty_second_transient_runs_at_the_default_resolution() {
 fn a_hundred_second_transient_runs_at_the_default_resolution() {
     // A pin only, like the twenty-second run above.
     LongRun { seconds: 100 }.assert_events_on_time();
+}
+
+/// The rule the digital engine of the session of `THERMOMETER` was bound with, the host having set
+/// `rule` on the request (`None` leaves the solver's own).
+fn bound_rule(rule: Option<TimePointRule>) -> TimePointRule {
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("bench.msl");
+    std::fs::write(&file, with_parts(THERMOMETER)).expect("write");
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let overrides = Overrides { top: Some("Top".into()), ..op(&["a"]) };
+    let mut spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    spec.options.time_point_rule = rule;
+    let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    session.circuit().expect("a circuit").bound().expect("a bound circuit").digital.time_point_rule()
+}
+
+#[test]
+fn the_time_point_rule_is_a_host_option_with_no_run_key() {
+    // TP-06 AC 3 and D8: a session lands by the observable rule unless the host sets the reference
+    // mode on its request; a run table cannot name it (no key), and `every_run_key_has_its_flag` in
+    // the CLI pins that no flag does either
+    assert_eq!(bound_rule(None), TimePointRule::Observable);
+    assert_eq!(bound_rule(Some(TimePointRule::Declared)), TimePointRule::Declared);
+    let faults = Manifest::run("time_point_rule = \"declared\"\n").expect_err("no such key");
+    assert!(format!("{faults:?}").contains("unknown key `time_point_rule`"), "{faults:?}");
 }

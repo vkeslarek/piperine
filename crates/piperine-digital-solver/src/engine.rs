@@ -179,6 +179,11 @@ impl Digital {
         }
     }
 
+    /// The rule that decides which scheduled instants a look-ahead lands on.
+    pub fn time_point_rule(&self) -> TimePointRule {
+        self.rule
+    }
+
     /// Sets the values reactions and discrete functions read as `GMIN` and `SOURCE_SCALE`
     /// (abi.md §4.2): the owner's continuation values at rest, given before `start`, where every
     /// function is evaluated. 0 and 1 until set.

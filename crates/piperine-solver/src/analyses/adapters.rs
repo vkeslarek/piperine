@@ -67,7 +67,7 @@ pub(crate) fn digital_error(e: DigitalError) -> Error {
 /// A `Digital` over an empty plan: what `Bound` holds while a run owns the real one.
 pub(crate) fn empty_digital(seconds_per_tick: f64) -> Result<Digital> {
     let plan = DigitalPlan::bind(Vec::new(), Vec::new(), Resolution { seconds_per_tick }).map_err(digital_error)?;
-    Ok(Digital::new(plan, DigitalLimits::default(), TimePointRule::Declared))
+    Ok(Digital::new(plan, DigitalLimits::default(), TimePointRule::default()))
 }
 
 /// The discrete side's settled state at the top of a transient step: the

@@ -367,7 +367,7 @@ impl Session {
     /// The netlist that binds the design when the run gives a `resolution` or a `maxmicro`; `None`
     /// leaves the backend's own `circuit()`, which is what a run with neither has always used.
     fn netlist_of<'a>(ir: &'a Ir, options: &Options) -> Option<Netlist<'a>> {
-        if options.resolution.is_none() && options.maxmicro.is_none() {
+        if options.resolution.is_none() && options.maxmicro.is_none() && options.time_point_rule.is_none() {
             return None;
         }
         let mut netlist = Netlist::new(ir);
@@ -376,6 +376,9 @@ impl Session {
         }
         if let Some(bound) = options.maxmicro {
             netlist = netlist.with_microsteps(bound as usize);
+        }
+        if let Some(rule) = options.time_point_rule {
+            netlist = netlist.with_time_point_rule(rule);
         }
         Some(netlist)
     }
