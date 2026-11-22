@@ -1510,9 +1510,22 @@ Proof: run integrated | test the_integrated_suite_passes ... ok
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none. Answered 2026-11-21 (in spec.md "Answers"): Q1 = B extended (natures take trait `impl`s, `Resolve<X, V>`, no `resolve` field, no library `Wire`), Q2 (strengths kept), Q3 = A (`E0511`), the ABI stays major 1. Waiting for the user: Q4 (a second trait for strength; the plan takes "no"), Q5 (the set of `Strength`; the plan takes five), and the approval of spec.md and of these tasks.
-**Dispatched:** none.
-**Walked:** none.
+**Delivered (batches B1 to B3, T1 to T18, 2026-11-21; one commit per task on `feature/explicit-unknowns`).** The specification, `abi.md`, the records and the Book state the explicit model; the code is untouched. S8 in `GAPS.md` tracks the implementation; MD-78 is in `.specs/STATE.md`.
+
+**Settled mid-build (defaults a later task starts from):**
+
+- **Appendix B counts 62 constructs, not 63.** `level` leaves with `Unknown` and `resolve` (D7): three rows, not two. `b1_counts_62_constructs` replaces `b1_still_counts_65_constructs`.
+- **Retired section and codes.** Appendix A.3 stays as a retired stub (section numbers are not reused); `E0150`, `E0151`, `E0906` and `E0908` are in `RETIRED_CODES` of `spec_text.rs`. `E0225` and `E0511` are owned by `explicit-unknowns` in `code_owners.tsv` and listed in `GAPS.md` section 10.
+- **E0187 does not apply to a carrier an undelayed definition drives, nor to a signal whose child `out` port holds the initial value** (§3.3.4 and §5.1's error row): the driver that gives none is the one refused.
+- **Part VII fences are ahead of `std`.** `std_excerpts.rs` holds two lists, `AHEAD_OF_STD` (first unmatched line of each fence) and `BEHIND_SPEC` (std units with no fence). T23 empties the binary part, T44 the `Logic` part; `the_ahead_lists_hold_only_what_still_differs` fails on a stale entry. `Driven` has a hand-written `Default` (`Driven::Z`) so `inertial<T: Repr + Default>` serves `TribufDelayed`. `inertial` is bound by `Default`; `Dff`, `DLatch`, `Slice` and `Delay` are too.
+- **The strength rationale (22.3.3).** Confirmed: Verilog-AMS LRM 2.4 section 9.22.1 to 9.22.3 (read from `VAMS-LRM-2-4.md` in git history), citing IEEE 1364-2005 subclauses 7.10 and 7.11 and the eight levels of its Figure 9-3; the ngspice manual 8.6.1 and 8.6.2; IEEE 1164 and IEEE 1800 section 6.6.7 by secondary sources only (no clause text reachable). Dropped: IEEE 1364 7.9 to 7.13 as a range, IEEE 1800 28.11 to 28.15, IEEE 1666 clause numbers, Logisim, Digital (H. Neemann).
+- **Spec listings ahead of the code** are `rust` fences listed in `AHEAD_OF_STD`; E.7 and F.4 are `rust,fragment` (they need `Resolve`), so `std_galleries` builds 16 fences (T9 changed its table and fixtures; T45 or the last of B8 flips them back).
+- **The Book registers what cannot run the way it already does:** the block row is `refused` (or the claim `unraised`) with gap `S8`, a `GAPS.md` section 11 row (owner `explicit-unknowns`), and a test that asserts today's refusal with `Refusal::expect` (it panics "now runs" the day the listing runs). The nets of "Driving with strength" (digital#17 to digital#20, new; the old digital#17 and digital#18 became digital#21 and digital#22), the `Option` and `Logic` listings of chapter 5, the alarm of chapter 6 and `core-std#6` are E0161 for `Driven` and `Resolve` or E0112 and P0001 for `Option` and `Logic`. Listings that read a discrete carrier in `analog` with no gate (welcome#17, analog#9, modules#9, mixed#8, mixed#10, mixed#14, values#21) are E0150 today; their tests also run the Book's physics through `Model::earlier` (`Earlier::gate` in `tests/book/support/model.rs`), which adds the gate the earlier text had, so every number stays held.
+- **The Book may print the earlier front end's own words only in two listings** (the E0150 refusals welcome#19 and the buck's, held to the binary by `piperine-cli`'s book target): `the_book_uses_no_removed_name` lists the exception and counts it; T30 refills both and the test's exempt count goes to 0.
+- **`examples/buck/benches/startup.msl` already reads `n` directly** (the Book's cli#44 is held equal to the file, so the line moved in T16; its preformat twin too). T24 has that file done.
+- **Tests that still pin the earlier behavior and stay until their code task:** `e0150_*` in `tests/book/analog.rs`, `mixed.rs`, `errors.rs`; `a_reaction_on_a_changed_unknown_emits_the_inputs` and `without_an_initial_value_...` neighbors in `errors.rs`; the unknown tests of `crates/*/tests` (types_unknowns, elab_unknowns, source_unknowns, abi layouts) are untouched.
+
+**Dispatched:** none. **Walked:** none (the verifier of B1 to B3 is the caller's).
 
 ---
 
