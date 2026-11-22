@@ -542,7 +542,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ---
 
-### T18: Book: the inventory holds, no removed name is left
+### T18: Book: the inventory holds, the removed names are fenced
 
 **What**: Add to `tests/book/inventory_guard.rs` a test that no block and no claim of `inventory.tsv`, and no text of `content.html`, uses `Unknown`, `known_or`, `known()`, `is_known`, `level(`, `high()` or `maybe`; and one that every row with verdict "refused" or "unraised" names a `GAPS.md` row that exists. Regenerate the fingerprints. Rebuild the Book with `build.py`.
 **Where**: `tests/book/inventory_guard.rs`
@@ -553,7 +553,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `book_inventory::the_book_uses_no_removed_name` and `every_listing_that_does_not_run_names_its_gap` pass
+- [ ] `book_inventory::every_listing_that_does_not_run_names_its_gap` passes, and `the_book_uses_no_removed_name` passes with its two named `E0150` exemptions, which T30 removes (C79 is proved there)
 - [ ] All 24 `book_*` targets pass
 - [ ] Gate check passes: Batch
 
@@ -807,7 +807,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T30: Checker: a missing initial value is `E0187`
 
-**What**: A signal, an `out` port, a drive of a resolved carrier, and a one-driver carrier with no drive, whose value type does not implement `Default` and that has no initial value: `E0187` at the declaration, naming the carrier and `Default`, once per declaration (an array of carriers is one). A top-level `in` port is left to the host (T38).
+**What**: Refill the two E0150 output blocks of the Book (welcome#19 and the buck's) with the real run now that the front end no longer prints `E0150`, and take the exemption out of `the_book_uses_no_removed_name` (its exempt count goes to 0, so EU-18 AC 3 holds). A signal, an `out` port, a drive of a resolved carrier, and a one-driver carrier with no drive, whose value type does not implement `Default` and that has no initial value: `E0187` at the declaration, naming the carrier and `Default`, once per declaration (an array of carriers is one). A top-level `in` port is left to the host (T38).
 **Where**: `crates/piperine-lang/src/types/carrier.rs`
 **Depends on**: T29
 **Reuses**: `Defaults` (T21), `InitialValue` (T22)
@@ -817,6 +817,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 **Done when**:
 
 - [ ] `types_explicit::a_missing_initial_value_is_e0187_naming_the_carrier` and `an_undriven_carrier_without_default_is_e0187` pass
+- [ ] `book_inventory::the_book_uses_no_removed_name` passes with no exempt block (C79)
 - [ ] The tree builds: T23 to T27 left no such carrier
 - [ ] Gate check passes: Full
 
@@ -1030,7 +1031,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 ### T40: Phase A closure
 
-**What**: `GAPS.md`: S8 removed; the clauses of L3, L5, L24 about unknown indexes and loops removed; L59 keeps its non-literal `map`/`and_then`/`then` closure and non-literal `expect` message clauses (the code still refuses them with `P0001`), its unknown clause is gone; the conformance rows updated; counts. Appendix G.72 loses "the reference implementation does not meet this yet" for everything but `Logic`, which names phase B. Book status boxes: the listings that now run flip, each with its test. **The Book rows T40 flips, exactly these** (inventory verdict `refused` or `unraised` becomes `run` or `holds`, the GAPS.md section 11 row is deleted, the test that asserted the refusal asserts the run): the E0150 listings welcome#17, analog#9, modules#9, mixed#8, mixed#10, mixed#14, values#21 (T20; their `Model::earlier` edits and the two E0150 output blocks welcome#19 and the buck's are refilled with the real run, and the exempt count of `the_book_uses_no_removed_name` goes to 0); the E0187 and Default rows values~23c03fc8, values~39ba3a1d, errors~39ba3a1d, errors~385c354c (T21, T22, T30) and values~37a548f2 (T38: the analysis refuses an undriven top `in` port without a `Default`); and the `Option` listings values#14 and its sentence values~2bbc575e (an `Option` carried on a signal). `.specs/STATE.md`: MD-78's status line. `code_owners.tsv`.
+**What**: `GAPS.md`: S8 removed; the clauses of L3, L5, L24 about unknown indexes and loops removed; L59 keeps its non-literal `map`/`and_then`/`then` closure and non-literal `expect` message clauses (the code still refuses them with `P0001`), its unknown clause is gone; the conformance rows updated; counts. Appendix G.72 loses "the reference implementation does not meet this yet" for everything but `Logic`, which names phase B. Book status boxes: the listings that now run flip, each with its test. **The Book rows T40 flips, exactly these** (inventory verdict `refused` or `unraised` becomes `run` or `holds`, the GAPS.md section 11 row is deleted, the test that asserted the refusal asserts the run): the E0150 listings welcome#17, analog#9, modules#9, mixed#8, mixed#10, mixed#14, values#21 (T20; their `Model::earlier` edits; the two E0150 output blocks welcome#19 and the buck's were refilled in T30); the E0187 and Default rows values~23c03fc8, values~39ba3a1d, errors~39ba3a1d, errors~385c354c (T21, T22, T30) and values~37a548f2 (T38: the analysis refuses an undriven top `in` port without a `Default`); and the `Option` listings values#14 and its sentence values~2bbc575e (an `Option` carried on a signal). `.specs/STATE.md`: MD-78's status line. `code_owners.tsv`.
 **Where**: `GAPS.md`
 **Depends on**: T39
 **Reuses**: `value-semantics` T15
@@ -1465,7 +1466,7 @@ Proof: run bookvalues | test the_values_chapter_teaches_the_explicit_model ... o
 **C78** - The Book lists "no primitive numeric type has a default" among its differing rules, without "same as Rust" (EU-18, AC 2; T13)
 Proof: run booklang | test the_book_says_numbers_have_no_default ... ok
 
-**C79** - No Book listing or sentence uses a removed name (EU-18, AC 3; T18)
+**C79** - No Book listing or sentence uses a removed name (EU-18, AC 3; T30)
 Proof: run bookinv | test the_book_uses_no_removed_name ... ok
 
 **C80** - The Book teaches a trait as a capability, `impl Resolve<X> for` a nature, and "Driving with strength" with the four worked nets; it names no library `Wire` (EU-18, AC 4; T14)
@@ -1573,7 +1574,7 @@ Execution is strictly sequential. Phases 1 to 3 merge to `main` first. Phases 4 
 | T15: Book: analog, mixed-signal and simulation listings | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T16: Book: standard library, errors, CLI and cheat sheet | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T17: Book: device ABI, solver and compiler chapters | 1 file or 1 unit, 1 concern | ✅ Granular |
-| T18: Book: the inventory holds, no removed name is left | 1 file or 1 unit, 1 concern | ✅ Granular |
+| T18: Book: the inventory holds, the removed names are fenced | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T19: Contract: rebase onto `main` with `composite-values` | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T20: Checker: `analog` reads a binary carrier directly | 1 file or 1 unit, 1 concern | ✅ Granular |
 | T21: Checker: the `Default` table | 1 file or 1 unit, 1 concern | ✅ Granular |
