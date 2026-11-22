@@ -355,14 +355,17 @@ const SLOW_DESIGN: &str = "pub module Capacitor(p: Electrical, n: Electrical) { 
 
 /// A `seconds`-long transient of `SLOW_DESIGN` at the default resolution, and what it must show.
 struct LongRun {
-    /// The run's stop time, in whole seconds.
+    /// The run's length, in whole seconds.
     seconds: usize,
+    /// How far past `seconds` the stop is asked for: a stop is an `f64` of seconds, which past
+    /// about a quarter of an hour cannot name the tick of an edge exactly at it.
+    past: f64,
 }
 
 impl LongRun {
     /// The instants of the `stream` records of the run.
     fn instants(&self, stream: &str) -> Vec<f64> {
-        let overrides = Overrides { top: Some("Top".into()), max_step: Some(0.25), analysis: Some("transient".into()), stop: Some(self.seconds as f64), ..rust(Overrides::default()) };
+        let overrides = Overrides { top: Some("Top".into()), max_step: Some(0.25), analysis: Some("transient".into()), stop: Some(self.seconds as f64 + self.past), ..rust(Overrides::default()) };
         let (_, records) = run(SLOW_DESIGN, overrides).unwrap_or_else(|f| panic!("{f}"));
         records.iter().filter(|r| r.stream == stream).map(|r| r.time).collect()
     }
@@ -388,18 +391,21 @@ impl LongRun {
 
 #[test]
 fn a_twenty_second_transient_runs_at_the_default_resolution() {
-    // A pin, not a guard of the step-floor fix: it also passes on the code before it (a crossing
-    // two comparator edges apart did not reproduce the collapse either). Only the CLI pump test,
-    // `a_long_transient_at_the_default_resolution_lands_its_crossings`, fails without the fix.
-    // §15 T1-T4: at 1 fs a tick is finer than an f64 second past 2^52 ticks (4.5 s), so a run past
-    // 8 s must still advance and land its events
-    LongRun { seconds: 20 }.assert_events_on_time();
+    // §15 T1-T4: at 1 fs a tick is finer than an f64 second past 2^52 ticks (4.5 s); the analog
+    // side counts its time from a tick epoch (T25), so a run past 8 s still lands its events
+    LongRun { seconds: 20, past: 0.0 }.assert_events_on_time();
 }
 
 #[test]
 fn a_hundred_second_transient_runs_at_the_default_resolution() {
-    // A pin only, like the twenty-second run above.
-    LongRun { seconds: 100 }.assert_events_on_time();
+    LongRun { seconds: 100, past: 0.0 }.assert_events_on_time();
+}
+
+#[test]
+fn an_hour_long_transient_runs_at_the_default_resolution() {
+    // T25: the analog time is a tick epoch plus a small offset, so 3.6e18 ticks (an hour at 1 fs)
+    // land every clock edge and every crossing on its tick
+    LongRun { seconds: 3600, past: 1e-6 }.assert_events_on_time();
 }
 
 /// The rule the digital engine of the session of `THERMOMETER` was bound with, the host having set

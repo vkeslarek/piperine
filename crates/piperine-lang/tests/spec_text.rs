@@ -1906,11 +1906,12 @@ fn the_host_reads_composites_and_sets_a_leaf() {
 }
 
 #[test]
-fn the_analog_step_floor_past_2_52_ticks_is_a_recorded_deviation() {
+fn no_analog_step_floor_deviation_remains_past_2_52_ticks() {
+    // transient-performance T25: the analog time is an integer tick epoch plus a small offset, so
+    // a step is never floored at a number of `f64` spacings and Appendix C.2.1 records no such row
     let c = spec("appendix_c_implementation.md");
-    let row = c.lines().find(|l| l.starts_with("| analog step floor past 2^52 ticks")).expect("step floor row");
-    assert!(row.contains("256 `f64` spacings"), "{row}");
-    assert!(row.contains("transient-performance T25"), "{row}");
+    assert!(!c.contains("analog step floor past 2^52 ticks"), "the stopgap row is gone");
+    assert!(!c.contains("256 `f64` spacings"), "no spacing floor is recorded");
 }
 
 // ---- explicit unknowns: EU-17 ----

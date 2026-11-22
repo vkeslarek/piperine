@@ -71,7 +71,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             delivered.extend(std::mem::take(&mut whole.boundary));
             self.analog.retake(mark);
             self.analog.deliver(&delivered, Restart::Integrator);
-            let attempt = self.analog.attempt(time, true)?;
+            let attempt = self.analog.attempt(self.offset(tick), true)?;
             let analog = &mut self.analog;
             self.delivery.keep_traces(AnalysisKind::Transient, |out| analog.drain_traces(out));
             if attempt != Attempt::Converged {

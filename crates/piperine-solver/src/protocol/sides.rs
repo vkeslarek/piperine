@@ -160,6 +160,22 @@ pub struct Accepted {
     pub samples: Vec<f64>,
 }
 
+/// A new origin of the clock the owner and the analog side share: the owner counts ticks from the
+/// `epoch` it keeps and passes every time to the analog side as seconds since it. Past 2^52 ticks
+/// (about 4.5 s at 1 fs) an `f64` second can no longer tell neighbouring ticks apart, so the
+/// owner moves the origin forward to the accepted tick and the times it passes stay small (the
+/// analog side keeps its own times, sums of controller steps, small the same way).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Origin {
+    /// How far the origin moved, in seconds.
+    pub moved: f64,
+    /// The time of the new origin since the start of the run, for what reads absolute time (a
+    /// device's `$abstime`, a recorded step).
+    pub time: f64,
+    /// The stop time, in seconds since the new origin.
+    pub stop: f64,
+}
+
 /// The analysis an observation belongs to.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum AnalysisKind {
@@ -320,6 +336,10 @@ pub trait AnalogSide {
     fn solution(&self) -> &[f64] {
         &[]
     }
+    /// Moves the origin of the side's clock: every time it holds, and every time it is given from
+    /// now on, is seconds since `origin`. Called between steps and only past 2^52 ticks, so no run
+    /// shorter than that sees it. A side that keeps no clock needs nothing.
+    fn rebase(&mut self, _origin: Origin) {}
     /// The time of the last accepted step as the side keeps it (`None`: it keeps none, and the
     /// owner's own time of the step stands). The two differ in the last bit, since the owner's
     /// is a whole number of ticks and the side's is a sum of its steps.

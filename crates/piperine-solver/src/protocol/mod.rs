@@ -17,7 +17,7 @@ mod transient;
 
 pub use sides::{
     Accepted, Advance, AnalogSide, AnalysisKind, Attempt, Boundary, DiscreteSide, Horizon, InstantMode, LandingCause,
-    Observation, ObservationKind, Outcome, ProposalBound, Restart, Shadow, Tick,
+    Observation, ObservationKind, Origin, Outcome, ProposalBound, Restart, Shadow, Tick,
 };
 pub use host::{HostCx, SetOutcome, Waiter};
 pub use sink::Sink;

@@ -103,7 +103,6 @@ How the Piperine solver meets Part V. Every number is a default the host may cha
 | restart step after a landing or a host `set` | at most 0.1 of the smaller of the last step and the gap to the next scheduled time point; after a host `set` also 10⁻³ of the last step, floored at the minimum step; the step is tested with the first-order estimate, retaken at an eighth | §15.2.6 |
 | charge tolerance `chgtol` | 1e-14 | §17.2 Resolution |
 | step to the stop | a step whose end lies within two ticks short of the stop ends at the stop (the remainder would be a step of a tick or two, integrated as noise); the smallest `CAP` of the last accepted solution still bounds it | §17.2.2 |
-| analog step floor past 2^52 ticks (stopgap deviation) | 256 `f64` spacings of the time reached (≈0.9 ps at 16 s, 1.8 ps at 32–64 s, 29 ps at 1000 s); a crossing inside such a step lands within that floor, beyond `ttol` plus one tick; removed by transient-performance T25 (integer tick epoch plus offset) | §15, §17.3 rule 2 |
 | step at the floor | one retake at `dt_min` after a larger attempt failed; Newton failing at the floor, `E0508`; the error test failing at the floor, accepted and counted | §17.2 |
 | limiting activity | `abs(x̂ − x) > 1e-6 + 1e-4 · abs(x)` | §18 rule 5 |
 | `temperature`, `tnom` | 300.15 K | §14 |

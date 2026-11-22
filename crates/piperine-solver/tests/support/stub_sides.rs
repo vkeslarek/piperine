@@ -11,7 +11,7 @@ use std::rc::Rc;
 
 use piperine_analog_solver::error::Result;
 use piperine_solver::protocol::{
-    Accepted, Advance, AnalogSide, Attempt, Boundary, DiscreteSide, Horizon, InstantMode, Observation, Outcome,
+    Accepted, Advance, AnalogSide, Attempt, Boundary, DiscreteSide, Horizon, InstantMode, Observation, Origin, Outcome,
     ProposalBound, Restart, Shadow, Tick,
 };
 
@@ -33,6 +33,7 @@ pub enum Call {
     Propose(f64, f64),
     Deliver(Vec<Boundary>, Restart),
     Attempt { to: f64, exempt: bool },
+    Rebase(Origin),
     Accept,
     Equilibrium,
     AnalogMark(u32),
@@ -216,6 +217,9 @@ impl AnalogSide for ScriptedAnalog {
     }
     fn deliver(&mut self, boundary: &[Boundary], restart: Restart) {
         self.record(Call::Deliver(boundary.to_vec(), restart));
+    }
+    fn rebase(&mut self, origin: Origin) {
+        self.record(Call::Rebase(origin));
     }
     fn attempt(&mut self, to: f64, exempt: bool) -> Result<Attempt> {
         self.record(Call::Attempt { to, exempt });

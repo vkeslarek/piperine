@@ -500,7 +500,14 @@ struct StepAssessment {
 /// as an explicit parameter.
 #[derive(Clone)]
 struct TimeLoop {
+    /// The accepted time, in seconds since `origin`.
     current_time: f64,
+    /// The time of the clock's origin since the start of the run: 0 until the protocol moves the
+    /// origin forward (past 2^52 ticks, see `AnalogSide::rebase`), so that every time this loop
+    /// holds stays small however long the run.
+    origin: f64,
+    /// The stop time, in seconds since `origin`.
+    stop: f64,
     dt: f64,
     steps_accepted: usize,
     /// Attempts rejected by the truncation-error test.
@@ -537,9 +544,11 @@ impl TimeLoop {
         self.rejected_truncation + self.rejected_newton
     }
 
-    fn new(start_time: f64, dt: f64) -> Self {
+    fn new(start_time: f64, stop_time: f64, dt: f64) -> Self {
         Self {
             current_time: start_time,
+            origin: 0.0,
+            stop: stop_time,
             dt,
             steps_accepted: 0,
             rejected_truncation: 0,
@@ -779,7 +788,8 @@ impl<'a> TransientSolver<'a> {
         device_ic
     }
 
-    /// Advance one TR-BDF2 step over `[t_n, t_n + dt]`. Two Newton solves:
+    /// Advance one TR-BDF2 step over `[t_n, t_n + dt]`, times in seconds since the clock's `origin`
+    /// (devices and the recorded step read `origin` added back). Two Newton solves:
     /// phase 1 (Trapezoidal over `γ·dt`) → `x_{n+γ}`; phase 2 (BDF2 over
     /// `(1−γ)·dt`) → `x_{n+1}`, warm-started from `x_{n+γ}`. Either phase
     /// failing rejects the whole step (TRB-05). The Newton buffer's push
@@ -787,6 +797,7 @@ impl<'a> TransientSolver<'a> {
     /// `view(1)`; phase 2 reads `x_{n+γ}` at `view(1)` and `x_n` at `view(2)`.
     fn execute_timestep(
         &mut self,
+        origin: f64,
         t_n: f64,
         dt: f64,
         use_predictor: bool,
@@ -798,7 +809,7 @@ impl<'a> TransientSolver<'a> {
         // Phase 1 — Trapezoidal over γ·dt → intermediate point x_{n+γ}.
         self.system.phase = TrBdf2Phase::Trapezoidal;
         self.system.h = dt;
-        self.system.time = t_n + TrBdf2::GAMMA * dt;
+        self.system.time = origin + (t_n + TrBdf2::GAMMA * dt);
         // First-order predictor seed (CP-16): extrapolate the two newest
         // accepted rows — x_n at view(0), x_{n−1+γ} at view(1), separated by
         // (1−γ)·prev_h — forward γ·dt to the TR-stage target. Only when the
@@ -816,14 +827,14 @@ impl<'a> TransientSolver<'a> {
         // Phase 2 — BDF2 over (1−γ)·dt → final point x_{n+1} (warm-start x_{n+γ}).
         self.system.phase = TrBdf2Phase::Bdf2;
         self.system.h = dt;
-        self.system.time = t_next;
+        self.system.time = origin + t_next;
         self.solver.solve_with_strategy(
             &mut self.system, self.plan.newton(), &tolerances, &policy,
         )?;
         self.system.take_callback_error()?;
 
         // `prev_h` is set by the caller once the global-LTE accept gate passes.
-        Ok(Some(self.snapshot(t_next)))
+        Ok(Some(self.snapshot(origin + t_next)))
     }
 
     /// Phase 3 — assess: the accept gate (TRB-05/06) over the truncation error of the step's
@@ -1201,7 +1212,7 @@ impl TransientSolver<'_> {
         }
         let locates = bound.analog.has_crossings();
         let run = DeviceRun {
-            st: TimeLoop::new(self.options.start_time, self.options.dt),
+            st: TimeLoop::new(self.options.start_time, self.options.stop_time, self.options.dt),
             steps: Vec::new(),
             pending: None,
             proposed: self.options.start_time,
@@ -1285,7 +1296,7 @@ impl TransientSolver<'_> {
         ran.map_err(|error| self.system.circuit.name_error(error))?;
         // Under `Keep::Last` the one step kept is the last, from the final solution.
         if self.options.keep == Keep::Last {
-            run.steps.push(self.full_snapshot(run.st.current_time));
+            run.steps.push(self.full_snapshot(run.st.origin + run.st.current_time));
         }
         // The last step carries the state a later run re-enters from.
         let bound = self.system.circuit.abi.as_ref().expect("a circuit of devices");
@@ -1468,7 +1479,7 @@ impl TransientSolver<'_> {
     /// moved since): the discrete side's settled state, the assembly's and the
     /// step bound. A step already carrying one, or a time not recorded, is left.
     pub(crate) fn device_capture(&mut self, run: &mut DeviceRun, digital: piperine_digital_solver::engine::Checkpoint, nets: Vec<Vec<u8>>) {
-        let due = self.options.reenters_every_step() && run.steps.last().is_some_and(|s| s.reentry().is_none() && s.time() == run.st.current_time);
+        let due = self.options.reenters_every_step() && run.steps.last().is_some_and(|s| s.reentry().is_none() && s.time() == run.st.origin + run.st.current_time);
         if due {
             let state = self.device_reentry_state(run, digital, nets);
             run.steps.last_mut().expect("a recorded step").set_reentry(Some(state));
@@ -1517,18 +1528,18 @@ impl TransientSolver<'_> {
             }
         }
         let cap_end = st.current_time + run.cap;
-        let mut end = (st.current_time + dt).min(self.options.stop_time).min(cap_end);
+        let mut end = (st.current_time + dt).min(st.stop).min(cap_end);
         // A step that would end within two ticks short of the stop ends at the stop: the
         // remainder would be a step of a few femtoseconds, or less than a tick, which the
         // companion of a charge integrates as noise (a capped step after a jump can end there).
         // The `CAP` bound still holds after the snap: a step is never stretched past it.
-        if self.options.stop_time - end < 2.0 * run.spt {
-            end = self.options.stop_time.min(st.current_time + run.cap);
+        if st.stop - end < 2.0 * run.spt {
+            end = st.stop.min(st.current_time + run.cap);
         }
         run.proposed = end;
         run.bound = if end == cap_end && end < st.current_time + dt {
             ProposalBound::Cap
-        } else if end == self.options.stop_time {
+        } else if end == st.stop {
             ProposalBound::Stop
         } else if dt >= self.options.dt_max {
             ProposalBound::MaxStep
@@ -1560,7 +1571,7 @@ impl TransientSolver<'_> {
         run.attempts += 1;
         if run.attempts > self.options.max_steps {
             let st = &run.st;
-            let progress = (st.current_time - self.options.start_time)
+            let progress = (st.origin + st.current_time - self.options.start_time)
                 / (self.options.stop_time - self.options.start_time).max(f64::MIN_POSITIVE);
             return Err(piperine_analog_solver::error::Error::simple(
                 piperine_analog_solver::error::SolverDomain::Transient,
@@ -1575,7 +1586,7 @@ impl TransientSolver<'_> {
                      raise `dt_min` to make the floor fail instead of crawl, \
                      or soften the discontinuity.",
                     self.options.max_steps,
-                    st.current_time,
+                    st.origin + st.current_time,
                     self.options.stop_time,
                     progress * 100.0,
                     st.dt,
@@ -1586,7 +1597,7 @@ impl TransientSolver<'_> {
                 ),
             ));
         }
-        let stop = self.options.stop_time;
+        let stop = run.st.stop;
         let t_next = if landing {
             to
         } else if (stop - to).abs() < run.spt {
@@ -1607,7 +1618,7 @@ impl TransientSolver<'_> {
             // at `h <= 0`): never attempted, never accepted.
             return Err(piperine_analog_solver::error::Error::simple(
                 piperine_analog_solver::error::SolverDomain::Transient,
-                format!("a step to t = {t_next:e} s does not advance from t = {:e} s", st.current_time),
+                format!("a step to t = {:e} s does not advance from t = {:e} s", st.origin + t_next, st.origin + st.current_time),
             ));
         }
         let prediction = StepPrediction {
@@ -1623,7 +1634,7 @@ impl TransientSolver<'_> {
         } else {
             JumpPosition::None
         };
-        let outcome = self.execute_timestep(st.current_time, prediction.dt_actual, st.last_step_accepted);
+        let outcome = self.execute_timestep(st.origin, st.current_time, prediction.dt_actual, st.last_step_accepted);
         if let Ok(Some(snapshot)) = outcome {
             let kind = prediction.kind;
             let assessment = self.assess_step(&prediction);
@@ -1699,7 +1710,7 @@ impl TransientSolver<'_> {
             run.located = None;
         }
         let x = self.solver.current_guess().map(|g| g.to_vec()).unwrap_or_default();
-        let amb = Ambient { time: t1, ..self.system.ambient() };
+        let amb = Ambient { time: run.st.origin + t1, ..self.system.ambient() };
         let (ttol, etol) = (self.options.ttol, self.system.context.tolerances.vntol);
         let rising = self.device_bound().analog.rising(&x, amb)?;
         let mut earliest = f64::INFINITY;
@@ -1737,7 +1748,7 @@ impl TransientSolver<'_> {
         if self.policy.trace.transient {
             eprintln!(
                 "REJECT t={:.3e} dt={:.3e} milne={:.3e} (trtol={})",
-                run.st.current_time,
+                run.st.origin + run.st.current_time,
                 prediction.dt_actual,
                 milne,
                 self.system.context.tolerances.trtol
@@ -1773,11 +1784,11 @@ impl TransientSolver<'_> {
         st.dt_min_seen = st.dt_min_seen.min(dt_actual);
         st.dt_max_seen = st.dt_max_seen.max(dt_actual);
         let x = self.solver.current_guess().map(|g| g.to_vec()).unwrap_or_default();
-        let amb = Ambient { time: t_next, ..self.system.ambient() };
+        let amb = Ambient { time: run.st.origin + t_next, ..self.system.ambient() };
         let (accepted, cap) = crate::analyses::adapters::accepted(self.device_bound(), &x, amb)?;
         run.cap = cap;
         let st = &mut run.st;
-        self.record_step(&mut run.steps, t_next, snapshot);
+        self.record_step(&mut run.steps, st.origin + t_next, snapshot);
         st.current_time = t_next;
         self.system.prev_h = dt_actual;
         self.system.last_read_jump = st.sets_just_applied;
@@ -1915,12 +1926,30 @@ impl DeviceRun {
     }
 
     pub(crate) fn attempted(&self) -> f64 {
-        self.attempted
+        self.st.origin + self.attempted
     }
 
     /// The time of the last accepted step (the start before any), as the step records it.
     pub(crate) fn accepted_time(&self) -> f64 {
-        self.st.current_time
+        self.st.origin + self.st.current_time
+    }
+
+    /// Moves the origin of this run's clock forward (`AnalogSide::rebase`): every time the run
+    /// holds becomes seconds since the new origin, and what reads absolute time adds `origin.time`
+    /// back. A step's history of times (`Located`) moves with them.
+    pub(crate) fn rebase(&mut self, origin: crate::protocol::Origin) {
+        let moved = origin.moved;
+        self.st.current_time -= moved;
+        self.st.origin = origin.time;
+        self.st.stop = origin.stop;
+        self.proposed -= moved;
+        self.attempted -= moved;
+        if let Some(located) = &mut self.located {
+            located.from -= moved;
+            for (_, (time, _, _)) in &mut located.past {
+                *time -= moved;
+            }
+        }
     }
 
     /// The smallest `CAP` of an accepted solution bounds the next step.

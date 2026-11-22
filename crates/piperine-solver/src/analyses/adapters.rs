@@ -30,7 +30,7 @@ use piperine_digital_solver::limits::DigitalLimits;
 
 use crate::protocol::{
     Accepted, Advance, AnalogSide, Attempt, Boundary, DiscreteSide, Horizon, HostCx, InstantMode, LandingCause,
-    Observation, ObservationKind, Outcome, ProposalBound, Protocol, Restart, Shadow, Sink, StepObserver, StepView, Tick, Waiter,
+    Observation, ObservationKind, Origin, Outcome, ProposalBound, Protocol, Restart, Shadow, Sink, StepObserver, StepView, Tick, Waiter,
 };
 use crate::analyses::dc::DcSolver;
 use crate::analyses::transient::{DeviceMark, DeviceRun, TransientSolver};
@@ -475,6 +475,10 @@ impl AnalogSide for TransientSide<'_, '_> {
 
     fn restore(&mut self, mark: &DeviceMark) {
         self.tran.device_restore(mark);
+    }
+
+    fn rebase(&mut self, origin: Origin) {
+        self.run.rebase(origin);
     }
 
     fn retake(&mut self, mark: &DeviceMark) {
