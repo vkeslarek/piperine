@@ -3,8 +3,7 @@
 **Status**: POSTPONED (user, 2026-11-22). Not in the automatic queue. It is scheduled after item 13
 (`spec-closure`) and after the `code-clarity` refactor; no design, no tasks until the user reopens it.
 
-**Approved**: not yet - the user asked for the spec and for it to wait; the open questions below are
-asked before it is approved.
+**Approved**: 2026-11-22 - user: "Q1 Sim Q2 Isso, o ABI suporta já Q3 Sim Q4 Ok Q5 Perfeito" (every open question takes its recommended option; the feature stays POSTPONED until after spec-closure and code-clarity).
 
 ## Decision (user, 2026-11-22, verbatim)
 
@@ -98,7 +97,7 @@ These bind every story; each is also an acceptance criterion (DP-01 to DP-05).
 | Non-convergence of a fused domain | The run fails with the error the event engine gives for the same design (`E0501`, naming the carriers still changing) | Non-negotiable 1: same outcome as the oracle, no new error | n |
 | Constructs fusion does not cover | A reaction or definition that reads `HORIZON`, commits with a nonzero `after`, drives a resolved net, or is under unknown control that needs `MERGE` stays on the event engine; it is never approximated | Exactness first; the design measures how much this leaves out | n |
 
-**Open questions** (asked before approval; each has a recommendation):
+**Open questions:** none - answered 2026-11-22, every recommendation accepted (user: "Q1 Sim Q2 Isso, o ABI suporta já Q3 Sim Q4 Ok Q5 Perfeito"). The table records the questions and the chosen option:
 
 | # | Question | Options | Recommendation |
 | - | -------- | ------- | -------------- |
