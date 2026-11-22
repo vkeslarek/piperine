@@ -332,9 +332,12 @@ impl<'a> ValuePrinter<'a> {
         Ok(names)
     }
 
-    /// The names the written locals take once the merge hands them back: `x_out_`.
+    /// The names the written locals take once the merge hands them back: `merge_out0_`, `merge_out1_`,
+    /// in order. They come from the position, not from the local's name, which may end in `_` (`a_`
+    /// prints `a__`): two locals never share one, none has a double underscore, and none is a name an
+    /// MSL local prints as (generated names end in `_`, MSL names are escaped away from that).
     fn merged_names(names: &[String]) -> Vec<String> {
-        names.iter().map(|n| Text::generated(&format!("{}_out", n.trim_end_matches('_')))).collect()
+        (0..names.len()).map(|position| Text::generated(&format!("merge_out{position}"))).collect()
     }
 
     /// `condition.choose(|| { first }, || { second })`, or in a reaction whose arms commit

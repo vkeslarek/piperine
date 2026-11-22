@@ -257,6 +257,17 @@ fn an_option_function_that_logs_or_takes_a_str_runs_its_body_once() {
     assert!(records.iter().all(|r| r.stream == "log" && r.instance == "Bench.rows"), "{records:?}");
 }
 
+#[test]
+fn locals_named_a_and_a_underscore_merge_under_unknown_control() {
+    // finding 14: `a` and `a_` written in one `if` on an undriven (unknown) condition are merged and handed
+    // back under distinct names, the generated source compiling with no warning; both arms agree, so the
+    // merge is the value Rust computes, known.
+    let (a, a_) = (5u8, 6u8);
+    let names = ["p", "q", "s"];
+    let wanted = [CarrierBytes::byte(a), CarrierBytes::byte(a_), CarrierBytes::byte(a + a_)];
+    RUN.assert_commits("merge_names.msl", &names, &wanted);
+}
+
 /// The rows `patterns.msl` commits.
 struct PatternRows;
 
