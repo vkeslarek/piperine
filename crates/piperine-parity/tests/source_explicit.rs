@@ -72,6 +72,17 @@ fn the_buck_elaborated_from_source_holds_no_flag_and_no_merge() {
     }
 }
 
+#[test]
+fn maybe_is_an_ordinary_field_of_a_record() {
+    // §19 rule 11 (EU-02 AC 3, C6): `emit!("s", maybe = true, x = 1.5)` elaborates, runs, and its record holds the field
+    // named `maybe` with the value `true`, beside `x`, in the order written: nothing is added or taken away
+    let records: Vec<Record> = RUN.records_of("maybe_field.msl", "Bench").into_iter().filter(|record| record.stream == "s").collect();
+    assert!(!records.is_empty(), "the reaction emits at the rising edges");
+    for record in records {
+        assert_eq!(record.fields, [("maybe".to_string(), Field::Bool(true)), ("x".to_string(), Field::Real(1.5))], "the record is exactly its two fields");
+    }
+}
+
 /// The records of the stream `name` the transient of `top` of `initial.msl` made, in order.
 fn stream(top: &str, name: &str) -> Vec<Record> {
     RUN.records_of("initial.msl", top).into_iter().filter(|record| record.stream == name).collect()

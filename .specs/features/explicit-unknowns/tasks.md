@@ -1251,7 +1251,7 @@ Proof: run types | test unknown_is_a_name_that_does_not_resolve ... ok
 Proof: run types | test the_flag_methods_do_not_resolve ... ok
 
 **C6** - An `emit!` with a field named `maybe` elaborates and the record holds it (EU-02, AC 3; T34)
-Proof: run types | test maybe_is_an_ordinary_field_name ... ok
+Proof: run src | test maybe_is_an_ordinary_field_of_a_record ... ok
 
 **C7** - No source raises `E0150`, `E0151`, `E0906` or `E0908` (EU-02, AC 4; T31)
 Proof: run hygiene | test retired_unknown_codes_are_raised_nowhere ... ok
