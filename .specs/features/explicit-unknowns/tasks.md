@@ -9,7 +9,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/explicit-unknowns/design.md`
-**Status**: Draft
+**Status**: In Progress
 **Approved**: 2026-11-21 - user: "Aceito os recomendados" (Q4: no separate strength trait, `impl Resolve<Driven>` carries it; Q5: Strength set B, five levels HighZ < Weak < Pull < Strong < Supply), after R1–R10, Q1–Q3 and the ABI (major 1, edited in place) the same day; D1–D21 stand.
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
 **Run spectext**: `cargo test -p piperine-lang --test spec_text`
@@ -171,10 +171,10 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] §3.3 holds the six rules, each numbered, and the sentence that `bool`, `UInt<N>`, `Int<N>`, `Float<N>` and `str` do not implement `Default` and that this differs from Rust
-- [ ] `spec_text.rs::section_3_3_states_the_explicit_model` and `a_nature_takes_trait_impls` pass; the tests it replaces are named in the commit body
-- [ ] Every anchor `#33-unknown-values` in `docs/spec` still resolves (the heading keeps an explicit anchor or every link moves)
-- [ ] Gate check passes: Quick
+- [x] §3.3 holds the seven rules, each numbered, and the sentence that `bool`, `UInt<N>`, `Int<N>`, `Float<N>` and `str` do not implement `Default` and that this differs from Rust
+- [x] `spec_text.rs::section_3_3_states_the_explicit_model` and `a_nature_takes_trait_impls` pass; the tests it replaces are named in the commit body
+- [x] Every anchor `#33-unknown-values` in `docs/spec` still resolves (the heading keeps an explicit anchor or every link moves)
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -194,9 +194,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] H.8 and H.10 read as design.md gives them
-- [ ] `spec_text.rs::appendix_h_holds_default_from_and_the_operator_traits` passes
-- [ ] Gate check passes: Quick
+- [x] H.8 and H.10 read as design.md gives them
+- [x] `spec_text.rs::appendix_h_holds_default_from_and_the_operator_traits` passes
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -216,9 +216,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] The rules read as design.md gives them; no sentence mentions a flag or a `resolve` field
-- [ ] `spec_text.rs::resolve_is_a_trait_of_two_parameters`, `many_drives_need_the_resolve_capability`, `a_drive_picks_its_impl_by_its_type`, `resolve_receives_plain_values_for_every_count` and `a_drive_without_a_value_starts_at_its_default` pass
-- [ ] Gate check passes: Quick
+- [x] The rules read as design.md gives them; no sentence mentions a flag or a `resolve` field
+- [x] `spec_text.rs::resolve_is_a_trait_of_two_parameters`, `many_drives_need_the_resolve_capability`, `a_drive_picks_its_impl_by_its_type`, `resolve_receives_plain_values_for_every_count` and `a_drive_without_a_value_starts_at_its_default` pass
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -238,9 +238,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `E0511` is a row of the §8.2 error table and of Part V's run codes
-- [ ] `spec_text.rs::a_relaxing_drive_starts_absent` and `a_loop_that_does_not_settle_is_e0511` pass
-- [ ] Gate check passes: Quick
+- [x] `E0511` is a row of the §8.2 error table and of Part V's run codes
+- [x] `spec_text.rs::a_relaxing_drive_starts_absent` and `a_loop_that_does_not_settle_is_e0511` pass
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -260,9 +260,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] §13 rule 6 says the initial value's commit at `(0, 0)` is a change of every carrier
-- [ ] The file holds no removed word; `spec_text.rs` assertions that quoted the earlier rules are replaced and pass
-- [ ] Gate check passes: Quick
+- [x] §13 rule 6 says the initial value's commit at `(0, 0)` is a change of every carrier
+- [x] The file holds no removed word; `spec_text.rs` assertions that quoted the earlier rules are replaced and pass
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -282,10 +282,10 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] A record is its declared fields; a `require` is a pass or a fail
-- [ ] §23.1 rule 9 reads as design.md gives it
-- [ ] `spec_text.rs` assertions for §19 and §23 are replaced and pass
-- [ ] Gate check passes: Quick
+- [x] A record is its declared fields; a `require` is a pass or a fail
+- [x] §23.1 rule 9 reads as design.md gives it
+- [x] `spec_text.rs` assertions for §19 and §23 are replaced and pass
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -305,11 +305,11 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] §22.1 prints the four tables beside the source
-- [ ] `spec_text.rs::section_22_1_holds_the_four_state_tables`, `strongest_resolves_by_strength`, `the_library_declares_no_net_nature` pass
-- [ ] `std_excerpts` passes with the fences ahead of `std` listed by name
-- [ ] The commit body lists each citation and where it was confirmed
-- [ ] Gate check passes: Quick
+- [x] §22.1 prints the four tables beside the source
+- [x] `spec_text.rs::section_22_1_holds_the_four_state_tables`, `strongest_resolves_by_strength`, `the_library_declares_no_net_nature` pass
+- [x] `std_excerpts` passes with the fences ahead of `std` listed by name
+- [x] The commit body lists each citation and where it was confirmed
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -329,10 +329,10 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `Unknown` and `resolve` are in no production and no keyword list
-- [ ] Appendix B's count of additions is two lower and its sum still matches its rows
-- [ ] The `spec_text.rs` tests `appendix_c_states_the_loop_bound_under_unknown_control` and `appendix_c_lists_the_loop_bound_among_the_defaults` are replaced by a test that C.2 holds no such row
-- [ ] Gate check passes: Quick
+- [x] `Unknown` and `resolve` are in no production and no keyword list
+- [x] Appendix B's count of additions is two lower and its sum still matches its rows
+- [x] The `spec_text.rs` tests `appendix_c_states_the_loop_bound_under_unknown_control` and `appendix_c_lists_the_loop_bound_among_the_defaults` are replaced by a test that C.2 holds no such row
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -352,10 +352,10 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `spec_text.rs::the_removed_words_are_absent_from_the_specification` walks every file of `docs/spec` and exempts G.72 only
-- [ ] `appendix_g_records_the_explicit_model` and `the_gallery_works_four_nets` pass
-- [ ] `std_galleries` passes, with the gallery fixtures that changed regenerated
-- [ ] Gate check passes: Quick
+- [x] `spec_text.rs::the_removed_words_are_absent_from_the_specification` walks every file of `docs/spec` and exempts G.72 only
+- [x] `appendix_g_records_the_explicit_model` and `the_gallery_works_four_nets` pass
+- [x] `std_galleries` passes, with the gallery fixtures that changed regenerated
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -375,8 +375,8 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `docs.rs::abi_md_describes_the_unreleased_contract` passes: the symbol `piperine_abi_1`, minor 0, the four-field `Field`, the three shipped layouts, the `driving` byte, the unreleased sentence, and the absence of `HAS_KNOWN`, `commit_with` and `known byte`
-- [ ] Gate check passes: Quick
+- [x] `docs.rs::abi_md_describes_the_unreleased_contract` passes: the symbol `piperine_abi_1`, minor 0, the four-field `Field`, the three shipped layouts, the `driving` byte, the unreleased sentence, and the absence of `HAS_KNOWN`, `commit_with` and `known byte`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -396,10 +396,10 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `docs.rs::state_holds_the_explicit_unknowns_decision` and `the_per_level_feature_is_recorded_as_dropped` pass
-- [ ] `spec_codes` passes
-- [ ] `GAPS.md`'s counts line matches its rows
-- [ ] Gate check passes: Quick
+- [x] `docs.rs::state_holds_the_explicit_unknowns_decision` and `the_per_level_feature_is_recorded_as_dropped` pass
+- [x] `spec_codes` passes
+- [x] `GAPS.md`'s counts line matches its rows
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -419,10 +419,10 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `book_values::the_values_chapter_teaches_the_explicit_model` passes
-- [ ] `the_flag_is_read_with_known_known_or_and_is_known` and `analog_reads_a_digital_carrier_through_known_or` are replaced, both names in the commit body
-- [ ] `book_inventory` and `book_claims` pass
-- [ ] Gate check passes: Quick
+- [x] `book_values::the_values_chapter_teaches_the_explicit_model` passes
+- [x] `the_flag_is_read_with_known_known_or_and_is_known` and `analog_reads_a_digital_carrier_through_known_or` are replaced, both names in the commit body
+- [x] `book_inventory` and `book_claims` pass
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -442,9 +442,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `book_language::the_book_says_numbers_have_no_default` passes
-- [ ] `book_types`, `book_generics`, `book_inventory` pass
-- [ ] Gate check passes: Quick
+- [x] `book_language::the_book_says_numbers_have_no_default` passes
+- [x] `book_types`, `book_generics`, `book_inventory` pass
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -464,10 +464,10 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `book_natures::the_book_drives_nets_with_strength` passes
-- [ ] Each worked net has its inventory row; all four name L21 and their tests assert today's refusal text
-- [ ] `book_digital`, `book_inventory`, `book_claims` pass
-- [ ] Gate check passes: Quick
+- [x] `book_natures::the_book_drives_nets_with_strength` passes
+- [x] Each worked net has its inventory row; all four name L21 and their tests assert today's refusal text
+- [x] `book_digital`, `book_inventory`, `book_claims` pass
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -487,9 +487,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `book_analog`, `book_mixed`, `book_simulation`, `book_inventory`, `book_claims` pass
-- [ ] Each replaced test is named in the commit body
-- [ ] Gate check passes: Quick
+- [x] `book_analog`, `book_mixed`, `book_simulation`, `book_inventory`, `book_claims` pass
+- [x] Each replaced test is named in the commit body
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -509,9 +509,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `book_core_std`, `book_errors`, `book_cli`, `book_cheatsheet` pass
-- [ ] `cargo test -p piperine-cli --test book` passes
-- [ ] Gate check passes: Quick
+- [x] `book_core_std`, `book_errors`, `book_cli`, `book_cheatsheet` pass
+- [x] `cargo test -p piperine-cli --test book` passes
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -531,9 +531,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `book_abi::the_abi_chapter_describes_the_unreleased_contract` passes
-- [ ] `book_solver`, `book_compiler`, `book_pom` pass
-- [ ] Gate check passes: Quick
+- [x] `book_abi::the_abi_chapter_describes_the_unreleased_contract` passes
+- [x] `book_solver`, `book_compiler`, `book_pom` pass
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -553,9 +553,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `book_inventory::every_listing_that_does_not_run_names_its_gap` passes, and `the_book_uses_no_removed_name` passes with its two named `E0150` exemptions, which T30 removes (C79 is proved there)
-- [ ] All 24 `book_*` targets pass
-- [ ] Gate check passes: Batch
+- [x] `book_inventory::every_listing_that_does_not_run_names_its_gap` passes, and `the_book_uses_no_removed_name` passes with its two named `E0150` exemptions, which T30 removes (C79 is proved there)
+- [x] All 24 `book_*` targets pass
+- [x] Gate check passes: Batch
 
 **Tests**: integration
 **Gate**: full
