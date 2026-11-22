@@ -261,7 +261,7 @@ fn the_sampling_time_constant_of_a_switch_is_a_tenth_of_a_nanosecond() {
     // time constant of ron . cs = 0.1 ns per switch": the integrator's switch `ron` is 100 and `cs` 1 pF
     let chapter = Chapter::read();
     let capacitor = "module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }\nanalog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }\n";
-    let after = "module Top(in clk: Bit) { signal a: Electrical; signal b: Electrical; let s = ScIntegrator(a, b, clk); }\n";
+    let after = "module Top(in clk: Bit = false) { signal a: Electrical; signal b: Electrical; let s = ScIntegrator(a, b, clk); }\n";
     let ran = chapter.wrapped("sc.msl", capacitor, "modules#9", after).run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
     let param = |path: &str| match ran.metadata.params.iter().find(|param| param.path == path).unwrap_or_else(|| panic!("no param {path}")).value {
         Cell::Real(value) => value,

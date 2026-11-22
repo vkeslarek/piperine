@@ -171,7 +171,7 @@ fn the_switched_capacitor_integrator_is_a_netlist_that_runs() {
     // structure, placed in a top with the clock as an `in` port. `Capacitor` is chapter 1's, written first
     let chapter = Chapter::read();
     let capacitor = "module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }\nanalog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }\n";
-    let after = "module Top(in clk: Bit) { signal a: Electrical; signal b: Electrical; let s = ScIntegrator(a, b, clk); }\n";
+    let after = "module Top(in clk: Bit = false) { signal a: Electrical; signal b: Electrical; let s = ScIntegrator(a, b, clk); }\n";
     let ran = chapter.wrapped("sc.msl", capacitor, "modules#9", after).run(Commands::of_top()).unwrap_or_else(|failure| panic!("{failure}"));
     assert_eq!(ran.table.rows.len(), 3, "the clock and the two analog nodes");
     assert!(ran.signal("Top.b").abs() < 1e-12, "the integrator's output with no input is at rest");

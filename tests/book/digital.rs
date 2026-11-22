@@ -527,7 +527,7 @@ fn e0430_a_bit_is_a_level_not_an_event() {
     // (E0430): on enable { ... } has no 'when'": say which change: on clk.rise()
     let faulty = Faulty::elaborating("digital~54ec481d", "module Top(in clk: Bit) {}\ndigital for Top { on clk { } }\n", "Top");
     assert_eq!(faulty.first("E0430").message, "the head of `on` has type `bool`: it must be an `Event`; a `bool` alone is not an event (§12.1.10)");
-    let fixed = Model::written("fixed.msl", "module Top(in clk: Bit) {}\ndigital for Top { on clk.rise() { } }\n").run(Faulty::operating_point_of("Top"));
+    let fixed = Model::written("fixed.msl", "module Top(in clk: Bit = false) {}\ndigital for Top { on clk.rise() { } }\n").run(Faulty::operating_point_of("Top"));
     assert!(fixed.is_ok(), "`clk.rise()` is an event");
 }
 
