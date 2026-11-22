@@ -364,6 +364,17 @@ fn deriving_repr_with_a_field_without_repr_is_e0110() {
 }
 
 #[test]
+fn generic_arguments_on_a_plain_type_are_refused() {
+    // A struct or an enum with no generic parameter takes no generic argument: `Pair<4>` is `P0001` naming `Pair`, never
+    // read as `Pair` with the `4` silently ignored.
+    for written in ["Bit<Pair<4>>", "Bit<Tx<4>>"] {
+        let src = format!("#[derive(Repr, PartialEq)]\nstruct Pair {{ a: u8 }}\n#[derive(Repr, PartialEq)]\nenum Tx {{ Idle, Busy }}\nmodule Top() {{ signal s: {written}; }}");
+        let found = Types::check(&CheckedSource::standard_design_of(&src), "Top").err().unwrap_or_default();
+        assert!(found.iter().any(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains("generic arguments on")), "{written}: {:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+    }
+}
+
+#[test]
 fn an_enum_without_repr_is_a_value_but_not_a_carried_type() {
     // CV-11 AC 1 (part I section 1.3 and 2: every enum is a value type): an enum with a payload and no `Repr` is built,
     // matched, passed and returned by value; a carrier of it is `E0112`.
