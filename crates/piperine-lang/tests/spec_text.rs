@@ -1878,3 +1878,23 @@ fn a_nature_takes_trait_impls() {
     assert!(s37.contains("**§3.7.13** A trait is a **capability**"), "{s37}");
     assert!(s37.contains("`W: Nature + Resolve<Driven>`"), "{s37}");
 }
+
+#[test]
+fn appendix_h_holds_default_from_and_the_operator_traits() {
+    // EU-17 AC 6: the `Default` rule of D4, `From`, the parameters of `PartialEq`, H.10.
+    let h = appendix_h();
+    let h8 = flat(&section(&h, "## H.8"));
+    assert!(h8.contains("**`bool`, `UInt<N>`, `Int<N>`, `Float<N>` and `str` do not implement `Default`**"), "{h8}");
+    assert!(h8.contains("`Option<T>` (`None`, for every `T`)"), "{h8}");
+    assert!(h8.contains("`PartialEq<Rhs = Self, Out = bool>`") && h8.contains("`trait From<T> { fn from(x: T) -> Self; }`"), "{h8}");
+    assert!(!h.contains("all-or-nothing"), "H rule 5 (all-or-nothing methods) is removed");
+    let rows = table_rows(&section(&h, "## H.10"));
+    let traits: Vec<&str> = rows.iter().map(|r| r[1].as_str()).collect();
+    for t in ["`BitAnd<Rhs = Self, Out = Self>`", "`BitOr<Rhs = Self, Out = Self>`", "`BitXor<Rhs = Self, Out = Self>`", "`Not<Out = Self>`", "`Shl<Rhs = usize, Out = Self>`, `Shr<Rhs = usize, Out = Self>`", "`PartialEq<Rhs = Self, Out = bool>`"] {
+        assert!(traits.contains(&t), "H.10 lacks {t}: {traits:?}");
+    }
+    let s = flat(&section(&h, "## H.10"));
+    for rule in ["the one `impl` whose type is the left operand's", "at most one `impl` exists (`E0187`)", "`a &= b` is `a = a & b`", "have no trait"] {
+        assert!(s.contains(rule), "H.10 lacks \"{rule}\"");
+    }
+}

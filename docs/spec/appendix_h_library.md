@@ -3,10 +3,9 @@
 This appendix is normative. It is the closed catalogue of the library of the value language: the methods of the numeric types, `Option`, arrays, ranges and iterators, and the traits and types a model may name without declaring them. Each entry is given with its signature and its meaning. §0.4 says the specification is complete; this appendix is where that holds for the library.
 
 1. A method, trait or type that this appendix does not list, and that neither the model nor the standard library (§22) declares, does not resolve (`E0161`). The catalogue is closed.
-2. The carrier and value methods of B.1 (`changed`, `prev`, `others`, `inflow`, `level`) and the functions a model declares are not in this appendix.
+2. The carrier and value methods of B.1 (`changed`, `prev`, `others`, `inflow`) and the functions a model declares are not in this appendix.
 3. A method listed here has the behavior its section states, in every analysis and at elaboration alike (§3.9.7). A panic is a panic of §1 rule 11.
 4. The signatures use the notation of §3 with two spellings that are not source syntax. `impl Fn(A) -> R` stands for any function or closure that satisfies the bound `Fn(A) -> R` (§3.8.6). `Iterator<T>` stands for an iterator of elements of type `T` (H.7). Every receiver, argument and result is a value: a method reads a copy of its receiver, and the receiver stays as it was (§1.4.6).
-5. A method with an unknown level in its receiver or in an argument is all-or-nothing (§3.3.2), unless its body is written with the control flow of §3.3.3: `filter`, `any`, `all` and `then` are, through their closures.
 
 > **Resolution.** Without a list, the library of a language has no edge. A method a fence of this specification calls is a row below; the type checker is written against these rows.
 
@@ -201,32 +200,37 @@ The ten adaptors and consumers below, on an array's `iter()` and on a range.
 
 ## H.8 Traits
 
-The traits a model may name in a bound or a derive. `Repr` (§2), `Nature` (§4) and `Fn` (§8.4) are the language's own and are not listed here. A name inside `#[derive(..)]` resolves like a name in a bound: it must be one of these traits, `Repr`, or a trait the project declares; any other name (an unknown word, a type, a value) is `E0161` at the name.
+The traits a model may name in a bound, a derive or an `impl`. `Repr` (§2), `Nature` (§4), `Resolve` (§4 rule 8) and `Fn` (§8.4) are the language's own and are not listed here. A trait is a capability (§3.7.13): a type has `==` when it implements `PartialEq`, `&` when it implements `BitAnd`, and may start without a value when it implements `Default`. A name inside `#[derive(..)]` resolves like a name in a bound: it must be one of these traits, `Repr`, or a trait the project declares; any other name (an unknown word, a type, a value) is `E0161` at the name.
 
 | Trait | Written as | Note |
 | --- | --- | --- |
-| `PartialEq` | `#[derive(PartialEq)]`, `T: PartialEq` | `==`, `!=` |
+| `PartialEq<Rhs = Self, Out = bool>` | `#[derive(PartialEq)]`, `T: PartialEq` | `==`, `!=` |
 | `Eq` | `#[derive(Eq)]`, `T: Eq` |  |
 | `PartialOrd` | `#[derive(PartialOrd)]`, `T: PartialOrd` | `<`, `<=`, `>`, `>=` |
 | `Ord` | `#[derive(Ord)]`, `T: Ord` |  |
-| `Default` | `#[derive(Default)]`, `T: Default` |  |
+| `Default` | `#[derive(Default)]`, `T: Default` | `T::default()`; a carrier with no initial value |
 | `Debug` | `#[derive(Debug)]`, `T: Debug` |  |
 | `Hash` | `#[derive(Hash)]`, `T: Hash` |  |
+| `From<T>` | `impl From<A> for B`, `B: From<A>` | `B::from(a)`; a total conversion |
 
 **Static semantics**
 
 1. Copying is not a trait. Every value is copied where it is used (§1.4.6), so the table has no `Clone` and no `Copy`, and no method `clone`. Written in a derive or in a bound, either name is a name outside the table: it does not resolve (`E0161`), by the rule above and no rule of its own.
-2. `PartialEq` gives `==` and `!=`. Derived, two values are equal when they are the same variant and their fields are equal, field by field. `Eq` adds nothing a model calls: it states that every value equals itself, and requires `PartialEq`.
+2. `PartialEq<Rhs = Self, Out = bool>` gives `==` and `!=`: `fn eq(self, other: Rhs) -> Out; fn ne(self, other: Rhs) -> Out;`. A bound or a derive that writes `PartialEq` alone means `PartialEq<Self, bool>`, the form that `contains`, `match` on a literal and derived comparison require. Derived, two values are equal when they are the same variant and their fields are equal, field by field. `Eq` adds nothing a model calls: it states that every value equals itself, and requires `PartialEq`.
 3. `PartialOrd` gives `<`, `<=`, `>` and `>=`. Derived, a struct orders by its fields in declaration order, the first difference deciding; an enum orders by the discriminant of the variant (§1.3.7), then by the fields. It requires `PartialEq`. `Ord` adds nothing a model calls: it states that any two values are ordered, and requires `Eq` and `PartialOrd`.
-4. `Default` gives `T::default()`. Derived on a struct, each field has its own default. The defaults of the built-in types are `false`, zero, `None`, `()`, and the tuple or array of defaults. An enum does not derive `Default`.
+4. `Default` gives `T::default()`, the value a carrier, a drive or a param starts at when it has no initial value (§3.3.4). Derived on a struct, each field has its own default, and the derive requires every field to implement `Default` (`E0187` naming the field and its type). The built-in types that implement `Default` are `()`, `Option<T>` (`None`, for every `T`), and a tuple or an array `[T; N]` when every part does; the library type `Logic<N>` implements it (X on every level, §22.1). **`bool`, `UInt<N>`, `Int<N>`, `Float<N>` and `str` do not implement `Default`**: `u8::default()` is `E0187` naming the type. This differs from Rust on purpose (§3.3.4). An enum does not derive `Default`; it may implement it by hand.
 5. `Debug` and `Hash` add nothing a model calls. A type may state them, and a bound may require them.
 6. A derive on a struct or an enum requires every field to implement the trait (§2 rule 3 for `Repr`). A derive on a generic type holds for the arguments that implement it.
 7. The built-in types implement these traits:
-    - `bool`, `UInt<N>`, `Int<N>` and `()`: all seven;
-    - `Float<N>`: `PartialEq`, `PartialOrd`, `Default` and `Debug`;
+    - `bool`, `UInt<N>` and `Int<N>`: all of them but `Default`;
+    - `()`: all seven;
+    - `Float<N>`: `PartialEq`, `PartialOrd` and `Debug`;
     - `str`: `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Debug` and `Hash`;
-    - a tuple, an array `[T; N]` and an `Option<T>`: each trait that every part implements;
+    - a tuple and an array `[T; N]`: each trait that every part implements;
+    - an `Option<T>`: each trait that `T` implements, and `Default` for every `T`;
     - a function pointer: `Debug`.
+
+8. `From<T>` is `trait From<T> { fn from(x: T) -> Self; }`. `B::from(a)` is the function of the one `impl From<A> for B`; none is `E0180`. A conversion that can fail returns an `Option` instead (`to_bits`, §22.1). The library implements `Logic<N>: From<UInt<N>>` and `Logic<1>: From<bool>` (§22.1).
 
 > **Resolution.** A float has no `Eq`, `Ord` or `Hash` because NaN is not equal to itself (§1.5.23). A type with a float field therefore derives `PartialEq` and `PartialOrd` only.
 
@@ -244,3 +248,26 @@ The types a model may name besides the carriers of Part II and the types it decl
 | `str` | the type of a string | §1.2.9 |
 
 The unit type, tuples, arrays and function pointers are written with the type syntax of §1.2 and have no name. A range, an iterator and a closure have types that cannot be written (§1.5.11, H.7, §1.2.11). `Event` (§13), `Analysis` (§11.1) and the natures and bundles are the types of Parts II to IV.
+
+## H.10 Operator traits
+
+An operator on a struct, an enum or a library type is the function of an operator trait, so a type has an operator when it implements the trait: a capability in the sense of §3.7.13. `a & b` is `BitAnd::bitand(a, b)` of the one `impl` for the two operand types. A trait holds no type (§3.7.1), so the result type is a trait parameter.
+
+| Operator | Trait | Function |
+| --- | --- | --- |
+| bitwise and, `a & b` | `BitAnd<Rhs = Self, Out = Self>` | `fn bitand(self, rhs: Rhs) -> Out` |
+| bitwise or, the vertical bar between two operands | `BitOr<Rhs = Self, Out = Self>` | `fn bitor(self, rhs: Rhs) -> Out` |
+| bitwise exclusive or, `a ^ b` | `BitXor<Rhs = Self, Out = Self>` | `fn bitxor(self, rhs: Rhs) -> Out` |
+| bitwise not, `!a` | `Not<Out = Self>` | `fn not(self) -> Out` |
+| shifts, `a << k` and `a >> k` | `Shl<Rhs = usize, Out = Self>`, `Shr<Rhs = usize, Out = Self>` | `fn shl(self, rhs: Rhs) -> Out`, `fn shr(self, rhs: Rhs) -> Out` |
+| equality, `a == b` and `a != b` | `PartialEq<Rhs = Self, Out = bool>` | `fn eq`, `fn ne` (H.8 rule 2) |
+
+**Static semantics**
+
+1. An operator on a struct or an enum is the function of the one `impl` whose type is the left operand's and whose `Rhs` is the right operand's. When none exists the operator is `E0180`.
+2. For one operator trait, one type and one `Rhs`, at most one `impl` exists (`E0187`), so `Out` follows from the operands.
+3. The built-in types implement these traits with the meaning §1.5 gives; §1.5 is unchanged.
+4. A compound assignment `a &= b` is `a = a & b`.
+5. The arithmetic and ordering operators have no trait: they apply to the types §1.5 lists and, for ordering, to a derived `PartialOrd`.
+
+> **Resolution.** `Logic<N>` (§22.1) needs `&` that gives a `Logic` and an `==` that gives a `Logic`. Neither can be a library `impl` unless the operator names a trait and the trait names its result type. That is the whole reason for the `Out` parameter; the common case, an operator that returns what it took, writes one argument or none.
