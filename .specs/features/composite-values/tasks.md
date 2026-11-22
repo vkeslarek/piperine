@@ -26,6 +26,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run errors**: `cargo test -p piperine-lang --test msl_errors`
 **Run typesvs**: `cargo test -p piperine-lang --test types_value_semantics`
 **Run srcvs**: `cargo test -p piperine-parity --test source_value_semantics`
+**Run typescmp**: `cargo test -p piperine-lang --test types_compound`
+**Run booktypes**: `cargo test -p piperine --test book_types`
 **Run srcagg**: `cargo test -p piperine-parity --test source_aggregates`
 **Run plancomp**: `cargo test -p piperine-plan --test composite_shape`
 **Run apicomp**: `cargo test -p piperine-api --test composites`
@@ -1823,6 +1825,21 @@ Proof: run irctl | test recursion_reached_from_analog_is_refused ... ok
 
 **C104** - The IR's dependency walk sees a probe a loop reaches only on a later iteration (the fixed point of a loop). (CV-02, AC 4; T3)
 Proof: run irctl | test a_loop_reaching_a_probe_on_a_later_iteration_reads_it ... ok
+
+**C105** - An enum without `#[derive(Repr)]` is a value type (built, matched, passed and returned), and a carrier of it is `E0112`. (CV-11, AC 1; finding 3)
+Proof: run typesagg | test an_enum_without_repr_is_a_value_but_not_a_carried_type ... ok
+
+**C106** - The Book's `area` over `Shape`, an enum with payload variants and no `Repr`, runs. (CV-11, AC 1; finding 3)
+Proof: run booktypes | test an_enum_without_repr_runs_as_a_value ... ok
+
+**C107** - A match arm over an `Option` takes `Some(1)`, `Some(2) | Some(3)`, a guard, `_`, `None`, a bound name (`whole @ Some(7)`) and a nested pattern as Rust does. (CV-04, AC 1 and AC 4; finding 4)
+Proof: run srcctl | test option_arms_take_rusts_patterns ... ok
+
+**C108** - A plain read of a composite carrier that holds no value yet fails the run naming the carrier; `u.prev()` before the first change is unknown. (CV-17, §3.3.2, §5.1.1, §5.1.8; finding 2)
+Proof: run srcagg | test an_unknown_composite_is_refused_by_name ... ok
+
+**C109** - Generic arguments written on a struct or enum with no generic parameter are `P0001` by name, never ignored. (CV-09, CV-11; found by the merge)
+Proof: run typesagg | test generic_arguments_on_a_plain_type_are_refused ... ok
 
 ---
 
