@@ -42,7 +42,9 @@ impl<'a> ValuePrinter<'a> {
             Prec::BitAnd | Prec::BitOr | Prec::BitXor | Prec::Shift => right.at(Prec::Unary),
             _ => right.at(Self::stronger(prec)),
         };
-        Ok(format!("{name} = {name} {symbol} {right};"))
+        // the last assignment of a loop may never be read: an attribute on an assignment is
+        // unstable, on a block statement it is not
+        Ok(format!("#[allow(unused_assignments)] {{ {name} = {name} {symbol} {right}; }}"))
     }
 
     /// A loop, `loop`, `while` or `for`: plain Rust counted by an `rt::Trips`.
