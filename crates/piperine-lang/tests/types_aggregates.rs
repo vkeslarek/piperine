@@ -378,8 +378,8 @@ fn generic_arguments_on_a_plain_type_are_refused() {
 fn an_enum_without_repr_is_a_value_but_not_a_carried_type() {
     // CV-11 AC 1 (part I section 1.3 and 2: every enum is a value type): an enum with a payload and no `Repr` is built,
     // matched, passed and returned by value; a carrier of it is `E0112`.
-    let items = "enum Shape { Circle(f64), Rect { w: f64, h: f64 } }\nfn area(s: Shape) -> f64 { match s { Shape::Circle(r) => r * r, Shape::Rect { w, h } => w * h } }";
-    CheckedSource::assert_clean(&CheckedSource::source(items, "let a = area(Shape::Rect { w: 2.0, h: 3.0 }); let b = area(Shape::Circle(1.0));"));
+    let items = "enum Shape { Circle(f64), Rect { w: f64, h: f64 } }\nfn area(s: Shape) -> f64 { match s { Shape::Circle(r) => r * r, Shape::Rect { w, h } => w * h } }\nfn pick(k: u8) -> Shape { if k == 0 { Shape::Circle(1.0) } else { Shape::Rect { w: 2.0, h: 3.0 } } }";
+    CheckedSource::assert_clean(&CheckedSource::source(items, "let a = area(Shape::Rect { w: 2.0, h: 3.0 }); let b = area(Shape::Circle(1.0)); let c = area(pick(1u8));"));
     let src = format!("{items}\nmodule Top() {{ signal s: Bit<Shape>; }}");
     let found = Types::check(&CheckedSource::standard_design_of(&src), "Top").err().unwrap_or_default();
     assert!(found.iter().any(|d| d.diagnostic.code == "E0112"), "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
