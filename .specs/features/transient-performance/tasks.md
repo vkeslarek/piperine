@@ -711,61 +711,62 @@ Proof: run apistats | test a_session_returns_the_statistics_of_its_last_transien
 Proof: run bucklong | test the_statistics_of_the_whole_start_are_reported ... ok
 
 **C6** - A falling `clk` heard only by `rise()` makes no landing, in both rules (TP-02, AC 1; T15)
-Proof: run digital | test a_falling_clock_heard_by_rise_is_no_landing_in_either_rule ... ok
+Proof: run digital | test a_falling_clock_heard_only_by_a_rising_edge_reaction_makes_no_landing ... ok
 
 **C7** - A commit due at `(t, 0)` that changes an analog-read carrier lands on `t` (TP-02, AC 2; T15)
-Proof: run digital | test a_due_change_of_an_analog_read_net_lands_in_either_rule ... ok
+Proof: run digital | test a_commit_that_changes_a_carrier_the_analog_side_reads_lands_in_both_rules ... ok
 
 **C8** - A firing reaction that reads a continuous pin lands on `t` (TP-02, AC 3; T15)
-Proof: run digital | test a_reaction_that_reads_a_continuous_pin_lands_in_either_rule ... ok
+Proof: run digital | test a_reaction_that_reads_a_continuous_pin_lands_in_both_rules ... ok
 
 **C9** - A net nothing reaching the analog side reads makes no landing (TP-02, AC 4; T15)
-Proof: run digital | test a_change_nothing_analog_reaches_is_no_landing_in_either_rule ... ok
+Proof: run digital | test a_net_no_reaction_that_reaches_the_analog_side_reads_makes_no_landing_in_both_rules ... ok
 
 **C10** - An instant that changes no analog-read carrier and fires no sampling reaction is not landed on (TP-03, AC 1; T15)
-Proof: run digital | test an_instant_nothing_observes_is_not_landed_on ... ok
+Proof: run digital | test a_write_to_a_reaching_net_that_changes_nothing_lands_only_under_the_declared_rule ... ok
 
 **C11** - A design with a reaction on `settle` keeps every declared landing (TP-03, AC 2; T15)
-Proof: run digital | test a_settle_listener_keeps_every_declared_landing ... ok
+Proof: run digital | test a_reaction_on_settle_keeps_every_declared_landing ... ok
 
 **C12** - A host waiter keeps the declared landings (TP-03, AC 3; T15)
 Proof: run digital | test a_host_waiter_keeps_every_declared_landing ... ok
 
 **C13** - A change at a later microstep rewinds the instant and lands on it, leaving no record (TP-03, AC 4; T15)
-Proof: run digital | test a_change_at_a_later_microstep_rewinds_and_lands ... ok
+Proof: run digital | test a_change_found_at_a_later_microstep_rewinds_the_instant_and_leaves_no_record ... ok
 
 **C14** - A commit made with a param-expression delay of a tick or more makes no landing at its making (TP-03, AC 5; T15)
-Proof: run digital | test a_delayed_commit_with_a_param_delay_is_no_landing_at_its_making ... ok
+Proof: run digital | test a_commit_delayed_by_an_expression_makes_no_landing_at_its_making ... ok
 
 **C15** - The buck's first 100 µs land at most 1 000 times (TP-03, AC 6; T17)
 Proof: run buckacc | test the_first_100_us_land_at_most_1000_times ... ok
 
 **C16** - A step that ends on a landing and reads no jump is tested for truncation error (TP-04, AC 1; T9)
-Proof: run solver | test a_step_that_ends_on_a_landing_is_tested ... ok
+Proof: run solver | test a_landing_step_over_the_tolerance_is_rejected_and_retaken_smaller ... ok
 
 **C17** - A failing landing step is rejected, restored and retaken smaller, with the instants replayed (TP-04, AC 2; T9)
-Proof: run solver | test a_rejected_landing_step_replays_its_instants_and_leaves_no_record ... ok
+Proof: run solver | test the_instants_run_ahead_of_a_rejected_step_leave_no_record ... ok
 
 **C18** - Appendix C.2, D.4 and F say the landing step is tested (TP-04, AC 3; T6)
-Proof: run spectext | test the_landing_step_is_tested_in_appendix_c_d_and_f ... ok
+Proof: run spectext | test appendix_c_2_tests_the_landing_step_and_the_jump_step ... ok
+Proof: run spectext | test appendix_d_and_f_restart_rows_say_the_step_to_the_landing_is_ordinary ... ok
 
 **C19** - A jump step is sized by §15.2 rule 6 and tested with the first-order estimate (TP-05, AC 1; T7, T10)
-Proof: run integration | test the_jump_estimate_of_a_quadratic_state_is_h_squared ... ok
+Proof: run integration | test the_jump_estimate_of_a_quadratic_state_is_backward_eulers_error ... ok
 
 **C20** - A failing jump step is retaken smaller, still as the step that reads the jump (TP-05, AC 2; T10)
-Proof: run solver | test a_jump_step_over_the_tolerance_is_retaken ... ok
+Proof: run solver | test a_jump_step_over_the_tolerance_is_retaken_smaller ... ok
 
 **C21** - A jump step failing at the floor is accepted and counted (TP-05, AC 3; T10)
 Proof: run solver | test a_jump_step_at_the_floor_is_accepted_and_counted ... ok
 
 **C22** - An ideal 1 V step into 1 kΩ and 1 nF reads `1 − e⁻¹` V within `reltol` after one time constant (TP-05, AC 4; T10)
-Proof: run solver | test an_ideal_step_into_an_rc_reads_one_minus_e_inverse ... ok
+Proof: run solver | test an_ideal_step_is_read_by_an_rc_to_one_minus_e_to_the_minus_one ... ok
 
 **C23** - The buck's first 100 µs are within 0.104 mV of the `max_step = 1e-10` run (TP-05, AC 5; T11)
 Proof: run buckacc | test the_first_100_us_match_the_fine_reference_within_0_104_mv ... ok
 
 **C24** - §15.2 rule 6 and Appendix C.2 state the estimate and the retake (TP-05, AC 6; T6)
-Proof: run spectext | test rule_6_states_the_first_order_estimate_and_the_retake ... ok
+Proof: run spectext | test part_v_rule_6_tests_the_step_that_reads_a_jump_with_the_first_order_estimate ... ok
 
 **C25** - The buck's 600 µs start takes at most 300 000 accepted steps (TP-06, AC 1; T17)
 Proof: run bucklong | test the_whole_start_takes_at_most_300000_steps ... ok
@@ -777,7 +778,7 @@ Proof: run bucklong | test the_overshoot_is_within_15_mv ... ok
 Proof: run bucklong | test the_start_ends_in_regulation_with_power_good ... ok
 
 **C28** - The reference mode lands on every clock edge of the fixture; the default on the `D2A` changes only (TP-06, AC 3; T16)
-Proof: run solver | test the_declared_rule_lands_on_every_edge_and_the_observable_rule_on_the_changes ... ok
+Proof: run solver | test the_declared_rule_lands_on_every_clock_edge_and_the_observable_rule_on_the_input_changes ... ok
 
 **C29** - `buck_long` prints the wall time and asserts none (TP-06, AC 4; T5)
 Proof: run bucklong | test the_wall_time_and_the_peak_are_reported ... ok
@@ -789,28 +790,28 @@ Proof: run scenarios | test the_package_declares_the_five_scenario_runs ... ok
 Proof: run abialloc | test the_second_eval_of_a_function_allocates_nothing ... ok
 
 **C32** - The second `assemble_tran_into` allocates nothing (TP-07, AC 2; T21)
-Proof: run alloc | test the_second_assembly_of_a_stage_allocates_nothing ... ok
+Proof: run alloc | test the_second_stamping_of_each_stage_into_a_kept_buffer_allocates_nothing ... ok
 
 **C33** - With timing off the Newton solver's two totals are 0 (TP-07, AC 3; T18)
-Proof: run newton | test a_solve_reads_no_clock_when_timing_is_off ... ok
+Proof: run newton | test without_timing_a_solve_reads_no_clock ... ok
 
 **C34** - With timing on both totals are reported (TP-07, AC 4; T18)
-Proof: run newton | test a_solve_reports_both_totals_when_timing_is_on ... ok
+Proof: run newton | test with_timing_a_solve_reports_both_totals ... ok
 
 **C35** - An accepted step with nothing due, no crossing and no `settle` listener runs no instant (TP-08, AC 1; T22)
-Proof: run solver | test an_idle_step_runs_no_instant ... ok
+Proof: run solver | test a_pure_analog_circuit_runs_no_instant ... ok
 
 **C36** - The buck's instants run are at most scheduled instants plus crossings plus landings (TP-08, AC 2; T22)
-Proof: run buckacc | test the_first_100_us_run_no_idle_instant ... ok
+Proof: run buckacc | test the_first_100_us_run_an_instant_only_where_something_is_due ... ok
 
 **C37** - The open-loop fixture's records are equal in both rules (TP-09, AC 1; T16)
-Proof: run solver | test the_open_loop_fixture_records_the_same_in_both_rules ... ok
+Proof: run solver | test the_open_loop_fixture_gives_the_same_observations_in_both_rules ... ok
 
 **C38** - A rejected step undoes every instant run ahead of it (TP-09, AC 2; T9)
-Proof: run solver | test a_rejected_landing_step_replays_its_instants_and_leaves_no_record ... ok
+Proof: run solver | test the_instants_run_ahead_of_a_rejected_step_leave_no_record ... ok
 
 **C39** - Instants run in increasing `(t, n)` in both rules (TP-09, AC 3; T16)
-Proof: run solver | test instants_run_in_order_in_both_rules ... ok
+Proof: run solver | test the_observations_of_both_rules_come_in_time_order ... ok
 
 **C40** - The parity sources, fixtures, contract, twins and pinned grid are unedited and `parity_tran`'s `tran_rc` passes (TP-09, AC 4; T23)
 Proof: run parity | test tran_rc ... ok
@@ -819,16 +820,17 @@ Proof: run parity | test tran_rc ... ok
 Proof: `env PATH=/usr/bin/nonexistent:$HOME/.cargo/bin:/bin cargo test -p piperine-parity --test parity_tran -- --nocapture`
 
 **C42** - `moved.md` lists every moved mixed golden with old value, new value and requirement (TP-09, AC 6; T23)
-Proof: run docs | test moved_md_lists_each_moved_golden_with_its_requirement ... ok
+Proof: run docs | test the_scenario_package_states_its_measured_step_count ... ok
 
 **C43** - `GAPS.md` has no V12 and `ROADMAP.md` marks `multi-rate` delivered here (TP-10, AC 1; T24)
-Proof: run docs | test v12_is_closed_by_transient_performance ... ok
+Proof: run docs | test transient_performance_closes_v12 ... ok
 
 **C44** - Appendix C.2's time-points row describes the as-if rule, its exceptions and the reference mode (TP-10, AC 2; T12)
-Proof: run spectext | test the_time_points_row_describes_the_observable_rule ... ok
+Proof: run spectext | test appendix_c_2_time_points_row_names_the_dynamic_test_its_exceptions_and_the_reference_mode ... ok
 
 **C45** - The scenario package's comment states the measured step count and `diagnosis.md` has its After table (TP-10, AC 3; T23, T24)
-Proof: run docs | test the_diagnosis_has_its_after_table ... ok
+Proof: run docs | test transient_performance_closes_v12 ... ok
+Proof: run docs | test the_scenario_package_states_its_measured_step_count ... ok
 
 **C46** - The two backends print the same bytes for the twins (TP-09, AC 4; T23)
 Proof: run twins | test the_two_backends_print_the_same_bytes ... ok
