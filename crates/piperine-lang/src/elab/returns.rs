@@ -171,7 +171,15 @@ impl Elaboration<'_, '_> {
 
     /// The pair `(f.is(args), f.val(args))` of a call of a function that returns an `Option`: the
     /// arguments are lowered once for each half.
+    ///
+    /// A function that reaches `emit!` or takes a `str` is inlined where it stands (§19 rule 10), and a
+    /// pair is two expressions of one run, so it has no such form: the call is refused by name, where each
+    /// half would run the `emit!` once more.
     pub(super) fn lower_option_call(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId) -> Option<Pair> {
+        if self.is_inlined(function) {
+            self.unsupported(scope.file, self.design.expr_node(expr).span, "a call of a function that returns an `Option` and reaches `emit!` (`log`) or takes a `str`");
+            return None;
+        }
         let origin = self.expr_origin(expr);
         let first = self.lower_arguments(scope, expr, function)?;
         let pattern: Vec<Flag> = first.iter().map(|a| self.flag(*a)).collect();

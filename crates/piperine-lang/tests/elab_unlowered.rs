@@ -216,3 +216,13 @@ fn an_option_arm_with_a_block_body_is_refused_once() {
     let refusals: Vec<&str> = found.iter().map(|d| d.diagnostic.message.as_str()).filter(|m| m.contains("this form of an `Option` value")).collect();
     assert_eq!(refusals.len(), 1, "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
 }
+
+#[test]
+fn an_option_function_that_logs_is_refused_by_name() {
+    // CV round 2 (b): a function returning an `Option` that reaches `emit!` (`log`) is inlined where it stands, which a
+    // pair of two halves cannot be; the call is `P0001` naming the form, never an internal `P0004` ill-formed IR.
+    let src = "fn f(x: u8) -> Option<u8> { log(Severity::Warning, \"x\"); if x > 1 { Some(x) } else { None } }\nmodule Top() { signal clk: Bit; signal y: Bit<u8>; }\ndigital for Top { on clk.rise() { y <- match f(3u8) { Some(v) => v, None => 0 }; } }";
+    let found = Elab::run(src, "Top").expect_err("the call is refused");
+    assert_eq!(Elab::codes(&found), ["P0001"], "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    assert!(found[0].diagnostic.message.contains("returns an `Option` and reaches `emit!`"), "{}", found[0].diagnostic.message);
+}
