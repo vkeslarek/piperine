@@ -238,7 +238,7 @@ impl Checker<'_> {
         Some(())
     }
 
-    /// A method call: a built-in the stdlib's own item stands for (`known_or`, `prev`, ..), or
+    /// A method call: a built-in the stdlib's own item stands for (`prev`, `cast`, ..), or
     /// a `Deferred` or `Unresolved` one resolved against the Appendix H catalogue on the type of
     /// its receiver, the row recorded (DIG-02). Every other method is `P0001` naming it.
     pub(super) fn method_call(&mut self, expr: ExprId) -> Option<Ty> {

@@ -42,7 +42,7 @@ pub enum Column {
     /// A discrete net holding a composite or an enum, by its id in the digital plan and its path (the
     /// net's own, whatever leaf the column shows), and how to read it.
     Shaped { id: u32, path: String, shape: CellShape, leaf: Option<String> },
-    /// A param, by the id of its net in the digital plan, with its type: the value with no known byte.
+    /// A param, by the id of its net in the digital plan, with its type: the value only.
     Param { id: u32, ty: ValueType },
     /// A param no net holds, read from the host's table over the run.
     Held { held: Held },

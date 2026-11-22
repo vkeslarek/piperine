@@ -45,7 +45,7 @@ pub(crate) struct Recorder {
     rows: Vec<Vec<Cell>>,
     /// The columns of each printed net, by its path (a net printed twice is two columns).
     by_path: HashMap<String, Vec<usize>>,
-    /// Each net column's value as the changes so far make it; `Unknown` for a column that is no
+    /// Each net column's value as the changes so far make it; a placeholder for a column that is no
     /// net.
     held: Vec<Cell>,
     /// The changes of printed nets since the previous step, in the order they were made:
@@ -513,8 +513,7 @@ mod tests {
         Column::Net { id, ty }
     }
 
-    /// The bytes of `cell` as a carrier of `ty` holds them: the value at its offset (all zero for
-    /// `Unknown`, which no carrier holds).
+    /// The bytes of `cell` as a carrier of `ty` holds them: the value at its offset.
     fn bytes(ty: &ValueType, cell: &Cell) -> Vec<u8> {
         let layout = CarrierLayout::of(ty).expect("a carrier");
         let field = layout.fields.get(0).expect("a field");

@@ -6,9 +6,9 @@
 //! on the pin path `<instance path>.<stream>`. `Ir::record_at` gives the instance and the site;
 //! the site's `emit!` statement gives the fields in source order; each value field is read from
 //! the bytes through the stream's `RecordLayout` (a carrier of the field's type at its offset,
-//! its known byte beside it), each text field is the site's literal, which never crosses the
-//! ABI. A record is never paired with a commit by order. A record with no site (a relaxed field
-//! that moved, abi.md §9 D1) has every value field of its stream and no text field.
+//! the value only), each text field is the site's literal, which never crosses the
+//! ABI. A record is never paired with a commit by order. A record with no site has every
+//! value field of its stream and no text field.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};

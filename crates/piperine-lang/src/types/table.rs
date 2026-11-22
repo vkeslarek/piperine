@@ -256,7 +256,7 @@ impl<'d> Types<'d> {
         self.methods.get(&expr).copied()
     }
 
-    /// The built-in a method call resolved to (`known_or`, `prev`, ..), set only when the name
+    /// The built-in a method call resolved to (`prev`, `cast`, ..), set only when the name
     /// resolved to the stdlib's own item.
     pub fn builtin(&self, expr: ExprId) -> Option<Builtin> {
         self.builtins.get(&expr).copied()

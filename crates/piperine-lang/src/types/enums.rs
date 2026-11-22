@@ -157,10 +157,9 @@ impl Checker<'_> {
         Some(width)
     }
 
-    /// Whether `ty` has a `Repr` layout (§2): what the unknown literal and the flag reads
-    /// (`known_or`, `is_known`, `level`, `cast`, ..) take: a scalar, an enum, or a tuple, an array,
-    /// a struct whose parts have one. An `Option` is not among them: value code holds it as a pair, and its
-    /// flag reads stay refused.
+    /// Whether `ty` has a `Repr` layout (§2): what `cast` and `same` take: a scalar, an enum, or a
+    /// tuple, an array, a struct whose parts have one. An `Option` is not among them: value code
+    /// holds it as a presence and a payload.
     pub(super) fn repr_ok(&mut self, ty: &Ty) -> bool {
         !matches!(ty, Ty::Option(_)) && self.repr_levels(ty).is_some()
     }

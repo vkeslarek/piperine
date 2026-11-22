@@ -944,8 +944,7 @@ given is one its own shape declared.
 3. *Replay it.* Nothing is hidden (F1, R3), so a recorded call is a unit test: the same bytes
    through the compiled device and through the interpreter must agree, for functions and
    reactions alike.
-4. *Check it.* Finite-difference verification of `jac` (§8); the canonical-form check of P3;
-   a non-finite value reported with instance, cell and source position; a convergence failure
+4. *Check it.* Finite-difference verification of `jac` (§8); a non-finite value reported with instance, cell and source position; a convergence failure
    naming the limits still active and the rows out of tolerance.
 5. *Watch it.* Every pin change, commit, crossing and record passes through the owner's one
    sink in `(t, n)` order.

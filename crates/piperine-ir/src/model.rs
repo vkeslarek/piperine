@@ -261,7 +261,7 @@ pub struct Reaction {
 }
 
 /// A record stream of a body (`emit!("sim", …)`): its name and the value fields its sites write.
-/// A site may leave a field out; the record then carries the field as unknown.
+/// A site that leaves a field out carries the field's `Default` (§19 rule 11).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Stream {
     pub name: String,
