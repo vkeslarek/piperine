@@ -237,6 +237,10 @@ fn a_missing_initial_value_is_e0187_naming_the_carrier() {
         assert!(found[0].1.contains(&format!("`{name}`")) && found[0].1.contains("`Default`"), "{src}: names the carrier and `Default`: {}", found[0].1);
         assert_eq!(found.len(), src.matches(": Bit").count(), "{src}: one error per declaration: {found:?}");
     }
+    // a type that prints as `enum `Mode`` elsewhere is named bare, with no backtick inside the backticks
+    let found = top_outcome("#[derive(Repr)] enum Mode { Idle, Run }\nmodule Top() { signal m: Bit<Mode>; }");
+    assert_eq!(found.first().map(|(code, _)| code.as_str()), Some("E0187"), "{found:?}");
+    assert!(found[0].1.contains("its type `Mode` does not implement `Default`"), "the bare type name: {}", found[0].1);
     // the carriers that have a value: written, or a type with `Default`
     let clean = "#[derive(Default, Repr)] struct Pair { a: Option<u8>, b: Option<bool> }\n\
                  module Top(in clk: Bit, out q: Bit = false) { signal en: Bit = false; signal last: Bit<Option<u8>>; signal both: Bit<Pair>; }";
