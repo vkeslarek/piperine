@@ -806,11 +806,11 @@ fn embedded_std_declares_no_core_name() {
 
 // ---- the catalogue of Appendix H (POL-02) ------------------------------------------------------
 
-/// The first cell of every row of the table under the heading starting `heading` in Appendix H,
-/// without its backticks and generic arguments (`UInt<N>` gives `UInt`).
 /// Traits of Appendix H.8 that the built-in table does not hold yet (explicit-unknowns T42).
 const SPEC_TRAITS_AHEAD_OF_THE_TABLE: [&str; 1] = ["From"];
 
+/// The first cell of every row of the table under the heading starting `heading` in Appendix H,
+/// without its backticks and generic arguments (`UInt<N>` gives `UInt`).
 fn appendix_h_names(heading: &str) -> Vec<String> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/spec/appendix_h_library.md");
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
