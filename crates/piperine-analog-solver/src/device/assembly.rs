@@ -326,7 +326,9 @@ impl Assembly {
     /// `DELAY` term in its Norton form; a `DDT` term adds nothing (its
     /// positions carry 0).
     pub fn assemble_dc(&mut self, x: &[f64], amb: Ambient) -> Result<Vec<Stamp<AnalogReference, f64>>, Error> {
-        self.assemble(x, amb, None)
+        let mut out = Vec::new();
+        self.assemble(x, amb, None, &mut out)?;
+        Ok(out)
     }
 
     /// The stamps of transient stage `stage` at iterate `x`: `FLOW` terms in
@@ -338,34 +340,51 @@ impl Assembly {
         amb: Ambient,
         stage: Stage,
     ) -> Result<Vec<Stamp<AnalogReference, f64>>, Error> {
-        self.assemble(x, amb, Some(stage))
+        let mut out = Vec::new();
+        self.assemble_tran_into(x, amb, stage, &mut out)?;
+        Ok(out)
     }
 
+    /// [`assemble_tran`](Self::assemble_tran) into `out`, which is emptied first: a caller that
+    /// stamps every iteration keeps one buffer, and a stage of the same shape allocates nothing.
+    pub fn assemble_tran_into(
+        &mut self,
+        x: &[f64],
+        amb: Ambient,
+        stage: Stage,
+        out: &mut Vec<Stamp<AnalogReference, f64>>,
+    ) -> Result<(), Error> {
+        self.assemble(x, amb, Some(stage), out)
+    }
+
+    /// Fills `out`, emptied first, with the stamps of an equilibrium solve (`stage` `None`) or of
+    /// one transient stage.
     fn assemble(
         &mut self,
         x: &[f64],
         amb: Ambient,
         stage: Option<Stage>,
-    ) -> Result<Vec<Stamp<AnalogReference, f64>>, Error> {
+        out: &mut Vec<Stamp<AnalogReference, f64>>,
+    ) -> Result<(), Error> {
         self.evaluate(x, amb)?;
         self.stage = stage;
-        let mut out = Vec::new();
+        out.clear();
         for (inst, st) in self.plan.instances.iter().zip(&self.state) {
             for (ti, t) in inst.terms.iter().enumerate() {
                 let lin = linear(t, inst, st);
                 match (t.op, stage) {
-                    (op::DDT, Some(stage)) => stamp_ddt(t, &lin, &st.ddt[ti], stage, x, &mut out),
-                    (op::DDT, None) => stamp_rows(t, &lin, 0.0, 0.0, &mut out),
+                    (op::DDT, Some(stage)) => stamp_ddt(t, &lin, &st.ddt[ti], stage, x, out),
+                    (op::DDT, None) => stamp_rows(t, &lin, 0.0, 0.0, out),
                     (op::DELAY, Some(_)) => {
                         let td = t.td.map_or(0.0, |(f, w)| st.fns[f].f64(w));
                         let at = (amb.time, td, max_of(t, &self.slots));
-                        stamp_delay(&inst.path, t, &lin, &st.delay[ti], at, x, &mut out)?;
+                        stamp_delay(&inst.path, t, &lin, &st.delay[ti], at, x, out)?;
                     }
-                    _ => stamp_flow(t, &lin, x, &mut out),
+                    _ => stamp_flow(t, &lin, x, out),
                 }
             }
         }
-        Ok(out)
+        Ok(())
     }
 
     /// The small-signal system at operating point `op` and sweep frequency

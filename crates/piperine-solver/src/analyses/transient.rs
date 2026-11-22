@@ -317,7 +317,17 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         &mut self,
         state: &CircularArrayBuffer2<f64>,
     ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, f64>>> {
-        self.assemble_device(state)
+        let mut stamps = Vec::new();
+        self.assemble_device(state, &mut stamps)?;
+        Ok(stamps)
+    }
+
+    fn assemble_into(
+        &mut self,
+        state: &CircularArrayBuffer2<f64>,
+        out: &mut Vec<Stamp<AnalogReference, f64>>,
+    ) -> crate::core::result::Result<()> {
+        self.assemble_device(state, out)
     }
 
     fn netlist(&self) -> &piperine_analog_solver::netlist::Netlist {
@@ -368,38 +378,43 @@ impl TransientSystem<'_> {
         }
     }
 
-    /// The stamps of one stage of a circuit of devices: `FLOW` terms in their
+    /// Fills `out` with the stamps of one stage of a circuit of devices: `FLOW` terms in their
     /// Norton form, `DDT` terms through the TR-BDF2 companion over their own
     /// history, `DELAY` terms from theirs, then the solver's shunts and clamps.
     fn assemble_device(
         &mut self,
         state: &CircularArrayBuffer2<f64>,
-    ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, f64>>> {
-        let x: Vec<f64> = match state.latest() {
-            Some(row) => row.to_vec(),
-            None => vec![0.0; state.size()],
+        out: &mut Vec<Stamp<AnalogReference, f64>>,
+    ) -> crate::core::result::Result<()> {
+        let owned;
+        let x: &[f64] = match state.latest().and_then(|row| row.to_slice()) {
+            Some(row) => row,
+            None => {
+                owned = state.latest().map_or_else(|| vec![0.0; state.size()], |row| row.to_vec());
+                &owned
+            }
         };
         let stage = Stage { phase: self.phase, h: self.h, prev_h: self.prev_h, jump: self.jump };
         let amb = self.ambient();
         let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
-        let mut all_stamps = bound.analog.assemble_tran(&x, amb, stage)?;
-        if let Some(err) = piperine_analog_solver::stamp_validation::non_finite_stamp_error("devices", &all_stamps) {
+        bound.analog.assemble_tran_into(x, amb, stage, out)?;
+        if let Some(err) = piperine_analog_solver::stamp_validation::non_finite_stamp_error("devices", out) {
             return Err(err);
         }
         let gshunt = self.context.tolerances.gshunt;
         if gshunt > 0.0 {
             for r in self.circuit.netlist().all_references() {
                 if r.variable().is_node() && !r.variable().is_ground() {
-                    all_stamps.push(Stamp::Matrix(r.clone(), r.clone(), gshunt));
+                    out.push(Stamp::Matrix(r.clone(), r.clone(), gshunt));
                 }
             }
         }
         if self.uic_hold {
             for clamp in &self.uic_clamps {
-                clamp.stamp(&mut all_stamps);
+                clamp.stamp(out);
             }
         }
-        Ok(all_stamps)
+        Ok(())
     }
 
     /// The error a callback met during the solve just run, if any.

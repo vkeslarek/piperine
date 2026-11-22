@@ -108,7 +108,7 @@ pub(crate) fn companion_current(stage: Stage, q: f64, hist: &History) -> f64 {
 /// with 0.
 pub(crate) fn stamp_ddt(
     t: &TermPlan,
-    lin: &Linear,
+    lin: &Linear<'_>,
     hist: &History,
     stage: Stage,
     x: &[f64],

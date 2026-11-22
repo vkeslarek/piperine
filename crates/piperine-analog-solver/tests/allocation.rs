@@ -1,6 +1,7 @@
 //! The cost of an assembly (feature `transient-performance`, TP-07): once an `Assembly` has
 //! evaluated a circuit, evaluating it again at another iterate allocates nothing, and stamping a
-//! transient stage into a buffer that already holds the stage's shape allocates nothing. The
+//! transient stage into a buffer that already holds the stage's shape allocates nothing (TP-07
+//! AC 2). The
 //! circuit is one instance of a hand-written module whose `eval` does nothing, so a count is the
 //! assembly's own (the in-tree device thunk cuts its own frame). The allocator is counted per
 //! thread, so the other tests' threads never add to a count.
@@ -14,7 +15,8 @@ use piperine_abi::layout::F64;
 use piperine_abi::raw::{Cell, Created, DEFAULT, Eval, GROUND, Instance, List, Module, Note, Partial, React, Str, Value, cell, op, part, role, status};
 use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_analog_solver::device::AnalogBinding::{Discrete, Unknown};
-use piperine_analog_solver::device::{Ambient, AnalogInstance, AnalogPlan, Assembly};
+use piperine_analog_solver::device::{Ambient, AnalogInstance, AnalogPlan, Assembly, JumpPosition, Stage};
+use piperine_analog_solver::math::integration::TrBdf2Phase;
 use piperine_analog_solver::netlist::{Netlist, NodeIdentifier};
 
 thread_local! {
@@ -123,4 +125,21 @@ fn the_second_evaluation_at_a_changed_iterate_allocates_nothing() {
     });
 
     assert_eq!(allocations, 0, "the second evaluation allocated");
+}
+
+#[test]
+fn the_second_stamping_of_a_stage_into_a_kept_buffer_allocates_nothing() {
+    let mut assembly = assembly();
+    let stage = Stage { phase: TrBdf2Phase::Trapezoidal, h: 1e-6, prev_h: 1e-6, jump: JumpPosition::None };
+    let mut stamps = Vec::new();
+    assembly.assemble_tran_into(&[0.5], ambient(), stage, &mut stamps).expect("the first stamping");
+    let first = stamps.len();
+
+    let allocations = allocations_during(|| {
+        assembly.assemble_tran_into(&[0.75], ambient(), stage, &mut stamps).expect("the second stamping");
+    });
+
+    assert_eq!(allocations, 0, "the second stamping allocated");
+    assert_eq!(stamps.len(), first, "the same stage has the same stamps");
+    assert!(first > 0, "the circuit stamps something");
 }

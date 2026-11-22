@@ -19,6 +19,18 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
         state: &CircularArrayBuffer2<E>,
     ) -> crate::error::Result<Vec<Stamp<A, E>>>;
 
+    /// [`assemble`](Self::assemble) into `out`, which the Newton solver keeps between iterations.
+    /// A system that can fill a buffer without allocating overrides this; the default takes the
+    /// stamps `assemble` returns.
+    fn assemble_into(
+        &mut self,
+        state: &CircularArrayBuffer2<E>,
+        out: &mut Vec<Stamp<A, E>>,
+    ) -> crate::error::Result<()> {
+        *out = self.assemble(state)?;
+        Ok(())
+    }
+
     /// The netlist naming this system's unknowns. The strategy solve path
     /// reads it for the per-row convergence tests; routing it through the
     /// system (instead of a separate parameter) lets the solver reborrow it
@@ -151,6 +163,10 @@ where
     residual: Vec<E>,
     /// Per-row absolute-contribution sum for the relative tolerance term.
     scale: Vec<f64>,
+    /// The stamps of the iteration, refilled by `assemble_into` and kept between iterations.
+    stamps: Vec<Stamp<A, E>>,
+    /// The unknowns that are nodes (the ones a damping strategy acts on), listed once.
+    nodes: Vec<usize>,
     last_iterations: usize,
     total_iterations: usize,
     /// Cumulative wall-clock time of assembly + stamping and of the sparse LU solve.
@@ -192,6 +208,13 @@ where
             )
         })?;
         let linear_system = L::new(size);
+        let nodes = system
+            .netlist()
+            .all_references()
+            .iter()
+            .filter(|reference| reference.is_node())
+            .filter_map(|reference| reference.idx())
+            .collect();
 
         Ok(Self {
             linear_system,
@@ -199,6 +222,8 @@ where
             state,
             residual: vec![E::zero(); size],
             scale: vec![0.0; size],
+            stamps: Vec::new(),
+            nodes,
             last_iterations: 0,
             total_iterations: 0,
             timer: SolveTimer::new(false),
@@ -438,13 +463,6 @@ where
         system.update_sources(&mut self.state);
 
         let max_iter = strategy.max_iter(policy);
-        let nodes: Vec<usize> = system
-            .netlist()
-            .all_references()
-            .iter()
-            .filter(|reference| reference.is_node())
-            .filter_map(|reference| reference.idx())
-            .collect();
         let mut failing = Vec::new();
 
         for iter in 0..max_iter {
@@ -452,11 +470,13 @@ where
             debug!("Newton Iteration {}", iter + 1);
 
             let assembly_started = self.timer.start();
-            let stamps = system.assemble(&self.state)?;
+            let mut stamps = std::mem::take(&mut self.stamps);
+            system.assemble_into(&self.state, &mut stamps)?;
             self.compute_residual(&stamps);
 
             self.linear_system.reset();
-            self.linear_system.apply_stamps(stamps);
+            self.linear_system.apply_stamps_from(&stamps);
+            self.stamps = stamps;
             self.timer.add(assembly_started, TimedPart::Assembly);
 
             let solve_started = self.timer.start();
@@ -479,7 +499,7 @@ where
                     static_solve: system.static_solve(),
                     iteration: iter,
                     limiting: system.any_limiting_report(),
-                    nodes: &nodes,
+                    nodes: &self.nodes,
                 };
                 strategy.damp_update(prev, current_guess.view_mut(), &context);
             }

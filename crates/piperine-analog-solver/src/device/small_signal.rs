@@ -34,8 +34,8 @@ pub(crate) fn response(t: &TermPlan, st: &InstanceState, omega: f64) -> Complex6
 
 /// Adds `w·g` at (`plus`, `j`) and its negative at (`minus`, `j`) for each
 /// partial of `lin`.
-pub(crate) fn stamp_matrix(t: &TermPlan, lin: &Linear, w: Complex64, out: &mut ComplexStamps) {
-    for (c, g) in &lin.cols {
+pub(crate) fn stamp_matrix(t: &TermPlan, lin: &Linear<'_>, w: Complex64, out: &mut ComplexStamps) {
+    for (c, g) in lin.cols() {
         let v = w * g;
         if let Some(p) = &t.plus {
             out.push(Stamp::Matrix(p.clone(), c.clone(), v));
@@ -176,7 +176,7 @@ impl<'a> SmallSignal<'a> {
     /// The linearization of `term`, with the response of its operator at the frequency.
     pub(crate) fn term_linearization(&self, term: &TermPlan) -> TermLinearization {
         let response = response(term, self.state, self.omega);
-        let unknowns = linear(term, self.instance, self.state).cols.into_iter().map(|(column, partial)| (column, response * partial)).collect();
+        let unknowns = linear(term, self.instance, self.state).cols().map(|(column, partial)| (column.clone(), response * partial)).collect();
         let noise = match term.value {
             Some((function, _)) => term
                 .via

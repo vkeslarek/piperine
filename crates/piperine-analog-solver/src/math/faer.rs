@@ -150,17 +150,17 @@ impl<E: 'static + Scalar> LinearSystem<E> for FaerSparseLinearSystem<E> {
         }
     }
 
-    fn apply_stamps<A: AsIndex>(&mut self, stamps: Vec<Stamp<A, E>>) {
+    fn apply_stamps_from<A: AsIndex>(&mut self, stamps: &[Stamp<A, E>]) {
         for stamp in stamps {
             match stamp {
                 Stamp::Matrix(r, c, val) => {
                     if let (Some(ri), Some(ci)) = (r.as_index(), c.as_index()) {
-                        self.triplets.push(Triplet::new(ri, ci, val));
+                        self.triplets.push(Triplet::new(ri, ci, *val));
                     }
                 }
                 Stamp::Rhs(r, val) => {
                     if let Some(ri) = r.as_index() {
-                        self.b_vec[ri] += val;
+                        self.b_vec[ri] += *val;
                     }
                 }
             }
