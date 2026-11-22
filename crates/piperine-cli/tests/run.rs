@@ -484,19 +484,18 @@ fn a_fatal_run_prints_its_msg_and_exits_1() {
 }
 
 #[test]
-fn a_maybe_record_prints_maybe_and_a_known_one_does_not() {
-    // US-05 AC 1, 2: `d` is never driven, so `if d { emit!(..) }` is reached under unknown
-    // control: its record line ends with `maybe=true`, JSON Lines carry `"maybe":true`; the
-    // `emit!` under known control prints no `maybe` at all
-    let design = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n\nmodule M(in d: Bit) {}\ndigital for M { on at(1u) { if d { emit!(\"unsure\", n = 1); } emit!(\"sure\", n = 1); } }\n\nmodule Top() {\n    signal a: Electrical; signal d: Bit;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n    let m = M(d);\n}\n";
+fn a_guarded_record_prints_when_its_guard_holds_and_no_record_carries_a_maybe() {
+    // US-05 AC 1, 2 (explicit-unknowns T29): `d` starts false and is never driven, so `if d { emit!(..) }` does
+    // not run and writes no record; the `emit!` outside the guard is a plain record: no line prints `maybe`
+    let design = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n\nmodule M(in d: Bit) {}\ndigital for M { on at(1u) { if d { emit!(\"unsure\", n = 1); } emit!(\"sure\", n = 1); } }\n\nmodule Top() {\n    signal a: Electrical; signal d: Bit = false;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n    let m = M(d);\n}\n";
     let dir = tempfile::tempdir().expect("tmp");
     std::fs::write(dir.path().join("maybe.msl"), design).expect("maybe.msl");
     let args = ["run", "maybe.msl", "--analysis", "transient", "--stop", "2e-6", "--top", "Top"];
     let out = piperine_in(dir.path(), shared_cache(), &args);
     let stdout = stdout_of(&out);
     let line = |stream: &str| stdout.lines().find(|l| l.contains(&format!(" {stream} "))).unwrap_or_else(|| panic!("no `{stream}` record in:\n{stdout}")).to_string();
-    assert!(line("unsure").ends_with(" n=1 maybe=true"), "{}", line("unsure"));
-    assert!(line("sure").ends_with(" n=1") && !line("sure").contains("maybe"), "{}", line("sure"));
+    assert!(!stdout.contains(" unsure "), "the guard is false, so the record is not written:\n{stdout}");
+    assert!(line("sure").ends_with(" n=1") && !stdout.contains(" maybe="), "{}", line("sure"));
 }
 
 #[test]
@@ -518,7 +517,7 @@ fn run_of_a_top_with_a_node_port_is_e0810() {
 /// at each rising edge of a clock, and a record that writes the same values.
 const COMPOSITES: &str = "#[derive(Repr, PartialEq)]\nenum Mode { Idle, Regulate }\n#[derive(Repr, PartialEq)]\nstruct Pair { a: u8, b: bool }\n#[derive(Repr, PartialEq)]\nenum Tx { Idle, Data { n: u3 } }\n\
 pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }\ndigital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }\n\
-module Logger(in clk: Bit, out mode: Bit<Mode>, out pair: Bit<Pair>, out tx: Bit<Tx>, out v: Bit<[u8; 2]>) {}\n\
+module Logger(in clk: Bit, out mode: Bit<Mode> = Mode::Idle, out pair: Bit<Pair> = Pair { a: 0, b: false }, out tx: Bit<Tx> = Tx::Idle, out v: Bit<[u8; 2]> = [0, 0]) {}\n\
 digital for Logger {\n    on clk.rise() {\n        mode <- Mode::Regulate;\n        pair <- Pair { a: 7, b: true };\n        tx <- Tx::Data { n: 5 };\n        v <- [3, 4];\n        emit!(\"sample\", pair = Pair { a: 7, b: true }, tx = Tx::Data { n: 5 }, arr = [1u8, 2]);\n    }\n}\n\
 module Top() {\n    signal clk: Bit;\n    signal mode: Bit<Mode>;\n    signal pair: Bit<Pair>;\n    signal tx: Bit<Tx>;\n    signal v: Bit<[u8; 2]>;\n    let osc = Osc(clk) { f: 200M };\n    let logger = Logger(clk, mode, pair, tx, v);\n}\n";
 
