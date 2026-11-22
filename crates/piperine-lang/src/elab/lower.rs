@@ -106,11 +106,13 @@ pub(super) struct Scope {
     /// The `let`s of the temporaries an inlined `Option` call reads (`returns.rs`), declared before the
     /// statement being lowered so every read of the pair sees them bound.
     pub(super) pending: Vec<LoweredStmt>,
+    /// The inlined `Option` functions being lowered that leave early, innermost last (`returns.rs`).
+    pub(super) inline_exits: Vec<super::returns::InlineExit>,
 }
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), may_be_unknown: false, loops: Vec::new(), result: None, fn_targets: BTreeMap::new(), unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new() }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), may_be_unknown: false, loops: Vec::new(), result: None, fn_targets: BTreeMap::new(), unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
     }
 }
 
@@ -575,6 +577,11 @@ impl Elaboration<'_, '_> {
                     self.unsupported(file, node.span, "this statement");
                     ok = false;
                 }
+            }
+            // a statement that is the value of its block leaves the flag to the code that takes the value
+            if value.is_none() && scope.inline_exits.last_mut().is_some_and(|frame| std::mem::take(&mut frame.loop_flagged)) {
+                let origin = self.locator.origin(file, node.span);
+                out.push(self.leave_if_inlined_return_ran(scope, origin));
             }
             let declared = std::mem::take(&mut scope.pending);
             out.splice(start..start, declared);

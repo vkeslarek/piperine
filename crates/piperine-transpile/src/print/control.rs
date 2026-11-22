@@ -334,7 +334,7 @@ impl<'a> ValuePrinter<'a> {
 
     /// The names the written locals take once the merge hands them back: `x_out_`.
     fn merged_names(names: &[String]) -> Vec<String> {
-        names.iter().map(|n| Text::generated(&format!("{n}_out"))).collect()
+        names.iter().map(|n| Text::generated(&format!("{}_out", n.trim_end_matches('_')))).collect()
     }
 
     /// `condition.choose(|| { first }, || { second })`, or in a reaction whose arms commit

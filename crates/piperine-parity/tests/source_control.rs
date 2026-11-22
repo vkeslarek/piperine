@@ -217,7 +217,23 @@ fn an_option_function_that_logs_or_takes_a_str_runs_its_body_once() {
         None => 7,
     };
     let bound = if let Some(v) = probe(4) { v * 2 } else { 0 };
-    let names = ["a", "b", "c", "d", "e", "f", "g"];
+    // a `return` and a `?` inside the inlined body, each after a `log`, also inside a `for`
+    let early_none = |x: u8| if x > 5 { None } else { Some(x) };
+    let early_some = |x: u8| if x > 1 { Some(x + 10) } else { Some(0) };
+    let through = |x: u8| -> Option<u8> {
+        let inner = if x > 2 { Some(x) } else { None };
+        let v = inner?;
+        Some(v + 1)
+    };
+    let in_loop = |n: u8| -> Option<u8> {
+        for k in 0..n {
+            if k == 3 {
+                return Some(k * 2);
+            }
+        }
+        None
+    };
+    let names = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n"];
     let wanted = [
         CarrierBytes::byte(probe(3).unwrap_or(9)),
         CarrierBytes::byte(matched),
@@ -226,11 +242,18 @@ fn an_option_function_that_logs_or_takes_a_str_runs_its_body_once() {
         CarrierBytes::byte(pick("go", 5).unwrap_or(1)),
         CarrierBytes::byte(pick("stop", 5).unwrap_or(1)),
         CarrierBytes::byte(noted("go", 6).unwrap_or(0)),
+        CarrierBytes::byte(early_none(9).unwrap_or(77)),
+        CarrierBytes::byte(early_none(2).unwrap_or(77)),
+        CarrierBytes::byte(early_some(4).unwrap_or(0)),
+        CarrierBytes::byte(through(4).unwrap_or(99)),
+        CarrierBytes::byte(through(1).unwrap_or(99)),
+        CarrierBytes::byte(in_loop(8).unwrap_or(1)),
+        CarrierBytes::byte(in_loop(2).unwrap_or(1)),
     ];
     RUN.assert_commits("option_log.msl", &names, &wanted);
-    // five calls of a function that logs (`probe` four times, `noted` once), one record each
+    // twelve calls of a function that logs (`probe` four times, `noted` once, seven that leave early), one record each
     let records = RUN.records_of("option_log.msl", "Bench");
-    assert_eq!(records.len(), 5, "one record per call: {records:?}");
+    assert_eq!(records.len(), 12, "one record per call: {records:?}");
     assert!(records.iter().all(|r| r.stream == "log" && r.instance == "Bench.rows"), "{records:?}");
 }
 

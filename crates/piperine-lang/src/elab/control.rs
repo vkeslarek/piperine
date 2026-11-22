@@ -145,8 +145,12 @@ impl Elaboration<'_, '_> {
     /// `value` pushed (`break` reads it).
     pub(super) fn lower_loop_body(&mut self, scope: &mut Scope, body: &BlockNode, value: ValueType) -> Option<Vec<LoweredStmt>> {
         scope.loops.push(LoopFrame { value });
+        let raised = scope.inline_exits.last().map(|frame| frame.flag_uses);
         let lowered = self.lower_statements(scope, &body.stmts);
         scope.loops.pop();
+        if let (Some(before), Some(frame)) = (raised, scope.inline_exits.last_mut()) {
+            frame.loop_flagged |= frame.flag_uses > before;
+        }
         let (mut stmts, tail) = lowered?;
         if let Some(tail) = tail {
             stmts.push(self.stmt(Stmt::Expr(tail)));
