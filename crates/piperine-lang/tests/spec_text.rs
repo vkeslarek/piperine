@@ -1358,7 +1358,8 @@ fn no_analysis_tran_remains() {
 #[test]
 fn tran_in_fences_is_the_module() {
     // STD-01 AC 9: in a `rust` or `rust,fragment` fence the token `Tran` is a declaration or
-    // a placement of the module, so `(` follows; the analysis kind is `Transient`.
+    // a placement of the module, so `(` follows (`<` for its generic declaration, explicit-unknowns
+    // D20); the analysis kind is `Transient`.
     for (name, text) in all_specs() {
         let mut fenced = false;
         for (n, line) in text.lines().enumerate() {
@@ -1377,7 +1378,7 @@ fn tran_in_fences_is_the_module() {
                 let s = i + k;
                 let e = s + 4;
                 let alone = (s == 0 || !word(b[s - 1])) && (e == b.len() || !word(b[e]));
-                assert!(!alone || b.get(e) == Some(&b'('), "{name}:{}: `Tran` not followed by `(`: {line}", n + 1);
+                assert!(!alone || b.get(e) == Some(&b'(') || b.get(e) == Some(&b'<'), "{name}:{}: `Tran` not followed by `(` or `<`: {line}", n + 1);
                 i = e;
             }
         }
@@ -2017,4 +2018,76 @@ fn records_and_the_host_hold_values_only() {
     }
     let v = flat(&spec("part_v_execution.md"));
     assert!(v.contains("| §8.2.3 | A loop of resolved drives still moves after its bounded passes (`E0511`)"), "Part V lists E0511 among the run codes");
+}
+
+// ---- explicit unknowns: EU-12, Part VII ----
+
+#[test]
+fn section_22_1_holds_the_four_state_tables() {
+    // EU-08, EU-09, EU-17 AC 2: the four-state tables of `&`, `|`, `^`, `!` are printed in 22.1.2,
+    // beside the `impl`s that implement them; `Known` and `merge` are gone.
+    let s22 = spec("part_vii_stdlib.md");
+    let s = section(&s22, "### 22.1 ");
+    let rows = table_rows(&section(&s, "#### 22.1.2"));
+    let find = |first: &str| rows.iter().filter(|r| r[0] == first).cloned().collect::<Vec<_>>();
+    // `&`: 0 & anything is 0; 1 & 1 is 1; 1 & X and X & X are X.
+    assert!(rows.contains(&vec!["**0**".into(), "0".into(), "0".into(), "0".into()]), "{rows:?}");
+    assert!(rows.contains(&vec!["**1**".into(), "0".into(), "1".into(), "X".into()]), "{rows:?}");
+    assert!(rows.contains(&vec!["**X**".into(), "0".into(), "X".into(), "X".into()]), "{rows:?}");
+    // `|`: 1 | anything is 1; `^`: any X operand gives X; `!`: X and Z give X.
+    assert!(rows.contains(&vec!["**1**".into(), "1".into(), "1".into(), "1".into()]), "{rows:?}");
+    assert!(rows.contains(&vec!["**X**".into(), "X".into(), "X".into(), "X".into()]), "{rows:?}");
+    assert!(rows.contains(&vec!["X, Z".into(), "X".into()]), "{rows:?}");
+    assert_eq!(find("**0**").len(), 3, "one row for 0 in each of the three binary tables");
+    let flat_s = flat(&s);
+    for gone in ["#### 22.1.1 `Known`", "#### 22.1.2 `merge`", "known_or", "is_known"] {
+        assert!(!flat_s.contains(gone), "22.1 still holds {gone}");
+    }
+    assert!(flat_s.contains("#### 22.1.1 `Logic` and `LogicState`"), "22.1.1 declares Logic");
+    assert!(flat_s.contains("`pub binary: UInt<N>`") || flat_s.contains("pub binary: UInt<N>"), "D1: two planes");
+    assert!(flat_s.contains("`a == b` on two `Logic<N>` is a `Logic<1>`: X when any level of either operand is X or Z"), "EU-09 AC 1");
+    assert!(flat_s.contains("`#[derive(PartialEq)]` on a struct with a `Logic` field is `E0187`"), "EU-09 AC 4");
+    assert!(flat_s.contains("`+`, `-` and `<` on one are `E0180`"), "EU-08 AC 7");
+}
+
+#[test]
+fn strongest_resolves_by_strength() {
+    // EU-12 AC 1, Q5 = B: five strengths, `Driven`, and the table of `Driven::strongest`.
+    let s = section(&spec("part_vii_stdlib.md"), "### 22.3 ");
+    let f = flat(&s);
+    assert!(s.contains("### 22.3 Strengths and ready-made net modules"), "retitled");
+    assert!(f.contains("The order is `HighZ < Weak < Pull < Strong < Supply`."), "{f}");
+    assert!(f.contains("pub struct Driven { pub v: Logic, pub s: Strength, }") || f.contains("pub v: Logic,"), "Driven");
+    let rows = table_rows(&section(&s, "#### 22.3.2"));
+    let drives: Vec<&str> = rows.iter().map(|r| r[0].as_str()).collect();
+    assert_eq!(drives, ["none, or all `HighZ`", "one strongest drive", "several of the greatest strength, same level", "several of the greatest strength, levels differ"], "{rows:?}");
+    assert_eq!(rows[0][1], "`Driven::Z`");
+    assert_eq!(rows[3][1], "X, that strength");
+    assert!(f.contains("A conflict is a value") && f.contains("`E0511`"), "a conflict is a value, an instability an error");
+}
+
+#[test]
+fn the_library_declares_no_net_nature() {
+    // EU-12 AC 2, D20: no `Wire`, `Tri`, `SumNet`, `tri`, `Logic::wired`; the eight modules are
+    // generic over `W: Nature + Resolve<Driven>`.
+    let part = spec("part_vii_stdlib.md");
+    let s = section(&part, "### 22.3 ");
+    assert!(!s.contains("pub nature"), "22.3 declares no nature");
+    for gone in ["Wire", "SumNet", "Tri<", "`tri`", "wired"] {
+        assert!(!part.contains(gone), "Part VII still says {gone}");
+    }
+    let bound = "<W: Nature + Resolve<Driven>>";
+    let all = flat(&part);
+    for module in ["Tribuf", "Pullup", "Pulldown", "Keeper", "Tran", "Tgate", "Bidir", "TribufDelayed"] {
+        assert!(all.contains(&format!("pub module {module}{bound}")), "{module} is generic over a Resolve<Driven> nature");
+    }
+    // The strength rationale is at most fifteen lines and names only citations that were confirmed.
+    let why = section(&s, "#### 22.3.3");
+    assert!(why.lines().filter(|l| !l.trim().is_empty()).count() <= 15 + 2, "{why}");
+    for confirmed in ["IEEE 1364-2005", "§9.22.3", "IEEE 1800 §6.6.7", "IEEE 1164", "ngspice manual (§8.6.1"] {
+        assert!(why.contains(confirmed), "the rationale lacks {confirmed}");
+    }
+    for dropped in ["Logisim", "Digital (H. Neemann)", "IEEE 1666", "§28", "§7.9"] {
+        assert!(!why.contains(dropped), "the rationale kept an unconfirmed citation: {dropped}");
+    }
 }

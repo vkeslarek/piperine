@@ -34,7 +34,7 @@ module Dac8(in code: Bit<u8>, vout: Electrical) {
 }
 
 analog for Dac8 {
-    v(src) +> vref * (code.known_or(0x80) as f64) / 256.0; // unknown code: mid-scale
+    v(src) +> vref * (code as f64) / 256.0;
     i(src, core) +> v(src, core) / rout;
     i(core, vout) +> v(core, vout) / rsw;
 }
@@ -166,11 +166,11 @@ module ChargePump(in up: Bit, in dn: Bit, vc: Electrical) {
 }
 
 analog for ChargePump {
-    i(vc) +> if dn.high() {
+    i(vc) +> if dn {
         icp
     } else {
         0.0
-    } - if up.high() {
+    } - if up {
         icp
     } else {
         0.0
@@ -267,8 +267,8 @@ module BehavioralCell(c: Cell) {
 }
 
 analog for BehavioralCell {
-    if c.wl.high() {
-        i(c.bl) +> (v(c.bl) - if bit.high() {
+    if c.wl {
+        i(c.bl) +> (v(c.bl) - if bit {
             vdd
         } else {
             0.0
@@ -277,7 +277,7 @@ analog for BehavioralCell {
 }
 
 digital for BehavioralCell {
-    on c.wl.fall() && c.wl.prev().is_known() {
+    on c.wl.fall() {
         bit <- v(c.bl) > vdd / 2.0;
     }
 }

@@ -216,7 +216,7 @@ analog for Inductor  { v(p, n) +> ddt(l * i(p, n)); }
 
 module Switch(a: Electrical, b: Electrical, in ctl: Bit) {}
 analog for Switch {
-    if ctl.high() { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; }
+    if ctl { v(a, b) +> 0.0; } else { i(a, b) +> 0.0; }
 }
 
 /// Two nodes made one: with no selector the kind is fixed, and the nodes merge at elaboration.
@@ -340,7 +340,7 @@ module Bounded(p: Electrical, n: Electrical) {
     let drift = v(p, n) * 1e-3;             // shared by both blocks
 }
 analog for Bounded {
-    if at_hi.high() { pos(xs) +> hi; } else { rate(xs) +> ddt(pos(xs)) - drift; }
+    if at_hi { pos(xs) +> hi; } else { rate(xs) +> ddt(pos(xs)) - drift; }
 }
 digital for Bounded {
     on above(pos(xs) - hi) { at_hi <- true; }

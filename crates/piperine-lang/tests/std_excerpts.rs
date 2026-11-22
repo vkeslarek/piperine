@@ -219,6 +219,83 @@ fn live_sources(part_vii: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// The first unmatched line of each fence of Part VII that is ahead of `std`: the specification
+/// states the explicit model (explicit-unknowns, MD-78) and the `std` files are brought to it by
+/// tasks T23 (the binary part) and T44 (`Logic`). A fence leaves this list in the task that makes
+/// its text a text of its file; `the_ahead_lists_hold_only_what_still_differs` fails on a stale entry.
+const AHEAD_OF_STD: [&str; 25] = [
+    "/// Four-state logic on N levels: 0, 1, X (not determined) and Z (not driven).",
+    "impl Logic {",
+    "impl<const N: usize> BitAnd for Logic<N> {",
+    "/// The same levels under another type of the same width, or `None` when `B` rejects them.",
+    "/// Equal level by level: on a `Logic`, the four states are compared literally.",
+    "    /// A change that ends at true: false to true.",
+    "    now() - t // a plain real, so analog may read it (§3.3.6)",
+    "    t // a plain real, so analog may read it (§3.3.6)",
+    "    signal base: Bit<Option<f64>>; // where the integral was last seated; None before the first wrap",
+    "    match mode {",
+    "    signal xd: Bit<f64> = 0.0; // x after the delay",
+    "    signal xs: [Bit<f64>; N] = [0.0; N]; // xs[k] = x[n−1−k]",
+    "/// How hard a drive holds its level. Verilog's drive strengths (IEEE 1364), without charge storage.",
+    "impl Driven {",
+    "pub fn sum<const N: usize>(d: [f64; N]) -> f64 {",
+    "pub module Tribuf<W: Nature + Resolve<Driven>>(w: W, in d: Bit, in oe: Bit) {",
+    "pub module Keeper<W: Nature + Resolve<Driven>>(w: W) {",
+    "pub module Tran<W: Nature + Resolve<Driven>>(a: W, b: W, in en: Bit) {",
+    "pub module Tgate<W: Nature + Resolve<Driven>>(a: W, y: W, in s: Bit, in sn: Bit) {",
+    "    let ramp = transition(if d { 1.0 } else { 0.0 }, 0.0, tr, tr);",
+    "pub module Bidir<W: Nature + Resolve<Driven>>(d: W, a: Electrical, vdd: Electrical) {",
+    "    on d.changed() && clk {",
+    "pub module inertial<T: Repr + Default>(in x: Bit<T>, tpd: f64) -> T {",
+    "pub module TribufDelayed<W: Nature + Resolve<Driven>>(y: W, in d: Bit, in oe: Bit) {",
+    "/// A condition that must hold: a pass or a failure.",
+];
+
+/// The units of `std` (file, line, label) that have no fence yet, because the fence that listed
+/// them was rewritten. They leave this list in T23 and T44, with the `std` text they name.
+const BEHIND_SPEC: [(&str, usize, &str); 40] = [
+    ("analog.msl", 195, "Digital block"),
+    ("analog.msl", 224, "Analog block"),
+    ("analog.msl", 268, "Digital block"),
+    ("analog.msl", 295, "Digital block"),
+    ("analog.msl", 321, "Analog block"),
+    ("monitor.msl", 52, "Digital block"),
+    ("nets.msl", 100, "Digital block"),
+    ("analog.msl", 161, "module last_crossing"),
+    ("analog.msl", 186, "module idtmod"),
+    ("analog.msl", 250, "module transition"),
+    ("analog.msl", 284, "module zi_nd"),
+    ("convert.msl", 3, "module D2A"),
+    ("convert.msl", 36, "module Bidir"),
+    ("io.msl", 22, "fn require"),
+    ("monitor.msl", 69, "module inertial"),
+    ("monitor.msl", 87, "module TribufDelayed"),
+    ("nets.msl", 3, "enum Strength"),
+    ("nets.msl", 12, "struct Logic"),
+    ("nets.msl", 18, "impl"),
+    ("nets.msl", 34, "impl"),
+    ("nets.msl", 50, "nature Wire"),
+    ("nets.msl", 55, "fn tri"),
+    ("nets.msl", 65, "nature Tri"),
+    ("nets.msl", 70, "fn sum"),
+    ("nets.msl", 74, "nature SumNet"),
+    ("nets.msl", 79, "module Tribuf"),
+    ("nets.msl", 87, "module Pullup"),
+    ("nets.msl", 91, "module Pulldown"),
+    ("nets.msl", 95, "module Keeper"),
+    ("nets.msl", 106, "module Tran"),
+    ("nets.msl", 119, "module Tgate"),
+    ("values.msl", 4, "trait Known"),
+    ("values.msl", 20, "impl"),
+    ("values.msl", 22, "fn merge"),
+    ("values.msl", 32, "fn cast"),
+    ("values.msl", 37, "fn same"),
+    ("values.msl", 41, "fn matches_bits"),
+    ("values.msl", 43, "fn logic"),
+    ("values.msl", 45, "impl"),
+    ("values.msl", 77, "module since"),
+];
+
 fn part_vii() -> String {
     std::fs::read_to_string(root().join("docs/spec/part_vii_stdlib.md")).expect("part VII exists")
 }
@@ -233,10 +310,30 @@ fn all_fence_texts() -> Vec<String> {
     fences_of(corpus())
 }
 
+/// `failures` without the units `BEHIND_SPEC` names.
+fn behind_filtered(failures: Vec<ItemFailure>) -> Vec<ItemFailure> {
+    failures.into_iter().filter(|f| !BEHIND_SPEC.contains(&(f.file.as_str(), f.line, f.item.as_str()))).collect()
+}
+
+#[test]
+fn the_ahead_lists_hold_only_what_still_differs() {
+    // A stale entry would hide a divergence the day it is fixed: each entry must still fail.
+    let part = part_vii();
+    let fences = fence_failures(&part, &live_sources(&part));
+    for line in AHEAD_OF_STD {
+        assert!(fences.iter().any(|f| f.first_unmatched == line), "AHEAD_OF_STD entry no longer differs from std, remove it: {line}");
+    }
+    let mut items = item_failures(&std_files(), &all_fence_texts(), false);
+    items.extend(item_failures(&std_files(), &all_fence_texts(), true));
+    for (file, line, label) in BEHIND_SPEC {
+        assert!(items.iter().any(|f| f.file == file && f.line == line && f.item == label), "BEHIND_SPEC entry no longer lacks a fence, remove it: {file}:{line} {label}");
+    }
+}
+
 #[test]
 fn every_part_vii_fence_is_in_its_file() {
     let part = part_vii();
-    let failures = fence_failures(&part, &live_sources(&part));
+    let failures: Vec<FenceFailure> = fence_failures(&part, &live_sources(&part)).into_iter().filter(|f| !AHEAD_OF_STD.contains(&f.first_unmatched.as_str())).collect();
     assert!(failures.is_empty(), "fences of Part VII not in their std file: {failures:#?}");
 }
 
@@ -271,14 +368,14 @@ fn a_fence_one_character_off_is_not_found() {
 
 #[test]
 fn every_std_item_is_in_a_fence() {
-    let failures = item_failures(&std_files(), &all_fence_texts(), false);
+    let failures = behind_filtered(item_failures(&std_files(), &all_fence_texts(), false));
     assert!(failures.is_empty(), "std items in no fence of docs/spec: {failures:#?}");
 }
 
 #[test]
 fn every_std_behavior_block_is_in_a_fence() {
     // A block is an excerpt of any fence of `docs/spec/` (decision S4): the block of `Short` is in §11.
-    let failures = item_failures(&std_files(), &all_fence_texts(), true);
+    let failures = behind_filtered(item_failures(&std_files(), &all_fence_texts(), true));
     assert!(failures.is_empty(), "std behavior blocks in no fence of docs/spec: {failures:#?}");
 }
 

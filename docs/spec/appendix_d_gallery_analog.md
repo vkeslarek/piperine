@@ -45,7 +45,7 @@ digital<N> for Pwl<N> {
 }
 
 analog<N> for Pwl<N> {
-    let k = seg.known_or(0) as usize;
+    let k = seg as usize;
     let y = if k + 1 >= N {
         points[N - 1].1
     } else {
@@ -231,7 +231,7 @@ module DeltaSigma1(vin: Electrical, in clk: Bit, out bit: Bit = false) {
 }
 
 analog for DeltaSigma1 {
-    let fb = if bit.high() {
+    let fb = if bit {
         vref
     } else {
         -vref
@@ -278,7 +278,7 @@ module RSwitch(a: Electrical, b: Electrical, in ctl: Bit) {
 }
 
 analog for RSwitch {
-    i(a, b) +> v(a, b) / if ctl.high() {
+    i(a, b) +> v(a, b) / if ctl {
         ron
     } else {
         roff

@@ -1214,16 +1214,20 @@ the error of the rule that applies (`E0161`, `E0180`, `E0187`).
 **Examples**
 
 ```rust,fragment
-signal en: Bit = false;               // a number or a bool has no default: the value is written
-signal last: Bit<Option<u8>>;         // starts at None, Option has a default
-signal bus: Bit<Logic<4>>;            // starts at xxxx, Logic has a default
+module Demo(in clk: Bit) {
+    signal en: Bit = false;               // a bool has no default: the value is written
+    signal last: Bit<Option<u8>>;         // starts at None, Option has a default
+    signal bus: Bit<Logic<4>>;            // starts at xxxx, Logic has a default
+}
 
-on clk.rise() {
-    if en { last <- Some(1); }        // `if` takes a bool: one path runs
-    if same(bus, Logic::X) { en <- true; }  // a Logic decides through a function
-    match last {
-        Some(v) => last <- Some(v + 1),
-        None => {}
+digital for Demo {
+    on clk.rise() {
+        if en { last <- Some(1); }        // `if` takes a bool: one path runs
+        if same(bus, Logic::X) { en <- true; }  // a Logic decides through a function
+        match last {
+            Some(v) => { last <- Some(v + 1); }
+            None => {}
+        }
     }
 }
 ```
