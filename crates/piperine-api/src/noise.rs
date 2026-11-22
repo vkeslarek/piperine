@@ -85,6 +85,7 @@ impl NoiseProbe {
         Ok(instance.path().to_string())
     }
 
+    /// The `E0801` of `entry`, a request that names nothing in the design, for `why`.
     fn nothing(entry: &str, why: &str) -> Failure {
         Failure::Host { code: "E0801", message: format!("`{entry}` names nothing in the design: {why}") }
     }

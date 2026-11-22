@@ -4,11 +4,16 @@
 
 use piperine_api::request::{Analysis, Overrides, RunSpec};
 
-/// The runs of a manifest holding `[run.n]` with `keys`.
-fn spec(keys: &str) -> Result<RunSpec, String> {
-    let text = format!("[run.n]\nbench = \"b.msl\"\nanalysis = \"noise\"\n{keys}");
-    let runs = RunSpec::read(&text, std::path::Path::new("Piperine.toml")).map_err(|failures| failures.iter().map(|f| format!("{f:?}")).collect::<Vec<_>>().join("\n"))?;
-    Ok(runs.into_iter().next().expect("one run"))
+/// A manifest with the one run `[run.n]`, a noise run.
+struct NoiseManifest;
+
+impl NoiseManifest {
+    /// The run `[run.n]` of a manifest holding `keys`, or the faults of reading it.
+    fn spec(keys: &str) -> Result<RunSpec, String> {
+        let text = format!("[run.n]\nbench = \"b.msl\"\nanalysis = \"noise\"\n{keys}");
+        let runs = RunSpec::read(&text, std::path::Path::new("Piperine.toml")).map_err(|failures| failures.iter().map(|failure| format!("{failure:?}")).collect::<Vec<_>>().join("\n"))?;
+        Ok(runs.into_iter().next().expect("one run"))
+    }
 }
 
 #[test]
@@ -22,11 +27,11 @@ fn a_noise_run_without_output_or_sweep_is_p0010() {
         ("output = \"o\"\nfrom = 1.0\nto = 1e3\n", "exactly one of `per_decade` and `points`"),
     ];
     for (keys, naming) in cases {
-        let message = spec(keys).expect_err(keys);
+        let message = NoiseManifest::spec(keys).expect_err(keys);
         assert!(message.contains("P0010"), "{keys}: {message}");
         assert!(message.contains(naming), "{keys}: the report names the missing key ({naming}): {message}");
     }
-    let ok = spec("output = \"o\"\nfrom = 1.0\nto = 1e3\nper_decade = 5\n").expect("a complete noise run");
+    let ok = NoiseManifest::spec("output = \"o\"\nfrom = 1.0\nto = 1e3\nper_decade = 5\n").expect("a complete noise run");
     assert!(matches!(ok.analysis, Analysis::Noise { ref output, input: None, .. } if output == "o"));
 }
 
@@ -35,7 +40,7 @@ fn a_key_of_another_analysis_is_p0010_in_a_noise_run() {
     // AO-05 AC 6: `stop` belongs to `transient`, `sweep` to `dc`, `wrt` to `sens`: none is read by `noise`.
     for key in ["stop = 1e-3\n", "sweep = \"r.r\"\n", "wrt = [\"r.r\"]\n", "period = 1e-3\n"] {
         let keys = format!("output = \"o\"\nfrom = 1.0\nto = 1e3\nper_decade = 5\n{key}");
-        let message = spec(&keys).expect_err(key);
+        let message = NoiseManifest::spec(&keys).expect_err(key);
         assert!(message.contains("P0010"), "{key}: {message}");
         assert!(message.contains("not read by a `noise` run"), "{key}: {message}");
     }
@@ -44,7 +49,7 @@ fn a_key_of_another_analysis_is_p0010_in_a_noise_run() {
 #[test]
 fn the_output_and_input_flags_win_over_the_keys() {
     // AO-05 AC 3: `--output` and `--input` replace the table's `output` and `input`.
-    let table = spec("output = \"a\"\ninput = \"vin\"\nfrom = 1.0\nto = 1e3\nper_decade = 5\n").expect("run");
+    let table = NoiseManifest::spec("output = \"a\"\ninput = \"vin\"\nfrom = 1.0\nto = 1e3\nper_decade = 5\n").expect("run");
     let flags = Overrides { output: Some("b".into()), input: Some("v2".into()), ..Overrides::default() };
     let merged = table.merged(&flags).expect("merge");
     assert!(matches!(merged.analysis, Analysis::Noise { ref output, input: Some(ref input), .. } if output == "b" && input == "v2"));

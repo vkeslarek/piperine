@@ -15,8 +15,7 @@ use super::flow::{stamp_flow, stamp_rows};
 use super::limit::{LimitState, advance, linear, take_iterates, vetoes};
 use super::watch::{Accepted, TraceRecord, Watched, accept_watches, record_traces, tolerance};
 use super::small_signal::{
-    ComplexStamps, NoiseColumn, StimulusColumn, TermLinearization, noise_columns, response, stamp_matrix, stimulus,
-    stimulus_columns, term_linearization,
+    ComplexStamps, NoiseColumn, SmallSignal, StimulusColumn, TermLinearization, response, stamp_matrix, stimulus,
 };
 use super::plan::{AnalogPlan, FnPlan, InstancePlan, Source, TermPlan};
 use crate::error::{Error, RunCode, SolverDomain};
@@ -402,31 +401,31 @@ impl Assembly {
         let omega = 2.0 * std::f64::consts::PI * amb.freq;
         let mut out = Vec::new();
         for (inst, st) in self.plan.instances.iter().zip(&self.state) {
-            noise_columns(inst, st, omega, &mut out);
+            SmallSignal::new(inst, st, omega).noise_columns(&mut out);
         }
         Ok(out)
     }
 
-    /// The small-signal stimuli of instance `instance` at operating point `op` and sweep
-    /// frequency `amb.freq`: one column per `STIM` input, through every term that reads it, with
+    /// The small-signal stimuli of instance `instance` at `operating_point` and sweep
+    /// frequency `ambient.freq`: one column per `STIM` input, through every term that reads it, with
     /// the phase of its phasor. The input-referred noise reads the transfer from them (design
     /// D11). An `instance` that is not in the plan is an error naming it.
-    pub fn stimulus_columns(&mut self, op: &[f64], amb: Ambient, instance: &str) -> Result<Vec<StimulusColumn>, Error> {
+    pub fn stimulus_columns(&mut self, operating_point: &[f64], ambient: Ambient, instance: &str) -> Result<Vec<StimulusColumn>, Error> {
         let index = self.instance_index(instance)?;
-        self.evaluate_for(op, amb, Need::AC)?;
-        let omega = 2.0 * std::f64::consts::PI * amb.freq;
+        self.evaluate_for(operating_point, ambient, Need::AC)?;
+        let omega = 2.0 * std::f64::consts::PI * ambient.freq;
         let mut out = Vec::new();
-        stimulus_columns(&self.plan.instances[index], &self.state[index], omega, &mut out);
+        SmallSignal::new(&self.plan.instances[index], &self.state[index], omega).stimulus_columns(&mut out);
         Ok(out)
     }
 
-    /// Term `term` of instance `instance` linearized at operating point `op` and sweep frequency
-    /// `amb.freq`: its partials against the unknowns and against each `NOISE` input, the
+    /// Term `term` of instance `instance` linearized at `operating_point` and sweep frequency
+    /// `ambient.freq`: its partials against the unknowns and against each `NOISE` input, the
     /// operator's response applied. An unknown instance or term is an error naming it.
     pub fn term_linearization(
         &mut self,
-        op: &[f64],
-        amb: Ambient,
+        operating_point: &[f64],
+        ambient: Ambient,
         instance: &str,
         term: &str,
     ) -> Result<TermLinearization, Error> {
@@ -434,10 +433,10 @@ impl Assembly {
         let Some(term_index) = self.plan.instances[index].terms.iter().position(|t| t.name == term) else {
             return Err(device_error(format!("instance `{instance}` has no term `{term}`")));
         };
-        self.evaluate_for(op, amb, Need { small_signal: true, ..Need::NEWTON })?;
-        let omega = 2.0 * std::f64::consts::PI * amb.freq;
-        let inst = &self.plan.instances[index];
-        Ok(term_linearization(&inst.terms[term_index], inst, &self.state[index], omega))
+        self.evaluate_for(operating_point, ambient, Need { small_signal: true, ..Need::NEWTON })?;
+        let omega = 2.0 * std::f64::consts::PI * ambient.freq;
+        let instance_plan = &self.plan.instances[index];
+        Ok(SmallSignal::new(instance_plan, &self.state[index], omega).term_linearization(&instance_plan.terms[term_index]))
     }
 
     /// The position of the instance at `path` in the plan.
