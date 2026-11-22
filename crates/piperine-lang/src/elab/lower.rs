@@ -357,6 +357,11 @@ impl Elaboration<'_, '_> {
             ExprKind::Return(value) => self.lower_return(scope, *value, node.span, origin),
             ExprKind::Try(inner) => self.lower_try(scope, *inner, node.span, origin),
             ExprKind::Call { args, class, .. } => self.lower_call(scope, expr, &args.iter().map(|a| a.value).collect::<Vec<_>>(), *class, ty, origin),
+            ExprKind::MethodCall { recv, args, .. } if self.types.method(expr).is_some_and(Method::is_sequence_row) => {
+                let method = self.types.method(expr)?;
+                let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
+                self.lower_sequence_method(scope, expr, method, *recv, &args, ty, origin)
+            }
             ExprKind::MethodCall { recv, args, .. } if self.types.builtin(expr).is_some() => {
                 let builtin = self.types.builtin(expr)?;
                 let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
@@ -576,6 +581,11 @@ impl Elaboration<'_, '_> {
         match self.design.pat_node(pat).kind.clone() {
             PatKind::Ident { binding, sub: None, .. } if matches!(self.types.local(binding), Some(Ty::Str)) => self.lower_text_let(scope, binding, init),
             PatKind::Ident { binding, sub: None, .. } if matches!(self.types.local(binding), Some(Ty::Option(_))) => self.lower_option_let(scope, out, binding, init),
+            // An iterator or a range holds no value: the name stands for the chain it was bound to (`iterators.rs`).
+            PatKind::Ident { binding, sub: None, .. } if self.is_sequence_binding(binding) => {
+                scope.let_sources.insert(binding, init);
+                true
+            }
             PatKind::Ident { binding, sub: None, .. } => {
                 let local = self.bind_local(scope, binding);
                 if let Some(function) = self.named_function(init) {

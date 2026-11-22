@@ -352,6 +352,12 @@ impl Elaboration<'_, '_> {
                 let val = half(self, LevelPart::Value, payload.clone())?;
                 Some(Pair { is, val, literal: None })
             }
+            // `a.first()`, `a.last()`, `a.get(i)` of an array (H.5).
+            ExprKind::MethodCall { recv, args, .. } if matches!(self.types.method(expr), Some(Method::ArrayFirst | Method::ArrayLast | Method::ArrayGet)) => {
+                let method = self.types.method(expr)?;
+                let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
+                self.lower_array_option(scope, method, *recv, &args, payload, origin)
+            }
             // `x.known()`: the two flag-total reads of `x`, each reading `x` where it stands.
             ExprKind::MethodCall { recv, .. } if self.types.builtin(expr) == Some(Builtin::Known) => {
                 let read = self.lower_expr(scope, *recv)?;

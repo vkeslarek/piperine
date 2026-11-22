@@ -124,6 +124,17 @@ pub enum Method {
     IteratorAll,
 }
 
+impl Method {
+    /// Whether the row is one of H.5 to H.7 the elaborator lowers as a loop over a sequence and
+    /// reads as a value (`first`, `last` and `get` are `Option`s, lowered on their pair).
+    pub fn is_sequence_row(self) -> bool {
+        matches!(
+            self,
+            Method::ArrayLen | Method::ArrayIsEmpty | Method::ArrayContains | Method::RangeContains | Method::RangeIsEmpty | Method::IteratorSum | Method::IteratorCount | Method::IteratorFold | Method::IteratorAny | Method::IteratorAll
+        )
+    }
+}
+
 /// A method the checker treats as part of the language because it resolved to the stdlib's own
 /// item (part I §3.3.7): the four flag-total reads, the edges of `Bit` and the history of a
 /// carrier. A project's replacement is `P0001` at its use, never one of these.

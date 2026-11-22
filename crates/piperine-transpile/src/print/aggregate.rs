@@ -27,6 +27,10 @@ impl ValuePrinter<'_> {
             }
             Expr::Array(parts) => {
                 let ValueType::Array(element, _) = self.ir.expr_type(e) else { return Err(self.unsupported(e, "an array expression that is not typed as an array")) };
+                if parts.is_empty() {
+                    // no element names the element type, so the empty array says it (H.5 rule 1)
+                    return atom(format!("<[{}; 0]>::default()", self.rust_type(element, &format!("{} e{}", self.path, e.index()))?));
+                }
                 let parts = self.parts(parts, &vec![(**element).clone(); parts.len()])?;
                 atom(format!("[{}]", parts.join(", ")))
             }

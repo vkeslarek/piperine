@@ -495,3 +495,128 @@ fn derived_comparisons_and_defaults_give_rusts_results() {
     ];
     assert_commits("compare.msl", &names, &wanted);
 }
+
+/// The rows of `iterators.msl`, each computed by Rust from the same text, and the names they commit.
+struct IteratorRows;
+
+impl IteratorRows {
+    /// The `(name, bytes Rust gives)` of every row, in the order the model commits them.
+    fn wanted() -> Vec<(&'static str, Vec<u8>)> {
+        let flag = |b: bool| byte(u8::from(b));
+        vec![
+            ("len", byte({ let a = [3u8, 1, 4, 1, 5]; a.len() as u8 })),
+            ("is_empty", flag({ let a = [3u8, 1, 4, 1, 5]; a.is_empty() })),
+            ("contains_hit", flag({ let a = [3u8, 1, 4, 1, 5]; a.contains(&4) })),
+            ("contains_miss", flag({ let a = [3u8, 1, 4, 1, 5]; a.contains(&9) })),
+            ("first", byte({ let a = [3u8, 1, 4, 1, 5]; *a.first().unwrap_or(&0) })),
+            ("last", byte({ let a = [3u8, 1, 4, 1, 5]; *a.last().unwrap_or(&0) })),
+            ("get_in", byte({ let a = [3u8, 1, 4, 1, 5]; *a.get(2).unwrap_or(&99) })),
+            ("get_out", byte({ let a = [3u8, 1, 4, 1, 5]; *a.get(7).unwrap_or(&99) })),
+            ("get_end_is_none", flag({ let a = [3u8, 1, 4, 1, 5]; a.get(5).is_none() && a.len() == 5 })),
+            ("range_in", flag((2..5).contains(&4))),
+            ("range_at_end", flag((2..5).contains(&5))),
+            ("range_inclusive", flag((2..=5).contains(&5))),
+            ("range_below", flag((2..5).contains(&1))),
+            ("range_float", flag((0.5..1.5).contains(&1.0))),
+            ("range_empty", flag((5..2).is_empty())),
+            ("range_single", flag((2..=2).is_empty())),
+            ("range_named", flag({ let r = 1..4; r.contains(&3) })),
+            ("range_to", flag((..3).contains(&2))),
+            ("range_from", flag((2..).contains(&1))),
+            ("map_sum", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().map(|x| x * 2).sum::<u8>() })),
+            ("filter_count", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().filter(|x| *x > 1).count() as u8 })),
+            ("fold", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().fold(0u8, |acc, x| acc * 2 + x) })),
+            ("sum", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().sum::<u8>() })),
+            ("count", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().count() as u8 })),
+            ("zip", byte({ let a = [3u8, 1, 4, 1, 5]; let b = [2u8, 0, 1, 3, 1]; a.iter().copied().zip(b.iter().copied()).map(|(x, y)| x * y).sum::<u8>() })),
+            ("zip_shorter", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().zip([7u8, 8].iter()).count() as u8 })),
+            ("enumerate", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().enumerate().fold(0u8, |acc, (i, x)| acc + (i as u8) * x) })),
+            ("rev", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().rev().fold(0u8, |acc, x| acc * 2 + x) })),
+            ("enumerate_then_rev", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().enumerate().rev().fold(0u8, |acc, (i, x)| acc * 2 + (i as u8) + x) })),
+            ("rev_then_enumerate", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().rev().enumerate().fold(0u8, |acc, (i, x)| acc * 2 + (i as u8) + x) })),
+            ("any_hit", flag({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().any(|x| x == 4) })),
+            ("any_miss", flag({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().any(|x| x > 9) })),
+            ("all_hit", flag({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().all(|x| x > 0) })),
+            ("all_miss", flag({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().all(|x| x > 1) })),
+            ("empty_any", flag({ let e: [u8; 0] = []; e.iter().copied().any(|x| x > 0) })),
+            ("empty_all", flag({ let e: [u8; 0] = []; e.iter().copied().all(|x| x > 0) })),
+            ("empty_sum", byte({ let e: [u8; 0] = []; e.iter().copied().sum::<u8>() })),
+            ("empty_fold", byte({ let e: [u8; 0] = []; e.iter().copied().fold(7u8, |acc, x| acc + x) })),
+            ("empty_len", byte({ let e: [u8; 0] = []; e.len() as u8 })),
+            ("empty_first_is_none", flag({ let e: [u8; 0] = []; e.first().is_none() && e.is_empty() })),
+            ("empty_is_empty", flag({ let e: [u8; 0] = []; e.is_empty() })),
+            ("filter_enumerate", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().filter(|x| *x != 1).enumerate().fold(0u8, |acc, (i, x)| acc * 2 + (i as u8) * 3 + x) })),
+            ("chain", byte({ let a = [3u8, 1, 4, 1, 5]; a.iter().copied().map(|x| x * 2).filter(|x| *x > 4).map(|x| x + 1).sum::<u8>() })),
+            ("range_map_sum", byte((1u8..5).map(|k| k * k).sum::<u8>())),
+            ("range_rev", byte((1u8..5).rev().fold(0u8, |acc, k| acc * 2 + k))),
+            ("range_filter_count", byte((0u8..10).filter(|k| k % 3 == 0).count() as u8)),
+            ("range_inclusive_sum", byte((1u8..=4).sum::<u8>())),
+            ("range_empty_sum", byte((5u8..2).sum::<u8>())),
+            ("range_zip", byte({ let a = [3u8, 1, 4, 1, 5]; (0u8..3).zip(a.iter().copied()).map(|(i, x)| i * x).sum::<u8>() })),
+            ("let_iterator", byte({ let a = [3u8, 1, 4, 1, 5]; let it = a.iter().copied().map(|x| x + 1); it.sum::<u8>() })),
+            ("signed_range_sum", byte({ let s: i8 = (-3i8..2).sum(); s as u8 })),
+            ("signed_range_count", byte((-3i8..2).count() as u8)),
+            ("for_array", byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for x in a { acc = acc * 2 + x; } acc })),
+            ("for_iter_rev", byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for x in a.iter().copied().rev() { acc = acc * 2 + x; } acc })),
+            ("for_enumerate", byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for (i, x) in a.iter().copied().enumerate() { acc = acc * 2 + (i as u8) + x; } acc })),
+            ("for_zip", byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for (x, y) in a.iter().copied().zip([1u8, 2, 3].iter().copied()) { acc = acc * 2 + x + y; } acc })),
+            ("for_filtered_range", byte({ let mut acc = 0u8; for k in (0u8..8).filter(|k| k % 2 == 0) { acc = acc * 2 + k; } acc })),
+            ("for_range_rev", byte({ let mut acc = 0u8; for k in (0u8..4).rev() { acc = acc * 2 + k; } acc })),
+            ("for_break", byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for x in a { if x == 4 { break; } acc = acc * 2 + x; } acc })),
+            ("for_continue", byte({ let a = [3u8, 1, 4, 1, 5]; let mut acc = 0u8; for x in a.iter().copied().filter(|x| *x != 5) { if x == 1 { continue; } acc = acc * 2 + x; } acc })),
+            ("for_named", byte({ let a = [3u8, 1, 4, 1, 5]; let it = a.iter().copied().map(|x| x * 3); let mut acc = 0u8; for x in it { acc = acc + x; } acc })),
+            ("zi_nd", real_bytes(Self::zi_acc([0.5, 0.25, 0.125], [1.5, -2.0], [0.75, -0.5], [0.3, 0.7], 2.0))),
+        ]
+    }
+
+    /// `zi_nd`'s reaction body value code, in the order the stdlib writes it.
+    fn zi_acc(num: [f64; 3], xs: [f64; 2], den: [f64; 2], ys: [f64; 2], x: f64) -> f64 {
+        let mut acc = num[0] * x;
+        for k in 1..3 {
+            acc += num[k] * xs[k - 1];
+        }
+        for k in 0..2 {
+            acc -= den[k] * ys[k];
+        }
+        acc
+    }
+}
+
+#[test]
+fn every_row_of_h5_to_h7_gives_rusts_result() {
+    // CV-15 AC 1 (H.5 rules 1 to 5, H.6 rules 1 to 3, H.7 rules 4 to 10): each row of the three tables, on
+    // arrays, ranges and adaptor chains, gives the result Rust's own array, range and iterator give;
+    // `get` past the end is `None`. The `for` rows are in `for_visits_elements_in_rusts_order`.
+    let rows: Vec<_> = IteratorRows::wanted().into_iter().filter(|(name, _)| !name.starts_with("for_") && !name.starts_with("empty_") && *name != "zi_nd").collect();
+    let names: Vec<&str> = rows.iter().map(|(name, _)| *name).collect();
+    let wanted: Vec<Vec<u8>> = rows.into_iter().map(|(_, bytes)| bytes).collect();
+    assert_commits("iterators.msl", &names, &wanted);
+}
+
+#[test]
+fn for_visits_elements_in_rusts_order() {
+    // CV-15 AC 2 (§1.8.9, H.7 rule 4): a `for` over an array, a range or an adaptor chain visits the elements
+    // in the order Rust's `for` does, `break` and `continue` leaving as they do.
+    let rows: Vec<_> = IteratorRows::wanted().into_iter().filter(|(name, _)| name.starts_with("for_")).collect();
+    let names: Vec<&str> = rows.iter().map(|(name, _)| *name).collect();
+    let wanted: Vec<Vec<u8>> = rows.into_iter().map(|(_, bytes)| bytes).collect();
+    assert_commits("iterators.msl", &names, &wanted);
+}
+
+#[test]
+fn an_empty_array_has_length_zero_and_no_first() {
+    // Edge case (H.5 rules 1 and 4, H.7 rules 8 to 10): an array of no element has `len()` 0 and `first()`
+    // `None`; `sum` of it is 0, `fold` gives `init`, `any` is false and `all` is true.
+    let rows: Vec<_> = IteratorRows::wanted().into_iter().filter(|(name, _)| name.starts_with("empty_")).collect();
+    let names: Vec<&str> = rows.iter().map(|(name, _)| *name).collect();
+    let wanted: Vec<Vec<u8>> = rows.into_iter().map(|(_, bytes)| bytes).collect();
+    assert_commits("iterators.msl", &names, &wanted);
+}
+
+#[test]
+fn the_zi_nd_reaction_value_code_runs_as_a_function() {
+    // Phase A Independent Test (D18): the value code of the `zi_nd` reaction body, `acc` over `num`, `xs`,
+    // `den` and `ys`, runs as a monomorphic `fn` over arrays with the value Rust gives for the same loops.
+    let zi = IteratorRows::wanted().into_iter().filter(|(name, _)| *name == "zi_nd").collect::<Vec<_>>();
+    assert_commits("iterators.msl", &["zi_nd"], &[zi[0].1.clone()]);
+}

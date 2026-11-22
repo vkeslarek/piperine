@@ -143,7 +143,7 @@ impl Elaboration<'_, '_> {
 
     /// The statements of a loop body, lowered with the frame of a loop whose value has type
     /// `value` pushed (`break` reads it).
-    fn lower_loop_body(&mut self, scope: &mut Scope, body: &BlockNode, value: ValueType) -> Option<Vec<LoweredStmt>> {
+    pub(super) fn lower_loop_body(&mut self, scope: &mut Scope, body: &BlockNode, value: ValueType) -> Option<Vec<LoweredStmt>> {
         scope.loops.push(LoopFrame { value });
         let lowered = self.lower_statements(scope, &body.stmts);
         scope.loops.pop();
@@ -172,9 +172,9 @@ impl Elaboration<'_, '_> {
     /// then it is the `while` that counts a mutable local, which the generated code can merge.
     pub(super) fn lower_for(&mut self, scope: &mut Scope, pat: PatId, iter: ExprId, body: &BlockNode, origin: Origin) -> Option<LoweredExpr> {
         let node = self.design.expr_node(self.peel_parens(iter)).clone();
+        // an array, an iterator chain or a named range runs as the loop of `iterators.rs`
         let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = node.kind else {
-            self.unsupported(scope.file, node.span, "a `for` over anything but an integer range");
-            return None;
+            return self.lower_sequence_for(scope, pat, iter, body, origin);
         };
         let (low, high) = (self.lower_expr(scope, lo)?, self.lower_expr(scope, hi)?);
         let (variable, binding) = self.for_variable(scope, pat)?;
