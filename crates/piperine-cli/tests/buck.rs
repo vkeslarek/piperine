@@ -76,8 +76,8 @@ fn startup_ends_with_the_reference_at_128() {
 
 #[test]
 fn startup_ends_within_3_mv_of_0_8_volts() {
-    // Book claims held here: mixed~e5a35079, cli~3d1453da, cli~57d761cd
-    // Book chapter 15, "an output within 3 mV of 0.8 V (0.8025)" in the last row of `startup`, and chapter 10,
+    // Book claims held here: mixed~e5a35079, cli~3d1453da, cli~5fadeccd
+    // Book chapter 15, "an output within 3 mV of 0.8 V (0.8026)" in the last row of `startup`, and chapter 10,
     // "regulates at 0.8 V within 3 mV": the end of the start is tighter than the 10 mV of SPEC section 2 that
     // `startup_ends_with_the_reference_at_128` holds. The run is the shared one of this target
     let (header, rows) = table(startup());
