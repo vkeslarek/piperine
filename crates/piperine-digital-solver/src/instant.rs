@@ -7,12 +7,12 @@
 use std::collections::BTreeSet;
 
 use crate::engine::{Digital, Horizon, Mode, Outcome};
-use crate::landing::LandingCause;
+use crate::landing::{LandingCause, LandingTest};
 use crate::net::{NetId, NetKind};
 use crate::queue::{Instant, Writer};
 use crate::run::{Phase, check_canonical, fire_net, fired_reactions, run_functions, run_reactions, write_net};
 use piperine_abi::layout::Merge;
-use piperine_abi::raw::{commit_flag, reaction_flag};
+use piperine_abi::raw::commit_flag;
 use crate::tick::Tick;
 use crate::error::DigitalError;
 
@@ -175,27 +175,7 @@ impl Digital {
             }
             if lookahead {
                 let firing = fired_reactions(&self.plan.instances, Phase::Microstep, &self.store);
-                let analysis = self.plan.analysis();
-                let probing = firing.iter().any(|f| analysis.probes(f.instance as u32, f.reaction as u32));
-                let sampling = firing.iter().any(|f| analysis.samples(f.instance as u32, f.reaction as u32));
-                let irreversible = firing.iter().any(|f| {
-                    let shape = self.plan.instances[f.instance].handle.shape();
-                    shape.reactions.get(f.reaction).is_some_and(|r| r.flags & reaction_flag::IRREVERSIBLE != 0)
-                });
-                let waited = self.waited.iter().any(|w| self.store.fired(*w));
-                let cause = if analog_now {
-                    Some(LandingCause::AnalogReadChanged)
-                } else if sampling {
-                    Some(LandingCause::ContinuousRead)
-                } else if probing {
-                    Some(LandingCause::DeclaredReach)
-                } else if irreversible {
-                    Some(LandingCause::Irreversible)
-                } else if waited {
-                    Some(LandingCause::HostWaiter)
-                } else {
-                    None
-                };
+                let cause = LandingTest::new(&self.plan, &self.waited).after_functions(&self.store, &firing, analog_now);
                 if let Some(cause) = cause {
                     return Ok(Stepped::Landing { cause });
                 }

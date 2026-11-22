@@ -10,7 +10,9 @@ mod devices;
 use devices::*;
 use piperine_abi::layout::{HIGH, LOW};
 use piperine_digital_solver::advance::Advance;
-use piperine_digital_solver::landing::LandingCause;
+use piperine_digital_solver::landing::{LandingCause, LandingTest};
+use piperine_digital_solver::run::{Phase, fired_reactions};
+use piperine_digital_solver::store::Store;
 use piperine_digital_solver::engine::{Digital, Horizon, Mode};
 use piperine_digital_solver::net::{NetId, NetSpec};
 use piperine_digital_solver::observe::Observation;
@@ -358,4 +360,32 @@ fn a_reaction_that_only_writes_a_reaching_net_probes_and_does_not_sample() {
 fn a_reaction_that_reaches_nothing_neither_probes_nor_samples() {
     let d = engine_with(vec![("cmp", setter(), vec![("up", "cross"), ("out", "above")])], &[]);
     assert_eq!(flags(&d, 0), (false, false));
+}
+
+/// The cause `LandingTest` gives for `fire` fired in a fresh store of the design, with `waited`
+/// listened to by a host waiter and `analog_read_changed` as the caller says.
+fn cause_after_functions(devices: Vec<Placed<'_>>, analog: &[&str], fire: &str, waited: &[&str], analog_read_changed: bool) -> Option<LandingCause> {
+    let d = engine_with(devices, analog);
+    let waited: Vec<NetId> = waited.iter().map(|name| net(&d, name)).collect();
+    let mut store = Store::new(&d.plan().nets);
+    store.begin_microstep();
+    store.fire(net(&d, fire));
+    let firing = fired_reactions(&d.plan().instances, Phase::Microstep, &store);
+    LandingTest::new(d.plan(), &waited).after_functions(&store, &firing, analog_read_changed)
+}
+
+#[test]
+fn the_landing_test_names_the_first_cause_that_holds() {
+    let sampler_design = || vec![("sm", sampler(), vec![("v", "node"), ("go", "g"), ("s", "out")])];
+    assert_eq!(cause_after_functions(sampler_design(), &[], "g", &[], true), Some(LandingCause::AnalogReadChanged), "a changed carrier outranks a continuous read");
+    assert_eq!(cause_after_functions(sampler_design(), &[], "g", &[], false), Some(LandingCause::ContinuousRead));
+    let stub_design = || vec![("st", stub(), vec![("go", "g"), ("out", "out")])];
+    assert_eq!(cause_after_functions(stub_design(), &[], "g", &["g"], false), Some(LandingCause::Irreversible), "an irreversible reaction outranks a host waiter");
+}
+
+#[test]
+fn the_landing_test_gives_no_cause_when_nothing_observable_fires() {
+    let design = || vec![("cmp", setter(), vec![("up", "cross"), ("out", "above")])];
+    assert_eq!(cause_after_functions(design(), &[], "cross", &[], false), None);
+    assert_eq!(cause_after_functions(design(), &[], "cross", &["cross"], false), Some(LandingCause::HostWaiter));
 }
