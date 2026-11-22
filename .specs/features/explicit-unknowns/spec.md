@@ -1,6 +1,6 @@
 # Explicit Unknowns Specification
 
-**Approved**: 2026-11-21 - user, 2026-11-21: "Aceito os recomendados" (Q4: no separate strength trait, `impl Resolve<Driven>` carries it; Q5: Strength set B, five levels HighZ < Weak < Pull < Strong < Supply), after R1–R10, Q1–Q3 and the ABI (major 1, edited in place) the same day; D1–D21 stand.
+**Approved**: 2026-11-21 - user: "Aceito os recomendados" (Q4: no separate strength trait, `impl Resolve<Driven>` carries it; Q5: Strength set B, five levels HighZ < Weak < Pull < Strong < Supply), after R1–R10, Q1–Q3 and the ABI (major 1, edited in place) the same day; D1–D21 stand.
 
 ## Decision (user, 2026-11-21)
 
