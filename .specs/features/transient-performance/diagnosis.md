@@ -269,29 +269,59 @@ The 300 continuous-read landings, and why there were none before: the ADC's `sam
 
 ## 10. Piperine vs ngspice, time per step
 
-Measured by `cargo test -p piperine-api --test power_stage_bench -- --nocapture` (printed, never
-asserted). The design is the buck's power stage without its digital side: a 12 V supply, two ideal
-switches (closed at 10 mΩ above half a volt, open at 10 MΩ below), a 2.2 µH inductor, a 22 µF
-capacitor and a 1 Ω load, 100 µs of 50 switching periods of 2 µs (200 ns high, 10 ns edges, the
-complement with 10 ns of dead time), the controls piecewise-linear sources. Piperine: `power_stage.msl`
-with the controls as the host's sources on the node ports (`NodeSource::with_corners`); ngspice 47
-(`ngspice -b`): `power_stage.cir`, the same corners as `PWL` sources and `tran 0.1u 100u 0 10n uic`.
-Both cap the step at 10 ns. Piperine runs in the dev profile of its crates (the tests of record),
-ngspice is an optimized build, so part of the per-step gap is the build and not the algorithm.
+Measured by `cargo test --release -p piperine-api --test power_stage_bench -- --nocapture` (printed,
+never asserted; each side is run three times and the best time is printed). The design is the buck's
+power stage without its digital side: a 12 V supply, two ideal switches (closed at 10 mΩ above half a
+volt, open at 10 MΩ below), a 2.2 µH inductor, a 22 µF capacitor and a 1 Ω load, 100 µs of 50
+switching periods of 2 µs (200 ns high, 10 ns edges, the complement with 10 ns of dead time), the
+controls piecewise-linear sources. Piperine: `power_stage.msl` with the controls as the host's
+sources on the node ports (`NodeSource::with_corners`); ngspice 47 (`ngspice -b`): `power_stage.cir`,
+the same corners as `PWL` sources and `tran 0.1u 100u 0 10n uic`. Both cap the step at 10 ns.
+Piperine's crates are built in the release profile (the generated design is always compiled at
+`opt-level=2` by `piperine-transpile`), ngspice is the distribution's optimized build.
 
-| | Accepted steps | Time | Time per step |
+| (release, best of 3) | Accepted steps | Time | Time per step |
 | --- | --- | --- | --- |
-| Piperine | 30 920 | 1.150 s | 37.2 µs |
-| ngspice | 12 043 | 0.298 s | 24.8 µs |
-| Piperine / ngspice | 2.57x | 3.9x | 1.50x |
+| Piperine | 30 920 | 0.844 s | 27.3 µs |
+| ngspice | 12 043 | 0.290 s | 24.1 µs |
+| Piperine / ngspice | 2.57x | 2.91x | 1.13x |
 
-Piperine takes 2.6 times the steps of ngspice on the same circuit and about 1.5 times the time per
-step, so a transient of this class takes about 3.9 times ngspice's. Not measured here, and so not
-claimed: why the step count differs (the candidates are ngspice's variable-order integration and
-its landing on every `PWL` corner against Piperine's first-order restart after each delivered jump,
-§15.2 rule 6) and what the per-step gap is made of beyond the build (the generated devices'
-per-call frame cutting, `piperine_abi::thunk`, allocates four times a call and is outside this
-feature's tasks).
+The dev-profile run of the first version of this section (1.150 s, 37.2 µs per step, 1.50x per step
+against ngspice's 0.298 s and 24.8 µs) is withdrawn: a dev build of one side against an optimized
+build of the other is not a comparison. In the release build Piperine's cost per step is 1.13 times
+ngspice's, and a transient of this class takes 2.9 times ngspice's, 2.57 of it the step count.
+
+**Why the step count differs** (measurement only; nothing was tuned). The steps of both runs were
+listed (Piperine: the table with no `print_step`, one row per accepted step; ngspice: `wrdata`) and
+split by the distance to the 301 corners of the two controls:
+
+| | Piperine | ngspice |
+| --- | --- | --- |
+| steps more than 100 ns after any corner | 8 904 | 8 900 |
+| steps within 100 ns after a corner | 22 017 (73.1 per corner) | 3 143 (10.4 per corner) |
+| steps at the 10 ns cap | 9 486 | 9 499 |
+| steps shorter than 1 ps | 11 513 | 0 |
+| steps from 1 ps to 100 ps | 5 500 | 0 |
+| first step after a corner, median (range) | 1.37 ps (1.7 fs to 10 ps) | 482 ps (156 ps to 1 ns) |
+| first step after a corner / the step before it, median | 1.0 × 10⁻³ | 0.17 |
+| second step / first, median | 1.00 | 2.00 |
+
+Away from the corners the two runs take the same number of steps (8 904 against 8 900, and the same
+9 486 against 9 499 at the cap): the whole difference (18 877 steps, of which 18 874 are the difference of the
+steps within 100 ns after a corner) is spent in the 100 ns after a corner. Piperine's corner is a delivery of the host source: 299 jump steps, 299 landings
+(all of the cause "an analog-read net changed") and no jump retake, and the step that reads it starts
+at 10⁻³ of the last step (the host-write restart, Appendix C.2: `Restart::IntegratorSmall`, 1.0 × 10⁻³
+exactly in the median), so 1.4 ps where ngspice's first step after a breakpoint is about a sixth of the
+last one, 482 ps. From there Piperine holds the first size once and grows by 1.5 per step (the clamp of
+the PI controller), ngspice doubles: about 23 steps from 1 ps to the cap, where ngspice, doubling from 482 ps, takes about 4. A second effect, consistent with the numbers and not isolated by a run of its own, makes
+the start smaller still: when two corners are 10 ns apart (the edges, and the 10 ns of dead time) the
+step that lands on the second corner is short, and 10⁻³ of a short step is a femtosecond (smallest step
+seen 1.7 fs; 11 513 steps under 1 ps, 38 per corner). The step controller also rejects 799 attempts by
+the truncation test (2.7 per corner) and none by Newton. Which of the three (the 10⁻³ restart, the 1.5
+growth clamp, the short landing step before the next corner) is worth changing is a decision for a
+later feature; the first two are the constants of §15.2 rule 6 and Appendix C.2, which this feature
+does not touch. The per-step cost of the 1.13x is the generated devices' call frame (`piperine_abi::thunk`
+allocates per call, outside this feature's tasks) and the rest of the assembly, not measured here.
 
 ## 11. After (the counts of section 2, 100 µs, `max_step = 1e-8`)
 
