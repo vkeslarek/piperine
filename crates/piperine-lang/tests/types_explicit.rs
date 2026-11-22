@@ -180,3 +180,58 @@ fn an_in_port_may_carry_an_initial_value() {
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     Types::check(&design, "Top").unwrap_or_else(|d| panic!("{:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
 }
+
+/// The `(code, message)` of each diagnostic of checking `Top` of `src` over the embedded standard library.
+fn top_outcome(src: &str) -> Vec<(String, String)> {
+    match Types::check(&design_of(src), "Top") {
+        Ok(_) => Vec::new(),
+        Err(found) => found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect(),
+    }
+}
+
+#[test]
+fn a_missing_initial_value_is_e0187_naming_the_carrier() {
+    // §3.3.4, EU-04 AC 4 (C14): a signal or an `out` port with no initial value, whose type has no `Default`, is `E0187`
+    // at the declaration naming the carrier and `Default`, once per declaration
+    for (src, name) in [
+        ("module Top() { signal en: Bit; }", "en"),
+        ("module Top(out q: Bit) { }", "q"),
+        ("module Top() { signal count: Bit<u8>; }", "count"),
+        ("module Top() { signal gain: Bit<f64>; signal also: Bit<f64>; }", "gain"),
+    ] {
+        let found = top_outcome(src);
+        assert_eq!(found.first().map(|(code, _)| code.as_str()), Some("E0187"), "{src}: {found:?}");
+        assert!(found[0].1.contains(&format!("`{name}`")) && found[0].1.contains("`Default`"), "{src}: names the carrier and `Default`: {}", found[0].1);
+        assert_eq!(found.len(), src.matches(": Bit").count(), "{src}: one error per declaration: {found:?}");
+    }
+    // the carriers that have a value: written, or a type with `Default`
+    let clean = "#[derive(Default, Repr)] struct Pair { a: Option<u8>, b: Option<bool> }\n\
+                 module Top(in clk: Bit, out q: Bit = false) { signal en: Bit = false; signal last: Bit<Option<u8>>; signal both: Bit<Pair>; }";
+    assert!(top_outcome(clean).is_empty(), "{:?}", top_outcome(clean));
+}
+
+#[test]
+fn an_undriven_carrier_without_default_is_e0187() {
+    // §5.2.8, EU-04 AC 5 (C15): a one-driver carrier nothing drives holds its initial value in every analysis; with none
+    // written and no `Default`, it is `E0187` naming the carrier
+    let found = top_outcome("module Top(in a: Bit<u8>) { signal idle: Bit<u8>; }");
+    assert_eq!(found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0187"], "{found:?}");
+    assert!(found[0].1.contains("`idle`"), "{}", found[0].1);
+    // an `in` port is its caller's carrier, not this module's
+    assert!(top_outcome("module Top(in a: Bit<u8>) { }").is_empty());
+}
+
+#[test]
+fn a_definition_or_a_child_out_port_specifies_the_value() {
+    // §3.3.4, EU-04 AC 7 (C92): the one driver gives the value: an undelayed definition, or the `out` port of a child
+    // the carrier is handed to; a delayed definition does not
+    let undelayed = "module Top(in d: Bit) { signal s: Bit; s = d; }";
+    assert!(top_outcome(undelayed).is_empty(), "{:?}", top_outcome(undelayed));
+    let child = "module Child(in a: Bit, out q: Bit = false) { }\nmodule Top(in a: Bit) { signal s: Bit; let c = Child(a, s); }";
+    assert!(top_outcome(child).is_empty(), "{:?}", top_outcome(child));
+    let delayed = top_outcome("module Top(in d: Bit) { signal s: Bit; s = d after 1n; }");
+    assert_eq!(delayed.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0187"], "{delayed:?}");
+    // the child's own `out` port is a declaration of its own: it needs its value or a `Default`
+    let bare_child = top_outcome("module Child(in a: Bit, out q: Bit) { }\nmodule Top(in a: Bit) { signal s: Bit; let c = Child(a, s); }");
+    assert_eq!(bare_child.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0187"], "{bare_child:?}");
+}

@@ -108,7 +108,7 @@ fn unreached_items_are_not_reported() {
 /// refused by name as well.
 const STD_ROWS: &[Row] = &[
     // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it (`types_natures::others_on_a_one_driver_carrier_is_e0224`).
-    Row { construct: "element definition", source: "module Top(out q: Bit) { q[0] = true; }", names: "element or field definition" },
+    Row { construct: "element definition", source: "module Top(out q: Bit = false) { q[0] = true; }", names: "element or field definition" },
     Row { construct: "resolved nature", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },
     Row { construct: "Repr", source: "module Top() { }\nanalog for Top { let x: Repr = 1.0; }", names: "`Repr`" },
 ];

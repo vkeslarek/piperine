@@ -95,7 +95,7 @@ analog for PowerSwitch {
 
 /// The gate driver (SPEC §5.3): a propagation delay on both gates and a shoot-through interlock.
 /// A command to both switches is a command to neither. Dead time itself comes from the DPWM.
-pub module GateDriver(in hs_cmd: Bit, in ls_cmd: Bit, out hs_gate: Bit, out ls_gate: Bit) {
+pub module GateDriver(in hs_cmd: Bit, in ls_cmd: Bit, out hs_gate: Bit = false, out ls_gate: Bit = false) {
     tpd: f64 = 10n where tpd > 0.0;
     hs_gate = (hs_cmd & !ls_cmd) after tpd;
     ls_gate = (ls_cmd & !hs_cmd) after tpd;

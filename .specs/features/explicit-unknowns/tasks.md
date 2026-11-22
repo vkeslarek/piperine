@@ -816,11 +816,11 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `types_explicit::a_missing_initial_value_is_e0187_naming_the_carrier` and `an_undriven_carrier_without_default_is_e0187` pass
-- [ ] `types_explicit::a_definition_or_a_child_out_port_specifies_the_value` passes: no `E0187` for a carrier an undelayed definition drives or a child's `out` port holds, `E0187` for a delayed definition without an initial value (C92)
-- [ ] `book_inventory::the_book_uses_no_removed_name` passes with no exempt block (C79)
-- [ ] The tree builds: T23 to T27 left no such carrier
-- [ ] Gate check passes: Full
+- [x] `types_explicit::a_missing_initial_value_is_e0187_naming_the_carrier` and `an_undriven_carrier_without_default_is_e0187` pass
+- [x] `types_explicit::a_definition_or_a_child_out_port_specifies_the_value` passes: no `E0187` for a carrier an undelayed definition drives or a child's `out` port holds, `E0187` for a delayed definition without an initial value (C92)
+- [x] `book_inventory::the_book_uses_no_removed_name` passes with no exempt block (C79)
+- [x] The tree builds: T23 to T27 left no such carrier
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

@@ -152,7 +152,7 @@ fn a_recursion_reached_from_analog_is_unrolled() {
 
     // A recursion no analog block reaches stays a recursion of the IR (D12).
     let items = "fn tri(n: u8, x: f64) -> f64 { if n == 0 { 0.0 } else { x + tri(n - 1, x) } }";
-    let src = format!("{items}\nmodule Top(in clk: Bit, out q: Bit<u8>) {{ }}\ndigital for Top {{ on clk.rise() {{ q <- tri(3, 1.0) as u8; }} }}");
+    let src = format!("{items}\nmodule Top(in clk: Bit, out q: Bit<u8> = 0) {{ }}\ndigital for Top {{ on clk.rise() {{ q <- tri(3, 1.0) as u8; }} }}");
     let ir = Elab::ir(&src, "Top");
     assert!(ir.functions().any(|f| f.name() == "tri"));
 }

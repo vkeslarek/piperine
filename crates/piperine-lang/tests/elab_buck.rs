@@ -61,6 +61,9 @@ const DPWM_PLAIN_READS: [(&str, &str); 5] = [
     ("(hs & oc.known_or(true))", "(hs & oc)"),
     ("(ls & sink_oc.known_or(true))", "(ls & sink_oc)"),
 ];
+/// The one difference of `GateDriver`: its delayed definitions give no value to its `out` ports, so each writes its
+/// initial value (explicit-unknowns T30, §3.3.4) and the fixture, the earlier transcription, has none.
+const GATE_DRIVER_INITIAL_VALUES: [(&str, &str); 2] = [("carrier hs_gate: bool out", "carrier hs_gate: bool out init false"), ("carrier ls_gate: bool out", "carrier ls_gate: bool out init false")];
 const DITHERED_WIDTH_PLAIN: [(&str, &str); 4] = [
     ("fn \"dithered_width~01\"(duty: u12, frame: flagged<u3>) -> flagged<u9>", "fn \"dithered_width~11\"(duty: flagged<u12>, frame: flagged<u3>) -> flagged<u9>"),
     ("  local coarse: u9", "  local coarse: flagged<u9>"),
@@ -94,7 +97,7 @@ fn assert_same(case: &str, expected: &[String], actual: &[String]) {
 
 #[test]
 fn six_slice_bodies_equal_their_hand_built_fixtures() {
-    // DIG-14 AC 1, C128. Osc and GateDriver print exactly; the others differ by the rise guard
+    // DIG-14 AC 1, C128. Osc prints exactly and GateDriver by its two initial values; the others differ by the rise guard
     // (SetpointReg `wr`, RefRamp `tick`, Adc `sample`, Pid `tick`) and Pid also by the fold.
     let ir = buck_ir();
     let print = ir.print_structural();
@@ -102,7 +105,7 @@ fn six_slice_bodies_equal_their_hand_built_fixtures() {
     pid.extend(PID_PLAIN_READS.map(pair));
     let cases: [(&str, &str, Vec<(String, String)>); 6] = [
         ("osc", "Osc", vec![]),
-        ("gate_driver", "GateDriver", vec![]),
+        ("gate_driver", "GateDriver", GATE_DRIVER_INITIAL_VALUES.map(pair).to_vec()),
         ("setpoint_reg", "SetpointReg", vec![stdlib_rise_guard("wr"), pair(SETPOINT_PLAIN)]),
         ("ref_ramp", "RefRamp", vec![stdlib_rise_guard("tick"), pair(RAMP_PLAIN)]),
         ("adc", "Adc", vec![stdlib_rise_guard("sample")]),

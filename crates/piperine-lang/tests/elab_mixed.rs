@@ -109,7 +109,7 @@ fn analog_reads_a_hoisted_result() {
     // hoisted result of `transition` (the carriers `gate.*` through `known_or`, `now()` and
     // `analysis(Static)`), and contributes `gch * v(d, s) - body_diode(v(s, d), vf, rd)` with
     // `ddt(coss * v(d, s))` (power.msl).
-    let ir = Elab::ir(&power(&["PowerSwitch"], "module Top() { signal d: Electrical; signal s: Electrical; signal g: Bit; let p = PowerSwitch(d, s, g); }"), "Top");
+    let ir = Elab::ir(&power(&["PowerSwitch"], "module Top() { signal d: Electrical; signal s: Electrical; signal g: Bit = false; let p = PowerSwitch(d, s, g); }"), "Top");
     let ps = body(&ir, "PowerSwitch");
     let lines = analog_lines(&ir, "PowerSwitch");
     assert_eq!(lines.len(), 2);
@@ -123,13 +123,13 @@ fn analog_reads_a_hoisted_result() {
     let guarded = reads.iter().filter(|e| matches!(e, Expr::KnownOr { value, .. } if matches!(ir.expr(*value), Expr::Carrier(_)))).count();
     assert!(carriers > 0 && carriers == guarded, "{carriers} reads, {guarded} under `known_or`");
     // `Load` reads two hoisted results in one contribution.
-    let ir = Elab::ir(&power(&["Load"], "module Top() { signal p: Electrical; signal a: Bit; signal b: Bit; let l = Load(p, a, b); }"), "Top");
+    let ir = Elab::ir(&power(&["Load"], "module Top() { signal p: Electrical; signal a: Bit = false; signal b: Bit = false; let l = Load(p, a, b); }"), "Top");
     let lines = analog_lines(&ir, "Load");
     assert_eq!(lines.len(), 1);
     assert!(lines[0].starts_with("b0.flow +> direct ((probe(p, gnd) * ((1.0 / r_base) + (if static() { k_step.x.known_or(0.0) }"), "{}", lines[0]);
     assert!(lines[0].contains("k_inject.x.known_or(0.0)") && lines[0].ends_with("* i_inject))"), "{}", lines[0]);
     // A carrier read, `now()` and `analysis(Static)` written in `analog` itself.
-    let src = "module M(p: Electrical, in g: Bit) { }\nanalog for M { i(p) +> if g && !analysis(Static) { now() } else { 0.0 }; }\nmodule Top() { signal a: Electrical; signal g: Bit; let m = M(a, g); }";
+    let src = "module M(p: Electrical, in g: Bit) { }\nanalog for M { i(p) +> if g && !analysis(Static) { now() } else { 0.0 }; }\nmodule Top() { signal a: Electrical; signal g: Bit = false; let m = M(a, g); }";
     let ir = Elab::ir(src, "Top");
     assert_eq!(analog_lines(&ir, "M"), ["b0.flow +> direct if (g.known_or(false) && (!static())) { time() } else { 0.0 }"]);
 }

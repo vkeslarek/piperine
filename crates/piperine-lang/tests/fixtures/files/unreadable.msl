@@ -1,4 +1,4 @@
 const M: str = include_str!("missing.txt");
 module Cell(in clk: Bit) { }
 digital for Cell { on clk.rise() { emit!("sim", msg = M); } }
-module Top() { signal clk: Bit; let c = Cell(clk); }
+module Top() { signal clk: Bit = false; let c = Cell(clk); }

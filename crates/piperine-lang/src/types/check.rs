@@ -647,6 +647,7 @@ impl<'d> Checker<'d> {
                 self.infer(instance);
             }
         }
+        self.missing_initial_values(&data.children);
         self.handed_drives();
     }
 }

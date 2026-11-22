@@ -68,7 +68,7 @@ fn analog_exprs(ir: &Ir, body: &Body) -> Vec<ExprId> {
 fn power_switch(names: &[&str]) -> String {
     let lets: Vec<String> = names.iter().map(|n| format!("let {n} = PowerSwitch(d, s, g);")).collect();
     format!(
-        "{}\n{}\nmodule Top() {{ signal d: Electrical; signal s: Electrical; signal g: Bit; {} }}",
+        "{}\n{}\nmodule Top() {{ signal d: Electrical; signal s: Electrical; signal g: Bit = false; {} }}",
         buck::item("power.msl", "fn body_diode"),
         buck::module_with_analog("power.msl", "PowerSwitch"),
         lets.join(" ")
@@ -159,7 +159,7 @@ fn an_omitted_option_input_reads_as_none() {
 #[test]
 fn two_placements_are_two_sets_of_carriers() {
     // DIG-10 AC 4, C93: `Load` (power.msl) places `transition` twice: `k_step.*` and `k_inject.*`.
-    let src = format!("{}\nmodule Top() {{ signal p: Electrical; signal step: Bit; signal inject: Bit; let l = Load(p, step, inject); }}", buck::module_with_analog("power.msl", "Load"));
+    let src = format!("{}\nmodule Top() {{ signal p: Electrical; signal step: Bit = false; signal inject: Bit = false; let l = Load(p, step, inject); }}", buck::module_with_analog("power.msl", "Load"));
     let ir = Elab::ir(&src, "Top");
     let load = body(&ir, "Load");
     let names = carrier_names(&load);

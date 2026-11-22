@@ -347,10 +347,10 @@ fn a_definition_and_a_commit_are_e0221() {
     assert_eq!((codes(&d), snippet(src, &d[0])), (vec!["E0221".to_string()], "q"));
     assert_eq!(d[0].diagnostic.span().start, src.rfind("q <- d").unwrap());
     // Two commits of one carrier are one drive.
-    let src = "module Top(in clk: Bit, in d: Bit, out q: Bit) { }\ndigital for Top { on clk.rise() { q <- d; q <- !d after 1n; } on clk.fall() { q <- true; } }";
+    let src = "module Top(in clk: Bit, in d: Bit, out q: Bit = false) { }\ndigital for Top { on clk.rise() { q <- d; q <- !d after 1n; } on clk.fall() { q <- true; } }";
     checked_top(src, "Top");
     // Commits and a hand-over of one carrier.
-    let src = "module Source(out q: Bit) { }\nmodule Top(in clk: Bit, in d: Bit) { signal s: Bit; let a = Source(s); }\ndigital for Top { on clk.rise() { s <- d; } }";
+    let src = "module Source(out q: Bit = false) { }\nmodule Top(in clk: Bit, in d: Bit) { signal s: Bit; let a = Source(s); }\ndigital for Top { on clk.rise() { s <- d; } }";
     let d = diagnostics(src);
     assert_eq!(codes(&d), ["E0220"]);
     assert_eq!(d[0].diagnostic.span().start, src.find("s)").unwrap());
@@ -560,7 +560,7 @@ fn cross_takes_ttol_and_etol_by_position_and_by_name() {
 /// `Top` with one reaction on `head` whose body is `body`, over a `bool` carrier `q` and an `f64`
 /// carrier `x`.
 fn with_body(head: &str, body: &str) -> String {
-    format!("module Top(in clk: Bit, in en: Bit, out q: Bit, out x: Bit<f64>) {{ }}\ndigital for Top {{\non {head} {{ {body} }}\n}}")
+    format!("module Top(in clk: Bit, in en: Bit, out q: Bit = false, out x: Bit<f64> = 0.0) {{ }}\ndigital for Top {{\non {head} {{ {body} }}\n}}")
 }
 
 #[test]
@@ -593,7 +593,7 @@ fn an_event_reads_as_a_bool_in_a_reaction_body() {
 fn an_event_committed_onto_a_bool_carrier_reads_as_a_bool() {
     // UE-02 AC 5, §13 rule 2 and design D2: `on up || dn { q <- up; }` commits whether `up` fired
     // in this microstep, as the `Comparator` of §13 does. The event is read, typed `bool`.
-    let src = "module Top(in clk: Bit, in en: Bit, out q: Bit) { let up = clk.rise(); let dn = clk.fall(); }\ndigital for Top { on up || dn { q <- up; } }";
+    let src = "module Top(in clk: Bit, in en: Bit, out q: Bit = false) { let up = clk.rise(); let dn = clk.fall(); }\ndigital for Top { on up || dn { q <- up; } }";
     let design = design_of(src);
     let types = checked(&design, src);
     let committed: Vec<ExprId> = exprs_reading(&design, &types, src, "up").into_iter().filter(|e| types.event_read(*e)).collect();

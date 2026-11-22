@@ -26,6 +26,8 @@ pub(super) struct DriveBook {
     /// The undelayed definitions in source order: the target, where, and the carriers its value
     /// reads (directly or through a `let`).
     loops: Vec<(DeclId, Span, BTreeSet<DeclId>)>,
+    /// The carriers an undelayed definition drives: the definition gives the carrier its value from `(0, 0)`.
+    pub(super) undelayed: BTreeSet<DeclId>,
 }
 
 impl Checker<'_> {
@@ -127,6 +129,7 @@ impl Checker<'_> {
             let mut reads = BTreeSet::new();
             self.carrier_reads(data.value, &mut reads, &mut BTreeSet::new());
             self.book.loops.push((carrier, place_span, reads));
+            self.book.undelayed.insert(carrier);
         }
     }
 

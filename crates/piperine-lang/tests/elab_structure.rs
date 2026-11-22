@@ -17,7 +17,7 @@ struct Device;
 impl Device {
     /// The source text of the device and its top.
     fn source(analog: &str) -> String {
-        format!("module M(p: Electrical, n: Electrical, in en: Bit) {{ k: f64 = 1.0; }}\nanalog for M {{ {analog} }}\nmodule Top() {{ signal s: Electrical; signal e: Bit; let m = M {{ }}(s, gnd, e); }}")
+        format!("module M(p: Electrical, n: Electrical, in en: Bit) {{ k: f64 = 1.0; }}\nanalog for M {{ {analog} }}\nmodule Top() {{ signal s: Electrical; signal e: Bit = false; let m = M {{ }}(s, gnd, e); }}")
     }
 
     /// The IR of `analog`, which must elaborate.
@@ -304,7 +304,7 @@ fn rows(ir: &Ir) -> Vec<(QuantityRole, Vec<(piperine_ir::Operator, bool)>)> {
 
 /// A device `M(p, n, in clk: Bit, out r: Bit<f64>)` with `items` in its body and `analog` as its `analog` block.
 fn charge_device(items: &str, analog: &str, digital: &str) -> String {
-    format!("module M(p: Electrical, n: Electrical, in clk: Bit, out r: Bit<f64> = 0.0) {{ c: f64 = 1p; {items} }}\nanalog for M {{ {analog} }}\ndigital for M {{ {digital} }}\nmodule Top() {{ signal s: Electrical; signal ck: Bit; signal r: Bit<f64>; let m = M {{ }}(s, gnd, ck, r); }}")
+    format!("module M(p: Electrical, n: Electrical, in clk: Bit, out r: Bit<f64> = 0.0) {{ c: f64 = 1p; {items} }}\nanalog for M {{ {analog} }}\ndigital for M {{ {digital} }}\nmodule Top() {{ signal s: Electrical; signal ck: Bit = false; signal r: Bit<f64>; let m = M {{ }}(s, gnd, ck, r); }}")
 }
 
 #[test]
@@ -505,7 +505,7 @@ fn a_param_value_let_that_reads_a_probe_is_e0321() {
     // has no value at elaboration: `E0321` at the use, naming the `let`.
     for (let_, reads) in [("let p = v(a);", "a probe"), ("let p = temperature();", "a call that is not a function"), ("let p = k;", "a carrier"), ("let p = Lag(1.0);", "the result of an instance")] {
         let lag = "module Lag(x: f64) -> f64 { signal y: State; potential(y) }\nanalog for Lag { flow(y) +> ddt(potential(y)) + potential(y) - x; }\n";
-        let src = format!("{lag}module Leaf() {{ c: f64 = 1.0; }}\nmodule Mid(a: Electrical) {{ signal k: Bit<f64>; {let_} let leaf = Leaf {{ c: p }}(); }}\nmodule Top() {{ signal a: Electrical; let m = Mid(a); }}");
+        let src = format!("{lag}module Leaf() {{ c: f64 = 1.0; }}\nmodule Mid(a: Electrical) {{ signal k: Bit<f64> = 0.0; {let_} let leaf = Leaf {{ c: p }}(); }}\nmodule Top() {{ signal a: Electrical; let m = Mid(a); }}");
         let err = Elab::run(&src, "Top").expect_err("the value has no constant");
         assert_eq!(Elab::codes(&err), ["E0321"], "{let_}: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
         let message = &err[0].diagnostic.message;

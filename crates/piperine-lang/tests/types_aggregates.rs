@@ -338,8 +338,18 @@ fn composite_carriers_type_check() {
     let items = "#[derive(Repr, PartialEq)]\nstruct Pair { a: u3, b: bool }\n\
                  #[derive(Repr, PartialEq)]\nenum Tx { Idle, Start, Data { n: u3 }, Stop }\n\
                  #[derive(Repr)]\n#[repr(u4)]\nenum Wide { A, B(u2, bool) }";
-    for carried in ["(u8, bool)", "[u4; 3]", "Option<u8>", "Pair", "Tx", "Option<Pair>", "[(u2, bool); 2]", "Wide"] {
-        let src = format!("{items}\nmodule Top() {{ signal s: Bit<{carried}>; }}");
+    for (carried, initial) in [
+        ("(u8, bool)", " = (0, false)"),
+        ("[u4; 3]", " = [0, 0, 0]"),
+        ("Option<u8>", ""),
+        ("Pair", " = Pair { a: 0, b: false }"),
+        ("Tx", " = Tx::Idle"),
+        ("Option<Pair>", ""),
+        ("[(u2, bool); 2]", " = [(0, false), (0, false)]"),
+        ("Wide", " = Wide::A"),
+    ] {
+        // a type with `Default` needs no initial value; the others write one (§3.3.4)
+        let src = format!("{items}\nmodule Top() {{ signal s: Bit<{carried}>{initial}; }}");
         CheckedSource::assert_clean_module(&src, carried);
     }
     // WIDTH: tuple/array/Option sums by the table; `Tx` is a 2-level tag and a 3-level payload
