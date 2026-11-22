@@ -13,6 +13,7 @@ use crate::settle::SettleCommits;
 use crate::store::{Store, StoreMark};
 use crate::tick::Tick;
 use crate::error::DigitalError;
+use crate::landing::TimePointRule;
 use crate::limits::DigitalLimits;
 
 /// The latest ticks a reaction's `HORIZON` may reach at an instant (abi.md R5).
@@ -121,6 +122,8 @@ impl Checkpoint {
 pub struct Digital {
     pub(crate) plan: DigitalPlan,
     pub(crate) limits: DigitalLimits,
+    /// Which scheduled instants a look-ahead lands on.
+    pub(crate) rule: TimePointRule,
     pub(crate) store: Store,
     pub(crate) queue: Queue,
     pub(crate) obs: Obs,
@@ -145,7 +148,8 @@ pub struct Digital {
 }
 
 impl Digital {
-    pub fn new(plan: DigitalPlan, limits: DigitalLimits) -> Digital {
+    /// An engine over `plan`; `rule` decides which scheduled instants a look-ahead lands on.
+    pub fn new(plan: DigitalPlan, limits: DigitalLimits, rule: TimePointRule) -> Digital {
         let mut store = Store::new(&plan.nets);
         // A param holds its initial value from the start, before any run (§5.3.1): a host `set`
         // checks its `where` against the other params' values, which a zeroed store would not give.
@@ -158,6 +162,7 @@ impl Digital {
         Digital {
             plan,
             limits,
+            rule,
             store,
             queue: Queue::new(),
             obs: Obs::new(),

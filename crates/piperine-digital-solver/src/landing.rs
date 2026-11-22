@@ -36,7 +36,8 @@ impl LandingCause {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum TimePointRule {
     /// Land only where something observable happens: a carrier the analog side reads changed, or a
-    /// firing reaction reads a continuous pin. Not yet wired: the engine applies `Declared`.
+    /// firing reaction reads a continuous pin. A design with a reaction on `settle` or a host
+    /// waiter keeps the `Declared` rule (abi.md R4 as implemented).
     #[default]
     Observable,
     /// Land on every instant the static reach analysis marks (R4 as declared).
@@ -46,14 +47,20 @@ pub enum TimePointRule {
 /// The test of a look-ahead: after the functions of one microstep, is the instant a landing, and
 /// why? Borrows what it reads, so the engine builds one per look-ahead without copying.
 pub struct LandingTest<'a> {
+    rule: TimePointRule,
     plan: &'a DigitalPlan,
     waited: &'a [NetId],
 }
 
 impl<'a> LandingTest<'a> {
-    /// The test over `plan` and the event nets a host waiter listens to (abi.md R7).
-    pub fn new(plan: &'a DigitalPlan, waited: &'a [NetId]) -> LandingTest<'a> {
-        LandingTest { plan, waited }
+    /// The test of `rule` over `plan` and the event nets a host waiter listens to (abi.md R7). The
+    /// rule in force is `Declared` whatever `rule` says when some pin is bound to `SETTLE` (a
+    /// reaction on `settle`, or the event function that guards one) or a host waiter is
+    /// registered: a settle phase or the host can see every time point.
+    pub fn new(rule: TimePointRule, plan: &'a DigitalPlan, waited: &'a [NetId]) -> LandingTest<'a> {
+        let seen = !plan.analysis().settle_nets().is_empty() || !waited.is_empty();
+        let rule = if seen { TimePointRule::Declared } else { rule };
+        LandingTest { rule, plan, waited }
     }
 
     /// The cause that makes the instant a landing after the functions of a microstep, or `None`
@@ -66,7 +73,7 @@ impl<'a> LandingTest<'a> {
             Some(LandingCause::AnalogReadChanged)
         } else if any(&|f| analysis.samples(f.instance as u32, f.reaction as u32)) {
             Some(LandingCause::ContinuousRead)
-        } else if any(&|f| analysis.probes(f.instance as u32, f.reaction as u32)) {
+        } else if self.rule == TimePointRule::Declared && any(&|f| analysis.probes(f.instance as u32, f.reaction as u32)) {
             Some(LandingCause::DeclaredReach)
         } else if any(&|f| self.is_irreversible(f)) {
             Some(LandingCause::Irreversible)

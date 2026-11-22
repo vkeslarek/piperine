@@ -15,6 +15,7 @@ use piperine_digital_solver::observe::Observation;
 use piperine_digital_solver::plan::DigitalPlan;
 use piperine_digital_solver::tick::{Resolution, Tick};
 use piperine_digital_solver::error::DigitalError;
+use piperine_digital_solver::landing::TimePointRule;
 use piperine_digital_solver::limits::DigitalLimits;
 
 fn crate_dir() -> PathBuf {
@@ -112,7 +113,7 @@ fn the_facade_offers_every_operation_of_the_discrete_side() {
 
     // and each once, on a small plan: one host-driven net
     let plan = DigitalPlan::bind(vec![NetSpec::discrete("n", 2, 1)], vec![], Resolution::default()).unwrap();
-    let mut d = Digital::new(plan, DigitalLimits::default());
+    let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
     let n = NetId(0);
     d.start().unwrap();
     assert_eq!(d.next_due(), None);

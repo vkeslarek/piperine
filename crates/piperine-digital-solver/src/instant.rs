@@ -175,7 +175,7 @@ impl Digital {
             }
             if lookahead {
                 let firing = fired_reactions(&self.plan.instances, Phase::Microstep, &self.store);
-                let cause = LandingTest::new(&self.plan, &self.waited).after_functions(&self.store, &firing, analog_now);
+                let cause = LandingTest::new(self.rule, &self.plan, &self.waited).after_functions(&self.store, &firing, analog_now);
                 if let Some(cause) = cause {
                     return Ok(Stepped::Landing { cause });
                 }

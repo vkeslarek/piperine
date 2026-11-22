@@ -11,7 +11,7 @@ mod devices;
 use devices::*;
 use piperine_abi::layout::{HIGH, LOW};
 use piperine_digital_solver::advance::Advance;
-use piperine_digital_solver::landing::LandingCause;
+use piperine_digital_solver::landing::{LandingCause, TimePointRule};
 use piperine_digital_solver::engine::{Digital, Horizon, Mode, Shadow};
 use piperine_digital_solver::net::{NetId, NetSpec};
 use piperine_digital_solver::observe::Observation;
@@ -20,7 +20,7 @@ use piperine_digital_solver::error::DigitalError;
 use piperine_digital_solver::limits::DigitalLimits;
 
 fn engine_with(devices: Vec<Placed<'_>>, adjust: impl FnOnce(&mut Vec<NetSpec>)) -> Digital {
-    Digital::new(bind_by_name_with(devices, Resolution::default(), adjust).expect("binds"), DigitalLimits::default())
+    Digital::new(bind_by_name_with(devices, Resolution::default(), adjust).expect("binds"), DigitalLimits::default(), TimePointRule::default())
 }
 
 fn net(d: &Digital, name: &str) -> NetId {

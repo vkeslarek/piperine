@@ -17,7 +17,7 @@ use std::rc::Rc;
 use piperine_analog_solver::device::{Ambient, AssemblySnapshot};
 use piperine_analog_solver::error::{Error, Result, SolverDomain};
 use piperine_digital_solver::advance::Advance as DigitalAdvance;
-use piperine_digital_solver::landing::LandingCause as DigitalLandingCause;
+use piperine_digital_solver::landing::{LandingCause as DigitalLandingCause, TimePointRule};
 use piperine_digital_solver::engine::{
     Checkpoint, Digital, Horizon as DigitalHorizon, Mark as DigitalMark, Mode, Shadow as DigitalShadow,
 };
@@ -67,7 +67,7 @@ pub(crate) fn digital_error(e: DigitalError) -> Error {
 /// A `Digital` over an empty plan: what `Bound` holds while a run owns the real one.
 pub(crate) fn empty_digital(seconds_per_tick: f64) -> Result<Digital> {
     let plan = DigitalPlan::bind(Vec::new(), Vec::new(), Resolution { seconds_per_tick }).map_err(digital_error)?;
-    Ok(Digital::new(plan, DigitalLimits::default()))
+    Ok(Digital::new(plan, DigitalLimits::default(), TimePointRule::Declared))
 }
 
 /// The discrete side's settled state at the top of a transient step: the

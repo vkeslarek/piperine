@@ -991,6 +991,46 @@ pub fn delayed() -> Handle {
     make::<Delayed>(&DELAYED, "delayed")
 }
 
+// ─── Lagged ─────────────────────────────────────────────────────────────────
+
+/// A statement that commits after 2 ns and promises nothing: its delay comes from an expression
+/// the shape cannot bound (the buck's `Osc`, whose delay is `0.5 / f`), so it carries no `LATER`.
+///
+/// pins: go=0 (PORT event); out=1 (PORT BIT)
+/// reaction 0: on [go] writes [S0 {out}]; out <- HIGH after 2 ns
+pub struct Lagged;
+static LAGGED_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static LAGGED: OnceLock<Module> = OnceLock::new();
+
+fn lagged_shape() -> ShapeRef {
+    let mut s = ShapeBuf::new();
+    let go = s.pin(PinSpec::event("go", role::PORT));
+    let out = s.pin(PinSpec::discrete("out", role::PORT, &BIT));
+    s.reaction(ReactionSpec { name: "lagged", on: vec![go], writes: vec![statement(out, 2, 0)], ..ReactionSpec::default() });
+    s.freeze()
+}
+
+impl Device for Lagged {
+    fn prototype() -> &'static Shape<'static> {
+        shared(&LAGGED_SHAPE, lagged_shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Lagged, Arc::clone(shared(&LAGGED_SHAPE, lagged_shape))))
+    }
+    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
+        Ok(())
+    }
+    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
+        bump("lagged", true);
+        cx.commit(0, &HIGH, 2e-9)?;
+        Ok(Flow::Continue)
+    }
+}
+
+pub fn lagged() -> Handle {
+    make::<Lagged>(&LAGGED, "lagged")
+}
+
 // ─── Clockwatch ─────────────────────────────────────────────────────────────
 
 static TICKS_FIELDS: [Field; 2] = [

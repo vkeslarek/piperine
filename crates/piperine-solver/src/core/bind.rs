@@ -19,6 +19,7 @@ use piperine_analog_solver::device::{AnalogBinding, AnalogInstance, AnalogPlan, 
 use piperine_analog_solver::error::{Error, SolverDomain};
 use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, BranchIdentifier, Netlist, NodeIdentifier};
 use piperine_analog_solver::tolerances::Tolerances;
+use piperine_digital_solver::landing::TimePointRule;
 use piperine_digital_solver::engine::Digital;
 use piperine_digital_solver::net::{NetId, NetSpec};
 use piperine_digital_solver::plan::{Binding, DigitalPlan, InstancePlan};
@@ -723,6 +724,6 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
             analog.set_discrete(slot, &init);
         }
     }
-    let digital = Digital::new(digital_plan, DigitalLimits { max_delta_cycles: microsteps, ..DigitalLimits::default() });
+    let digital = Digital::new(digital_plan, DigitalLimits { max_delta_cycles: microsteps, ..DigitalLimits::default() }, TimePointRule::Declared);
     Ok(Bound { analog, digital, names, holds, vntol, branch_abstol, analyses, host_writes: Vec::new(), temperature: None, microsteps })
 }
