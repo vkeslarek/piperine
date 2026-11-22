@@ -603,7 +603,7 @@ fn spec_parse_phase_codes() -> std::collections::BTreeSet<String> {
 fn every_parse_phase_row_has_a_fixture() {
     // A parse-phase row added to the spec without a fixture fails here.
     let spec = spec_parse_phase_codes();
-    assert!(spec.len() >= 19, "the spec's tables list at least the 17 rows and E0900/E0910: {spec:?}");
+    assert!(spec.len() >= 18, "the spec's tables list at least the 16 rows and E0900/E0910 (E0908 retired by explicit-unknowns): {spec:?}");
     let covered: std::collections::BTreeSet<String> = fixtures().iter().map(|f| f.code.to_string()).collect();
     let missing: Vec<&String> = spec.difference(&covered).collect();
     assert!(missing.is_empty(), "parse-phase rows without a fixture: {missing:?}");
@@ -617,9 +617,10 @@ fn every_parse_phase_row_has_a_fixture() {
 }
 
 /// Parse-phase codes the specification retired before the parser stopped raising them: the
-/// value-semantics amendment (Appendix G.71) changed the text first. `GAPS.md` S7 lists them;
-/// the feature `value-semantics` removes each fixture and empties this list.
-const RETIRED_AHEAD_OF_THE_PARSER: [&str; 1] = ["E0331"];
+/// value-semantics amendment (Appendix G.71) changed the text first (`E0331`; `GAPS.md` S7 lists it;
+/// the feature `value-semantics` removes the fixture), and explicit-unknowns retired `E0908`
+/// (`Unknown` as a name; its task T28 removes the fixtures and the entry).
+const RETIRED_AHEAD_OF_THE_PARSER: [&str; 2] = ["E0331", "E0908"];
 
 /// B.3.6 rows the specification gained with value semantics that the parser does not report
 /// yet (`GAPS.md` S7). The feature `value-semantics` adds their fixtures and empties this list.
