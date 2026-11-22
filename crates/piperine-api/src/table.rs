@@ -8,6 +8,7 @@ use piperine_ir::ValueType;
 use piperine_plan::CarrierLayout;
 use piperine_solver::prelude::{AcAnalysisResult, DcAnalysisResult, Net, PoleZeroResult, SensResult, TransferFunctionAnalysisResult, TransientAnalysisResult};
 
+use crate::composite::CompositeCell;
 use crate::failure::Failure;
 use crate::probe::Probe;
 use crate::held::Held;
@@ -23,6 +24,9 @@ pub enum Cell {
     Text(String),
     /// A discrete value whose known byte is clear.
     Unknown,
+    /// A tuple, an array, a struct, an enum with a payload or an `Option`: the tree of its parts
+    /// (`CompositeCell`), which the formats write as a literal or as leaves.
+    Composite(Box<CompositeCell>),
 }
 
 /// Columns and rows; every row has one cell per column.
@@ -104,6 +108,56 @@ impl Cell {
 }
 
 impl Table {
+    /// The table with each column that holds composite values replaced by one column per leaf, named
+    /// `<column>.<leaf>` (`<column>[k]` for an element, `<column>` itself for an enum's variant, whose
+    /// payload leaves are `<column>.<Variant>.<field>`): the form CSV and a plot need (D13). The leaves
+    /// of a column are those of every row, in the order each first appears; a row a leaf does not
+    /// exist in (another variant, an unknown value in a leaf column of a known one) shows an empty
+    /// text, an unknown value `x` in every leaf. `with_text` keeps the leaves that are text (a
+    /// variant's name); a plot has no use for them.
+    pub fn expanded(&self, with_text: bool) -> Table {
+        let mut columns = Vec::new();
+        let mut source: Vec<(usize, Option<String>)> = Vec::new();
+        for (c, name) in self.columns.iter().enumerate() {
+            let mut leaves: Vec<String> = Vec::new();
+            for row in &self.rows {
+                if let Some(Cell::Composite(value)) = row.get(c) {
+                    for (leaf, cell) in value.leaves() {
+                        if (with_text || !matches!(cell, Cell::Text(_))) && !leaves.contains(&leaf) {
+                            leaves.push(leaf);
+                        }
+                    }
+                }
+            }
+            if leaves.is_empty() {
+                columns.push(name.clone());
+                source.push((c, None));
+                continue;
+            }
+            for leaf in leaves {
+                columns.push(if leaf.is_empty() { name.clone() } else if leaf.starts_with('[') { format!("{name}{leaf}") } else { format!("{name}.{leaf}") });
+                source.push((c, Some(leaf)));
+            }
+        }
+        let rows = self
+            .rows
+            .iter()
+            .map(|row| {
+                source
+                    .iter()
+                    .map(|(c, leaf)| match (leaf, row.get(*c)) {
+                        (None, Some(cell)) => cell.clone(),
+                        (Some(_), Some(Cell::Unknown)) => Cell::Unknown,
+                        (Some(leaf), Some(Cell::Composite(value))) => value.leaf(leaf).unwrap_or_else(|| Cell::Text(String::new())),
+                        (Some(_), _) => Cell::Text(String::new()),
+                        (None, None) => Cell::Unknown,
+                    })
+                    .collect()
+            })
+            .collect();
+        Table { columns, rows }
+    }
+
     /// The operating point: columns `signal` and `value`, one row per probe in order. `net`
     /// gives the bytes of a discrete net by its path.
     pub fn operating_point(probes: &[Probe], result: &DcAnalysisResult, net: &dyn Fn(&str) -> Option<Vec<u8>>, term: &dyn Fn(&str, &str) -> Option<f64>) -> Result<Table, Failure> {
@@ -126,6 +180,7 @@ impl Table {
                     Probe::Flow { branch, .. } => result.get_branch(branch.clone()).map(Cell::Real),
                     Probe::Net { path, ty } => net(path).map(|bytes| Cell::decode(ty, &bytes)).transpose()?,
                     Probe::Param { path, ty } => net(path).map(|bytes| Cell::decode_param(ty, &bytes)).transpose()?,
+                    Probe::Shaped { path, shape, leaf } => net(path).map(|bytes| Probe::shown(shape, leaf.as_deref(), &bytes)).transpose()?,
                     Probe::Term { instance, term: name } => term(instance, name).map(Cell::Real),
                 };
                 value.ok_or_else(|| Failure::Backend(format!("the operating point holds no value for `{}`", probe.label())))
@@ -199,7 +254,7 @@ impl Table {
     pub fn frequency(probes: &[Probe], result: &AcAnalysisResult) -> Result<Table, Failure> {
         let mut columns = vec!["freq".to_string()];
         for probe in probes {
-            if let Probe::Net { path, .. } | Probe::Param { path, .. } = probe {
+            if let Probe::Net { path, .. } | Probe::Param { path, .. } | Probe::Shaped { path, .. } = probe {
                 let message = format!("`{path}` is a discrete net or a param: an `ac` run prints nodes and flows, which have a phasor");
                 return Err(Failure::Host { code: "E0801", message });
             }
@@ -218,7 +273,7 @@ impl Table {
                     let phasor = match probe {
                         Probe::Node { id, .. } => step.get_node(id),
                         Probe::Flow { branch, .. } => step.get_branch(branch.clone()),
-                        Probe::Net { .. } | Probe::Param { .. } | Probe::Term { .. } => None,
+                        Probe::Net { .. } | Probe::Param { .. } | Probe::Shaped { .. } | Probe::Term { .. } => None,
                     };
                     let phasor = phasor.ok_or_else(|| Failure::Backend(format!("the step at {} Hz holds no value for `{}`", step.frequency, probe.label())))?;
                     row.push(Cell::Real(phasor.norm()));
@@ -249,6 +304,7 @@ impl Table {
                         Probe::Node { id, .. } => step.get_node(id).map(Cell::Real),
                         Probe::Flow { branch, .. } => step.get_branch(branch.clone()).map(Cell::Real),
                         Probe::Net { path, ty } => step.digital_named(path).map(|bytes| Cell::decode(ty, bytes)).transpose()?,
+                        Probe::Shaped { path, shape, leaf } => step.digital_named(path).map(|bytes| Probe::shown(shape, leaf.as_deref(), bytes)).transpose()?,
                         Probe::Param { path, ty } => match step.digital_named(path) {
                             Some(bytes) => Some(Cell::decode_param(ty, bytes)?),
                             None => held.iter().find(|h| h.path == *path).map(|h| h.cell_at(step.time())),

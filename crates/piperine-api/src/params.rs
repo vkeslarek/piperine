@@ -233,6 +233,11 @@ impl Params {
         self.slot(instance)?.params.iter().find(|(n, ty, _)| n == param && !ty.is_composite()).map(|(_, _, v)| *v)
     }
 
+    /// The bytes of the composite param `param` of `instance`: its value, then the known byte.
+    pub fn composite_bytes(&self, instance: &str, param: &str) -> Option<&[u8]> {
+        self.slot(instance)?.composites.iter().find(|c| c.name == param).map(|c| c.bytes.as_slice())
+    }
+
     /// The leaves of the composite param `param` of `instance`, as the layout names them; `None`
     /// when the instance has no such composite param.
     pub fn leaves(&self, instance: &str, param: &str) -> Option<Vec<String>> {

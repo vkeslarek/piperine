@@ -19,6 +19,7 @@ use piperine_ir::{EmitField, Ir, Stmt, Stream, ValueType};
 use piperine_plan::{CarrierLayout, RecordLayout};
 use piperine_solver::protocol::{Observation, ObservationKind, Sink};
 
+use crate::composite::{CellShape, CompositeCell};
 use crate::failure::Failure;
 use crate::recorder::Recorder;
 use crate::table::Cell;
@@ -55,6 +56,10 @@ pub enum Field {
     Text(String),
     /// A value whose known byte is clear.
     Unknown,
+    /// The name of the variant an enum with no payload holds (CV-22).
+    Variant(String),
+    /// A tuple, an array, a struct, an enum or an `Option`: the tree of its parts.
+    Composite(Box<CompositeCell>),
 }
 
 /// Where a session hands the records of a run, as the solver delivers them.
@@ -156,7 +161,11 @@ impl Streams {
             let f = stream.fields.get(field as usize).ok_or_else(|| refused(format!("no value field {field}")))?;
             let (offset, carrier) = &layout.fields[field as usize];
             let slice = &bytes[*offset as usize..(offset + carrier.size()) as usize];
-            Ok((f.name.clone(), Field::of(Cell::decode(&self.ir.carried(&f.ty), slice)?)))
+            let cell = match CellShape::of(&self.ir, &f.ty) {
+                Some(shape) if !matches!(shape, CellShape::Scalar(_)) => shape.decode(slice)?,
+                _ => Cell::decode(&self.ir.carried(&f.ty), slice)?,
+            };
+            Ok((f.name.clone(), Field::of(cell)))
         };
         // `maybe` is always known (§19 rule 1); a clear known byte, which no run writes, reads as
         // not maybe rather than as a guess
@@ -198,8 +207,9 @@ impl Field {
             Cell::Real(v) => Field::Real(v),
             Cell::Bool(v) => Field::Bool(v),
             Cell::Int(v) => Field::Int(v),
-            Cell::Text(v) => Field::Text(v),
+            Cell::Text(v) => Field::Variant(v),
             Cell::Unknown => Field::Unknown,
+            Cell::Composite(v) => Field::Composite(v),
         }
     }
 }

@@ -192,6 +192,8 @@ impl Plot {
     /// with the first column as the x axis; an `ac` table is the magnitude in dB over the phase
     /// in degrees. `P0010` for an operating point, which has nothing to plot.
     pub fn of(table: &Table, analysis: &Analysis) -> Result<Plot, Failure> {
+        // a composite column is one series or lane per numeric leaf
+        let table = &table.expanded(false);
         match analysis {
             Analysis::Op => Err(Failure::Host { code: "P0010", message: "an operating point has nothing to plot".into() }),
             Analysis::Ac { grid, .. } => Plot::frequency(table, matches!(grid, Grid::PerDecade(_))),

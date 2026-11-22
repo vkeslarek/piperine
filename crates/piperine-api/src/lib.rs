@@ -16,6 +16,7 @@
 //! - [`request`]: a run request, read from a run table or from flags, validated.
 
 pub mod backend;
+pub mod composite;
 pub mod failure;
 mod held;
 mod host;
@@ -34,6 +35,7 @@ pub mod table;
 pub mod verdict;
 
 pub use backend::Backend;
+pub use composite::{CellShape, CompositeCell, VariantShape};
 pub use failure::Failure;
 pub use held::Held;
 pub use metadata::{Metadata, ParamInfo, PortInfo, StreamInfo};

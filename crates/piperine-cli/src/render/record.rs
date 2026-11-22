@@ -22,7 +22,9 @@ impl RecordLine {
                 Field::Bool(v) => Number::text(&Cell::Bool(*v)),
                 Field::Int(v) => Number::text(&Cell::Int(*v)),
                 Field::Text(v) => format!("\"{v}\""),
+                Field::Variant(v) => v.clone(),
                 Field::Unknown => Number::text(&Cell::Unknown),
+                Field::Composite(v) => Number::text(&Cell::Composite(v.clone())),
             };
             write!(out, " {name}={value}")?;
         }

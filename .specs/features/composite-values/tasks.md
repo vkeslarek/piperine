@@ -1462,8 +1462,8 @@ T63
 
 **Done when**:
 
-- [ ] `a_carried_enum_reads_as_its_variant_name` and `enum_names_live_in_the_ir_not_in_the_net_bytes` pass under `**Run apicomp**`
-- [ ] Gate check passes: Full
+- [x] `a_carried_enum_reads_as_its_variant_name` and `enum_names_live_in_the_ir_not_in_the_net_bytes` pass under `**Run apicomp**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

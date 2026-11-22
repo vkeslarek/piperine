@@ -9,7 +9,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::OnceLock;
 
-use piperine_api::{Failure, Field, Overrides, ParamValue, Project, Record, RecordSink, Session};
+use piperine_api::{CellShape, Cell, Failure, Field, Overrides, ParamValue, Project, Record, RecordSink, Session};
 use piperine_transpile::Settings;
 
 /// Keeps every record, in the order it is handed over.
@@ -116,4 +116,92 @@ fn a_timed_write_of_a_leaf_is_refused_by_name() {
         Err(Failure::Host { code, message }) => assert!(code == "E0806" && message.contains("composite"), "{code}: {message}"),
         other => panic!("a timed leaf write is refused: {other:?}"),
     }
+}
+
+/// A unit enum, a struct and an enum with a payload held by carriers a reaction commits, run as a
+/// transient that sees one rising edge of `clk` at 100 ns.
+const CARRIED: &str = "#[derive(Repr, PartialEq)]\nenum Mode { Idle, Regulate, Fault }\n#[derive(Repr, PartialEq)]\nstruct Pair { a: u8, b: bool }\n#[derive(Repr, PartialEq)]\nenum Tx { Idle, Data { n: u3 } }\n\
+module Top(in clk: Bit, out mode: Bit<Mode>, out pair: Bit<Pair>, out tx: Bit<Tx>) {}\n\
+digital for Top {\n    on clk.rise() {\n        mode <- Mode::Regulate;\n        pair <- Pair { a: 7, b: true };\n        tx <- Tx::Data { n: 5 };\n    }\n}\n";
+
+/// The session of `CARRIED` printing `print`, and the last row of its table.
+struct Carried {
+    session: Session,
+}
+
+impl Carried {
+    fn open(print: &[&str]) -> Carried {
+        static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
+        let cache = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
+        let dir = tempfile::tempdir().expect("tmp");
+        let file = dir.path().join("bench.msl");
+        std::fs::write(&file, CARRIED).expect("write");
+        let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides {
+            backend: Some("rust".into()),
+            top: Some("Top".into()),
+            analysis: Some("transient".into()),
+            stop: Some(2e-7),
+            max_step: Some(1e-8),
+            print: print.iter().map(|s| s.to_string()).collect(),
+            ..Overrides::default()
+        };
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        let mut session = Session::open(&project, &spec, &Settings { rustc: None, cache: cache.path().to_path_buf() }).unwrap_or_else(|f| panic!("{f}"));
+        session.drive("clk", ParamValue::Bool(false), 0.0).expect("drive clk low");
+        session.drive("clk", ParamValue::Bool(true), 1e-7).expect("drive clk high");
+        Carried { session }
+    }
+
+    /// The last row of the run's table: each printed signal's final value.
+    fn last(&mut self) -> (Vec<String>, Vec<Cell>) {
+        let table = self.session.run(Rc::new(RefCell::new(Kept::default()))).unwrap_or_else(|f| panic!("{f}"));
+        (table.columns.clone(), table.rows.last().expect("a row").clone())
+    }
+}
+
+#[test]
+fn a_carried_enum_reads_as_its_variant_name() {
+    // CV-22 AC 1: a unit enum reads as its variant's name, not its tag (`Regulate`, not 1); an enum
+    // with a payload and a struct read as composite values that print as the language's literals; a
+    // path naming a leaf (`pair.a`, `tx.Data.n`) is that leaf alone
+    let mut run = Carried::open(&["mode", "pair", "tx", "pair.a", "tx.Data.n"]);
+    let (columns, row) = run.last();
+    assert_eq!(columns, ["time", "Top.mode", "Top.pair", "Top.tx", "Top.pair.a", "Top.tx.Data.n"]);
+    assert_eq!(row[1], Cell::Text("Regulate".into()), "the variant's name");
+    let literal = |cell: &Cell| match cell {
+        Cell::Composite(value) => value.literal(&|leaf| match leaf {
+            Cell::Real(v) => v.to_string(),
+            Cell::Bool(v) => v.to_string(),
+            Cell::Int(v) => v.to_string(),
+            other => format!("{other:?}"),
+        }),
+        other => panic!("a composite, found {other:?}"),
+    };
+    assert_eq!(literal(&row[2]), "Pair { a: 7, b: true }");
+    assert_eq!(literal(&row[3]), "Tx::Data { n: 5 }");
+    assert_eq!(row[4], Cell::Int(7), "pair.a is the leaf alone");
+    assert_eq!(row[5], Cell::Int(5), "tx.Data.n is the leaf alone");
+}
+
+#[test]
+fn enum_names_live_in_the_ir_not_in_the_net_bytes() {
+    // CV-22 AC 2: the type arena holds each enum's variant names; the bytes of its net are the tag
+    // and the known byte only, so a decoder with the names reads the variant and one without them
+    // could not
+    let run = Carried::open(&["mode"]);
+    let ir = run.session.ir();
+    let mode = ir.top().body().carriers().iter().find(|c| c.name == "mode").expect("the carrier mode").ty.clone();
+    let shape = CellShape::of(ir, &mode).expect("a shape");
+    assert_eq!(shape.decode(&[1, 1]).expect("decodes"), Cell::Text("Regulate".into()), "tag 1, known: the second variant");
+    assert_eq!(shape.decode(&[2, 1]).expect("decodes"), Cell::Text("Fault".into()));
+    assert_eq!(shape.decode(&[3, 1]).expect("decodes"), Cell::Unknown, "tag 3 names no variant");
+    let names: Vec<String> = match &shape {
+        CellShape::Enum { variants, tag_width, .. } => {
+            assert_eq!(*tag_width, 1, "the net holds a one-byte tag");
+            variants.iter().map(|v| v.name.clone()).collect()
+        }
+        other => panic!("an enum shape, found {other:?}"),
+    };
+    assert_eq!(names, ["Idle", "Regulate", "Fault"]);
 }
