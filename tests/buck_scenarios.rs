@@ -470,15 +470,15 @@ impl Suite {
         self.results.iter().filter_map(|(_, result)| result.as_ref().ok()).collect()
     }
 
-    /// One line per family: its wall time, its rows and its interval, in seconds from the first
-    /// start (BS-08 AC 3), and one line for a family that failed.
+    /// One line per family: its wall time, its accepted steps, its rows and its interval, in
+    /// seconds from the first start (BS-08 AC 3), and one line for a family that failed.
     fn report(&self) -> String {
         let origin = self.completed().iter().map(|ran| ran.started).min();
         let lines: Vec<String> = self
             .results
             .iter()
             .map(|(name, result)| match (result, origin) {
-                (Ok(ran), Some(origin)) => format!("scenario `{name}`: wall time {:.1} s, {} rows, ran {:.1} s to {:.1} s", ran.wall().as_secs_f64(), ran.table.rows.len(), (ran.started - origin).as_secs_f64(), (ran.ended - origin).as_secs_f64()),
+                (Ok(ran), Some(origin)) => format!("scenario `{name}`: wall time {:.1} s, {} accepted steps, {} rows, ran {:.1} s to {:.1} s", ran.wall().as_secs_f64(), ran.accepted_steps, ran.table.rows.len(), (ran.started - origin).as_secs_f64(), (ran.ended - origin).as_secs_f64()),
                 (Ok(_), None) => unreachable!("a completed run gives an origin"),
                 (Err(message), _) => format!("scenario `{name}`: failed: {message}"),
             })
