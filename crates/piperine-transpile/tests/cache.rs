@@ -151,32 +151,38 @@ fn the_key_changes_with_any_part() {
 
 // EU-16 AC 1 (T36): the contract is edited in place and stays major 1, so the cache key holds the
 // contract's own source: an entry built against the earlier contract (a `Field` that still had
-// `flags` and `known`) is keyed differently, is not found by the current key, and is rebuilt.
+// `flags` and `known`) is keyed differently, is not found by the current key, and is rebuilt. The
+// key is formed by `Transpiler::cache_keys`, the function `compile` calls, and the test finds the
+// entry a real `compile` placed by that key: a `compile` that stopped hashing the ABI source would
+// place it elsewhere and fail here.
 #[test]
 fn an_entry_of_the_earlier_contract_is_rebuilt() {
     let root = tempfile::tempdir().unwrap();
-    let cache = Cache::at(root.path()).unwrap();
-    // the key of a design, as `Transpiler::compile` forms it: the design's source, then the file
-    // names and texts of the ABI crate
-    let key_of = |abi: &[(&str, String)]| {
-        let mut parts: Vec<&[u8]> = vec![b"design source"];
-        for (name, text) in abi {
-            parts.push(name.as_bytes());
-            parts.push(text.as_bytes());
-        }
-        Key::of(&parts)
-    };
-    let current: Vec<(&str, String)> = AbiSource::FILES.iter().map(|(name, text)| (*name, text.to_string())).collect();
-    let earlier: Vec<(&str, String)> = current
+    let settings = Settings { rustc: None, cache: root.path().to_path_buf() };
+    let mut b = IrBuilder::new();
+    let body = Devices::resistor(&mut b);
+    let top = Devices::alone(&mut b, body, "R", 1, vec![1000.0]);
+    let transpiler = Transpiler::new(Arc::new(b.finish(top))).unwrap_or_else(|e| panic!("{e}"));
+    let compiled = transpiler.compile(&settings).unwrap_or_else(|e| panic!("{e}"));
+    assert!(!compiled.report().cache_hit, "the first compile builds");
+
+    let source = transpiler.source().expect("the design prints");
+    let runtime = piperine_transpile::rt::Runtime::files(transpiler.digital() || transpiler.loops());
+    let version = piperine_transpile::Rustc::locate(&settings).expect("rustc").version_text().to_string();
+    let current: Vec<(&str, &str)> = AbiSource::FILES.to_vec();
+    let earlier: Vec<(String, String)> = current
         .iter()
-        .map(|(name, text)| (*name, if *name == "raw.rs" { text.replace("pub count: u32,\n}", "pub count: u32,\n    pub flags: u32,\n    pub known: u32,\n}") } else { text.clone() }))
+        .map(|(name, text)| (name.to_string(), if *name == "raw.rs" { text.replace("pub count: u32,\n}", "pub count: u32,\n    pub flags: u32,\n    pub known: u32,\n}") } else { text.to_string() }))
         .collect();
+    let earlier: Vec<(&str, &str)> = earlier.iter().map(|(name, text)| (name.as_str(), text.as_str())).collect();
     assert_ne!(current, earlier, "the earlier contract's `Field` is found in `raw.rs` to be replaced");
-    let (current_key, earlier_key) = (key_of(&current), key_of(&earlier));
+
+    let cache = Cache::at(root.path()).unwrap();
+    let (current_key, _) = Transpiler::cache_keys(&source, &runtime, &version, &current);
+    let (earlier_key, _) = Transpiler::cache_keys(&source, &runtime, &version, &earlier);
     assert_ne!(current_key, earlier_key, "a changed contract is a changed key");
-    cache.build(&earlier_key, "rustc 1.98.0", &[], |staging| fill(staging, "built against the earlier contract")).expect("the earlier entry");
-    assert!(cache.entry(&earlier_key).is_some(), "the earlier entry is present under its own key");
-    assert!(cache.entry(&current_key).is_none(), "the current key finds none: the library is rebuilt, never loaded");
+    assert!(cache.entry(&current_key).is_some(), "`compile` placed its entry under the key that holds the ABI source");
+    assert!(cache.entry(&earlier_key).is_none(), "an entry of the earlier contract is not there: the library is rebuilt, never loaded");
 }
 
 // RS-04 AC 8 / the design: a cache directory is created private, 0700 on Unix.
