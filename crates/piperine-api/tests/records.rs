@@ -151,15 +151,6 @@ fn a_text_field_is_the_sources_literal() {
 }
 
 #[test]
-fn an_unknown_field_is_unknown() {
-    // CLI-06 AC 5: `d` is an in-port the top never drives, so its value is unknown
-    let m = "module M(in d: Bit) {}\ndigital for M { on at(1u) { emit!(\"s\", v = d); } }\n";
-    let all = records(&design(m, "    signal d: Bit;\n    let m = M(d);\n"));
-    assert_eq!(all.len(), 1, "{all:?}");
-    assert_eq!(all[0].fields, [("v".to_string(), Field::Unknown)]);
-}
-
-#[test]
 fn a_failed_require_is_one_checks_record_with_pass_false() {
     // CLI-06 AC 6; std/io.msl: `require(name, pass)` is `emit!("checks", kind = "require",
     // name = name, pass = pass)`

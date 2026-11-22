@@ -123,7 +123,7 @@ fn a_timed_write_of_a_leaf_is_refused_by_name() {
 /// A unit enum, a struct and an enum with a payload held by carriers a reaction commits, run as a
 /// transient that sees one rising edge of `clk` at 100 ns.
 const CARRIED: &str = "#[derive(Repr, PartialEq)]\nenum Mode { Idle, Regulate, Fault }\n#[derive(Repr, PartialEq)]\nstruct Pair { a: u8, b: bool }\n#[derive(Repr, PartialEq)]\nenum Tx { Idle, Data { n: u3 } }\n\
-module Top(in clk: Bit, out mode: Bit<Mode>, out pair: Bit<Pair>, out tx: Bit<Tx>) {}\n\
+module Top(in clk: Bit, out mode: Bit<Mode> = Mode::Idle, out pair: Bit<Pair> = Pair { a: 0, b: false }, out tx: Bit<Tx> = Tx::Idle) {}\n\
 digital for Top {\n    on clk.rise() {\n        mode <- Mode::Regulate;\n        pair <- Pair { a: 7, b: true };\n        tx <- Tx::Data { n: 5 };\n    }\n}\n";
 
 /// The session of `CARRIED` printing `print`, and the last row of its table.
