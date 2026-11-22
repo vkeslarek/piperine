@@ -574,7 +574,9 @@ three hold:
 
 1. **Update.** Every unknown moved by at most `reltol · max(|x|, |x_old|) + abstol`. `abstol`
    is the nature's: for a node, the smallest potential `abstol` of the natures meeting there;
-   for a branch unknown, its flow `abstol`.
+   for a branch unknown, its flow `abstol`. A nature can only tighten the session's value: a
+   branch unknown and its row use the smaller of the session `abstol` and the nature's flow
+   `abstol`, so `--abstol` tighter than the nature's applies and a looser one does not.
 2. **Residual.** Every row's imbalance is at most `abstol + reltol · scale`. A node's row is
    tested against the potential `abstol` of that node (the smallest potential `abstol` of the
    natures meeting there, default 1 µV). A branch row is tested against the flow `abstol`

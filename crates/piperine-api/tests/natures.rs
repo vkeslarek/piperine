@@ -100,14 +100,15 @@ fn a_potential_abstol_of_one_millivolt_reaches_its_node() {
 #[test]
 fn a_flow_abstol_of_one_nanoampere_reaches_its_branch() {
     // AO-10 AC 2: the private flow unknown of a potential branch of `Fine` (flow `abstol` 1n) has the
-    // tolerance 1n, in its update test and in the residual test of its row: a 5e-10 step and a
-    // 5e-10 residual pass the bound circuit's tolerances and fail the default 1 pA.
+    // tolerance 1n where the session's `abstol` is looser (1 uA here), in its update test and in the
+    // residual test of its row: a 5e-10 step and a 5e-10 residual pass the bound circuit's tolerances
+    // and fail the default 1 pA (a nature only tightens: with the default session it would be 1 pA).
     let mut session = Designs::session("module Top() { signal a: Fine; let v1 = FineSource(a, gnd); }\n");
     let branch = BranchIdentifier::new("Top.v1", "b0.flow");
     let circuit = session.circuit().expect("a circuit");
     let bound = circuit.bound().expect("a bound circuit");
     assert_eq!(bound.branch_abstol.get(&branch).copied(), Some(1e-9), "{:?}", bound.branch_abstol);
-    let mut tolerances = Tolerances::default();
+    let mut tolerances = Tolerances { abstol: 1e-6, ..Tolerances::default() };
     bound.tighten(&mut tolerances);
     let netlist = circuit.netlist();
     let unknowns = netlist.all_references().into_iter().filter_map(|r| r.idx()).count();
@@ -123,6 +124,34 @@ fn a_flow_abstol_of_one_nanoampere_reaches_its_branch() {
     let flat = Tolerances::default();
     assert!(!flat.has_converged(Some(still.view()), &moved.view(), netlist), "the control: 1 pA rejects the update");
     assert!(!flat.residual_test(netlist, &residual, &scale), "the control: 1 pA rejects the residual");
+}
+
+#[test]
+fn a_nature_only_tightens_the_session_abstol_of_a_branch() {
+    // AO-10 AC 2, design D18: the flow tolerance of a potential branch is the smaller of the session
+    // `abstol` and its nature's (`Electrical`: 1 pA). Session 1e-6: the nature's 1e-12 applies, so a
+    // 5e-10 residual is refused; session 1e-15: the session's applies, so 5e-13 is refused too
+    // (the nature alone would accept it) and 5e-16 passes.
+    let mut session = Designs::session("module Top() { signal a: Electrical; let v1 = Source(a, gnd); }\n");
+    let branch = BranchIdentifier::new("Top.v1", "b0.flow");
+    let circuit = session.circuit().expect("a circuit");
+    let bound = circuit.bound().expect("a bound circuit");
+    assert_eq!(bound.branch_abstol.get(&branch).copied(), Some(1e-12), "{:?}", bound.branch_abstol);
+    let netlist = circuit.netlist();
+    let unknowns = netlist.all_references().into_iter().filter_map(|reference| reference.idx()).count();
+    let at = netlist.reference_for(&piperine_solver::prelude::AnalogVariable::Branch(branch)).and_then(|reference| reference.idx()).expect("the branch is an unknown");
+    let scale = vec![0.0; unknowns];
+    let accepts = |session_abstol: f64, residual_at_branch: f64| {
+        let mut tolerances = Tolerances { abstol: session_abstol, ..Tolerances::default() };
+        bound.tighten(&mut tolerances);
+        let mut residual = vec![0.0; unknowns];
+        residual[at] = residual_at_branch;
+        tolerances.residual_test(netlist, &residual, &scale)
+    };
+    assert!(!accepts(1e-6, 5e-10), "a looser session abstol does not loosen the nature's 1 pA");
+    assert!(accepts(1e-6, 5e-13), "1 pA still holds");
+    assert!(!accepts(1e-15, 5e-13), "a tighter session abstol applies");
+    assert!(accepts(1e-15, 5e-16), "and accepts what it allows");
 }
 
 #[test]

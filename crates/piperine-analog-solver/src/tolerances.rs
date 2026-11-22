@@ -57,7 +57,7 @@ pub struct Tolerances {
     /// alone already demonstrates.
     pub node_vntol_overrides: std::rc::Rc<std::collections::HashMap<crate::netlist::NodeIdentifier, f64>>,
     /// Per-branch flow-`abstol` override (§17.1 rules 1 and 2): a branch unknown present here
-    /// uses its nature's flow `abstol` instead of `abstol`, in the update test and in the
+    /// uses the smaller of its nature's flow `abstol` and `abstol`, in the update test and in the
     /// residual test of its row. Empty by default; a branch absent here is unaffected.
     pub branch_abstol_overrides: std::rc::Rc<std::collections::HashMap<crate::netlist::BranchIdentifier, f64>>,
 }
@@ -95,11 +95,12 @@ impl Tolerances {
         }
     }
 
-    /// The absolute tolerance of a branch unknown and of its row: its nature's flow `abstol`
-    /// when the branch has one in `branch_abstol_overrides`, else the flat `abstol`.
+    /// The absolute tolerance of a branch unknown and of its row: the smaller of the session's
+    /// `abstol` and its nature's flow `abstol` (in `branch_abstol_overrides`); a nature can only
+    /// tighten the session value (§17.1).
     fn abstol_for(&self, variable: &crate::netlist::AnalogVariable) -> f64 {
         match variable {
-            crate::netlist::AnalogVariable::Branch(id) => self.branch_abstol_overrides.get(id).copied().unwrap_or(self.abstol),
+            crate::netlist::AnalogVariable::Branch(id) => self.branch_abstol_overrides.get(id).map_or(self.abstol, |nature| nature.min(self.abstol)),
             _ => self.abstol,
         }
     }

@@ -1308,6 +1308,9 @@ Proof: run apinatures | test a_potential_abstol_of_one_millivolt_reaches_its_nod
 **C57** - A branch of a nature whose flow `abstol` is 1n gives its flow unknown and its row the tolerance 1n. (AO-10, AC 2; T10)
 Proof: run apinatures | test a_flow_abstol_of_one_nanoampere_reaches_its_branch ... ok
 
+**C71** - A branch's flow unknown and its row take the smaller of the session `abstol` and the nature's flow `abstol`: session 1e-6 on an `Electrical` source gives 1e-12, session 1e-15 gives 1e-15. (AO-10, AC 5; T10)
+Proof: run apinatures | test a_nature_only_tightens_the_session_abstol_of_a_branch ... ok
+
 **C58** - `Electrical` and `HvElectrical` at one node give it 1 µV, and the mixed divider equals the all-`Electrical` one within `DC_VOLTAGE`. (AO-10, AC 3; T10)
 Proof: run apinatures | test compatible_natures_take_the_smaller_abstol_and_the_divider_holds ... ok
 

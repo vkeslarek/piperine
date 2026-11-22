@@ -8328,7 +8328,7 @@ reltol   = 1e-4</pre>
 <tbody>
 <tr><td><code>reltol</code></td><td>1e-3</td><td>&gt; 0</td><td>The relative tolerance of every unknown, in Newton and in the step error. One part in a thousand unless you ask for more.</td></tr>
 <tr><td><code>vntol</code></td><td>1e-6 (1 µV)</td><td>&gt; 0</td><td>The absolute tolerance of a node potential, in volts. A nature's own <code>abstol</code> can tighten it for the nodes of that nature.</td></tr>
-<tr><td><code>abstol</code></td><td>1e-12 (1 pA)</td><td>&gt; 0</td><td>The absolute tolerance of a branch flow, in amperes.</td></tr>
+<tr><td><code>abstol</code></td><td>1e-12 (1 pA)</td><td>&gt; 0</td><td>The absolute tolerance of a branch flow, in amperes. A nature's own flow <code>abstol</code> can tighten it for the branches of that nature; it never loosens it.</td></tr>
 <tr><td><code>trtol</code></td><td>7</td><td>&gt; 0</td><td>How many times its target the estimated error of a time step may be before the step is rejected. It acts in <code>transient</code> and <code>pss</code>.</td></tr>
 </tbody></table></div>
 
