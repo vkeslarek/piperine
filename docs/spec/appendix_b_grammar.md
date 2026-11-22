@@ -8,19 +8,19 @@ Tokens are defined in Appendix A. B.3.2 holds the productions of the mixed-signa
 ## B.1 The mixed-signal constructs
 
 Every name and form of the language that is not part of the value language of Part I (§1.1 to §1.8, §3.7 to §3.9) or of the value library (Appendix H): what the language has for hardware, time and analysis.
-The language has **65** such constructs. Everything else a model uses is the standard library (§22), written in the language.
+The language has **62** such constructs. Everything else a model uses is the standard library (§22), written in the language.
 
 ### B.1.1 Count
 
 | Kind | Items | Count |
 | --- | --- | --- |
 | keywords | `module` `nature` `signal` `on` `out` `flip` `after`; the second uses of `in` and `extern` (A.1) | 9 |
-| contextual keywords | `analog`, `digital` before `for` or `<`; `potential`, `flow`, `value`, `resolve` in a nature (`potential` and `flow` are also the generic probes of those fields) | 6 |
+| contextual keywords | `analog`, `digital` before `for` or `<`; `potential`, `flow`, `value` in a nature (`potential` and `flow` are also the generic probes of those fields) | 5 |
 | operators | `+>`, `<-` | 2 |
 | calls | optional trailing `Option` parameters, named arguments (§3.2) | 2 |
-| literals | SI suffixes, `Unknown` | 2 |
+| literals | SI suffixes | 1 |
 | types and traits | `Event`, `Analysis`, `uN`/`iN`/`fN`, `Repr`, `Nature` | 5 |
-| carrier and value methods | `changed` `prev` `others` `inflow` `level` | 5 |
+| carrier and value methods | `changed` `prev` `others` `inflow` | 4 |
 | events | `at` `cross` `settle` | 3 |
 | analog | `ddt` `delay` `ddx` `limit` `noise` `ac_stim` `bound_step` | 7 |
 | environment | `now` `freq` `temperature` `simparam` `analysis` | 5 |
@@ -28,7 +28,7 @@ The language has **65** such constructs. Everything else a model uses is the sta
 | attributes | `#[derivative]`, `#[derive(Repr)]`, `#[link]` on an extern module | 3 |
 | names | `gnd`; implicit params `m`, `dtemp`; ABI strings `"osdi"`, `"cosim"`; reserved streams `sim`, `checks` | 7 |
 | forms | carrier fields in a `struct` (bundle); a module's name as a type and `Name { … }` as a value (template); the `Fn(P)` bound on modules; value inputs and a result on a module; `impl` on a nature or bundle, with a handle as `self`; `pub` on body items; `where` over const generics, on a module or a `fn` | 7 |
-| **total** |  | **65** |
+| **total** |  | **62** |
 
 ### B.1.2 The constructs, one by one
 
@@ -48,61 +48,58 @@ The language has **65** such constructs. Everything else a model uses is the sta
 | 12 | `potential` | contextual keyword | nature field; the generic potential probe | §4, §6 |
 | 13 | `flow` | contextual keyword | nature field; the generic flow probe | §4, §6 |
 | 14 | `value` | contextual keyword | nature field: the type a discrete carrier holds | §4 |
-| 15 | `resolve` | contextual keyword | nature field: how drives combine | §4, §5.2 |
-| 16 | `+>` | operator | contribution to a branch | §11 |
-| 17 | `<-` | operator | commit to a discrete carrier | §12.1 |
-| 18 | optional trailing `Option` parameters | call rule | a left-out trailing parameter is `None` | §3.2 |
-| 19 | named arguments | call rule | `name: value` after the positional arguments | §3.2 |
-| 20 | SI suffixes | literal | `1k`, `2.2u`: an `f64` times a power of ten | A.2 |
-| 21 | `Unknown` | literal | every level unknown, of any `Repr` type | §3.3, A.3 |
-| 22 | `Event` | type | something that fires at instants | §13 |
-| 23 | `Analysis` | type | the closed enum `Dc`, `Transient`, `Ac`, `Noise`, `Static` | §11.1 |
-| 24 | `uN` / `iN` / `fN` | types | `UInt<N>`, `Int<N>`, `Float<N>` and their short names | §1 |
-| 25 | `Repr` | trait | lays a value type out on levels | §2 |
-| 26 | `Nature` | trait | the bound satisfied by every nature | §6 rule 4, §8.3 |
-| 27 | `changed` | carrier method | `Event`: the carrier or param changed in this microstep | §5.3, §13 |
-| 28 | `prev` | carrier method | the value before the most recent change | §5.3 |
-| 29 | `others` | carrier method | `resolve` of every drive but this module's own | §5.2 |
-| 30 | `inflow` | port method | flow entering the module at a port | §6 |
-| 31 | `level` | value method | one level as a known `Option<bool>` | §3.3.4 |
-| 32 | `at` | event, core module | fires when time reaches its argument | §13 rule 4 |
-| 33 | `cross` | event, core module | fires on a rising crossing of zero | §13 rule 5, §17.3 |
-| 34 | `settle` | event value | fires once per time point, after the instant went quiet | §13, §15 |
-| 35 | `ddt` | core module | time derivative | §14.5, §15.2 |
-| 36 | `delay` | core module | its argument as it was `td` ago | §14.6 |
-| 37 | `ddx` | core `fn` | partial derivative with respect to a probe | §14.2 |
-| 38 | `limit` | core module | Newton step limiting | §14.7, §18 |
-| 39 | `noise` | core module | a noise source | §11.1.8, §14.8 |
-| 40 | `ac_stim` | core `fn` | small-signal stimulus | §14.3 |
-| 41 | `bound_step` | statement | caps the next time step | §14.10, §17.2.5 |
-| 42 | `now` | environment `fn` | the time of the solve | §14.4, §16.2 |
-| 43 | `freq` | environment `fn` | the frequency of a small-signal point | §14.4, §16.2 |
-| 44 | `temperature` | environment `fn` | the instance's temperature | §8.5.5, §14.4 |
-| 45 | `simparam` | environment `fn` | a simulator parameter by name | §14.4 |
-| 46 | `analysis` | environment `fn` | whether the current solve belongs to an `Analysis` | §11.1.1, §14.4 |
-| 47 | `emit!` | built-in `!` form | writes a record to a stream | §19 |
-| 48 | `include_str!` | built-in `!` form | the text of a file, at elaboration | §20 |
-| 49 | `#[derivative(f, …)]` | attribute | the derivatives of an `extern "C" fn` | §3 rules 2 and 11 |
-| 50 | `#[derive(Repr)]` | attribute | derives the level layout | §2 |
-| 51 | `#[link(…)]` on an extern module | attribute | names the foreign implementation | §8.5 |
-| 52 | `gnd` | name | the reference node of every continuous nature | §6 rule 1 |
-| 53 | `m` | implicit param | multiplicity of an instance | §8.5 |
-| 54 | `dtemp` | implicit param | temperature offset of an instance | §8.5 |
-| 55 | `"osdi"` | ABI string | an OSDI analog model | §8.5 |
-| 56 | `"cosim"` | ABI string | a cosimulated discrete model | §8.5 |
-| 57 | `sim` | reserved stream | a `finish` record ends the analysis | §19 rule 2 |
-| 58 | `checks` | reserved stream | the records of `require`, `cover`, `target` | §19 rule 2 |
-| 59 | bundle | form | a `struct` whose fields are carriers | §7 |
-| 60 | template | form | a module's name as a type; `Name { … }` as a value | §8.4 |
-| 61 | `Fn(P)` bound on modules | form | holds for every module whose port list is `P` | §8.4 |
-| 62 | value inputs and a result | form | a module placed inside an expression | §8.3 |
-| 63 | `impl` on a nature or bundle | form | functions with a handle as `self` | §3.1 |
-| 64 | `pub` on body items | form | visible to the parent as `inst.name` | §8.2 |
-| 65 | `where` over const generics | form | a boolean constraint on a module or a `fn` | §8.1, §3 |
+| 15 | `+>` | operator | contribution to a branch | §11 |
+| 16 | `<-` | operator | commit to a discrete carrier | §12.1 |
+| 17 | optional trailing `Option` parameters | call rule | a left-out trailing parameter is `None` | §3.2 |
+| 18 | named arguments | call rule | `name: value` after the positional arguments | §3.2 |
+| 19 | SI suffixes | literal | `1k`, `2.2u`: an `f64` times a power of ten | A.2 |
+| 20 | `Event` | type | something that fires at instants | §13 |
+| 21 | `Analysis` | type | the closed enum `Dc`, `Transient`, `Ac`, `Noise`, `Static` | §11.1 |
+| 22 | `uN` / `iN` / `fN` | types | `UInt<N>`, `Int<N>`, `Float<N>` and their short names | §1 |
+| 23 | `Repr` | trait | lays a value type out on levels | §2 |
+| 24 | `Nature` | trait | the bound satisfied by every nature | §6 rule 4, §8.3 |
+| 25 | `changed` | carrier method | `Event`: the carrier or param changed in this microstep | §5.3, §13 |
+| 26 | `prev` | carrier method | the value before the most recent change | §5.3 |
+| 27 | `others` | carrier method | `resolve` of every drive but this module's own | §5.2 |
+| 28 | `inflow` | port method | flow entering the module at a port | §6 |
+| 29 | `at` | event, core module | fires when time reaches its argument | §13 rule 4 |
+| 30 | `cross` | event, core module | fires on a rising crossing of zero | §13 rule 5, §17.3 |
+| 31 | `settle` | event value | fires once per time point, after the instant went quiet | §13, §15 |
+| 32 | `ddt` | core module | time derivative | §14.5, §15.2 |
+| 33 | `delay` | core module | its argument as it was `td` ago | §14.6 |
+| 34 | `ddx` | core `fn` | partial derivative with respect to a probe | §14.2 |
+| 35 | `limit` | core module | Newton step limiting | §14.7, §18 |
+| 36 | `noise` | core module | a noise source | §11.1.8, §14.8 |
+| 37 | `ac_stim` | core `fn` | small-signal stimulus | §14.3 |
+| 38 | `bound_step` | statement | caps the next time step | §14.10, §17.2.5 |
+| 39 | `now` | environment `fn` | the time of the solve | §14.4, §16.2 |
+| 40 | `freq` | environment `fn` | the frequency of a small-signal point | §14.4, §16.2 |
+| 41 | `temperature` | environment `fn` | the instance's temperature | §8.5.5, §14.4 |
+| 42 | `simparam` | environment `fn` | a simulator parameter by name | §14.4 |
+| 43 | `analysis` | environment `fn` | whether the current solve belongs to an `Analysis` | §11.1.1, §14.4 |
+| 44 | `emit!` | built-in `!` form | writes a record to a stream | §19 |
+| 45 | `include_str!` | built-in `!` form | the text of a file, at elaboration | §20 |
+| 46 | `#[derivative(f, …)]` | attribute | the derivatives of an `extern "C" fn` | §3 rules 2 and 11 |
+| 47 | `#[derive(Repr)]` | attribute | derives the level layout | §2 |
+| 48 | `#[link(…)]` on an extern module | attribute | names the foreign implementation | §8.5 |
+| 49 | `gnd` | name | the reference node of every continuous nature | §6 rule 1 |
+| 50 | `m` | implicit param | multiplicity of an instance | §8.5 |
+| 51 | `dtemp` | implicit param | temperature offset of an instance | §8.5 |
+| 52 | `"osdi"` | ABI string | an OSDI analog model | §8.5 |
+| 53 | `"cosim"` | ABI string | a cosimulated discrete model | §8.5 |
+| 54 | `sim` | reserved stream | a `finish` record ends the analysis | §19 rule 2 |
+| 55 | `checks` | reserved stream | the records of `require`, `cover`, `target` | §19 rule 2 |
+| 56 | bundle | form | a `struct` whose fields are carriers | §7 |
+| 57 | template | form | a module's name as a type; `Name { … }` as a value | §8.4 |
+| 58 | `Fn(P)` bound on modules | form | holds for every module whose port list is `P` | §8.4 |
+| 59 | value inputs and a result | form | a module placed inside an expression | §8.3 |
+| 60 | `impl` on a nature or bundle | form | functions with a handle as `self` | §3.1 |
+| 61 | `pub` on body items | form | visible to the parent as `inst.name` | §8.2 |
+| 62 | `where` over const generics | form | a boolean constraint on a module or a `fn` | §8.1, §3 |
 
-> **Resolution.** Names that occur only inside a counted construct are counted with it. The quantity keys `access`, `units` and `abstol` belong to `nature` (2). The variants of `Analysis` belong to `Analysis` (23). `UInt`, `Int` and `Float` belong to row 24. `#[repr(uN)]` (§2) and `extern "C" fn` (§3) are counted with the value language, not here.
+> **Resolution.** Names that occur only inside a counted construct are counted with it. The quantity keys `access`, `units` and `abstol` belong to `nature` (2). The variants of `Analysis` belong to `Analysis` (21). `UInt`, `Int` and `Float` belong to row 22. `#[repr(uN)]` (§2) and `extern "C" fn` (§3) are counted with the value language, not here.
 
-> **Resolution.** `where` on a param (§8.1) is counted with the param form of `module` (1). Row 65 covers only the `where` after a module's port list or a `fn`'s signature.
+> **Resolution.** `where` on a param (§8.1) is counted with the param form of `module` (1). Row 62 covers only the `where` after a module's port list or a `fn`'s signature.
 
 ## B.2 Where each thing is allowed
 
@@ -136,8 +133,7 @@ Positions, left to right: a body `let` or a value-input argument; a definition o
 | Expression | `let`, value input | definition, `in` argument | event position | reaction body | `analog` | `fn` | `const` |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | values, params, constants | yes | yes | yes | yes | yes | yes | constants only |
-| reading a discrete carrier | yes | yes | yes | yes | through `level` (§3.3.5) | yes, through a handle | no |
-| `Unknown` | yes | yes | yes | yes | no (§3.3.5) | yes | yes |
+| reading a discrete carrier | yes | yes | yes | yes | yes (§3.3.6) | yes, through a handle | no |
 | probes: `potential`, `flow`, aliases, `p.inflow()` | yes | no | yes | yes | yes | yes ¹ | no |
 | `now()`, `freq()`, `gmin()`, `source_scale()`, `analysis(Static)` | yes | no | yes | yes | yes | yes ¹ | no |
 | `temperature()`, `simparam`, `analysis` of a kind | yes | yes | yes | yes | yes | yes | no |
@@ -147,8 +143,7 @@ Positions, left to right: a body `let` or a value-input argument; a definition o
 | placing `cross`, `at` | as an `Event` | no | yes | no | no | no | no |
 | reading a named instance's result | yes | yes ³ | yes | yes | yes | no | no |
 | `s.changed()`, `settle` | as an `Event` | no | yes | as a `bool` (§13 rule 2) | no | yes ⁴ | no |
-| `s.prev()`, `s.others()` | yes | yes | yes | yes | through `level` | yes, through a handle | no |
-| `x.level(k)` | yes | yes | yes | yes | yes | yes | yes |
+| `s.prev()`, `s.others()` | yes | yes | yes | yes | yes | yes, through a handle | no |
 | `emit!` | no | no | no | yes | yes, as a trace | yes ¹ | no |
 | `include_str!` | no | no | no | no | no | no | yes |
 
@@ -179,7 +174,7 @@ Positions, left to right: a body `let` or a value-input argument; a definition o
 The notation is that of the index (§0). In addition:
 
 1. `stmt`, `expr`, `type`, `pat`, `block`, `generics`, `generic_args`, `path`, `attrs` and `const_item` are the productions of the value grammar, B.3.7.
-2. `IDENT` and `STRING` are token classes (Appendix A). The tokens `+>`, `<-`, the SI-suffixed literal and `Unknown` are defined in Appendix A and are not repeated here.
+2. `IDENT` and `STRING` are token classes (Appendix A). The tokens `+>`, `<-` and the SI-suffixed literal are defined in Appendix A and are not repeated here.
 3. `( X ',' )*` denotes a comma-separated list of `X`. The comma after the last element is optional.
 4. `gen<X>` is a production parameterized by the production `X`.
 
@@ -465,7 +460,7 @@ primary        ::= literal
                  | closure
                  | 'return' expr? | 'break' expr? | 'continue'
                  | emit | include_str                                          // B.3.2
-literal        ::= INT_LITERAL | FLOAT_LITERAL | STRING | 'true' | 'false' | 'Unknown'
+literal        ::= INT_LITERAL | FLOAT_LITERAL | STRING | 'true' | 'false'
 struct_expr    ::= path generic_args? '{' ( IDENT ( ':' expr )? ',' )* '}'
 closure        ::= ( '||' | '|' ( closure_param ',' )* '|' ) ( expr | '->' type block )
 closure_param  ::= pat1 ( ':' type )?

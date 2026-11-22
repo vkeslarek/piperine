@@ -30,9 +30,8 @@ Structure is resolved at elaboration, and every function is inlined. AIR v2 ther
 | --- | --- | --- |
 | param with `where` | param metadata, checked in `setup` | |
 | live `set`, `on p.changed()` | `live` param, `on change` region | |
-| known flags | a mask word beside each discrete value, elided where the elaborator proves it all-known | gap (G.6) |
-| `signal x: Bit<T> = v;` | digital state, unknown at start, with `v` committed at `(0, 0)` | |
-| a carrier with `resolve` | one state slot per drive and a combinational cell calling `resolve` | gap (G.6) |
+| `signal x: Bit<T> = v;` | digital state with `v`, or `Default::default()`, committed at `(0, 0)` | |
+| a carrier whose nature implements `Resolve` | one state slot per drive and a combinational cell calling `resolve` | gap (G.6) |
 | `prev()` | one previous value per carrier, allocated on first commit | |
 | node, `= v` | internal node; Newton's starting value, and a hold during a transient's operating point | |
 | `=` defining a discrete carrier | a combinational cell, evaluated in topological order; a loop among resolved drives is one strongly connected component, relaxed from empty | |
@@ -54,11 +53,10 @@ Structure is resolved at elaboration, and every function is inlined. AIR v2 ther
 
 Notes on single rows:
 
-1. **Known flags.** The mask travels with the value through every operator (§3.3.2). Elision is an optimization: it never changes a result.
-2. **Resolved carriers.** The drives are passed to `resolve` in instance-path order (§4 rule 2). The cell is re-evaluated in the microstep any drive changes (§5.2).
-3. **Transport queue.** The queue is per statement and per level, because a commit removes only pending commits of the same statement to that level (§12.1.4).
-4. **Contributions.** The reactive part of a contribution is what lies under `ddt`. Its argument is a state of the jump rule (§15.2.1).
-5. **Switch branches.** When the selector depends on params only, the kind is fixed at elaboration and a zero-potential branch merges its nodes (§11 rule 3). Otherwise the branch keeps its flow unknown and the kind is chosen per solve.
+1. **Resolved carriers.** The drives are passed to `resolve` in instance-path order (§4 rule 2). The cell is re-evaluated in the microstep any drive changes (§5.2).
+2. **Transport queue.** The queue is per statement and per level, because a commit removes only pending commits of the same statement to that level (§12.1.4).
+3. **Contributions.** The reactive part of a contribution is what lies under `ddt`. Its argument is a state of the jump rule (§15.2.1).
+4. **Switch branches.** When the selector depends on params only, the kind is fixed at elaboration and a zero-potential branch merges its nodes (§11 rule 3). Otherwise the branch keeps its flow as an unknown of the solve and the kind is chosen per solve.
 6. **`settle` commits.** The solver reads them before it takes the step, so the solve that arrives at the next time point already uses them (§15).
 7. **Records.** An `emit!` record travels as a commit to a quiet pin: it is delivered stamped with the instant it was made and adds no microstep (§19 rule 1).
 
@@ -69,7 +67,6 @@ How the Piperine solver meets Part V. Every number is a default the host may cha
 | Part V guarantee | Piperine algorithm | Status |
 | --- | --- | --- |
 | microstep loop (§15) | two-phase delta cycle: combinational cells in topological order, then sequential evaluation over one snapshot; commits sorted by (instant made, source index); at most 1000 microsteps per instant; relaxation passes per loop of resolved drives bounded by its drive count plus one | |
-| unknown control (§3.3.3) | the generated code runs both arms of an `if` or `match` on a value that may be unknown and merges what each wrote (a panic of an arm makes the merge unknown, §1 rule 13); a loop under unknown control runs at most 64 iterations, in every analysis, and what it wrote by then is unknown (§3.3.16) | |
 | the jump (§15.2) | no solve of its own: the solver lands exactly on the time of the change (`predict_step`); what is due there, and the zero-delay microsteps that follow from it, run to quiescence before the solve (`attempt_step`: `drain_due`, `run_digital_at`, which reads no new solution), so the step that arrives there reads them; a step that landed on a digital event or a breakpoint is exempt from the truncation-error test (`assess_step`); reactions that read the solution at that time run after the step is accepted (`settle_digital`: the accept hooks, then the scheduler to quiescence), and their changes are read by the next step as an ordinary step, neither exempt nor restarted; a host `set` lands the solver on its time without exemption (`predict_step` marks only digital events and breakpoints), applies after that step is accepted (`apply_scheduled_sets`), retakes it when its invalidation strength is `OperatingPoint` or more (`execute_timestep(t − h, h)`), and the next step reads it exempt (`post_set_step`) | |
 | operating point (§16) | Newton; then gmin stepping (a shunt on every node from 0.1 S down, a decade per converged solve, adaptive factor); then source stepping (scale from 0 to 1, first step 0.1 growing ×1.5 up to 0.25, halved on failure, a 1 µS knee shunt ramped out at the end); at most 20 mixed rounds | |
 | held nodes (§16) | a 10¹² S clamp from each node with `= value` to that value through every solve of a transient's operating point, removed before the first step | |
@@ -91,7 +88,6 @@ How the Piperine solver meets Part V. Every number is a default the host may cha
 | --- | --- | --- |
 | time resolution (tick) | 1 fs | §15 |
 | microsteps per instant | 1000 | §15: a loop that never goes quiet is an error |
-| loop iterations under unknown control | 64 | §3.3.16 |
 | relaxation passes per loop | drive count + 1 | §8.2.3 |
 | mixed rounds of an operating point | 20 | §16 step 4 |
 | `reltol` | 1e-3 | §17.1 |

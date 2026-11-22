@@ -11,7 +11,7 @@ Error codes of this appendix: `E09xx`.
 ## A.1 Source text and tokens
 
 The lexer turns source text into a sequence of tokens. A token is an identifier (A.7), a
-keyword (this section), a literal (A.2, A.3, A.8), a doc comment (A.4) or a
+keyword (this section), a literal (A.2, A.8), a doc comment (A.4) or a
 punctuation token (A.5, A.10).
 
 **Static semantics**
@@ -19,8 +19,8 @@ punctuation token (A.5, A.10).
 1. Source text is UTF-8. Whitespace, line comments `//` and block comments `/* */` separate
    tokens and are otherwise ignored (A.9). A token is the longest sequence of characters that
    forms one, read left to right; A.10 rule 2 states the one exception.
-2. The tokens are those of this appendix and no other. The SI-suffixed literal (A.2),
-   `Unknown` (A.3) and the operators `+>` and `<-` (A.5) have sections of their own. The
+2. The tokens are those of this appendix and no other. The SI-suffixed literal (A.2) and the
+   operators `+>` and `<-` (A.5) have sections of their own. The
    grammar is [B.3](appendix_b_grammar.md).
 3. The language has no token and no production for what
    [§1](part_i_values.md#1-value-types) rule 2 leaves out: mutable
@@ -37,7 +37,7 @@ punctuation token (A.5, A.10).
 | added keywords | `module` `nature` `signal` `on` `out` `flip` `after` | everywhere |
 | value keywords with a second use | `in` (port direction, beside `for … in`), `extern` (`extern` modules, beside `extern "C" fn`) | everywhere |
 | contextual keywords | `analog`, `digital` | only before `for` or `<` at item position |
-| contextual keywords | `potential`, `flow`, `value`, `resolve` | only as a field name inside a `nature` declaration |
+| contextual keywords | `potential`, `flow`, `value` | only as a field name inside a `nature` declaration |
 | value keywords | `as` `break` `const` `continue` `crate` `else` `enum` `extern` `false` `fn` `for` `if` `impl` `in` `let` `loop` `match` `mod` `pub` `return` `self` `Self` `struct` `super` `trait` `true` `use` `where` `while` | everywhere |
 | reserved words | `abstract` `async` `await` `become` `box` `do` `dyn` `final` `gen` `macro` `move` `mut` `override` `priv` `ref` `static` `try` `type` `typeof` `unsafe` `unsized` `virtual` `yield` | everywhere; no production accepts one |
 
@@ -170,24 +170,11 @@ hv: f64 = 2.26M;       // 2.26e6
 rl: f64 = 1T;
 ```
 
-## A.3 Unknown values
+## A.3 Retired
 
-`Unknown` is the literal of any `Repr` type with every level unknown
-([§3.3](part_i_values.md#33-uncertainty-and-absence)).
-
-**Static semantics**
-
-1. `Unknown` is a literal token, like `true` and `false`. It **MUST NOT** be redeclared or
-   shadowed.
-2. Its type is inferred from its context, as for an integer literal. The inferred type
-   **MUST** implement `Repr`.
-3. A value written level by level is the stdlib function `logic("10xx")`
-   ([§22.1](part_vii_stdlib.md#221-values-and-bit)), not a literal form. Its argument is an
-   ordinary string literal.
-
-> **Resolution.** The design lists `Unknown` among the literals and never says whether it is a
-> name. It is a reserved literal, so that no scope changes what `Unknown` means
-> ([G.61](appendix_g_scope.md)).
+This section number is retired and is not reused. It defined a literal that the language no
+longer has: what a type may hold is what its declaration says
+([§3.3](part_i_values.md#33-uncertainty-and-absence), [Appendix G.72](appendix_g_scope.md)).
 
 ## A.4 Doc comments
 
@@ -235,18 +222,18 @@ rl: f64 = 1T;
 | `E0903` | a keyword used as an identifier, or a keyword or reserved word where no production accepts it | parse |
 | `E0904` | an attribute that A.1 does not list, or a listed attribute on the wrong kind of item | elaboration |
 | `E0905` | a token of a dropped class: a character or byte literal, a byte string, a lifetime | parse |
-| `E0906` | `Unknown` where the inferred type does not implement `Repr`, or where no type can be inferred | elaboration |
 | `E0907` | `+>` or `<-` inside an expression, where no statement form accepts it. A well-formed `contribution` or `commit` in a block of the wrong kind is `E0404` | parse |
-| `E0908` | `Unknown` used as a binding, item or field name | parse |
 | `E0909` | a float literal whose nearest `f64` is infinite, or an integer literal that exceeds its suffix type or, without a suffix, 128 bits | parse |
 | `E0910` | nesting deeper than 256 levels (delimiters, blocks, prefix operators, closures, `return` and `break` operands, type arguments), or more than 4096 chain links (binary operators, postfix `.`, call, index, `as` and `?`, `else if` arms) on one path of an expression | parse |
+
+> **Resolution.** `E0906` is retired and `E0908` is retired (§0.2: numbers are not reused). They reported the literal that the language no longer has ([Appendix G.72](appendix_g_scope.md)); a word that names nothing is `E0161`.
 
 ## A.7 Identifiers
 
 **Syntax** (lexical)
 
 ```
-IDENT       ::= ( XID_START | '_' ) XID_CONTINUE*        // not a keyword, not `_` alone, not `Unknown`
+IDENT       ::= ( XID_START | '_' ) XID_CONTINUE*        // not a keyword, not `_` alone
 RAW_IDENT   ::= 'r#' ADDED_KEYWORD                       // A.1 rule 6
 ```
 
@@ -262,7 +249,7 @@ Standard Annex 31).
    the inferred type ([§1.6](part_i_values.md#16-patterns),
    [§1.4](part_i_values.md#14-typing-inference-and-conversion)).
 3. A word of the keyword table of A.1 that is reserved everywhere is a keyword token, never an
-   identifier. `Unknown` is a literal token (A.3).
+   identifier.
 4. Identifiers are case-sensitive. Two identifiers are the same name when they are the same
    sequence of code points: no normalization is applied.
 5. An identifier has no length limit.
@@ -281,7 +268,7 @@ let café = 2;
 
 ## A.8 Literals
 
-A literal is an integer, a float, a string, a boolean (`true`, `false`), or `Unknown` (A.3).
+A literal is an integer, a float, a string, or a boolean (`true`, `false`).
 There is no character literal, no byte literal and no byte string (`E0905`).
 
 **Syntax** (lexical)

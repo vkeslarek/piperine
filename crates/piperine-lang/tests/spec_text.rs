@@ -176,17 +176,24 @@ fn every_error_code_is_defined_exactly_once() {
 
 /// The codes value semantics retired (Appendix G.71): each is named by the Resolution that
 /// retires it and by G.71, and by no defining row.
-const RETIRED_CODES: [&str; 4] = ["E0102", "E0331", "E0150", "E0151"];
+const RETIRED_CODES: [&str; 6] = ["E0102", "E0331", "E0150", "E0151", "E0906", "E0908"];
 
 #[test]
-fn b1_still_counts_65_constructs() {
-    // POL-08 AC 8: the count and the rows agree.
+fn b1_counts_62_constructs() {
+    // POL-08 AC 8, amended by explicit-unknowns (replaces `b1_still_counts_65_constructs`): the
+    // literal `Unknown`, the contextual keyword `resolve` and the method `level` leave, so the
+    // count and the rows agree at 62, and the B.1.1 kinds add up to it.
     let sec = section(&spec("appendix_b_grammar.md"), "## B.1 ");
-    assert!(sec.contains("**65**"), "B.1 states 65");
+    assert!(sec.contains("**62**"), "B.1 states 62");
     let rows = table_rows(&section(&sec, "### B.1.2"));
-    assert_eq!(rows.len(), 65, "B.1.2 holds 65 rows");
+    assert_eq!(rows.len(), 62, "B.1.2 holds 62 rows");
     let last: usize = rows.last().unwrap()[0].parse().expect("row numbers are integers");
-    assert_eq!(last, 65);
+    assert_eq!(last, 62);
+    let kinds: usize = table_rows(&section(&sec, "### B.1.1")).iter().filter_map(|r| r[2].parse::<usize>().ok()).sum();
+    assert_eq!(kinds, 62, "the kinds of B.1.1 sum to the count");
+    for gone in ["Unknown", "`resolve`", "`level`"] {
+        assert!(!rows.iter().any(|r| r[1] == gone), "B.1.2 still lists {gone}");
+    }
 }
 
 #[path = "support/spec_corpus.rs"]
@@ -1337,13 +1344,13 @@ fn s22_rule_4_names_extern_intrinsic() {
 
 #[test]
 fn analysis_kinds_list_transient() {
-    // STD-01 AC 7: §11.1.1 and row 23 of Appendix B.1 list the five kinds.
+    // STD-01 AC 7: §11.1.1 and row 21 of Appendix B.1 list the five kinds.
     let kinds = "`Dc`, `Transient`, `Ac`, `Noise`, `Static`";
     let p4 = one_line(&spec("part_iv_behavior.md"));
     let at = p4.find("- **§11.1.1**").expect("§11.1.1 bullet");
     assert!(p4[at..at + 400].contains(kinds), "{}", &p4[at..at + 400]);
     let b = spec("appendix_b_grammar.md");
-    let row = b.lines().find(|l| l.starts_with("| 23 |")).expect("row 23");
+    let row = b.lines().find(|l| l.starts_with("| 21 |")).expect("row 21");
     assert!(row.contains(kinds), "{row}");
 }
 
@@ -1645,26 +1652,17 @@ fn appendix_c_states_the_solver_hygiene_numerics() {
 }
 
 #[test]
-fn appendix_c_states_the_loop_bound_under_unknown_control() {
-    // US-04 AC 11, §3.3.16 (C30): the reference implementation's bound is documented in C.2, in
-    // the row of "unknown control (§3.3.3)": the merge in generated code and the 64 iterations,
-    // applied in every analysis
+fn appendix_c_holds_no_unknown_control_rows() {
+    // EU-17 (replaces `appendix_c_states_the_loop_bound_under_unknown_control` and
+    // `appendix_c_lists_the_loop_bound_among_the_defaults`): with no merge there is no loop bound
+    // under unknown control, so neither C.2 nor C.2.1 has the row.
     let text = spec("appendix_c_implementation.md");
-    let rows = table_rows(&section(&text, "## C.2 "));
-    let row = rows.iter().find(|r| r[0] == "unknown control (§3.3.3)").expect("C.2 has a row for unknown control");
-    let algorithm = flat(&row[1]);
-    for fact in ["runs both arms of an `if` or `match` on a value that may be unknown and merges what each wrote", "a loop under unknown control runs at most 64 iterations, in every analysis", "(§3.3.16)"] {
-        assert!(algorithm.contains(fact), "the row lacks \"{fact}\": {algorithm}");
-    }
-}
-
-#[test]
-fn appendix_c_lists_the_loop_bound_among_the_defaults() {
-    // US-07 AC 2 (C43): C.2.1 holds the default "loop iterations under unknown control: 64",
-    // serving §3.3.16
-    let text = spec("appendix_c_implementation.md");
-    let rows = table_rows(&section(&text, "### C.2.1 "));
-    assert!(rows.iter().any(|r| r[..] == ["loop iterations under unknown control", "64", "§3.3.16"]), "{rows:?}");
+    let c2 = table_rows(&section(&text, "## C.2 "));
+    assert!(!c2.iter().any(|r| r[0].contains("unknown control")), "C.2 still has the row: {c2:?}");
+    let c21 = table_rows(&section(&text, "### C.2.1 "));
+    assert!(!c21.iter().any(|r| r[0].contains("unknown control")), "C.2.1 still has the row: {c21:?}");
+    assert!(c21.iter().any(|r| r[0] == "relaxation passes per loop"), "the relaxation default stays");
+    assert!(!flat(&text).contains("Known flags"), "C.1 note 1 is gone");
 }
 
 // ---- value semantics: G.71 and V1 to V7 ----
