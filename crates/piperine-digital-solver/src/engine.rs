@@ -257,6 +257,23 @@ impl Digital {
         }
     }
 
+    /// Whether the instant `at` would do nothing: no commit is due at or before `at`, no instant
+    /// is suspended for the host, no function waits to run and no pin is bound to `SETTLE`, whose
+    /// phase would run reactions at a time point. A step that ends at such a tick may skip the
+    /// instant and [`pass_instant`](Self::pass_instant) instead.
+    pub fn is_idle_at(&self, at: Tick) -> bool {
+        self.suspended.is_none()
+            && !self.dirty.any()
+            && self.plan.analysis().settle_nets().is_empty()
+            && self.queue.next_due().is_none_or(|(due, _)| due > at)
+    }
+
+    /// Moves the engine's clock to `at` as an instant that ran nothing leaves it: the tick a host
+    /// commit or a shadow made next reads as `now`. For a tick [`is_idle_at`](Self::is_idle_at) holds.
+    pub fn pass_instant(&mut self, at: Tick) {
+        self.now = at;
+    }
+
     /// Gives the param pin `net` the value `bytes` as the value it holds from the start of the run,
     /// which a `set` before the run is (§5.3.1): no change, `PREVIOUS` the same bytes. Only for a
     /// param net, before the first instant.

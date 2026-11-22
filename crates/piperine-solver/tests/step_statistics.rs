@@ -15,7 +15,7 @@ mod abi_devices;
 mod abi_mixed;
 
 use abi_devices::{add_capacitor, add_resistor, add_vsrc, vsine};
-use abi_mixed::dac;
+use abi_mixed::{dac, settle_count};
 use piperine_solver::abi::{ParamValue, Port};
 use piperine_solver::prelude::{
     CircuitBuilder, Context, SolverStats, TransientAnalysisOptions, TransientAnalysisResult,
@@ -127,6 +127,11 @@ fn rc_behind_a_switch() -> TransientAnalysisResult {
 
 /// A sine-driven RC low-pass with a first step far over the tolerance: Newton always converges.
 fn rc_over_the_tolerance() -> TransientAnalysisResult {
+    rc_with(|_| {})
+}
+
+/// The sine-driven RC low-pass, with whatever `add_devices` puts beside it.
+fn rc_with(add_devices: impl FnOnce(&mut CircuitBuilder)) -> TransientAnalysisResult {
     let mut builder = CircuitBuilder::new("rc over the tolerance");
     let ground = builder.ground();
     let top = builder.node("top");
@@ -139,6 +144,7 @@ fn rc_over_the_tolerance() -> TransientAnalysisResult {
     );
     add_resistor(&mut builder, "r1", 1.0e3, &top, &mid);
     add_capacitor(&mut builder, "c1", 1.0e-7, &mid, &ground);
+    add_devices(&mut builder);
     let mut circuit = builder.build().expect("build");
     circuit
         .transient(TransientAnalysisOptions::new(1.0e-4, 1.0e-5), Context::default())
@@ -185,4 +191,32 @@ fn a_step_at_max_step_is_counted() {
     let result = circuit.transient(options, Context::default()).expect("tran").solve().expect("solve");
     assert!(result.stats.steps_at_max_step > 0, "a circuit with no dynamics grows to max_step");
     assert_eq!(result.stats.steps_at_max_step as u64, result.statistics().ended(StepEnd::MaxStep));
+}
+
+#[test]
+fn a_pure_analog_circuit_runs_no_instant() {
+    let result = rc_over_the_tolerance();
+    let statistics = result.statistics();
+
+    assert!(statistics.accepted() >= 20, "the run takes steps: {}", statistics.accepted());
+    assert_eq!(statistics.instants_run(), 0, "nothing is due at any of the {} accepted steps", statistics.accepted());
+}
+
+#[test]
+fn a_reaction_on_settle_runs_an_instant_at_every_accepted_step() {
+    let result = rc_with(|builder| {
+        builder.device(settle_count(), "settle", &[], &[]);
+    });
+    let statistics = result.statistics();
+
+    assert_eq!(statistics.instants_run(), statistics.accepted(), "every accepted step is a time point for the listener");
+}
+
+#[test]
+fn one_commit_due_runs_one_instant() {
+    let result = rc_behind_a_switch();
+    let statistics = result.statistics();
+
+    assert!(statistics.accepted() >= 20, "the run takes steps: {}", statistics.accepted());
+    assert_eq!(statistics.instants_run(), 1, "only the host's write at 2 us is due");
 }

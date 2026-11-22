@@ -218,6 +218,15 @@ pub trait DiscreteSide {
     /// one (`next_microstep`) or at its last one (the settle phase after the rounds, §19 Resolution).
     /// A side that does not number its microsteps does nothing.
     fn reopen(&mut self, _at: Tick, _next_microstep: bool) {}
+    /// Whether the instant `at` would do nothing: no commit is due at it, none of its instants is
+    /// suspended, no function waits to run and no reaction listens to `settle`. The owner then
+    /// skips it (`pass_instant`) when no crossing fired there. A side that cannot tell answers
+    /// `false`, which runs every instant.
+    fn is_idle_at(&self, _at: Tick) -> bool {
+        false
+    }
+    /// Moves the side's clock to `at` in place of an instant `is_idle_at` found idle.
+    fn pass_instant(&mut self, _at: Tick) {}
     /// Runs (or, after a suspension, continues) the instant `at`. `samples` are
     /// the accepted continuous values reactions read; `limit` bounds each
     /// reaction's `HORIZON` (R5): `limit.crossing` for one a `CROSS` watch can

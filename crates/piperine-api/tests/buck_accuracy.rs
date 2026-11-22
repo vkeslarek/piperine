@@ -3,7 +3,8 @@
 //! `max_step = 1e-10`, `buck.vout` compared on the 0.5 us print grid. The largest difference is
 //! at most 0.104 mV, the difference of the solver before this feature (`diagnosis.md` section 4,
 //! row 0), so the speed of the feature is not bought with accuracy; the digital columns are equal
-//! row for row. The run lands at most 1 000 times (TP-03 AC 6; 39 999 before the observable rule).
+//! row for row. The run lands at most 1 000 times (TP-03 AC 6; 39 999 before the observable rule)
+//! and runs at most 1 000 instants at its accepted steps (TP-08 AC 2).
 //! The bounds are never moved to fit a run.
 #![cfg(unix)]
 
@@ -22,6 +23,11 @@ const VOUT_BOUND: f64 = 0.104e-3;
 /// The most landings the first 100 us may have (TP-03 AC 6).
 const LANDING_BOUND: u64 = 1000;
 
+/// The most instants the first 100 us may run at accepted steps (TP-08 AC 2): the landings
+/// (417 measured) and the instants scheduled at a step's end, never one per accepted step (127 611
+/// before the idle rule, 31 264 steps now). 668 measured.
+const INSTANT_BOUND: u64 = 1000;
+
 /// A sink that drops every record: the comparison reads the table only.
 struct Discard;
 
@@ -35,6 +41,8 @@ struct Run {
     accepted_steps: u64,
     /// The accepted steps that ended on a landing, whatever its cause.
     landings: u64,
+    /// The discrete instants the protocol ran at accepted steps.
+    instants: u64,
 }
 
 /// The run of the first 100 us with `max_step`.
@@ -54,7 +62,7 @@ fn run_with(max_step: f64) -> Run {
     let table = session.run(Rc::new(RefCell::new(Discard))).unwrap_or_else(|f| panic!("{f}"));
     let steps = session.statistics().expect("a transient leaves its statistics").steps();
     let landings = StepEnd::ALL.iter().filter(|end| matches!(end, StepEnd::Landing(_))).map(|end| steps.ended(*end)).sum();
-    Run { table, accepted_steps: steps.accepted(), landings }
+    Run { table, accepted_steps: steps.accepted(), landings, instants: steps.instants_run() }
 }
 
 /// The two runs, made once for every test of this target: the run as the buck is run, and the
@@ -63,7 +71,7 @@ fn runs() -> &'static (Run, Run) {
     static RUNS: OnceLock<(Run, Run)> = OnceLock::new();
     RUNS.get_or_init(|| {
         let (run, reference) = (run_with(1e-8), run_with(1e-10));
-        eprintln!("buck accuracy: {} accepted steps ({} landings) at max_step 1e-8, {} at 1e-10", run.accepted_steps, run.landings, reference.accepted_steps);
+        eprintln!("buck accuracy: {} accepted steps ({} landings, {} instants run) at max_step 1e-8, {} at 1e-10", run.accepted_steps, run.landings, run.instants, reference.accepted_steps);
         (run, reference)
     })
 }
@@ -112,4 +120,13 @@ fn the_first_100_us_land_at_most_1000_times() {
     let (run, _) = runs();
     eprintln!("buck landings: {} in the first 100 us (limit {LANDING_BOUND})", run.landings);
     assert!(run.landings <= LANDING_BOUND, "{} landings in the first 100 us, limit {LANDING_BOUND}", run.landings);
+}
+
+#[test]
+fn the_first_100_us_run_an_instant_only_where_something_is_due() {
+    // TP-08 AC 2: a step that ends where nothing is due runs no instant
+    let (run, _) = runs();
+    eprintln!("buck instants: {} run in the first 100 us for {} accepted steps (limit {INSTANT_BOUND})", run.instants, run.accepted_steps);
+    assert!(run.instants >= run.landings, "every landing runs its instant");
+    assert!(run.instants <= INSTANT_BOUND, "{} instants for {} accepted steps, limit {INSTANT_BOUND}", run.instants, run.accepted_steps);
 }

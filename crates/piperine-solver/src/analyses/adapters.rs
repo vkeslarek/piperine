@@ -212,6 +212,14 @@ impl DiscreteSide for DigitalSide {
         self.digital.reopen(DigitalTick(at), next_microstep);
     }
 
+    fn is_idle_at(&self, at: Tick) -> bool {
+        self.digital.is_idle_at(DigitalTick(at))
+    }
+
+    fn pass_instant(&mut self, at: Tick) {
+        self.digital.pass_instant(DigitalTick(at));
+    }
+
     fn run_instant(&mut self, at: Tick, samples: &[f64], limit: Horizon, mode: InstantMode) -> Result<Outcome> {
         let limit = DigitalHorizon { stop: DigitalTick(limit.stop), crossing: DigitalTick(limit.crossing) };
         let mode = Mode { is_static: mode.is_static, settle: mode.settle };

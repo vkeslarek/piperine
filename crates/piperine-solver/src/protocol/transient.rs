@@ -415,8 +415,13 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             // instant runs without the settle phase, and the phase follows the retakes.
             let deferred = unknowns && settle && jump.possible(&crossings);
             let rounds = InstantMode { settle: settle && !deferred, ..mode };
-            self.statistics.record_instant();
-            let mut outcome = self.run_whole_instant(tick_c, &samples, limit, rounds).map_err(|e| at(t_c, e))?;
+            let mut outcome = if crossings.is_empty() && self.discrete.is_idle_at(tick_c) {
+                self.discrete.pass_instant(tick_c);
+                Outcome::default()
+            } else {
+                self.statistics.record_instant();
+                self.run_whole_instant(tick_c, &samples, limit, rounds).map_err(|e| at(t_c, e))?
+            };
             if unknowns && jump.wanted(&crossings, &outcome) {
                 outcome = self.retake_step(&c.analog, tick_c, crossings, outcome, limit, rounds).map_err(|e| at(t_c, e))?;
             }
