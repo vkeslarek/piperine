@@ -101,11 +101,12 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    /// `match scrutinee { arms }`, whose value has the base type `base`.
-    pub(super) fn lower_match(&mut self, scope: &mut Scope, scrutinee: ExprId, arms: &[Arm], base: ValueType, origin: Origin) -> Option<LoweredExpr> {
+    /// `match scrutinee { arms }`, whose value has the base type `base`. `half` is `Some` for a
+    /// `match` of `Option` values: the chain of that half of each arm's pair (`lower_option_match`).
+    pub(super) fn lower_match(&mut self, scope: &mut Scope, scrutinee: ExprId, arms: &[Arm], base: ValueType, half: Option<LevelPart>, origin: Origin) -> Option<LoweredExpr> {
         let (subject, binding) = self.subject_of(scope, scrutinee, false)?;
         let mut binding = binding;
-        let chain = self.arms_chain(scope, scrutinee, &subject, arms, &base, &origin, &mut binding)?;
+        let chain = self.arms_chain(scope, scrutinee, &subject, arms, &base, half, &origin, &mut binding)?;
         if binding.is_empty() {
             return Some(chain);
         }
@@ -132,10 +133,21 @@ impl Elaboration<'_, '_> {
         Some(ArmTest { test, names })
     }
 
+    /// The value of an arm body: the body itself, or, for a `match` of `Option` values, the
+    /// `half` of its pair.
+    pub(super) fn lower_arm_value(&mut self, scope: &mut Scope, body: ExprId, half: Option<LevelPart>) -> Option<LoweredExpr> {
+        let Some(half) = half else { return self.lower_expr(scope, body) };
+        let pair = self.lower_option(scope, body)?;
+        Some(match half {
+            LevelPart::Is => pair.is,
+            LevelPart::Value => pair.val,
+        })
+    }
+
     /// The body of an arm under the `let`s of the names its pattern binds.
-    fn arm_body(&mut self, scope: &mut Scope, names: &[(u32, LoweredExpr)], body: ExprId) -> Option<LoweredExpr> {
+    fn arm_body(&mut self, scope: &mut Scope, names: &[(u32, LoweredExpr)], body: ExprId, half: Option<LevelPart>) -> Option<LoweredExpr> {
         let lets = self.binding_lets(names);
-        let lowered = self.lower_expr(scope, body)?;
+        let lowered = self.lower_arm_value(scope, body, half)?;
         if lets.is_empty() {
             return Some(lowered);
         }
@@ -148,7 +160,7 @@ impl Elaboration<'_, '_> {
     /// The `if` chain of `arms` over `subject`, from the last arm back: the last arm, or the
     /// first that matches everything, is the final value. The names a guarded arm's pattern binds
     /// are `let`s pushed to `prelude`, before any test: each is a read of the subject.
-    fn arms_chain(&mut self, scope: &mut Scope, scrutinee: ExprId, subject: &Subject, arms: &[Arm], base: &ValueType, origin: &Origin, prelude: &mut Vec<StmtId>) -> Option<LoweredExpr> {
+    fn arms_chain(&mut self, scope: &mut Scope, scrutinee: ExprId, subject: &Subject, arms: &[Arm], base: &ValueType, half: Option<LevelPart>, origin: &Origin, prelude: &mut Vec<StmtId>) -> Option<LoweredExpr> {
         let mut tests = Vec::new();
         let mut bodies = Vec::new();
         let mut ok = true;
@@ -179,9 +191,9 @@ impl Elaboration<'_, '_> {
             // those of any other arm are bound at the head of its body.
             let body = if arm.guard.is_some() {
                 prelude.extend(self.binding_lets(&tested.names));
-                self.lower_expr(scope, arm.body)
+                self.lower_arm_value(scope, arm.body, half)
             } else {
-                self.arm_body(scope, &tested.names, arm.body)
+                self.arm_body(scope, &tested.names, arm.body, half)
             };
             match body {
                 Some(body) => bodies.push(self.fit_to(body, base)),
@@ -432,6 +444,26 @@ impl Elaboration<'_, '_> {
                 let is = self.emit(Expr::If { cond: first, then: then.is, otherwise: otherwise.is }, is_ty, origin.clone());
                 let val = self.emit(Expr::If { cond: second, then: then.val, otherwise: otherwise.val }, val_ty, origin);
                 Some(Pair { is, val, literal: None })
+            }
+            // `match s { p => a, .. }` of `Option`s: the flag and the payload each a `match` chain
+            // over `s`, an arm's body read as its pair.
+            ExprKind::Match { scrutinee, arms } => {
+                if let Some(selected) = self.folded_selection(scope, *scrutinee, arms) {
+                    return self.lower_option(scope, arms[selected].body);
+                }
+                scope.decisions += 1;
+                let is = self.lower_match(scope, *scrutinee, arms, ValueType::Bool, Some(LevelPart::Is), origin.clone());
+                let val = self.lower_match(scope, *scrutinee, arms, payload, Some(LevelPart::Value), origin);
+                scope.decisions -= 1;
+                Some(Pair { is: is?, val: val?, literal: None })
+            }
+            // `if let p = s { a } else { b }` of `Option`s: the same, a `match` of two arms.
+            ExprKind::If { cond, then, else_: Some(else_) } => {
+                let (is, val) = (
+                    self.lower_if_let(scope, *cond, then, Some(*else_), ValueType::Bool, Some(LevelPart::Is), origin.clone()),
+                    self.lower_if_let(scope, *cond, then, Some(*else_), payload, Some(LevelPart::Value), origin),
+                );
+                Some(Pair { is: is?, val: val?, literal: None })
             }
             ExprKind::Block(block) => match block.stmts.as_slice() {
                 [stmt] => match self.design.stmt_node(*stmt).kind.clone() {

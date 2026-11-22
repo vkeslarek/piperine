@@ -304,7 +304,7 @@ impl Elaboration<'_, '_> {
                 };
                 Some(self.emit(Expr::Binary { op, lhs, rhs }, flag.wrap(ty), origin))
             }
-            ExprKind::If { cond, then, else_ } if matches!(self.design.expr_node(*cond).kind, ExprKind::Let { .. }) => self.lower_if_let(scope, *cond, then, *else_, ty, origin),
+            ExprKind::If { cond, then, else_ } if matches!(self.design.expr_node(*cond).kind, ExprKind::Let { .. }) => self.lower_if_let(scope, *cond, then, *else_, ty, None, origin),
             // A condition that reads only key params and constants is folded: only the arm it
             // selects is lowered (`structural.rs`, §11 rule 3).
             ExprKind::If { cond, then, else_ } if let Some(holds) = self.folded_decision(scope, *cond) => {
@@ -414,7 +414,7 @@ impl Elaboration<'_, '_> {
             ExprKind::Match { scrutinee, arms } if let Some(selected) = self.folded_selection(scope, *scrutinee, arms) => self.lower_expr(scope, arms[selected].body),
             ExprKind::Match { scrutinee, arms } => {
                 scope.decisions += 1;
-                let lowered = self.lower_match(scope, *scrutinee, arms, ty, origin);
+                let lowered = self.lower_match(scope, *scrutinee, arms, ty, None, origin);
                 scope.decisions -= 1;
                 lowered
             }

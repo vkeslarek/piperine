@@ -1841,6 +1841,9 @@ Proof: run srcagg | test an_unknown_composite_is_refused_by_name ... ok
 **C109** - Generic arguments written on a struct or enum with no generic parameter are `P0001` by name, never ignored. (CV-09, CV-11; found by the merge)
 Proof: run typesagg | test generic_arguments_on_a_plain_type_are_refused ... ok
 
+**C110** - A `match` or an `if let` whose value is an `Option` (arms by key, a guard over an `Option`, `if let Some(n) = o { Some(n + 1) } else { None }`) takes the arm Rust takes, flag and payload both. (CV-04, AC 1 and AC 4; GAPS L66, found by finding 6)
+Proof: run srcctl | test a_match_or_if_let_yielding_an_option_runs_as_rust ... ok
+
 ---
 
 ## Handoff

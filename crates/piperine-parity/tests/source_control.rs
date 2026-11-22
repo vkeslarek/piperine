@@ -325,6 +325,26 @@ fn option_arms_take_rusts_patterns() {
 }
 
 #[test]
+fn a_match_or_if_let_yielding_an_option_runs_as_rust() {
+    // CV-04 AC 1 and AC 4 (GAPS L66): a `match` or an `if let` whose value is an `Option` (arms by key, by a
+    // guard over an `Option`, and `if let`) takes the arm Rust takes, flag and payload both.
+    let by_key = |k: u8| match k {
+        0 => Some(1u8),
+        1 => Some(k + 10),
+        _ => None,
+    };
+    let by_guard = |o: Option<u8>| match o {
+        Some(n) if n > 5 => Some(n * 2),
+        Some(_) => Some(0u8),
+        None => None,
+    };
+    let if_let = |o: Option<u8>| if let Some(n) = o { Some(n + 1) } else { None };
+    let got = PatternRows::commits(&["m0", "m1", "m2", "m3", "m4", "m5", "m6", "m7"]);
+    let wanted = vec![by_key(0).unwrap_or(99), by_key(1).unwrap_or(99), by_key(2).unwrap_or(99), by_guard(Some(7)).unwrap_or(99), by_guard(Some(3)).unwrap_or(99), by_guard(None).unwrap_or(99), if_let(Some(4)).unwrap_or(99), if_let(None).unwrap_or(99)];
+    assert_eq!(got, wanted);
+}
+
+#[test]
 fn refutable_patterns_run_in_if_let_while_let_and_let_else() {
     // CV-04 AC 4 (§1.6.9, §1.7.6, §1.8.6): `if let`, `while let` and `let ... else` with literal,
     // range, `Some` and nested patterns run as Rust; a `let ... else` that fails runs its block.

@@ -20,7 +20,7 @@ use super::known::Flag;
 use super::lower::Scope;
 use super::selectors::ArmCondition;
 use crate::msl::Span;
-use crate::pom::{BlockNode, DeclId, DeclKind, ExprId, ExprKind, FileId, LitKind, PatId, PatKind, Resolution, StmtId};
+use crate::pom::{BlockNode, DeclId, DeclKind, ExprId, ExprKind, FileId, LitKind, PatId, PatKind, Resolution, StmtId, StmtKind};
 use crate::types::Ty;
 
 /// The scrutinee of a `match`, as each test reads it.
@@ -471,6 +471,26 @@ impl Elaboration<'_, '_> {
         Some(block)
     }
 
+    /// The `half` of the pair of the `Option` the single tail expression of `stmts` yields, under
+    /// the `lets` that bind the names of its pattern. `None` after a diagnostic, or for a block
+    /// that is more than its tail expression.
+    fn bound_half(&mut self, scope: &mut Scope, lets: Vec<LoweredStmt>, stmts: &[StmtId], span: Span, half: LevelPart) -> Option<LoweredExpr> {
+        let [stmt] = stmts else {
+            self.unsupported(scope.file, span, "an `if let` of `Option` values whose block is more than its value");
+            return None;
+        };
+        let StmtKind::Expr { expr, semi: false } = self.design.stmt_node(*stmt).kind.clone() else {
+            self.unsupported(scope.file, span, "an `if let` of `Option` values whose block is more than its value");
+            return None;
+        };
+        let origin = self.locator.origin(scope.file, span);
+        let value = self.lower_arm_value(scope, expr, Some(half))?;
+        let ty = self.type_of(value);
+        let block = self.emit(Expr::Block { stmts: lets.clone(), value: Some(value) }, ty, origin);
+        self.note_block(block, &lets, Some(value));
+        Some(block)
+    }
+
     /// The test of `matched` as a condition: `true` when it matches everything.
     fn condition_of(&mut self, matched: &PatternTest, origin: &Origin) -> LoweredExpr {
         match matched.test {
@@ -480,7 +500,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `if let p = e { A } else { B }`: `{ let s = e; if test(s, p) { let names; A } else { B } }`.
-    pub(super) fn lower_if_let(&mut self, scope: &mut Scope, cond: ExprId, then: &BlockNode, else_: Option<ExprId>, base: ValueType, origin: Origin) -> Option<LoweredExpr> {
+    pub(super) fn lower_if_let(&mut self, scope: &mut Scope, cond: ExprId, then: &BlockNode, else_: Option<ExprId>, base: ValueType, half: Option<LevelPart>, origin: Origin) -> Option<LoweredExpr> {
         let ExprKind::Let { pat, expr } = self.design.expr_node(cond).kind.clone() else { return None };
         let (subject, prelude) = self.subject_of(scope, expr, true)?;
         let matched = self.test_pattern(scope, &subject, pat)?;
@@ -489,13 +509,16 @@ impl Elaboration<'_, '_> {
         let arm = Self::enter_arm(scope, Some(test), true);
         scope.guards.push(ArmCondition::IfLet);
         let lets = self.binding_lets(&names);
-        let taken = self.bound_block(scope, lets, &then.stmts, then.span);
+        let taken = match half {
+            Some(half) => self.bound_half(scope, lets, &then.stmts, then.span, half),
+            None => self.bound_block(scope, lets, &then.stmts, then.span),
+        };
         scope.guards.pop();
         Self::leave_arm(scope, arm);
         let arm = Self::enter_arm(scope, Some(test), false);
         scope.guards.push(ArmCondition::IfLet);
         let otherwise = match else_ {
-            Some(else_) => self.lower_expr(scope, else_),
+            Some(else_) => self.lower_arm_value(scope, else_, half),
             None => Some(self.emit(Expr::Unit, ValueType::Unit, origin.clone())),
         };
         scope.guards.pop();
