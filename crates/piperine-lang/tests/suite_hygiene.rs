@@ -1188,11 +1188,9 @@ impl RemovedUnknownForms {
     /// The spellings of the earlier flag: `Unknown`, `known_or`, `is_known`, `.known()`, `.high()`, `.level(` and `merge(`.
     const NAMES: [&'static str; 7] = ["Unknown", "known_or", "is_known", ".known()", ".high()", ".level(", "merge("];
 
-    /// The `.msl` files that still use a removed name, with the task that removes it: the flag methods still resolve
-    /// until T29, and a plain read of a carrier inside a struct, a variant or a tuple needs the elaborator without the
+    /// The `.msl` files that still use a removed name, with the task that removes it: a plain read of a carrier inside a struct, a variant or a tuple needs the elaborator without the
     /// flag (T31). The list shrinks to nothing there; `the_removed_name_exceptions_are_still_needed` fails on a stale entry.
-    const PENDING: [(&'static str, &'static str); 3] = [
-        ("crates/piperine-lang/std/values.msl", "T29: Known, merge and high are std items until the flag methods go"),
+    const PENDING: [(&'static str, &'static str); 2] = [
         ("crates/piperine-parity/tests/aggregates/carriers.msl", "T31: a plain carrier read inside `Pair { .. }` and a `match` on a carrier"),
         ("crates/piperine-parity/tests/aggregates/normal.msl", "T31: a plain carrier read as the argument of a tuple-returning call"),
     ];

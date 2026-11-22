@@ -1,7 +1,7 @@
 //! Discrete carriers and definitions of `piperine_lang::types` (feature `msl-digital`, DIG-04,
 //! DIG-02 AC 1): the type of a `signal` and of a port of `Bit<T>`, what a carrier may hold
-//! (`E0112`), initial values (`E0210`), the flag reads `known`, `known_or`, `is_known`, `high`
-//! and `prev`, and a catalogue method applied to a carrier. Sources are written over the embedded
+//! (`E0112`), initial values (`E0210`),
+//! and the history read `prev`, and a catalogue method applied to a carrier. Sources are written over the embedded
 //! standard library, the buck's own enums read as written.
 
 #[path = "support/buck.rs"]
@@ -131,47 +131,6 @@ fn a_carrier_read_has_its_value_type() {
 }
 
 #[test]
-fn the_flag_reads_are_typed() {
-    // DIG-04 AC 4 (part I §3.3.4, §3.3.7): `known()` is `Option<T>`, `known_or(d)` is `T`,
-    // `is_known()` and `high()` are `bool`, on a carrier and on a value, and the checker records
-    // each as a built-in.
-    let src = "module Top(in c: Bit<u9>, in g: Bit, in x: Bit<f64>) {\n    let a = c.known();\n    let b = c.known_or(0);\n    let d = c.is_known();\n    let e = g.high();\n    let f = (c + 1).known_or(0);\n    let h = (x * 2.0).known();\n    let k = x.known_or(1.5);\n}";
-    let design = design_of(src);
-    let types = checked(&design, src);
-    let got: Vec<Option<&Ty>> = ["a", "b", "d", "e", "f", "h", "k"].iter().map(|n| types.local(decl(&design, n, "binding"))).collect();
-    let (u9, f64_) = (Ty::UInt(9), Ty::F64);
-    let (opt_u9, opt_f64) = (Ty::Option(Box::new(u9.clone())), Ty::Option(Box::new(f64_.clone())));
-    assert_eq!(got, [Some(&opt_u9), Some(&u9), Some(&Ty::Bool), Some(&Ty::Bool), Some(&u9), Some(&opt_f64), Some(&f64_)]);
-    let builtins: Vec<(String, Option<Builtin>)> = ["known", "known_or", "is_known", "high"].iter().flat_map(|n| method_calls(&design, &types, n)).map(|e| (src[design.expr_node(e).span.range()].to_string(), types.builtin(e))).collect();
-    let kinds: Vec<Option<Builtin>> = builtins.iter().map(|(_, b)| *b).collect();
-    assert_eq!(kinds.iter().filter(|b| **b == Some(Builtin::Known)).count(), 2);
-    assert_eq!(kinds.iter().filter(|b| **b == Some(Builtin::KnownOr)).count(), 3);
-    assert_eq!(kinds.iter().filter(|b| **b == Some(Builtin::IsKnown)).count(), 1);
-    assert_eq!(kinds.iter().filter(|b| **b == Some(Builtin::High)).count(), 1);
-    assert_eq!(kinds.len(), 7, "{builtins:?}");
-
-    // `high` is the read of a `Bit`; a default of the wrong type is a mismatch.
-    let src = "module Top(in c: Bit<u9>) { let a = c.high(); }";
-    let d = diagnostics(src);
-    assert_eq!((codes(&d), d[0].diagnostic.message.contains("`high` on `u9`")), (vec!["P0001".to_string()], true), "{}", d[0].diagnostic.message);
-    let src = "module Top(in c: Bit<u9>) { let a = c.known_or(true); }";
-    let d = diagnostics(src);
-    assert_eq!(codes(&d), ["E0180"]);
-    assert_eq!(snippet(src, &d[0]), "true");
-
-    // §3.3.7: a project's own `high` is not the stdlib's. It is `P0001` at its use, whether the
-    // POM resolved the receiver to it or left it to the checker.
-    for src in [
-        "impl Bit { pub fn high(self) -> bool { true } }\nmodule Top(in g: Bit) { let a = g.high(); }",
-        "trait Mine { fn known_or(self, d: u8) -> u8; }\nimpl Mine for u8 { fn known_or(self, d: u8) -> u8 { d } }\nmodule Top(in c: Bit<u8>) { let a = (c + 1).known_or(0); }",
-    ] {
-        let d = diagnostics(src);
-        assert_eq!(codes(&d), ["P0001"], "{src}");
-        assert!(d[0].diagnostic.message.contains("defined by the project"), "{}", d[0].diagnostic.message);
-    }
-}
-
-#[test]
 fn an_initial_value_of_the_wrong_kind_is_e0210() {
     // DIG-04 AC 5 (part II §5.1.5, §8.1.7): the initial value of a carrier has the carried type,
     // and reads no carrier and no probe; the same for a node, whose initial value is an `f64`,
@@ -196,14 +155,13 @@ fn an_initial_value_of_the_wrong_kind_is_e0210() {
 
 #[test]
 fn a_catalogue_method_on_a_carrier_is_typed_on_its_value() {
-    // DIG-02 AC 1: `d.min(SETPOINT_MAX)` on a `Bit<u8>` carrier is a `u8`, whether the carrier is
-    // the receiver or `known()` unwrapped it first (the `SetpointReg` of the buck).
-    let src = "const SETPOINT_MAX: u8 = 168;\nmodule Top(in data: Bit<u8>) {\n    let direct = data.min(SETPOINT_MAX);\n    let unwrapped = if let Some(d) = data.known() { d.min(SETPOINT_MAX) } else { 0 };\n}";
+    // DIG-02 AC 1: `d.min(SETPOINT_MAX)` on a `Bit<u8>` carrier is a `u8` (the `SetpointReg` of the buck).
+    let src = "const SETPOINT_MAX: u8 = 168;\nmodule Top(in data: Bit<u8>) {\n    let direct = data.min(SETPOINT_MAX);\n}";
     let design = design_of(src);
     let types = checked(&design, src);
-    assert_eq!([types.local(decl(&design, "direct", "binding")), types.local(decl(&design, "unwrapped", "binding"))], [Some(&Ty::UInt(8)), Some(&Ty::UInt(8))]);
+    assert_eq!(types.local(decl(&design, "direct", "binding")), Some(&Ty::UInt(8)));
     let mins = method_calls(&design, &types, "min");
-    assert_eq!(mins.iter().map(|e| types.method(*e)).collect::<Vec<_>>(), [Some(Method::Min), Some(Method::Min)]);
+    assert_eq!(mins.iter().map(|e| types.method(*e)).collect::<Vec<_>>(), [Some(Method::Min)]);
     // DIG-02 AC 2: a method with no row names the method and the value type (`E0161`, Appendix H
     // rule 1, now that the integer catalogue is complete).
     let src = "module Top(in oc_count: Bit<u4>) { let n = oc_count.leading_zeros(); }";
@@ -427,7 +385,7 @@ fn a_continuous_expression_at_an_in_port_is_e0316() {
     // DIG-04 AC 7 (§8.1.12): an expression at an `in` port is an anonymous definition and must be
     // discrete: a probe, `now()` and `analysis(Static)`, directly or through a `let`, are `E0316`
     // at the argument. A discrete expression is the positive case: `Controller` of the buck hands
-    // `target_codes(setpoint.known_or(0))` to the ramp.
+    // `target_codes(setpoint)` to the ramp.
     let items = "module Child(in a: Bit<f64>) { }\n";
     for (body, at) in [
         ("let c = Child(v(p));", "v(p)"),

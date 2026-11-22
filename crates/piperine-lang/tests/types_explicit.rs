@@ -1,8 +1,8 @@
 //! The checker's side of the explicit model of unknowns (part I §3.3, §22.1): `analog` reads a
 //! discrete carrier like any expression (§3.3.6), directly, through a `let`, a function or a
-//! placement; and, while the earlier forms are still accepted, `x.level(k)` and `T::WIDTH` typed on
-//! `Repr` values and the five stdlib functions of §22.1 typed by their contract at the concrete
-//! type (`E0701`, `E0702`). One positive and one negative source per rule, over the embedded
+//! placement; `T::WIDTH` typed on `Repr` values, `same` and `cast` typed by their contract at the
+//! concrete type (`E0701`), the flag methods that resolve to nothing (`E0161`), and `logic` and
+//! `matches_bits` refused until `Logic` (`P0001`). One positive and one negative source per rule, over the embedded
 //! standard library (the five functions are the stdlib's own items).
 
 #[path = "support/pom.rs"]
@@ -52,19 +52,29 @@ fn codes_of(diagnostics: &[DesignDiagnostic]) -> Vec<String> {
 const MODE: &str = "#[derive(Repr)] enum Mode { Idle, Run, Halt }";
 
 #[test]
-fn level_is_typed_on_every_repr_type() {
-    // §22.1: `x.level(k)` of a value with `Repr` is `Option<bool>` (US-02 AC 1).
-    let body = "let a = true.level(0); let b = 3_u8.level(0); let c = (-3_i4).level(1); let d = 1.5.level(0); let e = Mode::Run.level(0);";
-    let t = local_types(MODE, body, &["a", "b", "c", "d", "e"]);
-    assert_eq!(t, vec![Ty::Option(Box::new(Ty::Bool)); 5]);
+fn the_flag_methods_do_not_resolve() {
+    // EU-02 AC 2 (C5): `level`, `known`, `known_or`, `is_known`, `high` and `merge` resolve to nothing: `E0161`
+    // naming the method and the type, with the help that names an initial value, `Option<T>` and `Logic`
+    for (call, method, ty) in [("3_u8.level(0)", "level", "u8"), ("3_u8.known()", "known", "u8"), ("3_u8.known_or(1)", "known_or", "u8"), ("true.is_known()", "is_known", "bool"), ("true.high()", "high", "bool"), ("1.5.known_or(0.0)", "known_or", "f64")] {
+        let (src, d) = diagnostics("", &format!("let a = {call};"));
+        assert_eq!(codes_of(&d), ["E0161"], "{call}\n{src}");
+        let found = &d[0].diagnostic;
+        assert!(found.message.contains(&format!("`{method}`")) && found.message.contains(&format!("`{ty}`")), "{call}: names the method and the type: {}", found.message);
+        let help = found.help.as_deref().unwrap_or_default();
+        assert!(["initial value", "Option<T>", "Logic"].iter().all(|word| help.contains(word)), "{call}: the help: {help}");
+    }
+    // `merge` is a function of the earlier std: it is not found at all
+    let design = Design::builder().source("top.msl", "module Top() { }\nanalog for Top { let a = merge(1.0, 2.0); }").build();
+    assert_eq!(codes_of(design.diagnostics()), ["E0161"]);
 }
 
 #[test]
-fn level_on_a_value_without_repr_is_refused() {
-    // A flag read on an `Option` is refused loudly, never typed. The §2 table gives `Option<T>` a `Repr` (`1 + T::WIDTH`),
-    // so this is no missing `Repr`: the read has no lowering yet (GAPS L65, owned by `explicit-unknowns`, which removes flag reads).
-    let (src, d) = diagnostics("", "let a = Some(1.0).level(0);");
-    assert_eq!(codes_of(&d), ["P0001"], "{src}");
+fn logic_and_matches_bits_wait_for_logic() {
+    // EU-02 (GAPS L58): until `Logic` (T45) the two functions of §22.1.4 are refused by name with `P0001`
+    for call in ["let e: u4 = logic(\"10xx\");", "let g = matches_bits(5_u4, \"01x1\");"] {
+        let (src, d) = diagnostics("", call);
+        assert!(!d.is_empty() && codes_of(&d).iter().all(|code| code == "P0001"), "{src}: {:?}", codes_of(&d));
+    }
 }
 
 #[test]
@@ -77,19 +87,13 @@ fn width_is_typed_u32_on_a_concrete_type() {
 
 #[test]
 fn the_intrinsics_are_typed_at_the_concrete_type() {
-    // §22.1.2 to §22.1.4: each function is typed at the concrete type of its arguments, its
+    // §22.1.3 and §22.1.4: each function is typed at the concrete type of its arguments, its
     // turbofish or the type the context expects (US-03).
-    let body = "let b = same(3_u8, 4_u8); let c: u2 = cast::<Mode, u2>(Mode::Run); \
-                let d = cast::<u8, i8>(3_u8); let e: u4 = logic(\"10xx\"); let f = logic::<Mode>(\"x1\"); \
-                let g = matches_bits(5_u4, \"01x1\");";
-    let t = local_types(MODE, body, &["b", "c", "d", "e", "f", "g"]);
-    let mode = t[4].clone();
-    assert!(matches!(mode, Ty::Enum(_)), "logic::<Mode> is a Mode: {mode:?}");
+    let body = "let b = same(3_u8, 4_u8); let c: u2 = cast::<Mode, u2>(Mode::Run); let d = cast::<u8, i8>(3_u8);";
+    let t = local_types(MODE, body, &["b", "c", "d"]);
     assert_eq!(t[0], Ty::Bool);
     assert_eq!(t[1], Ty::UInt(2));
     assert_eq!(t[2], Ty::Int(8));
-    assert_eq!(t[3], Ty::UInt(4));
-    assert_eq!(t[5], Ty::Bool);
 }
 
 #[test]
@@ -108,73 +112,24 @@ fn cast_between_widths_is_e0701() {
     assert!(message.contains("Mode") && message.contains("u8"), "both types are named: {message}\n{src}");
 }
 
-#[test]
-fn a_bad_pattern_is_e0702() {
-    // §22.1.4 rule 3: a character other than `0`, `1`, `x`, or a length other than WIDTH, is
-    // `E0702` at the pattern (US-03 AC 9).
-    for (call, pattern) in [("logic::<u4>(\"10z0\")", "\"10z0\""), ("logic::<u4>(\"101\")", "\"101\""), ("matches_bits(3_u4, \"01x10\")", "\"01x10\"")] {
-        let (src, d) = diagnostics("", &format!("let a = {call};"));
-        assert_eq!(codes_of(&d), ["E0702"], "{call}");
-        assert_eq!(&src[d[0].diagnostic.span().range()], pattern, "the error sits at the pattern");
-    }
-}
-
 /// A stage reading `c` in `analog` through the function `f`, over the electrical nature.
 fn carrier_read_source(function: &str, call: &str) -> String {
     format!("{function}\nmodule Amp(x: f64, p: Electrical) {{ }}\nanalog for Amp {{ v(p) +> x; }}\nmodule Top(in c: Bit<f64>, p: Electrical) {{ }}\nanalog for Top {{ {call} }}")
 }
 
 #[test]
-fn a_function_that_reads_through_flags_takes_a_carrier_in_analog() {
-    // §3.3.6: `analog` hands a function a discrete carrier whatever the function does with it; the
-    // sources the earlier text called flag-total are accepted as they were
+fn a_function_that_reads_its_parameter_takes_a_carrier_in_analog() {
+    // §3.3.6, EU-01 AC 1: `analog` hands a function a discrete carrier whatever the function does with it: a bare
+    // use of the parameter, a forwarded one, a recursive one
     for function in [
-        "fn low(x: f64) -> bool { x.level(0).is_some() }",
-        "fn known_sum(x: f64) -> f64 { x.known_or(0.0) + x.known_or(1.0) }",
-        "fn through(x: f64) -> bool { low(x) }\nfn low(x: f64) -> bool { x.level(0).is_some() }",
+        "fn twice(x: f64) -> f64 { x * 2.0 }",
+        "fn forwards(x: f64) -> f64 { twice(x) }\nfn twice(x: f64) -> f64 { x * 2.0 }",
         "fn spin(x: f64) -> bool { spin(x) }",
     ] {
         let name = function.split('(').next().unwrap().rsplit(' ').next().unwrap().to_string();
         let src = carrier_read_source(function, &format!("let a = {name}(c);"));
         let design = design_of(&src);
         Types::check(&design, "Top").unwrap_or_else(|d| panic!("{function}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
-    }
-}
-
-#[test]
-fn a_function_that_reads_its_parameter_bare_takes_a_carrier_in_analog() {
-    // §3.3.6, EU-01 AC 1: the sources that were `E0150` (one bare use of the parameter, beside a
-    // `level` read or on its own, or forwarded) are accepted
-    for function in [
-        "fn twice(x: f64) -> f64 { x * 2.0 }",
-        "fn mixed(x: f64) -> f64 { if x.level(0).is_some() { x } else { 0.0 } }",
-        "fn forwards(x: f64) -> f64 { twice(x) }\nfn twice(x: f64) -> f64 { x * 2.0 }",
-    ] {
-        let name = function.split('(').next().unwrap().rsplit(' ').next().unwrap().to_string();
-        let src = carrier_read_source(function, &format!("let a = {name}(c);"));
-        let design = design_of(&src);
-        Types::check(&design, "Top").unwrap_or_else(|d| panic!("{function}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
-    }
-}
-
-#[test]
-fn unknown_is_a_name_that_does_not_resolve() {
-    // EU-02 AC 1 (C4): `Unknown` is no literal, so it is looked up like any name and found nowhere: `E0161` at the
-    // name, with a help naming an initial value, `Option<T>` and `Logic`; nowhere `E0906`, `E0908` or `E0150`
-    for (src, at) in [
-        ("module Top(in clk: Bit) { let x = Unknown; }", "Unknown"),
-        ("module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let x: u8 = Unknown; } }", "Unknown"),
-        ("module Top() { }\nanalog for Top { let x = Unknown; }", "Unknown"),
-    ] {
-        let design = Design::builder().source("top.msl", src).build();
-        let diagnostics = design.diagnostics();
-        assert_eq!(diagnostics.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0161"], "{src}");
-        let found = &diagnostics[0].diagnostic;
-        assert_eq!(&src[found.span().range()], at, "the error sits at the name");
-        let help = found.help.as_deref().unwrap_or_default();
-        for word in ["initial value", "Option<T>", "Logic"] {
-            assert!(help.contains(word), "the help names `{word}`: {help}");
-        }
     }
 }
 

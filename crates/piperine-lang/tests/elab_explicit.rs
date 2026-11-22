@@ -100,11 +100,6 @@ fn width_is_the_level_count_of_each_repr_type() {
     ]);
 }
 
-/// The diagnostics of elaborating `Top` of `src`, which must be refused.
-fn refused(src: &str) -> Vec<piperine_lang::pom::DesignDiagnostic> {
-    Elab::run(src, "Top").expect_err("elaboration refuses the source")
-}
-
 #[test]
 fn unknown_decides_no_structure_because_it_is_no_value() {
     // EU-02 AC 1, EU-01: where `Unknown` stood in a `where` condition or a param default (the retired `E0151`),
@@ -136,6 +131,6 @@ fn a_known_real_goes_through_each_analog_form() {
 #[test]
 fn analog_has_no_refusal_of_a_flag() {
     // EU-02 AC 4 (C7): no source in `analog` is `E0150` or `P0001` for being unknown
-    let err = refused(&analog_source("v(p) +> Unknown;"));
-    assert_eq!(Elab::codes(&err), ["E0161"]);
+    let design = Elab::design(&analog_source("v(p) +> Unknown;"));
+    assert_eq!(Elab::codes(design.diagnostics()), ["E0161"]);
 }

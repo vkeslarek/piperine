@@ -576,7 +576,6 @@ module M(in clk: Bit, p: Electrical, w: Wire, pr: Pair, a: f64) {
     let pv = s.prev();
     let ot = s.others();
     let inf = p.inflow();
-    let lv = w.level(1);
     let bg = p.big();
     let vd = pr.vd();
     let lo = w.lowest();
@@ -601,7 +600,6 @@ module M(in clk: Bit, p: Electrical, w: Wire, pr: Pair, a: f64) {
     assert_eq!(member_res(&design, "s.prev()"), builtin("prev"));
     assert_eq!(member_res(&design, "s.others()"), builtin("others"));
     assert_eq!(member_res(&design, "p.inflow()"), builtin("inflow"));
-    assert_eq!(member_res(&design, "w.level(1)"), builtin("level"));
     // Then the `impl`s of the nature or bundle, then those of the value type.
     assert_eq!(member_res(&design, "p.big()"), impl_fn("Electrical", "big"));
     assert_eq!(member_res(&design, "pr.vd()"), impl_fn("Pair", "vd"));

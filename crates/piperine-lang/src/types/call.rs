@@ -5,15 +5,17 @@
 use crate::msl::Span;
 use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, FileId, LitKind, PatKind, Resolution};
 
-use super::carrier::flag_builtin;
 use super::catalogue::{Catalogue, Lookup};
 use super::check::{Checker, Context};
 use super::flow::ExitFrame;
 use super::unsupported::Unsupported;
 use super::{Builtin, Callee, Method, Ty};
 
-/// The carrier and flag methods of B.1: not rows of Appendix H, so a miss on them is not `E0161`.
-const CARRIER_METHODS: &[&str] = &["known", "known_or", "is_known", "high", "changed", "prev", "rise", "fall", "others", "inflow", "level"];
+/// The carrier methods of B.1: not rows of Appendix H, so a miss on them is not `E0161`.
+const CARRIER_METHODS: &[&str] = &["changed", "prev", "rise", "fall", "others", "inflow"];
+
+/// The methods the explicit model of unknowns took out (§3.3): a call is `E0161` with the help that names the three forms.
+const REMOVED_FLAG_METHODS: &[&str] = &["known", "known_or", "is_known", "high", "level", "merge"];
 
 impl Checker<'_> {
     /// What a callee path names, if the callee is a plain path.
@@ -256,7 +258,7 @@ impl Checker<'_> {
             Resolution::Decl(f) => match self.stdlib_builtin(*f) {
                 Some(builtin) => Some(builtin),
                 None => {
-                    let replaced = flag_builtin(name).is_some() || matches!(name, "rise" | "fall");
+                    let replaced = matches!(name, "rise" | "fall");
                     let what = if replaced { format!("method `{name}` defined by the project (the checker knows only the stdlib's own `{name}`)") } else { format!("method `{name}`") };
                     self.unsupported(file, node.span, &what);
                     return None;
@@ -265,8 +267,6 @@ impl Checker<'_> {
             Resolution::Builtin(id) => match id.info().name {
                 "prev" => Some(Builtin::Prev),
                 "changed" => Some(Builtin::Changed),
-                // `level` of a carrier or a value the POM resolved to the language's own row
-                "level" => Some(Builtin::Level),
                 "inflow" => return self.inflow_read(expr, *recv, args),
                 _ => {
                     self.unsupported(file, node.span, &format!("method `{name}`"));
@@ -289,21 +289,7 @@ impl Checker<'_> {
         if let Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) = builtin {
             return self.edge_read(expr, edge, *recv, args);
         }
-        // A receiver the POM could not type might be a value of a project's own `impl`: the
-        // checker knows only the stdlib's flag reads (§3.3.7).
-        if builtin.is_none() && flag_builtin(name).is_some() && self.project_methods.contains(name) {
-            self.unsupported(file, node.span, &format!("method `{name}` defined by the project (the checker knows only the stdlib's own `{name}`)"));
-            self.infer(*recv);
-            return None;
-        }
         let recv_ty = self.infer(*recv)?;
-        // The four flag-total reads apply to any value and to a carrier's value.
-        let builtin = builtin.or_else(|| flag_builtin(name));
-        if let Some(builtin) = builtin {
-            if let Some(result) = self.flag_read(expr, builtin, &recv_ty, args) {
-                return result;
-            }
-        }
         let (row, params, result) = match Catalogue::method(&recv_ty, name) {
             Lookup::Row(row, params, result) => (row, params, result),
             Lookup::Payload(row) => return self.payload_row(expr, row, &recv_ty, args),
@@ -314,7 +300,14 @@ impl Checker<'_> {
                 if copy_method || (matches!(miss, Lookup::Absent) && !self.project_methods.contains(name) && !CARRIER_METHODS.contains(&name)) {
                     let message = format!("no method `{name}` on `{type_name}`");
                     let diagnostic = crate::msl::Diagnostic::new("E0161", message, method.span, format!("`{type_name}` has no such method (Appendix H)"));
-                    self.report(file, if copy_method { diagnostic.with_help(crate::msl::diag::COPY_HELP) } else { diagnostic });
+                    let help = if copy_method {
+                        Some(crate::msl::diag::COPY_HELP)
+                    } else if REMOVED_FLAG_METHODS.contains(&name) {
+                        Some(crate::msl::diag::UNKNOWN_HELP)
+                    } else {
+                        None
+                    };
+                    self.report(file, help.map_or(diagnostic.clone(), |help| diagnostic.with_help(help)));
                 } else {
                     self.unsupported(file, method.span, &format!("method `{name}` on `{type_name}`"));
                 }

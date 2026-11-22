@@ -136,20 +136,10 @@ impl Method {
 }
 
 /// A method the checker treats as part of the language because it resolved to the stdlib's own
-/// item (part I §3.3.7): the four flag-total reads, the edges of `Bit` and the history of a
+/// item (part I §3.3.7): the edges of `Bit` and the history of a
 /// carrier. A project's replacement is `P0001` at its use, never one of these.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Builtin {
-    /// `x.known() -> Option<T>`.
-    Known,
-    /// `x.known_or(d) -> T`.
-    KnownOr,
-    /// `x.is_known() -> bool`.
-    IsKnown,
-    /// `x.level(k) -> Option<bool>`: level `k` of `x`, `None` when that level is unknown (§22.1).
-    Level,
-    /// `c.high() -> bool` on a `Bit`.
-    High,
     /// `c.changed() -> Event`.
     Changed,
     /// `c.prev() -> T`: the value before the most recent change.

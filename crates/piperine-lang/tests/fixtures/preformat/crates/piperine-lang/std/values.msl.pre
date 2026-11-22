@@ -1,23 +1,5 @@
-//! Values and `Bit` (§22.1): `Known`, `cast`, `same`, the engine-implemented pattern
+//! Values and `Bit` (§22.1): `cast`, `same`, the engine-implemented pattern
 //! functions, the edges of `Bit`, `init`, `every` and `since`.
-
-pub trait Known: Repr {
-    /// The value when every level is known.
-    fn known(self) -> Option<Self> {
-        for k in 0..Self::WIDTH {
-            self.level(k)?;
-        }
-        Some(self)
-    }
-    fn known_or(self, d: Self) -> Self {
-        self.known().unwrap_or(d)
-    }
-    fn is_known(self) -> bool {
-        self.known().is_some()
-    }
-}
-
-impl<T: Repr> Known for T {}
 
 /// The same levels under another type of the same width, or `None` when `B` rejects them.
 pub fn cast<A: Repr, B: Repr>(a: A) -> Option<B> where A::WIDTH == B::WIDTH {
@@ -41,13 +23,6 @@ impl Bit {
     /// A change that ends at false: true to false.
     pub fn fall(self) -> Event {
         self.changed() && self.prev() && !self
-    }
-}
-
-impl Bit {
-    /// Known and true. In analog code an unknown control then acts as low; say so where that is wrong.
-    pub fn high(self) -> bool {
-        self.known_or(false)
     }
 }
 

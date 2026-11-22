@@ -1,11 +1,10 @@
-//! The five functions of §22.1 that are generic over `Repr` (`merge`, `same`, `cast`, `logic`,
-//! `matches_bits`), typed by their normative contract at the concrete type until `generics`
+//! The two functions of §22.1 that are generic over `Repr` and have no `Logic` in them (`same`, `cast`), typed by their normative contract at the concrete type until `generics`
 //! lands (spec Q1 (b)). A call whose callee is the stdlib's own item never reaches
 //! `signature_parts`, which refuses a generic function and an `extern` one; a project's own
 //! function of the same name is an ordinary function (§22 rule 3).
 
 use crate::msl::Span;
-use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, LitKind};
+use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode};
 
 use super::check::Checker;
 use super::{Callee, Ty};
@@ -13,27 +12,18 @@ use super::{Callee, Ty};
 /// A function of §22.1 the checker types by its contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Intrinsic {
-    /// `merge<T: Repr>(a: T, b: T) -> T` (§22.1.2).
-    Merge,
     /// `same<T: Repr>(a: T, b: T) -> bool` (§22.1.4).
     Same,
     /// `cast<A: Repr, B: Repr>(a: A) -> B`, `A::WIDTH == B::WIDTH` (§22.1.3).
     Cast,
-    /// `logic<T: Repr>(pattern: &str) -> T` (§22.1.4).
-    Logic,
-    /// `matches_bits<T: Repr>(s: T, pattern: &str) -> bool` (§22.1.4).
-    MatchesBits,
 }
 
 impl Intrinsic {
-    /// The function of §22.1 called `name`, if it is one of the five.
+    /// The function of §22.1 called `name`, if it is one of the two.
     fn named(name: &str) -> Option<Intrinsic> {
         match name {
-            "merge" => Some(Intrinsic::Merge),
             "same" => Some(Intrinsic::Same),
             "cast" => Some(Intrinsic::Cast),
-            "logic" => Some(Intrinsic::Logic),
-            "matches_bits" => Some(Intrinsic::MatchesBits),
             _ => None,
         }
     }
@@ -51,7 +41,7 @@ impl Checker<'_> {
         in_values.then(|| Intrinsic::named(&data.name.as_ref()?.text)).flatten()
     }
 
-    /// A call of one of the five: its type from the arguments, the turbofish or the type the
+    /// A call of one of the two: its type from the arguments, the turbofish or the type the
     /// context expects, the contract's errors reported (`E0701`, `E0702`), the callee recorded.
     pub(super) fn intrinsic_call(&mut self, expr: ExprId, callee: ExprId, intrinsic: Intrinsic, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
@@ -59,10 +49,10 @@ impl Checker<'_> {
         let written = self.turbofish_types(callee);
         let expected = self.call_expected.take().filter(|(at, _)| *at == expr).map(|(_, ty)| ty);
         let result = match intrinsic {
-            Intrinsic::Merge | Intrinsic::Same => {
+            Intrinsic::Same => {
                 let value = self.operand_type(file, span, written.first().cloned(), args.first())?;
                 self.apply(expr, &[value.clone(), value.clone()], args)?;
-                if intrinsic == Intrinsic::Merge { value } else { Ty::Bool }
+                Ty::Bool
             }
             Intrinsic::Cast => {
                 let from = self.operand_type(file, span, written.first().cloned(), args.first())?;
@@ -74,18 +64,6 @@ impl Checker<'_> {
                 self.apply(expr, &[from.clone()], args)?;
                 self.same_width(file, span, &from, &to)?;
                 to
-            }
-            Intrinsic::Logic => {
-                let value = self.value_type(file, span, written.first().cloned().or(expected))?;
-                self.apply(expr, &[Ty::Str], args)?;
-                self.bit_pattern(file, &value, args.first()?)?;
-                value
-            }
-            Intrinsic::MatchesBits => {
-                let value = self.operand_type(file, span, written.first().cloned(), args.first())?;
-                self.apply(expr, &[value.clone(), Ty::Str], args)?;
-                self.bit_pattern(file, &value, args.get(1)?)?;
-                Ty::Bool
             }
         };
         self.callees.insert(expr, Callee::Intrinsic(intrinsic));
@@ -130,24 +108,6 @@ impl Checker<'_> {
         if a != b {
             let message = format!("`cast` between `{}` ({a} levels) and `{}` ({b} levels): the widths differ (§22.1.3)", from.name(self.design), to.name(self.design));
             self.coded(file, "E0701", span, message, "widths differ");
-            return None;
-        }
-        Some(())
-    }
-
-    /// `E0702` unless `arg` is a string literal of `0`, `1` and `x`, one character per level of
-    /// `value` (§22.1.4 rule 3).
-    fn bit_pattern(&mut self, file: FileId, value: &Ty, arg: &Arg) -> Option<()> {
-        let levels = self.repr_levels(value)?;
-        let ExprKind::Lit(lit) = &self.design.expr_node(arg.value).kind else {
-            let message = "a pattern is a string literal of `0`, `1` and `x` (§22.1.4)".to_string();
-            self.coded(file, "E0702", arg.span, message, "not a pattern literal");
-            return None;
-        };
-        let LitKind::Str { text, .. } = &lit.kind else { return None };
-        if text.chars().count() != levels as usize || !text.chars().all(|c| matches!(c, '0' | '1' | 'x')) {
-            let message = format!("the pattern `{text}` is not {levels} characters of `0`, `1` and `x`, one per level of `{}` (§22.1.4)", value.name(self.design));
-            self.coded(file, "E0702", arg.span, message, "bad pattern");
             return None;
         }
         Some(())

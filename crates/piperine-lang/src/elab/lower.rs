@@ -366,10 +366,9 @@ impl Elaboration<'_, '_> {
                 let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
                 self.lower_sequence_method(scope, expr, method, *recv, &args, ty, origin)
             }
-            ExprKind::MethodCall { recv, args, .. } if self.types.builtin(expr).is_some() => {
+            ExprKind::MethodCall { recv, .. } if self.types.builtin(expr).is_some() => {
                 let builtin = self.types.builtin(expr)?;
-                let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
-                self.lower_flag_read(scope, expr, builtin, *recv, &args, ty, origin)
+                self.lower_flag_read(scope, expr, builtin, *recv, ty, origin)
             }
             ExprKind::MethodCall { recv, args, .. } => {
                 let Some(method) = self.types.method(expr) else {

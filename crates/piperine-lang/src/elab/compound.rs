@@ -28,7 +28,7 @@ use super::selectors::ArmCondition;
 use super::known::Flag;
 use super::lower::Scope;
 use crate::pom::{Arm, DeclId, DeclKind, Design, ExprId, ExprKind, FileId, LitKind, PatId, PatKind, Resolution};
-use crate::types::{Builtin, Method, Ty};
+use crate::types::{Method, Ty};
 
 /// What one `match` arm asks: its test, guard included, and the names it binds.
 struct ArmTest {
@@ -380,30 +380,6 @@ impl Elaboration<'_, '_> {
                 let method = self.types.method(expr)?;
                 let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
                 self.lower_array_option(scope, method, *recv, &args, payload, origin)
-            }
-            // `x.known()`: the two flag-total reads of `x`, each reading `x` where it stands.
-            ExprKind::MethodCall { recv, .. } if self.types.builtin(expr) == Some(Builtin::Known) => {
-                let read = self.lower_flag_receiver(scope, *recv)?;
-                let is = self.emit(Expr::IsKnown(read), ValueType::Bool, origin.clone());
-                let read = self.lower_flag_receiver(scope, *recv)?;
-                let Some(zero) = self.zero(&payload, origin.clone()) else { return unsupported(self) };
-                let val = self.emit(Expr::KnownOr { value: read, default: zero }, payload, origin);
-                Some(Pair { is, val, literal: None })
-            }
-            // `x.level(k)`: the pair `(is, value)` of the `Option<bool>` (§3.3.4), each half read
-            // from the receiver and the index where they stand. Both halves are flagged only when
-            // the index may be unknown (§3.3.13, §3.3.14).
-            ExprKind::MethodCall { recv, args, .. } if self.types.builtin(expr) == Some(Builtin::Level) => {
-                let [index] = args.as_slice() else { return unsupported(self) };
-                let mut half = |this: &mut Self, part: LevelPart| {
-                    let value = this.lower_flag_receiver(scope, *recv)?;
-                    let index = this.lower_expr(scope, index.value)?;
-                    let ty = this.flag(index).wrap(ValueType::Bool);
-                    Some(this.emit(Expr::Level { value, index, part }, ty, origin.clone()))
-                };
-                let is = half(self, LevelPart::Is)?;
-                let val = half(self, LevelPart::Value)?;
-                Some(Pair { is, val, literal: None })
             }
             // `a.checked_add(b)`: `None` when the wrapping operation overflowed (H.1), so the flag is
             // `!overflows(a, b)` and the payload is the wrapping result, each reading `a` and `b`

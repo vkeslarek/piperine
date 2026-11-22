@@ -68,17 +68,17 @@ fn a_selector_on_a_carrier_or_the_environment_keeps_the_flow_unknown() {
     // potential contribution under no condition is a potential branch; a flow-only branch has no
     // unknown whatever selects it.
     for (selector, kinds) in [
-        ("if en.known_or(false) { v(p, n) +> 1.0; }", [BranchKind::Switch]),
+        ("if en { v(p, n) +> 1.0; }", [BranchKind::Switch]),
         ("if now() > 1u { v(p, n) +> 1.0; }", [BranchKind::Switch]),
         ("if analysis(Static) { v(p, n) +> 1.0; } else { i(p, n) +> 2.0; }", [BranchKind::Switch]),
         ("v(p, n) +> 1.0;", [BranchKind::Potential]),
-        ("if en.known_or(false) { i(p, n) +> 1.0; }", [BranchKind::Flow]),
+        ("if en { i(p, n) +> 1.0; }", [BranchKind::Flow]),
     ] {
         let ir = Device::ir(selector);
         assert_eq!(Device::kinds(&ir), kinds, "{selector}");
     }
     // The contributions keep their place: under the arm of the condition, not at the top.
-    let ir = Device::ir("if en.known_or(false) { v(p, n) +> 1.0; } else { i(p, n) +> 2.0; }");
+    let ir = Device::ir("if en { v(p, n) +> 1.0; } else { i(p, n) +> 2.0; }");
     let body = ir.bodies().find(|b| b.name() == "M").expect("M");
     let found: Vec<(QuantityRole, bool)> = body.contributions().iter().map(|c| (c.quantity, c.conditions[0].holds)).collect();
     assert_eq!(found, [(QuantityRole::Potential, true), (QuantityRole::Flow, false)]);
@@ -113,7 +113,7 @@ fn a_probe_in_the_selector_of_a_potential_capable_branch_is_e0414() {
         "if v(p) > 0.5 { v(p, n) +> 1.0; }",
         "v(p, n) +> 1.0; if v(p) > 0.5 { i(p, n) +> 1.0; }",
         "let hot = v(p) > 0.5; if hot { v(p, n) +> 1.0; }",
-        "if en.known_or(false) { v(p, n) +> 1.0; } else if v(p) > 0.5 { i(p, n) +> 1.0; }",
+        "if en { v(p, n) +> 1.0; } else if v(p) > 0.5 { i(p, n) +> 1.0; }",
     ] {
         let (codes, at, message) = refusal(analog);
         assert_eq!(codes, ["E0414"], "{analog}");
@@ -503,7 +503,7 @@ fn a_param_value_let_may_read_another_let() {
 fn a_param_value_let_that_reads_a_probe_is_e0321() {
     // AS-12 AC 3 (§8.1.19): a `let` used as a param value that reads a probe, a carrier or the environment
     // has no value at elaboration: `E0321` at the use, naming the `let`.
-    for (let_, reads) in [("let p = v(a);", "a probe"), ("let p = temperature();", "a call that is not a function"), ("let p = k.known_or(0.0);", "a carrier"), ("let p = Lag(1.0);", "the result of an instance")] {
+    for (let_, reads) in [("let p = v(a);", "a probe"), ("let p = temperature();", "a call that is not a function"), ("let p = k;", "a carrier"), ("let p = Lag(1.0);", "the result of an instance")] {
         let lag = "module Lag(x: f64) -> f64 { signal y: State; potential(y) }\nanalog for Lag { flow(y) +> ddt(potential(y)) + potential(y) - x; }\n";
         let src = format!("{lag}module Leaf() {{ c: f64 = 1.0; }}\nmodule Mid(a: Electrical) {{ signal k: Bit<f64>; {let_} let leaf = Leaf {{ c: p }}(); }}\nmodule Top() {{ signal a: Electrical; let m = Mid(a); }}");
         let err = Elab::run(&src, "Top").expect_err("the value has no constant");

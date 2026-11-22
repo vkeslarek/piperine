@@ -128,8 +128,8 @@ fn analog_reads_a_hoisted_result() {
     assert_eq!(lines.len(), 1);
     assert!(lines[0].starts_with("b0.flow +> direct ((probe(p, gnd) * ((1.0 / r_base) + (if static() { k_step.x.known_or(0.0) }"), "{}", lines[0]);
     assert!(lines[0].contains("k_inject.x.known_or(0.0)") && lines[0].ends_with("* i_inject))"), "{}", lines[0]);
-    // A carrier read through `high()`, `now()` and `analysis(Static)` written in `analog` itself.
-    let src = "module M(p: Electrical, in g: Bit) { }\nanalog for M { i(p) +> if g.high() && !analysis(Static) { now() } else { 0.0 }; }\nmodule Top() { signal a: Electrical; signal g: Bit; let m = M(a, g); }";
+    // A carrier read, `now()` and `analysis(Static)` written in `analog` itself.
+    let src = "module M(p: Electrical, in g: Bit) { }\nanalog for M { i(p) +> if g && !analysis(Static) { now() } else { 0.0 }; }\nmodule Top() { signal a: Electrical; signal g: Bit; let m = M(a, g); }";
     let ir = Elab::ir(src, "Top");
-    assert_eq!(analog_lines(&ir, "M"), ["b0.flow +> direct if (g.high() && (!static())) { time() } else { 0.0 }"]);
+    assert_eq!(analog_lines(&ir, "M"), ["b0.flow +> direct if (g.known_or(false) && (!static())) { time() } else { 0.0 }"]);
 }

@@ -167,17 +167,6 @@ impl Elaboration<'_, '_> {
         self.emit(Expr::If { cond: lhs, then, otherwise }, ty, origin)
     }
 
-    /// The receiver of a flag read (`known_or`, `is_known`, `known`, `level`): the receiver lowered
-    /// as it stands, except a read of a carrier, or its `prev()`, that holds a tuple, an array, a
-    /// struct or an `Option`: a flag rides on no value of those in value code (a read is the value,
-    /// unknown reading as the default), so the flag read takes the carrier's own flagged read.
-    pub(super) fn lower_flag_receiver(&mut self, scope: &mut Scope, recv: ExprId) -> Option<LoweredExpr> {
-        if let Some(read) = self.flagged_carrier_read(scope, recv) {
-            return Some(read);
-        }
-        self.lower_expr(scope, recv)
-    }
-
     /// `read`, a carrier read or a `prev()` as `analog` takes it (§3.3.6): the value. While the
     /// earlier flag is still carried the read is `known_or` its type's default, which no model
     /// observes, because a carrier starts at a value (§3.3.4). Any other value is as it stands.
@@ -194,59 +183,10 @@ impl Elaboration<'_, '_> {
         self.emit(Expr::KnownOr { value: read, default }, base, origin)
     }
 
-    /// The flagged read of the carrier `expr` names or whose previous value it is; `None` when it is
-    /// neither.
-    fn flagged_carrier_read(&mut self, scope: &mut Scope, expr: ExprId) -> Option<LoweredExpr> {
-        let peeled = self.peel_parens(expr);
-        let origin = self.expr_origin(peeled);
-        let (carrier, previous) = match &self.design.expr_node(peeled).kind {
-            ExprKind::MethodCall { recv, .. } if self.types.builtin(peeled) == Some(Builtin::Prev) => (self.carrier_of(scope, *recv)?, true),
-            ExprKind::Path(path) => {
-                let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else { return None };
-                (self.frame_carrier(scope.frame, decl)?, false)
-            }
-            _ => return None,
-        };
-        let ty = ValueType::Flagged(Box::new(self.structure.carriers[carrier as usize].ty.clone()));
-        Some(self.emit(if previous { Expr::Previous(carrier) } else { Expr::Carrier(carrier) }, ty, origin))
-    }
-
-    /// `x.known_or(d)`, `x.is_known()`, `x.high()` (§3.3.4): known values whatever `x` holds.
-    /// `x.known()` is an `Option`, lowered as a pair (msl-digital T27); `c.prev()` is the
-    /// carrier's previous value; an edge is an event (`events.rs`), never a value.
-    pub(super) fn lower_flag_read(&mut self, scope: &mut Scope, expr: ExprId, builtin: Builtin, recv: ExprId, args: &[ExprId], base: ValueType, origin: Origin) -> Option<LoweredExpr> {
+    /// `c.prev()` is the carrier's previous value; an edge is an event (`events.rs`), never a value.
+    pub(super) fn lower_flag_read(&mut self, scope: &mut Scope, expr: ExprId, builtin: Builtin, recv: ExprId, base: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let span = self.design.expr_node(expr).span;
         match builtin {
-            Builtin::KnownOr => {
-                let value = self.lower_flag_receiver(scope, recv);
-                let default = match args {
-                    [d] => self.lower_expr(scope, *d),
-                    _ => None,
-                };
-                let (value, default) = (value?, default?);
-                // §22.1.1 rule 4: the result is the default when `value` is unknown, so it is as
-                // unknown as the default is.
-                let ty = self.flag(default).wrap(base);
-                Some(self.emit(Expr::KnownOr { value, default }, ty, origin))
-            }
-            Builtin::IsKnown => {
-                let value = self.lower_flag_receiver(scope, recv)?;
-                Some(self.emit(Expr::IsKnown(value), base, origin))
-            }
-            Builtin::High => {
-                let value = self.lower_flag_receiver(scope, recv)?;
-                Some(self.emit(Expr::High(value), base, origin))
-            }
-            Builtin::Known => {
-                self.unsupported(scope.file, span, "`known()`, an `Option`,");
-                None
-            }
-            // An `Option`, lowered as a pair by `lower_option` wherever it is read; the checker
-            // allows no other reading of it.
-            Builtin::Level => {
-                self.unsupported(scope.file, span, "`level` read as a value rather than as an `Option`");
-                None
-            }
             Builtin::Prev if let Some(param) = self.param_of(scope, recv) => Some(self.emit(Expr::ParamPrevious(param), base, origin)),
             Builtin::Prev => {
                 let carrier = self.carrier_of(scope, recv)?;

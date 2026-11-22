@@ -332,7 +332,7 @@ fn builtin_rows() -> Vec<(String, String)> {
 #[test]
 fn every_builtin_row_is_documented() {
     let rows = builtin_rows();
-    assert!(rows.len() >= 60 && rows.iter().any(|(n, k)| n == "ddt" && k == "Module"), "the scrape found only {rows:?}");
+    assert!(rows.len() >= 59 && rows.iter().any(|(n, k)| n == "ddt" && k == "Module"), "the scrape found only {rows:?}");
     let table = section_rows(&page_of("resolution.md"), "## The built-in table");
     let mut missing = Vec::new();
     for (name, kind) in &rows {
@@ -479,9 +479,8 @@ struct DocAheadOfTheCode {
 
 impl DocAheadOfTheCode {
     /// The statements that wait for their task. When a task removes a form the entry fails here, naming it.
-    const WAITING: [DocAheadOfTheCode; 7] = [
+    const WAITING: [DocAheadOfTheCode; 6] = [
         DocAheadOfTheCode { page: "mapping.md", statement: "`NatureFieldNode::Resolve`", source: "crates/piperine-lang/src/pom/decl.rs", form: "Resolve { meta: Meta, expr: ExprId", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
-        DocAheadOfTheCode { page: "mapping.md", statement: "the `level` builtin", source: "crates/piperine-lang/src/pom/builtin.rs", form: "row(\"level\"", owner: "explicit-unknowns T29" },
         DocAheadOfTheCode { page: "reflection.md", statement: "`resolve_fn(self)`", source: "crates/piperine-lang/src/pom/reflect/hardware.rs", form: "pub fn resolve_fn", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
         DocAheadOfTheCode { page: "reflection.md", statement: "nature Wire { value: bool, resolve: pick }", source: "crates/piperine-lang/src/pom/decl.rs", form: "Resolve { meta: Meta, expr: ExprId", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
         DocAheadOfTheCode { page: "model.md", statement: "value: T, resolve: f }", source: "crates/piperine-lang/src/pom/decl.rs", form: "Resolve { meta: Meta, expr: ExprId", owner: "resolved-nets T16 (the `resolve` field of a nature)" },
@@ -506,11 +505,11 @@ impl DocAheadOfTheCode {
 
 #[test]
 fn the_pom_docs_that_wait_for_the_code_stay_honest() {
-    // docs/pom describes the implementation, which still has the `resolve` field and the
-    // `level` builtin that the specification removed; each statement is owned by the task that removes its form,
+    // docs/pom describes the implementation, which still has the `resolve` field
+    // that the specification removed; each statement is owned by the task that removes its form,
     // and a stale entry (the form gone or the page rewritten) fails here instead of hiding a divergence.
     let found: Vec<String> = DocAheadOfTheCode::WAITING.iter().flat_map(DocAheadOfTheCode::offences).collect();
     assert!(found.is_empty(), "{found:#?}");
     let note = page_of("mapping.md");
-    assert!(note.contains("T29 for `level`, and `resolved-nets` T16"), "the mapping note names the owners of the forms it keeps");
+    assert!(note.contains("`resolved-nets` T16"), "the mapping note names the owners of the forms it keeps");
 }

@@ -190,17 +190,6 @@ fn bit_rise_resolves_into_std_values() {
     assert!(rise.declared_in().and_then(|d| d.as_impl()).is_some(), "rise is a function of an `impl`");
 }
 
-#[test]
-fn known_resolves_into_std_values() {
-    let design = Design::builder().source("top.msl", "module M(in d: Bit<u8>) { let k = d.known(); }\n").build();
-    assert_eq!(codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
-    let known = called_decl(&design, "d.known()");
-    assert_eq!(known.name(), Some("known"));
-    assert!(known.krate().is_std());
-    assert_eq!(known.file().name(), "values.msl");
-    assert_eq!(known.declared_in().and_then(|d| d.name()), Some("Known"));
-}
-
 /// The expressions of a declaration, with the design they belong to.
 fn calls_named<'d>(design: &'d Design, decl: piperine_lang::pom::Decl<'d>, name: &str) -> Vec<piperine_lang::pom::Expr<'d>> {
     decl.exprs()
@@ -591,7 +580,7 @@ fn engine_table() -> BTreeSet<String> {
 
 /// Pub items of `std` that the Index no longer lists (removed by explicit-unknowns; T23 deletes them
 /// from the files and empties the list). `Logic` of `nets` is the earlier struct, replaced by `values::Logic`.
-const STD_BEHIND_THE_INDEX: [(&str, &str); 6] = [("values", "Known"), ("nets", "Logic"), ("nets", "Wire"), ("nets", "Tri"), ("nets", "tri"), ("nets", "SumNet")];
+const STD_BEHIND_THE_INDEX: [(&str, &str); 5] = [("nets", "Logic"), ("nets", "Wire"), ("nets", "Tri"), ("nets", "tri"), ("nets", "SumNet")];
 
 /// Index items of §22 that `std` does not declare yet: the specification states the explicit model
 /// (explicit-unknowns, MD-78) before the files hold it. Each leaves with its task (T23 for `Driven`,

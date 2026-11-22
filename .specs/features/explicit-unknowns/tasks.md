@@ -794,9 +794,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `types_explicit::the_flag_methods_do_not_resolve` passes
-- [ ] `cargo test -p piperine-lang` passes
-- [ ] Gate check passes: Full
+- [x] `types_explicit::the_flag_methods_do_not_resolve` passes
+- [x] `cargo test -p piperine-lang` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

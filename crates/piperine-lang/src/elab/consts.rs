@@ -42,7 +42,7 @@ use super::compound::EnumLayout;
 use super::files::{FileFault, IncludedFiles};
 use crate::msl::lexer;
 use crate::pom::{BinOp, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, UnOp};
-use crate::types::{Builtin, Callee, Intrinsic, Method, Ty, Types};
+use crate::types::{Callee, Method, Ty, Types};
 pub use composite::{CompositeKind, ConstTree};
 use composite::Composite;
 use control::{Argument, FnValue};
@@ -702,9 +702,6 @@ impl<'d, 't> ConstEval<'d, 't> {
     /// A call of a function of the reachable set, or of a function a local holds: its body
     /// evaluated over its arguments. Every other callee needs a run.
     fn call(&mut self, expr: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Folded, ConstFault> {
-        if self.types.callee(expr) == Some(Callee::Intrinsic(Intrinsic::Logic)) {
-            return self.logic(expr, args);
-        }
         let function = match self.types.callee(expr) {
             Some(Callee::Function(function)) => FnValue::Named(function),
             _ => match self.called_function_value(expr) {
@@ -757,41 +754,7 @@ impl<'d, 't> ConstEval<'d, 't> {
         self.returned(expr, result)
     }
 
-    /// `logic::<T>("..")` (§22.1.4): the value whose level `k` is the pattern's character `WIDTH - 1
-    /// - k`, a literal `0` or `1`. A pattern with an `x` is `Unknown` (one flag per value, G6
-    /// provisional: the per-level spec gives it its partial form), and so is a tag no variant of an
-    /// enum target has (§22.1.3 rule 2). The checker reported a pattern that is not a literal of
-    /// `T::WIDTH` characters of `0`, `1` and `x` (`E0702`).
-    fn logic(&self, expr: ExprId, args: &[ExprId]) -> Result<Folded, ConstFault> {
-        let pattern = args.first().and_then(|a| match &self.design.expr_node(*a).kind {
-            ExprKind::Lit(lit) => lit.str_value(),
-            _ => None,
-        });
-        let Some(pattern) = pattern else {
-            return Err(ConstFault::Unsupported { expr, what: "a `logic` pattern that is not a string literal".to_string() });
-        };
-        if pattern.contains('x') {
-            return Ok(Folded::Unknown);
-        }
-        let bits = pattern.chars().fold(0u64, |bits, level| (bits << 1) | u64::from(level == '1'));
-        let known = |value: Constant| Ok(Folded::Known(value));
-        match self.types.ty(expr) {
-            Some(Ty::Bool) => known(Constant::Bool(bits != 0)),
-            Some(Ty::F64) => known(Constant::Real(Real::new(f64::from_bits(bits)))),
-            // the levels are a tag: the variant with that discriminant, else no variant (unknown)
-            Some(Ty::Enum(decl)) => match self.types.enum_tag(*decl).and_then(|t| t.discriminants.iter().position(|d| *d == i128::from(bits))) {
-                Some(position) => known(Constant::Int(position as i128)),
-                None => Ok(Folded::Unknown),
-            },
-            Some(ty) => match Width::of(ty) {
-                Some(width) => known(width.wrap(i128::from(bits))),
-                None => Err(ConstFault::Unsupported { expr, what: "a `logic` of a type with no levels".to_string() }),
-            },
-            None => Err(ConstFault::Unsupported { expr, what: "a `logic` the checker did not type".to_string() }),
-        }
-    }
-
-    /// A method call: a read of a flag (§3.3.4), or a row of the Appendix H catalogue applied to
+    /// A method call: a row of the Appendix H catalogue applied to
     /// its receiver and arguments, which is unknown when one of them is (§3.3.2).
     fn method(&mut self, expr: ExprId, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Folded, ConstFault> {
         if let Some(method) = self.types.method(expr) {
@@ -808,8 +771,8 @@ impl<'d, 't> ConstEval<'d, 't> {
         for arg in args {
             values.push(self.fold(*arg, bindings));
         }
-        if let Some(builtin) = self.types.builtin(expr) {
-            return Self::flag_read(expr, builtin, receiver?, values.into_iter().next().transpose()?);
+        if self.types.builtin(expr).is_some() {
+            return Err(ConstFault::Unsupported { expr, what: "this method in a const expression".to_string() });
         }
         let Some(method) = self.types.method(expr) else {
             return Err(ConstFault::Unsupported { expr, what: "a method outside the catalogue".to_string() });
@@ -819,19 +782,6 @@ impl<'d, 't> ConstEval<'d, 't> {
         match (receiver, known) {
             (Folded::Known(receiver), Some(values)) => self.known_method(expr, recv, args, method, receiver, values).map(Folded::Known),
             _ => Ok(Folded::Unknown),
-        }
-    }
-
-    /// `known_or`, `is_known` and `high` of a folded value: known whatever the value holds
-    /// (§3.3.4). `known_or` gives its default, which may itself be unknown, for an unknown value
-    /// (§22.1.1 rule 4). The rest of the flag reads (`known`, `level`) are not folded.
-    fn flag_read(expr: ExprId, builtin: Builtin, receiver: Folded, argument: Option<Folded>) -> Result<Folded, ConstFault> {
-        match (builtin, receiver, argument) {
-            (Builtin::KnownOr, Folded::Known(_), _) => Ok(receiver),
-            (Builtin::KnownOr, Folded::Unknown, Some(default)) => Ok(default),
-            (Builtin::IsKnown, _, _) => Ok(Folded::Known(Constant::Bool(matches!(receiver, Folded::Known(_))))),
-            (Builtin::High, _, _) => Ok(Folded::Known(Constant::Bool(receiver == Folded::Known(Constant::Bool(true))))),
-            _ => Err(ConstFault::Unsupported { expr, what: "this method in a const expression".to_string() }),
         }
     }
 

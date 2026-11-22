@@ -320,7 +320,7 @@ fn changed_rise_fall_and_cross_lower_to_events() {
     let values = std::fs::read_to_string(format!("{}/std/values.msl", env!("CARGO_MANIFEST_DIR"))).expect("std/values.msl");
     assert!(values.contains("self.changed() && !self.prev() && self"), "the stdlib `rise` is the oracle");
     assert!(values.contains("self.changed() && self.prev() && !self"), "the stdlib `fall` is the oracle");
-    let src = edges("on c.changed() { q <- true; }\non c.rise() { q <- true; }\non c.fall() { q <- false; }\non cross(v(a) - 0.5) { q <- true; }\non d.changed() && d.prev().known_or(0) == 3 { q <- d.prev().is_known(); }");
+    let src = edges("on c.changed() { q <- true; }\non c.rise() { q <- true; }\non c.fall() { q <- false; }\non cross(v(a) - 0.5) { q <- true; }\non d.changed() && d.prev() == 3 { q <- true; }");
     let ir = Elab::ir(&src, "Top");
     let read = Read { ir: &ir };
     let m = read.body("M");
@@ -335,7 +335,7 @@ fn changed_rise_fall_and_cross_lower_to_events() {
     // Term by term, the two conditions of each edge (design "From a source form to IR nodes").
     let rise = events[1].guard.expect("a rise has a guard");
     let fall = events[2].guard.expect("a fall has a guard");
-    assert_eq!(ir.expr_type(rise), &ValueType::Bool, "every part is a flag-total read: the guard is never unknown");
+    assert_eq!(ir.expr_type(rise), &ValueType::Bool, "the guard is never unknown");
     assert_eq!(ir.expr_type(fall), &ValueType::Bool);
     let text = ir.print_structural();
     assert!(text.contains("guard ((!c.prev().high()) & ((!c.is_known()) | c.known_or(false)))"), "{text}");
@@ -352,23 +352,18 @@ fn changed_rise_fall_and_cross_lower_to_events() {
     assert!(matches!(ir.expr(watched), Expr::Binary { .. }) && text.contains("cross (probe(a, gnd) - 0.5)"), "{text}");
     // `c.prev()` in a guard and in a reaction body is the previous-value read.
     assert_eq!(events[4].source, EventSource::Changed(d));
-    assert!(text.contains("guard (d.prev().known_or(0u8) == 3u8)"), "{text}");
-    let reaction = &m.reactions()[4];
-    let piperine_ir::Stmt::Commit { value, .. } = ir.stmt(reaction.stmts[0]) else { panic!("a commit") };
-    let Expr::IsKnown(inner) = ir.expr(*value) else { panic!("`is_known` of the previous value") };
-    assert_eq!(ir.expr(*inner), &Expr::Previous(d));
-    assert_eq!(ir.expr_type(*inner), &ValueType::Flagged(Box::new(ValueType::UInt(8))), "a previous value may be unknown, as a read");
+    assert!(text.contains("guard (d.prev() == 3u8)"), "{text}");
 }
 
 #[test]
 fn a_guard_splits_into_its_discrete_and_continuous_parts() {
-    // DIG-09 AC 7, C81: `on x.changed() && en.high() && analysis(Static)` keeps `en.high()` on
+    // DIG-09 AC 7, C81: `on x.changed() && en && analysis(Static)` keeps `en` on
     // the event and wraps the body in `if static` (abi.md F2: a probing guard is no discrete
     // function).
     let src = "module M(a: Electrical, in x: Bit, in en: Bit, out q: Bit) { }\n\
                digital for M {\n\
-                 on x.changed() && en.high() && analysis(Static) { q <- true; }\n\
-                 on x.changed() && v(a) > 0.5 && en.high() { q <- false; }\n\
+                 on x.changed() && en && analysis(Static) { q <- true; }\n\
+                 on x.changed() && v(a) > 0.5 && en { q <- false; }\n\
                  on x.changed() && en { q <- true; }\n\
                }\n\
                module Top() { signal n: Electrical; signal x: Bit; signal en: Bit; signal q: Bit; let m = M(n, x, en, q); }";
@@ -378,8 +373,7 @@ fn a_guard_splits_into_its_discrete_and_continuous_parts() {
     let en = m.carriers().iter().position(|k| k.name == "en").expect("en") as u32;
     use piperine_ir::{Env, Expr, Stmt};
     let guard = m.events()[0].guard.expect("the discrete part stays on the event");
-    let Expr::High(read_en) = ir.expr(guard) else { panic!("`en.high()` alone: {:?}", ir.expr(guard)) };
-    assert_eq!(ir.expr(*read_en), &Expr::Carrier(en));
+    assert_eq!(ir.expr(guard), &Expr::Carrier(en), "`en` alone");
     let wrapped = |r: usize| {
         let reaction = &m.reactions()[r];
         assert_eq!(reaction.stmts.len(), 1, "the body is one `if`");
@@ -394,7 +388,7 @@ fn a_guard_splits_into_its_discrete_and_continuous_parts() {
     // event in their order.
     let probe = wrapped(1);
     assert!(matches!(ir.expr(probe), Expr::Binary { .. }) && ir.print_structural().contains("if (probe(a, gnd) > 0.5) {"));
-    let Expr::High(_) = ir.expr(m.events()[1].guard.expect("en.high()")) else { panic!("en.high() on the event") };
+    assert_eq!(ir.expr(m.events()[1].guard.expect("en")), &Expr::Carrier(en), "`en` on the event");
     // A guard that may be unknown is kept as written: no `known_or` is added, the generated code
     // decides it (ir-rust RS-11 AC 5).
     let flagged = m.events()[2].guard.expect("a guard");
@@ -451,7 +445,7 @@ fn settle_lowers_to_the_settle_event_source() {
     // §13 rules 10, 14, 17 (unknown-semantics-events UE-03): `settle` is `EventSource::Settle`,
     // alone, guarded (`settle && g`) and in a disjunction (`settle || ev`, one reaction on both).
     use piperine_ir::EventSource;
-    let src = "module M(in x: Bit, in en: Bit, out q: Bit) { }\ndigital for M {\n on settle { q <- true; }\n on settle && en.high() { q <- false; }\n on settle || x.changed() { q <- true; }\n}";
+    let src = "module M(in x: Bit, in en: Bit, out q: Bit) { }\ndigital for M {\n on settle { q <- true; }\n on settle && en { q <- false; }\n on settle || x.changed() { q <- true; }\n}";
     let ir = Elab::ir(src, "M");
     let read = Read { ir: &ir };
     let m = read.body("M");
@@ -459,7 +453,7 @@ fn settle_lowers_to_the_settle_event_source() {
     assert_eq!(events.len(), 4, "one event per disjunct: {:?}", events.iter().map(|e| &e.source).collect::<Vec<_>>());
     assert_eq!((&events[0].source, events[0].guard), (&EventSource::Settle, None), "`settle` alone is unguarded");
     assert_eq!(events[1].source, EventSource::Settle);
-    assert!(events[1].guard.is_some(), "`settle && en.high()` keeps its guard on the event");
+    assert!(events[1].guard.is_some(), "`settle && en` keeps its guard on the event");
     assert_eq!(events[2].source, EventSource::Settle, "a disjunction adds one event per disjunct, in source order");
     assert!(matches!(events[3].source, EventSource::Changed(_)));
     let heads: Vec<Vec<u32>> = m.reactions().iter().map(|r| r.on.clone()).collect();
@@ -766,7 +760,7 @@ fn cross_tolerances_lower_to_the_event() {
 #[test]
 fn a_cross_tolerance_that_is_not_constant_is_p0001() {
     // FIX-12 AC 4: a tolerance that reads a carrier, a probe or a local.
-    for tolerance in ["v(a)", "c.known_or(1.0)", "{ let t = 1.0; t }"] {
+    for tolerance in ["v(a)", "c", "{ let t = 1.0; t }"] {
         let src = format!(
             "module M(a: Electrical, in c: Bit<f64>, out q: Bit) {{ }}\n\
              digital for M {{ on cross(v(a) - 0.5, {tolerance}) {{ q <- true; }} }}\n\

@@ -140,7 +140,7 @@ fn value_inputs_are_substituted_at_each_read() {
 fn an_omitted_option_input_reads_as_none() {
     // DIG-10 AC 3, C92: `transition(x)` leaves `td`, `tr`, `tf` out: `td.unwrap_or(0.0)` is the
     // literal `0.0`, the delay of `xd = x after td.unwrap_or(0.0)`.
-    let src = "module Top(in g: Bit) { let y = transition(if g.high() { 1.0 } else { 0.0 }); }";
+    let src = "module Top(in g: Bit) { let y = transition(if g { 1.0 } else { 0.0 }); }";
     let ir = Elab::ir(src, "Top");
     let top = body(&ir, "Top");
     let xd = index_of(&top, "y.xd");
@@ -148,7 +148,7 @@ fn an_omitted_option_input_reads_as_none() {
     let after = drive.after.expect("`after td.unwrap_or(0.0)`");
     assert_eq!(ir.expr(after), &Expr::Real(piperine_ir::Real::new(0.0)));
     // Given, an `f64` for `Option<f64>` is `Some` of it (§3.2.3): the delay is the value given.
-    let src = "module Top(in g: Bit) { let y = transition(if g.high() { 1.0 } else { 0.0 }, 2n); }";
+    let src = "module Top(in g: Bit) { let y = transition(if g { 1.0 } else { 0.0 }, 2n); }";
     let ir = Elab::ir(src, "Top");
     let top = body(&ir, "Top");
     let xd = index_of(&top, "y.xd");
@@ -222,7 +222,7 @@ fn the_stdlib_d2a_gives_transition_the_level_of_its_input() {
     let text = ir.print_structural();
     assert!(text.contains("drive ramp.x = if d { 1.0 } else { 0.0 }"), "{text}");
     // A binding inside `Some` would need a local: `P0001` by name.
-    let src = "module M(in d: Bit, a: Electrical) { let r = transition(match d.known() { Some(b) => if b { 1.0 } else { 0.0 }, None => 0.5 }, 0.0, 1n, 1n); }\n\
+    let src = "module M(in d: Bit, a: Electrical) { let r = transition(match Some(d) { Some(b) => if b { 1.0 } else { 0.0 }, None => 0.5 }, 0.0, 1n, 1n); }\n\
                analog for M { i(a) +> v(a) * r; }\n\
                module Top() { signal d: Bit = false; signal a: Electrical; let m = M(d, a); }";
     let diagnostics = Elab::run(src, "Top").expect_err("a binding in a drive is refused");
@@ -339,7 +339,7 @@ fn a_function_that_emits_is_inlined() {
 fn a_text_field_that_is_not_a_literal_is_p0001() {
     // DIG-11 AC 3, C103: `log(sev, msg)` with `msg` a function parameter that is no literal at
     // the call: the text cannot stay on the site.
-    let src = "fn note(ok: bool) { log(Severity::Info, if ok { \"up\" } else { \"down\" }); }\nmodule Top(in clk: Bit, in c: Bit) { }\ndigital for Top { on clk.rise() { note(c.known_or(false)); } }";
+    let src = "fn note(ok: bool) { log(Severity::Info, if ok { \"up\" } else { \"down\" }); }\nmodule Top(in clk: Bit, in c: Bit) { }\ndigital for Top { on clk.rise() { note(c); } }";
     let err = Elab::run(src, "Top").expect_err("a text that is no text");
     assert_eq!(Elab::codes(&err), ["P0001"]);
     assert!(err[0].diagnostic.message.contains("not a text after inlining"), "{}", err[0].diagnostic.message);
