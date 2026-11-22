@@ -217,8 +217,13 @@ impl<'d, 't> Elaboration<'d, 't> {
             .collect()
     }
 
+    /// Records `diagnostic`, once: a construct lowered in two halves (the `is` and the `val` of an `Option`)
+    /// reports the same refusal at the same place twice, which is one finding.
     pub(super) fn report(&mut self, file: FileId, diagnostic: Diagnostic) {
-        self.diagnostics.push(DesignDiagnostic { file, diagnostic });
+        let found = DesignDiagnostic { file, diagnostic };
+        if !self.diagnostics.contains(&found) {
+            self.diagnostics.push(found);
+        }
     }
 
     /// `P0001`: a construct inside the type-checked subset that M1 elaboration does not lower.

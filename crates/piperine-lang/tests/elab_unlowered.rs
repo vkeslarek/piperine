@@ -206,3 +206,13 @@ fn a_match_arm_guard_lowers() {
     let ir = Elab::ir(src, "Top");
     assert!(ir.print_structural().contains("n > 2"), "{}", ir.print_structural());
 }
+
+#[test]
+fn an_option_arm_with_a_block_body_is_refused_once() {
+    // CV round 2 (a): an arm of a `match` over an `Option` that yields an `Option` and whose body is a block of more
+    // than its value is lowered in two halves, `is` and `val`; the refusal is one finding, reported once.
+    let src = "fn f(o: Option<u8>) -> Option<u8> { match o { Some(v) => { let w = v + 1; Some(w) } None => None } }\nmodule Top() { signal clk: Bit; signal y: Bit<u8>; }\ndigital for Top { on clk.rise() { y <- match f(Some(1u8)) { Some(v) => v, None => 0 }; } }";
+    let found = Elab::run(src, "Top").expect_err("the arm is refused");
+    let refusals: Vec<&str> = found.iter().map(|d| d.diagnostic.message.as_str()).filter(|m| m.contains("this form of an `Option` value")).collect();
+    assert_eq!(refusals.len(), 1, "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+}
