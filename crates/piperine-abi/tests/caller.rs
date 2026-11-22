@@ -9,8 +9,8 @@ use std::sync::OnceLock;
 
 use piperine_abi::caller::{Commit, Handle};
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::layout::{BIT, F64, HIGH, LOW};
-use piperine_abi::raw::{Cell, CommitFn, DEFAULT, GROUND, Host, List, Module, Note, NOTE_TEXT, Partial, Shape, Statement, cell, commit_flag, op, part, role, status};
+use piperine_abi::layout::{BIT, F64, HIGH};
+use piperine_abi::raw::{Cell, DEFAULT, GROUND, Module, Partial, Shape, Statement, cell, op, part, role, status};
 use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_abi::thunk::module;
 
@@ -24,7 +24,6 @@ thread_local! {
 /// fn 1 "reshape": returns RESHAPE.  fn 2 "fault": returns a Fault with code 41.
 /// reaction 0 "drive": on [e] reads [x] writes [S0 {q}]: commits HIGH after 2 ns
 /// reaction 1 "stop": on [e] returns Finish
-/// reaction 2 "maybe": on [e] writes [S0 {q}]: commits LOW under MAYBE | MERGE after 1 ns
 fn amp_shape() -> ShapeRef {
     let mut s = ShapeBuf::new();
     let g = s.pin(PinSpec::discrete("g", role::PARAM, &F64));
@@ -50,12 +49,6 @@ fn amp_shape() -> ShapeRef {
         ..ReactionSpec::default()
     });
     s.reaction(ReactionSpec { name: "stop", on: vec![e], ..ReactionSpec::default() });
-    s.reaction(ReactionSpec {
-        name: "maybe",
-        on: vec![e],
-        writes: vec![Statement { pin: q, offset: 0, len: 2, flags: 0, min_after: 0.0 }],
-        ..ReactionSpec::default()
-    });
     s.freeze()
 }
 
@@ -95,10 +88,6 @@ impl Device for Amp {
     fn react(&self, k: u32, cx: &mut React<'_>) -> Result<Flow, Fault> {
         if k == 1 {
             return Ok(Flow::Finish);
-        }
-        if k == 2 {
-            cx.commit_with(0, &LOW, 1e-9, commit_flag::MAYBE | commit_flag::MERGE)?;
-            return Ok(Flow::Continue);
         }
         if cx.f64(0) > 0.0 {
             cx.commit(0, &HIGH, 2e-9)?;
@@ -215,54 +204,16 @@ fn a_shared_handle_is_one_instance_destroyed_with_its_last_share() {
 }
 
 #[test]
-fn a_commit_with_flags_reaches_the_owner() {
-    // abi.md C7: `commit_with` reaches the owner's closure with the statement, the bytes, the delay
-    // and the flags; a plain `commit` reaches it with flags 0.
+fn a_commit_reaches_the_owner() {
+    // abi.md §2 entry 6: `commit` reaches the owner's closure with the statement, the bytes and
+    // the delay; it is the host's one entry
     let mut h = Handle::create(amp_module(), &[]).expect("create");
     let x = 1.5f64.to_le_bytes();
-    let mut seen: Vec<(u32, Vec<u8>, f64, u32)> = Vec::new();
+    let mut seen: Vec<(u32, Vec<u8>, f64)> = Vec::new();
     let mut sink = |c: Commit<'_>| {
-        seen.push((c.statement, c.bytes.to_vec(), c.after, c.flags));
+        seen.push((c.statement, c.bytes.to_vec(), c.after));
         status::OK
     };
-    assert_eq!(h.react(2, &[], &mut sink), Ok(Flow::Continue));
     assert_eq!(h.react(0, &[&x], &mut sink), Ok(Flow::Continue));
-    assert_eq!(seen, [(0, LOW.to_vec(), 1e-9, commit_flag::MAYBE | commit_flag::MERGE), (0, HIGH.to_vec(), 2e-9, 0)]);
-}
-
-/// A minor-0 `Host`: it ends after `commit`, so its `size` does not reach `commit_with`.
-#[repr(C)]
-struct HostMinorZero {
-    size: u32,
-    commit: CommitFn,
-}
-
-unsafe extern "C" fn refuse_nothing(_: *mut std::ffi::c_void, _: u32, _: u32, _: u32, _: *const u8, _: f64) -> u32 {
-    status::OK
-}
-
-#[test]
-fn a_host_without_commit_with_is_a_named_fault() {
-    // abi.md C7: a device built for minor 1 on an owner of minor 0 that commits under unknown
-    // control gets a fault naming the statement; the flags are never dropped into a plain commit.
-    let module = amp_module();
-    let mut note = Note { code: 0, len: 0, text: [0; NOTE_TEXT] };
-    // SAFETY: `module` is a live module and the call passes no values.
-    let created = unsafe { (module.create())(module, List::from_slice(&[]), &mut note) };
-    assert_eq!(created.status, status::OK);
-    let host = HostMinorZero { size: size_of::<HostMinorZero>() as u32, commit: refuse_nothing };
-    let frame = piperine_abi::raw::React {
-        size: size_of::<piperine_abi::raw::React>() as u32,
-        input: std::ptr::NonNull::dangling().as_ptr(),
-        host: (&host as *const HostMinorZero).cast::<Host>(),
-        host_data: std::ptr::null_mut(),
-        note: &mut note,
-    };
-    // SAFETY: reaction 2 reads nothing; `host` is a minor-0 `Host` (its `size` says so) that outlives the call.
-    let s = unsafe { (module.react())(created.instance, 2, &frame) };
-    assert_eq!(s, status::FAULT);
-    let text = String::from_utf8_lossy(&note.text[..note.len as usize]).into_owned();
-    assert!(text.contains("statement 0") && text.contains("commit_with"), "{text}");
-    // SAFETY: `created` came from `module.create` and is destroyed once.
-    unsafe { (module.destroy())(created.instance) }
+    assert_eq!(seen, [(0, HIGH.to_vec(), 2e-9)]);
 }

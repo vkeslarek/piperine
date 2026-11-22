@@ -197,16 +197,9 @@ unsafe extern "C" fn record(data: *mut c_void, statement: u32, offset: u32, len:
     rec.answer
 }
 
-/// `Host.commit_with` of the recording host: records as `record` does; the flags are not kept
-/// here (`tests/caller.rs` covers them).
-unsafe extern "C" fn record_with(data: *mut c_void, statement: u32, offset: u32, len: u32, bytes: *const u8, after: f64, _flags: u32) -> u32 {
-    // SAFETY: the same contract as `record`.
-    unsafe { record(data, statement, offset, len, bytes, after) }
-}
-
 fn react_with(m: &Module, inst: &Created, k: u32, reads: &[&[u8]], answer: u32, note: &mut Note) -> (u32, Seen) {
     let input: Vec<*const u8> = reads.iter().map(|r| r.as_ptr()).collect();
-    let host = Host { size: size_of::<Host>() as u32, commit: record, commit_with: record_with };
+    let host = Host { size: size_of::<Host>() as u32, commit: record };
     let mut rec = Recorder { seen: Vec::new(), answer };
     let frame = raw::React {
         size: size_of::<raw::React>() as u32,

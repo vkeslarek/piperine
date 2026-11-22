@@ -279,7 +279,6 @@ fn react(handle: &mut Handle, k: u32, given: &[(&str, Vec<u8>)]) -> (Result<(), 
     let mut made: Vec<Made> = Vec::new();
     let result = handle
         .react(k, &reads, &mut |c: Commit<'_>| {
-            assert_eq!(c.flags, 0, "a reaction makes plain commits only");
             made.push((c.statement, c.bytes.to_vec(), c.after));
             status::OK
         })

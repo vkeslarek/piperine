@@ -464,7 +464,6 @@ impl LooperReaction {
         let mut made = Vec::new();
         handle
             .react(0, &reads, &mut |c: Commit<'_>| {
-                assert_eq!(c.flags, 0, "a reaction makes plain commits only");
                 made.push((c.statement, c.bytes.to_vec(), c.after));
                 status::OK
             })

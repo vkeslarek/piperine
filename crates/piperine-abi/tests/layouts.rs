@@ -4,7 +4,7 @@
 //! canonical form of a field with a known byte (P3), and the merge of two values of a layout
 //! (abi.md C7, part I §3.3.3).
 
-use piperine_abi::layout::{BIT, BYTE, F64, HIGH, LOW, Merge, MergeError, REAL, is_canonical, layout_eq, leaf_size};
+use piperine_abi::layout::{BIT, BYTE, HIGH, LOW, REAL, is_canonical, layout_eq, leaf_size};
 use piperine_abi::raw::{Field, Layout, List, Str, field_flag, leaf};
 
 /// One field of a layout: (name, leaf, offset, count, flags, known).
@@ -120,65 +120,4 @@ fn a_valueless_field_with_value_bytes_is_not_canonical() {
 
     // Bytes shorter than the layout are not a value of it.
     assert!(!is_canonical(&BIT, &[0]));
-}
-
-/// The merge of `committed` into `settled` under `layout`, the result.
-fn merged(layout: &Layout, settled: &[u8], committed: &[u8]) -> Vec<u8> {
-    let mut out = settled.to_vec();
-    Merge::of(layout).merge_into(&mut out, committed).expect("a mergeable layout");
-    out
-}
-
-#[test]
-fn merge_keeps_equal_known_fields_and_clears_the_rest() {
-    // Part I §3.3.3: equal known levels are kept, every other level becomes unknown (P3: the
-    // known byte and the value bytes zero).
-    let unknown = [0, 0];
-    // BIT: equal and known is kept; differing, or unknown on either side, is unknown.
-    assert_eq!(merged(&BIT, &HIGH, &HIGH), HIGH);
-    assert_eq!(merged(&BIT, &LOW, &LOW), LOW);
-    assert_eq!(merged(&BIT, &HIGH, &LOW), unknown);
-    assert_eq!(merged(&BIT, &HIGH, &unknown), unknown);
-    assert_eq!(merged(&BIT, &unknown, &HIGH), unknown);
-    assert_eq!(merged(&BIT, &unknown, &unknown), unknown);
-    // BYTE: the whole byte is the level.
-    assert_eq!(merged(&BYTE, &[7, 1], &[7, 1]), [7, 1]);
-    assert_eq!(merged(&BYTE, &[7, 1], &[8, 1]), unknown);
-    // REAL: the eight value bytes are compared.
-    let real = |v: f64, known: u8| {
-        let mut bytes = v.to_le_bytes().to_vec();
-        bytes.extend([known, 0, 0, 0, 0, 0, 0, 0]);
-        bytes
-    };
-    assert_eq!(merged(&REAL, &real(2.5, 1), &real(2.5, 1)), real(2.5, 1));
-    assert_eq!(merged(&REAL, &real(2.5, 1), &real(2.6, 1)), vec![0; 16]);
-    // A two-field record: each field merges on its own, and bytes outside the fields stay.
-    let record = [field("a", leaf::U8, 0, 1, Some(1)), field("b", leaf::U16, 2, 1, Some(4))];
-    let layout = layout(12, 4, &record);
-    let settled = [5, 1, 0x34, 0x12, 1, 0, 0, 0, 9, 9, 9, 9];
-    let committed = [5, 1, 0x35, 0x12, 1, 0, 0, 0, 8, 8, 8, 8];
-    assert_eq!(merged(&layout, &settled, &committed), [5, 1, 0, 0, 0, 0, 0, 0, 9, 9, 9, 9], "a is kept, b differs and clears, the bytes past the fields are untouched");
-}
-
-#[test]
-fn merge_works_element_by_element_over_an_array_field() {
-    // Each element of an array field is its own level.
-    let fields = [field("v", leaf::U8, 0, 3, Some(3))];
-    let layout = layout(6, 1, &fields);
-    let out = merged(&layout, &[1, 2, 3, 1, 1, 1], &[1, 9, 3, 1, 1, 0]);
-    assert_eq!(out, [1, 0, 0, 1, 0, 0], "elements 1 (differs) and 2 (unknown on one side) clear");
-}
-
-#[test]
-fn merge_refuses_a_field_without_a_known_byte() {
-    // abi.md C7: a field with no known byte cannot say "unknown": the merge is refused naming it,
-    // and the settled bytes are left as they were.
-    let mut settled = [1u8; 8];
-    let err = Merge::of(&F64).merge_into(&mut settled, &[2u8; 8]).expect_err("F64 has no known byte");
-    assert_eq!(err, MergeError::NoKnownByte { field: "v".to_string() });
-    assert!(err.to_string().contains("`v`"), "{err}");
-    assert_eq!(settled, [1u8; 8]);
-    // A value shorter than its layout is refused as well.
-    let err = Merge::of(&REAL).merge_into(&mut [0u8; 8], &[0u8; 16]).expect_err("a short value");
-    assert_eq!(err, MergeError::Short { have: 8, need: 16 });
 }

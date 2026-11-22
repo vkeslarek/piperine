@@ -10,8 +10,7 @@ use crate::engine::{Digital, Horizon, Mode, Outcome};
 use crate::net::{NetId, NetKind};
 use crate::queue::{Instant, Writer};
 use crate::run::{Phase, check_canonical, fire_net, fired_reactions, run_functions, run_reactions, write_net};
-use piperine_abi::layout::Merge;
-use piperine_abi::raw::{commit_flag, reaction_flag};
+use piperine_abi::raw::reaction_flag;
 use crate::tick::Tick;
 use crate::error::DigitalError;
 
@@ -51,12 +50,8 @@ impl Digital {
     /// commits to one discrete net settle over its value, the later one winning each byte, and
     /// the net is written once (§12.1.1, §12.1.2): `CHANGED`, `PREVIOUS` and the one `Change`
     /// observed compare the settled value with the value before the microstep (§8.2.3, §12.1.18).
-    /// A `MERGE` commit (abi.md C7, part I §3.3.3) applies merged, level by level, with the value
-    /// the net holds at that point of the C2 order: what a plain commit would leave, merged with
-    /// what the net holds, so the levels the commit does not write are kept as they are.
-    /// Returns each written net, in the order of its first commit; a merge the layout cannot do
-    /// is the error.
-    fn apply_due(&mut self, here: Instant) -> Result<Vec<Settled>, DigitalError> {
+    /// Returns each written net, in the order of its first commit.
+    fn apply_due(&mut self, here: Instant) -> Vec<Settled> {
         let mut settled: Vec<Settled> = Vec::new();
         for p in self.queue.take_due(here) {
             if self.plan.nets[p.net.0 as usize].kind == NetKind::Event {
@@ -72,29 +67,15 @@ impl Digital {
                 }
             };
             let offset = p.offset as usize;
-            if p.flags & commit_flag::MERGE == 0 {
-                let s = &mut settled[at];
-                s.bytes[offset..offset + p.bytes.len()].copy_from_slice(&p.bytes);
-            } else {
-                let Some(layout) = self.plan.net_layout(p.net) else {
-                    return Err(DigitalError::Unsupported { what: "a merge commit to a net with no layout" });
-                };
-                let mut laid = settled[at].bytes.clone();
-                laid[offset..offset + p.bytes.len()].copy_from_slice(&p.bytes);
-                Merge::of(layout).merge_into(&mut settled[at].bytes, &laid).map_err(|error| DigitalError::Merge {
-                    net: self.plan.nets[p.net.0 as usize].name.clone(),
-                    writer: self.writer_name(p.writer),
-                    error,
-                })?;
-            }
             let s = &mut settled[at];
+            s.bytes[offset..offset + p.bytes.len()].copy_from_slice(&p.bytes);
             s.last = p.writer;
             s.host |= p.writer == Writer::Host;
         }
         for s in &mut settled {
             s.changed = write_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, s.net, 0, &s.bytes, here);
         }
-        Ok(settled)
+        settled
     }
 
     /// Who made a commit, for an error: the instance's path, or the host.
@@ -153,7 +134,7 @@ impl Digital {
             let here = (at, n);
             self.store.begin_microstep();
             self.call = 0;
-            for s in self.apply_due(here)? {
+            for s in self.apply_due(here) {
                 out.host_param_write |= s.changed && s.host && self.plan.analysis().is_param_net(s.net);
                 check_canonical(&self.plan, &self.store, s.net, at, &self.writer_name(s.last))?;
             }
@@ -222,7 +203,7 @@ impl Digital {
                 .any(|p| !self.plan.nets[p.net.0 as usize].is_quiet());
             if !live {
                 // what is left for this instant applies as it exits
-                for s in self.apply_due(next)? {
+                for s in self.apply_due(next) {
                     check_canonical(&self.plan, &self.store, s.net, at, &self.writer_name(s.last))?;
                 }
                 self.obs.flush();
@@ -287,7 +268,7 @@ impl Digital {
         phase.finish = ran.finish;
         // what the phase left for the instant, its records, applies as the instant exits, as at the
         // end of the loop: a record left queued would be a commit due at this tick forever
-        for s in self.apply_due((at, last + 1))? {
+        for s in self.apply_due((at, last + 1)) {
             check_canonical(&self.plan, &self.store, s.net, at, &self.writer_name(s.last))?;
         }
         self.obs.flush();
