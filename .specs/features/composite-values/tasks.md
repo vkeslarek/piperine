@@ -811,8 +811,8 @@ T63
 
 **Done when**:
 
-- [ ] `the_type_arena_builds_checks_and_prints` passes under `**Run iragg**`
-- [ ] Gate check passes: Quick
+- [x] `the_type_arena_builds_checks_and_prints` passes under `**Run iragg**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -832,9 +832,9 @@ T63
 
 **Done when**:
 
-- [ ] `ir_check_types_every_aggregate_expression` passes under `**Run iragg**`
-- [ ] `each_composite_values_form_is_refused_by_name` covers the forms under `**Run interp**`
-- [ ] Gate check passes: Quick
+- [x] `ir_check_types_every_aggregate_expression` passes under `**Run iragg**`
+- [x] `each_composite_values_form_is_refused_by_name` covers the forms under `**Run interp**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -854,8 +854,8 @@ T63
 
 **Done when**:
 
-- [ ] `variant_tests_option_packs_and_comparisons_check` passes under `**Run iragg**`
-- [ ] Gate check passes: Quick
+- [x] `variant_tests_option_packs_and_comparisons_check` passes under `**Run iragg**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -875,8 +875,8 @@ T63
 
 **Done when**:
 
-- [ ] `composite_constants_check_print_and_round_trip` passes under `**Run iragg**`
-- [ ] Gate check passes: Build
+- [x] `composite_constants_check_print_and_round_trip` passes under `**Run iragg**`
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build
@@ -896,8 +896,8 @@ T63
 
 **Done when**:
 
-- [ ] `each_source_type_prints_as_one_rust_item_naming_its_path` passes under `**Run tagg**`
-- [ ] Gate check passes: Full
+- [x] `each_source_type_prints_as_one_rust_item_naming_its_path` passes under `**Run tagg**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -917,9 +917,9 @@ T63
 
 **Done when**:
 
-- [ ] `aggregate_expressions_compile_and_run` passes under `**Run tagg**`
-- [ ] `rt::control::tests::an_index_out_of_range_panics_naming_it` and `rt::control::tests::an_unknown_index_merges_the_elements_it_may_name` pass under `**Run rt**`
-- [ ] Gate check passes: Full
+- [x] `aggregate_expressions_compile_and_run` passes under `**Run tagg**`
+- [x] `rt::control::tests::an_index_out_of_range_panics_naming_it` and `rt::control::tests::an_unknown_index_merges_the_elements_it_may_name` pass under `**Run rt**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -939,8 +939,8 @@ T63
 
 **Done when**:
 
-- [ ] `rt::flag::tests::composite_levels_follow_the_section_2_table` passes under `**Run rt**`
-- [ ] Gate check passes: Full
+- [x] `rt::flag::tests::composite_levels_follow_the_section_2_table` passes under `**Run rt**`
+- [x] Gate check passes: Full
 
 **Tests**: unit
 **Gate**: full
@@ -960,8 +960,8 @@ T63
 
 **Done when**:
 
-- [ ] `every_composite_value_crosses_the_abi_unchanged` and `narrow_payloads_pad_with_false_levels` pass under `**Run tagg**`
-- [ ] Gate check passes: Full
+- [x] `every_composite_value_crosses_the_abi_unchanged` and `narrow_payloads_pad_with_false_levels` pass under `**Run tagg**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -981,8 +981,8 @@ T63
 
 **Done when**:
 
-- [ ] `every_struct_form_is_a_value_type` and `a_self_containing_type_is_e0186` pass under `**Run typesagg**`
-- [ ] Gate check passes: Quick
+- [x] `every_struct_form_is_a_value_type` and `a_self_containing_type_is_e0186` pass under `**Run typesagg**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1002,8 +1002,8 @@ T63
 
 **Done when**:
 
-- [ ] `struct_expressions_and_field_reads_type_check`, `a_bad_struct_expression_is_e0186_naming_the_field` and `struct_update_syntax_is_a_parse_error` pass under `**Run typesagg**`
-- [ ] Gate check passes: Quick
+- [x] `struct_expressions_and_field_reads_type_check`, `a_bad_struct_expression_is_e0186_naming_the_field` and `struct_update_syntax_is_a_parse_error` pass under `**Run typesagg**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1023,8 +1023,8 @@ T63
 
 **Done when**:
 
-- [ ] `tuples_and_tuple_patterns_type_check` passes under `**Run typesagg**`
-- [ ] Gate check passes: Quick
+- [x] `tuples_and_tuple_patterns_type_check` passes under `**Run typesagg**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1044,8 +1044,8 @@ T63
 
 **Done when**:
 
-- [ ] `payload_enums_build_and_match` and `a_discriminant_that_does_not_fit_or_repeats_is_e0111` pass under `**Run typesagg**`
-- [ ] Gate check passes: Quick
+- [x] `payload_enums_build_and_match` and `a_discriminant_that_does_not_fit_or_repeats_is_e0111` pass under `**Run typesagg**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1065,8 +1065,8 @@ T63
 
 **Done when**:
 
-- [ ] `arrays_and_indexing_type_check` and `a_non_constant_array_length_is_refused_naming_it` pass under `**Run typesagg**`
-- [ ] Gate check passes: Quick
+- [x] `arrays_and_indexing_type_check` and `a_non_constant_array_length_is_refused_naming_it` pass under `**Run typesagg**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1086,13 +1086,12 @@ T63
 
 **Done when**:
 
-- [ ] `borrows_in_call_arguments_are_accepted` and `a_borrow_elsewhere_is_e0102` pass under `**Run typesagg**`
-- [ ] Gate check passes: Quick
+- [x] Void: CV-14 is dropped by `value-semantics` (VS-01), so there is no test and no code to deliver
 
-**Tests**: integration
-**Gate**: quick
+**Tests**: none
+**Gate**: none
 
-**Commit**: `feat(types): borrows and dereference`
+**Commit**: none (void)
 
 ---
 
@@ -1351,7 +1350,7 @@ T63
 
 ### T56: Plan: composite layouts
 
-**What**: `piperine-plan/src/composite.rs` (`CompositeLayout`): the ABI `Layout` of an IR aggregate type: leaves at their alignment, dotted names (`p.x`, `t.0`, `tag`, `Data.n`), arrays as `count`, one known byte per leaf (`HAS_KNOWN`); used by `CarrierLayout`, `RecordLayout` and param pins; a one-variant enum lays out its payload only (§2 rule 5); an empty struct and `()` have zero levels. Create `crates/piperine-plan/tests/composite_shape.rs`.
+**What**: `piperine-plan/src/composite.rs` (`CompositeLayout`): the ABI `Layout` of an IR aggregate type as built: the value bytes packed at alignment 1 (an `f64` leaf may sit unaligned), one field per scalar leaf with a dotted name (`p.x`, `t.0`, `tag`, `Data.n`), an array one field per element (`num[2]`, no `count > 1` field), and one known byte for the whole composite (`HAS_KNOWN`); used by `CarrierLayout`, `RecordLayout` and param pins; a one-variant enum lays out its payload only (§2 rule 5); an empty struct and `()` have zero levels. Create `crates/piperine-plan/tests/composite_shape.rs`.
 **Where**: `crates/piperine-plan/src/composite.rs`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `CarrierLayout`, `RecordLayout`, `ShapeBuf`

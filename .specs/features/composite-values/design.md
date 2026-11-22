@@ -108,11 +108,13 @@ without a contribution or placement stays a loop in the IR.
   its MSL path and origin (R3). A carried type also gets `impl rt::Carried` encoding the §2
   layout into the ABI bytes.
 - **The ABI is unchanged (Q1 (a)).** A composite carrier, param or record field is one pin whose
-  `Layout` lists its leaves: nested fields with dotted names (`p.x`, `t.0`), arrays as `count`,
-  each leaf with its known byte (`HAS_KNOWN`). With one flag per value (G6/S6, until
-  `unknown-semantics-per-level`) every leaf's known byte is the value's flag; a value reads known
-  only when every leaf does. Two pins of one net get equal layouts (abi.md P4) because the layout
-  is a function of the IR type alone.
+  `Layout` lists its scalar leaves: nested fields with dotted names (`p.x`, `t.0`), an array one
+  field per element (`num[2]`), the value bytes **packed at alignment 1** (a leaf, an `f64`
+  included, may sit unaligned; a foreign device reads it unaligned) and **one known byte for the
+  whole composite** after them (`HAS_KNOWN`), the flag of the value (G6/S6, until
+  `explicit-unknowns` phase A): one byte cannot stand for the `count` known bytes of a counted
+  field, so an array has no `count > 1` field. Two pins of one net get equal layouts (abi.md P4)
+  because the layout is a function of the IR type alone. Delivered by T56 (MD-79).
 - **Levels.** `rt::Carried::to_levels`/`from_levels` move from `u64` to a level word vector
   (`rt::LevelWords`), so `level`, `cast`, `same` and `merge` work on composites wider than 64
   levels; a scalar's text does not change.
@@ -146,7 +148,7 @@ without a contribution or placement stays a loop in the IR.
 | `Statements::of` (ABI statement numbering) | `crates/piperine-ir/src/statements.rs` | a commit inside a loop is one statement (§12.1.14): the walk visits a loop body once |
 | `rt::Merge`, `Flagged::choose`, `Commits::branch`/`run`, `rt::Attempt`, `rt::Panic` | `crates/piperine-transpile/src/rt/{flag,control,commits}.rs` | the merge of written-local tuples, `Unrolled`, loop and depth panics |
 | `ValuePrinter::merged`, `holds_effect`, `block_lines` | `crates/piperine-transpile/src/print/value.rs` | the arms of a merged `if` return their written locals; new forms print in sibling files |
-| `RecordLayout`, `CarrierLayout` | `crates/piperine-plan/src/digital.rs` | composite layouts built field by field at their alignment |
+| `RecordLayout`, `CarrierLayout` | `crates/piperine-plan/src/digital.rs` | composite layouts built field by field, packed (alignment 1), one known byte per composite |
 | `ShapeBuf` (owned layouts) | `crates/piperine-abi/src/shape.rs` | owned composite layouts; no ABI change |
 | `Metadata::of(ir, ..)`, `Cell`, `Streams` | `crates/piperine-api/src/{metadata,table,record}.rs` | composite cells decoded with the IR arena |
 | Interpreter refusal by name | `crates/piperine-interp/src/walk.rs` (`form`, `form_name`) | one arm per new form; `tests/frozen.rs` pins each |
