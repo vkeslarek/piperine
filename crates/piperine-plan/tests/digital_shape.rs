@@ -9,6 +9,9 @@ use piperine_abi::raw::{Cell, Layout, Pin, Shape, cell, field_flag, global, kind
 use piperine_ir::{
     BodyId, BodySpec, CarrierRole, Constant, Event, EventSource, FunctionSpec, InstanceSpec, Ir, IrBuilder, Local, Origin, Real, Stream, StreamField, ValueType,
 };
+use piperine_digital_solver::dag::{Dag, Step};
+use piperine_digital_solver::net::{NetId, NetSpec};
+use piperine_digital_solver::plan::FnNode;
 use piperine_plan::{BodyPlan, Mode, RecordLayout, Source, Target};
 
 #[allow(dead_code)]
@@ -837,7 +840,7 @@ impl Merging {
         let en = x.local(0, flagged.clone());
         let (yes, no) = (x.boolean(true), x.boolean(false));
         let decision = x.if_(en, yes, no, flagged.clone());
-        let local = Local { name: "en".into(), ty: flagged.clone() };
+        let local = Local { name: "en".into(), ty: flagged.clone(), mutable: false };
         let pick = b.function(FunctionSpec {
             name: "pick".into(),
             origin: Buck::origin(Merging::F, 5, 1),
@@ -922,4 +925,144 @@ fn a_reaction_with_an_unknown_decision_reads_the_resolution() {
     assert_eq!(plan.reactions()[0].reads, [Source::Carrier(1)]);
     assert!(!has_pin(shape, "resolution"));
     assert_eq!(shape.pins.len(), 4, "go, en, q and the event pin");
+}
+
+/// Bodies with a `settle` event (§13 rule 17): an `in ready: Bit` and an `out q: Bit`.
+struct Settling;
+
+impl Settling {
+    const F: &'static str = "settling.msl";
+
+    /// `on settle { q <- true; }`, or `on settle && ready.high() { q <- true; }` when `guarded`.
+    fn body(b: &mut IrBuilder, guarded: bool) -> BodyId {
+        let body = b.body(Buck::spec("Settling", Settling::F, 1));
+        b.carrier(body, Buck::carrier("ready", ValueType::Bool, CarrierRole::In, None, Settling::F, 1, 14));
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Settling::F, 1, 28));
+        let mut x = Dx::new(b, Settling::F, 2, 20);
+        let ready = x.carrier(0, ValueType::Bool);
+        let guard = guarded.then(|| x.high(ready));
+        let event = b.event(body, Event { source: EventSource::Settle, guard, origin: Buck::origin(Settling::F, 2, 8) });
+        let yes = Dx::new(b, Settling::F, 3, 14).boolean(true);
+        let commit = Dx::new(b, Settling::F, 3, 9).commit(1, yes, None);
+        Buck::reaction(b, body, vec![event], vec![commit], vec![], Settling::F, 2);
+        body
+    }
+}
+
+#[test]
+fn a_settle_event_reads_the_global_settle_pin() {
+    // §13 rule 17, design D5: the event function of `settle` reads the `CHANGED` byte of the
+    // `GLOBAL` `SETTLE` pin (abi.md §4) and writes the event's own pin; a guard adds its reads
+    let (ir, body) = Alone::design(|b| Settling::body(b, false));
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let settle = Find::pin(shape, "settle");
+    let view = shape.pins.get(settle as usize).expect("the settle pin");
+    assert_eq!((view.kind, view.role, view.global), (kind::EVENT, role::GLOBAL, global::SETTLE));
+    let event = Find::pin(shape, "event:0");
+    let (reads, writes, _) = Find::function(shape, "event:0");
+    assert_eq!(reads, [pin(settle, part::CHANGED)], "an unguarded settle reads the settle pin alone");
+    assert_eq!(writes, [pin(event, part::CHANGED)]);
+    assert_eq!(plan.functions()[0].reads, [Source::Settle]);
+    assert_eq!(Find::reaction(shape, "reaction:0").0, vec![event], "the reaction listens to the event pin, never to SETTLE");
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+
+    let (ir, body) = Alone::design(|b| Settling::body(b, true));
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (ready, settle) = (Find::pin(shape, "ready"), Find::pin(shape, "settle"));
+    let (reads, _, _) = Find::function(shape, "event:0");
+    assert_eq!(reads, [pin(ready, part::VALUE), pin(settle, part::CHANGED)], "§13 rule 1: the guard is read in the same microstep");
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+}
+
+#[test]
+fn a_body_without_settle_has_no_settle_pin() {
+    // abi.md §4: a `GLOBAL` pin exists only for a body that asks for it
+    for make in [Buck::dff, Buck::osc] {
+        let (ir, body) = Alone::design(make);
+        let plan = BodyPlan::new(ir.body(body));
+        assert!(!has_pin(plan.shape().shape(), "settle"));
+    }
+}
+
+/// A body whose first event is guarded by whether the second fired (§13 rule 9), declared as the
+/// elaborator does: the guarded event of the head first, the event the guard reads appended after
+/// it. An `in en: Bit`, an `in d: Bit` and an `out q: Bit`; `on d.changed() && !en.changed() { q <-
+/// true; }`.
+struct Guarding;
+
+impl Guarding {
+    const F: &'static str = "guarding.msl";
+
+    fn body(b: &mut IrBuilder) -> BodyId {
+        let body = b.body(Buck::spec("Guarding", Guarding::F, 1));
+        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, Guarding::F, 1, 14));
+        b.carrier(body, Buck::carrier("d", ValueType::Bool, CarrierRole::In, None, Guarding::F, 1, 28));
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Guarding::F, 1, 40));
+        // the guard reads the event declared next: `Fired(1)`
+        let mut x = Dx::new(b, Guarding::F, 2, 30);
+        let still = x.b.expr(piperine_ir::Expr::Fired(1), ValueType::Bool, x.origin());
+        let guard = x.un(piperine_ir::UnaryOp::Not, still, ValueType::Bool);
+        let d_changed = b.event(body, Event { source: EventSource::Changed(1), guard: Some(guard), origin: Buck::origin(Guarding::F, 2, 8) });
+        b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(Guarding::F, 2, 8) });
+        let yes = Dx::new(b, Guarding::F, 3, 14).boolean(true);
+        let commit = Dx::new(b, Guarding::F, 3, 9).commit(2, yes, None);
+        Buck::reaction(b, body, vec![d_changed], vec![commit], vec![], Guarding::F, 2);
+        body
+    }
+}
+
+/// The levelized order of a shape's discrete functions, by the dag the digital solver runs them in
+/// (abi.md §9 D1): every pin is a net, a function reads and writes the nets of its cells.
+struct Levelized;
+
+impl Levelized {
+    /// The names of the functions of `shape` in the order the dag runs them.
+    fn order(shape: &Shape<'_>) -> Vec<String> {
+        let nets: Vec<NetSpec> = shape.pins.iter().map(|p| NetSpec::discrete(p.name.as_str(), 1, 1)).collect();
+        let nodes: Vec<FnNode> = shape
+            .functions
+            .iter()
+            .enumerate()
+            .map(|(k, f)| FnNode {
+                name: f.name.as_str().to_string(),
+                instance: 0,
+                k: k as u32,
+                reads: f.reads.iter().filter(|c| c.kind == cell::PIN).map(|c| NetId(c.index)).collect(),
+                writes: f.writes.iter().filter(|c| c.kind == cell::PIN).map(|c| NetId(c.index)).collect(),
+            })
+            .collect();
+        let dag = Dag::build(&nodes, &nets).expect("the functions have no cycle");
+        dag.order()
+            .iter()
+            .map(|step| match step {
+                Step::Run(f) => dag.function(*f).name.clone(),
+                Step::Relax { .. } => panic!("no relaxation in this body"),
+            })
+            .collect()
+    }
+}
+
+#[test]
+fn an_event_function_reading_another_event_runs_after_it() {
+    // §13 rule 9, design D8: the guarded event is declared first (`event:0`) and reads the
+    // `CHANGED` byte of the event its guard names, declared after it (`Source::Fired(1)`, `event:1`),
+    // so the order of the shape's functions is the wrong one; the dependency of abi.md D1, from
+    // what each function reads and writes, runs `event:1` first; the shape validates (no cycle)
+    let (ir, body) = Alone::design(Guarding::body);
+    let plan = BodyPlan::new(ir.body(body));
+    let shape = plan.shape().shape();
+    let (guarded, read) = (Find::pin(shape, "event:0"), Find::pin(shape, "event:1"));
+    let (reads, writes, _) = Find::function(shape, "event:0");
+    assert!(reads.contains(&pin(read, part::CHANGED)), "the guarded event reads the other event's pin: {reads:?}");
+    assert_eq!(writes, [pin(guarded, part::CHANGED)]);
+    let (_, writes, _) = Find::function(shape, "event:1");
+    assert_eq!(writes, [pin(read, part::CHANGED)], "the read event writes its own pin");
+    assert_eq!(plan.functions()[0].reads.iter().filter(|s| **s == Source::Fired(1)).count(), 1, "{:?}", plan.functions()[0].reads);
+    let declared = Find::function_names(shape);
+    assert!(declared.iter().position(|n| n == "event:0") < declared.iter().position(|n| n == "event:1"), "declaration order is the wrong one: {declared:?}");
+    let levelized = Levelized::order(shape);
+    assert!(levelized.iter().position(|n| n == "event:1") < levelized.iter().position(|n| n == "event:0"), "the dependency order runs the read event first: {levelized:?}");
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 }

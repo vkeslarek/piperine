@@ -1292,3 +1292,28 @@ fn the_environment_bound_step_fired_and_unwrap_forms_print_and_check() {
     one(8, "reads freq()");
     assert_eq!(broken.len(), 11, "{broken:#?}");
 }
+
+#[test]
+fn the_guard_of_an_event_reads_another_events_fired_never_its_own() {
+    // §13 rule 9, design D8: the guard of an event reads whether another event of the body fired in
+    // the microstep (`!fired(0)` here); it never reads its own, and no other code outside a
+    // reaction reads one
+    const F: &str = "guard.msl";
+    for (own, expected) in [(false, vec![]), (true, vec!["the guard of event 1 reads its own `fired`"])] {
+        let mut b = IrBuilder::new();
+        let body = b.body(Buck::spec("Guarding", F, 1));
+        b.carrier(body, Buck::carrier("d", ValueType::Bool, CarrierRole::In, None, F, 1, 14));
+        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, F, 1, 28));
+        let first = b.event(body, Event { source: EventSource::Changed(1), guard: None, origin: Design::origin(F, 2, 8) });
+        let mut x = Dx::new(&mut b, F, 3, 8);
+        let read = x.b.expr(Expr::Fired(if own { 1 } else { first }), ValueType::Bool, x.origin());
+        let guard = x.un(piperine_ir::UnaryOp::Not, read, ValueType::Bool);
+        let second = b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Design::origin(F, 3, 8) });
+        let mut x = Dx::new(&mut b, F, 4, 8);
+        let yes = x.boolean(true);
+        let commit = x.commit(0, yes, None);
+        Buck::reaction(&mut b, body, vec![second], vec![commit], vec![], F, 4);
+        let found: Vec<String> = Design::place(b, body, 0, &[ValueType::Bool, ValueType::Bool], vec![]).check().into_iter().map(|e| e.what).collect();
+        assert_eq!(found.iter().filter(|w| w.contains("reads its own `fired`") || w.contains("`fired` outside")).cloned().collect::<Vec<_>>(), expected, "own: {own}: {found:?}");
+    }
+}

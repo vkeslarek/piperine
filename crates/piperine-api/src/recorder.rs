@@ -16,7 +16,7 @@ use std::rc::Rc;
 use piperine_solver::prelude::{StepObserver, StepView};
 
 use crate::failure::Failure;
-use crate::probe::Column;
+use crate::probe::{Column, Probe};
 use crate::table::{Cell, Table};
 
 /// What a closure reads for one column of one step: its cell, `None` when the step holds no
@@ -72,8 +72,11 @@ impl Recorder {
     pub(crate) fn new(columns: Vec<Column>, labels: Vec<String>, from: f64) -> Recorder {
         let mut by_path: HashMap<String, Vec<usize>> = HashMap::new();
         for (at, (column, label)) in columns.iter().zip(&labels).enumerate() {
-            if matches!(column, Column::Net { .. }) {
-                by_path.entry(label.clone()).or_default().push(at);
+            match column {
+                Column::Net { .. } => by_path.entry(label.clone()).or_default().push(at),
+                // a column showing one leaf of a net is still changed by the net's path
+                Column::Shaped { path, .. } => by_path.entry(path.clone()).or_default().push(at),
+                Column::Unknown { .. } | Column::Param { .. } | Column::Held { .. } => {}
             }
         }
         let held = vec![Cell::Unknown; columns.len()];
@@ -89,8 +92,12 @@ impl Recorder {
             return;
         }
         for &column in at {
-            let Column::Net { ty, .. } = &self.columns[column] else { continue };
-            match Cell::decode(ty, bytes) {
+            let decoded = match &self.columns[column] {
+                Column::Net { ty, .. } => Cell::decode(ty, bytes),
+                Column::Shaped { shape, leaf, .. } => Probe::shown(shape, leaf.as_deref(), bytes),
+                _ => continue,
+            };
+            match decoded {
                 Ok(cell) => {
                     Recorder::reach_pending(&mut self.rows, &self.pending, slack, column, time, &cell);
                     self.changes.push((column, time, cell));
@@ -154,7 +161,7 @@ impl Recorder {
             self.started = true;
             self.changes.clear();
             for (held, (cell, column)) in self.held.iter_mut().zip(cells.iter().zip(&self.columns)) {
-                if matches!(column, Column::Net { .. }) {
+                if matches!(column, Column::Net { .. } | Column::Shaped { .. }) {
                     *held = cell.clone();
                 }
             }
@@ -185,7 +192,7 @@ impl Recorder {
         self.changes.clear();
         self.applied = 0;
         for (at, column) in self.columns.iter().enumerate() {
-            if matches!(column, Column::Net { .. }) {
+            if matches!(column, Column::Net { .. } | Column::Shaped { .. }) {
                 if !Recorder::same(&self.held[at], &cells[at]) {
                     let (held, read) = (&self.held[at], &cells[at]);
                     self.failure = Some(Failure::Backend(format!(
@@ -238,7 +245,7 @@ impl Recorder {
             self.apply(Some(at + slack));
             let prev = self.grid.as_ref().and_then(|g| g.prev.as_ref());
             let values = cells.iter().enumerate().map(|(i, b)| match (&self.columns[i], prev) {
-                (Column::Net { .. }, _) => self.held[i].clone(),
+                (Column::Net { .. } | Column::Shaped { .. }, _) => self.held[i].clone(),
                 (Column::Unknown { .. }, Some((t0, before))) if at != time => match (&before[i], b) {
                     (Cell::Real(a), Cell::Real(b)) => Cell::Real(a + (b - a) * (at - t0) / (time - t0)),
                     _ => Cell::Unknown,
@@ -298,6 +305,7 @@ impl StepObserver for Tap {
         self.0.borrow_mut().step(step.time(), &|column| match column {
             Column::Unknown { index } => Ok(step.unknown(*index).map(Cell::Real)),
             Column::Net { id, ty } => step.net(*id).map(|bytes| Cell::decode(ty, bytes)).transpose(),
+            Column::Shaped { id, shape, leaf, .. } => step.net(*id).map(|bytes| Probe::shown(shape, leaf.as_deref(), bytes)).transpose(),
             Column::Param { id, ty } => step.net(*id).map(|bytes| Cell::decode_param(ty, bytes)).transpose(),
             Column::Held { held } => Ok(Some(held.cell_at(step.time()))),
         });
@@ -319,7 +327,7 @@ mod tests {
     fn solution(solution: &[f64]) -> impl Fn(&Column) -> Result<Option<Cell>, Failure> + '_ {
         move |column| match column {
             Column::Unknown { index } => Ok(solution.get(*index).map(|v| Cell::Real(*v))),
-            Column::Net { .. } | Column::Param { .. } | Column::Held { .. } => Ok(None),
+            Column::Net { .. } | Column::Shaped { .. } | Column::Param { .. } | Column::Held { .. } => Ok(None),
         }
     }
 
@@ -516,7 +524,7 @@ mod tests {
             Cell::Bool(v) => out[at] = u8::from(*v),
             Cell::Real(v) => out[at..at + 8].copy_from_slice(&v.to_le_bytes()),
             Cell::Int(v) => out[at..at + 4].copy_from_slice(&(*v as i32).to_le_bytes()),
-            Cell::Text(_) => panic!("no net holds text"),
+            Cell::Text(_) | Cell::Composite(_) => panic!("no scalar net holds text or a composite"),
         }
         out[field.known as usize] = 1;
         out
@@ -526,7 +534,7 @@ mod tests {
     fn reading<'a>(v: f64, nets: &'a [Cell]) -> impl Fn(&Column) -> Result<Option<Cell>, Failure> + 'a {
         move |column| match column {
             Column::Unknown { .. } => Ok(Some(Cell::Real(v))),
-            Column::Net { id, .. } | Column::Param { id, .. } => Ok(nets.get(*id as usize).cloned()),
+            Column::Net { id, .. } | Column::Shaped { id, .. } | Column::Param { id, .. } => Ok(nets.get(*id as usize).cloned()),
             Column::Held { held } => Ok(Some(held.cell_at(0.0))),
         }
     }

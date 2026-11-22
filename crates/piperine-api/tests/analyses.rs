@@ -511,3 +511,26 @@ fn pss_takes_the_sessions_step_budget() {
     let Err(failure) = pss_run(Overrides { max_steps: Some(budget), ..pss(period, 8e-6, None) }) else { panic!("{budget} attempts cannot cover a period") };
     assert!(matches!(&failure, Failure::Solver { analysis: "pss", .. }), "{failure:?}");
 }
+
+#[test]
+fn a_where_holds_at_equality_and_reads_the_other_params() {
+    // Part III 8.1 and §0.3: `x >= 0.0` takes 0; `v_release < v_pick` is checked against the
+    // pick's value now. Each entry of a table is one host `set`, applied in order, and §8.1.23
+    // re-checks every dependent `where` at each: a table that passes through an invalid state is
+    // refused even when its end state is valid
+    // `fixtures/bounded_params.msl`: a `Thresh` with a param bounded below by a constant
+    // (`x >= 0.0`) and one bounded by another param (`v_release < v_pick`); the CLI tests share it
+    let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/bounded_params.msl");
+    let overrides = |params: &[(&str, f64)]| with_params(Overrides { top: Some("Top".into()), ..op(&["a"]) }, params);
+    for backend in ["interp", "rust"] {
+        for accepted in [&[("Top.t.x", 0.0)][..], &[("Top.t.v_release", 1.5)], &[("Top.t.v_release", 1.2)], &[("Top.t.v_release", 0.5), ("Top.t.v_pick", 1.0)]] {
+            run(&file, backend, overrides(accepted)).unwrap_or_else(|f| panic!("{backend} {accepted:?}: {f}"));
+        }
+        for refused in [&[("Top.t.x", -1.0)][..], &[("Top.t.v_release", 2.0)], &[("Top.t.v_release", 2.5)], &[("Top.t.v_pick", 1.0)], &[("Top.t.v_pick", 1.0), ("Top.t.v_release", 0.5)], &[("Top.t.v_pick", 1.0), ("Top.t.v_release", 1.5)]] {
+            match run(&file, backend, overrides(refused)) {
+                Err(Failure::Host { code: "E0802", .. }) => {}
+                other => panic!("{backend} {refused:?}: expected E0802, found {other:?}"),
+            }
+        }
+    }
+}

@@ -1,0 +1,68 @@
+//! A function that returns an `Option` and reaches `emit!` (`log`) or takes a `str` (CV finding 13,
+//! §19 rule 10, §1.2.9), called from a reaction as the subject of `unwrap_or`, a `match`, an `if let`
+//! and `is_some`: the body runs once per call. The expected values and the record count are
+//! computed by Rust in `source_control.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn probe(x: u8) -> Option<u8> {
+    log(Severity::Info, "probe");
+    if x > 1 { Some(x + 1) } else { None }
+}
+fn pick(name: str, x: u8) -> Option<u8> { if name == "go" && x > 1 { Some(x * 2) } else { None } }
+fn noted(name: str, x: u8) -> Option<u8> {
+    log(Severity::Info, "noted");
+    if name == "go" { Some(x) } else { None }
+}
+
+fn early_none(x: u8) -> Option<u8> {
+    log(Severity::Info, "early");
+    if x > 5 { return None; }
+    Some(x)
+}
+fn early_some(x: u8) -> Option<u8> {
+    log(Severity::Info, "early");
+    if x > 1 { return Some(x + 10); }
+    Some(0)
+}
+fn through(x: u8) -> Option<u8> {
+    log(Severity::Info, "through");
+    let inner = if x > 2 { Some(x) } else { None };
+    let v = inner?;
+    Some(v + 1)
+}
+fn in_loop(n: u8) -> Option<u8> {
+    log(Severity::Info, "loop");
+    for k in 0..n { if k == 3 { return Some(k * 2); } }
+    None
+}
+
+module Rows(in clk: Bit, out a: Bit<u8>, out b: Bit<u8>, out c: Bit<u8>, out d: Bit, out e: Bit<u8>, out f: Bit<u8>, out g: Bit<u8>,
+            out h: Bit<u8>, out i: Bit<u8>, out j: Bit<u8>, out k: Bit<u8>, out l: Bit<u8>, out m: Bit<u8>, out n: Bit<u8>) {}
+digital for Rows {
+    on clk.rise() {
+        a <- probe(3).unwrap_or(9);
+        b <- match probe(0) { Some(v) => v, None => 7 };
+        c <- if let Some(v) = probe(4) { v * 2 } else { 0 };
+        d <- probe(5).is_some();
+        e <- pick("go", 5).unwrap_or(1);
+        f <- pick("stop", 5).unwrap_or(1);
+        g <- noted("go", 6).unwrap_or(0);
+        h <- early_none(9).unwrap_or(77);
+        i <- early_none(2).unwrap_or(77);
+        j <- early_some(4).unwrap_or(0);
+        k <- through(4).unwrap_or(99);
+        l <- through(1).unwrap_or(99);
+        m <- in_loop(8).unwrap_or(1);
+        n <- in_loop(2).unwrap_or(1);
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal a: Bit<u8>; signal b: Bit<u8>; signal c: Bit<u8>; signal d: Bit; signal e: Bit<u8>; signal f: Bit<u8>; signal g: Bit<u8>;
+    signal h: Bit<u8>; signal i: Bit<u8>; signal j: Bit<u8>; signal k: Bit<u8>; signal l: Bit<u8>; signal m: Bit<u8>; signal n: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, a, b, c, d, e, f, g, h, i, j, k, l, m, n);
+}

@@ -1,0 +1,113 @@
+//! `state_machine`: a 10 MHz clock steps a sequencer through charge, hold and dump phases of a 1 nF
+//! capacitor through two switches; an `A2D` at 0.9 V (+- 10 mV) reports over-voltage, and two
+//! consecutive edges with it enter a 30-period fault that dumps the capacitor and then retries.
+
+use crate::{Capacitor, Clock, Resistor, Switch, Vdc};
+
+/// What the sequencer is doing.
+#[derive(Repr, PartialEq)]
+pub enum Phase {
+    /// Not enabled: both switches open.
+    Idle,
+    /// The charge switch is closed, for 20 clock periods.
+    Charge,
+    /// Both switches open, for 10 clock periods.
+    Hold,
+    /// The dump switch is closed, for 20 clock periods.
+    Dump,
+    /// An over-voltage was seen on two edges in a row: the dump switch is closed, for 30 clock periods.
+    Fault,
+}
+
+/// The cause of the last fault: latched on entering `Phase::Fault`, cleared when a charge phase ends clean.
+#[derive(Repr, PartialEq)]
+pub enum Fault {
+    /// No fault pending.
+    Clear,
+    /// The comparator saw over-voltage on two consecutive edges.
+    OverVoltage,
+}
+
+/// The sequencer: one reaction per rising edge reads `en` and `ov`, decides the next phase and the
+/// fault, and emits one `phase` record for each change of phase; a rising `ov` emits a `trips` record.
+pub module Sequencer(
+    in clk: Bit,
+    in en: Bit,
+    in ov: Bit,
+    out charge: Bit,
+    out dump: Bit,
+    out phase: Bit<Phase> = Phase::Idle,
+    out fault: Bit<Fault> = Fault::Clear,
+) {
+    /// Clock periods spent in the current phase.
+    signal ticks: Bit<u8> = 0;
+    /// `ov` as the previous edge read it.
+    signal ov_last: Bit = false;
+    charge = phase == Phase::Charge;
+    dump = phase == Phase::Dump || phase == Phase::Fault;
+}
+
+digital for Sequencer {
+    on clk.rise() {
+        let enabled = en.known_or(false);
+        let over = ov.known_or(false);
+        let was = phase.known_or(Phase::Idle);
+        let ticks_now = ticks.known_or(0) + 1;
+        // two edges in a row with over-voltage, in a phase that is neither idle nor a fault
+        let tripped = was != Phase::Fault && was != Phase::Idle && over && ov_last;
+        let next = if tripped {
+            Phase::Fault
+        } else if !enabled && was != Phase::Fault {
+            Phase::Idle
+        } else {
+            match was {
+                Phase::Idle => Phase::Charge,
+                Phase::Charge => if ticks_now == 20 { Phase::Hold } else { Phase::Charge },
+                Phase::Hold => if ticks_now == 10 { Phase::Dump } else { Phase::Hold },
+                Phase::Dump => if ticks_now == 20 { Phase::Charge } else { Phase::Dump },
+                Phase::Fault => if ticks_now == 30 { Phase::Charge } else { Phase::Fault },
+            }
+        };
+        let fault_next = if tripped {
+            Fault::OverVoltage
+        } else if was == Phase::Charge && next == Phase::Hold {
+            Fault::Clear
+        } else {
+            fault.known_or(Fault::Clear)
+        };
+        phase <- next;
+        fault <- fault_next;
+        ticks <- if next != was { 0 } else { ticks_now };
+        ov_last <- over;
+        if next != was {
+            emit!("phase", to = next);
+        }
+    }
+    on ov.rise() && ov.prev().is_known() {
+        emit!("trips", at = now());
+    }
+}
+
+/// The circuit: the source through the charge switch and 1 kohm into 1 nF, the dump switch and 1 kohm
+/// to ground, the comparator on the capacitor.
+pub module StateMachine(in en: Bit) {
+    signal clk: Bit;
+    signal ov: Bit;
+    signal charge: Bit;
+    signal dump: Bit;
+    signal phase: Bit<Phase>;
+    signal fault: Bit<Fault>;
+    signal supply: Electrical;
+    signal node: Electrical;
+    signal cap: Electrical;
+    signal sink: Electrical;
+    pub let source = Vdc(supply) { dc: 0.0 };
+    pub let osc = Clock(clk) { f: 10M };
+    pub let charger = Switch(supply, node, charge) { ron: 1.0 };
+    pub let feed = Resistor(node, cap) { r: 1k };
+    pub let storage = Capacitor(cap, gnd) { c: 1n };
+    pub let dumper = Switch(cap, sink, dump) { ron: 1.0 };
+    pub let bleed = Resistor(sink, gnd) { r: 1k };
+    pub let comparator = A2D(cap, ov) { vth: 0.9, hyst: 20m };
+    pub let sequencer = Sequencer(clk, en, ov, charge, dump, phase, fault);
+}

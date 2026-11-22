@@ -15,6 +15,7 @@ use crate::net::{NetId, NetKind};
 use crate::observe::{Obs, Observation};
 use crate::plan::{Binding, DigitalPlan, InstancePlan};
 use crate::queue::{Instant, Pending, Queue, Writer};
+use crate::settle::SettleCommits;
 use crate::store::{Aligned, Store};
 use crate::tick::{Due, Tick};
 use crate::error::DigitalError;
@@ -328,7 +329,9 @@ fn walk(
 
 /// The cycle of `fns` through the `RELAX` nets `nets` (abi.md §9 D1): those nets start at zero
 /// bytes, the functions run in order until no byte changes, at most `nets.len() + 1` passes; what
-/// still moves is zeroed where it has a known byte and a fault where it has none.
+/// still moves is zeroed where it has a known byte and a fault where it has none. A step that
+/// does not settle is one `Unsettled` observation naming every `RELAX` net of the step in name
+/// order (spec §8.2.3 step 4).
 fn relax(
     plan: &DigitalPlan,
     store: &mut Store,
@@ -411,9 +414,11 @@ fn relax(
                 }
             }
             store.write(*net, 0, &value);
-            obs.push(Observation::Unsettled { net: name.clone(), at });
             after[i] = value;
         }
+        let mut names: Vec<String> = nets.iter().map(|n| plan.nets[n.0 as usize].name.clone()).collect();
+        names.sort();
+        obs.push(Observation::Unsettled { nets: names, at });
     }
     // the run sees one change per net: from the value it had before the group, to the settled one
     for (i, net) in written.iter().enumerate() {
@@ -430,17 +435,28 @@ fn relax(
     Ok(())
 }
 
+/// Where in an instant a microstep runs (§15): an ordinary microstep, or the settle phase that
+/// closes the instant of a time point (§15 step 4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Phase {
+    /// A microstep of the loop.
+    Microstep,
+    /// The settle phase, after the loop is quiet.
+    Settle,
+}
+
 /// A reaction that runs in the current microstep.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Firing {
     pub instance: usize,
     pub reaction: usize,
-    /// One of the events it ran for is `SETTLE`.
+    /// It runs in the settle phase: §13 rule 14 says the phase decides, whatever event its head
+    /// names, so its commits with no advancing delay are settle commits (§15 S1).
     pub on_settle: bool,
 }
 
 /// R1: the reactions with an event pin in `on` that fired in this microstep, in (instance, reaction) order.
-pub fn fired_reactions(instances: &[InstancePlan], settle: &[NetId], store: &Store) -> Vec<Firing> {
+pub fn fired_reactions(instances: &[InstancePlan], phase: Phase, store: &Store) -> Vec<Firing> {
     let mut out = Vec::new();
     for (i, inst) in instances.iter().enumerate() {
         for (r, reaction) in inst.handle.shape().reactions.iter().enumerate() {
@@ -453,7 +469,7 @@ pub fn fired_reactions(instances: &[InstancePlan], settle: &[NetId], store: &Sto
                 })
                 .collect();
             if !on.is_empty() {
-                out.push(Firing { instance: i, reaction: r, on_settle: on.iter().any(|n| settle.contains(n)) });
+                out.push(Firing { instance: i, reaction: r, on_settle: phase == Phase::Settle });
             }
         }
     }
@@ -477,10 +493,13 @@ struct Planned {
     offset: u32,
     bytes: Vec<u8>,
     net: Option<NetId>,
-    /// `None`: it never comes due.
+    /// `None`: it never comes due, or (a settle commit) has no instant until it lands.
     due: Option<Instant>,
     replace: bool,
     record: Option<String>,
+    /// A settle commit (§15 S1): made in the settle phase with no advancing delay, held by
+    /// `SettleCommits` instead of queued.
+    settle: bool,
     /// `commit_flag::*` bits the device passed (0 for a plain commit).
     flags: u32,
 }
@@ -501,7 +520,7 @@ struct Job {
 }
 
 /// Calls reaction `job` once with `ambient` and `samples`, validating each commit it makes (statement
-/// range, `LATER` bound, `Resolution::due`, the settle refusal). Nothing of the engine changes.
+/// range, `LATER` bound, `Resolution::due`) and marking a settle commit. Nothing of the engine changes.
 fn call_reaction(
     plan: &mut DigitalPlan,
     store: &Store,
@@ -574,15 +593,6 @@ fn call_reaction(
                 return status::FAULT;
             }
         };
-        if job.on_settle && due == Due::NextMicrostep {
-            failure = Some(DigitalError::Unsupported { what: "settle commit" });
-            return status::FAULT;
-        }
-        let due = match due {
-            Due::NextMicrostep => Some((at.0, at.1 + 1)),
-            Due::At(t) => Some((t, 0)),
-            Due::Never => None,
-        };
         let net = match pins[s.pin as usize] {
             Binding::Net(n) => Some(n),
             _ => None,
@@ -590,6 +600,17 @@ fn call_reaction(
         let record = net
             .filter(|n| nets[n.0 as usize].record)
             .map(|_| format!("{path}.{}", pin_names[s.pin as usize]));
+        // a record is observed where it is made, `(t, n)` (§19 rules 7, 8): it is no settle commit,
+        // which is a change of state due at the next time point (§15 S1); a commit with an advancing
+        // delay is an ordinary one (S7)
+        let settle = job.on_settle && due == Due::NextMicrostep && record.is_none();
+        let due = match due {
+            // a settle commit has no instant until the owner lands it
+            Due::NextMicrostep if settle => None,
+            Due::NextMicrostep => Some((at.0, at.1 + 1)),
+            Due::At(t) => Some((t, 0)),
+            Due::Never => None,
+        };
         made.push(Planned {
             statement: c.statement,
             offset: c.offset,
@@ -598,6 +619,7 @@ fn call_reaction(
             due,
             replace: s.flags & statement_flag::REPLACE != 0,
             record,
+            settle,
             flags: c.flags,
         });
         status::OK
@@ -641,9 +663,10 @@ pub fn run_reactions(
     obs: &mut Obs,
     at: Instant,
     call: &mut u32,
+    settle: &mut SettleCommits,
+    phase: Phase,
 ) -> Result<Fired, DigitalError> {
-    let settle = plan.analysis().settle_nets().to_vec();
-    let jobs: Vec<Job> = fired_reactions(&plan.instances, &settle, store)
+    let jobs: Vec<Job> = fired_reactions(&plan.instances, phase, store)
         .into_iter()
         .map(|f| Job {
             instance: f.instance,
@@ -738,6 +761,10 @@ pub fn run_reactions(
                 due: (at.0, 0),
                 flags: p.flags,
             };
+            if p.settle {
+                settle.hold(pending, p.replace);
+                continue;
+            }
             match p.due {
                 Some(due) => {
                     pending.due = due;

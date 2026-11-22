@@ -1,0 +1,160 @@
+//! The shared parts of the integrated scenarios: a clock, a DC source, a resistor, a capacitor, a
+//! switch that a commit drives, an 8-bit ADC and a counter PWM with dead time. Each scenario file
+//! places them under its own top; the host (`tests/integrated/`) drives the tops' ports and sets
+//! their params during a run. Every number a scenario judges is derived in
+//! `.specs/features/integrated-tests/design.md`.
+
+pub mod half_bridge;
+
+pub mod pi_loop;
+
+pub mod pwm_filter;
+
+pub mod sample_hold;
+
+pub mod state_machine;
+
+pub mod threshold;
+
+pub use crate::half_bridge::HalfBridge;
+
+pub use crate::pi_loop::PiLoop;
+
+pub use crate::pwm_filter::PwmFilter;
+
+pub use crate::sample_hold::SampleHold;
+
+pub use crate::state_machine::StateMachine;
+
+pub use crate::threshold::Threshold;
+
+/// A free-running clock: its first change is its initial value at time 0, then it toggles every half
+/// period, so rising edge `k` falls at `(k - 1/2) / f` and falling edge `k` at `k / f`.
+pub module Clock(out clk: Bit = false) {
+    /// Frequency, in hertz.
+    f: f64 = 1M where f > 0.0;
+}
+
+digital for Clock {
+    on clk.changed() {
+        clk <- !clk after 0.5 / f;
+    }
+}
+
+/// An ideal DC source from `p` to ground.
+pub module Vdc(p: Electrical) {
+    /// Open-circuit voltage, in volts.
+    dc: f64 = 1.0;
+}
+
+analog for Vdc {
+    v(p) +> dc;
+}
+
+/// An ideal resistor.
+pub module Resistor(p: Electrical, n: Electrical) {
+    /// Resistance, in ohms.
+    r: f64 where r > 0.0;
+}
+
+analog for Resistor {
+    i(p, n) +> v(p, n) / r;
+}
+
+/// An ideal capacitor.
+pub module Capacitor(p: Electrical, n: Electrical) {
+    /// Capacitance, in farads.
+    c: f64 where c > 0.0;
+}
+
+analog for Capacitor {
+    i(p, n) +> ddt(c * v(p, n));
+}
+
+/// A switch a digital commit drives: a conductance that moves from `1 / roff` to `1 / ron` in 1 ps
+/// when `gate` goes high (the `PowerSwitch` pattern of `examples/buck`). An unknown gate reads as open.
+pub module Switch(p: Electrical, n: Electrical, in gate: Bit) {
+    /// Resistance when closed, in ohms.
+    ron: f64 = 1.0 where ron > 0.0;
+    /// Resistance when open, in ohms.
+    roff: f64 = 1G where roff > ron;
+    /// 0 when open, 1 when closed, a ramp of 1 ps in between.
+    let level = transition(
+        if gate.high() {
+            1.0
+        } else {
+            0.0
+        },
+        0.0,
+        1p,
+        1p,
+    );
+}
+
+analog for Switch {
+    i(p, n) +> (1.0 / roff + (1.0 / ron - 1.0 / roff) * level) * v(p, n);
+}
+
+/// An 8-bit ADC, mid-tread: on a rising `sample` (a change between two known values: the first commit
+/// at time 0 takes it from unknown and is no sample) it probes `ain` once, rounds to the nearest code
+/// and, `tconv` later, presents the code with a `done` strobe of `tstrobe`. The input draws no flow.
+pub module Adc8(ain: Electrical, in sample: Bit, out code: Bit<u8> = 0, out done: Bit = false) {
+    /// Full scale, in volts: one code is `vref / 256`.
+    vref: f64 = 1.0 where vref > 0.0;
+    /// Conversion time, in seconds.
+    tconv: f64 = 200n where tconv > 0.0;
+    /// Width of the `done` strobe, in seconds.
+    tstrobe: f64 = 50n where tstrobe > 0.0;
+}
+
+digital for Adc8 {
+    on sample.rise() && sample.prev().is_known() {
+        let q = (v(ain) / vref * 256.0 + 0.5).floor().clamp(0.0, 255.0) as u8;
+        code <- q after tconv;
+        done <- true after tconv;
+        done <- false after tconv + tstrobe; // a second statement: the pair is a pulse
+    }
+}
+
+/// Counts of dead time on each side of the high-side pulse (a module param cannot be an integer yet).
+pub const DEAD_COUNTS: u8 = 2;
+
+/// A counter PWM over 100 clock periods with dead time. The duty `duty` (in counts, 0 to 100) is
+/// latched at the wrap: the high side is on for counts `0 .. duty`, both sides are off for
+/// `DEAD_COUNTS` counts, the low side is on until `100 - DEAD_COUNTS`, and both are off for the last
+/// `DEAD_COUNTS` counts. `wrap`
+/// is high while the count is 0. A `Never` watches that the two sides are never on together.
+pub module PwmCounter(
+    in clk: Bit,
+    in duty: Bit<u8>,
+    out hs: Bit = false,
+    out ls: Bit = false,
+    out wrap: Bit,
+) {
+    /// The count of the period: the first edge wraps it to 0.
+    signal count: Bit<u8> = 99;
+    /// The duty latched at the last wrap.
+    signal width: Bit<u8> = 0;
+    wrap = count == 0;
+    let no_shoot_through = Never(clk, hs & ls);
+}
+
+digital for PwmCounter {
+    on clk.rise() {
+        let wrapping = count == 99;
+        let next = if wrapping {
+            0
+        } else {
+            count + 1
+        };
+        let latched = if wrapping {
+            duty.known_or(0)
+        } else {
+            width
+        };
+        count <- next;
+        width <- latched;
+        hs <- next < latched;
+        ls <- next >= latched + DEAD_COUNTS && next < 100 - DEAD_COUNTS;
+    }
+}

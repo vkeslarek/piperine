@@ -192,7 +192,7 @@ pub struct Buck;
 
 impl Buck {
     fn local(name: &str, ty: ValueType) -> piperine_ir::Local {
-        piperine_ir::Local { name: name.to_string(), ty }
+        piperine_ir::Local { name: name.to_string(), ty, mutable: false }
     }
 
     pub fn origin(file: &str, line: u32, col: u32) -> Origin {

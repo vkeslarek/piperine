@@ -94,6 +94,16 @@ fn gt_op<'a, I: In<'a>>(want: GtOp) -> P<'a, I, GtOp> {
     }
 }
 
+/// A prefix form: an operator that builds a node, or a removed reference form (B.3.6) that stands
+/// as its operand once it is reported.
+#[derive(Clone)]
+enum Prefix {
+    /// `-x` or `!x`.
+    Operator(UnOp),
+    /// `&x`, `&&x`, `&mut x` or `*x`.
+    Reference,
+}
+
 /// A postfix form: field, method call, call, index, `?`.
 #[derive(Clone)]
 enum Post {
@@ -383,6 +393,8 @@ pub(crate) fn build<'a, I: In<'a>>(
             .delimited_by(punct(Punct::Or), punct(Punct::Or)),
     ));
     let closure = kw(Kw::Move)
+        .map_with(|_, e| e.span())
+        .validate(|at, _, emitter| emitter.emit(ReservedMarker::report(Kw::Move, at)))
         .or_not()
         .then(closure_params)
         .then(first_of(vec![
@@ -395,12 +407,7 @@ pub(crate) fn build<'a, I: In<'a>>(
                 .boxed(),
             me.clone().map(|body| (None, body)).boxed(),
         ]))
-        .map_with(|((mv, params), (ret, body)), e| {
-            mk(
-                ExprKind::Closure { is_move: mv.is_some(), params, ret, body: boxed(body) },
-                e.span(),
-            )
-        });
+        .map_with(|((_, params), (ret, body)), e| mk(ExprKind::Closure { params, ret, body: boxed(body) }, e.span()));
 
     // A slice of boxed alternatives, not a tuple: a tuple `choice` keeps every
     // alternative's temporaries in one stack frame (60 KiB in a debug build).
@@ -485,14 +492,12 @@ pub(crate) fn build<'a, I: In<'a>>(
     // One precedence-climbing loop replaces a parser per precedence level, so
     // a nesting level costs one frame chain rather than a dozen (T16).
     let unary_op = choice((
-        punct(Punct::Minus).to(UnOp::Neg),
-        punct(Punct::Not).to(UnOp::Not),
-        punct(Punct::Star).to(UnOp::Deref),
-        punct(Punct::And).to(UnOp::Ref),
-        // `&&x` is removed (B.3.6): reported, read as one borrow.
-        punct(Punct::AndAnd).validate(|_, e, emitter| {
-            emitter.emit(removed("double borrows", e.span()));
-            UnOp::Ref
+        punct(Punct::Minus).to(Prefix::Operator(UnOp::Neg)),
+        punct(Punct::Not).to(Prefix::Operator(UnOp::Not)),
+        // `&x`, `&&x`, `&mut x` and `*x` are removed (B.3.6): reported at the operator, read as the operand.
+        choice((reference_head(), punct(Punct::Star).map_with(|_, e| e.span()))).validate(|head, _, emitter| {
+            emitter.emit(removed("references and borrows", head));
+            Prefix::Reference
         }),
     ));
     let mul_op = choice((op(Punct::Star, BinOp::Mul), op(Punct::Slash, BinOp::Div), op(Punct::Percent, BinOp::Rem)));
@@ -509,7 +514,10 @@ pub(crate) fn build<'a, I: In<'a>>(
     let or = atom
         .pratt((
             postfix(15, postfix_op, apply_post::<I>),
-            prefix(14, unary_op, |op, rhs: Expr, e| mk(ExprKind::Unary { op, expr: boxed(rhs) }, e.span())),
+            prefix(14, unary_op, |op, rhs: Expr, e| match op {
+                Prefix::Operator(op) => mk(ExprKind::Unary { op, expr: boxed(rhs) }, e.span()),
+                Prefix::Reference => rhs,
+            }),
             postfix(13, kw(Kw::As).ignore_then(h.ty.clone()).then_ignore(next_not_angle()), |lhs: Expr, ty, e| {
                 mk(ExprKind::Cast { expr: boxed(lhs), ty }, e.span())
             }),

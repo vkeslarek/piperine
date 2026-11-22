@@ -1,4 +1,4 @@
-//! Scope: chapter 9 of the Book, "Files, modules and packages" (feature `root-e2e`, RE-02 and RE-03):
+//! Scope: chapter 12 of the Book, "Files, modules and packages" (feature `root-e2e`, RE-02 and RE-03):
 //! the `lowpass` project assembled from the chapter's four files, the crate root of the bigger `adc`
 //! project, the `use` that is ambiguous between a local namespace and a dependency and its two ways out,
 //! the `include_str!` table (refused today, asserted refused), the rules that split a crate over files
@@ -142,31 +142,29 @@ fn a_crate_reaches_another_only_through_its_manifest() {
 }
 
 #[test]
-fn the_include_str_table_is_refused_for_its_generic_function_and_its_reference() {
+fn the_include_str_table_is_refused_for_its_generic_function() {
     // packages#12 (refused): `const IV: [(f64, f64); 64] = parse_table(include_str!("diode_iv.tbl"));` and
-    // the measured diode's `table_model(v(a, k), &IV, "3E")`: `parse_table` is a generic function and `&IV` a
-    // reference type, both `P0001` (L57)
+    // the measured diode's `table_model(v(a, k), IV, "3E")`: `parse_table` is a generic function,
+    // `P0001` (L57)
     let chapter = Chapter::read();
     let table: String = (0..64).map(|row| format!("{} {:e}\n", f64::from(row) * 0.01, f64::from(row) * 1e-12)).collect();
     let rom: String = (0..1024).map(|word| format!("{word:x}\n")).collect();
     let root = format!("{}\nmodule Top() {{ signal a: Electrical; signal k: Electrical; let m = MeasuredDiode(a, k); }}\n", chapter.text("packages#12"));
     let model = Model::package(&Manifest::of("iv", "", "Top")).with_source("src/lib.msl", &root).with_source("src/diode_iv.tbl", &table).with_source("src/boot.hex", &rom);
     let given = Refusal::of(model.run(Overrides::default()), "packages#12");
-    for expected in ["generic function is not supported yet", "reference type is not supported yet"] {
-        assert!(given.contains(&("P0001".to_string(), expected.to_string())), "{expected}: {given:?}");
-    }
+    assert!(given.contains(&("P0001".to_string(), "generic function is not supported yet".to_string())), "{given:?}");
     Refusal::expect(model.run(Overrides::default()), "packages#12", "P0001", "generic function is not supported yet");
 }
 
 #[test]
-fn e0610_is_not_raised_include_str_in_a_module_is_refused_as_p0001() {
+fn e0610_include_str_in_a_module_is_refused() {
     // packages~64f2121d: "E0610 let t = include_str!(\"iv.tbl\"); in a module": `include_str!` is for `const`
-    // items. `E0610` is named by the spec and no source raises it (GAPS.md section 10, L57): the use in a
-    // module is `P0001`, `include_str!` is not supported yet
+    // items (section 20 rule 1, PI-08 AC 2), so a use in a module body is `E0610`
     let source = "module Top() { signal a: Electrical; let t = include_str!(\"iv.tbl\"); }\n";
     let model = Model::package(&Manifest::of("iv", "", "Top")).with_source("src/lib.msl", source).with_source("src/iv.tbl", "0 0\n");
     let given = Refusal::of(model.run(Overrides::default()), "packages~64f2121d");
-    assert_eq!(given, [("P0001".to_string(), "`include_str!` is not supported yet".to_string())]);
+    assert!(given.iter().any(|(code, _)| code == "E0610"), "{given:?}");
+    assert!(given.iter().all(|(_, message)| !message.contains("`include_str!` is not supported")), "{given:?}");
 }
 
 #[test]

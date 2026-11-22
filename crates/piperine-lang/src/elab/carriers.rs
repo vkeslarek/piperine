@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use piperine_ir::{BodyId, BodyNode, Carrier, CarrierRole, ChildValue, Constant, Derivative, Drive, Event, Hoisted, Reach, Reaction, Stream, Terminal, ValueType};
 
 use super::body::NodePlan;
-use super::consts::Folded;
+use super::consts::{Bindings, Folded};
 use super::elaborator::Elaboration;
 use crate::pom::{DeclId, DeclKind, Dir, ExprId};
 use crate::types::Ty;
@@ -74,12 +74,15 @@ pub(super) struct Frame {
     pub(super) derivatives: BTreeMap<ExprId, u32>,
     /// For a reach frame (`reach.rs`), the index of the child it stands for in the body's children.
     pub(super) child: Option<u32>,
+    /// The loop variables of the unrolled analog loops the placement sat in when it was hoisted,
+    /// each a constant: what the caller's expressions of its inputs read (`unroll.rs`).
+    pub(super) unrolled: Bindings,
 }
 
 impl Frame {
     /// The frame of the body's own module.
     pub(super) fn root(module: DeclId) -> Frame {
-        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), child: None }
+        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), child: None, unrolled: Bindings::new() }
     }
 }
 
@@ -109,7 +112,7 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(decl);
         let (file, span) = (data.file, data.span);
         let carried = match self.types.carrier(decl) {
-            Some(Ty::Carrier { value, .. }) => self.value_type(value),
+            Some(Ty::Carrier { value, .. }) => self.stored_type(value),
             _ => None,
         };
         if carried.is_none() {
@@ -131,7 +134,7 @@ impl Elaboration<'_, '_> {
         };
         let ty = self.carried_type(decl)?;
         let init = match init {
-            Some(expr) => self.carrier_init(expr, frame)?,
+            Some(expr) => self.carrier_init(expr, frame)?.map(|value| self.ir_constant(value, &ty)),
             None => None,
         };
         let name = format!("{}{name}", self.frames[frame].prefix);
@@ -144,7 +147,10 @@ impl Elaboration<'_, '_> {
     /// one is an initial value that is `Unknown`, which is the same as none: every level unknown
     /// at `(0, 0)` and no `changed()` there (§3.3).
     fn carrier_init(&mut self, expr: ExprId, frame: usize) -> Option<Option<Constant>> {
-        match self.consts.folded(expr, &self.frame_bindings(frame)) {
+        let bindings = self.frame_bindings(frame);
+        // a composite folds to a constant of the IR's arena (`consts/imported.rs`)
+        let folded = if self.types.ty(expr).is_some_and(Ty::is_composite) { self.composite_constant(expr, &bindings).map(Folded::Known) } else { self.consts.folded(expr, &bindings) };
+        match folded {
             Ok(Folded::Known(value)) => Some(Some(value)),
             Ok(Folded::Unknown) => Some(None),
             Err(fault) => {

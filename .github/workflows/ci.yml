@@ -1,12 +1,8 @@
 name: CI
 
+# Manual only: the account's Actions minutes go to the docs build (docs.yml).
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch:
 
 jobs:
   build:

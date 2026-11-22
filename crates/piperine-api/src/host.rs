@@ -15,7 +15,7 @@ use crate::params::{Changed, Derive, Params};
 
 use crate::failure::Failure;
 use crate::request::Analysis;
-use crate::session::{ParamPath, Session};
+use crate::session::{ParamPath, ParamTarget, Session};
 
 /// A `set` the host scheduled at `at > 0`, as it gave it.
 #[derive(Debug, Clone)]
@@ -85,9 +85,19 @@ impl Session {
     pub fn set_at(&mut self, path: &str, value: f64, at: f64) -> Result<(), Failure> {
         let action = format!("the set of `{path}`");
         Session::not_before(at, &action)?;
-        let param = ParamPath::resolve(self.ir(), self.ir().top().path(), path)?;
+        let target = ParamTarget::resolve(self.ir(), self.ir().top().path(), path)?;
+        let param = target.param.clone();
         param.refuse_structural(self.ir())?;
         self.ready_for(at, &action)?;
+        if let Some(leaf) = &target.leaf {
+            // a leaf of a composite param is written whole, before the run: a timed write of one leaf
+            // would need the schedule to hold the bytes of the rest
+            if at > 0.0 {
+                return Err(Failure::Host { code: "E0806", message: format!("{action} is scheduled at {at:e} s: a leaf of a composite param is set before the run (at = 0)") });
+            }
+            let circuit = self.circuit.as_mut().ok_or_else(Session::ran)?;
+            return Session::set_leaf(&mut self.params, circuit, &param, leaf, value);
+        }
         if at > 0.0 {
             // the values a timed set derives depend on every other set due before it, whatever the
             // order the host gave them: the whole schedule is derived again with this one in it,

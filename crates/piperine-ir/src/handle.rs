@@ -1,15 +1,75 @@
 //! Reading: `Copy` handles that pair a borrow of the [`Ir`] with an id.
 
 use crate::real::Real;
-use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId};
+use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId, AggregateId};
 use crate::model::{
     BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Event, Expr, FunctionData, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
-    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ValueType,
+    NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, TypeData, TypeKind, ValueType, AggregateData,
 };
 use crate::contributions::{Contribution, Contributions};
 use crate::statements::Statements;
 
 impl Ir {
+    /// A source struct or enum of the type arena.
+    pub fn type_data(&self, id: TypeId) -> &TypeData {
+        &self.types[id.index()]
+    }
+
+    /// A composite constant.
+    pub fn aggregate(&self, id: AggregateId) -> &AggregateData {
+        &self.aggregates[id.index()]
+    }
+
+    /// The composite constants, in id order.
+    pub fn aggregates(&self) -> &[AggregateData] {
+        &self.aggregates
+    }
+
+    /// The scalar a pin holds for a value of `ty`: an enum whose variants have no fields is its tag
+    /// (§2 rule 5), `UInt<tag_levels>`, so carried bytes are the tag's; any other type is itself.
+    /// A flag is the pin's known byte, not part of the type.
+    pub fn carried(&self, ty: &ValueType) -> ValueType {
+        match ty {
+            ValueType::Flagged(inner) => self.carried(inner),
+            ValueType::Enum(id) => match &self.types[id.index()].kind {
+                TypeKind::Enum { tag_levels, variants } if *tag_levels > 0 && variants.iter().all(|v| v.fields.is_empty()) => ValueType::UInt(*tag_levels),
+                _ => ty.clone(),
+            },
+            other => other.clone(),
+        }
+    }
+
+    /// `ty` as the source writes it: `f64`, `u8`, `Gains` for a struct (its bare name), `[f64; 3]`,
+    /// `(u8, bool)`, `Option<u8>`. A type the source cannot write is spelt as `Display` spells it.
+    pub fn written(&self, ty: &ValueType) -> String {
+        match ty {
+            ValueType::Flagged(inner) => self.written(inner),
+            ValueType::Tuple(parts) => {
+                let parts: Vec<String> = parts.iter().map(|part| self.written(part)).collect();
+                if parts.len() == 1 { format!("({},)", parts[0]) } else { format!("({})", parts.join(", ")) }
+            }
+            ValueType::Array(element, length) => format!("[{}; {length}]", self.written(element)),
+            ValueType::Option(inner) => format!("Option<{}>", self.written(inner)),
+            ValueType::Struct(id) | ValueType::Enum(id) => self.types[id.index()].name.clone(),
+            other => other.to_string(),
+        }
+    }
+
+    /// The discriminant a constant of the enum type `ty` holds: the tag a pin carries for it.
+    pub fn discriminant(&self, ty: &ValueType, value: Constant) -> Option<i128> {
+        let (ValueType::Enum(id), Constant::Aggregate(aggregate)) = (ty, value) else { return None };
+        let variant = self.aggregates.get(aggregate.index())?.variant?;
+        match &self.types.get(id.index())?.kind {
+            TypeKind::Enum { variants, .. } => variants.get(variant as usize).map(|v| v.discriminant),
+            TypeKind::Struct { .. } => None,
+        }
+    }
+
+    /// The type arena, in id order.
+    pub fn types(&self) -> &[TypeData] {
+        &self.types
+    }
+
     /// The kind of an expression. An id out of range panics; `Ir::check` is the gate that makes
     /// that unreachable.
     pub fn expr(&self, id: ExprId) -> &Expr {
@@ -22,6 +82,16 @@ impl Ir {
 
     pub fn expr_origin(&self, id: ExprId) -> &Origin {
         &self.exprs[id.index()].origin
+    }
+
+    /// Every expression of the design, in the order they were added.
+    pub fn expressions(&self) -> impl Iterator<Item = &Expr> {
+        self.exprs.iter().map(|data| &data.kind)
+    }
+
+    /// The type of every expression, in id order.
+    pub fn expression_types(&self) -> impl Iterator<Item = &ValueType> {
+        self.exprs.iter().map(|data| &data.ty)
     }
 
     pub fn stmt(&self, id: StmtId) -> &Stmt {

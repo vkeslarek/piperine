@@ -173,12 +173,21 @@ fn a_false_where_is_e0317_with_the_path() {
 fn a_bound_value_that_is_not_constant_is_refused() {
     // A value that reads a param of the parent is lowered from msl-digital T32 on (DIG-09 AC 11);
     // the case still refused in its place is a form the constant evaluator does not fold.
-    let src = "module Leaf() { r: f64 = 1.0; }\nmodule Top() { k: f64 = 2.0; let a = Leaf { r: match 1 { _ => k } }(); let b = Leaf { r: temperature() }(); }";
+    let src = "module Leaf() { r: f64 = 1.0; }\nmodule Top() { k: f64 = 2.0; let a = Leaf { r: (2.0).sin() }(); let b = Leaf { r: temperature() }(); }";
     let err = Elab::run(src, "Top").expect_err("neither value is constant");
     assert_eq!(Elab::codes(&err), ["P0001", "E0321"]);
     let text = |i: usize| &src[err[i].diagnostic.span().start..err[i].diagnostic.span().end];
-    assert_eq!(text(0), "match 1 { _ => k }", "a form the evaluator does not fold is P0001");
+    assert_eq!(text(0), "(2.0).sin()", "a form the evaluator does not fold is P0001");
     assert_eq!(text(1), "temperature()", "anything that needs a run is E0321");
+}
+
+#[test]
+fn a_phase_a_form_in_a_bound_value_is_evaluated() {
+    // CV-36 AC 1 (replaces the `match` this test file pinned as a form the evaluator does not fold):
+    // a `match` in a bound value is evaluated at elaboration, and the param of the parent it reads
+    // is read as the value of the child (DIG-09 AC 11).
+    let src = "module Leaf() { r: f64 = 1.0; }\nmodule Top() { k: f64 = 2.0; let a = Leaf { r: match 1 { _ => k } }(); }";
+    Elab::ir(src, "Top");
 }
 
 #[test]

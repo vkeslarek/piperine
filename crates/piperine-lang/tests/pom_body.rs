@@ -64,8 +64,7 @@ fn pat_kind_name(k: &PatKind) -> &'static str {
         PatKind::Struct { .. } => "Struct",
         PatKind::Or(_) => "Or",
         PatKind::Range { .. } => "Range",
-        PatKind::Ref(_) => "Ref",
-        PatKind::Slice(_) => "Slice",
+        PatKind::Array(_) => "Array",
     }
 }
 
@@ -73,9 +72,7 @@ fn type_kind_name(k: &TypeKind) -> &'static str {
     match k {
         TypeKind::Path(_) => "Path",
         TypeKind::Array { .. } => "Array",
-        TypeKind::Slice(_) => "Slice",
         TypeKind::Tuple(_) => "Tuple",
-        TypeKind::Ref { .. } => "Ref",
         TypeKind::Flip(_) => "Flip",
         TypeKind::FnPtr { .. } => "FnPtr",
         TypeKind::Infer => "Infer",
@@ -168,7 +165,6 @@ const X: u32 = {
     let Phase::Liquid = p;
     let h @ 1..=5 = n;
     let (1 | 2) = n;
-    let &r = q;
     let [i, j] = arr;
     let _ = z;
     let -1 = n;
@@ -180,9 +176,7 @@ const X: u32 = {
     signal sg: T = 1;
     on ev { }
     let t1: [u8; 4] = x;
-    let t2: [u8] = x;
     let t3: (A, B) = x;
-    let t4: &T = x;
     let t5: flip T = x;
     let t6: _ = x;
     a + 1
@@ -197,11 +191,11 @@ const X: u32 = {
     let pats: BTreeSet<_> = (0..design.pat_count()).map(|i| pat_kind_name(&design.pat_node(PatId(i as u32)).kind)).collect();
     assert_eq!(
         pats.into_iter().collect::<Vec<_>>(),
-        ["Ident", "Lit", "Or", "Path", "Range", "Ref", "Rest", "Slice", "Struct", "Tuple", "TupleStruct", "Wild"]
+        ["Array", "Ident", "Lit", "Or", "Path", "Range", "Rest", "Struct", "Tuple", "TupleStruct", "Wild"]
     );
     let types: BTreeSet<_> =
         (0..design.type_count()).map(|i| type_kind_name(&design.type_node(TypeId(i as u32)).kind)).collect();
-    assert_eq!(types.into_iter().collect::<Vec<_>>(), ["Array", "Flip", "Infer", "Path", "Ref", "Slice", "Tuple"]);
+    assert_eq!(types.into_iter().collect::<Vec<_>>(), ["Array", "Flip", "Infer", "Path", "Tuple"]);
 
     // One Binding per bound identifier, owned by the const, in source order.
     let x = design.find("X").expect("const X");
@@ -214,7 +208,7 @@ const X: u32 = {
         })
         .collect();
     let names: Vec<_> = bound.iter().map(|(n, _)| *n).collect();
-    assert_eq!(names, ["a", "b", "c", "d", "f", "g", "h", "r", "i", "j", "t1", "t2", "t3", "t4", "t5", "t6"]);
+    assert_eq!(names, ["a", "b", "c", "d", "f", "g", "h", "i", "j", "t1", "t3", "t5", "t6"]);
     assert!(bound.iter().all(|(_, o)| *o == BindingOrigin::Local));
     // The item, the signal and the reaction are children too, in place.
     let labels: Vec<_> = kids.iter().map(|k| k.kind().label()).collect();
@@ -229,7 +223,7 @@ const X: u32 = {
 const AUDIT_SRC: &str = "\
 const A: u32 = { let (b, c) = (1, 2); if b < c { b } else { c } };
 fn f(x: u32, y: [u8; 4]) -> u32 {
-    let z: &u32 = &x;
+    let z: u32 = x;
     match x { 0 | 1 => 2, n if n > 3 => n, _ => 0 }
 }
 module M(a: electrical, b: electrical) {
@@ -402,14 +396,14 @@ fn assert_round_trips(src: &str) {
 fn value_bodies_round_trip() {
     // Every expression form, as the value of a const.
     let forms = [
-        "1", "2.5e3", "\"s\"", "true", "Unknown", "a", "-a", "!a", "*a", "&a", "a + b * c - d / e % f", "a ^ b & c | d",
+        "1", "2.5e3", "\"s\"", "true", "Unknown", "a", "-a", "!a", "a + b * c - d / e % f", "a ^ b & c | d",
         "a << 1 >> 2", "a && b || c", "a == b", "a != b", "a < b", "a <= b", "a > b", "a >= b", "a = b", "a += b",
         "a <<= b", "a as f64", "f(1, x: 2)", "a.m(1)", "a.m::<u8>(1, x: 2)", "a.b", "t.0", "a[0]", "0..4", "0..=4", "..4",
         "0..", "..", "(a)", "(a, b)", "()", "[1, 2]", "[0; 4]", "S { x: 1, y: 2 }", "{ 1 }", "{ }",
         "if a { 1 } else { 2 }", "if a { 1 } else if b { 2 } else { 3 }", "if a { 1 }", "if let Some(x) = y { 1 }",
         "match a { _ => 1 }", "match a { 0 | 1 => 2, n if n > 3 => n, #[x] _ => 0, }", "while a { }", "loop { }",
         "for i in 0..4 { }", "loop { break; }", "loop { break 1; }", "loop { continue; }", "return 1", "return",
-        "|x| x + 1", "move |x: u32, y| -> u32 { x }", "a?", "emit!(\"s\", a = 1)", "include_str!(\"f.txt\")",
+        "|x| x + 1", "|x: u32, y| -> u32 { x }", "a?", "emit!(\"s\", a = 1)", "include_str!(\"f.txt\")",
         "m(1) { w: 2 }", "a::b::<T>::c", "self::a", "super::a", "crate::a",
     ];
     for form in forms {
@@ -427,12 +421,9 @@ const X: u32 = {
     let Phase::Liquid = p;
     let i @ 1..=5 = n;
     let (1 | 2) = n;
-    let &r = q;
     let [j, k] = arr;
     let _ = z;
     let -1 = n;
-    let mut m = 1;
-    let ref n2 = 1;
     let Some(v) = o else { return };
     let 1.. = n;
     let ..5 = n;
@@ -447,10 +438,7 @@ const X: u32 = {
     signal sg2: T;
     on ev { x <- 1; }
     let t1: [u8; 4] = x;
-    let t2: [u8] = x;
     let t3: (A, B) = x;
-    let t4: &T = x;
-    let t5: &'static T = x;
     let t6: flip T = x;
     let t7: _ = x;
     let t8: () = x;
@@ -489,7 +477,7 @@ fn fns_consts_metas_and_generics_round_trip() {
 fn function_pointer_type_round_trips() {
     // POL-09 AC 4: a function-pointer type lowers to `TypeKind::FnPtr`
     // (params and return as type nodes) and converts back to the parsed tree.
-    let src = "fn apply(f: fn(f64) -> f64, g: fn(), h: fn(&[u8]) -> u8) {}\nstruct S { r: fn(f64) -> f64 }";
+    let src = "fn apply(f: fn(f64) -> f64, g: fn(), h: fn([u8; 2]) -> u8) {}\nstruct S { r: fn(f64) -> f64 }";
     assert_round_trips(src);
     let design = build(src);
     assert!(codes(&design).is_empty(), "{:?}", codes(&design));

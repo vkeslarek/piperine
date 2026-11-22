@@ -1,4 +1,4 @@
-//! Scope: chapter 10 of the Book, "Core and standard library" (feature `root-e2e`, RE-02 and RE-03): the
+//! Scope: chapter 13 of the Book, "Core and standard library" (feature `root-e2e`, RE-02 and RE-03): the
 //! tour modules that run (`Tour`, `VT_300K`, `Rc`, `Latch`, `DacRamp`, `Pad`, `Probe`, a crate's own
 //! `vt`), the ones refused today (the resolved line, `Reg` with its `Setup`, the watchdog's integer
 //! param, asserted refused with their diagnostics), the statements the chapter makes about the core, the
@@ -84,16 +84,15 @@ fn the_rc_module_of_the_carriers_part_runs() {
 }
 
 #[test]
-fn the_latch_takes_its_input_at_the_rising_edge_or_zero_when_unknown() {
-    // core-std#4 (run): `Latch`, `q <- d.known_or(0)` on `clk.rise()`: a known byte is latched at the edge, an
-    // unknown one gives the default 0
+fn the_latch_takes_its_input_at_the_rising_edge() {
+    // core-std#4 (run): `Latch`, `q <- d` on `clk.rise()` (replaces
+    // `the_latch_takes_its_input_at_the_rising_edge_or_zero_when_unknown`, whose `known_or(0)` and unknown
+    // input are gone): the input is latched at the edge, and before it `q` keeps its initial value
     let chapter = Chapter::read();
     let after = |data: &str| format!("module Top() {{ signal clk: Bit = false; signal d: Bit<u8>{data}; signal q: Bit<u8>; let l = Latch(clk, d, q); }}\ndigital for Top {{ on at(1u) {{ clk <- true; }} }}\n");
-    let known = chapter.wrapped("latch.msl", "", "core-std#4", &after(" = 5")).run(Commands::transient(3e-6, Some(1e-6))).unwrap_or_else(|failure| panic!("{failure}"));
-    assert_eq!(known.table.rows[0][3], piperine::Cell::Int(0), "before the edge, the initial value");
-    assert_eq!(known.table.rows.last().expect("a last row")[3], piperine::Cell::Int(5), "after it, the input");
-    let unknown = chapter.wrapped("latch.msl", "", "core-std#4", &after("")).run(Commands::transient(3e-6, Some(1e-6))).unwrap_or_else(|failure| panic!("{failure}"));
-    assert_eq!(unknown.table.rows.last().expect("a last row")[3], piperine::Cell::Int(0), "an unknown input is latched as the default");
+    let ran = chapter.wrapped("latch.msl", "", "core-std#4", &after(" = 5")).run(Commands::transient(3e-6, Some(1e-6))).unwrap_or_else(|failure| panic!("{failure}"));
+    assert_eq!(ran.table.rows[0][3], piperine::Cell::Int(0), "before the edge, the initial value");
+    assert_eq!(ran.table.rows.last().expect("a last row")[3], piperine::Cell::Int(5), "after it, the input");
 }
 
 #[test]
@@ -107,14 +106,14 @@ fn the_dac_ramp_scales_its_code_by_the_reference() {
 }
 
 #[test]
-fn the_resolved_line_is_refused_for_its_wire() {
-    // core-std#6 (refused): `IrqSource` and a `Board` with a `Pullup` on a `Wire`: the resolved nature is
-    // `P0001` (L21)
+fn the_resolved_line_is_refused_until_a_nature_can_implement_resolve() {
+    // core-std#6 (refused, S8): `IrqLine`, a nature the model declares with `impl Resolve<Driven>`, and a `Board`
+    // with a `Pullup`: `Driven` and `Resolve` are not in the library yet (E0161)
     let chapter = Chapter::read();
     let model = chapter.lone("board.msl", &["core-std#6"]);
     let given = Refusal::of(model.run(Faulty::operating_point_of("Board")), "core-std#6");
-    assert!(given.contains(&("P0001".to_string(), "resolved nature `Wire` is not supported yet".to_string())), "{given:?}");
-    Refusal::expect(model.run(Faulty::operating_point_of("Board")), "core-std#6", "P0001", "resolved nature `Wire` is not supported yet");
+    assert!(given.iter().all(|(code, _)| code == "E0161"), "names the library does not hold yet: {given:?}");
+    Refusal::expect(model.run(Faulty::operating_point_of("Board")), "core-std#6", "E0161", "cannot find `Driven` in this scope");
 }
 
 #[test]
@@ -143,7 +142,7 @@ fn the_register_with_a_setup_check_is_refused_for_the_generic_monitor() {
 #[test]
 fn the_probe_writes_a_check_and_a_log_record() {
     // core-std#9 (run): `Probe`: `require("ok_at_edge", ok)` and `log(Severity::Info, "edge")` on the rising
-    // edge: a `checks` record that passes and a `log` record with severity 0 and the message
+    // edge: a `checks` record that passes and a `log` record with severity `Info` and the message
     let chapter = Chapter::read();
     let after = "module Top() { signal clk: Bit = false; signal ok: Bit = true; let p = Probe(clk, ok); }\ndigital for Top { on at(1u) { clk <- true; } }\n";
     let ran = chapter.wrapped("probe.msl", "", "core-std#9", after).run(Commands::transient(3e-6, None)).unwrap_or_else(|failure| panic!("{failure}"));
@@ -154,7 +153,7 @@ fn the_probe_writes_a_check_and_a_log_record() {
     let logs = ran.stream("log");
     assert_eq!(logs.len(), 1);
     assert_eq!(Fields::of(logs[0], "msg"), &Field::Text("edge".to_string()));
-    assert_eq!(Fields::of(logs[0], "severity"), &Field::Int(0), "Severity::Info");
+    assert_eq!(Fields::of(logs[0], "severity"), &Field::Variant("Info".to_string()), "Severity::Info is read by its name (CV-22)");
 }
 
 #[test]
@@ -176,7 +175,7 @@ fn the_watchdog_ends_the_run_at_the_fourth_edge_with_the_button_held() {
     let watchdog = chapter.text("core-std#10");
     assert!(watchdog.contains("    limit: u16 = 1000;\n") && watchdog.contains("run >= limit"), "the Book's text");
     let watchdog = watchdog.replace("    limit: u16 = 1000;\n", "").replace("run >= limit", "run >= 3");
-    let clock = chapter.text("from-rust#2");
+    let clock = chapter.text("values#1");
     let clock = clock.split_once("/// Counts rising edges").expect("the clock comes first").0;
     let source = format!("{watchdog}\n{clock}\nmodule Top() {{ signal clk: Bit; signal busy: Bit = true; let o = Osc(clk) {{ f: 1M }}; let w = Watchdog(clk, busy); }}\n");
     let ran = Model::written("watchdog.msl", &source).run(Commands::transient(10e-6, None)).unwrap_or_else(|failure| panic!("{failure}"));
@@ -264,7 +263,7 @@ fn e0605_a_reserved_stream_field_has_a_fixed_type() {
     // core-std~64ee891d: "E0605 emit!(\"checks\", name = 3);": `name` is text
     let source = "module Top() { }\ndigital for Top { on at(1u) { emit!(\"checks\", name = 3); } }\n";
     let faulty = Faulty::running("core-std~64ee891d", source, Commands::transient(2e-6, None));
-    assert_eq!(faulty.first("E0605").message, "the field `name` of the stream `checks` has type `i32`: the stdlib gives it `&str` (§19 rule 15)");
+    assert_eq!(faulty.first("E0605").message, "the field `name` of the stream `checks` has type `i32`: the stdlib gives it `str` (§19 rule 15)");
 }
 
 #[test]

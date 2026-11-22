@@ -1,19 +1,39 @@
 //! Output and files (§22.6): `log`, `finish`, `fatal`, the checks `require`, `cover`, `target`, and the two text parsers.
 
-#[derive(Repr, Clone, Copy, PartialEq)]
-pub enum Severity { Info, Warning, Error }
+#[derive(Repr, PartialEq)]
+pub enum Severity {
+    Info,
+    Warning,
+    Error,
+}
 
-pub fn log(severity: Severity, msg: &str) { emit!("log", severity = severity, msg = msg); }
+pub fn log(severity: Severity, msg: str) {
+    emit!("log", severity = severity, msg = msg);
+}
 
-pub fn finish()         { emit!("sim", finish = true); }
-pub fn fatal(msg: &str) { emit!("sim", finish = true, failed = true, msg = msg); }
+pub fn finish() {
+    emit!("sim", finish = true);
+}
+
+pub fn fatal(msg: str) {
+    emit!("sim", finish = true, failed = true, msg = msg);
+}
 
 /// A condition that must hold. Unknown is reported as unknown, not as a pass.
-pub fn require(name: &str, pass: bool)    { emit!("checks", kind = "require", name = name, pass = pass); }
-/// A condition worth reaching; the host counts the hits.
-pub fn cover(name: &str, hit: bool)       { emit!("checks", kind = "cover", name = name, pass = hit); }
-/// A number to keep at or above zero: an objective or a constraint of an optimization (§23.2).
-pub fn target(name: &str, margin: f64)    { emit!("checks", kind = "target", name = name, margin = margin); }
+pub fn require(name: str, pass: bool) {
+    emit!("checks", kind = "require", name = name, pass = pass);
+}
 
-pub const extern "intrinsic" fn parse_table<Row, const N: usize>(text: &str) -> [Row; N];   // Row: f64 or a tuple of f64
-pub const extern "intrinsic" fn parse_hex<T, const N: usize>(text: &str) -> [T; N];         // T: an integer type
+/// A condition worth reaching; the host counts the hits.
+pub fn cover(name: str, hit: bool) {
+    emit!("checks", kind = "cover", name = name, pass = hit);
+}
+
+/// A number to keep at or above zero: an objective or a constraint of an optimization (§23.2).
+pub fn target(name: str, margin: f64) {
+    emit!("checks", kind = "target", name = name, margin = margin);
+}
+
+pub const extern "intrinsic" fn parse_table<Row, const N: usize>(text: str) -> [Row; N]; // Row: f64 or a tuple of f64
+
+pub const extern "intrinsic" fn parse_hex<T, const N: usize>(text: str) -> [T; N]; // T: an integer type

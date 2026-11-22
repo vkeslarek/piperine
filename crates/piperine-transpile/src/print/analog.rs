@@ -26,7 +26,7 @@ use piperine_plan::{BodyPlan, FunctionPlan, Mode, Source, Target, Term};
 use crate::Error;
 use crate::print::value::Reads;
 use crate::print::derivative::States;
-use crate::print::{ContributionSums, DerivativePrinter, Text, ValuePrinter};
+use crate::print::{ContributionSums, DerivativePrinter, RealLift, Text, TypeItems, ValuePrinter};
 
 /// Prints the analog functions of one body from its plan.
 #[derive(Debug)]
@@ -117,6 +117,7 @@ impl<'a> AnalogPrinter<'a> {
             Source::Time => Text::generated("time"),
             Source::Fired(k) => Text::generated(&format!("event{k}_fired")),
             Source::Resolution => Text::generated("resolution"),
+            Source::Settle => Text::generated("settle_changed"),
             Source::Freq => ValuePrinter::env_name(Env::Freq).to_string(),
             Source::Analysis(kind) => ValuePrinter::env_name(Env::Analysis(kind)).to_string(),
         }
@@ -220,6 +221,11 @@ impl<'a> AnalogPrinter<'a> {
             let stmt = self.ir.stmt(*id);
             let keep = match stmt {
                 Stmt::Let { local, .. } => needed.contains(local),
+                // an assignment is kept for the later reads of the local it writes (§1.5.12); its
+                // operands, and for a compound one the local itself, feed the earlier statements
+                Stmt::Assign { place, .. } => needed.contains(&place.local) || roots(*id),
+                // a loop, an `if` or a block that assigns a local kept later is kept as one
+                Stmt::Expr(written) => self.ir.written_locals(*written).iter().any(|local| needed.contains(local)) || roots(*id),
                 _ => roots(*id),
             };
             if !keep {
@@ -271,6 +277,8 @@ impl<'a> AnalogPrinter<'a> {
                     sources.extend(ValuePrinter::env_reads(self.ir, *function).into_iter().filter_map(Self::env_source));
                     stack.extend(args);
                 }
+                // a function used as a value reads the environment its closure passes on
+                Expr::FunctionRef(function) => sources.extend(ValuePrinter::env_reads(self.ir, *function).into_iter().filter_map(Self::env_source)),
                 Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::IsKnown(expr) | Expr::High(expr) => stack.push(*expr),
                 Expr::KnownOr { value, default } => stack.extend([*value, *default]),
                 Expr::Unwrap { is, value, .. } => stack.extend([*is, *value]),
@@ -278,6 +286,7 @@ impl<'a> AnalogPrinter<'a> {
                 Expr::LevelCast { expr, .. } => stack.push(*expr),
                 Expr::Method { receiver, args, .. } => stack.extend([*receiver].into_iter().chain(args.iter().copied())),
                 Expr::Binary { lhs, rhs, .. } => stack.extend([*lhs, *rhs]),
+                aggregate @ (Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_)) => stack.extend(aggregate.operands()),
                 Expr::If { cond, then, otherwise } => stack.extend([*cond, *then, *otherwise]),
                 Expr::Block { stmts, value } => {
                     for s in stmts {
@@ -287,6 +296,12 @@ impl<'a> AnalogPrinter<'a> {
                 }
                 Expr::Math { args, .. } => stack.extend(args),
                 Expr::Closure { body, .. } => stack.push(*body),
+                control @ (Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. }) => {
+                    stack.extend(control.operands());
+                    for s in control.statements() {
+                        stack.extend(self.ir.stmt(*s).operands());
+                    }
+                }
                 Expr::Carrier(c) => {
                     sources.insert(Source::Carrier(*c));
                 }
@@ -318,6 +333,15 @@ impl<'a> AnalogPrinter<'a> {
             Env::Freq => Source::Freq,
             Env::Analysis(kind) => Source::Analysis(kind),
         })
+    }
+
+    /// The read `s` named `name` at the real `Dual<slots>`, when it is a composite param that holds
+    /// a real: it decodes at `f64` and the block takes it at its own real (`lift.rs`).
+    fn lifted(&self, s: Source, name: &str, slots: usize) -> Option<String> {
+        let (Source::Param(p) | Source::ParamPrevious(p)) = s else { return None };
+        let ty = &self.body.params().get(p as usize)?.ty;
+        let items = TypeItems::new(self.body.ir());
+        (ty.is_composite() && items.holds_real(ty)).then(|| RealLift::new(self.body.ir(), &items).expr(ty, name, &format!("Dual<{slots}>"), 0))
     }
 
     /// Whether a generic block takes read `s` as it is rather than as a `Real` (so it is no
@@ -360,6 +384,8 @@ impl<'a> AnalogPrinter<'a> {
                     self.values.pin_type(ty)?,
                     ValuePrinter::zero(ty)
                 ),
+                // a composite param is the bytes of a composite pin; one nothing wrote is refused by name
+                Some(ty) if ty.is_composite() => format!("let {name} = rt::Flagged::<{}>::decode({cx}.bytes({i})).known_or_refuse({name:?});", RealLift::new(self.body.ir(), &TypeItems::new(self.body.ir())).concrete_type(ty)),
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
             Source::Carrier(c) | Source::CarrierPrevious(c) => match self.body.carriers().get(c as usize) {
@@ -597,6 +623,8 @@ impl<'a> AnalogPrinter<'a> {
                         if *i < f.slots {
                             let v = if zero && s.is_pin() { "0.0" } else { name.as_str() };
                             format!("Dual::<{}>::seeded({v}, {i})", f.slots)
+                        } else if let Some(lifted) = self.lifted(*s, name, f.slots) {
+                            lifted
                         } else if self.is_plain(*s) {
                             name.clone()
                         } else {

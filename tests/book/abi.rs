@@ -1,4 +1,4 @@
-//! Scope: chapter 13 of the Book, "Device ABI" (feature `root-e2e`, RE-02 and RE-03): the resistor and
+//! Scope: chapter 18 of the Book, "Device ABI" (feature `root-e2e`, RE-02 and RE-03): the resistor and
 //! the D flip-flop the chapter shows in MSL, compiled and run through `piperine::`, with the values the
 //! chapter states about them (two resistors of 1 kOhm and 2 kOhm share one shape, the flip-flop's output
 //! starts low and takes its input at the rising edge). The four sentences that describe the interface
@@ -44,4 +44,20 @@ fn the_flip_flop_starts_low_and_takes_its_input_at_the_rising_edge() {
     assert_eq!(ran.cell(0, "Top.q"), &Cell::Bool(false), "q starts low");
     let last = ran.table.rows.len() - 1;
     assert_eq!(ran.cell(last, "Top.q"), &Cell::Bool(true), "q took d at the edge");
+}
+
+#[test]
+fn the_abi_chapter_describes_the_unreleased_contract() {
+    // EU-18 AC 6: the chapter says the contract is still major 1 and unreleased (it changes in place until the
+    // first release), and describes the layouts without a flag byte: `BIT` one `BOOL`, `Option` a presence
+    // field and a payload, `Logic<N>` two planes, a drive pin with a plain `driving` byte, one `commit`
+    let book = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/book/content.html")).expect("the Book");
+    let start = book.find("<section id=\"abi\"").expect("chapter abi");
+    let chapter = &book[start..start + book[start..].find("</section>").expect("a chapter closes")];
+    for fact in ["<strong>major 1</strong> and is <strong>unreleased</strong>", "it changes in place", "<code>v: BOOL</code> at offset 0: size 1, alignment 1", "A <code>BOOL</code> presence field, then the layout of <code>T</code>", "Two fields of the leaf of <code>UInt&lt;N&gt;</code>", "<code>driving: BOOL</code>", "There is one <code>commit</code>, and a field is <code>{ name, leaf, offset, count }</code>"] {
+        assert!(chapter.contains(fact), "the ABI chapter lacks {fact}");
+    }
+    for gone in ["known byte", "commit_with", "HAS_KNOWN", "known: 1"] {
+        assert!(!chapter.contains(gone), "the ABI chapter still says {gone}");
+    }
 }

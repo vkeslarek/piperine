@@ -71,7 +71,15 @@ cargo test                        # their whole suite, ngspice parity included
 cargo test -p piperine-solver     # one crate
 cargo test <name>                 # one test
 cargo test -- --nocapture         # see solver output
+cargo test -p piperine --test integrated   # the per-task gate: five small mixed-signal designs, about half a minute
 ```
+
+`cargo test` skips every target that simulates the buck converter (`test = false`, MD-77). The per-task
+and per-batch gate is the integrated suite above, with `cargo test -p piperine-cli --test integrated`; the
+buck runs on demand by the four lines of the "On demand" block of `examples/buck/README.md`, once at a
+feature's close (before its merge) when the feature changes the runtime, the printer, the plan, the solvers
+or the lowering of an existing form, and in every task that edits `examples/buck/**`, `tests/e2e/buck/**`
+or a buck target.
 
 At the root, `cargo build` / `cargo test` run the `default-members` (the crates that
 compile). Never pass `--workspace`: `piperine-lang-server` does not build.
@@ -95,7 +103,7 @@ compile). Never pass `--workspace`: `piperine-lang-server` does not build.
 | `piperine-parity` | The parity harness and the runner of MSL from source (`publish = false`): runs ngspice on `tests/e2e/twins/*.cir` at test time and compares the MSL twins under one `ToleranceContract` (`tests/e2e/` holds each twin with its command and expected output; `tests/scenarios.rs` runs them); `Project` takes a crate graph from disk to a compiled circuit, which the `buck_*` targets use to run `examples/buck` from its `.msl`. |
 
 The root package `piperine` is the shell over `piperine-api` (`pub use piperine_api::*`, so a Rust
-host writes `use piperine::…`); it builds, and its integrated tests are queue item 4 of `ROADMAP.md`.
+host writes `use piperine::…`); it builds, and its integrated tests are the `tests/integrated/` package (MD-77).
 
 ## Solver architecture (current state)
 
@@ -161,7 +169,8 @@ no list here — the tree is the list, and a guard keeps it honest.
 - **Placement rule (MD-28, amended by MD-72)**: a target lives in the crate it exercises; the root
   `tests/` holds the integrated tests only: `tests/book/` (one target per Book chapter, through
   `piperine::`, with `inventory.tsv`), `tests/scenarios.rs` (the ngspice scenarios) and `tests/e2e/`
-  (their fixtures). Integration tests are grouped by functionality, one concern per target.
+  (their fixtures); `tests/integrated/` (one target, one module per scenario, MD-77) runs the scenario
+  package `tests/e2e/integrated/`. Integration tests are grouped by functionality, one concern per target.
 - **The enforcing guard**: `crates/piperine-lang/tests/suite_hygiene.rs` walks the repo's own sources
   and fails on switched-off test code, `#[ignore]`d tests, unregistered
   ```` ```ignore ```` doc fences, a target with no `//!` scope header, file-scope
@@ -174,6 +183,6 @@ no list here — the tree is the list, and a guard keeps it honest.
   front end. Design record (adversarial critic/builder rounds, review):
   `.specs/features/msl-spec/`.
 - What does not work yet, ranked: `GAPS.md`.
-- Solver gaps + ABI plan: merged into `ROADMAP.md` (P1/P2)
+- What is in development and in what order: `ROADMAP.md` (the development pool)
 - Spec-driven feature tracking: `.specs/STATE.md` + `.specs/features/`
 - Open items: `ROADMAP.md`

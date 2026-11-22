@@ -142,6 +142,20 @@ impl DigitalSide {
         slots
     }
 
+    /// The nets of `nets` whose bytes differ from the analog side's copy, as the boundary slots
+    /// they are; the copy takes the new bytes, as the analog side will once they are delivered.
+    fn changed_slots(&mut self, nets: Vec<(NetId, Vec<u8>)>) -> Vec<Boundary> {
+        let mut boundary = Vec::new();
+        for (net, bytes) in nets {
+            let slot = self.slots[&net];
+            if self.copy[slot as usize] != bytes {
+                self.copy[slot as usize].clone_from(&bytes);
+                boundary.push(Boundary { slot, bytes });
+            }
+        }
+        boundary
+    }
+
     fn time(&self, tick: DigitalTick) -> f64 {
         tick.0 as f64 * self.digital.plan().resolution.seconds_per_tick
     }
@@ -180,21 +194,27 @@ impl DiscreteSide for DigitalSide {
         self.digital.fire(NetId(net), DigitalTick(at)).map_err(digital_error)
     }
 
+    fn reopen(&mut self, at: Tick, next_microstep: bool) {
+        self.digital.reopen(DigitalTick(at), next_microstep);
+    }
+
     fn run_instant(&mut self, at: Tick, samples: &[f64], limit: Horizon, mode: InstantMode) -> Result<Outcome> {
         let limit = DigitalHorizon { stop: DigitalTick(limit.stop), crossing: DigitalTick(limit.crossing) };
         let mode = Mode { is_static: mode.is_static, settle: mode.settle };
         let microsteps = self.microsteps;
         let out = self.digital.run_instant(DigitalTick(at), samples, limit, mode).map_err(|e| instant_error(e, microsteps))?;
-        let mut boundary = Vec::new();
-        for (net, bytes) in out.boundary {
-            let slot = self.slots[&net];
-            if self.copy[slot as usize] != bytes {
-                self.copy[slot as usize].clone_from(&bytes);
-                boundary.push(Boundary { slot, bytes });
-            }
-        }
+        let boundary = self.changed_slots(out.boundary);
         let host_events = out.host_events.iter().map(|n| n.0).collect();
-        Ok(Outcome { boundary, host_param_write: out.host_param_write, finish: out.finish, host_events })
+        let settle_boundary = self.changed_slots(out.settle_boundary);
+        Ok(Outcome { boundary, host_param_write: out.host_param_write, finish: out.finish, host_events, settle_boundary })
+    }
+
+    fn land_settle_commits(&mut self, tick: Tick) {
+        self.digital.land_settle_commits(DigitalTick(tick));
+    }
+
+    fn drop_settle_commits(&mut self) {
+        self.digital.drop_settle_commits();
     }
 
     /// The engine's journal mark: no net is copied. The full copy and every net's bytes are
@@ -261,8 +281,10 @@ impl DiscreteSide for DigitalSide {
                 DigitalObservation::Record { stream, reaction, statement, at, bytes } => {
                     (stream, at.0, ObservationKind::Record { site: Some((reaction, statement)), bytes })
                 }
-                // abi.md §9 D1: a relaxed field that still moved is one record on the resolver's log.
-                DigitalObservation::Unsettled { net, at } => (net, at.0, ObservationKind::Record { site: None, bytes: Vec::new() }),
+                // abi.md §9 D1: a relaxation step that still moved is one observation of its own.
+                DigitalObservation::Unsettled { nets, at } => {
+                    (nets.first().cloned().unwrap_or_default(), at.0, ObservationKind::Unsettled { nets })
+                }
             };
             let time = self.time(at);
             out.push(Observation { path, analysis: Default::default(), time, kind });
@@ -426,6 +448,11 @@ impl AnalogSide for TransientSide<'_, '_> {
     }
 
     fn restore(&mut self, mark: &DeviceMark) {
+        self.tran.device_restore(mark);
+    }
+
+    fn retake(&mut self, mark: &DeviceMark) {
+        self.tran.device_unaccept(&mut self.run);
         self.tran.device_restore(mark);
     }
 

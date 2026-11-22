@@ -13,9 +13,9 @@ mod watch;
 pub mod plan;
 
 pub use assembly::{Ambient, Assembly, AssemblySnapshot, Rising};
-pub use ddt::Stage;
+pub use ddt::{JumpPosition, Stage};
 pub use limit::LimitState;
-pub use small_signal::{ComplexStamps, NoiseColumn};
+pub use small_signal::{ComplexStamps, NoiseColumn, StimulusColumn, TermLinearization};
 pub use watch::{Accepted, TraceRecord};
 pub use plan::{AnalogBinding, AnalogInstance, AnalogPlan};
 

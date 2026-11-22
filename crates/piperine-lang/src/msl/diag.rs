@@ -9,6 +9,9 @@ use serde::{Deserialize, Serialize};
 
 use super::span::Span;
 
+/// The help of the `E0161` for `Clone`, `Copy` and `clone` (§1.4.6): every value is copied where it is used.
+pub const COPY_HELP: &str = "every value is copied; delete the name";
+
 /// An MSL error: a spec code (`E09xx`, `E0121`, ...), a one-line message, a
 /// primary label at the offending span, optional secondary labels and an
 /// optional help line naming the correct form.

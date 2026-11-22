@@ -184,17 +184,31 @@ fn a_top_with_discrete_in_ports_runs_with_them_unknown() {
 }
 
 #[test]
-fn a_top_with_a_continuous_port_is_the_front_ends_diagnostic() {
-    // spec edge 6: an `Electrical` port of the top has nothing to connect to
+fn a_top_with_a_node_port_is_refused_by_the_interpreter_naming_the_host_source() {
+    // PI-07 (D8, R2): a node port of the top elaborates (the IR gains the host source), and the
+    // frozen interpreter, which does not run the clock the source reads, refuses it by name
     let text = format!("{DEVICES}\nmodule Top(a: Electrical) {{\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n}}\n");
     match open(&text, &flags("op", "interp", Some("Top")), &unused()) {
-        Err(Failure::Diagnostics { stage, found, .. }) => {
-            assert_eq!(stage, "elaborate");
-            assert_eq!(found.len(), 1, "{found:?}");
-            assert_eq!(found[0].diagnostic.code, "P0001", "{found:?}");
-            assert!(found[0].diagnostic.message.contains("port"), "{}", found[0].diagnostic.message);
+        Err(failure) => assert!(failure.to_string().contains("HostSource"), "{failure}"),
+        Ok(_) => panic!("the interpreter ran a host source"),
+    }
+}
+
+#[test]
+fn a_module_typed_param_is_not_set_by_text() {
+    // PI-04, design D13: a param of module type is bound in the source, so a request param that
+    // names it is E0802 at elaboration; the design itself opens
+    let devices = format!("{DEVICES}\nmodule Cell(p: Electrical) {{ r: f64 = 1k; }}\nanalog for Cell {{ i(p, gnd) +> v(p, gnd) / r; }}\n");
+    let top = "module Top() {\n    cell: Cell = Cell { r: 2k };\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let c1 = cell(a);\n}\n";
+    let text = format!("{devices}\n{top}");
+    open(&text, &flags("op", "interp", Some("Top")), &unused()).unwrap_or_else(|f| panic!("the design opens: {f}"));
+    let overrides = Overrides { params: vec![("Top.cell".to_string(), 1.0)], ..flags("op", "interp", Some("Top")) };
+    match open(&text, &overrides, &unused()) {
+        Err(Failure::Diagnostics { found, .. }) => {
+            assert_eq!(found.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0802"], "{found:?}");
+            assert!(found[0].diagnostic.message.contains("Top.cell"), "{}", found[0].diagnostic.message);
         }
-        Err(other) => panic!("the front end's diagnostic, found {other}"),
-        Ok(_) => panic!("a continuous port of the top is refused"),
+        Err(other) => panic!("E0802 from elaboration, found {other}"),
+        Ok(_) => panic!("a text value was given to a module-typed param"),
     }
 }

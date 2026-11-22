@@ -29,7 +29,7 @@ impl Statements {
             match step {
                 Step::Count(id) => out.push(id),
                 Step::Stmt(id) => match ir.stmts.get(id.index()) {
-                    Some(Stmt::Let { init, .. }) => next.push(Step::Expr(*init)),
+                    Some(Stmt::Let { init, .. } | Stmt::Assign { value: init, .. }) => next.push(Step::Expr(*init)),
                     Some(Stmt::Expr(e) | Stmt::BoundStep { value: e, .. }) => next.push(Step::Expr(*e)),
                     Some(Stmt::Contribute { addends, .. }) => next.extend(addends.iter().map(|a| Step::Expr(a.value))),
                     Some(Stmt::Commit { value, after, .. }) => {
@@ -59,6 +59,11 @@ impl Statements {
                         Expr::If { cond, then, otherwise } => next.extend([Step::Expr(*cond), Step::Expr(*then), Step::Expr(*otherwise)]),
                         Expr::Call { args, .. } | Expr::Math { args, .. } => next.extend(args.iter().map(|a| Step::Expr(*a))),
                         Expr::Closure { body, .. } => next.push(Step::Expr(*body)),
+                        // A loop body is walked once: a commit in a loop is one statement (§12.1.14).
+                        Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
+                            next.extend(data.kind.operands().into_iter().map(Step::Expr));
+                            next.extend(data.kind.statements().iter().map(|s| Step::Stmt(*s)));
+                        }
                         Expr::Limit { x, f, seed, .. } => next.extend([*x, *f].into_iter().chain(*seed).map(Step::Expr)),
                         Expr::Stim { mag, phase, .. } => next.extend([*mag].into_iter().chain(*phase).map(Step::Expr)),
                         Expr::Method { receiver, args, .. } => next.extend([*receiver].into_iter().chain(args.iter().copied()).map(Step::Expr)),

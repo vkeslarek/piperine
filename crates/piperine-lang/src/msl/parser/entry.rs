@@ -45,23 +45,6 @@ pub(crate) fn to_diagnostic(e: &Err<'_>, tokens: &[(Token, Span)]) -> Diagnostic
         {
             name_error(&t, span)
         }
-        // `&mut`: the `&` before the `mut` that was found is part of the form.
-        RichReason::ExpectedFound { found: Some(t), .. }
-            if matches!(&**t, Token::Kw(Kw::Mut))
-                && tokens.iter().any(|(p, s)| *p == Token::Punct(Punct::And) && s.end == span.start) =>
-        {
-            let start = tokens
-                .iter()
-                .find(|(p, s)| *p == Token::Punct(Punct::And) && s.end == span.start)
-                .map_or(span.start, |(_, s)| s.start);
-            Diagnostic::new(
-                "E0101",
-                "a mutable reference is not part of the language",
-                Span::new(start, span.end),
-                "a syntactic form left out of the language",
-            )
-            .with_help("values are immutable and owned; Part I §1 rule 2 lists the forms left out")
-        }
         // A Rust keyword no production of the language accepts anywhere.
         RichReason::ExpectedFound { found: Some(t), .. } if matches!(&**t, Token::Kw(k) if unused_keyword(*k)) => {
             name_error(&t, span)
@@ -302,7 +285,7 @@ fn is_close(t: &Token) -> bool {
 fn ends_operand(t: &Token) -> bool {
     match t {
         Token::Ident(_) | Token::RawIdent(_) | Token::Int(_) | Token::Float { .. } | Token::Str { .. }
-        | Token::Unknown | Token::StaticLifetime => true,
+        | Token::Unknown => true,
         Token::Kw(Kw::SelfLower | Kw::SelfUpper | Kw::True | Kw::False) => true,
         Token::Punct(p) => matches!(p, Punct::RParen | Punct::RBracket | Punct::RBrace | Punct::Question),
         _ => false,
@@ -767,8 +750,8 @@ fn unused_keyword(k: Kw) -> bool {
     use Kw::*;
     matches!(
         k,
-        Type | Static | Abstract | Become | Box | Do | Final | Macro | Override | Priv | Typeof | Unsized
-            | Virtual | Yield | Try | Gen
+        Type | Static | Mut | Ref | Move | Abstract | Become | Box | Do | Final | Macro | Override | Priv
+            | Typeof | Unsized | Virtual | Yield | Try | Gen
     )
 }
 
@@ -799,9 +782,10 @@ fn name_error(found: &Token, span: Span) -> Diagnostic {
             span,
             "a syntactic form left out of the language",
         )
-        .with_help("values are immutable and owned; Part I §1 rule 2 lists the forms left out"),
+        .with_help("Part I §1 rule 2 lists the forms left out"),
         other => {
             let help = match other {
+                Token::Kw(k) if ReservedMarker::of(*k).is_some() => ReservedMarker::of(*k).map_or_else(String::new, |m| m.help.to_string()),
                 Token::Kw(k) if added_keyword(*k) => format!("choose another name, or write the keyword as a raw identifier: `r#{}`", other.to_string().trim_matches('`')),
                 _ => "choose another name".to_string(),
             };

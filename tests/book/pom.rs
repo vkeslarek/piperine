@@ -1,4 +1,4 @@
-//! Scope: chapter 12 of the Book, "The object model" (feature `root-e2e`, RE-02 and RE-03): the `Front`
+//! Scope: chapter 17 of the Book, "The object model" (feature `root-e2e`, RE-02 and RE-03): the `Front`
 //! comparator the chapter walks through, run through `piperine::`, and the statements the chapter makes
 //! about what building a design gives (it always builds, a syntax error goes to `diagnostics()`, a
 //! generation `for` stays one `for`, a later stage raises the type errors), asserted on the object

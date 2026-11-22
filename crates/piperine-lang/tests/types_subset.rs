@@ -22,49 +22,22 @@ struct Row {
 
 // `analysis` of another kind, `bound_step` and `freq` left this table when FIX-09 to FIX-11 typed
 // them (`types_analog::freq_analysis_kinds_and_bound_step_type`).
+// `settle` left this table when unknown-semantics-events T5 typed it (an `Event`: head positions in
+// `types_events::settle_is_an_event_in_every_event_position`, `E0441` elsewhere in
+// `types_events::settle_outside_an_event_position_is_e0441`).
 const ROWS: &[Row] = &[
-    Row { construct: "index", source: "module Top() { }\nanalog for Top { let x = 1.0; let y = x[0]; }", names: "index expression" },
-    Row { construct: "closure that is not a limit function", source: "module Top() { }\nanalog for Top { let f = |x: f64| x; }", names: "closure" },
-    Row { construct: "struct as a parameter type", source: "struct S { a: f64 }\nfn f(s: S) -> f64 { 1.0 }\nmodule Top() { }\nanalog for Top { let x = f(1.0); }", names: "`struct` item used as a type" },
-    Row { construct: "settle", source: "module Top() { }\nanalog for Top { let x = settle; }", names: "`settle`" },
     Row { construct: "f32", source: "module Top() { }\nanalog for Top { let x: f32 = 1.0; }", names: "`f32`" },
     Row { construct: "Float<N>", source: "module Top() { }\nanalog for Top { let x: Float<32> = 1.0; }", names: "`Float`" },
-    Row { construct: "string literal", source: "module Top() { }\nanalog for Top { let x = \"a\"; }", names: "string literal" },
-    Row { construct: "tuple type", source: "module Top() { }\nanalog for Top { let x: (f64, f64) = 1.0; }", names: "tuple type" },
-    Row { construct: "tuple", source: "module Top() { }\nanalog for Top { let x = (1.0, 2.0); }", names: "tuple expression" },
-    Row { construct: "array", source: "module Top() { }\nanalog for Top { let x = [1.0, 2.0]; }", names: "array expression" },
-    Row { construct: "array type", source: "module Top() { }\nanalog for Top { let x: [f64; 2] = 1.0; }", names: "array type" },
-    Row { construct: "slice", source: "fn f(s: [f64]) -> f64 { 1.0 }\nmodule Top() { }\nanalog for Top { let x = f(1.0); }", names: "slice type" },
-    Row { construct: "reference", source: "module Top() { }\nanalog for Top { let x = 1.0; let y = &x; }", names: "reference `&`" },
-    Row { construct: "reference type", source: "module Top() { }\nanalog for Top { let x: &f64 = 1.0; }", names: "reference type" },
-    Row { construct: "struct", source: "struct S { a: f64 }\nmodule Top() { }\nanalog for Top { let s = S { a: 1.0 }; }", names: "struct expression" },
     Row { construct: "generation if", source: "module Top(a: E) { if true { let r = Resistor { r: 1.0 }(a, gnd); } }", names: "generation" },
-    Row { construct: "match", source: "module Top() { }\nanalog for Top { let x = 1.0; let y = match x { _ => 1.0 }; }", names: "`match` expression" },
-    Row { construct: "struct with an impl (its methods are never reached)", source: "struct S { a: f64 }\nimpl S { fn get(self) -> f64 { 1.0 } }\nmodule Top() { }\nanalog for Top { let s = S { a: 1.0 }; let x = s.get(); }", names: "struct expression" },
+    Row { construct: "struct with an impl (its methods are never reached)", source: "struct S { a: f64 }\nimpl S { fn get(self) -> f64 { 1.0 } }\nmodule Top() { }\nanalog for Top { let s = S { a: 1.0 }; let x = s.get(); }", names: "method `get`" },
     Row { construct: "generic function", source: "fn g<T>(x: f64) -> f64 { x }\nmodule Top() { }\nanalog for Top { let x = g(1.0); }", names: "generic function" },
     Row { construct: "generic module", source: "module G<N: Nature>(a: N) { }\nmodule Top(a: E) { let g = G(a); }", names: "generic module" },
     Row { construct: "const generic", source: "module G<const N: usize>() { }\nmodule Top() { let g = G(); }", names: "generic module" },
-    Row { construct: "let mut in a fn", source: "fn f() -> f64 { let mut y = 1.0; 2.0 }\nmodule Top() { }\nanalog for Top { let x = f(); }", names: "`let mut` binding" },
-    Row { construct: "closure in a module body", source: "module Top() { let f = |x: f64| x; }", names: "closure" },
-    Row { construct: "discrete nature", source: "nature B { value: bool }\nmodule Top(a: B) { }", names: "discrete nature `B`" },
     Row { construct: "bundle", source: "struct Bn { a: E }\nmodule Top(p: Bn) { }", names: "`struct` item used as a type" },
-    Row { construct: "settle as a head", source: "module Top() { }\ndigital for Top { on settle { } }", names: "`settle`" },
     Row { construct: "generation in a digital block", source: "module Top() { }\ndigital for Top { if true { } }", names: "generation" },
-    Row { construct: "string `let` with an annotation", source: "module Top() { }\nanalog for Top { let x: &str = \"a\"; }", names: "string literal" },
-    Row { construct: "include_str!", source: "module Top() { }\nanalog for Top { let x = include_str!(\"a.txt\"); }", names: "`include_str!`" },
-    Row { construct: "while", source: "module Top() { }\nanalog for Top { while true { } }", names: "`while` loop" },
-    Row { construct: "loop", source: "module Top() { }\nanalog for Top { loop { } }", names: "`loop`" },
-    Row { construct: "for", source: "module Top() { }\nanalog for Top { for i in 0..3 { } }", names: "`for` loop" },
-    Row { construct: "break", source: "module Top() { }\nanalog for Top { break; }", names: "`break`" },
-    Row { construct: "continue", source: "module Top() { }\nanalog for Top { continue; }", names: "`continue`" },
-    Row { construct: "return", source: "fn f() -> f64 { return 1.0; }\nmodule Top() { }\nanalog for Top { let x = f(); }", names: "`return`" },
-    Row { construct: "let mut", source: "module Top() { }\nanalog for Top { let mut x = 1.0; }", names: "`let mut` binding" },
-    Row { construct: "assignment", source: "module Top() { }\nanalog for Top { let x = 1.0; x = 2.0; }", names: "assignment" },
-    Row { construct: "let else", source: "module Top() { }\nanalog for Top { let x = 1.0 else { return; }; }", names: "`let ... else`" },
-    Row { construct: "try", source: "module Top() { }\nanalog for Top { let x = 1.0?; }", names: "`?` expression" },
     Row { construct: "template", source: "module Top(a: E, b: E) { let t = Resistor { r: 1.0 }; }", names: "module template" },
     Row { construct: "placement through a template", source: "module Top(a: E, b: E) { let t = Resistor { r: 1.0 }; let r = t(a, b); }", names: "module template" },
-    Row { construct: "value input of an unsupported type", source: "module Top(x: &str) { }", names: "value input port" },
+    Row { construct: "value input of an unsupported type", source: "module Top(x: (f64, f64)) { }", names: "value input port" },
     Row { construct: "named argument of a result module", source: "module M(x: f64, y: Option<f64>) -> f64 { x }\nmodule Top() { let m = M(1.0, y: 2.0); }", names: "named connection" },
     Row { construct: "extern module", source: "#[link(\"x.osdi\", model = \"x\")]\nextern \"osdi\" module X(a: E) { }\nmodule Top(a: E) { let x = X(a); }", names: "`extern` module" },
     Row { construct: "generation", source: "module Top(a: E) { for i in 0..2 { let r = Resistor { r: 1.0 }(a, gnd); } }", names: "generation" },
@@ -113,7 +86,7 @@ fn unreached_items_are_not_reported() {
         "{HEAD}\
          struct S {{ a: f64 }}\nenum C {{ A, B }}\ntrait Tr {{ fn get(self) -> f64; }}\nimpl S {{ fn get(self) -> f64 {{ 1.0 }} }}\n\
          const N: u32 = 3;\n\
-         fn loops(x: f64) -> f64 {{ let mut y = x; while y > 0.0 {{ y = y - 1.0; }} match y {{ _ => y }} }}\n\
+         fn loops(x: f64) -> f64 {{ let y = x; while y > 0.0 {{ y = y - 1.0; }} match y {{ _ => y }} }}\n\
          fn generic<T>(x: T) -> T {{ x }}\n\
          module Generic<N: Nature>(a: N) {{ }}\n\
          module Digital(in d: bool) -> f64 {{ 1.0 }}\n\
@@ -126,7 +99,7 @@ fn unreached_items_are_not_reported() {
     assert_eq!(types.reached().len(), 2, "only Top and Resistor are reached");
 
     // The same names, reached, are refused.
-    let reached = format!("{HEAD}fn loops(x: f64) -> f64 {{ let mut y = x; y }}\nmodule Top() {{ }}\nanalog for Top {{ let x = loops(1.0); }}");
+    let reached = format!("{HEAD}fn loops(x: f64) -> f64 {{ let s = include_str!(\"a.txt\"); x }}\nmodule Top() {{ }}\nanalog for Top {{ let x = loops(1.0); }}");
     let design: Design = support::build(&reached);
     assert!(Types::check(&design, "Top").is_err());
 }
@@ -134,7 +107,7 @@ fn unreached_items_are_not_reported() {
 /// Constructs that only resolve against the real standard library: `Bit`, `Repr` and the known
 /// flag are refused by name as well.
 const STD_ROWS: &[Row] = &[
-    Row { construct: "others on a carrier", source: "module Top(in c: Bit) { let x = c.others(); }", names: "method `others`" },
+    // `others()` on a one-driver carrier left this table when resolved-nets T3 typed it (`types_natures::others_on_a_one_driver_carrier_is_e0224`).
     Row { construct: "element definition", source: "module Top(out q: Bit) { q[0] = true; }", names: "element or field definition" },
     Row { construct: "resolved nature", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },
     Row { construct: "Repr", source: "module Top() { }\nanalog for Top { let x: Repr = 1.0; }", names: "`Repr`" },

@@ -161,3 +161,4 @@ _context_default_compiles_for_later_tests	a compile stub for the recording Eleme
 milne_lte_is_positive_for_curvature	the node Milne estimators (milne_lte, milne_lte_indexed), deleted with their last caller: the state estimate skips nothing (solver-hygiene T23)
 milne_lte_is_zero_for_constant_charge	the node Milne estimators (milne_lte, milne_lte_indexed), deleted with their last caller (solver-hygiene T23)
 milne_lte_is_zero_for_linear_charge	the node Milne estimators (milne_lte, milne_lte_indexed), deleted with their last caller (solver-hygiene T23)
+a_settle_commit_with_no_delay_is_refused	a settle commit is held, not refused (unknown-semantics-events T7, section 15 S1): replaced by a_settle_commit_is_held_until_it_is_landed

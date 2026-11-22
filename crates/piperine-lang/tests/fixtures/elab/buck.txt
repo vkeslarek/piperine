@@ -1,6 +1,11 @@
 nature Electrical
   potential Voltage v "V" abstol 1e-6
   flow Current i "A" abstol 1e-12
+type t0 = enum Mode [tag 2] { Off = 0, SoftStart = 1, Regulate = 2, Hiccup = 3 }  path "supervisor::Mode"  derive Clone, Copy, PartialEq, Repr
+type t1 = enum Fault [tag 2] { Clear = 0, OverCurrent = 1, OverVoltage = 2 }  path "supervisor::Fault"  derive Clone, Copy, PartialEq, Repr
+type t2 = enum Severity [tag 2] { Info = 0, Warning = 1, Error = 2 }  path "io::Severity"  derive Clone, Copy, PartialEq, Repr
+aggregate agg0: t0 = Mode::Off()
+aggregate agg1: t1 = Fault::Clear()
 body A2D
   param vth: f64 = 0.6
   param hyst: f64 = 0.05
@@ -56,8 +61,8 @@ body Buck
   carrier load_step: bool in
   carrier inject: bool in
   carrier pgood: bool out
-  carrier fault: u2 out
-  carrier mode: u2 out
+  carrier fault: t1 out
+  carrier mode: t0 out
   carrier clk: bool signal
   carrier hs_cmd: bool signal
   carrier ls_cmd: bool signal
@@ -98,8 +103,8 @@ body Controller
   carrier ls_cmd: bool out
   carrier sample: bool out
   carrier pgood: bool out
-  carrier fault: u2 out
-  carrier mode: u2 out
+  carrier fault: t1 out
+  carrier mode: t0 out
   carrier setpoint: u8 signal
   carrier reference: u10 signal
   carrier duty: u12 signal
@@ -391,26 +396,26 @@ body Supervisor
   carrier at_target: bool in
   carrier run: bool out
   carrier pgood: bool out init false
-  carrier mode: u2 out init 0
-  carrier fault: u2 out init 0
+  carrier mode: t0 out init agg0
+  carrier fault: t1 out init agg1
   carrier oc_count: u4 signal init 0
   carrier ov_count: u2 signal init 0
   carrier retry: u11 signal init 0
   carrier pg_in: u7 signal init 0
   carrier pg_out: u3 signal init 0
-  stream log (severity: u2)
-  drive run = ((mode == 1u2) | (mode == 2u2))
+  stream log (severity: t2)
+  drive run = ((mode == (Mode::SoftStart() : t0)) | (mode == (Mode::Regulate() : t0)))
   event E0 changed tick guard ((!tick.prev().high()) & ((!tick.is_known()) | tick.known_or(false)))
   reaction R0 on (E0)
     local enabled: bool
-    local f: flagged<u2>
+    local f: flagged<t1>
     local fault_now.is: flagged<bool>
-    local fault_now.val: flagged<u2>
+    local fault_now.val: flagged<t1>
     local in_n: flagged<u7>
     local inside: bool
-    local log.severity: u2
+    local log.severity: t2
     local m: u10
-    local match$0: u2
+    local match$0: t0
     local oc_n: flagged<u4>
     local out_n: flagged<u3>
     local ov_n: flagged<u2>
@@ -422,11 +427,11 @@ body Supervisor
     let oc_n = if (!cut.known_or(true)) { 0u4 } else { if (oc_count < 8u4) { (oc_count + 1u4) } else { 8u4 } }
     let ov_n = if (m <= ovp_threshold(r)) { 0u2 } else { if (ov_count < 2u2) { (ov_count + 1u2) } else { 2u2 } }
     let fault_now.is = if (oc_n >= 8u4) { true } else { if (ov_n >= 2u2) { true } else { false } }
-    let fault_now.val = if (oc_n >= 8u4) { 1u2 } else { if (ov_n >= 2u2) { 2u2 } else { 0u2 } }
+    let fault_now.val = if (oc_n >= 8u4) { (Fault::OverCurrent() : t1) } else { if (ov_n >= 2u2) { (Fault::OverVoltage() : t1) } else { (Fault::Clear() : t1) } }
     oc_count <- oc_n
     ov_count <- ov_n
-    if (!enabled) { mode <- 0u2 } else { let match$0 = mode.known_or(0u2); if (match$0 == 0u2) { mode <- 1u2 } else { if (match$0 == 3u2) { if (retry == 0u11) { mode <- 1u2 } else { retry <- (retry - 1u11) } } else { if fault_now.is { let f = fault_now.val; mode <- 3u2; fault <- f; retry <- 999u11; let log.severity = 1u2; emit log(severity = log.severity, msg = "buck: fault, entering hiccup") } else { if ((mode == 1u2) & at_target.known_or(false)) { mode <- 2u2; fault <- 0u2 } else { () } } } } }
-    let regulating = (((mode == 2u2) & enabled) & (!fault_now.is))
+    if (!enabled) { mode <- (Mode::Off() : t0) } else { let match$0 = mode.known_or((Mode::Off() : t0)); if matches!(match$0, Mode::Off) { mode <- (Mode::SoftStart() : t0) } else { if matches!(match$0, Mode::Hiccup) { if (retry == 0u11) { mode <- (Mode::SoftStart() : t0) } else { retry <- (retry - 1u11) } } else { if fault_now.is { let f = fault_now.val; mode <- (Mode::Hiccup() : t0); fault <- f; retry <- 999u11; let log.severity = (Severity::Warning() : t2); emit log(severity = log.severity, msg = "buck: fault, entering hiccup") } else { if ((mode == (Mode::SoftStart() : t0)) & at_target.known_or(false)) { mode <- (Mode::Regulate() : t0); fault <- (Fault::Clear() : t1) } else { () } } } } }
+    let regulating = (((mode == (Mode::Regulate() : t0)) & enabled) & (!fault_now.is))
     let inside = in_window(m, r)
     let in_n = if (!(regulating & inside)) { 0u7 } else { if (pg_in < 64u7) { (pg_in + 1u7) } else { 64u7 } }
     let out_n = if (!(regulating & (!inside))) { 0u3 } else { if (pg_out < 4u3) { (pg_out + 1u3) } else { 4u3 } }
@@ -546,7 +551,7 @@ net Buck.ctl.sup.pg_out: u3  declared by Buck.ctl.sup  init 0
 net Buck.ctl.sup.retry: u11  declared by Buck.ctl.sup  init 0
 net Buck.done: bool  declared by Buck
 net Buck.en: bool  declared by Buck
-net Buck.fault: u2  declared by Buck
+net Buck.fault: t1  declared by Buck
 net Buck.hs_cmd: bool  declared by Buck
 net Buck.inject: bool  declared by Buck
 net Buck.load.k_inject.dt: f64  declared by Buck.load  init 0.0
@@ -569,7 +574,7 @@ net Buck.meas.scp.above$0.init$0.up: bool  declared by Buck.meas.scp  init true
 net Buck.meas.scp.above$1.init$0.up: bool  declared by Buck.meas.scp  init true
 net Buck.meas.uvlo.above$0.init$0.up: bool  declared by Buck.meas.uvlo  init true
 net Buck.meas.uvlo.above$1.init$0.up: bool  declared by Buck.meas.uvlo  init true
-net Buck.mode: u2  declared by Buck
+net Buck.mode: t0  declared by Buck
 net Buck.oc: bool  declared by Buck
 net Buck.pgood: bool  declared by Buck
 net Buck.power.hs.gate.dt: f64  declared by Buck.power.hs  init 0.0

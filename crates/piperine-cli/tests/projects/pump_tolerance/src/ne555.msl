@@ -1,0 +1,112 @@
+//! A behavioral NE555 (bipolar), close to its block diagram: the 5k-5k-5k divider, the two
+//! comparators, the set/reset latch, the totem-pole output and the open-collector discharge
+//! transistor. Pin 1 (GND) is the global `gnd`.
+//!
+//! ```text
+//!   vcc(8) ──┬──────────────┬───────────────┐
+//!           5k              │             output ── out(3)
+//!  ctrl(5) ──┤── (-) thr(6) comparator ─ R  stage
+//!           5k                          latch ─┤
+//!    third ──┤── (+) trig(2) comparator ─ S    └── discharge ── dis(7)
+//!           5k              │   rst(4) ─ clear
+//!   gnd(1) ──┴──────────────┘
+//! ```
+
+/// The NE555. Trigger below 1/3 Vcc sets the latch (output high, discharge off); threshold
+/// above 2/3 Vcc resets it (output low, discharge on); trigger wins when both are active, and
+/// reset (pin 4 below about 0.7 V) wins over everything. The latch wakes up reset.
+pub module Ne555(
+    vcc: Electrical,
+    trig: Electrical,
+    r#out: Electrical,
+    rst: Electrical,
+    ctrl: Electrical,
+    thr: Electrical,
+    dis: Electrical,
+) {
+    /// The internal divider, 15 k in all, and where its two taps sit as fractions of Vcc.
+    /// Nominally 2/3 and 1/3; a real chip is a little off, which is the datasheet's "initial
+    /// error of the timing interval" (the tolerance analysis samples `k_thr`).
+    r_ladder: f64 = 15k where r_ladder > 0.0;
+    k_thr: f64 = 0.6666666666666666 where k_thr > 0.0 && k_thr < 1.0;
+    k_trig: f64 = 0.3333333333333333 where k_trig > 0.0 && k_trig < k_thr;
+    /// The rest of the quiescent current, as a resistance: about 7 mA at 12 V with the divider.
+    r_q: f64 = 1.9k where r_q > 0.0;
+    /// Output high: Vcc minus two junctions, then `r_source`. The datasheet gives 1.7 V typ
+    /// at 100 mA; a 25 mA relay coil sees about 1.4 V.
+    v_drop: f64 = 1.4;
+    r_source: f64 = 5.0 where r_source > 0.0;
+    /// Output low, and the saturated discharge transistor.
+    r_sink: f64 = 10.0 where r_sink > 0.0;
+    r_dis: f64 = 15.0 where r_dis > 0.0;
+    /// Threshold input current (0.1 uA typ at 2/3 Vcc), as a resistance.
+    r_thr: f64 = 80M where r_thr > 0.0;
+    /// Reset threshold on pin 4.
+    v_rst: f64 = 0.7;
+    /// Edge time of the output and of the discharge transistor.
+    t_edge: f64 = 1u where t_edge > 0.0;
+    /// The lower tap of the divider: 1/3 Vcc.
+    pub signal third: Electrical;
+    /// The comparator outputs and the latch.
+    signal trig_low: Bit = false;
+    signal thr_high: Bit = false;
+    signal rst_low: Bit = false;
+    pub signal q: Bit = false;
+    /// 0 with the output low, 1 with it high.
+    let drive = transition(
+        if q.high() {
+            1.0
+        } else {
+            0.0
+        },
+        0.0,
+        t_edge,
+        t_edge,
+    );
+}
+
+analog for Ne555 {
+    // The divider: pin 5 sits at 2/3 Vcc, `third` at 1/3 Vcc, both ratios of the supply.
+    i(vcc, ctrl) +> v(vcc, ctrl) / (r_ladder * (1.0 - k_thr));
+    i(ctrl, third) +> v(ctrl, third) / (r_ladder * (k_thr - k_trig));
+    i(third) +> v(third) / (r_ladder * k_trig);
+    i(vcc) +> v(vcc) / r_q;
+    // The output sources from Vcc when high and sinks to ground when low.
+    i(vcc, r#out) +> drive * (v(vcc, r#out) - v_drop).max(0.0) / r_source;
+    i(r#out) +> (1.0 - drive) * v(r#out) / r_sink;
+    // The discharge transistor conducts while the output is low.
+    i(dis) +> (1.0 - drive) * v(dis) / r_dis;
+    i(thr) +> v(thr) / r_thr;
+}
+
+digital for Ne555 {
+    // The comparators: each direction is a crossing the solver locates in time.
+    on above(v(third) - v(trig)) {
+        trig_low <- true;
+    }
+    on above(v(trig) - v(third)) {
+        trig_low <- false;
+    }
+    on above(v(thr) - v(ctrl)) {
+        thr_high <- true;
+    }
+    on above(v(ctrl) - v(thr)) {
+        thr_high <- false;
+    }
+    on above(v_rst - v(rst)) {
+        rst_low <- true;
+    }
+    on above(v(rst) - v_rst) {
+        rst_low <- false;
+    }
+    // The latch: reset, then trigger, then threshold; otherwise it holds.
+    on trig_low.changed() || thr_high.changed() || rst_low.changed() {
+        if rst_low {
+            q <- false;
+        } else if trig_low {
+            q <- true;
+        } else if thr_high {
+            q <- false;
+        }
+    }
+}

@@ -1,0 +1,24 @@
+//! An `unwrap` of `None` under known control, evaluated at the operating point.
+
+pub module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+pub module Broken(p: Electrical, n: Electrical) { }
+analog for Broken {
+    let missing: Option<f64> = None;
+    i(p, n) +> v(p, n) * missing.unwrap();
+}
+
+/// A digital form, so the design gets the runtime the integers and `unwrap` live in.
+module Idle(in clk: Bit) {}
+digital for Idle { on init() { } }
+
+module Unwrap() {
+    signal a: Electrical;
+    let r1 = Resistor { r: 1k }(a, gnd);
+    let x1 = Broken(a, gnd);
+    signal clk: Bit = false;
+    let i1 = Idle(clk);
+}

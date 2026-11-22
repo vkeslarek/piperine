@@ -1,0 +1,83 @@
+//! The board, wired as the schematic in README.md, and the pump it switches.
+
+use crate::ne555::Ne555;
+
+use crate::parts::{Capacitor, Diode, Pot, Resistor};
+
+use crate::relay::Relay;
+
+/// Timing parts as built: C1, R2 and the pot RV1. T = ln 3 * (R2 + pos * RV1) * C1.
+pub const C_TIME: f64 = 220u;
+
+pub const R_MIN: f64 = 4.7k;
+
+pub const R_POT: f64 = 100k;
+
+/// The run-on time the board gives for a pot position `pos` (0 to 1): the time a capacitor
+/// takes to charge from 0 to 2/3 of the supply, whatever the supply is.
+pub fn run_on_time(pos: f64) -> f64 {
+    3.0.ln() * (R_MIN + pos * R_POT) * C_TIME
+}
+
+/// A small 12 V DC pump: 5 W at 12 V (28.8 ohm) with a little winding inductance.
+pub module Pump(p: Electrical, n: Electrical) {
+    r: f64 = 28.8 where r > 0.0;
+    l: f64 = 5m where l > 0.0;
+}
+
+analog for Pump {
+    v(p, n) +> ddt(l * i(p, n)) + r * i(p, n);
+}
+
+/// The controller. Four wires leave the board besides the supply:
+///
+/// - `ft`: the TOP float, wired from here to GND. Closed (tank full) pulls pin 2 low.
+/// - `fb`: the BOTTOM float, wired from +12 V to here. Closed (tank empty) charges C1.
+/// - `pump`: the pump's + wire (its - wire goes to GND).
+/// - `tp`: a test point on the coil's + terminal, for a multimeter (and for the benches).
+///
+/// How it works: R1 holds TRIGGER high. The top float pulls it low, the 555's latch sets and
+/// its output closes the relay. The latch holds after the float opens again. THRESHOLD and
+/// DISCHARGE sit on C1, which has no charging path until the bottom float closes; from then it
+/// charges through R2 + RV1 and reaches 2/3 Vcc after T. The latch resets, the relay opens and
+/// DISCHARGE clamps C1 to ground, so a bottom float that stays closed during the refill only
+/// feeds a few milliamperes into pin 7 and starts nothing.
+pub module PumpAction(
+    vcc: Electrical,
+    ft: Electrical,
+    fb: Electrical,
+    pump: Electrical,
+    tp: Electrical,
+) {
+    /// The shaft of RV1: 0 is the shortest run-on time, 1 the longest.
+    pot: f64 = 0.5 where pot >= 0.0 && pot <= 1.0;
+    /// Leakage of C1, as a resistance (see `Capacitor`).
+    c1_rleak: f64 = 1e12;
+    /// C1's top plate: pins 6 and 7.
+    pub signal tc: Electrical = 0.0;
+    /// Between R2 and RV1.
+    signal rx: Electrical;
+    /// Pin 3.
+    pub signal r#out: Electrical;
+    /// Pin 5.
+    signal ctrl: Electrical;
+    // U1 with pin 4 (RESET) tied to +12 V.
+    pub let u1 = Ne555(vcc, ft, r#out, vcc, ctrl, tc, tc);
+    // R1: the pull-up of TRIGGER; 1.2 mA through the closed top float.
+    let r1 = Resistor(vcc, ft) { r: 10k };
+    // R2 + RV1 + C1: the run-on timer, fed through the bottom float.
+    let r2 = Resistor(fb, rx) { r: R_MIN };
+    let rv1 = Pot(rx, tc) { r_total: R_POT, pos: pot };
+    let c1 = Capacitor(tc, gnd) { c: C_TIME, rleak: c1_rleak };
+    // C2: the usual 10 nF on pin 5.
+    let c2 = Capacitor(ctrl, gnd) { c: 10n };
+    // C3: the bulk capacitor across the supply (C4, 100 nF, is in parallel and not modelled).
+    let c3 = Capacitor(vcc, gnd) { c: 470u };
+    // D2 (Schottky) keeps the coil's kick away from pin 3; D1 is the coil's flyback diode.
+    let d2 = Diode(r#out, tp) { is: 3u, n: 1.05 };
+    let d1 = Diode(gnd, tp);
+    // K1: coil from D2 to GND, contact from +12 V to the pump.
+    pub let k1 = Relay(tp, gnd, vcc, pump);
+    // D3: the pump's flyback diode, across the motor.
+    let d3 = Diode(gnd, pump);
+}

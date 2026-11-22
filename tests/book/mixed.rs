@@ -1,4 +1,4 @@
-//! Scope: chapter 8 of the Book, "Mixed-signal" (feature `root-e2e`, RE-02 and RE-03): the cycle
+//! Scope: chapter 10 of the Book, "Mixed-signal" (feature `root-e2e`, RE-02 and RE-03): the cycle
 //! counter through its comparator with hysteresis, the `D2A` converter, the delta-sigma modulator, the
 //! buck converter's control loop (its `settle` check, the comparator without hysteresis and the SAR
 //! ADC are refused today, asserted refused with their diagnostics), and each mistake of the chapter's
@@ -18,10 +18,10 @@ mod support {
     pub mod refusal;
 }
 
-use piperine::{Cell, Overrides};
+use piperine::{Cell, Field, Overrides};
 use support::chapter::Chapter;
 use support::faulty::Faulty;
-use support::model::Model;
+use support::model::{Earlier, Model};
 use support::printed::Printed;
 use support::records::Fields;
 use support::refusal::Refusal;
@@ -75,7 +75,7 @@ impl Buck {
         let text = chapter.text("mixed#8");
         let from = "ki: f64 = 1m where ki > 0.0;";
         assert!(text.contains(from), "the Book's text holds `{from}`");
-        Model::written("buck.msl", &text.replace(from, &format!("ki: f64 = {ki} where ki > 0.0;")))
+        Model::written("buck.msl", &Earlier::gate(&text.replace(from, &format!("ki: f64 = {ki} where ki > 0.0;"))))
     }
 }
 
@@ -112,42 +112,49 @@ fn the_cycle_counter_counts_the_located_crossings_of_the_sine() {
 }
 
 #[test]
-fn the_math_methods_run_and_the_settle_event_does_not() {
-    // mixed~a6b3f8ed: "One thing the examples here use is not compiled yet and is refused with P0001: the
-    // settle event (the converter's check). The math methods of f64 such as sin (the sine sources) run":
-    // the sine source runs (the cycle counter above), the `settle` check is `P0001` (mixed#10)
+fn the_math_methods_and_the_settle_event_run() {
+    // The chapter's introduction no longer lists `settle` among what is refused, and "the math methods of
+    // f64 such as sin (the sine sources) run": the sine source runs (the cycle counter above) and so does
+    // the `settle` check (mixed#10), since unknown-semantics-events T5 (L52); the sentence is gone (T22)
     let chapter = Chapter::read();
     CycleCounter::model(&chapter).run(Commands::cycles()).unwrap_or_else(|failure| panic!("`sin` runs: {failure}"));
-    Refusal::expect(chapter.marked("buck.msl", "mixed#10").run(Commands::buck()), "mixed~a6b3f8ed", "P0001", "built-in `settle` is not supported yet");
+    chapter.marked("buck.msl", "mixed#10").earlier("buck.msl").run(Commands::buck()).unwrap_or_else(|failure| panic!("the `settle` check runs (mixed#10): {failure}"));
 }
 
 #[test]
-fn the_comparator_without_hysteresis_is_refused_for_its_event_read_as_a_bool() {
-    // mixed#6 (refused): `Comparator`, `on up || dn { q <- up; }`: "in the body, up read as a bool says
-    // whether it was the rising one" is an event read as a `bool` (L51): the checker answers `E0441`, an
-    // `Event` committed, where the spec allows it
+fn the_comparator_without_hysteresis_reads_its_event_as_a_bool() {
+    // mixed#6 (run): `Comparator`, `on up || dn { q <- up; }`: "in the body, up read as a bool says
+    // whether it was the rising one" (§13 rule 2, design D2): `above` fires at the start, where the
+    // voltage already is above, so with `a` over `b` the `up` read commits true and with `b` over `a`
+    // `dn` fired, `up` reads false and `q` stays low
     let chapter = Chapter::read();
-    let after = format!("{SOURCE}module Top() {{ signal a: Electrical; signal b: Electrical; signal q: Bit; let s = Vdc(a) {{ dc: 1.0 }}; let s2 = Vdc(b) {{ dc: 0.5 }}; let c = Comparator(a, b, q); }}\n");
-    let model = chapter.wrapped("comparator.msl", "", "mixed#6", &after);
-    Refusal::expect(model.run(Commands::transient("Top", 1e-6, None)), "mixed#6", "E0441", "an `Event` value outside an event position, a guard or a reaction body: an event is never committed, carried or stored (§13 rule 8)");
+    for (a, b, wanted) in [(1.0, 0.5, true), (0.5, 1.0, false)] {
+        let after = format!("{SOURCE}module Top() {{ signal a: Electrical; signal b: Electrical; signal q: Bit; let s = Vdc(a) {{ dc: {a:?} }}; let s2 = Vdc(b) {{ dc: {b:?} }}; let c = Comparator(a, b, q); }}\n");
+        let ran = chapter.wrapped("comparator.msl", "", "mixed#6", &after).run(Commands::transient("Top", 1e-6, None)).unwrap_or_else(|failure| panic!("the comparator runs: {failure}"));
+        let last = ran.table.rows.len() - 1;
+        assert_eq!(ran.cell(last, "Top.q"), &Cell::Bool(wanted), "a = {a} V, b = {b} V: `q` is `up` read as a `bool`");
+    }
 }
 
 #[test]
-fn the_digital_to_analog_converter_drives_half_the_supply_for_unknown() {
-    // mixed#7 (run): `D2A`; mixed~e784c042 "d.known() gives three cases, and the model drives half the supply
-    // for 'don't know'"; mixed~f53cc3cb "That is the choice E0150 forces every analog reader to make.
-    // transition turns the stepped level into a ramp of duration tr, so the output has a real edge": with
-    // vdd = 2 V and `tr` = 1 us, an unknown input gives 1 V, a high at 1 us ramps to 2 V (1.5 V halfway) and a
-    // low at 3 us ramps back to 0 V
+fn the_digital_to_analog_converter_drives_the_supply_or_ground() {
+    // mixed#7 (run): `D2A`; mixed~e784c042 "d is a bool, so the output goes to the supply or to
+    // ground" (replaces the sentence "d.known() gives three cases, and the model drives half the supply for
+    // 'don't know'", whose test `the_digital_to_analog_converter_drives_half_the_supply_for_unknown` ran the
+    // unknown input); mixed~f53cc3cb "A converter for a Logic input makes the other choice in its own text,
+    // d.to_volts(1.0), which gives half the supply for x and z" (refused with it: `Logic` is not in the library
+    // yet). transition turns the stepped level into a ramp of duration tr, so the output has a real edge: with
+    // vdd = 2 V and `tr` = 1 us, a low input gives 0 V, a high at 1 us ramps to 2 V (1.5 V halfway) and a low at
+    // 3 us ramps back to 0 V. `D2A` reads `d` in a `let` of its body, which the earlier front end accepts: the row stays `run`
     let chapter = Chapter::read();
-    let after = format!("{SOURCE}module Top() {{ signal d: Bit; signal a: Electrical; signal vdd: Electrical; let s = Vdc(vdd) {{ dc: 2.0 }}; let c = D2A(d, a, vdd) {{ tr: 1u }}; }}\ndigital for Top {{ on at(1u) {{ d <- true; }} on at(3u) {{ d <- false; }} }}\n");
+    let after = format!("{SOURCE}module Top() {{ signal d: Bit = false; signal a: Electrical; signal vdd: Electrical; let s = Vdc(vdd) {{ dc: 2.0 }}; let c = D2A(d, a, vdd) {{ tr: 1u }}; }}\ndigital for Top {{ on at(1u) {{ d <- true; }} on at(3u) {{ d <- false; }} }}\n");
     let ran = chapter.wrapped("d2a.msl", "", "mixed#7", &after).run(Commands::transient("Top", 5e-6, Some(5e-7))).unwrap_or_else(|failure| panic!("{failure}"));
     let level = |microseconds: f64| {
         let row = ran.table.rows.iter().position(|row| matches!(row[0], Cell::Real(time) if (time - microseconds * 1e-6).abs() < 1e-9)).unwrap_or_else(|| panic!("no row at {microseconds} us"));
         ran.real(row, "Top.a")
     };
-    assert!((level(0.5) - 1.0).abs() < 1e-6, "unknown drives half the supply: {}", level(0.5));
-    assert!((level(1.5) - 1.5).abs() < 1e-6, "halfway up the ramp of `tr`: {}", level(1.5));
+    assert!(level(0.5).abs() < 1e-6, "a low input is ground: {}", level(0.5));
+    assert!((level(1.5) - 1.0).abs() < 1e-6, "halfway up the ramp of `tr`: {}", level(1.5));
     assert!((level(2.5) - 2.0).abs() < 1e-6, "high is the supply: {}", level(2.5));
     assert!((level(4.5)).abs() < 1e-6, "low is zero: {}", level(4.5));
 }
@@ -156,16 +163,28 @@ fn the_digital_to_analog_converter_drives_half_the_supply_for_unknown() {
 fn the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28() {
     // mixed#8 (run): the converter, the controller and the load, without the `digital for Buck` check
     // ("Leave the `digital for Buck` block out and the converter runs, loop records and all"); mixed#10
-    // (refused): with it the file is `P0001`, the `settle` event (L52); mixed~9d07c4b9 "It checks, at every
-    // time point after start-up, that the output stays within 50 mV of the target" (refused with it);
-    // mixed~758eca03 "A buck converter steps 12 V down to 3.3 V ... the output settles near d . 12 V";
+    // (run): with it the file runs, the `settle` event is compiled (L52); mixed~9d07c4b9 "It checks, at every
+    // time point after start-up, that the output stays within 50 mV of the target" (run with it);
+    // mixed~117bf721 "With the check in the file, every time point after 10 ms is tested, and the run completes
+    // with every regulated record passing"; mixed~758eca03 "A buck converter steps 12 V down to 3.3 V ... the output settles near d . 12 V";
     // mixed~a32dcb77 "emit!(\"loop\", ...) is the window into the loop: one record per period with the sample,
     // the error and the duty just decided. duty = d prints the new value"; mixed~3bce4014 "At the end the error
     // is zero and the duty sits where 12 V times the duty, less the small drop in the switch, equals 3.3 V:
     // about 0.28"
     let chapter = Chapter::read();
-    Refusal::expect(chapter.marked("buck.msl", "mixed#10").run(Commands::buck()), "mixed#10", "P0001", "built-in `settle` is not supported yet");
-    let records = Buck::loop_records(&chapter.marked("buck.msl", "mixed#8"));
+    let mut with_checks = Commands::buck();
+    with_checks.streams.push("checks".to_string());
+    Refusal::expect(chapter.marked("buck.msl", "mixed#10").run(with_checks.clone()), "mixed#10", "E0150", "an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
+    let checked = chapter.marked("buck.msl", "mixed#10").earlier("buck.msl").run(with_checks).unwrap_or_else(|failure| panic!("mixed#10, the converter with its `settle` check: {failure}"));
+    // UE-06 AC 2: every `regulated` check record after 10 ms is a pass (the bound is 50 mV, the Book's own)
+    let regulated: Vec<&_> = checked.stream("checks").into_iter().filter(|record| matches!(Fields::of(record, "name"), Field::Text(name) if name == "regulated")).collect();
+    assert!(!regulated.is_empty(), "the check runs at the time points after 10 ms");
+    for record in &regulated {
+        assert!(record.time > 10e-3, "the check is guarded by now() > 10m: {}", record.time);
+        assert_eq!(Fields::of(record, "pass"), &Field::Bool(true), "regulated at {:e} s: {:?}", record.time, record.fields);
+    }
+    Refusal::expect(chapter.marked("buck.msl", "mixed#8").run(Commands::buck()), "mixed#8", "E0150", "an `analog` block reads the discrete carrier `ctl` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
+    let records = Buck::loop_records(&chapter.marked("buck.msl", "mixed#8").earlier("buck.msl"));
     assert_eq!(records.len(), 1201, "one record per switching period of 10 us over 12 ms, the first at 0");
     assert!((records[1].0 - 1e-5).abs() < 1e-12 && (records[1200].0 - 12e-3).abs() < 1e-9, "the periods");
     let (_, vout, err, duty) = records[1200];
@@ -192,7 +211,7 @@ fn the_buck_starts_from_the_operating_point_with_the_first_tick_applied() {
     // is solved again with the switch closed, so the transient starts from 11.8 V. The first record is the
     // sample before that commit (vout 0, err 3.3, duty 0.0033)
     let chapter = Chapter::read();
-    let model = chapter.marked("buck.msl", "mixed#8");
+    let model = chapter.marked("buck.msl", "mixed#8").earlier("buck.msl");
     let records = Buck::loop_records(&model);
     Printed::holds("3.299960e0", records[0].2, "the first error, the Book's 3.300");
     Printed::holds("3.299960e-3", records[0].3, "the first duty, the Book's 0.0033");
@@ -235,10 +254,11 @@ fn the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero() {
     // bit high 65 % of the clocks; mixed~ac0aefe3 "Its = 0.0 holds it at 0 V through the transient's
     // operating point": the transient runs, where a Dc solve is singular and names `x` (the Book's step 6)
     let chapter = Chapter::read();
-    let clock = chapter.text("from-rust#2");
+    let clock = chapter.text("values#1");
     let clock = clock.split_once("/// Counts rising edges").expect("the clock comes first").0;
     let after = format!("{SOURCE}module Top() {{ signal vin: Electrical; signal clk: Bit; signal bit: Bit; let s = Vdc(vin) {{ dc: 0.3 }}; let m = DeltaSigma1(vin, clk, bit); let o = Osc(clk) {{ f: 1M }}; }}\n{clock}");
-    let model = chapter.wrapped("delta_sigma.msl", "", "mixed#14", &after);
+    Refusal::expect(chapter.wrapped("delta_sigma.msl", "", "mixed#14", &after).run(Commands::transient("Top", 200e-6, Some(1e-6))), "mixed#14", "E0150", "an `analog` block reads the discrete carrier `bit` other than through `known`, `known_or`, `is_known` or `high`: it has no unknowns (§3.3.5)");
+    let model = chapter.wrapped("delta_sigma.msl", "", "mixed#14", &after).earlier("delta_sigma.msl");
     let ran = model.run(Commands::transient("Top", 200e-6, Some(1e-6))).unwrap_or_else(|failure| panic!("{failure}"));
     let high = (0..ran.table.rows.len()).filter(|row| ran.cell(*row, "Top.bit") == &Cell::Bool(true)).count();
     let density = high as f64 / ran.table.rows.len() as f64;
@@ -250,19 +270,16 @@ fn the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero() {
 }
 
 #[test]
-fn the_sar_adc_is_refused_at_its_comparator_and_its_field_access_runs() {
-    // mixed#15 (refused): `SarAdc` and its `analog for SarAdc { i(dac.core) +> ... }` on a public node of its
-    // DAC elaborates since `analog-structure` (L36); what is left is the chapter's own `Comparator` (mixed#6,
-    // `E0441`, L51), with the pieces the chapter does not show written by the test (a sample-hold, `Dac8`,
-    // `SarLogic`)
+fn the_sar_adc_runs_with_its_comparator_and_its_field_access() {
+    // mixed#15 (run): `SarAdc` and its `analog for SarAdc { i(dac.core) +> ... }` on a public node of its
+    // DAC (`analog-structure`, L36) with the chapter's own `Comparator` (mixed#6: its `q <- up` reads an
+    // event as a `bool`, §13 rule 2, unknown-semantics-events), the pieces the chapter does not show
+    // written by the test (a source, a sample-hold, `Dac8`, `SarLogic`)
     let chapter = Chapter::read();
-    let pieces = "module SampleHold(vin: Electrical, vout: Electrical, in clk: Bit) { signal held: Bit<f64> = 0.0; }\ndigital for SampleHold { on clk.rise() { held <- v(vin); } }\nanalog for SampleHold { v(vout) +> held.known_or(0.0); }\nmodule Dac8(in code: Bit<u8>, vout: Electrical) { pub signal core: Electrical; }\nanalog for Dac8 { v(core) +> 0.5; v(vout) +> v(core); }\nmodule SarLogic(in clk: Bit, in start: Bit, in cmp: Bit, out code: Bit<u8> = 0, out done: Bit = false) {}\n";
-    let after = "module Top(in clk: Bit, in start: Bit) { signal vin: Electrical; signal code: Bit<u8>; signal done: Bit; let a = SarAdc(vin, clk, start, code, done); }\n";
+    let pieces = "module Vdc(p: Electrical) { dc: f64 = 1.0; }\nanalog for Vdc { v(p) +> dc; }\nmodule SampleHold(vin: Electrical, vout: Electrical, in clk: Bit) { signal held: Bit<f64> = 0.0; }\ndigital for SampleHold { on clk.rise() { held <- v(vin); } }\nanalog for SampleHold { v(vout) +> held.known_or(0.0); }\nmodule Dac8(in code: Bit<u8>, vout: Electrical) { pub signal core: Electrical; }\nanalog for Dac8 { v(core) +> 0.5; v(vout) +> v(core); }\nmodule SarLogic(in clk: Bit, in start: Bit, in cmp: Bit, out code: Bit<u8> = 0, out done: Bit = false) {}\n";
+    let after = "module Top(in clk: Bit, in start: Bit) { signal vin: Electrical; signal code: Bit<u8>; signal done: Bit; let s = Vdc(vin) { dc: 0.3 }; let a = SarAdc(vin, clk, start, code, done); }\n";
     let before = format!("{}\n{pieces}", chapter.text("mixed#6"));
-    let model = chapter.wrapped("sar.msl", &before, "mixed#15", after);
-    let given = Refusal::of(model.run(Faulty::operating_point_of("Top")), "mixed#15");
-    assert!(given.iter().all(|(_, message)| !message.contains("field access")), "the field access on the converter runs: {given:?}");
-    Refusal::expect(model.run(Faulty::operating_point_of("Top")), "mixed#15", "E0441", "an `Event` value outside an event position, a guard or a reaction body: an event is never committed, carried or stored (§13 rule 8)");
+    chapter.wrapped("sar.msl", &before, "mixed#15", after).run(Commands::transient("Top", 1e-6, None)).unwrap_or_else(|failure| panic!("the SAR ADC runs: {failure}"));
 }
 
 #[test]
@@ -348,4 +365,13 @@ fn e0504_the_step_after_a_jump_that_does_not_converge_names_the_carrier() {
     assert_eq!(given.len(), 1, "{given:?}");
     assert_eq!(given[0].0, "E0504");
     assert!(given[0].1.contains("the step after a jump fails at the smallest step; it reads the delivery of Top.lvl"), "{}", given[0].1);
+}
+
+#[test]
+fn e0180_a_logic_read_in_analog_is_a_mismatch() {
+    // mixed~39ba351d (E0180): the mistakes table's "E0180 if flags { … } in analog, flags a Bit<Logic>": a `Logic` where a
+    // `bool` is required is E0180. The library struct `Logic` is a type since composite-values CV-09 (it was `P0001`
+    // before), so the code is raised and names both types.
+    let faulty = Faulty::running("mixed~39ba351d", "module Top(in flags: Bit<Logic>) { signal a: Electrical; }\nanalog for Top { if flags { v(a) +> 1.0; } }\n", Faulty::operating_point_of("Top"));
+    assert_eq!(faulty.first("E0180").message, "mismatched types: expected `bool`, found `struct `Logic``");
 }

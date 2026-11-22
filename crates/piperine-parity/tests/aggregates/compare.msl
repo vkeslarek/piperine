@@ -1,0 +1,81 @@
+//! Derived comparisons and defaults (CV-12 AC 1, H.8 rules 2 to 4): `==`, `!=`, `<`, `<=`, `>`, `>=`
+//! on structs, tuples, arrays, enums and `Option`s, and `T::default()`. Each row commits one `bool`
+//! or integer; the expected values are computed by Rust in `source_aggregates.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(PartialEq, PartialOrd, Default)]
+struct P { x: f64, y: u8 }
+#[derive(Repr, PartialEq, PartialOrd)]
+enum Level { Low, Mid(u8), High { a: u8, b: u8 } }
+#[derive(PartialEq, PartialOrd)]
+struct Wrap { inner: Option<u8>, tag: Level }
+
+fn struct_eq() -> bool { P { x: 1.5, y: 2 } == P { x: 1.5, y: 2 } }
+fn struct_ne() -> bool { P { x: 1.5, y: 2 } != P { x: 1.5, y: 3 } }
+fn struct_lt_first() -> bool { P { x: 1.0, y: 9 } < P { x: 2.0, y: 0 } }
+fn struct_lt_second() -> bool { P { x: 1.0, y: 1 } < P { x: 1.0, y: 2 } }
+fn struct_le_equal() -> bool { P { x: 1.0, y: 1 } <= P { x: 1.0, y: 1 } }
+fn struct_gt() -> bool { P { x: 2.0, y: 0 } > P { x: 1.0, y: 9 } }
+fn struct_ge() -> bool { P { x: 1.0, y: 1 } >= P { x: 1.0, y: 2 } }
+
+fn tuple_eq() -> bool { (1u8, 2.5, true) == (1u8, 2.5, true) }
+fn tuple_ne() -> bool { (1u8, 2.5, true) != (1u8, 2.5, false) }
+fn tuple_lt() -> bool { (1u8, 9u8) < (2u8, 0u8) }
+fn tuple_ge() -> bool { (3u8, 1u8) >= (3u8, 2u8) }
+
+fn array_eq() -> bool { [1u8, 2, 3] == [1u8, 2, 3] }
+fn array_ne() -> bool { [1u8, 2, 3] != [1u8, 2, 4] }
+fn array_lt() -> bool { [1u8, 2, 3] < [1u8, 3, 0] }
+fn array_gt() -> bool { [1u8, 2, 3] > [1u8, 3, 0] }
+
+fn enum_eq() -> bool { Level::Mid(3) == Level::Mid(3) }
+fn enum_ne_variant() -> bool { Level::Mid(3) != Level::High { a: 3, b: 0 } }
+fn enum_lt_discriminant() -> bool { Level::Low < Level::Mid(0) }
+fn enum_lt_variant_over_fields() -> bool { Level::Mid(200) < Level::High { a: 0, b: 0 } }
+fn enum_lt_fields() -> bool { Level::High { a: 1, b: 9 } < Level::High { a: 2, b: 0 } }
+fn enum_gt_payload() -> bool { Level::Mid(5) > Level::Mid(4) }
+
+fn option_none_lowest() -> bool { let a: Option<u8> = None; a < Some(0u8) }
+fn option_some_order() -> bool { Some(3u8) < Some(4u8) }
+fn option_eq() -> bool { Some(3u8) == Some(3u8) }
+fn option_none_eq() -> bool { let a: Option<u8> = None; a == None }
+fn option_some_ne_none() -> bool { let a: Option<u8> = None; Some(3u8) != a }
+
+fn nested_lt() -> bool { Wrap { inner: Some(1), tag: Level::Mid(2) } < Wrap { inner: Some(1), tag: Level::Mid(3) } }
+fn nested_eq() -> bool { Wrap { inner: None, tag: Level::Low } == Wrap { inner: None, tag: Level::Low } }
+
+fn default_y() -> u8 { P::default().y }
+fn default_x_is_zero() -> bool { P::default().x == 0.0 }
+fn default_equals_zeros() -> bool { P::default() == P { x: 0.0, y: 0 } }
+fn default_option() -> bool { Option::<u8>::default() == None }
+
+module Rows(in clk: Bit, out r0: Bit<bool>, out r1: Bit<bool>, out r2: Bit<bool>, out r3: Bit<bool>, out r4: Bit<bool>, out r5: Bit<bool>, out r6: Bit<bool>, out t0: Bit<bool>, out t1: Bit<bool>, out t2: Bit<bool>, out t3: Bit<bool>, out a0: Bit<bool>, out a1: Bit<bool>, out a2: Bit<bool>, out a3: Bit<bool>, out e0: Bit<bool>, out e1: Bit<bool>, out e2: Bit<bool>, out e3: Bit<bool>, out e4: Bit<bool>, out e5: Bit<bool>, out o0: Bit<bool>, out o1: Bit<bool>, out o2: Bit<bool>, out o3: Bit<bool>, out o4: Bit<bool>, out n0: Bit<bool>, out n1: Bit<bool>, out d0: Bit<u8>, out d1: Bit<bool>, out d2: Bit<bool>, out d3: Bit<bool>) {}
+digital for Rows {
+    on clk.rise() {
+        r0 <- struct_eq(); r1 <- struct_ne(); r2 <- struct_lt_first(); r3 <- struct_lt_second();
+        r4 <- struct_le_equal(); r5 <- struct_gt(); r6 <- struct_ge();
+        t0 <- tuple_eq(); t1 <- tuple_ne(); t2 <- tuple_lt(); t3 <- tuple_ge();
+        a0 <- array_eq(); a1 <- array_ne(); a2 <- array_lt(); a3 <- array_gt();
+        e0 <- enum_eq(); e1 <- enum_ne_variant(); e2 <- enum_lt_discriminant();
+        e3 <- enum_lt_variant_over_fields(); e4 <- enum_lt_fields(); e5 <- enum_gt_payload();
+        o0 <- option_none_lowest(); o1 <- option_some_order(); o2 <- option_eq();
+        o3 <- option_none_eq(); o4 <- option_some_ne_none();
+        n0 <- nested_lt(); n1 <- nested_eq();
+        d0 <- default_y(); d1 <- default_x_is_zero(); d2 <- default_equals_zeros(); d3 <- default_option();
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal r0: Bit<bool>; signal r1: Bit<bool>; signal r2: Bit<bool>; signal r3: Bit<bool>; signal r4: Bit<bool>; signal r5: Bit<bool>; signal r6: Bit<bool>;
+    signal t0: Bit<bool>; signal t1: Bit<bool>; signal t2: Bit<bool>; signal t3: Bit<bool>;
+    signal a0: Bit<bool>; signal a1: Bit<bool>; signal a2: Bit<bool>; signal a3: Bit<bool>;
+    signal e0: Bit<bool>; signal e1: Bit<bool>; signal e2: Bit<bool>; signal e3: Bit<bool>; signal e4: Bit<bool>; signal e5: Bit<bool>;
+    signal o0: Bit<bool>; signal o1: Bit<bool>; signal o2: Bit<bool>; signal o3: Bit<bool>; signal o4: Bit<bool>;
+    signal n0: Bit<bool>; signal n1: Bit<bool>;
+    signal d0: Bit<u8>; signal d1: Bit<bool>; signal d2: Bit<bool>; signal d3: Bit<bool>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, r0, r1, r2, r3, r4, r5, r6, t0, t1, t2, t3, a0, a1, a2, a3, e0, e1, e2, e3, e4, e5, o0, o1, o2, o3, o4, n0, n1, d0, d1, d2, d3);
+}

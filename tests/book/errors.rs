@@ -1,4 +1,4 @@
-//! Scope: chapter 11 of the Book, "Reading errors" (feature `root-e2e`, RE-02 and RE-03): the
+//! Scope: chapter 14 of the Book, "Reading errors" (feature `root-e2e`, RE-02 and RE-03): the
 //! models of the chapter run through `piperine::` (`Project`, `Session`), a model the Book shows
 //! refused is asserted refused with the codes and messages the tool gives, and each code the
 //! chapter's tables name is provoked by the smallest model that makes the mistake. Each test opens
@@ -57,29 +57,29 @@ fn a_refusal_that_runs_fails_naming_its_row() {
 #[test]
 fn the_worked_sample_hold_is_refused_with_its_three_codes() {
     // errors#3: the Book's faulty sample-and-hold, placed in a bench, "has three mistakes that
-    // elaboration finds": E0310 on `clk: Bit`, E0430 on `on clk`, E0150 on `+> held`, sorted by position
+    // elaboration finds": E0310 on `clk: Bit`, E0210 on `= 0`, E0430 on `on clk`, sorted by position. The
+    // earlier front end adds a fourth, E0150 for the direct read `+> held` (S8), which the Book's text does
+    // not have: it is left out of the comparison
     let chapter = Chapter::read();
     let model = chapter.lone("sample_hold.msl", &["errors#3"]).with_source("sample_hold.msl", SAMPLE_HOLD_BENCH);
     let given = Refusal::of(model.run(Faulty::operating_point_of("Top")), "errors#3");
-    let codes: Vec<&str> = given.iter().map(|(code, _)| code.as_str()).collect();
-    assert_eq!(codes, ["E0310", "E0430", "E0150"], "the three mistakes, top to bottom: {given:?}");
+    let codes: Vec<&str> = given.iter().map(|(code, _)| code.as_str()).filter(|code| *code != "E0150").collect();
+    assert_eq!(codes, ["E0310", "E0210", "E0430"], "the three mistakes, top to bottom: {given:?}");
     Refusal::expect(model.run(Faulty::operating_point_of("Top")), "errors#3", "E0310", "a port of a discrete nature takes `in` or `out` (§8.1.5)");
 }
 
 #[test]
-fn the_discrete_read_diagnostic_has_the_parts_the_book_shows() {
-    // errors#1 (the rendering of E0150): a code, a message, the primary label on the carrier `held`
-    // and a help line naming `known()`, `known_or(d)` and `high()`
+fn the_mismatched_type_diagnostic_has_the_parts_the_book_shows() {
+    // errors#1 (the rendering of E0210, replaces `the_discrete_read_diagnostic_has_the_parts_the_book_shows`
+    // for E0150): a code, a message, and the primary label on the integer literal `0`
     let chapter = Chapter::read();
     let model = chapter.lone("sample_hold.msl", &["errors#3"]).with_source("sample_hold.msl", SAMPLE_HOLD_BENCH);
     let source = model.text_of("sample_hold.msl");
     let given = Refusal::reported_by(model.run(Faulty::operating_point_of("Top")), "errors#1");
-    let read = given.iter().find(|reported| reported.code == "E0150").expect("E0150 is one of the three");
-    assert_eq!(read.primary_text(&source), "held", "the label points at the carrier");
-    assert_eq!(read.primary_label, "a discrete carrier read in `analog`");
-    assert!(read.message.contains("reads the discrete carrier `held`"), "{}", read.message);
-    let help = read.help.as_deref().expect("errors#1: the Book shows a help line");
-    assert!(help.contains("`known()`") && help.contains("`known_or(d)`") && help.contains("`high()`"), "{help}");
+    let read = given.iter().find(|reported| reported.code == "E0210").expect("E0210 is one of the three");
+    assert_eq!(read.primary_text(&source), "0", "the label points at the literal");
+    assert_eq!(read.primary_label, "expected `f64`, found `an integer literal`");
+    assert_eq!(read.message, "mismatched types: expected `f64`, found `an integer literal`");
 }
 
 #[test]
@@ -136,7 +136,8 @@ fn e0150_is_found_on_the_read_of_the_carrier_in_the_worked_example() {
 #[test]
 fn the_three_fixes_make_the_worked_example_elaborate() {
     // errors~2db98d22: "Fix the three lines and the same command prints one `ok` line and exits with
-    // 0": `in clk`, `on clk.rise()` and `held.known_or(0.0)` leave no diagnostic and the operating
+    // 0": `in clk`, `= 0.0` and `on clk.rise()` leave no diagnostic (the model carries the gate the earlier front end
+    // still asks for on `+> held`, S8) and the operating
     // point runs (the `ok` line and the exit status are the binary's, `piperine-cli/commands`)
     let ran = Model::written("sample_hold.msl", SAMPLE_HOLD_FIXED).run(Faulty::operating_point_of("Top"));
     let table = ran.unwrap_or_else(|failure| panic!("the fixed example is refused: {failure}")).table;
@@ -422,7 +423,7 @@ const CIRCUIT_PARTS: &str = "module R(p: Electrical, n: Electrical) { r: f64 = 1
 
 #[test]
 fn e0501_is_microsteps_that_never_go_quiet() {
-    // errors~5c44f01d: "E0501: The microsteps at one time never go quiet" (a feedback loop of commits
+    // errors~5c44f01d and simulation~5c44f01d: "E0501: The microsteps at one time never go quiet" (a feedback loop of commits
     // with no delay); the report names the instance and the instant
     let source = "module Top() { signal a: Bit = false; }\ndigital for Top { on at(1u) { a <- true; } on a.changed() { a <- !a; } }\n";
     let faulty = Faulty::running("errors~5c44f01d", source, Faulty::transient_of_top(3e-6, None));
@@ -432,7 +433,7 @@ fn e0501_is_microsteps_that_never_go_quiet() {
 
 #[test]
 fn e0503_is_a_singular_solve_that_names_the_node_or_the_branches() {
-    // errors~5c44f21d: "E0503: A solve is singular; the report names the node or branches" (a node
+    // errors~5c44f21d and simulation~5c44f21d: "E0503: A solve is singular; the report names the node or branches" (a node
     // with no DC path, or a loop of voltage sources)
     let floating = format!("{CIRCUIT_PARTS}module Isrc(p: Electrical, n: Electrical) {{ dc: f64 = 1m; }}\nanalog for Isrc {{ i(p, n) +> dc; }}\nmodule Top() {{ signal a: Electrical; let s = Isrc(a, gnd); }}\n");
     let node = Faulty::elaborating("errors~5c44f21d", &floating, "Top");
@@ -444,8 +445,11 @@ fn e0503_is_a_singular_solve_that_names_the_node_or_the_branches() {
 
 #[test]
 fn e0504_is_a_step_after_a_digital_change_that_does_not_converge() {
-    // errors~5c44ed1d: "E0504: The step after a digital change does not converge" (an ideal edge into
-    // a circuit with no solution after it): the report names the carrier whose delivery the step reads
+    // errors~5c44ed1d and simulation~5c44ed1d: "E0504: The step after a digital change does not converge" (an ideal edge into
+    // a circuit with no solution after it): the report names the carrier whose delivery the step reads;
+    // simulation~17c534dc "... a Newton failure there ends the run with E0508, or with E0504 when the step
+    // is the one right after a digital change, which then names the carrier that changed" (the E0508 half
+    // is the test of that code, below)
     let source = format!("{CIRCUIT_PARTS}module Chatter(p: Electrical, n: Electrical, in go: Bit) {{ }}\nanalog for Chatter {{ i(p, n) +> if go.high() {{ if v(p, n) > 0.5 {{ 1e-3 }} else {{ -1e-3 }} }} else {{ 0.0 }}; }}\nmodule Top() {{ signal n: Electrical; signal go: Bit = false; let r1 = R(n, gnd); let c = Chatter(n, gnd, go); }}\ndigital for Top {{ on at(5e-7) {{ go <- true; }} }}\n");
     let faulty = Faulty::running("errors~5c44ed1d", &source, Faulty::transient_of_top(2e-6, Some(1e-8)));
     let run = faulty.first("E0504");
@@ -463,7 +467,7 @@ fn e0505_is_an_operating_point_that_does_not_converge() {
 
 #[test]
 fn e0507_is_a_non_finite_value_in_a_solve() {
-    // errors~5c44ee1d: "E0507: A non-finite value in a solve" (a division by a quantity that reached
+    // errors~5c44ee1d and simulation~5c44ee1d: "E0507: A non-finite value in a solve" (a division by a quantity that reached
     // zero): the report names the instance
     let source = format!("{CIRCUIT_PARTS}module D(p: Electrical, n: Electrical) {{ }}\nanalog for D {{ i(p, n) +> 1.0 / v(p, n); }}\nmodule Top() {{ signal a: Electrical; let s = V(a, gnd) {{ dc: 0.0 }}; let d = D(a, gnd); }}\n");
     let faulty = Faulty::elaborating("errors~5c44ee1d", &source, "Top");
@@ -472,10 +476,33 @@ fn e0507_is_a_non_finite_value_in_a_solve() {
 
 #[test]
 fn e0508_is_a_transient_step_that_cannot_be_completed_at_the_smallest_step() {
-    // errors~5c44e91d: "E0508: A transient step cannot be completed at the smallest step" (a
-    // discontinuity in an `analog` expression): the report names the instant
+    // errors~5c44e91d and simulation~5c44e91d: "E0508: A transient step cannot be completed at the smallest step" (a
+    // discontinuity in an `analog` expression): the report names the instant; solver~e5a88955 "A step that fails at that
+    // length ends the run with E0508, or E0504 when the step follows a digital change (chapter 14)." (the E0504 half
+    // is `e0504_is_a_step_after_a_digital_change_that_does_not_converge`'s)
     let source = format!("{CIRCUIT_PARTS}module Chatter(p: Electrical, n: Electrical) {{ from_time: f64 = 1e-6; }}\nanalog for Chatter {{ i(p, n) +> if now() > from_time {{ if v(p, n) > 0.5 {{ 1e-3 }} else {{ -1e-3 }} }} else {{ 0.0 }}; }}\nmodule Top() {{ signal n: Electrical; let r1 = R(n, gnd); let c = Chatter(n, gnd); }}\n");
     let faulty = Faulty::running("errors~5c44e91d", &source, Faulty::transient_of_top(2e-6, Some(1e-8)));
     let run = faulty.first("E0508");
     assert!(run.message.contains("the step fails at the smallest step") && run.message.contains("at t = 1.0000000"), "{}", run.message);
+}
+
+#[test]
+fn e0210_is_found_on_the_initial_value_of_the_worked_example() {
+    // errors~cc8e3f8d: "E0210 on `= 0`": the label sits on the integer literal; an integer is not a float
+    let worked = Chapter::read().worked_example("errors~cc8e3f8d");
+    assert_eq!(worked.pointed_at("E0210"), "0");
+    assert_eq!(worked.first("E0210").message, "mismatched types: expected `f64`, found `an integer literal`");
+}
+
+#[test]
+fn e0187_is_not_raised_for_a_signal_with_no_first_value_yet() {
+    // errors~39ba3a1d (the E0187 row of the codes table) and errors~385c354c ("Try it": declare `held` without
+    // any first value; which error do you expect? E0187, naming `held` and `Default`): both `unraised` (S8).
+    // The earlier front end starts such a signal unknown, so the model still compiles and `vout` sits at 0 V
+    // before the first edge; the test fails when E0187 is raised
+    let source = SAMPLE_HOLD_FIXED.replace("signal held: Bit<f64> = 0.0;", "signal held: Bit<f64>;");
+    assert_ne!(source, SAMPLE_HOLD_FIXED, "the initial value is gone");
+    let ran = Model::written("sample_hold.msl", &source).run(Faulty::operating_point_of("Top")).unwrap_or_else(|failure| panic!("it still compiles and runs: {failure}"));
+    let row = ran.table.rows.iter().position(|row| row[0] == piperine::Cell::Text("Top.b".to_string())).expect("the table has `vout`");
+    assert_eq!(ran.real(row, "value"), 0.0, "vout sits at 0 V");
 }

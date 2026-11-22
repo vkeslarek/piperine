@@ -7,9 +7,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, ModuleData, NatureKind, Resolution, StmtId};
+use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, ModuleData, Resolution, StmtId};
 
-use super::check::Checker;
+use super::check::{Checker, Context};
+use super::nature_rules::NatureRules;
 use super::{Builtin, Callee, Ty};
 
 /// The values the value inputs of a placement stand for while a result is read: each input is the
@@ -53,6 +54,49 @@ impl Checker<'_> {
         }
     }
 
+    /// The name `instance` of a placement of `module`, read as a value: an instance of a module
+    /// without a result has no value, `E0333` naming it (§8.2.14). One with a result is that value.
+    pub(super) fn instance_as_value(&mut self, file: FileId, span: Span, instance: DeclId, module: DeclId) -> Option<Ty> {
+        let has_result = matches!(&self.design.decl_data(module).kind, DeclKind::Module(m) if m.ret.is_some());
+        if has_result {
+            return Some(Ty::Module(module));
+        }
+        let name = self.design.decl_data(instance).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let message = format!("the instance `{name}` has no result: a module without a result is not a value (§8.2.14)");
+        self.coded(file, "E0333", span, message, "an instance without a result used as a value");
+        None
+    }
+
+    /// `E0354` (§8.3.10): the name `binding` of a continuous result (a `let`, or a placement's
+    /// result) read in a const context (a param default, a `where`, a `const` initializer), where no
+    /// probe may be written. Reports and returns true when it is one.
+    pub(super) fn continuous_result_in_const(&mut self, file: FileId, span: Span, binding: DeclId) -> bool {
+        if self.context != Context::Const {
+            return false;
+        }
+        let Some(init) = self.binding_init(binding) else { return false };
+        if !self.continuous(init) {
+            return false;
+        }
+        let name = self.design.decl_data(binding).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let message = format!("the continuous result `{name}` is read in a const context, where no probe may be written (§8.3.10)");
+        self.coded(file, "E0354", span, message, "a continuous result where probes are not allowed");
+        self.poisoned.insert(binding);
+        true
+    }
+
+    /// `E0354` (§8.3.10): the placement `expr` has an `Event` result and stands outside an event
+    /// position. Returns false for any other expression.
+    pub(super) fn event_result_out_of_place(&mut self, expr: ExprId) -> bool {
+        let node = self.design.expr_node(expr).clone();
+        let ExprKind::Call { class: CallClass::Instance { module: Some(module), .. }, .. } = &node.kind else { return false };
+        let name = self.design.decl_data(*module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let file = self.file_of_expr(expr);
+        let message = format!("the `Event` result of `{name}` is read outside an event position, where an event could not be written (§8.3.10)");
+        self.coded(file, "E0354", node.span, message, "an `Event` result outside an event position");
+        true
+    }
+
     /// Whether `decl` is a value input: a port whose type is a value, not a nature.
     pub(super) fn is_value_input(&self, decl: DeclId) -> bool {
         matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if self.design.nature_of(p.ty).is_none())
@@ -65,7 +109,7 @@ impl Checker<'_> {
             DeclKind::Signal(s) => s.ty,
             _ => return false,
         };
-        matches!(self.design.nature_of(ty), Some(n) if matches!(&self.design.decl_data(n).kind, DeclKind::Nature(d) if d.kind == NatureKind::Discrete))
+        self.design.nature_of(ty).is_some_and(|n| NatureRules::of(self.design, n).carries_values)
     }
 
     /// The value inputs of `module`, in port order.

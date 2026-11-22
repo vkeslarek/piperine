@@ -210,6 +210,7 @@ The operating point and the instant an analysis ends are always time points (§1
 | --- | --- | --- |
 | `E0501` | The microstep loop at one time does not go quiet within the session's bound. The report names the carriers that kept changing. | run |
 | `E0502` | A scheduled time lies outside the tick range. The report names the `at`, commit or host action. | run |
+| §8.2.3 | A loop of resolved drives still moves after its bounded passes (`E0511`). The report names the loop's drives. | run |
 
 ### 15.1 An instant, traced
 
@@ -285,19 +286,35 @@ of its own.
    3 pF one at 0 V gives 0.25 V on both at the first step that reads the jump (Appendix F.5).
 3. **A state multiplied by a carrier keeps the product.** In `ddt(c * v(p, n))` with `c` a
    `Bit<f64>` that jumps, `c·v` is carried and `v` moves. Charge is conserved.
-4. **Probes and `cross` read solutions that exist.** There is no second pass. A reaction at
-   `(t, n)` reads the latest solution (§15 step 3.3), which is the left value until a
-   step has read the change. A crossing that a change makes is found between the left value and
-   the right value. It is not located (§17.3): it fires at the time point of the step that
-   reads the change, at the microstep after that step's solve (§15 step 3.4), so never before
-   the change that caused it.
+4. **Probes and `cross` read solutions that exist.** A reaction at `(t, n)` reads the latest
+   solution (§15 step 3.3), which is the left value until a step has read the change. A crossing
+   that a change makes is found between the left value and the right value. It is not located
+   (§17.3): it fires at the time point of the step that reads the change, at the microstep after
+   that step's solve (§15 step 3.4), so never before the change that caused it. **When the
+   reactions of that crossing change a carrier or a param that `analog` reads, the step is
+   retaken to the same time `t` with the change, and the retaken solution replaces the first.**
+   The retaken step is exempt from the truncation-error test and restarts the integrator, like
+   the step that reads a host `set`. The reactions that ran are not run again. A crossing that
+   the retaken solution makes, and the first did not, fires at the next microstep of `t` and may
+   retake again. A step that reads no jump never retakes, and neither does a crossing whose
+   reactions change nothing `analog` reads. More retakes at one `t` than the operating point's
+   round bound fail as `E0504`, naming the instant. A change due before the solve that a settle
+   commit makes (S2, S3) is a jump like any other: the step that reads it retakes by this rule.
+   The instant's microstep numbering goes on across the rounds: a crossing only a retaken solution makes fires at the next microstep of `t`, and the settle phase that follows runs after the last microstep, so its records are stamped `(t, last)` (§19). The instant's settle phase runs once, after its last round, so a retake never runs an
+   `on settle` reaction twice at `t`, and the settle commits it holds are the ones the analog side
+   is given.
 5. **Other instance state is untouched.** `delay` keeps its history and `limit` its last
    value. `idt`, `slew` and `transition` have no rule of their own: their state is a node
    under `ddt` and discrete carriers.
 6. **The integrator restarts after a landing and after a host `set`.** Three steps restart
    the integrator: the first step after the operating point (H2), the step after one that
    landed on `t` because something was due there, and the step that reads a host `set`. Restarting, the trapezoidal stage drops the previous
-   derivative and runs as backward Euler over its sub-step. A change made after the solve of
+   derivative and runs as backward Euler over its sub-step. **The step that reads a jump is
+   first order throughout: its second stage also runs as backward Euler, over the whole step
+   from the step's start, so the derivative it ends with is the change of each state across
+   the step divided by the step. The step after it takes that derivative as its previous
+   derivative.** The first step after the operating point keeps its BDF2 stage unless the
+   operating point holds a settle commit, which that step reads as a jump (S3) and takes first order. A change made after the solve of
    `t` restarts nothing. After a host `set` the step size also restarts
    at 10⁻³ of the last step (Appendix C.2). **The step that restarts the integrator after a
    landing or a host `set` is at most a tenth of the smaller of the last accepted step and the
@@ -323,7 +340,7 @@ of its own.
 | Code | Condition | Phase |
 | --- | --- | --- |
 | `E0503` | A solve of any kind is singular. The report names the branches, or the node, that make it so. | run |
-| `E0504` | A transient step that reads a jump does not converge (§17.1). The report names the instant and the carriers or params whose change caused it. | run |
+| `E0504` | A transient step that reads a jump does not converge (§17.1), or the crossings of one instant retake the step more often than the round bound (rule 4). The report names the instant and the carriers or params whose change caused it. | run |
 
 **Example.** Appendix F.5 traces the charge-sharing jump row by row.
 
@@ -339,8 +356,9 @@ starts another round (step 4) instead of waiting for a step.
 
 **Procedure.**
 
-1. *Elaborate*: check params, run generation. Every level of every discrete carrier is
-   unknown.
+1. *Elaborate*: check params, run generation. Every discrete carrier is given its initial
+   value, written or `Default::default()` (§3.3.4); a carrier whose type has no `Default` and
+   no initial value is `E0187`.
 2. *Commit the initial values* at `(0, 0)`: every `= value` of the design, and every drive
    the host made before the run (§23.1.4). This is step 3.1 of §15. Definitions and
    `resolve`s settle and `changed()` fires (step 3.2; §13 rule 6). A `set` made before the
@@ -476,7 +494,7 @@ not executed.
    There `now()` is the point's time and a real carrier is as in §23.3.4.
 3. In an analysis run at a transient's last instant (§16.4), `now()` is that instant in every
    column.
-4. `analog` computes with known reals in every column (§3.3.5).
+4. `analog` computes with reals in every column (§3.3.6).
 
 The second table is what happens at instants. A sweep over frequency has none.
 
@@ -555,13 +573,16 @@ Every solve but a small-signal sweep is a Newton iteration. It has **converged**
 three hold:
 
 1. **Update.** Every unknown moved by at most `reltol · max(|x|, |x_old|) + abstol`. `abstol`
-   is the nature's: for a node, the smallest potential `abstol` of the natures meeting there;
-   for a branch unknown, its flow `abstol`.
-2. **Residual.** Every row's imbalance is at most `abstol + reltol · scale`. A node's row is
-   tested against the potential `abstol` of that node (the smallest potential `abstol` of the
-   natures meeting there, default 1 µV). A branch row is tested against the flow `abstol`
-   (default 1 pA). This is the mapping the reference implementation's ngspice parity was
-   validated with.
+   is the smaller of the session's and the nature's: for a node, the session `vntol` and the
+   smallest potential `abstol` of the natures meeting there; for a branch unknown, the session
+   `abstol` and its flow `abstol`. A nature can only tighten the session's value: `--vntol` and
+   `--abstol` always take effect, and a looser nature (a potential `abstol` of 1 mV) does not
+   loosen the default.
+2. **Residual.** Every row's imbalance is at most `abstol + reltol · scale`, with the `abstol`
+   of rule 1. A node's row is tested against the smaller of the session `vntol` and the
+   smallest potential `abstol` of the natures meeting there (default 1 µV). A branch row is
+   tested against the smaller of the session `abstol` and its flow `abstol` (default 1 pA).
+   This is the mapping the reference implementation's ngspice parity was validated with.
 3. **Limiting.** No `limit` instance is active (§18 rule 5).
 4. A non-finite value in an unknown, a residual or a Jacobian entry fails the solve
    (`E0507`).
@@ -685,13 +706,12 @@ time points, and whose time the solver finds.
 4. When several crossings fall in one step the solver lands on the earliest. Crossings that
    round to the same tick fire together, at the microstep after the solve of `t` (§15 step
    3.4).
-5. An expression that is unknown does not fire and is not located.
-6. A `cross` under a guard made only of discrete carriers is not located while the guard is
+5. A `cross` under a guard made only of discrete carriers is not located while the guard is
    false (§13 rule 5).
-7. A corner of a waveform computed from `now()` is invisible to the error estimate. It
+6. A corner of a waveform computed from `now()` is invisible to the error estimate. It
    **MUST** be written as a carrier change (§9, case D), which makes it a time point and a
    jump.
-8. A crossing between the two solutions a jump separates is not located. It fires at the
+7. A crossing between the two solutions a jump separates is not located. It fires at the
    time point of the step that reads the jump, after that step's solve (§15.2.4).
 
 > **Resolution.** The crossing of rule 1 is the crossing of the numerical solution: `ttol` bounds the distance between the landing and where the computed `e` crosses zero, never the distance to the closed form of the model. The solution is accurate to the step's truncation tolerance (`reltol`, `trtol`), so an event may differ from an analytic crossing by what that tolerance allows; a closed-form check caps the step so the two agree.
@@ -699,10 +719,10 @@ time points, and whose time the solver finds.
 > **Resolution.** Rule 3's guarantee is stated as: the landing time exceeds the true crossing
 > time by at most `ttol` plus one tick, or `e < etol` holds there. Rule 4 is stated here.
 
-> **Resolution.** A `ttol` or `etol` argument that is known and not finite and positive is
-> error `E0510`. An unknown one falls under rule 5. A tolerance the discrete side has not
-> written yet, as at the operating point's first solve, which comes before the parameter cone's
-> first run, is unknown: that solve uses the default tolerance.
+> **Resolution.** A `ttol` or `etol` argument that is not finite and positive is error
+> `E0510`. An argument that is `None` uses the default tolerance. A tolerance the discrete side
+> has not written yet, as at the operating point's first solve, which comes before the
+> parameter cone's first run, has its carrier's initial value (§3.3.4).
 
 **Errors**
 
@@ -758,7 +778,7 @@ an equation, so it is not model text. It is read only as Newton's starting point
 /// Junction diode with optional series resistance.
 module Diode(a: Electrical, k: Electrical) {
     is: f64 = 1e-14 where is > 0.0;
-    n: f64 = 1.0 where (0.1..=10.0).contains(&n);
+    n: f64 = 1.0 where (0.1..=10.0).contains(n);
     rs: Option<f64>;
     cj0: f64 = 0.0 where cj0 >= 0.0;
     signal ai: Electrical;

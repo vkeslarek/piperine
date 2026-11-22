@@ -635,7 +635,7 @@ fn generic_carrier_follows_the_resolved_bound() {
 /// A name written for a port, a param, a field or a parameter that the callee
 /// does not have names nothing: the slot stays `Unresolved` and one diagnostic
 /// is reported at the name, under the code the spec assigns (POL-18, D11):
-/// `E0320` for a param, `E0140` for a named argument, `E0161` for a struct field.
+/// `E0320` for a param, `E0140` for a named argument, `E0186` for a struct field.
 #[test]
 fn named_binding_without_a_target_reports_the_spec_code() {
     let src = "\
@@ -653,7 +653,7 @@ module Top() {
 ";
     let design = with_prelude(src);
     let found: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
-    assert_eq!(found, [("E0140", "q"), ("E0320", "nope"), ("E0161", "y"), ("E0320", "zz"), ("E0140", "b")], "{:?}", design.diagnostics());
+    assert_eq!(found, [("E0140", "q"), ("E0320", "nope"), ("E0186", "y"), ("E0320", "zz"), ("E0140", "b")], "{:?}", design.diagnostics());
     assert!(design.diagnostics().iter().all(|d| d.diagnostic.message.contains("no ")), "{:?}", design.diagnostics());
     // The names that do exist link, the ones that do not stay unresolved.
     let call = |text: &str| (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text().starts_with(text)).unwrap();
@@ -737,11 +737,11 @@ module Top() {
 #[test]
 fn bundle_literal_field_errors_are_e0263() {
     let src = "\
-struct Port2 { hi: Electrical, lo: Electrical, gain: f64 }
+struct Port2 { hi: Electrical, lo: Electrical }
 module Top() {
     signal a: Electrical;
     signal b: Electrical;
-    let ok = Port2 { hi: a, lo: b, gain: 1.0 };
+    let ok = Port2 { hi: a, lo: b };
     let x = Port2 { hi: a, lo: b, zz: 1.0 };
     let y = Port2 { hi: a, hi: b, lo: b };
 }
@@ -759,7 +759,7 @@ module Top() {
 }
 
 /// POL-18 AC 4: an unknown field of a struct literal and of a struct pattern is
-/// one `E0161` at the name; the shorthand pattern `S { a }` still binds and links.
+/// one `E0186` at the name; the shorthand pattern `S { a }` still binds and links.
 #[test]
 fn unknown_struct_field_is_reported_in_literals_and_patterns() {
     let src = "\
@@ -774,7 +774,7 @@ fn h(s: S) -> f64 {
 ";
     let design = with_prelude(src);
     let found: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
-    assert_eq!(found, [("E0161", "c"), ("E0161", "q")], "{:?}", design.diagnostics());
+    assert_eq!(found, [("E0186", "c"), ("E0186", "q")], "{:?}", design.diagnostics());
     let decl_s = design.find("S").expect("struct S");
     let field = |name: &str| Resolution::Decl(decl_s.children().into_iter().find(|f| f.name().as_deref() == Some(name)).unwrap().id());
     let mut seen = Vec::new();

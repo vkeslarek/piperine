@@ -135,3 +135,31 @@ fn the_new_keys_have_flags() {
     let out = stdout_of(&piperine_in(dir.path(), &["run", "lp.msl", "--analysis", "sens", "--wrt", "r1.r", "--print", "vout"]));
     assert!(out.starts_with("run lp: sens, top Top"), "{out}");
 }
+
+#[test]
+fn a_noise_run_prints_one_row_per_frequency_then_the_total() {
+    // AO-05 AC 1 on the command line: `--analysis noise` prints the header, the table `freq`,
+    // `onoise` with one row per frequency (1 to 1e3 at 1 point per decade: round(1 * 3) + 1 = 4),
+    // then the summary line `onoise_total  <value>`; the resistors and capacitor of the lowpass
+    // have no noise source, so the density and the total are 0. CSV writes the rows only.
+    let dir = tempfile::tempdir().expect("tmp");
+    std::fs::write(dir.path().join("lp.msl"), lowpass()).expect("bench");
+    let args = ["run", "lp.msl", "--analysis", "noise", "--output", "vout", "--from", "1", "--to", "1e3", "--per-decade", "1"];
+    let out = stdout_of(&piperine_in(dir.path(), &args));
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines[0], "run lp: noise, top Top, backend rust", "{out}");
+    let blank = lines.iter().position(|l| l.is_empty()).unwrap_or_else(|| panic!("no empty line in\n{out}"));
+    assert_eq!(cells(lines[blank + 1]), ["freq", "onoise"], "{out}");
+    assert_eq!(lines.len() - blank - 2, 4 + 1, "four rows and the total: {out}");
+    let total = cells(lines[lines.len() - 1]);
+    assert_eq!(total[0], "onoise_total", "{out}");
+    assert_eq!(total[1].parse::<f64>().expect("a number"), 0.0, "{out}");
+    let mut with_csv = args.to_vec();
+    with_csv.extend(["--csv", "noise.csv"]);
+    let out = stdout_of(&piperine_in(dir.path(), &with_csv));
+    assert!(out.lines().any(|l| l == "wrote noise.csv (4 rows)"), "{out}");
+    assert!(!out.contains("onoise_total"), "CSV writes the rows only: {out}");
+    let csv = std::fs::read_to_string(dir.path().join("noise.csv")).expect("the csv");
+    assert_eq!(csv.lines().next(), Some("freq,onoise"));
+    assert_eq!(csv.lines().count(), 5);
+}

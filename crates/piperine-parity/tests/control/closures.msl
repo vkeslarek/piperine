@@ -1,0 +1,64 @@
+//! Closures and function values (CV-05, CV-06): a closure bound by `let` and called, capturing by
+//! value; a function's name as a value and called through a local; a closure and a name passed
+//! to a function-typed parameter; and the same in an `analog` block, which is differentiated
+//! through. The expected values are computed by Rust in `source_control.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn double(x: u8) -> u8 { x * 2 }
+fn apply(f: fn(u8) -> u8, x: u8) -> u8 { f(x) }
+fn twice(f: fn(u8) -> u8, x: u8) -> u8 { f(f(x)) }
+
+module Rows(in clk: Bit, out a: Bit<u8>, out b: Bit<u8>, out c: Bit<u8>, out d: Bit<u8>, out e: Bit<u8>, out g: Bit<u8>) {}
+digital for Rows {
+    on clk.rise() {
+        let add = |x: u8, y: u8| x + y;
+        a <- add(3, 4);
+        // A closure captures by value, where it is written: the later assignment does not reach it.
+        let k = 3u8;
+        let plus_k = |x: u8| x + k;
+        k = 10;
+        b <- plus_k(1);
+        c <- k;
+        // A function's name is a value, called through a local and through a parameter.
+        let f = double;
+        d <- f(21);
+        e <- apply(double, 5);
+        // A closure that captures nothing is a function pointer.
+        g <- twice(|x: u8| x + 100, 1);
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal a: Bit<u8>; signal b: Bit<u8>; signal c: Bit<u8>; signal d: Bit<u8>; signal e: Bit<u8>; signal g: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, a, b, c, d, e, g);
+}
+
+/// Ideal resistor.
+module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// A potential held at `volts` with a unit AC stimulus on top.
+module AcLevel(p: Electrical) { volts: f64 = 0.0; }
+analog for AcLevel { v(p, gnd) +> volts + ac_stim(1.0); }
+
+fn cube(x: f64) -> f64 { x * x * x }
+
+/// `v(a)^3` through a closure and through a function value.
+module Closed(a: Electrical, o: Electrical, p: Electrical) {}
+analog for Closed {
+    let cubed = |x: f64| x * x * x;
+    i(gnd, o) +> cubed(v(a));
+    let f = cube;
+    i(gnd, p) +> f(v(a));
+}
+module ClosureBench() {
+    signal a: Electrical; signal o: Electrical; signal p: Electrical;
+    let source = AcLevel { volts: 1.5 }(a);
+    let closed = Closed(a, o, p);
+    let lo = Resistor { r: 1.0 }(o, gnd);
+    let lp = Resistor { r: 1.0 }(p, gnd);
+}

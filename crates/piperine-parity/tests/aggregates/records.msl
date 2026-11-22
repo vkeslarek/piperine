@@ -1,0 +1,24 @@
+//! A record with composite fields (CV-19, §19): one `emit!` writes a struct, an array, a tuple and
+//! a payload enum as fields of a stream. The expected bytes are computed by Rust in
+//! `source_aggregates.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(Repr, PartialEq)]
+struct Pair { a: u8, b: f64 }
+#[derive(Repr, PartialEq)]
+enum Tx { Idle, Data { n: u3 }, Stop }
+
+module Logger(in clk: Bit) {}
+digital for Logger {
+    on clk.rise() {
+        emit!("sample", t = now(), pair = Pair { a: 7, b: 0.5 }, arr = [1u8, 2, 3], tup = (9u8, true), tx = Tx::Data { n: 5 });
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let logger = Logger(clk);
+}

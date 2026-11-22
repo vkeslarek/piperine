@@ -16,11 +16,13 @@
 //! - [`request`]: a run request, read from a run table or from flags, validated.
 
 pub mod backend;
+pub mod composite;
 pub mod failure;
 mod held;
 mod host;
 pub mod prelude;
 pub mod metadata;
+pub mod noise;
 pub mod params;
 pub mod plot;
 pub mod probe;
@@ -29,10 +31,12 @@ pub mod record;
 mod recorder;
 pub mod request;
 pub mod session;
+mod source;
 pub mod table;
 pub mod verdict;
 
 pub use backend::Backend;
+pub use composite::{CellShape, CompositeCell, VariantShape};
 pub use failure::Failure;
 pub use held::Held;
 pub use metadata::{Metadata, ParamInfo, PortInfo, StreamInfo};
@@ -41,7 +45,8 @@ pub use probe::{Column, Probe};
 pub use project::{Checked, Project};
 pub use record::{Field, Record, RecordSink, Streams};
 pub use request::{Analysis, Grid, Overrides, RunSpec};
-pub use session::{Built, ParamPath, Session};
+pub use session::{Built, ParamPath, ParamTarget, Session};
+pub use source::NodeSource;
 pub use params::{Changed, Derive, Params};
 pub use piperine_solver::prelude::ParamValue;
 pub use table::{Cell, Table};

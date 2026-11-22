@@ -1,0 +1,119 @@
+//! Every loop form (CV-02): `while`, `while let`, `loop` with `break value`, `for` over a range
+//! with `break` and `continue`, in a function and in a reaction (whose locals may be unknown),
+//! a reaction committing in a loop, and `analog` loops that compute a value. The expected values
+//! are computed by Rust in `source_control.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn sum_to(n: u16) -> u16 { let s = 0u16; let i = 0u16; while i < n { s += i; i += 1; } s }
+fn first_square_over(limit: u16) -> u16 { let k = 0u16; loop { if k * k > limit { break k; } k += 1; } }
+fn odd_sum(n: u8) -> u16 { let s = 0u16; for k in 0..n { if k % 2 == 0 { continue; } s += k as u16; } s }
+fn inclusive_sum(n: u8) -> u16 { let s = 0u16; for k in 1..=n { s += k as u16; } s }
+fn first_multiple(step: u8, over: u8) -> u8 { let found = 0u8; for k in 1..32u8 { if k * step > over { found = k * step; break; } } found }
+fn drained(limit: u8) -> u16 {
+    let i = 0u8;
+    let total = 0u16;
+    while let Some(v) = (i < limit).then_some(i) { total += v as u16; i += 1; }
+    total
+}
+fn nested(n: u8) -> u16 { let s = 0u16; for a in 0..n { for b in 0..a { s += (a * b) as u16; } } s }
+
+module Rows(in clk: Bit, out w: Bit<u16>, out l: Bit<u16>, out o: Bit<u16>, out inc: Bit<u16>, out m: Bit<u8>, out d: Bit<u16>, out nest: Bit<u16>,
+            out rw: Bit<u16>, out rl: Bit<u16>, out ro: Bit<u16>, out rm: Bit<u8>, out rd: Bit<u16>) {}
+digital for Rows {
+    on clk.rise() {
+        w <- sum_to(10);
+        l <- first_square_over(50);
+        o <- odd_sum(9);
+        inc <- inclusive_sum(6);
+        m <- first_multiple(3, 20);
+        d <- drained(5);
+        nest <- nested(5);
+        // The same forms written in the reaction itself, whose locals may be unknown.
+        let s = 0u16; let i = 0u16; while i < 10 { s += i; i += 1; }
+        rw <- s;
+        let k = 0u16;
+        let found = loop { if k * k > 50 { break k; } k += 1; };
+        rl <- found;
+        let odd = 0u16;
+        for j in 0..9u8 { if j % 2 == 0 { continue; } odd += j as u16; }
+        ro <- odd;
+        let hit = 0u8;
+        for j in 1..32u8 { if j * 3 > 20 { hit = j * 3; break; } }
+        rm <- hit;
+        let i2 = 0u8; let total = 0u16;
+        while let Some(v) = (i2 < 5).then_some(i2) { total += v as u16; i2 += 1; }
+        rd <- total;
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal w: Bit<u16>; signal l: Bit<u16>; signal o: Bit<u16>; signal inc: Bit<u16>; signal m: Bit<u8>; signal d: Bit<u16>; signal nest: Bit<u16>;
+    signal rw: Bit<u16>; signal rl: Bit<u16>; signal ro: Bit<u16>; signal rm: Bit<u8>; signal rd: Bit<u16>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, w, l, o, inc, m, d, nest, rw, rl, ro, rm, rd);
+}
+
+/// Last write wins per level (§12.1.2); a commit under an `if` in the loop is its own statement.
+module Commits(in clk: Bit, out last: Bit<u8> = 0, out picked: Bit<u8> = 0, out counted: Bit<u8> = 0) {}
+digital for Commits {
+    on clk.rise() {
+        for k in 0..4u8 { last <- k; }
+        for k in 0..6u8 { if k == 2 { picked <- k * 10; } }
+        let n = 0u8;
+        while n < 3 { n += 1; counted <- n; }
+    }
+}
+
+module CommitBench() {
+    signal clk: Bit; signal last: Bit<u8>; signal picked: Bit<u8>; signal counted: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let commits = Commits(clk, last, picked, counted);
+}
+
+/// Ideal resistor.
+module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// A potential held at `volts` with a unit AC stimulus on top.
+module AcLevel(p: Electrical) { volts: f64 = 0.0; }
+analog for AcLevel { v(p, gnd) +> volts + ac_stim(1.0); }
+
+/// `v(a)^4` by a loop, and written out.
+module Looped(a: Electrical, o: Electrical) {}
+analog for Looped { let y = v(a); for _ in 0..3u8 { y = y * v(a); } i(gnd, o) +> y; }
+module Written(a: Electrical, o: Electrical) {}
+analog for Written { i(gnd, o) +> v(a) * v(a) * v(a) * v(a); }
+
+module LoopedBench() {
+    signal a: Electrical; signal o: Electrical;
+    let source = AcLevel { volts: 1.5 }(a);
+    let looped = Looped(a, o);
+    let load = Resistor { r: 1.0 }(o, gnd);
+}
+module WrittenBench() {
+    signal a: Electrical; signal o: Electrical;
+    let source = AcLevel { volts: 1.5 }(a);
+    let written = Written(a, o);
+    let load = Resistor { r: 1.0 }(o, gnd);
+}
+
+/// A range with no iteration: the loop body does not run, whether the bounds are literals or a param.
+module Empty(o: Electrical, p: Electrical) { count: f64 = 0.0; }
+analog for Empty {
+    let y = 2.0;
+    for _ in 0..0u8 { y = 99.0; }
+    i(gnd, o) +> y;
+    let z = 3.0;
+    for _ in 0..(count as u8) { z = 99.0; }
+    while false { z = 98.0; }
+    i(gnd, p) +> z;
+}
+module EmptyBench() {
+    signal o: Electrical; signal p: Electrical;
+    let empty = Empty(o, p);
+    let lo = Resistor { r: 1.0 }(o, gnd);
+    let lp = Resistor { r: 1.0 }(p, gnd);
+}

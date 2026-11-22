@@ -1,0 +1,112 @@
+//! One sample of the tolerance analysis. The same script as `timer.msl`, shortened, with no
+//! pass/fail of its own: it measures, and writes one `metrics` record at the end. The driver
+//! `analysis/montecarlo.py` sets the component values with `--param`, reads the record and
+//! judges it against the spec in README.md.
+//!
+//! ```text
+//!   0.0 s  power-up, tank empty: BOTTOM closed, TOP open
+//!   0.5 s  BOTTOM opens            1.0 s  TOP closes (full): the pump starts
+//!   1.5 s  TOP opens               3.0 s  BOTTOM closes (empty): T later the pump stops
+//! ```
+
+use pump_action::parts::{Contact, Supply};
+
+use pump_action::{Pump, PumpAction};
+
+/// Measures one run: times of the pump's edges, the coil voltage, the supply's power.
+module Meter(pump: Electrical, tp: Electrical, src: Electrical, vcc: Electrical) {
+    rs: f64 = 0.2;
+    t_empty: f64 = 3.0;
+    t_end: f64 = 44.9;
+    signal starts: Bit<u8> = 0;
+    signal stops: Bit<u8> = 0;
+    signal t_on: Bit<f64> = 0.0;
+    signal t_off: Bit<f64> = 0.0;
+    /// Coil voltage and supply voltage at the board, sampled with the pump running.
+    signal v_coil: Bit<f64> = 0.0;
+    signal v_rail: Bit<f64> = 0.0;
+    /// Supply power: the peak, the energy while the pump runs, two idle samples.
+    signal p_peak: Bit<f64> = 0.0;
+    signal e_on: Bit<f64> = 0.0;
+    signal t_prev: Bit<f64> = 0.0;
+    signal p_idle: Bit<f64> = 0.0;
+}
+
+digital for Meter {
+    on above(v(pump) - 6.0) {
+        starts <- starts + 1;
+        t_on <- now();
+    }
+    on above(6.0 - v(pump)) && now() > 0.0 {
+        stops <- stops + 1;
+        t_off <- now();
+    }
+    on settle {
+        let p = v(src) * v(src, vcc) / rs;
+        if p > p_peak {
+            p_peak <- p;
+        }
+        if v(pump) > 6.0 {
+            e_on <- e_on + p * (now() - t_prev);
+        }
+        t_prev <- now();
+    }
+    // Idle with both floats open: only the 555 and R1's divider draw.
+    on at(0.9) {
+        p_idle <- v(src) * v(src, vcc) / rs;
+    }
+    // Running, long after every edge: the steady coil voltage.
+    on at(2.5) {
+        v_coil <- v(tp);
+        v_rail <- v(vcc);
+    }
+    on at(t_end) {
+        emit!(
+            "metrics",
+            starts = starts,
+            stops = stops,
+            t_on = t_on,
+            t_off = t_off,
+            run_on = t_off - t_empty,
+            v_coil = v_coil,
+            v_rail = v_rail,
+            p_peak = p_peak,
+            p_avg_on = e_on / (t_off - t_on),
+            p_idle = p_idle,
+            p_idle_empty = v(src) * v(src, vcc) / rs,
+            pump_off_at_end = v(pump) < 0.1,
+        );
+    }
+}
+
+module Tolerance() {
+    signal src: Electrical;
+    signal vcc: Electrical;
+    signal ft: Electrical;
+    signal fb: Electrical;
+    signal pump_p: Electrical;
+    signal tp: Electrical;
+    signal top: Bit = false;
+    signal bottom: Bit = true;
+    pub let psu = Supply(src, vcc);
+    pub let ctl = PumpAction(vcc, ft, fb, pump_p, tp);
+    pub let m1 = Pump(pump_p, gnd);
+    let s_top = Contact(ft, gnd, top);
+    let s_bottom = Contact(vcc, fb, bottom);
+    let meter = Meter(pump_p, tp, src, vcc);
+}
+
+digital for Tolerance {
+    on at(0.5) {
+        bottom <- false;
+    }
+    on at(1.0) {
+        top <- true;
+    }
+    on at(1.5) {
+        top <- false;
+    }
+    on at(3.0) {
+        bottom <- true;
+    }
+}

@@ -14,6 +14,7 @@ use crate::netlist::AnalogReference;
 
 use super::assembly::InstanceState;
 use super::flow::Linear;
+use super::limit::linear;
 use super::plan::{InputPlan, InstancePlan, TermPlan};
 
 /// A complex stamp list.
@@ -71,36 +72,121 @@ fn phasor(x: &InputPlan, st: &InstanceState) -> Complex64 {
 pub struct NoiseColumn {
     /// `<instance path>.<input name>`.
     pub name: String,
+    /// The path of the instance that declares the input.
+    pub instance: String,
+    /// The input's position among the instance's inputs: what tells apart two inputs of one name.
+    pub input: usize,
     /// Its density `PSD` at this frequency.
     pub psd: f64,
     /// The injection `b`: per row, the sum over terms of `±w·g`.
     pub rows: Vec<(AnalogReference, Complex64)>,
 }
 
-/// Appends one column per `NOISE` input of `inst`.
-pub(crate) fn noise_columns(inst: &InstancePlan, st: &InstanceState, omega: f64, out: &mut Vec<NoiseColumn>) {
-    for (i, x) in inst.inputs.iter().enumerate() {
-        if x.kind != input::NOISE {
-            continue;
-        }
+/// One small-signal stimulus: a `STIM` input injected through every term that reads it, at unit
+/// magnitude, with the phase of its phasor (the input-referred noise reads the transfer from
+/// it, design D11).
+#[derive(Clone, Debug, PartialEq)]
+pub struct StimulusColumn {
+    /// `<instance path>.<input name>`.
+    pub name: String,
+    /// The phase `atan2(IM, RE)` of the stimulus phasor, radians.
+    pub phase: f64,
+    /// The injection: per row, the sum over terms of `±w·g`, in the sign convention of
+    /// [`NoiseColumn::rows`].
+    pub rows: Vec<(AnalogReference, Complex64)>,
+}
+
+/// A term at the operating point, linearized against the unknowns and the noise inputs, its
+/// operator's response already applied: the small-signal value of a flow output read from the
+/// term itself.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TermLinearization {
+    /// `w·∂v/∂x_j` for each unknown the term's value depends on.
+    pub unknowns: Vec<(AnalogReference, Complex64)>,
+    /// `w·∂v/∂n_k` for each `NOISE` input `k` (its position among the instance's inputs) the
+    /// term's value reads directly.
+    pub noise: Vec<(usize, Complex64)>,
+}
+
+/// One instance at the operating point, read at an angular frequency: what the small-signal
+/// quantities of its inputs and terms are there.
+pub(crate) struct SmallSignal<'a> {
+    /// The instance's plan.
+    instance: &'a InstancePlan,
+    /// The instance's evaluated state.
+    state: &'a InstanceState,
+    /// The angular frequency, radians per second.
+    omega: f64,
+}
+
+impl<'a> SmallSignal<'a> {
+    /// The instance `instance` in `state`, read at `omega`.
+    pub(crate) fn new(instance: &'a InstancePlan, state: &'a InstanceState, omega: f64) -> SmallSignal<'a> {
+        SmallSignal { instance, state, omega }
+    }
+
+    /// The injection of input `input`: per row, the sum over the terms that read it of `±w·g`,
+    /// `w` the term's response at the frequency.
+    fn injection_rows(&self, input: usize) -> Vec<(AnalogReference, Complex64)> {
         let mut rows: Vec<(AnalogReference, Complex64)> = Vec::new();
-        let mut add = |r: &Option<AnalogReference>, v: Complex64| {
-            let Some(r) = r else { return };
-            match rows.iter_mut().find(|(q, _)| q.idx() == r.idx()) {
-                Some((_, s)) => *s += v,
-                None => rows.push((r.clone(), v)),
+        let mut add = |row: &Option<AnalogReference>, value: Complex64| {
+            let Some(row) = row else { return };
+            match rows.iter_mut().find(|(known, _)| known.idx() == row.idx()) {
+                Some((_, sum)) => *sum += value,
+                None => rows.push((row.clone(), value)),
             }
         };
-        for t in &inst.terms {
-            let Some((fi, _)) = t.value else { continue };
-            let w = response(t, st, omega);
-            for (p, _) in t.via.iter().filter(|(_, j)| *j == i) {
-                let v = w * st.fns[fi].jac[*p];
-                add(&t.plus, v);
-                add(&t.minus, -v);
+        for term in &self.instance.terms {
+            let Some((function, _)) = term.value else { continue };
+            let response = response(term, self.state, self.omega);
+            for (partial, _) in term.via.iter().filter(|(_, read)| *read == input) {
+                let value = response * self.state.fns[function].jac[*partial];
+                add(&term.plus, value);
+                add(&term.minus, -value);
             }
         }
-        out.push(NoiseColumn { name: format!("{}.{}", inst.path, x.name), psd: strength(st, x.psd), rows });
+        rows
+    }
+
+    /// Appends one column per `NOISE` input of the instance.
+    pub(crate) fn noise_columns(&self, out: &mut Vec<NoiseColumn>) {
+        for (position, input) in self.instance.inputs.iter().enumerate().filter(|(_, input)| input.kind == input::NOISE) {
+            out.push(NoiseColumn {
+                name: format!("{}.{}", self.instance.path, input.name),
+                instance: self.instance.path.clone(),
+                input: position,
+                psd: strength(self.state, input.psd),
+                rows: self.injection_rows(position),
+            });
+        }
+    }
+
+    /// Appends one column per `STIM` input of the instance.
+    pub(crate) fn stimulus_columns(&self, out: &mut Vec<StimulusColumn>) {
+        for (position, input) in self.instance.inputs.iter().enumerate().filter(|(_, input)| input.kind == input::STIM) {
+            let phasor = phasor(input, self.state);
+            out.push(StimulusColumn {
+                name: format!("{}.{}", self.instance.path, input.name),
+                phase: phasor.im.atan2(phasor.re),
+                rows: self.injection_rows(position),
+            });
+        }
+    }
+
+    /// The linearization of `term`, with the response of its operator at the frequency.
+    pub(crate) fn term_linearization(&self, term: &TermPlan) -> TermLinearization {
+        let response = response(term, self.state, self.omega);
+        let unknowns = linear(term, self.instance, self.state).cols.into_iter().map(|(column, partial)| (column, response * partial)).collect();
+        let noise = match term.value {
+            Some((function, _)) => term
+                .via
+                .iter()
+                .filter(|(_, read)| self.instance.inputs[*read].kind == input::NOISE)
+                .map(|(partial, read)| (*read, response * self.state.fns[function].jac[*partial]))
+                .collect(),
+            None => Vec::new(),
+        };
+        TermLinearization { unknowns, noise }
     }
 }
 

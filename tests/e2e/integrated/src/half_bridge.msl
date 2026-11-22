@@ -1,0 +1,80 @@
+//! `half_bridge`: two levels of hierarchy under one top. A commander issues complementary `hi` and `lo`
+//! commands (1 us each, a period of 2 us); a `Leg` delays each by 50 ns through a `GateDriver`, closes
+//! one of two switches with it and watches with a `Never` that the two gates are never on together. The
+//! switched node drives an RL load (a 10 uH inductor into 9 ohm) whose current the host's supply ramp
+//! moves.
+
+use crate::{Clock, Resistor, Switch, Vdc};
+
+/// An ideal inductor.
+pub module Inductor(p: Electrical, n: Electrical) {
+    /// Inductance, in henries.
+    l: f64 where l > 0.0;
+}
+
+analog for Inductor {
+    v(p, n) +> ddt(l * i(p, n));
+}
+
+/// A gate driver: `gate` follows `cmd` `delay` later. `armed` is the command as the driver received it.
+pub module GateDriver(in cmd: Bit, out gate: Bit = false) {
+    /// Propagation delay, in seconds.
+    delay: f64 = 50n where delay > 0.0;
+    /// The command the driver last saw, before the delay.
+    signal armed: Bit = false;
+}
+
+digital for GateDriver {
+    on cmd.changed() {
+        armed <- cmd;
+        gate <- cmd after delay;
+    }
+}
+
+/// One half-bridge leg: the high switch from `rail` to `sw` and the low switch from `sw` to ground, each
+/// behind its own driver; `guard` watches that both gates are never on together.
+pub module Leg(in clk: Bit, in hi: Bit, in lo: Bit, rail: Electrical, sw: Electrical) {
+    signal hs: Bit;
+    signal ls: Bit;
+    pub let high_driver = GateDriver(hi, hs) { delay: 50n };
+    pub let low_driver = GateDriver(lo, ls) { delay: 50n };
+    pub let high_switch = Switch(rail, sw, hs);
+    pub let low_switch = Switch(sw, gnd, ls);
+    let guard = Never(clk, hs & ls);
+}
+
+/// The commands: on each rising edge of `clk`, a count of 20 periods (the first edge is count 0) sets `hi`
+/// for counts 0 to 9 and `lo` for counts 10 to 19.
+pub module Commander(in clk: Bit, out hi: Bit = false, out lo: Bit = false) {
+    /// The count of the period: the first edge wraps it to 0.
+    signal count: Bit<u8> = 19;
+}
+
+digital for Commander {
+    on clk.rise() {
+        let next = if count == 19 {
+            0
+        } else {
+            count + 1
+        };
+        count <- next;
+        hi <- next < 10;
+        lo <- next >= 10;
+    }
+}
+
+/// The half-bridge into its RL load, the supply at 0.5 V until the host ramps it.
+pub module HalfBridge() {
+    signal clk: Bit;
+    signal hi: Bit;
+    signal lo: Bit;
+    signal rail: Electrical;
+    signal sw: Electrical;
+    signal coil: Electrical;
+    pub let source = Vdc(rail) { dc: 0.5 };
+    pub let osc = Clock(clk) { f: 10M };
+    pub let commander = Commander(clk, hi, lo);
+    pub let leg = Leg(clk, hi, lo, rail, sw);
+    pub let winding = Inductor(sw, coil) { l: 10u };
+    pub let load = Resistor(coil, gnd) { r: 9.0 };
+}

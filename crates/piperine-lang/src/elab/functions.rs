@@ -7,20 +7,22 @@ use piperine_ir::{FunctionSpec, Local, ValueType};
 use super::elaborator::Elaboration;
 use super::known::Flag;
 use super::lower::Scope;
-use super::variants::Variants;
+use super::variants::{Half, Variants};
 use crate::pom::{DeclId, DeclKind, FileId, TypeId};
 use crate::types::Ty;
 
 impl Elaboration<'_, '_> {
     /// The variant of `function` for `pattern`: a parameter is flagged where the pattern is, and
     /// the result is the type of the body. `None` after a diagnostic.
-    pub(super) fn lower_function(&mut self, function: DeclId, pattern: &[Flag]) -> Option<FunctionSpec> {
+    pub(super) fn lower_function(&mut self, function: DeclId, pattern: &[Flag], half: Half) -> Option<FunctionSpec> {
         let data = self.design.decl_data(function).clone();
         let DeclKind::Fn(f) = &data.kind else { return None };
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let mut scope = Scope::new(data.file);
         // `freq()` in a function is the caller's `freq_`: the sweep's in an analog caller, 0 in a reaction.
         scope.analog = true;
+        // A variant with an argument that may be unknown may see unknown decisions inside.
+        scope.may_be_unknown = pattern.contains(&Flag::Flagged);
         let mut params = Vec::new();
         let mut ok = true;
         let declared = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)));
@@ -37,7 +39,7 @@ impl Elaboration<'_, '_> {
                 let name = self.design.decl_data(param).name.as_ref().map_or_else(String::new, |n| n.text.clone());
                 let is = scope.locals.len() as u32;
                 for (suffix, ty) in [("is", ValueType::Bool), ("val", payload)] {
-                    let local = Local { name: format!("{name}.{suffix}"), ty: flags.next().unwrap_or(Flag::Plain).wrap(ty) };
+                    let local = Local { name: format!("{name}.{suffix}"), ty: flags.next().unwrap_or(Flag::Plain).wrap(ty), mutable: false };
                     scope.locals.push(local.clone());
                     params.push(local);
                 }
@@ -55,6 +57,8 @@ impl Elaboration<'_, '_> {
         }
         // The declared result is checked for a type the IR has; the variant's result is its body's.
         let declared_ret = match f.ret {
+            // an `Option` result is two IR functions (`returns.rs`), each with the type of its half
+            Some(ty) if matches!(self.types.written(ty), Some(Ty::Option(_))) => true,
             Some(ty) => self.lower_type(data.file, ty).is_some(),
             None => true,
         };
@@ -62,12 +66,19 @@ impl Elaboration<'_, '_> {
             self.unsupported(data.file, data.span, "a function without a body");
             return None;
         };
-        let lowered = self.lower_block(&mut scope, data.file, &body.stmts, body.span)?;
+        let lowered = self.lower_function_body(&mut scope, function, half, data.file, body)?;
         if !(ok && declared_ret) {
             return None;
         }
         let ret = self.type_of(lowered);
-        Some(FunctionSpec { name: Variants::name(&name, pattern), origin: self.locator.decl(function), params, ret, locals: scope.locals, body: lowered })
+        // Each half runs the whole body and uses only part of what it computes: its own locals are
+        // spelled `_name`, so the generated Rust does not warn of the part a half leaves unread.
+        if half != Half::Whole {
+            for local in scope.locals.iter_mut().skip(params.len()) {
+                local.name = format!("_{}", local.name);
+            }
+        }
+        Some(FunctionSpec { name: Variants::name(&name, pattern, half), origin: self.locator.decl(function), params, ret, locals: scope.locals, body: lowered })
     }
 
     /// The IR type a type written in a signature names: the checker's type of it, as an IR type.

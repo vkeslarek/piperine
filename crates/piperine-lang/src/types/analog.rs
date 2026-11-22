@@ -5,6 +5,7 @@ use crate::pom::{Arg, BuiltinId, BuiltinKind, DeclKind, DeferReason, ExprId, Exp
 
 use super::catalogue::{Allowed, Core};
 use super::check::{Checker, Context};
+use super::nature_rules::NatureRules;
 use super::{Callee, Ty};
 
 impl Checker<'_> {
@@ -37,7 +38,7 @@ impl Checker<'_> {
         }
         self.apply(expr, &[], args)?;
         let measured = match self.declared_port(recv) {
-            Some((decl, Ty::Node(nature))) => matches!(self.design.decl_data(decl).kind, DeclKind::Port(_)) && self.nature_has_flow(nature),
+            Some((decl, Ty::Node(nature))) => matches!(self.design.decl_data(decl).kind, DeclKind::Port(_)) && NatureRules::of(self.design, nature).flow,
             _ => false,
         };
         if !measured {
@@ -49,11 +50,6 @@ impl Checker<'_> {
         self.infer(recv);
         self.builtins.insert(expr, super::Builtin::Inflow);
         Some(Ty::F64)
-    }
-
-    /// Whether the nature `nature` declares a flow quantity.
-    fn nature_has_flow(&self, nature: crate::pom::DeclId) -> bool {
-        self.design.decl_data(nature).children.iter().any(|c| matches!(&self.design.decl_data(*c).kind, DeclKind::Quantity(q) if q.role == QuantityRole::Flow))
     }
 
     /// A probe `v(a)`, `v(a, b)`, `potential(a, b)` or `flow(a, b)`: its nodes have one nature
@@ -87,8 +83,7 @@ impl Checker<'_> {
             self.coded(file, "E0450", node.span, "a probe is allowed in an `analog` block and a module body only".to_string(), "core primitive out of place");
         }
         if args.is_empty() || args.len() > 2 {
-            let message = format!("a probe takes 1 or 2 nodes, found {}", args.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, message));
+            self.arity_mismatch(file, node.span, "1 to 2", args);
             return None;
         }
         let mut natures = Vec::new();
@@ -105,6 +100,16 @@ impl Checker<'_> {
         }
         if natures.windows(2).any(|w| w[0] != w[1]) || nature.is_some_and(|q| natures.iter().any(|n| *n != q)) {
             self.coded(file, "E0240", node.span, "the nodes of a probe have different natures".to_string(), "nodes of two natures");
+            return None;
+        }
+        // §11 rule 11, §6 rule 10: a node of a nature without `flow` has no flow to contribute to
+        // (`E0413`) or to probe (`E0206`).
+        if role == QuantityRole::Flow && !natures.is_empty() && natures.iter().all(|n| !NatureRules::of(self.design, *n).flow) {
+            if target {
+                self.coded(file, "E0413", node.span, "a flow contribution needs a nature with a `flow`: a signal-flow node takes potential contributions only (§11 rule 11)".to_string(), "no flow on this nature");
+            } else {
+                self.coded(file, "E0206", node.span, "a flow probe needs a nature with a `flow`: the nature of this node declares none (§6 rule 10)".to_string(), "no flow on this nature");
+            }
             return None;
         }
         match (role, target) {
@@ -221,8 +226,8 @@ impl Checker<'_> {
         // in it.
         let (min, max) = (sig.required.len(), sig.required.len() + sig.optional.len());
         if args.len() < min || args.len() > max {
-            let message = format!("`{}` takes {min} to {max} argument(s), found {}", id.name(), args.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), node.span, message));
+            let expected = if min == max { min.to_string() } else { format!("{min} to {max}") };
+            self.arity_mismatch(file, node.span, expected, args);
             return None;
         }
         let params: Vec<Ty> = sig.required.iter().chain(sig.optional).map(|p| p.ty()).collect();
@@ -252,8 +257,7 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
         let [arg] = args else {
-            let message = format!("`analysis` takes 1 argument, found {}", args.len());
-            self.report(file, crate::msl::Diagnostic::new("P0002", format!("mismatched types: {message}"), span, message));
+            self.arity_mismatch(file, span, 1, args);
             return None;
         };
         let kind = match &self.design.expr_node(arg.value).kind {

@@ -311,14 +311,15 @@ impl<'a> Waveforms<'a> {
         DiscreteTrace::of(&self.ran.table, "buck.ctl.reference")
     }
 
-    /// The supervisor's mode (`Supervisor::OFF` to `Supervisor::HICCUP`).
+    /// The supervisor's mode (`Supervisor::OFF` to `Supervisor::HICCUP`): the table prints the variant's
+    /// name, read here as its place in the declaration.
     fn mode(&self) -> DiscreteTrace {
-        DiscreteTrace::of(&self.ran.table, "mode")
+        DiscreteTrace::of_enum(&self.ran.table, "mode", &["Off", "SoftStart", "Regulate", "Hiccup"])
     }
 
-    /// The supervisor's fault code.
+    /// The supervisor's fault code, read as the declaration index of the variant the table prints.
     fn fault(&self) -> DiscreteTrace {
-        DiscreteTrace::of(&self.ran.table, "fault")
+        DiscreteTrace::of_enum(&self.ran.table, "fault", &["Clear", "OverCurrent", "OverVoltage"])
     }
 
     /// Power-good.

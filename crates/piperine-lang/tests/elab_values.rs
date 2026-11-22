@@ -445,11 +445,9 @@ fn a_function_gets_one_variant_per_flag_pattern() {
 
 #[test]
 fn an_enum_is_its_tag_and_a_match_is_an_if_chain() {
-    // DIG-08 AC 9, §2 rule 5: an enum of `V` unit variants is `UInt<ceil(log2 V)>`, variant `k`
-    // the literal `k`; a `match` is an `if` chain that reads its scrutinee once. The enums are
-    // the buck's (examples/buck/src/supervisor.msl) and the stdlib's `Severity` (std/io.msl).
-    let items = "#[derive(Repr, Clone, Copy, PartialEq)]\npub enum Mode { Off, SoftStart, Regulate, Hiccup }\n\
-                 #[derive(Repr, Clone, Copy, PartialEq)]\npub enum Fault { Clear, OverCurrent, OverVoltage }\n\
+    // DIG-08 AC 9 (the name is kept: msl-digital C72 cites it), §2 rule 5, CV-20 AC 4: the enum is an IR enum.
+    let items = "#[derive(Repr, PartialEq)]\npub enum Mode { Off, SoftStart, Regulate, Hiccup }\n\
+                 #[derive(Repr, PartialEq)]\npub enum Fault { Clear, OverCurrent, OverVoltage }\n\
                  fn hiccup() -> Mode { Mode::Hiccup }\n\
                  fn clear() -> Fault { Fault::Clear }\n\
                  fn warning(s: Severity) -> bool { s == Severity::Warning }\n\
@@ -468,39 +466,43 @@ fn an_enum_is_its_tag_and_a_match_is_an_if_chain() {
     let read = Read { ir: &ir };
     let function = |name: &str| ir.functions().find(|f| f.name() == name).unwrap_or_else(|| panic!("no {name}"));
 
-    // `Mode` (4 variants) is `UInt(2)` and `Hiccup` its 4th, 3; `Fault` and `Severity` (3 each)
-    // are `UInt(2)`.
-    assert_eq!(*function("hiccup").ret(), ValueType::UInt(2));
-    assert_eq!(ir.expr(read.body_of("hiccup")), &Expr::Int(3));
-    assert_eq!((*function("clear").ret()).clone(), ValueType::UInt(2));
-    assert_eq!(ir.expr(read.body_of("clear")), &Expr::Int(0));
-    assert_eq!(function("warning").params()[0].ty, ValueType::UInt(2));
-    assert!(read.function_text("warning").contains("(s == 1u2)"), "{}", read.function_text("warning"));
-    assert_eq!(function("next").params().iter().map(|p| p.ty.clone()).collect::<Vec<_>>(), [ValueType::UInt(2), ValueType::Bool]);
+    // §2 rule 5: an enum of `V` unit variants has a tag of `ceil(log2 V)` levels; a `match` is an `if`
+    // chain that reads its scrutinee once. The enums are the buck's (examples/buck/src/supervisor.msl)
+    // and the stdlib's `Severity` (std/io.msl). `Mode`, `Fault` and `Severity` are IR enums since composite-values T48: a function's result and
+    // parameter have the enum's arena type, `Hiccup` is `VariantOf` its 4th variant (discriminant 3).
+    let enum_named = |name: &str| ValueType::Enum(piperine_ir::TypeId(ir.types().iter().position(|t| t.name == name).unwrap_or_else(|| panic!("no type {name}")) as u32));
+    assert_eq!(*function("hiccup").ret(), enum_named("Mode"));
+    assert!(matches!(ir.expr(read.body_of("hiccup")), Expr::VariantOf { variant: 3, fields, .. } if fields.is_empty()));
+    assert_eq!(*function("clear").ret(), enum_named("Fault"));
+    assert!(matches!(ir.expr(read.body_of("clear")), Expr::VariantOf { variant: 0, fields, .. } if fields.is_empty()));
+    assert_eq!(function("warning").params()[0].ty, enum_named("Severity"));
+    assert!(read.function_text("warning").contains("(s == (Severity::Warning() : t"), "{}", read.function_text("warning"));
+    assert_eq!(function("next").params().iter().map(|p| p.ty.clone()).collect::<Vec<_>>(), [enum_named("Mode"), ValueType::Bool]);
 
-    // The arms in order; an or-pattern over a known scrutinee is `||`; the last arm is the final
-    // `else`; a param is read where it is.
+    // The arms in order, each a variant test; an or-pattern over a known scrutinee is `||`; the last
+    // arm is the final `else`; a param is read where it is.
     let next = read.function_text("next");
-    assert!(next.contains("if ((m == 1u2) || (m == 2u2)) { 2u2 } else { if (m == 0u2) { if ok { 1u2 } else { 0u2 } } else { 1u2 } }"), "{next}");
+    assert!(next.contains("if (matches!(m, Mode::SoftStart) || matches!(m, Mode::Regulate)) { (Mode::Regulate() : t"), "{next}");
+    assert!(next.contains("else { if matches!(m, Mode::Off) {"), "{next}");
     // `_` is the final `else`.
-    assert!(read.function_text("severe").contains("if (f == 0u2) { 0u2 } else { 2u2 }"), "{}", read.function_text("severe"));
+    assert!(read.function_text("severe").contains("if matches!(f, Fault::Clear) { (Severity::Info() : t"), "{}", read.function_text("severe"));
     // A scrutinee that is not a plain read is bound to a local once, and read through it.
     let once = read.function_text("once");
     assert_eq!(once.matches("severe(f)").count(), 1, "{once}");
-    assert!(once.contains("local match$0: u2") && once.contains("let match$0 = severe(f)"), "{once}");
-    assert!(once.contains("if (match$0 == 0u2) { 0u8 } else { if (match$0 == 1u2) { 1u8 } else { 2u8 } }"), "{once}");
+    assert!(once.contains("let match$0 = severe(f)"), "{once}");
+    assert!(once.contains("if matches!(match$0, Severity::Info) { 0u8 } else { if matches!(match$0, Severity::Warning) { 1u8 } else { 2u8 } }"), "{once}");
     // Over a scrutinee that may be unknown, the or-pattern is `|` and every test is flagged.
     let unknown = read.function_text("unknown_mode");
-    assert!(unknown.contains("let s = if ((m == 1u2) | (m == 2u2)) { true } else { false }"), "{unknown}");
+    assert!(unknown.contains("let s = if ((m == (Mode::SoftStart() : t"), "{unknown}");
     assert!(locals_in(&unknown).contains(&"s: flagged<bool>".to_string()), "{unknown}");
     let ops: Vec<BinaryOp> = read.reach(read.body_of("unknown_mode")).into_iter().filter_map(|e| if let Expr::Binary { op, .. } = ir.expr(e) { Some(*op) } else { None }).collect();
     assert!(ops.contains(&BinaryOp::BitOr) && !ops.contains(&BinaryOp::Or), "{ops:?}");
 
-    // An enum of one variant has a tag of no level: no IR type holds it (spec Edge Cases).
-    let src = reaching("#[derive(Repr, Clone, Copy, PartialEq)]\npub enum One { Only }\nfn only() -> One { One::Only }", &["only()"]);
-    let err = Elab::run(&src, "Top").expect_err("a tag of no level");
-    assert!(Elab::codes(&err).iter().all(|c| c == "P0001"), "{:?}", Elab::codes(&err));
-    assert!(err.iter().any(|d| d.diagnostic.message.contains("an enum of one variant")), "{:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    // An enum of one variant has a tag of no level and is an IR enum all the same: its value is the
+    // variant (composite-values T48; it cannot be carried, the checker says so by name).
+    let src = reaching("#[derive(Repr, PartialEq)]\npub enum One { Only }\nfn only() -> One { One::Only }", &["only()"]);
+    let ir = Elab::ir(&src, "Top");
+    assert!(ir.expressions().any(|e| matches!(e, Expr::VariantOf { variant: 0, fields, .. } if fields.is_empty())));
 }
 
 #[test]
@@ -510,7 +512,7 @@ fn an_option_is_a_flag_and_a_payload() {
     // `setpoint` is the body of `SetpointReg`'s reaction (examples/buck/src/control.msl) and
     // `supervise` holds `Supervisor`'s `fault_now` (examples/buck/src/supervisor.msl), their
     // carriers here locals that may be unknown and their commits results.
-    let items = "#[derive(Repr, Clone, Copy, PartialEq)]\npub enum Fault { Clear, OverCurrent, OverVoltage }\n\
+    let items = "#[derive(Repr, PartialEq)]\npub enum Fault { Clear, OverCurrent, OverVoltage }\n\
                  const SETPOINT_MAX: u8 = 168;\nconst OC_PERIODS: u4 = 8;\nconst OV_SAMPLES: u2 = 2;\n\
                  fn setpoint(code: u8) -> u8 { let data: u8 = Unknown; if let Some(d) = data.known() { d.min(SETPOINT_MAX) } else { code } }\n\
                  fn supervise(oc_n: u4, ov_n: u2) -> u8 {\n\
@@ -540,24 +542,27 @@ fn an_option_is_a_flag_and_a_payload() {
     // A `let` of an `Option` binds its flag and its payload; `Some`/`None` give each.
     let supervise = read.function_text("supervise");
     let locals = locals_in(&supervise);
-    for local in ["fault_now.is: bool", "fault_now.val: u2", "f: u2", "latched: u2", "quiet: bool", "tripped: bool", "cause: u2", "match$0.is: bool", "match$0.val: u2"] {
-        assert!(locals.contains(&local.to_string()), "local {local} in:\n{supervise}");
+    // `Fault` is an IR enum (composite-values T48): the payload local holds the enum, not its tag.
+    let fault = format!("t{}", ir.types().iter().position(|t| t.name == "Fault").expect("Fault is in the arena"));
+    for local in ["fault_now.is: bool".to_string(), format!("fault_now.val: {fault}"), format!("f: {fault}"), format!("latched: {fault}"), "quiet: bool".to_string(), "tripped: bool".to_string(), format!("cause: {fault}"), "match$0.is: bool".to_string(), format!("match$0.val: {fault}")] {
+        assert!(locals.contains(&local), "local {local} in:\n{supervise}");
     }
+    let (over_current, over_voltage, clear) = (format!("(Fault::OverCurrent() : {fault})"), format!("(Fault::OverVoltage() : {fault})"), format!("(Fault::Clear() : {fault})"));
     for line in [
-        "let fault_now.is = if (oc_n >= 8u4) { true } else { if (ov_n >= 2u2) { true } else { false } }",
-        "let fault_now.val = if (oc_n >= 8u4) { 1u2 } else { if (ov_n >= 2u2) { 2u2 } else { 0u2 } }",
+        "let fault_now.is = if (oc_n >= 8u4) { true } else { if (ov_n >= 2u2) { true } else { false } }".to_string(),
+        format!("let fault_now.val = if (oc_n >= 8u4) {{ {over_current} }} else {{ if (ov_n >= 2u2) {{ {over_voltage} }} else {{ {clear} }} }}"),
         // `if let`: the flag decides, the binding reads the payload.
-        "let latched = if fault_now.is { let f = fault_now.val; f } else { 0u2 }",
-        "let quiet = (!fault_now.is)",
-        "let tripped = fault_now.is",
-        "let cause = if fault_now.is { fault_now.val } else { 0u2 }",
-        // `match`: `Some(v)` is the flag and the payload equal to `v`, `Some(f)` binds the payload,
+        format!("let latched = if fault_now.is {{ let f = fault_now.val; f }} else {{ {clear} }}"),
+        "let quiet = (!fault_now.is)".to_string(),
+        "let tripped = fault_now.is".to_string(),
+        format!("let cause = if fault_now.is {{ fault_now.val }} else {{ {clear} }}"),
+        // `match`: `Some(v)` is the flag and the payload tested for `v`, `Some(f)` binds the payload,
         // `None` the last arm.
-        "let match$0.is = fault_now.is",
-        "let match$0.val = fault_now.val",
-        "if (match$0.is && (match$0.val == 1u2)) { 1u8 } else { if match$0.is { let f = match$0.val; if (f == latched) { 2u8 } else { 3u8 } } else { 0u8 } }",
+        "let match$0.is = fault_now.is".to_string(),
+        "let match$0.val = fault_now.val".to_string(),
+        "if (match$0.is && matches!(match$0.val, Fault::OverCurrent)) { 1u8 } else { if match$0.is { let f = match$0.val; if (f == latched) { 2u8 } else { 3u8 } } else { 0u8 } }".to_string(),
     ] {
-        assert!(supervise.contains(line), "`{line}` in:\n{supervise}");
+        assert!(supervise.contains(&line), "`{line}` in:\n{supervise}");
     }
 
     // `unwrap_or` of a literal `Some` is its payload; of a pair it is an `if` on the flag.
@@ -588,8 +593,9 @@ fn an_option_is_a_flag_and_a_payload() {
     let text = ir.print_structural();
     assert!(!text.contains("Option") && !text.contains("option"), "{text}");
     let locals = locals_in(&text);
-    assert!(locals.contains(&"fault_now.is: flagged<bool>".to_string()) && locals.contains(&"fault_now.val: flagged<u2>".to_string()), "{text}");
-    assert!(text.contains("if fault_now.is { let f = fault_now.val; mode <- 3u2; fault <- f;"), "{text}");
+    let (mode, fault) = (ir.types().iter().position(|t| t.name == "Mode").expect("Mode"), ir.types().iter().position(|t| t.name == "Fault").expect("Fault"));
+    assert!(locals.contains(&"fault_now.is: flagged<bool>".to_string()) && locals.contains(&format!("fault_now.val: flagged<t{fault}>")), "{text}");
+    assert!(text.contains(&format!("if fault_now.is {{ let f = fault_now.val; mode <- (Mode::Hiccup() : t{mode}); fault <- f;")), "{text}");
 }
 
 /// The item of `examples/buck/src/<file>` that starts with `head`, through its closing brace.
@@ -768,4 +774,28 @@ fn option_rows_lower_on_the_pair() {
     let th = read.function_text("th");
     assert!(th.contains("let t.is = (c > 1u8)") && th.contains("let t.val = if (c > 1u8) { 7u8 } else { 0u8 }"), "{th}");
     assert!(th.contains("let s.is = (c > 2u8)") && th.contains("let s.val = 5u8"), "{th}");
+}
+
+#[test]
+fn a_const_reading_a_run_value_is_e0188() {
+    // §3.9.2: the initializer of a `const` that is not a const expression is `E0188` naming the
+    // `const`: here it calls a function that reads the environment, which only a run gives. A
+    // `const` without a value outside a trait is the same code.
+    for (src, wanted) in [("fn h() -> f64 { temperature() }\nconst K: f64 = h();", "reads a call that is not a function"), ("const K: u8;", "has no value")] {
+        let src = reaching(src, &["K"]);
+        let err = Elab::run(&src, "Top").expect_err(wanted);
+        assert_eq!(Elab::codes(&err), ["E0188"], "{src}: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert!(err[0].diagnostic.message.contains("`K`") && err[0].diagnostic.message.contains(wanted), "{}", err[0].diagnostic.message);
+    }
+}
+
+#[test]
+fn a_const_that_depends_on_itself_is_e0188() {
+    // §3.9.2: a constant that depends on itself, directly or through another `const`, is `E0188`.
+    for src in ["const K: u8 = K + 1;\nfn f() -> u8 { K }", "const A: u8 = B;\nconst B: u8 = A;\nfn f() -> u8 { A }"] {
+        let src = reaching(src, &["f()"]);
+        let err = Elab::run(&src, "Top").expect_err("a cycle");
+        assert_eq!(Elab::codes(&err), ["E0188"], "{src}");
+        assert!(err[0].diagnostic.message.contains("depends on itself"), "{}", err[0].diagnostic.message);
+    }
 }

@@ -2,9 +2,13 @@
 //! converter with its supply and load.
 
 use crate::control::{Pid, RefRamp, SetpointReg, target_codes};
+
 use crate::dpwm::{Dpwm, Osc};
+
 use crate::power::{Load, PowerStage, Supply};
+
 use crate::sense::Sensing;
+
 use crate::supervisor::{Fault, Mode, Supervisor};
 
 /// The digital controller (SPEC §5 to §8). Its inputs are the ADC code and strobe and the three
@@ -13,11 +17,23 @@ use crate::supervisor::{Fault, Mode, Supervisor};
 ///
 /// Two clocks drive it: the 200 MHz `clk` runs the DPWM, and the ADC's `done` strobe, once per
 /// period, runs the supervisor, the reference ramp and the PID (SPEC §9).
-pub module Controller(in clk: Bit, in en: Bit, in sp_wr: Bit, in sp_data: Bit<u8>,
-                      in code: Bit<u10>, in done: Bit,
-                      in vin_ok: Bit, in oc: Bit, in sink_oc: Bit,
-                      out hs_cmd: Bit, out ls_cmd: Bit, out sample: Bit,
-                      out pgood: Bit, out fault: Bit<Fault>, out mode: Bit<Mode>) {
+pub module Controller(
+    in clk: Bit,
+    in en: Bit,
+    in sp_wr: Bit,
+    in sp_data: Bit<u8>,
+    in code: Bit<u10>,
+    in done: Bit,
+    in vin_ok: Bit,
+    in oc: Bit,
+    in sink_oc: Bit,
+    out hs_cmd: Bit,
+    out ls_cmd: Bit,
+    out sample: Bit,
+    out pgood: Bit,
+    out fault: Bit<Fault>,
+    out mode: Bit<Mode>,
+) {
     pub signal setpoint: Bit<u8>;
     pub signal reference: Bit<u10>;
     pub signal duty: Bit<u12>;
@@ -48,8 +64,16 @@ pub module Controller(in clk: Bit, in en: Bit, in sp_wr: Bit, in sp_data: Bit<u8
 ///
 /// Probe points for the host: `vin`, `vout`, `power.sw`, `power.lx` (nodes), `isense` (0.1 V/A),
 /// `ctl.reference`, `ctl.duty`, `ctl.setpoint`.
-pub module Buck(in en: Bit, in sp_wr: Bit, in sp_data: Bit<u8>, in load_step: Bit, in inject: Bit,
-                out pgood: Bit, out fault: Bit<Fault>, out mode: Bit<Mode>) {
+pub module Buck(
+    in en: Bit,
+    in sp_wr: Bit,
+    in sp_data: Bit<u8>,
+    in load_step: Bit,
+    in inject: Bit,
+    out pgood: Bit,
+    out fault: Bit<Fault>,
+    out mode: Bit<Mode>,
+) {
     // ---- Source (SPEC §2) ----
     /// Supply voltage: 12 V nominal, 9 V to 16 V.
     vin_nom: f64 = 12.0 where vin_nom >= 0.0;
@@ -90,11 +114,24 @@ pub module Buck(in en: Bit, in sp_wr: Bit, in sp_data: Bit<u8>, in load_step: Bi
 
     let osc = Osc(clk) { f: f_clk };
     let supply = Supply(vin) { vin: vin_nom, rs: rs_in };
-    pub let power = PowerStage(vin, vout, isense, isense_n, hs_cmd, ls_cmd) {
-        l, dcr, cout, esr, cin, ron, tpd: t_driver,
-    };
+    pub let power = PowerStage(vin, vout, isense, isense_n, hs_cmd, ls_cmd) { l, dcr, cout, esr, cin, ron, tpd: t_driver };
     let load = Load(vout, load_step, inject) { r_base: r_load, r_step, tr: t_step, i_inject };
     let meas = Sensing(vin, vout, isense, isense_n, sample, code, done, vin_ok, oc, sink_oc);
-    pub let ctl = Controller(clk, en, sp_wr, sp_data, code, done, vin_ok, oc, sink_oc,
-                             hs_cmd, ls_cmd, sample, pgood, fault, mode);
+    pub let ctl = Controller(
+        clk,
+        en,
+        sp_wr,
+        sp_data,
+        code,
+        done,
+        vin_ok,
+        oc,
+        sink_oc,
+        hs_cmd,
+        ls_cmd,
+        sample,
+        pgood,
+        fault,
+        mode,
+    );
 }

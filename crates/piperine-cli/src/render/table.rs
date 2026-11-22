@@ -2,7 +2,7 @@
 
 use std::io::{self, Write};
 
-use piperine_api::Table;
+use piperine_api::{Cell, Table};
 
 use crate::render::number::Number;
 
@@ -22,6 +22,15 @@ impl TextTable {
         }
         Ok(())
     }
+
+    /// The summary lines of a run after its rows, one per line as `name  value`, the value
+    /// written as a table cell is.
+    pub fn write_summary(lines: &[(String, f64)], out: &mut dyn Write) -> io::Result<()> {
+        for (name, value) in lines {
+            writeln!(out, "{name}  {}", Number::text(&Cell::Real(*value)))?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -37,7 +46,7 @@ mod tests {
 
     #[test]
     fn a_table_is_left_aligned_two_spaces_no_trailing_space() {
-        // CLI-07 AC 2: the operating point of the Book's RC (chapter 16), column by column
+        // CLI-07 AC 2: the operating point of the Book's RC (chapter 13), column by column
         let op = Table {
             columns: vec!["signal".into(), "value".into()],
             rows: vec![

@@ -16,7 +16,6 @@
 
 use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, LevelPart, Origin, UnaryOp, ValueType};
 
-use super::compound::EnumLayout;
 use super::consts::{Bindings, Folded};
 use super::elaborator::Elaboration;
 use super::known::Flag;
@@ -42,7 +41,7 @@ impl Elaboration<'_, '_> {
                 // an enum target decodes only the tags of its variants, so any other pattern is
                 // `Unknown` and the result may be unknown whatever the operand was
                 let (tags, flag) = match self.types.ty(expr) {
-                    Some(Ty::Enum(decl)) => (Some(EnumLayout::of(self.design, *decl).tags()), Flag::Flagged),
+                    Some(Ty::Enum(decl)) => (self.types.enum_tag(*decl).map(|t| t.discriminants.clone()), Flag::Flagged),
                     _ => (None, self.flag(operand)),
                 };
                 Some(self.emit(Expr::LevelCast { expr: operand, to: ty.clone(), tags }, flag.wrap(ty), origin))

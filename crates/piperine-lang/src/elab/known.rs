@@ -51,9 +51,9 @@ impl Flag {
     }
 
     /// `base`, flagged when this is `Flagged` and the base is a scalar a flag can ride on
-    /// (`bool`, `f64`, an integer): the IR's own rule (`piperine_ir` typing, `Typing::flag`).
+    /// (`bool`, `f64`, an integer, an enum): the IR's own rule (`piperine_ir` typing, `Typing::flag`).
     pub(super) fn wrap(self, base: ValueType) -> ValueType {
-        let scalar = matches!(base, ValueType::Bool | ValueType::F64) || base.is_integer();
+        let scalar = matches!(base, ValueType::Bool | ValueType::F64 | ValueType::Enum(_)) || base.is_integer();
         if self == Flag::Flagged && scalar { ValueType::Flagged(Box::new(base)) } else { base }
     }
 }
@@ -167,6 +167,32 @@ impl Elaboration<'_, '_> {
         self.emit(Expr::If { cond: lhs, then, otherwise }, ty, origin)
     }
 
+    /// The receiver of a flag read (`known_or`, `is_known`, `known`, `level`): the receiver lowered
+    /// as it stands, except a read of a carrier, or its `prev()`, that holds a tuple, an array, a
+    /// struct or an `Option`: a flag rides on no value of those in value code (a read is the value,
+    /// unknown reading as the default), so the flag read takes the carrier's own flagged read.
+    pub(super) fn lower_flag_receiver(&mut self, scope: &mut Scope, recv: ExprId) -> Option<LoweredExpr> {
+        let held = self.types.ty(recv).filter(|ty| ty.is_composite() && !matches!(ty, Ty::Enum(_))).is_some();
+        if held && let Some(read) = self.flagged_carrier_read(scope, recv) {
+            return Some(read);
+        }
+        self.lower_expr(scope, recv)
+    }
+
+    /// The flagged read of the carrier `expr` names or whose previous value it is; `None` when it is
+    /// neither.
+    fn flagged_carrier_read(&mut self, scope: &mut Scope, expr: ExprId) -> Option<LoweredExpr> {
+        let peeled = self.peel_parens(expr);
+        let origin = self.expr_origin(peeled);
+        let (carrier, previous) = match &self.design.expr_node(peeled).kind {
+            ExprKind::MethodCall { recv, .. } if self.types.builtin(peeled) == Some(Builtin::Prev) => (self.carrier_of(scope, *recv)?, true),
+            ExprKind::Path(_) => (self.carrier_of(scope, peeled)?, false),
+            _ => return None,
+        };
+        let ty = ValueType::Flagged(Box::new(self.structure.carriers[carrier as usize].ty.clone()));
+        Some(self.emit(if previous { Expr::Previous(carrier) } else { Expr::Carrier(carrier) }, ty, origin))
+    }
+
     /// `x.known_or(d)`, `x.is_known()`, `x.high()` (§3.3.4): known values whatever `x` holds.
     /// `x.known()` is an `Option`, lowered as a pair (msl-digital T27); `c.prev()` is the
     /// carrier's previous value; an edge is an event (`events.rs`), never a value.
@@ -174,7 +200,7 @@ impl Elaboration<'_, '_> {
         let span = self.design.expr_node(expr).span;
         match builtin {
             Builtin::KnownOr => {
-                let value = self.lower_expr(scope, recv);
+                let value = self.lower_flag_receiver(scope, recv);
                 let default = match args {
                     [d] => self.lower_expr(scope, *d),
                     _ => None,
@@ -186,7 +212,7 @@ impl Elaboration<'_, '_> {
                 Some(self.emit(Expr::KnownOr { value, default }, ty, origin))
             }
             Builtin::IsKnown => {
-                let value = self.lower_expr(scope, recv)?;
+                let value = self.lower_flag_receiver(scope, recv)?;
                 Some(self.emit(Expr::IsKnown(value), base, origin))
             }
             Builtin::High => {
@@ -208,10 +234,11 @@ impl Elaboration<'_, '_> {
                 let carrier = self.carrier_of(scope, recv)?;
                 Some(self.previous(carrier, origin))
             }
-            // The checker reports an event read as a `bool` first (part IV §13 rule 2).
             Builtin::Inflow => self.lower_inflow(scope, recv, origin),
+            // An event read is `fired(k)` (`event_reads.rs`, §13 rule 2) before it gets here; an
+            // edge that reaches this arm stands where no event read does.
             Builtin::Changed | Builtin::Rise | Builtin::Fall => {
-                self.unsupported(scope.file, span, "an event read as a `bool`");
+                self.unsupported(scope.file, span, "an event that is not an event read");
                 None
             }
         }

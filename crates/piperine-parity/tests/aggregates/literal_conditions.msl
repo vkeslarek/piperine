@@ -1,0 +1,39 @@
+//! A braced struct or variant expression in a condition (CV-09 AC 2, `if p == (Pair { a: 3, b: false }) { .. }`):
+//! the printed Rust keeps its parentheses, which Rust asks for in the head of an `if`, a `while` and a `match`.
+//! Each row commits one integer; the expected values are computed by Rust in `source_aggregates.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(PartialEq)]
+struct Pair { a: u8, b: bool }
+#[derive(PartialEq)]
+enum Shape { Dot, Rect { w: u8, h: u8 } }
+
+fn in_if(p: Pair) -> u8 { if p == (Pair { a: 3, b: false }) { 1 } else { 2 } }
+fn in_variant(s: Shape) -> u8 { if s == (Shape::Rect { w: 1, h: 2 }) { 1 } else { 2 } }
+fn in_while() -> u8 {
+    let n: u8 = 0;
+    let p = Pair { a: 0, b: false };
+    while p != (Pair { a: 3, b: false }) { p.a = p.a + 1; n = n + 1; }
+    n
+}
+
+module Rows(in clk: Bit, out f0: Bit<u8>, out f1: Bit<u8>, out f2: Bit<u8>, out r0: Bit<u8>, out r1: Bit<u8>) {}
+digital for Rows {
+    on clk.rise() {
+        f0 <- in_if(Pair { a: 3, b: false });
+        f1 <- in_variant(Shape::Rect { w: 1, h: 3 });
+        f2 <- in_while();
+        let p = Pair { a: 3, b: false };
+        if p == (Pair { a: 3, b: false }) { r0 <- 1; } else { r0 <- 2; }
+        if Shape::Dot == (Shape::Rect { w: 1, h: 2 }) { r1 <- 1; } else { r1 <- 2; }
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal f0: Bit<u8>; signal f1: Bit<u8>; signal f2: Bit<u8>; signal r0: Bit<u8>; signal r1: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, f0, f1, f2, r0, r1);
+}

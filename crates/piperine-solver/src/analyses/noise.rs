@@ -8,7 +8,8 @@
 //! source travel on [`NoiseAnalysisOptions`], and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
 use piperine_analog_solver::device::Ambient;
-use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, NodeIdentifier};
+use piperine_analog_solver::math::integration::Integrator;
+use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, BranchIdentifier, NodeIdentifier};
 use crate::analyses::Context;
 use crate::analyses::ac::AcSweepAnalysisOptions;
 use crate::analyses::dc::DcSolver;
@@ -48,7 +49,50 @@ pub struct NoiseAnalysisOptions {
     pub sweep_options: AcSweepAnalysisOptions,
     pub output_node: NodeIdentifier,
     pub reference_node: NodeIdentifier,
+    /// The path of the instance whose `STIM` inputs are the analysis input: with it the result
+    /// carries the input-referred noise (`inoise`). An instance with no `STIM` input is refused
+    /// when the solver is built.
     pub input_source_name: Option<String>,
+    /// A flow output: when present it replaces the `output_node`/`reference_node` pair, and
+    /// `onoise` reads in A/√Hz.
+    pub output_flow: Option<FlowOutput>,
+}
+
+/// A flow (current) output of the noise analysis.
+#[derive(Clone, Debug, PartialEq)]
+pub enum FlowOutput {
+    /// The current of a branch unknown (a potential contribution's private flow pin): the
+    /// adjoint's unit sits at that unknown.
+    Branch(BranchIdentifier),
+    /// The value of one term of an instance, for a flow contribution with no potential branch:
+    /// the term's linearization is the adjoint's right side, and its direct partials against
+    /// the noise inputs add to each source's transfer.
+    Term {
+        /// The path of the instance.
+        instance: String,
+        /// The name of the term.
+        term: String,
+    },
+}
+
+/// The output of a noise run, resolved against the circuit.
+enum OutputTarget {
+    /// `v(out) − v(reference)`: a unit at `out`, its negative at `reference`.
+    Potential { out: AnalogReference, reference: AnalogReference },
+    /// The current of a branch unknown.
+    Branch(AnalogReference),
+    /// A term's value.
+    Term { instance: String, term: String },
+}
+
+/// The output as a linear functional of the small-signal solution at one frequency: it reads
+/// `Σ_j u_j·x_j + Σ_k h_k·n_k` over the unknowns `x` and the noise inputs `n` of its instance.
+struct OutputFunctional {
+    /// The coefficient of each unknown: the adjoint system's right side.
+    unknowns: Vec<(AnalogReference, Complex<f64>)>,
+    /// The instance whose noise inputs the output reads directly, and the coefficient of each
+    /// input by position (empty unless the output is a term).
+    direct: Option<(String, Vec<(usize, Complex<f64>)>)>,
 }
 
 
@@ -94,8 +138,7 @@ pub struct NoiseSolver<'a> {
     pub dc_point: DcAnalysisResult,
     pub symbolic_matrix: FaerSymbolicMatrix,
     pub options: NoiseAnalysisOptions,
-    pub out_ref: AnalogReference,
-    pub ref_ref: AnalogReference,
+    output: OutputTarget,
 }
 
 impl<'a> NoiseSolver<'a> {
@@ -124,7 +167,10 @@ impl<'a> NoiseSolver<'a> {
 
         let dc_point = DcSolver::under(circuit, context.clone(), piperine_abi::raw::global::NOISE)?.solve()?;
 
-        let (out_ref, ref_ref) = Self::resolve_nodes(circuit, &options)?;
+        let output = Self::resolve_output(circuit, &dc_point, &options, &context)?;
+        if let Some(path) = &options.input_source_name {
+            Self::require_stimulus(circuit, &dc_point, path, &options, &context)?;
+        }
         let size = circuit.netlist().max_index().map(|i| i + 1).unwrap_or(0);
 
         let symbolic_stamps = Self::assemble_linearized(circuit, &dc_point, 1.0, &context)?;
@@ -136,8 +182,7 @@ impl<'a> NoiseSolver<'a> {
             dc_point,
             symbolic_matrix,
             options,
-            out_ref,
-            ref_ref,
+            output,
         })
     }
 
@@ -162,19 +207,25 @@ impl<'a> NoiseSolver<'a> {
         let frequencies = self.options.sweep_options.generate_frequencies();
         let mut out_noise_sq = Vec::with_capacity(frequencies.len());
         let mut psd_map: HashMap<(String, String), (NoiseKind, Vec<f64>)> = HashMap::new();
+        // |H_in|² at each frequency, with an input: the power gain from it to the output.
+        let mut input_gain_squared = Vec::with_capacity(frequencies.len());
 
         for (i, &f) in frequencies.iter().enumerate() {
             let stamps = Self::assemble_linearized(self.circuit, &self.dc_point, f, &self.context)?;
-            let adjoint_sol = self.solve_adjoint_system(stamps)?;
+            let functional = self.output_functional(f)?;
+            let adjoint_sol = self.solve_adjoint_system(stamps, &functional)?;
 
             // Output density `Σ |H·b|²·PSD` over the assembly's noise columns.
             let mut step_density = 0.0;
-            let columns = self.device_columns(f, &adjoint_sol)?;
+            let columns = self.device_columns(f, &adjoint_sol, &functional)?;
             for (element, source, kind, val) in columns {
                 step_density += val;
                 Self::record(&mut psd_map, (element, source), kind, val, i, frequencies.len());
             }
             out_noise_sq.push(step_density);
+            if self.options.input_source_name.is_some() {
+                input_gain_squared.push(self.input_gain_squared(f, &adjoint_sol)?);
+            }
             for (_, entry) in psd_map.iter_mut() {
                 if entry.1.len() == i {
                     entry.1.push(0.0);
@@ -185,7 +236,13 @@ impl<'a> NoiseSolver<'a> {
         let integrated_noise = self.integrate_noise(&frequencies, &out_noise_sq);
 
         let mut contributions = Vec::new();
+        let (mut output_power, mut input_power) = (0.0, 0.0);
         for ((element, source), (kind, psd)) in psd_map {
+            output_power += Integrator::power_law(&frequencies, &psd);
+            if !input_gain_squared.is_empty() {
+                let referred: Vec<f64> = psd.iter().zip(&input_gain_squared).map(|(n, gain)| n / gain).collect();
+                input_power += Integrator::power_law(&frequencies, &referred);
+            }
             let mut integrated_sq = 0.0;
             if frequencies.len() > 1 {
                 for i in 0..frequencies.len() - 1 {
@@ -205,12 +262,18 @@ impl<'a> NoiseSolver<'a> {
         Ok(NoiseAnalysisResult {
             frequencies,
             integrated_noise,
+            output_total: output_power.sqrt(),
+            input_noise_sq: (!input_gain_squared.is_empty())
+                .then(|| out_noise_sq.iter().zip(&input_gain_squared).map(|(n, gain)| n / gain).collect()),
+            input_total: (!input_gain_squared.is_empty()).then(|| input_power.sqrt()),
             out_noise_sq,
             contributions,
         })
     }
 
-    /// Appends `val` to the PSD series of `key` at frequency index `i`.
+    /// Adds `val` to the PSD series of `key` at frequency index `i`: a second input of the same
+    /// key at one frequency (two inputs sharing a name) sums into that value, so a series holds
+    /// one value per frequency and stays aligned with the sweep (design D7, H2).
     fn record(
         psd_map: &mut HashMap<(String, String), (NoiseKind, Vec<f64>)>,
         key: (String, String),
@@ -219,23 +282,26 @@ impl<'a> NoiseSolver<'a> {
         i: usize,
         count: usize,
     ) {
-        let entry = psd_map.entry(key).or_insert_with(|| {
-            let mut vec = Vec::with_capacity(count);
-            vec.resize(i, 0.0);
-            (kind, vec)
-        });
+        let entry = psd_map.entry(key).or_insert_with(|| (kind, Vec::with_capacity(count)));
         while entry.1.len() < i {
             entry.1.push(0.0);
         }
-        entry.1.push(val);
+        match entry.1.get_mut(i) {
+            Some(already) => *already += val,
+            None => entry.1.push(val),
+        }
     }
 
     /// The noise columns of a circuit of devices at `f_hz`, each with its
-    /// contribution `|H·b|²·PSD` to the output: `(instance, input, kind, value)`.
+    /// contribution `|T|²·PSD` to the output: `(instance, input, kind, value)`, where the
+    /// transfer is `T = h − z·b` for the adjoint solution `z` and the injection `b` of the
+    /// column (a noise injection enters the system as `A·x = −b·n`, design D10), and `h` is the
+    /// output's direct coefficient on that input (nonzero only for a term output).
     fn device_columns(
         &mut self,
         f_hz: f64,
         adjoint: &Array1<Complex<f64>>,
+        functional: &OutputFunctional,
     ) -> crate::core::result::Result<Vec<(String, String, NoiseKind, f64)>> {
         let op = crate::analyses::ac::operating_vector(self.circuit, &self.dc_point);
         let amb = Ambient {
@@ -248,9 +314,16 @@ impl<'a> NoiseSolver<'a> {
         let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
         let mut out = Vec::new();
         for column in bound.analog.noise_sources(&op, amb)? {
-            let h_b = column.rows.iter().fold(Complex::new(0.0, 0.0), |sum, (r, b)| {
+            let through_circuit = column.rows.iter().fold(Complex::new(0.0, 0.0), |sum, (r, b)| {
                 sum + r.idx().map_or(Complex::new(0.0, 0.0), |i| adjoint[i]) * *b
             });
+            let direct = functional
+                .direct
+                .as_ref()
+                .filter(|(instance, _)| *instance == column.instance)
+                .and_then(|(_, inputs)| inputs.iter().find(|(input, _)| *input == column.input))
+                .map_or(Complex::new(0.0, 0.0), |(_, h)| *h);
+            let transfer = direct - through_circuit;
             let (element, source) = column.name.rsplit_once('.').unwrap_or(("", column.name.as_str()));
             let kind = match source {
                 s if s.contains("thermal") => NoiseKind::Thermal,
@@ -258,9 +331,62 @@ impl<'a> NoiseSolver<'a> {
                 s if s.contains("flicker") => NoiseKind::Flicker,
                 _ => NoiseKind::Other,
             };
-            out.push((element.to_string(), source.to_string(), kind, h_b.norm_sqr() * column.psd));
+            out.push((element.to_string(), source.to_string(), kind, transfer.norm_sqr() * column.psd));
         }
         Ok(out)
+    }
+
+    /// The operating point as the assembly's solution vector, and the ambient at `frequency`.
+    fn small_signal_point(circuit: &CircuitInstance, dc_point: &DcAnalysisResult, frequency: f64, context: &Context) -> (Vec<f64>, Ambient) {
+        let operating_point = crate::analyses::ac::operating_vector(circuit, dc_point);
+        let ambient = Ambient { time: 0.0, freq: frequency, is_static: false, gmin: context.tolerances.gmin, source_scale: 1.0 };
+        (operating_point, ambient)
+    }
+
+    /// Refuses an input instance that has no `STIM` input, naming it (a noise run's input must
+    /// stimulate something: its transfer to the output is what `inoise` divides by).
+    fn require_stimulus(
+        circuit: &mut CircuitInstance,
+        dc_point: &DcAnalysisResult,
+        path: &str,
+        options: &NoiseAnalysisOptions,
+        context: &Context,
+    ) -> crate::core::result::Result<()> {
+        let (operating_point, ambient) = Self::small_signal_point(circuit, dc_point, options.sweep_options.start_frequency, context);
+        let bound = circuit.abi.as_mut().expect("a circuit of devices");
+        if bound.analog.stimulus_columns(&operating_point, ambient, path)?.is_empty() {
+            return Err(piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Noise,
+                format!("input `{path}` has no small-signal stimulus (`ac_stim`): there is no transfer to refer the noise to"),
+            ));
+        }
+        Ok(())
+    }
+
+    /// `|H_in|²` at `frequency`: the power gain from the input instance to the output, with the
+    /// adjoint solution `z` of the output. Each `STIM` input `s` of the instance excites at unit
+    /// magnitude and its own phase `φ_s` (design D11), so `H_in = Σ_s (z·g_s)·e^{jφ_s}`. An
+    /// input with no transfer to the output has no input-referred noise: it fails naming the
+    /// input and the frequency.
+    fn input_gain_squared(&mut self, frequency: f64, adjoint: &Array1<Complex<f64>>) -> crate::core::result::Result<f64> {
+        let path = self.options.input_source_name.clone().expect("an input instance");
+        let (operating_point, ambient) = Self::small_signal_point(self.circuit, &self.dc_point, frequency, &self.context);
+        let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+        let mut transfer = Complex::new(0.0, 0.0);
+        for column in bound.analog.stimulus_columns(&operating_point, ambient, &path)? {
+            let from_column = column.rows.iter().fold(Complex::new(0.0, 0.0), |sum, (r, g)| {
+                sum + r.idx().map_or(Complex::new(0.0, 0.0), |i| adjoint[i]) * *g
+            });
+            transfer += from_column * Complex::from_polar(1.0, column.phase);
+        }
+        let gain_sq = transfer.norm_sqr();
+        if gain_sq == 0.0 {
+            return Err(piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Noise,
+                format!("input `{path}` has no transfer to the output at {frequency:e} Hz"),
+            ));
+        }
+        Ok(gain_sq)
     }
 
     /// Solves the adjoint system to find noise transfer functions.
@@ -272,7 +398,8 @@ impl<'a> NoiseSolver<'a> {
     ///
     /// # Algorithm
     /// 1. Build transposed system: swap row/col indices of all stamps
-    /// 2. Apply unit current at output: I_out = +1, I_ref = -1
+    /// 2. Apply the output functional as the right side: I_out = +1, I_ref = -1 for a node
+    ///    pair, a unit at a branch's flow unknown, the term's partials for a term output
     /// 3. Solve: [Y^T] × Z = I_unit
     /// 4. Result Z contains transfer impedances to output
     ///
@@ -284,6 +411,7 @@ impl<'a> NoiseSolver<'a> {
     fn solve_adjoint_system(
         &self,
         stamps: Vec<Stamp<AnalogReference, Complex<f64>>>,
+        functional: &OutputFunctional,
     ) -> crate::core::result::Result<Array1<Complex<f64>>> {
         let mut system = FaerSparseLinearSystem::new(self.symbolic_matrix.size());
 
@@ -293,10 +421,7 @@ impl<'a> NoiseSolver<'a> {
             }
         }
 
-        system.apply_stamps(vec![
-            Stamp::Rhs(self.out_ref.clone(), Complex::new(1.0, 0.0)),
-            Stamp::Rhs(self.ref_ref.clone(), Complex::new(-1.0, 0.0)),
-        ]);
+        system.apply_stamps(functional.unknowns.iter().map(|(r, u)| Stamp::Rhs(r.clone(), *u)).collect());
 
         system.solve_with_backend(&self.symbolic_matrix)
     }
@@ -332,6 +457,57 @@ impl<'a> NoiseSolver<'a> {
         Ok(bound.analog.assemble_ac(&op, amb)?.0)
     }
 
+    /// Resolves the options' output against the circuit: a flow output when `output_flow` is
+    /// given (a branch must be in the netlist, a term must be in its instance: both are refused
+    /// by name), else the `output_node`/`reference_node` pair.
+    fn resolve_output(
+        circuit: &mut CircuitInstance,
+        dc_point: &DcAnalysisResult,
+        options: &NoiseAnalysisOptions,
+        context: &Context,
+    ) -> crate::core::result::Result<OutputTarget> {
+        let refuse = |detail: String| {
+            piperine_analog_solver::error::Error::simple(piperine_analog_solver::error::SolverDomain::Noise, detail)
+        };
+        match &options.output_flow {
+            None => {
+                let (out, reference) = Self::resolve_nodes(circuit, options)?;
+                Ok(OutputTarget::Potential { out, reference })
+            }
+            Some(FlowOutput::Branch(branch)) => circuit
+                .netlist()
+                .reference_for(&AnalogVariable::Branch(branch.clone()))
+                .map(|reference| OutputTarget::Branch(reference.clone()))
+                .ok_or_else(|| refuse(format!("output branch `{branch:?}` not found"))),
+            Some(FlowOutput::Term { instance, term }) => {
+                let (operating_point, ambient) = Self::small_signal_point(circuit, dc_point, options.sweep_options.start_frequency, context);
+                let bound = circuit.abi.as_mut().expect("a circuit of devices");
+                bound.analog.term_linearization(&operating_point, ambient, instance, term)?;
+                Ok(OutputTarget::Term { instance: instance.clone(), term: term.clone() })
+            }
+        }
+    }
+
+    /// The output as a functional of the solution at `frequency`.
+    fn output_functional(&mut self, frequency: f64) -> crate::core::result::Result<OutputFunctional> {
+        match &self.output {
+            OutputTarget::Potential { out, reference } => Ok(OutputFunctional {
+                unknowns: vec![(out.clone(), Complex::new(1.0, 0.0)), (reference.clone(), Complex::new(-1.0, 0.0))],
+                direct: None,
+            }),
+            OutputTarget::Branch(branch) => {
+                Ok(OutputFunctional { unknowns: vec![(branch.clone(), Complex::new(1.0, 0.0))], direct: None })
+            }
+            OutputTarget::Term { instance, term } => {
+                let (instance, term) = (instance.clone(), term.clone());
+                let (operating_point, ambient) = Self::small_signal_point(self.circuit, &self.dc_point, frequency, &self.context);
+                let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+                let linearization = bound.analog.term_linearization(&operating_point, ambient, &instance, &term)?;
+                Ok(OutputFunctional { unknowns: linearization.unknowns, direct: Some((instance, linearization.noise)) })
+            }
+        }
+    }
+
     /// Resolves output and reference node identifiers to circuit references.
     ///
     /// # Arguments
@@ -363,6 +539,9 @@ impl<'a> NoiseSolver<'a> {
 
     /// Integrates noise power spectral density to get RMS noise voltage.
     ///
+    /// This is the trapezoid over the grid; the band total ngspice reports is
+    /// [`NoiseAnalysisResult::output_total`], by the power-law rule.
+    ///
     /// Trapezoidal integration through the shared [`Integrator`]:
     ///   P_total = ∫ PSD(f) df
     ///   V_rms = √P_total
@@ -374,6 +553,6 @@ impl<'a> NoiseSolver<'a> {
     /// # Returns
     /// Integrated RMS noise voltage (V)
     fn integrate_noise(&self, freqs: &[f64], psd: &[f64]) -> f64 {
-        piperine_analog_solver::math::integration::Integrator::trapezoid(freqs, psd).sqrt()
+        Integrator::trapezoid(freqs, psd).sqrt()
     }
 }

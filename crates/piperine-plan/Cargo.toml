@@ -11,3 +11,4 @@ piperine-solver = { path = "../piperine-solver" }
 
 [dev-dependencies]
 piperine-interp = { path = "../piperine-interp" }
+piperine-digital-solver = { path = "../piperine-digital-solver" }

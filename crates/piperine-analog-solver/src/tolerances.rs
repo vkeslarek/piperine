@@ -56,6 +56,10 @@ pub struct Tolerances {
     /// convergence on the connected net," which the potential/node case
     /// alone already demonstrates.
     pub node_vntol_overrides: std::rc::Rc<std::collections::HashMap<crate::netlist::NodeIdentifier, f64>>,
+    /// Per-branch flow-`abstol` override (§17.1 rules 1 and 2): a branch unknown present here
+    /// uses the smaller of its nature's flow `abstol` and `abstol`, in the update test and in the
+    /// residual test of its row. Empty by default; a branch absent here is unaffected.
+    pub branch_abstol_overrides: std::rc::Rc<std::collections::HashMap<crate::netlist::BranchIdentifier, f64>>,
 }
 
 impl Default for Tolerances {
@@ -72,28 +76,38 @@ impl Default for Tolerances {
             tnom: 300.15,
             gshunt: 0.0,
             node_vntol_overrides: std::rc::Rc::new(std::collections::HashMap::new()),
+            branch_abstol_overrides: std::rc::Rc::new(std::collections::HashMap::new()),
         }
     }
 }
 
 impl Tolerances {
-    /// §6.5.8's per-node potential-`abstol` (a tighter value than the flat
-    /// `vntol`, if the node has one declared) — `self.vntol` for any node
-    /// absent from `node_vntol_overrides`, unchanged from before this
-    /// field existed.
+    /// The absolute tolerance of a node: the smaller of the session's `vntol` and its nature's
+    /// potential `abstol` (in `node_vntol_overrides`, §6.5.8); a nature can only tighten the
+    /// session value (§17.1), and `self.vntol` stands for a node absent from the overrides.
     fn vntol_for(&self, variable: &crate::netlist::AnalogVariable) -> f64 {
         match variable {
             crate::netlist::AnalogVariable::Node(id) => {
-                self.node_vntol_overrides.get(id).copied().unwrap_or(self.vntol)
+                self.node_vntol_overrides.get(id).map_or(self.vntol, |nature| nature.min(self.vntol))
             }
             _ => self.vntol,
+        }
+    }
+
+    /// The absolute tolerance of a branch unknown and of its row: the smaller of the session's
+    /// `abstol` and its nature's flow `abstol` (in `branch_abstol_overrides`); a nature can only
+    /// tighten the session value (§17.1).
+    fn abstol_for(&self, variable: &crate::netlist::AnalogVariable) -> f64 {
+        match variable {
+            crate::netlist::AnalogVariable::Branch(id) => self.branch_abstol_overrides.get(id).map_or(self.abstol, |nature| nature.min(self.abstol)),
+            _ => self.abstol,
         }
     }
 
     /// The update test of one unknown: `|new − old| ≤ reltol·max(|old|, |new|) + abs`.
     fn update_within(&self, reference: &crate::netlist::AnalogReference, old_v: f64, new_v: f64) -> bool {
         let abs_limit = if reference.is_branch() {
-            self.abstol
+            self.abstol_for(reference.variable())
         } else {
             self.vntol_for(reference.variable())
         };
@@ -105,7 +119,7 @@ impl Tolerances {
     /// The residual test of one row: `|residual| ≤ abs + reltol·scale`.
     fn residual_within(&self, reference: &crate::netlist::AnalogReference, residual: f64, scale: f64) -> bool {
         let abs_limit = if reference.variable().is_branch() {
-            self.abstol
+            self.abstol_for(reference.variable())
         } else {
             self.vntol_for(reference.variable())
         };

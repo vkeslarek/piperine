@@ -22,6 +22,8 @@ pub enum Call {
     Advance(Tick),
     Fire(u32, Tick),
     RunInstant { at: Tick, samples: Vec<f64>, limit: Horizon, mode: InstantMode },
+    LandSettleCommits(Tick),
+    DropSettleCommits,
     DiscreteMark(u32),
     DiscreteRestore(u32),
     Shadow(u32, Vec<u8>),
@@ -118,6 +120,12 @@ impl DiscreteSide for ScriptedDiscrete {
         self.record(Call::RunInstant { at, samples: samples.to_vec(), limit, mode });
         self.buffer.extend(self.instant_observations.pop_front().unwrap_or_default());
         Ok(self.instants.pop_front().unwrap_or_default())
+    }
+    fn land_settle_commits(&mut self, tick: Tick) {
+        self.record(Call::LandSettleCommits(tick));
+    }
+    fn drop_settle_commits(&mut self) {
+        self.record(Call::DropSettleCommits);
     }
     fn mark(&mut self) -> u32 {
         let m = self.marks.get();

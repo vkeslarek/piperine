@@ -159,20 +159,7 @@ fn module_items(list: &[ModuleItem], out: &mut Vec<Diagnostic>) {
                 default.iter().chain(where_.iter()).for_each(&mut e);
             }
             ModuleItemKind::Signal { init, .. } => init.iter().for_each(&mut e),
-            ModuleItemKind::Let { pat, value } => {
-                e(value);
-                if let Some(span) = mutable_binding(pat) {
-                    out.push(
-                        Diagnostic::new(
-                            "E0331",
-                            "`let mut` in a module body",
-                            span,
-                            "a module body is declarative: its bindings are immutable",
-                        )
-                        .with_help("drop `mut`; compute the value in one expression"),
-                    );
-                }
-            }
+            ModuleItemKind::Let { value, .. } => e(value),
             ModuleItemKind::Def { place, value, after } => {
                 e(place);
                 e(value);
@@ -185,19 +172,6 @@ fn module_items(list: &[ModuleItem], out: &mut Vec<Diagnostic>) {
             }
             ModuleItemKind::Error => {}
         }
-    }
-}
-
-/// The span of the first `mut` binding inside a pattern.
-fn mutable_binding(p: &Pat) -> Option<Span> {
-    match &p.kind {
-        PatKind::Ident { mutable: true, .. } => Some(p.span.0),
-        PatKind::Ident { sub: Some(s), .. } => mutable_binding(s),
-        PatKind::Tuple(v) | PatKind::Slice(v) | PatKind::Or(v) => v.iter().find_map(mutable_binding),
-        PatKind::TupleStruct { pats, .. } => pats.iter().find_map(mutable_binding),
-        PatKind::Struct { fields, .. } => fields.iter().filter_map(|f| f.pat.as_ref()).find_map(mutable_binding),
-        PatKind::Ref(inner) => mutable_binding(inner),
-        _ => None,
     }
 }
 

@@ -128,6 +128,12 @@ impl ParamReads {
             }
             Expr::Limit { x, f, seed, .. } => ParamReads::walk_all(ir, &[*x, *f].into_iter().chain(*seed).collect::<Vec<_>>(), out),
             Expr::Stim { mag, phase, .. } => ParamReads::walk_all(ir, &[*mag].into_iter().chain(*phase).collect::<Vec<_>>(), out),
+            control @ (Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_)) => {
+                ParamReads::walk_all(ir, &control.operands(), out);
+                for stmt in control.statements() {
+                    ParamReads::walk_all(ir, &ir.stmt(*stmt).operands(), out);
+                }
+            }
         }
     }
 

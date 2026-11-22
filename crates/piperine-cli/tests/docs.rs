@@ -1,6 +1,6 @@
 //! The repository's own records after the command line (feature `msl-cli`, phase 7; CLI-20): the
 //! buck's README says how to run it, the instruction files describe the host crates as built,
-//! `GAPS.md` drops what closed and lists what is left, `ROADMAP.md` marks the CLI item done and
+//! `GAPS.md` drops what closed and lists what is left, `ROADMAP.md` is forward-looking and
 //! `.specs/STATE.md` holds the decision. Each test reads one file as text.
 
 use std::path::{Path, PathBuf};
@@ -30,6 +30,40 @@ fn the_buck_readme_says_how_to_run_it() {
         assert!(!readme.contains(stale), "the README still says `{stale}`");
     }
     assert!(readme.contains("No such host exists yet"), "the Python sketch says the host it sketches does not exist");
+}
+
+#[test]
+fn the_buck_readme_says_when_to_run_the_buck_on_demand() {
+    // integrated-tests IT-13 AC 1: the "On demand" block holds the four `cargo test` lines of every
+    // registered target, says that `cargo test` skips them, when they run, and how to only compile them
+    let readme = read("examples/buck/README.md");
+    let block = &readme[readme.find("## On demand").expect("the README has an \"On demand\" block")..];
+    for line in [
+        "cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_boundary --test buck_power --test buck_supervisor --test buck_closed_loop",
+        "cargo test -p piperine-api --test buck_long",
+        "cargo test -p piperine-cli --test buck --test book_buck",
+        "cargo test -p piperine --test buck_scenarios --test book_buck",
+    ] {
+        assert!(block.contains(line), "the block holds `{line}`");
+    }
+    for held in ["`cargo test` skips", "once at a feature's close", "examples/buck/**", "--no-run", "cargo test -p piperine --test integrated"] {
+        assert!(block.contains(held), "the block says `{held}`");
+    }
+}
+
+#[test]
+fn the_instructions_name_the_integrated_gate_and_the_buck_on_demand() {
+    // integrated-tests IT-13 AC 2: `CLAUDE.md` names the integrated target as the per-task gate, says that
+    // `cargo test` skips the buck and points at the README's "On demand" block; "Where the tests are"
+    // names `tests/integrated/` and `tests/e2e/integrated/`; `AGENTS.md` names the gate too
+    let claude = read("CLAUDE.md");
+    for held in ["cargo test -p piperine --test integrated", "cargo test -p piperine-cli --test integrated", "`cargo test` skips every target that simulates the buck", "examples/buck/README.md", "\"On demand\"", "tests/integrated/", "tests/e2e/integrated/"] {
+        assert!(claude.contains(held), "CLAUDE.md names `{held}`");
+    }
+    let agents = read("AGENTS.md");
+    for held in ["cargo test -p piperine --test integrated", "examples/buck/README.md", "tests/integrated/"] {
+        assert!(agents.contains(held), "AGENTS.md names `{held}`");
+    }
 }
 
 #[test]
@@ -113,7 +147,7 @@ fn gaps_drops_what_host_ii_closed() {
         assert!(!gaps.contains(&format!("- **{closed} \u{2014}")), "{closed} is still an entry");
     }
     assert!(!gaps.contains("A digital-only transient is refused"), "the refusal is still listed");
-    assert!(gaps.contains("| L39 | a top module with a continuous port"), "L39 stays");
+    // (L39, which stayed, is closed by `params-and-io`: `gaps_no_longer_lists_x5_l20_l39_h12`)
     let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("a row {id}")).to_string();
     assert!(row("H1").contains("`Session::drive`") && row("H1").contains("`force` and `release`"), "H1 says what is delivered and what is left");
     assert!(row("H3").contains("`ttol`") && row("H3").contains("`tnom`"), "H3 lists what is left of the options");
@@ -139,12 +173,12 @@ fn gaps_drops_what_root_e2e_closed() {
     assert!(row("H16").contains("`dt_min`") && row("H16").contains("Owner: `host-analyses`"), "H16: {}", row("H16"));
     assert!(row("H17").contains("`--stream <name>`") && row("H17").contains("Owner: `host-analyses`"), "H17: {}", row("H17"));
     assert!(row("H18").contains("`E0171`") && row("H18").contains("Owner: `cli-packages`"), "H18: {}", row("H18"));
-    let unraised = gaps.split("**Error codes of the spec that no source file mentions").nth(1).and_then(|s| s.split("`E0102").nth(1)).and_then(|s| s.split('`').next()).expect("section 10 lists the unraised codes");
+    let unraised = gaps.split("**Error codes of the spec that no source file mentions").nth(1).and_then(|s| s.split("by the elaborator.\n`").nth(1)).and_then(|s| s.split('`').next()).expect("section 10 lists the unraised codes");
     let listed: Vec<&str> = unraised.split_whitespace().collect();
     for raised in ["E0503", "E0504", "E0505", "E0507", "E0508", "E0803", "E0804", "E0805", "E0806"] {
         assert!(!listed.contains(&raised), "{raised} is raised and is listed as unraised");
     }
-    assert!(listed.contains(&"E0105") && listed.contains(&"E0906"), "the list keeps the codes nothing raises");
+    assert!(listed.contains(&"E0123") && listed.contains(&"E0614"), "the list keeps the codes nothing raises");
 }
 
 #[test]
@@ -165,17 +199,10 @@ fn gaps_narrows_what_buck_scenarios_ran() {
 }
 
 #[test]
-fn the_roadmap_and_state_record_root_e2e() {
-    // root-e2e RE-04 AC 2 and 3 (T43): the roadmap marks queue items 4 and 4b delivered and the lane
-    // `root-e2e` delivered; STATE.md holds MD-72 naming the book targets, the inventory and `tests/e2e/`
+fn state_records_root_e2e() {
+    // root-e2e RE-04 AC 2 and 3 (T43), the delivery record moved out of ROADMAP.md on its 2026-11-21
+    // rewrite (see `the_roadmap_is_forward_looking`): STATE.md holds MD-72 naming the book targets, the inventory and `tests/e2e/`
     // and amending MD-28; the instruction files say the root holds the integrated tests
-    let roadmap = read("ROADMAP.md");
-    let queue = roadmap.split("## Queue after ir-rust").nth(1).expect("ROADMAP.md has the queue");
-    for item in ["4. ", "4b. "] {
-        let line = queue.lines().find(|l| l.starts_with(item)).unwrap_or_else(|| panic!("the queue has item {item}"));
-        assert!(line.starts_with(&format!("{item}\u{2705} **Delivered")) && line.contains("root-e2e"), "item {item} is delivered: {line}");
-    }
-    assert!(roadmap.lines().any(|l| l.starts_with("| B next | `root-e2e`") && l.ends_with("| delivered |")), "the lane table says delivered");
     let state = read(".specs/STATE.md");
     let at = state.find("### MD-72:").expect("STATE.md holds MD-72");
     let decision = state[at..].split("\n---").next().expect("a decision");
@@ -188,17 +215,6 @@ fn the_roadmap_and_state_record_root_e2e() {
         assert!(!text.contains("holds no Rust target"), "{file} still says the root holds no Rust target");
     }
     assert!(read("CLAUDE.md").contains("`tests/e2e/twins/*.cir`"), "CLAUDE.md's parity row names tests/e2e/");
-}
-
-#[test]
-fn the_roadmap_lists_the_host_follow_ups() {
-    // HII-23 AC 2: the roadmap records `host-ii` as delivered and lists the follow-ups: the host
-    // follow-up feature (what needs new solver mechanisms) and `root-e2e`
-    let roadmap = read("ROADMAP.md");
-    assert!(roadmap.lines().any(|l| l.starts_with("3e. ✅ **Delivered") && l.contains("host-ii") && l.contains("MD-69")), "item 3e records host-ii");
-    assert!(roadmap.lines().any(|l| l.starts_with("| B | `host-ii`") && l.ends_with("| delivered |")), "the lane table says delivered");
-    assert!(roadmap.lines().any(|l| l.starts_with("| B next | host follow-up") && l.contains("`force`") && l.contains("continued transients")), "the host follow-up row");
-    assert!(roadmap.lines().any(|l| l.starts_with("| B next | `root-e2e`")), "the root-e2e row");
 }
 
 #[test]
@@ -219,17 +235,6 @@ fn state_records_the_derived_param_decision() {
     }
     assert!(claude.lines().any(|l| l.starts_with("| `piperine-cli` |") && l.contains("`info`")), "the piperine-cli row names `info`");
     assert!(read("AGENTS.md").contains("check build run test info"), "AGENTS.md lists `info`");
-}
-
-#[test]
-fn the_roadmap_marks_the_cli_item_done() {
-    // CLI-20 AC 3: item 3 of "Queue after ir-rust" is marked done; item 3b is left as it is
-    let roadmap = read("ROADMAP.md");
-    let queue = roadmap.split("## Queue after ir-rust").nth(1).expect("ROADMAP.md has the queue");
-    let item = queue.lines().find(|l| l.starts_with("3. ")).expect("the queue has an item 3");
-    assert!(item.starts_with("3. ✅ **Delivered"), "item 3 is marked done: {item}");
-    assert!(item.contains("msl-cli"), "item 3 names the feature: {item}");
-    assert!(queue.lines().any(|l| l.starts_with("3b. **Spec-completeness planning pass")), "item 3b stays as it is");
 }
 
 #[test]
@@ -261,19 +266,6 @@ fn gaps_says_a_host_run_is_bounded() {
 }
 
 #[test]
-fn the_roadmap_lists_what_the_long_run_leaves() {
-    // long-run LR-18 AC 2: `ROADMAP.md` marks `long-run` delivered and names the three futures
-    // of decision 6
-    let roadmap = read("ROADMAP.md");
-    let queue = roadmap.split("## Queue after ir-rust").nth(1).expect("ROADMAP.md has the queue");
-    let item = queue.lines().find(|l| l.starts_with("3c. ")).expect("the queue has an entry for long-run");
-    assert!(item.starts_with("3c. ✅ **Delivered") && item.contains("long-run"), "the entry is delivered and names the feature: {item}");
-    for future in ["Multi-rate stepping", "Surrogate or averaged models", "Periodic steady state"] {
-        assert!(queue.contains(future), "ROADMAP.md names `{future}`");
-    }
-}
-
-#[test]
 fn state_records_the_observation_decision() {
     // long-run LR-07 AC 3, LR-18: `.specs/STATE.md` holds MD-66, which says observation is the
     // run's, and extends MD-65 without superseding it
@@ -298,35 +290,44 @@ fn gaps_drops_what_msl_fixes_closed() {
     // L47 keeps `simparam` only; L16 keeps H.5 to H.7; L58 drops `db10`/`db20` and `absdelta`
     let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("GAPS.md has the row {id}")).to_string();
     assert!(row("L47").contains("`simparam`") && !row("L47").contains("`freq()`, "), "L47 keeps simparam: {}", row("L47"));
-    assert!(row("L16").contains("H.5, H.6, H.7") && !row("L16").contains("unwrap expect"), "L16 keeps H.5 to H.7: {}", row("L16"));
-    assert!(!row("L58").contains("db10") && !row("L58").contains("absdelta") && row("L58").contains("`limexp`") && row("L58").contains("`normal`"), "L58: {}", row("L58"));
+    // L16 left with composite-values phase B: H.5 to H.7 run (`gaps_drops_what_composite_values_phase_b_closed`)
+    assert!(!row("L58").contains("db10") && !row("L58").contains("absdelta") && !row("L58").contains("`limexp`"), "L58 (limexp left with unknown-semantics-events T17): {}", row("L58"));
     // (`### S2.` was kept here until `host-ii` closed it: `gaps_drops_what_host_ii_closed`)
     // (`### S4.` was kept here until `analog-structure` closed it, T35: `gaps_drops_what_analog_structure_closed`)
-    for kept in ["### S3.", "### S6.", "### B3.", "### B4."] {
+    // (`### S6.` was kept here until `explicit-unknowns` closed it by the redesign: `gaps_closes_s6_and_g6_by_the_redesign`; its row S8 stays instead)
+    for kept in ["### S3.", "### S8.", "### B3.", "### B4."] {
         assert!(gaps.contains(kept), "GAPS.md keeps {kept}");
     }
     // the counts follow, as `host-ii` moved them, `unknown-semantics` (L18, L19) after it and
-    // `analog-structure` (nine loud rows and S4) after that: 2 silent, 2 broken, 41 loud
-    assert!(gaps.contains("2 silent, 2 broken, 41 loud"), "the counts of §9 follow");
+    // `analog-structure` (nine loud rows and S4) after that, `unknown-semantics-events` (L52) after
+    // that: 2 silent, 2 broken, 40 loud; `params-and-io` (L20, L39) took the loud rows to 38, `composite-values`
+    // phase A (L5, L6, L10) and L63 to 35, `Pfd3` (L51: its event reads ran, its assignment now does) to 34, `resolved-nets` (L22, L23) to 32, and `value-semantics` closed S7 (the spec amendment had added it)
+    // and `composite-values` phase B (L1, L2, L3, L16) to 28, L64 (an unknown composite carrier read) to 29, L65 (a flag read on an `Option`) to 30; L66 (a `match` whose value is an `Option`) was found and closed by `composite-values` itself;
+    // `explicit-unknowns` replaced S6 by S8 (still 2 silent)
+    assert!(gaps.contains("2 silent, 2 broken, 30 loud"), "the counts of §9 follow");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
     assert_eq!(rows("## 3. Silent", "## 4."), 2, "two silent entries");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 41, "forty-one loud rows");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 30, "thirty loud rows");
 }
 
 #[test]
-fn the_roadmap_and_state_record_msl_fixes() {
+fn gaps_drops_the_value_semantics_gap() {
+    // value-semantics VS-10 AC 2: the front end meets Appendix G.71, so GAPS.md has no S7, names no feature
+    // `value-semantics` as a plan, and no longer says `E0331` is raised
+    let gaps = read("GAPS.md");
+    assert!(!gaps.contains("### S7."), "S7 is closed");
+    assert!(!gaps.contains("| S3, S6, S7 |") && !gaps.contains("| S3, S7, S8 ") && gaps.contains("| S3, S8 "), "the section table lists S3 and S8 (S6 closed by `explicit-unknowns`)");
+    assert!(!gaps.contains("E0331") && !gaps.contains("(`value-semantics`)"), "no entry names the retired code or the plan");
+    assert!(gaps.contains("2 silent, 2 broken, 30 loud"), "the counts are restored (28 since composite-values phase B closed L1 to L3 and L16, 29 with L64, 30 with L65, L66 closed by `composite-values` itself)");
+}
+
+#[test]
+fn state_records_msl_fixes() {
     // msl-fixes DOC-01 AC 2: the queue marks `msl-fixes` delivered and says what it leaves;
     // `.specs/STATE.md` holds MD-67 naming the catalogue, `E0161`, the `(is, val)` pair and the
     // amendment of abi.md A4
-    let roadmap = read("ROADMAP.md");
-    let queue = roadmap.split("## Queue after ir-rust").nth(1).expect("ROADMAP.md has the queue");
-    let item = queue.lines().find(|l| l.starts_with("3d. ")).expect("the queue has an entry for msl-fixes");
-    assert!(item.starts_with("3d. ✅ **Delivered") && item.contains("msl-fixes"), "the entry is delivered and names the feature: {item}");
-    for left in ["S3", "H.5 to H.7", "`simparam`", "`limexp`"] {
-        assert!(item.contains(left), "the entry names what is left: `{left}`");
-    }
     let state = read(".specs/STATE.md");
     let at = state.find("### MD-67:").expect("STATE.md holds MD-67");
     let decision = state[at..].split("\n---").next().expect("a decision");
@@ -339,61 +340,100 @@ fn the_roadmap_and_state_record_msl_fixes() {
 fn state_records_the_unknown_semantics_decision() {
     // US-07 (design "New project-level decision"): `.specs/STATE.md` holds MD-70, which says the
     // merge runs in generated code, the ABI's additive entry, the record's `maybe` and the
-    // deletion point of the contract lowering (Q1 (b)); it extends MD-62 and MD-64 and
-    // supersedes nothing
+    // deletion point of the contract lowering (Q1 (b)); since 2026-11-21 MD-78 supersedes it whole
     let state = read(".specs/STATE.md");
     let at = state.find("### MD-70:").expect("STATE.md holds MD-70");
-    let decision = state[at..].split("\n---").next().expect("a decision");
+    let decision = state[at..].split("\n### MD-71").next().expect("a decision");
     for name in ["runs in the generated Rust", "`Host.commit_with(", "`maybe`", "`generics`", "`std/values.msl`", "64", "extends MD-62", "MD-64"] {
         assert!(decision.contains(name), "MD-70 names {name}");
     }
-    assert!(decision.contains("It supersedes nothing"), "MD-70 supersedes nothing");
+    assert!(decision.contains("Superseded whole by MD-78"), "MD-70 is marked superseded");
 }
 
 #[test]
-fn abi_states_commits_under_unknown_control() {
-    // US-07: abi.md gives `Host` the entry `commit_with`, lists `commit_flag` (`MAYBE` 1, `MERGE` 2)
-    // and `MINOR` 1 in its constants, and states rule C7 (merge at the due microstep in C2 order;
-    // transport converts under `MAYBE`)
+fn state_holds_the_explicit_unknowns_decision() {
+    // EU-19 AC 1: MD-78 holds the six points of "MD entry", supersedes MD-70 whole and MD-64 in
+    // part, and moves MD-76's D7 into the trait.
+    let state = read(".specs/STATE.md");
+    let at = state.find("### MD-78:").expect("STATE.md holds MD-78");
+    let decision = state[at..].split("\n---").next().expect("a decision").split_whitespace().collect::<Vec<_>>().join(" ");
+    for fact in [
+        "1. **A value is what its type says.**",
+        "2. **Uncertainty and absence are types.**",
+        "3. **A carrier starts with a value or with its type's `Default`.**",
+        "4. **The device ABI stays major 1 and is edited in place.**",
+        "5. **Traits are capabilities.**",
+        "6. **`unknown-semantics-per-level` is dropped**",
+        "It supersedes MD-70 whole and MD-64 in its analysis of unknown-ness; it moves MD-76's D7 into the trait. MD-74 stands.",
+    ] {
+        assert!(decision.contains(fact), "MD-78 lacks {fact}");
+    }
+    let md70_at = state.find("### MD-70:").expect("STATE.md holds MD-70");
+    let md70 = state[md70_at..].split("\n### ").next().expect("MD-70 body");
+    assert!(md70.contains("Superseded whole by MD-78"), "MD-70 is marked superseded");
+    let md64 = state[state.find("### MD-64:").expect("MD-64")..].split("\n---").next().expect("MD-64 body").to_string();
+    assert!(md64.contains("Superseded in part by MD-78"), "MD-64 is marked");
+}
+
+#[test]
+fn the_per_level_feature_is_recorded_as_dropped() {
+    // EU-19 AC 3: the spec of `unknown-semantics-per-level` opens with a line that says it is
+    // dropped, by whom and when; ROADMAP.md no longer has the `KNOWN_LEVELS` line.
+    let spec = read(".specs/features/unknown-semantics-per-level/spec.md");
+    let first = spec.lines().next().expect("a first line");
+    assert!(first.contains("DROPPED") && first.contains("the user on 2026-11-21") && first.contains("MD-78"), "{first}");
+    assert!(!read("ROADMAP.md").contains("KNOWN_LEVELS"), "ROADMAP.md still lists KNOWN_LEVELS");
+}
+
+#[test]
+fn abi_md_describes_the_unreleased_contract() {
+    // EU-16, EU-17 AC 5 (replaces `abi_states_commits_under_unknown_control`, which pinned
+    // `commit_with`, `commit_flag` and rule C7): the contract is still major 1 and says it is
+    // unreleased; `MINOR` is 0; `Field` has four fields; the shipped layouts hold no flag byte;
+    // a drive pin carries the driven value and a plain `driving` byte; one `commit`.
     let abi = read(".specs/features/device-abi/abi.md");
-    assert!(abi.contains("commit_with: unsafe extern \"C\" fn"), "the Host struct has commit_with");
-    assert!(abi.contains("| `commit_with` flags (`commit_flag`) | `MAYBE` 1, `MERGE` 2 |"), "the constants table lists the flags");
-    assert!(abi.contains("`MAJOR` 1, `MINOR` 1"), "MINOR is 1");
-    let at = abi.find("- **C7. Commits under unknown control.**").expect("abi.md has rule C7");
-    let rule = abi[at..].split("\n---").next().expect("a rule").split_whitespace().collect::<Vec<_>>().join(" ");
-    for fact in ["merged, level by level, with the bytes the net holds at that point of the C2 order", "transport (C3, §12.1.4) does not remove the pending commits", "turns them into `MERGE` commits"] {
-        assert!(rule.contains(fact), "C7 lacks \"{fact}\"");
+    let flat = abi.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(flat.contains("| version | `MAJOR` 1, `MINOR` 0, symbol `piperine_abi_1`;"), "major 1, minor 0, symbol piperine_abi_1");
+    assert!(flat.contains("pub struct Field { name: Str, leaf: u32, offset: u32, count: u32 }"), "Field has four fields");
+    assert!(flat.contains("`BIT` is `{ v: BOOL @0 }` (size 1, align 1)") && flat.contains("`BYTE` is `{ v: U8 @0 }` (size 1, align 1)") && flat.contains("`F64` is `{ v: F64 @0 }` (size 8, align 8)"), "the three shipped layouts");
+    assert!(flat.contains("`driving: BOOL`") && flat.contains("0 is a drive *absent*"), "the drive pin carries a plain `driving` byte");
+    assert!(flat.contains("**Unreleased.** This ABI has had no release"), "abi.md says it is unreleased");
+    assert!(flat.contains("Until the first release it changes in place"), "abi.md says it changes in place until the first release");
+    assert!(flat.contains("## 2. Entry points (6)"), "six entry points");
+    for gone in ["HAS_KNOWN", "commit_with", "commit_flag", "known byte", "- **C7."] {
+        assert!(!abi.contains(gone), "abi.md still says {gone}");
     }
 }
 
 #[test]
-fn gaps_drops_l18_and_l19() {
-    // US-07 AC 1 (C42): `unknown-semantics` closed L18 (`Unknown` as an initial value, `level`,
-    // `merge`, `same`, `cast`, `logic`, `matches_bits`) and L19 (unknown control is a merge, not a
-    // fault): neither is a row, and no instruction file calls the merge a gap; S6 and G6 (one flag
-    // per value, an ABI change) stay
+fn gaps_closes_s6_and_g6_by_the_redesign() {
+    // EU-19 AC 2 (replaces `gaps_drops_l18_and_l19`, whose tail pinned S6 and G6 as staying):
+    // L18 and L19 stay closed; S6 and G6 closed with the redesign of `explicit-unknowns`; one
+    // silent row, S8, says the implementation still carries the known flag, until phase A lands.
     let gaps = read("GAPS.md");
     for closed in ["L18", "L19"] {
         assert!(!gaps.lines().any(|l| l.starts_with(&format!("| {closed} |"))), "{closed} is still a row");
     }
+    let l59 = gaps.lines().find(|l| l.starts_with("| L59 |")).expect("L59 keeps its non-literal closure and `expect` clauses");
+    assert!(l59.contains("when it is not a literal") && l59.contains("message that is not a string literal") && !l59.contains("unknown"), "{l59}");
     assert!(!gaps.contains("Unknown control is a fault, not a merge"), "the fault of an unknown `if` is still listed");
-    assert!(gaps.contains("### S6. Unknown integers are one flag per value"), "S6 stays");
-    assert!(gaps.contains("- **G6 \u{2014} unknown integers are per value** (S6)."), "G6 stays");
+    assert!(!gaps.contains("### S6."), "S6 is closed by the redesign");
+    assert!(!gaps.contains("- **G6 \u{2014} unknown integers are per value** (S6)."), "G6 is closed by the redesign");
+    assert!(gaps.contains("(S6 closed by `explicit-unknowns`)") && gaps.contains("G6 closed by `explicit-unknowns`"), "the closures are recorded");
+    assert!(gaps.contains("### S8. The implementation still carries the known flag"), "S8 is the one silent row");
     let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("GAPS.md has a section 9");
     let row = coverage.lines().find(|l| l.starts_with("| I §3–§3.3 ")).expect("the coverage row of §3.3");
-    assert!(!row.contains("L19") && !row.contains("`level`"), "the coverage row still lists the merge and `level` as gaps: {row}");
+    assert!(!row.contains("`level`"), "the coverage row still lists `level` as a gap: {row}");
 }
 
 #[test]
-fn gaps_carries_the_unknown_index_merge_to_composite_values() {
-    // US-04 AC 11, 12 (C31): the loops and the arrays do not exist yet, so their merge criteria
-    // travel with the rows that will add them: L5 (loops, bound 64) and L3 and L24 (an index that
-    // may be unknown)
+fn gaps_rows_carry_no_unknown_control_clause() {
+    // EU-19 (replaces `gaps_carries_the_unknown_index_merge_to_composite_values`): with no merge,
+    // L3, L5 and L24 do not carry the loop bound or the index merge any more (L3 and L5 left with composite-values).
     let gaps = read("GAPS.md");
     let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("a row {id}")).to_string();
-    assert!(row("L5").contains("64 iterations") && row("L5").contains("US-04 AC 11"), "L5 carries the loop bound");
-    for id in ["L3", "L24"] {
-        assert!(row(id).contains("merges every element it may name") && row(id).contains("US-04 AC 12"), "{id} carries the index merge");
+    for id in ["L24"] {
+        assert!(!row(id).contains("merges every element it may name") && !row(id).contains("US-04"), "{id} carries the index merge");
     }
 }
 
@@ -409,7 +449,7 @@ fn gaps_drops_what_analog_structure_closed() {
     let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("GAPS.md has the row {id}")).to_string();
     assert!(!row("L58").contains("`slew`"), "L58 no longer lists slew: {}", row("L58"));
     assert!(row("L60").contains("slew") && row("L60").contains("analog-operators"), "L60 records the ideal step and its owner: {}", row("L60"));
-    // the cluster is delivered and the counts follow: 2 silent, 2 broken, 41 loud (checked above)
+    // the cluster is delivered and the counts follow: 2 silent, 2 broken (the loud count is held by `gaps_drops_what_msl_fixes_closed`)
     assert!(gaps.contains("| Analog structure (delivered, MD-71) |"), "the cluster is marked delivered");
 }
 
@@ -427,14 +467,10 @@ fn gaps_keeps_l40_for_the_spec_models_that_wait() {
 }
 
 #[test]
-fn the_roadmap_and_state_record_analog_structure() {
+fn state_records_analog_structure() {
     // analog-structure AS-18 AC 4 (T36): the queue marks item 7 delivered and names what is left; STATE.md
     // holds MD-71 with the decisions of the design: a contribution stays in place, the derivative site, the
     // key params, hoisting and the reach
-    let roadmap = read("ROADMAP.md");
-    assert!(roadmap.lines().any(|l| l.starts_with("3f. ✅ **Delivered") && l.contains("analog-structure") && l.contains("MD-71") && l.contains("L40")), "the queue records analog-structure");
-    assert!(roadmap.lines().any(|l| l.starts_with("7. ✅ `analog-structure`")), "execution order item 7 is delivered");
-    assert!(roadmap.lines().any(|l| l.starts_with("| `analog-structure` |") && l.contains("delivered")), "the language table says delivered");
     let state = read(".specs/STATE.md");
     let at = state.find("### MD-71:").expect("STATE.md holds MD-71");
     let decision = state[at..].split("\n---").next().expect("a decision");
@@ -472,4 +508,158 @@ fn the_buck_spec_holds_the_bench_bounds() {
     // AC 5: the cleared fault code is `Clear`, never `None`
     assert!(spec.contains("(`Clear`, `OverCurrent`, `OverVoltage`)"), "§8.5 names `Clear`");
     assert!(!spec.contains("`None`"), "the SPEC no longer names the cleared fault code `None`");
+}
+
+#[test]
+fn gaps_drops_what_composite_values_phase_a_closed() {
+    // composite-values CV-37 AC 1 (T29): L5, L6 and L10 leave `GAPS.md`; L9 is left only for the part that
+    // waits on `generics` (a capturing closure passed to a user `fn`); section 9 and section 11 follow
+    let gaps = read("GAPS.md");
+    let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("GAPS.md has the row {id}")).to_string();
+    for id in ["L5", "L6", "L10"] {
+        assert!(!gaps.contains(&format!("| {id} |")), "GAPS.md still has the row {id}");
+    }
+    let l9 = row("L9");
+    assert!(l9.contains("capturing closure") && l9.contains("`generics`") && !l9.contains("function name passed as a value"), "L9 is the generics part only: {l9}");
+    // the rows that stay point at gaps that stay: the Book's types#17 refusal moved off L6 (analog#2 runs since `unknown-semantics-events`)
+    let book = gaps.split("## 11. The Book against the binary").nth(1).expect("section 11");
+    for stale in ["| L5 |", "| L6 |", "| L10 |"] {
+        assert!(!book.contains(stale), "section 11 still names {stale}");
+    }
+    assert!(book.contains("| types#17 | L7 |") && !book.contains("| types#11 |") && !book.contains("| analog#2 |"), "types#17 follows its remaining refusal, types#11 runs and analog#2 runs");
+    // section 9: the rows of I §1-§2 and I §3-§3.3 no longer list the loops as a hole
+    let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("section 9");
+    let functions = coverage.lines().find(|l| l.starts_with("| I §3–§3.3 ")).expect("the coverage row of §3.3");
+    assert!(functions.contains("loops, recursion, closures") && functions.contains("run") && !functions.contains("handles, loops"), "{functions}");
+    let values = coverage.lines().find(|l| l.starts_with("| I §1–§2 ")).expect("the coverage row of §1 and §2");
+    assert!(values.contains("`let mut`, assignment, patterns"), "{values}");
+    // the counts follow: 39 loud, then 38 when `composite-values` closed L63 (§1.4.4 literal typing), 35 with `params-and-io`
+    assert!(gaps.contains("30 loud"), "the loud count is 30 (28 once `params-and-io`, `composite-values`, `resolved-nets` and the last of `unknown-semantics-events` closed rows, then L64 for a composite carrier read before it holds a value L65 for a flag read on an `Option` and L66 closed again by `composite-values`: a `match` whose value is an `Option` runs)");
+}
+
+#[test]
+fn the_book_no_longer_says_settle_is_not_compiled() {
+    // unknown-semantics-events UE-07 AC 2 (T22): `settle` runs, so the Book's status paragraph, the buck's
+    // "Run it" box and the mixed chapter's introduction no longer list it among what the compiler refuses
+    let book = read("docs/book/content.html");
+    for stale in ["`settle` event.", "<code>settle</code> event.", "the check's <code>settle</code> is not compiled yet", "not compiled yet and is refused with P0001: the <code>settle</code> event"] {
+        assert!(!book.contains(stale), "the Book still says {stale:?}");
+    }
+    assert!(!book.contains("both commands refuse the file and run nothing"), "the buck's Run it box still says the file is refused");
+}
+
+#[test]
+fn gaps_no_longer_lists_settle_or_limexp() {
+    // unknown-semantics-events UE-07 AC 1 (T23): `GAPS.md` drops L52 (`settle`) and `limexp` from L58, section 1's
+    // "stdlib that runs" names `settle` and `limexp`, the coverage rows of IV section 13 and V section 15 no longer
+    // list `settle`; L53 stays until the feature's last batch
+    let gaps = read("GAPS.md");
+    assert!(!gaps.contains("| L52 |"), "GAPS.md still has the row L52");
+    let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("GAPS.md has the row {id}")).to_string();
+    assert!(!row("L58").contains("`limexp`"), "L58 still lists limexp: {}", row("L58"));
+    assert!(!gaps.contains("| L51 |"), "L51 (`Pfd3`) is closed: its event reads ran and `composite-values` lifted the assignment");
+    assert!(row("L53").contains("`Event`"), "L53 stays");
+    let runs = gaps.lines().find(|l| l.starts_with("| stdlib that runs |")).expect("section 1 lists the stdlib that runs");
+    assert!(runs.contains("`settle`") && runs.contains("`limexp`"), "section 1 names settle and limexp: {runs}");
+    let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("GAPS.md has a section 9");
+    for prefix in ["| IV §12–§13 ", "| V §15–§18 "] {
+        let line = coverage.lines().find(|l| l.starts_with(prefix)).unwrap_or_else(|| panic!("the coverage row {prefix}"));
+        assert!(!line.contains("`settle`"), "{line}");
+        assert!(!line.contains("an event as a `bool`"), "{line}");
+    }
+}
+
+#[test]
+fn gaps_no_longer_lists_x5_l20_l39_h12() {
+    // params-and-io PI-14 AC 1 (T28): X5, L20, L39 and H12 are gone from `GAPS.md` as entries and rows
+    // (the numbering of the other sections is kept), section 10 lists exactly the rows of the guard's
+    // allow-list `code_owners.tsv`, and the roadmap and the state record what B1 to B4 delivered
+    let gaps = read("GAPS.md");
+    for closed in ["| L20 |", "| L39 |", "| H12 |", "- **X5 \u{2014}"] {
+        assert!(!gaps.contains(closed), "{closed} is still in GAPS.md");
+    }
+    assert!(gaps.contains("| L21 |") && gaps.contains("| H13 |") && gaps.contains("- **X6 \u{2014}"), "the neighbours keep their numbers");
+    let owners = read("crates/piperine-lang/tests/support/code_owners.tsv");
+    let mut allowed: Vec<&str> = owners.lines().filter(|line| !line.starts_with('#') && !line.is_empty()).filter_map(|line| line.split('\t').next()).collect();
+    allowed.sort_unstable();
+    let listed = gaps.split("**Error codes of the spec that no source file mentions").nth(1).and_then(|s| s.split("by the elaborator.\n`").nth(1)).and_then(|s| s.split('`').next()).expect("section 10 lists the unraised codes");
+    let mut listed: Vec<&str> = listed.split_whitespace().collect();
+    listed.sort_unstable();
+    assert_eq!(listed, allowed, "section 10 lists exactly the rows of code_owners.tsv");
+    assert!(gaps.contains(&format!("({} of ", allowed.len())), "the heading counts the listed codes");
+    let roadmap = read("ROADMAP.md");
+    let row = roadmap.lines().find(|line| line.contains("| `params-and-io` |")).expect("the roadmap has a params-and-io row");
+    assert!(row.contains("B5–B6") && row.contains("composite-values"), "the row says B5 and B6 wait on composite-values: {row}");
+    let state = read(".specs/STATE.md");
+    assert!(state.contains("### MD-75:") && state.contains("`params-and-io`"), "STATE.md holds the decision entry");
+}
+
+#[test]
+fn gaps_no_longer_lists_project_or_signal_flow_natures() {
+    // resolved-nets T10 (RN-10 AC 1, RN-01, RN-08): a nature the project declares and a signal-flow
+    // nature run, so L22 and L23 are no rows, and `modules#8` of the §11 table keeps only the
+    // generic `idt` that `generics` owns
+    let gaps = read("GAPS.md");
+    for closed in ["L22", "L23"] {
+        assert!(!gaps.lines().any(|l| l.starts_with(&format!("| {closed} |"))), "{closed} is still a row");
+    }
+    assert!(!gaps.contains("`discrete nature Byte`") && !gaps.contains("`signal-flow nature VSignal`"), "a probe of the closed rows is still listed");
+    let row = gaps.lines().find(|l| l.starts_with("| modules#8 |")).expect("the Book row modules#8");
+    assert!(row.contains("| L30 |") && row.contains("`generics`") && !row.contains("signal-flow nature"), "modules#8 keeps only the generic `idt`: {row}");
+    assert!(gaps.lines().any(|l| l.starts_with("| L21 |")), "L21 stays: resolved natures are not compiled yet");
+}
+
+#[test]
+fn gaps_drops_what_composite_values_phase_b_closed() {
+    // composite-values CV-37 AC 1 (T63): L1, L2, L3 and L16 leave `GAPS.md`; L4 stays for generic enums only, which wait on `generics` GN-06 (an enum
+    // without `#[derive(Repr)]` runs as a value); `normal` leaves L58; the note
+    // that enum variant names are not carried leaves section 4.7; section 9 follows
+    let gaps = read("GAPS.md");
+    for id in ["L1", "L2", "L3", "L16"] {
+        assert!(!gaps.contains(&format!("| {id} |")), "GAPS.md still has the row {id}");
+    }
+    let l4 = gaps.lines().find(|l| l.starts_with("| L4 |")).expect("GAPS.md keeps L4 for generic enums").to_string();
+    assert!(l4.contains("generic enums") && l4.contains("GN-06") && !l4.contains("an enum of one variant as a carrier |"), "L4 is the generic enums only: {l4}");
+    let l58 = gaps.lines().find(|l| l.starts_with("| L58 |")).expect("the row L58").to_string();
+    assert!(!l58.contains("`normal`"), "L58 still lists `normal`: {l58}");
+    assert!(!gaps.contains("Enum variant names are not carried"), "section 4.7 still says enum variant names are not carried");
+    // section 11: the Book rows that named L1 and L3 follow their remaining refusal, a generic function or struct (L7)
+    let book = gaps.split("## 11. The Book against the binary").nth(1).expect("section 11");
+    for stale in ["| types#7 | L3 |", "| generics#4 | L1 |"] {
+        assert!(!book.contains(stale), "section 11 still names {stale}");
+    }
+    assert!(book.contains("| types#7 | L7 | `generics` |") && book.contains("| generics#4 | L7 | `generics` |"), "types#7 and generics#4 wait on generic items");
+    // section 9: the coverage of values, functions, the stdlib and the inherited library
+    let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("section 9");
+    let values = coverage.lines().find(|l| l.starts_with("| I §1–§2 ")).expect("the coverage row of §1 and §2");
+    assert!(values.contains("structs, tuples, arrays and payload enums run"), "{values}");
+    let functions = coverage.lines().find(|l| l.starts_with("| I §3–§3.3 ")).expect("the coverage row of §3.3");
+    assert!(functions.contains("arrays, composites") && !functions.contains("handles, arrays and composites"), "{functions}");
+    let stdlib = coverage.lines().find(|l| l.starts_with("| VII §22 ")).expect("the coverage row of §22");
+    assert!(stdlib.contains("`normal` runs"), "{stdlib}");
+    let inherited = coverage.lines().find(|l| l.starts_with("| H inherited library")).expect("the coverage row of H");
+    assert!(inherited.contains("100 %") && inherited.contains("H.5 to H.7 run"), "{inherited}");
+    assert!(gaps.contains("30 loud"), "the loud count follows");
+}
+
+#[test]
+fn the_roadmap_is_forward_looking() {
+    // ROADMAP.md rewrite (user, 2026-11-21: "limpar ... coloca certinho, tabelado, o que tem no pool de
+    // desenvolvimento"): the roadmap lists only what is in flight or waits, in tables, and no longer
+    // carries delivery history (that lives in STATE.md, held by the `state_records_*` tests above);
+    // what long-run, host-ii and msl-fixes left is still named as a future row
+    let roadmap = read("ROADMAP.md");
+    for section in ["## Development pool", "### In flight", "### Waiting, in order", "### After the review", "## Decisions waiting for the user"] {
+        assert!(roadmap.contains(section), "ROADMAP.md has `{section}`");
+    }
+    for stale in ["## Queue after ir-rust", "✅ **Delivered", "PHDL", "Python host:", "## V1 status"] {
+        assert!(!roadmap.contains(stale), "ROADMAP.md still carries `{stale}`");
+    }
+    let row = |name: &str| roadmap.lines().find(|l| l.contains(&format!("| `{name}`"))).unwrap_or_else(|| panic!("ROADMAP.md has a `{name}` row"));
+    for future in ["multi-rate", "surrogate-models", "periodic-small-signal", "host-iii", "transient-performance", "ngspice-models", "spec-closure", "code-clarity"] {
+        row(future);
+    }
+    assert!(row("host-iii").contains("`force`") && row("host-iii").contains("continued transients"), "the host follow-up row");
+    assert!(row("spec-closure").contains("item 13"), "spec-closure is item 13");
+    assert!(roadmap.contains("stops after item 13"), "the roadmap says where the automatic run stops");
 }

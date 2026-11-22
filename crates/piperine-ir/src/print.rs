@@ -30,10 +30,10 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Display, Write};
 
-use crate::ids::{ExprId, StmtId};
+use crate::ids::{AggregateId, ExprId, StmtId, TypeId};
 use crate::model::{
-    BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, ChildValue, Constant, EmitField, Env, EventSource, Expr, ExprData, FunctionData, InstanceData, Ir,
-    LevelPart, Local, MathFn, Method, NodeRef, Operator, Origin, Param, Quantity, QuantityRole, Stmt, Stream, Terminal,
+    BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, ChildValue, Constant, EmitField, Env, EventSource, Expr, ExprData, FieldsForm, FunctionData, InstanceData, Ir,
+    LevelPart, Local, MathFn, Method, NodeRef, Operator, Origin, Param, Place, Projection, Quantity, QuantityRole, Stmt, Stream, Terminal, TypeData, TypeKind,
     UnaryOp, ValueType,
 };
 use crate::real::Real;
@@ -83,6 +83,14 @@ impl Display for ValueType {
             ValueType::UInt(n) => write!(f, "u{n}"),
             ValueType::Int(n) => write!(f, "i{n}"),
             ValueType::Flagged(inner) => write!(f, "flagged<{inner}>"),
+            ValueType::Tuple(parts) if parts.len() == 1 => write!(f, "({},)", parts[0]),
+            ValueType::Tuple(parts) => {
+                let parts: Vec<String> = parts.iter().map(ToString::to_string).collect();
+                write!(f, "({})", parts.join(", "))
+            }
+            ValueType::Array(element, length) => write!(f, "[{element}; {length}]"),
+            ValueType::Struct(id) | ValueType::Enum(id) => write!(f, "t{}", id.0),
+            ValueType::Option(inner) => write!(f, "Option<{inner}>"),
         }
     }
 }
@@ -93,6 +101,7 @@ impl Display for Constant {
             Constant::Real(r) => f.write_str(&Printer::real(*r)),
             Constant::Bool(b) => write!(f, "{b}"),
             Constant::Int(v) => write!(f, "{v}"),
+            Constant::Aggregate(id) => write!(f, "agg{}", id.0),
         }
     }
 }
@@ -199,6 +208,10 @@ impl<'a> Printer<'a> {
             })
             .collect();
         self.items(natures);
+        let types = ir.types.iter().enumerate().map(|(i, data)| self.chunk(|p| p.type_item(i, data))).collect();
+        self.items(types);
+        let aggregates = ir.aggregates.iter().enumerate().map(|(i, data)| self.chunk(|p| p.line(0, &format!("aggregate agg{i}: {} = {}", data.ty, p.constant(&Constant::Aggregate(AggregateId(i as u32)), 0))))).collect();
+        self.items(aggregates);
         let bodies = ir.bodies.iter().map(|body| self.chunk(|p| p.body(body))).collect();
         self.items(bodies);
         let functions = ir.functions.iter().map(|function| self.chunk(|p| p.function(function))).collect();
@@ -234,9 +247,80 @@ impl<'a> Printer<'a> {
         }
     }
 
+    /// The fields of a struct or a variant: `{ x: f64 }`, `(f64, bool)`, or nothing.
+    fn fields_text(form: FieldsForm, fields: &[(String, ValueType)]) -> String {
+        match form {
+            FieldsForm::Unit => String::new(),
+            FieldsForm::Tuple => format!("({})", fields.iter().map(|(_, ty)| ty.to_string()).collect::<Vec<_>>().join(", ")),
+            FieldsForm::Named => format!(" {{ {} }}", fields.iter().map(|(name, ty)| format!("{}: {ty}", Printer::name(name))).collect::<Vec<_>>().join(", ")),
+        }
+    }
+
+    /// One entry of the type arena: `type t0 = struct P { x: f64 }  path m::P  derive Clone, Copy`.
+    fn type_item(&mut self, index: usize, data: &TypeData) {
+        let shape = match &data.kind {
+            TypeKind::Struct { form, fields } => format!("struct {}{}", Printer::name(&data.name), Printer::fields_text(*form, fields)),
+            TypeKind::Enum { tag_levels, variants } => {
+                let variants: Vec<String> = variants.iter().map(|v| format!("{}{} = {}", Printer::name(&v.name), Printer::fields_text(v.form, &v.fields), v.discriminant)).collect();
+                format!("enum {} [tag {tag_levels}] {{ {} }}", Printer::name(&data.name), variants.join(", "))
+            }
+        };
+        let d = data.derives;
+        let flags = [("Clone", d.clone), ("Copy", d.copy), ("PartialEq", d.partial_eq), ("Eq", d.eq), ("PartialOrd", d.partial_ord), ("Ord", d.ord), ("Default", d.default), ("Debug", d.debug), ("Hash", d.hash), ("Repr", d.repr)];
+        let derived: Vec<&str> = flags.iter().filter(|(_, on)| *on).map(|(name, _)| *name).collect();
+        let derive = if derived.is_empty() { String::new() } else { format!("  derive {}", derived.join(", ")) };
+        let at = self.at(&data.origin);
+        self.line(0, &format!("type t{index} = {shape}  path {}{derive}{at}", Printer::name(&data.path)));
+    }
+
+    /// A constant as source: a scalar as `Display` writes it, a composite value spelled out through
+    /// its type (`Pair(1.0, true)`, `Tx::Data(3)`, `[1, 2]`, `Some(1.0)`); `depth` ends a cycle.
+    fn constant(&self, value: &Constant, depth: usize) -> String {
+        let Constant::Aggregate(id) = value else { return Printer::scalar(value) };
+        let Some(data) = self.ir.aggregates.get(id.index()) else { return format!("<bad aggregate {}>", id.0) };
+        if depth > 32 {
+            return "..".to_string();
+        }
+        let parts: Vec<String> = data.parts.iter().map(|part| self.constant(part, depth + 1)).collect();
+        let list = parts.join(", ");
+        match &data.ty {
+            ValueType::Tuple(_) if parts.len() == 1 => format!("({list},)"),
+            ValueType::Tuple(_) => format!("({list})"),
+            ValueType::Array(..) => format!("[{list}]"),
+            ValueType::Struct(ty) => format!("{}({list})", self.type_name(*ty)),
+            ValueType::Enum(ty) => format!("{}({list})", self.variant_name(*ty, data.variant.unwrap_or(u32::MAX))),
+            ValueType::Option(_) if parts.is_empty() => "None".to_string(),
+            _ => format!("Some({list})"),
+        }
+    }
+
+    /// A scalar constant as source.
+    fn scalar(value: &Constant) -> String {
+        match value {
+            Constant::Real(r) => Printer::real(*r),
+            Constant::Bool(b) => b.to_string(),
+            Constant::Int(v) => v.to_string(),
+            Constant::Aggregate(id) => format!("agg{}", id.0),
+        }
+    }
+
+    /// The name of a type of the arena, `<bad type>` for an id outside it.
+    fn type_name(&self, ty: TypeId) -> String {
+        self.ir.types.get(ty.index()).map_or("<bad type>".to_string(), |data| Printer::name(&data.name))
+    }
+
+    /// `Enum::Variant`, `<bad variant>` for one outside the enum.
+    fn variant_name(&self, ty: TypeId, variant: u32) -> String {
+        let name = match self.ir.types.get(ty.index()).map(|data| &data.kind) {
+            Some(TypeKind::Enum { variants, .. }) => variants.get(variant as usize).map(|v| Printer::name(&v.name)),
+            _ => None,
+        };
+        format!("{}::{}", self.type_name(ty), name.unwrap_or_else(|| "<bad variant>".to_string()))
+    }
+
     /// The locals table of an owner: index order in the full text, sorted in the structural form.
     fn locals(&mut self, indent: usize, locals: &[Local]) {
-        let lines = locals.iter().map(|l| self.chunk(|p| p.line(indent, &format!("local {}: {}", Printer::name(&l.name), l.ty)))).collect();
+        let lines = locals.iter().map(|l| self.chunk(|p| p.line(indent, &format!("local {}{}: {}", if l.mutable { "mut " } else { "" }, Printer::name(&l.name), l.ty)))).collect();
         self.items(lines);
     }
 
@@ -402,6 +486,8 @@ impl<'a> Printer<'a> {
             let mut text = format!("event E{k} ");
             match &event.source {
                 EventSource::Changed(c) => text.push_str(&format!("changed {}", Printer::carrier(scope, *c))),
+                // `settle` (§13 rule 17) names no carrier, param or expression.
+                EventSource::Settle => text.push_str("settle"),
                 EventSource::ParamChanged(p) => {
                     let name = scope.params.get(*p as usize).map_or(format!("<bad param {p}>"), |param| Printer::name(&param.name));
                     text.push_str(&format!("param_changed {name}"));
@@ -550,6 +636,18 @@ impl<'a> Printer<'a> {
         scope.carriers.get(i as usize).map_or(format!("<bad carrier {i}>"), |c| Printer::name(&c.name))
     }
 
+    /// An assignment target as pieces: the local, then `.k` for a field and `[index]` for an element.
+    fn place(scope: Scope<'_>, place: &Place) -> Vec<Piece> {
+        let mut pieces = vec![Piece::Text(Printer::local(scope, place.local))];
+        for step in &place.path {
+            match step {
+                Projection::Field(k) => pieces.push(Piece::Text(format!(".{k}"))),
+                Projection::Index(index) => pieces.extend([Piece::Text("[".into()), Piece::Expr(*index), Piece::Text("]".into())]),
+            }
+        }
+        pieces
+    }
+
     fn local(scope: Scope<'_>, i: u32) -> String {
         scope.locals.get(i as usize).map_or(format!("<bad local {i}>"), |l| Printer::name(&l.name))
     }
@@ -601,6 +699,12 @@ impl<'a> Printer<'a> {
                 next.push(Piece::Expr(*init));
             }
             Stmt::Expr(e) => next.push(Piece::Expr(*e)),
+            Stmt::Assign { place, op, value } => {
+                let op = op.map_or(String::new(), |op| Printer::binary_op(op).to_string());
+                next.extend(Printer::place(scope, place));
+                next.push(Piece::Text(format!(" {op}= ")));
+                next.push(Piece::Expr(*value));
+            }
             Stmt::BoundStep { value, when, .. } => {
                 next.extend([Piece::Text("bound_step(".into()), Piece::Expr(*value), Piece::Text(")".into())]);
                 if let Some(when) = when {
@@ -654,6 +758,18 @@ impl<'a> Printer<'a> {
             }
             next.push(Piece::Expr(item));
         }
+    }
+
+    /// A loop body: `head { s0; s1 }`, the statements written in order.
+    fn statements(next: &mut Vec<Piece>, head: &str, stmts: &[StmtId]) {
+        next.push(Piece::Text(if head.is_empty() { "{ ".to_string() } else { format!("{head} {{ ") }));
+        for (i, &s) in stmts.iter().enumerate() {
+            if i > 0 {
+                next.push(Piece::Text("; ".into()));
+            }
+            next.push(Piece::Stmt(s));
+        }
+        next.push(Piece::Text(" }".into()));
     }
 
     fn expr(&mut self, scope: Scope<'_>, id: ExprId, next: &mut Vec<Piece>) {
@@ -727,6 +843,42 @@ impl<'a> Printer<'a> {
                 Printer::list(next, args);
                 next.push(text(")".into()));
             }
+            Expr::Tuple(parts) => {
+                next.push(text("(".into()));
+                Printer::list(next, parts);
+                next.push(text(if parts.len() == 1 { ",)" } else { ")" }.into()));
+            }
+            Expr::Array(parts) => {
+                next.push(text("[".into()));
+                Printer::list(next, parts);
+                next.push(text("]".into()));
+            }
+            Expr::ArrayRepeat { element, count } => next.extend([text("[".into()), Piece::Expr(*element), text(format!("; {count}]"))]),
+            Expr::StructOf { ty, fields } => {
+                next.push(text(format!("{}(", self.type_name(*ty))));
+                Printer::list(next, fields);
+                next.push(text(")".into()));
+            }
+            Expr::VariantOf { ty, variant, fields } => {
+                next.push(text(format!("{}(", self.variant_name(*ty, *variant))));
+                Printer::list(next, fields);
+                next.push(text(")".into()));
+            }
+            Expr::Field { expr, index } => next.extend([Piece::Expr(*expr), text(format!(".{index}"))]),
+            Expr::Index { expr, index } => next.extend([Piece::Expr(*expr), text("[".into()), Piece::Expr(*index), text("]".into())]),
+            Expr::Length(expr) => next.extend([Piece::Expr(*expr), text(".len()".into())]),
+            Expr::IsVariant { expr, variant } => {
+                let ty = self.ir.exprs.get(expr.index()).map(|e| &e.ty);
+                let name = match ty {
+                    Some(ValueType::Enum(id)) => self.variant_name(*id, *variant),
+                    _ => format!("<variant {variant}>"),
+                };
+                next.extend([text("matches!(".into()), Piece::Expr(*expr), text(format!(", {name})"))]);
+            }
+            Expr::VariantField { expr, variant, field } => next.extend([Piece::Expr(*expr), text(format!(" as variant {variant} .{field}"))]),
+            Expr::OptionPack { is, value } => next.extend([text("option(".into()), Piece::Expr(*is), text(", ".into()), Piece::Expr(*value), text(")".into())]),
+            Expr::OptionPart { option, part } => next.extend([Piece::Expr(*option), text(if *part == LevelPart::Is { ".is" } else { ".value" }.into())]),
+            Expr::Default(ty) => next.push(text(format!("{ty}::default()"))),
             Expr::Math { f, args } => {
                 next.push(text(format!("{}(", Printer::math_name(*f))));
                 Printer::list(next, args);
@@ -788,6 +940,36 @@ impl<'a> Printer<'a> {
                 let tags = tags.as_ref().map(|t| format!(" in {t:?}")).unwrap_or_default();
                 next.extend([text(format!("cast::<{to}{tags}>(")), Piece::Expr(*expr), text(")".into())]);
             }
+            Expr::Loop { body } => Printer::statements(next, "loop", body),
+            Expr::While { cond, body } => {
+                next.extend([text("while ".into()), Piece::Expr(*cond), text(" ".into())]);
+                Printer::statements(next, "", body);
+            }
+            Expr::ForRange { local, low, high, inclusive, reverse, body } => {
+                let range = if *inclusive { "..=" } else { ".." };
+                let (open, close) = if *reverse { ("(", ").rev()") } else { ("", "") };
+                next.extend([text(format!("for {} in {open}", Printer::local(scope, *local))), Piece::Expr(*low), text(range.into()), Piece::Expr(*high), text(format!("{close} "))]);
+                Printer::statements(next, "", body);
+            }
+            Expr::Break(value) => {
+                next.push(text("break".into()));
+                if let Some(value) = value {
+                    next.extend([text(" ".into()), Piece::Expr(*value)]);
+                }
+            }
+            Expr::Continue => next.push(text("continue".into())),
+            Expr::Return(value) => {
+                next.push(text("return".into()));
+                if let Some(value) = value {
+                    next.extend([text(" ".into()), Piece::Expr(*value)]);
+                }
+            }
+            Expr::FunctionRef(function) => next.push(text(self.ir.functions.get(function.index()).map_or("<bad function>".to_string(), |f| Printer::name(&f.name)))),
+            Expr::CallValue { callee, args } => {
+                next.extend([Piece::Expr(*callee), text("(".into())]);
+                Printer::list(next, args);
+                next.push(text(")".into()));
+            }
             Expr::Unwrap { is, value, message } => {
                 let name = if message.is_some() { "expect" } else { "unwrap" };
                 next.extend([text(format!("{name}(")), Piece::Expr(*is), text(", ".into()), Piece::Expr(*value)]);
@@ -838,7 +1020,7 @@ impl<'a> Printer<'a> {
             Expr::Level { value, index, .. } => Typing::level(&ty(value)?, &ty(index)?),
             Expr::Merge { a, b } => Typing::merge(&ty(a)?, &ty(b)?),
             Expr::Same { a, b } => Typing::same(&ty(a)?, &ty(b)?),
-            Expr::LevelCast { expr, to, tags } => Typing::level_cast(&ty(expr)?, to, tags.is_some()),
+            Expr::LevelCast { expr, to, tags } => Typing::level_cast(&ty(expr)?, to, tags.is_some(), &ir.types),
             Expr::Math { args, .. } if args.iter().any(|a| ty(a).is_some_and(|t| Typing::flagged(&t))) => {
                 let args: Option<Vec<ValueType>> = args.iter().map(ty).collect();
                 Typing::math(&args?.iter().collect::<Vec<_>>())
@@ -888,6 +1070,20 @@ impl<'a> Printer<'a> {
             Expr::Unknown | Expr::KnownOr { .. } | Expr::IsKnown(_) | Expr::High(_) | Expr::Carrier(_) | Expr::Previous(_) => None,
             Expr::Level { .. } | Expr::Merge { .. } | Expr::Same { .. } | Expr::LevelCast { .. } => None,
             Expr::Unwrap { value, .. } => ty(value),
+            Expr::While { .. } | Expr::ForRange { .. } => Some(ValueType::Unit),
+            // A diverging form fits any type, and a loop is typed by its breaks: both write theirs.
+            Expr::Loop { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) => None,
+            Expr::FunctionRef(function) => ir.functions.get(function.index()).map(|f| ValueType::Fn(f.params.iter().map(|p| p.ty.clone()).collect(), Box::new(f.ret.clone()))),
+            Expr::CallValue { callee, .. } => match ty(callee)? {
+                ValueType::Fn(_, ret) => Some(*ret),
+                _ => None,
+            },
+            // The aggregate forms are typed by their arena entry: the structural form writes the type.
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } => None,
+            Expr::Length(_) => Some(ValueType::UInt(64)),
+            Expr::IsVariant { .. } | Expr::OptionPart { part: LevelPart::Is, .. } => Some(ValueType::Bool),
+            Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } => None,
+            Expr::Default(ty) => Some(ty.clone()),
         }
     }
 
@@ -961,6 +1157,7 @@ impl<'a> Printer<'a> {
                         EventSource::Cross { e, ttol: None, etol: None } => format!("(cross e{} {})", e.0, opt(ev.guard)),
                         EventSource::Cross { e, ttol, etol } => format!("(cross e{} {} ttol {} etol {})", e.0, opt(ev.guard), opt(*ttol), opt(*etol)),
                         EventSource::At(e) => format!("(at e{} {})", e.0, opt(ev.guard)),
+                        EventSource::Settle => format!("(settle {})", opt(ev.guard)),
                     })
                     .collect();
                 let reactions: Vec<String> = body
@@ -1081,7 +1278,36 @@ impl<'a> Printer<'a> {
                 Some(message) => format!("expect {} {} {message:?}", e(is), e(value)),
                 None => format!("unwrap {} {}", e(is), e(value)),
             },
+            Expr::Loop { body } => format!("loop ({})", Printer::stmt_ids(body)),
+            Expr::While { cond, body } => format!("while {} ({})", e(cond), Printer::stmt_ids(body)),
+            Expr::ForRange { local, low, high, inclusive, reverse, body } => {
+                let flags = format!("{}{}", if *inclusive { " inclusive" } else { "" }, if *reverse { " reverse" } else { "" });
+                format!("for local {local} {} {}{flags} ({})", e(low), e(high), Printer::stmt_ids(body))
+            }
+            Expr::Break(value) => format!("break {}", opt(value)),
+            Expr::Continue => "continue".to_string(),
+            Expr::Return(value) => format!("return {}", opt(value)),
+            Expr::FunctionRef(function) => format!("function_ref fn {}", function.0),
+            Expr::CallValue { callee, args } => format!("call_value {} ({})", e(callee), ids(args)),
+            Expr::Tuple(parts) => format!("tuple ({})", ids(parts)),
+            Expr::Array(parts) => format!("array ({})", ids(parts)),
+            Expr::ArrayRepeat { element, count } => format!("array_repeat {} x{count}", e(element)),
+            Expr::StructOf { ty, fields } => format!("struct_of t{} ({})", ty.0, ids(fields)),
+            Expr::VariantOf { ty, variant, fields } => format!("variant_of t{} v{variant} ({})", ty.0, ids(fields)),
+            Expr::Field { expr, index } => format!("field {} .{index}", e(expr)),
+            Expr::Index { expr, index } => format!("index {} {}", e(expr), e(index)),
+            Expr::Length(expr) => format!("length {}", e(expr)),
+            Expr::IsVariant { expr, variant } => format!("is_variant {} v{variant}", e(expr)),
+            Expr::VariantField { expr, variant, field } => format!("variant_field {} v{variant} .{field}", e(expr)),
+            Expr::OptionPack { is, value } => format!("option_pack {} {}", e(is), e(value)),
+            Expr::OptionPart { option, part } => format!("option_part {} {}", e(option), if *part == LevelPart::Is { "is" } else { "value" }),
+            Expr::Default(ty) => format!("default {ty}"),
         }
+    }
+
+    /// Statement ids as `s0, s1`.
+    fn stmt_ids(stmts: &[StmtId]) -> String {
+        stmts.iter().map(|s| format!("s{}", s.0)).collect::<Vec<_>>().join(", ")
     }
 
     /// A statement's form with its operands as ids.
@@ -1089,6 +1315,18 @@ impl<'a> Printer<'a> {
         match stmt {
             Stmt::Let { local, init } => format!("let {local} e{}", init.0),
             Stmt::Expr(e) => format!("expr e{}", e.0),
+            Stmt::Assign { place, op, value } => {
+                let fields: String = place
+                    .path
+                    .iter()
+                    .map(|step| match step {
+                        Projection::Field(k) => format!(".{k}"),
+                        Projection::Index(index) => format!("[e{}]", index.0),
+                    })
+                    .collect();
+                let op = op.map_or("-".to_string(), |op| Printer::binary_name(op).to_string());
+                format!("assign {}{fields} {op} e{}", place.local, value.0)
+            }
             Stmt::BoundStep { site, value, when } => match when {
                 Some(when) => format!("bound_step B{site} e{} when e{}", value.0, when.0),
                 None => format!("bound_step B{site} e{}", value.0),

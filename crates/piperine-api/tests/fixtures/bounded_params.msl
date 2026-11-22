@@ -1,0 +1,14 @@
+pub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }
+analog for Vsource { v(p, n) +> dc; }
+pub module Thresh(p: Electrical, n: Electrical) {
+    x: f64 = 1.0 where x >= 0.0;
+    v_pick: f64 = 2.0;
+    v_release: f64 = 1.2 where v_release < v_pick;
+}
+analog for Thresh { i(p, n) +> v(p, n) / 1k + x * 0.0 + v_release * 0.0; }
+
+module Top() {
+    signal a: Electrical;
+    let v1 = Vsource(a, gnd) { dc: 1.0 };
+    let t = Thresh(a, gnd);
+}

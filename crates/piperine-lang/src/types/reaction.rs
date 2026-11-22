@@ -32,14 +32,18 @@ impl Checker<'_> {
         }
         let place_span = self.design.expr_node(place).span;
         let target = self.drive_target(place, "commit");
-        let outer = std::mem::replace(&mut self.committing, true);
         match &target {
+            // §1 rule 9: a function value or a closure has no `Repr`, so no carrier holds one
+            Some(_) if self.is_function_value(value) => {
+                let found = self.infer(value).map_or_else(|| "a function value".to_string(), |t| t.name(self.design));
+                let message = format!("`{found}` has no `Repr`: a carrier holds only a type that implements it (part I §2)");
+                self.coded(file, "E0112", self.design.expr_node(value).span, message, "no `Repr`");
+            }
             Some((_, held)) => self.check_as(value, held, "E0432"),
             None => {
                 self.infer(value);
             }
         }
-        self.committing = outer;
         if let Some(after) = after {
             self.check_as(after, &Ty::F64, "E0433");
         }

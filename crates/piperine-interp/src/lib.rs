@@ -7,6 +7,7 @@ use std::sync::Arc;
 use piperine_abi::raw::Module;
 use piperine_abi::thunk::module_with;
 
+mod composite;
 mod device;
 mod dual;
 mod walk;
@@ -23,6 +24,7 @@ pub use walk::{Value, Walk};
 use std::collections::HashSet;
 
 use piperine_ir::{AnalysisKind, Body, BodyId, BranchKind, Broken, Env, EventSource, Ir, Stmt, StmtId, Target};
+use composite::CompositeForms;
 use piperine_plan::{Modules, Netlist};
 use piperine_solver::prelude::CircuitInstance;
 
@@ -63,7 +65,7 @@ impl Interpreter {
                     what: format!("body {} has carriers, drives or reactions: the interpreter runs the M1 analog subset only (use the compiled backend)", b.name()),
                 });
             }
-            for form in Self::amended_forms(b).into_iter().chain(Self::structure_forms(b)) {
+            for form in Self::amended_forms(b).into_iter().chain(Self::structure_forms(b)).chain(CompositeForms::of(b)) {
                 refused.push(Broken {
                     item: format!("body {}", b.name()),
                     origin: b.origin().clone(),
@@ -141,11 +143,14 @@ impl Interpreter {
         let ttol = body.events().iter().any(|e| matches!(e.source, EventSource::Cross { ttol: Some(_), .. }));
         let etol = body.events().iter().any(|e| matches!(e.source, EventSource::Cross { etol: Some(_), .. }));
         let at = body.events().iter().any(|e| matches!(e.source, EventSource::At(_)));
+        let settle = body.events().iter().any(|e| matches!(e.source, EventSource::Settle));
         let emit = (0..body.reactions().len() as u32).any(|k| body.reaction_statements(k).iter().any(|s| matches!(body.ir().stmt(*s), Stmt::Emit { .. })));
         [
             (time, "now()"),
             (stat, "analysis(Static)"),
             (at, "at(t)"),
+            // §13 rule 17: the settle phase is the digital engine's; the interpreter has none
+            (settle, "settle"),
             (emit, "emit!"),
             (flow, "the flow of a potential branch"),
             (previous, "the previous value of a carrier"),

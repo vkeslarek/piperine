@@ -385,6 +385,20 @@ fn the_section_18_diode_waits_for_params_and_io() {
     assert!(found[0].diagnostic.message.contains("Option"), "the refusal names the param type: {}", found[0].diagnostic.message);
 }
 
+#[test]
+fn an_enum_param_is_refused_by_name_until_params_and_io() {
+    // CV round 2, finding 10 (GAPS L28, `md: Mode`): an enum param, unit or payload, with or without `Repr`, is `P0001`
+    // naming the enum type, never carried on to the transpiler read as an `f64`.
+    let items = "enum Mode { A, B }\n#[derive(Repr)]\nenum Kind { X(u8), Y }\n";
+    for (param, named) in [("m: Mode = Mode::A", "Mode"), ("k: Kind = Kind::Y", "Kind")] {
+        let src = format!("{items}module Top() {{ {param}; signal s: Electrical; }}");
+        let design = Elab::design(&src);
+        let found = piperine_lang::types::Types::check(&design, "Top").expect_err("the enum param is refused");
+        assert_eq!(Elab::codes(&found), ["P0001"], "{param}");
+        assert!(found[0].diagnostic.message.contains(&format!("param of type `enum `{named}``")), "{param}: {}", found[0].diagnostic.message);
+    }
+}
+
 /// `Lag` of AS-09: a result that reads its own node, hoisted into each body that places it.
 const LAG: &str = "module Lag(x: f64) -> f64 { tau: f64 = 1m; signal y: State; potential(y) }\nanalog for Lag { flow(y) +> tau * ddt(potential(y)) + potential(y) - x; }\n";
 
@@ -465,7 +479,7 @@ fn the_stdlib_idt_waits_for_generics() {
 fn the_water_model_waits_for_generics() {
     // AS-05 AC 2 (Q2): `Water` of Part IV section 13 reads `idt::<Heat>`, a generic instantiation: refused
     // by name until `generics` merges.
-    let src = "#[derive(Repr, Clone, Copy, PartialEq)]\nenum Phase { Liquid, Boiling, Vapor }\nnature Heat { potential: Energy { access: joules, units: \"J\", abstol: 1m }, flow: Power { access: pwr, units: \"W\", abstol: 1n } }\nmodule Water(t: Thermal) {\n    mass: f64 = 1.0;\n    hv: f64 = 2.26M;\n    pub signal phase: Bit<Phase> = Phase::Liquid;\n    let ph = phase.known_or(Phase::Liquid);\n    let absorbed = idt::<Heat>(pwr(t), 0.0, reset: ph != Phase::Boiling);\n}\nmodule Top() { signal t: Thermal; let w = Water(t); }";
+    let src = "#[derive(Repr, PartialEq)]\nenum Phase { Liquid, Boiling, Vapor }\nnature Heat { potential: Energy { access: joules, units: \"J\", abstol: 1m }, flow: Power { access: pwr, units: \"W\", abstol: 1n } }\nmodule Water(t: Thermal) {\n    mass: f64 = 1.0;\n    hv: f64 = 2.26M;\n    pub signal phase: Bit<Phase> = Phase::Liquid;\n    let ph = phase.known_or(Phase::Liquid);\n    let absorbed = idt::<Heat>(pwr(t), 0.0, reset: ph != Phase::Boiling);\n}\nmodule Top() { signal t: Thermal; let w = Water(t); }";
     let design = Elab::design(src);
     let found = piperine_lang::types::Types::check(&design, "Top").expect_err("a generic instantiation is refused");
     assert!(Elab::codes(&found).iter().all(|c| c == "P0001"), "{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());

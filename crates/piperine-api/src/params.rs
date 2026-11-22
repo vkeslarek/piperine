@@ -9,7 +9,7 @@
 
 use piperine_interp::{Dual, Value as Walked, Walk};
 use piperine_ir::{Constant, Ir, ValueType};
-use piperine_plan::{Binding, DerivePlan};
+use piperine_plan::{Binding, CompositeLayout, DerivePlan};
 use piperine_solver::abi::Value;
 use piperine_solver::prelude::ParamValue;
 use piperine_transpile::Compiled;
@@ -107,6 +107,31 @@ impl Changed {
     }
 }
 
+/// The bytes of one leaf of a composite param.
+struct LeafValue;
+
+impl LeafValue {
+    /// `value` as the leaf `leaf` (a `leaf::*` constant) holds it, little-endian; the reason it cannot when it cannot.
+    fn encode(leaf: u32, value: f64) -> Result<Vec<u8>, String> {
+        let whole = |low: f64, high: f64| {
+            if value.fract() == 0.0 && (low..=high).contains(&value) { Ok(value) } else { Err(format!("the leaf holds a whole number from {low} to {high}")) }
+        };
+        Ok(match leaf {
+            piperine_abi::raw::leaf::F64 => value.to_le_bytes().to_vec(),
+            piperine_abi::raw::leaf::BOOL => vec![u8::from(whole(0.0, 1.0)? == 1.0)],
+            piperine_abi::raw::leaf::U8 => (whole(0.0, 255.0)? as u8).to_le_bytes().to_vec(),
+            piperine_abi::raw::leaf::U16 => (whole(0.0, 65535.0)? as u16).to_le_bytes().to_vec(),
+            piperine_abi::raw::leaf::U32 => (whole(0.0, 4294967295.0)? as u32).to_le_bytes().to_vec(),
+            piperine_abi::raw::leaf::U64 => (whole(0.0, 18446744073709551615.0)? as u64).to_le_bytes().to_vec(),
+            piperine_abi::raw::leaf::I8 => (whole(-128.0, 127.0)? as i8).to_le_bytes().to_vec(),
+            piperine_abi::raw::leaf::I16 => (whole(-32768.0, 32767.0)? as i16).to_le_bytes().to_vec(),
+            piperine_abi::raw::leaf::I32 => (whole(-2147483648.0, 2147483647.0)? as i32).to_le_bytes().to_vec(),
+            piperine_abi::raw::leaf::I64 => (whole(-9223372036854775808.0, 9223372036854775807.0)? as i64).to_le_bytes().to_vec(),
+            other => return Err(format!("leaf kind {other} has no host value")),
+        })
+    }
+}
+
 /// The values of every param of every instance, by instance in the IR's order.
 #[derive(Debug, Clone)]
 pub struct Params {
@@ -118,6 +143,51 @@ pub struct Params {
 struct Slot {
     path: String,
     params: Vec<(String, ValueType, f64)>,
+    /// The composite params of the instance, each as the bytes its pin holds.
+    composites: Vec<CompositeParam>,
+}
+
+/// A composite param of an instance: its layout and the bytes its pin holds (the value, then the known byte).
+#[derive(Debug, Clone)]
+struct CompositeParam {
+    /// The param's name.
+    name: String,
+    /// The layout of its pin.
+    layout: CompositeLayout,
+    /// The bytes its pin holds: the value, then the known byte.
+    bytes: Vec<u8>,
+}
+
+/// One write of a leaf of a composite param: the whole value before and after, as the pin holds it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LeafChange {
+    /// The instance whose param it is.
+    pub instance: String,
+    /// The composite param.
+    pub param: String,
+    /// The leaf written, as the layout names it (`num[2]`, `p.x`, `0`).
+    pub leaf: String,
+    /// The bytes of the param before.
+    pub old: Vec<u8>,
+    /// The bytes of the param after.
+    pub bytes: Vec<u8>,
+}
+
+impl LeafChange {
+    /// `<instance>.<param>.<leaf>`.
+    pub fn label(&self) -> String {
+        format!("{}.{}.{}", self.instance, self.param, self.leaf)
+    }
+
+    /// The whole param as the circuit takes it.
+    pub fn param_value(&self) -> ParamValue {
+        ParamValue::Bytes(self.bytes.clone())
+    }
+
+    /// The whole param before the write, as the circuit takes it.
+    pub fn old_value(&self) -> ParamValue {
+        ParamValue::Bytes(self.old.clone())
+    }
 }
 
 impl Params {
@@ -127,6 +197,18 @@ impl Params {
             .instances()
             .map(|instance| Slot {
                 path: instance.path().to_string(),
+                composites: instance
+                    .body()
+                    .params()
+                    .iter()
+                    .zip(instance.params())
+                    .filter(|(param, _)| param.ty.is_composite())
+                    .filter_map(|(param, given)| {
+                        let layout = CompositeLayout::of(ir, &param.ty)?;
+                        let bytes = CompositeLayout::bytes(ir, &param.ty, *given)?;
+                        Some(CompositeParam { name: param.name.clone(), layout, bytes })
+                    })
+                    .collect(),
                 params: instance
                     .body()
                     .params()
@@ -137,6 +219,9 @@ impl Params {
                             Constant::Real(r) => r.get(),
                             Constant::Bool(b) => f64::from(u8::from(*b)),
                             Constant::Int(v) => *v as f64,
+                            // The scalar table holds no leaf of a composite: its place is kept so the
+                            // declaration order the derive functions read stays, and `get` reads none.
+                            Constant::Aggregate(_) => f64::NAN,
                         };
                         (param.name.clone(), param.ty.clone(), value)
                     })
@@ -148,7 +233,49 @@ impl Params {
 
     /// The value of `param` of `instance`; `None` when the design has no such param.
     pub fn get(&self, instance: &str, param: &str) -> Option<f64> {
-        self.slot(instance)?.params.iter().find(|(n, _, _)| n == param).map(|(_, _, v)| *v)
+        self.slot(instance)?.params.iter().find(|(n, ty, _)| n == param && !ty.is_composite()).map(|(_, _, v)| *v)
+    }
+
+    /// The bytes of the composite param `param` of `instance`: its value, then the known byte.
+    pub fn composite_bytes(&self, instance: &str, param: &str) -> Option<&[u8]> {
+        self.slot(instance)?.composites.iter().find(|c| c.name == param).map(|c| c.bytes.as_slice())
+    }
+
+    /// The leaves of the composite param `param` of `instance`, as the layout names them; `None`
+    /// when the instance has no such composite param.
+    pub fn leaves(&self, instance: &str, param: &str) -> Option<Vec<String>> {
+        let composite = self.slot(instance)?.composites.iter().find(|c| c.name == param)?;
+        Some(composite.layout.leaves().iter().map(|l| l.name.clone()).collect())
+    }
+
+    /// The write of `value` to `leaf` of the composite param `param` of `instance`, with nothing
+    /// applied: the whole param's new bytes. `E0801` for a param or a leaf that does not exist
+    /// (the leaves are named), `E0802` for a value the leaf cannot hold (a `bool` is 0 or 1, an
+    /// integer a whole number in its range).
+    pub fn leaf_change(&self, instance: &str, param: &str, leaf: &str, value: f64) -> Result<LeafChange, Failure> {
+        let label = format!("{instance}.{param}.{leaf}");
+        let composite = self
+            .slot(instance)
+            .and_then(|s| s.composites.iter().find(|c| c.name == param))
+            .ok_or_else(|| Failure::Host { code: "E0801", message: format!("`{instance}.{param}` is no composite param of the design") })?;
+        let found = composite.layout.leaves().iter().find(|l| l.name == leaf).ok_or_else(|| Failure::Host {
+            code: "E0801",
+            message: format!("`{label}` names no leaf of `{instance}.{param}`: its leaves are {}", composite.layout.leaves().iter().map(|l| format!("`{}`", l.name)).collect::<Vec<_>>().join(", ")),
+        })?;
+        let refused = |why: String| Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {value}: {why}") };
+        let mut bytes = composite.bytes.clone();
+        let encoded = LeafValue::encode(found.leaf, value).map_err(refused)?;
+        let at = found.offset as usize;
+        bytes[at..at + encoded.len()].copy_from_slice(&encoded);
+        Ok(LeafChange { instance: instance.to_string(), param: param.to_string(), leaf: leaf.to_string(), old: composite.bytes.clone(), bytes })
+    }
+
+    /// Takes `change` into the table.
+    pub fn apply_leaf(&mut self, change: &LeafChange) {
+        let found = self.instances.iter_mut().find(|s| s.path == change.instance).and_then(|s| s.composites.iter_mut().find(|c| c.name == change.param));
+        if let Some(composite) = found {
+            composite.bytes = change.bytes.clone();
+        }
     }
 
     /// The derive plan of the design.
@@ -215,6 +342,12 @@ impl Params {
             let read_changed = binding.reads.iter().any(|r| changes.iter().any(|c| c.instance == binding.parent && &c.param == r));
             if !read_changed {
                 continue;
+            }
+            if binding.ty.is_composite() {
+                return Err(refuse(format!(
+                    "`{label}` is read by the placement of the composite param `{}.{}`, which keeps the value it elaborated to: set `{}.{}` itself instead",
+                    binding.child, binding.param, binding.child, binding.param
+                )));
             }
             let parent = working.slot(&binding.parent).ok_or_else(|| Failure::Backend(format!("the derive plan names `{}`, which is no instance", binding.parent)))?;
             let inputs: Vec<f64> = parent.params.iter().map(|(_, _, v)| *v).collect();

@@ -1,3 +1,3 @@
 module SampleHold(vin: Electrical, vout: Electrical, in clk: Bit) { signal held: Bit<f64> = 0.0; }
 digital for SampleHold { on clk.rise() { held <- v(vin); } }
-analog for SampleHold { v(vout) +> held.known_or(0.0); }
+analog for SampleHold { v(vout) +> held; }

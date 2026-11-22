@@ -59,6 +59,28 @@ impl DiscreteTrace {
         DiscreteTrace { label: column.label().to_string(), window: None, rows }
     }
 
+    /// [`of`](Self::of) for a column of an enum with no payload, which a table prints by the variant's
+    /// name (composite-values CV-22): each row reads as the declaration index of its variant among
+    /// `variants`, in declaration order. A name `variants` lacks panics naming the row.
+    pub fn of_enum(table: &Table, name: &str, variants: &[&str]) -> DiscreteTrace {
+        let column = NamedColumn::find(table, name);
+        let rows = table
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(row, cells)| {
+                let Cell::Real(time) = cells[0] else { panic!("row {row} of `{}` has no real time: {:?}", column.label(), cells[0]) };
+                let value = match &cells[column.index()] {
+                    Cell::Text(variant) => Some(variants.iter().position(|candidate| candidate == variant).unwrap_or_else(|| panic!("row {row} of `{}` names `{variant}`, no variant of {variants:?}", column.label())) as i128),
+                    Cell::Unknown => None,
+                    other => panic!("row {row} of `{}` is not a variant's name: {other:?}", column.label()),
+                };
+                DiscreteSample { time, value }
+            })
+            .collect();
+        DiscreteTrace { label: column.label().to_string(), window: None, rows }
+    }
+
     /// The rows with `from <= time < to`; the window is kept for the messages of a failure.
     pub fn between(&self, from: f64, to: f64) -> DiscreteTrace {
         let rows = self.rows.iter().copied().filter(|row| row.time >= from && row.time < to).collect();

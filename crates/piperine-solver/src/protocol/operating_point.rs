@@ -5,7 +5,7 @@
 
 use piperine_analog_solver::error::{Error, Result, SolverDomain};
 
-use super::sides::{AnalogSide, AnalysisKind, DiscreteSide, Horizon, InstantMode, Restart};
+use super::sides::{AnalogSide, AnalysisKind, DiscreteSide, Horizon, InstantMode, Restart, Tick};
 use super::transient::{Ended, Protocol};
 
 /// The `E0506` error: the rounds of an operating point exceeded `max`;
@@ -26,6 +26,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         let analysis = AnalysisKind::OperatingPoint;
         let unknowns = self.analog.has_unknowns();
         self.discrete.start(at)?;
+        self.land_previous_point_settle_commits(at);
         self.started = true;
         self.collect(analysis);
         let mut rounds = 0u32;
@@ -63,6 +64,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             // A settle commit is read by the solve that arrives next (abi.md §10 step 4).
             self.analog.deliver(&settled.boundary, Restart::None);
         }
+        self.deliver_settle_boundary(unknowns, &settled);
         finish |= settled.finish;
         self.samples = samples;
         self.collect(analysis);
@@ -72,5 +74,20 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             return Ok(Ended::Finish(self.now));
         }
         Ok(Ended::StopTime)
+    }
+
+    /// §15 S6: where time does not advance the next time point is the next sweep point, so the
+    /// settle commits the previous point of a sweep held land at microstep 0 of this point's first
+    /// instant. A transient's operating point holds none from before; the ones it makes land at the
+    /// transient's first time point (§16 O4, through `Protocol::transient`).
+    fn land_previous_point_settle_commits(&mut self, at: Tick) {
+        self.discrete.land_settle_commits(at);
+    }
+
+    /// §15 S6: the settle commits of the last point of a sweep (or of an analysis that is not
+    /// followed by another point or a transient) are dropped.
+    pub fn end_sweep(&mut self) {
+        self.discrete.drop_settle_commits();
+        self.exempt_next = false;
     }
 }

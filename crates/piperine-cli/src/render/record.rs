@@ -22,7 +22,9 @@ impl RecordLine {
                 Field::Bool(v) => Number::text(&Cell::Bool(*v)),
                 Field::Int(v) => Number::text(&Cell::Int(*v)),
                 Field::Text(v) => format!("\"{v}\""),
+                Field::Variant(v) => v.clone(),
                 Field::Unknown => Number::text(&Cell::Unknown),
+                Field::Composite(v) => Number::text(&Cell::Composite(v.clone())),
             };
             write!(out, " {name}={value}")?;
         }
@@ -50,7 +52,7 @@ mod tests {
     #[test]
     fn a_record_is_one_line() {
         // CLI-06 AC 2: `@<time> <instance path> <stream> <field>=<value> ...`; the lines are the
-        // Book's (chapter 16): a real, a text in double quotes (AC 4), a bool, an integer, an
+        // Book's (chapter 13): a real, a text in double quotes (AC 4), a bool, an integer, an
         // unknown as `x` (AC 5), and a record with no field
         let trip = record(6.931472e-7, "Step.mon", "trip", vec![("v", Field::Real(0.5))]);
         assert_eq!(line(&trip), "@6.931472e-7 Step.mon trip v=5.000000e-1\n");

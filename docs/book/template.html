@@ -6,9 +6,10 @@
 <style>
 /* Layout: a book. Fixed chapter rail on the left (top menu on phones), one calm reading column of ~68ch; code and tables may run a little wider than prose. */
 :root{
-  --bg:#f5f7f6; --surface:#ffffff; --fg:#17201c; --muted:#5b6863; --line:#d8e0dc;
-  --accent:#0f7a5c; --accent-soft:#e2f1eb; --code-bg:#eef3f1;
-  --ana:#1f62a8; --dig:#a1520c; --warn:#8a5a00; --warn-soft:#f8eed9;
+  /* Piperine's colors, from assets/logo.svg: cream #f3f3eb, ink #454440, orange #d16127. */
+  --bg:#f3f3eb; --surface:#fbfbf7; --fg:#2e2d29; --muted:#64625b; --line:#dbdacf;
+  --accent:#b04f1c; --accent-soft:#f6e4d8; --code-bg:#ebeae0;
+  --ana:#1f62a8; --dig:#3d7a3f; --warn:#8a5a00; --warn-soft:#f6ecd4;
   --kw:#7a3fb8; --st:#1f6fb2; --nu:#a6600f; --com:#7c8a85; --ty:#0d6b6e; --fn:#33507f; --er:#b3261e;
   --f-display:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;
   --f-read:"IBM Plex Serif",Georgia,"Times New Roman",serif;
@@ -17,15 +18,15 @@
   --rail:268px; --measure:68ch;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#0f1412; --surface:#161d1a; --fg:#e2eae6; --muted:#97a59f; --line:#28332f;
-  --accent:#4cc79f; --accent-soft:#15302a; --code-bg:#18211e;
-  --ana:#7cb4ee; --dig:#eba663; --warn:#e8b46f; --warn-soft:#30260f;
+  --bg:#22211e; --surface:#2b2a26; --fg:#f3f3eb; --muted:#b2b0a5; --line:#45443f;
+  --accent:#e8834f; --accent-soft:#3d2a1f; --code-bg:#292824;
+  --ana:#7cb4ee; --dig:#86c487; --warn:#e8b46f; --warn-soft:#33291a;
   --kw:#c49bf0; --st:#7cb8ec; --nu:#e8b46f; --com:#7f8e88; --ty:#62c9c2; --fn:#a9c1ea; --er:#ff8a80;
   color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#0f1412; --surface:#161d1a; --fg:#e2eae6; --muted:#97a59f; --line:#28332f;
-  --accent:#4cc79f; --accent-soft:#15302a; --code-bg:#18211e;
-  --ana:#7cb4ee; --dig:#eba663; --warn:#e8b46f; --warn-soft:#30260f;
+  --bg:#22211e; --surface:#2b2a26; --fg:#f3f3eb; --muted:#b2b0a5; --line:#45443f;
+  --accent:#e8834f; --accent-soft:#3d2a1f; --code-bg:#292824;
+  --ana:#7cb4ee; --dig:#86c487; --warn:#e8b46f; --warn-soft:#33291a;
   --kw:#c49bf0; --st:#7cb8ec; --nu:#e8b46f; --com:#7f8e88; --ty:#62c9c2; --fn:#a9c1ea; --er:#ff8a80;
   color-scheme:dark}
 
@@ -52,6 +53,12 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-off
 .rail nav a:hover{color:var(--fg);background:var(--surface)}
 .rail nav a[aria-current="true"]{color:var(--fg);background:var(--surface);box-shadow:inset 0 0 0 1px var(--line)}
 .rail nav a[aria-current="true"] .n{color:var(--accent)}
+.rail nav li.part-row{margin-top:18px}
+.rail nav li.part-row:first-child{margin-top:0}
+.rail nav li.part-row a{display:block;padding:4px 10px 6px;color:var(--fg)}
+.rail nav li.part-row a:hover{background:none;color:var(--accent)}
+.rail nav li.part-row .p{display:block;font:500 11px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.rail nav li.part-row .pt{display:block;font:600 14.5px var(--f-display)}
 .rail .foot{margin-top:28px;padding-top:16px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);line-height:1.5}
 
 /* ---- phone top bar ---- */
@@ -72,6 +79,9 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-off
   .topbar .menu a .n{font:500 12px var(--f-mono);color:var(--muted);padding-top:2px}
   .topbar .menu a[aria-current="true"]{background:var(--surface)}
   .topbar .menu a[aria-current="true"] .n{color:var(--accent)}
+  .topbar .menu li.part-row a{display:block;padding:12px 10px 4px}
+  .topbar .menu li.part-row .p{font:500 11px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-right:8px}
+  .topbar .menu li.part-row .pt{font:600 15px var(--f-display)}
 }
 
 /* ---- reading column ---- */
@@ -85,6 +95,13 @@ main{min-width:0;padding-block:40px 120px}
 .masthead .meta span{display:inline-flex;gap:6px;align-items:center}
 .masthead .meta code{font:500 12.5px var(--f-mono);color:var(--fg)}
 
+/* parts: the Book's two halves, each opened by a divider */
+.part{max-width:760px;margin-top:72px;padding:26px 0 22px;border-top:3px solid var(--accent);border-bottom:1px solid var(--line);scroll-margin-top:16px}
+.masthead + .part{margin-top:28px}
+@media (max-width:920px){.part{scroll-margin-top:64px}}
+.part-num{font:500 12.5px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+.part-title{font:700 clamp(28px,4.2vw,36px)/1.1 var(--f-display);letter-spacing:-.02em;margin-bottom:10px}
+.part-lead{font:16px/1.55 var(--f-ui);color:var(--muted);max-width:var(--measure)}
 .chapter{max-width:760px;padding-top:56px;scroll-margin-top:16px}
 @media (max-width:920px){.chapter{scroll-margin-top:64px}}
 .ch-num{font:500 12px var(--f-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent);margin:0 0 6px}
@@ -173,8 +190,31 @@ blockquote.pull code{font-size:.8em}
 .cheat-card .code{margin:0 0 10px}
 .cheat-card .code pre{padding:10px 12px;font-size:12.5px}
 .cheat-card .code .lang{display:none}
-figure.plot{margin:4px 0 22px;padding:10px;background:#fff;border:1px solid var(--line);border-radius:8px}
+figure.plot{margin:4px 0 22px;padding:10px;background:#fbfbf7;border:1px solid var(--line);border-radius:8px}
 figure.plot svg{display:block;width:100%;height:auto}
+
+/* ---- drawn figures: inline SVG that follows the theme (strokes and fills come from the tokens) ---- */
+figure.fig{margin:6px 0 24px;padding:14px 14px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);overflow-x:auto}
+figure.fig svg{display:block;width:100%;min-width:560px;height:auto;font-family:var(--f-ui)}
+figure.fig figcaption{font:13.5px/1.5 var(--f-ui);color:var(--muted);margin-top:10px;max-width:var(--measure)}
+.fig text{fill:var(--fg);font-size:13px}
+.fig text.mu{fill:var(--muted)}
+.fig text.sm{font-size:11.5px}
+.fig text.hd{font:600 13px var(--f-display)}
+.fig text.mono{font-family:var(--f-mono);font-size:12px}
+.fig text.t-ana{fill:var(--ana)}.fig text.t-dig{fill:var(--dig)}.fig text.t-acc{fill:var(--accent)}.fig text.t-er{fill:var(--er)}
+.fig .ln{stroke:var(--fg);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.fig .ax{stroke:var(--muted);fill:none;stroke-width:1}
+.fig .gr{stroke:var(--line);fill:none;stroke-width:1}
+.fig .da{stroke-dasharray:4 4}
+.fig .s-ana{stroke:var(--ana)}.fig .s-dig{stroke:var(--dig)}.fig .s-acc{stroke:var(--accent)}.fig .s-er{stroke:var(--er)}.fig .s-mu{stroke:var(--muted)}
+.fig .w2{stroke-width:2.2}
+.fig .f-ana{fill:var(--ana)}.fig .f-dig{fill:var(--dig)}.fig .f-acc{fill:var(--accent)}.fig .f-er{fill:var(--er)}.fig .f-fg{fill:var(--fg)}.fig .f-mu{fill:var(--muted)}.fig .f-bg{fill:var(--surface)}
+.fig .box{fill:var(--code-bg);stroke:var(--line);stroke-width:1}
+.fig .box-ana{fill:none;stroke:var(--ana);stroke-width:1.4}
+.fig .box-dig{fill:none;stroke:var(--dig);stroke-width:1.4}
+.fig .box-acc{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.2}
+.fig .box-warn{fill:var(--warn-soft);stroke:var(--warn);stroke-width:1.2}
 
 .colophon{max-width:760px;margin-top:72px;padding-top:18px;border-top:1px solid var(--line);font:13.5px/1.6 var(--f-ui);color:var(--muted)}
 </style>
@@ -198,8 +238,8 @@ figure.plot svg{display:block;width:100%;height:auto}
     <header class="masthead">
       <p class="eyebrow">Piperine · a language manual</p>
       <h1>The <span>MSL</span> Book</h1>
-      <p class="lead">Learn to read and write MSL, the Rust-like language for analog, digital and mixed-signal circuit models. Example first, rules second.</p>
-      <div class="meta"><span>12 chapters</span><span>Three ways to write: <code>=</code> <code>+&gt;</code> <code>&lt;-</code></span><span>Examples from the spec's galleries</span></div>
+      <p class="lead">Learn to read and write MSL, the Piperine language for analog, digital and mixed-signal circuit models, and to run what you write. Example first, rules second.</p>
+      <div class="meta"><span>{{CHAPTERS}} chapters in {{PARTS}} parts</span><span>Part 1: Fundamentals</span><span>Part 2: In depth</span><span>Three ways to write: <code>=</code> <code>+&gt;</code> <code>&lt;-</code></span><span>Examples from the spec's galleries</span></div>
     </header>
 
 {{CONTENT}}
