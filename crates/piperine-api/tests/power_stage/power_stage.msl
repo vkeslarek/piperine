@@ -1,0 +1,45 @@
+//! The analog power stage of the buck as a benchmark design: an ideal supply, two ideal switches
+//! that each read a control voltage, an inductor, a capacitor and a load. The two controls are the
+//! host's piecewise-linear sources on the node ports `ctl` and `ctlb` (the high-side drive and its
+//! complement), so the design has no digital side. `power_stage.cir` is its ngspice twin.
+
+module Dc(p: Electrical) {
+    value: f64;
+}
+analog for Dc { v(p) +> value; }
+
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+module Capacitor(p: Electrical, n: Electrical) {
+    c: f64 where c > 0.0;
+}
+analog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }
+
+module Inductor(p: Electrical, n: Electrical) {
+    l: f64 where l > 0.0;
+}
+analog for Inductor { v(p, n) +> ddt(l * i(p, n)); }
+
+/// Closed (`ron`) while its control reads above half a volt, open (`roff`) below.
+module Switch(p: Electrical, n: Electrical, c: Electrical) {
+    ron: f64 = 10m where ron > 0.0;
+    roff: f64 = 1e7 where roff > 0.0;
+}
+analog for Switch {
+    i(p, n) +> v(p, n) / if v(c) > 0.5 { ron } else { roff };
+}
+
+module PowerStage(ctl: Electrical, ctlb: Electrical) {
+    signal vin: Electrical;
+    signal sw: Electrical;
+    signal vo: Electrical = 0.0;
+    let supply = Dc { value: 12.0 }(vin);
+    let high = Switch(vin, sw, ctl);
+    let low = Switch(sw, gnd, ctlb);
+    let choke = Inductor { l: 2.2u }(sw, vo);
+    let bulk = Capacitor { c: 22u }(vo, gnd);
+    let load = Resistor { r: 1.0 }(vo, gnd);
+}
