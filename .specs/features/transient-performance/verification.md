@@ -70,6 +70,11 @@ itself and the code about which steps are exempt (F3, F4).
 | C46 | `twins.rs` `the_two_backends_print_the_same_bytes` | yes |
 | C47 | `parity_baseline.rs` `parity_rc_transient` | yes |
 | C48 | `git diff --quiet origin/main -- <parity paths>` | yes - and the wider diff (parity `src`, `tests/support`, twins, transpile goldens) moves only `scenario/run.rs` (F9) |
+| C49 | `buck_long.rs` `the_statistics_of_the_whole_start_are_reported` | yes - asserts the request sets no rule (`None`) and the report names "landing rule default (observable)" (fix round, TP-12; judged by the author, not the Verifier) |
+| C50 | `protocol_epoch.rs` `past_2_52_ticks_the_analog_side_is_told_small_times_since_the_epoch` | yes - every time given is 10 or 990 or the stop, and the origin moves by 10 per step (fix round, TP-11; author) |
+| C51 | `protocol_epoch.rs` `a_step_of_one_tick_is_one_tick_long_past_2_52_ticks` | yes - the retake attempts `to: 1.0` (fix round, TP-11; author) |
+| C52 | `protocol_epoch.rs` `a_run_under_2_52_ticks_never_moves_its_epoch` | yes - no `Rebase` call and absolute times (fix round, TP-11; author) |
+| C53 | `options.rs` `an_hour_long_transient_runs_at_the_default_resolution` | yes for the clock edges (1e-12 s, two ulps of 3600 s; the removed stopgap moved a step by 0.1 ns); the crossings are held to the located-crossing bound `vntol/slope + ttol + tick`, which is `etol`-limited and not `ttol`-limited (fix round, TP-11; author) |
 
 ## Findings
 
