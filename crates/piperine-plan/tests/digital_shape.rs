@@ -130,6 +130,32 @@ fn integer(leaf: u32, width: u32) -> (u32, u32, Vec<(String, u32, u32, u32)>) {
 }
 
 #[test]
+fn an_option_carrier_pin_is_presence_then_payload() {
+    // EU-16 AC 4 (C68), abi.md P3 and P5: the pin `piperine-plan` lays out for a carrier of `Option<u8>` is a `BOOL`
+    // presence field `some` at 0 and the payload `value` (`U8`) at 1, two bytes with no field that holds a flag; an
+    // `Option<f64>` is the presence byte then the eight bytes of the real
+    fn options(b: &mut IrBuilder) -> BodyId {
+        let body = b.body(Buck::spec("Options", "options.msl", 1));
+        let carriers = [("o", ValueType::Option(Box::new(Ty::u(8)))), ("x", ValueType::Option(Box::new(ValueType::F64)))];
+        for (k, (name, ty)) in carriers.into_iter().enumerate() {
+            b.carrier(body, Buck::carrier(name, ty, CarrierRole::Signal, None, "options.msl", 2 + k as u32, 5));
+        }
+        body
+    }
+    let (ir, body) = Alone::design(options);
+    let plan = BodyPlan::new(ir.body(body));
+    let pins: Vec<&Pin<'_>> = plan.shape().shape().pins.iter().collect();
+    assert_eq!(pins.len(), 2, "one pin per carrier");
+    let some = ("some".to_string(), leaf::BOOL, 0, 1);
+    assert_eq!(layout(&pins[0].layout), (2, 1, vec![some.clone(), ("value".to_string(), leaf::U8, 1, 1)]), "`Option<u8>`");
+    assert_eq!(layout(&pins[1].layout), (9, 1, vec![some, ("value".to_string(), leaf::F64, 1, 1)]), "`Option<f64>`: the payload follows the presence byte");
+    for pin in pins {
+        assert_eq!(pin.kind, kind::DISCRETE, "pin {}", pin.name.as_str());
+        assert!(pin.layout.fields.iter().all(|f| f.name.as_str() == "some" || f.name.as_str() == "value"), "pin {}: the value only", pin.name.as_str());
+    }
+}
+
+#[test]
 fn carriers_are_discrete_pins_that_hold_the_value_only() {
     // A body with one carrier of each width class, built for this test: names are the type.
     fn widths(b: &mut IrBuilder) -> BodyId {

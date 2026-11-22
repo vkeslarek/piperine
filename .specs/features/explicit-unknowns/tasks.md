@@ -23,6 +23,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run src**: `cargo test -p piperine-parity --test source_explicit`
 **Run ir**: `cargo test -p piperine-ir --test digital`
 **Run abi**: `cargo test -p piperine-abi --test layouts`
+**Run plan**: `cargo test -p piperine-plan --test digital_shape`
 **Run cache**: `cargo test -p piperine-transpile --test cache`
 **Run abicontract**: `cargo test -p piperine-abi --test contract`
 **Run relax**: `cargo test -p piperine-digital-solver --test relax`
@@ -1436,7 +1437,7 @@ Proof: run abi | test the_shipped_layouts_hold_the_value_only ... ok
 Proof: run abicontract | test the_host_has_one_commit ... ok
 
 **C68** - An `Option<u8>` pin is a `BOOL` presence field then `U8` (EU-16, AC 4; T36)
-Proof: run abi | test an_option_pin_is_presence_then_payload ... ok
+Proof: run plan | test an_option_carrier_pin_is_presence_then_payload ... ok
 
 **C69** - A `Logic<4>` pin is two `U8` fields, `binary` at 0 and `value` at 1, size 2, align 1; `Logic<64>` is size 16, align 8 (EU-16, AC 5; T47)
 Proof: run abi | test a_logic_pin_is_two_planes ... ok
