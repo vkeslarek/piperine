@@ -103,7 +103,7 @@ fn unknown_is_a_name_that_does_not_resolve() {
 
 #[test]
 fn logic_and_matches_bits_wait_for_logic() {
-    // EU-02 (GAPS L58): until `Logic` (T45) the two functions of §22.1.4 are refused by name with `P0001`
+    // EU-02 (GAPS L67): until `Logic` (T45) the two functions of §22.1.4 are refused by name with `P0001`
     for call in ["let e: u4 = logic(\"10xx\");", "let g = matches_bits(5_u4, \"01x1\");"] {
         let (src, d) = diagnostics("", call);
         assert!(!d.is_empty() && codes_of(&d).iter().all(|code| code == "P0001"), "{src}: {:?}", codes_of(&d));

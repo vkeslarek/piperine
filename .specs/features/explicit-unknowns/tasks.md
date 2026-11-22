@@ -1156,7 +1156,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 **Done when**:
 
 - [ ] `source_logic::logic_reads_a_four_state_pattern` passes
-- [ ] `GAPS.md` L58 loses `logic` and `matches_bits`
+- [ ] `GAPS.md` L67 (`Logic<N>`, `logic`, `matches_bits`) is closed
 - [ ] Gate check passes: Full
 
 **Tests**: integration
