@@ -484,7 +484,6 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | digital~d7032a06 | L28 | `params-and-io` | the form is refused as the sentence says (digital#7) |
 | digital~d1d69398 | L28 | `params-and-io` | the debouncer and the PWM are refused (digital#7, digital#11); the counter runs |
 | packages#12 | L57 | `composite-values` | `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` is `P0001`, a reference type; `include_str!` itself is accepted in a `const` |
-| core-std#6 | L21 | `resolved-nets` | `IrqSource` and `Board` are `P0001`: the resolved nature `Wire`, and `.v`/`Logic` behind it |
 | core-std#8 | L30 | `generics` | `Reg` placing `Setup(clk, d) { ts: 100p }` is `P0001`: `Setup<T: Repr>` is a generic module |
 | core-std#10 | L28 | `params-and-io` | `Watchdog` is `P0001` on `limit: u16`; with the param written as a literal the watchdog runs and ends the run at the fourth edge |
 | cheatsheet#2 | L30 | `generics` | `module M<const N: usize>(..)` placed as `M::<2>` is `P0001`: generic module |
@@ -519,6 +518,9 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | natures~91c3bffe | S8 | `explicit-unknowns` | the `Pulldown` variant of the alarm needs the same nature: refused with natures#3 |
 | analog~39ba351d | S8 | `explicit-unknowns` | `E0180` is not raised: a `Bit<Logic>` is `P0001` (the library struct is not taken as a type yet) |
 | mixed~39ba351d | S8 | `explicit-unknowns` | `E0180` is not raised: a `Bit<Logic>` is `P0001` (the library struct is not taken as a type yet) |
+| core-std#6 | S8 | `explicit-unknowns` | `IrqLine`, a nature the model declares with `impl Resolve<Driven>`: `Driven` is `E0161` (not in the library yet) |
+| errors~39ba3a1d | S8 | `explicit-unknowns` | `E0187` is not raised (the row of the codes table) |
+| errors~385c354c | S8 | `explicit-unknowns` | `E0187` is not raised: `signal held: Bit<f64>;` elaborates and `vout` sits at 0 V |
 
 Three observations the root tests made are no Book row, so they are not above: they are entries of §7,
 each with its owner. A run has no key or flag for `dt_min` (H16, `host-analyses`); a `--stream` named like

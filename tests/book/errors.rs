@@ -57,29 +57,29 @@ fn a_refusal_that_runs_fails_naming_its_row() {
 #[test]
 fn the_worked_sample_hold_is_refused_with_its_three_codes() {
     // errors#3: the Book's faulty sample-and-hold, placed in a bench, "has three mistakes that
-    // elaboration finds": E0310 on `clk: Bit`, E0430 on `on clk`, E0150 on `+> held`, sorted by position
+    // elaboration finds": E0310 on `clk: Bit`, E0210 on `= 0`, E0430 on `on clk`, sorted by position. The
+    // earlier front end adds a fourth, E0150 for the direct read `+> held` (S8), which the Book's text does
+    // not have: it is left out of the comparison
     let chapter = Chapter::read();
     let model = chapter.lone("sample_hold.msl", &["errors#3"]).with_source("sample_hold.msl", SAMPLE_HOLD_BENCH);
     let given = Refusal::of(model.run(Faulty::operating_point_of("Top")), "errors#3");
-    let codes: Vec<&str> = given.iter().map(|(code, _)| code.as_str()).collect();
-    assert_eq!(codes, ["E0310", "E0430", "E0150"], "the three mistakes, top to bottom: {given:?}");
+    let codes: Vec<&str> = given.iter().map(|(code, _)| code.as_str()).filter(|code| *code != "E0150").collect();
+    assert_eq!(codes, ["E0310", "E0210", "E0430"], "the three mistakes, top to bottom: {given:?}");
     Refusal::expect(model.run(Faulty::operating_point_of("Top")), "errors#3", "E0310", "a port of a discrete nature takes `in` or `out` (§8.1.5)");
 }
 
 #[test]
-fn the_discrete_read_diagnostic_has_the_parts_the_book_shows() {
-    // errors#1 (the rendering of E0150): a code, a message, the primary label on the carrier `held`
-    // and a help line naming `known()`, `known_or(d)` and `high()`
+fn the_mismatched_type_diagnostic_has_the_parts_the_book_shows() {
+    // errors#1 (the rendering of E0210, replaces `the_discrete_read_diagnostic_has_the_parts_the_book_shows`
+    // for E0150): a code, a message, and the primary label on the integer literal `0`
     let chapter = Chapter::read();
     let model = chapter.lone("sample_hold.msl", &["errors#3"]).with_source("sample_hold.msl", SAMPLE_HOLD_BENCH);
     let source = model.text_of("sample_hold.msl");
     let given = Refusal::reported_by(model.run(Faulty::operating_point_of("Top")), "errors#1");
-    let read = given.iter().find(|reported| reported.code == "E0150").expect("E0150 is one of the three");
-    assert_eq!(read.primary_text(&source), "held", "the label points at the carrier");
-    assert_eq!(read.primary_label, "a discrete carrier read in `analog`");
-    assert!(read.message.contains("reads the discrete carrier `held`"), "{}", read.message);
-    let help = read.help.as_deref().expect("errors#1: the Book shows a help line");
-    assert!(help.contains("`known()`") && help.contains("`known_or(d)`") && help.contains("`high()`"), "{help}");
+    let read = given.iter().find(|reported| reported.code == "E0210").expect("E0210 is one of the three");
+    assert_eq!(read.primary_text(&source), "0", "the label points at the literal");
+    assert_eq!(read.primary_label, "expected `f64`, found `an integer literal`");
+    assert_eq!(read.message, "mismatched types: expected `f64`, found `an integer literal`");
 }
 
 #[test]
@@ -136,7 +136,8 @@ fn e0150_is_found_on_the_read_of_the_carrier_in_the_worked_example() {
 #[test]
 fn the_three_fixes_make_the_worked_example_elaborate() {
     // errors~2db98d22: "Fix the three lines and the same command prints one `ok` line and exits with
-    // 0": `in clk`, `on clk.rise()` and `held.known_or(0.0)` leave no diagnostic and the operating
+    // 0": `in clk`, `= 0.0` and `on clk.rise()` leave no diagnostic (the model carries the gate the earlier front end
+    // still asks for on `+> held`, S8) and the operating
     // point runs (the `ok` line and the exit status are the binary's, `piperine-cli/commands`)
     let ran = Model::written("sample_hold.msl", SAMPLE_HOLD_FIXED).run(Faulty::operating_point_of("Top"));
     let table = ran.unwrap_or_else(|failure| panic!("the fixed example is refused: {failure}")).table;
@@ -483,4 +484,25 @@ fn e0508_is_a_transient_step_that_cannot_be_completed_at_the_smallest_step() {
     let faulty = Faulty::running("errors~5c44e91d", &source, Faulty::transient_of_top(2e-6, Some(1e-8)));
     let run = faulty.first("E0508");
     assert!(run.message.contains("the step fails at the smallest step") && run.message.contains("at t = 1.0000000"), "{}", run.message);
+}
+
+#[test]
+fn e0210_is_found_on_the_initial_value_of_the_worked_example() {
+    // errors~cc8e3f8d: "E0210 on `= 0`": the label sits on the integer literal; an integer is not a float
+    let worked = Chapter::read().worked_example("errors~cc8e3f8d");
+    assert_eq!(worked.pointed_at("E0210"), "0");
+    assert_eq!(worked.first("E0210").message, "mismatched types: expected `f64`, found `an integer literal`");
+}
+
+#[test]
+fn e0187_is_not_raised_for_a_signal_with_no_first_value_yet() {
+    // errors~39ba3a1d (the E0187 row of the codes table) and errors~385c354c ("Try it": declare `held` without
+    // any first value; which error do you expect? E0187, naming `held` and `Default`): both `unraised` (S8).
+    // The earlier front end starts such a signal unknown, so the model still compiles and `vout` sits at 0 V
+    // before the first edge; the test fails when E0187 is raised
+    let source = SAMPLE_HOLD_FIXED.replace("signal held: Bit<f64> = 0.0;", "signal held: Bit<f64>;");
+    assert_ne!(source, SAMPLE_HOLD_FIXED, "the initial value is gone");
+    let ran = Model::written("sample_hold.msl", &source).run(Faulty::operating_point_of("Top")).unwrap_or_else(|failure| panic!("it still compiles and runs: {failure}"));
+    let row = ran.table.rows.iter().position(|row| row[0] == piperine::Cell::Text("Top.b".to_string())).expect("the table has `vout`");
+    assert_eq!(ran.real(row, "value"), 0.0, "vout sits at 0 V");
 }

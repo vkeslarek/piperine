@@ -5367,7 +5367,7 @@ digital for Tour { on clk.rise() { emit!("seen", t = now()); } }</pre>
 
 <div class="table-wrap"><table>
 <tbody>
-<tr><td><code>Bit</code></td><td>The discrete carrier. <code>Bit</code> is a bit, <code>Bit&lt;u8&gt;</code> a byte, <code>Bit&lt;f64&gt;</code> a real-valued event stream; any of them may be unknown.</td></tr>
+<tr><td><code>Bit</code></td><td>The discrete carrier. <code>Bit</code> is a bit, <code>Bit&lt;u8&gt;</code> a byte, <code>Bit&lt;f64&gt;</code> a real-valued event stream; any of them starts at the value you write, or at its type's default.</td></tr>
 <tr><td><code>Electrical</code></td><td>Voltage across, current through, with the accessors <code>v</code> and <code>i</code>.</td></tr>
 <tr><td><code>Thermal</code></td><td>Temperature and power, with <code>temp</code> and <code>pwr</code>.</td></tr>
 <tr><td><code>VSignal</code></td><td>A voltage-only nature, for signals that carry no current.</td></tr>
@@ -5384,27 +5384,26 @@ analog for Rc {
     i(mid, n) +> ddt(c * v(mid, n));
 }</pre>
 
-<h3><code>std::values</code>: unknown values, bit patterns and clocks</h3>
+<h3><code>std::values</code> and <code>std::logic</code>: four-state logic, bit patterns and clocks</h3>
 
-<p>Tools for values that may be unknown, and three small time sources.</p>
+<p>The four-state <code>Logic</code> type and the tools around it, and three small time sources.</p>
 
 <div class="table-wrap"><table>
 <tbody>
-<tr><td><code>Known</code></td><td>The trait behind <code>known()</code>, <code>known_or(d)</code> and <code>is_known()</code>: use the value only when every level is known, or fall back to a default.</td></tr>
-<tr><td><code>merge</code></td><td>Keeps the levels two values agree on and makes the rest unknown.</td></tr>
-<tr><td><code>cast</code></td><td>Reads the same levels as another type of the same width.</td></tr>
-<tr><td><code>same</code></td><td>True when two values have identical levels, unknowns included.</td></tr>
-<tr><td><code>matches_bits</code></td><td>Compares a value to a pattern of <code>0</code>, <code>1</code> and <code>x</code>.</td></tr>
-<tr><td><code>logic</code></td><td>Builds a value from such a pattern.</td></tr>
+<tr><td><code>Logic</code>, <code>LogicState</code></td><td>Four-state logic on <code>N</code> levels, each 0, 1, <code>x</code> or <code>z</code>, with the four-state operators, <code>is_high</code>, <code>is_low</code>, <code>is_x</code>, <code>is_z</code>, <code>to_bits</code> and <code>to_volts</code>.</td></tr>
+<tr><td><code>cast</code></td><td>Reads the same levels as another type of the same width, and gives an <code>Option</code>: <code>None</code> when the target type rejects them.</td></tr>
+<tr><td><code>same</code></td><td>True when two values have identical levels: on a <code>Logic</code> the four states are compared literally.</td></tr>
+<tr><td><code>matches_bits</code></td><td>Compares a <code>Logic</code> to a pattern of <code>0</code>, <code>1</code>, <code>x</code> and <code>z</code>.</td></tr>
+<tr><td><code>logic</code></td><td>Builds a <code>Logic</code> from such a pattern.</td></tr>
 <tr><td><code>init</code></td><td>An event that fires once, at the start of the analysis.</td></tr>
 <tr><td><code>every</code></td><td>An event that fires at a start time and then every period.</td></tr>
 <tr><td><code>since</code></td><td>The time elapsed since a carrier last changed.</td></tr>
 </tbody></table></div>
 
-<p>The methods <code>rise()</code>, <code>fall()</code> and <code>high()</code> of <code>Bit</code> are defined here too, which is why <code>clk.rise()</code> works everywhere.</p>
+<p>The methods <code>rise()</code> and <code>fall()</code> of <code>Bit</code> are defined here too, which is why <code>clk.rise()</code> works everywhere. A <code>rise()</code> is a change that ends at true, so a <code>Bit</code> that starts high has not risen.</p>
 
 <pre data-lang="msl">module Latch(in clk: Bit, in d: Bit&lt;u8&gt;, out q: Bit&lt;u8&gt; = 0) {}
-digital for Latch { on clk.rise() { q &lt;- d.known_or(0); } }</pre>
+digital for Latch { on clk.rise() { q &lt;- d; } }</pre>
 
 <h3><code>std::analog</code>: continuous-time building blocks</h3>
 
@@ -5439,15 +5438,13 @@ analog for DacRamp { v(vout) +&gt; ramp; }</pre>
 
 <h3><code>std::nets</code>: nets with more than one driver</h3>
 
-<p>What a net does when several modules drive it, and the switch-level parts built on that.</p>
+<p>The library declares no net. The model declares the nature of its net and gives it <code>impl Resolve</code> (chapter 6); this section holds what such a nature needs, and the switch-level parts, each generic over any nature that implements <code>Resolve&lt;Driven&gt;</code>.</p>
 
 <div class="table-wrap"><table>
 <tbody>
-<tr><td><code>Strength</code></td><td>How hard a driver drives: strong, weak, or not at all.</td></tr>
-<tr><td><code>Logic</code></td><td>A level with a strength, including the high-impedance value.</td></tr>
-<tr><td><code>Wire</code></td><td>The nature of a net with several drivers: the strongest wins, and equal strengths that disagree give unknown.</td></tr>
-<tr><td><code>tri</code>, <code>Tri</code></td><td>A typed bus where one driver at a time is allowed.</td></tr>
-<tr><td><code>sum</code>, <code>SumNet</code></td><td>A real-valued net whose drivers add.</td></tr>
+<tr><td><code>Strength</code></td><td>How hard a driver drives: <code>HighZ</code>, <code>Weak</code>, <code>Pull</code>, <code>Strong</code>, <code>Supply</code>, in that order.</td></tr>
+<tr><td><code>Driven</code>, <code>Driven::strongest</code></td><td>What a module drives into a net that resolves by strength: a level and a strength, including the high-impedance <code>Driven::Z</code>. <code>strongest</code> is the resolution: the strongest drive wins, and equal strengths that disagree give <code>x</code>.</td></tr>
+<tr><td><code>sum</code></td><td>The resolution of a real-valued net whose drivers add.</td></tr>
 <tr><td><code>Tribuf</code></td><td>A tristate buffer.</td></tr>
 <tr><td><code>Pullup</code>, <code>Pulldown</code></td><td>A weak driver that holds a net high or low while nobody else drives it.</td></tr>
 <tr><td><code>Keeper</code></td><td>Holds the last driven level, weakly.</td></tr>
@@ -5455,10 +5452,16 @@ analog for DacRamp { v(vout) +&gt; ramp; }</pre>
 <tr><td><code>Tgate</code></td><td>A CMOS transmission gate: two <code>Tran</code> in parallel.</td></tr>
 </tbody></table></div>
 
-<pre data-lang="msl">module IrqSource(in req: Bit, irq_n: Wire) { irq_n = if req { Logic::strong(false) } else { Logic::Z }; }
+<pre data-lang="msl">pub nature IrqLine { value: Driven }
+
+impl Resolve<Driven> for IrqLine {
+    fn resolve<const N: usize>(drives: [Driven; N]) -> Driven { Driven::strongest(drives) }
+}
+
+module IrqSource(in req: Bit, irq_n: IrqLine) { irq_n = if req { Driven::strong(false) } else { Driven::Z }; }
 
 module Board(in req0: Bit, in req1: Bit) {
-    signal irq_n: Wire;
+    signal irq_n: IrqLine;
     let pu = Pullup(irq_n);
     let s0 = IrqSource(req0, irq_n);
     let s1 = IrqSource(req1, irq_n);
@@ -5472,7 +5475,7 @@ module Board(in req0: Bit, in req1: Bit) {
 <tbody>
 <tr><td><code>D2A</code></td><td>Drives a node from a <code>Bit</code>: a level through a resistance, with finite edges.</td></tr>
 <tr><td><code>A2D</code></td><td>Reads a node into a <code>Bit</code> with hysteresis, right from the operating point.</td></tr>
-<tr><td><code>Bidir</code></td><td>A pad: one <code>Wire</code> and one node, driving and reading both.</td></tr>
+<tr><td><code>Bidir</code></td><td>A pad: one resolved net and one node, driving and reading both.</td></tr>
 </tbody></table></div>
 
 <pre data-lang="msl">module Pad(in d: Bit, out q: Bit, node: Electrical, vdd: Electrical) {
@@ -5539,7 +5542,7 @@ module Watchdog(in clk: Bit, in busy: Bit) {
 }
 digital for Watchdog {
     on clk.rise() {
-        if !busy.known_or(true) {
+        if !busy {
             run <- 0;
         } else if run >= limit {
             emit!("stuck", t = now(), edges = run);
@@ -5550,7 +5553,7 @@ digital for Watchdog {
     }
 }</pre>
 
-<p>An unknown <code>busy</code> is read as high, the pessimistic choice for a watchdog. The <code>stuck</code> record carries the time and the count; <code>fatal</code> ends the analysis at that instant and marks it failed. Had the condition itself been unknown, the <code>sim</code> record would carry <code>maybe = true</code> and the run would go on: an analysis is never ended on a guess.</p>
+<p><code>busy</code> is a <code>bool</code>, so each edge takes exactly one arm. The <code>stuck</code> record carries the time and the count; <code>fatal</code> ends the analysis at that instant and marks it failed.</p>
 
 <h3>Implemented by the engine</h3>
 
@@ -5584,7 +5587,7 @@ digital for Watchdog {
   <tr><td>E0603</td><td><code>require(…)</code>, <code>finish()</code> or <code>fatal(…)</code> in <code>analog</code></td><td>The reserved streams take records from reactions only. Move the call into <code>on settle { … }</code> or another reaction.</td></tr>
   <tr><td>E0605</td><td><code>emit!("checks", name = 3);</code></td><td>On a reserved stream the host's fields have fixed types: <code>name</code> is text. Use <code>require</code>, <code>cover</code> or <code>target</code>.</td></tr>
   <tr><td>E0161</td><td><code>x.cbrt()</code>, or another method the library does not list</td><td>The library of the built-in types is a closed list. Write the expression another way: <code>x.powf(1.0 / 3.0)</code>.</td></tr>
-  <tr><td>E0702</td><td><code>logic("10z1")</code></td><td>A pattern holds only <code>0</code>, <code>1</code> and <code>x</code>, one character per level of the type.</td></tr>
+  <tr><td>E0702</td><td><code>logic("10q1")</code></td><td>A pattern holds only <code>0</code>, <code>1</code>, <code>x</code> and <code>z</code>, one character per level of the type.</td></tr>
   </tbody></table></div>
 </div>
 
@@ -5608,13 +5611,11 @@ digital for Watchdog {
 
 <p>A diagnostic carries a code, a message, a primary label on the source span, optional secondary labels and an optional help line. Here is how one reads in a terminal:</p>
 
-<pre data-lang="diag">error[E0150]: `analog` reads the discrete carrier `held` without saying what unknown means
-  --> sample_hold.msl:3:37
+<pre data-lang="diag">error[E0210]: mismatched types: expected `f64`, found `an integer literal`
+  --> sample_hold.msl:2:29
    |
- 3 | analog for SampleHold { v(vout) +> held; }
-   |                                    ^^^^ `held` is a `Bit<f64>`
-   |
-   = help: read it through `known()`, `known_or(d)`, or `high()` for a `Bit`</pre>
+ 2 |     signal held: Bit<f64> = 0;
+   |                             ^ expected `f64`, found `an integer literal`</pre>
 
 <pre data-lang="diag">error[E0163]: `util` names both a dependency and a local item
   --> src/lib.msl:2:5
@@ -5638,7 +5639,7 @@ digital for Watchdog {
 <p>Here is a first attempt at the sample-and-hold of chapter 5, written the way a newcomer would. It parses, so the listing below is legal syntax, and it has three mistakes that elaboration finds.</p>
 
 <pre data-lang="msl">module SampleHold(vin: Electrical, vout: Electrical, clk: Bit) {
-    signal held: Bit<f64> = 0.0;
+    signal held: Bit<f64> = 0;
 }
 digital for SampleHold {
     on clk { held <- v(vin); }
@@ -5649,8 +5650,8 @@ analog for SampleHold {
 
 <ol class="steps">
 <li><strong>E0310 on <code>clk: Bit</code>.</strong> A one-driver port needs a direction. The module only reads the clock: <code>in clk: Bit</code>.</li>
+<li><strong>E0210 on <code>= 0</code>.</strong> The initial value of <code>held</code> must be an <code>f64</code>, and an integer literal is not one: nothing converts by itself (chapter 2). Write <code>= 0.0</code>.</li>
 <li><strong>E0430 on <code>on clk</code>.</strong> The head of a reaction is an event, and <code>clk</code> is a level. The sampler acts on the rising edge: <code>on clk.rise()</code>.</li>
-<li><strong>E0150 on <code>+> held</code>.</strong> <code>analog</code> reads a digital carrier without saying what unknown means: <code>held.known_or(0.0)</code>.</li>
 </ol>
 
 <p>Diagnostics come sorted by file and position, so you fix a file from top to bottom. Each fix here is local: one line, at the place the label points to.</p>
@@ -5670,9 +5671,9 @@ analog for SampleHold {
 <thead><tr><th>Symptom</th><th>What to emit</th><th>Chapter</th></tr></thead>
 <tbody>
 <tr><td>A state machine takes a wrong turn.</td><td><code>emit!("state", …)</code> with the state and the inputs, first line of the clocked reaction. Find the first row where the next row surprises you.</td><td>7</td></tr>
-<tr><td>An output is unknown and you do not know why.</td><td>A reaction on <code>q.changed() &amp;&amp; !q.is_known()</code> that emits the inputs of <code>q</code>. The unknown field is the culprit.</td><td>3</td></tr>
+<tr><td>An output has a value you did not expect, and you do not know which input gave it.</td><td>A reaction on <code>q.changed()</code> that emits the inputs of <code>q</code>. An input that may be absent or undetermined says so in its type, <code>None</code> or <code>x</code>, so the field names the culprit.</td><td>3, 5</td></tr>
 <tr><td>Something happens at the wrong time.</td><td><code>t = now()</code> in a reaction on the event itself, or on a crossing with <code>above</code>.</td><td>1, 8</td></tr>
-<tr><td>A record appears that "cannot happen".</td><td>Look at its <code>maybe</code> flag: it was reached under an unknown condition.</td><td>2, 3</td></tr>
+<tr><td>A record appears that "cannot happen".</td><td>Emit the values the guard read, with the same names: control takes a <code>bool</code>, so a record has exactly one cause.</td><td>2, 3</td></tr>
 <tr><td>A waveform has the wrong shape.</td><td><code>on settle { emit!("wave", …) }</code> with the nodes in question, and plot the fields.</td><td>6</td></tr>
 <tr><td>A sampled value is "one step old".</td><td>Nothing: a reaction on a clock edge reads the solution from just before the edge. Check the instant of the record.</td><td>8</td></tr>
 <tr><td>The solver fails to converge, or crawls.</td><td><code>emit!</code> inside the suspect device's <code>analog</code> block, and read the iterations of the failing step.</td><td>6</td></tr>
@@ -5692,8 +5693,8 @@ analog for SampleHold {
 <tr><td>E0162</td><td>A name declared twice in one namespace.</td><td>Rename one.</td></tr>
 <tr><td>E0163</td><td>A <code>use</code> whose first segment is both a dependency and a local item.</td><td><code>package = …</code> rename, or <code>crate::</code>.</td></tr>
 <tr><td>E0143</td><td>A default value in a <code>fn</code> signature, or an overload.</td><td>A trailing <code>Option&lt;T&gt;</code> parameter.</td></tr>
-<tr><td>E0150</td><td><code>analog</code> reads a digital carrier without <code>known_or</code> / <code>high()</code>.</td><td>Say what unknown means.</td></tr>
-<tr><td>E0220</td><td>A second drive of a one-driver carrier.</td><td>One writer, or a resolved nature like <code>Wire</code>.</td></tr>
+<tr><td>E0187</td><td>A signal, an <code>out</code> port or a drive with no first value whose type has no default.</td><td>Write the first value, or use a type with a default.</td></tr>
+<tr><td>E0220</td><td>A second drive of a one-driver carrier.</td><td>One writer, or a nature that implements <code>Resolve</code>.</td></tr>
 <tr><td>E0221</td><td>A definition and a commit to the same carrier in one module.</td><td>Pick <code>=</code> or <code><-</code>.</td></tr>
 <tr><td>E0222</td><td>Writing something this module may not drive, such as an <code>in</code> port.</td><td>Drive it from its owner.</td></tr>
 <tr><td>E0312</td><td>A port left unconnected, or too many connections.</td><td>Match the port list.</td></tr>
@@ -5733,7 +5734,7 @@ analog for SampleHold {
 
 <div class="callout try">
   <p class="callout-label">Try it</p>
-  <p>Fix the three errors of the worked example, then break it in a new way: declare <code>held</code> without <code>= 0.0</code>. It still compiles. What does <code>vout</code> do before the first clock edge, and which line decided that? (It sits at 0&nbsp;V: <code>held</code> is unknown, and <code>known_or(0.0)</code> said what unknown means.)</p>
+  <p>Fix the three errors of the worked example, then break it in a new way: declare <code>held</code> without any first value, <code>signal held: Bit&lt;f64&gt;;</code>. Which error do you expect, and what does it name? (E0187, naming <code>held</code> and the trait <code>Default</code>: a real number has no default value, so the first value must be written.)</p>
 </div>
 </section>
 
@@ -6003,7 +6004,7 @@ time         Step.vin    Step.vout
 
 <p><strong>What you can print.</strong> A node gives its voltage, a digital signal its value, and <code>i(&lt;instance&gt;)</code> the current through an instance such as a source. Each is named by its path, written in full or relative to the top: <code>vout</code> and <code>Step.vout</code> are the same signal. A column is always headed by the full path. With no <code>print</code>, the table shows the top module's own signals and ports, in the order they are declared.</p>
 
-<p><strong>How values are written.</strong> A real has six decimals and an exponent, <code>7.500000e0</code>; a <code>bool</code> is <code>true</code> or <code>false</code>; an integer is decimal; an unknown value is <code>x</code>; a text field is in double quotes. The same input gives the same characters every time: nothing on this output depends on the clock, on your directories or on what was cached.</p>
+<p><strong>How values are written.</strong> A real has six decimals and an exponent, <code>7.500000e0</code>; a <code>bool</code> is <code>true</code> or <code>false</code>; an integer is decimal; a four-state <code>Logic</code> is its characters, <code>0</code>, <code>1</code>, <code>x</code> and <code>z</code>, highest level first, as in <code>10xz</code>; an absent <code>Option</code> is <code>None</code>; a text field is in double quotes. The same input gives the same characters every time: nothing on this output depends on the clock, on your directories or on what was cached.</p>
 
 <h3>Records: your <code>emit!</code>, live</h3>
 
@@ -6074,7 +6075,7 @@ time         Step.vin    Step.vout
 4.000000e-6  1.000000e0  9.816886e-1
 5.000000e-6  1.000000e0  9.932653e-1</pre>
 
-<p>A records file is JSON Lines: one object per record, with the keys <code>time</code>, <code>instance</code>, <code>stream</code> and <code>fields</code>. A real or an integer is a JSON number, a <code>bool</code> a JSON boolean, a text a string, and an unknown value is <code>null</code>. A real is written with every digit it has, so a script reads back exactly the number the solver computed. The file holds every record, the passing checks included:</p>
+<p>A records file is JSON Lines: one object per record, with the keys <code>time</code>, <code>instance</code>, <code>stream</code> and <code>fields</code>. A real or an integer is a JSON number, a <code>bool</code> a JSON boolean, a text a string, a four-state <code>Logic</code> a string of its characters, and an absent <code>Option</code> the text <code>None</code>. A real is written with every digit it has, so a script reads back exactly the number the solver computed. The file holds every record, the passing checks included:</p>
 
 <pre data-lang="sh">piperine run step --records step.jsonl</pre>
 
@@ -6334,7 +6335,7 @@ PASS step (1 checks)
 <thead><tr><th>Line</th><th>When</th></tr></thead>
 <tbody>
 <tr><td><code>PASS &lt;name&gt; (&lt;n&gt; checks)</code></td><td>The run completed and every check passed.</td></tr>
-<tr><td><code>FAIL &lt;name&gt; (&lt;k&gt; of &lt;n&gt; checks failed)</code></td><td>A check's <code>pass</code> was false or unknown. The line of each such record follows.</td></tr>
+<tr><td><code>FAIL &lt;name&gt; (&lt;k&gt; of &lt;n&gt; checks failed)</code></td><td>A check's <code>pass</code> was false. The line of each such record follows.</td></tr>
 <tr><td><code>FAIL &lt;name&gt; (fatal at &lt;t&gt;: &lt;msg&gt;)</code></td><td>The model called <code>fatal</code>: the run ended at that instant and fails with the message. A <code>finish</code> ends a run too, and does not fail it.</td></tr>
 <tr><td><code>FAIL &lt;name&gt; (did not run)</code></td><td>The run did not complete; the error is on the error output.</td></tr>
 <tr><td><code>&lt;r&gt; runs, &lt;p&gt; passed, &lt;f&gt; failed</code></td><td>Always the last line.</td></tr>
@@ -6371,7 +6372,7 @@ module Host(in clk: Bit, out sp_wr: Bit = false, out en: Bit = false) {
 
 digital for Host {
     on clk.rise() {
-        let s = n.known_or(0);
+        let s = n;
         if s < 2 {
             n <- s + 1;
         }
@@ -7698,7 +7699,6 @@ time         Startup.buck.ctl.reference  Startup.mode  Startup.buck.vout
 <div class="cheat">
 <div class="cheat-card"><h4>Nature</h4>
 <pre data-lang="msl">nature Bit<T: Repr = bool> { value: T }
-nature Wire { value: Logic, resolve: Logic::wired }
 nature Electrical {
     potential: Voltage { access: v, units: "V", abstol: 1u },
     flow:      Current { access: i, units: "A", abstol: 1p },
@@ -7741,8 +7741,8 @@ for k in 0..N { pub let rk = Resistor(a, mid) { r: 1k }; }   // generation</pre>
     let y = transition(level, 0.0, tr, tf);
 }
 analog for M {
-    v(o) +> held.known_or(0.0);        // analog reads digital
-    if ctl.high() { bound_step(1n); }
+    v(o) +> held;                      // analog reads digital
+    if ctl { bound_step(1n); }
 }
 digital for M {
     on above(v(a) - vth) { d <- true; }    // digital reads analog
@@ -7752,7 +7752,7 @@ digital for M {
 <pre data-lang="msl">digital for M {
     on clk.rise() { emit!("state", t = now(), q = q); }           // one row per edge
     on cross(v(a) - vth) { emit!("cross", t = now()); }           // a located instant
-    on q.changed() && !q.is_known() { emit!("lost", d = d); }     // went unknown
+    on q.changed() { emit!("changed", d = d, q = q); }          // a change, with its inputs
     on settle { emit!("wave", t = now(), va = v(a)); }            // one row per time point
 }
 analog for M { emit!("newton", va = v(a)); }                      // every iteration: a trace</pre></div>
@@ -8128,7 +8128,7 @@ fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
 <li><strong>What a time point is.</strong> A time at which the analog solver produces an accepted solution <em>and</em> runs the time-point procedure. The simulator may accept solutions at other times; those are not time points, and <code>settle</code> does not fire there.</li>
 <li><strong>The C interface of an <code>extern</code> module is this ABI.</strong> <code>"osdi"</code> names the OSDI adapter; <code>"cosim"</code> is a module whose reaction is irreversible. A <code>"cosim"</code> module stays digital-only for now.</li>
 <li><strong>Two new core functions, <code>gmin()</code> and <code>source_scale()</code>,</strong> in the same family as <code>now()</code> and <code>freq()</code>. They let a model see the solver's continuation variables, as junction models in ngspice do.</li>
-<li><strong>Smaller ones.</strong> Two sentences on bytes (all-zero bytes are the all-unknown value; an unknown level's value bytes are zero), a <code>set</code> that would change an extern module's structure is refused like a structural param; records travel as quiet commits.</li>
+<li><strong>Smaller ones.</strong> Two sentences on bytes (all-zero bytes are the bytes of <code>Logic::X</code>, of <code>None</code> and of every derived default), a <code>set</code> that would change an extern module's structure is refused like a structural param; records travel as quiet commits.</li>
 </ul>
 
 </section>

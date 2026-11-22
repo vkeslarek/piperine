@@ -174,17 +174,17 @@ block	packages#15	5f60f0eac75c1c77	fragment	packages#13	-	-
 block	core-std#1	3585f494024ab2b2	run	piperine/book_core_std::the_tour_module_runs_its_analog_and_digital_blocks	-	-
 block	core-std#2	ffbc2ff18dccbb7f	run	piperine/book_core_std::a_constant_of_std_constants_is_the_thermal_voltage_at_300_kelvin	-	-
 block	core-std#3	9de7bc92b15444b7	run	piperine/book_core_std::the_rc_module_of_the_carriers_part_runs	-	-
-block	core-std#4	6924d752174dcd02	run	piperine/book_core_std::the_latch_takes_its_input_at_the_rising_edge_or_zero_when_unknown	-	-
+block	core-std#4	1cb038700030c8c4	run	piperine/book_core_std::the_latch_takes_its_input_at_the_rising_edge	-	-
 block	core-std#5	7dfd7bc254fb3c54	run	piperine/book_core_std::the_dac_ramp_scales_its_code_by_the_reference	-	-
-block	core-std#6	11531a1ac478846e	refused	piperine/book_core_std::the_resolved_line_is_refused_for_its_wire	L21	-
+block	core-std#6	1fe178b5474b2090	refused	piperine/book_core_std::the_resolved_line_is_refused_until_a_nature_can_implement_resolve	S8	-
 block	core-std#7	73e0cf5006f6d85d	run	piperine/book_core_std::the_pad_drives_its_node_and_reads_it_back	-	-
 block	core-std#8	6994862452a71c4a	refused	piperine/book_core_std::the_register_with_a_setup_check_is_refused_for_the_generic_monitor	L30	-
 block	core-std#9	8df4b148eabfdf77	run	piperine/book_core_std::the_probe_writes_a_check_and_a_log_record	-	-
-block	core-std#10	631aa175ce2fb38e	refused	piperine/book_core_std::the_watchdog_is_refused_for_its_integer_param	L28	-
+block	core-std#10	bfca7381ca325fda	refused	piperine/book_core_std::the_watchdog_is_refused_for_its_integer_param	L28	-
 block	core-std#11	8e7f72e7c63ab65b	run	piperine/book_core_std::a_crates_own_vt_replaces_the_library_one	-	-
-block	errors#1	02c79bb77a2f9f83	holds	piperine/book_errors::the_discrete_read_diagnostic_has_the_parts_the_book_shows	-	-
+block	errors#1	1bd5d00e8c8236b6	holds	piperine/book_errors::the_mismatched_type_diagnostic_has_the_parts_the_book_shows	-	-
 block	errors#2	290db49dc81491b3	holds	piperine/book_errors::the_ambiguous_name_diagnostic_has_the_parts_the_book_shows	-	-
-block	errors#3	d48482453090553f	refused	piperine/book_errors::the_worked_sample_hold_is_refused_with_its_three_codes	-	-
+block	errors#3	e4bc76897a516209	refused	piperine/book_errors::the_worked_sample_hold_is_refused_with_its_three_codes	-	-
 block	errors#4	d6f143186449ee41	shown	-	-	-
 block	pom#1	e6a2cd05f83340b4	shown	-	-	-
 block	pom#2	14322fa939347053	run	piperine/book_pom::front_runs_with_its_analog_and_digital_events	-	-
@@ -241,7 +241,7 @@ block	cli#40	00774e3a8eaf4965	shown	-	-	-
 block	cli#41	f9036105c777939d	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine build
 block	cli#42	2525e0948e3c847b	shown	-	-	-
 block	cli#43	10b7a1389fbd7646	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine test
-block	cli#44	3031e1b2fe1ad642	run	piperine/book_buck::the_buck_bench_starts_with_the_supervisor_off	-	-
+block	cli#44	fbf50aecd70ef960	run	piperine/book_buck::the_buck_bench_starts_with_the_supervisor_off	-	-
 block	cli#45	1c66b4b4d5d7a1e2	shown	-	-	-
 block	cli#46	47b905ff64d8b849	shown	-	-	-
 block	cli#47	0864d88b35e61a2b	held	piperine-cli/book_buck::the_buck_block_is_what_the_binary_prints	-	piperine run startup
@@ -256,13 +256,13 @@ block	simulation#7	5068c25da271a189	shown	-	-	-
 block	simulation#8	bb39a1d477539ba8	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run divider.msl --analysis transient --stop 40e-6 --print b --print-step 10e-6
 block	simulation#9	e9f2e26422078619	shown	-	-	-
 block	simulation#10	93d9904c6f268314	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run divider.msl --analysis ac --from 1e3 --to 1e6 --per-decade 1 --print b
-block	cheatsheet#1	35f08adcbe452e09	run	piperine/book_cheatsheet::the_nature_card_is_the_standard_librarys	-	-
+block	cheatsheet#1	a91c1587123be4d7	run	piperine/book_cheatsheet::the_nature_card_is_the_standard_librarys	-	-
 block	cheatsheet#2	383dda9a42c27bf9	refused	piperine/book_cheatsheet::the_module_card_is_refused_for_its_const_generic	L30	-
 block	cheatsheet#3	4191faccce1565bc	refused	piperine/book_cheatsheet::the_body_items_card_is_refused_for_its_generation	L31	-
 block	cheatsheet#4	dbde27824bc2538e	run	piperine/book_cheatsheet::the_analog_card_runs	-	-
 block	cheatsheet#5	61d8b738cee24c41	run	piperine/book_cheatsheet::the_digital_card_runs	-	-
-block	cheatsheet#6	6cf0d43b3a0501ec	fragment	mixed#7	-	-
-block	cheatsheet#7	8bb8999b182e071e	refused	piperine/book_cheatsheet::the_debug_prints_card_is_refused_for_the_analog_trace	L49	-
+block	cheatsheet#6	11929fb57ae578b1	fragment	mixed#7	-	-
+block	cheatsheet#7	610d8e0e5f75dd38	refused	piperine/book_cheatsheet::the_debug_prints_card_is_refused_for_the_analog_trace	L49	-
 block	cheatsheet#8	c2d75bfd6e731da6	refused	piperine/book_cheatsheet::the_template_card_is_refused_for_its_generic_module_and_its_placements	L32	-
 block	cheatsheet#9	ea8278e7ba785b91	refused	piperine/book_cheatsheet::the_extern_card_is_refused	L33	-
 block	cheatsheet#10	922342b0e4390458	refused	piperine/book_cheatsheet::the_files_card_is_refused_for_its_table_and_its_statement	L57	-
@@ -489,11 +489,9 @@ claim	core-std~6e04c51d	6e04c51dd9c78a87	holds	piperine/book_core_std::e0702_is_
 claim	errors~ed0997b0	ed0997b0b111f69a	prose	-	-	An error belongs to one of five phases: package (reading manifests and dependencies), parse, elaboration (names, types, params, the netlist), run (an analysis fails, naming the instance and the instant) and host (a host request is refused, and the analysis goes on).
 claim	errors~1f3eeee4	1f3eeee41c6df4bc	holds	piperine/book_errors::e0310_is_found_on_the_bare_port_of_the_worked_example	-	E0310 on clk: Bit.
 claim	errors~d6787e9a	d6787e9a56d74451	holds	piperine/book_errors::e0430_is_found_on_the_head_of_the_worked_example_s_reaction	-	E0430 on on clk.
-claim	errors~4cc71bd2	4cc71bd23fee939d	holds	piperine/book_errors::e0150_is_found_on_the_read_of_the_carrier_in_the_worked_example	-	E0150 on + held. analog reads a digital carrier without saying what unknown means: held.known_or(0.0).
 claim	errors~a1afa480	a1afa480e9edfee0	binary	piperine-cli/commands::check_renders_every_diagnostic_and_exits_1	-	The diagnostics come on the error output, each with its code, the file, the line and the source excerpt, as in the two renderings at the top of this chapter, and the command exits with status 1.
 claim	errors~2db98d22	2db98d22c5ef3135	holds	piperine/book_errors::the_three_fixes_make_the_worked_example_elaborate	-	Fix the three lines and the same command prints one ok line and exits with 0.
 claim	errors~3a745a24	3a745a2447904edf	prose	-	-	It cannot tell you that your counter wraps one edge late.
-claim	errors~473f7809	473f7809eac13282	holds	piperine/book_errors::a_reaction_on_a_changed_unknown_emits_the_inputs	-	A reaction on q.changed() && !q.is_known() that emits the inputs of q.
 claim	errors~a1c70149	a1c7014935bd251b	prose	-	-	The solver fails to converge, or crawls.
 claim	errors~aa280b8e	aa280b8e1a6fe182	prose	-	-	When the surprise is gone, keep the useful prints and turn the expectation into a require, so the next change that breaks it is caught without anyone reading a stream.
 claim	errors~80317d1d	80317d1de450c243	holds	piperine/book_errors::e0900_is_a_syntax_error_that_names_the_token	-	E0900
@@ -502,7 +500,6 @@ claim	errors~39a5d01d	39a5d01dbc00bf0a	holds	piperine/book_errors::e0161_is_a_na
 claim	errors~39a5cf1d	39a5cf1dbc00bd57	holds	piperine/book_errors::e0162_is_a_name_declared_twice	-	E0162
 claim	errors~39a5ce1d	39a5ce1dbc00bba4	holds	piperine/book_errors::e0163_is_a_name_that_is_a_dependency_and_a_local_item	-	E0163
 claim	errors~39acbe1d	39acbe1dbc06bf22	holds	piperine/book_errors::e0143_is_a_default_in_a_signature_or_an_overload	-	E0143
-claim	errors~39a9371d	39a9371dbc03a3e6	holds	piperine/book_errors::e0150_is_an_analog_read_of_a_digital_carrier	-	E0150
 claim	errors~42ae741d	42ae741dc13997e4	holds	piperine/book_errors::e0220_is_a_second_drive_of_a_one_driver_carrier	-	E0220
 claim	errors~42ae751d	42ae751dc1399997	holds	piperine/book_errors::e0221_is_a_definition_and_a_commit_to_one_carrier	-	E0221
 claim	errors~42ae761d	42ae761dc1399b4a	holds	piperine/book_errors::e0222_is_a_write_to_what_the_module_may_not_drive	-	E0222
@@ -767,7 +764,6 @@ claim	mixed~9d07c4b9	9d07c4b9576fd829	holds	piperine/book_mixed::the_buck_contro
 claim	mixed~ac0aefe3	ac0aefe3b2ca4ca9	holds	piperine/book_mixed::the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero	-	Its = 0.0 holds it at 0 V through the transient's operating point.
 claim	mixed~e5a35079	e5a35079f65c79a7	binary	piperine-cli/buck::startup_ends_within_3_mv_of_0_8_volts	-	A full-size digitally controlled buck converter (12 V in, 200 MHz digital PWM, PID, ADC, comparators and a supervisor) starts from its .msl and regulates at 0.8 V within 3 mV with its loop closed, and the piperine command runs it (chapter 15).
 claim	mixed~a879bf2a	a879bf2aa5b759ac	prose	-	-	In the cycle counter, set hyst: 0.0 and add a small 50 kHz ripple to the source (a second Vsin in series).
-claim	errors~2b0048e8	2b0048e8bba634bb	holds	piperine/book_errors::without_an_initial_value_the_output_sits_at_zero_volts	-	What does vout do before the first clock edge, and which line decided that? (It sits at 0 V: held is unknown, and known_or(0.0) said what unknown means.)
 claim	compiler~05f756b4	05f756b4750e40ff	holds	piperine/book_compiler::the_divider_puts_mid_at_7_5_volts_and_ngspice_prints_the_same	-	Its operating point puts mid at 7.5 V, the same number ngspice prints for the same circuit.
 claim	cli~a717f995	a717f9954de38412	binary	piperine-cli/book::the_plot_in_the_chapter_is_the_file_the_binary_writes	-	This is the file it wrote, as it is: Step.vin flat at 1 V, Step.vout rising towards it with the time constant of 1 µs.
 claim	cli~662c11ca	662c11cac0eb42a8	holds	piperine/book_cli::sens_gives_the_derivative_of_each_printed_signal_with_respect_to_each_param	-	Raising r1 by one ohm lowers the output by 1.875 mV, and raising r2 by one ohm raises it by 0.625 mV: the output is 10·R2/(R1+R2), and the numbers are its two partial derivatives.
@@ -824,3 +820,13 @@ claim	mixed~39ba351d	39ba351dbc1213b3	unraised	piperine/book_mixed::e0180_is_not
 claim	welcome~c0c90a99	c0c90a99cbd0ad16	prose	-	-	The listing above is what the command prints today: it refuses the file, because the front end still asks for a gate on a read of fired in analog, and the language no longer asks for one.
 claim	welcome~5dbd0520	5dbd0520ff525ebc	prose	-	-	When the read is accepted, the run gives the table of the benches before it.
 claim	mixed~8cc728df	8cc728df330e5e54	prose	-	-	Its switch reads the bit ctl in analog directly, which the front end still refuses with error E0150, as the listing at the end of this box shows; when the read is accepted, the commands below run.
+claim	core-std~8ed1df2a	8ed1df2af8489325	prose	-	-	Four-state logic on N levels, each 0, 1, x or z, with the four-state operators, is_high, is_low, is_x, is_z, to_bits and to_volts.
+claim	core-std~a0661a34	a0661a346cd4b004	prose	-	-	Reads the same levels as another type of the same width, and gives an Option: None when the target type rejects them.
+claim	core-std~eb1a03d8	eb1a03d8b42d6c53	prose	-	-	Compares a Logic to a pattern of 0, 1, x and z.
+claim	core-std~36c3bd57	36c3bd579a227695	prose	-	-	The model declares the nature of its net and gives it impl Resolve (chapter 6); this section holds what such a nature needs, and the switch-level parts, each generic over any nature that implements Resolve<Driven>.
+claim	core-std~693b618d	693b618dc750ea22	prose	-	-	A pattern holds only 0, 1, x and z, one character per level of the type.
+claim	errors~cc8e3f8d	cc8e3f8daf5d3ebb	holds	piperine/book_errors::e0210_is_found_on_the_initial_value_of_the_worked_example	-	E0210 on = 0.
+claim	errors~4a35ef2c	4a35ef2c052036a9	prose	-	-	A reaction on q.changed() that emits the inputs of q.
+claim	errors~39ba3a1d	39ba3a1dbc121c32	unraised	piperine/book_errors::e0187_is_not_raised_for_a_signal_with_no_first_value_yet	S8	E0187
+claim	errors~385c354c	385c354c6a15974a	unraised	piperine/book_errors::e0187_is_not_raised_for_a_signal_with_no_first_value_yet	S8	Which error do you expect, and what does it name? (E0187, naming held and the trait Default: a real number has no default value, so the first value must be written.)
+claim	cli~d8ef198c	d8ef198c3a5817c1	prose	-	-	A real has six decimals and an exponent, 7.500000e0; a bool is true or false; an integer is decimal; a four-state Logic is its characters, 0, 1, x and z, highest level first, as in 10xz; an absent Option is None; a text field is in double quotes.

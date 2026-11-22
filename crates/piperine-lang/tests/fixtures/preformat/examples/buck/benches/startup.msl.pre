@@ -13,7 +13,7 @@ module Host(in clk: Bit, out sp_wr: Bit = false, out en: Bit = false) {
 }
 digital for Host {
     on clk.rise() {
-        let s = n.known_or(0);
+        let s = n;
         if s < 2 { n <- s + 1; }
         if s == 0 { sp_wr <- true; }
         if s == 1 { en <- true; }
