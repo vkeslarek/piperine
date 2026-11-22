@@ -104,7 +104,7 @@ change of the IR or the ABI.
   removed names.
 - **Where it shows.** Every model that reads `known_or(d)`, `high()` or `.is_known()` runs; a
   carrier with no initial value starts unknown where the spec says it starts at its `Default`
-  (`E0187`); a `Bit` that starts high rises at `(0, 0)` where §22.1.5 says it does not; a loop that
+  (`E0187`) when it has no `Default`; a loop that
   does not settle writes a `log` record where §8.2.3 stops the run with `E0511`.
 - **Fix.** Phase A (B4 to B7 of `.specs/features/explicit-unknowns/tasks.md`) removes the flag from
   every layer in three moves (accept, rewrite the tree, refuse and remove); phase B (B8) writes
@@ -360,12 +360,12 @@ does not count.
 
 ## 10. Reference lists
 
-**Error codes of the spec that no source file mentions (35 of 189).** A code counts as mentioned when it is spelled
+**Error codes of the spec that no source file mentions (34 of 189).** A code counts as mentioned when it is spelled
 outside a comment in `crates/*/src` (a literal, or an enum variant's `as_str`); `E0375` is named in a doc
 comment only (`pom/builtin.rs`), so it is on the list. `E0503`, `E0504`, `E0505`, `E0507` and `E0508` are
 raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`). `E0803` to `E0806` are raised
 by `session.rs` and `host.rs`; `E0701` and `E0702` by the elaborator.
-`E0123 E0124 E0127 E0131 E0132 E0133 E0134 E0187 E0203 E0225 E0313 E0322 E0340 E0342
+`E0123 E0124 E0127 E0131 E0132 E0133 E0134 E0203 E0225 E0313 E0322 E0340 E0342
 E0360 E0362 E0371 E0372 E0373 E0374 E0375 E0451 E0452 E0453 E0454 E0456 E0511 E0614
 E0703 E0704 E0705 E0706 E0807 E0808 E0809`
 
@@ -461,12 +461,10 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function need a generic module: `P0001` |
 | cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
 | cheatsheet#10 | L57 | `composite-values` | with its `emit!` the card is `E0601` (a statement among items); without it `parse_table(include_str!(..))` is `P0001`, a generic function, and `table_model(.., IV, ..)` an array whose length is a generic parameter |
-| values#14 | S8 | `explicit-unknowns` | the adder's `Bit<Option<u8>>` port `b`, undriven, is read: the run fails with `E0105` naming `b` (a composite that holds no value yet; L64); made to run by explicit-unknowns, phase A: T21, T22 and T30 (`Option` as a carried type that starts at a value) |
 | values#18 | S8 | `explicit-unknowns` | `Logic<4>` is `P0001`: the library struct `Logic` has no generic parameter yet (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
 | values~23c03fc8 | S8 | `explicit-unknowns` | `E0187` is not raised: `signal en: Bit;` elaborates and starts unknown (made to run by explicit-unknowns, phase A: T21, T22 and T30 (the `Default` table, initial values, E0187; `Option` as a carried type)) |
 | values~37a548f2 | S8 | `explicit-unknowns` | the run does not refuse an undriven top-level `in` port of a type with no `Default`: it starts it unknown (made to run by explicit-unknowns, phase A: T38 (EU-04 AC 6: the analysis refuses the port)) |
 | values~39ba3a1d | S8 | `explicit-unknowns` | `E0187` is not raised (the row of the mistakes table) (made to run by explicit-unknowns, phase A: T21, T22 and T30 (the `Default` table, initial values, E0187; `Option` as a carried type)) |
-| values~2bbc575e | S8 | `explicit-unknowns` | held with values#14: the adder's undriven `Bit<Option<u8>>` port is `E0105` at run time (made to run by explicit-unknowns, phase A: T21, T22 and T30) |
 | values~c30bad4d | S8 | `explicit-unknowns` | held with values#18: `Logic<4>` is `P0001` (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
 | natures#2 | L21 | `resolved-nets` | `[Bit; 8]` is `P0001` (an array of carriers, L24) and `Bit<Logic<4>>` is `P0001` (`Logic` has no generic parameter yet); `Bit<Option<u8>>` is a carried type and runs, and `Sda`, declared further on in the chapter, is `E0161` when the block stands alone (made to run by resolved-nets, which lands after explicit-unknowns phase B (`Logic<4>`): `Sda` is the chapter's own `impl Resolve<Driven>` nature, which needs `Resolve` and `Driven` (T27 to T32)) |
 | natures#3 | L21 | `resolved-nets` | `alarm.msl` is `E0161`: `Driven`, `Resolve`, `Pullup` and the `Logic` behind them are not in the library yet, so a nature that implements `Resolve<Driven>` is not read (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |

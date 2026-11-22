@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use piperine_ir::{BodyId, BodyNode, Carrier, CarrierRole, ChildValue, Constant, Derivative, Drive, Event, Hoisted, Reach, Reaction, Stream, Terminal, ValueType};
+use piperine_ir::{AggregateData, BodyId, BodyNode, Carrier, CarrierRole, ChildValue, Constant, Derivative, Drive, Event, Hoisted, Reach, Reaction, Stream, Terminal, ValueType};
 
 use super::body::NodePlan;
 use super::consts::{Bindings, Folded};
@@ -135,6 +135,7 @@ impl Elaboration<'_, '_> {
         let ty = self.carried_type(decl)?;
         let init = match init {
             Some(expr) => self.carrier_init(expr, frame)?.map(|value| self.ir_constant(value, &ty)),
+            None if frame == 0 || matches!(data.kind, DeclKind::Signal(_)) => self.default_initial_value(decl, &ty),
             None => None,
         };
         let name = format!("{}{name}", self.frames[frame].prefix);
@@ -158,6 +159,35 @@ impl Elaboration<'_, '_> {
                 None
             }
         }
+    }
+
+    /// What carrier `decl` of value type `stored` holds at `(0, 0)` when no initial value is written:
+    /// the `Default::default()` of its type (§3.3.4), when it has one. A type without `Default` (a
+    /// `bool`, a number, a `str`) has none here: the checker asks for the written value.
+    fn default_initial_value(&mut self, decl: DeclId, stored: &ValueType) -> Option<Constant> {
+        let Some(Ty::Carrier { value, .. }) = self.types.carrier(decl).cloned() else { return None };
+        self.default_constant(&value, stored)
+    }
+
+    /// The constant `Default::default()` of the type `ty`, held as `stored`: `None` (the zero bytes)
+    /// for an `Option`, the defaults of the parts of a tuple, an array or a struct that derives
+    /// `Default` (H.8 rule 4). `None` for a type that has no default.
+    fn default_constant(&mut self, ty: &Ty, stored: &ValueType) -> Option<Constant> {
+        let (variant, parts) = match (ty, stored) {
+            (Ty::Option(_), ValueType::Option(_)) => (None, Vec::new()),
+            (Ty::Tuple(items), ValueType::Tuple(held)) => (None, items.iter().zip(held).map(|(item, held)| self.default_constant(item, held)).collect::<Option<Vec<_>>>()?),
+            (Ty::Array(element, length), ValueType::Array(held, _)) => {
+                let one = self.default_constant(element, held)?;
+                (None, vec![one; usize::try_from(*length).ok()?])
+            }
+            (Ty::Struct(struct_decl), ValueType::Struct(id)) if self.types.derives(*struct_decl, "Default") => {
+                let fields: Vec<Ty> = self.types.fields(*struct_decl)?.iter().map(|field| field.ty.clone()).collect();
+                let held = self.type_arena.field_types(*id).to_vec();
+                (None, fields.iter().zip(&held).map(|(field, held)| self.default_constant(field, held)).collect::<Option<Vec<_>>>()?)
+            }
+            _ => return None,
+        };
+        Some(Constant::Aggregate(self.ir.aggregate(AggregateData { ty: stored.clone(), variant, parts })))
     }
 
     /// Add the gathered structure of the body `body` to the IR, in the order it was numbered.

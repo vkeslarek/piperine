@@ -251,6 +251,18 @@ impl Store {
         }
     }
 
+    /// Makes the value `net` holds its `PREVIOUS` as well, keeping the stamp of the change that wrote it:
+    /// after the commit of an initial value (`start`), `prev()` reads that value until a later change
+    /// (part II §5.3, D8).
+    pub fn keep_as_previous(&mut self, net: NetId) {
+        self.journal_net(net.0 as usize);
+        let n = &mut self.nets[net.0 as usize];
+        if !n.quiet {
+            let value = n.value.bytes().to_vec();
+            n.previous.bytes_mut().copy_from_slice(&value);
+        }
+    }
+
     /// The saved state of `net`.
     pub fn save_net(&self, net: NetId) -> NetState {
         NetState(self.net(net).clone())

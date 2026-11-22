@@ -138,7 +138,7 @@ fn adding_or_removing_an_emit_gives_the_same_waveforms() {
 fn the_delayed_bench_steps_at_one_microsecond() {
     // welcome#17 (benches/delayed.msl added to the rc project); welcome~3afc3430 "on at(t0) {
     // fired <- true; } means when time reaches t0, set fired"; welcome~6c6cac8d "the record is
-    // written when vout rises through 63.2 % of the step"; welcome~ca1522ff "One time constant after
+    // written when vout rises through 63.2 % of the step"; welcome~174ddaf4 "The first line under the header is the record the bench wrote: one time constant after
     // the step: vout is 1 − 1/e to the digit, at 0.07 ns before 2 µs"
     let overrides = Overrides { analysis: Some("transient".to_string()), stop: Some(5e-6), print_step: Some(1e-6), ..Overrides::default() };
     let ran = Chapter::read().marked("rc/benches/delayed.msl", "welcome#17").run(overrides).unwrap_or_else(|failure| panic!("{failure}"));

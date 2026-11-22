@@ -641,8 +641,8 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `source_explicit::a_written_initial_value_is_the_value_at_the_start`, `a_carrier_without_a_value_starts_at_its_default`, `an_element_never_committed_reads_its_initial_value`, `an_unbound_option_param_is_none`, `an_option_carrier_is_read_by_matching`, `the_first_commit_is_a_change`, `prev_is_the_initial_value_before_a_change` pass
-- [ ] Gate check passes: Full
+- [x] `source_explicit::a_written_initial_value_is_the_value_at_the_start`, `a_carrier_without_a_value_starts_at_its_default`, `an_element_never_committed_reads_its_initial_value`, `an_unbound_option_param_is_none`, `an_option_carrier_is_read_by_matching`, `the_first_commit_is_a_change`, `prev_is_the_initial_value_before_a_change` pass
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

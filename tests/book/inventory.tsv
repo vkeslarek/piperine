@@ -26,7 +26,7 @@ block	welcome#15	22bdfa847a6e9e8b	held	piperine-cli/book::every_cli_listing_of_t
 block	welcome#16	09a7d97e5c52020f	shown	-	-	-
 block	welcome#17	1a8a3eed35a9b41a	run	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	-
 block	welcome#18	dddafa2050e950cd	shown	-	-	-
-block	welcome#19	764e385da5e0dc10	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run benches/delayed.msl --analysis transient --stop 5e-6 --print-step 1e-6
+block	welcome#19	21913b57ecc70534	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run benches/delayed.msl --analysis transient --stop 5e-6 --print-step 1e-6
 block	welcome#20	5a43010c6903b85d	shown	-	-	-
 block	welcome#21	40aed5bddc1b9b01	run	piperine/book_welcome::the_inverter_drives_its_output_a_propagation_delay_after_its_input	-	-
 block	language#1	3cea98b462d93ac1	run	piperine/book_language::the_literal_forms_have_the_values_their_comments_give	-	-
@@ -77,15 +77,15 @@ block	values#6	99d13973553af432	held	piperine-cli/book::every_cli_listing_of_the
 block	values#7	35ff65aaf710211a	run	piperine/book_values::a_message_with_values_is_a_record_with_a_text_field	-	-
 block	values#8	775ff75685a16476	refused	piperine/book_values::a_function_has_the_class_its_body_gives	L53	-
 block	values#9	d9806c64bb24943b	fragment	values#10	-	-
-block	values#10	bf4e0f7117cbdde7	run	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic	-	-
+block	values#10	bf4e0f7117cbdde7	run	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic	-	-
 block	values#11	a07bbc60df4e55a9	shown	-	-	-
 block	values#12	6801c85357a0db7b	shown	-	-	-
 block	values#13	e87cfdd0a992563c	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --analysis transient --stop 3e-6 --stream zone
-block	values#14	15606b1fa80f3505	refused	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic	S8	-
+block	values#14	15606b1fa80f3505	run	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic	-	-
 block	values#15	c68146731ab6a79c	shown	-	-	-
 block	values#16	d022fb86cf9de984	shown	-	-	-
-block	values#17	22792880fbef6fa1	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream absent
-block	values#18	cf6cf170a04f408d	refused	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic	S8	-
+block	values#17	5814d0376b1b3267	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --top AdderTop --analysis transient --stop 3e-6 --stream absent
+block	values#18	cf6cf170a04f408d	refused	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic	S8	-
 block	values#19	4bcc7aec0a6efc87	shown	-	-	-
 block	values#20	91e20d2ed735e545	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --top PeekTop --analysis transient --stop 3e-6 --stream compare
 block	values#21	1c36af9fee8a108e	run	piperine/book_values::analog_reads_a_digital_carrier_directly	-	-
@@ -153,7 +153,7 @@ block	mixed#9	e34a5f2d8cee81d3	shown	-	-	-
 block	mixed#10	dcd6e04b0acbdb87	run	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	-	-
 block	mixed#11	d9f0417b5399de0c	shown	-	-	-
 block	mixed#12	063828848af5ddc2	shown	-	-	-
-block	mixed#13	4a98a0af69eade7f	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop
+block	mixed#13	49074140a71dede7	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop
 block	mixed#14	4479d1916b290544	run	piperine/book_mixed::the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero	-	-
 block	mixed#15	ea28fe2bc18e8e9d	run	piperine/book_mixed::the_sar_adc_runs_with_its_comparator_and_its_field_access	-	-
 block	packages#1	4d5e7db8c23bc8e3	shown	-	-	-
@@ -348,10 +348,10 @@ claim	values~82576d99	82576d998faba1e1	holds	piperine/book_values::blinky_counts
 claim	values~2bf57b76	2bf57b767d174af0	holds	piperine/book_language::the_literal_forms_have_the_values_their_comments_give	-	This is also the scaffold of the earlier examples, now readable: module Literals() {} is a piece of hardware with no ports and nothing inside, and on at(1u) { … } is a reaction to the event "the time is 1 µs", which fires once.
 claim	values~4938c15f	4938c15f88e053f2	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The first three lines after the header are the three records of the table above, as the command prints them: one line each, live.
 claim	values~c389077a	c389077a09d64172	refused	values#8	L53	The compiler infers a class from the body: a pure function, like diode_current, works anywhere; one that probes a voltage or reads now() works where the solver is running; one that returns Event, like handshake, works where events go; and one that calls emit! works where emit! does.
-claim	values~d0e86096	d0e860965d39c65b	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic	-	This file watches a node and reports, on every clock edge, whether its voltage is under, inside or over a window.
-claim	values~8ad56d03	8ad56d032086a4c3	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic	-	The source is a ramp of 1 V/µs, so the node walks through all three zones.
-claim	values~3c87d509	3c87d5093c5ad414	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic	-	if z != zone { emit!(…) } prints only when the zone changes. zone on the right still reads the old value (the commit one line up has not applied yet), which is exactly what makes from = zone, to = z correct.
-claim	values~6ecca079	6ecca0792312a11d	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic	-	The clock rises at 0.5, 1.5 and 2.5 µs, where the ramp is near 0.5, 1.5 and 2.5 V:
+claim	values~d0e86096	d0e860965d39c65b	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic	-	This file watches a node and reports, on every clock edge, whether its voltage is under, inside or over a window.
+claim	values~8ad56d03	8ad56d032086a4c3	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic	-	The source is a ramp of 1 V/µs, so the node walks through all three zones.
+claim	values~3c87d509	3c87d5093c5ad414	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic	-	if z != zone { emit!(…) } prints only when the zone changes. zone on the right still reads the old value (the commit one line up has not applied yet), which is exactly what makes from = zone, to = z correct.
+claim	values~6ecca079	6ecca0792312a11d	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic	-	The clock rises at 0.5, 1.5 and 2.5 µs, where the ramp is near 0.5, 1.5 and 2.5 V:
 claim	values~4f830aa0	4f830aa06efa0a25	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The command prints an enum field as the name of its variant, so from=Ok to=Under is a move from Ok to Under.
 claim	values~80317c1d	80317c1de450c090	holds	piperine/book_values::e0901_there_is_no_println	-	E0901
 claim	values~64ee8a1d	64ee8a1dd48326bc	holds	piperine/book_values::e0602_an_emit_has_no_format_string	-	E0602
@@ -734,7 +734,6 @@ claim	welcome~e7b611bc	e7b611bc87f50e5a	holds	piperine/book_welcome::the_rc_step
 claim	welcome~f510779c	f510779cbb1f6161	holds	piperine/book_welcome::the_rc_step_charges_as_the_book_says	-	The initial value. signal vout: Electrical = 0.0; makes a transient start with the output at 0 V, a discharged capacitor.
 claim	welcome~4ecc9f35	4ecc9f3574b7bae5	holds	piperine/book_welcome::the_rc_project_holds_its_operating_point_and_its_netlist	-	An operating point holds nothing, which is why op printed 1 V for the same node.
 claim	welcome~6c6cac8d	6c6cac8dc767660a	holds	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	The bench has a reaction of its own this time, on a crossing again, and E is the constant e: the record is written when vout rises through 63.2 % of the step.
-claim	welcome~ca1522ff	ca1522ffac1e1026	holds	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	One time constant after the step: vout is 1 − 1/e to the digit, at 0.07 ns before 2 µs.
 claim	welcome~70f7cf01	70f7cf01582cea83	prose	-	-	Chapter 5 gives every rule of emit!, and chapter 8 shows what it does inside analog, where the second rule is different on purpose.
 claim	modules~d3ff187c	d3ff187cb9877521	prose	-	-	For the ladder with a 1 V step, estimate when each tap passes 0.5 V before you look at the half stream.
 claim	modules~1a89f2ad	1a89f2adc283d8ec	holds	piperine/book_modules::the_rule_of_thumb_for_the_ladder_gives_the_three_times_the_book_lists	-	A rough rule for an RC ladder is 0.69 times the Elmore delay, which here is 3, 5 and 6 times r · c for the three taps: about 2.1, 3.5 and 4.1 µs after the step.
@@ -777,9 +776,8 @@ claim	values~8bf2170e	8bf2170e867f9351	prose	-	-	Option<T> answers "is there a v
 claim	values~35ba1385	35ba1385b5066fa0	prose	-	-	Logic answers "what does the wire carry?" Each level of a Logic is 0, 1, x (not determined) or z (not driven), as in a Verilog waveform.
 claim	values~c57e558e	c57e558eee862c51	prose	-	-	The way back can fail, so it returns an Option: a.to_bits() is Some(n) when every level is 0 or 1 and None otherwise.
 claim	values~23c03fc8	23c03fc80dc74c12	unraised	piperine/book_values::e0187_is_not_raised_yet	S8	So signal en: Bit; is error E0187, naming the signal and the trait Default, and the fix is to write the first value.
-claim	values~2bbc575e	2bbc575ea3dba421	refused	values#14	S8	It is placed in a top that gives a the constant 3 and takes b from an in port of its own, which nothing drives, so b starts at None. (Osc is the clock from the file above.)
+claim	values~2bbc575e	2bbc575ea3dba421	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic	-	It is placed in a top that gives a the constant 3 and takes b from an in port of its own, which nothing drives, so b starts at None. (Osc is the clock from the file above.)
 claim	values~37a548f2	37a548f2bb778e5f	unraised	piperine/book_values::e0187_is_not_raised_yet	S8	A top-level in port that nothing drives starts at its type's default, here None; for a type with no default, such as Bit<u8>, the run refuses to start and names the port.
-claim	values~e99c1920	e99c1920bfe79d2e	prose	-	-	Today the command refuses the file and runs nothing:
 claim	values~a662dfff	a662dffff606a1d9	prose	-	-	x.is_high(), x.is_low(), x.is_x() and x.is_z() are true exactly when every level is 1, 0, x or z.
 claim	values~18ae081b	18ae081bedfe4678	prose	-	-	logic("1010") writes a four-state value one character per level, highest level first, from 0, 1, x and z.
 claim	values~c30bad4d	c30bad4d9436167c	refused	values#18	S8	The undriven b starts at xxxx, so each edge compares 1010 with xxxx: a == b prints x, same(a, b) is false and sure is false.
@@ -812,8 +810,6 @@ claim	analog~39ba351d	39ba351dbc1213b3	holds	piperine/book_analog::e0180_a_logic
 claim	analog~f8d4880c	f8d4880c2eb68bd6	prose	-	-	Decide with a function that returns one: if flags.is_high() { … }
 claim	mixed~9d92e73f	9d92e73f5af1700c	prose	-	-	A converter for a Logic input makes the other choice in its own text, d.to_volts(1.0), which gives half the supply for x and z: the model says what "not determined" means electrically, and the language does not guess. transition turns the stepped level into a ramp of duration tr, so the output has a real edge.
 claim	mixed~39ba351d	39ba351dbc1213b3	holds	piperine/book_mixed::e0180_a_logic_read_in_analog_is_a_mismatch	-	E0180
-claim	welcome~5dbd0520	5dbd0520ff525ebc	prose	-	-	When the read is accepted, the run gives the table of the benches before it.
-claim	mixed~8cc728df	8cc728df330e5e54	prose	-	-	Its switch reads the bit ctl in analog directly, which the front end still refuses with error E0150, as the listing at the end of this box shows; when the read is accepted, the commands below run.
 claim	core-std~8ed1df2a	8ed1df2af8489325	prose	-	-	Four-state logic on N levels, each 0, 1, x or z, with the four-state operators, is_high, is_low, is_x, is_z, to_bits and to_volts.
 claim	core-std~a0661a34	a0661a346cd4b004	prose	-	-	Reads the same levels as another type of the same width, and gives an Option: None when the target type rejects them.
 claim	core-std~eb1a03d8	eb1a03d8b42d6c53	prose	-	-	Compares a Logic to a pattern of 0, 1, x and z.
@@ -825,4 +821,5 @@ claim	errors~39ba3a1d	39ba3a1dbc121c32	unraised	piperine/book_errors::e0187_is_n
 claim	errors~385c354c	385c354c6a15974a	unraised	piperine/book_errors::e0187_is_not_raised_for_a_signal_with_no_first_value_yet	S8	Which error do you expect, and what does it name? (E0187, naming held and the trait Default: a real number has no default value, so the first value must be written.)
 claim	cli~d8ef198c	d8ef198c3a5817c1	prose	-	-	A real has six decimals and an exponent, 7.500000e0; a bool is true or false; an integer is decimal; a four-state Logic is its characters, 0, 1, x and z, highest level first, as in 10xz; an absent Option is None; a text field is in double quotes.
 claim	solver~95d8c226	95d8c226ae3825f3	prose	-	-	A loop of functions is accepted only if it passes through a net marked to relax, which is iterated until it stops changing; a net that still moves after its bounded passes stops the run with E0511, naming the loop's drives.
-claim	welcome~9ce9898c	9ce9898cfbb03cf6	prose	-	-	The listing above is what the command prints today: it refuses the file, because the front end still refuses a plain read of fired in analog (error E0150), which the language now allows.
+claim	welcome~174ddaf4	174ddaf4b9e1a9cd	holds	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	The first line under the header is the record the bench wrote: one time constant after the step, vout is 1 − 1/e to the digit, at 0.07 ns before 2 µs.
+claim	mixed~eab5e274	eab5e274a51fe9fa	prose	-	-	First watch the loop start, one record per switching period; the listing at the end of this box is the first lines of what the command prints:

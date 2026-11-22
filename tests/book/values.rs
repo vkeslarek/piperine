@@ -17,7 +17,7 @@ mod support {
     pub mod refusal;
 }
 
-use piperine::{Field, Overrides, Record};
+use piperine::{Cell, Field, Overrides, Record};
 use piperine_parity::golden::PrintedNumber;
 use support::chapter::Chapter;
 use support::faulty::Faulty;
@@ -240,7 +240,7 @@ fn a_function_has_the_class_its_body_gives() {
 }
 
 #[test]
-fn the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic() {
+fn the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic() {
     // values#10 (run: the window monitor of monitor.msl), values#9 is the enum of values#10; values~d0e86096
     // "This file watches a node and reports, on every clock edge, whether its voltage is under, inside or
     // over a window"; values~8ad56d03 "The source is a ramp of 1 V/µs, so the node walks through all three
@@ -248,7 +248,7 @@ fn the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic() {
     // 2.5 V"; values~3c87d509 "if z != zone { emit!(…) } prints only when the zone changes. zone on the
     // right still reads the old value"; values~4f830aa0 "The command prints an enum field as the name of
     // its variant, so from=Ok to=Under is a move from Ok to Under" (the command's line is held with the
-    // listing). The adder and the peek that followed it (values#14 and values#18) are refused, below.
+    // listing). The adder (values#14) runs and the peek that followed it (values#18) is refused, below.
     let chapter = Chapter::read();
     let monitor = chapter.marked("monitor.msl", "values#10").run(Transient::of("MonitorTop", 3e-6)).unwrap_or_else(|failure| panic!("{failure}"));
     let zones = monitor.stream("zone");
@@ -261,15 +261,21 @@ fn the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic() {
     }
     let longer = chapter.marked("monitor.msl", "values#10").run(Transient::of("MonitorTop", 5e-6)).unwrap_or_else(|failure| panic!("{failure}"));
     assert_eq!(longer.stream("zone").len(), 3, "the edges at 3.5 and 4.5 us find the zone unchanged and print nothing");
-    // values#14 and values#18 (refused, GAPS.md S8): the adder whose `b` is a `Bit<Option<u8>>` and the peek
-    // over `Bit<Logic<4>>`. The `Option` carrier has a `Repr` since composite-values, and `b` is never driven, so
-    // reading it is the run fault that names it (E0105; `explicit-unknowns` phase A starts every carrier at a
-    // value); `Logic<4>` is the library struct `Logic`, which has no generic parameter until phase B (P0001). The
-    // test fails when either starts to run, and the row then becomes `run`. values~2bbc575e "It is placed in a top that gives a the constant 3 and takes b
-    // from an in port of its own, which nothing drives, so b starts at None" and values~c30bad4d "The
-    // undriven b starts at xxxx ..." are held by the listings' refusal (S8)
-    let adder = chapter.marked("monitor.msl", "values#14").run(Transient::of("AdderTop", 3e-6));
-    Refusal::expect(adder, "values#14", "E0105", "a model panicked under known control in `AdderTop.add` at tick 500000000: `b` is a composite that holds no value yet, so it has no field or copy to read; drive it or give it an initial value first");
+    // values#14 (run since `explicit-unknowns` T22): the adder whose `b` is a `Bit<Option<u8>>` that nothing drives,
+    // so it starts at `None` and the `match` takes the `None` arm at each of the three rising edges (values~2bbc575e
+    // "b starts at None"; the sum stays at 0 because no commit is made). values#18, the peek over `Bit<Logic<4>>`
+    // (refused, GAPS.md S8): `Logic<4>` is the library struct `Logic`, which has no generic parameter until phase B
+    // (P0001). The test fails when it starts to run, and the row then becomes `run`. values~c30bad4d "The undriven b
+    // starts at xxxx ..." is held by that listing's refusal (S8)
+    let adder = chapter.marked("monitor.msl", "values#14").run(Transient::of("AdderTop", 3e-6)).unwrap_or_else(|failure| panic!("{failure}"));
+    let absent = adder.stream("absent");
+    assert_eq!(absent.len(), 3, "one record at each rising edge: {:?}", adder.records);
+    for (record, instant) in absent.iter().zip(["5.000000e-7", "1.500000e-6", "2.500000e-6"]) {
+        assert_eq!(record.instance, "AdderTop.add");
+        Printed::holds(instant, record.time, "the clock edge");
+        assert_eq!((Fields::of(record, "t"), Fields::of(record, "a")), (&Field::Real(record.time), &Field::Int(3)), "t and a");
+    }
+    assert!((0..adder.table.rows.len()).all(|row| adder.cell(row, "AdderTop.sum") == &Cell::Int(0)), "the sum stays at 0: no commit is made");
     let peek = chapter.marked("monitor.msl", "values#18").run(Transient::of("PeekTop", 3e-6));
     Refusal::expect(peek, "values#18", "P0001", "generic arguments on `Logic`, which has no generic parameter is not supported yet");
 }
