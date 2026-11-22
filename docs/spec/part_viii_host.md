@@ -110,6 +110,17 @@ param by path. A **host drive** writes one of the drives the host holds (rule 1)
 > **Resolution.** Rule 9 and the refusal semantics of rules 6–7 (nothing changes) are stated
 > here. Which module is the top is the host's choice (G.17).
 
+> **Resolution.** A host reads a carried tuple, array, struct, enum or `Option`, and a record
+> field of such a type, as a tree of its parts: the language's literal syntax in a text table,
+> a record line and JSON Lines (a struct an object, a tuple and an array an array, a payload
+> variant `{"Variant": {..}}`), and one column per dotted leaf in CSV and a plot (`st.n`,
+> `bits[3]`, `t.0`; an enum a variant column and its payload leaves `st.Data.n`). An enum with no
+> payload reads as the name of its variant, not its tag; the names live in the module's metadata,
+> and the bytes of a net do not change. A printed path that names a leaf (`Top.st.n`,
+> `Top.v[2]`) prints that leaf alone. A composite param is set by the path of one leaf
+> (`Top.f.num[2]`, `Top.p.x`, `Top.t.0`), before the run; the `where` of the param is checked on
+> the whole value after the write and a false one is `E0317`, a path that names no leaf `E0801`.
+
 A sketch in Python, not normative:
 
 ```python

@@ -22,7 +22,7 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 2 silent, 2 broken, 32 loud (L1 to L63 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the two `params-and-io` (L20, L39) and the four `composite-values` rows (L5, L6, L10, L63) and the two `resolved-nets` rows (L22, L23) closed, L9 narrowed to its `generics` part, in six tables) plus
+**Counts.** 2 silent, 2 broken, 28 loud (L1 to L63 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the two `params-and-io` (L20, L39) and the eight `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63) and the two `resolved-nets` rows (L22, L23) closed, L9 narrowed to its `generics` part and L4 to generic enums, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 9 unproven.
 
@@ -30,7 +30,7 @@ change of the IR or the ABI.
 | ------- | --- |
 | §2 Broken | B3, B4 |
 | §3 Silent (read this first) | S3, S6 |
-| §4 Loud | L1–L62 (L11, L14, L15, L17, L18, L19, L20, L39, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L51, L22, L23 closed; L9 narrowed) |
+| §4 Loud | L1–L62 (L11, L14, L15, L17, L18, L19, L20, L39, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L51, L22, L23 closed; L9 and L4 narrowed) |
 | §5 Spec holes and disagreements | G1–G6 (the buck's), X1, X2, X6 (X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
 | §6 Solver, numerics, performance | V12, V13, V16 |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
@@ -51,7 +51,7 @@ change of the IR or the ABI.
 | backends | IR → Rust → `rustc` → device library: everything the checker accepts. The interpreter is frozen at the M1 analog subset (R1) |
 | analyses from a host | `op`, `dc` (one sweep), `ac`, `transient`; on both backends for the 7 ngspice twins |
 | digital and mixed-signal | on the Rust backend only: `examples/buck` whole, closed loop at 0.8 V (`buck_closed_loop`, `buck_long`), scenarios S2 to S10 on the Rust host (`buck_scenarios`) |
-| stdlib that runs | `known`, `known_or`, `is_known`, `rise`, `fall`, `high`, `init`, `every`, `settle`, `vt`, `pnjlim`, `fetlim`, `deltalim`, `limexp`, `above`, `last_crossing`, `transition`, `D2A`, `A2D`, `Never`, `State`, `log`, `require`, `cover`, `target`, the six constants. About 29 of the 75 names of the §22 index |
+| stdlib that runs | `known`, `known_or`, `is_known`, `rise`, `fall`, `high`, `init`, `every`, `settle`, `vt`, `pnjlim`, `fetlim`, `deltalim`, `limexp`, `above`, `last_crossing`, `transition`, `normal`, `D2A`, `A2D`, `Never`, `State`, `log`, `require`, `cover`, `target`, the six constants. About 30 of the 75 names of the §22 index |
 | command line and host library | `check`, `build`, `run`, `test`, `new`, `clean`, `fmt`; tables, record lines, CSV, JSON Lines, SVG; `--param` before a run; a transient keeps rows, not steps: `piperine run startup` in `examples/buck` prints the whole 600 µs start |
 | language server | **does not build**, deferred by the user |
 
@@ -106,16 +106,12 @@ quotes the text after `P0001:` unless another code is shown.
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L1 | `struct` values, struct expressions, field access | §1, §2 | `struct item used as a type`, `struct expression`, `field access` | L, with L2–L4 |
-| L2 | tuples outside `let (a, b) = (x, y);` | §1 | `tuple expression`, `tuple type` | |
-| L3 | arrays, indexing, slices, `&` (an index that may be unknown merges every element it may name, §3.3.3: `unknown-semantics` US-04 AC 12 travels with this row) | §1, H.5 | `array type`, `array expression`, `index expression`, `reference type` | |
-| L4 | enums with a payload, `#[repr(uN)]`, an explicit discriminant, generic enums, an enum of one variant as a carrier | §2 rules 2, 5 | `enum Tx with a variant with a payload`, `with a #[repr] attribute` | |
+| L4 | generic enums, and an enum used by value code without `#[derive(Repr)]` (§2: every enum is a value type; payload enums, `#[repr(uN)]`, explicit discriminants and a one-variant enum as a carrier run) | §2 rules 2, 5 | `enum `Shape` without `#[derive(Repr)]``, `generic enum` | `generics` GN-06 |
 | L7 | generic functions, `self` parameters, `impl` on a value type, user traits | §3 rule 9, §3.1 | `generic function`, `generic parameter used as a type` | L, with L30 |
 | L8 | `impl` on a nature (other than the stdlib's `impl Bit`); a function that takes a carrier or a node and probes it (a handle) | §3.1, §3 rule 7 | `method mv`; `E0450: a probe is allowed in an analog block and a module body only` | M |
 | L9 | a capturing closure passed to a user `fn` parameter (it needs an `Fn` bound: `generics` GN-01) | §3 rule 3 | `P0001` naming the form | with L7 |
 | L12 | `extern "C" fn`, `#[derivative]` | §3 rules 2, 10, 11 | `extern function` | M |
 | L13 | `f16`, `f32`, `f128`; integers wider than 64 bits | §1 rule 5 | `type f32`; `integer type u128` | M |
-| L16 | every row of H.5, H.6, H.7 (arrays, ranges, iterators); the `Option` and `bool` rows of H.3 and H.4 run | H.5–H.7 | `E0161: no method .. on ..` | with L3 |
 
 ### 4.2 Carriers (Part II §4–§7)
 
@@ -178,8 +174,8 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 
 | # | Refused | Spec | Size |
 | - | ------- | ---- | ---- |
-| L57 | `include_str!`, `parse_table`, `parse_hex`, `table_model` (`P0001` when reached; see S3) | §20, §22.6.4, §22.2.15 | M, after L3 |
-| L58 | Stdlib refused with the form it is built on. **Generics (L30):** `Short`, `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`, `merge`, `cast`, `same`. **Resolved nets (L21):** `Logic`, `Strength`, `Wire`, `Tri`, `SumNet`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir`, `TribufDelayed`. **Other:** `AckWithin` (a `u32` param), `MinPulse` (`since`), `normal` (tuples, `cos`), `limvds` as a function value (L9) | §22 | by its group |
+| L57 | `include_str!`, `parse_table`, `parse_hex`, `table_model` (`P0001` when reached; see S3) | §20, §22.6.4, §22.2.15 | M |
+| L58 | Stdlib refused with the form it is built on. **Generics (L30):** `Short`, `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`, `merge`, `cast`, `same`. **Resolved nets (L21):** `Logic`, `Strength`, `Wire`, `Tri`, `SumNet`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir`, `TribufDelayed`. **Other:** `AckWithin` (a `u32` param), `MinPulse` (`since`), `limvds` as a function value (L9) | §22 | by its group |
 | L59 | `unwrap` or `expect` of an `Option` whose presence may be unknown; the closure of `map`, `and_then` or `then` when it is not a literal; an `expect` message that is not a string literal | H.3 | `P0001` naming the form | S |
 | L60 | the stdlib `slew` does not limit an ideal (jump) step: §15.2 rule 4 fires a jump's crossing after the solve, so the output passes the jump in one step. Fix = retake the step when a jump-crossing flips a carrier read by `analog` (owner `analog-operators`, AO-13; found by `analog-structure` AS-09 AC 6, which covers a step with a finite edge) | §15.2 rule 4, §22.2.10 | none: the output follows the jump | M |
 | L61 | sweeping or setting a key param after `Session::open`: a param that fixes the structure (a selector, an initial value, a reached param) is folded into the body at elaboration, so a `dc` sweep of it, or a `set` of it between open and the run, needs one elaboration per value. Today `E0803` refuses both naming the param; the before-run request param (`--param`) works (owner `sweeps-montecarlo-optimization`; found by `analog-structure` verification F1) | §23.1 rule 7, §8.1.2 | `E0803` | M |
@@ -191,8 +187,6 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
   digital or amended form by name.
 - **`ir-rust` refuses** `UInt<N>`/`Int<N>` with N outside 1..=64 by name; the ABI's leaves end at
   64 bits.
-- **Enum variant names are not carried.** A `Bit<Mode>` is its tag in the IR, on the ABI and in
-  every observation: a host reads `2`, not `Regulate`. Size M (metadata on the shape).
 - **A param whose value is a constant NaN** (`lo: f64 = 0.0 / 0.0`) fails the compiled row with "pin ... unlike its
   plan (a transpiler defect)": the plan folds NaN as `0xfff8…`, the library as `0x7ff8…`. Found by the
   `msl-fixes` fix round. Size S (canonicalize NaN bits at the plan/library boundary; owner `params-and-io`).
@@ -322,8 +316,8 @@ does not count.
 
 | Part | Runs | Biggest holes |
 | ---- | ---- | ------------- |
-| I §1–§2 values, `Repr` | 40 % | composites, payload enums, floats other than `f64`, widths over 64; `let mut`, assignment and patterns run |
-| I §3–§3.3 functions, calls, unknown values | 45 % | generics, `impl`, traits, handles, arrays and composites; loops, recursion, closures, function values, the merge and the level reads run |
+| I §1–§2 values, `Repr` | 60 % | floats other than `f64`, widths over 64, generic enums; `let mut`, assignment, patterns, structs, tuples, arrays and payload enums run |
+| I §3–§3.3 functions, calls, unknown values | 45 % | generics, `impl`, traits, handles; loops, recursion, closures, function values, arrays, composites, the merge and the level reads run |
 | I §3.4–§3.6 files, crates, packages | 95 % | the check of unreached items (S3) |
 | II §4–§5 natures, discrete carriers | 40 % | `resolve`, arrays, user discrete natures, `Unknown` initial values |
 | II §6 nodes, probes | 85 % | signal-flow |
@@ -336,12 +330,12 @@ does not count.
 | IV §14 core primitives | 50 % | `ddx`, `delay`, `noise`, `simparam`, `others`, `level`, `include_str!` |
 | V §15–§18 execution | 60 % | the merge, digital-only runs, error naming, the text of §15 itself (X1) |
 | VI §19–§21 output, input, metadata | 35 % | traces, `maybe`, files, host metadata |
-| VII §22 stdlib | 35 % (about 29 of 75 names) | everything generic, every resolved net, `idt`, filters, noise, tables |
+| VII §22 stdlib | 36 % (about 30 of 75 names; `normal` runs) | everything generic, every resolved net, `idt`, filters, noise, tables |
 | VIII §23 host | 15 % | host actions, options, Monte Carlo, optimization, gradients |
 | A lexical, B grammar | 100 % parsed | the placement matrix B.2 is enforced for the subset only |
 | C reference implementation | defaults in place | the C.2 text is stale (X1, X2); 1 of the 5 conformance items runs |
 | D, E, F galleries | 0 % proven | U4 |
-| H inherited library | 75 % (56 of 75 method rows) | L16 (H.5 to H.7) |
+| H inherited library | 100 % (75 of 75 method rows) | none: H.5 to H.7 run |
 
 ---
 
@@ -374,7 +368,7 @@ E0703 E0704 E0705 E0706 E0807 E0808 E0809`
 | `set` and params | H5, L28, L29, H4 | M |
 | Analog structure (delivered, MD-71) | what is left of L40: the stdlib `idt` and `Water` after `generics`, the §18 `Diode` after `params-and-io` | S |
 | Analog operators | L43, L44, L45, L49, H2 (`Noise`) | M to L |
-| Composite values | L1 to L4, L16 (H.5 to H.7), L24, L57 (phase A closed L5, L6, L10 and the part of L9 that is not `generics`) | L |
+| Composite values | L24, L57, and L4 for generic enums (phases A and B closed L1 to L3, L5, L6, L10, L16 and the part of L9 that is not `generics`; MD-79) | L |
 | Generics and generation | L7, L30, L31, L32, S3 for generic items: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
 | Resolved nets and bundles | L21, L25: `Wire`, `Tribuf`, `Tran`, `Bidir` | L |
 | Unknown semantics | S6 (ABI), L53, L8 (L18, L19 closed by `unknown-semantics`; L51, L52 by `unknown-semantics-events`) | L |
@@ -397,14 +391,14 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
-| types#7 | L3 | `composite-values` | reached from a top, `smoothed` is `P0001` (the `const` table `TAPS`: an array in a const expression) and `mean` is `P0001` (a generic function over an array, L7) |
-| types#11 | L4 | `composite-values` | reached from a top, `area` is `P0001`: the enum `Shape` has variants with a payload |
+| types#7 | L7 | `generics` | reached from a top, `mean` is `P0001` (a generic function over the length of an array); `smoothed`, over the `const` table `TAPS`, runs |
+| types#11 | L4 | `generics` | reached from a top, `area` is `P0001`: the enum `Shape` has variants with a payload |
 | types#16 | L7 | `generics` | reached from a top, `reads_high` is `P0001`: the method `switches_at` of an `impl` on the enum `Family` |
-| types#17 | L4 | `composite-values` | reached from a top, `range_of` is `P0001` (the enum has no `#[derive(Repr)]`; its range pattern is accepted) and `mean` is `P0001` (a reference type, L3) |
+| types#17 | L4 | `generics` | reached from a top, `range_of` is `P0001` (the enum has no `#[derive(Repr)]`; its range pattern is accepted) and `mean` is `P0001` (a generic function over an array, L7) |
 | generics#1 | L7 | `generics` | the trait `Receiver` and its `impl`s are accepted and `Family::LEVELS` is read; a method (`switches_at`, the default `reads_high`) is `P0001` |
 | generics~872b633d | L7 | `generics` | a default body of a trait does not run: the method `reads_high` on `Family` is `P0001` |
 | generics#2 | L7 | `generics` | reached from a top, `pick`, `larger` and `overdrive` are `P0001`: a generic function |
-| generics#4 | L1 | `composite-values` | reached from a top, `in_tolerance` is `P0001`: a struct expression of the generic struct `Window` |
+| generics#4 | L7 | `generics` | reached from a top, `in_tolerance` is `P0001`: a struct expression of the generic struct `Window` |
 | generics#5 | L7 | `generics` | reached from a top, `dot` and `mean_of` are `P0001`: a generic function with a const parameter, over an array type |
 | generics#9 | L9 | `generics` | reached from a top, `mid_ramp` is `P0001` (a generic function with an `Fn` bound); `clean`, a call of a function value, runs |
 | values#8 | L53 | `unknown-semantics-events` | `handshake`, a `fn` that returns `Event`, is `P0001`: method `rise` on this receiver is not supported yet |

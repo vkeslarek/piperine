@@ -355,12 +355,28 @@ fn every_gallery_lists_a_std_item() {
     }
 }
 
-/// The gallery fences that write a form `composite-values` phase A lifted, with the text of the
-/// form: a `for` in a reaction (E.3) and a guarded arm of a `match` (E.4).
-const PHASE_A_FENCES: [(&str, &str); 2] = [("E.3", "for k in 1..N"), ("E.4", "_ if !baud_tick")];
+/// The gallery fences that write a form `composite-values` lifted, with the text of each form: a `for` in
+/// a reaction (E.3, phase A), a guarded arm of a `match` and the variants of an enum with a payload (E.4,
+/// phases A and B).
+const LIFTED_FENCES: [(&str, &[&str]); 2] = [("E.3", &["for k in 1..N"]), ("E.4", &["_ if !baud_tick", "Tx::Data { n }"])];
 
-/// How the type checker named the forms phase A lifted, before CV-01 to CV-07 (`types/unsupported.rs`).
-const LIFTED_FORMS: [&str; 7] = ["assignment", "`while` loop", "`loop`", "`for` loop", "`let mut` binding", "a match arm guard", "range pattern"];
+/// How the type checker named the forms phases A and B lifted, before CV-01 to CV-22 (`types/unsupported.rs`).
+const LIFTED_FORMS: [&str; 14] = [
+    "assignment",
+    "`while` loop",
+    "`loop`",
+    "`for` loop",
+    "`let mut` binding",
+    "a match arm guard",
+    "range pattern",
+    "struct expression",
+    "field access",
+    "tuple expression",
+    "array expression",
+    "index expression",
+    "a variant with a payload",
+    "`#[repr]`",
+];
 
 /// The modules `text` declares, by name.
 fn declared_modules(text: &str) -> Vec<String> {
@@ -373,14 +389,15 @@ fn declared_modules(text: &str) -> Vec<String> {
 
 #[test]
 fn the_fences_composite_values_lifted_are_checked() {
-    // CV-37 AC 2: a gallery fence that writes a form of phase A is held to the type checker, each of its
+    // CV-37 AC 2: a gallery fence that writes a form of phase A or B is held to the type checker, each of its
     // modules as the top: none of its refusals names a form `composite-values` lifted. (E.3 is stopped by
-    // its const generics first, `generics` L30; E.4 reaches its guarded arm and stops at the payload enum,
-    // phase B.)
+    // its const generics first, `generics` L30; E.4 writes the guarded arm and the payload enum of section 2.)
     let mut held = Vec::new();
     for g in galleries() {
-        let Some((_, form)) = PHASE_A_FENCES.iter().find(|(section, _)| *section == g.section) else { continue };
-        assert!(g.block.text.contains(form), "{}: the fence no longer writes `{form}`", g.section);
+        let Some((_, forms)) = LIFTED_FENCES.iter().find(|(section, _)| *section == g.section) else { continue };
+        for form in *forms {
+            assert!(g.block.text.contains(form), "{}: the fence no longer writes `{form}`", g.section);
+        }
         let text = assemble(&g.block.text, fixtures_of(&g.section));
         let design = build(&text);
         for module in declared_modules(&text) {

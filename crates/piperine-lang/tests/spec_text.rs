@@ -1873,3 +1873,20 @@ fn appendix_c2_states_the_spline_end_conditions() {
         assert!(algorithm.contains(fact), "C.2's row lacks \"{fact}\": {algorithm}");
     }
 }
+
+#[test]
+fn the_host_reads_composites_and_sets_a_leaf() {
+    // composite-values CV-21, CV-22, CV-18 (Q2 (c), D13): section 23.1 states how a host reads a composite
+    // value and sets a composite param
+    let host = spec("part_viii_host.md");
+    let text = flat(&section(&host, "### 23.1 ").replace("> ", ""));
+    for fact in [
+        "one column per dotted leaf in CSV and a plot",
+        "An enum with no payload reads as the name of its variant, not its tag",
+        "A printed path that names a leaf (`Top.st.n`, `Top.v[2]`) prints that leaf alone",
+        "A composite param is set by the path of one leaf (`Top.f.num[2]`, `Top.p.x`, `Top.t.0`), before the run",
+        "a false one is `E0317`, a path that names no leaf `E0801`",
+    ] {
+        assert!(text.contains(fact), "§23.1 lacks \"{fact}\"");
+    }
+}

@@ -1766,6 +1766,35 @@ integrated; cargo test -p piperine-parity --test source_commits --test source_re
 
 ---
 
+### MD-79: composite values are typed IR aggregates; every enum is an IR enum; known control prints plain Rust
+
+`composite-values` phases A and B (2026-11-21; the number follows MD-77, `integrated-tests`; MD-78 is
+`explicit-unknowns`'s, approved and not yet merged, and is left to it). It extends MD-64 (the IR) and MD-67
+(the pair in value code) and supersedes nothing.
+
+1. **The IR holds aggregates as types.** `ValueType::{Tuple, Array, Struct, Enum, Option}`, a type arena of
+   `TypeData` (name, MSL path, origin, fields or variants, derives) and `Constant::Aggregate` (an entry of an
+   arena of composite constants, so `Constant` stays `Copy`). Every enum is an IR enum, a unit one included; its
+   carried bytes are unchanged (the tag), and its variant names live in the arena, never in a net.
+2. **Control.** A known decision prints plain Rust; an unknown one prints `rt::Unrolled` and the merged tuple of
+   the locals it wrote (§3.3.3). Loops and recursion that place or contribute are unrolled at elaboration.
+3. **The ABI is unchanged.** A composite carrier, param or record field is one pin laid out by
+   `piperine_plan::CompositeLayout`: the parts' value bytes one after another, the first lowest and unpadded
+   (what `rt::flag::Carried` writes), then one known byte for the whole value (one flag per value, G6/S6); one
+   ABI field per leaf named by its dotted path, each holding that known byte; an array one field per element.
+   The layout is a function of the IR type alone (abi.md P4).
+4. **The host (Q2 (c), D13).** `piperine-api` decodes a composite pin through the arena (`CellShape`,
+   `CompositeCell`); the text table, record lines and JSON Lines write literal syntax (JSON nested), CSV and the
+   plot one column per dotted leaf, a printed path naming a leaf prints that leaf alone, and an enum with no
+   payload reads as its variant's name (a record field `Field::Variant`, a table cell `Cell::Text`). A composite
+   param is set by the path of one leaf before the run (`Top.f.num[2]=0.5`); its `where` is checked on the whole
+   value after the write (`E0317`).
+5. **Defaults taken while the user was away** (D1 to D20 of `design.md`, plus B1 to B10 of `tasks.md`'s Handoff).
+
+**Scope:** `crates/piperine-ir`, `piperine-plan`, `piperine-transpile`, `piperine-lang`, `piperine-api`,
+`piperine-cli`, `piperine-parity`, `docs/spec`, the Book, `GAPS.md`.
+**Status:** phases A and B delivered (2026-11-21); phases C and D (arrays of carriers, `f16`/`f128`) follow.
+
 ## Handoff Snapshot
 
 ### Feature - `solver-abi-integration` (2026-11-15)
