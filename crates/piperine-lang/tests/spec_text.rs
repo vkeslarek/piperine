@@ -2287,6 +2287,17 @@ fn part_v_rule_6_tests_the_step_that_reads_a_jump_with_the_first_order_estimate(
 }
 
 #[test]
+fn part_v_the_host_set_step_is_tested_and_only_the_retaken_step_is_exempt() {
+    // §15.2: the step that reads a host `set` is tested with the first-order estimate of rule 6; the
+    // step retaken to the same time after its crossings (rule 4) cannot be taken smaller and stays exempt.
+    let s = flat(&section(&spec("part_v_execution.md"), "### 15.2 "));
+    assert!(s.contains("That step is tested with the first-order estimate of rule 6, restarts the integrator"), "the host set paragraph");
+    assert!(!s.contains("with the exemption"), "the host set bullet no longer names an exemption");
+    assert!(!s.contains("That step is exempt from the truncation-error test"), "the set's step is tested");
+    assert!(s.contains("The retaken step is exempt from the truncation-error test and restarts the integrator"), "rule 4 keeps its exemption");
+}
+
+#[test]
 fn part_v_the_step_that_arrives_at_a_landing_is_an_ordinary_step() {
     // TP-04 AC 3: §15.2 "At `t`" and §15 S3 no longer exempt the arriving step.
     let text = spec("part_v_execution.md");

@@ -256,8 +256,8 @@ it depends on when the change is made:
   reads all of them: it restarts the integrator and is sized and tested by rule 6. A settle
   commit is a change due before the solve of `t_next` (§15 S3): the step that arrives at the
   next time point reads it, and rule 6 sizes and tests that step likewise.
-- **A host `set`** is read by the first step after `t`, with the exemption and the restarts
-  of the paragraph below.
+- **A host `set`** is read by the first step after `t`, with the restarts of the paragraph
+  below.
 
 When several changes occur at one `t`, in successive microsteps, the step that reads the first
 of them reads them all.
@@ -265,7 +265,7 @@ of them reads them all.
 **Host `set`.** A `set` due at `t` lands the solver on `t` but is not applied before the step
 that arrives there: that step is tested for truncation error like any other and does not read
 the set. The set applies after the step to `t` is accepted, after the settle phase (§15 step 5).
-The first step after `t` reads it. That step is exempt from the truncation-error test, restarts
+The first step after `t` reads it. That step is tested with the first-order estimate of rule 6, restarts
 the integrator, and its size restarts at 10⁻³ of the last step (Appendix C.2). A `set` of a
 param whose change moves the operating point (the solver's `OperatingPoint` invalidation strength, Appendix C.2)
 also retakes the step to `t` with the new value; the retaken step's solution replaces the
