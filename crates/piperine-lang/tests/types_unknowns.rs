@@ -54,7 +54,8 @@ fn level_is_typed_on_every_repr_type() {
 
 #[test]
 fn level_on_a_value_without_repr_is_refused() {
-    // A receiver without `Repr` (here an `Option`) has no `level` (§2): refused loudly, never typed.
+    // A flag read on an `Option` is refused loudly, never typed. The §2 table gives `Option<T>` a `Repr` (`1 + T::WIDTH`),
+    // so this is no missing `Repr`: the read has no lowering yet (GAPS L65, owned by `explicit-unknowns`, which removes flag reads).
     let (src, d) = diagnostics("", "let a = Some(1.0).level(0);");
     assert_eq!(codes_of(&d), ["P0001"], "{src}");
 }
