@@ -232,6 +232,22 @@ A mixed-signal transient of the buck converter takes about 6 million accepted st
 
 ---
 
+### P3: The counts say the rule they were taken under
+
+**User Story**: As a reader of the step counts, I want to know which landing rule produced them, so that the buck's counts are not read against a baseline taken under the other rule.
+
+**Why P3**: TP-01 AC 5 asked for the reference mode; the baseline of `diagnosis.md` section 8 is the reference mode's, and `buck_long` runs the default rule. Added by the verification round (finding F10); no approved criterion is edited.
+
+**TP-12** (the mode of the counts)
+
+**Acceptance Criteria**:
+
+1. WHEN `buck_long` prints the counts of TP-01 THEN it SHALL print the landing rule they were taken under, which is the solver's default (the observable rule) because the run sets none; the baseline of the reference mode is `diagnosis.md` section 8.
+
+**Independent Test**: `cargo test -p piperine-api --test buck_long`.
+
+---
+
 ## Edge Cases
 
 - WHEN two commits fall on the same tick and only the second microstep changes an analog-read carrier THEN the solver SHALL land on that tick once.
@@ -259,8 +275,9 @@ A mixed-signal transient of the buck converter takes about 6 million accepted st
 | TP-08 | P2: a step costs less | Tasks | In Tasks |
 | TP-09 | P1: nothing else moves | Tasks | In Tasks |
 | TP-10 | P3: the documents say what is true | Tasks | In Tasks |
+| TP-12 | P3: the counts say the rule they were taken under | Tasks | In Tasks |
 
-**Coverage:** 10 total, 10 mapped to tasks, 0 unmapped.
+**Coverage:** 11 total, 11 mapped to tasks, 0 unmapped.
 
 ---
 

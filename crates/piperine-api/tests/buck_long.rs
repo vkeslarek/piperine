@@ -11,6 +11,7 @@ use std::rc::Rc;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
+use piperine_digital_solver::landing::TimePointRule;
 use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table, TransientStatistics};
 use piperine_solver::protocol::{LandingCause, StepEnd};
 use piperine_transpile::Settings;
@@ -48,6 +49,8 @@ struct Start {
     wall: Duration,
     /// How the steps of the run were spent.
     statistics: TransientStatistics,
+    /// The landing rule the request set; `None` is the solver's own, the observable rule.
+    rule: Option<TimePointRule>,
 }
 
 /// The one run of the whole start of this target.
@@ -63,6 +66,7 @@ fn start() -> &'static Start {
             ..Overrides::default()
         };
         let spec = project.request(Some("startup"), &overrides).unwrap_or_else(|f| panic!("{f}"));
+        let rule = spec.options.time_point_rule;
         let mut session = Session::open(&project, &spec, &Settings { rustc: None, cache: cache.path().to_path_buf() }).unwrap_or_else(|f| panic!("{f}"));
         let checks = Rc::new(RefCell::new(Checks::default()));
         let base = HEAP.begin();
@@ -72,9 +76,9 @@ fn start() -> &'static Start {
         let peak = HEAP.peak_since(base);
         let checks = std::mem::take(&mut *checks.borrow_mut());
         let statistics = session.statistics().cloned().expect("a transient leaves its statistics");
-        let start = Start { table, checks, peak, wall, statistics };
+        let start = Start { table, checks, peak, wall, statistics, rule };
         eprintln!("{}", report(&start));
-        eprintln!("{}", statistics_report(&start.statistics));
+        eprintln!("{}", statistics_report(&start.statistics, start.rule));
         start
     })
 }
@@ -84,9 +88,14 @@ fn report(start: &Start) -> String {
     format!("buck whole start: {} rows, wall time {:.1} s, peak live heap {} B ({:.1} MiB)", start.table.rows.len(), start.wall.as_secs_f64(), start.peak, start.peak as f64 / (1024.0 * 1024.0))
 }
 
-/// One line per count of the run: the landings by cause, how every other accepted step ended,
+/// The name of the landing rule the counts were taken under.
+fn rule_name(rule: Option<TimePointRule>) -> String {
+    rule.map_or("default (observable)".to_string(), |rule| format!("{rule:?}"))
+}
+
+/// One line per count of the run, under the landing rule `rule`: the landings by cause, how every other accepted step ended,
 /// the rejections by cause, the retakes, the jump steps, the steps at `max_step` and the instants run.
-fn statistics_report(statistics: &TransientStatistics) -> String {
+fn statistics_report(statistics: &TransientStatistics, rule: Option<TimePointRule>) -> String {
     let (steps, analog) = (statistics.steps(), statistics.analog());
     let causes = [
         ("analog-read changed", LandingCause::AnalogReadChanged),
@@ -95,7 +104,7 @@ fn statistics_report(statistics: &TransientStatistics) -> String {
         ("irreversible", LandingCause::Irreversible),
         ("host waiter", LandingCause::HostWaiter),
     ];
-    let mut lines = vec![format!("buck statistics: accepted steps {}", steps.accepted())];
+    let mut lines = vec![format!("buck statistics: landing rule {}", rule_name(rule)), format!("buck statistics: accepted steps {}", steps.accepted())];
     for (name, cause) in causes {
         lines.push(format!("buck statistics: landings, {name}: {}", steps.landings(cause)));
     }
@@ -114,9 +123,12 @@ fn statistics_report(statistics: &TransientStatistics) -> String {
 
 #[test]
 fn the_statistics_of_the_whole_start_are_reported() {
-    // TP-01 AC 5: every count is printed, and the ends add up to the accepted steps
+    // TP-01 AC 5, TP-12 AC 1: every count is printed under the default landing rule, and the ends
+    // add up to the accepted steps
     let start = start();
-    let report = statistics_report(&start.statistics);
+    assert_eq!(start.rule, None, "the run takes the solver's default rule");
+    let report = statistics_report(&start.statistics, start.rule);
+    assert!(report.contains("landing rule default (observable)"), "{report}");
     eprintln!("{report}");
     let steps = start.statistics.steps();
     let ended: u64 = StepEnd::ALL.iter().map(|end| steps.ended(*end)).sum();

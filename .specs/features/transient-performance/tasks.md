@@ -230,7 +230,7 @@ Why this order: the statistics come first because every gate is stated in them. 
 **Where**: `crates/piperine-api/src/session.rs`
 **Depends on**: T4
 **Reuses**: `crates/piperine-api/tests/buck_long.rs::report`
-**Requirement**: TP-01, TP-06
+**Requirement**: TP-01, TP-06, TP-12
 
 **Done when**:
 
@@ -836,6 +836,9 @@ Proof: run grid | test parity_rc_transient ... ok
 
 **C48** - No parity file is edited on the branch (TP-09, AC 4; T23)
 Proof: `git diff --quiet origin/main -- crates/piperine-parity/tests crates/piperine-parity/src/contract.rs crates/piperine-cli/tests/twins.rs crates/piperine-solver/tests/parity_baseline.rs`
+
+**C49** - `buck_long` prints the landing rule its counts were taken under, the solver's default (TP-12, AC 1; fix round F10)
+Proof: run bucklong | test the_statistics_of_the_whole_start_are_reported ... ok
 
 ---
 
