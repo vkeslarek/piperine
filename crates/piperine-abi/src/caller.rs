@@ -229,16 +229,61 @@ impl Handle {
         seed: &[u8],
         jac: &mut [f64],
     ) -> Result<(), CallError> {
-        let shape = self.shape();
-        let (Some(f), Some(frame)) = (shape.functions.get(k as usize), self.inner.frames.get(k as usize)) else {
-            return Err(CallError::frame(format!("function {k} does not exist")));
-        };
-        let Some((reads, writes)) = &frame.cells else {
-            return Err(CallError::frame(format!("function {k} names a cell its shape does not have")));
-        };
+        let (reads, writes) = self.cells(k)?;
         check_cells("read", input.iter().map(|b| b.len()), reads)?;
         check_cells("write", output.iter().map(|b| b.len()), writes)?;
-        let n = f.partials.len();
+        let mut buffers = self.inner.calls.lock().unwrap_or_else(|e| e.into_inner());
+        buffers.input.clear();
+        buffers.input.extend(input.iter().map(|b| b.as_ptr()));
+        buffers.output.clear();
+        buffers.output.extend(output.iter_mut().map(|b| b.as_mut_ptr()));
+        self.invoke(k, &buffers, seed, jac)
+    }
+
+    /// [`eval`](Self::eval) over cells kept the way a caller that calls the same function every
+    /// iteration keeps them: `input` is the bytes of every read cell one after the other, each
+    /// as long as its cell, and `output` is one buffer per written cell. Nothing is allocated
+    /// once the handle has made a call.
+    pub fn eval_packed(
+        &self,
+        k: u32,
+        input: &[u8],
+        output: &mut [Vec<u8>],
+        seed: &[u8],
+        jac: &mut [f64],
+    ) -> Result<(), CallError> {
+        let (reads, writes) = self.cells(k)?;
+        let wanted: usize = reads.iter().sum();
+        if input.len() < wanted {
+            return Err(CallError::frame(format!("{} input bytes for {wanted} bytes of read cells", input.len())));
+        }
+        check_cells("write", output.iter().map(Vec::len), writes)?;
+        let mut buffers = self.inner.calls.lock().unwrap_or_else(|e| e.into_inner());
+        buffers.input.clear();
+        let mut at = 0;
+        for len in reads {
+            buffers.input.push(input[at..].as_ptr());
+            at += len;
+        }
+        buffers.output.clear();
+        buffers.output.extend(output.iter_mut().map(|b| b.as_mut_ptr()));
+        self.invoke(k, &buffers, seed, jac)
+    }
+
+    /// The lengths of the cells function `k` reads and writes.
+    fn cells(&self, k: u32) -> Result<(&[usize], &[usize]), CallError> {
+        let Some(frame) = self.inner.frames.get(k as usize) else {
+            return Err(CallError::frame(format!("function {k} does not exist")));
+        };
+        match &frame.cells {
+            Some((reads, writes)) => Ok((reads, writes)),
+            None => Err(CallError::frame(format!("function {k} names a cell its shape does not have"))),
+        }
+    }
+
+    /// Calls function `k` with the pointers in `buffers`, whose cells the caller checked.
+    fn invoke(&self, k: u32, buffers: &EvalBuffers, seed: &[u8], jac: &mut [f64]) -> Result<(), CallError> {
+        let n = self.shape().functions.get(k as usize).map_or(0, |f| f.partials.len());
         if seed.len() != n || jac.len() != n {
             return Err(CallError::frame(format!(
                 "function {k} declares {n} partials; seed has {}, jac {}",
@@ -246,11 +291,6 @@ impl Handle {
                 jac.len()
             )));
         }
-        let mut buffers = self.inner.calls.lock().unwrap_or_else(|e| e.into_inner());
-        buffers.input.clear();
-        buffers.input.extend(input.iter().map(|b| b.as_ptr()));
-        buffers.output.clear();
-        buffers.output.extend(output.iter_mut().map(|b| b.as_mut_ptr()));
         let mut note = empty_note();
         let frame = raw::Eval {
             size: size_of::<raw::Eval>() as u32,
@@ -261,11 +301,11 @@ impl Handle {
             note: &mut note,
         };
         // SAFETY: abi.md §3 Eval "Every pointer is non-null and has the length
-        // the shape says": checked above against the function's cells.
-        let s = unsafe { (self.inner.module.eval)(self.inner.instance, k, &frame) };
-        match s {
+        // the shape says": the caller checked the cells against the function's, and the
+        // buffers are locked for the call.
+        match unsafe { (self.inner.module.eval)(self.inner.instance, k, &frame) } {
             status::OK => Ok(()),
-            _ => Err(CallError::from_note(s, &note)),
+            s => Err(CallError::from_note(s, &note)),
         }
     }
 

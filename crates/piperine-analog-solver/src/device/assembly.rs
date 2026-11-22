@@ -692,20 +692,9 @@ pub(crate) fn run(
     for (slot, _) in &f.traces {
         st.out[*slot].fill(0);
     }
-    let mut at = 0;
-    let input: Vec<&[u8]> = f
-        .reads
-        .iter()
-        .map(|(_, len)| {
-            let cell = &scratch[at..at + len];
-            at += len;
-            cell
-        })
-        .collect();
     st.jac.fill(0.0);
-    let mut output: Vec<&mut [u8]> = st.out.iter_mut().map(Vec::as_mut_slice).collect();
     st.valid = false;
-    inst.handle.eval(f.k, &input, &mut output, &f.seed, &mut st.jac).map_err(|e| {
+    inst.handle.eval_packed(f.k, scratch, &mut st.out, &f.seed, &mut st.jac).map_err(|e| {
         device_error(format!("instance `{}`: function `{}` ({}): {e}", inst.path, f.name, f.origin))
     })?;
     st.read.clear();
