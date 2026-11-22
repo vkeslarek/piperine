@@ -27,3 +27,10 @@ serde_json = "1"
 name = "buck_long"
 path = "tests/buck_long.rs"
 test = false
+
+# Runs by name, not by `cargo test`: the digital-only throughput benchmark of `digital-performance`
+# (registered in `suite_hygiene.rs`; run it with `--release`).
+[[test]]
+name = "digital_bench"
+path = "tests/digital_bench.rs"
+test = false

@@ -147,6 +147,13 @@ cargo test -p piperine-cli --test buck --test book_buck
 cargo test -p piperine --test buck_scenarios --test book_buck
 ```
 
-They take about half an hour in a debug build (`buck_scenarios` alone 25 to 90 minutes; all of its 61 tests
+One more on-demand target is not a buck run: the digital-only throughput benchmark of
+`.specs/features/digital-performance/diagnosis.md` (a measurement, no check; it prints a table):
+
+```sh
+cargo test --release -p piperine-api --test digital_bench -- --nocapture
+```
+
+The buck targets take about half an hour in a debug build (`buck_scenarios` alone 25 to 90 minutes; all of its 61 tests
 passed on the last on-demand run). To check that they still compile without running them, add
 `--no-run` to each line.
