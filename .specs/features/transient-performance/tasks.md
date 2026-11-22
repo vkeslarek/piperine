@@ -843,9 +843,16 @@ Proof: `git diff --quiet origin/main -- crates/piperine-parity/tests crates/pipe
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none
-**Dispatched:** none - planning only (Opus, 2026-11-20). Implementation waits for `analog-operators` and `unknown-semantics-events` on main.
-**Walked:** not yet
+**Settled mid-build (B1, Sonnet 5.5 worker, 2026-11-22):**
+- Rebase precondition met: `origin/main` 754784a1 (analog-operators B1-B3, unknown-semantics-events B1-B4) merged into the branch (`8720fe70`), no conflicts.
+- T1 anchor moved: the landing test is in `instant.rs` `microsteps` as the plan said, but the cause must tell `ContinuousRead` from `DeclaredReach` already in T1, so `Analysis::samples` (T13's table) was added in T1 (`plan.rs`, computed beside `probes`, `reachability` now takes it). T13 keeps its three tests of the table and adds nothing else. The cause priority is analog-read changed, continuous read, declared reach, irreversible, host waiter. `TimePointRule::Observable` is defined and the default but nothing reads it before T15.
+- T3: the protocol's `Advance::Landing` carries the protocol's own `LandingCause` (not `time_point`); existing protocol tests changed `time_point: true/false` to `AnalogReadChanged/Irreversible` (the field rename the task allows). `AnalogSide::proposal_bound` has a default (`Controller`); the real side (`DeviceRun::bound`, set in `device_propose`) reports `Cap`, `Stop`, `MaxStep`. A step ending on `Advance::Final` counts as `StepEnd::Stop`; a retaken step (forced tick) ends as `Crossing`. `record_instant` counts the one instant run at each accepted step (not the retake or settle re-runs).
+- T4: `jump_retakes` counts rejected attempts of a step that reads a jump (any cause), `steps_at_max_step` counts accepted steps within one tick of `dt_max`. "A step forced over the tolerance reports `rejected_truncation` 1" is asserted as `>= 1` on the sine-driven RC (the number of truncation rejections of that fixture is not exactly 1).
+- T5: `piperine-api` `statistics.rs` (`TransientStatistics { steps, analog }`), `Session::statistics`. A transient's table has one row per accepted step after the first (asserted).
+- Measured baseline (T5, merged tree): 804 136 accepted steps for the 600 us start (the plan quotes ~675 000, taken before analog-operators T9), 151.9 s wall; 238 803 declared-reach-only landings, 1 182 analog-read landings, 0 continuous-read landings; see diagnosis.md section 8.
+- T10 check still owed (B2): whether `DdtState::q[0]` of a jump step is the delivered-values state.
+**Dispatched:** B1 (T1-T5) Sonnet worker, commits 31176933, d6c68cd8, 77fa2e24, 1e32788b, 50032f42. B2 not dispatched.
+**Walked:** not yet (the Verifier and the walk run after the last batch)
 
 ---
 
