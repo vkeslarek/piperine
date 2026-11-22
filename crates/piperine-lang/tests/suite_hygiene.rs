@@ -1228,7 +1228,7 @@ impl RemovedUnknownForms {
 
     /// Each test that pinned an unknown behavior, the test that supersedes it, and the task that writes it when it does
     /// not exist yet (`None`: it exists).
-    const SUCCESSORS: [(&'static str, &'static str, Option<&'static str>); 44] = [
+    const SUCCESSORS: [(&'static str, &'static str, Option<&'static str>); 45] = [
         ("a_function_and_a_definition_merge_an_unknown_if", "control_on_a_carrier_runs_one_path", None),
         ("an_unknown_if_runs_both_arms_without_a_fault", "control_on_a_carrier_runs_one_path", None),
         ("both_arms_committing_commit_their_merge", "control_on_a_carrier_runs_one_path", None),
@@ -1273,6 +1273,7 @@ impl RemovedUnknownForms {
         ("cast_to_a_tag_with_no_variant_is_unknown", "a_logic_converts_to_an_option_of_bits", Some("T46")),
         ("logic_builds_known_and_unknown_values", "logic_reads_a_four_state_pattern", Some("T45")),
         ("matches_bits_follows_its_table", "logic_reads_a_four_state_pattern", Some("T45")),
+        ("the_library_items_that_took_borrows_give_the_same_results", "logic_and_matches_bits_give_the_table_values", Some("T45")),
     ];
 }
 
