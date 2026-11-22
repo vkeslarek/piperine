@@ -307,7 +307,7 @@ fn simparam_flag_is_repeatable_and_a_non_number_is_p0010() {
     let merged = table.merged(&flags).unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(merged.options.session_parameters, [("gain".to_string(), 9.0), ("bias".to_string(), 0.5), ("extra".to_string(), 1.0)]);
     let faults = manifest_run("simparam = { gain = \"two\" }\n").expect_err("a string is no number");
-    assert!(format!("{faults:?}").contains("P0010"), "{faults:?}");
+    assert!(format!("{faults:?}").contains("P0010") && format!("{faults:?}").contains("`gain`"), "{faults:?}");
 }
 
 #[test]

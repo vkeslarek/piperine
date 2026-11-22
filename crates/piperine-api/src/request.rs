@@ -434,8 +434,11 @@ impl Source {
             "simparam" => {
                 let table = v.as_table().ok_or_else(|| wrong("a table of names and numbers"))?;
                 for (entry, n) in entries(table) {
-                    let Some(n) = number(n.get_ref()) else { return Err(wrong("a table of names and numbers")) };
-                    keys.simparam.push((entry.get_ref().to_string(), n));
+                    let Some(number) = number(n.get_ref()) else {
+                        let message = format!("`simparam` entry `{}` must be a number, found {}", entry.get_ref(), n.get_ref().type_str());
+                        return Err(self.fault(Some(span(entry.span())), message, "not a number"));
+                    };
+                    keys.simparam.push((entry.get_ref().to_string(), number));
                 }
             }
             _ => {

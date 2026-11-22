@@ -29,6 +29,8 @@ pub struct RunCommand {
     pub project: Option<PathBuf>,
     pub target: Option<String>,
     pub overrides: Overrides,
+    /// A flag value that is no number: the run fails with it (`P0010`) before it starts.
+    pub refused: Option<String>,
 }
 
 /// Why a run ended before its table: a failure of the request (a usage error when the command
@@ -153,6 +155,9 @@ impl RunCommand {
     }
 
     fn attempt(&self, out: &Out, err: &mut dyn Write) -> Result<Option<Record>, Stop> {
+        if let Some(message) = &self.refused {
+            return Err(Stop::Failed(Failure::Host { code: "P0010", message: message.clone() }));
+        }
         if self.lone().is_some() && self.overrides.analysis.is_none() {
             // CLI-03 AC 12: a lone file has no run table, so the flags must say what to run
             let message = "a lone file has no run table: name the analysis with --analysis (op, dc, ac, transient, tf, pz, sens, pss or noise)".to_string();

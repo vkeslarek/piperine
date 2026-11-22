@@ -51,6 +51,9 @@ enum ArgKind {
     Texts { value: &'static str },
     /// `--<id> <path>=<value>`, given any number of times.
     Param,
+    /// `--<id> <name>=<value>`, given any number of times; the value is checked when the run is
+    /// built, so a value that is no number is a `P0010` naming the entry, not a usage error.
+    Setting,
 }
 
 /// The parsers of the typed values of a flag.
@@ -80,6 +83,15 @@ impl Values {
             other => Values::real(other)?,
         };
         Ok((path.to_string(), value))
+    }
+
+    /// The name and the text of `--simparam`'s `text`, split at the first `=`.
+    fn setting(text: &str) -> Result<(String, String), String> {
+        let (name, value) = text.split_once('=').ok_or_else(|| format!("`{text}` is not <name>=<value>"))?;
+        if name.is_empty() {
+            return Err(format!("`{text}` names no session parameter"));
+        }
+        Ok((name.to_string(), value.to_string()))
     }
 }
 
@@ -141,7 +153,7 @@ const COMMANDS: &[CommandRow] = &[
             ArgRow { id: "maxmicro", kind: ArgKind::Count { value: "N" }, help: "the bound on the microsteps of one instant" },
             ArgRow { id: "max-steps", kind: ArgKind::Count { value: "N" }, help: "the budget of attempts a transient may make (default 2000000)" },
             ArgRow { id: "nodeset", kind: ArgKind::Param, help: "seed an operating point's first iterate: <node>=<value> (repeatable)" },
-            ArgRow { id: "simparam", kind: ArgKind::Param, help: "set a session parameter a design reads with simparam(): <name>=<value> (repeatable)" },
+            ArgRow { id: "simparam", kind: ArgKind::Setting, help: "set a session parameter a design reads with simparam(): <name>=<value> (repeatable)" },
             ArgRow { id: "input", kind: ArgKind::Text { value: "SOURCE" }, help: "tf, pz: the voltage source that excites" },
             ArgRow { id: "output", kind: ArgKind::Text { value: "NODE" }, help: "tf, pz: the node that is measured" },
             ArgRow { id: "wrt", kind: ArgKind::Texts { value: "PARAM" }, help: "sens: a param to differentiate by (repeatable)" },
@@ -188,7 +200,8 @@ const PROJECT: &str = "project";
 pub enum Invocation {
     Check { project: Option<PathBuf>, target: Option<PathBuf> },
     Build { project: Option<PathBuf>, runs: Vec<String>, verbose: bool },
-    Run { project: Option<PathBuf>, target: Option<String>, overrides: Overrides },
+    /// `refused` is the `P0010` of a flag value that is no number, raised when the command runs.
+    Run { project: Option<PathBuf>, target: Option<String>, overrides: Overrides, refused: Option<String> },
     Test { project: Option<PathBuf>, runs: Vec<String> },
     New { name: String },
     Clean { project: Option<PathBuf>, cache: bool },
@@ -251,6 +264,7 @@ impl Cli {
             ArgKind::Count { value } => arg.long(row.id).value_name(value).value_parser(Values::count).action(ArgAction::Set),
             ArgKind::Texts { value } => arg.long(row.id).value_name(value).action(ArgAction::Append),
             ArgKind::Param => arg.long(row.id).value_name("PATH=VALUE").value_parser(Values::param).action(ArgAction::Append),
+            ArgKind::Setting => arg.long(row.id).value_name("NAME=VALUE").value_parser(Values::setting).action(ArgAction::Append),
         }
     }
 
@@ -298,8 +312,24 @@ impl Cli {
             period: real("period"),
             tstab: real("tstab"),
             nodeset: m.get_many::<(String, f64)>("nodeset").map(|v| v.cloned().collect()).unwrap_or_default(),
-            simparam: m.get_many::<(String, f64)>("simparam").map(|v| v.cloned().collect()).unwrap_or_default(),
+            simparam: Cli::simparam_entries(m).0,
         }
+    }
+
+    /// The `--simparam` entries of `m` whose value is a number, in order, and the fault of the
+    /// first whose value is none (`P0010`, naming the entry).
+    fn simparam_entries(m: &clap::ArgMatches) -> (Vec<(String, f64)>, Option<String>) {
+        let mut readable = Vec::new();
+        let mut refused = None;
+        for (name, text) in m.get_many::<(String, String)>("simparam").into_iter().flatten() {
+            match Values::real(text) {
+                Ok(value) => readable.push((name.clone(), value)),
+                Err(why) => {
+                    refused.get_or_insert_with(|| format!("`--simparam {name}={text}`: {why}"));
+                }
+            }
+        }
+        (readable, refused)
     }
 
     /// The invocation `args` spell (the first is the program name), or `clap`'s error: a usage
@@ -321,7 +351,7 @@ impl Cli {
         Ok(match name {
             "check" => Invocation::Check { project: project(), target: text("target").map(PathBuf::from) },
             "build" => Invocation::Build { project: project(), runs: texts("runs"), verbose: flag("verbose") },
-            "run" => Invocation::Run { project: project(), target: text("target"), overrides: Cli::overrides(m) },
+            "run" => Invocation::Run { project: project(), target: text("target"), overrides: Cli::overrides(m), refused: Cli::simparam_entries(m).1 },
             "test" => Invocation::Test { project: project(), runs: texts("runs") },
             "new" => Invocation::New { name: text("name").unwrap_or_default() },
             "clean" => Invocation::Clean { project: project(), cache: flag("cache") },
@@ -339,7 +369,7 @@ impl Cli {
             Invocation::Check { project, target } => CheckCommand { project: project.clone(), target: target.clone() }.execute(out, err),
             Invocation::New { name } => NewCommand { name: name.clone() }.execute(out, err),
             Invocation::Test { project, runs } => TestCommand { project: project.clone(), runs: runs.clone() }.execute(out, err),
-            Invocation::Run { project, target, overrides } => RunCommand { project: project.clone(), target: target.clone(), overrides: overrides.clone() }.execute(out, err),
+            Invocation::Run { project, target, overrides, refused } => RunCommand { project: project.clone(), target: target.clone(), overrides: overrides.clone(), refused: refused.clone() }.execute(out, err),
             Invocation::Info { project, target } => InfoCommand { project: project.clone(), target: target.clone() }.execute(out, err),
             Invocation::Fmt { project, files, check } => FmtCommand { project: project.clone(), files: files.clone(), check: *check }.execute(out, err),
         }
