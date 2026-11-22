@@ -302,13 +302,13 @@ fn gaps_drops_what_msl_fixes_closed() {
     // `analog-structure` (nine loud rows and S4) after that, `unknown-semantics-events` (L52) after
     // that: 2 silent, 2 broken, 40 loud; the value-semantics amendment of the spec then added S7
     // (the front end is the earlier language): 3 silent; `params-and-io` closed L20 and L39 (38 loud);
-    // `resolved-nets` T10 closed L22 and L23 (36 loud); `explicit-unknowns` closed L59 and replaced S6 by S8 (35 loud, still 3 silent)
-    assert!(gaps.contains("3 silent, 2 broken, 35 loud"), "the counts of §9 follow");
+    // `resolved-nets` T10 closed L22 and L23 (36 loud); `explicit-unknowns` replaced S6 by S8 (36 loud, still 3 silent; L59's unknown clause is moot, its closure and `expect` clauses stay)
+    assert!(gaps.contains("3 silent, 2 broken, 36 loud"), "the counts of §9 follow");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
     assert_eq!(rows("## 3. Silent", "## 4."), 3, "three silent entries");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 35, "thirty-five loud rows");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 36, "thirty-six loud rows");
 }
 
 #[test]
@@ -399,9 +399,11 @@ fn gaps_closes_s6_and_g6_by_the_redesign() {
     // L18 and L19 stay closed; S6 and G6 closed with the redesign of `explicit-unknowns`; one
     // silent row, S8, says the implementation still carries the known flag, until phase A lands.
     let gaps = read("GAPS.md");
-    for closed in ["L18", "L19", "L59"] {
+    for closed in ["L18", "L19"] {
         assert!(!gaps.lines().any(|l| l.starts_with(&format!("| {closed} |"))), "{closed} is still a row");
     }
+    let l59 = gaps.lines().find(|l| l.starts_with("| L59 |")).expect("L59 keeps its non-literal closure and `expect` clauses");
+    assert!(l59.contains("when it is not a literal") && l59.contains("message that is not a string literal") && !l59.contains("unknown"), "{l59}");
     assert!(!gaps.contains("Unknown control is a fault, not a merge"), "the fault of an unknown `if` is still listed");
     assert!(!gaps.contains("### S6."), "S6 is closed by the redesign");
     assert!(!gaps.contains("- **G6 \u{2014} unknown integers are per value** (S6)."), "G6 is closed by the redesign");

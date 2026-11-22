@@ -405,7 +405,7 @@ Because nets are user natures and `Resolve` is generic over `X` (D18, D20), the 
 
 ### `GAPS.md`
 
-S6 and G6 (closed by redesign); the stdlib line of §1 (`known`, `known_or`, `is_known`, `high`); L3, L5 and L24 (the clauses "an index that may be unknown", "a loop under unknown control", which travel with nobody now); L58 (`merge`, `cast`, `same`, `Logic`); L59 (moot); the conformance rows of I §3 to §3.3, II §4 to §5 and VI §19 to §21; the planned-work row "Unknown semantics"; the Book rows digital#7, natures#3, core-std#6.
+S6 and G6 (closed by redesign); the stdlib line of §1 (`known`, `known_or`, `is_known`, `high`); L3, L5 and L24 (the clauses "an index that may be unknown", "a loop under unknown control", which travel with nobody now); L58 (`merge`, `cast`, `same`, `Logic`); L59 (its clause on an `Option` whose presence may be unknown is moot; the non-literal closure and `expect` message clauses stay open); the conformance rows of I §3 to §3.3, II §4 to §5 and VI §19 to §21; the planned-work row "Unknown semantics"; the Book rows digital#7, natures#3, core-std#6.
 
 ### Code
 

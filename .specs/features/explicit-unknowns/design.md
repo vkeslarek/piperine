@@ -505,7 +505,7 @@ It runs after this feature's phase A, so it builds the param pins once.
 | T30, T31 integer, enum and `Option` params | "not given" is `Option<T>` with `None`; no param is unknown |
 | T32 plan and printer: param pins | layouts without a known byte; an `Option` param is `{ some: BOOL, v }` |
 | T33 host: the text of the new types | `None` is written and printed as `None` |
-| T35 the Book's debouncer | the listing without `known_or(clean)`; `GAPS.md` L59 is moot and closes with phase A |
+| T35 the Book's debouncer | the listing without `known_or(clean)`; `GAPS.md` L59 loses its unknown clause; its closure and `expect` clauses stay |
 | T37 to T44 | keep |
 
 ## Components
