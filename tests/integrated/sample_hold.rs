@@ -103,7 +103,7 @@ fn each_sample_commits_the_code_of_its_held_voltage() {
         let at = SampleSchedule::clock().falling(k) + 0.3e-6;
         let committed = code.iter().rev().find(|(time, _)| *time <= at).map(|(_, value)| *value).expect("a row");
         println!("sample_hold: sample {k}: committed {committed:?}, expected {}", wanted[k - 1]);
-        assert_eq!(committed, Some(wanted[k - 1]), "the code of sample {k}");
+        assert_eq!(committed, wanted[k - 1], "the code of sample {k}");
     }
 }
 
@@ -116,14 +116,14 @@ fn the_code_appears_after_tconv_with_a_50_ns_done_strobe() {
     let clock = SampleSchedule::clock();
     for k in (1..=SampleSchedule::SAMPLES).filter(|k| *k > 1 && SampleSchedule::code_for(*k) != SampleSchedule::code_for(k - 1)) {
         let edge_row = SampleSchedule::row_of(clock.falling(k));
-        let before = code.iter().find(|(time, _)| SampleSchedule::row_of(*time) == edge_row + 19).and_then(|(_, value)| *value);
-        let after = code.iter().find(|(time, _)| SampleSchedule::row_of(*time) == edge_row + 20).and_then(|(_, value)| *value);
+        let before = code.iter().find(|(time, _)| SampleSchedule::row_of(*time) == edge_row + 19).map(|(_, value)| *value);
+        let after = code.iter().find(|(time, _)| SampleSchedule::row_of(*time) == edge_row + 20).map(|(_, value)| *value);
         println!("sample_hold: sample {k}: code {before:?} at +190 ns, {after:?} at +200 ns");
         assert_ne!(before, Some(SampleSchedule::code_for(k)), "the code of sample {k} is not there at +190 ns");
         assert_eq!(after, Some(SampleSchedule::code_for(k)), "the code of sample {k} is there at +200 ns");
     }
     let done = PrintedColumn::integers(&ran.table, "done");
-    let high: Vec<i64> = done.iter().filter(|(_, value)| *value == Some(1)).map(|(time, _)| SampleSchedule::row_of(*time)).collect();
+    let high: Vec<i64> = done.iter().filter(|(_, value)| *value == 1).map(|(time, _)| SampleSchedule::row_of(*time)).collect();
     let wanted: Vec<i64> = (1..=SampleSchedule::SAMPLES).flat_map(|k| (20..=24).map(move |offset| SampleSchedule::row_of(clock.falling(k)) + offset)).collect();
     println!("sample_hold: `done` high on {} rows, expected {}", high.len(), wanted.len());
     assert_eq!(high, wanted, "`done` is high on exactly rows +200 ns to +240 ns after each falling edge (TCONV {:e} s)", SampleSchedule::TCONV);
@@ -143,7 +143,7 @@ impl FineStrobe {
         let overrides = Overrides { stop: Some(1.5e-6), print_step: Some(FineStrobe::GRID), print: vec!["SampleHold.done".to_string()], ..Overrides::default() };
         let mut session = IntegratedPackage::open_with(SampleHoldScenario::RUN, &overrides, cache.path());
         let table = session.run(Rc::new(RefCell::new(RunRecords::default()))).unwrap_or_else(|failure| panic!("{failure}"));
-        PrintedColumn::integers(&table, "done").into_iter().filter(|(_, value)| *value == Some(1)).map(|(time, _)| time).collect()
+        PrintedColumn::integers(&table, "done").into_iter().filter(|(_, value)| *value == 1).map(|(time, _)| time).collect()
     }
 }
 

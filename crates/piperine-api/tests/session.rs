@@ -9,7 +9,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use piperine_api::{Built, Failure, Overrides, Project, RunSpec, Session};
+use piperine_api::{Built, Failure, Overrides, ParamValue, Project, Record, RecordSink, RunSpec, Session};
+
 use piperine_solver::prelude::{Context, TransientAnalysisOptions};
 use piperine_transpile::Settings;
 
@@ -164,23 +165,52 @@ fn a_run_compiles_once_and_never_during_an_analysis() {
 }
 
 #[test]
-fn a_top_with_discrete_in_ports_runs_with_their_zero_bytes() {
-    // spec edge 5: the port `en` is a net of the top that nothing writes (contract "The top")
+fn a_top_with_discrete_in_ports_starts_them_at_their_initial_values() {
+    // spec edge 5: the port `en` is a net of the top that nothing writes after its initial value
+    // `true` (contract "The top")
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let cache = tempfile::tempdir().expect("tmp");
     let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
     let text = format!(
-        "{DEVICES}\nmodule Top(in en: Bit) {{\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) {{ dc: 1.0 }};\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n}}\n"
+        "{DEVICES}\nmodule Top(in en: Bit = true) {{\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) {{ dc: 1.0 }};\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n}}\n"
     );
     let mut session = open(&text, &flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
     assert!(session.ir().net_at("Top.en").is_some(), "the port is a net of the top");
     let circuit = session.circuit().expect("a circuit");
     let result = circuit.transient(TransientAnalysisOptions::new(1e-9, 1e-10), Context::default()).expect("tran").solve().unwrap_or_else(|e| panic!("{e}"));
     // the first step is the operating point; a `Bit` is laid out as its value byte (abi.md P3):
-    // nothing wrote `en`, so it holds its zero byte
+    // nothing wrote `en` after its initial value, so it holds `true`
     let first = result.get(0).expect("the operating point");
     let en = first.digital_named("Top.en").expect("the net `Top.en` in the result");
-    assert_eq!(en.get(0), Some(&0), "`en` holds its zero byte: {en:?}");
+    assert_eq!(en.get(0), Some(&1), "`en` holds its initial value: {en:?}");
+}
+
+#[test]
+fn an_undriven_top_port_without_default_refuses_the_analysis() {
+    // EU-04 (§3.3.4): an `in` port with no initial value, no `Default` and no value from the host
+    // when the analysis starts refuses it with `E0187` naming the port; a drive at 0 gives it its
+    // first value and the analysis runs
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let cache = tempfile::tempdir().expect("tmp");
+    let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
+    let text = format!(
+        "{DEVICES}\nmodule Top(in en: Bit) {{\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) {{ dc: 1.0 }};\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n}}\n"
+    );
+    let mut refused = open(&text, &flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
+    match refused.run(std::rc::Rc::new(std::cell::RefCell::new(NoRecords))) {
+        Err(Failure::Host { code: "E0187", message }) => assert!(message.contains("`en`"), "the port is named: {message}"),
+        other => panic!("E0187 naming `en`, found {other:?}"),
+    }
+    let mut driven = open(&text, &flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
+    driven.drive("en", ParamValue::Bool(true), 0.0).expect("a drive at 0");
+    driven.run(std::rc::Rc::new(std::cell::RefCell::new(NoRecords))).unwrap_or_else(|f| panic!("{f}"));
+}
+
+/// A sink that keeps no record.
+struct NoRecords;
+
+impl RecordSink for NoRecords {
+    fn record(&mut self, _record: &Record) {}
 }
 
 #[test]

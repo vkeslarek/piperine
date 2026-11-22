@@ -325,11 +325,13 @@ fn e0187_a_signal_with_no_first_value_and_no_default_is_refused() {
 }
 
 #[test]
-fn an_undriven_top_level_in_port_with_no_default_is_not_refused_yet() {
-    // values~37a548f2 (`unraised`, GAPS.md S8, task T38): the analysis does not refuse an undriven top-level `in`
-    // port of a type with no default, it runs. The test fails when the refusal exists
-    let port = Transient::ran(&Model::written("undriven.msl", "module Top(in b: Bit<u8>) { }\ndigital for Top { on at(1u) { emit!(\"p\", t = now()); } }\n"), "Top", 2e-6);
-    assert_eq!(port.stream("p").len(), 1, "an undriven in port of a type with no default still runs");
+fn an_undriven_top_level_in_port_with_no_default_is_refused() {
+    // values~37a548f2: a top-level `in` port that nothing drives starts at its type's default (here `None`); for a type
+    // with no default, such as `Bit<u8>`, the run refuses to start (E0187) and names the port
+    let none = Transient::ran(&Model::written("undriven_none.msl", "module Top(in b: Bit<Option<u8>>) { }\ndigital for Top { on at(1u) { emit!(\"p\", t = now()); } }\n"), "Top", 2e-6);
+    assert_eq!(none.stream("p").len(), 1, "an undriven in port of type Option starts at None and runs");
+    let refused = Faulty::running("values~37a548f2", "module Top(in b: Bit<u8>) { }\ndigital for Top { on at(1u) { emit!(\"p\", t = now()); } }\n", Faulty::operating_point_of("Top"));
+    assert!(refused.first("E0187").message.contains("the `in` port `b` of the top `Top` has no initial value, no `Default`"), "{}", refused.first("E0187").message);
 }
 
 #[test]

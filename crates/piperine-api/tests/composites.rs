@@ -196,9 +196,9 @@ fn enum_names_live_in_the_ir_not_in_the_net_bytes() {
     let ir = run.session.ir();
     let mode = ir.top().body().carriers().iter().find(|c| c.name == "mode").expect("the carrier mode").ty.clone();
     let shape = CellShape::of(ir, &mode).expect("a shape");
-    assert_eq!(shape.decode(&[1, 1]).expect("decodes"), Cell::Text("Regulate".into()), "tag 1, known: the second variant");
-    assert_eq!(shape.decode(&[2, 1]).expect("decodes"), Cell::Text("Fault".into()));
-    assert_eq!(shape.decode(&[3, 1]).expect("decodes"), Cell::Unknown, "tag 3 names no variant");
+    assert_eq!(shape.decode(&[1]).expect("decodes"), Cell::Text("Regulate".into()), "tag 1: the second variant");
+    assert_eq!(shape.decode(&[2]).expect("decodes"), Cell::Text("Fault".into()));
+    assert!(shape.decode(&[3]).is_err(), "tag 3 names no variant: a failure, never a guess");
     let names: Vec<String> = match &shape {
         CellShape::Enum { variants, tag_width, .. } => {
             assert_eq!(*tag_width, 1, "the net holds a one-byte tag");

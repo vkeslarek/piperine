@@ -40,9 +40,9 @@ mod tests {
     #[test]
     fn a_cell_with_a_comma_or_a_quote_is_quoted() {
         // RFC 4180: the cell is wrapped in quotes and its quotes are doubled
-        let table = Table { columns: vec!["a,b".into(), "say \"x\"".into()], rows: vec![vec![Cell::Real(1.0), Cell::Unknown]] };
+        let table = Table { columns: vec!["a,b".into(), "say \"x\"".into()], rows: vec![vec![Cell::Real(1.0), Cell::Bool(true)]] };
         let mut out = Vec::new();
         CsvTable::write(&table, &mut out).expect("a vector takes writes");
-        assert_eq!(String::from_utf8(out).expect("text"), "\"a,b\",\"say \"\"x\"\"\"\n1.000000e0,x\n");
+        assert_eq!(String::from_utf8(out).expect("text"), "\"a,b\",\"say \"\"x\"\"\"\n1.000000e0,true\n");
     }
 }

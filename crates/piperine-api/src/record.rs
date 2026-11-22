@@ -50,8 +50,6 @@ pub enum Field {
     Int(i128),
     /// A text literal of the site.
     Text(String),
-    /// A value whose known byte is clear.
-    Unknown,
     /// The name of the variant an enum with no payload holds (CV-22).
     Variant(String),
     /// A tuple, an array, a struct, an enum or an `Option`: the tree of its parts.
@@ -199,7 +197,6 @@ impl Field {
             Cell::Bool(v) => Field::Bool(v),
             Cell::Int(v) => Field::Int(v),
             Cell::Text(v) => Field::Variant(v),
-            Cell::Unknown => Field::Unknown,
             Cell::Composite(v) => Field::Composite(v),
         }
     }

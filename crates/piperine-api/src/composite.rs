@@ -136,16 +136,18 @@ impl CellShape {
         }
     }
 
-    /// The value of a pin's `bytes`: `Cell::Unknown` when an enum's tag names no variant (§2 rule
-    /// 9), the variant's bare name for an enum with no payload, a `Cell::Composite` for any
-    /// other. A length shorter than the value is a `Failure`.
+    /// The value of a pin's `bytes`: the variant's bare name for an enum with no payload, a
+    /// `Cell::Composite` for any other (an `Option` is `None` or `Some` of its payload). A length
+    /// shorter than the value, or a tag that names no variant, is a `Failure`, never a guess.
     pub fn decode(&self, bytes: &[u8]) -> Result<Cell, Failure> {
         let width = self.width();
         if bytes.len() < width {
             return Err(Failure::Backend(format!("cannot decode a composite value of {width} bytes from {} bytes", bytes.len())));
         }
         let mut at = 0;
-        let Some(read) = self.read(bytes, &mut at) else { return Ok(Cell::Unknown) };
+        let Some(read) = self.read(bytes, &mut at) else {
+            return Err(Failure::Backend(format!("cannot decode a composite value from {bytes:?}: an enum's tag names no variant")));
+        };
         Ok(match (&read, self.is_unit_enum()) {
             (CompositeCell::Variant { variant, .. }, true) => Cell::Text(variant.clone()),
             (CompositeCell::Scalar(cell), _) => cell.clone(),
@@ -391,7 +393,6 @@ mod tests {
                 Cell::Bool(v) => v.to_string(),
                 Cell::Int(v) => v.to_string(),
                 Cell::Text(v) => v.clone(),
-                Cell::Unknown => "x".into(),
                 Cell::Composite(_) => "composite".into(),
             }
         }
@@ -409,12 +410,12 @@ mod tests {
     }
 
     #[test]
-    fn an_enum_reads_its_variant_name_and_a_tag_no_variant_names_reads_unknown() {
+    fn an_enum_reads_its_variant_name_and_a_tag_no_variant_names_is_a_failure() {
         let Cell::Composite(value) = Shapes::tx().decode(&[1, 5]).expect("decodes") else { panic!("a composite") };
         assert_eq!(value.literal(&Shapes::text), "Tx::Data { n: 5 }");
         assert_eq!(value.leaves().iter().map(|(n, c)| format!("{n}={}", Shapes::text(c))).collect::<Vec<_>>(), ["=Data", "Data.n=5"]);
         assert_eq!(value.json(&Shapes::text, &|s| format!("\"{s}\"")), "{\"Data\":{\"n\":5}}");
-        assert_eq!(Shapes::tx().decode(&[2, 0]).expect("decodes"), Cell::Unknown, "tag 2 names no variant");
+        assert!(Shapes::tx().decode(&[2, 0]).is_err(), "tag 2 names no variant: a failure, never a guess");
         let units = CellShape::Enum {
             name: "Mode".into(),
             tag_width: 1,

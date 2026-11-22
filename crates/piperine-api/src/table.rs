@@ -21,8 +21,6 @@ pub enum Cell {
     Int(i128),
     /// A name, such as the signal column of an operating point.
     Text(String),
-    /// A discrete value whose known byte is clear.
-    Unknown,
     /// A tuple, an array, a struct, an enum with a payload or an `Option`: the tree of its parts
     /// (`CompositeCell`), which the formats write as a literal or as leaves.
     Composite(Box<CompositeCell>),
@@ -103,8 +101,8 @@ impl Table {
     /// `<column>.<leaf>` (`<column>[k]` for an element, `<column>` itself for an enum's variant, whose
     /// payload leaves are `<column>.<Variant>.<field>`): the form CSV and a plot need (D13). The leaves
     /// of a column are those of every row, in the order each first appears; a row a leaf does not
-    /// exist in (another variant, an unknown value in a leaf column of a known one) shows an empty
-    /// text, an unknown value `x` in every leaf. `with_text` keeps the leaves that are text (a
+    /// exist in (another variant, the `value` of an absent `Option`) shows an empty text.
+    /// `with_text` keeps the leaves that are text (a
     /// variant's name); a plot has no use for them.
     pub fn expanded(&self, with_text: bool) -> Table {
         let mut columns = Vec::new();
@@ -138,10 +136,9 @@ impl Table {
                     .iter()
                     .map(|(c, leaf)| match (leaf, row.get(*c)) {
                         (None, Some(cell)) => cell.clone(),
-                        (Some(_), Some(Cell::Unknown)) => Cell::Unknown,
                         (Some(leaf), Some(Cell::Composite(value))) => value.leaf(leaf).unwrap_or_else(|| Cell::Text(String::new())),
                         (Some(_), _) => Cell::Text(String::new()),
-                        (None, None) => Cell::Unknown,
+                        (None, None) => Cell::Text(String::new()),
                     })
                     .collect()
             })
@@ -347,7 +344,7 @@ impl Table {
                     _ if times[lo] == at || at > last => low.clone(),
                     (Cell::Real(a), Some(next)) => match &next[column] {
                         Cell::Real(b) => Cell::Real(a + (b - a) * (at - times[lo]) / (times[lo + 1] - times[lo])),
-                        _ => Cell::Unknown,
+                        _ => low.clone(),
                     },
                     (other, _) => other.clone(),
                 };
@@ -415,17 +412,18 @@ mod tests {
         let grid = table.on_grid(1.0, 0.0, 2.0).expect("grid");
         assert_eq!(grid.rows[1], vec![Cell::Real(1.0), Cell::Real(9.0), Cell::Bool(false), Cell::Int(10)]);
         assert_eq!(grid.rows[2], vec![Cell::Real(2.0), Cell::Real(3.0), Cell::Bool(true), Cell::Int(20)]);
-        // an unknown stays unknown: at 0.5 between a real and an unknown, and a held unknown
+        // a real is interpolated between two steps and a bool is held: at 0.5 between 1.0 and 3.0
+        // the real is 2.0 and the bool is still false
         let table = Table {
             columns: vec!["time".into(), "v".into(), "b".into()],
             rows: vec![
-                vec![Cell::Real(0.0), Cell::Real(1.0), Cell::Unknown],
-                vec![Cell::Real(1.0), Cell::Unknown, Cell::Bool(true)],
+                vec![Cell::Real(0.0), Cell::Real(1.0), Cell::Bool(false)],
+                vec![Cell::Real(1.0), Cell::Real(3.0), Cell::Bool(true)],
             ],
         };
         let grid = table.on_grid(0.5, 0.0, 1.0).expect("grid");
-        assert_eq!(grid.rows[1], vec![Cell::Real(0.5), Cell::Unknown, Cell::Unknown]);
-        assert_eq!(grid.rows[2], vec![Cell::Real(1.0), Cell::Unknown, Cell::Bool(true)]);
+        assert_eq!(grid.rows[1], vec![Cell::Real(0.5), Cell::Real(2.0), Cell::Bool(false)]);
+        assert_eq!(grid.rows[2], vec![Cell::Real(1.0), Cell::Real(3.0), Cell::Bool(true)]);
     }
 
     #[test]

@@ -79,7 +79,8 @@ impl Recorder {
                 Column::Unknown { .. } | Column::Param { .. } | Column::Held { .. } => {}
             }
         }
-        let held = vec![Cell::Unknown; columns.len()];
+        // every net column is seeded by the first step, and no other column reads `held`
+        let held = vec![Cell::Real(0.0); columns.len()];
         Recorder { columns, labels, from, grid: None, rows: Vec::new(), by_path, held, changes: Vec::new(), applied: 0, started: false, pending: Vec::new(), failure: None, reached: None }
     }
 
@@ -248,7 +249,7 @@ impl Recorder {
                 (Column::Net { .. } | Column::Shaped { .. }, _) => self.held[i].clone(),
                 (Column::Unknown { .. }, Some((t0, before))) if at != time => match (&before[i], b) {
                     (Cell::Real(a), Cell::Real(b)) => Cell::Real(a + (b - a) * (at - t0) / (time - t0)),
-                    _ => Cell::Unknown,
+                    (before, _) => before.clone(),
                 },
                 (Column::Held { held }, _) => held.cell_at(at),
                 (Column::Unknown { .. } | Column::Param { .. }, _) => b.clone(),
@@ -520,7 +521,6 @@ mod tests {
         let mut out = vec![0u8; layout.size as usize];
         let at = field.offset as usize;
         match cell {
-            Cell::Unknown => return out,
             Cell::Bool(v) => out[at] = u8::from(*v),
             Cell::Real(v) => out[at..at + 8].copy_from_slice(&v.to_le_bytes()),
             Cell::Int(v) => out[at..at + 4].copy_from_slice(&(*v as i32).to_le_bytes()),

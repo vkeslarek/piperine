@@ -29,7 +29,7 @@ fn settings() -> Settings {
 
 /// A source, a resistor, a module whose structure a param selects, and a counter that reads two
 /// of the top's inputs; `Top` holds the analog part and the counter.
-const DESIGN: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\nmodule Counter(in clk: Bit, in level: Bit<u8>, out count: Bit<u8> = 0) {}\ndigital for Counter {\n    on clk.rise() {\n        count <- count + 1;\n        emit!(\"edge\", t = now(), count = count, level = level);\n        emit!(\"tick\", n = count);\n    }\n}\nmodule Top(in clk: Bit, in level: Bit<u8>, out count: Bit<u8>) {\n    signal a: Electrical;\n    signal armed: Bit = false;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n    let ctr = Counter(clk, level, count);\n}\n";
+const DESIGN: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\nmodule Counter(in clk: Bit, in level: Bit<u8>, out count: Bit<u8> = 0) {}\ndigital for Counter {\n    on clk.rise() {\n        count <- count + 1;\n        emit!(\"edge\", t = now(), count = count, level = level);\n        emit!(\"tick\", n = count);\n    }\n}\nmodule Top(in clk: Bit = false, in level: Bit<u8> = 0, out count: Bit<u8>) {\n    signal a: Electrical;\n    signal armed: Bit = false;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n    let ctr = Counter(clk, level, count);\n}\n";
 
 fn session(analysis: &str, extra: Overrides) -> Session {
     let dir = tempfile::tempdir().expect("tmp");
@@ -70,7 +70,8 @@ fn field<'a>(record: &'a Record, name: &str) -> &'a Field {
 #[test]
 fn a_drive_at_zero_is_the_initial_value() {
     // HII-12 AC 1 (§23.1 rule 4): the value driven before the run is the port's initial value, so
-    // an operating point reads it; HII-12 AC 5 (rule 9): a port never driven holds its zero bytes
+    // an operating point reads it; HII-12 AC 5 (rule 9): a port never driven keeps the initial
+    // value its declaration gives
     let mut driven = session("op", Overrides { print: vec!["clk".into(), "level".into()], ..Overrides::default() });
     driven.drive("clk", ParamValue::Bool(true), 0.0).expect("drive clk");
     driven.drive("Top.level", ParamValue::Int(5), 0.0).expect("drive level, written in full");
@@ -129,9 +130,9 @@ fn a_drive_of_the_wrong_type_is_e0802() {
 }
 
 #[test]
-fn an_undriven_top_input_holds_its_zero_bytes() {
+fn an_undriven_top_input_keeps_its_initial_value() {
     // HII-12 AC 5 (§23.1 rule 9): a transient whose host drives `level` and never `clk` has no
-    // edge on `clk`, and `clk` holds its zero bytes in every row
+    // edge on `clk`, and `clk` keeps its initial value in every row
     let mut s = transient(1e-6, &["clk", "level"]);
     s.drive("level", ParamValue::Int(3), 0.0).expect("level");
     let (table, records) = run(&mut s).unwrap_or_else(|f| panic!("{f}"));

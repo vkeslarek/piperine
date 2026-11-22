@@ -92,7 +92,7 @@ impl Levels {
     /// The rows of the column `name` of the run's table.
     fn of(name: &str) -> Vec<(f64, i128)> {
         let ran = Suite::get().ran(HalfBridgeScenario::RUN);
-        PrintedColumn::integers(&ran.table, name).into_iter().map(|(time, value)| (time, value.unwrap_or_else(|| panic!("`{name}` is unknown at {time:e} s")))).collect()
+        PrintedColumn::integers(&ran.table, name)
     }
 
     /// The print rows on which `rows` goes from `from` to `to`, as row indices.

@@ -66,12 +66,13 @@ impl Metadata {
                 } else {
                     None
                 };
-                let value = match (instance.param(i), current) {
-                    _ if composite.is_some() => composite.unwrap_or(Cell::Unknown),
-                    (Some(Constant::Bool(_)), Some(now)) => Cell::Bool(now != 0.0),
-                    (Some(Constant::Int(_)), Some(now)) => Cell::Int(now as i128),
-                    (Some(_), Some(now)) => Cell::Real(now),
-                    _ => Cell::Unknown,
+                let value = match (composite, instance.param(i), current) {
+                    (Some(value), _, _) => value,
+                    (None, Some(Constant::Bool(_)), Some(now)) => Cell::Bool(now != 0.0),
+                    (None, Some(Constant::Int(_)), Some(now)) => Cell::Int(now as i128),
+                    (None, Some(_), Some(now)) => Cell::Real(now),
+                    // a param with no default holds no value until a placement gives it one
+                    (None, _, _) => Cell::Text(String::new()),
                 };
                 params.push(ParamInfo {
                     name: param.name.clone(),

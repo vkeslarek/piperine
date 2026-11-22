@@ -12,7 +12,7 @@ impl JsonRecord {
     /// `{"time":..,"instance":"..","stream":"..","fields":{..}}` and a line break. A real is a
     /// JSON number in Rust's shortest form that reads back as the same `f64` (a real JSON cannot
     /// hold, NaN or an infinity, is the string `"NaN"`, `"inf"` or `"-inf"`), a `bool` a JSON
-    /// boolean, an integer a JSON number, a text a JSON string and an unknown value `null`.
+    /// boolean, an integer a JSON number, a text a JSON string and an absent `Option` value `null`.
     pub fn write(record: &Record, out: &mut dyn Write) -> io::Result<()> {
         write!(out, "{{\"time\":{},\"instance\":{},\"stream\":{},\"fields\":{{", JsonRecord::real(record.time), JsonRecord::string(&record.instance), JsonRecord::string(&record.stream))?;
         for (i, (name, field)) in record.fields.iter().enumerate() {
@@ -24,7 +24,6 @@ impl JsonRecord {
                 Field::Bool(v) => v.to_string(),
                 Field::Int(v) => v.to_string(),
                 Field::Text(v) | Field::Variant(v) => JsonRecord::string(v),
-                Field::Unknown => "null".to_string(),
                 Field::Composite(v) => v.json(&JsonRecord::scalar, &JsonRecord::string),
             };
             write!(out, "{}:{value}", JsonRecord::string(name))?;
@@ -39,7 +38,7 @@ impl JsonRecord {
             Cell::Bool(v) => v.to_string(),
             Cell::Int(v) => v.to_string(),
             Cell::Text(v) => JsonRecord::string(v),
-            Cell::Unknown | Cell::Composite(_) => "null".to_string(),
+            Cell::Composite(_) => "null".to_string(),
         }
     }
 
@@ -76,6 +75,7 @@ impl JsonRecord {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use piperine_api::CompositeCell;
 
     fn line(record: &Record) -> String {
         let mut out = Vec::new();
@@ -97,12 +97,12 @@ mod tests {
                 ("n".into(), Field::Int(-7)),
                 ("big".into(), Field::Int(u64::MAX as i128)),
                 ("kind".into(), Field::Text("require".into())),
-                ("lost".into(), Field::Unknown),
+                ("absent".into(), Field::Composite(Box::new(CompositeCell::Option(None)))),
             ],
         };
         assert_eq!(
             line(&record),
-            "{\"time\":1e-6,\"instance\":\"Step.mon\",\"stream\":\"trip\",\"fields\":{\"v\":0.5,\"ok\":true,\"n\":-7,\"big\":18446744073709551615,\"kind\":\"require\",\"lost\":null}}\n"
+            "{\"time\":1e-6,\"instance\":\"Step.mon\",\"stream\":\"trip\",\"fields\":{\"v\":0.5,\"ok\":true,\"n\":-7,\"big\":18446744073709551615,\"kind\":\"require\",\"absent\":null}}\n"
         );
         // a record with no field has an empty object
         let bare = Record { time: 0.0, instance: "T".into(), stream: "s".into(), fields: vec![] };

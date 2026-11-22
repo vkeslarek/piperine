@@ -11,7 +11,7 @@ pub struct RecordLine;
 
 impl RecordLine {
     /// `@<time> <instance> <stream> <field>=<value> ...`, one space between fields; a text in
-    /// double quotes, an unknown value as `x`.
+    /// double quotes, an absent `Option` value as `None`.
     pub fn write(record: &Record, out: &mut dyn Write) -> io::Result<()> {
         write!(out, "@{} {} {}", Number::text(&Cell::Real(record.time)), record.instance, record.stream)?;
         for (name, field) in &record.fields {
@@ -21,7 +21,6 @@ impl RecordLine {
                 Field::Int(v) => Number::text(&Cell::Int(*v)),
                 Field::Text(v) => format!("\"{v}\""),
                 Field::Variant(v) => v.clone(),
-                Field::Unknown => Number::text(&Cell::Unknown),
                 Field::Composite(v) => Number::text(&Cell::Composite(v.clone())),
             };
             write!(out, " {name}={value}")?;
@@ -33,6 +32,7 @@ impl RecordLine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use piperine_api::CompositeCell;
 
     fn line(record: &Record) -> String {
         let mut out = Vec::new();
@@ -48,7 +48,7 @@ mod tests {
     fn a_record_is_one_line() {
         // CLI-06 AC 2: `@<time> <instance path> <stream> <field>=<value> ...`; the lines are the
         // Book's (chapter 13): a real, a text in double quotes (AC 4), a bool, an integer, an
-        // unknown as `x` (AC 5), and a record with no field
+        // an absent `Option` as `None` (AC 5), and a record with no field
         let trip = record(6.931472e-7, "Step.mon", "trip", vec![("v", Field::Real(0.5))]);
         assert_eq!(line(&trip), "@6.931472e-7 Step.mon trip v=5.000000e-1\n");
         let check = record(
@@ -58,8 +58,9 @@ mod tests {
             vec![("kind", Field::Text("require".into())), ("name", Field::Text("crossed_upward".into())), ("pass", Field::Bool(true))],
         );
         assert_eq!(line(&check), "@6.931472e-7 Step.mon checks kind=\"require\" name=\"crossed_upward\" pass=true\n");
-        let lost = record(5e-7, "AdderTop.add", "lost", vec![("t", Field::Real(5e-7)), ("a", Field::Int(3)), ("b", Field::Unknown)]);
-        assert_eq!(line(&lost), "@5.000000e-7 AdderTop.add lost t=5.000000e-7 a=3 b=x\n");
+        let absent = Field::Composite(Box::new(CompositeCell::Option(None)));
+        let lost = record(5e-7, "AdderTop.add", "lost", vec![("t", Field::Real(5e-7)), ("a", Field::Int(3)), ("b", absent)]);
+        assert_eq!(line(&lost), "@5.000000e-7 AdderTop.add lost t=5.000000e-7 a=3 b=None\n");
         assert_eq!(line(&record(0.0, "Top", "tick", vec![])), "@0.000000e0 Top tick\n");
     }
 }

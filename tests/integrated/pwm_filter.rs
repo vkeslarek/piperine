@@ -129,11 +129,11 @@ impl PwmReference {
 struct PrintedSides;
 
 impl PrintedSides {
-    /// The pair of each row of the run's table, row 0 first; panics on an unknown cell.
+    /// The pair of each row of the run's table, row 0 first.
     fn of(ran: &piperine_parity::scenario::CompletedRun) -> Vec<(i128, i128)> {
         let high = PrintedColumn::integers(&ran.table, "hs");
         let low = PrintedColumn::integers(&ran.table, "ls");
-        high.iter().zip(&low).map(|((time, high), (_, low))| (high.unwrap_or_else(|| panic!("hs unknown at {time:e} s")), low.unwrap_or_else(|| panic!("ls unknown at {time:e} s")))).collect()
+        high.iter().zip(&low).map(|((_, high), (_, low))| (*high, *low)).collect()
     }
 
     /// The runs of equal pairs in rows `from..to` of `pairs`, as `(pair, length)`.
@@ -211,13 +211,13 @@ fn the_driven_duty_is_latched_at_the_next_wrap() {
     let clock = PwmReference::clock();
     for period in [30, 31] {
         let (from, to) = PrintedSides::period_rows(period);
-        let rows = high[from..to].iter().filter(|(_, value)| *value == Some(1)).count();
+        let rows = high[from..to].iter().filter(|(_, value)| *value == 1).count();
         println!("pwm_filter: the period of the wrap at {:e} s holds {rows} high-side rows", clock.rising(from));
         assert_eq!(rows, if period == 30 { 25 } else { 60 }, "the period that starts at the wrap of {:e} s", clock.rising(from));
     }
     for period in 31..PwmReference::PERIODS {
         let (from, to) = PrintedSides::period_rows(period);
-        assert_eq!(high[from..to].iter().filter(|(_, value)| *value == Some(1)).count(), 60, "period {period}");
+        assert_eq!(high[from..to].iter().filter(|(_, value)| *value == 1).count(), 60, "period {period}");
     }
 }
 

@@ -70,7 +70,7 @@ fn an_operating_point_is_signal_and_value_in_print_order() {
     // in-port `en` holds its zero bytes (spec edge 5)
     let dir = tempfile::tempdir().expect("tmp");
     let file = dir.path().join("mixed.msl");
-    let text = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n\nmodule Top(in en: Bit) {\n    signal a: Electrical;\n    signal flag: Bit = false;\n    let v1 = Vsource(a, gnd) { dc: 2.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n}\n";
+    let text = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n\nmodule Top(in en: Bit = false) {\n    signal a: Electrical;\n    signal flag: Bit = false;\n    let v1 = Vsource(a, gnd) { dc: 2.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n}\n";
     std::fs::write(&file, text).expect("write");
     let overrides = Overrides { top: Some("Top".into()), ..op(&["flag", "a", "en"]) };
     let table = run(&file, "rust", overrides).unwrap_or_else(|f| panic!("{f}"));

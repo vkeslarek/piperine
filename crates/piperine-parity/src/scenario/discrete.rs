@@ -9,8 +9,8 @@ use super::column::NamedColumn;
 pub struct DiscreteSample {
     /// The time of the row, in seconds.
     pub time: f64,
-    /// The value the row holds; none when the column was unknown there.
-    pub value: Option<i128>,
+    /// The value the row holds.
+    pub value: i128,
 }
 
 /// The first row that does not hold what a trace was asked to hold: the error of
@@ -19,13 +19,12 @@ pub struct DiscreteSample {
 pub struct Departure {
     /// The time of the departing row, in seconds.
     pub time: f64,
-    /// The value the row holds; none when the column was unknown there.
-    pub value: Option<i128>,
+    /// The value the row holds.
+    pub value: i128,
 }
 
 /// The rows of one discrete column with the time of each, optionally cut to a window. A `Bool`
-/// cell reads as 0 or 1 and an `Unknown` cell as none, so a mode, a fault code and a flag are all
-/// read the same way.
+/// cell reads as 0 or 1, so a mode, a fault code and a flag are all read the same way.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DiscreteTrace {
     /// The full label of the column, for the messages of a failure.
@@ -48,9 +47,8 @@ impl DiscreteTrace {
             .map(|(row, cells)| {
                 let Cell::Real(time) = cells[0] else { panic!("row {row} of `{}` has no real time: {:?}", column.label(), cells[0]) };
                 let value = match &cells[column.index()] {
-                    Cell::Int(value) => Some(*value),
-                    Cell::Bool(flag) => Some(i128::from(*flag)),
-                    Cell::Unknown => None,
+                    Cell::Int(value) => *value,
+                    Cell::Bool(flag) => i128::from(*flag),
                     other => panic!("row {row} of `{}` is not a discrete value: {other:?}", column.label()),
                 };
                 DiscreteSample { time, value }
@@ -71,8 +69,7 @@ impl DiscreteTrace {
             .map(|(row, cells)| {
                 let Cell::Real(time) = cells[0] else { panic!("row {row} of `{}` has no real time: {:?}", column.label(), cells[0]) };
                 let value = match &cells[column.index()] {
-                    Cell::Text(variant) => Some(variants.iter().position(|candidate| candidate == variant).unwrap_or_else(|| panic!("row {row} of `{}` names `{variant}`, no variant of {variants:?}", column.label())) as i128),
-                    Cell::Unknown => None,
+                    Cell::Text(variant) => variants.iter().position(|candidate| candidate == variant).unwrap_or_else(|| panic!("row {row} of `{}` names `{variant}`, no variant of {variants:?}", column.label())) as i128,
                     other => panic!("row {row} of `{}` is not a variant's name: {other:?}", column.label()),
                 };
                 DiscreteSample { time, value }
@@ -89,33 +86,28 @@ impl DiscreteTrace {
 
     /// The time of the first row at or after `after` that holds `value`; none when no row does.
     pub fn first_time(&self, value: i128, after: f64) -> Option<f64> {
-        self.rows.iter().find(|row| row.time >= after && row.value == Some(value)).map(|row| row.time)
+        self.rows.iter().find(|row| row.time >= after && row.value == value).map(|row| row.time)
     }
 
     /// Passes when every row holds `value`; otherwise the first row that does not, with its time
-    /// and what it holds. An unknown row does not hold any value.
+    /// and what it holds.
     pub fn holds(&self, value: i128) -> Result<(), Departure> {
-        self.rows().iter().find(|row| row.value != Some(value)).map_or(Ok(()), |row| Err(Departure { time: row.time, value: row.value }))
+        self.rows().iter().find(|row| row.value != value).map_or(Ok(()), |row| Err(Departure { time: row.time, value: row.value }))
     }
 
-    /// What the row at or before `time` holds (the last row not after `time`); none when it was
-    /// unknown. A time before the first row panics: a scenario reads an instant the run covers.
-    pub fn value_at(&self, time: f64) -> Option<i128> {
+    /// What the row at or before `time` holds (the last row not after `time`). A time before the
+    /// first row panics: a scenario reads an instant the run covers.
+    pub fn value_at(&self, time: f64) -> i128 {
         match self.rows.iter().rev().find(|row| row.time <= time) {
             Some(row) => row.value,
             None => panic!("`{}` has no row at or before {time:e} s", self.label),
         }
     }
 
-    /// The largest known value minus the smallest. A row that is unknown panics naming it: a
-    /// peak-to-peak over an unknown is no measurement.
+    /// The largest value minus the smallest.
     pub fn peak_to_peak(&self) -> i128 {
-        let known: Vec<i128> = self
-            .rows()
-            .iter()
-            .map(|row| row.value.unwrap_or_else(|| panic!("`{}` is unknown at {:e} s", self.label, row.time)))
-            .collect();
-        known.iter().max().expect("rows() is never empty") - known.iter().min().expect("rows() is never empty")
+        let values: Vec<i128> = self.rows().iter().map(|row| row.value).collect();
+        values.iter().max().expect("rows() is never empty") - values.iter().min().expect("rows() is never empty")
     }
 
     /// The rows; an empty window panics naming the label and the window, so a scenario never
@@ -131,8 +123,6 @@ impl DiscreteTrace {
 
 #[cfg(test)]
 mod tests {
-    use std::panic::{AssertUnwindSafe, catch_unwind};
-
     use super::*;
 
     /// Tables the tests read, built by hand.
@@ -167,31 +157,25 @@ mod tests {
 
     #[test]
     fn holds_names_the_first_row_that_departs() {
-        let trace = Tables::trace(&[(0.0, Cell::Bool(true)), (1.0, Cell::Bool(true)), (2.0, Cell::Bool(false)), (3.0, Cell::Unknown)]);
+        let trace = Tables::trace(&[(0.0, Cell::Bool(true)), (1.0, Cell::Bool(true)), (2.0, Cell::Bool(false)), (3.0, Cell::Bool(true))]);
         // booleans read as 0 and 1; the first departure from 1 is the row at t = 2 holding 0
-        assert_eq!(trace.holds(1), Err(Departure { time: 2.0, value: Some(0) }));
+        assert_eq!(trace.holds(1), Err(Departure { time: 2.0, value: 0 }));
         // inside the window [0, 2) every row holds 1
         assert_eq!(trace.between(0.0, 2.0).holds(1), Ok(()));
-        // an unknown row holds nothing: it departs with no value
-        assert_eq!(trace.between(3.0, 4.0).holds(1), Err(Departure { time: 3.0, value: None }));
+        assert_eq!(trace.between(3.0, 4.0).holds(1), Ok(()));
     }
 
     #[test]
     fn value_at_is_the_row_at_or_before_the_time() {
         let trace = Tables::integers(&[(0.0, 0), (1.0, 2), (2.0, 3)]);
-        assert_eq!(trace.value_at(1.0), Some(2));
-        assert_eq!(trace.value_at(1.7), Some(2));
-        assert_eq!(trace.value_at(9.0), Some(3));
-        assert_eq!(Tables::trace(&[(0.0, Cell::Unknown)]).value_at(0.5), None);
+        assert_eq!(trace.value_at(1.0), 2);
+        assert_eq!(trace.value_at(1.7), 2);
+        assert_eq!(trace.value_at(9.0), 3);
     }
 
     #[test]
-    fn peak_to_peak_is_the_largest_known_value_minus_the_smallest_and_panics_on_an_unknown_row() {
+    fn peak_to_peak_is_the_largest_value_minus_the_smallest() {
         let trace = Tables::integers(&[(0.0, 130), (1.0, 128), (2.0, 131)]);
         assert_eq!(trace.peak_to_peak(), 3);
-        let unknown = Tables::trace(&[(0.0, Cell::Int(1)), (1.0, Cell::Unknown)]);
-        let payload = catch_unwind(AssertUnwindSafe(|| unknown.peak_to_peak())).expect_err("an unknown row must panic");
-        let text = payload.downcast_ref::<String>().expect("a formatted panic message");
-        assert!(text.contains("`mode`") && text.contains("unknown") && text.contains("1e0"), "{text}");
     }
 }
