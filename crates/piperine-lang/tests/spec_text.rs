@@ -2251,3 +2251,17 @@ fn part_v_retakes_the_step_a_jump_crossing_changes() {
     }
     assert!(!rule.contains("There is no second pass."), "rule 4's \"no second pass\" is gone");
 }
+
+#[test]
+fn part_v_convergence_tests_both_rows_against_the_smaller_abstol() {
+    // §17.1 rules 1 and 2: the update test and the residual test use one effective tolerance, the
+    // smaller of the session value and the nature's, for nodes and for branches (AO-10 AC 6).
+    let exec = flat(&spec("part_v_execution.md"));
+    let rule1 = &exec[exec.find("1. **Update.**").expect("rule 1")..exec.find("2. **Residual.**").expect("rule 2")];
+    assert!(rule1.contains("is the smaller of the session's and the nature's"), "{rule1}");
+    assert!(rule1.contains("A nature can only tighten the session's value"), "{rule1}");
+    let rule2 = &exec[exec.find("2. **Residual.**").expect("rule 2")..exec.find("3. **Limiting.**").expect("rule 3")];
+    assert!(rule2.contains("with the `abstol` of rule 1"), "{rule2}");
+    assert!(rule2.contains("the smaller of the session `vntol` and the smallest potential `abstol`"), "{rule2}");
+    assert!(rule2.contains("the smaller of the session `abstol` and its flow `abstol`"), "{rule2}");
+}

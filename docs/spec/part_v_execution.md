@@ -578,11 +578,11 @@ three hold:
    `abstol` and its flow `abstol`. A nature can only tighten the session's value: `--vntol` and
    `--abstol` always take effect, and a looser nature (a potential `abstol` of 1 mV) does not
    loosen the default.
-2. **Residual.** Every row's imbalance is at most `abstol + reltol · scale`. A node's row is
-   tested against the potential `abstol` of that node (the smallest potential `abstol` of the
-   natures meeting there, default 1 µV). A branch row is tested against the flow `abstol`
-   (default 1 pA). This is the mapping the reference implementation's ngspice parity was
-   validated with.
+2. **Residual.** Every row's imbalance is at most `abstol + reltol · scale`, with the `abstol`
+   of rule 1. A node's row is tested against the smaller of the session `vntol` and the
+   smallest potential `abstol` of the natures meeting there (default 1 µV). A branch row is
+   tested against the smaller of the session `abstol` and its flow `abstol` (default 1 pA).
+   This is the mapping the reference implementation's ngspice parity was validated with.
 3. **Limiting.** No `limit` instance is active (§18 rule 5).
 4. A non-finite value in an unknown, a residual or a Jacobian entry fails the solve
    (`E0507`).
