@@ -51,7 +51,7 @@ block	types#6	752d2a198d304f5c	run	piperine/book_types::tuples_and_structs_run_w
 block	types#7	3b9b74b50cece325	refused	piperine/book_types::the_listings_still_on_the_way_are_refused_where_a_top_reaches_them	L3	-
 block	types#8	b63a21346a74deb1	run	piperine/book_types::an_enum_is_matched_compared_and_printed_by_the_number_of_its_variant	-	-
 block	types#9	0a7d56d69e848349	shown	-	-	-
-block	types#10	df15c0637f325b78	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run levels.msl --analysis transient --stop 2e-6
+block	types#10	91e2ced8255df292	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run levels.msl --analysis transient --stop 2e-6
 block	types#11	febab19eac3f694a	refused	piperine/book_types::the_listings_still_on_the_way_are_refused_where_a_top_reaches_them	L4	-
 block	types#12	6d450490ba2c8973	run	piperine/book_types::tuples_and_structs_run_where_a_top_reaches_them	-	-
 block	types#13	cf6386a8806d36c2	run	piperine/book_types::an_impl_gives_a_type_its_constants_and_functions	-	-
@@ -80,7 +80,7 @@ block	values#9	d9806c64bb24943b	fragment	values#10	-	-
 block	values#10	bf4e0f7117cbdde7	run	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	-
 block	values#11	a07bbc60df4e55a9	shown	-	-	-
 block	values#12	6801c85357a0db7b	shown	-	-	-
-block	values#13	2ab2c4cf88e53d78	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --analysis transient --stop 3e-6 --stream zone
+block	values#13	e87cfdd0a992563c	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --analysis transient --stop 3e-6 --stream zone
 block	values#14	cb2da746f6a4b2ff	run	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	-
 block	values#15	54c55c5b3fa29637	shown	-	-	-
 block	values#16	2a136951b87674b7	shown	-	-	-
@@ -317,7 +317,7 @@ claim	language~84715108	847151084a459e3a	holds	piperine/book_language::arithmeti
 claim	types~b5963568	b596356877e77424	prose	-	-	This chapter builds those types from the ones of chapter 2, one at a time, and then shows the two tools that work on all of them: patterns, which take a value apart, and impl, which gives a type its own functions.
 claim	types~d5d7690f	d5d7690f043a99ce	holds	piperine/book_types::an_option_is_read_with_its_methods_a_match_and_an_if_let	-	The ramp reaches 1.5 V at 1.5 µs, which is later than 1 µs. never has no value, so unwrap_or(-1.0) yields the fallback and held takes its None arm.
 claim	types~4b156a2d	4b156a2da44bc9e4	holds	piperine/book_types::optional_arguments_may_be_left_out_or_named	-	Passing a plain T wraps it in Some, the one implicit conversion in the language:
-claim	types~050c60ed	050c60ed3f6d5b27	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The command prints an enum field as the number of its variant, counted from 0 in the order of the declaration, so seen=2 is High.
+claim	types~a1ff299b	a1ff299b2ebb3e21	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The command prints an enum field as the name of its variant, so seen=High is High.
 claim	types~545f1643	545f1643d584ba9b	holds	piperine/book_types::a_match_that_misses_a_variant_stops_the_build	-	Add a fourth variant later and this match stops the build until it has an arm for it, so a new case cannot be forgotten silently.
 claim	types~61763362	6176336202534a2d	prose	-	-	A function that should accept a table of any length gives the length a name of its own, <const N: usize>, and takes [f64; N].
 claim	types~10cb5d87	10cb5d87fc98b669	holds	piperine/book_types::an_enum_is_matched_compared_and_printed_by_the_number_of_its_variant	-	The line above the enum is an attribute. #[derive(…)] asks the compiler to write standard behavior for the type that follows: PartialEq gives it == and !=, PartialOrd gives it < and > in the order of the declaration, and Repr gives it a layout in bits, which a signal needs to carry it.
@@ -354,7 +354,7 @@ claim	values~d0e86096	d0e860965d39c65b	holds	piperine/book_values::the_monitor_f
 claim	values~8ad56d03	8ad56d032086a4c3	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	The source is a ramp of 1 V/µs, so the node walks through all three zones.
 claim	values~3c87d509	3c87d5093c5ad414	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	if z != zone { emit!(…) } prints only when the zone changes. zone on the right still reads the old value (the commit one line up has not applied yet), which is exactly what makes from = zone, to = z correct.
 claim	values~6ecca079	6ecca0792312a11d	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	The clock rises at 0.5, 1.5 and 2.5 µs, where the ramp is near 0.5, 1.5 and 2.5 V:
-claim	values~2931bd2e	2931bd2eba6a730c	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The command prints an enum field as the number of its variant, counted from 0 in the order of the declaration: Under is 0, Ok 1 and Over 2, so from=1 to=0 is Ok to Under.
+claim	values~4f830aa0	4f830aa06efa0a25	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The command prints an enum field as the name of its variant, so from=Ok to=Under is a move from Ok to Under.
 claim	values~1aeb5afb	1aeb5afb04fc42e5	holds	piperine/book_values::the_flag_is_read_with_known_known_or_and_is_known	-	You read the flag with three methods every Repr value has: x.known() gives an Option (None when any level is unknown), x.known_or(d) gives the value or a default, and x.is_known() a bool.
 claim	values~362f6b51	362f6b51760d2ad6	holds	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder	-	This adder is placed in a top that gives a the constant 3 and takes b from an in port of its own, which nothing drives. (Osc is the clock from the file above.)
 claim	values~9a0ece05	9a0ece05b8e8447d	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	An unknown value prints as x.

@@ -873,12 +873,12 @@ digital for Levels {
   <p class="callout-label">Run it</p>
 <pre data-lang="sh">piperine run levels.msl --analysis transient --stop 2e-6</pre>
 <pre data-lang="text" data-cli-output="piperine run levels.msl --analysis transient --stop 2e-6" data-cli-lines="1-2">run levels: transient, top Levels, backend rust
-@1.000000e-6 Levels levels seen=2 high=true above=true weight=2
+@1.000000e-6 Levels levels seen=High high=true above=true weight=2
 
 time
 0.000000e0
 2.000000e-6</pre>
-  <p>The high threshold is 0.7 × 3.3 = 2.31, so 2.8 is <code>High</code>. The command prints an enum field as the number of its variant, counted from 0 in the order of the declaration, so <code>seen=2</code> is <code>High</code>.</p>
+  <p>The high threshold is 0.7 × 3.3 = 2.31, so 2.8 is <code>High</code>. The command prints an enum field as the name of its variant, so <code>seen=High</code> is <code>High</code>.</p>
 </div>
 
 <p>Three things in this file are new:</p>
@@ -1673,119 +1673,119 @@ module MonitorTop() {
   <p>Save the file as <code>monitor.msl</code> and keep only the stream you care about:</p>
 <pre data-lang="sh">piperine run monitor.msl --analysis transient --stop 3e-6 --stream zone</pre>
 <pre data-lang="text" data-cli-output="piperine run monitor.msl --analysis transient --stop 3e-6 --stream zone" data-cli-lines="1-4">run monitor: transient, top MonitorTop, backend rust
-@5.000000e-7 MonitorTop.mon zone t=5.000000e-7 v=5.000000e-1 from=1 to=0
-@1.500000e-6 MonitorTop.mon zone t=1.500000e-6 v=1.500000e0 from=0 to=1
-@2.500000e-6 MonitorTop.mon zone t=2.500000e-6 v=2.500000e0 from=1 to=2
+@5.000000e-7 MonitorTop.mon zone t=5.000000e-7 v=5.000000e-1 from=Ok to=Under
+@1.500000e-6 MonitorTop.mon zone t=1.500000e-6 v=1.500000e0 from=Under to=Ok
+@2.500000e-6 MonitorTop.mon zone t=2.500000e-6 v=2.500000e0 from=Ok to=Over
 
 time         MonitorTop.x  MonitorTop.clk  MonitorTop.zone
-0.000000e0   0.000000e0    false           1
-3.000000e-9  3.000000e-3   false           1
-7.500000e-9  7.500000e-3   false           1
-1.425000e-8  1.425000e-2   false           1
-2.437500e-8  2.437500e-2   false           1
-3.956250e-8  3.956250e-2   false           1
-6.234375e-8  6.234375e-2   false           1
-9.234375e-8  9.234375e-2   false           1
-1.223437e-7  1.223437e-1   false           1
-1.523437e-7  1.523438e-1   false           1
-1.823438e-7  1.823437e-1   false           1
-2.123438e-7  2.123437e-1   false           1
-2.423437e-7  2.423437e-1   false           1
-2.723438e-7  2.723437e-1   false           1
-3.023438e-7  3.023438e-1   false           1
-3.323438e-7  3.323438e-1   false           1
-3.623438e-7  3.623438e-1   false           1
-3.923438e-7  3.923438e-1   false           1
-4.223438e-7  4.223438e-1   false           1
-4.523438e-7  4.523438e-1   false           1
-4.823438e-7  4.823438e-1   false           1
-5.000000e-7  5.000000e-1   true            0
-5.264844e-7  5.264844e-1   true            0
-5.564844e-7  5.564844e-1   true            0
-5.864844e-7  5.864844e-1   true            0
-6.164844e-7  6.164844e-1   true            0
-6.464844e-7  6.464844e-1   true            0
-6.764844e-7  6.764844e-1   true            0
-7.064844e-7  7.064844e-1   true            0
-7.364844e-7  7.364844e-1   true            0
-7.664844e-7  7.664844e-1   true            0
-7.964844e-7  7.964844e-1   true            0
-8.264844e-7  8.264844e-1   true            0
-8.564844e-7  8.564844e-1   true            0
-8.864844e-7  8.864844e-1   true            0
-9.164844e-7  9.164844e-1   true            0
-9.464844e-7  9.464844e-1   true            0
-9.764844e-7  9.764844e-1   true            0
-1.000000e-6  1.000000e0    false           0
-1.030000e-6  1.030000e0    false           0
-1.060000e-6  1.060000e0    false           0
-1.090000e-6  1.090000e0    false           0
-1.120000e-6  1.120000e0    false           0
-1.150000e-6  1.150000e0    false           0
-1.180000e-6  1.180000e0    false           0
-1.210000e-6  1.210000e0    false           0
-1.240000e-6  1.240000e0    false           0
-1.270000e-6  1.270000e0    false           0
-1.300000e-6  1.300000e0    false           0
-1.330000e-6  1.330000e0    false           0
-1.360000e-6  1.360000e0    false           0
-1.390000e-6  1.390000e0    false           0
-1.420000e-6  1.420000e0    false           0
-1.450000e-6  1.450000e0    false           0
-1.480000e-6  1.480000e0    false           0
-1.500000e-6  1.500000e0    true            1
-1.530000e-6  1.530000e0    true            1
-1.560000e-6  1.560000e0    true            1
-1.590000e-6  1.590000e0    true            1
-1.620000e-6  1.620000e0    true            1
-1.650000e-6  1.650000e0    true            1
-1.680000e-6  1.680000e0    true            1
-1.710000e-6  1.710000e0    true            1
-1.740000e-6  1.740000e0    true            1
-1.770000e-6  1.770000e0    true            1
-1.800000e-6  1.800000e0    true            1
-1.830000e-6  1.830000e0    true            1
-1.860000e-6  1.860000e0    true            1
-1.890000e-6  1.890000e0    true            1
-1.920000e-6  1.920000e0    true            1
-1.950000e-6  1.950000e0    true            1
-1.980000e-6  1.980000e0    true            1
-2.000000e-6  2.000000e0    false           1
-2.030000e-6  2.030000e0    false           1
-2.060000e-6  2.060000e0    false           1
-2.090000e-6  2.090000e0    false           1
-2.120000e-6  2.120000e0    false           1
-2.150000e-6  2.150000e0    false           1
-2.180000e-6  2.180000e0    false           1
-2.210000e-6  2.210000e0    false           1
-2.240000e-6  2.240000e0    false           1
-2.270000e-6  2.270000e0    false           1
-2.300000e-6  2.300000e0    false           1
-2.330000e-6  2.330000e0    false           1
-2.360000e-6  2.360000e0    false           1
-2.390000e-6  2.390000e0    false           1
-2.420000e-6  2.420000e0    false           1
-2.450000e-6  2.450000e0    false           1
-2.480000e-6  2.480000e0    false           1
-2.500000e-6  2.500000e0    true            2
-2.530000e-6  2.530000e0    true            2
-2.560000e-6  2.560000e0    true            2
-2.590000e-6  2.590000e0    true            2
-2.620000e-6  2.620000e0    true            2
-2.650000e-6  2.650000e0    true            2
-2.680000e-6  2.680000e0    true            2
-2.710000e-6  2.710000e0    true            2
-2.740000e-6  2.740000e0    true            2
-2.770000e-6  2.770000e0    true            2
-2.800000e-6  2.800000e0    true            2
-2.830000e-6  2.830000e0    true            2
-2.860000e-6  2.860000e0    true            2
-2.890000e-6  2.890000e0    true            2
-2.920000e-6  2.920000e0    true            2
-2.950000e-6  2.950000e0    true            2
-2.980000e-6  2.980000e0    true            2
-3.000000e-6  3.000000e0    false           2</pre>
-  <p>Three record lines from <code>MonitorTop.mon</code>, at 0.5, 1.5 and 2.5&nbsp;µs. Check the <code>from</code> and <code>to</code> fields against the table above. The command prints an enum field as the number of its variant, counted from 0 in the order of the declaration: <code>Under</code> is 0, <code>Ok</code> 1 and <code>Over</code> 2, so <code>from=1 to=0</code> is <code>Ok</code> to <code>Under</code>.</p>
+0.000000e0   0.000000e0    false           Ok
+3.000000e-9  3.000000e-3   false           Ok
+7.500000e-9  7.500000e-3   false           Ok
+1.425000e-8  1.425000e-2   false           Ok
+2.437500e-8  2.437500e-2   false           Ok
+3.956250e-8  3.956250e-2   false           Ok
+6.234375e-8  6.234375e-2   false           Ok
+9.234375e-8  9.234375e-2   false           Ok
+1.223437e-7  1.223437e-1   false           Ok
+1.523437e-7  1.523438e-1   false           Ok
+1.823438e-7  1.823437e-1   false           Ok
+2.123438e-7  2.123437e-1   false           Ok
+2.423437e-7  2.423437e-1   false           Ok
+2.723438e-7  2.723437e-1   false           Ok
+3.023438e-7  3.023438e-1   false           Ok
+3.323438e-7  3.323438e-1   false           Ok
+3.623438e-7  3.623438e-1   false           Ok
+3.923438e-7  3.923438e-1   false           Ok
+4.223438e-7  4.223438e-1   false           Ok
+4.523438e-7  4.523438e-1   false           Ok
+4.823438e-7  4.823438e-1   false           Ok
+5.000000e-7  5.000000e-1   true            Under
+5.264844e-7  5.264844e-1   true            Under
+5.564844e-7  5.564844e-1   true            Under
+5.864844e-7  5.864844e-1   true            Under
+6.164844e-7  6.164844e-1   true            Under
+6.464844e-7  6.464844e-1   true            Under
+6.764844e-7  6.764844e-1   true            Under
+7.064844e-7  7.064844e-1   true            Under
+7.364844e-7  7.364844e-1   true            Under
+7.664844e-7  7.664844e-1   true            Under
+7.964844e-7  7.964844e-1   true            Under
+8.264844e-7  8.264844e-1   true            Under
+8.564844e-7  8.564844e-1   true            Under
+8.864844e-7  8.864844e-1   true            Under
+9.164844e-7  9.164844e-1   true            Under
+9.464844e-7  9.464844e-1   true            Under
+9.764844e-7  9.764844e-1   true            Under
+1.000000e-6  1.000000e0    false           Under
+1.030000e-6  1.030000e0    false           Under
+1.060000e-6  1.060000e0    false           Under
+1.090000e-6  1.090000e0    false           Under
+1.120000e-6  1.120000e0    false           Under
+1.150000e-6  1.150000e0    false           Under
+1.180000e-6  1.180000e0    false           Under
+1.210000e-6  1.210000e0    false           Under
+1.240000e-6  1.240000e0    false           Under
+1.270000e-6  1.270000e0    false           Under
+1.300000e-6  1.300000e0    false           Under
+1.330000e-6  1.330000e0    false           Under
+1.360000e-6  1.360000e0    false           Under
+1.390000e-6  1.390000e0    false           Under
+1.420000e-6  1.420000e0    false           Under
+1.450000e-6  1.450000e0    false           Under
+1.480000e-6  1.480000e0    false           Under
+1.500000e-6  1.500000e0    true            Ok
+1.530000e-6  1.530000e0    true            Ok
+1.560000e-6  1.560000e0    true            Ok
+1.590000e-6  1.590000e0    true            Ok
+1.620000e-6  1.620000e0    true            Ok
+1.650000e-6  1.650000e0    true            Ok
+1.680000e-6  1.680000e0    true            Ok
+1.710000e-6  1.710000e0    true            Ok
+1.740000e-6  1.740000e0    true            Ok
+1.770000e-6  1.770000e0    true            Ok
+1.800000e-6  1.800000e0    true            Ok
+1.830000e-6  1.830000e0    true            Ok
+1.860000e-6  1.860000e0    true            Ok
+1.890000e-6  1.890000e0    true            Ok
+1.920000e-6  1.920000e0    true            Ok
+1.950000e-6  1.950000e0    true            Ok
+1.980000e-6  1.980000e0    true            Ok
+2.000000e-6  2.000000e0    false           Ok
+2.030000e-6  2.030000e0    false           Ok
+2.060000e-6  2.060000e0    false           Ok
+2.090000e-6  2.090000e0    false           Ok
+2.120000e-6  2.120000e0    false           Ok
+2.150000e-6  2.150000e0    false           Ok
+2.180000e-6  2.180000e0    false           Ok
+2.210000e-6  2.210000e0    false           Ok
+2.240000e-6  2.240000e0    false           Ok
+2.270000e-6  2.270000e0    false           Ok
+2.300000e-6  2.300000e0    false           Ok
+2.330000e-6  2.330000e0    false           Ok
+2.360000e-6  2.360000e0    false           Ok
+2.390000e-6  2.390000e0    false           Ok
+2.420000e-6  2.420000e0    false           Ok
+2.450000e-6  2.450000e0    false           Ok
+2.480000e-6  2.480000e0    false           Ok
+2.500000e-6  2.500000e0    true            Over
+2.530000e-6  2.530000e0    true            Over
+2.560000e-6  2.560000e0    true            Over
+2.590000e-6  2.590000e0    true            Over
+2.620000e-6  2.620000e0    true            Over
+2.650000e-6  2.650000e0    true            Over
+2.680000e-6  2.680000e0    true            Over
+2.710000e-6  2.710000e0    true            Over
+2.740000e-6  2.740000e0    true            Over
+2.770000e-6  2.770000e0    true            Over
+2.800000e-6  2.800000e0    true            Over
+2.830000e-6  2.830000e0    true            Over
+2.860000e-6  2.860000e0    true            Over
+2.890000e-6  2.890000e0    true            Over
+2.920000e-6  2.920000e0    true            Over
+2.950000e-6  2.950000e0    true            Over
+2.980000e-6  2.980000e0    true            Over
+3.000000e-6  3.000000e0    false           Over</pre>
+  <p>Three record lines from <code>MonitorTop.mon</code>, at 0.5, 1.5 and 2.5&nbsp;µs. Check the <code>from</code> and <code>to</code> fields against the table above. The command prints an enum field as the name of its variant, so <code>from=Ok to=Under</code> is a move from <code>Ok</code> to <code>Under</code>.</p>
 </div>
 
 <h3>Known and unknown</h3>

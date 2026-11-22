@@ -246,8 +246,8 @@ fn the_monitor_file_runs_its_window_monitor_and_its_adder() {
     // under, inside or over a window"; values~8ad56d03 "The source is a ramp of 1 V/µs, so the node walks
     // through all three zones"; values~6ecca079 "The clock rises at 0.5, 1.5 and 2.5 µs, where the ramp is
     // near 0.5, 1.5 and 2.5 V"; values~3c87d509 "if z != zone { emit!(…) } prints only when the zone
-    // changes. zone on the right still reads the old value"; values~2931bd2e "The command prints an
-    // enum field as the number of its variant, counted from 0 ... Under is 0, Ok 1 and Over 2" (the
+    // changes. zone on the right still reads the old value"; values~4f830aa0 "The command prints an
+    // enum field as the name of its variant, so from=Ok to=Under is a move from Ok to Under" (the
     // command's line is held with the listing); values~362f6b51 "This adder is placed in a top that gives
     // a the constant 3 and takes b from an in port of its own, which nothing drives"; values~9a0ece05
     // "An unknown value prints as x" (the library holds it as an unknown field)

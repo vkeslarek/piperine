@@ -1483,8 +1483,8 @@ T63
 
 **Done when**:
 
-- [ ] `composites_print_in_each_output_format` and `a_leaf_path_prints_that_leaf_alone` pass under `**Run clirun**`
-- [ ] Gate check passes: Full
+- [x] `composites_print_in_each_output_format` and `a_leaf_path_prints_that_leaf_alone` pass under `**Run clirun**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

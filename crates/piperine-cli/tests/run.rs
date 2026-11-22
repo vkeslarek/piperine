@@ -513,3 +513,79 @@ fn run_of_a_top_with_a_node_port_is_e0810() {
     assert!(!err.contains("P0001"), "{err}");
     assert_eq!(text(&out.stdout).trim_end(), "run bench: op, top Top, backend rust", "only the header, no table");
 }
+
+/// A design whose carriers hold a unit enum, a struct, an enum with a payload and an array, committed
+/// at each rising edge of a clock, and a record that writes the same values.
+const COMPOSITES: &str = "#[derive(Repr, PartialEq)]\nenum Mode { Idle, Regulate }\n#[derive(Repr, PartialEq)]\nstruct Pair { a: u8, b: bool }\n#[derive(Repr, PartialEq)]\nenum Tx { Idle, Data { n: u3 } }\n\
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }\ndigital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }\n\
+module Logger(in clk: Bit, out mode: Bit<Mode>, out pair: Bit<Pair>, out tx: Bit<Tx>, out v: Bit<[u8; 2]>) {}\n\
+digital for Logger {\n    on clk.rise() {\n        mode <- Mode::Regulate;\n        pair <- Pair { a: 7, b: true };\n        tx <- Tx::Data { n: 5 };\n        v <- [3, 4];\n        emit!(\"sample\", pair = Pair { a: 7, b: true }, tx = Tx::Data { n: 5 }, arr = [1u8, 2]);\n    }\n}\n\
+module Top() {\n    signal clk: Bit;\n    signal mode: Bit<Mode>;\n    signal pair: Bit<Pair>;\n    signal tx: Bit<Tx>;\n    signal v: Bit<[u8; 2]>;\n    let osc = Osc(clk) { f: 200M };\n    let logger = Logger(clk, mode, pair, tx, v);\n}\n";
+
+/// The files `piperine run` wrote for `COMPOSITES` and what it printed.
+struct CompositeRun {
+    /// Standard output.
+    stdout: String,
+    /// The directory holding the written files.
+    dir: tempfile::TempDir,
+}
+
+impl CompositeRun {
+    /// `piperine run bench.msl` printing `print`; with `files`, writing a CSV, JSON Lines and a plot
+    /// instead of printing the table and the records.
+    fn of(print: &[&str], files: bool) -> CompositeRun {
+        let dir = written(&[("bench.msl", COMPOSITES)]);
+        let mut args: Vec<String> = ["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9"].iter().map(|s| s.to_string()).collect();
+        for signal in print {
+            args.extend(["--print".to_string(), signal.to_string()]);
+        }
+        if files {
+            args.extend(["--csv", "out.csv", "--records", "out.jsonl", "--plot", "out.svg"].iter().map(|s| s.to_string()));
+        }
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let stdout = stdout_of(&piperine_in(dir.path(), shared_cache(), &refs));
+        CompositeRun { stdout, dir }
+    }
+
+    /// A file the run wrote.
+    fn file(&self, name: &str) -> String {
+        std::fs::read_to_string(self.dir.path().join(name)).unwrap_or_else(|e| panic!("no {name}: {e}"))
+    }
+}
+
+#[test]
+fn composites_print_in_each_output_format() {
+    // CV-21 AC 1, CV-22 AC 1 (Q2 (c), D13): the text table, the record lines and JSON Lines write a
+    // composite in literal syntax (JSON nested, an enum `{"Variant": {..}}`), and an enum with no
+    // payload as its variant's name; CSV and the plot take one column per dotted leaf
+    let run = CompositeRun::of(&["mode", "pair", "tx", "v"], false);
+    let last = run.stdout.lines().rev().find(|l| l.contains("Regulate")).unwrap_or_else(|| panic!("no final row in\n{}", run.stdout));
+    assert!(last.contains("Pair { a: 7, b: true }") && last.contains("Tx::Data { n: 5 }") && last.contains("[3, 4]"), "the text table: {last}");
+    let record = run.stdout.lines().find(|l| l.contains(" sample ")).unwrap_or_else(|| panic!("no record in\n{}", run.stdout));
+    assert!(record.contains("pair=Pair { a: 7, b: true }") && record.contains("tx=Tx::Data { n: 5 }") && record.contains("arr=[1, 2]"), "the record line: {record}");
+    let run = CompositeRun::of(&["mode", "pair", "tx", "v"], true);
+    let json = run.file("out.jsonl");
+    let line = json.lines().next().unwrap_or_else(|| panic!("no JSON line"));
+    assert!(line.contains("\"pair\":{\"a\":7,\"b\":true}") && line.contains("\"tx\":{\"Data\":{\"n\":5}}") && line.contains("\"arr\":[1,2]"), "the JSON line: {line}");
+    let csv = run.file("out.csv");
+    let mut rows = csv.lines();
+    assert_eq!(rows.next(), Some("time,Top.mode,Top.pair.a,Top.pair.b,Top.tx,Top.tx.Data.n,Top.v[0],Top.v[1]"), "one CSV column per leaf: {csv}");
+    let final_row = rows.last().expect("a CSV row");
+    assert!(final_row.ends_with(",Regulate,7,true,Data,5,3,4"), "the leaves of the last row: {final_row}");
+    let svg = run.file("out.svg");
+    for series in ["Top.pair.a", "Top.tx.Data.n", "Top.v[1]"] {
+        assert!(svg.contains(&format!("data-signal=\"{series}\"")), "the plot has `{series}`: {svg}");
+    }
+}
+
+#[test]
+fn a_leaf_path_prints_that_leaf_alone() {
+    // CV-21 AC 2: a printed path that names a field or an element prints that leaf and nothing else
+    let run = CompositeRun::of(&["Top.pair.a", "Top.tx.Data.n", "Top.v[1]"], false);
+    let header = run.stdout.lines().find(|l| l.starts_with("time")).unwrap_or_else(|| panic!("no table in\n{}", run.stdout));
+    assert_eq!(cells(header), ["time", "Top.pair.a", "Top.tx.Data.n", "Top.v[1]"], "{}", run.stdout);
+    let last = run.stdout.lines().rev().find(|l| !l.is_empty()).expect("a row");
+    assert_eq!(&cells(last)[1..], ["7", "5", "4"], "each leaf alone: {last}");
+    let table = run.stdout.split("\n\n").nth(1).expect("a table after the records");
+    assert!(!table.contains("Pair {") && !table.contains("Tx::"), "no whole value in the table: {table}");
+}
