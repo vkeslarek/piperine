@@ -213,8 +213,8 @@ fn page_section<'a>(page: &'a str, heading: &str) -> Vec<&'a str> {
 #[test]
 fn every_b1_construct_is_mapped() {
     let constructs = b12_constructs();
-    assert_eq!(constructs.len(), 65, "B.1.2 lists 65 constructs: {constructs:?}");
-    assert_eq!(constructs.iter().map(|(n, _)| *n).collect::<Vec<_>>(), (1..=65).collect::<Vec<_>>());
+    assert_eq!(constructs.len(), 62, "B.1.2 lists 62 constructs (explicit-unknowns removed `resolve`, `Unknown` and `level`): {constructs:?}");
+    assert_eq!(constructs.iter().map(|(n, _)| *n).collect::<Vec<_>>(), (1..=62).collect::<Vec<_>>());
     let docs = pom_docs();
     let page = &docs.iter().find(|(n, _)| n == "mapping.md").expect("docs/pom/mapping.md").1;
     let section = page_section(page, "## Constructs of B.1");
@@ -235,7 +235,7 @@ fn every_b1_construct_is_mapped() {
         }
     }
     assert!(unmapped.is_empty(), "no row of the `Constructs of B.1` table maps: {unmapped:?}");
-    assert_eq!(rows.iter().filter(|r| r.first().is_some_and(|c| c.parse::<usize>().is_ok())).count(), 65, "one row per construct, no extra");
+    assert_eq!(rows.iter().filter(|r| r.first().is_some_and(|c| c.parse::<usize>().is_ok())).count(), 62, "one row per construct, no extra");
 }
 
 /// The table rows (`| .. |` lines) of the `## heading` section of a page, as trimmed cells.

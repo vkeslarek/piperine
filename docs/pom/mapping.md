@@ -68,57 +68,56 @@ The 65 constructs [Appendix B.1.2](../spec/appendix_b_grammar.md) lists as added
 | 12 | `potential` | `NatureFieldNode::Quantity`, `QuantityRole`; `Nature::quantities`, `Quantity::role` |
 | 13 | `flow` | `NatureFieldNode::Quantity`, `QuantityRole`; `Nature::quantities`, `Quantity::role` |
 | 14 | `value` | `NatureFieldNode::Value`; `Nature::value_type` |
-| 15 | `resolve` | `NatureFieldNode::Resolve`; `Nature::resolve_fn` |
-| 16 | `+>` | `StmtKind::Contribution`; `Contribution`, `Behavior::contributions` |
-| 17 | `<-` | `StmtKind::Commit`; `Commit`, `Reaction::commits` |
-| 18 | optional trailing `Option` parameters | `PortData::default`; `Port::default`, `Instance::connection` (none for a left-out argument) |
-| 19 | named arguments | `Arg::name`; `Argument::name`, `Expr::args` |
-| 20 | SI suffixes | `LitKind::Float`; `Lit::suffix` |
-| 21 | `Unknown` | `LitKind::Unknown` |
-| 22 | `Event` | `BuiltinKind::Type`; `builtin`, `BuiltinId::info` |
-| 23 | `Analysis` | `BuiltinKind::Type`; `builtin`, `BuiltinId::info` |
-| 24 | `uN` / `iN` / `fN` | `BuiltinKind::Type`; `BuiltinId::width` |
-| 25 | `Repr` | `BuiltinKind::Trait`; `builtin`, `BuiltinId::info` |
-| 26 | `Nature` | `BuiltinKind::Trait`; `builtin`, `BuiltinId::info` |
-| 27 | `changed` | `BuiltinKind::Method`; `builtin_method`, `Expr::resolution` |
-| 28 | `prev` | `BuiltinKind::Method`; `builtin_method`, `Expr::resolution` |
-| 29 | `others` | `BuiltinKind::Method`; `builtin_method`, `Expr::resolution` |
-| 30 | `inflow` | `BuiltinKind::Method`; `builtin_method`, `Expr::resolution` |
-| 31 | `level` | `BuiltinKind::Method`; `builtin_method`, `Expr::resolution` |
-| 32 | `at` | `BuiltinKind::Module`; `Instance::builtin` |
-| 33 | `cross` | `BuiltinKind::Module`; `Instance::builtin` |
-| 34 | `settle` | `BuiltinKind::Event`; `builtin`, `Expr::resolution` |
-| 35 | `ddt` | `BuiltinKind::Module`; `Instance::builtin` |
-| 36 | `delay` | `BuiltinKind::Module`; `Instance::builtin` |
-| 37 | `ddx` | `BuiltinKind::Fn`, `CallClass::Function`; `Expr::resolution` |
-| 38 | `limit` | `BuiltinKind::Module`; `Instance::builtin` |
-| 39 | `noise` | `BuiltinKind::Module`; `Instance::builtin` |
-| 40 | `ac_stim` | `BuiltinKind::Fn`, `CallClass::Function`; `Expr::resolution` |
-| 41 | `bound_step` | `BuiltinKind::Statement`; `builtin`, `Expr::resolution` |
-| 42 | `now` | `BuiltinKind::Fn`; `Expr::resolution` |
-| 43 | `freq` | `BuiltinKind::Fn`; `Expr::resolution` |
-| 44 | `temperature` | `BuiltinKind::Fn`; `Expr::resolution` |
-| 45 | `simparam` | `BuiltinKind::Fn`; `Expr::resolution` |
-| 46 | `analysis` | `BuiltinKind::Fn`; `Expr::resolution` |
-| 47 | `emit!` | `ExprKind::Emit`; `Expr::fields` |
-| 48 | `include_str!` | `ExprKind::IncludeStr` |
-| 49 | `#[derivative(f, …)]` | `AttrNode`; `Attr`, `Reflect::attr`, `Attr::paths` |
-| 50 | `#[derive(Repr)]` | `AttrNode`; `Attr`, `Reflect::attr`, `Attr::paths` |
-| 51 | `#[link(…)]` on an extern module | `AttrNode`; `Attr`, `Reflect::attr`, `Attr::named` |
-| 52 | `gnd` | `BuiltinKind::Node`; `builtin` |
-| 53 | `m` | `BuiltinKind::ImplicitParam`; `builtin_implicit` |
-| 54 | `dtemp` | `BuiltinKind::ImplicitParam`; `builtin_implicit` |
-| 55 | `"osdi"` | `ModuleData::abi`; `Module::abi` |
-| 56 | `"cosim"` | `ModuleData::abi`; `Module::abi` |
-| 57 | `sim` | `ExprKind::Emit::stream`; `Expr::kind` |
-| 58 | `checks` | `ExprKind::Emit::stream`; `Expr::kind` |
-| 59 | bundle | `StructData::bundle`; `Struct::is_bundle`, `PortKind::Bundle` |
-| 60 | template | `StructClass::Template`, `CallClass::Instance`; `Instance::via_template`, `Instance::via` |
-| 61 | `Fn(P)` bound on modules | `GenericArgsNode::Paren`; `Path::segments` |
-| 62 | value inputs and a result | `PortKind::ValueInput`, `ModuleData::result`; `Module::result`, `Port::kind` |
-| 63 | `impl` on a nature or bundle | `ImplData`; `Impl`, `Nature::impls`, `Struct::impls` |
-| 64 | `pub` on body items | `DeclData::public`; `Reflect::is_pub` |
-| 65 | `where` over const generics | `FnData::where_`, `ModuleData::where_`; `Function::where_clause`, `Module::where_clause` |
+| 15 | `+>` | `StmtKind::Contribution`; `Contribution`, `Behavior::contributions` |
+| 16 | `<-` | `StmtKind::Commit`; `Commit`, `Reaction::commits` |
+| 17 | optional trailing `Option` parameters | `PortData::default`; `Port::default`, `Instance::connection` (none for a left-out argument) |
+| 18 | named arguments | `Arg::name`; `Argument::name`, `Expr::args` |
+| 19 | SI suffixes | `LitKind::Float`; `Lit::suffix` |
+| 20 | `Event` | `BuiltinKind::Type`; `builtin`, `BuiltinId::info` |
+| 21 | `Analysis` | `BuiltinKind::Type`; `builtin`, `BuiltinId::info` |
+| 22 | `uN` / `iN` / `fN` | `BuiltinKind::Type`; `BuiltinId::width` |
+| 23 | `Repr` | `BuiltinKind::Trait`; `builtin`, `BuiltinId::info` |
+| 24 | `Nature` | `BuiltinKind::Trait`; `builtin`, `BuiltinId::info` |
+| 25 | `changed` | `BuiltinKind::Method`; `builtin_method`, `Expr::resolution` |
+| 26 | `prev` | `BuiltinKind::Method`; `builtin_method`, `Expr::resolution` |
+| 27 | `others` | `BuiltinKind::Method`; `builtin_method`, `Expr::resolution` |
+| 28 | `inflow` | `BuiltinKind::Method`; `builtin_method`, `Expr::resolution` |
+| 29 | `at` | `BuiltinKind::Module`; `Instance::builtin` |
+| 30 | `cross` | `BuiltinKind::Module`; `Instance::builtin` |
+| 31 | `settle` | `BuiltinKind::Event`; `builtin`, `Expr::resolution` |
+| 32 | `ddt` | `BuiltinKind::Module`; `Instance::builtin` |
+| 33 | `delay` | `BuiltinKind::Module`; `Instance::builtin` |
+| 34 | `ddx` | `BuiltinKind::Fn`, `CallClass::Function`; `Expr::resolution` |
+| 35 | `limit` | `BuiltinKind::Module`; `Instance::builtin` |
+| 36 | `noise` | `BuiltinKind::Module`; `Instance::builtin` |
+| 37 | `ac_stim` | `BuiltinKind::Fn`, `CallClass::Function`; `Expr::resolution` |
+| 38 | `bound_step` | `BuiltinKind::Statement`; `builtin`, `Expr::resolution` |
+| 39 | `now` | `BuiltinKind::Fn`; `Expr::resolution` |
+| 40 | `freq` | `BuiltinKind::Fn`; `Expr::resolution` |
+| 41 | `temperature` | `BuiltinKind::Fn`; `Expr::resolution` |
+| 42 | `simparam` | `BuiltinKind::Fn`; `Expr::resolution` |
+| 43 | `analysis` | `BuiltinKind::Fn`; `Expr::resolution` |
+| 44 | `emit!` | `ExprKind::Emit`; `Expr::fields` |
+| 45 | `include_str!` | `ExprKind::IncludeStr` |
+| 46 | `#[derivative(f, …)]` | `AttrNode`; `Attr`, `Reflect::attr`, `Attr::paths` |
+| 47 | `#[derive(Repr)]` | `AttrNode`; `Attr`, `Reflect::attr`, `Attr::paths` |
+| 48 | `#[link(…)]` on an extern module | `AttrNode`; `Attr`, `Reflect::attr`, `Attr::named` |
+| 49 | `gnd` | `BuiltinKind::Node`; `builtin` |
+| 50 | `m` | `BuiltinKind::ImplicitParam`; `builtin_implicit` |
+| 51 | `dtemp` | `BuiltinKind::ImplicitParam`; `builtin_implicit` |
+| 52 | `"osdi"` | `ModuleData::abi`; `Module::abi` |
+| 53 | `"cosim"` | `ModuleData::abi`; `Module::abi` |
+| 54 | `sim` | `ExprKind::Emit::stream`; `Expr::kind` |
+| 55 | `checks` | `ExprKind::Emit::stream`; `Expr::kind` |
+| 56 | bundle | `StructData::bundle`; `Struct::is_bundle`, `PortKind::Bundle` |
+| 57 | template | `StructClass::Template`, `CallClass::Instance`; `Instance::via_template`, `Instance::via` |
+| 58 | `Fn(P)` bound on modules | `GenericArgsNode::Paren`; `Path::segments` |
+| 59 | value inputs and a result | `PortKind::ValueInput`, `ModuleData::result`; `Module::result`, `Port::kind` |
+| 60 | `impl` on a nature or bundle | `ImplData`; `Impl`, `Nature::impls`, `Struct::impls` |
+| 61 | `pub` on body items | `DeclData::public`; `Reflect::is_pub` |
+| 62 | `where` over const generics | `FnData::where_`, `ModuleData::where_`; `Function::where_clause`, `Module::where_clause` |
+
+The specification's B.1.2 no longer lists the contextual keyword `resolve`, the literal `Unknown` and the method `level` (explicit-unknowns, D7). The implementation still has `NatureFieldNode::Resolve`, `LitKind::Unknown` and the `level` builtin until its code tasks remove them (T28 and T29, and `resolved-nets` for the trait `Resolve`).
 
 ## Rust items MSL keeps
 
