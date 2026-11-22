@@ -18,6 +18,30 @@ pub struct Boundary {
     pub bytes: Vec<u8>,
 }
 
+/// Why the discrete side stopped before an instant: the protocol's own copy of the sub-solver's
+/// cause, so the seam names no type of either sub-solver.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LandingCause {
+    /// A carrier the analog side reads changed at a microstep of the instant.
+    AnalogReadChanged,
+    /// A firing reaction reads a continuous pin itself.
+    ContinuousRead,
+    /// A firing reaction is flagged by the static reach analysis only.
+    DeclaredReach,
+    /// A firing reaction is `IRREVERSIBLE` (R6).
+    Irreversible,
+    /// A host waiter's event fired (R7).
+    HostWaiter,
+}
+
+impl LandingCause {
+    /// Whether the instant is a time point of §17.2 rule 2: false for `Irreversible` and
+    /// `HostWaiter`, which land the step without making the instant a time point.
+    pub fn is_time_point(&self) -> bool {
+        !matches!(self, LandingCause::Irreversible | LandingCause::HostWaiter)
+    }
+}
+
 /// How far `DiscreteSide::advance` got (abi.md §5 step 2).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Advance {
