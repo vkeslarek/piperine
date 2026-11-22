@@ -29,9 +29,9 @@ change of the IR or the ABI.
 | Section | Ids |
 | ------- | --- |
 | §2 Broken | B3, B4 |
-| §3 Silent (read this first) | S3, S6 |
-| §4 Loud | L1–L62 (L11, L14, L15, L17, L18, L19, L20, L39, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L51, L22, L23 closed; L9 and L4 narrowed) |
-| §5 Spec holes and disagreements | G1–G6 (the buck's), X1, X2, X6 (X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
+| §3 Silent (read this first) | S3, S8 (S6 closed by `explicit-unknowns`) |
+| §4 Loud | L1–L66 (L11, L14, L15, L17, L18, L19, L20, L39, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L51, L22, L23 closed; L9 and L4 narrowed; L64 to L66 found by `composite-values`) |
+| §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X1, X2, X6 (X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
 | §6 Solver, numerics, performance | V12, V13, V16 |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
 | §8 Unproven | U1–U11 (U5, U10 closed by `root-e2e`) |
@@ -51,7 +51,7 @@ change of the IR or the ABI.
 | backends | IR → Rust → `rustc` → device library: everything the checker accepts. The interpreter is frozen at the M1 analog subset (R1) |
 | analyses from a host | `op`, `dc` (one sweep), `ac`, `transient`; on both backends for the 7 ngspice twins |
 | digital and mixed-signal | on the Rust backend only: `examples/buck` whole, closed loop at 0.8 V (`buck_closed_loop`, `buck_long`), scenarios S2 to S10 on the Rust host (`buck_scenarios`) |
-| stdlib that runs | `known`, `known_or`, `is_known`, `rise`, `fall`, `high`, `init`, `every`, `settle`, `vt`, `pnjlim`, `fetlim`, `deltalim`, `limexp`, `above`, `last_crossing`, `transition`, `normal`, `D2A`, `A2D`, `Never`, `State`, `log`, `require`, `cover`, `target`, the six constants. About 30 of the 75 names of the §22 index |
+| stdlib that runs | `rise`, `fall`, `init`, `every`, `settle`, `vt`, `pnjlim`, `fetlim`, `deltalim`, `limexp`, `above`, `last_crossing`, `transition`, `normal`, `D2A`, `A2D`, `Never`, `State`, `log`, `require`, `cover`, `target`, the six constants. About 30 of the 75 names of the §22 index |
 | command line and host library | `check`, `build`, `run`, `test`, `new`, `clean`, `fmt`; tables, record lines, CSV, JSON Lines, SVG; `--param` before a run; a transient keeps rows, not steps: `piperine run startup` in `examples/buck` prints the whole 600 µs start |
 | language server | **does not build**, deferred by the user |
 
@@ -86,12 +86,30 @@ change of the IR or the ABI.
   in elaboration, of the whole model.
 - Generic items need an instantiation to check (X6); the others do not.
 
-### S6. Unknown integers are one flag per value, so `&` and `|` lose known bits (G6) — size L (ABI)
+### S8. The implementation still carries the known flag — size L (`explicit-unknowns`, phases A and B)
 
-- §3.3.2 is per level. Probe: with `x` unknown, `((x & 1) & 2).known_or(9)` gives 9; the spec
-  gives 0. `x & 0` and `b && false` are right. Ruled provisional on 2026-11-15 (`ir-rust` F-B4);
-  listed here because the result differs from the spec text with no diagnostic. Per-level flags
-  change the ABI's one known byte per value.
+- **What.** The spec was amended on 2026-11-21 (Appendix G.72, MD-78): no value carries a flag,
+  `Logic<N>` and `Option<T>` say what a type may hold, a carrier starts at its written value or
+  its type's `Default`, and a nature that implements `Resolve<X, V>` takes many drives. S6 and G6
+  (one flag per value where the text said one per level) closed with it: the redesign removes the
+  flag instead of finishing it, and `unknown-semantics-per-level` is dropped. The implementation is
+  the earlier model. The layers: the lexer and parser (`Token::Unknown`, `LitKind::Unknown`);
+  the checker (`flag_total.rs`, `E0150`, `E0151`, `level`, `known`, `known_or`, `is_known`, `high`,
+  `merge`); the elaborator (`elab/known.rs`, the merge lowering, the unknown index); the IR
+  (`ValueType::Flagged`); the plan (the known byte of every layout, `maybe`); the generated code
+  (`rt/flag.rs`, the merge of paths, `commit_with`); the device ABI (`Field.known`, `HAS_KNOWN`,
+  `commit_flag`, `layout::Merge`, `MINOR` 1); the engines (the `MERGE` and `MAYBE` commits, relaxation
+  zeroing a known byte); the host (an unknown cell, `Record::surely`); the `resolve` field of a nature
+  and the library nets `Wire`, `Tri` and `SumNet`; and `std`, `examples/` and the tests, which use the
+  removed names.
+- **Where it shows.** Every model that reads `known_or(d)`, `high()` or `.is_known()` runs; a
+  carrier with no initial value starts unknown where the spec says it starts at its `Default`
+  (`E0187`); a `Bit` that starts high rises at `(0, 0)` where §22.1.5 says it does not; a loop that
+  does not settle writes a `log` record where §8.2.3 stops the run with `E0511`.
+- **Fix.** Phase A (B4 to B7 of `.specs/features/explicit-unknowns/tasks.md`) removes the flag from
+  every layer in three moves (accept, rewrite the tree, refuse and remove); phase B (B8) writes
+  `Logic<N>` and the operator traits in `std` after `generics`. This row is deleted when phase A lands
+  (T40).
 
 ---
 
@@ -119,8 +137,8 @@ quotes the text after `P0001:` unless another code is shown.
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L21 | natures with `resolve`: `Wire`, `Tri`, `SumNet`; `others()`; relaxation of loops | §4 rule 2, §5.2.2, §8.2.3 | `resolved nature Wire` | L |
-| L24 | arrays of carriers (`[Bit; 8]`, `[Electrical; 4]`); element and field commits (`bits[3] <- true`) and definitions (an index that may be unknown merges every element it may name, §3.3.3: `unknown-semantics` US-04 AC 12 travels with this row) | §5.1.4, §12.1 | `array type`; `an element or field commit` | L, with L3 |
+| L21 | natures that implement `Resolve<X, V>` (declared by the model; the library has no net nature); `others()`; relaxation of loops; `E0511` | §4 rule 2, §5.2.2, §8.2.3 | `resolved nature Wire` | L |
+| L24 | arrays of carriers (`[Bit; 8]`, `[Electrical; 4]`); element and field commits (`bits[3] <- true`) and definitions | §5.1.4, §12.1 | `array type`; `an element or field commit` | L, with L3 |
 | L25 | bundles: a `struct` of carriers, `flip`, bundle literals, `impl` on a bundle | §7 | `struct item used as a type`, `flip type` | L |
 | L64 | a plain read of a composite carrier that holds no value yet (a field, a copy, `prev()` before the first change of a `Bit<Pair>`, `Bit<(u8, u8)>`, `Bit<[T; N]>`, `Bit<Option<T>>`): it fails the run naming the instance and the carrier (`is_known()` first reads the flag). A composite carries one known byte, not a flag per field, and a scalar carrier in the same place reads unknown (§3.3.2, §5.1.1, §5.1.8). Owned by `explicit-unknowns` phase A (MD-78), which starts every carrier at a value or a `Default::default()` and so removes the case | §3.3.2, §5.1.1, §5.1.8 | run fault: `` `un` is a composite that holds no value yet `` | `explicit-unknowns` A |
 
@@ -178,8 +196,8 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 | # | Refused | Spec | Size |
 | - | ------- | ---- | ---- |
 | L57 | `include_str!`, `parse_table`, `parse_hex`, `table_model` (`P0001` when reached; see S3) | §20, §22.6.4, §22.2.15 | M |
-| L58 | Stdlib refused with the form it is built on. **Generics (L30):** `Short`, `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`, `merge`, `cast`, `same`. **Resolved nets (L21):** `Logic`, `Strength`, `Wire`, `Tri`, `SumNet`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir`, `TribufDelayed`. **Other:** `AckWithin` (a `u32` param), `MinPulse` (`since`), `limvds` as a function value (L9) | §22 | by its group |
-| L59 | `unwrap` or `expect` of an `Option` whose presence may be unknown; the closure of `map`, `and_then` or `then` when it is not a literal; an `expect` message that is not a string literal | H.3 | `P0001` naming the form | S |
+| L58 | Stdlib refused with the form it is built on. **Generics (L30):** `Short`, `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`, `cast`, `same`. **Resolved nets (L21):** `Logic`, `Strength`, `Driven`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir`, `TribufDelayed`. **Other:** `AckWithin` (a `u32` param), `MinPulse` (`since`), `limvds` as a function value (L9) | §22 | by its group |
+| L59 | the closure of `map`, `and_then` or `then` when it is not a literal; an `expect` message that is not a string literal | H.3 | `P0001` naming the form | S |
 | L60 | the stdlib `slew` does not limit an ideal (jump) step: §15.2 rule 4 fires a jump's crossing after the solve, so the output passes the jump in one step. Fix = retake the step when a jump-crossing flips a carrier read by `analog` (owner `analog-operators`, AO-13; found by `analog-structure` AS-09 AC 6, which covers a step with a finite edge) | §15.2 rule 4, §22.2.10 | none: the output follows the jump | M |
 | L61 | sweeping or setting a key param after `Session::open`: a param that fixes the structure (a selector, an initial value, a reached param) is folded into the body at elaboration, so a `dc` sweep of it, or a `set` of it between open and the run, needs one elaboration per value. Today `E0803` refuses both naming the param; the before-run request param (`--param`) works (owner `sweeps-montecarlo-optimization`; found by `analog-structure` verification F1) | §23.1 rule 7, §8.1.2 | `E0803` | M |
 | L62 | a `switch` branch between two floating nodes with an undriven control panics in faer (`attempt to subtract with overflow`, `faer.rs:47`) instead of a named solver error (owner `spec-closure`; found by the `analog-structure` fix round) | §11 (switch branches), §15 | a switch between two floating nodes whose control no source drives | S |
@@ -214,14 +232,13 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 ## 5. Spec holes and disagreements
 
 Each has a provisional rule or a note so work is not blocked; the spec sentence is still owed.
-G1 to G6 are the buck's (`examples/buck/GAPS.md`). The spec's own open list is Appendix G
+G1 to G5 are the buck's (`examples/buck/GAPS.md`; G6, unknown integers per value, closed with S6 by `explicit-unknowns`). The spec's own open list is Appendix G
 (`G.1` to `G.68`, about 30 open) and is not repeated here.
 
 - **G4 — `f64 as u10` outside the range.** §1 rule 1 says "truncates or extends, as in Rust".
   Provisional: saturate, NaN → 0 (probe: `5000.7 as u10` is 1023).
 - **G5 — shift by N or more bits.** No rule. Provisional: the mathematical result truncated to N
   bits (probe: `1u8 << 9` is 0). A negative amount panics in compiled code (a fault, F-B9).
-- **G6 — unknown integers are per value** (S6).
 - **G1 — no fixed-point type; G2 — no ranged integer.** Language proposals of the buck.
 - **X1 — §15 describes a solver that is gone.** Its notes say the microsteps of `t` run before
   the solve of `t`, and that the device ABI order (solve, then react) "is adopted: `solver-abi`
@@ -320,9 +337,9 @@ does not count.
 | Part | Runs | Biggest holes |
 | ---- | ---- | ------------- |
 | I §1–§2 values, `Repr` | 60 % | floats other than `f64`, widths over 64, generic enums; `let mut`, assignment, patterns, structs, tuples, arrays and payload enums run |
-| I §3–§3.3 functions, calls, unknown values | 45 % | generics, `impl`, traits, handles; loops, recursion, closures, function values, arrays, composites, the merge and the level reads run |
+| I §3–§3.3 functions, calls, uncertainty and absence | 45 % | generics, `impl`, traits, handles; loops, recursion, closures, function values, arrays, composites and the level reads run; the known flag is still carried (S8) |
 | I §3.4–§3.6 files, crates, packages | 95 % | the check of unreached items (S3) |
-| II §4–§5 natures, discrete carriers | 40 % | `resolve`, arrays, user discrete natures, `Unknown` initial values |
+| II §4–§5 natures, discrete carriers | 40 % | `Resolve`, arrays, user discrete natures, initial values by `Default` (S8) |
 | II §6 nodes, probes | 85 % | signal-flow |
 | II §7 bundles | 0 % | all |
 | III §8–§8.2 modules, ports, params, the body | 60 % | generics, generation, params that are not `f64` or `bool` |
@@ -330,9 +347,9 @@ does not count.
 | III §8.4–§8.5 templates, `m`/`dtemp`, extern | 0 % | all |
 | IV §10–§11 analog | 70 % | the §18 `Diode` (L40), an ideal-step `slew` (L60) |
 | IV §12–§13 digital, events | 60 % | `Event` functions, loops, element commits |
-| IV §14 core primitives | 50 % | `ddx`, `delay`, `noise`, `simparam`, `others`, `level`, `include_str!` |
-| V §15–§18 execution | 60 % | the merge, digital-only runs, error naming, the text of §15 itself (X1) |
-| VI §19–§21 output, input, metadata | 35 % | traces, `maybe`, files, host metadata |
+| IV §14 core primitives | 50 % | `ddx`, `delay`, `noise`, `simparam`, `others`, `include_str!` |
+| V §15–§18 execution | 60 % | digital-only runs, error naming, the text of §15 itself (X1) |
+| VI §19–§21 output, input, metadata | 35 % | traces, files, host metadata |
 | VII §22 stdlib | 36 % (about 30 of 75 names; `normal` runs) | everything generic, every resolved net, `idt`, filters, noise, tables |
 | VIII §23 host | 15 % | host actions, options, Monte Carlo, optimization, gradients |
 | A lexical, B grammar | 100 % parsed | the placement matrix B.2 is enforced for the subset only |
@@ -344,13 +361,13 @@ does not count.
 
 ## 10. Reference lists
 
-**Error codes of the spec that no source file mentions (33 of 189).** A code counts as mentioned when it is spelled
+**Error codes of the spec that no source file mentions (35 of 189).** A code counts as mentioned when it is spelled
 outside a comment in `crates/*/src` (a literal, or an enum variant's `as_str`); `E0375` is named in a doc
 comment only (`pom/builtin.rs`), so it is on the list. `E0503`, `E0504`, `E0505`, `E0507` and `E0508` are
 raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`). `E0803` to `E0806` are raised
 by `session.rs` and `host.rs`; `E0701` and `E0702` by the elaborator.
-`E0123 E0124 E0127 E0131 E0132 E0133 E0134 E0187 E0203 E0313 E0322 E0340 E0342
-E0360 E0362 E0371 E0372 E0373 E0374 E0375 E0451 E0452 E0453 E0454 E0456 E0614
+`E0123 E0124 E0127 E0131 E0132 E0133 E0134 E0187 E0203 E0225 E0313 E0322 E0340 E0342
+E0360 E0362 E0371 E0372 E0373 E0374 E0375 E0451 E0452 E0453 E0454 E0456 E0511 E0614
 E0703 E0704 E0705 E0706 E0807 E0808 E0809`
 
 **Entries of the previous file that changed.**
@@ -361,7 +378,7 @@ E0703 E0704 E0705 E0706 E0807 E0808 E0809`
   checker stops it first (`types/call.rs:54`, there since `295b5ab8`); closed by `params-and-io` as `E0180` (L20).
 - `examples/buck/GAPS.md` G3 (a method on a carrier left unresolved) was already closed by
   `msl-digital`: it is a `P0001` naming the method (L15, since closed).
-- Every other entry is kept: B3, B4, §4.7, G1 to G6, the solver points (now V1 to V11), U1 to
+- Every other entry is kept: B3, B4, §4.7, G1 to G5, the solver points (now V1 to V11), U1 to
   U3.
 
 **Clusters one feature would close.** Sizes are rough; the order is the user's.
@@ -373,8 +390,8 @@ E0703 E0704 E0705 E0706 E0807 E0808 E0809`
 | Analog operators | L43, L44, L45, L49, H2 (`Noise`) | M to L |
 | Composite values | L24, L57, and L4 for generic enums (phases A and B closed L1 to L3, L5, L6, L10, L16 and the part of L9 that is not `generics`; MD-79) | L |
 | Generics and generation | L7, L30, L31, L32, S3 for generic items: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
-| Resolved nets and bundles | L21, L25: `Wire`, `Tribuf`, `Tran`, `Bidir` | L |
-| Unknown semantics | S6 (ABI), L53, L8 (L18, L19 closed by `unknown-semantics`; L51, L52 by `unknown-semantics-events`) | L |
+| Resolved nets and bundles | L21, L25: natures that implement `Resolve`, `Tribuf`, `Tran`, `Bidir` | L |
+| Unknown semantics | S8 (explicit unknowns), L53, L8 (L18 and L19 closed by `unknown-semantics`; L51 and L52 by `unknown-semantics-events`; S6 and G6 closed by `explicit-unknowns`) | L |
 | Host II (delivered in part by `host-ii`) | H1, H3, H6, H9, then B4 (Python) | L |
 | Speed | V12, V13, V16, PSS on the device ABI | L |
 | Foreign models | L12, L33 | L |
@@ -407,12 +424,8 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | values~c389077a | L53 | `unknown-semantics-events` | the class of a function that returns `Event` does not run (`handshake`); the pure, `now()` and `emit!` classes do |
 | values#22 | L12 | `foreign-models` | an `extern "C" fn` with its `#[derivative]` is `P0001`: `extern` function is not supported yet |
 | values~3998361d | L12 | `foreign-models` | `E0123` is not raised: an `extern` function called in `analog` is `P0001` with or without the derivative |
-| natures#2 | L24 | `composite-values` | `[Bit; 8]` is `P0001` (array type), `signal sda: Wire` is `P0001` (resolved nature `Wire`) and `logic("10xx")` reaches a generic function of the standard library (`P0001`); the other lines are accepted |
-| natures#3 | L21 | `resolved-nets` | `alarm.msl` is twelve `P0001`: the `Wire` ports, `changed()` and field access on a `Wire`, the `struct` of `Logic` in `nets.msl` |
 | natures#8 | L25 | `resolved-nets-bundles` | placed in a top, the `Stream` bundle is `P0001` (`struct` item used as a type) and `Slice` is `P0001` (generic module) |
-| natures~e99c1920 | L21 | `resolved-nets` | the command refuses `alarm.msl` and runs nothing, as the sentence says: held with natures#3 |
 | natures~52790298 | L25 | `resolved-nets-bundles` | `flip` and the bundle's directions are `P0001` with natures#8 |
-| natures~6a449552 | L21 | `resolved-nets` | the `Pulldown` variant of the alarm needs the same `Wire`: refused with natures#3 |
 | modules#1 | L30 | `generics` | `ladder.msl` is `P0001`, a generic module, on `Ladder::<3>`, for an operating point and for the DC sweep |
 | modules#2 | L31 | `generics` | next to the generic ladder, generation `for` in a `digital` block is `P0001` |
 | modules#6 | L30 | `generics` | `lowpass` is `P0001`: its `idt` is a generic module; the module that returns a value with feedback through an instance is behind it (L38) |
@@ -431,18 +444,16 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | analog#11 | L45 | `analog-operators` | `noise(..)` is `P0001`: core primitive `noise` |
 | analog~139c67b5 | L49 | `analog-operators` | a trace from `analog` is refused with analog#7: no record per Newton iteration exists |
 | analog~b103eeb0 | L49 | `analog-operators` | no trace line reaches the command: the `emit!` in `analog` is refused with analog#7 |
-| digital#7 | L28 | `params-and-io` | `param of type u8 is not supported yet` on `n: u8`; with the param written as a literal, `known_or(clean)` is `P0001` too (a `known_or` default that may be unknown, L59) |
+| digital#7 | L28 | `params-and-io` | `param of type u8 is not supported yet` on `n: u8` |
 | digital#11 | L28 | `params-and-io` | `param of type u8 is not supported yet` on `period: u8` |
 | digital#14 | L28 | `params-and-io` | `PwmCheck` is `P0001` twice: `limit: u8` and `cycles: u32` |
-| digital#16 | L21 | `resolved-nets` | `IrqSource`, `IrqController` and `Board` are `P0001`: the resolved nature `Wire`, `.v` on it, the `Logic` struct |
-| digital#17 | L30 | `generics` | `Dff<T: Repr>` placed as `Dff::<u8>` is `P0001`: generic module |
+| digital#21 | L30 | `generics` | `Dff<T: Repr>` placed as `Dff::<u8>` is `P0001`: generic module |
 | digital~bc5825b1 | L28 | `params-and-io` | the debouncer is refused at `n: u8`, as the sentence says |
 | digital~bdd2508f | L28 | `params-and-io` | the PWM is refused at `period: u8`, as the sentence says: held with digital#11 |
 | digital~a0ca3f9d | L28 | `params-and-io` | the check does not run as the Book places it: `limit: u8` and `cycles: u32` are refused with digital#14 |
 | digital~d7032a06 | L28 | `params-and-io` | the form is refused as the sentence says (digital#7) |
 | digital~d1d69398 | L28 | `params-and-io` | the debouncer and the PWM are refused (digital#7, digital#11); the counter runs |
 | packages#12 | L57 | `composite-values` | `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` is `P0001`, a reference type; `include_str!` itself is accepted in a `const` |
-| core-std#6 | L21 | `resolved-nets` | `IrqSource` and `Board` are `P0001`: the resolved nature `Wire`, and `.v`/`Logic` behind it |
 | core-std#8 | L30 | `generics` | `Reg` placing `Setup(clk, d) { ts: 100p }` is `P0001`: `Setup<T: Repr>` is a generic module |
 | core-std#10 | L28 | `params-and-io` | `Watchdog` is `P0001` on `limit: u16`; with the param written as a literal the watchdog runs and ends the run at the fourth edge |
 | cheatsheet#2 | L30 | `generics` | `module M<const N: usize>(..)` placed as `M::<2>` is `P0001`: generic module |
@@ -451,6 +462,32 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function need a generic module: `P0001` |
 | cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
 | cheatsheet#10 | L57 | `composite-values` | with its `emit!` the card is `E0601` (a statement among items); without it `parse_table(include_str!(..))` is `P0001`, a generic function, and `table_model(.., IV, ..)` an array whose length is a generic parameter |
+| values#14 | S8 | `explicit-unknowns` | the adder's `Bit<Option<u8>>` port `b`, undriven, is read: the run fails with `E0105` naming `b` (a composite that holds no value yet; L64); made to run by explicit-unknowns, phase A: T21, T22 and T30 (`Option` as a carried type that starts at a value) |
+| values#18 | S8 | `explicit-unknowns` | `Logic<4>` is `P0001`: the library struct `Logic` has no generic parameter yet (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
+| values#21 | S8 | `explicit-unknowns` | `analog` reading `held` with no gate is `E0150`: the earlier front end still refuses a plain read of a discrete carrier (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
+| values~23c03fc8 | S8 | `explicit-unknowns` | `E0187` is not raised: `signal en: Bit;` elaborates and starts unknown (made to run by explicit-unknowns, phase A: T21, T22 and T30 (the `Default` table, initial values, E0187; `Option` as a carried type)) |
+| values~37a548f2 | S8 | `explicit-unknowns` | the run does not refuse an undriven top-level `in` port of a type with no `Default`: it starts it unknown (made to run by explicit-unknowns, phase A: T38 (EU-04 AC 6: the analysis refuses the port)) |
+| values~39ba3a1d | S8 | `explicit-unknowns` | `E0187` is not raised (the row of the mistakes table) (made to run by explicit-unknowns, phase A: T21, T22 and T30 (the `Default` table, initial values, E0187; `Option` as a carried type)) |
+| values~2bbc575e | S8 | `explicit-unknowns` | held with values#14: the adder's undriven `Bit<Option<u8>>` port is `E0105` at run time (made to run by explicit-unknowns, phase A: T21, T22 and T30) |
+| values~c30bad4d | S8 | `explicit-unknowns` | held with values#18: `Logic<4>` is `P0001` (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
+| natures#2 | L21 | `resolved-nets` | `[Bit; 8]` is `P0001` (an array of carriers, L24) and `Bit<Logic<4>>` is `P0001` (`Logic` has no generic parameter yet); `Bit<Option<u8>>` is a carried type and runs, and `Sda`, declared further on in the chapter, is `E0161` when the block stands alone (made to run by resolved-nets, which lands after explicit-unknowns phase B (`Logic<4>`): `Sda` is the chapter's own `impl Resolve<Driven>` nature, which needs `Resolve` and `Driven` (T27 to T32)) |
+| natures#3 | L21 | `resolved-nets` | `alarm.msl` is `E0161`: `Driven`, `Resolve`, `Pullup` and the `Logic` behind them are not in the library yet, so a nature that implements `Resolve<Driven>` is not read (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| natures~e99c1920 | L21 | `resolved-nets` | the command refuses `alarm.msl` and runs nothing, as the sentence says: held with natures#3 (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| digital#16 | L21 | `resolved-nets` | `IrqLine`, a nature the model declares with `impl Resolve<Driven>`: `Driven` is `E0161` (not in the library yet) (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| digital#17 | L21 | `resolved-nets` | `AndWire` and `impl Resolve<bool>`: `Resolve` is `E0161` (not in the library yet) (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| digital#18 | L21 | `resolved-nets` | `Sda` and its pull-up: `Driven` is `E0161` (not in the library yet) (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| digital#19 | L21 | `resolved-nets` | `TriBus` with `Tribuf` and `Keeper`: `Driven` is `E0161` (not in the library yet) (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| digital#20 | L21 | `resolved-nets` | `DataBus` and `impl Resolve<Option<u8>, Data>`: `Resolve` is `E0161` (not in the library yet) (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| welcome#17 | S8 | `explicit-unknowns` | `StepSource` reads `fired` in `analog` with no gate: `E0150`, the earlier front end still asks for one (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
+| analog#9 | S8 | `explicit-unknowns` | the ideal switch reads `ctl` with no gate: `E0150` (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
+| modules#9 | S8 | `explicit-unknowns` | `RSwitch` reads `ctl` with no gate: `E0150` (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
+| mixed#8 | S8 | `explicit-unknowns` | the buck's `RSwitch` reads `ctl` with no gate: `E0150` (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
+| mixed#10 | S8 | `explicit-unknowns` | the buck with its `settle` check reads `ctl` with no gate: `E0150` (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
+| mixed#14 | S8 | `explicit-unknowns` | `DeltaSigma1` reads `bit` with no gate: `E0150` (made to run by explicit-unknowns, phase A: T20 accepts the read, closed by T40) |
+| natures~91c3bffe | L21 | `resolved-nets` | the `Pulldown` variant of the alarm needs the same nature: refused with natures#3 (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| core-std#6 | L21 | `resolved-nets` | `IrqLine`, a nature the model declares with `impl Resolve<Driven>`: `Driven` is `E0161` (not in the library yet) (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
+| errors~39ba3a1d | S8 | `explicit-unknowns` | `E0187` is not raised (the row of the codes table) (made to run by explicit-unknowns, phase A: T21, T22 and T30 (the `Default` table, initial values, E0187; `Option` as a carried type)) |
+| errors~385c354c | S8 | `explicit-unknowns` | `E0187` is not raised: `signal held: Bit<f64>;` elaborates and `vout` sits at 0 V (made to run by explicit-unknowns, phase A: T21, T22 and T30 (the `Default` table, initial values, E0187; `Option` as a carried type)) |
 
 Three observations the root tests made are no Book row, so they are not above: they are entries of §7,
 each with its owner. A run has no key or flag for `dt_min` (H16, `host-analyses`); a `--stream` named like

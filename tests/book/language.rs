@@ -238,3 +238,25 @@ fn e0903_mut_is_not_a_word_of_the_language() {
     let plain = ValueFile::written("", "let x = 5; x = 6; emit!(\"r\", x = x);");
     ValueFile::int(&plain, "x", 6);
 }
+
+#[test]
+fn the_book_says_numbers_have_no_default() {
+    // EU-18 AC 2: the chapter on the basics says, in its own words and without borrowing another
+    // language's name for it, that no primitive numeric type has a default value, and the types
+    // chapter lists it among the things a model does not do (generics~8faad162, the operator traits,
+    // is prose).
+    let book = std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/book/content.html")).expect("the Book");
+    let chapter = |id: &str| {
+        let start = book.find(&format!("<section id=\"{id}\"")).unwrap_or_else(|| panic!("chapter {id}"));
+        book[start..start + book[start..].find("</section>").expect("a chapter closes")].to_string()
+    };
+    let language = chapter("language");
+    assert!(language.contains("<strong>a number has no default value</strong>"), "the language chapter states it");
+    assert!(language.contains("<code>u8::default()</code> does not exist"), "and names the case");
+    assert!(!book.contains("same as Rust") && !book.contains("as in Rust"), "the Book never explains by another language's name");
+    let types = chapter("types");
+    assert!(types.contains("A default value for a number (<code>u8::default()</code>)"), "the types chapter lists it among the limits");
+    let generics = chapter("generics");
+    assert!(generics.contains("numbers and <code>bool</code> have the traits of the other rows but not <code>Default</code>"), "the Default row says it");
+    assert!(generics.contains("<strong>Operators are traits too.</strong>"), "the operator traits are taught");
+}

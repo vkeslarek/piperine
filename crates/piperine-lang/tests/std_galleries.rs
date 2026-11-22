@@ -1,4 +1,4 @@
-//! Scope: the gallery gate of the standard library (STD-13, STD-14). The 18 gallery fences of
+//! Scope: the gallery gate of the standard library (STD-13, STD-14). The 16 gallery fences of
 //! Appendices D, E and F name models that other sections define; the fixtures under
 //! `tests/fixtures/gallery/` hold those models, every line copied from `docs/spec/`, and a table
 //! in this file says which fixtures each fence is assembled with and which `std` items it must
@@ -28,24 +28,22 @@ struct Row {
 const MODELS: [&str; 12] =
     ["Resistor", "Capacitor", "Switch", "SampleHold", "Comparator", "Cell", "Dram1T1C", "MemoryBank", "Stream", "Tx", "Vco", "RSwitch"];
 
-const TABLE: [Row; 18] = [
-    Row { section: "D.1", fixtures: &[], std_items: &["carriers::Electrical", "values::Known.known_or"] },
+const TABLE: [Row; 16] = [
+    Row { section: "D.1", fixtures: &[], std_items: &["carriers::Electrical", "carriers::Bit"] },
     Row { section: "D.2", fixtures: &[], std_items: &["carriers::Bit", "analog::normal"] },
     Row { section: "D.3", fixtures: &[], std_items: &["analog::idtmod", "analog::above"] },
     Row { section: "D.4", fixtures: &[], std_items: &["analog::transition", "carriers::Electrical"] },
     Row { section: "D.5", fixtures: &[], std_items: &["carriers::Electrical", "values::impl Bit.rise"] },
-    Row { section: "D.6", fixtures: &["Capacitor"], std_items: &["carriers::Electrical", "values::impl Bit.high"] },
+    Row { section: "D.6", fixtures: &["Capacitor"], std_items: &["carriers::Electrical", "carriers::Bit"] },
     Row { section: "E.1", fixtures: &[], std_items: &["carriers::Bit", "values::impl Bit.rise", "values::impl Bit.fall"] },
     Row { section: "E.2", fixtures: &[], std_items: &["carriers::Bit"] },
     Row { section: "E.3", fixtures: &[], std_items: &["carriers::Bit", "values::impl Bit.rise"] },
     Row { section: "E.4", fixtures: &["Tx"], std_items: &["carriers::Bit"] },
     Row { section: "E.5", fixtures: &[], std_items: &["carriers::Bit", "values::impl Bit.rise"] },
     Row { section: "E.6", fixtures: &["Stream"], std_items: &["carriers::Bit", "values::impl Bit.rise"] },
-    Row { section: "E.7", fixtures: &[], std_items: &["nets::Wire", "nets::Pullup", "nets::Logic"] },
-    Row { section: "F.1", fixtures: &["SampleHold", "Comparator"], std_items: &["carriers::Electrical", "values::Known.known_or"] },
+    Row { section: "F.1", fixtures: &["SampleHold", "Comparator"], std_items: &["carriers::Electrical", "carriers::Bit"] },
     Row { section: "F.2", fixtures: &["Resistor", "Capacitor", "Vco"], std_items: &["carriers::Electrical", "values::impl Bit.rise"] },
     Row { section: "F.3", fixtures: &["Cell", "Dram1T1C", "MemoryBank", "Capacitor", "RSwitch"], std_items: &["carriers::Bit", "carriers::Electrical"] },
-    Row { section: "F.4", fixtures: &[], std_items: &["nets::Wire", "nets::Keeper", "nets::Tran"] },
     Row { section: "F.5", fixtures: &["Capacitor", "Switch"], std_items: &["carriers::Electrical", "carriers::Bit"] },
 ];
 
@@ -168,7 +166,7 @@ fn every_fixture_line_is_spec_text() {
 #[test]
 fn the_fixture_table_covers_every_gallery() {
     let fences = galleries();
-    assert_eq!(fences.len(), 18, "Appendices D, E and F hold 18 gallery fences");
+    assert_eq!(fences.len(), 16, "Appendices D, E and F hold 16 gallery fences (E.7 and F.4 are fragments until `Resolve` runs)");
     let from_spec: BTreeSet<&str> = fences.iter().map(|g| g.section.as_str()).collect();
     let from_table: BTreeSet<&str> = TABLE.iter().map(|r| r.section).collect();
     assert_eq!(from_table.len(), TABLE.len(), "no section has two rows");
@@ -273,9 +271,9 @@ fn unreferenced_std_items(design: &Design, names: &[&str]) -> Vec<String> {
         .collect()
 }
 
-/// The gate fails unless it builds exactly 18 fences.
-fn require_18(built: usize) -> Result<(), String> {
-    if built == 18 { Ok(()) } else { Err(format!("the gate built {built} gallery fences, not 18")) }
+/// The gate fails unless it builds exactly 16 fences.
+fn require_16(built: usize) -> Result<(), String> {
+    if built == 16 { Ok(()) } else { Err(format!("the gate built {built} gallery fences, not 16")) }
 }
 
 #[test]
@@ -314,11 +312,11 @@ fn every_gallery_references_its_std_items() {
 }
 
 #[test]
-fn the_gate_builds_18_fences() {
+fn the_gate_builds_16_fences() {
     let fences = galleries();
     let built = fences.iter().map(|g| gallery_design(g)).count();
-    assert_eq!(require_18(built), Ok(()));
-    assert!(require_18(17).is_err() && require_18(19).is_err(), "another number fails the gate");
+    assert_eq!(require_16(built), Ok(()));
+    assert!(require_16(15).is_err() && require_16(17).is_err(), "another number fails the gate");
 }
 
 #[test]
@@ -349,7 +347,7 @@ fn galleries_fail_against_an_empty_prelude() {
 
 #[test]
 fn every_gallery_lists_a_std_item() {
-    assert_eq!(TABLE.len(), 18);
+    assert_eq!(TABLE.len(), 16);
     for row in &TABLE {
         assert!(!row.std_items.is_empty(), "{} lists no std item", row.section);
     }
@@ -419,12 +417,12 @@ fn the_fences_composite_values_lifted_are_checked() {
     assert_eq!(held, ["E.3", "E.4"], "both fences are held");
 }
 
-/// PI-11 AC 3: each of the 18 gallery fences is the formatter's output for itself, so a reader
+/// PI-11 AC 3: each of the 16 gallery fences is the formatter's output for itself, so a reader
 /// copies it into a file `piperine fmt --check` accepts.
 #[test]
 fn every_gallery_fence_is_in_the_formatters_form() {
     let fences = galleries();
-    assert_eq!(fences.len(), 18, "the galleries hold 18 fences");
+    assert_eq!(fences.len(), 16, "the galleries hold 16 fences");
     for gallery in fences {
         let text = format!("{}\n", gallery.block.text.trim_end());
         let formatted = Formatter::format(&text).unwrap_or_else(|d| panic!("{} ({}:{}): {d:?}", gallery.section, gallery.block.file, gallery.block.line));

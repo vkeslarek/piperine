@@ -56,7 +56,8 @@ Opus or Fable; a feature merges to `main` and upstream when its verifier passes.
 | --- | --- | --- |
 | welcome#17, analog#9, modules#9, mixed#8, mixed#10, mixed#14, values#21 (`analog` reads a discrete carrier directly) | `E0150` | `explicit-unknowns` phase A (T20, closed by T40) |
 | The `E0187` and `Default` initial-value sentences of the values chapter | not raised | `explicit-unknowns` phase A (T21, T22, T30) |
-| values#14 and natures#2 (`Option` as a carried type; `[Bit; 8]`) | `E0112`, `P0001` | `explicit-unknowns` phase A for `Option`; `composite-values` for the array |
+| values#14 (`Option` as a carried type) | `E0112` | `explicit-unknowns` phase A |
+| natures#2 (`[Bit; 8]`, `Bit<Option<u8>>`, `Bit<Logic<4>>`, `signal sda: Sda`) | `P0001`, `E0112`, `E0161` | `resolved-nets` (needs `composite-values` for the array, explicit-unknowns phases A and B, and `Resolve<Driven>` for `Sda`) |
 | values#18 and the other `Logic<4>` listings | `P0001` | `explicit-unknowns` phase B (T48) |
 | digital#16 to digital#20, natures#3 and its alarm, core-std#6 (`Driven`, `Resolve`, `Pullup`, `Tribuf`, `Keeper`) | `E0161` | `resolved-nets` B3 and later (T27 to T32) |
 

@@ -55,7 +55,7 @@ impl Surroundings {
 
 #[test]
 fn the_nature_card_is_the_standard_librarys() {
-    // cheatsheet#1 (run): `Bit`, `Wire` and `Electrical` as the sheet writes them; each is a declaration of
+    // cheatsheet#1 (run): `Bit` and `Electrical` as the sheet writes them (the library declares no `Wire`, explicit-unknowns D20); each is a declaration of
     // `std/carriers.msl` or `std/nets.msl`, comments and `pub` aside, and the block is accepted
     let chapter = Chapter::read();
     let model = chapter.wrapped("natures.msl", "", "cheatsheet#1", "module Top() {}\n");
@@ -63,7 +63,7 @@ fn the_nature_card_is_the_standard_librarys() {
     let library = StandardLibrary::normalized(&["carriers.msl", "nets.msl"]);
     let block = StandardLibrary::normalize(&chapter.text("cheatsheet#1"));
     let declarations: Vec<&str> = block.split("nature ").skip(1).collect();
-    assert_eq!(declarations.len(), 3, "Bit, Wire and Electrical: {block}");
+    assert_eq!(declarations.len(), 2, "Bit and Electrical: {block}");
     for declaration in declarations {
         let declaration = format!("nature {}", declaration.trim());
         assert!(library.contains(&declaration), "the standard library declares `{declaration}`");

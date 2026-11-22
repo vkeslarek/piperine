@@ -485,7 +485,7 @@ T34 → T35 → T36
 
 ### T16: Checker: resolved natures and their carriers
 
-**What**: `ResolveSignature::check` (design C3, D15): `resolve` of a pure function with one const parameter `N: usize`, one parameter `[T; N]`, result `T`, an associated function or a const of function type accepted, anything else `E0203` naming nature and function; `port_type`'s `Resolved` arm gives `Ty::Carrier`; `E0310` for `in`/`out` on a resolved port; `E0220` skipped for resolved carriers. Delete the `E0203` row of `code_owners.tsv` (D16).
+**What**: Removes `NatureFieldNode::Resolve`, `Nature::resolve_fn` and the kind `Resolved` that the `resolve` field gave, and rewrites the statements of `docs/pom/reflection.md`, `model.md`, `mapping.md` and `resolution.md` (the `E0261` row) that still describe the field (explicit-unknowns F14: `pom_docs::DocAheadOfTheCode::WAITING` lists each and fails when its form leaves the code; the entries are dropped here). `ResolveSignature::check` (design C3, D15): `resolve` of a pure function with one const parameter `N: usize`, one parameter `[T; N]`, result `T`, an associated function or a const of function type accepted, anything else `E0203` naming nature and function; `port_type`'s `Resolved` arm gives `Ty::Carrier`; `E0310` for `in`/`out` on a resolved port; `E0220` skipped for resolved carriers. Delete the `E0203` row of `code_owners.tsv` (D16).
 **Where**: `crates/piperine-lang/src/types/nature.rs`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `NatureRules`, `generics`' signature checks
@@ -887,7 +887,7 @@ T34 → T35 → T36
 
 ### T35: The other Book rows of resolved nets
 
-**What**: `digital#16` (`IrqSource`, `IrqController`, `Board`) and `core-std#6` run; `natures#2` keeps only the array refusal (L24, owner `composite-values`); tests and `inventory.tsv` follow.
+**What**: `digital#16` (`IrqSource`, `IrqController`, `Board`) and `core-std#6` run; `natures#2` runs too (gap L21, owner `resolved-nets`: composite-values and explicit-unknowns phases A and B have landed by then and only re-pinned it); tests and `inventory.tsv` follow.
 **Where**: `tests/book/digital.rs`
 **Depends on**: T34
 **Reuses**: `Chapter`, `Refusal`

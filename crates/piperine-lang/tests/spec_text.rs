@@ -176,17 +176,24 @@ fn every_error_code_is_defined_exactly_once() {
 
 /// The codes value semantics retired (Appendix G.71): each is named by the Resolution that
 /// retires it and by G.71, and by no defining row.
-const RETIRED_CODES: [&str; 2] = ["E0102", "E0331"];
+const RETIRED_CODES: [&str; 6] = ["E0102", "E0331", "E0150", "E0151", "E0906", "E0908"];
 
 #[test]
-fn b1_still_counts_65_constructs() {
-    // POL-08 AC 8: the count and the rows agree.
+fn b1_counts_62_constructs() {
+    // POL-08 AC 8, amended by explicit-unknowns (replaces `b1_still_counts_65_constructs`): the
+    // literal `Unknown`, the contextual keyword `resolve` and the method `level` leave, so the
+    // count and the rows agree at 62, and the B.1.1 kinds add up to it.
     let sec = section(&spec("appendix_b_grammar.md"), "## B.1 ");
-    assert!(sec.contains("**65**"), "B.1 states 65");
+    assert!(sec.contains("**62**"), "B.1 states 62");
     let rows = table_rows(&section(&sec, "### B.1.2"));
-    assert_eq!(rows.len(), 65, "B.1.2 holds 65 rows");
+    assert_eq!(rows.len(), 62, "B.1.2 holds 62 rows");
     let last: usize = rows.last().unwrap()[0].parse().expect("row numbers are integers");
-    assert_eq!(last, 65);
+    assert_eq!(last, 62);
+    let kinds: usize = table_rows(&section(&sec, "### B.1.1")).iter().filter_map(|r| r[2].parse::<usize>().ok()).sum();
+    assert_eq!(kinds, 62, "the kinds of B.1.1 sum to the count");
+    for gone in ["Unknown", "`resolve`", "`level`"] {
+        assert!(!rows.iter().any(|r| r[1] == gone), "B.1.2 still lists {gone}");
+    }
 }
 
 #[path = "support/spec_corpus.rs"]
@@ -524,7 +531,7 @@ fn attrs_are_allowed_before_statements_and_hardware_items() {
         if has("nature_field") {
             let p = production(text, "nature_field").join("\n");
             assert!(p.lines().next().unwrap().contains("attrs ( 'potential'"), "{file}: {p}");
-            assert!(p.contains("| attrs 'value'") && p.contains("| attrs 'resolve'"), "{file}: {p}");
+            assert!(p.contains("| attrs 'value'") && !p.contains("'resolve'"), "{file}: the nature_field production has no `resolve` line (D17): {p}");
         }
         if has("reaction") {
             check("reaction", "attrs 'on'", "all");
@@ -1143,11 +1150,11 @@ fn structure_changing_set_is_refused() {
 
 
 #[test]
-fn zero_bytes_are_the_unknown_value() {
-    assert!(flat(&spec("part_i_values.md")).contains("all-zero bytes"));
-    let carriers = spec("part_ii_carriers.md");
-    let s = flat(&section(&carriers, "### 5.3 "));
-    assert!(s.contains("value bytes"), "{s}");
+fn zero_bytes_are_the_default_value() {
+    // EU-17 AC 1 (replaces `zero_bytes_are_the_unknown_value`): §2 rule 11, all-zero bytes are
+    // the bytes of `Logic::X`, of `None` and of every derived `Default`.
+    let s = flat(&spec("part_i_values.md"));
+    assert!(s.contains("all-zero bytes are the bytes of `Logic::X`, of `None`"), "{s}");
 }
 
 #[test]
@@ -1337,13 +1344,13 @@ fn s22_rule_4_names_extern_intrinsic() {
 
 #[test]
 fn analysis_kinds_list_transient() {
-    // STD-01 AC 7: §11.1.1 and row 23 of Appendix B.1 list the five kinds.
+    // STD-01 AC 7: §11.1.1 and row 21 of Appendix B.1 list the five kinds.
     let kinds = "`Dc`, `Transient`, `Ac`, `Noise`, `Static`";
     let p4 = one_line(&spec("part_iv_behavior.md"));
     let at = p4.find("- **§11.1.1**").expect("§11.1.1 bullet");
     assert!(p4[at..at + 400].contains(kinds), "{}", &p4[at..at + 400]);
     let b = spec("appendix_b_grammar.md");
-    let row = b.lines().find(|l| l.starts_with("| 23 |")).expect("row 23");
+    let row = b.lines().find(|l| l.starts_with("| 21 |")).expect("row 21");
     assert!(row.contains(kinds), "{row}");
 }
 
@@ -1358,7 +1365,8 @@ fn no_analysis_tran_remains() {
 #[test]
 fn tran_in_fences_is_the_module() {
     // STD-01 AC 9: in a `rust` or `rust,fragment` fence the token `Tran` is a declaration or
-    // a placement of the module, so `(` follows; the analysis kind is `Transient`.
+    // a placement of the module, so `(` follows (`<` for its generic declaration, explicit-unknowns
+    // D20); the analysis kind is `Transient`.
     for (name, text) in all_specs() {
         let mut fenced = false;
         for (n, line) in text.lines().enumerate() {
@@ -1377,7 +1385,7 @@ fn tran_in_fences_is_the_module() {
                 let s = i + k;
                 let e = s + 4;
                 let alone = (s == 0 || !word(b[s - 1])) && (e == b.len() || !word(b[e]));
-                assert!(!alone || b.get(e) == Some(&b'('), "{name}:{}: `Tran` not followed by `(`: {line}", n + 1);
+                assert!(!alone || b.get(e) == Some(&b'(') || b.get(e) == Some(&b'<'), "{name}:{}: `Tran` not followed by `(` or `<`: {line}", n + 1);
                 i = e;
             }
         }
@@ -1644,26 +1652,17 @@ fn appendix_c_states_the_solver_hygiene_numerics() {
 }
 
 #[test]
-fn appendix_c_states_the_loop_bound_under_unknown_control() {
-    // US-04 AC 11, §3.3.16 (C30): the reference implementation's bound is documented in C.2, in
-    // the row of "unknown control (§3.3.3)": the merge in generated code and the 64 iterations,
-    // applied in every analysis
+fn appendix_c_holds_no_unknown_control_rows() {
+    // EU-17 (replaces `appendix_c_states_the_loop_bound_under_unknown_control` and
+    // `appendix_c_lists_the_loop_bound_among_the_defaults`): with no merge there is no loop bound
+    // under unknown control, so neither C.2 nor C.2.1 has the row.
     let text = spec("appendix_c_implementation.md");
-    let rows = table_rows(&section(&text, "## C.2 "));
-    let row = rows.iter().find(|r| r[0] == "unknown control (§3.3.3)").expect("C.2 has a row for unknown control");
-    let algorithm = flat(&row[1]);
-    for fact in ["runs both arms of an `if` or `match` on a value that may be unknown and merges what each wrote", "a loop under unknown control runs at most 64 iterations, in every analysis", "(§3.3.16)"] {
-        assert!(algorithm.contains(fact), "the row lacks \"{fact}\": {algorithm}");
-    }
-}
-
-#[test]
-fn appendix_c_lists_the_loop_bound_among_the_defaults() {
-    // US-07 AC 2 (C43): C.2.1 holds the default "loop iterations under unknown control: 64",
-    // serving §3.3.16
-    let text = spec("appendix_c_implementation.md");
-    let rows = table_rows(&section(&text, "### C.2.1 "));
-    assert!(rows.iter().any(|r| r[..] == ["loop iterations under unknown control", "64", "§3.3.16"]), "{rows:?}");
+    let c2 = table_rows(&section(&text, "## C.2 "));
+    assert!(!c2.iter().any(|r| r[0].contains("unknown control")), "C.2 still has the row: {c2:?}");
+    let c21 = table_rows(&section(&text, "### C.2.1 "));
+    assert!(!c21.iter().any(|r| r[0].contains("unknown control")), "C.2.1 still has the row: {c21:?}");
+    assert!(c21.iter().any(|r| r[0] == "relaxation passes per loop"), "the relaxation default stays");
+    assert!(!flat(&text).contains("Known flags"), "C.1 note 1 is gone");
 }
 
 #[test]
@@ -1795,7 +1794,7 @@ fn there_is_no_slice_and_no_borrow_in_the_grammar() {
         assert!(part.contains(needle), "{needle}");
     }
     let ii = one_line(&spec("part_ii_carriers.md"));
-    assert!(ii.contains("`fn f<const N: usize>(drives: [T; N]) -> T`"), "§4 rule 8 takes an array");
+    assert!(ii.contains("fn resolve<const N: usize>(drives: [X; N]) -> V;"), "§4 rule 8 takes an array");
     let h5 = section(&appendix_h(), "## H.5");
     assert!(!h5.contains('&'), "H.5 lends nothing: {h5}");
 }
@@ -1809,7 +1808,7 @@ fn section_22_no_longer_says_std_is_in_the_earlier_spelling() {
     for removed in ["&str", "&[T]", "let mut ", "Clone, Copy"] {
         assert!(!part.contains(removed), "Part VII still writes `{removed}`");
     }
-    assert!(part.contains("pub fn wired<const N: usize>(d: [Logic; N]) -> Logic"), "§22.3 takes the drives as an array");
+    assert!(part.contains("pub fn strongest<const N: usize>(d: [Driven; N]) -> Driven") && part.contains("pub fn sum<const N: usize>(d: [f64; N]) -> f64"), "§22.3 takes the drives as an array under a const parameter");
     assert!(one_line(&spec("part_vii_stdlib.md")).contains(r#"table_model(v(a, k), IV, "3E")"#));
     assert!(one_line(&spec("part_vi_io.md")).contains(r#"table_model(v(a, k), IV, "3E")"#), "Part VI and Part VII agree");
 }
@@ -1897,4 +1896,324 @@ fn the_analog_step_floor_past_2_52_ticks_is_a_recorded_deviation() {
     let row = c.lines().find(|l| l.starts_with("| analog step floor past 2^52 ticks")).expect("step floor row");
     assert!(row.contains("256 `f64` spacings"), "{row}");
     assert!(row.contains("transient-performance T25"), "{row}");
+}
+
+// ---- explicit unknowns: EU-17 ----
+
+#[test]
+fn section_3_3_states_the_explicit_model() {
+    // EU-17 AC 1 (replaces the assertions that quoted the known-flag §3.3): R1 to R6 as numbered
+    // rules, and the sentence that no primitive numeric type implements `Default`.
+    let s = flat(&section(&spec("part_i_values.md"), "### 3.3 "));
+    assert!(s.starts_with("### 3.3 Uncertainty and absence"), "{s}");
+    for rule in ["**§3.3.1 A value is a value.**", "**§3.3.2 Uncertainty is a type.**", "**§3.3.3 Absence is a type.**", "**§3.3.4 A carrier, a drive and a param start with a value.**", "**§3.3.5 Control takes a `bool`.**", "**§3.3.6 `analog` reads values.**"] {
+        assert!(s.contains(rule), "§3.3 lacks {rule}");
+    }
+    assert!(s.contains("**`bool`, `UInt<N>`, `Int<N>`, `Float<N>` and `str` do not implement `Default`.**"), "R4: {s}");
+    assert!(s.contains("differs from Rust on purpose"), "R4 says it differs from Rust");
+    assert!(s.contains("`E0187`") && s.contains("`E0180`"), "R4 and R5 name their codes");
+    assert!(s.contains("`a == b` on two `Logic` values is a `Logic`"), "R5");
+    assert!(s.contains("converting a `Logic` to a binary value gives an `Option`"), "R6 conversions");
+}
+
+#[test]
+fn a_nature_takes_trait_impls() {
+    // EU-11 AC 1, D17: §3.1.9 accepts `impl Trait for` a nature, `self` is a handle, E0134 is a
+    // bundle's, and a trait is a capability (§3.7.13).
+    let i = spec("part_i_values.md");
+    let s31 = flat(&section(&i, "### 3.1 "));
+    assert!(s31.contains("`impl Trait for Type` is accepted for a value type and for a nature"), "{s31}");
+    assert!(s31.contains("`self`, where a function has one, is a handle"), "{s31}");
+    assert!(s31.contains("`impl Trait for` a bundle is `E0134`"), "{s31}");
+    let e0134 = table_rows(&section(&i, "### 3.1 ")).into_iter().find(|r| r[0] == "`E0134`").expect("E0134 row");
+    assert_eq!(e0134[1], "`impl Trait for` a bundle", "{e0134:?}");
+    let s37 = flat(&section(&i, "### 3.7 "));
+    assert!(s37.contains("**§3.7.13** A trait is a **capability**"), "{s37}");
+    assert!(s37.contains("`W: Nature + Resolve<Driven>`"), "{s37}");
+}
+
+#[test]
+fn appendix_h_holds_default_from_and_the_operator_traits() {
+    // EU-17 AC 6: the `Default` rule of D4, `From`, the parameters of `PartialEq`, H.10.
+    let h = appendix_h();
+    let h8 = flat(&section(&h, "## H.8"));
+    assert!(h8.contains("**`bool`, `UInt<N>`, `Int<N>`, `Float<N>` and `str` do not implement `Default`**"), "{h8}");
+    assert!(h8.contains("`Option<T>` (`None`, for every `T`)"), "{h8}");
+    assert!(h8.contains("`PartialEq<Rhs = Self, Out = bool>`") && h8.contains("`trait From<T> { fn from(x: T) -> Self; }`"), "{h8}");
+    assert!(!h.contains("all-or-nothing"), "H rule 5 (all-or-nothing methods) is removed");
+    let rows = table_rows(&section(&h, "## H.10"));
+    let traits: Vec<&str> = rows.iter().map(|r| r[1].as_str()).collect();
+    for t in ["`BitAnd<Rhs = Self, Out = Self>`", "`BitOr<Rhs = Self, Out = Self>`", "`BitXor<Rhs = Self, Out = Self>`", "`Not<Out = Self>`", "`Shl<Rhs = usize, Out = Self>`, `Shr<Rhs = usize, Out = Self>`", "`PartialEq<Rhs = Self, Out = bool>`"] {
+        assert!(traits.contains(&t), "H.10 lacks {t}: {traits:?}");
+    }
+    let s = flat(&section(&h, "## H.10"));
+    for rule in ["the one `impl` whose type is the left operand's", "at most one `impl` exists (`E0187`)", "`a &= b` is `a = a & b`", "have no trait"] {
+        assert!(s.contains(rule), "H.10 lacks \"{rule}\"");
+    }
+}
+
+// ---- explicit unknowns: EU-11, resolved nets as a capability ----
+
+/// Part II section 4 rule 8 and section 5.2, flattened.
+fn part_ii_rules() -> (String, String) {
+    let ii = spec("part_ii_carriers.md");
+    (flat(&section(&ii, "## 4. ")), flat(&section(&ii, "### 5.2 ")))
+}
+
+#[test]
+fn resolve_is_a_trait_of_two_parameters() {
+    // EU-11 AC 2, D18: `Resolve<X: Repr, V: Repr = X>`, one function, `V` is the `value` type
+    // (E0203), no `resolve` field and no `resolve` keyword.
+    let (nat, _) = part_ii_rules();
+    assert!(nat.contains("pub trait Resolve<X: Repr, V: Repr = X> { fn resolve<const N: usize>(drives: [X; N]) -> V; }"), "{nat}");
+    assert!(nat.contains("`V` **MUST** be the nature's `value` type"), "{nat}");
+    assert!(nat.contains("There is no `resolve` field and no keyword `resolve`"), "{nat}");
+    let e0203 = table_rows(&section(&spec("part_ii_carriers.md"), "## 4. ")).into_iter().find(|r| r[0] == "`E0203`").expect("E0203 row");
+    assert!(e0203[1].contains("`impl Resolve<X, V>`") && e0203[1].contains("`value` type"), "{e0203:?}");
+}
+
+#[test]
+fn many_drives_need_the_resolve_capability() {
+    // EU-11 AC 3, D21: a carrier takes more than one drive only when its nature implements
+    // `Resolve`; a second drive of any other is E0220, naming the nature and `Resolve`.
+    let (_, drives) = part_ii_rules();
+    assert!(drives.contains("A **one-driver carrier** is a carrier of a discrete nature that does not implement `Resolve`."), "{drives}");
+    assert!(drives.contains("A second drive is `E0220`, and its diagnostic names the nature and `Resolve`."), "{drives}");
+    assert!(drives.contains("takes any number of them, zero included"), "{drives}");
+    let e0220 = table_rows(&section(&spec("part_ii_carriers.md"), "### 5.2 ")).into_iter().find(|r| r[0] == "`E0220`").expect("E0220 row");
+    assert!(e0220[1].contains("names the nature and `Resolve`"), "{e0220:?}");
+}
+
+#[test]
+fn a_drive_picks_its_impl_by_its_type() {
+    // EU-11 AC 4, D19: E0225 for two driven types, E0180 for a type no `impl` accepts.
+    let (_, drives) = part_ii_rules();
+    assert!(drives.contains("A drive picks its `impl` of `Resolve` by the type of the value it drives."), "{drives}");
+    assert!(drives.contains("two driven types on one carrier are `E0225`") && drives.contains("no `impl` accepts is `E0180`"), "{drives}");
+    let rows = table_rows(&section(&spec("part_ii_carriers.md"), "### 5.2 "));
+    assert!(rows.iter().any(|r| r[0] == "`E0225`"), "E0225 has its defining row in 5.2");
+}
+
+#[test]
+fn resolve_receives_plain_values_for_every_count() {
+    // EU-11 AC 5 and 7, D14: plain values in instance-path order, every count from zero, and a
+    // drive that relaxation has not produced is absent, not a value.
+    let (nat, _) = part_ii_rules();
+    assert!(nat.contains("receives as an array of plain values in the order of their instance paths"), "{nat}");
+    assert!(nat.contains("with `N` the number of drives a call receives, zero included"), "{nat}");
+    assert!(nat.contains("It receives every present drive as a plain value of type `X`"), "{nat}");
+    assert!(nat.contains("absence is not a value of the type"), "{nat}");
+}
+
+#[test]
+fn a_drive_without_a_value_starts_at_its_default() {
+    // EU-11 AC 6, EU-04 AC 2: a drive with no initial value starts at `Default::default()` of the
+    // driven type and is a drive from `(0, 0)`; a resolved carrier needs no initial value.
+    let (_, drives) = part_ii_rules();
+    assert!(drives.contains("A drive with no initial value starts at `Default::default()` of the driven type"), "{drives}");
+    assert!(drives.contains("It is a drive from `(0, 0)` on"), "{drives}");
+    assert!(drives.contains("needs no initial value of its own"), "{drives}");
+    let ii = flat(&section(&spec("part_ii_carriers.md"), "### 5.1 "));
+    assert!(ii.contains("starts at `Default::default()` of its value type"), "{ii}");
+    assert!(drives.contains("a type without it is `E0187` (§5.1 errors)"), "{drives}");
+}
+
+#[test]
+fn a_relaxing_drive_starts_absent() {
+    // EU-11 AC 7, D14: every drive of a loop starts each pass absent from what `resolve`
+    // receives, and absence is not a value of the type.
+    let s = flat(&section(&spec("part_iii_structure.md"), "### 8.2 "));
+    assert!(s.contains("every drive of the loop starts each pass absent from what `resolve` receives; absence is not a value of the type"), "{s}");
+}
+
+#[test]
+fn a_loop_that_does_not_settle_is_e0511() {
+    // EU-11 AC 8, Q3: the run stops with E0511 naming the loop's drives; the row replaces the
+    // "is not an error" row of the 8.2 table, and Part V lists the code among the run codes.
+    let iii = spec("part_iii_structure.md");
+    let s = flat(&section(&iii, "### 8.2 "));
+    assert!(s.contains("the run stops with `E0511`, which names the loop's drives"), "{s}");
+    assert!(!s.contains("is not an error: its levels are unknown"), "the old row is gone");
+    let row = table_rows(&section(&iii, "### 8.2 ")).into_iter().find(|r| r[0] == "`E0511`").expect("E0511 row in 8.2");
+    assert_eq!(row[2], "run", "{row:?}");
+}
+
+#[test]
+fn part_iv_reads_values_and_the_first_commit_is_a_change() {
+    // EU-13 AC 2 and 5, EU-14: §13 rule 6 says the initial value's commit at `(0, 0)` is a change
+    // of every carrier and that `rise()` does not fire for a carrier that starts high; Part IV
+    // holds none of the removed words.
+    let iv = spec("part_iv_behavior.md");
+    let s = flat(&iv);
+    assert!(s.contains("that commit is a change of every carrier. So `changed()` fires there for every carrier. `rise()` and `fall()` do not"), "{s}");
+    assert!(s.contains("When the guard is false the reaction does not run"), "§13 rule 1");
+    for gone in ["known_or", "is_known", "`level(", ".level(", "`Unknown`", "flag-total", "under unknown control", "known flag", "`E0150`"] {
+        assert!(!s.contains(gone), "Part IV still says {gone}");
+    }
+}
+
+#[test]
+fn records_and_the_host_hold_values_only() {
+    // EU-15 AC 1 to 3, EU-04 AC 6: a record is its declared fields, a `require` is a pass or a
+    // fail, a `fatal` ends the run, a top-level `in` port follows 3.3.4 (§19, §23.1 rule 9,
+    // §23.2 rules 3 and 4).
+    let vi = flat(&spec("part_vi_io.md"));
+    assert!(vi.contains("A record is its declared fields and that context, and nothing else"), "{vi}");
+    assert!(vi.contains("A `require` record is a pass or a fail: its `pass` field is a `bool`."), "{vi}");
+    assert!(vi.contains("| `E0604` | A field name is repeated in one `emit!`. |"), "{vi}");
+    let viii = flat(&spec("part_viii_host.md"));
+    assert!(viii.contains("else `Default::default()` of its type. When none of the three exists the analysis is refused with `E0187` naming the port."), "{viii}");
+    assert!(viii.contains("3. A `require` record is a pass or a fail (§19): its `pass` field is a `bool`, and there is no third verdict. 4. A `fatal` record ends the run (§19)."), "{viii}");
+    for (name, text) in [("part_v_execution.md", flat(&spec("part_v_execution.md"))), ("part_vi_io.md", vi), ("part_viii_host.md", viii)] {
+        for gone in ["known_or", "`maybe`", "maybe =", "`Unknown`", "flag-total", "unknown control", "known flag"] {
+            assert!(!text.contains(gone), "{name} still says {gone}");
+        }
+    }
+    let v = flat(&spec("part_v_execution.md"));
+    assert!(v.contains("| §8.2.3 | A loop of resolved drives still moves after its bounded passes (`E0511`)"), "Part V lists E0511 among the run codes");
+}
+
+// ---- explicit unknowns: EU-12, Part VII ----
+
+#[test]
+fn section_22_1_holds_the_four_state_tables() {
+    // EU-08, EU-09, EU-17 AC 2: the four-state tables of `&`, `|`, `^`, `!` are printed in 22.1.2,
+    // beside the `impl`s that implement them; `Known` and `merge` are gone.
+    let s22 = spec("part_vii_stdlib.md");
+    let s = section(&s22, "### 22.1 ");
+    let rows = table_rows(&section(&s, "#### 22.1.2"));
+    let find = |first: &str| rows.iter().filter(|r| r[0] == first).cloned().collect::<Vec<_>>();
+    // `&`: 0 & anything is 0; 1 & 1 is 1; 1 & X and X & X are X.
+    assert!(rows.contains(&vec!["**0**".into(), "0".into(), "0".into(), "0".into()]), "{rows:?}");
+    assert!(rows.contains(&vec!["**1**".into(), "0".into(), "1".into(), "X".into()]), "{rows:?}");
+    assert!(rows.contains(&vec!["**X**".into(), "0".into(), "X".into(), "X".into()]), "{rows:?}");
+    // `|`: 1 | anything is 1; `^`: any X operand gives X; `!`: X and Z give X.
+    assert!(rows.contains(&vec!["**1**".into(), "1".into(), "1".into(), "1".into()]), "{rows:?}");
+    assert!(rows.contains(&vec!["**X**".into(), "X".into(), "X".into(), "X".into()]), "{rows:?}");
+    assert!(rows.contains(&vec!["X, Z".into(), "X".into()]), "{rows:?}");
+    assert_eq!(find("**0**").len(), 3, "one row for 0 in each of the three binary tables");
+    let flat_s = flat(&s);
+    for gone in ["#### 22.1.1 `Known`", "#### 22.1.2 `merge`", "known_or", "is_known"] {
+        assert!(!flat_s.contains(gone), "22.1 still holds {gone}");
+    }
+    assert!(flat_s.contains("#### 22.1.1 `Logic` and `LogicState`"), "22.1.1 declares Logic");
+    assert!(flat_s.contains("`pub binary: UInt<N>`") || flat_s.contains("pub binary: UInt<N>"), "D1: two planes");
+    assert!(flat_s.contains("`a == b` on two `Logic<N>` is a `Logic<1>`: X when any level of either operand is X or Z"), "EU-09 AC 1");
+    assert!(flat_s.contains("`#[derive(PartialEq)]` on a struct with a `Logic` field is `E0187`"), "EU-09 AC 4");
+    assert!(flat_s.contains("`+`, `-` and `<` on one are `E0180`"), "EU-08 AC 7");
+}
+
+#[test]
+fn strongest_resolves_by_strength() {
+    // EU-12 AC 1, Q5 = B: five strengths, `Driven`, and the table of `Driven::strongest`.
+    let s = section(&spec("part_vii_stdlib.md"), "### 22.3 ");
+    let f = flat(&s);
+    assert!(s.contains("### 22.3 Strengths and ready-made net modules"), "retitled");
+    assert!(f.contains("The order is `HighZ < Weak < Pull < Strong < Supply`."), "{f}");
+    assert!(f.contains("pub struct Driven { pub v: Logic, pub s: Strength, }") || f.contains("pub v: Logic,"), "Driven");
+    let rows = table_rows(&section(&s, "#### 22.3.2"));
+    let drives: Vec<&str> = rows.iter().map(|r| r[0].as_str()).collect();
+    assert_eq!(drives, ["none, or all `HighZ`", "one strongest drive", "several of the greatest strength, same level", "several of the greatest strength, levels differ"], "{rows:?}");
+    assert_eq!(rows[0][1], "`Driven::Z`");
+    assert_eq!(rows[3][1], "X, that strength");
+    assert!(f.contains("A conflict is a value") && f.contains("`E0511`"), "a conflict is a value, an instability an error");
+}
+
+#[test]
+fn the_library_declares_no_net_nature() {
+    // EU-12 AC 2, D20: no `Wire`, `Tri`, `SumNet`, `tri`, `Logic::wired`; the eight modules are
+    // generic over `W: Nature + Resolve<Driven>`.
+    let part = spec("part_vii_stdlib.md");
+    let s = section(&part, "### 22.3 ");
+    assert!(!s.contains("pub nature"), "22.3 declares no nature");
+    for gone in ["Wire", "SumNet", "Tri<", "`tri`", "wired"] {
+        assert!(!part.contains(gone), "Part VII still says {gone}");
+    }
+    let bound = "<W: Nature + Resolve<Driven>>";
+    let all = flat(&part);
+    for module in ["Tribuf", "Pullup", "Pulldown", "Keeper", "Tran", "Tgate", "Bidir", "TribufDelayed"] {
+        assert!(all.contains(&format!("pub module {module}{bound}")), "{module} is generic over a Resolve<Driven> nature");
+    }
+    // The strength rationale is at most fifteen lines and names only citations that were confirmed.
+    let why = section(&s, "#### 22.3.3");
+    assert!(why.lines().filter(|l| !l.trim().is_empty()).count() <= 15 + 2, "{why}");
+    for confirmed in ["IEEE 1364-2005", "§9.22.3", "IEEE 1800 §6.6.7", "IEEE 1164", "ngspice manual (§8.6.1"] {
+        assert!(why.contains(confirmed), "the rationale lacks {confirmed}");
+    }
+    for dropped in ["Logisim", "Digital (H. Neemann)", "IEEE 1666", "§28", "§7.9"] {
+        assert!(!why.contains(dropped), "the rationale kept an unconfirmed citation: {dropped}");
+    }
+}
+
+/// The words the explicit model removed (EU-17 AC 3).
+const REMOVED_WORDS: [&str; 8] = ["known flag", "`Unknown`", "`level(", "known_or", "is_known", "flag-total", "under unknown control", "maybe = true"];
+
+/// The text of `docs/spec` outside Appendix G's entry G.72, which records what was removed.
+fn spec_without_g72() -> Vec<(String, String)> {
+    all_specs()
+        .into_iter()
+        .map(|(name, text)| {
+            if name != "appendix_g_scope.md" {
+                return (name, text);
+            }
+            let a = text.find("### G.72 ").expect("G.72 exists");
+            let b = a + text[a..].find("## Closed items").expect("G.72 ends at the closed items");
+            (name, format!("{}{}", &text[..a], &text[b..]))
+        })
+        .collect()
+}
+
+#[test]
+fn the_removed_words_are_absent_from_the_specification() {
+    // EU-17 AC 3: outside G.72, none of the removed words is anywhere in docs/spec.
+    let mut found = Vec::new();
+    for (name, text) in spec_without_g72() {
+        let flat_text = flat(&text);
+        for word in REMOVED_WORDS {
+            if flat_text.contains(word) {
+                found.push(format!("{name}: {word}"));
+            }
+        }
+        // the library net `Wire`, not the tail of a longer name (`AndWire`)
+        if flat_text.match_indices("Wire").any(|(at, _)| !flat_text[..at].ends_with(|c: char| c.is_ascii_alphabetic())) {
+            found.push(format!("{name}: Wire"));
+        }
+    }
+    assert!(found.is_empty(), "the specification still says: {found:#?}");
+}
+
+#[test]
+fn appendix_g_records_the_explicit_model() {
+    // EU-17 AC 4: G.72 lists what was removed and says the implementation does not meet it yet;
+    // G.29, G.46 and G.57 are closed by it, and no longer have an open or flagged entry.
+    let g = spec("appendix_g_scope.md");
+    let g72 = flat(&section(&g, "### G.72"));
+    for removed in ["the known flag of every level of every value, and the literal `Unknown`", "`level`, `known`, `known_or`, `is_known`, `high`, `merge`, and `Known`", "the merge of effects under unknown control", "the gate of an `analog` read", "`maybe` on a record", "the `resolve` field of a nature, and the library nets `Wire`, `Tri` and `SumNet`"] {
+        assert!(g72.contains(removed), "G.72 does not list: {removed}");
+    }
+    assert!(g72.contains("The reference implementation does not yet meet this item."), "{g72}");
+    let closed = flat(&section(&g, "### Other closed items"));
+    for item in ["G.28, G.29, G.45, G.46, G.55, G.57"] {
+        assert!(closed.contains(item), "the closed table lacks {item}");
+    }
+    assert!(!g.contains("### G.29 "), "G.29 has no open entry");
+    assert!(table_rows(&section(&g, "## Flagged resolutions")).iter().all(|r| !r[0].starts_with("G.45") && !r[0].starts_with("G.46")), "G.45 and G.46 left the flagged table");
+}
+
+#[test]
+fn the_gallery_works_four_nets() {
+    // EU-12 AC 3: F.4 holds four worked nets, each with its nature, its `impl` and its module
+    // code: a plain `bool` into a wired-AND nature, an open-drain line with a pull-up, a
+    // tri-state bus with two drivers and a keeper, and a conflict of equal strengths; plus the
+    // typed bus of D12 as a fifth listing.
+    let f = spec("appendix_f_gallery_mixed.md");
+    let s = section(&f, "## F.4");
+    for heading in ["### F.4.1 A plain `bool` into a wired-AND net", "### F.4.2 An open-drain line with a pull-up", "### F.4.3 A tri-state bus with two drivers and a keeper", "### F.4.4 A conflict of equal strengths"] {
+        assert!(s.contains(heading), "F.4 lacks {heading}");
+    }
+    let flat_s = flat(&s);
+    for needle in ["pub nature AndWire { value: bool }", "impl Resolve<bool> for AndWire", "pub nature Sda { value: Driven }", "impl Resolve<Driven> for Sda", "pub nature TriBus { value: Driven }", "impl Resolve<Driven> for TriBus", "let rp = Pullup(sda);", "let k = Keeper(line);", "pub nature DataBus { value: Data }", "impl Resolve<Option<u8>, Data> for DataBus", "`Driven { v: Logic::X, s: Strength::Strong }`", "`E0511`"] {
+        assert!(flat_s.contains(needle), "F.4 lacks {needle}");
+    }
+    assert!(!flat_s.contains(": Wire;") && !flat_s.contains(": Wire,"), "no library Wire");
 }

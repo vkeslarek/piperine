@@ -641,14 +641,22 @@ fn spec_parse_phase_codes() -> std::collections::BTreeSet<String> {
 fn every_parse_phase_row_has_a_fixture() {
     // A parse-phase row added to the spec without a fixture fails here.
     let spec = spec_parse_phase_codes();
-    assert!(spec.len() >= 19, "the spec's tables list at least the 17 rows and E0900/E0910: {spec:?}");
+    assert!(spec.len() >= 18, "the spec's tables list at least the 16 rows and E0900/E0910 (E0908 retired by explicit-unknowns): {spec:?}");
     let covered: std::collections::BTreeSet<String> = fixtures().iter().map(|f| f.code.to_string()).collect();
     let missing: Vec<&String> = spec.difference(&covered).collect();
     assert!(missing.is_empty(), "parse-phase rows without a fixture: {missing:?}");
-    // And a fixture for a code the spec does not list as `parse` is stale.
-    let stale: Vec<&String> = covered.difference(&spec).collect();
+    // And a fixture for a code the spec does not list as `parse` is stale, except the codes the
+    // specification retired ahead of the parser (explicit-unknowns).
+    let stale: Vec<&String> = covered.difference(&spec).filter(|c| !RETIRED_AHEAD_OF_THE_PARSER.contains(&c.as_str())).collect();
     assert!(stale.is_empty(), "fixtures for codes that are not parse-phase rows: {stale:?}");
+    for code in RETIRED_AHEAD_OF_THE_PARSER {
+        assert!(covered.contains(code) && !spec.contains(code), "{code} is retired in the spec and still raised: drop it from the list once the parser stops");
+    }
 }
+
+/// Parse-phase codes the specification retired before the parser stopped raising them: explicit-unknowns
+/// retired `E0908` (`Unknown` as a name; its task T28 removes the fixtures and the entry).
+const RETIRED_AHEAD_OF_THE_PARSER: [&str; 1] = ["E0908"];
 
 #[test]
 fn rendered_output_is_miette_graphical() {

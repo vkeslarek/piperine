@@ -179,7 +179,7 @@ does not define is not part of the language.
 | `where` | trait bounds | a boolean const expression; bounds are written in the generic list | [§3](part_i_values.md#3-functions) rule 8 |
 | receivers | `self`, `&self`, `&mut self` | `self`, a copy; a method returns what it changed | [§3.1.10](part_i_values.md#31-impl) |
 | type aliases, associated types, `static`, `union`, `impl Trait`, qualified paths, restricted `pub`, loop labels | part of the language | not in the language | [B.3.6](appendix_b_grammar.md#b36-forms-that-are-not-part-of-the-language) |
-| values | known | every level is known or unknown | [§3.3](part_i_values.md#33-unknown-values) |
+| default values | `bool`, the integers and the floats implement `Default` | they do not: a carrier of one is given its first value; `Option<T>` and `Logic<N>` have defaults | [§3.3.4](part_i_values.md#33-uncertainty-and-absence), [H.8](appendix_h_library.md#h8-traits) |
 | numeric literals | type suffixes | type suffixes and SI suffixes (`1k`, `2.2u`) | [A.2](appendix_a_lexical.md#a2-si-suffixed-reals) |
 | library | `core`, `alloc`, `std` | the closed catalogue of Appendix H and the MSL standard library | [Appendix H](appendix_h_library.md), [§22](part_vii_stdlib.md#22-standard-library) |
 | packages | Cargo, registries | `Piperine.toml`, `path` and `git` dependencies only | [§3.6](part_i_values.md#36-packages) |
@@ -191,8 +191,8 @@ decides. Nothing with a rule of its own is left out of the table.
 
 | # | Concept | Rule | Covers | § |
 | --- | --- | --- | --- | --- |
-| 1 | value and `fn` | data with no time, every level known or unknown; a function keeps no state, writes no carrier and places no instance | `Repr`, the known flag, closures, `Event`-returning functions | [1](part_i_values.md#1-value-types), [2](part_i_values.md#2-repr), [3](part_i_values.md#3-functions) |
-| 2 | nature | says what a carrier holds and how its drives combine | `Bit` (one drive), resolved natures (`resolve`), continuous natures (KCL) | [4](part_ii_carriers.md#4-natures) |
+| 1 | value and `fn` | data with no time, each level `false` or `true`; a function keeps no state, writes no carrier and places no instance | `Repr`, `Logic`, `Option`, closures, `Event`-returning functions | [1](part_i_values.md#1-value-types), [2](part_i_values.md#2-repr), [3](part_i_values.md#3-functions) |
+| 2 | nature | says what a carrier holds and how its drives combine | `Bit` (one drive), resolved natures (`impl Resolve`), continuous natures (KCL) | [4](part_ii_carriers.md#4-natures) |
 | 3 | carrier | a signal or port of a nature: it exists over time, and is connected by being passed to a port | discrete carriers, nodes, bundles (a `struct` of carriers) | [5](part_ii_carriers.md#5-discrete-carriers), [6](part_ii_carriers.md#6-continuous-carriers), [7](part_ii_carriers.md#7-bundles) |
 | 4 | drive | what one module writes to one carrier; the carrier's value is its nature's combination of the drives | definitions (`=`), commits, initial values, `others()`; on a node, the module's branches | [5.2](part_ii_carriers.md#52-drives), [8.2](part_iii_structure.md#82-the-body) |
 | 5 | param | a value fixed during a solve; the model reads it, the host sets it | defaults, `where`, structural params | [8.1](part_iii_structure.md#81-ports-and-params), [9](part_iii_structure.md#9-quantities) |
@@ -225,7 +225,7 @@ with a result, core or stdlib ([§8.3](part_iii_structure.md#83-instances-inside
 
 ```rust
 /// A comparator with hysteresis that drives a flip-flop.
-module Front(vin: Electrical, in clk: Bit, out q: Bit) {
+module Front(vin: Electrical, in clk: Bit, out q: Bit = false) {
     vth: f64 = 0.6;
     hyst: f64 = 50m;
     signal above_th: Bit = false;        // state: a signal
@@ -262,7 +262,7 @@ traced in [§15.1](part_v_execution.md#151-an-instant-traced).
 | File | Content | Sections | Error codes |
 | --- | --- | --- | --- |
 | [`index.md`](index.md) | scope, notation, conformance terms, the concept table, who writes what, reading guide, file map, glossary index, the rules formerly inherited | §0 | — |
-| [`part_i_values.md`](part_i_values.md) | the value language: types, expressions, patterns, statements, control flow, `Repr`, functions, `impl`, calls, unknown values, files, crates, packages, traits and generics | §1–3 | `E01xx` |
+| [`part_i_values.md`](part_i_values.md) | the value language: types, expressions, patterns, statements, control flow, `Repr`, functions, `impl`, calls, uncertainty and absence, files, crates, packages, traits and generics | §1–3 | `E01xx` |
 | [`part_ii_carriers.md`](part_ii_carriers.md) | natures, discrete carriers, drives, history, continuous carriers, bundles | §4–7 | `E02xx` |
 | [`part_iii_structure.md`](part_iii_structure.md) | modules, ports, params, the body, instances in expressions, templates, `extern` modules, quantities | §8–9 | `E03xx` |
 | [`part_iv_behavior.md`](part_iv_behavior.md) | behavior blocks, `analog`, `digital`, events, core primitives | §10–14 | `E04xx` |
@@ -327,7 +327,6 @@ Each term has one defining occurrence. The table points at it.
 | event time | [§15](part_v_execution.md#15-time-and-the-instant) |
 | event, `Event` | [§13](part_iv_behavior.md#13-events) |
 | extern module, implicit param | [§8.5](part_iii_structure.md#85-implicit-params-and-extern-modules) |
-| flag-total function | [§3.3.6](part_i_values.md#33-unknown-values) |
 | `force`, `release` | [§23.1](part_viii_host.md#231-testbenches) |
 | function class | [§3](part_i_values.md#3-functions) |
 | generation | [§8.2.7](part_iii_structure.md#82-the-body) |
@@ -345,7 +344,6 @@ Each term has one defining occurrence. The table points at it.
 | instant, microstep | [§15](part_v_execution.md#15-time-and-the-instant) |
 | irrefutable pattern, refutable pattern | [§1.6.11](part_i_values.md#16-patterns) |
 | jump, right value | [§15.2](part_v_execution.md#152-the-jump) |
-| known, unknown, known flag | [§3.3](part_i_values.md#33-unknown-values) |
 | left value | [§15.2](part_v_execution.md#152-the-jump) |
 | level | [§2](part_i_values.md#2-repr) |
 | limiting | [§18](part_v_execution.md#18-limiting) |
@@ -353,7 +351,6 @@ Each term has one defining occurrence. The table points at it.
 | lockfile | [§3.6](part_i_values.md#36-packages) |
 | loop, relaxation | [§8.2.3](part_iii_structure.md#82-the-body) |
 | manifest | [§3.6](part_i_values.md#36-packages) |
-| merge | [§3.3.3](part_i_values.md#33-unknown-values) |
 | metadata, path | [§21](part_vi_io.md#21-metadata) |
 | module | [§8](part_iii_structure.md#8-modules) |
 | monitor | [§22.5](part_vii_stdlib.md#225-monitors) |
@@ -394,6 +391,7 @@ Each term has one defining occurrence. The table points at it.
 | tick, time resolution | [§15](part_v_execution.md#15-time-and-the-instant) T1 |
 | time point | [§15](part_v_execution.md#15-time-and-the-instant) |
 | transport delay | [§12.1.4](part_iv_behavior.md#121-reactions) |
+| uncertainty, absence, `Logic`, `Option`, initial value | [§3.3](part_i_values.md#33-uncertainty-and-absence) |
 | value, value type | [Part I](part_i_values.md) introduction, [§1](part_i_values.md#1-value-types) |
 | view (of a bundle) | [§7](part_ii_carriers.md#7-bundles) |
 
@@ -422,7 +420,7 @@ row marked *same* writes down what Rust does; a row marked *differs* does not, a
 | 13 | Float corner cases of the library | `round` ties away from zero; `min` and `max` ignore one NaN; float `%` is the truncated remainder; `clamp` panics on crossed or NaN bounds | [H.2](appendix_h_library.md), [§1.5.22](part_i_values.md#15-expressions) | same |
 | 14 | Comparison | does not chain; floats by IEEE 754; tuples and arrays lexicographic; `None` below `Some` | [§1.5.5](part_i_values.md#15-expressions), [§1.5.23](part_i_values.md#15-expressions) | same |
 | 15 | Scalar types have associated constants (`u8::MAX`) | no; a bound is written as a literal | [§1.1.5](part_i_values.md#11-scalar-types) | differs: follows from the closed catalogue |
-| 16 | Which pattern forms exist | wildcard, binding (with `@`), literal, range, path, tuple, tuple struct, struct, array, or-pattern; `Unknown` is not a pattern | [§1.6](part_i_values.md#16-patterns) | same forms, less `..hi`, `mut`, `ref` and `&p` (B.3.6) |
+| 16 | Which pattern forms exist | wildcard, binding (with `@`), literal, range, path, tuple, tuple struct, struct, array, or-pattern| [§1.6](part_i_values.md#16-patterns) | same forms, less `..hi`, `mut`, `ref` and `&p` (B.3.6) |
 | 17 | Exhaustiveness of `match` | required; an arm with a guard does not count; an unreachable arm is not an error | [§1.8.6](part_i_values.md#18-control-flow) | same; there are no lints |
 | 18 | `let … else`, `if let`, `while let` | kept; a `let` condition is the whole condition, never an operand of `&&` | [§1.7.6](part_i_values.md#17-statements-and-blocks), [§1.8.2](part_i_values.md#18-control-flow) | differs: no `let` chains |
 | 19 | `break`, `continue`, `return` | innermost loop, no labels; `break value` in `loop` only; `return` in a function or closure only | [§1.8.10](part_i_values.md#18-control-flow), [§1.8.11](part_i_values.md#18-control-flow) | same, less labels (B.3.6) |
@@ -442,7 +440,7 @@ row marked *same* writes down what Rust does; a row marked *differs* does not, a
 | 33 | Identifiers | Unicode `XID_START`/`XID_CONTINUE`; compared by code points, no normalization | [A.7](appendix_a_lexical.md#a7-identifiers) rule 4 | differs: Rust normalizes to NFC |
 | 34 | Literal forms | lower-case `0x`, `0o`, `0b`; float suffixes `f32` and `f64` only; the escapes of A.8 rule 11; raw strings | [A.8](appendix_a_lexical.md#a8-literals) | same, less `char` and byte forms |
 | 35 | Reserved words | the 23 words of the last row of the keyword table | [A.1](appendix_a_lexical.md#a1-source-text-and-tokens) | same set as Rust's unused and reserved keywords, plus `static`, `type`, `unsafe`, `async`, `await`, `dyn`, `mut`, `ref`, `move` |
-| 36 | What the library traits provide | `Default` gives `T::default()`; `Eq`, `Ord`, `Debug` and `Hash` give nothing a model calls; there is no `Clone` and no `Copy`; an enum does not derive `Default` | [H.8](appendix_h_library.md) | narrower. `default` has no row of its own in H.1 to H.7: confirm that it is callable |
+| 36 | What the library traits provide | `Default` gives `T::default()`, and no primitive numeric type implements it (§3.3.4); `Eq`, `Ord`, `Debug` and `Hash` give nothing a model calls; there is no `Clone` and no `Copy`; an enum does not derive `Default` | [H.8](appendix_h_library.md) | narrower. `default` has no row of its own in H.1 to H.7: confirm that it is callable |
 | 37 | Iterators | adaptors are lazy; `rev` on arrays, integer ranges and `map`/`enumerate`/`zip`/`rev` of them; `sum` wraps for integers | [H.7](appendix_h_library.md) | same |
 | 38 | Codes for the conditions that had none | `E0180` type mismatch, `E0181` inference, `E0182` `as`, `E0183` assignment, `E0184` patterns, `E0185` control flow, `E0186` structs and enums, `E0187` traits and generic arguments, `E0188` const expressions; all of phase elaboration | Part I | new codes; the reference implementation reports some of these under provisional codes |
 | 39 | Which names may be assigned | every local, with no marker; no parameter, `self` included, and no name a closure captures | [§1.5.12](part_i_values.md#15-expressions), [§3.1.10](part_i_values.md#31-impl) | differs: Rust asks for `mut`, and allows it on a parameter |

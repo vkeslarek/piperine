@@ -232,12 +232,12 @@ impl Tree {
 
 #[test]
 fn the_book_reads_every_block() {
-    // RE-01 AC 1: the Book has 21 chapters and 280 code blocks (a mermaid diagram is not one), 122 of
+    // RE-01 AC 1: the Book has 21 chapters and 284 code blocks (280 before explicit-unknowns added the four nets of "Driving with strength") (a mermaid diagram is not one), 122 of
     // them `msl`; every block has a distinct id that reads back, and every chapter has prose
     let book = Book::read();
     assert_eq!(book.chapters().len(), 21, "the chapters of the Book: {:?}", book.chapters());
-    assert_eq!(book.blocks().len(), 280, "the code blocks of the Book");
-    assert_eq!(book.blocks().iter().filter(|block| block.language() == "msl").count(), 122, "the `msl` blocks of the Book");
+    assert_eq!(book.blocks().len(), 284, "the code blocks of the Book");
+    assert_eq!(book.blocks().iter().filter(|block| block.language() == "msl").count(), 126, "the `msl` blocks of the Book");
     let mut seen = Vec::new();
     for block in book.blocks() {
         let id = block.id().to_string();
@@ -577,4 +577,72 @@ fn the_owner_and_disputed_rules_name_what_they_break() {
     let found = guard.disputed_rows_that_are_not_listed("nothing is listed here");
     assert_eq!(found, vec![format!("{}: a `disputed` row is listed for the user; add it to divergences.md", disputed[0].id)]);
     assert!(guard.disputed_rows_that_are_not_listed(&format!("| {} | listed |", disputed[0].id)).is_empty());
+}
+
+/// The names the explicit model removed (EU-18 AC 3). A listing or a sentence of the Book uses none of them.
+const REMOVED_NAMES: [&str; 7] = ["Unknown", "known_or", "known()", "is_known", "level(", ".high()", "maybe"];
+
+#[test]
+fn the_book_uses_no_removed_name() {
+    // EU-18 AC 3: no block and no sentence of the Book uses `Unknown`, `known_or`, `known()`, `is_known`,
+    // `level(`, `high()` or `maybe`. The one exception is what the binary prints today: the two blocks that are
+    // the earlier front end's refusal of a plain `analog` read (`E0150`, stderr, held to the binary by
+    // `piperine-cli`'s book target) spell the names in its own diagnostic. They are listed here so the exception
+    // cannot grow, and they leave this list the day the front end stops printing them (explicit-unknowns T30).
+    let book = Book::read();
+    let mut found = Vec::new();
+    let mut exempt = 0;
+    for block in book.blocks() {
+        let earlier_refusal = block.attribute("data-cli-output").is_some() && block.attribute("data-cli-stream") == Some("stderr") && block.text().starts_with("E0150");
+        if earlier_refusal {
+            exempt += 1;
+            continue;
+        }
+        for name in REMOVED_NAMES {
+            if block.text().contains(name) {
+                found.push(format!("{}: the block uses `{name}`", block.id()));
+            }
+        }
+    }
+    assert_eq!(exempt, 2, "two listings are the earlier front end's E0150 refusal (welcome#19 and the buck's)");
+    for chapter in book.chapters() {
+        for sentence in book.sentences(&chapter) {
+            for name in REMOVED_NAMES {
+                if sentence.text().contains(name) {
+                    found.push(format!("{chapter}: the sentence uses `{name}`: {}", sentence.text()));
+                }
+            }
+        }
+    }
+    assert!(found.is_empty(), "the Book still uses removed names:\n  {}", found.join("\n  "));
+    // the control: a text that uses one is found
+    assert!(REMOVED_NAMES.iter().any(|name| "x.known_or(0)".contains(name)), "the list names `known_or`");
+}
+
+#[test]
+fn every_listing_that_does_not_run_names_its_gap() {
+    // EU-18 AC 5: a listing that cannot run yet (a `refused` block, an `unraised` row) names a gap that
+    // GAPS.md holds; the refusal itself is asserted by its test (`refused_rows_name_tests_that_expect_their_refusal`),
+    // so the row fails loud when the listing starts to run or stops matching
+    let tree = Tree::read();
+    let mut offences = Vec::new();
+    // faulty models the Book teaches are refused by design and have no gap (GAPS.md section 11 says so)
+    const REFUSED_BY_DESIGN: [&str; 3] = ["packages#13", "errors#3", "simulation#4"];
+    for row in tree.inventory.rows().iter().filter(|row| matches!(row.verdict, Verdict::Refused | Verdict::Unraised) && !REFUSED_BY_DESIGN.contains(&row.id.as_str())) {
+        if row.gap == "-" {
+            offences.push(format!("{}: a `{}` row names no gap", row.id, row.verdict.word()));
+        } else if !tree.gaps.has_entry(&row.gap) {
+            offences.push(format!("{}: the gap {} is no entry of GAPS.md", row.id, row.gap));
+        }
+    }
+    assert!(offences.is_empty(), "{}", offences.join("\n  "));
+    // the gap of each is the feature that really makes it run (ROADMAP.md, "Every Book listing runs before item 13"):
+    // explicit-unknowns phase A or B (S8), `resolved-nets` (L21: also natures#2, which needs phases A and B and `composite-values` first)
+    let gap_of = |id: &str| tree.inventory.rows().iter().find(|row| row.id == id).map(|row| row.gap.clone()).unwrap_or_else(|| panic!("a row {id}"));
+    for id in ["welcome#17", "analog#9", "modules#9", "mixed#8", "mixed#10", "mixed#14", "values#21", "values#14", "values#18"] {
+        assert_eq!(gap_of(id), "S8", "{id}: explicit-unknowns");
+    }
+    for id in ["natures#2", "natures#3", "digital#16", "digital#17", "digital#18", "digital#19", "digital#20", "core-std#6"] {
+        assert_eq!(gap_of(id), "L21", "{id}: resolved-nets");
+    }
 }

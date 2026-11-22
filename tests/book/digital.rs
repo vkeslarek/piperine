@@ -54,19 +54,18 @@ impl Oscillator {
 }
 
 /// The debouncer of the chapter with its two refused forms written as the compiler accepts them: the
-/// param `n` as the literal 4, and `known_or(false)` (the button is never unknown in the bench).
+/// param `n` as the literal 4, (the button is a plain bool).
 struct Debouncer;
 
 impl Debouncer {
-    /// The debouncer's file with `n` as a literal, `known_or(false)`, and `bench` in place of the
+    /// The debouncer's file with `n` as a literal and `bench` in place of the
     /// bench's timed reactions.
     fn accepted(chapter: &Chapter, bench: &str) -> Model {
         let text = chapter.text("digital#7");
         let text = Edit::replace(&text, "    n: u8 = 4 where n >= 1;\n", "");
         let text = Edit::replace(&text, "run + 1 >= n", "run + 1 >= 4");
         let text = Edit::replace(&text, " { n: 4 }", "");
-        let text = Edit::replace(&text, "raw.known_or(clean)", "raw.known_or(false)");
-        let text = Edit::replace(&text, "    on at(2.0m) { button <- true; }\n    on at(2.2m) { button <- false; }\n    on at(2.4m) { button <- true; }\n", bench);
+                let text = Edit::replace(&text, "    on at(2.0m) { button <- true; }\n    on at(2.2m) { button <- false; }\n    on at(2.4m) { button <- true; }\n", bench);
         Model::written("debounce.msl", &text)
     }
 
@@ -269,7 +268,7 @@ fn the_debouncer_is_refused_for_its_integer_param_alone() {
     // the command refuses the file there and runs nothing"; digital~d7032a06 (the same form);
     // digital~d1d69398 "That stops the debouncer and the PWM for now ...; the counter runs" (the counter:
     // the test of digital#1). The form is `P0001` (L28); with the param written as a literal the file
-    // runs: a `known_or` default that may be unknown is compiled (`unknown-semantics`)
+    // runs
     let chapter = Chapter::read();
     let overrides = Overrides { analysis: Some("transient".to_string()), stop: Some(7e-3), streams: vec!["flip".to_string()], ..Overrides::default() };
     let model = chapter.marked("debounce.msl", "digital#7");
@@ -281,7 +280,7 @@ fn the_debouncer_is_refused_for_its_integer_param_alone() {
 
 #[test]
 fn the_debouncer_flips_once_at_the_fourth_clean_sample() {
-    // The debouncer of digital#7 with `n` as the literal 4 and `known_or(false)` (digital#7 refuses the
+    // The debouncer of digital#7 with `n` as the literal 4 (digital#7 refuses the
     // Book's text): digital~6733ba9f "Once it runs, it prints one record line: the output flipped once, at
     // the fourth clean sample, @5.500000e-3 Press.db flip t=5.500000e-3 to=true"; digital~9d7f8cfe "its three
     // timed reactions are the stimulus: the button starts low, bounces high at 2.0 ms, low at 2.2 ms, and
@@ -392,18 +391,19 @@ fn the_check_passes_every_cycle_and_ends_the_run_at_the_twentieth() {
 }
 
 #[test]
-fn require_writes_to_checks_and_an_unknown_pass_is_unknown() {
-    // digital~aa0c04f9: "The library's require(name, pass) is a function over emit! that writes a record to
-    // the reserved checks stream; the host reports each one as a pass or a failure, and an unknown pass is
-    // reported as unknown, never as a pass. finish() writes to the reserved sim stream and ends the analysis
-    // at that instant": a known true, an unknown input, and a `finish()` at 2 us that ends a run set for 5 us
-    let source = "module Top(in u: Bit) { signal ok: Bit = true; }\ndigital for Top { on at(1u) { require(\"known_ok\", ok); require(\"unk\", u); } on at(2u) { finish(); } }\n";
+fn require_writes_to_checks_as_a_pass_or_a_failure() {
+    // digital~aa0c04f9 (replaces `require_writes_to_checks_and_an_unknown_pass_is_unknown`, whose unknown
+    // input has no meaning now): "The library's require(name, pass) is a function over emit! that writes a
+    // record to the reserved checks stream; the host reports each one as a pass or a failure, and there is no
+    // third verdict. finish() writes to the reserved sim stream and ends the analysis at that instant": a
+    // true and a false `require`, and a `finish()` at 2 us that ends a run set for 5 us
+    let source = "module Top() { signal ok: Bit = true; signal bad: Bit = false; }\ndigital for Top { on at(1u) { require(\"good\", ok); require(\"bad\", bad); } on at(2u) { finish(); } }\n";
     let ran = Model::written("require.msl", source).run(Commands::transient_of("Top", 5e-6)).unwrap_or_else(|failure| panic!("{failure}"));
     let checks = ran.stream("checks");
     assert_eq!(checks.len(), 2, "one record per require");
     assert_eq!(Fields::of(checks[0], "pass"), &Field::Bool(true));
-    assert_eq!(Fields::of(checks[1], "name"), &Field::Text("unk".to_string()));
-    assert_eq!(Fields::of(checks[1], "pass"), &Field::Unknown, "an unknown pass is unknown, never a pass");
+    assert_eq!(Fields::of(checks[1], "name"), &Field::Text("bad".to_string()));
+    assert_eq!(Fields::of(checks[1], "pass"), &Field::Bool(false), "a failed check is a failure, with no third verdict");
     assert_eq!(ran.stream("sim").len(), 1, "finish() writes to `sim`");
     let last = ran.table.rows.len() - 1;
     Printed::holds("2.000000e-6", ran.real(last, "time"), "the analysis ends at the instant of finish()");
@@ -437,23 +437,36 @@ fn a_reaction_at_a_time_runs_when_time_reaches_it() {
 }
 
 #[test]
-fn the_irq_line_is_refused_for_its_resolved_wire() {
-    // digital#16 (refused): `IrqSource`, `IrqController` and `Board` over a `Wire` with a `Pullup`: the
-    // resolved nature (L21), `.v` on it and the `Logic` struct of the standard library are `P0001`
+fn the_irq_line_and_the_four_nets_are_refused_until_a_nature_can_implement_resolve() {
+    // digital#16 (refused, S8): `IrqSource`, `IrqController` and `Board` over `IrqLine`, a nature the model
+    // declares with `impl Resolve<Driven>`; digital#17 to digital#20 (refused, S8): the four worked nets of
+    // "Driving with strength": a plain bool into `AndWire`, the open-drain `Sda` with its pull-up, the
+    // tri-state `TriBus` with a keeper, and the typed `DataBus` with `Resolve<Option<u8>, Data>`. The
+    // trait `Resolve`, the type `Driven` and the library modules are not in the standard library yet, so the
+    // checker reports the name (E0161); the test fails when a listing starts to run, and the row moves to
+    // `run`. The sentences of the section (digital~ids listed in the inventory) are held by these refusals
     let chapter = Chapter::read();
-    let model = chapter.lone("irq.msl", &["digital#16"]);
-    let given = Refusal::of(model.run(Commands::transient_of("Board", 1e-6)), "digital#16");
-    assert!(given.contains(&("P0001".to_string(), "resolved nature `Wire` is not supported yet".to_string())), "{given:?}");
-    Refusal::expect(model.run(Commands::transient_of("Board", 1e-6)), "digital#16", "P0001", "resolved nature `Wire` is not supported yet");
+    for (id, top) in [("digital#16", "Board"), ("digital#17", "Board"), ("digital#18", "I2cBus"), ("digital#19", "Bus"), ("digital#20", "")] {
+        let model = chapter.lone("net.msl", &[id]);
+        let overrides = if top.is_empty() { Commands::transient_of("Top", 1e-6) } else { Commands::transient_of(top, 1e-6) };
+        let given = Refusal::of(model.run(overrides), id);
+        assert!(given.iter().all(|(code, _)| code == "E0161" || code == "E0112"), "{id}: names the library does not hold yet: {given:?}");
+        assert!(given.iter().any(|(_, message)| message.starts_with("cannot find `Resolve")), "{id}: {given:?}");
+    }
+    Refusal::expect(chapter.lone("net.msl", &["digital#16"]).run(Commands::transient_of("Board", 1e-6)), "digital#16", "E0161", "cannot find `Driven` in this scope");
+    Refusal::expect(chapter.lone("net.msl", &["digital#17"]).run(Commands::transient_of("Board", 1e-6)), "digital#17", "E0161", "cannot find `Resolve` in this scope");
+    Refusal::expect(chapter.lone("net.msl", &["digital#18"]).run(Commands::transient_of("I2cBus", 1e-6)), "digital#18", "E0161", "cannot find `Driven` in this scope");
+    Refusal::expect(chapter.lone("net.msl", &["digital#19"]).run(Commands::transient_of("Bus", 1e-6)), "digital#19", "E0161", "cannot find `Driven` in this scope");
+    Refusal::expect(chapter.lone("net.msl", &["digital#20"]).run(Commands::transient_of("Top", 1e-6)), "digital#20", "E0161", "cannot find `Resolve` in this scope");
 }
 
 #[test]
 fn the_flip_flop_is_refused_for_its_generic_module() {
-    // digital#17 (refused): `Dff<T: Repr>`: a generic module is `P0001` (L30)
+    // digital#21 (refused): `Dff<T: Repr>`: a generic module is `P0001` (L30)
     let chapter = Chapter::read();
     let after = "module Top() { signal clk: Bit; signal r: Bit; signal d: Bit<u8>; signal q: Bit<u8>; let f = Dff::<u8>(clk, r, d, q) { reset: 0 }; }\n";
-    let model = chapter.wrapped("dff.msl", "", "digital#17", after);
-    Refusal::expect(model.run(Commands::transient_of("Top", 1e-6)), "digital#17", "P0001", "generic module is not supported yet");
+    let model = chapter.wrapped("dff.msl", "", "digital#21", after);
+    Refusal::expect(model.run(Commands::transient_of("Top", 1e-6)), "digital#21", "P0001", "generic module is not supported yet");
 }
 
 /// The multiply-accumulate pipeline of the chapter, in a bench that holds its inputs.
@@ -466,7 +479,7 @@ impl Pipeline {
     /// The model of the Book's pipeline, its three stage lines in the order the Book writes them
     /// (`reversed` false) or the other way round.
     fn model(chapter: &Chapter, reversed: bool) -> Model {
-        let text = chapter.text("digital#18");
+        let text = chapter.text("digital#22");
         let text = if reversed { Self::reversed(&text) } else { text };
         Model::written("mac.msl", &format!("{}\n{text}\n{}", Oscillator::text(chapter), Self::BENCH))
     }
@@ -493,14 +506,14 @@ impl Pipeline {
 
 #[test]
 fn a_pipeline_in_one_reaction_reads_every_register_before_the_edge() {
-    // digital#18 (run): `MacPipe`: "Pipelines fall out of 'reads see the past'. One reaction can describe all
+    // digital#22 (run): `MacPipe`: "Pipelines fall out of 'reads see the past'. One reaction can describe all
     // three stages of a multiply-accumulate pipeline, in any statement order, because every right-hand side
     // reads the registers as they were before the edge". Inputs 3 and -4: the first product reaches `acc`
     // at the third edge (2.5 us), then -12 more at each edge; written in the opposite statement order the
     // trace is the same
     let chapter = Chapter::read();
     let ran_book = Pipeline::model(&chapter, false);
-    chapter.wrapped("mac.msl", &format!("{}\n", Oscillator::text(&chapter)), "digital#18", Pipeline::BENCH).run(Commands::transient_of("Top", 7e-6)).unwrap_or_else(|failure| panic!("{failure}"));
+    chapter.wrapped("mac.msl", &format!("{}\n", Oscillator::text(&chapter)), "digital#22", Pipeline::BENCH).run(Commands::transient_of("Top", 7e-6)).unwrap_or_else(|failure| panic!("{failure}"));
     let trace = Pipeline::trace(&ran_book);
     let accumulators: Vec<i128> = trace.iter().map(|(acc, _)| *acc).collect();
     assert_eq!(accumulators, [0, 0, 0, -12, -24, -36, -48, -60], "three stages of latency, then -12 per edge");

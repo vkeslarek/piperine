@@ -103,7 +103,7 @@ input. A **param** is a value fixed during a solve: the model reads it, the host
 | Port | Written | Connected to |
 | --- | --- | --- |
 | carrier of a one-driver discrete nature | `in a: Bit<T>`, `out q: Bit<T> [= initial]` | a carrier; an `in` port also takes a discrete expression, which is an anonymous definition (§8.2.9) |
-| carrier of any other nature | `p: Electrical`, `sda: Wire [= initial drive]` | a carrier (a net) |
+| carrier of any other nature | `p: Electrical`, `sda: Sda [= initial drive]` (`Sda` a nature that implements `Resolve`) | a carrier (a net) |
 | bundle | `tx: Stream<T>`, `rx: flip Stream<T>`, `in s: Stream<T>` | a bundle carrier or a bundle literal (§7) |
 | value input | `x: f64` | an expression (§8.3) |
 
@@ -191,7 +191,7 @@ argument, a generation range or condition, an array length, a param default and 
 
 **Dynamic semantics**
 
-- **§8.1.22** A param is known and constant during every solve (§16.2). Its value changes only by
+- **§8.1.22** A param is constant during every solve (§16.2). Its value changes only by
   a host `set` (§9 rule 4).
 - **§8.1.23** When a host `set` changes a param, every value bound from it (§8.1.19) is recomputed
   and every dependent `where` is checked again. A `set` that violates a `where` is refused (§23).
@@ -313,7 +313,7 @@ a result that does.
 - **§8.2.19** The expression's type **MUST** be the value type of the levels the `place` names.
 - **§8.2.20** Within one module, a carrier is driven by definitions or by commits of reactions,
   never both (§5.2). Several definitions **MAY** target disjoint levels of one carrier. Two
-  definitions that share a level are an error. A level no definition names stays unknown.
+  definitions that share a level are an error. A level no definition names holds the carrier's initial value (§3.3.4).
 - **§8.2.21** A carrier whose drive is a definition without `after` **MUST NOT** have an initial
   value on the levels defined. A delayed definition **MAY** have one: `out q: Bit = false` with
   `q = !(r | qn) after tpd;`.
@@ -365,8 +365,8 @@ a result that does.
   `set` changes a param it reads (§9 rule 4).
 - **§8.2.27** A `let` keeps no value between reads. Two reads in one context yield the same value,
   because the context fixes everything the expression can read.
-- **§8.2.28** A value read through a `let` keeps its known flags (§3.3). An `analog` block that
-  reads a discrete carrier through a `let` is still bound by §3.3.5.
+- **§8.2.28** A value read through a `let` is a value of its type. An `analog` block that reads
+  a discrete carrier through a `let` reads it like any expression (§3.3.6).
 
 **Dynamic semantics: definitions**
 
@@ -382,12 +382,13 @@ a result that does.
   elaboration error. A loop among drives of resolved carriers only is legal. *Dynamic:* a legal
   loop, one strongly connected component of the drive dependency graph, settles by
   **relaxation**. In each microstep where an input of the loop changed:
-  1. every drive of the loop starts as not driving: it is absent from what `resolve` receives;
+  1. every drive of the loop starts each pass absent from what `resolve` receives; absence is
+     not a value of the type;
   2. all drives of the loop are re-evaluated together, each from the values the previous pass left;
   3. passes repeat until no drive changes, at most as many passes as the loop has drives, plus one;
-  4. if drives still move after that, the levels that move are unknown, and the simulator writes a
-     record naming the loop's drives on the `log` stream of the first drive's instance (§19), once
-     per loop and analysis.
+  4. if drives still move after that, the run stops with `E0511`, which names the loop's
+     drives. A conflict between drives is a value (a resolved `Logic` reads X); a loop that does
+     not settle is an instability, and an instability is an error.
 
   Starting from nothing every time, a loop cannot latch. Only the settled value is observable:
   `changed()` compares it with the value before the microstep.
@@ -397,8 +398,7 @@ a result that does.
   statement (§12.1.4); `after 0` is the next microstep; where time does not advance, a positive
   delay never comes due (§16.1.3).
 - **§8.2.30** The delay is evaluated when the commit is made. A later change of what the delay
-  reads does not move a pending commit. An unknown delay commits `Unknown` at the next microstep
-  (§3.3.3).
+  reads does not move a pending commit. A delay is an `f64`: it is always a value.
 - **§8.2.31** Definitions run at instants only. Per analysis they follow the second table of
   §16.2: at the microsteps of `(0, ·)` and of each sweep point, at every instant of a transient, and
   never in a small-signal sweep.
@@ -430,7 +430,7 @@ a result that does.
 | `E0342` | a reference to an item whose generation arm was not elaborated, or an index outside a generated array (§8.2.24) | elaboration |
 | `E0343` | `inst.name` names an item that is not `pub` (§8.2.8) | elaboration |
 | §5.2 | a definition target this module may not drive (§8.2.10): a second drive of a one-driver carrier (`E0220`), any other target (`E0222`); a carrier with both a definition and commits in one module (`E0221`) | elaboration |
-| — | a loop of resolved drives that does not settle is not an error: its levels are unknown and a `log` record is written (§8.2.3) | run |
+| `E0511` | a loop of resolved drives that still moves after its bounded passes; the diagnostic names the loop's drives (§8.2.3) | run |
 
 > **Resolution.** `E0331` is retired. It reported `let mut` in a module body, when `mut` marked the
 > locals that could be assigned. `mut` is now a reserved word in every position (`E0903`, A.1), and
@@ -440,9 +440,9 @@ a result that does.
 
 ```rust
 /// Clock buffer and two flip-flops: the buffer settles before either reaction runs.
-module Shift2(in clk: Bit, in d: Bit, out q2: Bit) {
+module Shift2(in clk: Bit, in d: Bit, out q2: Bit = false) {
     signal clk2: Bit;
-    signal q1: Bit;
+    signal q1: Bit = false;
     clk2 = clk;
 }
 digital for Shift2 {
@@ -452,15 +452,15 @@ digital for Shift2 {
 
 /// Shift register, LSB first: the register is the array, the byte a cast of it.
 module UartShift(in clk: Bit, in rx: Bit, out byte: Bit<u8>) {
-    signal sh: [Bit; 8];
-    byte = cast(sh);
+    signal sh: [Bit; 8] = [false; 8];
+    byte = cast(sh).unwrap();
 }
 digital for UartShift { on clk.rise() { sh[7] <- rx; for k in 0..7 { sh[k] <- sh[k + 1]; } } }
 
-/// Bidirectional pass gate: a legal loop when two gates join the same wires (§22.3).
-module Tran(a: Wire, b: Wire, in en: Bit) {
-    a = if en { b.others() } else { Logic::Z };
-    b = if en { a.others() } else { Logic::Z };
+/// Bidirectional pass gate: a legal loop when two gates join the same nets (§22.3).
+module Tran<W: Nature + Resolve<Driven>>(a: W, b: W, in en: Bit) {
+    a = if en { b.others() } else { Driven::Z };
+    b = if en { a.others() } else { Driven::Z };
 }
 ```
 
@@ -555,8 +555,8 @@ value (§8.4), called with connections.
 - **§8.3.17** Per analysis, an instance in an expression is its module: its `analog` blocks follow
   the first table of §16.2, its definitions and reactions the second. The core modules are specified
   one by one in §14.
-- **§8.3.18** A value input or result keeps its known flags (§3.3). §3.3.5 applies to an
-  `analog` read through either.
+- **§8.3.18** A value input or result is a value of its type (§3.3.1). An `analog` read
+  through either is an ordinary read (§3.3.6).
 
 `idt`, the stdlib integrator, is the worked case: its text and its behavior in every solve are
 §22.2.8.
@@ -763,9 +763,9 @@ module** is implemented outside the language.
 - **§8.5.14** A `"cosim"` instance follows the second table of §16.2 as reactions do. Where time
   does not advance, a time it asks for never comes due (§16.1.3).
 - **§8.5.15** A foreign model with analog pins sits behind `A2D` and `D2A` (§22.4).
-- **§8.5.16** A `"cosim"` step is all-or-nothing, like an `extern` function (§3.3.2): when an
-  input holds an unknown level the foreign simulator is not run, and every `out` port commits
-  `Unknown`.
+- **§8.5.16** A `"cosim"` step receives the bytes of the types its input ports declare and
+  commits the bytes of the types its `out` ports declare, as an `extern` function does (§3
+  rule 15). A port that may be absent is an `Option`; one that may be X or Z is a `Logic`.
 
 > **Resolution.** §8.5.16 is stated here. The C interface of `"cosim"` (the step function, its
 > descriptor, how it returns the next time it wants to run) is the device ABI of §8.5.8 (G.65).
@@ -849,9 +849,10 @@ A named expression and a value input are not quantities: they are expressions ov
 Four ways to vary a resistance, one per row of the table and one for time:
 
 ```rust
-// A. Set from outside: a Bit input; each change is a jump.
-module DigiPot(p: Electrical, n: Electrical, in r: Bit<f64>) { r0: f64 = 1k; }
-analog for DigiPot { i(p, n) +> v(p, n) / r.known_or(r0); }
+// A. Set from outside: a Bit input given by the parent or the host (no `= ..` on an `in` port,
+// §8.1.7); each change is a jump.
+module DigiPot(p: Electrical, n: Electrical, in r: Bit<f64>) { }
+analog for DigiPot { i(p, n) +> v(p, n) / r; }
 
 // B. A function of a node: in the matrix, Newton sees the dependence.
 module VcResistor(p: Electrical, n: Electrical, ctl: Electrical) { r0: f64 = 1k; k: f64 = 0.1; }
@@ -863,7 +864,7 @@ module LaggedResistor(p: Electrical, n: Electrical, ctl: Electrical) {
     signal r: Bit<f64> = r0;
 }
 digital for LaggedResistor { on settle { r <- r0 * (1.0 + k * v(ctl)); } }
-analog for LaggedResistor { i(p, n) +> v(p, n) / r.known_or(r0); }
+analog for LaggedResistor { i(p, n) +> v(p, n) / r; }
 
 // D. A function of time: no Jacobian entry; the corner is a carrier change, so the solver lands on it.
 module SweptResistor(p: Electrical, n: Electrical) {
@@ -871,7 +872,7 @@ module SweptResistor(p: Electrical, n: Electrical) {
     signal done: Bit = false;
 }
 analog for SweptResistor {
-    let x = if done.high() { 1.0 } else { now() / tsweep };
+    let x = if done { 1.0 } else { now() / tsweep };
     i(p, n) +> v(p, n) / (r0 + (r1 - r0) * x);
     bound_step(tsweep / 50.0);
 }

@@ -8,6 +8,7 @@ E0133	generics	L8 (handles)
 E0134	generics	L7 (traits)
 E0187	generics	L7 (traits and generic arguments)
 E0203	resolved-nets	L21
+E0225	explicit-unknowns	EU-11 AC 4 (two driven types on one resolved carrier)
 E0313	composite-values	L24 (array carriers)
 E0322	generics	L31 (generation)
 E0340	generics	L31
@@ -24,6 +25,7 @@ E0452	analog-operators	L44 (`delay`)
 E0453	analog-operators	L44
 E0454	analog-operators	L45 (`noise`)
 E0456	analog-operators	L47 (`simparam`)
+E0511	explicit-unknowns	EU-11 AC 8 (a loop of resolved drives that does not settle)
 E0614	params-and-io	PI-09 AC 3, raised here
 E0703	params-and-io	PI-10 AC 6, raised here
 E0704	params-and-io	PI-10 AC 7, raised here

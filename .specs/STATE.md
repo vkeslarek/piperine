@@ -1365,6 +1365,7 @@ and three choices fix how.
 `crates/piperine-transpile`, `CLAUDE.md`, `AGENTS.md`.
 **Status:** Accepted (2026-11-16), under the user's standing delegation and the approved
 `.specs/features/msl-digital/design.md` ("Tech Decisions").
+**Superseded in part by MD-78** (2026-11-21, `explicit-unknowns`): unknown-ness as an elaboration analysis is gone, and no value is flagged.
 
 ---
 
@@ -1561,6 +1562,7 @@ forms and unknown-ness as an elaboration analysis).
 `crates/piperine-plan`, `crates/piperine-transpile` (`rt/`, `print/`), `crates/piperine-abi`,
 `crates/piperine-digital-solver`, `crates/piperine-api`, `crates/piperine-cli`, `docs/spec`.
 **Status:** Accepted (2026-11-19), from the approved `.specs/features/unknown-semantics/design.md`.
+**Superseded whole by MD-78** (2026-11-21, `explicit-unknowns`): no merge, no `commit_with`, no `maybe`, no `E0150`/`E0151`.
 
 ### MD-71: a contribution stays where it was written; a module is lowered once per value of its key params
 
@@ -1763,6 +1765,22 @@ integrated; cargo test -p piperine-parity --test source_commits --test source_re
 **Scope:** `Cargo.toml` manifests, `crates/piperine-lang/tests/suite_hygiene.rs`, `crates/piperine-parity`,
 `crates/piperine-cli`, `tests/`, `examples/buck/README.md`, `CLAUDE.md`, `AGENTS.md`.
 **Status:** Accepted (2026-11-21), from the approved `.specs/features/integrated-tests/design.md`.
+
+### MD-78: unknown is explicit; no value carries a flag
+
+`explicit-unknowns` (2026-11-21, user: "Não acho que unknown deveria ser algo implícito, deveria ser algo EXPLICITO"). The number follows MD-77 (`integrated-tests`); `composite-values` may take a number at its merge, and the second feature to merge renumbers.
+
+1. **A value is what its type says.** Every value of `bool`, `UInt<N>`, `Int<N>`, `Float<N>`, an enum, a struct, a tuple or an array is known. Part I §3.3's known flag, the literal `Unknown`, `level`, `known`/`known_or`/`is_known`, the merge under unknown control, `maybe` and the gate of an analog read are removed from the language.
+2. **Uncertainty and absence are types.** `Logic<N>` is a library struct of two planes with the states 0, 1, X, Z; its operators are library `impl`s of the operator traits of Appendix H.10. Absence is `Option<T>`.
+3. **A carrier starts with a value or with its type's `Default`.** No primitive numeric type implements `Default`; a missing initial value on such a type is `E0187`.
+4. **The device ABI stays major 1 and is edited in place.** It is unreleased (user: "ABI pode continuar major 1 pq não fizemos release ainda"), so no compatibility is promised until the first release; `MINOR` returns to 0. No flag byte, no `commit_with`; `Option` is a presence byte and a payload, `Logic<N>` two planes, a drive pin the driven value and a plain `driving` byte.
+5. **Traits are capabilities.** A nature takes trait `impl`s (`E0134` is narrowed to bundles). A discrete carrier takes more than one drive only when its nature implements `Resolve<X, V = X>`; the `resolve` field and keyword are removed, and the library declares no net nature (`Wire`, `Tri`, `SumNet` leave). A loop of resolved drives that does not settle is `E0511`.
+6. **`unknown-semantics-per-level` is dropped**, and `GAPS.md` S6 and G6 close by this redesign.
+
+It supersedes MD-70 whole and MD-64 in its analysis of unknown-ness; it moves MD-76's D7 into the trait. MD-74 stands. The specification, `abi.md`, the records and the Book are amended first (batches B1 to B3, on `main` ahead of the code); phase A removes the flag from every layer, phase B writes `Logic<N>` from `std` after `generics`.
+
+**Scope:** `docs/spec`, `docs/book`, `crates/piperine-{lang,ir,plan,transpile,abi,digital-solver,solver,api,cli,parity}`, `examples/`, `tests/`.
+**Status:** Accepted (2026-11-21), from the approved `.specs/features/explicit-unknowns/spec.md`. Delivered so far: the specification, `abi.md` and the records (S8 in `GAPS.md` tracks the code).
 
 ---
 

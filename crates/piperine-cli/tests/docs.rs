@@ -294,14 +294,16 @@ fn gaps_drops_what_msl_fixes_closed() {
     assert!(!row("L58").contains("db10") && !row("L58").contains("absdelta") && !row("L58").contains("`limexp`"), "L58 (limexp left with unknown-semantics-events T17): {}", row("L58"));
     // (`### S2.` was kept here until `host-ii` closed it: `gaps_drops_what_host_ii_closed`)
     // (`### S4.` was kept here until `analog-structure` closed it, T35: `gaps_drops_what_analog_structure_closed`)
-    for kept in ["### S3.", "### S6.", "### B3.", "### B4."] {
+    // (`### S6.` was kept here until `explicit-unknowns` closed it by the redesign: `gaps_closes_s6_and_g6_by_the_redesign`; its row S8 stays instead)
+    for kept in ["### S3.", "### S8.", "### B3.", "### B4."] {
         assert!(gaps.contains(kept), "GAPS.md keeps {kept}");
     }
     // the counts follow, as `host-ii` moved them, `unknown-semantics` (L18, L19) after it and
     // `analog-structure` (nine loud rows and S4) after that, `unknown-semantics-events` (L52) after
     // that: 2 silent, 2 broken, 40 loud; `params-and-io` (L20, L39) took the loud rows to 38, `composite-values`
     // phase A (L5, L6, L10) and L63 to 35, `Pfd3` (L51: its event reads ran, its assignment now does) to 34, `resolved-nets` (L22, L23) to 32, and `value-semantics` closed S7 (the spec amendment had added it)
-    // and `composite-values` phase B (L1, L2, L3, L16) to 28, L64 (an unknown composite carrier read) to 29 L65 (a flag read on an `Option`) to 30 and L66 (a `match` whose value is an `Option`) to 31
+    // and `composite-values` phase B (L1, L2, L3, L16) to 28, L64 (an unknown composite carrier read) to 29, L65 (a flag read on an `Option`) to 30 and L66 (a `match` whose value is an `Option`) to 31;
+    // `explicit-unknowns` replaced S6 by S8 (still 2 silent)
     assert!(gaps.contains("2 silent, 2 broken, 31 loud"), "the counts of §9 follow");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
     assert_eq!(rows("## 3. Silent", "## 4."), 2, "two silent entries");
@@ -316,7 +318,7 @@ fn gaps_drops_the_value_semantics_gap() {
     // `value-semantics` as a plan, and no longer says `E0331` is raised
     let gaps = read("GAPS.md");
     assert!(!gaps.contains("### S7."), "S7 is closed");
-    assert!(!gaps.contains("| S3, S6, S7 |") && gaps.contains("| S3, S6 |"), "the section table lists S3 and S6");
+    assert!(!gaps.contains("| S3, S6, S7 |") && !gaps.contains("| S3, S7, S8 ") && gaps.contains("| S3, S8 "), "the section table lists S3 and S8 (S6 closed by `explicit-unknowns`)");
     assert!(!gaps.contains("E0331") && !gaps.contains("(`value-semantics`)"), "no entry names the retired code or the plan");
     assert!(gaps.contains("2 silent, 2 broken, 31 loud"), "the counts are restored (28 since composite-values phase B closed L1 to L3 and L16, 29 with L64, 30 with L65, 31 with L66)");
 }
@@ -338,62 +340,100 @@ fn state_records_msl_fixes() {
 fn state_records_the_unknown_semantics_decision() {
     // US-07 (design "New project-level decision"): `.specs/STATE.md` holds MD-70, which says the
     // merge runs in generated code, the ABI's additive entry, the record's `maybe` and the
-    // deletion point of the contract lowering (Q1 (b)); it extends MD-62 and MD-64 and
-    // supersedes nothing
+    // deletion point of the contract lowering (Q1 (b)); since 2026-11-21 MD-78 supersedes it whole
     let state = read(".specs/STATE.md");
     let at = state.find("### MD-70:").expect("STATE.md holds MD-70");
-    let decision = state[at..].split("\n---").next().expect("a decision");
+    let decision = state[at..].split("\n### MD-71").next().expect("a decision");
     for name in ["runs in the generated Rust", "`Host.commit_with(", "`maybe`", "`generics`", "`std/values.msl`", "64", "extends MD-62", "MD-64"] {
         assert!(decision.contains(name), "MD-70 names {name}");
     }
-    assert!(decision.contains("It supersedes nothing"), "MD-70 supersedes nothing");
+    assert!(decision.contains("Superseded whole by MD-78"), "MD-70 is marked superseded");
 }
 
 #[test]
-fn abi_states_commits_under_unknown_control() {
-    // US-07: abi.md gives `Host` the entry `commit_with`, lists `commit_flag` (`MAYBE` 1, `MERGE` 2)
-    // and `MINOR` 1 in its constants, and states rule C7 (merge at the due microstep in C2 order;
-    // transport converts under `MAYBE`)
+fn state_holds_the_explicit_unknowns_decision() {
+    // EU-19 AC 1: MD-78 holds the six points of "MD entry", supersedes MD-70 whole and MD-64 in
+    // part, and moves MD-76's D7 into the trait.
+    let state = read(".specs/STATE.md");
+    let at = state.find("### MD-78:").expect("STATE.md holds MD-78");
+    let decision = state[at..].split("\n---").next().expect("a decision").split_whitespace().collect::<Vec<_>>().join(" ");
+    for fact in [
+        "1. **A value is what its type says.**",
+        "2. **Uncertainty and absence are types.**",
+        "3. **A carrier starts with a value or with its type's `Default`.**",
+        "4. **The device ABI stays major 1 and is edited in place.**",
+        "5. **Traits are capabilities.**",
+        "6. **`unknown-semantics-per-level` is dropped**",
+        "It supersedes MD-70 whole and MD-64 in its analysis of unknown-ness; it moves MD-76's D7 into the trait. MD-74 stands.",
+    ] {
+        assert!(decision.contains(fact), "MD-78 lacks {fact}");
+    }
+    let md70_at = state.find("### MD-70:").expect("STATE.md holds MD-70");
+    let md70 = state[md70_at..].split("\n### ").next().expect("MD-70 body");
+    assert!(md70.contains("Superseded whole by MD-78"), "MD-70 is marked superseded");
+    let md64 = state[state.find("### MD-64:").expect("MD-64")..].split("\n---").next().expect("MD-64 body").to_string();
+    assert!(md64.contains("Superseded in part by MD-78"), "MD-64 is marked");
+}
+
+#[test]
+fn the_per_level_feature_is_recorded_as_dropped() {
+    // EU-19 AC 3: the spec of `unknown-semantics-per-level` opens with a line that says it is
+    // dropped, by whom and when; ROADMAP.md no longer has the `KNOWN_LEVELS` line.
+    let spec = read(".specs/features/unknown-semantics-per-level/spec.md");
+    let first = spec.lines().next().expect("a first line");
+    assert!(first.contains("DROPPED") && first.contains("the user on 2026-11-21") && first.contains("MD-78"), "{first}");
+    assert!(!read("ROADMAP.md").contains("KNOWN_LEVELS"), "ROADMAP.md still lists KNOWN_LEVELS");
+}
+
+#[test]
+fn abi_md_describes_the_unreleased_contract() {
+    // EU-16, EU-17 AC 5 (replaces `abi_states_commits_under_unknown_control`, which pinned
+    // `commit_with`, `commit_flag` and rule C7): the contract is still major 1 and says it is
+    // unreleased; `MINOR` is 0; `Field` has four fields; the shipped layouts hold no flag byte;
+    // a drive pin carries the driven value and a plain `driving` byte; one `commit`.
     let abi = read(".specs/features/device-abi/abi.md");
-    assert!(abi.contains("commit_with: unsafe extern \"C\" fn"), "the Host struct has commit_with");
-    assert!(abi.contains("| `commit_with` flags (`commit_flag`) | `MAYBE` 1, `MERGE` 2 |"), "the constants table lists the flags");
-    assert!(abi.contains("`MAJOR` 1, `MINOR` 1"), "MINOR is 1");
-    let at = abi.find("- **C7. Commits under unknown control.**").expect("abi.md has rule C7");
-    let rule = abi[at..].split("\n---").next().expect("a rule").split_whitespace().collect::<Vec<_>>().join(" ");
-    for fact in ["merged, level by level, with the bytes the net holds at that point of the C2 order", "transport (C3, §12.1.4) does not remove the pending commits", "turns them into `MERGE` commits"] {
-        assert!(rule.contains(fact), "C7 lacks \"{fact}\"");
+    let flat = abi.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(flat.contains("| version | `MAJOR` 1, `MINOR` 0, symbol `piperine_abi_1`;"), "major 1, minor 0, symbol piperine_abi_1");
+    assert!(flat.contains("pub struct Field { name: Str, leaf: u32, offset: u32, count: u32 }"), "Field has four fields");
+    assert!(flat.contains("`BIT` is `{ v: BOOL @0 }` (size 1, align 1)") && flat.contains("`BYTE` is `{ v: U8 @0 }` (size 1, align 1)") && flat.contains("`F64` is `{ v: F64 @0 }` (size 8, align 8)"), "the three shipped layouts");
+    assert!(flat.contains("`driving: BOOL`") && flat.contains("0 is a drive *absent*"), "the drive pin carries a plain `driving` byte");
+    assert!(flat.contains("**Unreleased.** This ABI has had no release"), "abi.md says it is unreleased");
+    assert!(flat.contains("Until the first release it changes in place"), "abi.md says it changes in place until the first release");
+    assert!(flat.contains("## 2. Entry points (6)"), "six entry points");
+    for gone in ["HAS_KNOWN", "commit_with", "commit_flag", "known byte", "- **C7."] {
+        assert!(!abi.contains(gone), "abi.md still says {gone}");
     }
 }
 
 #[test]
-fn gaps_drops_l18_and_l19() {
-    // US-07 AC 1 (C42): `unknown-semantics` closed L18 (`Unknown` as an initial value, `level`,
-    // `merge`, `same`, `cast`, `logic`, `matches_bits`) and L19 (unknown control is a merge, not a
-    // fault): neither is a row, and no instruction file calls the merge a gap; S6 and G6 (one flag
-    // per value, an ABI change) stay
+fn gaps_closes_s6_and_g6_by_the_redesign() {
+    // EU-19 AC 2 (replaces `gaps_drops_l18_and_l19`, whose tail pinned S6 and G6 as staying):
+    // L18 and L19 stay closed; S6 and G6 closed with the redesign of `explicit-unknowns`; one
+    // silent row, S8, says the implementation still carries the known flag, until phase A lands.
     let gaps = read("GAPS.md");
     for closed in ["L18", "L19"] {
         assert!(!gaps.lines().any(|l| l.starts_with(&format!("| {closed} |"))), "{closed} is still a row");
     }
+    let l59 = gaps.lines().find(|l| l.starts_with("| L59 |")).expect("L59 keeps its non-literal closure and `expect` clauses");
+    assert!(l59.contains("when it is not a literal") && l59.contains("message that is not a string literal") && !l59.contains("unknown"), "{l59}");
     assert!(!gaps.contains("Unknown control is a fault, not a merge"), "the fault of an unknown `if` is still listed");
-    assert!(gaps.contains("### S6. Unknown integers are one flag per value"), "S6 stays");
-    assert!(gaps.contains("- **G6 \u{2014} unknown integers are per value** (S6)."), "G6 stays");
+    assert!(!gaps.contains("### S6."), "S6 is closed by the redesign");
+    assert!(!gaps.contains("- **G6 \u{2014} unknown integers are per value** (S6)."), "G6 is closed by the redesign");
+    assert!(gaps.contains("(S6 closed by `explicit-unknowns`)") && gaps.contains("G6 closed by `explicit-unknowns`"), "the closures are recorded");
+    assert!(gaps.contains("### S8. The implementation still carries the known flag"), "S8 is the one silent row");
     let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("GAPS.md has a section 9");
     let row = coverage.lines().find(|l| l.starts_with("| I §3–§3.3 ")).expect("the coverage row of §3.3");
-    assert!(!row.contains("L19") && !row.contains("`level`"), "the coverage row still lists the merge and `level` as gaps: {row}");
+    assert!(!row.contains("`level`"), "the coverage row still lists `level` as a gap: {row}");
 }
 
 #[test]
-fn gaps_carries_the_unknown_index_merge_to_composite_values() {
-    // US-04 AC 12 (C31): the arrays do not exist yet, so their merge criterion travels with the rows
-    // that will add them: L3 and L24 (an index that may be unknown). The loop bound of US-04 AC 11 left
-    // with L5 when composite-values phase A added the loops: Appendix C.2 holds it
-    // (`spec_text::appendix_c_states_the_loop_bound_under_unknown_control`).
+fn gaps_rows_carry_no_unknown_control_clause() {
+    // EU-19 (replaces `gaps_carries_the_unknown_index_merge_to_composite_values`): with no merge,
+    // L3, L5 and L24 do not carry the loop bound or the index merge any more (L3 and L5 left with composite-values).
     let gaps = read("GAPS.md");
     let row = |id: &str| gaps.lines().find(|l| l.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("a row {id}")).to_string();
-    // L3 left with composite-values phase B (T51 runs the merge: `an_unknown_index_reads_and_writes_by_merge`)
     for id in ["L24"] {
-        assert!(row(id).contains("merges every element it may name") && row(id).contains("US-04 AC 12"), "{id} carries the index merge");
+        assert!(!row(id).contains("merges every element it may name") && !row(id).contains("US-04"), "{id} carries the index merge");
     }
 }
 
