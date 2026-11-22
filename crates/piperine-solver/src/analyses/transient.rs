@@ -426,6 +426,27 @@ struct ScheduledWrite {
     value: crate::core::bind::ParamValue,
 }
 
+/// What a transient step reads, which decides how its truncation error is measured.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StepKind {
+    /// A step that reads no change: tested with Milne's estimate.
+    Ordinary,
+    /// The step that reads a jump (a delivery under a restart, §15.2 rule 6).
+    ReadsJump,
+}
+
+impl StepKind {
+    /// The kind of the step that starts at a time loop whose `sets_just_applied` is given.
+    fn of(sets_just_applied: bool) -> Self {
+        if sets_just_applied { Self::ReadsJump } else { Self::Ordinary }
+    }
+
+    /// Whether the step reads a jump.
+    fn reads_jump(self) -> bool {
+        self == Self::ReadsJump
+    }
+}
+
 /// Phase 1 output — the candidate landing point chosen over the unified
 /// breakpoint table from the PI-proposed step size.
 struct StepPrediction {
@@ -435,9 +456,10 @@ struct StepPrediction {
     dt_actual: f64,
     /// The step size the PI controller proposed (before breakpoint clamping).
     dt_proposed: f64,
-    /// The step lands on a declared discontinuity → exempt from the
-    /// Milne-LTE accept gate.
-    landed_on_breakpoint: bool,
+    /// What the step reads.
+    kind: StepKind,
+    /// The step ends exactly on a tick: a landing, or the stop.
+    on_tick: bool,
 }
 
 /// Why an attempt was rejected.
@@ -797,13 +819,18 @@ impl<'a> TransientSolver<'a> {
     /// stages, against `max(h·(abstol + reltol·|i|), reltol·max(|q|, chgtol))`. A circuit with
     /// no `ddt` state has no truncation error, so the controller grows the step. Steps landing
     /// on a declared discontinuity (breakpoint or live-set edge) are exempt.
-    fn assess_step(&self, prediction: &StepPrediction, post_set_step: bool) -> StepAssessment {
+    fn assess_step(&self, prediction: &StepPrediction) -> StepAssessment {
         let tolerances = &self.system.context.tolerances;
         let states = self.system.circuit.abi.as_ref().map(|bound| bound.analog.ddt_states()).unwrap_or_default();
         let milne = TrBdf2::state_lte(&states, tolerances, prediction.dt_actual);
-        let reject =
-            !prediction.landed_on_breakpoint && !post_set_step && milne > tolerances.trtol;
+        let reject = self.is_tested(prediction) && milne > tolerances.trtol;
         StepAssessment { milne, accept: !reject }
+    }
+
+    /// Whether the accept gate applies to the step. Temporary: a step that ends on a landing keeps
+    /// its exemption until the landing step is tested; the step that reads a jump is exempt.
+    fn is_tested(&self, prediction: &StepPrediction) -> bool {
+        prediction.kind == StepKind::Ordinary && !prediction.on_tick
     }
 
     /// Record an accepted step's snapshot when it falls inside the
@@ -841,10 +868,10 @@ impl<'a> TransientSolver<'a> {
         milne: f64,
         dt_actual: f64,
         dt_proposed: f64,
-        post_set_step: bool,
+        kind: StepKind,
         sets_just_applied: bool,
     ) -> f64 {
-        let mut dt = if post_set_step {
+        let mut dt = if kind.reads_jump() {
             dt_proposed
         } else {
             // NOTE: the controller targets `lte == 1` while the accept gate
@@ -1049,7 +1076,6 @@ struct PendingStep {
     prediction: StepPrediction,
     snapshot: TransientStep,
     milne: f64,
-    post_set_step: bool,
     /// The attempt is at the step floor and fails the truncation test: it is accepted anyway.
     over_error_at_floor: bool,
 }
@@ -1515,7 +1541,7 @@ impl TransientSolver<'_> {
         &mut self,
         run: &mut DeviceRun,
         to: f64,
-        exempt: bool,
+        landing: bool,
     ) -> crate::core::result::Result<crate::protocol::Attempt> {
         use crate::protocol::Attempt;
         if let Some(e) = run.failed.take() {
@@ -1551,7 +1577,7 @@ impl TransientSolver<'_> {
             ));
         }
         let stop = self.options.stop_time;
-        let t_next = if exempt {
+        let t_next = if landing {
             to
         } else if (stop - to).abs() < run.spt {
             stop
@@ -1578,9 +1604,9 @@ impl TransientSolver<'_> {
             t_next,
             dt_actual: t_next - st.current_time,
             dt_proposed: st.dt,
-            landed_on_breakpoint: exempt,
+            kind: StepKind::of(st.sets_just_applied),
+            on_tick: landing,
         };
-        let post_set_step = st.sets_just_applied;
         self.system.jump = if st.sets_just_applied {
             JumpPosition::Reads
         } else if self.system.last_read_jump {
@@ -1590,15 +1616,16 @@ impl TransientSolver<'_> {
         };
         let outcome = self.execute_timestep(st.current_time, prediction.dt_actual, st.last_step_accepted);
         if let Ok(Some(snapshot)) = outcome {
-            let assessment = self.assess_step(&prediction, post_set_step);
+            let kind = prediction.kind;
+            let assessment = self.assess_step(&prediction);
             // The floor rule, ngspice's (`dctran.c`, "Timestep too small"): nothing smaller than
             // `dt_min` is tried, so an attempt already at it that only fails the truncation test
             // is accepted and counted; a Newton failure there ends the run (below).
             let over_error_at_floor = !assessment.accept && self.is_at_floor(run, prediction.dt_actual);
             if assessment.accept || over_error_at_floor {
-                run.pending = Some(PendingStep { prediction, snapshot, milne: assessment.milne, post_set_step, over_error_at_floor });
+                run.pending = Some(PendingStep { prediction, snapshot, milne: assessment.milne, over_error_at_floor });
                 // §17.3 rule 8: a step that reads a jump does not locate its crossings.
-                if run.locates && !post_set_step
+                if run.locates && !kind.reads_jump()
                     && let Some(landing) = self.device_locate(run, t_next)?
                 {
                     return Ok(Attempt::LandedEarlier(landing));
@@ -1613,7 +1640,7 @@ impl TransientSolver<'_> {
         // retaken there once, and the attempt at the floor that fails again is "Timestep too small".
         let spent = self.cut_after_failure(run, &prediction, Rejection::Newton);
         if spent && let Err(e) = outcome {
-            run.failed = Some(run.floor_error(e, t_next, post_set_step));
+            run.failed = Some(run.floor_error(e, t_next, prediction.kind.reads_jump()));
         }
         Ok(Attempt::Rejected)
     }
@@ -1709,7 +1736,7 @@ impl TransientSolver<'_> {
     /// Accepts the converged attempt: `accept_step`'s bookkeeping without the
     /// old discrete engine; the restart comes with `device_deliver`.
     pub(crate) fn device_accept(&mut self, run: &mut DeviceRun) -> crate::core::result::Result<crate::protocol::Accepted> {
-        let PendingStep { prediction, snapshot, milne, post_set_step, over_error_at_floor } =
+        let PendingStep { prediction, snapshot, milne, over_error_at_floor } =
             run.pending.take().expect("accept follows a converged attempt");
         run.undo = Some(AcceptUndo {
             st: run.st.clone(),
@@ -1723,10 +1750,10 @@ impl TransientSolver<'_> {
             last_dt: run.last_dt,
             stepper: self.plan.stepper().memory(),
         });
-        let StepPrediction { t_next, dt_actual, dt_proposed, .. } = prediction;
+        let StepPrediction { t_next, dt_actual, dt_proposed, kind, .. } = prediction;
         let st = &mut run.st;
         st.steps_accepted += 1;
-        st.jump_steps += usize::from(post_set_step);
+        st.jump_steps += usize::from(kind.reads_jump());
         st.steps_at_max_step += usize::from(dt_actual + run.spt >= self.options.dt_max);
         st.floor_accepts += usize::from(over_error_at_floor);
         st.last_step_accepted = true;
@@ -1750,7 +1777,7 @@ impl TransientSolver<'_> {
         } else {
             dt_actual
         };
-        st.dt = self.propose_dt(milne, grown_from, dt_proposed, post_set_step, false);
+        st.dt = self.propose_dt(milne, grown_from, dt_proposed, kind, false);
         // A step retaken toward a crossing is short for the crossing's sake, not the error's:
         // the next step starts from the controller's step before the retake.
         if let Some(before) = run.retaken.take() {

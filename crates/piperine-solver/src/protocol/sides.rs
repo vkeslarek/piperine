@@ -289,9 +289,9 @@ pub trait AnalogSide {
     /// at the instant that changed them; `restart` says how the next step starts.
     fn deliver(&mut self, boundary: &[Boundary], restart: Restart);
     /// Solves a step to `to` on the current copy of discrete values (the left
-    /// value at a scheduled instant); `exempt` skips the truncation test (a
-    /// step that lands on a scheduled instant, as at a breakpoint).
-    fn attempt(&mut self, to: f64, exempt: bool) -> Result<Attempt>;
+    /// value at a scheduled instant); `landing` says the step ends exactly on
+    /// `to` (a scheduled instant, as at a breakpoint) and not on this side's own proposal.
+    fn attempt(&mut self, to: f64, landing: bool) -> Result<Attempt>;
     /// Accepts the last converged attempt.
     fn accept(&mut self) -> Result<Accepted>;
     /// Solves the equilibrium (`STATIC = 1`) and evaluates watches there.

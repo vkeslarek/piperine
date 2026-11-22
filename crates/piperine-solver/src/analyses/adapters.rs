@@ -367,7 +367,7 @@ impl AnalogSide for EquilibriumSide<'_, '_> {
         }
     }
 
-    fn attempt(&mut self, _to: f64, _exempt: bool) -> Result<Attempt> {
+    fn attempt(&mut self, _to: f64, _landing: bool) -> Result<Attempt> {
         unreachable!("an operating point takes no step")
     }
 
@@ -441,13 +441,13 @@ impl AnalogSide for TransientSide<'_, '_> {
         self.tran.device_deliver(&mut self.run, boundary, restart);
     }
 
-    fn attempt(&mut self, to: f64, exempt: bool) -> Result<Attempt> {
+    fn attempt(&mut self, to: f64, landing: bool) -> Result<Attempt> {
         // Nothing has moved since the protocol's mark: the step accepted last
         // takes the settled state as its re-entry state.
         if let Some((digital, nets)) = self.settled.borrow_mut().take() {
             self.tran.device_capture(&mut self.run, digital, nets);
         }
-        self.tran.device_attempt(&mut self.run, to, exempt)
+        self.tran.device_attempt(&mut self.run, to, landing)
     }
 
     fn accept(&mut self) -> Result<Accepted> {
