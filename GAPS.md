@@ -32,7 +32,7 @@ change of the IR or the ABI.
 | §3 Silent (read this first) | S3, S8 (S6 closed by `explicit-unknowns`) |
 | §4 Loud | L1–L66 (L11, L14, L15, L17, L18, L19, L20, L39, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L22, L23 closed; L9 and L4 narrowed; L64 to L66 found by `composite-values`) |
 | §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X1, X2, X6 (X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
-| §6 Solver, numerics, performance | V12, V13, V16 |
+| §6 Solver, numerics, performance | V13, V16 (V12 closed by `transient-performance`) |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
 | §8 Unproven | U1–U11 (U5, U10 closed by `root-e2e`) |
 | §9 Coverage by spec part | — |
@@ -256,7 +256,7 @@ G1 to G5 are the buck's (`examples/buck/GAPS.md`; G6, unknown integers per value
 
 From the solver internals review (artifact `TEV6Hqo6d3QRi1ssZtJTW5`), the `solver-abi-integration`
 verification, and this audit. The hygiene points V1 to V11, V14 and V15 closed in `solver-hygiene`;
-what remains is speed (V12, V13) and the periodic linearization (V16).
+what remains is speed (V13) and the periodic linearization (V16); V12, the buck stepping at every digital edge, closed in `transient-performance`.
 
 The solver's default transient result keeps every accepted step, with its re-entry state (N2):
 about 58 KB a step, which is 25 GB over the buck's whole start. That is the default by design;
@@ -266,7 +266,6 @@ step only (60 001 rows peak at about 11 MiB).
 
 | # | Point | Evidence | Size |
 | - | ----- | -------- | ---- |
-| V12 | **A mixed design steps at every digital edge.** The buck takes about 45 000 accepted steps per 40 µs (about 675 000 for the 600 µs start), 130 s in a dev build: the analog side lands near every 200 MHz instant. §17.2.2 says a clock nothing analog depends on costs nothing, which suggests the reachability set is coarser than the rule; not measured here. Multi-rate stepping is the user's next item after `long-run` | `long-run`, ROADMAP 3c | L |
 | V13 | No surrogate or averaged model for runs longer than a start | ROADMAP 3c | L |
 | V16 | The periodic small-signal and periodic noise linearization is not implemented | C.2, G.37 | L |
 
@@ -393,7 +392,7 @@ E0703 E0704 E0705 E0706 E0807 E0808 E0809`
 | Resolved nets and bundles | L21, L25: natures that implement `Resolve`, `Tribuf`, `Tran`, `Bidir` | L |
 | Unknown semantics | S8 (explicit unknowns), L53, L8 (L18 and L19 closed by `unknown-semantics`; L51 and L52 by `unknown-semantics-events`; S6 and G6 closed by `explicit-unknowns`) | L |
 | Host II (delivered in part by `host-ii`) | H1, H3, H6, H9, then B4 (Python) | L |
-| Speed | V12, V13, V16, PSS on the device ABI | L |
+| Speed | V13, V16, PSS on the device ABI | L |
 | Foreign models | L12, L33 | L |
 | Language server | B3 | M, deferred |
 | Documents | X1, X2, H13 | S |

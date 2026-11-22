@@ -68,7 +68,7 @@ code (user, 2026-11-18 and 2026-11-21).
 
 | Feature | What it delivers | State |
 | --- | --- | --- |
-| `transient-performance` | Faster transients (Fable diagnosis and plan): step control around events, stamps and node lists reused, no instant at an idle step; T25: the analog time as an integer tick epoch plus a small offset, replacing the long-transient stopgap | spec, design and tasks on `feature/transient-performance`; first after the review (user, 2026-11-21) |
+| `transient-performance` | Faster transients (Fable diagnosis and plan): step control around events, stamps and node lists reused, no instant at an idle step; T25: the analog time as an integer tick epoch plus a small offset, replacing the long-transient stopgap | built on `feature/transient-performance`, awaiting the merge (user, 2026-11-21) |
 | `host-iii` | `force`, `release`, waits for an event, continued transients (H1, H6) | spec |
 | `host-analyses` | S-parameters, Fourier, distortion, operating-point variables (H2) | spec |
 | `sweeps-montecarlo-optimization` | Multi-axis sweeps, Monte Carlo, optimization (H2, H7) | spec |
@@ -76,7 +76,7 @@ code (user, 2026-11-18 and 2026-11-21).
 | `cli-packages` | Packages from the command line (H10) | spec |
 | `conformance` | The galleries and conformance on the compiled backend (U1, U2, U4, U6, U8, U9) | spec |
 | `foreign-models` | Foreign and OSDI models, linking (L12, L33) | spec |
-| `multi-rate` | Digital edges that do not cut analog steps (V12) | spec; later (user) |
+| `multi-rate` | Digital edges that do not cut analog steps (V12) | delivered by `transient-performance` (landings only where something observable happens: `59be2e5c`; no instant at an idle step: `c8569a22`) |
 | `surrogate-models` | Averaged or surrogate models for long runs (V13) | spec; later (user) |
 | `periodic-small-signal` | Small-signal analyses over the periodic steady state (V16) | spec |
 | `ngspice-models` | The ngspice device models in the MSL standard library — same names, params and equations, each with a parity twin — so a SPICE user moves over easily | **idea only**; well after the rest (user, 2026-11-21) |

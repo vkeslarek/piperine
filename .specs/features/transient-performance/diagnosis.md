@@ -259,7 +259,60 @@ about 20 % with the load of the machine.
 | T9, the landing step is tested | 806 491 | 143.6 s | 2 110 | 2 367 | 48 more rejections, +0.3 % steps: the landings are still 240 000, so the tested steps are the small ones |
 | T10, the jump step is error-controlled | 814 058 | 129.0 s | 1 707 | 2 367 | 769 jump retakes (0 before); every jump step starts at a tenth of the last step and is cut to an eighth of the failed step until it passes |
 | T16/T17, the observable rule is the default | 210 188 | 39.2 s (68.3 s on a loaded machine) | 2 468 | 2 367 | 2 367 landings (analog-read changed) + 300 (continuous read) + 0 (declared reach); 891 jump retakes; 56 809 steps end at `max_step`, 150 711 at the controller's proposal; the gate of 300 000 holds. First 100 us: 31 264 steps, 417 landings (limit 1 000), `buck.vout` 0.000136 mV from the fine reference |
+| T18 to T21, the per-step cost | 210 188 | 29.2 s | 2 468 | 2 367 | Newton reads no clock unless asked; a `Handle` validates a function's cells once and builds no pointer list per call; a term's partials are read where they live; the stamps go into one kept buffer. Same steps, same instants (210 188) |
+| T22, no instant at an idle step | 210 188 | 26.7 s | 2 468 | 2 367 | instants run 2 918 (from 210 188): 2 667 landings and 251 scheduled instants. First 100 us: 668 instants for 31 264 steps |
+| T25, the tick epoch | 210 188 | 43.6 s (loaded machine) | 2 468 | 2 367 | the steps, the instants and every limit are those of T22: nothing moves under 2^52 ticks |
 
 `buck_accuracy` (T11, first 100 µs, 0.5 µs grid, against `max_step = 1e-10`): 129 869 accepted steps at `max_step = 1e-8` and 1 013 271 at `1e-10`; the largest `buck.vout` difference is 0.000117 mV at 82.5 µs (the gate is 0.104 mV, the baseline's own); the digital columns are equal row for row. The speed work of B3 starts from this.
 
 The 300 continuous-read landings, and why there were none before: the ADC's `sample.rise()` reaction reads a continuous pin, but under the declared rule the DPWM reaction that commits `sample` is itself flagged by reach, so its instant landed first (cause `DeclaredReach`, 238 803 of them) and the ADC's own firing, at microstep 1 of the same instant, was never reached by the look-ahead. Under the observable rule that instant runs ahead and the ADC's firing is the landing: 300 in 600 us (one per 2 us period, as section 7 predicted), now counted under its own cause.
+
+## 10. Piperine vs ngspice, time per step
+
+Measured by `cargo test -p piperine-api --test power_stage_bench -- --nocapture` (printed, never
+asserted). The design is the buck's power stage without its digital side: a 12 V supply, two ideal
+switches (closed at 10 mΩ above half a volt, open at 10 MΩ below), a 2.2 µH inductor, a 22 µF
+capacitor and a 1 Ω load, 100 µs of 50 switching periods of 2 µs (200 ns high, 10 ns edges, the
+complement with 10 ns of dead time), the controls piecewise-linear sources. Piperine: `power_stage.msl`
+with the controls as the host's sources on the node ports (`NodeSource::with_corners`); ngspice 47
+(`ngspice -b`): `power_stage.cir`, the same corners as `PWL` sources and `tran 0.1u 100u 0 10n uic`.
+Both cap the step at 10 ns. Piperine runs in the dev profile of its crates (the tests of record),
+ngspice is an optimized build, so part of the per-step gap is the build and not the algorithm.
+
+| | Accepted steps | Time | Time per step |
+| --- | --- | --- | --- |
+| Piperine | 30 920 | 1.150 s | 37.2 µs |
+| ngspice | 12 043 | 0.298 s | 24.8 µs |
+| Piperine / ngspice | 2.57x | 3.9x | 1.50x |
+
+Piperine takes 2.6 times the steps of ngspice on the same circuit and about 1.5 times the time per
+step, so a transient of this class takes about 3.9 times ngspice's. Not measured here, and so not
+claimed: why the step count differs (the candidates are ngspice's variable-order integration and
+its landing on every `PWL` corner against Piperine's first-order restart after each delivered jump,
+§15.2 rule 6) and what the per-step gap is made of beyond the build (the generated devices'
+per-call frame cutting, `piperine_abi::thunk`, allocates four times a call and is outside this
+feature's tasks).
+
+## 11. After (the counts of section 2, 100 µs, `max_step = 1e-8`)
+
+Printed by `buck_accuracy` (`cargo test -p piperine-api --test buck_accuracy -- --nocapture`) on the
+finished feature. The Newton solve and iteration counts of section 2 are not printed by any target
+and are not repeated.
+
+| Quantity | Before (section 2) | After |
+| --- | --- | --- |
+| Accepted steps | 127 608 | 31 264 |
+| Rejected attempts | 387, all by the truncation test | 442 by the truncation test; 0 by Newton |
+| Crossing retakes (`LandedEarlier`) | 0 | 0 |
+| Steps ending on a landing | 39 999 | 417 |
+| Steps ending on the controller's proposal | 87 609 | 21 320 |
+| Steps at `max_step` | 0 | 9 526 |
+| Jump steps (a delivery read) | 367 | 367 |
+| Instants run at an accepted step | 127 611 | 668 |
+| `buck.vout` against `max_step = 1e-10` | 0.104 mV | 0.000136 mV |
+
+The whole 600 µs start (`buck_long`): 804 136 accepted steps and 151.9 s before, 210 188 and about
+27 s after (26.7 s with the machine otherwise idle, 43.6 s on a loaded one); the same limits hold
+(largest `vout` 0.807500 V, settling inside ±10 mV from 262.87 µs, ripple 1.494 mV). Steps fell 3.8
+times, wall time 5.7 times: the steps by T16/T17 (landings only where something is observed, with every
+step tested), the rest by the per-step work of T18 to T22.

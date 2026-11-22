@@ -663,3 +663,41 @@ fn the_roadmap_is_forward_looking() {
     assert!(row("spec-closure").contains("item 13"), "spec-closure is item 13");
     assert!(roadmap.contains("stops after item 13"), "the roadmap says where the automatic run stops");
 }
+
+#[test]
+fn the_scenario_package_states_its_measured_step_count() {
+    // transient-performance TP-10 AC 3 (T23): the comment of `tests/e2e/buck/Piperine.toml` states the
+    // accepted steps of its 5.2 ms of converter time, as measured, and `moved.md` keeps its columns
+    let manifest = read("tests/e2e/buck/Piperine.toml");
+    let comment = manifest.lines().filter(|line| line.starts_with('#')).collect::<Vec<_>>().join(" ");
+    assert!(comment.contains("accepted steps") && comment.contains("5.2 ms"), "the comment states a step count for 5.2 ms: {comment}");
+    assert!(!comment.contains("about 6 M steps"), "the count of before the feature is gone");
+    let moved = read(".specs/features/transient-performance/moved.md");
+    let header = moved.lines().find(|line| line.starts_with("| Task |")).expect("moved.md has its table header");
+    for column in ["Old", "New", "Requirement"] {
+        assert!(header.contains(column), "moved.md lacks the column `{column}`: {header}");
+    }
+}
+
+#[test]
+fn transient_performance_closes_v12() {
+    // transient-performance TP-10 AC 1 and AC 3 (T24): GAPS.md has no V12 row, ROADMAP.md marks `multi-rate`
+    // delivered by `transient-performance`, and `diagnosis.md` holds the "After" table of its section 2
+    let gaps = read("GAPS.md");
+    assert!(!gaps.lines().any(|line| line.starts_with("| V12 |")), "GAPS.md still has a V12 row");
+    let roadmap = read("ROADMAP.md");
+    let row = roadmap.lines().find(|line| line.contains("| `multi-rate`")).expect("the roadmap has a multi-rate row");
+    assert!(row.contains("delivered by `transient-performance`"), "{row}");
+    let diagnosis = read(".specs/features/transient-performance/diagnosis.md");
+    let after = diagnosis.split("## 11. After").nth(1).expect("diagnosis.md has an \"After\" section");
+    for count in ["Accepted steps", "Rejected attempts", "Steps ending on a landing", "Steps ending on the controller's proposal", "Instants run"] {
+        assert!(after.contains(count), "the After table lacks `{count}`");
+    }
+}
+
+#[test]
+fn state_records_the_observable_landings_and_the_tick_epoch() {
+    // transient-performance T24: the decision entry
+    let state = read(".specs/STATE.md");
+    assert!(state.contains("### MD-80:") && state.contains("`transient-performance`") && state.contains("observable rule"), "STATE.md holds the decision entry");
+}
