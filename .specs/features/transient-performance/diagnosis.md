@@ -247,3 +247,13 @@ reaction reads a continuous pin, the declared reach only. The share of sampling 
 that the ADC's sampling instants (50 per 100 µs, section 7) do not show as `continuous read` is not yet
 explained (the cause is picked after the analog-read test, so they may be counted there) and T15's
 tests settle it.
+
+## 9. Progress of `buck_long` (600 µs start, `max_step = 1e-8`, same machine as section 8)
+
+Run once after each optimisation task. The wall time is printed, never asserted, and varies by
+about 20 % with the load of the machine.
+
+| After | Accepted steps | Wall time | Rejected by truncation | Jump steps | Note |
+| ----- | -------------- | --------- | ---------------------- | ---------- | ---- |
+| baseline (section 8) | 804 136 | 151.9 s | 2 062 | 2 363 | |
+| T9, the landing step is tested | 806 491 | 143.6 s | 2 110 | 2 367 | 48 more rejections, +0.3 % steps: the landings are still 240 000, so the tested steps are the small ones |

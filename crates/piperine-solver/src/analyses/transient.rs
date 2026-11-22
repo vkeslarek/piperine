@@ -458,8 +458,6 @@ struct StepPrediction {
     dt_proposed: f64,
     /// What the step reads.
     kind: StepKind,
-    /// The step ends exactly on a tick: a landing, or the stop.
-    on_tick: bool,
 }
 
 /// Why an attempt was rejected.
@@ -827,10 +825,11 @@ impl<'a> TransientSolver<'a> {
         StepAssessment { milne, accept: !reject }
     }
 
-    /// Whether the accept gate applies to the step. Temporary: a step that ends on a landing keeps
-    /// its exemption until the landing step is tested; the step that reads a jump is exempt.
+    /// Whether the accept gate applies to the step: an ordinary step is tested whether or not it
+    /// ends on a landing (it reads the left value); the step that reads a jump is exempt until it
+    /// is tested with its own estimate.
     fn is_tested(&self, prediction: &StepPrediction) -> bool {
-        prediction.kind == StepKind::Ordinary && !prediction.on_tick
+        prediction.kind == StepKind::Ordinary
     }
 
     /// Record an accepted step's snapshot when it falls inside the
@@ -1605,7 +1604,6 @@ impl TransientSolver<'_> {
             dt_actual: t_next - st.current_time,
             dt_proposed: st.dt,
             kind: StepKind::of(st.sets_just_applied),
-            on_tick: landing,
         };
         self.system.jump = if st.sets_just_applied {
             JumpPosition::Reads
