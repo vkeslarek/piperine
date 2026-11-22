@@ -70,7 +70,7 @@ impl ConstEval<'_, '_> {
             ExprKind::Break(value) => self.exit(expr, Exit::Break, *value, bindings),
             ExprKind::Continue => self.exit(expr, Exit::Continue, None, bindings),
             ExprKind::Return(value) => self.exit(expr, Exit::Return, *value, bindings),
-            _ => self.folded(expr, bindings).map(Some),
+            _ => self.fold(expr, bindings).map(Some),
         }
     }
 
@@ -83,7 +83,7 @@ impl ConstEval<'_, '_> {
     /// leaves catches.
     fn exit(&mut self, expr: ExprId, exit: Exit, value: Option<ExprId>, bindings: &Bindings) -> Result<Option<Folded>, ConstFault> {
         self.leaving = match value {
-            Some(value) => Some(self.folded(value, bindings)?),
+            Some(value) => Some(self.fold(value, bindings)?),
             None => None,
         };
         Err(ConstFault::Leaves { expr, exit })
@@ -120,7 +120,7 @@ impl ConstEval<'_, '_> {
             self.fn_values.insert(binding, function);
             return Ok(());
         }
-        let value = self.folded(init, bindings)?;
+        let value = self.fold(init, bindings)?;
         if self.matches(pat, value, init, bindings)? {
             return Ok(());
         }
@@ -139,13 +139,13 @@ impl ConstEval<'_, '_> {
     /// A condition: a `bool`, or `let pat = e` (which binds when it matches).
     fn condition(&mut self, cond: ExprId, bindings: &Bindings) -> Result<Truth, ConstFault> {
         if let ExprKind::Let { pat, expr } = self.design.expr_node(cond).kind.clone() {
-            let value = self.folded(expr, bindings)?;
+            let value = self.fold(expr, bindings)?;
             if value == Folded::Unknown && !matches!(self.design.pat_node(pat).kind, PatKind::Wild) {
                 return Ok(Truth::Unknown);
             }
             return Ok(if self.matches(pat, value, expr, bindings)? { Truth::Holds } else { Truth::Fails });
         }
-        match self.folded(cond, bindings)? {
+        match self.fold(cond, bindings)? {
             Folded::Known(known) => Ok(if Self::boolean(cond, known)? { Truth::Holds } else { Truth::Fails }),
             Folded::Unknown => Ok(Truth::Unknown),
         }
@@ -214,13 +214,13 @@ impl ConstEval<'_, '_> {
     /// `match scrutinee { arms }`: the first arm whose pattern matches and whose guard holds. The
     /// scrutinee and the guards must be known (§3.3.8).
     fn exec_match(&mut self, expr: ExprId, scrutinee: ExprId, arms: &[Arm], bindings: &Bindings) -> Result<Option<Folded>, ConstFault> {
-        let subject = self.folded(scrutinee, bindings)?;
+        let subject = self.fold(scrutinee, bindings)?;
         for arm in arms {
             if !self.matches(arm.pat, subject, scrutinee, bindings)? {
                 continue;
             }
             if let Some(guard) = arm.guard {
-                match self.folded(guard, bindings)? {
+                match self.fold(guard, bindings)? {
                     Folded::Known(known) if Self::boolean(guard, known)? => {}
                     Folded::Known(_) => continue,
                     Folded::Unknown => return Err(ConstFault::Unknown { expr: guard }),
@@ -277,9 +277,19 @@ impl ConstEval<'_, '_> {
     fn exec_for(&mut self, expr: ExprId, pat: PatId, iter: ExprId, body: &BlockNode, bindings: &Bindings) -> Result<Option<Folded>, ConstFault> {
         let iter = self.peel(iter);
         let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = self.design.expr_node(iter).kind else {
-            return Err(ConstFault::Unsupported { expr, what: "a `for` over anything but a range with both bounds".to_string() });
+            // an array, a named range or an iterator chain: its elements in order (`composite.rs`)
+            let sequence = self.fold(iter, bindings)?;
+            let elements = self.elements_of(iter, sequence)?;
+            let mut trips = 0;
+            for element in elements {
+                self.matches(pat, element, iter, bindings)?;
+                if let Flow::Done(value) = self.iterate(expr, body, &mut trips, bindings)? {
+                    return Ok(value);
+                }
+            }
+            return Ok(None);
         };
-        let (Folded::Known(Constant::Int(first)), Folded::Known(Constant::Int(last))) = (self.folded(lo, bindings)?, self.folded(hi, bindings)?) else {
+        let (Folded::Known(Constant::Int(first)), Folded::Known(Constant::Int(last))) = (self.fold(lo, bindings)?, self.fold(hi, bindings)?) else {
             return Err(ConstFault::Unknown { expr: iter });
         };
         let end = if inclusive { last + 1 } else { last };
@@ -297,17 +307,20 @@ impl ConstEval<'_, '_> {
     /// compound operator reads the local and wraps as the type of the local does.
     fn exec_assign(&mut self, expr: ExprId, op: Option<crate::pom::BinOp>, lhs: ExprId, rhs: ExprId, bindings: &Bindings) -> Result<(), ConstFault> {
         let target = self.peel(lhs);
+        if let Some(result) = self.assign_into(expr, target, op, rhs, bindings) {
+            return result;
+        }
         let ExprKind::Path(path) = &self.design.expr_node(target).kind else {
-            return Err(ConstFault::Unsupported { expr, what: "an assignment to a field or an element in a const expression".to_string() });
+            return Err(ConstFault::Unsupported { expr, what: "an assignment to something that is not a local, a field or an element".to_string() });
         };
         let Some(Resolution::Decl(local)) = self.design.path_node(*path).segments.last().map(|s| s.res) else {
             return Err(ConstFault::Unsupported { expr, what: "an assignment to a name that is not a local".to_string() });
         };
-        let value = self.folded(rhs, bindings)?;
+        let value = self.fold(rhs, bindings)?;
         let assigned = match op {
             None => value,
             Some(op) => {
-                let current = self.folded(target, bindings)?;
+                let current = self.fold(target, bindings)?;
                 match (current, value) {
                     (Folded::Known(a), Folded::Known(b)) => Folded::Known(self.known_binary(target, op, (target, a), (rhs, b))?),
                     (a, b) => self.unknown_binary(target, op, a, b),
@@ -322,7 +335,10 @@ impl ConstEval<'_, '_> {
 
     /// Whether `value`, the value of `at`, matches `pat`; a match binds the names of the pattern
     /// into the locals. A refutable pattern over an unknown value is a fault (§3.3.8).
-    fn matches(&mut self, pat: PatId, value: Folded, at: ExprId, bindings: &Bindings) -> Result<bool, ConstFault> {
+    pub(super) fn matches(&mut self, pat: PatId, value: Folded, at: ExprId, bindings: &Bindings) -> Result<bool, ConstFault> {
+        if let Some(result) = self.matches_composite(pat, value, at, bindings) {
+            return result;
+        }
         let kind = self.design.pat_node(pat).kind.clone();
         match &kind {
             PatKind::Wild => Ok(true),
@@ -339,7 +355,7 @@ impl ConstEval<'_, '_> {
                 }
             },
             PatKind::Lit(lit) => {
-                let named = self.value(*lit, bindings)?;
+                let named = self.known(*lit, bindings)?;
                 self.equals(value, named, at)
             }
             PatKind::Path(path) => match self.named_constant(self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res)) {
@@ -357,11 +373,11 @@ impl ConstEval<'_, '_> {
             PatKind::Range { lo, hi, inclusive } => {
                 let Folded::Known(subject) = value else { return Err(ConstFault::Unknown { expr: at }) };
                 let above = match lo {
-                    Some(lo) => Self::order(subject, self.value(*lo, bindings)?).map(|o| o.is_ge()),
+                    Some(lo) => Self::order(subject, self.known(*lo, bindings)?).map(|o| o.is_ge()),
                     None => Some(true),
                 };
                 let below = match hi {
-                    Some(hi) => Self::order(subject, self.value(*hi, bindings)?).map(|o| if *inclusive { o.is_le() } else { o.is_lt() }),
+                    Some(hi) => Self::order(subject, self.known(*hi, bindings)?).map(|o| if *inclusive { o.is_le() } else { o.is_lt() }),
                     None => Some(true),
                 };
                 match (above, below) {
@@ -369,7 +385,7 @@ impl ConstEval<'_, '_> {
                     _ => Err(ConstFault::Unsupported { expr: at, what: "a range pattern over values that are not both integers or both floats".to_string() }),
                 }
             }
-            _ => Err(ConstFault::Unsupported { expr: at, what: "a tuple, struct or slice pattern in a const expression".to_string() }),
+            _ => Err(ConstFault::Unsupported { expr: at, what: "this pattern in a const expression".to_string() }),
         }
     }
 
@@ -382,7 +398,7 @@ impl ConstEval<'_, '_> {
     }
 
     /// `a` against `b` for two integers or two floats.
-    fn order(a: Constant, b: Constant) -> Option<std::cmp::Ordering> {
+    pub(super) fn order(a: Constant, b: Constant) -> Option<std::cmp::Ordering> {
         match (a, b) {
             (Constant::Int(a), Constant::Int(b)) => Some(a.cmp(&b)),
             (Constant::Real(a), Constant::Real(b)) => a.get().partial_cmp(&b.get()),

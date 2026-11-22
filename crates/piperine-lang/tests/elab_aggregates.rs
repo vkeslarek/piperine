@@ -82,3 +82,164 @@ fn struct_fields_are_evaluated_in_written_order() {
     let (first, second) = (shuffled.find("let field$").expect("a local per field"), shuffled.rfind("let field$").expect("a second"));
     assert!(first < second && shuffled[first..].find("one()").is_some_and(|at| at < shuffled[first..].find("half(").unwrap_or(usize::MAX)), "`y` runs before `x`: {shuffled}");
 }
+
+/// A design of `Top` with the const items `items` and the params `params` of `Top`.
+fn with_params(items: &str, params: &str) -> String {
+    format!("{items}\nmodule Top() {{ {params} }}")
+}
+
+/// The values of the params of `Top`, printed.
+fn param_values(src: &str) -> Vec<String> {
+    let ir = Elab::ir(src, "Top");
+    ir.instance_at("Top").expect("the top instance").params().iter().map(|c| c.to_string()).collect()
+}
+
+#[test]
+fn aggregates_fold_in_const_contexts() {
+    // CV-36 AC 1 (§1.2.4, §1.2.5, §1.3, H.5 to H.8): tuples, arrays, structs and `Option`s evaluate in a `const`, a
+    // `const fn`, a param default, a `where` and a generation range with the value they have at run time, and
+    // the stdlib's `poly_q`, `den_q` and `conjugate_closed` fold; a composite that is a param's default
+    // becomes a `Constant::Aggregate` of the IR. Each expected value is the same expression evaluated by Rust.
+    #[derive(Clone, Copy, PartialEq)]
+    struct Pair {
+        a: f64,
+        n: u8,
+    }
+    let array = [1.0f64, 2.0, 3.0];
+    let pair = Pair { a: 0.5, n: 4 };
+    let tuple = (1.5f64, 2u8);
+    let total = |xs: [f64; 3]| {
+        let mut s = 0.0;
+        for k in 0..3 {
+            s += xs[k];
+        }
+        s
+    };
+    let doubled = |xs: [f64; 3]| {
+        let mut r = xs;
+        for k in 0..3 {
+            r[k] = xs[k] * 2.0;
+        }
+        r
+    };
+    let items = "#[derive(PartialEq)]\nstruct Pair { a: f64, n: u8 }\n\
+                 const A: [f64; 3] = [1.0, 2.0, 3.0];\n\
+                 const P: Pair = Pair { a: 0.5, n: 4 };\n\
+                 const T: (f64, u8) = (1.5, 2);\n\
+                 const fn total(xs: [f64; 3]) -> f64 { let s = 0.0; for k in 0..3 { s += xs[k]; } s }\n\
+                 const fn doubled(xs: [f64; 3]) -> [f64; 3] { let r = xs; for k in 0..3 { r[k] = xs[k] * 2.0; } r }\n\
+                 const fn head(xs: [f64; 3]) -> Option<f64> { xs.first() }\n\
+                 const fn pick(p: Pair) -> u8 { match p { Pair { n: 4, .. } => 40, Pair { n, .. } => n } }\n\
+                 const fn swap(t: (f64, u8)) -> (u8, f64) { let (x, y) = t; (y, x) }";
+    let params = "picked: f64 = A[1] + P.a + T.0; summed: f64 = total(A); both: f64 = doubled(A)[2]; counted: f64 = (P.n + T.1) as f64; \
+                  swapped: f64 = swap(T).0 as f64; matched: f64 = pick(P) as f64; iterated: f64 = A.iter().map(|x| x * 2.0).fold(0.0, |acc, x| acc + x); \
+                  first: f64 = head(A).unwrap_or(9.0); equal: bool = P == P && A != doubled(A); ranged: bool = (1..4).contains(3); \
+                  sliced: f64 = A[1..3][0]; checked: f64 = 1.0 where A[0] < A[2] && P.n == 4;";
+    let values = param_values(&with_params(items, params));
+    let real = |v: f64| format!("{:?}", v);
+    assert_eq!(
+        values,
+        [
+            real(array[1] + pair.a + tuple.0),
+            real(total(array)),
+            real(doubled(array)[2]),
+            real(f64::from(pair.n + tuple.1)),
+            real(f64::from(tuple.1)),
+            real(40.0),
+            real(array.iter().map(|x| x * 2.0).fold(0.0, |acc, x| acc + x)),
+            real(*array.first().unwrap_or(&9.0)),
+            (pair == pair && array != doubled(array)).to_string(),
+            (1..4).contains(&3).to_string(),
+            real(array[1..3][0]),
+            "1.0".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn an_index_out_of_range_in_a_const_is_e0104() {
+    // CV-13 AC 3, C58 (§1 rule 11, §1.5.25): an index past the end of an array in a const context is an
+    // elaboration error, `E0104`, at the expression; so is a range index whose end is past the array's.
+    for (items, at) in [
+        ("const A: [f64; 3] = [1.0, 2.0, 3.0];\nconst BAD: f64 = A[5];", "A[5]"),
+        ("const A: [f64; 3] = [1.0, 2.0, 3.0];\nconst fn element(i: usize) -> f64 { A[i] }\nconst BAD: f64 = element(3);", "A[i]"),
+        ("const A: [f64; 3] = [1.0, 2.0, 3.0];\nconst BAD: f64 = A[1..4][0];", "A[1..4]"),
+    ] {
+        let src = with_params(items, "x: f64 = BAD;");
+        let err = Elab::run(&src, "Top").expect_err("the index is out of range");
+        assert_eq!(Elab::codes(&err), ["E0104"], "{items}");
+        let span = err[0].diagnostic.span();
+        assert!(src[span.start..span.end].contains(at), "the error names the expression {at}: {:?}", &src[span.start..span.end]);
+    }
+}
+
+#[test]
+fn the_stdlib_polynomial_helpers_fold() {
+    // CV-36 AC 1, C96 (§22.2): `conjugate_closed`, `poly_q` and `den_q` of `std/analog.msl`, their bodies as
+    // written there (tuples in arrays, `let (a, b) = ..`, `(1..=n + 1).rev()`, `iter().all(..)`, element
+    // assignment) at a fixed length, fold in `const` items to the values Rust gives for the same algorithm.
+    // The length stays fixed here because a function generic over `const N` is the `generics` feature's.
+    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/std/analog.msl")).expect("the stdlib's analog.msl");
+    let function = |name: &str| -> String {
+        let start = text.find(&format!("const fn {name}")).unwrap_or_else(|| panic!("no const fn {name} in analog.msl"));
+        let end = start + text[start..].find("\n}\n").expect("the end of the function") + 3;
+        [("<const N: usize>", ""), ("<const D: usize>", ""), ("N + 1", "3"), ("0..N", "0..2"), ("0..=N", "0..=2"), ("0..D", "0..2"), ("; N]", "; 2]"), ("; D]", "; 2]")].iter().fold(text[start..end].to_string(), |body, (from, to)| body.replace(from, to))
+    };
+    let items = format!(
+        "{}\n{}\n{}\n\
+         const ROOTS: [(f64, f64); 2] = [(0.5, 0.0), (0.25, 0.5)];\n\
+         const C: [f64; 3] = poly_q(ROOTS);\n\
+         const D: [f64; 2] = den_q(ROOTS);\n\
+         const CLOSED: bool = conjugate_closed([(1.0, 1.0), (1.0, -1.0)]);\n\
+         const OPEN: bool = conjugate_closed([(1.0, 1.0), (2.0, -1.0)]);",
+        function("conjugate_closed"),
+        function("poly_q"),
+        function("den_q")
+    );
+    let values = param_values(&with_params(&items, "c1: f64 = C[1]; c2: f64 = C[2]; d0: f64 = D[0]; d1: f64 = D[1]; ok: bool = CLOSED; no: bool = OPEN;"));
+    // the same product of `1 - rho * q` over the roots, in Rust
+    let roots = [(0.5f64, 0.0f64), (0.25, 0.5)];
+    let mut c = [(0.0f64, 0.0f64); 3];
+    c[0] = (1.0, 0.0);
+    for n in 0..2 {
+        let (a, b) = roots[n];
+        for k in (1..=n + 1).rev() {
+            let (pr, pi) = c[k - 1];
+            c[k] = (c[k].0 - (a * pr - b * pi), c[k].1 - (a * pi + b * pr));
+        }
+    }
+    let real = |v: f64| format!("{v:?}");
+    assert_eq!(values, [real(c[1].0), real(c[2].0), real(c[1].0), real(c[2].0), "true".to_string(), "false".to_string()]);
+}
+
+#[test]
+fn a_folded_composite_becomes_an_aggregate_constant() {
+    // CV-36 (§1.5.25): a composite that is a param's default is a `Constant::Aggregate` of the IR's arena: its
+    // type, and one `Constant` per part, nested through further aggregates.
+    use piperine_ir::{Constant, Real};
+    let items = "struct Pair { a: f64, n: u8 }\nconst A: [f64; 3] = [1.0, 2.0, 3.0];\nconst P: Pair = Pair { a: 0.5, n: 4 };\n\
+                 const fn doubled(xs: [f64; 3]) -> [f64; 3] { let r = xs; for k in 0..3 { r[k] = xs[k] * 2.0; } r }";
+    let ir = Elab::ir(&with_params(items, "table: [f64; 3] = doubled(A); p: Pair = P; t: (f64, bool) = (1.5, true); n: ((f64, f64), [bool; 2]) = ((0.5, 1.5), [true, false]);"), "Top");
+    let params: Vec<Constant> = ir.instance_at("Top").expect("the top instance").params().iter().copied().collect();
+    let parts = |value: &Constant| match value {
+        Constant::Aggregate(id) => ir.aggregate(*id).parts.clone(),
+        other => panic!("a composite default is an aggregate, found {other:?}"),
+    };
+    let real = |v: f64| Constant::Real(Real::new(v));
+    assert_eq!(parts(&params[0]), [real(2.0), real(4.0), real(6.0)]);
+    assert_eq!(parts(&params[1]), [real(0.5), Constant::Int(4)]);
+    assert_eq!(parts(&params[2]), [real(1.5), Constant::Bool(true)]);
+    let nested = parts(&params[3]);
+    assert_eq!(parts(&nested[0]), [real(0.5), real(1.5)]);
+    assert_eq!(parts(&nested[1]), [Constant::Bool(true), Constant::Bool(false)]);
+}
+
+#[test]
+fn a_composite_const_read_in_value_code_is_written_out() {
+    // CV-36 (§1.5.25): a `const` of composite type read in a function or an `analog` block is the expression that
+    // builds its value, so `A[2]` indexes an array of the constants and `P.a` reads a field of a struct of them.
+    let items = "struct Pair { a: f64, n: u8 }\nconst A: [f64; 3] = [1.0, 2.0, 3.0];\nconst P: Pair = Pair { a: 0.5, n: 4 };\nfn pick(i: usize) -> f64 { A[i] + P.a }";
+    let ir = Elab::ir(&reaching(items, &["pick(1)", "A[2]"]), "Top");
+    assert!(ir.expressions().any(|e| matches!(e, Expr::Array(parts) if parts.len() == 3)), "the array constant is written out");
+    assert!(ir.expressions().any(|e| matches!(e, Expr::StructOf { fields, .. } if fields.len() == 2)), "the struct constant is written out");
+}

@@ -694,6 +694,8 @@ impl Elaboration<'_, '_> {
             return None;
         };
         match &self.design.decl_data(decl).kind {
+            // A composite `const` is written out where it is read (`consts/imported.rs`).
+            DeclKind::Const(_) if self.consts.is_composite_constant(decl) => self.lower_composite_constant(scope, decl, expr, ty, origin),
             DeclKind::Const(_) => match self.consts.folded_constant(decl) {
                 Ok(Folded::Known(value)) => Some(self.constant_expr(value, ty, origin)),
                 Ok(Folded::Unknown) => Some(self.unknown_expr(ty, origin)),
