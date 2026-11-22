@@ -534,8 +534,8 @@ struct TimeLoop {
     /// Live-set edge rule (LIVE-06/07): the first step after a scheduled
     /// set integrates the value jump, so its Milne window spans the
     /// discontinuity — the LTE there is not error but the jump itself.
-    /// That one step is exempt from the accept gate and from the PI
-    /// update (dt held), exactly like landing on a declared breakpoint.
+    /// That one step is tested by the first-order jump estimate
+    /// (`TrBdf2::jump_lte`) and sized by rule 6, not by the PI controller.
     sets_just_applied: bool,
     dt_min_seen: f64,
     dt_max_seen: f64,
@@ -1839,8 +1839,8 @@ impl TransientSolver<'_> {
     }
 
     /// The analog copy takes the boundary; after a jump the next step starts
-    /// first-order (`prev_h = 0`) and is exempt from the truncation test and
-    /// the controller, as after a scheduled set; after a host write it is also
+    /// first-order (`prev_h = 0`) and is sized and tested by the
+    /// jump rule (§15.2 rule 6), as after a scheduled set; after a host write it is also
     /// `1e-3` of the last step, floored at `dt_min`.
     pub(crate) fn device_deliver(
         &mut self,

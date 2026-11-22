@@ -397,7 +397,7 @@ fn a_reentry_from_every_recorded_step_continues_bit_for_bit() {
 }
 
 /// The step at an edge of the clock is the first after a jump's delivery: its state holds the
-/// restart (first-order stage, the exemption, the step size), and the run re-entered there takes it.
+/// restart (first-order stage, the jump estimate, the step size), and the run re-entered there takes it.
 #[test]
 fn a_reentry_after_a_jump_takes_the_same_restart() {
     let (mut circuit, _c) = build_clocked_rc();

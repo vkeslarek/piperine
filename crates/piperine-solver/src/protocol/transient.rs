@@ -4,7 +4,7 @@
 //! C := checkpoint(discrete, analog, sink buffer)                 at accepted time t
 //! 1. t_c := analog.propose(t, stop)           (the stop time when there is no unknown)
 //! 2. discrete.advance(tick(t_c)): a Landing or Final shortens t_c to its tick
-//! 3. attempt to t_c on the value before the instant (the left value), exempt when
+//! 3. attempt to t_c on the value before the instant (the left value), a landing when
 //!    t_c is a scheduled instant
 //! 4. Rejected: restore C, propose again.  LandedEarlier(t'): restore C, t_c := t', go to 2
 //! 5. accept; fire the crossings at (t_c, 0); run the instant t_c, whose reactions read the
@@ -91,8 +91,8 @@ pub struct Protocol<D: DiscreteSide, A: AnalogSide> {
     /// The host's observer of accepted steps.
     pub(super) observer: Option<Box<dyn StepObserver>>,
     /// A settle commit was delivered to the analog side: the step that arrives at the next time
-    /// point is exempt from the truncation test, until one is accepted (§15 S3).
-    pub(super) exempt_next: bool,
+    /// point reads a jump (is sized and tested by §15.2 rule 6), until one is accepted (§15 S3).
+    pub(super) settle_delivered: bool,
     /// How the accepted steps ended.
     pub(super) statistics: StepStatistics,
 }
@@ -120,7 +120,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             samples: Vec::new(),
             waiters: Vec::new(),
             observer: None,
-            exempt_next: false,
+            settle_delivered: false,
             statistics: StepStatistics::default(),
         }
     }
@@ -280,7 +280,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         self.epoch = 0;
         self.started = true;
         self.finished = None;
-        self.exempt_next = false;
+        self.settle_delivered = false;
         self.samples = samples;
     }
 
@@ -336,7 +336,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         };
         let mut forced: Option<Tick> = None;
         let mut rejections = 0u32;
-        let mut jump = JumpRetake::new(self.exempt_next);
+        let mut jump = JumpRetake::new(self.settle_delivered);
         while self.now_tick < stop_tick {
             self.rebase_epoch(stop_tick);
             let c = self.checkpoint();
@@ -380,8 +380,8 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             // Steps 3 and 4: one analog attempt to t_c.
             let mut crossings = Vec::new();
             let samples = if unknowns {
-                let exempt = !matches!(advanced, Advance::Reached) || self.exempt_next;
-                let attempt = self.analog.attempt(self.offset(tick_c), exempt).map_err(|e| at(t_c, e))?;
+                let landing = !matches!(advanced, Advance::Reached) || self.settle_delivered;
+                let attempt = self.analog.attempt(self.offset(tick_c), landing).map_err(|e| at(t_c, e))?;
                 let analog = &mut self.analog;
                 self.delivery.keep_traces(AnalysisKind::Transient, |out| analog.drain_traces(out));
                 // A retry: `Some(tick)` to attempt again (`None`: propose again).
@@ -426,7 +426,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
                 // Step 5: accept, fire the crossings at (t_c, 0).
                 let accepted = self.analog.accept().map_err(|e| at(t_c, e))?;
                 rejections = 0;
-                self.exempt_next = false;
+                self.settle_delivered = false;
                 for net in &accepted.fired {
                     self.discrete.fire(*net, tick_c).map_err(|e| at(t_c, e))?;
                 }
@@ -516,11 +516,11 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
 
     /// §15 S2 and S3: the settle commits the instant held reach the analog side now, so the solve
     /// that arrives at the next time point reads them; the integrator restarts from them, and that
-    /// arriving step is exempt from the truncation test (`exempt_next`).
+    /// arriving step reads a jump (`settle_delivered`).
     pub(super) fn deliver_settle_boundary(&mut self, unknowns: bool, outcome: &Outcome) {
         if unknowns && !outcome.settle_boundary.is_empty() {
             self.analog.deliver(&outcome.settle_boundary, Restart::Integrator);
-            self.exempt_next = true;
+            self.settle_delivered = true;
         }
     }
 

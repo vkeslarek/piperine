@@ -47,7 +47,7 @@ fn past_2_52_ticks_the_analog_side_is_told_small_times_since_the_epoch() {
     assert_eq!(proposed[0], Call::Propose(0.0, 1000.0), "the stop is 1000 ticks after the accepted tick");
     assert_eq!(proposed[1], Call::Propose(0.0, 990.0), "after a step of 10 ticks the origin moved there");
     let attempts = calls(&log, |call| matches!(call, Call::Attempt { .. }));
-    assert_eq!(attempts[..3], vec![Call::Attempt { to: 10.0, exempt: false }; 3], "every step is 10 ticks from its own origin");
+    assert_eq!(attempts[..3], vec![Call::Attempt { to: 10.0, landing: false }; 3], "every step is 10 ticks from its own origin");
     let moves = rebases(&log);
     // the resume floors the start to a tick, which at 2^52 can round one tick up
     assert!((moves[0].moved - start as f64).abs() <= 1.0, "the first move brings the origin from tick 0 to the start: {}", moves[0].moved);
@@ -65,8 +65,8 @@ fn a_step_of_one_tick_is_one_tick_long_past_2_52_ticks() {
     protocol.transient((BEYOND + 20) as f64).expect("the run");
 
     let attempts = calls(&log, |call| matches!(call, Call::Attempt { .. }));
-    assert_eq!(attempts[0], Call::Attempt { to: 10.0, exempt: false });
-    assert_eq!(attempts[1], Call::Attempt { to: 1.0, exempt: false }, "the retake lands one tick after the accepted tick");
+    assert_eq!(attempts[0], Call::Attempt { to: 10.0, landing: false });
+    assert_eq!(attempts[1], Call::Attempt { to: 1.0, landing: false }, "the retake lands one tick after the accepted tick");
 }
 
 #[test]

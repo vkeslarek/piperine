@@ -18,7 +18,7 @@ pub(super) struct JumpRetake {
 
 impl JumpRetake {
     /// A transient's start: its first step reads a jump when the operating point it follows holds
-    /// a settle commit (`settle_pending`: that step is exempt, §15 S3), and none otherwise.
+    /// a settle commit (`settle_pending`: that step reads a jump, §15 S3), and none otherwise.
     pub(super) fn new(settle_pending: bool) -> JumpRetake {
         JumpRetake { reads_jump: settle_pending }
     }

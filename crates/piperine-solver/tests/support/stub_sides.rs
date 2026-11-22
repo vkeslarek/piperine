@@ -32,7 +32,7 @@ pub enum Call {
     Drain,
     Propose(f64, f64),
     Deliver(Vec<Boundary>, Restart),
-    Attempt { to: f64, exempt: bool },
+    Attempt { to: f64, landing: bool },
     Rebase(Origin),
     Accept,
     Equilibrium,
@@ -221,8 +221,8 @@ impl AnalogSide for ScriptedAnalog {
     fn rebase(&mut self, origin: Origin) {
         self.record(Call::Rebase(origin));
     }
-    fn attempt(&mut self, to: f64, exempt: bool) -> Result<Attempt> {
-        self.record(Call::Attempt { to, exempt });
+    fn attempt(&mut self, to: f64, landing: bool) -> Result<Attempt> {
+        self.record(Call::Attempt { to, landing });
         self.buffer.extend(self.traces.pop_front().unwrap_or_default());
         Ok(self.attempts.pop_front().unwrap_or(Attempt::Converged))
     }

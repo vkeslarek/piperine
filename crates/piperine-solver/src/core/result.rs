@@ -242,7 +242,7 @@ pub(crate) struct ReentryState {
 /// solution, to take every later step the continuous run took (HYG-04). The Newton history the
 /// predictor reads, the step size the controller proposed, the previous accepted step, the size of
 /// the last accepted step, whether the last step was accepted, whether a restart is pending (the
-/// step after a discontinuity is first order and exempt), whether the last step read a jump, and the controller's memory.
+/// step after a discontinuity is first order and tested by the jump estimate), whether the last step read a jump, and the controller's memory.
 #[derive(Debug, Clone)]
 pub(crate) struct AnalogResume {
     newton: piperine_analog_solver::math::circular_array::CircularArrayBuffer2<f64>,
