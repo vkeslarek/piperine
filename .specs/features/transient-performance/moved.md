@@ -17,3 +17,10 @@ T10 (TP-05): no pinned golden moves (`book_mixed`, the parity targets, the twins
 | largest `buck.vout` | 0.808723 V at 288.41 µs | 0.807500 V at 284.44 µs | 0.815 V | TP-05 |
 | settling inside ±10 mV from | 263.74 µs | 262.87 µs | 207.5 to 307.5 µs | TP-05 |
 | ripple over the last 40 µs | 1.270 mV | 1.486 mV | 10 mV | TP-05 |
+
+B3 (T16, the observable rule becomes the default; the cause is TP-02/TP-03, which D12 does not list, so the record names the real cause): parity targets, twins and `parity_baseline` pass with their sources unedited, and every ngspice twin was compared (no SKIP outside the deliberate skip-line tests). Two mixed-signal values moved:
+
+| Task | Golden | Old | New | Requirement |
+| ---- | ------ | --- | --- | ----------- |
+| T16 | `docs/book/content.html`, listing `piperine run monitor.msl --analysis transient --stop 3e-6 --stream zone` (project `monitor`) | the print rows of the 1 us to 1.98 us and 1.5 us to 2 us spans lie on the grid that lands on the 1 us and 2 us clock edges (rows 1.000000e-6, 1.030000e-6, ..., 1.530000e-6 ...) | the same rows lie on the controller's own grid (1.006484e-6, 1.036484e-6, ..., 1.520273e-6 ...); 66 rows differ in time and in the interpolated analog column `x`; every `clk` and `zone` value at a row both listings share is equal, and the three `zone` records are equal | TP-03 (no landing at a clock edge nothing observes), not TP-04/TP-05 |
+| T17 | `buck_long` limits (largest `buck.vout`, settling, ripple) | 0.807500 V at 284.44 us; inside 10 mV from 262.87 us; ripple 1.486 mV | 0.807500 V at 284.44 us; 262.87 us; ripple 1.494 mV | TP-03; every limit still holds |
