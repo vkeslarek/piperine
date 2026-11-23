@@ -716,4 +716,5 @@ fn state_records_the_observable_landings_and_the_tick_epoch() {
     // transient-performance T24: the decision entry
     let state = read(".specs/STATE.md");
     assert!(state.contains("### MD-80:") && state.contains("`transient-performance`") && state.contains("observable rule"), "STATE.md holds the decision entry");
+    assert!(state.contains("`HOST_RESTART_FRACTION`") && state.contains("growth clamp stays 1.5") && state.contains("(T26, TP-13"), "MD-80 records T26");
 }
