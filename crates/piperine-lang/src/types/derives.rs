@@ -99,6 +99,8 @@ impl Checker<'_> {
             Ty::Struct(decl) | Ty::Enum(decl) => self.derives(*decl, which.name()),
             Ty::Fn(..) => which == DerivedTrait::Debug,
             Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Carrier { .. } | Ty::Event | Ty::Never | Ty::Range { .. } | Ty::Iterator { .. } => false,
+            // what a parameter implements is what its bounds give (T19); none is known here
+            Ty::Param(_) => false,
         }
     }
 

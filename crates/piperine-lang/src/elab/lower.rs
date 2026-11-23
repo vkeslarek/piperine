@@ -130,6 +130,8 @@ impl ValueTypes<'_> {
             // A struct, an enum, a tuple and an array are the arena's entries and their composition.
             Ty::Struct(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Array(..) => self.arena.of(ty, |part| self.of(part)),
             Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Option(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str | Ty::Never | Ty::Range { .. } | Ty::Iterator { .. } => None,
+            // the elaborator reads types through the substitution (T32): a parameter never reaches the IR
+            Ty::Param(_) => None,
         }
     }
 }

@@ -1,10 +1,13 @@
 //! The types of the M1 subset, as data.
 
-use crate::pom::{DeclId, Design};
+use crate::pom::{DeclId, Design, ExprId};
 
-/// A type of the subset. There is no type variable: what is outside the subset is refused by
-/// the checker, never given a `Ty`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// A type of the subset. There is no inference variable: what is outside the subset is refused by
+/// the checker, never given a `Ty`. The one open type is [`Ty::Param`], a generic parameter of the
+/// item being checked: a generic body is checked once at its definition with each parameter
+/// opaque, so it may use only what the parameter's bounds give (Q1 (c), part I §3 rule 9). `Ty`
+/// is ordered so that an instantiation, a list of types and values, can key a map.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Ty {
     F64,
     Bool,
@@ -52,6 +55,38 @@ pub enum Ty {
     /// is true when `rev` applies (H.7 rule 3): `iter()` of an array, an integer range, and the
     /// `map`, `enumerate`, `zip` and `rev` of those.
     Iterator { element: Box<Ty>, reversible: bool },
+    /// A type or nature parameter of the generic item being checked (`T` of `fn f<T: Repr>`),
+    /// by its declaration: opaque, it offers what its bounds give and nothing else.
+    Param(DeclId),
+}
+
+/// What a generic parameter is given at a use or an instantiation (§3.8): a type for a type or
+/// nature parameter, a const for a const parameter, a function name or a closure for a parameter
+/// bounded by `Fn(A) -> R`.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum GenericValue {
+    /// A type, or a nature as the type of a node.
+    Type(Ty),
+    /// A value of a const parameter.
+    Const(ConstTerm),
+    /// A function named for an `Fn` bound.
+    Function(DeclId),
+    /// A closure written for an `Fn` bound, by its expression; every closure is its own type.
+    Closure(ExprId),
+}
+
+/// A const generic argument as the checker knows it: folded where it can be, else a name or an
+/// expression the elaborator folds per instantiation (§3.8.3).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ConstTerm {
+    /// An integer value.
+    Value(i128),
+    /// A `bool` value.
+    Bool(bool),
+    /// A const parameter of the enclosing generic item, by its declaration.
+    Param(DeclId),
+    /// An expression over const parameters, folded when the item is instantiated.
+    Expr(ExprId),
 }
 
 impl Ty {
@@ -78,7 +113,7 @@ impl Ty {
             Ty::Option(inner) | Ty::Array(inner, _) => inner.is_value(),
             Ty::Range { element, .. } | Ty::Iterator { element, .. } => element.is_value(),
             Ty::Tuple(items) => items.iter().all(Ty::is_value),
-            Ty::Fn(..) => true,
+            Ty::Fn(..) | Ty::Param(_) => true,
             Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Carrier { .. } | Ty::Event | Ty::Never => false,
         }
     }
@@ -159,6 +194,10 @@ impl Ty {
             Ty::Module(module) => match &design.decl_data(*module).name {
                 Some(n) => format!("module `{}`", n.text),
                 None => "module".to_string(),
+            },
+            Ty::Param(param) => match &design.decl_data(*param).name {
+                Some(n) => n.text.clone(),
+                None => "type parameter".to_string(),
             },
         }
     }
