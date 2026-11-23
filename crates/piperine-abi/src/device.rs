@@ -257,13 +257,13 @@ impl<'a> Deref for Eval<'a> {
     }
 }
 
-/// Queues one write of the calling reaction: `(statement, bytes, after)` to a
-/// status.
-pub type CommitSink<'a> = dyn FnMut(u32, &[u8], f64) -> u32 + 'a;
+/// Queues one write of the calling reaction: `(statement, offset, bytes, after)` to a status; `offset` is relative to
+/// the start of the statement's declared range.
+pub type CommitSink<'a> = dyn FnMut(u32, u32, &[u8], f64) -> u32 + 'a;
 
-/// Queues one write of the calling reaction to element `element` of an array pin: `(statement, element, bytes,
-/// after)` to a status.
-pub type ElementSink<'a> = dyn FnMut(u32, u64, &[u8], f64) -> u32 + 'a;
+/// Queues one write of the calling reaction to element `element` of an array pin: `(statement, element, offset,
+/// bytes, after)` to a status.
+pub type ElementSink<'a> = dyn FnMut(u32, u64, u32, &[u8], f64) -> u32 + 'a;
 
 /// The lens of `react`.
 pub struct React<'a> {
@@ -292,10 +292,15 @@ impl<'a> React<'a> {
     /// Commits `bytes` to `element` of the array pin statement `statement` writes, due `after` seconds later
     /// (abi.md §6, arrays of carriers). A refusal, or a host with no element commits, is a `Fault`.
     pub fn commit_element(&mut self, statement: u32, element: u64, bytes: &[u8], after: f64) -> Result<(), Fault> {
+        self.commit_element_at(statement, element, 0, bytes, after)
+    }
+
+    /// [`commit_element`](Self::commit_element) at `offset` inside the statement's declared range.
+    pub fn commit_element_at(&mut self, statement: u32, element: u64, offset: u32, bytes: &[u8], after: f64) -> Result<(), Fault> {
         let Some(sink) = self.element.as_mut() else {
             return Err(Fault::new(status::FAULT, "the host has no element commits".to_string()));
         };
-        match sink(statement, element, bytes, after) {
+        match sink(statement, element, offset, bytes, after) {
             status::OK => Ok(()),
             s => Err(Fault::new(s, format!("commit of element {element} by statement {statement} refused with status {s}"))),
         }
@@ -304,7 +309,13 @@ impl<'a> React<'a> {
     /// Commits `bytes` through statement `statement`, due `after` seconds
     /// later (abi.md §6). A refusal is a `Fault` carrying the status as its code.
     pub fn commit(&mut self, statement: u32, bytes: &[u8], after: f64) -> Result<(), Fault> {
-        match (self.commit)(statement, bytes, after) {
+        self.commit_at(statement, 0, bytes, after)
+    }
+
+    /// Commits `bytes` at `offset` inside the range statement `statement` declares: one level of a composite or
+    /// one element of a value array a statement over the whole range covers.
+    pub fn commit_at(&mut self, statement: u32, offset: u32, bytes: &[u8], after: f64) -> Result<(), Fault> {
+        match (self.commit)(statement, offset, bytes, after) {
             status::OK => Ok(()),
             s => Err(Fault::new(s, format!("commit of statement {statement} refused with status {s}"))),
         }
@@ -375,7 +386,7 @@ mod tests {
     fn react_lens_reads_and_commits() {
         let d = [1u8, 1];
         let mut seen = Vec::new();
-        let mut sink = |s: u32, b: &[u8], after: f64| {
+        let mut sink = |s: u32, _offset: u32, b: &[u8], after: f64| {
             seen.push((s, b.to_vec(), after));
             if s == 9 { status::FAULT } else { status::OK }
         };

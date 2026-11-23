@@ -363,23 +363,25 @@ unsafe fn react_on<T>(
         };
         let host_data = frame.host_data;
         let statements = r.writes;
-        let mut sink = |statement: u32, bytes: &[u8], after: f64| -> u32 {
-            let declared = statements.get(statement as usize);
-            if declared.is_none_or(|s| bytes.len() > s.len as usize) {
+        let mut sink = |statement: u32, offset: u32, bytes: &[u8], after: f64| -> u32 {
+            let Some(declared) = statements.get(statement as usize) else { return status::FAULT };
+            if offset as u64 + bytes.len() as u64 > declared.len as u64 {
                 return status::FAULT;
             }
             // SAFETY: abi.md §2 entry 6 and §12 "`commit` is called only inside
             // the `react` that received the `Host`": this is that call.
-            unsafe { commit(host_data, statement, 0, bytes.len() as u32, bytes.as_ptr(), after) }
+            unsafe { commit(host_data, statement, declared.offset + offset, bytes.len() as u32, bytes.as_ptr(), after) }
         };
-        let mut element_sink = |statement: u32, element: u64, bytes: &[u8], after: f64| -> u32 {
-            let declared = statements.get(statement as usize);
+        let mut element_sink = |statement: u32, element: u64, offset: u32, bytes: &[u8], after: f64| -> u32 {
+            let Some(declared) = statements.get(statement as usize) else { return status::FAULT };
             let Some(commit_element) = commit_element else { return status::FAULT };
-            if declared.is_none_or(|s| bytes.len() > s.len as usize) {
+            if offset as u64 + bytes.len() as u64 > declared.len as u64 {
                 return status::FAULT;
             }
             // SAFETY: as for `commit` above.
-            unsafe { commit_element(host_data, statement, element, 0, bytes.len() as u32, bytes.as_ptr(), after) }
+            unsafe {
+                commit_element(host_data, statement, element, declared.offset + offset, bytes.len() as u32, bytes.as_ptr(), after)
+            }
         };
         let mut cx = React::with_elements(input, &mut sink, &mut element_sink);
         Ok(match run(&inst.device, k, &mut cx)? {

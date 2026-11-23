@@ -262,8 +262,8 @@ T86 → T87 → T88 → T89 → T90
 
 **Done when**:
 
-- [ ] `carrier_array_index_past_the_end_panics_naming_it` and `element_commits_reach_the_host_with_their_element` pass under `**Run rt**`
-- [ ] Gate check passes: Task (`piperine-transpile`)
+- [x] `carrier_array_index_past_the_end_panics_naming_it` and `element_commits_reach_the_host_with_their_element` pass under `**Run rt**`
+- [x] Gate check passes: Task (`piperine-transpile`)
 
 **Tests**: unit
 **Gate**: task
@@ -836,6 +836,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **T65 amendments:** (a) element addressing is `Function.elements`/`Reaction.elements` (appended `List<u64>`) instead of `Cell.element`, so the transpile goldens stay byte-identical (the goldens spell `Cell { kind, index, part }`); (b) `ArrayView.data` is named `context` (`contract.rs::raw_views_have_no_public_pointer_field` forbids a public `data:` field); (c) `contract.rs::the_host_has_one_commit` (EU-16 AC 2, 'Host is 16 bytes, one commit') is superseded by QC1: `Host` is 24 bytes with `commit_element`, the test now pins that; `raw.rs::struct_layouts_match_the_abi` and `tests/validate.rs::every_shape_local_rule_is_enforced` grew the new fields and three rule rows; (d) `Handle::react`'s `Commit` gained `element: Option<u64>`, `React::with_elements`/`commit_element` carry element commits through the lens.
 **T67 notes:** the plan's `Binding` gained `Element { net, element }` and `Window { net, first, length }`; the engine dirties every reader of an array net when any element changes (precise per-element dirtying is an optimization with no observable effect, a discrete function is pure in its reads), so a cell naming one element is not dirtied element-precisely; P1 (one writer) holds per element range of an array net; `Digital::host_commit_element` and `read_element` serve the host. The functions never take a `WHOLE` read or an element write: a constant element read or definition is a private scalar pin bound to `Binding::Element` (T72 plans it that way).
 **T68 notes:** the plan variants are `Binding::ArrayElement`/`ArrayWindow` and `Site::ArrayElement`/`ArrayWindow` (the guard `removed_surface.rs::the_element_contract_is_gone` forbids the whole word `Element` in solver sources); an analog function reading a pin on an array element or window fails loud at bind (no analog slot for one element yet).
+**T69 notes:** `CommitSink`/`ElementSink` carry an `offset` relative to the statement's declared range (`React::commit_at`, `commit_element_at`), and the thunk adds the statement's own offset: a statement over a field range now commits correctly (before, the thunk always passed offset 0). `rt/array.rs` is part of every digital design's runtime files (`Runtime::files`).
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 
