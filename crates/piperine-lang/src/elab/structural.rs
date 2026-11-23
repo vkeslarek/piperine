@@ -456,7 +456,7 @@ impl Elaboration<'_, '_> {
         let mut texts = Vec::new();
         for key in &keys {
             let value = values.get(*key)?;
-            keyed.bind(*key, value);
+            self.bind_param(&mut keyed, *key, value);
             texts.push(value.to_string());
         }
         let key = BodyKey { module, values: texts };
@@ -785,7 +785,7 @@ impl Elaboration<'_, '_> {
             if let Some(slot) = values.get_mut(index) {
                 *slot = value;
             }
-            bindings.bind(key, value);
+            self.bind_param(&mut bindings, key, value);
         }
         (values, bindings)
     }

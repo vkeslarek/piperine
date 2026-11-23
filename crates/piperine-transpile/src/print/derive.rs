@@ -63,8 +63,20 @@ impl DerivePrinter {
             return Err(Error::Unsupported { form: "a derived param whose parent is no instance".into(), path: binding.child.clone(), origin: ir.top().body().origin().clone() });
         };
         let printer = ValuePrinter::of_placement(ir, parent);
-        let value = printer.expr(binding.expr)?;
         let params = Text::generated("params");
+        // a param passed on as it is (`{ md: md }`) is the parent's value, whatever its type: an enum's tag crosses as it is
+        if let piperine_ir::Expr::Param(index) = ir.expr(binding.expr)
+            && parent.params().get(*index as usize).is_some_and(|read| read.ty == binding.ty)
+            && matches!(binding.ty, ValueType::Enum(_))
+        {
+            let mut t = Text::new();
+            t.comment(&format!("derive {}: {}.{} is {} of {}", binding.k, binding.child, binding.param, parent.params()[*index as usize].name, binding.parent), parent.origin());
+            t.line(&format!("fn {}({params}: &[f64]) -> f64 {{", Text::generated(&format!("derive_{}", binding.k))));
+            t.indented(|t| t.line(&format!("{params}[{index}]")));
+            t.line("}");
+            return Ok((t.finish(), parent.params().len()));
+        }
+        let value = printer.expr(binding.expr)?;
         let at = parent.origin();
         let unsupported = |form: String| Error::Unsupported { form, path: format!("{}.{}", binding.child, binding.param), origin: at.clone() };
         let mut lets = Vec::new();
@@ -73,15 +85,19 @@ impl DerivePrinter {
             if !printer.uses(&name) {
                 continue;
             }
-            lets.push(match p.ty {
+            lets.push(match &p.ty {
                 ValueType::F64 => format!("let {name} = {params}[{i}];"),
                 ValueType::Bool => format!("let {name} = {params}[{i}] != 0.0;"),
-                _ => return Err(unsupported(format!("a derived param that reads the integer param `{}`", p.name))),
+                ValueType::UInt(bits) => format!("let {name} = rt::UInt::<{bits}>::from_f64({params}[{i}]);"),
+                ValueType::Int(bits) => format!("let {name} = rt::Int::<{bits}>::from_f64({params}[{i}]);"),
+                // an enum is read only as itself, passed on as it is (`{ md: md }`, below)
+                _ => return Err(unsupported(format!("a derived param that reads the param `{}` of type {}", p.name, p.ty))),
             });
         }
-        let tail = match binding.ty {
+        let tail = match &binding.ty {
             ValueType::F64 => value,
             ValueType::Bool => format!("if {value} {{ 1.0 }} else {{ 0.0 }}"),
+            ValueType::UInt(_) | ValueType::Int(_) => format!("({value}).to_f64()"),
             _ => return Err(unsupported(format!("a derived param of type {}", binding.ty))),
         };
         let mut t = Text::new();

@@ -120,7 +120,8 @@ impl Elaboration<'_, '_> {
                 },
                 None => None,
             };
-            values.bind(key, self.key_value(module, key, written, file, span)?);
+            let value = self.key_value(module, key, written, file, span)?;
+            self.bind_param(&mut values, key, value);
         }
         Some(values)
     }
@@ -158,7 +159,8 @@ impl Elaboration<'_, '_> {
         let mut keys = Bindings::new();
         for key in self.keys.of(template.module).to_vec() {
             let written = template.fields.iter().find(|(param, _, _)| *param == key).map(|(_, value, _)| *value);
-            keys.bind(key, self.key_value(template.module, key, written, file, span)?);
+            let value = self.key_value(template.module, key, written, file, span)?;
+            self.bind_param(&mut keys, key, value);
         }
         Some((given, keys))
     }
@@ -332,6 +334,13 @@ impl Elaboration<'_, '_> {
         } else {
             None
         };
+        // an `Option` param of the parent passed on (`{ rs: rs }`): its two halves, packed again
+        if payload.is_none() && matches!(self.types.ty(expr), Some(crate::types::Ty::Option(_))) {
+            let pair = self.lower_option(scope, expr)?;
+            let origin = self.expr_origin(expr);
+            let held = self.type_of(pair.val);
+            return Some(self.emit(piperine_ir::Expr::OptionPack { is: pair.is, value: pair.val }, ValueType::Option(Box::new(held)), origin));
+        }
         let Some(payload) = payload else { return self.lower_expr(scope, expr) };
         let value = self.lower_expr(scope, payload)?;
         let origin = self.expr_origin(expr);

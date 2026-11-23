@@ -49,7 +49,13 @@ impl<'a> TypeItems<'a> {
                 Self::collect_aggregates(ir, &param.ty, &mut lifted);
             }
         }
-        let pinned = lifted.clone();
+        // every type a param pin holds, a unit enum included, has its `Carried` form (§8.1.15)
+        let mut pinned = lifted.clone();
+        for body in ir.bodies() {
+            for param in body.params() {
+                Self::collect_aggregates(ir, &param.ty, &mut pinned);
+            }
+        }
         let mut items = TypeItems { ir, names, optional, lifted, pinned };
         let held = std::mem::take(&mut items.lifted);
         items.lifted = held.into_iter().filter(|index| items.holds_real(&Self::as_value(ir, TypeId(*index as u32)))).collect();

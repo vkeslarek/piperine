@@ -63,7 +63,7 @@ impl Elaboration<'_, '_> {
                 return self.implicit_some_constant(expr, bindings);
             }
             // a composite folds to a constant of the IR's arena (`consts/imported.rs`)
-            if self.types.ty(expr).is_some_and(crate::types::Ty::is_composite) {
+            if self.types.ty(expr).is_some_and(|ty| ty.is_composite() || matches!(ty, crate::types::Ty::Enum(_))) {
                 return self.composite_constant(expr, bindings);
             }
             return self.consts.value(expr, bindings);
