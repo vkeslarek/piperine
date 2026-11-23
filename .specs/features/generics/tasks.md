@@ -1132,9 +1132,9 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_carrier_method_call_follows_the_lookup_order` passes under `**Run typeshandles**`
-- [ ] `an_inherent_impl_on_a_nature_may_be_written_in_any_crate` passes under `**Run spectext**`
-- [ ] Gate check passes: Quick
+- [x] `a_carrier_method_call_follows_the_lookup_order` passes under `**Run typeshandles**`
+- [x] `an_inherent_impl_on_a_nature_may_be_written_in_any_crate` passes under `**Run spectext**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

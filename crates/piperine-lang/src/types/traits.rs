@@ -41,6 +41,9 @@ pub struct ImplEntry {
     pub builtin_trait: Option<&'static str>,
     /// What it is written for.
     pub target: ImplTarget,
+    /// The type a carrier of the nature holds when the `impl` is written for a nature that takes one: `impl Bit` is
+    /// `impl Bit<bool>` (§3.1.8), `impl Bit<f64>` the carriers of `f64`. `None` for every other `impl`.
+    pub carried: Option<Ty>,
 }
 
 /// Every trait and `impl` of a design.
@@ -200,7 +203,8 @@ impl<'d> ImplTable<'d> {
     fn targets(&self, entry: &ImplEntry, ty: &Ty) -> bool {
         match (&entry.target, ty) {
             (ImplTarget::Declared(decl), Ty::Struct(nominal) | Ty::Enum(nominal)) => nominal.decl == *decl,
-            (ImplTarget::Declared(decl), Ty::Node(nature) | Ty::Carrier { nature, .. }) => nature == decl,
+            (ImplTarget::Declared(decl), Ty::Node(nature)) => nature == decl,
+            (ImplTarget::Declared(decl), Ty::Carrier { nature, value }) => nature == decl && entry.carried.as_ref().is_none_or(|carried| carried == &**value),
             (ImplTarget::Primitive(primitive), other) => primitive == other,
             (ImplTarget::Blanket(_), _) => true,
             _ => false,
@@ -222,7 +226,7 @@ impl<'d> ImplTable<'d> {
             Some(path) => {
                 let segment = design.path_node(path).segments.last()?;
                 if matches!(segment.res, Resolution::Builtin(id) if id.info().name == "Repr") {
-                    return Some(ImplEntry { decl, trait_decl: None, trait_arguments: Vec::new(), builtin_trait: Some("Repr"), target: Self::target(design, decl, data.self_ty) });
+                    return Some(ImplEntry { decl, trait_decl: None, trait_arguments: Vec::new(), builtin_trait: Some("Repr"), target: Self::target(design, decl, data.self_ty), carried: Self::carried(design, data.self_ty) });
                 }
                 let arguments = match &segment.args {
                     Some(GenericArgsNode::Angle { args, .. }) => args.iter().filter_map(|arg| if let GenericArgNode::Type(ty) = arg { Some(*ty) } else { None }).collect(),
@@ -235,7 +239,30 @@ impl<'d> ImplTable<'d> {
             }
             None => (None, Vec::new(), None),
         };
-        Some(ImplEntry { decl, trait_decl, trait_arguments, builtin_trait, target: Self::target(design, decl, data.self_ty) })
+        Some(ImplEntry { decl, trait_decl, trait_arguments, builtin_trait, target: Self::target(design, decl, data.self_ty), carried: Self::carried(design, data.self_ty) })
+    }
+
+    /// The value type of the carriers an `impl` for the nature `self_ty` names is written for: the first type
+    /// argument when it is a primitive, `bool` when the nature takes one and none is written (§3.1.8). `None` for
+    /// a type that is not a nature that takes one.
+    fn carried(design: &Design, self_ty: TypeId) -> Option<Ty> {
+        let TypeKind::Path(path) = &design.type_node(self_ty).kind else { return None };
+        let segment = design.path_node(*path).segments.last()?;
+        let Resolution::Decl(nature) = segment.res else { return None };
+        if !matches!(design.decl_data(nature).kind, DeclKind::Nature(_)) || design.decl_data(nature).generics_span.is_none() {
+            return None;
+        }
+        let written = match &segment.args {
+            Some(GenericArgsNode::Angle { args, .. }) => args.iter().find_map(|arg| if let GenericArgNode::Type(ty) = arg { Some(*ty) } else { None }),
+            _ => None,
+        };
+        match written {
+            None => Some(Ty::Bool),
+            Some(ty) => match Self::target(design, nature, ty) {
+                ImplTarget::Primitive(primitive) => Some(primitive),
+                _ => None,
+            },
+        }
     }
 
     /// What the self type of the `impl` `decl` names.

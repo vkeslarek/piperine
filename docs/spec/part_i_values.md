@@ -1048,6 +1048,12 @@ only reference a function holds, and it is not a value.
   caller assigns it: `s = s.step(x);`. There is no other receiver form and no shorthand for
   that assignment.
 
+> **Resolution.** [§3.7.7](#37-traits) says an inherent `impl T { .. }` is written in the crate that
+> declares `T`; that rule governs value types. An inherent `impl` on a nature may be written in any
+> crate: `impl Thermal { fn celsius(self) -> f64 { temp(self) - 273.15 } }` is a legal item of a
+> user crate although `Thermal` is a `std` nature (§3.1's own example). A trait `impl` on a nature
+> keeps the orphan rule of [§3.7.7](#37-traits): the trait or the nature is the crate's.
+
 > **Resolution.** An `impl` on a value type may hold associated `const` items
 > ([§3.9](#39-constants)), read as `Type::NAME` (`Logic::Z`,
 > [§22.1](part_vii_stdlib.md#221-values-and-bit)). On a nature or bundle an `impl` holds

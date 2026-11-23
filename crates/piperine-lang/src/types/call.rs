@@ -311,6 +311,13 @@ impl Checker<'_> {
         if let Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) = builtin {
             return self.edge_read(expr, edge, *recv, args);
         }
+        // §3.1.7: a method of a carrier is the carrier's own (above), then the `impl`s of its nature, then the value's
+        if let Some(carrier @ Ty::Carrier { .. }) = self.carrier_named(*recv)
+            && let Some(function) = self.method_of(&carrier, name)
+        {
+            self.infer(*recv)?;
+            return self.method_call_of(expr, *recv, &carrier, function, args);
+        }
         let recv_ty = self.infer(*recv)?;
         // §3 rule 9: a value of a type parameter has the methods its bounds give
         if let Ty::Param(param) = recv_ty {

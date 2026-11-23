@@ -79,3 +79,26 @@ fn a_handle_returned_stored_or_written_is_e0133() {
     let passed = "fn level(a: Electrical) -> f64 { v(a) }\nfn call(a: Electrical) -> f64 { level(a) + level(a) }\n";
     assert_eq!(HandleSources::found(&format!("{passed}{tail}")), []);
 }
+
+#[test]
+fn a_carrier_method_call_follows_the_lookup_order() {
+    // GN-10 / §3.1.7: a method called on a carrier is the carrier's own, then the `impl`s of its nature (inherent and
+    // trait, a project nature or a prelude one, `impl Bit` being `impl Bit<bool>`), then the methods of the value read;
+    // `self` of such an `impl` is a handle
+    let clean = |src: &str| assert_eq!(HandleSources::found(src), [], "{src}");
+    // a trait impl and an inherent impl on a prelude nature
+    clean("trait Describe { fn tag(self) -> f64; }\nimpl Describe for Thermal { fn tag(self) -> f64 { temp(self) } }\nmodule Top() { signal t: Thermal; signal o: Electrical; }\nanalog for Top { v(o) +> t.tag(); }\n");
+    clean("impl Electrical { fn volts(self) -> f64 { v(self) } }\nmodule Top() { signal a: Electrical; signal o: Electrical; }\nanalog for Top { v(o) +> a.volts(); }\n");
+    // `impl Bit` is the carriers of `bool`, `impl Bit<f64>` the carriers of `f64`
+    clean("impl Bit { fn flipped(self) -> bool { !self } }\nmodule Top() { signal c: Bit = false; signal d: Bit = false; }\ndigital for Top { on c.rise() { d <- c.flipped(); } }\n");
+    clean("impl Bit<f64> { fn doubled(self) -> f64 { self * 2.0 } }\nmodule Top() { signal s: Bit<f64> = 1.0; signal d: Bit<f64> = 1.0; }\ndigital for Top { on s.changed() { d <- s.doubled(); } }\n");
+    let wrong_value = "impl Bit { fn flipped(self) -> bool { !self } }\nmodule Top() { signal s: Bit<f64> = 1.0; signal d: Bit = false; }\ndigital for Top { on s.changed() { d <- s.flipped(); } }\n";
+    assert!(!HandleSources::found(wrong_value).is_empty(), "`impl Bit` is not written for a carrier of `f64`");
+    // the impl of the nature comes before the value's own method: the `abs` of `Bit<f64>` below gives a `bool`, which `f64::abs` never does
+    clean("impl Bit<f64> { fn abs(self) -> bool { true } }\nmodule Top() { signal s: Bit<f64> = 1.0; signal d: Bit = false; }\ndigital for Top { on s.changed() { d <- s.abs(); } }\n");
+    // with no impl, the value's method answers
+    clean("module Top() { signal s: Bit<f64> = 1.0; signal d: Bit<f64> = 1.0; }\ndigital for Top { on s.changed() { d <- s.abs(); } }\n");
+    // the carrier's own method is not shadowed: a project `prev` on a nature is `E0131`
+    let own = "impl Bit { fn prev(self) -> bool { true } }\nmodule Top() { signal c: Bit = false; }\n";
+    assert!(generic_sources::GenericSources::standard_codes(own).iter().any(|code| code == "E0131"), "{:?}", generic_sources::GenericSources::standard_codes(own));
+}

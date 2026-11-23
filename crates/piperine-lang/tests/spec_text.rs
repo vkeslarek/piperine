@@ -2326,6 +2326,20 @@ fn rule_9_splits_definition_and_instantiation_errors() {
 }
 
 #[test]
+fn an_inherent_impl_on_a_nature_may_be_written_in_any_crate() {
+    // GN-10, design D10: §3.7.7 puts an inherent `impl` in the crate of its type, a rule for value types; §3.1 says a
+    // nature's inherent `impl` may be written in any crate, and a trait `impl` keeps the orphan rule
+    let text = flat(&spec("part_i_values.md").replace("\n> ", "\n"));
+    for fact in [
+        "An inherent `impl` on a nature may be written in any crate",
+        "`impl Thermal { fn celsius(self) -> f64 { temp(self) - 273.15 } }` is a legal item of a user crate although `Thermal` is a `std` nature",
+        "A trait `impl` on a nature keeps the orphan rule of [§3.7.7](#37-traits)",
+    ] {
+        assert!(text.contains(fact), "§3.1 lacks \"{fact}\"");
+    }
+}
+
+#[test]
 fn part_v_rule_6_tests_the_step_that_reads_a_jump_with_the_first_order_estimate() {
     // TP-05 AC 6: §15.2 rule 6 states the estimate and the retake.
     let rule = flat(&section(&spec("part_v_execution.md"), "### 15.2 "));
