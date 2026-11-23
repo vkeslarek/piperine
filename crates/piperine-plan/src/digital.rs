@@ -473,6 +473,16 @@ impl Digital {
             .collect()
     }
 
+    /// Adds the private `F64` pin `delay<k>.max` of each delay site, written by a function of the
+    /// parameter cone and named by the site's `DELAY` term.
+    pub(crate) fn delay_maximum_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<u32> {
+        body.delays()
+            .iter()
+            .enumerate()
+            .map(|(k, site)| s.pin(PinSpec { origin: &Self::at(&site.origin), ..PinSpec::discrete(&format!("delay{k}.max"), role::PRIVATE, &F64) }))
+            .collect()
+    }
+
     /// Adds one `CAP` watch per `bound_step` site of the `analog` block, `cap:<site>`; returns
     /// `(site, watch)`.
     pub(crate) fn cap_watches(s: &mut ShapeBuf, body: Body<'_>) -> Vec<(u32, u32)> {

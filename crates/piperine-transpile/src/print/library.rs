@@ -174,6 +174,8 @@ impl LibraryPrinter {
                 Mode::Ttol(_) | Mode::Etol(_) => (analog.tolerance(k)?, digital.function_name(f)),
                 Mode::Cap(_) => (analog.cap(k)?, digital.function_name(f)),
                 Mode::DerivativeAbstol(_) => (DerivativePrinter::new(&analog).abstol(k)?, digital.function_name(f)),
+                // SPEC_DEVIATION: refused until T28 prints the delay maximum (T24 lands the plan first).
+                Mode::DelayMaximum(_) => return Err(analog.unsupported(&format!("the function {k} of a delay site"))),
             };
             if matches!(f.mode, Mode::Terms | Mode::Limit(_) | Mode::Cross { .. }) {
                 uses.insert("rt::Dual");

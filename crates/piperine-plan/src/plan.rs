@@ -49,6 +49,13 @@ pub enum Term {
     /// A derivative site's `DDT {u, GROUND}` term of value `-x`, `x` being the site's state; it
     /// names the site's `abstol` pin when the site has one.
     DerivativeState(u32),
+    /// A delay site's `FLOW {u, GROUND}` term, `u` being its output pin `delay<k>.value` (abi.md
+    /// A1: the row `u - op(x) = 0`).
+    DelayOutput(u32),
+    /// A delay site's `DELAY {u, GROUND}` term of value `-x`, `x` being the site's input; its
+    /// `TIME` is written by `terms` (`Target::DelayTime`) and its `max` is the pin
+    /// `delay<k>.max`.
+    DelayHistory(u32),
 }
 
 /// What a function computes: one walk of the `analog` block in one mode.
@@ -73,6 +80,8 @@ pub enum Mode {
     Cap(u32),
     /// The `abstol` of derivative site `k`: its tolerance pin.
     DerivativeAbstol(u32),
+    /// The `max` of delay site `k`: its bound pin (`td` itself when the site gives none).
+    DelayMaximum(u32),
     /// The `ttol` of `cross` event `k`: its tolerance pin.
     Ttol(u32),
     /// The `etol` of `cross` event `k`: its tolerance pin.
@@ -94,6 +103,9 @@ pub enum Source {
     /// A derivative site's rate pin `d<k>.rate` (abi.md A1's private pin `u`): a continuous
     /// unknown that is 0 in an equilibrium solve.
     Derivative(u32),
+    /// A delay site's output pin `delay<k>.value` (abi.md A1's private pin `u`): a continuous
+    /// unknown that is `x` in an equilibrium solve.
+    Delay(u32),
     /// A `limit` site's input `VALUE`.
     LimitValue(u32),
     /// An `ac_stim` site's input `VALUE`.
@@ -145,12 +157,12 @@ pub enum Source {
 impl Source {
     /// A continuous pin: read as 0 by the affine rule (INT-12).
     pub fn is_pin(self) -> bool {
-        matches!(self, Source::Node(_) | Source::BranchFlow(_) | Source::Derivative(_))
+        matches!(self, Source::Node(_) | Source::BranchFlow(_) | Source::Derivative(_) | Source::Delay(_))
     }
 
     /// A read the walk carries a tangent for.
     pub fn is_differentiable(self) -> bool {
-        matches!(self, Source::Node(_) | Source::BranchFlow(_) | Source::Derivative(_) | Source::LimitValue(_) | Source::StimValue(_))
+        matches!(self, Source::Node(_) | Source::BranchFlow(_) | Source::Derivative(_) | Source::Delay(_) | Source::LimitValue(_) | Source::StimValue(_))
     }
 }
 
@@ -186,6 +198,10 @@ pub enum Target {
     Etol(u32),
     /// The `abstol` pin of derivative site `k`.
     DerivativeAbstol(u32),
+    /// The `TIME` of the `DELAY` term of delay site `k` (a write of `terms`).
+    DelayTime(u32),
+    /// The `max` pin of delay site `k`.
+    DelayMaximum(u32),
     /// The `RECORD` pin of stream `s` (a statement of a reaction that emits).
     Record(u32),
 }
@@ -250,6 +266,7 @@ impl ReadSet {
         set.0.extend(body.previous_reads(target).into_iter().map(Source::CarrierPrevious));
         set.0.extend(body.fired_reads(target).into_iter().map(Source::Fired));
         set.0.extend(body.derivative_reads(target).into_iter().map(Source::Derivative));
+        set.0.extend(body.delay_reads(target).into_iter().map(Source::Delay));
         set.0.extend(body.param_previous_reads(target).into_iter().map(Source::ParamPrevious));
         set
     }
@@ -272,6 +289,8 @@ pub struct Pins {
     pub branches: Vec<Option<u32>>,
     /// The rate pin `d<k>.rate` of each derivative site, after the branch flow pins.
     pub derivatives: Vec<u32>,
+    /// The output pin `delay<k>.value` of each delay site, after the derivative rate pins.
+    pub delays: Vec<u32>,
     pub temperature: Option<u32>,
     /// The `GLOBAL` pin of each analysis kind the body reads, in `AnalysisKind` order, after the
     /// temperature pin.
@@ -310,7 +329,9 @@ pub struct Pins {
     /// The private `abstol` pin `d<k>.abstol` of each derivative site that gives one, after the
     /// tolerance pins; `None` for a site with the default tolerance.
     pub derivative_abstols: Vec<Option<u32>>,
-    /// The `GLOBAL` `SETTLE` pin, after the derivative abstol pins, when the body has a `settle`
+    /// The private `F64` pin `delay<k>.max` of each delay site, after the derivative abstol pins.
+    pub delay_maxima: Vec<u32>,
+    /// The `GLOBAL` `SETTLE` pin, after the delay `max` pins, when the body has a `settle`
     /// event (§13 rule 17): the engine fires it in the settle phase (§15 step 4).
     pub settle: Option<u32>,
 }
@@ -359,6 +380,16 @@ impl Pins {
     /// The rate pin of derivative site `k`; `GROUND` for a site the body does not have.
     pub fn derivative(&self, k: u32) -> u32 {
         self.derivatives.get(k as usize).copied().unwrap_or(GROUND)
+    }
+
+    /// The output pin of delay site `k`; `GROUND` for a site the body does not have.
+    pub fn delay(&self, k: u32) -> u32 {
+        self.delays.get(k as usize).copied().unwrap_or(GROUND)
+    }
+
+    /// The `max` pin of delay site `k`; `DEFAULT` for a site the body does not have.
+    pub fn delay_maximum(&self, k: u32) -> u32 {
+        self.delay_maxima.get(k as usize).copied().unwrap_or(DEFAULT)
     }
 
     /// The `abstol` pin of derivative site `k`; `DEFAULT` when it has none.
@@ -435,6 +466,7 @@ impl BodyPlan {
             + body.nodes().len()
             + body.branches().iter().filter(|b| b.kind != BranchKind::Flow).count()
             + body.derivatives().len()
+            + body.delays().len()
             + usize::from(Self::reads_temperature(body))
             + Self::reads_analysis(body).len();
         let mut next_check = pin_count as u32;
@@ -506,6 +538,17 @@ impl BodyPlan {
             })
             .collect();
 
+        // One private output pin per delay site, after the rate pins (abi.md A1).
+        let delays: Vec<u32> = body
+            .delays()
+            .iter()
+            .enumerate()
+            .map(|(k, site)| {
+                let at = origin(&site.origin);
+                s.pin(PinSpec { origin: &at, ..PinSpec::continuous(&format!("delay{k}.value"), role::PRIVATE) })
+            })
+            .collect();
+
         let temperature = Self::reads_temperature(body).then(|| {
             let at = origin(body.origin());
             s.pin(PinSpec {
@@ -543,6 +586,7 @@ impl BodyPlan {
         let records = Digital::record_pins(&mut s, body);
         let tolerances = Digital::tolerance_pins(&mut s, body);
         let derivative_abstols = Digital::derivative_abstol_pins(&mut s, body);
+        let delay_maxima = Digital::delay_maximum_pins(&mut s, body);
         let settle = Digital::settle_pin(&mut s, body);
         let watches = Digital::watches(&mut s, body, &events, &crossed, &tolerances);
         let caps = Digital::cap_watches(&mut s, body);
@@ -550,6 +594,7 @@ impl BodyPlan {
             nodes,
             branches,
             derivatives,
+            delays,
             temperature,
             analysis,
             checks,
@@ -565,6 +610,7 @@ impl BodyPlan {
             tolerances,
             caps,
             derivative_abstols,
+            delay_maxima,
             settle,
         };
 
@@ -609,6 +655,19 @@ impl BodyPlan {
             term(&format!("d{k}.state"), op::DDT, pins.derivative_abstol(k), Term::DerivativeState(k));
         }
 
+        // Delay sites: the output term `u` and the history term `-x` that carries `TIME` and `max`.
+        for (k, site) in body.delays().iter().enumerate() {
+            let (k, at) = (k as u32, origin(&site.origin));
+            let output = pins.delay(k);
+            let max = pins.delay_maximum(k);
+            let mut term = |name: &str, operator: u32, max: u32, what: Term| {
+                s.term(TermSpec { name, origin: &at, op: operator, plus: output, minus: GROUND, abstol: DEFAULT, max });
+                terms.push(what);
+            };
+            term(&format!("delay{k}.value"), op::FLOW, DEFAULT, Term::DelayOutput(k));
+            term(&format!("delay{k}.history"), op::DELAY, max, Term::DelayHistory(k));
+        }
+
         // Inputs: limits, then stimuli, each named after its site.
         for site in body.limits() {
             let at = origin(&site.origin);
@@ -647,7 +706,13 @@ impl BodyPlan {
             for set in &sets {
                 all.union(set);
             }
-            let writes = terms.iter().zip(&sets).map(|(t, set)| (Target::Term(*t), Some(set))).collect();
+            // `terms` also writes the `TIME` of each delay: `td`, read like any other input
+            let times: Vec<ReadSet> = (0..body.delays().len() as u32).map(|k| ReadSet::target(body, Query::DelayTime(k))).collect();
+            for set in &times {
+                all.union(set);
+            }
+            let mut writes: Vec<(Target, Option<&ReadSet>)> = terms.iter().zip(&sets).map(|(t, set)| (Target::Term(*t), Some(set))).collect();
+            writes.extend((0..times.len() as u32).map(|k| (Target::DelayTime(k), None)));
             let mut plan = Self::function(Mode::Terms, &all, writes);
             plan.affine = terms
                 .iter()
@@ -655,9 +720,10 @@ impl BodyPlan {
                     Term::Flow(b) => body.is_affine(*b),
                     // which kind a switch branch's equation takes is decided per solve (§11 rule 2)
                     Term::Eq(b) => body.branches()[*b as usize].kind != BranchKind::Switch && body.is_affine(*b),
-                    Term::Current(_) | Term::DerivativeRate(_) => true,
-                    Term::Charge(_) | Term::DerivativeState(_) => false,
+                    Term::Current(_) | Term::DerivativeRate(_) | Term::DelayOutput(_) => true,
+                    Term::Charge(_) | Term::DerivativeState(_) | Term::DelayHistory(_) => false,
                 })
+                .chain(std::iter::repeat_n(false, times.len()))
                 .collect();
             Self::declare(&mut s, &pins, &terms, body, "terms", &origin(body.origin()), &plan);
             functions.push(plan);
@@ -688,6 +754,14 @@ impl BodyPlan {
             Self::declare(&mut s, &pins, &terms, body, &format!("d{k}.abstol"), &origin(&site.origin), &plan);
             functions.push(plan);
         }
+        for (k, site) in body.delays().iter().enumerate() {
+            let k = k as u32;
+            // without a `max` the bound is `td` itself (D4)
+            let set = ReadSet::target(body, if site.maximum.is_some() { Query::DelayMaximum(k) } else { Query::DelayTime(k) });
+            let plan = Self::function(Mode::DelayMaximum(k), &set, vec![(Target::DelayMaximum(k), None)]);
+            Self::declare(&mut s, &pins, &terms, body, &format!("delay{k}.max"), &origin(&site.origin), &plan);
+            functions.push(plan);
+        }
         let reactions = Digital::reactions(&mut s, &pins, body);
 
         BodyPlan { shape: s.freeze(), functions, reactions }
@@ -701,6 +775,8 @@ impl BodyPlan {
             Term::Current(b) => ReadSet([Source::BranchFlow(b)].into_iter().collect()),
             Term::DerivativeRate(k) => ReadSet([Source::Derivative(k)].into_iter().collect()),
             Term::DerivativeState(k) => ReadSet::target(body, Query::Derivative(k)),
+            Term::DelayOutput(k) => ReadSet([Source::Delay(k)].into_iter().collect()),
+            Term::DelayHistory(k) => ReadSet::target(body, Query::DelayInput(k)),
             Term::Eq(b) => {
                 let mut set = ReadSet::target(body, Query::Flow(b));
                 let branch = &body.branches()[b as usize];
@@ -765,6 +841,8 @@ impl BodyPlan {
                 Target::Ttol(k) => value(cell::PIN, pins.ttol(k)),
                 Target::Etol(k) => value(cell::PIN, pins.etol(k)),
                 Target::DerivativeAbstol(k) => value(cell::PIN, pins.derivative_abstol(k)),
+                Target::DelayTime(k) => at(cell::TERM, terms.iter().position(|x| *x == Term::DelayHistory(k)).unwrap_or(usize::MAX) as u32, part::TIME),
+                Target::DelayMaximum(k) => value(cell::PIN, pins.delay_maximum(k)),
             })
             .collect();
         let partials =
@@ -781,6 +859,7 @@ impl BodyPlan {
             Source::Node(i) => value(cell::PIN, pins.node(i)),
             Source::BranchFlow(b) => value(cell::PIN, pins.branches[b as usize].unwrap_or(GROUND)),
             Source::Derivative(k) => value(cell::PIN, pins.derivative(k)),
+            Source::Delay(k) => value(cell::PIN, pins.delay(k)),
             Source::LimitValue(k) => value(cell::INPUT, k),
             Source::StimValue(k) => value(cell::INPUT, limits + k),
             Source::Param(i) => value(cell::PIN, i),
@@ -905,6 +984,7 @@ impl BodyPlan {
             .chain(n(body.reactions().len()).map(Query::Reaction))
             .chain(Self::bound_steps(body).into_iter().map(Query::BoundStep))
             .chain(n(body.derivatives().len()).flat_map(|k| [Query::Derivative(k), Query::DerivativeAbstol(k)]))
+            .chain(n(body.delays().len()).flat_map(|k| [Query::DelayInput(k), Query::DelayTime(k), Query::DelayMaximum(k)]))
             .collect()
     }
 

@@ -694,8 +694,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `a_delay_site_has_its_pin_terms_and_maximum` and `a_body_without_a_new_form_keeps_its_shape` pass
-- [ ] Gate check passes: `Run planops`, then `cargo test -p piperine-plan`, then `Run tgolden`
+- [x] `a_delay_site_has_its_pin_terms_and_maximum` and `a_body_without_a_new_form_keeps_its_shape` pass
+- [x] Gate check passes: `Run planops`, then `cargo test -p piperine-plan`, then `Run tgolden`
 
 **Tests**: integration
 **Gate**: full

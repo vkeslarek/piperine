@@ -88,6 +88,7 @@ impl<'a> AnalogPrinter<'a> {
             }
             Source::BranchFlow(b) => Self::flow_name(b),
             Source::Derivative(k) => Self::derivative_pin(k),
+            Source::Delay(k) => Text::generated(&format!("delay{k}_value")),
             Source::LimitValue(k) => site(self.body.limits(), k, "limit"),
             Source::StimValue(k) => site(self.body.stims(), k, "stim"),
             Source::Param(p) => {
@@ -157,6 +158,8 @@ impl<'a> AnalogPrinter<'a> {
             Term::Charge(b) => format!("b{b}.charge"),
             Term::DerivativeRate(k) => format!("d{k}.rate"),
             Term::DerivativeState(k) => format!("d{k}.state"),
+            Term::DelayOutput(k) => format!("delay{k}.value"),
+            Term::DelayHistory(k) => format!("delay{k}.history"),
         }
     }
 
@@ -190,6 +193,8 @@ impl<'a> AnalogPrinter<'a> {
             Target::Ttol(k) => format!("ttol:{k}"),
             Target::Etol(k) => format!("etol:{k}"),
             Target::DerivativeAbstol(k) => format!("d{k}.abstol"),
+            Target::DelayTime(k) => format!("delay{k}.history.TIME"),
+            Target::DelayMaximum(k) => format!("delay{k}.max"),
         }
     }
 
@@ -575,6 +580,9 @@ impl<'a> AnalogPrinter<'a> {
                 Term::Current(b) => self.read_name(Source::BranchFlow(b)),
                 Term::DerivativeRate(k) => Self::derivative_pin(k),
                 Term::DerivativeState(k) => format!("-{}", DerivativePrinter::state_name(k)),
+                // SPEC_DEVIATION: a delay term is refused until T28 prints it.
+                // Reason: the plan lands first (T24); a term with no printer fails loud.
+                Term::DelayOutput(_) | Term::DelayHistory(_) => return Err(self.unsupported(&format!("the delay term {term:?}"))),
                 Term::Eq(b) => {
                     let Some(branch) = self.body.branches().get(b as usize) else {
                         return Err(self.unsupported(&format!("the equation term of branch {b}")));

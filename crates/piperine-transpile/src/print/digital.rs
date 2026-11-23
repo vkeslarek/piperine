@@ -63,6 +63,7 @@ impl<'a> DigitalPrinter<'a> {
             }
             Mode::Cap(site) => format!("cap{site}"),
             Mode::DerivativeAbstol(k) => format!("derivative{k}_abstol"),
+            Mode::DelayMaximum(k) => format!("delay{k}_maximum"),
             Mode::Limit(_) | Mode::Stim(_) | Mode::Terms | Mode::Check(_) => "terms".to_string(),
         }
     }
@@ -106,7 +107,7 @@ impl<'a> DigitalPrinter<'a> {
             | Source::Fired(_)
             | Source::Settle
             | Source::ParamChanged(_) => format!("let {name} = {cx}.bool({i});"),
-            Source::Node(_) | Source::Derivative(_) | Source::Temperature | Source::Gmin | Source::SourceScale | Source::Time | Source::Freq => {
+            Source::Node(_) | Source::Derivative(_) | Source::Delay(_) | Source::Temperature | Source::Gmin | Source::SourceScale | Source::Time | Source::Freq => {
                 format!("let {name} = {cx}.f64({i});")
             }
             // abi.md §4.2: `STATIC` is one `BOOL` byte
