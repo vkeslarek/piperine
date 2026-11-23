@@ -3,7 +3,7 @@
 use crate::real::Real;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId, AggregateId};
 use crate::model::{
-    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, DelaySite, Derivative, Drive, EmitField, Event, Expr, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
+    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, DelaySite, Derivative, Drive, NoiseSource, EmitField, Event, Expr, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
     NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ReprForm, TypeData, TypeKind, ValueType, AggregateData,
 };
 use crate::contributions::{Contribution, Contributions};
@@ -310,6 +310,11 @@ impl<'a> Body<'a> {
     /// The delay sites, by index (`Expr::Delay`).
     pub fn delays(&self) -> &'a [DelaySite] {
         &self.data().delays
+    }
+
+    /// The noise sources, by index (`Expr::Noise`).
+    pub fn noise_sources(&self) -> &'a [NoiseSource] {
+        &self.data().noise_sources
     }
 
     /// The authored placements, in source order.

@@ -104,6 +104,9 @@ pub struct BodyData {
     /// The delay sites: each `delay(x, td, max)` (§14.6), by index (`Expr::Delay`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) delays: Vec<DelaySite>,
+    /// The noise sources: each `noise(psd, name)` (§14.8), by index (`Expr::Noise`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) noise_sources: Vec<NoiseSource>,
     /// The modules placed in an expression whose nodes or `analog` statements joined this body.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) hoisted: Vec<Hoisted>,
@@ -336,6 +339,20 @@ pub struct DelaySite {
     pub origin: Origin,
 }
 
+/// A `noise(psd, name)` (§14.8): the `NOISE` input `noise:<k>`. Its value is 0 in every solve; a
+/// noise sweep injects the partials against it with the power density `density`. Its index in
+/// the body's list is its identity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NoiseSource {
+    pub name: String,
+    /// The group the library reports the source's density under: the literal `name` argument
+    /// found after inlining, `None` for an unnamed source (reported by instance path).
+    pub group: Option<String>,
+    /// The power spectral density, an `f64` evaluated only by a noise sweep (at its frequency).
+    pub density: ExprId,
+    pub origin: Origin,
+}
+
 /// A module placed in an expression whose node or `analog` statements joined this body (Appendix
 /// C.1.1): `name` is the placement's name in the body (`lag`, `Lag$1`), `module` the placed
 /// module. The IR keeps the walkable record so a reader sees what was placed where.
@@ -505,6 +522,10 @@ pub enum Expr {
     /// The output of the delay site `k` of the body (`Body::delays`): an `f64`, read in the
     /// `analog` block, a body `let`, an event argument or a reaction.
     Delay(u32),
+    /// The value of the noise source `k` of the body (`Body::noise_sources`): an `f64` that is 0
+    /// in every solve and the source's unit-variance input in a noise sweep. Read in the `analog`
+    /// block, a body `let` or an event argument; a reaction reads 0.
+    Noise(u32),
     /// `fired(e)` in a reaction: whether the body's event `e` fired in this microstep (the
     /// `CHANGED` byte of its pin), a known `bool`.
     Fired(u32),
@@ -637,7 +658,7 @@ impl Expr {
     pub fn operands(&self) -> Vec<ExprId> {
         match self {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) => Vec::new(),
-            Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::ParamPrevious(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Fired(_) | Expr::Continue | Expr::FunctionRef(_) => Vec::new(),
+            Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::ParamPrevious(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::Fired(_) | Expr::Continue | Expr::FunctionRef(_) => Vec::new(),
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::LevelCast { expr, .. } => vec![*expr],
             Expr::Binary { lhs: a, rhs: b, .. } | Expr::Unwrap { is: a, value: b, .. } | Expr::Same { a, b } => vec![*a, *b],
             Expr::If { cond, then, otherwise } => vec![*cond, *then, *otherwise],

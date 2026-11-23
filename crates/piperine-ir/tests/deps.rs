@@ -38,6 +38,7 @@ impl Want {
             limits: limits.to_vec(),
             stims: stims.to_vec(),
             delays: Vec::new(),
+            noise_sources: Vec::new(),
         }
     }
 }

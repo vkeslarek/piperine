@@ -7,7 +7,7 @@ use crate::real::Real;
 use crate::deps::DepsMemo;
 use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
 use crate::model::{AggregateData, NodeAlias, 
-    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, DelaySite, Derivative, Drive, Event, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
+    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, DelaySite, Derivative, Drive, Event, NoiseSource, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
     Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, ReprForm, Site, Stmt, Stream, Terminal, TypeData, ValueType,
 };
 
@@ -182,6 +182,7 @@ impl IrBuilder {
             streams: Vec::new(),
             derivatives: Vec::new(),
             delays: Vec::new(),
+            noise_sources: Vec::new(),
             hoisted: Vec::new(),
             merges: Vec::new(),
             reaches: Vec::new(),
@@ -277,6 +278,13 @@ impl IrBuilder {
         let delays = &mut self.body_data(body).delays;
         delays.push(delay);
         delays.len() as u32 - 1
+    }
+
+    /// Adds a noise source to `body`: returns its index, the identity `Expr::Noise` reads it by.
+    pub fn noise_source(&mut self, body: BodyId, source: NoiseSource) -> u32 {
+        let sources = &mut self.body_data(body).noise_sources;
+        sources.push(source);
+        sources.len() as u32 - 1
     }
 
     /// Records that `body` placed a module in an expression whose node or `analog` statements

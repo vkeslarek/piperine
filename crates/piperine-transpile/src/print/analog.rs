@@ -305,7 +305,7 @@ impl<'a> AnalogPrinter<'a> {
                     sources.insert(Source::Carrier(*c));
                 }
                 // a delay has no plan read until T24 gives it a pin; the value printer refuses it
-                Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Fired(_) | Expr::Delay(_) => {}
+                Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Fired(_) | Expr::Delay(_) | Expr::Noise(_) => {}
                 Expr::Derivative(k) => {
                     sources.insert(Source::Derivative(*k));
                 }

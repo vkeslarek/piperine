@@ -101,6 +101,8 @@ pub enum Target {
     DelayTime(u32),
     /// The `max` of a delay site; empty when the site has none.
     DelayMaximum(u32),
+    /// The power density of a noise source (`Body::noise_sources`).
+    NoiseDensity(u32),
 }
 
 /// A dependency set. Fields come in the fixed order nodes, params, environment reads, `limit`
@@ -117,6 +119,8 @@ pub struct Deps {
     pub stims: Vec<SiteIndex>,
     /// Delay sites whose output (`Expr::Delay`) is read, by index (`Body::delays`).
     pub delays: Vec<u32>,
+    /// Noise sources whose value (`Expr::Noise`) is read, by index (`Body::noise_sources`).
+    pub noise_sources: Vec<u32>,
 }
 
 impl<'a> Body<'a> {
@@ -172,6 +176,12 @@ impl<'a> Body<'a> {
         self.sources_of(target).derivatives.iter().copied().collect()
     }
 
+    /// The noise sources whose value (`Expr::Noise`) `target` reads, by index
+    /// (`Body::noise_sources`), sorted, through locals and function calls.
+    pub fn noise_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).noises.iter().copied().collect()
+    }
+
     /// The delay sites whose output (`Expr::Delay`) `target` reads, by index (`Body::delays`),
     /// sorted, through locals and function calls.
     pub fn delay_reads(&self, target: Target) -> Vec<u32> {
@@ -206,6 +216,7 @@ impl<'a> Body<'a> {
             Target::DelayInput(i) => (&deps.delay_inputs, i, "delay site"),
             Target::DelayTime(i) => (&deps.delay_times, i, "delay site"),
             Target::DelayMaximum(i) => (&deps.delay_maxima, i, "delay site"),
+            Target::NoiseDensity(i) => (&deps.noise_densities, i, "noise source"),
         };
         match list.get(i as usize) {
             Some(sources) => sources,
@@ -272,6 +283,7 @@ pub(crate) struct BodyDeps {
     delay_inputs: Vec<Sources>,
     delay_times: Vec<Sources>,
     delay_maxima: Vec<Sources>,
+    noise_densities: Vec<Sources>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
@@ -292,6 +304,8 @@ struct Sources {
     derivatives: BTreeSet<u32>,
     /// The delay sites whose output is read (`Expr::Delay`).
     delays: BTreeSet<u32>,
+    /// The noise sources whose value is read (`Expr::Noise`).
+    noises: BTreeSet<u32>,
     /// The params whose previous value is read (`Expr::ParamPrevious`).
     param_previous: BTreeSet<u32>,
 }
@@ -309,6 +323,7 @@ impl Sources {
         self.fired.extend(&other.fired);
         self.derivatives.extend(&other.derivatives);
         self.delays.extend(&other.delays);
+        self.noises.extend(&other.noises);
         self.param_previous.extend(&other.param_previous);
     }
 
@@ -320,6 +335,7 @@ impl Sources {
             limits: self.limits.iter().copied().collect(),
             stims: self.stims.iter().copied().collect(),
             delays: self.delays.iter().copied().collect(),
+            noise_sources: self.noises.iter().copied().collect(),
         }
     }
 }
@@ -561,6 +577,7 @@ impl<'a> Walk<'a> {
         let delay_inputs: Vec<Sources> = data.delays.iter().map(|d| one(Some(d.input))).collect();
         let delay_times: Vec<Sources> = data.delays.iter().map(|d| one(Some(d.time))).collect();
         let delay_maxima: Vec<Sources> = data.delays.iter().map(|d| one(d.maximum)).collect();
+        let noise_densities: Vec<Sources> = data.noise_sources.iter().map(|n| one(Some(n.density))).collect();
         let mut reactions = Vec::with_capacity(data.reactions.len());
         for reaction in &data.reactions {
             walk.scopes = vec![Scope::new(owner.clone(), true, reaction.locals.len())];
@@ -605,6 +622,7 @@ impl<'a> Walk<'a> {
             delay_inputs,
             delay_times,
             delay_maxima,
+            noise_densities,
         }
     }
 
@@ -881,6 +899,16 @@ impl<'a> Walk<'a> {
                 sources.delays.insert(*k);
                 return self.done(id, Value::of(sources, Class::Affine));
             }
+            Expr::Noise(k) => {
+                if !in_body {
+                    self.refuse(id, "noise read outside a body");
+                }
+                // The value of a source is an input that no node potential moves: it is a
+                // constant of the sum.
+                let mut sources = Sources::default();
+                sources.noises.insert(*k);
+                return self.done(id, Value::of(sources, Class::Constant));
+            }
             Expr::Probe { plus, minus } => {
                 if !in_body {
                     self.refuse(id, "probe outside a body");
@@ -1054,7 +1082,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };

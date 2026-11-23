@@ -312,6 +312,7 @@ impl<'a> Walk<'a> {
             Expr::Flow { .. } => "Flow",
             Expr::Derivative(_) => "Derivative",
             Expr::Delay(_) => "Delay",
+            Expr::Noise(_) => "Noise",
             Expr::ParamPrevious(_) => "ParamPrevious",
             Expr::Previous(_) => "Previous",
             Expr::Fired(_) => "Fired",

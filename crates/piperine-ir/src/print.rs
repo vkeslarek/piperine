@@ -416,6 +416,12 @@ impl<'a> Printer<'a> {
             text.push_str(&self.at(&site.origin));
             self.line(1, &text);
         }
+        for (i, source) in body.noise_sources.iter().enumerate() {
+            let group = source.group.as_ref().map_or("none".to_string(), |g| format!("{g:?}"));
+            let mut text = format!("noise{i}({}, {group}) {:?}", self.render(scope, Piece::Expr(source.density)), source.name);
+            text.push_str(&self.at(&source.origin));
+            self.line(1, &text);
+        }
         for hoisted in &body.hoisted {
             let at = self.at(&hoisted.origin);
             self.line(1, &format!("hoisted {}: {}{at}", Printer::name(&hoisted.name), Printer::name(&hoisted.module)));
@@ -941,6 +947,7 @@ impl<'a> Printer<'a> {
             Expr::Previous(i) => next.push(text(format!("{}.prev()", Printer::carrier(scope, *i)))),
             Expr::Derivative(k) => next.push(text(format!("rate(D{k})"))),
             Expr::Delay(k) => next.push(text(format!("delay{k}.value"))),
+            Expr::Noise(k) => next.push(text(format!("noise{k}.value"))),
             Expr::ParamPrevious(i) => next.push(text(format!("{}.prev()", scope.params.get(*i as usize).map_or(format!("<bad param {i}>"), |p| Printer::name(&p.name))))),
             Expr::Fired(e) => next.push(text(format!("fired(E{e})"))),
             Expr::Same { a, b } => next.extend([text("same(".into()), Piece::Expr(*a), text(", ".into()), Piece::Expr(*b), text(")".into())]),
@@ -1043,7 +1050,7 @@ impl<'a> Printer<'a> {
         let ty = |id: &ExprId| ir.exprs.get(id.index()).map(|e| e.ty.clone());
         match kind {
             Expr::Env(Env::Static | Env::Analysis(_)) | Expr::Fired(_) => Some(ValueType::Bool),
-            Expr::Real(_) | Expr::Math { .. } | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } | Expr::Flow { .. } | Expr::Derivative(_) | Expr::Delay(_) => {
+            Expr::Real(_) | Expr::Math { .. } | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } | Expr::Flow { .. } | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) => {
                 Some(ValueType::F64)
             }
             Expr::Bool(_) => Some(ValueType::Bool),
@@ -1259,6 +1266,7 @@ impl<'a> Printer<'a> {
             Expr::Previous(i) => format!("previous {i}"),
             Expr::Derivative(k) => format!("derivative D{k}"),
             Expr::Delay(k) => format!("delay {k}"),
+            Expr::Noise(k) => format!("noise {k}"),
             Expr::ParamPrevious(i) => format!("param_previous {i}"),
             Expr::Fired(i) => format!("fired {i}"),
             Expr::Same { a, b } => format!("same {} {}", e(a), e(b)),

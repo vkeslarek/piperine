@@ -568,8 +568,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `a_noise_source_is_built_checked_printed_and_round_tripped` passes
-- [ ] Gate check passes: `Run irops`
+- [x] `a_noise_source_is_built_checked_printed_and_round_tripped` passes
+- [x] Gate check passes: `Run irops`
 
 **Tests**: integration
 **Gate**: quick
