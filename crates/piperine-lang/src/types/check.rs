@@ -505,14 +505,14 @@ impl<'d> Checker<'d> {
 
     /// An integer type of width `width`, written `written`: 1..=64 is in the subset, a wider one
     /// is `P0001` naming it, a width below 1 is `E0103` (§1 rule 5).
-    pub(super) fn integer_type(&mut self, file: FileId, span: Span, make: fn(u8) -> Ty, width: u128, written: &str) -> Option<Ty> {
+    pub(super) fn integer_type(&mut self, file: FileId, span: Span, make: fn(u32) -> Ty, width: u128, written: &str) -> Option<Ty> {
         match width {
             0 => {
                 let message = format!("`{written}`: an integer width is a const expression `>= 1`");
                 self.report(file, Diagnostic::new("E0103", message, span, "integer width below 1"));
                 None
             }
-            1..=64 => Some(make(width as u8)),
+            1..=64 => Some(make(width as u32)),
             _ => {
                 self.unsupported(file, span, &format!("integer type `{written}`"));
                 None

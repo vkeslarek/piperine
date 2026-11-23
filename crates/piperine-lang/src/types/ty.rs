@@ -22,9 +22,9 @@ pub enum Ty {
     /// A module, by its declaration.
     Module(DeclId),
     /// `UInt<N>` (`uN`), `N` in 1..=64.
-    UInt(u8),
+    UInt(u32),
     /// `Int<N>` (`iN`), `N` in 1..=64.
-    Int(u8),
+    Int(u32),
     /// `UInt<N>` or `Int<N>` whose width names const parameters of the generic item being checked (`UInt<N>` in
     /// `impl<const N: usize> Logic<N>`): an integer of a width the instantiation gives. Substitution turns it into
     /// `UInt(n)` or `Int(n)` once the width is a number.
@@ -355,7 +355,7 @@ impl Ty {
     /// an integer type.
     pub fn literal_max(&self, negated: bool) -> Option<u128> {
         match *self {
-            Ty::UInt(n) => Some(u128::MAX >> (128 - u32::from(n))),
+            Ty::UInt(n) => Some(u128::MAX >> (128 - n)),
             Ty::Int(n) if negated => Some(1u128 << (n - 1)),
             Ty::Int(n) => Some((1u128 << (n - 1)) - 1),
             _ => None,
@@ -369,7 +369,7 @@ impl Ty {
         match self {
             Ty::Bool => Some(1),
             Ty::F64 => Some(64),
-            Ty::UInt(n) | Ty::Int(n) => Some(u32::from(*n)),
+            Ty::UInt(n) | Ty::Int(n) => Some(*n),
             Ty::Enum(Nominal { decl, .. }) => {
                 let variants = design.decl_data(*decl).children.iter().filter(|c| matches!(design.decl_data(**c).kind, crate::pom::DeclKind::Variant(_))).count();
                 Some(usize::BITS - variants.saturating_sub(1).leading_zeros())

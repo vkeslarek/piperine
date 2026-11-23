@@ -503,8 +503,8 @@ impl Checker<'_> {
             _ => {
                 let width = suffix[1..].parse::<u8>().unwrap_or(u8::MAX);
                 match (&suffix[..1], width) {
-                    ("u", 1..=64) => Ty::UInt(width),
-                    ("i", 1..=64) => Ty::Int(width),
+                    ("u", 1..=64) => Ty::UInt(u32::from(width)),
+                    ("i", 1..=64) => Ty::Int(u32::from(width)),
                     ("u" | "i", _) => {
                         self.unsupported(file, span, &format!("integer type `{suffix}`"));
                         return None;

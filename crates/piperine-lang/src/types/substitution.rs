@@ -73,8 +73,8 @@ impl Substitution {
             Ty::Range { element, iterable } => Ty::Range { element: Box::new(self.apply(element)), iterable: *iterable },
             Ty::Iterator { element, reversible } => Ty::Iterator { element: Box::new(self.apply(element)), reversible: *reversible },
             Ty::GenericInteger { signed, width } => match self.apply_term(width) {
-                ConstTerm::Value(n @ 1..=64) if *signed => Ty::Int(n as u8),
-                ConstTerm::Value(n @ 1..=64) => Ty::UInt(n as u8),
+                ConstTerm::Value(n @ 1..=64) if *signed => Ty::Int(n as u32),
+                ConstTerm::Value(n @ 1..=64) => Ty::UInt(n as u32),
                 replaced => Ty::GenericInteger { signed: *signed, width: replaced },
             },
             Ty::F64 | Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) | Ty::Event | Ty::Str | Ty::Never => ty.clone(),

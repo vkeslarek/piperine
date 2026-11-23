@@ -928,8 +928,8 @@ struct Width {
 impl Width {
     fn of(ty: &Ty) -> Option<Width> {
         match *ty {
-            Ty::UInt(n) => Some(Width { bits: u32::from(n), signed: false }),
-            Ty::Int(n) => Some(Width { bits: u32::from(n), signed: true }),
+            Ty::UInt(n) => Some(Width { bits: n, signed: false }),
+            Ty::Int(n) => Some(Width { bits: n, signed: true }),
             _ => None,
         }
     }

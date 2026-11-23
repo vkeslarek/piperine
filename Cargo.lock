@@ -1426,6 +1426,7 @@ dependencies = [
  "logos",
  "miette",
  "piperine-ir",
+ "piperine-numbers",
  "piperine-transpile",
  "serde",
  "serde_json",
