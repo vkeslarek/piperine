@@ -65,10 +65,16 @@ impl Checker<'_> {
         }
     }
 
+    /// Whether the handle `decl` is a node (a continuous carrier): a read of it is the node itself, which no value holds.
+    /// A discrete carrier's read is its value (§3.1.6), so using it as a value is no handle kept.
+    fn is_node_handle(&self, decl: DeclId) -> bool {
+        !matches!(self.locals.get(&decl), Some(Ty::Carrier { .. }))
+    }
+
     /// The expression of a handle that `expr` evaluates to: the handle's own path, or the one a block's tail, an
     /// `if` arm or a `match` arm yields (§3.1.5: storing a handle through a value position is storing it).
     pub(super) fn handle_held(&self, expr: ExprId) -> Option<ExprId> {
-        if self.handle_named(expr).is_some() {
+        if self.handle_named(expr).is_some_and(|decl| self.is_node_handle(decl)) {
             return Some(expr);
         }
         match &self.design.expr_node(expr).kind {
@@ -156,7 +162,7 @@ impl Checker<'_> {
                 ExprKind::Closure { body, .. } => {
                     let mut inside = Vec::new();
                     crate::pom::preorder(self.design, *body, &mut inside);
-                    found.extend(inside.into_iter().filter(|inner| self.handle_named(*inner).is_some()).map(|inner| (self.design.expr_node(inner).span, inner, "captured by a closure")));
+                    found.extend(inside.into_iter().filter(|inner| self.handle_held(*inner).is_some()).map(|inner| (self.design.expr_node(inner).span, inner, "captured by a closure")));
                 }
                 _ => {}
             }

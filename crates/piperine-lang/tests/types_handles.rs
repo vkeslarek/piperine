@@ -82,6 +82,20 @@ fn a_handle_returned_stored_or_written_is_e0133() {
         let e0133: Vec<&String> = found.iter().filter(|(code, _)| code == "E0133").map(|(_, message)| message).collect();
         assert!(!e0133.is_empty() && e0133.iter().any(|message| message.contains(how) || how == "returned"), "{function}: {found:?}");
     }
+    // a discrete handle used as a value is its read (§3.1.6): every form of it is clean, and a node kept is not
+    for function in [
+        "fn pick(a: Bit) -> bool { let c = a; c }",
+        "fn pick(a: Bit) -> bool { a }",
+        "fn pick(a: Bit) -> bool { return a; }",
+        "fn pick(a: Bit) -> bool { if true { a } else { !a } }",
+        "fn pick(a: Bit) -> bool { a && true }",
+        "fn pick(a: Bit) -> bool { let c = { a }; c }",
+        "fn pick(a: Bit) -> bool { let c = match 1 { _ => a }; c }",
+        "fn pick(a: Bit) -> bool { let h = (a, 1.0); h.0 }",
+    ] {
+        let found = HandleSources::found(&format!("{function}\nmodule Top(in clk: Bit, out d: Bit = false) {{ }}\ndigital for Top {{ on clk.rise() {{ d <- pick(clk); }} }}\n"));
+        assert!(found.iter().all(|(code, _)| code != "E0133"), "{function}: {found:?}");
+    }
     let passed = "fn level(a: Electrical) -> f64 { v(a) }\nfn call(a: Electrical) -> f64 { level(a) + level(a) }\n";
     assert_eq!(HandleSources::found(&format!("{passed}{tail}")), []);
 }

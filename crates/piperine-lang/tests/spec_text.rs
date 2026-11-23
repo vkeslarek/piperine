@@ -2525,3 +2525,13 @@ fn a_solve_reading_call_in_a_definition_is_e0336_in_the_function_classes() {
         assert!(rule.contains(fact), "§3 rule 0 lacks \"{fact}\": {rule}");
     }
 }
+
+#[test]
+fn a_discrete_handle_used_as_a_value_is_no_e0133_in_the_handle_rules() {
+    // fix round 2, finding 13: §3.1.6 says a read of a discrete handle is a value, so storing or returning it keeps no handle
+    let text = flat(&spec("part_i_values.md"));
+    let rule = &text[text.find("- **§3.1.6**").expect("rule 3.1.6")..text.find("- **§3.1.7**").expect("rule 3.1.7")];
+    for fact in ["a discrete handle used where a value is expected", "stores or returns that value and is no `E0133`", "`E0133` is for a handle kept as a handle"] {
+        assert!(rule.contains(fact), "§3.1.6 lacks \"{fact}\": {rule}");
+    }
+}

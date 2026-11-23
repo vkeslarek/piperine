@@ -1035,7 +1035,11 @@ only reference a function holds, and it is not a value.
   methods called on it. It **MUST NOT** be returned, stored in a value, or written through.
 - **§3.1.6** Reading a handle of a discrete carrier yields the carrier's value
   ([§5.1.1](part_ii_carriers.md#51-declaring-and-reading)). Through a handle, `others()` is
-  taken from the module that made the call.
+  taken from the module that made the call. *(Amendment, generics fix round 2, 2026-11-23, AFK default,
+  pending user review.)* Because the read is a value, a discrete handle used where a value is
+  expected (`let c = a;`, a tail `a`, `a && true`, `if t { a } else { !a }`) stores or returns that
+  value and is no `E0133`; `E0133` is for a handle kept as a handle, which only a node (the read of a
+  continuous handle is the node itself) or a write through the handle can be.
 - **§3.1.7** A method call on a carrier expression is looked up in this order: the carrier
   methods ([§14](part_iv_behavior.md#14-core-primitives)), the `impl` blocks of its nature
   (trait `impl`s included, rule 9), then the methods of the value it reads.

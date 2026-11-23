@@ -1380,6 +1380,7 @@ Proof: run srchandles | test a_handle_is_read_probed_passed_on_and_has_carrier_m
 
 **C32** - A handle returned, stored in a value or written through is `E0133`. (GN-11, AC 2; T45)
 Proof: run typeshandles | test a_handle_returned_stored_or_written_is_e0133 ... ok
+Proof: run spectext | test a_discrete_handle_used_as_a_value_is_no_e0133_in_the_handle_rules ... ok
 
 **C33** - A discrete handle reads the carrier's value with its flags. (GN-11, AC 3; T49)
 Proof: run srchandles | test a_discrete_handle_reads_the_value_with_its_flags ... ok
