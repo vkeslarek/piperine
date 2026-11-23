@@ -213,8 +213,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `rounding_to_every_format_is_nearest_ties_to_even` passes under `**Run formats**` (for each format: every exact tie, one above and below, the largest finite value and the first overflow, the smallest subnormal and half of it, and 20 000 random exact rationals; for `SINGLE` and `DOUBLE` the expected bits are also Rust's own `f32`/`f64` from the same rational, so the fixture is checked against Rust)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `rounding_to_every_format_is_nearest_ties_to_even` passes under `**Run formats**` (for each format: every exact tie, one above and below, the largest finite value and the first overflow, the smallest subnormal and half of it, and 20 000 random exact rationals; for `SINGLE` and `DOUBLE` the expected bits are also Rust's own `f32`/`f64` from the same rational, so the fixture is checked against Rust)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task

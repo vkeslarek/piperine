@@ -9,5 +9,6 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod format;
 pub mod limbs;
 pub mod wide;
