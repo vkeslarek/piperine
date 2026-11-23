@@ -1156,9 +1156,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `source_logic::logic_reads_a_four_state_pattern` passes
-- [ ] `GAPS.md` L68 (`Logic<N>`, `logic`, `matches_bits`) is closed
-- [ ] Gate check passes: Full
+- [x] `source_logic::logic_reads_a_four_state_pattern` passes
+- [ ] `GAPS.md` L68 (`Logic<N>`, `logic`, `matches_bits`) is closed (moved to T47: the Book's `values#18` waits for the host's `Logic` cell, and the row names L68 until then)
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

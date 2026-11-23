@@ -178,7 +178,7 @@ fn gaps_drops_what_root_e2e_closed() {
     for raised in ["E0503", "E0504", "E0505", "E0507", "E0508", "E0803", "E0804", "E0805", "E0806"] {
         assert!(!listed.contains(&raised), "{raised} is raised and is listed as unraised");
     }
-    assert!(listed.contains(&"E0123") && listed.contains(&"E0702"), "the list keeps the codes nothing raises");
+    assert!(listed.contains(&"E0123") && listed.contains(&"E0807") && !listed.contains(&"E0702"), "the list keeps the codes nothing raises, and E0702 is raised since T45");
 }
 
 #[test]
@@ -427,8 +427,9 @@ fn gaps_closes_s6_and_tracks_the_flag() {
         assert!(!gaps.lines().any(|l| l.starts_with(&format!("| {closed} |"))), "{closed} is still a row");
     }
     assert!(gaps.contains("S6, S8 and G6 closed by `explicit-unknowns`") || gaps.contains("(S6 and S8 closed by `explicit-unknowns`)"), "the closures are recorded");
+    // `core-std~6e04c51d` (E0702) runs since T45; values#18 waits for the host's four-state cell (T47)
     let logic = gaps.lines().filter(|l| l.starts_with("| values#18 |") || l.starts_with("| core-std~6e04c51d |")).collect::<Vec<_>>();
-    assert!(logic.len() == 2 && logic.iter().all(|l| l.contains("| L68 |")), "the phase B rows point at L68, owned by `explicit-unknowns` phase B: {logic:?}");
+    assert!(logic.len() == 1 && logic.iter().all(|l| l.contains("| L68 |")), "the phase B row points at L68, owned by `explicit-unknowns` phase B: {logic:?}");
     let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("GAPS.md has a section 9");
     let row = coverage.lines().find(|l| l.starts_with("| I §3–§3.3 ")).expect("the coverage row of §3.3");
     assert!(!row.contains("`level`"), "the coverage row still lists `level` as a gap: {row}");

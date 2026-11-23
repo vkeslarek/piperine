@@ -89,9 +89,9 @@ pub module TribufDelayed(in d: Bit, in oe: Bit, y: Wire) {
     toff: f64 = 300p;
     y = inertial(
         if oe {
-            Driven::strong(d)
+            Drive::strong(d)
         } else {
-            Driven::Z
+            Drive::Z
         },
         if oe {
             ton

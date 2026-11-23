@@ -227,11 +227,10 @@ fn live_sources(part_vii: &str) -> Vec<(String, String)> {
 /// `Resolve` is a capability of a nature (`resolved-nets`, after `generics`). The binary part of Part VII is `std`'s
 /// text since T23. A fence leaves this list in the task that makes its text a text of its file;
 /// `the_ahead_lists_hold_only_what_still_differs` fails on a stale entry.
-const AHEAD_OF_STD: [&str; 10] = [
-    "pub extern \"intrinsic\" fn matches_bits<const N: usize>(s: Logic<N>, pattern: str) -> bool;",
+const AHEAD_OF_STD: [&str; 9] = [
     "impl Bit<Logic> {",
     "/// What a module drives into a net that resolves by strength: a level and how hard it is held.",
-    "    /// The strongest drive wins; equal strongest drives that disagree give X. A HighZ drive is left out.",
+    "impl Driven {",
     "pub module Tribuf<W: Nature + Resolve<Driven>>(w: W, in d: Bit, in oe: Bit) {",
     "pub module Keeper<W: Nature + Resolve<Driven>>(w: W) {",
     "pub module Tran<W: Nature + Resolve<Driven>>(a: W, b: W, in en: Bit) {",
@@ -245,10 +244,10 @@ const AHEAD_OF_STD: [&str; 10] = [
 /// nets and the modules over them (`Wire`, `Tri`, `SumNet`, `Tribuf` and the rest, `Bidir`, `TribufDelayed`:
 /// `resolved-nets`), `Logic` of `nets` (T44), `matches_bits` and `logic` over `Logic<N>` (T45). Nothing in these
 /// units reads a known flag. The list is empty when they are gone.
-const BEHIND_SPEC: [(&str, usize, &str); 18] = [
+const BEHIND_SPEC: [(&str, usize, &str); 16] = [
     ("convert.msl", 36, "module Bidir"),
     ("monitor.msl", 87, "module TribufDelayed"),
-    ("nets.msl", 13, "struct Driven"),
+    ("nets.msl", 13, "struct Drive"),
     ("nets.msl", 19, "impl"),
     ("nets.msl", 35, "impl"),
     ("nets.msl", 53, "nature Wire"),
@@ -261,8 +260,6 @@ const BEHIND_SPEC: [(&str, usize, &str); 18] = [
     ("nets.msl", 98, "module Keeper"),
     ("nets.msl", 109, "module Tran"),
     ("nets.msl", 122, "module Tgate"),
-    ("values.msl", 14, "fn matches_bits"),
-    ("values.msl", 16, "fn logic"),
     ("nets.msl", 103, "Digital block"),
 ];
 

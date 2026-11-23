@@ -47,3 +47,19 @@ fn at_gives_the_state_of_one_level() {
     // `LogicState` is `X`, `L`, `H`, `Z` in tag order 0 to 3
     RUN.assert_commits("planes.msl", &["s0", "s1", "s2", "s3"], &[vec![2], vec![1], vec![3], vec![0]]);
 }
+
+#[test]
+fn logic_reads_a_four_state_pattern() {
+    // §22.1.4 rules 2 and 3 (EU-07 AC 3, C25): `logic("10xz")` has levels 3 to 0 equal to 1, 0, X, Z: `binary` 1100 and
+    // `value` 1001 (X is `(0, 0)`, Z is `(0, 1)`). `logic("10xz") & Logic::from(0b1111u4)` is the specification's `10xx`
+    // (a Z level under `&` with a 1 is X): `binary` 1100, `value` 1000
+    RUN.assert_commits("patterns.msl", &["m0", "m1"], &[vec![0b1100, 0b1001], vec![0b1100, 0b1000]]);
+}
+
+#[test]
+fn logic_and_matches_bits_give_the_table_values() {
+    // §22.1.4 (EU-07 AC 3): `matches_bits(s, p)` is true when each level of `s` is the state its character names, `x`
+    // naming any: `10xz` against `10xz` and `1xxz` and `xxxx` holds, against `0xxz` (level 3 is 1) and `10x0` (level 0 is Z)
+    // does not
+    RUN.assert_commits("patterns.msl", &["t0", "t1", "t2", "t3", "t4"], &[vec![1], vec![1], vec![0], vec![0], vec![1]]);
+}

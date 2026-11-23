@@ -279,12 +279,13 @@ fn e0161_the_inherited_library_is_a_closed_list() {
 }
 
 #[test]
-fn e0702_is_not_raised_while_logic_is_a_generic_extern() {
-    // core-std~6e04c51d: "E0702 logic(\"10z1\")": a pattern holds only 0, 1 and x (`unraised`, GAPS.md S8, task T45).
-    // `logic` is `extern "intrinsic" fn logic<T: Repr>(pattern: str) -> T`: its call types through the generic path
-    // (generics fix round), but elaboration refuses the pattern literal of a carrier's initial value by name before
-    // the checker reaches the pattern. The test fails when the call runs: the row then becomes `holds` and asserts `E0702`
-    let faulty = Faulty::elaborating("core-std~6e04c51d", "module Top() { signal a: Bit<u4> = logic(\"10z1\"); }\n", "Top");
-    assert_eq!(faulty.first("P0001").message, "this literal in a carrier's initial value is not supported yet");
-    assert!(faulty.given.iter().all(|reported| reported.code != "E0702"), "E0702 is not given yet");
+fn e0702_is_raised_for_a_pattern_with_another_character_or_another_length() {
+    // core-std~6e04c51d: "E0702 logic(\"10q1\"): a pattern holds only 0, 1, x and z, one character per level of the type"
+    // (§22.1.4 rule 2). `q` is no level, and a pattern of three characters has no place in a `Logic<4>`: each is `E0702`
+    // at the pattern, naming it
+    let character = Faulty::elaborating("core-std~6e04c51d", "module Top() { signal a: Bit<Logic<4>> = logic(\"10q1\"); }\n", "Top");
+    assert!(character.first("E0702").message.contains("`q`"), "{}", character.first("E0702").message);
+    assert_eq!(character.pointed_at("E0702"), "\"10q1\"");
+    let length = Faulty::elaborating("core-std~6e04c51d", "module Top() { signal a: Bit<Logic<4>> = logic(\"101\"); }\n", "Top");
+    assert!(length.first("E0702").message.contains("3 characters"), "{}", length.first("E0702").message);
 }

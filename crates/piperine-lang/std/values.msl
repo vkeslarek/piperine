@@ -11,9 +11,9 @@ pub fn same<T: Repr>(a: T, b: T) -> bool {
     a.encode() == b.encode()
 }
 
-pub extern "intrinsic" fn matches_bits<T: Repr>(s: T, pattern: str) -> bool;
+pub extern "intrinsic" fn matches_bits<const N: usize>(s: Logic<N>, pattern: str) -> bool;
 
-pub extern "intrinsic" fn logic<T: Repr>(pattern: str) -> T;
+pub extern "intrinsic" fn logic<const N: usize>(pattern: str) -> Logic<N>;
 
 impl Bit {
     /// A change that ends at true: false to true.

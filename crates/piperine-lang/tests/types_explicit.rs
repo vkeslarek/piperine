@@ -2,7 +2,7 @@
 //! discrete carrier like any expression (§3.3.6), directly, through a `let`, a function or a
 //! placement; `T::WIDTH` typed on `Repr` values, `same` and `cast` typed by their contract at the
 //! concrete type (`E0701`), the flag methods that resolve to nothing (`E0161`), and `logic` and
-//! `matches_bits` refused until `Logic` (`P0001`). One positive and one negative source per rule, over the embedded
+//! `matches_bits` typed over `Logic<N>`. One positive and one negative source per rule, over the embedded
 //! standard library (the five functions are the stdlib's own items).
 
 #[path = "support/pom.rs"]
@@ -102,12 +102,29 @@ fn unknown_is_a_name_that_does_not_resolve() {
 }
 
 #[test]
-fn logic_and_matches_bits_wait_for_logic() {
-    // EU-02 (GAPS L68): `logic` and `matches_bits` are generic `extern "intrinsic"` functions; since the generics fix round
-    // a call types through the generic path (`T` from the expected type or the argument) and the refusal by name is the
-    // elaborator's ("a call of the generic `extern` function `matches_bits`", `elab/lower.rs`)
-    let t = local_types("", "let e: u4 = logic(\"10xx\"); let g = matches_bits(5_u4, \"01x1\");", &["e", "g"]);
-    assert_eq!(t, vec![Ty::UInt(4), Ty::Bool]);
+fn logic_and_matches_bits_are_typed_over_logic() {
+    // §22.1.4 (EU-07 AC 3, C25): `logic(p)` is a `Logic<N>` with `N` from the expected type or the length of a literal
+    // pattern; `matches_bits(s, p)` takes a `Logic<N>` and gives a `bool`; a character that names no level and a length
+    // other than `N` are `E0702`, each naming the pattern
+    let typed = |body: &str, names: &[&str]| -> Vec<String> {
+        let src = source("", body);
+        let design = Design::builder().source("top.msl", src.clone()).build();
+        let checked = Types::check(&design, "Top").unwrap_or_else(|d| panic!("expected a clean check: {:?}\n{src}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+        names.iter().map(|n| checked.local(binding(&design, n)).unwrap_or_else(|| panic!("no type for `{n}`")).source_name(&design)).collect()
+    };
+    let t = typed("let a = logic(\"10xz\"); let b: Logic<4> = logic(\"10xz\"); let c = matches_bits(a, \"1xxz\"); let d = logic(\"1\");", &["a", "b", "c", "d"]);
+    assert_eq!(t, ["Logic<4>", "Logic<4>", "bool", "Logic<1>"]);
+    for (body, words) in [
+        ("let a = logic(\"10q1\");", vec!["`q`", "10q1"]),
+        ("let a: Logic<4> = logic(\"101\");", vec!["3 characters", "Logic<4>"]),
+        ("let a = logic(\"1xz0\"); let c = matches_bits(a, \"10\");", vec!["2 characters", "Logic<4>"]),
+    ] {
+        let (_, d) = diagnostics("", body);
+        assert_eq!(codes_of(&d), ["E0702"], "{body}");
+        for word in words {
+            assert!(d[0].diagnostic.message.contains(word), "{body}: `{}` names `{word}`", d[0].diagnostic.message);
+        }
+    }
 }
 
 #[test]

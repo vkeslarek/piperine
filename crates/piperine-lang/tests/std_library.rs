@@ -585,12 +585,11 @@ fn engine_table() -> BTreeSet<String> {
 
 /// Pub items of `std` that the Index no longer lists (removed by explicit-unknowns; T23 deletes them
 /// from the files and empties the list).
-const STD_BEHIND_THE_INDEX: [(&str, &str); 4] = [("nets", "Wire"), ("nets", "Tri"), ("nets", "tri"), ("nets", "SumNet")];
+const STD_BEHIND_THE_INDEX: [(&str, &str); 5] = [("nets", "Drive"), ("nets", "Wire"), ("nets", "Tri"), ("nets", "tri"), ("nets", "SumNet")];
 
 /// Index items of §22 that `std` does not declare yet: the specification states the explicit model
-/// (explicit-unknowns, MD-78) before the files hold it. `Logic` and `LogicState` left with T44 and `Driven` is the earlier
-/// struct of `nets` under its new name until `resolved-nets`; a stale entry fails `the_index_lists_stay_honest`.
-const INDEX_AHEAD_OF_STD: [(&str, &str); 0] = [];
+/// (explicit-unknowns, MD-78) before the files hold it. `Logic` and `LogicState` left with T44; the earlier strength struct of `nets` is `Drive` until `resolved-nets` brings `Driven`; a stale entry fails `the_index_lists_stay_honest`.
+const INDEX_AHEAD_OF_STD: [(&str, &str); 1] = [("nets", "Driven")];
 
 /// Members the Index lists under the items above (`Logic::..`, `Driven::strongest`).
 const INDEX_MEMBERS_AHEAD_OF_STD: [(&str, &str); 1] = [("nets", "strongest")];
@@ -841,7 +840,7 @@ fn std_holds_no_removed_form() {
         }
     }
     let nets = std::fs::read_to_string(std_dir().join("nets.msl")).expect("nets.msl");
-    for item in ["pub fn wired<const N: usize>(d: [Driven; N]) -> Driven", "pub fn tri<T: Repr, const N: usize>(d: [Option<T>; N]) -> Option<T>", "pub fn sum<const N: usize>(d: [f64; N]) -> f64"] {
+    for item in ["pub fn wired<const N: usize>(d: [Drive; N]) -> Drive", "pub fn tri<T: Repr, const N: usize>(d: [Option<T>; N]) -> Option<T>", "pub fn sum<const N: usize>(d: [f64; N]) -> f64"] {
         assert!(nets.contains(item), "nets.msl holds `{item}`");
     }
 }

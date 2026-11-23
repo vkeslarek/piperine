@@ -323,14 +323,14 @@ does not count.
 
 ## 10. Reference lists
 
-**Error codes of the spec that no source file mentions (24 of 189).** A code counts as mentioned when it is spelled
+**Error codes of the spec that no source file mentions (23 of 189).** A code counts as mentioned when it is spelled
 outside a comment in `crates/*/src` (a literal, or an enum variant's `as_str`); `E0375` is named in a doc
-comment only (`pom/builtin.rs`), so it is on the list, and `E0702` is on it since `logic` is refused `P0001` until T45 raises it again. `E0503`, `E0504`, `E0505`, `E0507` and `E0508` are
+comment only (`pom/builtin.rs`), so it is on the list, and `E0702` left it when T45 raised it. `E0503`, `E0504`, `E0505`, `E0507` and `E0508` are
 raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`). `E0803` to `E0806` are raised
 by `session.rs` and `host.rs`; `E0701` by the elaborator.
 `E0123 E0124 E0203 E0225 E0313 E0322 E0340 E0342
 E0360 E0362 E0371 E0372 E0373 E0374 E0375 E0451 E0452 E0453 E0454 E0456
-E0702 E0807 E0808 E0809`
+E0807 E0808 E0809`
 
 **Entries of the previous file that changed.**
 
@@ -406,7 +406,6 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
 | values#18 | L68 | `explicit-unknowns` | `Logic<4>` is `P0001`: the library struct `Logic` has no generic parameter yet (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
 | values~c30bad4d | L68 | `explicit-unknowns` | held with values#18: `Logic<4>` is `P0001` (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
-| core-std~6e04c51d | L68 | `explicit-unknowns` | `E0702` is not raised: `logic("10z1")` is `P0001`, because `logic` is a generic `std` function (made to run by explicit-unknowns, phase B: T45 (`logic` and `matches_bits` as generic `std` items)) |
 | natures#2 | L21 | `resolved-nets` | `[Bit; 8]` is `P0001` (an array of carriers, L24) and `Bit<Logic<4>>` is `P0001` (`Logic` has no generic parameter yet); `Bit<Option<u8>>` is a carried type and runs, and `Sda`, declared further on in the chapter, is `E0161` when the block stands alone (made to run by resolved-nets, which lands after explicit-unknowns phase B (`Logic<4>`): `Sda` is the chapter's own `impl Resolve<Driven>` nature, which needs `Resolve` and `Driven` (T27 to T32)) |
 | natures#3 | L21 | `resolved-nets` | `alarm.msl` is `E0161`: `Driven`, `Resolve`, `Pullup` and the `Logic` behind them are not in the library yet, so a nature that implements `Resolve<Driven>` is not read (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
 | natures~e99c1920 | L21 | `resolved-nets` | the command refuses `alarm.msl` and runs nothing, as the sentence says: held with natures#3 (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |

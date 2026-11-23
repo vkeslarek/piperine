@@ -41,9 +41,9 @@ pub module Bidir(d: Wire, a: Electrical, vdd: Electrical) {
     signal seen: Bit = false; // the node, thresholded
     let driving = d.others().s != Strength::HighZ;
     d = if driving {
-        Driven::Z
+        Drive::Z
     } else {
-        Driven::strong(seen)
+        Drive::strong(seen)
     };
     let ramp = transition(
         if d.others().v {

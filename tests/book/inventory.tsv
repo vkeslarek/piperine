@@ -479,7 +479,7 @@ claim	core-std~39983c1d	39983c1dbbf53932	holds	piperine/book_core_std::e0125_onl
 claim	core-std~64ee8b1d	64ee8b1dd483286f	holds	piperine/book_core_std::e0603_the_reserved_streams_take_records_from_reactions_only	-	E0603
 claim	core-std~64ee891d	64ee891dd4832509	holds	piperine/book_core_std::e0605_a_reserved_stream_field_has_a_fixed_type	-	E0605
 claim	core-std~39a5d01d	39a5d01dbc00bf0a	holds	piperine/book_core_std::e0161_the_inherited_library_is_a_closed_list	-	E0161
-claim	core-std~6e04c51d	6e04c51dd9c78a87	unraised	piperine/book_core_std::e0702_is_not_raised_while_logic_is_a_generic_extern	L68	E0702
+claim	core-std~6e04c51d	6e04c51dd9c78a87	holds	piperine/book_core_std::e0702_is_raised_for_a_pattern_with_another_character_or_another_length	-	E0702
 claim	errors~ed0997b0	ed0997b0b111f69a	prose	-	-	An error belongs to one of five phases: package (reading manifests and dependencies), parse, elaboration (names, types, params, the netlist), run (an analysis fails, naming the instance and the instant) and host (a host request is refused, and the analysis goes on).
 claim	errors~1f3eeee4	1f3eeee41c6df4bc	holds	piperine/book_errors::e0310_is_found_on_the_bare_port_of_the_worked_example	-	E0310 on clk: Bit.
 claim	errors~d6787e9a	d6787e9a56d74451	holds	piperine/book_errors::e0430_is_found_on_the_head_of_the_worked_example_s_reaction	-	E0430 on on clk.
