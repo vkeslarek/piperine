@@ -955,9 +955,9 @@ T44
 
 **Done when**:
 
-- [ ] `a_param_of_another_type_is_refused_naming_the_transpiled_backend` passes under `**Run interp**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `a_param_of_another_type_is_refused_naming_the_transpiled_backend` passes under `**Run interp**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

@@ -232,7 +232,11 @@ fn a_module_typed_param_is_not_set_by_text() {
     let devices = format!("{DEVICES}\nmodule Cell(p: Electrical) {{ r: f64 = 1k; }}\nanalog for Cell {{ i(p, gnd) +> v(p, gnd) / r; }}\n");
     let top = "module Top() {\n    cell: Cell = Cell { r: 2k };\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let c1 = cell(a);\n}\n";
     let text = format!("{devices}\n{top}");
-    open(&text, &flags("op", "interp", Some("Top")), &unused()).unwrap_or_else(|f| panic!("the design opens: {f}"));
+    // the interpreter runs `f64` and `bool` params only (PI-05), so "the design opens" is its description: elaborated, no backend
+    let (_dir, file) = lone(&text);
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let spec = project.request(None, &flags("op", "interp", Some("Top"))).unwrap_or_else(|f| panic!("{f}"));
+    Session::describe(&project, &spec).unwrap_or_else(|f| panic!("the design opens: {f}"));
     let overrides = Overrides { params: vec![("Top.cell".to_string(), 1.0)], ..flags("op", "interp", Some("Top")) };
     match open(&text, &overrides, &unused()) {
         Err(Failure::Diagnostics { found, .. }) => {

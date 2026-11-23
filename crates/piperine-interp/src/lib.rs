@@ -10,6 +10,7 @@ use piperine_abi::thunk::module_with;
 mod composite;
 mod device;
 mod dual;
+mod param_types;
 mod walk;
 
 #[cfg(test)]
@@ -25,6 +26,7 @@ use std::collections::HashSet;
 
 use piperine_ir::{AnalysisKind, Body, BodyId, BranchKind, Broken, Env, EventSource, Ir, Stmt, StmtId, Target};
 use composite::CompositeForms;
+use param_types::ParamTypes;
 use piperine_plan::{Modules, Netlist};
 use piperine_solver::prelude::CircuitInstance;
 
@@ -71,6 +73,9 @@ impl Interpreter {
                     origin: b.origin().clone(),
                     what: format!("body {} holds {form}: the interpreter runs the M1 analog subset only", b.name()),
                 });
+            }
+            for what in ParamTypes::refused(b) {
+                refused.push(Broken { item: format!("body {}", b.name()), origin: b.origin().clone(), what });
             }
         }
         if !refused.is_empty() {
