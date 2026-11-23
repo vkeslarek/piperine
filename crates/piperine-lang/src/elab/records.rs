@@ -39,7 +39,9 @@ impl Elaboration<'_, '_> {
     /// takes a `str`, a text that exists at elaboration only (§1.2.9).
     pub(super) fn is_inlined(&self, function: DeclId) -> bool {
         let takes_text = self.design.decl_data(function).children.iter().any(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)) && matches!(self.typed_local(*c), Some(Ty::Str)));
-        self.types.emits(function).is_some() || takes_text || self.takes_handle(function)
+        let is_extern = matches!(&self.design.decl_data(function).kind, DeclKind::Fn(f) if f.abi.is_some());
+        // an `extern` function has no body to inline; its call is the call of a generic `extern` function, refused by name
+        !is_extern && (self.types.emits(function).is_some() || takes_text || self.takes_handle(function))
     }
 
     /// `emit!(stream, fields)`: one site of the body's stream named `stream`.
@@ -193,7 +195,11 @@ impl Elaboration<'_, '_> {
     pub(super) fn bind_inlined_arguments(&mut self, scope: &mut Scope, function: DeclId, args: &[ExprId]) -> Option<(Vec<LoweredStmt>, BlockNode)> {
         let data = self.design.decl_data(function).clone();
         let DeclKind::Fn(f) = &data.kind else { return None };
-        let body = f.body.clone()?;
+        let Some(body) = f.body.clone() else {
+            // an `extern` function has no body to inline: its call is refused by name, never dropped
+            self.unsupported(scope.file, data.span, "a call of a function with no body (an `extern` function) that must be inlined");
+            return None;
+        };
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_))).collect();
         let mut out = Vec::new();

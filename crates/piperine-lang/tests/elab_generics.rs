@@ -205,3 +205,55 @@ fn a_hand_written_repr_on_a_generic_type_is_refused_by_name() {
     let found = Elab::run(src, "Top").err().expect("refused");
     assert!(found.iter().any(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains("a hand-written `Repr` on a generic type")), "{:?}", found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect::<Vec<_>>());
 }
+
+/// A call of a generic `extern "intrinsic"` function that no route lowers, written in each position a function body or a
+/// behavior has, and what elaborating it reports.
+struct ExternCalls;
+
+impl ExternCalls {
+    /// The `(code, message)` of each diagnostic of elaborating `src`'s `Top`; empty when it elaborates.
+    fn found(src: &str) -> Vec<(String, String)> {
+        match Elab::run(src, "Top") {
+            Ok(_) => Vec::new(),
+            Err(found) => found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect(),
+        }
+    }
+}
+
+#[test]
+fn a_generic_extern_call_is_never_dropped_in_any_position() {
+    // fix round 2, finding 12: a function whose tail (or `if` arm, block tail, `match` arm) is a call the lowering does not
+    // support is `P0001` naming the call wherever the function is called from: a reaction, `analog` or a `let`
+    let tails = [
+        "fn f(x: u8) -> bool { matches_bits(x, \"00000011\") }",
+        "fn f(x: u8) -> bool { if x > 1 { matches_bits(x, \"00000011\") } else { false } }",
+        "fn f(x: u8) -> bool { { matches_bits(x, \"00000011\") } }",
+        "fn f(x: u8) -> bool { match x { 0 => false, _ => matches_bits(x, \"00000011\") } }",
+        "fn f(x: u8) -> bool { let y = matches_bits(x, \"00000011\"); y }",
+    ];
+    let positions = [
+        "module Top(in clk: Bit, out d: Bit = false) { }\ndigital for Top { on clk.rise() { d <- f(3u8); } }",
+        "module Top() { signal o: Electrical; }\nanalog for Top { let y = f(3u8); v(o) +> if y { 1.0 } else { 0.0 }; }",
+        "module Top() { signal o: Electrical; let b = f(3u8); }\nanalog for Top { v(o) +> if b { 1.0 } else { 0.0 }; }",
+    ];
+    for tail in tails {
+        for position in positions {
+            let found = ExternCalls::found(&format!("{tail}\n{position}\n"));
+            assert!(found.iter().any(|(code, message)| code == "P0001" && message.contains("generic `extern` function")), "{tail}\n{position}\n{found:?}");
+        }
+    }
+}
+
+#[test]
+fn a_logic_call_in_a_function_tail_is_refused_by_name() {
+    // fix round 2, finding 12: `logic::<u8>` as a function tail, called from a reaction, `analog` and a body `let`
+    let tail = "fn g() -> u8 { logic::<u8>(\"00000011\") }";
+    for position in [
+        "module Top(in clk: Bit, out d: Bit<u8> = 0) { }\ndigital for Top { on clk.rise() { d <- g(); } }",
+        "module Top() { signal o: Electrical; }\nanalog for Top { v(o) +> if g() > 1 { 1.0 } else { 0.0 }; }",
+        "module Top() { signal o: Electrical; let b = g(); }\nanalog for Top { v(o) +> if b > 1 { 1.0 } else { 0.0 }; }",
+    ] {
+        let found = ExternCalls::found(&format!("{tail}\n{position}\n"));
+        assert!(found.iter().any(|(code, message)| code == "P0001" && message.contains("generic `extern` function")), "{position}\n{found:?}");
+    }
+}

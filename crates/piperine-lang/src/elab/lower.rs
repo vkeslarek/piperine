@@ -579,6 +579,7 @@ impl Elaboration<'_, '_> {
             let start = out.len();
             let node = self.design.stmt_node(*stmt).clone();
             let file = self.design.decl_data(node.owner).file;
+            let (reported, carried) = (self.diagnostics.len(), std::mem::replace(&mut ok, true));
             match &node.kind {
                 StmtKind::Let { pat, init: Some(init), else_: None, .. } => ok &= self.lower_let(scope, &mut out, *pat, *init, file, node.span),
                 // `let x;`: a local first assigned later (§1.7.5, `control.rs`).
@@ -605,6 +606,11 @@ impl Elaboration<'_, '_> {
                     ok = false;
                 }
             }
+            // a statement that failed to lower without saying why is refused by name: nothing vanishes silently
+            if !ok && self.diagnostics.len() == reported {
+                self.unsupported(file, node.span, "this statement");
+            }
+            ok &= carried;
             // a statement that is the value of its block leaves the flag to the code that takes the value
             if value.is_none() && scope.inline_exits.last_mut().is_some_and(|frame| std::mem::take(&mut frame.loop_flagged)) {
                 let origin = self.locator.origin(file, node.span);
