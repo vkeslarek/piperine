@@ -57,6 +57,12 @@ impl DerivedTrait {
         })
     }
 
+    /// Whether implementing this trait gives `which`: itself and every trait it requires (`Ord` gives
+    /// `Eq`, `PartialOrd` and `PartialEq`, H.8 rules 2 and 3).
+    pub(super) fn gives(self, which: DerivedTrait) -> bool {
+        self == which || self.requires().iter().any(|required| required.gives(which))
+    }
+
     /// The traits a type must implement before it implements this one (H.8 rules 2 and 3).
     fn requires(self) -> &'static [DerivedTrait] {
         match self {
@@ -99,8 +105,8 @@ impl Checker<'_> {
             Ty::Struct(Nominal { decl, .. }) | Ty::Enum(Nominal { decl, .. }) => self.derives(*decl, which.name()),
             Ty::Fn(..) => which == DerivedTrait::Debug,
             Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Carrier { .. } | Ty::Event | Ty::Never | Ty::Range { .. } | Ty::Iterator { .. } => false,
-            // what a parameter implements is what its bounds give (T19); none is known here
-            Ty::Param(_) => false,
+            // what a parameter implements is what its bounds give (§3 rule 9)
+            Ty::Param(param) => self.param_implements(*param, which),
         }
     }
 
@@ -150,7 +156,10 @@ impl Checker<'_> {
             return;
         }
         let found = ty.name(self.design);
-        if which == DerivedTrait::Default {
+        if let Ty::Param(_) = ty {
+            let message = format!("mismatched types: `{found}` has no `{}`: the bounds of `{found}` do not give it (§3 rule 9), add `{found}: {}`", which.name(), which.name());
+            self.coded(file, "E0180", span, message, "an operation no bound gives");
+        } else if which == DerivedTrait::Default {
             self.coded(file, "E0187", span, format!("`{found}` does not implement `Default`: `{found}::default()` has no value (H.8 rule 4)"), "a type without a default");
         } else {
             self.mismatch_text(file, span, &format!("a type that derives `{}`", which.name()), &found);

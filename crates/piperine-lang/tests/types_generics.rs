@@ -224,3 +224,68 @@ fn a_call_of_a_generic_function_waits_for_inference() {
     assert!(codes_of(&found).iter().all(|code| code == "P0001"), "{found:?}");
     assert!(found[0].diagnostic.message.contains("generic function"), "{:?}", found[0]);
 }
+
+#[test]
+fn a_generic_argument_that_does_not_satisfy_its_bound_is_e0187() {
+    // §3.8.7: `T: Repr` takes a type with a layout, `T: Ord` a type that derives `Ord`
+    let items = "struct Held<T: Repr> { a: T }\nstruct Sorted<T: Ord> { a: T }\n";
+    let found = model_errors(&format!("{items}fn f(a: Held<str>, b: Sorted<f64>) -> f64 {{ 1.0 }}\n"));
+    assert_eq!(codes_of(&found), ["E0187", "E0187"], "{found:?}");
+    assert!(found[0].diagnostic.message.contains("`str` does not satisfy the bound `Repr` of `T` in `Held`"), "{:?}", found[0]);
+    assert!(found[1].diagnostic.message.contains("`f64` does not satisfy the bound `Ord` of `T` in `Sorted`"), "{:?}", found[1]);
+    let met = support::build(&format!("{HEAD}{items}fn g(a: Held<u8>, b: Sorted<u8>, c: Held<(f64, bool)>) -> f64 {{ 1.0 }}\n"));
+    assert_eq!(Types::check_model(&met), Ok(()), "a bound that holds");
+}
+
+#[test]
+fn bounds_give_operators_width_and_codecs() {
+    // §3 rule 9, §2: `T: PartialEq` gives `==`, `T: PartialOrd` gives `<`, `T: Repr` gives `T::WIDTH`,
+    // `encode` and `decode`, `T: Default` gives `T::default()`, `F: Fn(A) -> R` gives a call; each is
+    // checked at the definition with nothing instantiating it
+    let design = support::build(&format!(
+        "{HEAD}fn same<T: PartialEq>(a: T, b: T) -> bool {{ a == b }}\n\
+         fn less<T: Ord>(a: T, b: T) -> bool {{ a < b }}\n\
+         fn width<T: Repr>(a: T) -> u32 {{ T::WIDTH }}\n\
+         fn round<T: Repr>(a: T) -> Option<T> {{ T::decode(a.encode()) }}\n\
+         fn made<T: Default>() -> T {{ T::default() }}\n\
+         fn twice<F: Fn(f64) -> f64>(f: F, x: f64) -> f64 {{ f(f(x)) }}\n\
+         fn both<T: Ord + Repr>(a: T, b: T) -> bool {{ a == b && T::WIDTH > 1 }}\n"
+    ));
+    assert_eq!(Types::check_model(&design), Ok(()), "every member a bound gives is typed");
+}
+
+#[test]
+fn a_member_no_bound_gives_is_refused_at_the_definition() {
+    // GN-07 AC 2: a method or an operator the bounds do not give is refused at the definition, naming the
+    // method, the parameter and the bound that would give it, with nothing instantiating the function
+    let found = model_errors(
+        "fn no_eq<T>(a: T, b: T) -> bool { a == b }\n\
+         fn no_order<T: PartialEq>(a: T, b: T) -> bool { a < b }\n\
+         fn no_encode<T: PartialEq>(a: T) -> bool { let l = a.encode(); true }\n\
+         fn no_method<T: Repr>(a: T) -> T { a.sqrt() }\n\
+         fn no_clone<T: Repr>(a: T) -> T { a.clone() }\n",
+    );
+    assert_eq!(codes_of(&found), ["E0180", "E0180", "E0161", "E0161", "E0161"], "{found:?}");
+    let messages: Vec<&str> = found.iter().map(|d| d.diagnostic.message.as_str()).collect();
+    assert!(messages[0].contains("`T` has no `PartialEq`") && messages[0].contains("add `T: PartialEq`"), "{}", messages[0]);
+    assert!(messages[1].contains("`T` has no `PartialOrd`"), "{}", messages[1]);
+    assert!(messages[2].contains("no method `encode` on `T`") && messages[2].contains("the bounds PartialEq of `T`") && messages[2].contains("comes from `Repr`"), "{}", messages[2]);
+    assert!(messages[3].contains("no method `sqrt` on `T`") && messages[3].contains("the bounds Repr of `T`"), "{}", messages[3]);
+    assert!(messages[4].contains("every value is copied"), "{}", messages[4]);
+    // `T::WIDTH` with no `Repr` bound does not resolve: the POM refuses it before the check
+    assert_eq!(support::codes(&support::build(&format!("{HEAD}fn no_width<T>(a: T) -> u32 {{ T::WIDTH }}\n"))), ["E0161"]);
+}
+
+#[test]
+fn a_length_over_const_parameters_fits_until_the_item_is_instantiated() {
+    // §3.8.9, Q1 (c): `[f64; N + 1]` built in a body is the declared `[f64; N + 1]` at the definition (the
+    // two lengths are compared by value at each instantiation), but `N` is not another parameter `M`
+    let clean = support::build(&format!(
+        "{HEAD}fn widened<const N: usize>(xs: [f64; N]) -> [f64; N + 1] {{\n    let wide = [0.0; N + 1];\n    for k in 0..N {{ wide[k] = xs[k]; }}\n    wide\n}}\n\
+         fn dot<const N: usize>(a: [f64; N], b: [f64; N]) -> f64 {{ let sum = 0.0; for k in 0..N {{ sum += a[k] * b[k]; }} sum }}\n\
+         fn mean_of<const N: usize>(xs: [f64; N]) -> f64 where N >= 1 {{ let sum = 0.0; for x in xs {{ sum += x; }} sum / N as f64 }}\n"
+    ));
+    assert_eq!(Types::check_model(&clean), Ok(()), "{:?}", Types::check_model(&clean));
+    let found = model_errors("fn mixed<const N: usize, const M: usize>(a: [f64; N]) -> [f64; M] { a }\n");
+    assert_eq!(codes_of(&found), ["E0180"], "two different parameters are two lengths: {found:?}");
+}

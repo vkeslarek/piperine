@@ -127,7 +127,7 @@ impl Checker<'_> {
                 _ => self.infer(expr),
             };
             if let Some(found) = found
-                && found != *expected
+                && !found.fits(expected)
                 && found != Ty::Never
             {
                 if self.event_reads.contains(&expr) {
@@ -282,7 +282,7 @@ impl Checker<'_> {
                     Some(t @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Str)) => self.check(second, &t),
                     // §1.3.10, H.8 rule 7: an enum, a struct, a tuple, an array or an `Option` compares
                     // when it implements `PartialEq`.
-                    Some(t) if t.is_composite() => {
+                    Some(t) if t.is_composite() || matches!(t, Ty::Param(_)) => {
                         self.check(second, &t);
                         let span = self.design.expr_node(first).span;
                         self.require_trait(file, span, &t, DerivedTrait::PartialEq);
@@ -333,7 +333,7 @@ impl Checker<'_> {
                 self.check(second, &t);
                 Some(t)
             }
-            Some(t) if ordering && t.is_composite() => {
+            Some(t) if ordering && (t.is_composite() || matches!(t, Ty::Param(_))) => {
                 self.check(second, &t);
                 let file = self.file_of_expr(first);
                 let span = self.design.expr_node(first).span;

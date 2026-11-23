@@ -41,10 +41,16 @@ impl Checker<'_> {
         if let Some(found) = self.default_call(expr, *callee, args.len()) {
             return found;
         }
+        if let Some(found) = self.parameter_decode(expr, *callee, args) {
+            return found;
+        }
         match class {
             CallClass::Function => {}
             CallClass::Instance { module: Some(module), .. } => return self.placement(expr, *module),
             CallClass::Instance { module: None, .. } if matches!(self.callee_resolution(*callee), Some(Resolution::Builtin(_))) => {}
+            // §3.8.6: a value of a type parameter bound by `Fn(A) -> R` is called as a function; the POM
+            // reads the call as a placement because a module parameter has the same bound
+            CallClass::Instance { module: None, .. } if let Some(parameter) = self.callable_parameter(*callee) => return self.local_call(expr, parameter, args),
             CallClass::Instance { module: None, .. } => {
                 self.unsupported(file, node.span, "placement through a template value or a function");
                 return None;
@@ -290,6 +296,10 @@ impl Checker<'_> {
             return self.edge_read(expr, edge, *recv, args);
         }
         let recv_ty = self.infer(*recv)?;
+        // §3 rule 9: a value of a type parameter has the methods its bounds give
+        if let Ty::Param(param) = recv_ty {
+            return self.parameter_method(param, name, method.span, args, file);
+        }
         let (row, params, result) = match Catalogue::method(&recv_ty, name) {
             Lookup::Row(row, params, result) => (row, params, result),
             Lookup::Payload(row) => return self.payload_row(expr, row, &recv_ty, args),

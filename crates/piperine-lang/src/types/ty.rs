@@ -89,6 +89,27 @@ impl Nominal {
 }
 
 impl Ty {
+    /// Whether a value of this type may stand where `expected` is wanted: equal types, where an array
+    /// length built from const parameters agrees with any other length until the item is instantiated
+    /// ([`Length::fits`]); the arguments of a generic type are compared the same way.
+    pub fn fits(&self, expected: &Ty) -> bool {
+        match (self, expected) {
+            (Ty::Array(found, found_length), Ty::Array(wanted, wanted_length)) => found.fits(wanted) && found_length.fits(wanted_length),
+            (Ty::Option(found), Ty::Option(wanted)) => found.fits(wanted),
+            (Ty::Tuple(found), Ty::Tuple(wanted)) => found.len() == wanted.len() && found.iter().zip(wanted).all(|(found, wanted)| found.fits(wanted)),
+            (Ty::Fn(found, found_result), Ty::Fn(wanted, wanted_result)) => found.len() == wanted.len() && found.iter().zip(wanted).all(|(found, wanted)| found.fits(wanted)) && found_result.fits(wanted_result),
+            (Ty::Struct(found), Ty::Struct(wanted)) | (Ty::Enum(found), Ty::Enum(wanted)) => {
+                found.decl == wanted.decl
+                    && found.arguments.len() == wanted.arguments.len()
+                    && found.arguments.iter().zip(&wanted.arguments).all(|pair| match pair {
+                        (GenericValue::Type(found), GenericValue::Type(wanted)) => found.fits(wanted),
+                        (found, wanted) => found == wanted,
+                    })
+            }
+            _ => self == expected,
+        }
+    }
+
     /// The struct `decl`, not generic.
     pub fn structure(decl: DeclId) -> Ty {
         Ty::Struct(Nominal::plain(decl))
@@ -112,6 +133,19 @@ pub enum Length {
 }
 
 impl Length {
+    /// Whether a value of length `self` may stand where one of length `expected` is wanted. Two
+    /// numbers agree when equal and a parameter with itself; every other pair involves a length
+    /// built from const parameters, which is compared by value when the item is instantiated
+    /// (Q1 (c), §3.8.9), so the definition accepts it.
+    pub fn fits(&self, expected: &Length) -> bool {
+        match (self, expected) {
+            (Length::Fixed(found), Length::Fixed(wanted)) => found == wanted,
+            (Length::Generic(ConstTerm::Param(found)), Length::Generic(ConstTerm::Param(wanted))) => found == wanted,
+            (Length::Generic(ConstTerm::Width(found)), Length::Generic(ConstTerm::Width(wanted))) => found == wanted,
+            _ => true,
+        }
+    }
+
     /// The length as a number, `None` for a generic one.
     pub fn fixed(&self) -> Option<u64> {
         match self {
@@ -128,6 +162,7 @@ impl Length {
             Length::Generic(ConstTerm::Bool(b)) => b.to_string(),
             Length::Generic(ConstTerm::Param(param)) => design.decl_data(*param).name.as_ref().map_or_else(|| "N".to_string(), |n| n.text.clone()),
             Length::Generic(ConstTerm::Expr(_)) => "{..}".to_string(),
+            Length::Generic(ConstTerm::Width(param)) => format!("{}::WIDTH", design.decl_data(*param).name.as_ref().map_or("T", |n| n.text.as_str())),
         }
     }
 }
@@ -178,6 +213,9 @@ pub enum ConstTerm {
     Param(DeclId),
     /// An expression over const parameters, folded when the item is instantiated.
     Expr(ExprId),
+    /// `T::WIDTH` of a type parameter bound by `Repr` (§2): the number of levels of whatever `T` is
+    /// instantiated with.
+    Width(DeclId),
 }
 
 impl Ty {

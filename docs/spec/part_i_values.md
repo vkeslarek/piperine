@@ -926,7 +926,14 @@ of the functions it calls. A function may belong to several classes; the restric
   generics and associated consts. It is checked when the function is instantiated. Trait
   bounds are written in `generics`.
 - **§3 rule 9.** A function that is generic over a type, a nature or a const is instantiated
-  at elaboration. An error inside an instantiation is an elaboration error.
+  at elaboration. An error inside an instantiation is an elaboration error. The body is also
+  checked once at its definition, with each type parameter opaque: a name, a type or a class
+  that is wrong, a method or an operator that none of the bounds of a parameter gives
+  (`E0161` for a method, `E0180` for an operator), and a generic argument that does not
+  satisfy its bound (`E0187`) are errors of the definition, reported by `piperine check` with
+  nothing instantiating the function; the value of a const argument, the `where` (`E0127`),
+  array lengths built from const parameters and a const expression that fails (`E0104`) are
+  errors of an instantiation.
 - **§3 rule 10.** A function accepts two ABI strings, `"C"` and `"intrinsic"`. The string
   `"intrinsic"` is accepted only in the crate `std`. An `extern "C" fn` takes and returns
   `bool`, integer and float scalars only. It **MUST** be a function of its arguments alone.

@@ -225,6 +225,7 @@ impl Checker<'_> {
                 ("isize", _) => Some(Ty::Int(64)),
                 _ => None,
             },
+            Resolution::Decl(decl) if self.parameter_owner(owner).is_some() => Some(Ty::Param(decl)),
             Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) => self.enum_type(decl, file, span),
             Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::Struct(_)) => self.struct_type(decl, file, span),
             _ => None,
@@ -244,6 +245,9 @@ impl Checker<'_> {
         }
         let file = self.file_of_expr(expr);
         let owner_type = self.path_owner_type(file, node.span, owner.res)?;
+        if let Ty::Param(param) = owner_type {
+            return self.parameter_width(param, file, node.span);
+        }
         let levels = self.repr_levels(&owner_type)?;
         self.widths.insert(expr, levels);
         Some(Ty::UInt(32))

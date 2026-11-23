@@ -381,14 +381,15 @@ impl Checker<'_> {
             }
             _ => self.infer(element),
         };
-        let Some(length) = self.fold_length(len) else {
+        // `[x; N + 1]`: a length over const parameters is generic, folded at an instantiation (§3.8.3)
+        let Some(length) = self.fold_length(len).map(Length::Fixed).or_else(|| self.generic_length(len)) else {
             let span = self.design.expr_node(len).span;
             let what = self.expression_name(len);
             self.mismatch_text(file, span, "a constant array length", &what);
             return None;
         };
         let ty = ty?;
-        Some(Ty::array(ty, length))
+        Some(Ty::Array(Box::new(ty), length))
     }
 
     /// `e[i]` reads an element of an array (§1.5.9); an index is

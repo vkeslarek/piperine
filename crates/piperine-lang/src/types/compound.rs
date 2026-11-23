@@ -85,7 +85,7 @@ impl Checker<'_> {
             return;
         }
         let Some(found) = self.infer(expr) else { return };
-        if found == *expected {
+        if found.fits(expected) {
             return;
         }
         if found == *inner {

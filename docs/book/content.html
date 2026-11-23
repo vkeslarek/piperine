@@ -1964,18 +1964,7 @@ P0001
  17 │ 
     ╰────
 
-P0001
-
-  × generic parameter used as a type is not supported yet
-    ╭─[values.msl:16:59]
- 15 │ 
- 16 │ pub extern "intrinsic" fn logic&lt;T: Repr&gt;(pattern: str) -&gt; T;
-    ·                                                           ┬
-    ·                                                           ╰── generic parameter used as a type is outside the M1 subset
- 17 │ 
-    ╰────
-
-error: typeck failed with 6 diagnostic(s)</pre>
+error: typeck failed with 5 diagnostic(s)</pre>
   <p>When it runs, each rising edge writes one record, <code>eq=x same=false sure=false</code>, three in all. Today the library type <code>Logic</code> is refused by name.</p>
 </div>
 

@@ -178,7 +178,12 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
         self.settle_pending(decl, args);
-        let Some(Ty::Fn(params, result)) = self.locals.get(&decl).cloned() else {
+        // a value of a type parameter bound by `Fn(A) -> R` is called through the bound (§3.8.6)
+        let local = match self.locals.get(&decl).cloned() {
+            Some(Ty::Param(param)) => self.callable_of(param).or(Some(Ty::Param(param))),
+            other => other,
+        };
+        let Some(Ty::Fn(params, result)) = local else {
             if !self.poisoned.contains(&decl) {
                 self.unsupported(file, span, "a call of a value that is not a function");
             }

@@ -2295,3 +2295,19 @@ fn part_i_3_8_names_the_rules_of_a_parameter_list() {
     let errors = flat(&section(&spec("part_i_values.md"), "### 3.8 "));
     assert!(errors.contains("a bound that names no trait (`E0161`)"), "{errors}");
 }
+
+#[test]
+fn rule_9_splits_definition_and_instantiation_errors() {
+    // GN-07 AC 4, Q1 (c): §3 rule 9 says which errors belong to a generic body's definition and which to an instantiation
+    let text = flat(&spec("part_i_values.md"));
+    let rule = &text[text.find("- **§3 rule 9.**").expect("rule 9")..text.find("- **§3 rule 10.**").expect("rule 10")];
+    for fact in [
+        "The body is also checked once at its definition, with each type parameter opaque",
+        "a method or an operator that none of the bounds of a parameter gives (`E0161` for a method, `E0180` for an operator)",
+        "a generic argument that does not satisfy its bound (`E0187`)",
+        "reported by `piperine check` with nothing instantiating the function",
+        "the value of a const argument, the `where` (`E0127`), array lengths built from const parameters and a const expression that fails (`E0104`) are errors of an instantiation",
+    ] {
+        assert!(rule.contains(fact), "§3 rule 9 lacks \"{fact}\": {rule}");
+    }
+}

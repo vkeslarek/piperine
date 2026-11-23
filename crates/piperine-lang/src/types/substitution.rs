@@ -9,6 +9,7 @@ use crate::msl::Span;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, LitKind, PathId, Resolution, StmtKind, TypeId, TypeKind, UnOp};
 
 use super::check::Checker;
+use super::bounds::BoundCheck;
 use super::generics::{GenericParameter, GenericSignature, ParameterDefault, ParameterKind};
 use super::{ConstTerm, GenericValue, Length, Nominal, Ty};
 
@@ -86,6 +87,12 @@ impl Substitution {
                 Some(GenericValue::Const(replacement)) => replacement.clone(),
                 _ => term.clone(),
             },
+            // `T::WIDTH` follows `T` to the parameter it is replaced by; a concrete type's width is read
+            // where the instantiation is made (`Ty::levels`)
+            ConstTerm::Width(parameter) => match self.get(*parameter) {
+                Some(GenericValue::Type(Ty::Param(replacement))) => ConstTerm::Width(*replacement),
+                _ => term.clone(),
+            },
             ConstTerm::Value(_) | ConstTerm::Bool(_) | ConstTerm::Expr(_) => term.clone(),
         }
     }
@@ -143,8 +150,27 @@ impl Checker<'_> {
             substitution.bind(parameter.decl, value.clone());
             arguments.push(value);
         }
+        self.arguments_satisfy_bounds(&signature, &arguments, decl, file, span)?;
         let nominal = Nominal { decl, arguments };
         Some(if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) { Ty::Enum(nominal) } else { Ty::Struct(nominal) })
+    }
+
+    /// Every argument satisfies every bound of its parameter (§3.8.7); one that does not is `E0187`
+    /// naming the argument and the bound. `None` after a refusal.
+    fn arguments_satisfy_bounds(&mut self, signature: &GenericSignature, arguments: &[GenericValue], item: DeclId, file: FileId, span: Span) -> Option<()> {
+        let item_name = self.design.decl_data(item).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let mut satisfied = true;
+        for (parameter, argument) in signature.parameters().iter().zip(arguments) {
+            let GenericValue::Type(ty) = argument else { continue };
+            for bound in &parameter.bounds {
+                if !BoundCheck::new(self).satisfies(ty, bound) {
+                    let message = format!("`{}` does not satisfy the bound `{}` of `{}` in `{item_name}` (§3.8.7)", ty.source_name(self.design), self.bound_name(bound), parameter.name);
+                    self.coded(file, "E0187", span, message, "an argument that does not satisfy its bound");
+                    satisfied = false;
+                }
+            }
+        }
+        satisfied.then_some(())
     }
 
     /// The argument `node` for `parameter`: a type for a type or nature parameter, a const for a

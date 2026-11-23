@@ -1,0 +1,203 @@
+//! What a type parameter's bounds give (part I §3 rule 9, §3.8.9, GN-07): a generic body is
+//! checked once at its definition with each parameter opaque, so a value of type `T` offers exactly
+//! what the bounds of `T` offer. `T: PartialEq` gives `==`, `T: PartialOrd` gives `<`, `T: Repr`
+//! gives `T::WIDTH`, `x.encode()` and `T::decode(levels)`, `T: Default` gives `T::default()`, and
+//! `F: Fn(A) -> R` gives a call. Anything else is refused at the definition naming the bound that
+//! would give it; the errors that depend on the arguments (a `where`, a length) wait for an
+//! instantiation.
+
+use crate::msl::Span;
+use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericParamData, Resolution, TypeId};
+
+use super::check::Checker;
+use super::derives::DerivedTrait;
+use super::generics::{Bound, GenericSignature};
+use super::{ConstTerm, Length, Ty};
+
+/// Whether a type satisfies a bound (§3.8.7).
+pub(super) struct BoundCheck<'c, 'd> {
+    checker: &'c mut Checker<'d>,
+}
+
+impl<'c, 'd> BoundCheck<'c, 'd> {
+    /// A check of bounds with the checker's tables.
+    pub(super) fn new(checker: &'c mut Checker<'d>) -> Self {
+        BoundCheck { checker }
+    }
+
+    /// Whether `ty` satisfies `bound`: an H.8 trait through the derive table, `Repr` through the
+    /// type's layout, `Nature` for a nature, a project trait where the type names it as a bound, and
+    /// `Fn(A) -> R` for a function type of that signature. A type parameter satisfies what its own
+    /// bounds give.
+    pub(super) fn satisfies(&mut self, ty: &Ty, bound: &Bound) -> bool {
+        match bound {
+            Bound::Library(name) => DerivedTrait::ALL.into_iter().find(|candidate| candidate.name() == *name).is_some_and(|which| self.checker.implements(ty, which)),
+            Bound::Repr => match ty {
+                Ty::Param(param) => self.checker.bounds_of(*param).contains(&Bound::Repr),
+                other => self.checker.repr_levels(other).is_some(),
+            },
+            Bound::Nature => match ty {
+                Ty::Param(param) => self.checker.bounds_of(*param).contains(&Bound::Nature),
+                other => matches!(other, Ty::Node(_)),
+            },
+            Bound::Trait(_) => matches!(ty, Ty::Param(param) if self.checker.bounds_of(*param).contains(bound)),
+            Bound::Callable { inputs, output } => {
+                let wanted = self.checker.callable_type(inputs, *output);
+                match (ty, wanted) {
+                    (Ty::Param(param), Some(wanted)) => self.checker.bounds_of(*param).iter().any(|own| matches!(own, Bound::Callable { inputs, output } if self.checker.callable_type(inputs, *output).as_ref() == Some(&wanted))),
+                    (found, Some(wanted)) => *found == wanted,
+                    (_, None) => false,
+                }
+            }
+        }
+    }
+}
+
+impl Checker<'_> {
+    /// The bounds written on the type parameter `param`, in order.
+    pub(super) fn bounds_of(&self, param: DeclId) -> Vec<Bound> {
+        match &self.design.decl_data(param).kind {
+            DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) => bounds.iter().filter_map(|path| GenericSignature::bound(self.design, *path)).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Whether the bounds of `param` give the H.8 trait `which`, a supertrait of a bound included
+    /// (`Ord` gives `Eq`, `PartialOrd` and `PartialEq`).
+    pub(super) fn param_implements(&self, param: DeclId, which: DerivedTrait) -> bool {
+        self.bounds_of(param).iter().any(|bound| match bound {
+            Bound::Library(name) => DerivedTrait::ALL.into_iter().find(|candidate| candidate.name() == *name).is_some_and(|given| given.gives(which)),
+            _ => false,
+        })
+    }
+
+    /// The function type `Fn(inputs) -> output` a callable bound writes, `None` when a type in it
+    /// is refused (the refusal is reported where the bound is read).
+    pub(super) fn callable_type(&mut self, inputs: &[TypeId], output: Option<TypeId>) -> Option<Ty> {
+        let inputs: Option<Vec<Ty>> = inputs.iter().map(|input| self.lower_type(*input)).collect();
+        let output = match output {
+            Some(output) => self.lower_type(output)?,
+            None => Ty::Unit,
+        };
+        Some(Ty::Fn(inputs?, Box::new(output)))
+    }
+
+    /// The function parameter or binding `callee` names when its type is a type parameter bound by `Fn`.
+    pub(super) fn callable_parameter(&mut self, callee: ExprId) -> Option<DeclId> {
+        let Some(Resolution::Decl(decl)) = self.callee_resolution(callee) else { return None };
+        let Some(Ty::Param(param)) = self.locals.get(&decl).cloned() else { return None };
+        self.callable_of(param).map(|_| decl)
+    }
+
+    /// The function type a type parameter's `Fn(A) -> R` bound gives its values, `None` without one.
+    pub(super) fn callable_of(&mut self, param: DeclId) -> Option<Ty> {
+        let (inputs, output) = self.bounds_of(param).into_iter().find_map(|bound| match bound {
+            Bound::Callable { inputs, output } => Some((inputs, output)),
+            _ => None,
+        })?;
+        self.callable_type(&inputs, output)
+    }
+
+    /// The type parameter a path owner names (`T` of `T::WIDTH`), when it is one.
+    pub(super) fn parameter_owner(&self, owner: Resolution) -> Option<DeclId> {
+        match owner {
+            Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::GenericParam(GenericParamData::Type { .. })) => Some(decl),
+            _ => None,
+        }
+    }
+
+    /// `T::WIDTH` of a type parameter bound by `Repr`: a `u32`, known when `T` is (§2); without the
+    /// bound it is `E0161` naming it.
+    pub(super) fn parameter_width(&mut self, param: DeclId, file: FileId, span: Span) -> Option<Ty> {
+        self.require_bound(param, &Bound::Repr, "WIDTH", file, span)?;
+        Some(Ty::UInt(32))
+    }
+
+    /// `x.encode()` on a value of a type parameter bound by `Repr`: the `[bool; T::WIDTH]` of its
+    /// levels (§2); `E0161` without the bound.
+    pub(super) fn parameter_encode(&mut self, param: DeclId, args: &[Arg], file: FileId, span: Span) -> Option<Ty> {
+        self.require_bound(param, &Bound::Repr, "encode", file, span)?;
+        if !args.is_empty() {
+            self.arity_mismatch(file, span, 0, args);
+            return None;
+        }
+        Some(Ty::Array(Box::new(Ty::Bool), Length::Generic(ConstTerm::Width(param))))
+    }
+
+    /// `T::decode(levels)` on a type parameter bound by `Repr`: an `Option<T>` from `[bool; T::WIDTH]`
+    /// (§2); `E0161` without the bound. `None` when `callee` is not such a path.
+    pub(super) fn parameter_decode(&mut self, expr: ExprId, callee: ExprId, args: &[Arg]) -> Option<Option<Ty>> {
+        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return None };
+        let segments = self.design.path_node(*path).segments.clone();
+        let [owner, member] = segments.as_slice() else { return None };
+        let param = self.parameter_owner(owner.res).filter(|_| member.name.text == "decode" && matches!(member.res, Resolution::Deferred(_) | Resolution::Builtin(_)))?;
+        let (file, span) = (self.file_of_expr(expr), self.design.expr_node(expr).span);
+        if self.require_bound(param, &Bound::Repr, "decode", file, span).is_none() {
+            return Some(None);
+        }
+        let levels = Ty::Array(Box::new(Ty::Bool), Length::Generic(ConstTerm::Width(param)));
+        if args.len() != 1 {
+            self.arity_mismatch(file, span, 1, args);
+            return Some(None);
+        }
+        self.check_argument(args[0].value, &levels);
+        Some(Some(Ty::Option(Box::new(Ty::Param(param)))))
+    }
+
+    /// A method call on a value of the type parameter `param`: what its bounds give, else `E0161`
+    /// naming the method, the parameter and the bound that would give it. The arguments are still
+    /// typed, so the one mistake is one diagnostic.
+    pub(super) fn parameter_method(&mut self, param: DeclId, name: &str, method_span: Span, args: &[Arg], file: FileId) -> Option<Ty> {
+        if name == "encode" && self.bounds_of(param).contains(&Bound::Repr) {
+            return self.parameter_encode(param, args, file, method_span);
+        }
+        let given: Vec<String> = self.bounds_of(param).iter().map(|bound| self.bound_name(bound)).collect();
+        let parameter = Ty::Param(param).name(self.design);
+        let hint = if name == "clone" {
+            "every value is copied; delete the name".to_string()
+        } else if let Some(bound) = Self::bound_giving(name) {
+            format!("`{name}` comes from `{bound}`: add `{parameter}: {bound}`")
+        } else {
+            "no bound of the parameter gives it".to_string()
+        };
+        let bounds = if given.is_empty() { "no bound".to_string() } else { format!("the bounds {}", given.join(" + ")) };
+        let message = format!("no method `{name}` on `{parameter}`: {bounds} of `{parameter}` give none called `{name}` (§3 rule 9); {hint}");
+        self.coded(file, "E0161", method_span, message, "a method no bound gives");
+        for arg in args {
+            self.infer(arg.value);
+        }
+        None
+    }
+
+    /// `E0161` unless the bounds of `param` include `bound`; `Some(())` when they do.
+    fn require_bound(&mut self, param: DeclId, bound: &Bound, member: &str, file: FileId, span: Span) -> Option<()> {
+        if self.bounds_of(param).contains(bound) {
+            return Some(());
+        }
+        let parameter = Ty::Param(param).name(self.design);
+        let needed = self.bound_name(bound);
+        let message = format!("`{parameter}::{member}` needs the bound `{needed}`, which the bounds of `{parameter}` do not give (§3 rule 9): add `{parameter}: {needed}`");
+        self.coded(file, "E0161", span, message, "a member no bound gives");
+        None
+    }
+
+    /// The bound as it is written, for messages.
+    pub(super) fn bound_name(&self, bound: &Bound) -> String {
+        match bound {
+            Bound::Trait(decl) => self.design.decl_data(*decl).name.as_ref().map_or_else(|| "a trait".to_string(), |n| n.text.clone()),
+            Bound::Library(name) => (*name).to_string(),
+            Bound::Repr => "Repr".to_string(),
+            Bound::Nature => "Nature".to_string(),
+            Bound::Callable { .. } => "Fn".to_string(),
+        }
+    }
+
+    /// The built-in bound that gives the method `name`, when one does.
+    fn bound_giving(name: &str) -> Option<&'static str> {
+        match name {
+            "encode" | "decode" => Some("Repr"),
+            "default" => Some("Default"),
+            _ => None,
+        }
+    }
+}

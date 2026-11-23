@@ -613,7 +613,7 @@ impl<'d> Checker<'d> {
     /// whatever else the body got wrong, since it is its own mistake.
     fn function_body(&mut self, body: &BlockNode, ret: &Ty, file: FileId) {
         if let Some(found) = self.statements(&body.stmts, Some(ret))
-            && found != *ret
+            && !found.fits(ret)
             && found != Ty::Never
         {
             self.mismatch(file, body.span, ret, &found);

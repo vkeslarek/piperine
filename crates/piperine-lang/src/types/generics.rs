@@ -122,7 +122,7 @@ impl GenericSignature {
 
     /// The bound a path names, `None` for a name that is no trait (`Checker::generic_signature`
     /// reports it).
-    fn bound(design: &Design, path: PathId) -> Option<Bound> {
+    pub(super) fn bound(design: &Design, path: PathId) -> Option<Bound> {
         let segment = design.path_node(path).segments.last()?;
         match segment.res {
             Resolution::Builtin(builtin) => match builtin.info().name {

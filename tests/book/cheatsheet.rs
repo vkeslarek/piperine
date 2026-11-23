@@ -159,8 +159,7 @@ fn the_files_card_is_refused_for_its_table_and_its_statement() {
     // parse_table(include_str!("iv.tbl"));` and `emit!("log", ..)` among the items. The `emit!` is a
     // statement among the items, so the file as the sheet writes it is `E0601` (§19 rule 10); without that last line, in
     // a package that has the files and the dependency it names, and a top that reads the table (the checker
-    // reaches only what the top reaches), `parse_table` is a generic function and `&IV` a reference, `P0001`
-    // (L57)
+    // reaches only what the top reaches), `parse_table` is a generic function, `P0001` (L57)
     let chapter = Chapter::read();
     let card = chapter.text("cheatsheet#10");
     let (items, statement) = card.rsplit_once('\n').expect("the card has several lines");
@@ -181,7 +180,8 @@ fn the_files_card_is_refused_for_its_table_and_its_statement() {
     let items_only = package(format!("{items}\n{reading}"));
     let given = Refusal::of(items_only.run(Overrides::default()), "cheatsheet#10");
     assert!(Surroundings::holds(&given, "P0001", "generic function is not supported yet"), "{given:?}");
-    Refusal::expect(items_only.run(Overrides::default()), "cheatsheet#10", "P0001", "an array whose length is a generic parameter is not supported yet");
+    // the generic length of `parse_table`'s result is a type the checker reads (generics T17); the call stays refused as a generic function
+    Refusal::expect(items_only.run(Overrides::default()), "cheatsheet#10", "P0001", "generic function is not supported yet");
 }
 
 #[test]
