@@ -1304,18 +1304,16 @@ Proof: run ssession | test simparam_runs_in_a_definition_and_a_selector_with_one
 Proof: run clioptions | test simparam_flag_is_repeatable_and_a_non_number_is_p0010 ... ok
 Proof: run apioptions | test a_simparam_entry_naming_an_option_is_p0010 ... ok
 
-**C45** - The key `tnom` and the flag `--tnom` are read in °C, 27 when absent. (AO-08, AC 1; T15)
-Proof: run apioptions | test tnom_key_and_flag_default_to_27 ... ok
-Proof: run apioptions | test the_tnom_key_of_a_run_table_reaches_the_session_context ... ok
+**C45** - A run table that gives the key `tnom` is `P0010` naming the key: the run has no `tnom`. (AO-08, AC 1 as amended; T45)
+Proof: run apioptions | test a_run_key_tnom_is_refused ... ok
 
-**C46** - A `tnom` that is not a number above −273.15 is `P0010` naming the key. (AO-08, AC 2; T15)
-Proof: run apioptions | test tnom_at_or_below_absolute_zero_is_p0010 ... ok
-Proof: run clioptions | test a_tnom_that_is_no_number_is_p0010_naming_the_flag ... ok
+**C46** - The command line has no flag `--tnom`: `piperine run ... --tnom 50` is a usage error naming it and prints nothing. (AO-08, AC 1 as amended; T45)
+Proof: run clioptions | test a_tnom_flag_is_refused ... ok
 
 **C47** - There is no run `tnom`: `simparam("tnom")` is `None`, and the nominal temperature is a per-instance model param, which the twin `tnom_res` sets on its resistor (323.15 K against ngspice's `.options tnom=50`) and holds to ngspice under `DC_VOLTAGE`. (AO-08 withdrawn, user 2026-11-23; T43, T45)
 Proof: run apisession | test the_session_hands_its_options_and_entries_to_the_circuit ... ok
 Proof: run parop | test tnom_res ... ok
-**C48** - `tnom_res` with `tnom = 50` and `temp = 27` agrees with ngspice under `DC_VOLTAGE`. (AO-08, AC 4; T43)
+**C48** - `tnom_res` with its resistor's `tnom` param at 323.15 K and `temp = 27` agrees with ngspice's `.options tnom=50 temp=27` under `DC_VOLTAGE`. (AO-08, AC 3; T43)
 Proof: run parop | test tnom_res ... ok
 
 **C49** - `emit!("conv", v = v(a));` in `analog` writes one record per evaluation in every equilibrium solve, transient step and jump solve, with the instance path, the analysis, the instant and the Newton iteration. (AO-09, AC 1; T30, T38)

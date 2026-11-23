@@ -302,6 +302,15 @@ fn a_simparam_entry_naming_an_option_is_p0010() {
     }
 }
 
+#[test]
+fn a_run_key_tnom_is_refused() {
+    // AO-08 AC 1 (withdrawn run `tnom`): the nominal temperature is a per-instance param, so a run
+    // table that gives `tnom` is a P0010 naming the key and listing what a run takes.
+    let faults = Manifest::run("tnom = 50\n").expect_err("tnom is no run key");
+    let report = format!("{faults:?}");
+    assert!(report.contains("P0010") && report.contains("unknown key `tnom`"), "{report}");
+}
+
 /// A half-second clock beside a one-hertz sine that a comparator watches: the digital side has a
 /// periodic event of its own and the analog side a located crossing, both on the tick grid.
 const SLOW_DESIGN: &str = "pub module Capacitor(p: Electrical, n: Electrical) { c: f64 where c > 0.0; }\nanalog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }\nmodule Tick(out clk: Bit = false) { }\ndigital for Tick { on clk.changed() { clk <- !clk after 0.5; emit!(\"clock\", t = now()); } }\nmodule Sine(p: Electrical) { }\nanalog for Sine { v(p) +> (6.283185307179586 * now()).sin(); }\nmodule Top() {\n    signal a: Electrical;\n    signal clk: Bit;\n    let s = Sine(a);\n    let c1 = Capacitor(a, gnd) { c: 1u };\n    let m = Tick(clk);\n}\ndigital for Top { on above(v(a) - 0.5) { emit!(\"rise\", t = now()); } }\n";

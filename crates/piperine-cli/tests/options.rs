@@ -351,6 +351,17 @@ fn a_simparam_entry_naming_an_option_is_p0010() {
     assert!(text(&out.stderr).contains("P0010") && text(&out.stderr).contains("reltol"), "{}", text(&out.stderr));
 }
 
+#[test]
+fn a_tnom_flag_is_refused() {
+    // AO-08 AC 1 (withdrawn flag `--tnom`): the command line has no such flag, so it is a usage
+    // error naming it, exit 2 (clap's), and nothing runs.
+    let dir = tempfile::tempdir().expect("tmp");
+    let out = piperine_in(dir.path(), &["run", twin("divider.msl").to_str().expect("path"), "--analysis", "op", "--tnom", "50"]);
+    assert_ne!(out.status.code(), Some(0), "{}", text(&out.stdout));
+    assert!(text(&out.stderr).contains("--tnom"), "{}", text(&out.stderr));
+    assert_eq!(text(&out.stdout), "");
+}
+
 /// The lone design of `piperine-api/tests/fixtures/bounded_params.msl`, shared with the API tests:
 /// its `Thresh` has a param bounded below by a constant (`x >= 0.0`) and one bounded by another
 /// param (`v_release < v_pick`).
