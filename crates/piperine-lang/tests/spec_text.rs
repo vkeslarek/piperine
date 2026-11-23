@@ -2438,3 +2438,11 @@ fn no_spec_text_retakes_a_step_for_an_operating_point_invalidation() {
         assert!(!text.contains("also retakes the step to `t` with the new value"), "{file} retakes a step for a `set`");
     }
 }
+
+#[test]
+fn part_v_the_event_time_steps_are_the_ones_that_exist() {
+    // F22: with the solve gone from the microstep loop its steps are 3.1 to 3.4 (the exit test is 3.4).
+    let s = flat(&spec("part_v_execution.md"));
+    assert!(s.contains("steps 2, 3.1, 3.2, 3.3 and 3.4 run, in the same order. Steps 1 and 4 do not"), "the event-time steps");
+    assert!(!s.contains("3.5"), "Part V names a step 3.5, which the procedure does not have");
+}

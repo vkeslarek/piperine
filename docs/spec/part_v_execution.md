@@ -119,7 +119,7 @@ The table fixes the microstep at which each event fires; §13 defines the events
 > **Resolution.** In the settle phase the only primitive event that has fired is `settle`.
 > An event read as a `bool` there (§13 rule 2) is true only if `settle` makes it fire.
 
-**Event times that are not time points.** At such a time `t`, steps 2, 3.1, 3.2, 3.3 and 3.5
+**Event times that are not time points.** At such a time `t`, steps 2, 3.1, 3.2, 3.3 and 3.4
 run, in the same order. Steps 1 and 4 do not:
 by §17.2.2 nothing at `t` probes and nothing that `analog` reads can change. These instants run in increasing order of `(t, n)`,
 interleaved with the time points.
