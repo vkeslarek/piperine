@@ -865,9 +865,9 @@ T44
 
 **Done when**:
 
-- [ ] `integer_enum_and_option_params_type_check`, `an_option_param_read_as_a_number_is_e0180` pass under `**Run typesmodules**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `integer_enum_and_option_params_type_check`, `an_option_param_read_as_a_number_is_e0180` pass under `**Run typesmodules**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

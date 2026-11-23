@@ -48,9 +48,9 @@ fn params_are_f64_or_bool() {
     assert_eq!(types.ty(expr_of(&design, &src, "1.0")), Some(&Ty::F64));
     assert_eq!(types.ty(expr_of(&design, &src, "true")), Some(&Ty::Bool));
 
-    // Any other type is outside the subset; a tuple param is accepted since composite-values T47
-    // (`composite_params_and_record_fields_type_check`).
-    for ty in ["u32", "Option<f64>"] {
+    // An integer, enum or `Option` param is accepted since params-and-io T30
+    // (`integer_enum_and_option_params_type_check`); a function or `str` param is outside the subset.
+    for ty in ["str", "Event"] {
         let (src, d) = diagnostics(&format!("module Top() {{ a: {ty}; }}"));
         assert_eq!(codes_of(&d), ["P0001"], "{ty}");
         assert!(snippet(&src, &d[0]).starts_with(ty.split('<').next().unwrap_or(ty)), "{ty}: {}", snippet(&src, &d[0]));
@@ -307,4 +307,28 @@ fn a_template_of_another_module_is_e0180_naming_both() {
     assert_eq!(codes_of(&d), ["E0180"]);
     let message = &d[0].diagnostic.message;
     assert!(message.contains("Cell") && message.contains("Other"), "{message}");
+}
+
+#[test]
+fn integer_enum_and_option_params_type_check() {
+    // PI-01 to PI-03 (§8.1.15): `UInt<N>`/`Int<N>`, a unit enum and `Option<T>` are param types,
+    // with a default and a `where`, and each binds at a placement.
+    let src = format!(
+        "{NATURES}#[derive(Repr, PartialEq)]\nenum Mode {{ Fast, Slow }}\n\
+         module Child(o: E) {{ n: u8 = 4 where n >= 1; s: i16 = 0 - 3; md: Mode = Mode::Fast; rs: Option<f64>; k: Option<u4> = None; }}\n\
+         module Top() {{ signal x: E; let c = Child(x) {{ n: 7, md: Mode::Slow, rs: Some(10.0), k: None }}; }}"
+    );
+    let design = design_of(&src);
+    if let Err(found) = Types::check(&design, "Top") {
+        panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+    }
+}
+
+#[test]
+fn an_option_param_read_as_a_number_is_e0180() {
+    // PI-03: an `Option<f64>` is not a number, so a `where` reading it as one is the plain mismatch.
+    let (src, d) = diagnostics("module Top() { rs: Option<f64> where rs > 0.0; }");
+    assert_eq!(codes_of(&d), ["E0180"], "{d:?}");
+    assert_eq!(snippet(&src, &d[0]), "0.0", "the mismatch is at the number compared with the `Option`");
+    assert!(d[0].diagnostic.message.contains("Option<f64>"), "names the `Option` type: {}", d[0].diagnostic.message);
 }
