@@ -40,6 +40,8 @@ pub(super) struct Structure {
     pub(super) noise_sources: Vec<piperine_ir::NoiseSource>,
     /// The session parameters the body reads, one per name, in the order they were first read.
     pub(super) session_parameters: Vec<piperine_ir::SessionParameter>,
+    /// The trace sites of the body (`emit!` in `analog`), in the order their `Stmt::Trace` numbers them.
+    pub(super) traces: Vec<piperine_ir::TraceSite>,
     /// The carriers each child binds at its carrier ports: (child index, one entry per port).
     pub(super) child_carriers: Vec<(u32, Vec<Option<u32>>)>,
     /// The param values of children that read the parent's params: (child, param, value).
@@ -240,6 +242,9 @@ impl Elaboration<'_, '_> {
         }
         for delay in structure.delays {
             self.ir.delay(body, delay);
+        }
+        for trace in structure.traces {
+            self.ir.trace(body, trace);
         }
         for parameter in structure.session_parameters {
             self.ir.session_parameter(body, parameter);

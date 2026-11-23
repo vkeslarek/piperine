@@ -998,8 +998,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `an_emit_in_analog_lowers_to_a_trace_site` and `a_field_type_conflict_across_trace_sites_is_e0605` pass
-- [ ] Gate check passes: `Run elabops`
+- [x] `an_emit_in_analog_lowers_to_a_trace_site` and `a_field_type_conflict_across_trace_sites_is_e0605` pass
+- [x] Gate check passes: `Run elabops`
 
 **Tests**: integration
 **Gate**: quick

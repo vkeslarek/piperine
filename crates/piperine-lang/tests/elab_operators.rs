@@ -104,3 +104,24 @@ fn simparam_lowers_to_one_session_parameter_per_name() {
     let matched = Elab::ir(&design("v(o, gnd) +> match simparam(\"gain\") { Some(g) => g, None => 1.0 };"), "Top");
     assert_eq!(matched.bodies().find(|b| b.name() == "M").expect("M").session_parameters().len(), 1);
 }
+
+#[test]
+fn an_emit_in_analog_lowers_to_a_trace_site() {
+    // AO-09 (§19 rule 4): `emit!("conv", v = v(a))` in `analog` is a trace: one site of the body per
+    // statement, its stream `conv` with the field `v`, written where it stands (here under an `if`).
+    let ir = Elab::ir(&design("emit!(\"conv\", v = v(a, gnd), who = \"M\"); if v(a, gnd) > 0.5 { emit!(\"conv\", v = 1.0); } v(o, gnd) +> 0.0;"), "Top");
+    let m = ir.bodies().find(|b| b.name() == "M").expect("the body M");
+    assert_eq!(m.traces().len(), 2, "one site per statement");
+    assert!(m.traces().iter().all(|t| t.stream == 0), "both write the stream `conv`");
+    let text = ir.to_string();
+    assert!(text.contains("trace0 \"conv\"") && text.contains("trace1 \"conv\""), "{text}");
+    assert!(text.contains("trace0 {f0 = probe(a, gnd), who = \"M\"}"), "{text}");
+}
+
+#[test]
+fn a_field_type_conflict_across_trace_sites_is_e0605() {
+    // AO-09 AC 5 (§19 rule 12): two sites of one stream give a field one type: `v` is an `f64` at the
+    // first and a `bool` at the second.
+    let err = Elab::run(&design("emit!(\"conv\", v = v(a, gnd)); emit!(\"conv\", v = true);"), "Top").expect_err("a field of two types");
+    assert!(Elab::codes(&err).iter().any(|c| c == "E0605"), "{:?}", err.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+}
