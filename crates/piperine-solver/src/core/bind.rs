@@ -343,6 +343,12 @@ pub(crate) fn encode(layout: &Layout, value: &ParamValue) -> std::result::Result
         }
         _ => return Err("the value does not fit the first field of the layout".into()),
     }
+    // a layout whose second field is a BOOL `known` flag (a session parameter's) says the value was given
+    if let Some(flag) = layout.fields.iter().nth(1).filter(|f| f.name.as_str() == "known" && f.leaf == leaf::BOOL) {
+        if let Some(byte) = bytes.get_mut(flag.offset as usize) {
+            *byte = 1;
+        }
+    }
     Ok(bytes)
 }
 

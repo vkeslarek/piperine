@@ -13,11 +13,6 @@ E0372	foreign-models	FM-07 AC 2, 3
 E0373	foreign-models	FM-07 AC 4, 5
 E0374	foreign-models	FM-07 AC 6
 E0375	generics	its spec, a model item named `m` or `dtemp`
-E0451	analog-operators	L43 (`ddx`)
-E0452	analog-operators	L44 (`delay`)
-E0453	analog-operators	L44
-E0454	analog-operators	L45 (`noise`)
-E0456	analog-operators	L47 (`simparam`)
 E0807	gradients	H8
 E0808	gradients	H8
 E0809	gradients	H8

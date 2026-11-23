@@ -232,26 +232,31 @@ fn e0404_a_commit_belongs_in_a_reaction() {
 
 #[test]
 fn the_status_paragraph_lists_what_is_still_refused_and_one_item_runs() {
-    // welcome~47af33d1: "Parts of the language beyond that are still refused by name with P0001: in analog,
-    // noise, idt and delay; elsewhere, generic modules and resolved natures (a nature
-    // that implements Resolve)." Every item is `P0001`; the math methods such as `sin` and the `settle` event, which the sentence
-    // no longer lists, run (unknown-semantics-events T5 and T22)
+    // welcome~e12daa72: "Parts of the language beyond that are still refused by name with P0001: in analog,
+    // idt; elsewhere, generic modules and resolved natures (a nature
+    // that implements Resolve)." Every item is `P0001`; the math methods such as `sin`, the `settle` event, `noise` and
+    // `delay`, which the sentence no longer lists, run (unknown-semantics-events T5 and T22; analog-operators T33 and T34)
     let p0001 = |row: &str, source: &str, message: &str| {
         let model = Model::written("refused.msl", source);
         let overrides = Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() };
         let given = Refusal::of(model.run(overrides), row);
         assert!(given.iter().any(|(code, text)| code == "P0001" && text == message), "{source:?} gives {given:?}");
     };
-    let row = "welcome~47af33d1";
-    p0001(row, "module Top() { signal p: Electrical; }\nanalog for Top { i(p, gnd) +> white_noise(1e-12, \"n\"); }\n", "core primitive `noise` is not supported yet");
+    let row = "welcome~e12daa72";
     p0001(row, "module Top() { signal p: Electrical; }\nanalog for Top { i(p, gnd) +> idt(v(p)); }\n", "generic module is not supported yet");
-    p0001(row, "module Top() { signal p: Electrical; signal q: Electrical; }\nanalog for Top { v(q) +> delay(v(p), 1n); }\n", "core primitive `delay` is not supported yet");
     p0001(row, "module G<T: Repr>() {}\nmodule Top() { let g = G::<f64>(); }\n", "generic module is not supported yet");
     p0001(row, "module Top() { signal w: Wire; }\n", "resolved nature `Wire` is not supported yet");
     // a param of an integer type is a param like any other since params-and-io T31 (L28): the sentence no longer lists it
     let counted = Model::written("counted.msl", "module Top() { signal p: Electrical; n: u8 = 3; }\nanalog for Top { v(p) +> n as f64; }\n");
     let ran = counted.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: an integer param is refused: {failure}"));
     Printed::holds("3.000000e0", ran.signal("Top.p"), "n as f64 runs");
+    // `white_noise` is a source read by a noise sweep alone (L45) and `delay` of an operating point is its input (L44)
+    let noise = Model::written("noise.msl", "module Top() { signal p: Electrical; }\nanalog for Top { i(p, gnd) +> v(p, gnd) / 1k + white_noise(1e-12, \"n\"); }\n");
+    let ran = noise.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: `white_noise` is refused: {failure}"));
+    Printed::holds("0.000000e0", ran.signal("Top.p"), "white_noise runs and is 0 at the operating point");
+    let delayed = Model::written("delay.msl", "module Top() { signal p: Electrical; signal q: Electrical; }\nanalog for Top { v(p, gnd) +> 2.0; v(q, gnd) +> delay(v(p, gnd), 1n); }\n");
+    let ran = delayed.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: `delay` is refused: {failure}"));
+    Printed::holds("2.000000e0", ran.signal("Top.q"), "delay runs and is its input at the operating point");
     // the `settle` event is compiled since unknown-semantics-events T5 (L52)
     let settle = Model::written("settle.msl", "module Top() { }\ndigital for Top { on settle { } }\n");
     settle.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: `on settle` is refused: {failure}"));

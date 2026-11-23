@@ -95,6 +95,16 @@ pub enum Target {
     Derivative(u32),
     /// The `abstol` of a derivative site; empty when the site has none.
     DerivativeAbstol(u32),
+    /// The delayed quantity of a delay site (`Body::delays`).
+    DelayInput(u32),
+    /// The delay time of a delay site.
+    DelayTime(u32),
+    /// The `max` of a delay site; empty when the site has none.
+    DelayMaximum(u32),
+    /// The power density of a noise source (`Body::noise_sources`).
+    NoiseDensity(u32),
+    /// Everything a trace site (`Body::traces`) writes: the values of its fields.
+    Trace(u32),
 }
 
 /// A dependency set. Fields come in the fixed order nodes, params, environment reads, `limit`
@@ -109,6 +119,12 @@ pub struct Deps {
     pub env: Vec<Env>,
     pub limits: Vec<SiteIndex>,
     pub stims: Vec<SiteIndex>,
+    /// Delay sites whose output (`Expr::Delay`) is read, by index (`Body::delays`).
+    pub delays: Vec<u32>,
+    /// Noise sources whose value (`Expr::Noise`) is read, by index (`Body::noise_sources`).
+    pub noise_sources: Vec<u32>,
+    /// Session parameters read (`Expr::SessionParameter`), by index (`Body::session_parameters`).
+    pub session_parameters: Vec<u32>,
 }
 
 impl<'a> Body<'a> {
@@ -185,6 +201,24 @@ impl<'a> Body<'a> {
         self.sources_of(target).derivatives.iter().copied().collect()
     }
 
+    /// The session parameters `target` reads (`Expr::SessionParameter`), by index
+    /// (`Body::session_parameters`), sorted, through locals and function calls.
+    pub fn session_parameter_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).session_parameters.iter().copied().collect()
+    }
+
+    /// The noise sources whose value (`Expr::Noise`) `target` reads, by index
+    /// (`Body::noise_sources`), sorted, through locals and function calls.
+    pub fn noise_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).noises.iter().copied().collect()
+    }
+
+    /// The delay sites whose output (`Expr::Delay`) `target` reads, by index (`Body::delays`),
+    /// sorted, through locals and function calls.
+    pub fn delay_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).delays.iter().copied().collect()
+    }
+
     /// The events whose `fired` byte `target` reads (`Expr::Fired`), by index (`Body::events`),
     /// sorted, through locals and function calls.
     pub fn fired_reads(&self, target: Target) -> Vec<u32> {
@@ -210,6 +244,11 @@ impl<'a> Body<'a> {
             Target::Etol(i) => (&deps.etols, i, "event"),
             Target::Derivative(i) => (&deps.derivative_states, i, "derivative site"),
             Target::DerivativeAbstol(i) => (&deps.derivative_abstols, i, "derivative site"),
+            Target::DelayInput(i) => (&deps.delay_inputs, i, "delay site"),
+            Target::DelayTime(i) => (&deps.delay_times, i, "delay site"),
+            Target::DelayMaximum(i) => (&deps.delay_maxima, i, "delay site"),
+            Target::NoiseDensity(i) => (&deps.noise_densities, i, "noise source"),
+            Target::Trace(i) => (&deps.traces, i, "trace site"),
         };
         match list.get(i as usize) {
             Some(sources) => sources,
@@ -273,6 +312,11 @@ pub(crate) struct BodyDeps {
     etols: Vec<Sources>,
     derivative_states: Vec<Sources>,
     derivative_abstols: Vec<Sources>,
+    delay_inputs: Vec<Sources>,
+    delay_times: Vec<Sources>,
+    delay_maxima: Vec<Sources>,
+    noise_densities: Vec<Sources>,
+    traces: Vec<Sources>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
@@ -291,6 +335,12 @@ struct Sources {
     fired: BTreeSet<u32>,
     /// The derivative sites whose rate is read (`Expr::Derivative`).
     derivatives: BTreeSet<u32>,
+    /// The delay sites whose output is read (`Expr::Delay`).
+    delays: BTreeSet<u32>,
+    /// The noise sources whose value is read (`Expr::Noise`).
+    noises: BTreeSet<u32>,
+    /// The session parameters whose value is read (`Expr::SessionParameter`).
+    session_parameters: BTreeSet<u32>,
     /// The params whose previous value is read (`Expr::ParamPrevious`).
     param_previous: BTreeSet<u32>,
     /// The constant elements of an array carrier whose value is read (`mem[3]`), as `(carrier, element)`.
@@ -315,6 +365,9 @@ impl Sources {
         self.previous.extend(&other.previous);
         self.fired.extend(&other.fired);
         self.derivatives.extend(&other.derivatives);
+        self.delays.extend(&other.delays);
+        self.noises.extend(&other.noises);
+        self.session_parameters.extend(&other.session_parameters);
         self.param_previous.extend(&other.param_previous);
         self.elements.extend(&other.elements);
         self.element_previous.extend(&other.element_previous);
@@ -329,6 +382,9 @@ impl Sources {
             env: self.env.iter().copied().collect(),
             limits: self.limits.iter().copied().collect(),
             stims: self.stims.iter().copied().collect(),
+            delays: self.delays.iter().copied().collect(),
+            noise_sources: self.noises.iter().copied().collect(),
+            session_parameters: self.session_parameters.iter().copied().collect(),
         }
     }
 }
@@ -411,6 +467,8 @@ enum Task {
     Addend { branch: u32, operator: Operator, at: ExprId },
     /// The step of a `bound_step` site (its value on the stack).
     Cap(u32),
+    /// A field of a trace site (its value on the stack).
+    Trace(u32),
     /// The condition of the `if` `0` is on the value stack: keep it for its arms.
     Hold(ExprId),
     /// The walk enters an arm of the `if` `0`: its condition encloses what the arm contributes.
@@ -461,6 +519,8 @@ struct Walk<'a> {
     reads: Option<Sources>,
     /// The step of each `bound_step` site, grown as sites are met.
     caps: Vec<Sources>,
+    /// What each trace site writes, by site.
+    traces: Vec<Sources>,
     /// The condition of each `if` whose arms are being walked, by the `if`'s expression id.
     held: HashMap<ExprId, Value>,
     /// The conditions of the arms enclosing the statement being walked, outermost first: what a
@@ -491,6 +551,7 @@ impl<'a> Walk<'a> {
             stims: vec![Sources::default(); data.stims.len()],
             reads: None,
             caps: Vec::new(),
+            traces: vec![Sources::default(); data.traces.len()],
             held: HashMap::new(),
             enclosing: Vec::new(),
             frames: Vec::new(),
@@ -567,6 +628,10 @@ impl<'a> Walk<'a> {
         };
         let derivative_states: Vec<Sources> = data.derivatives.iter().map(|d| one(Some(d.state))).collect();
         let derivative_abstols: Vec<Sources> = data.derivatives.iter().map(|d| one(d.abstol)).collect();
+        let delay_inputs: Vec<Sources> = data.delays.iter().map(|d| one(Some(d.input))).collect();
+        let delay_times: Vec<Sources> = data.delays.iter().map(|d| one(Some(d.time))).collect();
+        let delay_maxima: Vec<Sources> = data.delays.iter().map(|d| one(d.maximum)).collect();
+        let noise_densities: Vec<Sources> = data.noise_sources.iter().map(|n| one(Some(n.density))).collect();
         let mut reactions = Vec::with_capacity(data.reactions.len());
         for reaction in &data.reactions {
             walk.scopes = vec![Scope::new(owner.clone(), true, reaction.locals.len())];
@@ -608,6 +673,11 @@ impl<'a> Walk<'a> {
             etols,
             derivative_states,
             derivative_abstols,
+            delay_inputs,
+            delay_times,
+            delay_maxima,
+            noise_densities,
+            traces: walk.traces,
         }
     }
 
@@ -696,6 +766,12 @@ impl<'a> Walk<'a> {
                         Operator::Ddt => self.charge[b].join(&value.sources),
                     }
                 }
+                Task::Trace(site) => {
+                    let value = self.pop();
+                    if let Some(slot) = self.traces.get_mut(site as usize) {
+                        slot.join(&value.sources);
+                    }
+                }
                 Task::Cap(site) => {
                     let value = self.pop();
                     if self.caps.len() <= site as usize {
@@ -764,6 +840,13 @@ impl<'a> Walk<'a> {
                 for f in fields {
                     if let EmitField::Value { value, .. } = f {
                         next.extend([Task::Expr(*value), Task::Discard]);
+                    }
+                }
+            }
+            Stmt::Trace { site, fields } => {
+                for f in fields {
+                    if let EmitField::Value { value, .. } = f {
+                        next.extend([Task::Expr(*value), Task::Trace(*site)]);
                     }
                 }
             }
@@ -877,6 +960,35 @@ impl<'a> Walk<'a> {
                 let mut sources = Sources::default();
                 sources.derivatives.insert(*k);
                 return self.done(id, Value::of(sources, Class::Affine));
+            }
+            Expr::Delay(k) => {
+                if !in_body {
+                    self.refuse(id, "delay read outside a body");
+                }
+                // The output of a site is one more unknown of the system, as a flow is: it
+                // reaches a sum affinely.
+                let mut sources = Sources::default();
+                sources.delays.insert(*k);
+                return self.done(id, Value::of(sources, Class::Affine));
+            }
+            Expr::SessionParameter { parameter } => {
+                if !in_body {
+                    self.refuse(id, "session parameter read outside a body");
+                }
+                // constant during an analysis: the sum sees a constant
+                let mut sources = Sources::default();
+                sources.session_parameters.insert(*parameter);
+                return self.done(id, Value::of(sources, Class::Constant));
+            }
+            Expr::Noise(k) => {
+                if !in_body {
+                    self.refuse(id, "noise read outside a body");
+                }
+                // The value of a source is an input that no node potential moves: it is a
+                // constant of the sum.
+                let mut sources = Sources::default();
+                sources.noises.insert(*k);
+                return self.done(id, Value::of(sources, Class::Constant));
             }
             Expr::Probe { plus, minus } => {
                 if !in_body {
@@ -1069,7 +1181,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::SessionParameter { .. } | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };

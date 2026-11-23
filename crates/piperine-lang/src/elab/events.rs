@@ -55,8 +55,8 @@ impl Elaboration<'_, '_> {
     pub(super) fn continuous_kind(&self, kind: &Expr) -> bool {
         let any = |es: &[LoweredExpr]| es.iter().any(|e| self.continuous(*e));
         match kind {
-            Expr::Probe { .. } | Expr::Flow { .. } | Expr::Derivative(_) | Expr::Env(Env::Time | Env::Static | Env::Gmin | Env::SourceScale | Env::Freq) => true,
-            Expr::Env(Env::Temperature | Env::Analysis(_)) | Expr::Fired(_) | Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::ParamPrevious(_) | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Previous(_) => false,
+            Expr::Probe { .. } | Expr::Flow { .. } | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::Env(Env::Time | Env::Static | Env::Gmin | Env::SourceScale | Env::Freq) => true,
+            Expr::Env(Env::Temperature | Env::Analysis(_)) | Expr::SessionParameter { .. } | Expr::Fired(_) | Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::ParamPrevious(_) | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Previous(_) => false,
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Table { x: expr, .. } | Expr::TableSlope { x: expr, .. } => self.continuous(*expr),
             Expr::CarrierElement { index, .. } | Expr::ElementPrevious { index, .. } | Expr::ElementChanged { index, .. } => self.continuous(*index),
             Expr::Binary { lhs, rhs, .. } => any(&[*lhs, *rhs]),
@@ -363,27 +363,34 @@ impl Elaboration<'_, '_> {
     /// a param, `None` after a diagnostic. A value reaching a hoisted module's input (`above`'s
     /// `cross(e, ttol, etol)`) is read in the caller's frame.
     fn tolerance(&mut self, scope: &mut Scope, arg: Option<ExprId>) -> Option<Option<LoweredExpr>> {
+        self.optional_constant(scope, arg, "a `cross` tolerance")
+    }
+
+    /// The optional argument `arg`, lowered as [`tolerance`](Self::tolerance) reads one: `Some(None)`
+    /// for one left out or given `None`, `Some(Some(value))` for a constant or a param, `None` after a
+    /// diagnostic naming `what` (`delay`'s `max` is read the same way, §14.6).
+    pub(super) fn optional_constant(&mut self, scope: &mut Scope, arg: Option<ExprId>, what: &str) -> Option<Option<LoweredExpr>> {
         let Some(arg) = arg else { return Some(None) };
         let node = self.design.expr_node(arg).clone();
         match &node.kind {
-            ExprKind::Paren(inner) => return self.tolerance(scope, Some(*inner)),
+            ExprKind::Paren(inner) => return self.optional_constant(scope, Some(*inner), what),
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Builtin(id)) if id.info().name == "None" => return Some(None),
                 Some(Resolution::Decl(decl)) => match self.input_of(scope, decl) {
                     Some(None) => return Some(None),
-                    Some(Some(given)) => return self.in_caller(scope, |this, scope| this.tolerance(scope, Some(given))),
+                    Some(Some(given)) => return self.in_caller(scope, |this, scope| this.optional_constant(scope, Some(given), what)),
                     None => {}
                 },
                 _ => {}
             },
             ExprKind::Call { args, .. } if self.is_some_call(arg) => {
                 let payload = args.first().map(|a| a.value);
-                return self.tolerance(scope, payload);
+                return self.optional_constant(scope, payload, what);
             }
             _ => {}
         }
         if !self.constant_or_param(scope, arg) {
-            self.unsupported(scope.file, node.span, "a `cross` tolerance that is not a constant or a param");
+            self.unsupported(scope.file, node.span, &format!("{what} that is not a constant or a param"));
             return None;
         }
         Some(Some(self.event_argument(scope, arg)?))

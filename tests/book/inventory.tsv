@@ -118,11 +118,11 @@ block	analog#3	6395ae5e780ffca4	run	piperine/book_analog::the_clipper_prints_one
 block	analog#4	f44e0e6d9f174a31	shown	-	-	-
 block	analog#5	f0d9aa24342fc413	shown	-	-	-
 block	analog#6	86627a9b1ef08bf0	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run clipper.msl --analysis transient --stop 2e-3 --print vin --print vout --stream clip --plot clipper.svg
-block	analog#7	2dcf8ccdabaf5fbf	refused	piperine/book_analog::the_diode_with_a_trace_is_refused	L49	-
+block	analog#7	2dcf8ccdabaf5fbf	run	piperine/book_analog::the_diode_with_a_trace_runs	-	-
 block	analog#8	c75a64c2f73e0062	shown	-	-	-
 block	analog#9	ad5153ed8a776aa7	run	piperine/book_analog::the_switch_shorts_its_nodes_while_its_control_is_high	-	-
 block	analog#10	680ede3e2ac2fe51	run	piperine/book_analog::the_nullor_drives_its_output_to_a_virtual_short_and_coupled_inductors_couple	-	-
-block	analog#11	35b144b2c97d9575	refused	piperine/book_analog::the_noise_source_is_refused	L45	-
+block	analog#11	35b144b2c97d9575	run	piperine/book_analog::the_noise_source_runs_and_reads_as_zero_outside_a_noise_sweep	-	-
 block	digital#1	b6a2c3d854639e4c	run	piperine/book_digital::the_counter_raises_full_exactly_while_the_count_is_255	-	-
 block	digital#2	a15e186f7ce2d093	shown	-	-	-
 block	digital#3	a594897648f9a3c9	run	piperine/book_digital::the_counter_raises_full_exactly_while_the_count_is_255	-	-
@@ -262,7 +262,7 @@ block	cheatsheet#3	4191faccce1565bc	refused	piperine/book_cheatsheet::the_body_i
 block	cheatsheet#4	dbde27824bc2538e	run	piperine/book_cheatsheet::the_analog_card_runs	-	-
 block	cheatsheet#5	61d8b738cee24c41	run	piperine/book_cheatsheet::the_digital_card_runs	-	-
 block	cheatsheet#6	11929fb57ae578b1	fragment	mixed#7	-	-
-block	cheatsheet#7	610d8e0e5f75dd38	refused	piperine/book_cheatsheet::the_debug_prints_card_is_refused_for_the_analog_trace	L49	-
+block	cheatsheet#7	610d8e0e5f75dd38	run	piperine/book_cheatsheet::the_debug_prints_card_runs_with_its_analog_trace	-	-
 block	cheatsheet#8	c2d75bfd6e731da6	refused	piperine/book_cheatsheet::the_template_card_is_refused_for_its_generic_module_and_its_placements	L32	-
 block	cheatsheet#9	ea8278e7ba785b91	refused	piperine/book_cheatsheet::the_extern_card_is_refused	L33	-
 block	cheatsheet#10	922342b0e4390458	run	piperine/book_cheatsheet::the_files_card_runs	-	-
@@ -281,7 +281,7 @@ claim	welcome~e9269920	e9269920165af6c3	prose	-	-	A solver often tries a time st
 claim	welcome~3afc3430	3afc34303f9d001f	holds	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	Its reaction, on at(t0) { fired <- true; }, means "when time reaches t0, set fired".
 claim	welcome~cd0a6683	cd0a6683d2118361	prose	-	-	Everything else writes nothing. let x = expr; only gives an expression a name.
 claim	welcome~6e662db9	6e662db9ee7d0481	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The piperine command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself.
-claim	welcome~47af33d1	47af33d10f393e92	holds	piperine/book_welcome::the_status_paragraph_lists_what_is_still_refused_and_one_item_runs	-	Parts of the language beyond that are still refused by name with P0001: in analog, noise, idt and delay; elsewhere, generic modules and resolved natures (a nature that implements Resolve).
+claim	welcome~e12daa72	e12daa72d55a284c	holds	piperine/book_welcome::the_status_paragraph_lists_what_is_still_refused_and_one_item_runs	-	Parts of the language beyond that are still refused by name with P0001: in analog, idt; elsewhere, generic modules and resolved natures (a nature that implements Resolve).
 claim	welcome~4bc80e1d	4bc80e1dc680d2f3	holds	piperine/book_welcome::e0319_a_param_with_no_default_must_be_bound	-	E0319
 claim	welcome~0808ef8f	0808ef8f1e6f4968	holds	piperine/book_welcome::the_rc_project_holds_its_operating_point_and_its_netlist	-	Bind it: Resistor(vin, vout) { r: 1k }.
 claim	welcome~4bc8171d	4bc8171dc680e23e	holds	piperine/book_welcome::e0312_a_port_must_be_connected	-	E0312
@@ -404,8 +404,7 @@ claim	modules~54e1b71d	54e1b71dcbc8277f	holds	piperine/book_modules::e0401_a_mod
 claim	modules~4bcb9f1d	4bcb9f1dc683ff2d	unraised	piperine/book_modules::e0304_is_not_raised_a_generic_ladder_is_refused_before_its_where_is_checked	L30	E0304
 claim	analog~8f90421c	8f90421cf10f758d	holds	piperine/book_analog::the_clipper_clips_near_the_forward_voltage_and_the_clip_record_confirms_the_hand_calculation	-	The clip stream answers a sharper question, "when does the clipping start, and how high is the input then?".
 claim	analog~750ad45d	750ad45df3f747a1	holds	piperine/book_analog::the_clipper_prints_one_clip_record_per_period_near_0_72_volts	-	The command runs: it prints the two clip records, then the table of the rows, and writes the plot:
-claim	analog~139c67b5	139c67b5de8bbf3a	refused	analog#7	L49	This emit! runs when the code around it runs, and analog runs at every evaluation: every Newton iteration of every step, including iterations and whole steps that the solver later rejects.
-claim	analog~b103eeb0	b103eeb07178680c	refused	analog#7	L49	The piperine command prints the records of reactions; a trace from analog is not among the lines it shows.
+claim	analog~139c67b5	139c67b5de8bbf3a	holds	piperine/book_analog::the_diode_with_a_trace_runs	-	This emit! runs when the code around it runs, and analog runs at every evaluation: every Newton iteration of every step, including iterations and whole steps that the solver later rejects.
 claim	analog~c91537fe	c91537fe5beade7a	holds	piperine/book_analog::e0414_a_branch_that_switches_kind_on_a_probe_is_refused	-	A choice of kind that depends on a probe is an error (E0414), because the solver would have to change the equations while it is solving them.
 claim	analog~54e53c1d	54e53c1dcbcb3f55	holds	piperine/book_analog::e0410_a_contribution_writes_a_probe_of_a_branch	-	E0410
 claim	analog~54e5351d	54e5351dcbcb3370	holds	piperine/book_analog::e0417_a_contribution_is_an_f64_and_the_fix_runs	-	E0417
@@ -551,9 +550,13 @@ block	solver#12	fef80f23f68a3276	shown	-	-	-
 block	solver#13	aa30088d37939468	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run filter.msl --analysis pz --input v1 --output vout
 block	solver#14	08d4bb8ee0696a6d	shown	-	-	-
 block	solver#15	dd386fb556b3f2b4	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run filter.msl --analysis sens --wrt v1.dc --wrt r1.r --print vout
-block	solver#16	6f7e18a9dd9c3243	shown	-	-	-
-block	solver#17	c2057ebbb7378f77	shown	-	-	-
-block	solver#18	b920698c6959c65d	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run filter.msl --analysis transient --stop 5e-3 --max-steps 20 --print vout
+block	solver#16	4698de5517cae20c	run	piperine/book_solver::the_noise_model_runs_and_its_density_is_the_resistors_shaped_by_the_filter	-	-
+block	solver#17	cdcd861b458be80e	shown	-	-	-
+block	solver#18	c375d7209380093e	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run hiss.msl --analysis noise --input v1 --output vout --from 10 --to 1e4 --per-decade 1
+block	solver#19	6f7e18a9dd9c3243	shown	-	-	-
+block	solver#20	c2057ebbb7378f77	shown	-	-	-
+block	solver#21	b920698c6959c65d	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run filter.msl --analysis transient --stop 5e-3 --max-steps 20 --print vout
+claim	solver~611c58a3	611c58a31a4817cb	holds	piperine/book_solver::the_noise_model_runs_and_its_density_is_the_resistors_shaped_by_the_filter	-	Only the resistor of hiss.msl makes noise, so the density is its 4 k T / r shaped by the filter, and the input-referred density is flat.
 claim	solver~fe59ce49	fe59ce49a19424cb	prose	-	-	This chapter explains what it does with them, so that you can predict what a simulation will do and read what it reports.
 claim	solver~83cb975b	83cb975b79c20f2c	holds	piperine/book_solver::the_two_sides_of_the_solver_never_depend_on_each_other	-	The analog and digital solvers never call each other: everything that crosses between them is an event the owner carries.
 claim	solver~73d81a62	73d81a62e1d21515	prose	-	-	When plain Newton fails, the solver makes the problem easier and walks back.
@@ -821,3 +824,4 @@ claim	cli~d8ef198c	d8ef198c3a5817c1	prose	-	-	A real has six decimals and an exp
 claim	solver~95d8c226	95d8c226ae3825f3	prose	-	-	A loop of functions is accepted only if it passes through a net marked to relax, which is iterated until it stops changing; a net that still moves after its bounded passes stops the run with E0511, naming the loop's drives.
 claim	welcome~174ddaf4	174ddaf4b9e1a9cd	holds	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	The first line under the header is the record the bench wrote: one time constant after the step, vout is 1 − 1/e to the digit, at 0.07 ns before 2 µs.
 claim	mixed~eab5e274	eab5e274a51fe9fa	prose	-	-	First watch the loop start, one record per switching period; the listing at the end of this box is the first lines of what the command prints:
+claim	analog~a8e493ee	a8e493eee5c35c20	prose	-	-	The piperine command prints the records of reactions, and a trace from analog when --stream names its stream, with the Newton iteration that wrote it.

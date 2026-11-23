@@ -79,7 +79,7 @@ How the Piperine solver meets Part V. Every number is a default the host may cha
 | crossings (§17.3) | after a converged step that reads no jump, each `cross` that went from `≤ 0` to `> 0` is within tolerance when `e < etol` or the step's end exceeds its estimated crossing by at most `ttol`; the estimate is the secant of the step's last two attempts past the crossing when it falls inside the bracket, else the secant of the bracketing pair; otherwise the step is retaken to the earliest estimate rounded up to a tick, and a retake that lands before the crossing is accepted as an ordinary step. A design with a `cross` steps on the tick grid | |
 | limiting (§18) | ngspice `pnjlim`, `fetlim`, `limvds`; an instance is active while `abs(x̂ − x) > 1e-6 + 1e-4 · abs(x)`; when a limited branch potential becomes node potentials, the minus node moves and the plus node stays, unless the minus node is `gnd` | |
 | analyses the host builds (§16.3, §16.4) | continuation keeps the checkpoint of the last accepted step; periodic steady state by shooting over continued transients | the periodic small-signal and noise linearization is not implemented (G.6, G.37) |
-| temperature | `temperature` and `tnom` 300.15 K | |
+| temperature | `temperature` 300.15 K | |
 | integer width limit (§1 rule 5) | the width of `UInt<N>` and `Int<N>` is any const expression `1 <= N <= 2^32 - 1`: the width is held in 32 bits by the IR and the ABI (`count` of a `U64` field, `ceil(N/64)`). A wider integer is `E0103` naming this limit. The limit bounds the representation, not the stack: an `Int<1000000>` value is 125 KiB | |
 | `table_model` splines (§22.2.15 rule 8, G.64) | the coefficients are computed once per table. Control `3`: a cubic spline with the not-a-knot end conditions (the third derivative is continuous at the second and the last-but-one sample, so the first two segments, and the last two, are one cubic). Control `2`: a quadratic spline whose first segment is the parabola through the first three samples, each later segment taking the value and the slope of the one before at their shared sample. The derivative at a sample is the slope of the segment on its right; at the last sample, the slope of the segment on its left | |
 
@@ -106,7 +106,7 @@ How the Piperine solver meets Part V. Every number is a default the host may cha
 | step to the stop | a step whose end lies within two ticks short of the stop ends at the stop (the remainder would be a step of a tick or two, integrated as noise); the smallest `CAP` of the last accepted solution still bounds it | §17.2.2 |
 | step at the floor | one retake at `dt_min` after a larger attempt failed; Newton failing at the floor, `E0508`; the error test failing at the floor, accepted and counted | §17.2 |
 | limiting activity | `abs(x̂ − x) > 1e-6 + 1e-4 · abs(x)` | §18 rule 5 |
-| `temperature`, `tnom` | 300.15 K | §14 |
+| `temperature` | 300.15 K | §14 |
 
 ### C.2.2 What the defaults may not change
 

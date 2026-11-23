@@ -341,7 +341,7 @@ In force: the contract of §8.5, and §8.5.16 (a step receives and commits the b
 ### G.66 Session parameter names of `simparam`
 
 **Status: Open.**
-`simparam(name, default)` (§14.4) reads a session parameter. This specification names none, so no name is portable between hosts.
+`simparam(name)` (§14.4) reads a session parameter as an `Option<f64>`. This specification names none, so no name is portable between hosts.
 
 ### G.67 Two blanket traits with one method name
 

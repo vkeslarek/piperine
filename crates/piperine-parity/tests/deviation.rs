@@ -142,14 +142,15 @@ fn floor(golden: &piperine_parity::golden::Golden) -> Measured {
 /// `uic_rc` and `diode_rs` joined them with `analog-structure` (T23, T24): `CapIc` reads
 /// `analysis(..)` and `DiodeRs` selects a contribution by a param, forms the interpreter refuses by
 /// name (T15).
-const COMPILED_ONLY: [&str; 6] = ["tran_jump", "tran_corner", "tran_floor", "pss_rc", "uic_rc", "diode_rs"];
+const COMPILED_ONLY: [&str; 10] = ["tran_jump", "tran_corner", "tran_floor", "pss_rc", "uic_rc", "diode_rs", "delay_tline", "noise_rc", "noise_switch", "noise_diode"];
 
 /// The twins of `host-ii` whose `parity_*` target measures and prints its own deviation per
-/// quantity (`parity_tf`, `parity_pz`, `parity_sens`): resistances, eigenvalues and derivatives
+/// quantity (`parity_tf`, `parity_pz`, `parity_sens`, and `parity_noise` for the noise twins, whose rows
+/// are densities under `NOISE`): resistances, eigenvalues and derivatives
 /// are not an operating-point node, a waveform or a sweep this table's rows can hold; the gate is
 /// that target under `ToleranceContract`, and the table does not repeat it. `temp_res` is an
 /// operating point and `pss_rc` a waveform, so both are rows here.
-const OWN_TARGET: [&str; 3] = ["pz_lowpass", "sens_divider", "tf_divider"];
+const OWN_TARGET: [&str; 6] = ["noise_diode", "noise_rc", "noise_switch", "pz_lowpass", "sens_divider", "tf_divider"];
 
 /// The twin `temp_res` at 75 C (the run key `temp`, ngspice's `.options temp=75`) and at the
 /// default 27 C (what ngspice prints as `cold`), `v(mid)` under `DC_VOLTAGE`.
@@ -214,6 +215,8 @@ fn measure(backend: Backend) -> Option<BTreeMap<&'static str, Measured>> {
     table.insert("tran_rc", tran("tran_rc", "tran_rc_tran", "out", &golden, backend));
     let Reference::Golden(golden) = ngspice.run("temp_res") else { return None };
     table.insert("temp_res", temp_res(&golden, backend));
+    let Reference::Golden(golden) = ngspice.run("tnom_res") else { return None };
+    table.insert("tnom_res", operating_point(&OperatingPoint { fixture: "tnom_res", nodes: &["mid"] }, &golden, backend));
     let Reference::Golden(golden) = ngspice.run("tran_dq") else { return None };
     table.insert("tran_dq", tran("tran_dq", "tran_dq_tran", "a", &golden, backend));
     if backend == Backend::Rust {
@@ -227,6 +230,8 @@ fn measure(backend: Backend) -> Option<BTreeMap<&'static str, Measured>> {
         table.insert("pss_rc", pss_rc(&golden, backend));
         let Reference::Golden(golden) = ngspice.run("uic_rc") else { return None };
         table.insert("uic_rc", tran("uic_rc", "uic_rc_tran", "out", &golden, backend));
+        let Reference::Golden(golden) = ngspice.run("delay_tline") else { return None };
+        table.insert("delay_tline", tran("delay_tline", "delay_tline_tran", "out", &golden, backend));
         let Reference::Golden(golden) = ngspice.run("diode_rs") else { return None };
         table.insert("diode_rs", operating_point(&OperatingPoint { fixture: "diode_rs", nodes: &["vin", "a"] }, &golden, backend));
     }

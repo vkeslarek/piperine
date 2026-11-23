@@ -244,7 +244,7 @@ impl Assembly {
             for (ti, t) in inst.terms.iter().enumerate() {
                 if t.op == op::DELAY {
                     let v = linear(t, inst, st).v;
-                    st.delay[ti].push(amb.time, v, max_of(t, &self.slots));
+                    st.delay[ti].push(amb.time, v, max_of(t, &self.slots, &self.written));
                 }
             }
         }
@@ -377,7 +377,7 @@ impl Assembly {
                     (op::DDT, None) => stamp_rows(t, &lin, 0.0, 0.0, out),
                     (op::DELAY, Some(_)) => {
                         let td = t.td.map_or(0.0, |(f, w)| st.fns[f].f64(w));
-                        let at = (amb.time, td, max_of(t, &self.slots));
+                        let at = (amb.time, td, max_of(t, &self.slots, &self.written));
                         stamp_delay(&inst.path, t, &lin, &st.delay[ti], at, x, out)?;
                     }
                     _ => stamp_flow(t, &lin, x, out),
@@ -631,10 +631,11 @@ impl Assembly {
     }
 }
 
-/// The bound of a `DELAY` term: the `F64` at byte 0 of its `max` slot, or
-/// unbounded.
-fn max_of(t: &TermPlan, slots: &[Vec<u8>]) -> f64 {
-    t.max.map_or(f64::INFINITY, |s| f64::from_le_bytes(slots[s][..8].try_into().expect("an F64 at byte 0")))
+/// The bound of a `DELAY` term: the `F64` at byte 0 of its `max` slot, or unbounded. A slot the
+/// parameter cone has not written yet (the operating point's first solve comes before the cone's
+/// first run) is unbounded too: its zero bytes are no bound.
+fn max_of(t: &TermPlan, slots: &[Vec<u8>], written: &[bool]) -> f64 {
+    t.max.filter(|s| written[*s]).map_or(f64::INFINITY, |s| f64::from_le_bytes(slots[s][..8].try_into().expect("an F64 at byte 0")))
 }
 
 /// Which outputs one evaluation needs beyond the rows of a Newton solve.

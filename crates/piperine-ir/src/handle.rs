@@ -4,7 +4,7 @@ use crate::real::Real;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId, AggregateId, WideId};
 use crate::model::{
     CarrierWindow, EmptyArray, NodeArray,
-    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Event, Expr, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
+    BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, DelaySite, Derivative, Drive, NoiseSource, SessionParameter, TraceSite, PartialDerivative, EmitField, Event, Expr, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
     NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ReprForm, TypeData, TypeKind, ValueType, AggregateData, WideData,
 };
 use crate::contributions::{Contribution, Contributions};
@@ -316,6 +316,53 @@ impl<'a> Body<'a> {
     /// The derivative sites, by index (`Expr::Derivative`).
     pub fn derivatives(&self) -> &'a [Derivative] {
         &self.data().derivatives
+    }
+
+    /// The delay sites, by index (`Expr::Delay`).
+    pub fn delays(&self) -> &'a [DelaySite] {
+        &self.data().delays
+    }
+
+    /// The noise sources, by index (`Expr::Noise`).
+    pub fn noise_sources(&self) -> &'a [NoiseSource] {
+        &self.data().noise_sources
+    }
+
+    /// The session parameters the body reads, by index (`Expr::SessionParameter`).
+    pub fn session_parameters(&self) -> &'a [SessionParameter] {
+        &self.data().session_parameters
+    }
+
+    /// The `ddx` calls the elaborator differentiated, by index.
+    pub fn partial_derivatives(&self) -> &'a [PartialDerivative] {
+        &self.data().partial_derivatives
+    }
+
+    /// The text fields of trace site `site`, as `(name, text)`, in source order: what the site's
+    /// `emit!` wrote that never crosses the ABI. Empty for a site the body does not have.
+    pub fn trace_texts(&self, site: u32) -> Vec<(&'a str, &'a str)> {
+        let ir = self.ir;
+        let analog = self.data().analog.as_deref().unwrap_or(&[]);
+        Statements::of(ir, analog)
+            .into_iter()
+            .find_map(|id| match ir.stmt(id) {
+                Stmt::Trace { site: s, fields } if *s == site => Some(
+                    fields
+                        .iter()
+                        .filter_map(|f| match f {
+                            EmitField::Text { name, text } => Some((name.as_str(), text.as_str())),
+                            EmitField::Value { .. } => None,
+                        })
+                        .collect(),
+                ),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    /// The trace sites, by index (`Stmt::Trace`).
+    pub fn traces(&self) -> &'a [TraceSite] {
+        &self.data().traces
     }
 
     /// The authored placements, in source order.

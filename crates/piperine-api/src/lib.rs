@@ -25,6 +25,7 @@ mod host;
 pub mod prelude;
 pub mod metadata;
 pub mod noise;
+mod parameters;
 pub mod param_text;
 pub mod params;
 pub mod plot;

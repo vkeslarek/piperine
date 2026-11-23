@@ -11,6 +11,7 @@ mod composite;
 mod device;
 mod dual;
 mod generics;
+mod operators;
 mod param_types;
 mod widths;
 mod walk;
@@ -29,6 +30,7 @@ use std::collections::HashSet;
 use piperine_ir::{AnalysisKind, Body, BodyId, BranchKind, Broken, Env, EventSource, Ir, Stmt, StmtId, Target};
 use composite::CompositeForms;
 use generics::GenericForms;
+use operators::OperatorForms;
 use param_types::ParamTypes;
 use widths::NumberWidths;
 use piperine_plan::{Modules, Netlist};
@@ -74,7 +76,7 @@ impl Interpreter {
             for what in NumberWidths::refused(b) {
                 refused.push(Broken { item: format!("body {}", b.name()), origin: b.origin().clone(), what });
             }
-            for form in Self::amended_forms(b).into_iter().chain(Self::structure_forms(b)).chain(CompositeForms::of(b)).map(String::from).chain(GenericForms::of(b)) {
+            for form in Self::amended_forms(b).into_iter().chain(Self::structure_forms(b)).chain(CompositeForms::of(b)).chain(OperatorForms::of(b)).map(String::from).chain(GenericForms::of(b)) {
                 refused.push(Broken {
                     item: format!("body {}", b.name()),
                     origin: b.origin().clone(),

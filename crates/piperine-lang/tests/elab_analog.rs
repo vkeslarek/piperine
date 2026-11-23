@@ -112,8 +112,8 @@ analog for D {
 module Top() { let d = D { }(gnd, gnd); }";
     let ir = Elab::ir(src, "Top");
     let text = ir.print_structural();
-    // The sites, in source order: the `let` names a `limit`; an `ac_stim` is the analysis `ac`.
-    assert!(text.contains("  limit L0 \"vd\"\n  limit L1 \"w\"\n  limit L2 \"limit2\"\n  stim S0 \"ac\"\n  stim S1 \"ac\"\n"), "{text}");
+    // The sites, in source order: the `let` names a `limit`; the first `ac_stim` is the analysis `ac`, a later one is numbered (`ac1`), so no two sites print alike.
+    assert!(text.contains("  limit L0 \"vd\"\n  limit L1 \"w\"\n  limit L2 \"limit2\"\n  stim S0 \"ac\"\n  stim S1 \"ac1\"\n"), "{text}");
     // The diode's form, closure and seed included.
     assert!(text.contains("let vd = limit L0 (probe(a, k), |new, old| pnjlim(new, old, 0.026, vcrit), seed vcrit)"), "{text}");
     assert!(text.contains("let w = limit L1 (probe(a, gnd), |n, o| n)"), "no seed, no `seed`: {text}");

@@ -219,7 +219,7 @@ impl Reach {
                     Reach::expr(ir, *a, out);
                 }
             }
-            Stmt::Emit { fields, .. } => {
+            Stmt::Emit { fields, .. } | Stmt::Trace { fields, .. } => {
                 for f in fields {
                     if let piperine_ir::EmitField::Value { value, .. } = f {
                         Reach::expr(ir, *value, out);
@@ -233,7 +233,8 @@ impl Reach {
         out.push(id);
         match ir.expr(id) {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) => {}
+            Expr::SessionParameter { .. } => {}
             Expr::CarrierElement { index, .. } | Expr::ElementPrevious { index, .. } | Expr::ElementChanged { index, .. } => Reach::expr(ir, *index, out),
             Expr::Unwrap { is, value, .. } => {
                 Reach::expr(ir, *is, out);

@@ -79,3 +79,10 @@ fn diode_rs_runs_and_prints_the_skip_line_without_ngspice() {
         assert_eq!((outcome.solved, outcome.compared), (2, 0), "{}", backend.name());
     }
 }
+
+#[test]
+fn tnom_res() {
+    // AO-08, withdrawn as a run key: the model's own `tnom` of 323.15 K (50 C) against ngspice's
+    // `.options tnom=50`, both at 27 C, the lower leg 3k * (1 + 0.002 * (27 - 50))
+    compare(OperatingPoint { fixture: "tnom_res", nodes: &["mid"] });
+}

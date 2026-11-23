@@ -1,0 +1,400 @@
+//! `ddx` run from source (analog-operators AO-01, Part IV §14.2): each module forces its output
+//! to the value of one `ddx`, so the operating point reads the derivative as `v(o)`.
+
+/// `ddx` of the diode current against its own branch, the conductance at the operating point.
+module DiodeConductance(a: Electrical, o: Electrical) {
+    is: f64 = 1e-14;
+    nvt: f64 = 25.85m;
+}
+analog for DiodeConductance {
+    let id = is * ((v(a, gnd) / nvt).exp() - 1.0);
+    v(o, gnd) +> ddx(id, v(a, gnd));
+}
+
+module DiodeConductanceBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let g = DiodeConductance(a, o);
+}
+analog for DiodeConductanceBench { v(a, gnd) +> 0.6; }
+
+/// `ddx(v(k, a), v(a, k))`: the reversed branch is -1.
+module ReversedBranch(a: Electrical, k: Electrical, o: Electrical) {}
+analog for ReversedBranch { v(o, gnd) +> ddx(v(k, a), v(a, k)); }
+
+module ReversedBranchBench() {
+    signal a: Electrical;
+    signal k: Electrical;
+    signal o: Electrical;
+    let r = ReversedBranch(a, k, o);
+}
+analog for ReversedBranchBench {
+    v(a, gnd) +> 0.7;
+    v(k, gnd) +> 0.2;
+}
+
+/// `ddx(v(g) - v(s), v(g, s))`: the two single-node probes are other branches, held constant.
+module OtherBranches(g: Electrical, s: Electrical, o: Electrical) {}
+analog for OtherBranches { v(o, gnd) +> ddx(v(g, gnd) - v(s, gnd), v(g, s)); }
+
+module OtherBranchesBench() {
+    signal g: Electrical;
+    signal s: Electrical;
+    signal o: Electrical;
+    let r = OtherBranches(g, s, o);
+}
+analog for OtherBranchesBench {
+    v(g, gnd) +> 0.7;
+    v(s, gnd) +> 0.2;
+}
+
+/// `ddx(x * i(a, b), i(a, b))` is `x`: the flow of a branch the module drives with a potential.
+module FlowFactor(a: Electrical, b: Electrical, o: Electrical) {
+    x: f64 = 3.0;
+}
+analog for FlowFactor {
+    v(a, b) +> 0.5;
+    v(o, gnd) +> ddx(x * i(a, b), i(a, b));
+}
+
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+module FlowFactorBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let f = FlowFactor(a, gnd, o);
+    let load = Resistor { r: 1k }(a, gnd);
+}
+
+/// `ddx(limit(v(a), f) * 2.0, v(a))` is 2: `limit` is transparent.
+module ThroughLimit(a: Electrical, o: Electrical) {}
+analog for ThroughLimit { v(o, gnd) +> ddx(limit(v(a, gnd), |new, old| new) * 2.0, v(a, gnd)); }
+
+module ThroughLimitBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let t = ThroughLimit(a, o);
+}
+analog for ThroughLimitBench { v(a, gnd) +> 0.4; }
+
+/// `ddx` of an expression that reads no probe is 0.
+module NoProbe(a: Electrical, o: Electrical) {
+    k: f64 = 4.0;
+}
+analog for NoProbe { v(o, gnd) +> ddx(k * 2.0, v(a, gnd)); }
+
+module NoProbeBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let t = NoProbe(a, o);
+}
+analog for NoProbeBench { v(a, gnd) +> 0.4; }
+
+/// An AC sweep takes the `ddx` at the operating point: `i(o) +> ddx(id, v(a)) * v(inp)` into 1 kohm.
+module ConductanceTimesInput(a: Electrical, inp: Electrical, o: Electrical) {
+    is: f64 = 1e-14;
+    nvt: f64 = 25.85m;
+}
+analog for ConductanceTimesInput {
+    let id = is * ((v(a, gnd) / nvt).exp() - 1.0);
+    i(o, gnd) +> ddx(id, v(a, gnd)) * v(inp, gnd);
+}
+
+module ConductanceAcBench() {
+    signal a: Electrical;
+    signal inp: Electrical;
+    signal o: Electrical;
+    let t = ConductanceTimesInput(a, inp, o);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for ConductanceAcBench {
+    v(a, gnd) +> 0.6;
+    v(inp, gnd) +> ac_stim(1.0);
+}
+
+/// A pure `fn` of the junction current, with a `let` of its own and a call of another `fn`.
+fn shockley(v: f64, is: f64, nvt: f64) -> f64 {
+    let x = v / nvt;
+    is * (x.exp() - 1.0)
+}
+
+fn twice(v: f64, is: f64, nvt: f64) -> f64 { 2.0 * shockley(v, is, nvt) }
+
+/// `ddx` of calls of a `fn`: `shockley(v, is) + twice(v, is)` is three junctions of `is`, so the
+/// derivative is three times the conductance.
+module FnConductance(a: Electrical, o: Electrical) {
+    is: f64 = 1e-14;
+    nvt: f64 = 25.85m;
+}
+analog for FnConductance {
+    v(o, gnd) +> ddx(shockley(v(a, gnd), is, nvt) + twice(v(a, gnd), is, nvt), v(a, gnd));
+}
+
+module FnConductanceBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let g = FnConductance(a, o);
+}
+analog for FnConductanceBench { v(a, gnd) +> 0.6; }
+
+/// The same call of one `fn` twice with other arguments: the second call does not read the first's.
+module FnTwiceConductance(a: Electrical, o: Electrical) {
+    is: f64 = 1e-14;
+    nvt: f64 = 25.85m;
+}
+analog for FnTwiceConductance {
+    v(o, gnd) +> ddx(shockley(v(a, gnd), is, nvt) + shockley(v(a, gnd), 5.0 * is, nvt), v(a, gnd));
+}
+
+module FnTwiceConductanceBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let g = FnTwiceConductance(a, o);
+}
+analog for FnTwiceConductanceBench { v(a, gnd) +> 0.6; }
+
+/// A flow probe of a branch the module gives no potential contribution: the flow is no unknown, so an
+/// expression is held constant against it (§14.2.3: any other branch is held constant).
+module FlowOfAFlowBranch(a: Electrical, o: Electrical) {}
+analog for FlowOfAFlowBranch {
+    i(a, gnd) +> v(a, gnd) / 1k;
+    v(o, gnd) +> ddx(3.0 * v(a, gnd), i(a, gnd));
+}
+
+module FlowOfAFlowBranchBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let f = FlowOfAFlowBranch(a, o);
+}
+analog for FlowOfAFlowBranchBench { v(a, gnd) +> 0.4; }
+
+/// `ac_stim` read by the value of a `ddx` (§14.3.1): `ddx(ac_stim(2) * x + 3 x, x)` is `ac_stim(2) + 3` (the stimulus
+/// is no function of the probe, so its own derivative is 0): 3 at the operating point, and the stimulus `2` in a sweep.
+module StimulusDdxBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+}
+analog for StimulusDdxBench {
+    v(a, gnd) +> 0.4;
+    v(o, gnd) +> ddx(ac_stim(2.0) * v(a, gnd) + 3.0 * v(a, gnd), v(a, gnd));
+}
+
+/// `ddx(ac_stim(2), x)` is 0: the stimulus is no function of the probe, so the derivative reads no stimulus and the
+/// site is still a site of the body (§14.3.1, §14.2.3).
+module StimulusAloneDdxBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+}
+analog for StimulusAloneDdxBench {
+    v(a, gnd) +> 0.4;
+    v(o, gnd) +> ddx(ac_stim(2.0), v(a, gnd));
+}
+
+/// `ac_stim` read by the state of a `ddt` that is no whole addend (a derivative site): a value input like the
+/// others (§14.3.1), whose derivative is 0 at the operating point.
+module StimulusStateBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+}
+analog for StimulusStateBench {
+    v(a, gnd) +> 0.4;
+    v(o, gnd) +> ddt(ac_stim(2.0) + v(a, gnd)) * v(a, gnd);
+}
+
+/// `ddx(5 i(a), i(a))` of a flow branch the module gives no potential contribution: a probe of the same flow
+/// contributes 1 (§14.2.3), so the derivative is 5 though the flow is no unknown.
+module FlowLeafFactor(a: Electrical, o: Electrical) {}
+analog for FlowLeafFactor {
+    i(a, gnd) +> v(a, gnd) / 1k;
+    v(o, gnd) +> ddx(5.0 * i(a, gnd), i(a, gnd));
+}
+
+module FlowLeafFactorBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let f = FlowLeafFactor(a, o);
+}
+analog for FlowLeafFactorBench { v(a, gnd) +> 0.4; }
+
+/// The same flow named the other way round: the reversed branch contributes -1, so `ddx(5 i(a, gnd), i(gnd, a))` is -5.
+module FlowLeafReversed(a: Electrical, o: Electrical) {}
+analog for FlowLeafReversed {
+    i(a, gnd) +> v(a, gnd) / 1k;
+    v(o, gnd) +> ddx(5.0 * i(a, gnd), i(gnd, a));
+}
+
+module FlowLeafReversedBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let f = FlowLeafReversed(a, o);
+}
+analog for FlowLeafReversedBench { v(a, gnd) +> 0.4; }
+
+/// A flow no contribution of the module reaches: `ddx(5 i(a), i(a))` is still 5, the derivative reading no value of it.
+module FlowLeafAlone(a: Electrical, o: Electrical) {}
+analog for FlowLeafAlone { v(o, gnd) +> ddx(5.0 * i(a, gnd), i(a, gnd)); }
+
+module FlowLeafAloneBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let f = FlowLeafAlone(a, o);
+    let load = Resistor { r: 1k }(a, gnd);
+}
+
+// ---- a `fn` inside a `ddx` (§14.2.3): its body is run symbolically, so its statements differentiate ----------------------
+// Each bench drives `a` and reads `v(o)`, the value of one `ddx`, written as its closed form in `source_partial.rs`.
+
+/// An early `return` under an `if`: `2 x^2` above 0.5, `3 x` below.
+fn clip(x: f64) -> f64 { if x > 0.5 { return 2.0 * x * x; } x * 3.0 }
+module FnEarlyReturn(a: Electrical, o: Electrical) {}
+analog for FnEarlyReturn { v(o, gnd) +> ddx(clip(v(a, gnd)), v(a, gnd)); }
+module FnEarlyReturnHighBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnEarlyReturn(a, o);
+}
+analog for FnEarlyReturnHighBench { v(a, gnd) +> 0.6; }
+module FnEarlyReturnLowBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnEarlyReturn(a, o);
+}
+analog for FnEarlyReturnLowBench { v(a, gnd) +> 0.4; }
+
+/// An `if` expression with an `else if` chain that assigns in its branches: `x^2` below 0.5, `x^3` between, `x` above.
+fn banded(x: f64) -> f64 {
+    let y = x;
+    if x < 0.5 { y = x * x; } else if x < 0.8 { y = x * x * x; }
+    y
+}
+module FnBranchAssign(a: Electrical, o: Electrical) {}
+analog for FnBranchAssign { v(o, gnd) +> ddx(banded(v(a, gnd)), v(a, gnd)); }
+module FnBranchAssignMiddleBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnBranchAssign(a, o);
+}
+analog for FnBranchAssignMiddleBench { v(a, gnd) +> 0.6; }
+module FnBranchAssignHighBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnBranchAssign(a, o);
+}
+analog for FnBranchAssignHighBench { v(a, gnd) +> 0.9; }
+
+/// Assignments: `y = x * x; y += x` is `x^2 + x`.
+fn assigned(x: f64) -> f64 { let y = x; y = y * y; y += x; y }
+module FnAssign(a: Electrical, o: Electrical) {}
+analog for FnAssign { v(o, gnd) +> ddx(assigned(v(a, gnd)), v(a, gnd)); }
+module FnAssignBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnAssign(a, o);
+}
+analog for FnAssignBench { v(a, gnd) +> 0.4; }
+
+/// A loop with constant bounds: three trips of `p = p * x` is `x^3`.
+fn cubed(x: f64) -> f64 { let p = 1.0; for k in 0..3 { p = p * x; } p }
+module FnLoop(a: Electrical, o: Electrical) {}
+analog for FnLoop { v(o, gnd) +> ddx(cubed(v(a, gnd)), v(a, gnd)); }
+module FnLoopBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnLoop(a, o);
+}
+analog for FnLoopBench { v(a, gnd) +> 0.4; }
+
+/// A loop whose variable is read and decides: `k x` for each of the trips with `k > 1` is `(2 + 3) x`, so the sum is `5 x`.
+fn weighted(x: f64) -> f64 { let s = 0.0; for k in 0..4 { if k > 1 { s += (k as f64) * x; } } s }
+module FnLoopVariable(a: Electrical, o: Electrical) {}
+analog for FnLoopVariable { v(o, gnd) +> ddx(weighted(v(a, gnd)), v(a, gnd)); }
+module FnLoopVariableBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnLoopVariable(a, o);
+}
+analog for FnLoopVariableBench { v(a, gnd) +> 0.4; }
+
+/// An `Option` parameter: `x * gain.unwrap_or(2)` is the given gain, or 2 left out.
+fn amplified(x: f64, gain: Option<f64>) -> f64 { x * gain.unwrap_or(2.0) }
+module FnOption(a: Electrical, o: Electrical, p: Electrical) {}
+analog for FnOption {
+    v(o, gnd) +> ddx(amplified(v(a, gnd), Some(5.0)), v(a, gnd));
+    v(p, gnd) +> ddx(amplified(v(a, gnd)), v(a, gnd));
+}
+module FnOptionBench() {
+    signal a: Electrical; signal o: Electrical; signal p: Electrical;
+    let f = FnOption(a, o, p);
+}
+analog for FnOptionBench { v(a, gnd) +> 0.4; }
+
+/// A `str` parameter, bound to its text and not read as a value.
+fn labelled(x: f64, label: str) -> f64 { x * 4.0 }
+module FnText(a: Electrical, o: Electrical) {}
+analog for FnText { v(o, gnd) +> ddx(labelled(v(a, gnd), "gain"), v(a, gnd)); }
+module FnTextBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnText(a, o);
+}
+analog for FnTextBench { v(a, gnd) +> 0.4; }
+
+/// A method of a trait on `f64`, `self` a parameter like another: `x.scaled(7)`.
+trait Scale { fn scaled(self, k: f64) -> f64; }
+impl Scale for f64 { fn scaled(self, k: f64) -> f64 { self * k } }
+module FnMethod(a: Electrical, o: Electrical) {}
+analog for FnMethod { v(o, gnd) +> ddx(v(a, gnd).scaled(7.0), v(a, gnd)); }
+module FnMethodBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnMethod(a, o);
+}
+analog for FnMethodBench { v(a, gnd) +> 0.4; }
+
+/// A generic `fn`, expanded for the type and the const of its instance: `x * N` whatever the tag.
+fn tripled<T: Repr, const N: usize>(x: f64, tag: T) -> f64 { x * (N as f64) }
+module FnGeneric(a: Electrical, o: Electrical) {}
+analog for FnGeneric { v(o, gnd) +> ddx(tripled::<bool, 3>(v(a, gnd), true), v(a, gnd)); }
+module FnGenericBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnGeneric(a, o);
+}
+analog for FnGenericBench { v(a, gnd) +> 0.4; }
+
+/// A recursion that ends on a constant: `power(x, 3)` is `x * x * x`.
+fn power(x: f64, n: u8) -> f64 { if n == 0 { 1.0 } else { x * power(x, n - 1) } }
+module FnRecursion(a: Electrical, o: Electrical) {}
+analog for FnRecursion { v(o, gnd) +> ddx(power(v(a, gnd), 3), v(a, gnd)); }
+module FnRecursionBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnRecursion(a, o);
+}
+analog for FnRecursionBench { v(a, gnd) +> 0.4; }
+
+/// A handle parameter, bound to the caller's node: `2 v(h)`.
+fn doubled(h: Electrical) -> f64 { 2.0 * v(h) }
+module FnHandle(a: Electrical, o: Electrical) {}
+analog for FnHandle { v(o, gnd) +> ddx(doubled(a), v(a, gnd)); }
+module FnHandleBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnHandle(a, o);
+}
+analog for FnHandleBench { v(a, gnd) +> 0.4; }
+
+/// An ordinary analog loop, unrolled because it contributes: `k as f64` of its variable is read in a term, `0 + 1 + 2 + 3` times 0.1.
+module UnrolledCastLoop(o: Electrical) {}
+analog for UnrolledCastLoop { for k in 0..4 { v(o, gnd) +> (k as f64) * 0.1; } }
+
+module UnrolledCastBench() {
+    signal o: Electrical;
+    let l = UnrolledCastLoop(o);
+}
+
+/// A method of a struct, its receiver a struct written out: `self.k * x` with `k` 7, and a struct held in a `let`.
+struct Gain { k: f64 }
+impl Gain { fn apply(self, x: f64) -> f64 { x * self.k } }
+fn held(x: f64) -> f64 { let g = Gain { k: 9.0 }; g.apply(x) }
+module FnStructMethod(a: Electrical, o: Electrical, p: Electrical) {}
+analog for FnStructMethod {
+    v(o, gnd) +> ddx(Gain { k: 7.0 }.apply(v(a, gnd)), v(a, gnd));
+    v(p, gnd) +> ddx(held(v(a, gnd)), v(a, gnd));
+}
+module FnStructMethodBench() {
+    signal a: Electrical; signal o: Electrical; signal p: Electrical;
+    let f = FnStructMethod(a, o, p);
+}
+analog for FnStructMethodBench { v(a, gnd) +> 0.4; }

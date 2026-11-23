@@ -162,10 +162,23 @@ impl<'a> NoiseSolver<'a> {
         options: NoiseAnalysisOptions,
         context: Context,
     ) -> crate::core::result::Result<Self> {
+        Self::observed_by(circuit, options, context, Default::default())
+    }
+
+    /// As [`new`](Self::new), the operating point the noise is taken about delivered to the host's
+    /// sink `host` (every equilibrium solve writes its trace records, analog-operators AO-09 AC 1).
+    pub(crate) fn observed_by(
+        circuit: &'a mut CircuitInstance,
+        options: NoiseAnalysisOptions,
+        context: Context,
+        host: crate::analyses::adapters::HostHooks,
+    ) -> crate::core::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
 
-        let dc_point = DcSolver::under(circuit, context.clone(), piperine_abi::raw::global::NOISE)?.solve()?;
+        let mut dc_solver = DcSolver::under(circuit, context.clone(), piperine_abi::raw::global::NOISE)?;
+        dc_solver.host = host;
+        let dc_point = dc_solver.solve()?;
 
         let output = Self::resolve_output(circuit, &dc_point, &options, &context)?;
         if let Some(path) = &options.input_source_name {

@@ -108,7 +108,7 @@ impl ParamReads {
     fn walk(ir: &Ir, expr: ExprId, out: &mut Vec<u32>) {
         match ir.expr(expr) {
             Expr::Param(index) => out.push(*index),
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) => {}
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::LevelCast { expr, .. } | Expr::Table { x: expr, .. } | Expr::TableSlope { x: expr, .. } => ParamReads::walk(ir, *expr, out),
             Expr::Closure { body, .. } => ParamReads::walk(ir, *body, out),
             Expr::CarrierElement { index, .. } | Expr::ElementPrevious { index, .. } | Expr::ElementChanged { index, .. } => ParamReads::walk(ir, *index, out),
@@ -128,6 +128,7 @@ impl ParamReads {
                 }
             }
             Expr::Limit { x, f, seed, .. } => ParamReads::walk_all(ir, &[*x, *f].into_iter().chain(*seed).collect::<Vec<_>>(), out),
+            Expr::SessionParameter { .. } => {}
             Expr::Stim { mag, phase, .. } => ParamReads::walk_all(ir, &[*mag].into_iter().chain(*phase).collect::<Vec<_>>(), out),
             control @ (Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_)) => {
                 ParamReads::walk_all(ir, &control.operands(), out);

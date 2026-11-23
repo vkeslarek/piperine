@@ -91,6 +91,14 @@ struct Owner {
     events: usize,
     /// The number of the body's derivative sites.
     derivatives: usize,
+    /// The number of the body's delay sites.
+    delays: usize,
+    /// The number of the body's noise sources.
+    noise_sources: usize,
+    /// The number of the body's session parameters.
+    session_parameters: usize,
+    /// The record stream of each of the body's trace sites.
+    traces: Vec<u32>,
     /// The statements of a reaction: `fired` may appear.
     reaction: bool,
     /// The event whose guard is walked: `fired` of another event may appear there (§13 rule 9),
@@ -100,6 +108,9 @@ struct Owner {
     in_body: bool,
     /// The `analog` block of a body: sites and contributions may appear.
     analog: bool,
+    /// A value a primitive evaluates on its own (a derivative state, a delay input, a noise density): it may read an
+    /// `ac_stim` site, which a statement of the `analog` block writes.
+    value_input: bool,
 }
 
 /// Which element of its carrier a write names, as far as the IR says.
@@ -253,7 +264,7 @@ impl<'a> Checker<'a> {
             Stmt::Expr(e) => Some(*e),
             Stmt::Contribute { addends, .. } => addends.first().map(|a| a.value),
             Stmt::Commit { value, .. } | Stmt::BoundStep { value, .. } | Stmt::Assign { value, .. } => Some(*value),
-            Stmt::Emit { fields, .. } => fields.iter().find_map(|f| match f {
+            Stmt::Emit { fields, .. } | Stmt::Trace { fields, .. } => fields.iter().find_map(|f| match f {
                 EmitField::Value { value, .. } => Some(*value),
                 EmitField::Text { .. } => None,
             }),
@@ -311,6 +322,14 @@ impl<'a> Checker<'a> {
                 for id in [site.state].into_iter().chain(site.abstol) {
                     self.expr_id(&item, &site.origin, id);
                 }
+            }
+            for site in &body.delays {
+                for id in [site.input, site.time].into_iter().chain(site.maximum) {
+                    self.expr_id(&item, &site.origin, id);
+                }
+            }
+            for source in &body.noise_sources {
+                self.expr_id(&item, &source.origin, source.density);
             }
             for site in &body.limits {
                 if let Some(enabled) = site.enabled {
@@ -414,7 +433,7 @@ impl<'a> Checker<'a> {
                         self.expr_id(&item, &origin, index);
                     }
                 }
-                Stmt::Emit { fields, .. } => {
+                Stmt::Emit { fields, .. } | Stmt::Trace { fields, .. } => {
                     for f in fields {
                         if let EmitField::Value { value, .. } = f {
                             self.expr_id(&item, &origin, *value);
@@ -551,7 +570,7 @@ impl<'a> Checker<'a> {
         let mut exprs: Vec<ExprId> = Vec::new();
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) => {}
             Expr::Unwrap { is, value, .. } => exprs.extend([*is, *value]),
             Expr::Same { a, b } => exprs.extend([*a, *b]),
             Expr::LevelCast { expr, .. } => exprs.push(*expr),
@@ -596,6 +615,7 @@ impl<'a> Checker<'a> {
                 exprs.push(*mag);
                 exprs.extend(phase);
             }
+            Expr::SessionParameter { .. } => {}
         }
         for e in exprs {
             self.expr_id(item, origin, e);
@@ -970,7 +990,7 @@ impl<'a> Checker<'a> {
                     Stmt::Contribute { addends, .. } => stack_e.extend(addends.iter().map(|a| a.value)),
                     Stmt::Commit { value, after, target, .. } => stack_e.extend([*value].into_iter().chain(*after).chain(target.iter().flat_map(crate::model::CommitTarget::index_operands))),
                     Stmt::BoundStep { value, when, .. } => stack_e.extend([*value].into_iter().chain(*when)),
-                    Stmt::Emit { fields, .. } => stack_e.extend(fields.iter().filter_map(|f| match f {
+                    Stmt::Emit { fields, .. } | Stmt::Trace { fields, .. } => stack_e.extend(fields.iter().filter_map(|f| match f {
                         EmitField::Value { value, .. } => Some(*value),
                         EmitField::Text { .. } => None,
                     })),
@@ -985,7 +1005,7 @@ impl<'a> Checker<'a> {
             out_e.push(e);
             match &data.kind {
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => {}
-                Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
+                Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) => {}
                 Expr::Unwrap { is, value, .. } => stack_e.extend([*is, *value]),
                 Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => stack_e.push(*expr),
                 Expr::Binary { lhs, rhs, .. } => stack_e.extend([*lhs, *rhs]),
@@ -1005,6 +1025,7 @@ impl<'a> Checker<'a> {
                 }
                 Expr::Limit { x, f, seed, .. } => stack_e.extend([*x, *f].into_iter().chain(*seed)),
                 Expr::Stim { mag, phase, .. } => stack_e.extend([*mag].into_iter().chain(*phase)),
+                Expr::SessionParameter { .. } => {}
             }
         }
         (out_e, out_s)
@@ -1167,6 +1188,8 @@ impl<'a> Checker<'a> {
             // A commit anywhere but in a reaction: the analog block, a `where`, a drive, an event.
             let mut roots: Vec<ExprId> = body.params.iter().filter_map(|p| p.check).collect();
             roots.extend(body.derivatives.iter().flat_map(|d| [d.state].into_iter().chain(d.abstol)));
+            roots.extend(body.noise_sources.iter().map(|n| n.density));
+            roots.extend(body.delays.iter().flat_map(|d| [d.input, d.time].into_iter().chain(d.maximum)));
             roots.extend(body.drives.iter().flat_map(|d| [d.value].into_iter().chain(d.after)));
             roots.extend(body.events.iter().flat_map(|e| {
                 let cross = match e.source {
@@ -1281,10 +1304,15 @@ impl<'a> Checker<'a> {
                 streams: body.streams.iter().map(|s| s.fields.iter().map(|f| f.ty.clone()).collect()).collect(),
                 events: body.events.len(),
                 derivatives: body.derivatives.len(),
+                delays: body.delays.len(),
+                noise_sources: body.noise_sources.len(),
+                session_parameters: body.session_parameters.len(),
+                traces: body.traces.iter().map(|t| t.stream).collect(),
                 reaction: false,
                 event: None,
                 in_body: true,
                 analog,
+                value_input: false,
             };
             for param in &body.params {
                 let Some(check) = param.check else { continue };
@@ -1360,13 +1388,25 @@ impl<'a> Checker<'a> {
                 self.walk(&mut w, Task::Expr(enabled, Ctx::top()));
             }
             for (k, site) in body.derivatives.iter().enumerate() {
-                let mut w = Walk::new(owner(false, format!("body {} derivative {k}", body.name)), 0);
+                let mut w = Walk::new(Owner { value_input: true, ..owner(false, format!("body {} derivative {k}", body.name)) }, 0);
                 self.expect(&w, site.state, &ValueType::F64);
                 self.walk(&mut w, Task::Expr(site.state, Ctx::top()));
                 if let Some(abstol) = site.abstol {
                     self.expect(&w, abstol, &ValueType::F64);
                     self.walk(&mut w, Task::Expr(abstol, Ctx::top()));
                 }
+            }
+            for (k, site) in body.delays.iter().enumerate() {
+                let mut w = Walk::new(Owner { value_input: true, ..owner(false, format!("body {} delay {k}", body.name)) }, 0);
+                for id in [site.input, site.time].into_iter().chain(site.maximum) {
+                    self.expect(&w, id, &ValueType::F64);
+                    self.walk(&mut w, Task::Expr(id, Ctx::top()));
+                }
+            }
+            for (k, source) in body.noise_sources.iter().enumerate() {
+                let mut w = Walk::new(Owner { value_input: true, ..owner(false, format!("body {} noise source {k}", body.name)) }, 0);
+                self.expect(&w, source.density, &ValueType::F64);
+                self.walk(&mut w, Task::Expr(source.density, Ctx::top()));
             }
             for (k, reaction) in body.reactions.iter().enumerate() {
                 let item = format!("body {} reaction {k}", body.name);
@@ -1400,10 +1440,15 @@ impl<'a> Checker<'a> {
                 streams: Vec::new(),
                 events: 0,
                 derivatives: 0,
+                delays: 0,
+                noise_sources: 0,
+                session_parameters: 0,
+                traces: Vec::new(),
                 reaction: false,
                 event: None,
                 in_body: false,
                 analog: false,
+                value_input: false,
             };
             let mut w = Walk::new(owner, function.params.len());
             self.expect(&w, function.body, &function.ret);
@@ -1560,6 +1605,31 @@ impl<'a> Checker<'a> {
                 if let Some(after) = after {
                     self.carried(w, *after, &ValueType::F64, "the delay of a commit");
                     next.push(Task::Expr(*after, ctx));
+                }
+            }
+            Stmt::Trace { site, fields } => {
+                // A trace is written where the analog block executes it: not in a function, a
+                // closure, a loop or a reaction.
+                if !w.owner.analog {
+                    self.report(w.owner.item.clone(), origin.clone(), "a trace outside the analog block of a body".to_string());
+                } else if ctx.closure {
+                    self.report(w.owner.item.clone(), origin.clone(), "a trace inside a closure".to_string());
+                }
+                let Some(stream) = w.owner.traces.get(*site as usize).copied() else {
+                    self.report(w.owner.item.clone(), origin.clone(), format!("trace of site {site}, out of range ({} sites)", w.owner.traces.len()));
+                    return;
+                };
+                let Some(types) = w.owner.streams.get(stream as usize).cloned() else {
+                    self.report(w.owner.item.clone(), origin.clone(), format!("trace site {site} names stream {stream}, out of range ({} streams)", w.owner.streams.len()));
+                    return;
+                };
+                for f in fields {
+                    let EmitField::Value { field, value } = f else { continue };
+                    match types.get(*field as usize) {
+                        Some(ty) => self.carried(w, *value, ty, "the value of a trace field"),
+                        None => self.report(w.owner.item.clone(), origin.clone(), format!("trace writes field {field} of stream {stream}, out of range ({} fields)", types.len())),
+                    }
+                    next.push(Task::Expr(*value, ctx));
                 }
             }
             Stmt::Emit { stream, fields } => {
@@ -1967,6 +2037,36 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
+            Expr::Delay(k) => {
+                if first {
+                    self.own(w, &origin, ty, &ValueType::F64);
+                    if !w.owner.in_body {
+                        self.wrong(w, origin, "a delay read outside a body".to_string());
+                    } else if *k as usize >= w.owner.delays {
+                        self.wrong(w, origin, format!("delay read of site {k}, out of range ({} sites)", w.owner.delays));
+                    }
+                }
+            }
+            Expr::Noise(k) => {
+                if first {
+                    self.own(w, &origin, ty, &ValueType::F64);
+                    if !w.owner.in_body {
+                        self.wrong(w, origin, "a noise read outside a body".to_string());
+                    } else if *k as usize >= w.owner.noise_sources {
+                        self.wrong(w, origin, format!("noise read of source {k}, out of range ({} sources)", w.owner.noise_sources));
+                    }
+                }
+            }
+            Expr::SessionParameter { parameter } => {
+                if first {
+                    self.own(w, &origin, ty, &ValueType::Option(Box::new(ValueType::F64)));
+                    if !w.owner.in_body {
+                        self.wrong(w, origin, "a session parameter read outside a body".to_string());
+                    } else if *parameter as usize >= w.owner.session_parameters {
+                        self.wrong(w, origin, format!("session parameter read {parameter}, out of range ({} parameters)", w.owner.session_parameters));
+                    }
+                }
+            }
             Expr::Fired(e) => {
                 if first {
                     self.own(w, &origin, ty, &ValueType::Bool);
@@ -2195,7 +2295,7 @@ impl<'a> Checker<'a> {
     /// context, range, and the distinct expressions that use it.
     fn site(&mut self, w: &mut Walk, user: ExprId, origin: &Origin, kind: &str, site: u32, ctx: Ctx) {
         let count = if kind == "limit" { w.owner.limits } else { w.owner.stims };
-        if !w.owner.analog {
+        if !w.owner.analog && !(kind == "ac_stim" && w.owner.value_input) {
             self.wrong(w, origin.clone(), format!("{kind} outside the analog block of a body"));
         } else if ctx.closure {
             self.wrong(w, origin.clone(), format!("{kind} inside a closure"));

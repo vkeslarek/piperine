@@ -81,3 +81,51 @@ fn ac_rc_with_a_scaled_derivative() {
         }
     }
 }
+
+/// The small-signal run of the `delay_tline` twin: `0.5 * delay(v(src), 1.05 us)` is a gain of one half
+/// and a phase of `-w * 1.05 us` (analog-operators AO-02), what ngspice's lossless line matched at both
+/// ends gives, over the 41 points of `ac dec 10 1k 10Meg`.
+struct LineSweep;
+
+impl LineSweep {
+    /// The 41 points of the export `delay_tline_ac`.
+    const ROWS: usize = 41;
+
+    /// The sweep of the twin on `backend` against the reference run already made.
+    fn compare_on(reference: &Reference, backend: Backend) {
+        let mut bench = Bench::load_on("delay_tline", backend);
+        let out = bench.node("out");
+        let rows = match reference {
+            Reference::Golden(golden) => {
+                let rows = golden.complex("delay_tline_ac");
+                golden.expect_rows("delay_tline_ac", &rows, Self::ROWS);
+                rows
+            }
+            Reference::Skipped => Vec::new(),
+        };
+        let options = match (rows.first(), rows.last()) {
+            (Some((start, _)), Some((stop, _))) => AcSweepAnalysisOptions { start_frequency: *start, stop_frequency: *stop, steps: rows.len(), logarithmic: true },
+            _ => AcSweepAnalysisOptions { start_frequency: 1e3, stop_frequency: 10e6, steps: Self::ROWS, logarithmic: true },
+        };
+        let mut ac = bench.circuit().ac(Context::default()).expect("ac");
+        let sweep = ac.solve_sweep(options).unwrap_or_else(|error| panic!("delay_tline: the sweep does not solve on {}: {error}", backend.name()));
+        let Reference::Golden(golden) = reference else { return };
+        for ((frequency, wanted), step) in rows.iter().zip(sweep.iter()) {
+            let actual = step.get_node(&out).unwrap_or_else(|| panic!("delay_tline: no v(out) at {frequency} on {}", backend.name()));
+            let at = Point::new("delay_tline", "|v(out)|", Coordinate::Frequency(*frequency)).with_ngspice(golden.version()).with_backend(backend.name());
+            ToleranceContract::AC_MAGNITUDE.assert(&at, wanted.magnitude(), actual.norm());
+            if ToleranceContract::phase_applies(wanted.magnitude()) {
+                let at = Point::new("delay_tline", "arg v(out)", Coordinate::Frequency(*frequency)).with_ngspice(golden.version()).with_backend(backend.name());
+                ToleranceContract::AC_PHASE.assert(&at, wanted.phase(), actual.arg());
+            }
+        }
+    }
+}
+
+#[test]
+fn delay_tline_ac() {
+    let reference = Ngspice::from_environment().run("delay_tline");
+    for backend in Backend::selected().into_iter().filter(|backend| *backend == Backend::Rust) {
+        LineSweep::compare_on(&reference, backend);
+    }
+}

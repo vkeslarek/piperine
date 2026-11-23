@@ -1,0 +1,23 @@
+//! Twin of `tests/e2e/twins/noise_rc.cir`: the thermal noise of a resistor shaped by an RC pole at
+//! 100 kHz. The resistor is the sole noise source, a current density `4 k T / r` in parallel with
+//! its own conductance (analog-operators AO-06). Its source reads `temperature()`, which the
+//! command's `--temp 27` fixes to ngspice's default. The interpreter refuses `white_noise`, so the
+//! twin runs on the compiled backend only.
+mod devices;
+use devices::*;
+
+/// A resistor with its thermal noise: `i = v / r` plus a white current source of density `4 k T / r`.
+pub module NoisyResistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for NoisyResistor {
+    i(p, n) +> v(p, n) / r + white_noise(4.0 * K_B * temperature() / r, "thermal");
+}
+
+module NoiseRc() {
+    signal vin: Electrical;
+    signal r#out: Electrical;
+    let v1 = Vsource { dc: 0.0, ac: 1.0 }(vin, gnd);
+    let r1 = NoisyResistor { r: 1000.0 }(vin, r#out);
+    let c1 = Capacitor { c: 1.5915494309189535e-9 }(r#out, gnd);
+}

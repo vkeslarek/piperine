@@ -741,7 +741,7 @@ library (§22), written in the language over this section.
 | `potential`, `flow`, every `access` alias; `p.inflow()` | `fn` | probes (§6) | `analog`, events, reactions, body `let`s, value inputs | 14.1 |
 | `ddx(e, probe)` | `fn` | partial derivative | `analog` | 14.2 |
 | `ac_stim(mag, phase: Option<f64>)` | `fn` | small-signal stimulus | `analog` | 14.3 |
-| `temperature()`, `simparam(name, default: Option<f64>)`, `analysis(a)` for an analysis kind | `fn` | environment, constant during an analysis | everywhere | 14.4 |
+| `temperature()`, `simparam(name) -> Option<f64>`, `analysis(a)` for an analysis kind | `fn` | environment, constant during an analysis | everywhere | 14.4 |
 | `now()`, `freq()`, `gmin()`, `source_scale()`, `analysis(Static)` | `fn` | environment of the solve (§16.2) | everywhere but definitions (§8.2.5) | 14.4 |
 | `ddt(x, abstol: Option<f64>)` | module | time derivative; its argument is a state of the jump rule (§15.2) | where instances go (§8.3.4) and `analog` reads them | 14.5 |
 | `delay(x, td, max: Option<f64>)` | module | `x` as it was `td` ago | the same | 14.6 |
@@ -794,7 +794,6 @@ library (§22), written in the language over this section.
 | `E0453` | `delay` with `td < 0`, or `max` not positive | run |
 | `E0454` | `noise` with a negative or non-finite `psd` in a `Noise` sweep | run |
 | §17 | an invalid `bound_step` argument (`E0509`); an invalid `ttol` or `etol` of `cross` (`E0510`) | run |
-| `E0456` | `simparam(name)` with no default and no such session parameter | run, at the start of the analysis |
 | `E0457` | a core name redefined by a model (§14 rule 1) | elaboration |
 | §8.1 | an environment function in a const context (`E0323`) | elaboration |
 | §8.2 | `now()`, `freq()`, `gmin()`, `source_scale()`, `analysis(Static)` or a probe in a definition (`E0336`) | elaboration |
@@ -865,7 +864,7 @@ with `mag` and `phase` evaluated at the operating point.
 | Function | Returns | Class |
 | --- | --- | --- |
 | `temperature() -> f64` | the analysis temperature plus the instance's effective `dtemp` (§8.5.5), in kelvin | constant during an analysis |
-| `simparam(name: str, default: Option<f64>) -> f64` | the session parameter `name`, else `default` | constant during an analysis |
+| `simparam(name: str) -> Option<f64>` | `Some` of the session parameter `name` when the run gave it, else `None` | constant during an analysis |
 | `analysis(a: Analysis) -> bool`, `a` in `Dc`, `Transient`, `Ac`, `Noise` | whether the analysis is of that kind (§11.1.1) | constant during an analysis |
 | `now() -> f64` | the time of the solve | environment of the solve |
 | `freq() -> f64` | the frequency of the sweep point | environment of the solve |
@@ -882,7 +881,10 @@ with `mag` and `phase` evaluated at the operating point.
 - **§14.4.3** All are plain values. All are constant during a solve, so any of them **MAY** appear in a
   selector (§11 rule 3).
 - **§14.4.6** This specification names no session parameter of `simparam`. The names are the
-  host's (G.66).
+  host's (G.66). The result is an `Option<f64>` with no default argument: a model writes
+  `simparam("x").unwrap_or(1.0)` or a `match`. `E0456` is retired with the default (user decision
+  2026-11-23: "É, melhor voltar Option"). `tnom` is no session parameter: it is a per-instance model
+  param, and the core keeps only the run temperature (`temperature()`).
 - **§14.4.7** `gmin()` and `source_scale()` are the continuation variables (§16 step 3). They
   change between solves, as `now()` and `freq()` do, so they are not constant during an
   analysis and §14.4.1 does not apply to them. At rest `gmin()` is the session `gmin` and

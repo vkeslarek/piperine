@@ -504,27 +504,20 @@ fn a_check_reached_from_analog_is_e0603() {
         assert_eq!(codes(&d), ["E0603"], "{src}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
         assert_eq!(snippet(&src, &d[0]), at, "{src}");
     }
-    let src = "module Top(p: Electrical) { }\nanalog for Top { emit!(\"trace\", vp = v(p)); log(Severity::Info, \"stepped\"); }";
-    assert_eq!(codes(&diagnostics(src)), ["P0001", "P0001"], "a trace and a `log` in `analog` are no `E0603`");
+    // analog-operators T23: an `emit!` written in `analog` on another stream is a trace and checks; a `log` is a
+    // call of a `fn` that emits, inlined where it is called (closing round, GAPS L72), and neither is an `E0603`.
+    checked_top("module Top(p: Electrical) { }\nanalog for Top { emit!(\"trace\", vp = v(p)); log(Severity::Info, \"stepped\"); }", "Top");
 }
 
 #[test]
-fn an_emit_in_analog_is_p0001_by_name() {
-    // Edge case 7 (verification F3): the M1 elaborator lowers no trace, so an `emit!` on a stream
-    // other than `sim` and `checks` reached from `analog` - written there, through `log`, or
-    // through a `fn` - is one `P0001` naming the form, at the site in `analog`; never a model
-    // that checks and then fails elaboration.
+fn an_emit_reached_from_analog_through_a_fn_checks() {
+    // Edge case 7 (verification F3), as the closing round of analog-operators leaves it (GAPS L72): an `emit!` written
+    // in `analog` is a trace (AO-09), and one reached through `log` or through a `fn` is the trace of the call, which
+    // the elaborator inlines where it stands (§19 rule 10); only `sim` and `checks` are `E0603`.
     let items = "fn note(x: f64) { emit!(\"trace\", x = x); }\n";
-    for (src, at) in [
-        (format!("module Top(p: Electrical) {{ }}\nanalog for Top {{ emit!(\"trace\", vp = v(p)); i(p) +> v(p); }}"), "emit!(\"trace\", vp = v(p))"),
-        (format!("module Top(p: Electrical) {{ }}\nanalog for Top {{ log(Severity::Info, \"stepped\"); i(p) +> v(p); }}"), "log(Severity::Info, \"stepped\")"),
-        (format!("{items}module Top(p: Electrical) {{ }}\nanalog for Top {{ note(v(p)); i(p) +> v(p); }}"), "note(v(p))"),
-    ] {
-        let d = diagnostics(&src);
-        assert_eq!(codes(&d), ["P0001"], "{src}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
-        assert_eq!(snippet(&src, &d[0]), at, "{src}");
-        assert!(d[0].diagnostic.message.contains("an `emit!` in an `analog` block"), "{}", d[0].diagnostic.message);
-    }
+    checked_top("module Top(p: Electrical) { }\nanalog for Top { log(Severity::Info, \"stepped\"); i(p) +> v(p); }", "Top");
+    checked_top(&format!("{items}module Top(p: Electrical) {{ }}\nanalog for Top {{ note(v(p)); i(p) +> v(p); }}"), "Top");
+    checked_top("module Top(p: Electrical) { }\nanalog for Top { emit!(\"trace\", vp = v(p)); i(p) +> v(p); }", "Top");
     // The same `log` in a reaction checks.
     checked_top("module Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { log(Severity::Info, \"stepped\"); } }", "Top");
 }

@@ -11,6 +11,8 @@ pub enum Coordinate {
     Sweep(f64),
     Frequency(f64),
     Time(f64),
+    /// A band total: the lower and the upper frequency it integrates over.
+    Band(f64, f64),
 }
 
 impl Coordinate {
@@ -20,6 +22,7 @@ impl Coordinate {
             Coordinate::Sweep(value) => format!("sweep value {value:e}"),
             Coordinate::Frequency(value) => format!("frequency {value:e} Hz"),
             Coordinate::Time(value) => format!("time {value:e} s"),
+            Coordinate::Band(from, to) => format!("band {from:e} to {to:e} Hz"),
         }
     }
 }
@@ -120,6 +123,13 @@ impl ToleranceContract {
                     error of that order; the bound is a decade above it, never tuned to a result",
     };
 
+    pub const NOISE: Self = Self {
+        reltol: 1e-3,
+        abstol: 1e-20,
+        rationale: "a linear solve per frequency at a frozen operating point, with the band totals integrated by ngspice's \
+                    own power-law rule; the floor (V or A per root hertz) is far under every density a twin prints",
+    };
+
     pub fn reltol(&self) -> f64 {
         self.reltol
     }
@@ -216,6 +226,18 @@ mod tests {
             let at = Point::new("f", "q", Coordinate::OperatingPoint);
             assert!(rejection(&contract, &at, 1.0, 1.1).contains(contract.rationale()), "{name}: a rejection prints its rationale");
         }
+    }
+
+    #[test]
+    fn the_noise_contract_carries_its_bound_and_rationale() {
+        // analog-operators D9: reltol 1e-3, abstol 1e-20; a rejection names the band of a total
+        let contract = ToleranceContract::NOISE;
+        assert_eq!((contract.reltol(), contract.abstol()), (1e-3, 1e-20));
+        assert!(contract.rationale().len() > 40, "no rationale worth the name");
+        let at = Point::new("noise_rc", "onoise_total", Coordinate::Band(1e3, 1e6));
+        let text = rejection(&contract, &at, 1.5e-6, 2.5e-6);
+        assert!(text.contains("band 1e3 to 1e6 Hz") && text.contains(contract.rationale()), "{text}");
+        assert!(contract.holds(0.0, 0.0));
     }
 
     #[test]
