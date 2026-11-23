@@ -7,7 +7,7 @@
 
 use piperine_abi::raw::status;
 use piperine_abi::caller::{Commit, Handle};
-use piperine_ir::{BinaryOp, Carrier, CarrierRole, Constant, Env, Event, EventSource, Expr, Ir, NoiseSource, Reaction, Stmt, ValueType};
+use piperine_ir::{BinaryOp, Origin, Carrier, CarrierRole, Constant, Env, Event, EventSource, Expr, Ir, NoiseSource, Reaction, Stmt, ValueType};
 use piperine_plan::Modules;
 use piperine_transpile::{Settings, Transpiler};
 use std::sync::Arc;
@@ -134,4 +134,66 @@ fn a_reaction_reads_noise_as_zero() {
         status::OK
     }).expect("the reaction runs");
     assert_eq!(made, [vec![0u8]], "q <- 0.0 > 0.5 is false");
+}
+
+/// `i(a, gnd) +> simparam("gmin", <default>)` as the body `Op`, the parameter required without one.
+fn parameterised(default: Option<f64>) -> Ir {
+    Operators::ir(|b| {
+        let mut parameter = Operators::gmin();
+        parameter.required = default.is_none();
+        Written { analog: vec![Operators::contribute_the_session_parameter(b, 0, default)], session_parameters: vec![parameter], ..Written::default() }
+    })
+}
+
+/// The bytes of an `Option<f64>` pin: the tag byte, then the value (all zero for `None`).
+fn option_pin(value: Option<f64>) -> Vec<u8> {
+    let mut bytes = vec![0u8; 9];
+    if let Some(v) = value {
+        bytes[0] = 1;
+        bytes[1..].copy_from_slice(&v.to_le_bytes());
+    }
+    bytes
+}
+
+#[test]
+fn a_session_parameter_reads_its_pin_or_its_default() {
+    // §14.4: `simparam(name, default)` is the parameter when the host gave it, else `default`
+    // (`0.0` with none: the host refuses before binding, E0456). `terms` reads the pin, an
+    // `Option<f64>`, and writes the flow `simparam(..)`.
+    let with_default = Device::of_body(parameterised(Some(1e-12)), "Op");
+    assert_eq!(with_default.run("terms", &[&option_pin(Some(7.0))]).expect("given"), [7.0]);
+    assert_eq!(with_default.run("terms", &[&option_pin(None)]).expect("not given"), [1e-12], "the default of the read");
+    let required = Device::of_body(parameterised(None), "Op");
+    assert_eq!(required.run("terms", &[&option_pin(Some(-3.5))]).expect("given"), [-3.5]);
+    assert_eq!(required.run("terms", &[&option_pin(None)]).expect("not given"), [0.0], "no default reads 0.0");
+}
+
+/// `if v(a, gnd) > 0.5 { emit!("newton", x = v(a, gnd)) }`, the only statement of the `analog` block.
+fn traced_above_half() -> Ir {
+    Operators::ir(|b| {
+        let (probe, half) = (Operators::ex(b).probe(piperine_ir::Terminal::Node(0), piperine_ir::Terminal::Ground), Operators::ex(b).real(0.5));
+        let cond = b.expr(Expr::Binary { op: BinaryOp::Gt, lhs: probe, rhs: half }, ValueType::Bool, Operators::at());
+        let trace = Operators::trace_the_probe(b, 0);
+        let at = Origin { file: Operators::FILE.into(), line: 3, col: 5 };
+        let then = b.expr(Expr::Block { stmts: vec![trace], value: None }, ValueType::Unit, at.clone());
+        let otherwise = b.expr(Expr::Block { stmts: vec![], value: None }, ValueType::Unit, at.clone());
+        let branch = b.expr(Expr::If { cond, then, otherwise }, ValueType::Unit, at);
+        let statement = b.stmt(Stmt::Expr(branch));
+        Written { analog: vec![statement], streams: vec![Operators::newton()], traces: vec![Operators::trace_site()], ..Written::default() }
+    })
+}
+
+#[test]
+fn a_trace_writes_its_watch_only_where_it_executes() {
+    // abi.md A5: the watch's record is a `BOOL` presence byte, then the stream's fields; where the
+    // statement does not execute the record is empty (all zero). With `a = 0.75` the arm runs and
+    // the record is presence 1, padding, `x = 0.75` at offset 8; with `a = 0.25` it is all zero.
+    let device = Device::of_body(traced_above_half(), "Op");
+    let (written, _) = device.run_cells("terms", &[&Bytes::real(0.75)]).expect("the arm runs");
+    let mut expected = vec![0u8; 16];
+    expected[0] = 1;
+    expected[8..].copy_from_slice(&0.75f64.to_le_bytes());
+    assert_eq!(written, [expected]);
+    let (written, _) = device.run_cells("terms", &[&Bytes::real(0.25)]).expect("the arm does not run");
+    assert_eq!(written, [vec![0u8; 16]], "no record where the statement does not execute");
 }

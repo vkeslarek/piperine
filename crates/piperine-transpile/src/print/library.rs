@@ -213,6 +213,10 @@ impl LibraryPrinter {
         ] {
             uses.insert(path);
         }
+        // a session parameter's pin and a trace's record are read and written through `Carried`
+        if !body.session_parameters().is_empty() || !body.traces().is_empty() {
+            uses.insert("rt::Carried");
+        }
         let shape = shapes.prototype(plan.shape().shape());
 
         let mut t = Text::new();

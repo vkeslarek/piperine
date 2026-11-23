@@ -113,6 +113,13 @@ impl Transpiler {
         self.ir.bodies().any(|body| body.params().iter().any(|param| !matches!(param.ty, ValueType::F64 | ValueType::Bool)))
     }
 
+    /// Whether the design reads a session parameter or writes a trace: the pin of a session
+    /// parameter is an `Option<f64>` and a trace's record is written by `rt::Carried`, so its
+    /// runtime is the files of `rt` and not `real.rs` alone.
+    pub fn carried_sites(&self) -> bool {
+        self.ir.bodies().any(|body| !body.session_parameters().is_empty() || !body.traces().is_empty())
+    }
+
     /// Whether the design derives a param from another: its derive functions read pins through `rt::Carried`.
     pub fn derives(&self) -> bool {
         !piperine_plan::DerivePlan::of(&self.ir).bindings().is_empty()

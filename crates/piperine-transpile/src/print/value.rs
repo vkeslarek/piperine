@@ -98,6 +98,8 @@ pub struct ValuePrinter<'a> {
     carriers: Vec<ValueType>,
     /// The record streams of the owner's body, by index; empty for a function.
     streams: Vec<Stream>,
+    /// The stream each trace site of the owner's body writes, by site; empty for a function.
+    traces: Vec<u32>,
     /// The owner's origin: where an error with no expression of its own points.
     pub(super) origin: Origin,
     /// How the analog read forms print; `None` outside an `analog` block.
@@ -144,6 +146,9 @@ pub struct Reads {
     /// By noise source: the variable of its input's `VALUE` (`noise<k>.value`, AO-03). A body
     /// printed with none reads 0 where a source is read: a reaction or a guard (§14.8.5).
     pub noises: Vec<String>,
+    /// By session parameter: the variable of its pin, an `Option<f64>` known when the host gave
+    /// the parameter (`simparam`, AO-07).
+    pub session_parameters: Vec<String>,
     /// By body param: the variable its pin's `PREVIOUS` was decoded into (`p.prev()`, §5.3.1).
     pub param_previous: Vec<String>,
     /// By body carrier: the variable its pin's `PREVIOUS` was decoded into (`c.prev()`, A7).
@@ -168,6 +173,7 @@ impl<'a> ValuePrinter<'a> {
             params: Vec::new(),
             carriers: Vec::new(),
             streams: Vec::new(),
+            traces: Vec::new(),
             origin,
             analog: None,
             sums: None,
@@ -195,6 +201,7 @@ impl<'a> ValuePrinter<'a> {
             params: Vec::new(),
             carriers: Vec::new(),
             streams: Vec::new(),
+            traces: Vec::new(),
             origin: data.origin.clone(),
             analog: None,
             sums: None,
@@ -225,6 +232,7 @@ impl<'a> ValuePrinter<'a> {
             params,
             carriers: body.carriers().iter().map(|c| c.ty.clone()).collect(),
             streams: body.streams().to_vec(),
+            traces: body.traces().iter().map(|t| t.stream).collect(),
             origin,
             analog: None,
             sums: None,
@@ -767,7 +775,21 @@ impl<'a> ValuePrinter<'a> {
                 Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "the output of a delay site")),
             },
-            Expr::SessionParameter { .. } => Err(self.unsupported(e, "simparam")),
+            // `simparam(name, default)`: the pin's value when the host gave it, else the default
+            // (`0.0` with none: the host refuses before binding, E0456)
+            Expr::SessionParameter { parameter, default } => {
+                let Some(name) = self.analog.as_ref().and_then(|r| r.session_parameters.get(*parameter as usize)) else {
+                    return Err(self.unsupported(e, "a session parameter"));
+                };
+                let pin = self.read(name);
+                let text = match (default, self.plain) {
+                    (Some(d), true) => format!("{pin}.unwrap_or({})", self.expr(*d)?),
+                    (Some(d), false) => format!("{pin}.map_or({}, R::constant)", self.expr(*d)?),
+                    (None, true) => format!("{pin}.unwrap_or(0.0)"),
+                    (None, false) => format!("R::constant({pin}.unwrap_or(0.0))"),
+                };
+                atom(text)
+            }
             // §14.8.5: a reaction or a guard reads 0 (its printer names no noise input), as does
             // every accepted solution of `analog`
             Expr::Noise(k) => match self.analog.as_ref().map(|r| r.noises.get(*k as usize)) {
@@ -1071,16 +1093,7 @@ impl<'a> ValuePrinter<'a> {
             },
             Stmt::Assign { place, op, value } => self.assign(place, *op, *value),
             Stmt::BoundStep { value, .. } => Err(self.unsupported(*value, "`bound_step` outside the top level of the `analog` block")),
-            // SPEC_DEVIATION: a trace is refused until T30 prints its watch write.
-            // Reason: the IR form lands first (T20); a form with no printer fails loud.
-            Stmt::Trace { fields, .. } => Err(Error::Unsupported {
-                form: "emit! in analog".into(),
-                path: format!("{} s{}", self.path, s.index()),
-                origin: fields.iter().find_map(|f| match f {
-                    EmitField::Value { value, .. } => Some(self.ir.expr_origin(*value).clone()),
-                    EmitField::Text { .. } => None,
-                }).unwrap_or_else(|| self.origin.clone()),
-            }),
+            Stmt::Trace { site, fields } => self.trace(s, *site, fields),
             Stmt::Emit { stream, fields } => self.emit(s, *stream, fields),
             Stmt::Commit { carrier, value, after } => {
                 if !self.commits {
@@ -1133,6 +1146,57 @@ impl<'a> ValuePrinter<'a> {
         lines.extend(sums.flag(branch, quantity).map(|flag| format!("{flag} = true;")));
         Ok(lines.join("\n"))
     }
+
+    /// A trace (`emit!` in `analog`, §19 rule 4): the record of its stream, its `BOOL` presence byte
+    /// set and each value field written where the layout puts it, stored in the `traces_` buffer of
+    /// the site; `terms` copies the buffer to the site's `TRACE` watch. A statement that does not
+    /// execute leaves the buffer empty, which is the empty record (abi.md A5). The text fields stay
+    /// in the IR.
+    fn trace(&self, s: StmtId, site: u32, fields: &[EmitField]) -> Result<String, Error> {
+        let origin = fields
+            .iter()
+            .find_map(|f| match f {
+                EmitField::Value { value, .. } => Some(self.ir.expr_origin(*value).clone()),
+                EmitField::Text { .. } => None,
+            })
+            .unwrap_or_else(|| self.origin.clone());
+        let unsupported = |form: &str| Error::Unsupported { form: form.to_string(), path: format!("{} s{}", self.path, s.index()), origin: origin.clone() };
+        let Some(declared) = self.traces.get(site as usize).and_then(|stream| self.streams.get(*stream as usize)) else {
+            return Err(unsupported("a trace of a site the body does not have"));
+        };
+        let Some(layout) = RecordLayout::in_ir(self.ir, declared) else {
+            return Err(unsupported(&format!("a trace to stream `{}`, whose fields no pin holds", declared.name)));
+        };
+        let start = layout.trace_start();
+        let mut writes = Vec::new();
+        let mut texts = Vec::new();
+        for f in fields {
+            match f {
+                EmitField::Value { field, value } => {
+                    let (Some((offset, _)), Some(field_type)) = (layout.fields.get(*field as usize), declared.fields.get(*field as usize)) else {
+                        return Err(unsupported(&format!("a trace of field {field} of stream `{}`, out of range", declared.name)));
+                    };
+                    let mut text = self.expr(*value)?;
+                    // a real is an `R` in a generic block: its value is what the record holds
+                    if field_type.ty == ValueType::F64 && !self.plain {
+                        text = format!("({text}).value()");
+                    }
+                    writes.push(format!("rt::Carried::write_pin({text}, &mut record_[{}..]); // {}", start + offset, field_type.name));
+                }
+                EmitField::Text { name, text } => texts.push(format!("{name} = {text:?}")),
+            }
+        }
+        let note = if texts.is_empty() { String::new() } else { format!("; its text {} stays in the IR", texts.join(", ")) };
+        let mut lines = vec![format!("// trace to stream `{}` @ {}:{}:{}{note}", declared.name, origin.file, origin.line, origin.col)];
+        lines.push(format!("let mut record_ = [0u8; {}];", layout.trace_size()));
+        lines.push("record_[0] = 1;".to_string());
+        lines.extend(writes);
+        lines.push(format!("{}[{site}] = Some(record_.to_vec());", Self::TRACES));
+        Ok(lines.join("\n"))
+    }
+
+    /// The name of the buffer `terms_block` fills with the records of its trace sites.
+    pub const TRACES: &'static str = "traces_";
 
     /// An emit site (msl-digital A4): the record's bytes in its stream's layout (`RecordLayout`),
     /// all zero first so a field the site leaves out has its zero (abi.md C5), each value

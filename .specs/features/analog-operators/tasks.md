@@ -820,8 +820,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `a_session_parameter_reads_its_pin_or_its_default` and `a_trace_writes_its_watch_only_where_it_executes` pass
-- [ ] Gate check passes: `Run tops`, `Run tgolden`
+- [x] `a_session_parameter_reads_its_pin_or_its_default` and `a_trace_writes_its_watch_only_where_it_executes` pass
+- [x] Gate check passes: `Run tops`, `Run tgolden`
 
 **Tests**: integration
 **Gate**: quick

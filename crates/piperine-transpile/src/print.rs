@@ -19,6 +19,7 @@ pub mod reaction;
 pub mod shape;
 pub mod site;
 pub mod text;
+pub mod trace;
 pub mod types;
 pub mod value;
 
@@ -33,5 +34,6 @@ pub use noise::NoisePrinter;
 pub use lift::RealLift;
 pub use shape::ShapePrinter;
 pub use text::Text;
+pub use trace::TracePrinter;
 pub use types::TypeItems;
 pub use value::ValuePrinter;

@@ -41,6 +41,7 @@ impl<'a> DigitalPrinter<'a> {
             derivatives: (0..self.body.derivatives().len() as u32).map(AnalogPrinter::derivative_pin).collect(),
             delays: (0..self.body.delays().len() as u32).map(|k| self.names.read_name(Source::Delay(k))).collect(),
             noises: Vec::new(),
+            session_parameters: (0..self.body.session_parameters().len() as u32).map(|k| self.names.read_name(Source::SessionParameter(k))).collect(),
             param_previous: (0..self.body.params().len() as u32).map(|p| self.names.read_name(Source::ParamPrevious(p))).collect(),
             previous: (0..self.body.carriers().len() as u32).map(|c| AnalogPrinter::carrier_part(self.body, c, "previous")).collect(),
         }
@@ -126,7 +127,9 @@ impl<'a> DigitalPrinter<'a> {
                 Some(ty) if self.body.ir().is_composite_value(ty) || matches!(ty, ValueType::Enum(_)) => format!("let {name} = {};", ValuePrinter::pin_value(&values.pin_type(ty)?, &format!("{cx}.bytes({i})"))),
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
-            Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::NoiseValue(_) | Source::SessionParameter(_) | Source::LimitLast(_) | Source::LimitAge(_) => {
+            // the pin of a session parameter holds an `Option<f64>`: known when the host gave it
+            Source::SessionParameter(_) => format!("let {name} = <Option<f64> as rt::Carried>::from_pin({cx}.bytes({i}));"),
+            Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::NoiseValue(_) | Source::LimitLast(_) | Source::LimitAge(_) => {
                 return Ok(None);
             }
         }))

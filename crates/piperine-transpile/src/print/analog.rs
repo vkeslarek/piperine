@@ -27,7 +27,7 @@ use crate::Error;
 use crate::print::value::Reads;
 use crate::print::delay::DelayStates;
 use crate::print::derivative::States;
-use crate::print::{ContributionSums, DelayPrinter, DerivativePrinter, RealLift, Text, TypeItems, ValuePrinter};
+use crate::print::{ContributionSums, DelayPrinter, DerivativePrinter, TracePrinter, RealLift, Text, TypeItems, ValuePrinter};
 
 /// Prints the analog functions of one body from its plan.
 #[derive(Debug)]
@@ -60,6 +60,7 @@ impl<'a> AnalogPrinter<'a> {
             derivatives: (0..body.derivatives().len() as u32).map(Self::derivative_pin).collect(),
             delays: (0..body.delays().len() as u32).map(|k| Text::generated(&format!("delay{k}_value"))).collect(),
             noises: (0..body.noise_sources().len() as u32).map(crate::print::NoisePrinter::input_name).collect(),
+            session_parameters: (0..body.session_parameters().len() as u32).map(|k| Text::generated(&format!("simparam{k}"))).collect(),
             param_previous: (0..body.params().len() as u32).map(|p| Self::param_part(body, p, "previous")).collect(),
             previous: (0..body.carriers().len() as u32).map(|c| Self::carrier_part(body, c, "previous")).collect(),
         };
@@ -316,9 +317,10 @@ impl<'a> AnalogPrinter<'a> {
                 Expr::Carrier(c) => {
                     sources.insert(Source::Carrier(*c));
                 }
-                // a session parameter has no plan read until T26; its default is read, and the
-                // value printer refuses the form
-                Expr::SessionParameter { default, .. } => stack.extend(default),
+                Expr::SessionParameter { parameter, default } => {
+                    sources.insert(Source::SessionParameter(*parameter));
+                    stack.extend(default);
+                }
                 Expr::Delay(k) => {
                     sources.insert(Source::Delay(*k));
                 }
@@ -369,7 +371,7 @@ impl<'a> AnalogPrinter<'a> {
     pub(crate) fn is_plain(&self, s: Source) -> bool {
         match s {
             Source::Param(p) | Source::ParamPrevious(p) => self.body.params().get(p as usize).is_some_and(|x| x.ty != ValueType::F64),
-            Source::Carrier(_) | Source::CarrierPrevious(_) | Source::Static | Source::Analysis(_) => true,
+            Source::Carrier(_) | Source::CarrierPrevious(_) | Source::Static | Source::Analysis(_) | Source::SessionParameter(_) => true,
             _ => false,
         }
     }
@@ -387,6 +389,7 @@ impl<'a> AnalogPrinter<'a> {
                 None => Err(self.unsupported(&format!("a read of carrier {c}"))),
             },
             Source::Static | Source::Analysis(_) => Ok("bool".to_string()),
+            Source::SessionParameter(_) => Ok("Option<f64>".to_string()),
             _ => Ok("R".to_string()),
         }
     }
@@ -415,6 +418,8 @@ impl<'a> AnalogPrinter<'a> {
             },
             // abi.md §4.2: `STATIC` is one `BOOL` byte, `TIME` an `F64`
             Source::Static | Source::Analysis(_) => format!("let {name} = {cx}.bool({i});"),
+            // the pin of a session parameter holds an `Option<f64>`: known when the host gave it
+            Source::SessionParameter(_) => format!("let {name} = <Option<f64> as rt::Carried>::from_pin({cx}.bytes({i}));"),
             _ => format!("let {name} = {cx}.f64({i});"),
         })
     }
@@ -438,7 +443,9 @@ impl<'a> AnalogPrinter<'a> {
         let Some(f) = self.plan.functions().get(k).filter(|f| f.mode == Mode::Terms) else {
             return Err(self.unsupported(&format!("function {k} as the terms function")));
         };
-        let holders = ContributionSums::holders(self.body);
+        let mut holders = ContributionSums::holders(self.body);
+        // a trace is kept as a contribution is: it writes what the block's conditions let it
+        holders.extend(TracePrinter::holders(self.body));
         let slice = self.slice(Mode::Terms, |id| holders.contains(&id));
         let states = DerivativePrinter::new(self).states()?;
         let delays = DelayPrinter::new(self).states()?;
@@ -498,6 +505,10 @@ impl<'a> AnalogPrinter<'a> {
         // term its constant and slopes reads every pin as 0 and must not raise it
         if self.block_faults() {
             params.push(format!("{}: bool", Self::exclusive()));
+        }
+        // the records of the trace sites, one slot each
+        if !self.body.traces().is_empty() {
+            params.push(TracePrinter::parameter(self.body.traces().len()));
         }
         t.comment(&format!("{}.analog", self.body.name()), self.body.origin());
         let returns = if self.block_faults() { format!("Result<[R; {}], Fault>", f.writes.len()) } else { format!("[R; {}]", f.writes.len()) };
@@ -591,6 +602,11 @@ impl<'a> AnalogPrinter<'a> {
                     outputs.push(DelayPrinter::time_value(k));
                     continue;
                 }
+                // a trace writes bytes, not a number: its record is in the buffer `terms` copies
+                Target::Trace(_) => {
+                    outputs.push("R::default()".to_string());
+                    continue;
+                }
                 _ => return Err(self.unsupported(&format!("the write {w:?} of the terms function"))),
             };
             outputs.push(match term {
@@ -674,6 +690,11 @@ impl<'a> AnalogPrinter<'a> {
                 if fallible {
                     args.push((!zero).to_string());
                 }
+                // the trace buffer: the evaluation at the iterate fills it, the one at 0 only
+                // gives the slopes and its records are dropped
+                if !self.body.traces().is_empty() {
+                    args.push(if zero { "&mut Default::default()".to_string() } else { format!("&mut {}", ValuePrinter::TRACES) });
+                }
                 let call = if named {
                     // no argument carries the block's number type: name it
                     format!("Self::terms_block::<Dual<{}>>({})", f.slots, args.join(", "))
@@ -682,6 +703,9 @@ impl<'a> AnalogPrinter<'a> {
                 };
                 if fallible { format!("{call}?") } else { call }
             };
+            if !self.body.traces().is_empty() {
+                t.line(&format!("let mut {}: [Option<Vec<u8>>; {}] = Default::default();", ValuePrinter::TRACES, self.body.traces().len()));
+            }
             if at_iterate {
                 t.line("// the evaluation at the iterate");
                 t.line(&format!("let at_iterate_ = {};", call(false)));
@@ -709,6 +733,10 @@ impl<'a> AnalogPrinter<'a> {
                     t.line(&format!("cx_.set({w}, at_iterate_[{w}].v);"));
                     if let Target::DelayTime(k) = f.writes[w] {
                         t.line(&DelayPrinter::new(self).time_fault(w, k));
+                    }
+                    if let Target::Trace(k) = f.writes[w] {
+                        // a record the block wrote is the watch's bytes; none is the empty record
+                        t.line(&format!("if let Some(record_) = &{}[{k}] {{ cx_.out_bytes({w}).copy_from_slice(record_); }}", ValuePrinter::TRACES));
                     }
                 }
             }

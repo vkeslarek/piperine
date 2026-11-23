@@ -333,6 +333,17 @@ impl RecordLayout {
         }
     }
 
+    /// Where the record starts in a `TRACE` watch: after the `BOOL` presence byte, at the
+    /// record's own alignment (abi.md A5).
+    pub fn trace_start(&self) -> u32 {
+        1u32.next_multiple_of(self.align)
+    }
+
+    /// The size of a `TRACE` watch holding the record: the presence byte, then the record.
+    pub fn trace_size(&self) -> u32 {
+        (self.trace_start() + self.size).next_multiple_of(self.align)
+    }
+
     /// The ABI fields of the layout: each value field's leaves, named after the stream's fields.
     fn abi_fields(&self) -> Vec<Field<'_>> {
         self.leaves
@@ -498,10 +509,10 @@ impl Digital {
                 let Some(record) = RecordLayout::in_ir(body.ir(), stream) else {
                     panic!("body {}: stream {} holds a field no pin holds; check() refuses it", body.name(), stream.name)
                 };
-                let start = 1u32.next_multiple_of(record.align);
+                let start = record.trace_start();
                 let mut fields = vec![Field { name: Str::from_str("present"), leaf: leaf::BOOL, offset: 0, count: 1 }];
                 fields.extend(record.abi_fields().into_iter().map(|f| Field { offset: f.offset + start, ..f }));
-                let layout = Layout { size: (start + record.size).next_multiple_of(record.align), align: record.align, fields: List::from_slice(&fields) };
+                let layout = Layout { size: record.trace_size(), align: record.align, fields: List::from_slice(&fields) };
                 s.watch(WatchSpec {
                     name: &format!("trace:{k}"),
                     origin: &Self::at(&site.origin),
