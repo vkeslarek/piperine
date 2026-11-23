@@ -26,19 +26,8 @@ impl ExactRational {
         }
     }
 
-    /// `(-1)^negative * digits * 10^power`.
-    pub fn decimal(negative: bool, digits: &BigUint, power: i64) -> Self {
-        let sign = if negative { Sign::Minus } else { Sign::Plus };
-        let ten_power = BigUint::from(10u32).pow(power.unsigned_abs() as u32);
-        if power >= 0 {
-            ExactRational { numerator: BigInt::from_biguint(sign, digits * ten_power), denominator: BigUint::from(1u32) }
-        } else {
-            ExactRational { numerator: BigInt::from_biguint(sign, digits.clone()), denominator: ten_power }
-        }
-    }
-
     /// The magnitude of the numerator.
-    fn magnitude(&self) -> BigUint {
+    pub fn magnitude(&self) -> BigUint {
         self.numerator.magnitude().clone()
     }
 
@@ -47,16 +36,8 @@ impl ExactRational {
         self.numerator.sign() == Sign::Minus
     }
 
-    /// `floor(|self| * 2^shift)` as limbs and whether a remainder was dropped.
-    pub fn scaled(&self, shift: u32) -> (Vec<u64>, bool) {
-        let scaled = self.magnitude() << shift;
-        let quotient = &scaled / &self.denominator;
-        let remainder = &scaled % &self.denominator;
-        (quotient.to_u64_digits(), remainder != BigUint::from(0u32))
-    }
-
     /// `floor(log2 |self|)` of a nonzero value.
-    fn binary_logarithm(&self) -> i64 {
+    pub fn binary_logarithm(&self) -> i64 {
         let numerator = self.magnitude();
         let mut exponent = numerator.bits() as i64 - self.denominator.bits() as i64;
         let (left, right) = if exponent >= 0 { (numerator.clone(), &self.denominator << (exponent as u64)) } else { (&numerator << ((-exponent) as u64), self.denominator.clone()) };

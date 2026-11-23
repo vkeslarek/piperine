@@ -9,6 +9,8 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+pub mod arithmetic;
 pub mod format;
+pub mod half;
 pub mod limbs;
 pub mod wide;

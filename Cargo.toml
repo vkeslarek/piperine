@@ -179,6 +179,21 @@ opt-level = 2
 [profile.dev.package.piperine-abi]
 opt-level = 2
 
+# The numeric crate's tests check every f16 input and millions of operand pairs against exact
+# big-integer arithmetic: unoptimized they take minutes. Optimization changes no result (integer
+# and correctly rounded float arithmetic), and overflow checks stay on in a dev build.
+[profile.dev.package.piperine-numbers]
+opt-level = 3
+
+[profile.dev.package.num-bigint]
+opt-level = 3
+
+[profile.dev.package.num-integer]
+opt-level = 3
+
+[profile.dev.package.num-traits]
+opt-level = 3
+
 [profile.release]
 debug = true
 opt-level = 3

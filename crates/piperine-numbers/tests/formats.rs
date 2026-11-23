@@ -4,6 +4,8 @@
 
 #[path = "support/exact.rs"]
 mod exact;
+#[path = "support/exact_text.rs"]
+mod exact_text;
 #[path = "support/random.rs"]
 mod random;
 
