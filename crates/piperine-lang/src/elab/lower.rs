@@ -583,7 +583,7 @@ impl Elaboration<'_, '_> {
             let start = out.len();
             let node = self.design.stmt_node(*stmt).clone();
             let file = self.design.decl_data(node.owner).file;
-            let (reported, carried) = (self.diagnostics.len(), std::mem::replace(&mut ok, true));
+            let carried = std::mem::replace(&mut ok, true);
             match &node.kind {
                 StmtKind::Let { pat, init: Some(init), else_: None, .. } => ok &= self.lower_let(scope, &mut out, *pat, *init, file, node.span),
                 // `let x;`: a local first assigned later (§1.7.5, `control.rs`).
@@ -610,8 +610,8 @@ impl Elaboration<'_, '_> {
                     ok = false;
                 }
             }
-            // a statement that failed to lower without saying why is refused by name: nothing vanishes silently
-            if !ok && self.diagnostics.len() == reported {
+            // a statement that failed to lower while nothing was reported is refused by name: nothing vanishes silently (a failure that rests on an earlier diagnostic, such as an unreadable file, keeps that one)
+            if !ok && self.diagnostics.is_empty() {
                 self.unsupported(file, node.span, "this statement");
             }
             ok &= carried;
