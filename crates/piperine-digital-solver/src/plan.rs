@@ -18,12 +18,36 @@ use crate::error::DigitalError;
 /// What one pin of an instance is bound to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Binding {
-    /// A discrete or event pin on this net.
+    /// A discrete or event pin on this net; an array pin bound to a whole array net of equal `count` (P4).
     Net(NetId),
+    /// A scalar discrete pin on one element of an array net (a window of one element, CV-23).
+    Element { net: NetId, element: u64 },
+    /// An array pin on `length` consecutive elements of an array net from `first` (a sub-array window, CV-23).
+    Window { net: NetId, first: u64, length: u64 },
     /// A continuous pin a reaction reads: an index into the owner's sample vector.
     Sample(u32),
     /// An unbound `OPTIONAL` pin: it reads as zero bytes.
     Absent,
+}
+
+impl Binding {
+    /// The net a pin is on, whatever part of it.
+    pub fn net(&self) -> Option<NetId> {
+        match self {
+            Binding::Net(net) | Binding::Element { net, .. } | Binding::Window { net, .. } => Some(*net),
+            Binding::Sample(_) | Binding::Absent => None,
+        }
+    }
+
+    /// The elements of its array net a pin covers: `(first, length)` for a window or an element, `None` otherwise
+    /// (a whole net is every element).
+    pub fn elements(&self) -> Option<(u64, u64)> {
+        match self {
+            Binding::Element { element, .. } => Some((*element, 1)),
+            Binding::Window { first, length, .. } => Some((*first, *length)),
+            _ => None,
+        }
+    }
 }
 
 /// An instance as the rules see it: its path, its shape, its pin bindings.
@@ -144,10 +168,10 @@ fn pin_name(input: &ShapeInput<'_>, i: usize) -> String {
 fn nets_of<'a>(input: &ShapeInput<'_>, cells: impl Iterator<Item = &'a piperine_abi::raw::Cell>) -> Vec<NetId> {
     let mut out = Vec::new();
     for c in cells.filter(|c| c.kind == cell::PIN) {
-        if let Some(Binding::Net(id)) = input.pins.get(c.index as usize)
-            && !out.contains(id)
+        if let Some(id) = input.pins.get(c.index as usize).and_then(Binding::net)
+            && !out.contains(&id)
         {
-            out.push(*id);
+            out.push(id);
         }
     }
     out
@@ -205,7 +229,7 @@ pub fn analyze(nets: &[NetSpec], inputs: &[ShapeInput<'_>], resolution: Resoluti
         let mut found: Vec<NetId> = Vec::new();
         for input in inputs {
             for (i, pin) in input.shape.pins.iter().enumerate() {
-                if let (role::GLOBAL, Binding::Net(id)) = (pin.role, input.pins[i])
+                if let (role::GLOBAL, Some(id)) = (pin.role, input.pins[i].net())
                     && pin.global == which
                     && !found.contains(&id)
                 {
@@ -218,7 +242,7 @@ pub fn analyze(nets: &[NetSpec], inputs: &[ShapeInput<'_>], resolution: Resoluti
     let mut param_nets = vec![false; nets.len()];
     for input in inputs {
         for (i, pin) in input.shape.pins.iter().enumerate() {
-            if let Binding::Net(id) = input.pins[i]
+            if let Some(id) = input.pins[i].net()
                 && (pin.role == role::PARAM || pin.role == role::GLOBAL)
             {
                 param_nets[id.0 as usize] = true;
@@ -270,10 +294,7 @@ fn reachability(
 ) -> Vec<Vec<bool>> {
     let mut reach: Vec<bool> = nets.iter().map(|n| n.analog_reads).collect();
     let mut probes: Vec<Vec<bool>> = inputs.iter().map(|i| vec![false; i.shape.reactions.len()]).collect();
-    let net_of = |input: &ShapeInput<'_>, pin: u32| match input.pins.get(pin as usize) {
-        Some(Binding::Net(id)) => Some(*id),
-        _ => None,
-    };
+    let net_of = |input: &ShapeInput<'_>, pin: u32| input.pins.get(pin as usize).and_then(Binding::net);
     loop {
         let mut changed = false;
         for f in functions {
@@ -319,10 +340,7 @@ fn reachability(
 fn crossing_reach(nets: &[NetSpec], inputs: &[ShapeInput<'_>], functions: &[FnNode]) -> Vec<Vec<bool>> {
     let mut reached: Vec<bool> = nets.iter().map(|n| n.crossing).collect();
     let mut out: Vec<Vec<bool>> = inputs.iter().map(|i| vec![false; i.shape.reactions.len()]).collect();
-    let net_of = |input: &ShapeInput<'_>, pin: u32| match input.pins.get(pin as usize) {
-        Some(Binding::Net(id)) => Some(*id),
-        _ => None,
-    };
+    let net_of = |input: &ShapeInput<'_>, pin: u32| input.pins.get(pin as usize).and_then(Binding::net);
     loop {
         let mut changed = false;
         for f in functions {
@@ -359,6 +377,15 @@ fn crossing_reach(nets: &[NetSpec], inputs: &[ShapeInput<'_>], functions: &[FnNo
     }
 }
 
+/// The array net `net` an element or a window names.
+fn array_net<'a>(nets: &'a [NetSpec], net: NetId, name: &str) -> Result<&'a NetSpec, DigitalError> {
+    match nets.get(net.0 as usize) {
+        Some(spec) if spec.count > 0 && spec.kind == NetKind::Discrete => Ok(spec),
+        Some(spec) => Err(bind_error("P4", vec![format!("{name}: net `{}` is no array net", spec.name)])),
+        None => Err(bind_error("net", vec![format!("{name}: net {} does not exist", net.0)])),
+    }
+}
+
 /// Every pin is bound as its kind allows, to a net that exists and has its kind.
 fn check_bindings(nets: &[NetSpec], inputs: &[ShapeInput<'_>]) -> Result<(), DigitalError> {
     for input in inputs {
@@ -379,6 +406,34 @@ fn check_bindings(nets: &[NetSpec], inputs: &[ShapeInput<'_>]) -> Result<(), Dig
                     if spec.kind != want {
                         return Err(bind_error("P4", vec![format!("{name}: bound to net `{}` of another kind", spec.name)]));
                     }
+                    // P4: an array pin and its net have equal `count` (0 on both for one carrier)
+                    if pin.count != spec.count {
+                        return Err(bind_error(
+                            "P4",
+                            vec![format!("{name}: an array of {} elements on net `{}` of {}", pin.count, spec.name, spec.count)],
+                        ));
+                    }
+                }
+                (Binding::Element { net, element }, kind::DISCRETE) => {
+                    let spec = array_net(nets, net, &name)?;
+                    if pin.count != 0 || element >= spec.count {
+                        return Err(bind_error(
+                            "P4",
+                            vec![format!("{name}: element {element} of net `{}` of {} elements, on a pin of count {}", spec.name, spec.count, pin.count)],
+                        ));
+                    }
+                }
+                (Binding::Window { net, first, length }, kind::DISCRETE) => {
+                    let spec = array_net(nets, net, &name)?;
+                    if pin.count != length || length == 0 || first.checked_add(length).is_none_or(|end| end > spec.count) {
+                        return Err(bind_error(
+                            "P4",
+                            vec![format!(
+                                "{name}: a window of {length} elements from {first} on net `{}` of {} elements, for a pin of count {}",
+                                spec.name, spec.count, pin.count
+                            )],
+                        ));
+                    }
                 }
                 (_, _) => return Err(bind_error("net", vec![format!("{name}: a binding its kind cannot take")])),
             }
@@ -392,7 +447,7 @@ fn check_layouts(nets: &[NetSpec], inputs: &[ShapeInput<'_>]) -> Result<(), Digi
     let mut first: Vec<Option<(usize, usize)>> = vec![None; nets.len()];
     for (n, input) in inputs.iter().enumerate() {
         for (i, pin) in input.shape.pins.iter().enumerate() {
-            let Binding::Net(id) = input.pins[i] else { continue };
+            let Some(id) = input.pins[i].net() else { continue };
             match first[id.0 as usize] {
                 None => first[id.0 as usize] = Some((n, i)),
                 Some((m, j)) => {
@@ -414,7 +469,7 @@ fn check_layouts(nets: &[NetSpec], inputs: &[ShapeInput<'_>]) -> Result<(), Digi
     }
     for (n, input) in inputs.iter().enumerate() {
         for (i, pin) in input.shape.pins.iter().enumerate() {
-            let Binding::Net(id) = input.pins[i] else { continue };
+            let Some(id) = input.pins[i].net() else { continue };
             let spec = &nets[id.0 as usize];
             if pin.layout.size != spec.size || pin.layout.align != spec.align {
                 return Err(bind_error(
@@ -435,43 +490,66 @@ fn check_layouts(nets: &[NetSpec], inputs: &[ShapeInput<'_>]) -> Result<(), Digi
     Ok(())
 }
 
-/// P1: one writer per net, derived from the shapes; the host when none.
+/// One writer of a net, with the elements it writes when the net is an array and the pin is a window of it.
+struct WriterEntry {
+    writer: NetWriter,
+    who: String,
+    /// `(first, length)` of the elements the writing pin covers; `None` is the whole net.
+    elements: Option<(u64, u64)>,
+}
+
+impl WriterEntry {
+    /// Whether the two writers can write one element: always for a scalar net or a whole pin, and for windows when
+    /// their runs overlap.
+    fn collides(&self, other: &WriterEntry) -> bool {
+        match (self.elements, other.elements) {
+            (Some((a, la)), Some((b, lb))) => a < b + lb && b < a + la,
+            _ => true,
+        }
+    }
+}
+
+/// P1: one writer per net (per element of an array net), derived from the shapes; the host when none.
 fn find_writers(nets: &[NetSpec], inputs: &[ShapeInput<'_>]) -> Result<Vec<NetWriter>, DigitalError> {
-    let mut found: Vec<Vec<(NetWriter, String)>> = vec![Vec::new(); nets.len()];
-    let mut note = |net: NetId, writer: NetWriter, who: String| {
+    let mut found: Vec<Vec<WriterEntry>> = (0..nets.len()).map(|_| Vec::new()).collect();
+    let mut note = |binding: Binding, writer: NetWriter, who: String| {
+        let Some(net) = binding.net() else { return };
         let list = &mut found[net.0 as usize];
-        if !list.iter().any(|(w, _)| *w == writer) {
-            list.push((writer, who));
+        let elements = binding.elements();
+        if !list.iter().any(|e| e.writer == writer && e.elements == elements) {
+            list.push(WriterEntry { writer, who, elements });
         }
     };
     for (n, input) in inputs.iter().enumerate() {
         let instance = n as u32;
         for (k, f) in input.shape.functions.iter().enumerate() {
             for c in f.writes.iter().filter(|c| c.kind == cell::PIN) {
-                if let Some(Binding::Net(id)) = input.pins.get(c.index as usize) {
+                if let Some(binding) = input.pins.get(c.index as usize) {
                     let who = format!("{} (function {})", pin_name(input, c.index as usize), f.name.as_str());
-                    note(*id, NetWriter::Function { instance, k: k as u32 }, who);
+                    note(*binding, NetWriter::Function { instance, k: k as u32 }, who);
                 }
             }
         }
         for r in input.shape.reactions.iter() {
             for s in r.writes.iter() {
-                if let Some(Binding::Net(id)) = input.pins.get(s.pin as usize) {
+                if let Some(binding) = input.pins.get(s.pin as usize) {
                     let who = format!("{} (statement of reaction {})", pin_name(input, s.pin as usize), r.name.as_str());
-                    note(*id, NetWriter::Statements { instance }, who);
+                    note(*binding, NetWriter::Statements { instance }, who);
                 }
             }
         }
     }
     let mut writers = Vec::with_capacity(nets.len());
     for (i, list) in found.into_iter().enumerate() {
-        match list.as_slice() {
-            [] => writers.push(NetWriter::Host),
-            [(w, _)] => writers.push(*w),
-            [(_, a), (_, b), ..] => {
-                return Err(bind_error("P1", vec![format!("net `{}` has two writers: {a} and {b}", nets[i].name)]));
+        for (a, first) in list.iter().enumerate() {
+            let clash = list[a + 1..]
+                .iter()
+                .find(|second| first.writer != second.writer && (nets[i].count == 0 || first.collides(second)));
+            if let Some(second) = clash {
+                return Err(bind_error("P1", vec![format!("net `{}` has two writers: {} and {}", nets[i].name, first.who, second.who)]));
             }
         }
+        writers.push(list.first().map_or(NetWriter::Host, |e| e.writer));
     }
     Ok(writers)
 }
@@ -512,7 +590,9 @@ impl DigitalPlan {
     pub fn net_layout(&self, net: NetId) -> Option<&Layout<'_>> {
         self.instances.iter().find_map(|inst| {
             inst.pins.iter().enumerate().find_map(|(i, b)| match b {
-                Binding::Net(id) if *id == net => inst.handle.shape().pins.get(i).map(|p| &p.layout),
+                Binding::Net(id) | Binding::Element { net: id, .. } | Binding::Window { net: id, .. } if *id == net => {
+                    inst.handle.shape().pins.get(i).map(|p| &p.layout)
+                }
                 _ => None,
             })
         })
@@ -551,7 +631,7 @@ fn parameter_cone(nets: &[NetSpec], instances: &[InstancePlan], analysis: &Analy
     let mut port = vec![false; nets.len()];
     for inst in instances {
         for (i, pin) in inst.handle.shape().pins.iter().enumerate() {
-            if let Binding::Net(id) = inst.pins[i] {
+            if let Some(id) = inst.pins[i].net() {
                 param[id.0 as usize] |= pin.role == role::PARAM || pin.role == role::GLOBAL;
                 port[id.0 as usize] |= pin.role == role::PORT;
             }

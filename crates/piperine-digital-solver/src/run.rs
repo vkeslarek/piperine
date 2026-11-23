@@ -5,9 +5,9 @@
 //! Both read and write through `Store` and call devices only through
 //! `piperine_abi::caller::Handle`.
 
-use piperine_abi::caller::{CallError, Commit};
-use piperine_abi::device::{Access, Flow, cell_lens};
-use piperine_abi::raw::{Cell, Statement, cell, reaction_flag, statement_flag, status};
+use piperine_abi::caller::{CallError, Commit, ElementSource, ViewHandle};
+use piperine_abi::device::{Access, Flow, cell_lens_of};
+use piperine_abi::raw::{ArrayView, Cell, Shape, Statement, WHOLE, cell, part, reaction_flag, statement_flag, status};
 
 use crate::dag::Step;
 use crate::net::{NetId, NetKind};
@@ -117,6 +117,27 @@ pub fn write_net(
     changed
 }
 
+/// Writes `bytes` at `offset` of `element` of array net `net`: observes and dirties the readers on a change.
+pub fn write_element(
+    plan: &DigitalPlan,
+    store: &mut Store,
+    dirty: &mut DirtySet,
+    obs: &mut Obs,
+    net: NetId,
+    element: u64,
+    offset: u32,
+    bytes: &[u8],
+    at: Instant,
+) -> bool {
+    let changed = store.write_element(net, element, offset, bytes);
+    if changed {
+        let name = format!("{}[{element}]", plan.nets[net.0 as usize].name);
+        obs.push(Observation::Change { net: name, at, bytes: store.element_value(net, element).to_vec() });
+        dirty.mark_net(plan, net);
+    }
+    changed
+}
+
 /// Fires event net `net`: observes it and dirties the functions that read its `CHANGED`.
 pub fn fire_net(plan: &DigitalPlan, store: &mut Store, dirty: &mut DirtySet, obs: &mut Obs, net: NetId, at: Instant) {
     store.fire(net);
@@ -124,10 +145,83 @@ pub fn fire_net(plan: &DigitalPlan, store: &mut Store, dirty: &mut DirtySet, obs
     dirty.mark_net(plan, net);
 }
 
+/// The bytes of one element of an array net a cell reads.
+struct ElementPart;
+
+impl ElementPart {
+    /// Hands `fill` the bytes of `part` of `element` of array net `net` as of the microstep the store is in.
+    fn fill(store: &Store, net: NetId, element: u64, part: u32, fill: impl FnOnce(&[u8])) {
+        match part {
+            part::VALUE => fill(store.element_value(net, element)),
+            part::PREVIOUS => fill(store.element_previous(net, element)),
+            part::CHANGED => fill(&[store.element_changed(net, element) as u8]),
+            _ => {}
+        }
+    }
+}
+
+/// An array pin's elements as a reaction's `WHOLE` read sees them: a window of an array net at the snapshot (R2).
+struct WindowView<'a> {
+    store: &'a Store,
+    net: NetId,
+    /// The array net's element the pin's element 0 is.
+    first: u64,
+    length: u64,
+    size: u32,
+}
+
+impl ElementSource for WindowView<'_> {
+    fn count(&self) -> u64 {
+        self.length
+    }
+
+    fn size(&self) -> u32 {
+        self.size
+    }
+
+    fn element(&self, element: u64, part: u32) -> &[u8] {
+        let at = self.first + element;
+        match part {
+            part::VALUE => self.store.element_value(self.net, at),
+            part::PREVIOUS => self.store.element_previous(self.net, at),
+            _ if self.store.element_changed(self.net, at) => &[1],
+            _ => &[0],
+        }
+    }
+}
+
+/// The `WHOLE` reads of one reaction.
+struct WholeReads;
+
+impl WholeReads {
+    /// The windows of reaction `reaction`'s `WHOLE` reads, in the order the reads are listed: each is the array net an
+    /// array pin is bound to, or the run of elements of it (R2: the store is the microstep's snapshot).
+    fn windows<'s>(store: &'s Store, shape: &Shape, reaction: usize, pins: &[Binding]) -> Vec<WindowView<'s>> {
+        let Some(reaction) = shape.reactions.get(reaction) else { return Vec::new() };
+        let mut windows = Vec::new();
+        for (i, c) in reaction.reads.iter().enumerate() {
+            if reaction.elements.get(i).copied() != Some(WHOLE) {
+                continue;
+            }
+            let size = shape.pins.get(c.index as usize).map_or(0, |pin| pin.layout.size);
+            match pins[c.index as usize] {
+                Binding::Net(net) => {
+                    let length = store.array(net).map_or(0, |array| array.count());
+                    windows.push(WindowView { store, net, first: 0, length, size });
+                }
+                Binding::Window { net, first, length } => windows.push(WindowView { store, net, first, length, size }),
+                _ => {}
+            }
+        }
+        windows
+    }
+}
+
 /// One input or output buffer of `len` bytes, filled with what `cell` names.
 fn cell_bytes(
     pins: &[Binding],
     c: &Cell,
+    element: u64,
     len: usize,
     store: &Store,
     ambient: &Ambient,
@@ -140,12 +234,16 @@ fn cell_bytes(
     };
     match c.kind {
         cell::PIN => match pins[c.index as usize] {
-            Binding::Net(id) => match c.part {
-                piperine_abi::raw::part::VALUE => fill(&mut buf, store.value(id)),
-                piperine_abi::raw::part::PREVIOUS => fill(&mut buf, store.previous(id)),
-                piperine_abi::raw::part::CHANGED => fill(&mut buf, &[store.changed(id) as u8]),
+            Binding::Net(id) if store.array(id).is_none() => match c.part {
+                part::VALUE => fill(&mut buf, store.value(id)),
+                part::PREVIOUS => fill(&mut buf, store.previous(id)),
+                part::CHANGED => fill(&mut buf, &[store.changed(id) as u8]),
                 _ => {}
             },
+            // an array pin read at a constant element, or a scalar pin on one element of an array net (a window)
+            Binding::Net(id) => ElementPart::fill(store, id, element, c.part, |bytes| fill(&mut buf, bytes)),
+            Binding::Element { net, element: first } => ElementPart::fill(store, net, first, c.part, |bytes| fill(&mut buf, bytes)),
+            Binding::Window { net, first, .. } => ElementPart::fill(store, net, first + element, c.part, |bytes| fill(&mut buf, bytes)),
             Binding::Sample(i) => fill(&mut buf, &samples.get(i as usize).copied().unwrap_or(0.0).to_le_bytes()),
             Binding::Absent => {}
         },
@@ -166,6 +264,8 @@ fn cell_bytes(
 /// What a function wrote to one net.
 struct Out {
     net: NetId,
+    /// The element of an array net the write is to (a pin bound to a window of one element).
+    element: Option<u64>,
     event: bool,
     bytes: Vec<u8>,
 }
@@ -183,19 +283,20 @@ fn call_function(
     let inst = &plan.instances[node.instance as usize];
     let shape = inst.handle.shape();
     let func = shape.functions.get(node.k as usize).expect("bind took this function from the shape");
-    let reads = cell_lens(shape, &func.reads, Access::FunctionRead).expect("bind validated the shape");
-    let writes = cell_lens(shape, &func.writes, Access::FunctionWrite).expect("bind validated the shape");
+    let reads = cell_lens_of(shape, &func.reads, &func.elements, Access::FunctionRead).expect("bind validated the shape");
+    let writes = cell_lens_of(shape, &func.writes, &piperine_abi::raw::List::empty(), Access::FunctionWrite).expect("bind validated the shape");
     let inputs: Vec<Aligned> = func
         .reads
         .iter()
         .zip(&reads)
-        .map(|(c, len)| cell_bytes(&inst.pins, c, *len, store, ambient, &[]))
+        .enumerate()
+        .map(|(i, (c, len))| cell_bytes(&inst.pins, c, func.elements.get(i).copied().unwrap_or(0), *len, store, ambient, &[]))
         .collect();
     let mut outputs: Vec<Aligned> = func
         .writes
         .iter()
         .zip(&writes)
-        .map(|(c, len)| cell_bytes(&inst.pins, c, *len, store, ambient, &[]))
+        .map(|(c, len)| cell_bytes(&inst.pins, c, 0, *len, store, ambient, &[]))
         .collect();
     let input_refs: Vec<&[u8]> = inputs.iter().map(|b| b.bytes()).collect();
     let mut output_refs: Vec<&mut [u8]> = outputs.iter_mut().map(|b| b.bytes_mut()).collect();
@@ -210,10 +311,14 @@ fn call_function(
     }
     let mut out = Vec::new();
     for (c, buf) in func.writes.iter().zip(&outputs) {
-        let Binding::Net(net) = inst.pins[c.index as usize] else { continue };
+        let (net, element) = match inst.pins[c.index as usize] {
+            Binding::Net(net) => (net, None),
+            Binding::Element { net, element } => (net, Some(element)),
+            _ => continue,
+        };
         let event = plan.nets[net.0 as usize].kind == NetKind::Event;
         let bytes = buf.bytes().to_vec();
-        out.push(Out { net, event, bytes });
+        out.push(Out { net, element, event, bytes });
     }
     Ok(out)
 }
@@ -225,6 +330,8 @@ fn apply(plan: &DigitalPlan, store: &mut Store, dirty: &mut DirtySet, obs: &mut 
             if o.bytes[0] != 0 {
                 fire_net(plan, store, dirty, obs, o.net, at);
             }
+        } else if let Some(element) = o.element {
+            write_element(plan, store, dirty, obs, o.net, element, 0, &o.bytes, at);
         } else {
             write_net(plan, store, dirty, obs, o.net, 0, &o.bytes, at);
         }
@@ -344,7 +451,10 @@ fn relax(
                     }
                     continue;
                 }
-                store.write(o.net, 0, &o.bytes);
+                match o.element {
+                    Some(element) => store.write_element(o.net, element, 0, &o.bytes),
+                    None => store.write(o.net, 0, &o.bytes),
+                };
             }
         }
         after = snapshot(store);
@@ -431,6 +541,8 @@ struct Planned {
     offset: u32,
     bytes: Vec<u8>,
     net: Option<NetId>,
+    /// The element of an array net the commit is to.
+    element: Option<u64>,
     /// `None`: it never comes due, or (a settle commit) has no instant until it lands.
     due: Option<Instant>,
     replace: bool,
@@ -469,15 +581,29 @@ fn call_reaction(
     let inst = &mut instances[job.instance];
     let path = inst.path.clone();
     let pins = inst.pins.clone();
+    let windows = WholeReads::windows(store, inst.handle.shape(), job.reaction, &pins);
+    let handles: Vec<ViewHandle<'_>> = windows.iter().map(|window| ViewHandle::new(window)).collect();
     let (statements, pin_names, inputs) = {
+        let mut whole = handles.iter();
         let shape = inst.handle.shape();
         let reaction = shape.reactions.get(job.reaction).expect("listed from this shape");
-        let lens = cell_lens(shape, &reaction.reads, Access::ReactionRead).expect("bind validated the shape");
+        let lens = cell_lens_of(shape, &reaction.reads, &reaction.elements, Access::ReactionRead).expect("bind validated the shape");
         let inputs: Vec<Aligned> = reaction
             .reads
             .iter()
             .zip(&lens)
-            .map(|(c, len)| cell_bytes(&pins, c, *len, store, ambient, samples))
+            .enumerate()
+            .map(|(i, (c, len))| {
+                let element = reaction.elements.get(i).copied().unwrap_or(0);
+                if element == WHOLE {
+                    let view = whole.next().expect("one view per WHOLE read").view();
+                    let mut buffer = Aligned::zeroed(*len);
+                    buffer.bytes_mut().copy_from_slice(&ArrayView::as_bytes(&view)[..*len]);
+                    buffer
+                } else {
+                    cell_bytes(&pins, c, element, *len, store, ambient, samples)
+                }
+            })
             .collect();
         (
             reaction.writes.iter().copied().collect::<Vec<Statement>>(),
@@ -529,9 +655,19 @@ fn call_reaction(
                 return status::FAULT;
             }
         };
-        let net = match pins[s.pin as usize] {
-            Binding::Net(n) => Some(n),
-            _ => None,
+        let (net, element) = match (pins[s.pin as usize], c.element) {
+            (Binding::Net(n), None) if nets[n.0 as usize].count == 0 => (Some(n), None),
+            (Binding::Net(n), Some(e)) if e < nets[n.0 as usize].count => (Some(n), Some(e)),
+            (Binding::Element { net, element }, None) => (Some(net), Some(element)),
+            (Binding::Window { net, first, length }, Some(e)) if e < length => (Some(net), Some(first + e)),
+            (Binding::Sample(_) | Binding::Absent, _) => (None, None),
+            (binding, element) => {
+                failure = Some(reject(format!(
+                    "reaction {} statement {} committed to pin {} ({binding:?}) with element {element:?}, which is not an element it has",
+                    job.reaction, c.statement, pin_names[s.pin as usize]
+                )));
+                return status::FAULT;
+            }
         };
         let record = net
             .filter(|n| nets[n.0 as usize].record)
@@ -552,6 +688,7 @@ fn call_reaction(
             offset: c.offset,
             bytes: c.bytes.to_vec(),
             net,
+            element,
             due,
             replace: s.flags & statement_flag::REPLACE != 0,
             record,
@@ -687,6 +824,7 @@ pub fn run_reactions(
             *call += 1;
             let mut pending = Pending {
                 net,
+                element: p.element,
                 offset: p.offset,
                 bytes: p.bytes,
                 writer: Writer::Reaction { instance: job.instance as u32, reaction: job.reaction as u32 },

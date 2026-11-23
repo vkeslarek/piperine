@@ -61,6 +61,47 @@ fn empty_note() -> Note {
     Note { code: 0, len: 0, text: [0; NOTE_TEXT] }
 }
 
+/// What a host serves an [`ArrayView`](raw::ArrayView) from: the elements of one array pin at the call's snapshot.
+pub trait ElementSource {
+    /// The number of elements.
+    fn count(&self) -> u64;
+    /// The bytes of one element.
+    fn size(&self) -> u32;
+    /// The bytes of `element` for `part` (`VALUE`, `PREVIOUS` or `CHANGED`, one byte): valid until the call ends.
+    fn element(&self, element: u64, part: u32) -> &[u8];
+}
+
+/// An [`ElementSource`] made into the view a `WHOLE` read cell holds. The view points into this handle, so the
+/// handle stays where it is (boxed) until the `react` call that reads the view returns.
+pub struct ViewHandle<'a> {
+    source: &'a dyn ElementSource,
+}
+
+impl<'a> ViewHandle<'a> {
+    /// A handle serving `source`.
+    pub fn new(source: &'a dyn ElementSource) -> ViewHandle<'a> {
+        ViewHandle { source }
+    }
+
+    /// The view of the source: its `count` and `size`, reading through `source`.
+    pub fn view(&self) -> raw::ArrayView {
+        raw::ArrayView {
+            context: (&self.source as *const &dyn ElementSource).cast::<c_void>(),
+            count: self.source.count(),
+            size: self.source.size(),
+            read: Self::read,
+        }
+    }
+
+    /// `ArrayView.read`: the bytes of one element, from the source `context` points at.
+    unsafe extern "C" fn read(context: *const c_void, element: u64, part: u32) -> *const u8 {
+        // SAFETY: `context` is the `source` field of a live `ViewHandle` (`view` above), kept in place until the
+        // `react` call that reads the view returns (abi.md §3.1).
+        let source = unsafe { *context.cast::<&dyn ElementSource>() };
+        source.element(element, part).as_ptr()
+    }
+}
+
 /// One live instance of a module.
 ///
 /// `Handle` is `Send`: calls on different instances may run on different

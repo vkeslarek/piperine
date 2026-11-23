@@ -10,7 +10,7 @@ use crate::engine::{Digital, Horizon, Mode, Outcome};
 use crate::landing::{LandingCause, LandingTest};
 use crate::net::{NetId, NetKind};
 use crate::queue::{Instant, Writer};
-use crate::run::{Phase, fire_net, fired_reactions, run_functions, run_reactions, write_net};
+use crate::run::{Phase, fire_net, fired_reactions, run_functions, run_reactions, write_element, write_net};
 use crate::tick::Tick;
 use crate::error::DigitalError;
 
@@ -34,6 +34,8 @@ struct SettlePhase {
 /// One discrete net as the commits due at a microstep left it.
 struct Settled {
     net: NetId,
+    /// The element of an array net the commits are to.
+    element: Option<u64>,
     /// The whole net: its value before the microstep, each commit's bytes laid over it in order.
     bytes: Vec<u8>,
     /// A commit came from the host.
@@ -55,11 +57,14 @@ impl Digital {
                 fire_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, p.net, here);
                 continue;
             }
-            let at = match settled.iter().position(|s| s.net == p.net) {
+            let at = match settled.iter().position(|s| s.net == p.net && s.element == p.element) {
                 Some(i) => i,
                 None => {
-                    let bytes = self.store.value(p.net).to_vec();
-                    settled.push(Settled { net: p.net, bytes, host: false, changed: false });
+                    let bytes = match p.element {
+                        Some(element) => self.store.element_value(p.net, element).to_vec(),
+                        None => self.store.value(p.net).to_vec(),
+                    };
+                    settled.push(Settled { net: p.net, element: p.element, bytes, host: false, changed: false });
                     settled.len() - 1
                 }
             };
@@ -69,7 +74,12 @@ impl Digital {
             s.host |= p.writer == Writer::Host;
         }
         for s in &mut settled {
-            s.changed = write_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, s.net, 0, &s.bytes, here);
+            s.changed = match s.element {
+                Some(element) => {
+                    write_element(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, s.net, element, 0, &s.bytes, here)
+                }
+                None => write_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, s.net, 0, &s.bytes, here),
+            };
         }
         settled
     }

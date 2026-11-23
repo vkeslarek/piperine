@@ -21,6 +21,8 @@ pub enum Writer {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Pending {
     pub net: NetId,
+    /// The element of an array net the commit is to; `None` for a net of one carrier.
+    pub element: Option<u64>,
     pub offset: u32,
     pub bytes: Vec<u8>,
     pub writer: Writer,
@@ -34,7 +36,7 @@ pub struct Pending {
 
 impl Pending {
     fn same_statement(&self, other: &Pending) -> bool {
-        self.writer == other.writer && self.statement == other.statement && self.net == other.net
+        self.writer == other.writer && self.statement == other.statement && self.net == other.net && self.element == other.element
     }
 
     /// Whether `new`, pushed to be due at `new.due`, removes this commit, which is due at `due`
