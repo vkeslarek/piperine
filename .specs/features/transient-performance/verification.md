@@ -1,8 +1,8 @@
 # Transient Performance verification
 
 **Verdict**: FAIL
-**Proofs**: `proofs.md` at 94455512 (round 2: 60 pass, 0 fail; round 1 at 1c3e74ba had 24 pass and 27 "no test ran")
-**Verifier**: independent sub-agent (author != verifier), Opus 5.5, 2026-11-22, rounds 1 and 2
+**Proofs**: `proofs.md` at 1c1d6487 (round 3: 60 pass, 0 fail; round 2 at 94455512 had 60/0; round 1 at 1c3e74ba had 24 pass and 27 "no test ran")
+**Verifier**: independent sub-agent (author != verifier), Opus 5.5, 2026-11-22, rounds 1 to 3
 
 The gates hold at `HEAD`. The buck's 600 µs start takes 210 188 accepted steps (gate 300 000). The
 first 100 µs land 417 times (gate 1 000) and run 668 instants (0 for crossings, 668 scheduled), and
@@ -13,9 +13,17 @@ user: "Aceitar") and `scenario/run.rs`, which now returns the step count instead
 T26 holds D5: the restart after a host write becomes a tenth of the last step, and the growth clamp
 stays 1.5. C55 holds the sixteen twins' bytes, the only witness that 2.0 would move `tran_corner`.
 
-Round 2 closes F1 to F14; each fix and the test that now holds it were read. The verdict stays FAIL
-because the wider §15 amendment (68b19c5f) leaves spec text that contradicts the code (F15 to F18),
-and two smaller records are open (F19, F20).
+Round 2 closed F1 to F14, and round 3 closes F15 to F20; I read each fix and the test that now holds
+it. Part V §15, §15.2 and Appendix C.2 now agree with the code on these points. The host `set` is a
+commit at `(t, 0)` (`Digital::host_commit`), and no operating-point retake is described. The restart
+row lists rule 6's four restarts and real functions, and rule 4 states its exemption on its own.
+
+The verdict stays FAIL on two small spec-text points:
+
+- **F21.** Two other parts of the specification still place a host `set` at §15 step 5.
+- **F22.** Part V still names a §15 step 3.5, which 68b19c5f removed.
+
+Neither touches code, a value or a test outcome.
 
 ## Checks
 
@@ -101,6 +109,8 @@ and two smaller records are open (F19, F20).
 | F18. Rule 4 still says "The retaken step is exempt from the truncation-error test and restarts the integrator, like the step that reads a host `set`". Since e785264c the host-`set` step is tested by rule 6, so the comparison now reads as if that step were exempt | `docs/spec/part_v_execution.md:288-289` | write "...exempt from the truncation-error test, since it lands on the same `t` and cannot be taken smaller; it restarts the integrator like every step that reads a change (rule 6)", and extend `part_v_the_host_set_step_is_tested_and_only_the_retaken_step_is_exempt` to refuse the old comparison | 0324aad6; `spec_text.rs` `part_v_the_host_set_step_is_tested_and_only_the_retaken_step_is_exempt` |
 | F19. MD-80 does not record T26, the solver default it changes: the restart step after a host write goes from 10⁻³ to a tenth of the last step, and the growth clamp stays 1.5 because 2.0 moves the `tran_corner` twin (D5) | `.specs/STATE.md` MD-80 items 1 to 5 | add an item 6 (T26, TP-13) and extend `docs.rs` `state_records_the_observable_landings_and_the_tick_epoch` to hold it | 891c4b4f; `docs.rs` `state_records_the_observable_landings_and_the_tick_epoch` |
 | F20. Two cleanliness points the fix round missed. `eval_allocation.rs`, new in this feature, keeps four free helpers (`gain_shape`, `gain_prototype`, `gain_module`, `allocations_during`), which F12 should have listed. The doc of `TimeLoop::sets_just_applied` still says "Live-set edge rule (LIVE-06/07): the first step after a scheduled set", although the flag marks every step that reads a delivered change | `crates/piperine-abi/tests/eval_allocation.rs:42,59,83,95`; `crates/piperine-solver/src/analyses/transient.rs:534-539` | group the helpers under a fixture type, as `allocation.rs` does with `Terms` and `Probe`; correct the doc to "the step reads a delivered change (any `Restart::Integrator*`): sized and tested by rule 6" | f6ed62d2; the Build line (`eval_allocation.rs` grouped under `Gain` and `Probe`, flag doc corrected) |
+| F21. Two parts outside Part V still say a host `set` during a run applies at §15 step 5, after the step is accepted. F15 made it a host commit at `(t, 0)`, collected at step 2, and step 5 no longer applies anything | `docs/spec/part_viii_host.md:72-74` (rule 4: "a `set` applies after the step to that time is accepted, at step 5 of §15"); `docs/spec/part_iii_structure.md` §9 rule 4 ("The `set` is collected at a scheduled instant and applies after the step to that instant is accepted (§15 step 5)") | reword both to "a `set` is a host commit due at `(t, 0)` of its scheduled time, collected at step 2 of §15 and applied after the step to `t` is accepted (§15.2, "Host `set`")", and add both files to `part_v_a_host_set_due_at_t_is_a_commit_at_t_0`'s absence list of the step-5 wording | |
+| F22. Part V names a step that no longer exists: "At such a time `t`, steps 2, 3.1, 3.2, 3.3 and 3.5 run". 68b19c5f removed the solve step 3.4, and the exit test is now 3.4 | `docs/spec/part_v_execution.md:122` | write "steps 2, 3.1, 3.2, 3.3 and 3.4 run", and pin it in `part_v_the_step_to_t_solves_first_on_the_left_value_in_every_place_that_says_so` | |
 
 Not findings (judged and accepted):
 
