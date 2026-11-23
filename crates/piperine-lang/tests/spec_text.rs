@@ -1152,9 +1152,10 @@ fn structure_changing_set_is_refused() {
 #[test]
 fn zero_bytes_are_the_default_value() {
     // EU-17 AC 1 (replaces `zero_bytes_are_the_unknown_value`): §2 rule 11, all-zero bytes are
-    // the bytes of `Logic::X`, of `None` and of every derived `Default`.
+    // the bytes of `Logic::default()` (X on every level, amended 2026-11-23: `Logic::X` is a `Logic<1>`), of `None` and
+    // of every derived `Default`.
     let s = flat(&spec("part_i_values.md"));
-    assert!(s.contains("all-zero bytes are the bytes of `Logic::X`, of `None`"), "{s}");
+    assert!(s.contains("all-zero bytes are the bytes of `Logic::default()` (every level X; `Logic::X` at one level), of `None`"), "{s}");
 }
 
 #[test]
