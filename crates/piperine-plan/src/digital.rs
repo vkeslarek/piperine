@@ -81,6 +81,7 @@ use piperine_ir::{Body, CarrierRole, Constant, EventSource, Expr, ExprId, Ir, Or
 
 use crate::array::ArrayPin;
 use crate::pin::PinLayout;
+use crate::widths::NumberLayout;
 use crate::plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, ReadSet, Source, Target};
 
 /// What a reaction of the shape runs.
@@ -223,6 +224,10 @@ impl CarrierLayout {
         match *ty {
             ValueType::Bool => Some(&BIT),
             ValueType::F64 => Some(&F64),
+            ValueType::F16 => Some(&U16),
+            ValueType::F32 | ValueType::F128 => NumberLayout::static_layout(ty),
+            // an integer wider than 64 bits is a `U64` array: its layout depends on its width
+            ValueType::UInt(n) | ValueType::Int(n) if n > 64 => None,
             ValueType::UInt(n) => Some(match Self::width(n) {
                 1 => &BYTE,
                 2 => &U16,
@@ -262,6 +267,7 @@ impl CarrierLayout {
         let value: Vec<u8> = match (ty, value) {
             (ValueType::Bool, Constant::Bool(b)) => vec![u8::from(b)],
             (ValueType::F64, Constant::Real(r)) => r.get().to_le_bytes().to_vec(),
+            (ValueType::F32 | ValueType::F16 | ValueType::F128, Constant::FloatBits(bits)) => NumberLayout::float_bytes(ty, bits)?,
             (ValueType::UInt(_) | ValueType::Int(_), Constant::Int(v)) => {
                 let (lo, hi) = ty.integer_range()?;
                 if v < lo || v > hi {

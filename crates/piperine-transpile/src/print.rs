@@ -20,6 +20,7 @@ pub mod site;
 pub mod text;
 pub mod types;
 pub mod value;
+pub mod widths;
 
 pub use analog::AnalogPrinter;
 pub use contribution::ContributionSums;

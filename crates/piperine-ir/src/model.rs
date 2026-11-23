@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::deps::DepsMemo;
-use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
+use crate::ids::{AggregateId, WideId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
 use crate::real::Real;
 
 /// A source position, printed `file:line:col`.
@@ -43,6 +43,9 @@ pub struct Ir {
     /// The composite constants: `Constant::Aggregate` names an entry.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) aggregates: Vec<AggregateData>,
+    /// The constants of integer types wider than 64 bits: `Constant::Wide` and `Expr::Wide` name an entry.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) wides: Vec<WideData>,
 }
 
 /// The authored path of a node that a merge (a fixed zero-potential branch) removed from the arena,
@@ -528,6 +531,11 @@ pub enum Expr {
     Stim { site: u32, mag: ExprId, phase: Option<ExprId> },
     /// An integer literal; its `UInt<N>` or `Int<N>` type is the expression's type.
     Int(i128),
+    /// A float literal of a width other than `f64`: its IEEE 754 bit pattern; the expression's type
+    /// (`f32`, `f16` or `f128`) is its format.
+    FloatBits(u128),
+    /// A literal of an integer type wider than 64 bits: an entry of the arena of wide constants.
+    Wide(WideId),
     /// `expr as to`: among integer types and `f64`, or from `bool` to an integer type.
     Cast { expr: ExprId, to: ValueType },
     /// `receiver.method(args)`: one of the closed set of value methods.
@@ -684,7 +692,7 @@ impl Expr {
     /// block or a loop body (`Expr::statements`).
     pub fn operands(&self) -> Vec<ExprId> {
         match self {
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) => Vec::new(),
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) => Vec::new(),
             Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::ParamPrevious(_) | Expr::Derivative(_) | Expr::Fired(_) | Expr::Continue | Expr::FunctionRef(_) => Vec::new(),
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::LevelCast { expr, .. } => vec![*expr],
             Expr::Binary { lhs: a, rhs: b, .. } | Expr::Unwrap { is: a, value: b, .. } | Expr::Same { a, b } => vec![*a, *b],
@@ -1006,6 +1014,12 @@ pub enum ValueType {
     Enum(TypeId),
     /// An `Option<T>` held as one value: a field, an element, an item, a carrier.
     Option(Box<ValueType>),
+    /// `f32` (`Float<32>`): IEEE 754 binary32, computed as Rust's `f32`.
+    F32,
+    /// `f16` (`Float<16>`): IEEE 754 binary16, correctly rounded.
+    F16,
+    /// `f128` (`Float<128>`): IEEE 754 binary128, correctly rounded.
+    F128,
 }
 
 /// How the fields of a struct or a variant are written in the source.
@@ -1104,6 +1118,32 @@ impl ValueType {
         matches!(self, ValueType::UInt(_) | ValueType::Int(_))
     }
 
+    /// Whether this is a float of any width: `f64`, `f32`, `f16` or `f128`.
+    pub fn is_float(&self) -> bool {
+        matches!(self, ValueType::F64 | ValueType::F32 | ValueType::F16 | ValueType::F128)
+    }
+
+    /// Whether this is a float of a width other than `f64`.
+    pub fn is_other_float(&self) -> bool {
+        matches!(self, ValueType::F32 | ValueType::F16 | ValueType::F128)
+    }
+
+    /// The width of a float in bits (16, 32, 64, 128), `None` for any other type.
+    pub fn float_width(&self) -> Option<u32> {
+        match self {
+            ValueType::F16 => Some(16),
+            ValueType::F32 => Some(32),
+            ValueType::F64 => Some(64),
+            ValueType::F128 => Some(128),
+            _ => None,
+        }
+    }
+
+    /// Whether this is an integer type wider than 64 bits, the one form `Constant::Wide` holds.
+    pub fn is_wide_integer(&self) -> bool {
+        matches!(self, ValueType::UInt(n) | ValueType::Int(n) if *n > 64)
+    }
+
     /// The range of an integer type, `None` for any other type.
     pub fn integer_range(&self) -> Option<(i128, i128)> {
         match *self {
@@ -1124,6 +1164,20 @@ pub enum Constant {
     /// A composite value (a tuple, an array, a struct, an enum variant, an `Option`): an entry of
     /// the arena of composite constants. The handle keeps `Constant` `Copy`.
     Aggregate(AggregateId),
+    /// A float of a width other than `f64` (`f32`, `f16`, `f128`): its IEEE 754 bit pattern, read by the type
+    /// of the param or carrier it initializes, as `Int` is.
+    FloatBits(u128),
+    /// An integer of an integer type wider than 64 bits: an entry of the arena of wide constants.
+    Wide(WideId),
+}
+
+/// One constant of an integer type wider than 64 bits: its two's complement value at the type's
+/// width, as `ceil(N/64)` little-endian `u64` limbs (low limb first), canonical when no bit past
+/// the width is set (an `Int<N>` sign-extends to the limb boundary).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WideData {
+    /// The limbs, low limb first.
+    pub limbs: Vec<u64>,
 }
 
 /// One composite constant: its type and its parts in declaration order (§1.5.25). A part is

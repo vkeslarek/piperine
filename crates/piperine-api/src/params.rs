@@ -311,6 +311,8 @@ impl Params {
                             // its place is kept so the declaration order the derive functions read stays,
                             // and `get` reads none.
                             Constant::Aggregate(_) => ir.discriminant(&param.ty, *given).map_or(f64::NAN, |tag| tag as f64),
+                            // A float of another width and a wide integer have no `f64` view either: the exact cell reads their bytes.
+                            Constant::FloatBits(_) | Constant::Wide(_) => f64::NAN,
                         };
                         (param.name.clone(), param.ty.clone(), value)
                     })

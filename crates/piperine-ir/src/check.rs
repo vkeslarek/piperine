@@ -33,6 +33,7 @@ use crate::model::{
 use crate::typing::Typing;
 
 mod aggregates;
+mod widths;
 mod carrier_array;
 mod traits;
 
@@ -200,6 +201,8 @@ impl<'a> Checker<'a> {
             (ValueType::UInt(_) | ValueType::Int(_), Constant::Int(v)) => {
                 ty.integer_range().is_some_and(|(lo, hi)| (lo..=hi).contains(&v))
             }
+            (ValueType::F32 | ValueType::F16 | ValueType::F128, Constant::FloatBits(bits)) => self.float_bits_fit(ty, bits),
+            (ValueType::UInt(_) | ValueType::Int(_), Constant::Wide(id)) => self.wide_fits(ty, id),
             _ => false,
         }
     }
@@ -548,7 +551,7 @@ impl<'a> Checker<'a> {
         let mut exprs: Vec<ExprId> = Vec::new();
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
             Expr::Unwrap { is, value, .. } => exprs.extend([*is, *value]),
             Expr::Same { a, b } => exprs.extend([*a, *b]),
             Expr::LevelCast { expr, .. } => exprs.push(*expr),
@@ -799,8 +802,9 @@ impl<'a> Checker<'a> {
 
     // ---- types -----------------------------------------------------------------------------
 
-    /// Every type written in the IR is well formed: an integer width in 1..=64 (RS-Q6: the ABI's
-    /// leaves end at 64 bits).
+    /// Every type written in the IR is well formed: an integer width in 1..=2^32 - 1 (Q4 of the
+    /// number widths, which supersedes RS-Q6's 1..=64: a width past 64 is a `U64` field of
+    /// `ceil(N/64)` elements).
     fn types(&mut self) {
         let ir = self.ir;
         let mut found: Vec<(String, Origin, ValueType)> = Vec::new();
@@ -918,8 +922,8 @@ impl<'a> Checker<'a> {
         let mut stack = vec![ty];
         while let Some(t) = stack.pop() {
             match t {
-                ValueType::UInt(n) | ValueType::Int(n) if !(1..=64).contains(n) => {
-                    return Some(format!("type {t} has a width outside 1..=64"));
+                ValueType::UInt(0) | ValueType::Int(0) => {
+                    return Some(format!("type {t} has a width outside 1..=4294967295"));
                 }
                 ValueType::Fn(params, ret) => {
                     stack.extend(params);
@@ -981,7 +985,7 @@ impl<'a> Checker<'a> {
             out_e.push(e);
             match &data.kind {
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => {}
-                Expr::Int(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
+                Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
                 Expr::Unwrap { is, value, .. } => stack_e.extend([*is, *value]),
                 Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => stack_e.push(*expr),
                 Expr::Binary { lhs, rhs, .. } => stack_e.extend([*lhs, *rhs]),
@@ -1881,6 +1885,16 @@ impl<'a> Checker<'a> {
                 self.site(w, id, &origin, "ac_stim", *site, ctx);
                 next.push(Task::Expr(*mag, ctx));
                 next.extend(phase.iter().map(|p| Task::Expr(*p, ctx)));
+            }
+            Expr::FloatBits(bits) => {
+                if first {
+                    self.float_literal(w, &origin, ty, *bits);
+                }
+            }
+            Expr::Wide(id) => {
+                if first {
+                    self.wide_literal(w, &origin, ty, *id);
+                }
             }
             Expr::Int(value) => {
                 if first {

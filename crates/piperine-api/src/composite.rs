@@ -79,7 +79,8 @@ impl CellShape {
                     .collect::<Option<Vec<_>>>()?;
                 Some(CellShape::Enum { name: data.name.clone(), tag_width: Tag::width(*tag_levels), variants })
             }
-            ValueType::Unit | ValueType::Fn(..) => None,
+            // a pin of a number-width type is no composite shape: the host reads it as an exact number cell
+            ValueType::F32 | ValueType::F16 | ValueType::F128 | ValueType::Unit | ValueType::Fn(..) => None,
         }
     }
 

@@ -321,7 +321,7 @@ impl<'a> AnalogPrinter<'a> {
                     sources.insert(Source::CarrierPrevious(*carrier));
                     stack.push(*index);
                 }
-                Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Fired(_) => {}
+                Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Fired(_) => {}
                 Expr::Derivative(k) => {
                     sources.insert(Source::Derivative(*k));
                 }
