@@ -1441,8 +1441,10 @@ Proof: run abicontract | test the_host_has_one_commit ... ok
 **C68** - An `Option<u8>` pin is a `BOOL` presence field then `U8` (EU-16, AC 4; T36)
 Proof: run plan | test an_option_carrier_pin_is_presence_then_payload ... ok
 
-**C69** - A `Logic<4>` pin is two `U8` fields, `binary` at 0 and `value` at 1, size 2, align 1; `Logic<64>` is size 16, align 8 (EU-16, AC 5; T47)
-Proof: run abi | test a_logic_pin_is_two_planes ... ok
+**C69** - A `Logic<4>` pin is two `U8` fields, `binary` at 0 and `value` at 1, size 2, align 1; `Logic<64>` is size 16, align 1 as the plan lays it (EU-16, AC 5 as amended 2026-11-23; T47)
+Proof: run logic | test the_plan_lays_a_logic_pin_as_two_planes ... ok
+
+*Amendment of the check (finding 59, 2026-11-23): the text said align 8 before the AC's amendment to the packed composite; the plan's layout is its proof. `layouts::a_logic_pin_is_two_planes` keeps the abi's own validity rule.*
 
 **C70** - A drive pin is the driven type's layout then `driving: BOOL`; 0 leaves the drive out of the resolver (EU-16, AC 6; T37)
 Proof: run relax | test a_drive_pin_ends_with_a_plain_driving_byte ... ok

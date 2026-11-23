@@ -173,7 +173,7 @@ impl Checker<'_> {
     /// A field of the generic struct `decl` that is an integer of a width the arguments make wider than 64 bits (`Logic<100>`
     /// has two `UInt<100>` planes) is `P0001` naming the instance, the field and the width, `GAPS.md` L13: the one
     /// refusal, rather than the errors a type of no layout would raise after it. `None` after a refusal.
-    fn fields_fit_integers(&mut self, decl: DeclId, arguments: &[GenericValue], substitution: &Substitution, file: FileId, span: Span) -> Option<()> {
+    pub(super) fn fields_fit_integers(&mut self, decl: DeclId, arguments: &[GenericValue], substitution: &Substitution, file: FileId, span: Span) -> Option<()> {
         let fields = self.fields_of(decl)?;
         for field in fields {
             if let Ty::GenericInteger { width, .. } = &field.ty

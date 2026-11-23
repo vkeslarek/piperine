@@ -324,6 +324,15 @@ fn a_logic_of_a_hundred_levels_is_refused_by_name() {
 }
 
 #[test]
+fn an_inferred_logic_of_seventy_levels_is_refused_by_name() {
+    // §22.1.4 (finding 60): `logic("<70 ones>")` infers a `Logic<70>`; it goes through the same width rule as a written one: one
+    // `P0001` naming the type, the field and the width, and `GAPS.md` L13
+    let refused = RUN.project("inferred_wide.msl").elaborate("Bench").err().map(|rejection| rejection.to_string()).unwrap_or_default();
+    assert!(refused.contains("P0001") && refused.contains("`Logic<70>`") && refused.contains("70 bits") && refused.contains("L13"), "{refused}");
+    assert_eq!(refused.matches("P0001").count(), 1, "one refusal: {refused}");
+}
+
+#[test]
 fn the_plan_lays_a_logic_pin_as_two_planes() {
     // EU-16 AC 5 (C69): the plan lays the elaborated `Logic<4>` and `Logic<64>` as the struct each is: `binary` at 0 then
     // `value`, each the leaf of `UInt<N>`; sizes 2 and 16 and alignment 1 (the abi's own rule is held by `layouts::a_logic_pin_is_two_planes`)
