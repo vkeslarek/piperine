@@ -1,38 +1,44 @@
 # Params and I/O verification
 
 **Verdict**: FAIL
-**Proofs**: `proofs.md` at defc9611 (the round 5 fix, 114 pass, 0 fail; re-run by the round 6 verifier after its own commit); round 5 at b3045722, round 4 at dcbbea67, round 3 at e60177d8, round 2 at acefa2f6, round 1 at 0bed6a92
+**Proofs**: `proofs.md` at c93b8ef5 (the round 6 fix, 114 pass, 0 fail; re-run by the round 7 verifier after its own commit); round 6 at defc9611, round 5 at b3045722, round 4 at dcbbea67, round 3 at e60177d8, round 2 at acefa2f6, round 1 at 0bed6a92
 **Verifier**: independent sub-agent (author != verifier)
-**Scope**: round 6 judges the fix of F27 to F29 (dbd3954e, 69791646 amendment A13; `git diff eef03cc1..defc9611`, 6 files) and each loud refusal left after it: a recorded amendment or `GAPS.md` row with a real owner, or a divergence from the spec to implement. Rounds 5 to 1 are kept below. F15 is out of scope (owned by `generics`).
+**Scope**: round 7 judges the fix of F30 to F32 (b113b52d: typed derive `piperine_derive_2(k, bytes) -> List<u8>`, A13 deleted, refusals removed; `git diff dc527c11..c93b8ef5`, 17 files across api, transpile, solver introspect), and three questions from the coordinator: (1) the leaked derive result, (2) the interpreter's `Evaluated` derive that gives no value, (3) the two panics from `mutated.rs`. Rounds 6 to 1 are kept below. F15 is out of scope (owned by `generics`).
 
 **Contract.** `git diff origin/main -- tests/support/ngspice.rs crates/piperine-parity/src` is empty.
 
-**Tests run (gate policy: targeted only, foreground only).** Lane D env: `cargo build -p piperine-cli`; `check_proofs.py params-and-io`
-after this commit (`proofs.md`; `apisession` holds `params_passed_through_a_wrappers_placement_run`). No workspace run.
+**Tests run (gate policy: targeted only, foreground).** Lane D env, the crates the fix touched: `cargo test -p piperine-transpile
+--no-fail-fast` (every target green; `derive.rs` 2/2); `cargo test -p piperine-api --no-fail-fast` (22 targets, all green: `session`,
+`derived`, `bindings`, `host_sources` among them); `cargo build -p piperine-cli`; `check_proofs.py params-and-io` after this
+commit (`proofs.md`: `source_params`, `source_tables`, `run_errors`, `source_host`, `clirun`, `docs` and the `piperine-lang` groups).
+`piperine-lang` is not touched by b113b52d. No workspace run.
 
 **Own examples (HEAD binary, throwaway files under `/var/tmp/piperine-tmp-d/v3`, not committed).** 1 V behind 1 kOhm into the load.
-- F27: `Wrap { rs } -> Load { rs: rs }` (wrapper with no pin): `w.rs=500` 1/3 V, `w.rs=Some(250)` 1/5 V, `w.md=Slow` 1/4 V (by hand,
-  hold). **`w.rs=None` is `E0802` "no PARAM pin `rs`"** while the child already holds `None` (F30).
-- F28: `w.big=9007199254740993` (read by a placement) is `E0802` "is read by a placement, and an integer above 2^53 does not cross as
-  an `f64`"; `w.l.big=..993` is `E0802` "derived ... set that param instead"; `2^53` and `5` run. Loud, no longer silent.
-- F29: `{ md: if slow { .. } }` and `{ md: match k { .. } }` run (0.5 V, and 0.25 V after `w.slow=true` / `w.k=3`). Closed.
-- Left refused: `Load { rs: rt * 2.0 }` runs (2 kOhm, 0.667 V) but `--param w.rt=500` is `E0802` "which this design computes from more
-  than the param" although it reads one param; so is `{ rs: a + b }` for `w.a`. `Res { r: match md { Mode::Fast => 1k, Mode::Slow =>
-  3k } }` over a wrapper's enum param fails the whole design on the Rust backend, default run included: "`a derived param that reads
-  the param `md` of type Mode` has no Rust lowering yet".
+- F28's case, now recomputed: `Wrap { big: u64 } -> Load { big: big }`, `--param w.big=9007199254740993` gives 1/7 V (both at 3 mS, by
+  hand); a write to the derived `w.l.big` is still `E0802` "derived ... set that param instead".
+- F30: `--param w.rs=None` on the pinless wrapper whose child holds `None` runs (0.5 V); `w.rs=500` 1/3 V, `Some(250)` 1/5 V,
+  `w.md=Slow` and `w.n=3` 1/4 V.
+- F31: `{ rs: rt * 2.0 }` with `w.rt=500` gives 0.5 V (rs = 1 kOhm); `{ rs: a + b }` with `w.a=500` gives 1/3 V. No refusal left.
+- F32: `Res { r: match md { Mode::Fast => 1k, Mode::Slow => 3k } }` runs: 0.5 V, and 0.75 V after `w.md=Slow`.
+- Regressions: `{ md: if slow .. }` after `w.slow=true` 1/4 V; `{ n: k + 1 }` at `k = 254` 3.906 mV; a pinless param nothing reads is
+  still the loud "no PARAM pin" (unchanged since round 4).
 
-**The refusals left, judged.** The rule: a loud refusal of something the spec allows is legitimate only as a recorded departure with
-a real owner (a `GAPS.md` row naming the feature that lifts it); an amendment of this feature's own criteria does not change
-`docs/spec`. A13 is written by the implementer in a fix round, not approved by the user, and `GAPS.md` gains no row in this range.
-1. An integer above 2^53 set on a param a placement reads (F28's choice): Part III §8.1.23 and D24 allow it; refused because derive
-   functions take `f64`. Loud and rare; legitimate only with a `GAPS.md` row and an owner (or carry integers as `i128`). Missing (F31).
-2. A composite bound from an expression over params (`{ rs: rt * 2.0 }`, `{ rs: a + b }`) that a `set` would recompute: §8.1.23
-   allows it. A13 says "a composite computed from more than one param is still refused", but a one-param expression is refused too
-   and the message says "more than the param"; no `GAPS.md` row. The `SomeOf` case is the derive plan's own `f64` value wrapped in
-   `Some`, so it is cheap to implement; until then it needs a row (F31).
-3. A placement value that reads an enum param beyond pass-through: §8.1.19 allows any expression over params; A13 does not mention
-   it and `GAPS.md` has no row; it refuses the design itself, not only a `set`. Should be implemented (an enum param is held as its
-   tag, the derive function can read it back as the variant) or recorded with an owner (F32).
+**(1) The leaked derive result.** `piperine_derive_2` answers a `List<'static, u8>` over `Box::leak` of a fresh `Vec` on every call
+(`print/derive.rs`), and the host copies it out (`load.rs`): every derive call leaks its answer. The module doc calls a recompute "a
+rare host `set`", but every point of a DC sweep of a param others derive from, every timed `set` and every host loop of `set`s calls it
+once per derived param. Bounded per call, unbounded over a session, and avoidable at no cost: the host owns the buffer (an output
+`List`/slice the host allocates at the child's pin width, which it knows from `PinLayout`). A defect, not a design choice (F33).
+
+**(2) The interpreter's `Evaluated`.** It gives `None` for a binding that reads an integer, an enum or a composite param, or yields
+one. The caller (`Params::changes_from`) turns `None` into `Failure::Backend` "the derive function `k` of `..` gave no value (the
+compiled design does not match its plan)": loud, never silent. It is reached by `Session::describe` with a host value (the API; `piperine
+info` passes none); the interpreter backend itself never calls it (with no compiled design `changes` refuses "the interpreter does not
+recompute them, use --backend rust"). The message blames a compiled design that does not exist on that path (F34, minor).
+
+**(3) The two panics in the log.** `crates/piperine-transpile/tests/compiled.rs`
+`a_panic_in_compiled_code_is_a_fault_and_the_instance_survives` (RS-06 AC 6) wraps `rustc` to inject `panic!("boom at {p}")` into the
+generated `terms` and calls it at 200 and 300: the `thread '<unnamed>' panicked at .../mutated.rs:79:48: boom at 200` / `boom at 300`
+lines are the panic hook's print of those deliberate panics, which the test asserts become faults. Expected; the target passes.
 
 ## Checks
 
@@ -184,9 +190,47 @@ a real owner (a `GAPS.md` row naming the feature that lifts it); an amendment of
 | F27. (Major, records) A `set` of a param that a placement binds into a composite or `Option` param of a child is refused, against §8.1.23 ("every value bound from it is recomputed") and PI-03 AC 4, and nothing records the departure | `Wrap { rs: Option<f64>; let l = Load(p) { rs: rs }; }`: `--param w.rs=500` / `None` is `E0802`; `params.rs:407` "is read by the placement of the composite param .., which keeps the value it elaborated to"; `params_passed_through_a_wrappers_placement_run` asserts the refusal; no `GAPS.md` row, amendment or owner. On a wrapper with no pin the `--param` refusal is the generic "no PARAM pin `rs`" | recompute the bound composite (its bytes from the parent's value) or record the departure: a `GAPS.md` row with a real owner and an amendment of PI-03 AC 4's scope, and give the `--param` path the placement message | dbd3954e, 69791646 (A13); `apisession` `params_passed_through_a_wrappers_placement_run` (`w.rs` to `3000` and `None`, `rs2: rt` follows `rt`), own examples hold; what stays refused is F30, F31 |
 | F28. (Blocker, silent) An integer above 2^53 set by a host skips the derive plan: what a placement binds from it keeps its old value, and a derived param takes the write that its plan refuses | own example `bg.msl` (`Wrap { big: u64; let l = Load(p) { big: big }; }`, both reading `big > 2^53`): `--param w.big=9007199254740993` runs the wrapper at 3 mS and the child at 1 mS (0.2 V, wanted 1/7 V); `--param w.l.big=9007199254740993` is accepted while `w.l.big=5` is `E0802` "derived ... set that param instead". `Session::set_exact_integer` (`session.rs`) writes the pin and `table.apply` with `derived: false`, never `Params::changes`; reachable since bf92fd5a lowers derives that read an integer | route the exact write through `Params::changes` (its refusals and readers), and either carry the exact integer to the derive function or refuse a value above 2^53 on a param others derive from; a test with a wrapper passing a `u64` down | dbd3954e; `apisession` `params_passed_through_a_wrappers_placement_run` (`Top.w.big` and `Top.w.i.big` above 2^53 are `E0802`, `9007199254740` follows); own example: loud, no stale child. The refusal itself is F31 item 1 |
 | F29. (Minor, records) A derived enum value beyond pass-through is refused with no `GAPS.md` row, by an arena name | `{ md: if slow { Mode::Slow } else { Mode::Fast } }` and `{ md: match k { .. } }` in a placement: "`a derived param of type t0` has no Rust lowering yet" (`print/derive.rs`, `binding.ty` printed raw); §8.1.19 allows any expression over params as a bound value | a `GAPS.md` row with a real owner (or lower it: the tail can return the variant's tag), and print the type by its name (`Mode`) | dbd3954e; `apisession` `params_passed_through_a_wrappers_placement_run` (`md2` by `if`, `md3` by `match`); types printed by their written names. An enum read beyond pass-through is F32 |
-| F30. (Major) A `set` of a composite param of an instance with no pin is refused when it changes nothing in the children bound from it | `pt.msl` (`Wrap { rs: Option<f64>; let l = Load(p) { rs: rs }; }`, no `analog` for `Wrap`): `--param w.rs=None` is `E0802` "no PARAM pin `rs`" (the child already holds `None`); the same for any leaf write equal to the child's bytes. `Session::write_leaf_change`: `written = pinned \|\| followers.is_empty()`, so an empty follower list sends the write to a missing pin | write to the pin only when one exists; refuse only a pinless param that no placement reads (the earlier rule), and test `None` on a wrapper whose child holds `None` | |
-| F31. (Major, records) Two loud refusals of what §8.1.23 allows have no `GAPS.md` row and owner, and A13 misstates one | (1) an integer above 2^53 on a param a placement reads is `E0802` (`Params::refuse_exact`); (2) a `set` of a param read by a composite bound from an expression (`{ rs: rt * 2.0 }`, one param) is `E0802` "which this design computes from more than the param", while A13 says only a composite computed from more than one param stays refused; `git diff eef03cc1..defc9611 -- GAPS.md` is empty | implement (2) for an `Option` that is `Some` of the derive plan's `f64` value, or give both a `GAPS.md` row with a real owner; correct A13 and the refusal's message | |
-| F32. (Major) A placement value that reads an enum param beyond passing it on refuses the whole design on the Rust backend | `ex_WrapR.msl`: `module WrapR(p) { md: Mode = Mode::Fast; let l = Res(p, gnd) { r: match md { Mode::Fast => 1k, Mode::Slow => 3k } }; }` fails the default run: "`a derived param that reads the param `md` of type Mode` has no Rust lowering yet" (`print/derive.rs`); §8.1.19 allows any expression over params; no amendment and no `GAPS.md` row | read an enum param in the derive function from its tag (the pin and the table hold it), with a parity row for `r` by `match md` before and after `--param w.md=Slow`; or a `GAPS.md` row with a real owner | |
+| F30. (Major) A `set` of a composite param of an instance with no pin is refused when it changes nothing in the children bound from it | `pt.msl` (`Wrap { rs: Option<f64>; let l = Load(p) { rs: rs }; }`, no `analog` for `Wrap`): `--param w.rs=None` is `E0802` "no PARAM pin `rs`" (the child already holds `None`); the same for any leaf write equal to the child's bytes. `Session::write_leaf_change`: `written = pinned \|\| followers.is_empty()`, so an empty follower list sends the write to a missing pin | write to the pin only when one exists; refuse only a pinless param that no placement reads (the earlier rule), and test `None` on a wrapper whose child holds `None` | b113b52d; `apisession` `params_passed_through_a_wrappers_placement_run` (`Top.w.rs` to `None`); own example `w.rs=None` 0.5 V |
+| F31. (Major, records) Two loud refusals of what §8.1.23 allows have no `GAPS.md` row and owner, and A13 misstates one | (1) an integer above 2^53 on a param a placement reads is `E0802` (`Params::refuse_exact`); (2) a `set` of a param read by a composite bound from an expression (`{ rs: rt * 2.0 }`, one param) is `E0802` "which this design computes from more than the param", while A13 says only a composite computed from more than one param stays refused; `git diff eef03cc1..defc9611 -- GAPS.md` is empty | implement (2) for an `Option` that is `Some` of the derive plan's `f64` value, or give both a `GAPS.md` row with a real owner; correct A13 and the refusal's message | b113b52d (refusals removed, A13 deleted); `apisession` `params_passed_through_a_wrappers_placement_run` (above 2^53 follows, `rs2: rt`); own examples `rt * 2.0`, `a + b`, `w.big=..993` 1/7 V |
+| F32. (Major) A placement value that reads an enum param beyond passing it on refuses the whole design on the Rust backend | `ex_WrapR.msl`: `module WrapR(p) { md: Mode = Mode::Fast; let l = Res(p, gnd) { r: match md { Mode::Fast => 1k, Mode::Slow => 3k } }; }` fails the default run: "`a derived param that reads the param `md` of type Mode` has no Rust lowering yet" (`print/derive.rs`); §8.1.19 allows any expression over params; no amendment and no `GAPS.md` row | read an enum param in the derive function from its tag (the pin and the table hold it), with a parity row for `r` by `match md` before and after `--param w.md=Slow`; or a `GAPS.md` row with a real owner | b113b52d; own example `r: match md` 0.5 V and 0.75 V after `w.md=Slow`; `apisession` `params_passed_through_a_wrappers_placement_run` |
+| F33. (Minor) Every call of the derive export leaks its answer | `print/derive.rs`: `List::from_slice(Box::leak(whole.into_boxed_slice()))` on each call, the host copying it out (`load.rs`); called once per derived param on each host `set`, DC sweep point and timed `set`, so a sweep of a param others derive from leaks per point; the module doc's "a recompute is a rare host `set`" does not hold for sweeps | let the host own the buffer: pass an output slice of the child's pin width (`PinLayout`) to `piperine_derive_2` and have it write and answer a status | |
+| F34. (Minor) The interpreter walk's missing derive is reported as a compiled design that does not match its plan | `Evaluated::derive` (`params.rs`) is `None` for a binding over an integer, enum or composite param; `Params::changes_from` maps `None` to `Failure::Backend` "the derive function .. gave no value (the compiled design does not match its plan)", reached by `Session::describe` with a host value | refuse by name on that path ("the description recomputes `f64` and `bool` bindings only" naming the binding), as the interpreter backend already does, with a test of `describe` over an enum-reading binding | |
+| F35. (Minor, cleanliness) A dead parameter and a message patched by text replacement | `Session::set_exact_integer(.., _ir: &Ir, ..)` keeps an unused parameter; `Session::write_leaf_change` rewrites a refusal with `message.replacen("refuses the value NaN", ..)`, a composite change that carries `NaN` as its value so the message the write builds is wrong first | drop `_ir`; give `Changed` the text to show (or build the composite refusal with it) instead of patching the message | |
+
+## Round 6 record (fix of F27 to F29)
+
+**Round 6 verdict**: FAIL
+**Round 6 proofs**: `proofs.md` at defc9611 (the round 5 fix, 114 pass, 0 fail; re-run by the round 6 verifier after its own commit); round 5 at b3045722, round 4 at dcbbea67, round 3 at e60177d8, round 2 at acefa2f6, round 1 at 0bed6a92
+**Round 6 scope**: round 6 judges the fix of F27 to F29 (dbd3954e, 69791646 amendment A13; `git diff eef03cc1..defc9611`, 6 files) and each loud refusal left after it: a recorded amendment or `GAPS.md` row with a real owner, or a divergence from the spec to implement. Rounds 5 to 1 are kept below. F15 is out of scope (owned by `generics`).
+
+**Contract.** `git diff origin/main -- tests/support/ngspice.rs crates/piperine-parity/src` is empty.
+
+**Tests run (gate policy: targeted only, foreground only).** Lane D env: `cargo build -p piperine-cli`; `check_proofs.py params-and-io`
+after this commit (`proofs.md`; `apisession` holds `params_passed_through_a_wrappers_placement_run`). No workspace run.
+
+**Own examples (HEAD binary, throwaway files under `/var/tmp/piperine-tmp-d/v3`, not committed).** 1 V behind 1 kOhm into the load.
+- F27: `Wrap { rs } -> Load { rs: rs }` (wrapper with no pin): `w.rs=500` 1/3 V, `w.rs=Some(250)` 1/5 V, `w.md=Slow` 1/4 V (by hand,
+  hold). **`w.rs=None` is `E0802` "no PARAM pin `rs`"** while the child already holds `None` (F30).
+- F28: `w.big=9007199254740993` (read by a placement) is `E0802` "is read by a placement, and an integer above 2^53 does not cross as
+  an `f64`"; `w.l.big=..993` is `E0802` "derived ... set that param instead"; `2^53` and `5` run. Loud, no longer silent.
+- F29: `{ md: if slow { .. } }` and `{ md: match k { .. } }` run (0.5 V, and 0.25 V after `w.slow=true` / `w.k=3`). Closed.
+- Left refused: `Load { rs: rt * 2.0 }` runs (2 kOhm, 0.667 V) but `--param w.rt=500` is `E0802` "which this design computes from more
+  than the param" although it reads one param; so is `{ rs: a + b }` for `w.a`. `Res { r: match md { Mode::Fast => 1k, Mode::Slow =>
+  3k } }` over a wrapper's enum param fails the whole design on the Rust backend, default run included: "`a derived param that reads
+  the param `md` of type Mode` has no Rust lowering yet".
+
+**The refusals left, judged.** The rule: a loud refusal of something the spec allows is legitimate only as a recorded departure with
+a real owner (a `GAPS.md` row naming the feature that lifts it); an amendment of this feature's own criteria does not change
+`docs/spec`. A13 is written by the implementer in a fix round, not approved by the user, and `GAPS.md` gains no row in this range.
+1. An integer above 2^53 set on a param a placement reads (F28's choice): Part III §8.1.23 and D24 allow it; refused because derive
+   functions take `f64`. Loud and rare; legitimate only with a `GAPS.md` row and an owner (or carry integers as `i128`). Missing (F31).
+2. A composite bound from an expression over params (`{ rs: rt * 2.0 }`, `{ rs: a + b }`) that a `set` would recompute: §8.1.23
+   allows it. A13 says "a composite computed from more than one param is still refused", but a one-param expression is refused too
+   and the message says "more than the param"; no `GAPS.md` row. The `SomeOf` case is the derive plan's own `f64` value wrapped in
+   `Some`, so it is cheap to implement; until then it needs a row (F31).
+3. A placement value that reads an enum param beyond pass-through: §8.1.19 allows any expression over params; A13 does not mention
+   it and `GAPS.md` has no row; it refuses the design itself, not only a `set`. Should be implemented (an enum param is held as its
+   tag, the derive function can read it back as the variant) or recorded with an owner (F32).
 
 ## Round 5 record (fix of F25, F26)
 
@@ -424,3 +468,5 @@ Round 4: F25 and F26 need an implementer. A `--param` of a param nothing reads o
 Round 5: F27, F28 and F29 need an implementer; F27 also needs a ruling if the departure from §8.1.23 is to stand (an amendment with an owner) rather than be implemented.
 
 Round 6: F30 to F32 need an implementer; F31 item 1 (integers above 2^53 through a placement) is reasonable to defer, but only as a `GAPS.md` row with a real owner, and A13 is the implementer's amendment, not yet the user's.
+
+Round 7: F30 to F32 are closed by the typed derive; F33 to F35 are minor and need an implementer. Every refusal of §8.1.19/§8.1.23 forms judged in round 6 is gone, so no `GAPS.md` row is owed by this feature for them.
