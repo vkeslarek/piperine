@@ -116,6 +116,25 @@ fn delay_noise_and_simparam_type_and_wait_for_lowering() {
 }
 
 #[test]
+fn a_value_of_another_type_given_to_delay_or_noise_is_a_type_mismatch() {
+    // §14.6 and §14.8 take `f64` inputs; a value of another type (a `bool`, a text) is the checker's plain
+    // type mismatch, `E0180`, at the argument. `E0150`, the old "an unknown value reaches `analog`", is retired
+    // with the explicit model (explicit-unknowns EU-02): there is no flag to check, only a type.
+    for (body, at) in [
+        ("let x = delay(true, 1n);", "true"),
+        ("let x = delay(v(a), true);", "true"),
+        ("let x = delay(v(a), 1n, true);", "true"),
+        ("let x = noise(true);", "true"),
+        ("let x = noise(\"v\");", "\"v\""),
+    ] {
+        let src = source("", body);
+        let d = diagnostics(&src);
+        assert_eq!(codes_of(&d), ["E0180"], "{body}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(snippet(&src, &d[0]), at, "{body}");
+    }
+}
+
+#[test]
 fn a_site_reached_from_analog_writing_sim_or_checks_is_e0603() {
     // AO-09 AC 5 (§19 rules 4 and 14): `E0603` is unchanged by the trace: a site reached from
     // `analog` that writes `sim` or `checks` is refused, written there or through a `fn`; a trace

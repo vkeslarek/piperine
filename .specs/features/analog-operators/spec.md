@@ -21,12 +21,12 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 
 ## Goals
 
-- [ ] `ddx`, `delay`, `noise`, `simparam` and `emit!` in `analog` run on the Rust backend as §14 and §16.2 define them.
-- [ ] `white_noise` and `flicker_noise` run; `noise_table` runs once its dependencies merge.
-- [ ] `analysis = "noise"` runs from a run table and from the command line, and agrees with ngspice `.noise` on `noise_rc`, `noise_switch` and a new `noise_diode` twin.
-- [ ] `tnom` is a session option, read by `simparam`, proven against ngspice on a new `tnom_res` twin.
-- [ ] A user nature's `abstol` and compatible natures at one node are exercised from `.msl` source.
-- [ ] The 7 existing twins print the bytes they print today.
+- [x] `ddx`, `delay`, `noise`, `simparam` and `emit!` in `analog` run on the Rust backend as §14 and §16.2 define them (`emit!` through a `fn` stays `P0001`, GAPS L72; `simparam` is an `Option<f64>`, user 2026-11-23).
+- [x] `white_noise` and `flicker_noise` run; `noise_table` stays refused by name with the generics group of GAPS L58 until `generics` merges (AO-04 AC 3 is a `WHERE` criterion).
+- [x] `analysis = "noise"` runs from a run table and from the command line, and agrees with ngspice `.noise` on `noise_rc` and a new `noise_diode` twin; `noise_switch` is held to its closed form where ngspice reads a closed switch as open, and agrees with `noise_switch_off.cir` once opened (AO-06 AC 2 amended).
+- [x] (Withdrawn, user 2026-11-23) `tnom` is no session option: it is a per-instance model param, proven against ngspice on a new `tnom_res` twin.
+- [x] A user nature's `abstol` and compatible natures at one node are exercised from `.msl` source.
+- [x] The 7 existing twins print the bytes they print today.
 
 ## Out of Scope
 
@@ -174,18 +174,17 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 
 **Acceptance Criteria** (AO-07, `simparam`, L47, Q4):
 
-1. WHEN `simparam("vth0", Some(0.5))` is evaluated and the run gives `simparam = { vth0 = 0.7 }` THEN the system SHALL give 0.7, and 0.5 when the run gives none.
-2. WHEN `simparam("reltol", None)` is evaluated THEN the system SHALL give the run's `reltol`, or the default the solver uses when the run gives none.
-3. IF `simparam(name)` has no default and the session has no parameter `name` THEN the system SHALL fail at the start of the analysis with `E0456` naming `name`.
+1. WHEN `simparam("vth0")` is evaluated and the run gives `simparam = { vth0 = 0.7 }` THEN the system SHALL give `Some(0.7)`, and `None` when the run gives none. (Amended, user 2026-11-23: an `Option<f64>`, no default argument.)
+2. WHEN `simparam("reltol")` is evaluated THEN the system SHALL give `Some` of the run's `reltol`, or of the default the solver uses when the run gives none.
+3. WHEN `simparam(name)` names no session parameter THEN the system SHALL give `None`; `E0456` is retired.
 4. The system SHALL accept `simparam` in every run-time position, definitions and selectors included, and SHALL give it one value for the whole analysis (§14.4.1).
 5. The system SHALL give the key `simparam` the repeatable flag `--simparam <name>=<value>`; IF a value is not a number THEN the system SHALL report `P0010` naming the entry.
 
-**Acceptance Criteria** (AO-08, `tnom`, Q4, Q6):
+**Acceptance Criteria** (AO-08, `tnom`; **withdrawn**, user 2026-11-23: "dtemp seria um signal e o tnom seria por instância, o que deixa o nosso core apenas com temp"):
 
-1. The system SHALL accept the key `tnom` in a run table and the flag `--tnom`, in °C, 27 when absent.
-2. IF `tnom` is not a number greater than −273.15 THEN the system SHALL report `P0010` naming the key.
-3. WHEN `simparam("tnom", None)` is evaluated THEN the system SHALL give the run's `tnom` in °C.
-4. WHEN a new twin `tnom_res` (a divider whose resistor has `tc1`, written `r * (1.0 + tc1 * (temperature() - 273.15 - simparam("tnom", None)))`, against ngspice with `.options tnom=50 temp=27`) runs with `tnom = 50` and `temp = 27` THEN the system SHALL agree with ngspice under `DC_VOLTAGE`.
+1. The system SHALL accept no run key `tnom` and no flag `--tnom`; the nominal temperature is a per-instance model param (default 300.15 K).
+2. WHEN `simparam("tnom")` is evaluated THEN the system SHALL give `None`.
+3. WHEN a new twin `tnom_res` (a divider whose resistor has `tc1` and its own `tnom`, written `r * (1.0 + tc1 * (temperature() - tnom))`, set to 323.15 K, against ngspice with `.options tnom=50 temp=27`) runs at 27 C THEN the system SHALL agree with ngspice under `DC_VOLTAGE`.
 
 **Independent Test**: transpile tests; `cargo test -p piperine-parity --test parity_op` for `tnom_res`.
 
@@ -274,20 +273,21 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| AO-01 | P1: `ddx` | - | Pending |
-| AO-02 | P1: `delay` | - | Pending |
-| AO-03 | P1: noise sources | - | Pending |
-| AO-04 | P1: noise sources | - | Pending |
-| AO-05 | P1: a noise analysis from the host | - | Pending |
-| AO-06 | P1: a noise analysis from the host | - | Pending |
-| AO-07 | P1: session parameters | - | Pending |
-| AO-08 | P1: session parameters | - | Pending |
-| AO-09 | P1: trace records | - | Pending |
-| AO-10 | P2: tolerances of user natures | - | Pending |
-| AO-11 | P2: interpreter, parity, documents | - | Pending |
-| AO-12 | P2: interpreter, parity, documents | - | Pending |
+| AO-01 | P1: `ddx` | 5, 7 | Done |
+| AO-02 | P1: `delay` | 3, 5, 7, 8 | Done |
+| AO-03 | P1: noise sources | 5, 6, 7 | Done |
+| AO-04 | P1: noise sources | 5, 6, 7, 8 | Done |
+| AO-05 | P1: a noise analysis from the host | 2, 4, 8 | Done |
+| AO-06 | P1: a noise analysis from the host | 2, 4, 8 | Done |
+| AO-07 | P1: session parameters | 4, 7 | Done |
+| AO-08 | P1: session parameters | 4, 7, 8 (withdrawn) | Done |
+| AO-09 | P1: trace records | 5, 6, 7 | Done |
+| AO-10 | P2: tolerances of user natures | 3 | Done |
+| AO-11 | P2: interpreter, parity, documents | 6, 8 | Done |
+| AO-12 | P2: interpreter, parity, documents | 8 | Done |
+| AO-13 | P1: `slew` limits an ideal step | 3 | Done |
 
-**Coverage:** 12 total, 0 mapped to tasks, 12 unmapped (no tasks yet).
+**Coverage:** 13 total, 13 mapped to tasks and Done (AO-08 withdrawn by the user decision of 2026-11-23, its twin kept as a model-param twin).
 
 ## Gaps closed
 
@@ -296,7 +296,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 | L43 | `ddx` | AO-01 |
 | L44 | `delay` | AO-02 |
 | L45 | `noise`, `white_noise`, `flicker_noise`, `noise_table` | AO-03 (core), AO-04 AC 1, 2 (`white_noise`, `flicker_noise`), AO-04 AC 3 (`noise_table`, once `generics`, `composite-values` and `params-and-io` merge) |
-| L47 (`simparam`; `tnom`, deferred by `host-ii`) | `simparam` and the `tnom` session option | AO-07, AO-08. `freq()` stays with `msl-fixes` |
+| L47 (`simparam`; `tnom`, deferred by `host-ii`) | `simparam` as an `Option<f64>`; no run `tnom` (a per-instance model param) | AO-07, AO-08 (withdrawn). `freq()` stays with `msl-fixes` |
 | L49 | trace records: `emit!` in `analog` | AO-09 |
 | H2 (noise analysis) | `analysis = "noise"` through `piperine-api` and the command line, proven against ngspice `.noise` | AO-05, AO-06 |
 | U7 | a user nature's `abstol` in the convergence test; compatible natures at one node | AO-10 |
@@ -328,9 +328,9 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 
 ## Success Criteria
 
-- [ ] `piperine run --analysis noise` prints `onoise` for `noise_rc`, `noise_switch` and `noise_diode` that agrees with ngspice under one documented contract.
-- [ ] `delay_tline` and `tnom_res` agree with ngspice; `ddx`, `simparam` and traces match their closed forms.
-- [ ] The 7 existing twins print the bytes they printed before.
+- [x] `piperine run --analysis noise` prints `onoise` for `noise_rc`, `noise_switch` and `noise_diode`; `noise_rc` and `noise_diode` agree with ngspice under the one documented contract `NOISE`, `noise_switch` with its closed form and, opened, with ngspice (T41).
+- [x] `delay_tline` and `tnom_res` agree with ngspice; `ddx`, `simparam` and traces match their closed forms.
+- [x] The 7 existing twins print the bytes they printed before.
 - [ ] `cargo build --workspace` has no warning and `cargo test --workspace` passes.
 
 ---

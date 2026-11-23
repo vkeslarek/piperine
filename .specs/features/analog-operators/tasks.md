@@ -68,7 +68,13 @@ Rules every task follows:
 
 ### T46: `simparam(name)` is an `Option<f64>`
 
-**What**: As the decision above says. **Done when**: [x] the IR, plan, printer, elaborator and host read `simparam(name)` as an `Option<f64>`; [x] `E0456` and the `required` flag are gone; [x] the spec table of Part IV §14.4 says so. **Commit**: `refactor: simparam(name) is an Option<f64>`.
+**Depends on**: T45
+**What**: As the decision above says. **Done when**: [x] the IR, plan, printer, elaborator and host read `simparam(name)` as an `Option<f64>`; [x] `E0456` and the `required` flag are gone; [x] the spec table of Part IV §14.4 says so.
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `refactor: simparam(name) is an Option<f64>`.
 
 ---
 
@@ -116,10 +122,10 @@ Rules every task follows:
 | Printer (`piperine-transpile`) | integration | each new form printed, built and evaluated against its hand-derived value; each fault; the goldens byte-identical | `crates/piperine-transpile/tests/operators.rs`, `golden.rs` | `Run tops`, `Run tgolden` |
 | Interpreter (`piperine-interp`) | integration | one refusal per new form, by name | `crates/piperine-interp/tests/frozen.rs` | `Run frozen` |
 | Type checker (`piperine-lang/src/types`) | integration | 1:1 to the spec's typing ACs; `E0450`, `E0451` named | `crates/piperine-lang/tests/types_analog_operators.rs`, `types_subset.rs` | `Run typeops`, `Run subset` |
-| Elaborator (`piperine-lang/src/elab`) | integration | the IR each form lowers to; every refusal and code (`E0150`, `E0452`, `E0603`, `P0001`) by name | `crates/piperine-lang/tests/elab_operators.rs` | `Run elabops` |
+| Elaborator (`piperine-lang/src/elab`) | integration | the IR each form lowers to; every refusal and code (`E0452`, `E0603`, `P0001`) by name | `crates/piperine-lang/tests/elab_operators.rs` | `Run elabops` |
 | Runs from source (`piperine-parity` `Project`) | e2e | every runtime AC on the Rust backend, values from the spec's closed forms | `crates/piperine-parity/tests/source_{partial,delay,noise,session,traces,slew}.rs`, fixtures `tests/operators/*.msl` | `Run spartial` and siblings |
 | ngspice twins | e2e | the new twins against ngspice under the contract; the existing twins unchanged | `crates/piperine-parity/tests/parity_*.rs`, `tests/e2e/twins/` | `Run partran`, `Run parac`, `Run parop`, `Run parnoise`, `Run corpus` |
-| Host library (`piperine-api`) | integration | the noise request, its report and groups; `tnom` and `simparam`; session parameters and `E0456`; traces as records; nature tolerances | `crates/piperine-api/tests/{noise,options,session_parameters,traces,natures}.rs` | `Run apinoise` and siblings |
+| Host library (`piperine-api`) | integration | the noise request, its report and groups; `tnom` and `simparam`; session parameters (no `E0456`: `simparam` is an `Option`); traces as records; nature tolerances | `crates/piperine-api/tests/{noise,options,session_parameters,traces,natures}.rs` | `Run apinoise` and siblings |
 | Command line and the Book (`piperine-cli`, `docs/book`) | e2e | the keys, the flags, the noise table; the twins' bytes; every listing equals its output | `crates/piperine-cli/tests/{analyses,options,twins,book}.rs`, `tests/book/` | `Run clianalyses`, `Run clioptions`, `Run twins`, `Run clibook`, `Run inventory` |
 | Records (`GAPS.md`, `ROADMAP.md`, `.specs/STATE.md`) | integration | each claim of AO-12 AC 3 read as text | `crates/piperine-cli/tests/docs.rs` | `Run docs` |
 | Feature records (`contract.md`) | none | - (build gate only) | - | build gate only |
@@ -213,6 +219,8 @@ T14 → T40
 T34 → T40
 T40 → T41 → T42
 T36 → T43
+T36 → T45
+T45 → T46
 T9 → T44
 T10 → T44
 T31 → T44
@@ -1242,10 +1250,9 @@ Proof: run snoise | test white_noise_is_a_source_of_its_density ... ok
 **C26** - `flicker_noise(k, exp, name)` has density `k / f^exp` at each frequency. (AO-04, AC 2; T34)
 Proof: run snoise | test flicker_noise_falls_as_one_over_f_to_the_exponent ... ok
 
-**C27** - WHERE `generics`, `composite-values` and `params-and-io` have merged, `noise_table` gives its piecewise density; until then it is refused by name, naming its dependencies, and `GAPS.md` keeps L45 for it alone. (AO-04, AC 3; T34, T44, D17)
+**C27** - WHERE `generics`, `composite-values` and `params-and-io` have merged, `noise_table` gives its piecewise density; until then it is refused by name, naming its dependencies, and `GAPS.md` L58 holds it with the generics group (no row of its own: L45 closed with the noise sources). (AO-04, AC 3; T34, T44, D17)
 Proof: run elabops | test noise_table_waits_for_its_dependencies ... ok
 Proof: run subset | test p0001_names_the_construct ... ok
-
 **C28** - A noise run with `output`, `from`, `to` and `per_decade` prints one row per frequency with `freq` and `onoise`, then the line `onoise_total`. (AO-05, AC 1; T13, T14)
 Proof: run apinoise | test a_noise_run_prints_freq_onoise_and_the_total ... ok
 Proof: run clianalyses | test a_noise_run_prints_one_row_per_frequency_then_the_total ... ok
@@ -1285,18 +1292,14 @@ Proof: run parnoise | test noise_diode ... ok
 **C39** - With the ngspice comparison disabled, the three noise twins still run and print the harness's skip line. (AO-06, AC 4; T40)
 Proof: run parnoise | test noise_twins_run_and_print_the_skip_line_without_ngspice ... ok
 
-**C40** - `simparam("vth0", Some(0.5))` gives 0.7 when the run gives `simparam = { vth0 = 0.7 }` and 0.5 when it gives none (edge case: a default and a run value give the run's). (AO-07, AC 1; T36)
+**C40** - `simparam("vth0")` is `Some(0.7)` when the run gives `simparam = { vth0 = 0.7 }` and `None` when it gives none, so `.unwrap_or(0.5)` reads 0.7 and 0.5 (the user decision of 2026-11-23: no default argument; edge case: a default and a run value give the run's). (AO-07, AC 1; T36, T46)
 Proof: run ssession | test simparam_reads_the_run_entry_else_its_default ... ok
-
-**C41** - `simparam("reltol", None)` gives the run's `reltol`, or the solver's default when the run gives none. (AO-07, AC 2; T36)
-Proof: run ssession | test simparam_reads_the_session_options_and_their_defaults ... ok
-
-**C42** - `simparam(name)` with no default and no such session parameter fails at the start of the analysis with `E0456` naming `name`. (AO-07, AC 3; T36)
-Proof: run apisession | test simparam_without_default_and_without_entry_is_e0456 ... ok
-
-**C43** - `simparam` runs in a definition and a selector, with one value for the whole analysis. (AO-07, AC 4; T35, T36)
+**C41** - `simparam("reltol")` is `Some` of the run's `reltol`, or of the solver's default (1e-3) when the run gives none: the session options read by their key names. (AO-07, AC 2; T36, T46)
+Proof: run ssession | test simparam_reads_the_options_by_their_key_names ... ok
+**C42** - `simparam(name)` of a name the run lacks is `None`: `E0456` is retired, the session opens and the model takes its own default. (AO-07, AC 3 as amended; T36, T46)
+Proof: run apisession | test a_name_the_run_lacks_reads_none ... ok
+**C43** - `simparam` runs in a definition and a selector, with one value for the whole analysis. (AO-07, AC 4; T35, T36, T46)
 Proof: run ssession | test simparam_runs_in_a_definition_and_a_selector_with_one_value ... ok
-
 **C44** - `--simparam <name>=<value>` is repeatable; a value that is not a number is `P0010` naming the entry. (AO-07, AC 5; T16)
 Proof: run clioptions | test simparam_flag_is_repeatable_and_a_non_number_is_p0010 ... ok
 Proof: run apioptions | test a_simparam_entry_naming_an_option_is_p0010 ... ok
@@ -1309,9 +1312,9 @@ Proof: run apioptions | test the_tnom_key_of_a_run_table_reaches_the_session_con
 Proof: run apioptions | test tnom_at_or_below_absolute_zero_is_p0010 ... ok
 Proof: run clioptions | test a_tnom_that_is_no_number_is_p0010_naming_the_flag ... ok
 
-**C47** - `simparam("tnom", None)` gives the run's `tnom` in °C. (AO-08, AC 3; T36)
-Proof: run ssession | test simparam_tnom_reads_the_run_tnom_in_celsius ... ok
-
+**C47** - There is no run `tnom`: `simparam("tnom")` is `None`, and the nominal temperature is a per-instance model param, which the twin `tnom_res` sets on its resistor (323.15 K against ngspice's `.options tnom=50`) and holds to ngspice under `DC_VOLTAGE`. (AO-08 withdrawn, user 2026-11-23; T43, T45)
+Proof: run apisession | test the_session_hands_its_options_and_entries_to_the_circuit ... ok
+Proof: run parop | test tnom_res ... ok
 **C48** - `tnom_res` with `tnom = 50` and `temp = 27` agrees with ngspice under `DC_VOLTAGE`. (AO-08, AC 4; T43)
 Proof: run parop | test tnom_res ... ok
 
@@ -1386,10 +1389,8 @@ Proof: run spartial | test ddx_of_an_expression_that_reads_no_probe_is_zero ... 
 **C68** - A trace site whose field types differ from another site of the same stream is `E0605`. (Edge case; T37)
 Proof: run elabops | test a_field_type_conflict_across_trace_sites_is_e0605 ... ok
 
-**C69** - An unknown value reaching `delay` or `noise` is `E0150` naming its source (unknown-semantics AC 3). (§14 errors; T33, T34)
-Proof: run elabops | test a_delay_reading_an_unknown_value_is_e0150 ... ok
-Proof: run elabops | test a_noise_density_reading_an_unknown_value_is_e0150 ... ok
-
+**C69** - A value of a type other than `f64` given to `delay` or `noise` is the checker's type mismatch `E0180` at the argument; `E0150` is retired with the explicit model (explicit-unknowns EU-02), so no unknown value reaches them. (§14 errors; T23, T33, T34)
+Proof: run typeops | test a_value_of_another_type_given_to_delay_or_noise_is_a_type_mismatch ... ok
 **C72** - A step that reads a settle commit retakes when its crossing changes what `analog` reads, and a retaken instant settles once and delivers that phase's settle commits. (AO-13, AC 2; fix round)
 Proof: run retake | test a_crossing_made_by_a_step_that_reads_a_settle_commit_retakes_it ... ok
 Proof: run retake | test a_second_round_retake_runs_settle_once_and_delivers_its_settle_commits ... ok
@@ -1412,6 +1413,9 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **User decision 2026-11-23 (direct):** "dtemp seria um signal e o tnom seria por instância, o que deixa o nosso core apenas com temp". The core keeps only the run temperature (`temp`, `temperature()`); `tnom` is an ordinary per-instance model param (spice-faithful models declare `tnom`, default 27 C = 300.15 K) and `dtemp` is no core mechanism. Effect here: T36 gives the circuit `reltol`, `abstol`, `vntol`, `trtol`, `temp` and the `simparam` entries, no `tnom`; AO-08 and the run `tnom` key of T15 are withdrawn by the new task T45 (appended below), which removes the key, the flag, the context field and the spec text and makes each spice-faithful model read its own `tnom` param.
 **User decision 2026-11-23 (direct, second):** "É, melhor voltar Option". `simparam(name) -> Option<f64>`: `Some(v)` when the run set it, `None` otherwise; no default argument; `E0456` is retired. Models write `.unwrap_or(..)` or a `match`. It replaces the planned `multiplicity()` (generics phase D reads `simparam("multiplicity")`). Landed as T46 (below, done): IR `Expr::SessionParameter { parameter }` typed `Option<f64>` (no `default`, no `required`), the checker row, the elaborator's `lower_session_pair` over `OptionPart`, an always-`OPTIONAL` pin, no host fault. Checks C40, C41, C42, C43 and C47 read in that form (C42 is retired: a name the run lacks is `None`, asserted by `a_name_the_run_lacks_reads_none`; C47 is retired with `tnom`).
 **B4 settled items (T17 to T23):** (1) printed forms: `delay<k>(x, td[, max]) "name"` with the read `delay<k>.value`; `noise<k>(psd, "group"|none) "name"` with `noise<k>.value`; `session S<k> "name"` with `simparam("name"[, default])`; `trace<k> "stream"` with the statement `trace<k> {f0 = .., text = ".."}`. (2) Deps classes: a delay read is an affine unknown, a noise read a constant of the sum, a session parameter constant unless its default is not. (3) Differentiation folds zeros, treats function parameters as locals, names derived functions `<f>$d<i>` (memoized in `IrBuilder`), refuses a recursive function, a block with `let` outside a function and a local outside a function. (4) Checker: `ddx_call` in `types/analog.rs`; second argument must be a probe call (flow probes accepted), else `E0451`; `noise`'s name is `Option<str>`, `simparam`'s default `OptionF64`. (5) `emit!` in `analog` types from T23; one reached through a `fn` stays `P0001` naming the `fn` (D14); the elaborator refuses a direct one until T37 (SPEC_DEVIATION in `elab/records.rs`). (6) Until T24 to T31 the printer refuses `Expr::Delay`, `Expr::Noise`, `Expr::SessionParameter` and `Stmt::Trace` with `Unsupported` (SPEC_DEVIATION in `print/value.rs`). (7) Rewritten tests: `types_subset.rs` rows (ddx, delay, noise, simparam), `types_events.rs` (`an_emit_in_analog_is_p0001_by_name`, `a_check_reached_from_analog_is_e0603`), the `Deps` literal of `piperine-ir/tests/deps.rs`. (8) `contract.md` has the B4 re-anchor note. (9) A pre-existing warning (`crates/piperine/tests/book/types.rs` `Reached::run`) is untouched.
+**B5 settled items (T24 to T31):** (1) `SessionParameter` first carried `required` (some read gives no default) so the plan set `OPTIONAL` on the pin only when every read had a default (D12); T46 withdrew it: the pin is always `OPTIONAL` and the read an `Option<f64>`. (2) The transpiler emits delay sites, noise sources, session parameters and trace watches as the printer's forms; a `delay` site reads its `max` pin as unbounded until the parameter cone has written it (the operating point's first solve precedes the cone's first run), and a zero slot is no bound. (3) The interpreter refuses each new form by name (`P0001`), frozen R1. (4) A direct `emit!` in `analog` stays a checker `P0001` until T37 lowers it; the elaborator's refusal of an unlowered core primitive says `core primitive X` as the checker did (Book cheatsheet card).
+**B6 settled items (T32 to T38):** (1) `E0453` and `E0454` are raised (their `code_owners.tsv` rows and the `GAPS.md` section 10 entries left; `E0451` before them). (2) A noise input is named by its source's group; a density always reads `FREQ` so an `E0454` fault names the frequency. (3) The session gives `reltol`, `abstol`, `vntol`, `trtol`, `temp` and the run's `simparam` entries, no `tnom`; the pin of a session parameter is `{ v: F64 @0, known: BOOL @8 }` and the solver sets `known` when it binds a value. (4) `emit!` in `analog` lowers in `elab/records.rs` (`lower_emit`: a `Stmt::Trace` and its `TraceSite` when the scope is the analog block); one reached through a `fn` stays `P0001` naming the `fn` (D14, GAPS L72). (5) `Record` gains `iteration` and `analysis`; a trace is delivered only for a stream the run names (`--stream`), and the run-key count of `request.rs` is 36 after T45. (6) Rewritten tests: `tests/book/analog.rs` `the_noise_source_runs_and_reads_as_zero_outside_a_noise_sweep` (analog#11 runs), the welcome status paragraph, the Book's analog#7 and cheatsheet#7 (they run, so their inventory and `GAPS.md` section 11 rows left).
+**B7 settled items (T39 to T44):** (1) `delay_tline` has `TD` = 1.05 us, not 1 us: with a print point on `TD` itself ngspice's print interpolation reads 0.75 mV at the kink where the wave first arrives, a reference artifact, so the kink sits between two print points. (2) `NOISE` is reltol 1e-3, abstol 1e-20 and covers the densities and the totals (no second constant); `Coordinate::Band` names a total's band. (3) ngspice 46 and 47 read the switch state vector at 0 in `.noise`: a switch the operating point closed carries the open switch's noise and transfer (`noise_switch.cir` prints 3.8819e-9, the open value of `noise_switch_off.cir`, with `v(a)` = 0.999 mV), so the closed `noise_switch` is held to its closed form `sqrt(4 k T (1k || ron))` and the same twin with its control opened agrees with `noise_switch_off.cir` (AO-06 AC 2 amended). (4) `tnom_res` reads no `simparam`, so both backends run it and it is not `COMPILED_ONLY`; the four noise and delay twins are. (5) The noise twins are `OWN_TARGET` of the deviation table; the corpus count guard went 18 to 23; every twin also has a test in `tests/scenarios.rs` (`Comparison::Noise`, `FlatNoise`). (6) The pre-existing warning of `tests/book/types.rs` (`Reached::run`) is untouched. (7) `E0180` is the checker's code for a type mismatch (not `P0002`).
 **User approvals (2026-11-22):** T9's moved Book numbers ("Numeros do Book mudaram então acerta o book"), Part V §15.2 rule 6 ("Ok"), and the fix of the settle/retake defect, verification Finding 3 ("Corrige"); see t9-decision.md.
 **User decision (Finding 18, 2026-11-22, "Menor dos dois"):** nodes and branches both take the minimum of the session value and the nature's `abstol`; see AO-10 AC 6 and design.md D18.
 **Dispatched:** none
