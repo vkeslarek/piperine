@@ -230,7 +230,10 @@ pub struct NodeArray {
 /// record is all the body keeps of it, for a host that names it (`--print` shows `[]`, CV-28).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EmptyArray {
+    /// The array's name as the host addresses it: the frame's prefix, then the declared name (`p.none` for one of a hoisted
+    /// placement `p`).
     pub name: String,
+    /// Where the array is declared in the source.
     pub origin: Origin,
 }
 
