@@ -1,6 +1,58 @@
 # Unknown Semantics: Events verification
 
-**Verdict**: PASS
+**Verdict**: FAIL
+**Proofs**: `proofs.md` not re-run at 35266266 (see the B5 round: the root filesystem was at 93 %, past the 90 % stop line, before any build, so no cargo command ran)
+**Verifier**: independent sub-agent (author != verifier)
+
+## B5 round (T24 to T31, closure) - HEAD 35266266
+
+Range judged: `git diff f8595df9..35266266` (15 files). Read against `docs/spec/part_iv_behavior.md` §13 and
+`docs/spec/part_i_values.md` §3 and §3.2. No own example could run: `df /` reported 93 % (11 GB free) at the
+start of the round, past the stop line the dispatch set, so the review is by reading and no targeted test,
+`check_proofs.py` or suite ran.
+
+What holds: the inliner (`elab/event_functions.rs`) is wired at the one place events are walked
+(`events.rs` `disjuncts`, `Call` arm), restores the scope through `Environment` so two calls never see each
+other's arguments, nests, and evaluates every argument before binding any. The `bool` read is found by the
+declared result (`is_event_function`), not the call's type, which is right since §13 rule 2 types the read
+`bool`. The Settled B5 amendments are honoured: no `HandleBinding`, no `let mut` dependency, T27 tests-only.
+`docs.rs` counts (20 to 19 loud) match the removed L53 row; values#8 and values~c389077a flip to `run`/`holds`
+on `a_function_has_the_class_its_body_gives`, which asserts one handshake at exactly 1 us (the 0.2 us rise
+with `ack` low excluded); digital#6 points at `the_phase_detector_runs_assignment_and_events_read_as_bools`;
+MD-74 records the B5 decision; ROADMAP marks the feature delivered. No tolerance or parity contract moved
+(`crates/piperine-parity/src`, `tests/support` untouched).
+
+### B5 checks
+
+| Check | Test | Holds |
+| --- | --- | --- |
+| C3 | `source_events.rs` `pfd3_rising_together_leaves_state_unchanged` | yes - asserts no `up`/`dn` move at 40 ns and the full `up` sequence (the 80 ns step from state 1) |
+| C23 | `types_events.rs` `a_function_returning_event_is_accepted_in_every_event_position`; `source_events.rs` `an_event_function_in_every_event_position` | no - AC 1 names "the result of a module"; neither test places the call as a module's `Event` result (F8) |
+| C24 | `source_events.rs` `handshake_fires_when_req_rises_with_ack_high` | yes - exact instants 40, 60, 110, 130 ns; 10, 20, 80 ns excluded by the equality |
+| C25 | `source_events.rs` `an_event_function_read_as_a_bool_says_whether_it_fired` | yes - every record of either edge with its exact flag |
+| C26 | `types_events.rs` `a_function_returning_event_outside_an_event_position_is_e0441` | yes - code and span, and the `bool` read in body and guard |
+| C36 | `docs.rs` `gaps_no_longer_lists_settle_or_limexp`, `gaps_no_longer_lists_l51_or_l53` | yes for the text it asserts; but closing L53 leaves refused, spec-allowed forms with no row (F7) |
+| C40 | `source_events.rs` `an_event_function_calling_another_fires_under_the_outer_guard` | yes - exactly 110 and 130 ns |
+| C45 (third proof) | `elab_digital.rs` `an_event_function_call_lowers_to_its_body_event` | yes - structural print equal to the hand-written event, swapped arguments swap it |
+| C46 (B5 proofs) | `book_digital.rs` `the_phase_detector_runs_assignment_and_events_read_as_bools`; `book_values.rs` `a_function_has_the_class_its_body_gives` | yes |
+
+### B5 findings
+
+| Finding | Evidence | Fix | Closed |
+| --- | --- | --- | --- |
+| F6 (Major, silent) - an event function binds its arguments by position only: a named argument binds the wrong parameter, a left-out optional one is never bound, and an `Option<T>` parameter is not given `Some`/`None` | `crates/piperine-lang/src/elab/event_functions.rs:83-87`: `params.iter().zip(arguments)` over `args.iter().map(\|arg\| arg.value)` (:48) ignores `arg.name` and the checker's per-call slots (`Types::binding`, `types/table.rs:408`, filled by `bind_arguments`, `types/call.rs:147`). §3.2.2 to §3.2.4 and §3.2.9 allow `fn edge(c: Bit, a: Option<bool>, b: Option<bool>) -> Event { c.rise() && a.unwrap_or(true) }` called `edge(clk, b: Some(false))`: the checker binds `b`, the inliner binds `Some(false)` to `a`, so the event never fires where the spec says it fires on every rise. The ordinary call path does it right (`expansion.rs:183` `expanded_arguments`: slots, `lower_option_slot`) | bind through `self.types.binding(call)` slots as `expanded_arguments` does (an `Option` parameter through `lower_option_slot`, a left-out one as `None`); a test with a named, a left-out and a wrapped `Option` argument | |
+| F7 (Major) - three forms the spec allows are refused `P0001` with no test and no GAPS row, while L53 is closed as if functions returning `Event` all run | `event_functions.rs:29-31` refuses recursion, but §3 rule 12 allows it (unrolled while decided by params and constants, as `expansion.rs` `may_expand` already does elsewhere); `:68-73` refuses a body with statements besides its event, but §3 rules 6 and 15 allow locals (`let`) in a function body, and the event position list of §13 includes "the return value of a function", not only a tail expression; `:61-64` refuses a bodiless one, reachable by a trait-declared `fn ... -> Event;` (§3 rule 2 exempts trait items from E0125). `grep` finds no test naming any of the three messages | either make them run (recursion through the expansion's unrolling, `let`s through the scope's `values` before the tail) or reopen a GAPS §4 row naming the three forms with a real owner (`spec-closure`) and a test per refusal pinning `P0001` and its span; adjust `gaps_no_longer_lists_l51_or_l53` | |
+| F8 (Minor) - C23 does not prove UE-04 AC 1's "result of a module" position, nor the generic-over-a-nature path | `types_events.rs` rows and `handshake.msl` cover head, body `let`, guard, `\|\|`, `&&`, nested function; no `module M(..) -> Event { handshake(req, ack) }`. `event_functions.rs:35-41` (`concrete_instance` + substitution for a generic event function) is reached by no test | add a module-result row to both tests and one generic event function (`fn edge<N: ..>(c: Bit<N>) -> Event`) from source | |
+| F9 (Minor, cleanliness) - inline path and abbreviated binding; a stale task line | `event_functions.rs:75` `crate::msl::Span` written inline instead of imported; `:22`, `:60` bind the function data as `f`; `tasks.md:768` T28 still says "Reuses: `HandleBinding`" though the amendment (`:766`) removed it | import `Span`; name the binding `function_data` (or similar); strike `HandleBinding` from T28's Reuses | |
+
+### B5 final run
+
+Not run. The verdict is FAIL, and the disk was past the stop line (93 %) before any build. The full suite,
+parity, buck and twins targets are for the PASS round after the fixes.
+
+## Round 1 (B1 to B4)
+
+**Round 1 verdict (B1 to B4)**: PASS
 **Proofs**: `proofs.md` at 3ed72693 (60 pass; the 10 failing rows are the B5 proofs, deferred)
 **Verifier**: independent sub-agent (author != verifier)
 **Scope**: batches B1 to B4 (T1 to T23). B5 (T24 to T31: `Pfd3`, functions that return `Event`, the closing of L51 and L53) is deliberately not built yet; its checks (C3, C23 to C26, C40, the second proof of C36, the third of C45, the `bookdigital`/`bookvalues` proofs of C46) are listed `deferred`, not judged as failures.
