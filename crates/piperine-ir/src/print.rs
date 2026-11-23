@@ -32,8 +32,9 @@ use std::fmt::{self, Display, Write};
 
 use crate::ids::{AggregateId, ExprId, FunctionId, StmtId, TypeId};
 use crate::model::{
+    Drive,
     BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, ChildValue, Constant, EmitField, Env, EventSource, Expr, ExprData, FieldsForm, FunctionData, InstanceData, Ir,
-    LevelPart, Local, MathFn, Method, NodeRef, Operator, Origin, Param, Place, Projection, Quantity, QuantityRole, Stmt, Stream, ReprForm, Terminal, TypeData, TypeKind,
+    CommitTarget, LevelPart, Local, MathFn, Method, NodeRef, Operator, Origin, Param, Place, Projection, Quantity, QuantityRole, Stmt, Stream, ReprForm, Terminal, TypeData, TypeKind,
     UnaryOp, ValueType,
 };
 use crate::real::Real;
@@ -480,7 +481,17 @@ impl<'a> Printer<'a> {
             );
         }
         for drive in &body.drives {
-            let mut text = format!("drive {} = ", Printer::carrier(scope, drive.carrier));
+            let mut text = format!("drive {}", Printer::carrier(scope, drive.carrier));
+            if let Some(element) = drive.element {
+                text.push_str(&format!("[{element}]"));
+            }
+            for step in &drive.path {
+                match step {
+                    Projection::Field(k) => text.push_str(&format!(".{k}")),
+                    Projection::Index(index) => text.push_str(&format!("[{}]", self.render(scope, Piece::Expr(*index)))),
+                }
+            }
+            text.push_str(" = ");
             text.push_str(&self.render(scope, Piece::Expr(drive.value)));
             if let Some(after) = drive.after {
                 text.push_str(" after ");
@@ -495,6 +506,9 @@ impl<'a> Printer<'a> {
                 EventSource::Changed(c) => text.push_str(&format!("changed {}", Printer::carrier(scope, *c))),
                 // `settle` (§13 rule 17) names no carrier, param or expression.
                 EventSource::Settle => text.push_str("settle"),
+                EventSource::ElementChanged { carrier, element } => {
+                    text.push_str(&format!("changed {}[{element}]", Printer::carrier(scope, *carrier)))
+                }
                 EventSource::ParamChanged(p) => {
                     let name = scope.params.get(*p as usize).map_or(format!("<bad param {p}>"), |param| Printer::name(&param.name));
                     text.push_str(&format!("param_changed {name}"));
@@ -644,6 +658,44 @@ impl<'a> Printer<'a> {
         scope.carriers.get(i as usize).map_or(format!("<bad carrier {i}>"), |c| Printer::name(&c.name))
     }
 
+    /// What a commit names inside its carrier, as pieces after the carrier's name: `[element]`, then `.k` for a field
+    /// and `[index]` for an element of a value array.
+    fn target(next: &mut Vec<Piece>, target: &CommitTarget) {
+        if let Some(element) = target.element {
+            next.extend([Piece::Text("[".into()), Piece::Expr(element), Piece::Text("]".into())]);
+        }
+        for step in &target.path {
+            match step {
+                Projection::Field(k) => next.push(Piece::Text(format!(".{k}"))),
+                Projection::Index(index) => next.extend([Piece::Text("[".into()), Piece::Expr(*index), Piece::Text("]".into())]),
+            }
+        }
+    }
+
+    /// What a definition names inside its carrier, for the structural form: ` at N` for the element, then the steps.
+    fn drive_target_key(drive: &Drive) -> String {
+        let mut out = drive.element.map_or(String::new(), |e| format!(" at {e}"));
+        for step in &drive.path {
+            match step {
+                Projection::Field(k) => out.push_str(&format!(".{k}")),
+                Projection::Index(index) => out.push_str(&format!("[e{}]", index.0)),
+            }
+        }
+        out
+    }
+
+    /// `target`, as the structural form writes it: `at eN` for the element, `.k` and `[eN]` for the steps.
+    fn target_key(target: &CommitTarget) -> String {
+        let mut out = target.element.map_or(String::new(), |e| format!("at e{}", e.0));
+        for step in &target.path {
+            match step {
+                Projection::Field(k) => out.push_str(&format!(".{k}")),
+                Projection::Index(index) => out.push_str(&format!("[e{}]", index.0)),
+            }
+        }
+        out
+    }
+
     /// An assignment target as pieces: the local, then `.k` for a field and `[index]` for an element.
     fn place(scope: Scope<'_>, place: &Place) -> Vec<Piece> {
         let mut pieces = vec![Piece::Text(Printer::local(scope, place.local))];
@@ -730,8 +782,12 @@ impl<'a> Printer<'a> {
                     next.push(Piece::Expr(a.value));
                 }
             }
-            Stmt::Commit { carrier, value, after } => {
-                next.push(Piece::Text(format!("{} <- ", Printer::carrier(scope, *carrier))));
+            Stmt::Commit { carrier, value, after, target } => {
+                next.push(Piece::Text(Printer::carrier(scope, *carrier)));
+                if let Some(target) = target {
+                    Printer::target(next, target);
+                }
+                next.push(Piece::Text(" <- ".into()));
                 next.push(Piece::Expr(*value));
                 if let Some(after) = after {
                     next.extend([Piece::Text(" after ".into()), Piece::Expr(*after)]);
@@ -933,6 +989,15 @@ impl<'a> Printer<'a> {
             Expr::Carrier(i) => next.push(text(Printer::carrier(scope, *i))),
             Expr::Flow { branch } => next.push(text(format!("flow(b{branch})"))),
             Expr::Previous(i) => next.push(text(format!("{}.prev()", Printer::carrier(scope, *i)))),
+            Expr::CarrierElement { carrier, index } => {
+                next.extend([text(format!("{}[", Printer::carrier(scope, *carrier))), Piece::Expr(*index), text("]".into())])
+            }
+            Expr::ElementPrevious { carrier, index } => {
+                next.extend([text(format!("{}[", Printer::carrier(scope, *carrier))), Piece::Expr(*index), text("].prev()".into())])
+            }
+            Expr::ElementChanged { carrier, index } => {
+                next.extend([text(format!("{}[", Printer::carrier(scope, *carrier))), Piece::Expr(*index), text("].changed()".into())])
+            }
             Expr::Derivative(k) => next.push(text(format!("rate(D{k})"))),
             Expr::ParamPrevious(i) => next.push(text(format!("{}.prev()", scope.params.get(*i as usize).map_or(format!("<bad param {i}>"), |p| Printer::name(&p.name))))),
             Expr::Fired(e) => next.push(text(format!("fired(E{e})"))),
@@ -1019,7 +1084,11 @@ impl<'a> Printer<'a> {
             }
             Expr::Same { a, b } => Typing::same(&ty(a)?, &ty(b)?),
             Expr::LevelCast { expr, to, .. } => Typing::level_cast(&ty(expr)?, to, &ir.types),
-            Expr::Carrier(i) | Expr::Previous(i) => scope.carriers.get(*i as usize).map(|c| Typing::read_of(&c.ty)),
+            Expr::Carrier(i) | Expr::Previous(i) => scope.carriers.get(*i as usize).map(|c| Typing::read_of_carrier(c)),
+            Expr::CarrierElement { carrier, .. } | Expr::ElementPrevious { carrier, .. } => {
+                scope.carriers.get(*carrier as usize).map(|c| Typing::read_of(&c.ty))
+            }
+            Expr::ElementChanged { .. } => Some(ValueType::Bool),
             Expr::Unary { op, expr } if ty(expr).is_some_and(|t| Typing::digital(&t)) => Typing::unary(*op, &ty(expr)?),
             Expr::Binary { op, lhs, rhs }
                 if Typing::digital_op(*op) || [lhs, rhs].iter().any(|e| ty(e).is_some_and(|t| Typing::digital(&t))) =>
@@ -1055,7 +1124,7 @@ impl<'a> Printer<'a> {
                 Some(ValueType::Fn(params?, Box::new(ty(body)?)))
             }
             Expr::Int(_) | Expr::Cast { .. } | Expr::Method { .. } => None,
-            Expr::Carrier(_) | Expr::Previous(_) => None,
+            Expr::Carrier(_) | Expr::Previous(_) | Expr::CarrierElement { .. } | Expr::ElementPrevious { .. } | Expr::ElementChanged { .. } => None,
             Expr::Same { .. } | Expr::LevelCast { .. } => None,
             Expr::Unwrap { value, .. } => ty(value),
             Expr::While { .. } | Expr::ForRange { .. } => Some(ValueType::Unit),
@@ -1135,7 +1204,7 @@ impl<'a> Printer<'a> {
             );
             if !(body.drives.is_empty() && body.events.is_empty() && body.reactions.is_empty()) {
                 let opt = |e: Option<ExprId>| e.map_or("-".to_string(), |a| format!("e{}", a.0));
-                let drives: Vec<String> = body.drives.iter().map(|d| format!("(c{} e{} {})", d.carrier, d.value.0, opt(d.after))).collect();
+                let drives: Vec<String> = body.drives.iter().map(|d| format!("(c{} e{} {}{})", d.carrier, d.value.0, opt(d.after), Printer::drive_target_key(d))).collect();
                 let events: Vec<String> = body
                     .events
                     .iter()
@@ -1146,6 +1215,7 @@ impl<'a> Printer<'a> {
                         EventSource::Cross { e, ttol, etol } => format!("(cross e{} {} ttol {} etol {})", e.0, opt(ev.guard), opt(*ttol), opt(*etol)),
                         EventSource::At(e) => format!("(at e{} {})", e.0, opt(ev.guard)),
                         EventSource::Settle => format!("(settle {})", opt(ev.guard)),
+                        EventSource::ElementChanged { carrier, element } => format!("(element_changed c{carrier} {element} {})", opt(ev.guard)),
                     })
                     .collect();
                 let reactions: Vec<String> = body
@@ -1250,6 +1320,9 @@ impl<'a> Printer<'a> {
             Expr::Carrier(i) => format!("carrier {i}"),
             Expr::Flow { branch } => format!("flow b{branch}"),
             Expr::Previous(i) => format!("previous {i}"),
+            Expr::CarrierElement { carrier, index } => format!("carrier_element {carrier} {}", e(index)),
+            Expr::ElementPrevious { carrier, index } => format!("element_previous {carrier} {}", e(index)),
+            Expr::ElementChanged { carrier, index } => format!("element_changed {carrier} {}", e(index)),
             Expr::Derivative(k) => format!("derivative D{k}"),
             Expr::ParamPrevious(i) => format!("param_previous {i}"),
             Expr::Fired(i) => format!("fired {i}"),
@@ -1327,8 +1400,9 @@ impl<'a> Printer<'a> {
                     .collect();
                 format!("contribute b{branch} {q} ({})", parts.join(", "))
             }
-            Stmt::Commit { carrier, value, after } => {
-                format!("commit c{carrier} e{} {}", value.0, after.map_or("-".to_string(), |a| format!("e{}", a.0)))
+            Stmt::Commit { carrier, value, after, target } => {
+                let target = target.as_ref().map_or(String::new(), |t| format!(" {}", Printer::target_key(t)));
+                format!("commit c{carrier} e{} {}{target}", value.0, after.map_or("-".to_string(), |a| format!("e{}", a.0)))
             }
             Stmt::Emit { stream, fields } => {
                 let parts: Vec<String> = fields

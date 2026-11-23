@@ -577,6 +577,68 @@ fn composites_print_in_each_output_format() {
     }
 }
 
+/// A design with an array of carriers `v` whose element 1 takes 4 at the first rising edge, and an array of nodes `bl`.
+const ARRAYS: &str = "pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }\ndigital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }\n\
+module Memory(in clk: Bit) { signal v: [Bit<u8>; 3] = [7; 3]; signal n: Bit<u8> = 0; }\n\
+digital for Memory { on clk.rise() { emit!(\"sample\", v = v, one = v[1]); n <- n + 1; if n == 0 { v[1] <- 4; } } }\n\
+module Ladder(feed: Electrical) { signal bl: [Electrical; 2]; }\n\
+analog for Ladder { v(bl[0], gnd) +> 2.0; i(bl[0], bl[1]) +> v(bl[0], bl[1]) / 1000.0; i(bl[1], gnd) +> v(bl[1], gnd) / 1000.0; }\n\
+module Top() { signal clk: Bit; let osc = Osc(clk) { f: 200M }; let memory = Memory(clk); let ladder = Ladder(gnd); }\n";
+
+/// `piperine run` over `ARRAYS`.
+struct ArrayRun;
+
+impl ArrayRun {
+    /// The output of printing `print`, with `files` writing a CSV and a plot instead of printing only the table.
+    fn of(print: &[&str], files: bool) -> (String, tempfile::TempDir) {
+        let dir = written(&[("bench.msl", ARRAYS)]);
+        let mut args: Vec<String> = ["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9"].iter().map(|s| s.to_string()).collect();
+        for signal in print {
+            args.extend(["--print".to_string(), signal.to_string()]);
+        }
+        if files {
+            args.extend(["--csv", "out.csv", "--plot", "out.svg", "--records", "out.jsonl"].iter().map(|s| s.to_string()));
+        }
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let stdout = stdout_of(&piperine_in(dir.path(), shared_cache(), &refs));
+        (stdout, dir)
+    }
+}
+
+#[test]
+fn an_array_of_carriers_prints_by_element_and_whole_in_every_format() {
+    // CV-28 AC 1, AC 2, CV-21 (Q2 (c)): `Top.memory.v[1]` prints that element alone, `Top.memory.v` the whole array in literal
+    // syntax in the text table, and CSV and the plot take one column per element; an array of nodes is one column per node
+    let (stdout, _) = ArrayRun::of(&["Top.memory.v[1]", "Top.memory.v"], false);
+    let header = stdout.lines().find(|l| l.starts_with("time")).unwrap_or_else(|| panic!("no table in\n{stdout}"));
+    assert_eq!(cells(header)[1], "Top.memory.v[1]", "{stdout}");
+    let last = stdout.lines().rev().find(|l| !l.is_empty()).expect("a row");
+    assert_eq!(cells(last)[1], "4", "the element committed at the first edge: {last}");
+    assert!(last.contains("[7, 4, 7]"), "the whole array in literal syntax: {last}");
+    let (_, dir) = ArrayRun::of(&["Top.memory.v", "Top.ladder.bl"], true);
+    let csv = std::fs::read_to_string(dir.path().join("out.csv")).expect("out.csv");
+    let mut rows = csv.lines();
+    assert_eq!(rows.next(), Some("time,Top.memory.v[0],Top.memory.v[1],Top.memory.v[2],Top.ladder.bl[0],Top.ladder.bl[1]"), "one CSV column per element and per node: {csv}");
+    let final_row = rows.last().expect("a CSV row");
+    assert!(final_row.contains(",7,4,7,"), "the elements of the last row: {final_row}");
+    // the record lines of `emit!("sample", v = v, one = v[1])`: the whole array in literal syntax and the element as a number, at the
+    // first edge (before its commit) and at the second (after it); JSON Lines holds the array as an array
+    let (stdout, _) = ArrayRun::of(&["Top.memory.v"], false);
+    let records: Vec<&str> = stdout.lines().filter(|l| l.contains(" sample ")).collect();
+    assert_eq!(records.len(), 2, "one record per rising edge in 10 ns: {stdout}");
+    assert!(records[0].contains("v=[7, 7, 7]") && records[0].contains("one=7"), "the first edge reads the initial elements: {}", records[0]);
+    assert!(records[1].contains("v=[7, 4, 7]") && records[1].contains("one=4"), "the second reads the committed element: {}", records[1]);
+    let json = std::fs::read_to_string(dir.path().join("out.jsonl")).expect("out.jsonl");
+    let lines: Vec<&str> = json.lines().collect();
+    assert_eq!(lines.len(), 2, "one JSON line per record: {json}");
+    assert!(lines[0].contains("\"v\":[7,7,7]") && lines[0].contains("\"one\":7"), "{}", lines[0]);
+    assert!(lines[1].contains("\"v\":[7,4,7]") && lines[1].contains("\"one\":4"), "{}", lines[1]);
+    let svg = std::fs::read_to_string(dir.path().join("out.svg")).expect("out.svg");
+    for series in ["Top.memory.v[1]", "Top.ladder.bl[1]"] {
+        assert!(svg.contains(&format!("data-signal=\"{series}\"")), "the plot has `{series}`: {svg}");
+    }
+}
+
 /// A design whose carrier `o` holds an `Option<u8>` that starts at `None` and takes `Some(7)` at the
 /// first rising edge of a clock.
 const OPTIONS: &str = "pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }\ndigital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }\n\

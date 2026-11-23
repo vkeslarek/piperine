@@ -380,6 +380,13 @@ impl Elaboration<'_, '_> {
                 self.keys.add(*module, param, &order);
             }
         }
+        // A param read by the length of an array of carriers or nodes is structural too (§8.1.2, QC2).
+        for module in modules {
+            let order = self.params_of(*module);
+            for param in self.params_read_by_array_lengths(*module) {
+                self.keys.add(*module, param, &order);
+            }
+        }
         // A param of a child that the parent reads through `inst.name` is fixed by the placement.
         for (module, param) in self.params_read_through_reaches() {
             if modules.contains(&module) {
@@ -399,6 +406,21 @@ impl Elaboration<'_, '_> {
                 }
             }
         }
+    }
+
+    /// The params of `module` that the length of one of its arrays of carriers or nodes reads (`signal s: [Bit; n]`).
+    fn params_read_by_array_lengths(&self, module: DeclId) -> Vec<DeclId> {
+        let mut found = Vec::new();
+        for child in &self.design.decl_data(module).children {
+            let Some(mut at) = self.types.carrier_array(*child).or_else(|| self.types.node_array(*child)) else { continue };
+            while let crate::types::Ty::Array(element, length) = at {
+                if let crate::types::Length::Generic(crate::types::ConstTerm::Expr(expr)) = length {
+                    found.extend(ParamReads::new(self.design, self.types).of(*expr).into_iter().flatten());
+                }
+                at = element;
+            }
+        }
+        found
     }
 
     /// The params of `module` that the initial value of one of its nodes or carriers reads (`signal a:

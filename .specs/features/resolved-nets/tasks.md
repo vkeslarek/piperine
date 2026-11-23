@@ -887,7 +887,7 @@ T34 → T35 → T36
 
 ### T35: The other Book rows of resolved nets
 
-**What**: `digital#16` (`IrqSource`, `IrqController`, `Board`) and `core-std#6` run; `natures#2` runs too (gap L21, owner `resolved-nets`: composite-values and explicit-unknowns phases A and B have landed by then and only re-pinned it); tests and `inventory.tsv` follow.
+**What**: `digital#16` (`IrqSource`, `IrqController`, `Board`) and `core-std#6` run; `natures#2` is judged by elaboration, not by an operating point (gap L21, owner `resolved-nets`: composite-values and explicit-unknowns phases A and B have landed by then and only re-pinned it; the listing's nodes `mid` and `vout` float, so its operating point is singular, `E0503`, whatever resolved-nets does: the flip is that the block, with `Sda` declared, elaborates, and the test moves its row from `refused` to `run` on that check); tests and `inventory.tsv` follow.
 **Where**: `tests/book/digital.rs`
 **Depends on**: T34
 **Reuses**: `Chapter`, `Refusal`

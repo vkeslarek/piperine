@@ -339,4 +339,18 @@ impl Checker<'_> {
             _ => false,
         }
     }
+
+    /// Whether the const expression `expr` reads a param of a module anywhere in it (`[Bit; n]`, `[Bit; n + 1]`): an
+    /// array length the elaborator folds per body variant, which makes the param structural (§8.1.2).
+    pub(super) fn reads_module_param(&self, expr: ExprId) -> bool {
+        match &self.design.expr_node(expr).kind {
+            ExprKind::Path(path) => matches!(
+                self.design.path_node(*path).segments.last().map(|segment| segment.res),
+                Some(Resolution::Decl(decl)) if matches!(self.design.decl_data(decl).kind, DeclKind::Param(_))
+            ),
+            ExprKind::Paren(inner) | ExprKind::Unary { expr: inner, .. } | ExprKind::Cast { expr: inner, .. } => self.reads_module_param(*inner),
+            ExprKind::Binary { lhs, rhs, .. } => self.reads_module_param(*lhs) || self.reads_module_param(*rhs),
+            _ => false,
+        }
+    }
 }

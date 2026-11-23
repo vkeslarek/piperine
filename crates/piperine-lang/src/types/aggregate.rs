@@ -127,20 +127,35 @@ impl Checker<'_> {
         Some(Ty::Tuple(types))
     }
 
-    /// `[T; N]` (§1.2.5): `N` is a const expression the checker folds, else `E0188`.
+    /// `[T; N]` (§1.2.5): `N` is a const expression the checker folds, else `E0188`; one that reads a module
+    /// param stays an expression the elaborator folds per body variant (§8.1.2, QC2).
     pub(super) fn array_type(&mut self, file: FileId, span: Span, elem: TypeId, len: ExprId) -> Option<Ty> {
         let element = self.lower_type(elem);
-        let Some(length) = self.fold_length(len).map(Length::Fixed).or_else(|| self.generic_length(len)) else {
+        let Some(length) = self.fold_length(len).map(Length::Fixed).or_else(|| self.generic_length(len)).or_else(|| self.module_param_length(len)) else {
             let what = self.expression_name(len);
             self.coded(file, "E0188", span, format!("the length of an array type is a constant, and {what} is not one the checker folds (§1.2.5)"), "not a constant");
             return None;
         };
         let element = element?;
+        // an array of carriers or of nodes (CV-23): `Ty::Array` over a `Carrier` or a `Node` element, which no value is
+        if element.is_carrier_element() {
+            return Some(Ty::Array(Box::new(element), length));
+        }
         if !element.is_value() {
             self.unsupported(file, span, &format!("an array of `{}`", element.name(self.design)));
             return None;
         }
         Some(Ty::Array(Box::new(element), length))
+    }
+
+    /// The length that reads a module param (`[T; n]`, `[T; n + 1]`), left as the expression: the checker types it so the
+    /// elaborator's evaluator reads it, and the elaborator folds it per body variant (§8.1.2, QC2).
+    fn module_param_length(&mut self, len: ExprId) -> Option<Length> {
+        if !self.reads_module_param(len) {
+            return None;
+        }
+        self.infer(len)?;
+        Some(Length::Generic(ConstTerm::Expr(len)))
     }
 
     /// The length `[T; N]` or `[T; N + 1]` writes when it names const parameters (§3.8.3, D14): a
@@ -388,7 +403,7 @@ impl Checker<'_> {
             _ => self.infer(element),
         };
         // `[x; N + 1]`: a length over const parameters is generic, folded at an instantiation (§3.8.3)
-        let Some(length) = self.fold_length(len).map(Length::Fixed).or_else(|| self.generic_length(len)) else {
+        let Some(length) = self.fold_length(len).map(Length::Fixed).or_else(|| self.generic_length(len)).or_else(|| self.module_param_length(len)) else {
             let span = self.design.expr_node(len).span;
             let what = self.expression_name(len);
             self.mismatch_text(file, span, "a constant array length", &what);

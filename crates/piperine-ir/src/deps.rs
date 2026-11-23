@@ -130,6 +130,27 @@ impl<'a> Body<'a> {
         self.sources_of(target).flows.iter().copied().collect()
     }
 
+    /// The constant elements of array carriers whose value `target` reads (`mem[3]`), as
+    /// `(carrier, element)`, sorted: a run-time index reads the whole carrier (`carrier_reads`).
+    pub fn element_reads(&self, target: Target) -> Vec<(u32, u64)> {
+        self.sources_of(target).elements.iter().copied().collect()
+    }
+
+    /// The constant elements whose previous value `target` reads (`mem[3].prev()`), sorted.
+    pub fn element_previous_reads(&self, target: Target) -> Vec<(u32, u64)> {
+        self.sources_of(target).element_previous.iter().copied().collect()
+    }
+
+    /// The constant elements whose `changed` byte `target` reads (`mem[3].changed()`), sorted.
+    pub fn element_changed_reads(&self, target: Target) -> Vec<(u32, u64)> {
+        self.sources_of(target).element_changed.iter().copied().collect()
+    }
+
+    /// The array carriers whose `changed` byte `target` reads at a run-time element, sorted.
+    pub fn whole_changed_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).whole_changed.iter().copied().collect()
+    }
+
     /// The carriers whose previous value (`Expr::Previous`) `target` reads, by index
     /// (`Body::carriers`), sorted, through locals and function calls. A read of a previous value
     /// is not in `carrier_reads`: it reads the carrier's `PREVIOUS` and not its value.
@@ -272,6 +293,14 @@ struct Sources {
     derivatives: BTreeSet<u32>,
     /// The params whose previous value is read (`Expr::ParamPrevious`).
     param_previous: BTreeSet<u32>,
+    /// The constant elements of an array carrier whose value is read (`mem[3]`), as `(carrier, element)`.
+    elements: BTreeSet<(u32, u64)>,
+    /// The constant elements whose previous value is read (`mem[3].prev()`).
+    element_previous: BTreeSet<(u32, u64)>,
+    /// The constant elements whose `changed` byte is read (`mem[3].changed()`).
+    element_changed: BTreeSet<(u32, u64)>,
+    /// The array carriers whose `changed` byte is read at a run-time element (`mem[i].changed()`).
+    whole_changed: BTreeSet<u32>,
 }
 
 impl Sources {
@@ -287,6 +316,10 @@ impl Sources {
         self.fired.extend(&other.fired);
         self.derivatives.extend(&other.derivatives);
         self.param_previous.extend(&other.param_previous);
+        self.elements.extend(&other.elements);
+        self.element_previous.extend(&other.element_previous);
+        self.element_changed.extend(&other.element_changed);
+        self.whole_changed.extend(&other.whole_changed);
     }
 
     fn to_deps(&self) -> Deps {
@@ -508,19 +541,19 @@ impl<'a> Walk<'a> {
             };
             crosses.push(one(match event.source {
                 EventSource::Cross { e, .. } => Some(e),
-                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             }));
             ttols.push(one(match event.source {
                 EventSource::Cross { ttol, .. } => ttol,
-                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             }));
             etols.push(one(match event.source {
                 EventSource::Cross { etol, .. } => etol,
-                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             }));
             ats.push(one(match event.source {
                 EventSource::At(e) => Some(e),
-                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) | EventSource::Settle => None,
+                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             }));
             guards.push(one(event.guard));
         }
@@ -717,10 +750,14 @@ impl<'a> Walk<'a> {
                     next.push(Task::Addend { branch: *branch, operator: addend.operator, at: addend.value });
                 }
             }
-            Stmt::Commit { value, after, .. } => {
+            Stmt::Commit { value, after, target, .. } => {
                 next.extend([Task::Expr(*value), Task::Discard]);
                 if let Some(after) = after {
                     next.extend([Task::Expr(*after), Task::Discard]);
+                }
+                // the element and the value-array indexes of the target are read too (an element commit at a run-time index)
+                for index in target.iter().flat_map(crate::model::CommitTarget::index_operands) {
+                    next.extend([Task::Expr(index), Task::Discard]);
                 }
             }
             Stmt::Emit { fields, .. } => {
@@ -878,7 +915,7 @@ impl<'a> Walk<'a> {
             }
             Expr::Call { args, .. } | Expr::Math { args, .. } => next.extend(args.iter().map(|&a| Task::Expr(a))),
             // An aggregate is one abstract value: what its parts read (`finish`).
-            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } => {
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::CarrierElement { .. } | Expr::ElementPrevious { .. } | Expr::ElementChanged { .. } => {
                 next.extend(ir.exprs[id.index()].kind.operands().into_iter().map(Task::Expr));
             }
             Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } => return self.begin_loop(id, next),
@@ -981,6 +1018,24 @@ impl<'a> Walk<'a> {
             Expr::Method { args, .. } => {
                 let values = self.pop_n(1 + args.len());
                 Value::nonlinear(&values)
+            }
+            // An element read is a read of its carrier (CV-24) and of what its index reads.
+            Expr::CarrierElement { carrier, index } | Expr::ElementPrevious { carrier, index } | Expr::ElementChanged { carrier, index } => {
+                let values = self.pop_n(1);
+                let mut value = Value::nonlinear(&values);
+                let constant = match ir.exprs[index.index()].kind {
+                    Expr::Int(element) => u64::try_from(element).ok(),
+                    _ => None,
+                };
+                match (&ir.exprs[id.index()].kind, constant) {
+                    (Expr::ElementPrevious { .. }, Some(element)) => value.sources.element_previous.insert((*carrier, element)),
+                    (Expr::ElementPrevious { .. }, None) => value.sources.previous.insert(*carrier),
+                    (Expr::ElementChanged { .. }, Some(element)) => value.sources.element_changed.insert((*carrier, element)),
+                    (Expr::ElementChanged { .. }, None) => value.sources.whole_changed.insert(*carrier),
+                    (_, Some(element)) => value.sources.elements.insert((*carrier, element)),
+                    (_, None) => value.sources.carriers.insert(*carrier),
+                };
+                value
             }
             // An aggregate and each of its projections read everything its parts read.
             Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } => {

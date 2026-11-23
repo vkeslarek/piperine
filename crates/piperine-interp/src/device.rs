@@ -97,6 +97,8 @@ impl Interpreted {
                 // a timer's pin, a previous value: `Interpreter::new` refuses every body with an
                 // `at` or a carrier (msl-digital T22).
                 Source::Timer(_) | Source::CarrierPrevious(_) => None,
+                // an array carrier, whole or one element: refused by name in the same way (composite-values R1)
+                Source::Whole(..) | Source::Element(..) => None,
                 // a derivative site's rate: no body that has one reaches the interpreter, which
                 // refuses it by name (analog-structure R1, AS-17).
                 Source::Derivative(_) => None,

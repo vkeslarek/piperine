@@ -178,19 +178,19 @@ fn the_switched_capacitor_integrator_is_a_netlist_that_runs() {
 }
 
 #[test]
-fn the_memory_bank_is_refused_for_its_struct_arrays_and_generics() {
+fn the_memory_bank_is_refused_for_its_generic_module() {
     // modules#10 (refused): the `Cell` struct, `Dram1T1C` and the generic `MemoryBank`; modules#11
     // (fragment): the placement `MemoryBank::<_, 64, 32>(wl, bl) { cell: Dram1T1C { cs: 30f } }` in a
-    // parent's body. The struct as a type (L1), the arrays of carriers (L24) and the generic module (L30)
+    // parent's body. The generic module (L30); the struct as a type and the arrays of carriers run
     let chapter = Chapter::read();
     let top = format!("module Top() {{\n    signal wl: [Bit; 64];\n    signal bl: [Electrical; 32];\n    {}\n}}\n", chapter.text("modules#11"));
     let model = chapter.wrapped("bank.msl", "", "modules#10", &top);
     let given = Refusal::of(model.run(Commands::of_top()), "modules#10");
-    for expected in ["an array of `Bit<bool>` is not supported yet", "generic module is not supported yet"] {
-        assert!(given.contains(&("P0001".to_string(), expected.to_string())), "{expected}: {given:?}");
-    }
+    // the arrays of carriers run since composite-values phase C (L24): the generic module is the one refusal left (L30)
+    assert!(given.contains(&("P0001".to_string(), "generic module is not supported yet".to_string())), "{given:?}");
+    assert!(!given.iter().any(|(_, message)| message.contains("array of")), "the arrays of carriers run: {given:?}");
     assert!(given.iter().all(|(code, _)| code == "P0001"), "{given:?}");
-    Refusal::expect(model.run(Commands::of_top()), "modules#10", "P0001", "an array of `Bit<bool>` is not supported yet");
+    Refusal::expect(model.run(Commands::of_top()), "modules#10", "P0001", "generic module is not supported yet");
 }
 
 #[test]

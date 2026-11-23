@@ -70,17 +70,24 @@ module PreviousBench() {
     let probe = Previous(clk, q);
 }
 
-/// Reads the first and the last element of a composite carrier no model commits.
-module Elements(in clk: Bit, in e: Bit<[u8; 4]>) {}
+/// Reads the first and the last element of an array of carriers no model commits, and one a reaction commits at the first edge.
+module Elements(in clk: Bit) {
+    signal edge: Bit<u8> = 0;
+    signal xs: [Bit<Option<u8>>; 1048576] = [Some(5); 1048576];
+}
 digital for Elements {
-    on clk.rise() { emit!("elements", first = e[0], last = e[3]); }
+    on clk.rise() {
+        edge <- edge + 1;
+        if edge == 0 { xs[1] <- Some(7); }
+        emit!("elements", first = xs[0].unwrap_or(99), last = xs[1048575].unwrap_or(99), committed = xs[1].unwrap_or(99));
+    }
 }
 
-/// The composite carrier holds its written initial value `[5, 6, 7, 8]`, and no commit writes an element.
+/// The array of a million elements holds its written initial value `Some(5)` in every element no edge commits.
 module ElementsBench() {
-    signal clk: Bit; signal e: Bit<[u8; 4]> = [5, 6, 7, 8];
+    signal clk: Bit;
     let osc = Osc(clk) { f: 1G };
-    let probe = Elements(clk, e);
+    let probe = Elements(clk);
 }
 
 /// A module with an `Option` param no instance binds: it is `None` (EU-06 AC 1).

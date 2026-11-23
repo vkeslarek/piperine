@@ -197,9 +197,13 @@ unsafe extern "C" fn record(data: *mut c_void, statement: u32, offset: u32, len:
     rec.answer
 }
 
+unsafe extern "C" fn refuse_element(_: *mut c_void, _: u32, _: u64, _: u32, _: u32, _: *const u8, _: f64) -> u32 {
+    status::FAULT
+}
+
 fn react_with(m: &Module, inst: &Created, k: u32, reads: &[&[u8]], answer: u32, note: &mut Note) -> (u32, Seen) {
     let input: Vec<*const u8> = reads.iter().map(|r| r.as_ptr()).collect();
-    let host = Host { size: size_of::<Host>() as u32, commit: record };
+    let host = Host { size: size_of::<Host>() as u32, commit: record, commit_element: refuse_element };
     let mut rec = Recorder { seen: Vec::new(), answer };
     let frame = raw::React {
         size: size_of::<raw::React>() as u32,

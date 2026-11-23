@@ -346,6 +346,7 @@ impl CircuitInstance {
         self.abi = None;
         let bound = crate::core::bind::bind(crate::core::bind::BindInput {
             specs: recipe.specs,
+            arrays: recipe.arrays,
             shared: recipe.shared,
             session: recipe.session,
             netlist: &mut netlist,

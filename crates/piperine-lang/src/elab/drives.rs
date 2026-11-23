@@ -25,11 +25,20 @@ impl Elaboration<'_, '_> {
         for child in children {
             let data = self.design.decl_data(child).clone();
             let DeclKind::Definition(definition) = &data.kind else { continue };
-            let Some(carrier) = self.drive_target(scope, definition.place) else { continue };
+            let mut place_scope = Self::sub_scope(scope);
+            let Some(target) = self.place_target(&mut place_scope, definition.place) else { continue };
+            // a definition names a constant element: each element is its own drive (`element_commits.rs`)
+            if target.element.is_some() && target.constant.is_none() {
+                self.not_folded(scope, self.design.expr_node(definition.place).span, "the element of a definition");
+                continue;
+            }
+            if target.element.is_some() && definition.after.is_some() {
+                self.unsupported(scope.file, self.design.expr_node(definition.place).span, "a delayed definition of an element of an array of carriers");
+                continue;
+            }
             let origin = self.locator.decl(child);
-            let wanted = self.structure.carriers.get(carrier as usize).map(|c| c.ty.clone());
-            if let Some((value, after)) = self.lower_drive_value(scope, definition.value, definition.after, wanted.as_ref()) {
-                self.structure.drives.push(Drive { carrier, value, after, origin });
+            if let Some((value, after)) = self.lower_drive_value(scope, definition.value, definition.after, Some(&target.ty)) {
+                self.structure.drives.push(Drive { carrier: target.carrier, value, after, origin, element: target.constant, path: target.path });
             }
         }
     }
@@ -87,8 +96,8 @@ impl Elaboration<'_, '_> {
         let origin = self.expr_origin(value);
         let (lowered, _) = self.lower_drive_value(scope, value, None, Some(&ty))?;
         let name = format!("{}{instance}.{port_name}", self.frames[scope.frame].prefix);
-        let carrier = self.add_carrier(Carrier { name, ty, role: CarrierRole::Signal, init: None, origin: origin.clone() });
-        self.structure.drives.push(Drive { carrier, value: lowered, after: None, origin });
+        let carrier = self.add_carrier(Carrier { name, ty, role: CarrierRole::Signal, init: None, origin: origin.clone(), count: None });
+        self.structure.drives.push(Drive { carrier, value: lowered, after: None, origin, element: None, path: vec![] });
         Some(carrier)
     }
 }

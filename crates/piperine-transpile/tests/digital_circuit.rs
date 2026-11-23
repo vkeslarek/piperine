@@ -199,7 +199,7 @@ fn parent_clocked(bound: bool, init: Option<bool>) -> Ir {
         ..Buck::spec("Top", "top.msl", 1)
     });
     let init = init.map(Constant::Bool);
-    b.carrier(top_body, Carrier { name: "clk".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init, origin: at() });
+    b.carrier(top_body, Carrier { name: "clk".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init, origin: at(), count: None });
     // the ports of `Dff` are clk, d, q: clk and d on the signal, q on a net of the top
     let bindings = if bound { vec![Some(0), Some(0), None] } else { vec![None, None, None] };
     b.bind_child_carriers(top_body, 0, bindings);

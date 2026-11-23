@@ -179,6 +179,7 @@ impl Table {
                     Probe::Param { path, ty } => net(path).map(|bytes| Cell::decode_param(ty, &bytes)).transpose()?,
                     Probe::Shaped { path, shape, leaf } => net(path).map(|bytes| Probe::shown(shape, leaf.as_deref(), &bytes)).transpose()?,
                     Probe::Term { instance, term: name } => term(instance, name).map(Cell::Real),
+                    Probe::Empty { .. } => Some(Probe::empty_array()),
                 };
                 value.ok_or_else(|| Failure::Backend(format!("the operating point holds no value for `{}`", probe.label())))
             })
@@ -251,7 +252,7 @@ impl Table {
     pub fn frequency(probes: &[Probe], result: &AcAnalysisResult) -> Result<Table, Failure> {
         let mut columns = vec!["freq".to_string()];
         for probe in probes {
-            if let Probe::Net { path, .. } | Probe::Param { path, .. } | Probe::Shaped { path, .. } = probe {
+            if let Probe::Net { path, .. } | Probe::Param { path, .. } | Probe::Shaped { path, .. } | Probe::Empty { path } = probe {
                 let message = format!("`{path}` is a discrete net or a param: an `ac` run prints nodes and flows, which have a phasor");
                 return Err(Failure::Host { code: "E0801", message });
             }
@@ -270,7 +271,7 @@ impl Table {
                     let phasor = match probe {
                         Probe::Node { id, .. } => step.get_node(id),
                         Probe::Flow { branch, .. } => step.get_branch(branch.clone()),
-                        Probe::Net { .. } | Probe::Param { .. } | Probe::Shaped { .. } | Probe::Term { .. } => None,
+                        Probe::Net { .. } | Probe::Param { .. } | Probe::Shaped { .. } | Probe::Term { .. } | Probe::Empty { .. } => None,
                     };
                     let phasor = phasor.ok_or_else(|| Failure::Backend(format!("the step at {} Hz holds no value for `{}`", step.frequency, probe.label())))?;
                     row.push(Cell::Real(phasor.norm()));
@@ -339,6 +340,7 @@ impl Table {
                             None => held.iter().find(|h| h.path == *path).map(|h| h.cell_at(step.time())),
                         },
                         Probe::Term { instance, .. } => return Err(Failure::Host { code: "E0801", message: format!("`i({instance})` is a flow term: a transient prints the flow of a potential branch") }),
+                        Probe::Empty { .. } => Some(Probe::empty_array()),
                     };
                     let missing = || Failure::Backend(format!("the step at {} holds no value for `{}`", step.time(), probe.label()));
                     row.push(value.ok_or_else(missing)?);

@@ -164,8 +164,8 @@ fn time_and_static_reads_print_and_check() {
     let body = b.body(Buck::spec("Bad", F, 1));
     b.carrier(body, Buck::carrier("a", ValueType::Bool, CarrierRole::Out, None, F, 1, 20));
     b.carrier(body, Buck::carrier("c", ValueType::Bool, CarrierRole::Out, None, F, 1, 30));
-    b.drive(body, Drive { carrier: 0, value: late, after: None, origin: Design::origin(F, 2, 3) });
-    b.drive(body, Drive { carrier: 1, value: via_call, after: None, origin: Design::origin(F, 4, 3) });
+    b.drive(body, Drive { carrier: 0, value: late, after: None, origin: Design::origin(F, 2, 3), element: None, path: vec![] });
+    b.drive(body, Drive { carrier: 1, value: via_call, after: None, origin: Design::origin(F, 4, 3), element: None, path: vec![] });
     b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Design::origin(F, 3, 3) });
     let broken = Design::place(b, body, 0, &[ValueType::Bool, ValueType::Bool], vec![]).check();
     let one = |item: &str, line: u32, what: &str| {
@@ -1239,7 +1239,7 @@ fn the_environment_bound_step_fired_and_unwrap_forms_print_and_check() {
     let freq = x.b.expr(Expr::Env(Env::Freq), ValueType::F64, x.origin());
     let level = x.real(0.0);
     let over = x.bin(piperine_ir::BinaryOp::Gt, freq, level, ValueType::Bool);
-    b.drive(body, Drive { carrier: 1, value: over, after: None, origin: Design::origin(F, 8, 3) });
+    b.drive(body, Drive { carrier: 1, value: over, after: None, origin: Design::origin(F, 8, 3), element: None, path: vec![] });
     let broken = Design::place(b, body, 2, &[ValueType::Bool, ValueType::Bool], vec![]).check();
     let one = |line: u32, what: &str| {
         let hits: Vec<_> = broken.iter().filter(|e| e.origin.line == line && e.what.contains(what)).collect();

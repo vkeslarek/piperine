@@ -20,10 +20,9 @@ mod support {
     pub mod value_file;
 }
 
-use piperine::{Failure, Field, Overrides};
+use piperine::{Field, Overrides};
 use support::chapter::Chapter;
 use support::faulty::Faulty;
-use support::model::Ran;
 use support::printed::Printed;
 use support::records::Fields;
 use support::value_file::ValueFile;
@@ -40,11 +39,6 @@ impl Reached {
     /// The text after a listing that makes a top run `statements` in a reaction at 1 us.
     fn top(statements: &str) -> String {
         format!("module Top() {{ }}\ndigital for Top {{ on at(1u) {{ {statements} }} }}\n")
-    }
-
-    /// The run of the block `id`, after `before`, on a top that runs `statements`.
-    fn run(id: &str, before: &str, statements: &str) -> Result<Ran, Failure> {
-        Chapter::read().wrapped("reached.msl", before, id, &Self::top(statements)).run(Self::overrides())
     }
 }
 

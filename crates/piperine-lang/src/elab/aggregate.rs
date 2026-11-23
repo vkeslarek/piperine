@@ -14,6 +14,7 @@ use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Place, Projection,
 
 use super::compound::EnumLayout;
 use super::elaborator::Elaboration;
+use super::elements::Lookup;
 use super::lower::Scope;
 use super::patterns::{PatternTest, Subject};
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FieldInit, FieldPatNode, PatId, PatKind, Resolution};
@@ -286,6 +287,12 @@ impl Elaboration<'_, '_> {
     /// elements in range.
     pub(super) fn lower_index(&mut self, scope: &mut Scope, expr: ExprId, base: ExprId, index: ExprId, origin: Origin) -> Option<LoweredExpr> {
         let span = self.design.expr_node(expr).span;
+        // one element of an array of carriers is read through the element, never through the array (`elements.rs`)
+        match self.element_lookup(scope, expr) {
+            Lookup::Found(element) => return Some(self.carrier_element_read(element, origin)),
+            Lookup::Failed => return None,
+            Lookup::No => {}
+        }
         let whole = self.lower_expr(scope, base)?;
         let ValueType::Array(element, length) = self.type_of(whole) else {
             self.unsupported(scope.file, span, "an index of a value that is not an array");

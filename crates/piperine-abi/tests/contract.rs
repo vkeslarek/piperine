@@ -78,10 +78,12 @@ fn every_constant_has_its_pinned_value() {
 
 #[test]
 fn the_host_has_one_commit() {
-    // EU-16 AC 2 (abi.md §2 entry 6): the solver's `Host` is its `size` and the one `commit`
-    // entry: no `commit_with`, no commit flags, so it is 16 bytes and the contract is minor 0
-    assert_eq!(size_of::<Host>(), 16);
+    // EU-16 AC 2 (abi.md §2 entry 6): the solver's `Host` is its `size`, `commit` and, since arrays of carriers
+    // (CV-27, QC1: appended in place at minor 0), `commit_element`: no `commit_with`, no commit flags, so it is 24
+    // bytes and the contract is minor 0. Superseded here: it read "16 bytes, the one commit".
+    assert_eq!(size_of::<Host>(), 24);
     assert_eq!(core::mem::offset_of!(Host, commit), 8);
+    assert_eq!(core::mem::offset_of!(Host, commit_element), 16);
     assert_eq!(MINOR, 0);
 }
 
@@ -106,6 +108,7 @@ fn pin_named(name: &'static str) -> Pin<'static> {
         init: Bytes::EMPTY,
         check: 0,
         abstol: [0.0, 0.0],
+        count: 0,
     }
 }
 

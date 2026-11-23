@@ -13,14 +13,14 @@ pub(crate) struct CompositeForms<'a> {
     /// The body being walked.
     body: Body<'a>,
     /// The forms met so far, by their position in `CompositeForms::NAMES`.
-    met: [bool; 23],
+    met: [bool; 30],
     /// The functions the body calls or names, in the order the walk first met them.
     reached: Vec<FunctionId>,
 }
 
 impl<'a> CompositeForms<'a> {
     /// The name of each form, in the order the refusal lists them.
-    const NAMES: [&'static str; 23] = [
+    const NAMES: [&'static str; 30] = [
         "an assignment",
         "a loop",
         "a while loop",
@@ -44,18 +44,25 @@ impl<'a> CompositeForms<'a> {
         "an option part",
         "a default value",
         "a table model",
+        "an element read of an array of carriers",
+        "an element's previous value",
+        "an element's changed()",
+        "an element event",
+        "an element or field commit",
+        "an element or field definition",
+        "a window of an array of carriers",
     ];
 
     /// The forms `body` holds, each once, in a fixed order.
     pub(crate) fn of(body: Body<'a>) -> Vec<&'static str> {
-        let mut forms = CompositeForms { body, met: [false; 23], reached: Vec::new() };
+        let mut forms = CompositeForms { body, met: [false; 30], reached: Vec::new() };
         forms.walk();
         Self::NAMES.into_iter().zip(forms.met).filter_map(|(name, met)| met.then_some(name)).collect()
     }
 
     /// The functions `body` evaluates (called or named, transitively), each once.
     pub(crate) fn reached_functions(body: Body<'a>) -> Vec<FunctionId> {
-        let mut forms = CompositeForms { body, met: [false; 23], reached: Vec::new() };
+        let mut forms = CompositeForms { body, met: [false; 30], reached: Vec::new() };
         forms.walk();
         forms.reached
     }
@@ -67,6 +74,13 @@ impl<'a> CompositeForms<'a> {
         let mut exprs: Vec<ExprId> = body.params().iter().filter_map(|param| param.check).collect();
         for drive in body.drives() {
             exprs.extend([drive.value].into_iter().chain(drive.after));
+            if drive.element.is_some() || !drive.path.is_empty() {
+                self.met[28] = true;
+            }
+            exprs.extend(drive.path.iter().filter_map(|step| match step {
+                piperine_ir::Projection::Index(index) => Some(*index),
+                piperine_ir::Projection::Field(_) => None,
+            }));
         }
         for event in body.events() {
             exprs.extend(event.guard);
@@ -74,12 +88,17 @@ impl<'a> CompositeForms<'a> {
                 EventSource::Cross { e, ttol, etol } => exprs.extend([e].into_iter().chain(ttol).chain(etol)),
                 EventSource::At(e) => exprs.push(e),
                 EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle => {}
+                // an element event: `on x[k].changed()`
+                EventSource::ElementChanged { .. } => self.met[26] = true,
             }
         }
         stmts.extend(body.reactions().iter().flat_map(|reaction| reaction.stmts.iter().copied()));
         exprs.extend(body.limits().iter().filter_map(|site| site.enabled));
         exprs.extend(body.derivatives().iter().flat_map(|site| [site.state].into_iter().chain(site.abstol)));
         for child in 0..body.children().len() {
+            if body.child_windows(child).iter().any(Option::is_some) {
+                self.met[29] = true;
+            }
             exprs.extend(body.child_params(child).iter().filter_map(|(_, value)| match value {
                 piperine_ir::ChildValue::Expr(e) => Some(*e),
                 piperine_ir::ChildValue::Const(_) => None,
@@ -95,6 +114,9 @@ impl<'a> CompositeForms<'a> {
                 let stmt = ir.stmt(id);
                 if matches!(stmt, Stmt::Assign { .. }) {
                     self.met[0] = true;
+                }
+                if matches!(stmt, Stmt::Commit { target: Some(_), .. }) {
+                    self.met[27] = true;
                 }
                 exprs.extend(stmt.operands());
             }
@@ -143,6 +165,9 @@ impl<'a> CompositeForms<'a> {
             Expr::Default(_) => Some(21),
             // `table_model` and its slope (PI-10, T40): the interpreter does not run a table
             Expr::Table { .. } | Expr::TableSlope { .. } => Some(22),
+            Expr::CarrierElement { .. } => Some(23),
+            Expr::ElementPrevious { .. } => Some(24),
+            Expr::ElementChanged { .. } => Some(25),
             _ => None,
         }
     }
