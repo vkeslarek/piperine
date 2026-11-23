@@ -1,38 +1,27 @@
 # Params and I/O verification
 
 **Verdict**: FAIL
-**Proofs**: `proofs.md` at 59ae2602 (the round 7 fix, 114 pass, 0 fail; re-run by the round 8 verifier after its own commit); round 7 at c93b8ef5, round 6 at defc9611, round 5 at b3045722, round 4 at dcbbea67, round 3 at e60177d8, round 2 at acefa2f6, round 1 at 0bed6a92
+**Proofs**: `proofs.md` at c4a883a2 (the round 8 fix, 114 pass, 0 fail; re-run by the round 9 verifier after its own commit); round 8 at 59ae2602, round 7 at c93b8ef5, round 6 at defc9611, round 5 at b3045722, round 4 at dcbbea67, round 3 at e60177d8, round 2 at acefa2f6, round 1 at 0bed6a92
 **Verifier**: independent sub-agent (author != verifier)
-**Scope**: round 8 judges the fix of F33 to F35 (b7c1fd4b: a lent `BytesMut` out-buffer in `piperine-abi` `raw.rs` and the new `piperine_derive_2(k, params, out) -> u32`; the interpreter walk's refusal citing PI-05 AC 1; `git diff d65ecfea..59ae2602`, 10 files), the soundness of the ABI change and its callers, and whether F34's justification holds against PI-05 AC 1. Rounds 7 to 1 are kept below. F15 is out of scope (owned by `generics`).
+**Scope**: round 9 judges the fix of F36 and F37 (cc2b6f98: `Session::describe(project, spec, settings)` compiles a Rust request that sets a param some placement derives from and derives through it; `piperine_derive_3`; abi.md lists `BytesMut`; `git diff 99a13f80..c4a883a2`, 12 files), every caller of the changed `describe`, and that `piperine info` with no host value needs no `rustc`. Rounds 8 to 1 are kept below. F15 is out of scope (owned by `generics`).
 
 **Contract.** `git diff origin/main -- tests/support/ngspice.rs crates/piperine-parity/src` is empty.
 
-**Tests run (gate policy: targeted only, foreground).** Lane D env: `cargo test -p piperine-abi -p piperine-transpile --no-fail-fast`
-(38 results, all green, no warning); `cargo test -p piperine-api --lib` (79 pass, the `Scales` derive under the new signature) and
-`--test session --test derived --test bindings` (26, 17, 8 pass); `cargo build -p piperine-cli`; `check_proofs.py params-and-io`
-after this commit (`proofs.md`, `source_params` and `source_tables` among the groups). No workspace run.
+**Tests run (gate policy: targeted only, foreground).** Lane D env: `cargo test -p piperine-api -p piperine-transpile --no-fail-fast`
+(48 results, all green: every `piperine-api` target and the transpiler's); `cargo build -p piperine-cli`; `check_proofs.py
+params-and-io` after this commit (`proofs.md`; `clicommands`, `docs` hold `info` and MD-69's `piperine_derive_3`). No workspace run.
 
-**Own examples (HEAD binary, `/var/tmp/piperine-tmp-d/v3`).** Unchanged results after the signature change: `w.big=9007199254740993`
-1/7 V, `r: match md` after `w.md=Slow` 0.75 V, `rs: rt * 2.0` after `w.rt=500` 0.5 V, `w.rs=None` on the pinless wrapper 0.5 V, and a DC
-sweep of a param others derive from (`m.rr` 1k to 3k: 0.5, 0.667, 0.75 V). Hold.
+**The `describe` API change.** Callers: `piperine-cli` `commands/info.rs` (a lazy `Settings::from_environment`), and the
+`piperine-api` tests `session.rs` (four) and `derived.rs`; no other host surface calls it (no Python crate in this tree; `grep` of
+`describe(`). `piperine info pt.msl` under `env -i PATH=/usr/bin:/bin`, where no `rustc` is on the path, lists every param (exit 0):
+with no host value `sets_a_param` is false and the closure is never called. Holds.
 
-**The ABI change.** `BytesMut<'a>` is `#[repr(C)]`, its fields `pub(crate)`, built in safe code only by `from_slice(&'a mut [u8])`
-(an exclusive borrow for `'a`), neither `Clone` nor `Copy` (no aliasing `&mut`), and `as_mut_slice(&mut self)` hands out a slice no
-longer than the `&mut self` borrow; the zero-length case returns `&mut []`. Sound within the crate's trust model (abi.md §933: safe
-code builds only valid views). Callers: `load.rs`'s `DeriveExport` and `Loaded::derive` (lends a `vec![0; width]`, accepts only
-`written == width`), `Compiled::derive`, the `Derive` trait and its three impls (`Compiled`, `Evaluated`, the unit-test `Scales`), the
-printer (`print/derive.rs`, `use piperine_abi::raw::BytesMut` in `library.rs`; it writes only `bytes.len() <= out.len()` and answers 0
-otherwise) and `tests/derive.rs`: every one follows the new signature (`grep` of `.derive(`, `DeriveExport`, `impl Derive`). A library
-built under the previous `piperine_derive_2` cannot be loaded with the new type: the cache key hashes the generated source and the
-embedded ABI sources (`AbiSource::FILES`), both changed. The leak of F33 is gone. Two record gaps (F37).
-
-**F34 against PI-05 AC 1.** PI-05 AC 1 reads "IF a design **run on the interpreter backend** has a param of a type other than `f64`
-or `bool` THEN the system SHALL refuse it naming the param and the transpiled backend". `Session::describe` is not a run on any backend
-(HII-10, "no backend builds it and no analysis runs"), and it walks every binding with `Evaluated` whatever backend the request
-names (`session.rs:947`). So the justification holds for a request on the interpreter backend (the design would be refused there
-anyway, and the test uses `interp`), but not for one on the Rust backend: there the refusal tells the host to "use --backend rust",
-which it already does, and the description cannot show what a run would use for an integer, enum or composite bound from a param
-(HII-10, §8.1.23). Loud, not silent; misleading and narrower than the spec (F36).
+**Own examples (a throwaway `piperine-api` test, deleted, not committed).** `Wrap { rs: Option<f64>; cfg: Cfg; n: u8; let i =
+Inner { rs: rs, cfg: cfg, n: n }(p); }`, `describe` of a `rust` request:
+- `Top.w.n=3` shows `Top.w.i.n` = `Int(3)`: the compiled derive is used (F36 holds). With no text, `Int(1)`, no compile.
+- `Top.w.rs=3000` shows `Top.w.i.rs` = `None`; a run of the same text gives the child `Some(3000)` (round 6, `params_passed_through_a_wrappers_placement_run`).
+- `Top.w.cfg.g=2.5` shows `Top.w.i.cfg` with `g` = 1.0; a run gives 2.5.
+Both stale values are shown with no refusal (F38).
 
 ## Checks
 
@@ -190,8 +179,44 @@ which it already does, and the description cannot show what a run would use for 
 | F33. (Minor) Every call of the derive export leaks its answer | `print/derive.rs`: `List::from_slice(Box::leak(whole.into_boxed_slice()))` on each call, the host copying it out (`load.rs`); called once per derived param on each host `set`, DC sweep point and timed `set`, so a sweep of a param others derive from leaks per point; the module doc's "a recompute is a rare host `set`" does not hold for sweeps | let the host own the buffer: pass an output slice of the child's pin width (`PinLayout`) to `piperine_derive_2` and have it write and answer a status | b7c1fd4b; `piperine_derive_2(k, params, out: BytesMut) -> u32` writes a host-lent buffer, nothing is allocated for the host; `transpile` `derive.rs` (`compiled.derive(0, &bytes(2.0), 8)`), own DC sweep |
 | F34. (Minor) The interpreter walk's missing derive is reported as a compiled design that does not match its plan | `Evaluated::derive` (`params.rs`) is `None` for a binding over an integer, enum or composite param; `Params::changes_from` maps `None` to `Failure::Backend` "the derive function .. gave no value (the compiled design does not match its plan)", reached by `Session::describe` with a host value | refuse by name on that path ("the description recomputes `f64` and `bool` bindings only" naming the binding), as the interpreter backend already does, with a test of `describe` over an enum-reading binding | b7c1fd4b; `apisession` `describing_a_set_the_interpreter_cannot_derive_names_the_interpreter_not_the_plan` (`E0802`, `--backend rust`, no "does not match"); for a Rust-backend request see F36 |
 | F35. (Minor, cleanliness) A dead parameter and a message patched by text replacement | `Session::set_exact_integer(.., _ir: &Ir, ..)` keeps an unused parameter; `Session::write_leaf_change` rewrites a refusal with `message.replacen("refuses the value NaN", ..)`, a composite change that carries `NaN` as its value so the message the write builds is wrong first | drop `_ir`; give `Changed` the text to show (or build the composite refusal with it) instead of patching the message | b7c1fd4b; `_ir` dropped from `set_exact_integer`; `Changed::text`/`shown()` carries the host's text, the `replacen` patch is gone |
-| F36. (Minor) `Session::describe` of a Rust-backend request refuses a value bound from an integer, enum or composite param and tells the host to "use --backend rust" | `session.rs:947` builds `Evaluated` for every request; `Evaluated::derive` refuses such a binding ("which the interpreter does not evaluate ...: use --backend rust"); PI-05 AC 1 governs a run on the interpreter backend only, and HII-10 says the description shows "the values a run uses"; the F34 test describes an `interp` request only | evaluate those bindings for the description (the elaborator's const evaluator folds every param type), or refuse naming the real limit of the description (and a `GAPS.md` row with an owner); test a `rust` request | |
-| F37. (Minor, records) The new ABI view and the changed derive contract are not written down | `BytesMut<'a>` joins `piperine-abi` `raw.rs` but `.specs/features/device-abi/abi.md` (§933 lists `Str`, `Bytes`, `List`, `Module` as the views with private fields) does not name it; the export kept the symbol `piperine_derive_2` across a signature change although `print/derive.rs` says "the suffix is the version of this contract" (no build is affected: the cache key changes, and the branch is unmerged) | add `BytesMut` to abi.md beside `Bytes`; record the derive contract's current signature where MD-69 names it, or bump the suffix | |
+| F36. (Minor) `Session::describe` of a Rust-backend request refuses a value bound from an integer, enum or composite param and tells the host to "use --backend rust" | `session.rs:947` builds `Evaluated` for every request; `Evaluated::derive` refuses such a binding ("which the interpreter does not evaluate ...: use --backend rust"); PI-05 AC 1 governs a run on the interpreter backend only, and HII-10 says the description shows "the values a run uses"; the F34 test describes an `interp` request only | evaluate those bindings for the description (the elaborator's const evaluator folds every param type), or refuse naming the real limit of the description (and a `GAPS.md` row with an owner); test a `rust` request | cc2b6f98; `describe` of a Rust request compiles and derives through `Compiled` (own probe: `Top.w.n=3` shows the child `Int(3)`); `apisession` describe tests; `info` with no host value calls no `rustc` (own run with no `rustc` on the path). The composite and `Option` paths of `describe` are F38 |
+| F37. (Minor, records) The new ABI view and the changed derive contract are not written down | `BytesMut<'a>` joins `piperine-abi` `raw.rs` but `.specs/features/device-abi/abi.md` (§933 lists `Str`, `Bytes`, `List`, `Module` as the views with private fields) does not name it; the export kept the symbol `piperine_derive_2` across a signature change although `print/derive.rs` says "the suffix is the version of this contract" (no build is affected: the cache key changes, and the branch is unmerged) | add `BytesMut` to abi.md beside `Bytes`; record the derive contract's current signature where MD-69 names it, or bump the suffix | cc2b6f98; abi.md §933 lists `BytesMut`; the export is `piperine_derive_3`, recorded in MD-69 (`docs` `state_records_the_derived_param_decision`) |
+| F38. (Major, silent) `Session::describe` shows a stale child after a host value for an `Option` or a leaf of a composite param that a placement passes down | own probe (`describe`, `rust` request): `Top.w.rs=3000` shows `Top.w.i.rs` `None`, `Top.w.cfg.g=2.5` shows `Top.w.i.cfg.g` 1.0, where a run gives `Some(3000)` and 2.5; `describe` writes both through `Params::leaf_change` + `apply_leaf` (`session.rs` the `option_leaves` arm and the leaf arms of both loops), never through `Params::changes_composite`, which the run's `write_leaf_change` uses; HII-10: the description shows "the values a run uses" | route `describe`'s leaf and `Option` writes through `changes_composite` with the same `derive`, and test both cases in `describe` | |
+
+## Round 8 record (fix of F33 to F35)
+
+**Round 8 verdict**: FAIL
+**Round 8 proofs**: `proofs.md` at 59ae2602 (the round 7 fix, 114 pass, 0 fail; re-run by the round 8 verifier after its own commit); round 7 at c93b8ef5, round 6 at defc9611, round 5 at b3045722, round 4 at dcbbea67, round 3 at e60177d8, round 2 at acefa2f6, round 1 at 0bed6a92
+**Round 8 scope**: round 8 judges the fix of F33 to F35 (b7c1fd4b: a lent `BytesMut` out-buffer in `piperine-abi` `raw.rs` and the new `piperine_derive_2(k, params, out) -> u32`; the interpreter walk's refusal citing PI-05 AC 1; `git diff d65ecfea..59ae2602`, 10 files), the soundness of the ABI change and its callers, and whether F34's justification holds against PI-05 AC 1. Rounds 7 to 1 are kept below. F15 is out of scope (owned by `generics`).
+
+**Contract.** `git diff origin/main -- tests/support/ngspice.rs crates/piperine-parity/src` is empty.
+
+**Tests run (gate policy: targeted only, foreground).** Lane D env: `cargo test -p piperine-abi -p piperine-transpile --no-fail-fast`
+(38 results, all green, no warning); `cargo test -p piperine-api --lib` (79 pass, the `Scales` derive under the new signature) and
+`--test session --test derived --test bindings` (26, 17, 8 pass); `cargo build -p piperine-cli`; `check_proofs.py params-and-io`
+after this commit (`proofs.md`, `source_params` and `source_tables` among the groups). No workspace run.
+
+**Own examples (HEAD binary, `/var/tmp/piperine-tmp-d/v3`).** Unchanged results after the signature change: `w.big=9007199254740993`
+1/7 V, `r: match md` after `w.md=Slow` 0.75 V, `rs: rt * 2.0` after `w.rt=500` 0.5 V, `w.rs=None` on the pinless wrapper 0.5 V, and a DC
+sweep of a param others derive from (`m.rr` 1k to 3k: 0.5, 0.667, 0.75 V). Hold.
+
+**The ABI change.** `BytesMut<'a>` is `#[repr(C)]`, its fields `pub(crate)`, built in safe code only by `from_slice(&'a mut [u8])`
+(an exclusive borrow for `'a`), neither `Clone` nor `Copy` (no aliasing `&mut`), and `as_mut_slice(&mut self)` hands out a slice no
+longer than the `&mut self` borrow; the zero-length case returns `&mut []`. Sound within the crate's trust model (abi.md §933: safe
+code builds only valid views). Callers: `load.rs`'s `DeriveExport` and `Loaded::derive` (lends a `vec![0; width]`, accepts only
+`written == width`), `Compiled::derive`, the `Derive` trait and its three impls (`Compiled`, `Evaluated`, the unit-test `Scales`), the
+printer (`print/derive.rs`, `use piperine_abi::raw::BytesMut` in `library.rs`; it writes only `bytes.len() <= out.len()` and answers 0
+otherwise) and `tests/derive.rs`: every one follows the new signature (`grep` of `.derive(`, `DeriveExport`, `impl Derive`). A library
+built under the previous `piperine_derive_2` cannot be loaded with the new type: the cache key hashes the generated source and the
+embedded ABI sources (`AbiSource::FILES`), both changed. The leak of F33 is gone. Two record gaps (F37).
+
+**F34 against PI-05 AC 1.** PI-05 AC 1 reads "IF a design **run on the interpreter backend** has a param of a type other than `f64`
+or `bool` THEN the system SHALL refuse it naming the param and the transpiled backend". `Session::describe` is not a run on any backend
+(HII-10, "no backend builds it and no analysis runs"), and it walks every binding with `Evaluated` whatever backend the request
+names (`session.rs:947`). So the justification holds for a request on the interpreter backend (the design would be refused there
+anyway, and the test uses `interp`), but not for one on the Rust backend: there the refusal tells the host to "use --backend rust",
+which it already does, and the description cannot show what a run would use for an integer, enum or composite bound from a param
+(HII-10, §8.1.23). Loud, not silent; misleading and narrower than the spec (F36).
 
 ## Round 7 record (fix of F30 to F32)
 
@@ -509,3 +534,5 @@ Round 6: F30 to F32 need an implementer; F31 item 1 (integers above 2^53 through
 Round 7: F30 to F32 are closed by the typed derive; F33 to F35 are minor and need an implementer. Every refusal of §8.1.19/§8.1.23 forms judged in round 6 is gone, so no `GAPS.md` row is owed by this feature for them.
 
 Round 8: F33 to F35 are closed; F36 and F37 are minor and need an implementer.
+
+Round 9: F36 and F37 are closed; F38 needs an implementer.
