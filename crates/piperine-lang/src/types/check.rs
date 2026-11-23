@@ -97,6 +97,9 @@ pub(super) struct Checker<'d> {
     /// The placements whose arguments are being typed, innermost last: the module, or `None` for
     /// a core module.
     pub(super) placing: Vec<Option<DeclId>>,
+    /// How many `ddx` values are being typed: a flow probe of a branch with no potential contribution may be read there,
+    /// where it is a leaf the derivative reads symbolically (§14.2.3), though it is no value elsewhere (`probe`).
+    pub(super) differentiated: u32,
     /// The declaration being checked: a module, a function or a constant.
     pub(super) owner: Option<DeclId>,
     pub(super) context: Context,
@@ -189,6 +192,7 @@ impl<'d> Checker<'d> {
             records: Records::default(),
             lets_open: BTreeMap::new(),
             placing: Vec::new(),
+            differentiated: 0,
             owner: None,
             context: Context::Module,
             event_slot: None,

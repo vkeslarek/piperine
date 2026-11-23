@@ -120,8 +120,8 @@ impl Checker<'_> {
         match (role, target) {
             (QuantityRole::Potential, _) | (QuantityRole::Flow, true) => Some(Ty::F64),
             // The flow of a branch the module drives with a potential (`v(p, n) +> ddt(l * i(p, n))`,
-            // the inductor) is a value; the flow of a flow branch is outside the subset.
-            (QuantityRole::Flow, false) if self.contributes_potential_to(args) => Some(Ty::F64),
+            // the inductor) is a value; the flow of a flow branch is no value, but a leaf of a `ddx` value (`differentiated`).
+            (QuantityRole::Flow, false) if self.contributes_potential_to(args) || self.differentiated > 0 => Some(Ty::F64),
             (QuantityRole::Flow, false) => {
                 self.unsupported(file, node.span, "flow probe read as a value");
                 None
@@ -225,6 +225,9 @@ impl Checker<'_> {
         if name == "analysis" {
             return self.analysis_call(expr, args);
         }
+        if name == "ddx" {
+            return self.ddx_call(expr, args);
+        }
         // §3.2: the arguments bind as a function's do, by position or by the name the row gives
         // its parameters. The arguments of a core module are read through a result with a direct
         // dependence (§8.3.6): a `let` that reads itself through one is a cycle with no unknown
@@ -253,6 +256,30 @@ impl Checker<'_> {
             "cross" => &["e", "ttol", "etol"],
             _ => &[],
         }
+    }
+
+    /// `ddx(e, probe)` (§14.2): `e` is an `f64`, and the second argument is a probe call of a
+    /// potential or a flow of a branch of this module (`E0451`: `p.inflow()` is no probe call,
+    /// and neither is a value or a handle). Both are read as `f64`; the result is an `f64`.
+    fn ddx_call(&mut self, expr: ExprId, args: &[Arg]) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        let [value, variable] = args else {
+            self.arity_mismatch(file, span, 2, args);
+            return None;
+        };
+        self.differentiated += 1;
+        self.check_argument(value.value, &Ty::F64);
+        self.differentiated -= 1;
+        let probe_call = matches!(&self.design.expr_node(variable.value).kind, ExprKind::Call { class: crate::pom::CallClass::Probe, .. });
+        if !probe_call {
+            let at = self.design.expr_node(variable.value).span;
+            self.coded(file, "E0451", at, "the second argument of `ddx` must be a probe call of a potential or a flow of a branch of this module (§14.2.2); `p.inflow()` is not accepted".to_string(), "not a probe call");
+            self.infer(variable.value);
+            return None;
+        }
+        self.exprs[variable.value.index()] = self.probe(variable.value, true);
+        Some(Ty::F64)
     }
 
     /// `analysis(kind)` (§14.4): a `bool`. `Static` is true in an equilibrium solve; `Dc`,

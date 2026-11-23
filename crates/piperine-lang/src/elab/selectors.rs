@@ -174,6 +174,8 @@ impl Elaboration<'_, '_> {
                 Expr::Probe { plus, minus } => Some(format!("the probe of ({}, {})", self.terminal_name(*plus), self.terminal_name(*minus))),
                 Expr::Flow { branch } => Some(format!("the flow of the branch {}", self.branch_name(scope, *branch as usize))),
                 Expr::Derivative(_) => Some("a `ddt` result".to_string()),
+                Expr::Delay(_) => Some("a `delay` result".to_string()),
+                Expr::Noise(_) => Some("a `noise` value".to_string()),
                 Expr::Limit { .. } => Some("a `limit` value".to_string()),
                 _ => None,
             };

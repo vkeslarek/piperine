@@ -68,10 +68,9 @@ impl Checker<'_> {
             }
         }
         if self.context == Context::Analog {
+            // a stream other than `sim` and `checks` is a trace (§19 rule 4): it checks
             if is_reserved(&name) {
                 self.analog_writes_reserved(file, span, &name);
-            } else {
-                self.analog_trace(file, span);
             }
         }
         let mut seen = BTreeSet::new();
@@ -112,13 +111,6 @@ impl Checker<'_> {
         self.coded(file, "E0603", span, message, "`analog` writes a reserved stream");
     }
 
-    /// An `emit!` on a stream other than `sim` and `checks` reached from `analog`: a trace
-    /// (§19), which the M1 elaborator does not lower (it has no `TRACE` pin), so it is refused
-    /// by name here rather than failing elaboration (msl-digital edge case 7).
-    fn analog_trace(&mut self, file: FileId, span: Span) {
-        self.unsupported(file, span, "an `emit!` in an `analog` block");
-    }
-
     /// A call of `function`, which may reach `emit!`: from `analog` it writes neither `sim` nor `checks`
     /// (`E0603`). Where an emitting call may not stand at all, in a definition, a body `let` or a const
     /// context, it is `E0122` (`refuse_outside_class`); `E0601` is `emit!` written directly (§19 rule 10).
@@ -135,8 +127,6 @@ impl Checker<'_> {
         if self.context == Context::Analog {
             if let Some(stream) = streams.iter().find(|s| is_reserved(s)) {
                 self.analog_writes_reserved(file, span, &stream.clone());
-            } else {
-                self.analog_trace(file, span);
             }
         }
     }

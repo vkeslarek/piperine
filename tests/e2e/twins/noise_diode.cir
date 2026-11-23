@@ -1,0 +1,22 @@
+* noise_diode — the shot and flicker noise of a forward-biased junction.
+* A 1 mA current source with AC 1 drives a diode (is 1e-14, n 1, kf 1e-15, af 1.2); the noise
+* is read at the junction node `a` and referred to the source I1. ngspice's diode noise
+* (diosetup/dionoise.c) is the shot density 2 q |I| and the flicker density kf |I|^af / f^ef
+* (ef = 1): the twin writes the same two sources explicitly, so a disagreement is the
+* solver's, not a model's. The source's own impedance is infinite, so the junction's
+* small-signal resistance nvt/I is the whole transfer and the input-referred density is the
+* output density over that resistance. Four decades from 10 Hz put the flicker corner
+* (about 800 Hz) inside the band.
+I1 0 a DC 1m AC 1
+D1 a 0 DMOD
+.model DMOD D (is=1e-14 n=1 kf=1e-15 af=1.2)
+.control
+noise v(a) I1 dec 10 10 100k
+setplot noise1
+wrdata noise_diode_psd onoise_spectrum
+wrdata noise_diode_ipsd inoise_spectrum
+setplot noise2
+wrdata noise_diode_total onoise_total
+wrdata noise_diode_itotal inoise_total
+.endc
+.end

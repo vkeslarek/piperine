@@ -35,7 +35,7 @@ use crate::model::{
     Drive,
     BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, ChildValue, Constant, EmitField, Env, EventSource, Expr, ExprData, FieldsForm, FunctionData, InstanceData, Ir,
     CommitTarget, LevelPart, Local, MathFn, Method, NodeRef, Operator, Origin, Param, Place, Projection, Quantity, QuantityRole, Stmt, Stream, ReprForm, Terminal, TypeData, TypeKind,
-    UnaryOp, ValueType,
+    UnaryOp, SessionParameter, ValueType,
 };
 use crate::real::Real;
 use crate::typing::Typing;
@@ -60,7 +60,7 @@ impl Ir {
     /// word `where`; `None` for a param with no check or an index out of range.
     pub(crate) fn param_check_text(&self, body: &BodyData, param: usize) -> Option<String> {
         let check = body.params.get(param)?.check?;
-        let scope = Scope { locals: &body.locals, params: &body.params, nodes: &body.nodes, carriers: &body.carriers, streams: &body.streams };
+        let scope = Scope { locals: &body.locals, params: &body.params, nodes: &body.nodes, carriers: &body.carriers, streams: &body.streams, session_parameters: &body.session_parameters };
         Some(Printer::new(self, false).render(scope, Piece::Expr(check)))
     }
 }
@@ -114,6 +114,7 @@ struct Scope<'a> {
     nodes: &'a [BodyNode],
     carriers: &'a [Carrier],
     streams: &'a [Stream],
+    session_parameters: &'a [SessionParameter],
 }
 
 /// One step of the iterative tree walk.
@@ -343,7 +344,7 @@ impl<'a> Printer<'a> {
     fn body(&mut self, body: &BodyData) {
         let at = self.at(&body.origin);
         self.line(0, &format!("body {}{at}", Printer::name(&body.name)));
-        let scope = Scope { locals: &body.locals, params: &body.params, nodes: &body.nodes, carriers: &body.carriers, streams: &body.streams };
+        let scope = Scope { locals: &body.locals, params: &body.params, nodes: &body.nodes, carriers: &body.carriers, streams: &body.streams, session_parameters: &body.session_parameters };
         for param in &body.params {
             let mut text = format!("param {}: {}", Printer::name(&param.name), param.ty);
             if let Some(default) = &param.default {
@@ -409,6 +410,31 @@ impl<'a> Printer<'a> {
                 let _ = write!(text, " abstol {}", self.render(scope, Piece::Expr(abstol)));
             }
             text.push_str(&self.at(&site.origin));
+            self.line(1, &text);
+        }
+        for (i, site) in body.delays.iter().enumerate() {
+            let maximum = site.maximum.map_or(String::new(), |m| format!(", {}", self.render(scope, Piece::Expr(m))));
+            let mut text = format!("delay{i}({}, {}{maximum}) {:?}", self.render(scope, Piece::Expr(site.input)), self.render(scope, Piece::Expr(site.time)), site.name);
+            text.push_str(&self.at(&site.origin));
+            self.line(1, &text);
+        }
+        for (i, partial) in body.partial_derivatives.iter().enumerate() {
+            let at = self.at(&partial.origin);
+            self.line(1, &format!("ddx{i} {:?}{at}", partial.name));
+        }
+        for (i, site) in body.traces.iter().enumerate() {
+            let stream = body.streams.get(site.stream as usize).map_or(format!("<bad stream {}>", site.stream), |s| format!("{:?}", s.name));
+            let at = self.at(&site.origin);
+            self.line(1, &format!("trace{i} {stream}{at}"));
+        }
+        for (i, parameter) in body.session_parameters.iter().enumerate() {
+            let at = self.at(&parameter.origin);
+            self.line(1, &format!("session S{i} {:?}{at}", parameter.name));
+        }
+        for (i, source) in body.noise_sources.iter().enumerate() {
+            let group = source.group.as_ref().map_or("none".to_string(), |g| format!("{g:?}"));
+            let mut text = format!("noise{i}({}, {group}) {:?}", self.render(scope, Piece::Expr(source.density)), source.name);
+            text.push_str(&self.at(&source.origin));
             self.line(1, &text);
         }
         for hoisted in &body.hoisted {
@@ -568,7 +594,7 @@ impl<'a> Printer<'a> {
         let instance = function.instance.as_ref().map(|instance| format!("  // instance of {}", instance.item)).unwrap_or_default();
         self.line(0, &format!("fn {}({}) -> {}{at}{instance}", Printer::name(&function.name), params.join(", "), function.ret));
         self.locals(1, &function.locals);
-        let scope = Scope { locals: &function.locals, params: &[], nodes: &[], carriers: &[], streams: &[] };
+        let scope = Scope { locals: &function.locals, params: &[], nodes: &[], carriers: &[], streams: &[], session_parameters: &[] };
         let body = function.body;
         // A block body prints one statement per line. In the full text its id is printed and on
         // the stack meanwhile. In the structural form each line is a statement of its own,
@@ -793,6 +819,22 @@ impl<'a> Printer<'a> {
                     next.extend([Piece::Text(" after ".into()), Piece::Expr(*after)]);
                 }
             }
+            Stmt::Trace { site, fields } => {
+                next.push(Piece::Text(format!("trace{site} {{")));
+                for (i, f) in fields.iter().enumerate() {
+                    if i > 0 {
+                        next.push(Piece::Text(", ".into()));
+                    }
+                    match f {
+                        EmitField::Value { field, value } => {
+                            next.push(Piece::Text(format!("f{field} = ")));
+                            next.push(Piece::Expr(*value));
+                        }
+                        EmitField::Text { name, text } => next.push(Piece::Text(format!("{} = {text:?}", Printer::name(name)))),
+                    }
+                }
+                next.push(Piece::Text("}".into()));
+            }
             Stmt::Emit { stream, fields } => {
                 let name = scope.streams.get(*stream as usize).map_or(format!("<bad stream {stream}>"), |s| Printer::name(&s.name));
                 next.push(Piece::Text(format!("emit {name}(")));
@@ -999,6 +1041,12 @@ impl<'a> Printer<'a> {
                 next.extend([text(format!("{}[", Printer::carrier(scope, *carrier))), Piece::Expr(*index), text("].changed()".into())])
             }
             Expr::Derivative(k) => next.push(text(format!("rate(D{k})"))),
+            Expr::Delay(k) => next.push(text(format!("delay{k}.value"))),
+            Expr::Noise(k) => next.push(text(format!("noise{k}.value"))),
+            Expr::SessionParameter { parameter } => {
+                let name = scope.session_parameters.get(*parameter as usize).map_or(format!("<bad session parameter {parameter}>"), |p| format!("{:?}", p.name));
+                next.push(text(format!("simparam({name})")));
+            }
             Expr::ParamPrevious(i) => next.push(text(format!("{}.prev()", scope.params.get(*i as usize).map_or(format!("<bad param {i}>"), |p| Printer::name(&p.name))))),
             Expr::Fired(e) => next.push(text(format!("fired(E{e})"))),
             Expr::Same { a, b } => next.extend([text("same(".into()), Piece::Expr(*a), text(", ".into()), Piece::Expr(*b), text(")".into())]),
@@ -1105,9 +1153,10 @@ impl<'a> Printer<'a> {
         let ty = |id: &ExprId| ir.exprs.get(id.index()).map(|e| e.ty.clone());
         match kind {
             Expr::Env(Env::Static | Env::Analysis(_)) | Expr::Fired(_) => Some(ValueType::Bool),
-            Expr::Real(_) | Expr::Math { .. } | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } | Expr::Flow { .. } | Expr::Derivative(_) => {
+            Expr::Real(_) | Expr::Math { .. } | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } | Expr::Flow { .. } | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) => {
                 Some(ValueType::F64)
             }
+            Expr::SessionParameter { .. } => Some(ValueType::Option(Box::new(ValueType::F64))),
             Expr::Bool(_) => Some(ValueType::Bool),
             Expr::Unit => Some(ValueType::Unit),
             Expr::Local(i) => scope.locals.get(*i as usize).map(|l| l.ty.clone()),
@@ -1324,6 +1373,9 @@ impl<'a> Printer<'a> {
             Expr::ElementPrevious { carrier, index } => format!("element_previous {carrier} {}", e(index)),
             Expr::ElementChanged { carrier, index } => format!("element_changed {carrier} {}", e(index)),
             Expr::Derivative(k) => format!("derivative D{k}"),
+            Expr::Delay(k) => format!("delay {k}"),
+            Expr::Noise(k) => format!("noise {k}"),
+            Expr::SessionParameter { parameter } => format!("simparam {parameter}"),
             Expr::ParamPrevious(i) => format!("param_previous {i}"),
             Expr::Fired(i) => format!("fired {i}"),
             Expr::Same { a, b } => format!("same {} {}", e(a), e(b)),
@@ -1403,6 +1455,16 @@ impl<'a> Printer<'a> {
             Stmt::Commit { carrier, value, after, target } => {
                 let target = target.as_ref().map_or(String::new(), |t| format!(" {}", Printer::target_key(t)));
                 format!("commit c{carrier} e{} {}{target}", value.0, after.map_or("-".to_string(), |a| format!("e{}", a.0)))
+            }
+            Stmt::Trace { site, fields } => {
+                let parts: Vec<String> = fields
+                    .iter()
+                    .map(|f| match f {
+                        EmitField::Value { field, value } => format!("f{field} e{}", value.0),
+                        EmitField::Text { name, text } => format!("{} {text:?}", Printer::name(name)),
+                    })
+                    .collect();
+                format!("trace t{site} ({})", parts.join(", "))
             }
             Stmt::Emit { stream, fields } => {
                 let parts: Vec<String> = fields

@@ -374,7 +374,7 @@ The user is away ("Tu sempre assume o default mais razoável e depois me conta")
 | `piperine-plan` | `plan.rs`, `digital.rs`, `netlist.rs`; new target `tests/operators_shape.rs` |
 | `piperine-transpile` | new `print/delay.rs`, `print/noise.rs`, `print/trace.rs`; `print/value.rs`, `print/analog.rs`, `print/reaction.rs`, `print/shape.rs`; new target `tests/operators.rs` |
 | `piperine-interp` | new `operators.rs`; `tests/frozen.rs` gains tests |
-| `piperine-lang` | `types/catalogue.rs`, `types/analog.rs`, `types/record.rs`; `elab/analog.rs`, `elab/hoist.rs`, new `elab/partial.rs`, `elab/delays.rs`, `elab/noise.rs`, `elab/session.rs`, `elab/traces.rs`; new targets `tests/types_operators.rs`, `tests/elab_operators.rs`; the `ddx`, `delay`, `noise`, `simparam` and trace rows of `types_subset.rs` rewritten |
+| `piperine-lang` | `types/catalogue.rs`, `types/analog.rs`, `types/record.rs`; `elab/analog.rs`, `elab/hoist.rs`, new `elab/partial.rs`, `elab/delays.rs`, `elab/noise.rs`, `elab/session.rs`, `elab/traces.rs`; new targets `tests/types_analog_operators.rs`, `tests/elab_operators.rs`; the `ddx`, `delay`, `noise`, `simparam` and trace rows of `types_subset.rs` rewritten |
 | `piperine-analog-solver` | `math/integration.rs`, `device/assembly.rs`; new target `tests/noise_numerics.rs` |
 | `piperine-solver` | `analyses/noise.rs`, `protocol/transient.rs`; new targets `tests/noise_report.rs`, `tests/jump_retake.rs`; one literal of `tests/abi_noise.rs` |
 | `piperine-api` | `request.rs`, `session.rs`, `table.rs`, `record.rs`, `recorder.rs`, new `noise.rs`; new targets `tests/noise.rs`, `tests/session_parameters.rs`, `tests/natures.rs`, `tests/traces.rs` |
@@ -385,3 +385,7 @@ The user is away ("Tu sempre assume o default mais razoável e depois me conta")
 ## Size
 
 44 tasks in eight phases, seven batches; see `tasks.md`.
+
+---
+
+**Amendment, user decision 2026-11-23:** "dtemp seria um signal e o tnom seria por instância, o que deixa o nosso core apenas com temp". The core keeps only the run temperature; `tnom` is a per-instance model param and not a session or run key, and `dtemp` is no core mechanism. AO-08 and the `tnom` rows of Q4, Q6 and D13 are withdrawn; task T45 removes what B1 to B3 delivered.

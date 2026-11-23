@@ -38,6 +38,16 @@ pub(super) struct Structure {
     pub(super) streams: Vec<Stream>,
     /// The derivative sites of the body, in the order their `Expr::Derivative` reads number them.
     pub(super) derivatives: Vec<Derivative>,
+    /// The `ddx` calls of the body, in source order (`partial.rs`).
+    pub(super) partial_derivatives: Vec<piperine_ir::PartialDerivative>,
+    /// The delay sites of the body, in the order their `Expr::Delay` reads number them.
+    pub(super) delays: Vec<piperine_ir::DelaySite>,
+    /// The noise sources of the body, in the order their `Expr::Noise` reads number them.
+    pub(super) noise_sources: Vec<piperine_ir::NoiseSource>,
+    /// The session parameters the body reads, one per name, in the order they were first read.
+    pub(super) session_parameters: Vec<piperine_ir::SessionParameter>,
+    /// The trace sites of the body (`emit!` in `analog`), in the order their `Stmt::Trace` numbers them.
+    pub(super) traces: Vec<piperine_ir::TraceSite>,
     /// The carriers each child binds at its carrier ports: (child index, one entry per port).
     pub(super) child_carriers: Vec<(u32, Vec<Option<u32>>)>,
     /// The param values of children that read the parent's params: (child, param, value).
@@ -83,6 +93,10 @@ pub(super) struct Frame {
     pub(super) failed: BTreeSet<ExprId>,
     /// The derivative site of each `ddt` call read in the frame (`derivatives.rs`): one call, one site.
     pub(super) derivatives: BTreeMap<ExprId, u32>,
+    /// The delay site of each `delay` call read in the frame (`delays.rs`): one call, one site.
+    pub(super) delays: BTreeMap<ExprId, u32>,
+    /// The noise source of each `noise` call read in the frame (`noise.rs`): one call, one source.
+    pub(super) noise_sources: BTreeMap<ExprId, u32>,
     /// For a reach frame (`reach.rs`), the index of the child it stands for in the body's children.
     pub(super) child: Option<u32>,
     /// The loop variables of the unrolled analog loops the placement sat in when it was hoisted,
@@ -93,7 +107,7 @@ pub(super) struct Frame {
 impl Frame {
     /// The frame of the body's own module.
     pub(super) fn root(module: DeclId) -> Frame {
-        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), child: None, unrolled: Bindings::new() }
+        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, unrolled: Bindings::new() }
     }
 }
 
@@ -286,6 +300,21 @@ impl Elaboration<'_, '_> {
         }
         for derivative in structure.derivatives {
             self.ir.derivative(body, derivative);
+        }
+        for delay in structure.delays {
+            self.ir.delay(body, delay);
+        }
+        for trace in structure.traces {
+            self.ir.trace(body, trace);
+        }
+        for parameter in structure.session_parameters {
+            self.ir.session_parameter(body, parameter);
+        }
+        for source in structure.noise_sources {
+            self.ir.noise_source(body, source);
+        }
+        for partial in structure.partial_derivatives {
+            self.ir.partial_derivative(body, partial);
         }
         for (child, carriers) in structure.child_carriers {
             self.ir.bind_child_carriers(body, child, carriers);

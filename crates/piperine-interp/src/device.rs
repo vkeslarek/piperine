@@ -102,6 +102,13 @@ impl Interpreted {
                 // a derivative site's rate: no body that has one reaches the interpreter, which
                 // refuses it by name (analog-structure R1, AS-17).
                 Source::Derivative(_) => None,
+                // a delay site's output: no body that has one reaches the interpreter, which
+                // refuses it by name (analog-operators R1, AO-11)
+                Source::Delay(_) => None,
+                // a noise source's input: refused by name likewise (AO-11)
+                Source::NoiseValue(_) => None,
+                // a session parameter: refused by name likewise (AO-11)
+                Source::SessionParameter(_) => None,
                 // a param's previous value or changed byte: refused by name likewise (T15)
                 Source::ParamPrevious(_) | Source::ParamChanged(_) => None,
             };
@@ -133,6 +140,10 @@ impl Interpreted {
             // the interpreter refuses a body with a derivative site by name (R1, AS-17)
             Term::DerivativeRate(k) | Term::DerivativeState(k) => {
                 return Err(Fault::new(Walk::UNEXECUTED, format!("{}: derivative site {k} is not run by the interpreter", body.name())));
+            }
+            // the interpreter refuses a body with a delay site by name (R1, AO-11)
+            Term::DelayOutput(k) | Term::DelayHistory(k) => {
+                return Err(Fault::new(Walk::UNEXECUTED, format!("{}: delay site {k} is not run by the interpreter", body.name())));
             }
             Term::Eq(b) => {
                 let branch = &body.branches()[b as usize];
@@ -297,7 +308,7 @@ impl Factory for BodyFactory {
                 Err(Fault::new(Interpreted::UNRUN, format!("{name}: function {k} is digital; the interpreter runs none")))
             }
             // `bound_step` and a `cross` tolerance: refused by name (T12).
-            Mode::Cap(_) | Mode::Ttol(_) | Mode::Etol(_) | Mode::DerivativeAbstol(_) => {
+            Mode::Cap(_) | Mode::Ttol(_) | Mode::Etol(_) | Mode::DerivativeAbstol(_) | Mode::DelayMaximum(_) | Mode::Noise(_) => {
                 Err(Fault::new(Interpreted::UNRUN, format!("{name}: function {k} is digital; the interpreter runs none")))
             }
         }

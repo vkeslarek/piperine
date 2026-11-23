@@ -1,0 +1,96 @@
+//! `emit!` in `analog` run from source (analog-operators AO-09, Part VI §19 rule 3): each bench
+//! writes the trace stream `newton` at every evaluation.
+
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// A diode: its Newton path from 0 V to the operating point takes several iterations.
+module TracedDiode(a: Electrical) {
+    is: f64 = 1e-14;
+    nvt: f64 = 25.85m;
+}
+analog for TracedDiode {
+    i(a, gnd) +> is * ((v(a, gnd) / nvt).exp() - 1.0);
+    emit!("newton", v = v(a, gnd));
+}
+
+/// A 5 V source through 1 kohm into the diode.
+module DiodeBench() {
+    signal s: Electrical;
+    signal a: Electrical;
+    let d = TracedDiode(a);
+    let r = Resistor { r: 1k }(s, a);
+}
+analog for DiodeBench { v(s, gnd) +> 5.0; }
+
+/// The same circuit with no trace.
+module QuietDiode(a: Electrical) {
+    is: f64 = 1e-14;
+    nvt: f64 = 25.85m;
+}
+analog for QuietDiode { i(a, gnd) +> is * ((v(a, gnd) / nvt).exp() - 1.0); }
+
+module QuietBench() {
+    signal s: Electrical;
+    signal a: Electrical;
+    let d = QuietDiode(a);
+    let r = Resistor { r: 1k }(s, a);
+}
+analog for QuietBench { v(s, gnd) +> 5.0; }
+
+/// A trace under an `if`: only the evaluations with `v(a)` above 0.5 V write it.
+module GuardedDiode(a: Electrical) {
+    is: f64 = 1e-14;
+    nvt: f64 = 25.85m;
+}
+analog for GuardedDiode {
+    i(a, gnd) +> is * ((v(a, gnd) / nvt).exp() - 1.0);
+    if v(a, gnd) > 0.5 { emit!("newton", v = v(a, gnd)); }
+}
+
+module GuardedBench() {
+    signal s: Electrical;
+    signal a: Electrical;
+    let d = GuardedDiode(a);
+    let r = Resistor { r: 1k }(s, a);
+}
+analog for GuardedBench { v(s, gnd) +> 5.0; }
+
+/// A source that steps 0 to 1 V at 1 us, steeply enough that a step across it is rejected.
+module StepBench() {
+    signal s: Electrical;
+    signal o: Electrical;
+    let r = Resistor { r: 1k }(s, o);
+    let c = Capacitor { c: 1n }(o, gnd);
+}
+analog for StepBench {
+    v(s, gnd) +> if now() > 1u { 1.0 } else { 0.0 };
+    emit!("newton", v = v(o, gnd));
+}
+
+module Capacitor(p: Electrical, n: Electrical) {
+    c: f64 where c > 0.0;
+}
+analog for Capacitor { i(p, n) +> ddt(c * v(p, n)); }
+
+/// A trace written by a `fn` the analog block calls: inlined where it is called, so it writes as a trace does.
+fn note(level: f64) { emit!("newton", v = level); }
+
+module FnTracedDiode(a: Electrical) {
+    is: f64 = 1e-14;
+    nvt: f64 = 25.85m;
+}
+analog for FnTracedDiode {
+    i(a, gnd) +> is * ((v(a, gnd) / nvt).exp() - 1.0);
+    note(v(a, gnd));
+}
+
+module FnTracedBench() {
+    signal s: Electrical;
+    signal a: Electrical;
+    let d = FnTracedDiode(a);
+    let r = Resistor { r: 1k }(s, a);
+}
+analog for FnTracedBench { v(s, gnd) +> 5.0; }

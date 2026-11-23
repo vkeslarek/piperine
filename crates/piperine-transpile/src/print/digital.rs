@@ -40,6 +40,9 @@ impl<'a> DigitalPrinter<'a> {
             carriers: self.body.carriers().iter().map(|c| Text::ident(&c.name)).collect(),
             flows: Vec::new(),
             derivatives: (0..self.body.derivatives().len() as u32).map(AnalogPrinter::derivative_pin).collect(),
+            delays: (0..self.body.delays().len() as u32).map(|k| self.names.read_name(Source::Delay(k))).collect(),
+            noises: Vec::new(),
+            session_parameters: (0..self.body.session_parameters().len() as u32).map(|k| self.names.read_name(Source::SessionParameter(k))).collect(),
             param_previous: (0..self.body.params().len() as u32).map(|p| self.names.read_name(Source::ParamPrevious(p))).collect(),
             previous: (0..self.body.carriers().len() as u32).map(|c| AnalogPrinter::carrier_part(self.body, c, "previous")).collect(),
         }
@@ -67,6 +70,8 @@ impl<'a> DigitalPrinter<'a> {
             }
             Mode::Cap(site) => format!("cap{site}"),
             Mode::DerivativeAbstol(k) => format!("derivative{k}_abstol"),
+            Mode::DelayMaximum(k) => format!("delay{k}_maximum"),
+            Mode::Noise(k) => format!("noise{k}"),
             Mode::Limit(_) | Mode::Stim(_) | Mode::Terms | Mode::Check(_) => "terms".to_string(),
         }
     }
@@ -110,7 +115,7 @@ impl<'a> DigitalPrinter<'a> {
             | Source::Fired(_)
             | Source::Settle
             | Source::ParamChanged(_) => format!("let {name} = {cx}.bool({i});"),
-            Source::Node(_) | Source::Derivative(_) | Source::Temperature | Source::Gmin | Source::SourceScale | Source::Time | Source::Freq => {
+            Source::Node(_) | Source::Derivative(_) | Source::Delay(_) | Source::Temperature | Source::Gmin | Source::SourceScale | Source::Time | Source::Freq => {
                 format!("let {name} = {cx}.f64({i});")
             }
             // abi.md §4.2: `STATIC` is one `BOOL` byte
@@ -126,7 +131,9 @@ impl<'a> DigitalPrinter<'a> {
                 Some(ty) if self.body.ir().is_composite_value(ty) || matches!(ty, ValueType::Enum(_)) => format!("let {name} = {};", ValuePrinter::pin_value(&values.pin_type(ty)?, &format!("{cx}.bytes({i})"))),
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
-            Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::LimitLast(_) | Source::LimitAge(_) => {
+            // the pin of a session parameter holds an `Option<f64>`: known when the host gave it
+            Source::SessionParameter(_) => format!("let {name} = {{ let pin_ = {cx}.bytes({i}); (pin_[8] != 0).then(|| f64::from_le_bytes([pin_[0], pin_[1], pin_[2], pin_[3], pin_[4], pin_[5], pin_[6], pin_[7]])) }};"),
+            Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::NoiseValue(_) | Source::LimitLast(_) | Source::LimitAge(_) => {
                 return Ok(None);
             }
             // the one `CarrierArray` over an array pin, a reaction's read (`print/carrier_array.rs`)

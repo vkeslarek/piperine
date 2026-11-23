@@ -120,17 +120,14 @@ fn the_digital_card_runs() {
 }
 
 #[test]
-fn the_debug_prints_card_is_refused_for_the_analog_trace() {
-    // cheatsheet#7 (refused): the four reactions that print and `analog for M { emit!("newton", ..); }`: the
-    // `settle` event runs (L52, closed) and an `emit!` in `analog` is `P0001` (L49)
+fn the_debug_prints_card_runs_with_its_analog_trace() {
+    // cheatsheet#7 (runs since analog-operators T37): the four reactions that print and `analog for M { emit!("newton", ..); }`:
+    // the `settle` event (L52) and the trace in `analog` (L49) both run
     let chapter = Chapter::read();
-    let before = "module M(a: Electrical, in clk: Bit, in d: Bit) { vth: f64 = 0.5; signal q: Bit; }\n";
-    let after = "module Top() { signal a: Electrical; signal c: Bit; signal d: Bit; let m = M(a, c, d); }\n";
+    let before = "module M(a: Electrical, in clk: Bit, in d: Bit) { vth: f64 = 0.5; signal q: Bit = false; }\n";
+    let after = "module Top() { signal a: Electrical; signal c: Bit = false; signal d: Bit = false; let m = M(a, c, d); }\nanalog for Top { v(a, gnd) +> 0.7; }\n";
     let model = chapter.wrapped("prints.msl", before, "cheatsheet#7", after);
-    let given = Surroundings::refusals(&model, "cheatsheet#7");
-    assert!(Surroundings::holds(&given, "P0001", "an `emit!` in an `analog` block is not supported yet"), "{given:?}");
-    assert!(!given.iter().any(|(_, message)| message.contains("`settle`")), "`settle` is no longer refused: {given:?}");
-    Refusal::expect(model.run(Commands::operating_point()), "cheatsheet#7", "P0001", "an `emit!` in an `analog` block is not supported yet");
+    model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("cheatsheet#7: {failure}"));
 }
 
 #[test]

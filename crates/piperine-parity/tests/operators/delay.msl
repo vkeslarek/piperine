@@ -1,0 +1,76 @@
+//! `delay` run from source (analog-operators AO-02, Part IV §14.6): the input is the ramp
+//! `1 + 1000 * now()` volts, so its value `td` ago is `1 + 1000 * (t - td)` once `t > td`, and the
+//! operating point's 1 V before.
+
+/// `delay(x, 1 ms)`: before 1 ms the operating point's value, after it `x` as it was 1 ms ago.
+module ConstantDelayBench() {
+    signal src: Electrical;
+    signal o: Electrical;
+}
+analog for ConstantDelayBench {
+    v(src, gnd) +> 1.0 + 1000.0 * now();
+    v(o, gnd) +> delay(v(src, gnd), 1m);
+}
+
+/// `delay(x, 0)` is `x` in any solve.
+module ZeroDelayBench() {
+    signal src: Electrical;
+    signal o: Electrical;
+}
+analog for ZeroDelayBench {
+    v(src, gnd) +> 1.0 + 1000.0 * now();
+    v(o, gnd) +> delay(v(src, gnd), 0.0);
+}
+
+/// A varying `td` held to `max`: `td = 0.5 * now()`, `max = 0.1 ms`, so the delay is `0.5 t` until
+/// `t = 0.2 ms` and `0.1 ms` after it, on the ramp `1000 * now()`.
+module VaryingDelayBench() {
+    signal src: Electrical;
+    signal o: Electrical;
+}
+analog for VaryingDelayBench {
+    v(src, gnd) +> 1000.0 * now();
+    v(o, gnd) +> delay(v(src, gnd), 0.5 * now(), 0.1m);
+}
+
+/// A negative `td` is the run error `E0453`.
+module NegativeDelayBench() {
+    signal src: Electrical;
+    signal o: Electrical;
+}
+analog for NegativeDelayBench {
+    v(src, gnd) +> 1.0;
+    v(o, gnd) +> delay(v(src, gnd), -1n);
+}
+
+/// A `max` that is not positive is the run error `E0453`.
+module NonPositiveMaxBench() {
+    signal src: Electrical;
+    signal o: Electrical;
+}
+analog for NonPositiveMaxBench {
+    v(src, gnd) +> 1.0;
+    v(o, gnd) +> delay(v(src, gnd), 1n, 0.0);
+}
+
+/// `delay(x, 1 ms)` of a `let` that reads a `limit`: the input is read at a solution, where the limited
+/// iterate is the unlimited one, so it gives what `ConstantDelayBench` gives.
+module LimitedDelayBench() {
+    signal src: Electrical;
+    signal o: Electrical;
+}
+analog for LimitedDelayBench {
+    v(src, gnd) +> 1.0 + 1000.0 * now();
+    let seen = limit(v(src, gnd), |new, old| new, 1.0);
+    v(o, gnd) +> delay(seen, 1m);
+}
+
+/// `delay` of a stimulus (§14.3.1, §11.1.5): in a sweep the response is `exp(-j w td)` times the phasor of the
+/// stimulus, `2 exp(0.5 j)`, so `v(o)` at a frequency `f` is `2 exp(j (0.5 - 2 pi f td))`; at the operating point
+/// the stimulus is 0.
+module DelayedStimulusBench() {
+    signal o: Electrical;
+}
+analog for DelayedStimulusBench {
+    v(o, gnd) +> delay(ac_stim(2.0, 0.5), 1u);
+}

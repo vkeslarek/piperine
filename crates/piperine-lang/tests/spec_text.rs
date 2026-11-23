@@ -175,8 +175,9 @@ fn every_error_code_is_defined_exactly_once() {
 }
 
 /// The codes value semantics retired (Appendix G.71) and `E0701`, retired by generics T55 (`cast`'s `where` is its check): each is named by the Resolution that
-/// retires it and by G.71, and by no defining row.
-const RETIRED_CODES: [&str; 7] = ["E0102", "E0331", "E0150", "E0151", "E0906", "E0908", "E0701"];
+/// retires it and by G.71, and by no defining row; `E0456`, retired by analog-operators (user decision
+/// 2026-11-23, `simparam(name)` is an `Option<f64>`), is named by §14.4.6.
+const RETIRED_CODES: [&str; 8] = ["E0102", "E0331", "E0150", "E0151", "E0906", "E0908", "E0701", "E0456"];
 
 #[test]
 fn b1_counts_62_constructs() {

@@ -35,7 +35,6 @@ pub struct Tolerances {
     /// Charge tolerance in Coulombs for truncation error (default: 1e-14)
     pub chgtol: f64,
     pub temperature: f64,
-    pub tnom: f64,
     /// Circuit-wide diagonal conductance to ground on every node (default 0).
     /// Helps convergence on floating/poorly-damped topologies (ngspice gshunt).
     pub gshunt: f64,
@@ -73,7 +72,6 @@ impl Default for Tolerances {
             trtol: 7.0,
             chgtol: 1e-14,
             temperature: 300.15,
-            tnom: 300.15,
             gshunt: 0.0,
             node_vntol_overrides: std::rc::Rc::new(std::collections::HashMap::new()),
             branch_abstol_overrides: std::rc::Rc::new(std::collections::HashMap::new()),

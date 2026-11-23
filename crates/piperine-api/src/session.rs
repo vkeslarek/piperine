@@ -379,7 +379,8 @@ impl Session {
             Analysis::Noise { output, input, .. } => Some(NoiseProbe::resolve(&ir, ir.top().path(), output, input.as_deref())?),
             _ => None,
         };
-        let netlist = Session::netlist_of(&ir, &spec.options);
+        let session_parameters = crate::parameters::SessionParameters::of(&ir, &spec.options);
+        let netlist = Session::netlist_of(&ir, &spec.options, &session_parameters);
         let (mut circuit, compiled) = match backend {
             Backend::Interp => {
                 let interpreter = Interpreter::new(ir.clone()).map_err(|rejected| {
@@ -448,7 +449,7 @@ impl Session {
 
     /// The context a run's options give: the solver's own default with each given option in its
     /// place; `temp` is Celsius in the run and Kelvin in the solver (HII-02 AC 2 and 3).
-    fn context_of(options: &Options) -> Context {
+    pub(crate) fn context_of(options: &Options) -> Context {
         let mut context = Context::default();
         let tolerances = &mut context.tolerances;
         for (given, slot) in [
@@ -461,9 +462,6 @@ impl Session {
                 *slot = value;
             }
         }
-        if let Some(celsius) = options.tnom {
-            tolerances.tnom = celsius + 273.15;
-        }
         if let Some(celsius) = options.temp {
             tolerances.temperature = celsius + 273.15;
         }
@@ -473,13 +471,13 @@ impl Session {
         context
     }
 
-    /// The netlist that binds the design when the run gives a `resolution` or a `maxmicro`; `None`
+    /// The netlist that binds the design when the run gives a `resolution`, a `maxmicro` or the design reads session parameters; `None`
     /// leaves the backend's own `circuit()`, which is what a run with neither has always used.
-    fn netlist_of<'a>(ir: &'a Ir, options: &Options) -> Option<Netlist<'a>> {
-        if options.resolution.is_none() && options.maxmicro.is_none() && options.time_point_rule.is_none() {
+    fn netlist_of<'a>(ir: &'a Ir, options: &Options, session_parameters: &[(String, f64)]) -> Option<Netlist<'a>> {
+        if options.resolution.is_none() && options.maxmicro.is_none() && options.time_point_rule.is_none() && session_parameters.is_empty() {
             return None;
         }
-        let mut netlist = Netlist::new(ir);
+        let mut netlist = Netlist::new(ir).with_session_parameters(session_parameters);
         if let Some(seconds) = options.resolution {
             netlist = netlist.with_resolution(seconds);
         }

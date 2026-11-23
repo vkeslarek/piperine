@@ -346,7 +346,7 @@ print_step = 1e-6</pre>
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 17) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 18 and 19). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run from source as compiled Rust: a full-size digitally controlled buck converter starts and regulates with its loop closed (chapter 20). So a file with a <code>digital</code> block, like <code>Monitor</code> above, runs today. The <code>piperine</code> command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself. Parts of the language beyond that are still refused by name with P0001: in analog, noise, <code>idt</code> and <code>delay</code>; elsewhere, generic modules and resolved natures (a nature that implements <code>Resolve</code>). When a chapter's example needs one of them, its "Run it" box says so and shows the refusal. This book describes the language as specified.</p>
+  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 17) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 18 and 19). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run from source as compiled Rust: a full-size digitally controlled buck converter starts and regulates with its loop closed (chapter 20). So a file with a <code>digital</code> block, like <code>Monitor</code> above, runs today. The <code>piperine</code> command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself. Parts of the language beyond that are still refused by name with P0001: in analog, <code>idt</code>; elsewhere, generic modules and resolved natures (a nature that implements <code>Resolve</code>). When a chapter's example needs one of them, its "Run it" box says so and shows the refusal. This book describes the language as specified.</p>
 </div>
 
 <div class="callout mistake">
@@ -2820,7 +2820,7 @@ wrote clipper.svg</pre>
   t2'     0           vd = …   id = …     the shorter retry
   …</pre>
 
-<p>The <code>piperine</code> command prints the records of reactions; a trace from <code>analog</code> is not among the lines it shows. Where a trace is available, it is exactly what you need when a circuit does not converge: you see the voltage a device was asked to evaluate at each iteration, and whether it is settling, oscillating or running away. It is also why a trace is never used for a result. Keep the two kinds of output apart:</p>
+<p>The <code>piperine</code> command prints the records of reactions, and a trace from <code>analog</code> when <code>--stream</code> names its stream, with the Newton iteration that wrote it. A trace is exactly what you need when a circuit does not converge: you see the voltage a device was asked to evaluate at each iteration, and whether it is settling, oscillating or running away. It is also why a trace is never used for a result. Keep the two kinds of output apart:</p>
 
 <div class="table-wrap"><table>
 <thead><tr><th>You want</th><th>Write</th><th>Records exist for</th></tr></thead>
@@ -7061,12 +7061,11 @@ tstab      = 8e-6                 # pss: the transient before the orbit</pre>
 <tr><td><code>vntol</code></td><td><code>--vntol</code></td><td>all</td><td>The absolute tolerance of a voltage, in volts, 1e-6 by default.</td></tr>
 <tr><td><code>trtol</code></td><td><code>--trtol</code></td><td><code>transient</code></td><td>The factor on the truncation error a step may have and be accepted, 7 by default.</td></tr>
 <tr><td><code>temp</code></td><td><code>--temp</code></td><td>all</td><td>The temperature of the run, in degrees Celsius; 27 by default.</td></tr>
-<tr><td><code>tnom</code></td><td><code>--tnom</code></td><td>all</td><td>The nominal temperature the models' parameters are given at, in degrees Celsius; 27 by default. It does not move <code>temp</code>.</td></tr>
 <tr><td><code>resolution</code></td><td><code>--resolution</code></td><td>all</td><td>The tick of the digital engine, in seconds.</td></tr>
 <tr><td><code>maxrounds</code></td><td><code>--maxrounds</code></td><td>all</td><td>The most rounds an operating point may take before it fails, 20 by default.</td></tr>
 <tr><td><code>maxmicro</code></td><td><code>--maxmicro</code></td><td>all</td><td>The most microsteps one instant of the digital engine may take before it fails.</td></tr>
 <tr><td><code>max_steps</code></td><td><code>--max-steps</code></td><td><code>transient</code>, <code>pss</code></td><td>The budget of attempts a transient may make before it fails naming it, 2000000 by default.</td></tr>
-<tr><td><code>simparam</code></td><td><code>--simparam name=value</code>, repeatable</td><td>all</td><td>A session parameter: a name and a number. A name that is an option, such as <code>reltol</code> or <code>tnom</code>, is refused.</td></tr>
+<tr><td><code>simparam</code></td><td><code>--simparam name=value</code>, repeatable</td><td>all</td><td>A session parameter: a name and a number. A name that is an option, such as <code>reltol</code> or <code>temp</code>, is refused.</td></tr>
 <tr><td><code>nodeset</code></td><td><code>--nodeset node=value</code>, repeatable</td><td><code>op</code>, <code>dc</code></td><td>Seeds the first guess of an operating point. A flag replaces the table's entry of the same node.</td></tr>
 <tr><td><code>input</code>, <code>output</code></td><td><code>--input</code>, <code>--output</code></td><td><code>tf</code>, <code>pz</code>, <code>noise</code></td><td>The voltage source that excites, by instance, and the node that is measured. A <code>noise</code> run requires <code>output</code>, a node, <code>v(a, b)</code> or <code>i(instance)</code>, and refers the noise to <code>input</code> when it is given.</td></tr>
 <tr><td><code>wrt</code></td><td><code>--wrt</code>, repeatable</td><td><code>sens</code></td><td>A param to differentiate by, by path.</td></tr>
@@ -9326,7 +9325,7 @@ flowchart LR
 <tr><td>Periodic steady state</td><td><code>pss</code></td><td>The state that repeats itself after one period, by shooting.</td><td><code>period</code></td><td><code>tstab</code>, <code>max_step</code>, <code>print_step</code>, <code>plot</code></td></tr>
 </tbody></table></div>
 
-<p>The solver has three more analyses that a run table does not name yet: noise (the output noise density over frequency, and each source's share), S-parameters (the scattering matrix of an N-port), and sensitivity to many params at once by one adjoint solve. They are built and tested inside the solver, and a run cannot ask for them yet.</p>
+<p>The solver has two more analyses that a run table does not name yet: S-parameters (the scattering matrix of an N-port), and sensitivity to many params at once by one adjoint solve. They are built and tested inside the solver, and a run cannot ask for them yet.</p>
 
 <h3>Running each analysis</h3>
 
@@ -9423,6 +9422,42 @@ pole  -1.000000e3  0.000000e0</pre>
 param         d(Filter.vout)
 Filter.v1.dc  1.000000e0
 Filter.r1.r   0.000000e0</pre>
+
+<p><strong>Noise.</strong> <code>output</code> names the node the noise is read at and <code>input</code> a source to refer it to; <code>from</code> and <code>to</code> and the grid are the ones of AC. Each frequency has a row with the output density <code>onoise</code> in V/&radic;Hz, and <code>inoise</code>, the same density divided by the gain from the input, when <code>input</code> is given. The band totals follow the rows, in volts. Only the resistor of <code>hiss.msl</code> makes noise, so the density is its <code>4&nbsp;k&nbsp;T&nbsp;/&nbsp;r</code> shaped by the filter, and the input-referred density is flat.</p>
+
+<!-- cli-file: hiss.msl -->
+<pre data-lang="msl">module Capacitor(p: Electrical, n: Electrical) { c: f64 where c &gt; 0.0; }
+analog for Capacitor { i(p, n) +&gt; ddt(c * v(p, n)); }
+
+/// A resistor with its thermal noise: a white current source of density 4 k T / r.
+module Resistor(p: Electrical, n: Electrical) { r: f64 where r &gt; 0.0; }
+analog for Resistor {
+    i(p, n) +&gt; v(p, n) / r + white_noise(4.0 * K_B * temperature() / r, "thermal");
+}
+
+/// A source that carries the small-signal stimulus, the input a noise run refers to.
+module Source(p: Electrical, n: Electrical) { dc: f64 = 0.0; }
+analog for Source { v(p, n) +&gt; dc + ac_stim(1.0, 0.0); }
+
+/// 1 kΩ and 1 µF: a corner at 159 Hz, and the only noise is the resistor's.
+module Hiss() {
+    signal vin: Electrical;
+    signal vout: Electrical;
+    let v1 = Source(vin, gnd);
+    let r1 = Resistor(vin, vout) { r: 1k };
+    let c1 = Capacitor(vout, gnd) { c: 1u };
+}</pre>
+
+<pre data-lang="sh">piperine run hiss.msl --analysis noise --input v1 --output vout --from 10 --to 1e4 --per-decade 1</pre>
+<pre data-lang="text" data-cli-output="piperine run hiss.msl --analysis noise --input v1 --output vout --from 10 --to 1e4 --per-decade 1">run hiss: noise, top Hiss, backend rust
+
+freq        onoise        inoise
+1.000000e1  4.063359e-9   4.071372e-9
+1.000000e2  3.447365e-9   4.071372e-9
+1.000000e3  6.399250e-10  4.071372e-9
+1.000000e4  6.478970e-11  4.071372e-9
+onoise_total  5.699734e-8
+inoise_total  4.069336e-7</pre>
 
 <p><strong>Periodic steady state.</strong> <code>period</code> is the period of the drive. The solver first runs a transient of length <code>tstab</code>, then repeats one period until the state at its end equals the state at its start; the table is one period of that orbit. It needs a circuit with a periodic source, and chapter 15 runs one.</p>
 

@@ -8,7 +8,7 @@
 //! its `str` params bound to the texts the call gives and its other params to locals of the
 //! reaction holding the arguments. A `str` that is no text after inlining is `P0001`.
 
-use piperine_ir::{EmitField, Expr, ExprId as LoweredExpr, Origin, Stmt, Stream, StreamField, StmtId as LoweredStmt, ValueType};
+use piperine_ir::{EmitField, Expr, ExprId as LoweredExpr, Origin, Stmt, Stream, StreamField, StmtId as LoweredStmt, TraceSite, ValueType};
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
@@ -23,7 +23,7 @@ impl Elaboration<'_, '_> {
         let expr = self.peel_parens(expr);
         let node = self.design.expr_node(expr).clone();
         match &node.kind {
-            ExprKind::Emit { stream, fields } => Some(self.lower_emit(scope, out, stream, fields)),
+            ExprKind::Emit { stream, fields } => Some(self.lower_emit(scope, out, expr, stream, fields)),
             ExprKind::Call { args, .. } => match self.types.callee(expr) {
                 Some(Callee::Function(function)) if self.is_inlined(function) => {
                     let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
@@ -45,7 +45,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `emit!(stream, fields)`: one site of the body's stream named `stream`.
-    fn lower_emit(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, stream: &Lit, fields: &[FieldInit]) -> bool {
+    fn lower_emit(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, expr: ExprId, stream: &Lit, fields: &[FieldInit]) -> bool {
         let name = stream.str_value().unwrap_or_default();
         let index = match self.structure.streams.iter().position(|s| s.name == name) {
             Some(at) => at,
@@ -97,7 +97,13 @@ impl Elaboration<'_, '_> {
             };
             lowered.push(EmitField::Value { field: at as u32, value });
         }
-        if ok {
+        if ok && scope.analog {
+            // `emit!` in the `analog` block is a trace (§19 rule 4): one `TRACE` watch per site,
+            // written where the statement executes (`traces.rs`)
+            let site = self.structure.traces.len() as u32;
+            self.structure.traces.push(TraceSite { stream: index as u32, origin: self.expr_origin(expr) });
+            out.push(self.stmt(Stmt::Trace { site, fields: lowered }));
+        } else if ok {
             out.push(self.stmt(Stmt::Emit { stream: index as u32, fields: lowered }));
         }
         ok

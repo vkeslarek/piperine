@@ -28,7 +28,7 @@ use crate::types::{Callee, Ty};
 /// The most iterations one loop is unrolled into, and the deepest call an expansion follows
 /// (Q5, §1 rule 11).
 const TRIPS: i128 = 1 << 24;
-const DEPTH: usize = 1024;
+pub(super) const DEPTH: usize = 1024;
 
 /// What an analog loop holds that cannot stay a loop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,6 +64,19 @@ pub(super) struct Expansion {
     function: DeclId,
     /// `Scope::decisions` at the call.
     decisions: u32,
+}
+
+impl Expansion {
+    /// The expansion of a call of `function` that begins with `decisions` decisions that did not fold around it.
+    pub(super) fn begin(function: DeclId, decisions: u32) -> Expansion {
+        Expansion { function, decisions }
+    }
+
+    /// Whether this expansion is of `function` and a decision that did not fold lies between it and a call of
+    /// `function` made under `decisions` of them: the recursion hangs on it, so it never ends.
+    pub(super) fn hangs_on_unfolded(&self, function: DeclId, decisions: u32) -> bool {
+        self.function == function && decisions > self.decisions
+    }
 }
 
 /// The functions on a call cycle, and the functions that reach one: asked often, answered once.
@@ -121,7 +134,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// Every expression of `body`, nested ones included.
-    fn body_exprs(&self, body: &BlockNode) -> Vec<ExprId> {
+    pub(super) fn body_exprs(&self, body: &BlockNode) -> Vec<ExprId> {
         let mut inside = Vec::new();
         for expr in crate::pom::block_exprs(self.design, body) {
             crate::pom::preorder(self.design, expr, &mut inside);

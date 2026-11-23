@@ -7,7 +7,7 @@ use crate::real::Real;
 use crate::deps::DepsMemo;
 use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
 use crate::model::{AggregateData, CarrierWindow, EmptyArray, NodeAlias, NodeArray, 
-    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, Derivative, Drive, Event, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
+    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, DelaySite, Derivative, Drive, Event, NoiseSource, SessionParameter, TraceSite, PartialDerivative, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
     Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, ReprForm, Site, Stmt, Stream, Terminal, TypeData, ValueType,
 };
 
@@ -128,6 +128,9 @@ pub struct IrBuilder {
     aggregates: Vec<AggregateData>,
     /// The merges `merge_nodes` asked for, applied by `finish`.
     union: NodeUnion,
+    /// The derived function of each `(function, argument)` the differentiation built; `None`
+    /// while it is being built (a recursive function has none).
+    derived: BTreeMap<(FunctionId, u32), Option<FunctionId>>,
 }
 
 impl IrBuilder {
@@ -184,6 +187,11 @@ impl IrBuilder {
             reactions: Vec::new(),
             streams: Vec::new(),
             derivatives: Vec::new(),
+            delays: Vec::new(),
+            noise_sources: Vec::new(),
+            session_parameters: Vec::new(),
+            traces: Vec::new(),
+            partial_derivatives: Vec::new(),
             hoisted: Vec::new(),
             merges: Vec::new(),
             reaches: Vec::new(),
@@ -297,6 +305,28 @@ impl IrBuilder {
         derivatives.len() as u32 - 1
     }
 
+    /// Adds a delay site to `body`: returns its index, the identity `Expr::Delay` reads it by.
+    pub fn delay(&mut self, body: BodyId, delay: DelaySite) -> u32 {
+        let delays = &mut self.body_data(body).delays;
+        delays.push(delay);
+        delays.len() as u32 - 1
+    }
+
+    /// Adds a noise source to `body`: returns its index, the identity `Expr::Noise` reads it by.
+    pub fn noise_source(&mut self, body: BodyId, source: NoiseSource) -> u32 {
+        let sources = &mut self.body_data(body).noise_sources;
+        sources.push(source);
+        sources.len() as u32 - 1
+    }
+
+    /// Adds a session parameter to `body`: returns its index, the identity `Expr::SessionParameter`
+    /// reads it by.
+    pub fn session_parameter(&mut self, body: BodyId, parameter: SessionParameter) -> u32 {
+        let parameters = &mut self.body_data(body).session_parameters;
+        parameters.push(parameter);
+        parameters.len() as u32 - 1
+    }
+
     /// Records that `body` placed a module in an expression whose node or `analog` statements
     /// joined it: returns its index.
     pub fn hoisted(&mut self, body: BodyId, hoisted: Hoisted) -> u32 {
@@ -326,6 +356,20 @@ impl IrBuilder {
         let list = &mut self.body_data(body).inflows;
         list.push(inflow);
         list.len() as u32 - 1
+    }
+
+    /// Records a `ddx` of `body`: returns its index.
+    pub fn partial_derivative(&mut self, body: BodyId, partial: PartialDerivative) -> u32 {
+        let list = &mut self.body_data(body).partial_derivatives;
+        list.push(partial);
+        list.len() as u32 - 1
+    }
+
+    /// Adds a trace site to `body`: returns its index, the identity `Stmt::Trace` names it by.
+    pub fn trace(&mut self, body: BodyId, trace: TraceSite) -> u32 {
+        let traces = &mut self.body_data(body).traces;
+        traces.push(trace);
+        traces.len() as u32 - 1
     }
 
     /// Adds a record stream to `body`: returns its index, the identity `Stmt::Emit` names it by.
@@ -377,6 +421,59 @@ impl IrBuilder {
     /// builder never handed out.
     pub fn expr_kind(&self, id: ExprId) -> Option<&Expr> {
         self.exprs.get(id.index()).map(|e| &e.kind)
+    }
+
+    /// The data of expression `id` added before; `None` for an id this builder never handed out.
+    pub(crate) fn expr_data(&self, id: ExprId) -> Option<&ExprData> {
+        self.exprs.get(id.index())
+    }
+
+    /// How many expressions the builder holds: the id the next one takes. A pass that builds
+    /// expressions outside the elaborator's own `emit` reads this to find what it adds.
+    pub fn expr_count(&self) -> usize {
+        self.exprs.len()
+    }
+
+    /// The type of expression `id` added before; `None` for an id this builder never handed out.
+    pub fn expr_type(&self, id: ExprId) -> Option<&ValueType> {
+        self.exprs.get(id.index()).map(|e| &e.ty)
+    }
+
+    /// The origin of expression `id` added before; `None` for an id this builder never handed out.
+    pub fn expr_origin(&self, id: ExprId) -> Option<&Origin> {
+        self.exprs.get(id.index()).map(|e| &e.origin)
+    }
+
+    /// The statement `id` added before; `None` for an id this builder never handed out.
+    pub(crate) fn stmt_data(&self, id: StmtId) -> Option<&Stmt> {
+        self.stmts.get(id.index())
+    }
+
+    /// The function `id` added before; `None` for an id this builder never handed out.
+    pub(crate) fn function_data(&self, id: FunctionId) -> Option<&FunctionData> {
+        self.functions.get(id.index())
+    }
+
+    /// The derived function of `function` against its argument `argument` the differentiation
+    /// built (`None` when none is built or it is still being built).
+    pub fn derived_function(&self, function: FunctionId, argument: u32) -> Option<FunctionId> {
+        self.derived.get(&(function, argument)).copied().flatten()
+    }
+
+    /// Marks the derived function of `(function, argument)` as being built: `false` when it
+    /// already is, which means the function reaches itself.
+    pub(crate) fn begin_derived(&mut self, function: FunctionId, argument: u32) -> bool {
+        self.derived.insert((function, argument), None).is_none()
+    }
+
+    /// Records the derived function of `(function, argument)` once built.
+    pub(crate) fn end_derived(&mut self, function: FunctionId, argument: u32, derived: FunctionId) {
+        self.derived.insert((function, argument), Some(derived));
+    }
+
+    /// Drops the mark of a derived function whose construction failed.
+    pub(crate) fn abandon_derived(&mut self, function: FunctionId, argument: u32) {
+        self.derived.remove(&(function, argument));
     }
 
     pub fn stmt(&mut self, stmt: Stmt) -> StmtId {

@@ -153,7 +153,7 @@ impl StatementPlan {
                     Some(StatementPlan::commit_through(ir, *carrier, &held.ty, held.count, *after, path))
                 }
                 Stmt::Emit { stream, .. } => Some(StatementPlan::record(*stream)),
-                Stmt::Let { .. } | Stmt::Expr(_) | Stmt::Assign { .. } | Stmt::Contribute { .. } | Stmt::BoundStep { .. } => None,
+                Stmt::Let { .. } | Stmt::Expr(_) | Stmt::Assign { .. } | Stmt::Contribute { .. } | Stmt::BoundStep { .. } | Stmt::Trace { .. } => None,
             })
             .collect()
     }
@@ -349,6 +349,17 @@ impl RecordLayout {
         }
     }
 
+    /// Where the record starts in a `TRACE` watch: after the `BOOL` presence byte, at the
+    /// record's own alignment (abi.md A5).
+    pub fn trace_start(&self) -> u32 {
+        1u32.next_multiple_of(self.align)
+    }
+
+    /// The size of a `TRACE` watch holding the record: the presence byte, then the record.
+    pub fn trace_size(&self) -> u32 {
+        (self.trace_start() + self.size).next_multiple_of(self.align)
+    }
+
     /// The ABI fields of the layout: each value field's leaves, named after the stream's fields.
     fn abi_fields(&self) -> Vec<Field<'_>> {
         self.leaves
@@ -485,6 +496,48 @@ impl Digital {
             .enumerate()
             .map(|(k, site)| {
                 site.abstol.map(|_| s.pin(PinSpec { origin: &Self::at(&site.origin), ..PinSpec::discrete(&format!("d{k}.abstol"), role::PRIVATE, &F64) }))
+            })
+            .collect()
+    }
+
+    /// Adds the private `F64` pin `delay<k>.max` of each delay site, written by a function of the
+    /// parameter cone and named by the site's `DELAY` term.
+    pub(crate) fn delay_maximum_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<u32> {
+        body.delays()
+            .iter()
+            .enumerate()
+            .map(|(k, site)| s.pin(PinSpec { origin: &Self::at(&site.origin), ..PinSpec::discrete(&format!("delay{k}.max"), role::PRIVATE, &F64) }))
+            .collect()
+    }
+
+    /// Adds one `TRACE` watch per trace site of the `analog` block, `trace:<k>`, after the `CAP`
+    /// watches: its layout is a `BOOL` presence byte (0 for "not written in this evaluation", abi.md
+    /// A5) followed by the record layout of the site's stream, whose fields the site leaves out
+    /// stay zero. Returns each site's watch.
+    pub(crate) fn trace_watches(s: &mut ShapeBuf, body: Body<'_>) -> Vec<u32> {
+        body.traces()
+            .iter()
+            .enumerate()
+            .map(|(k, site)| {
+                let Some(stream) = body.streams().get(site.stream as usize) else {
+                    panic!("body {}: trace site {k} names stream {}, out of range; check() refuses it", body.name(), site.stream)
+                };
+                let Some(record) = RecordLayout::in_ir(body.ir(), stream) else {
+                    panic!("body {}: stream {} holds a field no pin holds; check() refuses it", body.name(), stream.name)
+                };
+                let start = record.trace_start();
+                let mut fields = vec![Field { name: Str::from_str("present"), leaf: leaf::BOOL, offset: 0, count: 1 }];
+                fields.extend(record.abi_fields().into_iter().map(|f| Field { offset: f.offset + start, ..f }));
+                let layout = Layout { size: record.trace_size(), align: record.align, fields: List::from_slice(&fields) };
+                s.watch(WatchSpec {
+                    name: &format!("trace:{k}"),
+                    origin: &Self::at(&site.origin),
+                    kind: watch::TRACE,
+                    layout: &layout,
+                    event: DEFAULT,
+                    ttol: DEFAULT,
+                    etol: DEFAULT,
+                })
             })
             .collect()
     }
@@ -764,6 +817,7 @@ impl Digital {
     /// carrier's pin, or fires an event pin (`len` 0, abi.md C4).
     fn declare(s: &mut ShapeBuf, pins: &Pins, body: Body<'_>, name: &str, origin: &str, plan: &ReactionPlan) {
         let limits = body.limits().len() as u32;
+        let stims = body.stims().len() as u32;
         let writes = plan
             .statements
             .iter()
@@ -794,7 +848,7 @@ impl Digital {
             name,
             origin,
             on: plan.on.clone(),
-            reads: plan.reads.iter().map(|r| BodyPlan::read(pins, limits, *r)).collect(),
+            reads: plan.reads.iter().map(|r| BodyPlan::read(pins, limits, stims, *r)).collect(),
             writes,
             elements: BodyPlan::elements(&plan.reads),
             ..ReactionSpec::default()

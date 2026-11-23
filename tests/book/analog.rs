@@ -174,18 +174,17 @@ fn the_thermal_voltage_is_about_25_9_millivolts_at_the_default_temperature() {
 }
 
 #[test]
-fn the_diode_with_a_trace_is_refused() {
-    // analog#7 (refused): the Diode with `emit!("newton", ..)` in its `analog` block; analog~139c67b5 "This
-    // emit! runs when the code around it runs, and analog runs at every evaluation" and analog~b103eeb0
-    // "The piperine command prints the records of reactions; a trace from analog is not among the lines it
-    // shows" (refused with it). An `emit!` in `analog` is `P0001` (L49)
+fn the_diode_with_a_trace_runs() {
+    // analog#7 (runs since analog-operators T37): the Diode with `emit!("newton", ..)` in its `analog` block is a
+    // trace, written at every evaluation (analog~139c67b5 "This emit! runs when the code around it runs, and
+    // analog runs at every evaluation"); the operating point runs and reads the same 0.4 to 0.7 V as without it
     let chapter = Chapter::read();
     let before = "module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\nmodule Diode(a: Electrical, k: Electrical) { is: f64 = 1e-14 where is > 0.0; n: f64 = 1.0 where n > 0.0; }\n";
     let after = format!("{}module Top() {{ signal a: Electrical; signal b: Electrical; let s = Vdc(a); let r = Resistor(a, b) {{ r: 1k }}; let d = Diode(b, gnd); }}\n", Bench::PARTS);
     let model = chapter.wrapped("traced.msl", before, "analog#7", &after);
-    let given = Refusal::of(model.run(Commands::operating_point()), "analog#7");
-    assert!(given.contains(&("P0001".to_string(), "an `emit!` in an `analog` block is not supported yet".to_string())), "{given:?}");
-    Refusal::expect(model.run(Commands::operating_point()), "analog#7", "P0001", "an `emit!` in an `analog` block is not supported yet");
+    let ran = model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
+    let forward = ran.signal("Top.b");
+    assert!(forward > 0.4 && forward < 0.8, "the diode's forward voltage: {forward}");
 }
 
 #[test]
@@ -227,12 +226,22 @@ fn the_nullor_drives_its_output_to_a_virtual_short_and_coupled_inductors_couple(
 }
 
 #[test]
-fn the_noise_source_is_refused() {
-    // analog#11 (refused): `let n = noise(4.0 * K_B * temperature() / r, "thermal");` and its two uses in a
-    // behavior block: the core primitive `noise` is `P0001` (L45)
+fn the_noise_source_runs_and_reads_as_zero_outside_a_noise_sweep() {
+    // analog#11 (runs since analog-operators T34): `let n = noise(4.0 * K_B * temperature() / r, "thermal");`
+    // and its two uses in a behavior block: the source is 0 in every solve but a noise sweep, so the two
+    // contributions between `a`, `mid` and `b` carry no current at the operating point. `mid` has the one
+    // resistor to ground the wrapper gives it, so the point is solvable: every node is at 0 V.
     let chapter = Chapter::read();
-    let model = chapter.wrapped("noise.msl", "module R(a: Electrical, b: Electrical) { r: f64 = 1k; signal mid: Electrical; }\nanalog for R {\n", "analog#11", "}\nmodule Top() { signal a: Electrical; signal b: Electrical; let x = R(a, b); }\n");
-    Refusal::expect(model.run(Commands::operating_point()), "analog#11", "P0001", "core primitive `noise` is not supported yet");
+    let before = "module R(a: Electrical, b: Electrical) { r: f64 = 1k; signal mid: Electrical; }\nanalog for R {\ni(mid, gnd) +> v(mid, gnd) / r;\n";
+    let model = chapter.wrapped("noise.msl", before, "analog#11", "}\nmodule Top() { signal a: Electrical; signal b: Electrical; let x = R(a, b); let la = Load(a); let lb = Load(b); }\nmodule Load(p: Electrical) {}\nanalog for Load { i(p, gnd) +> v(p, gnd) / 1k; }\n");
+    let point = model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
+    for row in &point.table.rows {
+        for cell in row.iter().skip(1) {
+            if let Cell::Real(volts) = cell {
+                assert!(volts.abs() <= 1e-12, "a noise source carries no current at the operating point: {row:?}");
+            }
+        }
+    }
 }
 
 #[test]

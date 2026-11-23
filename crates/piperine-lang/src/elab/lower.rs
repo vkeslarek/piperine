@@ -61,6 +61,26 @@ pub(super) struct Scope {
     pub(super) handles: BTreeMap<DeclId, ExprId>,
     /// Code with no local of its own (a drive): a `match` reads its scrutinee again at each test.
     pub(super) no_locals: bool,
+    /// Code a core primitive evaluates at a converged solution (a `noise` density, a `delay` input): a `limit` there is
+    /// its argument, since limiting changes no iterate that has stopped moving (§14.7.4).
+    pub(super) at_solution: bool,
+    /// Code a primitive evaluates on its own, outside every statement of the `analog` block (a `noise` density, a
+    /// `delay` input, a `ddt` state): an `ac_stim` read there is also a statement of the block, which is where the
+    /// stimulus site is written (`analog.rs`).
+    pub(super) value_input: bool,
+    /// Code that is differentiated symbolically (a `ddx` value): a `fn` called there is expanded where it stands
+    /// (`expansion.rs`), not called.
+    pub(super) differentiated: bool,
+    /// The branches whose flow a differentiated value reads as a leaf though the module gives them no potential
+    /// contribution (`analog.rs`): the derivative may not read their value.
+    pub(super) flow_leaves: Vec<u32>,
+    /// The parameters and `let`s of the `fn` being expanded in a differentiated value, each the lowered expression it holds
+    /// (`expansion.rs`).
+    pub(super) values: BTreeMap<DeclId, LoweredExpr>,
+    /// The `Option` parameters and `let`s of the `fn` being expanded: the flag and the payload each holds.
+    pub(super) option_values: BTreeMap<DeclId, (LoweredExpr, LoweredExpr)>,
+    /// The forks the `fn` being expanded has made so far (`symbolic.rs`).
+    pub(super) forks: u32,
     /// Whether the code being lowered reads `freq()` from the solve (§14.4.4): the analog block
     /// and the functions it calls (a function's `freq_` is the caller's; a reaction reads 0).
     pub(super) analog: bool,
@@ -106,8 +126,20 @@ pub(super) struct Scope {
 }
 
 impl Scope {
+    /// Takes over what a standalone scope made from a copy of this one's (`standalone_scope`) added: the `ac_stim` sites
+    /// and the statements that write them, the branches a flow read numbered, and the flow leaves. So a stimulus or a
+    /// flow read inside a value a primitive evaluates on its own (a `noise` density, a `delay` input, a `ddt` state, a
+    /// `ddx` value) is a site or a branch of the body. The `limit` sites it made stay its own: a `limit` there is read
+    /// at a solution (`at_solution`) or differentiated through, never evaluated.
+    pub(super) fn adopt_standalone(&mut self, standalone: &mut Scope) {
+        self.stims = standalone.stims.clone();
+        self.branches = standalone.branches.clone();
+        self.flow_leaves.append(&mut standalone.flow_leaves);
+        self.hoisted_steps.append(&mut standalone.hoisted_steps);
+    }
+
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), handles: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), handles: BTreeMap::new(), no_locals: false, at_solution: false, value_input: false, differentiated: false, flow_leaves: Vec::new(), values: BTreeMap::new(), option_values: BTreeMap::new(), forks: 0, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
     }
 }
 
@@ -455,6 +487,10 @@ impl Elaboration<'_, '_> {
     /// however many bodies call it), or of a core primitive or a probe (see `analog.rs`).
     fn lower_call(&mut self, scope: &mut Scope, expr: ExprId, args: &[ExprId], class: CallClass, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let span = self.design.expr_node(expr).span;
+        // a `fn` called in a value that is differentiated is expanded where it stands (`expansion.rs`)
+        if scope.differentiated && class != CallClass::Probe && let Some(expanded) = self.expand_function_call(scope, expr) {
+            return expanded;
+        }
         // a call of a generic function is typed (generics T20 to T23) and instantiated by T33 and T34: until
         // then the elaborator names it and stops
         if let Some(Callee::Function(function)) = self.types.callee(expr)
@@ -812,6 +848,7 @@ impl Elaboration<'_, '_> {
             // The loop variable of an unrolled analog loop and the parameter of an expanded recursion
             // are the constant of this iteration or call (`unroll.rs`).
             // a handle read: the carrier the caller passed (`handles.rs`)
+            DeclKind::FnParam(_) | DeclKind::Binding(_) if let Some(value) = scope.values.get(&decl).copied() => Some(value),
             DeclKind::FnParam(_) if let Some(bound) = scope.handles.get(&decl).copied() => self.lower_expr(scope, bound),
             DeclKind::FnParam(_) | DeclKind::Binding(_) if let Some(value) = scope.unrolled.get(decl) => Some(self.constant_expr(value, ty, origin)),
             DeclKind::FnParam(_) | DeclKind::Binding(_) => match scope.local_index.get(&decl) {

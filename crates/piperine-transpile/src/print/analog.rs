@@ -26,8 +26,9 @@ use piperine_plan::{BodyPlan, FunctionPlan, Mode, Source, Target, Term};
 use crate::Error;
 use crate::print::carrier_array::ElementNames;
 use crate::print::value::Reads;
+use crate::print::delay::DelayStates;
 use crate::print::derivative::States;
-use crate::print::{ContributionSums, DerivativePrinter, RealLift, Text, TypeItems, ValuePrinter};
+use crate::print::{ContributionSums, DelayPrinter, DerivativePrinter, TracePrinter, RealLift, Text, TypeItems, ValuePrinter};
 
 /// Prints the analog functions of one body from its plan.
 #[derive(Debug)]
@@ -58,6 +59,9 @@ impl<'a> AnalogPrinter<'a> {
             carriers: body.carriers().iter().map(|c| Text::ident(&c.name)).collect(),
             flows: (0..body.branches().len() as u32).map(|b| Self::flow_name(b)).collect(),
             derivatives: (0..body.derivatives().len() as u32).map(Self::derivative_pin).collect(),
+            delays: (0..body.delays().len() as u32).map(|k| Text::generated(&format!("delay{k}_value"))).collect(),
+            noises: (0..body.noise_sources().len() as u32).map(crate::print::NoisePrinter::input_name).collect(),
+            session_parameters: (0..body.session_parameters().len() as u32).map(|k| Text::generated(&format!("simparam{k}"))).collect(),
             param_previous: (0..body.params().len() as u32).map(|p| Self::param_part(body, p, "previous")).collect(),
             previous: (0..body.carriers().len() as u32).map(|c| Self::carrier_part(body, c, "previous")).collect(),
         };
@@ -89,8 +93,11 @@ impl<'a> AnalogPrinter<'a> {
             }
             Source::BranchFlow(b) => Self::flow_name(b),
             Source::Derivative(k) => Self::derivative_pin(k),
+            Source::Delay(k) => Text::generated(&format!("delay{k}_value")),
             Source::LimitValue(k) => site(self.body.limits(), k, "limit"),
             Source::StimValue(k) => site(self.body.stims(), k, "stim"),
+            Source::NoiseValue(k) => Text::generated(&format!("noise{k}_input")),
+            Source::SessionParameter(k) => Text::generated(&format!("simparam{k}")),
             Source::Param(p) => {
                 self.body.params().get(p as usize).map_or_else(|| Text::generated(&format!("param{p}")), |x| Text::ident(&x.name))
             }
@@ -165,6 +172,8 @@ impl<'a> AnalogPrinter<'a> {
             Term::Charge(b) => format!("b{b}.charge"),
             Term::DerivativeRate(k) => format!("d{k}.rate"),
             Term::DerivativeState(k) => format!("d{k}.state"),
+            Term::DelayOutput(k) => format!("delay{k}.value"),
+            Term::DelayHistory(k) => format!("delay{k}.history"),
         }
     }
 
@@ -199,6 +208,10 @@ impl<'a> AnalogPrinter<'a> {
             Target::Ttol(k) => format!("ttol:{k}"),
             Target::Etol(k) => format!("etol:{k}"),
             Target::DerivativeAbstol(k) => format!("d{k}.abstol"),
+            Target::NoiseDensity(k) => format!("noise:{k}.PSD"),
+            Target::Trace(k) => format!("trace:{k}"),
+            Target::DelayTime(k) => format!("delay{k}.history.TIME"),
+            Target::DelayMaximum(k) => format!("delay{k}.max"),
         }
     }
 
@@ -313,6 +326,15 @@ impl<'a> AnalogPrinter<'a> {
                 Expr::Carrier(c) => {
                     sources.insert(Source::Carrier(*c));
                 }
+                Expr::SessionParameter { parameter } => {
+                    sources.insert(Source::SessionParameter(*parameter));
+                }
+                Expr::Delay(k) => {
+                    sources.insert(Source::Delay(*k));
+                }
+                Expr::Noise(k) => {
+                    sources.insert(Source::NoiseValue(*k));
+                }
                 Expr::CarrierElement { carrier, index } | Expr::ElementChanged { carrier, index } => {
                     sources.insert(Source::Carrier(*carrier));
                     stack.push(*index);
@@ -365,7 +387,7 @@ impl<'a> AnalogPrinter<'a> {
     pub(crate) fn is_plain(&self, s: Source) -> bool {
         match s {
             Source::Param(p) | Source::ParamPrevious(p) => self.body.params().get(p as usize).is_some_and(|x| x.ty != ValueType::F64),
-            Source::Carrier(_) | Source::CarrierPrevious(_) | Source::Static | Source::Analysis(_) => true,
+            Source::Carrier(_) | Source::CarrierPrevious(_) | Source::Static | Source::Analysis(_) | Source::SessionParameter(_) => true,
             _ => false,
         }
     }
@@ -383,6 +405,7 @@ impl<'a> AnalogPrinter<'a> {
                 None => Err(self.unsupported(&format!("a read of carrier {c}"))),
             },
             Source::Static | Source::Analysis(_) => Ok("bool".to_string()),
+            Source::SessionParameter(_) => Ok("Option<f64>".to_string()),
             _ => Ok("R".to_string()),
         }
     }
@@ -411,6 +434,8 @@ impl<'a> AnalogPrinter<'a> {
             },
             // abi.md §4.2: `STATIC` is one `BOOL` byte, `TIME` an `F64`
             Source::Static | Source::Analysis(_) => format!("let {name} = {cx}.bool({i});"),
+            // the pin of a session parameter holds an `Option<f64>`: known when the host gave it
+            Source::SessionParameter(_) => format!("let {name} = {{ let pin_ = {cx}.bytes({i}); (pin_[8] != 0).then(|| f64::from_le_bytes([pin_[0], pin_[1], pin_[2], pin_[3], pin_[4], pin_[5], pin_[6], pin_[7]])) }};"),
             _ => format!("let {name} = {cx}.f64({i});"),
         })
     }
@@ -434,11 +459,15 @@ impl<'a> AnalogPrinter<'a> {
         let Some(f) = self.plan.functions().get(k).filter(|f| f.mode == Mode::Terms) else {
             return Err(self.unsupported(&format!("function {k} as the terms function")));
         };
-        let holders = ContributionSums::holders(self.body);
+        let mut holders = ContributionSums::holders(self.body);
+        // a trace is kept as a contribution is: it writes what the block's conditions let it
+        holders.extend(TracePrinter::holders(self.body));
         let slice = self.slice(Mode::Terms, |id| holders.contains(&id));
         let states = DerivativePrinter::new(self).states()?;
+        let delays = DelayPrinter::new(self).states()?;
         let mut used = slice.sources.clone();
         used.extend(states.sources.iter().copied());
+        used.extend(delays.sources.iter().copied());
         for w in &f.writes {
             match w {
                 Target::Term(Term::Current(b)) => {
@@ -446,6 +475,9 @@ impl<'a> AnalogPrinter<'a> {
                 }
                 Target::Term(Term::DerivativeRate(k)) => {
                     used.insert(Source::Derivative(*k));
+                }
+                Target::Term(Term::DelayOutput(k)) => {
+                    used.insert(Source::Delay(*k));
                 }
                 Target::Term(Term::Eq(b)) => {
                     if let Some(branch) = self.body.branches().get(*b as usize) {
@@ -466,7 +498,7 @@ impl<'a> AnalogPrinter<'a> {
         // The reads the slice uses, in the plan's order, each with its index in the plan.
         let reads: Vec<(usize, Source)> = f.reads.iter().copied().enumerate().filter(|(_, s)| used.contains(s)).collect();
         let mut t = Text::new();
-        self.terms_block(&mut t, f, &slice, &states, &reads)?;
+        self.terms_block(&mut t, f, &slice, &states, &delays, &reads)?;
         t.line("");
         self.terms_function(&mut t, k, f, &reads)?;
         let mut text = t.finish();
@@ -480,7 +512,7 @@ impl<'a> AnalogPrinter<'a> {
         self.sums.as_ref().is_some_and(ContributionSums::faults)
     }
 
-    fn terms_block(&self, t: &mut Text, f: &FunctionPlan, slice: &Slice, states: &States, reads: &[(usize, Source)]) -> Result<(), Error> {
+    fn terms_block(&self, t: &mut Text, f: &FunctionPlan, slice: &Slice, states: &States, delays: &DelayStates, reads: &[(usize, Source)]) -> Result<(), Error> {
         let mut params: Vec<String> = Vec::with_capacity(reads.len());
         for (_, s) in reads {
             params.push(format!("{}: {}", self.read_name(*s), self.block_type(*s)?));
@@ -490,11 +522,17 @@ impl<'a> AnalogPrinter<'a> {
         if self.block_faults() {
             params.push(format!("{}: bool", Self::exclusive()));
         }
+        // the records of the trace sites, one slot each
+        if !self.body.traces().is_empty() {
+            params.push(TracePrinter::parameter(self.body.traces().len()));
+        }
         t.comment(&format!("{}.analog", self.body.name()), self.body.origin());
         let returns = if self.block_faults() { format!("Result<[R; {}], Fault>", f.writes.len()) } else { format!("[R; {}]", f.writes.len()) };
         t.line(&format!("fn terms_block<R: Real>({}) -> {returns} {{", params.join(", ")));
         // the states of the derivative sites come first, outside every condition (§14 rule 9)
         let mut lines = states.lines.clone();
+        // the input, time and bound of every delay site, outside every condition too (§14 rule 9)
+        lines.extend(delays.lines.iter().cloned());
         let (block, defined) = match &self.sums {
             Some(sums) => (self.structured_lines(sums, slice)?, BTreeSet::new()),
             None => self.shadowed_lines(slice)?,
@@ -573,8 +611,19 @@ impl<'a> AnalogPrinter<'a> {
     fn outputs(&self, f: &FunctionPlan, defined: &BTreeSet<String>, lines: &mut Vec<String>) -> Result<Vec<String>, Error> {
         let mut outputs = Vec::with_capacity(f.writes.len());
         for w in &f.writes {
-            let Target::Term(term) = *w else {
-                return Err(self.unsupported(&format!("the write {w:?} of the terms function")));
+            let term = match *w {
+                Target::Term(term) => term,
+                // the `TIME` of a delay's history term: the delay held to its bound (§14.6.4)
+                Target::DelayTime(k) => {
+                    outputs.push(DelayPrinter::time_value(k));
+                    continue;
+                }
+                // a trace writes bytes, not a number: its record is in the buffer `terms` copies
+                Target::Trace(_) => {
+                    outputs.push("R::default()".to_string());
+                    continue;
+                }
+                _ => return Err(self.unsupported(&format!("the write {w:?} of the terms function"))),
             };
             outputs.push(match term {
                 Term::Flow(b) => match &self.sums {
@@ -588,6 +637,8 @@ impl<'a> AnalogPrinter<'a> {
                 Term::Current(b) => self.read_name(Source::BranchFlow(b)),
                 Term::DerivativeRate(k) => Self::derivative_pin(k),
                 Term::DerivativeState(k) => format!("-{}", DerivativePrinter::state_name(k)),
+                Term::DelayOutput(k) => self.read_name(Source::Delay(k)),
+                Term::DelayHistory(k) => format!("-{}", DelayPrinter::input_name(k)),
                 Term::Eq(b) => {
                     let Some(branch) = self.body.branches().get(b as usize) else {
                         return Err(self.unsupported(&format!("the equation term of branch {b}")));
@@ -655,6 +706,11 @@ impl<'a> AnalogPrinter<'a> {
                 if fallible {
                     args.push((!zero).to_string());
                 }
+                // the trace buffer: the evaluation at the iterate fills it, the one at 0 only
+                // gives the slopes and its records are dropped
+                if !self.body.traces().is_empty() {
+                    args.push(if zero { "&mut Default::default()".to_string() } else { format!("&mut {}", ValuePrinter::TRACES) });
+                }
                 let call = if named {
                     // no argument carries the block's number type: name it
                     format!("Self::terms_block::<Dual<{}>>({})", f.slots, args.join(", "))
@@ -663,6 +719,9 @@ impl<'a> AnalogPrinter<'a> {
                 };
                 if fallible { format!("{call}?") } else { call }
             };
+            if !self.body.traces().is_empty() {
+                t.line(&format!("let mut {}: [Option<Vec<u8>>; {}] = Default::default();", ValuePrinter::TRACES, self.body.traces().len()));
+            }
             if at_iterate {
                 t.line("// the evaluation at the iterate");
                 t.line(&format!("let at_iterate_ = {};", call(false)));
@@ -688,6 +747,13 @@ impl<'a> AnalogPrinter<'a> {
                 } else {
                     t.line(&format!("// term {w} `{name}`: its value at the iterate"));
                     t.line(&format!("cx_.set({w}, at_iterate_[{w}].v);"));
+                    if let Target::DelayTime(k) = f.writes[w] {
+                        t.line(&DelayPrinter::new(self).time_fault(w, k));
+                    }
+                    if let Target::Trace(k) = f.writes[w] {
+                        // a record the block wrote is the watch's bytes; none is the empty record
+                        t.line(&format!("if let Some(record_) = &{}[{k}] {{ cx_.out_bytes({w}).copy_from_slice(record_); }}", ValuePrinter::TRACES));
+                    }
                 }
             }
             for (p, (w, slot)) in f.partials.iter().enumerate() {
