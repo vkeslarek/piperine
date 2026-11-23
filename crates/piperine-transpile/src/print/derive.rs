@@ -91,14 +91,16 @@ impl DerivePrinter {
                 ValueType::UInt(bits) => format!("let {name} = rt::UInt::<{bits}>::from_f64({params}[{i}]);"),
                 ValueType::Int(bits) => format!("let {name} = rt::Int::<{bits}>::from_f64({params}[{i}]);"),
                 // an enum is read only as itself, passed on as it is (`{ md: md }`, below)
-                _ => return Err(unsupported(format!("a derived param that reads the param `{}` of type {}", p.name, p.ty))),
+                _ => return Err(unsupported(format!("a derived param that reads the param `{}` of type {}", p.name, ir.written(&p.ty)))),
             });
         }
         let tail = match &binding.ty {
             ValueType::F64 => value,
             ValueType::Bool => format!("if {value} {{ 1.0 }} else {{ 0.0 }}"),
             ValueType::UInt(_) | ValueType::Int(_) => format!("({value}).to_f64()"),
-            _ => return Err(unsupported(format!("a derived param of type {}", binding.ty))),
+            // a unit enum crosses as its tag: the discriminant of the variant the expression selects
+            ValueType::Enum(_) if !ir.is_composite_value(&binding.ty) => format!("({value}) as i64 as f64"),
+            _ => return Err(unsupported(format!("a derived param of type {}", ir.written(&binding.ty)))),
         };
         let mut t = Text::new();
         t.comment(&format!("derive {}: {}.{} from the params of {}", binding.k, binding.child, binding.param, binding.parent), at);

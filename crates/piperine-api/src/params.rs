@@ -72,6 +72,11 @@ pub struct Changed {
     pub value: f64,
     /// Whether the param was recomputed from another (not the one the host set).
     pub derived: bool,
+    /// The bytes a composite param holds after the change, when it is one (§8.1.23: a param bound from another follows it); `value` is
+    /// then unused.
+    pub bytes: Option<Vec<u8>>,
+    /// The bytes it held before.
+    pub old_bytes: Option<Vec<u8>>,
 }
 
 impl Changed {
@@ -83,12 +88,18 @@ impl Changed {
     /// The value as the circuit takes it: what the host gave stays a real (as every `set` of a
     /// param has been), a recomputed `bool` is a bool.
     pub fn param_value(&self) -> ParamValue {
-        self.encoded(self.value)
+        match &self.bytes {
+            Some(bytes) => ParamValue::Bytes(bytes.clone()),
+            None => self.encoded(self.value),
+        }
     }
 
     /// The value before the `set`, as the circuit takes it.
     pub fn old_value(&self) -> ParamValue {
-        self.encoded(self.old)
+        match &self.old_bytes {
+            Some(bytes) => ParamValue::Bytes(bytes.clone()),
+            None => self.encoded(self.old),
+        }
     }
 
     /// The value as a scheduled `set` takes it.
@@ -149,6 +160,32 @@ pub struct Params {
     /// The integers a host gave that no `f64` holds exactly (PI-01 AC 4), by `(instance, param)`: the table's own value is the
     /// nearest `f64`.
     exact: std::collections::BTreeMap<(String, String), i128>,
+    /// The composite params of a child bound from a param of its parent that follow it when a host sets it (§8.1.23).
+    rebinds: Vec<Rebind>,
+}
+
+/// A composite param of a child bound from a param of its parent.
+#[derive(Debug, Clone, PartialEq)]
+struct Rebind {
+    /// The child instance.
+    child: String,
+    /// The child's param.
+    param: String,
+    /// The parent instance.
+    parent: String,
+    /// The param of the parent the child's is bound from.
+    from: String,
+    /// How the child follows it.
+    kind: RebindKind,
+}
+
+/// How a bound composite param follows its source.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum RebindKind {
+    /// The parent's composite is passed on whole (`{ rs: rs }`): the child holds the same bytes.
+    Copy,
+    /// The child's `Option` is `Some` of the parent's value (`{ rs: rt }`, `{ rs: Some(rt) }`, §3.2.3).
+    SomeOf,
 }
 
 #[derive(Debug, Clone)]
@@ -241,7 +278,39 @@ impl Params {
                     .collect(),
             })
             .collect();
-        Params { plan: DerivePlan::of(ir), instances, exact: std::collections::BTreeMap::new() }
+        let plan = DerivePlan::of(ir);
+        let rebinds = Self::rebinds_of(ir, &plan);
+        Params { plan, instances, exact: std::collections::BTreeMap::new(), rebinds }
+    }
+
+    /// The composite bindings of `plan` a host `set` can follow: a param passed on whole, or an `Option` that is `Some` of a param.
+    fn rebinds_of(ir: &Ir, plan: &DerivePlan) -> Vec<Rebind> {
+        let mut found = Vec::new();
+        for binding in plan.bindings().iter().filter(|binding| ir.is_composite_value(&binding.ty)) {
+            let Some(parent) = ir.instances().find(|i| i.path() == binding.parent) else { continue };
+            let source = |expr: piperine_ir::ExprId| match ir.expr(expr) {
+                piperine_ir::Expr::Param(index) => parent.body().params().get(*index as usize),
+                _ => None,
+            };
+            let (read, kind) = match ir.expr(binding.expr) {
+                piperine_ir::Expr::OptionPack { is, value } if matches!(ir.expr(*is), piperine_ir::Expr::Bool(true)) => (source(*value), RebindKind::SomeOf),
+                // an `Option` param passed on whole is packed again from its two halves (`lower_param_expression`)
+                piperine_ir::Expr::OptionPack { is, .. } => match ir.expr(*is) {
+                    piperine_ir::Expr::OptionPart { option, part: piperine_ir::LevelPart::Is } => (source(*option), RebindKind::Copy),
+                    _ => (None, RebindKind::Copy),
+                },
+                _ => (source(binding.expr), RebindKind::Copy),
+            };
+            let Some(read) = read else { continue };
+            let fits = match kind {
+                RebindKind::Copy => read.ty == binding.ty,
+                RebindKind::SomeOf => matches!(&binding.ty, ValueType::Option(payload) if **payload == read.ty),
+            };
+            if fits {
+                found.push(Rebind { child: binding.child.clone(), param: binding.param.clone(), parent: binding.parent.clone(), from: read.name.clone(), kind });
+            }
+        }
+        found
     }
 
     /// The value of `param` of `instance`; `None` when the design has no such param.
@@ -342,7 +411,7 @@ impl Params {
         for (done, change) in changes.iter().enumerate() {
             if let Err(error) = write(change) {
                 for undone in changes[..done].iter().rev() {
-                    let back = Changed { value: undone.old, old: undone.value, ..undone.clone() };
+                    let back = Changed { value: undone.old, old: undone.value, bytes: undone.old_bytes.clone(), old_bytes: undone.bytes.clone(), ..undone.clone() };
                     // the old value was accepted before: an undo that fails leaves the circuit's
                     // own error to be read, and the table is untouched either way
                     let _ = write(&back);
@@ -387,7 +456,7 @@ impl Params {
         let old = self.get(instance, param).ok_or_else(|| Failure::Host { code: "E0801", message: format!("`{label}` names no param of the design") })?;
         let readers = self.plan.readers(instance, param);
         let ty = self.slot(instance).and_then(|s| s.params.iter().find(|(n, _, _)| n == param)).map(|(_, t, _)| t.clone()).unwrap_or(ValueType::F64);
-        let mut changes = vec![Changed { instance: instance.to_string(), param: param.to_string(), ty, old, value, derived: false }];
+        let mut changes = vec![Changed { instance: instance.to_string(), param: param.to_string(), ty, old, value, derived: false, bytes: None, old_bytes: None }];
         if readers.is_empty() {
             return Ok(changes);
         }
@@ -403,10 +472,22 @@ impl Params {
                 continue;
             }
             if binding.ty.is_composite() || self.composite_bytes(&binding.child, &binding.param).is_some() {
-                return Err(refuse(format!(
-                    "`{label}` is read by the placement of the composite param `{}.{}`, which keeps the value it elaborated to: set `{}.{}` itself instead",
-                    binding.child, binding.param, binding.child, binding.param
-                )));
+                let rebind = self.rebinds.iter().find(|r| r.child == binding.child && r.param == binding.param && r.kind == RebindKind::SomeOf);
+                let Some(rebind) = rebind else {
+                    return Err(refuse(format!(
+                        "`{label}` is read by the placement of the composite param `{}.{}`, which this design computes from more than the param: set `{}.{}` itself instead",
+                        binding.child, binding.param, binding.child, binding.param
+                    )));
+                };
+                let held = working.get(&rebind.parent, &rebind.from).ok_or_else(|| Failure::Backend(format!("`{}.{}` has no value", rebind.parent, rebind.from)))?;
+                let bytes = working.some_bytes(&binding.child, &binding.param, held)?;
+                let old = working.composite_bytes(&binding.child, &binding.param).map(<[u8]>::to_vec).unwrap_or_default();
+                if bytes != old {
+                    let change = Changed { instance: binding.child.clone(), param: binding.param.clone(), ty: ValueType::Unit, old: f64::NAN, value: f64::NAN, derived: true, bytes: Some(bytes), old_bytes: Some(old) };
+                    working.apply(std::slice::from_ref(&change));
+                    changes.push(change);
+                }
+                continue;
             }
             let parent = working.slot(&binding.parent).ok_or_else(|| Failure::Backend(format!("the derive plan names `{}`, which is no instance", binding.parent)))?;
             let inputs: Vec<f64> = parent.params.iter().map(|(_, _, v)| *v).collect();
@@ -423,15 +504,65 @@ impl Params {
         Ok(changes)
     }
 
+    /// The changes of the composite params bound from the composite param `param` of `instance` once it holds `bytes`, in instance
+    /// order and down every level (§8.1.23): a param passed on whole takes the same bytes. Nothing is written and the table is untouched.
+    pub fn composite_changes(&self, instance: &str, param: &str, bytes: &[u8]) -> Vec<Changed> {
+        let mut changes = Vec::new();
+        let mut pending = vec![(instance.to_string(), param.to_string(), bytes.to_vec())];
+        while let Some((parent, from, held)) = pending.pop() {
+            for rebind in self.rebinds.iter().filter(|r| r.kind == RebindKind::Copy && r.parent == parent && r.from == from) {
+                let Some(old) = self.composite_bytes(&rebind.child, &rebind.param).map(<[u8]>::to_vec) else { continue };
+                if old != held {
+                    changes.push(Changed { instance: rebind.child.clone(), param: rebind.param.clone(), ty: ValueType::Unit, old: f64::NAN, value: f64::NAN, derived: true, bytes: Some(held.clone()), old_bytes: Some(old) });
+                    pending.push((rebind.child.clone(), rebind.param.clone(), held.clone()));
+                }
+            }
+        }
+        changes
+    }
+
+    /// The bytes the `Option` param `param` of `instance` holds when it is `Some(value)`.
+    fn some_bytes(&self, instance: &str, param: &str, value: f64) -> Result<Vec<u8>, Failure> {
+        let composite = self.slot(instance).and_then(|s| s.composites.iter().find(|c| c.name == param)).ok_or_else(|| Failure::Backend(format!("`{instance}.{param}` is no composite param")))?;
+        let mut bytes = composite.bytes.clone();
+        for (leaf, wanted) in [("some", 1.0), ("value", value)] {
+            let found = composite.layout.leaves().iter().find(|l| l.name == leaf).ok_or_else(|| Failure::Backend(format!("`{instance}.{param}` has no leaf `{leaf}`")))?;
+            let encoded = LeafValue::encode(found.leaf, wanted).map_err(|why| Failure::Host { code: "E0802", message: format!("`{instance}.{param}.{leaf}` refuses the value {wanted}: {why}") })?;
+            let at = found.offset as usize;
+            bytes[at..at + encoded.len()].copy_from_slice(&encoded);
+        }
+        Ok(bytes)
+    }
+
+    /// `E0802` for an integer above 2^53 set on a param others derive from, or one a placement derives itself: a derive function takes its
+    /// parent's params as `f64`, which cannot hold it, so the recomputed values would be wrong (PI-01 AC 4).
+    pub fn refuse_exact(&self, instance: &str, param: &str) -> Result<(), Failure> {
+        let label = format!("{instance}.{param}");
+        let refuse = |message: String| Failure::Host { code: "E0802", message };
+        if let Some(giving) = self.plan.giving(instance, param) {
+            return Err(refuse(format!("`{label}` is derived from `{}` of `{}` by its placement: set that param instead", giving.reads.join("`, `"), giving.parent)));
+        }
+        if !self.plan.readers(instance, param).is_empty() || self.rebinds.iter().any(|r| r.parent == instance && r.from == param) {
+            return Err(refuse(format!("`{label}` is read by a placement, and an integer above 2^53 does not cross as an `f64`: give a value of at most 2^53")));
+        }
+        Ok(())
+    }
+
     /// The change `binding` makes when its expression gives `value`.
     fn derived(&self, binding: &Binding, value: f64) -> Result<Changed, Failure> {
         let old = self.get(&binding.child, &binding.param).ok_or_else(|| Failure::Backend(format!("the derive plan names `{}.{}`, which is no param", binding.child, binding.param)))?;
-        Ok(Changed { instance: binding.child.clone(), param: binding.param.clone(), ty: binding.ty.clone(), old, value, derived: true })
+        Ok(Changed { instance: binding.child.clone(), param: binding.param.clone(), ty: binding.ty.clone(), old, value, derived: true, bytes: None, old_bytes: None })
     }
 
     /// Takes `changes` into the table.
     pub fn apply(&mut self, changes: &[Changed]) {
         for change in changes {
+            if let Some(bytes) = &change.bytes {
+                if let Some(composite) = self.instances.iter_mut().find(|s| s.path == change.instance).and_then(|s| s.composites.iter_mut().find(|c| c.name == change.param)) {
+                    composite.bytes = bytes.clone();
+                }
+                continue;
+            }
             self.exact.remove(&(change.instance.clone(), change.param.clone()));
             let found = self.instances.iter_mut().find(|s| s.path == change.instance).and_then(|s| s.params.iter_mut().find(|(n, _, _)| *n == change.param));
             if let Some((_, _, v)) = found {

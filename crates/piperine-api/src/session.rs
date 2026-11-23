@@ -283,6 +283,7 @@ impl Session {
     /// `f64` into `table` (what derives from it is not recomputed from a value a derive function cannot hold).
     fn set_exact_integer(table: &mut Params, circuit: &mut CircuitInstance, ir: &Ir, path: &ParamPath, scalar: ParamScalar) -> Result<(), Failure> {
         let ParamScalar::Integer(value) = scalar else { return Ok(()) };
+        table.refuse_exact(&path.instance, &path.param)?;
         let ty = ir.instance_at(&path.instance).and_then(|instance| instance.body().params().iter().find(|param| param.name == path.param).map(|param| param.ty.clone()));
         let bits = match ty {
             Some(ValueType::UInt(bits) | ValueType::Int(bits)) => bits,
@@ -298,7 +299,7 @@ impl Session {
         let label = path.label();
         circuit.set(&path.instance, &path.param, piperine_solver::prelude::ParamValue::Bytes(bytes)).map_err(|error| Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {value}: {error}") })?;
         let old = table.get(&path.instance, &path.param).unwrap_or(f64::NAN);
-        let change = Changed { instance: path.instance.clone(), param: path.param.clone(), ty: ValueType::Int(bits), old, value: value as f64, derived: false };
+        let change = Changed { instance: path.instance.clone(), param: path.param.clone(), ty: ValueType::Int(bits), old, value: value as f64, derived: false, bytes: None, old_bytes: None };
         table.apply(&[change]);
         table.keep_exact(&path.instance, &path.param, value);
         Ok(())
@@ -321,17 +322,33 @@ impl Session {
     /// `shown` is the value as the host gave it, for the refusals.
     fn write_leaf_change(table: &mut Params, circuit: &mut CircuitInstance, path: &ParamPath, change: &LeafChange, shown: &str) -> Result<(), Failure> {
         let label = change.label();
-        circuit.check_set(&path.instance, &path.param, &change.param_value()).map_err(|error| {
-            let text = error.to_string();
-            if text.contains("is refused, check") {
-                Failure::Host { code: "E0317", message: format!("the `where` of the param `{}.{}` is false for the value {shown} written at `{label}`", path.instance, path.param) }
-            } else {
-                Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {shown}: {text}") }
+        // the composite params bound from this one follow it (§8.1.23); a param no device pin holds is not written when they do
+        let followers = table.composite_changes(&path.instance, &path.param, &change.bytes);
+        let written = Session::pinned(circuit, &path.instance, &path.param) || followers.is_empty();
+        if written {
+            circuit.check_set(&path.instance, &path.param, &change.param_value()).map_err(|error| {
+                let text = error.to_string();
+                if text.contains("is refused, check") {
+                    Failure::Host { code: "E0317", message: format!("the `where` of the param `{}.{}` is false for the value {shown} written at `{label}`", path.instance, path.param) }
+                } else {
+                    Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {shown}: {text}") }
+                }
+            })?;
+            circuit.set(&path.instance, &path.param, change.param_value()).map_err(|error| Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {shown}: {error}") })?;
+        }
+        for follower in &followers {
+            if Session::pinned(circuit, &follower.instance, &follower.param) {
+                circuit.set(&follower.instance, &follower.param, follower.param_value()).map_err(|error| Failure::Host { code: "E0802", message: format!("`{}` refuses the value {shown}: {error}", follower.label()) })?;
             }
-        })?;
-        circuit.set(&path.instance, &path.param, change.param_value()).map_err(|error| Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {shown}: {error}") })?;
+        }
         table.apply_leaf(change);
+        table.apply(&followers);
         Ok(())
+    }
+
+    /// Whether a device pin holds the param `param` of `instance`.
+    fn pinned(circuit: &CircuitInstance, instance: &str, param: &str) -> bool {
+        circuit.bound().is_some_and(|bound| bound.names.params.contains_key(&(instance.to_string(), param.to_string())))
     }
 }
 
