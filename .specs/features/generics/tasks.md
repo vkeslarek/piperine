@@ -1218,8 +1218,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `impl_thermal_celsius_reads_temp_minus_273_15` passes under `**Run srchandles**`
-- [ ] Gate check passes: Full
+- [x] `impl_thermal_celsius_reads_temp_minus_273_15` passes under `**Run srchandles**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
