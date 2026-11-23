@@ -5,7 +5,7 @@
 //! naming it. The call is then typed by the signature with the arguments substituted.
 
 use crate::msl::Span;
-use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgsNode, Resolution};
+use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, Resolution, TypeKind};
 
 use super::check::Checker;
 use super::generics::{Bound, GenericParameter, GenericSignature, ParameterKind};
@@ -174,6 +174,10 @@ impl Checker<'_> {
             return None;
         }
         for (index, node) in nodes.iter().enumerate() {
+            // `_` is as if left out (§1.2.12): the connections give the argument, else its default
+            if matches!(node, GenericArgNode::Type(ty) if matches!(self.design.type_node(*ty).kind, TypeKind::Infer)) {
+                continue;
+            }
             let value = self.generic_argument(&signature.parameters()[index], node, file)?;
             inference.give(index, value);
         }

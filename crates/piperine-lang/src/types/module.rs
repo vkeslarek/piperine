@@ -213,11 +213,20 @@ impl Checker<'_> {
             self.unsupported(file, node.span, "generic module");
             return None;
         }
-        let substitution = if self.design.decl_data(module).generics_span.is_some() { Some(self.generic_placement(expr, *callee, module, args)?) } else { None };
+        // pushed before the arguments are typed: a `let` that feeds back through its own placement is judged by §8.3.5
+        self.placing.push(Some(module));
+        let substitution = if self.design.decl_data(module).generics_span.is_some() {
+            let Some(given) = self.generic_placement(expr, *callee, module, args) else {
+                self.placing.pop();
+                return None;
+            };
+            Some(given)
+        } else {
+            None
+        };
         self.reach(module);
         self.callees.insert(expr, Callee::Module(module));
         self.exprs[callee.index()] = Some(Ty::Module(module));
-        self.placing.push(Some(module));
         let outer = std::mem::replace(&mut self.placement_substitution, substitution.clone());
         self.connections(expr, module, args, file);
         self.placement_substitution = outer;

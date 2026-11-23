@@ -344,9 +344,9 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `generic_module_arguments_are_explicit_or_inferred`, `an_underscore_generic_argument_is_inferred` and `two_natures_for_one_nature_parameter_are_e0180_naming_both` pass under `**Run typesmods**`
-- [ ] `a_generic_placement_feeds_back_through_its_unknown` (the Book's `lowpass` and `PiAw` shapes over the stdlib `idt`: no `E0332`) and `a_carrier_handed_to_a_generic_out_port_needs_no_initial_value` pass under `**Run typesmods**`
-- [ ] Gate check passes: Quick
+- [x] `generic_module_arguments_are_explicit_or_inferred`, `an_underscore_generic_argument_is_inferred` and `two_natures_for_one_nature_parameter_are_e0180_naming_both` pass under `**Run typesmods**`
+- [x] `a_generic_placement_feeds_back_through_its_unknown` (the Book's `lowpass` and `PiAw` shapes over the stdlib `idt`: no `E0332`) and `a_carrier_handed_to_a_generic_out_port_needs_no_initial_value` pass under `**Run typesmods**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
