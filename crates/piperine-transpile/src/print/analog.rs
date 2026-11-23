@@ -293,6 +293,7 @@ impl<'a> AnalogPrinter<'a> {
                     stack.extend(value);
                 }
                 Expr::Math { args, .. } => stack.extend(args),
+                Expr::Table { x, .. } | Expr::TableSlope { x, .. } => stack.push(*x),
                 Expr::Closure { body, .. } => stack.push(*body),
                 control @ (Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. }) => {
                     stack.extend(control.operands());

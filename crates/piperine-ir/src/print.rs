@@ -878,6 +878,10 @@ impl<'a> Printer<'a> {
             Expr::OptionPack { is, value } => next.extend([text("option(".into()), Piece::Expr(*is), text(", ".into()), Piece::Expr(*value), text(")".into())]),
             Expr::OptionPart { option, part } => next.extend([Piece::Expr(*option), text(if *part == LevelPart::Is { ".is" } else { ".value" }.into())]),
             Expr::Default(ty) => next.push(text(format!("{ty}::default()"))),
+            Expr::Table { x, table, control } | Expr::TableSlope { x, table, control } => {
+                let name = if matches!(data.kind, Expr::Table { .. }) { "table" } else { "table_slope" };
+                next.extend([text(format!("{name}(")), Piece::Expr(*x), text(format!(", \"{}\", {})", control.text(), Printer::samples(table)))]);
+            }
             Expr::Math { f, args } => {
                 next.push(text(format!("{}(", Printer::math_name(*f))));
                 Printer::list(next, args);
@@ -1023,7 +1027,7 @@ impl<'a> Printer<'a> {
         let ty = |id: &ExprId| ir.exprs.get(id.index()).map(|e| e.ty.clone());
         match kind {
             Expr::Env(Env::Static | Env::Analysis(_)) | Expr::Fired(_) => Some(ValueType::Bool),
-            Expr::Real(_) | Expr::Math { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } | Expr::Flow { .. } | Expr::Derivative(_) => {
+            Expr::Real(_) | Expr::Math { .. } | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } | Expr::Flow { .. } | Expr::Derivative(_) => {
                 Some(ValueType::F64)
             }
             Expr::Bool(_) => Some(ValueType::Bool),
@@ -1220,6 +1224,8 @@ impl<'a> Printer<'a> {
             }
             Expr::Call { function, args } => format!("call fn {} ({})", function.0, ids(args)),
             Expr::Math { f, args } => format!("{} ({})", Printer::math_name(*f), ids(args)),
+            Expr::Table { x, table, control } => format!("table {} \"{}\" {}", e(x), control.text(), Printer::samples(table)),
+            Expr::TableSlope { x, table, control } => format!("table_slope {} \"{}\" {}", e(x), control.text(), Printer::samples(table)),
             Expr::Closure { params, body } => {
                 let params: Vec<String> = params.iter().map(u32::to_string).collect();
                 format!("closure ({}) {}", params.join(", "), e(body))
@@ -1376,6 +1382,12 @@ impl<'a> Printer<'a> {
 
     fn method_name(method: Method) -> &'static str {
         method.name()
+    }
+
+    /// The samples of a table model as `[(a, v), ..]`, each number as `real` writes it.
+    fn samples(table: &[(Real, Real)]) -> String {
+        let pairs: Vec<String> = table.iter().map(|(abscissa, value)| format!("({}, {})", Printer::real(*abscissa), Printer::real(*value))).collect();
+        format!("[{}]", pairs.join(", "))
     }
 
     fn math_name(f: MathFn) -> &'static str {

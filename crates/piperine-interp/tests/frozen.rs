@@ -821,3 +821,18 @@ fn a_param_of_another_type_is_refused_naming_the_transpiled_backend() {
     }
     assert!(Interpreter::new(build(vec![param("r", ValueType::F64), param("on", ValueType::Bool)])).is_ok(), "`f64` and `bool` params run");
 }
+
+#[test]
+fn a_table_expression_is_refused_by_name() {
+    // PI-10 AC 8 (T40, R1): a body that holds a `table_model` is refused by `Interpreter::new` naming the form, once for the
+    // value and the slope together.
+    let named = Composite::refused(|b| {
+        let x = Switching::ex(b).real(0.5);
+        let table = vec![(piperine_ir::Real::new(0.0), piperine_ir::Real::new(0.0)), (piperine_ir::Real::new(1.0), piperine_ir::Real::new(2.0))];
+        let control = piperine_ir::TableControl { degree: piperine_ir::TableDegree::Linear, low: piperine_ir::Extrapolation::Constant, high: piperine_ir::Extrapolation::Constant };
+        let value = Composite::run(b, Expr::Table { x, table: table.clone(), control }, ValueType::F64);
+        let slope = Composite::run(b, Expr::TableSlope { x, table, control }, ValueType::F64);
+        (vec![], vec![value, slope])
+    });
+    assert_eq!(named, ["a table model"]);
+}

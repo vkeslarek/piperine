@@ -26,6 +26,6 @@ pub use model::{
     Addend, AggregateData, AnalysisKind, Derives, FieldsForm, TypeData, TypeKind, VariantData, BinaryOp, BodyData, BodyNode, Branch, BranchKind, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Env, Event, EventSource, Expr,
     ExprData, FunctionData, Hoisted, InstanceData, Inflow, Merge, Reach, ReachedItem, Ir, LevelPart, Local, MathFn, Method, NatureData, NetData, NodeAlias, NodeData, NodeRef,
     NodeRole, Operator, Origin, Param, Place, Projection, Quantity, QuantityRole, Reaction, Site, Stmt, Stream, StreamField, Terminal, UnaryOp,
-    ValueType,
+    ValueType, Extrapolation, TableControl, TableDegree,
 };
 pub use real::Real;

@@ -523,7 +523,7 @@ impl<'a> ValuePrinter<'a> {
     /// The expressions `expr` holds, statements included.
     pub(crate) fn children(ir: &Ir, expr: &Expr, out: &mut Vec<ExprId>) {
         match expr {
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => out.push(*expr),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Table { x: expr, .. } | Expr::TableSlope { x: expr, .. } => out.push(*expr),
             Expr::Unwrap { is, value, .. } => out.extend([*is, *value]),
             Expr::Same { a, b } => out.extend([*a, *b]),
             Expr::LevelCast { expr, .. } => out.push(*expr),
@@ -723,6 +723,7 @@ impl<'a> ValuePrinter<'a> {
                 };
                 atom(format!("{}.{name}()", self.piece(*arg)?.at(Prec::Atom)))
             }
+            Expr::Table { .. } | Expr::TableSlope { .. } => Err(self.unsupported(e, "a table model")),
             // a closure is a function value, which is the reference `&dyn Fn` takes
             Expr::Closure { .. } => Ok(Piece::new(format!("&{}", self.closure(e)?), Prec::Unary)),
             Expr::Probe { plus, minus } => self.probe_piece(*plus, *minus).ok_or_else(|| self.unsupported(e, "probe")),

@@ -511,6 +511,68 @@ pub enum Expr {
     OptionPart { option: ExprId, part: LevelPart },
     /// `T::default()` (H.8 rule 4): the type is the one written.
     Default(ValueType),
+    /// `table_model(x, table, control)` (§22.2.15, PI-10): the interpolant of the `table` of `(abscissa,
+    /// value)` samples, strictly increasing in the abscissa, read at `x`, an `f64`. The table and the
+    /// control are elaboration constants, so the form holds them and the run only evaluates it.
+    Table { x: ExprId, table: Vec<(Real, Real)>, control: TableControl },
+    /// The derivative of the `Table` with the same `table` and `control` with respect to `x`: the slope of
+    /// its interpolant at `x` (§22.2.15 rule 5). An `f64`.
+    TableSlope { x: ExprId, table: Vec<(Real, Real)>, control: TableControl },
+}
+
+/// The control string of a `table_model` as the elaborator parsed it (§22.2.15 rules 2 to 4): the
+/// interpolation, and the extrapolation at each end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TableControl {
+    /// The interpolation character.
+    pub degree: TableDegree,
+    /// What happens below the first abscissa.
+    pub low: Extrapolation,
+    /// What happens above the last abscissa.
+    pub high: Extrapolation,
+}
+
+/// The interpolation of a `table_model`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TableDegree {
+    /// `D`: the closest sample, no interpolation.
+    Closest,
+    /// `1`: linear.
+    Linear,
+    /// `2`: a quadratic spline.
+    Quadratic,
+    /// `3`: a cubic spline.
+    Cubic,
+}
+
+/// What a `table_model` does outside its table, at one end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Extrapolation {
+    /// `C`: the end value.
+    Constant,
+    /// `L`: the line of the end slope.
+    Linear,
+    /// `E`: an error, `E0705`, when `x` is outside the table.
+    Error,
+}
+
+impl TableControl {
+    /// The control string that parses to this control: the interpolation character then the two
+    /// extrapolation characters.
+    pub fn text(&self) -> String {
+        let degree = match self.degree {
+            TableDegree::Closest => 'D',
+            TableDegree::Linear => '1',
+            TableDegree::Quadratic => '2',
+            TableDegree::Cubic => '3',
+        };
+        let end = |extrapolation: Extrapolation| match extrapolation {
+            Extrapolation::Constant => 'C',
+            Extrapolation::Linear => 'L',
+            Extrapolation::Error => 'E',
+        };
+        format!("{degree}{}{}", end(self.low), end(self.high))
+    }
 }
 
 impl Expr {
@@ -540,6 +602,7 @@ impl Expr {
             Expr::OptionPack { is, value } => vec![*is, *value],
             Expr::OptionPart { option, .. } => vec![*option],
             Expr::Default(_) => Vec::new(),
+            Expr::Table { x, .. } | Expr::TableSlope { x, .. } => vec![*x],
             Expr::Index { expr, index } => vec![*expr, *index],
         }
     }
