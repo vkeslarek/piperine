@@ -32,6 +32,7 @@ use std::fmt::{self, Display, Write};
 
 use crate::ids::{AggregateId, ExprId, FunctionId, StmtId, TypeId};
 use crate::model::{
+    Drive,
     BinaryOp, BodyData, BodyNode, BranchKind, Carrier, CarrierRole, ChildValue, Constant, EmitField, Env, EventSource, Expr, ExprData, FieldsForm, FunctionData, InstanceData, Ir,
     CommitTarget, LevelPart, Local, MathFn, Method, NodeRef, Operator, Origin, Param, Place, Projection, Quantity, QuantityRole, Stmt, Stream, ReprForm, Terminal, TypeData, TypeKind,
     UnaryOp, ValueType,
@@ -480,7 +481,17 @@ impl<'a> Printer<'a> {
             );
         }
         for drive in &body.drives {
-            let mut text = format!("drive {} = ", Printer::carrier(scope, drive.carrier));
+            let mut text = format!("drive {}", Printer::carrier(scope, drive.carrier));
+            if let Some(element) = drive.element {
+                text.push_str(&format!("[{element}]"));
+            }
+            for step in &drive.path {
+                match step {
+                    Projection::Field(k) => text.push_str(&format!(".{k}")),
+                    Projection::Index(index) => text.push_str(&format!("[{}]", self.render(scope, Piece::Expr(*index)))),
+                }
+            }
+            text.push_str(" = ");
             text.push_str(&self.render(scope, Piece::Expr(drive.value)));
             if let Some(after) = drive.after {
                 text.push_str(" after ");
@@ -659,6 +670,18 @@ impl<'a> Printer<'a> {
                 Projection::Index(index) => next.extend([Piece::Text("[".into()), Piece::Expr(*index), Piece::Text("]".into())]),
             }
         }
+    }
+
+    /// What a definition names inside its carrier, for the structural form: ` at N` for the element, then the steps.
+    fn drive_target_key(drive: &Drive) -> String {
+        let mut out = drive.element.map_or(String::new(), |e| format!(" at {e}"));
+        for step in &drive.path {
+            match step {
+                Projection::Field(k) => out.push_str(&format!(".{k}")),
+                Projection::Index(index) => out.push_str(&format!("[e{}]", index.0)),
+            }
+        }
+        out
     }
 
     /// `target`, as the structural form writes it: `at eN` for the element, `.k` and `[eN]` for the steps.
@@ -1181,7 +1204,7 @@ impl<'a> Printer<'a> {
             );
             if !(body.drives.is_empty() && body.events.is_empty() && body.reactions.is_empty()) {
                 let opt = |e: Option<ExprId>| e.map_or("-".to_string(), |a| format!("e{}", a.0));
-                let drives: Vec<String> = body.drives.iter().map(|d| format!("(c{} e{} {})", d.carrier, d.value.0, opt(d.after))).collect();
+                let drives: Vec<String> = body.drives.iter().map(|d| format!("(c{} e{} {}{})", d.carrier, d.value.0, opt(d.after), Printer::drive_target_key(d))).collect();
                 let events: Vec<String> = body
                     .events
                     .iter()

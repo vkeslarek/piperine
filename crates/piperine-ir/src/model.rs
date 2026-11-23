@@ -258,6 +258,13 @@ pub struct Drive {
     pub value: ExprId,
     pub after: Option<ExprId>,
     pub origin: Origin,
+    /// The element of an array carrier the definition names (`bits[0] = a;`, CV-25); `None` for the whole carrier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub element: Option<u64>,
+    /// The steps into the value (a field, an element of a value array) the definition names inside the carrier or
+    /// its element; empty for all of it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub path: Vec<Projection>,
 }
 
 /// An event of a body (§13): what fires it, and a `bool` read at the microstep that must hold

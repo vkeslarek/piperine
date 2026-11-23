@@ -175,7 +175,7 @@ fn hoisted(b: &mut IrBuilder, name: &str, extra: Option<&str>) -> BodyId {
     }
     let mut x = Dx::new(b, F, 5, 14);
     let clk = x.carrier(0, BIT);
-    b.drive(body, Drive { carrier: 1, value: clk, after: None, origin: Buck::origin(F, 5, 5) });
+    b.drive(body, Drive { carrier: 1, value: clk, after: None, origin: Buck::origin(F, 5, 5), element: None, path: vec![] });
     let gate = b.event(body, Event { source: EventSource::Changed(1), guard: None, origin: Buck::origin(F, 6, 8) });
     let mut x = Dx::new(b, F, 6, 40);
     let level = x.carrier(1, BIT);

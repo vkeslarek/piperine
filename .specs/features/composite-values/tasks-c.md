@@ -305,9 +305,9 @@ T86 → T87 → T88 → T89 → T90
 
 **Done when**:
 
-- [ ] `commit_targets_and_windows_are_checked` and `an_element_commit_in_a_loop_is_one_statement` pass under `**Run irarr**`
-- [ ] `each_composite_values_form_is_refused_by_name` passes under `**Run interp**`
-- [ ] Gate check passes: Task (`piperine-ir`, `piperine-interp`)
+- [x] `commit_targets_and_windows_are_checked` and `an_element_commit_in_a_loop_is_one_statement` pass under `**Run irarr**`
+- [x] `each_composite_values_form_is_refused_by_name` passes under `**Run interp**`
+- [x] Gate check passes: Task (`piperine-ir`, `piperine-interp`)
 
 **Tests**: integration
 **Gate**: task
@@ -839,6 +839,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **T69 notes:** `CommitSink`/`ElementSink` carry an `offset` relative to the statement's declared range (`React::commit_at`, `commit_element_at`), and the thunk adds the statement's own offset: a statement over a field range now commits correctly (before, the thunk always passed offset 0). `rt/array.rs` is part of every digital design's runtime files (`Runtime::files`).
 **C1 batch gate (T64 to T69), 2026-11-23:** `cargo test --workspace --exclude piperine-lang-server --no-fail-fast` ran 343 targets with ONE failure, `crates/piperine-cli/tests/book.rs::every_cli_listing_of_the_book_is_what_the_binary_prints` (the Book listing `monitor.msl` uses `Bit<Logic<4>>`, which the binary refuses `P0001` "generic arguments on `Logic`, which has no generic parameter"); phase C changed nothing under `crates/piperine-lang`, `crates/piperine-cli` or `docs` (`git diff origin/main --stat` is empty there), so it is red on `origin/main` too (the generics A-B merge), not caused by this phase. `cargo test -p piperine-parity -- --nocapture` exit 0, `cargo test -p piperine-cli --test twins` exit 0, the seven buck targets exit 0, `cargo test -p piperine --test buck_scenarios` exit 0. The disk hit 100% once (test temp dirs in TMPDIR); `/var/tmp/piperine-tmp-d` is cleared before each gate.
 **T70 notes:** the checks live in `piperine-ir/src/check/carrier_array.rs`; a whole read of an array carrier is typed `[T; K]` and `Expr::Previous` of one is refused (`x.prev()` on the whole array is E0211 at the language level); `NodeArray` and `CarrierWindow` are set through `IrBuilder::node_array`/`bind_child_windows` (no `BodySpec` field); the net of an array carrier keeps the element type (`NetSpec` gained no `count`: the carrier holds it). Interim until T72/T73: the plan panics on an element event and the printer returns `Unsupported` for an element form or a commit with a target (both replaced by those tasks). The interpreter names four new forms (`an element read of an array of carriers`, `an element's previous value`, `an element's changed()`, `an element event`).
+**T71 notes:** `Drive.element`/`Drive.path` and `Stmt::Commit.target` are checked by `check/carrier_array.rs` (`written_type`: the committed value has the type of the levels the target names, §12.1.9); the IR rule `a carrier has both a drive and a commit` is now per element (a constant element, a whole carrier, or a run-time element that may reach any), the IR half of CV-25 AC 3. The interpreter names `an element or field commit`, `an element or field definition` and `a window of an array of carriers`.
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 

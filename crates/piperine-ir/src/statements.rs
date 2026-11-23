@@ -7,7 +7,7 @@
 //! `Ir::check` names it.
 
 use crate::ids::{ExprId, StmtId};
-use crate::model::{EmitField, Expr, Ir, Stmt};
+use crate::model::{CommitTarget, EmitField, Expr, Ir, Stmt};
 
 /// One step of the walk.
 enum Step {
@@ -32,8 +32,8 @@ impl Statements {
                     Some(Stmt::Let { init, .. } | Stmt::Assign { value: init, .. }) => next.push(Step::Expr(*init)),
                     Some(Stmt::Expr(e) | Stmt::BoundStep { value: e, .. }) => next.push(Step::Expr(*e)),
                     Some(Stmt::Contribute { addends, .. }) => next.extend(addends.iter().map(|a| Step::Expr(a.value))),
-                    Some(Stmt::Commit { value, after, .. }) => {
-                        next.extend([*value].into_iter().chain(*after).map(Step::Expr));
+                    Some(Stmt::Commit { value, after, target, .. }) => {
+                        next.extend([*value].into_iter().chain(*after).chain(target.iter().flat_map(CommitTarget::index_operands)).map(Step::Expr));
                         next.push(Step::Count(id));
                     }
                     Some(Stmt::Emit { fields, .. }) => {

@@ -294,7 +294,7 @@ impl Buck {
         let r = x.carrier(reference, word.clone());
         let t = x.carrier(target, word.clone());
         let same = x.bin(BinaryOp::Eq, r, t, ValueType::Bool);
-        b.drive(body, Drive { carrier: at_target, value: same, after: None, origin: Buck::origin(F, 24, 5) });
+        b.drive(body, Drive { carrier: at_target, value: same, after: None, origin: Buck::origin(F, 24, 5), element: None, path: vec![] });
         let rise = Buck::rise(b, body, tick, F, 27, 8);
         let mut x = Dx::new(b, F, 30, 14);
         let r = x.carrier(reference, word.clone());
@@ -557,7 +557,7 @@ impl Buck {
         let c = x.carrier(count, u9.clone());
         let at_zero = x.int(0, u9.clone());
         let same = x.bin(BinaryOp::Eq, c, at_zero, fb.clone());
-        b.drive(body, Drive { carrier: sample, value: same, after: None, origin: Buck::origin(F, 51, 5) });
+        b.drive(body, Drive { carrier: sample, value: same, after: None, origin: Buck::origin(F, 51, 5), element: None, path: vec![] });
         let rise = Buck::rise(b, body, clk, F, 56, 8);
 
         let locals = [
@@ -892,7 +892,7 @@ impl Buck {
             let value = x.bin(BinaryOp::BitAnd, cmd, not, ValueType::Bool);
             x.at(line, 38);
             let after = x.param(0, ValueType::F64);
-            b.drive(body, Drive { carrier: target, value, after: Some(after), origin: Buck::origin(F, line, 5) });
+            b.drive(body, Drive { carrier: target, value, after: Some(after), origin: Buck::origin(F, line, 5), element: None, path: vec![] });
         }
         body
     }

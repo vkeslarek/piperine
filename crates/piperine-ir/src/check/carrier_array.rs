@@ -5,7 +5,7 @@
 
 use super::{Checker, Walk};
 use crate::ids::ExprId;
-use crate::model::{BodyData, Expr, Origin, ValueType};
+use crate::model::{BodyData, CommitTarget, Expr, Origin, Projection, TypeKind, ValueType};
 
 impl Checker<'_> {
     /// An element read of carrier `carrier` at `index`: `form` names the read in the message, `ty` is the type the
@@ -78,6 +78,147 @@ impl Checker<'_> {
             if carrier.count == Some(0) {
                 self.report(format!("{item} carrier {}", carrier.name), carrier.origin.clone(), format!("carrier {} is an array of no element", carrier.name));
             }
+        }
+    }
+
+    /// The windows of arrays of carriers a placement gives its child's carrier ports: parallel to the bindings, each
+    /// naming an array carrier of the parent and a run (or one element) inside it.
+    pub(super) fn child_windows(&mut self, item: &str, body: &BodyData) {
+        for (ci, windows) in body.child_windows.iter().enumerate() {
+            let Some(child) = body.children.get(ci) else {
+                self.report(item.to_string(), body.origin.clone(), format!("windows of child {ci}, out of range ({} children)", body.children.len()));
+                continue;
+            };
+            let bound = body.child_carriers.get(ci).map_or(&[][..], Vec::as_slice);
+            if windows.len() != bound.len() {
+                self.report(item.to_string(), child.origin.clone(), format!("child {} has {} windows for {} carrier bindings", child.name, windows.len(), bound.len()));
+                continue;
+            }
+            for (port, (window, binding)) in windows.iter().zip(bound).enumerate() {
+                let Some(window) = window else { continue };
+                let count = binding.and_then(|c| body.carriers.get(c as usize)).and_then(|c| c.count);
+                let Some(count) = count else {
+                    self.report(item.to_string(), child.origin.clone(), format!("child {}: port {port} has a window of a carrier that is no array of carriers", child.name));
+                    continue;
+                };
+                let length = window.length.unwrap_or(1);
+                if length == 0 || window.first.checked_add(length).is_none_or(|end| end > count) {
+                    self.report(
+                        item.to_string(),
+                        child.origin.clone(),
+                        format!("child {}: port {port} has the window {}..+{length} of an array of {count}", child.name, window.first),
+                    );
+                }
+            }
+        }
+    }
+
+    /// The type of the levels `path` names inside a value of type `ty`: a field of a struct or a tuple, an element of
+    /// a value array (an integer index, a constant one below the length). `Err` names the first step that fails.
+    pub(super) fn projected(&self, ty: &ValueType, path: &[Projection]) -> Result<ValueType, String> {
+        let mut at = ty.clone();
+        for step in path {
+            at = match (step, &at) {
+                (Projection::Field(k), ValueType::Tuple(parts)) => {
+                    parts.get(*k as usize).cloned().ok_or_else(|| format!("field {k} of a tuple of {}", parts.len()))?
+                }
+                (Projection::Field(k), ValueType::Struct(id)) => match self.ir.types.get(id.index()).map(|t| &t.kind) {
+                    Some(TypeKind::Struct { fields, .. }) => {
+                        fields.get(*k as usize).map(|(_, ty)| ty.clone()).ok_or_else(|| format!("field {k} of a struct of {}", fields.len()))?
+                    }
+                    _ => return Err(format!("field {k} of a type that is no struct")),
+                },
+                (Projection::Index(index), ValueType::Array(element, length)) => {
+                    if self.ty(*index).is_some_and(|t| !t.is_integer()) {
+                        return Err("an index that is no integer".to_string());
+                    }
+                    if let Some(Expr::Int(n)) = self.ir.exprs.get(index.index()).map(|d| &d.kind) {
+                        if *n < 0 || *n as u128 >= *length as u128 {
+                            return Err(format!("the constant index {n} of an array of {length}"));
+                        }
+                    }
+                    (**element).clone()
+                }
+                (step, ty) => return Err(format!("{step:?} into a value of type {ty}")),
+            };
+        }
+        Ok(at)
+    }
+
+    /// The type a commit or a definition of carrier `carrier` (holding `ty`) writes through `element` and `path`: the
+    /// carrier's whole value, an element of an array carrier, or the levels the projections name inside either. `None`
+    /// after reporting a target that does not fit the carrier.
+    pub(super) fn written_type(
+        &mut self,
+        w: &Walk,
+        origin: &Origin,
+        carrier: u32,
+        ty: &ValueType,
+        element: Option<&dyn ElementOf>,
+        path: &[Projection],
+    ) -> Option<ValueType> {
+        let count = w.owner.counts.get(carrier as usize).copied().flatten();
+        let base = match (count, element) {
+            (Some(count), Some(element)) => {
+                element.check(self, w, origin, count);
+                ty.clone()
+            }
+            (Some(count), None) => ValueType::Array(Box::new(ty.clone()), count),
+            (None, Some(_)) => {
+                self.wrong(w, origin.clone(), format!("an element of carrier {carrier}, which is no array of carriers"));
+                return None;
+            }
+            (None, None) => ty.clone(),
+        };
+        match self.projected(&base, path) {
+            Ok(written) => Some(written),
+            Err(what) => {
+                self.wrong(w, origin.clone(), format!("a target of carrier {carrier} that does not fit it: {what}"));
+                None
+            }
+        }
+    }
+
+    /// The target of a commit: its element (an expression) and its steps.
+    pub(super) fn commit_type(&mut self, w: &Walk, origin: &Origin, carrier: u32, ty: &ValueType, target: Option<&CommitTarget>) -> Option<ValueType> {
+        match target {
+            None => self.written_type(w, origin, carrier, ty, None, &[]),
+            Some(target) => {
+                let element = target.element.map(ExpressionElement);
+                self.written_type(w, origin, carrier, ty, element.as_ref().map(|e| e as &dyn ElementOf), &target.path)
+            }
+        }
+    }
+
+    /// The type a definition of carrier `carrier` writes through `element` and `path`.
+    pub(super) fn drive_type(&mut self, w: &Walk, origin: &Origin, carrier: u32, ty: &ValueType, element: Option<u64>, path: &[Projection]) -> Option<ValueType> {
+        let element = element.map(ConstantElement);
+        self.written_type(w, origin, carrier, ty, element.as_ref().map(|e| e as &dyn ElementOf), path)
+    }
+}
+
+/// An element of an array carrier a commit or a definition names, checked against the array's count.
+pub(super) trait ElementOf {
+    /// Reports an element that does not fit an array of `count`.
+    fn check(&self, checker: &mut Checker<'_>, w: &Walk, origin: &Origin, count: u64);
+}
+
+/// A commit's element: an integer expression, constant or not.
+pub(super) struct ExpressionElement(ExprId);
+
+impl ElementOf for ExpressionElement {
+    fn check(&self, checker: &mut Checker<'_>, w: &Walk, origin: &Origin, count: u64) {
+        checker.index_in_range(w, origin, "a commit's element", self.0, count);
+    }
+}
+
+/// A definition's element: a constant (a definition's index folds at elaboration).
+pub(super) struct ConstantElement(u64);
+
+impl ElementOf for ConstantElement {
+    fn check(&self, checker: &mut Checker<'_>, w: &Walk, origin: &Origin, count: u64) {
+        if self.0 >= count {
+            checker.wrong(w, origin.clone(), format!("the element {} of a definition is out of range for an array of {count}", self.0));
         }
     }
 }

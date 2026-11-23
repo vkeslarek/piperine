@@ -189,7 +189,7 @@ impl ParamEvents {
         let tolerance = Param { name: "tol".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
         let body = b.body(BodySpec { name: "Lag".into(), origin: origin.clone(), params: vec![tolerance], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
         b.carrier(body, Carrier { name: "seen".into(), ty: ValueType::F64, role: CarrierRole::Out, init: None, origin: origin.clone(), count: None });
-        b.drive(body, Drive { carrier: 0, value, after: None, origin: Self::at() });
+        b.drive(body, Drive { carrier: 0, value, after: None, origin: Self::at(), element: None, path: vec![] });
         let top = b.next_instance_id();
         let net = b.net(NetSpec { path: "Lag.seen".into(), ty: ValueType::F64, declared_by: top, init: None, origin: origin.clone() });
         let top = b.instance(InstanceSpec { path: "Lag".into(), name: "Lag".into(), body, parent: None, nodes: vec![], params: vec![Constant::Real(Real::new(1e-9))], origin });

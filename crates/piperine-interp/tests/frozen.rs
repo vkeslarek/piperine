@@ -803,6 +803,11 @@ fn each_composite_values_form_is_refused_by_name() {
     for name in ["an element read of an array of carriers", "an element's previous value", "an element's changed()", "an element event"] {
         assert!(reads.iter().any(|entry| entry == name), "{name} is named: {reads:?}");
     }
+    // `mem[2] = 1;` and `mem[1] <- 7;` (T71)
+    let writes = CarrierArrays::refused_with(false, true, |_| vec![]);
+    for name in ["an element or field commit", "an element or field definition"] {
+        assert!(writes.iter().any(|entry| entry == name), "{name} is named: {writes:?}");
+    }
 }
 
 /// A design with a body `Ram` that holds an array carrier `mem` of four `u8`, for the forms of arrays of carriers.
@@ -812,6 +817,12 @@ impl CarrierArrays {
     /// What the interpreter names in `Ram` when its `analog` block runs `forms` (expressions over `mem`, built by
     /// the caller) and an `on mem[1].changed()` event is added when `event` is set.
     fn refused(event: bool, forms: impl FnOnce(&mut IrBuilder) -> Vec<ExprId>) -> Vec<String> {
+        Self::refused_with(event, false, forms)
+    }
+
+    /// [`refused`](Self::refused), and when `writes` is set the body also defines `mem[2] = 1` and commits
+    /// `mem[1] <- 7` in a reaction.
+    fn refused_with(event: bool, writes: bool, forms: impl FnOnce(&mut IrBuilder) -> Vec<ExprId>) -> Vec<String> {
         let mut b = IrBuilder::new();
         let el = Devices::electrical(&mut b);
         let at = |line: u32| Origin { file: "ram.msl".into(), line, col: 1 };
@@ -832,6 +843,15 @@ impl CarrierArrays {
         b.carrier(body, Carrier { name: "mem".into(), ty: Ty::u(8), role: CarrierRole::Signal, init: None, origin: at(2), count: Some(4) });
         if event {
             b.event(body, Event { source: EventSource::ElementChanged { carrier: 0, element: 1 }, guard: None, origin: at(3) });
+        }
+        if writes {
+            let one = Dx::new(&mut b, "ram.msl", 5, 5).int(1, Ty::u(8));
+            let seven = Dx::new(&mut b, "ram.msl", 5, 9).int(7, Ty::u(8));
+            b.drive(body, piperine_ir::Drive { carrier: 0, value: one, after: None, origin: at(5), element: Some(2), path: vec![] });
+            let at_one = Dx::new(&mut b, "ram.msl", 6, 5).int(1, Ty::u(8));
+            let commit = b.stmt(Stmt::Commit { carrier: 0, value: seven, after: None, target: Some(piperine_ir::CommitTarget { element: Some(at_one), path: vec![] }) });
+            let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: at(6) });
+            b.reaction(body, piperine_ir::Reaction { on: vec![go], stmts: vec![commit], locals: vec![], origin: at(6) });
         }
         let top = b.next_instance_id();
         let net = b.net(NetSpec { path: "Ram.mem".into(), ty: Ty::u(8), declared_by: top, init: None, origin: at(2) });

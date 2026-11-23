@@ -243,7 +243,7 @@ impl Elaboration<'_, '_> {
             let origin = self.expr_origin(arg.value);
             let wanted = self.structure.carriers.get(carrier as usize).map(|c| c.ty.clone());
             if let Some((value, _)) = self.lower_drive_value(scope, arg.value, None, wanted.as_ref()) {
-                self.structure.drives.push(Drive { carrier, value, after: None, origin });
+                self.structure.drives.push(Drive { carrier, value, after: None, origin, element: None, path: vec![] });
             }
         }
         let mut inner = Self::sub_scope(scope);

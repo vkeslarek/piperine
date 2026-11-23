@@ -27,7 +27,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::contributions::Contributions;
 use crate::ids::{ExprId, FunctionId, StmtId, TypeId};
 use crate::model::{
-    BinaryOp, BodyData, BranchKind, CarrierRole, Child, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, NodeRef, NodeRole, Origin, Place, QuantityRole, ReachedItem, Stmt, Terminal, UnaryOp,
+    BinaryOp, BodyData, BranchKind, CarrierRole, Child, ChildValue, Constant, EmitField, Env, EventSource, Expr, Ir, NodeRef, NodeRole, Origin, Place, Projection, QuantityRole, ReachedItem, Stmt, Terminal, UnaryOp,
     FunctionData, ReprForm, TypeData, TypeKind, ValueType,
 };
 use crate::typing::Typing;
@@ -99,6 +99,27 @@ struct Owner {
     in_body: bool,
     /// The `analog` block of a body: sites and contributions may appear.
     analog: bool,
+}
+
+/// Which element of its carrier a write names, as far as the IR says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ElementWritten {
+    /// The whole carrier (or its only value).
+    Whole,
+    /// One element, known.
+    Constant(u64),
+    /// An element chosen at run time: any of them.
+    Dynamic,
+}
+
+impl ElementWritten {
+    /// Whether two writes of one carrier can reach one element.
+    fn overlaps(self, other: ElementWritten) -> bool {
+        match (self, other) {
+            (ElementWritten::Constant(a), ElementWritten::Constant(b)) => a == b,
+            _ => true,
+        }
+    }
 }
 
 /// The state of one walk: one owner's code, every root of it sharing the memo.
@@ -490,6 +511,7 @@ impl<'a> Checker<'a> {
     fn child_carrier_ids(&mut self, body: &BodyData) {
         let ir = self.ir;
         let item = format!("body {}", body.name);
+        self.child_windows(&item, body);
         for (ci, bound) in body.child_carriers.iter().enumerate() {
             if bound.is_empty() {
                 continue;
@@ -1182,11 +1204,11 @@ impl<'a> Checker<'a> {
                 self.report(format!("{item} drive {}", c.name), drive.origin.clone(), format!("drives the reached carrier {}: a child's carrier is read only", c.name));
             }
         }
-        let mut committed: BTreeSet<u32> = BTreeSet::new();
+        let mut committed: Vec<(u32, ElementWritten)> = Vec::new();
         for (k, reaction) in body.reactions.iter().enumerate() {
             let (_, stmts) = self.reach(&reaction.stmts, &[]);
             for (s, carrier) in self.commits(&stmts) {
-                committed.insert(carrier);
+                committed.push((carrier, self.element_written(&self.ir.stmts[s.index()])));
                 if let Some(c) = input(carrier) {
                     let origin = self.stmt_origin(&self.ir.stmts[s.index()]);
                     self.report(format!("{item} reaction {k}"), origin, format!("commits to the `in` port {}: an input is written outside the body", c.name));
@@ -1197,11 +1219,31 @@ impl<'a> Checker<'a> {
                 }
             }
         }
-        let driven: BTreeSet<u32> = body.drives.iter().map(|d| d.carrier).collect();
-        for c in driven.intersection(&committed) {
-            if let Some(carrier) = body.carriers.get(*c as usize) {
+        // a definition and a commit of one carrier, or of one element of an array carrier (CV-25 AC 3: two elements
+        // are two carriers), never both; a commit whose element is not constant may reach any element
+        let mut clashing: BTreeSet<u32> = BTreeSet::new();
+        for drive in &body.drives {
+            let written = drive.element.map_or(ElementWritten::Whole, ElementWritten::Constant);
+            if committed.iter().any(|(carrier, other)| *carrier == drive.carrier && written.overlaps(*other)) {
+                clashing.insert(drive.carrier);
+            }
+        }
+        for c in clashing {
+            if let Some(carrier) = body.carriers.get(c as usize) {
                 self.report(format!("{item} carrier {}", carrier.name), carrier.origin.clone(), format!("carrier {} has both a drive and a commit", carrier.name));
             }
+        }
+    }
+
+    /// The element of its carrier a commit writes.
+    fn element_written(&self, stmt: &Stmt) -> ElementWritten {
+        let Stmt::Commit { target, .. } = stmt else { return ElementWritten::Whole };
+        match target.as_ref().and_then(|t| t.element) {
+            None => ElementWritten::Whole,
+            Some(index) => match self.ir.exprs.get(index.index()).map(|d| &d.kind) {
+                Some(Expr::Int(n)) if *n >= 0 => ElementWritten::Constant(*n as u64),
+                _ => ElementWritten::Dynamic,
+            },
         }
     }
 
@@ -1266,7 +1308,14 @@ impl<'a> Checker<'a> {
                 let name = body.carriers.get(drive.carrier as usize).map_or("<bad carrier>", |c| c.name.as_str());
                 let mut w = Walk::new(owner(false, format!("body {} drive {name}", body.name)), 0);
                 if let Some(c) = body.carriers.get(drive.carrier as usize) {
-                    self.carried(&w, drive.value, &c.ty, "the value of a drive");
+                    if let Some(written) = self.drive_type(&w, &drive.origin, drive.carrier, &c.ty, drive.element, &drive.path) {
+                        self.carried(&w, drive.value, &written, "the value of a drive");
+                    }
+                }
+                for step in &drive.path {
+                    if let Projection::Index(index) = step {
+                        self.walk(&mut w, Task::Expr(*index, Ctx::top()));
+                    }
                 }
                 self.walk(&mut w, Task::Expr(drive.value, Ctx::top()));
                 if let Some(after) = drive.after {
@@ -1486,12 +1535,19 @@ impl<'a> Checker<'a> {
                     next.push(Task::Expr(a.value, ctx));
                 }
             }
-            Stmt::Commit { carrier, value, after, .. } => {
+            Stmt::Commit { carrier, value, after, target } => {
                 match w.owner.carriers.get(*carrier as usize).cloned() {
-                    Some(ty) => self.carried(w, *value, &ty, "the value of a commit"),
+                    Some(ty) => {
+                        if let Some(written) = self.commit_type(w, &origin, *carrier, &ty, target.as_ref()) {
+                            self.carried(w, *value, &written, "the value of a commit");
+                        }
+                    }
                     None => self.report(w.owner.item.clone(), origin.clone(), format!("commit to carrier {carrier}, out of range ({} carriers)", w.owner.carriers.len())),
                 }
                 next.push(Task::Expr(*value, ctx));
+                if let Some(target) = target {
+                    next.extend(target.index_operands().map(|index| Task::Expr(index, ctx)));
+                }
                 if let Some(after) = after {
                     self.carried(w, *after, &ValueType::F64, "the delay of a commit");
                     next.push(Task::Expr(*after, ctx));

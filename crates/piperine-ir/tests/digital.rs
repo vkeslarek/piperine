@@ -563,7 +563,7 @@ fn carriers_and_drives_print() {
     b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, "bad.msl", 1, 20));
     b.carrier(body, Buck::carrier("w", Ty::u(4), CarrierRole::Out, None, "bad.msl", 1, 30));
     let value = Dx::new(&mut b, "bad.msl", 2, 9).int(3, Ty::u(8));
-    b.drive(body, Drive { carrier: 0, value, after: None, origin: Design::origin("bad.msl", 2, 5) });
+    b.drive(body, Drive { carrier: 0, value, after: None, origin: Design::origin("bad.msl", 2, 5), element: None, path: vec![] });
     let top = b.next_instance_id();
     let net = b.net(NetSpec { path: "Bad.q".into(), ty: Ty::u(8), declared_by: top, init: None, origin: Design::origin("bad.msl", 1, 20) });
     let top = Stage::instance(&mut b, "Bad", body, None, vec![], vec![], vec![net], 1);
@@ -797,10 +797,10 @@ fn a_defective_digital_body_gives_one_entry_per_defect() {
         b.carrier(body, Buck::carrier(name, ty, role, init, F, line, col));
     }
     let yes = Dx::new(&mut b, F, 3, 10).boolean(true);
-    b.drive(body, Drive { carrier: 0, value: yes, after: None, origin: Design::origin(F, 3, 5) });
+    b.drive(body, Drive { carrier: 0, value: yes, after: None, origin: Design::origin(F, 3, 5), element: None, path: vec![] });
     let mut x = Dx::new(&mut b, F, 4, 9);
     let q = x.carrier(0, ValueType::Bool);
-    b.drive(body, Drive { carrier: 2, value: q, after: None, origin: Design::origin(F, 4, 5) });
+    b.drive(body, Drive { carrier: 2, value: q, after: None, origin: Design::origin(F, 4, 5), element: None, path: vec![] });
     let changed = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Changed(0), guard: None, origin: Design::origin(F, 5, 8) });
     let count = Dx::new(&mut b, F, 6, 14).carrier(4, Ty::u(4));
     b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Cross { e: count, ttol: None, etol: None }, guard: None, origin: Design::origin(F, 6, 8) });

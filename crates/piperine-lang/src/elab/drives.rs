@@ -29,7 +29,7 @@ impl Elaboration<'_, '_> {
             let origin = self.locator.decl(child);
             let wanted = self.structure.carriers.get(carrier as usize).map(|c| c.ty.clone());
             if let Some((value, after)) = self.lower_drive_value(scope, definition.value, definition.after, wanted.as_ref()) {
-                self.structure.drives.push(Drive { carrier, value, after, origin });
+                self.structure.drives.push(Drive { carrier, value, after, origin, element: None, path: vec![] });
             }
         }
     }
@@ -88,7 +88,7 @@ impl Elaboration<'_, '_> {
         let (lowered, _) = self.lower_drive_value(scope, value, None, Some(&ty))?;
         let name = format!("{}{instance}.{port_name}", self.frames[scope.frame].prefix);
         let carrier = self.add_carrier(Carrier { name, ty, role: CarrierRole::Signal, init: None, origin: origin.clone(), count: None });
-        self.structure.drives.push(Drive { carrier, value: lowered, after: None, origin });
+        self.structure.drives.push(Drive { carrier, value: lowered, after: None, origin, element: None, path: vec![] });
         Some(carrier)
     }
 }

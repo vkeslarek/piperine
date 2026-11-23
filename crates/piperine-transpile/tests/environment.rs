@@ -45,7 +45,7 @@ fn ambient(b: &mut IrBuilder) -> BodyId {
     }
     for (carrier, env, col) in [(4, Env::Temperature, 5), (5, Env::Gmin, 25), (6, Env::SourceScale, 40)] {
         let value = b.expr(Expr::Env(env), ValueType::F64, Buck::origin(A, 3, col));
-        b.drive(body, Drive { carrier, value, after: None, origin: Buck::origin(A, 3, col) });
+        b.drive(body, Drive { carrier, value, after: None, origin: Buck::origin(A, 3, col), element: None, path: vec![] });
     }
     let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(A, 4, 8) });
     let mut commits = Vec::new();

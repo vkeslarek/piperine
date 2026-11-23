@@ -593,7 +593,7 @@ impl Placements {
         b.reach(top_body, Reach { child: 0, item: ReachedItem::Carrier { carrier: seen, child_carrier: leaf_q } });
         if drive {
             let value = Ex::new(&mut b, "placements.msl", 6, 1).boolean(true);
-            b.drive(top_body, Drive { carrier: seen, value, after: None, origin: Self::at(6) });
+            b.drive(top_body, Drive { carrier: seen, value, after: None, origin: Self::at(6), element: None, path: vec![] });
         }
         let top = b.next_instance_id();
         let a = b.node(NodeSpec { path: "Top.a".into(), nature: el, declared_by: top, init: None, origin: Self::at(4) });
