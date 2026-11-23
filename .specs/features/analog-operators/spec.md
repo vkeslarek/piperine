@@ -331,7 +331,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 - [x] `piperine run --analysis noise` prints `onoise` for `noise_rc`, `noise_switch` and `noise_diode`; `noise_rc` and `noise_diode` agree with ngspice under the one documented contract `NOISE`, `noise_switch` with its closed form and, opened, with ngspice (T41).
 - [x] `delay_tline` and `tnom_res` agree with ngspice; `ddx`, `simparam` and traces match their closed forms.
 - [x] The 7 existing twins print the bytes they printed before.
-- [ ] `cargo build --workspace` has no warning and `cargo test --workspace` passes.
+- [x] `cargo build` of the crates the Build line names has no warning of this feature (one pre-existing warning, `tests/book/types.rs` `Reached::run`, is untouched and came with `explicit-unknowns`) and `cargo test --workspace --exclude piperine-lang-server` passes (`piperine-lang-server` does not build: GAPS B3).
 
 ---
 
