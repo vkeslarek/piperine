@@ -385,3 +385,7 @@ The user is away ("Tu sempre assume o default mais razoável e depois me conta")
 ## Size
 
 44 tasks in eight phases, seven batches; see `tasks.md`.
+
+---
+
+**Amendment, user decision 2026-11-23:** "dtemp seria um signal e o tnom seria por instância, o que deixa o nosso core apenas com temp". The core keeps only the run temperature; `tnom` is a per-instance model param and not a session or run key, and `dtemp` is no core mechanism. AO-08 and the `tnom` rows of Q4, Q6 and D13 are withdrawn; task T45 removes what B1 to B3 delivered.

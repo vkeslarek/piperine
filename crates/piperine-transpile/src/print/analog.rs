@@ -419,7 +419,7 @@ impl<'a> AnalogPrinter<'a> {
             // abi.md §4.2: `STATIC` is one `BOOL` byte, `TIME` an `F64`
             Source::Static | Source::Analysis(_) => format!("let {name} = {cx}.bool({i});"),
             // the pin of a session parameter holds an `Option<f64>`: known when the host gave it
-            Source::SessionParameter(_) => format!("let {name} = <Option<f64> as rt::Carried>::from_pin({cx}.bytes({i}));"),
+            Source::SessionParameter(_) => format!("let {name} = {{ let pin_ = {cx}.bytes({i}); (pin_[8] != 0).then(|| f64::from_le_bytes([pin_[0], pin_[1], pin_[2], pin_[3], pin_[4], pin_[5], pin_[6], pin_[7]])) }};"),
             _ => format!("let {name} = {cx}.f64({i});"),
         })
     }

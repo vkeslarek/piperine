@@ -147,12 +147,13 @@ fn parameterised(default: Option<f64>) -> Ir {
     })
 }
 
-/// The bytes of an `Option<f64>` pin: the tag byte, then the value (all zero for `None`).
+/// The bytes of a session parameter's pin: the value, then the `known` byte at 8 (all zero when
+/// the host gave none).
 fn option_pin(value: Option<f64>) -> Vec<u8> {
-    let mut bytes = vec![0u8; 9];
+    let mut bytes = vec![0u8; 16];
     if let Some(v) = value {
-        bytes[0] = 1;
-        bytes[1..].copy_from_slice(&v.to_le_bytes());
+        bytes[..8].copy_from_slice(&v.to_le_bytes());
+        bytes[8] = 1;
     }
     bytes
 }

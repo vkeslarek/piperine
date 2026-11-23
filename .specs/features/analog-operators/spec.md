@@ -332,3 +332,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 - [ ] `delay_tline` and `tnom_res` agree with ngspice; `ddx`, `simparam` and traces match their closed forms.
 - [ ] The 7 existing twins print the bytes they printed before.
 - [ ] `cargo build --workspace` has no warning and `cargo test --workspace` passes.
+
+---
+
+**Amendment, user decision 2026-11-23:** "dtemp seria um signal e o tnom seria por instância, o que deixa o nosso core apenas com temp". The core keeps only the run temperature; `tnom` is a per-instance model param and not a session or run key, and `dtemp` is no core mechanism. AO-08 and the `tnom` rows of Q4, Q6 and D13 are withdrawn; task T45 removes what B1 to B3 delivered.

@@ -62,7 +62,32 @@ Rules every task follows:
 - **Cross-lane touches are only those `design.md` names**: `piperine-analog-solver` (`math/integration.rs`, `device/assembly.rs`), `piperine-solver` (`analyses/noise.rs`, `protocol/transient.rs`, the one literal of `tests/abi_noise.rs`), `docs/spec/part_v_execution.md` §15.2. No other file of the solver crates or `piperine-abi` is edited.
 - **The interpreter is frozen (R1).** `piperine-interp` gains refusal rows only (T31); none of its existing targets is edited except `frozen.rs`, which gains tests.
 - **Fail loud.** A form this feature does not run is `P0001` naming it, or the spec's code; never a default, a skipped statement or a value of 0.
-- **Tests state what the spec says, not what the code does.** Expected values come from `docs/spec/`, the criterion's closed form or ngspice, with the derivation written beside the assertion. Test functions have exactly the names `## Checks` cites.
+- **Tests state what the spec says, not what the code does.** Expected values come from `docs/spec/`, the criterion's closed form or ngspice, with the derivation written beside the assertion. Test functions have exactly the names `
+
+---
+
+### T45: Withdraw the run `tnom`; every spice-faithful model reads its own `tnom` param
+
+**What**: Remove the run key `tnom` and the flag `--tnom` (`piperine-api` `request.rs`, `piperine-cli`), `Tolerances::tnom` and its context plumbing (`context_of`), the `tnom` rows of Part V and Appendix C, AO-08, and the Book rows of the key table; each `headers/spice` model that reads the solver's nominal temperature reads its own param `tnom: f64 = 300.15` instead; the ngspice twins keep their numbers (unset is 300.15 K, as ngspice). `tnom_res` (T43) becomes a twin of a per-instance `tnom` param. T15's tests are rewritten or removed with the key, the commit says which and why. Per user decision 2026-11-23.
+**Where**: `crates/piperine-api`, `crates/piperine-cli`, `crates/piperine-analog-solver/src/tolerances.rs`, `crates/piperine-lang/std` and spice models, `docs/spec`, `docs/book`
+**Depends on**: T36
+**Requirement**: AO-08 (withdrawn)
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] no `tnom` key or flag exists and a run table naming it is `P0010`
+- [ ] every spice-faithful model has its own `tnom` param and the parity twins pass unchanged
+- [ ] Gate check passes: Build, the touched crates' tests, `Run twins`, `Run parop`
+
+**Tests**: integration
+**Gate**: full
+
+**Commit**: `refactor: tnom is a per-instance model param, not a run key`
+
+---
+
+## Checks` cites.
 - **No existing test is removed, weakened or skipped.** A test that asserts a refusal this feature lifts (the rows of `types_subset.rs`, the `L47` assertion of `docs.rs`) is rewritten to assert the new behaviour, and its commit says which test and why. A struct literal that gains a field gains it as its "absent" value, with no assertion changed.
 - **AGENTS.md idiom rules and the code-clarity rules bind** (`.specs/features/code-clarity/spec.md`): no free function (every function has an owner type), no macro of your own, modules named after what they do, no abbreviated names, one purpose per type, no god method, every new struct, enum and method doc-commented, no `unwrap()`/`expect()` on a path a user's input reaches. Every new target opens with a `//!` scope header, has no `#[ignore]` and no file-scope `#![allow]`.
 - Zero warnings on every crate the `**Build**` line names. Cargo with `-p <crate>` or the default members: never `--workspace`, never `cargo clean`.
@@ -946,8 +971,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] the `ssession` and `apisession` tests of AO-07 and AO-08 named in `## Checks` pass
-- [ ] Gate check passes: `Run apisession`, `Run ssession`, then Full
+- [x] the `ssession` and `apisession` tests of AO-07 and AO-08 named in `## Checks` pass
+- [x] Gate check passes: `Run apisession`, `Run ssession`, then Full
 
 **Tests**: e2e
 **Gate**: full
@@ -1378,6 +1403,7 @@ Proof: run abinoise | test test_per_source_noise_reporting_and_conservation ... 
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** Planning (2026-11-20): the user was away and asked for the most reasonable default on every open point ("Tu sempre assume o default mais razoável e depois me conta"); the defaults are design.md D1 to D20. T9 blocked (orchestrator AFK defaults tried and not applied): (a) restarting the BDF2 stage as backward Euler over the whole step after Restart::Integrator (TrBdf2::stage_coeffs `(1/h, 0, -1/h)` at prev_h = 0, with Part V section 15.2.6 and Appendix C.2 reworded) makes `slew_limits_an_ideal_step_to_its_rate` pass, but it moves existing results: `piperine-analog-solver` `assembly_ddt` (hand-derived BDF2 current at prev_h = 0), `piperine-cli` `book` (3 listings), `buck` (`startup` 0.8025 to 0.8029), `options` (records) and `twins` (3 targets), so it was reverted per the rule; the parity/buck_* targets of piperine-parity were not reached before the stop. (b) the stdlib direction rule from sign(input - output) cannot work alone: in Track `pos(y) = x`, so the error is 0 when the reaction runs. T9 (test and fixture kept in the session scratchpad, uncommitted) needs a decision: accept (a) with the listed goldens regenerated, or give `slew` a direction that does not read the sign of `ddt`. B1 settled items: (1) per-source totals (T3): `onoise_total`/`inoise_total` sum each source's power-law integral then take the root (matches ngspice: two-source RC 1.999884e-6 both; integral-of-sum gives 2.000949e-6); same-name inputs are merged before integration. (2) D8: a non-positive endpoint density gives N1*df, no 1e-38 floor; an interval starting at a non-positive frequency is a trapezoid. (3) T4: new types `StimulusColumn` (name, phase, rows) and `TermLinearization` (unknowns, noise by input position); `stimulus_columns` returns `Result`; `NoiseColumn` gains `instance` and `input`. (4) T5: an input with no STIM is refused at solver build naming it; a zero transfer at a frequency fails naming input and frequency. (5) T6: `FlowOutput` enum {`Branch(BranchIdentifier)`, `Term{instance, term}`} in the prelude; `output_flow` replaces the node pair; `NoiseSolver`'s `out_ref`/`ref_ref` are replaced by a private `OutputTarget`. (6) `output_flow: None` added mechanically to five literals (`abi_noise` x2, `environment`, `failure_rules` x2).
+**User decision 2026-11-23 (direct):** "dtemp seria um signal e o tnom seria por instância, o que deixa o nosso core apenas com temp". The core keeps only the run temperature (`temp`, `temperature()`); `tnom` is an ordinary per-instance model param (spice-faithful models declare `tnom`, default 27 C = 300.15 K) and `dtemp` is no core mechanism. Effect here: T36 gives the circuit `reltol`, `abstol`, `vntol`, `trtol`, `temp` and the `simparam` entries, no `tnom`; AO-08 and the run `tnom` key of T15 are withdrawn by the new task T45 (appended below), which removes the key, the flag, the context field and the spec text and makes each spice-faithful model read its own `tnom` param.
 **B4 settled items (T17 to T23):** (1) printed forms: `delay<k>(x, td[, max]) "name"` with the read `delay<k>.value`; `noise<k>(psd, "group"|none) "name"` with `noise<k>.value`; `session S<k> "name"` with `simparam("name"[, default])`; `trace<k> "stream"` with the statement `trace<k> {f0 = .., text = ".."}`. (2) Deps classes: a delay read is an affine unknown, a noise read a constant of the sum, a session parameter constant unless its default is not. (3) Differentiation folds zeros, treats function parameters as locals, names derived functions `<f>$d<i>` (memoized in `IrBuilder`), refuses a recursive function, a block with `let` outside a function and a local outside a function. (4) Checker: `ddx_call` in `types/analog.rs`; second argument must be a probe call (flow probes accepted), else `E0451`; `noise`'s name is `Option<str>`, `simparam`'s default `OptionF64`. (5) `emit!` in `analog` types from T23; one reached through a `fn` stays `P0001` naming the `fn` (D14); the elaborator refuses a direct one until T37 (SPEC_DEVIATION in `elab/records.rs`). (6) Until T24 to T31 the printer refuses `Expr::Delay`, `Expr::Noise`, `Expr::SessionParameter` and `Stmt::Trace` with `Unsupported` (SPEC_DEVIATION in `print/value.rs`). (7) Rewritten tests: `types_subset.rs` rows (ddx, delay, noise, simparam), `types_events.rs` (`an_emit_in_analog_is_p0001_by_name`, `a_check_reached_from_analog_is_e0603`), the `Deps` literal of `piperine-ir/tests/deps.rs`. (8) `contract.md` has the B4 re-anchor note. (9) A pre-existing warning (`crates/piperine/tests/book/types.rs` `Reached::run`) is untouched.
 **User approvals (2026-11-22):** T9's moved Book numbers ("Numeros do Book mudaram então acerta o book"), Part V §15.2 rule 6 ("Ok"), and the fix of the settle/retake defect, verification Finding 3 ("Corrige"); see t9-decision.md.
 **User decision (Finding 18, 2026-11-22, "Menor dos dois"):** nodes and branches both take the minimum of the session value and the nature's `abstol`; see AO-10 AC 6 and design.md D18.

@@ -26,9 +26,18 @@ use piperine_abi::layout::{BIT, F64};
 
 use crate::digital::{CarrierLayout, Digital, ReactionPlan};
 use crate::pin::PinLayout;
-use piperine_abi::raw::{Cell, DEFAULT, GROUND, Partial, ambient, cell, global, input, op, part, pin_flag, role};
+use piperine_abi::raw::{Cell, DEFAULT, Field, GROUND, Layout, List, Partial, Str, ambient, cell, global, input, leaf, op, part, pin_flag, role};
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_ir::{AnalysisKind, Body, Branch, BranchKind, Constant, Deps, Env, Operator, Origin, Stmt, Target as Query, Terminal, ValueType};
+
+const SESSION_VALUE: Str = Str::from_static("v");
+const SESSION_KNOWN: Str = Str::from_static("known");
+static SESSION_FIELDS: [Field; 2] = [Field { name: SESSION_VALUE, leaf: leaf::F64, offset: 0, count: 1 }, Field { name: SESSION_KNOWN, leaf: leaf::BOOL, offset: 8, count: 1 }];
+
+/// The layout of the pin of a session parameter: `{ v: F64 @0, known: BOOL @8 }`. The solver writes
+/// the value and sets `known` when the host gave the parameter; an absent `OPTIONAL` pin is all zero,
+/// so `known` is 0 and the read takes its default.
+pub static SESSION_PARAMETER: Layout = Layout { size: 16, align: 8, fields: List::from_slice(&SESSION_FIELDS) };
 
 /// What one term of the shape computes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -835,18 +844,16 @@ impl BodyPlan {
     }
 
     /// Adds one `GLOBAL NAMED` pin per session parameter of the body, named the parameter, holding
-    /// an `Option<f64>` (the value and its known byte): `OPTIONAL` when every read gives a default,
-    /// so a host that gives none leaves the pin unknown and the read takes its default (D12).
+    /// the layout [`SESSION_PARAMETER`] (the value, then a `known` byte the solver sets when the host
+    /// gave the parameter): `OPTIONAL` when every read gives a default, so a host that gives none
+    /// leaves the pin unknown and the read takes its default (D12).
     fn session_parameter_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<u32> {
-        let layout = PinLayout::in_ir(body.ir(), &ValueType::Option(Box::new(ValueType::F64)));
-        let fields = layout.as_ref().map(PinLayout::fields).unwrap_or_default();
-        let shaped = layout.as_ref().map(|l| l.layout(&fields));
         body.session_parameters()
             .iter()
             .map(|parameter| {
                 let at = format!("{}:{}:{}", parameter.origin.file, parameter.origin.line, parameter.origin.col);
                 let flags = if parameter.required { 0 } else { pin_flag::OPTIONAL };
-                let spec = PinSpec::discrete(&parameter.name, role::GLOBAL, shaped.as_ref().unwrap_or(&F64));
+                let spec = PinSpec::discrete(&parameter.name, role::GLOBAL, &SESSION_PARAMETER);
                 s.pin(PinSpec { origin: &at, global: global::NAMED, flags, ..spec })
             })
             .collect()
