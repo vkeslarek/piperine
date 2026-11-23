@@ -52,8 +52,10 @@ enum ArgKind {
     Checked { value: &'static str },
     /// `--<id> <value>`, given any number of times.
     Texts { value: &'static str },
-    /// `--<id> <path>=<value>`, given any number of times.
+    /// `--<id> <path>=<real>`, given any number of times.
     Param,
+    /// `--<id> <path>=<value>`, given any number of times: a real, or text the param's type reads (PI-01 to PI-03).
+    Given,
     /// `--<id> <name>=<value>`, given any number of times; the value is checked when the run is
     /// built, so a value that is no number is a `P0010` naming the entry, not a usage error.
     Setting,
@@ -73,19 +75,30 @@ impl Values {
         text.parse::<u32>().map_err(|_| format!("`{text}` is not a whole number"))
     }
 
-    /// The path and the real value of `--param`'s `text`, split at the last `=`.
-    fn param(text: &str) -> Result<(String, f64), String> {
-        let (path, value) = text.rsplit_once('=').ok_or_else(|| format!("`{text}` is not <path>=<value>"))?;
-        if path.is_empty() {
-            return Err(format!("`{text}` names no path"));
-        }
-        // a `bool` leaf of a composite param is given as `true` or `false`
-        let value = match value {
+    /// The path and the real value of a `<path>=<real>` flag's `text` (`--nodeset`), split at the last `=`; a flag is 1 or 0.
+    fn path_real(text: &str) -> Result<(String, f64), String> {
+        let (path, value) = Values::path_and_value(text)?;
+        let real = match value.as_str() {
             "true" => 1.0,
             "false" => 0.0,
             other => Values::real(other)?,
         };
-        Ok((path.to_string(), value))
+        Ok((path, real))
+    }
+
+    /// The path and the text of `--param`'s `text`, split at the last `=`: the text is kept whole, for the param's type to read
+    /// (an integer literal in a radix, a variant name, `None`, a number, a flag; PI-01 to PI-03, D24).
+    fn param(text: &str) -> Result<(String, String), String> {
+        Values::path_and_value(text)
+    }
+
+    /// `<path>=<value>` split at the last `=`; a text with no `=` or no path is refused.
+    fn path_and_value(text: &str) -> Result<(String, String), String> {
+        let (path, value) = text.rsplit_once('=').ok_or_else(|| format!("`{text}` is not <path>=<value>"))?;
+        if path.is_empty() {
+            return Err(format!("`{text}` names no path"));
+        }
+        Ok((path.to_string(), value.to_string()))
     }
 
     /// The name and the text of `--simparam`'s `text`, split at the first `=`.
@@ -139,7 +152,7 @@ const COMMANDS: &[CommandRow] = &[
             ArgRow { id: "points", kind: ArgKind::Count { value: "N" }, help: "ac, noise: points in all" },
             ArgRow { id: "print", kind: ArgKind::Texts { value: "SIGNAL" }, help: "a signal to print (repeatable)" },
             ArgRow { id: "stream", kind: ArgKind::Texts { value: "STREAM" }, help: "a record stream to print (repeatable)" },
-            ArgRow { id: "param", kind: ArgKind::Param, help: "set a parameter before the run: <path>=<value> (repeatable)" },
+            ArgRow { id: "param", kind: ArgKind::Given, help: "set a parameter before the run: <path>=<value> (repeatable)" },
             ArgRow { id: "backend", kind: ArgKind::Text { value: "BACKEND" }, help: "the backend: rust or interp" },
             ArgRow { id: "csv", kind: ArgKind::Path { value: "FILE" }, help: "write the table as CSV to this file" },
             ArgRow { id: "records", kind: ArgKind::Path { value: "FILE" }, help: "write the records as JSON Lines to this file" },
@@ -267,7 +280,8 @@ impl Cli {
             ArgKind::Checked { value } => arg.long(row.id).value_name(value).allow_negative_numbers(true).action(ArgAction::Set),
             ArgKind::Count { value } => arg.long(row.id).value_name(value).value_parser(Values::count).action(ArgAction::Set),
             ArgKind::Texts { value } => arg.long(row.id).value_name(value).action(ArgAction::Append),
-            ArgKind::Param => arg.long(row.id).value_name("PATH=VALUE").value_parser(Values::param).action(ArgAction::Append),
+            ArgKind::Param => arg.long(row.id).value_name("PATH=VALUE").value_parser(Values::path_real).action(ArgAction::Append),
+            ArgKind::Given => arg.long(row.id).value_name("PATH=VALUE").value_parser(Values::param).action(ArgAction::Append),
             ArgKind::Setting => arg.long(row.id).value_name("NAME=VALUE").value_parser(Values::setting).action(ArgAction::Append),
         }
     }
@@ -294,7 +308,8 @@ impl Cli {
             points: count("points"),
             print: texts("print"),
             streams: texts("stream"),
-            params: m.get_many::<(String, f64)>("param").map(|v| v.cloned().collect()).unwrap_or_default(),
+            params: Vec::new(),
+            param_texts: Cli::given_params(m),
             backend: text("backend"),
             csv: path("csv"),
             records: path("records"),
@@ -327,6 +342,11 @@ impl Cli {
             let value = m.get_one::<String>("tnom")?;
             Values::real(value).err().map(|why| format!("`--tnom {value}`: {why}"))
         })
+    }
+
+    /// The `--param` entries of `m`, in the order given.
+    fn given_params(m: &clap::ArgMatches) -> Vec<(String, String)> {
+        m.get_many::<(String, String)>("param").map(|v| v.cloned().collect()).unwrap_or_default()
     }
 
     /// The `--simparam` entries of `m` whose value is a number, in order, and the fault of the
@@ -460,7 +480,8 @@ mod tests {
             points: Some(20),
             print: vec!["a".into(), "b".into()],
             streams: vec!["s1".into(), "s2".into()],
-            params: vec![("r1.r".into(), 2000.0), ("c1.c".into(), 1e-9)],
+            params: vec![],
+            param_texts: vec![("r1.r".into(), "2000".into()), ("c1.c".into(), "1e-9".into())],
             backend: Some("interp".into()),
             csv: Some("o.csv".into()),
             records: Some("r.jsonl".into()),
@@ -492,6 +513,17 @@ mod tests {
             let args: Vec<&str> = ["piperine", "run"].iter().chain(bad).copied().collect();
             assert!(Cli::parse(args).is_err(), "{bad:?}");
         }
+    }
+
+    #[test]
+    fn a_param_is_kept_as_text_for_its_type() {
+        // PI-01 to PI-03 (D24): `--param` keeps every value as the text it was written, a number included: the param's type reads
+        // it when the session opens (an integer literal in a radix, a variant name, `None`, a number, a flag).
+        let args = ["piperine", "run", "--param", "a.x=1e-9", "--param", "a.n=0x1F", "--param", "a.md=Slow", "--param", "a.rs=None", "--param", "a.f=true"];
+        let Ok(Invocation::Run { overrides, .. }) = Cli::parse(args) else { panic!("the params parse") };
+        assert!(overrides.params.is_empty(), "no `--param` is read as a real before its type is known");
+        let texts: Vec<(&str, &str)> = overrides.param_texts.iter().map(|(path, text)| (path.as_str(), text.as_str())).collect();
+        assert_eq!(texts, [("a.x", "1e-9"), ("a.n", "0x1F"), ("a.md", "Slow"), ("a.rs", "None"), ("a.f", "true")]);
     }
 
     #[test]

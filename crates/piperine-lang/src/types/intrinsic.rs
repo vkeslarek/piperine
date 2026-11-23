@@ -1,4 +1,4 @@
-//! The two functions of §22.1 that are generic over `Repr` and have no `Logic` in them (`same`, `cast`), typed by their normative contract at the concrete type until `generics`
+//! The functions of §22.1, §22.2.15 and §22.6.4 that are generic over `Repr` and have no `Logic` in them (`same`, `cast`), typed by their normative contract at the concrete type until `generics`
 //! lands (spec Q1 (b)). A call whose callee is the stdlib's own item never reaches
 //! `signature_parts`, which refuses a generic function and an `extern` one; a project's own
 //! function of the same name is an ordinary function (§22 rule 3).
@@ -16,14 +16,24 @@ pub enum Intrinsic {
     Same,
     /// `cast<A: Repr, B: Repr>(a: A) -> B`, `A::WIDTH == B::WIDTH` (§22.1.3).
     Cast,
+    /// `parse_table<Row, const N: usize>(text: str) -> [Row; N]`: the type of the `const` being initialized
+    /// gives `Row` and `N` (§22.6.4 rule 2, PI-09).
+    ParseTable,
+    /// `parse_hex<T, const N: usize>(text: str) -> [T; N]`, `T` an integer type (§22.6.4, PI-09).
+    ParseHex,
+    /// `table_model<const N: usize>(x: f64, table: [(f64, f64); N], control: str) -> f64` (§22.2.15, PI-10).
+    TableModel,
 }
 
 impl Intrinsic {
-    /// The function of §22.1 called `name`, if it is one of the two.
-    fn named(name: &str) -> Option<Intrinsic> {
-        match name {
-            "same" => Some(Intrinsic::Same),
-            "cast" => Some(Intrinsic::Cast),
+    /// The function called `name` in the std namespace `namespace` (`values`, `io`, `analog`), if it is one of them.
+    fn named(namespace: &str, name: &str) -> Option<Intrinsic> {
+        match (namespace, name) {
+            ("values", "same") => Some(Intrinsic::Same),
+            ("values", "cast") => Some(Intrinsic::Cast),
+            ("io", "parse_table") => Some(Intrinsic::ParseTable),
+            ("io", "parse_hex") => Some(Intrinsic::ParseHex),
+            ("analog", "table_model") => Some(Intrinsic::TableModel),
             _ => None,
         }
     }
@@ -37,8 +47,8 @@ impl Checker<'_> {
             return None;
         }
         let parent = data.parent.map(|p| self.design.decl_data(p))?;
-        let in_values = matches!(parent.kind, DeclKind::Namespace(_)) && parent.name.as_ref().is_some_and(|n| n.text == "values");
-        in_values.then(|| Intrinsic::named(&data.name.as_ref()?.text)).flatten()
+        let namespace = matches!(parent.kind, DeclKind::Namespace(_)).then(|| parent.name.as_ref().map(|n| n.text.as_str())).flatten()?;
+        Intrinsic::named(namespace, &data.name.as_ref()?.text)
     }
 
     /// A call of one of the two: its type from the arguments, the turbofish or the type the
@@ -71,9 +81,63 @@ impl Checker<'_> {
                 self.refuse_enum_in_a_sequence(file, span, &to)?;
                 Ty::Option(Box::new(to))
             }
+            Intrinsic::ParseTable | Intrinsic::ParseHex => self.parsed_array(expr, intrinsic, args, expected)?,
+            Intrinsic::TableModel => self.table_model_call(expr, args)?,
         };
         self.callees.insert(expr, Callee::Intrinsic(intrinsic));
         Some(result)
+    }
+
+    /// `parse_table(text)` and `parse_hex(text)`: the text is a `str`, the result the type the `const` being
+    /// initialized gives (§22.6.4 rule 2): an array of `f64` or of a tuple of `f64` for a table, of one integer
+    /// type for a hex image. `None` after a diagnostic.
+    fn parsed_array(&mut self, expr: ExprId, intrinsic: Intrinsic, args: &[Arg], expected: Option<Ty>) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        self.apply(expr, &[Ty::Str], args)?;
+        let name = if intrinsic == Intrinsic::ParseTable { "parse_table" } else { "parse_hex" };
+        let Some(array) = expected.filter(|ty| matches!(ty, Ty::Array(..))) else {
+            self.unsupported(file, span, &format!("`{name}` whose result type is not written (the array type is the `const`'s, §22.6.4 rule 2)"));
+            return None;
+        };
+        let Ty::Array(element, _) = &array else { return None };
+        let fits = match (intrinsic, &**element) {
+            (Intrinsic::ParseTable, Ty::F64) => true,
+            (Intrinsic::ParseTable, Ty::Tuple(parts)) => !parts.is_empty() && parts.iter().all(|part| *part == Ty::F64),
+            (_, other) => intrinsic == Intrinsic::ParseHex && other.is_integer(),
+        };
+        if !fits {
+            let wanted = if intrinsic == Intrinsic::ParseTable { "an array of `f64` or of a tuple of `f64`" } else { "an array of one integer type" };
+            let message = format!("`{name}` gives {wanted}, not `{}` (§22.6.4)", array.name(self.design));
+            self.coded(file, "E0180", span, message, "the array type does not fit");
+            return None;
+        }
+        Some(array)
+    }
+
+    /// `table_model(x, table, control)`: `x` an `f64`, `table` an array of `(f64, f64)` pairs of any length and
+    /// `control` a `str`; the value is an `f64` (§22.2.15). `None` after a diagnostic.
+    fn table_model_call(&mut self, expr: ExprId, args: &[Arg]) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let pair = Ty::Tuple(vec![Ty::F64, Ty::F64]);
+        let table = match args.get(1).and_then(|arg| self.infer(arg.value)) {
+            Some(table @ Ty::Array(..)) => table,
+            Some(other) => {
+                let span = self.design.expr_node(args[1].value).span;
+                self.mismatch_text(file, span, "[(f64, f64); N]", &other.name(self.design));
+                return None;
+            }
+            None => return None,
+        };
+        if let Ty::Array(element, _) = &table
+            && **element != pair
+        {
+            let span = self.design.expr_node(args[1].value).span;
+            self.mismatch_text(file, span, "[(f64, f64); N]", &table.name(self.design));
+            return None;
+        }
+        self.apply(expr, &[Ty::F64, table, Ty::Str], args)?;
+        Some(Ty::F64)
     }
 
     /// The types written in the turbofish of the callee's last segment (`cast::<u8, Mode>`).

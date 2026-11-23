@@ -618,3 +618,35 @@ fn a_leaf_path_prints_that_leaf_alone() {
     let table = run.stdout.split("\n\n").nth(1).expect("a table after the records");
     assert!(!table.contains("Pair {") && !table.contains("Tx::"), "no whole value in the table: {table}");
 }
+
+/// A lone bench: 1 V behind 1 kOhm into a load of `n` mS, `n` an integer param of 4 by default.
+const COUNTED: &str = "pub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n\
+    pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\n\
+    module Load(p: Electrical) { n: u8 = 4; }\nanalog for Load { i(p, gnd) +> (n as f64) * v(p) / 1k; }\n\
+    module Top() { signal src: Electrical; signal a: Electrical; let v1 = Vsource(src, gnd); let r1 = Resistor(src, a) { r: 1k }; let l = Load(a); }\n";
+
+#[test]
+fn param_of_an_integer_from_the_command_line_reads_from_the_start() {
+    // PI-01 AC 5 (D24): `--param l.n=6` is the load of the run from its operating point, v(a) = 1 / (1 + n); the default
+    // n = 4 gives 0.2 V, and the literal `0x6` and `6` are the same value.
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("counted.msl");
+    std::fs::write(&file, COUNTED).expect("write");
+    let file = file.to_str().expect("utf-8 path");
+    let volts = |extra: &[&str]| {
+        let args: Vec<&str> = ["run", file, "--analysis", "op", "--print", "a"].iter().chain(extra).copied().collect();
+        let out = stdout_of(&piperine_in(dir.path(), shared_cache(), &args));
+        let row = out.lines().find(|l| l.starts_with("Top.a")).unwrap_or_else(|| panic!("no row of `a` in\n{out}")).to_string();
+        cells(&row)[1].parse::<f64>().expect("a number")
+    };
+    assert!(close(volts(&[]), 1.0 / 5.0, 1e-6), "the default n = 4");
+    assert!(close(volts(&["--param", "l.n=6"]), 1.0 / 7.0, 1e-6), "n = 6 from the start");
+    assert!(close(volts(&["--param", "l.n=0x6"]), 1.0 / 7.0, 1e-6), "the literal `0x6` is 6");
+    // PI-01 AC 4, D24: what is no integer literal of the type and range is `E0802` naming the param and the value, a number included
+    for bad in ["300", "6.5", "1e1", "-1"] {
+        let entry = format!("l.n={bad}");
+        let refused = piperine_in(dir.path(), shared_cache(), &["run", file, "--analysis", "op", "--param", &entry]);
+        assert_ne!(refused.status.code(), Some(0), "`{bad}` is no `u8`");
+        assert!(text(&refused.stderr).contains("E0802") && text(&refused.stderr).contains("l.n") && text(&refused.stderr).contains(bad), "{bad}: {}", text(&refused.stderr));
+    }
+}

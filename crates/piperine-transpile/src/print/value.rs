@@ -530,7 +530,7 @@ impl<'a> ValuePrinter<'a> {
     /// The expressions `expr` holds, statements included.
     pub(crate) fn children(ir: &Ir, expr: &Expr, out: &mut Vec<ExprId>) {
         match expr {
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => out.push(*expr),
+            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Table { x: expr, .. } | Expr::TableSlope { x: expr, .. } => out.push(*expr),
             Expr::Unwrap { is, value, .. } => out.extend([*is, *value]),
             Expr::Same { a, b } => out.extend([*a, *b]),
             Expr::LevelCast { expr, .. } => out.push(*expr),
@@ -654,6 +654,19 @@ impl<'a> ValuePrinter<'a> {
         }
     }
 
+    /// A `table_model` (or its slope) as a block: the model is built once, in a `static` of its own, from the samples and
+    /// the control; the value and the slope are read at the value of `x`, and the tangent of `x` goes through the slope
+    /// (`Real::compose`), so the derivative of a contribution is that of the interpolant (§22.2.15 rule 5).
+    fn table_piece(&self, x: ExprId, table: &[(piperine_ir::Real, piperine_ir::Real)], control: &piperine_ir::TableControl, slope_only: bool) -> Result<Piece, Error> {
+        let samples: Vec<String> = table.iter().map(|(a, v)| format!("({}, {})", Text::real(a.get()), Text::real(v.get()))).collect();
+        let at = self.piece(x)?.at(Prec::Atom);
+        let result = if slope_only { "x_.compose(model_.slope(x_.value()), 0.0)" } else { "x_.compose(model_.value(x_.value()), model_.slope(x_.value()))" };
+        Ok(Piece::new(
+            format!("{{ static TABLE_: std::sync::OnceLock<rt::TableModel> = std::sync::OnceLock::new(); let model_ = TABLE_.get_or_init(|| rt::TableModel::new(&[{}], \"{}\")); let x_ = {at}; {result} }}", samples.join(", "), control.text()),
+            Prec::Atom,
+        ))
+    }
+
     pub(super) fn piece(&self, e: ExprId) -> Result<Piece, Error> {
         let atom = |text: String| Ok(Piece::new(text, Prec::Atom));
         match self.ir.expr(e) {
@@ -733,6 +746,8 @@ impl<'a> ValuePrinter<'a> {
                 };
                 atom(format!("{}.{name}()", self.piece(*arg)?.at(Prec::Atom)))
             }
+            Expr::Table { x, table, control } => self.table_piece(*x, table, control, false),
+            Expr::TableSlope { x, table, control } => self.table_piece(*x, table, control, true),
             // a closure is a function value, which is the reference `&dyn Fn` takes
             Expr::Closure { .. } => Ok(Piece::new(format!("&{}", self.closure(e)?), Prec::Unary)),
             Expr::Probe { plus, minus } => self.probe_piece(*plus, *minus).ok_or_else(|| self.unsupported(e, "probe")),

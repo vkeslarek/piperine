@@ -57,6 +57,15 @@ impl Ir {
         }
     }
 
+    /// Whether a value of `ty` is a whole of parts a param or a pin holds as bytes: a tuple, an array, a struct, an `Option`
+    /// or an enum some variant of which has fields. A unit enum is its tag and is not one (PI-02).
+    pub fn is_composite_value(&self, ty: &ValueType) -> bool {
+        match ty {
+            ValueType::Enum(id) => matches!(&self.types[id.index()].kind, TypeKind::Enum { variants, .. } if variants.iter().any(|variant| !variant.fields.is_empty())),
+            other => other.is_composite(),
+        }
+    }
+
     /// The discriminant a constant of the enum type `ty` holds: the tag a pin carries for it.
     pub fn discriminant(&self, ty: &ValueType, value: Constant) -> Option<i128> {
         let (ValueType::Enum(id), Constant::Aggregate(aggregate)) = (ty, value) else { return None };

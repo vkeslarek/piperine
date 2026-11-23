@@ -178,7 +178,7 @@ fn gaps_drops_what_root_e2e_closed() {
     for raised in ["E0503", "E0504", "E0505", "E0507", "E0508", "E0803", "E0804", "E0805", "E0806"] {
         assert!(!listed.contains(&raised), "{raised} is raised and is listed as unraised");
     }
-    assert!(listed.contains(&"E0123") && listed.contains(&"E0614"), "the list keeps the codes nothing raises");
+    assert!(listed.contains(&"E0123") && listed.contains(&"E0702"), "the list keeps the codes nothing raises");
 }
 
 #[test]
@@ -225,7 +225,7 @@ fn state_records_the_derived_param_decision() {
     let state = read(".specs/STATE.md");
     let at = state.find("### MD-69:").expect("STATE.md holds MD-69");
     let decision = state[at..].split("\n---").next().expect("a decision");
-    for name in ["`piperine_derive_1(", "MD-18", "`Session::drive`", "`Session::set_at`", "S2"] {
+    for name in ["`piperine_derive_3(", "MD-18", "`Session::drive`", "`Session::set_at`", "S2"] {
         assert!(decision.contains(name), "MD-69 names {name}");
     }
     let claude = read("CLAUDE.md");
@@ -304,13 +304,13 @@ fn gaps_drops_what_msl_fixes_closed() {
     // that: 2 silent, 2 broken, 40 loud; `params-and-io` (L20, L39) took the loud rows to 38, `composite-values`
     // phase A (L5, L6, L10) and L63 to 35, `Pfd3` (L51: its event reads ran, its assignment now does) to 34, `resolved-nets` (L22, L23) to 32, and `value-semantics` closed S7 (the spec amendment had added it)
     // and `composite-values` phase B (L1, L2, L3, L16) to 28, L64 (an unknown composite carrier read) to 29, L65 (a flag read on an `Option`) to 30; L66 (a `match` whose value is an `Option`) was found and closed by `composite-values` itself;
-    // `explicit-unknowns` replaced S6 by S8 (still 2 silent), and its phase A closed S8 and L64 and L65: 1 silent, 28 loud; the split of L68 from L58 (explicit-unknowns phase B owns it) makes 29
-    assert!(gaps.contains("1 silent, 2 broken, 27 loud"), "the counts of §9 follow");
+    // `explicit-unknowns` replaced S6 by S8 (still 2 silent), and its phase A closed S8 and L64 and L65: 1 silent, 28 loud; the split of L68 from L58 (explicit-unknowns phase B owns it) makes 29; `params-and-io` B5 closed L28 (integer, enum and `Option` params) and B6 L57 (files and tables): 27
+    assert!(gaps.contains("1 silent, 2 broken, 25 loud"), "the counts of §9 follow");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
     assert_eq!(rows("## 3. Silent", "## 4."), 1, "one silent entry");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 27, "twenty-seven loud rows (L68, `Logic`, `logic` and `matches_bits`, was split from L58; `generics` closed L4, L7, L8 and L9 and found L69 and L70)");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 25, "twenty-five loud rows (L68, `Logic`, `logic` and `matches_bits`, was split from L58; L28 and L57 closed by `params-and-io`; `generics` closed L4, L7, L8 and L9 and found L69 and L70)");
 }
 
 #[test]
@@ -321,7 +321,7 @@ fn gaps_drops_the_value_semantics_gap() {
     assert!(!gaps.contains("### S7."), "S7 is closed");
     assert!(!gaps.contains("| S3, S6, S7 |") && !gaps.contains("| S3, S7, S8 ") && !gaps.contains("| S3, S8 ") && gaps.contains("| S3, for generic modules (S6 and S8 closed by `explicit-unknowns`) |"), "the section table lists S3 for generic modules (S6 and S8 closed by `explicit-unknowns`)");
     assert!(!gaps.contains("E0331") && !gaps.contains("(`value-semantics`)"), "no entry names the retired code or the plan");
-    assert!(gaps.contains("1 silent, 2 broken, 27 loud"), "the counts follow (28 since composite-values phase B closed L1 to L3 and L16; L64 and L65 came and were closed by `explicit-unknowns`, L66 by `composite-values` itself; S8 closed by `explicit-unknowns`)");
+    assert!(gaps.contains("1 silent, 2 broken, 25 loud"), "the counts follow (27 loud after `params-and-io` closed L28 and L57; 28 since composite-values phase B closed L1 to L3 and L16; L64 and L65 came and were closed by `explicit-unknowns`, L66 by `composite-values` itself; S8 closed by `explicit-unknowns`)");
 }
 
 #[test]
@@ -464,12 +464,12 @@ fn gaps_drops_what_analog_structure_closed() {
 #[test]
 fn gaps_keeps_l40_for_the_spec_models_that_wait() {
     // analog-structure AS-18 AC 4, Q2 (T36): one L40 line is left, for the three spec models that wait on
-    // another feature's dependency: the stdlib `idt` and `Water` (`generics`) and the §18 `Diode`
-    // (`params-and-io`)
+    // another feature's dependency: the stdlib `idt` and `Water` (`generics`); the §18 `Diode` runs since
+    // `params-and-io` (`elab_structure::the_section_18_diode_type_checks_with_its_option_param`)
     let gaps = read("GAPS.md");
     let rows: Vec<&str> = gaps.lines().filter(|l| l.starts_with("| L40 |")).collect();
     assert_eq!(rows.len(), 1, "one L40 row: {rows:?}");
-    for name in ["`idt`", "`Water`", "`Diode`", "`generics`", "`params-and-io`"] {
+    for name in ["`idt`", "`Water`", "`generics`"] {
         assert!(rows[0].contains(name), "L40 names {name}: {}", rows[0]);
     }
 }
@@ -584,7 +584,7 @@ fn gaps_drops_what_composite_values_phase_a_closed() {
     let values = coverage.lines().find(|l| l.starts_with("| I §1–§2 ")).expect("the coverage row of §1 and §2");
     assert!(values.contains("`let mut`, assignment, patterns"), "{values}");
     // the counts follow: 39 loud, then 38 when `composite-values` closed L63 (§1.4.4 literal typing), 35 with `params-and-io`
-    assert!(gaps.contains("27 loud"), "the loud count is 28 (28 once `params-and-io`, `composite-values`, `resolved-nets` and the last of `unknown-semantics-events` closed rows; L64 and L65 came and were closed by `explicit-unknowns` phase A, L66 by `composite-values` itself)");
+    assert!(gaps.contains("25 loud"), "the loud count is 28 (28 once `params-and-io`, `composite-values`, `resolved-nets` and the last of `unknown-semantics-events` closed rows; L64 and L65 came and were closed by `explicit-unknowns` phase A, L66 by `composite-values` itself)");
 }
 
 #[test]
@@ -639,7 +639,7 @@ fn gaps_no_longer_lists_x5_l20_l39_h12() {
     assert!(gaps.contains(&format!("({} of ", allowed.len())), "the heading counts the listed codes");
     let roadmap = read("ROADMAP.md");
     let row = roadmap.lines().find(|line| line.contains("| `params-and-io` |")).expect("the roadmap has a params-and-io row");
-    assert!(row.contains("B5–B6") && row.contains("composite-values"), "the row says B5 and B6 wait on composite-values: {row}");
+    assert!(row.contains("B5–B6") && row.contains("composite-values") && row.contains("Delivered"), "the row says B1 to B6 are delivered, B5 and B6 on composite-values: {row}");
     let state = read(".specs/STATE.md");
     assert!(state.contains("### MD-75:") && state.contains("`params-and-io`"), "STATE.md holds the decision entry");
 }
@@ -689,7 +689,7 @@ fn gaps_drops_what_composite_values_phase_b_closed() {
     assert!(stdlib.contains("`normal` runs"), "{stdlib}");
     let inherited = coverage.lines().find(|l| l.starts_with("| H inherited library")).expect("the coverage row of H");
     assert!(inherited.contains("100 %") && inherited.contains("H.5 to H.7 run"), "{inherited}");
-    assert!(gaps.contains("27 loud"), "the loud count follows");
+    assert!(gaps.contains("25 loud"), "the loud count follows");
 }
 
 #[test]
@@ -767,4 +767,43 @@ fn state_records_the_observable_landings_and_the_tick_epoch() {
     let state = read(".specs/STATE.md");
     assert!(state.contains("### MD-80:") && state.contains("`transient-performance`") && state.contains("observable rule"), "STATE.md holds the decision entry");
     assert!(state.contains("`HOST_RESTART_FRACTION`") && state.contains("growth clamp stays 1.5") && state.contains("(T26, TP-13"), "MD-80 records T26");
+}
+
+#[test]
+fn gaps_no_longer_lists_l28_or_its_book_rows() {
+    // params-and-io PI-01 to PI-03 (T35): the params of an integer, enum, `Option` or module type run, so GAPS.md has no L28
+    // row and its section 11 holds no row of the debouncer, the PWM, its check or the watchdog
+    let gaps = read("GAPS.md");
+    assert!(!gaps.lines().any(|line| line.starts_with("| L28 |")), "GAPS.md still has an L28 row");
+    for closed in ["| digital#7 |", "| digital#11 |", "| digital#14 |", "| core-std#10 |", "| packages#12 |", "| cheatsheet#10 |", "| L57 |"] {
+        assert!(!gaps.lines().any(|line| line.starts_with(closed)), "section 11 still lists {closed}");
+    }
+}
+
+#[test]
+fn gaps_no_longer_lists_this_features_ids() {
+    // params-and-io PI-14 AC 1 (T44): L20, L28, L39, L57, X5 and H12 are gone from `GAPS.md` as entries and rows, with the section 11
+    // rows of the Book listings they held.
+    let gaps = read("GAPS.md");
+    for closed in ["| L20 |", "| L28 |", "| L39 |", "| L57 |", "| H12 |", "- **X5 \u{2014}"] {
+        assert!(!gaps.contains(closed), "{closed} is still in GAPS.md");
+    }
+}
+
+#[test]
+fn gaps_section_10_lists_exactly_the_owned_codes() {
+    // params-and-io PI-14 AC 1 (T44): section 10's list of the codes no source mentions is exactly the rows of `code_owners.tsv`, and its
+    // heading counts them.
+    let gaps = read("GAPS.md");
+    let owners = read("crates/piperine-lang/tests/support/code_owners.tsv");
+    let mut allowed: Vec<&str> = owners.lines().filter(|line| !line.starts_with('#') && !line.is_empty()).filter_map(|line| line.split('\t').next()).collect();
+    allowed.sort_unstable();
+    let listed = gaps.split("**Error codes of the spec that no source file mentions").nth(1).and_then(|s| s.split("by the elaborator.\n`").nth(1)).and_then(|s| s.split('`').next()).expect("section 10 lists the unraised codes");
+    let mut listed: Vec<&str> = listed.split_whitespace().collect();
+    listed.sort_unstable();
+    assert_eq!(listed, allowed, "section 10 lists exactly the rows of code_owners.tsv");
+    assert!(gaps.contains(&format!("({} of ", allowed.len())), "the heading counts the listed codes");
+    for delivered in ["E0614", "E0703", "E0704", "E0705", "E0706"] {
+        assert!(!allowed.contains(&delivered), "{delivered} is raised and is no entry");
+    }
 }

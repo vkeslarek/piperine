@@ -22,7 +22,7 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 1 silent, 2 broken, 27 loud (L1 to L70 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the two `params-and-io` (L20, L39) and the nine `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63, L66), the two `resolved-nets` rows (L22, L23) and the two `explicit-unknowns` rows (L64, L65) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, in six tables) plus
+**Counts.** 1 silent, 2 broken, 25 loud (L1 to L70 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the four `params-and-io` (L20, L28, L39, L57) and the nine `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63, L66), the two `resolved-nets` rows (L22, L23) and the two `explicit-unknowns` rows (L64, L65) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 9 unproven.
 
@@ -30,7 +30,7 @@ change of the IR or the ABI.
 | ------- | --- |
 | §2 Broken | B3, B4 |
 | §3 Silent (read this first) | S3, for generic modules (S6 and S8 closed by `explicit-unknowns`) |
-| §4 Loud | L1–L70 (L64 and L65 closed by `explicit-unknowns`; L11, L14, L15, L17, L18, L19, L20, L39, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L22, L23 closed; L4, L7, L8 and L9 closed by `generics` phases A and B; L64 to L66 found by `composite-values`; L68 split from L58) |
+| §4 Loud | L1–L70 (L64 and L65 closed by `explicit-unknowns`; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L22, L23 closed; L4, L7, L8 and L9 closed by `generics` phases A and B; L64 to L66 found by `composite-values`; L68 split from L58) |
 | §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X1, X2 (X6 decided by `generics`; X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
 | §6 Solver, numerics, performance | V13, V16 (V12 closed by `transient-performance`) |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
@@ -118,11 +118,10 @@ before and after the first change, `E0150`, `E0210`, `E0220`, `E0221`, `E0222`, 
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L28 | params of an integer, enum, `Option` or module type (`n: u8`, `md: Mode`, `rs: Option<f64>`, `cell: C`); also owes `explicit-unknowns` EU-06 AC 1 (an `Option<T>` param no instance binds is `None`, check C20, test `an_unbound_option_param_is_none`, interim `an_unbound_option_param_waits_for_params_and_io`) | §8.1.15, §3.2.6 | `param of type u8` | M, `params-and-io` B5-B6 |
 | L29 | `m` and `dtemp`: binding them at a placement and reading them | §8.5.1–§8.5.6 | `E0320: no param m in R`; `built-in m` | M |
 | L30 | generic modules and const generics: the prelude's own `Short<N>` and every stdlib module built on them | §8 rule 4 | `generic module` | L |
 | L31 | generation `for` and `if`, in a body and in a `digital` block | §8.2.7, §12 rule 1 | `generation for/if in a module body` | M |
-| L32 | templates (`Name { .. }` as a value), placement through a template or a function, `Fn(P)` bounds | §8.4 | `module template Name { .. } outside a placement` | M, after L28 |
+| L32 | templates (`Name { .. }` as a value), placement through a template or a function, `Fn(P)` bounds | §8.4 | `module template Name { .. } outside a placement` | M |
 | L33 | `extern` modules: `"osdi"`, `"cosim"`, `#[link]` | §8.5.7–§8.5.16 | `extern module` | L |
 
 Works, by probe: `where` at elaboration and on a set (`E0317`, `E0802`), `E0312`, `E0314`,
@@ -134,7 +133,7 @@ blocks.
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L40 | the three spec models that wait on another feature's dependency: the stdlib `idt` and `Water` (they need `generics`) and the §18 `Diode` with `match rs` (it needs `params-and-io`); a contribution under an `if` or a `match`, `Switch`, `CapIc` and `Bounded` run | §11 rules 2, 3, 18, §18 | `generic module` (`idt`, `Water`); `the diode needs params-and-io` | M |
+| L40 | the three spec models that wait on another feature's dependency: the stdlib `idt` and `Water` (they need `generics`); the §18 `Diode` with `match rs` runs since `params-and-io`; a contribution under an `if` or a `match`, `Switch`, `CapIc` and `Bounded` run | §11 rules 2, 3, 18, §18 | `generic module` (`idt`, `Water`) | M |
 | L43 | `ddx` | §14.2 | `core primitive ddx` | M |
 | L44 | `delay` | §14.6 | `core primitive delay` | M |
 | L45 | `noise`, and so `white_noise`, `flicker_noise`, `noise_table` | §14.8, §11.1.8 | `core primitive noise` | M |
@@ -161,7 +160,6 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 
 | # | Refused | Spec | Size |
 | - | ------- | ---- | ---- |
-| L57 | `include_str!`, `parse_table`, `parse_hex`, `table_model` (`P0001` when reached; see S3) | §20, §22.6.4, §22.2.15 | M |
 | L58 | Stdlib refused with the form it is built on. **Generics (L30):** `Short`, `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`; `cast` and `same` run today as the checker's own intrinsics (`types::intrinsic`, `cast` is an `Option<B>`, `None` for a tag that names no variant), refused only for a `cast` to a tuple or an array that holds an enum, until `explicit-unknowns` phase B (T48, after `generics` A) removes the intrinsics and compiles them from `std/values.msl`. **Resolved nets (L21):** `Strength`, `Driven`, `Tribuf`, `Pullup`, `Pulldown`, `Keeper`, `Tran`, `Tgate`, `Bidir`, `TribufDelayed`. **Other:** `AckWithin` (a `u32` param), `MinPulse` (`since`), `limvds` as a function value (L9) | §22 | by its group |
 | L68 | `Logic<N>`, `logic` and `matches_bits` (§22.1.4, §22.2): the four-state value of a net that resolves, and the two functions that build and test one: `Logic` has no generic parameter yet and `logic` and `matches_bits` are `P0001` until it has | §22.1, §22.2 | `P0001` naming `logic` or `matches_bits`; `Logic<4>` is `P0001` | `explicit-unknowns` phase B (T44 to T48), after `generics` phase A (L30) |
 | L69 | a hand-written `Repr` (§2 rule 2) on a generic type (`impl<T: Repr> Repr for Pair<T>`), and a carrier of a hand-written type that has a `Default` and no initial value (§3.3.4: the levels of the default need `encode` run on it) | §2 rules 2, 4; §3.3.4 | `P0001`: "a hand-written Repr on a generic type"; "a carrier of a type with a hand-written Repr and no initial value" | `generics` GN-32 (phase C) |
@@ -177,9 +175,6 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
   digital or amended form by name.
 - **`ir-rust` refuses** `UInt<N>`/`Int<N>` with N outside 1..=64 by name; the ABI's leaves end at
   64 bits.
-- **A param whose value is a constant NaN** (`lo: f64 = 0.0 / 0.0`) fails the compiled row with "pin ... unlike its
-  plan (a transpiler defect)": the plan folds NaN as `0xfff8…`, the library as `0x7ff8…`. Found by the
-  `msl-fixes` fix round. Size S (canonicalize NaN bits at the plan/library boundary; owner `params-and-io`).
 - **A drive, an event guard or an `at` argument that calls a function reading `freq()`** is refused loud by the
   IR's ambient-reads check (it read 0 silently before `msl-fixes` F1). §14.4 gives such a context 0; size S
   (owner `analog-operators`).
@@ -328,14 +323,14 @@ does not count.
 
 ## 10. Reference lists
 
-**Error codes of the spec that no source file mentions (29 of 189).** A code counts as mentioned when it is spelled
+**Error codes of the spec that no source file mentions (24 of 189).** A code counts as mentioned when it is spelled
 outside a comment in `crates/*/src` (a literal, or an enum variant's `as_str`); `E0375` is named in a doc
 comment only (`pom/builtin.rs`), so it is on the list, and `E0702` is on it since `logic` is refused `P0001` until T45 raises it again. `E0503`, `E0504`, `E0505`, `E0507` and `E0508` are
 raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`). `E0803` to `E0806` are raised
 by `session.rs` and `host.rs`; `E0701` by the elaborator.
 `E0123 E0124 E0203 E0225 E0313 E0322 E0340 E0342
-E0360 E0362 E0371 E0372 E0373 E0374 E0375 E0451 E0452 E0453 E0454 E0456 E0614
-E0702 E0703 E0704 E0705 E0706 E0807 E0808 E0809`
+E0360 E0362 E0371 E0372 E0373 E0374 E0375 E0451 E0452 E0453 E0454 E0456
+E0702 E0807 E0808 E0809`
 
 **Entries of the previous file that changed.**
 
@@ -352,10 +347,10 @@ E0702 E0703 E0704 E0705 E0706 E0807 E0808 E0809`
 
 | Cluster | Closes | Size |
 | ------- | ------ | ---- |
-| `set` and params | H5, L28, L29, H4 | M |
-| Analog structure (delivered, MD-71) | what is left of L40: the stdlib `idt` and `Water` after `generics`, the §18 `Diode` after `params-and-io` | S |
+| `set` and params | H5, L29, H4 | M |
+| Analog structure (delivered, MD-71) | what is left of L40: the stdlib `idt` and `Water` after `generics` | S |
 | Analog operators | L43, L44, L45, L49, H2 (`Noise`) | M to L |
-| Composite values | L24, L57 (phases A and B closed L1 to L3, L5, L6, L10, L16 and the part of L9 that is not `generics`; MD-79) | L |
+| Composite values | L24 (phases A and B closed L1 to L3, L5, L6, L10, L16 and the part of L9 that is not `generics`; MD-79) | L |
 | Generics and generation (phases A and B delivered: L4, L7, L8, L9, X6) | L30, L31, L32, S3 for generic modules: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
 | Resolved nets and bundles | L21, L25: natures that implement `Resolve`, `Tribuf`, `Tran`, `Bidir` | L |
 | Unknown semantics | L53 (L18 and L19 closed by `unknown-semantics`; L51 and L52 by `unknown-semantics-events`; S6, S8 and G6 closed by `explicit-unknowns`; its phase B is `Logic<N>`, L68) | L |
@@ -395,31 +390,20 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | modules~87ce6f6e | L31 | `generics` | the `half` block over the ladder is refused with modules#2 |
 | modules~3f8e84ba | L31 | `generics` | the `half` stream is refused with modules#2 |
 | modules~8b927a42 | L30 | `generics` | the value inputs of `lowpass` are refused with modules#6 |
-| modules~1faf8c12 | L29 | `generics` | `m` and `dtemp` in a param block are `E0320`, no param `m`: the Book's four resistors in parallel do not run until `generics` phase D (GN-24, GN-25) implements them |
+| modules~1faf8c12 | L29 | `generics` | `m` and `dtemp` in a param block are `E0320`, no param `m`: the Book's four resistors in parallel do not run until `generics` implements them (its GN-26 AC 3 flips this row) |
 | modules~4bd9131d | L31 | `generics` | `E0340` is not raised: a `for` in a body is `P0001`, generation is refused |
 | modules~4bcb9f1d | L30 | `generics` | `E0304` is not raised: `Ladder::<0>` is `P0001`, the generic module is refused |
 | analog#7 | L49 | `analog-operators` | `emit!("newton", ..)` in an `analog` block is `P0001` |
 | analog#11 | L45 | `analog-operators` | `noise(..)` is `P0001`: core primitive `noise` |
 | analog~139c67b5 | L49 | `analog-operators` | a trace from `analog` is refused with analog#7: no record per Newton iteration exists |
 | analog~b103eeb0 | L49 | `analog-operators` | no trace line reaches the command: the `emit!` in `analog` is refused with analog#7 |
-| digital#7 | L28 | `params-and-io` | `param of type u8 is not supported yet` on `n: u8` |
-| digital#11 | L28 | `params-and-io` | `param of type u8 is not supported yet` on `period: u8` |
-| digital#14 | L28 | `params-and-io` | `PwmCheck` is `P0001` twice: `limit: u8` and `cycles: u32` |
 | digital#21 | L30 | `generics` | `Dff<T: Repr>` placed as `Dff::<u8>` is `P0001`: generic module |
-| digital~bc5825b1 | L28 | `params-and-io` | the debouncer is refused at `n: u8`, as the sentence says |
-| digital~bdd2508f | L28 | `params-and-io` | the PWM is refused at `period: u8`, as the sentence says: held with digital#11 |
-| digital~a0ca3f9d | L28 | `params-and-io` | the check does not run as the Book places it: `limit: u8` and `cycles: u32` are refused with digital#14 |
-| digital~d7032a06 | L28 | `params-and-io` | the form is refused as the sentence says (digital#7) |
-| digital~d1d69398 | L28 | `params-and-io` | the debouncer and the PWM are refused (digital#7, digital#11); the counter runs |
-| packages#12 | L57 | `params-and-io` | `parse_table(include_str!(..))` is `P0001`, a call of a generic `extern` function (typed since the `generics` fix round, not run until `params-and-io` T37), and `&IV` is `P0001`, a reference type; `include_str!` itself is accepted in a `const` |
 | core-std#8 | L30 | `generics` | `Reg` placing `Setup(clk, d) { ts: 100p }` is `P0001`: `Setup<T: Repr>` is a generic module |
-| core-std#10 | L28 | `params-and-io` | `Watchdog` is `P0001` on `limit: u16`; with the param written as a literal the watchdog runs and ends the run at the fourth edge |
 | cheatsheet#2 | L30 | `generics` | `module M<const N: usize>(..)` placed as `M::<2>` is `P0001`: generic module |
 | cheatsheet#3 | L31 | `generics` | the `for k in 0..N { .. }` of the body items is `P0001`: generation in a module body; the instance, the named expression and the definitions around it are accepted |
 | cheatsheet#7 | L49 | `analog-operators` | the `emit!("newton", ..)` in `analog` is `P0001` (L49); the `on settle` reactions run |
 | cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function need a generic module: `P0001` |
 | cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
-| cheatsheet#10 | L57 | `params-and-io` | with its `emit!` the card is `E0601` (a statement among items); without it `parse_table(include_str!(..))` is `P0001`, a call of a generic `extern` function (typed, not run yet), and `table_model(.., IV, ..)` an array whose length is a generic parameter |
 | values#18 | L68 | `explicit-unknowns` | `Logic<4>` is `P0001`: the library struct `Logic` has no generic parameter yet (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
 | values~c30bad4d | L68 | `explicit-unknowns` | held with values#18: `Logic<4>` is `P0001` (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
 | core-std~6e04c51d | L68 | `explicit-unknowns` | `E0702` is not raised: `logic("10z1")` is `P0001`, because `logic` is a generic `std` function (made to run by explicit-unknowns, phase B: T45 (`logic` and `matches_bits` as generic `std` items)) |

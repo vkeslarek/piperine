@@ -126,16 +126,16 @@ fn solve_reading_functions_are_accepted_where_the_table_allows() {
 
 #[test]
 fn a_solve_reading_call_in_a_const_context_is_e0122() {
-    // GN-12 AC 2, D13: a const and a param default refuse a solve-reading call with `E0122` naming the function and the
-    // position; a definition that reads the solve keeps `E0336` (§8.2.5)
+    // GN-12 AC 2, D13: a const and a param default refuse a solve-reading call with `E0122` naming the function (and, after the merge with params-and-io, its class; the
+    // position is the label); a definition that reads the solve keeps `E0336` (§8.2.5)
     let level = "fn level(a: Electrical) -> f64 { v(a) }\nfn clock() -> f64 { now() }\nfn viaclock() -> f64 { clock() }\n";
-    for (item, position) in [
+    for (item, _position) in [
         ("const T0: f64 = clock();\nmodule Top() { let x = T0; }\n", "a const context"),
         ("const T0: f64 = viaclock();\nmodule Top() { let x = T0; }\n", "a const context"),
         ("module Top() { p: f64 = clock(); }\n", "a const context"),
     ] {
         let found = HandleSources::found(&format!("{level}{item}"));
-        assert!(found.iter().any(|(code, message)| code == "E0122" && message.contains("solve-reading") && message.contains(position) && (message.contains("`clock`") || message.contains("`viaclock`"))), "{item}: {found:?}");
+        assert!(found.iter().any(|(code, message)| code == "E0122" && message.contains("solve-reading") && (message.contains("`clock`") || message.contains("`viaclock`"))), "{item}: {found:?}");
     }
     // a function that reads nothing of the solve is pure, and a const may call it
     let pure = "fn double(x: f64) -> f64 { x * 2.0 }\nconst T0: f64 = double(1.0);\nmodule Top() { let x = T0; }\n";

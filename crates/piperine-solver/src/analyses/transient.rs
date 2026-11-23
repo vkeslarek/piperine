@@ -1153,6 +1153,7 @@ impl TransientSolver<'_> {
                 crate::core::introspect::Value::Real(v) => crate::core::bind::ParamValue::Real(v),
                 crate::core::introspect::Value::Integer(v) => crate::core::bind::ParamValue::Int(v),
                 crate::core::introspect::Value::Boolean(v) => crate::core::bind::ParamValue::Bool(v),
+                crate::core::introspect::Value::Bytes(bytes) => crate::core::bind::ParamValue::Bytes(bytes),
                 crate::core::introspect::Value::Text(_) => {
                     return Err(Error::simple(
                         SolverDomain::Transient,

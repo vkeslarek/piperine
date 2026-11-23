@@ -91,3 +91,61 @@ fn a_node_initial_value_over_a_param_starts_newton_in_an_operating_point() {
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("bistable", "v(o)", Coordinate::OperatingPoint), 1.0, operating_point("BistableBench"));
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("bistable negative", "v(o)", Coordinate::OperatingPoint), -1.0, operating_point("BistableNegBench"));
 }
+
+#[test]
+fn an_integer_param_runs_with_its_value() {
+    // PI-01 AC 1 to AC 3: the load is `n` mS behind 1 kOhm from 1 V, so v(o) = 1 / (1 + n): n = 4 (the default) gives 0.2 V and
+    // the bound n = 7 gives 0.125 V.
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("integer default", "v(o)", Coordinate::OperatingPoint), 1.0 / 5.0, operating_point("IntegerDefaultBench"));
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("integer bound", "v(o)", Coordinate::OperatingPoint), 1.0 / 8.0, operating_point("IntegerBoundBench"));
+}
+
+#[test]
+fn an_enum_param_runs_its_arm() {
+    // PI-02 AC 1, AC 2: `Fast` is 1 mS (v = 1 / 2) and `Slow` is 3 mS (v = 1 / 4).
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("enum default", "v(o)", Coordinate::OperatingPoint), 0.5, operating_point("EnumDefaultBench"));
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("enum bound", "v(o)", Coordinate::OperatingPoint), 0.25, operating_point("EnumBoundBench"));
+}
+
+#[test]
+fn an_option_param_runs_its_case() {
+    // PI-03 AC 1 to AC 3: left out or `None` it is 1 kOhm by `unwrap_or` (v = 1 / 2); `Some(3k)` is 3 kOhm (v = 3 / 4).
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("option left out", "v(o)", Coordinate::OperatingPoint), 0.5, operating_point("OptionLeftOutBench"));
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("option none", "v(o)", Coordinate::OperatingPoint), 0.5, operating_point("OptionNoneBench"));
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("option some", "v(o)", Coordinate::OperatingPoint), 0.75, operating_point("OptionSomeBench"));
+}
+
+#[test]
+fn a_payload_enum_param_runs_its_variant() {
+    // PI-02, §8.1.15 ("a param's type is a value type"): an enum whose variants carry fields is a param too. The load is
+    // `Conductance(2m)` by default, so v(o) = 1 / (1 + 2) = 1/3 behind 1 kOhm; bound to `Resistance(250.0)` it is 4 mS, so
+    // v(o) = 1 / (1 + 4) = 0.2.
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("payload default", "v(o)", Coordinate::OperatingPoint), 1.0 / 3.0, operating_point("RatedDefaultBench"));
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("payload bound", "v(o)", Coordinate::OperatingPoint), 0.2, operating_point("RatedResistanceBench"));
+}
+
+#[test]
+fn every_read_of_an_option_param_gives_the_bound_case() {
+    // PI-03 AC 3 (§3.2): `match`, `is_some` with `unwrap`, and `if let Some(r)` read the bound case of `rs` behind 1 kOhm from 1 V:
+    // bound to 3k (a plain value, `Some` of it by §3.2.3) the load is 3 kOhm and v(o) = 3 / 4; left out it is `None`, the
+    // 1 kOhm of the other arm, and v(o) = 1 / 2.
+    for form in ["Match", "IsSome", "IfLet"] {
+        ToleranceContract::DC_VOLTAGE.assert(&Point::new(form, "v(o) bound", Coordinate::OperatingPoint), 0.75, operating_point(&format!("{form}SomeBench")));
+        ToleranceContract::DC_VOLTAGE.assert(&Point::new(form, "v(o) none", Coordinate::OperatingPoint), 0.5, operating_point(&format!("{form}NoneBench")));
+    }
+}
+
+#[test]
+fn a_composite_param_needs_no_repr_and_no_read_by_analog() {
+    // §8.1.15 ("a param's type is a value type"; only a carried type needs `Repr`, §1): a struct that derives nothing, holding an `f64`,
+    // is a param no `analog` block reads, and the design compiles and runs: v(o) = 1 kOhm / 2 kOhm = 1/2.
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("held rating", "v(o)", Coordinate::OperatingPoint), 0.5, operating_point("HeldRatingBench"));
+}
+
+#[test]
+fn a_unit_enum_with_no_derive_is_a_param() {
+    // §8.1.15 (a param's type is a value type; only a carried type needs `Repr`), PI-02 AC 1: `enum Gear { Low, High }` derives nothing
+    // and is read by `match`: `Low` is 1 mS behind 1 kOhm (v(o) = 1/2), `High` is 3 mS (v(o) = 1/4).
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("gear low", "v(o)", Coordinate::OperatingPoint), 0.5, operating_point("GearLowBench"));
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("gear high", "v(o)", Coordinate::OperatingPoint), 0.25, operating_point("GearHighBench"));
+}

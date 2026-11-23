@@ -232,8 +232,8 @@ fn e0404_a_commit_belongs_in_a_reaction() {
 
 #[test]
 fn the_status_paragraph_lists_what_is_still_refused_and_one_item_runs() {
-    // welcome~e1871864: "Parts of the language beyond that are still refused by name with P0001: in analog,
-    // noise, idt and delay; elsewhere, generic modules, params of an integer type and resolved natures (a nature
+    // welcome~47af33d1: "Parts of the language beyond that are still refused by name with P0001: in analog,
+    // noise, idt and delay; elsewhere, generic modules and resolved natures (a nature
     // that implements Resolve)." Every item is `P0001`; the math methods such as `sin` and the `settle` event, which the sentence
     // no longer lists, run (unknown-semantics-events T5 and T22)
     let p0001 = |row: &str, source: &str, message: &str| {
@@ -242,13 +242,16 @@ fn the_status_paragraph_lists_what_is_still_refused_and_one_item_runs() {
         let given = Refusal::of(model.run(overrides), row);
         assert!(given.iter().any(|(code, text)| code == "P0001" && text == message), "{source:?} gives {given:?}");
     };
-    let row = "welcome~e1871864";
+    let row = "welcome~47af33d1";
     p0001(row, "module Top() { signal p: Electrical; }\nanalog for Top { i(p, gnd) +> white_noise(1e-12, \"n\"); }\n", "core primitive `noise` is not supported yet");
     p0001(row, "module Top() { signal p: Electrical; }\nanalog for Top { i(p, gnd) +> idt(v(p)); }\n", "generic module is not supported yet");
     p0001(row, "module Top() { signal p: Electrical; signal q: Electrical; }\nanalog for Top { v(q) +> delay(v(p), 1n); }\n", "core primitive `delay` is not supported yet");
     p0001(row, "module G<T: Repr>() {}\nmodule Top() { let g = G::<f64>(); }\n", "generic module is not supported yet");
-    p0001(row, "module Top() { n: u8 = 3; }\n", "param of type `u8` is not supported yet");
     p0001(row, "module Top() { signal w: Wire; }\n", "resolved nature `Wire` is not supported yet");
+    // a param of an integer type is a param like any other since params-and-io T31 (L28): the sentence no longer lists it
+    let counted = Model::written("counted.msl", "module Top() { signal p: Electrical; n: u8 = 3; }\nanalog for Top { v(p) +> n as f64; }\n");
+    let ran = counted.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: an integer param is refused: {failure}"));
+    Printed::holds("3.000000e0", ran.signal("Top.p"), "n as f64 runs");
     // the `settle` event is compiled since unknown-semantics-events T5 (L52)
     let settle = Model::written("settle.msl", "module Top() { }\ndigital for Top { on settle { } }\n");
     settle.run(Overrides { analysis: Some("op".to_string()), top: Some("Top".to_string()), ..Overrides::default() }).unwrap_or_else(|failure| panic!("{row}: `on settle` is refused: {failure}"));

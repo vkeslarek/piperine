@@ -281,6 +281,21 @@ impl Elaboration<'_, '_> {
         Some([is, val])
     }
 
+    /// The packed value of the `Option` param `decl` read in `scope` (PI-03): the param itself in the
+    /// body's own frame, the constant its placement bound in a hoisted module's (`hoist.rs`). `None`
+    /// when `decl` is no param of the scope.
+    fn option_param_read(&mut self, scope: &Scope, decl: DeclId, payload: &ValueType, origin: &Origin) -> Option<LoweredExpr> {
+        if !matches!(self.design.decl_data(decl).kind, DeclKind::Param(_)) {
+            return None;
+        }
+        let packed = ValueType::Option(Box::new(payload.clone()));
+        match (scope.params.get(&decl), self.frames.get(scope.frame).and_then(|frame| frame.params.get(&decl)).copied()) {
+            (Some(index), _) if scope.frame == 0 => Some(self.emit(Expr::Param(*index), packed, origin.clone())),
+            (_, Some(value)) => Some(self.constant_expr(value, packed, origin.clone())),
+            _ => None,
+        }
+    }
+
     /// The pair an `Option` expression lowers to. `None` after a diagnostic.
     pub(super) fn lower_option(&mut self, scope: &mut Scope, expr: ExprId) -> Option<Pair> {
         let node = self.design.expr_node(expr).clone();
@@ -328,6 +343,14 @@ impl Elaboration<'_, '_> {
                     // (§3.3.9)
                     // A carrier holding an `Option`: the two halves of its value, each unpacked from
                     // the read where it stands.
+                    // A param of `Option` type (PI-03): its two halves, each unpacked from the param read
+                    // where it stands.
+                    (None, None) if let Some(packed) = self.option_param_read(scope, decl, &payload, &origin) => {
+                        let is = self.emit(Expr::OptionPart { option: packed, part: LevelPart::Is }, ValueType::Bool, origin.clone());
+                        let packed = self.option_param_read(scope, decl, &payload, &origin)?;
+                        let val = self.emit(Expr::OptionPart { option: packed, part: LevelPart::Value }, payload.clone(), origin);
+                        Some(Pair { is, val, literal: None })
+                    }
                     (None, None) if let Some(carrier) = self.frame_carrier(scope.frame, decl) => {
                         let half = |this: &mut Self, part: LevelPart, ty: ValueType| {
                             let packed = this.carrier_read(carrier, origin.clone());

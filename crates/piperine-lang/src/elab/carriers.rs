@@ -184,7 +184,7 @@ impl Elaboration<'_, '_> {
     /// The constant `Default::default()` of the type `ty`, held as `stored`: `None` (the zero bytes)
     /// for an `Option`, the defaults of the parts of a tuple, an array or a struct that derives
     /// `Default` (H.8 rule 4). `None` for a type that has no default.
-    fn default_constant(&mut self, ty: &Ty, stored: &ValueType) -> Option<Constant> {
+    pub(super) fn default_constant(&mut self, ty: &Ty, stored: &ValueType) -> Option<Constant> {
         let (variant, parts) = match (ty, stored) {
             (Ty::Option(_), ValueType::Option(_)) => (None, Vec::new()),
             (Ty::Tuple(items), ValueType::Tuple(held)) => (None, items.iter().zip(held).map(|(item, held)| self.default_constant(item, held)).collect::<Option<Vec<_>>>()?),

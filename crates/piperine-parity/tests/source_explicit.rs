@@ -168,16 +168,14 @@ fn an_element_never_committed_reads_its_initial_value() {
 }
 
 #[test]
-fn an_unbound_option_param_waits_for_params_and_io() {
-    // §8.1 (EU-06 AC 1, `an_unbound_option_param_is_none` once it can run): a param of type `Option<u8>` is `P0001`
-    // today, `GAPS.md` L28, owned by `params-and-io`, which builds the param pins. The test fails when the param
-    // elaborates, so the day it runs the criterion's own test replaces it
-    let project = RUN.project("param_option.msl");
-    let refused = match project.compile("ParamBench") {
-        Ok(_) => panic!("an `Option` param now elaborates: replace this test by `an_unbound_option_param_is_none`"),
-        Err(report) => report.to_string(),
-    };
-    assert!(refused.contains("P0001") && refused.contains("param of type `Option<u8>` is not supported yet"), "{refused}");
+fn an_unbound_option_param_is_none() {
+    // §8.1 (EU-06 AC 1, C20; owed to `params-and-io` B5, GAPS L28 closed): the placement of `Param` binds no value for
+    // `limit: Option<u8>`, so it is `None` and `limit.is_some()` is false at every rising edge
+    let given = stream("ParamBench", "param");
+    assert!(!given.is_empty(), "the reaction runs at the rising edges");
+    for record in given {
+        assert_eq!(record.fields, [("given".to_string(), Field::Bool(false))], "an unbound `Option` param is `None`");
+    }
 }
 
 /// The records of the stream `name` the transient of `top` of `edges.msl` made, in order.

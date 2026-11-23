@@ -3,7 +3,7 @@
 //! structural; the top's ports with their direction and type; every record stream with its
 //! fields. The value of a param is the one the run uses (a `set` of the request is applied).
 
-use piperine_ir::{CarrierRole, Constant, Ir, NodeRole};
+use piperine_ir::{CarrierRole, Constant, Ir, NodeRole, ValueType};
 
 use crate::composite::CellShape;
 use crate::params::Params;
@@ -61,15 +61,21 @@ impl Metadata {
             for (i, param) in body.params().iter().enumerate() {
                 let path = format!("{}.{}", instance.path(), param.name);
                 let current = held.get(instance.path(), &param.name);
-                let composite = if param.ty.is_composite() {
+                let composite = if ir.is_composite_value(&param.ty) {
                     CellShape::of(ir, &param.ty).zip(held.composite_bytes(instance.path(), &param.name)).and_then(|(shape, bytes)| shape.decode(bytes).ok())
+                } else if let (ValueType::Enum(_), Some(tag)) = (&param.ty, current) {
+                    // a unit enum param is its tag (PI-02), shown as the variant's name
+                    CellShape::of(ir, &param.ty).and_then(|shape| match &shape {
+                        CellShape::Enum { tag_width, .. } => shape.decode(&(tag as i128).to_le_bytes()[..*tag_width]).ok(),
+                        _ => None,
+                    })
                 } else {
                     None
                 };
                 let value = match (composite, instance.param(i), current) {
                     (Some(value), _, _) => value,
                     (None, Some(Constant::Bool(_)), Some(now)) => Cell::Bool(now != 0.0),
-                    (None, Some(Constant::Int(_)), Some(now)) => Cell::Int(now as i128),
+                    (None, Some(Constant::Int(_)), Some(now)) => Cell::Int(held.exact_integer(instance.path(), &param.name).unwrap_or(now as i128)),
                     (None, Some(_), Some(now)) => Cell::Real(now),
                     // a param with no default holds no value until a placement gives it one: the absent cell
                     (None, _, _) => Cell::Absent,

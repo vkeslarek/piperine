@@ -6,7 +6,7 @@
 #[allow(dead_code)]
 mod support;
 
-use piperine_ir::{Constant, Real};
+use piperine_ir::{Constant, Expr, Real, ValueType};
 use piperine_lang::elab::{Bindings, ConstEval, ConstFault};
 use piperine_lang::pom::{Design, ExprId, Reflect};
 use piperine_lang::types::Types;
@@ -203,4 +203,130 @@ fn a_param_read_is_never_folded() {
     let piperine_ir::Stmt::Let { init, .. } = ir.stmt(first) else { panic!("a `let`") };
     let piperine_ir::Expr::Binary { lhs, .. } = ir.expr(*init) else { panic!("a product") };
     assert_eq!(ir.expr(*lhs), &piperine_ir::Expr::Param(0));
+}
+
+/// The designs of the integer, enum and `Option` param tests, and what they place: the owner of the helpers they share.
+struct Placed;
+
+impl Placed {
+    /// A `Child` with the params `params` read by the `analog` block `uses`, and a `Top` that places it with `binding`.
+    fn child_with(params: &str, uses: &str, binding: &str) -> String {
+        format!(
+            "#[derive(Repr, PartialEq)]\nenum Mode {{ Fast, Slow }}\n\
+             module Child(o: Electrical) {{ {params} }}\n\
+             analog for Child {{ {uses} }}\n\
+             module Top() {{ signal n: Electrical; let k = Child(n) {binding}; }}"
+        )
+    }
+
+    /// The variant and the parts of the aggregate `constant` of `ir`.
+    fn aggregate(ir: &piperine_ir::Ir, constant: &Constant) -> (Option<u32>, Vec<Constant>) {
+        match constant {
+            Constant::Aggregate(id) => (ir.aggregate(*id).variant, ir.aggregate(*id).parts.clone()),
+            other => panic!("expected an aggregate, found {other:?}"),
+        }
+    }
+
+    /// The IR of `src` and the params of its placed instance `Top.k`.
+    fn params(src: &str) -> (piperine_ir::Ir, Vec<Constant>) {
+        let ir = Elab::ir(src, "Top");
+        let params = ir.instance_at("Top.k").expect("the placed instance").params().iter().copied().collect();
+        (ir, params)
+    }
+}
+
+#[test]
+fn an_integer_param_is_bound_and_read() {
+    // PI-01 AC 1, AC 2: `n: u8 = 4 where n >= 1` is 4 when nothing binds it and 7 when a placement does.
+    let params = "n: u8 = 4 where n >= 1;";
+    let uses = "i(o) +> 1.0;";
+    assert_eq!(Placed::params(&Placed::child_with(params, uses, "{ }")).1, [Constant::Int(4)]);
+    assert_eq!(Placed::params(&Placed::child_with(params, uses, "{ n: 7 }")).1, [Constant::Int(7)]);
+    let src = Placed::child_with(params, uses, "{ n: 0 }");
+    let err = Elab::run(&src, "Top").expect_err("0 breaks `n >= 1`");
+    assert_eq!(Elab::codes(&err), ["E0317"], "the `where` holds for an integer");
+}
+
+#[test]
+fn n_as_f64_reaches_the_contribution() {
+    // PI-01 AC 3: `n as f64` in `analog` is a conversion of the param read, in the body of every instance.
+    let ir = Elab::ir(&Placed::child_with("n: u8 = 4;", "i(o) +> n as f64;", "{ n: 7 }"), "Top");
+    assert!(ir.expressions().any(|e| matches!(e, Expr::Cast { to: ValueType::F64, .. })), "the conversion is lowered");
+    assert_eq!(ir.instance_at("Top.k").expect("instance").params().iter().copied().collect::<Vec<_>>(), [Constant::Int(7)]);
+}
+
+#[test]
+fn an_integer_default_converts_with_as() {
+    // Part I §1 rule 1: an `as` in a default is the one conversion; `m: u16 = 3.0 as u16` folds to 3.
+    let params = "m: u16 = 3.0 as u16; w: i8 = 0 - 2;";
+    assert_eq!(Placed::params(&Placed::child_with(params, "i(o) +> 1.0;", "{ }")).1, [Constant::Int(3), Constant::Int(-2)]);
+}
+
+#[test]
+fn an_enum_param_selects_its_arm() {
+    // PI-02 AC 1, AC 2: the param holds the bound variant (its index in the enum), and a `match` on it is in the body.
+    let params = "md: Mode = Mode::Fast;";
+    let uses = "i(o) +> match md { Mode::Fast => 1.0, Mode::Slow => 2.0 };";
+    let (ir, defaults) = Placed::params(&Placed::child_with(params, uses, "{ }"));
+    let (bound_ir, bound) = Placed::params(&Placed::child_with(params, uses, "{ md: Mode::Slow }"));
+    assert_eq!(Placed::aggregate(&ir, &defaults[0]).0, Some(0), "`Fast` is the first variant");
+    assert_eq!(Placed::aggregate(&bound_ir, &bound[0]).0, Some(1), "`Slow` is the second");
+}
+
+#[test]
+fn an_option_param_left_out_is_none() {
+    // PI-03 AC 1, explicit-unknowns EU-06 AC 1 (check C20): an `Option<T>` param no instance binds is `None`.
+    let (ir, params) = Placed::params(&Placed::child_with("rs: Option<f64>;", "i(o) +> 1.0;", "{ }"));
+    assert_eq!(Placed::aggregate(&ir, &params[0]), (None, vec![]), "no part: `None`");
+}
+
+#[test]
+fn an_unbound_option_param_is_none() {
+    // explicit-unknowns C20 (EU-06 AC 1), owed to params-and-io B5 (GAPS L28): the top itself is a placement
+    // with no values, so its `Option` param is `None` too.
+    let src = "module Top() { rs: Option<f64>; k: Option<u8> = None; }";
+    let ir = Elab::ir(src, "Top");
+    let params: Vec<Constant> = ir.instance_at("Top").expect("the top instance").params().iter().copied().collect();
+    assert_eq!(params.iter().map(|p| Placed::aggregate(&ir, p)).collect::<Vec<_>>(), [(None, vec![]), (None, vec![])]);
+}
+
+#[test]
+fn an_option_param_bound_to_a_value_is_some() {
+    // PI-03 AC 2 (§3.2.3, §3.2.10): `{ rs: 10.0 }`, a plain value bound to an `Option<f64>` param, is `Some(10.0)`, so is `Some(10.0)` written out, and `{ rs: None }` is `None`.
+    let params = "rs: Option<f64>;";
+    for binding in ["{ rs: 10.0 }", "{ rs: Some(10.0) }"] {
+        let (ir, some) = Placed::params(&Placed::child_with(params, "i(o) +> 1.0;", binding));
+        assert_eq!(Placed::aggregate(&ir, &some[0]), (None, vec![Constant::Real(Real::new(10.0))]), "{binding}");
+    }
+    let (ir, none) = Placed::params(&Placed::child_with(params, "i(o) +> 1.0;", "{ rs: None }"));
+    assert_eq!(Placed::aggregate(&ir, &none[0]), (None, vec![]));
+}
+
+#[test]
+fn option_param_methods_read_the_bound_case() {
+    // PI-03 AC 3, the shape: `unwrap_or`, `is_some` and `match` over the param elaborate to its two halves, the presence and the
+    // payload, read through the param pin. The value of the bound case in each form (`match`, `is_some`, `if let`) is run in
+    // `piperine-parity`'s `source_params::every_read_of_an_option_param_gives_the_bound_case`.
+    let params = "rs: Option<f64>;";
+    let uses = "i(o) +> rs.unwrap_or(1.0) + match rs { Some(x) => x, None => 0.0 } + if rs.is_some() { 1.0 } else { 0.0 };";
+    let ir = Elab::ir(&Placed::child_with(params, uses, "{ rs: Some(2.0) }"), "Top");
+    let halves = ir.expressions().filter(|e| matches!(e, Expr::OptionPart { .. })).count();
+    assert!(halves >= 2, "the `Option` param is read as its two halves, the presence and the payload: {halves}");
+    assert!(ir.expressions().any(|e| matches!(e, Expr::Param(0))), "through the param pin");
+}
+
+#[test]
+fn an_option_param_bound_over_the_parents_param_reads_some_of_it() {
+    // PI-03 AC 2 (§3.2.3), F21: a placement binds an `Option<f64>` param to an expression over the parent's params, plain (`Some` of it
+    // by §3.2.3) or written as `Some(expr)`: each instance reads `Some` of the parent's value.
+    for binding in ["{ rs: rt }", "{ rs: Some(rt) }", "{ rs: rt * 2.0 }"] {
+        let src = format!(
+            "module Load(p: Electrical) {{ rs: Option<f64>; }}\nanalog for Load {{ i(p, gnd) +> v(p) / rs.unwrap_or(1.0); }}\n\
+             module Mid(p: Electrical) {{ rt: f64 = 3.0; let l = Load(p) {binding}; }}\nmodule Top() {{ signal n: Electrical; let m = Mid(n); }}"
+        );
+        let ir = Elab::ir(&src, "Top");
+        let params: Vec<Constant> = ir.instance_at("Top.m.l").expect("the child").params().iter().copied().collect();
+        let wanted = if binding.contains("2.0") { 6.0 } else { 3.0 };
+        assert_eq!(Placed::aggregate(&ir, &params[0]), (None, vec![Constant::Real(Real::new(wanted))]), "{binding}");
+    }
 }

@@ -57,13 +57,13 @@ impl Checker<'_> {
         }
     }
 
-    /// `name: T = default where cond;` — `T` is `f64`, `bool`, a module (its value a template
+    /// `name: T = default where cond;` — `T` is `f64`, `bool`, an integer, a unit enum, an `Option` (PI-01 to PI-03), a module (its value a template
     /// `Name { params }`, PI-04) or a struct, tuple or array of plain data (CV-18); `where` is `bool` (`E0318`).
     pub(super) fn param(&mut self, decl: DeclId, param: &ParamData) {
         let ty = self.lower_type(param.ty).and_then(|ty| match ty {
             Ty::F64 | Ty::Bool | Ty::Module(_) => Some(ty),
-            // An `Option` or enum param is `params-and-io`'s (L28).
-            composite if self.is_param_composite(&composite) => Some(composite),
+            // An integer, enum, `Option` or composite param (PI-01 to PI-03, CV-18).
+            plain if self.is_param_type(&plain) => Some(plain),
             other => {
                 let node = self.design.type_node(param.ty).clone();
                 let file = self.design.decl_data(node.owner).file;
@@ -436,7 +436,12 @@ impl Checker<'_> {
             };
             match param.and_then(|t| self.lower_type(t)) {
                 Some(ty @ (Ty::F64 | Ty::Bool | Ty::Module(_))) => self.check(field.value, &ty),
-                Some(composite) if self.is_param_composite(&composite) => self.check(field.value, &composite),
+                // a value of `T` bound to an `Option<T>` param is `Some` of it (§3.2.3, PI-03 AC 2)
+                Some(Ty::Option(inner)) => {
+                    let option = Ty::Option(inner.clone());
+                    self.option_argument(field.value, &option, &inner)
+                }
+                Some(plain) if self.is_param_type(&plain) => self.check(field.value, &plain),
                 _ => {
                     self.infer(field.value);
                 }

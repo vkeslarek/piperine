@@ -26,6 +26,11 @@ impl Elaboration<'_, '_> {
                 let (a, b) = (self.lower_expr(scope, *a)?, self.lower_expr(scope, *b)?);
                 Some(self.emit(Expr::Same { a, b }, ValueType::Bool, origin))
             }
+            (Intrinsic::TableModel, _) => self.lower_table_model(scope, expr, args, origin),
+            (Intrinsic::ParseTable | Intrinsic::ParseHex, _) => {
+                self.unsupported(scope.file, self.design.expr_node(expr).span, "`parse_table` or `parse_hex` outside a `const`: a run never reads a file (§20)");
+                None
+            }
             _ => {
                 self.unsupported(scope.file, self.design.expr_node(expr).span, "a function of §22.1 called with the wrong number of arguments, or a `cast` read as a whole value");
                 None

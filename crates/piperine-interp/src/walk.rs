@@ -338,6 +338,8 @@ impl<'a> Walk<'a> {
             Expr::OptionPack { .. } => "OptionPack",
             Expr::OptionPart { .. } => "OptionPart",
             Expr::Default(_) => "Default",
+            Expr::Table { .. } => "Table",
+            Expr::TableSlope { .. } => "TableSlope",
         }
     }
 

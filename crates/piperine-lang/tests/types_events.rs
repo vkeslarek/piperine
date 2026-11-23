@@ -468,18 +468,19 @@ fn a_field_type_conflict_is_e0605() {
 
 #[test]
 fn emit_where_it_is_not_allowed_is_e0601() {
-    // DIG-05 AC 14 (§19 rule 10): `emit!`, or a function that calls it, reached from a definition,
-    // a module-body `let` or a const context is `E0601`, at the emit or at the call.
+    // DIG-05 AC 14 (§19 rule 10): `emit!` reached from a definition, a module-body `let` or a const
+    // context is `E0601`, at the emit; a function that calls it, at the call, is `E0122` (params-and-io PI-12
+    // AC 3, §3 and §6: `E0601` is `emit!` written directly; the library's `require` is a named function over `emit!`).
     let items = "fn check(ok: bool) -> bool { require(\"c\", ok); ok }\n";
-    for (src, at) in [
-        (format!("{items}module Top(in a: Bit, out q: Bit) {{ q = check(a); }}"), "check(a)"),
-        (format!("{items}module Top(in a: Bit) {{ let x = check(a); }}"), "check(a)"),
-        (format!("{items}const C: bool = check(true);\nmodule Top() {{ k: bool = C; }}"), "check(true)"),
-        (format!("module Top(in a: Bit) {{ let x = emit!(\"s\", f = 1.0); }}"), "emit!(\"s\", f = 1.0)"),
-        (format!("{items}module Top(in a: Bit, out q: Bit) {{ q = !require(\"c\", true); }}"), "require(\"c\", true)"),
+    for (src, at, code) in [
+        (format!("{items}module Top(in a: Bit, out q: Bit) {{ q = check(a); }}"), "check(a)", "E0122"),
+        (format!("{items}module Top(in a: Bit) {{ let x = check(a); }}"), "check(a)", "E0122"),
+        (format!("{items}const C: bool = check(true);\nmodule Top() {{ k: bool = C; }}"), "check(true)", "E0122"),
+        (format!("module Top(in a: Bit) {{ let x = emit!(\"s\", f = 1.0); }}"), "emit!(\"s\", f = 1.0)", "E0601"),
+        (format!("{items}module Top(in a: Bit, out q: Bit) {{ q = !require(\"c\", true); }}"), "require(\"c\", true)", "E0122"),
     ] {
         let d = diagnostics(&src);
-        assert_eq!(codes(&d)[0], "E0601", "{src}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(codes(&d)[0], code, "{src}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
         assert_eq!(snippet(&src, &d[0]), at, "{src}");
     }
     // A function that reaches `emit!` is callable from another one, and from a reaction.

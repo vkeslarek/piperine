@@ -6,7 +6,7 @@
 
 use std::collections::BTreeSet;
 
-use piperine_ir::{Child, ChildValue, Constant, NodeRole, Terminal};
+use piperine_ir::{Child, ChildValue, Constant, NodeRole, Terminal, ValueType};
 
 use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
@@ -120,7 +120,8 @@ impl Elaboration<'_, '_> {
                 },
                 None => None,
             };
-            values.bind(key, self.key_value(module, key, written, file, span)?);
+            let value = self.key_value(module, key, written, file, span)?;
+            self.bind_param(&mut values, key, value);
         }
         Some(values)
     }
@@ -158,7 +159,8 @@ impl Elaboration<'_, '_> {
         let mut keys = Bindings::new();
         for key in self.keys.of(template.module).to_vec() {
             let written = template.fields.iter().find(|(param, _, _)| *param == key).map(|(_, value, _)| *value);
-            keys.bind(key, self.key_value(template.module, key, written, file, span)?);
+            let value = self.key_value(template.module, key, written, file, span)?;
+            self.bind_param(&mut keys, key, value);
         }
         Some((given, keys))
     }
@@ -298,7 +300,7 @@ impl Elaboration<'_, '_> {
                 // shows the expression, the instance table the constant of each instance.
                 Err(ConstFault::UnboundParam { .. }) => {
                     let mut sub = Self::sub_scope(scope);
-                    match self.lower_expr(&mut sub, field.value) {
+                    match self.lower_param_expression(&mut sub, field.value) {
                         Some(value) if sub.locals.is_empty() => {
                             self.structure.child_params.push((child, index as u32, ChildValue::Expr(value)));
                             out.push((index as u32, None, field.value));
@@ -317,5 +319,33 @@ impl Elaboration<'_, '_> {
             }
         }
         ok.then_some(out)
+    }
+
+    /// The value `expr` gives a param of the child when it reads the parent's params (§3.2.3): the expression itself, and for an
+    /// `Option` param a value of `T`, or `Some(value)` written out, as `Some` of it (`OptionPack`). `None` after a diagnostic.
+    fn lower_param_expression(&mut self, scope: &mut Scope, expr: ExprId) -> Option<piperine_ir::ExprId> {
+        let payload = if self.types.implicit_some(expr) {
+            Some(expr)
+        } else if self.is_some_call(expr) {
+            match &self.design.expr_node(expr).kind {
+                ExprKind::Call { args, .. } => args.first().map(|arg| arg.value),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        // an `Option` param of the parent passed on (`{ rs: rs }`): its two halves, packed again
+        if payload.is_none() && matches!(self.typed(expr).as_ref(), Some(crate::types::Ty::Option(_))) {
+            let pair = self.lower_option(scope, expr)?;
+            let origin = self.expr_origin(expr);
+            let held = self.type_of(pair.val);
+            return Some(self.emit(piperine_ir::Expr::OptionPack { is: pair.is, value: pair.val }, ValueType::Option(Box::new(held)), origin));
+        }
+        let Some(payload) = payload else { return self.lower_expr(scope, expr) };
+        let value = self.lower_expr(scope, payload)?;
+        let origin = self.expr_origin(expr);
+        let is = self.emit(piperine_ir::Expr::Bool(true), ValueType::Bool, origin.clone());
+        let held = self.type_of(value);
+        Some(self.emit(piperine_ir::Expr::OptionPack { is, value }, ValueType::Option(Box::new(held)), origin))
     }
 }

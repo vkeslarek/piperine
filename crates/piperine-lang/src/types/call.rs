@@ -89,6 +89,7 @@ impl Checker<'_> {
             return self.intrinsic_call(expr, callee, intrinsic, args);
         }
         self.reach(function);
+        self.refuse_outside_class(expr, function);
         self.emitting_call(expr, function);
         self.check_call_class(expr, function);
         if self.is_trait_function(function) {

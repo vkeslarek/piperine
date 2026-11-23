@@ -31,7 +31,7 @@ const UNRAWABLE: &[&str] = &["crate", "self", "Self", "super"];
 /// prints with a trailing `_`, so it never shadows one of them.
 const RESERVED: &[&str] = &[
     // crates, the runtime module, the export and the two thunks
-    "std", "core", "alloc", "piperine_abi", "rt", "piperine_abi_1", "piperine_derive_1", "library", "module",
+    "std", "core", "alloc", "piperine_abi", "rt", "piperine_abi_1", "piperine_derive_3", "library", "module",
     // the prelude and the primitive types generated code spells
     "Ok", "Err", "Some", "None", "Result", "Option", "Fn", "Box", "Vec", "String", "f64", "u8", "u32", "bool",
     "str", "R",

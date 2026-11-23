@@ -157,27 +157,28 @@ fn the_probe_writes_a_check_and_a_log_record() {
 }
 
 #[test]
-fn the_watchdog_is_refused_for_its_integer_param() {
-    // core-std#10 (refused): `Watchdog`, with `limit: u16 = 1000`: a param of an integer type is `P0001`
-    // (L28)
+fn the_watchdog_builds_with_its_u16_param() {
+    // core-std#10 (run, L28 closed by params-and-io PI-01): `Watchdog`, with `limit: u16 = 1000`, builds from the
+    // Book's own text and runs; the button is held and the clock has not reached 1000 edges in a microsecond, so it
+    // ends no run
     let chapter = Chapter::read();
-    let after = "module Top() { signal clk: Bit; signal busy: Bit = true; let w = Watchdog(clk, busy); }\n";
-    Refusal::expect(chapter.wrapped("watchdog.msl", "", "core-std#10", after).run(Commands::transient(1e-6, None)), "core-std#10", "P0001", "param of type `u16` is not supported yet");
+    let after = "module Top() { signal clk: Bit = false; signal busy: Bit = true; let w = Watchdog(clk, busy); }\n";
+    let ran = chapter.wrapped("watchdog.msl", "", "core-std#10", after).run(Commands::transient(1e-6, None)).unwrap_or_else(|failure| panic!("the watchdog builds with its integer param: {failure:#}"));
+    assert!(ran.stream("stuck").is_empty(), "no `stuck` record before the limit");
 }
 
 #[test]
 fn the_watchdog_ends_the_run_at_the_fourth_edge_with_the_button_held() {
-    // The watchdog of core-std#10 with `limit` written as the literal 3 (the Book's text is refused): the
+    // The watchdog of core-std#10 with `limit` bound to 3 at its placement (the exercise's `limit: 3`): the
     // exercise of the chapter, "the fourth edge with the button down: the first three count, the fourth
     // finds run at 3". The `stuck` record carries the time and the count, `fatal` ends the run at that
     // instant and marks it failed
     let chapter = Chapter::read();
     let watchdog = chapter.text("core-std#10");
     assert!(watchdog.contains("    limit: u16 = 1000;\n") && watchdog.contains("run >= limit"), "the Book's text");
-    let watchdog = watchdog.replace("    limit: u16 = 1000;\n", "").replace("run >= limit", "run >= 3");
     let clock = chapter.text("values#1");
     let clock = clock.split_once("/// Counts rising edges").expect("the clock comes first").0;
-    let source = format!("{watchdog}\n{clock}\nmodule Top() {{ signal clk: Bit; signal busy: Bit = true; let o = Osc(clk) {{ f: 1M }}; let w = Watchdog(clk, busy); }}\n");
+    let source = format!("{watchdog}\n{clock}\nmodule Top() {{ signal clk: Bit; signal busy: Bit = true; let o = Osc(clk) {{ f: 1M }}; let w = Watchdog(clk, busy) {{ limit: 3 }}; }}\n");
     let ran = Model::written("watchdog.msl", &source).run(Commands::transient(10e-6, None)).unwrap_or_else(|failure| panic!("{failure}"));
     let stuck = ran.stream("stuck");
     assert_eq!(stuck.len(), 1);

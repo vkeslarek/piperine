@@ -71,8 +71,7 @@ impl Compiled {
             }
             modules.push(Some(module));
         }
-        // a composite param derived from another keeps its elaborated value: no function recomputes it
-        let recomputed = DerivePlan::of(&ir).bindings().iter().any(|binding| !binding.ty.is_composite());
+        let recomputed = !DerivePlan::of(&ir).bindings().is_empty();
         if recomputed && !loaded.derives() {
             return Err(Error::Load {
                 file: loaded.file().to_path_buf(),
@@ -88,12 +87,12 @@ impl Compiled {
         Netlist::new(&self.ir).circuit(self)
     }
 
-    /// Derived param `k` of the design's `DerivePlan` (a parent before its children) over the
-    /// params of its parent, in declaration order (a `bool` as 0.0 or 1.0): the value the
-    /// placement's expression gives. NaN for a `k` the design has no binding for, or a number of
-    /// params other than its parent's, and for a design that derives nothing.
-    pub fn derive(&self, k: u32, params: &[f64]) -> f64 {
-        self.loaded.derive(k, params).unwrap_or(f64::NAN)
+    /// Derived param `k` of the design's `DerivePlan` (a parent before its children) over the pin
+    /// bytes of the params of its parent, one after another in declaration order, each as wide as its
+    /// pin: the pin bytes of the value the placement's expression gives, `width` of them (the child's pin). `None` for a `k` the design
+    /// has no binding for, a parent of another width, and a design that derives nothing.
+    pub fn derive(&self, k: u32, params: &[u8], width: usize) -> Option<Vec<u8>> {
+        self.loaded.derive(k, params, width)
     }
 
     /// What this build cost.

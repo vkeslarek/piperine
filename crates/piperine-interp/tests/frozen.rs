@@ -9,7 +9,7 @@ use std::sync::Arc;
 use piperine_interp::Interpreter;
 use piperine_ir::{
     Addend, AnalysisKind, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Child, EmitField, Env, Event, EventSource, Expr, ExprId, FunctionSpec, Hoisted,
-    Inflow, InstanceSpec, Ir, IrBuilder, Local, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, Place, QuantityRole, Reach, ReachedItem, Site, Stmt, Stream,
+    Inflow, InstanceSpec, Ir, IrBuilder, Local, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, Param, Place, QuantityRole, Reach, ReachedItem, Site, Stmt, Stream,
     StreamField, StmtId, Terminal, ValueType,
 };
 use piperine_ir::{Derives, FieldsForm, GenericInstance, ReprForm, TypeData, TypeKind, VariantData};
@@ -854,4 +854,40 @@ fn each_generics_form_is_refused_by_name() {
     });
     let Err(rejected) = Interpreter::new(Arc::new(ir)) else { panic!("a hand-written Repr was accepted") };
     assert_eq!(rejected.entries.iter().filter(|e| e.item.starts_with("type ")).map(|e| e.what.as_str()).collect::<Vec<_>>(), ["type OneHot holds a hand-written Repr: the interpreter runs the M1 analog subset only"]);
+}
+
+#[test]
+fn a_param_of_another_type_is_refused_naming_the_transpiled_backend() {
+    // PI-05 AC 1, R1: a body with an integer param (an enum or an `Option` param likewise: only `f64` and `bool` pass) is refused by `Interpreter::new`, one entry
+    // for each param naming it, its type and the transpiled backend; a body of `f64` and `bool` params is not.
+    let origin = Origin { file: "top.msl".into(), line: 1, col: 1 };
+    let param = |name: &str, ty: ValueType| Param { name: name.into(), ty, default: None, check: None, structural: false, origin: origin.clone() };
+    let build = |params: Vec<Param>| {
+        let mut b = IrBuilder::new();
+        let bound = vec![piperine_ir::Constant::Int(0); params.len()];
+        let body = b.body(BodySpec { name: "Top".into(), origin: origin.clone(), params, nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
+        let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes: vec![], params: bound, origin: origin.clone() });
+        Arc::new(b.finish(top))
+    };
+    let Err(rejected) = Interpreter::new(build(vec![param("r", ValueType::F64), param("n", ValueType::UInt(8)), param("m", ValueType::Int(16))])) else { panic!("a typed param was accepted") };
+    assert_eq!(rejected.entries.len(), 2, "one entry per param: {:?}", rejected.entries);
+    for (entry, name) in rejected.entries.iter().zip(["n", "m"]) {
+        assert!(entry.what.contains(&format!("`{name}`")) && entry.what.contains("transpiled backend"), "{}", entry.what);
+    }
+    assert!(Interpreter::new(build(vec![param("r", ValueType::F64), param("on", ValueType::Bool)])).is_ok(), "`f64` and `bool` params run");
+}
+
+#[test]
+fn a_table_expression_is_refused_by_name() {
+    // PI-10 AC 8 (T40, R1): a body that holds a `table_model` is refused by `Interpreter::new` naming the form, once for the
+    // value and the slope together.
+    let named = Composite::refused(|b| {
+        let x = Switching::ex(b).real(0.5);
+        let table = vec![(piperine_ir::Real::new(0.0), piperine_ir::Real::new(0.0)), (piperine_ir::Real::new(1.0), piperine_ir::Real::new(2.0))];
+        let control = piperine_ir::TableControl { degree: piperine_ir::TableDegree::Linear, low: piperine_ir::Extrapolation::Constant, high: piperine_ir::Extrapolation::Constant };
+        let value = Composite::run(b, Expr::Table { x, table: table.clone(), control }, ValueType::F64);
+        let slope = Composite::run(b, Expr::TableSlope { x, table, control }, ValueType::F64);
+        (vec![], vec![value, slope])
+    });
+    assert_eq!(named, ["a table model"]);
 }

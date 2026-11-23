@@ -119,8 +119,9 @@ impl Checker<'_> {
         self.unsupported(file, span, "an `emit!` in an `analog` block");
     }
 
-    /// A call of `function`, which may reach `emit!`: where it stands is where `emit!` may stand
-    /// (`E0601`), and from `analog` it writes neither `sim` nor `checks` (`E0603`).
+    /// A call of `function`, which may reach `emit!`: from `analog` it writes neither `sim` nor `checks`
+    /// (`E0603`). Where an emitting call may not stand at all, in a definition, a body `let` or a const
+    /// context, it is `E0122` (`refuse_outside_class`); `E0601` is `emit!` written directly (§19 rule 10).
     pub(super) fn emitting_call(&mut self, expr: ExprId, function: DeclId) {
         let streams = self.function_streams(function);
         if streams.is_empty() {
@@ -131,20 +132,12 @@ impl Checker<'_> {
         }
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
-        match self.context {
-            Context::Module | Context::Const => {
-                let name = self.design.decl_data(function).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-                let message = format!("`{name}` reaches `emit!`: it is called where `emit!` may be written, in a reaction or in `analog`, never in a definition, a body `let` or a const context (§19 rule 10)");
-                self.coded(file, "E0601", span, message, "an emitting `fn` out of place");
+        if self.context == Context::Analog {
+            if let Some(stream) = streams.iter().find(|s| is_reserved(s)) {
+                self.analog_writes_reserved(file, span, &stream.clone());
+            } else {
+                self.analog_trace(file, span);
             }
-            Context::Analog => {
-                if let Some(stream) = streams.iter().find(|s| is_reserved(s)) {
-                    self.analog_writes_reserved(file, span, &stream.clone());
-                } else {
-                    self.analog_trace(file, span);
-                }
-            }
-            Context::Reaction | Context::Function => {}
         }
     }
 

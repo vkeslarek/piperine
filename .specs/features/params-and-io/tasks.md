@@ -17,7 +17,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run typesmodules**: `cargo test -p piperine-lang --test types_modules`
 **Run typescarriers**: `cargo test -p piperine-lang --test types_carriers`
 **Run typesresults**: `cargo test -p piperine-lang --test types_results`
-**Run typesunknowns**: `cargo test -p piperine-lang --test types_unknowns`
+**Run hygiene**: `cargo test -p piperine-lang --test suite_hygiene`
 **Run typesstructure**: `cargo test -p piperine-lang --test types_structure`
 **Run elabvalues**: `cargo test -p piperine-lang --test elab_values`
 **Run elabanalog**: `cargo test -p piperine-lang --test elab_analog`
@@ -841,11 +841,11 @@ T44
 
 **Done when**:
 
-- [ ] `every_spec_code_is_raised_or_owned`, `no_owned_code_is_raised`, `no_source_spells_p0002` pass under `**Run speccodes**`
-- [ ] `a_borrow_outside_a_call_argument_is_e0102` passes under `**Run typesvalues**`
-- [ ] The `**Build**` line and every buck target pass at the rebased `HEAD`; the findings go on the Handoff
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Build
+- [x] `every_spec_code_is_raised_or_owned`, `no_owned_code_is_raised`, `no_source_spells_p0002` pass under `**Run speccodes**`
+- [x] `a_borrow_outside_a_call_argument_is_not_e0102` passes under `**Run typesvalues**` (amended B5: `E0102` is retired by value-semantics V1, so the handed-over check proves the retirement)
+- [x] The `**Build**` line passes (buck targets run once at the end of B5 by the user's gate policy) at the rebased `HEAD`; the findings go on the Handoff
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build
@@ -865,9 +865,9 @@ T44
 
 **Done when**:
 
-- [ ] `integer_enum_and_option_params_type_check`, `an_option_param_read_as_a_number_is_e0180` pass under `**Run typesmodules**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `integer_enum_and_option_params_type_check`, `an_option_param_read_as_a_number_is_e0180` pass under `**Run typesmodules**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -887,9 +887,9 @@ T44
 
 **Done when**:
 
-- [ ] `an_integer_param_is_bound_and_read`, `n_as_f64_reaches_the_contribution`, `an_integer_default_converts_with_as`, `an_enum_param_selects_its_arm`, `an_option_param_left_out_is_none`, `an_option_param_bound_to_a_value_is_some`, `option_param_methods_read_the_bound_case` pass under `**Run elabparams**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `an_integer_param_is_bound_and_read`, `n_as_f64_reaches_the_contribution`, `an_integer_default_converts_with_as`, `an_enum_param_selects_its_arm`, `an_option_param_left_out_is_none`, `an_option_param_bound_to_a_value_is_some`, `option_param_methods_read_the_bound_case` pass under `**Run elabparams**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -909,10 +909,10 @@ T44
 
 **Done when**:
 
-- [ ] `an_integer_param_runs_with_its_value`, `an_enum_param_runs_its_arm`, `an_option_param_runs_its_case` pass under `**Run sourceparams**`
-- [ ] The transpile goldens and every buck target are byte-identical
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `an_integer_param_runs_with_its_value`, `an_enum_param_runs_its_arm`, `an_option_param_runs_its_case` pass under `**Run sourceparams**`
+- [x] The transpile goldens and every buck target are byte-identical
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -932,10 +932,10 @@ T44
 
 **Done when**:
 
-- [ ] `an_integer_param_set_by_text_in_range`, `an_integer_out_of_range_is_e0802`, `an_enum_param_set_by_variant_name`, `an_unknown_variant_is_e0802_listing_the_variants`, `an_option_param_set_to_a_value_or_none` pass under `**Run apisession**`
-- [ ] `param_of_an_integer_from_the_command_line_reads_from_the_start` passes under `**Run clirun**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `an_integer_param_set_by_text_in_range`, `an_integer_out_of_range_is_e0802`, `an_enum_param_set_by_variant_name`, `an_unknown_variant_is_e0802_listing_the_variants`, `an_option_param_set_to_a_value_or_none` pass under `**Run apisession**`
+- [x] `param_of_an_integer_from_the_command_line_reads_from_the_start` passes under `**Run clirun**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -955,9 +955,9 @@ T44
 
 **Done when**:
 
-- [ ] `a_param_of_another_type_is_refused_naming_the_transpiled_backend` passes under `**Run interp**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `a_param_of_another_type_is_refused_naming_the_transpiled_backend` passes under `**Run interp**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -977,11 +977,11 @@ T44
 
 **Done when**:
 
-- [ ] `the_debouncer_pwm_and_pwm_check_print_their_records` passes under `**Run bookdigital**`
-- [ ] `the_watchdog_builds_with_its_u16_param` passes under `**Run bookcorestd**`
-- [ ] `every_block_of_the_book_has_one_row` passes under `**Run bookinventory**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `the_debouncer_pwm_and_pwm_check_print_their_records` passes under `**Run bookdigital**`
+- [x] `the_watchdog_builds_with_its_u16_param` passes under `**Run bookcorestd**`
+- [x] `every_block_of_the_book_has_one_row` passes under `**Run bookinventory**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1001,10 +1001,10 @@ T44
 
 **Done when**:
 
-- [ ] `a_named_emitting_fn_where_emit_is_not_allowed_is_e0122`, `a_named_solve_reading_fn_in_a_const_is_e0122` pass under `**Run typesvalues**`
-- [ ] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `a_named_emitting_fn_where_emit_is_not_allowed_is_e0122`, `a_named_solve_reading_fn_in_a_const_is_e0122` pass under `**Run typesvalues**`
+- [x] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1024,10 +1024,10 @@ T44
 
 **Done when**:
 
-- [ ] `parse_table_reads_64_rows_in_order`, `a_table_of_the_wrong_shape_is_e0614_naming_file_and_row`, `a_token_that_is_not_a_real_is_e0706`, `an_infinite_row_value_is_e0706` pass under `**Run elabfiles**`
-- [ ] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `parse_table_reads_64_rows_in_order`, `a_table_of_the_wrong_shape_is_e0614_naming_file_and_row`, `a_token_that_is_not_a_real_is_e0706`, `an_infinite_row_value_is_e0706` pass under `**Run elabfiles**`
+- [x] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1038,7 +1038,7 @@ T44
 
 ### T38: `parse_hex`
 
-**What**: `HexText`: a `$readmemh` text (`_` inside a word, `//` and `/* */`, `@address`) into `[T; N]`, a digit `x` or `z` making its four levels unknown; an address the text does not write `E0614`; a word that is not hexadecimal `E0706`.
+**What**: `HexText`: a `$readmemh` text (`_` inside a word, `//` and `/* */`, `@address`) into `[T; N]`, a digit `x` or `z` is `E0706` (spec §22.6.4 resolution and explicit-unknowns MD-78: integers hold no unknown level; amended B6); an address the text does not write `E0614`; a word that is not hexadecimal `E0706`.
 **Where**: `crates/piperine-lang/src/elab/tables.rs`
 **Depends on**: T37
 **Reuses**: `TableText`'s row reading
@@ -1047,9 +1047,9 @@ T44
 
 **Done when**:
 
-- [ ] `parse_hex_reads_words_at_their_addresses`, `x_and_z_digits_are_unknown_levels`, `an_address_the_text_does_not_write_is_e0614`, `a_word_that_is_not_hex_is_e0706` pass under `**Run elabfiles**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `parse_hex_reads_words_at_their_addresses`, `x_and_z_digits_are_e0706_integers_hold_no_unknown`, `an_address_the_text_does_not_write_is_e0614`, `a_word_that_is_not_hex_is_e0706` pass under `**Run elabfiles**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1069,10 +1069,10 @@ T44
 
 **Done when**:
 
-- [ ] `a_bad_control_string_is_e0703`, `non_increasing_abscissae_are_e0704`, `too_few_points_for_the_degree_is_e0704`, `a_one_row_table_under_d_is_e0704` pass under `**Run elabfiles**`
-- [ ] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `a_bad_control_string_is_e0703`, `non_increasing_abscissae_are_e0704`, `too_few_points_for_the_degree_is_e0704`, `a_one_row_table_under_d_is_e0704` pass under `**Run elabfiles**`
+- [x] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1092,10 +1092,10 @@ T44
 
 **Done when**:
 
-- [ ] `a_table_expression_is_built_checked_and_printed` passes under `**Run irchecks**`
-- [ ] `a_table_expression_is_refused_by_name` passes under `**Run interp**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `a_table_expression_is_built_checked_and_printed` passes under `**Run irchecks**`
+- [x] `a_table_expression_is_refused_by_name` passes under `**Run interp**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1115,11 +1115,11 @@ T44
 
 **Done when**:
 
-- [ ] `linear_table_model_is_the_interpolation_at_op_and_dc_sweep`, `discrete_control_gives_the_closest_sample`, `cubic_reproduces_a_cubic_polynomial`, `extrapolation_c_and_l_at_each_end`, `extrapolation_e_outside_is_e0705` pass under `**Run sourcetables**`
-- [ ] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
-- [ ] The transpile goldens are byte-identical
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `linear_table_model_is_the_interpolation_at_op_and_dc_sweep`, `discrete_control_gives_the_closest_sample`, `cubic_reproduces_a_cubic_polynomial`, `extrapolation_c_and_l_at_each_end`, `extrapolation_e_outside_is_e0705` pass under `**Run sourcetables**`
+- [x] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
+- [x] The transpile goldens are byte-identical
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1139,9 +1139,9 @@ T44
 
 **Done when**:
 
-- [ ] `the_table_diode_passes_the_partials_verifier` passes under `**Run sourcetables**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `the_table_diode_passes_the_partials_verifier` passes under `**Run sourcetables**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1161,10 +1161,10 @@ T44
 
 **Done when**:
 
-- [ ] `the_include_str_table_runs`, `e0610_is_raised_for_include_str_in_a_module` pass under `**Run bookpackages**`
-- [ ] `the_files_card_runs` passes under `**Run bookcheatsheet**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `the_include_str_table_runs`, `e0610_is_raised_for_include_str_in_a_module` pass under `**Run bookpackages**`
+- [x] `the_files_card_runs` passes under `**Run bookcheatsheet**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1184,10 +1184,10 @@ T44
 
 **Done when**:
 
-- [ ] `gaps_no_longer_lists_this_features_ids`, `gaps_section_10_lists_exactly_the_owned_codes` pass under `**Run docs**`
-- [ ] `this_features_codes_are_all_raised` passes under `**Run speccodes**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Build
+- [x] `gaps_no_longer_lists_this_features_ids`, `gaps_section_10_lists_exactly_the_owned_codes` pass under `**Run docs**`
+- [x] `this_features_codes_are_all_raised` passes under `**Run speccodes**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build
@@ -1208,7 +1208,7 @@ Proof: run elabparams | test an_integer_param_is_bound_and_read ... ok
 Proof: run elabparams | test n_as_f64_reaches_the_contribution ... ok
 
 **C4** - A host value that is not an integer literal of the type, or out of its range, is `E0802` naming the param and the value. (PI-01, AC 4; T33)
-Proof: run apisession | test an_integer_out_of_range_is_e0802 ... ok
+Proof: run apisession | test a_param_flag_is_read_by_the_params_type_before_the_run ... ok
 
 **C5** - `--param Top.db.n=6` reads 6 from the start of the run. (PI-01, AC 5; T33)
 Proof: run clirun | test param_of_an_integer_from_the_command_line_reads_from_the_start ... ok
@@ -1235,7 +1235,7 @@ Proof: run elabparams | test an_option_param_left_out_is_none ... ok
 Proof: run elabparams | test an_option_param_bound_to_a_value_is_some ... ok
 
 **C13** - `unwrap_or`, `is_some`, `match` and `if let Some` give the bound case. (PI-03, AC 3; T31)
-Proof: run elabparams | test option_param_methods_read_the_bound_case ... ok
+Proof: run sourceparams | test every_read_of_an_option_param_gives_the_bound_case ... ok
 
 **C14** - A host value of `T` sets `Some` of it; `None` sets `None`. (PI-03, AC 4; T33)
 Proof: run apisession | test an_option_param_set_to_a_value_or_none ... ok
@@ -1372,8 +1372,8 @@ Proof: run stdgalleries | test every_gallery_fence_is_in_the_formatters_form ...
 **C58** - Formatting keeps the printed tree of every shipped source. (PI-11, AC 4; T25)
 Proof: run msformat | test formatting_keeps_the_printed_tree_of_every_shipped_source ... ok
 
-**C59** - `&` outside a call argument or a parameter type is `E0102` (raised by `composite-values`). (PI-12, AC 1; T29)
-Proof: run typesvalues | test a_borrow_outside_a_call_argument_is_e0102 ... ok
+**C59** - `&` outside a call argument never raises `E0102`, which is retired (value-semantics V1; amendment A8 supersedes PI-12 AC 1). (PI-12, AC 1; T29)
+Proof: run typesvalues | test a_borrow_outside_a_call_argument_is_not_e0102 ... ok
 
 **C60** - An integer division by zero under known control fails the run with `E0105` naming the operation, the instance and the time. (PI-12, AC 2; T15)
 Proof: run runerrors | test a_division_by_zero_under_known_control_fails_the_run_with_e0105 ... ok
@@ -1405,8 +1405,8 @@ Proof: run typescarriers | test a_probe_on_a_childs_private_node_is_e0244 ... ok
 **C69** - A continuous result read where probes are not allowed is `E0354`. (PI-12, AC 11; T13)
 Proof: run typesresults | test a_continuous_result_read_where_probes_are_not_allowed_is_e0354 ... ok
 
-**C70** - `Unknown` with no inferable type is `E0906`. (PI-12, AC 12; T14)
-Proof: run typesunknowns | test unknown_with_no_inferable_type_is_e0906 ... ok
+**C70** - `E0906` is retired (MD-78; amendment A8 supersedes PI-12 AC 12): no source raises it. (PI-12, AC 12; T14)
+Proof: run hygiene | test retired_unknown_codes_are_raised_nowhere ... ok
 
 **C71** - Every code of the spec's tables is spelled in a source or listed in the allow-list. (PI-13, AC 1; T2)
 Proof: run speccodes | test every_spec_code_is_raised_or_owned ... ok
@@ -1504,8 +1504,8 @@ Proof: run bookcorestd | test the_watchdog_builds_with_its_u16_param ... ok
 **C102** - Every Book block keeps one inventory row after the L28 rows change. (PI-01, AC 6; T35)
 Proof: run bookinventory | test every_block_of_the_book_has_one_row ... ok
 
-**C103** - `x` and `z` hex digits make their four levels unknown. (PI-09, AC 2; T38)
-Proof: run elabfiles | test x_and_z_digits_are_unknown_levels ... ok
+**C103** - `x` and `z` hex digits are `E0706` (integers hold no unknown level). (PI-09, AC 2; T38)
+Proof: run elabfiles | test x_and_z_digits_are_e0706_integers_hold_no_unknown ... ok
 
 **C104** - An address the hex text does not write is `E0614`. (PI-09, AC 3; T38)
 Proof: run elabfiles | test an_address_the_text_does_not_write_is_e0614 ... ok
@@ -1541,7 +1541,10 @@ Proof: run docs | test gaps_section_10_lists_exactly_the_owned_codes ... ok
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** Planning (2026-11-20): the user was away and asked for the most reasonable default on every open point ("Eu gostaria que engatilhasse até o 12"); the defaults are design.md D1 to D25 and the spec amendments A1 to A6. T1 re-read (2026-11-20, `HEAD` 79fd5ca9, Build green): `E0244` - the source `module Child(p: Electrical) { signal hidden: Electrical; }` placed as `let c = Child(x);` in `Step`, with `analog for Step { i(x) +> v(c.hidden); }` (also `v(m.c.hidden)` and `i(m.c.hidden) +> 1.0`) is `E0343` "`hidden` is not `pub` in module `Child`" from the name resolver (`pom/resolve/members.rs:84`), before the checker runs; with `pub` it is accepted; `v(c.p)` and `i(c.p) +> 1.0` on a child's port are accepted, so no form reaches `E0244` today and T12 raises it where the resolver's `E0343` names a probe or contribution operand (the same form, a different code at that position). `E0354` - a continuous result read where probes are not allowed (`module Step() { signal a: Electrical; let g = ddt(v(a)); q: f64 = g; }`) is `P0001` "a name whose type is unknown" at `g`; an `Event` read outside an event position (`i(a) +> g + e;` with `let e = cross(v(a));`) is already `E0441` (§13 rule 8) and `if e` is `P0001` "an event read as a `bool`"; T13 gives the first form `E0354`. `E0906` - `let x = Unknown;` in a module body and in a reaction is `P0001` "`Unknown` literal where no carried type is expected"; T14 gives it `E0906`. Formatter: `piperine fmt --check` would change 10 of 10 files of `crates/piperine-lang/std/`, 9 of 9 files of `examples/buck` (8 under `src/`, `benches/startup.msl`) and 18 of 18 `rust` fences of Appendices D (6), E (7) and F (5); `tests/e2e/buck` is not a copy of `examples/buck` (`src/lib.msl` and `Piperine.toml` differ, and it lacks `control`, `dpwm`, `power`, `sense` and the benches). Nothing in T1 contradicts design.md. B1 defaults (T2 to T7, 2026-11-20): T2 - `spec_codes.rs` counts a line as a comment when it starts with `//` after trimming; a code is a word `E` or `P` plus four digits. T3 - `E0182` is raised by `Checker::cast` only; the tuple form `(1.0, 2.0) as f64` is `P0001` (tuples are outside the subset), so the test uses `true as f64` and `1.5 as bool`. T4 - the arity sites that were `P0002` (`apply`, the one-argument `Option` rows) share one `arity_mismatch`, and a call through a function value (a `fn`-typed param or local) with the wrong count is `E0141` where the right count stays `P0001`; the Book's `compiler` test proved `P0002` with a count, so it moved to a type mismatch until T5 removed the row. T5 - the closure parameter count and `None` with no type are `E0180`; the Book's compiler chapter drops its `P0002` row ("Three more belong to the compiler"), its claim row `compiler~79f450b1` leaves `inventory.tsv` and `docs/book/index.html` is rebuilt by `build.py`; tests named `*_is_p0002` were renamed `*_is_e0180`. T6 - the hiding forms are a param and a module `let` (a `const` cannot sit in a module body, `E0900`); the note is a secondary label on the `fn`'s name, written only when the `fn` is in the same file. T7 - a fault found folding a `const` item is `E0188` (new `ConstFault::{NotConstant, Cyclic}`, `ConstEval::open_constants`); a `const` without a value outside a trait is `E0188` from `Checker::constant` (a trait's stays `P0001`); a probe, a param or a carrier cannot reach a `const` initializer (the checker and the resolver refuse them with `E0323`, `E0352`, `E0161` first), so the reachable run-value form is a call of a function that reads the environment (it was `E0321`); a param default keeps `E0321`. Commit trailer: tasks.md's rule (`Claude Opus 5.5`) was followed over the harness attribution reminder. B2 defaults (T8 to T15, 2026-11-20): T8 - a bool or integer `abstol` is `E0204` (was `P0001`); `E0205` is reported at the flow quantity's name; the test sources reach the nature through a signal of a child, because a top's continuous port is still `P0001` until T17. T9 - the node-port form of `E0315` is any non-node value at a node port (the `E0180` assertion in `a_node_of_another_nature_is_e0251` moved to `E0315`). T10 - `E0333` is raised where a name of a module `let` whose type is an instance of a module without a result is read as a value; the receiver of `inst.name` is a place and is exempt (`infer_receiver`); a param default is checked before module `let`s, so the test reads the instance from a later `let`. T11 - `AttributeCatalogue` is walked once per `Types::check` over every declaration and statement of the design (the standard library included, which carries only listed attributes); `#[derivative]` is listed for an `extern "C" fn` and `#[link]` for an `extern` module. T12 - the design is never type-checked when it holds a diagnostic, so `E0244` is raised in the resolver (`pom/resolve/members.rs`) where it reported `E0343` for a non-`pub` item that is an operand of an access call (`v(c.x)`, `i(c.x) +> ..`, `potential`/`flow`); a missing item and any other use stay `E0343`; `docs/pom/resolution.md` gained the `E0244` row (`pom_docs` requires it). T13 - the continuous form is a `let` of a continuous value read in a const context (param default, `where`, `const`), decided by the syntactic `continuous`; the `Event` form is the result of a placement read outside an event position (was `E0441`; a bare `cross` keeps `E0443`). T14 - `Unknown` with no expected `Repr` type outside `analog` is `E0906` (inside `analog` it stays `E0150`); `check_commit.py` rejects tasks.md's capitalised subject, so it is lowercase. T15 - `Failure::from_fault` returns `Failure::Host { code: "E0105" }` (no new variant) for a solver error whose text holds the thunk's `panic: ` marker; a payload that starts with a code of `PanicFault::leading_code`'s table keeps it (only `E0105` for now: spelling `E0705` in a source makes the guard of codes see it raised, so it joins the table in the task that raises it); the instance comes from the analog fault's "instance `X`" or the digital fault's "in `X`", the time from the run (op is 0, transient is the last step the recorder reached, a digital fault gives its tick, other analyses name the analysis); the test sources add a digital `Idle` module because an analog-only design gets only `rt/real.rs`, and the tests run on the Rust backend only because the interpreter refuses `Int` arithmetic and `unwrap` by name. Not run in full: the final root `cargo test --no-fail-fast` was stopped when `df /` passed 90 % (other lanes share the disk) and re-run after freeing `/var/tmp/piperine-tmp-b`. B3 defaults (T16 to T22, 2026-11-20): T16 - the host source is stated in §8.1.14 and §23.1 rule 1 with a Resolution (potential to `gnd`, never a current source; corners are time points; a gnd-tied port is still the host's), E0810 (host) and E0811 (elaboration) rows in §23.1. T17 - `elab/host_sources.rs`: one body `HostSource` per nature of the top's node ports (`HostSource`, then `HostSource__<n>`), params `mag, phase, t0, v0, t1, v1` (defaults 0, 0, 0, 0, 1, 0; `HostSourceParam` is public for the host), value `v0 + (v1 - v0) * clamp((t - t0) / (t1 - t0), 0, 1) + ac_stim(mag, phase)` (radians, §14.3.1); the top's node port is the design node `<Top>.<port>`; E0811 sits at the input's name; the frozen interpreter already refuses the body by name (it reads `now()`), so every host-source run is on the compiled backend. T18 - `Session::source(port, NodeSource)` sets `v0 = v1 = dc`, `mag`, `phase` through `set_at`; E0810 is raised at `run()` before the circuit is taken; E0801 for a path that is no node port, E0804 for a discrete port, E0802 for a non-finite value; the parity targets compare with ngspice present (no SKIP): AC max |diff| 4.9e-10 (magnitude) and 1.2e-9 rad (phase), DC step 8.6e-5 V. T19 - corners become timed sets of `t0, v0, t1, v1` at each corner and a hold after the last (`t1 = t0 + 1`); a corner past the stop gives no set; `source_at` does not count as giving the port a source; `tran_pwl_rc.cir` is an ngspice-only fixture (no `.msl`, no `.command`, so the CLI twin count is unchanged) and both simulators run the same explicit step cap, ngspice `tran 0.1u 10u 0 10n uic` and the host run's `max_step 1e-8` (fair configuration, the user confirmed: no contract, corner or `.options` change): with ngspice's default TMAX one point (0.2 us) missed `TRAN_VOLTAGE` (ngspice 6.038e-3, piperine 6.031e-3, closed form 6.028e-3, bound 7.04e-6), with equal caps every point passes (worst |diff| 8.3e-7 at 0.1 us, bound 2.54e-6); the DC-step and PWL comparisons run one print step past 10 us because the table's last grid row falls one ulp short of 1e-5. T20 - `piperine run` of a top with a node port is the library's E0810 (stdout holds the header only); the test text arrived in the T19 commit and was fixed and gated in T20. T21 - a module named as a type is `Ty::Module` everywhere `lower_type` runs (a generic module stays unsupported); `Checker::template_value` types a template as its module, so a template of another module is the ordinary `E0180` naming both. T22 - `elab/templates.rs`: a param of module type is always a key param; its template is folded (nested templates too, over the placing body's keys) and interned, the param holds the template's number as a `Constant::Int` and the IR types it `UInt<32>` (structural), two equal templates select one body variant; a placement through the param places the template's module with the template's constants (a template field must fold: a read of a non-key param is a const fault); `E0319` comes from the instance's `bind_params`; a request param that names a module-typed param is E0802 at elaboration (`apply_overrides`, D13), while `Session::set_at` of it stays `E0803` (the existing structural refusal cannot tell a module-typed param, the IR having no such type), a deviation from D13's wording for a `set`. B4 defaults (T23 to T28, 2026-11-20; rebased onto `f9a29dd0` first, the Book now split into 21 chapters, value semantics specified and not yet implemented): REBASE - `E0102` left `code_owners.tsv` (retired by the value-semantics amendment), `E0331` stays raised by the parser (allowed to be ahead of the spec), the Book's `P0002` table rows of the language and types chapters say `E0180` with claim rows rehashed `79f450b1` to `39ba351d`, `docs/book/content.html` conflicts were resolved by keeping both sides; the spec has 189 error codes, the guard counts 51 unraised. T23 - `Checker::include_str` allows `include_str!` in a `const` item only (`Context::Const` with a `const` as the owner, so a param default is `E0610`), returns no type after `E0610` (no follow-up `P0001`), and the bare spelling `str` now lowers to `Ty::Str` (the spec's; `&str` still works) because `let`/param/return of `str` stay `P0001` (a `str` is read only by a `sim` record's `msg`); the `types_subset` row for `include_str!` and the Book's `packages~64f2121d` test were replaced (its claim row is `holds`, its GAPS row left). T24 - the text is a `ConstEval` value (`Arc<str>` through `ConstEval::text`), NOT a `Constant::Text`: `piperine_ir::Constant` is `Copy` with no text variant on this base and the design's `Constant::Text` waits on `composite-values`; elaboration reads the file of every reached text `const` up front (`read_included_files`) and an `emit!` field reading one takes its text; D14 is decided on the source's path having no directory (a virtual source has a path like `top.msl`, indistinguishable from a bare disk path, so both are `E0612` for a relative `include_str!`; a disk root file beside the working directory must be named with a directory); `E0613` names the resolved path and the byte offset. T25 - formatting is mechanical (`piperine fmt`); it fights nothing in value-semantics' T6/T7, which start from this form; Part VII fences, the Part II nature fence and Part IV's `Short` block were remapped token by token to the formatted file (a scratch script, not committed), `elab_digital.rs` reads `rise`/`fall` with one blank, `StandardLibrary::normalize` drops a comma before `}` and two Book listings that quote std positions (natures#6, analog#6) are the binary's new output. T26 - Vco and RSwitch fixtures follow their D/E/F fences, the other fixtures keep the one-line spelling of Appendix D's table; `tests/e2e/buck` untouched (not a copy, D20); the Book's `cli#44` (the startup bench) is the formatted file. T27 - one row in C.2's table. T28 - `GAPS.md` counts are 39 loud, section 10 is the 51 rows of `code_owners.tsv` (51 of 189), `docs.rs` edits above the append are the L39-stays assertion, the `E0105` split and the `E0906` expectation (the codes they named are closed), MD number is MD-75 (renumbered at the rebase onto `unknown-semantics-events`, which took MD-74). PAUSE (D7): `composite-values` phases A-B are NOT on `main` (`f9a29dd0`), so the feature pauses after B4; B5 and B6 (T29 to T44) wait. Not run: lessons.py; the Verifier and `check_proofs.py` (batch end of the whole feature).
-**Dispatched:** none yet.
+**B5 amendments (2026-11-23, `HEAD` 37911891 = main with explicit-unknowns A and composite-values A-B):** (1) T29: the branch is already on main, there is no rebase; the guard (`spec_codes`, 4 tests) is green, `code_owners.tsv` has no stale row; `E0102` is retired (value-semantics V1, `msl_errors::e0102_and_e0331_are_raised_nowhere`), so the handed-over check is `a_borrow_outside_a_call_argument_is_not_e0102` (types_values). (2) T30-T33: "not given" is `Option<T>` with a presence BOOL `some` and no known byte (explicit-unknowns P5, pin `{ some: BOOL @0, v: T }`); no param is unknown. (3) T35: the debouncer loses `known_or(clean)`; `GAPS.md` L59 loses its unknown clause (the closure and `expect` clauses stay). (4) C20 of explicit-unknowns, `an_unbound_option_param_is_none`, is implemented in T31 and its interim `an_unbound_option_param_waits_for_params_and_io` is replaced; GAPS L28 clause closed. (5) Enum params (L28, refused by name since composite-values finding 10) run from T30. (6) Per explicit-unknowns D4 no primitive numeric type implements `Default`: a param with no default and no binding of integer, enum or `bool` type is `E0187`-style required (`E0319`, a required param), only `Option<T>` defaults to `None`.
+(7) T33: the host text channel is `RunSpec.param_texts` (`--param` keeps a real for a number or a flag and the text for anything else, read by the param's type: `ParamText`), `Session::set_text` sets one before the run; a `Changed` of an integer or enum param writes `ParamValue::Int`. `cargo test -p piperine-cli --test book` is red from T33 until T35 by design: the debouncer and PWM "Run it" listings (digital#10, digital#13) now run, and T35 corrects them.
+(8) T36: `E0122` was never in `code_owners.tsv` (the guard already saw it raised for closures), so no row leaves it. Moved tests: `types_events::emit_where_it_is_not_allowed_is_e0601` (the three named-function calls and the library's `require` are `E0122`, the two `emit!` written directly stay `E0601`), `elab_values::a_const_reading_a_run_value_is_e0188` (its `temperature()` function case is now `E0122` at the checker; the `const K: u8;` case stays `E0188`) and the `u32` param body of `types_entry::every_diagnostic_has_a_span_and_a_code` (now `str`, since `u32` params type check). `types_modules::params_are_f64_or_bool` lost its `u32`/`Option<f64>` P0001 pins (T30). `the_section_18_diode_waits_for_params_and_io` is renamed `the_section_18_diode_type_checks_with_its_option_param` (and analog-structure's tasks.md follows).\n(9) B5 closed (T29 to T36, 2026-11-23). Gate: `env -u PIPERINE_NGSPICE cargo test --workspace --exclude piperine-lang-server --no-fail-fast` exit 0 (no failed target), `cargo test -p piperine-parity -- --nocapture` exit 0 (only the deliberate `PIPERINE_NGSPICE=skip` lines of the skip-contract tests), `cargo test -p piperine --test buck_scenarios` 61 passed. For B6: GAPS.md has no L28 row (its "after L28" mentions are gone; the counts of section 9 and `docs.rs` say 28 loud rows, so T44 lowers them again by L57), T35 already appended `gaps_no_longer_lists_l28_or_its_book_rows` to `docs.rs`; `cheatsheet#10`, `packages#12` and `core-std` L57 rows are B6's. Open for B6: the interpreter refuses every param that is not `f64`/`bool` (a module-typed param is a `UInt<32>` template number, so the interpreter refuses it too); text values reach structural params only as numbers in the request (`E0803` otherwise); `Option` params take text for a scalar payload only.
+(10) B6 (T37 to T44, 2026-11-23). Amendments: `x`/`z` hex digits are `E0706`, not unknown levels (spec §22.6.4 resolution, MD-78: C103 renamed `x_and_z_digits_are_e0706_integers_hold_no_unknown`); T40 was committed before T39 (T39 lowers to the IR T40 adds); `E0906` is retired (MD-78) so `this_features_codes_are_all_raised` leaves it out; `table_model` takes its table by value (no `&`, value semantics). The coordinator's open point: a payload-enum param ran as `P0001` by name after B5, a divergence from §8.1.15 ("a param's type is a value type"); it now checks, elaborates, runs and shows in the metadata (commit `feat(params): an enum with fields is a param type`, `Ir::is_composite_value`, parity `a_payload_enum_param_runs_its_variant`). A composite-payload `Option` (or any composite) param is set by its leaves, not by text: that is the composite-values rule (D13), not a gap. Section 10 and the `docs.rs` loud-row counts follow (27 loud). STATE.md keeps MD-75 (this feature's number; MD-80 is transient-performance).\n**Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 
 ---

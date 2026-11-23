@@ -19,12 +19,7 @@ E0452	analog-operators	L44 (`delay`)
 E0453	analog-operators	L44
 E0454	analog-operators	L45 (`noise`)
 E0456	analog-operators	L47 (`simparam`)
-E0614	params-and-io	PI-09 AC 3, raised here
 E0702	explicit-unknowns	EU-02 (GAPS L58: raised again by T45 with `Logic`)
-E0703	params-and-io	PI-10 AC 6, raised here
-E0704	params-and-io	PI-10 AC 7, raised here
-E0705	params-and-io	PI-10 AC 5, raised here
-E0706	params-and-io	PI-09 AC 4, raised here
 E0807	gradients	H8
 E0808	gradients	H8
 E0809	gradients	H8

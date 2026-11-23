@@ -139,6 +139,9 @@ pub struct Overrides {
     pub print: Vec<String>,
     pub streams: Vec<String>,
     pub params: Vec<(String, f64)>,
+    /// `--param` values given as text, read by the param's type (PI-01 to PI-03, D24): an integer
+    /// literal in a radix, a variant name, `None`. Applied after `params`.
+    pub param_texts: Vec<(String, String)>,
     pub backend: Option<String>,
     pub csv: Option<PathBuf>,
     pub records: Option<PathBuf>,
@@ -182,6 +185,8 @@ pub struct RunSpec {
     pub print: Vec<String>,
     pub streams: Vec<String>,
     pub params: Vec<(String, f64)>,
+    /// The params given as text, read by their type when the session opens (`Overrides::param_texts`).
+    pub param_texts: Vec<(String, String)>,
     pub backend: Option<String>,
     pub csv: Option<PathBuf>,
     pub records: Option<PathBuf>,
@@ -235,6 +240,7 @@ struct Keys {
     print: Vec<String>,
     streams: Vec<String>,
     params: Vec<(String, f64)>,
+    param_texts: Vec<(String, String)>,
     backend: Option<Given<String>>,
     csv: Option<Given<PathBuf>>,
     records: Option<Given<PathBuf>>,
@@ -516,6 +522,7 @@ impl Keys {
             }
         }
         self.params.extend(o.params.iter().cloned());
+        self.param_texts.extend(o.param_texts.iter().cloned());
         self
     }
 
@@ -725,6 +732,7 @@ impl Keys {
             print: self.print.clone(),
             streams: self.streams.clone(),
             params: self.params.clone(),
+            param_texts: self.param_texts.clone(),
             backend: self.backend.as_ref().map(|g| g.value.clone()),
             csv: self.csv.as_ref().map(|g| g.value.clone()),
             records: self.records.as_ref().map(|g| g.value.clone()),

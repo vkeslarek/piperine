@@ -456,7 +456,7 @@ impl Elaboration<'_, '_> {
         let mut texts = Vec::new();
         for key in &keys {
             let value = values.get(*key)?;
-            keyed.bind(*key, value);
+            self.bind_param(&mut keyed, *key, value);
             texts.push(value.to_string());
         }
         let key = BodyKey { module, values: texts };
@@ -713,7 +713,17 @@ impl Elaboration<'_, '_> {
 /// param is ignored here, it stays the host's write before the run (design mechanism 4, C6).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Overrides {
-    entries: Vec<(String, f64)>,
+    /// The bindings, in the order given.
+    entries: Vec<(String, Given)>,
+}
+
+/// A value a host binds to a key param before the run: a number, or a text the elaborator reads by the param's type.
+#[derive(Debug, Clone, PartialEq)]
+enum Given {
+    /// A number, as the type of the param's default holds it.
+    Number(f64),
+    /// A text: an integer literal, a variant name, `None`, `Some(value)`, a value of `T` for an `Option<T>`.
+    Text(String),
 }
 
 impl Overrides {
@@ -725,15 +735,22 @@ impl Overrides {
     /// The bindings `entries` (`<instance>.<param>`, value), in the order given; a later entry for
     /// the same param wins, as it does when the host writes them in order.
     pub fn new(entries: &[(String, f64)]) -> Overrides {
-        Overrides { entries: entries.to_vec() }
+        Overrides { entries: entries.iter().map(|(entry, value)| (entry.clone(), Given::Number(*value))).collect() }
+    }
+
+    /// These bindings and the texts `texts` (`<instance>.<param>`, text) after them: each read by the type of its param, so a
+    /// unit enum's variant name, `None` and `Some(value)` select the variant of their value (PI-02, PI-03).
+    pub fn with_texts(mut self, texts: &[(String, String)]) -> Overrides {
+        self.entries.extend(texts.iter().map(|(entry, text)| (entry.clone(), Given::Text(text.clone()))));
+        self
     }
 
     /// The value bound to `param` of the instance at `instance`, written in full or relative to
     /// `top` (the first segment of every instance path).
-    fn value(&self, top: &str, instance: &str, param: &str) -> Option<f64> {
+    fn value(&self, top: &str, instance: &str, param: &str) -> Option<&Given> {
         self.entries.iter().rev().find_map(|(entry, value)| {
             let (path, name) = entry.rsplit_once('.')?;
-            (name == param && (path == instance || format!("{top}.{path}") == instance)).then_some(*value)
+            (name == param && (path == instance || format!("{top}.{path}") == instance)).then_some(value)
         })
     }
 }
@@ -745,22 +762,30 @@ impl Elaboration<'_, '_> {
         let top = path.split('.').next().unwrap_or(path);
         for key in self.keys.of(module).to_vec() {
             let Some(index) = plans.iter().position(|p| p.decl == key) else { continue };
-            let Some(given) = self.overrides.value(top, path, &plans[index].name) else { continue };
+            let Some(given) = self.overrides.value(top, path, &plans[index].name).cloned() else { continue };
             // D13: the host has no text for a template; the param is bound in the source.
             if self.is_module_param(key) {
-                let message = format!("`{path}.{}` is a module-typed param: it is bound in the source, a host cannot give it the value {given}", plans[index].name);
+                let message = format!("`{path}.{}` is a module-typed param: it is bound in the source, a host cannot give it the value {given:?}", plans[index].name);
                 self.report(at.0, crate::msl::Diagnostic::new("E0802", message, at.1, "a module-typed param is bound in the source"));
                 continue;
             }
-            let value = match plans[index].default {
-                Some(Constant::Bool(_)) => Constant::Bool(given != 0.0),
-                Some(Constant::Int(_)) => Constant::Int(given as i128),
-                _ => Constant::Real(piperine_ir::Real::new(given)),
+            let value = match (&given, plans[index].default) {
+                (Given::Text(text), _) => match self.constant_of_text(key, text) {
+                    Ok(value) => value,
+                    Err(why) => {
+                        let message = format!("`{path}.{}` refuses the value `{text}`: {why}", plans[index].name);
+                        self.report(at.0, crate::msl::Diagnostic::new("E0802", message, at.1, "the value a host gave"));
+                        continue;
+                    }
+                },
+                (Given::Number(given), Some(Constant::Bool(_))) => Constant::Bool(*given != 0.0),
+                (Given::Number(given), Some(Constant::Int(_))) => Constant::Int(*given as i128),
+                (Given::Number(given), _) => Constant::Real(piperine_ir::Real::new(*given)),
             };
             if let Some(slot) = values.get_mut(index) {
                 *slot = value;
             }
-            bindings.bind(key, value);
+            self.bind_param(&mut bindings, key, value);
         }
         (values, bindings)
     }

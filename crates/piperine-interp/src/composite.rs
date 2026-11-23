@@ -13,14 +13,14 @@ pub(crate) struct CompositeForms<'a> {
     /// The body being walked.
     body: Body<'a>,
     /// The forms met so far, by their position in `CompositeForms::NAMES`.
-    met: [bool; 22],
+    met: [bool; 23],
     /// The functions the body calls or names, in the order the walk first met them.
     reached: Vec<FunctionId>,
 }
 
 impl<'a> CompositeForms<'a> {
     /// The name of each form, in the order the refusal lists them.
-    const NAMES: [&'static str; 22] = [
+    const NAMES: [&'static str; 23] = [
         "an assignment",
         "a loop",
         "a while loop",
@@ -43,18 +43,19 @@ impl<'a> CompositeForms<'a> {
         "an option pack",
         "an option part",
         "a default value",
+        "a table model",
     ];
 
     /// The forms `body` holds, each once, in a fixed order.
     pub(crate) fn of(body: Body<'a>) -> Vec<&'static str> {
-        let mut forms = CompositeForms { body, met: [false; 22], reached: Vec::new() };
+        let mut forms = CompositeForms { body, met: [false; 23], reached: Vec::new() };
         forms.walk();
         Self::NAMES.into_iter().zip(forms.met).filter_map(|(name, met)| met.then_some(name)).collect()
     }
 
     /// The functions `body` evaluates (called or named, transitively), each once.
     pub(crate) fn reached_functions(body: Body<'a>) -> Vec<FunctionId> {
-        let mut forms = CompositeForms { body, met: [false; 22], reached: Vec::new() };
+        let mut forms = CompositeForms { body, met: [false; 23], reached: Vec::new() };
         forms.walk();
         forms.reached
     }
@@ -140,6 +141,8 @@ impl<'a> CompositeForms<'a> {
             Expr::OptionPack { .. } => Some(19),
             Expr::OptionPart { .. } => Some(20),
             Expr::Default(_) => Some(21),
+            // `table_model` and its slope (PI-10, T40): the interpreter does not run a table
+            Expr::Table { .. } | Expr::TableSlope { .. } => Some(22),
             _ => None,
         }
     }

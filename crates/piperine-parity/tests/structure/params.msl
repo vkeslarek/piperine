@@ -71,3 +71,103 @@ module BistableNegBench() {
 /// A potential held at `volts`.
 module Level(p: Electrical) { volts: f64 = 0.0; }
 analog for Level { v(p, gnd) +> volts; }
+
+// -- params-and-io PI-01 to PI-03: integer, enum and `Option` params
+
+/// How a load scales its conductance.
+#[derive(Repr, PartialEq)]
+enum Mode { Fast, Slow }
+
+/// A load of `n` times 1 mS: an integer param read as `n as f64` (PI-01 AC 3).
+module CountedLoad(p: Electrical) { n: u8 = 4; }
+analog for CountedLoad { i(p, gnd) +> (n as f64) * v(p) / 1k; }
+
+/// A load of 1 mS or 3 mS by the arm its `Mode` param selects (PI-02 AC 1).
+module ModedLoad(p: Electrical) { md: Mode = Mode::Fast; }
+analog for ModedLoad {
+    i(p, gnd) +> match md { Mode::Fast => 1.0, Mode::Slow => 3.0 } * v(p) / 1k;
+}
+
+/// A resistor of `rs` ohms, 1 kOhm when `rs` is left out (PI-03 AC 1 and AC 3).
+module OptionalLoad(p: Electrical) { rs: Option<f64>; }
+analog for OptionalLoad { i(p, gnd) +> v(p) / rs.unwrap_or(1k); }
+
+/// 1 V behind 1 kOhm into `o`: the divider every load below hangs on.
+module Supply(o: Electrical) {
+    signal src: Electrical;
+    let source = Level { volts: 1.0 }(src);
+    let series = Resistor { r: 1k }(src, o);
+}
+
+module IntegerDefaultBench() { signal o: Electrical; let supply = Supply(o); let load = CountedLoad(o); }
+module IntegerBoundBench() { signal o: Electrical; let supply = Supply(o); let load = CountedLoad { n: 7 }(o); }
+module EnumDefaultBench() { signal o: Electrical; let supply = Supply(o); let load = ModedLoad(o); }
+module EnumBoundBench() { signal o: Electrical; let supply = Supply(o); let load = ModedLoad { md: Mode::Slow }(o); }
+module OptionLeftOutBench() { signal o: Electrical; let supply = Supply(o); let load = OptionalLoad(o); }
+module OptionSomeBench() { signal o: Electrical; let supply = Supply(o); let load = OptionalLoad { rs: Some(3k) }(o); }
+module OptionNoneBench() { signal o: Electrical; let supply = Supply(o); let load = OptionalLoad { rs: None }(o); }
+
+// -- params-and-io PI-02, §8.1.15: an enum param with a payload
+
+/// How a load is described: by its conductance, or by its resistance.
+#[derive(Repr, PartialEq)]
+enum Rating { Conductance(f64), Resistance(f64) }
+
+/// A load rated either way (the default is 2 mS).
+module RatedLoad(p: Electrical) { rating: Rating = Rating::Conductance(2m); }
+analog for RatedLoad {
+    i(p, gnd) +> match rating { Rating::Conductance(g) => g, Rating::Resistance(r) => 1.0 / r } * v(p);
+}
+
+module RatedDefaultBench() { signal o: Electrical; let supply = Supply(o); let load = RatedLoad(o); }
+module RatedResistanceBench() { signal o: Electrical; let supply = Supply(o); let load = RatedLoad { rating: Rating::Resistance(250.0) }(o); }
+
+// -- params-and-io PI-03 AC 3: every way to read an `Option` param gives the value of the bound case
+
+/// A resistor of `rs` ohms read by `match`; 1 kOhm when `rs` is `None`.
+module MatchLoad(p: Electrical) { rs: Option<f64>; }
+analog for MatchLoad { i(p, gnd) +> match rs { Some(r) => v(p) / r, None => v(p) / 1k }; }
+
+/// The same read by `is_some` and `unwrap`.
+module IsSomeLoad(p: Electrical) { rs: Option<f64>; }
+analog for IsSomeLoad { i(p, gnd) +> if rs.is_some() { v(p) / rs.unwrap() } else { v(p) / 1k }; }
+
+/// The same read by `if let`.
+module IfLetLoad(p: Electrical) { rs: Option<f64>; }
+analog for IfLetLoad {
+    if let Some(r) = rs {
+        i(p, gnd) +> v(p) / r;
+    } else {
+        i(p, gnd) +> v(p) / 1k;
+    }
+}
+
+module MatchSomeBench() { signal o: Electrical; let supply = Supply(o); let load = MatchLoad { rs: 3k }(o); }
+module MatchNoneBench() { signal o: Electrical; let supply = Supply(o); let load = MatchLoad(o); }
+module IsSomeSomeBench() { signal o: Electrical; let supply = Supply(o); let load = IsSomeLoad { rs: 3k }(o); }
+module IsSomeNoneBench() { signal o: Electrical; let supply = Supply(o); let load = IsSomeLoad(o); }
+module IfLetSomeBench() { signal o: Electrical; let supply = Supply(o); let load = IfLetLoad { rs: 3k }(o); }
+module IfLetNoneBench() { signal o: Electrical; let supply = Supply(o); let load = IfLetLoad(o); }
+
+// -- §8.1.15: a param's type is a value type: no `Repr`, and no read of it by `analog`
+
+/// A struct that derives nothing, holding a real and an integer.
+struct Rating2 { n: u8, g: f64 }
+
+/// Holds a `Rating2` param that nothing reads, beside a plain 1 kOhm load.
+module HeldRating(p: Electrical) { rating: Rating2 = Rating2 { n: 1, g: 2.0 }; }
+analog for HeldRating { i(p, gnd) +> v(p) / 1k; }
+
+module HeldRatingBench() { signal o: Electrical; let supply = Supply(o); let load = HeldRating(o); }
+
+// -- §8.1.15, F26: a unit enum that derives nothing is a param too
+
+/// Two speeds, no derive.
+enum Gear { Low, High }
+
+/// A load of 1 mS in `Low` and 3 mS in `High`.
+module GearLoad(p: Electrical) { gear: Gear = Gear::Low; }
+analog for GearLoad { i(p, gnd) +> match gear { Gear::Low => 1.0, Gear::High => 3.0 } * v(p) / 1k; }
+
+module GearLowBench() { signal o: Electrical; let supply = Supply(o); let load = GearLoad(o); }
+module GearHighBench() { signal o: Electrical; let supply = Supply(o); let load = GearLoad { gear: Gear::High }(o); }

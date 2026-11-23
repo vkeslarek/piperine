@@ -112,7 +112,7 @@ count; the user named "the gaps that limit the expressiveness of the language" f
 **PI-02. Enum params.**
 
 **Acceptance Criteria**:
-1. WHEN a module declares `md: Mode = Mode::Fast;` of a unit enum and a reaction or `analog` matches on `md` THEN the system SHALL run the arm of the bound variant.
+1. *(Amended by A10: an enum with fields is a param type too.)* WHEN a module declares `md: Mode = Mode::Fast;` of a unit enum and a reaction or `analog` matches on `md` THEN the system SHALL run the arm of the bound variant.
 2. WHEN a placement binds `{ md: Mode::Slow }` THEN the instance SHALL read `Mode::Slow`.
 3. WHEN a host sets `--param Top.md=Slow` THEN the run SHALL read `Mode::Slow`.
 4. IF a host sets an enum param to a name the enum does not declare THEN the system SHALL refuse with `E0802` naming the param and listing the variants.
@@ -166,14 +166,14 @@ model without being pasted into source.
 
 **Acceptance Criteria**:
 1. WHEN `const IV: [(f64, f64); 64] = parse_table(include_str!("diode_iv.tbl"));` reads a file of 64 rows of two whitespace-separated real literals (SI suffixes allowed, blank lines and `#` comments skipped) THEN the system SHALL give `IV` those 64 pairs in order.
-2. WHEN `const ROM: [u32; 1024] = parse_hex(include_str!("boot.hex"));` reads a `$readmemh` text (`_` inside a word, `//` and `/* */` comments, `@address` records) THEN the system SHALL give `ROM` the words at their addresses, a digit `x` or `z` making its four levels unknown.
+2. WHEN `const ROM: [u32; 1024] = parse_hex(include_str!("boot.hex"));` reads a `$readmemh` text (`_` inside a word, `//` and `/* */` comments, `@address` records) THEN the system SHALL give `ROM` the words at their addresses, a digit `x` or `z` making its four levels unknown. *(Amended by A7: a digit `x` or `z` is `E0706`.)*
 3. IF the text has more or fewer rows than the `const`'s length, a row with another number of columns, or an address the text does not write THEN the system SHALL report `E0614` naming the file and the row.
 4. IF the text is not in the format at all (a token that is not a real literal, a word that is not hexadecimal) THEN the system SHALL report `E0706` naming the file, the row and the token.
 
 **PI-10. `table_model`.**
 
 **Acceptance Criteria**:
-1. WHEN `i(a, k) +> table_model(v(a, k), &IV, "1C");` runs `op` and a DC sweep THEN the flow SHALL equal the linear interpolation of `IV` at each point to 1e-15 relative.
+1. WHEN `i(a, k) +> table_model(v(a, k), &IV, "1C");` runs `op` and a DC sweep THEN the flow SHALL equal the linear interpolation of `IV` at each point to 1e-15 relative. *(Amended by A9: `IV` is passed by value, `table_model(v(a, k), IV, "1C")`.)*
 2. WHEN the control is `"D"` THEN the result SHALL be the value of the closest sample.
 3. WHEN the control is `"3"` and the table samples a cubic polynomial at 4 or more points THEN the result SHALL reproduce the polynomial at any `x` inside the table to 1e-12 relative.
 4. WHEN extrapolation is `C` THEN outside the table the result SHALL be the end value; WHEN it is `L` THEN the end slope's line; two characters SHALL apply to the low end then the high end, and none SHALL be `L` at both.
@@ -261,7 +261,7 @@ or listed with the feature that will raise it, so that no code is forgotten.
 **PI-12. The codes owned here.**
 
 **Acceptance Criteria**:
-1. WHEN this feature merges THEN `E0102` SHALL be raised where `&` appears other than as a shared borrow in a call argument or as an array, slice or string parameter type, by `composite-values` (its CV-14 AC 2, T43; A3), and PI-13's allow-list SHALL not hold it.
+1. *(Superseded by A8: `E0102` is retired.)* WHEN this feature merges THEN `E0102` SHALL be raised where `&` appears other than as a shared borrow in a call argument or as an array, slice or string parameter type, by `composite-values` (its CV-14 AC 2, T43; A3), and PI-13's allow-list SHALL not hold it.
 2. IF a run panics under known control (an integer division or remainder by zero, a shift by a negative amount under `spec-closure` Q3 (a), an `unwrap` of `None`) THEN the system SHALL fail the analysis with `E0105` naming the operation, the instance and the time.
 3. IF a named solve-reading function is called in a const context, or a named emitting function where `emit!` is not allowed THEN the system SHALL report `E0122` naming the function and its class (a closure's call is `composite-values`' T16, A3; today a named emitting function there is `E0601`, which §6 reserves for `emit!` written directly).
 4. IF a nature's quantity carries an attribute other than `access`, `units` and `abstol`, an attribute of the wrong type, or an `abstol` that is not positive THEN the system SHALL report `E0204` naming the attribute.
@@ -272,7 +272,7 @@ or listed with the feature that will raise it, so that no code is forgotten.
 9. The codes `E0610`, `E0612`, `E0613`, `E0614`, `E0703`, `E0704`, `E0705` and `E0706` SHALL be raised as PI-08 to PI-10 state.
 10. IF a probe or a contribution names a node the module cannot reach under §6 rule 7 (a child's node that is not `pub`) THEN the system SHALL report `E0244` naming the node (A4).
 11. IF a continuous result is read where probes are not allowed, or an `Event` result outside an event position (§8.3.10) THEN the system SHALL report `E0354` naming the placement (A4).
-12. IF `Unknown` stands where no type can be inferred (`let x = Unknown;`) THEN the system SHALL report `E0906` (A4; the half of the row about a type that does not implement `Repr` needs `generics`' traits on user types and stays in the allow-list under `generics` only if no reachable form raises it).
+12. *(Superseded by A8: `E0906` is retired.)* IF `Unknown` stands where no type can be inferred (`let x = Unknown;`) THEN the system SHALL report `E0906` (A4; the half of the row about a type that does not implement `Repr` needs `generics`' traits on user types and stays in the allow-list under `generics` only if no reachable form raises it).
 
 **PI-13. The guard of codes.**
 
@@ -405,6 +405,12 @@ with the construct that raises them (A2, A3).
 | A4 | `E0244`, `E0354`, `E0906` are this feature's | their constructs run since `analog-structure` and `unknown-semantics`; the sibling specs give such codes here (D4) |
 | A5 | The code table is recounted against the spec of `494a7f75` (68 of 189) | the 73-of-180 count predates revision 38 and four deliveries (D5) |
 | A6 | `E0807` to `E0809` are `gradients`', not `host-iii`'s | `.specs/features/gradients/spec.md` claims them (D5) |
+| A7 | B6, 2026-11-23: PI-09 AC 2: a digit `x` or `z` of a hex word is `E0706`, not four unknown levels | §22.6.4's resolution ("the elements are integers, which hold no X or Z") and explicit-unknowns MD-78: no integer holds an unknown level; check C103 is `x_and_z_digits_are_e0706_integers_hold_no_unknown` |
+| A8 | B5, 2026-11-23: `E0102` and `E0906` are retired, so PI-12 AC 1 and AC 12 are superseded: C59 is `a_borrow_outside_a_call_argument_is_not_e0102` (a `&` outside a call argument never raises `E0102`) and C70 is `hygiene::retired_unknown_codes_are_raised_nowhere` (it fails if a source raises a retired code; `msl_errors::e0102_and_e0331_are_raised_nowhere` holds the retirement of `E0102`) | value-semantics V1 (G.71, no borrow) and explicit-unknowns MD-78 (Appendix G); `this_features_codes_are_all_raised` leaves `E0906` out |
+| A9 | B6, 2026-11-23: PI-10 AC 1 writes `table_model(v(a, k), IV, "1C")`, the table by value | value semantics has no `&`; §22.2.15's signature takes `table: [(f64, f64); N]` |
+| A10 | B5, 2026-11-23: PI-02 reads "unit enum"; an enum with fields is a param type too, and a composite param (an enum with fields, an `Option` of a composite) is set by its leaves | Part III §8.1.15 "a param's type is a value type"; composite-values D13 (set by leaf path); `a_payload_enum_param_runs_its_variant` |
+| A11 | Fix rounds, 2026-11-23: a `--param` is read by its param's type whatever it looks like (no numeric shortcut), integers exactly; a plain value bound to an `Option<T>` param is `Some` of it | D24, PI-01 AC 4, PI-02 AC 4, PI-03 AC 2 and AC 4, §3.2.3; verification F9, F10, F11, F17; a structural param's text reaches the elaborator as that value (F19, F20); a value over the parent's params bound to an `Option` param is `Some` of it, written plain or as `Some(..)` (F21) |
+| A12 | Fix round 3, 2026-11-23: a leaf of a composite param takes the literal syntax of the leaf's own type (a `bool` leaf `true` or `false` only, an integer leaf an integer literal such as `0x3`, a real leaf a number); a text that is no value of the leaf is `E0802` | the rule of A11 applied to leaves; composite-values D13 names the leaf path, not the leaf's text, so its wording is unchanged |
 
 ---
 
@@ -412,20 +418,20 @@ with the construct that raises them (A2, A3).
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| PI-01 | P1: a param of any carried type | 9 | Planned (T30–T33, T35) |
-| PI-02 | P1: a param of any carried type | 9 | Planned (T31–T33) |
-| PI-03 | P1: a param of any carried type | 9 | Planned (T31–T33) |
-| PI-04 | P1: a param of any carried type | 5 | Planned (T21, T22) |
-| PI-05 | P1: a param of any carried type | 9 | Planned (T34) |
-| PI-06 | P1: type errors carry spec codes | 2 | Planned (T3–T7) |
-| PI-07 | P1: the host drives every port of the top | 4 | Planned (T16–T20) |
-| PI-08 | P1: a design reads data from files | 6 | Planned (T23, T24, T43) |
-| PI-09 | P1: a design reads data from files | 11 | Planned (T37, T38, T43) |
-| PI-10 | P1: a design reads data from files | 7, 11 | Planned (T27, T39–T42) |
-| PI-11 | P2: the shipped sources are formatted | 7 | Planned (T25, T26) |
-| PI-12 | P1: every error code is raised or owned | 3, 8, 10, 12 | Planned (T8–T15, T29, T36, T44) |
-| PI-13 | P1: every error code is raised or owned | 1, 8, 12 | Planned (T2, T29, T44) |
-| PI-14 | P1: every error code is raised or owned | 7, 12 | Planned (T28, T44) |
+| PI-01 | P1: a param of any carried type | 9 | Done (T30–T33, T35) |
+| PI-02 | P1: a param of any carried type | 9 | Done (T31–T33) |
+| PI-03 | P1: a param of any carried type | 9 | Done (T31–T33) |
+| PI-04 | P1: a param of any carried type | 5 | Done (T21, T22) |
+| PI-05 | P1: a param of any carried type | 9 | Done (T34) |
+| PI-06 | P1: type errors carry spec codes | 2 | Done (T3–T7) |
+| PI-07 | P1: the host drives every port of the top | 4 | Done (T16–T20) |
+| PI-08 | P1: a design reads data from files | 6 | Done (T23, T24, T43) |
+| PI-09 | P1: a design reads data from files | 11 | Done (T37, T38, T43) |
+| PI-10 | P1: a design reads data from files | 7, 11 | Done (T27, T39–T42) |
+| PI-11 | P2: the shipped sources are formatted | 7 | Done (T25, T26) |
+| PI-12 | P1: every error code is raised or owned | 3, 8, 10, 12 | Done (T8–T15, T29, T36, T44) |
+| PI-13 | P1: every error code is raised or owned | 1, 8, 12 | Done (T2, T29, T44) |
+| PI-14 | P1: every error code is raised or owned | 7, 12 | Done (T28, T44) |
 
 **Coverage:** 14 total, 14 mapped to tasks (tasks.md, 44 tasks in 12 phases).
 

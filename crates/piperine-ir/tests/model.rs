@@ -273,6 +273,7 @@ impl Reach {
                 }
             }
             Expr::Closure { body, .. } => Reach::expr(ir, *body, out),
+            Expr::Table { x, .. } | Expr::TableSlope { x, .. } => Reach::expr(ir, *x, out),
             Expr::Limit { x, f, seed, .. } => {
                 Reach::expr(ir, *x, out);
                 Reach::expr(ir, *f, out);

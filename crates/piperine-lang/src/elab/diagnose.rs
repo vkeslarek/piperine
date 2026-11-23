@@ -50,6 +50,8 @@ impl Elaboration<'_, '_> {
             ConstFault::Cyclic { .. } | ConstFault::NotConstant { .. } => {}
             // §20: the file of an `include_str!` has no text.
             ConstFault::File { fault, .. } => self.report(file, Diagnostic::new(fault.code(), fault.message(), span, "the file named here")),
+            // §22.6.4: the text does not fit the `const`'s type (`E0614`) or is not in the format (`E0706`).
+            ConstFault::Table { code, message, .. } => self.report(file, Diagnostic::new(code, message.clone(), span, "the text parsed here")),
             ConstFault::UnboundParam { .. } => self.unsupported(file, span, &format!("{position} that reads a param")),
             ConstFault::Dynamic { what, .. } => {
                 let message = format!("{position} is not an expression over params and constants: it reads {what}");
