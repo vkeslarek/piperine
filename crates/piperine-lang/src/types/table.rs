@@ -299,6 +299,12 @@ impl<'d> Types<'d> {
         self.event_reads.contains(&expr)
     }
 
+    /// The value of the const expression `expr` of a generic item for an instantiation: `values` gives each
+    /// const parameter its argument. `None` when it does not fold (an underflow, an overflow, a division by zero).
+    pub fn fold_with(&self, expr: ExprId, values: BTreeMap<DeclId, u128>) -> Option<u128> {
+        super::lengths::IntegerFolder::with_values(self.design, values).fold(expr, 16)
+    }
+
     /// The level count a `T::WIDTH` path of the reachable set reads (§2, §22.1): 1 for `bool`, `N`
     /// for `uN` and `iN`, 64 for `f64`, the tag width of an enum. `None` for any other expression.
     pub fn width(&self, expr: ExprId) -> Option<u32> {

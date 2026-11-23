@@ -176,6 +176,11 @@ pub struct ConstEval<'d, 't> {
 }
 
 impl<'d, 't> ConstEval<'d, 't> {
+    /// What the generic parameters of the instance being lowered are replaced by.
+    pub(super) fn substitution(&self) -> &crate::types::Substitution {
+        &self.substitution
+    }
+
     /// The type the checker gave `expr` under the substitution of the instance being lowered.
     pub(super) fn typed(&self, expr: ExprId) -> Option<Ty> {
         self.types.ty(expr).map(|ty| self.substitution.apply(ty))
@@ -376,6 +381,8 @@ impl<'d, 't> ConstEval<'d, 't> {
                 ConstFault::NoValue { decl } if self.is_trait_item(decl) => ConstFault::Unsupported { expr, what: "a `const` without a value".to_string() },
                 other => other,
             }),
+            // a const parameter of the generic item being instantiated is bound to its argument (generics T33)
+            DeclKind::GenericParam(_) => bindings.get(decl).ok_or(ConstFault::UnboundParam { expr, param: decl }),
             DeclKind::Param(_) => match bindings.get(decl) {
                 // a composite param is an IR constant, which this evaluator's composites are not (`composite.rs`)
                 Some(Constant::Aggregate(_)) => match bindings.tree(decl).cloned() {

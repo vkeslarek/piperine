@@ -38,6 +38,8 @@ pub enum Obligation {
     /// A const expression over const parameters (an array length `N + 1`), which must fold for the
     /// instantiation.
     Constant {
+        /// The expression.
+        expr: ExprId,
         /// Where the expression is written.
         file: FileId,
         /// The expression's span.
@@ -78,7 +80,7 @@ impl Checker<'_> {
     /// checked: it must fold for each instantiation.
     pub(super) fn defer_constant(&mut self, expr: ExprId) {
         let (file, span) = (self.file_of_expr(expr), self.design.expr_node(expr).span);
-        self.defer(Obligation::Constant { file, span });
+        self.defer(Obligation::Constant { expr, file, span });
     }
 
     /// `ty` with the arguments of `substitution` replaced, and each array length that is an

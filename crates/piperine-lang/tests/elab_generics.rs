@@ -6,6 +6,12 @@
 
 use std::path::{Path, PathBuf};
 
+#[path = "support/elab.rs"]
+#[allow(dead_code)]
+mod support;
+
+use support::Elab;
+
 /// The source files of `piperine_lang::elab`.
 struct ElabSources;
 
@@ -51,4 +57,41 @@ fn the_elaborator_reads_types_only_through_the_substitution() {
     for helper in ["fn typed(", "fn typed_local(", "fn typed_written("] {
         assert!(consts.contains(helper), "ConstEval has `{helper}`");
     }
+}
+
+/// A design whose `analog` block calls the generic functions of `items` with `statement`, and the diagnostics of elaborating it.
+struct GenericCall;
+
+impl GenericCall {
+    /// The `(code, message)` of each diagnostic of elaborating `Top`, whose `analog` runs `statement`, after `items`.
+    fn found(items: &str, statement: &str) -> Vec<(String, String)> {
+        let src = format!("{items}\nmodule Top() {{ signal o: Electrical; }}\nanalog for Top {{ {statement} }}\n");
+        match Elab::run(&src, "Top") {
+            Ok(_) => Vec::new(),
+            Err(found) => found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect(),
+        }
+    }
+}
+
+#[test]
+fn a_false_where_is_e0127_naming_the_instantiation() {
+    // §3 rule 8, GN-01 AC 4: the `where` is checked for each instantiation; a false one is E0127 naming `clamp::<1>`
+    let items = "fn clamp<const N: usize>(x: f64) -> f64 where N > 2 { x }";
+    let found = GenericCall::found(items, "v(o) +> clamp::<1>(1.0);");
+    assert_eq!(found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0127"], "{found:?}");
+    assert!(found[0].1.contains("the `where` of `clamp::<1>` is false"), "{}", found[0].1);
+    // a true `where` passes the instantiation; lowering the body waits for T34
+    let held = GenericCall::found(items, "v(o) +> clamp::<3>(1.0);");
+    assert_eq!(held.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["P0001"], "{held:?}");
+}
+
+#[test]
+fn instantiation_errors_name_the_item_and_its_arguments() {
+    // GN-07 AC 3: two lengths that differ at an instantiation, and a const expression that fails, are reported at the
+    // instantiation naming the item and its arguments
+    let items = "fn grown<const N: usize>(a: [f64; N]) -> [f64; N + 1] { a }\nfn shrunk<const N: usize>(a: [f64; N]) -> f64 { let b = [0.0; N - 1]; 1.0 }";
+    let lengths = GenericCall::found(items, "let r = grown([1.0, 2.0]);");
+    assert!(lengths.iter().any(|(code, message)| code == "E0180" && message.contains("`grown::<2>`") && message.contains("an array of 3 elements is expected, found one of 2")), "{lengths:?}");
+    let constant = GenericCall::found(items, "let e: [f64; 0] = []; let r = shrunk(e);");
+    assert!(constant.iter().any(|(code, message)| code == "E0104" && message.contains("`shrunk::<0>`")), "{constant:?}");
 }

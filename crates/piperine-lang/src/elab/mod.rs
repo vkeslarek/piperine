@@ -32,6 +32,7 @@ mod functions;
 mod hoist;
 mod host_sources;
 mod inflow;
+mod instances;
 mod intrinsics;
 mod iterators;
 mod lower;

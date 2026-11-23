@@ -426,6 +426,8 @@ impl Elaboration<'_, '_> {
         if let Some(Callee::Function(function)) = self.types.callee(expr)
             && self.design.decl_data(function).generics_span.is_some()
         {
+            // the instance is folded and checked now (`instances.rs`); lowering its body is T34's
+            self.concrete_instance(expr)?;
             self.unsupported(scope.file, span, "generic function");
             return None;
         }
