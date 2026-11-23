@@ -295,3 +295,56 @@ fn a_word_that_is_not_hex_is_e0706() {
         assert!(found[0].1.contains("w.hex") && found[0].1.contains("row 2") && found[0].1.contains(&format!("`{word}`")) && found[0].1.contains(why), "{}", found[0].1);
     }
 }
+
+/// A source whose `analog` block contributes `table_model(v(a), T, control)`, `T` being `samples` written out.
+fn table_model_source(samples: &str, count: usize, control: &str) -> String {
+    format!("const T: [(f64, f64); {count}] = [{samples}];\nmodule Top() {{ signal a: Electrical; }}\nanalog for Top {{ i(a) +> table_model(v(a), T, \"{control}\"); }}\n")
+}
+
+/// The codes and messages of elaborating `source` with `Top` as the top.
+fn refusals(source: &str) -> Vec<(String, String)> {
+    Elab::run(source, "Top").expect_err("the table model is refused").iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()
+}
+
+#[test]
+fn a_bad_control_string_is_e0703() {
+    // PI-10 AC 6, §22.2.15 rule 4: a control string that is not one interpolation character and up to two extrapolation characters is
+    // `E0703`; the report names the string.
+    for control in ["9", "", "1X", "1CLE", "C1"] {
+        let found = refusals(&table_model_source("(0.0, 0.0), (1.0, 1.0)", 2, control));
+        assert_eq!(found.len(), 1, "{control}: {found:?}");
+        assert_eq!(found[0].0, "E0703", "{control}: {found:?}");
+        assert!(found[0].1.contains(&format!("`{control}`")), "{}", found[0].1);
+    }
+    // every form of the table in §22.2.15 is accepted
+    for control in ["D", "1", "2C", "3", "1LE", "3EC", "DCC"] {
+        let samples = "(0.0, 0.0), (1.0, 1.0), (2.0, 4.0), (3.0, 9.0)";
+        Elab::run(&table_model_source(samples, 4, control), "Top").unwrap_or_else(|d| panic!("`{control}`: {:?}", Elab::codes(&d)));
+    }
+}
+
+#[test]
+fn non_increasing_abscissae_are_e0704() {
+    // PI-10 AC 7, §22.2.15 rule 1: abscissae that do not strictly increase are `E0704` naming the first offending row (from 1).
+    let found = refusals(&table_model_source("(0.0, 0.0), (1.0, 1.0), (1.0, 2.0), (0.5, 3.0)", 4, "1"));
+    assert_eq!(found[0].0, "E0704", "{found:?}");
+    assert!(found[0].1.contains("row 3"), "the first offending row is the third: {}", found[0].1);
+}
+
+#[test]
+fn too_few_points_for_the_degree_is_e0704() {
+    // PI-10 AC 7: a quadratic spline needs three points and a cubic one four.
+    for (control, samples, count, needed) in [("2", "(0.0, 0.0), (1.0, 1.0)", 2, 3), ("3", "(0.0, 0.0), (1.0, 1.0), (2.0, 4.0)", 3, 4)] {
+        let found = refusals(&table_model_source(samples, count, control));
+        assert_eq!(found[0].0, "E0704", "{control}: {found:?}");
+        assert!(found[0].1.contains(&format!("at least {needed}")), "{}", found[0].1);
+    }
+}
+
+#[test]
+fn a_one_row_table_under_d_is_e0704() {
+    // PI-10 edge case: one sample is no table under `D` either.
+    let found = refusals(&table_model_source("(0.0, 1.0)", 1, "D"));
+    assert_eq!(found[0].0, "E0704", "{found:?}");
+    assert!(found[0].1.contains("1 point"), "{}", found[0].1);
+}

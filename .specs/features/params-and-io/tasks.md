@@ -1069,10 +1069,10 @@ T44
 
 **Done when**:
 
-- [ ] `a_bad_control_string_is_e0703`, `non_increasing_abscissae_are_e0704`, `too_few_points_for_the_degree_is_e0704`, `a_one_row_table_under_d_is_e0704` pass under `**Run elabfiles**`
-- [ ] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `a_bad_control_string_is_e0703`, `non_increasing_abscissae_are_e0704`, `too_few_points_for_the_degree_is_e0704`, `a_one_row_table_under_d_is_e0704` pass under `**Run elabfiles**`
+- [x] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

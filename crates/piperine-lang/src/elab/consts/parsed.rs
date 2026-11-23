@@ -42,6 +42,11 @@ impl ConstEval<'_, '_> {
         Ok(self.make(CompositeKind::Array, elements))
     }
 
+    /// The text `expr` stands for, for a caller outside the evaluator (the control string of a `table_model`).
+    pub(in crate::elab) fn text_of_expression(&mut self, expr: ExprId, bindings: &Bindings) -> Result<(String, Arc<str>), ConstFault> {
+        self.text_of(expr, bindings)
+    }
+
     /// The text `expr` stands for and how a diagnostic names it: an `include_str!` (the resolved file), a `const`
     /// that holds one, or a string literal.
     fn text_of(&mut self, expr: ExprId, bindings: &Bindings) -> Result<(String, Arc<str>), ConstFault> {
@@ -66,9 +71,7 @@ impl ConstEval<'_, '_> {
                         return Err(ConstFault::NoValue { decl });
                     };
                     let value = *value;
-                    let (source, _) = self.text_of(value, bindings)?;
-                    let text = self.text(decl)?;
-                    Ok((source, text))
+                    self.text_of(value, bindings)
                 }
                 _ => Err(ConstFault::Unsupported { expr, what: "a text that is no `include_str!` or `const` of one".to_string() }),
             },
