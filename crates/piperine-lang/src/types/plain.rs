@@ -5,7 +5,9 @@
 //! are never plain, so a host can read and write every leaf of a plain value.
 
 use super::check::Checker;
-use super::{Nominal, Ty};
+use crate::pom::DeclId;
+
+use super::{Bound, Nominal, Ty};
 
 impl Checker<'_> {
     /// Whether `ty` is a struct, a tuple, an array or an `Option` all of whose leaves are plain
@@ -24,6 +26,12 @@ impl Checker<'_> {
             Ty::Enum(_) => true,
             other => self.is_plain_composite(other, false),
         }
+    }
+
+    /// Whether the generic parameter `parameter` stands for a value type: not a nature (a node's) and not a template
+    /// (`C: Fn(Cell)`, phase D), so a `param` of it is an ordinary value (§8.1.15).
+    pub(super) fn is_value_type_parameter(&mut self, parameter: DeclId) -> bool {
+        !self.bounds_of(parameter).contains(&Bound::Nature) && self.callable_of(parameter).is_none()
     }
 
     /// Whether every leaf of `ty` is a plain scalar, or `str` when `text` is allowed.

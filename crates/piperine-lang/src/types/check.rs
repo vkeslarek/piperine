@@ -74,6 +74,10 @@ pub(super) struct Checker<'d> {
     /// The generic function whose definition is being checked or whose signature is being typed:
     /// what a definition defers is recorded under it.
     pub(super) generic_item: Option<DeclId>,
+    /// The arguments of the generic module whose placement is being connected: the ports are typed under it (GN-13).
+    pub(super) placement_substitution: Option<super::Substitution>,
+    /// The unfinished forms this check admits (`unfinished.rs`): every other one is refused with `main`'s `P0001`.
+    pub(super) forms: super::UnfinishedForms,
     /// What each generic function defers to its instantiations.
     pub(super) obligations: BTreeMap<DeclId, Vec<super::Obligation>>,
     /// The instantiation each call of a generic function makes (§3.8.10).
@@ -159,7 +163,7 @@ pub(super) struct Checker<'d> {
 }
 
 impl<'d> Checker<'d> {
-    pub(super) fn new(design: &'d Design) -> Self {
+    pub(super) fn new(design: &'d Design, forms: super::UnfinishedForms) -> Self {
         Checker {
             design,
             exprs: vec![None; design.expr_count()],
@@ -175,6 +179,8 @@ impl<'d> Checker<'d> {
             defaults: BTreeMap::new(),
             written: BTreeMap::new(),
             generic_item: None,
+            placement_substitution: None,
+            forms,
             obligations: BTreeMap::new(),
             instantiations: BTreeMap::new(),
             impls: std::rc::Rc::new(super::ImplTable::new(design)),
@@ -696,14 +702,37 @@ impl<'d> Checker<'d> {
         }
     }
 
+    /// Whether `decl`, or a declaration above it, is a generation `for`/`if` (a module body item generated per iteration).
+    fn inside_generation(&self, decl: DeclId) -> bool {
+        let mut at = Some(decl);
+        while let Some(current) = at {
+            if matches!(self.design.decl_data(current).kind, DeclKind::Generation(_)) {
+                return true;
+            }
+            at = self.design.decl_data(current).parent;
+        }
+        false
+    }
+
     /// A module of the reachable set: its params, nodes and placements, then its analog blocks.
     /// The modules it places are reached.
     fn module(&mut self, decl: DeclId) {
+        let outer = std::mem::replace(&mut self.generic_item, self.design.decl_data(decl).generics_span.map(|_| decl));
+        self.module_of(decl);
+        self.generic_item = outer;
+    }
+
+    /// [`Checker::module`] with the generic item set: a generic module is typed once at its definition, its type and
+    /// nature parameters opaque (`Ty::Param`) and its const parameters `ConstTerm::Param` (GN-13, Q1 (c)).
+    fn module_of(&mut self, decl: DeclId) {
         let data = self.design.decl_data(decl).clone();
         let DeclKind::Module(m) = &data.kind else { return };
         if data.generics_span.is_some() {
-            self.unsupported(data.file, data.span, "generic module");
-            return;
+            if !self.forms.admits(super::UnfinishedForm::GenericModules) {
+                self.unsupported(data.file, data.span, "generic module");
+                return;
+            }
+            self.generic_signature(decl);
         }
         if m.abi.is_some() {
             self.unsupported(data.file, data.span, "`extern` module");
@@ -752,7 +781,9 @@ impl<'d> Checker<'d> {
         }
         // A placement no statement above typed (one written where only the module lists it).
         for instance in m.instances.iter().copied() {
-            if self.exprs[instance.index()].is_none() {
+            // a placement inside generation is typed with generation itself (T72); until then its loop variable has no type
+            let in_generation = self.inside_generation(self.design.expr_node(instance).owner);
+            if self.exprs[instance.index()].is_none() && !in_generation {
                 self.infer(instance);
             }
         }

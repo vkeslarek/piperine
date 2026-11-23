@@ -321,10 +321,10 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `a_generic_module_body_is_checked_once_at_its_definition` and `a_param_of_a_type_parameter_is_typed_under_its_bounds` pass under `**Run typesmods**`
-- [ ] `an_unreached_generic_module_with_an_error_fails_the_model_check` (admitting `GenericModules`) and `unfinished_forms_in_force_are_the_ones_phase_c_has_not_closed` (production: an unreached faulty generic module passes, a placement of one is `P0001` `generic module`) pass under `**Run typesmodel**`
-- [ ] Every Book target passes unchanged
-- [ ] Gate check passes: Quick
+- [x] `a_generic_module_body_is_checked_once_at_its_definition` and `a_param_of_a_type_parameter_is_typed_under_its_bounds` pass under `**Run typesmods**`
+- [x] `an_unreached_generic_module_with_an_error_fails_the_model_check` (admitting `GenericModules`) and `unfinished_forms_in_force_are_the_ones_phase_c_has_not_closed` (production: an unreached faulty generic module passes, a placement of one is `P0001` `generic module`) pass under `**Run typesmodel**`
+- [x] Every Book target passes unchanged
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

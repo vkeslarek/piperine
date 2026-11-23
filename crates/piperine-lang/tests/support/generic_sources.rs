@@ -3,7 +3,7 @@
 //! `Types::check` from a `Top` or by the whole-model check, and what the check says read back.
 
 use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic};
-use piperine_lang::types::Types;
+use piperine_lang::types::{Types, UnfinishedForm};
 
 use crate::support;
 
@@ -49,6 +49,12 @@ impl GenericSources {
     pub fn standard_found(src: &str) -> Vec<DesignDiagnostic> {
         let design = Design::builder().source("top.msl", format!("{}{src}", Self::HEAD)).build();
         Types::check_model(&design).err().unwrap_or_default()
+    }
+
+    /// The diagnostics of the whole-model check of `src` over the embedded standard library with `forms` admitted.
+    pub fn admitting_found(src: &str, forms: &[UnfinishedForm]) -> Vec<DesignDiagnostic> {
+        let design = Design::builder().source("top.msl", format!("{}{src}", Self::HEAD)).build();
+        Types::check_model_admitting(&design, forms).err().unwrap_or_default()
     }
 
     /// The codes of [`GenericSources::standard_found`].

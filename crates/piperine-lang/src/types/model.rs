@@ -6,29 +6,30 @@
 //! elaborator reads. This check builds none; it keeps the diagnostics of one [`Checker`] seeded
 //! with every item, in source order, each with the code the item has when reached. `std` is left
 //! to its own check (a stdlib item is checked when reached). A generic function, and a method of a
-//! generic `impl`, are checked once at their definition (Q1 (c), design D19). A generic module,
-//! struct or enum, and what sits inside one, is left out until generics phase C: reaching it is
-//! `P0001`, and `GAPS.md` S3 keeps that part open.
+//! generic `impl`, are checked once at their definition (Q1 (c), design D19). A generic module is
+//! checked the same way (GN-13); a generic struct or enum, and what sits inside one, is left out.
 
 use crate::pom::{Decl, DeclId, DeclKind, Design, DesignDiagnostic, Reflect};
 
 use super::check::Checker;
+use super::{UnfinishedForm, UnfinishedForms};
 
 /// One pass over the items of a design that no top need reach.
 pub(super) struct ModelCheck<'d> {
     design: &'d Design,
+    forms: UnfinishedForms,
 }
 
 impl<'d> ModelCheck<'d> {
     /// A check over every item of `design`.
-    pub(super) fn new(design: &'d Design) -> Self {
-        ModelCheck { design }
+    pub(super) fn new(design: &'d Design, forms: UnfinishedForms) -> Self {
+        ModelCheck { design, forms }
     }
 
     /// Every seeded item checked: `Ok` when none has a diagnostic.
     pub(super) fn run(self) -> Result<(), Vec<DesignDiagnostic>> {
         let items = self.items();
-        let diagnostics = Checker::new(self.design).run_model(&items);
+        let diagnostics = Checker::new(self.design, self.forms.clone()).run_model(&items);
         if diagnostics.is_empty() { Ok(()) } else { Err(diagnostics) }
     }
 
@@ -40,7 +41,7 @@ impl<'d> ModelCheck<'d> {
     /// Whether `decl` is a module, a function or a `const` of a crate but `std`, outside a trait
     /// (a trait function has no body to check), outside every generic item other than itself (a
     /// generic function or a method of a generic `impl` is checked once at its definition, Q1 (c); a generic
-    /// module, struct or enum is not, until their own tasks).
+    /// struct or enum is not).
     fn is_seed(&self, decl: DeclId) -> bool {
         let data = self.design.decl_data(decl);
         // an `impl` is held to the declaration rules of §3.1 whatever its generics
@@ -48,16 +49,22 @@ impl<'d> ModelCheck<'d> {
             return !Decl::new(self.design, decl).krate().is_std();
         }
         let is_item = matches!(data.kind, DeclKind::Module(_) | DeclKind::Fn(_) | DeclKind::Const(_));
-        is_item && !Decl::new(self.design, decl).krate().is_std() && !self.is_generic_beyond_a_function(decl) && !data.parent.is_some_and(|p| matches!(self.design.decl_data(p).kind, DeclKind::Trait(_)))
+        is_item && !Decl::new(self.design, decl).krate().is_std() && !self.is_generic_beyond_a_module(decl) && !data.parent.is_some_and(|p| matches!(self.design.decl_data(p).kind, DeclKind::Trait(_)))
     }
 
-    /// Whether `decl` is a generic module, struct or enum, or sits inside one: those wait for their own phase. A
-    /// generic function, and a method of a generic `impl`, are checked once at the definition (Q1 (c)).
-    fn is_generic_beyond_a_function(&self, decl: DeclId) -> bool {
+    /// Whether `decl` is a generic struct or enum, or sits inside one, or is a generic module the gate has not admitted:
+    /// those wait for their own phase. A generic function and a method of a generic `impl` are checked once at the
+    /// definition (Q1 (c)), a generic module when its form is admitted.
+    fn is_generic_beyond_a_module(&self, decl: DeclId) -> bool {
         let mut at = Some(decl);
         while let Some(current) = at {
             let data = self.design.decl_data(current);
-            if data.generics_span.is_some() && matches!(data.kind, DeclKind::Module(_) | DeclKind::Struct(_) | DeclKind::Enum(_)) {
+            let waits = match data.kind {
+                DeclKind::Struct(_) | DeclKind::Enum(_) => true,
+                DeclKind::Module(_) => !self.forms.admits(UnfinishedForm::GenericModules),
+                _ => false,
+            };
+            if data.generics_span.is_some() && waits {
                 return true;
             }
             at = data.parent;
