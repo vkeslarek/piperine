@@ -550,9 +550,13 @@ block	solver#12	fef80f23f68a3276	shown	-	-	-
 block	solver#13	aa30088d37939468	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run filter.msl --analysis pz --input v1 --output vout
 block	solver#14	08d4bb8ee0696a6d	shown	-	-	-
 block	solver#15	dd386fb556b3f2b4	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run filter.msl --analysis sens --wrt v1.dc --wrt r1.r --print vout
-block	solver#16	6f7e18a9dd9c3243	shown	-	-	-
-block	solver#17	c2057ebbb7378f77	shown	-	-	-
-block	solver#18	b920698c6959c65d	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run filter.msl --analysis transient --stop 5e-3 --max-steps 20 --print vout
+block	solver#16	4698de5517cae20c	run	piperine/book_solver::the_noise_model_runs_and_its_density_is_the_resistors_shaped_by_the_filter	-	-
+block	solver#17	cdcd861b458be80e	shown	-	-	-
+block	solver#18	c375d7209380093e	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run hiss.msl --analysis noise --input v1 --output vout --from 10 --to 1e4 --per-decade 1
+block	solver#19	6f7e18a9dd9c3243	shown	-	-	-
+block	solver#20	c2057ebbb7378f77	shown	-	-	-
+block	solver#21	b920698c6959c65d	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run filter.msl --analysis transient --stop 5e-3 --max-steps 20 --print vout
+claim	solver~611c58a3	611c58a31a4817cb	holds	piperine/book_solver::the_noise_model_runs_and_its_density_is_the_resistors_shaped_by_the_filter	-	Only the resistor of hiss.msl makes noise, so the density is its 4 k T / r shaped by the filter, and the input-referred density is flat.
 claim	solver~fe59ce49	fe59ce49a19424cb	prose	-	-	This chapter explains what it does with them, so that you can predict what a simulation will do and read what it reports.
 claim	solver~83cb975b	83cb975b79c20f2c	holds	piperine/book_solver::the_two_sides_of_the_solver_never_depend_on_each_other	-	The analog and digital solvers never call each other: everything that crosses between them is an event the owner carries.
 claim	solver~73d81a62	73d81a62e1d21515	prose	-	-	When plain Newton fails, the solver makes the problem easier and walks back.

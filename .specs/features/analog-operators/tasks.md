@@ -1145,8 +1145,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `gaps_and_roadmap_follow_analog_operators` passes; `every_cli_listing_of_the_book_is_what_the_binary_prints` and the inventory guard pass
-- [ ] Gate check passes: `Run docs`, `Run clibook`, `Run inventory`, then Build
+- [x] `gaps_and_roadmap_follow_analog_operators` passes; `every_cli_listing_of_the_book_is_what_the_binary_prints` and the inventory guard pass
+- [x] Gate check passes: `Run docs`, `Run clibook`, `Run inventory`, then Build
 
 **Tests**: integration
 **Gate**: build

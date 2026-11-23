@@ -1869,6 +1869,30 @@ merges second). It extends MD-64 (IR functions are pure values) and supersedes n
    word `encode` gives for the folded initializer (design D18).
 5. **`check`.** `piperine check` types every item of every non-std crate; a generic module's body waits for phase C (S3).
 
+### MD-82: the analog operators are IR forms; the session gives parameters; a noise source is a held input
+
+`analog-operators` (2026-11-23; the number follows MD-81, `generics`; a collision at merge is renumbered by whoever merges
+second). It extends MD-64 (IR functions are pure values) and MD-78, and supersedes nothing.
+
+1. **`ddx`** is differentiated symbolically in the IR at elaboration (`Differentiation`); backends are unchanged. A loop,
+   an assignment, a closure or a call through a value under `ddx` is `P0001` naming it.
+2. **`delay`** is always a site on a private pin with a `FLOW` and a `DELAY` term; a negative `td` or `max <= 0` is the run
+   error `E0453`, a `td` that varies is bounded by its `max`.
+3. **A noise source** (`noise`, `white_noise`, `flicker_noise`) is a `NOISE` input of the instance whose density only a noise
+   sweep reads, grouped by the source's name; the analysis integrates each source by ngspice's power-law rule and sums the
+   sources as powers (`onoise_total`, `inoise_total`). `NOISE` is the one parity constant of noise.
+4. **Session parameters.** The core keeps only the run temperature (`temp`, `temperature()`); `tnom` is an ordinary
+   per-instance model param (default 300.15 K), never a run key or flag, and `dtemp` is no core mechanism (user,
+   2026-11-23). `simparam(name)` is an `Option<f64>`: `Some` when the run set it, `None` otherwise, no default argument,
+   `E0456` retired (user, 2026-11-23). The host fills a `GLOBAL NAMED` pin per name.
+5. **Traces.** `emit!` in `analog` is a `TRACE` watch delivered as a record of a stream the run names, with the Newton
+   iteration and the analysis; one reached through a `fn` stays `P0001` naming the `fn` (GAPS L72).
+6. **Owner rule (AO-13).** The step that read a jump is retaken when the jump's crossings change what `analog` reads, so the
+   stdlib `slew` limits an ideal step; the bound is the round bound, else `E0504`.
+7. **Parity.** ngspice is the oracle where it is right: `delay_tline`, `noise_rc`, `noise_diode` and `tnom_res` agree under
+   their contracts. ngspice 46 and 47 take the open switch's noise and transfer for a switch the operating point closed, so
+   the closed `noise_switch` is held to its closed form and the same twin opened to `noise_switch_off.cir`.
+
 ## Handoff Snapshot
 
 ### Feature - `solver-abi-integration` (2026-11-15)

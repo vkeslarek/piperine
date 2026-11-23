@@ -22,19 +22,19 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 1 silent, 2 broken, 25 loud (L1 to L71 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the four `params-and-io` (L20, L28, L39, L57) and the nine `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63, L66), the two `resolved-nets` rows (L22, L23) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, in six tables) plus
+**Counts.** 1 silent, 2 broken, 20 loud (L1 to L72 less the six `analog-operators` rows (L43, L44, L45, L47, L49, L60), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the four `params-and-io` (L20, L28, L39, L57) and the nine `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63, L66), the two `resolved-nets` rows (L22, L23) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
-17 host gaps, 9 unproven.
+17 host gaps, 8 unproven.
 
 | Section | Ids |
 | ------- | --- |
 | §2 Broken | B3, B4 |
 | §3 Silent (read this first) | S3, for generic modules (S6 and S8 closed by `explicit-unknowns`) |
-| §4 Loud | L1–L71 (L64 and L65 closed by `explicit-unknowns`; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L22, L23 closed; L4, L7, L8 and L9 closed by `generics` phases A and B; L64 to L66 found by `composite-values`; L68 split from L58 and closed by `explicit-unknowns` phase B) |
+| §4 Loud | L1–L72 (L43, L44, L45, L47, L49 and L60 closed by `analog-operators`; L72 found by it; L64 and L65 closed by `explicit-unknowns`; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L22, L23 closed; L4, L7, L8 and L9 closed by `generics` phases A and B; L64 to L66 found by `composite-values`; L68 split from L58 and closed by `explicit-unknowns` phase B) |
 | §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X1, X2 (X6 decided by `generics`; X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
 | §6 Solver, numerics, performance | V13, V16 (V12 closed by `transient-performance`) |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
-| §8 Unproven | U1–U11 (U5, U10 closed by `root-e2e`) |
+| §8 Unproven | U1–U11 (U5, U10 closed by `root-e2e`, U7 by `analog-operators`) |
 | §9 Coverage by spec part | — |
 | §10 Reference lists, changed entries, clusters | — |
 | §11 The Book against the binary | one row per Book block or claim the binary refuses, does not meet, never raises or the spec disputes |
@@ -134,11 +134,6 @@ blocks.
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
 | L40 | the three spec models that wait on another feature's dependency: the stdlib `idt` and `Water` (they need `generics`); the §18 `Diode` with `match rs` runs since `params-and-io`; a contribution under an `if` or a `match`, `Switch`, `CapIc` and `Bounded` run | §11 rules 2, 3, 18, §18 | `generic module` (`idt`, `Water`) | M |
-| L43 | `ddx` | §14.2 | `core primitive ddx` | M |
-| L44 | `delay` | §14.6 | `core primitive delay` | M |
-| L45 | `noise`, and so `white_noise`, `flicker_noise`, `noise_table` | §14.8, §11.1.8 | `core primitive noise` | M |
-| L47 | `simparam` (`freq()` runs) | §14.4 | `core primitive simparam` | S |
-| L49 | No trace records: `emit!` in `analog` is refused | §19 rule 4, §11 rule 20 | `an emit! in an analog block` | M |
 
 Works, by probe: `ddt` of a flow and of a potential (capacitor, inductor, coupled inductors),
 `limit` with a closure and a seed, `ac_stim` with a phase, `temperature()`, `gmin()`,
@@ -165,9 +160,9 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 | L70 | `x.encode()` and `T::decode(levels)` under `T: Repr` at `f64`, at a derived struct, enum, tuple or array, and `decode` into a signed integer (they run at `bool`, integers up to 64 bits for `encode`, unsigned integers up to 64 bits for `decode`, and hand-written `Repr` types): the levels of these layouts need an IR bit-pack form the IR does not have | §2, H.8 `Repr` | `P0001`: "`encode` on a value of a type whose layout is derived"; "`decode` into a signed integer or a type whose layout is derived" | `generics` phase C, first task (residual of GN-01 AC 1); the removal of `Intrinsic::{Cast, Same}` it unblocks is batch B9 (T55 of `tasks-c.md`), right after |
 | L59 | the closure of `map`, `and_then` or `then` when it is not a literal; an `expect` message that is not a string literal | H.3 | `P0001` naming the form | S |
 | L71 | a host write of a `Logic` param or of a four-state pattern: a `Logic` param is a struct param (`P0001`), and no host call takes `"10xz"` for a `Logic<4>` cell, though the host prints a cell as that pattern (EU-15 AC 4). T47 planned `parse the same pattern for a host write` and dropped it: no criterion asks for one and the write fails loud (owner `resolved-nets`, whose host drive of a resolved `Logic` carrier is the first caller; it parses the pattern with the rules of §22.1.4 and writes the two planes of `abi.md` P3) | §22.1.1, §22.1.4 | `P0001` (a struct param) | S |
-| L60 | the stdlib `slew` does not limit an ideal (jump) step: §15.2 rule 4 fires a jump's crossing after the solve, so the output passes the jump in one step. Fix = retake the step when a jump-crossing flips a carrier read by `analog` (owner `analog-operators`, AO-13; found by `analog-structure` AS-09 AC 6, which covers a step with a finite edge) | §15.2 rule 4, §22.2.10 | none: the output follows the jump | M |
 | L61 | sweeping or setting a key param after `Session::open`: a param that fixes the structure (a selector, an initial value, a reached param) is folded into the body at elaboration, so a `dc` sweep of it, or a `set` of it between open and the run, needs one elaboration per value. Today `E0803` refuses both naming the param; the before-run request param (`--param`) works (owner `sweeps-montecarlo-optimization`; found by `analog-structure` verification F1) | §23.1 rule 7, §8.1.2 | `E0803` | M |
 | L62 | a `switch` branch between two floating nodes with an undriven control panics in faer (`attempt to subtract with overflow`, `faer.rs:47`) instead of a named solver error (owner `spec-closure`; found by the `analog-structure` fix round) | §11 (switch branches), §15 | a switch between two floating nodes whose control no source drives | S |
+| L72 | an `emit!` reached from `analog` through a `fn`: a direct `emit!` in an `analog` block is a trace (`analog-operators` T37), one inside a function the block calls stays refused naming the `fn`, because a trace inside a function needs a watch buffer passed through calls (design D14; no criterion asks for it) | §19 rule 4, §11 rule 20 | `P0001` naming the `fn` | M |
 
 ### 4.7 Backends
 
@@ -242,7 +237,7 @@ adjoint and PSS (`core/circuit.rs:111` to `:172`); the host exposes four analyse
 | # | Missing | Spec | Size |
 | - | ------- | ---- | ---- |
 | H1 | **No host sequences from the command line**, and from the library only what a Rust host does: `Session::drive` of a top `in` port and `Session::set_at` (a param set at a time) are delivered, and the command line takes neither (decision X8: a bench in MSL is its stimulus), and Python is B4. Left: `force` and `release`, a wait for an event, a read at an instant. The buck's scenarios S2 to S10 run on the Rust host (`buck-scenarios`) | §23.1 rules 1–4, 8, 11 | L |
-| H2 | Analyses beyond `op`, `dc`, `ac`, `transient`, `tf`, `pz`, `sens`, `pss` (delivered by `host-ii`) and `noise` (delivered by `analog-operators` B1 to B3: `analysis = "noise"` with `output`, `input` and the sweep, per-source totals, the library report; what stays open is a `noise()` source in a design, B6, L45): S-parameters, Fourier and distortion, more than one sweep axis | §11.1, §16.3 | M each, on the device ABI |
+| H2 | Analyses beyond `op`, `dc`, `ac`, `transient`, `tf`, `pz`, `sens`, `pss` (delivered by `host-ii`) and `noise` (delivered by `analog-operators` B1 to B3: `analysis = "noise"` with `output`, `input` and the sweep, per-source totals, the library report; a `noise()`, `white_noise` and `flicker_noise` source in a design, B6): S-parameters, Fourier and distortion, more than one sweep axis | §11.1, §16.3 | M each, on the device ABI |
 | H3 | Session options: `reltol`, `abstol`, `vntol`, `trtol`, `temp`, `resolution`, `maxrounds`, `maxmicro`, `max_steps` and `nodeset` are run keys (delivered). `tnom` is no run key: it is a per-instance model param (user decision 2026-11-23, `analog-operators` T45). Left: `ttol` (each `cross` carries its own default) | §23 table | S |
 | H4 | Metadata: `piperine info` and `Session::metadata` list params, ports and streams (delivered), and `--print Top.r1.r` reads a param back. Left: the public items and sites; an operating-point variable (`--print Top.g.id` is `E0801`); the flow of a branch that is not a potential source in `transient`, `ac`, `pss` and `sens` (H14) | §21 table, rule 6 | S |
 | H5 | A `set` of a param that has no device pin and that nothing derives from (`--param Top.r=..` where `r` is read by nobody): `E0802: .. no PARAM pin r; the instance declares no writable parameters`. A param a child derives from is no longer in this case: a `set` recomputes it through the generated function (`host-ii`, MD-69) | §23.1 rule 6 | S |
@@ -278,9 +273,6 @@ adjoint and PSS (`core/circuit.rs:111` to `:172`); the host exposes four analyse
 - **U6. Rules of Part V with no test that names them**: record order within a microstep (§19
   rule 8), the tick rounding of T2 to T4, `E0502`, the round bound `E0506`, crossings between
   sweep points (§16.1.2), a rejected step leaving no record (§19 rule 7).
-- **U7. The `abstol` of a user nature in the convergence test, and compatible natures at one
-  node** (§4 rules 5, 13; §17.1) are exercised from source since `analog-operators` T10
-  (`crates/piperine-api/tests/natures.rs`); the entry leaves this list when the feature merges.
 - **U8. AC from MSL is proven on one RC.** Nothing checks an AC run of a design with a digital
   part (§16.1.4) or a DC sweep that crosses a threshold (§16.1.2).
 - **U9. The two backends agree on the M1 subset only** (`backends`, `twins`); everything else has
@@ -349,7 +341,7 @@ E0807 E0808 E0809`
 | ------- | ------ | ---- |
 | `set` and params | H5, L29, H4 | M |
 | Analog structure (delivered, MD-71) | what is left of L40: the stdlib `idt` and `Water` after `generics` | S |
-| Analog operators | L43, L44, L45, L49, H2 (`Noise`) | M to L |
+| Analog operators (delivered, MD-82) | L43, L44, L45, L47, L49, L60, H2 (`Noise`), U7 (L72 stays) | M to L |
 | Composite values | L24 (phases A and B closed L1 to L3, L5, L6, L10, L16 and the part of L9 that is not `generics`; MD-79) | L |
 | Generics and generation (phases A and B delivered: L4, L7, L8, L9, X6) | L30, L31, L32, S3 for generic modules: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
 | Resolved nets and bundles | L21, L25: natures that implement `Resolve`, `Tribuf`, `Tran`, `Bidir` | L |
