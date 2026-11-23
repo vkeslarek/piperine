@@ -263,7 +263,9 @@ Nested arrays (`[[Bit; 4]; 2]`, allowed by `sigtype`) are one array net, row-maj
 | `tests/book/natures.rs::signals_of_every_family_are_refused_for_the_arrays_the_option_the_logic_and_the_net` | `[Bit; 8]` runs; `Bit<Logic<4>>` and `Sda` stay refused | T89 (renamed `signals_of_every_family_are_refused_for_the_logic_and_the_net`, `inventory.tsv` follows) |
 | `tests/book/modules.rs::the_memory_bank_is_refused_for_its_struct_arrays_and_generics` | the arrays of carriers no longer refuse; the generic module and template stay | T89 (renamed `the_memory_bank_is_refused_for_its_generic_module`) |
 | `crates/piperine-parity/tests/source_explicit.rs::an_element_never_committed_reads_its_initial_value` (model `ElementsBench`) | the stand-in becomes the real array of EU-04 AC 3 | T86 (same test name, stronger model) |
-| A test asserting `P0001` "an element or field commit"/"definition" | the form runs | T76 |
+| A test asserting `P0001` "an element or field commit"/"definition" | the form runs | T76 (`types_buck.rs` 2 rows, `elab_unlowered.rs`, `types_subset.rs`, `elab_entry.rs`) |
+| `crates/piperine-abi/tests/contract.rs::the_host_has_one_commit` (EU-16: "Host is 16 bytes, one commit") | QC1, approved by the user 2026-11-23: `Host` is 24 bytes with `commit_element`; supersedes EU-16 AC 2 | T65 |
+| `crates/piperine-lang/tests/types_buck.rs` `an array type` row | `[Bit; 4]` runs | T74 |
 
 Never moving: the twin goldens, `crates/piperine-parity/src/contract.rs`, the transpile goldens of
 `crates/piperine-transpile/tests/golden/`, every parity target, every buck target's assertions.

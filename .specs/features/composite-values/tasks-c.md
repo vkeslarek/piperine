@@ -622,8 +622,8 @@ T86 → T87 → T88 → T89 → T90
 
 **Done when**:
 
-- [ ] `an_element_never_committed_reads_its_initial_value` passes under `**Run src**` on the real array
-- [ ] Gate check passes: Task (`piperine-parity`)
+- [x] `an_element_never_committed_reads_its_initial_value` passes under `**Run src**` on the real array
+- [x] Gate check passes: Task (`piperine-parity`)
 
 **Tests**: integration
 **Gate**: task
@@ -857,6 +857,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **T83 notes:** the end-to-end run found and fixed, in this task: (1) element definitions (`q[k] = d[k]`) had no plan: a drive of one element writes a scalar `PORT` pin `drive:<carrier>[<element>]` (`Pins::element_drives`, after the `SETTLE` pin; `Target::ElementDrive`) that `Netlist` binds by `Port::Window` of length 1, the Rust function is `<carrier>_element<k>_drive`; a delayed element definition is refused by name by the elaborator; (2) P1 on an array net: a reaction's statement (the element is named at run time) and a function's window never collide at bind (`WriterEntry::clash`): the checker proves the pair statically (E0221/E0220); (3) `deps`/`check` read the index expressions of a commit target; (4) the whole read prints `*x.whole::<K>()` (no parentheses). The `changed()` of every element fires at `(0, 0)` (the initial commit is a change of every carrier, §13 rule 6), as for a scalar.
 **T84 notes:** the ladder run found that an element's name `bl[2]` is a Rust identifier in the analog printer: `Text::spelled_cased` now spells `[` and `]` as `_i` and `_j` (`bl_i2_j`). The test compares the looped and the written-out ladders bit for bit and the closed form to 1e-9 V (DC3, QC6).
 **T85 notes:** `peak_heap_does_not_depend_on_the_declared_length`: `1 << 32` and `1 << 16` elements with 1000 elements written peak 6 774 328 B and 6 739 034 B (35 KiB apart); the same `1 << 32` array with none written peaks 6 006 762 B, so the meter sees the written elements (about 767 B each).
+**T86 notes:** `explicit/initial.msl` `ElementsBench` is the real `[Bit<Option<u8>>; 1 << 20] = [Some(5); 1 << 20]`; `lower_option` reads one element of an array of `Option` carriers as its two halves (`compound.rs`). explicit-unknowns `tasks.md` C13 lost its DEFERRED note and C67 carries the QC1 amendment.
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 
