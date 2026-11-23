@@ -27,10 +27,14 @@ mod models;
 #[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/structure.rs"]
 mod structure;
+#[allow(dead_code)]
+#[path = "../../piperine-ir/tests/support/operators.rs"]
+mod operators;
 
 use devices::Devices;
 use digital::{Buck, Dx, Ty};
 use models::{In, Models, View};
+use operators::Operators;
 use structure::{ParamEvents, Switching, Written};
 
 #[test]
@@ -630,6 +634,32 @@ fn the_interpreter_refuses_each_analog_structure_form_by_name() {
         Written { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..Written::default() }
     });
     held(&Structured::refused(capped), "a bound_step under a selector");
+}
+
+#[test]
+fn the_interpreter_refuses_each_analog_operator_by_name() {
+    // AO-11: a body that holds a `ddx`, a `delay`, a `noise`, a `simparam` or an `emit!` in `analog`
+    // is rejected, one entry naming the form; the compiled backend runs each (R1).
+    let held = |ir: Ir, form: &str| {
+        let Err(rejected) = Interpreter::new(Arc::new(ir)) else { panic!("{form}: the design was accepted") };
+        let named: Vec<&str> = rejected.entries.iter().filter_map(|e| e.what.split_once(" holds ").map(|(_, rest)| rest.split(':').next().unwrap_or(""))).collect();
+        assert_eq!(named, [form], "{form}");
+    };
+    held(Operators::ir(|b| operators::Written { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![Operators::delay_site(b, None)], ..operators::Written::default() }), "delay");
+    held(Operators::ir(|b| operators::Written { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![Operators::noise_site(b, None)], ..operators::Written::default() }), "noise");
+    held(Operators::ir(|b| operators::Written { analog: vec![Operators::contribute_the_session_parameter(b, 0, Some(1e-12))], session_parameters: vec![Operators::gmin()], ..operators::Written::default() }), "simparam");
+    held(Operators::tracing(), "emit! in analog");
+    // the record of a `ddx` is a `PartialDerivative`: the body holds it though its value is an expression
+    let mut b = IrBuilder::new();
+    let body = Devices::resistor(&mut b);
+    b.partial_derivative(body, piperine_ir::PartialDerivative { name: "v(p, n)".into(), origin: Origin { file: "ddx.msl".into(), line: 3, col: 5 } });
+    let top = Devices::alone(&mut b, body, "R", 1, vec![1000.0]);
+    held(b.finish(top), "ddx");
+    // a body with none of them is not named: the five M1 bodies still run
+    let mut b = IrBuilder::new();
+    let resistor = Devices::resistor(&mut b);
+    let top = Devices::alone(&mut b, resistor, "R", 1, vec![1000.0]);
+    assert!(Interpreter::new(Arc::new(b.finish(top))).is_ok());
 }
 
 #[test]

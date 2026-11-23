@@ -841,8 +841,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `the_interpreter_refuses_each_analog_operator_by_name` passes
-- [ ] Gate check passes: `Run frozen`
+- [x] `the_interpreter_refuses_each_analog_operator_by_name` passes
+- [x] Gate check passes: `Run frozen`
 
 **Tests**: integration
 **Gate**: quick
