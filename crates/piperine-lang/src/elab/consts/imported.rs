@@ -104,6 +104,15 @@ impl Elaboration<'_, '_> {
         }
     }
 
+    /// The constant of `expr`, a value of type `T` bound to a param of type `Option<T>`: `Some` of it (§3.2.3, PI-03 AC 2).
+    pub(in crate::elab) fn implicit_some_constant(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
+        let payload = self.consts.tree(expr, bindings)?;
+        let Some(held) = self.types.ty(expr).and_then(|ty| self.stored_type(ty)) else {
+            return Err(ConstFault::Unsupported { expr, what: "an implicit `Some` of a value with no value type".to_string() });
+        };
+        self.import_tree(expr, &ConstTree::Composite { kind: CompositeKind::Option, parts: vec![payload] }, &ValueType::Option(Box::new(held)))
+    }
+
     /// `tree` as a constant of type `ty`.
     fn import_tree(&mut self, expr: ExprId, tree: &ConstTree, ty: &ValueType) -> Result<Constant, ConstFault> {
         match (tree, ty) {

@@ -296,6 +296,10 @@ impl Elaboration<'_, '_> {
                 Ok(value) => out.push((index as u32, Some(value), field.value)),
                 // A value over the parent's params (`{ r: r_top }`, `{ l }`): the authored child
                 // shows the expression, the instance table the constant of each instance.
+                Err(ConstFault::UnboundParam { .. }) if self.types.implicit_some(field.value) => {
+                    self.unsupported(file, self.design.expr_node(field.value).span, "a value over the parent's params bound to an `Option` param without `Some`: write `Some(..)`");
+                    ok = false;
+                }
                 Err(ConstFault::UnboundParam { .. }) => {
                     let mut sub = Self::sub_scope(scope);
                     match self.lower_expr(&mut sub, field.value) {

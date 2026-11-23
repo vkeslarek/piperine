@@ -58,6 +58,10 @@ impl Elaboration<'_, '_> {
     /// number), any other expression as `ConstEval::value` folds it over `bindings`.
     pub(super) fn fold_param_value(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let ExprKind::Struct { fields, class: StructClass::Template(module), .. } = self.design.expr_node(expr).kind.clone() else {
+            // a value of `T` bound to a param of `Option<T>` is `Some` of it (§3.2.3)
+            if self.types.implicit_some(expr) {
+                return self.implicit_some_constant(expr, bindings);
+            }
             // a composite folds to a constant of the IR's arena (`consts/imported.rs`)
             if self.types.ty(expr).is_some_and(crate::types::Ty::is_composite) {
                 return self.composite_constant(expr, bindings);

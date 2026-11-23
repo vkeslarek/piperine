@@ -13,7 +13,10 @@ use crate::pom::ExprId;
 /// The control string of a `table_model` (§22.2.15 rules 2 to 4): one interpolation character, then zero,
 /// one or two extrapolation characters. One extrapolation character applies to both ends, two to the low
 /// end and then the high end, none is `L` at both.
-pub(super) struct ControlText<'a>(pub(super) &'a str);
+pub(super) struct ControlText<'a>(
+    /// The control string as the source wrote it.
+    pub(super) &'a str,
+);
 
 impl ControlText<'_> {
     /// The control the text says, or why it is none (`E0703`).
@@ -45,7 +48,10 @@ impl ControlText<'_> {
 }
 
 /// The samples of a `table_model`, `(abscissa, value)` pairs, as the elaborator validates them.
-pub(super) struct Samples<'a>(pub(super) &'a [(f64, f64)]);
+pub(super) struct Samples<'a>(
+    /// The pairs, in the order the table lists them.
+    pub(super) &'a [(f64, f64)],
+);
 
 impl Samples<'_> {
     /// How many points the interpolation of `degree` needs: two for the closest sample and the line, one more

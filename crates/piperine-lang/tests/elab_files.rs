@@ -149,27 +149,61 @@ fn one_file_named_twice_is_read_once() {
     assert_eq!(eval.files_read(), 1, "one resolved path, one read");
 }
 
-/// A source whose `const` `name` of type `ty` is `parser(include_str!(file))`, read in `analog` so the checker reaches it.
-fn parsed_source(name: &str, ty: &str, parser: &str, file: &str) -> String {
-    format!("const {name}: {ty} = {parser}(include_str!(\"{file}\"));\nmodule Top() {{ }}\nanalog for Top {{ let x = {name}[0]; }}\n")
+/// The sources the file and table tests elaborate, and the readings of what they give: the owner of the helpers they share.
+struct Parsed;
+
+impl Parsed {
+    /// A source whose `const` `name` of type `ty` is `parser(include_str!(file))`, read in `analog` so the checker reaches it.
+    pub fn source(name: &str, ty: &str, parser: &str, file: &str) -> String {
+        format!("const {name}: {ty} = {parser}(include_str!(\"{file}\"));\nmodule Top() {{ }}\nanalog for Top {{ let x = {name}[0]; }}\n")
+    }
+
+
+    /// The folded tree of `const` `name` of the package at `root`, or the diagnostics of elaborating it.
+    pub fn folded(root: &Path, name: &str) -> Result<ConstTree, Vec<String>> {
+        let design = Fixture::design(root);
+        let types = Types::check(&design, "Top").map_err(|found| found.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>())?;
+        ConstEval::new(&design, &types).constant_tree(Fixture::constant(&design, name)).map_err(|fault| vec![format!("{fault:?}")])
+    }
+
+
+    /// The diagnostics (code and message) elaborating the package at `root` gives.
+    pub fn refused(scratch: &Scratch, source: &str) -> Vec<(String, String)> {
+        let root = scratch.write("top.msl", source);
+        let design = Fixture::design(&root);
+        Elaborator::new(&design).run("Top").expect_err("the text is refused").iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()
+    }
+
+
+    /// A source whose `analog` block contributes `table_model(v(a), T, control)`, `T` being `samples` written out.
+    pub fn table_model_source(samples: &str, count: usize, control: &str) -> String {
+        format!("const T: [(f64, f64); {count}] = [{samples}];\nmodule Top() {{ signal a: Electrical; }}\nanalog for Top {{ i(a) +> table_model(v(a), T, \"{control}\"); }}\n")
+    }
+
+
+    /// The codes and messages of elaborating `source` with `Top` as the top.
+    pub fn refusals(source: &str) -> Vec<(String, String)> {
+        Elab::run(source, "Top").expect_err("the table model is refused").iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()
+    }
+
+
 }
 
-/// The folded tree of `const` `name` of the package at `root`, or the diagnostics of elaborating it.
-fn folded(root: &Path, name: &str) -> Result<ConstTree, Vec<String>> {
-    let design = Fixture::design(root);
-    let types = Types::check(&design, "Top").map_err(|found| found.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>())?;
-    ConstEval::new(&design, &types).constant_tree(Fixture::constant(&design, name)).map_err(|fault| vec![format!("{fault:?}")])
-}
+/// The trees of the values the tests expect.
+struct Trees;
 
-/// The diagnostics (code and message) elaborating the package at `root` gives.
-fn refused(scratch: &Scratch, source: &str) -> Vec<(String, String)> {
-    let root = scratch.write("top.msl", source);
-    let design = Fixture::design(&root);
-    Elaborator::new(&design).run("Top").expect_err("the text is refused").iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()
-}
+impl Trees {
+    /// The tree of the real `value`.
+    pub fn real(value: f64) -> ConstTree {
+        ConstTree::Scalar(Constant::Real(Real::new(value)))
+    }
 
-fn real(value: f64) -> ConstTree {
-    ConstTree::Scalar(Constant::Real(Real::new(value)))
+
+    /// The tree of the integer `value`.
+    pub fn int(value: i128) -> ConstTree {
+        ConstTree::Scalar(Constant::Int(value))
+    }
+
 }
 
 #[test]
@@ -185,17 +219,17 @@ fn parse_table_reads_64_rows_in_order() {
         }
     }
     scratch.write("diode_iv.tbl", &text);
-    let root = scratch.write("top.msl", &parsed_source("IV", "[(f64, f64); 64]", "parse_table", "diode_iv.tbl"));
-    let ConstTree::Composite { kind: CompositeKind::Array, parts } = folded(&root, "IV").expect("the table folds") else { panic!("an array") };
+    let root = scratch.write("top.msl", &Parsed::source("IV", "[(f64, f64); 64]", "parse_table", "diode_iv.tbl"));
+    let ConstTree::Composite { kind: CompositeKind::Array, parts } = Parsed::folded(&root, "IV").expect("the table folds") else { panic!("an array") };
     assert_eq!(parts.len(), 64);
     for (k, row) in parts.iter().enumerate() {
         let ConstTree::Composite { kind: CompositeKind::Tuple, parts: pair } = row else { panic!("a pair") };
-        assert_eq!(pair, &[real(k as f64 * 0.1), real(k as f64 * 1e-3)], "row {k}");
+        assert_eq!(pair, &[Trees::real(k as f64 * 0.1), Trees::real(k as f64 * 1e-3)], "row {k}");
     }
     // a table of one number per row is an array of `f64`
     scratch.write("one.tbl", "1k\n2.5\n");
-    let root = scratch.write("one.msl", &parsed_source("T", "[f64; 2]", "parse_table", "one.tbl").replace("[0]", "[1]"));
-    assert_eq!(folded(&root, "T").expect("folds"), ConstTree::Composite { kind: CompositeKind::Array, parts: vec![real(1000.0), real(2.5)] });
+    let root = scratch.write("one.msl", &Parsed::source("T", "[f64; 2]", "parse_table", "one.tbl").replace("[0]", "[1]"));
+    assert_eq!(Parsed::folded(&root, "T").expect("folds"), ConstTree::Composite { kind: CompositeKind::Array, parts: vec![Trees::real(1000.0), Trees::real(2.5)] });
 }
 
 #[test]
@@ -204,23 +238,23 @@ fn a_table_of_the_wrong_shape_is_e0614_naming_file_and_row() {
     // naming the file and the row.
     let scratch = Scratch::new("shape");
     scratch.write("wide.tbl", "1 2\n3 4 5\n");
-    let found = refused(&scratch, &parsed_source("T", "[(f64, f64); 2]", "parse_table", "wide.tbl"));
+    let found = Parsed::refused(&scratch, &Parsed::source("T", "[(f64, f64); 2]", "parse_table", "wide.tbl"));
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].0, "E0614");
     assert!(found[0].1.contains("wide.tbl") && found[0].1.contains("row 2"), "names the file and the row: {}", found[0].1);
     scratch.write("short.tbl", "1 2\n");
-    let found = refused(&scratch, &parsed_source("T", "[(f64, f64); 2]", "parse_table", "short.tbl"));
+    let found = Parsed::refused(&scratch, &Parsed::source("T", "[(f64, f64); 2]", "parse_table", "short.tbl"));
     assert_eq!(found[0].0, "E0614", "{found:?}");
     assert!(found[0].1.contains("short.tbl") && found[0].1.contains("1 rows"), "{}", found[0].1);
 }
 
 #[test]
 fn a_token_that_is_not_a_real_is_e0706() {
-    // PI-09 AC 4, §22.6.4 rule 6: `abc` on the third line is no real literal: `E0706` naming the file, the row and the token; so is `inf`.
+    // PI-09 AC 4, §22.6.4 rule 6: `abc` on the third line is no real literal: `E0706` naming the file, the row and the token; so are `inf` and an exponent with an SI suffix (`1e-3k`, Appendix A.2 rule 4).
     let scratch = Scratch::new("token");
-    for (name, text, token, row) in [("bad.tbl", "1 2\n\n3 abc\n", "abc", "row 3"), ("inf.tbl", "1 inf\n", "inf", "row 1")] {
+    for (name, text, token, row) in [("bad.tbl", "1 2\n\n3 abc\n", "abc", "row 3"), ("inf.tbl", "1 inf\n", "inf", "row 1"), ("exp.tbl", "1 1e-3k\n", "1e-3k", "row 1")] {
         scratch.write(name, text);
-        let found = refused(&scratch, &parsed_source("T", "[(f64, f64); 2]", "parse_table", name));
+        let found = Parsed::refused(&scratch, &Parsed::source("T", "[(f64, f64); 2]", "parse_table", name));
         assert_eq!(found[0].0, "E0706", "{name}: {found:?}");
         assert!(found[0].1.contains(name) && found[0].1.contains(row) && found[0].1.contains(&format!("`{token}`")), "{}", found[0].1);
     }
@@ -231,13 +265,9 @@ fn an_infinite_row_value_is_e0706() {
     // PI-09 edge case: `1e999` is a real literal whose nearest `f64` is infinite, `E0706` naming the row.
     let scratch = Scratch::new("infinite");
     scratch.write("big.tbl", "1 2\n3 1e999\n");
-    let found = refused(&scratch, &parsed_source("T", "[(f64, f64); 2]", "parse_table", "big.tbl"));
+    let found = Parsed::refused(&scratch, &Parsed::source("T", "[(f64, f64); 2]", "parse_table", "big.tbl"));
     assert_eq!(found[0].0, "E0706", "{found:?}");
     assert!(found[0].1.contains("row 2") && found[0].1.contains("1e999") && found[0].1.contains("infinite"), "{}", found[0].1);
-}
-
-fn int(value: i128) -> ConstTree {
-    ConstTree::Scalar(Constant::Int(value))
 }
 
 #[test]
@@ -247,14 +277,14 @@ fn parse_hex_reads_words_at_their_addresses() {
     let scratch = Scratch::new("hex");
     // `@0` then 8 words, comments of both forms and a `_` inside a word
     scratch.write("full.hex", "// boot image\n@0 DE_AD /* between words */ BEEF 7 9 00ff 01 /* two\nlines */ 02 03\n");
-    let root_full = scratch.write("full.msl", &parsed_source("ROM", "[u32; 8]", "parse_hex", "full.hex"));
-    let ConstTree::Composite { kind: CompositeKind::Array, parts } = folded(&root_full, "ROM").expect("the image folds") else { panic!("an array") };
-    assert_eq!(parts, [int(0xDEAD), int(0xBEEF), int(7), int(9), int(0xFF), int(1), int(2), int(3)]);
+    let root_full = scratch.write("full.msl", &Parsed::source("ROM", "[u32; 8]", "parse_hex", "full.hex"));
+    let ConstTree::Composite { kind: CompositeKind::Array, parts } = Parsed::folded(&root_full, "ROM").expect("the image folds") else { panic!("an array") };
+    assert_eq!(parts, [Trees::int(0xDEAD), Trees::int(0xBEEF), Trees::int(7), Trees::int(9), Trees::int(0xFF), Trees::int(1), Trees::int(2), Trees::int(3)]);
     // the addresses move the next word: `@4` then `@2`
     scratch.write("moved.hex", "@4 0a 0b\n@0 01 02\n@2 03 04\n");
-    let root_moved = scratch.write("moved.msl", &parsed_source("ROM", "[u8; 6]", "parse_hex", "moved.hex"));
-    let ConstTree::Composite { parts, .. } = folded(&root_moved, "ROM").expect("folds") else { panic!("an array") };
-    assert_eq!(parts, [int(1), int(2), int(3), int(4), int(0xa), int(0xb)]);
+    let root_moved = scratch.write("moved.msl", &Parsed::source("ROM", "[u8; 6]", "parse_hex", "moved.hex"));
+    let ConstTree::Composite { parts, .. } = Parsed::folded(&root_moved, "ROM").expect("folds") else { panic!("an array") };
+    assert_eq!(parts, [Trees::int(1), Trees::int(2), Trees::int(3), Trees::int(4), Trees::int(0xa), Trees::int(0xb)]);
 }
 
 #[test]
@@ -264,7 +294,7 @@ fn x_and_z_digits_are_e0706_integers_hold_no_unknown() {
     let scratch = Scratch::new("hexunknown");
     for word in ["0x", "zz", "1X"] {
         scratch.write("u.hex", &format!("00\n{word}\n"));
-        let found = refused(&scratch, &parsed_source("ROM", "[u8; 2]", "parse_hex", "u.hex"));
+        let found = Parsed::refused(&scratch, &Parsed::source("ROM", "[u8; 2]", "parse_hex", "u.hex"));
         assert_eq!(found[0].0, "E0706", "{word}: {found:?}");
         assert!(found[0].1.contains("u.hex") && found[0].1.contains("row 2") && found[0].1.contains(&format!("`{word}`")) && found[0].1.contains("unknown"), "{}", found[0].1);
     }
@@ -275,11 +305,11 @@ fn an_address_the_text_does_not_write_is_e0614() {
     // PI-09 AC 3 (§22.6.4 resolution): an index the text never writes, and an address past the array, are `E0614`.
     let scratch = Scratch::new("hexaddress");
     scratch.write("gap.hex", "01 02 @3 04\n");
-    let found = refused(&scratch, &parsed_source("ROM", "[u8; 4]", "parse_hex", "gap.hex"));
+    let found = Parsed::refused(&scratch, &Parsed::source("ROM", "[u8; 4]", "parse_hex", "gap.hex"));
     assert_eq!(found[0].0, "E0614", "{found:?}");
     assert!(found[0].1.contains("gap.hex") && found[0].1.contains("address 2"), "{}", found[0].1);
     scratch.write("past.hex", "01 02 03\n");
-    let found = refused(&scratch, &parsed_source("ROM", "[u8; 2]", "parse_hex", "past.hex"));
+    let found = Parsed::refused(&scratch, &Parsed::source("ROM", "[u8; 2]", "parse_hex", "past.hex"));
     assert_eq!(found[0].0, "E0614", "{found:?}");
     assert!(found[0].1.contains("past.hex") && found[0].1.contains("address 2") && found[0].1.contains("row 1"), "{}", found[0].1);
 }
@@ -290,20 +320,10 @@ fn a_word_that_is_not_hex_is_e0706() {
     let scratch = Scratch::new("hexword");
     for (word, why) in [("g1", "not a hexadecimal word"), ("1ff", "does not fit 8 bits")] {
         scratch.write("w.hex", &format!("00\n{word}\n"));
-        let found = refused(&scratch, &parsed_source("ROM", "[u8; 2]", "parse_hex", "w.hex"));
+        let found = Parsed::refused(&scratch, &Parsed::source("ROM", "[u8; 2]", "parse_hex", "w.hex"));
         assert_eq!(found[0].0, "E0706", "{word}: {found:?}");
         assert!(found[0].1.contains("w.hex") && found[0].1.contains("row 2") && found[0].1.contains(&format!("`{word}`")) && found[0].1.contains(why), "{}", found[0].1);
     }
-}
-
-/// A source whose `analog` block contributes `table_model(v(a), T, control)`, `T` being `samples` written out.
-fn table_model_source(samples: &str, count: usize, control: &str) -> String {
-    format!("const T: [(f64, f64); {count}] = [{samples}];\nmodule Top() {{ signal a: Electrical; }}\nanalog for Top {{ i(a) +> table_model(v(a), T, \"{control}\"); }}\n")
-}
-
-/// The codes and messages of elaborating `source` with `Top` as the top.
-fn refusals(source: &str) -> Vec<(String, String)> {
-    Elab::run(source, "Top").expect_err("the table model is refused").iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()
 }
 
 #[test]
@@ -311,7 +331,7 @@ fn a_bad_control_string_is_e0703() {
     // PI-10 AC 6, §22.2.15 rule 4: a control string that is not one interpolation character and up to two extrapolation characters is
     // `E0703`; the report names the string.
     for control in ["9", "", "1X", "1CLE", "C1"] {
-        let found = refusals(&table_model_source("(0.0, 0.0), (1.0, 1.0)", 2, control));
+        let found = Parsed::refusals(&Parsed::table_model_source("(0.0, 0.0), (1.0, 1.0)", 2, control));
         assert_eq!(found.len(), 1, "{control}: {found:?}");
         assert_eq!(found[0].0, "E0703", "{control}: {found:?}");
         assert!(found[0].1.contains(&format!("`{control}`")), "{}", found[0].1);
@@ -319,14 +339,14 @@ fn a_bad_control_string_is_e0703() {
     // every form of the table in §22.2.15 is accepted
     for control in ["D", "1", "2C", "3", "1LE", "3EC", "DCC"] {
         let samples = "(0.0, 0.0), (1.0, 1.0), (2.0, 4.0), (3.0, 9.0)";
-        Elab::run(&table_model_source(samples, 4, control), "Top").unwrap_or_else(|d| panic!("`{control}`: {:?}", Elab::codes(&d)));
+        Elab::run(&Parsed::table_model_source(samples, 4, control), "Top").unwrap_or_else(|d| panic!("`{control}`: {:?}", Elab::codes(&d)));
     }
 }
 
 #[test]
 fn non_increasing_abscissae_are_e0704() {
     // PI-10 AC 7, §22.2.15 rule 1: abscissae that do not strictly increase are `E0704` naming the first offending row (from 1).
-    let found = refusals(&table_model_source("(0.0, 0.0), (1.0, 1.0), (1.0, 2.0), (0.5, 3.0)", 4, "1"));
+    let found = Parsed::refusals(&Parsed::table_model_source("(0.0, 0.0), (1.0, 1.0), (1.0, 2.0), (0.5, 3.0)", 4, "1"));
     assert_eq!(found[0].0, "E0704", "{found:?}");
     assert!(found[0].1.contains("row 3"), "the first offending row is the third: {}", found[0].1);
 }
@@ -335,7 +355,7 @@ fn non_increasing_abscissae_are_e0704() {
 fn too_few_points_for_the_degree_is_e0704() {
     // PI-10 AC 7: a quadratic spline needs three points and a cubic one four.
     for (control, samples, count, needed) in [("2", "(0.0, 0.0), (1.0, 1.0)", 2, 3), ("3", "(0.0, 0.0), (1.0, 1.0), (2.0, 4.0)", 3, 4)] {
-        let found = refusals(&table_model_source(samples, count, control));
+        let found = Parsed::refusals(&Parsed::table_model_source(samples, count, control));
         assert_eq!(found[0].0, "E0704", "{control}: {found:?}");
         assert!(found[0].1.contains(&format!("at least {needed}")), "{}", found[0].1);
     }
@@ -344,7 +364,7 @@ fn too_few_points_for_the_degree_is_e0704() {
 #[test]
 fn a_one_row_table_under_d_is_e0704() {
     // PI-10 edge case: one sample is no table under `D` either.
-    let found = refusals(&table_model_source("(0.0, 1.0)", 1, "D"));
+    let found = Parsed::refusals(&Parsed::table_model_source("(0.0, 1.0)", 1, "D"));
     assert_eq!(found[0].0, "E0704", "{found:?}");
     assert!(found[0].1.contains("1 point"), "{}", found[0].1);
 }

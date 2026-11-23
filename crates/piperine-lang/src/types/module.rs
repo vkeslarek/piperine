@@ -436,6 +436,11 @@ impl Checker<'_> {
             };
             match param.and_then(|t| self.lower_type(t)) {
                 Some(ty @ (Ty::F64 | Ty::Bool | Ty::Module(_))) => self.check(field.value, &ty),
+                // a value of `T` bound to an `Option<T>` param is `Some` of it (§3.2.3, PI-03 AC 2)
+                Some(Ty::Option(inner)) => {
+                    let option = Ty::Option(inner.clone());
+                    self.option_argument(field.value, &option, &inner)
+                }
                 Some(plain) if self.is_param_type(&plain) => self.check(field.value, &plain),
                 _ => {
                     self.infer(field.value);

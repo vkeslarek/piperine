@@ -71,6 +71,9 @@ impl<'a> TableText<'a> {
             Some(suffix) if Self::scale(suffix).is_some() && token.len() > 1 => (&token[..token.len() - suffix.len_utf8()], Self::scale(suffix).unwrap_or(1.0)),
             _ => (token, 1.0),
         };
+        if scale != 1.0 && digits.contains(['e', 'E']) {
+            return Err(TableFault::format(self.source, row, token, "has an exponent and an SI suffix: Appendix A.2 rule 4 allows one or the other"));
+        }
         let literal = digits.strip_prefix(['+', '-']).unwrap_or(digits);
         let shaped = literal.chars().next().is_some_and(|c| c.is_ascii_digit() || c == '.') && literal.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | 'e' | 'E' | '+' | '-' | '_'));
         let value = shaped.then(|| digits.replace('_', "").parse::<f64>().ok()).flatten().ok_or_else(|| TableFault::format(self.source, row, token, "is not a real literal"))?;
