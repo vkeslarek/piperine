@@ -161,3 +161,10 @@ fn a_nature_generic_handle_function_type_checks_and_records_its_nature() {
     let discrete = "fn tick<N: Nature>(a: N) -> f64 { 1.0 }\nmodule Top() { signal c: Bit = false; signal o: Electrical; }\nanalog for Top { v(o) +> tick(c); }\n";
     assert_eq!(HandleSources::found(discrete), []);
 }
+
+#[test]
+fn a_carrier_generic_over_its_value_type_is_a_handle() {
+    // GN-11: `fn earlier<T: Repr>(a: Bit<T>) -> T` is a handle of a carrier whose value type is the parameter; `a.prev()` is a `T`
+    let src = "fn earlier<T: Repr>(a: Bit<T>) -> T { a.prev() }\nmodule Top() { signal c: Bit<u8> = 0; signal d: Bit<u8> = 1; }\ndigital for Top { on c.changed() { d <- earlier(c); } }\n";
+    assert_eq!(HandleSources::found(src), []);
+}

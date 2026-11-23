@@ -88,7 +88,8 @@ impl Checker<'_> {
                 self.unsupported(file, node.span, &format!("a carrier of the single-variant enum `{name}` (its tag has zero levels)"));
                 None
             }
-            v if self.repr_levels(v).is_some() => {
+            // a type parameter bound by `Repr` is a type with one (`fn f<T: Repr>(a: Bit<T>)`, §3.8.6)
+            v if self.repr_levels(v).is_some() || matches!(v, Ty::Param(param) if self.bounds_of(*param).contains(&super::Bound::Repr)) => {
                 self.reach_hand_written_repr(v);
                 Some(value)
             }

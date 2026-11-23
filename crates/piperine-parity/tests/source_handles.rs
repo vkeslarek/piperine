@@ -77,3 +77,10 @@ fn a_probing_function_runs_from_analog_and_a_reaction() {
     // GN-12 AC 1: `diff(a, b)` called from a reaction reads the solved nodes at the edge: 2.5 - 0.75
     RUN.assert_commits("discrete.msl", &["r3"], &[CarrierBytes::real(2.5 - 0.75)]);
 }
+
+#[test]
+fn a_handle_generic_over_the_value_of_its_carrier_calls_prev() {
+    // GN-11 AC 1: `earlier<T: Repr>(a: Bit<T>) -> T { a.prev() }` is a handle of any value type: for `clk` (`bool`) it is
+    // the value before the rising edge, for a `Bit<u8>` that never changed the value it started with
+    RUN.assert_commits("discrete.msl", &["r4", "r5"], &[CarrierBytes::byte(0), CarrierBytes::byte(7)]);
+}
