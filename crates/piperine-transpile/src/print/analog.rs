@@ -304,6 +304,14 @@ impl<'a> AnalogPrinter<'a> {
                 Expr::Carrier(c) => {
                     sources.insert(Source::Carrier(*c));
                 }
+                Expr::CarrierElement { carrier, index } | Expr::ElementChanged { carrier, index } => {
+                    sources.insert(Source::Carrier(*carrier));
+                    stack.push(*index);
+                }
+                Expr::ElementPrevious { carrier, index } => {
+                    sources.insert(Source::CarrierPrevious(*carrier));
+                    stack.push(*index);
+                }
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Fired(_) => {}
                 Expr::Derivative(k) => {
                     sources.insert(Source::Derivative(*k));

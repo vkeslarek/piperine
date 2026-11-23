@@ -33,6 +33,7 @@ use crate::model::{
 use crate::typing::Typing;
 
 mod aggregates;
+mod carrier_array;
 mod traits;
 
 /// One broken invariant: the item, where it was written, and what is wrong.
@@ -81,6 +82,8 @@ struct Owner {
     stims: usize,
     /// The carried types of the body's carriers.
     carriers: Vec<ValueType>,
+    /// The element count of each carrier that is an array of carriers, parallel to `carriers`.
+    counts: Vec<Option<u64>>,
     /// The field types of each of the body's streams.
     streams: Vec<Vec<ValueType>>,
     /// The number of the body's events.
@@ -290,6 +293,7 @@ impl<'a> Checker<'a> {
                     self.expr_id(&item, &site.origin, enabled);
                 }
             }
+            self.carrier_arrays(&item, body);
             for drive in &body.drives {
                 if drive.carrier as usize >= body.carriers.len() {
                     self.report(item.clone(), drive.origin.clone(), format!("drive of carrier {}, out of range ({} carriers)", drive.carrier, body.carriers.len()));
@@ -545,7 +549,7 @@ impl<'a> Checker<'a> {
             }
             Expr::Math { args, .. } => exprs.extend(args),
             Expr::Closure { body, .. } => exprs.push(*body),
-            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } => {
+            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::CarrierElement { .. } | Expr::ElementPrevious { .. } | Expr::ElementChanged { .. } => {
                 for &s in kind.statements() {
                     self.stmt_id(item, origin, s);
                 }
@@ -964,7 +968,7 @@ impl<'a> Checker<'a> {
                 Expr::Call { args, .. } | Expr::Math { args, .. } => stack_e.extend(args),
                 Expr::Method { receiver, args, .. } => stack_e.extend([*receiver].into_iter().chain(args.iter().copied())),
                 Expr::Closure { body, .. } => stack_e.push(*body),
-                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } => {
+                Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::CarrierElement { .. } | Expr::ElementPrevious { .. } | Expr::ElementChanged { .. } => {
                     stack_s.extend(data.kind.statements());
                     stack_e.extend(data.kind.operands());
                 }
@@ -1012,7 +1016,7 @@ impl<'a> Checker<'a> {
         for (k, event) in body.events.iter().enumerate() {
             let at = match event.source {
                 EventSource::At(e) => Some(e),
-                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) | EventSource::Settle => None,
+                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             };
             for e in event.guard.into_iter().chain(at) {
                 positions.push((format!("{item} event {k}"), event.origin.clone(), e));
@@ -1137,7 +1141,7 @@ impl<'a> Checker<'a> {
                 let cross = match e.source {
                     EventSource::Cross { e: x, ttol, etol } => [Some(x), ttol, etol],
                     EventSource::At(x) => [Some(x), None, None],
-                    EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle => [None; 3],
+                    EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => [None; 3],
                 };
                 cross.into_iter().flatten().chain(e.guard)
             }));
@@ -1222,6 +1226,7 @@ impl<'a> Checker<'a> {
                 limit_guards: body.limits.iter().map(|s| s.enabled.is_some()).collect(),
                 stims: body.stims.len(),
                 carriers: body.carriers.iter().map(|c| c.ty.clone()).collect(),
+                counts: body.carriers.iter().map(|c| c.count).collect(),
                 streams: body.streams.iter().map(|s| s.fields.iter().map(|f| f.ty.clone()).collect()).collect(),
                 events: body.events.len(),
                 derivatives: body.derivatives.len(),
@@ -1280,6 +1285,9 @@ impl<'a> Checker<'a> {
                         }
                     }
                     EventSource::At(e) => self.walk(&mut w, Task::Expr(e, Ctx::top())),
+                    EventSource::ElementChanged { carrier, element } => {
+                        self.element_event(&format!("body {} event {k}", body.name), &event.origin, body, carrier, element)
+                    }
                     EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle => {}
                 }
                 if let Some(guard) = event.guard {
@@ -1330,6 +1338,7 @@ impl<'a> Checker<'a> {
                 limit_guards: Vec::new(),
                 stims: 0,
                 carriers: Vec::new(),
+                counts: Vec::new(),
                 streams: Vec::new(),
                 events: 0,
                 derivatives: 0,
@@ -1477,7 +1486,7 @@ impl<'a> Checker<'a> {
                     next.push(Task::Expr(a.value, ctx));
                 }
             }
-            Stmt::Commit { carrier, value, after } => {
+            Stmt::Commit { carrier, value, after, .. } => {
                 match w.owner.carriers.get(*carrier as usize).cloned() {
                     Some(ty) => self.carried(w, *value, &ty, "the value of a commit"),
                     None => self.report(w.owner.item.clone(), origin.clone(), format!("commit to carrier {carrier}, out of range ({} carriers)", w.owner.carriers.len())),
@@ -1911,7 +1920,11 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin, "carrier read outside a body".to_string());
                     } else {
                         match w.owner.carriers.get(*i as usize) {
-                            Some(c) => self.own(w, &origin, ty, &Typing::read_of(c)),
+                            // an array of carriers read whole is the array of its elements' values (CV-24)
+                            Some(c) => match w.owner.counts.get(*i as usize).copied().flatten() {
+                                Some(count) => self.own(w, &origin, ty, &ValueType::Array(Box::new(c.clone()), count)),
+                                None => self.own(w, &origin, ty, &Typing::read_of(c)),
+                            },
                             None => self.wrong(w, origin, format!("carrier {i} out of range ({} carriers)", w.owner.carriers.len())),
                         }
                     }
@@ -1923,11 +1936,32 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin, "a previous-value read outside a body".to_string());
                     } else {
                         match w.owner.carriers.get(*i as usize) {
+                            Some(_) if w.owner.counts.get(*i as usize).copied().flatten().is_some() => {
+                                self.wrong(w, origin, format!("previous value of carrier {i}, an array of carriers: read one element's"));
+                            }
                             Some(c) => self.own(w, &origin, ty, &Typing::read_of(c)),
                             None => self.wrong(w, origin, format!("previous value of carrier {i}, out of range ({} carriers)", w.owner.carriers.len())),
                         }
                     }
                 }
+            }
+            Expr::CarrierElement { carrier, index } => {
+                if first {
+                    self.element_read(w, &origin, "an element read", *carrier, *index, ty, false);
+                }
+                next.push(Task::Expr(*index, ctx));
+            }
+            Expr::ElementPrevious { carrier, index } => {
+                if first {
+                    self.element_read(w, &origin, "an element's previous value", *carrier, *index, ty, false);
+                }
+                next.push(Task::Expr(*index, ctx));
+            }
+            Expr::ElementChanged { carrier, index } => {
+                if first {
+                    self.element_read(w, &origin, "an element's `changed()`", *carrier, *index, ty, true);
+                }
+                next.push(Task::Expr(*index, ctx));
             }
             Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } => self.looping(w, id, first, ctx, next),
             Expr::Break(value) => {

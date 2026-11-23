@@ -541,10 +541,10 @@ impl Structured {
         let node = |name: &str, role| BodyNode { name: name.into(), nature: el, role, init: None, origin: at(1) };
         let spec = |name: &str, nodes, children| BodySpec { name: name.into(), origin: at(1), params: vec![], nodes, branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children };
         let leaf = b.body(spec("Leaf", vec![node("p", NodeRole::Port), node("s", NodeRole::Signal)], vec![]));
-        let leaf_q = b.carrier(leaf, Carrier { name: "q".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: at(2) });
+        let leaf_q = b.carrier(leaf, Carrier { name: "q".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: at(2), count: None });
         let child = Child { name: "leaf".into(), body: leaf, nodes: vec![Terminal::Node(0), Terminal::Own(1)], params: vec![], origin: at(5) };
         let top_body = b.body(spec("Top", vec![node("a", NodeRole::Signal), node("mid", NodeRole::Reached)], vec![child]));
-        let seen = b.carrier(top_body, Carrier { name: "seen".into(), ty: ValueType::Bool, role: CarrierRole::Reached, init: None, origin: at(4) });
+        let seen = b.carrier(top_body, Carrier { name: "seen".into(), ty: ValueType::Bool, role: CarrierRole::Reached, init: None, origin: at(4), count: None });
         b.reach(top_body, Reach { child: 0, item: ReachedItem::Node { node: 1, child_node: 1 } });
         b.reach(top_body, Reach { child: 0, item: ReachedItem::Carrier { carrier: seen, child_carrier: leaf_q } });
         let top = b.next_instance_id();
@@ -790,6 +790,58 @@ fn each_composite_values_form_is_refused_by_name() {
         (vec![], [test, payload, part, fresh].into_iter().map(|e| b.stmt(Stmt::Expr(e))).collect())
     });
     assert_eq!(variants, ["a variant expression", "a variant test", "a variant field read", "an option pack", "an option part", "a default value"]);
+
+    // `mem[1]`, `mem[1].prev()` and `mem[1].changed()` read in the `analog` block, and `on mem[1].changed()` (CV-34,
+    // T70): each is named, after the carrier the body holds
+    let reads = CarrierArrays::refused(true, |b| {
+        let one = Dx::new(b, "ram.msl", 4, 5).int(1, Ty::u(8));
+        let value = b.expr(Expr::CarrierElement { carrier: 0, index: one }, Ty::u(8), Switching::at());
+        let before = b.expr(Expr::ElementPrevious { carrier: 0, index: one }, Ty::u(8), Switching::at());
+        let flag = b.expr(Expr::ElementChanged { carrier: 0, index: one }, ValueType::Bool, Switching::at());
+        vec![value, before, flag]
+    });
+    for name in ["an element read of an array of carriers", "an element's previous value", "an element's changed()", "an element event"] {
+        assert!(reads.iter().any(|entry| entry == name), "{name} is named: {reads:?}");
+    }
+}
+
+/// A design with a body `Ram` that holds an array carrier `mem` of four `u8`, for the forms of arrays of carriers.
+struct CarrierArrays;
+
+impl CarrierArrays {
+    /// What the interpreter names in `Ram` when its `analog` block runs `forms` (expressions over `mem`, built by
+    /// the caller) and an `on mem[1].changed()` event is added when `event` is set.
+    fn refused(event: bool, forms: impl FnOnce(&mut IrBuilder) -> Vec<ExprId>) -> Vec<String> {
+        let mut b = IrBuilder::new();
+        let el = Devices::electrical(&mut b);
+        let at = |line: u32| Origin { file: "ram.msl".into(), line, col: 1 };
+        let mut analog: Vec<StmtId> = forms(&mut b).into_iter().map(|e| b.stmt(Stmt::Expr(e))).collect();
+        analog.push(Switching::contribute(&mut b, QuantityRole::Flow, 1.0));
+        let body = b.body(BodySpec {
+            name: "Ram".into(),
+            origin: at(1),
+            params: vec![],
+            nodes: vec![BodyNode { name: "a".into(), nature: el, role: NodeRole::Port, init: None, origin: at(1) }],
+            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Ground, kind: BranchKind::Flow }],
+            limits: vec![],
+            stims: vec![],
+            locals: vec![],
+            analog: Some(analog),
+            children: vec![],
+        });
+        b.carrier(body, Carrier { name: "mem".into(), ty: Ty::u(8), role: CarrierRole::Signal, init: None, origin: at(2), count: Some(4) });
+        if event {
+            b.event(body, Event { source: EventSource::ElementChanged { carrier: 0, element: 1 }, guard: None, origin: at(3) });
+        }
+        let top = b.next_instance_id();
+        let net = b.net(NetSpec { path: "Ram.mem".into(), ty: Ty::u(8), declared_by: top, init: None, origin: at(2) });
+        let top = b.instance(InstanceSpec { path: "Ram".into(), name: "Ram".into(), body, parent: None, nodes: vec![NodeRef::Ground], params: vec![], origin: at(1) });
+        b.bind_nets(top, vec![net]);
+        let ir = b.finish(top);
+        assert_eq!(ir.check(), vec![], "the design itself is well formed");
+        let Err(rejected) = Interpreter::new(Arc::new(ir)) else { panic!("a design with an array of carriers was accepted") };
+        rejected.entries.iter().filter_map(|e| e.what.split_once(" holds ").map(|(_, rest)| rest.split(": ").next().unwrap_or("").to_string())).collect()
+    }
 }
 
 #[test]

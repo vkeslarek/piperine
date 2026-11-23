@@ -421,7 +421,7 @@ fn reactions_and_drives_read_the_environment_as_analog_code_does() {
     let mut commits = Vec::new();
     for (carrier, env, col) in [(1, Env::Temperature, 29), (2, Env::Gmin, 50), (3, Env::SourceScale, 64)] {
         let value = b.expr(Expr::Env(env), ValueType::F64, Buck::origin(A, 4, col));
-        commits.push(b.stmt(piperine_ir::Stmt::Commit { carrier, value, after: None }));
+        commits.push(b.stmt(piperine_ir::Stmt::Commit { carrier, value, after: None, target: None }));
     }
     Buck::reaction(&mut b, body, vec![changed], commits, vec![], A, 4);
     let ir = Arc::new(Alone::finish(b));

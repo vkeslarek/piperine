@@ -25,7 +25,7 @@ impl Elaboration<'_, '_> {
         };
         match (carrier, value, after) {
             (Some(carrier), Some(value), Some(after)) => {
-                out.push(self.stmt(Stmt::Commit { carrier, value, after }));
+                out.push(self.stmt(Stmt::Commit { carrier, value, after, target: None }));
                 true
             }
             _ => false,

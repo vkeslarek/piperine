@@ -283,9 +283,9 @@ T86 → T87 → T88 → T89 → T90
 
 **Done when**:
 
-- [ ] `element_forms_are_checked_against_the_array` passes under `**Run irarr**`
-- [ ] `each_composite_values_form_is_refused_by_name` passes under `**Run interp**` with the three expressions and the event source added
-- [ ] Gate check passes: Task (`piperine-ir`, `piperine-interp`)
+- [x] `element_forms_are_checked_against_the_array` passes under `**Run irarr**`
+- [x] `each_composite_values_form_is_refused_by_name` passes under `**Run interp**` with the three expressions and the event source added
+- [x] Gate check passes: Task (`piperine-ir`, `piperine-interp`)
 
 **Tests**: integration
 **Gate**: task
@@ -838,6 +838,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **T68 notes:** the plan variants are `Binding::ArrayElement`/`ArrayWindow` and `Site::ArrayElement`/`ArrayWindow` (the guard `removed_surface.rs::the_element_contract_is_gone` forbids the whole word `Element` in solver sources); an analog function reading a pin on an array element or window fails loud at bind (no analog slot for one element yet).
 **T69 notes:** `CommitSink`/`ElementSink` carry an `offset` relative to the statement's declared range (`React::commit_at`, `commit_element_at`), and the thunk adds the statement's own offset: a statement over a field range now commits correctly (before, the thunk always passed offset 0). `rt/array.rs` is part of every digital design's runtime files (`Runtime::files`).
 **C1 batch gate (T64 to T69), 2026-11-23:** `cargo test --workspace --exclude piperine-lang-server --no-fail-fast` ran 343 targets with ONE failure, `crates/piperine-cli/tests/book.rs::every_cli_listing_of_the_book_is_what_the_binary_prints` (the Book listing `monitor.msl` uses `Bit<Logic<4>>`, which the binary refuses `P0001` "generic arguments on `Logic`, which has no generic parameter"); phase C changed nothing under `crates/piperine-lang`, `crates/piperine-cli` or `docs` (`git diff origin/main --stat` is empty there), so it is red on `origin/main` too (the generics A-B merge), not caused by this phase. `cargo test -p piperine-parity -- --nocapture` exit 0, `cargo test -p piperine-cli --test twins` exit 0, the seven buck targets exit 0, `cargo test -p piperine --test buck_scenarios` exit 0. The disk hit 100% once (test temp dirs in TMPDIR); `/var/tmp/piperine-tmp-d` is cleared before each gate.
+**T70 notes:** the checks live in `piperine-ir/src/check/carrier_array.rs`; a whole read of an array carrier is typed `[T; K]` and `Expr::Previous` of one is refused (`x.prev()` on the whole array is E0211 at the language level); `NodeArray` and `CarrierWindow` are set through `IrBuilder::node_array`/`bind_child_windows` (no `BodySpec` field); the net of an array carrier keeps the element type (`NetSpec` gained no `count`: the carrier holds it). Interim until T72/T73: the plan panics on an element event and the printer returns `Unsupported` for an element form or a commit with a target (both replaced by those tasks). The interpreter names four new forms (`an element read of an array of carriers`, `an element's previous value`, `an element's changed()`, `an element event`).
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 

@@ -154,7 +154,7 @@ impl Elaboration<'_, '_> {
             None => None,
         };
         let name = format!("{}{name}", self.frames[frame].prefix);
-        Some(Carrier { name, ty, role, init, origin: self.locator.decl(decl) })
+        Some(Carrier { name, ty, role, init, origin: self.locator.decl(decl), count: None })
     }
 
     /// The initial value of a carrier, folded: a constant expression over literals, `const`s and the

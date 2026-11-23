@@ -57,6 +57,7 @@ impl Elaboration<'_, '_> {
             Expr::Probe { .. } | Expr::Flow { .. } | Expr::Derivative(_) | Expr::Env(Env::Time | Env::Static | Env::Gmin | Env::SourceScale | Env::Freq) => true,
             Expr::Env(Env::Temperature | Env::Analysis(_)) | Expr::Fired(_) | Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::ParamPrevious(_) | Expr::Int(_) | Expr::Carrier(_) | Expr::Previous(_) => false,
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Table { x: expr, .. } | Expr::TableSlope { x: expr, .. } => self.continuous(*expr),
+            Expr::CarrierElement { index, .. } | Expr::ElementPrevious { index, .. } | Expr::ElementChanged { index, .. } => self.continuous(*index),
             Expr::Binary { lhs, rhs, .. } => any(&[*lhs, *rhs]),
             Expr::Unwrap { is, value, .. } => any(&[*is, *value]),
             Expr::Same { a, b } => any(&[*a, *b]),

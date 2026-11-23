@@ -508,19 +508,19 @@ impl<'a> Walk<'a> {
             };
             crosses.push(one(match event.source {
                 EventSource::Cross { e, .. } => Some(e),
-                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             }));
             ttols.push(one(match event.source {
                 EventSource::Cross { ttol, .. } => ttol,
-                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             }));
             etols.push(one(match event.source {
                 EventSource::Cross { etol, .. } => etol,
-                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle => None,
+                EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             }));
             ats.push(one(match event.source {
                 EventSource::At(e) => Some(e),
-                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) | EventSource::Settle => None,
+                EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             }));
             guards.push(one(event.guard));
         }
@@ -878,7 +878,7 @@ impl<'a> Walk<'a> {
             }
             Expr::Call { args, .. } | Expr::Math { args, .. } => next.extend(args.iter().map(|&a| Task::Expr(a))),
             // An aggregate is one abstract value: what its parts read (`finish`).
-            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } => {
+            Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::CarrierElement { .. } | Expr::ElementPrevious { .. } | Expr::ElementChanged { .. } => {
                 next.extend(ir.exprs[id.index()].kind.operands().into_iter().map(Task::Expr));
             }
             Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } => return self.begin_loop(id, next),
@@ -981,6 +981,17 @@ impl<'a> Walk<'a> {
             Expr::Method { args, .. } => {
                 let values = self.pop_n(1 + args.len());
                 Value::nonlinear(&values)
+            }
+            // An element read is a read of its carrier (CV-24) and of what its index reads.
+            Expr::CarrierElement { carrier, .. } | Expr::ElementPrevious { carrier, .. } | Expr::ElementChanged { carrier, .. } => {
+                let values = self.pop_n(1);
+                let mut value = Value::nonlinear(&values);
+                if matches!(ir.exprs[id.index()].kind, Expr::ElementPrevious { .. }) {
+                    value.sources.previous.insert(*carrier);
+                } else {
+                    value.sources.carriers.insert(*carrier);
+                }
+                value
             }
             // An aggregate and each of its projections read everything its parts read.
             Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) | Expr::Table { .. } | Expr::TableSlope { .. } => {

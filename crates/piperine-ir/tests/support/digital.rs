@@ -142,7 +142,7 @@ impl<'b> Dx<'b> {
 
     /// `carrier <- value;`, or `carrier <- value after delay;`.
     pub fn commit(&mut self, carrier: u32, value: ExprId, after: Option<ExprId>) -> StmtId {
-        self.b.stmt(Stmt::Commit { carrier, value, after })
+        self.b.stmt(Stmt::Commit { carrier, value, after, target: None })
     }
 
     /// `if cond { stmts }` with no `else`: the `else` is `()`, as `piperine-lang` lowers it.
@@ -210,7 +210,7 @@ impl Buck {
     }
 
     pub fn carrier(name: &str, ty: ValueType, role: CarrierRole, init: Option<Constant>, file: &str, line: u32, col: u32) -> Carrier {
-        Carrier { name: name.into(), ty, role, init, origin: Buck::origin(file, line, col) }
+        Carrier { name: name.into(), ty, role, init, origin: Buck::origin(file, line, col), count: None }
     }
 
     /// The `Electrical` nature of `std/carriers.msl`, added once per builder.

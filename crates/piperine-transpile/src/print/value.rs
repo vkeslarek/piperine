@@ -531,6 +531,7 @@ impl<'a> ValuePrinter<'a> {
     pub(crate) fn children(ir: &Ir, expr: &Expr, out: &mut Vec<ExprId>) {
         match expr {
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Table { x: expr, .. } | Expr::TableSlope { x: expr, .. } => out.push(*expr),
+            Expr::CarrierElement { index, .. } | Expr::ElementPrevious { index, .. } | Expr::ElementChanged { index, .. } => out.push(*index),
             Expr::Unwrap { is, value, .. } => out.extend([*is, *value]),
             Expr::Same { a, b } => out.extend([*a, *b]),
             Expr::LevelCast { expr, .. } => out.push(*expr),
@@ -696,6 +697,9 @@ impl<'a> ValuePrinter<'a> {
             Expr::Unwrap { is, value, message } => {
                 let message = message.as_ref().map_or_else(|| "None".to_string(), |m| format!("Some({m:?})"));
                 atom(format!("rt::Unwrap::of({}, {}, {message})", self.expr(*is)?, self.expr(*value)?))
+            }
+            Expr::CarrierElement { .. } | Expr::ElementPrevious { .. } | Expr::ElementChanged { .. } => {
+                Err(self.unsupported(e, "an element of an array of carriers (printed by `print/carrier_array.rs`)"))
             }
             Expr::Carrier(c) => match self.analog.as_ref().and_then(|r| r.carriers.get(*c as usize)) {
                 Some(name) => Ok(self.carrier_value(e, self.read(name))),
@@ -1052,7 +1056,10 @@ impl<'a> ValuePrinter<'a> {
             Stmt::Assign { place, op, value } => self.assign(place, *op, *value),
             Stmt::BoundStep { value, .. } => Err(self.unsupported(*value, "`bound_step` outside the top level of the `analog` block")),
             Stmt::Emit { stream, fields } => self.emit(s, *stream, fields),
-            Stmt::Commit { carrier, value, after } => {
+            Stmt::Commit { carrier, value, after, target } => {
+                if target.is_some() {
+                    return Err(self.unsupported(*value, "an element or field commit (printed by `print/carrier_array.rs`)"));
+                }
                 if !self.commits {
                     return Err(Error::Unsupported {
                         form: "commit".into(),

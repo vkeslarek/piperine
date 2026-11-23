@@ -207,7 +207,7 @@ impl Switching {
             analog: Some(analog),
             children: vec![],
         });
-        b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone() });
+        b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone(), count: None });
         for site in derivatives {
             b.derivative(body, site);
         }
@@ -292,7 +292,7 @@ fn a_contribution_in_a_function_or_a_reaction_is_broken() {
         analog: None,
         children: vec![],
     });
-    b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone() });
+    b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone(), count: None });
     let event = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Changed(0), guard: None, origin: origin.clone() });
     b.reaction(body, Reaction { on: vec![event], stmts: vec![inside], locals: vec![], origin: origin.clone() });
     let top = b.next_instance_id();
@@ -582,13 +582,13 @@ impl Placements {
         let mut b = IrBuilder::new();
         let el = Devices::electrical(&mut b);
         let leaf = b.body(Self::body("Leaf", vec![Self::node("p", NodeRole::Port, el), Self::node("s", NodeRole::Signal, el)], vec![]));
-        let leaf_q = b.carrier(leaf, Carrier { name: "q".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: Self::at(2) });
+        let leaf_q = b.carrier(leaf, Carrier { name: "q".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: Self::at(2), count: None });
         let top_body = b.body(Self::body(
             "Top",
             vec![Self::node("a", NodeRole::Signal, el), Self::node("mid", NodeRole::Reached, el)],
             vec![Self::child("leaf", leaf, vec![Terminal::Node(0), Terminal::Own(1)])],
         ));
-        let seen = b.carrier(top_body, Carrier { name: "seen".into(), ty: ValueType::Bool, role: CarrierRole::Reached, init: None, origin: Self::at(4) });
+        let seen = b.carrier(top_body, Carrier { name: "seen".into(), ty: ValueType::Bool, role: CarrierRole::Reached, init: None, origin: Self::at(4), count: None });
         b.reach(top_body, Reach { child: 0, item: ReachedItem::Node { node: 1, child_node: 1 } });
         b.reach(top_body, Reach { child: 0, item: ReachedItem::Carrier { carrier: seen, child_carrier: leaf_q } });
         if drive {
@@ -708,10 +708,10 @@ impl ParamEvents {
         let mut b = IrBuilder::new();
         let origin = Origin { file: "param_events.msl".into(), line: 1, col: 1 };
         let value = value(&mut b);
-        let commit = b.stmt(Stmt::Commit { carrier: 0, value, after: None });
+        let commit = b.stmt(Stmt::Commit { carrier: 0, value, after: None, target: None });
         let tolerance = Param { name: "tol".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
         let body = b.body(BodySpec { name: "Lag".into(), origin: origin.clone(), params: vec![tolerance], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
-        b.carrier(body, Carrier { name: "seen".into(), ty: seen_ty.clone(), role: CarrierRole::Out, init: None, origin: origin.clone() });
+        b.carrier(body, Carrier { name: "seen".into(), ty: seen_ty.clone(), role: CarrierRole::Out, init: None, origin: origin.clone(), count: None });
         let event = b.event(body, Event { source, guard: None, origin: Self::at() });
         b.reaction(body, Reaction { on: vec![event], stmts: vec![commit], locals: vec![], origin: Self::at() });
         let top = b.next_instance_id();

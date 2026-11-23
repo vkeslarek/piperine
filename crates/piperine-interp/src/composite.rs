@@ -13,14 +13,14 @@ pub(crate) struct CompositeForms<'a> {
     /// The body being walked.
     body: Body<'a>,
     /// The forms met so far, by their position in `CompositeForms::NAMES`.
-    met: [bool; 23],
+    met: [bool; 27],
     /// The functions the body calls or names, in the order the walk first met them.
     reached: Vec<FunctionId>,
 }
 
 impl<'a> CompositeForms<'a> {
     /// The name of each form, in the order the refusal lists them.
-    const NAMES: [&'static str; 23] = [
+    const NAMES: [&'static str; 27] = [
         "an assignment",
         "a loop",
         "a while loop",
@@ -44,18 +44,22 @@ impl<'a> CompositeForms<'a> {
         "an option part",
         "a default value",
         "a table model",
+        "an element read of an array of carriers",
+        "an element's previous value",
+        "an element's changed()",
+        "an element event",
     ];
 
     /// The forms `body` holds, each once, in a fixed order.
     pub(crate) fn of(body: Body<'a>) -> Vec<&'static str> {
-        let mut forms = CompositeForms { body, met: [false; 23], reached: Vec::new() };
+        let mut forms = CompositeForms { body, met: [false; 27], reached: Vec::new() };
         forms.walk();
         Self::NAMES.into_iter().zip(forms.met).filter_map(|(name, met)| met.then_some(name)).collect()
     }
 
     /// The functions `body` evaluates (called or named, transitively), each once.
     pub(crate) fn reached_functions(body: Body<'a>) -> Vec<FunctionId> {
-        let mut forms = CompositeForms { body, met: [false; 23], reached: Vec::new() };
+        let mut forms = CompositeForms { body, met: [false; 27], reached: Vec::new() };
         forms.walk();
         forms.reached
     }
@@ -74,6 +78,8 @@ impl<'a> CompositeForms<'a> {
                 EventSource::Cross { e, ttol, etol } => exprs.extend([e].into_iter().chain(ttol).chain(etol)),
                 EventSource::At(e) => exprs.push(e),
                 EventSource::Changed(_) | EventSource::ParamChanged(_) | EventSource::Settle => {}
+                // an element event: `on x[k].changed()`
+                EventSource::ElementChanged { .. } => self.met[26] = true,
             }
         }
         stmts.extend(body.reactions().iter().flat_map(|reaction| reaction.stmts.iter().copied()));
@@ -143,6 +149,9 @@ impl<'a> CompositeForms<'a> {
             Expr::Default(_) => Some(21),
             // `table_model` and its slope (PI-10, T40): the interpreter does not run a table
             Expr::Table { .. } | Expr::TableSlope { .. } => Some(22),
+            Expr::CarrierElement { .. } => Some(23),
+            Expr::ElementPrevious { .. } => Some(24),
+            Expr::ElementChanged { .. } => Some(25),
             _ => None,
         }
     }

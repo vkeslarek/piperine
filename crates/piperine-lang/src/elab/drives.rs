@@ -87,7 +87,7 @@ impl Elaboration<'_, '_> {
         let origin = self.expr_origin(value);
         let (lowered, _) = self.lower_drive_value(scope, value, None, Some(&ty))?;
         let name = format!("{}{instance}.{port_name}", self.frames[scope.frame].prefix);
-        let carrier = self.add_carrier(Carrier { name, ty, role: CarrierRole::Signal, init: None, origin: origin.clone() });
+        let carrier = self.add_carrier(Carrier { name, ty, role: CarrierRole::Signal, init: None, origin: origin.clone(), count: None });
         self.structure.drives.push(Drive { carrier, value: lowered, after: None, origin });
         Some(carrier)
     }

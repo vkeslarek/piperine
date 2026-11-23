@@ -214,6 +214,7 @@ impl<'a> DigitalPrinter<'a> {
                     EventSource::At(_) => (self.names.read_name(Source::Timer(e)), format!("its timer fired (event {e})")),
                     // §13 rule 17: the `SETTLE` pin's `CHANGED` byte, which the engine fires in the settle phase (§15 step 4)
                     EventSource::Settle => (self.names.read_name(Source::Settle), "the settle phase runs".to_string()),
+                    EventSource::ElementChanged { .. } => return Err(self.unsupported("an element event (printed by `print/carrier_array.rs`)")),
                 };
                 (source, event.guard, event.origin.clone(), what)
             }

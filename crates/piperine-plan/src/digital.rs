@@ -631,6 +631,8 @@ impl Digital {
                 EventSource::Settle => {
                     set.0.insert(Source::Settle);
                 }
+                // planned by `array.rs` (composite-values T72)
+                EventSource::ElementChanged { .. } => panic!("an element event reaches the plan before `array.rs` plans it"),
             }
             add(s, format!("event:{k}"), &e.origin, BodyPlan::function(Mode::Event(k), &set, vec![(Target::EventPin(k), None)]));
         }
