@@ -1,0 +1,28 @@
+//! Two impls of one trait for one type, written with different trait arguments, and bounds that name each (GN-04); the
+//! expected values are computed by Rust in `source_generics.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+trait Convert<T> { fn to(self) -> T; }
+struct Cell;
+impl Convert<f64> for Cell { fn to(self) -> f64 { 1.5 } }
+impl Convert<u8> for Cell { fn to(self) -> u8 { 7 } }
+
+fn as_real<C: Convert<f64>>(c: C) -> f64 { c.to() }
+fn as_byte<C: Convert<u8>>(c: C) -> u8 { c.to() }
+
+module Rows(in clk: Bit, out a0: Bit<f64> = 9.0, out a1: Bit<u8> = 9) {}
+digital for Rows {
+    on clk.rise() {
+        a0 <- as_real(Cell);
+        a1 <- as_byte(Cell);
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal a0: Bit<f64>; signal a1: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, a0, a1);
+}

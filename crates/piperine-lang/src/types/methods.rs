@@ -137,6 +137,12 @@ impl Checker<'_> {
         }
         let (own, rest) = params.split_first()?;
         let mut substitution = self.impl_substitution(expr, function, own, recv_ty, file, span)?;
+        // a call through a bound that writes the trait's arguments (`C: Convert<f64>`): they stand for the trait's parameters
+        if let Some(bound) = self.bound_substitution.take() {
+            for (parameter, value) in bound.entries() {
+                substitution.bind(parameter, value.clone());
+            }
+        }
         // a function a trait declares has `Self` for its receiver: the receiver's type stands for it
         if let Ty::Param(owner) = own
             && matches!(self.design.decl_data(*owner).kind, DeclKind::Trait(_))

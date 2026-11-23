@@ -698,7 +698,8 @@ impl<'d, 't> ConstEval<'d, 't> {
         // instance being evaluated: its const parameters are values in the body (GN-01, GN-14)
         let outer = match self.types.instantiation(expr).cloned() {
             Some(instantiation) => {
-                let substitution = self.instantiation_substitution(&instantiation);
+                // a type argument can nest as deep as the instantiation chain does (D7): the walk over it has its own stack
+                let substitution = crate::stack::wide(|| self.instantiation_substitution(&instantiation));
                 Some(self.set_substitution(substitution))
             }
             None => None,

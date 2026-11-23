@@ -12,7 +12,7 @@ use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericParamDa
 use super::check::Checker;
 use super::derives::DerivedTrait;
 use super::generics::{Bound, GenericSignature};
-use super::{ConstTerm, Length, Ty};
+use super::{ConstTerm, GenericValue, Length, Substitution, Ty};
 
 /// Whether a type satisfies a bound (§3.8.7).
 pub(super) struct BoundCheck<'c, 'd> {
@@ -195,7 +195,19 @@ impl Checker<'_> {
     /// typed, so the one mistake is one diagnostic.
     pub(super) fn parameter_method(&mut self, param: DeclId, name: &str, method_span: Span, args: &[Arg], file: FileId, call: (ExprId, ExprId)) -> Option<Ty> {
         // a method a project trait gives: through a bound of the parameter, or the trait itself for its `Self`
-        if let Some(function) = self.trait_method_of(param, name) {
+        if let Some((function, trait_arguments)) = self.trait_method_of(param, name) {
+            // the arguments the bound writes for the trait's own parameters (`C: Convert<f64>`) replace them in the
+            // signature, and the elaborator picks the `impl` of that argument list (GN-04)
+            let wanted: Option<Vec<Ty>> = trait_arguments.iter().map(|argument| self.lower_type(*argument)).collect();
+            if let (Some(wanted), Some(trait_decl)) = (wanted.filter(|wanted| !wanted.is_empty()), self.design.decl_data(function).parent) {
+                let signature = self.generic_signature(trait_decl);
+                let mut bound = Substitution::new();
+                for (parameter, argument) in signature.parameters().iter().zip(&wanted) {
+                    bound.bind(parameter.decl, GenericValue::Type(argument.clone()));
+                }
+                self.bound_substitution = Some(bound);
+                self.bound_arguments.insert(call.0, wanted);
+            }
             return self.method_call_of(call.0, call.1, &Ty::Param(param), function, args);
         }
         if name == "encode" && self.bounds_of(param).contains(&Bound::Repr) {
@@ -221,15 +233,16 @@ impl Checker<'_> {
 
     /// The function `name` a trait gives a value of the type parameter `param`: an item of a trait that
     /// bounds it (supertraits included), or, when `param` is a trait's own `Self`, of that trait.
-    fn trait_method_of(&self, param: DeclId, name: &str) -> Option<DeclId> {
-        let own = matches!(self.design.decl_data(param).kind, DeclKind::Trait(_)).then_some(param);
-        let bounded = self.bounds_of(param).into_iter().filter_map(|bound| if let Bound::Trait { decl, .. } = bound { Some(decl) } else { None });
-        let mut pending: Vec<DeclId> = own.into_iter().chain(bounded).collect();
-        while let Some(tr) = pending.pop() {
+    fn trait_method_of(&self, param: DeclId, name: &str) -> Option<(DeclId, Vec<TypeId>)> {
+        let own = matches!(self.design.decl_data(param).kind, DeclKind::Trait(_)).then_some((param, Vec::new()));
+        let bounded = self.bounds_of(param).into_iter().filter_map(|bound| if let Bound::Trait { decl, arguments } = bound { Some((decl, arguments)) } else { None });
+        let mut pending: Vec<(DeclId, Vec<TypeId>)> = own.into_iter().chain(bounded).collect();
+        while let Some((tr, arguments)) = pending.pop() {
             if let Some(item) = self.impls.item(tr, name).filter(|item| matches!(self.design.decl_data(*item).kind, DeclKind::Fn(_))) {
-                return Some(item);
+                return Some((item, arguments));
             }
-            pending.extend(self.impls.supertraits(tr));
+            // a supertrait's arguments are its own, not the bound's
+            pending.extend(self.impls.supertraits(tr).into_iter().map(|supertrait| (supertrait, Vec::new())));
         }
         None
     }

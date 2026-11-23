@@ -357,3 +357,33 @@ fn a_const_context_reads_the_const_generic_arguments() {
     // array repeats `[x; N]` for that argument: `count::<3>()` is 3 and `filled::<4>()`, four elements of 1.5, sums to 6.0
     RUN.assert_commits("functions.msl", &["r10", "r11"], &[CarrierBytes::byte(count::<3>()), CarrierBytes::real(table_total([1.5; 4]))]);
 }
+
+/// `struct Cell` and its two `Convert` impls of the model `trait_args.msl`.
+trait Convert<T> {
+    /// The conversion.
+    fn to(self) -> T;
+}
+
+/// `struct Cell;` of the model.
+#[derive(Clone, Copy)]
+struct Cell;
+
+impl Convert<f64> for Cell {
+    fn to(self) -> f64 {
+        1.5
+    }
+}
+
+impl Convert<u8> for Cell {
+    fn to(self) -> u8 {
+        7
+    }
+}
+
+#[test]
+fn a_bound_that_writes_the_trait_arguments_runs_the_impl_of_that_list() {
+    // GN-04 AC 5: `as_real<C: Convert<f64>>` and `as_byte<C: Convert<u8>>` call the two impls of one type, each with its
+    // own result type
+    let (real, byte): (f64, u8) = (Convert::<f64>::to(Cell), Convert::<u8>::to(Cell));
+    RUN.assert_commits("trait_args.msl", &["a0", "a1"], &[CarrierBytes::real(real), CarrierBytes::byte(byte)]);
+}

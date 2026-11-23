@@ -110,6 +110,10 @@ pub(super) struct Checker<'d> {
     pub(super) poisoned: BTreeSet<DeclId>,
     /// The parameters of functions that are handles: a node or a carrier of a nature (`handles.rs`).
     pub(super) handles: BTreeSet<DeclId>,
+    /// The arguments a bound writes for its trait, set for the call through it being typed (`bounds.rs`).
+    pub(super) bound_substitution: Option<super::Substitution>,
+    /// The arguments of the trait bound each call through a bound names, by call (`Types::bound_arguments`).
+    pub(super) bound_arguments: BTreeMap<ExprId, Vec<Ty>>,
     /// How many definitions the check is inside: their values are not read from the solve (`classes.rs`).
     pub(super) in_definition: u32,
     /// Set while the `where` of a `fn` is checked: its parameters are not in scope (§3 rule 8).
@@ -187,6 +191,8 @@ impl<'d> Checker<'d> {
             event_reads: BTreeSet::new(),
             poisoned: BTreeSet::new(),
             handles: BTreeSet::new(),
+            bound_substitution: None,
+            bound_arguments: BTreeMap::new(),
             in_definition: 0,
             fn_where: false,
             places: Places::default(),
@@ -230,7 +236,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned() })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, bound_arguments: self.bound_arguments, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned() })
     }
 
     /// Check every declaration of `items`, and what they reach, and keep only the diagnostics, in

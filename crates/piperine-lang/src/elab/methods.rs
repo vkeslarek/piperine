@@ -45,12 +45,34 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_bound_call(&mut self, scope: &mut Scope, expr: ExprId, item: DeclId, receiver: ExprId, arguments: &[ExprId], origin: piperine_ir::Origin) -> Option<LoweredExpr> {
         let span = self.design.expr_node(expr).span;
         let receiver_type = self.typed(receiver)?;
-        let table = &self.impls;
-        let Some(target) = table.implementation(item, &receiver_type, &mut |ty, bound| Self::bound_holds(table, ty, bound)) else {
+        let Some(target) = self.bound_implementation(expr, item, &receiver_type) else {
             self.unsupported(scope.file, span, "a method call through a bound that no impl gives for this type");
             return None;
         };
         self.lower_method_call(scope, expr, target, receiver, arguments, origin)
+    }
+
+    /// The item that runs for the call `expr` of the trait function `item` through a bound, on a receiver of type `receiver`:
+    /// of the `impl`s of the trait that apply to the type, the first written with the arguments the bound names
+    /// (`C: Convert<f64>` picks `impl Convert<f64> for Cell`, not `impl Convert<u8> for Cell`); the trait's own body
+    /// when that `impl` leaves the function out and the trait gives one.
+    fn bound_implementation(&mut self, expr: ExprId, item: DeclId, receiver: &Ty) -> Option<DeclId> {
+        let wanted: Vec<Ty> = self.types.bound_arguments(expr).iter().map(|ty| self.consts.substitution().apply(ty)).collect();
+        let trait_decl = self.design.decl_data(item).parent?;
+        let name = self.design.decl_data(item).name.as_ref()?.text.clone();
+        let table = &self.impls;
+        let entries: Vec<(DeclId, Vec<crate::pom::TypeId>)> = table.implementing(receiver, trait_decl, &mut |ty, bound| Self::bound_holds(table, ty, bound)).into_iter().map(|entry| (entry.decl, entry.trait_arguments.clone())).collect();
+        let chosen = entries.into_iter().find(|(_, arguments)| {
+            wanted.is_empty() || {
+                let given: Option<Vec<Ty>> = arguments.iter().map(|argument| self.typed_written(*argument)).collect();
+                given.is_some_and(|given| given == wanted)
+            }
+        })?;
+        match self.impls.item(chosen.0, &name) {
+            Some(own) => Some(own),
+            None if self.impls.has_default(item) => Some(item),
+            None => None,
+        }
     }
 
     /// Whether `ty` satisfies `bound` for choosing among the `impl`s of the design: a trait bound is met by an `impl`

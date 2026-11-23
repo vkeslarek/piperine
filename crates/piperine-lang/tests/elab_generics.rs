@@ -177,3 +177,13 @@ fn the_pom_keeps_the_generic_function_as_written() {
     assert!(Declarations::written_generic(&design, "pick::<f64>").is_empty() && Declarations::written_generic(&design, "pick::<u8>").is_empty(), "no declaration for an instance");
     assert_eq!(IrFunctions::names(&ir).len(), 2, "the instances are IR functions");
 }
+
+#[test]
+fn a_bound_that_writes_the_trait_arguments_picks_the_impl_of_that_list() {
+    // GN-04 AC 5, T36: two `impl`s of `Convert<T>` for one type, `Convert<f64>` and `Convert<u8>`, are two IR functions,
+    // and a call through `C: Convert<f64>` or `C: Convert<u8>` runs the one of its list (the bound's argument also gives
+    // the result its type)
+    let items = "trait Convert<T> { fn to(self) -> T; }\nstruct Cell;\nimpl Convert<f64> for Cell { fn to(self) -> f64 { 1.5 } }\nimpl Convert<u8> for Cell { fn to(self) -> u8 { 7 } }\nfn as_real<C: Convert<f64>>(c: C) -> f64 { c.to() }\nfn as_byte<C: Convert<u8>>(c: C) -> u8 { c.to() }";
+    let ir = IrFunctions::of(items, "v(o) +> as_real(Cell) + as_byte(Cell) as f64;");
+    assert_eq!(IrFunctions::names(&ir), ["as_real::<Cell>", "Cell.to::<f64>", "as_byte::<Cell>", "Cell.to::<u8>"]);
+}

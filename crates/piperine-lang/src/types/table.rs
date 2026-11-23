@@ -217,6 +217,8 @@ pub struct Types<'d> {
     pub(super) obligations: BTreeMap<DeclId, Vec<super::Obligation>>,
     /// The parameters of the functions of the check that are handles (`handles.rs`).
     pub(super) handles: std::collections::BTreeSet<DeclId>,
+    /// The arguments of the trait bound each call through a bound names (`bounds.rs`).
+    pub(super) bound_arguments: BTreeMap<ExprId, Vec<Ty>>,
     pub(super) instantiations: BTreeMap<ExprId, Instantiation>,
     pub(super) continuous: BTreeSet<ExprId>,
     pub(super) emits: BTreeMap<DeclId, BTreeSet<String>>,
@@ -399,6 +401,12 @@ impl<'d> Types<'d> {
     /// the argument of each parameter, inferred or written, defaults filled in.
     pub fn instantiation(&self, call: ExprId) -> Option<&Instantiation> {
         self.instantiations.get(&call)
+    }
+
+    /// The arguments the bound writes for its trait in the call `call` of a method through a bound (`C: Convert<f64>`
+    /// gives `[f64]`); empty for a trait with none. The call's `impl` is the one of that argument list (GN-04).
+    pub fn bound_arguments(&self, call: ExprId) -> &[Ty] {
+        self.bound_arguments.get(&call).map_or(&[], Vec::as_slice)
     }
 
     /// Whether the function parameter `param` is a handle: it stands for the carrier the caller passes (§3.1.5).
