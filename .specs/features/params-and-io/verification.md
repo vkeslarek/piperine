@@ -1,9 +1,192 @@
-# Params and I/O verification (B1 to B4)
+# Params and I/O verification
 
-**Verdict**: PASS (B1 to B4; B5 and B6 deferred, so the gate cannot exit 0 until they land)
-**Proofs**: `proofs.md` at 0bed6a92 (fix round; first run a28fdf9b) (B1 to B4: every in-scope check passes; the 52 failing rows are the B5/B6 checks, whose tests do not exist yet, and `Run sourcetables`, a target T41 creates)
+**Verdict**: FAIL
+**Proofs**: `proofs.md` at acefa2f6 (B5, B6 and the closure: 112 pass, 3 fail - C59 no test ran, C70 and `Run typesunknowns` exit 101); round 1 (B1 to B4) at 0bed6a92
 **Verifier**: independent sub-agent (author != verifier)
-**Scope**: batches B1 to B4 (T1 to T28) only. B5 and B6 (T29 to T44: integer, enum and `Option` params, `E0122` for named functions, `parse_table`, `parse_hex`, `table_model`) wait on `composite-values` and are marked "deferred", not judged; `validate_verification.py` cannot pass until they land.
+**Scope**: round 2 judges batches B5 and B6 (T29 to T44) and the feature's closure, over `git diff origin/main...HEAD` (37911891..acefa2f6, 18 commits, 92 files); round 1 (B1 to B4, T1 to T28) is kept below as it was judged.
+
+**Contract.** `git diff origin/main -- tests/support/ngspice.rs` is empty and `crates/piperine-parity/src` is
+unchanged: no `ToleranceContract`, no contract file, no golden edited. The new parity rows (`source_params`,
+`source_tables`) call the existing `ToleranceContract::DC_VOLTAGE` or bounds of their own.
+
+**Tests run (gate policy: targeted only).** `check_proofs.py params-and-io` at acefa2f6 (env lane d): the
+`**Build**` line green (zero warnings, `suite_hygiene`), every `Run` group green but `typesunknowns`; ngspice on
+`PATH`. No workspace run.
+
+**Own examples (HEAD binary, throwaway files under `/var/tmp/piperine-tmp-d/v1`, not committed).**
+- `table_model`: control `1` with no extrapolation character gives -2 at x = -1 and 3 at x = 6 (`L` at both ends,
+  rule 3: holds); a cubic sampled at exactly four points (`3`) is reproduced at 0.5, 1.5, 2.5 (holds); the
+  quadratic spline of `2` matches Appendix C.2 by hand at 0.5, 1.5, 2.5, 4.5 and at both ends (holds).
+- `Option` param read through `if let Some(x)`, `match` and `is_some` in `analog`: `Some(500)` gives 0.1667 V and
+  `None` 0.5 V, as computed by hand (holds; the test of C13 does not show it, F12).
+- The section 18 `Diode` with `rs: Option<f64>` and `match rs` runs an operating point (0.618 V) (holds; the
+  records still say it waits on this feature, F16).
+- `--param` against `n: u8`, `md: Mode`, `rs: Option<f64>`: `l.n=6.5` runs as 6, `l.n=1e1` as 10, `l.n=-1` as 255,
+  `l.md=1` as `Slow`, `l.rs=10` is `E0802` "a composite param" (F9, F10); `l.rs=Some(10)`, `l.rs=None`,
+  `l.md=Medium` (`E0802` listing `Fast`, `Slow`) and `l.n=256` (`E0802`) hold.
+- A placement `Load { rs: 10.0 }` is `E0180` "expected `Option<f64>`, found `f64`" (F11).
+- `parse_table` of a file holding `1e-3k` folds to 1.0 (F14); `.5` reads 0.5.
+
+**Amendments of the B6 handoff, judged.** (a) `x`/`z` hex digits are `E0706`: legitimate - `docs/spec/part_vii_stdlib.md`
+§22.6.4's resolution says so on main ("A digit `x` or `z` is `E0706`: the elements are integers") and MD-78 item 1
+removed the known flag from integers; the code follows the spec. (b) `E0906` retired: legitimate - Appendix A's
+resolution and Appendix G (`appendix_g_scope.md:417`) retire it. (c) `E0102` retired: legitimate (value semantics,
+MD-76). (d) `table_model` takes its table by value: legitimate - §22.2.15's signature is `table: [(f64, f64); N]`.
+(e) A payload-enum param runs: follows §8.1.15. (f) A composite-payload param is set by its leaves: the
+composite-values rule. Each is a departure from an approved criterion of `spec.md` (PI-09 AC 2, PI-12 AC 1 and 12,
+PI-10 AC 1), and none is written in `spec.md`'s Amendments or appended as a criterion: they live only in the tasks
+Handoff (F8), and two checks still assert the retired behaviour (F7).
+
+**Book.** No row of `tests/book/inventory.tsv` is refused for L20, L28, L39 or L57: the nine L28 rows, packages#12
+and cheatsheet#10 run, and `GAPS.md`'s refused table no longer lists them. One refused row still names this feature
+as its owner (F15).
+
+**Records.** `GAPS.md` lists none of L20, L28, L39, L57, X5, H12 as a row; section 10 equals `code_owners.tsv`
+(checked by C112, 29 codes). Stale mentions remain (F16).
+
+## Checks
+
+| Check | Test | Holds |
+| --- | --- | --- |
+| C1 | `sourceparams` `an_integer_param_runs_with_its_value` | yes - the parity bench pins 1/5 and 1/8 V under `DC_VOLTAGE`, so a wrong `n` fails |
+| C2 | `elabparams` `an_integer_param_is_bound_and_read` | yes - `Constant::Int(4)` unbound, `Int(7)` bound, `n: 0` is `E0317` |
+| C3 | `elabparams` `n_as_f64_reaches_the_contribution` | yes - the `Cast` to `F64` is lowered and the instance holds 7; the value reaching the contribution is pinned by C1 |
+| C4 | `apisession` `an_integer_out_of_range_is_e0802` | no - holds for `Session::set_text` only: the same refusals given through `--param` (a number) take the real path and are accepted (F9) |
+| C5 | `clirun` `param_of_an_integer_from_the_command_line_reads_from_the_start` | yes - `l.n=6`, `l.n=0x6` and `l.n=300`; the real path it rides on is F9 |
+| C6 | `bookdigital` `the_debouncer_pwm_and_pwm_check_print_their_records` | yes - the Book records are compared line by line |
+| C7 | `sourceparams` `an_enum_param_runs_its_arm` | yes - 0.5 V for `Fast`, 0.25 V for `Slow` |
+| C8 | `elabparams` `an_enum_param_selects_its_arm` | yes - the variant index of the default and of the binding |
+| C9 | `apisession` `an_enum_param_set_by_variant_name` | yes - bare and `Mode::`-qualified names, shown back as the variant |
+| C10 | `apisession` `an_unknown_variant_is_e0802_listing_the_variants` | yes - the message holds the param, the value and both variants |
+| C11 | `elabparams` `an_option_param_left_out_is_none` | yes - an aggregate with no variant and no part |
+| C12 | `elabparams` `an_option_param_bound_to_a_value_is_some` | no - the criterion binds `{ rs: 10.0 }` (§3.2.3); the test binds `{ rs: Some(10.0) }`, and the criterion's form is `E0180` at HEAD (F11) |
+| C13 | `elabparams` `option_param_methods_read_the_bound_case` | no - asserts the IR shape (two or more `OptionPart`, a `Param(0)`), not the value of the bound case (F12) |
+| C14 | `apisession` `an_option_param_set_to_a_value_or_none` | no - holds for `Session::set_text`; `--param l.rs=10` is `E0802` "a composite param" (F10) |
+| C15 | `elabinstances` `a_placement_through_a_module_param_places_its_template` | yes |
+| C16 | `elabinstances` `a_parent_binding_replaces_the_template` | yes |
+| C17 | `typesmodules` `a_param_block_on_a_placement_through_a_param_is_e0361` | yes |
+| C18 | `elabinstances` `a_template_leaving_a_required_param_unbound_is_e0319` | yes |
+| C19 | `typesmodules` `a_template_of_another_module_is_e0180_naming_both` | yes |
+| C20 | `elabinstances` `the_pom_keeps_the_placement_through_the_param_and_the_ir_the_module` | yes |
+| C21 | `interp` `a_param_of_another_type_is_refused_naming_the_transpiled_backend` | yes - the refusal names the param, its type and `--backend rust` |
+| C22 | `typesvalues` `a_mismatch_no_row_names_is_e0180_naming_both_types` | yes - the exact message with both types |
+| C23 | `speccodes` `no_source_spells_p0002` | yes - scans every non-comment line of `crates/*/src` |
+| C24 | `typesvalues` `a_param_hiding_a_function_is_e0180_with_a_note_at_the_function` | yes |
+| C25 | `clibook` `no_book_listing_prints_p0002` | yes |
+| C26 | `typesvalues` `an_as_between_types_without_a_row_is_e0182` | yes |
+| C27 | `typesvalues` `a_call_through_a_function_value_with_the_wrong_arity_is_e0141` | yes - after F1: a function value, a method call and a probe of three nodes are `E0141` |
+| C28 | `elabvalues` `a_const_reading_a_run_value_is_e0188` | yes |
+| C29 | `apisources` `a_dc_source_sets_the_port_at_the_operating_point` | yes |
+| C30 | `apisources` `a_pwl_source_lands_on_every_corner` | yes - corners 2, 5, 6 us are off the 0.3 us step grid; a missed corner interpolates to ~0.97 V and fails the 1e-6 bound |
+| C31 | `sourcehost` `a_host_driven_rc_matches_ac_rc_in_ac` | yes - ngspice ran (no SKIP); `AC_MAGNITUDE`, `AC_PHASE` unchanged |
+| C32 | `apisources` `a_timed_source_change_is_a_jump` | yes - after F3: 10 ns rows pin 1 V before and 3 V after 2 us |
+| C33 | `apisources` `an_undriven_node_port_is_e0810` | yes |
+| C34 | `elabentry` `a_top_value_input_is_e0811` | yes |
+| C35 | `elabentry` `a_top_value_input_is_e0811` | yes - Q1 is (a); same test as C34 |
+| C36 | `spectext` `the_host_drives_a_tops_node_ports_e0810_e0811` | yes |
+| C37 | `elabfiles` `include_str_reads_the_file_beside_the_source` | yes |
+| C38 | `typesvalues` `include_str_outside_a_const_is_e0610` | yes - after F4: exactly `E0610` over an `analog` let, a module `let`, a param default and a `fn` body |
+| C39 | `elabfiles` `an_unreadable_file_is_e0612_naming_the_path` | yes |
+| C40 | `elabfiles` `a_file_that_is_not_utf8_is_e0613_with_the_offset` | yes |
+| C41 | `elabfiles` `a_changed_file_needs_a_new_elaboration` | yes - at the `ConstEval` layer the IR is built from |
+| C42 | `elabfiles` `parse_table_reads_64_rows_in_order` | yes - 64 pairs compared in order, blank lines, comments and `m` suffix |
+| C43 | `elabfiles` `parse_hex_reads_words_at_their_addresses` | yes - words, `_`, both comment forms and moving `@address` records, compared whole |
+| C44 | `elabfiles` `a_table_of_the_wrong_shape_is_e0614_naming_file_and_row` | yes - a wide row (row 2) and a short text, each exactly `E0614` with the file |
+| C45 | `elabfiles` `a_token_that_is_not_a_real_is_e0706` | yes - `abc` and `inf`, file, row and token |
+| C46 | `sourcetables` `linear_table_model_is_the_interpolation_at_op_and_dc_sweep` | no - the bound is 1e-12 relative plus 1e-12 absolute where AC 1 fixes 1e-15 relative, and the sweep is a series of operating points, not a DC sweep (F13) |
+| C47 | `sourcetables` `discrete_control_gives_the_closest_sample` | yes - both sides of every midpoint |
+| C48 | `sourcetables` `cubic_reproduces_a_cubic_polynomial` | no - 1e-10 relative where AC 3 fixes 1e-12 (F13) |
+| C49 | `sourcetables` `extrapolation_c_and_l_at_each_end` | yes - `1CL` and `1LC` at both ends; the default with no extrapolation character (`L` at both) is not tested (F13) |
+| C50 | `sourcetables` `extrapolation_e_outside_is_e0705` | yes - `Failure::Host` coded `E0705`, the instance and the call with x |
+| C51 | `elabfiles` `a_bad_control_string_is_e0703` | yes - five malformed strings, exactly one `E0703` each, and seven valid ones accepted |
+| C52 | `elabfiles` `non_increasing_abscissae_are_e0704` | yes - the first offending row is the third |
+| C53 | `sourcetables` `the_table_diode_passes_the_partials_verifier` | yes - `verify_partials` must be `Exact` at three biases inside the table |
+| C54 | `spectext` `appendix_c2_states_the_spline_end_conditions` | yes |
+| C55 | `clicommands` `fmt_check_passes_on_every_stdlib_file` | yes |
+| C56 | `clicommands` `fmt_check_passes_in_examples_buck` | yes |
+| C57 | `stdgalleries` `every_gallery_fence_is_in_the_formatters_form` | yes |
+| C58 | `msformat` `formatting_keeps_the_printed_tree_of_every_shipped_source` | yes - after F5: the pre-format texts of the 21 changed files are formatted, the tree is kept and the output is the shipped file |
+| C59 | `typesvalues` `a_borrow_outside_a_call_argument_is_e0102` (absent; `a_borrow_outside_a_call_argument_is_not_e0102` exists) | no - names `a_borrow_outside_a_call_argument_is_e0102`, which no longer exists (renamed `_is_not_e0102` by the B5 amendment); `check_proofs.py`: no test ran (F7) |
+| C60 | `runerrors` `a_division_by_zero_under_known_control_fails_the_run_with_e0105` | yes |
+| C61 | `typesvalues` `a_named_emitting_fn_where_emit_is_not_allowed_is_e0122` | yes - three calls, exactly `["E0122"]` at the call, the message names the function and class |
+| C62 | `elabanalog` `a_quantity_attribute_outside_the_three_is_e0204` | yes |
+| C63 | `elabanalog` `equal_access_names_are_e0205` | yes |
+| C64 | `typesmodules` `an_expression_on_a_carrier_port_that_is_not_in_is_e0315` | yes |
+| C65 | `typesmodules` `an_instance_without_a_result_used_as_a_value_is_e0333` | yes |
+| C66 | `typesstructure` `an_attribute_a1_does_not_list_is_e0904` | yes |
+| C67 | `speccodes` `this_features_codes_are_all_raised` | yes - `E0906` left out by MD-78 (recorded only in the Handoff, F8) |
+| C68 | `typescarriers` `a_probe_on_a_childs_private_node_is_e0244` | yes |
+| C69 | `typesresults` `a_continuous_result_read_where_probes_are_not_allowed_is_e0354` | yes |
+| C70 | `typesunknowns` `unknown_with_no_inferable_type_is_e0906` | no - target `types_unknowns` was deleted on main with `E0906` (MD-78); `check_proofs.py`: exit 101 (F7) |
+| C71 | `speccodes` `every_spec_code_is_raised_or_owned` | yes - 189 codes parsed (recounted independently), the 51 owned rows equal the unraised set |
+| C72 | `speccodes` `every_owned_code_names_its_owner_and_construct` | yes |
+| C73 | `speccodes` `no_owned_code_is_raised` | yes |
+| C74 | `speccodes` `this_features_codes_are_all_raised` | yes |
+| C75 | `docs` `gaps_no_longer_lists_this_features_ids` | yes - L20, L28, L39, L57, X5, H12 absent from the gap tables |
+| C76 | `elabparams` `an_integer_default_converts_with_as` | yes - `Int(3)` and `Int(-2)` |
+| C77 | `typesmodules` `an_option_param_read_as_a_number_is_e0180` | yes - exactly `E0180` at `0.0`, naming `Option<f64>` |
+| C78 | `apisources` `a_node_port_tied_to_gnd_inside_is_still_refused_undriven` | yes |
+| C79 | `elabfiles` `one_file_named_twice_is_read_once` | yes |
+| C80 | `elabfiles` `an_infinite_row_value_is_e0706` | yes |
+| C81 | `elabfiles` `a_one_row_table_under_d_is_e0704` | yes |
+| C82 | `elabvalues` `a_const_that_depends_on_itself_is_e0188` | yes |
+| C83 | `sourcehost` `a_host_driven_rc_step_matches_tran_rc` | yes - the configuration of the existing `tran_rc` twin (see note on step caps) |
+| C84 | `sourcehost` `a_host_pwl_into_the_rc_matches_tran_pwl_rc` | yes - ngspice `tran 0.1u 10u 0 10n uic` and piperine `max_step 1e-8`: one explicit cap on both sides; `TRAN_VOLTAGE` unchanged |
+| C85 | `clirun` `run_of_a_top_with_a_node_port_is_e0810` | yes |
+| C86 | `elabanalog` `a_non_positive_abstol_is_e0204` | yes |
+| C87 | `typesstructure` `a_listed_attribute_on_the_wrong_item_is_e0904` | yes |
+| C88 | `typesresults` `an_event_result_outside_an_event_position_is_e0354` | yes |
+| C89 | `typesvalues` `a_named_solve_reading_fn_in_a_const_is_e0122` | yes - direct and through another function, exactly `E0122` |
+| C90 | `runerrors` `an_unwrap_of_none_under_known_control_fails_the_run_with_e0105` | yes |
+| C91 | `elabentry` `a_top_node_port_gets_one_host_source_instance` | yes |
+| C92 | `elabentry` `the_pom_keeps_a_top_with_node_ports_as_written` | yes |
+| C93 | `typesmodules` `a_module_typed_param_takes_a_template` | yes |
+| C94 | `apisession` `a_module_typed_param_is_not_set_by_text` | yes |
+| C95 | `typesvalues` `include_str_in_a_const_is_a_str` | yes |
+| C96 | `msformat` `every_stdlib_file_is_in_the_formatters_form` | yes |
+| C97 | `docs` `gaps_no_longer_lists_x5_l20_l39_h12` | yes |
+| C98 | `typesmodules` `integer_enum_and_option_params_type_check` | yes - the type check passes with every new type bound |
+| C99 | `sourceparams` `an_option_param_runs_its_case` | yes - left out, `None` and `Some(3k)` at 1/2, 1/2 and 3/4 V; only `unwrap_or` runs (F12) |
+| C100 | `apisession` `an_integer_param_set_by_text_in_range` | yes - five literals in radix and range read back as `Cell::Int` |
+| C101 | `bookcorestd` `the_watchdog_builds_with_its_u16_param` | yes - the Book's own text builds and runs with `limit: u16` |
+| C102 | `bookinventory` `every_block_of_the_book_has_one_row` | yes - passes at HEAD (T35 is deferred; the inventory guard holds after B4) |
+| C103 | `elabfiles` `x_and_z_digits_are_unknown_levels` | yes - `0x`, `zz`, `1X` are `E0706` naming file, row and word (the criterion as amended by MD-78, F8) |
+| C104 | `elabfiles` `an_address_the_text_does_not_write_is_e0614` | yes - a gap at address 2 and a word past the array, each `E0614` |
+| C105 | `elabfiles` `a_word_that_is_not_hex_is_e0706` | yes - `g1` and a word that does not fit `u8` |
+| C106 | `elabfiles` `too_few_points_for_the_degree_is_e0704` | yes - 2 points for `2`, 3 for `3` |
+| C107 | `irchecks` `a_table_expression_is_built_checked_and_printed` | yes |
+| C108 | `interp` `a_table_expression_is_refused_by_name` | yes |
+| C109 | `bookpackages` `the_include_str_table_runs` | yes - the listing builds from its files and solves; the assertion reads the source node, not the table value |
+| C110 | `bookpackages` `e0610_is_raised_for_include_str_in_a_module` | yes |
+| C111 | `bookcheatsheet` `the_files_card_runs` | yes - the card without its statement runs |
+| C112 | `docs` `gaps_section_10_lists_exactly_the_owned_codes` | yes - section 10 equals `code_owners.tsv` exactly |
+
+## Findings
+
+| Finding | Evidence | Fix | Closed |
+| --- | --- | --- | --- |
+| F1. A wrong argument count on a probe or a builtin is `E0180`, not `E0141` (PI-06 AC 6, design line 55 and the table at line 263) | `v(p, q, gnd)` at HEAD: `E0180` "mismatched types: a probe takes 1 or 2 nodes, found 3"; `types_events.rs:521` asserts `E0180` for `cross()` and `cross(v(p), 1p, 1u, 2u)`; C27's test covers only a function value and a method call | route the probe and core-primitive count checks through `Checker::arity_mismatch` (`E0141` with both counts); assert `E0141` in `types_events.rs:521` and add a probe case to `a_call_through_a_function_value_with_the_wrong_arity_is_e0141` | 731dab5c; C27 (`a_call_through_a_function_value_with_the_wrong_arity_is_e0141`, probe case added) and `types_events.rs` `cross_takes_ttol_and_etol_by_position_and_by_name` (now `E0141`) |
+| F2. A non-exhaustive `match` is `E0180`, but Part I's `E0184` row names that position (PI-06 AC 1: `E0180` only where no other row names it) | `types_compound.rs:282` `a_match_that_is_not_exhaustive_is_e0180` (renamed from `_is_p0002`); `docs/spec/part_i_values.md:639` | raise `E0184` for exhaustiveness (the construct runs today, the amendment's own rule gives such codes here) and rename the test `_is_e0184`; `E0184`'s `code_owners.tsv` row must then leave (composite-values keeps its other forms) - or have the user rule that it waits for `composite-values` and record it in `GAPS.md` | baf51375 (composite-values, B3 T15); closed by deferral: `E0184` for a non-exhaustive `match` is implemented on feature/composite-values (its B3, T15) and lands with that feature; its `code_owners.tsv` row stays; `types_compound.rs:282` stays as it is until then |
+| F3. C32's test does not pin the jump to its time | `host_sources.rs` `a_timed_source_change_is_a_jump`: print step 0.5 us and rows between 1.9 and 2.1 us skipped, so a change anywhere between 1.5 and 2.5 us, or a ramp across that span, passes | print at a step of 1e-8 near 2 us and assert 1 V just before 2 us and 3 V from 2 us on | 03472efa; C32 (`a_timed_source_change_is_a_jump`, 10 ns rows either side of 2 us) |
+| F4. C38's test covers one position and accepts extra codes | `types_values.rs` `include_str_outside_a_const_is_e0610`: one `analog` let, `codes_of(&d).contains(..)` | assert `["E0610"]` exactly, over an `analog` let, a module `let`, a param default and a `fn` body (all `E0610` at HEAD) | abd6fd6b; C38 (`include_str_outside_a_const_is_e0610`, exactly `["E0610"]` over four positions) |
+| F5. C58's test cannot fail: the shipped files are fixed points of the formatter, so formatting them changes nothing | `msl_format.rs` `formatting_keeps_the_printed_tree_of_every_shipped_source` compares `print(format(text))` with `print(text)` where `format(text) == text` (C96, C55, C56) | compare the printed tree of each shipped file with that of its pre-format text: e.g. a test that formats a committed unformatted copy (or the fences' pre-format text) and asserts both trees equal; the claim itself holds (verified: fmt of origin/main == HEAD) | c49ea25a; C58 (`formatting_keeps_the_printed_tree_of_every_shipped_source`, over the pre-format texts in `tests/fixtures/preformat/`; a renamed identifier in a fixture makes it fail) |
+| F6. New code without doc comments, and free functions in new test code (user cleanliness rules) | `elab/host_sources.rs`: `HostSourceExpressions::{emit, binary, param}`, `HostSources::new`, fields `ir`, `origin`, `bodies`; `elab/files.rs`: `IncludedFiles::{texts, reads}`, `FileFault` variant fields; `api/source.rs`: `SegmentSet` fields; tests: free `settings`, `session`, `transient`, `open`, `run`, `piecewise`, `real` (`api/tests/host_sources.rs`, most undocumented), `fixture`, `design_of`, `constant` (`elab_files.rs`), `host_failure` (`run_errors.rs`), `nature_source` (`elab_analog.rs`), `first_param` (`elab_instances.rs`), `repository` (`cli/tests/commands.rs`), `printed_tree` (`msl_format.rs`); undocumented `HostDrivenRc::{session, table}` (`source_host.rs`), `RcTop::design` (`elab_entry.rs`); `HostSourceParam::Mag` abbreviates magnitude | document each; move the test helpers onto owner structs (as `Fixture`, `Scratch`, `HostDrivenRc` already are); name the variant `Magnitude` (the IR param name can stay `mag`) | c8416da4; C55 to C57, C96 and the targets that held the moved helpers |
+| F7. (Blocker, gate) C59 and C70 prove retired behaviour with tests that no longer exist, so `check_proofs.py` is red (112 pass, 3 fail) and `validate_verification.py` cannot pass | `tasks.md:1376` names `a_borrow_outside_a_call_argument_is_e0102` (renamed `_is_not_e0102` in B5, `types_values.rs`); `tasks.md:1409` names target `types_unknowns`, deleted on main with `E0906` (MD-78): `cargo test -p piperine-lang --test types_unknowns` exits 101 | append criteria for the retirements (F8) and point C59 at `a_borrow_outside_a_call_argument_is_not_e0102` and C70 at a test that proves `E0906` is raised nowhere (e.g. `spec_codes`/`msl_errors`), then rerun `check_proofs.py` | |
+| F8. (Major, records) The B5/B6 departures from approved criteria are recorded only in the tasks Handoff, not in `spec.md` | `spec.md:398` Amendments stop at A6 (2026-11-20); PI-09 AC 2 still says `x`/`z` make "four levels unknown", PI-12 AC 1 that `E0102` is raised, AC 12 that `E0906` is raised, PI-10 AC 1 writes `&IV` | add A7 to A10 (each citing §22.6.4, MD-78, Appendix A/G, §22.2.15) or append superseding criteria with new IDs; never edit the approved text silently | |
+| F9. (Major) `--param` with a number bypasses the type's reading: a non-integer, an exponent, a negative value for an unsigned param and an enum tag are accepted, silently truncated or wrapped (D24, PI-01 AC 4, PI-02 AC 4: `E0802`) | `cli.rs:106` sends any text that parses as `f64` to `params` (the real path), which writes `ParamValue::Int(v as i64)` (`params.rs:106`); at HEAD `--param l.n=6.5` runs n = 6 (v(a) = 1/7), `l.n=1e1` runs 10, `l.n=-1` runs 255 (v(a) = 3.906e-3), `l.md=1` runs `Slow`; C4's test only calls `Session::set_text` | read every `--param` of an integer, enum or `Option` param through `ParamText` (or refuse a real that is not an integer in range in `Session::set_param`); add the four cases to C4/C5 through the CLI | |
+| F10. (Major) `--param` of an `Option<T>` param to a value of `T` is refused (PI-03 AC 4: it is `Some` of it) | `--param l.rs=10` at HEAD: `E0802: l.rs is a composite param: name one of its leaves` (`session.rs:179`, the real path); `l.rs=Some(10)` works only because it is text | route numbers for `Option` params through `ParamText::option`; add `--param l.rs=10` to a CLI test | |
+| F11. (Major) A placement binding `{ rs: 10.0 }` of an `Option<f64>` param is `E0180`; PI-03 AC 2 says it reads `Some(10.0)` (§3.2.3) | own example `Load { rs: 10.0 }(a)`: `E0180 mismatched types: expected Option<f64>, found f64`; `elab_params.rs:289` quotes the criterion and binds `Some(10.0)` (`:291`) | apply §3.2.3's `T` to `Option<T>` to a param binding, or record an amendment the user approves (the spec text says "an argument"); make C12 bind `10.0` | |
+| F12. (Minor) C13's test does not hold "the value of the bound case" | `elab_params.rs:304`: `halves >= 2` and a `Param(0)` exist; no value of `unwrap_or`, `is_some`, `match` or `if let` is asserted, and the parity row runs `unwrap_or` only | a parity row per form with `Some` and `None` (own example: 0.1667 V and 0.5 V) | |
+| F13. (Minor) C46 and C48 assert looser bounds than their criteria; the default extrapolation is untested | `source_tables.rs:62` 1e-12 rel + 1e-12 abs (AC 1: 1e-15 relative) over repeated operating points (AC 1: a DC sweep); `:84` 1e-10 (AC 3: 1e-12); no test outside the table with no extrapolation character (rule 3, AC 4 "none is `L` at both") | tighten to the criteria's bounds, run a DC sweep analysis, add the default-extrapolation case | |
+| F14. (Minor) `parse_table` accepts an exponent with an SI suffix | `tables.rs:69` `real`: `1e-3k` folds to 1.0 (own example); Appendix A.2 rule 4: "`1e3k` ... are errors", and §22.6.4's resolution reads "the language's real literals" | refuse an exponent before an SI suffix with `E0706`; add the case to C45 | |
+| F15. (Major, closure rule) A refused Book row still names this feature as its owner | `GAPS.md:411` `modules~1faf8c12` (L29, `m` and `dtemp`): "do not run until `params-and-io` implements them"; L29 is not in this spec's gaps and the feature closes | give the row (and L29) a real owning feature that runs before spec-closure, or implement it here | |
+| F16. (Minor, records) Stale mentions of this feature in `GAPS.md` | `GAPS.md:142` L40 and `:360` say the section 18 `Diode` needs `params-and-io` (it type checks, `elab_structure.rs:376`, and runs: own example 0.618 V); `:184` names `params-and-io` the owner of the NaN-param bit point, which this feature did not take; `:33` lists closed loud rows without L28 and L57 | rewrite L40 to its `generics` part, give `:184` an owner that will do it, add L28 and L57 to `:33` | |
+| F17. (Minor) Integer text above 2^53 is rounded | `param_text.rs:96` `Ok(value as f64)`: `ParamText::Number(f64)` cannot hold `u64`/`i64` 9007199254740993, and `params.rs:106` `v as i64` saturates a `u64` above `i64::MAX`; D24 "an integer literal ... in range is the value" | carry an integer as `i128` (`ParamValue::Int`) end to end, or refuse a value an `f64` cannot hold | |
+| F18. (Minor, cleanliness) New code breaks the user's rules (recurrence of F6) | free functions in tests: `elab_files.rs` (`parsed_source`, `folded`, `refused`, `real`, `int`, `table_model_source`, `refusals`; `real` and `int` undocumented), `elab_params.rs` (`child_with`, `aggregate`, `placed_params` undocumented), `piperine-api/tests/session.rs` (`typed_session`, `shown`, `literal`), `source_tables.rs` (`project`, `line`, `holds`), `piperine-ir/tests/check.rs:511` (`table_ir`), `param_text.rs` unit tests (`design`, `read` undocumented); undocumented fields `Reading::{ir, label, text}` (`param_text.rs:24`) and the tuple fields of `ControlText`, `Samples` (`table_model.rs`); abbreviations `hl`, `hp` (`rt/table.rs:120`) | move the helpers onto owner structs, document them, name `hl`/`hp` | |
+
+## Round 1 record (B1 to B4)
+
+**Round 1 verdict**: PASS for B1 to B4 at 0bed6a92 (B5 and B6 then deferred).
 
 Range judged: `git diff origin/main...HEAD` (f9a29dd0..a28fdf9b, 118 files).
 
@@ -56,135 +239,7 @@ buck targets and `buck_scenarios` included (re-run in full after the power loss)
 `PATH`: `source_host` 3/3, `parity_ac` 2/2, `parity_tran` 9/9, no real SKIP (the one `SKIP uic_rc`
 line is `parity_tran`'s test of the skip message itself).
 
-## Checks
-
-| Check | Test | Holds |
-| --- | --- | --- |
-| C1 | `sourceparams` `an_integer_param_runs_with_its_value` | deferred - B5/B6 (T32), not judged |
-| C2 | `elabparams` `an_integer_param_is_bound_and_read` | deferred - B5/B6 (T31), not judged |
-| C3 | `elabparams` `n_as_f64_reaches_the_contribution` | deferred - B5/B6 (T31), not judged |
-| C4 | `apisession` `an_integer_out_of_range_is_e0802` | deferred - B5/B6 (T33), not judged |
-| C5 | `clirun` `param_of_an_integer_from_the_command_line_reads_from_the_start` | deferred - B5/B6 (T33), not judged |
-| C6 | `bookdigital` `the_debouncer_pwm_and_pwm_check_print_their_records` | deferred - B5/B6 (T35), not judged |
-| C7 | `sourceparams` `an_enum_param_runs_its_arm` | deferred - B5/B6 (T32), not judged |
-| C8 | `elabparams` `an_enum_param_selects_its_arm` | deferred - B5/B6 (T31), not judged |
-| C9 | `apisession` `an_enum_param_set_by_variant_name` | deferred - B5/B6 (T33), not judged |
-| C10 | `apisession` `an_unknown_variant_is_e0802_listing_the_variants` | deferred - B5/B6 (T33), not judged |
-| C11 | `elabparams` `an_option_param_left_out_is_none` | deferred - B5/B6 (T31), not judged |
-| C12 | `elabparams` `an_option_param_bound_to_a_value_is_some` | deferred - B5/B6 (T31), not judged |
-| C13 | `elabparams` `option_param_methods_read_the_bound_case` | deferred - B5/B6 (T31), not judged |
-| C14 | `apisession` `an_option_param_set_to_a_value_or_none` | deferred - B5/B6 (T33), not judged |
-| C15 | `elabinstances` `a_placement_through_a_module_param_places_its_template` | yes |
-| C16 | `elabinstances` `a_parent_binding_replaces_the_template` | yes |
-| C17 | `typesmodules` `a_param_block_on_a_placement_through_a_param_is_e0361` | yes |
-| C18 | `elabinstances` `a_template_leaving_a_required_param_unbound_is_e0319` | yes |
-| C19 | `typesmodules` `a_template_of_another_module_is_e0180_naming_both` | yes |
-| C20 | `elabinstances` `the_pom_keeps_the_placement_through_the_param_and_the_ir_the_module` | yes |
-| C21 | `interp` `a_param_of_another_type_is_refused_naming_the_transpiled_backend` | deferred - B5/B6 (T34), not judged |
-| C22 | `typesvalues` `a_mismatch_no_row_names_is_e0180_naming_both_types` | yes - the exact message with both types |
-| C23 | `speccodes` `no_source_spells_p0002` | yes - scans every non-comment line of `crates/*/src` |
-| C24 | `typesvalues` `a_param_hiding_a_function_is_e0180_with_a_note_at_the_function` | yes |
-| C25 | `clibook` `no_book_listing_prints_p0002` | yes |
-| C26 | `typesvalues` `an_as_between_types_without_a_row_is_e0182` | yes |
-| C27 | `typesvalues` `a_call_through_a_function_value_with_the_wrong_arity_is_e0141` | yes - after F1: a function value, a method call and a probe of three nodes are `E0141` |
-| C28 | `elabvalues` `a_const_reading_a_run_value_is_e0188` | yes |
-| C29 | `apisources` `a_dc_source_sets_the_port_at_the_operating_point` | yes |
-| C30 | `apisources` `a_pwl_source_lands_on_every_corner` | yes - corners 2, 5, 6 us are off the 0.3 us step grid; a missed corner interpolates to ~0.97 V and fails the 1e-6 bound |
-| C31 | `sourcehost` `a_host_driven_rc_matches_ac_rc_in_ac` | yes - ngspice ran (no SKIP); `AC_MAGNITUDE`, `AC_PHASE` unchanged |
-| C32 | `apisources` `a_timed_source_change_is_a_jump` | yes - after F3: 10 ns rows pin 1 V before and 3 V after 2 us |
-| C33 | `apisources` `an_undriven_node_port_is_e0810` | yes |
-| C34 | `elabentry` `a_top_value_input_is_e0811` | yes |
-| C35 | `elabentry` `a_top_value_input_is_e0811` | yes - Q1 is (a); same test as C34 |
-| C36 | `spectext` `the_host_drives_a_tops_node_ports_e0810_e0811` | yes |
-| C37 | `elabfiles` `include_str_reads_the_file_beside_the_source` | yes |
-| C38 | `typesvalues` `include_str_outside_a_const_is_e0610` | yes - after F4: exactly `E0610` over an `analog` let, a module `let`, a param default and a `fn` body |
-| C39 | `elabfiles` `an_unreadable_file_is_e0612_naming_the_path` | yes |
-| C40 | `elabfiles` `a_file_that_is_not_utf8_is_e0613_with_the_offset` | yes |
-| C41 | `elabfiles` `a_changed_file_needs_a_new_elaboration` | yes - at the `ConstEval` layer the IR is built from |
-| C42 | `elabfiles` `parse_table_reads_64_rows_in_order` | deferred - B5/B6 (T37), not judged |
-| C43 | `elabfiles` `parse_hex_reads_words_at_their_addresses` | deferred - B5/B6 (T38), not judged |
-| C44 | `elabfiles` `a_table_of_the_wrong_shape_is_e0614_naming_file_and_row` | deferred - B5/B6 (T37), not judged |
-| C45 | `elabfiles` `a_token_that_is_not_a_real_is_e0706` | deferred - B5/B6 (T37), not judged |
-| C46 | `sourcetables` `linear_table_model_is_the_interpolation_at_op_and_dc_sweep` | deferred - B5/B6 (T41), not judged |
-| C47 | `sourcetables` `discrete_control_gives_the_closest_sample` | deferred - B5/B6 (T41), not judged |
-| C48 | `sourcetables` `cubic_reproduces_a_cubic_polynomial` | deferred - B5/B6 (T41), not judged |
-| C49 | `sourcetables` `extrapolation_c_and_l_at_each_end` | deferred - B5/B6 (T41), not judged |
-| C50 | `sourcetables` `extrapolation_e_outside_is_e0705` | deferred - B5/B6 (T41), not judged |
-| C51 | `elabfiles` `a_bad_control_string_is_e0703` | deferred - B5/B6 (T39), not judged |
-| C52 | `elabfiles` `non_increasing_abscissae_are_e0704` | deferred - B5/B6 (T39), not judged |
-| C53 | `sourcetables` `the_table_diode_passes_the_partials_verifier` | deferred - B5/B6 (T42), not judged |
-| C54 | `spectext` `appendix_c2_states_the_spline_end_conditions` | yes |
-| C55 | `clicommands` `fmt_check_passes_on_every_stdlib_file` | yes |
-| C56 | `clicommands` `fmt_check_passes_in_examples_buck` | yes |
-| C57 | `stdgalleries` `every_gallery_fence_is_in_the_formatters_form` | yes |
-| C58 | `msformat` `formatting_keeps_the_printed_tree_of_every_shipped_source` | yes - after F5: the pre-format texts of the 21 changed files are formatted, the tree is kept and the output is the shipped file |
-| C59 | `typesvalues` `a_borrow_outside_a_call_argument_is_e0102` | deferred - B5/B6 (T29), not judged |
-| C60 | `runerrors` `a_division_by_zero_under_known_control_fails_the_run_with_e0105` | yes |
-| C61 | `typesvalues` `a_named_emitting_fn_where_emit_is_not_allowed_is_e0122` | deferred - B5/B6 (T36), not judged |
-| C62 | `elabanalog` `a_quantity_attribute_outside_the_three_is_e0204` | yes |
-| C63 | `elabanalog` `equal_access_names_are_e0205` | yes |
-| C64 | `typesmodules` `an_expression_on_a_carrier_port_that_is_not_in_is_e0315` | yes |
-| C65 | `typesmodules` `an_instance_without_a_result_used_as_a_value_is_e0333` | yes |
-| C66 | `typesstructure` `an_attribute_a1_does_not_list_is_e0904` | yes |
-| C67 | `speccodes` `this_features_codes_are_all_raised` | deferred - B5/B6 (T44), not judged |
-| C68 | `typescarriers` `a_probe_on_a_childs_private_node_is_e0244` | yes |
-| C69 | `typesresults` `a_continuous_result_read_where_probes_are_not_allowed_is_e0354` | yes |
-| C70 | `typesunknowns` `unknown_with_no_inferable_type_is_e0906` | yes |
-| C71 | `speccodes` `every_spec_code_is_raised_or_owned` | yes - 189 codes parsed (recounted independently), the 51 owned rows equal the unraised set |
-| C72 | `speccodes` `every_owned_code_names_its_owner_and_construct` | yes |
-| C73 | `speccodes` `no_owned_code_is_raised` | yes |
-| C74 | `speccodes` `this_features_codes_are_all_raised` | deferred - B5/B6 (T44), not judged |
-| C75 | `docs` `gaps_no_longer_lists_this_features_ids` | deferred - B5/B6 (T44), not judged |
-| C76 | `elabparams` `an_integer_default_converts_with_as` | deferred - B5/B6 (T31), not judged |
-| C77 | `typesmodules` `an_option_param_read_as_a_number_is_e0180` | deferred - B5/B6 (T30), not judged |
-| C78 | `apisources` `a_node_port_tied_to_gnd_inside_is_still_refused_undriven` | yes |
-| C79 | `elabfiles` `one_file_named_twice_is_read_once` | yes |
-| C80 | `elabfiles` `an_infinite_row_value_is_e0706` | deferred - B5/B6 (T37), not judged |
-| C81 | `elabfiles` `a_one_row_table_under_d_is_e0704` | deferred - B5/B6 (T39), not judged |
-| C82 | `elabvalues` `a_const_that_depends_on_itself_is_e0188` | yes |
-| C83 | `sourcehost` `a_host_driven_rc_step_matches_tran_rc` | yes - the configuration of the existing `tran_rc` twin (see note on step caps) |
-| C84 | `sourcehost` `a_host_pwl_into_the_rc_matches_tran_pwl_rc` | yes - ngspice `tran 0.1u 10u 0 10n uic` and piperine `max_step 1e-8`: one explicit cap on both sides; `TRAN_VOLTAGE` unchanged |
-| C85 | `clirun` `run_of_a_top_with_a_node_port_is_e0810` | yes |
-| C86 | `elabanalog` `a_non_positive_abstol_is_e0204` | yes |
-| C87 | `typesstructure` `a_listed_attribute_on_the_wrong_item_is_e0904` | yes |
-| C88 | `typesresults` `an_event_result_outside_an_event_position_is_e0354` | yes |
-| C89 | `typesvalues` `a_named_solve_reading_fn_in_a_const_is_e0122` | deferred - B5/B6 (T36), not judged |
-| C90 | `runerrors` `an_unwrap_of_none_under_known_control_fails_the_run_with_e0105` | yes |
-| C91 | `elabentry` `a_top_node_port_gets_one_host_source_instance` | yes |
-| C92 | `elabentry` `the_pom_keeps_a_top_with_node_ports_as_written` | yes |
-| C93 | `typesmodules` `a_module_typed_param_takes_a_template` | yes |
-| C94 | `apisession` `a_module_typed_param_is_not_set_by_text` | yes |
-| C95 | `typesvalues` `include_str_in_a_const_is_a_str` | yes |
-| C96 | `msformat` `every_stdlib_file_is_in_the_formatters_form` | yes |
-| C97 | `docs` `gaps_no_longer_lists_x5_l20_l39_h12` | yes |
-| C98 | `typesmodules` `integer_enum_and_option_params_type_check` | deferred - B5/B6 (T30), not judged |
-| C99 | `sourceparams` `an_option_param_runs_its_case` | deferred - B5/B6 (T32), not judged |
-| C100 | `apisession` `an_integer_param_set_by_text_in_range` | deferred - B5/B6 (T33), not judged |
-| C101 | `bookcorestd` `the_watchdog_builds_with_its_u16_param` | deferred - B5/B6 (T35), not judged |
-| C102 | `bookinventory` `every_block_of_the_book_has_one_row` | yes - passes at HEAD (T35 is deferred; the inventory guard holds after B4) |
-| C103 | `elabfiles` `x_and_z_digits_are_unknown_levels` | deferred - B5/B6 (T38), not judged |
-| C104 | `elabfiles` `an_address_the_text_does_not_write_is_e0614` | deferred - B5/B6 (T38), not judged |
-| C105 | `elabfiles` `a_word_that_is_not_hex_is_e0706` | deferred - B5/B6 (T38), not judged |
-| C106 | `elabfiles` `too_few_points_for_the_degree_is_e0704` | deferred - B5/B6 (T39), not judged |
-| C107 | `irchecks` `a_table_expression_is_built_checked_and_printed` | deferred - B5/B6 (T40), not judged |
-| C108 | `interp` `a_table_expression_is_refused_by_name` | deferred - B5/B6 (T40), not judged |
-| C109 | `bookpackages` `the_include_str_table_runs` | deferred - B5/B6 (T43), not judged |
-| C110 | `bookpackages` `e0610_is_raised_for_include_str_in_a_module` | deferred - B5/B6 (T43), not judged |
-| C111 | `bookcheatsheet` `the_files_card_runs` | deferred - B5/B6 (T43), not judged |
-| C112 | `docs` `gaps_section_10_lists_exactly_the_owned_codes` | deferred - B5/B6 (T44), not judged |
-
-## Findings
-
-| Finding | Evidence | Fix | Closed |
-| --- | --- | --- | --- |
-| F1. A wrong argument count on a probe or a builtin is `E0180`, not `E0141` (PI-06 AC 6, design line 55 and the table at line 263) | `v(p, q, gnd)` at HEAD: `E0180` "mismatched types: a probe takes 1 or 2 nodes, found 3"; `types_events.rs:521` asserts `E0180` for `cross()` and `cross(v(p), 1p, 1u, 2u)`; C27's test covers only a function value and a method call | route the probe and core-primitive count checks through `Checker::arity_mismatch` (`E0141` with both counts); assert `E0141` in `types_events.rs:521` and add a probe case to `a_call_through_a_function_value_with_the_wrong_arity_is_e0141` | 731dab5c; C27 (`a_call_through_a_function_value_with_the_wrong_arity_is_e0141`, probe case added) and `types_events.rs` `cross_takes_ttol_and_etol_by_position_and_by_name` (now `E0141`) |
-| F2. A non-exhaustive `match` is `E0180`, but Part I's `E0184` row names that position (PI-06 AC 1: `E0180` only where no other row names it) | `types_compound.rs:282` `a_match_that_is_not_exhaustive_is_e0180` (renamed from `_is_p0002`); `docs/spec/part_i_values.md:639` | raise `E0184` for exhaustiveness (the construct runs today, the amendment's own rule gives such codes here) and rename the test `_is_e0184`; `E0184`'s `code_owners.tsv` row must then leave (composite-values keeps its other forms) - or have the user rule that it waits for `composite-values` and record it in `GAPS.md` | baf51375 (composite-values, B3 T15); closed by deferral: `E0184` for a non-exhaustive `match` is implemented on feature/composite-values (its B3, T15) and lands with that feature; its `code_owners.tsv` row stays; `types_compound.rs:282` stays as it is until then |
-| F3. C32's test does not pin the jump to its time | `host_sources.rs` `a_timed_source_change_is_a_jump`: print step 0.5 us and rows between 1.9 and 2.1 us skipped, so a change anywhere between 1.5 and 2.5 us, or a ramp across that span, passes | print at a step of 1e-8 near 2 us and assert 1 V just before 2 us and 3 V from 2 us on | 03472efa; C32 (`a_timed_source_change_is_a_jump`, 10 ns rows either side of 2 us) |
-| F4. C38's test covers one position and accepts extra codes | `types_values.rs` `include_str_outside_a_const_is_e0610`: one `analog` let, `codes_of(&d).contains(..)` | assert `["E0610"]` exactly, over an `analog` let, a module `let`, a param default and a `fn` body (all `E0610` at HEAD) | abd6fd6b; C38 (`include_str_outside_a_const_is_e0610`, exactly `["E0610"]` over four positions) |
-| F5. C58's test cannot fail: the shipped files are fixed points of the formatter, so formatting them changes nothing | `msl_format.rs` `formatting_keeps_the_printed_tree_of_every_shipped_source` compares `print(format(text))` with `print(text)` where `format(text) == text` (C96, C55, C56) | compare the printed tree of each shipped file with that of its pre-format text: e.g. a test that formats a committed unformatted copy (or the fences' pre-format text) and asserts both trees equal; the claim itself holds (verified: fmt of origin/main == HEAD) | c49ea25a; C58 (`formatting_keeps_the_printed_tree_of_every_shipped_source`, over the pre-format texts in `tests/fixtures/preformat/`; a renamed identifier in a fixture makes it fail) |
-| F6. New code without doc comments, and free functions in new test code (user cleanliness rules) | `elab/host_sources.rs`: `HostSourceExpressions::{emit, binary, param}`, `HostSources::new`, fields `ir`, `origin`, `bodies`; `elab/files.rs`: `IncludedFiles::{texts, reads}`, `FileFault` variant fields; `api/source.rs`: `SegmentSet` fields; tests: free `settings`, `session`, `transient`, `open`, `run`, `piecewise`, `real` (`api/tests/host_sources.rs`, most undocumented), `fixture`, `design_of`, `constant` (`elab_files.rs`), `host_failure` (`run_errors.rs`), `nature_source` (`elab_analog.rs`), `first_param` (`elab_instances.rs`), `repository` (`cli/tests/commands.rs`), `printed_tree` (`msl_format.rs`); undocumented `HostDrivenRc::{session, table}` (`source_host.rs`), `RcTop::design` (`elab_entry.rs`); `HostSourceParam::Mag` abbreviates magnitude | document each; move the test helpers onto owner structs (as `Fixture`, `Scratch`, `HostDrivenRc` already are); name the variant `Magnitude` (the IR param name can stay `mag`) | c8416da4; C55 to C57, C96 and the targets that held the moved helpers |
-
-## Fix round (F1 to F6)
+### Fix round (F1 to F6)
 
 F1, F3, F4, F5 and F6 are closed by the commits in the table; F2 is closed by deferral to
 `composite-values`. F1 also changed the counts that `types_analog.rs` asserted (`ac_stim()`,
@@ -199,3 +254,5 @@ ignored. With ngspice on `PATH`: `source_host` 3/3, `parity_ac` 2/2, `parity_tra
 C83's DC-step comparison reuses main's frozen `tran_rc.cir` (ngspice's default step cap) against
 piperine `max_step 1e-8`: the twin convention of the existing `tran_rc` test, not the same-cap
 configuration of C84. Left as it is for the user or the spec closure to rule on.
+
+Round 2: F11 needs a ruling (does §3.2.3's implicit `Some` apply to a param binding, as PI-03 AC 2 says?).
