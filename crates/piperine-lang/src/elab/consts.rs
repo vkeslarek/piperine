@@ -404,11 +404,27 @@ impl<'d, 't> ConstEval<'d, 't> {
         }
     }
 
+    /// The level count of `T::WIDTH` inside an instance: `T` is a type parameter the substitution replaces by a
+    /// type with a `Repr` (§2). `None` when `expr` is no such path or `T` has no argument here.
+    pub(super) fn parameter_levels(&self, expr: ExprId) -> Option<u32> {
+        let ExprKind::Path(path) = &self.design.expr_node(expr).kind else { return None };
+        let segments = &self.design.path_node(*path).segments;
+        let [owner, member] = segments.as_slice() else { return None };
+        if member.name.text != "WIDTH" {
+            return None;
+        }
+        let Resolution::Decl(parameter) = owner.res else { return None };
+        match self.substitution.get(parameter)? {
+            GenericValue::Type(ty) => ty.levels(self.design),
+            _ => None,
+        }
+    }
+
     /// A name as the constant it is bound to (a `const`, a param, a binding of the call), or the
     /// level count of a `T::WIDTH`; a built-in name is dynamic.
     fn path(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         // `T::WIDTH`: the level count of `T`, which the checker recorded (§2, §22.1)
-        if let Some(levels) = self.types.width(expr) {
+        if let Some(levels) = self.types.width(expr).or_else(|| self.parameter_levels(expr)) {
             return Ok(Constant::Int(i128::from(levels)));
         }
         let ExprKind::Path(path) = &self.design.expr_node(expr).kind else {
@@ -699,7 +715,7 @@ impl<'d, 't> ConstEval<'d, 't> {
         let outer = match self.types.instantiation(expr).cloned() {
             Some(instantiation) => {
                 // a type argument can nest as deep as the instantiation chain does (D7): the walk over it has its own stack
-                let substitution = crate::stack::wide(|| self.instantiation_substitution(&instantiation));
+                let substitution = crate::stack::Stack::wide(|| self.instantiation_substitution(&instantiation));
                 Some(self.set_substitution(substitution))
             }
             None => None,
@@ -748,7 +764,7 @@ impl<'d, 't> ConstEval<'d, 't> {
         }
         let outer = std::mem::replace(&mut self.locals, frame);
         let outer_functions = std::mem::replace(&mut self.fn_values, functions);
-        let result = crate::stack::deep(|| self.exec_block(expr, &body.stmts, &Bindings::new()));
+        let result = crate::stack::Stack::deep(|| self.exec_block(expr, &body.stmts, &Bindings::new()));
         self.depth -= 1;
         self.locals = outer;
         self.fn_values = outer_functions;

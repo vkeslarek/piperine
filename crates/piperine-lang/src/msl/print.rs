@@ -523,7 +523,7 @@ impl<'h> Printer<'h> {
     }
 
     fn expr(&self, e: &Expr) -> String {
-        crate::stack::deep(|| self.expr_inner(e))
+        crate::stack::Stack::deep(|| self.expr_inner(e))
     }
 
     fn expr_inner(&self, e: &Expr) -> String {

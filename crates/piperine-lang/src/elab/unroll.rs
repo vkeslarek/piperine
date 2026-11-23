@@ -385,7 +385,7 @@ impl Elaboration<'_, '_> {
             stmts.push(self.stmt(Stmt::Let { local, init }));
         }
         scope.expanding.push(Expansion { function, decisions: scope.decisions });
-        let lowered = crate::stack::deep(|| self.lower_statements(scope, &body.stmts));
+        let lowered = crate::stack::Stack::deep(|| self.lower_statements(scope, &body.stmts));
         scope.expanding.pop();
         scope.local_index = saved_locals;
         scope.unrolled = saved_unrolled;

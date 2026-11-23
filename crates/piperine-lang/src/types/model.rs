@@ -5,8 +5,10 @@
 //! [`Types::check`](super::Types::check) stays the reach of one top: it builds the table the
 //! elaborator reads. This check builds none; it keeps the diagnostics of one [`Checker`] seeded
 //! with every item, in source order, each with the code the item has when reached. `std` is left
-//! to its own check (a stdlib item is checked when reached). A generic item is left out too: its
-//! body is checked per Q1 once the generic forms land, and until then reaching it is `P0001`.
+//! to its own check (a stdlib item is checked when reached). A generic function, and a method of a
+//! generic `impl`, are checked once at their definition (Q1 (c), design D19). A generic module,
+//! struct or enum, and what sits inside one, is left out until generics phase C: reaching it is
+//! `P0001`, and `GAPS.md` S3 keeps that part open.
 
 use crate::pom::{Decl, DeclId, DeclKind, Design, DesignDiagnostic, Reflect};
 
@@ -18,6 +20,7 @@ pub(super) struct ModelCheck<'d> {
 }
 
 impl<'d> ModelCheck<'d> {
+    /// A check over every item of `design`.
     pub(super) fn new(design: &'d Design) -> Self {
         ModelCheck { design }
     }

@@ -216,7 +216,7 @@ impl<'d> Rebuild<'d> {
     }
 
     fn expr(&self, id: ExprId) -> ast::Expr {
-        crate::stack::deep(|| self.expr_inner(id))
+        crate::stack::Stack::deep(|| self.expr_inner(id))
     }
 
     fn expr_inner(&self, id: ExprId) -> ast::Expr {

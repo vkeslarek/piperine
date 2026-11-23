@@ -210,7 +210,7 @@ pub fn parse_type(src: &str) -> Parsed<Type> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(crate::stack::deep(|| ty::build(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
+    finish(crate::stack::Stack::deep(|| ty::build(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// Parse `src` as one pattern.
@@ -218,7 +218,7 @@ pub fn parse_pat(src: &str) -> Parsed<Pat> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(crate::stack::deep(|| h.pat.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
+    finish(crate::stack::Stack::deep(|| h.pat.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// Parse `src` as generic parameters (`<T: Repr = bool, const N: u32>`).
@@ -226,7 +226,7 @@ pub fn parse_generics(src: &str) -> Parsed<Generics> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(crate::stack::deep(|| ty::generics(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
+    finish(crate::stack::Stack::deep(|| ty::generics(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// Parse `src` as one expression.
@@ -234,7 +234,7 @@ pub fn parse_expr(src: &str) -> Parsed<Expr> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(crate::stack::deep(|| h.expr.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
+    finish(crate::stack::Stack::deep(|| h.expr.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// Parse `src` as one item of a module body.
@@ -242,7 +242,7 @@ pub fn parse_module_item(src: &str) -> Parsed<ModuleItem> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(crate::stack::deep(|| msl::module_item(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
+    finish(crate::stack::Stack::deep(|| msl::module_item(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// Parse `src` as one braced block `{ stmt* }`.
@@ -250,7 +250,7 @@ pub fn parse_block(src: &str) -> Parsed<Block> {
     let (tokens, diags) = lex_limited(src);
     let input = token_input(&tokens, src.len());
     let h = handles();
-    finish(crate::stack::deep(|| h.block.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
+    finish(crate::stack::Stack::deep(|| h.block.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
 /// The deepest nesting the parser descends into (E0910).
@@ -718,7 +718,7 @@ pub fn parse(src: &str) -> ParseResult {
         .then(first_of(vec![h.item.clone().boxed(), stray.boxed()]).repeated().collect::<Vec<_>>())
         .then_ignore(end())
         .map_with(|(inner_docs, items), e| File { inner_docs, items, span: Loc(e.span()) });
-    let (file, mut diagnostics) = finish(crate::stack::deep(|| file.parse(input).into_output_errors()), diags, &tokens);
+    let (file, mut diagnostics) = finish(crate::stack::Stack::deep(|| file.parse(input).into_output_errors()), diags, &tokens);
     let file = file.unwrap_or(File {
         inner_docs: Vec::new(),
         items: Vec::new(),

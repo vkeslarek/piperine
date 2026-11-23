@@ -343,7 +343,7 @@ pub(crate) fn block_exprs(design: &Design, block: &BlockNode) -> Vec<ExprId> {
 
 /// `id` and everything below it, pre-order.
 pub(crate) fn preorder(design: &Design, id: ExprId, out: &mut Vec<ExprId>) {
-    crate::stack::deep(|| {
+    crate::stack::Stack::deep(|| {
         out.push(id);
         for c in expr_children(&design.expr_node(id).kind, design) {
             preorder(design, c, out);

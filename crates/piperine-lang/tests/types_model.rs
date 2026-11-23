@@ -21,22 +21,28 @@ const LIMIT: bool = 1.0;\n\
 struct Holder { a: f64 }\n\
 impl Holder { fn make() -> bool { 1.0 } }\n";
 
-/// The diagnostics of the model check of `src` after `HEAD`, with `src`.
-fn model_errors(src: &str) -> (String, Vec<DesignDiagnostic>) {
-    let src = format!("{HEAD}{src}");
-    let design = support::build(&src);
-    assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", support::codes(&design));
-    let found = Types::check_model(&design).expect_err("expected diagnostics");
-    (src, found)
-}
+/// What a model-check test reads from a source: the diagnostics of the check, the text they point at, their codes.
+struct ModelSources;
 
-/// The text each diagnostic points at, in source order.
-fn snippets<'a>(src: &'a str, found: &[DesignDiagnostic]) -> Vec<&'a str> {
-    found.iter().map(|d| &src[d.diagnostic.span().range()]).collect()
-}
+impl ModelSources {
+    /// The diagnostics of the model check of `src` after `HEAD`, with `src`.
+    fn errors(src: &str) -> (String, Vec<DesignDiagnostic>) {
+        let src = format!("{HEAD}{src}");
+        let design = support::build(&src);
+        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", support::codes(&design));
+        let found = Types::check_model(&design).expect_err("expected diagnostics");
+        (src, found)
+    }
 
-fn codes_of(found: &[DesignDiagnostic]) -> Vec<String> {
-    found.iter().map(|d| d.diagnostic.code.to_string()).collect()
+    /// The text each diagnostic points at, in source order.
+    fn snippets<'a>(src: &'a str, found: &[DesignDiagnostic]) -> Vec<&'a str> {
+        found.iter().map(|d| &src[d.diagnostic.span().range()]).collect()
+    }
+
+    /// The code of each diagnostic.
+    fn codes(found: &[DesignDiagnostic]) -> Vec<String> {
+        found.iter().map(|d| d.diagnostic.code.to_string()).collect()
+    }
 }
 
 #[test]
@@ -64,29 +70,29 @@ fn every_item_kind_of_every_crate_is_checked_unreached() {
 #[test]
 fn an_unreached_function_with_an_error_fails_the_model_check() {
     // GN-08 AC 3: `broken` is called by nothing, and the model check names it
-    let (src, found) = model_errors("fn broken(x: f64) -> bool { x + 1.0 }\nmodule Top() { }");
-    assert_eq!(snippets(&src, &found), ["x + 1.0"]);
-    assert_eq!(codes_of(&found), ["E0180"]);
+    let (src, found) = ModelSources::errors("fn broken(x: f64) -> bool { x + 1.0 }\nmodule Top() { }");
+    assert_eq!(ModelSources::snippets(&src, &found), ["x + 1.0"]);
+    assert_eq!(ModelSources::codes(&found), ["E0180"]);
 }
 
 #[test]
 fn an_unplaced_module_calling_ddt_from_a_function_is_e0350() {
     // GN-08 AC 4: nothing places `Lonely`, and its function places the core module `ddt`
-    let (src, found) = model_errors("fn rate(x: f64) -> f64 { ddt(x) }\nmodule Lonely(a: E) { }\nanalog for Lonely { let y = rate(v(a)); }");
-    assert_eq!(codes_of(&found), ["E0350"]);
-    assert_eq!(snippets(&src, &found), ["ddt(x)"]);
+    let (src, found) = ModelSources::errors("fn rate(x: f64) -> f64 { ddt(x) }\nmodule Lonely(a: E) { }\nanalog for Lonely { let y = rate(v(a)); }");
+    assert_eq!(ModelSources::codes(&found), ["E0350"]);
+    assert_eq!(ModelSources::snippets(&src, &found), ["ddt(x)"]);
 }
 
 #[test]
 fn an_unreached_item_has_the_code_it_has_when_reached() {
     // the same function, once unreached under the model check and once reached from `Top`
     let function = "fn broken(x: f64) -> bool { x + 1.0 }\n";
-    let (src, unreached) = model_errors(&format!("{function}module Top() {{ }}"));
+    let (src, unreached) = ModelSources::errors(&format!("{function}module Top() {{ }}"));
     let reached_src = format!("{HEAD}{function}module Top() {{ }}\nanalog for Top {{ let b = broken(1.0); }}");
     let design = support::build(&reached_src);
     let reached = Types::check(&design, "Top").expect_err("reached, it fails");
-    assert_eq!(codes_of(&unreached), codes_of(&reached));
-    assert_eq!(snippets(&src, &unreached), snippets(&reached_src, &reached));
+    assert_eq!(ModelSources::codes(&unreached), ModelSources::codes(&reached));
+    assert_eq!(ModelSources::snippets(&src, &unreached), ModelSources::snippets(&reached_src, &reached));
 }
 
 #[test]
@@ -97,6 +103,6 @@ fn the_standard_library_is_left_to_its_own_check() {
     let design = Design::builder().std_source("lib.msl", format!("pub mod prelude;\n{std_error}")).std_source("prelude.msl", "").source("top.msl", format!("{HEAD}module Top() {{ }}")).build();
     assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
     assert!(Types::check_model(&design).is_ok());
-    let (_, found) = model_errors(&format!("{std_error}module Top() {{ }}"));
-    assert_eq!(codes_of(&found), ["E0180"]);
+    let (_, found) = ModelSources::errors(&format!("{std_error}module Top() {{ }}"));
+    assert_eq!(ModelSources::codes(&found), ["E0180"]);
 }

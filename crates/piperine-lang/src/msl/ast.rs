@@ -247,7 +247,7 @@ pub struct Expr {
 /// come back through here).
 impl Clone for Expr {
     fn clone(&self) -> Self {
-        crate::stack::deep(|| Expr { kind: self.kind.clone(), span: self.span })
+        crate::stack::Stack::deep(|| Expr { kind: self.kind.clone(), span: self.span })
     }
 }
 

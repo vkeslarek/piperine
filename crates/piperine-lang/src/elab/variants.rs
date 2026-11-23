@@ -141,7 +141,7 @@ impl Elaboration<'_, '_> {
         self.variants.continuous.push(false);
         self.variants.assumed.push(self.declared_result(function, half));
         self.variants.open.insert(id);
-        let spec = crate::stack::wide(|| self.lower_variant(id, function, &arguments, half));
+        let spec = crate::stack::Stack::wide(|| self.lower_variant(id, function, &arguments, half));
         self.variants.open.remove(&id);
         let spec = spec?;
         let ret = spec.ret.clone();

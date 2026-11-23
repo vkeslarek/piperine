@@ -5,7 +5,7 @@
 use crate::msl::lexer;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{BinOp, BlockNode, FileId, BuiltinKind, DeclKind, ExprId, ExprKind, GenericParamData, LitKind, PatKind, Resolution, StmtId, StmtKind, StructClass, UnOp};
-use crate::stack;
+use crate::stack::Stack;
 
 use super::check::{Checker, Context};
 use super::derives::DerivedTrait;
@@ -36,7 +36,7 @@ impl Checker<'_> {
     /// `check`, where a mismatch of `expr` itself carries `code` (a rule of the specification
     /// with a code of its own, `E0318` for a `where`) instead of the plain `E0180`.
     pub(super) fn check_as(&mut self, expr: ExprId, expected: &Ty, code: &'static str) {
-        stack::deep(|| {
+        Stack::deep(|| {
             let node = self.design.expr_node(expr).clone();
             let file = self.file_of_expr(expr);
             if *expected == Ty::Event {
@@ -164,7 +164,7 @@ impl Checker<'_> {
 
     /// The type of `expr` from the expression alone; `None` after a diagnostic.
     pub(super) fn infer(&mut self, expr: ExprId) -> Option<Ty> {
-        stack::deep(|| {
+        Stack::deep(|| {
             let in_event_position = self.event_slot == Some(expr);
             let mut ty = self.infer_kind(expr);
             if ty == Some(Ty::Event) && !in_event_position {
