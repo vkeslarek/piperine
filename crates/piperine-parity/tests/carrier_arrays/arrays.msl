@@ -1,0 +1,165 @@
+//! Arrays of carriers run from source (composite-values CV-23 to CV-25, part II §5.1.8, part IV §12.1). A 10 GHz
+//! oscillator gives the rising edges (0.05 ns, 0.15 ns, ...); each bench counts them in `n`, which holds the number of
+//! edges before the one a reaction runs at.
+
+/// A free-running oscillator, its first change at half a period.
+pub module Osc(out clk: Bit = false) {
+    f: f64 = 200M where f > 0.0;
+}
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+/// Copies each element of `d` to the same element of `q`.
+module Reg(in d: [Bit; 4], out q: [Bit; 4]) {
+    q[0] = d[0];
+    q[1] = d[1];
+    q[2] = d[2];
+    q[3] = d[3];
+}
+
+/// One bit, passed through.
+module Cell(in d: Bit, out q: Bit) { q = d; }
+
+/// At edge `n` element `n % 4` of `x` toggles. `y` is `x` through a register, `z` element 2 of `x` through a cell, and
+/// `lines[3]` element 0 through a cell the child drives.
+module Toggles(in clk: Bit) {
+    signal n: Bit<u8> = 0;
+    signal x: [Bit; 4];
+    signal y: [Bit; 4];
+    signal z: Bit;
+    signal lines: [Bit; 4];
+    let copy = Reg(x, y);
+    let one = Cell(x[2], z);
+    let driven = Cell(x[0], lines[3]);
+}
+digital for Toggles {
+    on clk.rise() {
+        n <- n + 1;
+        let k = n % 4;
+        x[k] <- !x[k];
+        lines[1] <- !lines[1];
+        let w = y;
+        emit!("probe", n = n, y0 = y[0], y1 = y[1], y2 = y[2], y3 = y[3], z = z, l3 = lines[3], l1 = lines[1]);
+        emit!("whole", w0 = w[0], w1 = w[1], w2 = w[2], w3 = w[3]);
+    }
+    on x[0].changed() { emit!("changed", element = 0u8, n = n); }
+    on x[1].changed() { emit!("changed", element = 1u8, n = n); }
+    on x[2].changed() { emit!("changed", element = 2u8, n = n); }
+    on x[3].changed() { emit!("changed", element = 3u8, n = n); }
+    on x[1].changed() { emit!("history", prev = x[1].prev(), now = x[1], other_prev = x[0].prev(), other = x[0]); }
+}
+
+/// The bench: the oscillator and the module.
+module TogglesBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 10G };
+    let toggles = Toggles(clk);
+}
+
+/// A memory of a million bytes, every element starting at 9: element `n` takes `100 + n` at edge `n`.
+module Memory(in clk: Bit) {
+    signal n: Bit<u8> = 0;
+    signal mem: [Bit<u8>; 1048576] = [9; 1048576];
+}
+digital for Memory {
+    on clk.rise() {
+        n <- n + 1;
+        mem[n] <- 100 + n;
+        emit!("probe", n = n, first = mem[0], third = mem[3], fifth = mem[5], mid = mem[500], mid_prev = mem[500].prev(), last = mem[1048575]);
+    }
+    on mem[3].changed() { emit!("third", n = n, value = mem[3], before = mem[3].prev()); }
+    on mem[5].changed() { emit!("fifth", n = n, value = mem[5]); }
+}
+
+module MemoryBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 10G };
+    let memory = Memory(clk);
+}
+
+#[derive(Repr)]
+struct Frame { n: u8, ok: bool }
+
+/// Commits to the fields of a struct carrier and to an element of a value array, then reads them back.
+module Fields(in clk: Bit) {
+    signal edge: Bit<u8> = 0;
+    signal st: Bit<Frame> = Frame { n: 0, ok: false };
+    signal word: Bit<[bool; 8]> = [false; 8];
+    signal bits: [Bit; 2];
+}
+digital for Fields {
+    on clk.rise() {
+        edge <- edge + 1;
+        if edge == 0 {
+            st.n <- 3;
+            word[2] <- true;
+            bits[1] <- true;
+            bits[1] <- false;
+            st.n <- 1;
+            st.ok <- true;
+            st.n <- 2;
+        }
+        emit!("fields", edge = edge, n = st.n, ok = st.ok, w0 = word[0], w2 = word[2], w7 = word[7], b1 = bits[1]);
+    }
+}
+
+module FieldsBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 10G };
+    let fields = Fields(clk);
+}
+
+/// Commits to element `n + 4` of four carriers at the first edge.
+module Reach(in clk: Bit) {
+    signal n: Bit<u8> = 0;
+    signal small: [Bit; 4];
+}
+digital for Reach { on clk.rise() { small[n + 4] <- true; } }
+
+module ReachBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 10G };
+    let reach = Reach(clk);
+}
+
+/// §8.2's shift register: `sh[7]` takes `rx`, every other element the one above it; `rx` plays a pattern.
+module Shift(in clk: Bit) {
+    signal n: Bit<u8> = 0;
+    signal rx: Bit = false;
+    signal pat: [Bit; 8] = [true, false, true, true, false, false, true, false];
+    signal sh: [Bit; 8];
+}
+digital for Shift {
+    on clk.rise() {
+        n <- n + 1;
+        rx <- pat[n % 8];
+        sh[7] <- rx;
+        for k in 0..7 { sh[k] <- sh[k + 1]; }
+        emit!("shift", n = n, s0 = sh[0], s1 = sh[1], s2 = sh[2], s3 = sh[3], s4 = sh[4], s5 = sh[5], s6 = sh[6], s7 = sh[7]);
+    }
+}
+
+module ShiftBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 10G };
+    let shift = Shift(clk);
+}
+
+/// E.5's RAM: even edges write `1000 + n` at address `n % 16`; every edge reads the address first (before the write).
+module Ram(in clk: Bit) {
+    signal n: Bit<u8> = 0;
+    signal mem: [Bit<u32>; 256];
+}
+digital for Ram {
+    on clk.rise() {
+        n <- n + 1;
+        let addr = n % 16;
+        emit!("ram", n = n, addr = addr, read = mem[addr]);
+        if n % 2 == 0 { mem[addr] <- 1000u32 + n as u32; }
+    }
+}
+
+module RamBench() {
+    signal clk: Bit;
+    let osc = Osc(clk) { f: 10G };
+    let ram = Ram(clk);
+}

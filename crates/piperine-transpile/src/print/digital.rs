@@ -52,7 +52,10 @@ impl<'a> DigitalPrinter<'a> {
             self.body.carriers().get(c as usize).map_or_else(|| format!("drive{k}"), |x| Text::ident(&x.name))
         };
         match f.mode {
-            Mode::Drive(k) => format!("{}_drive", carrier(k)),
+            Mode::Drive(k) => match self.body.drives().get(k as usize).and_then(|d| d.element) {
+                Some(element) => format!("{}_element{element}_drive", carrier(k)),
+                None => format!("{}_drive", carrier(k)),
+            },
             Mode::DelayedEvent(k) => format!("{}_drive_changed", carrier(k)),
             Mode::Event(k) => format!("event{k}"),
             Mode::Cross(k) => format!("cross{k}"),

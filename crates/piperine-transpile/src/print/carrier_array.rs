@@ -128,7 +128,7 @@ impl ValuePrinter<'_> {
         let Some(count) = facts.count else {
             return Err(self.unsupported(e, "a whole read of a carrier that is no array"));
         };
-        Ok(Piece::new(format!("(*{}.whole::<{count}>())", self.read(&ElementNames::whole(&facts.name))), Prec::Atom))
+        Ok(Piece::new(format!("*{}.whole::<{count}>()", self.read(&ElementNames::whole(&facts.name))), Prec::Unary))
     }
 
     /// The statement a commit of `carrier` through `target` goes through: the whole pin, one element, or the range of

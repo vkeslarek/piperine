@@ -32,6 +32,10 @@ impl Elaboration<'_, '_> {
                 self.not_folded(scope, self.design.expr_node(definition.place).span, "the element of a definition");
                 continue;
             }
+            if target.element.is_some() && definition.after.is_some() {
+                self.unsupported(scope.file, self.design.expr_node(definition.place).span, "a delayed definition of an element of an array of carriers");
+                continue;
+            }
             let origin = self.locator.decl(child);
             if let Some((value, after)) = self.lower_drive_value(scope, definition.value, definition.after, Some(&target.ty)) {
                 self.structure.drives.push(Drive { carrier: target.carrier, value, after, origin, element: target.constant, path: target.path });

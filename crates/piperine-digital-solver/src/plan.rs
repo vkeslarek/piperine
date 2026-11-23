@@ -499,6 +499,18 @@ struct WriterEntry {
 }
 
 impl WriterEntry {
+    /// Whether `first` and `second`, writers of an array net of `count` elements (0 for a scalar net), break P1. On an array
+    /// net a reaction's statement names its element at run time, so it is never proved to share one with a function's window:
+    /// the checker refuses that pair statically (a drive and a commit of one element, or of any element, are `E0221`,
+    /// `E0220`); two functions, or two reactions, collide where their runs overlap.
+    fn clash(count: u64, first: &WriterEntry, second: &WriterEntry) -> bool {
+        if count == 0 {
+            return true;
+        }
+        let mixed = matches!((first.writer, second.writer), (NetWriter::Function { .. }, NetWriter::Statements { .. }) | (NetWriter::Statements { .. }, NetWriter::Function { .. }));
+        !mixed && first.collides(second)
+    }
+
     /// Whether the two writers can write one element: always for a scalar net or a whole pin, and for windows when
     /// their runs overlap.
     fn collides(&self, other: &WriterEntry) -> bool {
@@ -542,9 +554,7 @@ fn find_writers(nets: &[NetSpec], inputs: &[ShapeInput<'_>]) -> Result<Vec<NetWr
     let mut writers = Vec::with_capacity(nets.len());
     for (i, list) in found.into_iter().enumerate() {
         for (a, first) in list.iter().enumerate() {
-            let clash = list[a + 1..]
-                .iter()
-                .find(|second| first.writer != second.writer && (nets[i].count == 0 || first.collides(second)));
+            let clash = list[a + 1..].iter().find(|second| first.writer != second.writer && WriterEntry::clash(nets[i].count, first, second));
             if let Some(second) = clash {
                 return Err(bind_error("P1", vec![format!("net `{}` has two writers: {} and {}", nets[i].name, first.who, second.who)]));
             }

@@ -107,6 +107,14 @@ impl<'a> Netlist<'a> {
                     (None, _) => Port::Open,
                 });
             }
+            // a drive of one element writes a scalar pin bound to that element of the array net (`Pins::element_drives`)
+            for drive in body.drives().iter().filter(|d| d.element.is_some() && d.after.is_none()) {
+                let window = match (instance.net(drive.carrier as usize), drive.element) {
+                    (Some(net), Some(first)) => Port::Window { net: net.path().to_string(), first, length: 1 },
+                    _ => Port::Open,
+                };
+                ports.push(window);
+            }
             let mut values: Vec<(&str, ParamValue)> = Vec::new();
             for (param, given) in body.params().iter().zip(instance.params()).filter(|(param, given)| param.default.as_ref() != Some(*given)) {
                 let value = match given {

@@ -188,6 +188,7 @@ impl<'a> AnalogPrinter<'a> {
                 let part = if matches!(t, Target::Delayed(_)) { "now" } else { "changed" };
                 format!("drive:{name}.{part}")
             }
+            Target::ElementDrive(k) => format!("drive:{k}[element]"),
             Target::Watch(k) => format!("cross:{k}"),
             Target::Timer(k) => format!("at:{k}"),
             Target::Rearm { event, carrier } => {

@@ -750,10 +750,14 @@ impl<'a> Walk<'a> {
                     next.push(Task::Addend { branch: *branch, operator: addend.operator, at: addend.value });
                 }
             }
-            Stmt::Commit { value, after, .. } => {
+            Stmt::Commit { value, after, target, .. } => {
                 next.extend([Task::Expr(*value), Task::Discard]);
                 if let Some(after) = after {
                     next.extend([Task::Expr(*after), Task::Discard]);
+                }
+                // the element and the value-array indexes of the target are read too (an element commit at a run-time index)
+                for index in target.iter().flat_map(crate::model::CommitTarget::index_operands) {
+                    next.extend([Task::Expr(index), Task::Discard]);
                 }
             }
             Stmt::Emit { fields, .. } => {

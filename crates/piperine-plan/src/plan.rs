@@ -187,6 +187,8 @@ pub enum Target {
     EventPin(u32),
     /// Drive `k`'s undelayed pin.
     Delayed(u32),
+    /// The pin drive `k` of one element of an array carrier writes (`Pins::element_drives`).
+    ElementDrive(u32),
     /// The event pin of the `changed` event of drive `k`'s undelayed pin.
     DelayedEventPin(u32),
     /// The `CROSS` watch of event `k`.
@@ -337,6 +339,10 @@ pub struct Pins {
     /// The `GLOBAL` `SETTLE` pin, after the derivative abstol pins, when the body has a `settle`
     /// event (§13 rule 17): the engine fires it in the settle phase (§15 step 4).
     pub settle: Option<u32>,
+    /// The `PORT` pin `drive:<carrier>[<element>]` of each drive of one element of an array carrier, after the `SETTLE`
+    /// pin; `None` for any other drive. It is bound to that element of the array net by a window (abi.md §3: a
+    /// function writes one element through a scalar pin).
+    pub element_drives: Vec<Option<u32>>,
 }
 
 /// The pins of a drive with `after` (RS-12 AC 5).
@@ -383,6 +389,11 @@ impl Pins {
     /// The rate pin of derivative site `k`; `GROUND` for a site the body does not have.
     pub fn derivative(&self, k: u32) -> u32 {
         self.derivatives.get(k as usize).copied().unwrap_or(GROUND)
+    }
+
+    /// The pin drive `k` of one element writes; `GROUND` for a drive of a whole carrier.
+    pub fn element_drive(&self, k: u32) -> u32 {
+        self.element_drives.get(k as usize).copied().flatten().unwrap_or(GROUND)
     }
 
     /// The `abstol` pin of derivative site `k`; `DEFAULT` when it has none.
@@ -568,6 +579,7 @@ impl BodyPlan {
         let tolerances = Digital::tolerance_pins(&mut s, body);
         let derivative_abstols = Digital::derivative_abstol_pins(&mut s, body);
         let settle = Digital::settle_pin(&mut s, body);
+        let element_drives = Digital::element_drive_pins(&mut s, body);
         let watches = Digital::watches(&mut s, body, &events, &crossed, &tolerances);
         let caps = Digital::cap_watches(&mut s, body);
         let pins = Pins {
@@ -590,6 +602,7 @@ impl BodyPlan {
             caps,
             derivative_abstols,
             settle,
+            element_drives,
         };
 
         // Terms, branch by branch.
@@ -787,6 +800,7 @@ impl BodyPlan {
                 // abi.md §4.1: an event pin is written through its `CHANGED` byte (nonzero fires it).
                 Target::EventPin(k) => at(cell::PIN, pins.events.get(k as usize).copied().unwrap_or(GROUND), part::CHANGED),
                 Target::Delayed(k) => value(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.value)),
+                Target::ElementDrive(k) => value(cell::PIN, pins.element_drive(k)),
                 Target::DelayedEventPin(k) => at(cell::PIN, pins.delayed(k).map_or(GROUND, |d| d.event), part::CHANGED),
                 Target::Watch(k) => value(cell::WATCH, pins.watches.get(k as usize).copied().flatten().unwrap_or(GROUND)),
                 Target::Timer(k) => at(cell::PIN, pins.timer(k), part::CHANGED),

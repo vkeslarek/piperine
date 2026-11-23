@@ -402,10 +402,13 @@ impl<'a> Checker<'a> {
                         self.expr_id(&item, &origin, a.value);
                     }
                 }
-                Stmt::Commit { value, after, .. } => {
+                Stmt::Commit { value, after, target, .. } => {
                     self.expr_id(&item, &origin, *value);
                     if let Some(after) = after {
                         self.expr_id(&item, &origin, *after);
+                    }
+                    for index in target.iter().flat_map(crate::model::CommitTarget::index_operands) {
+                        self.expr_id(&item, &origin, index);
                     }
                 }
                 Stmt::Emit { fields, .. } => {
@@ -961,7 +964,7 @@ impl<'a> Checker<'a> {
                     Stmt::Expr(e) => stack_e.push(*e),
                     Stmt::Assign { value, .. } => stack_e.push(*value),
                     Stmt::Contribute { addends, .. } => stack_e.extend(addends.iter().map(|a| a.value)),
-                    Stmt::Commit { value, after, .. } => stack_e.extend([*value].into_iter().chain(*after)),
+                    Stmt::Commit { value, after, target, .. } => stack_e.extend([*value].into_iter().chain(*after).chain(target.iter().flat_map(crate::model::CommitTarget::index_operands))),
                     Stmt::BoundStep { value, when, .. } => stack_e.extend([*value].into_iter().chain(*when)),
                     Stmt::Emit { fields, .. } => stack_e.extend(fields.iter().filter_map(|f| match f {
                         EmitField::Value { value, .. } => Some(*value),

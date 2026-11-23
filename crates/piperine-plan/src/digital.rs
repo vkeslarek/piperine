@@ -549,6 +549,23 @@ impl Digital {
         })
     }
 
+    /// Adds the `PORT` pin of each drive of one element of an array carrier, `drive:<carrier>[<element>]`, in the element's
+    /// layout; `None` for every other drive. The netlist binds it to that element of the array net (`Port::Window`).
+    pub(crate) fn element_drive_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<Option<u32>> {
+        body.drives()
+            .iter()
+            .map(|d| {
+                let element = d.element.filter(|_| d.after.is_none())?;
+                let carrier = body.carriers().get(d.carrier as usize)?;
+                let layout = PinLayout::in_ir(body.ir(), &carrier.ty)?;
+                let fields = layout.fields();
+                let abi = layout.layout(&fields);
+                let name = format!("drive:{}[{element}]", carrier.name);
+                Some(s.pin(PinSpec { origin: &Self::at(&d.origin), ..PinSpec::discrete(&name, role::PORT, &abi) }))
+            })
+            .collect()
+    }
+
     /// Adds the `GLOBAL` `SETTLE` pin when `body` has a `settle` event (§13 rule 17): the pin the
     /// engine fires in the settle phase (§15 step 4), read by the event function of each
     /// `settle` event (`Source::Settle`).
@@ -622,8 +639,12 @@ impl Digital {
         for (k, d) in body.drives().iter().enumerate() {
             let k = k as u32;
             let set = ReadSet::target(body, Query::Drive(k));
-            let write = if d.after.is_some() { Target::Delayed(k) } else { Target::Carrier(d.carrier) };
-            let name = format!("drive:{}", Self::carrier_name(body, d.carrier));
+            let write = match (d.after.is_some(), d.element.is_some()) {
+                (true, _) => Target::Delayed(k),
+                (false, true) => Target::ElementDrive(k),
+                (false, false) => Target::Carrier(d.carrier),
+            };
+            let name = Self::drive_name(body, k);
             add(s, name, &d.origin, BodyPlan::function(Mode::Drive(k), &set, vec![(write, None)]));
         }
         for (k, e) in body.events().iter().enumerate() {
@@ -673,6 +694,15 @@ impl Digital {
             }
         }
         functions
+    }
+
+    /// The name of drive `k`'s function: `drive:<carrier>`, `drive:<carrier>[<element>]` for one element.
+    pub fn drive_name(body: Body<'_>, k: u32) -> String {
+        let Some(drive) = body.drives().get(k as usize) else { return format!("drive:{k}") };
+        match drive.element {
+            Some(element) => format!("drive:{}[{element}]", Self::carrier_name(body, drive.carrier)),
+            None => format!("drive:{}", Self::carrier_name(body, drive.carrier)),
+        }
     }
 
     /// What reaction `k` of `body` reads: its own dependency set.
