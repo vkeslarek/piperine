@@ -58,6 +58,19 @@ fn before_td_the_delay_reads_the_operating_point() {
 }
 
 #[test]
+fn a_let_reading_a_limit_is_a_delay_input() {
+    // AO-02 AC 2 (design mechanism 2): a `let` that reads a `limit` and is the input of a `delay` is read
+    // at a solution, where the limited iterate is the unlimited one: the delay gives what the plain input
+    // gives, the operating point's 1 V until 1 ms, `1 + 1000 (t - 1 ms)` after.
+    let points = Delayed::output("LimitedDelayBench", 2e-3, 20e-6);
+    assert!(points.len() > 20, "the transient takes steps");
+    for (t, v) in points {
+        let wanted = if t <= 1e-3 { 1.0 } else { 1.0 + 1000.0 * (t - 1e-3) };
+        ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("delay of a limit", "v(o)", Coordinate::Time(t)), wanted, v);
+    }
+}
+
+#[test]
 fn an_operating_point_and_a_zero_delay_give_the_input() {
     // AO-02 AC 3: in an equilibrium solve `delay(x, td)` is `x`: 1 V at the operating point of the
     // 1 ms bench; and `td = 0` gives `x` in every solve: `1 + 1000 t` along the transient.

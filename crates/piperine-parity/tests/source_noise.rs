@@ -172,6 +172,14 @@ fn a_density_that_is_not_finite_fails_with_e0454_naming_the_frequency() {
 }
 
 #[test]
+fn a_let_reading_a_limit_is_a_density_input() {
+    // AO-03 (§14 rule 5, §14.7.4): a density that reads a `let` bound to a `limit` is read at the operating
+    // point, where the limited iterate is the unlimited one: 1 V on the node, density `1e-18 * 1^2`, so the
+    // output is `r * sqrt(1e-18)`.
+    Hiss::assert_densities("limit", &Hiss::density("LimitedDensityBench", "o"), |_| 1e3 * (1e-18_f64).sqrt(), 1e-9);
+}
+
+#[test]
 fn analysis_noise_is_true_and_ac_stim_zero_in_a_noise_run() {
     // AO-05 AC 7: `analysis(Noise)` is true in the sweep, so the density is its 1e-18 branch: the
     // output density is `r * sqrt(1e-18)`, not the 1e-16 of the other. It is true in the operating point

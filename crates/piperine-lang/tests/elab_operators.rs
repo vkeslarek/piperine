@@ -31,13 +31,31 @@ fn ddx_lowers_to_its_derivative_and_is_recorded() {
 }
 
 #[test]
-fn ddx_through_a_fn_call_is_p0001_naming_the_form() {
-    // `ddx` is symbolic over the lowered expression; a call of a `fn` has no derived function yet
-    // (the elaborator adds the functions after the body), so it is refused by name.
+fn ddx_through_a_fn_call_expands_the_call_and_differentiates_its_body() {
+    // §14.2.3: `ddx(square(v(a)), v(a))` is the derivative of the body of `square` with `x` read as
+    // `v(a)`: `v(a) + v(a)`, as for `v(a) * v(a)`; the body adds no IR function and no local.
     let src = format!("fn square(x: f64) -> f64 {{ x * x }}\n{}", design("v(o, gnd) +> ddx(square(v(a, gnd)), v(a, gnd));"));
-    let err = Elab::run(&src, "Top").expect_err("a call inside ddx");
+    let ir = Elab::ir(&src, "Top");
+    assert!(ir.to_string().contains("(probe(a, gnd) + probe(a, gnd))"), "{ir}");
+    assert_eq!(ir.functions().count(), 0, "the call is expanded, so no function is added");
+}
+
+#[test]
+fn a_fn_with_more_than_lets_and_a_value_is_p0001_inside_a_ddx() {
+    // the derivative of a branch of control flow is not an expression: a `fn` that returns early is refused
+    // by the statement that is no plain `let`.
+    let early = format!("fn clipped(x: f64) -> f64 {{ if x > 1.0 {{ return 1.0; }} x }}\n{}", design("v(o, gnd) +> ddx(clipped(v(a, gnd)), v(a, gnd));"));
+    let err = Elab::run(&early, "Top").expect_err("an early return inside ddx");
     assert_eq!(Elab::codes(&err), ["P0001"], "{:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
-    assert!(err[0].diagnostic.message.contains("a call of a `fn` inside a `ddx`"), "{}", err[0].diagnostic.message);
+    assert!(err[0].diagnostic.message.contains("a statement that is no plain `let` in a `fn` called inside a `ddx`"), "{}", err[0].diagnostic.message);
+}
+
+#[test]
+fn ddx_against_the_flow_of_a_branch_with_no_potential_contribution_is_the_literal_zero() {
+    // `i(a, gnd)` of a branch the module only gives a flow contribution is no unknown: the derivative
+    // against it is 0 (§14.2.3), the same literal as for an expression that reads no probe.
+    let ir = Elab::ir(&design("i(a, gnd) +> v(a, gnd) / 1k; v(o, gnd) +> ddx(3.0 * v(a, gnd), i(a, gnd));"), "Top");
+    assert!(ir.to_string().contains("potential +> direct 0.0"), "{ir}");
 }
 
 #[test]
@@ -125,4 +143,17 @@ fn a_field_type_conflict_across_trace_sites_is_e0605() {
     // first and a `bool` at the second.
     let err = Elab::run(&design("emit!(\"conv\", v = v(a, gnd)); emit!(\"conv\", v = true);"), "Top").expect_err("a field of two types");
     assert!(Elab::codes(&err).iter().any(|c| c == "E0605"), "{:?}", err.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+}
+
+#[test]
+fn a_definition_or_an_at_argument_reaching_freq_through_a_fn_is_refused_by_the_checker() {
+    // §8.2.5 and §13 rule 11 (GAPS §4.7): a definition and an `at` argument are discrete expressions, so one that
+    // reads `freq()` through a `fn` is `E0336` and `E0442`, errors of the language, not a gap; the IR's
+    // ambient-reads check is the backstop behind them.
+    let definition = "fn level() -> f64 { 1.0 + freq() }\nmodule R(out q: f64 = 0.0) { q = level(); }\nmodule Top() { signal q: f64; let r = R(q); }";
+    let err = Elab::run(definition, "Top").expect_err("a definition reading freq");
+    assert!(Elab::codes(&err).iter().any(|c| c == "E0336"), "{:?}", Elab::codes(&err));
+    let at = "fn when() -> f64 { 1.0e-9 + freq() }\nmodule R(out q: Bit<f64> = 0.0) { }\ndigital for R { on at(when()) { q <- 1.0; } }\nmodule Top() { signal q: Bit<f64>; let r = R(q); }";
+    let err = Elab::run(at, "Top").expect_err("an at argument reading freq");
+    assert!(Elab::codes(&err).iter().any(|c| c == "E0442"), "{:?}", Elab::codes(&err));
 }

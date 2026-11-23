@@ -17,12 +17,11 @@ analog for NoisyDiode {
     let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();
     let vd    = limit(v(a, k), |new, old| pnjlim(new, old, nvt, vcrit), vcrit);
     let id    = is * ((vd / nvt).exp() - 1.0);
-    // the noise densities read the junction current of the solved voltage, not of the limited one
-    // the Newton iteration stamps (the limiting is a convergence aid, `vd` = `v(a, k)` at a solution)
-    let solved = is * ((v(a, k) / nvt).exp() - 1.0);
+    // the noise densities read the junction current `id` itself: a `limit` read by a `noise` density is its
+    // argument, the density being evaluated at a solution
     i(a, k) +> id + gmin() * vd
-        + white_noise(2.0 * Q * solved.abs(), "shot")
-        + flicker_noise(kf * solved.abs().powf(af), 1.0, "flicker");
+        + white_noise(2.0 * Q * id.abs(), "shot")
+        + flicker_noise(kf * id.abs().powf(af), 1.0, "flicker");
 }
 
 module NoiseDiode() {

@@ -129,7 +129,7 @@ impl Elaboration<'_, '_> {
             _ => None,
         };
         if !standalone.locals.is_empty() {
-            self.unsupported(scope.file, span, "a `let` inside a `ddt`");
+            self.unsupported(scope.file, span, "a closure or an `Option` binding inside a `ddt` state");
             return None;
         }
         let site = self.structure.derivatives.len() as u32;
@@ -144,6 +144,8 @@ impl Elaboration<'_, '_> {
         let mut standalone = Self::sub_scope(scope);
         standalone.no_locals = true;
         standalone.analog = scope.analog;
+        standalone.at_solution = scope.at_solution;
+        standalone.expands_functions = scope.expands_functions;
         standalone.keys = scope.keys.clone();
         standalone.let_sources = scope.let_sources.clone();
         standalone

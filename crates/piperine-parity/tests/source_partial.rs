@@ -45,6 +45,33 @@ fn ddx_of_the_diode_current_is_its_conductance() {
 }
 
 #[test]
+fn ddx_differentiates_through_a_fn_and_a_fn_it_calls() {
+    // AO-01 AC 1 (§14.2.3, the derivative is symbolic over pure functions): `shockley` (a `let` and a
+    // value) plus `twice` (2 * a call of `shockley`) is three junctions: three times the conductance.
+    let (is, nvt) = (1e-14, 25.85e-3);
+    let wanted = 3.0 * is / nvt * (0.6f64 / nvt).exp();
+    let actual = Partial::output("FnConductanceBench");
+    assert!(Partial::within(wanted, actual, 1e-9), "g = {actual:e}, closed form {wanted:e}");
+}
+
+#[test]
+fn ddx_of_two_calls_of_one_fn_reads_each_calls_arguments() {
+    // `shockley(v, is) + shockley(v, 5 is)`: the second call binds the parameters again, so the
+    // derivative is six times `is / nvt * exp(0.6 / nvt)`, not twice.
+    let (is, nvt) = (1e-14, 25.85e-3);
+    let wanted = 6.0 * is / nvt * (0.6f64 / nvt).exp();
+    let actual = Partial::output("FnTwiceConductanceBench");
+    assert!(Partial::within(wanted, actual, 1e-9), "g = {actual:e}, closed form {wanted:e}");
+}
+
+#[test]
+fn ddx_against_the_flow_of_a_branch_with_no_potential_contribution_is_zero() {
+    // §14.2.3: the flow of a branch the module only gives a flow contribution is no unknown, so the
+    // expression is held constant against it: `ddx(3 v(a), i(a))` is 0.
+    assert!(Partial::output("FlowOfAFlowBranchBench").abs() <= 1e-12);
+}
+
+#[test]
 fn ddx_against_the_reversed_branch_is_minus_one() {
     // AO-01 AC 2: `ddx(v(k, a), v(a, k))`: the reversed branch contributes -1.
     assert!(Partial::within(-1.0, Partial::output("ReversedBranchBench"), 1e-12));

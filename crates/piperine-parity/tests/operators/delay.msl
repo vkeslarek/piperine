@@ -52,3 +52,15 @@ analog for NonPositiveMaxBench {
     v(src, gnd) +> 1.0;
     v(o, gnd) +> delay(v(src, gnd), 1n, 0.0);
 }
+
+/// `delay(x, 1 ms)` of a `let` that reads a `limit`: the input is read at a solution, where the limited
+/// iterate is the unlimited one, so it gives what `ConstantDelayBench` gives.
+module LimitedDelayBench() {
+    signal src: Electrical;
+    signal o: Electrical;
+}
+analog for LimitedDelayBench {
+    v(src, gnd) +> 1.0 + 1000.0 * now();
+    let seen = limit(v(src, gnd), |new, old| new, 1.0);
+    v(o, gnd) +> delay(seen, 1m);
+}

@@ -23,7 +23,7 @@ mod derived;
 mod diagnose;
 mod drives;
 mod event_reads;
-mod events;
+mod events; mod expansion;
 mod exits;
 mod files; mod override_text; mod table_model; mod tables;
 mod elaborator; mod analog;

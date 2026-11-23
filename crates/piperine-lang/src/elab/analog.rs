@@ -202,6 +202,10 @@ impl Elaboration<'_, '_> {
         if !self.core_site_allowed(scope, span, "limit") {
             return None;
         }
+        // read at a converged solution, `limit(x, f, seed)` is `x`: the limited iterate is the unlimited one
+        if scope.at_solution {
+            return self.lower_expr(scope, *args.first()?);
+        }
         let enabled = self.standalone_guard(scope, span, "a `limit`")?;
         let site = scope.limits.len() as u32;
         let name = match scope.limit_name.take() {

@@ -174,3 +174,15 @@ module NanDensityBench() {
     let load = Resistor { r: 1k }(o, gnd);
 }
 analog for NanDensityBench { i(gnd, o) +> noise(0.0 / 0.0, "unbounded"); }
+
+/// A density that reads a `let` bound to a `limit`: 1 mA into 1 kohm is 1 V, and the density `1e-18 * level^2`
+/// is read at that solution, where the limited iterate is the unlimited one.
+module LimitedDensityBench() {
+    signal o: Electrical;
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for LimitedDensityBench {
+    i(gnd, o) +> 1m;
+    let level = limit(v(o, gnd), |new, old| new, 1.0);
+    i(o, gnd) +> noise(1e-18 * level * level, "limited");
+}

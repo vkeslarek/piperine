@@ -26,9 +26,10 @@ impl Elaboration<'_, '_> {
         let span = self.design.expr_node(call).span;
         let [density, rest @ ..] = args else { return None };
         let mut standalone = Self::standalone_scope(scope);
+        standalone.at_solution = true;
         let density = self.lower_expr(&mut standalone, *density)?;
         if !standalone.locals.is_empty() {
-            self.unsupported(scope.file, span, "a `let` inside a `noise`");
+            self.unsupported(scope.file, span, "a closure or an `Option` binding inside a `noise` density");
             return None;
         }
         let group = self.noise_group(scope, rest.first().copied())?;

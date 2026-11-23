@@ -26,12 +26,13 @@ impl Elaboration<'_, '_> {
         let span = self.design.expr_node(call).span;
         let [input, time, rest @ ..] = args else { return None };
         let mut standalone = Self::standalone_scope(scope);
+        standalone.at_solution = true;
         let input = self.lower_expr(&mut standalone, *input)?;
         let time_span = self.design.expr_node(*time).span;
         let time = self.lower_expr(&mut standalone, *time)?;
         let maximum = self.optional_constant(&mut standalone, rest.first().copied(), "a `delay` max")?;
         if !standalone.locals.is_empty() {
-            self.unsupported(scope.file, span, "a `let` inside a `delay`");
+            self.unsupported(scope.file, span, "a closure or an `Option` binding inside a `delay` input");
             return None;
         }
         if maximum.is_none() && !self.constant_during_an_analysis(time) {

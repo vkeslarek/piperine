@@ -114,3 +114,59 @@ analog for ConductanceAcBench {
     v(a, gnd) +> 0.6;
     v(inp, gnd) +> ac_stim(1.0);
 }
+
+/// A pure `fn` of the junction current, with a `let` of its own and a call of another `fn`.
+fn shockley(v: f64, is: f64, nvt: f64) -> f64 {
+    let x = v / nvt;
+    is * (x.exp() - 1.0)
+}
+
+fn twice(v: f64, is: f64, nvt: f64) -> f64 { 2.0 * shockley(v, is, nvt) }
+
+/// `ddx` of calls of a `fn`: `shockley(v, is) + twice(v, is)` is three junctions of `is`, so the
+/// derivative is three times the conductance.
+module FnConductance(a: Electrical, o: Electrical) {
+    is: f64 = 1e-14;
+    nvt: f64 = 25.85m;
+}
+analog for FnConductance {
+    v(o, gnd) +> ddx(shockley(v(a, gnd), is, nvt) + twice(v(a, gnd), is, nvt), v(a, gnd));
+}
+
+module FnConductanceBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let g = FnConductance(a, o);
+}
+analog for FnConductanceBench { v(a, gnd) +> 0.6; }
+
+/// The same call of one `fn` twice with other arguments: the second call does not read the first's.
+module FnTwiceConductance(a: Electrical, o: Electrical) {
+    is: f64 = 1e-14;
+    nvt: f64 = 25.85m;
+}
+analog for FnTwiceConductance {
+    v(o, gnd) +> ddx(shockley(v(a, gnd), is, nvt) + shockley(v(a, gnd), 5.0 * is, nvt), v(a, gnd));
+}
+
+module FnTwiceConductanceBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let g = FnTwiceConductance(a, o);
+}
+analog for FnTwiceConductanceBench { v(a, gnd) +> 0.6; }
+
+/// A flow probe of a branch the module gives no potential contribution: the flow is no unknown, so an
+/// expression is held constant against it (§14.2.3: any other branch is held constant).
+module FlowOfAFlowBranch(a: Electrical, o: Electrical) {}
+analog for FlowOfAFlowBranch {
+    i(a, gnd) +> v(a, gnd) / 1k;
+    v(o, gnd) +> ddx(3.0 * v(a, gnd), i(a, gnd));
+}
+
+module FlowOfAFlowBranchBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let f = FlowOfAFlowBranch(a, o);
+}
+analog for FlowOfAFlowBranchBench { v(a, gnd) +> 0.4; }

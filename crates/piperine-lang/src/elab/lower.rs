@@ -61,6 +61,12 @@ pub(super) struct Scope {
     pub(super) handles: BTreeMap<DeclId, ExprId>,
     /// Code with no local of its own (a drive): a `match` reads its scrutinee again at each test.
     pub(super) no_locals: bool,
+    /// Code a core primitive evaluates at a converged solution (a `noise` density, a `delay` input): a `limit` there is
+    /// its argument, since limiting changes no iterate that has stopped moving (§14.7.4).
+    pub(super) at_solution: bool,
+    /// Code that is differentiated symbolically (a `ddx` value): a `fn` called there is expanded where it stands
+    /// (`expansion.rs`), not called.
+    pub(super) expands_functions: bool,
     /// Whether the code being lowered reads `freq()` from the solve (§14.4.4): the analog block
     /// and the functions it calls (a function's `freq_` is the caller's; a reaction reads 0).
     pub(super) analog: bool,
@@ -107,7 +113,7 @@ pub(super) struct Scope {
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), handles: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), handles: BTreeMap::new(), no_locals: false, at_solution: false, expands_functions: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
     }
 }
 
@@ -494,6 +500,8 @@ impl Elaboration<'_, '_> {
             (CallClass::Probe, _) => self.lower_probe(scope, expr, ty, origin),
             // A function that emits is no IR function: its call is inlined where it stands (§19 rule 10).
             (_, Some(Callee::Function(function))) if self.is_inlined(function) => self.inline_emitting_value(scope, function, args, origin),
+            // A `fn` called in a value that is differentiated is expanded where it stands (`expansion.rs`).
+            (_, Some(Callee::Function(function))) if scope.expands_functions => self.expand_function_call(scope, expr, function),
             // A recursion reached from an `analog` block is expanded where it is called (§3 rule 12, `unroll.rs`).
             (_, Some(Callee::Function(function))) if scope.in_analog_block && self.reaches_recursion(function) => self.lower_expanded_call(scope, expr, function, origin),
             (_, Some(Callee::Function(function))) => {
