@@ -883,8 +883,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] the `sdelay` and `elabops` tests of AO-02 named in `## Checks` pass, and `a_delay_reading_an_unknown_value_is_e0150`
-- [ ] Gate check passes: `Run elabops`, `Run sdelay`, then Full
+- [x] the `sdelay` and `elabops` tests of AO-02 named in `## Checks` pass, and `a_delay_reading_an_unknown_value_is_e0150`
+- [x] Gate check passes: `Run elabops`, `Run sdelay`, then Full
 
 **Tests**: e2e
 **Gate**: full

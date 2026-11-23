@@ -34,6 +34,8 @@ pub(super) struct Structure {
     pub(super) derivatives: Vec<Derivative>,
     /// The `ddx` calls of the body, in source order (`partial.rs`).
     pub(super) partial_derivatives: Vec<piperine_ir::PartialDerivative>,
+    /// The delay sites of the body, in the order their `Expr::Delay` reads number them.
+    pub(super) delays: Vec<piperine_ir::DelaySite>,
     /// The carriers each child binds at its carrier ports: (child index, one entry per port).
     pub(super) child_carriers: Vec<(u32, Vec<Option<u32>>)>,
     /// The param values of children that read the parent's params: (child, param, value).
@@ -74,6 +76,8 @@ pub(super) struct Frame {
     pub(super) failed: BTreeSet<ExprId>,
     /// The derivative site of each `ddt` call read in the frame (`derivatives.rs`): one call, one site.
     pub(super) derivatives: BTreeMap<ExprId, u32>,
+    /// The delay site of each `delay` call read in the frame (`delays.rs`): one call, one site.
+    pub(super) delays: BTreeMap<ExprId, u32>,
     /// For a reach frame (`reach.rs`), the index of the child it stands for in the body's children.
     pub(super) child: Option<u32>,
     /// The loop variables of the unrolled analog loops the placement sat in when it was hoisted,
@@ -84,7 +88,7 @@ pub(super) struct Frame {
 impl Frame {
     /// The frame of the body's own module.
     pub(super) fn root(module: DeclId) -> Frame {
-        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), child: None, unrolled: Bindings::new() }
+        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), child: None, unrolled: Bindings::new() }
     }
 }
 
@@ -227,6 +231,9 @@ impl Elaboration<'_, '_> {
         }
         for derivative in structure.derivatives {
             self.ir.derivative(body, derivative);
+        }
+        for delay in structure.delays {
+            self.ir.delay(body, delay);
         }
         for partial in structure.partial_derivatives {
             self.ir.partial_derivative(body, partial);

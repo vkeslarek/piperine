@@ -113,9 +113,9 @@ fn delay_noise_and_simparam_type_and_wait_for_lowering() {
     // the arguments are typed: a text where an `f64` goes, and a number where the name goes
     assert_eq!(codes_of(&diagnostics(&source("", "let x = delay(\"v\", 1n);"))).len(), 1);
     assert_eq!(codes_of(&diagnostics(&source("", "let x = simparam(1.0);"))).len(), 1);
-    // the elaborator still refuses each with a `P0001` naming it
+    // the elaborator still refuses each with a `P0001` naming it (`delay` lowers since T33: `elab_operators`)
     let elaborated_src = "module Top(a: Electrical, b: Electrical) { }\nanalog for Top { i(a, b) +> V; }";
-    for (form, name) in [("delay(v(a), 1n)", "delay"), ("noise(1e-18)", "noise"), ("simparam(\"gmin\", 1e-12)", "simparam")] {
+    for (form, name) in [("noise(1e-18)", "noise"), ("simparam(\"gmin\", 1e-12)", "simparam")] {
         let src = elaborated_src.replace("V", form);
         let err = elaborated::Elab::run(&src, "Top").expect_err(name);
         assert_eq!(elaborated::Elab::codes(&err), ["P0001"], "{name}: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
