@@ -57,13 +57,11 @@ impl Elaboration<'_, '_> {
         self.shape_in(&array, frame).is_some_and(|shape| shape.count() == 0)
     }
 
-    /// Keeps the name of the array `decl` of no element in the body's record when it is the body's own (frame 0): a
-    /// host that names it reads the empty array (CV-28).
+    /// Keeps the name of the array `decl` of no element in the body's record, under the prefix of its `frame` (a hoisted
+    /// placement's array is `p.none`, like its carriers): a host that names it reads the empty array (CV-28).
     pub(super) fn record_empty_array(&mut self, frame: usize, decl: DeclId) {
-        if frame != 0 {
-            return;
-        }
-        let name = self.design.decl_data(decl).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let declared = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str());
+        let name = format!("{}{declared}", self.frames[frame].prefix);
         self.structure.empty_arrays.push(piperine_ir::EmptyArray { name, origin: self.locator.decl(decl) });
     }
 

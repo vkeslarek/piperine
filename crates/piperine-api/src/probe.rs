@@ -114,13 +114,17 @@ impl Probe {
     /// `Top.bl[K-1]`, each its own column (composite-values CV-28).
     pub fn resolve_all(ir: &Ir, top: &str, entry: &str) -> Result<Vec<Probe>, Failure> {
         for path in [entry.to_string(), format!("{top}.{entry}")] {
-            let Some((instance, name)) = path.rsplit_once('.') else { continue };
-            let Some(found) = ir.instance_at(instance) else { continue };
-            if found.body().empty_arrays().iter().any(|a| a.name == name) {
-                return Ok(vec![Probe::Empty { path }]);
-            }
-            if let Some(array) = found.body().node_arrays().iter().find(|a| a.name == name) {
-                return (0..array.count).map(|k| Probe::resolve(ir, top, &format!("{path}[{k}]"))).collect();
+            // the name may hold dots of its own (a hoisted placement's array is `p.none` in the body of `Top`), so every
+            // split of the path into an instance and a name is tried, the longest instance first
+            for (dot, _) in path.rmatch_indices('.') {
+                let (instance, name) = (&path[..dot], &path[dot + 1..]);
+                let Some(found) = ir.instance_at(instance) else { continue };
+                if found.body().empty_arrays().iter().any(|a| a.name == name) {
+                    return Ok(vec![Probe::Empty { path }]);
+                }
+                if let Some(array) = found.body().node_arrays().iter().find(|a| a.name == name) {
+                    return (0..array.count).map(|k| Probe::resolve(ir, top, &format!("{path}[{k}]"))).collect();
+                }
             }
         }
         Probe::resolve(ir, top, entry).map(|probe| vec![probe])

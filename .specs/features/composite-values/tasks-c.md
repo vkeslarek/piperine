@@ -852,6 +852,9 @@ Proof: run elabarr | test a_negative_array_length_from_a_param_is_e0104_naming_i
 **C154** - A host that names a declared empty array reads `[]` at every row. (CV-28, AC 1; fix round 2, finding 16)
 Proof: run apiarr | test a_declared_empty_array_prints_as_the_empty_array ... ok
 
+**C155** - An empty array declared inside a hoisted module is recorded under the placement's prefix and a host that names it (`Top.p.e`) reads `[]`. (CV-28, AC 1; fix round 3, finding 20)
+Proof: run apiarr | test an_empty_array_of_a_hoisted_module_prints_under_the_placement ... ok
+
 ---
 
 ## Handoff

@@ -28,7 +28,8 @@ analog for Ladder { v(bl[0], gnd) +> 3.0; for k in 0..2 { i(bl[k], bl[k + 1]) +>
 module Bank(in lanes: [Bit; 4], out cells: [Bit<u8>; 2] = [0; 2]) { }\n\
 module Wide() { n: u32 = 4; signal lanes: [Bit; n]; }\n\
 module Gap() { signal none: [Bit<u8>; 0]; signal bl: [Electrical; 0]; }\n\
-module Bench() { signal clk: Bit; let osc = Osc(clk) { f: 1G }; let memory = Memory(clk); let ladder = Ladder(); let wide = Wide(); let gap = Gap(); }\n";
+module Hoist() -> f64 { signal e: [Bit<u8>; 0]; 1.0 }\n\
+module Bench() { signal clk: Bit; let osc = Osc(clk) { f: 1G }; let memory = Memory(clk); let ladder = Ladder(); let wide = Wide(); let gap = Gap(); let p = Hoist(); }\n";
 
 /// The last row of the transient of `DESIGN` over the probes `print`.
 struct Run;
@@ -148,5 +149,17 @@ fn a_declared_empty_array_prints_as_the_empty_array() {
     match Run::table(&["Bench.gap.other"]) {
         Err(Failure::Host { code, .. }) => assert_eq!(code, "E0801"),
         other => panic!("a name nothing declares is refused: {other:?}"),
+    }
+}
+
+#[test]
+fn an_empty_array_of_a_hoisted_module_prints_under_the_placement() {
+    // CV-28 AC 1 (finding 20): `Hoist` has a result, so its placement `p` joins the body of `Bench` under the prefix
+    // `p.`; its empty array `e` is `Bench.p.e` and prints `[]` at every row
+    let table = Run::table(&["Bench.p.e"]).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(table.columns[1..], ["Bench.p.e"].map(String::from), "one column for the entry");
+    for row in &table.rows {
+        let Cell::Composite(array) = &row[1] else { panic!("an empty array is a composite cell: {:?}", row[1]) };
+        assert_eq!(**array, CompositeCell::Array(Vec::new()), "no element");
     }
 }
