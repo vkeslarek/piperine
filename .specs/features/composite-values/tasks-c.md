@@ -685,9 +685,9 @@ T86 → T87 → T88 → T89 → T90
 
 **Done when**:
 
-- [ ] `signals_of_every_family_are_refused_for_the_logic_and_the_net` and `the_memory_bank_is_refused_for_its_generic_module` pass under `**Run book**`, and `book_inventory` passes
-- [ ] `the_fences_composite_values_lifted_are_checked` passes under `**Run galleries**` with the phase C fences
-- [ ] Gate check passes: Task (`piperine`, `piperine-lang`)
+- [x] `signals_of_every_family_are_refused_for_the_logic_and_the_net` and `the_memory_bank_is_refused_for_its_generic_module` pass under `**Run book**`, and `book_inventory` passes
+- [x] `the_fences_composite_values_lifted_are_checked` passes under `**Run galleries**` with the phase C fences
+- [x] Gate check passes: Task (`piperine`, `piperine-lang`)
 
 **Tests**: integration
 **Gate**: task
@@ -860,6 +860,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **T86 notes:** `explicit/initial.msl` `ElementsBench` is the real `[Bit<Option<u8>>; 1 << 20] = [Some(5); 1 << 20]`; `lower_option` reads one element of an array of `Option` carriers as its two halves (`compound.rs`). explicit-unknowns `tasks.md` C13 lost its DEFERRED note and C67 carries the QC1 amendment.
 **T87 notes (amendment: no `array_probe.rs`):** the whole array is a `Probe::Shaped` over `ValueType::Array(elem, count)` and an element is its leaf `[k]`, so the existing cells, formats and `E0801` apply; `Column::Array` is read at every step through `StepView::net_bytes` (the dense bytes of every element, never-committed ones at their initial value; `DiscreteSide::net_bytes`) because a change observation names no element to the recorder. An array of nodes: `Probe::resolve_all` expands `Top.bl` to `Top.bl[0..K]`. Metadata does not list nets, so no count is listed there (gap).
 **T88 notes:** no CLI code was needed beyond T87: text table (`[7, 4, 7]`), CSV and plot (one column per element and per node) are the phase B composite formats over the new probes; the test covers the text table, CSV and plot (the record-line and JSON-Lines forms of an array are phase B's `emit!` arrays).
+**T89 notes:** after the explicit-unknowns merge natures#2 stays `refused` for the `logic(\"10xx\")` literal (and `Sda` alone, E0161), so its renamed test keeps `Refusal::expect`; only E.5 (`Ram`) is a gallery fence of phase C (§8.2's `UartShift` and §22.1.3 are not gallery fences), so `the_fences_composite_values_lifted_are_checked` holds E.3, E.4 and E.5. `GAPS.md` section 10 count corrected to 22 after the merge.
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 

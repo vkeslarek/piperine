@@ -323,7 +323,7 @@ does not count.
 
 ## 10. Reference lists
 
-**Error codes of the spec that no source file mentions (23 of 189).** A code counts as mentioned when it is spelled
+**Error codes of the spec that no source file mentions (22 of 189).** A code counts as mentioned when it is spelled
 outside a comment in `crates/*/src` (a literal, or an enum variant's `as_str`); `E0375` is named in a doc
 comment only (`pom/builtin.rs`), so it is on the list, and `E0702` left it when T45 raised it. `E0503`, `E0504`, `E0505`, `E0507` and `E0508` are
 raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`). `E0803` to `E0806` are raised
@@ -383,7 +383,7 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | modules#2 | L31 | `generics` | next to the generic ladder, generation `for` in a `digital` block is `P0001` |
 | modules#6 | L30 | `generics` | `lowpass` is `P0001`: its `idt` is a generic module; the module that returns a value with feedback through an instance is behind it (L38) |
 | modules#8 | L30 | `generics` | `PiAw` is `P0001`: the `idt` of the integral is a generic module (its `VSignal` ports are typed signal-flow nodes) |
-| modules#10 | L32 | `generics` | `Cell` as a type, the arrays of carriers of `MemoryBank` and the generic module are `P0001` |
+| modules#10 | L32 | `generics` | the generic module of `MemoryBank` is `P0001` (the `Cell` struct and the arrays of carriers run) |
 | modules#12 | L32 | `generics` | `nch(0.13u, 2u)(d, g, s, b)`: placement through a template value or a function is `P0001` |
 | modules#14 | L33 | `foreign-models` | `extern "osdi" module Bsim4` is `P0001`: `extern` module is not supported yet |
 | modules~b53307eb | L30 | `generics` | the const generic and its `where N >= 1` are refused with modules#1 |
@@ -404,7 +404,7 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | cheatsheet#7 | L49 | `analog-operators` | the `emit!("newton", ..)` in `analog` is `P0001` (L49); the `on settle` reactions run |
 | cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function need a generic module: `P0001` |
 | cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
-| natures#2 | L21 | `resolved-nets` | `[Bit; 8]` is `P0001` (an array of carriers, L24), the one refusal left of the array, the `Option` and the `Logic`: `Bit<Option<u8>>` and `Bit<Logic<4>>` are carried types and run, and `Sda`, declared further on in the chapter, is `E0161` when the block stands alone (made to run by resolved-nets, after explicit-unknowns phase B: `Sda` is the chapter's own `impl Resolve<Driven>` nature, which needs `Resolve` and `Driven` (T27 to T32)) |
+| natures#2 | L21 | `resolved-nets` | `[Bit; 8]`, `Bit<Option<u8>>` and `Bit<Logic<4>>` run; the one refusal left of the line list is the `logic("10xx")` literal, and `Sda`, declared further on in the chapter, is `E0161` when the block stands alone (made to run by resolved-nets, after explicit-unknowns phase B: `Sda` is the chapter's own `impl Resolve<Driven>` nature, which needs `Resolve` and `Driven` (T27 to T32)) |
 | natures#3 | L21 | `resolved-nets` | `alarm.msl` is `E0161`: `Driven`, `Resolve` and `Pullup` are not in the library yet (`Logic` is, since explicit-unknowns phase B), so a nature that implements `Resolve<Driven>` is not read (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
 | natures~e99c1920 | L21 | `resolved-nets` | the command refuses `alarm.msl` and runs nothing, as the sentence says: held with natures#3 (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
 | digital#16 | L21 | `resolved-nets` | `IrqLine`, a nature the model declares with `impl Resolve<Driven>`: `Driven` is `E0161` (not in the library yet) (made to run by resolved-nets, B3 and later, T27 to T32 (`Resolve`, `Driven`, `Pullup`, `Tribuf`, `Keeper`)) |
