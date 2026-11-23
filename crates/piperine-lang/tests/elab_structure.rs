@@ -373,30 +373,23 @@ fn an_override_of_a_key_param_lowers_its_variant() {
 }
 
 #[test]
-fn the_section_18_diode_waits_for_params_and_io() {
-    // AS-05 AC 3 and 4 (Q2): the section 18 `Diode` as the spec writes it has `rs: Option<f64>`, an
-    // `Option` param that `params-and-io` (L28) owns. Until then it is refused by name, not mis-run:
-    // `P0001` naming the param type. The local `DiodeRs` (`tests/ngspice/diode_rs.msl`) proves the
-    // mechanism with a params-only `f64` selector.
+fn the_section_18_diode_type_checks_with_its_option_param() {
+    // AS-05 AC 3 and 4 (Q2), params-and-io PI-03 (GAPS L28 closed): the section 18 `Diode` as the spec writes it has
+    // `rs: Option<f64>`, an `Option` param, and a `match` over it in `analog`; it type checks and elaborates.
     let src = "module Diode(a: Electrical, k: Electrical) {\n    is: f64 = 1e-14 where is > 0.0;\n    rs: Option<f64>;\n    signal ai: Electrical;\n}\nanalog for Diode {\n    match rs {\n        Some(r) => { i(a, ai) +> v(a, ai) / r; }\n        None    => { v(a, ai) +> 0.0; }\n    }\n    i(ai, k) +> is * (v(ai, k) / vt()).exp();\n}\nmodule Top() { signal s: Electrical; let d = Diode { rs: Some(100.0) }(s, gnd); }";
-    let design = Elab::design(src);
-    let found = piperine_lang::types::Types::check(&design, "Top").expect_err("the Option param is refused");
-    assert_eq!(Elab::codes(&found), ["P0001"]);
-    assert!(found[0].diagnostic.message.contains("Option"), "the refusal names the param type: {}", found[0].diagnostic.message);
+    Elab::ir(src, "Top");
 }
 
 #[test]
-fn an_enum_param_is_refused_by_name_until_params_and_io() {
-    // CV round 2, finding 10 (GAPS L28, `md: Mode`): an enum param, unit or payload, with or without `Repr`, is `P0001`
-    // naming the enum type, never carried on to the transpiler read as an `f64`.
-    let items = "enum Mode { A, B }\n#[derive(Repr)]\nenum Kind { X(u8), Y }\n";
-    for (param, named) in [("m: Mode = Mode::A", "Mode"), ("k: Kind = Kind::Y", "Kind")] {
-        let src = format!("{items}module Top() {{ {param}; signal s: Electrical; }}");
-        let design = Elab::design(&src);
-        let found = piperine_lang::types::Types::check(&design, "Top").expect_err("the enum param is refused");
-        assert_eq!(Elab::codes(&found), ["P0001"], "{param}");
-        assert!(found[0].diagnostic.message.contains(&format!("param of type `{named}`")), "{param}: {}", found[0].diagnostic.message);
-    }
+fn a_payload_enum_param_is_refused_by_name() {
+    // PI-02 (unit enums only), CV round 2 finding 10: an enum param with a payload is `P0001` naming the enum type,
+    // never carried on to the transpiler read as an `f64`; a unit enum param is the param of `an_enum_param_selects_its_arm`.
+    let items = "#[derive(Repr)]\nenum Kind { X(u8), Y }\n";
+    let src = format!("{items}module Top() {{ k: Kind = Kind::Y; signal s: Electrical; }}");
+    let design = Elab::design(&src);
+    let found = piperine_lang::types::Types::check(&design, "Top").expect_err("the payload enum param is refused");
+    assert_eq!(Elab::codes(&found), ["P0001"]);
+    assert!(found[0].diagnostic.message.contains("param of type `Kind`"), "{}", found[0].diagnostic.message);
 }
 
 /// `Lag` of AS-09: a result that reads its own node, hoisted into each body that places it.

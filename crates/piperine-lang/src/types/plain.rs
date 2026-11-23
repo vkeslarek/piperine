@@ -15,10 +15,15 @@ impl Checker<'_> {
         ty.is_composite() && self.is_plain(ty, text)
     }
 
-    /// Whether a param may hold `ty` (§8.1.15, PI-01 to PI-03): an integer, an enum or an
-    /// `Option` of plain data, or a plain composite. `f64`, `bool` and a module are the caller's.
+    /// Whether a param may hold `ty` (§8.1.15, PI-01 to PI-03): an integer, a unit enum (PI-02; an
+    /// enum with a payload is refused by name) or an `Option` of plain data, or a plain composite.
+    /// `f64`, `bool` and a module are the caller's.
     pub(super) fn is_param_type(&mut self, ty: &Ty) -> bool {
-        matches!(ty, Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_)) || self.is_plain_composite(ty, false)
+        match ty {
+            Ty::UInt(_) | Ty::Int(_) => true,
+            Ty::Enum(decl) => !self.has_payload(*decl),
+            other => self.is_plain_composite(other, false),
+        }
     }
 
     /// Whether every leaf of `ty` is a plain scalar, or `str` when `text` is allowed.

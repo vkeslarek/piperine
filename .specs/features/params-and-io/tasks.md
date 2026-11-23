@@ -887,9 +887,9 @@ T44
 
 **Done when**:
 
-- [ ] `an_integer_param_is_bound_and_read`, `n_as_f64_reaches_the_contribution`, `an_integer_default_converts_with_as`, `an_enum_param_selects_its_arm`, `an_option_param_left_out_is_none`, `an_option_param_bound_to_a_value_is_some`, `option_param_methods_read_the_bound_case` pass under `**Run elabparams**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `an_integer_param_is_bound_and_read`, `n_as_f64_reaches_the_contribution`, `an_integer_default_converts_with_as`, `an_enum_param_selects_its_arm`, `an_option_param_left_out_is_none`, `an_option_param_bound_to_a_value_is_some`, `option_param_methods_read_the_bound_case` pass under `**Run elabparams**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

@@ -17,7 +17,7 @@ impl Elaboration<'_, '_> {
     /// the IR's composite constants.
     pub(in crate::elab) fn composite_constant(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let tree = self.consts.tree(expr, bindings)?;
-        let Some(ty) = self.types.ty(expr).and_then(|t| self.value_type(t)) else {
+        let Some(ty) = self.types.ty(expr).and_then(|t| self.stored_type(t)) else {
             return Err(ConstFault::Unsupported { expr, what: "a composite value of a type that has no value type".to_string() });
         };
         self.import_tree(expr, &tree, &ty)

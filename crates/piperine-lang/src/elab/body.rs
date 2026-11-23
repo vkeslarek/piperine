@@ -65,12 +65,24 @@ impl Elaboration<'_, '_> {
                             continue;
                         }
                     },
-                    None => None,
+                    None => self.absent_option(p.ty),
                 };
                 plans.push(ParamPlan { decl: param, name, default, where_: p.where_ });
             }
             self.param_plans.insert(*module, plans);
         }
+    }
+
+    /// The default of an `Option` param written with none: `None` (§3.2.10, PI-03 AC 1, explicit-unknowns
+    /// EU-06 AC 1), so an instance that binds nothing reads the absent case. Any other type has no
+    /// default to give (explicit-unknowns D4: no numeric, `bool` or enum `Default`), so the param is required.
+    fn absent_option(&mut self, ty: crate::pom::TypeId) -> Option<Constant> {
+        let written = self.types.written(ty)?;
+        if !matches!(written, crate::types::Ty::Option(_)) {
+            return None;
+        }
+        let stored = self.stored_type(&written)?;
+        self.default_constant(&written, &stored)
     }
 
     /// Lower the body `key` of the module `module`, whose key params hold `keys`, and remember
@@ -143,13 +155,24 @@ impl Elaboration<'_, '_> {
         let DeclKind::Param(p) = &data.kind else { return None };
         let plan = self.param_plans.get(&module)?.iter().find(|plan| plan.decl == param)?.clone();
         // A param of module type holds its template's number (`templates.rs`).
-        let ty = if self.is_module_param(param) { ValueType::UInt(32) } else { self.lower_type(data.file, p.ty)? };
+        let ty = if self.is_module_param(param) { ValueType::UInt(32) } else { self.lower_param_type(data.file, p.ty)? };
         let check = match p.where_ {
             Some(cond) => Some(self.lower_expr(scope, cond)?),
             None => None,
         };
         let structural = self.keys.is_key(module, param);
         Some(Param { name: plan.name, ty, default: plan.default, check, structural, origin: self.locator.decl(param) })
+    }
+
+    /// The type a param of the declared type `ty` holds: one value, an `Option` kept whole as `ValueType::Option`
+    /// (its pin is `{ some, v }`, explicit-unknowns P5), unpacked into its halves where a read needs them.
+    fn lower_param_type(&mut self, file: crate::pom::FileId, ty: crate::pom::TypeId) -> Option<ValueType> {
+        let stored = self.types.written(ty).and_then(|t| self.stored_type(&t));
+        if stored.is_none() {
+            let span = self.design.type_node(ty).span;
+            self.unsupported(file, span, "a param of a type that has no value in the IR");
+        }
+        stored
     }
 
     /// The values the params a frame's initial values may read take: the body's key params for the body's
