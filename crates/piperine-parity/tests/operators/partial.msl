@@ -243,3 +243,134 @@ module FlowLeafAloneBench() {
     let f = FlowLeafAlone(a, o);
     let load = Resistor { r: 1k }(a, gnd);
 }
+
+// ---- a `fn` inside a `ddx` (§14.2.3): its body is run symbolically, so its statements differentiate ----------------------
+// Each bench drives `a` and reads `v(o)`, the value of one `ddx`, written as its closed form in `source_partial.rs`.
+
+/// An early `return` under an `if`: `2 x^2` above 0.5, `3 x` below.
+fn clip(x: f64) -> f64 { if x > 0.5 { return 2.0 * x * x; } x * 3.0 }
+module FnEarlyReturn(a: Electrical, o: Electrical) {}
+analog for FnEarlyReturn { v(o, gnd) +> ddx(clip(v(a, gnd)), v(a, gnd)); }
+module FnEarlyReturnHighBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnEarlyReturn(a, o);
+}
+analog for FnEarlyReturnHighBench { v(a, gnd) +> 0.6; }
+module FnEarlyReturnLowBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnEarlyReturn(a, o);
+}
+analog for FnEarlyReturnLowBench { v(a, gnd) +> 0.4; }
+
+/// An `if` expression with an `else if` chain that assigns in its branches: `x^2` below 0.5, `x^3` between, `x` above.
+fn banded(x: f64) -> f64 {
+    let y = x;
+    if x < 0.5 { y = x * x; } else if x < 0.8 { y = x * x * x; }
+    y
+}
+module FnBranchAssign(a: Electrical, o: Electrical) {}
+analog for FnBranchAssign { v(o, gnd) +> ddx(banded(v(a, gnd)), v(a, gnd)); }
+module FnBranchAssignMiddleBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnBranchAssign(a, o);
+}
+analog for FnBranchAssignMiddleBench { v(a, gnd) +> 0.6; }
+module FnBranchAssignHighBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnBranchAssign(a, o);
+}
+analog for FnBranchAssignHighBench { v(a, gnd) +> 0.9; }
+
+/// Assignments: `y = x * x; y += x` is `x^2 + x`.
+fn assigned(x: f64) -> f64 { let y = x; y = y * y; y += x; y }
+module FnAssign(a: Electrical, o: Electrical) {}
+analog for FnAssign { v(o, gnd) +> ddx(assigned(v(a, gnd)), v(a, gnd)); }
+module FnAssignBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnAssign(a, o);
+}
+analog for FnAssignBench { v(a, gnd) +> 0.4; }
+
+/// A loop with constant bounds: three trips of `p = p * x` is `x^3`.
+fn cubed(x: f64) -> f64 { let p = 1.0; for k in 0..3 { p = p * x; } p }
+module FnLoop(a: Electrical, o: Electrical) {}
+analog for FnLoop { v(o, gnd) +> ddx(cubed(v(a, gnd)), v(a, gnd)); }
+module FnLoopBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnLoop(a, o);
+}
+analog for FnLoopBench { v(a, gnd) +> 0.4; }
+
+/// A loop whose variable decides: `2 x` is added for each of the two trips with `k > 1`, so the sum is `4 x`.
+fn weighted(x: f64) -> f64 { let s = 0.0; for k in 0..4 { if k > 1 { s += 2.0 * x; } } s }
+module FnLoopVariable(a: Electrical, o: Electrical) {}
+analog for FnLoopVariable { v(o, gnd) +> ddx(weighted(v(a, gnd)), v(a, gnd)); }
+module FnLoopVariableBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnLoopVariable(a, o);
+}
+analog for FnLoopVariableBench { v(a, gnd) +> 0.4; }
+
+/// An `Option` parameter: `x * gain.unwrap_or(2)` is the given gain, or 2 left out.
+fn amplified(x: f64, gain: Option<f64>) -> f64 { x * gain.unwrap_or(2.0) }
+module FnOption(a: Electrical, o: Electrical, p: Electrical) {}
+analog for FnOption {
+    v(o, gnd) +> ddx(amplified(v(a, gnd), Some(5.0)), v(a, gnd));
+    v(p, gnd) +> ddx(amplified(v(a, gnd)), v(a, gnd));
+}
+module FnOptionBench() {
+    signal a: Electrical; signal o: Electrical; signal p: Electrical;
+    let f = FnOption(a, o, p);
+}
+analog for FnOptionBench { v(a, gnd) +> 0.4; }
+
+/// A `str` parameter, bound to its text and not read as a value.
+fn labelled(x: f64, label: str) -> f64 { x * 4.0 }
+module FnText(a: Electrical, o: Electrical) {}
+analog for FnText { v(o, gnd) +> ddx(labelled(v(a, gnd), "gain"), v(a, gnd)); }
+module FnTextBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnText(a, o);
+}
+analog for FnTextBench { v(a, gnd) +> 0.4; }
+
+/// A method of a trait on `f64`, `self` a parameter like another: `x.scaled(7)`.
+trait Scale { fn scaled(self, k: f64) -> f64; }
+impl Scale for f64 { fn scaled(self, k: f64) -> f64 { self * k } }
+module FnMethod(a: Electrical, o: Electrical) {}
+analog for FnMethod { v(o, gnd) +> ddx(v(a, gnd).scaled(7.0), v(a, gnd)); }
+module FnMethodBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnMethod(a, o);
+}
+analog for FnMethodBench { v(a, gnd) +> 0.4; }
+
+/// A generic `fn`, expanded for the type of its instance: `x * 3` whatever the tag.
+fn tripled<T: Repr>(x: f64, tag: T) -> f64 { x * 3.0 }
+module FnGeneric(a: Electrical, o: Electrical) {}
+analog for FnGeneric { v(o, gnd) +> ddx(tripled(v(a, gnd), true), v(a, gnd)); }
+module FnGenericBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnGeneric(a, o);
+}
+analog for FnGenericBench { v(a, gnd) +> 0.4; }
+
+/// A recursion that ends on a constant: `power(x, 3)` is `x * x * x`.
+fn power(x: f64, n: u8) -> f64 { if n == 0 { 1.0 } else { x * power(x, n - 1) } }
+module FnRecursion(a: Electrical, o: Electrical) {}
+analog for FnRecursion { v(o, gnd) +> ddx(power(v(a, gnd), 3), v(a, gnd)); }
+module FnRecursionBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnRecursion(a, o);
+}
+analog for FnRecursionBench { v(a, gnd) +> 0.4; }
+
+/// A handle parameter, bound to the caller's node: `2 v(h)`.
+fn doubled(h: Electrical) -> f64 { 2.0 * v(h) }
+module FnHandle(a: Electrical, o: Electrical) {}
+analog for FnHandle { v(o, gnd) +> ddx(doubled(a), v(a, gnd)); }
+module FnHandleBench() {
+    signal a: Electrical; signal o: Electrical;
+    let f = FnHandle(a, o);
+}
+analog for FnHandleBench { v(a, gnd) +> 0.4; }

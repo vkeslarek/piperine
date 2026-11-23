@@ -30,7 +30,7 @@ impl Elaboration<'_, '_> {
         let expr = self.lower_expr(&mut standalone, *value)?;
         scope.adopt_standalone(&mut standalone);
         if self.reads_a_function(expr) {
-            self.unsupported(scope.file, span, "a call inside a `ddx` that is no `fn` it can expand (a method, a generic `fn`)");
+            self.unsupported(scope.file, span, "a call inside a `ddx` that expands to no expression");
             return None;
         }
         // the body of the derivative is the one being lowered: it has no id yet and the pass reads none of it

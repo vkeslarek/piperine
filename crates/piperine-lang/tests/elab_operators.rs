@@ -38,21 +38,43 @@ fn ddx_lowers_to_its_derivative_and_is_recorded() {
 #[test]
 fn ddx_through_a_fn_call_expands_the_call_and_differentiates_its_body() {
     // §14.2.3: `ddx(square(v(a)), v(a))` is the derivative of the body of `square` with `x` read as
-    // `v(a)`: `v(a) + v(a)`, as for `v(a) * v(a)`; the body adds no IR function and no local.
+    // `v(a)`: `v(a) + v(a)`, as for `v(a) * v(a)`; the body adds no IR function and no local. The argument is lowered
+    // once, so the second `v(a)` of the sum is the shared probe `e0`.
     let src = format!("fn square(x: f64) -> f64 {{ x * x }}\n{}", Sources::design("v(o, gnd) +> ddx(square(v(a, gnd)), v(a, gnd));"));
     let ir = Elab::ir(&src, "Top");
-    assert!(ir.to_string().contains("(probe(a, gnd) + probe(a, gnd))"), "{ir}");
+    let text = ir.to_string();
+    assert!(text.contains("potential +> direct (probe(a, gnd) + e0)") && text.contains("e0: f64 = probe n0 gnd"), "{ir}");
     assert_eq!(ir.functions().count(), 0, "the call is expanded, so no function is added");
 }
 
 #[test]
-fn a_fn_with_more_than_lets_and_a_value_is_p0001_inside_a_ddx() {
-    // the derivative of a branch of control flow is not an expression: a `fn` that returns early is refused
-    // by the statement that is no plain `let`.
+fn a_fn_with_statements_is_run_symbolically_inside_a_ddx() {
+    // §14.2.3: an early `return` under an `if`, an assignment and a loop over constant bounds are run, the call
+    // standing for one expression: no function is added, and the derivative reads the value of the branch taken.
     let early = format!("fn clipped(x: f64) -> f64 {{ if x > 1.0 {{ return 1.0; }} x }}\n{}", Sources::design("v(o, gnd) +> ddx(clipped(v(a, gnd)), v(a, gnd));"));
-    let err = Elab::run(&early, "Top").expect_err("an early return inside ddx");
-    assert_eq!(Elab::codes(&err), ["P0001"], "{:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
-    assert!(err[0].diagnostic.message.contains("a statement that is no plain `let` in a `fn` called inside a `ddx`"), "{}", err[0].diagnostic.message);
+    let ir = Elab::ir(&early, "Top");
+    assert_eq!(ir.functions().count(), 0, "the call is expanded, so no function is added");
+    let looped = format!("fn cubed(x: f64) -> f64 {{ let p = 1.0; for k in 0..3 {{ p = p * x; }} p }}\n{}", Sources::design("v(o, gnd) +> ddx(cubed(v(a, gnd)), v(a, gnd));"));
+    assert_eq!(Elab::ir(&looped, "Top").functions().count(), 0);
+}
+
+#[test]
+fn a_fn_form_with_no_finite_symbolic_reading_is_p0001_naming_it_inside_a_ddx() {
+    // GAPS L74: a loop with no constant bound, a `break`, an `if let`, a `let` of a pattern and an expression
+    // statement made for its effect have no finite symbolic reading, so each is `P0001` naming the form.
+    let forms = [
+        ("fn f(x: f64) -> f64 { let s = x; let n = 0; while n < 3 { n += 1; } s }", "a `while` or `loop`"),
+        ("fn f(x: f64) -> f64 { let s = x; for k in 0..3 { if k == 1 { break; } s += x; } s }", "a `break`, a `continue` or a nested `while`"),
+        ("fn f(x: f64) -> f64 { let s = x; for k in 0..(x as u8) { s += x; } s }", "a `for` whose bounds do not fold"),
+        ("fn f(x: f64) -> f64 { let o = Some(x); if let Some(g) = o { g * x } else { x } }", "an `if let`"),
+        ("fn f(x: f64) -> f64 { let (a, b) = (x, x); a + b }", "a `let` of a pattern that is no name"),
+    ];
+    for (function, form) in forms {
+        let src = format!("{function}\n{}", Sources::design("v(o, gnd) +> ddx(f(v(a, gnd)), v(a, gnd));"));
+        let err = Elab::run(&src, "Top").map(|_| ()).expect_err(form);
+        assert_eq!(Elab::codes(&err), ["P0001"], "{form}: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert!(err[0].diagnostic.message.contains(form), "{form}: {}", err[0].diagnostic.message);
+    }
 }
 
 #[test]

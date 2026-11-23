@@ -322,6 +322,8 @@ impl Elaboration<'_, '_> {
                     let Some(val) = self.zero(&payload, origin) else { return unsupported(self) };
                     Some(Pair { is, val, literal: Some(false) })
                 }
+                // an `Option` parameter or `let` of a `fn` expanded in a differentiated value: the pair it holds
+                Resolution::Decl(decl) if let Some((is, val)) = scope.option_values.get(&decl).copied() => Some(Pair { is, val, literal: None }),
                 Resolution::Decl(decl) => match (scope.options.get(&decl).copied(), self.input_of(scope, decl)) {
                     (Some((is, val)), _) => {
                         let (is_ty, val_ty) = (scope.locals[is as usize].ty.clone(), scope.locals[val as usize].ty.clone());

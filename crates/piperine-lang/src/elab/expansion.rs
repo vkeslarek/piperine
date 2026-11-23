@@ -1,26 +1,141 @@
 //! A `fn` called where an expression is differentiated (Part IV §14.2.3, analog-operators AO-01): the call is
 //! expanded where it stands, so the derivative of `ddx(diode_current(v(a, k)), v(a, k))` is the derivative of the
-//! body of `diode_current` with its parameter read as the argument.
+//! body of `diode_current` with its parameters read as the arguments.
 //!
-//! A `ddx` value is lowered standalone (`derivatives.rs`): it holds no local, and a name that stands for an
-//! expression is read as that expression (`Scope::let_sources`). A `fn` called there is no IR function (its id would
-//! be handed out after the derivative is built, `variants.rs`); its parameters and `let`s are bound the same way, to
-//! the argument or the initializer they stand for, and the tail expression is lowered in place. A `fn` whose body is
-//! more than `let`s and a value (a statement that assigns, a loop, an early `return`) is `P0001` naming the form: the
-//! derivative of a branch of control flow is not an expression.
+//! A `ddx` value is lowered standalone (`derivatives.rs`): it holds no local, and its derivative is built over one
+//! expression. A `fn` called there is no IR function (its id would be handed out after the derivative is built,
+//! `variants.rs`) and no block with locals: its body is *run*, symbolically (`symbolic.rs`), over an environment that
+//! maps each parameter and each `let` of the body to the lowered expression it holds, and what the run returns is
+//! the one expression the call stands for. The call binds its parameters first: a value to its lowered argument (and
+//! to the constant it folds to, so the decisions of a recursion fold), an `Option` to the pair of its flag and its
+//! payload, a `str` to its text, a handle to the caller's node. The methods of a type, a method through a bound and
+//! a generic `fn` expand the same way, for the arguments their instance takes.
 
-use piperine_ir::ExprId as LoweredExpr;
+use std::collections::BTreeMap;
 
+use piperine_ir::{Constant, ExprId as LoweredExpr};
+
+use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use super::unroll::{DEPTH, Expansion};
 use crate::msl::Span;
-use crate::pom::{DeclId, DeclKind, ExprId, PatKind, StmtKind};
-use crate::types::Ty;
+use crate::pom::{DeclId, DeclKind, ExprId};
+use super::instances::ConcreteValue;
+use crate::types::{Callee, Substitution, Ty};
+
+/// What the names of the `fn` being expanded stand for, taken before a call rebinds them and put back after it.
+#[derive(Clone)]
+pub(super) struct Environment {
+    /// A parameter or a `let`: the expression it holds.
+    values: BTreeMap<DeclId, LoweredExpr>,
+    /// An `Option` parameter: its flag and its payload.
+    options: BTreeMap<DeclId, (LoweredExpr, LoweredExpr)>,
+    /// A `str` parameter: its text.
+    texts: BTreeMap<DeclId, String>,
+    /// A handle parameter: the caller's node.
+    handles: BTreeMap<DeclId, ExprId>,
+    /// A name that folds to a constant here: a loop variable, a parameter whose argument folds.
+    unrolled: Bindings,
+}
+
+impl Environment {
+    /// The environment `scope` has now.
+    pub(super) fn of(scope: &Scope) -> Environment {
+        Environment { values: scope.values.clone(), options: scope.option_values.clone(), texts: scope.texts.clone(), handles: scope.handles.clone(), unrolled: scope.unrolled.clone() }
+    }
+
+    /// Puts this environment back in `scope`.
+    pub(super) fn restore(self, scope: &mut Scope) {
+        scope.values = self.values;
+        scope.option_values = self.options;
+        scope.texts = self.texts;
+        scope.handles = self.handles;
+        scope.unrolled = self.unrolled;
+    }
+}
+
+/// One parameter of an expanded `fn`, evaluated where the call stands, before any parameter is rebound.
+enum Argument {
+    /// A value, and the constant it folds to when it does.
+    Value { param: DeclId, value: LoweredExpr, folded: Option<Constant> },
+    /// An `Option`: its flag and its payload.
+    Option { param: DeclId, flag: LoweredExpr, payload: LoweredExpr },
+    /// A `str`: its text.
+    Text { param: DeclId, text: String },
+    /// A handle: the caller's node.
+    Handle { param: DeclId, target: ExprId },
+}
+
+impl Argument {
+    /// Binds the parameter in `scope`.
+    fn bind(self, scope: &mut Scope) {
+        match self {
+            Argument::Value { param, value, folded } => {
+                scope.values.insert(param, value);
+                match folded {
+                    Some(constant) => scope.unrolled.bind(param, constant),
+                    None => {
+                        scope.unrolled.unbind(param);
+                    }
+                }
+            }
+            Argument::Option { param, flag, payload } => {
+                scope.option_values.insert(param, (flag, payload));
+            }
+            Argument::Text { param, text } => {
+                scope.texts.insert(param, text);
+            }
+            Argument::Handle { param, target } => {
+                scope.handles.insert(param, target);
+            }
+        }
+    }
+}
 
 impl Elaboration<'_, '_> {
-    /// The call `call` of the plain `function`, expanded: its parameters and `let`s read as the expressions they are
-    /// bound to, its tail expression lowered where the call stands. `None` after a diagnostic.
-    pub(super) fn expand_function_call(&mut self, scope: &mut Scope, call: ExprId, function: DeclId) -> Option<LoweredExpr> {
+    /// A call of a plain or generic `fn` inside a differentiated value, expanded; `None` for a call that is no `fn` (a
+    /// probe, a core primitive, an `extern` function, a module) and is lowered as it always is. `Some(None)` after a
+    /// diagnostic.
+    pub(super) fn expand_function_call(&mut self, scope: &mut Scope, call: ExprId) -> Option<Option<LoweredExpr>> {
+        let Some(Callee::Function(function)) = self.types.callee(call) else { return None };
+        if matches!(&self.design.decl_data(function).kind, DeclKind::Fn(f) if f.abi.is_some()) {
+            return None;
+        }
+        let Some(binding) = self.types.binding(call).map(<[_]>::to_vec) else {
+            self.unsupported(scope.file, self.design.expr_node(call).span, "a call whose arguments the type checker did not bind, inside a `ddx`");
+            return Some(None);
+        };
+        // a generic `fn` runs for the arguments the checker read from the call
+        if self.design.decl_data(function).generics_span.is_some() {
+            let Some(instance) = self.concrete_instance(call) else { return Some(None) };
+            let substitution = self.instance_substitution(instance.item, &instance.arguments);
+            return Some(self.expand_under(scope, call, instance.item, binding, Some(substitution)));
+        }
+        Some(self.expand_under(scope, call, function, binding, None))
+    }
+
+    /// The call `receiver.f(arguments)` of the method `function` inside a differentiated value, expanded for the
+    /// `impl` arguments `instance` the receiver's type gives. `None` after a diagnostic.
+    pub(super) fn expand_method_call(&mut self, scope: &mut Scope, call: ExprId, function: DeclId, receiver: ExprId, arguments: &[ExprId], instance: Vec<ConcreteValue>) -> Option<LoweredExpr> {
+        let slots: Vec<Option<ExprId>> = std::iter::once(receiver).chain(arguments.iter().copied()).map(Some).collect();
+        let substitution = (!instance.is_empty()).then(|| self.instance_substitution(function, &instance));
+        self.expand_under(scope, call, function, slots, substitution)
+    }
+
+    /// `expand` under the substitution of the instance, when there is one.
+    fn expand_under(&mut self, scope: &mut Scope, call: ExprId, function: DeclId, slots: Vec<Option<ExprId>>, substitution: Option<Substitution>) -> Option<LoweredExpr> {
+        let outer = substitution.map(|substitution| self.consts.set_substitution(substitution));
+        let expanded = self.expand(scope, call, function, &slots);
+        if let Some(outer) = outer {
+            self.consts.set_substitution(outer);
+        }
+        expanded
+    }
+
+    /// The call `call` of `function` with the argument `slots` (one per parameter, `None` for one left out),
+    /// expanded: its body run over the environment its parameters make (`symbolic.rs`). `None` after a diagnostic.
+    fn expand(&mut self, scope: &mut Scope, call: ExprId, function: DeclId, slots: &[Option<ExprId>]) -> Option<LoweredExpr> {
         let span = self.design.expr_node(call).span;
         let data = self.design.decl_data(function).clone();
         let DeclKind::Fn(f) = &data.kind else { return None };
@@ -28,64 +143,82 @@ impl Elaboration<'_, '_> {
             self.unsupported(scope.file, span, "a call of a function with no body inside a `ddx`");
             return None;
         };
-        if self.takes_handle(function) || self.reaches_recursion(function) {
-            self.unsupported(scope.file, span, "a call of a recursive `fn`, or one that takes a handle, inside a `ddx`");
+        if self.types.emits(function).is_some() {
+            self.unsupported(scope.file, span, "a call of a function that emits inside a `ddx`");
             return None;
         }
-        let Some(binding) = self.types.binding(call).map(<[_]>::to_vec) else {
-            self.unsupported(scope.file, span, "a call whose arguments the type checker did not bind, inside a `ddx`");
+        if !self.may_expand(scope, function, span) {
             return None;
-        };
-        let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_))).collect();
-        let mut bound = Vec::new();
-        for (param, slot) in params.iter().zip(binding) {
-            let Some(argument) = slot.filter(|_| !matches!(self.typed_local(*param), Some(Ty::Option(_) | Ty::Str))) else {
-                self.unsupported(scope.file, span, "a call that leaves out an argument, or passes an `Option` or a `str`, inside a `ddx`");
-                self.rebind(scope, bound);
-                return None;
-            };
-            bound.push((*param, scope.let_sources.insert(*param, argument)));
         }
-        let value = self.expand_body(scope, &body.stmts, &mut bound, span);
-        self.rebind(scope, bound);
+        let arguments = self.expanded_arguments(scope, call, &data.children, slots)?;
+        let before = Environment::of(scope);
+        for argument in arguments {
+            argument.bind(scope);
+        }
+        if scope.expanding.is_empty() {
+            scope.forks = 0;
+        }
+        scope.expanding.push(Expansion::begin(function, scope.decisions));
+        let value = crate::stack::Stack::deep(|| self.run_body(scope, &body, span));
+        scope.expanding.pop();
+        before.restore(scope);
         value
     }
 
-    /// The tail expression of the statements `stmts` of an expanded `fn`, after each `let` of them is bound to its
-    /// initializer (pushed on `bound` with what it replaced). `None` after a diagnostic.
-    fn expand_body(&mut self, scope: &mut Scope, stmts: &[crate::pom::StmtId], bound: &mut Vec<(DeclId, Option<ExprId>)>, call_span: Span) -> Option<LoweredExpr> {
-        let mut value = None;
-        for (index, stmt) in stmts.iter().enumerate() {
-            let node = self.design.stmt_node(*stmt).clone();
-            match &node.kind {
-                StmtKind::Let { pat, init: Some(init), else_: None, .. } if let PatKind::Ident { binding, sub: None, .. } = self.design.pat_node(*pat).kind && !matches!(self.typed_local(binding), Some(Ty::Option(_) | Ty::Str)) => {
-                    bound.push((binding, scope.let_sources.insert(binding, *init)));
-                }
-                StmtKind::Expr { expr, semi: false } if index + 1 == stmts.len() => value = Some(self.lower_expr(scope, *expr)?),
-                StmtKind::Empty => {}
-                _ => {
-                    let file = self.design.decl_data(node.owner).file;
-                    self.unsupported(file, node.span, "a statement that is no plain `let` in a `fn` called inside a `ddx`");
-                    return None;
-                }
-            }
+    /// Whether the call of `function` may be expanded one level deeper: a recursion is followed to 1 024 calls and
+    /// while the decisions it hangs on fold (`E0126` naming the function otherwise, §3 rule 12).
+    fn may_expand(&mut self, scope: &Scope, function: DeclId, span: Span) -> bool {
+        if scope.expanding.len() >= DEPTH {
+            self.unfoldable_recursion(scope, function, span, "it is deeper than 1 024 calls");
+            return false;
         }
-        match value {
-            Some(value) => Some(value),
-            None => {
-                self.unsupported(scope.file, call_span, "a `fn` with no value inside a `ddx`");
-                None
-            }
+        if scope.expanding.iter().any(|open| open.hangs_on_unfolded(function, scope.decisions)) {
+            self.unfoldable_recursion(scope, function, span, "a decision it hangs on does not fold");
+            return false;
         }
+        true
     }
 
-    /// Puts back what each of `bound` stood for before the expansion, last binding first.
-    fn rebind(&mut self, scope: &mut Scope, bound: Vec<(DeclId, Option<ExprId>)>) {
-        for (decl, before) in bound.into_iter().rev() {
-            match before {
-                Some(source) => scope.let_sources.insert(decl, source),
-                None => scope.let_sources.remove(&decl),
+    /// Each parameter of `function` with its argument evaluated where the call stands. `None` after a diagnostic.
+    fn expanded_arguments(&mut self, scope: &mut Scope, call: ExprId, children: &[DeclId], slots: &[Option<ExprId>]) -> Option<Vec<Argument>> {
+        let span = self.design.expr_node(call).span;
+        let params: Vec<DeclId> = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_))).collect();
+        let mut arguments = Vec::new();
+        for (param, slot) in params.iter().zip(slots) {
+            let argument = match (self.typed_local(*param), *slot) {
+                (Some(Ty::Option(payload)), slot) => {
+                    let [flag, payload] = self.lower_option_slot(scope, slot, &payload, call)?;
+                    Argument::Option { param: *param, flag, payload }
+                }
+                (_, None) => {
+                    self.unsupported(scope.file, span, "a call that leaves out an argument, inside a `ddx`");
+                    return None;
+                }
+                (_, Some(arg)) if self.types.handle(*param) => Argument::Handle { param: *param, target: self.handle_argument_target(scope, arg) },
+                (Some(Ty::Str), Some(arg)) => match self.text_of(scope, arg) {
+                    Some(text) => Argument::Text { param: *param, text },
+                    None => {
+                        self.unsupported(scope.file, self.design.expr_node(arg).span, "a `str` that is not a text after expansion, inside a `ddx`");
+                        return None;
+                    }
+                },
+                (_, Some(arg)) => {
+                    let folded = self.fold_scalar(scope, arg);
+                    Argument::Value { param: *param, value: self.lower_expr(scope, arg)?, folded }
+                }
             };
+            arguments.push(argument);
+        }
+        Some(arguments)
+    }
+
+    /// The constant `expr` folds to over the frame's params and the names an expansion has bound; `None` when it is no
+    /// scalar constant here.
+    pub(super) fn fold_scalar(&mut self, scope: &Scope, expr: ExprId) -> Option<Constant> {
+        let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
+        match self.consts.value(expr, &bindings) {
+            Ok(constant @ (Constant::Int(_) | Constant::Bool(_) | Constant::Real(_))) => Some(constant),
+            _ => None,
         }
     }
 }

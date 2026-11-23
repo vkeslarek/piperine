@@ -151,6 +151,12 @@ impl Elaboration<'_, '_> {
         standalone.differentiated = scope.differentiated;
         standalone.keys = scope.keys.clone();
         standalone.let_sources = scope.let_sources.clone();
+        // the names of a `fn` being expanded are read in a value nested in it
+        standalone.values = scope.values.clone();
+        standalone.option_values = scope.option_values.clone();
+        standalone.texts = scope.texts.clone();
+        standalone.handles = scope.handles.clone();
+        standalone.unrolled = scope.unrolled.clone();
         // the stimulus sites and the branches of the enclosing scope stay numbered as they are: one the code adds is the next
         standalone.stims = scope.stims.clone();
         standalone.branches = scope.branches.clone();

@@ -163,3 +163,50 @@ fn ddx_against_a_flow_with_no_potential_contribution_reads_the_expression() {
     assert!(Partial::within(-5.0, Partial::output("FlowLeafReversedBench"), 1e-12));
     assert!(Partial::within(5.0, Partial::output("FlowLeafAloneBench"), 1e-12));
 }
+
+#[test]
+fn ddx_through_a_fn_that_returns_early_follows_the_branch_the_operating_point_takes() {
+    // §14.2.3: `clip(x)` is `2 x^2` above 0.5 and `3 x` below, so its derivative is `4 x` at 0.6 and 3 at 0.4.
+    assert!(Partial::within(4.0 * 0.6, Partial::output("FnEarlyReturnHighBench"), 1e-12));
+    assert!(Partial::within(3.0, Partial::output("FnEarlyReturnLowBench"), 1e-12));
+}
+
+#[test]
+fn ddx_through_a_fn_that_assigns_in_the_branches_of_an_if_follows_the_branch_taken() {
+    // `banded` is `x^2` below 0.5, `x^3` below 0.8 and `x` after: its derivative is `3 x^2` at 0.6 and 1 at 0.9.
+    assert!(Partial::within(3.0 * 0.6 * 0.6, Partial::output("FnBranchAssignMiddleBench"), 1e-12));
+    assert!(Partial::within(1.0, Partial::output("FnBranchAssignHighBench"), 1e-12));
+}
+
+#[test]
+fn ddx_through_a_fn_that_assigns_is_the_derivative_of_the_last_value() {
+    // `y = x * x; y += x` is `x^2 + x`: the derivative `2 x + 1` is 1.8 at 0.4.
+    assert!(Partial::within(2.0 * 0.4 + 1.0, Partial::output("FnAssignBench"), 1e-12));
+}
+
+#[test]
+fn ddx_through_a_fn_with_a_constant_loop_unrolls_it() {
+    // three trips of `p = p * x` is `x^3`, its derivative `3 x^2` = 0.48 at 0.4; `2 x` added for the two trips with `k > 1` is `4 x`.
+    assert!(Partial::within(3.0 * 0.4 * 0.4, Partial::output("FnLoopBench"), 1e-12));
+    assert!(Partial::within(4.0, Partial::output("FnLoopVariableBench"), 1e-12));
+}
+
+#[test]
+fn ddx_through_a_fn_reads_an_option_and_a_str_parameter() {
+    // `x * gain.unwrap_or(2)` is 5 with `Some(5)` and 2 with the gain left out (the second output); a `str` is bound to its text.
+    let mut running = Partial::project().compile("FnOptionBench").unwrap_or_else(|r| panic!("{r}"));
+    let solved = running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves");
+    let read = |name: &str| solved.get_node(&NodeIdentifier::Anonymous(running.ir.node_at(&format!("FnOptionBench.{name}")).expect("a node").id().index())).expect("a value");
+    assert!(Partial::within(5.0, read("o"), 1e-12));
+    assert!(Partial::within(2.0, read("p"), 1e-12));
+    assert!(Partial::within(4.0, Partial::output("FnTextBench"), 1e-12));
+}
+
+#[test]
+fn ddx_through_a_method_a_generic_fn_a_recursion_and_a_handle() {
+    // a method `self * k` (7), a generic `fn` `x * 3` (3), `power(x, 3)` = `x^3` unrolled (`3 x^2` = 0.48 at 0.4), a handle `2 v(h)` (2).
+    assert!(Partial::within(7.0, Partial::output("FnMethodBench"), 1e-12));
+    assert!(Partial::within(3.0, Partial::output("FnGenericBench"), 1e-12));
+    assert!(Partial::within(3.0 * 0.4 * 0.4, Partial::output("FnRecursionBench"), 1e-12));
+    assert!(Partial::within(2.0, Partial::output("FnHandleBench"), 1e-12));
+}

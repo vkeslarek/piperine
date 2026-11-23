@@ -19,6 +19,8 @@ None of these is decided. Each has a recommendation; the spec is written to the 
 
 Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `noise` (L45) and so `white_noise`, `flicker_noise` and `noise_table`, `simparam` (L47), and `emit!` in `analog` (L49). The solver already has the analyses and the ABI vocabulary for them (`op::DELAY`, `input::NOISE`, `global::NAMED`, `watch::TRACE`, `analyses/noise.rs`), but nothing in the language reaches them, so no host can run a noise analysis (H2: `host-ii` left it out because every density would be zero) and `tnom` waits for `simparam` (`host-ii`). The convergence tolerance of a user nature and compatible natures at one node are never exercised from source (U7).
 
+**Criteria added in the closing round, pending user review.** The implementer appended these to approved requirements, and the user has not seen them: AO-01 AC 10 (`ddx` through a `fn`, reworded in round 2) and AC 11 (the flow of a branch with no potential contribution, reworded in round 2), AO-03 AC 9 (a `limit` read by a `noise` or `delay` input), AO-09 AC 8 (`emit!` through a `fn`) and the edge case of `freq()` reached through a `fn` from a definition or an `at`. Round 2 added AO-01 AC 12, AO-02 AC 8 and AO-03 AC 10 (`ac_stim` read by a `ddx` value, a `delay` input and a `noise` density), each from §14.3.1. Each is marked where it stands.
+
 ## Goals
 
 - [x] `ddx`, `delay`, `noise`, `simparam` and `emit!` in `analog` run on the Rust backend as §14 and §16.2 define them (`emit!` through a `fn` is the trace of its call, closing round; `simparam` is an `Option<f64>`, user 2026-11-23).
@@ -86,7 +88,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 7. IF the second argument is not a potential or flow probe of a branch of the module (`p.inflow()`, any other expression) THEN the system SHALL report `E0451`.
 8. IF `ddx` is written outside `analog`, or in a body `let` or value input that a definition or a reaction reads THEN the system SHALL report `E0450`.
 9. WHEN an AC sweep linearizes a contribution `i(o, gnd) +> ddx(id, v(a, k)) * v(in);` THEN the system SHALL use the value of `ddx` at the operating point: the gain `|v(o)/v(in)|` equals that value times the load of `o`, within `AC_MAGNITUDE`.
-10. WHEN `e` calls a `fn` (`ddx(shockley(v(a, k), is, nvt), v(a, k))`, the `fn` having `let`s and a value) THEN the system SHALL differentiate its body with the parameters read as the arguments, so the result equals the derivative of the same expression written in place; a `fn` whose body is more than `let`s and a value SHALL be `P0001` naming the statement. (Added in the closing round, finding 26: a `fn` call was refused.)
+10. WHEN `e` calls a `fn` (`ddx(shockley(v(a, k), is, nvt), v(a, k))`) THEN the system SHALL differentiate its body with the parameters read as the arguments, so the result equals the derivative of the same expression written in place. The body is run symbolically: a `let`, an assignment, an `if` with an early `return`, a `for` over constant bounds, a parameter of type `Option`, `str` or a handle, a method, a generic `fn` and a recursion that folds are differentiated; a form with no finite symbolic reading (a `while`, a `break`, a `for` whose bounds do not fold) SHALL be `P0001` naming it (GAPS L74). (Added in the closing round, pending user review, finding 26: a `fn` call was refused; reworded in round 2, finding 35: the criterion no longer writes the narrowing of the first implementation.)
 11. WHEN the second argument is the flow of a branch the module gives no potential contribution THEN the system SHALL differentiate `e` against that flow as against any probe: a probe of the same flow contributes 1, the reversed branch -1, any other quantity is held constant (§14.2.3): `ddx(5.0 * i(a, gnd), i(a, gnd))` is 5 and `ddx(3.0 * v(a, gnd), i(a, gnd))` is 0; a derivative that still reads the value of that flow (`ddx(i * i, i)`) SHALL be `P0001` naming it (GAPS L73). (Added in the closing round, finding 26, pending user review; reworded in round 2, finding 36: the first wording gave 0 without reading `e`.)
 12. WHEN the value of a `ddx` reads `ac_stim` (`ddx(ac_stim(2.0) * v(a, gnd) + 3.0 * v(a, gnd), v(a, gnd))`) THEN the system SHALL run it: the stimulus is no function of the probe, so its derivative is 0 and the result is `ac_stim(2.0) + 3.0`: 3 at the operating point and the stimulus 2 in an AC sweep (§14.3.1, §14.2.3). (Added in the closing round, round 2 finding 33, pending user review: the form was the internal error `P0004`.)
 
@@ -131,7 +133,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 6. IF `psd` is negative or not finite at a frequency of a noise sweep THEN the system SHALL fail the analysis with `E0454` naming the instance and the frequency.
 7. WHEN a reaction or an event argument reads a `noise` result THEN the system SHALL give 0.
 8. WHEN two sources share a `name` THEN the system SHALL keep them independent: the name groups, it does not correlate.
-9. WHEN a `noise` density or a `delay` input reads a `let` bound to a `limit` THEN the system SHALL read it as the `limit`'s argument: both are evaluated at a solution, where the limited iterate is the unlimited one (§14.7.4). (Added in the closing round, finding 26: the form was refused as "a `let` inside a `noise`".)
+9. WHEN a `noise` density or a `delay` input reads a `let` bound to a `limit` THEN the system SHALL read it as the `limit`'s argument: both are evaluated at a solution, where the limited iterate is the unlimited one (§14.7.4). (Added in the closing round, pending user review, finding 26: the form was refused as "a `let` inside a `noise`".)
 10. WHEN a `noise` density reads `ac_stim` THEN the system SHALL give 0 for it in a noise sweep and its operating point: the stimulus is the small-signal drive of an AC sweep, which a noise run does not carry (§14.3.1, §16.2). (Added in the closing round, round 2 finding 33, pending user review: the form was the internal error `P0004`.)
 
 **Acceptance Criteria** (AO-04, the stdlib noise modules):
@@ -211,7 +213,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 5. IF a site reached from `analog`, directly or through a `fn`, writes the stream `sim` or `checks` (`require(..)` in `analog` included) THEN the system SHALL report `E0603` naming the site.
 6. WHEN a run does not name a trace stream in `streams` THEN the system SHALL record none of its records (Q5); WHEN it names one THEN the system SHALL deliver every record of it.
 7. The system SHALL NOT let a trace record change any carrier, solve or event (§19 rule 9).
-8. WHEN an `analog` block calls a `fn` that reaches `emit!` on another stream than `sim` and `checks` THEN the system SHALL write the records the same `emit!` written in the block writes, the call inlined where it stands (§19 rule 10). (Added in the closing round: GAPS L72, which the feature found, is closed rather than left ownerless.)
+8. WHEN an `analog` block calls a `fn` that reaches `emit!` on another stream than `sim` and `checks` THEN the system SHALL write the records the same `emit!` written in the block writes, the call inlined where it stands (§19 rule 10). (Added in the closing round, pending user review: GAPS L72, which the feature found, is closed rather than left ownerless.)
 
 **Independent Test**: a transpile test over a diode whose Newton path is known, counting records per iteration; elaboration tests for `E0603`.
 
@@ -272,7 +274,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 - WHEN `delay`'s `td` is exactly `max` THEN the system SHALL read `x` as it was `max` ago.
 - WHEN `ddx`'s `e` does not read the probe at all THEN the system SHALL give 0.
 - WHEN `simparam` is called with a name the run gives and `.unwrap_or(default)` is applied to it THEN the system SHALL give the run's value, and the default when the run gives none (`simparam` has no default argument, user 2026-11-23).
-- WHEN a definition or an `at` argument reaches `freq()` through a `fn` THEN the system SHALL report `E0336` or `E0442` (§8.2.5, §13 rule 11), as it does for a direct read: the form is an error of the language, and the IR's ambient-reads check is its backstop.
+- WHEN a definition or an `at` argument reaches `freq()` through a `fn` THEN the system SHALL report `E0336` or `E0442` (§8.2.5, §13 rule 11), as it does for a direct read: the form is an error of the language, and the IR's ambient-reads check is its backstop. (Added in the closing round, pending user review.)
 - WHEN a trace site's fields differ in type from another site of the same stream THEN the system SHALL report the error of §19 rule 12, as for reaction records.
 
 ---
