@@ -4,8 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::msl::{Diagnostic, Span};
-use crate::msl::lexer;
-use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, FnParamData, GenericArgNode, GenericArgsNode, LitKind, PathId, Reflect, Resolution, TypeId, TypeKind};
+use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, FileId, FnParamData, GenericArgNode, GenericArgsNode, PathId, Reflect, Resolution, TypeId, TypeKind};
 
 use super::continuity::Continuity;
 use super::class::FunctionClass;
@@ -16,7 +15,7 @@ use super::flow::{ExitFrame, Flow};
 use super::nature_rules::NatureRules;
 use super::record::Records;
 use super::unsupported::Unsupported;
-use super::{Builtin, Callee, Method, Ty, Types};
+use super::{Builtin, Callee, ConstTerm, Method, Ty, Types};
 
 /// Where the expression being checked is written: the §14 table allows a core primitive by it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -463,17 +462,22 @@ impl<'d> Checker<'d> {
     /// literal; a width computed from a const expression is outside the subset (`P0001`).
     fn sized_type(&mut self, file: FileId, span: Span, path: PathId, family: &str) -> Option<Ty> {
         let args = self.design.path_node(path).segments.last().and_then(|s| s.args.clone());
-        let width = match &args {
+        // a width that names const parameters is an integer of the instantiation's width (`UInt<N>`, `Int<{ N + 1 }>`)
+        let term = match &args {
             Some(GenericArgsNode::Angle { args, .. }) if args.len() == 1 => match &args[0] {
-                GenericArgNode::Const(expr) => match &self.design.expr_node(*expr).kind {
-                    ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Int(_)) => match &lit.kind {
-                        LitKind::Int(text) => lexer::int_value(text),
-                        _ => None,
-                    },
-                    _ => None,
-                },
-                GenericArgNode::Type(_) => None,
+                GenericArgNode::Const(expr) => self.const_term(*expr, file),
+                GenericArgNode::Type(ty) => self.const_parameter_named_by(*ty).map(ConstTerm::Param),
             },
+            _ => None,
+        };
+        let width = match term {
+            Some(ConstTerm::Value(value)) => u128::try_from(value).ok(),
+            Some(generic @ (ConstTerm::Param(_) | ConstTerm::Expr(_))) if matches!(family, "UInt" | "Int") => {
+                if let ConstTerm::Expr(expr) = &generic {
+                    self.defer_constant(*expr);
+                }
+                return Some(Ty::GenericInteger { signed: family == "Int", width: generic });
+            }
             _ => None,
         };
         let Some(width) = width else {

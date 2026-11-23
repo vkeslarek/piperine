@@ -1132,11 +1132,11 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `types_operators::logic_is_compiled_from_the_library_source` passes
-- [ ] `source_logic::logic_lays_out_two_planes` and `at_gives_the_state_of_one_level` pass
-- [ ] `types_explicit::the_types_that_have_a_default` gains the `Logic<N>` case
-- [ ] `std_excerpts` and `std_library` pass
-- [ ] Gate check passes: Full
+- [x] `types_operators::logic_is_compiled_from_the_library_source` passes
+- [x] `source_logic::logic_lays_out_two_planes` and `at_gives_the_state_of_one_level` pass
+- [x] `types_explicit::the_types_that_have_a_default` gains the `Logic<N>` case
+- [x] `std_excerpts` and `std_library` pass
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

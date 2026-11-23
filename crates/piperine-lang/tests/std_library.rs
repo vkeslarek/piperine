@@ -519,12 +519,17 @@ fn monitors_resolve_into_std_monitor() {
 
 // ---- the library as a whole (STD-07 to STD-09, STD-17): layout, Index, intrinsics ----
 
-/// The nine namespaces of the library, the prelude last.
-const NAMESPACES: [&str; 9] = ["constants", "carriers", "values", "analog", "nets", "convert", "monitor", "io", "prelude"];
+/// The ten namespaces of the library, the prelude last.
+const NAMESPACES: [&str; 10] = ["constants", "carriers", "values", "logic", "analog", "nets", "convert", "monitor", "io", "prelude"];
 
-/// The namespace that holds section `22.k` of Part VII.
-fn namespace_of_section(k: u32) -> &'static str {
-    ["values", "analog", "nets", "convert", "monitor", "io"][k as usize - 1]
+/// The namespace that holds the entry `entry` of the Index of Part VII (`§22.1.2`): `logic` for §22.1.1 and §22.1.2,
+/// the namespace of its section for every other.
+fn namespace_of_entry(entry: &str) -> &'static str {
+    if entry.starts_with("§22.1.1") || entry.starts_with("§22.1.2") {
+        return "logic";
+    }
+    let k: usize = entry.strip_prefix("§22.").and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next()).and_then(|n| n.parse().ok()).unwrap_or_else(|| panic!("entry `{entry}` names a §22 section"));
+    ["values", "analog", "nets", "convert", "monitor", "io"][k - 1]
 }
 
 fn part_vii() -> String {
@@ -546,7 +551,7 @@ fn index_names() -> Vec<IndexName> {
     let part = part_vii();
     let mut names = Vec::new();
     for row in table_rows(&section(&part, "### Index")) {
-        let k: u32 = row[2].strip_prefix("§22.").and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next()).and_then(|n| n.parse().ok()).unwrap_or_else(|| panic!("entry `{}` names a §22 section", row[2]));
+        let namespace = namespace_of_entry(&row[2]);
         let (mut depth, mut open, mut word) = (0, false, String::new());
         for c in row[0].chars() {
             match c {
@@ -554,7 +559,7 @@ fn index_names() -> Vec<IndexName> {
                     open = false;
                     let member = depth > 0 || word.contains("::");
                     let name = word.rsplit("::").next().unwrap().to_string();
-                    names.push(IndexName { name, member, namespace: namespace_of_section(k) });
+                    names.push(IndexName { name, member, namespace });
                     word.clear();
                 }
                 '`' => open = true,
@@ -579,16 +584,16 @@ fn engine_table() -> BTreeSet<String> {
 }
 
 /// Pub items of `std` that the Index no longer lists (removed by explicit-unknowns; T23 deletes them
-/// from the files and empties the list). `Logic` of `nets` is the earlier struct, replaced by `values::Logic`.
-const STD_BEHIND_THE_INDEX: [(&str, &str); 5] = [("nets", "Logic"), ("nets", "Wire"), ("nets", "Tri"), ("nets", "tri"), ("nets", "SumNet")];
+/// from the files and empties the list).
+const STD_BEHIND_THE_INDEX: [(&str, &str); 4] = [("nets", "Wire"), ("nets", "Tri"), ("nets", "tri"), ("nets", "SumNet")];
 
 /// Index items of §22 that `std` does not declare yet: the specification states the explicit model
-/// (explicit-unknowns, MD-78) before the files hold it. Each leaves with its task (T23 for `Driven`,
-/// T44 for `Logic` and `LogicState`); a stale entry fails `the_index_lists_stay_honest`.
-const INDEX_AHEAD_OF_STD: [(&str, &str); 3] = [("values", "Logic"), ("values", "LogicState"), ("nets", "Driven")];
+/// (explicit-unknowns, MD-78) before the files hold it. `Logic` and `LogicState` left with T44 and `Driven` is the earlier
+/// struct of `nets` under its new name until `resolved-nets`; a stale entry fails `the_index_lists_stay_honest`.
+const INDEX_AHEAD_OF_STD: [(&str, &str); 0] = [];
 
 /// Members the Index lists under the items above (`Logic::..`, `Driven::strongest`).
-const INDEX_MEMBERS_AHEAD_OF_STD: [(&str, &str); 2] = [("values", "Logic"), ("nets", "strongest")];
+const INDEX_MEMBERS_AHEAD_OF_STD: [(&str, &str); 1] = [("nets", "strongest")];
 
 /// The names of the `pub` items of a namespace.
 fn pub_names(design: &Design, namespace: &str) -> BTreeSet<String> {
@@ -597,7 +602,7 @@ fn pub_names(design: &Design, namespace: &str) -> BTreeSet<String> {
 }
 
 #[test]
-fn std_root_declares_nine_namespaces() {
+fn std_root_declares_its_namespaces() {
     let design = embedded();
     let root = &design.std_crate().files()[0];
     let parsed = piperine_lang::msl::parser::parse(root.text());
@@ -620,19 +625,18 @@ fn each_namespace_holds_its_section() {
     let set = |xs: &[&str]| xs.iter().map(|s| s.to_string()).collect::<BTreeSet<String>>();
     assert_eq!(names("constants"), set(&["Q", "K_B", "EPS0", "PI", "E", "inf"]), "constants: §1 rule 3");
     assert_eq!(names("carriers"), set(&["Bit", "Electrical", "Thermal", "VSignal", "Short"]), "carriers: §4 and §11");
-    for k in 1..=6 {
-        let ns = namespace_of_section(k);
+    for ns in ["values", "logic", "analog", "nets", "convert", "monitor", "io"] {
         let mut wanted: BTreeSet<String> = index_names().into_iter().filter(|n| !n.member && n.namespace == ns).map(|n| n.name).collect();
         for (space, name) in INDEX_AHEAD_OF_STD.iter().filter(|(space, _)| *space == ns) {
             assert!(wanted.remove(*name), "{space}::{name} is not an Index row any more: drop it from INDEX_AHEAD_OF_STD");
         }
         wanted.extend(STD_BEHIND_THE_INDEX.iter().filter(|(space, _)| *space == ns).map(|(_, name)| name.to_string()));
-        assert_eq!(names(ns), wanted, "{ns}: the pub items are the Index rows of §22.{k}");
+        assert_eq!(names(ns), wanted, "{ns}: the pub items are the Index rows of its section");
     }
 }
 
 #[test]
-fn prelude_is_eight_reexports() {
+fn prelude_reexports_every_namespace() {
     let design = embedded();
     let prelude = design.std_crate().root().submodules().into_iter().find(|n| n.name() == Some("prelude")).expect("std declares the prelude");
     let mut globbed = BTreeSet::new();
@@ -647,7 +651,7 @@ fn prelude_is_eight_reexports() {
     }
     let expected: BTreeSet<String> = NAMESPACES.iter().filter(|n| **n != "prelude").map(|n| n.to_string()).collect();
     assert_eq!(globbed, expected);
-    assert_eq!(prelude.items().len(), 8, "one re-export per namespace");
+    assert_eq!(prelude.items().len(), 9, "one re-export per namespace");
 }
 
 #[test]
@@ -837,7 +841,7 @@ fn std_holds_no_removed_form() {
         }
     }
     let nets = std::fs::read_to_string(std_dir().join("nets.msl")).expect("nets.msl");
-    for item in ["pub fn wired<const N: usize>(d: [Logic; N]) -> Logic", "pub fn tri<T: Repr, const N: usize>(d: [Option<T>; N]) -> Option<T>", "pub fn sum<const N: usize>(d: [f64; N]) -> f64"] {
+    for item in ["pub fn wired<const N: usize>(d: [Driven; N]) -> Driven", "pub fn tri<T: Repr, const N: usize>(d: [Option<T>; N]) -> Option<T>", "pub fn sum<const N: usize>(d: [f64; N]) -> f64"] {
         assert!(nets.contains(item), "nets.msl holds `{item}`");
     }
 }

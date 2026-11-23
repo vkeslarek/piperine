@@ -95,7 +95,7 @@ impl Checker<'_> {
     pub(super) fn implements(&self, ty: &Ty, which: DerivedTrait) -> bool {
         match ty {
             Ty::Unit => true,
-            Ty::Bool | Ty::UInt(_) | Ty::Int(_) => which.of_integer(),
+            Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } => which.of_integer(),
             Ty::F64 => which.of_float(),
             Ty::Str => which.of_text(),
             // H.8 rule 4: the default of an `Option` is `None`, whatever its payload.

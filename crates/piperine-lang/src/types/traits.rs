@@ -25,6 +25,8 @@ pub enum ImplTarget {
     Declared(DeclId),
     /// A built-in scalar or `str` (`impl Describe for f64`).
     Primitive(Ty),
+    /// `UInt<N>` (`signed` false) or `Int<N>` (`signed` true) of any width: `impl<const N: usize> BitAnd<Logic<N>, Logic<N>> for UInt<N>`.
+    Integer { signed: bool },
     /// Every type that satisfies these bounds (`impl<T: Repr> Known for T`).
     Blanket(Vec<Bound>),
     /// A type the table does not index (a tuple, an array, an unresolved name).
@@ -205,6 +207,7 @@ impl<'d> ImplTable<'d> {
             (ImplTarget::Blanket(bounds), other) | (other, ImplTarget::Blanket(bounds)) => self.representative(other).is_some_and(|ty| bounds.iter().all(|bound| oracle(&ty, bound))),
             (ImplTarget::Declared(first), ImplTarget::Declared(second)) => first == second,
             (ImplTarget::Primitive(first), ImplTarget::Primitive(second)) => first == second,
+            (ImplTarget::Integer { signed: first }, ImplTarget::Integer { signed: second }) => first == second,
             _ => false,
         }
     }
@@ -218,6 +221,7 @@ impl<'d> ImplTable<'d> {
                 _ => Ty::structure(*decl),
             }),
             ImplTarget::Primitive(ty) => Some(ty.clone()),
+            ImplTarget::Integer { signed } => Some(if *signed { Ty::Int(1) } else { Ty::UInt(1) }),
             ImplTarget::Blanket(_) | ImplTarget::Other => None,
         }
     }
@@ -238,6 +242,8 @@ impl<'d> ImplTable<'d> {
             (ImplTarget::Declared(decl), Ty::Node(nature)) => nature == decl,
             (ImplTarget::Declared(decl), Ty::Carrier { nature, value }) => nature == decl && entry.carried.as_ref().is_none_or(|carried| carried == &**value),
             (ImplTarget::Primitive(primitive), other) => primitive == other,
+            (ImplTarget::Integer { signed: false }, Ty::UInt(_) | Ty::GenericInteger { signed: false, .. }) => true,
+            (ImplTarget::Integer { signed: true }, Ty::Int(_) | Ty::GenericInteger { signed: true, .. }) => true,
             (ImplTarget::Blanket(_), _) => true,
             _ => false,
         }
@@ -314,6 +320,8 @@ impl<'d> ImplTable<'d> {
                 ("str", _) => ImplTarget::Primitive(Ty::Str),
                 ("uN", Some(width)) => u8::try_from(width).map_or(ImplTarget::Other, |width| ImplTarget::Primitive(Ty::UInt(width))),
                 ("iN", Some(width)) => u8::try_from(width).map_or(ImplTarget::Other, |width| ImplTarget::Primitive(Ty::Int(width))),
+                ("UInt", _) => ImplTarget::Integer { signed: false },
+                ("Int", _) => ImplTarget::Integer { signed: true },
                 ("usize", _) => ImplTarget::Primitive(Ty::UInt(64)),
                 ("isize", _) => ImplTarget::Primitive(Ty::Int(64)),
                 _ => ImplTarget::Other,

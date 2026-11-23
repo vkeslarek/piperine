@@ -11,6 +11,7 @@ mod support;
 mod checked_source;
 
 use checked_source::CheckedSource;
+use piperine_lang::pom::{BUILTINS, DeclKind, Reflect};
 use piperine_lang::types::{Ty, Types};
 
 /// A four-state value of four levels as two planes, with the operators of H.10 written as the library writes
@@ -134,4 +135,31 @@ fn deriving_partial_eq_over_a_logic_is_e0187() {
     // `E0187` naming the field and its type
     let items = "#[derive(PartialEq)] struct Pair { first: Quad, second: u4 }";
     assert_refused(items, "let p = Pair { first: quad(), second: 1_u4 };", "E0187", &["first", "`Quad`", "PartialEq"]);
+}
+
+/// The type, written as the author writes it, of the `let` binding `name` of `body` in a module checked over the library.
+fn library_local_type(body: &str, name: &str) -> String {
+    let src = CheckedSource::source("", body);
+    let design = CheckedSource::standard_design_of(&src);
+    let types = Types::check(&design, "Top").unwrap_or_else(|found| panic!("{:?}\n{src}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
+    let binding = CheckedSource::declaration(&design, name, |kind| matches!(kind, DeclKind::Binding(_)));
+    types.local(binding).unwrap_or_else(|| panic!("`{name}` has no type")).source_name(&design)
+}
+
+#[test]
+fn logic_is_compiled_from_the_library_source() {
+    // EU-07 AC 1 (C23, §22.1.1): `Logic<N>` is a struct of `std/logic.msl` and no table of the language names it; the
+    // operators of H.10 and `From` are its `impl`s, so `Logic::from(5u4) & ..` is a `Logic<4>`, `==` is a `Logic<1>`
+    // (`Out`), and `to_bits()` is an `Option<UInt<4>>`
+    assert!(BUILTINS.iter().all(|row| !row.name.starts_with("Logic")), "no built-in row names Logic");
+    let design = piperine_lang::pom::Design::builder().source("top.msl", "module Top() { }").build();
+    let logic = design.std_crate().find("logic::Logic").expect("std declares logic::Logic");
+    assert!(logic.file().name().ends_with("logic.msl"), "declared in {}", logic.file().name());
+    let body = "let a = Logic::from(5u4); let b = a & a; let c = a == a; let d = a.to_bits(); let e = !a; let f = a & 3u4; let g = 3u4 | a;";
+    assert_eq!(library_local_type(body, "a"), "Logic<4>");
+    for name in ["b", "e", "f", "g"] {
+        assert_eq!(library_local_type(body, name), "Logic<4>", "`{name}` is the `Out` of its `impl`");
+    }
+    assert_eq!(library_local_type(body, "c"), "Logic<1>", "`==` gives a `Logic`, not a `bool` (H.10)");
+    assert_eq!(library_local_type(body, "d"), "Option<u4>");
 }

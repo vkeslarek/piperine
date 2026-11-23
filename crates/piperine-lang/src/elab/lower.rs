@@ -134,7 +134,7 @@ impl ValueTypes<'_> {
             Ty::Struct(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Array(..) => self.arena.of(ty, |part| self.of(part)),
             Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Option(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str | Ty::Never | Ty::Range { .. } | Ty::Iterator { .. } => None,
             // the elaborator reads types through the substitution (T32): a parameter never reaches the IR
-            Ty::Param(_) => None,
+            Ty::Param(_) | Ty::GenericInteger { .. } => None,
         }
     }
 }
@@ -478,6 +478,16 @@ impl Elaboration<'_, '_> {
             }
             let lowered = self.lower_arguments(scope, expr, instance.item)?;
             let (id, ret) = self.request_instance(instance.item, instance.arguments, Half::Whole)?;
+            return Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin));
+        }
+        // an associated function of a generic `impl` runs for the arguments the checker read from the call (`Logic::from(b)`)
+        if let Some(Callee::Function(function)) = self.types.callee(expr)
+            && self.is_generic_impl_item(function)
+            && let Some(recorded) = self.types.instantiation(expr).cloned()
+        {
+            let values = recorded.arguments.iter().map(|value| self.concrete_argument(value, scope.file, span)).collect::<Option<Vec<_>>>()?;
+            let lowered = self.lower_arguments(scope, expr, function)?;
+            let (id, ret) = self.request_instance(function, values, Half::Whole)?;
             return Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin));
         }
         match (class, self.types.callee(expr)) {

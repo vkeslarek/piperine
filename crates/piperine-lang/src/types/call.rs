@@ -85,6 +85,7 @@ impl Checker<'_> {
     /// A call of a function of the reachable set: arguments against the declared parameters,
     /// the declared result as the type.
     fn function_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, args: &[Arg]) -> Option<Ty> {
+        let function = self.overload_of(function, args);
         if let Some(intrinsic) = self.intrinsic_of(function) {
             return self.intrinsic_call(expr, callee, intrinsic, args);
         }
@@ -97,6 +98,9 @@ impl Checker<'_> {
         }
         if self.design.decl_data(function).generics_span.is_some() {
             return self.generic_call(expr, callee, function, args);
+        }
+        if let Some(owner) = self.generic_impl_of(function) {
+            return self.associated_call(expr, callee, function, owner, args);
         }
         let (params, ret) = self.signature(function)?;
         self.finish_call(expr, callee, function, params, ret, args, true)

@@ -72,6 +72,11 @@ impl Substitution {
             Ty::Array(element, length) => Ty::Array(Box::new(self.apply(element)), self.apply_length(length)),
             Ty::Range { element, iterable } => Ty::Range { element: Box::new(self.apply(element)), iterable: *iterable },
             Ty::Iterator { element, reversible } => Ty::Iterator { element: Box::new(self.apply(element)), reversible: *reversible },
+            Ty::GenericInteger { signed, width } => match self.apply_term(width) {
+                ConstTerm::Value(n @ 1..=64) if *signed => Ty::Int(n as u8),
+                ConstTerm::Value(n @ 1..=64) => Ty::UInt(n as u8),
+                replaced => Ty::GenericInteger { signed: *signed, width: replaced },
+            },
             Ty::F64 | Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) | Ty::Event | Ty::Str | Ty::Never => ty.clone(),
         }
     }
@@ -237,7 +242,7 @@ impl Checker<'_> {
     }
 
     /// The const parameter a type node spells: `N` in `Delay<u8, N>` reads as a type name.
-    fn const_parameter_named_by(&self, ty: TypeId) -> Option<DeclId> {
+    pub(super) fn const_parameter_named_by(&self, ty: TypeId) -> Option<DeclId> {
         let TypeKind::Path(path) = &self.design.type_node(ty).kind else { return None };
         match self.design.path_node(*path).segments.last().map(|segment| segment.res) {
             Some(Resolution::Decl(decl)) if self.is_const_parameter(decl) => Some(decl),

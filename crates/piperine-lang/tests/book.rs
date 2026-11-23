@@ -198,7 +198,7 @@ fn the_chapter_names_every_core_name() {
 fn the_chapter_has_a_part_per_namespace() {
     let design = embedded();
     let namespaces = std_namespaces(&design);
-    assert_eq!(namespaces.len(), 9, "{namespaces:?}");
+    assert_eq!(namespaces.len(), 10, "{namespaces:?}");
     let heads = headings(&chapter(&content(), "core-std"));
     let absent: Vec<String> = namespaces.iter().filter(|n| !heads.iter().any(|h| h.contains(&format!("<code>std::{n}</code>")))).cloned().collect();
     assert!(absent.is_empty(), "no heading with `std::<name>` for: {absent:?}; headings: {heads:?}");

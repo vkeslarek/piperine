@@ -96,7 +96,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// Whether `function` is written in an `impl` that has generic parameters.
-    fn is_generic_impl_item(&self, function: DeclId) -> bool {
+    pub(super) fn is_generic_impl_item(&self, function: DeclId) -> bool {
         self.design.decl_data(function).parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Impl(_)) && self.design.decl_data(parent).generics_span.is_some())
     }
 }

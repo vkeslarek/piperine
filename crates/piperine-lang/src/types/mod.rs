@@ -10,7 +10,7 @@
 mod aggregate;
 mod aggregate_patterns;
 mod analog;
-mod assign;
+mod assign; mod associated;
 mod attributes;
 mod call;
 mod carrier;

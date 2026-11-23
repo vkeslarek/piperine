@@ -1320,6 +1320,7 @@ fn s22_maps_sections_to_namespaces() {
     let rows = table_rows(&pre[at..end]);
     let expect = [
         ("§22.1", "std::values", "values.msl"),
+        ("§22.1", "std::logic", "logic.msl"),
         ("§22.2", "std::analog", "analog.msl"),
         ("§22.3", "std::nets", "nets.msl"),
         ("§22.4", "std::convert", "convert.msl"),
@@ -1330,7 +1331,7 @@ fn s22_maps_sections_to_namespaces() {
     ];
     assert_eq!(rows.len(), expect.len(), "{rows:?}");
     for (sec, ns, file) in expect {
-        let row = rows.iter().find(|r| r[0].starts_with(sec)).unwrap_or_else(|| panic!("no row for {sec}: {rows:?}"));
+        let row = rows.iter().find(|r| r[0].starts_with(sec) && r[1].contains(ns)).unwrap_or_else(|| panic!("no row for {sec}: {rows:?}"));
         assert!(row[1].contains(ns) && row[2].contains(file), "{sec}: {row:?}");
     }
     assert!(rows.iter().find(|r| r[0].starts_with("§4")).unwrap()[0].contains("§11"), "{rows:?}");

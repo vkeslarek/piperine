@@ -192,6 +192,13 @@ fn the_types_that_have_a_default() {
     let src = CheckedSource::source(items, body);
     CheckedSource::assert_clean(&src);
     assert_eq!(CheckedSource::binding_or_parameter_type(&src, "outer"), Ty::structure(CheckedSource::type_decl(&src, "Outer")), "`T::default()` has the type `T`");
+    // §22.1.1 rule 2 (EU-07, phase B): `Logic<N>` implements `Default` (all X), so a struct of `Logic` fields derives it
+    // and `Logic::default()` is a `Logic<4>` where one is expected
+    let logic = CheckedSource::source("#[derive(Default)]\nstruct Bus { wide: Logic<4>, one: Logic }", "let bus = Bus::default(); let wide: Logic<4> = Logic::default();");
+    let design = CheckedSource::standard_design_of(&logic);
+    if let Err(found) = Types::check(&design, "Top") {
+        panic!("`Logic<N>` has `Default`: {:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    }
 }
 
 #[test]

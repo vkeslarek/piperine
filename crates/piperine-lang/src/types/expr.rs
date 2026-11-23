@@ -295,7 +295,7 @@ impl Checker<'_> {
                     return self.operator_call(whole, operator, lhs, ty, Some(rhs));
                 }
                 match first_ty {
-                    Some(t @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Str)) => self.check(second, &t),
+                    Some(t @ (Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } | Ty::Str)) => self.check(second, &t),
                     // §1.3.10, H.8 rule 7: an enum, a struct, a tuple, an array or an `Option` compares
                     // when it implements `PartialEq`.
                     Some(t) if t.is_composite() || matches!(t, Ty::Param(_)) => {
@@ -320,7 +320,7 @@ impl Checker<'_> {
                 // a struct or an enum takes the operator from the `impl` of its trait; a built-in type does when the
                 // project writes an `impl` of the trait for it and the right operand is no bare literal (Appendix H.10)
                 if let (Some(ty), Some(operator), true) = (&first_ty, OperatorTrait::of_binary(op), first == lhs)
-                    && (Self::takes_operator_traits(ty) || (self.has_operator_impl(operator, ty) && self.integer_literal_text(rhs).is_none()))
+                    && (Self::takes_operator_traits(ty) || (self.has_operator_impl(operator, ty) && self.integer_literal_text(rhs).is_none() && self.infer(rhs).is_some_and(|found| Self::takes_operator_traits(&found))))
                 {
                     return self.operator_call(whole, operator, lhs, ty, Some(rhs));
                 }

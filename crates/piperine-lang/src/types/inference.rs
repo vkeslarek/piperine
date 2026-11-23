@@ -57,6 +57,18 @@ impl<'s> Inference<'s> {
                 self.unify_length(declared_length, given_length);
             }
             (Ty::Option(declared), Ty::Option(given)) => self.unify(declared, given),
+            // `UInt<N>` meeting `u4` gives `N = 4`; meeting `UInt<M>` gives `N = M`
+            (Ty::GenericInteger { signed, width: ConstTerm::Param(parameter) }, found) if self.owns(*parameter) && self.found.get(*parameter).is_none() => {
+                let width = match found {
+                    Ty::UInt(n) if !signed => Some(ConstTerm::Value(i128::from(*n))),
+                    Ty::Int(n) if *signed => Some(ConstTerm::Value(i128::from(*n))),
+                    Ty::GenericInteger { signed: other, width } if other == signed => Some(width.clone()),
+                    _ => None,
+                };
+                if let Some(width) = width {
+                    self.found.bind(*parameter, GenericValue::Const(width));
+                }
+            }
             (Ty::Tuple(declared), Ty::Tuple(given)) if declared.len() == given.len() => declared.iter().zip(given).for_each(|(declared, given)| self.unify(declared, given)),
             (Ty::Fn(declared, declared_result), Ty::Fn(given, given_result)) if declared.len() == given.len() => {
                 declared.iter().zip(given).for_each(|(declared, given)| self.unify(declared, given));
@@ -169,6 +181,10 @@ impl Checker<'_> {
     /// Learns from the arguments: each argument whose type does not depend on its context first, in
     /// order, then the integer literals with no suffix, which take the type already found (`larger(3u8,
     /// 200)`) or else their default (§1.4.2).
+    pub(super) fn learn_from_arguments(&mut self, inference: &mut Inference<'_>, params: &[Ty], args: &[Arg]) {
+        self.argument_types(inference, params, args);
+    }
+
     fn argument_types(&mut self, inference: &mut Inference<'_>, params: &[Ty], args: &[Arg]) {
         for open_literals in [false, true] {
             for (arg, declared) in args.iter().zip(params) {
@@ -217,6 +233,12 @@ impl Checker<'_> {
     fn mentions_open_parameter(&self, declared: &Ty, inference: &Inference<'_>) -> bool {
         match declared {
             Ty::Param(parameter) => inference.open().iter().any(|open| open.decl == *parameter),
+            Ty::GenericInteger { width: ConstTerm::Param(parameter), .. } => inference.open().iter().any(|open| open.decl == *parameter),
+            Ty::Struct(nominal) | Ty::Enum(nominal) => nominal.arguments.iter().any(|argument| match argument {
+                GenericValue::Type(ty) => self.mentions_open_parameter(ty, inference),
+                GenericValue::Const(ConstTerm::Param(parameter)) => inference.open().iter().any(|open| open.decl == *parameter),
+                _ => false,
+            }),
             Ty::Array(element, _) | Ty::Option(element) => self.mentions_open_parameter(element, inference),
             Ty::Tuple(items) => items.iter().any(|item| self.mentions_open_parameter(item, inference)),
             Ty::Fn(params, result) => params.iter().any(|param| self.mentions_open_parameter(param, inference)) || self.mentions_open_parameter(result, inference),
