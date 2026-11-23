@@ -552,9 +552,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] Phase C's T90 commit is an ancestor of the branch head; the head is recorded on the Handoff
-- [ ] Every anchor is found or its difference is on the Handoff
-- [ ] Gate check passes: Task (Build line only)
+- [x] Phase C's T90 commit is an ancestor of the branch head; the head is recorded on the Handoff
+- [x] Every anchor is found or its difference is on the Handoff
+- [x] Gate check passes: Task (Build line only)
 
 **Tests**: none
 **Gate**: task
@@ -1063,6 +1063,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** Planning (2026-11-23): Q4 answered by the user directly (integers (a), `f16` (a), `f128` (a) complete, recorded in spec.md). design-d.md QD1 to QD8 are the planner's defaults, pending the user's approval of these tasks. D1 to D3 (T91 to T109) may run beside phase C; T110 waits for phase C's merge.
 **Defaults and findings (D1 to D3, numeric crate):**
+- T110: phase C's merge d734d458 is an ancestor of the branch head (origin/main merged at eeeb0624; Build line green, zero warnings, 2026-11-23). Anchors re-read: `ValueType` is model.rs:990 (F64, Bool, Unit, Fn, UInt(u32), Int(u32), Tuple, Array, Struct, Enum, Option; widths already u32) and `Constant` model.rs:1118 (Real, Bool, Int(i128), Aggregate); phase C added `piperine-transpile/src/rt/array.rs`, `print/carrier_array.rs`, `piperine-plan/src/array.rs`, `piperine-ir/src/check/{aggregates,carrier_array}.rs`; the interpreter's refusal file is `piperine-interp/src/composite.rs`. Design-d.md anchors otherwise stand.
 - T109: every f16 transcendental is Rust's f64 method rounded once to f16 (powi as powf of the integer, since llvm's powi accumulates error): all 65 536 inputs of each of the 13 one-argument methods, powi with exponents -4 to 4 over all inputs, and atan2/powf over every pair of 32 special values plus 2^20 deterministic (splitmix64) pairs each match the f128 library rounded to f16, with no input flagged ambiguous (an f128 result within one f128 unit of an f16 midpoint fails by name; the one exception is an exact x^y, found with ExactPower, whose f128 value is exact so a tie is a true tie). The test uses the f128 library as its oracle (already proven by T104 to T108) and runs on all cores (std::thread::scope): about 3 minutes wall in release. D3 (T105 to T109) closed; per the gate policy no workspace suite was run, only the Build line and cargo test -p piperine-numbers.
 - T108: sinh/cosh use their Taylor series up to |x| = 2 (relatively accurate for a tiny x, no cancellation) and (e^x -+ e^-x)/2 beyond; tanh is sinh/cosh; sinh and cosh give infinity and tanh +-1 past |x| = 12 000 (the Ziv loop decides everything between, including the overflow at about 11 357 and the saturation to 1 near 40). Every row of sinh, cosh, tanh matched at the first attempt.
 - T107: asin = 2 atan(x / (1 + sqrt((1-x)(1+x)))), acos = 2 atan(sqrt((1-x)/(1+x))) (stable at +-1: the factors 1-x and 1+x are exact), asin(+-1) = +-pi/2 and acos(-1) = pi from the pi interval, atan of an infinity is +-pi/2; atan2 follows C's table (signed zero y with a negative or -0 x gives +-pi, y infinite gives +-pi/4, +-3pi/4 or +-pi/2) and otherwise adds pi to atan(|y|/|x|) when x is negative. Every row of asin, acos, atan, atan2 and exact.tsv matched at the first attempt.
