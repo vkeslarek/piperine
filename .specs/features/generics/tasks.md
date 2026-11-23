@@ -1027,8 +1027,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `the_fences_generics_lifted_are_checked` passes under `**Run galleries**`
-- [ ] Gate check passes: Quick
+- [x] `the_fences_generics_lifted_are_checked` passes under `**Run galleries**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
