@@ -822,6 +822,9 @@ impl<'d, 't> ConstEval<'d, 't> {
                 return result;
             }
         }
+        if let Some(levels) = self.encoded_levels(expr, recv, args, bindings) {
+            return levels;
+        }
         let receiver = self.fold(recv, bindings);
         let mut values = Vec::with_capacity(args.len());
         for arg in args {
@@ -835,6 +838,30 @@ impl<'d, 't> ConstEval<'d, 't> {
         };
         let (receiver, values) = (receiver?, values.into_iter().collect::<Result<Vec<_>, _>>()?);
         self.known_method(expr, recv, args, method, receiver, values)
+    }
+
+    /// `x.encode()` of a `T: Repr` parameter at `bool`, an integer or `f64` (§2 rules 2 and 3): the levels of the receiver,
+    /// least significant first, as an array of `bool`. `None` when the call is no such `encode`.
+    fn encoded_levels(&mut self, expr: ExprId, recv: ExprId, args: &[ExprId], bindings: &Bindings) -> Option<Result<Constant, ConstFault>> {
+        let ExprKind::MethodCall { method, .. } = &self.design.expr_node(expr).kind else { return None };
+        if method.text != "encode" || !args.is_empty() || self.types.method(expr).is_some() || self.types.builtin(expr).is_some() {
+            return None;
+        }
+        let width = match self.typed(recv)? {
+            Ty::Bool => 1,
+            Ty::UInt(bits) | Ty::Int(bits) => u32::from(bits),
+            Ty::F64 => 64,
+            _ => return None,
+        };
+        let word = match self.fold(recv, bindings) {
+            Ok(Constant::Bool(high)) => i128::from(high),
+            Ok(Constant::Int(value)) => value,
+            Ok(Constant::Real(real)) => i128::from(real.get().to_bits()),
+            Ok(_) => return Some(Err(ConstFault::Unsupported { expr, what: "an `encode` of a value that is no scalar".to_string() })),
+            Err(fault) => return Some(Err(fault)),
+        };
+        let levels = (0..width).map(|level| Constant::Bool((word >> level) & 1 == 1)).collect();
+        Some(Ok(self.make(CompositeKind::Array, levels)))
     }
 
     /// A catalogue row applied to constants.

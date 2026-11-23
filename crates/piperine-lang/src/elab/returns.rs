@@ -103,7 +103,11 @@ impl Elaboration<'_, '_> {
             _ => None,
         };
         let statements = if tail.is_some() { &body.stmts[..body.stmts.len() - 1] } else { &body.stmts[..] };
-        let (stmts, _) = self.lower_statements(scope, statements)?;
+        let (mut stmts, last) = self.lower_statements(scope, statements)?;
+        // a block-like statement just before the tail (`for k in .. { }`, `if c { .. }`) comes back as the value of the slice: it still runs
+        if let Some(last) = last {
+            stmts.push(self.stmt(Stmt::Expr(last)));
+        }
         let value = match tail {
             Some(tail) => {
                 let pair = self.lower_option(scope, tail)?;

@@ -225,9 +225,9 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `each_instance_of_a_generic_hand_written_repr_has_its_own_codec` passes under `**Run elabgen**`
-- [ ] `a_generic_hand_written_repr_is_carried_with_its_layout` passes under `**Run srcgen**`
-- [ ] Gate check passes: Quick
+- [x] `each_instance_of_a_generic_hand_written_repr_has_its_own_codec` passes under `**Run elabgen**`
+- [x] `a_generic_hand_written_repr_is_carried_with_its_layout` passes under `**Run srcgen**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

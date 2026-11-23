@@ -570,3 +570,39 @@ fn a_cast_to_a_tuple_holding_an_enum_runs() {
     ];
     RUN.assert_commits("casts.msl", &["c4", "c5", "c6", "c7"], &wanted);
 }
+
+/// `struct Pair<T> { a: T, b: T }` of the model `pair_repr.msl`, whose layout is written by hand: the levels of `b`, then those of `a`.
+struct SwappedPair<T> {
+    a: T,
+    b: T,
+}
+
+impl SwappedPair<u8> {
+    /// `encode` of the model at `u8`: 16 levels, `b` in the low byte and `a` in the high one, packed into a word.
+    fn word(&self) -> u16 {
+        u16::from(self.b) | (u16::from(self.a) << 8)
+    }
+}
+
+impl SwappedPair<bool> {
+    /// `encode` of the model at `bool`: 2 levels, `b` first and then `a`, packed into a byte.
+    fn word(&self) -> u8 {
+        u8::from(self.b) | (u8::from(self.a) << 1)
+    }
+}
+
+#[test]
+fn a_generic_hand_written_repr_is_carried_with_its_layout() {
+    // GN-32 AC 1 (§2 rule 2): each instance of `Pair<T>` commits the levels of its own `encode` (`2 * T::WIDTH` of them, the levels
+    // of `b` and then those of `a`) and reads its start value back through its own `decode`
+    let committed_bytes = SwappedPair { a: 3u8, b: 5u8 }.word();
+    let committed_flags = SwappedPair { a: false, b: true }.word();
+    RUN.assert_commits("pair_repr.msl", &["bytes", "flags"], &[CarrierBytes::word(committed_bytes), CarrierBytes::byte(committed_flags)]);
+    // the carriers start at the levels of `Pair { a: 7, b: 9 }` and `Pair { a: true, b: false }`, and `decode` gives the fields back
+    let start = SwappedPair { a: 7u8, b: 9u8 };
+    let held = SwappedPair { a: true, b: false };
+    RUN.assert_commits("pair_repr.msl", &["ra", "rb", "rc", "rd"], &[CarrierBytes::byte(start.a), CarrierBytes::byte(start.b), CarrierBytes::byte(u8::from(held.a)), CarrierBytes::byte(u8::from(held.b))]);
+    // `back` is `T::decode(x.encode())` at `Pair<u8>`: the two functions are inverses
+    let back = SwappedPair { a: 3u8, b: 5u8 };
+    RUN.assert_commits("pair_repr.msl", &["re", "rf"], &[CarrierBytes::byte(back.a), CarrierBytes::byte(back.b)]);
+}

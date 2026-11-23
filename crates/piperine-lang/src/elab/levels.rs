@@ -40,7 +40,7 @@ impl Elaboration<'_, '_> {
     /// The number of levels of the `Repr` of `ty` (§2): the width of its hand-written `impl`, else the count its layout
     /// gives (rules 2 to 6). `None` for a type with no laid-out value type.
     pub(super) fn level_count(&self, ty: &Ty) -> Option<u32> {
-        let hand_written = self.impls.hand_written_repr(ty).map(|entry| entry.decl).and_then(|owner| self.hand_written_width(owner));
+        let hand_written = self.impls.hand_written_repr(ty).map(|entry| entry.decl).and_then(|owner| self.hand_written_width(owner, &self.hand_written_arguments(owner, ty)?));
         hand_written.or_else(|| self.types.repr_levels(ty))
     }
 
@@ -60,8 +60,9 @@ impl Elaboration<'_, '_> {
     fn encode_levels(&mut self, scope: &mut Scope, recv: ExprId, ty: &Ty, result: Option<Ty>, span: crate::msl::Span, origin: Origin) -> Option<LoweredExpr> {
         if let Some(owner) = self.impls.hand_written_repr(ty).map(|entry| entry.decl) {
             let item = self.impls.item(owner, "encode")?;
+            let arguments = self.hand_written_arguments(owner, ty)?;
             let argument = self.lower_expr(scope, recv)?;
-            let (function, ret) = self.request(item, Half::Whole)?;
+            let (function, ret) = self.request_instance(item, arguments, Half::Whole)?;
             return Some(self.emit(Expr::Call { function, args: vec![argument] }, ret, origin));
         }
         let value = self.lower_expr(scope, recv)?;
@@ -131,9 +132,10 @@ impl Elaboration<'_, '_> {
     fn decode_levels(&mut self, scope: &mut Scope, levels: ExprId, target: &Ty, span: crate::msl::Span, origin: &Origin) -> Option<Pair> {
         if let Some(owner) = self.impls.hand_written_repr(target).map(|entry| entry.decl) {
             let item: DeclId = self.impls.item(owner, "decode")?;
+            let arguments = self.hand_written_arguments(owner, target)?;
             let first = self.lower_expr(scope, levels)?;
-            let (presence, is_ty) = self.request(item, Half::Presence)?;
-            let (payload, val_ty) = self.request(item, Half::Payload)?;
+            let (presence, is_ty) = self.request_instance(item, arguments.clone(), Half::Presence)?;
+            let (payload, val_ty) = self.request_instance(item, arguments, Half::Payload)?;
             let second = self.lower_expr(scope, levels)?;
             let is = self.emit(Expr::Call { function: presence, args: vec![first] }, is_ty, origin.clone());
             let val = self.emit(Expr::Call { function: payload, args: vec![second] }, val_ty, origin.clone());

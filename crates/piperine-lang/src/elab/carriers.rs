@@ -135,7 +135,7 @@ impl Elaboration<'_, '_> {
         let ty = self.carried_type(decl)?;
         let init = match init {
             Some(expr) => match self.hand_written_encode(decl) {
-                Some(encode) => Some(self.encoded_init(expr, encode, frame)?),
+                Some((encode, arguments)) => Some(self.encoded_init(expr, encode, &arguments, frame)?),
                 None => {
                     let value = self.carrier_init(expr, frame)?;
                     Some(self.ir_constant(value, &ty))

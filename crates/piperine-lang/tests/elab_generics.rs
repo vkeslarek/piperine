@@ -197,15 +197,6 @@ fn a_carrier_of_a_hand_written_type_with_no_initial_value_is_refused_by_name() {
     assert!(found.iter().any(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains("a carrier of a type with a hand-written `Repr` and no initial value")), "{:?}", found.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
 }
 
-#[test]
-fn a_hand_written_repr_on_a_generic_type_is_refused_by_name() {
-    // an instance of a generic type would be laid out from its fields although the checker reads its `WIDTH` from the
-    // `impl`: refused by name until phase C instead of carrying the wrong layout
-    let src = "#[derive(PartialEq)] struct Pair<T> { a: T, b: T }\nimpl<T: Repr> Repr for Pair<T> {\n    const WIDTH: u32 = 2;\n    fn encode(self) -> [bool; 2] { [true, true] }\n    fn decode(l: [bool; 2]) -> Option<Pair<T>> { None }\n}\nmodule Top() { signal s: Bit<Pair<bool>> = Pair { a: true, b: false }; }\n";
-    let found = Elab::run(src, "Top").err().expect("refused");
-    assert!(found.iter().any(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains("a hand-written `Repr` on a generic type")), "{:?}", found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect::<Vec<_>>());
-}
-
 /// A call of an `extern "intrinsic"` function, written in each position a function body or a behavior has, and what
 /// elaborating it reports.
 struct ExternCalls;
@@ -309,4 +300,36 @@ fn cast_between_widths_is_e0127_naming_both_types() {
     // false for a cast between types of different widths, so the instantiation is `E0127` naming `cast::<Mode, u8>`
     let found = ExternCalls::found("#[derive(Repr)] enum Mode { Idle, Run, Halt }\nmodule Top() { }\nanalog for Top { let a = cast::<Mode, u8>(Mode::Run); }\n");
     assert!(found.iter().any(|(code, message)| code == "E0127" && message.contains("Mode") && message.contains("u8")), "{found:?}");
+}
+
+/// A generic `Pair<T>` whose `Repr` is written by hand (two copies of the levels of `T`), carried at two arguments.
+struct HandWrittenPair;
+
+impl HandWrittenPair {
+    /// The source: `Pair<u8>` and `Pair<bool>` each carried, so each instance is reached.
+    const SOURCE: &'static str = "#[derive(PartialEq)] struct Pair<T> { a: T, b: T }\n\
+        impl<T: Repr> Repr for Pair<T> {\n\
+            const WIDTH: u32 = 2 * T::WIDTH;\n\
+            fn encode(self) -> [bool; 2 * T::WIDTH] { let first = self.a.encode(); let second = self.b.encode(); [false; 2 * T::WIDTH] }\n\
+            fn decode(levels: [bool; 2 * T::WIDTH]) -> Option<Pair<T>> { None }\n\
+        }\n\
+        module Top() { signal s: Bit<Pair<u8>> = Pair { a: 1u8, b: 2u8 }; signal t: Bit<Pair<bool>> = Pair { a: true, b: false }; }\n";
+}
+
+#[test]
+fn each_instance_of_a_generic_hand_written_repr_has_its_own_codec() {
+    // GN-32 AC 1 (§2 rule 2, §3.8.10): `Pair<u8>` and `Pair<bool>` are two arena entries, each `ReprForm::HandWritten` with the
+    // folded `WIDTH` (`2 * T::WIDTH`: 16 and 2) and its own `encode` and `decode` named for the instance
+    let ir = Elab::ir(HandWrittenPair::SOURCE, "Top");
+    let mut found: Vec<(String, u32)> = Vec::new();
+    for ty in ir.types() {
+        if let piperine_ir::ReprForm::HandWritten { width, encode, decode } = &ty.repr {
+            let instance = ty.instance.as_ref().expect("a hand-written instance is an instance").arguments.join(", ");
+            assert!(ir.function(*encode).name().contains("encode") && ir.function(*encode).name().contains(&instance), "{}", ir.function(*encode).name());
+            assert!(ir.function(*decode).name().contains("decode") && ir.function(*decode).name().contains(&instance), "{}", ir.function(*decode).name());
+            found.push((instance, *width));
+        }
+    }
+    found.sort();
+    assert_eq!(found, [("bool".to_string(), 2), ("u8".to_string(), 16)]);
 }

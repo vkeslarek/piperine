@@ -1,0 +1,67 @@
+//! A hand-written `Repr` on a generic type (GN-32 AC 1): `Pair<T>` lays out the levels of `b` and then those of `a`, so
+//! `Pair<u8>` has 16 levels and `Pair<bool>` 2, each carried by its own `encode` and `decode`; the expected levels are
+//! computed by Rust in `source_generics.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+#[derive(PartialEq)]
+struct Pair<T> { a: T, b: T }
+
+impl<T: Repr> Repr for Pair<T> {
+    const WIDTH: u32 = 2 * T::WIDTH;
+    fn encode(self) -> [bool; 2 * T::WIDTH] {
+        let levels_out = [false; 2 * T::WIDTH];
+        let first = self.a.encode();
+        let second = self.b.encode();
+        for k in 0..T::WIDTH {
+            levels_out[k] = second[k];
+            levels_out[T::WIDTH + k] = first[k];
+        }
+        levels_out
+    }
+    fn decode(levels: [bool; 2 * T::WIDTH]) -> Option<Pair<T>> {
+        let first = [false; T::WIDTH];
+        let second = [false; T::WIDTH];
+        for k in 0..T::WIDTH {
+            second[k] = levels[k];
+            first[k] = levels[T::WIDTH + k];
+        }
+        match T::decode(first) {
+            Some(a) => match T::decode(second) {
+                Some(b) => Some(Pair { a, b }),
+                None => None,
+            },
+            None => None,
+        }
+    }
+}
+
+fn back<T: Repr>(x: T) -> T { T::decode(x.encode()).unwrap() }
+
+module Bench() {
+    signal re: Bit<u8> = 99;
+    signal rf: Bit<u8> = 99;
+    signal clk: Bit;
+    signal bytes: Bit<Pair<u8>> = Pair { a: 7u8, b: 9u8 };
+    signal flags: Bit<Pair<bool>> = Pair { a: true, b: false };
+    signal held_bytes: Bit<Pair<u8>> = Pair { a: 7u8, b: 9u8 };
+    signal held_flags: Bit<Pair<bool>> = Pair { a: true, b: false };
+    signal ra: Bit<u8> = 99;
+    signal rb: Bit<u8> = 99;
+    signal rc: Bit<bool> = false;
+    signal rd: Bit<bool> = true;
+    let osc = Osc(clk) { f: 200M };
+}
+digital for Bench {
+    on clk.rise() {
+        bytes <- Pair { a: 3u8, b: 5u8 };
+        flags <- Pair { a: false, b: true };
+        ra <- held_bytes.a;
+        rb <- held_bytes.b;
+        rc <- held_flags.a;
+        rd <- held_flags.b;
+        re <- back(Pair { a: 3u8, b: 5u8 }).a;
+        rf <- back(Pair { a: 3u8, b: 5u8 }).b;
+    }
+}

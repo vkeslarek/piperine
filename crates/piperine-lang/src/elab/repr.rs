@@ -6,12 +6,15 @@
 //! An `Option` result is no IR value of elaboration, so the author's `decode` is two IR functions, one for each
 //! half (`T.decode.is`, `T.decode.val`); the IR's `decode` is the function that packs them again.
 
+use std::collections::BTreeMap;
+
 use piperine_ir::{Expr, FunctionId, FunctionSpec, Local, TypeId as IrTypeId, ValueType};
 
 use super::elaborator::Elaboration;
 use super::variants::Half;
 use crate::pom::{DeclId, DeclKind};
-use crate::types::{ImplTarget, Ty};
+use super::instances::{ConcreteValue, Instance};
+use crate::types::{ConstTerm, GenericSignature, GenericValue, ImplTarget, Nominal, Ty};
 
 /// A hand-written layout whose functions exist, set on its type once they are in the IR.
 pub(super) struct HandWrittenRepr {
@@ -43,10 +46,12 @@ impl Elaboration<'_, '_> {
         let mut layouts = Vec::new();
         for (owner, decl) in impls {
             if self.type_arena.id_of(decl).is_none() {
-                // an instance of a generic type would be laid out from its fields, silently: refused by name until phase C
-                if self.type_arena.has_instance_of(decl) {
-                    let data = self.design.decl_data(owner);
-                    self.unsupported(data.file, data.span, "a hand-written `Repr` on a generic type");
+                // a generic type has no entry of its own: each instance the run reached gets the layout of the `impl` for its
+                // arguments, `Pair<f64>.encode` and `Pair<f64>.decode` (GN-32 AC 1)
+                for (nominal, ty) in self.type_arena.instances_of(decl) {
+                    if let Some(layout) = self.lower_hand_written_instance(owner, &nominal, ty) {
+                        layouts.push(layout);
+                    }
                 }
                 continue;
             }
@@ -61,13 +66,33 @@ impl Elaboration<'_, '_> {
     fn lower_hand_written_repr(&mut self, owner: DeclId, decl: DeclId) -> Option<HandWrittenRepr> {
         let ty = self.type_arena.id_of(decl)?;
         let own = self.value_type(&Self::declared_type(self.design.decl_data(decl).kind.clone(), decl))?;
-        let width = self.hand_written_width(owner)?;
+        let width = self.hand_written_width(owner, &[])?;
         let encode_item = self.impls.item(owner, "encode")?;
         let decode_item = self.impls.item(owner, "decode")?;
         let (encode, _) = self.request(encode_item, Half::Whole)?;
         let (presence, _) = self.request(decode_item, Half::Presence)?;
         let (payload, _) = self.request(decode_item, Half::Payload)?;
-        let decode = self.pack_decode(decode_item, &own, width, presence, payload);
+        let decode = self.pack_decode(decode_item, &[], &own, width, presence, payload);
+        Some(HandWrittenRepr { ty, width, encode, decode })
+    }
+
+    /// The layout the generic `impl Repr` `owner` gives the instance `nominal` of its type, registered as the arena
+    /// entry `ty`: `encode` and `decode` lowered once for the instance's arguments (§3.8.10).
+    fn lower_hand_written_instance(&mut self, owner: DeclId, nominal: &Nominal, ty: IrTypeId) -> Option<HandWrittenRepr> {
+        let instance = Self::declared_type(self.design.decl_data(nominal.decl).kind.clone(), nominal.decl);
+        let instance = match instance {
+            Ty::Enum(_) => Ty::Enum(nominal.clone()),
+            _ => Ty::Struct(nominal.clone()),
+        };
+        let arguments = self.hand_written_arguments(owner, &instance)?;
+        let own = self.value_type(&instance)?;
+        let width = self.hand_written_width(owner, &arguments)?;
+        let encode_item = self.impls.item(owner, "encode")?;
+        let decode_item = self.impls.item(owner, "decode")?;
+        let (encode, _) = self.request_instance(encode_item, arguments.clone(), Half::Whole)?;
+        let (presence, _) = self.request_instance(decode_item, arguments.clone(), Half::Presence)?;
+        let (payload, _) = self.request_instance(decode_item, arguments.clone(), Half::Payload)?;
+        let decode = self.pack_decode(decode_item, &arguments, &own, width, presence, payload);
         Some(HandWrittenRepr { ty, width, encode, decode })
     }
 
@@ -79,16 +104,47 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    /// The folded `WIDTH` of the `impl Repr` `owner`.
-    pub(super) fn hand_written_width(&self, owner: DeclId) -> Option<u32> {
+    /// The arguments the `impl Repr` `owner` takes for the type `ty` it is written for: what its parameters stand for
+    /// (`impl<T: Repr> Repr for Pair<T>` meeting `Pair<u8>` gives `u8`), in the order of its parameters; empty for an
+    /// `impl` with none. `None` when a parameter stays open.
+    pub(super) fn hand_written_arguments(&self, owner: DeclId, ty: &Ty) -> Option<Vec<ConcreteValue>> {
+        let encode = self.impls.item(owner, "encode")?;
+        if !self.is_generic_impl_item(encode) {
+            return Some(Vec::new());
+        }
+        let found = self.types.impl_arguments(encode, ty)?;
+        found
+            .into_iter()
+            .map(|value| match value {
+                GenericValue::Type(argument) => Some(ConcreteValue::Type(argument)),
+                GenericValue::Const(ConstTerm::Value(count)) => Some(ConcreteValue::Const(count)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The folded `WIDTH` of the `impl Repr` `owner` for `arguments`: the level count of each type argument and the value
+    /// of each const argument stand where the `impl`'s parameters are named (`2 * T::WIDTH`).
+    pub(super) fn hand_written_width(&self, owner: DeclId, arguments: &[ConcreteValue]) -> Option<u32> {
         let width = self.impls.item(owner, "WIDTH")?;
         let DeclKind::Const(data) = &self.design.decl_data(width).kind else { return None };
-        u32::try_from(self.types.integer_constant(data.value?)?).ok()
+        let signature = GenericSignature::of(self.design, owner);
+        let values: BTreeMap<DeclId, u128> = signature
+            .parameters()
+            .iter()
+            .zip(arguments)
+            .filter_map(|(parameter, argument)| match argument {
+                ConcreteValue::Type(ty) => self.level_count(ty).map(|levels| (parameter.decl, u128::from(levels))),
+                ConcreteValue::Const(count) => u128::try_from(*count).ok().map(|count| (parameter.decl, count)),
+                _ => None,
+            })
+            .collect();
+        u32::try_from(self.types.fold_with(data.value?, values)?).ok()
     }
 
     /// The IR function `Type.decode` that gives the whole `Option` of the author's `decode`: it calls the
     /// two halves with its one argument and packs their results.
-    fn pack_decode(&mut self, item: DeclId, own: &ValueType, width: u32, presence: FunctionId, payload: FunctionId) -> FunctionId {
+    fn pack_decode(&mut self, item: DeclId, arguments: &[ConcreteValue], own: &ValueType, width: u32, presence: FunctionId, payload: FunctionId) -> FunctionId {
         let origin = self.locator.decl(item);
         let levels = ValueType::Array(Box::new(ValueType::Bool), u64::from(width));
         let option = ValueType::Option(Box::new(own.clone()));
@@ -98,22 +154,27 @@ impl Elaboration<'_, '_> {
         let value = self.emit(Expr::Call { function: payload, args: val_args }, own.clone(), origin.clone());
         let body = self.emit(Expr::OptionPack { is, value }, option.clone(), origin.clone());
         let levels_param = Local { name: "levels".into(), ty: levels, mutable: false };
-        let name = self.impl_qualified_name(item);
+        let name = if arguments.is_empty() { self.impl_qualified_name(item) } else { Instance { item, arguments: arguments.to_vec() }.name(self) };
         self.variants.add_synthetic(FunctionSpec { name, origin, params: vec![levels_param.clone()], ret: option, locals: vec![levels_param], body })
     }
 
-    /// The `encode` of the hand-written `Repr` of what the carrier `decl` holds; `None` for a derived layout.
-    pub(super) fn hand_written_encode(&self, decl: DeclId) -> Option<DeclId> {
+    /// The `encode` of the hand-written `Repr` of what the carrier `decl` holds, with the arguments its `impl` takes for
+    /// that type; `None` for a derived layout.
+    pub(super) fn hand_written_encode(&self, decl: DeclId) -> Option<(DeclId, Vec<ConcreteValue>)> {
         let Some(Ty::Carrier { value, .. }) = self.types.carrier(decl) else { return None };
         let entry = self.impls.hand_written_repr(value)?;
-        self.impls.item(entry.decl, "encode")
+        let arguments = self.hand_written_arguments(entry.decl, value)?;
+        Some((self.impls.item(entry.decl, "encode")?, arguments))
     }
 
     /// The initial value of a carrier of a hand-written layout: the levels word `encode` gives for the folded
-    /// `expr`. `None` after a diagnostic.
-    pub(super) fn encoded_init(&mut self, expr: crate::pom::ExprId, encode: DeclId, frame: usize) -> Option<piperine_ir::Constant> {
+    /// `expr`, run for the arguments of its `impl`. `None` after a diagnostic.
+    pub(super) fn encoded_init(&mut self, expr: crate::pom::ExprId, encode: DeclId, arguments: &[ConcreteValue], frame: usize) -> Option<piperine_ir::Constant> {
         let bindings = self.frame_bindings(frame);
-        match self.consts.encoded_word(expr, encode, &bindings) {
+        let outer = self.consts.set_substitution(self.instance_substitution(encode, arguments));
+        let word = self.consts.encoded_word(expr, encode, &bindings);
+        self.consts.set_substitution(outer);
+        match word {
             Ok(word) => Some(word),
             Err(fault) => {
                 self.const_fault(&fault, "a carrier's initial value");
