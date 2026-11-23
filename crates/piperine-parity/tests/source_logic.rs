@@ -309,11 +309,13 @@ fn the_tables_hold_at_sixty_four_levels() {
 
 #[test]
 fn a_logic_of_a_hundred_levels_is_refused_by_name() {
-    // §22.1.1 (EU-07, N of 100): two `UInt<100>` planes need integers wider than 64 bits, which `GAPS.md` L13 refuses by name
-    // until they exist; the refusal names the type, and no run starts
+    // §22.1.1 (EU-07, N of 100): two `UInt<100>` planes need integers wider than 64 bits, which `GAPS.md` L13 refuses by
+    // name until they exist (owner `composite-values` phase D): one `P0001` naming the type, the field and the width, and
+    // no error code of the language (`E0112`, `E0181`) for what is a missing feature
     let project = RUN.project("too_wide.msl");
     let refused = project.elaborate("Bench").err().map(|rejection| rejection.to_string()).unwrap_or_default();
-    assert!(refused.contains("100"), "the refusal names the width: {refused}");
+    assert!(refused.contains("P0001") && refused.contains("`Logic<100>`") && refused.contains("100 bits") && refused.contains("L13"), "{refused}");
+    assert!(!refused.contains("E0112") && !refused.contains("E0181"), "a language error for a missing feature: {refused}");
 }
 
 #[test]

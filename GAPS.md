@@ -98,7 +98,7 @@ quotes the text after `P0001:` unless another code is shown.
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
 | L12 | `extern "C" fn`, `#[derivative]` | §3 rules 2, 10, 11 | `extern function` | M |
-| L13 | `f16`, `f32`, `f128`; integers wider than 64 bits | §1 rule 5 | `type f32`; `integer type u128` | M |
+| L13 | `f16`, `f32`, `f128`; integers wider than 64 bits (owner `composite-values` phase D; a `Logic<N>` with N > 64 is a `P0001` naming the instance, its field and the width) | §1 rule 5 | `type f32`; `integer type u128`; `Logic<100>`: its field `binary` is an integer of 100 bits | M |
 
 ### 4.2 Carriers (Part II §4–§7)
 
