@@ -10,6 +10,7 @@ use crate::msl::Span;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtKind};
 
 use super::check::Checker;
+use super::Bound;
 use super::Ty;
 
 impl Checker<'_> {
@@ -18,10 +19,29 @@ impl Checker<'_> {
         matches!(ty, Ty::Node(_) | Ty::Carrier { .. })
     }
 
-    /// Records the parameter `param` of type `ty` as a handle when `ty` is one.
+    /// Whether `ty` is a type parameter bound by `Nature`: what a function generic over a nature takes (`fn f<N: Nature>(a: N)`).
+    pub(super) fn is_nature_parameter(&self, ty: &Ty) -> bool {
+        matches!(ty, Ty::Param(param) if self.bounds_of(*param).contains(&Bound::Nature))
+    }
+
+    /// Records the parameter `param` of type `ty` as a handle when `ty` is one: a node or a carrier of a nature, or a
+    /// type parameter bound by `Nature`.
     pub(super) fn note_handle(&mut self, param: DeclId, ty: &Ty) {
-        if Self::is_handle_type(ty) {
+        if Self::is_handle_type(ty) || self.is_nature_parameter(ty) {
             self.handles.insert(param);
+        }
+    }
+
+    /// The type of the argument `expr` for a parameter generic over a nature: the carrier it names (a discrete one is
+    /// the carrier, not the value it reads, so the call's nature is inferred from it), else the type it reads as.
+    pub(super) fn infer_carrier(&mut self, expr: ExprId) -> Option<Ty> {
+        let read = self.infer(expr)?;
+        match self.carrier_named(expr) {
+            Some(carrier @ Ty::Carrier { .. }) => {
+                self.exprs[expr.index()] = Some(carrier.clone());
+                Some(carrier)
+            }
+            _ => Some(read),
         }
     }
 

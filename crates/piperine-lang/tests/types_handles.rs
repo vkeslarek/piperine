@@ -8,8 +8,8 @@ mod support;
 #[path = "support/generic_sources.rs"]
 mod generic_sources;
 
-use piperine_lang::pom::{DeclId, DeclKind, Design};
-use piperine_lang::types::Types;
+use piperine_lang::pom::{DeclId, DeclKind, Design, ExprId};
+use piperine_lang::types::{GenericValue, Types};
 
 /// MSL sources over the standard library, checked from `Top`.
 struct HandleSources;
@@ -134,4 +134,30 @@ fn a_solve_reading_call_in_a_const_context_is_e0122() {
     // a function that reads nothing of the solve is pure, and a const may call it
     let pure = "fn double(x: f64) -> f64 { x * 2.0 }\nconst T0: f64 = double(1.0);\nmodule Top() { let x = T0; }\n";
     assert_eq!(HandleSources::found(pure), []);
+}
+
+#[test]
+fn a_nature_generic_handle_function_type_checks_and_records_its_nature() {
+    // GN-11 AC 4, GN-10 AC 2: `fn f<N: Nature>(a: N)` types `a` as a handle of `N`: it is probed (`potential(a)`,
+    // `temp(a)`), a bound such as `W: Nature + Drive` is satisfied by the nature's trait `impl`, and the call's nature is
+    // inferred from the carrier passed and recorded in its instantiation
+    let probe = |nature: &str, probe: &str| format!("fn level<N: Nature>(a: N) -> f64 {{ {probe} }}\nmodule Top() {{ signal t: {nature}; signal o: Electrical; }}\nanalog for Top {{ v(o) +> level(t); }}\n");
+    let electrical = probe("Electrical", "potential(a)");
+    let thermal = probe("Thermal", "temp(a)");
+    for (src, nature) in [(electrical, "Electrical"), (thermal, "Thermal")] {
+        let design = Design::builder().source("top.msl", src.clone()).build();
+        assert_eq!(HandleSources::found(&src), [], "{src}");
+        let types = Types::check(&design, "Top").unwrap_or_else(|found| panic!("{found:?}"));
+        let call = (0..design.expr_count()).map(|index| ExprId(index as u32)).find(|expr| types.instantiation(*expr).is_some()).expect("a generic call");
+        let instantiation = types.instantiation(call).expect("its instantiation");
+        let GenericValue::Type(argument) = &instantiation.arguments[0] else { panic!("a type argument: {instantiation:?}") };
+        assert_eq!(argument.name(&design), format!("node of nature `{nature}`"), "{src}");
+    }
+    let capability = "trait Drive { fn push(self) -> f64; }\nimpl Drive for Electrical { fn push(self) -> f64 { v(self) } }\nfn go<W: Nature + Drive>(a: W) -> f64 { a.push() }\nmodule Top() { signal o: Electrical; }\nanalog for Top { v(o) +> go(o); }\n";
+    assert_eq!(HandleSources::found(capability), []);
+    let refused = "trait Drive { fn push(self) -> f64; }\nimpl Drive for Electrical { fn push(self) -> f64 { v(self) } }\nfn go<W: Nature + Drive>(a: W) -> f64 { 0.0 }\nmodule Top() { signal t: Thermal; signal o: Electrical; }\nanalog for Top { v(o) +> go(t); }\n";
+    assert!(HandleSources::found(refused).iter().any(|(code, _)| code == "E0187"), "{:?}", HandleSources::found(refused));
+    // a discrete carrier is a nature too: the call's nature is the carrier, not the value it reads
+    let discrete = "fn tick<N: Nature>(a: N) -> f64 { 1.0 }\nmodule Top() { signal c: Bit = false; signal o: Electrical; }\nanalog for Top { v(o) +> tick(c); }\n";
+    assert_eq!(HandleSources::found(discrete), []);
 }

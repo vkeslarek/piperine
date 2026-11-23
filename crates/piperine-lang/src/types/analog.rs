@@ -94,6 +94,8 @@ impl Checker<'_> {
             match self.infer(arg.value) {
                 Some(Ty::Node(n)) => natures.push(n),
                 Some(Ty::AnyNode) => {}
+                // a handle generic over a nature: its nature is the instantiation's, known there
+                Some(generic) if self.is_nature_parameter(&generic) => {}
                 Some(other) => {
                     let span = self.design.expr_node(arg.value).span;
                     self.mismatch_text(file, span, "a node", &other.name(self.design));

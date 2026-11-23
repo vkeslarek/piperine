@@ -185,7 +185,8 @@ impl Checker<'_> {
                 if open_literals && !self.mentions_open_parameter(declared, inference) {
                     continue;
                 }
-                if let Some(given) = self.infer(arg.value) {
+                let given = if self.is_nature_parameter(declared) { self.infer_carrier(arg.value) } else { self.infer(arg.value) };
+                if let Some(given) = given {
                     inference.unify(declared, &given);
                 }
             }

@@ -38,7 +38,7 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
             },
             Bound::Nature => match ty {
                 Ty::Param(param) => self.checker.bounds_of(*param).contains(&Bound::Nature),
-                other => matches!(other, Ty::Node(_)),
+                other => matches!(other, Ty::Node(_) | Ty::Carrier { .. }),
             },
             Bound::Trait { decl, arguments } => {
                 if matches!(ty, Ty::Param(param) if self.checker.bounds_of(*param).contains(bound)) {

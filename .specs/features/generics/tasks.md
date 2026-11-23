@@ -1175,8 +1175,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_nature_generic_handle_function_type_checks_and_records_its_nature` passes under `**Run typeshandles**`
-- [ ] Gate check passes: Quick
+- [x] `a_nature_generic_handle_function_type_checks_and_records_its_nature` passes under `**Run typeshandles**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
