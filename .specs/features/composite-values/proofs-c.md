@@ -1,9 +1,9 @@
-# composite-values phase C proofs (tasks-c.md)
+# scratch-c proofs
 
-**HEAD**: 1c80b340
+**HEAD**: c9044da5
 **Tree**: clean
 **Shell**: /bin/sh
-**Result**: 47 pass, 0 fail
+**Result**: 48 pass, 0 fail
 
 | Check | Proof | Result |
 | --- | --- | --- |
@@ -52,6 +52,7 @@
 | C152 | `run elabarr / test an_argument_of_another_length_than_a_param_length_is_e0313_at_elaboration ... ok` | pass |
 | C153 | `run elabarr / test a_negative_array_length_from_a_param_is_e0104_naming_it ... ok` | pass |
 | C154 | `run apiarr / test a_declared_empty_array_prints_as_the_empty_array ... ok` | pass |
+| C155 | `run apiarr / test an_empty_array_of_a_hoisted_module_prints_under_the_placement ... ok` | pass |
 | Build | `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperin` | pass |
 | Build | `cargo test -p piperine-lang --test suite_hygiene` | pass |
 
@@ -60,30 +61,30 @@
 `Run srcarr` - exit 0
 
 ```
-test an_element_never_committed_reads_the_arrays_initial_value ... ok
-test overlapping_commits_in_one_microstep_keep_the_last_write_per_level ... ok
 test a_run_time_element_index_out_of_range_names_carrier_index_instance_and_instant ... ok
-test element_history_and_events_apply_to_that_element_only ... ok
-test an_element_given_to_an_out_port_is_driven_by_the_child ... ok
-test each_element_of_an_array_of_carriers_has_its_own_events ... ok
+test an_element_never_committed_reads_the_arrays_initial_value ... ok
 test arrays_and_elements_connect_element_to_element ... ok
+test an_element_given_to_an_out_port_is_driven_by_the_child ... ok
+test element_history_and_events_apply_to_that_element_only ... ok
+test each_element_of_an_array_of_carriers_has_its_own_events ... ok
 test the_shift_register_and_the_ram_give_their_expected_sequences ... ok
 test an_array_of_carriers_reads_whole_as_an_array_value ... ok
 test an_element_commit_changes_that_element_only ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.47s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.69s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-parity)
+    Finished `test` profile [unoptimized] target(s) in 0.92s
      Running tests/source_carrier_arrays.rs (/var/tmp/piperine-target-d/debug/deps/source_carrier_arrays-58a9ddbd6ecee6c5)
 ```
 
 `Run elabarr` - exit 0
 
 ```
-test an_element_definition_is_one_drive ... ok
-test a_negative_array_length_from_a_param_is_e0104_naming_it ... ok
+test an_analog_node_index_that_does_not_fold_is_refused_naming_it ... ok
 test an_array_whose_length_reads_a_param_reads_and_writes_whole ... ok
 test an_array_length_read_from_a_param_makes_it_structural ... ok
+test an_element_definition_is_one_drive ... ok
 test node_array_contributions_unroll_to_their_nodes ... ok
 test an_array_of_nodes_is_one_node_per_element ... ok
 test element_and_field_commits_lower_to_their_targets ... ok
@@ -91,29 +92,29 @@ test an_argument_of_another_length_than_a_param_length_is_e0313_at_elaboration .
 test element_reads_and_events_lower_per_element ... ok
 test an_array_of_length_zero_is_an_empty_array ... ok
 
-test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.10s
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.23s
 
-    Finished `test` profile [unoptimized] target(s) in 0.38s
+    Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/elab_carrier_arrays.rs (/var/tmp/piperine-target-d/debug/deps/elab_carrier_arrays-87a09a55b4e61bea)
 ```
 
 `Run typesarr` - exit 0
 
 ```
-test an_array_of_carriers_as_a_function_parameter_is_refused_by_name ... ok
-test arrays_of_carriers_type_as_signals_and_ports ... ok
 test an_initialized_array_with_an_element_on_an_out_port_is_e0223 ... ok
-test a_carrier_method_on_a_whole_array_is_e0211 ... ok
 test element_reads_history_and_probes_type_per_element ... ok
-test an_array_initial_value_of_another_type_is_e0210 ... ok
+test arrays_of_carriers_type_as_signals_and_ports ... ok
+test a_carrier_method_on_a_whole_array_is_e0211 ... ok
 test an_array_argument_of_another_length_is_e0313_naming_both_lengths ... ok
-test a_definition_and_commits_of_one_element_are_e0221 ... ok
+test an_array_initial_value_of_another_type_is_e0210 ... ok
 test arrays_and_elements_connect_to_ports_of_their_shape ... ok
+test a_definition_and_commits_of_one_element_are_e0221 ... ok
 test element_and_field_targets_type_their_levels ... ok
 
-test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.33s
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.31s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
+   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-lang)
+    Finished `test` profile [unoptimized] target(s) in 0.49s
      Running tests/types_carrier_arrays.rs (/var/tmp/piperine-target-d/debug/deps/types_carrier_arrays-6c4233f4c3db21b6)
 ```
 
@@ -123,44 +124,46 @@ test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 running 1 test
 test peak_heap_does_not_depend_on_the_declared_length ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.35s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.40s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
+   Compiling piperine-api v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-api)
+    Finished `test` profile [unoptimized] target(s) in 0.67s
      Running tests/carrier_array_storage.rs (/var/tmp/piperine-target-d/debug/deps/carrier_array_storage-c0fb95a0211ae76a)
 ```
 
 `Run clirun` - exit 0
 
 ```
-test run_prints_header_records_blank_line_and_table ... ok
 test the_project_flag_uses_that_directory_and_never_searches ... ok
 test an_option_cell_prints_none_or_the_value ... ok
 test a_fatal_run_prints_its_msg_and_exits_1 ... ok
-test run_of_a_top_with_a_node_port_is_e0810 ... ok
 test an_array_of_carriers_prints_by_element_and_whole_in_every_format ... ok
+test run_of_a_top_with_a_node_port_is_e0810 ... ok
 test records_stay_when_the_analysis_fails ... ok
 test run_prints_the_fatal_line_and_exits_1 ... ok
 test param_of_an_integer_from_the_command_line_reads_from_the_start ... ok
 test stdout_is_the_same_from_two_caches_and_two_directories ... ok
 
-test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.20s
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.13s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
+   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-cli)
+    Finished `test` profile [unoptimized] target(s) in 1.21s
      Running tests/run.rs (/var/tmp/piperine-target-d/debug/deps/run-3deb22af66054c5e)
 ```
 
 `Run apiarr` - exit 0
 
 ```
-running 6 tests
+running 7 tests
 test a_name_that_is_no_element_of_the_array_is_e0801 ... ok
 test the_metadata_lists_the_length_of_an_array_port ... ok
-test a_node_array_prints_one_column_per_node ... ok
-test array_probes_read_an_element_and_the_whole_array ... ok
 test a_set_of_a_param_an_array_length_reads_is_e0803 ... ok
+test an_empty_array_of_a_hoisted_module_prints_under_the_placement ... ok
+test array_probes_read_an_element_and_the_whole_array ... ok
+test a_node_array_prints_one_column_per_node ... ok
 test a_declared_empty_array_prints_as_the_empty_array ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.13s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.24s
 
     Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/carrier_arrays.rs (/var/tmp/piperine-target-d/debug/deps/carrier_arrays-ff06cf672ae7f7a0)
@@ -169,40 +172,40 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run interp` - exit 0
 
 ```
-test a_param_of_another_type_is_refused_naming_the_transpiled_backend ... ok
-test a_host_source_body_is_rejected_by_name ... ok
 test a_body_with_an_amended_form_is_rejected_by_name ... ok
-test the_level_nodes_are_refused_by_name ... ok
 test each_generics_form_is_refused_by_name ... ok
-test a_digital_body_is_rejected_by_name ... ok
 test the_interpreter_refuses_each_analog_structure_form_by_name ... ok
+test a_digital_body_is_rejected_by_name ... ok
 test an_analog_body_without_new_forms_still_runs_on_the_interpreter ... ok
 test each_composite_values_form_is_refused_by_name ... ok
+test the_level_nodes_are_refused_by_name ... ok
 test the_interpreter_refuses_each_new_form_by_name ... ok
 
-test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
+   Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-plan)
+   Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-interp)
+    Finished `test` profile [unoptimized] target(s) in 1.74s
      Running tests/frozen.rs (/var/tmp/piperine-target-d/debug/deps/frozen-1902f3691d3ff8e6)
 ```
 
 `Run src` - exit 0
 
 ```
-test an_option_carrier_is_read_by_matching ... ok
-test an_edge_is_a_transition ... ok
-test maybe_is_an_ordinary_field_of_a_record ... ok
 test the_buck_elaborated_from_source_holds_no_flag_and_no_merge ... ok
+test a_finish_ends_the_run_where_its_guard_holds ... ok
+test an_unbound_option_param_is_none ... ok
 test prev_is_the_initial_value_before_a_change ... ok
-test control_on_a_carrier_runs_one_path ... ok
 test settle_runs_as_before ... ok
 test short_circuit_operands_decide_as_bools ... ok
+test control_on_a_carrier_runs_one_path ... ok
 test the_first_commit_is_a_change ... ok
 test a_carrier_that_starts_high_has_not_risen ... ok
 
-test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 29.87s
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.77s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-parity)
+    Finished `test` profile [unoptimized] target(s) in 0.97s
      Running tests/source_explicit.rs (/var/tmp/piperine-target-d/debug/deps/source_explicit-f3ba4bb5b2b38629)
 ```
 
@@ -215,7 +218,7 @@ test array_pins_validate_their_count_and_init ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized] target(s) in 0.08s
+    Finished `test` profile [unoptimized] target(s) in 0.04s
      Running tests/array_pins.rs (/var/tmp/piperine-target-d/debug/deps/array_pins-15dc83d4d4809697)
 ```
 
@@ -223,15 +226,15 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 running 5 tests
-test element_commits_keep_the_last_write_per_level_and_transport_per_element ... ok
-test a_reaction_committing_an_element_a_function_writes_is_a_fault ... ok
-test an_element_window_reads_and_writes_one_element ... ok
 test an_unwritten_element_reads_its_initial_value_and_previous ... ok
+test element_commits_keep_the_last_write_per_level_and_transport_per_element ... ok
+test an_element_window_reads_and_writes_one_element ... ok
+test a_reaction_committing_an_element_a_function_writes_is_a_fault ... ok
 test a_sparse_array_stores_only_written_elements_and_rewinds ... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized] target(s) in 0.09s
+    Finished `test` profile [unoptimized] target(s) in 0.04s
      Running tests/array_nets.rs (/var/tmp/piperine-target-d/debug/deps/array_nets-59bb83da17a50769)
 ```
 
@@ -245,7 +248,7 @@ test a_window_binds_a_pin_to_elements_of_an_array_net ... ok
 
 test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized] target(s) in 0.16s
+    Finished `test` profile [unoptimized] target(s) in 0.08s
      Running tests/array_windows.rs (/var/tmp/piperine-target-d/debug/deps/array_windows-c5e90fa36bb328e8)
 ```
 
@@ -258,7 +261,9 @@ test rt::array::tests::carrier_array_index_past_the_end_panics_naming_it ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 49 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized] target(s) in 0.13s
+   Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-interp)
+   Compiling piperine-transpile v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-transpile)
+    Finished `test` profile [unoptimized] target(s) in 2.92s
      Running unittests src/lib.rs (/var/tmp/piperine-target-d/debug/deps/piperine_transpile-6d48b28f4fb0a670)
 ```
 
@@ -268,13 +273,14 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 49 filtered out; fin
 running 5 tests
 test an_element_commit_in_a_loop_is_one_statement ... ok
 test an_element_event_names_an_element_of_an_array_carrier ... ok
-test element_forms_are_checked_against_the_array ... ok
 test commit_targets_and_windows_are_checked ... ok
 test an_array_of_nodes_names_consecutive_body_nodes_and_round_trips ... ok
+test element_forms_are_checked_against_the_array ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized] target(s) in 0.08s
+   Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-ir)
+    Finished `test` profile [unoptimized] target(s) in 4.42s
      Running tests/carrier_arrays.rs (/var/tmp/piperine-target-d/debug/deps/carrier_arrays-d85acdc68e342699)
 ```
 
@@ -285,9 +291,10 @@ running 2 tests
 test a_field_commit_is_a_statement_over_its_levels ... ok
 test an_array_of_carriers_is_one_array_pin ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
+   Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-plan)
+    Finished `test` profile [unoptimized] target(s) in 0.44s
      Running tests/carrier_arrays.rs (/var/tmp/piperine-target-d/debug/deps/carrier_arrays-aa5946c0a1ffedca)
 ```
 
@@ -297,67 +304,68 @@ test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 1 test
 test element_reads_and_commits_compile_and_run ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.36s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.73s
 
-    Finished `test` profile [unoptimized] target(s) in 0.10s
+   Compiling piperine-transpile v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-transpile)
+    Finished `test` profile [unoptimized] target(s) in 0.64s
      Running tests/carrier_arrays.rs (/var/tmp/piperine-target-d/debug/deps/carrier_arrays-a2f8a6f9d3e0d79f)
 ```
 
 `Run docs` - exit 0
 
 ```
-test gaps_no_longer_lists_x5_l20_l39_h12 ... ok
-test the_instruction_files_say_the_host_crates_build ... ok
-test the_instructions_name_the_integrated_gate_and_the_buck_on_demand ... ok
-test the_roadmap_is_forward_looking ... ok
-test state_records_the_generics_decision ... ok
+test state_records_the_observable_landings_and_the_tick_epoch ... ok
+test gaps_drops_what_host_ii_closed ... ok
 test the_scenario_package_states_its_measured_step_count ... ok
-test state_records_the_derived_param_decision ... ok
-test state_records_root_e2e ... ok
+test state_records_the_unknown_semantics_decision ... ok
 test transient_performance_closes_v12 ... ok
+test the_roadmap_is_forward_looking ... ok
+test state_holds_the_explicit_unknowns_decision ... ok
+test abi_md_describes_the_unreleased_contract ... ok
 test the_book_no_longer_says_settle_is_not_compiled ... ok
 
-test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-    Finished `test` profile [unoptimized] target(s) in 0.18s
+   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-cli)
+    Finished `test` profile [unoptimized] target(s) in 0.47s
      Running tests/docs.rs (/var/tmp/piperine-target-d/debug/deps/docs-93bbd657b5852db6)
 ```
 
 `Run galleries` - exit 0
 
 ```
-test every_fixture_line_is_spec_text ... ok
 test galleries_fail_against_an_empty_prelude ... ok
 test every_gallery_fence_is_in_the_formatters_form ... ok
 test a_dirty_gallery_is_reported_by_fence ... ok
 test the_fences_composite_values_lifted_are_checked ... ok
+test no_gallery_has_an_unresolved_member ... ok
+test every_gallery_builds_with_no_diagnostics ... ok
+test every_gallery_references_its_std_items ... ok
 test the_gate_builds_16_fences ... ok
 test every_gallery_passes_check ... ok
-test every_gallery_builds_with_no_diagnostics ... ok
-test no_gallery_has_an_unresolved_member ... ok
-test every_gallery_references_its_std_items ... ok
 
-test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.88s
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.08s
 
-    Finished `test` profile [unoptimized] target(s) in 0.13s
+   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-lang)
+    Finished `test` profile [unoptimized] target(s) in 0.58s
      Running tests/std_galleries.rs (/var/tmp/piperine-target-d/debug/deps/std_galleries-20eb711d5dacf84a)
 ```
 
 `Run book` - exit 0
 
 ```
-test a_bundle_is_refused_where_the_solver_reaches_it ... ok
 test the_open_drain_line_is_refused_until_a_nature_can_implement_resolve ... ok
-test a_resistor_that_heats_itself_finds_the_temperature_where_power_in_equals_power_out ... ok
 test the_book_shows_the_natures_the_standard_library_gives ... ok
-test an_out_port_gives_the_initial_value ... ok
+test a_resistor_that_heats_itself_finds_the_temperature_where_power_in_equals_power_out ... ok
 test a_module_reaches_other_nodes_only_through_its_ports_and_gnd_is_everywhere ... ok
+test an_out_port_gives_the_initial_value ... ok
 test behavior_crosses_freely_inside_one_module ... ok
 test the_signal_list_elaborates_and_only_the_net_nature_is_missing ... ok
 
-test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.27s
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.98s
 
-    Finished `test` profile [unoptimized] target(s) in 0.13s
+   Compiling piperine v0.2.0 (/home/keslarek/Git/piperine-cv-c)
+    Finished `test` profile [unoptimized] target(s) in 1.41s
      Running tests/book/inventory_guard.rs (/var/tmp/piperine-target-d/debug/deps/book_inventory-1a21c47b4e1a6a60)
      Running tests/book/modules.rs (/var/tmp/piperine-target-d/debug/deps/book_modules-a4ed62e653059f7f)
      Running tests/book/natures.rs (/var/tmp/piperine-target-d/debug/deps/book_natures-84da6f1f33ea55da)
@@ -367,21 +375,31 @@ test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 running 6 tests
+test the_two_backends_print_the_same_bytes ... ok
 test the_three_op_twins_run_on_both_backends ... ok
 test tran_rc_prints_the_bytes_it_printed_before_the_long_run ... ok
-test the_two_backends_print_the_same_bytes ... ok
 test the_sweep_and_transient_twins_run_on_both_backends ... ok
 test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok
 test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.91s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 24.80s
 
-    Finished `test` profile [unoptimized] target(s) in 0.17s
+   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-cli)
+    Finished `test` profile [unoptimized] target(s) in 0.64s
      Running tests/twins.rs (/var/tmp/piperine-target-d/debug/deps/twins-9b01bd7200d69219)
 ```
 
 `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperin` - exit 0
 
 ```
-Finished `dev` profile [unoptimized] target(s) in 0.25s
+Compiling piperine-transpile v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-transpile)
+   Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-interp)
+   Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-plan)
+   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-lang)
+   Compiling piperine v0.2.0 (/home/keslarek/Git/piperine-cv-c)
+   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-cli)
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-parity)
+   Compiling piperine-api v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-api)
+   Compiling piperine-ir v0.2.0 (/home/keslarek/Git/piperine-cv-c/crates/piperine-ir)
+    Finished `dev` profile [unoptimized] target(s) in 51.04s
 ```
