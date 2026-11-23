@@ -107,6 +107,55 @@ flowchart LR
   element (`EventSource::ElementChanged` of composite-values phase C), kept in iteration order inside source order
   (§12.1.14).
 
+### Interim: the unfinished-forms gate (amendment 2026-11-23, after T59)
+
+**Why.** Every run, every `piperine check`, the host and the Book call the whole-model check before the run check. The draft
+of T60 to T62 (`origin/wip/generics-c-b10`) seeded generic modules there, so the Book's own generic modules reported their
+definition gaps instead of the `generic module is not supported yet` that 14 Book tests pin. The same shape repeats for
+generation (T72 types it, T73 unrolls it, T77 flips the Book) and for generation in `digital` (T78 to T80): a form that the
+checker accepts before the elaborator lowers it would reach the run half-built.
+
+**Decision (option b).** One test-visible switch in `piperine-lang/src/types/unfinished.rs`:
+`UnfinishedForm { GenericModules, Generation, DigitalGeneration }` and `UnfinishedForms::IN_FORCE`, the forms every
+production entry still refuses with the exact `P0001` it gives on `main` (a generic module is neither seeded nor placed;
+generation is `P0001` in the checker). `Types::check`/`Types::check_model` read `IN_FORCE`; `Types::check_admitting(design,
+top, forms)`/`Types::check_model_admitting(design, forms)` and parity's `Project::admitting(forms)` are the opt-ins a task's
+tests use before the form's flip, naming the form. The pin `types_model.rs::unfinished_forms_in_force_are_the_ones_phase_c_
+has_not_closed` asserts the list and the production behaviour of each listed form. Flips, each a named task that also
+removes the form's opt-ins: `GenericModules` in **T71**, `Generation` in **T77**, `DigitalGeneration` in **T80**, which
+deletes the type, the opt-ins and the pin (replaced by `generation_in_a_digital_block_runs_from_every_entry`). No Book test
+changes before its flip; S3 stays in `GAPS.md` until T71.
+
+**Why T71 moves before T69 and T70.** The Book rule says a refused row flips in the task that makes it run; with the gate
+that task is the flip, so T71 is the gate flip for generic modules and runs right after T68 (instances lower). T69
+(`Short` on the parity entry) and T70 (structural override through the host `Session`) then need no opt-in, and no
+temporary switch reaches the public host API.
+
+**Re-pin rule.** When a flip changes what a still-refused Book row prints, the row's test is re-pinned in that commit to the
+exact refusals it now gives, each with its gap id and owner in `GAPS.md` §11; a pin is never widened.
+
+### Gap verdicts (the draft's list, each checked against `docs/spec`)
+
+| # | Gap the draft hit | Spec | Verdict | Owner |
+| - | ----------------- | ---- | ------- | ----- |
+| G1 | a value param of type `T` (`Dff`'s `reset: T`) | §8.1.15 "a param's type is a value type" | (i) real form | T60 (typed under bounds), T68 (folded per instance), runs in T71 |
+| G2 | a value param of type `C` (`cell: C`, `C: Fn(Cell)`) | §8.4.1, §8.4.5 | (i) real form of templates | phase D T88 (amended); until then `P0001` naming the template form, pinned at T71 |
+| G3 | a `struct` with a carrier field (`Stream`, `Cell`) | §7 | (ii) bundles | `resolved-nets-bundles` T21 (natures#8 already; amended to cover modules#10, modules#11, cheatsheet#8 after phase D T93 narrows them) |
+| G4 | generation in a module body (ladder, `MemoryBank`, cheatsheet#3) | §8.2.7 | (i) real form | T72 to T77; behind the gate until T77 |
+| G5 | `E0332` "a `let` reads its own name" (`lowpass`, `PiAw` over `idt`) | §8.3.5: an instance may read its own result when the result reads only the module's carriers | (i) real form; the code's fault: a generic placement was not pushed on `placing`, so the feedback rule never ran | T61 |
+| G6 | `E0312` `Setup(clk, d)` with 2 of 3 ports (core-std#8) | §8.1.8 "a carrier port is never optional"; `viol` is an `out` carrier port | (iii) Book bug | T116 (BA1): `Setup(clk, d, late)` |
+| G7 | `_` inferred generic argument (`MemoryBank::<_, 64, 32>`) | §1.2.12; spec index row 22 (`_` in the generic arguments of an expression) | (i) real form | T61 (`_` as if left out); inferring `C` from the template bound to `cell` is phase D T88 (amended) |
+| G8 | a named connection (`reset: seat` in `std/analog.msl` `idtmod`) | §8.1.9, §8.3.7: trailing `Option` value inputs may be passed by name | (i) real form, generic-agnostic; a loud `P0001` with no `GAPS.md` row | new T117 |
+| G9 | `E0187` "`bool`/`u8` does not implement `Default`" | §3.3.4 and MD-78: `bool`, `UInt<N>` have no `Default`; a carrier with no driver that gives a value needs an initial value | spec-correct. (iii) the test harnesses (`signal clk: Bit;` read only by `in` ports) and the plan's `Dff::<u8>` were wrong; the code's share is that a generic placement did not record its `out` ports in the `DriveBook` (T61) | harnesses and `Dff` at `Option<u8>` in T71 (`Dff::<u8>` proven `E0187`); BA2, BA3 below |
+
+### Book amendments (T116)
+
+| # | Row | Book text | Spec | Correction |
+| - | --- | --------- | ---- | ---------- |
+| BA1 | core-std#8 and the chapter "digital" sentence that quotes it | `let chk = Setup(clk, d) { ts: 100p };` | §8.1.8 | `signal late: Bit; let chk = Setup(clk, d, late) { ts: 100p };` |
+| BA2 | cheatsheet#2 | `signal s: [Bit; N];` | §3.3.4 (`bool` has no `Default`) | `signal s: [Bit; N] = [false; N];` |
+| BA3 | natures#8 | `module Slice<T: Repr>` with `signal buf: Bit<T>;` | §3.3.4; gallery E.6 writes `Slice<T: Repr + Default>` | `module Slice<T: Repr + Default>` |
+
 ---
 
 ## Code Reuse Analysis
@@ -140,8 +189,12 @@ flowchart LR
 ## Components
 
 - **`types/module.rs`** (existing): a generic module definition is typed with opaque parameters (T60).
+- **`types/unfinished.rs`** (`UnfinishedForm`, `UnfinishedForms`): the interim gate; the forms production still refuses
+  (T60); emptied by T71, T77, and deleted by T80.
 - **`types/module_generics.rs`** (`impl Checker`): placement of a generic module, inference, the recorded
-  `Instantiation` (T61).
+  `Instantiation`, `_` arguments, `placing` and the `DriveBook` for a generic placement (T61).
+- **`types/module.rs`** placement connections: a trailing `Option` value input passed by name (T117).
+- **`piperine-parity/src/project.rs`**: `Project::admitting`, the parity opt-in to the gate (T68 to T80, deleted with it).
 - **`types/lengths.rs`** (existing): const expressions in written types anywhere (`UInt<{A + 1}>`, `Int< -1 >`) (T63).
 - **`elab/consts/composite.rs`** (existing): an array repeat reading a const generic, a `const fn` result as a param
   value (T64).
@@ -203,8 +256,12 @@ pub(super) enum GeneratedItem { Carriers(u32), Nodes(NodeArrayId), Instances(Vec
 | Tests that pin `Callee::Intrinsic(Cast)`/`(Same)` or the `cast`-to-a-tuple-holding-an-enum refusal | the intrinsics leave; each pin becomes the source-compiled acceptance | T55 |
 | The `P0001` pins of L69 (a hand-written `Repr` on a generic type; a carrier with no initial value) | GN-32 | T57, T58 |
 | `types_generics.rs::phase_c_d_and_e_forms_stay_p0001_by_name` (check C39) | its phase C cases run; it keeps the phase D and E cases and its name | T60, T81 |
-| `types_model.rs` and `crates/piperine-cli/tests/commands.rs` expectations that an unreached generic module passes `check` | S3 closes | T60 |
+| `types_model.rs` and `crates/piperine-cli/tests/commands.rs` expectations that an unreached generic module passes `check` | S3 closes when the gate opens | T71 |
 | `elab_structure.rs::the_water_model_waits_for_generics` and the `idt` refusal next to it | `idt` is a generic module that runs; each becomes the acceptance of the spec model, or its refusal narrows to the form still missing | T71 |
+| `types_model.rs::unfinished_forms_in_force_are_the_ones_phase_c_has_not_closed` (new in T60) | the interim pin: its list shrinks at each flip | T71, T77; replaced at T80 by `generation_in_a_digital_block_runs_from_every_entry` |
+| Book listings core-std#8, cheatsheet#2, natures#8 and their fingerprints in `inventory.tsv` | Book amendments BA1 to BA3 | T116 |
+| Book tests whose harness reads a `Bit` only through `in` ports with no initial value (`book_digital`, `book_core_std`, `book_cheatsheet`, `book_natures`, `book_generics`) | §3.3.4: the harness gains `= false`/`= None`; `Dff` is placed at `Option<u8>` | T71 |
+| Book tests still refused after a flip (modules#1, #2, #10, ~b53307eb, ~4bcb9f1d, cheatsheet#8, natures#8, the `piperine-cli --test book` ladder listing) | re-pinned to their exact remaining refusals | T71, T77 |
 | Book tests `the_ladder_is_refused_for_its_generic_module`, `the_half_reactions_are_refused_with_the_ladder`, `the_lowpass_module_is_refused_for_the_generic_integrator`, `the_pi_controller_is_refused_only_for_its_generic_idt`, `the_flip_flop_is_refused_for_its_generic_module`, `the_register_with_a_setup_check_is_refused_for_the_generic_monitor`, `the_module_card_is_refused_for_its_const_generic`, `the_body_items_card_is_refused_for_its_generation`, `e0340_is_not_raised_generation_is_refused_before_its_range_is_checked`, `e0304_is_not_raised_a_generic_ladder_is_refused_before_its_where_is_checked` | each row runs (or is raised) and its test becomes the acceptance; `inventory.tsv` and `GAPS.md` §11 follow | T71, T77, T80 |
 
 Never moving: the 7 ngspice twin goldens, `crates/piperine-parity/src/contract.rs`, the transpile goldens of
@@ -252,6 +309,9 @@ argument, an array length, generation or a template is structural." Supersedes n
 | DC5 | GN-13 AC 3 | `E0403`, raised by the POM today; T62 proves it on a generic module | Part IV §10 errors |
 | DC6 | A stdlib generic module that starts to run with T68 (`Setup`, `since`, `idt`, `Short`) | its Book rows flip in phase C (T71) the day they run; their §22 value tests stay phase E's (GN-28) | the Book rule: a refusal test fails "now runs" the day it runs |
 | DC7 | GN-20 AC 1's generation half | classified in T73, with generation; T70 does generic arguments, array lengths and templates | generation does not exist before T73 |
+| DC8 | The whole-model check exposed the Book's generic definitions before they could check clean (T60 draft) | option (b): the unfinished-forms gate, flipped in T71, T77, T80 (section "Interim") | the coordinator's recommendation (2026-11-23); no Book test is loosened, every task lands green |
+| DC9 | New tasks need ids | T116, T117, after phase E's T115, so no id of phases D and E moves; checks C120 to C127 | ids stay unique in the feature (DC2) |
+| DC10 | A Book listing that contradicts the spec | corrected in the Book (BA1 to BA3, T116), each old form proven refused on a non-generic model | code follows the spec; the Book follows the spec |
 
 ## Open questions (user)
 
@@ -265,3 +325,5 @@ None for phase C: every point above follows the approved spec, `docs/spec/` and 
 | - | ---------- | ---- | --- |
 | VC1 | An unreached generic module is not type-checked | §0.3 | T60 |
 | VC2 | `E0304`, `E0340`, `E0342`, `E0322` are named by §8 and never raised for a generic module or generation | §8, §8.2.7, §8.2.24 | T65, T72, T73 |
+| VC3 | A trailing `Option` value input passed by name is `P0001` "named connection" | §8.1.9, §8.3.7 | T117 |
+| VC4 | A generic placement skipped `placing` (so §8.3.5 feedback was `E0332`) and the `DriveBook` | §8.3.5, §3.3.4 | T61 |

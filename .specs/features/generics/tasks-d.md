@@ -221,7 +221,7 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 ### T88: `Fn(P)` bounds on modules
 
-**What**: `types/module_bounds.rs` checks a template bound to `C: Fn(P)`: the module's ports have the types and directions of `P`, in order, names not counting, a module with a result included (§8.4.5), else `E0360` naming the first port that differs; a bound `N: Tr + Fn(P)` also needs `impl Tr for` the module (`E0187` naming the module and the trait).
+**What**: `types/module_bounds.rs` checks a template bound to `C: Fn(P)`: the module's ports have the types and directions of `P`, in order, names not counting, a module with a result included (§8.4.5), else `E0360` naming the first port that differs; a bound `N: Tr + Fn(P)` also needs `impl Tr for` the module (`E0187` naming the module and the trait). **Amended 2026-11-23 (generics C gap verdicts G2, G7):** a param whose type is a parameter bounded by `Fn(P)` (`cell: C`, §8.4.1) holds a template, replacing the `P0001` naming the template form that T60 leaves and T71 pins on modules#10 and cheatsheet#8; that parameter, written `_` or left out, is inferred from the template the placement binds to the param (`MemoryBank::<_, 64, 32>(wl, bl) { cell: Dram1T1C { cs: 30f } }` infers `C = Dram1T1C`), else `E0181` naming it.
 **Where**: `crates/piperine-lang/src/types/module_bounds.rs`
 **Depends on**: T87
 **Reuses**: `Bound::Callable`, `BoundCheck`
@@ -231,6 +231,7 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 **Done when**:
 
 - [ ] `a_module_whose_ports_match_fits_fn_p_names_not_counting` and `a_module_whose_ports_differ_is_e0360_naming_the_first` pass under `**Run typestempl**`
+- [ ] `a_fn_bounded_parameter_is_inferred_from_its_template_param` passes under `**Run typestempl**`
 - [ ] Gate check passes: Full (last task of batch B14)
 
 **Tests**: integration
@@ -326,7 +327,7 @@ T94 → T95 → T96 → T97 → T98 → T99 → T100 → T101 → T102
 
 ### T93: The template Book rows
 
-**What**: Flip modules#12 (`nch(0.13u, 2u)(d, g, s, b)` places `Bsim4` with the binned `vth0`); add the swappable MOSFET listing to the modules chapter after the binning paragraph (DD6) with an inventory row `run` and its test; narrow modules#10 and cheatsheet#8 to the bundle `Cell` (their test asserts only the bundle's refusal) and hand their §11 rows to `resolved-nets-bundles` under L25 (DD2); `inventory.tsv` and `GAPS.md` §11 follow.
+**What**: Flip modules#12 (`nch(0.13u, 2u)(d, g, s, b)` places `Bsim4` with the binned `vth0`); add the swappable MOSFET listing to the modules chapter after the binning paragraph (DD6) with an inventory row `run` and its test; narrow modules#10 and cheatsheet#8 to the bundle `Cell` (their test asserts only the bundle's refusal; from the template and bundle pins T71/T77 of phase C leave) and hand their §11 rows to `resolved-nets-bundles` under L25 (DD2); `inventory.tsv` and `GAPS.md` §11 follow.
 **Where**: `tests/book/modules.rs`
 **Depends on**: T92
 **Reuses**: `Chapter`, `Refusal`
@@ -572,6 +573,7 @@ Proof: run srctempl | test binning_places_the_chosen_model ... ok
 **C94** - A module whose port types and directions match `P` fits `C: Fn(P)`, names not counting. (GN-23, AC 1; T88, T92)
 Proof: run typestempl | test a_module_whose_ports_match_fits_fn_p_names_not_counting ... ok
 Proof: run srctempl | test a_memory_bank_places_its_cell_template ... ok
+Proof: run typestempl | test a_fn_bounded_parameter_is_inferred_from_its_template_param ... ok
 
 **C95** - A module whose ports differ from `P` is `E0360` naming the first port that differs. (GN-23, AC 2; T88)
 Proof: run typestempl | test a_module_whose_ports_differ_is_e0360_naming_the_first ... ok

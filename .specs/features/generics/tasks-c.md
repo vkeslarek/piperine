@@ -35,6 +35,12 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bookcorestd**: `cargo test -p piperine --test book_core_std`
 **Run bookcheatsheet**: `cargo test -p piperine --test book_cheatsheet`
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`
+**Run booknatures**: `cargo test -p piperine --test book_natures`
+**Run bookgenerics**: `cargo test -p piperine --test book_generics`
+**Run bookwelcome**: `cargo test -p piperine --test book_welcome`
+**Run clibook**: `cargo test -p piperine-cli --test book`
+**Run typesmodules**: `cargo test -p piperine-lang --test types_modules`
+**Run elabresults**: `cargo test -p piperine-lang --test elab_results`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_supervisor --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
@@ -53,7 +59,8 @@ Rules every task follows (the user's rules, repeated so a worker needs no other 
 - **Tests state the spec, not the code.** Expected values are the same expression evaluated by Rust in the test, or the spec's own value; each assertion cites its rule. Test functions have exactly the names `## Checks` cites. No test is removed, weakened or skipped beyond the table above.
 - **Code clarity (user rules).** Readable at a glance; the module tree says where each thing is; each crate one purpose; **no free function, tests included** (every function has an owner type: a test helper is a method of a support type); **one purpose per type**; **OO names without abbreviations**; **no god method** and no needless abstraction; the data path evident; **a `///` doc comment on every new type, method, field and variant**, and a non-evident block cites its spec rule. No macro; no `unwrap()`/`expect()` on a path user input reaches. New concerns go to the files design-c.md "Components" names, never into `types/expr.rs`, `types/call.rs` or `print/value.rs` beyond a dispatch arm.
 - **Conventions.** No new IR `Expr`/`Stmt` variant; new IR fields carry `#[serde(default)]`. The interpreter refuses every new IR marker by name (R1) in the task that adds it. Every new test target opens with a `//!` scope header, has no `#[ignore]` and no file-scope `#![allow]`. Source-level models live in `crates/piperine-parity/tests/generic_modules/*.msl` and `tests/generation/*.msl`.
-- **Book rows.** A Book test that asserts a refusal and starts to run flips in the task that makes it run: its test becomes the acceptance, `tests/book/inventory.tsv` takes `run` (or `holds`), the `GAPS.md` §11 row leaves, and the Book's own "today it refuses" prose is rewritten to what the binary now prints. A row that still needs another feature's form is narrowed to that form, and its §11 row takes that gap id and owner (recorded on the Handoff).
+- **Book rows.** A Book test that asserts a refusal and starts to run flips in the task that makes it run: its test becomes the acceptance, `tests/book/inventory.tsv` takes `run` (or `holds`), the `GAPS.md` §11 row leaves, and the Book's own "today it refuses" prose is rewritten to what the binary now prints. A row that still needs another feature's form is narrowed to that form, and its §11 row takes that gap id and owner (recorded on the Handoff). **Re-pin rule (amendment 2026-11-23):** a task that changes what a refused Book row prints re-pins that row, in the same commit, to the exact refusals it now gives (code and message, the full list where the test lists them); a pin is never widened to "some refusal". A Book listing that contradicts `docs/spec` is corrected in the Book (a Book amendment, T116), never accommodated in the code.
+- **The unfinished-forms gate (amendment 2026-11-23, design-c.md "Interim: the unfinished-forms gate").** `UnfinishedForms::IN_FORCE` lists the forms every production entry (`Types::check`, `Types::check_model`, so `piperine run`/`check`, the host, the Book) still refuses with today's `P0001`. A test of a task before the form's flip opts in through `Types::check_admitting`/`Types::check_model_admitting` (piperine-lang) or `Project::admitting` (piperine-parity) and names the form. Only the flip task of a form removes it from `IN_FORCE`: `GenericModules` in T71, `Generation` in T77, `DigitalGeneration` in T80 (which deletes the gate). No Book test changes because of the gate before its flip task.
 - **Cross-lane files.** `spec_text.rs` and `docs.rs` are appended to, never edited above; `GAPS.md` keeps its section numbering; `ROADMAP.md` rows of other features are not edited.
 - One atomic commit per task, message as given, ending with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. No push, no merge.
 - **`lessons.py` is not run** during this feature.
@@ -99,16 +106,16 @@ Phases are ordered and run sequentially - each phase completes before the next b
 T53 → T54 → T55 → T56 → T57 → T58
 ```
 
-### Phase 14: Contract and the checker's generic modules
+### Phase 14: Contract, Book amendments and the checker's generic modules (behind the gate)
 
 ```
-T59 → T60 → T61 → T62 → T63 → T64
+T59 → T116 → T60 → T61 → T117 → T62 → T63 → T64
 ```
 
-### Phase 15: Generic module instances
+### Phase 15: Generic module instances; the gate opens for generic modules
 
 ```
-T65 → T66 → T67 → T68 → T69 → T70 → T71
+T65 → T66 → T67 → T68 → T71 → T69 → T70
 ```
 
 ### Phase 16: Generation in a body
@@ -279,32 +286,56 @@ T78 → T79 → T80 → T81 → T82
 
 ---
 
-### T60: A generic module's definition is checked once against its bounds
+### T116: Book amendments: the listings that contradict the spec
 
-**What**: `Checker::module` no longer refuses a generic module: it types it once with its type and nature parameters opaque (`Ty::Param`) and its const parameters as `ConstTerm::Param`, including ports and signals of `Bit<T>`, of a nature parameter `S`, and `[Bit; ROWS]` (`Ty::CarrierArray` with `Length::Generic`); a method or operator no bound gives is `E0161`/`E0180` at the definition. The whole-model check seeds generic modules (`types/model.rs` stops skipping them), so `GAPS.md` drops S3 and its §9 row, with the `docs.rs` assertion; the `types_model`/`commands` pins of design-c.md move.
-**Where**: `crates/piperine-lang/src/types/module.rs`
+**What**: Correct the three Book listings the generic definition check showed to contradict `docs/spec` (design-c.md "Gap verdicts", Book amendment BA1 to BA3), with the prose that quotes them: core-std#8 `Reg` connects all three ports of `Setup` (`signal late: Bit; let chk = Setup(clk, d, late) { ts: 100p };`, §8.1.8: a carrier port is never optional), and the sentence of chapter "digital" that quotes `Setup(clk, d) { ts: 100p }` follows; cheatsheet#2 gives `signal s: [Bit; N]` its initial value (`= [false; N]`, §3.3.4: `bool` has no `Default`, MD-78); natures#8 bounds `Slice<T: Repr + Default>` as gallery E.6 does (§3.3.4: `signal buf: Bit<T>` starts at `T::default()`). `inventory.tsv` takes the new fingerprints; each refused row keeps its refusal (the gate is closed). Each correction gets a test that proves the old form is refused under the spec on a non-generic model, so the amendment is not taken on trust.
+**Where**: `docs/book/content.html`
 **Depends on**: T59
-**Reuses**: `Checker::generic_signature`, `BoundCheck`, `ModelCheck`
-**Requirement**: GN-13 (AC 1), GN-07 (AC 2), GN-08, GN-31
+**Reuses**: `Chapter`, `Faulty`, `Inventory`
+**Requirement**: GN-31 (AC 2)
 **Executor**: Sonnet
 
 **Done when**:
 
-- [ ] `a_generic_module_body_is_checked_once_at_its_definition` passes under `**Run typesmods**`
-- [ ] `an_unreached_generic_module_with_an_error_fails_the_model_check` passes under `**Run typesmodel**`
-- [ ] `gaps_drops_s3` passes under `**Run docs**`
+- [ ] `a_carrier_port_left_out_is_e0312_as_the_old_register_listing_was` passes under `**Run bookcorestd**`
+- [ ] `an_array_of_bits_with_no_initial_value_is_e0187` passes under `**Run bookcheatsheet**`
+- [ ] `the_slice_listing_bounds_t_by_default_as_gallery_e6_does` passes under `**Run booknatures**`
+- [ ] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
 
-**Commit**: `feat(types): check a generic module once at its definition; GAPS drops S3`
+**Commit**: `docs(book): Reg connects every port of Setup; initial values the spec requires`
+
+---
+
+### T60: A generic module's definition is checked once against its bounds (behind the gate)
+
+**What**: Adds the unfinished-forms gate (design-c.md "Interim"): `UnfinishedForm { GenericModules, Generation, DigitalGeneration }` and `UnfinishedForms::IN_FORCE` (all three) in `types/unfinished.rs`, read by both entries; `Types::check_admitting`/`Types::check_model_admitting` take the forms a test admits. With `GenericModules` admitted, `Checker::module` types a generic module once with its type and nature parameters opaque (`Ty::Param`) and its const parameters as `ConstTerm::Param`, including ports and signals of `Bit<T>`, of a nature parameter `S`, and `[Bit; ROWS]` (`Ty::Array` of a carrier element with `Length::Generic`, T59 anchor 1); a method or operator no bound gives is `E0161`/`E0180` at the definition; **a param whose type is a type parameter (`reset: T`, §8.1.15) is typed under its bounds**, its default and `where` checked as const expressions over it; a param whose type is a parameter bounded by `Fn(P)` (`cell: C`) stays `P0001` naming the template form (L32, phase D T88); a module's `T: Default` bound makes its carriers of `Bit<T>` with no initial value legal (§3.3.4), and one without it is `E0187` at the definition. The whole-model check seeds generic modules only when the form is admitted. Not admitted (production), every entry behaves as on `main`: S3 stays open in `GAPS.md` until T71.
+**Where**: `crates/piperine-lang/src/types/module.rs`
+**Depends on**: T116
+**Reuses**: `Checker::generic_signature`, `BoundCheck`, `ModelCheck`; the draft on `origin/wip/generics-c-b10` (its seeding moves behind the gate)
+**Requirement**: GN-13 (AC 1), GN-07 (AC 2), GN-08, GN-31
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `a_generic_module_body_is_checked_once_at_its_definition` and `a_param_of_a_type_parameter_is_typed_under_its_bounds` pass under `**Run typesmods**`
+- [ ] `an_unreached_generic_module_with_an_error_fails_the_model_check` (admitting `GenericModules`) and `unfinished_forms_in_force_are_the_ones_phase_c_has_not_closed` (production: an unreached faulty generic module passes, a placement of one is `P0001` `generic module`) pass under `**Run typesmodel**`
+- [ ] Every Book target passes unchanged
+- [ ] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(types): check a generic module once at its definition, behind the unfinished-forms gate`
 
 ---
 
 ### T61: Placing a generic module: explicit and inferred arguments
 
-**What**: `Checker::generic_placement` types a placement of a generic module: turbofish arguments (`Ladder::<3>`, `Dff::<u8>`), else inference of a nature parameter from the natures of the connected carriers (`Short(a, b)`), a type parameter from a `Bit<T>` connection or a value input, a const parameter from an array argument's length, then defaults (`S: Nature = State`); `E0181` naming a parameter nothing gives, `E0187` for a bound or a count; the placement records its `Instantiation` (`Types::instantiation(placement)`). Two natures given to one nature parameter are `E0180` naming both (DC4).
+**What**: (gate: `GenericModules` admitted in its tests) `Checker::generic_placement` types a placement of a generic module: turbofish arguments (`Ladder::<3>`, `Dff::<Option<u8>>`), a `_` argument inferred as if left out (§1.2.12, spec index row 22), else inference of a nature parameter from the natures of the connected carriers (`Short(a, b)`), a type parameter from a `Bit<T>` connection or a value input, a const parameter from an array argument's length, then defaults (`S: Nature = State`); `E0181` naming a parameter nothing gives, `E0187` for a bound or a count (`Dff::<u8>`: `u8` does not implement `Default`, §3.3.4); the placement records its `Instantiation` (`Types::instantiation(placement)`). Two natures given to one nature parameter are `E0180` naming both (DC4). A generic placement takes part in what every placement does: it is pushed on `placing`, so a `let` that feeds back through its result is judged by §8.3.5 (`let y = idt((x - y) / tau);` is legal: `idt`'s result reads only its node), and a carrier handed to its `out` port is recorded in the `DriveBook` (`handed`), so that carrier needs no initial value of its own (§3.3.4).
 **Where**: `crates/piperine-lang/src/types/module_generics.rs`
 **Depends on**: T60
 **Reuses**: `Inference`, `BoundCheck`, `Instantiation`
@@ -313,7 +344,8 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `generic_module_arguments_are_explicit_or_inferred` and `two_natures_for_one_nature_parameter_are_e0180_naming_both` pass under `**Run typesmods**`
+- [ ] `generic_module_arguments_are_explicit_or_inferred`, `an_underscore_generic_argument_is_inferred` and `two_natures_for_one_nature_parameter_are_e0180_naming_both` pass under `**Run typesmods**`
+- [ ] `a_generic_placement_feeds_back_through_its_unknown` (the Book's `lowpass` and `PiAw` shapes over the stdlib `idt`: no `E0332`) and `a_carrier_handed_to_a_generic_out_port_needs_no_initial_value` pass under `**Run typesmods**`
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
@@ -323,11 +355,33 @@ T78 → T79 → T80 → T81 → T82
 
 ---
 
+### T117: A trailing `Option` value input passed by name
+
+**What**: A placement passes a trailing `Option` value input by name after its positional connections (§8.1.9, §8.3.7): `idt::<S>(x, base.unwrap_or(start), reset: seat)` binds `reset` to `Some(seat)`, an input left out reads `None`; a name that is no trailing `Option` value input is `E0140`, a missing required one `E0141` (§3.2). Replaces the `P0001` "named connection" of `types/module.rs` (a loud gap with no `GAPS.md` row, found by the draft of T60 in `std/analog.msl`'s `idtmod`); generic-agnostic, so it is proven on a plain module and needs no gate.
+**Where**: `crates/piperine-lang/src/types/module.rs`
+**Depends on**: T61
+**Reuses**: `Checker::apply` (§3.2 binding of a call), `elab/results.rs`
+**Requirement**: GN-13 (AC 1), GN-28 (AC 2, `idtmod`)
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `a_trailing_option_value_input_passed_by_name_binds_it` and `a_named_connection_that_is_no_trailing_option_input_is_e0140` pass under `**Run typesmodules**`
+- [ ] `a_value_input_passed_by_name_reads_its_argument` passes under `**Run elabresults**`
+- [ ] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(types,elab): trailing Option value inputs passed by name`
+
+---
+
 ### T62: Behavior blocks bind the module's generic names
 
-**What**: An `analog<S> for idt<S>` or `digital<T> for Setup<T>` block is typed under its module's parameters (each name of its list bound to the module's parameter of the same position), so `signal y: S` and `Bit<T>` read inside it have the module's types; a list that differs in name, number or order stays `E0403` naming both lists, now proven on a generic module.
+**What**: (gate: `GenericModules` admitted in its tests) An `analog<S> for idt<S>` or `digital<T> for Setup<T>` block is typed under its module's parameters (each name of its list bound to the module's parameter of the same position), so `signal y: S` and `Bit<T>` read inside it have the module's types; a list that differs in name, number or order stays `E0403` naming both lists, now proven on a generic module.
 **Where**: `crates/piperine-lang/src/types/check.rs`
-**Depends on**: T61
+**Depends on**: T117
 **Reuses**: `pom/resolve/behaviors.rs` (`E0403`)
 **Requirement**: GN-13 (AC 2, AC 3)
 **Executor**: Sonnet
@@ -346,7 +400,7 @@ T78 → T79 → T80 → T81 → T82
 
 ### T63: Const expressions in written types anywhere
 
-**What**: A written type or const argument that is a const expression is accepted outside a generic function too (`UInt<{A + 1}>`, `[f64; N + 1]` and `[State; D - 1]` in a generic module's items, `Int< -1 >`), its length a `Length::Generic` folded per instance; the `P0001` of D14 leaves.
+**What**: (gate: `GenericModules` admitted where a generic module is written) A written type or const argument that is a const expression is accepted outside a generic function too (`UInt<{A + 1}>`, `[f64; N + 1]` and `[State; D - 1]` in a generic module's items, `Int< -1 >`), its length a `Length::Generic` folded per instance; the `P0001` of D14 leaves. Covers the Book's `[Electrical; N + 1]` (modules#1) and `[false; N]` (cheatsheet#2 after T116).
 **Where**: `crates/piperine-lang/src/types/lengths.rs`
 **Depends on**: T62
 **Reuses**: `Length`, `ConstTerm`, `Ty::fits`
@@ -367,7 +421,7 @@ T78 → T79 → T80 → T81 → T82
 
 ### T64: `const fn` results and repeats over const generics in const contexts
 
-**What**: The constant evaluator folds a `const fn` called in a const context with every form `composite-values` accepts (`poly_q(&zeros)` as a param value, loops, arrays) and an array repeat whose length reads a const generic argument (`[0.0; N + 1]` in a module's const context, `consts/composite.rs`).
+**What**: The constant evaluator folds a `const fn` called in a const context with every form `composite-values` accepts (`poly_q(&zeros)` as a param value, loops, arrays) and an array repeat whose length reads a const generic argument (`[0.0; N + 1]` in a module's const context, and an initial value `[false; N]` of a carrier array, `consts/composite.rs`).
 **Where**: `crates/piperine-lang/src/elab/consts/composite.rs`
 **Depends on**: T63
 **Reuses**: `ConstEval`, `ConstEval::resolved`
@@ -388,7 +442,7 @@ T78 → T79 → T80 → T81 → T82
 
 ### T65: One body per instance of a generic module
 
-**What**: `BodyVariants` is keyed by `(module, Instance, key values)`: a placement's recorded `Instantiation` folds under the enclosing substitution into an `Instance`, the body is lowered under it (`ConstEval::typed`), its `where` is discharged per instance (`E0304` naming `Ladder::<0>`) and its length obligations too; equal arguments share one body; a chain of growing arguments is `E0341` naming the module at depth 1 024; the POM keeps the generic module and each placement as written.
+**What**: (gate: `GenericModules` admitted in its tests) `BodyVariants` is keyed by `(module, Instance, key values)`: a placement's recorded `Instantiation` folds under the enclosing substitution into an `Instance`, the body is lowered under it (`ConstEval::typed`), its `where` is discharged per instance (`E0304` naming `Ladder::<0>`) and its length obligations too; equal arguments share one body; a chain of growing arguments is `E0341` naming the module at depth 1 024; the POM keeps the generic module and each placement as written.
 **Where**: `crates/piperine-lang/src/elab/structural.rs`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `Instantiations::concrete`, `KeyParams`, the depth bound of D7
@@ -409,7 +463,7 @@ T78 → T79 → T80 → T81 → T82
 
 ### T66: IR `BodyData::instance`
 
-**What**: `BodyData::instance: Option<GenericInstance>` (`#[serde(default)]`), set by the elaborator for an instance body; `Ir::check` holds the body's name to `name()` plus its key suffix; the IR printer shows it; the interpreter refuses a body with an `instance` by name (``a generic module instance `Ladder::<3>` ``), and `frozen.rs::each_generics_form_is_refused_by_name` grows with it.
+**What**: (gate: `GenericModules` admitted in its tests) `BodyData::instance: Option<GenericInstance>` (`#[serde(default)]`), set by the elaborator for an instance body; `Ir::check` holds the body's name to `name()` plus its key suffix; the IR printer shows it; the interpreter refuses a body with an `instance` by name (``a generic module instance `Ladder::<3>` ``), and `frozen.rs::each_generics_form_is_refused_by_name` grows with it.
 **Where**: `crates/piperine-ir/src/model.rs`
 **Depends on**: T65
 **Reuses**: `GenericInstance`, `IrBuilder::mark_instance`
@@ -431,7 +485,7 @@ T78 → T79 → T80 → T81 → T82
 
 ### T67: Rust and library names of module instances
 
-**What**: `Text::spelled` spells a body instance name (`Ladder::<3>` to `Ladder_g3_e`, `idt::<State>~r=1k`) so it compiles, two instances never collide (the existing refusal covers the rest), and the device library's module list shows the MSL spelling.
+**What**: (gate: `GenericModules` admitted in its tests) `Text::spelled` spells a body instance name (`Ladder::<3>` to `Ladder_g3_e`, `idt::<State>~r=1k`) so it compiles, two instances never collide (the existing refusal covers the rest), and the device library's module list shows the MSL spelling.
 **Where**: `crates/piperine-transpile/src/print/text.rs`
 **Depends on**: T66
 **Reuses**: phase A's instance spellings
@@ -452,7 +506,7 @@ T78 → T79 → T80 → T81 → T82
 
 ### T68: An instance's carriers, nodes and ports
 
-**What**: A generic module's instance lowers its `Bit<T>` ports and signals at the concrete type, a `signal y: S` at the concrete nature, a `[Bit; ROWS]` port bound to a window of the caller's array (composite-values `CarrierWindow`), and its behavior blocks under the instance's substitution. Source tests: `Dff<T: Repr + Default>` at `u8` and at an enum, `M::<2>` with an array-of-carriers port, `idt` with the default nature `State`, a const generic of 0 (`Taps::<0>`, its loops running zero times) and two placements with equal arguments sharing one body.
+**What**: (gate: `GenericModules` admitted in its tests: `Project::admitting` in `crates/piperine-parity/src/project.rs`, a test-support option that T71 removes with the form) A generic module's instance lowers its `Bit<T>` ports and signals at the concrete type, a `signal y: S` at the concrete nature, a `[Bit; ROWS]` port bound to a window of the caller's array (composite-values `CarrierWindow`), and its behavior blocks under the instance's substitution. Source tests: `Dff<T: Repr + Default>` at `Option<u8>` and at an enum with a `Default` (`u8` has none, §3.3.4), `M::<2>` with an array-of-carriers port, `idt` with the default nature `State`, a const generic of 0 (`Taps::<0>`, its loops running zero times) and two placements with equal arguments sharing one body.
 **Where**: `crates/piperine-lang/src/elab/generic_bodies.rs`
 **Depends on**: T67
 **Reuses**: `CarrierArrays`, `CarrierWindow`, `elab/carriers.rs`
@@ -471,11 +525,41 @@ T78 → T79 → T80 → T81 → T82
 
 ---
 
+### T71: The gate opens for generic modules; their Book rows run or narrow
+
+**What**: The named flip task of the interim strategy (design-c.md "Interim"). `GenericModules` leaves `UnfinishedForms::IN_FORCE`: every entry seeds generic modules in the whole-model check and types their placements, so `GAPS.md` drops S3 and its §9 row (`gaps_drops_s3`, moved here from T60), and the `types_model`/`commands` pins of design-c.md move; `Project::admitting(GenericModules)` and every test's opt-in for that form leave. In the same commit, per the Book rule and the re-pin rule:
+(1) **Rows that run** flip to acceptances with values Rust computes in the test: digital#21 (`Dff` at `Option<u8>`, the harness's `in`-only signals given `= false`/`= None` as §3.3.4 requires; `Dff::<u8>` is the spec's `E0187` naming `u8` and `Default`), cheatsheet#2 (`M::<2>`), core-std#8 (`Reg` with `Setup(clk, d, late)` after T116: the violation flag), modules#6 and modules~8b927a42 (`lowpass` over the stdlib `idt`: the step response `1 - e^{-t/tau}`), modules#8 (`PiAw`: the output limits); the `elab_structure.rs` pins of `idt` and `Water` become acceptances or narrow to the form still missing.
+(2) **Rows still refused** re-pin to their exact remaining refusals: modules#1, modules~b53307eb, modules~4bcb9f1d and the `piperine-cli --test book` ladder listing to the body generation `P0001` (L31, flips in T77; the chapter's "Run it" box is rewritten to what the binary now prints); modules#2 to the two generation `P0001`s (L31, T77/T80); modules#10 and cheatsheet#8 to the template form of `cell: C` (L32, phase D T88), the bundle `Cell` (L25, `resolved-nets-bundles` T21) and generation (L31, T77); natures#8 to the bundle `Stream` alone (L25, `resolved-nets-bundles` T21; harness at a type with a `Default`, T116).
+(3) **Prose**: welcome~47af33d1 no longer lists `idt` and generic modules among the refused forms; the generics status box (generics~00f0fd4f) no longer lists generic modules (its smallest-model case leaves, per its own comment); `inventory.tsv`, `GAPS.md` §11 (each row with its new gap id and owner) and §4 L30 (narrowed to what phase C still owes) follow.
+**Where**: `tests/book/inventory.tsv`
+**Depends on**: T68
+**Reuses**: `tests/book/support`, `Refusal`, `Chapter`, `Faulty`
+**Requirement**: GN-07 (AC 2), GN-08, GN-31 (AC 1, AC 2), GN-13 (AC 1)
+**Executor**: Sonnet
+
+**Done when**:
+
+- [ ] `gaps_drops_s3` passes under `**Run docs**`; `an_unreached_generic_module_with_an_error_fails_the_model_check` (no opt-in) and `unfinished_forms_in_force_are_the_ones_phase_c_has_not_closed` (now `Generation`, `DigitalGeneration`) pass under `**Run typesmodel**`
+- [ ] `the_flip_flop_runs_for_a_type_with_a_default` and `e0187_the_flip_flop_at_u8_has_no_default` pass under `**Run bookdigital**`
+- [ ] `the_module_card_runs_for_its_const_generic` and `the_template_card_is_refused_for_its_template_bundle_and_generation` pass under `**Run bookcheatsheet**`
+- [ ] `the_register_with_a_setup_check_runs` passes under `**Run bookcorestd**`
+- [ ] `the_lowpass_module_runs_over_the_generic_integrator`, `the_pi_controller_runs_with_its_generic_idt`, `the_ladder_is_refused_for_its_generation`, `the_half_reactions_are_refused_for_their_generation`, `the_memory_bank_is_refused_for_its_template_bundle_and_generation` and `e0304_waits_for_the_generation_of_the_generic_ladder` pass under `**Run bookmodules**`
+- [ ] `a_bundle_is_refused_where_the_solver_reaches_it` (the bundle alone) passes under `**Run booknatures**`; `a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it` passes under `**Run bookgenerics**`; `the_status_paragraph_lists_what_is_still_refused_and_one_item_runs` passes under `**Run bookwelcome**`; `every_cli_listing_of_the_book_is_what_the_binary_prints` passes under `**Run clibook**`
+- [ ] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
+- [ ] Gate check passes: Quick
+
+**Tests**: integration
+**Gate**: quick
+
+**Commit**: `feat(types): generic modules leave the unfinished-forms gate; their Book rows run or narrow; GAPS drops S3`
+
+---
+
 ### T69: `Short` merges two nodes of one nature
 
-**What**: `Short(a, b)` of the prelude, placed over `Electrical`, `Thermal` and a project's nature, merges its two nodes at elaboration through the zero-potential merge; source test: a divider with a `Short` gives the same solution as the divider with the two nodes written as one, per nature; two natures are `E0180` (T61) at the placement, proven end to end.
+**What**: (no gate: `GenericModules` left `IN_FORCE` in T71) `Short(a, b)` of the prelude, placed over `Electrical`, `Thermal` and a project's nature, merges its two nodes at elaboration through the zero-potential merge; source test: a divider with a `Short` gives the same solution as the divider with the two nodes written as one, per nature; two natures are `E0180` (T61) at the placement, proven end to end.
 **Where**: `crates/piperine-parity/tests/source_generic_modules.rs`
-**Depends on**: T68
+**Depends on**: T71
 **Reuses**: `elab/structural.rs` merge
 **Requirement**: GN-16 (AC 1, AC 2)
 **Executor**: Sonnet
@@ -505,43 +589,18 @@ T78 → T79 → T80 → T81 → T82
 
 - [ ] `a_param_read_by_a_generic_argument_or_a_length_is_structural` passes under `**Run elabmods**`
 - [ ] `a_structural_param_overrides_before_the_run_and_is_refused_during_it` passes under `**Run apisession**`
-- [ ] Gate check passes: Quick
-
-**Tests**: integration
-**Gate**: quick
-
-**Commit**: `feat(elab): params read by generic arguments and lengths are structural`
-
----
-
-### T71: The Book rows generic modules make run
-
-**What**: Flip the rows that run once generic modules run: digital#21 (`Dff::<u8>`), cheatsheet#2 (`M::<2>`, its array of carriers run since composite-values C), core-std#8 (`Setup` in `Reg`), modules#6 and modules~8b927a42 (`lowpass` over the stdlib `idt`), modules#8 (`PiAw`); and the `elab_structure.rs` pins of `idt` and `Water`. Each test becomes the acceptance with values Rust computes in the test (the register's violation flag, the low-pass step response `1 - e^{-t/tau}`, the PI output limits); a row that still needs another feature's form is narrowed to it (design-c.md Risks). `inventory.tsv`, `GAPS.md` §11 and the Book's prose follow.
-**Where**: `tests/book/inventory.tsv`
-**Depends on**: T70
-**Reuses**: `tests/book/support`, `Refusal`, `Chapter`
-**Requirement**: GN-31 (AC 2)
-**Executor**: Sonnet
-
-**Done when**:
-
-- [ ] `the_flip_flop_runs_for_u8` passes under `**Run bookdigital**`
-- [ ] `the_module_card_runs_for_its_const_generic` passes under `**Run bookcheatsheet**`
-- [ ] `the_register_with_a_setup_check_runs` passes under `**Run bookcorestd**`
-- [ ] `the_lowpass_module_runs_over_the_generic_integrator` and `the_pi_controller_runs_with_its_generic_idt` pass under `**Run bookmodules**`
-- [ ] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
 - [ ] Gate check passes: Full (last task of batch B11)
 
 **Tests**: integration
 **Gate**: full
 
-**Commit**: `test(book): the generic module listings run`
+**Commit**: `feat(elab): params read by generic arguments and lengths are structural`
 
 ---
 
 ### T72: The checker types generation in a module body
 
-**What**: `types/generation.rs` (`impl Checker`) replaces the `P0001` of `Checker::module`: a generation range or condition is checked as a const expression (`E0340` otherwise, naming it); a param declared inside generation is `E0322`; an item declared in a generation `for` has the array type of its element (`Ty::CarrierArray` for a signal or node, `Ty::InstanceArray` for an instance, an array of its value for a `let`), nested loops nesting it (§8.2.23); an item of a generation `if` is typed whatever the arm.
+**What**: (gate: `Generation` admitted in its tests) `types/generation.rs` (`impl Checker`) replaces the `P0001` of `Checker::module`: a generation range or condition is checked as a const expression (`E0340` otherwise, naming it); a param declared inside generation is `E0322`; an item declared in a generation `for` has the array type of its element (`Ty::CarrierArray` for a signal or node, `Ty::InstanceArray` for an instance, an array of its value for a `let`), nested loops nesting it (§8.2.23); an item of a generation `if` is typed whatever the arm.
 **Where**: `crates/piperine-lang/src/types/generation.rs`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `Context::Const`, `Ty::CarrierArray`
@@ -562,7 +621,7 @@ T78 → T79 → T80 → T81 → T82
 
 ### T73: The elaborator unrolls generation
 
-**What**: `Generation` (`elab/generation.rs`) folds each range and condition, elaborates each iteration's items with the loop variable bound as a constant, stores each named item as an array indexed by ordinal from 0 (carriers and nodes as composite-values' arrays, instances as `name[k]` children), elaborates the taken arm only, makes an empty array for an empty range, and raises `E0342` for a reference into an arm that was not elaborated or an index outside a generated array; a param read by a range or a condition joins `KeyParams` (GN-20 AC 1, DC7).
+**What**: (gate: `Generation` admitted in its tests) `Generation` (`elab/generation.rs`) folds each range and condition, elaborates each iteration's items with the loop variable bound as a constant, stores each named item as an array indexed by ordinal from 0 (carriers and nodes as composite-values' arrays, instances as `name[k]` children), elaborates the taken arm only, makes an empty array for an empty range, and raises `E0342` for a reference into an arm that was not elaborated or an index outside a generated array; a param read by a range or a condition joins `KeyParams` (GN-20 AC 1, DC7).
 **Where**: `crates/piperine-lang/src/elab/generation.rs`
 **Depends on**: T72
 **Reuses**: `Unrolling`, `CarrierArrays`, `KeyParams`
@@ -583,7 +642,7 @@ T78 → T79 → T80 → T81 → T82
 
 ### T74: Recursion by generation
 
-**What**: A module that places itself under a generation `if` whose condition ends the recursion unrolls into nested instances; one whose recursion does not end is `E0341` naming the module at depth 1 024.
+**What**: (gate: `Generation` admitted in its tests) A module that places itself under a generation `if` whose condition ends the recursion unrolls into nested instances; one whose recursion does not end is `E0341` naming the module at depth 1 024.
 **Where**: `crates/piperine-lang/src/elab/generation.rs`
 **Depends on**: T73
 **Reuses**: the depth bound of D7, `stack::wide`
@@ -604,7 +663,7 @@ T78 → T79 → T80 → T81 → T82
 
 ### T75: Generated arrays run
 
-**What**: Source tests: `for k in 0..N { pub let rk = Resistor(..) }` in parallel gives `R / N` (Rust computes it), host paths `Top.rk[2]` read one element, a generation `if` over a param places the taken arm only, nested loops make a nested array.
+**What**: (gate: `Generation` admitted through `Project::admitting`) Source tests: `for k in 0..N { pub let rk = Resistor(..) }` in parallel gives `R / N` (Rust computes it), host paths `Top.rk[2]` read one element, a generation `if` over a param places the taken arm only, nested loops make a nested array.
 **Where**: `crates/piperine-parity/tests/source_generation.rs`
 **Depends on**: T74
 **Reuses**: `crates/piperine-parity/tests/generation/*.msl`
@@ -625,7 +684,7 @@ T78 → T79 → T80 → T81 → T82
 
 ### T76: The Book's RC ladder by generation
 
-**What**: Source test: the Book's `Ladder<const N: usize>` (recursion by generation) at `N = 1, 3, 8` gives, at an operating point and at a transient instant, the same node voltages as the ladder written out section by section (both models in the test's folder; equal to the bit).
+**What**: (gate: `Generation` admitted through `Project::admitting`) Source test: the Book's `Ladder<const N: usize>` (recursion by generation) at `N = 1, 3, 8` gives, at an operating point and at a transient instant, the same node voltages as the ladder written out section by section (both models in the test's folder; equal to the bit).
 **Where**: `crates/piperine-parity/tests/source_generation.rs`
 **Depends on**: T75
 **Reuses**: `crates/piperine-parity/tests/generation/*.msl`
@@ -646,7 +705,7 @@ T78 → T79 → T80 → T81 → T82
 
 ### T77: The Book rows of the ladder and of generation in a body
 
-**What**: Flip modules#1 and modules~b53307eb (the ladder for an operating point and a DC sweep, the output equal to the input at every point), modules~4bcb9f1d (`Ladder::<0>` now `E0304`), modules~4bd9131d (`for k in 0..count` with a signal now `E0340`) and cheatsheet#3 (the body items card with its generation `for`); rewrite the chapter's "Run it" box with what the binary prints; `inventory.tsv` and `GAPS.md` §11 follow.
+**What**: `Generation` leaves `UnfinishedForms::IN_FORCE` (its opt-ins and `Project::admitting(Generation)` leave). Flip modules#1 and modules~b53307eb (the ladder for an operating point and a DC sweep, the output equal to the input at every point), modules~4bcb9f1d (`Ladder::<0>` now `E0304`), modules~4bd9131d (`for k in 0..count` with a signal now `E0340`) and cheatsheet#3 (the body items card with its generation `for`); rewrite the chapter's "Run it" box with what the binary prints (`**Run clibook**`); re-pin modules#2 to the `digital` generation `P0001` alone and modules#10 and cheatsheet#8 without generation; `inventory.tsv` and `GAPS.md` §11 follow.
 **Where**: `tests/book/modules.rs`
 **Depends on**: T76
 **Reuses**: `Chapter`, `Faulty`, `Commands`
@@ -656,7 +715,8 @@ T78 → T79 → T80 → T81 → T82
 **Done when**:
 
 - [ ] `the_ladder_runs_for_an_operating_point_and_a_sweep`, `e0304_a_generic_ladder_of_zero_sections` and `e0340_a_generation_range_read_from_a_signal` pass under `**Run bookmodules**`
-- [ ] `the_body_items_card_runs_with_its_generation` passes under `**Run bookcheatsheet**`
+- [ ] `the_body_items_card_runs_with_its_generation` and `the_template_card_is_refused_for_its_template_and_bundle` pass under `**Run bookcheatsheet**`
+- [ ] `the_half_reactions_are_refused_for_their_digital_generation` and `the_memory_bank_is_refused_for_its_template_and_bundle` pass under `**Run bookmodules**`; `**Run clibook**` passes; `unfinished_forms_in_force_are_the_ones_phase_c_has_not_closed` (now `DigitalGeneration`) passes under `**Run typesmodel**`
 - [ ] `refused_rows_and_gaps_section_11_agree` passes under `**Run bookinventory**`
 - [ ] Gate check passes: Full (last task of batch B12)
 
@@ -669,7 +729,7 @@ T78 → T79 → T80 → T81 → T82
 
 ### T78: The checker types generation in a `digital` block
 
-**What**: `types/generation.rs` gains the `digital` form: `for k in 0..N { on lines[k].rise() { .. } }` with a const range, each reaction typed with `k` a constant, the element event over `Ty::CarrierArray` (composite-values C); `E0340` for a range that is not const; the `P0001` of `types/event.rs` leaves.
+**What**: (gate: `DigitalGeneration` admitted in its tests) `types/generation.rs` gains the `digital` form: `for k in 0..N { on lines[k].rise() { .. } }` with a const range, each reaction typed with `k` a constant, the element event over `Ty::CarrierArray` (composite-values C); `E0340` for a range that is not const; the `P0001` of `types/event.rs` leaves.
 **Where**: `crates/piperine-lang/src/types/generation.rs`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `types/element.rs` (composite-values C)
@@ -690,7 +750,7 @@ T78 → T79 → T80 → T81 → T82
 
 ### T79: One reaction per iteration
 
-**What**: The elaborator makes one reaction per iteration of a generation `for` in a `digital` block, its event `EventSource::ElementChanged` of the element, each a distinct statement, kept in iteration order within source order (§12.1.2, §12.1.14).
+**What**: (gate: `DigitalGeneration` admitted in its tests) The elaborator makes one reaction per iteration of a generation `for` in a `digital` block, its event `EventSource::ElementChanged` of the element, each a distinct statement, kept in iteration order within source order (§12.1.2, §12.1.14).
 **Where**: `crates/piperine-lang/src/elab/reactions.rs`
 **Depends on**: T78
 **Reuses**: `Generation`, composite-values `elab/elements.rs`
@@ -711,7 +771,7 @@ T78 → T79 → T80 → T81 → T82
 
 ### T80: A generated bank reacts per element; the `half` listings run
 
-**What**: Source test: a bank of `N` flip-flops whose generated reactions each latch their own element on `lines[k].rise()`, and two reactions of one iteration committing in source order; flip modules#2, modules~87ce6f6e and modules~3f8e84ba (the `half` stream gives three records, `stage=1` to `stage=3`, in time order); `inventory.tsv` and `GAPS.md` §11 follow.
+**What**: `DigitalGeneration` leaves `IN_FORCE`, the last form: `UnfinishedForms`, `Types::check_admitting`, `Types::check_model_admitting` and `Project::admitting` are deleted, and `unfinished_forms_in_force_are_the_ones_phase_c_has_not_closed` is replaced by its superseding acceptance `generation_in_a_digital_block_runs_from_every_entry` (`**Run srcgenr**`, through the plain project entry; the commit body names both). Source test: a bank of `N` flip-flops whose generated reactions each latch their own element on `lines[k].rise()`, and two reactions of one iteration committing in source order; flip modules#2, modules~87ce6f6e and modules~3f8e84ba (the `half` stream gives three records, `stage=1` to `stage=3`, in time order); `inventory.tsv` and `GAPS.md` §11 follow.
 **Where**: `crates/piperine-parity/tests/source_generation.rs`
 **Depends on**: T79
 **Reuses**: `crates/piperine-parity/tests/generation/*.msl`, `tests/book/modules.rs`
@@ -720,7 +780,7 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `a_generated_bank_reacts_per_element` passes under `**Run srcgenr**`
+- [ ] `a_generated_bank_reacts_per_element` and `generation_in_a_digital_block_runs_from_every_entry` pass under `**Run srcgenr**`
 - [ ] `the_half_reactions_report_each_stage_in_time_order` passes under `**Run bookmodules**`
 - [ ] Gate check passes: Quick
 
@@ -852,6 +912,7 @@ Proof: run elabgenr | test a_generation_recursion_that_does_not_end_is_e0341 ...
 **C72** - `for k in 0..N { on lines[k].rise() { .. } }` makes one reaction per iteration. (GN-19, AC 1; T78, T79, T80)
 Proof: run typesgenr | test generation_in_a_digital_block_is_typed_per_iteration ... ok
 Proof: run srcgenr | test a_generated_bank_reacts_per_element ... ok
+Proof: run srcgenr | test generation_in_a_digital_block_runs_from_every_entry ... ok
 
 **C73** - Generated reactions keep iteration order within source order, each a distinct statement. (GN-19, AC 2; T79, T80)
 Proof: run elabgenr | test generated_reactions_are_one_per_iteration_in_source_order ... ok
@@ -863,7 +924,7 @@ Proof: run elabmods | test a_param_read_by_a_generic_argument_or_a_length_is_str
 **C75** - A host override of a structural param before a run elaborates with it; a set or sweep during the run is `E0803` naming it as structural. (GN-20, AC 2, AC 3; T70)
 Proof: run apisession | test a_structural_param_overrides_before_the_run_and_is_refused_during_it ... ok
 
-**C76** - A generic module's body is checked once at its definition, and an unreached one with an error fails `piperine check` (S3). (GN-07, AC 2; GN-08, AC 1; T60)
+**C76** - A generic module's body is checked once at its definition, and an unreached one with an error fails `piperine check` (S3). (GN-07, AC 2; GN-08, AC 1; T60, T71)
 Proof: run typesmods | test a_generic_module_body_is_checked_once_at_its_definition ... ok
 Proof: run typesmodel | test an_unreached_generic_module_with_an_error_fails_the_model_check ... ok
 
@@ -879,14 +940,14 @@ Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move .
 **C80** - The build gives no warning on the crates this phase touches, and the hygiene guard passes. (GN-30, AC 2; every batch)
 Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-lang --test suite_hygiene`
 
-**C81** - `GAPS.md` drops L70, L69, S3, L30 and L31 in the commits that close them. (GN-31, AC 1; T54, T58, T60, T82)
+**C81** - `GAPS.md` drops L70, L69, S3, L30 and L31 in the commits that close them. (GN-31, AC 1; T54, T58, T71, T82)
 Proof: run docs | test gaps_drops_l70 ... ok
 Proof: run docs | test gaps_drops_l69 ... ok
 Proof: run docs | test gaps_drops_s3 ... ok
 Proof: run docs | test gaps_drops_what_generics_phase_c_closed ... ok
 
 **C82** - Every Book row and gallery fence phase C lets run is held to it. (GN-31, AC 2; T71, T77, T80, T81)
-Proof: run bookdigital | test the_flip_flop_runs_for_u8 ... ok
+Proof: run bookdigital | test the_flip_flop_runs_for_a_type_with_a_default ... ok
 Proof: run bookcheatsheet | test the_module_card_runs_for_its_const_generic ... ok
 Proof: run bookcheatsheet | test the_body_items_card_runs_with_its_generation ... ok
 Proof: run bookcorestd | test the_register_with_a_setup_check_runs ... ok
@@ -910,6 +971,43 @@ Proof: run srcgen | test cast_and_same_from_source_agree_with_the_removed_loweri
 Proof: run srcgen | test a_cast_to_a_tuple_holding_an_enum_runs ... ok
 Proof: run typesgen | test no_intrinsic_stands_for_cast_or_same ... ok
 Proof: run docs | test gaps_drops_the_cast_and_same_intrinsics ... ok
+
+
+**C120** - The Book listings that contradicted the spec are corrected, and each old form is refused as the spec says: a carrier port left out is `E0312` (§8.1.8), a `[Bit; N]` with no initial value is `E0187` (§3.3.4), `Slice` is bounded by `Default` as gallery E.6 is. (GN-31, AC 2; Book amendments BA1 to BA3; T116)
+Proof: run bookcorestd | test a_carrier_port_left_out_is_e0312_as_the_old_register_listing_was ... ok
+Proof: run bookcheatsheet | test an_array_of_bits_with_no_initial_value_is_e0187 ... ok
+Proof: run booknatures | test the_slice_listing_bounds_t_by_default_as_gallery_e6_does ... ok
+
+**C121** - A trailing `Option` value input is passed by name after the positional connections; a name that is none is `E0140`. (§8.1.9, §8.3.7; GN-13, AC 1; T117)
+Proof: run typesmodules | test a_trailing_option_value_input_passed_by_name_binds_it ... ok
+Proof: run typesmodules | test a_named_connection_that_is_no_trailing_option_input_is_e0140 ... ok
+Proof: run elabresults | test a_value_input_passed_by_name_reads_its_argument ... ok
+
+**C122** - No form of phase C is left behind the interim gate: generation in a `digital` block, the last one, runs from the plain production entry, and the gate is gone. (Interim strategy; T60 adds the gate, T71, T77 and T80 empty it; the interim pin `unfinished_forms_in_force_are_the_ones_phase_c_has_not_closed` holds each intermediate list and is replaced at T80 by this proof)
+Proof: run srcgenr | test generation_in_a_digital_block_runs_from_every_entry ... ok
+
+**C123** - A `let` that feeds back through the result of a generic placement whose result reads only its own carriers is legal (`lowpass`, `PiAw` over `idt`). (§8.3.5; GN-13, AC 1; T61)
+Proof: run typesmods | test a_generic_placement_feeds_back_through_its_unknown ... ok
+
+**C124** - A param whose type is a type parameter is typed under its bounds and elaborated per instance (`reset: T`). (§8.1.15; GN-13, AC 1; T60, T71)
+Proof: run typesmods | test a_param_of_a_type_parameter_is_typed_under_its_bounds ... ok
+
+**C125** - A generic argument that does not implement a bound the module's carriers need is `E0187` naming the type and the trait (`Dff::<u8>`); a carrier handed to a generic `out` port needs no initial value. (§3.3.4, §3.8; GN-13, AC 1; T61, T71)
+Proof: run bookdigital | test e0187_the_flip_flop_at_u8_has_no_default ... ok
+Proof: run typesmods | test a_carrier_handed_to_a_generic_out_port_needs_no_initial_value ... ok
+
+**C126** - `_` as a generic argument of a placement is inferred as if left out. (§1.2.12; GN-13, AC 1; T61)
+Proof: run typesmods | test an_underscore_generic_argument_is_inferred ... ok
+
+**C127** - A Book row still refused after a task that changed its refusal is pinned to its exact remaining refusals and their owners. (GN-31, AC 2; re-pin rule; T71, T77)
+Proof: run bookmodules | test the_ladder_is_refused_for_its_generation ... ok
+Proof: run bookmodules | test the_memory_bank_is_refused_for_its_template_and_bundle ... ok
+Proof: run bookcheatsheet | test the_template_card_is_refused_for_its_template_and_bundle ... ok
+Proof: run bookmodules | test the_half_reactions_are_refused_for_their_digital_generation ... ok
+Proof: run booknatures | test a_bundle_is_refused_where_the_solver_reaches_it ... ok
+Proof: run bookgenerics | test a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it ... ok
+Proof: run bookwelcome | test the_status_paragraph_lists_what_is_still_refused_and_one_item_runs ... ok
+Proof: run clibook | test every_cli_listing_of_the_book_is_what_the_binary_prints ... ok
 
 ---
 
@@ -974,6 +1072,25 @@ off for the Book run until T71. The draft keeps `Checker::refuse_generic_placeme
 `run_model`); (b) needs it true in `run_model` too and a test-only way to turn it off.
 Also: `suite_hygiene::mod_rs_declares_only` (types/mod.rs ceiling 60 lines) was fixed on the draft; the helper scripts of
 `/var/tmp/piperine-tmp-d/helpers` did not exist, `check_commit.py` of the skill was used.
+**Planning amendment after the T60 blocker (2026-11-23, design-c.md "Interim: the unfinished-forms gate" and "Gap verdicts"):**
+(1) Interim strategy (b): the whole-model check and the run check keep refusing generic modules (and generation, in a body
+and in `digital`) with `main`'s `P0001` until each form's flip task, behind `UnfinishedForms::IN_FORCE`; tests opt in by
+naming the form. Flips: `GenericModules` T71 (moved to run right after T68, before T69 and T70, which need the plain entry:
+parity's `Short` and the host's structural override), `Generation` T77, `DigitalGeneration` T80 (deletes the gate). No Book
+test changes before its flip; at a flip each still-refused row is re-pinned to its exact remaining refusals.
+(2) Verdicts: param of type `T` = real (§8.1.15), T60; param of type `C` (`Fn(Cell)`) = phase D T88; bundle with a carrier
+field = `resolved-nets-bundles` T21 (amended to cover modules#10, modules#11, cheatsheet#8); generation in a body = T72 to T77;
+E0332 on `lowpass`/`PiAw` = real (§8.3.5), the generic placement was not pushed on `placing`, T61; E0312 `Setup` with 2 of 3
+ports = Book bug (§8.1.8), T116; `_` generic argument = real (§1.2.12), T61, its inference from a template param phase D T88;
+named connection `reset: seat` = real (§8.1.9, §8.3.7), generic-agnostic, new T117; E0187 `bool`/`u8` no `Default` = spec-
+correct (§3.3.4, MD-78): the test harnesses (`signal clk: Bit;` read only by `in` ports) and the plan's `Dff::<u8>` were wrong,
+corrected in T71 (`Dff` at `Option<u8>`, `Dff::<u8>` proven `E0187`), plus two more Book bugs the same rule exposes:
+cheatsheet#2 `signal s: [Bit; N]` and natures#8 `Slice<T: Repr>` with `signal buf: Bit<T>` (T116).
+(3) New tasks T116 (Book amendments) and T117 (named connection); ids continue after phase E's T115 so no id moves. Phase C
+is 32 tasks (T53 to T82, T116, T117), checks C51 to C86 and C120 to C127. B10 = T59, T116, T60, T61, T117, T62, T63, T64.
+(4) Continue from the draft: merge `origin/wip/generics-c-b10` into T60/T61's work, then put `ModelCheck`'s seeding and the
+placement typing behind the gate (the draft's `refuse_generic_placements` becomes `UnfinishedForms`); its `GAPS.md` S3 drop
+and `gaps_drops_s3` move to T71.
 **Dispatched:** none yet.
 **Walked:** none yet.
 
@@ -985,8 +1102,8 @@ Also: `suite_hygiene::mod_rs_declares_only` (types/mod.rs ceiling 60 lines) was 
 Phase 13 → Phase 14 → Phase 15 → Phase 16 → Phase 17
 
 Phase 13:  T53 → T54 → T55 → T56 → T57 → T58
-Phase 14:  T59 → T60 → T61 → T62 → T63 → T64
-Phase 15:  T65 → T66 → T67 → T68 → T69 → T70 → T71
+Phase 14:  T59 → T116 → T60 → T61 → T117 → T62 → T63 → T64
+Phase 15:  T65 → T66 → T67 → T68 → T71 → T69 → T70
 Phase 16:  T72 → T73 → T74 → T75 → T76 → T77
 Phase 17:  T78 → T79 → T80 → T81 → T82
 ```
@@ -994,7 +1111,7 @@ Phase 17:  T78 → T79 → T80 → T81 → T82
 | Batch | Phases | Tasks | Notes |
 | ----- | ------ | ----- | ----- |
 | B9 | 13 | T53 to T58 | starts on `main` as it is (no composite-values C); closes L70 and L69; T55 retires the `cast`/`same` intrinsics (user, 2026-11-23) |
-| B10 | 14 | T59 to T64 | starts after `composite-values` phase C is on `main` (T59 merges it); closes S3 |
-| B11 | 15 | T65 to T71 | generic module instances; the generic-module Book rows flip |
-| B12 | 16 | T72 to T77 | generation in a body; the ladder rows flip |
-| B13 | 17 | T78 to T82 | needs composite-values C's element events; closes L30 and L31 |
+| B10 | 14 | T59, T116, T60, T61, T117, T62, T63, T64 | starts after `composite-values` phase C is on `main` (T59 merges it); Book amendments BA1 to BA3; generic modules checked behind the gate |
+| B11 | 15 | T65 to T68, T71, T69, T70 | generic module instances; T71 opens the gate for generic modules, closes S3, flips or re-pins the generic-module Book rows |
+| B12 | 16 | T72 to T77 | generation in a body behind the gate; T77 opens it; the ladder rows flip |
+| B13 | 17 | T78 to T82 | needs composite-values C's element events; T80 opens the last form and deletes the gate; closes L30 and L31 |
