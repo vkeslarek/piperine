@@ -68,9 +68,10 @@ impl Checker<'_> {
             }
         }
         if self.context == Context::Analog {
-            // a stream other than `sim` and `checks` is a trace (§19 rule 4): it checks
             if is_reserved(&name) {
                 self.analog_writes_reserved(file, span, &name);
+            } else {
+                self.analog_trace(file, span);
             }
         }
         let mut seen = BTreeSet::new();
@@ -111,11 +112,11 @@ impl Checker<'_> {
         self.coded(file, "E0603", span, message, "`analog` writes a reserved stream");
     }
 
-    /// An `emit!` on a stream other than `sim` and `checks` that a `fn` reaches, called from
-    /// `analog`: a trace written inside a function needs a watch buffer passed through calls,
-    /// which the elaborator does not lower (design D14), so it is refused naming the `fn`.
-    fn analog_trace_through(&mut self, file: FileId, span: Span, function: &str) {
-        self.unsupported(file, span, &format!("an `emit!` reached from `analog` through the `fn` `{function}`"));
+    /// An `emit!` on a stream other than `sim` and `checks` reached from `analog`: a trace
+    /// (§19), which the M1 elaborator does not lower (it has no `TRACE` pin), so it is refused
+    /// by name here rather than failing elaboration (msl-digital edge case 7).
+    fn analog_trace(&mut self, file: FileId, span: Span) {
+        self.unsupported(file, span, "an `emit!` in an `analog` block");
     }
 
     /// A call of `function`, which may reach `emit!`: from `analog` it writes neither `sim` nor `checks`
@@ -135,8 +136,7 @@ impl Checker<'_> {
             if let Some(stream) = streams.iter().find(|s| is_reserved(s)) {
                 self.analog_writes_reserved(file, span, &stream.clone());
             } else {
-                let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-                self.analog_trace_through(file, span, &name);
+                self.analog_trace(file, span);
             }
         }
     }

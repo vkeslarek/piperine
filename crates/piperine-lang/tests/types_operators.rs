@@ -142,5 +142,7 @@ fn a_site_reached_from_analog_writing_sim_or_checks_is_e0603() {
     }
     let trace = "module Top(p: Electrical) { }\nanalog for Top { emit!(\"trace\", vp = v(p)); }";
     let design = elaborated::Elab::design(trace);
-    assert!(Types::check(&design, "Top").is_ok(), "a trace on another stream types");
+    // until T37 lowers a trace the checker refuses it by name, one `P0001`, never an `E0603`
+    let d = Types::check(&design, "Top").expect_err("a trace is refused until T37");
+    assert_eq!(codes_of(&d), ["P0001"], "{:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
 }

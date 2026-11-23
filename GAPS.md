@@ -329,7 +329,7 @@ comment only (`pom/builtin.rs`), so it is on the list, and `E0702` is on it sinc
 raised: they are the variants of `RunCode` (`piperine-analog-solver/src/error.rs`). `E0803` to `E0806` are raised
 by `session.rs` and `host.rs`; `E0701` by the elaborator.
 `E0123 E0124 E0203 E0225 E0313 E0322 E0340 E0342
-E0360 E0362 E0371 E0372 E0373 E0374 E0375 E0451 E0452 E0453 E0454 E0456
+E0360 E0362 E0371 E0372 E0373 E0374 E0375 E0452 E0453 E0454 E0456
 E0702 E0807 E0808 E0809`
 
 **Entries of the previous file that changed.**

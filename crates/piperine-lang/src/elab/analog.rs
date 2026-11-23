@@ -173,7 +173,7 @@ impl Elaboration<'_, '_> {
             "ac_stim" => self.lower_stim(scope, expr, args, ty, origin),
             "ddt" => self.lower_derivative(scope, expr, args, origin),
             name => {
-                self.unsupported(scope.file, span, &format!("the core primitive `{name}`"));
+                self.unsupported(scope.file, span, &format!("core primitive `{name}`"));
                 None
             }
         }
