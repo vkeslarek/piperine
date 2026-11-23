@@ -1,5 +1,5 @@
 //! Function classes at a call (generics GN-12, part I §3, design D13): a function is solve-reading when its body
-//! probes, reads `now()`, `freq()`, `gmin()`, `source_scale()`, `temperature()` or `analysis(..)`, or calls a
+//! probes, reads `now()`, `freq()`, `gmin()`, `source_scale()` or `analysis(..)` (`temperature()` is constant during an analysis, so it is pure), or calls a
 //! solve-reading function (a fixed point over recursion, `closures.rs`). Such a call is accepted in `analog`, an event
 //! expression, a reaction body, a body `let` and a value input, and is `E0122` in a const context (a `const`, a param
 //! default, a `where`, a const argument). A definition that reads the solve is `E0336`, the rule that names it (§8.2.5).
