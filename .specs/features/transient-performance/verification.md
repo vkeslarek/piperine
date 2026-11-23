@@ -1,75 +1,81 @@
 # Transient Performance verification
 
 **Verdict**: FAIL
-**Proofs**: `proofs.md` at 5f0494fb, rerun after the fix round and T26 (60 pass, 0 fail; the first run, at 1c3e74ba, had 24 pass and 27 "no test ran"). Findings F1 to F14 are closed below. Checks C49 to C55 were added by the fix round and T26 and have no `## Checks` row yet: the Verifier judges them. `HEAD` is one commit past the sha `proofs.md` names, because the commit that adds `proofs.md` is the last
-**Verifier**: independent sub-agent (author != verifier), Opus 5.5, 2026-11-22
+**Proofs**: `proofs.md` at 94455512 (round 2: 60 pass, 0 fail; round 1 at 1c3e74ba had 24 pass and 27 "no test ran")
+**Verifier**: independent sub-agent (author != verifier), Opus 5.5, 2026-11-22, rounds 1 and 2
 
-The optimisations hold their gates at `HEAD` (read from `proofs.md`): the buck's 600 µs start takes
-210 188 accepted steps (gate 300 000), the first 100 µs land 417 times (gate 1 000) and run 668
-instants, `buck.vout` is 0.000136 mV from the `max_step = 1e-10` reference (gate 0.104 mV, largest
-at the last row). No parity source, fixture, `contract.rs`, twin golden, transpile golden or pinned
-grid moved (`git diff 754784a1..HEAD` touches only `crates/piperine-parity/src/scenario/run.rs`, a
-two-line step-count print; see F9); D5 was never triggered. The D12 widening holds for the one moved
-Book listing: re-parsed old and new `monitor.msl` listings have 41 shared rows, all equal; the three
-`zone` records are byte-equal; every new row keeps `x = t·10⁶` and the clock phase; the 66
-differing rows are only the new step grid, and `values#13` takes the new fingerprint.
+The gates hold at `HEAD`. The buck's 600 µs start takes 210 188 accepted steps (gate 300 000). The
+first 100 µs land 417 times (gate 1 000) and run 668 instants (0 for crossings, 668 scheduled), and
+`buck.vout` is 0.000136 mV from the `max_step = 1e-10` reference (gate 0.104 mV). Against the merge
+base 754784a1, no parity source, fixture, `contract.rs`, twin golden, transpile golden or pinned grid
+moved; the only changes on those paths are the Book's `monitor.msl` listing (D12, accepted by the
+user: "Aceitar") and `scenario/run.rs`, which now returns the step count instead of printing it.
+T26 holds D5: the restart after a host write becomes a tenth of the last step, and the growth clamp
+stays 1.5. C55 holds the sixteen twins' bytes, the only witness that 2.0 would move `tran_corner`.
 
-The verdict is FAIL for three reasons. Half the proofs are red by name (F1). The retaken step of
-§15.2 rule 4 now fails the run when the new estimate rejects it (F2, reproduced). Part V contradicts
-itself and the code about which steps are exempt (F3, F4).
+Round 2 closes F1 to F14; each fix and the test that now holds it were read. The verdict stays FAIL
+because the wider §15 amendment (68b19c5f) leaves spec text that contradicts the code (F15 to F18),
+and two smaller records are open (F19, F20).
 
 ## Checks
 
 | Check | Test | Holds |
 | --- | --- | --- |
 | C1 | `step_statistics.rs` `the_protocol_counts_one_landing_of_each_cause` | yes - scripted sides, one landing per cause, each counted 1 |
-| C2 | `step_statistics.rs` `the_analog_side_reports_rejections_by_cause_and_jump_steps` (+ `a_step_at_max_step_is_counted`, `a_step_retaken_toward_a_crossing_is_counted_once`) | yes - truncation `>= 1` is the only loose bound (the fixture's exact count is not specified) |
+| C2 | `step_statistics.rs` `the_analog_side_reports_rejections_by_cause_and_jump_steps` (+ `a_step_at_max_step_is_counted`, `a_step_retaken_toward_a_crossing_is_counted_once`) | yes - truncation `>= 1` is the only loose bound; the fixture's exact count is not specified |
 | C3 | `protocol/statistics.rs` `the_ends_sum_to_the_accepted_steps` | yes |
 | C4 | `session.rs` `a_session_returns_the_statistics_of_its_last_transient` | yes |
-| C5 | `buck_long.rs` `the_statistics_of_the_whole_start_are_reported` | yes - prints every count; runs the default rule, not the "reference mode" AC 5 names (F10) |
-| C6 | `advance.rs` `a_falling_clock_heard_only_by_a_rising_edge_reaction_makes_no_landing` | yes - but the proof names `a_falling_clock_heard_by_rise_is_no_landing_in_either_rule`, which does not exist (F1) |
-| C7 | `advance.rs` `a_commit_that_changes_a_carrier_the_analog_side_reads_lands_in_both_rules` | yes - proof name wrong (F1) |
-| C8 | `advance.rs` `a_reaction_that_reads_a_continuous_pin_lands_in_both_rules` | yes - proof name wrong (F1) |
-| C9 | `advance.rs` `a_net_no_reaction_that_reaches_the_analog_side_reads_makes_no_landing_in_both_rules` | yes - proof name wrong (F1) |
-| C10 | `advance.rs` `a_write_to_a_reaching_net_that_changes_nothing_lands_only_under_the_declared_rule` | yes - proof name wrong (F1) |
-| C11 | `advance.rs` `a_reaction_on_settle_keeps_every_declared_landing` | yes - proof name wrong (F1) |
+| C5 | `buck_long.rs` `the_statistics_of_the_whole_start_are_reported` | yes - every count printed; the rule is TP-12's (C49) |
+| C6 | `advance.rs` `a_falling_clock_heard_only_by_a_rising_edge_reaction_makes_no_landing` | yes |
+| C7 | `advance.rs` `a_commit_that_changes_a_carrier_the_analog_side_reads_lands_in_both_rules` | yes |
+| C8 | `advance.rs` `a_reaction_that_reads_a_continuous_pin_lands_in_both_rules` | yes |
+| C9 | `advance.rs` `a_net_no_reaction_that_reaches_the_analog_side_reads_makes_no_landing_in_both_rules` | yes |
+| C10 | `advance.rs` `a_write_to_a_reaching_net_that_changes_nothing_lands_only_under_the_declared_rule` | yes |
+| C11 | `advance.rs` `a_reaction_on_settle_keeps_every_declared_landing` | yes |
 | C12 | `advance.rs` `a_host_waiter_keeps_every_declared_landing` | yes |
-| C13 | `advance.rs` `a_change_found_at_a_later_microstep_rewinds_the_instant_and_leaves_no_record` | yes - checkpoint and observations equal before/after; proof name wrong (F1) |
-| C14 | `advance.rs` `a_commit_delayed_by_an_expression_makes_no_landing_at_its_making` | yes - proof name wrong (F1) |
+| C13 | `advance.rs` `a_change_found_at_a_later_microstep_rewinds_the_instant_and_leaves_no_record` | yes - checkpoint and observations are equal before and after |
+| C14 | `advance.rs` `a_commit_delayed_by_an_expression_makes_no_landing_at_its_making` | yes |
 | C15 | `buck_accuracy.rs` `the_first_100_us_land_at_most_1000_times` | yes - 417 |
-| C16 | `jump_step.rs` `a_landing_step_over_the_tolerance_is_rejected_and_retaken_smaller` | yes - under the old exemption the first step would be exactly `LANDING`; proof name wrong (F1) |
-| C17 | `jump_step.rs` `the_instants_run_ahead_of_a_rejected_step_leave_no_record` | yes - a throwaway run shows the recorder ran twice and its 8 records reached the sink once; proof name wrong (F1) |
-| C18 | `spec_text.rs` `appendix_c_2_tests_the_landing_step_and_the_jump_step`, `appendix_d_and_f_restart_rows_say_the_step_to_the_landing_is_ordinary` | yes for the rows it pins - proof name wrong (F1); the C.2 "the jump" row it pins is itself stale (F4) |
-| C19 | `math/integration.rs` `the_jump_estimate_of_a_quadratic_state_is_backward_eulers_error` | partly - the estimate is pinned (the `h²` closed form); "sized by rule 6" has no test of its own here. Proof name wrong (F1) |
-| C20 | `jump_step.rs` `a_jump_step_over_the_tolerance_is_retaken_smaller` | yes - `jump_steps == 1` with `jump_retakes >= 1` and `floor_accepts == 0` |
+| C16 | `jump_step.rs` `a_landing_step_over_the_tolerance_is_rejected_and_retaken_smaller` | yes - under the old exemption the first step would be exactly `LANDING` |
+| C17 | `jump_step.rs` `the_instants_run_ahead_of_a_rejected_step_leave_no_record` | yes - a throwaway run in round 1 showed the recorder ran twice while its 8 records reached the sink once |
+| C18 | `spec_text.rs` `appendix_c_2_tests_the_landing_step_and_the_jump_step`, `appendix_d_and_f_restart_rows_say_the_step_to_the_landing_is_ordinary` | yes for the rows they pin; the C.2 "the jump" row still names a retake that does not exist (F16) |
+| C19 | `math/integration.rs` `the_jump_estimate_of_a_quadratic_state_is_backward_eulers_error` | yes for the estimate; the rule-6 size is held by C20 to C22 (`jump_step.rs`) |
+| C20 | `jump_step.rs` `a_jump_step_over_the_tolerance_is_retaken_smaller` | yes - `jump_steps == 1`, `jump_retakes >= 1`, `floor_accepts == 0` |
 | C21 | `jump_step.rs` `a_jump_step_at_the_floor_is_accepted_and_counted` | yes - with the no-jump control |
-| C22 | `jump_step.rs` `an_ideal_step_is_read_by_an_rc_to_one_minus_e_to_the_minus_one` | yes - proof name wrong (F1) |
-| C23 | `buck_accuracy.rs` `the_first_100_us_match_the_fine_reference_within_0_104_mv` | yes - 0.000136 mV, plus the digital columns row for row |
-| C24 | `spec_text.rs` `part_v_rule_6_tests_the_step_that_reads_a_jump_with_the_first_order_estimate` | yes for rule 6 - proof name wrong (F1); the host-`set` and retake paragraphs still say "exempt" (F3) |
+| C22 | `jump_step.rs` `an_ideal_step_is_read_by_an_rc_to_one_minus_e_to_the_minus_one` | yes |
+| C23 | `buck_accuracy.rs` `the_first_100_us_match_the_fine_reference_within_0_104_mv` | yes - 0.000136 mV, and the digital columns are equal row for row |
+| C24 | `spec_text.rs` `part_v_rule_6_tests_the_step_that_reads_a_jump_with_the_first_order_estimate` | yes for rule 6; rule 4's "like the step that reads a host `set`" now reads as if that step were exempt (F18) |
 | C25 | `buck_long.rs` `the_whole_start_takes_at_most_300000_steps` | yes - 210 188 |
 | C26 | `buck_long.rs` `the_overshoot_is_within_15_mv` | yes |
 | C27 | `buck_long.rs` `the_start_ends_in_regulation_with_power_good` (+ the settling and ripple tests of the target) | yes |
-| C28 | `landing_rule.rs` `the_declared_rule_lands_on_every_clock_edge_and_the_observable_rule_on_the_input_changes` | yes - 1400 vs 3 landings; proof name wrong (F1) |
+| C28 | `landing_rule.rs` `the_declared_rule_lands_on_every_clock_edge_and_the_observable_rule_on_the_input_changes` | yes - 1400 against 3 landings |
 | C29 | `buck_long.rs` `the_wall_time_and_the_peak_are_reported` | yes |
 | C30 | `buck_scenarios.rs` `the_package_declares_the_five_scenario_runs` (the whole target, 61 tests, passes unedited) | yes |
 | C31 | `eval_allocation.rs` `the_second_eval_of_a_function_allocates_nothing` (+ `a_buffer_shorter_than_its_cell_is_refused_with_the_text_it_always_had`) | yes |
-| C32 | `allocation.rs` `the_second_stamping_of_a_stage_into_a_kept_buffer_allocates_nothing` | no - the fixture has one `FLOW` term only, so the `DDT` and `DELAY` paths of a transient stage are never stamped; proof name wrong (F1, F7) |
-| C33 | `newton_raphson.rs` `without_timing_a_solve_reads_no_clock` | yes - totals 0 is what the criterion fixes; proof name wrong (F1) |
-| C34 | `newton_raphson.rs` `with_timing_a_solve_reports_both_totals` | yes - proof name wrong (F1) |
-| C35 | `step_statistics.rs` `a_pure_analog_circuit_runs_no_instant` (+ `one_commit_due_runs_one_instant`, `a_reaction_on_settle_runs_an_instant_at_every_accepted_step`) | yes - proof name wrong (F1) |
-| C36 | `buck_accuracy.rs` `the_first_100_us_run_an_instant_only_where_something_is_due` | no - asserts a fixed 1 000, not "scheduled instants plus crossings plus landings" (668 measured; 332 idle instants would pass); proof name wrong (F1, F6) |
-| C37 | `landing_rule.rs` `the_open_loop_fixture_gives_the_same_observations_in_both_rules` | yes - every observation equal; the fixture has no `RECORD` pin, so "every record" is the change/commit/fire stream; proof name wrong (F1) |
-| C38 | `jump_step.rs` `the_instants_run_ahead_of_a_rejected_step_leave_no_record` | yes (see C17) - proof name wrong (F1) |
-| C39 | `landing_rule.rs` `the_observations_of_both_rules_come_in_time_order` | partly - non-decreasing time only; the microstep `n` of `(t, n)` is not compared; proof name wrong (F1) |
-| C40 | `parity_tran` `tran_rc` (ngspice present at `/usr/bin/ngspice`) | yes |
-| C41 | `parity_tran` with ngspice off the path | yes - skip line printed, twins ran |
-| C42 | `docs.rs` `the_scenario_package_states_its_measured_step_count` | no - checks only that `moved.md`'s header has Old/New/Requirement, not that each moved golden is listed; proof name wrong (F1, F8) |
-| C43 | `docs.rs` `transient_performance_closes_v12` | yes - proof name wrong (F1) |
-| C44 | `spec_text.rs` `appendix_c_2_time_points_row_names_the_dynamic_test_its_exceptions_and_the_reference_mode` | yes - proof name wrong (F1) |
-| C45 | `docs.rs` `transient_performance_closes_v12` (After table) + `the_scenario_package_states_its_measured_step_count` (comment) | yes - proof name wrong (F1) |
+| C32 | `allocation.rs` `the_second_stamping_of_each_stage_into_a_kept_buffer_allocates_nothing` | yes - `FLOW`, `DDT` and `DELAY` terms, both TR-BDF2 stages, 0 allocations |
+| C33 | `newton_raphson.rs` `without_timing_a_solve_reads_no_clock` | yes - both totals are 0, which is what the criterion fixes |
+| C34 | `newton_raphson.rs` `with_timing_a_solve_reports_both_totals` | yes |
+| C35 | `step_statistics.rs` `a_pure_analog_circuit_runs_no_instant` (+ `one_commit_due_runs_one_instant`, `a_reaction_on_settle_runs_an_instant_at_every_accepted_step`) | yes |
+| C36 | `buck_accuracy.rs` `the_first_100_us_run_an_instant_only_where_something_is_due` | yes - every instant is counted under its cause (crossing or scheduled), so none is idle: 0 + 668 instants, 417 of them landings |
+| C37 | `landing_rule.rs` `the_open_loop_fixture_gives_the_same_observations_in_both_rules` | yes - every observation equal; the fixture has no `RECORD` pin, so the stream is changes, commits and fires |
+| C38 | `jump_step.rs` `the_instants_run_ahead_of_a_rejected_step_leave_no_record` | yes (see C17) |
+| C39 | `landing_rule.rs` `the_observations_of_both_rules_come_in_time_order` | yes for `t`; the microstep `n` is not compared, and I accept it because I3 is held by the engine's own queue tests |
+| C40 | `parity_tran` `tran_rc` (ngspice at `/usr/bin/ngspice`) | yes |
+| C41 | `parity_tran` with ngspice off the path | yes - skip line printed, the twins still ran |
+| C42 | `docs.rs` `the_scenario_package_states_its_measured_step_count` | yes - every `moved.md` row has 5 non-empty cells and no record or column; the T16 row is held |
+| C43 | `docs.rs` `transient_performance_closes_v12` | yes |
+| C44 | `spec_text.rs` `appendix_c_2_time_points_row_names_the_dynamic_test_its_exceptions_and_the_reference_mode` | yes |
+| C45 | `docs.rs` `transient_performance_closes_v12` (the After table) + `the_scenario_package_states_its_measured_step_count` (the comment) | yes |
 | C46 | `twins.rs` `the_two_backends_print_the_same_bytes` | yes |
 | C47 | `parity_baseline.rs` `parity_rc_transient` | yes |
-| C48 | `git diff --quiet origin/main -- <parity paths>` | yes - and the wider diff (parity `src`, `tests/support`, twins, transpile goldens) moves only `scenario/run.rs` (F9) |
+| C48 | `git diff --quiet $(git merge-base origin/main HEAD) -- <parity paths>` | yes - the merge base is right now that origin/main has moved on (d17796b5); I diffed the wider parity and twin paths too |
+| C49 | `buck_long.rs` `the_statistics_of_the_whole_start_are_reported` | yes - asserts the run sets no rule and that the report prints `landing rule default (observable)`; that the solver default is `Observable` is held by `options.rs` `the_time_point_rule_is_a_host_option_with_no_run_key` |
+| C50 | `protocol_epoch.rs` `past_2_52_ticks_the_analog_side_is_told_small_times_since_the_epoch` | yes - exact proposals and moves on scripted sides |
+| C51 | `protocol_epoch.rs` `a_step_of_one_tick_is_one_tick_long_past_2_52_ticks` | yes |
+| C52 | `protocol_epoch.rs` `a_run_under_2_52_ticks_never_moves_its_epoch` | yes - absolute times as before |
+| C53 | `options.rs` `an_hour_long_transient_runs_at_the_default_resolution` | yes - clock edges to 1e-12 s; crossings to `vntol/slope + ttol + tick`, the bound TP-11 AC 4 writes |
+| C54 | `host_set.rs` `a_scheduled_host_write_lands_and_restarts_small` | yes - the next step is `max(0.1·last, dt_min)` within 1e-9 relative; the landing is solved before the write and the next step reads it |
+| C55 | `twins.rs` `every_twin_prints_the_bytes_it_printed_before_the_move` | yes - all sixteen twins' bytes against their goldens, so a clamp of 2.0 (which moves `tran_corner` at 1 µs) would fail it |
 
 ## Findings
 
@@ -89,13 +95,21 @@ itself and the code about which steps are exempt (F3, F4).
 | F12. Free helper functions in the new tests, against the cleanliness rules that apply to tests too (`jump_retake.rs` on main groups them in `impl Scenario`) | `jump_step.rs` (`sine_rc`, `run_with_a_landing_in_the_first_step`, `rc_behind_a_step`, `output_at`, `net`), `step_statistics.rs` (`sides`, `statistics_of`, `rc_behind_a_switch`, `rc_with`, ...), `landing_rule.rs` (`run`, `open_loop`, `crossing`, `net`), `protocol_epoch.rs` (`resumed_at`, `rebases`), `buck_accuracy.rs` (`run_with`, `runs`, `column`), `power_stage_bench.rs` (`controls`, `piperine_run`, `ngspice_run`), the additions to `advance.rs`, `buck_long.rs` `statistics_report` | group each target's helpers under a fixture type (`struct Scenario; impl Scenario`), as `jump_retake.rs` does | 740743e7; the Build line and C1, C6-C14, C16, C17, C22, C28, C35, C37, C39, C50-C52 |
 | F13. The MD-80 entry carries two wrong facts: it says `composite-values` "is not yet on `main`" (MD-79 is on `origin/main` 754784a1), and it says the feature "extends MD-73's solver" (MD-73 is "a host scenario of an example is a package under `tests/e2e/`") | `.specs/STATE.md:1818-1819` | drop the "not yet on main" clause (MD-80 is the next free number on `origin/main`) and name the solver decision it extends (MD-62's owner protocol / MD-74) | eed5bd92; `docs.rs` `state_records_the_observable_landings_and_the_tick_epoch` |
 | F14. T25 (the tick epoch) is built and tested (`protocol_epoch.rs`, the hour test) but has no requirement ID or check, so nothing in `## Checks` or `proofs.md` covers it. The hour test also could not tell the epoch from the removed stopgap: crossings are checked to 1 µs and clock edges to 1 ns, while the stopgap floor at 3600 s was about 0.1 ns | `spec.md` (no TP for T25); `crates/piperine-api/tests/options.rs:388` (`"rise", &crossings, 1e-6`) | append TP-11 (the analog time is a tick epoch plus an offset; bit-identical under 2^52 ticks; every tick exact past it) with checks on `protocol_epoch.rs`'s three tests. Tighten the hour test's crossing tolerance to `ttol` plus a tick | 108954bf; C50-C53 (TP-11, `protocol_epoch.rs`, `options.rs` `an_hour_long_transient_runs_at_the_default_resolution`: clock edges to 1e-12 s; crossings to the located-crossing bound `vntol/slope + ttol + tick`, since a crossing the run locates by `etol` lies 1.3e-8 s off at 0.083 s, so `ttol` plus a tick alone cannot hold) |
+| F15. Part V says a host `set` due at `t` applies after the settle phase (§15 step 2: "not collected here"; step 5: "First the host `set`s due at `t` apply, after the settle phase"; §15.2 "Host `set`": "applies after the step to `t` is accepted, after the settle phase"). The code commits a scheduled write at `(t, 0)` (`Digital::host_commit`, `due: (at, 0)`; `TransientSolver` turns each scheduled write into a host commit), so the reactions of `(t, n)` and the settle phase of `t` read the new value | `docs/spec/part_v_execution.md:87-88, 103-104, 258-260`; `crates/piperine-digital-solver/src/engine.rs:288-313`; `crates/piperine-solver/src/analyses/transient.rs:1171-1187` | one direction for the fix round: amend Part V to the code (a host `set` due at `t` is a host commit at `(t, 0)`, run after the step to `t` is solved like any other change at `t`; the first step after `t` reads it with `Restart::IntegratorSmall`), in line with the user's "muda a spec"; pin the new order in `spec_text.rs`. Or change the code, if the user wants the set after `settle` | |
+| F16. Part V and Appendix C.2 describe a retake that does not exist: "A `set` of a param whose change moves the operating point (the solver's `OperatingPoint` invalidation strength, Appendix C.2) also retakes the step to `t` with the new value". No invalidation strength and no such retake exist in `crates/` (the only retake is the crossing retake of rule 4) | `docs/spec/part_v_execution.md:260-264`; `docs/spec/appendix_c_implementation.md:70` ("retakes it when its invalidation strength is `OperatingPoint` or more"); `grep -rn "strength\|invalidation" crates/*/src` finds nothing | delete the sentence from §15.2 and the clause from the C.2 "the jump" row, or record the missing retake in `GAPS.md` if the user wants it; add a `spec_text.rs` absence pin | |
+| F17. Appendix C.2's "restart" row lists a fifth restart that rule 6 does not and the code lacks: "after a device announces a discontinuity at the accepted point (`discontinuity()`)". It also names `accept_step`, which is not a function in the tree | `docs/spec/appendix_c_implementation.md:77`; no `fn discontinuity` or `fn accept_step` in `crates/` (the device ABI has no discontinuity call); rule 6 (`part_v_execution.md:301-305`) lists four restarts | drop the `discontinuity()` clause and name the real functions (`device_deliver`, `device_accept`); add an absence assertion to `reference_rows_describe_the_kept_jump` | |
+| F18. Rule 4 still says "The retaken step is exempt from the truncation-error test and restarts the integrator, like the step that reads a host `set`". Since e785264c the host-`set` step is tested by rule 6, so the comparison now reads as if that step were exempt | `docs/spec/part_v_execution.md:288-289` | write "...exempt from the truncation-error test, since it lands on the same `t` and cannot be taken smaller; it restarts the integrator like every step that reads a change (rule 6)", and extend `part_v_the_host_set_step_is_tested_and_only_the_retaken_step_is_exempt` to refuse the old comparison | |
+| F19. MD-80 does not record T26, the solver default it changes: the restart step after a host write goes from 10⁻³ to a tenth of the last step, and the growth clamp stays 1.5 because 2.0 moves the `tran_corner` twin (D5) | `.specs/STATE.md` MD-80 items 1 to 5 | add an item 6 (T26, TP-13) and extend `docs.rs` `state_records_the_observable_landings_and_the_tick_epoch` to hold it | |
+| F20. Two cleanliness points the fix round missed. `eval_allocation.rs`, new in this feature, keeps four free helpers (`gain_shape`, `gain_prototype`, `gain_module`, `allocations_during`), which F12 should have listed. The doc of `TimeLoop::sets_just_applied` still says "Live-set edge rule (LIVE-06/07): the first step after a scheduled set", although the flag marks every step that reads a delivered change | `crates/piperine-abi/tests/eval_allocation.rs:42,59,83,95`; `crates/piperine-solver/src/analyses/transient.rs:534-539` | group the helpers under a fixture type, as `allocation.rs` does with `Terms` and `Probe`; correct the doc to "the step reads a delivered change (any `Restart::Integrator*`): sized and tested by rule 6" | |
 
 Not findings (judged and accepted):
 
-- **D12 widening (TP-03 print-grid moves).** Satisfied for `monitor.msl` / `values#13`, as described above. TP-09 AC 6's text still says "(TP-04 or TP-05)". The widening lives in D12 and `moved.md` as an orchestrator default, and the user may confirm it.
+- **D12 widening (TP-03 print-grid moves).** Satisfied for `monitor.msl` / `values#13`. In round 1 I re-parsed both listings: the 41 shared rows are equal, the 3 `zone` records are byte-equal, and every row keeps `x = t·10⁶`. The user accepted the widening ("Aceitar").
+- **F2's fix (8279f7dc).** `StepKind::Retake` is set by `device_unaccept` and cleared by `device_accept`, so only the crossing retake is exempt. It still counts as reading a jump: it locates no crossing and keeps the proposed step, as before the feature. Its test sweeps 80 time constants from 1 ns to 1.9 µs, which covers both failing bands I found (1.4 to 2.0 ns and 11 to 16 ns).
+- **The rewritten §15 and §15.2 (40fcb86c, 68b19c5f).** Step 1 solves on the left value. Located crossings fire at `(t, 0)` after the solve, and the reactions and the settle phase read the solution at `t`. Rule 6's four restarts match `protocol/transient.rs` (deliver only a non-empty boundary, `Restart::IntegratorSmall` after a host param write, the settle delivery) and `retake.rs`, and so do S2/S3 and I5/I6. What still disagrees is F15 to F18.
 - **The jump estimate.** `h·|s1 − sγ|/(1−γ)` is correct for two backward-Euler stages from `q_n`. It is the error of one backward-Euler step over `h`, so it is about 1.9 times the error of the two stages actually taken (`(γ² + (1−γ)²)/2·h²q''`). The test is conservative, never permissive.
 - **The idle instant.** `Digital::is_idle_at` requires nothing due at or before the tick, no suspended instant, no dirty function and no `SETTLE` pin, and the protocol also requires that no crossing fired. Functions are dirty-driven and never read samples. Host waiters fire only on events, and events need a commit or a crossing. I found no observable effect that is skipped.
 - **The observable rule.** A run-ahead instant that changes an analog-read carrier at a later microstep rewinds to its sub-checkpoint (`advance.rs`). `LandingTest` falls back to `Declared` while any `SETTLE` pin or host waiter exists, and it is rebuilt every microstep, so a waiter registered mid-run is seen.
 - **Stamp reuse.** `apply_stamps_from` keeps the stamp order, and `Linear` partials scale by `weight = 1.0` (exact) except for `DELAY`. Parity and twins are unchanged.
 - **T25 under 2^52 ticks.** Bit-identical by construction: `offset(tick) = time(tick)`, `floor_offset = floor_tick`, and `now_offset = now` while the epoch is 0, and the removed `min_advance` returned 1 there. Past 2^52, `protocol_epoch.rs` proves exact one-tick steps on scripted sides. The C.2.1 stopgap row is gone, and its pin was rewritten to assert the row's absence.
-- **The benchmark (`diagnosis.md` §10).** It compares Piperine's dev profile with an optimized ngspice and says so. The step ratio (2.57x) does not depend on the profile, so it stands. The per-step ratio (1.50x) is not an honest number and must not be quoted as Piperine's cost per step until `power_stage_bench` runs under `--release` (generated designs included).
+- **The benchmark (`diagnosis.md` §10, 10.1).** Rerun in the release profile (7be394de) after round 1. After T26, Piperine takes 27 547 steps at 26.3 µs each against ngspice's 12 043 at 24.0 µs: 2.29x the steps and 1.10x the time per step, an honest like-for-like number. The dev-profile figures are withdrawn in the text. The remaining step gap is attributed, by measurement, to the 1.5 growth clamp and the rejections after each corner; D5 keeps the clamp.
