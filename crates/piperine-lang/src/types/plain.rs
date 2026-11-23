@@ -5,7 +5,7 @@
 //! are never plain, so a host can read and write every leaf of a plain value.
 
 use super::check::Checker;
-use super::Ty;
+use super::{Nominal, Ty};
 
 impl Checker<'_> {
     /// Whether `ty` is a struct, a tuple, an array or an `Option` all of whose leaves are plain
@@ -28,7 +28,7 @@ impl Checker<'_> {
             Ty::Str => text,
             Ty::Tuple(items) => items.iter().all(|item| self.is_plain(item, text)),
             Ty::Array(element, _) | Ty::Option(element) => self.is_plain(element, text),
-            Ty::Struct(decl) => match self.fields_of(*decl) {
+            Ty::Struct(Nominal { decl, .. }) => match self.fields_of(*decl) {
                 Some(fields) => fields.iter().all(|field| self.is_plain(&field.ty, text)),
                 None => false,
             },

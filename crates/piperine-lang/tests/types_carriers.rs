@@ -84,9 +84,9 @@ fn carriers_of_bit_are_typed_by_their_value() {
         carrier("b", "port", Ty::UInt(9)),
         carrier("c", "port", Ty::Int(16)),
         carrier("d", "port", Ty::F64),
-        carrier("e", "port", Ty::Enum(mode)),
+        carrier("e", "port", Ty::enumeration(mode)),
         carrier("f", "signal", Ty::Bool),
-        carrier("g", "signal", Ty::Enum(mode)),
+        carrier("g", "signal", Ty::enumeration(mode)),
         carrier("h", "signal", Ty::UInt(3)),
         carrier("k", "signal", Ty::F64),
     ] {

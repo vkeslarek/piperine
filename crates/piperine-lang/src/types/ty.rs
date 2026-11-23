@@ -26,7 +26,7 @@ pub enum Ty {
     /// `Int<N>` (`iN`), `N` in 1..=64.
     Int(u8),
     /// An enum of unit variants deriving `Repr`, by its declaration.
-    Enum(DeclId),
+    Enum(Nominal),
     /// `Option<T>`.
     Option(Box<Ty>),
     /// `(A, B, ..)` (§1.2.4), and `(A,)` of one field.
@@ -44,7 +44,7 @@ pub enum Ty {
     /// `loop` with no `break` (§1.5.16). It fits any required type.
     Never,
     /// A `struct` of named, positional or no fields, by its declaration (§1.3.1): a nominal type.
-    Struct(DeclId),
+    Struct(Nominal),
     /// `[T; N]`: `N` values of one type (§1.2.5).
     Array(Box<Ty>, u64),
     /// The value of `a..b`, `a..=b`, `a..`, `..b` or `..=b` over one integer or float type (§1.5.11,
@@ -58,6 +58,37 @@ pub enum Ty {
     /// A type or nature parameter of the generic item being checked (`T` of `fn f<T: Repr>`),
     /// by its declaration: opaque, it offers what its bounds give and nothing else.
     Param(DeclId),
+}
+
+/// A struct or an enum by its declaration and the generic arguments it is written with: `Pair<f64>`
+/// is `Nominal { decl: Pair, arguments: [f64] }`. The arguments of a type that is not generic are
+/// empty, and two uses are one type exactly when their `Nominal`s are equal.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Nominal {
+    /// The declaration of the struct or enum.
+    pub decl: DeclId,
+    /// The arguments for its generic parameters, in order; one for each parameter once the type
+    /// is written out in full.
+    pub arguments: Vec<GenericValue>,
+}
+
+impl Nominal {
+    /// The type `decl` names with no generic argument.
+    pub fn plain(decl: DeclId) -> Nominal {
+        Nominal { decl, arguments: Vec::new() }
+    }
+}
+
+impl Ty {
+    /// The struct `decl`, not generic.
+    pub fn structure(decl: DeclId) -> Ty {
+        Ty::Struct(Nominal::plain(decl))
+    }
+
+    /// The enum `decl`, not generic.
+    pub fn enumeration(decl: DeclId) -> Ty {
+        Ty::Enum(Nominal::plain(decl))
+    }
 }
 
 /// What a generic parameter is given at a use or an instantiation (§3.8): a type for a type or
@@ -138,7 +169,7 @@ impl Ty {
             Ty::Bool => Some(1),
             Ty::F64 => Some(64),
             Ty::UInt(n) | Ty::Int(n) => Some(u32::from(*n)),
-            Ty::Enum(decl) => {
+            Ty::Enum(Nominal { decl, .. }) => {
                 let variants = design.decl_data(*decl).children.iter().filter(|c| matches!(design.decl_data(**c).kind, crate::pom::DeclKind::Variant(_))).count();
                 Some(usize::BITS - variants.saturating_sub(1).leading_zeros())
             }
@@ -163,7 +194,7 @@ impl Ty {
             }
             Ty::UInt(n) => format!("u{n}"),
             Ty::Int(n) => format!("i{n}"),
-            Ty::Enum(e) => match &design.decl_data(*e).name {
+            Ty::Enum(Nominal { decl: e, .. }) => match &design.decl_data(*e).name {
                 Some(n) => n.text.clone(),
                 None => "enum".to_string(),
             },
@@ -184,7 +215,7 @@ impl Ty {
             Ty::Event => "Event".to_string(),
             Ty::Str => "str".to_string(),
             Ty::Never => "!".to_string(),
-            Ty::Struct(decl) => match &design.decl_data(*decl).name {
+            Ty::Struct(Nominal { decl, .. }) => match &design.decl_data(*decl).name {
                 Some(n) => format!("struct `{}`", n.text),
                 None => "struct".to_string(),
             },

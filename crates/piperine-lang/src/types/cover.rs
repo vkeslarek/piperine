@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use crate::pom::{DeclId, DeclKind, Design};
 
 use super::aggregate::FieldType;
-use super::Ty;
+use super::{Nominal, Ty};
 
 /// What one alternative of a pattern covers of its scrutinee.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -95,8 +95,8 @@ impl<'d> Coverage<'d> {
                     Self::prefixed(format!("Some({})", w[0]), rest)
                 })
             }
-            Ty::Enum(decl) => self.missing_variant(*decl, rest, rows),
-            Ty::Struct(decl) => {
+            Ty::Enum(Nominal { decl, .. }) => self.missing_variant(*decl, rest, rows),
+            Ty::Struct(Nominal { decl, .. }) => {
                 let fields = self.layouts.get(decl).cloned().unwrap_or_default();
                 let types: Vec<Ty> = fields.iter().map(|f| f.ty.clone()).collect();
                 let name = self.design.decl_data(*decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();

@@ -38,7 +38,7 @@ impl Checker<'_> {
             return None;
         }
         if self.declared.contains(&decl) {
-            return Some(Ty::Enum(decl));
+            return Some(Ty::enumeration(decl));
         }
         if self.declaring.contains(&decl) {
             return self.cyclic_type(decl, file, span);
@@ -48,7 +48,7 @@ impl Checker<'_> {
         self.declaring.remove(&decl);
         if declared {
             self.declared.insert(decl);
-            Some(Ty::Enum(decl))
+            Some(Ty::enumeration(decl))
         } else {
             self.broken.insert(decl);
             None

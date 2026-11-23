@@ -15,7 +15,7 @@ use super::body::NodePlan;
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use crate::pom::{DeclId, DeclKind, Dir, ExprId};
-use crate::types::Ty;
+use crate::types::{Nominal, Ty};
 
 /// What a body holds besides its analog block, in the order the IR numbers it.
 #[derive(Default)]
@@ -180,7 +180,7 @@ impl Elaboration<'_, '_> {
                 let one = self.default_constant(element, held)?;
                 (None, vec![one; usize::try_from(*length).ok()?])
             }
-            (Ty::Struct(struct_decl), ValueType::Struct(id)) if self.types.derives(*struct_decl, "Default") => {
+            (Ty::Struct(Nominal { decl: struct_decl, .. }), ValueType::Struct(id)) if self.types.derives(*struct_decl, "Default") => {
                 let fields: Vec<Ty> = self.types.fields(*struct_decl)?.iter().map(|field| field.ty.clone()).collect();
                 let held = self.type_arena.field_types(*id).to_vec();
                 (None, fields.iter().zip(&held).map(|(field, held)| self.default_constant(field, held)).collect::<Option<Vec<_>>>()?)

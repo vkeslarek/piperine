@@ -11,7 +11,7 @@ use crate::pom::{AttrArgNode, AttrInputNode, DeclId, DeclKind, Design, ExprId, E
 
 use super::aggregate::FieldType;
 use super::check::Checker;
-use super::Ty;
+use super::{Nominal, Ty};
 
 /// One trait of the table of H.8.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,7 +96,7 @@ impl Checker<'_> {
             Ty::Option(_) if which == DerivedTrait::Default => true,
             Ty::Option(inner) | Ty::Array(inner, _) => self.implements(inner, which),
             Ty::Tuple(items) => items.iter().all(|item| self.implements(item, which)),
-            Ty::Struct(decl) | Ty::Enum(decl) => self.derives(*decl, which.name()),
+            Ty::Struct(Nominal { decl, .. }) | Ty::Enum(Nominal { decl, .. }) => self.derives(*decl, which.name()),
             Ty::Fn(..) => which == DerivedTrait::Debug,
             Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Carrier { .. } | Ty::Event | Ty::Never | Ty::Range { .. } | Ty::Iterator { .. } => false,
             // what a parameter implements is what its bounds give (T19); none is known here
@@ -110,7 +110,7 @@ impl Checker<'_> {
     /// type. `false` when one is refused.
     pub(super) fn judge_derives(&mut self, decl: DeclId, file: FileId, span: Span, fields: &[FieldType]) -> bool {
         let is_enum = matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_));
-        let name = if is_enum { Ty::Enum(decl) } else { Ty::Struct(decl) }.name(self.design);
+        let name = if is_enum { Ty::enumeration(decl) } else { Ty::structure(decl) }.name(self.design);
         let mut clean = true;
         let derived: Vec<DerivedTrait> = DerivedTrait::ALL.into_iter().filter(|t| self.derives(decl, t.name())).collect();
         for which in derived {
@@ -204,11 +204,11 @@ impl Checker<'_> {
             Ty::Tuple(items) => self.repr_sum(items),
             Ty::Array(element, length) => u32::try_from(*length).ok()?.checked_mul(self.repr_levels(element)?),
             Ty::Option(inner) => self.repr_levels(inner)?.checked_add(1),
-            Ty::Struct(decl) if self.derives(*decl, "Repr") => {
+            Ty::Struct(Nominal { decl, .. }) if self.derives(*decl, "Repr") => {
                 let fields: Vec<Ty> = self.fields_of(*decl)?.into_iter().map(|f| f.ty).collect();
                 self.repr_sum(&fields)
             }
-            Ty::Enum(decl) => self.enum_levels(*decl),
+            Ty::Enum(Nominal { decl, .. }) => self.enum_levels(*decl),
             _ => None,
         }
     }

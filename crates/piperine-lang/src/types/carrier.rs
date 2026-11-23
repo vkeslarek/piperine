@@ -10,7 +10,7 @@ use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode
 
 use super::check::Checker;
 use super::nature_rules::NatureRules;
-use super::{Builtin, Ty};
+use super::{Builtin, Nominal, Ty};
 
 impl Checker<'_> {
     /// A discrete nature written at `path`, the stdlib's `Bit<T>` or a project's (§4 rule 12): a
@@ -82,7 +82,7 @@ impl Checker<'_> {
                 self.coded(file, "E0441", node.span, message, "an `Event` is not carried");
                 None
             }
-            Ty::Enum(e) if self.design.decl_data(*e).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Variant(_))).count() == 1 => {
+            Ty::Enum(Nominal { decl: e, .. }) if self.design.decl_data(*e).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Variant(_))).count() == 1 => {
                 let name = self.design.decl_data(*e).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
                 self.unsupported(file, node.span, &format!("a carrier of the single-variant enum `{name}` (its tag has zero levels)"));
                 None

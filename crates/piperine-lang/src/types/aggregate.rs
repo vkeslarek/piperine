@@ -10,7 +10,7 @@ use crate::msl::Span;
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Name, Resolution, TypeId};
 
 use super::check::Checker;
-use super::Ty;
+use super::{Nominal, Ty};
 
 /// One typed field of a struct or of an enum variant, in declaration order.
 #[derive(Debug, Clone, PartialEq)]
@@ -40,7 +40,7 @@ impl Checker<'_> {
             return None;
         }
         if self.layouts.contains_key(&decl) {
-            return Some(Ty::Struct(decl));
+            return Some(Ty::structure(decl));
         }
         if self.declaring.contains(&decl) {
             return self.cyclic_type(decl, file, span);
@@ -49,7 +49,7 @@ impl Checker<'_> {
         let declared = self.declare_struct(decl, file, span);
         self.declaring.remove(&decl);
         if declared {
-            Some(Ty::Struct(decl))
+            Some(Ty::structure(decl))
         } else {
             self.broken.insert(decl);
             None
@@ -59,7 +59,7 @@ impl Checker<'_> {
     /// A type met again while its own fields are being typed: `E0186` (§1.3.8).
     pub(super) fn cyclic_type(&mut self, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
         let kind = &self.design.decl_data(decl).kind;
-        let ty = if matches!(kind, DeclKind::Enum(_)) { Ty::Enum(decl) } else { Ty::Struct(decl) };
+        let ty = if matches!(kind, DeclKind::Enum(_)) { Ty::enumeration(decl) } else { Ty::structure(decl) };
         let name = ty.name(self.design);
         self.coded(file, "E0186", span, format!("{name} contains itself: a value has a fixed size and there is no indirection (§1.3.8)"), "contains itself");
         None
@@ -264,7 +264,7 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let found = self.infer(receiver)?;
         match &found {
-            Ty::Struct(decl) => {
+            Ty::Struct(Nominal { decl, .. }) => {
                 let layout = self.fields_of(*decl)?;
                 let named = match name.text.parse::<usize>() {
                     Ok(position) => layout.get(position).filter(|f| f.name.is_none()),

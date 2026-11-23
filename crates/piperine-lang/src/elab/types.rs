@@ -12,7 +12,7 @@ use piperine_ir::{AggregateData, Constant, Derives, FieldsForm, TypeData, TypeId
 
 use super::elaborator::Elaboration;
 use crate::pom::{DeclId, DeclKind, FieldsForm as SourceForm, Reflect};
-use crate::types::{FieldType, Ty};
+use crate::types::{FieldType, Nominal, Ty};
 
 /// The entry of the IR's type arena each reached struct and enum declaration has.
 #[derive(Debug, Default)]
@@ -57,8 +57,8 @@ impl TypeArena {
     /// `compound.rs`) and for a type no value has.
     pub(super) fn of(&self, ty: &Ty, scalar: impl Fn(&Ty) -> Option<ValueType> + Copy) -> Option<ValueType> {
         match ty {
-            Ty::Struct(decl) => self.id_of(*decl).map(ValueType::Struct),
-            Ty::Enum(decl) => self.id_of(*decl).map(ValueType::Enum),
+            Ty::Struct(Nominal { decl, .. }) => self.id_of(*decl).map(ValueType::Struct),
+            Ty::Enum(Nominal { decl, .. }) => self.id_of(*decl).map(ValueType::Enum),
             Ty::Tuple(items) => items.iter().map(|item| self.of(item, scalar).or_else(|| scalar(item))).collect::<Option<Vec<_>>>().map(ValueType::Tuple),
             Ty::Array(element, length) => self.of(element, scalar).or_else(|| scalar(element)).map(|element| ValueType::Array(Box::new(element), *length)),
             _ => None,

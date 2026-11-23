@@ -23,7 +23,7 @@ use super::super::compound::EnumLayout;
 use super::control::{Argument, FnValue};
 use super::{Bindings, ConstEval, ConstFault};
 use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, FieldInit, PatId, PatKind, Resolution};
-use crate::types::{Method, Ty};
+use crate::types::{Method, Nominal, Ty};
 
 /// What a composite value is made of.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -170,7 +170,7 @@ impl ConstEval<'_, '_> {
     /// evaluated in the order written (§1.3.11).
     pub(super) fn struct_value(&mut self, expr: ExprId, path: crate::pom::PathId, inits: &[FieldInit], bindings: &Bindings) -> Result<Constant, ConstFault> {
         let owner = match self.types.ty(expr) {
-            Some(Ty::Struct(decl)) => *decl,
+            Some(Ty::Struct(Nominal { decl, .. })) => *decl,
             _ => match self.design.path_node(path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(variant)) if matches!(self.design.decl_data(variant).kind, DeclKind::Variant(_)) => variant,
                 _ => return Err(ConstFault::Unsupported { expr, what: "a struct expression that names neither a struct nor a variant".to_string() }),
@@ -298,7 +298,7 @@ impl ConstEval<'_, '_> {
                 let part = self.default_value(expr, element)?;
                 Ok(self.make(CompositeKind::Array, vec![part; *count as usize]))
             }
-            Ty::Struct(decl) => {
+            Ty::Struct(Nominal { decl, .. }) => {
                 let fields: Vec<Ty> = self.types.fields(*decl).map(|fields| fields.iter().map(|f| f.ty.clone()).collect()).unwrap_or_default();
                 let parts = fields.iter().map(|field| self.default_value(expr, field)).collect::<Result<Vec<_>, _>>()?;
                 Ok(self.make(CompositeKind::Struct, parts))
@@ -321,7 +321,7 @@ impl ConstEval<'_, '_> {
     fn field_position(&self, recv: ExprId, name: &str) -> Option<usize> {
         match self.types.ty(recv)? {
             Ty::Tuple(_) => name.parse().ok(),
-            Ty::Struct(decl) => {
+            Ty::Struct(Nominal { decl, .. }) => {
                 let fields = self.types.fields(*decl)?;
                 match name.parse::<usize>() {
                     Ok(position) if fields.iter().all(|f| f.name.is_none()) => Some(position),

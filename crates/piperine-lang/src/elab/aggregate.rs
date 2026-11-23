@@ -17,7 +17,7 @@ use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::patterns::{PatternTest, Subject};
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FieldInit, FieldPatNode, PatId, PatKind, Resolution};
-use crate::types::Ty;
+use crate::types::{Nominal, Ty};
 
 /// What a struct expression or a call builds: a struct of the arena, or one variant of an enum.
 #[derive(Clone, Copy)]
@@ -68,7 +68,7 @@ impl Elaboration<'_, '_> {
     /// evaluated in the order written (§1.3.11). `None` after a diagnostic.
     pub(super) fn lower_struct_expr(&mut self, scope: &mut Scope, expr: ExprId, path: crate::pom::PathId, fields: &[FieldInit], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let owner = match self.types.ty(expr) {
-            Some(Ty::Struct(decl)) => *decl,
+            Some(Ty::Struct(Nominal { decl, .. })) => *decl,
             _ => match self.design.path_node(path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(variant)) if matches!(self.design.decl_data(variant).kind, DeclKind::Variant(_)) => variant,
                 _ => {
@@ -191,7 +191,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn field_index(&self, ty: &Ty, name: &str) -> Option<u32> {
         match ty {
             Ty::Tuple(_) => name.parse().ok(),
-            Ty::Struct(decl) => {
+            Ty::Struct(Nominal { decl, .. }) => {
                 let fields = self.types.fields(*decl)?;
                 match name.parse::<u32>() {
                     Ok(position) if fields.iter().all(|f| f.name.is_none()) => Some(position),

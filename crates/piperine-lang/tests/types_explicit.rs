@@ -191,7 +191,7 @@ fn the_types_that_have_a_default() {
     let body = "let outer = Outer::default(); let inner = Inner::default(); let held: Option<u8> = Option::<u8>::default();";
     let src = CheckedSource::source(items, body);
     CheckedSource::assert_clean(&src);
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "outer"), Ty::Struct(CheckedSource::type_decl(&src, "Outer")), "`T::default()` has the type `T`");
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "outer"), Ty::structure(CheckedSource::type_decl(&src, "Outer")), "`T::default()` has the type `T`");
 }
 
 #[test]

@@ -38,7 +38,7 @@ use super::compound::EnumLayout;
 use super::files::{FileFault, IncludedFiles};
 use crate::msl::lexer;
 use crate::pom::{BinOp, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, UnOp};
-use crate::types::{Callee, Method, Ty, Types};
+use crate::types::{Callee, Method, Nominal, Ty, Types};
 pub use composite::{CompositeKind, ConstTree};
 use composite::Composite;
 use control::{Argument, FnValue};
@@ -575,7 +575,7 @@ impl<'d, 't> ConstEval<'d, 't> {
             other => other,
         };
         let value = match (self.types.ty(operand), value) {
-            (Some(Ty::Enum(decl)), Constant::Int(position)) => match self.types.enum_tag(*decl).and_then(|t| t.discriminants.get(position as usize)) {
+            (Some(Ty::Enum(Nominal { decl, .. })), Constant::Int(position)) => match self.types.enum_tag(*decl).and_then(|t| t.discriminants.get(position as usize)) {
                 Some(discriminant) => Constant::Int(*discriminant),
                 None => return Err(ConstFault::Unsupported { expr, what: "a cast of a variant outside its enum".to_string() }),
             },

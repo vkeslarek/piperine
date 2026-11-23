@@ -15,7 +15,7 @@ use super::compound::Pair;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use crate::pom::ExprId;
-use crate::types::{Intrinsic, Ty};
+use crate::types::{Intrinsic, Nominal, Ty};
 
 impl Elaboration<'_, '_> {
     /// A call of `same`, whose call expression is `expr` and its arguments `args`; a `cast` is an
@@ -47,7 +47,7 @@ impl Elaboration<'_, '_> {
             return None;
         };
         let tags = match &*to {
-            Ty::Enum(decl) => self.types.enum_tag(*decl).map(|t| t.discriminants.clone()),
+            Ty::Enum(Nominal { decl, .. }) => self.types.enum_tag(*decl).map(|t| t.discriminants.clone()),
             _ => None,
         };
         let operand = self.lower_expr(scope, value)?;

@@ -11,7 +11,7 @@ use super::check::{Checker, Context};
 use super::derives::DerivedTrait;
 use super::flow::Assigned;
 use super::unsupported::Unsupported;
-use super::Ty;
+use super::{Nominal, Ty};
 
 impl Checker<'_> {
     /// Check `expr` against `expected`. A mismatch is one diagnostic; the expression then takes
@@ -383,7 +383,7 @@ impl Checker<'_> {
         let target = target?;
         let numeric = |t: &Ty| t.is_integer() || *t == Ty::F64;
         // §1.3.7: an enum without fields converts to an integer type; its value is the discriminant.
-        if let Some(Ty::Enum(decl)) = &source
+        if let Some(Ty::Enum(Nominal { decl, .. })) = &source
             && target.is_integer()
             && !self.has_payload(*decl)
         {
