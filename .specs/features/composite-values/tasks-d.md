@@ -363,8 +363,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `reference_constants_contain_their_published_digits` passes under `**Run precision**` (π, ln 2 and ln 10 to 1 000 decimal places, written in the test from OEIS A000796, A002162, A002392, lie inside the interval at 3 300 bits; π's interval at 16 600 bits contains the 1 000-digit value)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `reference_constants_contain_their_published_digits` passes under `**Run precision**` (π, ln 2 and ln 10 to 1 000 decimal places, written in the test from OEIS A000796, A002162, A002392, lie inside the interval at 3 300 bits; π's interval at 16 600 bits contains the 1 000-digit value)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -1063,6 +1063,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** Planning (2026-11-23): Q4 answered by the user directly (integers (a), `f16` (a), `f128` (a) complete, recorded in spec.md). design-d.md QD1 to QD8 are the planner's defaults, pending the user's approval of these tasks. D1 to D3 (T91 to T109) may run beside phase C; T110 waits for phase C's merge.
 **Defaults and findings (D1 to D3, numeric crate):**
+- T101: the constants' tests compare with the committed 1000-decimal values (truncated, from mpmath, cross-checked inside generate.py against the well-known leading digits of OEIS A000796, A002162, A002392; the digits were not typed from memory beyond those prefixes) as consistency intervals [T, T + 10^-1000] since the series interval at 3 300 bits is narrower than the 1000th decimal; the returned interval is carried at precision + 32 guard bits, so it is far narrower than two units in the last place. A static OnceLock<Mutex<HashMap>> caches per (constant, precision).
 - T100: Interval ops take their working precision from the interval; a sticky bit is valid only on a magnitude longer than the precision (documented on MultiPrecision::rounded; add pads the larger operand to precision+3 bits before using the far-operand shortcut, which found a bug the directed-rounding test caught). The tests' shared fixtures were split into small files (tests/support/exact*.rs, one concern each, included per target with #[path]) so no target carries unused code.
 - T99: the vectors have 1 300 to 2 700 rows per function (the plan said about 2 000; the test requires at least 1 000), computed by tests/vectors/generate.py with mpmath 1.3.0 at 1 024 bits (Ziv loop on the oracle side, margin 2^-984 relative) and exact Fraction rounding; exact.tsv holds 1 180 exact cases. Extra data files: constants.txt (pi, ln 2, ln 10 to 1 000 decimals, asserted against their well-known leading digits inside the generator), pi_bits.hex (floor(pi * 2^20000)), half_pi.tsv (the f128 nearest to k*pi/2, k odd up to 16 370 bits, hex); the sin/cos/tan sets also contain 300 such arguments each. powi rows carry the i32 exponent in decimal. Special-value rules are those of C99 Annex F / Rust: powf(x, +-0) = 1, powf(1, y) = 1, powi(x, 0) = 1 for any x, atan2 with signed zeros and infinities, min(-0,+0) not involved.
 - T98: DecimalText also reads inf, -inf, NaN (any case) so the host's text reads back; shortest() is plain notation for decimal exponents -5..=16 and d.ddde<x> outside it, shortest_scientific() is always Rust's {:e} form (the tests compare it with Rust's own f32/f64 output); a tie between two equally close shortest candidates goes up, as Rust does. The shortest search is exact (one big division, then 36-digit integers, binary search over the digit count). D1 (T91 to T98) closed; per the gate policy no workspace suite was run, only the Build line and cargo test -p piperine-numbers.

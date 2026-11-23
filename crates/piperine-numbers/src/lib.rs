@@ -10,6 +10,7 @@
 #![deny(missing_docs)]
 
 pub mod arithmetic;
+pub mod constants;
 pub mod convert;
 pub mod decimal;
 pub mod format;

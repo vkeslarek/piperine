@@ -6,14 +6,19 @@
 mod exact;
 #[path = "support/exact_algebra.rs"]
 mod exact_algebra;
+#[path = "support/exact_text.rs"]
+mod exact_text;
 #[path = "support/random.rs"]
 mod random;
 
 use exact::ExactRational;
 use num_bigint::BigUint;
+use piperine_numbers::constants::ReferenceConstants;
 use piperine_numbers::precision::{Interval, MultiPrecision, Rounding};
 use random::Xorshift;
 use std::cmp::Ordering;
+use std::fs;
+use std::path::PathBuf;
 
 /// The scenario of the directed-rounding test.
 struct DirectedScenario {
@@ -121,4 +126,61 @@ fn directed_rounding_brackets_the_exact_result() {
         scenario.check_precision(precision, 5_000);
         scenario.check_intervals(precision, 1_000);
     }
+}
+
+/// The published digits of pi, ln 2 and ln 10 (OEIS A000796, A002162, A002392; committed by
+/// `tests/vectors/generate.py`, which also checks them against their well-known leading digits).
+struct PublishedConstants;
+
+impl PublishedConstants {
+    /// The committed file's data lines as `(name, digits text)`.
+    fn rows() -> Vec<(String, String)> {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/constants.txt");
+        fs::read_to_string(path).unwrap_or_default().lines().filter(|line| !line.starts_with('#')).filter_map(|line| line.split_once('\t')).map(|(name, digits)| (name.to_string(), digits.to_string())).collect()
+    }
+
+    /// The constant's value truncated to 1000 decimal places, as an exact rational.
+    fn truncated(name: &str) -> ExactRational {
+        let digits = Self::rows().into_iter().find(|(row, _)| row == name).map(|(_, digits)| digits).unwrap_or_default();
+        let (whole, fraction) = digits.split_once('.').unwrap_or((&digits, ""));
+        assert_eq!(fraction.len(), 1000, "{name} has 1000 decimal places");
+        ExactRational::decimal(false, &format!("{whole}{fraction}").parse::<BigUint>().unwrap_or_default(), -1000)
+    }
+
+    /// The `2^20000`-scaled floor of pi from the committed hex file.
+    fn pi_bits() -> BigUint {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/pi_bits.hex");
+        let text = fs::read_to_string(path).unwrap_or_default();
+        let hex: String = text.lines().filter(|line| !line.starts_with('#')).collect();
+        BigUint::parse_bytes(hex.trim().as_bytes(), 16).unwrap_or_default()
+    }
+
+    /// Asserts the interval is consistent with `[truncated, truncated + 10^-1000)` (the constant
+    /// lies in both) and no wider than two units in the last place of `precision` bits.
+    fn assert_consistent(interval: &Interval, truncated: &ExactRational, precision: u32, name: &str) {
+        let (lower, upper) = (DirectedScenario::rational(interval.lower()), DirectedScenario::rational(interval.upper()));
+        let ceiling = truncated.plus(&ExactRational::decimal(false, &BigUint::from(1u32), -1000));
+        assert_ne!(lower.compare(&ceiling), Ordering::Greater, "{name} at {precision} bits: lower bound above the published value");
+        assert_ne!(upper.compare(truncated), Ordering::Less, "{name} at {precision} bits: upper bound below the published value");
+        let top = interval.lower().top_exponent().unwrap_or(0);
+        let two_units = ExactRational::dyadic(false, &BigUint::from(2u32), top - precision as i64 + 1);
+        assert_ne!(upper.minus(&lower).compare(&two_units), Ordering::Greater, "{name} at {precision} bits: wider than two units in the last place");
+    }
+}
+
+#[test]
+fn reference_constants_contain_their_published_digits() {
+    for (name, constant) in [("pi", ReferenceConstants::pi as fn(u32) -> Interval), ("ln2", ReferenceConstants::ln_two), ("ln10", ReferenceConstants::ln_ten)] {
+        let published = PublishedConstants::truncated(name);
+        for precision in [120u32, 500, 3_300, 4_000] {
+            PublishedConstants::assert_consistent(&constant(precision), &published, precision, name);
+        }
+    }
+    let pi = ReferenceConstants::pi(16_600);
+    PublishedConstants::assert_consistent(&pi, &PublishedConstants::truncated("pi"), 16_600, "pi");
+    let scaled = PublishedConstants::pi_bits();
+    let (lower, upper) = (DirectedScenario::rational(pi.lower()), DirectedScenario::rational(pi.upper()));
+    assert_ne!(lower.compare(&ExactRational::dyadic(false, &(&scaled + 1u32), -20_000)), Ordering::Greater, "pi at 16 600 bits against the 20 000-bit value (lower)");
+    assert_ne!(upper.compare(&ExactRational::dyadic(false, &scaled, -20_000)), Ordering::Less, "pi at 16 600 bits against the 20 000-bit value (upper)");
+    assert_eq!(ReferenceConstants::pi(500).lower().compare(ReferenceConstants::pi(500).lower()), Ordering::Equal, "a cached value is the same value");
 }
