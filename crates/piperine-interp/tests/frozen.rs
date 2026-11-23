@@ -12,7 +12,7 @@ use piperine_ir::{
     Inflow, InstanceSpec, Ir, IrBuilder, Local, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, Place, QuantityRole, Reach, ReachedItem, Site, Stmt, Stream,
     StreamField, StmtId, Terminal, ValueType,
 };
-use piperine_ir::{Derives, FieldsForm, TypeData, TypeKind, VariantData};
+use piperine_ir::{Derives, FieldsForm, GenericInstance, TypeData, TypeKind, VariantData};
 use piperine_ir::Method as M;
 
 #[allow(dead_code)]
@@ -505,7 +505,7 @@ fn the_level_nodes_are_refused_by_name() {
     type Node = fn(&mut Dx<'_>, piperine_ir::ExprId) -> piperine_ir::ExprId;
     let nodes: [(&str, Node); 2] = [
         ("same", |x, v| x.same(v, v)),
-        ("cast", |x, v| x.level_cast(v, Ty::u(64), None, Ty::u(64))),
+        ("cast", |x, v| x.level_cast(v, Ty::u(64), None, ValueType::Option(Box::new(Ty::u(64))))),
     ];
     for (name, node) in nodes {
         let mut b = IrBuilder::new();
@@ -530,7 +530,7 @@ impl Structured {
     fn refused(ir: Ir) -> Vec<String> {
         assert_eq!(ir.check(), vec![], "the design itself is well formed");
         let Err(rejected) = Interpreter::new(Arc::new(ir)) else { panic!("a design with a form of analog-structure was accepted") };
-        rejected.entries.iter().filter_map(|e| e.what.split_once(" holds ").map(|(_, rest)| rest.split(':').next().unwrap_or("").to_string())).collect()
+        rejected.entries.iter().filter_map(|e| e.what.split_once(" holds ").map(|(_, rest)| rest.split(": ").next().unwrap_or("").to_string())).collect()
     }
 
     /// `Top` reads `mid`, the `signal s` of its child `leaf`, and the carrier `q` as `seen`.
@@ -799,4 +799,27 @@ fn a_host_source_body_is_rejected_by_name() {
     let Err(rejected) = Interpreter::new(Arc::new(ir)) else { panic!("a host source was accepted") };
     let named: Vec<&str> = rejected.entries.iter().map(|e| e.what.split_once(": ").map_or(e.what.as_str(), |(head, _)| head)).collect();
     assert_eq!(named, ["body HostSource holds now()"]);
+}
+
+#[test]
+fn each_generics_form_is_refused_by_name() {
+    // `swap::<f64>(1.0)` called from `analog` (GN-02, T8): a function that is a generic instance is
+    // named with its instantiation, and the same function written without one still refuses nothing
+    let instance = Composite::refused(|b| {
+        let read = Switching::ex(b).local(0);
+        let swap = Composite::function(b, "swap::<f64>", read);
+        b.mark_instance(swap, GenericInstance { item: "swap".into(), arguments: vec!["f64".into()] });
+        let argument = Switching::ex(b).real(1.0);
+        let call = Switching::ex(b).call(swap, vec![argument]);
+        (vec![], vec![b.stmt(Stmt::Expr(call))])
+    });
+    assert_eq!(instance, ["a generic instantiation `swap::<f64>`"]);
+    let plain = Composite::refused(|b| {
+        let read = Switching::ex(b).local(0);
+        let identity = Composite::function(b, "identity", read);
+        let argument = Switching::ex(b).real(1.0);
+        let call = Switching::ex(b).call(identity, vec![argument]);
+        (vec![], vec![b.stmt(Stmt::Expr(call))])
+    });
+    assert_eq!(plain, Vec::<String>::new());
 }

@@ -344,6 +344,11 @@ impl<'a> Checker<'a> {
         for function in &ir.functions {
             let item = format!("function {}", function.name);
             self.expr_id(&item, &function.origin, function.body);
+            if let Some(instance) = &function.instance
+                && !instance.names(&function.name)
+            {
+                self.report(item, function.origin.clone(), format!("a generic instance of `{}` is named `{}`, not `{}`", instance.item, instance.name(), function.name));
+            }
         }
         for (i, data) in ir.exprs.iter().enumerate() {
             let item = format!("expr {i}");

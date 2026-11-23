@@ -7,7 +7,7 @@ use crate::real::Real;
 use crate::deps::DepsMemo;
 use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
 use crate::model::{AggregateData, NodeAlias, 
-    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, Derivative, Drive, Event, Expr, ExprData, FunctionData, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
+    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, Derivative, Drive, Event, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
     Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, Terminal, TypeData, ValueType,
 };
 
@@ -317,8 +317,16 @@ impl IrBuilder {
             ret: spec.ret,
             locals: spec.locals,
             body: spec.body,
+            instance: None,
         });
         FunctionId(self.functions.len() as u32 - 1)
+    }
+
+    /// Records that `function` is `instance` of a generic item (GN-02); the function's name must
+    /// be the instance's (`Ir::check`). Set after `function` so that a function as written needs
+    /// no extra field in its `FunctionSpec`.
+    pub fn mark_instance(&mut self, function: FunctionId, instance: GenericInstance) {
+        self.functions[function.index()].instance = Some(instance);
     }
 
     /// The function already added under `name`, if any.

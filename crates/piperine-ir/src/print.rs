@@ -543,7 +543,8 @@ impl<'a> Printer<'a> {
     fn function(&mut self, function: &FunctionData) {
         let params: Vec<String> = function.params.iter().map(|p| format!("{}: {}", Printer::name(&p.name), p.ty)).collect();
         let at = self.at(&function.origin);
-        self.line(0, &format!("fn {}({}) -> {}{at}", Printer::name(&function.name), params.join(", "), function.ret));
+        let instance = function.instance.as_ref().map(|instance| format!("  // instance of {}", instance.item)).unwrap_or_default();
+        self.line(0, &format!("fn {}({}) -> {}{at}{instance}", Printer::name(&function.name), params.join(", "), function.ret));
         self.locals(1, &function.locals);
         let scope = Scope { locals: &function.locals, params: &[], nodes: &[], carriers: &[], streams: &[] };
         let body = function.body;

@@ -401,6 +401,34 @@ pub struct FunctionData {
     pub(crate) ret: ValueType,
     pub(crate) locals: Vec<Local>,
     pub(crate) body: ExprId,
+    /// The generic item this function is one instantiation of; `None` for a function as written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) instance: Option<GenericInstance>,
+}
+
+/// One instantiation of a generic item: the item and the arguments, each printed as the source
+/// spells it (`swap::<f64>` is item `swap`, arguments `["f64"]`). The IR name of the instance is
+/// [`GenericInstance::name`], which `Ir::check` holds the function or type to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GenericInstance {
+    /// The generic item's name as written.
+    pub item: String,
+    /// The generic arguments in order, a type, a const value or a function, each as printed.
+    pub arguments: Vec<String>,
+}
+
+impl GenericInstance {
+    /// The name of the instance, `item::<a, b>` (design D8): what its IR function carries.
+    pub fn name(&self) -> String {
+        format!("{}::<{}>", self.item, self.arguments.join(", "))
+    }
+
+    /// Whether `name` is this instance's name, or that name followed by the half of an `Option`
+    /// result the function computes (`.is` or `.val`, `elab/variants.rs`).
+    pub fn names(&self, name: &str) -> bool {
+        let own = self.name();
+        name.strip_prefix(&own).is_some_and(|rest| matches!(rest, "" | ".is" | ".val"))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
