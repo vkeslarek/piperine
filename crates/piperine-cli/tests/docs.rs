@@ -464,12 +464,12 @@ fn gaps_drops_what_analog_structure_closed() {
 #[test]
 fn gaps_keeps_l40_for_the_spec_models_that_wait() {
     // analog-structure AS-18 AC 4, Q2 (T36): one L40 line is left, for the three spec models that wait on
-    // another feature's dependency: the stdlib `idt` and `Water` (`generics`) and the §18 `Diode`
-    // (`params-and-io`)
+    // another feature's dependency: the stdlib `idt` and `Water` (`generics`); the §18 `Diode` runs since
+    // `params-and-io` (`elab_structure::the_section_18_diode_type_checks_with_its_option_param`)
     let gaps = read("GAPS.md");
     let rows: Vec<&str> = gaps.lines().filter(|l| l.starts_with("| L40 |")).collect();
     assert_eq!(rows.len(), 1, "one L40 row: {rows:?}");
-    for name in ["`idt`", "`Water`", "`Diode`", "`generics`", "`params-and-io`"] {
+    for name in ["`idt`", "`Water`", "`generics`"] {
         assert!(rows[0].contains(name), "L40 names {name}: {}", rows[0]);
     }
 }

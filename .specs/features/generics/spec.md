@@ -282,6 +282,7 @@ Order inside the two features: CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E (`
 
 1. WHEN a host sets `m` or `dtemp` of an instance THEN the system SHALL treat it as a param change (§8.5.6), the effective values of its descendants following the derived-param rule of `host-ii` (X9).
 2. WHEN a host lists an instance's params THEN the system SHALL include `m` and `dtemp`.
+3. WHEN the Book's `Resistor(a, b) { r: 1k, m: 4.0 }` and its `dtemp` example are placed THEN the system SHALL run them as four resistors in parallel and as a shifted temperature, the Book row `modules~1faf8c12` SHALL move from refused to run in `tests/book/inventory.tsv`, and its row SHALL leave `GAPS.md` section 11 (handed over by `params-and-io`, whose closure may not leave a refused row naming it).
 
 **Independent Test**: the `MemoryBank`/`Dram1T1C` pair of §8.4 elaborated (once `params-and-io` and `resolved-nets` give module-typed params and the `Cell` bundle; meanwhile the same shape over `Electrical` ports); `nch` binning; a resistor with `m` against parallel copies; a diode with `dtemp` against the same diode at a higher temperature.
 

@@ -1208,7 +1208,7 @@ Proof: run elabparams | test an_integer_param_is_bound_and_read ... ok
 Proof: run elabparams | test n_as_f64_reaches_the_contribution ... ok
 
 **C4** - A host value that is not an integer literal of the type, or out of its range, is `E0802` naming the param and the value. (PI-01, AC 4; T33)
-Proof: run apisession | test an_integer_out_of_range_is_e0802 ... ok
+Proof: run apisession | test a_param_flag_is_read_by_the_params_type_before_the_run ... ok
 
 **C5** - `--param Top.db.n=6` reads 6 from the start of the run. (PI-01, AC 5; T33)
 Proof: run clirun | test param_of_an_integer_from_the_command_line_reads_from_the_start ... ok
@@ -1235,7 +1235,7 @@ Proof: run elabparams | test an_option_param_left_out_is_none ... ok
 Proof: run elabparams | test an_option_param_bound_to_a_value_is_some ... ok
 
 **C13** - `unwrap_or`, `is_some`, `match` and `if let Some` give the bound case. (PI-03, AC 3; T31)
-Proof: run elabparams | test option_param_methods_read_the_bound_case ... ok
+Proof: run sourceparams | test every_read_of_an_option_param_gives_the_bound_case ... ok
 
 **C14** - A host value of `T` sets `Some` of it; `None` sets `None`. (PI-03, AC 4; T33)
 Proof: run apisession | test an_option_param_set_to_a_value_or_none ... ok
@@ -1372,8 +1372,8 @@ Proof: run stdgalleries | test every_gallery_fence_is_in_the_formatters_form ...
 **C58** - Formatting keeps the printed tree of every shipped source. (PI-11, AC 4; T25)
 Proof: run msformat | test formatting_keeps_the_printed_tree_of_every_shipped_source ... ok
 
-**C59** - `&` outside a call argument or a parameter type is `E0102` (raised by `composite-values`). (PI-12, AC 1; T29)
-Proof: run typesvalues | test a_borrow_outside_a_call_argument_is_e0102 ... ok
+**C59** - `&` outside a call argument never raises `E0102`, which is retired (value-semantics V1; amendment A8 supersedes PI-12 AC 1). (PI-12, AC 1; T29)
+Proof: run typesvalues | test a_borrow_outside_a_call_argument_is_not_e0102 ... ok
 
 **C60** - An integer division by zero under known control fails the run with `E0105` naming the operation, the instance and the time. (PI-12, AC 2; T15)
 Proof: run runerrors | test a_division_by_zero_under_known_control_fails_the_run_with_e0105 ... ok
@@ -1405,8 +1405,8 @@ Proof: run typescarriers | test a_probe_on_a_childs_private_node_is_e0244 ... ok
 **C69** - A continuous result read where probes are not allowed is `E0354`. (PI-12, AC 11; T13)
 Proof: run typesresults | test a_continuous_result_read_where_probes_are_not_allowed_is_e0354 ... ok
 
-**C70** - `Unknown` with no inferable type is `E0906`. (PI-12, AC 12; T14)
-Proof: run typesunknowns | test unknown_with_no_inferable_type_is_e0906 ... ok
+**C70** - `E0906` is retired (MD-78; amendment A8 supersedes PI-12 AC 12): no code of the spec's tables is left unraised and unowned. (PI-12, AC 12; T14)
+Proof: run speccodes | test every_spec_code_is_raised_or_owned ... ok
 
 **C71** - Every code of the spec's tables is spelled in a source or listed in the allow-list. (PI-13, AC 1; T2)
 Proof: run speccodes | test every_spec_code_is_raised_or_owned ... ok

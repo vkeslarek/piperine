@@ -30,7 +30,7 @@ change of the IR or the ABI.
 | ------- | --- |
 | §2 Broken | B3, B4 |
 | §3 Silent (read this first) | S3 (S6 and S8 closed by `explicit-unknowns`) |
-| §4 Loud | L1–L68 (L64 and L65 closed by `explicit-unknowns`; L11, L14, L15, L17, L18, L19, L20, L39, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L22, L23 closed; L9 and L4 narrowed; L64 to L66 found by `composite-values`; L68 split from L58) |
+| §4 Loud | L1–L68 (L64 and L65 closed by `explicit-unknowns`; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L22, L23 closed; L9 and L4 narrowed; L64 to L66 found by `composite-values`; L68 split from L58) |
 | §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X1, X2, X6 (X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
 | §6 Solver, numerics, performance | V13, V16 (V12 closed by `transient-performance`) |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
@@ -139,7 +139,7 @@ blocks.
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L40 | the three spec models that wait on another feature's dependency: the stdlib `idt` and `Water` (they need `generics`) and the §18 `Diode` with `match rs` (it needs `params-and-io`); a contribution under an `if` or a `match`, `Switch`, `CapIc` and `Bounded` run | §11 rules 2, 3, 18, §18 | `generic module` (`idt`, `Water`); `the diode needs params-and-io` | M |
+| L40 | the three spec models that wait on another feature's dependency: the stdlib `idt` and `Water` (they need `generics`); the §18 `Diode` with `match rs` runs since `params-and-io`; a contribution under an `if` or a `match`, `Switch`, `CapIc` and `Bounded` run | §11 rules 2, 3, 18, §18 | `generic module` (`idt`, `Water`) | M |
 | L43 | `ddx` | §14.2 | `core primitive ddx` | M |
 | L44 | `delay` | §14.6 | `core primitive delay` | M |
 | L45 | `noise`, and so `white_noise`, `flicker_noise`, `noise_table` | §14.8, §11.1.8 | `core primitive noise` | M |
@@ -179,9 +179,6 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
   digital or amended form by name.
 - **`ir-rust` refuses** `UInt<N>`/`Int<N>` with N outside 1..=64 by name; the ABI's leaves end at
   64 bits.
-- **A param whose value is a constant NaN** (`lo: f64 = 0.0 / 0.0`) fails the compiled row with "pin ... unlike its
-  plan (a transpiler defect)": the plan folds NaN as `0xfff8…`, the library as `0x7ff8…`. Found by the
-  `msl-fixes` fix round. Size S (canonicalize NaN bits at the plan/library boundary; owner `params-and-io`).
 - **A drive, an event guard or an `at` argument that calls a function reading `freq()`** is refused loud by the
   IR's ambient-reads check (it read 0 silently before `msl-fixes` F1). §14.4 gives such a context 0; size S
   (owner `analog-operators`).
@@ -357,7 +354,7 @@ E0702 E0807 E0808 E0809`
 | Cluster | Closes | Size |
 | ------- | ------ | ---- |
 | `set` and params | H5, L29, H4 | M |
-| Analog structure (delivered, MD-71) | what is left of L40: the stdlib `idt` and `Water` after `generics`, the §18 `Diode` after `params-and-io` | S |
+| Analog structure (delivered, MD-71) | what is left of L40: the stdlib `idt` and `Water` after `generics` | S |
 | Analog operators | L43, L44, L45, L49, H2 (`Noise`) | M to L |
 | Composite values | L24 and L4 for generic enums (phases A and B closed L1 to L3, L5, L6, L10, L16 and the part of L9 that is not `generics`; MD-79) | L |
 | Generics and generation | L7, L30, L31, L32, S3 for generic items: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
@@ -408,7 +405,7 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | modules~87ce6f6e | L31 | `generics` | the `half` block over the ladder is refused with modules#2 |
 | modules~3f8e84ba | L31 | `generics` | the `half` stream is refused with modules#2 |
 | modules~8b927a42 | L30 | `generics` | the value inputs of `lowpass` are refused with modules#6 |
-| modules~1faf8c12 | L29 | `params-and-io` | `m` and `dtemp` in a param block are `E0320`, no param `m`: the Book's four resistors in parallel do not run until `params-and-io` implements them |
+| modules~1faf8c12 | L29 | `generics` | `m` and `dtemp` in a param block are `E0320`, no param `m`: the Book's four resistors in parallel do not run until `generics` implements them (its GN-26 AC 3 flips this row) |
 | modules~4bd9131d | L31 | `generics` | `E0340` is not raised: a `for` in a body is `P0001`, generation is refused |
 | modules~4bcb9f1d | L30 | `generics` | `E0304` is not raised: `Ladder::<0>` is `P0001`, the generic module is refused |
 | analog#7 | L49 | `analog-operators` | `emit!("newton", ..)` in an `analog` block is `P0001` |
