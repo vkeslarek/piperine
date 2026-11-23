@@ -1139,9 +1139,9 @@ T44
 
 **Done when**:
 
-- [ ] `the_table_diode_passes_the_partials_verifier` passes under `**Run sourcetables**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `the_table_diode_passes_the_partials_verifier` passes under `**Run sourcetables**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

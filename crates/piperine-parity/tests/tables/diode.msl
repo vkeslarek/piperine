@@ -1,0 +1,26 @@
+//! The diode of a datasheet: its I-V curve is a measured table read from a file at elaboration, and a boot image
+//! holds the scale of its current (params-and-io PI-09, PI-10).
+
+const IV: [(f64, f64); 64] = parse_table(include_str!("diode_iv.tbl"));
+const ROM: [u32; 16] = parse_hex(include_str!("boot.hex"));
+
+/// A diode whose current is the cubic spline through the measured table, times the word 0 of the image.
+module TableDiode(p: Electrical, n: Electrical) {}
+analog for TableDiode { i(p, n) +> (ROM[0] as f64) * table_model(v(p, n), IV, "3"); }
+
+/// The diode forward biased through a resistor.
+module TableDiodeBench() {
+    signal a: Electrical;
+    signal k: Electrical;
+    let source = Level { volts: 0.6 }(a);
+    let series = Resistor { r: 100.0 }(a, k);
+    let d = TableDiode(k, gnd);
+}
+
+/// A potential held at `volts`.
+module Level(p: Electrical) { volts: f64 = 0.0; }
+analog for Level { v(p, gnd) +> volts; }
+
+/// Ideal resistor.
+module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }

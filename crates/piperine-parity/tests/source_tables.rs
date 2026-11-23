@@ -122,3 +122,53 @@ fn extrapolation_e_outside_is_e0705() {
     assert!(text.contains("ErrorBench.map"), "the instance: {text}");
     assert!(text.contains("table_model") && text.contains("x = 6e0"), "the call and the value: {text}");
 }
+
+#[test]
+fn the_table_diode_passes_the_partials_verifier() {
+    // PI-10 AC 8 (the spec's Independent Test): the diode of `tests/tables/diode.msl` reads a measured table (`diode_iv.tbl`, 64
+    // rows, `parse_table`) and a boot image (`boot.hex`, `parse_hex`); every function of its device passes `verify_partials`
+    // at three bias points, the declared partial being the derivative of the cubic spline through the table.
+    use piperine_abi::caller::Handle;
+    use piperine_abi::device::{Access, cell_lens};
+    use piperine_abi::raw::{Shape, ambient, cell, part, role};
+    use piperine_abi::verify::{Verdict, verify_partials};
+    use piperine_plan::Modules;
+
+    let diode = Project::new(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/tables/diode.msl")).compile("TableDiodeBench").unwrap_or_else(|rejection| panic!("{rejection}"));
+    let body = diode.ir.bodies().find(|body| body.name() == "TableDiode").expect("the diode body").id();
+    let module = Modules::module(diode.compiled(), body).expect("the diode has a compiled module");
+    let handle = Handle::create(module, &[]).unwrap_or_else(|error| panic!("create the diode: {error}"));
+    let shape: &Shape<'_> = handle.shape();
+    let mut verified = 0;
+    for (k, function) in shape.functions.iter().enumerate() {
+        for (first, second) in [(0.2503, 0.0), (0.4107, 0.0), (0.5611, 0.0)] {
+            let lens = cell_lens(shape, &function.reads, Access::FunctionRead).expect("read lens");
+            let input: Vec<Vec<u8>> = function
+                .reads
+                .iter()
+                .zip(&lens)
+                .map(|(read, len)| {
+                    let value: f64 = match read.kind {
+                        cell::PIN => match shape.pins.get(read.index as usize).map(|pin| (pin.role, pin.name.as_str())) {
+                            Some((role::GLOBAL, _)) => 300.15,
+                            Some((role::PORT, name)) => if name == shape.pins.iter().find(|pin| pin.role == role::PORT).map_or("", |pin| pin.name.as_str()) { first } else { second },
+                            _ => 0.002,
+                        },
+                        cell::INPUT if read.part == part::LAST => first - second,
+                        cell::INPUT => first - second,
+                        cell::AMBIENT if read.index == ambient::GMIN => 1e-12,
+                        cell::AMBIENT if read.index == ambient::SOURCE_SCALE => 1.0,
+                        _ => 0.0,
+                    };
+                    assert_eq!(*len, 8, "every read of the diode is an `f64`");
+                    value.to_le_bytes().to_vec()
+                })
+                .collect();
+            match verify_partials(&handle, k as u32, &input, 1e-6) {
+                Ok(Verdict::Exact) => verified += 1,
+                other => panic!("`{}` at ({first}, {second}): {other:?}", function.name.as_str()),
+            }
+        }
+    }
+    assert!(verified >= 3, "the diode has a function with partials: {verified} points verified");
+}
