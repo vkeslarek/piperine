@@ -724,6 +724,7 @@ impl Digital {
     /// carrier's pin, or fires an event pin (`len` 0, abi.md C4).
     fn declare(s: &mut ShapeBuf, pins: &Pins, body: Body<'_>, name: &str, origin: &str, plan: &ReactionPlan) {
         let limits = body.limits().len() as u32;
+        let stims = body.stims().len() as u32;
         let writes = plan
             .statements
             .iter()
@@ -753,7 +754,7 @@ impl Digital {
             name,
             origin,
             on: plan.on.clone(),
-            reads: plan.reads.iter().map(|r| BodyPlan::read(pins, limits, *r)).collect(),
+            reads: plan.reads.iter().map(|r| BodyPlan::read(pins, limits, stims, *r)).collect(),
             writes,
             ..ReactionSpec::default()
         });

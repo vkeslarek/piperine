@@ -194,7 +194,8 @@ impl<'a> Walk<'a> {
             | Mode::Ttol(_)
             | Mode::Etol(_)
             | Mode::DerivativeAbstol(_)
-            | Mode::DelayMaximum(_) => {
+            | Mode::DelayMaximum(_)
+            | Mode::Noise(_) => {
                 Err(Fault::new(Self::UNEXECUTED, format!("{}: the walk of {mode:?} ended without reaching its site", body.name())))
             }
         }

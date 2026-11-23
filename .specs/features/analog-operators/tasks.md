@@ -715,8 +715,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `a_noise_source_is_an_input_with_its_density_function` passes
-- [ ] Gate check passes: `Run planops`, `Run tgolden`
+- [x] `a_noise_source_is_an_input_with_its_density_function` passes
+- [x] Gate check passes: `Run planops`, `Run tgolden`
 
 **Tests**: integration
 **Gate**: quick

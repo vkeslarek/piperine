@@ -4,8 +4,8 @@
 //! expected entry is written from the design (mechanisms 2 to 6) and abi.md, and every shape
 //! passes `piperine_abi::validate`.
 
-use piperine_abi::raw::{Cell, DEFAULT, GROUND, Shape, cell, kind, op, part, role};
-use piperine_ir::Ir;
+use piperine_abi::raw::{Cell, DEFAULT, GROUND, Shape, cell, input, kind, op, part, role};
+use piperine_ir::{Env, Expr, Ir, NoiseSource, ValueType};
 use piperine_plan::{BodyPlan, FunctionPlan, Mode, Source, Target, Term};
 
 #[allow(dead_code)]
@@ -127,4 +127,45 @@ fn a_body_without_a_new_form_keeps_its_shape() {
     assert_eq!(Find::term_names(shape), ["b0.flow"]);
     assert_eq!(Find::function_names(shape), ["terms"]);
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+}
+
+/// `i(a, gnd) +> noise(<density>, "thermal")`, the density being `freq()` when `on_freq`, else `4e-21`.
+fn noisy(on_freq: bool) -> Ir {
+    Operators::ir(|b| {
+        let source = if on_freq {
+            let density = b.expr(Expr::Env(Env::Freq), ValueType::F64, Operators::at());
+            NoiseSource { name: "n".into(), group: Some("thermal".into()), density, origin: Operators::at() }
+        } else {
+            Operators::noise_site(b, Some("thermal"))
+        };
+        Written { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![source], ..Written::default() }
+    })
+}
+
+#[test]
+fn a_noise_source_is_an_input_with_its_density_function() {
+    // abi.md A2: one `NOISE` input `noise:<k>` after the `STIM` inputs; the density is a function
+    // that writes its `PSD`; `terms` reads the input's value as a tangent slot.
+    let ir = noisy(false);
+    let plan = Find::plan(&ir);
+    let shape = plan.shape().shape();
+    let inputs: Vec<(&str, u32)> = shape.inputs.iter().map(|i| (i.name.as_str(), i.kind)).collect();
+    assert_eq!(inputs, [("noise:0", input::NOISE)]);
+    let function = Find::terms_plan(&plan);
+    assert_eq!(function.reads, [Source::NoiseValue(0)]);
+    assert!(Source::NoiseValue(0).is_differentiable() && !Source::NoiseValue(0).is_pin());
+    assert_eq!(function.slots, 1);
+    assert_eq!(function.partials, [(0, 0)]);
+    let noise = plan.functions().iter().find(|f| f.mode == Mode::Noise(0)).expect("the density function");
+    assert!(noise.reads.is_empty());
+    assert_eq!(noise.writes, [Target::NoiseDensity(0)]);
+    let f = shape.functions.iter().find(|f| f.name.as_str() == "noise:0").expect("noise:0");
+    assert_eq!(f.writes.iter().copied().collect::<Vec<_>>(), [Cell { kind: cell::INPUT, index: 0, part: part::PSD }]);
+    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    // a density that reads `freq()` reads the ambient `FREQ`, in the density function only
+    let plan = Find::plan(&noisy(true));
+    let noise = plan.functions().iter().find(|f| f.mode == Mode::Noise(0)).expect("the density function");
+    assert_eq!(noise.reads, [Source::Freq]);
+    assert_eq!(Find::terms_plan(&plan).reads, [Source::NoiseValue(0)]);
+    assert_eq!(piperine_abi::validate::validate(plan.shape().shape()), Ok(()));
 }

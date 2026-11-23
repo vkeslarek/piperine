@@ -80,6 +80,8 @@ pub enum Mode {
     Cap(u32),
     /// The `abstol` of derivative site `k`: its tolerance pin.
     DerivativeAbstol(u32),
+    /// The density of noise source `k`: its `PSD`, read only by a noise sweep.
+    Noise(u32),
     /// The `max` of delay site `k`: its bound pin (`td` itself when the site gives none).
     DelayMaximum(u32),
     /// The `ttol` of `cross` event `k`: its tolerance pin.
@@ -110,6 +112,9 @@ pub enum Source {
     LimitValue(u32),
     /// An `ac_stim` site's input `VALUE`.
     StimValue(u32),
+    /// A noise source's input `VALUE`: 0 in every solve, the source's input in a noise sweep
+    /// (abi.md A2).
+    NoiseValue(u32),
     Param(u32),
     /// The `PREVIOUS` of a param's pin: its bytes before the host's most recent `set` of it
     /// (`p.prev()`, §5.3.1). Between `Param` and `ParamChanged`, as a carrier's three reads are.
@@ -162,7 +167,7 @@ impl Source {
 
     /// A read the walk carries a tangent for.
     pub fn is_differentiable(self) -> bool {
-        matches!(self, Source::Node(_) | Source::BranchFlow(_) | Source::Derivative(_) | Source::Delay(_) | Source::LimitValue(_) | Source::StimValue(_))
+        matches!(self, Source::Node(_) | Source::BranchFlow(_) | Source::Derivative(_) | Source::Delay(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::NoiseValue(_))
     }
 }
 
@@ -198,6 +203,8 @@ pub enum Target {
     Etol(u32),
     /// The `abstol` pin of derivative site `k`.
     DerivativeAbstol(u32),
+    /// The `PSD` of noise source `k`'s input.
+    NoiseDensity(u32),
     /// The `TIME` of the `DELAY` term of delay site `k` (a write of `terms`).
     DelayTime(u32),
     /// The `max` pin of delay site `k`.
@@ -267,6 +274,7 @@ impl ReadSet {
         set.0.extend(body.fired_reads(target).into_iter().map(Source::Fired));
         set.0.extend(body.derivative_reads(target).into_iter().map(Source::Derivative));
         set.0.extend(body.delay_reads(target).into_iter().map(Source::Delay));
+        set.0.extend(body.noise_reads(target).into_iter().map(Source::NoiseValue));
         set.0.extend(body.param_previous_reads(target).into_iter().map(Source::ParamPrevious));
         set
     }
@@ -678,6 +686,11 @@ impl BodyPlan {
             s.input(InputSpec { name: &site.name, origin: &at, kind: input::STIM });
         }
 
+        for (k, source) in body.noise_sources().iter().enumerate() {
+            let at = origin(&source.origin);
+            s.input(InputSpec { name: &format!("noise:{k}"), origin: &at, kind: input::NOISE });
+        }
+
         // Functions: one per site, then the terms.
         let mut functions = Vec::new();
         for (k, site) in body.limits().iter().enumerate() {
@@ -698,6 +711,13 @@ impl BodyPlan {
             let set = ReadSet::target(body, Query::Stim(k));
             let plan = Self::function(Mode::Stim(k), &set, vec![(Target::StimRe(k), None), (Target::StimIm(k), None)]);
             Self::declare(&mut s, &pins, &terms, body, &format!("stim:{k}"), &origin(&site.origin), &plan);
+            functions.push(plan);
+        }
+        for (k, source) in body.noise_sources().iter().enumerate() {
+            let k = k as u32;
+            let set = ReadSet::target(body, Query::NoiseDensity(k));
+            let plan = Self::function(Mode::Noise(k), &set, vec![(Target::NoiseDensity(k), None)]);
+            Self::declare(&mut s, &pins, &terms, body, &format!("noise:{k}"), &origin(&source.origin), &plan);
             functions.push(plan);
         }
         if !terms.is_empty() {
@@ -815,9 +835,10 @@ impl BodyPlan {
     /// Adds `plan` to the shape as function `name`.
     pub(crate) fn declare(s: &mut ShapeBuf, pins: &Pins, terms: &[Term], body: Body<'_>, name: &str, origin: &str, plan: &FunctionPlan) {
         let limits = body.limits().len() as u32;
+        let stims = body.stims().len() as u32;
         let at = |kind: u32, index: u32, part: u32| Cell { kind, index, part };
         let value = |kind: u32, index: u32| at(kind, index, part::VALUE);
-        let reads = plan.reads.iter().map(|r| Self::read(pins, limits, *r)).collect();
+        let reads = plan.reads.iter().map(|r| Self::read(pins, limits, stims, *r)).collect();
         let writes = plan
             .writes
             .iter()
@@ -841,6 +862,7 @@ impl BodyPlan {
                 Target::Ttol(k) => value(cell::PIN, pins.ttol(k)),
                 Target::Etol(k) => value(cell::PIN, pins.etol(k)),
                 Target::DerivativeAbstol(k) => value(cell::PIN, pins.derivative_abstol(k)),
+                Target::NoiseDensity(k) => at(cell::INPUT, limits + stims + k, part::PSD),
                 Target::DelayTime(k) => at(cell::TERM, terms.iter().position(|x| *x == Term::DelayHistory(k)).unwrap_or(usize::MAX) as u32, part::TIME),
                 Target::DelayMaximum(k) => value(cell::PIN, pins.delay_maximum(k)),
             })
@@ -851,8 +873,8 @@ impl BodyPlan {
     }
 
     /// The cell a read names; `limits` is the body's count of `limit` sites (the `STIM` inputs
-    /// follow them).
-    pub(crate) fn read(pins: &Pins, limits: u32, r: Source) -> Cell {
+    /// follow them) and `stims` its count of `ac_stim` sites (the `NOISE` inputs follow those).
+    pub(crate) fn read(pins: &Pins, limits: u32, stims: u32, r: Source) -> Cell {
         let at = |kind: u32, index: u32, part: u32| Cell { kind, index, part };
         let value = |kind: u32, index: u32| at(kind, index, part::VALUE);
         match r {
@@ -862,6 +884,7 @@ impl BodyPlan {
             Source::Delay(k) => value(cell::PIN, pins.delay(k)),
             Source::LimitValue(k) => value(cell::INPUT, k),
             Source::StimValue(k) => value(cell::INPUT, limits + k),
+            Source::NoiseValue(k) => value(cell::INPUT, limits + stims + k),
             Source::Param(i) => value(cell::PIN, i),
             Source::ParamPrevious(i) => at(cell::PIN, i, part::PREVIOUS),
             Source::ParamChanged(i) => at(cell::PIN, i, part::CHANGED),
@@ -984,6 +1007,7 @@ impl BodyPlan {
             .chain(n(body.reactions().len()).map(Query::Reaction))
             .chain(Self::bound_steps(body).into_iter().map(Query::BoundStep))
             .chain(n(body.derivatives().len()).flat_map(|k| [Query::Derivative(k), Query::DerivativeAbstol(k)]))
+            .chain(n(body.noise_sources().len()).map(Query::NoiseDensity))
             .chain(n(body.delays().len()).flat_map(|k| [Query::DelayInput(k), Query::DelayTime(k), Query::DelayMaximum(k)]))
             .collect()
     }
