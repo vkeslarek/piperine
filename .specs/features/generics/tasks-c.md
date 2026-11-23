@@ -409,8 +409,8 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `const_expressions_in_written_types_are_accepted_everywhere` passes under `**Run typesmods**`
-- [ ] Gate check passes: Quick
+- [x] `const_expressions_in_written_types_are_accepted_everywhere` passes under `**Run typesmods**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

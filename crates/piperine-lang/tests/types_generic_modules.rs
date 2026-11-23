@@ -164,3 +164,23 @@ fn behavior_names_that_differ_are_e0403_naming_both_lists() {
     }
 }
 
+
+#[test]
+fn const_expressions_in_written_types_are_accepted_everywhere() {
+    // GN-14 AC 1 (§1.2.5, §3.8.5): a const expression in a written type is accepted outside a generic function too: an
+    // integer width in a generic function's signature, an array length in a generic module's items; none is `P0001`
+    let clean = "fn widen<const A: usize>(x: UInt<{A + 1}>) -> UInt<{A + 1}> { x }\n\
+                 module Taps<const N: usize, const D: usize>(a: [Electrical; N]) where D >= 1 {\n\
+                     signal rails: [Electrical; N + 1];\n\
+                     signal states: [State; D - 1];\n\
+                 }\n";
+    assert_eq!(Admitted::pairs(clean), vec![], "const expressions in written types");
+    // and outside any generic item: a const expression is a written length or width there as well
+    let plain = "const K: usize = 2;\nfn widen(x: UInt<{K + 1}>) -> UInt<{K + 1}> { x }\nmodule Taps(a: Electrical) { signal rails: [Electrical; K + 1]; signal states: [State; {K * 2}]; }\n";
+    let found = Admitted::pairs(plain);
+    assert!(found.iter().all(|(code, _)| code != "P0001"), "{found:?}");
+    // a width that no const expression makes valid is the width error, not an unsupported form
+    let negative = "fn bad(x: Int<-1>) -> bool { true }\n";
+    let found = Admitted::pairs(negative);
+    assert!(!found.is_empty() && found.iter().all(|(code, _)| code != "P0001"), "{found:?}");
+}
