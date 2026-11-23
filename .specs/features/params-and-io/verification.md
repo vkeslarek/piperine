@@ -1,41 +1,41 @@
 # Params and I/O verification
 
 **Verdict**: FAIL
-**Proofs**: `proofs.md` at e60177d8 (the fix round, 114 pass, 0 fail; re-run by the round 3 verifier after its own commit); round 2 at acefa2f6, round 1 at 0bed6a92
+**Proofs**: `proofs.md` at dcbbea67 (the round 3 fix, 114 pass, 0 fail; re-run by the round 4 verifier after its own commit); round 3 at e60177d8, round 2 at acefa2f6, round 1 at 0bed6a92
 **Verifier**: independent sub-agent (author != verifier)
-**Scope**: round 3 judges the fix round of F7 to F18 (27e04297, 3c85d77f, 22f74aee, 6b11cc8b, e60177d8; `git diff fd8ba657..e60177d8`, 29 files) and the regressions it could introduce; rounds 2 and 1 are kept below as they were judged.
+**Scope**: round 4 judges the fix of F19 to F24 and two transpiler fixes (141fd5da, 61608529, a67784ad, b2e4efd9; `git diff f351f6c1..dcbbea67`, 19 files) and the regressions they could introduce; rounds 3, 2 and 1 are kept below as they were judged. F15 is out of scope (owned by `generics`).
 
-**Rulings applied (user, AFK, binding).** F11: §3.2.3's implicit `Some` applies to a param binding, PI-03 AC 2 stands. F9, F10,
-F17: a `--param` text always goes through its param's type reading. F15: the `m`/`dtemp` row is re-owned to `generics` (GN-26 AC 3).
+**Rulings applied (binding).** Round 3's, and: a leaf of a composite param reads its text by the leaf's type with the language's literal syntax (A12).
 
-**Contract.** `git diff origin/main -- tests/support/ngspice.rs crates/piperine-parity/src` is empty: no tolerance, contract or golden edited.
+**Contract.** `git diff origin/main -- tests/support/ngspice.rs crates/piperine-parity/src` is empty.
 
-**Tests run (gate policy: targeted only).** The `CARGO_TARGET_DIR=/var/tmp/piperine-target-d` lane: `cargo build -p piperine-cli`;
-`cargo test -p piperine-api --test bindings` (8/8, the structural-param bindings next to the `--param` change);
-`check_proofs.py params-and-io` after this commit (`proofs.md`). No workspace run.
+**Tests run (gate policy: targeted only).** Lane D env: `cargo build -p piperine-cli`; `check_proofs.py params-and-io` after this commit
+(`proofs.md`, which runs `apisession`, `elabparams`, `sourceparams` holding the new tests). No workspace run.
 
 **Own examples (HEAD binary, throwaway files under `/var/tmp/piperine-tmp-d/v3`, not committed).**
-- `--param` on a `u8`/`Mode`/`Option<f64>`/`u64` design, 1 V behind 1 kOhm: `l.n=6` 0.125 V, `l.n=0b110` 0.125 V, `l.md=Slow`
-  0.125 V, `l.rs=10` and `l.rs=Some(10)` 9.524 mV, `l.rs=None` 0.1667 V (all by hand: hold); `l.n=6.5`, `1e1`, `-1` and `l.md=1`
-  are `E0802` naming param and value (F9 holds); `l.big=9007199254740993` runs, and a `where big < 100` refuses it (the device's check).
-- Real params through the new text path: `r0.r=3e3`, `v1.dc=2` on both backends, a placement-derived `m.rr=3000` on rust (0.75 V)
-  and its interpreter refusal, a DC sweep of `m.rr`, `--nodeset`, composite leaves `l.cfg.g=3e-3` and `l.cfg.en=false`: hold.
-- **Structural params of a type a number does not spell** (`match md { .. }` and `match vs { Some(x) => .., None => .. }` selecting
-  the contribution): `--param m.md=Open` runs the `Short` variant (v(a) = 0.25 V, wanted 1 V) and `--param o.vs=Some(0.5)` runs the
-  `None` variant (v(c) = 1 V, wanted 0.5 V), silently (F19); `--param o.vs=0.5` is `P0004` "elaboration produced an ill-formed IR:
-  param vs is bound to 0.5, not a value of Option<f64>" (F20). A structural `u8` (`k.k=0`, `k.k=0x0`) selects its variant (holds).
-- Option bindings: `Load(a, b) { rs: 3000.0 }` over `{ rs: 1000.0 }` gives 0.25 V (holds); `{ rs: 2.0 * 500.0 }` folds (holds);
-  `{ rs: rt }` over a parent param `rt: f64` is a new `P0001` and `{ rs: Some(rt) }` a `P0001` too, with no `GAPS.md` row (F21).
-- NaN params: `lo: f64 = 0.0 / 0.0` as a default and as a placement binding run on rust (the plan's pin and the library agree; the
-  `GAPS.md` row is truly closed).
+- F19/F20, structural params selecting the contribution, 1 V behind 1 kOhm: `m.md=Open` and `m.md=Mode::Open` give 1 V, `Short`
+  0.25 V; `o.vs=0.5` and `o.vs=Some(0.5)` give 0.5 V, `o.vs=None` 1 V; `k.k=0`/`0x0` select the open branch; `m.md=1`, `m.md=Bogus`,
+  `o.vs=x`, `k.k=1.5` are `E0802` at elaboration naming param and value. Hold.
+- F21: `Mid { rt: f64 = 3k; let l = Load(p) { rs: rt }; }` gives 0.75 V, and `Mid2 { rs: Some(rt * 1.0) }` with `rt: 1k` 0.5 V on rust;
+  the interpreter refuses the `Option` param by name. Hold.
+- A12, leaves: `l.cfg.n=0x3` runs 0.25 V; `3e0`, `3.5` (`u8` leaf) and `en=1` (`bool` leaf) are `E0802`; `en=false`, `g=2e-3` run. Hold.
+- b2e4efd9: a struct `Cfg { g: f64, n: u8 }` with no derive as a param read by `analog`, bound at the placement and set by leaf: 1/3,
+  1/7 (`md=Slow`) and 1/2 V by hand (holds). **A unit enum with no derive as a param** (`enum Mode { Fast, Slow }`, `md: Mode`, read by
+  `match`) is a rustc refusal "the trait bound `Mode: Carried` is not satisfied (a transpiler defect)" (F26).
+- **A module with no `analog` block** (the coordinator's question): (a) a param read by a `digital` block (the Book's `Watchdog`,
+  `limit: u16`) is written: `w.limit=3` fires `stuck` at 3.5 us with 3 edges, `w.limit=0x5` at 5.5 us, `w.limit=70000` is `E0802`;
+  (b) a wrapper's `f64` param read by a placement is derived and written (`m.rr=3000` 0.75 V, round 3); (c) a param nothing reads, on an
+  instance with no pin (`Plain { gain, n, md, rs, cfg }` holding only a child): every `--param` of it is refused loud, `E0802` "no
+  PARAM pin `gain`; the instance declares no writable parameters" (the same for `n`, `md`, `rs`, the leaves of `cfg`, and `Top.tg`).
+  Never silent. The refusal of a param that has no effect is stricter than needed, and its message shows the tag (`refuses the value
+  1` for `md=Open`) and `rs.value`/`None` for an `Option`: cosmetic, left to the user.
+- Pass-through of the new param types from a wrapper (`Wrap { md: Mode; n: u8; rs: Option<f64>; let l = Load(p) { md: md, n: n, rs: rs }; }`):
+  `{ n: n }` and `{ md: md }` are refused "`a derived param that reads the integer param ..` has no Rust lowering yet" (transpiler,
+  already on main), `{ rs: rs }` is `P0001` "an expression the type checker gave no value type", and a structural pass-through
+  (`WrapSw { md } -> Sw { md: md }` with `match md` selecting a contribution) is `P0001` "a composite param in a const expression in the
+  value of a param that fixes structure". All loud; none is a `GAPS.md` row (F25).
 
-**Findings of round 2.** F7 to F18 are closed by the commits in the table (F9 with a regression, F19; F11 with a gap left
-unrecorded, F21; F17 on the session path only, F23).
-
-**F15 (owner check).** `generics` is a real owner in the plan: ROADMAP item 2 runs before `spec-closure` (item 10), its spec gives
-L29 to phase D (GN-24 to GN-26). But **no task covers it**: `origin/feature/generics:.specs/features/generics/tasks.md` tasks
-phases A and B only (T1 to T52; "phases C, D and E ... not tasked here"), and its T42 pins `m`/`dtemp` as `P0001`. GN-26 AC 3 was
-appended to the approved `generics` spec on this branch, not on `feature/generics`. Reported to the user, not a finding of this feature.
+**Findings of round 3.** F19 to F24 are closed by the commits in the table.
 
 ## Checks
 
@@ -110,7 +110,7 @@ appended to the approved `generics` spec on this branch, not on `feature/generic
 | C67 | `speccodes` `this_features_codes_are_all_raised` | yes - `E0906` left out by MD-78 (recorded only in the Handoff, F8) |
 | C68 | `typescarriers` `a_probe_on_a_childs_private_node_is_e0244` | yes |
 | C69 | `typesresults` `a_continuous_result_read_where_probes_are_not_allowed_is_e0354` | yes |
-| C70 | `speccodes` `every_spec_code_is_raised_or_owned` | no (round 3) - the claim is that `E0906` is retired; this test checks the codes of the tables, which no longer hold `E0906`, so it passes whatever a source raises for it. `suite_hygiene` `retired_unknown_codes_are_raised_nowhere` holds the claim (F24) |
+| C70 | `hygiene` `retired_unknown_codes_are_raised_nowhere` | yes (round 4) - fails when any library source spells `"E0906"` outside a comment |
 | C71 | `speccodes` `every_spec_code_is_raised_or_owned` | yes - 189 codes parsed (recounted independently), the 51 owned rows equal the unraised set |
 | C72 | `speccodes` `every_owned_code_names_its_owner_and_construct` | yes |
 | C73 | `speccodes` `no_owned_code_is_raised` | yes |
@@ -176,12 +176,52 @@ appended to the approved `generics` spec on this branch, not on `feature/generic
 | F16. (Minor, records) Stale mentions of this feature in `GAPS.md` | `GAPS.md:142` L40 and `:360` say the section 18 `Diode` needs `params-and-io` (it type checks, `elab_structure.rs:376`, and runs: own example 0.618 V); `:184` names `params-and-io` the owner of the NaN-param bit point, which this feature did not take; `:33` lists closed loud rows without L28 and L57 | rewrite L40 to its `generics` part, give `:184` an owner that will do it, add L28 and L57 to `:33` || 6b11cc8b, 22f74aee; L40 rewritten, the NaN row closed by `piperine-plan` `nan_param` (and run end to end, own example), L28 and L57 in the closed list |
 | F17. (Minor) Integer text above 2^53 is rounded | `param_text.rs:96` `Ok(value as f64)`: `ParamText::Number(f64)` cannot hold `u64`/`i64` 9007199254740993, and `params.rs:106` `v as i64` saturates a `u64` above `i64::MAX`; D24 "an integer literal ... in range is the value" | carry an integer as `i128` (`ParamValue::Int`) end to end, or refuse a value an `f64` cannot hold || 27e04297; `apisession` `an_integer_above_2_pow_53_is_set_exactly`, `param_text` unit `an_integer_above_2_pow_53_is_read_exactly` (`Session::describe` still rounds: F23) |
 | F18. (Minor, cleanliness) New code breaks the user's rules (recurrence of F6) | free functions in tests: `elab_files.rs` (`parsed_source`, `folded`, `refused`, `real`, `int`, `table_model_source`, `refusals`; `real` and `int` undocumented), `elab_params.rs` (`child_with`, `aggregate`, `placed_params` undocumented), `piperine-api/tests/session.rs` (`typed_session`, `shown`, `literal`), `source_tables.rs` (`project`, `line`, `holds`), `piperine-ir/tests/check.rs:511` (`table_ir`), `param_text.rs` unit tests (`design`, `read` undocumented); undocumented fields `Reading::{ir, label, text}` (`param_text.rs:24`) and the tuple fields of `ControlText`, `Samples` (`table_model.rs`); abbreviations `hl`, `hp` (`rt/table.rs:120`) | move the helpers onto owner structs, document them, name `hl`/`hp` || 3c85d77f, 22f74aee; helpers on `Placed`, `Parsed`, `Typed`, `Maps`, `Texts`; `Reading`, `ControlText`, `Samples` documented; `last_width`/`before_width` (a misplaced doc comment remains: F22) |
-| F19. (Blocker, silent) A `--param` of a structural param whose value is no number (a unit enum's variant, `Some(..)`, `None`) is silently ignored: the run uses the default's variant. Regression of 27e04297 | own example `s.msl`: `Sw { md: Mode = Mode::Short }` with `match md` selecting `v(a, b) +> 0.25` or an open branch: `--param m.md=Open` gives v(a) = 0.25 V (wanted 1 V); `Ow { vs: Option<f64> }` with `match vs`: `--param o.vs=Some(0.5)` gives v(c) = 1 V (wanted 0.5 V). `ParamText::elaboration_value` (`param_text.rs`) gives no number for these texts, so `Session::elaborate` binds nothing, and `Session::set_target_text` (`session.rs`) only reads a structural text; before 27e04297 the texts loop raised `refuse_structural` (`E0803`) | give the elaborator the type's reading of every structural `--param` (variant tag, `Option` presence and payload) so the variant is selected, or refuse loud as before; a test per form (`m.md=Open`, `o.vs=Some(0.5)`, `o.vs=None`) through `--param` asserting the selected variant's value | |
-| F20. (Major) `--param` of a structural `Option<f64>` param to a plain value is an internal error (PI-03 AC 4: it is `Some` of it) | own example: `--param o.vs=0.5` is `P0004` "elaboration produced an ill-formed IR: param vs is bound to 0.5, not a value of Option<f64>"; `elaboration_value("0.5")` is 0.5 and goes into `Overrides` as a bare number for an `Option` param | bind `Some(0.5)` (with F19's reading), test it with F19's |  |
-| F21. (Minor, records) A plain value over a parent's param bound to an `Option` param is a new `P0001` with no `GAPS.md` row and no test; the `Some(..)` spelling of it is `P0001` too | `elab/children.rs:300` "a value over the parent's params bound to an `Option` param without `Some`: write `Some(..)`"; own example `Mid { rt: f64 = 3k; let l = Load(p) { rs: rt }; }`, and `{ rs: Some(rt) }` is `P0001` "an expression the type checker gave no value type"; GAPS rule: a loud refusal is a row with an owner | implement it, or add a `GAPS.md` row with an owner and a test pinning both refusals |  |
-| F22. (Minor, cleanliness) `Params::changes` lost its doc comment: its text now heads `refuse_unfit`'s | `crates/piperine-api/src/params.rs:328-333`: the `changes` paragraph ("The params a `set` ... what a timed `set` schedules") is the first half of `refuse_unfit`'s doc, and `changes` at `:347` has none | move the paragraph back above `changes` |  |
-| F23. (Minor) `Session::describe` of a param text above 2^53 shows 0 | `session.rs` describe loop: `scalar.exact_real().unwrap_or(f64::NAN)` is written to the table and `keep_exact` is not called, so `Metadata::of` shows `Cell::Int(NaN as i128)` = 0 (by reading; `piperine info` takes no `--param`, the API path does) | keep the exact integer in `describe` as `set_exact_integer` does, and extend `an_integer_above_2_pow_53_is_set_exactly` to `describe` |  |
-| F24. (Minor, records) C70's test does not hold its claim; a stale `Run` line; A10 and A11 marks | C70 (`E0906` is retired) proves through `every_spec_code_is_raised_or_owned`, which no longer sees `E0906`; `suite_hygiene` `retired_unknown_codes_are_raised_nowhere` is the test that fails if a source raises it. `tasks.md:20` `**Run typesunknowns**` names the deleted target (`validate_tasks.py` warns). A10 changes PI-02 AC 1 ("of a unit enum"), which carries no mark; A11 is dated "B5" but is the fix round | point C70 at `suite_hygiene` (a `Run` line for it), drop `Run typesunknowns`, mark PI-02 AC 1 with A10, date A11 to the fix round |  |
+| F19. (Blocker, silent) A `--param` of a structural param whose value is no number (a unit enum's variant, `Some(..)`, `None`) is silently ignored: the run uses the default's variant. Regression of 27e04297 | own example `s.msl`: `Sw { md: Mode = Mode::Short }` with `match md` selecting `v(a, b) +> 0.25` or an open branch: `--param m.md=Open` gives v(a) = 0.25 V (wanted 1 V); `Ow { vs: Option<f64> }` with `match vs`: `--param o.vs=Some(0.5)` gives v(c) = 1 V (wanted 0.5 V). `ParamText::elaboration_value` (`param_text.rs`) gives no number for these texts, so `Session::elaborate` binds nothing, and `Session::set_target_text` (`session.rs`) only reads a structural text; before 27e04297 the texts loop raised `refuse_structural` (`E0803`) | give the elaborator the type's reading of every structural `--param` (variant tag, `Option` presence and payload) so the variant is selected, or refuse loud as before; a test per form (`m.md=Open`, `o.vs=Some(0.5)`, `o.vs=None`) through `--param` asserting the selected variant's value | 141fd5da; `apisession` `a_structural_params_text_selects_its_variant` (`m.md=Open` 1 V, `o.vs=Some(0.5)`, `0.5` 0.5 V, `None` 1 V) and `a_structural_params_bad_text_is_e0802`; own examples hold |
+| F20. (Major) `--param` of a structural `Option<f64>` param to a plain value is an internal error (PI-03 AC 4: it is `Some` of it) | own example: `--param o.vs=0.5` is `P0004` "elaboration produced an ill-formed IR: param vs is bound to 0.5, not a value of Option<f64>"; `elaboration_value("0.5")` is 0.5 and goes into `Overrides` as a bare number for an `Option` param | bind `Some(0.5)` (with F19's reading), test it with F19's | 141fd5da; `apisession` `a_structural_params_text_selects_its_variant` (`o.vs=0.5` is 0.5 V) |
+| F21. (Minor, records) A plain value over a parent's param bound to an `Option` param is a new `P0001` with no `GAPS.md` row and no test; the `Some(..)` spelling of it is `P0001` too | `elab/children.rs:300` "a value over the parent's params bound to an `Option` param without `Some`: write `Some(..)`"; own example `Mid { rt: f64 = 3k; let l = Load(p) { rs: rt }; }`, and `{ rs: Some(rt) }` is `P0001` "an expression the type checker gave no value type"; GAPS rule: a loud refusal is a row with an owner | implement it, or add a `GAPS.md` row with an owner and a test pinning both refusals | 141fd5da; `elabparams` `an_option_param_bound_over_the_parents_param_reads_some_of_it` (`{ rs: rt }`, `Some(rt)`, `rt * 2.0`); run by hand 0.75 V and 0.5 V (an `Option`-to-`Option` pass-through is F25) |
+| F22. (Minor, cleanliness) `Params::changes` lost its doc comment: its text now heads `refuse_unfit`'s | `crates/piperine-api/src/params.rs:328-333`: the `changes` paragraph ("The params a `set` ... what a timed `set` schedules") is the first half of `refuse_unfit`'s doc, and `changes` at `:347` has none | move the paragraph back above `changes` | 61608529; `Params::changes` has its doc again, `refuse_unfit` its own |
+| F23. (Minor) `Session::describe` of a param text above 2^53 shows 0 | `session.rs` describe loop: `scalar.exact_real().unwrap_or(f64::NAN)` is written to the table and `keep_exact` is not called, so `Metadata::of` shows `Cell::Int(NaN as i128)` = 0 (by reading; `piperine info` takes no `--param`, the API path does) | keep the exact integer in `describe` as `set_exact_integer` does, and extend `an_integer_above_2_pow_53_is_set_exactly` to `describe` | 61608529; `apisession` `an_integer_above_2_pow_53_is_set_exactly` extended to `Session::describe` |
+| F24. (Minor, records) C70's test does not hold its claim; a stale `Run` line; A10 and A11 marks | C70 (`E0906` is retired) proves through `every_spec_code_is_raised_or_owned`, which no longer sees `E0906`; `suite_hygiene` `retired_unknown_codes_are_raised_nowhere` is the test that fails if a source raises it. `tasks.md:20` `**Run typesunknowns**` names the deleted target (`validate_tasks.py` warns). A10 changes PI-02 AC 1 ("of a unit enum"), which carries no mark; A11 is dated "B5" but is the fix round | point C70 at `suite_hygiene` (a `Run` line for it), drop `Run typesunknowns`, mark PI-02 AC 1 with A10, date A11 to the fix round | a67784ad; C70 proves through `hygiene` `retired_unknown_codes_are_raised_nowhere`, `Run typesunknowns` replaced by `Run hygiene`, PI-02 AC 1 marked A10, A11 dated to the fix rounds (A8's own text still names the old C70 proof: F25) |
+| F25. (Minor, records) Loud refusals of the new param types through a wrapper's placement are not `GAPS.md` rows; A8 names the old C70 proof | own examples: `{ n: n }` and `{ md: md }` (`u8`, unit enum) are "a derived param that reads the integer param .. has no Rust lowering yet" (`print/derive.rs:79`); `{ rs: rs }` (`Option<f64>` to `Option<f64>`) is `P0001` "an expression the type checker gave no value type"; a structural enum pass-through is `P0001` "a composite param in a const expression in the value of a param that fixes structure"; `grep` of `GAPS.md` finds none. `spec.md` A8 still says C70 is `speccodes::every_spec_code_is_raised_or_owned` | a `GAPS.md` row per refusal with an owner (or implement them), and A8's text to `hygiene` `retired_unknown_codes_are_raised_nowhere` | |
+| F26. (Major) A unit enum with no `#[derive(..)]` as a param is a rustc refusal of the generated source, "a transpiler defect": b2e4efd9's rule (a param's type needs no `Repr`, §8.1.15) covers the aggregates a param holds, not a unit enum (PI-02 AC 1, A10) | own example `nr3.msl`: `enum Mode { Fast, Slow }`, `module Load(p) { md: Mode = Mode::Fast; }`, `analog` `match md`: `error[E0277]: the trait bound Mode: Carried is not satisfied` at `<Mode as rt::Carried>::from_pin`; with `#[derive(Repr, PartialEq)]` it runs. `TypeItems::pinned` is `lifted` (`collect_aggregates`), which a unit enum is not | give every type a param pin holds its `Carried` form (unit enums included), and a parity row with a derive-less unit enum param read by `match` next to `HeldRatingBench` | |
+
+## Round 3 record (fix round of F7 to F18)
+
+**Round 3 verdict**: FAIL
+**Round 3 proofs**: `proofs.md` at e60177d8 (the fix round, 114 pass, 0 fail; re-run by the round 3 verifier after its own commit); round 2 at acefa2f6, round 1 at 0bed6a92
+**Round 3 scope**: round 3 judges the fix round of F7 to F18 (27e04297, 3c85d77f, 22f74aee, 6b11cc8b, e60177d8; `git diff fd8ba657..e60177d8`, 29 files) and the regressions it could introduce; rounds 2 and 1 are kept below as they were judged.
+
+**Rulings applied (user, AFK, binding).** F11: §3.2.3's implicit `Some` applies to a param binding, PI-03 AC 2 stands. F9, F10,
+F17: a `--param` text always goes through its param's type reading. F15: the `m`/`dtemp` row is re-owned to `generics` (GN-26 AC 3).
+
+**Contract.** `git diff origin/main -- tests/support/ngspice.rs crates/piperine-parity/src` is empty: no tolerance, contract or golden edited.
+
+**Tests run (gate policy: targeted only).** The `CARGO_TARGET_DIR=/var/tmp/piperine-target-d` lane: `cargo build -p piperine-cli`;
+`cargo test -p piperine-api --test bindings` (8/8, the structural-param bindings next to the `--param` change);
+`check_proofs.py params-and-io` after this commit (`proofs.md`). No workspace run.
+
+**Own examples (HEAD binary, throwaway files under `/var/tmp/piperine-tmp-d/v3`, not committed).**
+- `--param` on a `u8`/`Mode`/`Option<f64>`/`u64` design, 1 V behind 1 kOhm: `l.n=6` 0.125 V, `l.n=0b110` 0.125 V, `l.md=Slow`
+  0.125 V, `l.rs=10` and `l.rs=Some(10)` 9.524 mV, `l.rs=None` 0.1667 V (all by hand: hold); `l.n=6.5`, `1e1`, `-1` and `l.md=1`
+  are `E0802` naming param and value (F9 holds); `l.big=9007199254740993` runs, and a `where big < 100` refuses it (the device's check).
+- Real params through the new text path: `r0.r=3e3`, `v1.dc=2` on both backends, a placement-derived `m.rr=3000` on rust (0.75 V)
+  and its interpreter refusal, a DC sweep of `m.rr`, `--nodeset`, composite leaves `l.cfg.g=3e-3` and `l.cfg.en=false`: hold.
+- **Structural params of a type a number does not spell** (`match md { .. }` and `match vs { Some(x) => .., None => .. }` selecting
+  the contribution): `--param m.md=Open` runs the `Short` variant (v(a) = 0.25 V, wanted 1 V) and `--param o.vs=Some(0.5)` runs the
+  `None` variant (v(c) = 1 V, wanted 0.5 V), silently (F19); `--param o.vs=0.5` is `P0004` "elaboration produced an ill-formed IR:
+  param vs is bound to 0.5, not a value of Option<f64>" (F20). A structural `u8` (`k.k=0`, `k.k=0x0`) selects its variant (holds).
+- Option bindings: `Load(a, b) { rs: 3000.0 }` over `{ rs: 1000.0 }` gives 0.25 V (holds); `{ rs: 2.0 * 500.0 }` folds (holds);
+  `{ rs: rt }` over a parent param `rt: f64` is a new `P0001` and `{ rs: Some(rt) }` a `P0001` too, with no `GAPS.md` row (F21).
+- NaN params: `lo: f64 = 0.0 / 0.0` as a default and as a placement binding run on rust (the plan's pin and the library agree; the
+  `GAPS.md` row is truly closed).
+
+**Findings of round 2.** F7 to F18 are closed by the commits in the table (F9 with a regression, F19; F11 with a gap left
+unrecorded, F21; F17 on the session path only, F23).
+
+**F15 (owner check).** `generics` is a real owner in the plan: ROADMAP item 2 runs before `spec-closure` (item 10), its spec gives
+L29 to phase D (GN-24 to GN-26). But **no task covers it**: `origin/feature/generics:.specs/features/generics/tasks.md` tasks
+phases A and B only (T1 to T52; "phases C, D and E ... not tasked here"), and its T42 pins `m`/`dtemp` as `P0001`. GN-26 AC 3 was
+appended to the approved `generics` spec on this branch, not on `feature/generics`. Reported to the user, not a finding of this feature.
 
 ## Round 2 record (B5, B6, closure)
 
@@ -302,3 +342,5 @@ configuration of C84. Left as it is for the user or the spec closure to rule on.
 Round 2: F11 needs a ruling (does §3.2.3's implicit `Some` apply to a param binding, as PI-03 AC 2 says?).
 
 Round 3: F19 and F20 need an implementer (the `--param` of a structural param of enum or `Option` type); F15's owner `generics` has no task for GN-26 AC 3 yet (phase D is untasked, its T42 pins `m`/`dtemp` as `P0001`), and GN-26 AC 3 was added to the approved `generics` spec from this branch. A leaf of a composite param still takes any number (`l.cfg.n=0x3` is `E0802`, `l.cfg.en=1` is `true`): the leaf path is composite-values' D13, not this feature's type reading; left for the user to rule on.
+
+Round 4: F25 and F26 need an implementer. A `--param` of a param nothing reads on an instance with no pin is refused loud (`E0802` "no PARAM pin"): not silent, but stricter than needed, with a message that shows an enum's tag and an `Option`'s `value` leaf; left for the user to rule on.
