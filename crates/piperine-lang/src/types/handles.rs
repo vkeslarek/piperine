@@ -65,6 +65,28 @@ impl Checker<'_> {
         }
     }
 
+    /// The expression of a handle that `expr` evaluates to: the handle's own path, or the one a block's tail, an
+    /// `if` arm or a `match` arm yields (§3.1.5: storing a handle through a value position is storing it).
+    pub(super) fn handle_held(&self, expr: ExprId) -> Option<ExprId> {
+        if self.handle_named(expr).is_some() {
+            return Some(expr);
+        }
+        match &self.design.expr_node(expr).kind {
+            ExprKind::Block(block) => self.handle_in_block(block),
+            ExprKind::If { then, else_, .. } => self.handle_in_block(then).or_else(|| else_.and_then(|other| self.handle_held(other))),
+            ExprKind::Match { arms, .. } => arms.iter().find_map(|arm| self.handle_held(arm.body)),
+            _ => None,
+        }
+    }
+
+    /// The handle a block's tail expression yields, if it has a tail.
+    fn handle_in_block(&self, block: &crate::pom::BlockNode) -> Option<ExprId> {
+        match block.stmts.last().map(|stmt| &self.design.stmt_node(*stmt).kind) {
+            Some(StmtKind::Expr { expr, semi: false }) => self.handle_held(*expr),
+            _ => None,
+        }
+    }
+
     /// What a read of the handle `decl` is: the value of a discrete carrier (§3.1.6), the node itself for a
     /// continuous one. `None` when `decl` is not a handle.
     pub(super) fn handle_read(&self, decl: DeclId) -> Option<Ty> {
@@ -125,11 +147,11 @@ impl Checker<'_> {
                 continue;
             }
             match &node.kind {
-                ExprKind::Struct { fields, .. } => found.extend(fields.iter().filter(|field| self.handle_named(field.value).is_some()).map(|field| (field.span, field.value, "stored in a struct field"))),
-                ExprKind::Tuple(items) => found.extend(items.iter().filter(|item| self.handle_named(**item).is_some()).map(|item| (self.design.expr_node(*item).span, *item, "stored in a tuple element"))),
-                ExprKind::Array(items) => found.extend(items.iter().filter(|item| self.handle_named(**item).is_some()).map(|item| (self.design.expr_node(*item).span, *item, "stored in an array element"))),
-                ExprKind::ArrayRepeat { elem, .. } if self.handle_named(*elem).is_some() => found.push((self.design.expr_node(*elem).span, *elem, "stored in an array element")),
-                ExprKind::Return(Some(value)) if self.handle_named(*value).is_some() => found.push((self.design.expr_node(*value).span, *value, "returned")),
+                ExprKind::Struct { fields, .. } => found.extend(fields.iter().filter(|field| self.handle_held(field.value).is_some()).map(|field| (field.span, field.value, "stored in a struct field"))),
+                ExprKind::Tuple(items) => found.extend(items.iter().filter(|item| self.handle_held(**item).is_some()).map(|item| (self.design.expr_node(*item).span, *item, "stored in a tuple element"))),
+                ExprKind::Array(items) => found.extend(items.iter().filter(|item| self.handle_held(**item).is_some()).map(|item| (self.design.expr_node(*item).span, *item, "stored in an array element"))),
+                ExprKind::ArrayRepeat { elem, .. } if self.handle_held(*elem).is_some() => found.push((self.design.expr_node(*elem).span, *elem, "stored in an array element")),
+                ExprKind::Return(Some(value)) if self.handle_held(*value).is_some() => found.push((self.design.expr_node(*value).span, *value, "returned")),
                 ExprKind::Assign { lhs, .. } if self.handle_named(*lhs).is_some() => found.push((self.design.expr_node(*lhs).span, *lhs, "written through")),
                 ExprKind::Closure { body, .. } => {
                     let mut inside = Vec::new();
@@ -145,12 +167,13 @@ impl Checker<'_> {
                 continue;
             }
             match &node.kind {
-                StmtKind::Let { init: Some(init), .. } if self.handle_named(*init).is_some() => found.push((self.design.expr_node(*init).span, *init, "stored in a `let`")),
+                StmtKind::Let { init: Some(init), .. } if self.handle_held(*init).is_some() => found.push((self.design.expr_node(*init).span, *init, "stored in a `let`")),
                 StmtKind::Commit { place, .. } if self.handle_named(*place).is_some() => found.push((self.design.expr_node(*place).span, *place, "written through")),
                 _ => {}
             }
         }
         for (span, expr, how) in found {
+            let expr = self.handle_held(expr).unwrap_or(expr);
             let name = self.handle_named(expr).and_then(|decl| self.design.decl_data(decl).name.as_ref().map(|name| name.text.clone())).unwrap_or_default();
             let message = format!("the handle `{name}` is {how}: a handle is read, probed, passed on and has carrier methods called on it, nothing else (§3.1.5)");
             self.coded(file, "E0133", span, message, "a handle kept past its call");

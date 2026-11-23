@@ -71,6 +71,12 @@ fn a_handle_returned_stored_or_written_is_e0133() {
         ("fn pick(a: Electrical) -> f64 { let h = [a, a]; 1.0 }", "stored in an array element"),
         ("fn pick(a: Electrical) -> f64 { let f = |x: f64| x + v(a); f(1.0) }", "captured by a closure"),
         ("fn pick(a: Bit) -> bool { a = true; true }", "written through"),
+        ("fn pick(a: Electrical) -> f64 { let c = { a }; 1.0 }", "stored in a `let`"),
+        ("fn pick(a: Electrical) -> f64 { let c = if true { a } else { a }; 1.0 }", "stored in a `let`"),
+        ("fn pick(a: Electrical) -> f64 { let c = match 1 { _ => a }; 1.0 }", "stored in a `let`"),
+        ("fn pick(a: Electrical) -> f64 { let c = if false { 1.0 } else { let d = 2.0; { a } }; 1.0 }", "stored in a `let`"),
+        ("fn pick(a: Electrical) -> f64 { let h = ({ a }, 1.0); 1.0 }", "stored in a tuple element"),
+        ("fn pick(a: Electrical) -> f64 { return { a }; }", "returned"),
     ] {
         let found = HandleSources::found(&format!("{function}\nfn call(x: Electrical) -> f64 {{ pick(x) }}\n{tail}"));
         let e0133: Vec<&String> = found.iter().filter(|(code, _)| code == "E0133").map(|(_, message)| message).collect();
