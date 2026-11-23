@@ -1,7 +1,8 @@
 # Composite Values verification (phase C, arrays of carriers, T64 to T90)
 
-**Verdict**: FAIL (round 3 at 06e8d1bf: findings 1 to 17 are closed by commits and every proof passes; three Low findings 18 to 20 are new - none silent, none in a run's values; a short fix round closes them)
+**Verdict**: PASS (round 4 at 0ec2fba8: findings 1 to 20 are closed by commits, every proof passes - 48 checks - and the feature's one final full suite is green at 0ec2fba8)
 **Proofs**: `proofs-c.md` (check_proofs.py over `tasks-c.md`; first run at 7033d22c: 36 pass, 2 fail - C112 and C140 name a test that does not exist; rerun at the verification commit)
+**Round 4**: re-verification at 0ec2fba8 (fixes 1ddfe8c1, 69be2ebc, c9044da5); `proofs-c.md` rerun at the round-4 verification commit; the final full suite run at 0ec2fba8 (below).
 **Round 3**: re-verification at 06e8d1bf (fixes bec5068c, 517b3b39, d1f02381, checks b66e5d21); `proofs-c.md` rerun at the round-3 verification commit.
 **Round 2**: re-verification at fc734468 (fixes f7487b45, 5a43aed5, 61d5ecd3, 9f7bee89, f2da2208, 34434d7e); `proofs-c.md` rerun at the round-2 verification commit. User decisions (direct, 2026-11-23): QC4 = `E0188`; tasks-c.md approved "Aprovo o plano da fase C".
 **Verifier**: independent sub-agent (author != verifier), Opus, 2026-11-23, branch `feature/composite-values-c` at 7033d22c (diff `origin/main...HEAD`, merge base 52b2223c, 34 commits)
@@ -30,6 +31,36 @@
 - natures#2 refused only for `logic("10xx")`: the owner it names does not own that literal (Finding 6).
 - 3fbfb9ce subject `test(parity): EU-04 AC 3 on an array of carriers`: the capital is the identifier `EU-04`; process note only, no finding.
 - POM navigability: the POM keeps `signal bl: [Electrical; 4]` as one declaration (`types_carrier_arrays.rs::arrays_of_carriers_type_as_signals_and_ports` finds one decl `bl` typed `[Node; 4]`); the K nodes are the IR's. Holds.
+
+## Round 4 (0ec2fba8)
+
+**Fixes judged.** 1ddfe8c1 documents `EmptyArray.name` and `.origin`. c9044da5 makes C151 hold its claim by value: each variant's `bl` count and its locals' `[u8; n]`, with the refusal's code. 69be2ebc records an empty array under its frame's prefix (`p.e`), as hoisted carriers are named, and lets `Probe::resolve_all` try each split of the path into an instance and a name, longest instance first.
+
+**Can the longest-instance-first split resolve an ambiguous path to the wrong thing? No.** A path `A.b.c` could split two ways:
+
+- as instance `A.b` with name `c`, which needs `b` to be a placed child of `A` with a body;
+- as instance `A` with name `b.c`, which needs `b` to be a hoisted placement inside `A`.
+
+One `let b` is either placed or hoisted, never both, so at most one split names an existing instance that also has that empty array or node array. Within one body, an empty array, a node array and a carrier never share a name, because names are unique per body and a frame's prefix keeps hoisted names apart. If no split matches, the path falls through to the earlier `Probe::resolve`, so carriers, nodes and params resolve as before. The other probe tests (C127, C128, C149, C150, C154) pass beside C155.
+
+**Final full suite at 0ec2fba8** (lane D env in every command; `/var/tmp/piperine-tmp-d` cleared first; disk 81% to 83%). The workspace run went package by package in the foreground, `env -u PIPERINE_NGSPICE cargo test --no-fail-fast -p <package>`, because one command does not fit the tool's 10-minute limit. Together the packages are `--workspace --exclude piperine-lang-server`.
+
+| Command | Result |
+| --- | --- |
+| `cargo build --workspace --exclude piperine-lang-server` | exit 0, no warning, no error |
+| `cargo test --workspace --exclude piperine-lang-server --no-run` | exit 0 |
+| `cargo test` (`env -u PIPERINE_NGSPICE`, `--no-fail-fast`): abi, analog-solver, digital-solver, interp, ir, plan, solver, project | exit 0; 145 `ok` results, 0 failed |
+| `cargo test` (same flags): piperine-lang | exit 0; 68 `ok` results, 0 failed |
+| `cargo test` (same flags): piperine-transpile and piperine-api | exit 0; 52 `ok` results, 0 failed. The panics printed inside `mutated.rs` are the mutation tests' expected panics |
+| `cargo test` (same flags): piperine-cli | exit 0; 13 `ok` results, 0 failed |
+| `cargo test` (same flags): piperine (root) | exit 0; 28 `ok` results, 0 failed |
+| `cargo test` (same flags): piperine-parity | exit 0; 47 `ok` results, 0 failed |
+| `cargo test -p piperine-parity -- --nocapture` | exit 0; 47 `ok` results, 0 failed |
+| the seven buck targets (`buck_whole`, `buck_dpwm`, `buck_control`, `buck_supervisor`, `buck_boundary`, `buck_closed_loop`, `buck_power`) | exit 0; 3 + 4 + 2 + 3 + 5 + 3 + 3 passed |
+| `cargo test -p piperine --test buck_scenarios` | exit 0; 61 passed |
+| `cargo test -p piperine-cli --test twins` | exit 0; 6 passed |
+
+The workspace part ran 339 test targets plus each package's doc-tests (353 result lines in all), with no failed result.
 
 ## Round 3 (06e8d1bf)
 
@@ -104,11 +135,12 @@
 | C147 | `crates/piperine-digital-solver/tests/array_nets.rs` `a_reaction_committing_an_element_a_function_writes_is_a_fault` | yes - control (element 6 apart) runs with both values; element 2 faults naming `element 2`, `lines` and P1 |
 | C148 | `elab_carrier_arrays.rs` `a_logic_literal_is_a_carriers_initial_value` | yes - planes `0b1100`/`0b1000` from §22.1.1, field order `binary, value` matches `std/logic.msl` |
 | C149 | `crates/piperine-api/tests/carrier_arrays.rs` `the_metadata_lists_the_length_of_an_array_port` | yes - `[bool; 4]` and `[u8; 2]` |
+| C155 | `crates/piperine-api/tests/carrier_arrays.rs` `an_empty_array_of_a_hoisted_module_prints_under_the_placement`; `elab_carrier_arrays.rs` `an_array_of_length_zero_is_an_empty_array` | yes (round 4) - the IR records `p.e` in `Top`'s body, and `Bench.p.e` reads `[]` at every row |
 | C150 | `crates/piperine-api/tests/carrier_arrays.rs` `a_set_of_a_param_an_array_length_reads_is_e0803` | yes - `E0803` naming `wide.n`, and a non-structural `osc.f` accepted |
-| C151 | `elab_carrier_arrays.rs` `an_array_whose_length_reads_a_param_reads_and_writes_whole` | partly (round 3) - it proves that the three forms elaborate and that two variant bodies exist, not that each variant reads with the length of its own `n` (the claim's "each per body variant"); the run-time values hold in the verifier's own example (Finding 19); its negative case asserts only `!found.is_empty()` |
+| C151 | `elab_carrier_arrays.rs` `an_array_whose_length_reads_a_param_reads_and_writes_whole` | yes (round 4) - per variant: `bl` 5 and 3 nodes by body, the locals `w` and `ones` printed `[u8; 5]` and `[u8; 3]`, and `[1; m]` refused `E0180` exactly; the run-time lengths also hold in the verifier's round 3 example |
 | C152 | `elab_carrier_arrays.rs` `an_argument_of_another_length_than_a_param_length_is_e0313_at_elaboration` | yes (round 3) - `E0313` naming `[4]` and `[3]` for carriers, `[5]` and `[4]` for nodes; the matching length and the placement's own `n` 5 elaborate |
 | C153 | `elab_carrier_arrays.rs` `a_negative_array_length_from_a_param_is_e0104_naming_it` | yes (round 3) - `E0104` naming `-1` and `carriers`/`nodes`, and no `P0001` |
-| C154 | `crates/piperine-api/tests/carrier_arrays.rs` `a_declared_empty_array_prints_as_the_empty_array` | yes (round 3) for a placed body - `[]` at every row for `Bench.gap.none` and `Bench.gap.bl`, an undeclared name `E0801`; a hoisted frame's empty array is Finding 20 |
+| C154 | `crates/piperine-api/tests/carrier_arrays.rs` `a_declared_empty_array_prints_as_the_empty_array` | yes (round 4) - `[]` at every row for `[Bit<u8>; 0]` and `[Electrical; 0]`, an undeclared name `E0801`; the hoisted frame is C155 |
 
 ## Findings
 
@@ -131,6 +163,6 @@
 | 15. **Low** (round 2) - a negative param length, `n: i32 = -1; signal s: [Bit; n];`, is `P0001` "not a constant yet ... not supported yet"; §1.2.3 makes the length "known and not negative", so this is an error of the program, not a missing feature | own example; `elab/carrier_arrays.rs` `shape_in` (`u64::try_from` fails into `None`) | report `E0188` (or `E0104`) naming the length and its value | bec5068c (C153; `E0104`, the code §1 rule 11 gives a panic of a const expression, which spec part I values lists for array lengths built from const parameters) |
 | 16. **Low** (round 2) - the host cannot name an empty array: `--print none` on `signal none: [Bit<u8>; 0]` is `E0801` "names nothing in the design", although the source declares it; CV-28 AC 1 prints every element, here none (`[]`) | own example (`piperine run`) | resolve a declared empty array to an empty composite cell, or a named refusal | 517b3b39 (C154) |
 | 17. **Low** (round 2) - natures#2's records outside GAPS.md are stale: `ROADMAP.md:64` still names `P0001`, `E0112` and the array; `.specs/features/resolved-nets/tasks.md:890` says natures#2 "runs" when `Sda` lands, but the listing's floating nodes make the operating point singular (`E0503`) whatever resolved-nets does, so its flip cannot be an op run. The test name `..._refused_for_the_logic_and_the_net` no longer describes it (the logic line runs) | `tests/book/natures.rs:69-95`; `GAPS.md:407` (right, and says so); `ROADMAP.md:64`; resolved-nets tasks.md:890 | record in resolved-nets' task that natures#2 is judged by elaboration (a declaration list), not by an operating point; fix ROADMAP:64; rename the test (inventory row with it) | d1f02381 (C143 renamed; ROADMAP.md, resolved-nets T35, GAPS.md agree) |
-| 18. **Low** (round 3) - the new IR record's fields carry no doc comment: `EmptyArray { name, origin }` (`crates/piperine-ir/src/model.rs`, after `NodeArray`); the user's rule is that every new field has one | `crates/piperine-ir/src/model.rs` `pub struct EmptyArray` | a `///` line on `name` and `origin` | |
-| 19. **Low** (round 3) - C151 claims each variant reads with its own `n`; its test proves only that the forms elaborate and two bodies exist, so a fold that gave every variant the default length would pass. Its negative case (`[1; m]`) asserts only that some diagnostic exists | `crates/piperine-lang/tests/elab_carrier_arrays.rs` `an_array_whose_length_reads_a_param_reads_and_writes_whole` | assert the folded lengths per variant (the type of `w`/`ones` in each body, or a run's `len()` 5 and 3), and the code of the `[1; m]` refusal | |
-| 20. **Low** (round 3) - a hoisted frame's empty array cannot be named by the host: `record_empty_array` keeps only frame 0's, so `--print Top.p.e` for `signal e: [Bit<u8>; 0]` in a placed module with a result is `E0801` "names nothing in the design" though declared (Finding 16's rule, for the frames) | own example; `crates/piperine-lang/src/elab/carrier_arrays.rs` `record_empty_array` (`if frame != 0 { return; }`) | record it under the frame's prefix (`p.e`), as a hoisted carrier is named, with a test | |
+| 18. **Low** (round 3) - the new IR record's fields carry no doc comment: `EmptyArray { name, origin }` (`crates/piperine-ir/src/model.rs`, after `NodeArray`); the user's rule is that every new field has one | `crates/piperine-ir/src/model.rs` `pub struct EmptyArray` | a `///` line on `name` and `origin` || 1ddfe8c1 (doc comments on `name` and `origin`) |
+| 19. **Low** (round 3) - C151 claims each variant reads with its own `n`; its test proves only that the forms elaborate and two bodies exist, so a fold that gave every variant the default length would pass. Its negative case (`[1; m]`) asserts only that some diagnostic exists | `crates/piperine-lang/tests/elab_carrier_arrays.rs` `an_array_whose_length_reads_a_param_reads_and_writes_whole` | assert the folded lengths per variant (the type of `w`/`ones` in each body, or a run's `len()` 5 and 3), and the code of the `[1; m]` refusal || c9044da5 (C151) |
+| 20. **Low** (round 3) - a hoisted frame's empty array cannot be named by the host: `record_empty_array` keeps only frame 0's, so `--print Top.p.e` for `signal e: [Bit<u8>; 0]` in a placed module with a result is `E0801` "names nothing in the design" though declared (Finding 16's rule, for the frames) | own example; `crates/piperine-lang/src/elab/carrier_arrays.rs` `record_empty_array` (`if frame != 0 { return; }`) | record it under the frame's prefix (`p.e`), as a hoisted carrier is named, with a test || 69be2ebc (C155) |
