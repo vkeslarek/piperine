@@ -1188,7 +1188,7 @@ fn jump_has_no_solve_of_its_own() {
     assert!(r6.contains("backward Euler"), "{r6}");
     assert!(r6.contains("drops the previous derivative"), "{r6}");
     assert!(!s.contains("**Before the solve of `t`.**") && !s.contains("**After the solve of `t`.**"), "the two cases are one: the step solves, then the instant runs");
-    let at = &s[s.find("**At `t`.**").expect("the case of a change at `t`")..s.find("**A host `set`** is read").expect("the host set case")];
+    let at = &s[s.find("**At `t`.**").expect("the case of a change at `t`")..s.find("**A host `set`** is a host commit").expect("the host set case")];
     for fact in [
         "The step that arrives at `t` solves on the left value, the discrete state as it stood before `t`, and reads no change: it is an ordinary step, tested for truncation error like any other",
         "run after that solve is accepted",
@@ -2403,5 +2403,22 @@ fn part_v_the_step_to_t_solves_first_on_the_left_value_in_every_place_that_says_
         ("appendix_f_gallery_mixed.md", "The step to `t` is solved first; the reaction probes the solution at `t`"),
     ] {
         assert!(flat(&spec(file)).contains(fact), "{file} lacks \"{fact}\"");
+    }
+}
+
+#[test]
+fn part_v_a_host_set_due_at_t_is_a_commit_at_t_0() {
+    // F15: the code commits a scheduled write at `(t, 0)` (`Digital::host_commit`), so the reactions
+    // and the settle phase of `t` read it; Part V no longer says it applies after the settle phase.
+    let s = flat(&spec("part_v_execution.md"));
+    for fact in [
+        "A host `set` due at `t` is collected here, as a host commit due at `(t, 0)`.",
+        "The set is a host commit due at `(t, 0)`: it applies after the step to `t` is accepted, like any other change at `t`, so the reactions of `(t, n)` and the settle phase of `t` read it.",
+        "The first step after `t` reads every change made at `t`, a host `set` included",
+    ] {
+        assert!(s.contains(fact), "Part V lacks \"{fact}\"");
+    }
+    for stale in ["it applies in step 5", "First the host `set`s due at `t` apply, after the settle phase", "applies after the step to `t` is accepted, after the settle phase"] {
+        assert!(!s.contains(stale), "Part V still says \"{stale}\"");
     }
 }

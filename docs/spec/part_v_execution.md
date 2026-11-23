@@ -84,8 +84,8 @@ produce the result of the following procedure.
    anything at `t` runs, on the left value (the discrete state as it stood before `t`). It
    reads no change made at `t`. Its solution is the solution at `t`.
 2. *Collect* what is due at `t`: `at` events, delayed commits and host drives (§23.1.4).
-   Collected commits are due at `(t, 0)`. Collected events fire at `(t, 0)`. A host `set` is
-   not collected here: it applies in step 5.
+   Collected commits are due at `(t, 0)`. Collected events fire at `(t, 0)`. A host `set` due at `t` is collected here, as a host
+   commit due at `(t, 0)`.
 3. *Microstep loop*, for `n = 0, 1, …`:
    1. *Apply* the commits due at `(t, n)`. Commits to one level of one drive are ordered by
       §12.1.2; the last one is the value.
@@ -100,8 +100,8 @@ produce the result of the following procedure.
       is not read by a solve at `t`: the first step after `t` reads it (§15.2).
 4. *Settle.* Every reaction on `settle` runs once, reading the final discrete state and the
    solution at `t`. This is the **settle phase**.
-5. *Advance* to the next time point (§17.2). First the host `set`s due at `t` apply, after
-   the settle phase; the first step after `t` reads them (§15.2, "Host `set`").
+5. *Advance* to the next time point (§17.2). The first step after `t` reads every change made
+   at `t`, a host `set` included (§15.2, "Host `set`").
 
 Something is **pending** at `(t, n + 1)` when a commit is due there or an event fires there.
 The table fixes the microstep at which each event fires; §13 defines the events themselves.
@@ -249,16 +249,17 @@ it depends on when the change is made:
   reads all of them: it restarts the integrator and is sized and tested by rule 6. A settle
   commit is a change due before the solve of `t_next` (§15 S3): the step that arrives at the
   next time point reads it, and rule 6 sizes and tests that step likewise.
-- **A host `set`** is read by the first step after `t`, with the restarts of the paragraph
-  below.
+- **A host `set`** is a host commit at `(t, 0)`, read by the first step after `t`, with the
+  restarts of the paragraph below.
 
 When several changes occur at one `t`, in successive microsteps, the step that reads the first
 of them reads them all.
 
 **Host `set`.** A `set` due at `t` lands the solver on `t` but is not applied before the step
 that arrives there: that step is tested for truncation error like any other and does not read
-the set. The set applies after the step to `t` is accepted, after the settle phase (§15 step 5).
-The first step after `t` reads it. That step is tested with the first-order estimate of rule 6, restarts
+the set. The set is a host commit due at `(t, 0)`: it applies after the step to `t` is
+accepted, like any other change at `t`, so the reactions of `(t, n)` and the settle phase of
+`t` read it. The first step after `t` reads it. That step is tested with the first-order estimate of rule 6, restarts
 the integrator, and its size restarts at a tenth of the last step (Appendix C.2). A `set` of a
 param whose change moves the operating point (the solver's `OperatingPoint` invalidation strength, Appendix C.2)
 also retakes the step to `t` with the new value; the retaken step's solution replaces the
