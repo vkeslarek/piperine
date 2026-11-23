@@ -91,6 +91,16 @@ impl MultiPrecision {
         (!self.is_zero()).then(|| self.exponent + self.magnitude.bit_length() as i64 - 1)
     }
 
+    /// The magnitude of the integer nearest to the value, a tie going away from zero.
+    pub fn nearest_integer_magnitude(&self) -> Vec<u64> {
+        if self.exponent >= 0 {
+            return self.magnitude.shifted_left(self.exponent as u64);
+        }
+        let drop = (-self.exponent) as u64;
+        let whole = self.magnitude.shifted_right(drop);
+        if self.magnitude.bit(drop - 1) { whole.plus(&1u64.to_limbs()) } else { whole }
+    }
+
     /// `-x`.
     pub fn negated(&self) -> Self {
         MultiPrecision { negative: !self.negative && !self.is_zero(), magnitude: self.magnitude.clone(), exponent: self.exponent }
@@ -365,6 +375,22 @@ impl Interval {
         }
         let upper = if self.upper.compare(&self.lower.negated()) == Ordering::Less { self.lower.negated() } else { self.upper.clone() };
         Interval { lower: MultiPrecision::zero(), upper, precision: self.precision }
+    }
+
+    /// The interval `[-bound, bound]` for a non-negative `bound`.
+    pub fn symmetric(bound: &MultiPrecision, precision: u32) -> Self {
+        Interval { lower: bound.negated(), upper: bound.clone(), precision }
+    }
+
+    /// `floor(log2)` of the largest magnitude in the interval, `None` for `[0, 0]`.
+    pub fn magnitude_top(&self) -> Option<i64> {
+        self.lower.top_exponent().max(self.upper.top_exponent())
+    }
+
+    /// The largest magnitude in the interval as a value (zero for `[0, 0]`).
+    pub fn largest_magnitude(&self) -> MultiPrecision {
+        let (low, high) = (self.lower.absolute(), self.upper.absolute());
+        if low.compare(&high) == Ordering::Greater { low } else { high }
     }
 
     /// The bounds rounded to the nearest `f128` each: if they are equal, every value between

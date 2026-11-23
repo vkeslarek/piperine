@@ -56,6 +56,9 @@ impl ReferenceConstants {
 
     /// The cached value of a constant, computed on first use.
     fn cached(constant: Constant, precision: u32) -> Interval {
+        // Precisions round up to a multiple of 256 bits so nearby requests share one entry; the
+        // interval is only narrower than asked.
+        let precision = precision.div_ceil(256) * 256;
         let key = (constant, precision);
         if let Ok(guard) = ConstantCache::table().lock() {
             if let Some(found) = guard.get(&key) {

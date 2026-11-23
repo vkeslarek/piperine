@@ -18,4 +18,5 @@ pub mod half;
 pub mod limbs;
 pub mod precision;
 pub mod quad;
+pub mod reduction;
 pub mod wide;

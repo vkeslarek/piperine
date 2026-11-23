@@ -6,14 +6,18 @@
 mod exact;
 #[path = "support/exact_algebra.rs"]
 mod exact_algebra;
+#[path = "support/exact_integers.rs"]
+mod exact_integers;
 #[path = "support/exact_text.rs"]
 mod exact_text;
 #[path = "support/random.rs"]
 mod random;
 
 use exact::ExactRational;
-use num_bigint::BigUint;
+use num_bigint::{BigInt, BigUint};
 use piperine_numbers::constants::ReferenceConstants;
+use piperine_numbers::quad::Float128;
+use piperine_numbers::reduction::ArgumentReduction;
 use piperine_numbers::precision::{Interval, MultiPrecision, Rounding};
 use random::Xorshift;
 use std::cmp::Ordering;
@@ -183,4 +187,131 @@ fn reference_constants_contain_their_published_digits() {
     assert_ne!(lower.compare(&ExactRational::dyadic(false, &(&scaled + 1u32), -20_000)), Ordering::Greater, "pi at 16 600 bits against the 20 000-bit value (lower)");
     assert_ne!(upper.compare(&ExactRational::dyadic(false, &scaled, -20_000)), Ordering::Less, "pi at 16 600 bits against the 20 000-bit value (upper)");
     assert_eq!(ReferenceConstants::pi(500).lower().compare(ReferenceConstants::pi(500).lower()), Ordering::Equal, "a cached value is the same value");
+}
+
+/// Argument reduction against exact rational arithmetic with pi at 20 000 bits and ln 2 at 1000 decimals.
+struct ReductionScenario {
+    /// The deterministic operand source.
+    random: Xorshift,
+    /// `floor(pi * 2^20000)`.
+    pi_scaled: BigUint,
+}
+
+impl ReductionScenario {
+    /// A scenario with a seeded generator and pi from the committed file.
+    fn new(seed: u64) -> Self {
+        ReductionScenario { random: Xorshift::new(seed), pi_scaled: PublishedConstants::pi_bits() }
+    }
+
+    /// pi/2 as a rational, within `2^-20001` of the truth.
+    fn half_pi(&self) -> ExactRational {
+        ExactRational::dyadic(false, &self.pi_scaled, -20_001)
+    }
+
+    /// `2^power` as a rational.
+    fn power_of_two(power: i64) -> ExactRational {
+        ExactRational::dyadic(false, &BigUint::from(1u32), power)
+    }
+
+    /// `|value|`.
+    fn absolute(value: &ExactRational) -> ExactRational {
+        if value.is_negative() { value.negated() } else { value.clone() }
+    }
+
+    /// The `f128` arguments of `half_pi.tsv`: the binary128 nearest to odd multiples of pi/2.
+    fn worst_cases() -> Vec<u128> {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/vectors/half_pi.tsv");
+        fs::read_to_string(path).unwrap_or_default().lines().filter(|line| !line.starts_with('#')).filter_map(|line| u128::from_str_radix(line.split_once('\t')?.1, 16).ok()).collect()
+    }
+
+    /// A random finite pattern: random bits, a window of exponents around 1, or any exponent.
+    fn random_argument(&mut self) -> u128 {
+        let word = (self.random.next_u64() as u128) << 64 | self.random.next_u64() as u128;
+        let field = match self.random.next_u64() % 3 {
+            0 => (word >> 112) & 0x7FFE,
+            1 => 0x3FFF - 20 + (self.random.next_u64() % 60) as u128,
+            _ => (self.random.next_u64() % 0x7FFE) as u128,
+        };
+        (word & (1u128 << 127 | ((1u128 << 112) - 1))) | field << 112
+    }
+
+    /// The exact reduction of `x` against the 20 000-bit pi: the turns `n`, the remainder
+    /// `r` with `|r| <= pi/4`, and whether `r` is so close to `+-pi/4` that `n` is ambiguous.
+    fn exact_reduction(&self, x: &ExactRational) -> (BigInt, ExactRational, bool) {
+        let half_pi = self.half_pi();
+        let turns = x.divided_by(&half_pi).map(|quotient| quotient.floor()).unwrap_or_default();
+        let remainder = x.remainder_euclid(&half_pi);
+        let twice = remainder.plus(&remainder);
+        let ambiguous = Self::absolute(&twice.minus(&half_pi)).compare(&Self::power_of_two(-200)) == Ordering::Less;
+        if twice.compare(&half_pi) == Ordering::Greater { (turns + 1, remainder.minus(&half_pi), ambiguous) } else { (turns, remainder, ambiguous) }
+    }
+
+    /// Checks one argument at each precision: the interval meets the exact remainder, the quadrant
+    /// agrees, and the interval is no wider than `2^-precision` relative.
+    fn check(&self, bits: u128, precisions: &[u32]) {
+        let exact = DirectedScenario::rational(&MultiPrecision::from_quad_bits(bits).unwrap_or_else(MultiPrecision::zero));
+        let reduction = self.exact_reduction(&exact);
+        for precision in precisions {
+            Self::check_precision(bits, *precision, &reduction);
+        }
+    }
+
+    /// Checks one argument at one precision against its exact reduction.
+    fn check_precision(bits: u128, precision: u32, reduction: &(BigInt, ExactRational, bool)) {
+        let reduced = ArgumentReduction::quarter_turns(Float128::from_bits(bits), precision);
+        assert!(reduced.is_some(), "{bits:#x} is finite and must reduce");
+        let Some(reduced) = reduced else { return };
+        let (turns, remainder, ambiguous) = (&reduction.0, &reduction.1, reduction.2);
+        let (lower, upper) = (DirectedScenario::rational(reduced.remainder.lower()), DirectedScenario::rational(reduced.remainder.upper()));
+        // The oracle's remainder is within |n| * 2^-20001 of the true one.
+        let error = ExactRational::dyadic(false, &(turns.magnitude() + 1u32), -20_001);
+        if ambiguous {
+            return;
+        }
+        assert_ne!(lower.compare(&remainder.plus(&error)), Ordering::Greater, "remainder interval of {bits:#x} at {precision} bits lies above the exact remainder");
+        assert_ne!(upper.compare(&remainder.minus(&error)), Ordering::Less, "remainder interval of {bits:#x} at {precision} bits lies below the exact remainder");
+        let modulus = BigInt::from(4);
+        let quadrant = (((turns % &modulus) + &modulus) % &modulus).to_u64_digits().1.first().copied().unwrap_or(0);
+        assert_eq!(u64::from(reduced.quadrant), quadrant, "quadrant of {bits:#x}");
+        let relative_width = upper.minus(&lower).times(&Self::power_of_two(precision as i64));
+        assert_ne!(relative_width.compare(&Self::absolute(remainder)), Ordering::Greater, "remainder of {bits:#x} at {precision} bits is wider than 2^-{precision} relative");
+    }
+
+    /// Checks `x = k ln 2 + r` for an `f128` value at one precision against ln 2 at 1000 decimals.
+    fn check_ln_two(&self, bits: u128, precision: u32) {
+        let Some(value) = MultiPrecision::from_quad_bits(bits) else { return };
+        let point = Interval::point(value, precision + 64);
+        let steps = ArgumentReduction::ln_two_steps(&point, precision);
+        assert!(steps.is_some(), "{bits:#x} must reduce by ln 2");
+        let Some(steps) = steps else { return };
+        let ln_two = PublishedConstants::truncated("ln2");
+        let exact = DirectedScenario::rational(point.lower());
+        let reconstructed = exact.minus(&ln_two.times(&ExactRational { numerator: BigInt::from(steps.steps), denominator: BigUint::from(1u32) }));
+        let slack = ExactRational::decimal(false, &BigUint::from(steps.steps.unsigned_abs() + 1), -1000);
+        let (lower, upper) = (DirectedScenario::rational(steps.remainder.lower()), DirectedScenario::rational(steps.remainder.upper()));
+        assert_ne!(lower.compare(&reconstructed.plus(&slack)), Ordering::Greater, "ln 2 remainder of {bits:#x} lies above");
+        assert_ne!(upper.compare(&reconstructed.minus(&slack)), Ordering::Less, "ln 2 remainder of {bits:#x} lies below");
+        let half_ln_two = ln_two.times(&Self::power_of_two(-1));
+        let margin = ExactRational::decimal(false, &BigUint::from(1u32), -900);
+        assert_ne!(Self::absolute(&reconstructed).compare(&half_ln_two.plus(&margin)), Ordering::Greater, "|r| <= ln 2 / 2 for {bits:#x}");
+        assert_ne!(upper.minus(&lower).compare(&Self::power_of_two(-(precision as i64))), Ordering::Greater, "ln 2 remainder of {bits:#x} wider than 2^-{precision}");
+    }
+}
+
+#[test]
+fn reduction_keeps_full_precision_for_every_finite_argument() {
+    let mut scenario = ReductionScenario::new(102);
+    let mut arguments = ReductionScenario::worst_cases();
+    arguments.extend([0x7FFE_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFFu128, 0xFFFE_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF, 1, 0x3FFF_0000_0000_0000_0000_0000_0000_0000, 0x3FFE_0000_0000_0000_0000_0000_0000_0000, 0x4000_0000_0000_0000_0000_0000_0000_0000, 0x3FFE_921F_B544_42D1_8469_898C_C517_01B8]);
+    for _ in 0..600 {
+        arguments.push(scenario.random_argument());
+    }
+    for bits in arguments {
+        scenario.check(bits, &[160, 400]);
+    }
+    for _ in 0..500 {
+        let value = (scenario.random_argument() & !(0x7FFFu128 << 112)) | (0x3FFF - 20 + (scenario.random.next_u64() % 35) as u128) << 112;
+        scenario.check_ln_two(value, 160);
+        scenario.check_ln_two(value, 400);
+    }
 }
