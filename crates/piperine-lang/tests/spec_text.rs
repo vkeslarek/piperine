@@ -1223,6 +1223,10 @@ fn reference_rows_describe_the_kept_jump() {
         assert!(!row.contains("gap"), "{row}");
     }
     let restart = c.lines().find(|l| l.starts_with("| restart")).expect("restart row");
+    for stale in ["discontinuity()", "accept_step"] {
+        assert!(!restart.contains(stale), "the restart row names `{stale}`, which the tree does not have: {restart}");
+    }
+    assert!(restart.contains("`device_deliver`") && restart.contains("rule 6's four restarts, and no other"), "{restart}");
     assert!(restart.contains("a tenth of the last step (`HOST_RESTART_FRACTION` 0.1)"), "{restart}");
     assert!(!restart.contains("10⁻³"), "the old restart fraction is gone: {restart}");
     assert!(restart.contains("after a host `set` only"), "{restart}");
