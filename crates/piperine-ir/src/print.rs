@@ -417,6 +417,10 @@ impl<'a> Printer<'a> {
             text.push_str(&self.at(&site.origin));
             self.line(1, &text);
         }
+        for (i, partial) in body.partial_derivatives.iter().enumerate() {
+            let at = self.at(&partial.origin);
+            self.line(1, &format!("ddx{i} {:?}{at}", partial.name));
+        }
         for (i, site) in body.traces.iter().enumerate() {
             let stream = body.streams.get(site.stream as usize).map_or(format!("<bad stream {}>", site.stream), |s| format!("{:?}", s.name));
             let at = self.at(&site.origin);

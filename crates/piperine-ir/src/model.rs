@@ -115,6 +115,10 @@ pub struct BodyData {
     /// (`Stmt::Trace`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) traces: Vec<TraceSite>,
+    /// The `ddx` calls the elaborator differentiated (§14.2), by index, kept so a reader and the
+    /// interpreter see where one was.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) partial_derivatives: Vec<PartialDerivative>,
     /// The modules placed in an expression whose nodes or `analog` statements joined this body.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) hoisted: Vec<Hoisted>,
@@ -375,6 +379,15 @@ pub struct SessionParameter {
 pub struct TraceSite {
     /// The record stream the site writes (its index in `Body::streams`).
     pub stream: u32,
+    pub origin: Origin,
+}
+
+/// A `ddx` the elaborator differentiated (§14.2): the expression it stands for is already the
+/// derivative, built by `Differentiation`; this records where it was written.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PartialDerivative {
+    /// The probe or flow `ddx` differentiated against, as the source spells it.
+    pub name: String,
     pub origin: Origin,
 }
 

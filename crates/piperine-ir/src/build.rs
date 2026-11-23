@@ -7,7 +7,7 @@ use crate::real::Real;
 use crate::deps::DepsMemo;
 use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
 use crate::model::{AggregateData, NodeAlias, 
-    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, DelaySite, Derivative, Drive, Event, NoiseSource, SessionParameter, TraceSite, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
+    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, DelaySite, Derivative, Drive, Event, NoiseSource, SessionParameter, TraceSite, PartialDerivative, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
     Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, ReprForm, Site, Stmt, Stream, Terminal, TypeData, ValueType,
 };
 
@@ -128,6 +128,9 @@ pub struct IrBuilder {
     aggregates: Vec<AggregateData>,
     /// The merges `merge_nodes` asked for, applied by `finish`.
     union: NodeUnion,
+    /// The derived function of each `(function, argument)` the differentiation built; `None`
+    /// while it is being built (a recursive function has none).
+    derived: BTreeMap<(FunctionId, u32), Option<FunctionId>>,
 }
 
 impl IrBuilder {
@@ -185,6 +188,7 @@ impl IrBuilder {
             noise_sources: Vec::new(),
             session_parameters: Vec::new(),
             traces: Vec::new(),
+            partial_derivatives: Vec::new(),
             hoisted: Vec::new(),
             merges: Vec::new(),
             reaches: Vec::new(),
@@ -328,6 +332,13 @@ impl IrBuilder {
         list.len() as u32 - 1
     }
 
+    /// Records a `ddx` of `body`: returns its index.
+    pub fn partial_derivative(&mut self, body: BodyId, partial: PartialDerivative) -> u32 {
+        let list = &mut self.body_data(body).partial_derivatives;
+        list.push(partial);
+        list.len() as u32 - 1
+    }
+
     /// Adds a trace site to `body`: returns its index, the identity `Stmt::Trace` names it by.
     pub fn trace(&mut self, body: BodyId, trace: TraceSite) -> u32 {
         let traces = &mut self.body_data(body).traces;
@@ -384,6 +395,43 @@ impl IrBuilder {
     /// builder never handed out.
     pub fn expr_kind(&self, id: ExprId) -> Option<&Expr> {
         self.exprs.get(id.index()).map(|e| &e.kind)
+    }
+
+    /// The data of expression `id` added before; `None` for an id this builder never handed out.
+    pub(crate) fn expr_data(&self, id: ExprId) -> Option<&ExprData> {
+        self.exprs.get(id.index())
+    }
+
+    /// The statement `id` added before; `None` for an id this builder never handed out.
+    pub(crate) fn stmt_data(&self, id: StmtId) -> Option<&Stmt> {
+        self.stmts.get(id.index())
+    }
+
+    /// The function `id` added before; `None` for an id this builder never handed out.
+    pub(crate) fn function_data(&self, id: FunctionId) -> Option<&FunctionData> {
+        self.functions.get(id.index())
+    }
+
+    /// The derived function of `function` against its argument `argument` the differentiation
+    /// built (`None` when none is built or it is still being built).
+    pub fn derived_function(&self, function: FunctionId, argument: u32) -> Option<FunctionId> {
+        self.derived.get(&(function, argument)).copied().flatten()
+    }
+
+    /// Marks the derived function of `(function, argument)` as being built: `false` when it
+    /// already is, which means the function reaches itself.
+    pub(crate) fn begin_derived(&mut self, function: FunctionId, argument: u32) -> bool {
+        self.derived.insert((function, argument), None).is_none()
+    }
+
+    /// Records the derived function of `(function, argument)` once built.
+    pub(crate) fn end_derived(&mut self, function: FunctionId, argument: u32, derived: FunctionId) {
+        self.derived.insert((function, argument), Some(derived));
+    }
+
+    /// Drops the mark of a derived function whose construction failed.
+    pub(crate) fn abandon_derived(&mut self, function: FunctionId, argument: u32) {
+        self.derived.remove(&(function, argument));
     }
 
     pub fn stmt(&mut self, stmt: Stmt) -> StmtId {

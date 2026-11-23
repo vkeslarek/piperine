@@ -631,8 +631,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `each_form_differentiates_by_the_rule_of_its_row`, `probes_of_other_branches_are_held_constant`, `limit_is_transparent_to_ddx`, `results_of_other_instances_are_held_constant` and `a_form_with_no_rule_is_not_differentiable_by_name` pass
-- [ ] Gate check passes: `Run irops`, then `cargo test -p piperine-ir`
+- [x] `each_form_differentiates_by_the_rule_of_its_row`, `probes_of_other_branches_are_held_constant`, `limit_is_transparent_to_ddx`, `results_of_other_instances_are_held_constant` and `a_form_with_no_rule_is_not_differentiable_by_name` pass
+- [x] Gate check passes: `Run irops`, then `cargo test -p piperine-ir`
 
 **Tests**: integration
 **Gate**: full
