@@ -68,8 +68,8 @@ analog<N> for Pwl<N> {
 | Events | `N − 1` instances of `at`, one per unrolled reaction (§8.3.4). Each fires once at its tick (§13 rule 4, §15). |
 | `(0, 0)` | `seg ← 0` is committed and `seg.changed()` fires (§13 rule 6). No reaction listens. |
 | Operating point | `now()` is 0 (§16.2). With `points[0].0 == 0`, `y = points[0].1`. A first time above 0 clamps to the same value. |
-| Corner `t_k` | `(t_k, 0)`: `at` fires, the reaction commits `seg`. `(t_k, 1)`: `seg ← k` applies; nothing is pending, so the step that arrives at `t_k` is solved and reads it: a jump (§15 step 3.4). |
-| The jump | Left value: the solution of the previous time point, on segment `k − 1`, which ends at `y_k` at `t_k`. Right value: the step to `t_k` reads `seg = k`; the clamp is 0, so `y = y_k`. The source is continuous; only its slope changes. Tick rounding (§15) can leave a difference of at most the slope times half a tick, which the jump absorbs. |
+| Corner `t_k` | `(t_k, 0)`: `at` fires, the reaction commits `seg`. `(t_k, 1)`: `seg ← k` applies. The step that arrived at `t_k` solved on the old `seg`; the first step after `t_k` reads `seg ← k`: a jump (§15.2). |
+| The jump | Left value: the solution at `t_k`, solved on segment `k − 1`, which ends at `y_k` at `t_k`. Right value: the first step after `t_k` reads `seg = k`; the clamp is 0, so `y = y_k`. The source is continuous; only its slope changes. Tick rounding (§15) can leave a difference of at most the slope times half a tick, which the jump absorbs. |
 | After the last corner | `seg = N − 1`, so `k + 1 >= N` and `y` stays at `points[N − 1].1`. |
 | Time points | Every corner (§17.2.2: its reaction changes a carrier that `analog` reads). No other instant. |
 | `Dc` | `at` never fires (§16.1.3). `seg` stays 0 and `now()` is 0: the source holds its value at time 0. |

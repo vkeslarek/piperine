@@ -1625,8 +1625,8 @@ fn part_v_states_the_solver_hygiene_rules() {
     // the Resolution blocks are quoted: drop the `> ` a wrapped line starts with
     let text = flat(&spec("part_v_execution.md")).replace(" > ", " ");
     for fact in [
-        // Q5: the restart step after a landing or a host `set`
-        "The step that restarts the integrator after a landing or a host `set` is at most a tenth of the smaller of the last accepted step and the time from `t` to the next scheduled time point",
+        // Q5: the restart step after a delivered change or a host `set`
+        "The step that restarts the integrator after a change or a host `set` is at most a tenth of the smaller of the last accepted step and the time from `t` to the next scheduled time point",
         // Q6: a later start from an operating point
         "starts from an operating point at `(t_start, 0)`",
         "A start time that is not finite or is negative fails before the operating point",
@@ -1665,7 +1665,7 @@ fn appendix_c_states_the_solver_hygiene_numerics() {
         "the smallest `CAP` of the last accepted solution still bounds it",
         // Q5
         "at most `0.1·min(last step, gap to the next scheduled time point)`, first order",
-        "| restart step after a landing or a host `set` | at most 0.1 of the smaller of the last step and the gap to the next scheduled time point;",
+        "| restart step after a delivered change or a host `set` | at most 0.1 of the smaller of the last step and the gap to the next scheduled time point;",
     ] {
         assert!(text.contains(fact), "Appendix C lacks \"{fact}\"");
     }
@@ -2249,7 +2249,7 @@ fn part_v_retakes_the_step_a_jump_crossing_changes() {
     let text = spec("part_v_execution.md");
     let rule = flat(&section(&text, "### 15.2 "));
     for fact in [
-        "it fires at the time point of the step that reads the change, at the microstep after that step's solve",
+        "it fires at the time point of the step that reads the change, at microstep 0 after that step's solve",
         "the step is retaken to the same time `t` with the change, and the retaken solution replaces the first",
         "The reactions that ran are not run again",
         "fires at the next microstep of `t` and may retake again",
@@ -2370,5 +2370,38 @@ fn abi_section_5_states_r4_as_implemented() {
         "The protocol text below is unchanged",
     ] {
         assert!(text.contains(fact), "abi.md lacks \"{fact}\"");
+    }
+}
+
+#[test]
+fn part_v_the_step_to_t_solves_first_on_the_left_value_in_every_place_that_says_so() {
+    // The user's decision "muda a spec" (2026-11-22): §15 step 1, I5, I6, §15.1, the reads table,
+    // the Part IV, Part VIII and gallery rows say the step to `t` solves on the left value and
+    // the instant runs after it; no place has the solve at the end of the microstep loop.
+    let exec = flat(&spec("part_v_execution.md"));
+    for fact in [
+        "is solved once, here, before anything at `t` runs, on the left value",
+        "**I5. Agreement.** The solution at a time point `t` was solved with the discrete state as it stood before `t` (the left value)",
+        "**I6. One solve per time point.** A reaction at `(t, n)` reads the solution at `t`, solved once in step 1.",
+        "| a reaction at `(t, n)` | settled at microstep `n` (step 3.2) | the solution at `t` |",
+        "| `cross(e)`, located at `t` (§17.3) | `(t, 0)`, after the solve of step 1 |",
+        "Four steps restart the integrator",
+        "a landing at which nothing `analog` reads changed restarts nothing",
+    ] {
+        assert!(exec.contains(fact), "Part V lacks \"{fact}\"");
+    }
+    for stale in ["*Solve, once.*", "step 3.4", "A change made after the solve of `t` restarts nothing", "The step after a landing"] {
+        for file in ["part_v_execution.md", "part_iv_behavior.md", "part_viii_host.md", "appendix_d_gallery_analog.md", "appendix_f_gallery_mixed.md", "appendix_c_implementation.md"] {
+            assert!(!flat(&spec(file)).contains(stale), "{file} still says \"{stale}\"");
+        }
+    }
+    for (file, fact) in [
+        ("part_iv_behavior.md", "the solution at `t`, solved in §15 step 1 on the left value (§15 step 3.3)"),
+        ("part_viii_host.md", "the solution at `t`, solved in step 1"),
+        ("appendix_d_gallery_analog.md", "the first step after `t_k` reads `seg ← k`: a jump (§15.2)"),
+        ("appendix_f_gallery_mixed.md", "the first step after `t` reads `close`: a jump (§15.2)"),
+        ("appendix_f_gallery_mixed.md", "The step to `t` is solved first; the reaction probes the solution at `t`"),
+    ] {
+        assert!(flat(&spec(file)).contains(fact), "{file} lacks \"{fact}\"");
     }
 }
