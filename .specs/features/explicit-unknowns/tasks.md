@@ -1221,7 +1221,7 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [x] `cast` and `same` compile from `std/values.msl`; `Intrinsic::Cast` and `Intrinsic::Same` are gone from the tree: **handed to `generics` phase C, batch B9, right after its L70 task** (user's ruling, 2026-11-23, finding 54): that batch removes `Intrinsic::{Cast, Same}`, `lower_cast` and the checker's own `cast` and `same`, and adds the differential test of the stdlib source against the lowering. `std/values.msl` already holds the source; `GAPS.md` L58 and L70 name B9. T48 closes with this hand-off recorded
+- [x] `cast` and `same` compile from `std/values.msl`; `Intrinsic::Cast` and `Intrinsic::Same` are gone from the tree: **handed to `generics` phase C, batch B9, T55 of its `tasks-c.md`, right after its L70 task** (user's ruling, 2026-11-23, finding 54): that batch removes `Intrinsic::{Cast, Same}`, `lower_cast` and the checker's own `cast` and `same`, and adds the differential test of the stdlib source against the lowering. `std/values.msl` already holds the source; `GAPS.md` L58 and L70 name B9. T48 closes with this hand-off recorded
 - [x] All `book_*` targets pass
 - [x] `twins::every_twin_matches_its_golden` and both integrated suites pass
 - [x] Gate check passes: Batch
