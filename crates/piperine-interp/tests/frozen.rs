@@ -643,7 +643,8 @@ fn the_interpreter_refuses_each_analog_operator_by_name() {
     let held = |ir: Ir, form: &str| {
         let Err(rejected) = Interpreter::new(Arc::new(ir)) else { panic!("{form}: the design was accepted") };
         let named: Vec<&str> = rejected.entries.iter().filter_map(|e| e.what.split_once(" holds ").map(|(_, rest)| rest.split(':').next().unwrap_or(""))).collect();
-        assert_eq!(named, [form], "{form}");
+        // a `simparam` is also an `Option` part, which the composite forms name: the form is among them
+        assert!(named.contains(&form), "{form} among {named:?}");
     };
     held(Operators::ir(|b| operators::Written { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![Operators::delay_site(b, None)], ..operators::Written::default() }), "delay");
     held(Operators::ir(|b| operators::Written { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![Operators::noise_site(b, None)], ..operators::Written::default() }), "noise");

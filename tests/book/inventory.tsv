@@ -281,7 +281,7 @@ claim	welcome~e9269920	e9269920165af6c3	prose	-	-	A solver often tries a time st
 claim	welcome~3afc3430	3afc34303f9d001f	holds	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	Its reaction, on at(t0) { fired <- true; }, means "when time reaches t0, set fired".
 claim	welcome~cd0a6683	cd0a6683d2118361	prose	-	-	Everything else writes nothing. let x = expr; only gives an expression a name.
 claim	welcome~6e662db9	6e662db9ee7d0481	binary	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	The piperine command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself.
-claim	welcome~47af33d1	47af33d10f393e92	holds	piperine/book_welcome::the_status_paragraph_lists_what_is_still_refused_and_one_item_runs	-	Parts of the language beyond that are still refused by name with P0001: in analog, noise, idt and delay; elsewhere, generic modules and resolved natures (a nature that implements Resolve).
+claim	welcome~e12daa72	e12daa72d55a284c	holds	piperine/book_welcome::the_status_paragraph_lists_what_is_still_refused_and_one_item_runs	-	Parts of the language beyond that are still refused by name with P0001: in analog, idt; elsewhere, generic modules and resolved natures (a nature that implements Resolve).
 claim	welcome~4bc80e1d	4bc80e1dc680d2f3	holds	piperine/book_welcome::e0319_a_param_with_no_default_must_be_bound	-	E0319
 claim	welcome~0808ef8f	0808ef8f1e6f4968	holds	piperine/book_welcome::the_rc_project_holds_its_operating_point_and_its_netlist	-	Bind it: Resistor(vin, vout) { r: 1k }.
 claim	welcome~4bc8171d	4bc8171dc680e23e	holds	piperine/book_welcome::e0312_a_port_must_be_connected	-	E0312
@@ -820,3 +820,4 @@ claim	cli~d8ef198c	d8ef198c3a5817c1	prose	-	-	A real has six decimals and an exp
 claim	solver~95d8c226	95d8c226ae3825f3	prose	-	-	A loop of functions is accepted only if it passes through a net marked to relax, which is iterated until it stops changing; a net that still moves after its bounded passes stops the run with E0511, naming the loop's drives.
 claim	welcome~174ddaf4	174ddaf4b9e1a9cd	holds	piperine/book_welcome::the_delayed_bench_steps_at_one_microsecond	-	The first line under the header is the record the bench wrote: one time constant after the step, vout is 1 − 1/e to the digit, at 0.07 ns before 2 µs.
 claim	mixed~eab5e274	eab5e274a51fe9fa	prose	-	-	First watch the loop start, one record per switching period; the listing at the end of this box is the first lines of what the command prints:
+claim	analog~a8e493ee	a8e493eee5c35c20	prose	-	-	The piperine command prints the records of reactions, and a trace from analog when --stream names its stream, with the Newton iteration that wrote it.

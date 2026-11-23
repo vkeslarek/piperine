@@ -232,7 +232,7 @@ fn e0404_a_commit_belongs_in_a_reaction() {
 
 #[test]
 fn the_status_paragraph_lists_what_is_still_refused_and_one_item_runs() {
-    // welcome~47af33d1: "Parts of the language beyond that are still refused by name with P0001: in analog,
+    // welcome~e12daa72: "Parts of the language beyond that are still refused by name with P0001: in analog,
     // idt; elsewhere, generic modules and resolved natures (a nature
     // that implements Resolve)." Every item is `P0001`; the math methods such as `sin`, the `settle` event, `noise` and
     // `delay`, which the sentence no longer lists, run (unknown-semantics-events T5 and T22; analog-operators T33 and T34)
@@ -242,7 +242,7 @@ fn the_status_paragraph_lists_what_is_still_refused_and_one_item_runs() {
         let given = Refusal::of(model.run(overrides), row);
         assert!(given.iter().any(|(code, text)| code == "P0001" && text == message), "{source:?} gives {given:?}");
     };
-    let row = "welcome~47af33d1";
+    let row = "welcome~e12daa72";
     p0001(row, "module Top() { signal p: Electrical; }\nanalog for Top { i(p, gnd) +> idt(v(p)); }\n", "generic module is not supported yet");
     p0001(row, "module G<T: Repr>() {}\nmodule Top() { let g = G::<f64>(); }\n", "generic module is not supported yet");
     p0001(row, "module Top() { signal w: Wire; }\n", "resolved nature `Wire` is not supported yet");
