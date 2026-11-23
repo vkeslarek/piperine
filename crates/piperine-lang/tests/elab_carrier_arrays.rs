@@ -78,6 +78,31 @@ fn an_array_of_nodes_is_one_node_per_element() {
 }
 
 #[test]
+fn an_array_of_length_zero_is_an_empty_array() {
+    // §1.2.3 (the length is known and not negative): `[Bit<u8>; 0]` elaborates (no P0004), holds no carrier since it
+    // holds no element, reads whole as the empty array, and every element of it is out of range (E0104)
+    let src = "module Top(in clk: Bit) { signal none: [Bit<u8>; 0]; signal one: [Bit<u8>; 1] = [3; 1]; }\n\
+               digital for Top { on clk.rise() { let all = none; let kept = one[0]; } }";
+    let ir = Elab::ir(src, "Top");
+    let carriers = Read { ir: &ir }.carriers("Top");
+    assert_eq!(carriers.iter().map(|c| (c.0.as_str(), c.1)).collect::<Vec<_>>(), [("clk", None), ("one", Some(1))], "no carrier for an array of no element");
+    for (body, form) in [("let a = none[0];", "a constant element"), ("let a = none[clk as u8];", "a run-time element"), ("none[0] <- 1;", "an element commit"), ("let a = none[0].prev();", "a history read")] {
+        let src = format!("module Top(in clk: Bit) {{ signal none: [Bit<u8>; 0]; }}\ndigital for Top {{ on clk.rise() {{ {body} }} }}");
+        let found = Elab::run(&src, "Top").expect_err(form);
+        assert!(found.iter().any(|d| d.diagnostic.code == "E0104" && d.diagnostic.message.contains("array of 0 carriers")), "{form}: {:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+    }
+    // an empty array connects to an empty array port, in either direction, and an array of no node names no node
+    for port in ["in", "out"] {
+        let src = format!("module Leaf({port} d: [Bit; 0], in c: Bit) {{ }}\nmodule Top() {{ signal none: [Bit; 0]; signal c: Bit = false; let l = Leaf(none, c); }}");
+        Elab::ir(&src, "Top");
+    }
+    let ir = Elab::ir("module Top() { signal bl: [Electrical; 0]; }", "Top");
+    assert_eq!(Read { ir: &ir }.nodes("Top"), (Vec::new(), Vec::new()), "no node and no node array");
+    let found = Elab::run("module Top() { signal bl: [Electrical; 0]; }\nanalog for Top { let x = v(bl[0]); }", "Top").expect_err("no node");
+    assert!(found.iter().any(|d| d.diagnostic.code == "E0104"), "{:?}", Elab::codes(&found));
+}
+
+#[test]
 fn element_reads_and_events_lower_per_element() {
     // CV-24: `x[i]` is one element read (constant or run-time index), the whole `x` an array of the values,
     // `x[k].prev()` the element's previous value, `x[i].changed()` the element's change as a `bool`, and

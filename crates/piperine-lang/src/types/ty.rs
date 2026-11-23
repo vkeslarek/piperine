@@ -294,6 +294,14 @@ impl Ty {
         }
     }
 
+    /// Whether this is an array one of whose levels has the fixed length 0: it holds no element.
+    pub fn has_fixed_zero_length(&self) -> bool {
+        match self {
+            Ty::Array(element, length) => length.fixed() == Some(0) || element.has_fixed_zero_length(),
+            _ => false,
+        }
+    }
+
     /// The type an array of arrays of `T` is made of: `T`; any other type is itself.
     pub fn innermost(&self) -> &Ty {
         match self {

@@ -15,7 +15,7 @@ use super::templates::TemplateValue;
 use super::unlowered::Unlowered;
 use crate::msl::Diagnostic;
 use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Resolution, StructClass};
-use crate::types::Callee;
+use crate::types::{Callee, Ty};
 
 /// A placement, as instance placement needs it.
 #[derive(Clone)]
@@ -188,6 +188,10 @@ impl Elaboration<'_, '_> {
                     Some(nodes) => terminals.extend(nodes),
                     None => ok = false,
                 }
+                continue;
+            }
+            // a port of an array of length 0 has no carrier in the child, so it binds nothing (§1.2.3)
+            if self.types.carrier_array(*port).is_some_and(Ty::has_fixed_zero_length) {
                 continue;
             }
             if self.types.carrier(*port).is_some() {

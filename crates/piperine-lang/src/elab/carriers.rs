@@ -67,6 +67,9 @@ pub(super) struct Frame {
     pub(super) nodes: BTreeMap<DeclId, Terminal>,
     /// The shape of each array of nodes of `nodes`: its first terminal is element 0 (`carrier_arrays.rs`).
     pub(super) node_shapes: BTreeMap<DeclId, super::carrier_arrays::ArrayShape>,
+    /// The arrays of carriers declared with length 0 (§1.2.3): no carrier of the body, since no element exists to hold
+    /// (`carrier_arrays.rs`). Every element of one is out of range, and read whole it is the empty array.
+    pub(super) empty_arrays: BTreeSet<DeclId>,
     /// A hoisted module's params, bound to constants by the placement or their defaults.
     pub(super) params: BTreeMap<DeclId, Constant>,
     /// A hoisted module's value inputs: the caller's expression, read in the parent frame, or
@@ -88,7 +91,7 @@ pub(super) struct Frame {
 impl Frame {
     /// The frame of the body's own module.
     pub(super) fn root(module: DeclId) -> Frame {
-        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), child: None, unrolled: Bindings::new() }
+        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), child: None, unrolled: Bindings::new() }
     }
 }
 
@@ -101,7 +104,9 @@ impl Elaboration<'_, '_> {
         let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && discrete(self, c));
         let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && discrete(self, c));
         for decl in ports.chain(signals).collect::<Vec<_>>() {
-            if let Some(carrier) = self.lower_carrier(frame, decl) {
+            if self.is_empty_array(frame, decl) {
+                self.frames[frame].empty_arrays.insert(decl);
+            } else if let Some(carrier) = self.lower_carrier(frame, decl) {
                 let index = self.add_carrier(carrier);
                 self.frames[frame].carriers.insert(decl, index);
             }

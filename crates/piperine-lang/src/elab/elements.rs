@@ -65,8 +65,12 @@ impl Elaboration<'_, '_> {
         let ExprKind::Path(path) = self.design.expr_node(at).kind.clone() else { return Lookup::No };
         let Some(Resolution::Decl(decl)) = self.design.path_node(path).segments.last().map(|s| s.res) else { return Lookup::No };
         let Some(array) = self.types.carrier_array(decl).cloned() else { return Lookup::No };
-        let Some(carrier) = self.frame_carrier(scope.frame, decl) else { return Lookup::No };
         let span = self.design.expr_node(expr).span;
+        if !indexes.is_empty() && self.frames.get(scope.frame).is_some_and(|f| f.empty_arrays.contains(&decl)) {
+            self.element_of_empty_array(scope.file, span);
+            return Lookup::Failed;
+        }
+        let Some(carrier) = self.frame_carrier(scope.frame, decl) else { return Lookup::No };
         let Some(shape) = self.shape_in(&array, scope.frame) else {
             self.unsupported(scope.file, span, "an element of an array whose length is not a constant yet");
             return Lookup::Failed;
@@ -254,8 +258,12 @@ impl Elaboration<'_, '_> {
         let ExprKind::Path(path) = self.design.expr_node(at).kind.clone() else { return None };
         let Some(Resolution::Decl(decl)) = self.design.path_node(path).segments.last().map(|s| s.res) else { return None };
         let array = self.types.carrier_array(decl).cloned()?;
-        let carrier = self.frame_carrier(scope.frame, decl)?;
         let span = self.design.expr_node(arg).span;
+        if !indexes.is_empty() && self.frames.get(scope.frame).is_some_and(|f| f.empty_arrays.contains(&decl)) {
+            self.element_of_empty_array(scope.file, span);
+            return Some(None);
+        }
+        let carrier = self.frame_carrier(scope.frame, decl)?;
         let shape = self.shape_in(&array, scope.frame)?;
         if indexes.len() > shape.dims.len() {
             self.unsupported(scope.file, span, "an index of an array of carriers past its levels");

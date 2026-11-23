@@ -39,6 +39,19 @@ impl ArrayShape {
 }
 
 impl Elaboration<'_, '_> {
+    /// Whether `decl` is an array of carriers of length 0 in `frame` (§1.2.3: the length is known and not negative, so
+    /// zero is legal): it has no element, so the body gets no carrier for it.
+    pub(super) fn is_empty_array(&mut self, frame: usize, decl: DeclId) -> bool {
+        let Some(array) = self.types.carrier_array(decl).cloned() else { return false };
+        self.shape_in(&array, frame).is_some_and(|shape| shape.count() == 0)
+    }
+
+    /// `E0104` for an element of the empty array `decl`: no index is in range of a length of 0 (§1 rule 11).
+    pub(super) fn element_of_empty_array(&mut self, file: crate::pom::FileId, span: crate::msl::Span) {
+        let message = "the element is out of range for an array of 0 carriers (§1 rule 11)".to_string();
+        self.report(file, crate::msl::Diagnostic::new("E0104", message, span, "index out of range"));
+    }
+
     /// The shape of the array type `ty` of a declaration of `frame`: a length that reads a param is folded over the
     /// frame's params (§8.1.2, QC2). `None` when a length does not fold.
     pub(super) fn shape_in(&mut self, ty: &Ty, frame: usize) -> Option<ArrayShape> {
@@ -127,7 +140,10 @@ impl Elaboration<'_, '_> {
             plan.init = inits[flat as usize];
             self.structure.nodes.push((spec, plan));
         }
-        self.structure.node_arrays.push(NodeArray { name, first, count: shape.count() as u32, origin: self.locator.decl(decl) });
+        // an array of no node names no node: nothing to record (§1.2.3)
+        if shape.count() > 0 {
+            self.structure.node_arrays.push(NodeArray { name, first, count: shape.count() as u32, origin: self.locator.decl(decl) });
+        }
         Some((shape, piperine_ir::Terminal::Node(first)))
     }
 
