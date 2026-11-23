@@ -94,3 +94,52 @@ fn the_impl_table_answers_inherent_visible_and_implementation() {
     assert_eq!(table.traits().len(), 4);
     assert!(table.defines_method("area", |_| false) && !table.defines_method("nothing", |_| false));
 }
+
+/// The natures every source below places in the open.
+const HEAD: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n";
+
+/// The type names of the bindings of `Top`'s `analog` block after `items`, as `name = type`, or the codes and messages of the check.
+fn analog_types(items: &str, body: &str, names: &[&str]) -> Result<Vec<String>, Vec<(String, String)>> {
+    let design = support::build(&format!("{HEAD}{items}\nmodule Top() {{ }}\nanalog for Top {{ {body} }}"));
+    assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}", support::codes(&design));
+    match piperine_lang::types::Types::check(&design, "Top") {
+        Ok(types) => Ok(names
+            .iter()
+            .map(|name| {
+                let decl = (0..design.decl_count()).map(|i| DeclId(i as u32)).find(|d| matches!(design.decl_data(*d).kind, DeclKind::Binding(_)) && design.decl_data(*d).name.as_ref().is_some_and(|n| n.text == *name)).unwrap_or_else(|| panic!("no binding `{name}`"));
+                format!("{name} = {}", types.local(decl).map_or_else(|| "?".to_string(), |ty| ty.name(&design)))
+            })
+            .collect()),
+        Err(found) => Err(found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()),
+    }
+}
+
+#[test]
+fn methods_associated_functions_and_constants_type_check() {
+    // §3.1, §3.7: a method resolves through the inherent `impl` and then through a trait (its own item or
+    // its default), `Type::f(..)` and `Type::NAME` are an associated function and a constant, and `Self`
+    // is the type of the `impl`
+    let items = "struct Sq { a: f64 }\n\
+                 impl Sq { fn make(side: f64) -> Self { Sq { a: side } } const SIDES: u32 = 4; fn area(self) -> f64 { self.a * self.a } fn scaled(self, k: f64) -> Sq { Sq { a: self.a * k } } }\n\
+                 trait Shape { fn perimeter(self) -> f64; fn double(self) -> f64 { 2.0 } }\n\
+                 impl Shape for Sq { fn perimeter(self) -> f64 { 4.0 * self.a } }\n";
+    let body = "let s = Sq::make(2.0); let a = s.area(); let t = s.scaled(2.0); let n = Sq::SIDES; let p = s.perimeter(); let d = s.double();";
+    let found = analog_types(items, body, &["s", "a", "t", "n", "p", "d"]).unwrap_or_else(|errors| panic!("{errors:?}"));
+    assert_eq!(found, ["s = struct `Sq`", "a = f64", "t = struct `Sq`", "n = u32", "p = f64", "d = f64"]);
+    // an argument of another type, and a call of an associated function as a method, are refused
+    let wrong = analog_types(items, "let s = Sq::make(2.0); let t = s.scaled(true);", &["t"]).expect_err("a bool for an f64");
+    assert_eq!(wrong[0].0, "E0180", "{wrong:?}");
+    let no_self = analog_types(items, "let s = Sq::make(2.0); let t = s.make(1.0);", &["t"]).expect_err("`make` has no `self`");
+    assert!(no_self[0].0 == "E0161" && no_self[0].1.contains("associated function with no `self`"), "{no_self:?}");
+}
+
+#[test]
+fn self_outside_an_impl_or_not_first_is_e0187() {
+    // §3.7: `self` is the first parameter of a function in an `impl` or a trait
+    let design = support::build(&format!("{HEAD}fn loose(self) -> f64 {{ 1.0 }}\nstruct S {{ a: f64 }}\nimpl S {{ fn late(k: f64, self) -> f64 {{ 1.0 }} }}\n"));
+    let found = piperine_lang::types::Types::check_model(&design).expect_err("both are refused");
+    let codes: Vec<String> = found.iter().map(|d| d.diagnostic.code.to_string()).collect();
+    assert_eq!(codes, ["E0187", "E0187"], "{found:?}");
+    assert!(found[0].diagnostic.message.contains("neither"), "{:?}", found[0]);
+    assert!(found[1].diagnostic.message.contains("must be the first parameter"), "{:?}", found[1]);
+}

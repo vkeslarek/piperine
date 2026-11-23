@@ -274,6 +274,8 @@ impl Checker<'_> {
         let builtin = match res {
             Resolution::Decl(f) => match self.stdlib_builtin(*f) {
                 Some(builtin) => Some(builtin),
+                // a method the project writes in an `impl` or a trait is typed from its signature
+                None if self.is_project_method(*f) => None,
                 None => {
                     let replaced = matches!(name, "rise" | "fall");
                     let what = if replaced { format!("method `{name}` defined by the project (the checker knows only the stdlib's own `{name}`)") } else { format!("method `{name}`") };
@@ -311,10 +313,19 @@ impl Checker<'_> {
         if let Ty::Param(param) = recv_ty {
             return self.parameter_method(param, name, method.span, args, file);
         }
+        // §3.1.7: the methods of a struct or an enum are the project's
+        if matches!(recv_ty, Ty::Struct(_) | Ty::Enum(_))
+            && let Some(function) = self.method_of(&recv_ty, name)
+        {
+            return self.method_call_of(expr, *recv, &recv_ty, function, args);
+        }
         let (row, params, result) = match Catalogue::method(&recv_ty, name) {
             Lookup::Row(row, params, result) => (row, params, result),
             Lookup::Payload(row) => return self.payload_row(expr, row, &recv_ty, args),
             miss => {
+                if let Some(function) = self.method_of(&recv_ty, name) {
+                    return self.method_call_of(expr, *recv, &recv_ty, function, args);
+                }
                 let type_name = recv_ty.name(self.design);
                 // `clone` is no method of any type (§1.4.6): a value is copied where it is used.
                 let copy_method = name == "clone" && !self.project_defines(name);

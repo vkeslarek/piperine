@@ -20,7 +20,7 @@ const NODE: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1
 
 const ROWS: &[Row] = &[
     Row { construct: "an array type", source: "module Top() { signal s: [Bit; 4]; }", names: "an array of" },
-    Row { construct: "a user trait and impl", source: "trait Tr { fn get(self) -> f64; }\nimpl Tr for f64 { fn get(self) -> f64 { self } }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let y = 1.0.get(); } }", names: "method `get`" },
+    // `a user trait and impl` left this table when generics T25 typed methods (`types_traits::methods_associated_functions_and_constants_type_check`).
     Row { construct: "a generic module", source: "module G<N: Nature>(a: N) { }\nmodule Top(a: Electrical) { let g = G(a); }", names: "generic module" },
     Row { construct: "a generic function", source: "fn g<T>(x: T) -> T { x }\nmodule Top(in clk: Bit) { }\ndigital for Top { on clk.rise() { let h = g; } }", names: "generic function" },
     Row { construct: "a nature with resolve", source: "module Top(c: Wire) { }", names: "resolved nature `Wire`" },

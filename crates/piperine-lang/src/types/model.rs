@@ -8,7 +8,7 @@
 //! to its own check (a stdlib item is checked when reached). A generic item is left out too: its
 //! body is checked per Q1 once the generic forms land, and until then reaching it is `P0001`.
 
-use crate::pom::{Decl, DeclId, DeclKind, Design, DesignDiagnostic, FnParamData, Reflect};
+use crate::pom::{Decl, DeclId, DeclKind, Design, DesignDiagnostic, Reflect};
 
 use super::check::Checker;
 
@@ -37,17 +37,11 @@ impl<'d> ModelCheck<'d> {
     /// Whether `decl` is a module, a function or a `const` of a crate but `std`, outside a trait
     /// (a trait function has no body to check), outside every generic item other than itself (a
     /// generic function is checked once at its definition, Q1 (c); a generic module, struct or
-    /// enum is not, until their own tasks) and not a method with a `self` parameter (refused
-    /// `P0001` until methods land).
+    /// enum is not, until their own tasks).
     fn is_seed(&self, decl: DeclId) -> bool {
         let data = self.design.decl_data(decl);
         let is_item = matches!(data.kind, DeclKind::Module(_) | DeclKind::Fn(_) | DeclKind::Const(_));
-        is_item && !Decl::new(self.design, decl).krate().is_std() && !self.is_generic_beyond_a_function(decl) && !self.takes_self(decl) && !data.parent.is_some_and(|p| matches!(self.design.decl_data(p).kind, DeclKind::Trait(_)))
-    }
-
-    /// Whether `decl` is a function with a `self` parameter.
-    fn takes_self(&self, decl: DeclId) -> bool {
-        self.design.decl_data(decl).children.iter().any(|child| matches!(self.design.decl_data(*child).kind, DeclKind::FnParam(FnParamData::SelfValue)))
+        is_item && !Decl::new(self.design, decl).krate().is_std() && !self.is_generic_beyond_a_function(decl) && !data.parent.is_some_and(|p| matches!(self.design.decl_data(p).kind, DeclKind::Trait(_)))
     }
 
     /// Whether an enclosing item of `decl` writes a `<..>` list, or `decl` does and is not a function.

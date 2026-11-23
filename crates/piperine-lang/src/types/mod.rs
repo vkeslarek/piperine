@@ -38,6 +38,7 @@ mod lengths;
 mod literals;
 mod loops;
 mod model;
+mod methods;
 mod module;
 mod obligations;
 mod patterns;

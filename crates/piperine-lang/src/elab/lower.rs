@@ -423,6 +423,11 @@ impl Elaboration<'_, '_> {
                 self.unsupported(scope.file, span, "a placement used as a value");
                 None
             }
+            // A method of the project is typed (generics T25) and lowered by its own task (T35).
+            (_, Some(Callee::Method(_))) => {
+                self.unsupported(scope.file, span, "a method call");
+                None
+            }
             // Typed by `types::intrinsic`, lowered by its §22.1 contract (`intrinsics.rs`).
             (_, Some(Callee::Intrinsic(intrinsic))) => self.lower_intrinsic(scope, expr, intrinsic, args, origin),
             (_, None) if self.types.default_of(expr).is_some() => Some(self.emit(Expr::Default(ty.clone()), ty, origin)),

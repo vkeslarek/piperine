@@ -580,7 +580,8 @@ impl<'d> Checker<'d> {
             let DeclKind::FnParam(p) = &self.design.decl_data(child).kind else { continue };
             let ty = match p {
                 FnParamData::Named { ty } => self.lower_type(*ty),
-                FnParamData::SelfValue | FnParamData::Error => {
+                FnParamData::SelfValue => self.self_parameter(decl, child),
+                FnParamData::Error => {
                     let d = self.design.decl_data(child);
                     self.unsupported(d.file, d.span, "`self` parameter");
                     None
