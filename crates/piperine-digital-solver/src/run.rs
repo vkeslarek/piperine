@@ -6,7 +6,7 @@
 //! `piperine_abi::caller::Handle`.
 
 use piperine_abi::caller::{CallError, Commit, ElementSource, ViewHandle};
-use piperine_abi::device::{Access, Flow, cell_lens_of};
+use piperine_abi::device::{Access, Flow};
 use piperine_abi::raw::{ArrayView, Cell, Shape, Statement, WHOLE, cell, part, reaction_flag, statement_flag, status};
 
 use crate::dag::Step;
@@ -283,8 +283,8 @@ fn call_function(
     let inst = &plan.instances[node.instance as usize];
     let shape = inst.handle.shape();
     let func = shape.functions.get(node.k as usize).expect("bind took this function from the shape");
-    let reads = cell_lens_of(shape, &func.reads, &func.elements, Access::FunctionRead).expect("bind validated the shape");
-    let writes = cell_lens_of(shape, &func.writes, &piperine_abi::raw::List::empty(), Access::FunctionWrite).expect("bind validated the shape");
+    let reads = shape.cell_lens_of(&func.reads, &func.elements, Access::FunctionRead).expect("bind validated the shape");
+    let writes = shape.cell_lens_of(&func.writes, &piperine_abi::raw::List::empty(), Access::FunctionWrite).expect("bind validated the shape");
     let inputs: Vec<Aligned> = func
         .reads
         .iter()
@@ -587,7 +587,7 @@ fn call_reaction(
         let mut whole = handles.iter();
         let shape = inst.handle.shape();
         let reaction = shape.reactions.get(job.reaction).expect("listed from this shape");
-        let lens = cell_lens_of(shape, &reaction.reads, &reaction.elements, Access::ReactionRead).expect("bind validated the shape");
+        let lens = shape.cell_lens_of(&reaction.reads, &reaction.elements, Access::ReactionRead).expect("bind validated the shape");
         let inputs: Vec<Aligned> = reaction
             .reads
             .iter()

@@ -8,7 +8,7 @@ use std::ffi::c_void;
 use std::fmt;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
-use crate::device::{Access, Flow, cell_lens, cell_lens_of};
+use crate::device::{Access, Flow, cell_lens};
 use crate::raw::{self, Host, Instance, List, Module, NOTE_TEXT, Note, Shape, Value, status};
 
 /// A call that did not return `OK` (or `FINISH` from a reaction).
@@ -138,7 +138,7 @@ struct FunctionFrame {
 impl FunctionFrame {
     /// The frame of function `f` of `shape`.
     fn of(shape: &Shape<'_>, f: &raw::Function<'_>) -> Self {
-        let reads = cell_lens_of(shape, &f.reads, &f.elements, Access::FunctionRead);
+        let reads = shape.cell_lens_of(&f.reads, &f.elements, Access::FunctionRead);
         let writes = cell_lens(shape, &f.writes, Access::FunctionWrite);
         Self { cells: reads.zip(writes).map(|(reads, writes)| (reads.into(), writes.into())) }
     }
@@ -376,7 +376,7 @@ impl Handle {
         let Some(r) = shape.reactions.get(k as usize) else {
             return Err(CallError::frame(format!("reaction {k} does not exist")));
         };
-        let Some(reads) = cell_lens_of(shape, &r.reads, &r.elements, Access::ReactionRead) else {
+        let Some(reads) = shape.cell_lens_of(&r.reads, &r.elements, Access::ReactionRead) else {
             return Err(CallError::frame(format!("reaction {k} names a cell its shape does not have")));
         };
         check_cells("read", input.iter().map(|b| b.len()), &reads)?;

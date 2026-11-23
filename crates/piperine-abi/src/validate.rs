@@ -201,6 +201,14 @@ impl Entry<'_> {
             detail,
         }
     }
+
+    /// An `elements` list is empty or has one entry per read.
+    fn check_elements(&self, reads: usize, elements: List<u64>) -> Result<(), ShapeError> {
+        if elements.len() != 0 && elements.len() != reads {
+            return Err(self.fail(Rule::ElementOutOfRange, format!("{} elements for {reads} reads", elements.len())));
+        }
+        Ok(())
+    }
 }
 
 fn known(value: u32, set: &[u32]) -> bool {
@@ -511,20 +519,12 @@ pub(crate) fn cell_bytes<'s>(
     }
 }
 
-/// An `elements` list is empty or has one entry per read.
-fn check_elements(e: &Entry<'_>, reads: usize, elements: List<u64>) -> Result<(), ShapeError> {
-    if elements.len() != 0 && elements.len() != reads {
-        return Err(e.fail(Rule::ElementOutOfRange, format!("{} elements for {reads} reads", elements.len())));
-    }
-    Ok(())
-}
-
 fn check_function(shape: &Shape, f: &Function) -> Result<(), ShapeError> {
     let e = Entry { what: "function", name: &f.name, origin: &f.origin };
     if !known_bits(f.flags, fn_flag::OWNS_CORRECTION) {
         return Err(e.fail(Rule::UnknownConstant, format!("flags {:#x}", f.flags)));
     }
-    check_elements(&e, f.reads.len(), f.elements)?;
+    e.check_elements(f.reads.len(), f.elements)?;
     let mut reads = Vec::with_capacity(f.reads.len());
     for (i, c) in f.reads.iter().enumerate() {
         reads.push(cell_bytes(shape, c, f.elements.get(i).copied().unwrap_or(0), Access::FunctionRead).map_err(|(rule, d)| e.fail(rule, d))?);
@@ -613,7 +613,7 @@ fn check_reaction(shape: &Shape, r: &Reaction) -> Result<(), ShapeError> {
             return Err(e.fail(Rule::ReactionOnNonEvent, format!("on pin {}", pin.name.as_str())));
         }
     }
-    check_elements(&e, r.reads.len(), r.elements)?;
+    e.check_elements(r.reads.len(), r.elements)?;
     for (i, c) in r.reads.iter().enumerate() {
         cell_bytes(shape, c, r.elements.get(i).copied().unwrap_or(0), Access::ReactionRead).map_err(|(rule, d)| e.fail(rule, d))?;
         let quiet = shape.pins.get(c.index as usize).is_some_and(|p| p.flags & (pin_flag::QUIET | pin_flag::RECORD) != 0);

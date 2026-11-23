@@ -95,6 +95,7 @@ impl Checker<'_> {
         }
     }
 
+    /// `E0222`: the target of a `what` is `why`, which this module may not drive; `None` after the report.
     fn not_drivable(&mut self, file: crate::pom::FileId, span: Span, what: &str, why: &str) -> Option<DriveTarget> {
         let why = if why.starts_with("a ") || why.starts_with("an ") || why.starts_with("not ") { why.to_string() } else { format!("a {why}") };
         self.coded(file, "E0222", span, format!("the target of a {what} is {why}, which this module may not drive (§8.2.10)"), "this module may not drive it");

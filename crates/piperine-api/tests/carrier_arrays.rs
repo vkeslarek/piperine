@@ -25,6 +25,7 @@ module Memory(in clk: Bit) {\n    signal n: Bit<u8> = 0;\n    signal mem: [Bit<u
 digital for Memory { on clk.rise() { n <- n + 1; if n < 4 { mem[n] <- 100 + n; } } }\n\
 module Ladder() { signal bl: [Electrical; 3]; }\n\
 analog for Ladder { v(bl[0], gnd) +> 3.0; for k in 0..2 { i(bl[k], bl[k + 1]) +> v(bl[k], bl[k + 1]) / 1000.0; } i(bl[2], gnd) +> v(bl[2], gnd) / 1000.0; }\n\
+module Bank(in lanes: [Bit; 4], out cells: [Bit<u8>; 2] = [0; 2]) { }\n\
 module Wide() { n: u32 = 4; signal lanes: [Bit; n]; }\n\
 module Bench() { signal clk: Bit; let osc = Osc(clk) { f: 1G }; let memory = Memory(clk); let ladder = Ladder(); let wide = Wide(); }\n";
 
@@ -39,6 +40,11 @@ impl Run {
 
     /// The session of the transient, 20 ns long, over `print`, opened and not run.
     fn session(print: &[&str]) -> Result<Session, Failure> {
+        Run::session_of("Bench", print)
+    }
+
+    /// [`session`](Self::session) with `top` as the top module.
+    fn session_of(top: &str, print: &[&str]) -> Result<Session, Failure> {
         static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
         let cache = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
         let directory = tempfile::tempdir().expect("tmp");
@@ -47,7 +53,7 @@ impl Run {
         let project = Project::file(&file)?;
         let overrides = Overrides {
             analysis: Some("transient".into()),
-            top: Some("Bench".into()),
+            top: Some(top.into()),
             stop: Some(2e-8),
             print_step: Some(5e-9),
             max_step: Some(1e-9),
@@ -115,4 +121,12 @@ fn a_set_of_a_param_an_array_length_reads_is_e0803() {
         other => panic!("E0803, found {other:?}"),
     }
     session.set_at("osc.f", 2e9, 5e-9).expect("a param no array length reads is not structural");
+}
+
+#[test]
+fn the_metadata_lists_the_length_of_an_array_port() {
+    // CV-28: a discrete port that is an array of carriers is listed with its length in the type, not as one element
+    let session = Run::session_of("Bank", &[]).unwrap_or_else(|f| panic!("{f}"));
+    let ports: Vec<(String, &str, String)> = session.metadata().ports.into_iter().map(|p| (p.name, p.direction, p.ty)).collect();
+    assert_eq!(ports, [("lanes".to_string(), "in", "[bool; 4]".to_string()), ("cells".to_string(), "out", "[u8; 2]".to_string())]);
 }

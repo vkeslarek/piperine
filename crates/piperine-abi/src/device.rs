@@ -106,24 +106,26 @@ impl<'a> Values<'a> {
 /// entry that lists them: what a frame's buffer for that cell holds. `None`
 /// when a cell breaks a rule `validate` checks.
 pub fn cell_lens(shape: &Shape, cells: &List<Cell>, access: Access) -> Option<Vec<usize>> {
-    cell_lens_of(shape, cells, &List::empty(), access)
+    shape.cell_lens_of(cells, &List::empty(), access)
 }
 
-/// [`cell_lens`] for cells with `elements`: the entry's `elements` list, empty or one per cell. A `WHOLE`
-/// read of an array pin holds an [`ArrayView`](crate::raw::ArrayView), so its buffer is that struct's size.
-pub fn cell_lens_of(shape: &Shape, cells: &List<Cell>, elements: &List<u64>, access: Access) -> Option<Vec<usize>> {
-    cells
-        .iter()
-        .enumerate()
-        .map(|(i, c)| {
-            cell_bytes(shape, c, elements.get(i).copied().unwrap_or(0), access).ok().map(|b| match b {
-                CellBytes::F64 | CellBytes::I64 => 8,
-                CellBytes::Byte => 1,
-                CellBytes::Layout(l) => l.size as usize,
-                CellBytes::View => size_of::<crate::raw::ArrayView>(),
+impl Shape<'_> {
+    /// [`cell_lens`] for cells with `elements`: the entry's `elements` list, empty or one per cell. A `WHOLE`
+    /// read of an array pin holds an [`ArrayView`](crate::raw::ArrayView), so its buffer is that struct's size.
+    pub fn cell_lens_of(&self, cells: &List<Cell>, elements: &List<u64>, access: Access) -> Option<Vec<usize>> {
+        cells
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                cell_bytes(self, c, elements.get(i).copied().unwrap_or(0), access).ok().map(|b| match b {
+                    CellBytes::F64 | CellBytes::I64 => 8,
+                    CellBytes::Byte => 1,
+                    CellBytes::Layout(l) => l.size as usize,
+                    CellBytes::View => size_of::<crate::raw::ArrayView>(),
+                })
             })
-        })
-        .collect()
+            .collect()
+    }
 }
 
 /// The read cells of a call, shared by both lenses.

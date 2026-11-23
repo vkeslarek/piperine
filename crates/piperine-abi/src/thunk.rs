@@ -7,7 +7,7 @@
 use std::ffi::c_void;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use crate::device::{Device, Eval, Factory, Flow, Fault, React, Values, cell_lens, cell_lens_of};
+use crate::device::{Device, Eval, Factory, Flow, Fault, React, Values, cell_lens};
 use crate::raw::{
     self, Created, Instance, Library, List, MINOR, Module, NOTE_TEXT, Note, Shape, Str, Value, role, status,
 };
@@ -292,7 +292,7 @@ unsafe fn eval_on<T>(
         let Some(f) = shape.functions.get(k as usize) else {
             return Err(Fault::new(0, format!("function {k} does not exist")));
         };
-        let reads = cell_lens_of(shape, &f.reads, &f.elements, Access::FunctionRead);
+        let reads = shape.cell_lens_of(&f.reads, &f.elements, Access::FunctionRead);
         let writes = cell_lens(shape, &f.writes, Access::FunctionWrite);
         let (Some(reads), Some(writes)) = (reads, writes) else {
             return Err(Fault::new(0, format!("function {k} names a cell its shape does not have")));
@@ -349,7 +349,7 @@ unsafe fn react_on<T>(
         let Some(r) = shape.reactions.get(k as usize) else {
             return Err(Fault::new(0, format!("reaction {k} does not exist")));
         };
-        let Some(reads) = cell_lens_of(shape, &r.reads, &r.elements, Access::ReactionRead) else {
+        let Some(reads) = shape.cell_lens_of(&r.reads, &r.elements, Access::ReactionRead) else {
             return Err(Fault::new(0, format!("reaction {k} names a cell its shape does not have")));
         };
         // SAFETY: abi.md §3 React: `input` holds one pointer per read cell.
