@@ -28,7 +28,7 @@ impl Types {
     /// `struct <name> { <fields> }` at line `line`, deriving `derives`.
     fn named(b: &mut IrBuilder, name: &str, line: u32, fields: &[(&str, ValueType)], derives: Derives) -> TypeId {
         let fields = fields.iter().map(|(n, ty)| (n.to_string(), ty.clone())).collect();
-        b.type_data(TypeData { name: name.into(), path: format!("m::{name}"), origin: Types::origin(line), kind: TypeKind::Struct { form: FieldsForm::Named, fields }, derives })
+        b.type_data(TypeData { name: name.into(), path: format!("m::{name}"), origin: Types::origin(line), kind: TypeKind::Struct { form: FieldsForm::Named, fields }, derives, instance: None, repr: Default::default() })
     }
 
     /// `enum <name> { Idle = 0, Data { n: u3 } = 1, Stop = 2 }` with a `tag_levels`-level tag.
@@ -39,7 +39,7 @@ impl Types {
             variant("Data", discriminants[1], FieldsForm::Named, vec![("n".into(), ValueType::UInt(3))]),
             variant("Stop", discriminants[2], FieldsForm::Unit, vec![]),
         ];
-        b.type_data(TypeData { name: "Tx".into(), path: "m::Tx".into(), origin: Types::origin(20), kind: TypeKind::Enum { tag_levels, variants }, derives: Derives { clone: true, copy: true, repr: true, ..Derives::default() } })
+        b.type_data(TypeData { name: "Tx".into(), path: "m::Tx".into(), origin: Types::origin(20), kind: TypeKind::Enum { tag_levels, variants }, derives: Derives { clone: true, copy: true, repr: true, ..Derives::default() }, instance: None, repr: Default::default() })
     }
 
     fn copyable() -> Derives {
@@ -69,8 +69,10 @@ fn the_type_arena_builds_checks_and_prints() {
             origin: Types::origin(5),
             kind: TypeKind::Struct { form: FieldsForm::Tuple, fields: vec![("0".into(), ValueType::UInt(8)), ("1".into(), ValueType::Struct(pair))] },
             derives: Derives::default(),
+            instance: None,
+            repr: Default::default(),
         });
-        let unit = b.type_data(TypeData { name: "Marker".into(), path: "m::Marker".into(), origin: Types::origin(7), kind: TypeKind::Struct { form: FieldsForm::Unit, fields: vec![] }, derives: Derives::default() });
+        let unit = b.type_data(TypeData { name: "Marker".into(), path: "m::Marker".into(), origin: Types::origin(7), kind: TypeKind::Struct { form: FieldsForm::Unit, fields: vec![] }, derives: Derives::default(), instance: None, repr: Default::default() });
         let tx = Types::tx(b, 2, [0, 1, 2]);
         vec![
             ValueType::Struct(pair),
@@ -106,13 +108,13 @@ fn the_type_arena_builds_checks_and_prints() {
 fn a_type_that_contains_itself_is_refused() {
     // §1.3.8: directly, through an array, through an `Option`, and through another struct.
     let direct = Types::ir(|b| {
-        let node = b.type_data(TypeData { name: "Node".into(), path: "m::Node".into(), origin: Types::origin(3), kind: TypeKind::Struct { form: FieldsForm::Named, fields: vec![("next".into(), ValueType::Struct(TypeId(0)))] }, derives: Derives::default() });
+        let node = b.type_data(TypeData { name: "Node".into(), path: "m::Node".into(), origin: Types::origin(3), kind: TypeKind::Struct { form: FieldsForm::Named, fields: vec![("next".into(), ValueType::Struct(TypeId(0)))] }, derives: Derives::default(), instance: None, repr: Default::default() });
         vec![ValueType::Struct(node)]
     });
     let broken = direct.check();
     assert_eq!(Entries::with(&broken, "contains itself").len(), 1, "{broken:?}");
     let around = Types::ir(|b| {
-        let first = b.type_data(TypeData { name: "A".into(), path: "m::A".into(), origin: Types::origin(3), kind: TypeKind::Struct { form: FieldsForm::Named, fields: vec![("b".into(), ValueType::Array(Box::new(ValueType::Option(Box::new(ValueType::Struct(TypeId(1))))), 2))] }, derives: Derives::default() });
+        let first = b.type_data(TypeData { name: "A".into(), path: "m::A".into(), origin: Types::origin(3), kind: TypeKind::Struct { form: FieldsForm::Named, fields: vec![("b".into(), ValueType::Array(Box::new(ValueType::Option(Box::new(ValueType::Struct(TypeId(1))))), 2))] }, derives: Derives::default(), instance: None, repr: Default::default() });
         Types::named(b, "B", 4, &[("a", ValueType::Tuple(vec![ValueType::Bool, ValueType::Struct(TypeId(0))]))], Derives::default());
         vec![ValueType::Struct(first)]
     });
@@ -139,6 +141,8 @@ fn an_enum_tag_holds_its_discriminants() {
             origin: Types::origin(3),
             kind: TypeKind::Enum { tag_levels: 0, variants: vec![VariantData { name: "Only".into(), discriminant: 0, form: FieldsForm::Unit, fields: vec![] }] },
             derives: Derives::default(),
+            instance: None,
+            repr: Default::default(),
         });
         vec![ValueType::Enum(only)]
     });
@@ -164,6 +168,8 @@ fn derives_imply_what_h8_says() {
             origin: Types::origin(3),
             kind: TypeKind::Enum { tag_levels: 1, variants: vec![VariantData { name: "A".into(), discriminant: 0, form: FieldsForm::Unit, fields: vec![] }] },
             derives: Derives { default: true, ..Derives::default() },
+            instance: None,
+            repr: Default::default(),
         });
         vec![ValueType::Enum(tx)]
     });
@@ -179,7 +185,7 @@ fn a_malformed_aggregate_type_is_refused() {
     let confused = Types::ir(|b| vec![ValueType::Struct(Types::tx(b, 2, [0, 1, 2]))]);
     assert_eq!(Entries::with(&confused.check(), "names an enum as a struct").len(), 1);
     let unit_with_fields = Types::ir(|b| {
-        let id = b.type_data(TypeData { name: "U".into(), path: "m::U".into(), origin: Types::origin(3), kind: TypeKind::Struct { form: FieldsForm::Unit, fields: vec![("x".into(), ValueType::Bool)] }, derives: Derives::default() });
+        let id = b.type_data(TypeData { name: "U".into(), path: "m::U".into(), origin: Types::origin(3), kind: TypeKind::Struct { form: FieldsForm::Unit, fields: vec![("x".into(), ValueType::Bool)] }, derives: Derives::default(), instance: None, repr: Default::default() });
         vec![ValueType::Struct(id)]
     });
     assert_eq!(Entries::with(&unit_with_fields.check(), "a unit form has no fields").len(), 1);

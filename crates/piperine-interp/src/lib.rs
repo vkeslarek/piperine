@@ -75,6 +75,7 @@ impl Interpreter {
                 });
             }
         }
+        refused.extend(GenericForms::hand_written_types(&ir));
         if !refused.is_empty() {
             return Err(Rejected { entries: refused });
         }

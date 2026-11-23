@@ -12,7 +12,7 @@ use piperine_ir::{
     Inflow, InstanceSpec, Ir, IrBuilder, Local, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, Place, QuantityRole, Reach, ReachedItem, Site, Stmt, Stream,
     StreamField, StmtId, Terminal, ValueType,
 };
-use piperine_ir::{Derives, FieldsForm, GenericInstance, TypeData, TypeKind, VariantData};
+use piperine_ir::{Derives, FieldsForm, GenericInstance, ReprForm, TypeData, TypeKind, VariantData};
 use piperine_ir::Method as M;
 
 #[allow(dead_code)]
@@ -748,6 +748,8 @@ fn each_composite_values_form_is_refused_by_name() {
             origin: Switching::at(),
             kind: TypeKind::Struct { form: FieldsForm::Tuple, fields: vec![("0".into(), ValueType::F64)] },
             derives: Derives::default(),
+            instance: None,
+            repr: Default::default(),
         });
         let built = b.expr(Expr::StructOf { ty: shape, fields: vec![element] }, ValueType::Struct(shape), Switching::at());
         let choice = b.type_data(TypeData {
@@ -756,6 +758,8 @@ fn each_composite_values_form_is_refused_by_name() {
             origin: Switching::at(),
             kind: TypeKind::Enum { tag_levels: 1, variants: vec![VariantData { name: "A".into(), discriminant: 0, form: FieldsForm::Unit, fields: vec![] }] },
             derives: Derives::default(),
+            instance: None,
+            repr: Default::default(),
         });
         let variant = b.expr(Expr::VariantOf { ty: choice, variant: 0, fields: vec![] }, ValueType::Enum(choice), Switching::at());
         (vec![], [length, built, variant].into_iter().map(|e| b.stmt(Stmt::Expr(e))).collect())
@@ -774,6 +778,8 @@ fn each_composite_values_form_is_refused_by_name() {
             origin: Switching::at(),
             kind: TypeKind::Enum { tag_levels: 1, variants: vec![VariantData { name: "A".into(), discriminant: 0, form: FieldsForm::Tuple, fields: vec![("0".into(), ValueType::F64)] }] },
             derives: Derives::default(),
+            instance: None,
+            repr: Default::default(),
         });
         let built = b.expr(Expr::VariantOf { ty: choice, variant: 0, fields: vec![one] }, ValueType::Enum(choice), Switching::at());
         let test = b.expr(Expr::IsVariant { expr: built, variant: 0 }, ValueType::Bool, Switching::at());
@@ -822,4 +828,30 @@ fn each_generics_form_is_refused_by_name() {
         (vec![], vec![b.stmt(Stmt::Expr(call))])
     });
     assert_eq!(plain, Vec::<String>::new());
+    // `impl Repr for OneHot`, written by the author (GN-05, T9): the type is named, never laid out wrongly
+    let ir = Switching::ir(BranchKind::Flow, |b| {
+        let one_hot = b.type_data(TypeData {
+            name: "OneHot".into(),
+            path: "OneHot".into(),
+            origin: Switching::at(),
+            kind: TypeKind::Enum { tag_levels: 1, variants: vec![VariantData { name: "A".into(), discriminant: 0, form: FieldsForm::Unit, fields: vec![] }] },
+            derives: Derives::default(),
+            instance: None,
+            repr: Default::default(),
+        });
+        let levels = ValueType::Array(Box::new(ValueType::Bool), 4);
+        let x = Local { name: "x".into(), ty: ValueType::Enum(one_hot), mutable: false };
+        let l = Local { name: "l".into(), ty: levels.clone(), mutable: false };
+        let falses: Vec<ExprId> = (0..4).map(|_| Switching::ex(b).boolean(false)).collect();
+        let written = b.expr(Expr::Array(falses), levels.clone(), Switching::at());
+        let variant = b.expr(Expr::VariantOf { ty: one_hot, variant: 0, fields: vec![] }, ValueType::Enum(one_hot), Switching::at());
+        let present = Switching::ex(b).boolean(true);
+        let read = b.expr(Expr::OptionPack { is: present, value: variant }, ValueType::Option(Box::new(ValueType::Enum(one_hot))), Switching::at());
+        let encode = b.function(FunctionSpec { name: "OneHot::encode".into(), origin: Switching::at(), params: vec![x.clone()], ret: levels.clone(), locals: vec![x], body: written });
+        let decode = b.function(FunctionSpec { name: "OneHot::decode".into(), origin: Switching::at(), params: vec![l.clone()], ret: ValueType::Option(Box::new(ValueType::Enum(one_hot))), locals: vec![l], body: read });
+        b.set_repr(one_hot, ReprForm::HandWritten { width: 4, encode, decode });
+        Written::default()
+    });
+    let Err(rejected) = Interpreter::new(Arc::new(ir)) else { panic!("a hand-written Repr was accepted") };
+    assert_eq!(rejected.entries.iter().filter(|e| e.item.starts_with("type ")).map(|e| e.what.as_str()).collect::<Vec<_>>(), ["type OneHot holds a hand-written Repr: the interpreter runs the M1 analog subset only"]);
 }

@@ -423,6 +423,11 @@ impl GenericInstance {
         format!("{}::<{}>", self.item, self.arguments.join(", "))
     }
 
+    /// The name of the instance of a generic type, `item<a, b>` (design D8).
+    pub fn type_name(&self) -> String {
+        format!("{}<{}>", self.item, self.arguments.join(", "))
+    }
+
     /// Whether `name` is this instance's name, or that name followed by the half of an `Option`
     /// result the function computes (`.is` or `.val`, `elab/variants.rs`).
     pub fn names(&self, name: &str) -> bool {
@@ -893,6 +898,31 @@ pub struct TypeData {
     pub origin: Origin,
     pub kind: TypeKind,
     pub derives: Derives,
+    /// The generic item this type is one instantiation of (`Pair<f64>`); `None` for a type as
+    /// written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance: Option<GenericInstance>,
+    /// How the type crosses the device ABI: derived from its fields (§2) or written by the author.
+    #[serde(default, skip_serializing_if = "ReprForm::is_derived")]
+    pub repr: ReprForm,
+}
+
+/// Where the layout of a type that implements `Repr` comes from (§2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum ReprForm {
+    /// `#[derive(Repr)]`: the layout follows the fields.
+    #[default]
+    Derived,
+    /// `impl Repr for T`: `width` levels, written to levels by the function `encode` (the type to
+    /// `[bool; width]`) and read back by `decode` (`[bool; width]` to `Option` of the type).
+    HandWritten { width: u32, encode: FunctionId, decode: FunctionId },
+}
+
+impl ReprForm {
+    /// Whether the layout is derived, which serde leaves unwritten.
+    pub fn is_derived(&self) -> bool {
+        matches!(self, ReprForm::Derived)
+    }
 }
 
 /// The shape of a source type.

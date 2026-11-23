@@ -1,7 +1,7 @@
 //! Scope: the IR forms of `generics` (GN-02, GN-05, GN-06), built by hand through `IrBuilder`,
 //! checked (valid and refused) and printed: a function that is the instance of a generic item.
 
-use piperine_ir::{BodySpec, Expr, FunctionId, FunctionSpec, GenericInstance, InstanceSpec, Ir, IrBuilder, Local, Origin, ValueType};
+use piperine_ir::{BodySpec, Derives, Expr, FieldsForm, FunctionId, FunctionSpec, GenericInstance, InstanceSpec, Ir, IrBuilder, Local, Origin, ReprForm, TypeData, TypeKind, ValueType, VariantData};
 
 /// The small designs every test of this target builds.
 struct Designs;
@@ -59,4 +59,72 @@ fn an_instance_whose_name_disagrees_is_refused() {
     let found = ir.check();
     assert_eq!(found.len(), 1, "{found:?}");
     assert!(found[0].what.contains("`swap::<f64>`") && found[0].what.contains("`swap::<u8>`"), "{:?}", found[0]);
+}
+
+/// A design with a one-hot enum of four variants whose `Repr` is written by hand.
+struct OneHot;
+
+impl OneHot {
+    /// The design: the enum `OneHot` (named `name`, marked an instance of `Pair` when `instance`),
+    /// `encode` returning `[bool; encoded]` levels and `decode` taking `[bool; decoded]` levels and
+    /// returning an `Option` of the enum; `width` is the width the type declares.
+    fn ir(name: &str, instance: Option<GenericInstance>, width: u32, encoded: u64, decoded: u64) -> Ir {
+        let mut b = IrBuilder::new();
+        let variants = (0..4).map(|n| VariantData { name: format!("S{n}"), discriminant: n, form: FieldsForm::Unit, fields: vec![] }).collect();
+        let one_hot = b.type_data(TypeData {
+            name: name.into(),
+            path: "OneHot".into(),
+            origin: Designs::origin(),
+            kind: TypeKind::Enum { tag_levels: 2, variants },
+            derives: Derives { repr: true, ..Derives::default() },
+            instance,
+            repr: ReprForm::Derived,
+        });
+        let enum_type = ValueType::Enum(one_hot);
+        let array = |n: u64| ValueType::Array(Box::new(ValueType::Bool), n);
+        let (x, l) = (Local { name: "x".into(), ty: enum_type.clone(), mutable: false }, Local { name: "l".into(), ty: array(decoded), mutable: false });
+        let falses: Vec<_> = (0..encoded).map(|_| b.expr(Expr::Bool(false), ValueType::Bool, Designs::origin())).collect();
+        let written = b.expr(Expr::Array(falses), array(encoded), Designs::origin());
+        let variant = b.expr(Expr::VariantOf { ty: one_hot, variant: 0, fields: vec![] }, enum_type.clone(), Designs::origin());
+        let present = b.expr(Expr::Bool(true), ValueType::Bool, Designs::origin());
+        let option = ValueType::Option(Box::new(enum_type));
+        let read = b.expr(Expr::OptionPack { is: present, value: variant }, option.clone(), Designs::origin());
+        let encode = b.function(FunctionSpec { name: "OneHot::encode".into(), origin: Designs::origin(), params: vec![x.clone()], ret: array(encoded), locals: vec![x], body: written });
+        let decode = b.function(FunctionSpec { name: "OneHot::decode".into(), origin: Designs::origin(), params: vec![l.clone()], ret: option, locals: vec![l], body: read });
+        b.set_repr(one_hot, ReprForm::HandWritten { width, encode, decode });
+        let module = b.body(BodySpec { name: "Top".into(), origin: Designs::origin(), params: vec![], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
+        let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: module, parent: None, nodes: vec![], params: vec![], origin: Designs::origin() });
+        b.finish(top)
+    }
+}
+
+#[test]
+fn a_type_instance_and_a_hand_written_repr_are_built_checked_and_printed() {
+    // GN-05 AC 1, GN-06 AC 1: a type is an instance named `item<arguments>`; its hand-written `Repr`
+    // is `width` levels through `encode` and `decode`
+    let pair = GenericInstance { item: "Pair".into(), arguments: vec!["f64".into()] };
+    let ir = OneHot::ir("Pair<f64>", Some(pair.clone()), 4, 4, 4);
+    assert_eq!(ir.check(), vec![], "{ir}");
+    let data = &ir.types()[0];
+    assert_eq!(data.instance, Some(pair));
+    assert!(matches!(data.repr, ReprForm::HandWritten { width: 4, .. }), "{:?}", data.repr);
+    let text = ir.to_string();
+    assert!(text.contains("instance of Pair") && text.contains("repr hand-written 4 levels, encode \"OneHot::encode\", decode \"OneHot::decode\""), "{text}");
+    let round_trip: Ir = serde_json::from_str(&serde_json::to_string(&ir).expect("serializes")).expect("deserializes");
+    assert_eq!(round_trip, ir, "the instance and the repr survive serde");
+    let derived = OneHot::ir("OneHot", None, 4, 4, 4);
+    assert_eq!(derived.check(), vec![]);
+}
+
+#[test]
+fn a_hand_written_repr_with_wrong_signatures_is_refused() {
+    // GN-05: `encode` must return `[bool; width]` and `decode` take it; the width is one level at least
+    let encode = OneHot::ir("OneHot", None, 4, 3, 4).check();
+    assert!(encode.iter().any(|b| b.what.contains("the encode of a hand-written Repr")), "{encode:?}");
+    let decode = OneHot::ir("OneHot", None, 4, 4, 5).check();
+    assert!(decode.iter().any(|b| b.what.contains("the decode of a hand-written Repr")), "{decode:?}");
+    let empty = OneHot::ir("OneHot", None, 0, 4, 4).check();
+    assert!(empty.iter().any(|b| b.what.contains("at least one level")), "{empty:?}");
+    let named = OneHot::ir("Pair<u8>", Some(GenericInstance { item: "Pair".into(), arguments: vec!["f64".into()] }), 4, 4, 4).check();
+    assert!(named.iter().any(|b| b.what.contains("a generic instance of `Pair`")), "{named:?}");
 }

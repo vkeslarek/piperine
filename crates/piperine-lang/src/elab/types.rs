@@ -103,7 +103,7 @@ impl Elaboration<'_, '_> {
             DeclKind::Struct(s) => TypeKind::Struct { form: Self::fields_form(s.form), fields: self.field_list(decl) },
             _ => self.enum_kind(decl),
         };
-        TypeData { name, path: self.design.decl(decl).qualified_name(), origin: self.locator.decl(decl), kind, derives: self.derives_of(decl) }
+        TypeData { name, path: self.design.decl(decl).qualified_name(), origin: self.locator.decl(decl), kind, derives: self.derives_of(decl), instance: None, repr: Default::default() }
     }
 
     /// The source's way of writing fields as the IR's.

@@ -37,6 +37,8 @@ impl Types {
             origin: Types::origin(),
             kind: TypeKind::Struct { form: FieldsForm::Named, fields: vec![("a".into(), ValueType::F64), ("b".into(), ValueType::Bool)] },
             derives: Types::derives(),
+            instance: None,
+            repr: Default::default(),
         });
         let variant = |name: &str, discriminant, form, fields: Vec<(String, ValueType)>| VariantData { name: name.into(), discriminant, form, fields };
         let tx = b.type_data(TypeData {
@@ -52,14 +54,18 @@ impl Types {
                 ],
             },
             derives: Types::derives(),
+            instance: None,
+            repr: Default::default(),
         });
-        let marker = b.type_data(TypeData { name: "Marker".into(), path: "m::Marker".into(), origin: Types::origin(), kind: TypeKind::Struct { form: FieldsForm::Unit, fields: vec![] }, derives: Types::derives() });
+        let marker = b.type_data(TypeData { name: "Marker".into(), path: "m::Marker".into(), origin: Types::origin(), kind: TypeKind::Struct { form: FieldsForm::Unit, fields: vec![] }, derives: Types::derives(), instance: None, repr: Default::default() });
         let single = b.type_data(TypeData {
             name: "Only".into(),
             path: "m::Only".into(),
             origin: Types::origin(),
             kind: TypeKind::Enum { tag_levels: 0, variants: vec![variant("One", 0, FieldsForm::Named, vec![("n".into(), ValueType::UInt(8))])] },
             derives: Types::derives(),
+            instance: None,
+            repr: Default::default(),
         });
         Types { pair, tx, marker, single }
     }
