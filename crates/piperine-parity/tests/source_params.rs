@@ -141,3 +141,11 @@ fn a_composite_param_needs_no_repr_and_no_read_by_analog() {
     // is a param no `analog` block reads, and the design compiles and runs: v(o) = 1 kOhm / 2 kOhm = 1/2.
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("held rating", "v(o)", Coordinate::OperatingPoint), 0.5, operating_point("HeldRatingBench"));
 }
+
+#[test]
+fn a_unit_enum_with_no_derive_is_a_param() {
+    // §8.1.15 (a param's type is a value type; only a carried type needs `Repr`), PI-02 AC 1: `enum Gear { Low, High }` derives nothing
+    // and is read by `match`: `Low` is 1 mS behind 1 kOhm (v(o) = 1/2), `High` is 3 mS (v(o) = 1/4).
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("gear low", "v(o)", Coordinate::OperatingPoint), 0.5, operating_point("GearLowBench"));
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("gear high", "v(o)", Coordinate::OperatingPoint), 0.25, operating_point("GearHighBench"));
+}

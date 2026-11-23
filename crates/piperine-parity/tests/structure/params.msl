@@ -159,3 +159,15 @@ module HeldRating(p: Electrical) { rating: Rating2 = Rating2 { n: 1, g: 2.0 }; }
 analog for HeldRating { i(p, gnd) +> v(p) / 1k; }
 
 module HeldRatingBench() { signal o: Electrical; let supply = Supply(o); let load = HeldRating(o); }
+
+// -- §8.1.15, F26: a unit enum that derives nothing is a param too
+
+/// Two speeds, no derive.
+enum Gear { Low, High }
+
+/// A load of 1 mS in `Low` and 3 mS in `High`.
+module GearLoad(p: Electrical) { gear: Gear = Gear::Low; }
+analog for GearLoad { i(p, gnd) +> match gear { Gear::Low => 1.0, Gear::High => 3.0 } * v(p) / 1k; }
+
+module GearLowBench() { signal o: Electrical; let supply = Supply(o); let load = GearLoad(o); }
+module GearHighBench() { signal o: Electrical; let supply = Supply(o); let load = GearLoad { gear: Gear::High }(o); }

@@ -238,6 +238,23 @@ impl Session {
     /// literal, a variant name, `None` or a value of `T`. A refusal changes nothing (`E0802`). An integer an
     /// `f64` cannot hold is written as its exact pin bytes (PI-01 AC 4).
     pub(crate) fn set_text_param(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, ir: &Ir, path: &ParamPath, text: &str) -> Result<(), Failure> {
+        Session::write_text(table, derive, circuit, ir, path, text).map_err(|failure| Session::name_text(failure, &path.label(), text))
+    }
+
+    /// `failure`, when it is the refusal of a write (`E0802`: "`<label>` refuses the value ..."), as the user's own text states it:
+    /// the param and the text they gave (`Open`, `Some(0.5)`), never the tag or the leaf the text became.
+    fn name_text(failure: Failure, label: &str, text: &str) -> Failure {
+        match failure {
+            Failure::Host { code: "E0802", message } => match message.split_once("refuses the value ").and_then(|(_, rest)| rest.split_once(": ")) {
+                Some((_, reason)) => Failure::Host { code: "E0802", message: format!("`{label}` refuses the value `{text}`: {reason}") },
+                None => Failure::Host { code: "E0802", message },
+            },
+            other => other,
+        }
+    }
+
+    /// [`Session::set_text_param`] before its refusals are renamed.
+    fn write_text(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, ir: &Ir, path: &ParamPath, text: &str) -> Result<(), Failure> {
         let read = ParamText::read(ir, path, text)?;
         match read.option_leaves(&path.label())? {
             None => match read {

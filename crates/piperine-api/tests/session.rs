@@ -443,7 +443,9 @@ const STRUCTURAL: &str = "#[derive(Repr, PartialEq)]\nenum Mode { Short, Open }\
     module Sw(a: Electrical) { md: Mode = Mode::Short; }\nanalog for Sw { match md { Mode::Short => { v(a, gnd) +> 0.25; } Mode::Open => {} } }\n\
     module Ow(c: Electrical) { vs: Option<f64>; }\nanalog for Ow { match vs { Some(x) => { v(c, gnd) +> x; } None => {} } }\n\
     module SwTop() { signal a: Electrical; let sup = Supply(a); let m = Sw(a); }\n\
-    module OwTop() { signal c: Electrical; let sup = Supply(c); let o = Ow(c); }\n";
+    module OwTop() { signal c: Electrical; let sup = Supply(c); let o = Ow(c); }\n\
+    module SwWrap(a: Electrical) { md: Mode = Mode::Short; let s = Sw { md: md }(a); }\n\
+    module SwWrapTop() { signal a: Electrical; let sup = Supply(a); let w = SwWrap(a); }\n";
 
 /// The runs of `STRUCTURAL` with `--param` texts for structural params.
 struct Structural;
@@ -516,5 +518,64 @@ fn a_leaf_text_is_read_by_the_leafs_type() {
     with("Top.cfg.g", "2.5").unwrap_or_else(|f| panic!("{f}"));
     for (entry, text) in [("Top.cfg.en", "1"), ("Top.cfg.n", "1.5"), ("Top.cfg.n", "true"), ("Top.cfg.g", "yes")] {
         assert!(matches!(with(entry, text), Err(Failure::Host { code: "E0802", .. })), "{entry}={text}");
+    }
+}
+
+/// Params passed through a wrapper's placement (`{ n: n }`): a design whose inner module reads an integer, an enum with no derive and an
+/// `Option`, and whose wrapper hands its own params down.
+const WRAPPED: &str = "enum Mode { Fast, Slow }\n\
+    module Vsource(p: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, gnd) +> dc; }\n\
+    module Inner(p: Electrical) { n: u8 = 1; md: Mode = Mode::Fast; rs: Option<f64>; }\n\
+    analog for Inner { i(p, gnd) +> (n as f64) * v(p) / 1k + match md { Mode::Fast => 1.0, Mode::Slow => 3.0 } * v(p) / 1k + v(p) / rs.unwrap_or(1k); }\n\
+    module Wrap(p: Electrical) { n: u8 = 4; md: Mode = Mode::Fast; rs: Option<f64>; let i = Inner { n: n, md: md, rs: rs }(p); }\n\
+    module Top() { signal a: Electrical; let v1 = Vsource(a); let w = Wrap { rs: 2k }(a); }\n";
+
+#[test]
+fn params_passed_through_a_wrappers_placement_run() {
+    // §3.2 and §8.4: a placement binds the child's param to the parent's own (`{ n: n }`, `{ md: md }`, `{ rs: rs }`, an `Option` to an
+    // `Option`): the child reads the parent's value, and a `set` of the parent's integer or enum reaches the child. The `Option`
+    // keeps the value it elaborated to (a composite is not recomputed): setting it is E0802 pointing at the child.
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let cache = tempfile::tempdir().expect("a cache");
+    let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
+    let mut session = open(WRAPPED, &flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
+    let shown = |session: &Session, param: &str| session.metadata().params.into_iter().find(|p| p.path == format!("Top.w.i.{param}")).unwrap_or_else(|| panic!("no `{param}`")).value;
+    assert_eq!(shown(&session, "n"), piperine_api::Cell::Int(4));
+    assert_eq!(shown(&session, "md"), piperine_api::Cell::Text("Fast".into()));
+    assert!(matches!(shown(&session, "rs"), piperine_api::Cell::Composite(_)), "the `Option` reached the child: {:?}", shown(&session, "rs"));
+    session.set_text("Top.w.n", "6").unwrap_or_else(|f| panic!("{f}"));
+    session.set_text("Top.w.md", "Slow").unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(shown(&session, "n"), piperine_api::Cell::Int(6), "the child follows the wrapper's integer");
+    assert_eq!(shown(&session, "md"), piperine_api::Cell::Text("Slow".into()), "and its enum");
+    match session.set_text("Top.w.rs", "3k") {
+        Err(Failure::Host { code: "E0802", message }) => assert!(message.contains("Top.w.rs") || message.contains("Top.w.i.rs"), "{message}"),
+        other => panic!("E0802 for the composite pass-through, found {other:?}"),
+    }
+}
+
+#[test]
+fn a_structural_enum_passed_through_a_wrapper_selects_the_variant() {
+    // a structural param handed down (`{ md: md }`): the wrapper's `--param w.md=Open` reaches the inner `Sw` at elaboration, so its
+    // node is the supply's 1 V; the default `Short` forces 0.25 V.
+    let near = |wanted: f64, got: f64| assert!((got - wanted).abs() < 1e-9, "wanted {wanted}, got {got}");
+    near(0.25, Structural::volts("SwWrapTop", "a", &[]).unwrap_or_else(|f| panic!("{f}")));
+    near(1.0, Structural::volts("SwWrapTop", "a", &[("w.md", "Open")]).unwrap_or_else(|f| panic!("{f}")));
+}
+
+#[test]
+fn a_refused_text_is_named_as_the_user_wrote_it() {
+    // a write the circuit refuses (the instance runs nothing, so it has no pin for the param) names the param and the text the user
+    // gave, `Open` or `Some(0.5)`, never the enum's tag or the `value` leaf of an `Option`.
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let cache = tempfile::tempdir().expect("a cache");
+    let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
+    let source = "enum Mode { Short, Open }\nmodule Top() { md: Mode = Mode::Short; vs: Option<f64>; signal a: Electrical; }\n";
+    for (entry, text) in [("Top.md", "Open"), ("Top.vs", "Some(0.5)")] {
+        let overrides = Overrides { param_texts: vec![(entry.to_string(), text.to_string())], ..flags("op", "rust", Some("Top")) };
+        match open(source, &overrides, &settings) {
+            Err(Failure::Host { code: "E0802", message }) => assert!(message.contains(entry) && message.contains(&format!("`{text}`")) && !message.contains("value`"), "{message}"),
+            Err(other) => panic!("{entry}={text}: E0802 naming the text, found {other}"),
+            Ok(_) => panic!("{entry}={text}: accepted"),
+        }
     }
 }
