@@ -1040,8 +1040,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `delay_tline` and `delay_tline_ac` pass with ngspice present
-- [ ] Gate check passes: `Run partran`, `Run parac`, `Run corpus`, `Run twins`
+- [x] `delay_tline` and `delay_tline_ac` pass with ngspice present
+- [x] Gate check passes: `Run partran`, `Run parac`, `Run corpus`, `Run twins`
 
 **Tests**: e2e
 **Gate**: full

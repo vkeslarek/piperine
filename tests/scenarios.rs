@@ -22,7 +22,7 @@ use piperine_transpile::Settings;
 
 /// The twins only the Rust backend runs: their source reads `now()`, which the interpreter refuses
 /// (the same list `piperine-cli/tests/twins.rs` holds the binary to); `uic_rc` and `diode_rs` read `analysis(..)`.
-const COMPILED_ONLY: [&str; 6] = ["pss_rc", "tran_jump", "tran_corner", "tran_floor", "uic_rc", "diode_rs"];
+const COMPILED_ONLY: [&str; 7] = ["pss_rc", "tran_jump", "tran_corner", "tran_floor", "uic_rc", "diode_rs", "delay_tline"];
 
 /// A sink that keeps nothing: a scenario reads the table.
 struct Ignore;
@@ -511,6 +511,12 @@ fn pss_rc() {
 fn temp_res() {
     // 75 C: ngspice's `.options temp=75`, the command's `--temp 75`; the same rows as an operating point
     Scenario::of("temp_res").hold(&Comparison::OperatingPoint { nodes: &["mid"] });
+}
+
+#[test]
+fn delay_tline() {
+    // AO-02: a lossless line matched at both ends is `0.5 * delay(v(src), 1.05 us)`; the 100 kHz sine reads `now()`
+    Scenario::of("delay_tline").hold(&Comparison::Transient { export: "delay_tline_tran", rows: 101, node: "out" });
 }
 
 #[test]

@@ -142,7 +142,7 @@ fn floor(golden: &piperine_parity::golden::Golden) -> Measured {
 /// `uic_rc` and `diode_rs` joined them with `analog-structure` (T23, T24): `CapIc` reads
 /// `analysis(..)` and `DiodeRs` selects a contribution by a param, forms the interpreter refuses by
 /// name (T15).
-const COMPILED_ONLY: [&str; 6] = ["tran_jump", "tran_corner", "tran_floor", "pss_rc", "uic_rc", "diode_rs"];
+const COMPILED_ONLY: [&str; 7] = ["tran_jump", "tran_corner", "tran_floor", "pss_rc", "uic_rc", "diode_rs", "delay_tline"];
 
 /// The twins of `host-ii` whose `parity_*` target measures and prints its own deviation per
 /// quantity (`parity_tf`, `parity_pz`, `parity_sens`): resistances, eigenvalues and derivatives
@@ -227,6 +227,8 @@ fn measure(backend: Backend) -> Option<BTreeMap<&'static str, Measured>> {
         table.insert("pss_rc", pss_rc(&golden, backend));
         let Reference::Golden(golden) = ngspice.run("uic_rc") else { return None };
         table.insert("uic_rc", tran("uic_rc", "uic_rc_tran", "out", &golden, backend));
+        let Reference::Golden(golden) = ngspice.run("delay_tline") else { return None };
+        table.insert("delay_tline", tran("delay_tline", "delay_tline_tran", "out", &golden, backend));
         let Reference::Golden(golden) = ngspice.run("diode_rs") else { return None };
         table.insert("diode_rs", operating_point(&OperatingPoint { fixture: "diode_rs", nodes: &["vin", "a"] }, &golden, backend));
     }

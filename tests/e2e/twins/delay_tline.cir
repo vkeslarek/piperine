@@ -1,0 +1,20 @@
+* delay_tline — a lossless transmission line against `delay`.
+* A 1 V, 100 kHz sine (AC 1) drives 50 Ohm into a lossless line of Z0 = 50 Ohm and
+* TD = 1.05 us, loaded by 50 Ohm. The line is matched at both ends, so the input divides
+* 1:2 and the output is the input as it was TD ago (TD = 1.05 us, between two print points:
+* ngspice's print interpolation reads a half-step ramp at the kink where the wave first
+* arrives, 0.75 mV off at TD itself if a print point lands on it): v(out) = 0.5 * v(src)(t - TD), and in
+* the small-signal run 0.5 * exp(-j w TD). The step cap (tmax = 10n) is the harness's, a
+* tenth of the print step, on both sides.
+V1 src 0 SIN(0 1 100k) AC 1
+R1 src in 50
+T1 in 0 out 0 Z0=50 TD=1.05u
+R2 out 0 50
+.options interp
+.control
+tran 0.1u 10u 0 10n
+wrdata delay_tline_tran v(out)
+ac dec 10 1k 10Meg
+wrdata delay_tline_ac v(out)
+.endc
+.end
