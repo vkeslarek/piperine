@@ -99,13 +99,13 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 
 **Acceptance Criteria** (AO-02, L44):
 
-1. WHEN `v(out) +> 0.5 * delay(v(src), 1u);` runs a transient THEN the system SHALL agree with a new twin `delay_tline` (`tests/ngspice/delay_tline.cir`: the same source into a lossless line `T` with `Z0` = 50 Ω, `TD` = 1 µs, matched at both ends) under `TRAN_VOLTAGE` at every print row.
+1. WHEN `v(out) +> 0.5 * delay(v(src), 1.05u);` runs a transient THEN the system SHALL agree with a new twin `delay_tline` (`tests/e2e/twins/delay_tline.cir`: the same source into a lossless line `T` with `Z0` = 50 Ω, `TD` = 1.05 µs, matched at both ends) under `TRAN_VOLTAGE` at every print row. (Amended in T39, coordinator ruling 2026-11-23, pending user review: the twin's `delay` is 1.05 µs, not 1 µs. With `TD = 1u` ngspice-47 prints 7.5398e-4 V at t = 1.0 us, the print row where the delayed sine first arrives, where the exact matched line gives 0; that is 0.75 mV against a zero golden, outside `TRAN_VOLTAGE`'s 1e-6 absolute bound. 1.05 µs keeps the kink between print rows and tests the same operator; `tests/e2e/twins/delay_tline.msl` and its `.cir` both use it.)
 2. WHEN the time is less than `td` THEN the system SHALL give the value `x` had at the operating point.
 3. WHEN an operating point evaluates `delay(x, td)` THEN the system SHALL give `x`, and WHEN `td` is 0 in any solve THEN `x`.
 4. WHEN `delay(x, td, max)` is given a `td` that varies during the analysis THEN the system SHALL read `x` as it was `td` ago, and as it was `max` ago while `td` exceeds `max`.
 5. IF `delay` has no `max` and its `td` is not constant during an analysis after value inputs are substituted THEN the system SHALL report `E0452` at elaboration naming the instance.
 6. IF `td` is negative, or `max` is not positive, during a run THEN the system SHALL fail the run with `E0453` naming the instance.
-7. WHEN `delay_tline` is swept in AC THEN the system SHALL give `0.5 · exp(−jω · 1 µs)` and agree with ngspice under `AC_MAGNITUDE` and `AC_PHASE`.
+7. WHEN `delay_tline` is swept in AC THEN the system SHALL give `0.5 · exp(−jω · 1.05 µs)` (the twin's `td`, AC 1) and agree with ngspice under `AC_MAGNITUDE` and `AC_PHASE`.
 
 **Independent Test**: `cargo test -p piperine-parity --test parity_tran --test parity_ac` for `delay_tline`; elaboration tests for `E0452`.
 
@@ -158,7 +158,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 **Acceptance Criteria** (AO-06, against ngspice `.noise`):
 
 1. WHEN the twin `noise_rc.msl` (the `noise_rc.cir` circuit, its resistor carrying `white_noise(4.0 * K_B * temperature() / r, "thermal")`) runs THEN `onoise` SHALL agree with ngspice's `onoise_spectrum` at every frequency, and `onoise_total` with ngspice's, under the new noise contract.
-2. WHEN the twin `noise_switch.msl` (a resistive switch whose thermal source follows its on resistance) runs closed THEN `onoise` SHALL equal the closed form `sqrt(4 k T (1 kohm || ron))`, and WHEN its control is opened THEN `onoise` SHALL agree with `noise_switch_off.cir` under the same contract. (Amended in T41: ngspice 46 and 47 take the open switch's noise and transfer for a switch the operating point closed, so `noise_switch.cir` cannot be the oracle of the closed state; see `parity_noise.rs::noise_switch`.)
+2. WHEN the twin `noise_switch.msl` (a resistive switch whose thermal source follows its on resistance) runs closed THEN `onoise` SHALL equal the closed form `sqrt(4 k T (1 kohm || ron))`, and WHEN its control is opened THEN `onoise` SHALL agree with `noise_switch_off.cir` under the same contract. (Amended in T41, coordinator ruling 2026-11-23, pending user review; the implementer's amendment, the user has not confirmed it. Evidence on ngspice-47: `noise_switch.cir` prints `onoise_spectrum` 3.88190044e-9 at every point, byte-equal to `noise_switch_off.cir` (`sqrt(4kT(1k||10k))`, the open switch), while the same netlist's `op` gives `v(a)` = 9.990010e-4 (closed) and an `ac` alone gives 0.9090909, the open divider: ngspice's SW reads the open state in every small-signal analysis. The closed state is held to `sqrt(4kT(1k||ron))` = 1.286838e-10 at 300.15 K, the open state to ngspice, in `noise_switch` and `noise_switch_open_agrees_with_ngspice`. ngspice 46 and 47 take the open switch's noise and transfer for a switch the operating point closed, so `noise_switch.cir` cannot be the oracle of the closed state; see `parity_noise.rs::noise_switch`.)
 3. WHEN a new twin `noise_diode` (a diode biased by a current source, with shot noise `2qI` and flicker noise `kf·I^af/f`, against ngspice's `D` with `kf`, `af`) runs THEN `onoise` SHALL agree under the same contract.
 4. WHERE the ngspice comparison is disabled the three twins SHALL still run and print the harness's skip line.
 
@@ -264,7 +264,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 - WHEN a design has no noise source THEN a noise run SHALL print `onoise` = 0 at every frequency and succeed.
 - WHEN `delay`'s `td` is exactly `max` THEN the system SHALL read `x` as it was `max` ago.
 - WHEN `ddx`'s `e` does not read the probe at all THEN the system SHALL give 0.
-- WHEN `simparam` is called with a name the run gives and a default THEN the system SHALL give the run's value.
+- WHEN `simparam` is called with a name the run gives and `.unwrap_or(default)` is applied to it THEN the system SHALL give the run's value, and the default when the run gives none (`simparam` has no default argument, user 2026-11-23).
 - WHEN a trace site's fields differ in type from another site of the same stream THEN the system SHALL report the error of §19 rule 12, as for reaction records.
 
 ---

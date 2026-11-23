@@ -1194,7 +1194,7 @@ Proof: run typeops | test ddx_outside_analog_or_read_by_a_definition_is_e0450 ..
 **C9** - An AC sweep of `i(o, gnd) +> ddx(id, v(a, k)) * v(in);` gives `|v(o)/v(in)|` = the operating point's `ddx` times the load of `o`, within `AC_MAGNITUDE`. (AO-01, AC 9; T32)
 Proof: run spartial | test an_ac_sweep_takes_ddx_at_the_operating_point ... ok
 
-**C10** - `delay_tline.msl` agrees with `delay_tline.cir` (a matched lossless line, `TD` = 1 µs) under `TRAN_VOLTAGE` at every print row. (AO-02, AC 1; T39)
+**C10** - `delay_tline.msl` agrees with `delay_tline.cir` (a matched lossless line, `TD` = 1.05 µs, AO-02 AC 1 as amended: ngspice-47's print interpolation at a first arrival that sits on a print row is 0.75 mV off a zero golden) under `TRAN_VOLTAGE` at every print row. (AO-02, AC 1; T39)
 Proof: run partran | test delay_tline ... ok
 
 **C11** - Before `td` the delay reads the value `x` had at the operating point. (AO-02, AC 2; T33)
@@ -1214,7 +1214,7 @@ Proof: run elabops | test a_delay_without_max_whose_td_varies_is_e0452 ... ok
 Proof: run sdelay | test a_negative_td_or_a_non_positive_max_fails_with_e0453 ... ok
 Proof: run tops | test the_delay_function_faults_453 ... ok
 
-**C16** - `delay_tline` in AC gives `0.5 · exp(−jω · 1 µs)` and agrees with ngspice under `AC_MAGNITUDE` and `AC_PHASE`. (AO-02, AC 7; T39)
+**C16** - `delay_tline` in AC gives `0.5 · exp(−jω · 1.05 µs)` (the twin's `td`) and agrees with ngspice under `AC_MAGNITUDE` and `AC_PHASE`. (AO-02, AC 7; T39)
 Proof: run parac | test delay_tline_ac ... ok
 
 **C17** - `i(a, gnd) +> noise(-1.0);` runs `op`, `transient` and `ac` with the values of the design without it, and its density is never read there. (AO-03, AC 1; T34)
@@ -1284,8 +1284,9 @@ Proof: run apinoise | test report::the_report_takes_roots_groups_by_name_else_in
 **C36** - `noise_rc.msl` agrees with ngspice's `onoise_spectrum` at every frequency and its `onoise_total` under `NOISE`. (AO-06, AC 1; T40)
 Proof: run parnoise | test noise_rc ... ok
 
-**C37** - `noise_switch.msl` agrees with `noise_switch.cir` under `NOISE`. (AO-06, AC 2; T41)
+**C37** - `noise_switch.msl` closed equals the closed form `sqrt(4kT(1k||ron))` under `NOISE` (ngspice reads a closed switch as open in `.noise`, so `noise_switch.cir` is not its oracle), and opened it agrees with `noise_switch_off.cir`. (AO-06, AC 2 as amended; T41)
 Proof: run parnoise | test noise_switch ... ok
+Proof: run parnoise | test noise_switch_open_agrees_with_ngspice ... ok
 
 **C38** - `noise_diode.msl` (shot `2qI`, flicker `kf·I^af/f`) agrees with ngspice's `D` under `NOISE`. (AO-06, AC 3; T42)
 Proof: run parnoise | test noise_diode ... ok
