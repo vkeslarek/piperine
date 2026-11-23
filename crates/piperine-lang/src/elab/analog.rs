@@ -318,6 +318,13 @@ impl Elaboration<'_, '_> {
         if let ExprKind::Field { .. } = &node.kind {
             return self.reached_terminal(scope, arg);
         }
+        if let ExprKind::Index { .. } = &node.kind {
+            // one node of an array of nodes: its index folds, per iteration of an unrolled loop (CV-26)
+            return self.node_element(scope, arg)?.or_else(|| {
+                self.unsupported(file, node.span, "an index of a value that is no array of nodes");
+                None
+            });
+        }
         let ExprKind::Path(path) = &node.kind else {
             self.unsupported(file, node.span, "a node argument that is not a name");
             return None;

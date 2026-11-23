@@ -105,3 +105,28 @@ fn an_element_binds_a_handle_parameter() {
     let text = structure_of(src);
     assert!(text.contains("lines") && text.contains(".prev"), "the handle reads the element's previous value:\n{text}");
 }
+
+#[test]
+fn node_array_contributions_unroll_to_their_nodes() {
+    // CV-26 AC 1: a loop of constant trip count that contributes to `bl[k]` and `bl[k+1]` is unrolled with `k` folded:
+    // three branches between consecutive nodes of the array, `bl[0]` to `bl[3]`, a probe of one element reads that node
+    let src = "module Top() {\n\
+               signal bl: [Electrical; 4];\n}\n\
+               analog for Top { for k in 0..3 { i(bl[k], bl[k + 1]) +> v(bl[k], bl[k + 1]) / 1000.0; } let tap = v(bl[2]); }";
+    let ir = Elab::ir(src, "Top");
+    let body = ir.bodies().find(|b| b.name() == "Top").expect("Top");
+    assert_eq!(body.nodes().iter().map(|n| n.name.as_str()).collect::<Vec<_>>(), ["bl[0]", "bl[1]", "bl[2]", "bl[3]"]);
+    let branches: Vec<(piperine_ir::Terminal, piperine_ir::Terminal)> = body.branches().iter().map(|b| (b.plus, b.minus)).collect();
+    use piperine_ir::Terminal::Node;
+    assert_eq!(branches, vec![(Node(0), Node(1)), (Node(1), Node(2)), (Node(2), Node(3))], "one branch per iteration, on its two nodes");
+}
+
+#[test]
+fn an_analog_node_index_that_does_not_fold_is_refused_naming_it() {
+    // CV-26 AC 2, QC4: an index of a node array in `analog` that does not fold after unrolling is refused naming it; a
+    // constant past the end is E0104
+    let found = Elab::run("module Top() { signal bl: [Electrical; 4]; }\nanalog for Top { let k = 2; let x = v(bl[k]); }", "Top").expect_err("no fold");
+    assert!(found.iter().any(|d| d.diagnostic.code == "E0180" && d.diagnostic.message.contains("`k`")), "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    let past = Elab::run("module Top() { signal bl: [Electrical; 4]; }\nanalog for Top { let x = v(bl[4]); }", "Top").expect_err("past the end");
+    assert!(past.iter().any(|d| d.diagnostic.code == "E0104" && d.diagnostic.message.contains('4')), "{:?}", Elab::codes(&past));
+}
