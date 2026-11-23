@@ -531,11 +531,10 @@ struct TimeLoop {
     /// Predictor gate: extrapolation history is only valid coming off an
     /// accepted step (a rejection leaves rejected rows in the buffer).
     last_step_accepted: bool,
-    /// Live-set edge rule (LIVE-06/07): the first step after a scheduled
-    /// set integrates the value jump, so its Milne window spans the
-    /// discontinuity — the LTE there is not error but the jump itself.
-    /// That one step is tested by the first-order jump estimate
-    /// (`TrBdf2::jump_lte`) and sized by rule 6, not by the PI controller.
+    /// The step about to be attempted reads a delivered change (any `Restart::Integrator*`: an
+    /// instant that changed a carrier or a param `analog` reads, a settle commit, a host `set`):
+    /// its Milne window spans the discontinuity, so it is sized by §15.2 rule 6 and tested by
+    /// the first-order jump estimate (`TrBdf2::jump_lte`) instead of the PI controller's error.
     sets_just_applied: bool,
     dt_min_seen: f64,
     dt_max_seen: f64,
