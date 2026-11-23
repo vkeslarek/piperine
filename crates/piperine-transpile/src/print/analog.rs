@@ -340,7 +340,7 @@ impl<'a> AnalogPrinter<'a> {
         let (Source::Param(p) | Source::ParamPrevious(p)) = s else { return None };
         let ty = &self.body.params().get(p as usize)?.ty;
         let items = TypeItems::new(self.body.ir());
-        (ty.is_composite() && items.holds_real(ty)).then(|| RealLift::new(self.body.ir(), &items).expr(ty, name, &format!("Dual<{slots}>"), 0))
+        (self.body.ir().is_composite_value(ty) && items.holds_real(ty)).then(|| RealLift::new(self.body.ir(), &items).expr(ty, name, &format!("Dual<{slots}>"), 0))
     }
 
     /// Whether a generic block takes read `s` as it is rather than as a `Real` (so it is no
@@ -382,7 +382,7 @@ impl<'a> AnalogPrinter<'a> {
                     format!("let {name} = {};", ValuePrinter::pin_value(&self.values.pin_type(ty)?, &format!("{cx}.bytes({i})")))
                 }
                 // a composite param is the bytes of a composite pin, and a unit enum param its tag's
-                Some(ty) if ty.is_composite() || matches!(ty, ValueType::Enum(_)) => {
+                Some(ty) if self.body.ir().is_composite_value(ty) || matches!(ty, ValueType::Enum(_)) => {
                     let concrete = RealLift::new(self.body.ir(), &TypeItems::new(self.body.ir())).concrete_type(ty);
                     format!("let {name} = {};", ValuePrinter::pin_value(&concrete, &format!("{cx}.bytes({i})")))
                 }

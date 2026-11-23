@@ -61,7 +61,7 @@ impl Metadata {
             for (i, param) in body.params().iter().enumerate() {
                 let path = format!("{}.{}", instance.path(), param.name);
                 let current = held.get(instance.path(), &param.name);
-                let composite = if param.ty.is_composite() {
+                let composite = if ir.is_composite_value(&param.ty) {
                     CellShape::of(ir, &param.ty).zip(held.composite_bytes(instance.path(), &param.name)).and_then(|(shape, bytes)| shape.decode(bytes).ok())
                 } else if let (ValueType::Enum(_), Some(tag)) = (&param.ty, current) {
                     // a unit enum param is its tag (PI-02), shown as the variant's name

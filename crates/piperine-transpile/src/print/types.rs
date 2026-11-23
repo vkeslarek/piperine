@@ -42,7 +42,7 @@ impl<'a> TypeItems<'a> {
         }
         let mut lifted = BTreeSet::new();
         for body in ir.bodies() {
-            for param in body.params().iter().filter(|param| param.ty.is_composite()) {
+            for param in body.params().iter().filter(|param| ir.is_composite_value(&param.ty)) {
                 Self::collect_aggregates(ir, &param.ty, &mut lifted);
             }
         }

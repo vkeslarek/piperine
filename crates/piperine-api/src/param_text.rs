@@ -37,7 +37,7 @@ impl ParamText {
         let reading = Reading { ir, label: path.label(), text: text.trim() };
         match &ty {
             ValueType::Option(payload) => reading.option(payload),
-            other if other.is_composite() => Err(reading.refused("a composite param is set by its leaves, `<param>.<leaf>`".to_string())),
+            other if ir.is_composite_value(other) => Err(reading.refused("a composite param, an enum with fields included, is set by its leaves, `<param>.<leaf>`".to_string())),
             other => reading.scalar(other).map(ParamText::Number),
         }
     }
@@ -118,7 +118,7 @@ impl Reading<'_> {
         }
         let inner = self.text.strip_prefix("Some(").and_then(|rest| rest.strip_suffix(')')).unwrap_or(self.text);
         let reading = Reading { ir: self.ir, label: self.label.clone(), text: inner.trim() };
-        if payload.is_composite() {
+        if self.ir.is_composite_value(payload) {
             return Err(self.refused("the payload is a composite: set `some` and the leaves of `value`".to_string()));
         }
         reading.scalar(payload).map(|value| ParamText::Option { some: true, value })

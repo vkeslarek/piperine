@@ -114,3 +114,12 @@ fn an_option_param_runs_its_case() {
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("option none", "v(o)", Coordinate::OperatingPoint), 0.5, operating_point("OptionNoneBench"));
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("option some", "v(o)", Coordinate::OperatingPoint), 0.75, operating_point("OptionSomeBench"));
 }
+
+#[test]
+fn a_payload_enum_param_runs_its_variant() {
+    // PI-02, §8.1.15 ("a param's type is a value type"): an enum whose variants carry fields is a param too. The load is
+    // `Conductance(2m)` by default, so v(o) = 1 / (1 + 2) = 1/3 behind 1 kOhm; bound to `Resistance(250.0)` it is 4 mS, so
+    // v(o) = 1 / (1 + 4) = 0.2.
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("payload default", "v(o)", Coordinate::OperatingPoint), 1.0 / 3.0, operating_point("RatedDefaultBench"));
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("payload bound", "v(o)", Coordinate::OperatingPoint), 0.2, operating_point("RatedResistanceBench"));
+}

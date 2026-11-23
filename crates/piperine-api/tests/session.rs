@@ -283,9 +283,9 @@ fn a_session_returns_the_statistics_of_its_last_transient() {
 
 /// A leaf with an integer, an enum and an `Option` param, on a source across a resistor, as
 /// PI-01 to PI-03 write them.
-const TYPED_PARAMS: &str = "#[derive(Repr, PartialEq)]\nenum Mode { Fast, Slow }\n\
+const TYPED_PARAMS: &str = "#[derive(Repr, PartialEq)]\nenum Mode { Fast, Slow }\n#[derive(Repr, PartialEq)]\nenum Rating { Conductance(f64), Resistance(f64) }\n\
     pub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n\
-    module Leaf(p: Electrical) { n: u8 = 4; md: Mode = Mode::Fast; rs: Option<f64>; }\n\
+    module Leaf(p: Electrical) { n: u8 = 4; md: Mode = Mode::Fast; rs: Option<f64>; rating: Rating = Rating::Conductance(1.0); }\n\
     analog for Leaf { i(p, gnd) +> (n as f64) * v(p) / 1k + match md { Mode::Fast => 1.0, Mode::Slow => 3.0 } * v(p) / rs.unwrap_or(1k); }\n\
     module Top() { signal a: Electrical; let v1 = Vsource(a, gnd) { dc: 1.0 }; let l = Leaf(a); }\n";
 
@@ -374,4 +374,16 @@ fn an_option_param_set_to_a_value_or_none() {
     session.set_text("Top.l.rs", "Some(10)").unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(literal(shown(&session, "rs")), "Some(10)");
     assert!(matches!(session.set_text("Top.l.rs", "lots"), Err(Failure::Host { code: "E0802", .. })));
+}
+
+#[test]
+fn a_payload_enum_param_is_set_by_its_leaves_not_by_text() {
+    // PI-02, §8.1.15: an enum with fields is a composite param, shown as its variant and set by leaves like any composite (D13):
+    // a text for the whole param is E0802 naming the param and pointing at its leaves.
+    let (mut session, _cache) = typed_session();
+    assert!(matches!(shown(&session, "rating"), piperine_api::Cell::Composite(_)), "{:?}", shown(&session, "rating"));
+    match session.set_text("Top.l.rating", "Resistance") {
+        Err(Failure::Host { code: "E0802", message }) => assert!(message.contains("Top.l.rating") && message.contains("leaves"), "{message}"),
+        other => panic!("E0802, found {other:?}"),
+    }
 }

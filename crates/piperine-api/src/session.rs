@@ -174,7 +174,7 @@ impl ParamTarget {
     pub fn resolve(ir: &Ir, top: &str, entry: &str) -> Result<ParamTarget, Failure> {
         match ParamPath::resolve(ir, top, entry) {
             Ok(param) => {
-                let composite = ir.instance_at(&param.instance).and_then(|i| i.body().params().iter().find(|p| p.name == param.param).map(|p| p.ty.is_composite()));
+                let composite = ir.instance_at(&param.instance).and_then(|i| i.body().params().iter().find(|p| p.name == param.param).map(|p| ir.is_composite_value(&p.ty)));
                 if composite == Some(true) {
                     return Err(Failure::Host { code: "E0802", message: format!("`{entry}` is a composite param: name one of its leaves, `{entry}.<leaf>`") });
                 }
@@ -195,7 +195,7 @@ impl ParamTarget {
             let (name, leaf) = rest.split_at(name_end);
             let leaf = leaf.strip_prefix('.').unwrap_or(leaf);
             let Some(instance) = [path.clone(), format!("{top}.{path}")].into_iter().find_map(|p| ir.instance_at(&p)) else { continue };
-            if leaf.is_empty() || !instance.body().params().iter().any(|p| p.name == name && p.ty.is_composite()) {
+            if leaf.is_empty() || !instance.body().params().iter().any(|p| p.name == name && ir.is_composite_value(&p.ty)) {
                 continue;
             }
             return Some(ParamTarget { param: ParamPath { instance: instance.path().to_string(), param: name.to_string() }, leaf: Some(leaf.to_string()) });

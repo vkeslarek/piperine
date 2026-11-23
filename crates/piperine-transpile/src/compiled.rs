@@ -72,7 +72,7 @@ impl Compiled {
             modules.push(Some(module));
         }
         // a composite param derived from another keeps its elaborated value: no function recomputes it
-        let recomputed = DerivePlan::of(&ir).bindings().iter().any(|binding| !binding.ty.is_composite());
+        let recomputed = DerivePlan::of(&ir).bindings().iter().any(|binding| !ir.is_composite_value(&binding.ty));
         if recomputed && !loaded.derives() {
             return Err(Error::Load {
                 file: loaded.file().to_path_buf(),

@@ -381,15 +381,11 @@ fn the_section_18_diode_type_checks_with_its_option_param() {
 }
 
 #[test]
-fn a_payload_enum_param_is_refused_by_name() {
-    // PI-02 (unit enums only), CV round 2 finding 10: an enum param with a payload is `P0001` naming the enum type,
-    // never carried on to the transpiler read as an `f64`; a unit enum param is the param of `an_enum_param_selects_its_arm`.
-    let items = "#[derive(Repr)]\nenum Kind { X(u8), Y }\n";
-    let src = format!("{items}module Top() {{ k: Kind = Kind::Y; signal s: Electrical; }}");
-    let design = Elab::design(&src);
-    let found = piperine_lang::types::Types::check(&design, "Top").expect_err("the payload enum param is refused");
-    assert_eq!(Elab::codes(&found), ["P0001"]);
-    assert!(found[0].diagnostic.message.contains("param of type `Kind`"), "{}", found[0].diagnostic.message);
+fn a_payload_enum_param_elaborates() {
+    // PI-02, §8.1.15 ("a param's type is a value type"): an enum whose variants carry fields is a param type too (it was `P0001`
+    // naming the enum, CV round 2 finding 10, until params-and-io T30); its default and its binding fold to the variant.
+    let src = "#[derive(Repr)]\nenum Kind { X(u8), Y }\nmodule Child(o: Electrical) { k: Kind = Kind::Y; }\nmodule Top() { signal s: Electrical; let c = Child(s) { k: Kind::X(3) }; let d = Child(s); }";
+    Elab::ir(src, "Top");
 }
 
 /// `Lag` of AS-09: a result that reads its own node, hoisted into each body that places it.

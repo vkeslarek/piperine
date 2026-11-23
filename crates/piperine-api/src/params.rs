@@ -209,7 +209,7 @@ impl Params {
                     .params()
                     .iter()
                     .zip(instance.params())
-                    .filter(|(param, _)| param.ty.is_composite())
+                    .filter(|(param, _)| ir.is_composite_value(&param.ty))
                     .filter_map(|(param, given)| {
                         let layout = CompositeLayout::of(ir, &param.ty)?;
                         let bytes = CompositeLayout::bytes(ir, &param.ty, *given)?;
@@ -241,7 +241,7 @@ impl Params {
 
     /// The value of `param` of `instance`; `None` when the design has no such param.
     pub fn get(&self, instance: &str, param: &str) -> Option<f64> {
-        self.slot(instance)?.params.iter().find(|(n, ty, _)| n == param && !ty.is_composite()).map(|(_, _, v)| *v)
+        self.slot(instance)?.params.iter().find(|(n, ty, _)| n == param && !ty.is_composite()).map(|(_, _, v)| *v).filter(|_| self.composite_bytes(instance, param).is_none())
     }
 
     /// The bytes of the composite param `param` of `instance`: its value.
@@ -351,7 +351,7 @@ impl Params {
             if !read_changed {
                 continue;
             }
-            if binding.ty.is_composite() {
+            if binding.ty.is_composite() || self.composite_bytes(&binding.child, &binding.param).is_some() {
                 return Err(refuse(format!(
                     "`{label}` is read by the placement of the composite param `{}.{}`, which keeps the value it elaborated to: set `{}.{}` itself instead",
                     binding.child, binding.param, binding.child, binding.param

@@ -119,7 +119,7 @@ impl<'a> DigitalPrinter<'a> {
                     format!("let {name} = {};", ValuePrinter::pin_value(&rust, &format!("{cx}.bytes({i})")))
                 }
                 // a composite param is the bytes of a composite pin
-                Some(ty) if ty.is_composite() => format!("let {name} = {};", ValuePrinter::pin_value(&values.pin_type(ty)?, &format!("{cx}.bytes({i})"))),
+                Some(ty) if self.body.ir().is_composite_value(ty) || matches!(ty, ValueType::Enum(_)) => format!("let {name} = {};", ValuePrinter::pin_value(&values.pin_type(ty)?, &format!("{cx}.bytes({i})"))),
                 _ => format!("let {name} = {cx}.f64({i});"),
             },
             Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::LimitLast(_) | Source::LimitAge(_) => {

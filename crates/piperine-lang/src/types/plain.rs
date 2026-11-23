@@ -21,7 +21,7 @@ impl Checker<'_> {
     pub(super) fn is_param_type(&mut self, ty: &Ty) -> bool {
         match ty {
             Ty::UInt(_) | Ty::Int(_) => true,
-            Ty::Enum(decl) => !self.has_payload(*decl),
+            Ty::Enum(_) => true,
             other => self.is_plain_composite(other, false),
         }
     }

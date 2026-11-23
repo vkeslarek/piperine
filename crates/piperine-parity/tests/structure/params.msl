@@ -106,3 +106,18 @@ module EnumBoundBench() { signal o: Electrical; let supply = Supply(o); let load
 module OptionLeftOutBench() { signal o: Electrical; let supply = Supply(o); let load = OptionalLoad(o); }
 module OptionSomeBench() { signal o: Electrical; let supply = Supply(o); let load = OptionalLoad { rs: Some(3k) }(o); }
 module OptionNoneBench() { signal o: Electrical; let supply = Supply(o); let load = OptionalLoad { rs: None }(o); }
+
+// -- params-and-io PI-02, §8.1.15: an enum param with a payload
+
+/// How a load is described: by its conductance, or by its resistance.
+#[derive(Repr, PartialEq)]
+enum Rating { Conductance(f64), Resistance(f64) }
+
+/// A load rated either way (the default is 2 mS).
+module RatedLoad(p: Electrical) { rating: Rating = Rating::Conductance(2m); }
+analog for RatedLoad {
+    i(p, gnd) +> match rating { Rating::Conductance(g) => g, Rating::Resistance(r) => 1.0 / r } * v(p);
+}
+
+module RatedDefaultBench() { signal o: Electrical; let supply = Supply(o); let load = RatedLoad(o); }
+module RatedResistanceBench() { signal o: Electrical; let supply = Supply(o); let load = RatedLoad { rating: Rating::Resistance(250.0) }(o); }
