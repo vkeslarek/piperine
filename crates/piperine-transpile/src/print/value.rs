@@ -548,6 +548,7 @@ impl<'a> ValuePrinter<'a> {
             Expr::Closure { body, .. } => out.push(*body),
             Expr::Limit { x, f, seed, .. } => out.extend([*x, *f].into_iter().chain(*seed)),
             Expr::Stim { mag, phase, .. } => out.extend([*mag].into_iter().chain(*phase)),
+            Expr::SessionParameter { default, .. } => out.extend(default),
             Expr::Real(_)
             | Expr::Bool(_)
             | Expr::Unit
@@ -761,6 +762,7 @@ impl<'a> ValuePrinter<'a> {
             // Reason: the IR form lands first (T17); a form with no printer fails loud.
             Expr::Delay(_) => Err(self.unsupported(e, "delay")),
             Expr::Noise(_) => Err(self.unsupported(e, "noise")),
+            Expr::SessionParameter { .. } => Err(self.unsupported(e, "simparam")),
             Expr::ParamPrevious(p) => match self.analog.as_ref().and_then(|r| r.param_previous.get(*p as usize)) {
                 Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "the previous value of a param")),

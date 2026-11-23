@@ -304,6 +304,9 @@ impl<'a> AnalogPrinter<'a> {
                 Expr::Carrier(c) => {
                     sources.insert(Source::Carrier(*c));
                 }
+                // a session parameter has no plan read until T26; its default is read, and the
+                // value printer refuses the form
+                Expr::SessionParameter { default, .. } => stack.extend(default),
                 // a delay has no plan read until T24 gives it a pin; the value printer refuses it
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Fired(_) | Expr::Delay(_) | Expr::Noise(_) => {}
                 Expr::Derivative(k) => {

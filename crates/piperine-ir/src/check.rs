@@ -91,6 +91,8 @@ struct Owner {
     delays: usize,
     /// The number of the body's noise sources.
     noise_sources: usize,
+    /// The number of the body's session parameters.
+    session_parameters: usize,
     /// The statements of a reaction: `fired` may appear.
     reaction: bool,
     /// The event whose guard is walked: `fired` of another event may appear there (§13 rule 9),
@@ -576,6 +578,7 @@ impl<'a> Checker<'a> {
                 exprs.push(*mag);
                 exprs.extend(phase);
             }
+            Expr::SessionParameter { default, .. } => exprs.extend(default),
         }
         for e in exprs {
             self.expr_id(item, origin, e);
@@ -982,6 +985,7 @@ impl<'a> Checker<'a> {
                 }
                 Expr::Limit { x, f, seed, .. } => stack_e.extend([*x, *f].into_iter().chain(*seed)),
                 Expr::Stim { mag, phase, .. } => stack_e.extend([*mag].into_iter().chain(*phase)),
+                Expr::SessionParameter { default, .. } => stack_e.extend(default),
             }
         }
         (out_e, out_s)
@@ -1241,6 +1245,7 @@ impl<'a> Checker<'a> {
                 derivatives: body.derivatives.len(),
                 delays: body.delays.len(),
                 noise_sources: body.noise_sources.len(),
+                session_parameters: body.session_parameters.len(),
                 reaction: false,
                 event: None,
                 in_body: true,
@@ -1363,6 +1368,7 @@ impl<'a> Checker<'a> {
                 derivatives: 0,
                 delays: 0,
                 noise_sources: 0,
+                session_parameters: 0,
                 reaction: false,
                 event: None,
                 in_body: false,
@@ -1932,6 +1938,20 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin, format!("noise read of source {k}, out of range ({} sources)", w.owner.noise_sources));
                     }
                 }
+            }
+            Expr::SessionParameter { parameter, default } => {
+                if first {
+                    self.own(w, &origin, ty, &ValueType::F64);
+                    if let Some(d) = default {
+                        self.want(w, *d, &ValueType::F64, "the default of a `simparam`");
+                    }
+                    if !w.owner.in_body {
+                        self.wrong(w, origin, "a session parameter read outside a body".to_string());
+                    } else if *parameter as usize >= w.owner.session_parameters {
+                        self.wrong(w, origin, format!("session parameter read {parameter}, out of range ({} parameters)", w.owner.session_parameters));
+                    }
+                }
+                next.extend(default.iter().map(|d| Task::Expr(*d, ctx)));
             }
             Expr::Fired(e) => {
                 if first {

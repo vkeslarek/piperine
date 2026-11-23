@@ -121,6 +121,8 @@ pub struct Deps {
     pub delays: Vec<u32>,
     /// Noise sources whose value (`Expr::Noise`) is read, by index (`Body::noise_sources`).
     pub noise_sources: Vec<u32>,
+    /// Session parameters read (`Expr::SessionParameter`), by index (`Body::session_parameters`).
+    pub session_parameters: Vec<u32>,
 }
 
 impl<'a> Body<'a> {
@@ -174,6 +176,12 @@ impl<'a> Body<'a> {
     /// (`Body::derivatives`), sorted, through locals and function calls.
     pub fn derivative_reads(&self, target: Target) -> Vec<u32> {
         self.sources_of(target).derivatives.iter().copied().collect()
+    }
+
+    /// The session parameters `target` reads (`Expr::SessionParameter`), by index
+    /// (`Body::session_parameters`), sorted, through locals and function calls.
+    pub fn session_parameter_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).session_parameters.iter().copied().collect()
     }
 
     /// The noise sources whose value (`Expr::Noise`) `target` reads, by index
@@ -306,6 +314,8 @@ struct Sources {
     delays: BTreeSet<u32>,
     /// The noise sources whose value is read (`Expr::Noise`).
     noises: BTreeSet<u32>,
+    /// The session parameters whose value is read (`Expr::SessionParameter`).
+    session_parameters: BTreeSet<u32>,
     /// The params whose previous value is read (`Expr::ParamPrevious`).
     param_previous: BTreeSet<u32>,
 }
@@ -324,6 +334,7 @@ impl Sources {
         self.derivatives.extend(&other.derivatives);
         self.delays.extend(&other.delays);
         self.noises.extend(&other.noises);
+        self.session_parameters.extend(&other.session_parameters);
         self.param_previous.extend(&other.param_previous);
     }
 
@@ -336,6 +347,7 @@ impl Sources {
             stims: self.stims.iter().copied().collect(),
             delays: self.delays.iter().copied().collect(),
             noise_sources: self.noises.iter().copied().collect(),
+            session_parameters: self.session_parameters.iter().copied().collect(),
         }
     }
 }
@@ -990,6 +1002,12 @@ impl<'a> Walk<'a> {
                 next.push(Task::Expr(*mag));
                 next.extend(phase.iter().map(|&p| Task::Expr(p)));
             }
+            Expr::SessionParameter { default, .. } => {
+                if !in_body {
+                    self.refuse(id, "session parameter read outside a body");
+                }
+                next.extend(default.iter().map(|&d| Task::Expr(d)));
+            }
         }
         // Any form with operands is combined once they are walked.
         next.push(Task::Finish(id));
@@ -1080,6 +1098,14 @@ impl<'a> Walk<'a> {
                     None => self.refuse(id, &format!("ac_stim site {site} out of range")),
                 }
                 value.sources.stims.insert(*site);
+                value
+            }
+            Expr::SessionParameter { parameter, default } => {
+                let values = self.pop_n(usize::from(default.is_some()));
+                // A session parameter is constant during an analysis: the sum sees a constant
+                // unless the default is not one.
+                let mut value = Value::nonlinear(&values);
+                value.sources.session_parameters.insert(*parameter);
                 value
             }
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {

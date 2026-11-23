@@ -39,6 +39,7 @@ impl Want {
             stims: stims.to_vec(),
             delays: Vec::new(),
             noise_sources: Vec::new(),
+            session_parameters: Vec::new(),
         }
     }
 }

@@ -7,7 +7,7 @@ use crate::real::Real;
 use crate::deps::DepsMemo;
 use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
 use crate::model::{AggregateData, NodeAlias, 
-    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, DelaySite, Derivative, Drive, Event, NoiseSource, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
+    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, DelaySite, Derivative, Drive, Event, NoiseSource, SessionParameter, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
     Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, ReprForm, Site, Stmt, Stream, Terminal, TypeData, ValueType,
 };
 
@@ -183,6 +183,7 @@ impl IrBuilder {
             derivatives: Vec::new(),
             delays: Vec::new(),
             noise_sources: Vec::new(),
+            session_parameters: Vec::new(),
             hoisted: Vec::new(),
             merges: Vec::new(),
             reaches: Vec::new(),
@@ -285,6 +286,14 @@ impl IrBuilder {
         let sources = &mut self.body_data(body).noise_sources;
         sources.push(source);
         sources.len() as u32 - 1
+    }
+
+    /// Adds a session parameter to `body`: returns its index, the identity `Expr::SessionParameter`
+    /// reads it by.
+    pub fn session_parameter(&mut self, body: BodyId, parameter: SessionParameter) -> u32 {
+        let parameters = &mut self.body_data(body).session_parameters;
+        parameters.push(parameter);
+        parameters.len() as u32 - 1
     }
 
     /// Records that `body` placed a module in an expression whose node or `analog` statements

@@ -8,7 +8,7 @@ mod devices;
 
 use devices::{Devices, Ex};
 use piperine_ir::{
-    Addend, BodySpec, Branch, BranchKind, Constant, DelaySite, NoiseSource, Expr, ExprId, FunctionSpec, Ir, IrBuilder, InstanceSpec, NodeRef, NodeRole, Operator, Origin, Param, QuantityRole, Real, Stmt, StmtId, Target, Terminal, ValueType,
+    Addend, BodySpec, Branch, BranchKind, Constant, DelaySite, NoiseSource, SessionParameter, Expr, ExprId, FunctionSpec, Ir, IrBuilder, InstanceSpec, NodeRef, NodeRole, Operator, Origin, Param, QuantityRole, Real, Stmt, StmtId, Target, Terminal, ValueType,
     BodyNode,
 };
 
@@ -18,6 +18,7 @@ struct Written {
     analog: Vec<StmtId>,
     delays: Vec<DelaySite>,
     noise_sources: Vec<NoiseSource>,
+    session_parameters: Vec<SessionParameter>,
 }
 
 /// The one body `Op(a)` with the flow branch `(a, gnd)` and the param `td: f64` (index 0), whose
@@ -47,7 +48,7 @@ impl Operators {
         let mut b = IrBuilder::new();
         let el = Devices::electrical(&mut b);
         let origin = Origin { file: Self::FILE.into(), line: 1, col: 1 };
-        let Written { analog, delays, noise_sources } = write(&mut b);
+        let Written { analog, delays, noise_sources, session_parameters } = write(&mut b);
         let delay_time = Param { name: "td".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
         let body = b.body(BodySpec {
             name: "Op".into(),
@@ -66,6 +67,9 @@ impl Operators {
         }
         for source in noise_sources {
             b.noise_source(body, source);
+        }
+        for parameter in session_parameters {
+            b.session_parameter(body, parameter);
         }
         let params = vec![Constant::Real(Real::new(1e-9))];
         let top = b.instance(InstanceSpec { path: "Op".into(), name: "Op".into(), body, parent: None, nodes: vec![NodeRef::Ground], params, origin });
@@ -196,4 +200,53 @@ fn a_noise_read_out_of_range_or_in_a_function_is_broken() {
         Written { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![source], ..Written::default() }
     });
     assert!(Operators::names(&in_function.check(), "a noise read outside a body"), "{:?}", in_function.check());
+}
+
+/// Session parameters.
+impl Operators {
+    /// `i(a, gnd) +> simparam("gmin", <default>);`
+    fn contribute_the_session_parameter(b: &mut IrBuilder, parameter: u32, default: Option<f64>) -> StmtId {
+        let default = default.map(|d| Self::ex(b).real(d));
+        let read = b.expr(Expr::SessionParameter { parameter, default }, ValueType::F64, Self::at());
+        Self::contribute(b, read)
+    }
+
+    /// The session parameter `gmin`.
+    fn gmin() -> SessionParameter {
+        SessionParameter { name: "gmin".into(), origin: Self::at() }
+    }
+}
+
+#[test]
+fn a_session_parameter_is_built_checked_printed_and_round_tripped() {
+    // `i(a, gnd) +> simparam("gmin", 1e-12)`: one parameter S0, read once with a default.
+    let ir = Operators::ir(|b| Written { analog: vec![Operators::contribute_the_session_parameter(b, 0, Some(1e-12))], session_parameters: vec![Operators::gmin()], ..Written::default() });
+    assert_eq!(ir.check(), vec![], "{}", ir);
+    let text = ir.to_string();
+    assert!(text.contains("session S0 \"gmin\""), "{text}");
+    assert!(text.contains("simparam(\"gmin\", 1e-12)"), "{text}");
+    let body = ir.bodies().next().expect("a body");
+    assert_eq!(body.session_parameters().len(), 1);
+    assert_eq!(Operators::round_trip(&ir), ir);
+    // A discrete read: a constant of the sum, listed among the dependencies.
+    assert_eq!(body.session_parameter_reads(Target::Flow(0)), vec![0]);
+    assert_eq!(body.dependencies(Target::Flow(0)).session_parameters, vec![0]);
+    assert!(body.is_affine(0));
+    // Without a default it prints with the name alone.
+    let bare = Operators::ir(|b| Written { analog: vec![Operators::contribute_the_session_parameter(b, 0, None)], session_parameters: vec![Operators::gmin()], ..Written::default() });
+    assert_eq!(bare.check(), vec![], "{}", bare);
+    assert!(bare.to_string().contains("simparam(\"gmin\")"), "{bare}");
+}
+
+#[test]
+fn a_session_parameter_read_out_of_range_or_with_a_non_real_default_is_broken() {
+    let none = Operators::ir(|b| Written { analog: vec![Operators::contribute_the_session_parameter(b, 0, None)], ..Written::default() });
+    assert!(Operators::names(&none.check(), "session parameter read 0, out of range (0 parameters)"), "{:?}", none.check());
+    // A default that is no `f64`.
+    let typed = Operators::ir(|b| {
+        let default = Operators::ex(b).boolean(true);
+        let read = b.expr(Expr::SessionParameter { parameter: 0, default: Some(default) }, ValueType::F64, Operators::at());
+        Written { analog: vec![Operators::contribute(b, read)], session_parameters: vec![Operators::gmin()], ..Written::default() }
+    });
+    assert!(Operators::names(&typed.check(), "the default of a `simparam`"), "{:?}", typed.check());
 }
