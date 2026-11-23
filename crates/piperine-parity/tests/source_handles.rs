@@ -44,6 +44,16 @@ fn impl_thermal_celsius_reads_temp_minus_273_15() {
 }
 
 #[test]
+fn a_nature_generic_handle_function_instantiates_per_nature() {
+    // GN-11 AC 4: `level<N: Nature>` called with an `Electrical` node gives its potential, with a `Thermal` one its
+    // temperature; `diff(a, b)` is the solved difference of two nodes (GN-12 AC 1, from `analog`)
+    let seen = RUN.operating_point("probing.msl", "AnalogBench", &["o1", "o2", "o3"]);
+    for (found, wanted) in seen.iter().zip([3.0 - 1.25, 3.0, 321.0]) {
+        assert!((found - wanted).abs() < VOLT, "{seen:?}");
+    }
+}
+
+#[test]
 fn a_handle_is_read_probed_passed_on_and_has_carrier_methods() {
     // GN-11 AC 1, §3.1.5: at the first rising edge `held(clk)` reads the carrier (true), `before(clk)` calls `prev()` on it
     // (false, the value before the change), `either` passes it on to both, and `diff` probes two nodes passed on
@@ -60,4 +70,10 @@ fn a_discrete_handle_reads_the_value_with_its_flags() {
     // GN-11 AC 3, §3.1.6, as MD-78 amends it (a value carries no flag): reading a handle of a discrete carrier gives the
     // carrier's value, `true` at a rising edge and not what it was before
     RUN.assert_commits("discrete.msl", &["r0"], &[CarrierBytes::byte(1)]);
+}
+
+#[test]
+fn a_probing_function_runs_from_analog_and_a_reaction() {
+    // GN-12 AC 1: `diff(a, b)` called from a reaction reads the solved nodes at the edge: 2.5 - 0.75
+    RUN.assert_commits("discrete.msl", &["r3"], &[CarrierBytes::real(2.5 - 0.75)]);
 }

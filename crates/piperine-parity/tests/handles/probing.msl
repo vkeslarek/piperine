@@ -1,0 +1,28 @@
+//! Probing functions (GN-12) called from `analog` and from a reaction, and a function generic over a nature (GN-11 AC 4):
+//! the expected values are computed by Rust in `source_handles.rs`.
+
+fn diff(a: Electrical, b: Electrical) -> f64 { v(a) - v(b) }
+fn level<N: Nature>(n: N) -> f64 { potential(n) }
+
+module Source(o: Electrical) { volts: f64 = 1.0; }
+analog for Source { v(o) +> volts; }
+
+module Hot(t: Thermal) { kelvin: f64 = 300.0; }
+analog for Hot { temp(t) +> kelvin; }
+
+/// `o1` is the difference of two nodes, `o2` and `o3` the potential of an electrical and of a thermal node.
+module Analog(p: Electrical, n: Electrical, t: Thermal, o1: Electrical, o2: Electrical, o3: Electrical) {}
+analog for Analog {
+    v(o1) +> diff(p, n);
+    v(o2) +> level(p);
+    v(o3) +> level(t);
+}
+
+module AnalogBench() {
+    signal p: Electrical; signal n: Electrical; signal t: Thermal;
+    signal o1: Electrical; signal o2: Electrical; signal o3: Electrical;
+    let sp = Source(p) { volts: 3.0 };
+    let sn = Source(n) { volts: 1.25 };
+    let ht = Hot(t) { kelvin: 321.0 };
+    let a = Analog(p, n, t, o1, o2, o3);
+}

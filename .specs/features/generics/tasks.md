@@ -1239,8 +1239,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_probing_function_runs_from_analog_and_a_reaction` and `a_nature_generic_handle_function_instantiates_per_nature` pass under `**Run srchandles**`
-- [ ] Gate check passes: Full
+- [x] `a_probing_function_runs_from_analog_and_a_reaction` and `a_nature_generic_handle_function_instantiates_per_nature` pass under `**Run srchandles**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
