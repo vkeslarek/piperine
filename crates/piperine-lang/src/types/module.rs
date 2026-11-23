@@ -285,6 +285,7 @@ impl Checker<'_> {
             };
             match kind {
                 Some(carrier @ Ty::Carrier { .. }) => self.connect_carrier(arg.value, dir, &carrier),
+                Some(array @ Ty::Array(..)) if array.is_carrier_element() => self.connect_array(arg.value, dir, &array),
                 Some(expected @ Ty::Node(_)) => {
                     let Some(found) = self.infer(arg.value) else { continue };
                     self.connect(arg.value, port_decl, &expected, &found);
@@ -349,9 +350,11 @@ impl Checker<'_> {
                     let message = format!("a carrier of `{}` is connected to a port of `{}`", held.name(self.design), port.name(self.design));
                     self.coded(file, "E0251", span, message, "carrier of another type");
                 } else if dir == Some(crate::msl::ast::Dir::Out) {
-                    self.hand_over(*decl, span, file);
+                    self.hand_over(*decl, arg, span, file);
                 }
             }
+            // an array of carriers where one carrier goes: the shape differs (§8.1.10)
+            (Some((_, held @ Ty::Array(..))), _) if held.is_carrier_element() => self.shape_mismatch(file, span, &held, port),
             (Some(_), _) => {}
             (None, Some(crate::msl::ast::Dir::Out)) => {
                 let message = "an expression is connected to an `out` port: it takes only a carrier the parent may hand to one driver (§8.1.11)".to_string();
@@ -371,25 +374,86 @@ impl Checker<'_> {
     /// The parent hands the carrier `decl` to an `out` port of an instance: a signal of the
     /// parent or an `out` port of the parent (an `in` port is not the parent's to hand over,
     /// `E0314`). The drive is the instance's from here on.
-    fn hand_over(&mut self, decl: DeclId, span: Span, file: FileId) {
+    pub(super) fn hand_over(&mut self, decl: DeclId, arg: ExprId, span: Span, file: FileId) {
         if matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if p.dir == Some(crate::msl::ast::Dir::In)) {
             let message = "an `in` port of the parent is connected to an `out` port: the parent may not hand over what it does not drive (§8.1.11)".to_string();
             self.coded(file, "E0314", span, message, "an `in` port at an `out` port");
             return;
         }
-        self.book.handed.push((decl, span, file));
+        let element = self.element_named_by(arg);
+        self.book.handed.push((decl, element, span, file));
+    }
+
+    /// One argument at an array port (§8.1.10): an array of carriers (or of nodes) of the port's shape, or a part of
+    /// a nested one that has it. Another length or shape is `E0313` naming both; another element type `E0251`.
+    fn connect_array(&mut self, arg: ExprId, dir: Option<crate::msl::ast::Dir>, port: &Ty) {
+        let file = self.file_of_expr(arg);
+        let span = self.design.expr_node(arg).span;
+        let carrier = self.declared_port(arg);
+        let found = self.infer(arg);
+        match carrier {
+            Some((decl, held)) if held.is_carrier_element() => {
+                if !self.same_shape(&held, port) {
+                    self.shape_mismatch(file, span, &held, port);
+                } else if !self.same_elements(&held, port) {
+                    let message = format!("an array of `{}` is connected to a port of `{}`", held.name(self.design), port.name(self.design));
+                    self.coded(file, "E0251", span, message, "array of another type");
+                } else if dir == Some(crate::msl::ast::Dir::Out) {
+                    self.hand_over(decl, arg, span, file);
+                }
+            }
+            Some((_, held)) => self.shape_mismatch(file, span, &held, port),
+            None if dir == Some(crate::msl::ast::Dir::Out) => {
+                let message = "an expression is connected to an `out` port: it takes only a carrier the parent may hand to one driver (§8.1.11)".to_string();
+                self.coded(file, "E0314", span, message, "expression at an `out` port");
+            }
+            None => {
+                if let Some(found) = found.filter(|f| f.is_carrier_element()) {
+                    self.shape_mismatch(file, span, &found, port);
+                } else {
+                    self.check_as(arg, &port.read_value(), "E0337");
+                }
+            }
+        }
+    }
+
+    /// Whether `found` and `port` are arrays of the same lengths at every level (a generic length agrees until the
+    /// item is instantiated).
+    fn same_shape(&self, found: &Ty, port: &Ty) -> bool {
+        match (found, port) {
+            (Ty::Array(found, found_length), Ty::Array(wanted, wanted_length)) => found_length.fits(wanted_length) && self.same_shape(found, wanted),
+            (Ty::Array(..), _) | (_, Ty::Array(..)) => false,
+            _ => true,
+        }
+    }
+
+    /// Whether the innermost elements of two arrays of one shape are the same carrier or compatible nodes.
+    fn same_elements(&self, found: &Ty, port: &Ty) -> bool {
+        match (found.innermost(), port.innermost()) {
+            (Ty::Node(f), Ty::Node(p)) => NatureRules::compatible(self.design, *p, *f),
+            (found, port) => found == port,
+        }
+    }
+
+    /// `E0313`: a connection of another array shape, naming both.
+    fn shape_mismatch(&mut self, file: FileId, span: Span, found: &Ty, port: &Ty) {
+        let message = format!("`{}` is connected to a port of `{}`: the lengths or the shape differ (§8.1.10)", found.name(self.design), port.name(self.design));
+        self.coded(file, "E0313", span, message, "another array shape");
     }
 
     /// A carrier handed to an `out` port has one drive, the instance's: a second hand-over, or
     /// a definition or a commit of this module, is `E0220`; an initial value is `E0223`.
     pub(super) fn handed_drives(&mut self) {
         let handed = std::mem::take(&mut self.book.handed);
-        let mut seen = std::collections::BTreeSet::new();
-        for (decl, span, file) in handed {
+        let mut given: Vec<(DeclId, super::element_target::Element)> = Vec::new();
+        for (decl, element, span, file) in handed {
             let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-            if !seen.insert(decl) {
+            let twice = given.iter().any(|(d, e)| *d == decl && e.overlaps(element));
+            given.push((decl, element));
+            let driven_here = self.book.defined.contains_key(&decl) || self.book.committed.contains_key(&decl) || self.book.elements.iter().any(|(c, e, _, _)| *c == decl && e.overlaps(element));
+            if twice {
                 self.coded(file, "E0220", span, format!("`{name}` is handed to a second `out` port: a one-driver carrier has one drive (§5.2.1)"), "a second drive");
-            } else if self.book.defined.contains_key(&decl) || self.book.committed.contains_key(&decl) {
+            } else if driven_here {
                 self.coded(file, "E0220", span, format!("`{name}` is handed to an `out` port and driven by this module too (§5.2.6)"), "a second drive");
             } else if self.has_initial(decl) {
                 self.coded(file, "E0223", span, format!("`{name}` has an initial value and is handed to an `out` port: the instance holds the drive, so the declaring module may give none (§5.2.6)"), "initial value without the drive");
@@ -414,7 +478,7 @@ impl Checker<'_> {
             if !is_carrier || self.has_initial(decl) || !NatureRules::of(self.design, nature).one_driver || self.implements(&value, DerivedTrait::Default) {
                 continue;
             }
-            let specified_by_the_driver = self.book.undelayed.contains(&decl) || self.book.handed.iter().any(|(carrier, _, _)| *carrier == decl);
+            let specified_by_the_driver = self.book.undelayed.contains(&decl) || self.book.handed.iter().any(|(carrier, _, _, _)| *carrier == decl);
             if specified_by_the_driver {
                 continue;
             }

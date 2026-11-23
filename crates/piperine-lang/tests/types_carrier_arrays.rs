@@ -175,3 +175,44 @@ fn a_definition_and_commits_of_one_element_are_e0221() {
     Source::assert_one("module Top(in a: Bit) { signal bits: [Bit; 2]; bits[0] = a; bits[0] = !a; }", "E0335", "");
     Source::assert_clean("module Top(in a: Bit) { signal bits: [Bit; 2]; bits[0] = a; bits[1] = !a; }");
 }
+
+/// Child modules the connection tests place: a four-bit register, a one-bit cell and a ladder of nodes.
+const CHILDREN: &str = "module Reg(in d: [Bit; 4], out q: [Bit; 4]) { q[0] = d[0]; q[1] = d[1]; q[2] = d[2]; q[3] = d[3]; }\n\
+    module Cell(in d: Bit, out q: Bit) { q = d; }\n\
+    module Ladder(a: [Electrical; 4]) { }\n\
+    module Tap(p: Electrical) { }\n";
+
+#[test]
+fn arrays_and_elements_connect_to_ports_of_their_shape() {
+    // CV-23 AC 2: an array to an array port of the same shape, an element `x[k]` to a scalar port, a sub-array `g[r]`
+    // of a nested array to an array port, an element of a node array to a node port, a node array to an array of nodes
+    let top = |body: &str| format!("{CHILDREN}module Top(in x: [Bit; 4]) {{ signal y: [Bit; 4]; signal g: [[Bit; 4]; 2]; signal h: [[Bit; 4]; 2]; signal bl: [Electrical; 4]; {body} }}");
+    Source::assert_clean(&top("let r = Reg(x, y);"));
+    Source::assert_clean(&top("let c = Cell(x[1], y[2]);"));
+    Source::assert_clean(&top("let r = Reg(g[0], h[1]);"));
+    Source::assert_clean(&top("let l = Ladder(bl); let t = Tap(bl[3]);"));
+    // two elements of one array handed to two `out` ports are two drives of two elements, not two of one
+    Source::assert_clean(&top("let a = Cell(x[0], y[0]); let b = Cell(x[1], y[1]);"));
+    Source::assert_one(&top("let a = Cell(x[0], y[0]); let b = Cell(x[1], y[0]);"), "E0220", "second");
+}
+
+#[test]
+fn an_array_argument_of_another_length_is_e0313_naming_both_lengths() {
+    // CV-23 AC 3, §8.1.10: an array argument and its port differ in length: E0313 naming both
+    let top = |body: &str| format!("{CHILDREN}module Top() {{ signal short: [Bit; 3]; signal q: [Bit; 4]; signal one: Bit; signal bl: [Electrical; 3]; {body} }}");
+    let found = Source::found(&top("let r = Reg(short, q);"));
+    assert!(found.iter().any(|(c, m)| c == "E0313" && m.contains("; 3]") && m.contains("; 4]")), "{found:?}");
+    // a single carrier at an array port, an array at a scalar port, and nodes of another count
+    Source::assert_one(&top("let r = Reg(one, q);"), "E0313", "");
+    Source::assert_one(&top("let c = Cell(short, one);"), "E0313", "");
+    Source::assert_one(&top("let l = Ladder(bl);"), "E0313", "");
+}
+
+#[test]
+fn an_initialized_array_with_an_element_on_an_out_port_is_e0223() {
+    // DC4, §5.2.6: the initial value is given by the driver; an element handed to a child's `out` port leaves the
+    // array's initial value given twice
+    let top = |decl: &str| format!("{CHILDREN}module Top(in d: Bit) {{ {decl}\nlet c = Cell(d, bits[1]); }}");
+    Source::assert_clean(&top("signal bits: [Bit; 2];"));
+    Source::assert_one(&top("signal bits: [Bit; 2] = [false; 2];"), "E0223", "initial value");
+}

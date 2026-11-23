@@ -433,8 +433,8 @@ T86 → T87 → T88 → T89 → T90
 
 **Done when**:
 
-- [ ] `arrays_and_elements_connect_to_ports_of_their_shape`, `an_array_argument_of_another_length_is_e0313_naming_both_lengths` and `an_initialized_array_with_an_element_on_an_out_port_is_e0223` pass under `**Run typesarr**`
-- [ ] Gate check passes: Task (`piperine-lang`)
+- [x] `arrays_and_elements_connect_to_ports_of_their_shape`, `an_array_argument_of_another_length_is_e0313_naming_both_lengths` and `an_initialized_array_with_an_element_on_an_out_port_is_e0223` pass under `**Run typesarr**`
+- [x] Gate check passes: Task (`piperine-lang`)
 
 **Tests**: integration
 **Gate**: task
@@ -847,6 +847,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **T74 notes (amendment to design-c.md "Data Models"):** no new `Ty` variant: an array of carriers or of nodes is `Ty::Array(Carrier | Node | nested, Length)` (`Ty::is_carrier_element`, `innermost`, `read_value`), so `fits`, substitution and length folding are the value array's; `is_value` stays false for it. A whole read of a carrier array types as `[value; K]`, so `x[i]` types as the value through the ordinary array index. `types_buck.rs` lost its `an array type` P0001 row (moved to `types_carrier_arrays`), recorded with the `types_aggregates` row. Until T89 the Book test `signals_of_every_family_are_refused_for_the_arrays_...` (tests/book/natures.rs) is red (`[Bit; 8]` runs).
 **T75 notes:** `declared_port` walks `x[i]` to the carrier the element is (`Ty::Carrier`/`Node`), so `prev`/`changed`/`rise`/`fall` and `f(x[k])` (handle) resolve per element through the existing builtin paths; E0211 for a whole-array method stays the POM's (the checker adds no `P0001`); a constant element past the end is `E0104` at elaboration (T79), not in the checker.
 **T76 notes:** `types/element_target.rs` (not `definition.rs`): `DriveTarget { carrier, held, element }`, `Element::{Whole, At, Any}` (a run-time index may reach any element), `DriveBook.elements`. A definition's non-folding index is NOT refused by the checker (generation loops fold at elaboration): T81 raises `P0002` there. A whole array or a part of one as a target is `P0001` "name an element". Moved pins (design-c "may move": the element-or-field P0001 rows): `types_buck.rs` (2 rows), `elab_unlowered.rs` (1 row; `a_diagnostic_means_no_ir` now uses two `Wire` ports), `types_subset.rs` (1 row), `elab_entry.rs` (its P0001 case now a module template). The elaborator's `drive_target` still refuses an element target by name until T81.
+**T77 notes:** connections live in `types/module.rs` (`connect_array`, `shape_mismatch`, `hand_over` with an `Element`, `handed` is now `(carrier, element, span, file)`); `Element::Run` names a sub-array; `E0313` left `code_owners.tsv`. A constant index past the end of a connected array is `E0104` at elaboration (T82), not here.
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 

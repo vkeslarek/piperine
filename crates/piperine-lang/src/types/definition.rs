@@ -23,7 +23,7 @@ pub(super) struct DriveBook {
     pub(super) committed: BTreeMap<DeclId, Span>,
     /// The carriers handed to an `out` port of an instance, in source order, with where and in
     /// which file.
-    pub(super) handed: Vec<(DeclId, Span, crate::pom::FileId)>,
+    pub(super) handed: Vec<(DeclId, Element, Span, crate::pom::FileId)>,
     /// The undelayed definitions in source order: the target, where, and the carriers its value
     /// reads (directly or through a `let`).
     loops: Vec<(DeclId, Span, BTreeSet<DeclId>)>,
