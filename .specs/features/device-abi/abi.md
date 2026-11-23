@@ -1030,6 +1030,8 @@ Entry points: 6, each with one contract.
 
 ## 15. Spec amendments awaiting a decision
 
+*QC1 (composite-values phase C, approved 2026-11-23):* the array pin adds `Pin.count`, `Function.elements`/`Reaction.elements`, `ArrayView` and `Host.commit_element` in place at `MINOR` 0 (the `Host` is 24 bytes); the unreleased ABI changes in place.
+
 The ABI is implementable against the language specification (`docs/spec/` of the codegen-plan
 repo) as written, except for the sentences below. None has been edited. The verdict column is
 the critic's, from `critique_v3.md`; the last column is what this document assumes meanwhile.

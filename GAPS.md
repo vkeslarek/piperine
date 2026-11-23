@@ -22,7 +22,7 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 1 silent, 2 broken, 25 loud (L1 to L71 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the four `params-and-io` (L20, L28, L39, L57) and the nine `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63, L66), the two `resolved-nets` rows (L22, L23) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, in six tables) plus
+**Counts.** 1 silent, 2 broken, 24 loud (L1 to L71 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the four `params-and-io` (L20, L28, L39, L57) and the nine `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63, L66), the two `resolved-nets` rows (L22, L23) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 9 unproven.
 
@@ -105,7 +105,6 @@ quotes the text after `P0001:` unless another code is shown.
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
 | L21 | natures that implement `Resolve<X, V>` (declared by the model; the library has no net nature); `others()`; relaxation of loops through the nets of such a nature (a loop that does not settle is `E0511`, raised by the digital engine); also owes `explicit-unknowns` EU-04 AC 4 for a drive of a resolved carrier (`E0187` when its drive has no initial value and its type no `Default`: `types/module.rs` skips every carrier whose nature is not one-driver, so no test can reach it until a resolved nature runs; check C14's drive half) | §4 rule 2, §5.2.2, §8.2.3 | `resolved nature Wire` | L |
-| L24 | arrays of carriers (`[Bit; 8]`, `[Electrical; 4]`); element and field commits (`bits[3] <- true`) and definitions; also owes `explicit-unknowns` EU-04 AC 3 (an element of `[Bit<Option<u8>>; 1 << 20]` never committed reads its initial value, with storage for the written elements only: check C13) | §5.1.4, §12.1 | `array type`; `an element or field commit` | L, with L3 |
 | L25 | bundles: a `struct` of carriers, `flip`, bundle literals, `impl` on a bundle | §7 | `struct item used as a type`, `flip type` | L |
 
 Works, by probe: continuous natures with their own access names (`State` runs; `Thermal` and a
@@ -199,6 +198,7 @@ Each has a provisional rule or a note so work is not blocked; the spec sentence 
 G1 to G5 are the buck's (`examples/buck/GAPS.md`; G6, unknown integers per value, closed with S6 by `explicit-unknowns`). The spec's own open list is Appendix G
 (`G.1` to `G.68`, about 30 open) and is not repeated here.
 
+- **QC3 — an array of carriers as a function parameter.** §3 rule 7 makes a nature or bundle parameter a handle and is silent on an array of them; it is `P0001` "an array of carriers as a function parameter" and the spec sentence is owed (owner `user`).
 - **G4 — `f64 as u10` outside the range.** §1 rule 1 says "truncates or extends, as in Rust".
   Provisional: saturate, NaN → 0 (probe: `5000.7 as u10` is 1023).
 - **G5 — shift by N or more bits.** No rule. Provisional: the mathematical result truncated to N
@@ -249,7 +249,7 @@ adjoint and PSS (`core/circuit.rs:111` to `:172`); the host exposes four analyse
 | H6 | Continued transients, and an analysis at a transient's last instant: both need a solver mechanism that does not exist (a transient the host can resume) | §16.4 | M |
 | H7 | Monte Carlo, optimization, objectives and constraints from `target`s, bounds from `where` | §23.1 rule 5, §23.2 | L |
 | H8 | Gradients: gradient params, `∂(record)/∂p`, saltation, `E0807` to `E0809`. The solver's `adjoint` and `sens` are not reached from MSL | §21 rule 7, §23.3 | L |
-| H9 | Host error codes: `E0804` (drive of a carrier that is no top `in` port), `E0805` (late subscription) and `E0806` (past time) are delivered. `E0803` (timed `set` of a structural param) is checked but no MSL design reaches it: the elaborator marks no param structural, and generation in a module body is `P0001` | §23.1 | with L-generation |
+| H9 | Host error codes: `E0804` (drive of a carrier that is no top `in` port), `E0805` (late subscription) and `E0806` (past time) are delivered. `E0803` (timed `set` of a structural param) is checked and is reachable by a param an array length reads (structural since composite-values phase C, QC2: marked by the IR's `structural`); generation in a module body is still `P0001` | §23.1 | with L-generation |
 | H10 | Command line: `add`, `remove`, `tree`, `update`, `--locked`, `--offline`, plugin scripts, a REPL, ngspice raw output, a terminal or PNG plot | — | S each |
 | H13 | Stale repository documents: the first 270 lines of `ROADMAP.md` (PHDL, a Python bench, Cranelift), the `STATE.md` handoff below `solver-restructure`, `editors/vscode` (a Verilog-AMS extension) and `piperine-lang-server` (postponed); `SPEC_DEVIATIONS.md`, `CLEANUP_PLAN.md`, `docs/audit/`, `docs/reference/` and `VAMS-LRM-2-4.md` are deleted (2026-11-20) | — | S |
 | H14 | A flow term `i(<instance>)` of an instance with no potential branch prints in `op` and `dc` only; `transient`, `ac`, `pss` and `sens` refuse it (`E0801`/`P0010`) because `StepView` carries no device term, so a transient table cannot show it. Needs a `StepView` read of `Assembly::term_value`. Owner: `host-analyses` | §21 | S |
@@ -304,11 +304,11 @@ does not count.
 | II §4–§5 natures, discrete carriers | 40 % | `Resolve`, arrays, user discrete natures, initial values by `Default` run (`explicit-unknowns` phase A) |
 | II §6 nodes, probes | 85 % | signal-flow |
 | II §7 bundles | 0 % | all |
-| III §8–§8.2 modules, ports, params, the body | 60 % | generic modules, generation, params that are not `f64` or `bool` |
+| III §8–§8.2 modules, ports, params, the body | 65 % | generic modules, generation; arrays of carriers and nodes as ports and signals run (phase C) |
 | III §8.3 instances in expressions | 70 % | generic results, the stdlib `idt` and `Water` (L40) |
 | III §8.4–§8.5 templates, `m`/`dtemp`, extern | 0 % | all |
 | IV §10–§11 analog | 70 % | the §18 `Diode` (L40), an ideal-step `slew` (L60) |
-| IV §12–§13 digital, events | 60 % | `Event` functions, loops, element commits |
+| IV §12–§13 digital, events | 70 % | `Event` functions; arrays of carriers, element and field commits run (composite-values phase C) |
 | IV §14 core primitives | 50 % | `ddx`, `delay`, `noise`, `simparam`, `others`, `include_str!` |
 | V §15–§18 execution | 60 % | digital-only runs, error naming, the text of §15 itself (X1) |
 | VI §19–§21 output, input, metadata | 35 % | traces, files, host metadata |
@@ -350,7 +350,7 @@ E0807 E0808 E0809`
 | `set` and params | H5, L29, H4 | M |
 | Analog structure (delivered, MD-71) | what is left of L40: the stdlib `idt` and `Water` after `generics` | S |
 | Analog operators | L43, L44, L45, L49, H2 (`Noise`) | M to L |
-| Composite values | L24 (phases A and B closed L1 to L3, L5, L6, L10, L16 and the part of L9 that is not `generics`; MD-79) | L |
+| Composite values | phase C closed L24 (arrays of carriers, MD-79); phase D (number widths) follows | L |
 | Generics and generation (phases A and B delivered: L4, L7, L8, L9, X6) | L30, L31, L32, S3 for generic modules: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
 | Resolved nets and bundles | L21, L25: natures that implement `Resolve`, `Tribuf`, `Tran`, `Bidir` | L |
 | Unknown semantics | L53 (L18 and L19 closed by `unknown-semantics`; L51 and L52 by `unknown-semantics-events`; S6, S8 and G6 closed by `explicit-unknowns`; its phase B delivered `Logic<N>`, `logic` and `matches_bits`, L68) | L |

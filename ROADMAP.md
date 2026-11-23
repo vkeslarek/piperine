@@ -30,7 +30,7 @@ Opus or Fable; a feature merges to `main` and upstream when its verifier passes.
 
 | Feature | What it delivers | Progress | Lane |
 | --- | --- | --- | --- |
-| `composite-values` (+ `value-semantics`, MD-76) | Structs, tuples, payload enums, arrays and ranges, `Option` of aggregates, iterators (Appendix H.5–H.7), `normal`; value semantics: no borrows, moves, `Clone` or `Copy`, every `let` reassignable (`E0903`, `E0161`) | B1–B10 done (T1 to T63, MD-79); then verifier, merge | C |
+| `composite-values` (+ `value-semantics`, MD-76) | Structs, tuples, payload enums, arrays and ranges, `Option` of aggregates, iterators (Appendix H.5–H.7), `normal`; value semantics: no borrows, moves, `Clone` or `Copy`, every `let` reassignable (`E0903`, `E0161`) | B1–B10 done (T1 to T63, MD-79); phase C (arrays of carriers) delivered T64 to T90; then verifier, merge | C |
 | `explicit-unknowns` B1–B3 | The spec and Book amendment of the explicit model (MD-78): no hidden known flag, `Logic`, `Option`, `Default`, traits as capabilities, `Resolve<X, V>` on natures, strengths, the ABI without known bytes | done on the branch; user reads the Book, then Opus verifier and merge to `main` ahead of the code | A |
 
 ### Waiting, in order (all unblock when `composite-values` merges)
