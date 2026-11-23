@@ -949,6 +949,31 @@ are `pub(super)` in `elab/structural.rs:48,78`; `elab/templates.rs` unchanged. (
 `docs.rs` and `print/text.rs::spelled_cased` only: brackets spell `_i`/`_j` (main), `; ( )` keep `_l`/`_t`/`_z`; loud count
 22 (24 on main less L69 and L70). Pre-existing warning of `book_types` is gone. Nothing below is amended by a moved anchor
 except (1).
+**B10 stopped at T59 (2026-11-23, executor ran out of context); T60 to T62 are drafted on `origin/wip/generics-c-b10`
+(commit on top of 8ec95747), NOT green, to be continued from there (`git merge origin/wip/generics-c-b10` or cherry-pick).**
+What the draft holds and what it found:
+(1) T60: `Checker::module` = `module_of` under `generic_item`, `generic_signature` at the definition; `model.rs` seeds generic
+modules (a generic struct/enum is still skipped); `port_type` takes a nature parameter (`Ty::Param` with the `Nature` bound,
+`carrier.rs`) as a node type; `GAPS.md` drops S3 (0 silent, 22 loud) and `docs.rs` follows (`gaps_drops_s3`).
+(2) T61: `types/module_generics.rs` (`generic_placement`, `port_type_under_placement`; `Checker::placement_substitution`;
+`Inference::unify` learns a carrier from a carrier; `explicit_arguments`/`argument_types` are `pub(super)`); `gnd` teaches no
+nature; two natures for one nature parameter is `E0180` naming both. (3) T62: `E0403` now names both lists
+(`pom/resolve/behaviors.rs`). Tests: `crates/piperine-lang/tests/types_generic_modules.rs` (6 tests, all pass in the draft,
+the T63 one untried) and `types_model.rs::an_unreached_generic_module_with_an_error_fails_the_model_check`.
+**Blocker the plan did not foresee:** every Book run calls the whole-model check, so seeding generic modules (T60) makes the
+Book's own generic modules report their definition gaps instead of the `generic module is not supported yet` refusal that 14
+Book tests pin (`book_modules` x6, `book_digital`, `book_core_std`, `book_cheatsheet` x2, `book_natures`, `book_generics`,
+`piperine-cli --test book` ladder listing). Gaps seen: a value param of type `T`/`C` (`param of type T is not supported`),
+a `struct` with a carrier field (bundle), generation in a body (T72), `let y` reading its own name (E0332, the `idt`/lowpass
+pattern), `Setup` placed with 2 of 3 ports (E0312, a defaulted `out`), `_` inferred type, a named connection
+(`reset: seat` in `idtmod`), and "`bool` does not implement `Default`" (E0187 on `signal clk: Bit` when the placement of a
+generic module is typed: the drive-book that clears it is not filled for a generic placement; also `u8` has no `Default`).
+Two ways forward: (a) make those definitions and placements check clean (T63 onward do most of it) and narrow each of the
+14 Book refusals to the form still missing (allowed by design-c "Goldens, pins and tests that may move"), or (b) keep seeding
+off for the Book run until T71. The draft keeps `Checker::refuse_generic_placements` (true for `Types::check`, false in
+`run_model`); (b) needs it true in `run_model` too and a test-only way to turn it off.
+Also: `suite_hygiene::mod_rs_declares_only` (types/mod.rs ceiling 60 lines) was fixed on the draft; the helper scripts of
+`/var/tmp/piperine-tmp-d/helpers` did not exist, `check_commit.py` of the skill was used.
 **Dispatched:** none yet.
 **Walked:** none yet.
 
