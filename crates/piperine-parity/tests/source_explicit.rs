@@ -172,7 +172,7 @@ fn an_unbound_option_param_waits_for_params_and_io() {
     // §8.1 (EU-06 AC 1, `an_unbound_option_param_is_none` once it can run): a param of type `Option<u8>` is `P0001`
     // today, `GAPS.md` L28, owned by `params-and-io`, which builds the param pins. The test fails when the param
     // elaborates, so the day it runs the criterion's own test replaces it
-    let project = RUN.project("initial.msl");
+    let project = RUN.project("param_option.msl");
     let refused = match project.compile("ParamBench") {
         Ok(_) => panic!("an `Option` param now elaborates: replace this test by `an_unbound_option_param_is_none`"),
         Err(report) => report.to_string(),

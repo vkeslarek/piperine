@@ -82,14 +82,3 @@ module ElementsBench() {
     let osc = Osc(clk) { f: 1G };
     let probe = Elements(clk, e);
 }
-
-/// A module with an `Option` param no instance binds (`GAPS.md` L28: not elaborated yet).
-module Param(in clk: Bit) { limit: Option<u8>; }
-digital for Param { on clk.rise() { emit!("param", given = limit.is_some()); } }
-
-/// The module placed with no value for `limit`.
-module ParamBench() {
-    signal clk: Bit;
-    let osc = Osc(clk) { f: 1G };
-    let probe = Param(clk);
-}
