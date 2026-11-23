@@ -36,6 +36,9 @@ pub struct ImplEntry {
     pub trait_decl: Option<DeclId>,
     /// The arguments the trait is written with, as written (`impl Resolve<Driven> for Wire`).
     pub trait_arguments: Vec<TypeId>,
+    /// The language's own trait it implements (`Repr`), which has no declaration: `trait_decl` is
+    /// `None` and this names it.
+    pub builtin_trait: Option<&'static str>,
     /// What it is written for.
     pub target: ImplTarget,
 }
@@ -83,7 +86,7 @@ impl<'d> ImplTable<'d> {
 
     /// The item `name` of the inherent `impl` of `ty`, a function or a constant (`Logic::Z`).
     pub fn inherent(&self, ty: &Ty, name: &str) -> Option<DeclId> {
-        self.impls.iter().filter(|entry| entry.trait_decl.is_none() && self.targets(entry, ty)).find_map(|entry| self.item(entry.decl, name))
+        self.impls.iter().filter(|entry| entry.trait_decl.is_none() && entry.builtin_trait.is_none() && self.targets(entry, ty)).find_map(|entry| self.item(entry.decl, name))
     }
 
     /// The items called `name` that a trait gives `ty`: the `impl`'s own, else the trait's (a default
@@ -92,6 +95,11 @@ impl<'d> ImplTable<'d> {
     pub fn visible(&self, ty: &Ty, name: &str, oracle: BoundOracle<'_>) -> Vec<DeclId> {
         let mut found = Vec::new();
         for entry in &self.impls {
+            // the items of an `impl Repr for T` are methods of `T` (`x.encode()`); the trait has no body to default to
+            if entry.builtin_trait.is_some() && self.targets(entry, ty) {
+                found.extend(self.item(entry.decl, name));
+                continue;
+            }
             let Some(trait_decl) = entry.trait_decl else { continue };
             if !self.applies(entry, ty, oracle) {
                 continue;
@@ -126,6 +134,11 @@ impl<'d> ImplTable<'d> {
     /// list of trait arguments the type implements it with (`Resolve<A>` and `Resolve<B>`).
     pub fn implementing(&self, ty: &Ty, trait_decl: DeclId, oracle: BoundOracle<'_>) -> Vec<&ImplEntry> {
         self.impls.iter().filter(|entry| entry.trait_decl == Some(trait_decl) && self.applies(entry, ty, oracle)).collect()
+    }
+
+    /// The `impl Repr for T` that lays out `ty` by hand (§2 rule 2), if the project writes one.
+    pub fn hand_written_repr(&self, ty: &Ty) -> Option<&ImplEntry> {
+        self.impls.iter().find(|entry| entry.builtin_trait == Some("Repr") && self.targets(entry, ty))
     }
 
     /// The traits `trait_decl` requires, as written after its name (§3.7.3).
@@ -197,21 +210,24 @@ impl<'d> ImplTable<'d> {
     /// The entry of the declaration `decl` when it is an `impl`.
     fn entry(design: &Design, decl: DeclId) -> Option<ImplEntry> {
         let DeclKind::Impl(data) = &design.decl_data(decl).kind else { return None };
-        let (trait_decl, trait_arguments) = match data.trait_ {
+        let (trait_decl, trait_arguments, builtin_trait) = match data.trait_ {
             Some(path) => {
                 let segment = design.path_node(path).segments.last()?;
+                if matches!(segment.res, Resolution::Builtin(id) if id.info().name == "Repr") {
+                    return Some(ImplEntry { decl, trait_decl: None, trait_arguments: Vec::new(), builtin_trait: Some("Repr"), target: Self::target(design, decl, data.self_ty) });
+                }
                 let arguments = match &segment.args {
                     Some(GenericArgsNode::Angle { args, .. }) => args.iter().filter_map(|arg| if let GenericArgNode::Type(ty) = arg { Some(*ty) } else { None }).collect(),
                     _ => Vec::new(),
                 };
                 match segment.res {
-                    Resolution::Decl(trait_decl) if matches!(design.decl_data(trait_decl).kind, DeclKind::Trait(_)) => (Some(trait_decl), arguments),
+                    Resolution::Decl(trait_decl) if matches!(design.decl_data(trait_decl).kind, DeclKind::Trait(_)) => (Some(trait_decl), arguments, None),
                     _ => return None,
                 }
             }
-            None => (None, Vec::new()),
+            None => (None, Vec::new(), None),
         };
-        Some(ImplEntry { decl, trait_decl, trait_arguments, target: Self::target(design, decl, data.self_ty) })
+        Some(ImplEntry { decl, trait_decl, trait_arguments, builtin_trait, target: Self::target(design, decl, data.self_ty) })
     }
 
     /// What the self type of the `impl` `decl` names.

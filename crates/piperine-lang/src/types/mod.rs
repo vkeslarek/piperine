@@ -47,6 +47,7 @@ mod plain;
 mod nature_rules;
 mod reach;
 mod reaction;
+mod repr;
 mod record;
 mod result;
 mod substitution;

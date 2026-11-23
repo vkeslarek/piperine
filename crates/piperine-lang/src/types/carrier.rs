@@ -70,6 +70,7 @@ impl Checker<'_> {
         if let Resolution::Decl(d) = self.design.type_resolution(ty)
             && matches!(self.design.decl_data(d).kind, DeclKind::Enum(_))
             && !self.derives(d, "Repr")
+            && self.impls.hand_written_repr(&Ty::enumeration(d)).is_none()
         {
             let name = self.design.decl_data(d).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             self.no_repr(file, node.span, &format!("enum `{name}`"));

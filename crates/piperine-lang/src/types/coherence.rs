@@ -62,6 +62,9 @@ impl Checker<'_> {
         let table = std::rc::Rc::clone(&self.impls);
         let Some(position) = table.impls().iter().position(|entry| entry.decl == decl) else { return };
         let current = table.impls()[position].clone();
+        if current.trait_decl.is_none() {
+            return;
+        }
         let (file, span) = (self.design.decl_data(decl).file, self.design.decl_data(decl).span);
         for earlier in &table.impls()[..position] {
             if earlier.trait_decl != current.trait_decl || !table.overlap(earlier, &current, &mut |ty, bound| super::bounds::BoundCheck::new(self).satisfies(ty, bound)) {
@@ -92,6 +95,10 @@ impl Checker<'_> {
     fn trait_impl_rules(&mut self, decl: DeclId) {
         let DeclKind::Impl(data) = self.design.decl_data(decl).kind.clone() else { return };
         let Some(path) = data.trait_ else { return };
+        if self.impls.impls().iter().any(|entry| entry.decl == decl && entry.builtin_trait == Some("Repr")) {
+            self.repr_impl_rules(decl, data.self_ty);
+            return;
+        }
         let Some(Resolution::Decl(trait_decl)) = self.design.path_node(path).segments.last().map(|segment| segment.res) else { return };
         let (file, span) = (self.design.decl_data(decl).file, self.design.decl_data(decl).span);
         let Some(self_ty) = self.lower_type(data.self_ty) else { return };

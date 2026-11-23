@@ -282,3 +282,36 @@ fn overlapping_impls_are_e0187() {
     let args = "trait Cv<X> { fn c(self, x: X) -> X { x } }\nstruct S { a: f64 }\nimpl Cv<u8> for S {}\nimpl Cv<bool> for S {}\n";
     assert!(GenericSources::e0187_messages(args).is_empty(), "the trait's arguments tell the impls apart");
 }
+
+/// The items of a correct one-hot `impl Repr`.
+const ENCODE: &str = "fn encode(self) -> [bool; 4] { [self == OneHot::A, self == OneHot::B, self == OneHot::C, self == OneHot::D] }";
+const DECODE: &str = "fn decode(levels: [bool; 4]) -> Option<OneHot> { if levels[0] { Some(OneHot::A) } else if levels[1] { Some(OneHot::B) } else if levels[2] { Some(OneHot::C) } else if levels[3] { Some(OneHot::D) } else { None } }";
+
+/// A one-hot enum whose `Repr` is written by hand, with the items `encode` and `decode` as given.
+const ONE_HOT: &str = "#[derive(PartialEq)] enum OneHot { A, B, C, D }\nimpl Repr for OneHot { const WIDTH: u32 = 4; ";
+
+#[test]
+fn a_hand_written_repr_type_checks_and_is_carried() {
+    // §2 rules 2 and 4: a one-hot `impl Repr` gives the type `WIDTH` levels, so a `Bit<OneHot>` carrier is accepted
+    // (E0112 for the same enum without one), `OneHot::WIDTH` reads 4 and `x.encode()` is `[bool; 4]`
+    let items = format!("{ONE_HOT}{ENCODE} {DECODE} }}\nfn width() -> u32 {{ OneHot::WIDTH }}\nfn levels(x: OneHot) -> [bool; 4] {{ x.encode() }}\nmodule Top() {{ signal s: Bit<OneHot> = OneHot::A; }}\n");
+    let design = Design::builder().source("top.msl", format!("{HEAD}{items}")).build();
+    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let types = piperine_lang::types::Types::check(&design, "Top").unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
+    assert!(!types.reached().is_empty());
+    assert_eq!(GenericSources::standard_codes(&items), Vec::<String>::new(), "the whole model checks too");
+    let without = Design::builder().source("top.msl", format!("{HEAD}#[derive(PartialEq)] enum OneHot {{ A, B }}\nmodule Top() {{ signal s: Bit<OneHot> = OneHot::A; }}\n")).build();
+    let found = piperine_lang::types::Types::check(&without, "Top").err().expect("no Repr");
+    assert_eq!(found[0].diagnostic.code, "E0112");
+}
+
+#[test]
+fn a_hand_written_repr_missing_an_item_is_e0187() {
+    // §2: `WIDTH`, `encode` and `decode`, no other item, each with the signature §2 gives
+    let missing = GenericSources::e0187_messages(&format!("{ONE_HOT}{ENCODE} }}\n"));
+    assert!(missing.len() == 1 && missing[0].contains("`impl Repr for OneHot` leaves out `decode`"), "{missing:?}");
+    let extra = GenericSources::e0187_messages(&format!("{ONE_HOT}{ENCODE} {DECODE} fn more(self) -> f64 {{ 1.0 }} }}\n"));
+    assert!(extra.len() == 1 && extra[0].contains("defines `more`"), "{extra:?}");
+    let wrong = GenericSources::e0187_messages(&format!("{ONE_HOT}fn encode(self) -> [bool; 3] {{ [true, false, false] }} {DECODE} }}\n"));
+    assert!(wrong.len() == 1 && wrong[0].contains("`encode` has the type"), "{wrong:?}");
+}

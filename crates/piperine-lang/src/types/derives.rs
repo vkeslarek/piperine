@@ -213,6 +213,7 @@ impl Checker<'_> {
             Ty::Tuple(items) => self.repr_sum(items),
             Ty::Array(element, Length::Fixed(length)) => u32::try_from(*length).ok()?.checked_mul(self.repr_levels(element)?),
             Ty::Option(inner) => self.repr_levels(inner)?.checked_add(1),
+            Ty::Struct(_) | Ty::Enum(_) if self.hand_written_levels(ty).is_some() => self.hand_written_levels(ty),
             Ty::Struct(Nominal { decl, .. }) if self.derives(*decl, "Repr") => {
                 let fields: Vec<Ty> = self.fields_of(*decl)?.into_iter().map(|f| f.ty).collect();
                 self.repr_sum(&fields)
