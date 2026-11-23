@@ -394,6 +394,8 @@ active MD decisions; each is reported back.
 
 ## Phases C, D and E (ROADMAP item 11): later batch boundaries
 
+**Designed (2026-11-23):** `design-c.md`, `design-d.md`, `design-e.md`, with `tasks-c.md`, `tasks-d.md`, `tasks-e.md`.
+
 Not tasked here; each starts with a rebase onto `composite-values` phase C and re-reads
 `Instantiations`, `Substitution`, `ImplTable` and `HandleBinding`.
 
