@@ -277,6 +277,11 @@ impl<'d> Checker<'d> {
         if self.queued.insert(decl) {
             self.reached.push(decl);
             self.queue.push_back(decl);
+            // a function of an `impl` brings its `impl` along: the declaration rules of the block and the types it writes
+            // (the arguments of its trait) are judged once, wherever a function of it is first reached
+            if let Some(owner) = self.design.decl_data(decl).parent.filter(|owner| matches!(self.design.decl_data(*owner).kind, DeclKind::Impl(_))) {
+                self.reach(owner);
+            }
         }
     }
 

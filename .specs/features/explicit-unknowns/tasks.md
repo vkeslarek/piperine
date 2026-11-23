@@ -1111,8 +1111,8 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] A source test in `source_logic.rs` (created here) runs a test-local struct with `impl BitAnd` and reads the result
-- [ ] Gate check passes: Full
+- [x] A source test in `source_logic.rs` (created here) runs a test-local struct with `impl BitAnd` and reads the result
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

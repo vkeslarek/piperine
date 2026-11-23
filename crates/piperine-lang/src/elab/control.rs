@@ -9,6 +9,7 @@ use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Stmt, StmtId as Lo
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use crate::pom::{BlockNode, DeclId, ExprId, ExprKind, FileId, PatId, PatKind, Resolution};
+use crate::types::Callee;
 
 /// One loop the code being lowered sits in; `Scope::loops` counts them, innermost last.
 pub(super) struct LoopFrame;
@@ -43,6 +44,15 @@ impl Elaboration<'_, '_> {
         if self.place_type(scope, &place).is_none() {
             self.unsupported(scope.file, node.span, "an assignment to a place whose type has no value in the IR");
             return false;
+        }
+        // `a &= b` on a library type is `a = a & b`: the call of the operator's `impl` function (Appendix H.10 rule 4)
+        if op.is_some()
+            && let Some(Callee::Method(function)) = self.types.callee(expr)
+        {
+            let origin = self.expr_origin(expr);
+            let Some(value) = self.lower_method_call(scope, expr, function, lhs, &[rhs], origin) else { return false };
+            out.push(self.stmt(Stmt::Assign { place, op: None, value }));
+            return true;
         }
         let Some(value) = self.lower_expr(scope, rhs) else { return false };
         let op = op.map(Self::binary_op);

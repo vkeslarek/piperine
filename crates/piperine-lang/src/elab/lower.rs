@@ -293,6 +293,9 @@ impl Elaboration<'_, '_> {
             ExprKind::Array(items) => self.lower_array(scope, items, ty, origin),
             ExprKind::ArrayRepeat { elem, len } => self.lower_array_repeat(scope, *elem, *len, origin),
             ExprKind::Index { expr: base, index } => self.lower_index(scope, expr, *base, *index, origin),
+            // an operator the checker resolved to the `impl` function of an operator trait is a call of it (Appendix H.10)
+            ExprKind::Unary { expr: operand, .. } if let Some(Callee::Method(function)) = self.types.callee(expr) => self.lower_method_call(scope, expr, function, *operand, &[], origin),
+            ExprKind::Binary { lhs, rhs, .. } if let Some(Callee::Method(function)) = self.types.callee(expr) => self.lower_method_call(scope, expr, function, *lhs, &[*rhs], origin),
             ExprKind::Unary { op, expr: operand } => {
                 let op = match op {
                     UnOp::Neg => UnaryOp::Neg,
