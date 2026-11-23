@@ -909,10 +909,10 @@ T44
 
 **Done when**:
 
-- [ ] `an_integer_param_runs_with_its_value`, `an_enum_param_runs_its_arm`, `an_option_param_runs_its_case` pass under `**Run sourceparams**`
-- [ ] The transpile goldens and every buck target are byte-identical
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `an_integer_param_runs_with_its_value`, `an_enum_param_runs_its_arm`, `an_option_param_runs_its_case` pass under `**Run sourceparams**`
+- [x] The transpile goldens and every buck target are byte-identical
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

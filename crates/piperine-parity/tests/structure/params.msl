@@ -71,3 +71,38 @@ module BistableNegBench() {
 /// A potential held at `volts`.
 module Level(p: Electrical) { volts: f64 = 0.0; }
 analog for Level { v(p, gnd) +> volts; }
+
+// -- params-and-io PI-01 to PI-03: integer, enum and `Option` params
+
+/// How a load scales its conductance.
+#[derive(Repr, PartialEq)]
+enum Mode { Fast, Slow }
+
+/// A load of `n` times 1 mS: an integer param read as `n as f64` (PI-01 AC 3).
+module CountedLoad(p: Electrical) { n: u8 = 4; }
+analog for CountedLoad { i(p, gnd) +> (n as f64) * v(p) / 1k; }
+
+/// A load of 1 mS or 3 mS by the arm its `Mode` param selects (PI-02 AC 1).
+module ModedLoad(p: Electrical) { md: Mode = Mode::Fast; }
+analog for ModedLoad {
+    i(p, gnd) +> match md { Mode::Fast => 1.0, Mode::Slow => 3.0 } * v(p) / 1k;
+}
+
+/// A resistor of `rs` ohms, 1 kOhm when `rs` is left out (PI-03 AC 1 and AC 3).
+module OptionalLoad(p: Electrical) { rs: Option<f64>; }
+analog for OptionalLoad { i(p, gnd) +> v(p) / rs.unwrap_or(1k); }
+
+/// 1 V behind 1 kOhm into `o`: the divider every load below hangs on.
+module Supply(o: Electrical) {
+    signal src: Electrical;
+    let source = Level { volts: 1.0 }(src);
+    let series = Resistor { r: 1k }(src, o);
+}
+
+module IntegerDefaultBench() { signal o: Electrical; let supply = Supply(o); let load = CountedLoad(o); }
+module IntegerBoundBench() { signal o: Electrical; let supply = Supply(o); let load = CountedLoad { n: 7 }(o); }
+module EnumDefaultBench() { signal o: Electrical; let supply = Supply(o); let load = ModedLoad(o); }
+module EnumBoundBench() { signal o: Electrical; let supply = Supply(o); let load = ModedLoad { md: Mode::Slow }(o); }
+module OptionLeftOutBench() { signal o: Electrical; let supply = Supply(o); let load = OptionalLoad(o); }
+module OptionSomeBench() { signal o: Electrical; let supply = Supply(o); let load = OptionalLoad { rs: Some(3k) }(o); }
+module OptionNoneBench() { signal o: Electrical; let supply = Supply(o); let load = OptionalLoad { rs: None }(o); }

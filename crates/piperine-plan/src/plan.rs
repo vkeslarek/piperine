@@ -443,6 +443,8 @@ impl BodyPlan {
             let scalar = match &p.ty {
                 ValueType::Bool => &BIT,
                 ty if ty.is_integer() => CarrierLayout::of(ty).unwrap_or(&F64),
+                // a unit enum is its tag (PI-02)
+                ty @ ValueType::Enum(_) => CarrierLayout::in_ir(ir, ty).unwrap_or(&F64),
                 _ => &F64,
             };
             let layout = composite_layout.as_ref().unwrap_or(scalar);

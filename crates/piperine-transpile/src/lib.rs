@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use piperine_ir::{Body, BodyId, Expr, Ir};
+use piperine_ir::{Body, BodyId, Expr, Ir, ValueType};
 use piperine_plan::BodyPlan;
 
 use crate::print::LibraryPrinter;
@@ -104,6 +104,13 @@ impl Transpiler {
     pub fn loops(&self) -> bool {
         self.ir.expressions().any(|e| matches!(e, Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. }))
             || self.ir.functions().any(|f| print::ValuePrinter::is_recursive(&self.ir, f.id()))
+    }
+
+    /// Whether a param of the design holds a type the pin carries beyond `f64` and `bool`: an
+    /// integer, an enum or an `Option` (PI-01 to PI-03). Its generated reads spell `rt::UInt` and
+    /// `rt::Carried`, so its runtime is the files of `rt` and not `real.rs` alone.
+    pub fn carried_params(&self) -> bool {
+        self.ir.bodies().any(|body| body.params().iter().any(|param| !matches!(param.ty, ValueType::F64 | ValueType::Bool)))
     }
 
     /// The design as one Rust source text (`design.rs`); a form with no lowering is

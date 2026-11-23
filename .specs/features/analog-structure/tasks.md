@@ -703,7 +703,7 @@ T35 → T36
 **Done when**:
 
 - [x] Tests with exactly these names pass in `Run parop`: `diode_rs`, `diode_rs_with_rs_zero_merges_and_matches_rdiode`, `diode_rs_runs_and_prints_the_skip_line_without_ngspice`
-- [x] Test with exactly this name passes in `Run elabstruct`: `the_section_18_diode_waits_for_params_and_io`
+- [x] Test with exactly this name passes in `Run elabstruct`: `the_section_18_diode_type_checks_with_its_option_param`
 - [x] `Run corpus` passes unedited
 - [x] Gate check passes: Full (`Run parop`, `Run elabstruct`, `Run corpus`, `Run twins`, `Run tgolden`)
 - [x] Test count: the 4 tests named above, and no existing test removed or edited
@@ -1069,7 +1069,7 @@ Proof: run elabstruct | test the_stdlib_idt_waits_for_generics ... ok
 Proof: run elabstruct | test the_water_model_waits_for_generics ... ok
 
 **C25** - WHERE `params-and-io` has merged the §18 `Diode` with `rs: Some(100.0)` runs `diode_rs`; until then it is refused by name and the twin runs the local `DiodeRs`. (AS-05, AC 3; T24, Q2)
-Proof: run elabstruct | test the_section_18_diode_waits_for_params_and_io ... ok
+Proof: run elabstruct | test the_section_18_diode_type_checks_with_its_option_param ... ok
 Proof: run parop | test diode_rs ... ok
 
 **C26** - WHERE `params-and-io` has merged the §18 `Diode` with `rs` left out merges `a` and `ai`; until then `GAPS.md` keeps one L40 line naming the three spec models and their dependencies. (AS-05, AC 4; T36, Q2)

@@ -38,7 +38,7 @@ impl Transpiler {
 
         let rustc = Rustc::locate(settings)?;
         let cache = Cache::at(&settings.cache)?;
-        let runtime = Runtime::files(self.digital() || self.loops());
+        let runtime = Runtime::files(self.digital() || self.loops() || self.carried_params());
         let (key, abi_key) = Self::cache_keys(&source, &runtime, rustc.version_text(), AbiSource::FILES);
 
         // RS-04 AC 5: an entry that is incomplete or fails to open is not what it recorded; it

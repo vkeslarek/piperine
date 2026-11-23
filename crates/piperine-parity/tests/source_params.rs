@@ -91,3 +91,26 @@ fn a_node_initial_value_over_a_param_starts_newton_in_an_operating_point() {
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("bistable", "v(o)", Coordinate::OperatingPoint), 1.0, operating_point("BistableBench"));
     ToleranceContract::DC_VOLTAGE.assert(&Point::new("bistable negative", "v(o)", Coordinate::OperatingPoint), -1.0, operating_point("BistableNegBench"));
 }
+
+#[test]
+fn an_integer_param_runs_with_its_value() {
+    // PI-01 AC 1 to AC 3: the load is `n` mS behind 1 kOhm from 1 V, so v(o) = 1 / (1 + n): n = 4 (the default) gives 0.2 V and
+    // the bound n = 7 gives 0.125 V.
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("integer default", "v(o)", Coordinate::OperatingPoint), 1.0 / 5.0, operating_point("IntegerDefaultBench"));
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("integer bound", "v(o)", Coordinate::OperatingPoint), 1.0 / 8.0, operating_point("IntegerBoundBench"));
+}
+
+#[test]
+fn an_enum_param_runs_its_arm() {
+    // PI-02 AC 1, AC 2: `Fast` is 1 mS (v = 1 / 2) and `Slow` is 3 mS (v = 1 / 4).
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("enum default", "v(o)", Coordinate::OperatingPoint), 0.5, operating_point("EnumDefaultBench"));
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("enum bound", "v(o)", Coordinate::OperatingPoint), 0.25, operating_point("EnumBoundBench"));
+}
+
+#[test]
+fn an_option_param_runs_its_case() {
+    // PI-03 AC 1 to AC 3: left out or `None` it is 1 kOhm by `unwrap_or` (v = 1 / 2); `Some(3k)` is 3 kOhm (v = 3 / 4).
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("option left out", "v(o)", Coordinate::OperatingPoint), 0.5, operating_point("OptionLeftOutBench"));
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("option none", "v(o)", Coordinate::OperatingPoint), 0.5, operating_point("OptionNoneBench"));
+    ToleranceContract::DC_VOLTAGE.assert(&Point::new("option some", "v(o)", Coordinate::OperatingPoint), 0.75, operating_point("OptionSomeBench"));
+}

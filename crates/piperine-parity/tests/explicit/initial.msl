@@ -83,7 +83,7 @@ module ElementsBench() {
     let probe = Elements(clk, e);
 }
 
-/// A module with an `Option` param no instance binds (`GAPS.md` L28: not elaborated yet).
+/// A module with an `Option` param no instance binds: it is `None` (EU-06 AC 1).
 module Param(in clk: Bit) { limit: Option<u8>; }
 digital for Param { on clk.rise() { emit!("param", given = limit.is_some()); } }
 
