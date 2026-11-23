@@ -167,6 +167,23 @@ fn exp_and_logarithms_match_the_reference_vectors_bit_for_bit() {
 
 /// Compares the two-argument functions with their vector files.
 impl VectorComparison {
+    /// Checks `atan2` on every row of `atan2.tsv` and the `exact.tsv` rows of that name.
+    fn check_atan2(&self) {
+        let mut rows = 0;
+        for (y, x, expected) in self.vectors.binary("atan2") {
+            let actual = Float128::from_bits(y).atan2(Float128::from_bits(x));
+            assert!(Self::same(expected, actual), "atan2({y:#034x}, {x:#034x}): expected {expected:#034x}, got {:#034x}", actual.to_bits());
+            rows += 1;
+        }
+        for row in self.vectors.exact().iter().filter(|row| row.function == "atan2") {
+            let x = row.y.as_deref().and_then(ReferenceVectors::bits).unwrap_or(0);
+            let actual = Float128::from_bits(row.x).atan2(Float128::from_bits(x));
+            assert!(Self::same(row.expected, actual), "exact atan2({:#034x}, {x:#034x}): expected {:#034x}, got {:#034x}", row.x, row.expected, actual.to_bits());
+            rows += 1;
+        }
+        assert!(rows >= 2_000, "only {rows} atan2 rows compared");
+    }
+
     /// Checks `powf` on every row of `powf.tsv` and the `exact.tsv` rows of that name.
     fn check_power(&self) {
         let mut rows = 0;
@@ -207,4 +224,13 @@ fn circular_functions_match_the_reference_vectors_bit_for_bit() {
     comparison.check_unary("sin", Float128::sin);
     comparison.check_unary("cos", Float128::cos);
     comparison.check_unary("tan", Float128::tan);
+}
+
+#[test]
+fn inverse_circular_functions_match_the_reference_vectors_bit_for_bit() {
+    let comparison = VectorComparison::committed();
+    comparison.check_unary("asin", Float128::asin);
+    comparison.check_unary("acos", Float128::acos);
+    comparison.check_unary("atan", Float128::atan);
+    comparison.check_atan2();
 }

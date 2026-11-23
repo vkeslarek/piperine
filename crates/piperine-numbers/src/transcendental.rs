@@ -45,6 +45,16 @@ impl Evaluation {
         Some((reduced.quadrant, sine, cosine))
     }
 
+    /// `pi / 2` as an interval carried at `precision` plus the guard bits.
+    fn half_pi(precision: u32) -> Interval {
+        ReferenceConstants::pi(precision + Self::GUARD_BITS).scaled(-1).with_precision(precision + Self::GUARD_BITS)
+    }
+
+    /// `pi` as an interval carried at `precision` plus the guard bits.
+    fn pi(precision: u32) -> Interval {
+        ReferenceConstants::pi(precision + Self::GUARD_BITS).with_precision(precision + Self::GUARD_BITS)
+    }
+
     /// `log_base(x)` as `ln x / ln base` for a finite positive `x`, with the exact case supplied.
     fn logarithm(x: Float128, exact: Option<Float128>, divisor: fn(u32) -> Interval) -> Float128 {
         Self::rounded(exact, |precision| {
@@ -256,5 +266,103 @@ impl Float128 {
             let (quadrant, sine, cosine) = Evaluation::circle(self, precision)?;
             if quadrant % 2 == 0 { sine.divide(&cosine) } else { Some(cosine.divide(&sine)?.negated()) }
         })
+    }
+}
+
+impl Float128 {
+    /// The arcsine, correctly rounded (NaN outside `[-1, 1]`): `2 atan(x / (1 + sqrt(1 - x^2)))`.
+    pub fn asin(self) -> Float128 {
+        if self.is_nan() || self.abs() > Float128::ONE {
+            return Float128::NAN;
+        }
+        if self.is_zero() {
+            return self;
+        }
+        let negative = self.is_sign_negative();
+        let result = Evaluation::rounded(None, |precision| {
+            if self.abs() == Float128::ONE {
+                return Some(Evaluation::half_pi(precision));
+            }
+            let x = Evaluation::point(self.abs(), precision)?;
+            let one = Interval::integer(false, 1, precision + Evaluation::GUARD_BITS);
+            // 1 - x^2 as (1 - x)(1 + x): both factors are exact for a binary128 x.
+            let root = one.subtract(&x).multiply(&one.add(&x)).square_root()?;
+            Some(ElementaryFunctions::atan(&x.divide(&one.add(&root))?)?.scaled(1))
+        });
+        if negative { -result } else { result }
+    }
+
+    /// The arccosine, correctly rounded (NaN outside `[-1, 1]`): `2 atan(sqrt((1 - x) / (1 + x)))`.
+    pub fn acos(self) -> Float128 {
+        if self.is_nan() || self.abs() > Float128::ONE {
+            return Float128::NAN;
+        }
+        if self == Float128::ONE {
+            return Float128::ZERO;
+        }
+        Evaluation::rounded(None, |precision| {
+            if self == -Float128::ONE {
+                return Some(Evaluation::pi(precision));
+            }
+            let x = Evaluation::point(self, precision)?;
+            let one = Interval::integer(false, 1, precision + Evaluation::GUARD_BITS);
+            let ratio = one.subtract(&x).divide(&one.add(&x))?;
+            Some(ElementaryFunctions::atan(&ratio.square_root()?)?.scaled(1))
+        })
+    }
+
+    /// The arctangent, correctly rounded.
+    pub fn atan(self) -> Float128 {
+        if self.is_nan() {
+            return Float128::NAN;
+        }
+        if self.is_zero() {
+            return self;
+        }
+        let negative = self.is_sign_negative();
+        let result = Evaluation::rounded(None, |precision| {
+            if self.is_infinite() {
+                return Some(Evaluation::half_pi(precision));
+            }
+            ElementaryFunctions::atan(&Evaluation::point(self.abs(), precision)?)
+        });
+        if negative { -result } else { result }
+    }
+
+    /// `self.atan2(x)`: the angle of the point `(x, self)` from `-pi` to `pi` (H.2 rule 8), with the
+    /// signed zeros and infinities of IEEE 754 section 9.2.1.
+    pub fn atan2(self, x: Float128) -> Float128 {
+        if self.is_nan() || x.is_nan() {
+            return Float128::NAN;
+        }
+        let negative = self.is_sign_negative();
+        let signed = |magnitude: Float128| if negative { -magnitude } else { magnitude };
+        let left = x.is_sign_negative();
+        if self.is_zero() {
+            return if left { signed(Evaluation::rounded(None, |precision| Some(Evaluation::pi(precision)))) } else { self };
+        }
+        if self.is_infinite() {
+            let angle = Evaluation::rounded(None, |precision| {
+                let pi = Evaluation::pi(precision);
+                Some(match (x.is_infinite(), left) {
+                    (false, _) => pi.scaled(-1),
+                    (true, false) => pi.scaled(-2),
+                    (true, true) => pi.scaled(-2).multiply(&Interval::integer(false, 3, pi.precision())),
+                })
+            });
+            return signed(angle);
+        }
+        if x.is_infinite() {
+            return if left { signed(Evaluation::rounded(None, |precision| Some(Evaluation::pi(precision)))) } else { signed(Float128::ZERO) };
+        }
+        if x.is_zero() {
+            return signed(Evaluation::rounded(None, |precision| Some(Evaluation::half_pi(precision))));
+        }
+        let result = Evaluation::rounded(None, |precision| {
+            let quotient = Evaluation::point(self.abs(), precision)?.divide(&Evaluation::point(x.abs(), precision)?)?;
+            let angle = ElementaryFunctions::atan(&quotient)?;
+            Some(if left { Evaluation::pi(precision).subtract(&angle) } else { angle })
+        });
+        signed(result)
     }
 }
