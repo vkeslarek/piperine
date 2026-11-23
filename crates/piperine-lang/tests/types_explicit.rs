@@ -1,7 +1,7 @@
 //! The checker's side of the explicit model of unknowns (part I §3.3, §22.1): `analog` reads a
 //! discrete carrier like any expression (§3.3.6), directly, through a `let`, a function or a
 //! placement; `T::WIDTH` typed on `Repr` values, `same` and `cast` typed by their contract at the
-//! concrete type (`E0701`), the flag methods that resolve to nothing (`E0161`), and `logic` and
+//! concrete type, the flag methods that resolve to nothing (`E0161`), and `logic` and
 //! `matches_bits` typed over `Logic<N>`. One positive and one negative source per rule, over the embedded
 //! standard library (the five functions are the stdlib's own items).
 
@@ -149,15 +149,12 @@ fn the_intrinsics_are_typed_at_the_concrete_type() {
 }
 
 #[test]
-fn a_cast_into_a_sequence_that_holds_an_enum_is_refused() {
-    // GAPS L58: a tag that names no variant is judged for an enum and a struct, not yet inside a tuple or an array
-    let (src, d) = diagnostics(MODE, "let a = cast::<u4, (Mode, u2)>(5_u4);");
-    assert_eq!(codes_of(&d), ["P0001"], "{src}");
-    let (src, d) = diagnostics(MODE, "let a = cast::<u4, [Mode; 2]>(5_u4);");
-    assert_eq!(codes_of(&d), ["P0001"], "{src}");
-    // the type is named bare in the message, with no backtick inside the backticks
-    let (src, d) = diagnostics(MODE, "let a = cast::<u4, (Mode, Mode)>(15_u4);");
-    assert!(d[0].diagnostic.message.contains("`cast` to `(Mode, Mode)`"), "{src}: {}", d[0].diagnostic.message);
+fn a_cast_into_a_sequence_that_holds_an_enum_is_typed() {
+    // GAPS L58 closed (generics T55): `cast` is the generic function of `std/values.msl`, so a target that is a tuple or an
+    // array holding an enum type-checks as an `Option` of it, like any other target (§22.1.3 rule 1)
+    let t = local_types(MODE, "let a = cast::<u4, (Mode, u2)>(5_u4); let b = cast::<u4, [Mode; 2]>(5_u4);", &["a", "b"]);
+    assert!(matches!(&t[0], Ty::Option(inner) if matches!(&**inner, Ty::Tuple(_))), "{:?}", t[0]);
+    assert!(matches!(&t[1], Ty::Option(inner) if matches!(&**inner, Ty::Array(..))), "{:?}", t[1]);
 }
 
 #[test]
@@ -165,15 +162,6 @@ fn a_project_function_named_like_an_intrinsic_is_an_ordinary_function() {
     // §22 rule 3: a project's own `merge` is not intercepted; it is typed from its signature.
     let t = local_types("fn merge(a: f64, b: f64) -> f64 { a + b }", "let a = merge(1.0, 2.0);", &["a"]);
     assert_eq!(t, [Ty::F64]);
-}
-
-#[test]
-fn cast_between_widths_is_e0701() {
-    // §22.1.3 rule 3: a width mismatch is `E0701`, naming both types (US-03 AC 8).
-    let (src, d) = diagnostics(MODE, "let a: u8 = cast::<Mode, u8>(Mode::Run);");
-    assert_eq!(codes_of(&d), ["E0701"]);
-    let message = &d[0].diagnostic.message;
-    assert!(message.contains("Mode") && message.contains("u8"), "both types are named: {message}\n{src}");
 }
 
 /// A stage reading `c` in `analog` through the function `f`, over the electrical nature.

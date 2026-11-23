@@ -818,3 +818,14 @@ fn gaps_drops_l70() {
     assert!(!gaps.contains("| L70 |"), "GAPS.md still has the row L70");
     assert!(!gaps.contains("`encode` on a value of a type whose layout is derived"), "the L70 refusal text is gone");
 }
+
+#[test]
+fn gaps_drops_the_cast_and_same_intrinsics() {
+    // generics GN-27 AC 1 (T55): `cast` and `same` compile from `std/values.msl`, so the row L58 no longer says they run as the
+    // checker's own intrinsics, and no source of the language crate names the two variants
+    let gaps = read("GAPS.md");
+    let l58 = gaps.lines().find(|l| l.starts_with("| L58 |")).expect("the row L58").to_string();
+    assert!(!l58.contains("`cast` and `same`") && !l58.contains("Intrinsic::{Cast, Same}"), "L58 still names the intrinsics: {l58}");
+    let intrinsic = read("crates/piperine-lang/src/types/intrinsic.rs");
+    assert!(!intrinsic.contains("Same,") && !intrinsic.contains("Cast,"), "types::intrinsic still has a variant for `cast` or `same`");
+}

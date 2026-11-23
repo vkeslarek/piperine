@@ -487,3 +487,86 @@ fn encode_and_decode_run_at_every_layout() {
     // tag 3 names no variant of the three-variant enum, tag 1 names `Y`
     RUN.assert_commits("levels.msl", &["n0", "n1"], &[CarrierBytes::byte(0), CarrierBytes::byte(1)]);
 }
+
+/// The levels a cast moves, and what `cast` and `same` give them: the contract of part I §22.1.3 and §22.1.4, in Rust, as the
+/// removed lowering computed it (`Expr::LevelCast` and `Expr::Same`).
+struct LevelContract;
+
+impl LevelContract {
+    /// The levels of `value` as `width` booleans, least significant first.
+    fn levels(value: u64, width: u32) -> Vec<bool> {
+        (0..width).map(|k| (value >> k) & 1 == 1).collect()
+    }
+
+    /// The value of `width` levels read back as an integer.
+    fn word(levels: &[bool]) -> u64 {
+        levels.iter().enumerate().fold(0, |word, (k, level)| word | (u64::from(*level) << k))
+    }
+
+    /// `Mode` of the model: the tag of one of its three variants, `None` for a tag no variant names (§22.1.3).
+    fn mode(tag: u64) -> Option<u8> {
+        (tag < 3).then_some(tag as u8)
+    }
+
+    /// `cast::<uW, Mode>`: the two low levels are the tag.
+    fn to_mode(value: u64) -> u8 {
+        Self::mode(Self::word(&Self::levels(value, 2))).unwrap_or(9)
+    }
+
+    /// `cast::<u4, (Mode, u2)>`: the tag from levels 0 and 1, then the `u2` from levels 2 and 3, `99` for no tag.
+    fn to_tuple(value: u64) -> u8 {
+        let levels = Self::levels(value, 4);
+        Self::mode(Self::word(&levels[..2])).map_or(99, |tag| tag * 10 + Self::word(&levels[2..]) as u8)
+    }
+
+    /// `cast::<u4, [Mode; 2]>`: two tags of two levels each, `99` when either names no variant.
+    fn to_array(value: u64) -> u8 {
+        let levels = Self::levels(value, 4);
+        match (Self::mode(Self::word(&levels[..2])), Self::mode(Self::word(&levels[2..]))) {
+            (Some(first), Some(second)) => first * 10 + second,
+            _ => 99,
+        }
+    }
+
+    /// `same`: equal level by level, so `0.0` and `-0.0` differ and a NaN equals itself (§22.1.2 rule 2).
+    fn same(a: f64, b: f64) -> u8 {
+        u8::from(a.to_bits() == b.to_bits())
+    }
+}
+
+#[test]
+fn cast_and_same_from_source_agree_with_the_removed_lowering() {
+    // GN-27 AC 1, GN-01 AC 1 (T55): the source-compiled `cast` gives `Some` for a tag a variant names and `None` for one it
+    // does not, and `same` compares level by level, with the values the removed `LevelCast`/`Same` lowering gave
+    let casts = [
+        // `Mode::Z` is the tag 2, the `u2` two
+        CarrierBytes::byte(LevelContract::word(&LevelContract::levels(2, 2)) as u8),
+        CarrierBytes::byte(LevelContract::to_mode(2)),
+        CarrierBytes::byte(LevelContract::to_mode(3)),
+        // 200 as `i8` is negative
+        CarrierBytes::byte(u8::from((200u8 as i8) < 0)),
+    ];
+    RUN.assert_commits("casts.msl", &["c0", "c1", "c2", "c3"], &casts);
+    let same = [
+        CarrierBytes::byte(LevelContract::same(f64::from_bits(7), f64::from_bits(7))),
+        CarrierBytes::byte(LevelContract::same(f64::from_bits(7), f64::from_bits(6))),
+        CarrierBytes::byte(LevelContract::same(0.0, -0.0)),
+        CarrierBytes::byte(LevelContract::same(f64::NAN, f64::NAN)),
+        // `logic("01xz")` against itself, and against `logic("01zx")`: the four states are compared literally
+        CarrierBytes::byte(1),
+        CarrierBytes::byte(0),
+    ];
+    RUN.assert_commits("casts.msl", &["s0", "s1", "s2", "s3", "s4", "s5"], &same);
+}
+
+#[test]
+fn a_cast_to_a_tuple_holding_an_enum_runs() {
+    // GAPS L58 closed (T55), §22.1.3 rule 1: a tag that names no variant is `None` inside a tuple and an array too
+    let wanted = [
+        CarrierBytes::byte(LevelContract::to_tuple(9)),
+        CarrierBytes::byte(LevelContract::to_tuple(3)),
+        CarrierBytes::byte(LevelContract::to_array(9)),
+        CarrierBytes::byte(LevelContract::to_array(12)),
+    ];
+    RUN.assert_commits("casts.msl", &["c4", "c5", "c6", "c7"], &wanted);
+}

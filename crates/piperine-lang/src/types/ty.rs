@@ -207,7 +207,6 @@ impl Length {
         match (self, expected) {
             (Length::Fixed(found), Length::Fixed(wanted)) => found == wanted,
             (Length::Generic(ConstTerm::Param(found)), Length::Generic(ConstTerm::Param(wanted))) => found == wanted,
-            (Length::Generic(ConstTerm::Width(found)), Length::Generic(ConstTerm::Width(wanted))) => found == wanted,
             _ => true,
         }
     }

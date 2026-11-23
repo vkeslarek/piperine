@@ -22,13 +22,7 @@ impl Elaboration<'_, '_> {
             Ty::Array(element, Length::Generic(ConstTerm::Width(parameter))) => {
                 let element = Box::new(self.with_hand_written_widths(element));
                 let width = match self.consts.substitution().get(*parameter) {
-                    Some(GenericValue::Type(given)) => self
-                        .impls
-                        .hand_written_repr(given)
-                        .map(|entry| entry.decl)
-                        .and_then(|owner| self.hand_written_width(owner))
-                        // a derived layout: the level count of its value type (§2 rules 2 to 6)
-                        .or_else(|| self.value_type(given).and_then(|value| self.ir.level_count(&value))),
+                    Some(GenericValue::Type(given)) => self.level_count(given),
                     _ => None,
                 };
                 match width {
@@ -41,6 +35,13 @@ impl Elaboration<'_, '_> {
             Ty::Option(inner) => Ty::Option(Box::new(self.with_hand_written_widths(inner))),
             other => other.clone(),
         }
+    }
+
+    /// The number of levels of the `Repr` of `ty` (§2): the width of its hand-written `impl`, else the count its layout
+    /// gives (rules 2 to 6). `None` for a type with no laid-out value type.
+    pub(super) fn level_count(&self, ty: &Ty) -> Option<u32> {
+        let hand_written = self.impls.hand_written_repr(ty).map(|entry| entry.decl).and_then(|owner| self.hand_written_width(owner));
+        hand_written.or_else(|| self.types.repr_levels(ty))
     }
 
     /// `x.encode()` where the checker typed no method (a `T: Repr` parameter): the levels of the receiver. `None` when

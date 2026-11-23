@@ -222,6 +222,15 @@ impl Elaboration<'_, '_> {
     /// Discharges what the definition of `instance`'s function deferred (Q1 (c)): the `where`, the pairs of
     /// array lengths and the const expressions, for these arguments. `None` after a diagnostic.
     fn discharge(&mut self, instance: &Instance, bindings: &Bindings) -> Option<()> {
+        // the `where` reads the instance's own type arguments (`A::WIDTH == B::WIDTH`)
+        let outer = self.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
+        let discharged = self.discharge_under_substitution(instance, bindings);
+        self.consts.set_substitution(outer);
+        discharged
+    }
+
+    /// [`Elaboration::discharge`] with the substitution of `instance` set.
+    fn discharge_under_substitution(&mut self, instance: &Instance, bindings: &Bindings) -> Option<()> {
         let name = instance.name(self);
         let values = self.instance_values(instance);
         let mut holds = true;
@@ -242,7 +251,7 @@ impl Elaboration<'_, '_> {
                     }
                 },
                 Obligation::SameLength { file, span, expected, found } => {
-                    let (wanted, given) = (self.fold_length(&expected, &values), self.fold_length(&found, &values));
+                    let (wanted, given) = (self.fold_length(instance, &expected, &values), self.fold_length(instance, &found, &values));
                     if let (Some(wanted), Some(given)) = (wanted, given)
                         && wanted != given
                     {
@@ -262,12 +271,21 @@ impl Elaboration<'_, '_> {
     }
 
     /// The number of elements `length` stands for when the const parameters have `values`, `None` when it does not fold.
-    fn fold_length(&mut self, length: &Length, values: &BTreeMap<DeclId, u128>) -> Option<i128> {
+    fn fold_length(&mut self, instance: &Instance, length: &Length, values: &BTreeMap<DeclId, u128>) -> Option<i128> {
         match length {
             Length::Fixed(count) => Some(i128::from(*count)),
             Length::Generic(ConstTerm::Value(count)) => Some(*count),
             Length::Generic(ConstTerm::Expr(expr)) => self.types.fold_with(*expr, values.clone()).and_then(|count| i128::try_from(count).ok()),
             Length::Generic(ConstTerm::Param(parameter)) => values.get(parameter).and_then(|count| i128::try_from(*count).ok()),
+            // `T::WIDTH` of the argument the instance gives the parameter `T` (§2)
+            Length::Generic(ConstTerm::Width(parameter)) => {
+                let signature = GenericSignature::of(self.design, instance.item);
+                let argument = signature.parameters().iter().zip(&instance.arguments).find_map(|(candidate, argument)| (candidate.decl == *parameter).then_some(argument))?;
+                match argument {
+                    ConcreteValue::Type(given) => self.level_count(given).map(i128::from),
+                    _ => None,
+                }
+            }
             Length::Generic(_) => None,
         }
     }

@@ -101,7 +101,6 @@ Codes owned by this part. Conditions that are instances of another part's rule a
 
 | Code | Condition | Phase |
 | --- | --- | --- |
-| `E0701` | `cast::<A, B>` with `A::WIDTH != B::WIDTH` | elaboration |
 | `E0702` | pattern of `logic` or `matches_bits`: a character outside `0 1 x z`, or a length other than `N` | elaboration |
 | `E0703` | `table_model` control string not of the form in §22.2.15 | elaboration |
 | `E0704` | `table_model` table: abscissae not strictly increasing, or fewer points than the interpolation degree needs | elaboration |
@@ -413,7 +412,7 @@ pub fn cast<A: Repr, B: Repr>(a: A) -> Option<B> where A::WIDTH == B::WIDTH {
 ```
 
 1. The result is what `B::decode` returns for the levels of `a`. A `decode` that fails gives `None`; the caller receives it and no carrier is changed by it (§2 rule 9).
-2. A width mismatch is `E0701`.
+2. A width mismatch is the false `where` of `cast`: `E0127` (§3 rule 8), naming `cast::<A, B>` and both types. (`E0701` is retired: `cast` is an ordinary generic function, so its own `where` is the check, and the language has no second code for it.)
 3. A definition between carriers of equal width and different types is written with `cast` and the `Option` unwrapped where the types cannot fail (§8.2.6).
 
 ```rust,fragment

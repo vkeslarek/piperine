@@ -4,7 +4,6 @@
 use std::collections::BTreeMap;
 
 use crate::real::Real;
-use crate::typing::Typing;
 use crate::deps::DepsMemo;
 use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
 use crate::model::{AggregateData, NodeAlias, 
@@ -140,12 +139,6 @@ impl IrBuilder {
     pub fn type_data(&mut self, data: TypeData) -> TypeId {
         self.types.push(data);
         TypeId((self.types.len() - 1) as u32)
-    }
-
-    /// How many levels a value of `ty` has (§2 table) among the source types added so far; `None` for a type with no
-    /// `Repr` layout.
-    pub fn level_count(&self, ty: &ValueType) -> Option<u32> {
-        Typing::levels_in(ty, &self.types)
     }
 
     /// The composite constant `id` names, as added.

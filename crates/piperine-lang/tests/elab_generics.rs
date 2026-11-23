@@ -302,3 +302,11 @@ fn encode_and_decode_of_every_layout_lower_through_the_level_cast() {
         }
     }
 }
+
+#[test]
+fn cast_between_widths_is_e0127_naming_both_types() {
+    // §22.1.3 rule 2 as amended by T55: `cast` is `std/values.msl`'s generic function whose `where A::WIDTH == B::WIDTH` is
+    // false for a cast between types of different widths, so the instantiation is `E0127` naming `cast::<Mode, u8>`
+    let found = ExternCalls::found("#[derive(Repr)] enum Mode { Idle, Run, Halt }\nmodule Top() { }\nanalog for Top { let a = cast::<Mode, u8>(Mode::Run); }\n");
+    assert!(found.iter().any(|(code, message)| code == "E0127" && message.contains("Mode") && message.contains("u8")), "{found:?}");
+}

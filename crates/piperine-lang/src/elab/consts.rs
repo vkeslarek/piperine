@@ -438,7 +438,7 @@ impl<'d, 't> ConstEval<'d, 't> {
     /// The level count of the type the substitution gives the type parameter `parameter`.
     pub(super) fn parameter_width(&self, parameter: DeclId) -> Option<u32> {
         match self.substitution.get(parameter)? {
-            GenericValue::Type(ty) => ty.levels(self.design),
+            GenericValue::Type(ty) => self.types.repr_levels(ty).or_else(|| ty.levels(self.design)),
             _ => None,
         }
     }

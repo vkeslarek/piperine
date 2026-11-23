@@ -181,10 +181,10 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `cast_and_same_from_source_agree_with_the_removed_lowering` and `a_cast_to_a_tuple_holding_an_enum_runs` pass under `**Run srcgen**`
-- [ ] `no_intrinsic_stands_for_cast_or_same` passes under `**Run typesgen**`
-- [ ] `gaps_drops_the_cast_and_same_intrinsics` passes under `**Run docs**`
-- [ ] Gate check passes: Quick
+- [x] `cast_and_same_from_source_agree_with_the_removed_lowering` and `a_cast_to_a_tuple_holding_an_enum_runs` pass under `**Run srcgen**`
+- [x] `no_intrinsic_stands_for_cast_or_same` passes under `**Run typesgen**`
+- [x] `gaps_drops_the_cast_and_same_intrinsics` passes under `**Run docs**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

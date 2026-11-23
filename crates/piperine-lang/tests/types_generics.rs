@@ -495,3 +495,29 @@ fn a_call_of_an_extern_intrinsic_types_over_the_logic_of_std() {
     let mismatch = messages("fn bad(x: u8) -> bool { matches_bits(x, \"1\") }\n");
     assert!(mismatch.iter().any(|(code, message)| code == "E0180" && message.contains("Logic")), "a subject that is no `Logic` is a mismatch: {mismatch:?}");
 }
+
+/// A source whose calls of the standard library's `cast` and `same` are looked up by what the checker recorded.
+struct StdCalls;
+
+impl StdCalls {
+    /// The name of the function each call of `src` resolves to when it is a function of the project or the standard library.
+    fn function_names(src: &str) -> Vec<String> {
+        let design = Design::builder().source("top.msl", src).build();
+        assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+        let types = Types::check(&design, "Top").unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>()));
+        (0..design.expr_count())
+            .filter_map(|index| match types.callee(piperine_lang::pom::ExprId(index as u32)) {
+                Some(piperine_lang::types::Callee::Function(function)) => design.decl_data(function).name.as_ref().map(|name| name.text.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+#[test]
+fn no_intrinsic_stands_for_cast_or_same() {
+    // GN-27 AC 1, GN-01 AC 1 (T55): `cast` and `same` are ordinary generic functions of `std/values.msl`, so the checker
+    // records a `Callee::Function` of each call, never a `Callee::Intrinsic` (the enum has no variant for either)
+    let names = StdCalls::function_names("module Top() { }\nanalog for Top { let a = same(3_u8, 4_u8); let b = cast::<u8, i8>(3_u8); }\n");
+    assert!(names.iter().any(|name| name == "same") && names.iter().any(|name| name == "cast"), "{names:?}");
+}

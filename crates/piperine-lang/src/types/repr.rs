@@ -6,7 +6,7 @@
 use crate::pom::{DeclId, DeclKind, TypeId};
 
 use super::check::Checker;
-use super::Ty;
+use super::{Length, Ty, Types};
 
 impl Checker<'_> {
     /// The number of levels of `ty` when its `Repr` is written by hand: the folded `WIDTH` of its
@@ -64,6 +64,29 @@ impl Checker<'_> {
                 let (item_file, item_span) = (self.design.decl_data(item).file, self.design.decl_data(item).span);
                 self.coded(item_file, "E0187", item_span, format!("{head}: `{name}` has the type `{}`, §2 gives it `{}`", found.name(self.design), wanted.name(self.design)), "a signature §2 does not give");
             }
+        }
+    }
+}
+
+impl Types<'_> {
+    /// The number of levels of `ty`'s derived `Repr` (§2 rules 2 to 6): the scalars, a tuple, an array and an `Option` from
+    /// their parts, a struct its fields end to end, an enum its tag then its widest payload. `None` for a type with no
+    /// `Repr` among the types the check reached, and for one whose layout is written by hand (the elaborator reads that
+    /// width from the `impl`).
+    pub fn repr_levels(&self, ty: &Ty) -> Option<u32> {
+        let sum = |parts: &[Ty]| parts.iter().try_fold(0u32, |total, part| total.checked_add(self.repr_levels(part)?));
+        match ty {
+            Ty::Tuple(items) => sum(items),
+            Ty::Array(element, Length::Fixed(length)) => u32::try_from(*length).ok()?.checked_mul(self.repr_levels(element)?),
+            Ty::Option(inner) => self.repr_levels(inner)?.checked_add(1),
+            Ty::Struct(nominal) => sum(&self.instance_fields(nominal.decl, nominal).into_iter().map(|field| field.ty).collect::<Vec<_>>()),
+            Ty::Enum(nominal) => {
+                let tag = self.enum_tag(nominal.decl)?.tag_levels;
+                let variants = self.design.decl_data(nominal.decl).children.iter().copied().filter(|child| matches!(self.design.decl_data(*child).kind, DeclKind::Variant(_)));
+                let widest = variants.map(|variant| sum(&self.instance_fields(variant, nominal).into_iter().map(|field| field.ty).collect::<Vec<_>>())).try_fold(0u32, |widest, payload| Some(widest.max(payload?)))?;
+                tag.checked_add(widest)
+            }
+            other => other.levels(self.design),
         }
     }
 }
