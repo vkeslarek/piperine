@@ -310,7 +310,7 @@ fn gaps_drops_what_msl_fixes_closed() {
     assert_eq!(rows("## 3. Silent", "## 4."), 1, "one silent entry");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 24, "twenty-four loud rows (L71, the host write of a `Logic`, was found by `explicit-unknowns`; L68, `Logic`, `logic` and `matches_bits`, was split from L58 and closed by `explicit-unknowns` phase B; L28 and L57 closed by `params-and-io`; `generics` closed L4, L7, L8 and L9 and found L69 and L70; L70 closed by T54)");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 23, "twenty-three loud rows (L71, the host write of a `Logic`, was found by `explicit-unknowns`; L68, `Logic`, `logic` and `matches_bits`, was split from L58 and closed by `explicit-unknowns` phase B; L28 and L57 closed by `params-and-io`; `generics` closed L4, L7, L8 and L9 and found L69 and L70; L70 closed by T54 and L69 by T58)");
 }
 
 #[test]
@@ -828,4 +828,14 @@ fn gaps_drops_the_cast_and_same_intrinsics() {
     assert!(!l58.contains("`cast` and `same`") && !l58.contains("Intrinsic::{Cast, Same}"), "L58 still names the intrinsics: {l58}");
     let intrinsic = read("crates/piperine-lang/src/types/intrinsic.rs");
     assert!(!intrinsic.contains("Same,") && !intrinsic.contains("Cast,"), "types::intrinsic still has a variant for `cast` or `same`");
+}
+
+#[test]
+fn gaps_drops_l69() {
+    // generics GN-32, GN-31 (T58): a hand-written `Repr` on a generic type runs and a carrier of a hand-written type starts at the
+    // levels of its `Default`, so the row L69 leaves `GAPS.md` with no trace of its refusals
+    let gaps = read("GAPS.md");
+    assert!(!gaps.contains("| L69 |"), "GAPS.md still has the row L69");
+    assert!(!gaps.contains("a carrier of a type with a hand-written `Repr` and no initial value"), "the L69 refusal text is gone");
+    assert!(!gaps.contains("a hand-written `Repr` on a generic type"), "the L69 refusal text is gone");
 }

@@ -188,15 +188,6 @@ fn a_bound_that_writes_the_trait_arguments_picks_the_impl_of_that_list() {
     assert_eq!(IrFunctions::names(&ir), ["as_real::<Cell>", "Cell.to::<f64>", "as_byte::<Cell>", "Cell.to::<u8>"]);
 }
 
-#[test]
-fn a_carrier_of_a_hand_written_type_with_no_initial_value_is_refused_by_name() {
-    // the `Default` of a hand-written `Repr` type needs `encode` run on a value no expression writes: until phase C the
-    // elaborator refuses it by name instead of starting the carrier at zero levels, which `decode` may not read as the default
-    let src = "#[derive(Default, PartialEq)] struct Slot { v: Option<bool> }\nimpl Repr for Slot {\n    const WIDTH: u32 = 2;\n    fn encode(self) -> [bool; 2] { [true, true] }\n    fn decode(l: [bool; 2]) -> Option<Slot> { Some(Slot { v: None }) }\n}\nmodule Top() { signal s: Bit<Slot>; }\n";
-    let found = Elab::run(src, "Top").err().expect("refused");
-    assert!(found.iter().any(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains("a carrier of a type with a hand-written `Repr` and no initial value")), "{:?}", found.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
-}
-
 /// A call of an `extern "intrinsic"` function, written in each position a function body or a behavior has, and what
 /// elaborating it reports.
 struct ExternCalls;

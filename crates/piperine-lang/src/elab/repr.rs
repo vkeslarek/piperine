@@ -183,6 +183,25 @@ impl Elaboration<'_, '_> {
         }
     }
 
+    /// The levels word a carrier of a hand-written layout starts at when it writes no initial value: the levels `encode` gives
+    /// for the `default` value of its type (GN-32 AC 2, §3.3.4), run for the arguments of its `impl`. `None` after a diagnostic.
+    pub(super) fn encoded_default(&mut self, encode: DeclId, arguments: &[ConcreteValue], default: piperine_ir::Constant) -> Option<piperine_ir::Constant> {
+        let DeclKind::Fn(data) = &self.design.decl_data(encode).kind else { return None };
+        let body = data.body.clone()?;
+        let Some(crate::pom::StmtKind::Expr { expr: at, .. }) = body.stmts.last().map(|stmt| self.design.stmt_node(*stmt).kind.clone()) else { return None };
+        let tree = self.imported_tree(default);
+        let outer = self.consts.set_substitution(self.instance_substitution(encode, arguments));
+        let word = self.consts.encoded_tree_word(at, encode, &tree);
+        self.consts.set_substitution(outer);
+        match word {
+            Ok(word) => Some(word),
+            Err(fault) => {
+                self.const_fault(&fault, "the levels of a `Default` value");
+                None
+            }
+        }
+    }
+
     /// Writes each layout on its type; the functions are in the IR by now.
     pub(super) fn set_hand_written_reprs(&mut self, layouts: Vec<HandWrittenRepr>) {
         if !self.diagnostics.is_empty() {

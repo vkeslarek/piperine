@@ -141,14 +141,15 @@ impl Elaboration<'_, '_> {
                     Some(self.ir_constant(value, &ty))
                 }
             },
-            // the levels of a `Default` need `encode` run on a value no expression writes: refused by name until phase C
-            // (GAPS L69). A type with no `Default` has none to start at: the carrier takes its value from what drives it
-            None if self.hand_written_encode(decl).is_some() && (frame == 0 || matches!(data.kind, DeclKind::Signal(_))) => {
-                if self.default_initial_value(decl, &ty).is_some() {
-                    self.unsupported(data.file, data.span, "a carrier of a type with a hand-written `Repr` and no initial value");
-                    return None;
+            // a type with a hand-written `Repr` and a `Default` starts at the levels `encode` gives for its default (GN-32 AC 2); a
+            // type with no `Default` has none to start at: the carrier takes its value from what drives it
+            None if let Some((encode, arguments)) = self.hand_written_encode(decl)
+                && (frame == 0 || matches!(data.kind, DeclKind::Signal(_))) =>
+            {
+                match self.default_initial_value(decl, &ty) {
+                    Some(default) => Some(self.encoded_default(encode, &arguments, default)?),
+                    None => None,
                 }
-                None
             }
             None if frame == 0 || matches!(data.kind, DeclKind::Signal(_)) => self.default_initial_value(decl, &ty),
             None => None,
@@ -193,7 +194,7 @@ impl Elaboration<'_, '_> {
                 (None, vec![one; usize::try_from(*length).ok()?])
             }
             // a type with a hand-written `impl Default` starts at what its `default` returns (`Logic<N>`: every level X)
-            (Ty::Struct(nominal), _) if self.impls.has_written_default(ty) => return self.written_default(nominal, stored),
+            (Ty::Struct(nominal) | Ty::Enum(nominal), _) if self.impls.has_written_default(ty) => return self.written_default(ty, nominal, stored),
             (Ty::Struct(Nominal { decl: struct_decl, .. }), ValueType::Struct(id)) if self.types.derives(*struct_decl, "Default") => {
                 let fields: Vec<Ty> = self.types.fields(*struct_decl)?.iter().map(|field| field.ty.clone()).collect();
                 let held = self.type_arena.field_types(*id).to_vec();
@@ -206,8 +207,8 @@ impl Elaboration<'_, '_> {
 
     /// The constant a hand-written `impl Default` gives the struct `nominal`, held as `stored`: the tail of its `default`,
     /// folded for the arguments of the `impl` (`N` of a `Logic<N>`). `None` when the body is no tail expression that folds.
-    fn written_default(&mut self, nominal: &Nominal, stored: &ValueType) -> Option<Constant> {
-        let function = *self.impls.builtin_functions("Default", "default", &Ty::Struct(nominal.clone())).first()?;
+    fn written_default(&mut self, ty: &Ty, nominal: &Nominal, stored: &ValueType) -> Option<Constant> {
+        let function = *self.impls.builtin_functions("Default", "default", ty).first()?;
         let DeclKind::Fn(data) = &self.design.decl_data(function).kind else { return None };
         let body = data.body.clone()?;
         let Some(crate::pom::StmtKind::Expr { expr, semi: false }) = body.stmts.last().map(|stmt| self.design.stmt_node(*stmt).kind.clone()) else { return None };
@@ -221,7 +222,8 @@ impl Elaboration<'_, '_> {
             })
             .collect::<Option<_>>()?;
         let outer = self.consts.set_substitution(self.instance_substitution(function, &arguments));
-        let folded = self.composite_constant(expr, &Bindings::new());
+        // a unit variant of an enum with no field is its tag, no composite
+        let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, &Bindings::new()) } else { self.consts.value(expr, &Bindings::new()) };
         self.consts.set_substitution(outer);
         let value = folded.ok()?;
         Some(self.ir_constant(value, stored))

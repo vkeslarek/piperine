@@ -34,7 +34,7 @@ impl Elaboration<'_, '_> {
 
     /// The constant `value` of the IR's arena as the tree the evaluator reads: the reverse of
     /// `import_tree`. A unit variant of an enum with no field is its tag.
-    fn imported_tree(&self, value: Constant) -> ConstTree {
+    pub(in crate::elab) fn imported_tree(&self, value: Constant) -> ConstTree {
         let Constant::Aggregate(id) = value else { return ConstTree::Scalar(value) };
         let data = self.ir.aggregate_at(id);
         let parts: Vec<ConstTree> = data.parts.iter().map(|part| self.imported_tree(*part)).collect();

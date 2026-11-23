@@ -247,9 +247,9 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `a_carrier_of_a_hand_written_type_starts_at_its_default_levels` passes under `**Run srcgen**`
-- [ ] `gaps_drops_l69` passes under `**Run docs**`
-- [ ] Gate check passes: Full (last task of batch B9)
+- [x] `a_carrier_of_a_hand_written_type_starts_at_its_default_levels` passes under `**Run srcgen**`
+- [x] `gaps_drops_l69` passes under `**Run docs**`
+- [x] Gate check passes: Full (last task of batch B9)
 
 **Tests**: integration
 **Gate**: full
@@ -917,7 +917,26 @@ Proof: run docs | test gaps_drops_the_cast_and_same_intrinsics ... ok
 
 The phase's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none yet. Planning (2026-11-23): the defaults of design-c.md DC1 to DC7.
+**Settled mid-build:** Planning (2026-11-23): the defaults of design-c.md DC1 to DC7. Batch B9 (T53 to T58, 2026-11-23):
+(1) `encode`/`decode` at `f64`, signed integers and every derived layout are `Expr::LevelCast` to/from `[bool; WIDTH]`
+(`elab/levels.rs`); `bool` and unsigned integers keep their inline shift/mask form. `T::WIDTH` of a derived layout is folded
+by `Types::repr_levels` (a new public method; hand-written widths are read from the `impl`).
+(2) **Spec amendment, E0701 retired.** `cast` is the generic function of `std/values.msl`, so a width mismatch is the false
+`where A::WIDTH == B::WIDTH` of the instantiation: `E0127` naming `cast::<A, B>` (part VII 22.1.3 rule 2 amended, the
+`E0701` row removed, `spec_text.rs` RETIRED_CODES gains it, GAPS section 10 note). `Length::fits` no longer rejects two
+`T::WIDTH` of different parameters at a definition: the `SameLength` obligation compares them at the instantiation, and a
+`where` is discharged under the instance's substitution.
+(3) Gaps found and fixed on the way (each in the task that needed it): a generic function returning an `Option` runs per
+instance (T55); a block-like statement before the tail of an `Option` function (a `for` in `decode`) was dropped (T57);
+`rt::Carried` no longer requires `Default` (`[bool; 64]` is carried; `Carried::zeroed()` unpacks a `None` payload), and
+tuples and arrays judge a tag inside (`try_from_levels`) (T54, T55); an instance name with a tuple or array argument spells
+as one Rust identifier (`Text::spelled_cased`, T54); the const evaluator runs `x.encode()` at scalars (T57).
+(4) A hand-written `Repr` on a generic type writes its signature as `[bool; 2 * T::WIDTH]`: `T::WIDTH` and expressions over it
+are accepted as written lengths and deferred to the instantiation (checker `width_parameter_of`); T63 generalizes const
+expressions in written types. A carrier of such a type still needs an initial value or a `Default` (`u8` has none).
+(5) A carrier with a `Default` and no initial value starts at `encode(default)` (a unit enum with an `impl Default` included).
+(6) Pre-existing, not mine: `cargo build ... --all-targets` prints one warning, `associated function run is never used`, in
+`tests/book` (`book_types`).
 **Dispatched:** none yet.
 **Walked:** none yet.
 

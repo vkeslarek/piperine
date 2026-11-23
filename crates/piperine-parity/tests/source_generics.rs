@@ -267,6 +267,12 @@ impl Count {
         let gray = self.n ^ (self.n >> 1);
         [gray & 1 == 1, gray & 2 == 2]
     }
+
+    /// `decode` of the model: the Gray code read back, `Some` for every pattern of the two levels.
+    fn decode(levels: [bool; 2]) -> Option<Count> {
+        let gray = u8::from(levels[0]) + 2 * u8::from(levels[1]);
+        Some(Count { n: gray ^ (gray >> 1) })
+    }
 }
 
 /// The byte of a carrier of a hand-written layout: level `k` is bit `k` (the narrowest unsigned integer of the levels).
@@ -605,4 +611,14 @@ fn a_generic_hand_written_repr_is_carried_with_its_layout() {
     // `back` is `T::decode(x.encode())` at `Pair<u8>`: the two functions are inverses
     let back = SwappedPair { a: 3u8, b: 5u8 };
     RUN.assert_commits("pair_repr.msl", &["re", "rf"], &[CarrierBytes::byte(back.a), CarrierBytes::byte(back.b)]);
+}
+
+#[test]
+fn a_carrier_of_a_hand_written_type_starts_at_its_default_levels() {
+    // GN-32 AC 2 (§3.3.4): `Bit<Count>` and `Bit<Phase>` write no initial value, so each starts at the levels `encode` gives for
+    // `Default::default()` of its type: the Gray code of 2, whose `decode` reads 2 back, and the one-hot level of `C`
+    let count = Count { n: 2 };
+    let start = Count::decode(count.encode()).map_or(0, |count| count.n);
+    let one_hot = Phase::decode(Phase::C.encode()).map_or(0, |phase| u8::from(phase == Phase::C));
+    RUN.assert_commits("default_levels.msl", &["n", "is_c"], &[CarrierBytes::byte(start), CarrierBytes::byte(one_hot)]);
 }
