@@ -164,3 +164,39 @@ fn exp_and_logarithms_match_the_reference_vectors_bit_for_bit() {
     comparison.check_unary("log2", Float128::log2);
     comparison.check_unary("log10", Float128::log10);
 }
+
+/// Compares the two-argument functions with their vector files.
+impl VectorComparison {
+    /// Checks `powf` on every row of `powf.tsv` and the `exact.tsv` rows of that name.
+    fn check_power(&self) {
+        let mut rows = 0;
+        for (x, y, expected) in self.vectors.binary("powf") {
+            let actual = Float128::from_bits(x).powf(Float128::from_bits(y));
+            assert!(Self::same(expected, actual), "powf({x:#034x}, {y:#034x}): expected {expected:#034x}, got {:#034x}", actual.to_bits());
+            rows += 1;
+        }
+        for row in self.vectors.exact().iter().filter(|row| row.function == "powf") {
+            let y = row.y.as_deref().and_then(ReferenceVectors::bits).unwrap_or(0);
+            let actual = Float128::from_bits(row.x).powf(Float128::from_bits(y));
+            assert!(Self::same(row.expected, actual), "exact powf({:#034x}, {y:#034x}): expected {:#034x}, got {:#034x}", row.x, row.expected, actual.to_bits());
+            rows += 1;
+        }
+        for (x, exponent, expected) in self.vectors.integer_power() {
+            let actual = Float128::from_bits(x).powi(exponent);
+            assert!(Self::same(expected, actual), "powi({x:#034x}, {exponent}): expected {expected:#034x}, got {:#034x}", actual.to_bits());
+            rows += 1;
+        }
+        for row in self.vectors.exact().iter().filter(|row| row.function == "powi") {
+            let exponent: i32 = row.y.as_deref().and_then(|text| text.parse().ok()).unwrap_or(0);
+            let actual = Float128::from_bits(row.x).powi(exponent);
+            assert!(Self::same(row.expected, actual), "exact powi({:#034x}, {exponent}): expected {:#034x}, got {:#034x}", row.x, row.expected, actual.to_bits());
+            rows += 1;
+        }
+        assert!(rows >= 4_000, "only {rows} power rows compared");
+    }
+}
+
+#[test]
+fn powers_match_the_reference_vectors_bit_for_bit() {
+    VectorComparison::committed().check_power();
+}

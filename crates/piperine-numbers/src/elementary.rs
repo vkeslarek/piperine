@@ -22,12 +22,19 @@ impl ElementaryFunctions {
         leading - precision as i64 - 8
     }
 
-    /// `x` clamped into `[-EXPONENT_LIMIT, EXPONENT_LIMIT]` (an `exp` beyond it is infinity or zero anyway).
+    /// `x` with each bound clamped into `[-EXPONENT_LIMIT, EXPONENT_LIMIT]` (an `exp` beyond it is infinity or zero anyway).
     fn clamped(x: &Interval) -> Interval {
         let limit = MultiPrecision::from_integer(false, Self::EXPONENT_LIMIT as u64);
-        let lower = if x.lower().compare(&limit.negated()) == std::cmp::Ordering::Less { limit.negated() } else { x.lower().clone() };
-        let upper = if x.upper().compare(&limit) == std::cmp::Ordering::Greater { limit } else { x.upper().clone() };
-        Interval::new(lower, upper, x.precision())
+        let clamp = |bound: &MultiPrecision| {
+            if bound.compare(&limit) == std::cmp::Ordering::Greater {
+                limit.clone()
+            } else if bound.compare(&limit.negated()) == std::cmp::Ordering::Less {
+                limit.negated()
+            } else {
+                bound.clone()
+            }
+        };
+        Interval::new(clamp(x.lower()), clamp(x.upper()), x.precision())
     }
 
     /// `exp(x)`.
@@ -51,7 +58,10 @@ impl ElementaryFunctions {
         // The omitted tail is at most 3 * |r|^(n+1) / (n+1)!, which is below 3 times the next term.
         let next = term.largest_magnitude().multiply(&radius, precision, Rounding::Up).divide(&MultiPrecision::from_integer(false, index + 1), precision, Rounding::Up)?;
         let tail = next.multiply(&MultiPrecision::from_integer(false, 3), precision, Rounding::Up);
-        Some(sum.add(&Interval::symmetric(&tail, precision)).scaled(reduced.steps))
+        let enclosed = sum.add(&Interval::symmetric(&tail, precision)).scaled(reduced.steps);
+        // `exp` is positive: a bound dragged below zero by the tail must not round to `-0` (and so disagree with `+0`).
+        let lower = if enclosed.lower().is_negative() { MultiPrecision::zero() } else { enclosed.lower().clone() };
+        Some(Interval::new(lower, enclosed.upper().clone(), precision))
     }
 
     /// `ln(x)` for an interval of positive values.

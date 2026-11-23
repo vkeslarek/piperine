@@ -7,6 +7,7 @@
 use super::constants::ReferenceConstants;
 use super::elementary::ElementaryFunctions;
 use super::limbs::{Limbs, ToLimbs};
+use super::power::ExactPower;
 use super::precision::{Interval, MultiPrecision};
 use super::quad::Float128;
 use super::ziv::ZivRounding;
@@ -69,6 +70,19 @@ impl Evaluation {
 }
 
 impl Float128 {
+    /// Whether the value is an integer, and whether that integer is odd.
+    fn integer_parity(self) -> Option<bool> {
+        let (_, significand, exponent) = super::format::BinaryFormat::QUAD.decode(self.to_bits())?;
+        if significand == 0 {
+            return Some(false);
+        }
+        let low = i64::from(significand.trailing_zeros());
+        if exponent + low < 0 {
+            return None;
+        }
+        Some(exponent + low == 0)
+    }
+
     /// `e^x`, correctly rounded.
     pub fn exp(self) -> Float128 {
         if self.is_nan() {
@@ -126,5 +140,59 @@ impl Float128 {
         }
         let exact = Evaluation::power_of_ten(self).map(|k| Evaluation::integer(false, k));
         Evaluation::logarithm(self, exact, ReferenceConstants::ln_ten)
+    }
+}
+
+impl Float128 {
+    /// `self` raised to `exponent`, correctly rounded, with the special cases of C's `pow` (and
+    /// Rust's `powf`): `x^0 = 1` and `1^y = 1` even for NaN, a negative base with a non-integer
+    /// exponent is NaN (H.2 rule 7), signed zeros and infinities by IEEE 754 section 9.2.1.
+    pub fn powf(self, exponent: Float128) -> Float128 {
+        if exponent.is_zero() || self == Float128::ONE {
+            return Float128::ONE;
+        }
+        if self.is_nan() || exponent.is_nan() {
+            return Float128::NAN;
+        }
+        let parity = exponent.integer_parity();
+        let odd = parity == Some(true);
+        let negative_result = self.is_sign_negative() && odd;
+        if self.is_zero() || self.is_infinite() || exponent.is_infinite() {
+            return self.power_of_extreme(exponent, odd, negative_result);
+        }
+        if self.is_sign_negative() && parity.is_none() {
+            return Float128::NAN;
+        }
+        let magnitude = self.abs();
+        let exact = ExactPower::of(magnitude, exponent);
+        let result = Evaluation::rounded(exact, |precision| {
+            let logarithm = ElementaryFunctions::ln(&Evaluation::point(magnitude, precision)?)?;
+            ElementaryFunctions::exp(&logarithm.multiply(&Evaluation::point(exponent, precision)?))
+        });
+        if negative_result { -result } else { result }
+    }
+
+    /// `self^exponent` when the base is a zero or an infinity or the exponent is infinite.
+    fn power_of_extreme(self, exponent: Float128, odd: bool, negative_result: bool) -> Float128 {
+        let exponent_negative = exponent.is_sign_negative();
+        if self.is_zero() {
+            let magnitude = if exponent_negative { Float128::INFINITY } else { Float128::ZERO };
+            return if negative_result { -magnitude } else { magnitude };
+        }
+        if self.is_infinite() {
+            let magnitude = if exponent_negative { Float128::ZERO } else { Float128::INFINITY };
+            return if self.is_sign_negative() && odd { -magnitude } else { magnitude };
+        }
+        let size = self.abs();
+        if size == Float128::ONE {
+            return Float128::ONE;
+        }
+        let grows = (size > Float128::ONE) != exponent_negative;
+        if grows { Float128::INFINITY } else { Float128::ZERO }
+    }
+
+    /// `self` raised to an `i32`, correctly rounded; the same values as `powf` of that integer.
+    pub fn powi(self, exponent: i32) -> Float128 {
+        self.powf(Evaluation::integer(exponent < 0, u64::from(exponent.unsigned_abs())))
     }
 }

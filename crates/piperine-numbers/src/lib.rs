@@ -17,6 +17,7 @@ pub mod elementary;
 pub mod format;
 pub mod half;
 pub mod limbs;
+pub mod power;
 pub mod precision;
 pub mod quad;
 pub mod reduction;
