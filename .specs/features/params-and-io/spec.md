@@ -412,20 +412,20 @@ with the construct that raises them (A2, A3).
 
 | Requirement ID | Story | Phase | Status |
 | -------------- | ----- | ----- | ------ |
-| PI-01 | P1: a param of any carried type | 9 | Planned (T30–T33, T35) |
-| PI-02 | P1: a param of any carried type | 9 | Planned (T31–T33) |
-| PI-03 | P1: a param of any carried type | 9 | Planned (T31–T33) |
-| PI-04 | P1: a param of any carried type | 5 | Planned (T21, T22) |
-| PI-05 | P1: a param of any carried type | 9 | Planned (T34) |
-| PI-06 | P1: type errors carry spec codes | 2 | Planned (T3–T7) |
-| PI-07 | P1: the host drives every port of the top | 4 | Planned (T16–T20) |
-| PI-08 | P1: a design reads data from files | 6 | Planned (T23, T24, T43) |
-| PI-09 | P1: a design reads data from files | 11 | Planned (T37, T38, T43) |
-| PI-10 | P1: a design reads data from files | 7, 11 | Planned (T27, T39–T42) |
-| PI-11 | P2: the shipped sources are formatted | 7 | Planned (T25, T26) |
-| PI-12 | P1: every error code is raised or owned | 3, 8, 10, 12 | Planned (T8–T15, T29, T36, T44) |
-| PI-13 | P1: every error code is raised or owned | 1, 8, 12 | Planned (T2, T29, T44) |
-| PI-14 | P1: every error code is raised or owned | 7, 12 | Planned (T28, T44) |
+| PI-01 | P1: a param of any carried type | 9 | Done (T30–T33, T35) |
+| PI-02 | P1: a param of any carried type | 9 | Done (T31–T33) |
+| PI-03 | P1: a param of any carried type | 9 | Done (T31–T33) |
+| PI-04 | P1: a param of any carried type | 5 | Done (T21, T22) |
+| PI-05 | P1: a param of any carried type | 9 | Done (T34) |
+| PI-06 | P1: type errors carry spec codes | 2 | Done (T3–T7) |
+| PI-07 | P1: the host drives every port of the top | 4 | Done (T16–T20) |
+| PI-08 | P1: a design reads data from files | 6 | Done (T23, T24, T43) |
+| PI-09 | P1: a design reads data from files | 11 | Done (T37, T38, T43) |
+| PI-10 | P1: a design reads data from files | 7, 11 | Done (T27, T39–T42) |
+| PI-11 | P2: the shipped sources are formatted | 7 | Done (T25, T26) |
+| PI-12 | P1: every error code is raised or owned | 3, 8, 10, 12 | Done (T8–T15, T29, T36, T44) |
+| PI-13 | P1: every error code is raised or owned | 1, 8, 12 | Done (T2, T29, T44) |
+| PI-14 | P1: every error code is raised or owned | 7, 12 | Done (T28, T44) |
 
 **Coverage:** 14 total, 14 mapped to tasks (tasks.md, 44 tasks in 12 phases).
 

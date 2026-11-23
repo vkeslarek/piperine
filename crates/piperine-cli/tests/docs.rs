@@ -597,7 +597,7 @@ fn gaps_no_longer_lists_x5_l20_l39_h12() {
     assert!(gaps.contains(&format!("({} of ", allowed.len())), "the heading counts the listed codes");
     let roadmap = read("ROADMAP.md");
     let row = roadmap.lines().find(|line| line.contains("| `params-and-io` |")).expect("the roadmap has a params-and-io row");
-    assert!(row.contains("B5–B6") && row.contains("composite-values"), "the row says B5 and B6 wait on composite-values: {row}");
+    assert!(row.contains("B5–B6") && row.contains("composite-values") && row.contains("Delivered"), "the row says B1 to B6 are delivered, B5 and B6 on composite-values: {row}");
     let state = read(".specs/STATE.md");
     assert!(state.contains("### MD-75:") && state.contains("`params-and-io`"), "STATE.md holds the decision entry");
 }
@@ -735,5 +735,33 @@ fn gaps_no_longer_lists_l28_or_its_book_rows() {
     assert!(!gaps.lines().any(|line| line.starts_with("| L28 |")), "GAPS.md still has an L28 row");
     for closed in ["| digital#7 |", "| digital#11 |", "| digital#14 |", "| core-std#10 |", "| packages#12 |", "| cheatsheet#10 |", "| L57 |"] {
         assert!(!gaps.lines().any(|line| line.starts_with(closed)), "section 11 still lists {closed}");
+    }
+}
+
+#[test]
+fn gaps_no_longer_lists_this_features_ids() {
+    // params-and-io PI-14 AC 1 (T44): L20, L28, L39, L57, X5 and H12 are gone from `GAPS.md` as entries and rows, with the section 11
+    // rows of the Book listings they held.
+    let gaps = read("GAPS.md");
+    for closed in ["| L20 |", "| L28 |", "| L39 |", "| L57 |", "| H12 |", "- **X5 \u{2014}"] {
+        assert!(!gaps.contains(closed), "{closed} is still in GAPS.md");
+    }
+}
+
+#[test]
+fn gaps_section_10_lists_exactly_the_owned_codes() {
+    // params-and-io PI-14 AC 1 (T44): section 10's list of the codes no source mentions is exactly the rows of `code_owners.tsv`, and its
+    // heading counts them.
+    let gaps = read("GAPS.md");
+    let owners = read("crates/piperine-lang/tests/support/code_owners.tsv");
+    let mut allowed: Vec<&str> = owners.lines().filter(|line| !line.starts_with('#') && !line.is_empty()).filter_map(|line| line.split('\t').next()).collect();
+    allowed.sort_unstable();
+    let listed = gaps.split("**Error codes of the spec that no source file mentions").nth(1).and_then(|s| s.split("by the elaborator.\n`").nth(1)).and_then(|s| s.split('`').next()).expect("section 10 lists the unraised codes");
+    let mut listed: Vec<&str> = listed.split_whitespace().collect();
+    listed.sort_unstable();
+    assert_eq!(listed, allowed, "section 10 lists exactly the rows of code_owners.tsv");
+    assert!(gaps.contains(&format!("({} of ", allowed.len())), "the heading counts the listed codes");
+    for delivered in ["E0614", "E0703", "E0704", "E0705", "E0706"] {
+        assert!(!allowed.contains(&delivered), "{delivered} is raised and is no entry");
     }
 }

@@ -1673,7 +1673,7 @@ merge renumbers.
 
 ### MD-75: params of every carried type; the host drives a top's node through an IR source; files read at elaboration; every spec code raised or owned
 
-`params-and-io` (2026-11-20, batches B1 to B4; B5 and B6 wait on `composite-values` phases A to B). The
+`params-and-io` (2026-11-20, batches B1 to B4; B5 and B6, 2026-11-23, on `composite-values` A to B and `explicit-unknowns` A). The
 number follows MD-74 (`unknown-semantics-events`, merged first).
 
 1. **Every code of the spec is raised or owned.** `crates/piperine-lang/tests/spec_codes.rs` lists every
@@ -1691,10 +1691,21 @@ number follows MD-74 (`unknown-semantics-events`, merged first).
 5. **The shipped sources are in the formatter's form:** the stdlib, `examples/buck` and the gallery
    fences, with `piperine fmt --check` guarding them; Appendix C.2 states the `table_model` spline end
    conditions.
+6. **A param is any value type** (B5, spec §8.1.15): an integer, a unit enum (its tag), an enum with fields
+   or an `Option` (composite pins; an `Option` param no instance binds is `None`, explicit-unknowns EU-06).
+   The host reads a `--param`/`set` text by the param's type (`ParamText`: an integer literal in a radix,
+   a variant name, `None` or a value of `T`; `E0802` otherwise); a composite is set by its leaves. The
+   interpreter refuses every param that is not `f64` or `bool`. A named function called outside its class
+   is `E0122`.
+7. **Files and tables** (B6): `parse_table` and `parse_hex` are intrinsics typed by the `const`'s array
+   type and folded by the evaluator (`E0614`, `E0706`; an `x`/`z` digit is `E0706`, integers hold no
+   unknown); `table_model` lowers to `Expr::Table` over elaboration constants (`E0703`, `E0704`) and runs
+   on `rt::TableModel` (`E0705` outside the table under extrapolation `E`, the host keeping the code).
+   The IR is appended last (D17); the interpreter refuses it by name.
 
 **Scope:** `crates/piperine-lang` (`types/`, `elab/`), `crates/piperine-api`, `crates/piperine-cli`,
 `crates/piperine-parity`, `docs/spec`, `GAPS.md`.
-**Status:** Accepted (2026-11-20), from the approved `.specs/features/params-and-io/design.md`.
+**Status:** Accepted (2026-11-20), from the approved `.specs/features/params-and-io/design.md`; delivered, B1 to B6 (2026-11-23).
 
 ### MD-76: pure value semantics: no reference, no move, no mutability marker
 
