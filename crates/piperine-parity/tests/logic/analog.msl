@@ -1,0 +1,23 @@
+//! A `Logic` carrier read by `analog` through a function that returns an `f64` or a `bool` (§3.3.6): `to_volts(1.8)` for the
+//! level of each state and `is_high()` for a gate. The expected voltages are written in `source_logic.rs`.
+
+/// Forces `p` to the volts of the level `x` holds.
+module Level(p: Electrical, in x: Bit<Logic>) {}
+analog for Level { v(p) +> x.to_volts(1.8); }
+
+/// Forces `q` to 2 when `x` is high and to 0 when it is anything else.
+module Gate(q: Electrical, in x: Bit<Logic>) {}
+analog for Gate { v(q) +> if x.is_high() { 2.0 } else { 0.0 }; }
+
+module Bench() {
+    signal lit: Electrical; signal dark: Electrical; signal unknown: Electrical; signal floating: Electrical;
+    signal gate_on: Electrical; signal gate_off: Electrical; signal gate_unknown: Electrical;
+    signal high: Bit<Logic> = Logic::H; signal low: Bit<Logic> = Logic::L; signal never: Bit<Logic>; signal open: Bit<Logic> = Logic::Z;
+    let l0 = Level(lit, high);
+    let l1 = Level(dark, low);
+    let l2 = Level(unknown, never);
+    let l3 = Level(floating, open);
+    let g0 = Gate(gate_on, high);
+    let g1 = Gate(gate_off, low);
+    let g2 = Gate(gate_unknown, never);
+}

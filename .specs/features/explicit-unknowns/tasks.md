@@ -1067,9 +1067,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] The `**Build**` line and `cargo test` at the root pass
-- [ ] The Handoff names the units
-- [ ] Gate check passes: Build
+- [x] The `**Build**` line and `cargo test` at the root pass
+- [x] The Handoff names the units
+- [x] Gate check passes: Build
 
 **Tests**: none
 **Gate**: build
@@ -1089,9 +1089,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `types_operators::control_refuses_a_logic_and_an_option`, `analog_refuses_a_bare_logic`, `arithmetic_and_ordering_refuse_a_logic`, `deriving_partial_eq_over_a_logic_is_e0187` pass (against a test-local four-state struct until T44)
-- [ ] `cargo test -p piperine-lang` passes
-- [ ] Gate check passes: Full
+- [x] `types_operators::control_refuses_a_logic_and_an_option`, `analog_refuses_a_bare_logic`, `arithmetic_and_ordering_refuse_a_logic`, `deriving_partial_eq_over_a_logic_is_e0187` pass (against a test-local four-state struct until T44)
+- [x] `cargo test -p piperine-lang` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1111,8 +1111,8 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] A source test in `source_logic.rs` (created here) runs a test-local struct with `impl BitAnd` and reads the result
-- [ ] Gate check passes: Full
+- [x] A source test in `source_logic.rs` (created here) runs a test-local struct with `impl BitAnd` and reads the result
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1132,11 +1132,11 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `types_operators::logic_is_compiled_from_the_library_source` passes
-- [ ] `source_logic::logic_lays_out_two_planes` and `at_gives_the_state_of_one_level` pass
-- [ ] `types_explicit::the_types_that_have_a_default` gains the `Logic<N>` case
-- [ ] `std_excerpts` and `std_library` pass
-- [ ] Gate check passes: Full
+- [x] `types_operators::logic_is_compiled_from_the_library_source` passes
+- [x] `source_logic::logic_lays_out_two_planes` and `at_gives_the_state_of_one_level` pass
+- [x] `types_explicit::the_types_that_have_a_default` gains the `Logic<N>` case
+- [x] `std_excerpts` and `std_library` pass
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1156,9 +1156,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `source_logic::logic_reads_a_four_state_pattern` passes
-- [ ] `GAPS.md` L68 (`Logic<N>`, `logic`, `matches_bits`) is closed
-- [ ] Gate check passes: Full
+- [x] `source_logic::logic_reads_a_four_state_pattern` passes
+- [ ] `GAPS.md` L68 (`Logic<N>`, `logic`, `matches_bits`) is closed (moved to T47: the Book's `values#18` waits for the host's `Logic` cell, and the row names L68 until then)
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1178,8 +1178,8 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] Every `source_logic` test that `## Checks` assigns to T46 passes
-- [ ] Gate check passes: Full
+- [x] Every `source_logic` test that `## Checks` assigns to T46 passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1199,9 +1199,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `run::a_logic_cell_prints_its_pattern` passes
-- [ ] `layouts::a_logic_pin_is_two_planes` passes
-- [ ] Gate check passes: Full
+- [x] `run::a_logic_cell_prints_its_pattern` passes
+- [x] `layouts::a_logic_pin_is_two_planes` passes
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
@@ -1221,10 +1221,10 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] `cast` and `same` compile from `std/values.msl`; `Intrinsic::Cast` and `Intrinsic::Same` are gone from the tree
-- [ ] All `book_*` targets pass
-- [ ] `twins::every_twin_matches_its_golden` and both integrated suites pass
-- [ ] Gate check passes: Batch
+- [x] `cast` and `same` compile from `std/values.msl`; `Intrinsic::Cast` and `Intrinsic::Same` are gone from the tree: **handed to `generics` phase C, batch B9, T55 of its `tasks-c.md`, right after its L70 task** (user's ruling, 2026-11-23, finding 54): that batch removes `Intrinsic::{Cast, Same}`, `lower_cast` and the checker's own `cast` and `same`, and adds the differential test of the stdlib source against the lowering. `std/values.msl` already holds the source; `GAPS.md` L58 and L70 name B9. T48 closes with this hand-off recorded
+- [x] All `book_*` targets pass
+- [x] `twins::every_twin_matches_its_golden` and both integrated suites pass
+- [x] Gate check passes: Batch
 
 **Tests**: integration
 **Gate**: full
@@ -1443,8 +1443,10 @@ Proof: run abicontract | test the_host_has_one_commit ... ok
 **C68** - An `Option<u8>` pin is a `BOOL` presence field then `U8` (EU-16, AC 4; T36)
 Proof: run plan | test an_option_carrier_pin_is_presence_then_payload ... ok
 
-**C69** - A `Logic<4>` pin is two `U8` fields, `binary` at 0 and `value` at 1, size 2, align 1; `Logic<64>` is size 16, align 8 (EU-16, AC 5; T47)
-Proof: run abi | test a_logic_pin_is_two_planes ... ok
+**C69** - A `Logic<4>` pin is two `U8` fields, `binary` at 0 and `value` at 1, size 2, align 1; `Logic<64>` is size 16, align 1 as the plan lays it (EU-16, AC 5 as amended 2026-11-23; T47)
+Proof: run logic | test the_plan_lays_a_logic_pin_as_two_planes ... ok
+
+*Amendment of the check (finding 59, 2026-11-23): the text said align 8 before the AC's amendment to the packed composite; the plan's layout is its proof. `layouts::a_logic_pin_is_two_planes` keeps the abi's own validity rule.*
 
 **C70** - A drive pin is the driven type's layout then `driving: BOOL`; 0 leaves the drive out of the resolver (EU-16, AC 6; T37)
 Proof: run relax | test a_drive_pin_ends_with_a_plain_driving_byte ... ok
@@ -1565,6 +1567,19 @@ The feature's live state, written as it happens - a compaction gives no warning.
   - **T39.** The renderers have no unknown arm; an absent `Option` prints `None` (table, record line), `null` (JSON Lines) or an empty `value` leaf (CSV). An `emit!` field of type `Option` is outside the M1 subset ("an expression the type checker gave no value type"): the record forms are held by the render unit tests.
   - **T40.** `GAPS.md`: S8, L64 and L65 removed (1 silent, 2 broken, 28 loud); G.72 says the implementation meets the item in every layer and names `Logic<N>` (phase B, L58) and `Resolve` (`resolved-nets`, L21); `docs.rs::gaps_closes_s6_and_tracks_the_flag` replaces `gaps_closes_s6_and_g6_by_the_redesign`; the `E0511` row left `code_owners.tsv` (a source raises it); MD-78's status line says phase A is delivered. The Book rows of the T40 list were all flipped by their own tasks (T20, T21, T22, T30, T38); T40 re-checked each against `inventory.tsv`.
   - **Gate (B7), 2026-11-22.** `env -u PIPERINE_NGSPICE cargo test --workspace --exclude piperine-lang-server --no-fail-fast`: 314 targets, every one `ok` after one fix commit. The first run was red in five targets, all of one cause (a top `in` port with no initial value now refuses the run, E0187): `book_analog`, `book_digital`, `book_mixed`, `book_modules` and `host_ii`; their wrapped tops give the port a first value and only those five targets were rerun. The integrated suites, `piperine-cli --test twins`, `piperine-parity --test twins`, the buck (`piperine-cli --test buck`, every `buck_*` target of `piperine-parity`) and the parity tests against ngspice ran in the workspace run (ngspice present: the only SKIP lines are the two skip-line tests). The Build line is clean (zero warnings). Twin goldens and `contract.rs` did not move.
+
+**T41 (B8, 2026-11-23): rebase and re-read at `origin/main` `2fda3089`** (generics A and B, MD-81, are on `main`; the branch was reset to `origin/main`, nothing unmerged). Where an operator is typed today: `Types::binary` and the `UnOp::Not` arm of `infer_kind` in `crates/piperine-lang/src/types/expr.rs` (built-in operands only; `==`/`!=` on a struct or enum only through the derived `PartialEq`, `require_trait`); the elaborator lowers them in `elab/lower.rs` and `elab/compound.rs` (`Pair`, compound assignment). The generics units T42 extends: `ImplTable` (`types/traits.rs`: `implementing`, `visible`, `implementation`), the checker's `Callee::Method` / `Callee::Bound` resolution (`types/methods.rs`, `types/call.rs`), and the elaborator's `lower_method_call` / `lower_bound_call` (generics T35 and T36). Findings: `PartialEq`, `Default`, `Repr` are `Resolution::Builtin` traits and `ImplTable::entry` indexes a builtin trait `impl` only for `Repr`; `BitAnd`, `BitOr`, `BitXor`, `Not`, `Shl`, `Shr` and `From` are not in `BUILTINS` (`pom/builtin.rs`), so T42 adds them (the `From` row empties `SPEC_TRAITS_AHEAD_OF_THE_TABLE`).
+
+- **Delivered (batch B8, T41 to T48, 2026-11-23; phase B).** Settled defaults and amendments a later task starts from:
+  - **Operator traits (T42, T43).** `From`, `BitAnd`, `BitOr`, `BitXor`, `Not`, `Shl`, `Shr` are built-in rows (appended to `BUILTINS`, so no id moved); `ImplTable` indexes an `impl` of any of them, `PartialEq` and `Default` (`builtin_trait`), `types/operators.rs` picks the one `impl` by the left type and the right operand's type, `E0180` when none, `E0187` for two with one `Rhs` (`coherence.rs`), a signature check per built-in trait (`builtin_impl_rules`). A function of an `impl` brings its `impl` into the check (`reach`). A derived `PartialEq` over a field whose `==` is not a `bool` is `E0187` naming the field. The elaborator lowers the operator as the call of that function (`Callee::Method` on the operator's expression; a compound assignment through the binary form).
+  - **Generic-width integers (T44).** `UInt<N>`/`Int<N>` with a const parameter or expression is `Ty::GenericInteger`; `Substitution::apply` makes it `UInt(n)`/`Int(n)`. `ImplTarget::Integer { signed }` is `impl .. for UInt<N>`. An associated function of a generic `impl` (`Logic::from(b)`) reads the `impl` arguments from its arguments and the expected type (`types/associated.rs`), recorded as the instantiation of the `impl`; `Logic::from` picks the `From` `impl` by the argument's type.
+  - **Amendments to the specification text (T44), each with its reason.** (1) `Logic::X` and `Logic::Z` are constants of the one-level `impl Logic` (with `L` and `H`), not of `impl<const N: usize> Logic<N>`: a constant of a generic `impl` read as `Logic::X` has no type to infer `N` from without inference variables, so a wider all-X value is `Logic::default()`, whose body writes `Logic { binary: 0, value: 0 }`. (2) `Shl` and `Shr` are written with `!(!self.binary << k)` (the shifted-in levels of `binary` are 1) because a `let top = !(!0 >> k)` types its `0` as `i32`. (3) The mixed forms are written in full in the fences (they are the file's text). (4) `std_excerpts` lets a section map to several files (`values.msl` and `logic.msl` hold §22.1); the Sources table has a `std::logic` row; `std_library` counts ten namespaces and the prelude's nine re-exports. The Index maps §22.1.1 and §22.1.2 to `logic`.
+  - **The earlier strength struct of `nets` is `Drive` (T44).** `Logic` of `nets` collided with the new `Logic<N>`; it is renamed `Drive` (not `Driven`, so the Book's E0161 refusals of `Driven` and `Resolve` stand until `resolved-nets`); `STD_BEHIND_THE_INDEX` and `STD_BEHIND_THE_BOOK` list it. A hand-written `impl Default` is the carrier's initial value: its `default` tail is folded for the `impl` arguments (`written_default`), and the checker reaches that function when a carrier with no initial value needs it.
+  - **`logic` and `matches_bits` (T45)** stay `extern "intrinsic"` over `Logic<N>`, typed by contract (`Intrinsic::{Logic, MatchesBits}`: `N` from the expected type, the subject or a literal pattern) and lowered to the planes and masks; `x` in a `matches_bits` pattern matches any state, `z` the state Z; `E0702` for another character or a wrong length (literal in the checker, a `str` the front end knows in the elaborator). `same` takes any value with a `Repr` layout (IR typing). An `Option`-returning method lowers as its two halves per `impl` instance (`lower_option_instance_method`). Trait `impl` instances are named by their written self type and trait arguments (`Logic<N>.bitand::<UInt<N>, Logic<N>>::<4>`), read through `ConstEval::written_as_declared`.
+  - **The host cell (T47).** A `Logic<N>` cell (N <= 64) is `Cell::Text` of its N characters; a record field is `Field::Variant` of it (how a text cell becomes a field today). There is no host write path for a `Logic` (no AC asks for one), so the pattern is not parsed on the way in.
+  - **`Logic<100>` (T46)** is refused by name by the front end (`GAPS.md` L13, integers wider than 64 bits): `a_logic_of_a_hundred_levels_is_refused_by_name` asserts the refusal; `Logic<1>`, `<4>`, `<8>`, `<16>` and `<64>` run.
+  - **Not done, with the reason (T48).** `cast` and `same` are still the checker's own intrinsics (`Intrinsic::{Cast, Same}` stay in `types/intrinsic.rs`, `elab/intrinsics.rs`, `lower_cast`): compiling them from `std/values.msl` needs `encode` and `decode` of a derived layout (a `Logic` is a derived struct), which `GAPS.md` L70 owns for `generics` phase C; no differential test is possible until then. `GAPS.md` L58 and L70 say so, and the user ruled (2026-11-23) that the removal of `Intrinsic::{Cast, Same}`, `lower_cast` and the differential test is `generics` phase C batch B9's, right after its L70 task. The fence `impl Bit<Logic>` (§22.1.5) left `AHEAD_OF_STD`: the impl is built (fix round, finding 47). L68 is closed; the Book rows values#18, values~c30bad4d and core-std~6e04c51d run (`tests/book`, inventory and GAPS section 11 follow); natures#2 is re-pinned to its one remaining refusal (the array of carriers, L24, and `Sda`'s `Resolve`, `resolved-nets`).
+  - **Gate (B8), 2026-11-23.** `env -u PIPERINE_NGSPICE cargo test --workspace --exclude piperine-lang-server --no-fail-fast`: 342 targets ok; the `piperine-parity` suite, the buck targets and `buck_scenarios`: see the report. The `**Build**` line is clean.
 
 **Dispatched:** none. **Walked:** none (the verifier of B1 to B3 is the caller's).
 

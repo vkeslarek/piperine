@@ -72,6 +72,11 @@ impl Substitution {
             Ty::Array(element, length) => Ty::Array(Box::new(self.apply(element)), self.apply_length(length)),
             Ty::Range { element, iterable } => Ty::Range { element: Box::new(self.apply(element)), iterable: *iterable },
             Ty::Iterator { element, reversible } => Ty::Iterator { element: Box::new(self.apply(element)), reversible: *reversible },
+            Ty::GenericInteger { signed, width } => match self.apply_term(width) {
+                ConstTerm::Value(n @ 1..=64) if *signed => Ty::Int(n as u8),
+                ConstTerm::Value(n @ 1..=64) => Ty::UInt(n as u8),
+                replaced => Ty::GenericInteger { signed: *signed, width: replaced },
+            },
             Ty::F64 | Ty::Bool | Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::UInt(_) | Ty::Int(_) | Ty::Event | Ty::Str | Ty::Never => ty.clone(),
         }
     }
@@ -160,8 +165,27 @@ impl Checker<'_> {
         let declared = if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) { self.enum_type(decl, file, span) } else { self.struct_type(decl, file, span) };
         declared?;
         self.arguments_have_repr(decl, &arguments, file, span)?;
+        self.fields_fit_integers(decl, &arguments, &substitution, file, span)?;
         let nominal = Nominal { decl, arguments };
         Some(if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) { Ty::Enum(nominal) } else { Ty::Struct(nominal) })
+    }
+
+    /// A field of the generic struct `decl` that is an integer of a width the arguments make wider than 64 bits (`Logic<100>`
+    /// has two `UInt<100>` planes) is `P0001` naming the instance, the field and the width, `GAPS.md` L13: the one
+    /// refusal, rather than the errors a type of no layout would raise after it. `None` after a refusal.
+    pub(super) fn fields_fit_integers(&mut self, decl: DeclId, arguments: &[GenericValue], substitution: &Substitution, file: FileId, span: Span) -> Option<()> {
+        let fields = self.fields_of(decl)?;
+        for field in fields {
+            if let Ty::GenericInteger { width, .. } = &field.ty
+                && let ConstTerm::Value(bits @ 65..) = substitution.apply_term(width)
+            {
+                let name = field.name.as_deref().unwrap_or("a field");
+                let instance = Ty::Struct(Nominal { decl, arguments: arguments.to_vec() }).name(self.design);
+                self.unsupported(file, span, &format!("`{instance}`: its field `{name}` is an integer of {bits} bits, wider than 64 (`GAPS.md` L13)"));
+                return None;
+            }
+        }
+        Some(())
     }
 
     /// Every argument satisfies every bound of its parameter (§3.8.7); one that does not is `E0187`
@@ -237,7 +261,7 @@ impl Checker<'_> {
     }
 
     /// The const parameter a type node spells: `N` in `Delay<u8, N>` reads as a type name.
-    fn const_parameter_named_by(&self, ty: TypeId) -> Option<DeclId> {
+    pub(super) fn const_parameter_named_by(&self, ty: TypeId) -> Option<DeclId> {
         let TypeKind::Path(path) = &self.design.type_node(ty).kind else { return None };
         match self.design.path_node(*path).segments.last().map(|segment| segment.res) {
             Some(Resolution::Decl(decl)) if self.is_const_parameter(decl) => Some(decl),

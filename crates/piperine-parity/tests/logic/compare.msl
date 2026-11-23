@@ -1,0 +1,19 @@
+//! Comparing and deciding on `Logic<4>` (§22.1.2 rule 4, §22.1.4): `==` is a `Logic`, `same` is a `bool`. The expected
+//! values are written in `source_logic.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+module Peek(in clk: Bit, in a: Bit<Logic<4>>, in b: Bit<Logic<4>>) {}
+digital for Peek {
+    on clk.rise() {
+        emit!("compare", eq = a == b, same = same(a, b), sure = (a == b).is_high());
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal b: Bit<Logic<4>>;
+    let osc = Osc(clk);
+    let peek = Peek(clk, logic("1010"), b);
+}

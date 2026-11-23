@@ -178,7 +178,7 @@ fn gaps_drops_what_root_e2e_closed() {
     for raised in ["E0503", "E0504", "E0505", "E0507", "E0508", "E0803", "E0804", "E0805", "E0806"] {
         assert!(!listed.contains(&raised), "{raised} is raised and is listed as unraised");
     }
-    assert!(listed.contains(&"E0123") && listed.contains(&"E0702"), "the list keeps the codes nothing raises");
+    assert!(listed.contains(&"E0123") && listed.contains(&"E0807") && !listed.contains(&"E0702"), "the list keeps the codes nothing raises, and E0702 is raised since T45");
 }
 
 #[test]
@@ -305,12 +305,12 @@ fn gaps_drops_what_msl_fixes_closed() {
     // phase A (L5, L6, L10) and L63 to 35, `Pfd3` (L51: its event reads ran, its assignment now does) to 34, `resolved-nets` (L22, L23) to 32, and `value-semantics` closed S7 (the spec amendment had added it)
     // and `composite-values` phase B (L1, L2, L3, L16) to 28, L64 (an unknown composite carrier read) to 29, L65 (a flag read on an `Option`) to 30; L66 (a `match` whose value is an `Option`) was found and closed by `composite-values` itself;
     // `explicit-unknowns` replaced S6 by S8 (still 2 silent), and its phase A closed S8 and L64 and L65: 1 silent, 28 loud; the split of L68 from L58 (explicit-unknowns phase B owns it) makes 29; `params-and-io` B5 closed L28 (integer, enum and `Option` params) and B6 L57 (files and tables): 27
-    assert!(gaps.contains("1 silent, 2 broken, 25 loud"), "the counts of §9 follow");
+    assert!(gaps.contains("1 silent, 2 broken, 25 loud"), "the counts of §9 follow (25 loud since L71, the host write of a `Logic`, was recorded by `explicit-unknowns`)");
     let rows = |section: &str, next: &str| gaps.split(section).nth(1).and_then(|s| s.split(next).next()).expect("a section").lines().filter(|l| l.starts_with("### ")).count();
     assert_eq!(rows("## 3. Silent", "## 4."), 1, "one silent entry");
     assert_eq!(rows("## 2. Broken", "## 3."), 2, "two broken entries");
     let loud = gaps.split("## 4. Loud").nth(1).and_then(|s| s.split("## 5.").next()).expect("section 4");
-    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 25, "twenty-five loud rows (L68, `Logic`, `logic` and `matches_bits`, was split from L58; L28 and L57 closed by `params-and-io`; `generics` closed L4, L7, L8 and L9 and found L69 and L70)");
+    assert_eq!(loud.lines().filter(|l| l.starts_with("| L")).count(), 25, "twenty-five loud rows (L71, the host write of a `Logic`, was found by `explicit-unknowns`; L68, `Logic`, `logic` and `matches_bits`, was split from L58 and closed by `explicit-unknowns` phase B; L28 and L57 closed by `params-and-io`; `generics` closed L4, L7, L8 and L9 and found L69 and L70)");
 }
 
 #[test]
@@ -410,8 +410,8 @@ fn abi_md_describes_the_unreleased_contract() {
 fn gaps_closes_s6_and_tracks_the_flag() {
     // EU-19 AC 2 (T40; replaces `gaps_closes_s6_and_g6_by_the_redesign`): L18 and L19 stay closed;
     // S6 and G6 closed with the redesign of `explicit-unknowns`; S8, which said the implementation
-    // still carries the known flag, closed when phase A landed, and so did L64 and L65. The phase B
-    // rows of the Book point at L68 (`Logic`, `logic` and `matches_bits`, split from L58).
+    // still carries the known flag, closed when phase A landed, and so did L64 and L65. Phase B closed L68
+    // (`Logic`, `logic` and `matches_bits`, split from L58).
     let gaps = read("GAPS.md");
     for closed in ["L18", "L19"] {
         assert!(!gaps.lines().any(|l| l.starts_with(&format!("| {closed} |"))), "{closed} is still a row");
@@ -427,8 +427,10 @@ fn gaps_closes_s6_and_tracks_the_flag() {
         assert!(!gaps.lines().any(|l| l.starts_with(&format!("| {closed} |"))), "{closed} is still a row");
     }
     assert!(gaps.contains("S6, S8 and G6 closed by `explicit-unknowns`") || gaps.contains("(S6 and S8 closed by `explicit-unknowns`)"), "the closures are recorded");
-    let logic = gaps.lines().filter(|l| l.starts_with("| values#18 |") || l.starts_with("| core-std~6e04c51d |")).collect::<Vec<_>>();
-    assert!(logic.len() == 2 && logic.iter().all(|l| l.contains("| L68 |")), "the phase B rows point at L68, owned by `explicit-unknowns` phase B: {logic:?}");
+    // phase B (T45, T47): L68 is closed and no row of section 11 names it, since every listing it held runs
+    assert!(!gaps.lines().any(|l| l.starts_with("| L68 |")), "L68 is closed by phase B");
+    let logic = gaps.lines().filter(|l| l.starts_with("| values#18 |") || l.starts_with("| values~c30bad4d |") || l.starts_with("| core-std~6e04c51d |")).collect::<Vec<_>>();
+    assert!(logic.is_empty(), "the three Book rows of phase B run and are no row of section 11: {logic:?}");
     let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("GAPS.md has a section 9");
     let row = coverage.lines().find(|l| l.starts_with("| I §3–§3.3 ")).expect("the coverage row of §3.3");
     assert!(!row.contains("`level`"), "the coverage row still lists `level` as a gap: {row}");

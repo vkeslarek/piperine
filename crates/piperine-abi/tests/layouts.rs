@@ -89,3 +89,21 @@ fn validate_layout(layout: &Layout<'_>) -> Result<(), String> {
     let frozen = shape.freeze();
     validate(frozen.shape()).map_err(|e| e.to_string())
 }
+
+#[test]
+fn a_logic_pin_is_two_planes() {
+    // EU-16 AC 5 (explicit-unknowns T47, C69): a pin of `Logic<N>` is two fields, `binary` at offset 0 and `value` at the size of
+    // `UInt<N>`, each with the leaf of `UInt<N>`, the whole twice that size and packed (alignment 1, the composite rule; coordinator ruling
+    // 2026-11-23). `Logic<4>` is two `U8` fields of size 2; `Logic<64>` two `U64` of size 16; both are valid layouts
+    let narrow = [field("binary", leaf::U8, 0, 1), field("value", leaf::U8, 1, 1)];
+    let wide = [field("binary", leaf::U64, 0, 1), field("value", leaf::U64, 8, 1)];
+    let (four, sixty_four) = (layout(2, 1, &narrow), layout(16, 1, &wide));
+    assert_eq!((four.size, four.align), (2, 1));
+    assert_eq!(fields_of(&four), [("binary".to_string(), leaf::U8, 0, 1), ("value".to_string(), leaf::U8, 1, 1)]);
+    assert_eq!((sixty_four.size, sixty_four.align), (16, 1));
+    assert_eq!(fields_of(&sixty_four), [("binary".to_string(), leaf::U64, 0, 1), ("value".to_string(), leaf::U64, 8, 1)]);
+    for pin in [&four, &sixty_four] {
+        assert_eq!(validate_layout(pin), Ok(()), "a plane pair is a valid layout of size {}", pin.size);
+    }
+    assert!(!layout_eq(&four, &sixty_four), "two widths are two layouts");
+}

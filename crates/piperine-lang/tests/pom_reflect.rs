@@ -43,8 +43,8 @@ fn nature_impls_lists_its_impl_blocks() {
     let src = "impl Electrical { pub fn one(self) -> f64 { 1.0 } }\nimpl Electrical { pub fn two(self) -> f64 { 2.0 } }\n";
     let design = with_prelude(src);
     assert_eq!(design.nature("Electrical").unwrap().impls().len(), 2);
-    // `std` writes one `impl Bit`: the edges of §22.1.5 (`high` left with the flag methods, explicit-unknowns T29)
-    assert_eq!(design.nature("Bit").unwrap().impls().len(), 1);
+    // `std` writes two `impl Bit`: the edges of a `Bit` of `bool` and of a `Bit<Logic>` (§22.1.5)
+    assert_eq!(design.nature("Bit").unwrap().impls().len(), 2);
     assert!(design.nature("Wire").unwrap().impls().is_empty());
 }
 

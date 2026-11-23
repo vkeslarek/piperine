@@ -14,6 +14,10 @@ use super::Ty;
 /// Whether a type satisfies a bound: what a blanket `impl` asks of the type it may apply to.
 pub type BoundOracle<'a> = &'a mut dyn FnMut(&Ty, &Bound) -> bool;
 
+/// The built-in traits (no declaration) a project may write an `impl` of: `Repr` (§2), the operator traits
+/// (Appendix H.10), `From`, `PartialEq` and `Default` (H.8). Their `impl`s are indexed with the trait's name.
+const IMPLEMENTABLE_BUILTIN_TRAITS: [&str; 10] = ["Repr", "BitAnd", "BitOr", "BitXor", "Not", "Shl", "Shr", "PartialEq", "From", "Default"];
+
 /// What an `impl` is written for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImplTarget {
@@ -21,6 +25,8 @@ pub enum ImplTarget {
     Declared(DeclId),
     /// A built-in scalar or `str` (`impl Describe for f64`).
     Primitive(Ty),
+    /// `UInt<N>` (`signed` false) or `Int<N>` (`signed` true) of any width: `impl<const N: usize> BitAnd<Logic<N>, Logic<N>> for UInt<N>`.
+    Integer { signed: bool },
     /// Every type that satisfies these bounds (`impl<T: Repr> Known for T`).
     Blanket(Vec<Bound>),
     /// A type the table does not index (a tuple, an array, an unresolved name).
@@ -72,6 +78,34 @@ impl<'d> ImplTable<'d> {
     pub fn defines_method(&self, name: &str, is_std: impl Fn(DeclId) -> bool) -> bool {
         let owners = self.impls.iter().map(|entry| entry.decl).chain(self.traits.iter().copied());
         owners.filter(|owner| !is_std(*owner)).any(|owner| self.design.decl_data(owner).children.iter().any(|child| matches!(self.design.decl_data(*child).kind, DeclKind::Fn(_)) && self.design.decl_data(*child).name.as_ref().is_some_and(|n| n.text == name)))
+    }
+
+    /// The functions called `function` of the `impl`s of the built-in trait `trait_name` that are written for `ty`
+    /// (`impl BitAnd for Logic`), in declaration order. A blanket `impl` is not asked.
+    pub fn builtin_functions(&self, trait_name: &str, function: &str, ty: &Ty) -> Vec<DeclId> {
+        let entries = self.impls.iter().filter(|entry| entry.builtin_trait == Some(trait_name) && !matches!(entry.target, ImplTarget::Blanket(_)) && self.targets(entry, ty));
+        entries.filter_map(|entry| self.item(entry.decl, function)).collect()
+    }
+
+    /// Whether a project's `impl PartialEq` for `ty` is the plain `PartialEq<Self, bool>` (H.8): its `Rhs` is the
+    /// type itself (or left out) and its `Out` is `bool` (or left out). The derived `==` of a struct holding `ty`
+    /// is defined only then.
+    pub fn has_plain_partial_eq(&self, ty: &Ty) -> bool {
+        let names = |argument: &TypeId, expected: &str| matches!(self.design.type_resolution(*argument), Resolution::Builtin(id) if id.info().name == expected);
+        let is_self = |entry: &ImplEntry, argument: &TypeId| match (&entry.target, self.design.type_resolution(*argument)) {
+            (ImplTarget::Declared(own), Resolution::Decl(named)) => *own == named,
+            _ => false,
+        };
+        self.impls.iter().filter(|entry| entry.builtin_trait == Some("PartialEq") && self.targets(entry, ty)).any(|entry| {
+            let rhs_is_self = entry.trait_arguments.first().is_none_or(|rhs| is_self(entry, rhs));
+            let out_is_bool = entry.trait_arguments.get(1).is_none_or(|out| names(out, "bool"));
+            rhs_is_self && out_is_bool
+        })
+    }
+
+    /// Whether a project's `impl Default for ty` exists (H.8).
+    pub fn has_written_default(&self, ty: &Ty) -> bool {
+        !self.builtin_functions("Default", "default", ty).is_empty()
     }
 
     /// The traits of the design, in declaration order.
@@ -173,6 +207,7 @@ impl<'d> ImplTable<'d> {
             (ImplTarget::Blanket(bounds), other) | (other, ImplTarget::Blanket(bounds)) => self.representative(other).is_some_and(|ty| bounds.iter().all(|bound| oracle(&ty, bound))),
             (ImplTarget::Declared(first), ImplTarget::Declared(second)) => first == second,
             (ImplTarget::Primitive(first), ImplTarget::Primitive(second)) => first == second,
+            (ImplTarget::Integer { signed: first }, ImplTarget::Integer { signed: second }) => first == second,
             _ => false,
         }
     }
@@ -186,6 +221,7 @@ impl<'d> ImplTable<'d> {
                 _ => Ty::structure(*decl),
             }),
             ImplTarget::Primitive(ty) => Some(ty.clone()),
+            ImplTarget::Integer { signed } => Some(if *signed { Ty::Int(1) } else { Ty::UInt(1) }),
             ImplTarget::Blanket(_) | ImplTarget::Other => None,
         }
     }
@@ -206,6 +242,8 @@ impl<'d> ImplTable<'d> {
             (ImplTarget::Declared(decl), Ty::Node(nature)) => nature == decl,
             (ImplTarget::Declared(decl), Ty::Carrier { nature, value }) => nature == decl && entry.carried.as_ref().is_none_or(|carried| carried == &**value),
             (ImplTarget::Primitive(primitive), other) => primitive == other,
+            (ImplTarget::Integer { signed: false }, Ty::UInt(_) | Ty::GenericInteger { signed: false, .. }) => true,
+            (ImplTarget::Integer { signed: true }, Ty::Int(_) | Ty::GenericInteger { signed: true, .. }) => true,
             (ImplTarget::Blanket(_), _) => true,
             _ => false,
         }
@@ -225,13 +263,15 @@ impl<'d> ImplTable<'d> {
         let (trait_decl, trait_arguments, builtin_trait) = match data.trait_ {
             Some(path) => {
                 let segment = design.path_node(path).segments.last()?;
-                if matches!(segment.res, Resolution::Builtin(id) if id.info().name == "Repr") {
-                    return Some(ImplEntry { decl, trait_decl: None, trait_arguments: Vec::new(), builtin_trait: Some("Repr"), target: Self::target(design, decl, data.self_ty), carried: Self::carried(design, data.self_ty) });
-                }
                 let arguments = match &segment.args {
                     Some(GenericArgsNode::Angle { args, .. }) => args.iter().filter_map(|arg| if let GenericArgNode::Type(ty) = arg { Some(*ty) } else { None }).collect(),
                     _ => Vec::new(),
                 };
+                if let Resolution::Builtin(id) = segment.res
+                    && let Some(name) = IMPLEMENTABLE_BUILTIN_TRAITS.iter().copied().find(|name| *name == id.info().name)
+                {
+                    return Some(ImplEntry { decl, trait_decl: None, trait_arguments: arguments, builtin_trait: Some(name), target: Self::target(design, decl, data.self_ty), carried: Self::carried(design, data.self_ty) });
+                }
                 match segment.res {
                     Resolution::Decl(trait_decl) if matches!(design.decl_data(trait_decl).kind, DeclKind::Trait(_)) => (Some(trait_decl), arguments, None),
                     _ => return None,
@@ -280,6 +320,8 @@ impl<'d> ImplTable<'d> {
                 ("str", _) => ImplTarget::Primitive(Ty::Str),
                 ("uN", Some(width)) => u8::try_from(width).map_or(ImplTarget::Other, |width| ImplTarget::Primitive(Ty::UInt(width))),
                 ("iN", Some(width)) => u8::try_from(width).map_or(ImplTarget::Other, |width| ImplTarget::Primitive(Ty::Int(width))),
+                ("UInt", _) => ImplTarget::Integer { signed: false },
+                ("Int", _) => ImplTarget::Integer { signed: true },
                 ("usize", _) => ImplTarget::Primitive(Ty::UInt(64)),
                 ("isize", _) => ImplTarget::Primitive(Ty::Int(64)),
                 _ => ImplTarget::Other,

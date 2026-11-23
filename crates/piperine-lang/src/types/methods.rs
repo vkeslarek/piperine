@@ -55,7 +55,7 @@ impl Checker<'_> {
         let signature = self.generic_signature(owner);
         let mut inference = Inference::new(&signature);
         inference.unify(own, recv_ty);
-        let substitution = self.complete_arguments(&mut inference, &signature, owner, file, span)?;
+        let substitution = self.complete_arguments(&mut inference, &signature, owner, function, file, span)?;
         // the call is an instantiation of the `impl`: the elaborator instantiates the method with its arguments (T35)
         let arguments = signature.parameters().iter().filter_map(|parameter| substitution.get(parameter.decl).cloned()).collect();
         self.instantiations.insert(call, Instantiation { item: owner, arguments });

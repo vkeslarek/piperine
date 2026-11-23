@@ -700,3 +700,30 @@ fn param_of_an_integer_from_the_command_line_reads_from_the_start() {
         assert!(text(&refused.stderr).contains("E0802") && text(&refused.stderr).contains("l.n") && text(&refused.stderr).contains(bad), "{bad}: {}", text(&refused.stderr));
     }
 }
+
+/// A design whose carrier `l` holds a `Logic<4>` that starts at `xxxx` and takes `10xz` at the first rising edge of a clock,
+/// and a record that writes two four-state values.
+const LOGICS: &str = "pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }\ndigital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }\n\
+module Logger(in clk: Bit, out l: Bit<Logic<4>>) {}\n\
+digital for Logger {\n    on clk.rise() {\n        l <- logic(\"10xz\");\n        emit!(\"sample\", w = logic(\"10xz\"), n = Logic::from(0b0110u4));\n    }\n}\n\
+module Top() {\n    signal clk: Bit;\n    signal l: Bit<Logic<4>>;\n    let osc = Osc(clk) { f: 200M };\n    let logger = Logger(clk, l);\n}\n";
+
+#[test]
+fn a_logic_cell_prints_its_pattern() {
+    // EU-15 AC 4 (explicit-unknowns T47, C63): a `Logic<4>` cell is its four characters of `0`, `1`, `x`, `z`, highest level
+    // first, in the text table (`xxxx` before the commit, `10xz` after), the record line and JSON Lines, and CSV
+    let dir = written(&[("bench.msl", LOGICS)]);
+    let args = ["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "l"];
+    let stdout = stdout_of(&piperine_in(dir.path(), shared_cache(), &args));
+    let table: Vec<&str> = stdout.lines().skip_while(|l| !l.starts_with("time")).collect();
+    assert!(table.get(1).is_some_and(|row| row.ends_with("xxxx")), "the first row holds the initial `xxxx`: {table:?}");
+    assert!(table.iter().rev().find(|row| !row.is_empty()).is_some_and(|row| row.ends_with("10xz")), "the last row holds the committed pattern: {table:?}");
+    let record = stdout.lines().find(|l| l.contains(" sample ")).unwrap_or_else(|| panic!("no record in\n{stdout}"));
+    assert!(record.contains("w=10xz") && record.contains("n=0110"), "the record line: {record}");
+    piperine_in(dir.path(), shared_cache(), &["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "l", "--csv", "out.csv", "--records", "out.jsonl"]);
+    let json = std::fs::read_to_string(dir.path().join("out.jsonl")).expect("out.jsonl");
+    let line = json.lines().next().unwrap_or_else(|| panic!("no JSON line"));
+    assert!(line.contains("\"w\":\"10xz\"") && line.contains("\"n\":\"0110\""), "the JSON line: {line}");
+    let csv = std::fs::read_to_string(dir.path().join("out.csv")).expect("out.csv");
+    assert!(csv.lines().last().is_some_and(|row| row.ends_with(",10xz")), "the last CSV row: {csv}");
+}

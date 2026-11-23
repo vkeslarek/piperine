@@ -247,6 +247,12 @@ impl<'d, 't> ConstEval<'d, 't> {
         self.types.local(binding).map(|ty| self.resolved(ty))
     }
 
+    /// The type written at `ty` as the checker typed it, under no substitution: what names an instance the same way
+    /// wherever it is asked (`impl_qualified_name`).
+    pub(super) fn written_as_declared(&self, ty: TypeId) -> Option<Ty> {
+        self.types.written(ty).cloned()
+    }
+
     /// The type the type node `ty` writes under the substitution.
     pub(super) fn typed_written(&self, ty: TypeId) -> Option<Ty> {
         self.types.written(ty).map(|ty| self.resolved(ty))

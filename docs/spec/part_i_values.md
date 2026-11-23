@@ -856,7 +856,7 @@ pub trait Repr {
   receives that `None`; no carrier is changed by it ([§3.3.9](#33-uncertainty-and-absence)).
 - **§2 rule 10.** A hand-written `encode` or `decode` is an ordinary function. It has no rule
   of its own.
-- **§2 rule 11.** In the byte form of a value, all-zero bytes are the bytes of `Logic::X`, of
+- **§2 rule 11.** In the byte form of a value, all-zero bytes are the bytes of `Logic::default()` (every level X; `Logic::X` at one level), of
   `None` and of the `Default` of every derived type that has one.
 
 **Errors**
@@ -1249,7 +1249,7 @@ module Demo(in clk: Bit) {
 digital for Demo {
     on clk.rise() {
         if en { last <- Some(1); }        // `if` takes a bool: one path runs
-        if same(bus, Logic::X) { en <- true; }  // a Logic decides through a function
+        if same(bus, Logic::default()) { en <- true; }  // a Logic decides through a function
         match last {
             Some(v) => { last <- Some(v + 1); }
             None => {}

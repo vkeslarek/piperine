@@ -1,0 +1,3 @@
+//! A pattern has one character per level (§22.1.4 rule 2): three characters have no place in a `Logic<4>`, so the pattern is `E0702`.
+
+module Bench() { signal a: Bit<Logic<4>> = logic("101"); }

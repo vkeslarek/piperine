@@ -105,6 +105,13 @@ pub const BUILTINS: &[BuiltinInfo] = &[
     row("prev", BuiltinKind::Method, "§14.12"),
     row("others", BuiltinKind::Method, "§14.12"),
     row("inflow", BuiltinKind::Method, "§14.1"),
+    row("From", BuiltinKind::Trait, "App. H"),
+    row("BitAnd", BuiltinKind::Trait, "App. H"),
+    row("BitOr", BuiltinKind::Trait, "App. H"),
+    row("BitXor", BuiltinKind::Trait, "App. H"),
+    row("Not", BuiltinKind::Trait, "App. H"),
+    row("Shl", BuiltinKind::Trait, "App. H"),
+    row("Shr", BuiltinKind::Trait, "App. H"),
 ];
 
 /// An entry of the built-in table. The low byte is the row of [`BUILTINS`];

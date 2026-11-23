@@ -475,6 +475,10 @@ impl Checker<'_> {
                 _ => false,
             };
             let Some(Ty::Carrier { nature, value }) = self.carriers.get(&decl).cloned() else { continue };
+            // a carrier with no initial value starts at its `Default`: a hand-written one is a function the elaborator folds
+            if !self.has_initial(decl) {
+                self.reach_written_defaults(&value);
+            }
             if !is_carrier || self.has_initial(decl) || !NatureRules::of(self.design, nature).one_driver || self.implements(&value, DerivedTrait::Default) {
                 continue;
             }
@@ -537,6 +541,28 @@ impl Checker<'_> {
                 let file = self.file_of_expr(expr);
                 self.coded(file, "E0352", node.span, "a bound param value places no instance: a result is not fixed during a solve (§8.3.4)".to_string(), "placement in a bound param value");
             }
+        }
+    }
+}
+
+impl Checker<'_> {
+    /// Brings every hand-written `impl Default` the default of `ty` reads into the check: the `default` function of a struct
+    /// that writes one, and of the structs, tuples and arrays holding such a struct.
+    fn reach_written_defaults(&mut self, ty: &Ty) {
+        match ty {
+            Ty::Struct(nominal) => {
+                let table = std::rc::Rc::clone(&self.impls);
+                if let Some(function) = table.builtin_functions("Default", "default", ty).first() {
+                    self.reach(*function);
+                } else if self.derives(nominal.decl, "Default") {
+                    let substitution = self.nominal_substitution(nominal);
+                    let fields: Vec<Ty> = self.fields_of(nominal.decl).unwrap_or_default().into_iter().map(|field| self.substitute(&substitution, &field.ty)).collect();
+                    fields.iter().for_each(|field| self.reach_written_defaults(field));
+                }
+            }
+            Ty::Tuple(items) => items.iter().for_each(|item| self.reach_written_defaults(item)),
+            Ty::Array(element, _) => self.reach_written_defaults(element),
+            _ => {}
         }
     }
 }

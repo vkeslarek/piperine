@@ -3,6 +3,8 @@
 pub use crate::constants::*;
 pub use crate::carriers::*;
 pub use crate::values::*;
+
+pub use crate::logic::*;
 pub use crate::analog::*;
 pub use crate::nets::*;
 pub use crate::convert::*;

@@ -133,9 +133,10 @@ impl Typing {
         }
     }
 
-    /// `same(a, b)`: two values of one base type; a plain `bool` (§22.1.4).
+    /// `same(a, b)`: two values of one type that has a `Repr` layout, compared level by level (a `Logic` included); a
+    /// plain `bool` (§22.1.4).
     pub(crate) fn same(a: &ValueType, b: &ValueType) -> Option<ValueType> {
-        let fits = Typing::scalar(a) && a == b;
+        let fits = Typing::laid_out(a) && a == b;
         fits.then_some(ValueType::Bool)
     }
 
