@@ -22,16 +22,16 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 1 silent, 2 broken, 29 loud (L1 to L68 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the two `params-and-io` (L20, L39) and the nine `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63, L66), the two `resolved-nets` rows (L22, L23) and the two `explicit-unknowns` rows (L64, L65) closed, S8 closed by `explicit-unknowns` phase A, L9 narrowed to its `generics` part and L4 to generic enums, in six tables) plus
+**Counts.** 1 silent, 2 broken, 26 loud (L1 to L68 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the two `params-and-io` (L20, L39) and the nine `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63, L66), the two `resolved-nets` rows (L22, L23) and the two `explicit-unknowns` rows (L64, L65) closed, S8 closed by `explicit-unknowns` phase A, L4, L7 and L9 closed by `generics` phase A, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 9 unproven.
 
 | Section | Ids |
 | ------- | --- |
 | §2 Broken | B3, B4 |
-| §3 Silent (read this first) | S3 (S6 and S8 closed by `explicit-unknowns`) |
-| §4 Loud | L1–L68 (L64 and L65 closed by `explicit-unknowns`; L11, L14, L15, L17, L18, L19, L20, L39, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L22, L23 closed; L9 and L4 narrowed; L64 to L66 found by `composite-values`; L68 split from L58) |
-| §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X1, X2, X6 (X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
+| §3 Silent (read this first) | S3, for generic modules (S6 and S8 closed by `explicit-unknowns`) |
+| §4 Loud | L1–L68 (L64 and L65 closed by `explicit-unknowns`; L11, L14, L15, L17, L18, L19, L20, L39, L41, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L22, L23 closed; L4, L7 and L9 closed by `generics` phase A; L64 to L66 found by `composite-values`; L68 split from L58) |
+| §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X1, X2 (X6 decided by `generics`; X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
 | §6 Solver, numerics, performance | V13, V16 (V12 closed by `transient-performance`) |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
 | §8 Unproven | U1–U11 (U5, U10 closed by `root-e2e`) |
@@ -74,16 +74,16 @@ change of the IR or the ABI.
 
 ## 3. Silent — accepted, then wrong or ignored
 
-### S3. The type checker does not check a generic body — size M
+### S3. The type checker does not check a generic module's body — size S
 
 - **What.** `Types::check_model` types every module, function, `const` and `impl` function of
   every crate but `std`, reached from a top or not, and `piperine check`, `build` and `run` fail
-  alike on an error in any of them. A generic item is the one thing it leaves out: its body is
-  checked per Q1 (c) with X6, and until then reaching it is `P0001`, so
-  `fn id<T>(x: T) -> T { x + 1 }` passes `piperine check` when nothing calls it.
-- **Impact.** `check` is green for a library whose generic item cannot compile.
-- Generic items need an instantiation to check (X6).
-
+  alike on an error in any of them. A generic function, and a method of a generic `impl`, are
+  checked once at the definition against their bounds (Q1 (c), X6 decided). A generic module is the
+  one item it leaves out: reaching it is `P0001`, so `module Hold<T: Repr>(..) { .. }` with an error
+  in its body passes `piperine check` when nothing places it. Phase C of `generics` (GN-13)
+  checks it.
+- **Impact.** `check` is green for a library whose generic module cannot compile.
 ---
 
 ## 4. Loud — refused, though the spec allows it
@@ -97,10 +97,7 @@ quotes the text after `P0001:` unless another code is shown.
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L4 | generic enums (`enum Tagged<T> { .. }`; §2: every other enum, a payload enum, `#[repr(uN)]`, explicit discriminants and an enum of one variant, is a value type, and the one a carrier holds derives `Repr`) | §2 rules 2, 5 | `generic enum` | `generics` GN-06 |
-| L7 | generic functions, `self` parameters, `impl` on a value type, user traits | §3 rule 9, §3.1 | `generic function`, `generic parameter used as a type` | L, with L30 |
 | L8 | `impl` on a nature (other than the stdlib's `impl Bit`); a function that takes a carrier or a node and probes it (a handle) | §3.1, §3 rule 7 | `method mv`; `E0450: a probe is allowed in an analog block and a module body only` | M |
-| L9 | a capturing closure passed to a user `fn` parameter (it needs an `Fn` bound: `generics` GN-01) | §3 rule 3 | `P0001` naming the form | with L7 |
 | L12 | `extern "C" fn`, `#[derivative]` | §3 rules 2, 10, 11 | `extern function` | M |
 | L13 | `f16`, `f32`, `f128`; integers wider than 64 bits | §1 rule 5 | `type f32`; `integer type u128` | M |
 
@@ -219,8 +216,6 @@ G1 to G5 are the buck's (`examples/buck/GAPS.md`; G6, unknown integers per value
 - **X2 — Appendix C.2.3 and G.38 say "nothing is executed".** Of the conformance set,
   `transition` runs; `zi_nd`, `inertial` and `Tran` are refused; the §15.1 trace has no test from
   source.
-- **X6 — what `check` owes a library.** Is a generic body checked once against its bounds, or per
-  instantiation only (§3 rule 9 reads as the latter)? S3 depends on the answer.
 
 ---
 
@@ -308,12 +303,12 @@ does not count.
 | Part | Runs | Biggest holes |
 | ---- | ---- | ------------- |
 | I §1–§2 values, `Repr` | 60 % | floats other than `f64`, widths over 64, generic enums; `let mut`, assignment, patterns, structs, tuples, arrays and payload enums run |
-| I §3–§3.3 functions, calls, uncertainty and absence | 45 % | generics, `impl`, traits, handles; loops, recursion, closures, function values, arrays, composites and the level reads run |
-| I §3.4–§3.6 files, crates, packages | 97 % | the check of an unreached generic item (S3) |
+| I §3–§3.3 functions, calls, uncertainty and absence | 45 % | handles; generic functions, `impl`, traits, loops, recursion, closures, function values, arrays, composites and the level reads run |
+| I §3.4–§3.6 files, crates, packages | 97 % | the check of an unreached generic module (S3) |
 | II §4–§5 natures, discrete carriers | 40 % | `Resolve`, arrays, user discrete natures, initial values by `Default` run (`explicit-unknowns` phase A) |
 | II §6 nodes, probes | 85 % | signal-flow |
 | II §7 bundles | 0 % | all |
-| III §8–§8.2 modules, ports, params, the body | 60 % | generics, generation, params that are not `f64` or `bool` |
+| III §8–§8.2 modules, ports, params, the body | 60 % | generic modules, generation, params that are not `f64` or `bool` |
 | III §8.3 instances in expressions | 70 % | generic results, the stdlib `idt` and `Water` (L40) |
 | III §8.4–§8.5 templates, `m`/`dtemp`, extern | 0 % | all |
 | IV §10–§11 analog | 70 % | the §18 `Diode` (L40), an ideal-step `slew` (L60) |
@@ -359,8 +354,8 @@ E0702 E0703 E0704 E0705 E0706 E0807 E0808 E0809`
 | `set` and params | H5, L28, L29, H4 | M |
 | Analog structure (delivered, MD-71) | what is left of L40: the stdlib `idt` and `Water` after `generics`, the §18 `Diode` after `params-and-io` | S |
 | Analog operators | L43, L44, L45, L49, H2 (`Noise`) | M to L |
-| Composite values | L24, L57, and L4 for generic enums (phases A and B closed L1 to L3, L5, L6, L10, L16 and the part of L9 that is not `generics`; MD-79) | L |
-| Generics and generation | L7, L30, L31, L32, S3 for generic items: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
+| Composite values | L24, L57 (phases A and B closed L1 to L3, L5, L6, L10, L16 and the part of L9 that is not `generics`; MD-79) | L |
+| Generics and generation (phase A delivered: L4, L7, L9, X6) | L8, L30, L31, L32, S3 for generic modules: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
 | Resolved nets and bundles | L21, L25: natures that implement `Resolve`, `Tribuf`, `Tran`, `Bidir` | L |
 | Unknown semantics | L53, L8 (L18 and L19 closed by `unknown-semantics`; L51 and L52 by `unknown-semantics-events`; S6, S8 and G6 closed by `explicit-unknowns`; its phase B is `Logic<N>`, L68) | L |
 | Host II (delivered in part by `host-ii`) | H1, H3, H6, H9, then B4 (Python) | L |

@@ -469,3 +469,13 @@ fn m_and_dtemp_bound_in_a_param_block_stay_refused_until_phase_d() {
     let found = LaterPhases::found(src);
     assert!(found.iter().any(|(code, message)| code == "E0320" && message == "no param `m` in `Resistor`"), "{found:?}");
 }
+
+#[test]
+fn an_unreached_method_of_a_generic_impl_is_checked_at_its_definition() {
+    // S3 / GN-07 (Q1 (c)): the whole-model check seeds a method of a generic `impl` as it seeds a generic function, so an
+    // error in one nothing reaches is reported where it is written
+    let src = "struct Pair<T> { a: T, b: T }\nimpl<T> Pair<T> { fn wrong(self) -> bool { 1.0 } }\n";
+    let codes = GenericSources::standard_codes(src);
+    assert!(!codes.is_empty() && codes.iter().all(|code| code != "P0001"), "{codes:?}");
+    assert!(GenericSources::standard_codes("struct Pair<T> { a: T, b: T }\nimpl<T> Pair<T> { fn first(self) -> T { self.a } }\n").is_empty());
+}

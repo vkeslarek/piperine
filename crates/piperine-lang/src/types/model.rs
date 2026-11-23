@@ -36,8 +36,8 @@ impl<'d> ModelCheck<'d> {
 
     /// Whether `decl` is a module, a function or a `const` of a crate but `std`, outside a trait
     /// (a trait function has no body to check), outside every generic item other than itself (a
-    /// generic function is checked once at its definition, Q1 (c); a generic module, struct or
-    /// enum is not, until their own tasks).
+    /// generic function or a method of a generic `impl` is checked once at its definition, Q1 (c); a generic
+    /// module, struct or enum is not, until their own tasks).
     fn is_seed(&self, decl: DeclId) -> bool {
         let data = self.design.decl_data(decl);
         // an `impl` is held to the declaration rules of §3.1 whatever its generics
@@ -48,16 +48,13 @@ impl<'d> ModelCheck<'d> {
         is_item && !Decl::new(self.design, decl).krate().is_std() && !self.is_generic_beyond_a_function(decl) && !data.parent.is_some_and(|p| matches!(self.design.decl_data(p).kind, DeclKind::Trait(_)))
     }
 
-    /// Whether an enclosing item of `decl` writes a `<..>` list, or `decl` does and is not a function.
+    /// Whether `decl` is a generic module, struct or enum, or sits inside one: those wait for their own phase. A
+    /// generic function, and a method of a generic `impl`, are checked once at the definition (Q1 (c)).
     fn is_generic_beyond_a_function(&self, decl: DeclId) -> bool {
-        let own = self.design.decl_data(decl);
-        if own.generics_span.is_some() && !matches!(own.kind, DeclKind::Fn(_)) {
-            return true;
-        }
-        let mut at = own.parent;
+        let mut at = Some(decl);
         while let Some(current) = at {
             let data = self.design.decl_data(current);
-            if data.generics_span.is_some() {
+            if data.generics_span.is_some() && matches!(data.kind, DeclKind::Module(_) | DeclKind::Struct(_) | DeclKind::Enum(_)) {
                 return true;
             }
             at = data.parent;

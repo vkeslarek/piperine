@@ -1069,8 +1069,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `gaps_drops_what_generics_phase_a_closed` passes under `**Run docs**`
-- [ ] Gate check passes: Build
+- [x] `gaps_drops_what_generics_phase_a_closed` passes under `**Run docs**`
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build
@@ -1485,3 +1485,5 @@ Execution is strictly sequential - there is no intra-phase parallelism. A single
 | B8 | 12 | T49 to T52 | closes phase B (L8) and records the `MD-` entry; `unknown-semantics-events` may then start |
 
 **Later batch boundaries (not tasked here):** phases C, D and E (GN-13 to GN-28, ROADMAP item 11) run after `composite-values` phase C, from `design-c.md`/`design-d.md`/`design-e.md` and their tasks files (design.md "Phases C, D and E").
+
+**Phases C, D and E must be tasked and delivered before spec-closure (coordinator, 2026-11-23).** They are not tasked here only because this file stops at phase B; the feature is not closed, and `validate_verification.py` must not be run, until `design-c.md`, `design-d.md` and `design-e.md` and their tasks files exist and are done. Items that wait on them and are recorded in `GAPS.md` or the Book: **phase C** generic modules, generation, templates and placement through a template (L30, L31, L32, S3 for generic modules, GN-13 to GN-23), the const-context array repeat that reads a const generic argument (`consts/composite.rs`, GN-14), a generic type with a hand-written `Repr`, a carrier of a hand-written type with no initializer, two impls of one trait that differ only by the trait's arguments chosen at run time through a bound (GN-04 AC 5, GN-16 and GN-21 where a module type takes trait impls); **phase D** `m` and `dtemp` bound in a param block and read as names (L29, Book row `modules~1faf8c12`, GN-26 AC 3, landing with `params-and-io` on `main`); **phase E** the L58 stdlib group (GN-27, GN-28).
