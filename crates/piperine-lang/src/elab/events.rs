@@ -273,9 +273,9 @@ impl Elaboration<'_, '_> {
                     let module = self.frames[frame].module;
                     let DeclKind::Module(m) = &self.design.decl_data(module).kind else { return None };
                     let result = m.result?;
-                    let outer = std::mem::replace(&mut scope.frame, frame);
+                    let entry = self.enter_frame(scope, frame);
                     let lowered = self.disjuncts(scope, result);
-                    scope.frame = outer;
+                    self.leave_frame(scope, entry);
                     lowered
                 }
                 _ => {

@@ -174,6 +174,51 @@ fn an_array_length_read_from_a_param_makes_it_structural() {
 }
 
 #[test]
+fn an_array_whose_length_reads_a_param_reads_and_writes_whole() {
+    // CV-36 AC 1 and CV-24 AC 1 (QC2, QC5): the length folds per body variant wherever the type is read, so the whole
+    // read of `in d: [Bit<u8>; n]`, the value array `[1; n]` of a reaction and `[1.0; n]` of `analog` all elaborate,
+    // each variant with the length of its own `n`
+    let src = "module Wide(in d: [Bit<u8>; n], in clk: Bit, out q: Bit<u8> = 0) { n: u32 = 3; signal bl: [Electrical; n]; }\n\
+               digital for Wide { on clk.rise() { let w = d; let ones: [u8; n] = [1; n]; q <- w[0] + ones[1]; } }\n\
+               analog for Wide { let zeros: [f64; n] = [1.0; n]; let first = zeros[0]; }\n\
+               module Top() { signal d: [Bit<u8>; 5]; signal clk: Bit = false; signal q: Bit<u8>; signal d3: [Bit<u8>; 3]; signal q3: Bit<u8>; let w = Wide { n: 5 }(d, clk, q); let v = Wide(d3, clk, q3); }";
+    let ir = Elab::ir(src, "Top");
+    assert!(ir.bodies().any(|b| b.name().starts_with("Wide~n=")), "the variant of n = 5 is a body");
+    assert_eq!(ir.bodies().filter(|b| b.name().starts_with("Wide")).count(), 2, "the default n = 3 is a body of its own");
+    let found = Elab::run(&src.replace("[1; n]", "[1; m]"), "Top").expect_err("a length that reads no param");
+    assert!(!found.is_empty(), "a repeat count that reads nothing is an error: {:?}", Elab::codes(&found));
+}
+
+#[test]
+fn an_argument_of_another_length_than_a_param_length_is_e0313_at_elaboration() {
+    // CV-23 AC 3 (§8.1.10): `Child(in d: [Bit<u8>; n])` with n = 3 given 4 elements is E0313 naming both lengths when
+    // the design elaborates, not an error of the bind; the same for an array of nodes; a matching length elaborates
+    let child = "module Child(in d: [Bit<u8>; n], e: [Electrical; n + 1]) { n: u32 = 3; }\n";
+    let top = |given: u32, nodes: u32| format!("{child}module Top() {{ signal s: [Bit<u8>; {given}]; signal bl: [Electrical; {nodes}]; let c = Child(s, bl); }}");
+    Elab::ir(&top(3, 4), "Top");
+    for (given, nodes, found_length, wanted_length) in [(4, 4, "[4]", "[3]"), (3, 5, "[5]", "[4]")] {
+        let found = Elab::run(&top(given, nodes), "Top").expect_err("a length that is not the port's");
+        let mismatch = found.iter().find(|d| d.diagnostic.code == "E0313").unwrap_or_else(|| panic!("E0313 expected: {:?}", Elab::codes(&found)));
+        assert!(mismatch.diagnostic.message.contains(found_length) && mismatch.diagnostic.message.contains(wanted_length), "both lengths are named: {}", mismatch.diagnostic.message);
+    }
+    // the port's length follows the placement's own `n`
+    Elab::ir(&format!("{child}module Top() {{ signal s: [Bit<u8>; 5]; signal bl: [Electrical; 6]; let c = Child {{ n: 5 }}(s, bl); }}"), "Top");
+}
+
+#[test]
+fn a_negative_array_length_from_a_param_is_e0104_naming_it() {
+    // §1.2.3 (a length is known and not negative): `n = -1` makes `[Bit; n]` a panic of the const expression, E0104
+    // (§1 rule 11, §3.9.7), naming the length - not P0001, which would call it a missing feature
+    for (declared, what) in [("signal s: [Bit; n];", "carriers"), ("signal s: [Electrical; n];", "nodes")] {
+        let src = format!("module Top() {{ n: i32 = -1; {declared} }}");
+        let found = Elab::run(&src, "Top").expect_err("a negative length");
+        let negative = found.iter().find(|d| d.diagnostic.code == "E0104").unwrap_or_else(|| panic!("E0104 expected: {:?}", Elab::codes(&found)));
+        assert!(negative.diagnostic.message.contains("-1") && negative.diagnostic.message.contains(what), "{}", negative.diagnostic.message);
+        assert!(found.iter().all(|d| d.diagnostic.code != "P0001"), "no missing-feature refusal: {:?}", Elab::codes(&found));
+    }
+}
+
+#[test]
 fn an_element_binds_a_handle_parameter() {
     // GN-11, QC3: `f(lines[k])` binds the handle to that one carrier, so `.prev()` and a read inside `f` are the
     // element's

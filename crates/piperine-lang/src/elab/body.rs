@@ -96,6 +96,7 @@ impl Elaboration<'_, '_> {
         self.structure = Structure::default();
         self.frames = vec![Frame::root(module)];
         self.body_keys = keys.clone();
+        self.consts.set_frame_params(keys.clone());
         self.index_children(module);
         let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
         for (index, param) in params.iter().enumerate() {
@@ -189,6 +190,19 @@ impl Elaboration<'_, '_> {
         bindings
     }
 
+    /// Lowers code of `frame` from here on: `scope` reads its names and the types read its params. The state of the
+    /// frame left comes back with `leave_frame`.
+    pub(super) fn enter_frame(&mut self, scope: &mut Scope, frame: usize) -> FrameEntry {
+        let params = self.frame_bindings(frame);
+        FrameEntry { outer: std::mem::replace(&mut scope.frame, frame), params: self.consts.set_frame_params(params) }
+    }
+
+    /// Back to the frame `entry` left.
+    pub(super) fn leave_frame(&mut self, scope: &mut Scope, entry: FrameEntry) {
+        scope.frame = entry.outer;
+        self.consts.set_frame_params(entry.params);
+    }
+
     /// The nodes of a module, ports first and then signals, each with its nature and initial value,
     /// added to the structure of the body and named in frame 0. A discrete carrier is not a node
     /// (`carriers.rs`).
@@ -266,4 +280,12 @@ impl Elaboration<'_, '_> {
         let node = BodyNode { name: name.clone(), nature, role, init, origin: origin.clone() };
         Some((node, NodePlan { name, role, nature, init, origin }))
     }
+}
+
+/// The frame a lowering left when it entered another (`Elaboration::enter_frame`).
+pub(super) struct FrameEntry {
+    /// The frame `scope` read before.
+    outer: usize,
+    /// The module params the types read before.
+    params: Bindings,
 }

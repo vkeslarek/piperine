@@ -240,6 +240,13 @@ impl Elaboration<'_, '_> {
             Some((_, keys)) => keys,
             None => self.child_key_values(scope, module, &fields, file, node.span)?,
         };
+        let mut shapes_agree = true;
+        for (port, arg) in ports.iter().zip(args) {
+            shapes_agree &= self.check_array_argument(scope, *port, arg.value, &key_values);
+        }
+        if !shapes_agree {
+            return None;
+        }
         let (_, body) = self.request_body(module, &key_values)?;
         let params = given.iter().filter_map(|(index, value, _)| value.map(|v| (*index, v))).collect();
         let origin = self.locator.origin(file, node.span);

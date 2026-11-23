@@ -8,9 +8,20 @@
 
 use piperine_ir::{AggregateData, Constant, NodeArray, ValueType};
 
+use super::consts::Bindings;
 use super::elaborator::Elaboration;
+use super::lower::Scope;
 use crate::pom::{DeclId, ExprId, ExprKind};
 use crate::types::{Length, Ty};
+
+/// Why the length of an array type has no value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum LengthFault {
+    /// The length does not fold to a constant.
+    NotConstant,
+    /// The length folds to this negative number.
+    Negative(i128),
+}
 
 /// The shape of a declared array: its lengths from the outermost level in, and the number of elements they make.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,20 +67,66 @@ impl Elaboration<'_, '_> {
     /// frame's params (§8.1.2, QC2). `None` when a length does not fold.
     pub(super) fn shape_in(&mut self, ty: &Ty, frame: usize) -> Option<ArrayShape> {
         let bindings = self.frame_bindings(frame);
+        self.shape_over(ty, &bindings).ok()
+    }
+
+    /// The shape of the array type `ty` of the declaration `decl` in `frame`, or the diagnostic of why it has none:
+    /// `E0104` for a length that folds to a negative number (§1.2.3 makes a length known and not negative, so a
+    /// panic of the const expression the length is, §1 rule 11), `P0001` naming `what` for one that does not fold.
+    pub(super) fn declared_shape(&mut self, ty: &Ty, frame: usize, decl: DeclId, what: &str) -> Option<ArrayShape> {
+        let bindings = self.frame_bindings(frame);
+        let fault = match self.shape_over(ty, &bindings) {
+            Ok(shape) => return Some(shape),
+            Err(fault) => fault,
+        };
+        let data = self.design.decl_data(decl);
+        let (file, span) = (data.file, data.span);
+        match fault {
+            LengthFault::Negative(length) => {
+                let message = format!("the length of an array of {what} is {length}: a length is known and not negative (§1.2.3)");
+                self.report(file, crate::msl::Diagnostic::new("E0104", message, span, "negative length"));
+            }
+            LengthFault::NotConstant => self.unsupported(file, span, &format!("an array of {what} whose length is not a constant yet")),
+        }
+        None
+    }
+
+    /// The shape of the array type `ty` with the lengths that read params folded over `bindings`. The fault when a length
+    /// does not fold, or folds to a negative number (reported where the length is declared, `declared_shape`).
+    pub(super) fn shape_over(&mut self, ty: &Ty, bindings: &Bindings) -> Result<ArrayShape, LengthFault> {
         let mut dims = Vec::new();
         let mut at = ty;
         while let Ty::Array(element, length) = at {
             dims.push(match length {
                 Length::Fixed(length) => *length,
-                Length::Generic(crate::types::ConstTerm::Expr(expr)) => match self.consts.value(*expr, &bindings) {
-                    Ok(piperine_ir::Constant::Int(count)) => u64::try_from(count).ok()?,
-                    _ => return None,
+                Length::Generic(crate::types::ConstTerm::Expr(expr)) => match self.consts.value(*expr, bindings) {
+                    Ok(piperine_ir::Constant::Int(count)) => u64::try_from(count).map_err(|_| LengthFault::Negative(count))?,
+                    _ => return Err(LengthFault::NotConstant),
                 },
-                Length::Generic(_) => return None,
+                Length::Generic(_) => return Err(LengthFault::NotConstant),
             });
             at = element;
         }
-        Some(ArrayShape { dims })
+        Ok(ArrayShape { dims })
+    }
+
+    /// `E0313` when the array `argument` handed to the array port `port` of a placement is not of the port's shape,
+    /// the port's lengths folded over the placed module's params `keys` (CV-23 AC 3, §8.1.10). A shape that does not
+    /// fold, or an argument that is no declared array, is left to the bind. Whether it reported.
+    pub(super) fn check_array_argument(&mut self, scope: &Scope, port: DeclId, argument: ExprId, keys: &Bindings) -> bool {
+        let Some(wanted) = self.types.carrier_array(port).or_else(|| self.types.node_array(port)).cloned() else { return true };
+        let Some(wanted_shape) = self.shape_over(&wanted, keys).ok() else { return true };
+        let Some(found) = self.typed(argument).filter(|ty| matches!(ty, Ty::Array(..))) else { return true };
+        let Some(found_shape) = self.shape_over(&found, &self.frame_bindings(scope.frame)).ok() else { return true };
+        if found_shape == wanted_shape {
+            return true;
+        }
+        let name = |shape: &ArrayShape| shape.dims.iter().map(|length| format!("[{length}]")).collect::<String>();
+        let message = format!("an array of {} is connected to a port of {}: the lengths or the shape differ (§8.1.10)", name(&found_shape), name(&wanted_shape));
+        let node = self.design.expr_node(argument);
+        let file = self.design.decl_data(node.owner).file;
+        self.report(file, crate::msl::Diagnostic::new("E0313", message, node.span, "another array shape"));
+        false
     }
 
     /// The shape and the innermost value type of the array of carriers `decl` declares; `None` after a diagnostic.
@@ -77,10 +134,7 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(decl);
         let (file, span) = (data.file, data.span);
         let Some(array) = self.types.carrier_array(decl).cloned() else { return None };
-        let Some(shape) = self.shape_in(&array, frame) else {
-            self.unsupported(file, span, "an array of carriers whose length is not a constant yet");
-            return None;
-        };
+        let shape = self.declared_shape(&array, frame, decl, "carriers")?;
         let Ty::Carrier { value, .. } = array.innermost() else { return None };
         match self.stored_type(value) {
             Some(element) => Some((shape, element)),
@@ -122,10 +176,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn add_node_array(&mut self, decl: DeclId, role: piperine_ir::NodeRole, prefix: &str, frame: usize) -> Option<(crate::elab::carrier_arrays::ArrayShape, piperine_ir::Terminal)> {
         let data = self.design.decl_data(decl).clone();
         let array = self.types.node_array(decl).cloned()?;
-        let Some(shape) = self.shape_in(&array, frame) else {
-            self.unsupported(data.file, data.span, "an array of nodes whose length is not a constant yet");
-            return None;
-        };
+        let shape = self.declared_shape(&array, frame, decl, "nodes")?;
         let name = format!("{prefix}{}", data.name.as_ref().map_or("", |n| n.text.as_str()));
         let first = self.structure.nodes.len() as u32;
         let init = match &data.kind {

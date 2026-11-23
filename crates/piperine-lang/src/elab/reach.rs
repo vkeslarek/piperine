@@ -79,9 +79,9 @@ impl Elaboration<'_, '_> {
             },
             _ => {
                 let value = self.body_let_value(item)?;
-                let outer = std::mem::replace(&mut scope.frame, frame);
+                let entry = self.enter_frame(scope, frame);
                 let lowered = self.lower_body_let(scope, value);
-                scope.frame = outer;
+                self.leave_frame(scope, entry);
                 lowered
             }
         }
