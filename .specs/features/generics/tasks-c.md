@@ -204,8 +204,8 @@ T78 → T79 → T80 → T81 → T82
 
 **Done when**:
 
-- [ ] `a_hand_written_repr_on_a_generic_type_is_typed_per_argument` passes under `**Run typestraits**`
-- [ ] Gate check passes: Quick
+- [x] `a_hand_written_repr_on_a_generic_type_is_typed_per_argument` passes under `**Run typestraits**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

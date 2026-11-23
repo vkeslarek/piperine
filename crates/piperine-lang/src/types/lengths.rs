@@ -71,7 +71,8 @@ impl Checker<'_> {
 pub(super) struct IntegerFolder<'d> {
     /// The design the expression is read from.
     pub(super) design: &'d crate::pom::Design,
-    /// The value of each const parameter the expression may name (an instantiation's arguments).
+    /// The value of each const parameter the expression may name (an instantiation's arguments), and the level count
+    /// of each type parameter whose `T::WIDTH` it may name.
     values: std::collections::BTreeMap<DeclId, u128>,
 }
 
@@ -114,6 +115,8 @@ impl IntegerFolder<'_> {
                     _ => None,
                 }
             }
+            // `T::WIDTH` of a type parameter whose level count the folder was given (a hand-written `Repr` on a generic type)
+            ExprKind::Path(path) if let [owner, member] = self.design.path_node(*path).segments.as_slice() && member.name.text == "WIDTH" && let Resolution::Decl(parameter) = owner.res => self.values.get(&parameter).copied(),
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
                     DeclKind::Const(data) => self.fold(data.value?, nesting),

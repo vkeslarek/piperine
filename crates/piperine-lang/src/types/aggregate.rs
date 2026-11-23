@@ -148,6 +148,8 @@ impl Checker<'_> {
     fn generic_length(&mut self, len: ExprId) -> Option<Length> {
         match self.generic_parameter_of(len) {
             Some(parameter) => Some(Length::Generic(ConstTerm::Param(parameter))),
+            // `[bool; T::WIDTH]`: the level count of the type argument, known at the instantiation (§2)
+            None if let Some(parameter) = self.width_parameter_of(len) => Some(Length::Generic(ConstTerm::Width(parameter))),
             None if self.mentions_generic_parameter(len) => {
                 self.defer_constant(len);
                 Some(Length::Generic(ConstTerm::Expr(len)))

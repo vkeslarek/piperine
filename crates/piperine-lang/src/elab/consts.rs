@@ -205,6 +205,8 @@ impl<'d, 't> ConstEval<'d, 't> {
             .entries()
             .filter_map(|(parameter, value)| match value {
                 GenericValue::Const(ConstTerm::Value(count)) => u128::try_from(*count).ok().map(|count| (parameter, count)),
+                // a type argument stands for its level count, which `T::WIDTH` in a length reads (§2)
+                GenericValue::Type(_) => self.parameter_width(parameter).map(|levels| (parameter, u128::from(levels))),
                 _ => None,
             })
             .collect();

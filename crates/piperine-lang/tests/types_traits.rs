@@ -315,3 +315,29 @@ fn a_hand_written_repr_missing_an_item_is_e0187() {
     let wrong = GenericSources::e0187_messages(&format!("{ONE_HOT}fn encode(self) -> [bool; 3] {{ [true, false, false] }} {DECODE} }}\n"));
     assert!(wrong.len() == 1 && wrong[0].contains("`encode` has the type"), "{wrong:?}");
 }
+
+/// A generic `Pair<T>` whose `Repr` is written by hand: two copies of the levels of `T`, so its `WIDTH` is `2 * T::WIDTH`.
+const GENERIC_PAIR: &str = "#[derive(PartialEq)] struct Pair<T> { a: T, b: T }\n\
+    impl<T: Repr> Repr for Pair<T> {\n\
+        const WIDTH: u32 = 2 * T::WIDTH;\n\
+        fn encode(self) -> [bool; 2 * T::WIDTH] { let first = self.a.encode(); let second = self.b.encode(); [false; 2 * T::WIDTH] }\n\
+        fn decode(levels: [bool; 2 * T::WIDTH]) -> Option<Pair<T>> { None }\n\
+    }\n";
+
+#[test]
+fn a_hand_written_repr_on_a_generic_type_is_typed_per_argument() {
+    // GN-32 AC 1 (§2 rule 2, §3.8): `impl<T: Repr> Repr for Pair<T>` is accepted with `T` opaque, and `Pair<u8>`, `Pair<bool>`
+    // and `Pair<f64>` then satisfy `Repr` through their own `WIDTH` (`2 * T::WIDTH`), so each is a carried type
+    let carriers = "module Top() { signal s: Bit<Pair<u8>> = Pair { a: 1u8, b: 2u8 }; signal t: Bit<Pair<bool>> = Pair { a: true, b: false }; signal u: Bit<Pair<f64>> = Pair { a: 1.0, b: 2.0 }; }\n";
+    let items = format!("{GENERIC_PAIR}{carriers}");
+    let design = Design::builder().source("top.msl", format!("{HEAD}{items}")).build();
+    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let checked = piperine_lang::types::Types::check(&design, "Top");
+    assert!(checked.is_ok(), "{:?}", checked.err().map(|found| found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect::<Vec<_>>()));
+    assert_eq!(GenericSources::standard_codes(&items), Vec::<String>::new(), "the whole model checks too");
+    // an argument with no `Repr` leaves the instance without one: E0112, naming the instance
+    let plain = format!("{GENERIC_PAIR}struct Plain {{ x: f64 }}\nmodule Top() {{ signal s: Bit<Pair<Plain>> = Pair {{ a: Plain {{ x: 1.0 }}, b: Plain {{ x: 2.0 }} }}; }}\n");
+    let design = Design::builder().source("top.msl", format!("{HEAD}{plain}")).build();
+    let found = piperine_lang::types::Types::check(&design, "Top").err().expect("Plain has no Repr");
+    assert_eq!(found[0].diagnostic.code, "E0112", "{:?}", found.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
+}

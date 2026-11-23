@@ -188,7 +188,8 @@ impl Elaboration<'_, '_> {
         bindings
     }
 
-    /// The integer const arguments of `instance` by parameter: what an array length folds over.
+    /// The integer const arguments of `instance` by parameter, and the level count of each type argument: what an array
+    /// length folds over.
     fn instance_values(&self, instance: &Instance) -> BTreeMap<DeclId, u128> {
         let signature = GenericSignature::of(self.design, instance.item);
         signature
@@ -197,6 +198,8 @@ impl Elaboration<'_, '_> {
             .zip(&instance.arguments)
             .filter_map(|(parameter, argument)| match argument {
                 ConcreteValue::Const(value) => u128::try_from(*value).ok().map(|value| (parameter.decl, value)),
+                // a type argument stands for its level count, which `T::WIDTH` in a length reads (§2)
+                ConcreteValue::Type(ty) => self.level_count(ty).map(|levels| (parameter.decl, u128::from(levels))),
                 _ => None,
             })
             .collect()

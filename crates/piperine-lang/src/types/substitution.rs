@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 
 use crate::msl::Span;
-use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, LitKind, PathId, Resolution, StmtKind, TypeId, TypeKind, UnOp};
+use crate::pom::{DeclId, DeclKind, ExprId, GenericParamData, ExprKind, FileId, GenericArgNode, GenericArgsNode, LitKind, PathId, Resolution, StmtKind, TypeId, TypeKind, UnOp};
 
 use super::check::Checker;
 use super::bounds::BoundCheck;
@@ -326,10 +326,18 @@ impl Checker<'_> {
         }
     }
 
-    /// Whether the const expression `expr` names a generic parameter anywhere in it.
+    /// The type parameter `T` the const expression `expr` is `T::WIDTH` of (§2), if it is.
+    pub(super) fn width_parameter_of(&self, expr: ExprId) -> Option<DeclId> {
+        let ExprKind::Path(path) = &self.design.expr_node(expr).kind else { return None };
+        let [owner, member] = self.design.path_node(*path).segments.as_slice() else { return None };
+        let Resolution::Decl(parameter) = owner.res else { return None };
+        (member.name.text == "WIDTH" && matches!(self.design.decl_data(parameter).kind, DeclKind::GenericParam(GenericParamData::Type { .. }))).then_some(parameter)
+    }
+
+    /// Whether the const expression `expr` names a generic parameter anywhere in it, or the `WIDTH` of one.
     pub(super) fn mentions_generic_parameter(&self, expr: ExprId) -> bool {
         match &self.design.expr_node(expr).kind {
-            ExprKind::Path(_) => self.generic_parameter_of(expr).is_some(),
+            ExprKind::Path(_) => self.generic_parameter_of(expr).is_some() || self.width_parameter_of(expr).is_some(),
             ExprKind::Paren(inner) | ExprKind::Unary { expr: inner, .. } | ExprKind::Cast { expr: inner, .. } => self.mentions_generic_parameter(*inner),
             ExprKind::Binary { lhs, rhs, .. } => self.mentions_generic_parameter(*lhs) || self.mentions_generic_parameter(*rhs),
             ExprKind::Block(block) => block.stmts.iter().any(|stmt| match &self.design.stmt_node(*stmt).kind {
