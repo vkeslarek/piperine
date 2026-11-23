@@ -1319,11 +1319,11 @@ Proof: run parop | test tnom_res ... ok
 **C49** - `emit!("conv", v = v(a));` in `analog` writes one record per evaluation in every equilibrium solve, transient step and jump solve, with the instance path, the analysis, the instant and the Newton iteration. (AO-09, AC 1; T30, T38)
 Proof: run straces | test a_trace_writes_one_record_per_evaluation_with_path_analysis_instant_and_iteration ... ok
 
-**C50** - The trace records written during a rejected step stay. (AO-09, AC 2; T38)
+**C50** - The trace records written during a rejected step stay: the instants that hold records and no accepted row has are exactly as many as the step attempts the solver counts rejected. (AO-09, AC 2; T38)
 Proof: run straces | test traces_of_a_rejected_step_stay ... ok
 
-**C51** - An AC or noise sweep writes no trace record. (AO-09, AC 3; T38)
-Proof: run straces | test an_ac_or_noise_sweep_writes_no_trace ... ok
+**C51** - An AC or noise sweep writes no trace record: the run delivers its operating point's records (an equilibrium solve, AC 1) and nothing from the sweep. (AO-09, AC 1 and 3; T38)
+Proof: run straces | test an_ac_or_noise_sweep_writes_no_trace_beyond_its_operating_point ... ok
 
 **C52** - An `emit!` under an `if` writes a record only at the evaluations that execute it. (AO-09, AC 4; T30, T38)
 Proof: run straces | test a_trace_under_an_if_writes_only_when_executed ... ok
@@ -1332,7 +1332,7 @@ Proof: run tops | test a_trace_writes_its_watch_only_where_it_executes ... ok
 **C53** - A site reached from `analog`, directly or through a `fn`, that writes `sim` or `checks` (`require(..)` included) is `E0603` naming the site. (AO-09, AC 5; T23)
 Proof: run typeops | test a_site_reached_from_analog_writing_sim_or_checks_is_e0603 ... ok
 
-**C54** - A run that does not name a trace stream in `streams` records none of it; one that names it receives every record. (AO-09, AC 6; T38)
+**C54** - A run that does not name a trace stream in `streams` records none of it, and naming another stream delivers none of it either; one that names it receives every record. (AO-09, AC 6; T38)
 Proof: run apitraces | test traces_are_recorded_only_for_a_named_stream ... ok
 
 **C55** - A trace changes no carrier, solve or event: the run with and without it gives the same solution. (AO-09, AC 7; T38)

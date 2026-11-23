@@ -161,10 +161,22 @@ impl<'a> AcSolver<'a> {
     /// # Returns
     /// Initialized AC solver ready for frequency sweep
     pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> crate::core::result::Result<Self> {
+        Self::observed_by(circuit, context, Default::default())
+    }
+
+    /// As [`new`](Self::new), the operating point the sweep linearizes about delivered to the host's
+    /// sink `host` (every equilibrium solve writes its trace records, analog-operators AO-09 AC 1).
+    /// The sweep itself evaluates nothing the host observes.
+    pub(crate) fn observed_by(
+        circuit: &'a mut CircuitInstance,
+        context: Context,
+        host: crate::analyses::adapters::HostHooks,
+    ) -> crate::core::result::Result<Self> {
         Context::init_global();
         circuit.setup_all(&context)?;
 
         let mut dc_solver = DcSolver::under(circuit, context.clone(), piperine_abi::raw::global::AC)?;
+        dc_solver.host = host;
         let dc_point = dc_solver.solve()?;
 
         let netlist = circuit.netlist();

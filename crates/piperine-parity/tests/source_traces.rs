@@ -38,6 +38,12 @@ impl Traced {
 
     /// One run of `top` with `overrides`: the table and the records it delivered.
     fn run(top: &str, overrides: Overrides) -> (Table, Vec<Record>) {
+        let (table, records, _) = Self::run_counting_rejections(top, overrides);
+        (table, records)
+    }
+
+    /// As [`run`](Self::run), with the number of step attempts the transient rejected (0 for another analysis).
+    fn run_counting_rejections(top: &str, overrides: Overrides) -> (Table, Vec<Record>, usize) {
         let project = Project::file(&Self::path()).unwrap_or_else(|f| panic!("{f}"));
         let overrides = Overrides { top: Some(top.into()), ..overrides };
         let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
@@ -45,7 +51,8 @@ impl Traced {
         let kept = Rc::new(RefCell::new(Kept::default()));
         let table = session.run(kept.clone()).unwrap_or_else(|f| panic!("{f}"));
         let records = kept.borrow().0.clone();
-        (table, records)
+        let rejected = session.statistics().map_or(0, |statistics| statistics.analog().steps_rejected);
+        (table, records, rejected)
     }
 
     fn op() -> Overrides {
@@ -111,24 +118,35 @@ fn a_trace_under_an_if_writes_only_when_executed() {
 }
 
 #[test]
-fn an_ac_or_noise_sweep_writes_no_trace() {
-    // AO-09 AC 3: an AC run writes no trace record: the sweep reads none, and the host's AC run takes its
-    // operating point outside the record protocol, so the run delivers none (the operating-point run delivers many).
+fn an_ac_or_noise_sweep_writes_no_trace_beyond_its_operating_point() {
+    // AO-09 AC 3 and AC 1: the operating point an AC or noise run linearizes about is an equilibrium solve
+    // and writes the records of the operating-point run, one per evaluation; the sweep adds none, however
+    // many frequencies it takes (3 here).
     let (_, op) = Traced::run("DiodeBench", Traced::op());
     assert!(!op.is_empty());
     let ac = Overrides { analysis: Some("ac".into()), from: Some(1e3), to: Some(1e5), per_decade: Some(1), print: vec!["a".into()], streams: vec!["newton".into()], ..Overrides::default() };
-    let (_, swept) = Traced::run("DiodeBench", ac);
-    assert!(swept.is_empty(), "{swept:?}");
+    let (swept, ac_records) = Traced::run("DiodeBench", ac);
+    assert!(swept.rows.len() >= 3, "{} frequencies", swept.rows.len());
+    assert_eq!(ac_records, op, "the AC run delivers its operating point's records and nothing else");
+    let noise = Overrides { analysis: Some("noise".into()), output: Some("a".into()), from: Some(1e3), to: Some(1e5), per_decade: Some(1), streams: vec!["newton".into()], ..Overrides::default() };
+    let (_, noise_records) = Traced::run("DiodeBench", noise);
+    assert_eq!(noise_records, op, "the noise run delivers its operating point's records and nothing else");
 }
 
 #[test]
 fn traces_of_a_rejected_step_stay() {
     // AO-09 AC 2 (§19 rule 7): the transient across a steep step rejects steps, and the records the rejected
-    // attempts wrote stay: more instants hold records than the table holds accepted rows.
+    // attempts wrote stay: exactly as many instants hold records that no accepted row has as the solver
+    // counts rejected attempts.
     let overrides = Overrides { analysis: Some("transient".into()), stop: Some(3e-6), max_step: Some(1e-6), print: vec!["o".into()], streams: vec!["newton".into()], ..Overrides::default() };
-    let (table, records) = Traced::run("StepBench", overrides);
-    let accepted = table.rows.len();
+    let (table, records, rejected) = Traced::run_counting_rejections("StepBench", overrides);
+    assert!(rejected > 0, "the bench must reject steps: {rejected}");
+    let accepted: std::collections::BTreeSet<u64> = table.rows.iter().filter_map(|row| match row[0] {
+        Cell::Real(t) => Some(t.to_bits()),
+        _ => None,
+    }).collect();
     let instants: std::collections::BTreeSet<u64> = records.iter().map(|r| r.time.to_bits()).collect();
-    assert!(instants.len() >= accepted, "{} instants of records, {accepted} rows", instants.len());
+    let rejected_instants = instants.difference(&accepted).count();
+    assert_eq!(rejected_instants, rejected, "each rejected attempt delivered its records at an instant no accepted row has");
     assert!(records.iter().all(|r| r.iteration.is_some() && r.analysis.is_some()));
 }
