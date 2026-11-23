@@ -2295,7 +2295,8 @@ fn part_v_the_host_set_step_is_tested_and_only_the_retaken_step_is_exempt() {
     assert!(s.contains("That step is tested with the first-order estimate of rule 6, restarts the integrator"), "the host set paragraph");
     assert!(!s.contains("with the exemption"), "the host set bullet no longer names an exemption");
     assert!(!s.contains("That step is exempt from the truncation-error test"), "the set's step is tested");
-    assert!(s.contains("The retaken step is exempt from the truncation-error test and restarts the integrator"), "rule 4 keeps its exemption");
+    assert!(s.contains("The retaken step is exempt from the truncation-error test, since it lands on the same `t` and cannot be taken smaller; it restarts the integrator like every step that reads a change (rule 6)"), "rule 4 keeps its exemption, on its own");
+    assert!(!s.contains("like the step that reads a host `set`"), "rule 4 no longer compares the retaken step with the host set step");
 }
 
 #[test]

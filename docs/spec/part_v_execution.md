@@ -283,8 +283,9 @@ transient step that reads the change, so the set has no solve of its own.
    step's solve (§15 step 1), so never before the change that caused it. **When the
    reactions of that crossing change a carrier or a param that `analog` reads, the step is
    retaken to the same time `t` with the change, and the retaken solution replaces the first.**
-   The retaken step is exempt from the truncation-error test and restarts the integrator, like
-   the step that reads a host `set`. The reactions that ran are not run again. A crossing that
+   The retaken step is exempt from the truncation-error test, since it lands on the same `t` and
+   cannot be taken smaller; it restarts the integrator like every step that reads a change
+   (rule 6). The reactions that ran are not run again. A crossing that
    the retaken solution makes, and the first did not, fires at the next microstep of `t` and may
    retake again. A step that reads no jump never retakes, and neither does a crossing whose
    reactions change nothing `analog` reads. More retakes at one `t` than the operating point's
