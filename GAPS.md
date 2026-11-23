@@ -382,8 +382,6 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 
 | Book | Gap | Owner | Today |
 | ---- | --- | ----- | ----- |
-| generics#4 | L7 | `generics` | reached from a top, `in_tolerance` is `P0001`: a struct expression of the generic struct `Window` |
-| generics#5 | L7 | `generics` | reached from a top, `dot` and `mean_of` are `P0001`: a generic function with a const parameter, over an array type |
 | values#8 | L53 | `unknown-semantics-events` | `handshake`, a `fn` that returns `Event`, is `P0001`: method `rise` on this receiver is not supported yet |
 | values~c389077a | L53 | `unknown-semantics-events` | the class of a function that returns `Event` does not run (`handshake`); the pure, `now()` and `emit!` classes do |
 | values#22 | L12 | `foreign-models` | an `extern "C" fn` with its `#[derivative]` is `P0001`: `extern` function is not supported yet |

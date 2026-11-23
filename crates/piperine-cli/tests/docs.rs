@@ -653,7 +653,7 @@ fn gaps_drops_what_composite_values_phase_b_closed() {
     for stale in ["| types#7 | L3 |", "| generics#4 | L1 |"] {
         assert!(!book.contains(stale), "section 11 still names {stale}");
     }
-    assert!(!book.contains("| types#7 |") && book.contains("| generics#4 | L7 | `generics` |"), "types#7 runs since generics T37 and generics#4 waits on generic items");
+    assert!(!book.contains("| types#7 |") && !book.contains("| generics#4 |"), "types#7 runs since generics T37 and generics#4 since T38");
     // section 9: the coverage of values, functions, the stdlib and the inherited library
     let coverage = gaps.split("## 9. Coverage by spec part").nth(1).and_then(|s| s.split("## 10.").next()).expect("section 9");
     let values = coverage.lines().find(|l| l.starts_with("| I §1–§2 ")).expect("the coverage row of §1 and §2");

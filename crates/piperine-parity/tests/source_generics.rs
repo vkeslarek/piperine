@@ -161,3 +161,72 @@ fn a_capturing_closure_a_plain_closure_and_a_function_name_pass_for_an_fn_bound(
         &[CarrierBytes::real(twice(|v| v + 1.0, 3.0)), CarrierBytes::real(twice(|v| v * gain, 2.0)), CarrierBytes::real(twice(halve, 10.0))],
     );
 }
+
+/// `struct Pair<T> { a: T, b: T }` of the model `types.msl`, with the method of its `impl<T>`.
+#[derive(Clone, Copy)]
+struct Pair<T> {
+    a: T,
+    b: T,
+}
+
+impl<T> Pair<T> {
+    fn swapped(self) -> Pair<T> {
+        Pair { a: self.b, b: self.a }
+    }
+}
+
+/// `enum Slot<T> { Empty, Full(T) }` of the model.
+enum Slot<T> {
+    Empty,
+    Full(T),
+}
+
+/// `fn load(s: Slot<f64>) -> f64` of the model.
+fn load(slot: Slot<f64>) -> f64 {
+    match slot {
+        Slot::Empty => -1.0,
+        Slot::Full(value) => value,
+    }
+}
+
+/// `struct Window<T: PartialOrd>` of the model, with the method of its `impl<T>`.
+struct Window<T: PartialOrd> {
+    lo: T,
+    hi: T,
+}
+
+impl<T: PartialOrd> Window<T> {
+    fn holds(self, x: T) -> bool {
+        self.lo <= x && x <= self.hi
+    }
+}
+
+#[test]
+fn generic_structs_and_enums_instantiate_per_argument_list() {
+    // GN-06 AC 1 (§3.8.9): `Pair<f64>`, `Pair<u8>` and `Pair<Pair<f64>>` are three types; a method of `impl<T> Pair<T>`,
+    // a function over `Pair<f64>`, a `match` over `Slot<f64>`, a nested instance and `Window<T: PartialOrd>`
+    let nested = Pair { a: Pair { a: 1.0, b: 2.0 }, b: Pair { a: 3.0, b: 4.0 } };
+    let in_window = |v: f64| u8::from(Window { lo: 3.0, hi: 3.6 }.holds(v));
+    RUN.assert_commits(
+        "types.msl",
+        &["m0", "m1", "m2", "m3", "m4", "m5", "m6", "m7"],
+        &[
+            CarrierBytes::real(Pair { a: 1.0, b: 2.0 }.swapped().a),
+            CarrierBytes::byte(Pair { a: 3u8, b: 4u8 }.swapped().b),
+            CarrierBytes::real(1.5 + 2.5),
+            CarrierBytes::real(load(Slot::Full(2.5))),
+            CarrierBytes::real(load(Slot::<f64>::Empty)),
+            CarrierBytes::real(nested.b.a),
+            CarrierBytes::byte(in_window(3.3)),
+            CarrierBytes::byte(in_window(4.0)),
+        ],
+    );
+}
+
+#[test]
+fn a_generic_repr_instance_is_laid_out_per_section_2() {
+    // GN-06 AC 2 (§2 rule 3): `Pair<u8>` derives `Repr` through its argument, so a `Bit<Pair<u8>>` carries the leaves of
+    // its fields in order, one byte each
+    let pair = Pair { a: 3u8, b: 4u8 };
+    RUN.assert_commits("types.msl", &["m8"], &[[CarrierBytes::byte(pair.a), CarrierBytes::byte(pair.b)].concat()]);
+}

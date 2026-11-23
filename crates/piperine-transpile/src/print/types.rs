@@ -30,7 +30,7 @@ impl<'a> TypeItems<'a> {
     pub fn new(ir: &'a Ir) -> TypeItems<'a> {
         let mut names: Vec<String> = Vec::with_capacity(ir.types().len());
         for (index, data) in ir.types().iter().enumerate() {
-            let plain = Text::ident(&data.name);
+            let plain = if data.instance.is_some() { Text::instance_type(&data.name) } else { Text::ident(&data.name) };
             let name = if names.contains(&plain) { Text::generated(&format!("{}_{index}", data.name)) } else { plain };
             names.push(name);
         }

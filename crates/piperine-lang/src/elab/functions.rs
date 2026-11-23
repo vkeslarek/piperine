@@ -19,6 +19,7 @@ impl Elaboration<'_, '_> {
         let written = self.impl_qualified_name(function);
         // an instance of a generic function is named from the function and its arguments (D8)
         let name = if arguments.is_empty() { written } else { Instance { item: function, arguments: arguments.to_vec() }.name(self) };
+        self.register_function_types(function);
         let mut scope = Scope::new(data.file);
         // `freq()` in a function is the caller's `freq_`: the sweep's in an analog caller, 0 in a reaction.
         scope.analog = true;
@@ -75,6 +76,18 @@ impl Elaboration<'_, '_> {
             }
         }
         Some(FunctionSpec { name: Variants::name(&name, half), origin: self.locator.decl(function), params, ret, locals: scope.locals, body: lowered })
+    }
+
+    /// The arena entry of every instance of a generic type the body and the signature of `function` hold, under the
+    /// substitution of the instance being lowered (the types of a body that is not generic were registered with the
+    /// arena; a generic body names its instances only here, T38).
+    fn register_function_types(&mut self, function: DeclId) {
+        let mut types: Vec<Ty> = (0..self.design.expr_count() as u32).map(crate::pom::ExprId).filter(|expr| self.design.expr_node(*expr).owner == function).filter_map(|expr| self.typed(expr)).collect();
+        types.extend(self.design.decl_data(function).children.iter().filter_map(|child| self.typed_local(*child)));
+        if let DeclKind::Fn(signature) = &self.design.decl_data(function).kind {
+            types.extend(signature.ret.and_then(|ret| self.typed_written(ret)));
+        }
+        types.iter().for_each(|ty| self.register_instances(ty));
     }
 
     /// The name of `function` as written; a function of an `impl` with no parameters is named by the type the `impl` is for, `Sq.area`, so

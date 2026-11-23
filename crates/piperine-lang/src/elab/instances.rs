@@ -98,7 +98,7 @@ impl Elaboration<'_, '_> {
     /// function type). `None` for an argument that is no callable.
     fn callable_type(&self, value: &ConcreteValue) -> Option<Ty> {
         match value {
-            ConcreteValue::Closure(closure) => self.types.ty(*closure).cloned(),
+            ConcreteValue::Closure(closure) => self.typed(*closure),
             ConcreteValue::Function(function) => {
                 let data = self.design.decl_data(*function);
                 let DeclKind::Fn(signature) = &data.kind else { return None };

@@ -61,21 +61,21 @@ impl Instances {
 
 #[test]
 fn instance_names_compile_and_nested_arguments_spell_apart() {
-    // GN-02 AC 1, D8: an instance prints under the marks `_g`, `_c`, `_e`; two instances whose
+    // GN-02 AC 1, D8: a function instance prints under the marks `_g`, `_c`, `_e` and a type instance in upper camel case (`PairGu8E`); two instances whose
     // arguments nest differently are two Rust items, and the functions run
     let ir = Instances::design();
     let mut texts = TypeItems::new(&ir).items().unwrap_or_else(|e| panic!("{e}"));
     texts.extend(ir.functions().map(|f| ValuePrinter::function(&ir, f.id()).unwrap_or_else(|e| panic!("{e}"))));
     let text = texts.join("\n");
-    for name in ["Pair_gu8_e", "Pair_gPair_gu8_e_cu8_e", "Pair_gPair_gu8_cu8_e_e", "swap_gu8_e", "swap_gPair_gu8_e_e"] {
+    for name in ["PairGu8E", "PairGPairGu8ECu8E", "PairGPairGu8Cu8EE", "swap_gu8_e", "swap_gpair_gu8_e_e"] {
         assert!(text.contains(name), "the text names `{name}`:\n{text}");
     }
     let main = "\
 fn main() {
-    let inner = Pair_gu8_e(rt::UInt::<8>::new(3));
-    let outer = Pair_gPair_gu8_e_cu8_e(inner, rt::UInt::<8>::new(4));
-    let flat = Pair_gPair_gu8_cu8_e_e(rt::UInt::<8>::new(5), rt::UInt::<8>::new(6));
-    println!(\"{} {} {}\", swap_gu8_e(rt::UInt::<8>::new(9)).get(), swap_gPair_gu8_e_e(inner).0.get(), outer.1.get() + flat.1.get());
+    let inner = PairGu8E(rt::UInt::<8>::new(3));
+    let outer = PairGPairGu8ECu8E(inner, rt::UInt::<8>::new(4));
+    let flat = PairGPairGu8Cu8EE(rt::UInt::<8>::new(5), rt::UInt::<8>::new(6));
+    println!(\"{} {} {}\", swap_gu8_e(rt::UInt::<8>::new(9)).get(), swap_gpair_gu8_e_e(inner).0.get(), outer.1.get() + flat.1.get());
 }
 ";
     let out = Probe::run(&texts, main);

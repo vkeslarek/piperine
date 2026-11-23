@@ -326,6 +326,21 @@ impl<'d> Types<'d> {
         all
     }
 
+    /// Every instance of a generic struct or enum a type of the check holds, with all its arguments given, each after
+    /// the instances inside its arguments: the arena entries the bodies that are not generic need (GN-06).
+    pub fn generic_instances(&self) -> Vec<Nominal> {
+        let mut found = Vec::new();
+        self.exprs.iter().flatten().chain(self.locals.values()).chain(self.written.values()).for_each(|ty| ty.generic_instances(&mut found));
+        found
+    }
+
+    /// The fields of `owner` (a generic struct, or one of its variants) as the instance `nominal` has them: the
+    /// declared field types with the instance's arguments put in the place of the parameters.
+    pub fn instance_fields(&self, owner: DeclId, nominal: &Nominal) -> Vec<super::FieldType> {
+        let substitution = super::Substitution::of(&super::GenericSignature::of(self.design, nominal.decl), &nominal.arguments);
+        self.fields(owner).unwrap_or(&[]).iter().map(|field| super::FieldType { ty: substitution.apply(&field.ty), ..field.clone() }).collect()
+    }
+
     /// The typed fields of the struct or enum variant `owner`, in declaration order.
     pub fn fields(&self, owner: DeclId) -> Option<&[super::FieldType]> {
         self.layouts.get(&owner).map(Vec::as_slice)

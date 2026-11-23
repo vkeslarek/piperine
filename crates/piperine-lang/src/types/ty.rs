@@ -128,6 +128,30 @@ impl Ty {
         }
     }
 
+    /// Every instance of a generic struct or enum the type holds, each with all its arguments given (no parameter in
+    /// them), an instance's own arguments before it: what the elaborator gives an arena entry (GN-06).
+    pub fn generic_instances(&self, out: &mut Vec<Nominal>) {
+        match self {
+            Ty::Struct(nominal) | Ty::Enum(nominal) => {
+                nominal.arguments.iter().for_each(|argument| {
+                    if let GenericValue::Type(ty) = argument {
+                        ty.generic_instances(out);
+                    }
+                });
+                if !nominal.arguments.is_empty() && !self.has_param() && !out.contains(nominal) {
+                    out.push(nominal.clone());
+                }
+            }
+            Ty::Option(inner) | Ty::Array(inner, _) => inner.generic_instances(out),
+            Ty::Tuple(items) => items.iter().for_each(|item| item.generic_instances(out)),
+            Ty::Fn(params, ret) => {
+                params.iter().for_each(|param| param.generic_instances(out));
+                ret.generic_instances(out);
+            }
+            _ => {}
+        }
+    }
+
     /// Whether a type parameter is mentioned anywhere in the type, an argument and a length included.
     pub fn has_param(&self) -> bool {
         match self {

@@ -150,6 +150,24 @@ impl Text {
         if name.contains(['~', '.', '$']) || name.contains("::<") { spelled.to_ascii_lowercase() } else { spelled }
     }
 
+    /// The Rust name of an instance of a generic type, `Pair<f64>`: spelled as a generic instance and in upper camel
+    /// case (`PairGf64E`), as a type name must be.
+    pub fn instance_type(name: &str) -> String {
+        let mut out = String::new();
+        let mut upper = true;
+        for c in Self::spelled_cased(name).chars() {
+            if c == '_' {
+                upper = true;
+            } else if upper {
+                out.push(c.to_ascii_uppercase());
+                upper = false;
+            } else {
+                out.push(c);
+            }
+        }
+        out
+    }
+
     /// [`Self::spelled`] with the capitals kept: the spelling a type name is made from (a body
     /// variant's struct, `StartedBench_vv0_q0_d6`, which `LibraryPrinter::camel` turns into
     /// `StartedBenchVv0Q0D6`; a lowercase type name is a rustc warning).

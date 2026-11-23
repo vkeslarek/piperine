@@ -77,12 +77,6 @@ impl Elaboration<'_, '_> {
                 }
             },
         };
-        if self.design.decl_data(owner).generics_span.is_some() {
-            // the arena instance of a generic type waits for T38
-            let name = self.design.decl_data(owner).name.as_ref().map_or(String::new(), |name| name.text.clone());
-            self.unsupported(scope.file, self.design.expr_node(expr).span, &format!("generic struct `{name}`"));
-            return None;
-        }
         let (built, wanted) = self.built_by(owner, &ty)?;
         let layout: Vec<DeclId> = self.types.fields(owner)?.iter().map(|f| f.decl).collect();
         let mut written = Vec::with_capacity(fields.len());
@@ -279,7 +273,7 @@ impl Elaboration<'_, '_> {
 
     /// The value of the constant `expr` as a count. `None` after a diagnostic.
     fn const_count(&mut self, scope: &Scope, expr: ExprId) -> Option<u64> {
-        match self.types.integer_constant(expr).and_then(|count| u64::try_from(count).ok()) {
+        match self.consts.integer(expr).and_then(|count| u64::try_from(count).ok()) {
             Some(count) => Some(count),
             None => {
                 self.unsupported(scope.file, self.design.expr_node(expr).span, "a length or a bound that is not an integer constant");

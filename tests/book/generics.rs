@@ -26,7 +26,6 @@ use support::faulty::Faulty;
 use support::model::{Model, Ran};
 use support::printed::Printed;
 use support::records::Fields;
-use support::refusal::Refusal;
 use support::value_file::ValueFile;
 
 /// A listing of the chapter whose forms the compiler does not run yet, reached from a top.
@@ -91,7 +90,7 @@ fn the_methods_of_a_trait_run_where_a_top_reaches_them() {
 fn the_generic_listings_run_where_a_top_reaches_them() {
     // generics#2 (run in part): `pick` and `larger`, with generics#3, their calls, a fragment of it, run with the values
     // Rust gives; `overdrive`, which calls a method through its `Receiver` bound, runs by static dispatch (T36);
-    // generics#4 (refused, L1): the generic struct `Window` and its method; generics#5: the const parameter of
+    // generics#4: the generic struct `Window` and its method, an instance `Window<f64>` (T38); generics#5: the const parameter of
     // `dot`, `mean_of` and `widened`; generics#9: `at_middle`, which takes any function, runs with `corrected`. The forms that still wait are asserted refused
     let chapter = Chapter::read();
     let receiver = chapter.text("generics#1");
@@ -104,9 +103,15 @@ fn the_generic_listings_run_where_a_top_reaches_them() {
     ValueFile::int(larger.stream("r")[0], "s", i128::from(3u8.max(200)));
     let over = Reached::run("generics#2", &receiver, "emit!(\"r\", s = overdrive(Family::Cmos, 2.8, 3.3));").unwrap_or_else(|failure| panic!("{failure}"));
     Printed::holds("1.150000e0", Fields::real(over.stream("r")[0], "s"), "overdrive(Family::Cmos, 2.8, 3.3)");
-    Refusal::expect(Reached::run("generics#4", "", "emit!(\"r\", s = in_tolerance(3.3));"), "generics#4", "P0001", "generic struct `Window` is not supported yet");
-    Refusal::expect(Reached::run("generics#5", "", "emit!(\"r\", s = dot([1.0, 2.0], [3.0, 4.0]));"), "generics#5", "P0001", "this name as a value is not supported yet");
-    Refusal::expect(Reached::run("generics#5", "", "emit!(\"r\", s = mean_of([1.0, 2.0]));"), "generics#5", "P0001", "this name as a value is not supported yet");
+    let window = Reached::run("generics#4", "", "emit!(\"r\", s = in_tolerance(3.3));").unwrap_or_else(|failure| panic!("{failure}"));
+    ValueFile::flag(window.stream("r")[0], "s", (3.0..=3.6).contains(&3.3));
+    // generics#5: a const parameter fixed by the length of an array argument runs its loops that many times
+    let dot = Reached::run("generics#5", "", "emit!(\"r\", s = dot([1.0, 2.0], [3.0, 4.0]));").unwrap_or_else(|failure| panic!("{failure}"));
+    Printed::holds("1.100000e1", Fields::real(dot.stream("r")[0], "s"), "dot([1.0, 2.0], [3.0, 4.0])");
+    let mean = Reached::run("generics#5", "", "emit!(\"r\", s = mean_of([1.0, 2.0]));").unwrap_or_else(|failure| panic!("{failure}"));
+    Printed::holds("1.500000e0", Fields::real(mean.stream("r")[0], "s"), "mean_of([1.0, 2.0])");
+    let wide = Reached::run("generics#5", "", "let w = widened([1.0, 2.0]); emit!(\"r\", s = w[1] + 10.0 * w[2] + 100.0 * w.len() as f64);").unwrap_or_else(|failure| panic!("{failure}"));
+    Printed::holds("3.020000e2", Fields::real(wide.stream("r")[0], "s"), "widened([1.0, 2.0])");
     // generics#9: `at_middle` takes a closure for its `Fn` bound (T37) and `corrected` a function by its type
     let ramp = Reached::run("generics#9", "", "emit!(\"r\", s = mid_ramp(1M));").unwrap_or_else(|failure| panic!("{failure}"));
     Printed::holds("5.000000e-1", Fields::real(ramp.stream("r")[0], "s"), "mid_ramp(1M)");
@@ -120,13 +125,9 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
     // message that names the form, so nothing is ever computed by a rule other than the ones above": the forms
     // of the chapter's status box, each on the smallest model (when one of them runs, this test fails and the
     // box loses it)
-    for (items, statements, named) in [
-        ("struct Pair<T: PartialEq> { a: T, b: T }", "let p = Pair { a: 1.0, b: 2.0 }; emit!(\"r\", y = p.a);", "generic struct `Pair` is not supported yet"),
-        ("fn width<const N: usize>() -> usize { N }", "emit!(\"r\", y = width::<4>());", "this name as a value is not supported yet"),
-    ] {
-        let faulty = ValueFile::refused("generics~5628120b", items, statements);
-        assert!(faulty.given.iter().any(|reported| reported.code == "P0001" && reported.message == named), "{statements}: {:?}", faulty.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
-    }
+    // the const parameter `N` read as a value, the smallest model of the forms the box once listed, now runs
+    let width = ValueFile::written("fn width<const N: usize>() -> usize { N }", "emit!(\"r\", y = width::<4>());");
+    ValueFile::int(&width, "y", 4);
     // a generic module, the form chapter 7 places
     let module = Faulty::elaborating("generics~5628120b", "module Hold<T: Repr>(in d: Bit<T>, out q: Bit<T>) {}\nmodule Top() { signal d: Bit<u8>; signal q: Bit<u8>; let h = Hold::<u8>(d, q); }\n", "Top");
     assert!(module.given.iter().any(|reported| reported.code == "P0001" && reported.message == "generic module is not supported yet"), "{:?}", module.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());

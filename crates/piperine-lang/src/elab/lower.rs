@@ -771,6 +771,15 @@ impl Elaboration<'_, '_> {
                     None
                 }
             },
+            // a const parameter read in the body of an instance is the constant of its argument (T33, GN-02)
+            DeclKind::GenericParam(_) => match self.consts.substitution().get(decl) {
+                Some(crate::types::GenericValue::Const(crate::types::ConstTerm::Value(value))) => Some(self.constant_expr(piperine_ir::Constant::Int(*value), ty, origin)),
+                Some(crate::types::GenericValue::Const(crate::types::ConstTerm::Bool(flag))) => Some(self.constant_expr(piperine_ir::Constant::Bool(*flag), ty, origin)),
+                _ => {
+                    self.unsupported(scope.file, node.span, "a generic parameter read as a value");
+                    None
+                }
+            },
             DeclKind::Fn(_) => self.lower_function_value(scope, decl, ty, node.span, origin),
             DeclKind::Struct(_) => self.lower_unit_struct(ty, origin),
             _ => {

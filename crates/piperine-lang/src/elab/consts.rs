@@ -38,7 +38,7 @@ use super::compound::EnumLayout;
 use super::files::{FileFault, IncludedFiles};
 use crate::msl::lexer;
 use crate::pom::{BinOp, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, TypeId, UnOp};
-use crate::types::{Callee, Method, Nominal, Ty, Types};
+use crate::types::{Callee, ConstTerm, GenericValue, Length, Method, Nominal, Ty, Types};
 pub use composite::{CompositeKind, ConstTree};
 use composite::Composite;
 use control::{Argument, FnValue};
@@ -186,19 +186,58 @@ impl<'d, 't> ConstEval<'d, 't> {
         std::mem::replace(&mut self.substitution, substitution)
     }
 
+    /// `ty` under the substitution of the instance being lowered, an array length written as an expression over the
+    /// const parameters (`[f64; N + 1]`) folded to the number it is for these arguments (§3.8.3); one that does not
+    /// fold stays generic, and the obligation of the instantiation reports it.
+    fn resolved(&self, ty: &Ty) -> Ty {
+        self.folded_lengths(&self.substitution.apply(ty))
+    }
+
+    /// The value of the integer const expression `expr` of the instance being lowered: its const parameters are
+    /// the substitution's arguments. `None` when it does not fold.
+    pub(super) fn integer(&self, expr: ExprId) -> Option<u128> {
+        let values: BTreeMap<DeclId, u128> = self
+            .substitution
+            .entries()
+            .filter_map(|(parameter, value)| match value {
+                GenericValue::Const(ConstTerm::Value(count)) => u128::try_from(*count).ok().map(|count| (parameter, count)),
+                _ => None,
+            })
+            .collect();
+        self.types.fold_with(expr, values)
+    }
+
+    /// `ty` with the lengths that are const expressions folded over the const arguments of the substitution.
+    fn folded_lengths(&self, ty: &Ty) -> Ty {
+        match ty {
+            Ty::Array(element, Length::Generic(ConstTerm::Expr(expr))) => {
+                let element = Box::new(self.folded_lengths(element));
+                match self.integer(*expr).and_then(|count| u64::try_from(count).ok()) {
+                    Some(count) => Ty::Array(element, Length::Fixed(count)),
+                    None => Ty::Array(element, Length::Generic(ConstTerm::Expr(*expr))),
+                }
+            }
+            Ty::Array(element, length) => Ty::Array(Box::new(self.folded_lengths(element)), length.clone()),
+            Ty::Tuple(items) => Ty::Tuple(items.iter().map(|item| self.folded_lengths(item)).collect()),
+            Ty::Option(inner) => Ty::Option(Box::new(self.folded_lengths(inner))),
+            Ty::Fn(params, ret) => Ty::Fn(params.iter().map(|param| self.folded_lengths(param)).collect(), Box::new(self.folded_lengths(ret))),
+            other => other.clone(),
+        }
+    }
+
     /// The type the checker gave `expr` under the substitution of the instance being lowered.
     pub(super) fn typed(&self, expr: ExprId) -> Option<Ty> {
-        self.types.ty(expr).map(|ty| self.substitution.apply(ty))
+        self.types.ty(expr).map(|ty| self.resolved(ty))
     }
 
     /// The type of the binding `binding` under the substitution.
     pub(super) fn typed_local(&self, binding: DeclId) -> Option<Ty> {
-        self.types.local(binding).map(|ty| self.substitution.apply(ty))
+        self.types.local(binding).map(|ty| self.resolved(ty))
     }
 
     /// The type the type node `ty` writes under the substitution.
     pub(super) fn typed_written(&self, ty: TypeId) -> Option<Ty> {
-        self.types.written(ty).map(|ty| self.substitution.apply(ty))
+        self.types.written(ty).map(|ty| self.resolved(ty))
     }
 
     pub fn new(design: &'d Design, types: &'t Types<'d>) -> Self {
