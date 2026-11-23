@@ -83,11 +83,12 @@ fn one_delay_call_is_one_site_however_often_it_is_read() {
 fn noise_table_waits_for_its_dependencies() {
     // AO-04 AC 3 (D17): `noise_table` is a module generic over `const N` with an array param. A
     // generic module is `P0001` in the subset (`types_subset`), so it is refused by that name until
-    // the checker takes one; `GAPS.md` keeps L45 for it alone.
+    // the checker takes one; `GAPS.md` L58 holds it with the generics group (L45 closed with the noise sources).
     let src = "module M(a: Electrical) { }\nanalog for M { i(a, gnd) +> noise_table::<2>(\"t\") { table: [(1k, 1e-18), (10k, 4e-18)] }; }\nmodule Top() { signal a: Electrical; let m = M(a); }";
     let err = Elab::run(src, "Top").expect_err("noise_table is refused");
     assert_eq!(Elab::codes(&err), ["P0001"], "{:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
-    assert!(err[0].diagnostic.message.contains("generic module"), "{}", err[0].diagnostic.message);
+    let message = &err[0].diagnostic.message;
+    assert!(message.contains("generic module"), "the refusal names the construct that waits: {message}");
 }
 
 #[test]

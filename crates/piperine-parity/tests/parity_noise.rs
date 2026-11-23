@@ -143,13 +143,16 @@ fn noise_rc() {
 
 #[test]
 fn noise_twins_run_and_print_the_skip_line_without_ngspice() {
-    // AO-12: with the comparison disabled `Ngspice::run` prints its skip line and returns
-    // `Skipped`, and each twin still solves its sweep on the compiled backend and compares nothing
-    let reference = Ngspice::new(Lookup::Skip).run("noise_rc");
-    assert!(matches!(reference, Reference::Skipped));
-    assert_eq!(Ngspice::skip_line("noise_rc"), "SKIP noise_rc: ngspice comparison disabled by PIPERINE_NGSPICE=skip");
-    for backend in NoiseTwin::backends() {
-        NOISE_RC.compare(&reference, backend);
+    // AO-12, AO-06 AC 4: with the comparison disabled `Ngspice::run` prints its skip line and returns
+    // `Skipped`, and each of the three twins (`noise_rc`, `noise_switch`, `noise_diode`) still solves its
+    // sweep on the compiled backend and compares nothing
+    for twin in [&NOISE_RC, &NOISE_SWITCH, &NOISE_DIODE] {
+        let reference = Ngspice::new(Lookup::Skip).run(twin.name);
+        assert!(matches!(reference, Reference::Skipped), "{}", twin.name);
+        assert_eq!(Ngspice::skip_line(twin.name), format!("SKIP {}: ngspice comparison disabled by PIPERINE_NGSPICE=skip", twin.name));
+        for backend in NoiseTwin::backends() {
+            twin.compare(&reference, backend);
+        }
     }
 }
 

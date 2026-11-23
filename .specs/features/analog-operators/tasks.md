@@ -1234,6 +1234,7 @@ Proof: run snoise | test noise_through_ddt_and_delay_takes_their_response ... ok
 
 **C22** - A negative or non-finite density in a noise sweep fails the analysis with `E0454` naming the instance and the frequency. (AO-03, AC 6; T29, T34)
 Proof: run snoise | test a_negative_density_fails_with_e0454_naming_the_frequency ... ok
+Proof: run snoise | test a_density_that_is_not_finite_fails_with_e0454_naming_the_frequency ... ok
 Proof: run tops | test the_noise_function_writes_its_density_and_faults_454 ... ok
 
 **C23** - A reaction or an event argument reads a `noise` result as 0. (AO-03, AC 7; T29, T34)
@@ -1250,7 +1251,7 @@ Proof: run snoise | test white_noise_is_a_source_of_its_density ... ok
 **C26** - `flicker_noise(k, exp, name)` has density `k / f^exp` at each frequency. (AO-04, AC 2; T34)
 Proof: run snoise | test flicker_noise_falls_as_one_over_f_to_the_exponent ... ok
 
-**C27** - WHERE `generics`, `composite-values` and `params-and-io` have merged, `noise_table` gives its piecewise density; until then it is refused by name, naming its dependencies, and `GAPS.md` L58 holds it with the generics group (no row of its own: L45 closed with the noise sources). (AO-04, AC 3; T34, T44, D17)
+**C27** - WHERE `generics`, `composite-values` and `params-and-io` have merged, `noise_table` gives its piecewise density; until then it is refused `P0001` by the construct it waits for (`generic module`, the checker's own refusal; the message does not list the three features), and `GAPS.md` L58 holds it with the generics group (no row of its own: L45 closed with the noise sources). (AO-04, AC 3; T34, T44, D17)
 Proof: run elabops | test noise_table_waits_for_its_dependencies ... ok
 Proof: run subset | test p0001_names_the_construct ... ok
 **C28** - A noise run with `output`, `from`, `to` and `per_decade` prints one row per frequency with `freq` and `onoise`, then the line `onoise_total`. (AO-05, AC 1; T13, T14)
@@ -1273,7 +1274,7 @@ Proof: run apinoise | test an_output_or_input_that_names_nothing_is_e0801 ... ok
 **C33** - A noise run that gives `stop` or `sweep` is `P0010`. (AO-05, AC 6; T11)
 Proof: run apinoise | test a_key_of_another_analysis_is_p0010_in_a_noise_run ... ok
 
-**C34** - `analysis(Noise)` is true in a noise run's operating point and sweep, and `ac_stim` is 0 in the sweep. (AO-05, AC 7; T34)
+**C34** - `analysis(Noise)` is true in a noise run's operating point (a source of 2 V there sets the density) and sweep, and `ac_stim` is 0 in the sweep (a stimulus driven into the node leaves the density the noise alone, while the AC run reads it). (AO-05, AC 7; T34)
 Proof: run snoise | test analysis_noise_is_true_and_ac_stim_zero_in_a_noise_run ... ok
 
 **C35** - `piperine-api` returns the rows, the totals and each group's density. (AO-05, AC 8; T13)

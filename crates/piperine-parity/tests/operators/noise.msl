@@ -137,3 +137,40 @@ module WatcherBench() {
     let watcher = Watcher(a);
     let load = Resistor { r: 1k }(a, gnd);
 }
+
+/// `analysis(Noise)` is true in the operating point too: a source of 2 V there and 1 V elsewhere sets a
+/// density `1e-18 * v(b)^2`, read at the operating point.
+module OperatingPointBench() {
+    signal b: Electrical;
+    signal o: Electrical;
+    let load = Resistor { r: 1k }(o, gnd);
+    let hold = Resistor { r: 1k }(b, gnd);
+}
+analog for OperatingPointBench {
+    v(b, gnd) +> if analysis(Noise) { 2.0 } else { 1.0 };
+    i(o, gnd) +> noise(1e-18 * v(b, gnd) * v(b, gnd), "level");
+}
+
+/// A stimulus of 1 A beside a density: an AC run of it reads 1 kV at `o`, a noise sweep reads no stimulus.
+module StimulusBench() {
+    signal o: Electrical;
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for StimulusBench {
+    i(gnd, o) +> ac_stim(1.0);
+    i(o, gnd) +> noise(1e-18, "stimulated");
+}
+
+/// A density that is infinity: not finite, so the sweep refuses it.
+module InfiniteDensityBench() {
+    signal o: Electrical;
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for InfiniteDensityBench { i(gnd, o) +> noise(1.0 / 0.0, "unbounded"); }
+
+/// A density that is NaN: not finite either.
+module NanDensityBench() {
+    signal o: Electrical;
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for NanDensityBench { i(gnd, o) +> noise(0.0 / 0.0, "unbounded"); }

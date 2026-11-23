@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::OnceLock;
 
-use piperine_api::{Failure, Overrides, Project, Record, RecordSink, Session, Table};
+use piperine_api::{Cell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
 use piperine_solver::protocol::ObservationKind;
 use piperine_transpile::Settings;
 
@@ -57,6 +57,20 @@ impl Hiss {
         let mut session = Session::open(&project, &spec, &Self::settings())?;
         let table = session.run(Rc::new(RefCell::new(Ignore)))?;
         Ok((session, table))
+    }
+
+    /// The table of the run `overrides` of `top`, printing `signal`.
+    fn table(top: &str, signal: &str, overrides: Overrides) -> Table {
+        let project = Project::file(&Self::path()).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides { top: Some(top.into()), print: vec![signal.into()], ..overrides };
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        let mut session = Session::open(&project, &spec, &Self::settings()).unwrap_or_else(|f| panic!("{f}"));
+        session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"))
+    }
+
+    /// The AC run of `top` printing `signal` at 1 kHz: its table.
+    fn ac_run(top: &str, signal: &str) -> Table {
+        Self::table(top, signal, Overrides { analysis: Some("ac".into()), from: Some(1e3), to: Some(1e3), points: Some(1), ..Overrides::default() })
     }
 
     /// The output density at each frequency of the noise run of `top` measuring `output`.
@@ -145,17 +159,43 @@ fn a_negative_density_fails_with_e0454_naming_the_frequency() {
 }
 
 #[test]
+fn a_density_that_is_not_finite_fails_with_e0454_naming_the_frequency() {
+    // AO-03 AC 6: a density that is not finite (`1.0 / 0.0` or NaN) at a frequency of the sweep fails like a
+    // negative one: `E0454` naming the source and the first frequency.
+    for bench in ["InfiniteDensityBench", "NanDensityBench"] {
+        let Err(failure) = Hiss::run(bench, "o") else { panic!("{bench}: a density that is not finite ran") };
+        let message = failure.to_string();
+        assert!(message.contains("E0454"), "{bench}: {message}");
+        assert!(message.contains("`unbounded`"), "{bench}, names the source: {message}");
+        assert!(message.contains("1000 Hz"), "{bench}, names the frequency: {message}");
+    }
+}
+
+#[test]
 fn analysis_noise_is_true_and_ac_stim_zero_in_a_noise_run() {
     // AO-05 AC 7: `analysis(Noise)` is true in the sweep, so the density is its 1e-18 branch: the
-    // output density is `r * sqrt(1e-18)`, not the 1e-16 of the other.
+    // output density is `r * sqrt(1e-18)`, not the 1e-16 of the other. It is true in the operating point
+    // too: the source of `OperatingPointBench` is 2 V there (1 V elsewhere), and the density reads it, so
+    // the output is `r * sqrt(1e-18 * 2^2)`. `ac_stim` is 0 in the sweep: the density of a bench that
+    // drives a stimulus of 1 A into the node stays `r * sqrt(1e-18)`, while its AC run reads the 1 kV the
+    // stimulus gives (so the stimulus is real, and the sweep leaves it out).
     Hiss::assert_densities("analysis(Noise)", &Hiss::density("AnalysisBench", "o"), |_| 1e3 * (1e-18_f64).sqrt(), 1e-9);
+    Hiss::assert_densities("operating point", &Hiss::density("OperatingPointBench", "o"), |_| 1e3 * (4e-18_f64).sqrt(), 1e-9);
+    Hiss::assert_densities("ac_stim", &Hiss::density("StimulusBench", "o"), |_| 1e3 * (1e-18_f64).sqrt(), 1e-9);
+    let ac = Hiss::ac_run("StimulusBench", "o");
+    let Cell::Real(magnitude) = ac.rows[0][1] else { panic!("a real magnitude in {:?}", ac.rows[0]) };
+    assert!((magnitude - 1e3).abs() <= 1e-6, "the AC run reads the stimulus: {magnitude}");
 }
 
 #[test]
 fn a_noise_source_is_zero_outside_a_noise_sweep_and_never_reads_its_density() {
-    // AO-03 AC 1: `i(gnd, out) +> 1m + noise(-1.0)` into 1 kohm is 1 V at the operating point and
-    // along a transient, as without the source: the negative density is read by no solve but a noise
+    // AO-03 AC 1: `i(gnd, out) +> 1m + noise(-1.0)` into 1 kohm is 1 V at the operating point, in an
+    // AC run (no stimulus, so 0 amplitude) and along a transient, as without the source: the negative density is read by no solve but a noise
     // sweep (which fails, the test above).
+    let operating_point = Hiss::table("NegativeDensityBench", "o", Overrides { analysis: Some("op".into()), ..Overrides::default() });
+    assert!(matches!(operating_point.rows[0][1], Cell::Real(v) if (v - 1.0).abs() <= 1e-9), "v(o) of the operating point: {operating_point:?}");
+    let ac = Hiss::ac_run("NegativeDensityBench", "o");
+    assert!(ac.rows.iter().all(|row| matches!(row[1], Cell::Real(magnitude) if magnitude == 0.0)), "the AC run has no stimulus and the source adds none: {ac:?}");
     let built = support::build(&piperine_parity::project::Project::new(&Hiss::path()), "NegativeDensityBench");
     let out = piperine_solver::prelude::NodeIdentifier::Anonymous(built.ir.node_at("NegativeDensityBench.o").expect("node o").id().index());
     let (_, result) = built.run_with(1e-6, 0.1e-6);
