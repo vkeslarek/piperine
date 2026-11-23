@@ -43,20 +43,20 @@ fn the_gate_driver_delays_and_interlocks() {
     // and `hs_cmd` raised again (edge 8) the gate stays false; it rises `tpd` after `ls_cmd`
     // falls (edge 11), the high side command still high
     //
-    // Both gates are drives with a delay, and a carrier is unknown until its first commit
-    // (part I §5.1.1): the drive's first commit is made at (0, 0) and is due `tpd` later, so each
-    // gate is unknown at the operating point and becomes known false at `tpd`, before any command
-    // arrives.
-    let first = (tpd, LOW.to_vec());
-    let hs = vec![first.clone(), (rise(1) + tpd, HIGH.to_vec()), (rise(4) + tpd, LOW.to_vec()), (rise(11) + tpd, HIGH.to_vec())];
+    // Both gates are drives with a delay. A carrier has its initial value, false, from (0, 0) on
+    // (part II §5.1.1, §5.3.8), so the drive's first commit, false, comes due at `tpd` and
+    // writes the value the gate already holds: "a commit of the value the carrier already holds
+    // is not a change" (part II §5.3.5). Each gate's first change is therefore its first
+    // command-driven one.
+    let hs = vec![(rise(1) + tpd, HIGH.to_vec()), (rise(4) + tpd, LOW.to_vec()), (rise(11) + tpd, HIGH.to_vec())];
     // `ls_gate = (ls_cmd & !hs_cmd) after tpd`: rises `tpd` after `ls_cmd` (edge 6); the low side
     // command with `hs_cmd` high at edge 8 is a command to neither: it falls `tpd` after (edge
     // 8); and it stays false when `ls_cmd` falls (edge 11)
-    let ls = vec![first, (rise(6) + tpd, HIGH.to_vec()), (rise(8) + tpd, LOW.to_vec())];
+    let ls = vec![(rise(6) + tpd, HIGH.to_vec()), (rise(8) + tpd, LOW.to_vec())];
     let (hs_seen, ls_seen) = (transient(&seen, "DriverBench.hs_gate"), transient(&seen, "DriverBench.ls_gate"));
     for gate in ["DriverBench.hs_gate", "DriverBench.ls_gate"] {
         let start = series(&seen, gate);
-        assert_eq!(start.first().map(|(t, b)| (*t, b[1])), Some((tpd, 1)), "{gate} holds no value before its first commit is due");
+        assert_eq!(start.first(), Some(&(0, LOW.to_vec())), "{gate} holds its initial value, false, from the first instant");
     }
     assert_eq!(hs_seen, hs, "the high gate");
     assert_eq!(ls_seen, ls, "the low gate");
