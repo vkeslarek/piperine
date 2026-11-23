@@ -12,6 +12,7 @@
 //! * a call is `Σ ∂f/∂argᵢ · ∂argᵢ`, where `∂f/∂argᵢ` is a derived function built once per
 //!   `(function, i)` and memoized by [`IrBuilder::derived_function`];
 //! * a block differentiates forward: each `let x = e` gains a `let ∂x = ∂e`;
+//! * a field of a struct or a tuple written out (`Gain { k: 7.0 }.k`) is the derivative of the part it names;
 //! * a form with no rule (a loop, an assignment, a closure, a call through a value) is
 //!   [`NotDifferentiable`], naming the form.
 //!
@@ -124,6 +125,11 @@ impl<'b> Differentiation<'b> {
             }
             Expr::Call { function, args } => self.call(function, &args, &origin),
             Expr::Block { stmts, value } => self.block(&stmts, value, &origin),
+            // a field of a struct or a tuple written out is the part it names: the derivative of that part
+            Expr::Field { expr: base, index } => match self.builder.expr_data(base).map(|d| d.kind.clone()) {
+                Some(Expr::StructOf { fields, .. } | Expr::Tuple(fields)) if (index as usize) < fields.len() => self.of(fields[index as usize]),
+                _ => Err(NotDifferentiable { form: "a field of a composite value that is not written out", origin }),
+            },
             other => Err(NotDifferentiable { form: Self::form_name(&other), origin }),
         }
     }

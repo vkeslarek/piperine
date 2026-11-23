@@ -1399,7 +1399,7 @@ Proof: run retake | test the_first_step_after_an_operating_point_that_holds_a_se
 Proof: run digital | test a_reopened_instant_settles_at_its_last_microstep ... ok
 Proof: run digital | test a_firing_after_a_reopened_instant_is_due_at_the_next_microstep ... ok
 
-**C73** - `ddx` of calls of a `fn` equals the closed derivative of the same expression: a `let` and a value, a `fn` that calls another, two calls of one `fn` (each binds its own arguments), an early `return` under an `if` (the branch the operating point takes), assignments in the branches of an `if` and a chain of `else if`, assignments and `+=`, a `for` over constant bounds (and a decision on its variable), an `Option` parameter given and left out, a `str` parameter, a method of a trait on `f64`, a generic `fn`, a recursion that folds and a handle parameter; a form with no finite symbolic reading is `P0001` naming it. (AO-01, AC 10; closing round, round 2 finding 35)
+**C73** - `ddx` of calls of a `fn` equals the closed derivative of the same expression: a `let` and a value, a `fn` that calls another, two calls of one `fn` (each binds its own arguments), an early `return` under an `if` (the branch the operating point takes), assignments in the branches of an `if` and a chain of `else if`, assignments and `+=`, a `for` over constant bounds (and a decision on its variable), an `Option` parameter given and left out, a `str` parameter, a method of a trait on `f64` and of a struct (its field read), a generic `fn` over a const read as `N as f64`, an integer cast of a loop variable (also in an ordinary unrolled analog loop), a recursion that folds and a handle parameter; a form with no finite symbolic reading is `P0001` naming it. (AO-01, AC 10; closing round, round 2 finding 35)
 Proof: run spartial | test ddx_differentiates_through_a_fn_and_a_fn_it_calls ... ok
 Proof: run spartial | test ddx_of_two_calls_of_one_fn_reads_each_calls_arguments ... ok
 Proof: run spartial | test ddx_through_a_fn_that_returns_early_follows_the_branch_the_operating_point_takes ... ok
@@ -1408,6 +1408,8 @@ Proof: run spartial | test ddx_through_a_fn_that_assigns_is_the_derivative_of_th
 Proof: run spartial | test ddx_through_a_fn_with_a_constant_loop_unrolls_it ... ok
 Proof: run spartial | test ddx_through_a_fn_reads_an_option_and_a_str_parameter ... ok
 Proof: run spartial | test ddx_through_a_method_a_generic_fn_a_recursion_and_a_handle ... ok
+Proof: run spartial | test ddx_through_a_method_of_a_struct_reads_the_field_of_its_receiver ... ok
+Proof: run spartial | test an_integer_cast_in_an_analog_term_runs_without_a_digital_form ... ok
 Proof: run elabops | test ddx_through_a_fn_call_expands_the_call_and_differentiates_its_body ... ok
 Proof: run elabops | test a_fn_with_statements_is_run_symbolically_inside_a_ddx ... ok
 Proof: run elabops | test a_fn_form_with_no_finite_symbolic_reading_is_p0001_naming_it_inside_a_ddx ... ok

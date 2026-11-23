@@ -301,8 +301,8 @@ module FnLoopBench() {
 }
 analog for FnLoopBench { v(a, gnd) +> 0.4; }
 
-/// A loop whose variable decides: `2 x` is added for each of the two trips with `k > 1`, so the sum is `4 x`.
-fn weighted(x: f64) -> f64 { let s = 0.0; for k in 0..4 { if k > 1 { s += 2.0 * x; } } s }
+/// A loop whose variable is read and decides: `k x` for each of the trips with `k > 1` is `(2 + 3) x`, so the sum is `5 x`.
+fn weighted(x: f64) -> f64 { let s = 0.0; for k in 0..4 { if k > 1 { s += (k as f64) * x; } } s }
 module FnLoopVariable(a: Electrical, o: Electrical) {}
 analog for FnLoopVariable { v(o, gnd) +> ddx(weighted(v(a, gnd)), v(a, gnd)); }
 module FnLoopVariableBench() {
@@ -345,10 +345,10 @@ module FnMethodBench() {
 }
 analog for FnMethodBench { v(a, gnd) +> 0.4; }
 
-/// A generic `fn`, expanded for the type of its instance: `x * 3` whatever the tag.
-fn tripled<T: Repr>(x: f64, tag: T) -> f64 { x * 3.0 }
+/// A generic `fn`, expanded for the type and the const of its instance: `x * N` whatever the tag.
+fn tripled<T: Repr, const N: usize>(x: f64, tag: T) -> f64 { x * (N as f64) }
 module FnGeneric(a: Electrical, o: Electrical) {}
-analog for FnGeneric { v(o, gnd) +> ddx(tripled(v(a, gnd), true), v(a, gnd)); }
+analog for FnGeneric { v(o, gnd) +> ddx(tripled::<bool, 3>(v(a, gnd), true), v(a, gnd)); }
 module FnGenericBench() {
     signal a: Electrical; signal o: Electrical;
     let f = FnGeneric(a, o);
@@ -374,3 +374,27 @@ module FnHandleBench() {
     let f = FnHandle(a, o);
 }
 analog for FnHandleBench { v(a, gnd) +> 0.4; }
+
+/// An ordinary analog loop, unrolled because it contributes: `k as f64` of its variable is read in a term, `0 + 1 + 2 + 3` times 0.1.
+module UnrolledCastLoop(o: Electrical) {}
+analog for UnrolledCastLoop { for k in 0..4 { v(o, gnd) +> (k as f64) * 0.1; } }
+
+module UnrolledCastBench() {
+    signal o: Electrical;
+    let l = UnrolledCastLoop(o);
+}
+
+/// A method of a struct, its receiver a struct written out: `self.k * x` with `k` 7, and a struct held in a `let`.
+struct Gain { k: f64 }
+impl Gain { fn apply(self, x: f64) -> f64 { x * self.k } }
+fn held(x: f64) -> f64 { let g = Gain { k: 9.0 }; g.apply(x) }
+module FnStructMethod(a: Electrical, o: Electrical, p: Electrical) {}
+analog for FnStructMethod {
+    v(o, gnd) +> ddx(Gain { k: 7.0 }.apply(v(a, gnd)), v(a, gnd));
+    v(p, gnd) +> ddx(held(v(a, gnd)), v(a, gnd));
+}
+module FnStructMethodBench() {
+    signal a: Electrical; signal o: Electrical; signal p: Electrical;
+    let f = FnStructMethod(a, o, p);
+}
+analog for FnStructMethodBench { v(a, gnd) +> 0.4; }

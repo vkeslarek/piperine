@@ -186,9 +186,9 @@ fn ddx_through_a_fn_that_assigns_is_the_derivative_of_the_last_value() {
 
 #[test]
 fn ddx_through_a_fn_with_a_constant_loop_unrolls_it() {
-    // three trips of `p = p * x` is `x^3`, its derivative `3 x^2` = 0.48 at 0.4; `2 x` added for the two trips with `k > 1` is `4 x`.
+    // three trips of `p = p * x` is `x^3`, its derivative `3 x^2` = 0.48 at 0.4; `k x` added for the trips with `k > 1` is `5 x`.
     assert!(Partial::within(3.0 * 0.4 * 0.4, Partial::output("FnLoopBench"), 1e-12));
-    assert!(Partial::within(4.0, Partial::output("FnLoopVariableBench"), 1e-12));
+    assert!(Partial::within(5.0, Partial::output("FnLoopVariableBench"), 1e-12));
 }
 
 #[test]
@@ -204,9 +204,27 @@ fn ddx_through_a_fn_reads_an_option_and_a_str_parameter() {
 
 #[test]
 fn ddx_through_a_method_a_generic_fn_a_recursion_and_a_handle() {
-    // a method `self * k` (7), a generic `fn` `x * 3` (3), `power(x, 3)` = `x^3` unrolled (`3 x^2` = 0.48 at 0.4), a handle `2 v(h)` (2).
+    // a method `self * k` (7), a generic `fn` `x * N` with `N` = 3 (3), `power(x, 3)` = `x^3` unrolled (`3 x^2` = 0.48 at 0.4), a handle `2 v(h)` (2).
     assert!(Partial::within(7.0, Partial::output("FnMethodBench"), 1e-12));
     assert!(Partial::within(3.0, Partial::output("FnGenericBench"), 1e-12));
     assert!(Partial::within(3.0 * 0.4 * 0.4, Partial::output("FnRecursionBench"), 1e-12));
     assert!(Partial::within(2.0, Partial::output("FnHandleBench"), 1e-12));
+}
+
+#[test]
+fn an_integer_cast_in_an_analog_term_runs_without_a_digital_form() {
+    // `k as f64` of the variable of an unrolled analog loop is a term of an analog-only design: the four trips of
+    // `v(o) +> k * 0.1` add up to `(0 + 1 + 2 + 3) * 0.1`.
+    assert!(Partial::within(0.6, Partial::output("UnrolledCastBench"), 1e-12));
+}
+
+#[test]
+fn ddx_through_a_method_of_a_struct_reads_the_field_of_its_receiver() {
+    // `Gain { k: 7 }.apply(x)` is `x * self.k`: the field of a struct written out is the part it names, so the derivative
+    // is 7; the same struct held in a `let` of a `fn` gives its own 9.
+    let mut running = Partial::project().compile("FnStructMethodBench").unwrap_or_else(|r| panic!("{r}"));
+    let solved = running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves");
+    let read = |name: &str| solved.get_node(&NodeIdentifier::Anonymous(running.ir.node_at(&format!("FnStructMethodBench.{name}")).expect("a node").id().index())).expect("a value");
+    assert!(Partial::within(7.0, read("o"), 1e-12));
+    assert!(Partial::within(9.0, read("p"), 1e-12));
 }
