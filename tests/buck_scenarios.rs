@@ -405,8 +405,8 @@ trait Family {
         let (waves, at) = (Self::waves(), Timing::FIRST_STIMULUS);
         let (mode, pgood, vout) = (waves.mode().value_at(at), waves.pgood().value_at(at), Waveforms::at(&waves.vout(), at));
         eprintln!("{}: at {at:e} s mode {mode:?} (Regulate = 2), pgood {pgood:?}, vout {vout:.6} V (3.3 V +- 1 %)", Self::RUN);
-        assert_eq!(mode, Some(Supervisor::REGULATE), "mode at {at:e} s");
-        assert_eq!(pgood, Some(1), "pgood at {at:e} s");
+        assert_eq!(mode, Supervisor::REGULATE, "mode at {at:e} s");
+        assert_eq!(pgood, 1, "pgood at {at:e} s");
         assert!((vout - Timing::NOMINAL).abs() <= Timing::NOMINAL * Timing::BAND, "vout {vout} V at {at:e} s");
     }
 
@@ -845,7 +845,7 @@ impl FaultsFamily {
     fn over_current_entry() -> f64 {
         let waves = Self::waves();
         let entry = waves.mode().first_time(Supervisor::HICCUP, Self::OVERLOAD).expect("mode never reads Hiccup after the overload");
-        assert_eq!(waves.fault().value_at(entry), Some(Supervisor::OVER_CURRENT), "fault at the entry into Hiccup, {entry:e} s");
+        assert_eq!(waves.fault().value_at(entry), Supervisor::OVER_CURRENT, "fault at the entry into Hiccup, {entry:e} s");
         entry
     }
 
@@ -858,7 +858,7 @@ impl FaultsFamily {
     fn over_voltage_entry() -> f64 {
         let waves = Self::waves();
         let entry = waves.mode().first_time(Supervisor::HICCUP, Self::INJECT).expect("mode never reads Hiccup after inject");
-        assert_eq!(waves.fault().value_at(entry), Some(Supervisor::OVER_VOLTAGE), "fault at the entry into Hiccup, {entry:e} s");
+        assert_eq!(waves.fault().value_at(entry), Supervisor::OVER_VOLTAGE, "fault at the entry into Hiccup, {entry:e} s");
         entry
     }
 
