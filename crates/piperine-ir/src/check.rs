@@ -836,6 +836,8 @@ impl<'a> Checker<'a> {
                     );
                 } else if let Some(init) = c.init
                     && !self.holds(&c.ty, init)
+                    // an array carrier's initial value is one element (`[x; K]`) or every element (`[a, b, c]`)
+                    && !c.count.is_some_and(|count| self.holds(&ValueType::Array(Box::new(c.ty.clone()), count), init))
                 {
                     self.report(
                         format!("{item} carrier {}", c.name),

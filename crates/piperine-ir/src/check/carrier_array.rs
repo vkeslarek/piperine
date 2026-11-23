@@ -163,13 +163,23 @@ impl Checker<'_> {
                 element.check(self, w, origin, count);
                 ty.clone()
             }
-            (Some(count), None) => ValueType::Array(Box::new(ty.clone()), count),
+            (Some(_), None) => {
+                // the ABI commits through an element (abi.md §3): a statement's range is inside one element
+                self.wrong(w, origin.clone(), format!("a whole array of carriers (carrier {carrier}) cannot be committed or defined; name an element"));
+                return None;
+            }
             (None, Some(_)) => {
                 self.wrong(w, origin.clone(), format!("an element of carrier {carrier}, which is no array of carriers"));
                 return None;
             }
             (None, None) => ty.clone(),
         };
+        if let Some(Projection::Index(index)) =
+            path.iter().find(|step| matches!(step, Projection::Index(i) if !matches!(self.ir.exprs.get(i.index()).map(|d| &d.kind), Some(Expr::Int(_)))))
+        {
+            self.wrong(w, origin.clone(), format!("a run-time index {index:?} into the value of carrier {carrier}: a commit's byte range is fixed in the shape"));
+            return None;
+        }
         match self.projected(&base, path) {
             Ok(written) => Some(written),
             Err(what) => {

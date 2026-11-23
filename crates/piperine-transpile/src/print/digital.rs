@@ -125,6 +125,8 @@ impl<'a> DigitalPrinter<'a> {
             Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::LimitLast(_) | Source::LimitAge(_) => {
                 return Ok(None);
             }
+            // replaced by `print/carrier_array.rs` (composite-values T73)
+            Source::Whole(..) | Source::Element(..) => return Err(self.unsupported("a read of an array of carriers")),
         }))
     }
 

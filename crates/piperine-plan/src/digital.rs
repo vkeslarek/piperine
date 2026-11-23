@@ -74,11 +74,12 @@
 
 use piperine_abi::layout::{BIT, BYTE, F64, leaf_size};
 use piperine_abi::raw::{
-    DEFAULT, Field, GROUND, Layout, List, Statement, Str, global, leaf, pin_flag, role, statement_flag, watch,
+    DEFAULT, Field, GROUND, Layout, List, Statement, Str, global, leaf, part, pin_flag, role, statement_flag, watch,
 };
 use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf, WatchSpec};
 use piperine_ir::{Body, CarrierRole, Constant, EventSource, Expr, ExprId, Ir, Origin, Stmt, Stream, Target as Query, ValueType};
 
+use crate::array::ArrayPin;
 use crate::pin::PinLayout;
 use crate::plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, ReadSet, Source, Target};
 
@@ -115,18 +116,21 @@ pub struct StatementPlan {
     pub min_after: Option<f64>,
     /// The statement is `REPLACE` (abi.md C3): a commit through it removes every pending one.
     pub replace: bool,
+    /// The byte range `(offset, len)` the statement commits inside the pin, or inside one element of an array pin
+    /// (`ArrayPin::range`); `None`: the whole pin, or the whole element.
+    pub range: Option<(u32, u32)>,
 }
 
 impl StatementPlan {
     /// The statement of a commit to `carrier` delayed by `after`.
     pub fn commit(ir: &Ir, carrier: u32, after: Option<ExprId>) -> StatementPlan {
-        StatementPlan { target: Target::Carrier(carrier), min_after: after.and_then(|a| Self::min_after(ir, a)), replace: false }
+        StatementPlan { target: Target::Carrier(carrier), min_after: after.and_then(|a| Self::min_after(ir, a)), replace: false, range: None }
     }
 
     /// The statement of an emit site of stream `s`: the whole of its `RECORD` pin, due at the
     /// next microstep.
     pub fn record(s: u32) -> StatementPlan {
-        StatementPlan { target: Target::Record(s), min_after: None, replace: false }
+        StatementPlan { target: Target::Record(s), min_after: None, replace: false, range: None }
     }
 
     /// The statements of reaction `k` of `body`, one per commit and per emit site, in ABI order.
@@ -135,7 +139,14 @@ impl StatementPlan {
         body.reaction_statements(k)
             .into_iter()
             .filter_map(|id| match ir.stmt(id) {
-                Stmt::Commit { carrier, after, .. } => Some(StatementPlan::commit(ir, *carrier, *after)),
+                Stmt::Commit { carrier, after, target, .. } => {
+                    let plan = StatementPlan::commit(ir, *carrier, *after);
+                    let path = target.as_ref().map_or(&[][..], |t| t.path.as_slice());
+                    let held = body.carriers().get(*carrier as usize)?;
+                    // an element commit declares the range inside one element (abi.md §3), a field commit its levels
+                    let range = if held.count.is_some() || !path.is_empty() { ArrayPin::range(ir, held, path) } else { None };
+                    Some(StatementPlan { range, ..plan })
+                }
                 Stmt::Emit { stream, .. } => Some(StatementPlan::record(*stream)),
                 Stmt::Let { .. } | Stmt::Expr(_) | Stmt::Assign { .. } | Stmt::Contribute { .. } | Stmt::BoundStep { .. } => None,
             })
@@ -146,7 +157,7 @@ impl StatementPlan {
     /// timer fires.
     pub fn arm(body: Body<'_>, k: u32) -> StatementPlan {
         let guarded = body.events().get(k as usize).is_some_and(|e| e.guard.is_some());
-        StatementPlan { target: if guarded { Target::Timer(k) } else { Target::EventPin(k) }, min_after: None, replace: true }
+        StatementPlan { target: if guarded { Target::Timer(k) } else { Target::EventPin(k) }, min_after: None, replace: true, range: None }
     }
 
     /// The `min_after` of a commit delayed by `after`: the delay itself when it is a real
@@ -357,7 +368,7 @@ impl Digital {
                 panic!("body {}: carrier {} at {at} holds {}, which no pin holds; check() refuses it", body.name(), c.name, c.ty)
             };
             let init = match c.init {
-                Some(value) => PinLayout::bytes_in(body.ir(), &c.ty, value).unwrap_or_else(|| {
+                Some(value) => ArrayPin::init(body.ir(), c, value).or_else(|| PinLayout::bytes_in(body.ir(), &c.ty, value)).unwrap_or_else(|| {
                     panic!("body {}: carrier {} at {at}: initial value {value:?} is not a value of {}; check() refuses it", body.name(), c.name, c.ty)
                 }),
                 None => Vec::new(),
@@ -366,7 +377,7 @@ impl Digital {
             let flags = if init.is_empty() { 0 } else { pin_flag::HAS_INIT };
             let fields = layout.fields();
             let abi = layout.layout(&fields);
-            let pin = s.pin(PinSpec { origin: &at, flags, init: &init, ..PinSpec::discrete(&c.name, pin_role, &abi) });
+            let pin = s.pin(PinSpec { origin: &at, flags, init: &init, count: c.count.unwrap_or(0), ..PinSpec::discrete(&c.name, pin_role, &abi) });
             debug_assert_eq!(pin, first + i as u32);
         }
         first
@@ -631,8 +642,10 @@ impl Digital {
                 EventSource::Settle => {
                     set.0.insert(Source::Settle);
                 }
-                // planned by `array.rs` (composite-values T72)
-                EventSource::ElementChanged { .. } => panic!("an element event reaches the plan before `array.rs` plans it"),
+                // `lines[k].changed()` (§13 rule 9): the element's value and `CHANGED` byte, gated by the guard
+                EventSource::ElementChanged { carrier, element } => {
+                    set.0.extend([Source::Element(carrier, element, part::VALUE), Source::Element(carrier, element, part::CHANGED)]);
+                }
             }
             add(s, format!("event:{k}"), &e.origin, BodyPlan::function(Mode::Event(k), &set, vec![(Target::EventPin(k), None)]));
         }
@@ -738,7 +751,8 @@ impl Digital {
                 if st.replace {
                     flags |= statement_flag::REPLACE;
                 }
-                Statement { pin, offset: 0, len, flags, min_after }
+                let (offset, len) = st.range.unwrap_or((0, len));
+                Statement { pin, offset, len, flags, min_after }
             })
             .collect();
         s.reaction(ReactionSpec {
@@ -747,6 +761,7 @@ impl Digital {
             on: plan.on.clone(),
             reads: plan.reads.iter().map(|r| BodyPlan::read(pins, limits, *r)).collect(),
             writes,
+            elements: BodyPlan::elements(&plan.reads),
             ..ReactionSpec::default()
         });
     }

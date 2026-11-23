@@ -119,6 +119,8 @@ impl<'a> AnalogPrinter<'a> {
             Source::Settle => Text::generated("settle_changed"),
             Source::Freq => ValuePrinter::env_name(Env::Freq).to_string(),
             Source::Analysis(kind) => ValuePrinter::env_name(Env::Analysis(kind)).to_string(),
+            Source::Whole(c, part) => Self::carrier_part(self.body, c, &format!("whole_{part}")),
+            Source::Element(c, element, part) => Self::carrier_part(self.body, c, &format!("element{element}_{part}")),
         }
     }
 
