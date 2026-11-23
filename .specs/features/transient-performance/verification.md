@@ -1,8 +1,8 @@
 # Transient Performance verification
 
-**Verdict**: FAIL
-**Proofs**: `proofs.md` at 1c1d6487 (round 3: 60 pass, 0 fail; round 2 at 94455512 had 60/0; round 1 at 1c3e74ba had 24 pass and 27 "no test ran")
-**Verifier**: independent sub-agent (author != verifier), Opus 5.5, 2026-11-22, rounds 1 to 3
+**Verdict**: PASS
+**Proofs**: `proofs.md` at b080e9c7 (round 4: 60 pass, 0 fail; round 3 at 1c1d6487 had 60/0; round 2 at 94455512 had 60/0; round 1 at 1c3e74ba had 24 pass and 27 "no test ran")
+**Verifier**: independent sub-agent (author != verifier), Opus 5.5, 2026-11-22, rounds 1 to 4
 
 The gates hold at `HEAD`. The buck's 600 µs start takes 210 188 accepted steps (gate 300 000). The
 first 100 µs land 417 times (gate 1 000) and run 668 instants (0 for crossings, 668 scheduled), and
@@ -13,17 +13,17 @@ user: "Aceitar") and `scenario/run.rs`, which now returns the step count instead
 T26 holds D5: the restart after a host write becomes a tenth of the last step, and the growth clamp
 stays 1.5. C55 holds the sixteen twins' bytes, the only witness that 2.0 would move `tran_corner`.
 
-Round 2 closed F1 to F14, and round 3 closes F15 to F20; I read each fix and the test that now holds
-it. Part V §15, §15.2 and Appendix C.2 now agree with the code on these points. The host `set` is a
-commit at `(t, 0)` (`Digital::host_commit`), and no operating-point retake is described. The restart
-row lists rule 6's four restarts and real functions, and rule 4 states its exemption on its own.
+Round 2 closed F1 to F14, round 3 closed F15 to F20, and round 4 closes F21 and F22. I read each fix
+and the test that now holds it. The specification now agrees with the code on the points this feature
+touched:
 
-The verdict stays FAIL on two small spec-text points:
+- Part V §15, §15.2 and Appendix C.2: the step to `t` solves first on the left value; rule 6 has
+  four restarts; the crossing retake is exempt on its own.
+- Parts III and VIII: a host `set` is a commit at `(t, 0)` (b961e47c).
+- Part V: the event-time steps are 2 and 3.1 to 3.4 (6e58471e).
 
-- **F21.** Two other parts of the specification still place a host `set` at §15 step 5.
-- **F22.** Part V still names a §15 step 3.5, which 68b19c5f removed.
-
-Neither touches code, a value or a test outcome.
+A grep of `docs/` and `abi.md` finds no other host `set` at step 5 and no step 3.4 solve. Every check
+holds and no finding is open.
 
 ## Checks
 
