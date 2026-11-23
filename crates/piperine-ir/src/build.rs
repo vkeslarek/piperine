@@ -402,6 +402,22 @@ impl IrBuilder {
         self.exprs.get(id.index())
     }
 
+    /// How many expressions the builder holds: the id the next one takes. A pass that builds
+    /// expressions outside the elaborator's own `emit` reads this to find what it adds.
+    pub fn expr_count(&self) -> usize {
+        self.exprs.len()
+    }
+
+    /// The type of expression `id` added before; `None` for an id this builder never handed out.
+    pub fn expr_type(&self, id: ExprId) -> Option<&ValueType> {
+        self.exprs.get(id.index()).map(|e| &e.ty)
+    }
+
+    /// The origin of expression `id` added before; `None` for an id this builder never handed out.
+    pub fn expr_origin(&self, id: ExprId) -> Option<&Origin> {
+        self.exprs.get(id.index()).map(|e| &e.origin)
+    }
+
     /// The statement `id` added before; `None` for an id this builder never handed out.
     pub(crate) fn stmt_data(&self, id: StmtId) -> Option<&Stmt> {
         self.stmts.get(id.index())

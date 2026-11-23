@@ -862,8 +862,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] the `spartial` tests of AO-01 named in `## Checks` pass, and `ddx_of_an_expression_that_reads_no_probe_is_zero`
-- [ ] Gate check passes: `Run elabops`, `Run spartial`, then Full
+- [x] the `spartial` tests of AO-01 named in `## Checks` pass, and `ddx_of_an_expression_that_reads_no_probe_is_zero`
+- [x] Gate check passes: `Run elabops`, `Run spartial`, then Full
 
 **Tests**: e2e
 **Gate**: full

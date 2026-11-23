@@ -18,7 +18,7 @@ mod compound;
 mod consts;
 mod control;
 mod contribute;
-mod derivatives;
+mod derivatives; mod partial;
 mod derived;
 mod diagnose;
 mod drives;

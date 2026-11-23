@@ -96,7 +96,7 @@ impl Elaboration<'_, '_> {
     /// round. A branch is numbered at its first contribution; a flow read written before that
     /// contribution numbers it from the potential contribution the module's `analog` block
     /// writes, wherever it sits in it (under an `if`, in a nested block).
-    fn potential_branch(&mut self, scope: &mut Scope, plus: Terminal, minus: Terminal) -> Option<(u32, bool)> {
+    pub(super) fn potential_branch(&mut self, scope: &mut Scope, plus: Terminal, minus: Terminal) -> Option<(u32, bool)> {
         let same = |b: &Branch| (b.plus, b.minus) == (plus, minus) || (b.plus, b.minus) == (minus, plus);
         let existing = scope.branches.iter().position(same);
         if let Some(at) = existing
@@ -172,6 +172,7 @@ impl Elaboration<'_, '_> {
             "limit" => self.lower_limit(scope, expr, args, ty, origin),
             "ac_stim" => self.lower_stim(scope, expr, args, ty, origin),
             "ddt" => self.lower_derivative(scope, expr, args, origin),
+            "ddx" => self.lower_ddx(scope, expr, args, origin),
             name => {
                 self.unsupported(scope.file, span, &format!("core primitive `{name}`"));
                 None

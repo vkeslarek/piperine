@@ -1,0 +1,116 @@
+//! `ddx` run from source (analog-operators AO-01, Part IV §14.2): each module forces its output
+//! to the value of one `ddx`, so the operating point reads the derivative as `v(o)`.
+
+/// `ddx` of the diode current against its own branch, the conductance at the operating point.
+module DiodeConductance(a: Electrical, o: Electrical) {
+    is: f64 = 1e-14;
+    nvt: f64 = 25.85m;
+}
+analog for DiodeConductance {
+    let id = is * ((v(a, gnd) / nvt).exp() - 1.0);
+    v(o, gnd) +> ddx(id, v(a, gnd));
+}
+
+module DiodeConductanceBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let g = DiodeConductance(a, o);
+}
+analog for DiodeConductanceBench { v(a, gnd) +> 0.6; }
+
+/// `ddx(v(k, a), v(a, k))`: the reversed branch is -1.
+module ReversedBranch(a: Electrical, k: Electrical, o: Electrical) {}
+analog for ReversedBranch { v(o, gnd) +> ddx(v(k, a), v(a, k)); }
+
+module ReversedBranchBench() {
+    signal a: Electrical;
+    signal k: Electrical;
+    signal o: Electrical;
+    let r = ReversedBranch(a, k, o);
+}
+analog for ReversedBranchBench {
+    v(a, gnd) +> 0.7;
+    v(k, gnd) +> 0.2;
+}
+
+/// `ddx(v(g) - v(s), v(g, s))`: the two single-node probes are other branches, held constant.
+module OtherBranches(g: Electrical, s: Electrical, o: Electrical) {}
+analog for OtherBranches { v(o, gnd) +> ddx(v(g, gnd) - v(s, gnd), v(g, s)); }
+
+module OtherBranchesBench() {
+    signal g: Electrical;
+    signal s: Electrical;
+    signal o: Electrical;
+    let r = OtherBranches(g, s, o);
+}
+analog for OtherBranchesBench {
+    v(g, gnd) +> 0.7;
+    v(s, gnd) +> 0.2;
+}
+
+/// `ddx(x * i(a, b), i(a, b))` is `x`: the flow of a branch the module drives with a potential.
+module FlowFactor(a: Electrical, b: Electrical, o: Electrical) {
+    x: f64 = 3.0;
+}
+analog for FlowFactor {
+    v(a, b) +> 0.5;
+    v(o, gnd) +> ddx(x * i(a, b), i(a, b));
+}
+
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+module FlowFactorBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let f = FlowFactor(a, gnd, o);
+    let load = Resistor { r: 1k }(a, gnd);
+}
+
+/// `ddx(limit(v(a), f) * 2.0, v(a))` is 2: `limit` is transparent.
+module ThroughLimit(a: Electrical, o: Electrical) {}
+analog for ThroughLimit { v(o, gnd) +> ddx(limit(v(a, gnd), |new, old| new) * 2.0, v(a, gnd)); }
+
+module ThroughLimitBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let t = ThroughLimit(a, o);
+}
+analog for ThroughLimitBench { v(a, gnd) +> 0.4; }
+
+/// `ddx` of an expression that reads no probe is 0.
+module NoProbe(a: Electrical, o: Electrical) {
+    k: f64 = 4.0;
+}
+analog for NoProbe { v(o, gnd) +> ddx(k * 2.0, v(a, gnd)); }
+
+module NoProbeBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let t = NoProbe(a, o);
+}
+analog for NoProbeBench { v(a, gnd) +> 0.4; }
+
+/// An AC sweep takes the `ddx` at the operating point: `i(o) +> ddx(id, v(a)) * v(inp)` into 1 kohm.
+module ConductanceTimesInput(a: Electrical, inp: Electrical, o: Electrical) {
+    is: f64 = 1e-14;
+    nvt: f64 = 25.85m;
+}
+analog for ConductanceTimesInput {
+    let id = is * ((v(a, gnd) / nvt).exp() - 1.0);
+    i(o, gnd) +> ddx(id, v(a, gnd)) * v(inp, gnd);
+}
+
+module ConductanceAcBench() {
+    signal a: Electrical;
+    signal inp: Electrical;
+    signal o: Electrical;
+    let t = ConductanceTimesInput(a, inp, o);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for ConductanceAcBench {
+    v(a, gnd) +> 0.6;
+    v(inp, gnd) +> ac_stim(1.0);
+}
