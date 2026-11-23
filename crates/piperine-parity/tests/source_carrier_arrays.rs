@@ -248,3 +248,30 @@ fn the_shift_register_and_the_ram_give_their_expected_sequences() {
         assert_eq!((Records::integer(record, "addr"), Records::integer(record, "read")), (addr as i128, i128::from(read)), "edge {}: the address and the word read before the write", Records::integer(record, "n"));
     }
 }
+
+#[test]
+fn a_ladder_over_an_array_of_nodes_solves_as_written_out() {
+    // CV-26 AC 1, CV-24 AC 2 (DC3, QC6): the ladder contributed in a loop over `bl[k]` has the operating point of the same
+    // ladder written out node by node, to the last bit, and the closed form the test computes: with a 2 kOhm shunt at each
+    // of four nodes behind a 1 kOhm series resistor, the node voltages follow from the transfer `r' = 1k + (2k || r)`
+    let looped = RUN.operating_point("ladder.msl", "Ladder", &["bl[0]", "bl[1]", "bl[2]", "bl[3]", "bl[4]"]);
+    let written = RUN.operating_point("ladder.msl", "WrittenOut", &["n0", "n1", "n2", "n3", "n4"]);
+    assert_eq!(looped.iter().map(|v| v.to_bits()).collect::<Vec<_>>(), written.iter().map(|v| v.to_bits()).collect::<Vec<_>>(), "the same circuit, the same solution");
+    // closed form: the load seen from node `k + 1` toward the end, `r_k` ohms; the voltage divides at each section
+    let (series, shunt) = (1000.0_f64, 2000.0_f64);
+    let mut load = [0.0_f64; 5];
+    load[4] = shunt;
+    for k in (1..4).rev() {
+        let beyond = series + load[k + 1];
+        load[k] = shunt * beyond / (shunt + beyond);
+    }
+    let mut wanted = [5.0_f64; 5];
+    for k in 0..4 {
+        wanted[k + 1] = wanted[k] * load[k + 1] / (series + load[k + 1]);
+    }
+    for (k, (got, want)) in looped.iter().zip(wanted).enumerate() {
+        assert!((got - want).abs() < 1e-9, "node {k}: {got} V, the closed form gives {want} V");
+    }
+    let probed = RUN.operating_point("ladder.msl", "LadderProbed", &["tap"]);
+    assert!((probed[0] - wanted[3]).abs() < 1e-9, "`v(bl[3])` is element 3 only: {} V, wanted {}", probed[0], wanted[3]);
+}

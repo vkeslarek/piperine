@@ -1,0 +1,44 @@
+//! An R-ladder over an array of nodes (composite-values CV-26): four sections of a series 1 kOhm and a shunt 2 kOhm, fed
+//! by 5 V, contributed in a loop over `bl[k]`, and the same ladder written out node by node.
+
+/// The ladder over `bl[0]` to `bl[4]`.
+module Ladder() {
+    signal bl: [Electrical; 5];
+}
+analog for Ladder {
+    v(bl[0], gnd) +> 5.0;
+    for k in 0..4 {
+        i(bl[k], bl[k + 1]) +> v(bl[k], bl[k + 1]) / 1000.0;
+        i(bl[k + 1], gnd) +> v(bl[k + 1], gnd) / 2000.0;
+    }
+}
+
+/// The same ladder, one node at a time.
+module WrittenOut() {
+    signal n0: Electrical; signal n1: Electrical; signal n2: Electrical; signal n3: Electrical; signal n4: Electrical;
+}
+analog for WrittenOut {
+    v(n0, gnd) +> 5.0;
+    i(n0, n1) +> v(n0, n1) / 1000.0;
+    i(n1, gnd) +> v(n1, gnd) / 2000.0;
+    i(n1, n2) +> v(n1, n2) / 1000.0;
+    i(n2, gnd) +> v(n2, gnd) / 2000.0;
+    i(n2, n3) +> v(n2, n3) / 1000.0;
+    i(n3, gnd) +> v(n3, gnd) / 2000.0;
+    i(n3, n4) +> v(n3, n4) / 1000.0;
+    i(n4, gnd) +> v(n4, gnd) / 2000.0;
+}
+
+/// Reads one element of the array at its probe: `tap = v(bl[3])`.
+module LadderProbed() {
+    signal bl: [Electrical; 5];
+    signal tap: Electrical;
+}
+analog for LadderProbed {
+    v(bl[0], gnd) +> 5.0;
+    for k in 0..4 {
+        i(bl[k], bl[k + 1]) +> v(bl[k], bl[k + 1]) / 1000.0;
+        i(bl[k + 1], gnd) +> v(bl[k + 1], gnd) / 2000.0;
+    }
+    v(tap, gnd) +> v(bl[3]);
+}

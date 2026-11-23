@@ -580,8 +580,8 @@ T86 → T87 → T88 → T89 → T90
 
 **Done when**:
 
-- [ ] `a_ladder_over_an_array_of_nodes_solves_as_written_out` passes under `**Run srcarr**`
-- [ ] Gate check passes: Task (`piperine-parity`)
+- [x] `a_ladder_over_an_array_of_nodes_solves_as_written_out` passes under `**Run srcarr**`
+- [x] Gate check passes: Task (`piperine-parity`)
 
 **Tests**: integration
 **Gate**: task
@@ -855,6 +855,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **T81 notes:** `elab/element_commits.rs`: `place_target` (root carrier by `drive_target`, the first indexes one per level of the array's dims name the flat element through `flat_element`, the rest are `Projection`s typed through the struct/tuple/array levels); `PlaceTarget::commit_target`. `reactions.rs::lower_commit` and `drives.rs::lower_definitions` use it; a definition's element must fold (E0180 `not_folded`), it is `Drive.element`. The test files of this phase define no free function (`Fixture`/`Read`/`Writes` own their helpers).
 **T82 notes:** `children.rs` gives a node-array port its K terminals (`node_array_terminals`) and a carrier port its carrier and window (`carrier_window`: an element `x[k]` is `CarrierWindow { first, length: None }`, a sub-array `g[r]` the run `(r*C, C)`); `Structure::child_windows` -> `IrBuilder::bind_child_windows`. `Ir::check` skips a child with an empty window list. The net table is unchanged: one net per array carrier, one node per element, by the existing paths.
 **T83 notes:** the end-to-end run found and fixed, in this task: (1) element definitions (`q[k] = d[k]`) had no plan: a drive of one element writes a scalar `PORT` pin `drive:<carrier>[<element>]` (`Pins::element_drives`, after the `SETTLE` pin; `Target::ElementDrive`) that `Netlist` binds by `Port::Window` of length 1, the Rust function is `<carrier>_element<k>_drive`; a delayed element definition is refused by name by the elaborator; (2) P1 on an array net: a reaction's statement (the element is named at run time) and a function's window never collide at bind (`WriterEntry::clash`): the checker proves the pair statically (E0221/E0220); (3) `deps`/`check` read the index expressions of a commit target; (4) the whole read prints `*x.whole::<K>()` (no parentheses). The `changed()` of every element fires at `(0, 0)` (the initial commit is a change of every carrier, §13 rule 6), as for a scalar.
+**T84 notes:** the ladder run found that an element's name `bl[2]` is a Rust identifier in the analog printer: `Text::spelled_cased` now spells `[` and `]` as `_i` and `_j` (`bl_i2_j`). The test compares the looped and the written-out ladders bit for bit and the closed form to 1e-9 V (DC3, QC6).
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 
