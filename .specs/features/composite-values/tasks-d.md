@@ -278,8 +278,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `every_as_conversion_follows_the_table_of_1_4_5` passes under `**Run conversions**` (each pair over the special values, the edges of each range and 5 000 random values; the `f32`↔`f64` and `u64`/`i64`↔`f32`/`f64` pairs are compared with Rust's own `as`, the rest with `ExactRational`; a double-rounding case for `f64 → f16` that `f64 → f32 → f16` gets wrong is in the set)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `every_as_conversion_follows_the_table_of_1_4_5` passes under `**Run conversions**` (each pair over the special values, the edges of each range and 5 000 random values; the `f32`↔`f64` and `u64`/`i64`↔`f32`/`f64` pairs are compared with Rust's own `as`, the rest with `ExactRational`; a double-rounding case for `f64 → f16` that `f64 → f32 → f16` gets wrong is in the set)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -1063,6 +1063,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** Planning (2026-11-23): Q4 answered by the user directly (integers (a), `f16` (a), `f128` (a) complete, recorded in spec.md). design-d.md QD1 to QD8 are the planner's defaults, pending the user's approval of these tasks. D1 to D3 (T91 to T109) may run beside phase C; T110 waits for phase C's merge.
 **Defaults and findings (D1 to D3, numeric crate):**
+- T97: float to integer maps a float whose magnitude passes the target to the range edge and truncates the rest exactly; the double-rounding case is 1 + 2^-11 + 2^-40 (f64 to f16 once gives 0x3C01, through f32 gives 0x3C00).
 - T96: the f128 operand generator mixes random bits with exponents near the anchor, sparse significands (ties), subnormals and values near overflow; hypot and rem_euclid are checked on one random pair in four (1 000 pairs) plus every special pair and the largest finite value. All exact operations are IeeeArithmetic, tested against ExactOracle (independent code).
 - Root Cargo.toml gains [profile.dev.package.{piperine-numbers,num-bigint,num-integer,num-traits}] opt-level = 3 so the numeric tests (all 65 536 f16 inputs, 2^22 operand pairs against big-integer arithmetic) run in a dev build in about a minute, not hours; no result depends on it. T95: rem_euclid and hypot are checked on one random pair in eight (2^19 pairs), the other operations on all 2^22. Hypot, like rem_euclid, is the exact IeeeArithmetic (not f64), so it is correctly rounded by construction. IeeeArithmetic (src/arithmetic.rs, exact operations of any BinaryFormat) is a file the design table did not list: Float16 and Float128 delegate their exact methods to it. Decisions the spec left open, followed by code and oracle alike: min(-0,+0) = -0 and max = +0; rem_euclid with an infinite divisor leaves a non-negative x and gives +inf for a negative x (Rust's), and an exact zero remainder keeps the sign of x; fract(x) = x - trunc(x) in IEEE terms (+0 for an integer, NaN for an infinity).
 - Build gate: the Build line already prints one warning on main before this work (dead code 'run' in root test tests/book/types.rs); it is not ours and is untouched; the gate used here is zero warnings and zero errors from piperine-numbers plus no error anywhere.

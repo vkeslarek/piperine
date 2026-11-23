@@ -8,25 +8,6 @@ use piperine_numbers::format::BinaryFormat;
 use std::cmp::Ordering;
 
 impl ExactRational {
-    /// The exact value of a finite pattern of `format` (zero included), `None` for infinity and NaN.
-    pub fn from_pattern(format: BinaryFormat, pattern: u128) -> Option<Self> {
-        let fraction_bits = format.fraction_bits();
-        let field = (pattern >> fraction_bits) & ((1u128 << (format.bits - format.precision)) - 1);
-        let fraction = pattern & ((1u128 << fraction_bits) - 1);
-        let negative = pattern >> (format.bits - 1) == 1;
-        if field == (1u128 << (format.bits - format.precision)) - 1 {
-            return None;
-        }
-        let minimum_unit = format.minimum_exponent() as i64 - fraction_bits as i64;
-        let (significand, exponent) = if field == 0 { (fraction, minimum_unit) } else { (fraction | 1u128 << fraction_bits, field as i64 - format.maximum_exponent as i64 - fraction_bits as i64) };
-        Some(Self::dyadic(negative, &BigUint::from(significand), exponent))
-    }
-
-    /// The integer `value`.
-    pub fn integer(value: &BigInt) -> Self {
-        ExactRational { numerator: value.clone(), denominator: BigUint::from(1u32) }
-    }
-
     /// `self + other`.
     pub fn plus(&self, other: &Self) -> Self {
         let denominator = &self.denominator * &other.denominator;
@@ -58,11 +39,6 @@ impl ExactRational {
         Some(ExactRational { numerator: &self.numerator * BigInt::from(other.denominator.clone()) * sign, denominator: self.denominator.clone() * other.magnitude() })
     }
 
-    /// Whether the value is zero.
-    pub fn is_zero(&self) -> bool {
-        self.numerator.sign() == Sign::NoSign
-    }
-
     /// The exact order of two rationals.
     pub fn compare(&self, other: &Self) -> Ordering {
         (&self.numerator * BigInt::from(other.denominator.clone())).cmp(&(&other.numerator * BigInt::from(self.denominator.clone())))
@@ -78,11 +54,6 @@ impl ExactRational {
     /// The least integer not below the value.
     pub fn ceiling(&self) -> BigInt {
         -self.negated().floor()
-    }
-
-    /// The integer part toward zero.
-    pub fn truncated(&self) -> BigInt {
-        &self.numerator / BigInt::from(self.denominator.clone())
     }
 
     /// The nearest integer, a tie going away from zero.

@@ -6,6 +6,8 @@
 mod exact;
 #[path = "support/exact_arithmetic.rs"]
 mod exact_arithmetic;
+#[path = "support/exact_values.rs"]
+mod exact_values;
 #[path = "support/oracle.rs"]
 mod oracle;
 #[path = "support/random.rs"]

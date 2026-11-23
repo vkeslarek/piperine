@@ -10,6 +10,7 @@
 #![deny(missing_docs)]
 
 pub mod arithmetic;
+pub mod convert;
 pub mod format;
 pub mod half;
 pub mod limbs;
