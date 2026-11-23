@@ -26,6 +26,10 @@ impl Checker<'_> {
             self.option_argument(expr, expected, inner);
             return;
         }
+        if matches!(expected, Ty::Carrier { .. }) {
+            self.handle_argument(expr, expected);
+            return;
+        }
         self.check(expr, expected);
     }
 
@@ -555,6 +559,10 @@ impl Checker<'_> {
                     DeclKind::Port(p) => self.read_type(decl, p.ty),
                     DeclKind::Signal(s) => self.read_type(decl, s.ty),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {
+                        // a handle read: the value of a discrete carrier, the node itself (§3.1.5, §3.1.6)
+                        if let Some(read) = self.handle_read(decl) {
+                            return Some(read);
+                        }
                         let local = self.locals.get(&decl).cloned();
                         // A read that requires no type gives the literal its default `i32` (§1.4.2).
                         self.open_literals.remove(&decl);

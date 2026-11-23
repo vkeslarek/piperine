@@ -1090,8 +1090,8 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_handle_is_read_probed_passed_on_and_has_carrier_methods_in_the_checker` and `a_probe_of_a_handle_in_a_function_is_not_e0450` pass under `**Run typeshandles**`
-- [ ] Gate check passes: Quick
+- [x] `a_handle_is_read_probed_passed_on_and_has_carrier_methods_in_the_checker` and `a_probe_of_a_handle_in_a_function_is_not_e0450` pass under `**Run typeshandles**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

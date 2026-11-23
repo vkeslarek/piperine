@@ -215,6 +215,8 @@ pub struct Types<'d> {
     pub(super) enum_tags: BTreeMap<DeclId, super::EnumTag>,
     pub(super) written: BTreeMap<TypeId, Ty>,
     pub(super) obligations: BTreeMap<DeclId, Vec<super::Obligation>>,
+    /// The parameters of the functions of the check that are handles (`handles.rs`).
+    pub(super) handles: std::collections::BTreeSet<DeclId>,
     pub(super) instantiations: BTreeMap<ExprId, Instantiation>,
     pub(super) continuous: BTreeSet<ExprId>,
     pub(super) emits: BTreeMap<DeclId, BTreeSet<String>>,
@@ -397,6 +399,11 @@ impl<'d> Types<'d> {
     /// the argument of each parameter, inferred or written, defaults filled in.
     pub fn instantiation(&self, call: ExprId) -> Option<&Instantiation> {
         self.instantiations.get(&call)
+    }
+
+    /// Whether the function parameter `param` is a handle: it stands for the carrier the caller passes (§3.1.5).
+    pub fn handle(&self, param: DeclId) -> bool {
+        self.handles.contains(&param)
     }
 
     /// What the definition of the generic function `item` defers to each instantiation: its

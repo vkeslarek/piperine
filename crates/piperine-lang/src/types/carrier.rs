@@ -157,6 +157,8 @@ impl Checker<'_> {
                 let ty = match &self.design.decl_data(decl).kind {
                     DeclKind::Port(p) => p.ty,
                     DeclKind::Signal(s) => s.ty,
+                    // a handle is the carrier the caller passes (§3.1.5)
+                    DeclKind::FnParam(_) => return self.handle_type(decl).map(|t| (decl, t)),
                     _ => return None,
                 };
                 self.port_type(ty).map(|t| (decl, t))

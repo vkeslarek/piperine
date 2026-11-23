@@ -108,6 +108,8 @@ pub(super) struct Checker<'d> {
     /// Bindings whose value could not be typed: a read of one is silent, so one mistake is
     /// one diagnostic.
     pub(super) poisoned: BTreeSet<DeclId>,
+    /// The parameters of functions that are handles: a node or a carrier of a nature (`handles.rs`).
+    pub(super) handles: BTreeSet<DeclId>,
     /// Set while the `where` of a `fn` is checked: its parameters are not in scope (§3 rule 8).
     pub(super) fn_where: bool,
     /// Which names are places and which locals the body assigns (§1.5.12).
@@ -182,6 +184,7 @@ impl<'d> Checker<'d> {
             in_guard: false,
             event_reads: BTreeSet::new(),
             poisoned: BTreeSet::new(),
+            handles: BTreeSet::new(),
             fn_where: false,
             places: Places::default(),
             open_literals: BTreeMap::new(),
@@ -224,7 +227,7 @@ impl<'d> Checker<'d> {
         }
         let continuous: BTreeSet<ExprId> = self.continuity.continuous_set().collect();
         let emits = self.records.emitting();
-        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned() })
+        Ok(Types { design: self.design, exprs: self.exprs, locals: self.locals, methods: self.methods, callees: self.callees, bindings: self.bindings, reached: self.reached, somes: self.somes, carriers: self.carriers, builtins: self.builtins, event_reads: self.event_reads, widths: self.widths, defaults: self.defaults, layouts: self.layouts, enum_tags: self.enum_tags, written: self.written, handles: self.handles, instantiations: self.instantiations, obligations: self.obligations, continuous, emits, assigned: self.places.into_assigned() })
     }
 
     /// Check every declaration of `items`, and what they reach, and keep only the diagnostics, in
@@ -629,6 +632,7 @@ impl<'d> Checker<'d> {
         for (param, ty) in parts.params {
             match ty {
                 Some(ty) => {
+                    self.note_handle(param, &ty);
                     self.locals.insert(param, ty);
                 }
                 None => {

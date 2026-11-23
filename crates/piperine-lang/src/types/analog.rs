@@ -79,7 +79,10 @@ impl Checker<'_> {
                 return None;
             }
         };
-        if matches!(self.context, Context::Function | Context::Const) {
+        // a function probes through a handle (§3 rule 7, §3.1.5); a probe of anything else is out of place
+        let operands: Vec<ExprId> = args.iter().map(|arg| arg.value).collect();
+        let through_handles = self.context == Context::Function && self.probes_only_handles(&operands);
+        if matches!(self.context, Context::Function | Context::Const) && !through_handles {
             self.coded(file, "E0450", node.span, "a probe is allowed in an `analog` block and a module body only".to_string(), "core primitive out of place");
         }
         if args.is_empty() || args.len() > 2 {
