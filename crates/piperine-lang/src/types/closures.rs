@@ -171,6 +171,18 @@ impl Checker<'_> {
         class
     }
 
+    /// A call of the named function `function` where its class is not allowed (§3 table, PI-12 AC 3): a
+    /// solve-reading function in a const context, an emitting one in a const context or a module body, is
+    /// `E0122` naming the function and the class. `emit!` written directly stays `E0601`.
+    pub(super) fn refuse_outside_class(&mut self, expr: ExprId, function: DeclId) {
+        let Some(class) = self.function_class(function, &mut BTreeSet::new()).refused_in(self.context) else { return };
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        let name = self.design.decl_data(function).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let message = format!("the function `{name}` is {class} and is called where that class is not allowed (§3)");
+        self.coded(file, "E0122", span, message, "a call out of its class");
+    }
+
     /// A call of the local `decl` whose type is `fn(..) -> R`, a closure or a function pointer:
     /// the arguments against its parameters, and, for a closure, `E0122` where its class is not
     /// allowed. There is no named function to record as the callee.

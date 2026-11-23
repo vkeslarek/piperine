@@ -159,7 +159,7 @@ fn every_diagnostic_has_a_span_and_a_code() {
     let natures = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\nnature T { potential: Tp { access: temp, units: \"K\", abstol: 1m }, flow: P { access: pwr, units: \"W\", abstol: 1n } }\nmodule Resistor(p: E, n: E) { r: f64; }\n";
     let bodies = [
         "module Top() { a: f64 = true; }",
-        "module Top() { a: u32; }",
+        "module Top() { a: str; }",
         "module Top() { a: f64 = 1.0 where 1.0; }",
         "module Top() { signal s: E = true; }",
         "module Top(a: E) { let r = Resistor { r: 1.0 }(a); }",

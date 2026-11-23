@@ -83,6 +83,7 @@ impl Checker<'_> {
             return self.intrinsic_call(expr, callee, intrinsic, args);
         }
         self.reach(function);
+        self.refuse_outside_class(expr, function);
         self.emitting_call(expr, function);
         let (params, ret) = self.signature(function)?;
         self.callees.insert(expr, Callee::Function(function));
