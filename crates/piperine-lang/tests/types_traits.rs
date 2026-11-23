@@ -185,3 +185,65 @@ fn impl_trait_for_a_nature_is_accepted() {
     // §3.1.9, MD-78: a nature takes trait impls, its `self` a handle; a trait that a nature implements is a capability
     assert_eq!(standard_codes("trait Cap { fn cap(self) -> f64; }\nimpl Cap for E { fn cap(self) -> f64 { 1.0 } }\n"), Vec::<String>::new());
 }
+
+/// The `E0187` messages of the model check of `src`, in order, and nothing else (every other code fails the test).
+fn e0187_messages(src: &str) -> Vec<String> {
+    let design = Design::builder().source("top.msl", format!("{HEAD}{src}")).build();
+    match piperine_lang::types::Types::check_model(&design) {
+        Ok(()) => Vec::new(),
+        Err(found) => {
+            assert!(found.iter().all(|d| d.diagnostic.code == "E0187"), "{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+            found.iter().map(|d| d.diagnostic.message.clone()).collect()
+        }
+    }
+}
+
+#[test]
+fn a_trait_impl_missing_an_item_is_e0187_naming_trait_and_type() {
+    // §3.7.4: every item of the trait without a default is defined; the one with a default may be left out
+    let found = e0187_messages("trait Shape { fn area(self) -> f64; fn sides(self) -> u32 { 3 } }\nstruct Sq { a: f64 }\nimpl Shape for Sq { }\n");
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("`impl Shape for Sq` leaves out `area`"), "{}", found[0]);
+    assert!(e0187_messages("trait Shape { fn sides(self) -> u32 { 3 } }\nstruct Sq { a: f64 }\nimpl Shape for Sq { }\n").is_empty());
+}
+
+#[test]
+fn extra_items_signatures_supertraits_crate_and_pub_are_e0187() {
+    let shape = "trait Shape { fn area(self) -> f64; }\nstruct Sq { a: f64 }\n";
+    // §3.7.4: an item the trait lacks, and an item of another signature
+    let extra = e0187_messages(&format!("{shape}impl Shape for Sq {{ fn area(self) -> f64 {{ 1.0 }} fn extra(self) -> f64 {{ 1.0 }} }}\n"));
+    assert!(extra.len() == 1 && extra[0].contains("`impl Shape for Sq` defines `extra`, which the trait does not have"), "{extra:?}");
+    let signature = e0187_messages(&format!("{shape}impl Shape for Sq {{ fn area(self) -> bool {{ true }} }}\n"));
+    assert!(signature.len() == 1 && signature[0].contains("`area` has the type `fn(struct `Sq`) -> bool`, the trait gives it `fn(struct `Sq`) -> f64`"), "{signature:?}");
+    // §3.7.3: a supertrait the type does not implement
+    let supertrait = e0187_messages(&format!("{shape}trait Solid: Shape {{ fn volume(self) -> f64; }}\nimpl Solid for Sq {{ fn volume(self) -> f64 {{ 1.0 }} }}\n"));
+    assert!(supertrait.len() == 1 && supertrait[0].contains("does not implement the supertrait `Shape`"), "{supertrait:?}");
+    // §3.7.11: no `pub` on an item of a trait impl
+    let public = e0187_messages(&format!("{shape}impl Shape for Sq {{ pub fn area(self) -> f64 {{ 1.0 }} }}\n"));
+    assert!(public.len() == 1 && public[0].contains("written `pub`"), "{public:?}");
+    // §3.7.8, MD-78: the arguments a trait takes are named by the `impl`, and each item is checked under them
+    let generic = "trait Conv<X, Y = X> { fn conv(self, x: X) -> Y; }\nstruct S { a: f64 }\n";
+    assert!(e0187_messages(&format!("{generic}impl Conv<f64> for S {{ fn conv(self, x: f64) -> f64 {{ x }} }}\n")).is_empty(), "the default Y = X is f64");
+    let under = e0187_messages(&format!("{generic}impl Conv<f64, u8> for S {{ fn conv(self, x: f64) -> f64 {{ x }} }}\n"));
+    assert!(under.len() == 1 && under[0].contains("`conv`"), "{under:?}");
+}
+
+#[test]
+fn an_impl_is_written_in_the_crate_of_the_trait_or_of_the_type() {
+    // §3.7.7: `impl Tr for T` is in the crate that declares `Tr` or the one that declares `T`
+    use piperine_lang::pom::CrateGraph;
+    let mut graph = CrateGraph::new();
+    let app = graph.add_crate("app", "app/lib.msl").unwrap();
+    let util = graph.add_crate("util", "util/lib.msl").unwrap();
+    graph.add_dependency(app, "util", util).unwrap();
+    let lib = "pub trait Tr { fn f(self) -> f64; }\n";
+    let own_type = "use util::Tr;\nstruct S { a: f64 }\nimpl Tr for S { fn f(self) -> f64 { 1.0 } }\n";
+    let foreign = "use util::Tr;\nimpl Tr for f64 { fn f(self) -> f64 { 1.0 } }\n";
+    for (src, expected) in [(own_type, 0), (foreign, 1)] {
+        let design = Design::builder().std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", "").source("app/lib.msl", src).source("util/lib.msl", lib).crates(graph.clone()).build();
+        assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+        let found = piperine_lang::types::Types::check_model(&design).err().unwrap_or_default();
+        assert_eq!(found.len(), expected, "{src}: {found:?}");
+        assert!(found.iter().all(|d| d.diagnostic.message.contains("declares neither the trait nor the type")), "{found:?}");
+    }
+}

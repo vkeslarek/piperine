@@ -405,6 +405,14 @@ impl Elaboration<'_, '_> {
     /// however many bodies call it), or of a core primitive or a probe (see `analog.rs`).
     fn lower_call(&mut self, scope: &mut Scope, expr: ExprId, args: &[ExprId], class: CallClass, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let span = self.design.expr_node(expr).span;
+        // a call of a generic function is typed (generics T20 to T23) and instantiated by T33 and T34: until
+        // then the elaborator names it and stops
+        if let Some(Callee::Function(function)) = self.types.callee(expr)
+            && self.design.decl_data(function).generics_span.is_some()
+        {
+            self.unsupported(scope.file, span, "generic function");
+            return None;
+        }
         match (class, self.types.callee(expr)) {
             (CallClass::Probe, _) => self.lower_probe(scope, expr, ty, origin),
             // A function that emits is no IR function: its call is inlined where it stands (§19 rule 10).

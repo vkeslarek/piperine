@@ -311,7 +311,7 @@ impl Checker<'_> {
         let recv_ty = self.infer(*recv)?;
         // §3 rule 9: a value of a type parameter has the methods its bounds give
         if let Ty::Param(param) = recv_ty {
-            return self.parameter_method(param, name, method.span, args, file);
+            return self.parameter_method(param, name, method.span, args, file, (expr, *recv));
         }
         // §3.1.7: the methods of a struct or an enum are the project's
         if matches!(recv_ty, Ty::Struct(_) | Ty::Enum(_))

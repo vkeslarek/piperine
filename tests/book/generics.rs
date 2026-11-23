@@ -75,8 +75,8 @@ fn the_methods_of_a_trait_are_refused_where_a_top_reaches_them() {
     // with a body, like reads_high, is a default: a type gets it as written unless it gives its own". The
     // declarations are accepted and the constant of an `impl` is read; a method is `P0001`. When it runs this
     // test fails and the rows move
-    Refusal::expect(Reached::run("generics#1", "", "emit!(\"r\", s = Family::Ttl.reads_high(2.0, 5.0));"), "generics#1", "P0001", "method `reads_high` on `Family` is not supported yet");
-    Refusal::expect(Reached::run("generics#1", "", "emit!(\"r\", s = Family::Ttl.switches_at(5.0));"), "generics#1", "P0001", "method `switches_at` on `Family` is not supported yet");
+    Refusal::expect(Reached::run("generics#1", "", "emit!(\"r\", s = Family::Ttl.reads_high(2.0, 5.0));"), "generics#1", "P0001", "a method outside the catalogue is not supported yet");
+    Refusal::expect(Reached::run("generics#1", "", "emit!(\"r\", s = Family::Ttl.switches_at(5.0));"), "generics#1", "P0001", "a method outside the catalogue is not supported yet");
     let chapter = Chapter::read();
     let constant = chapter.wrapped("levels.msl", "", "generics#1", &Reached::top("emit!(\"r\", n = Family::LEVELS);")).run(Reached::overrides()).unwrap_or_else(|failure| panic!("{failure}"));
     ValueFile::int(constant.stream("r")[0], "n", 2);
@@ -118,7 +118,7 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
     // of the chapter's status box, each on the smallest model (when one of them runs, this test fails and the
     // box loses it)
     for (items, statements, named) in [
-        ("trait Area { fn area(self) -> f64; }\n#[derive(PartialEq, Repr)] enum Z { A, B }\nimpl Area for Z { fn area(self) -> f64 { 1.0 } }", "emit!(\"r\", y = Z::A.area());", "method `area` on `Z` is not supported yet"),
+        ("trait Area { fn area(self) -> f64; }\n#[derive(PartialEq, Repr)] enum Z { A, B }\nimpl Area for Z { fn area(self) -> f64 { 1.0 } }", "emit!(\"r\", y = Z::A.area());", "a method outside the catalogue is not supported yet"),
         ("fn same<T: PartialEq>(x: T) -> T { x }", "emit!(\"r\", y = same(1.0));", "generic function is not supported yet"),
         ("struct Pair<T: PartialEq> { a: T, b: T }", "let p = Pair { a: 1.0, b: 2.0 }; emit!(\"r\", y = p.a);", "generic struct `Pair` is not supported yet"),
         ("fn width<const N: usize>() -> usize { N }", "emit!(\"r\", y = width::<4>());", "generic function is not supported yet"),
@@ -132,14 +132,13 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
 }
 
 #[test]
-fn an_impl_is_not_yet_compared_with_its_trait() {
-    // The status box: "an impl is not yet compared with the trait it provides, so a missing or an extra item is
-    // found only where it is used": an `impl` with an item the trait does not list is accepted, and one that
-    // leaves a constant out is `E0161` at the use of the constant
-    let extra = ValueFile::written("trait Supply { const VDD: f64; }\nstruct Core;\nimpl Supply for Core { const VDD: f64 = 1.0; const EXTRA: f64 = 2.0; }", "emit!(\"r\", v = Core::VDD);");
-    Printed::holds("1.000000e0", Fields::real(&extra, "v"), "the constant of the impl");
-    let missing = ValueFile::refused("generics~5628120b", "trait Supply { const VDD: f64; }\nstruct Core;\nimpl Supply for Core { }", "emit!(\"r\", v = Core::VDD);");
-    assert_eq!(missing.first("E0161").message, "cannot find `VDD` in this scope");
+fn an_impl_is_compared_with_its_trait() {
+    // generics~76d9eeda (the status box): "An impl is compared with the trait it provides: a missing or an extra item, a signature that
+    // differs and a supertrait the type does not implement are E0187, found where the impl is written" (generics T27)
+    let extra = ValueFile::refused("generics~5628120b", "trait Supply { const VDD: f64; }\nstruct Core;\nimpl Supply for Core { const VDD: f64 = 1.0; const EXTRA: f64 = 2.0; }", "emit!(\"r\", v = Core::VDD);");
+    assert!(extra.first("E0187").message.contains("`impl Supply for Core` defines `EXTRA`, which the trait does not have"), "{:?}", extra.first("E0187").message);
+    let missing = ValueFile::refused("generics~5628120b", "trait Supply { const VDD: f64; }\nstruct Core;\nimpl Supply for Core { }", "emit!(\"r\", v = 1.0);");
+    assert!(missing.first("E0187").message.contains("`impl Supply for Core` leaves out `VDD`"), "{:?}", missing.first("E0187").message);
 }
 
 #[test]

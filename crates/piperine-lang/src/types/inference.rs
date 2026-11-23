@@ -106,6 +106,13 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
         let signature = self.generic_signature(function);
+        // a generic `extern` function (the library's intrinsics) is a generic form first: it waits for the stdlib's phase
+        let data = self.design.decl_data(function);
+        if matches!(&data.kind, DeclKind::Fn(f) if f.abi.is_some()) {
+            let (function_file, function_span) = (data.file, data.span);
+            self.unsupported(function_file, function_span, "generic function");
+            return None;
+        }
         let (params, ret) = self.declared_signature(function)?;
         let mut inference = Inference::new(&signature);
         self.explicit_arguments(&mut inference, &signature, callee, function, file, span)?;

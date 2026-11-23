@@ -337,6 +337,7 @@ claim	generics~f43d6021	f43d60213078ff9f	prose	-	-	On a function or a module it 
 claim	generics~7b1ada2a	7b1ada2aaf7531fa	prose	-	-	A netlist with N sections, placed as Ladder::<4>(x, y).
 claim	generics~3a14da6c	3a14da6c949c48be	holds	piperine/book_generics::a_closure_is_passed_to_the_methods_of_an_option	-	map is a method of Option that takes a function: on Some(x) it calls the function with x and wraps the result in Some, and on None it calls nothing.
 claim	generics~5628120b	5628120bc0d03e21	holds	piperine/book_generics::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	-	A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above.
+claim	generics~76d9eeda	76d9eedaf1be706f	holds	piperine/book_generics::an_impl_is_compared_with_its_trait	-	An impl is compared with the trait it provides: a missing or an extra item, a signature that differs and a supertrait the type does not implement are E0187, found where the impl is written.
 claim	generics~80317d1d	80317d1de450c243	holds	piperine/book_generics::e0900_a_bound_is_not_a_where_an_impl_type_or_a_qualified_path	-	E0900
 claim	generics~399f441d	399f441dbbfb6578	holds	piperine/book_generics::e0101_e0905_and_e0903_no_dyn_no_lifetime_and_no_type_alias	-	E0101
 claim	generics~8031801d	8031801de450c75c	holds	piperine/book_generics::e0101_e0905_and_e0903_no_dyn_no_lifetime_and_no_type_alias	-	E0905

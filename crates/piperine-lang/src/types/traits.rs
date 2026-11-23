@@ -135,7 +135,7 @@ impl<'d> ImplTable<'d> {
     }
 
     /// Whether the trait item has a body (a function) or a value (a constant) of its own.
-    fn has_default(&self, item: DeclId) -> bool {
+    pub fn has_default(&self, item: DeclId) -> bool {
         match &self.design.decl_data(item).kind {
             DeclKind::Fn(data) => data.body.is_some(),
             DeclKind::Const(data) => data.value.is_some(),

@@ -643,6 +643,8 @@ impl<'d> Checker<'d> {
             (Some(body), None) => {
                 self.statements(&body.stmts, None);
             }
+            // a function a trait declares has no body; its implementations do
+            (None, _) if data.parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Trait(_))) => {}
             (None, _) => self.unsupported(data.file, data.span, "function without a body"),
         }
         self.context = Context::Module;

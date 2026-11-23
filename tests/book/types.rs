@@ -135,7 +135,7 @@ fn the_listings_still_on_the_way_are_refused_where_a_top_reaches_them() {
     // When one of them runs this test fails and its row moves to `run`
     Refusal::expect(Reached::run("types#7", "", "emit!(\"r\", s = mean(TAPS));"), "types#7", "P0001", "generic function is not supported yet");
     let family = "#[derive(PartialEq, Repr)]\nenum Family { Cmos, Ttl }\n";
-    Refusal::expect(Reached::run("types#16", family, "emit!(\"r\", s = reads_high(Family::Cmos, 2.0, 3.3));"), "types#16", "P0001", "method `switches_at` on `Family` is not supported yet");
+    Refusal::expect(Reached::run("types#16", family, "emit!(\"r\", s = reads_high(Family::Cmos, 2.0, 3.3));"), "types#16", "P0001", "a method outside the catalogue is not supported yet");
 }
 
 #[test]
@@ -178,7 +178,7 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
     // T48 to T51, `tuples_and_structs_run_where_a_top_reaches_them`)
     let level = "#[derive(PartialEq, Repr)] enum Z { A, B }";
     for (items, statements, named) in [
-        (level, "emit!(\"r\", y = Z::B.next() == Z::A);", "method `next` on `Z` is not supported yet"),
+        (level, "emit!(\"r\", y = Z::B.next() == Z::A);", "a method outside the catalogue is not supported yet"),
     ] {
         let items = if statements.contains(".next()") { format!("{items}\nimpl Z {{ fn next(self) -> Z {{ match self {{ Z::A => Z::B, Z::B => Z::A }} }} }}") } else { items.to_string() };
         let faulty = ValueFile::refused("types~5628120b", &items, statements);

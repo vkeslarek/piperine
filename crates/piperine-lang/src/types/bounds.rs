@@ -40,7 +40,14 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
                 Ty::Param(param) => self.checker.bounds_of(*param).contains(&Bound::Nature),
                 other => matches!(other, Ty::Node(_)),
             },
-            Bound::Trait(_) => matches!(ty, Ty::Param(param) if self.checker.bounds_of(*param).contains(bound)),
+            Bound::Trait(trait_decl) => {
+                if matches!(ty, Ty::Param(param) if self.checker.bounds_of(*param).contains(bound)) {
+                    return true;
+                }
+                let table = std::rc::Rc::clone(&self.checker.impls);
+                let checker = &mut *self.checker;
+                table.implements(ty, *trait_decl, &mut |candidate, wanted| BoundCheck::new(&mut *checker).satisfies(candidate, wanted))
+            }
             Bound::Callable { inputs, output } => {
                 let wanted = self.checker.callable_type(inputs, *output);
                 match (ty, wanted) {
@@ -161,7 +168,11 @@ impl Checker<'_> {
     /// A method call on a value of the type parameter `param`: what its bounds give, else `E0161`
     /// naming the method, the parameter and the bound that would give it. The arguments are still
     /// typed, so the one mistake is one diagnostic.
-    pub(super) fn parameter_method(&mut self, param: DeclId, name: &str, method_span: Span, args: &[Arg], file: FileId) -> Option<Ty> {
+    pub(super) fn parameter_method(&mut self, param: DeclId, name: &str, method_span: Span, args: &[Arg], file: FileId, call: (ExprId, ExprId)) -> Option<Ty> {
+        // a method a project trait gives: through a bound of the parameter, or the trait itself for its `Self`
+        if let Some(function) = self.trait_method_of(param, name) {
+            return self.method_call_of(call.0, call.1, &Ty::Param(param), function, args);
+        }
         if name == "encode" && self.bounds_of(param).contains(&Bound::Repr) {
             return self.parameter_encode(param, args, file, method_span);
         }
@@ -179,6 +190,21 @@ impl Checker<'_> {
         self.coded(file, "E0161", method_span, message, "a method no bound gives");
         for arg in args {
             self.infer(arg.value);
+        }
+        None
+    }
+
+    /// The function `name` a trait gives a value of the type parameter `param`: an item of a trait that
+    /// bounds it (supertraits included), or, when `param` is a trait's own `Self`, of that trait.
+    fn trait_method_of(&self, param: DeclId, name: &str) -> Option<DeclId> {
+        let own = matches!(self.design.decl_data(param).kind, DeclKind::Trait(_)).then_some(param);
+        let bounded = self.bounds_of(param).into_iter().filter_map(|bound| if let Bound::Trait(tr) = bound { Some(tr) } else { None });
+        let mut pending: Vec<DeclId> = own.into_iter().chain(bounded).collect();
+        while let Some(tr) = pending.pop() {
+            if let Some(item) = self.impls.item(tr, name).filter(|item| matches!(self.design.decl_data(*item).kind, DeclKind::Fn(_))) {
+                return Some(item);
+            }
+            pending.extend(self.impls.supertraits(tr));
         }
         None
     }
