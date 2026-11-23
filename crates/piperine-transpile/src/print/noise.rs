@@ -48,9 +48,13 @@ impl<'p, 'a> NoisePrinter<'p, 'a> {
         let value = printer.values.expr(noise.density)?;
         let name = format!("noise{source}");
         let reads: Vec<(usize, Source)> = f.reads.iter().copied().enumerate().collect();
+        // the block takes what the density reads; the frequency a fault names stays with the function
+        let (mut locals, mut used) = (std::collections::BTreeSet::new(), std::collections::BTreeSet::new());
+        printer.reads(noise.density, Mode::Noise(source), &mut locals, &mut used);
+        let block_reads: Vec<(usize, Source)> = reads.iter().copied().filter(|(_, s)| used.contains(s)).collect();
         let mut t = Text::new();
         t.comment(&format!("{}.noise {source}: its density", printer.body.name()), &noise.origin);
-        t.line(&format!("fn {name}_density_block<R: Real>({}) -> R {{", printer.block_params(&reads)?));
+        t.line(&format!("fn {name}_density_block<R: Real>({}) -> R {{", printer.block_params(&block_reads)?));
         t.indented(|t| t.line(&value));
         t.line("}");
         t.line("");
@@ -59,10 +63,13 @@ impl<'p, 'a> NoisePrinter<'p, 'a> {
         t.line(&format!("// function {k} `noise:{source}`: reads {}; writes {} @ {}", names.join(", "), writes.join(", "), printer.function_origin(k)));
         t.line(&format!("fn {name}(cx_: &mut Eval<'_>) -> Result<(), Fault> {{"));
         let mut body = printer.bind_reads(&reads)?;
-        body.push(format!("let value_ = Self::{name}_density_block::<f64>({});", printer.block_args(&reads)));
+        body.push(format!("let value_ = Self::{name}_density_block::<f64>({});", printer.block_args(&block_reads)));
         // the frequency the density was read at, when it reads one
         let at = if f.reads.contains(&Source::Freq) { format!(" at {{}} Hz\", value_, {}", printer.read_name(Source::Freq)) } else { "\", value_".to_string() };
-        let label = if noise.name.is_empty() { source.to_string() } else { format!("{source} `{}`", noise.name) };
+        let label = match &noise.group {
+            Some(group) => format!("{source} `{group}`"),
+            None => source.to_string(),
+        };
         body.push(format!("if !(value_ >= 0.0 && value_.is_finite()) {{ return Err(Fault::new(454, format!(\"E0454: noise source {label} has the density {{}}{at}))); }}"));
         for (j, w) in f.writes.iter().enumerate() {
             match w {

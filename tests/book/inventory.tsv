@@ -122,7 +122,7 @@ block	analog#7	2dcf8ccdabaf5fbf	refused	piperine/book_analog::the_diode_with_a_t
 block	analog#8	c75a64c2f73e0062	shown	-	-	-
 block	analog#9	ad5153ed8a776aa7	run	piperine/book_analog::the_switch_shorts_its_nodes_while_its_control_is_high	-	-
 block	analog#10	680ede3e2ac2fe51	run	piperine/book_analog::the_nullor_drives_its_output_to_a_virtual_short_and_coupled_inductors_couple	-	-
-block	analog#11	35b144b2c97d9575	refused	piperine/book_analog::the_noise_source_is_refused	L45	-
+block	analog#11	35b144b2c97d9575	run	piperine/book_analog::the_noise_source_runs_and_reads_as_zero_outside_a_noise_sweep	-	-
 block	digital#1	b6a2c3d854639e4c	run	piperine/book_digital::the_counter_raises_full_exactly_while_the_count_is_255	-	-
 block	digital#2	a15e186f7ce2d093	shown	-	-	-
 block	digital#3	a594897648f9a3c9	run	piperine/book_digital::the_counter_raises_full_exactly_while_the_count_is_255	-	-

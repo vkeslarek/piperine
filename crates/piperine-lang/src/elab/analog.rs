@@ -174,6 +174,7 @@ impl Elaboration<'_, '_> {
             "ddt" => self.lower_derivative(scope, expr, args, origin),
             "ddx" => self.lower_ddx(scope, expr, args, origin),
             "delay" => self.lower_delay(scope, expr, args, origin),
+            "noise" => self.lower_noise(scope, expr, args, origin),
             name => {
                 self.unsupported(scope.file, span, &format!("core primitive `{name}`"));
                 None

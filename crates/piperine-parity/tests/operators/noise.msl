@@ -1,0 +1,139 @@
+//! `noise`, `white_noise` and `flicker_noise` run from source (analog-operators AO-03 and AO-04,
+//! Part IV §14.8, §22.2): each bench is a node `o` loaded by a 1 kohm resistor, with the sources
+//! the criterion names; the noise analysis reads the output density off the node.
+
+/// Ideal resistor.
+module Resistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for Resistor { i(p, n) +> v(p, n) / r; }
+
+/// A resistor with its thermal noise, `4 k T / r`.
+module ThermalResistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for ThermalResistor {
+    i(p, n) +> v(p, n) / r + white_noise(4.0 * K_B * temperature() / r, "thermal");
+}
+
+module ThermalBench() {
+    signal o: Electrical;
+    let r = ThermalResistor { r: 1k }(o, gnd);
+}
+
+/// A resistor with flicker noise `k / f^exp` in the current.
+module FlickerResistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+    k: f64 = 1e-18;
+    exp: f64 = 1.0;
+}
+analog for FlickerResistor {
+    i(p, n) +> v(p, n) / r + flicker_noise(k, exp, "flicker");
+}
+
+module FlickerBench() {
+    signal o: Electrical;
+    let r = FlickerResistor { r: 1k }(o, gnd);
+}
+
+/// A current noise source of density `psd`, grouped as `hiss`.
+module Hiss(p: Electrical, n: Electrical) {
+    psd: f64 = 1e-18;
+}
+analog for Hiss { i(p, n) +> noise(psd, "hiss"); }
+
+/// The same, grouped as `hush`.
+module Hush(p: Electrical, n: Electrical) {
+    psd: f64 = 1e-18;
+}
+analog for Hush { i(p, n) +> noise(psd, "hush"); }
+
+/// Two instances feeding one node add their powers.
+module TwoSourcesBench() {
+    signal o: Electrical;
+    let a = Hiss { psd: 1e-18 }(o, gnd);
+    let b = Hush { psd: 3e-18 }(o, gnd);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+
+/// Two instances that share a name stay independent: the name groups, it does not correlate.
+module SameNameBench() {
+    signal o: Electrical;
+    let a = Hiss { psd: 1e-18 }(o, gnd);
+    let b = Hiss { psd: 3e-18 }(o, gnd);
+    let load = Resistor { r: 1k }(o, gnd);
+}
+
+/// One source read by two contributions is one fully correlated source.
+module Correlated(a: Electrical, b: Electrical) {
+    psd: f64 = 1e-18;
+}
+analog for Correlated {
+    let n = noise(psd, "shared");
+    i(a, gnd) +> n;
+    i(b, gnd) +> n;
+}
+
+module CorrelatedBench() {
+    signal a: Electrical;
+    signal b: Electrical;
+    let c = Correlated { psd: 1e-18 }(a, b);
+    let ra = Resistor { r: 1k }(a, gnd);
+    let rb = Resistor { r: 1k }(b, gnd);
+}
+
+/// A density that reads `freq()`: `1e-20 * f`.
+module FrequencyDensityBench() {
+    signal o: Electrical;
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for FrequencyDensityBench { i(o, gnd) +> noise(1e-20 * freq(), "ramp"); }
+
+/// A source into `ddt(c * n)`: the response `j w c`.
+module ThroughDdtBench() {
+    signal o: Electrical;
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for ThroughDdtBench {
+    let n = noise(1e-12, "n");
+    i(o, gnd) +> ddt(1n * n);
+}
+
+/// A source through `delay(n, 1 us)`: the response `exp(-j w td)`, of magnitude 1.
+module ThroughDelayBench() {
+    signal o: Electrical;
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for ThroughDelayBench {
+    let n = noise(1e-12, "n");
+    i(o, gnd) +> delay(n, 1u);
+}
+
+/// A negative density is read only by a noise sweep: 1 mA into 1 kohm is 1 V at the operating point.
+module NegativeDensityBench() {
+    signal o: Electrical;
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for NegativeDensityBench { i(gnd, o) +> 1m + noise(-1.0, "bad"); }
+
+/// `analysis(Noise)` is true in a noise sweep: the density is `1e-18` there and 100 times it elsewhere.
+module AnalysisBench() {
+    signal o: Electrical;
+    let load = Resistor { r: 1k }(o, gnd);
+}
+analog for AnalysisBench {
+    i(o, gnd) +> noise(if analysis(Noise) { 1e-18 } else { 1e-16 }, "kind");
+}
+
+/// A reaction reads a noise result as 0, at 1 ms.
+module Watcher(a: Electrical) {
+    let n = noise(1.0, "watched");
+}
+analog for Watcher { i(a, gnd) +> n; }
+digital for Watcher { on at(1m) { emit!("n", x = n); } }
+
+module WatcherBench() {
+    signal a: Electrical;
+    let watcher = Watcher(a);
+    let load = Resistor { r: 1k }(a, gnd);
+}

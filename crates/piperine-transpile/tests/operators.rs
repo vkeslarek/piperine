@@ -80,12 +80,14 @@ fn the_noise_function_writes_its_density_and_faults_454() {
     // §14.8: the function `noise:0` writes the `PSD` of the input; a density that is negative or
     // not finite is the fault 454 naming the source (D9 of the density's own contract).
     let device = Device::of_body(noisy(Expr::Param(0)), "Op");
-    assert_eq!(device.run("noise:0", &[&Bytes::real(4e-21)]).expect("a density"), [4e-21]);
-    assert_eq!(device.run("noise:0", &[&Bytes::real(0.0)]).expect("zero is a density"), [0.0]);
+    // the function reads the param and the sweep's frequency, which a fault names
+    let at = Bytes::real(2e3);
+    assert_eq!(device.run("noise:0", &[&Bytes::real(4e-21), &at]).expect("a density"), [4e-21]);
+    assert_eq!(device.run("noise:0", &[&Bytes::real(0.0), &at]).expect("zero is a density"), [0.0]);
     for bad in [-1e-21, f64::NAN, f64::INFINITY] {
-        let fault = device.run("noise:0", &[&Bytes::real(bad)]).expect_err("a bad density");
+        let fault = device.run("noise:0", &[&Bytes::real(bad), &at]).expect_err("a bad density");
         assert_eq!(fault.code, 454, "{bad}: {fault}");
-        assert!(fault.message.contains("E0454") && fault.message.contains("`hiss`"), "{bad}: {fault}");
+        assert!(fault.message.contains("E0454") && fault.message.contains("`thermal`") && fault.message.contains("at 2000 Hz"), "{bad}: {fault}");
     }
     // a density that reads `freq()` names the frequency it was read at
     let flicker = Device::of_body(noisy(Expr::Env(Env::Freq)), "Op");

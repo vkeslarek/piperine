@@ -715,9 +715,11 @@ impl BodyPlan {
             s.input(InputSpec { name: &site.name, origin: &at, kind: input::STIM });
         }
 
-        for (k, source) in body.noise_sources().iter().enumerate() {
+        for source in body.noise_sources() {
             let at = origin(&source.origin);
-            s.input(InputSpec { name: &format!("noise:{k}"), origin: &at, kind: input::NOISE });
+            // the input is named by the source's group, so the host reports the sources that share
+            // a name as one group; an unnamed source has no name (the host groups it by instance)
+            s.input(InputSpec { name: source.group.as_deref().unwrap_or(""), origin: &at, kind: input::NOISE });
         }
 
         // Functions: one per site, then the terms.
@@ -744,7 +746,10 @@ impl BodyPlan {
         }
         for (k, source) in body.noise_sources().iter().enumerate() {
             let k = k as u32;
-            let set = ReadSet::target(body, Query::NoiseDensity(k));
+            // the density is read at a frequency of the sweep: the function always reads `FREQ`, so
+            // a fault names it
+            let mut set = ReadSet::target(body, Query::NoiseDensity(k));
+            set.0.insert(Source::Freq);
             let plan = Self::function(Mode::Noise(k), &set, vec![(Target::NoiseDensity(k), None)]);
             Self::declare(&mut s, &pins, &terms, body, &format!("noise:{k}"), &origin(&source.origin), &plan);
             functions.push(plan);

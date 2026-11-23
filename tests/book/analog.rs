@@ -227,12 +227,22 @@ fn the_nullor_drives_its_output_to_a_virtual_short_and_coupled_inductors_couple(
 }
 
 #[test]
-fn the_noise_source_is_refused() {
-    // analog#11 (refused): `let n = noise(4.0 * K_B * temperature() / r, "thermal");` and its two uses in a
-    // behavior block: the core primitive `noise` is `P0001` (L45)
+fn the_noise_source_runs_and_reads_as_zero_outside_a_noise_sweep() {
+    // analog#11 (runs since analog-operators T34): `let n = noise(4.0 * K_B * temperature() / r, "thermal");`
+    // and its two uses in a behavior block: the source is 0 in every solve but a noise sweep, so the two
+    // contributions between `a`, `mid` and `b` carry no current at the operating point. `mid` has the one
+    // resistor to ground the wrapper gives it, so the point is solvable: every node is at 0 V.
     let chapter = Chapter::read();
-    let model = chapter.wrapped("noise.msl", "module R(a: Electrical, b: Electrical) { r: f64 = 1k; signal mid: Electrical; }\nanalog for R {\n", "analog#11", "}\nmodule Top() { signal a: Electrical; signal b: Electrical; let x = R(a, b); }\n");
-    Refusal::expect(model.run(Commands::operating_point()), "analog#11", "P0001", "core primitive `noise` is not supported yet");
+    let before = "module R(a: Electrical, b: Electrical) { r: f64 = 1k; signal mid: Electrical; }\nanalog for R {\ni(mid, gnd) +> v(mid, gnd) / r;\n";
+    let model = chapter.wrapped("noise.msl", before, "analog#11", "}\nmodule Top() { signal a: Electrical; signal b: Electrical; let x = R(a, b); let la = Load(a); let lb = Load(b); }\nmodule Load(p: Electrical) {}\nanalog for Load { i(p, gnd) +> v(p, gnd) / 1k; }\n");
+    let point = model.run(Commands::operating_point()).unwrap_or_else(|failure| panic!("{failure}"));
+    for row in &point.table.rows {
+        for cell in row.iter().skip(1) {
+            if let Cell::Real(volts) = cell {
+                assert!(volts.abs() <= 1e-12, "a noise source carries no current at the operating point: {row:?}");
+            }
+        }
+    }
 }
 
 #[test]

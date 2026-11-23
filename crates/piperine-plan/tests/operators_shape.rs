@@ -150,14 +150,16 @@ fn a_noise_source_is_an_input_with_its_density_function() {
     let plan = Find::plan(&ir);
     let shape = plan.shape().shape();
     let inputs: Vec<(&str, u32)> = shape.inputs.iter().map(|i| (i.name.as_str(), i.kind)).collect();
-    assert_eq!(inputs, [("noise:0", input::NOISE)]);
+    // the input is named by the source's group (`thermal`)
+    assert_eq!(inputs, [("thermal", input::NOISE)]);
     let function = Find::terms_plan(&plan);
     assert_eq!(function.reads, [Source::NoiseValue(0)]);
     assert!(Source::NoiseValue(0).is_differentiable() && !Source::NoiseValue(0).is_pin());
     assert_eq!(function.slots, 1);
     assert_eq!(function.partials, [(0, 0)]);
     let noise = plan.functions().iter().find(|f| f.mode == Mode::Noise(0)).expect("the density function");
-    assert!(noise.reads.is_empty());
+    // the density function always reads the sweep's frequency, so that a fault names it
+    assert_eq!(noise.reads, [Source::Freq]);
     assert_eq!(noise.writes, [Target::NoiseDensity(0)]);
     let f = shape.functions.iter().find(|f| f.name.as_str() == "noise:0").expect("noise:0");
     assert_eq!(f.writes.iter().copied().collect::<Vec<_>>(), [Cell { kind: cell::INPUT, index: 0, part: part::PSD }]);
