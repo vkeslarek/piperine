@@ -28,6 +28,7 @@
 mod composite;
 mod control;
 mod imported;
+mod parsed;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -38,7 +39,7 @@ use super::compound::EnumLayout;
 use super::files::{FileFault, IncludedFiles};
 use crate::msl::lexer;
 use crate::pom::{BinOp, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, UnOp};
-use crate::types::{Callee, Method, Ty, Types};
+use crate::types::{Callee, Intrinsic, Method, Ty, Types};
 pub use composite::{CompositeKind, ConstTree};
 use composite::Composite;
 use control::{Argument, FnValue};
@@ -124,6 +125,9 @@ pub enum ConstFault {
     Cyclic { expr: ExprId, constant: DeclId },
     /// The file an `include_str!` at `expr` names has no text (§20 errors: `E0612`, `E0613`).
     File { expr: ExprId, fault: FileFault },
+    /// The text `parse_table` or `parse_hex` reads does not fit the `const`'s type (`E0614`) or is not in the
+    /// format (`E0706`, §22.6.4): `message` names the source and the row.
+    Table { expr: ExprId, code: &'static str, message: String },
     /// A `break`, `continue` or `return` on its way to the loop or function it leaves; the value it
     /// carries waits in the evaluator. Never reaches a caller of [`ConstEval::value`].
     Leaves { expr: ExprId, exit: Exit },
@@ -144,7 +148,7 @@ impl ConstFault {
     /// The expression the fault sits on; none for a `const` item without a value.
     pub fn expr(&self) -> Option<ExprId> {
         match self {
-            ConstFault::UnboundParam { expr, .. } | ConstFault::Dynamic { expr, .. } | ConstFault::Unsupported { expr, .. } | ConstFault::Panic { expr, .. } | ConstFault::Cyclic { expr, .. } | ConstFault::NotConstant { expr, .. } | ConstFault::File { expr, .. } | ConstFault::Leaves { expr, .. } => Some(*expr),
+            ConstFault::UnboundParam { expr, .. } | ConstFault::Dynamic { expr, .. } | ConstFault::Unsupported { expr, .. } | ConstFault::Panic { expr, .. } | ConstFault::Cyclic { expr, .. } | ConstFault::NotConstant { expr, .. } | ConstFault::File { expr, .. } | ConstFault::Table { expr, .. } | ConstFault::Leaves { expr, .. } => Some(*expr),
             ConstFault::NoValue { .. } => None,
         }
     }
@@ -598,6 +602,9 @@ impl<'d, 't> ConstEval<'d, 't> {
     /// A call of a function of the reachable set, or of a function a local holds: its body
     /// evaluated over its arguments. Every other callee needs a run.
     fn call(&mut self, expr: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Constant, ConstFault> {
+        if let Some(Callee::Intrinsic(parser @ (Intrinsic::ParseTable | Intrinsic::ParseHex))) = self.types.callee(expr) {
+            return self.parse_array(expr, parser, args, bindings);
+        }
         let function = match self.types.callee(expr) {
             Some(Callee::Function(function)) => FnValue::Named(function),
             _ => match self.called_function_value(expr) {

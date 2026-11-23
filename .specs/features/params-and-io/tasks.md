@@ -1024,10 +1024,10 @@ T44
 
 **Done when**:
 
-- [ ] `parse_table_reads_64_rows_in_order`, `a_table_of_the_wrong_shape_is_e0614_naming_file_and_row`, `a_token_that_is_not_a_real_is_e0706`, `an_infinite_row_value_is_e0706` pass under `**Run elabfiles**`
-- [ ] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Quick
+- [x] `parse_table_reads_64_rows_in_order`, `a_table_of_the_wrong_shape_is_e0614_naming_file_and_row`, `a_token_that_is_not_a_real_is_e0706`, `an_infinite_row_value_is_e0706` pass under `**Run elabfiles**`
+- [x] The code's row leaves `crates/piperine-lang/tests/support/code_owners.tsv` in this commit and `**Run speccodes**` passes
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

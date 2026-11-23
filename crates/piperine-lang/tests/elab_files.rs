@@ -10,7 +10,8 @@ mod support;
 
 use std::path::{Path, PathBuf};
 
-use piperine_lang::elab::{ConstEval, ConstFault, Elaborator, FileFault};
+use piperine_ir::{Constant, Real};
+use piperine_lang::elab::{CompositeKind, ConstEval, ConstFault, ConstTree, Elaborator, FileFault};
 use piperine_lang::pom::{DeclId, DeclKind, Design, Reflect};
 use piperine_lang::types::Types;
 use support::Elab;
@@ -146,4 +147,91 @@ fn one_file_named_twice_is_read_once() {
     let (first, second) = (eval.text(Fixture::constant(&design, "T")).expect("readable"), eval.text(Fixture::constant(&design, "U")).expect("readable"));
     assert_eq!(first, second);
     assert_eq!(eval.files_read(), 1, "one resolved path, one read");
+}
+
+/// A source whose `const` `name` of type `ty` is `parser(include_str!(file))`, read in `analog` so the checker reaches it.
+fn parsed_source(name: &str, ty: &str, parser: &str, file: &str) -> String {
+    format!("const {name}: {ty} = {parser}(include_str!(\"{file}\"));\nmodule Top() {{ }}\nanalog for Top {{ let x = {name}[0]; }}\n")
+}
+
+/// The folded tree of `const` `name` of the package at `root`, or the diagnostics of elaborating it.
+fn folded(root: &Path, name: &str) -> Result<ConstTree, Vec<String>> {
+    let design = Fixture::design(root);
+    let types = Types::check(&design, "Top").map_err(|found| found.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>())?;
+    ConstEval::new(&design, &types).constant_tree(Fixture::constant(&design, name)).map_err(|fault| vec![format!("{fault:?}")])
+}
+
+/// The diagnostics (code and message) elaborating the package at `root` gives.
+fn refused(scratch: &Scratch, source: &str) -> Vec<(String, String)> {
+    let root = scratch.write("top.msl", source);
+    let design = Fixture::design(&root);
+    Elaborator::new(&design).run("Top").expect_err("the text is refused").iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()
+}
+
+fn real(value: f64) -> ConstTree {
+    ConstTree::Scalar(Constant::Real(Real::new(value)))
+}
+
+#[test]
+fn parse_table_reads_64_rows_in_order() {
+    // PI-09 AC 1, §22.6.4 rule 3 and the resolutions: one row per line, whitespace columns, blank lines skipped, `#` comments, SI suffixes.
+    // Row k is `k * 0.1` then `k` mA (`k m`): the 64 pairs come in the file's order.
+    let scratch = Scratch::new("table64");
+    let mut text = String::from("# the measured I-V of the diode\n\n");
+    for k in 0..64 {
+        text.push_str(&format!("{} {k}m  # row {k}\n", f64::from(k) * 0.1));
+        if k == 10 {
+            text.push_str("\n");
+        }
+    }
+    scratch.write("diode_iv.tbl", &text);
+    let root = scratch.write("top.msl", &parsed_source("IV", "[(f64, f64); 64]", "parse_table", "diode_iv.tbl"));
+    let ConstTree::Composite { kind: CompositeKind::Array, parts } = folded(&root, "IV").expect("the table folds") else { panic!("an array") };
+    assert_eq!(parts.len(), 64);
+    for (k, row) in parts.iter().enumerate() {
+        let ConstTree::Composite { kind: CompositeKind::Tuple, parts: pair } = row else { panic!("a pair") };
+        assert_eq!(pair, &[real(k as f64 * 0.1), real(k as f64 * 1e-3)], "row {k}");
+    }
+    // a table of one number per row is an array of `f64`
+    scratch.write("one.tbl", "1k\n2.5\n");
+    let root = scratch.write("one.msl", &parsed_source("T", "[f64; 2]", "parse_table", "one.tbl").replace("[0]", "[1]"));
+    assert_eq!(folded(&root, "T").expect("folds"), ConstTree::Composite { kind: CompositeKind::Array, parts: vec![real(1000.0), real(2.5)] });
+}
+
+#[test]
+fn a_table_of_the_wrong_shape_is_e0614_naming_file_and_row() {
+    // PI-09 AC 3, §22.6.4 rule 5, §20: a row with another number of columns than the type's, or another number of rows, is `E0614`
+    // naming the file and the row.
+    let scratch = Scratch::new("shape");
+    scratch.write("wide.tbl", "1 2\n3 4 5\n");
+    let found = refused(&scratch, &parsed_source("T", "[(f64, f64); 2]", "parse_table", "wide.tbl"));
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].0, "E0614");
+    assert!(found[0].1.contains("wide.tbl") && found[0].1.contains("row 2"), "names the file and the row: {}", found[0].1);
+    scratch.write("short.tbl", "1 2\n");
+    let found = refused(&scratch, &parsed_source("T", "[(f64, f64); 2]", "parse_table", "short.tbl"));
+    assert_eq!(found[0].0, "E0614", "{found:?}");
+    assert!(found[0].1.contains("short.tbl") && found[0].1.contains("1 rows"), "{}", found[0].1);
+}
+
+#[test]
+fn a_token_that_is_not_a_real_is_e0706() {
+    // PI-09 AC 4, §22.6.4 rule 6: `abc` on the third line is no real literal: `E0706` naming the file, the row and the token; so is `inf`.
+    let scratch = Scratch::new("token");
+    for (name, text, token, row) in [("bad.tbl", "1 2\n\n3 abc\n", "abc", "row 3"), ("inf.tbl", "1 inf\n", "inf", "row 1")] {
+        scratch.write(name, text);
+        let found = refused(&scratch, &parsed_source("T", "[(f64, f64); 2]", "parse_table", name));
+        assert_eq!(found[0].0, "E0706", "{name}: {found:?}");
+        assert!(found[0].1.contains(name) && found[0].1.contains(row) && found[0].1.contains(&format!("`{token}`")), "{}", found[0].1);
+    }
+}
+
+#[test]
+fn an_infinite_row_value_is_e0706() {
+    // PI-09 edge case: `1e999` is a real literal whose nearest `f64` is infinite, `E0706` naming the row.
+    let scratch = Scratch::new("infinite");
+    scratch.write("big.tbl", "1 2\n3 1e999\n");
+    let found = refused(&scratch, &parsed_source("T", "[(f64, f64); 2]", "parse_table", "big.tbl"));
+    assert_eq!(found[0].0, "E0706", "{found:?}");
+    assert!(found[0].1.contains("row 2") && found[0].1.contains("1e999") && found[0].1.contains("infinite"), "{}", found[0].1);
 }

@@ -26,6 +26,7 @@ mod event_reads;
 mod events;
 mod exits;
 mod files;
+mod tables;
 mod elaborator;
 mod analog;
 mod functions;
@@ -52,8 +53,8 @@ mod unlowered;
 mod unroll;
 mod variants;
 
-pub use consts::{Bindings, ConstEval, ConstFault, Exit};
-pub use files::{FileFault, IncludedFiles};
+pub use consts::{Bindings, CompositeKind, ConstEval, ConstFault, ConstTree, Exit};
+pub use {files::{FileFault, IncludedFiles}, tables::{HexText, TableFault, TableText}};
 pub use elaborator::Elaborator;
 pub use host_sources::HostSourceParam;
 pub use structural::Overrides;
