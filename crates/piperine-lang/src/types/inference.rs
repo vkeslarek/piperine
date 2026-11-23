@@ -126,7 +126,7 @@ impl Checker<'_> {
         if let Some(expected) = self.call_expected.take().filter(|(at, _)| *at == expr).map(|(_, ty)| ty) {
             inference.unify(&ret, &expected);
         }
-        let substitution = self.complete_arguments(&mut inference, &signature, function, file, span)?;
+        let substitution = self.complete_arguments(&mut inference, &signature, function, function, file, span)?;
         let arguments: Vec<GenericValue> = signature.parameters().iter().filter_map(|parameter| self.recorded_argument(parameter, &params, args, &substitution)).collect();
         self.arguments_satisfy_bounds(&signature, &arguments, function, file, span)?;
         self.instantiations.insert(expr, Instantiation { item: function, arguments });
@@ -248,7 +248,7 @@ impl Checker<'_> {
 
     /// The substitution for every parameter: what was found, else the default, else `E0181` naming
     /// the first parameter left open.
-    pub(super) fn complete_arguments(&mut self, inference: &mut Inference<'_>, signature: &GenericSignature, function: DeclId, file: FileId, span: Span) -> Option<Substitution> {
+    pub(super) fn complete_arguments(&mut self, inference: &mut Inference<'_>, signature: &GenericSignature, item: DeclId, function: DeclId, file: FileId, span: Span) -> Option<Substitution> {
         let mut substitution = Substitution::new();
         for parameter in signature.parameters() {
             let value = match inference.found().get(parameter.decl) {
@@ -257,17 +257,31 @@ impl Checker<'_> {
                 None => None,
             };
             let Some(value) = value else {
-                let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+                let (name, turbofish) = self.callee_names(item, function);
                 let (kind, how) = match parameter.kind {
                     ParameterKind::Const(_) => ("const parameter", "an array argument or"),
                     _ => ("type parameter", "an argument or"),
                 };
-                let message = format!("cannot infer the {kind} `{}` of `{name}`: no argument or expected type gives it; write it as `{name}::<..>` (§3.8.7)", parameter.name);
+                let message = format!("cannot infer the {kind} `{}` of `{name}`: no argument or expected type gives it; write it as `{turbofish}` (§3.8.7)", parameter.name);
                 self.coded(file, "E0181", span, message, &format!("{how} turbofish would give `{}`", parameter.name));
                 return None;
             };
             substitution.bind(parameter.decl, value);
         }
         Some(substitution)
+    }
+
+    /// What a diagnostic about the arguments of `item` calls the callee and how the turbofish is written: the item's own
+    /// name, or for an `impl` (which has none) `Type::function` and `Type::<..>::function`, naming the function called.
+    fn callee_names(&self, item: DeclId, function: DeclId) -> (String, String) {
+        let own = self.design.decl_data(item).name.as_ref().map(|n| n.text.clone());
+        if let Some(name) = own {
+            return (name.clone(), format!("{name}::<..>"));
+        }
+        let function_name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let DeclKind::Impl(data) = &self.design.decl_data(item).kind else { return (function_name.clone(), format!("{function_name}::<..>")) };
+        let Resolution::Decl(owner) = self.design.type_resolution(data.self_ty) else { return (function_name.clone(), format!("{function_name}::<..>")) };
+        let type_name = self.design.decl_data(owner).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        (format!("{type_name}::{function_name}"), format!("{type_name}::<..>::{function_name}"))
     }
 }

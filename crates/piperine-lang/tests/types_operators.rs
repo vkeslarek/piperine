@@ -213,3 +213,11 @@ fn logic_is_compiled_from_the_library_source() {
     assert_eq!(Subject::library_local_type(body, "c"), "Logic<1>", "`==` gives a `Logic`, not a `bool` (H.10)");
     assert_eq!(Subject::library_local_type(body, "d"), "Option<u4>");
 }
+
+#[test]
+fn an_associated_call_that_gives_no_const_argument_is_e0181_naming_its_function() {
+    // §3.8.7: `Logic::default()` has nothing that gives the `N` of its `impl` when it is an operand of `==` with a
+    // `Logic<1>`; the `E0181` names the function and writes the turbofish that would give it, never an empty name
+    let found = Subject::LIBRARY.outcome("", "let a = Logic::default() == Logic::from(true);");
+    Verdict::assert_one(&found, "Logic::default()", "E0181", &["`N`", "`Logic::default`", "Logic::<..>::default"]);
+}

@@ -66,7 +66,7 @@ impl Checker<'_> {
         if let Some(expected) = self.call_expected.take().filter(|(at, _)| *at == expr).map(|(_, ty)| ty) {
             inference.unify(&open, &expected);
         }
-        let substitution = self.complete_arguments(&mut inference, &signature, type_decl, file, span)?;
+        let substitution = self.complete_arguments(&mut inference, &signature, type_decl, type_decl, file, span)?;
         let arguments: Vec<GenericValue> = signature.parameters().iter().filter_map(|parameter| substitution.get(parameter.decl).cloned()).collect();
         self.arguments_satisfy_bounds(&signature, &arguments, type_decl, file, span)?;
         let closed = Nominal { decl: type_decl, arguments };

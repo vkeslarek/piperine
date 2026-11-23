@@ -64,7 +64,7 @@ impl Checker<'_> {
         if let Some(expected) = self.call_expected.take().filter(|(at, _)| *at == expr).map(|(_, ty)| ty) {
             inference.unify(&ret, &expected);
         }
-        let substitution = self.complete_arguments(&mut inference, &signature, owner, file, span)?;
+        let substitution = self.complete_arguments(&mut inference, &signature, owner, function, file, span)?;
         let arguments = signature.parameters().iter().filter_map(|parameter| substitution.get(parameter.decl).cloned()).collect();
         self.instantiations.insert(expr, Instantiation { item: owner, arguments });
         let params: Vec<Ty> = params.iter().map(|param| substitution.apply(param)).collect();
