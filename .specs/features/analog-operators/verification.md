@@ -191,6 +191,7 @@ Also judged: the merge 534ff5e4 (its conflict resolutions are the `types_operato
 | C75 | `source_noise` `a_let_reading_a_limit_is_a_density_input`; `source_delay` `a_let_reading_a_limit_is_a_delay_input` | yes - at a solution the argument and the limited value agree, which is the criterion's outcome |
 | C76 | `elab_operators` `a_definition_or_an_at_argument_reaching_freq_through_a_fn_is_refused_by_the_checker` | yes for a definition and an `at` (the removed GAPS row also named an event guard, unprobed) |
 | C77 | `source_traces` `a_trace_written_through_a_fn_is_the_trace_of_its_call`; `types_events` `an_emit_reached_from_analog_through_a_fn_checks` | yes - equal (iteration, value) sequences |
+| C78 | `elab_operators` `an_ac_stim_read_by_a_noise_density_a_delay_input_or_a_ddx_value_is_a_site_of_the_body`; `source_partial` `an_ac_stim_read_by_a_ddx_is_a_constant_of_the_derivative`, `ddx_of_an_ac_stim_alone_is_zero_and_the_site_still_runs`, `an_ac_stim_read_by_a_ddt_state_compiles_and_reads_zero_at_the_operating_point`; `source_delay` `a_delayed_stimulus_is_the_phasor_turned_by_the_delay`; `source_noise` `analysis_noise_is_true_and_ac_stim_zero_in_a_noise_run` | yes (round 3) - 3 at the operating point and 2 in the sweep; the delayed phasor's real and imaginary parts at each frequency; a density reading `ac_stim(3.0)` held at 1e-18; my own examples agree |
 
 ## Findings
 
