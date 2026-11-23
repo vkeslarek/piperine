@@ -1187,9 +1187,16 @@ fn jump_has_no_solve_of_its_own() {
     let r6 = &s[s.find(" 6. ").expect("rule 6")..s.find(" 7. ").expect("rule 7")];
     assert!(r6.contains("backward Euler"), "{r6}");
     assert!(r6.contains("drops the previous derivative"), "{r6}");
-    let landing = &s[s.find("**Before the solve of `t`.**").expect("before-the-solve case")
-        ..s.find("**After the solve of `t`.**").expect("after-the-solve case")];
-    assert!(landing.contains("is exempt from the truncation-error test"), "{landing}");
+    assert!(!s.contains("**Before the solve of `t`.**") && !s.contains("**After the solve of `t`.**"), "the two cases are one: the step solves, then the instant runs");
+    let at = &s[s.find("**At `t`.**").expect("the case of a change at `t`")..s.find("**A host `set`** is a host commit").expect("the host set case")];
+    for fact in [
+        "The step that arrives at `t` solves on the left value, the discrete state as it stood before `t`, and reads no change: it is an ordinary step, tested for truncation error like any other",
+        "run after that solve is accepted",
+        "The first step after `t` reads all of them: it restarts the integrator and is sized and tested by rule 6",
+    ] {
+        assert!(at.contains(fact), "§15.2 lacks \"{fact}\": {at}");
+    }
+    assert!(!s.contains("is applied before the step that arrives at `t` is solved"), "the old order is gone");
 }
 
 #[test]
@@ -1216,7 +1223,12 @@ fn reference_rows_describe_the_kept_jump() {
         assert!(!row.contains("gap"), "{row}");
     }
     let restart = c.lines().find(|l| l.starts_with("| restart")).expect("restart row");
-    assert!(restart.contains("10⁻³ of the last step"), "{restart}");
+    for stale in ["discontinuity()", "accept_step"] {
+        assert!(!restart.contains(stale), "the restart row names `{stale}`, which the tree does not have: {restart}");
+    }
+    assert!(restart.contains("`device_deliver`") && restart.contains("rule 6's four restarts, and no other"), "{restart}");
+    assert!(restart.contains("a tenth of the last step (`HOST_RESTART_FRACTION` 0.1)"), "{restart}");
+    assert!(!restart.contains("10⁻³"), "the old restart fraction is gone: {restart}");
     assert!(restart.contains("after a host `set` only"), "{restart}");
     let g6 = section(&spec("appendix_g_scope.md"), "### G.6 ");
     for row in table_rows(&g6) {
@@ -1617,8 +1629,8 @@ fn part_v_states_the_solver_hygiene_rules() {
     // the Resolution blocks are quoted: drop the `> ` a wrapped line starts with
     let text = flat(&spec("part_v_execution.md")).replace(" > ", " ");
     for fact in [
-        // Q5: the restart step after a landing or a host `set`
-        "The step that restarts the integrator after a landing or a host `set` is at most a tenth of the smaller of the last accepted step and the time from `t` to the next scheduled time point",
+        // Q5: the restart step after a delivered change or a host `set`
+        "The step that restarts the integrator after a change or a host `set` is at most a tenth of the smaller of the last accepted step and the time from `t` to the next scheduled time point",
         // Q6: a later start from an operating point
         "starts from an operating point at `(t_start, 0)`",
         "A start time that is not finite or is negative fails before the operating point",
@@ -1657,7 +1669,7 @@ fn appendix_c_states_the_solver_hygiene_numerics() {
         "the smallest `CAP` of the last accepted solution still bounds it",
         // Q5
         "at most `0.1·min(last step, gap to the next scheduled time point)`, first order",
-        "| restart step after a landing or a host `set` | at most 0.1 of the smaller of the last step and the gap to the next scheduled time point;",
+        "| restart step after a delivered change or a host `set` | at most 0.1 of the smaller of the last step and the gap to the next scheduled time point;",
     ] {
         assert!(text.contains(fact), "Appendix C lacks \"{fact}\"");
     }
@@ -1906,11 +1918,12 @@ fn the_host_reads_composites_and_sets_a_leaf() {
 }
 
 #[test]
-fn the_analog_step_floor_past_2_52_ticks_is_a_recorded_deviation() {
+fn no_analog_step_floor_deviation_remains_past_2_52_ticks() {
+    // transient-performance T25: the analog time is an integer tick epoch plus a small offset, so
+    // a step is never floored at a number of `f64` spacings and Appendix C.2.1 records no such row
     let c = spec("appendix_c_implementation.md");
-    let row = c.lines().find(|l| l.starts_with("| analog step floor past 2^52 ticks")).expect("step floor row");
-    assert!(row.contains("256 `f64` spacings"), "{row}");
-    assert!(row.contains("transient-performance T25"), "{row}");
+    assert!(!c.contains("analog step floor past 2^52 ticks"), "the stopgap row is gone");
+    assert!(!c.contains("256 `f64` spacings"), "no spacing floor is recorded");
 }
 
 // ---- explicit unknowns: EU-17 ----
@@ -2258,7 +2271,7 @@ fn part_v_retakes_the_step_a_jump_crossing_changes() {
     let text = spec("part_v_execution.md");
     let rule = flat(&section(&text, "### 15.2 "));
     for fact in [
-        "it fires at the time point of the step that reads the change, at the microstep after that step's solve",
+        "it fires at the time point of the step that reads the change, at microstep 0 after that step's solve",
         "the step is retaken to the same time `t` with the change, and the retaken solution replaces the first",
         "The reactions that ran are not run again",
         "fires at the next microstep of `t` and may retake again",
@@ -2310,4 +2323,180 @@ fn rule_9_splits_definition_and_instantiation_errors() {
     ] {
         assert!(rule.contains(fact), "§3 rule 9 lacks \"{fact}\": {rule}");
     }
+}
+
+#[test]
+fn part_v_rule_6_tests_the_step_that_reads_a_jump_with_the_first_order_estimate() {
+    // TP-05 AC 6: §15.2 rule 6 states the estimate and the retake.
+    let rule = flat(&section(&spec("part_v_execution.md"), "### 15.2 "));
+    for fact in [
+        "tested for truncation error with the first-order estimate of its two stages, against the tolerance of §17.2 rule 1",
+        "a step that fails is rejected and retaken smaller, and it is still the step that reads the jump",
+    ] {
+        assert!(rule.contains(fact), "§15.2 rule 6 lacks \"{fact}\"");
+    }
+}
+
+#[test]
+fn part_v_the_host_set_step_is_tested_and_only_the_retaken_step_is_exempt() {
+    // §15.2: the step that reads a host `set` is tested with the first-order estimate of rule 6; the
+    // step retaken to the same time after its crossings (rule 4) cannot be taken smaller and stays exempt.
+    let s = flat(&section(&spec("part_v_execution.md"), "### 15.2 "));
+    assert!(s.contains("That step is tested with the first-order estimate of rule 6, restarts the integrator"), "the host set paragraph");
+    assert!(!s.contains("with the exemption"), "the host set bullet no longer names an exemption");
+    assert!(!s.contains("That step is exempt from the truncation-error test"), "the set's step is tested");
+    assert!(s.contains("The retaken step is exempt from the truncation-error test, since it lands on the same `t` and cannot be taken smaller; it restarts the integrator like every step that reads a change (rule 6)"), "rule 4 keeps its exemption, on its own");
+    assert!(!s.contains("like the step that reads a host `set`"), "rule 4 no longer compares the retaken step with the host set step");
+}
+
+#[test]
+fn part_v_the_step_that_arrives_at_a_landing_is_an_ordinary_step() {
+    // TP-04 AC 3: §15.2 "At `t`" and §15 S3 no longer exempt the arriving step.
+    let text = spec("part_v_execution.md");
+    let jump = flat(&section(&text, "### 15.2 "));
+    assert!(
+        jump.contains("it is an ordinary step, tested for truncation error like any other (§17.2.1)"),
+        "§15.2 \"At `t`\" lacks the ordinary landing step"
+    );
+    assert!(!jump.contains("so that step is exempt from the truncation-error test"), "the old exemption is gone");
+    let settle = flat(&text);
+    assert!(
+        settle.contains("it is the step that reads a jump (§15.2 rule 6), first order and sized and tested by that rule"),
+        "S3 lacks the step that reads the settle commit"
+    );
+}
+
+#[test]
+fn appendix_c_2_tests_the_landing_step_and_the_jump_step() {
+    // TP-04 AC 3, TP-05 AC 6: the "the jump", "truncation error" and restart-constant rows.
+    let text = flat(&spec("appendix_c_implementation.md"));
+    for fact in [
+        "the step that arrives there solves on the value before the instant (the left value, `AnalogSide::attempt`), reads no change and is an ordinary step, tested for truncation error like any other",
+        "a step that ends on a landing and reads no jump is tested like any other",
+        "tested with a first-order estimate taken from its own two backward-Euler stages (`jump_lte`)",
+        "the step is tested with the first-order estimate, retaken at an eighth",
+    ] {
+        assert!(text.contains(fact), "Appendix C.2 lacks \"{fact}\"");
+    }
+    assert!(!text.contains("a step that lands on a jump is exempt"), "the old truncation-error exemption is gone");
+}
+
+#[test]
+fn appendix_d_and_f_restart_rows_say_the_step_to_the_landing_is_ordinary() {
+    // TP-04 AC 3: the two gallery "Restart" rows.
+    for (file, fact) in [
+        ("appendix_d_gallery_analog.md", "The step to `t` is an ordinary step, tested for truncation error. The step after it reads the change, is first order, is sized and tested by rule 6"),
+        ("appendix_f_gallery_mixed.md", "The step to `t` is an ordinary step, tested for truncation error; the step after it reads the change"),
+    ] {
+        let text = flat(&spec(file));
+        assert!(text.contains(fact), "{file} lacks \"{fact}\"");
+        assert!(!text.contains("so it is exempt from the truncation-error test"), "{file} keeps the old exemption");
+    }
+}
+
+#[test]
+fn appendix_c_2_time_points_row_names_the_dynamic_test_its_exceptions_and_the_reference_mode() {
+    // TP-10 AC 2: the "time points" row.
+    let text = flat(&spec("appendix_c_implementation.md"));
+    let start = text.find("| time points (§17.2) |").expect("the time points row");
+    let row = &text[start..start + text[start..].find(" | |").expect("the end of the row")];
+    for fact in [
+        "lands on it only when a carrier `analog` reads changed or a firing reaction reads a continuous pin (the dynamic test)",
+        "a reaction on `settle`, a host waiter or a host probe",
+        "the solver's reference mode (`TimePointRule::Declared`)",
+        "no model can observe a landing that is skipped",
+    ] {
+        assert!(row.contains(fact), "the time points row lacks \"{fact}\"");
+    }
+}
+
+#[test]
+fn abi_section_5_states_r4_as_implemented() {
+    // TP-10 AC 2: abi.md carries the paragraph (§17.2 rule 2 is not edited).
+    let abi = std::fs::read_to_string(root().join(".specs/features/device-abi/abi.md")).expect("abi.md");
+    let text = flat(&abi);
+    for fact in [
+        "**R4 as implemented.**",
+        "It keeps the static reach set as the rule in three cases: a reaction on `settle`, a host waiter, a host probe at that time",
+        "The protocol text below is unchanged",
+    ] {
+        assert!(text.contains(fact), "abi.md lacks \"{fact}\"");
+    }
+}
+
+#[test]
+fn part_v_the_step_to_t_solves_first_on_the_left_value_in_every_place_that_says_so() {
+    // The user's decision "muda a spec" (2026-11-22): §15 step 1, I5, I6, §15.1, the reads table,
+    // the Part IV, Part VIII and gallery rows say the step to `t` solves on the left value and
+    // the instant runs after it; no place has the solve at the end of the microstep loop.
+    let exec = flat(&spec("part_v_execution.md"));
+    for fact in [
+        "is solved once, here, before anything at `t` runs, on the left value",
+        "**I5. Agreement.** The solution at a time point `t` was solved with the discrete state as it stood before `t` (the left value)",
+        "**I6. One solve per time point.** A reaction at `(t, n)` reads the solution at `t`, solved once in step 1.",
+        "| a reaction at `(t, n)` | settled at microstep `n` (step 3.2) | the solution at `t` |",
+        "| `cross(e)`, located at `t` (§17.3) | `(t, 0)`, after the solve of step 1 |",
+        "Four steps restart the integrator",
+        "a landing at which nothing `analog` reads changed restarts nothing",
+    ] {
+        assert!(exec.contains(fact), "Part V lacks \"{fact}\"");
+    }
+    for stale in ["*Solve, once.*", "step 3.4", "A change made after the solve of `t` restarts nothing", "The step after a landing"] {
+        for file in ["part_v_execution.md", "part_iv_behavior.md", "part_viii_host.md", "appendix_d_gallery_analog.md", "appendix_f_gallery_mixed.md", "appendix_c_implementation.md"] {
+            assert!(!flat(&spec(file)).contains(stale), "{file} still says \"{stale}\"");
+        }
+    }
+    for (file, fact) in [
+        ("part_iv_behavior.md", "the solution at `t`, solved in §15 step 1 on the left value (§15 step 3.3)"),
+        ("part_viii_host.md", "the solution at `t`, solved in step 1"),
+        ("appendix_d_gallery_analog.md", "the first step after `t_k` reads `seg ← k`: a jump (§15.2)"),
+        ("appendix_f_gallery_mixed.md", "the first step after `t` reads `close`: a jump (§15.2)"),
+        ("appendix_f_gallery_mixed.md", "The step to `t` is solved first; the reaction probes the solution at `t`"),
+    ] {
+        assert!(flat(&spec(file)).contains(fact), "{file} lacks \"{fact}\"");
+    }
+}
+
+#[test]
+fn part_v_a_host_set_due_at_t_is_a_commit_at_t_0() {
+    // F15: the code commits a scheduled write at `(t, 0)` (`Digital::host_commit`), so the reactions
+    // and the settle phase of `t` read it; Part V no longer says it applies after the settle phase.
+    let s = flat(&spec("part_v_execution.md"));
+    for fact in [
+        "A host `set` due at `t` is collected here, as a host commit due at `(t, 0)`.",
+        "The set is a host commit due at `(t, 0)`: it applies after the step to `t` is accepted, like any other change at `t`, so the reactions of `(t, n)` and the settle phase of `t` read it.",
+        "The first step after `t` reads every change made at `t`, a host `set` included",
+    ] {
+        assert!(s.contains(fact), "Part V lacks \"{fact}\"");
+    }
+    for (file, fact) in [
+        ("part_viii_host.md", "a `set` is a host commit due at `(t, 0)`, collected at step 2 of §15 (§15.2)"),
+        ("part_iii_structure.md", "The `set` is a host commit due at `(t, 0)` of a scheduled instant, collected at step 2 of §15"),
+    ] {
+        let text = flat(&spec(file));
+        assert!(text.contains(fact), "{file} lacks \"{fact}\"");
+        assert!(!text.contains("at step 5 of §15") && !text.contains("(§15 step 5)"), "{file} still has a host set apply at step 5");
+    }
+    for stale in ["it applies in step 5", "First the host `set`s due at `t` apply, after the settle phase", "applies after the step to `t` is accepted, after the settle phase"] {
+        assert!(!s.contains(stale), "Part V still says \"{stale}\"");
+    }
+}
+
+#[test]
+fn no_spec_text_retakes_a_step_for_an_operating_point_invalidation() {
+    // F16: the solver has no invalidation strength and its only retake is the crossing retake of
+    // §15.2 rule 4; neither Part V nor Appendix C.2 describes another.
+    for file in ["part_v_execution.md", "appendix_c_implementation.md"] {
+        let text = flat(&spec(file));
+        assert!(!text.contains("invalidation"), "{file} describes an invalidation strength the solver does not have");
+        assert!(!text.contains("also retakes the step to `t` with the new value"), "{file} retakes a step for a `set`");
+    }
+}
+
+#[test]
+fn part_v_the_event_time_steps_are_the_ones_that_exist() {
+    // F22: with the solve gone from the microstep loop its steps are 3.1 to 3.4 (the exit test is 3.4).
+    let s = flat(&spec("part_v_execution.md"));
+    assert!(s.contains("steps 2, 3.1, 3.2, 3.3 and 3.4 run, in the same order. Steps 1 and 4 do not"), "the event-time steps");
+    assert!(!s.contains("3.5"), "Part V names a step 3.5, which the procedure does not have");
 }

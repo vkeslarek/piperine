@@ -11,14 +11,16 @@ mod operating_point;
 mod retake;
 mod sides;
 mod sink;
+mod statistics;
 mod step;
 mod transient;
 
 pub use sides::{
-    Accepted, Advance, AnalogSide, AnalysisKind, Attempt, Boundary, DiscreteSide, Horizon, InstantMode, Observation,
-    ObservationKind, Outcome, Restart, Shadow, Tick,
+    Accepted, Advance, AnalogSide, AnalysisKind, Attempt, Boundary, DiscreteSide, Horizon, InstantMode, LandingCause,
+    Observation, ObservationKind, Origin, Outcome, ProposalBound, Restart, Shadow, Tick,
 };
 pub use host::{HostCx, SetOutcome, Waiter};
 pub use sink::Sink;
+pub use statistics::{InstantCause, StepEnd, StepStatistics};
 pub use step::{StepObserver, StepView};
 pub use transient::{Ended, Protocol, ProtocolOptions};

@@ -14,12 +14,13 @@ use piperine_digital_solver::net::{NetId, NetSpec};
 use piperine_digital_solver::observe::Observation;
 use piperine_digital_solver::tick::{Resolution, Tick};
 use piperine_digital_solver::error::DigitalError;
+use piperine_digital_solver::landing::TimePointRule;
 use piperine_digital_solver::limits::DigitalLimits;
 
 const NS: i64 = 1_000_000; // ticks of 1 fs
 
 fn engine(devices: Vec<Placed<'_>>) -> Digital {
-    Digital::new(bind_by_name(devices, Resolution::default()).expect("binds"), DigitalLimits::default())
+    Digital::new(bind_by_name(devices, Resolution::default()).expect("binds"), DigitalLimits::default(), TimePointRule::default())
 }
 
 fn net(d: &Digital, name: &str) -> NetId {
@@ -81,7 +82,7 @@ fn a_plan_with_no_code_applies_host_commits_only() {
         Resolution::default(),
     )
     .unwrap();
-    let mut d = Digital::new(plan, DigitalLimits::default());
+    let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
     d.start().unwrap();
     assert_eq!(d.next_due(), None, "nothing to run");
     d.host_commit(NetId(0), 0, &HIGH, Tick(7)).unwrap();
@@ -158,7 +159,7 @@ fn an_instant_that_never_goes_quiet_is_e0501_naming_the_nets() {
         half.init = 0.0f64.to_le_bytes().to_vec();
     })
     .unwrap();
-    let mut d = Digital::new(plan, DigitalLimits::default());
+    let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
     d.start().unwrap();
     match d.run_instant(Tick(0), &[], Horizon::uniform(Tick(1000)), Mode::default()) {
         Err(DigitalError::NotQuiet { code, tick, nets }) => {
@@ -202,7 +203,7 @@ fn settler_engine(delay: f64) -> Digital {
         nets.iter_mut().find(|n| n.name == "out").unwrap().analog_reads = true;
     })
     .expect("binds");
-    Digital::new(plan, DigitalLimits::default())
+    Digital::new(plan, DigitalLimits::default(), TimePointRule::default())
 }
 
 #[test]
@@ -271,7 +272,7 @@ fn settle_event_engine(delay: f64, extra: Vec<Placed<'_>>) -> Digital {
         nets.iter_mut().find(|n| n.name == "s.delay").expect("the delay net").init = delay.to_le_bytes().to_vec();
     })
     .expect("binds");
-    Digital::new(plan, DigitalLimits::default())
+    Digital::new(plan, DigitalLimits::default(), TimePointRule::default())
 }
 
 #[test]
@@ -367,7 +368,7 @@ fn an_instant_reports_boundary_fired_and_final() {
         |nets| nets.iter_mut().find(|n| n.name == "out").unwrap().analog_reads = true,
     )
     .unwrap();
-    let mut d = Digital::new(plan, DigitalLimits::default());
+    let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
     d.start().unwrap();
     d.fire(net(&d, "g"), Tick(7)).unwrap();
     d.fire(net(&d, "fin"), Tick(7)).unwrap();

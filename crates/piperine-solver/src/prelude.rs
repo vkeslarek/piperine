@@ -37,6 +37,7 @@ pub use crate::analyses::Context;
 pub use piperine_analog_solver::tolerances::{Policy, Tolerances};
 pub use crate::analyses::Solver;
 pub use crate::protocol::{StepObserver, StepView};
+pub use piperine_digital_solver::landing::TimePointRule;
 
 // ── Convergence policy (opt-in customization) ──────────────────────────────
 pub use piperine_analog_solver::config::{GminSchedule, Schedules, SourceSchedule, StepperGains, TraceFlags};

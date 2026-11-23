@@ -11,7 +11,7 @@ use std::rc::Rc;
 use std::sync::OnceLock;
 
 use piperine_api::{Cell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
-use piperine_solver::prelude::Context;
+use piperine_solver::prelude::{Context, TimePointRule};
 use piperine_transpile::Settings;
 
 /// Keeps every record, in the order it is handed over.
@@ -355,14 +355,17 @@ const SLOW_DESIGN: &str = "pub module Capacitor(p: Electrical, n: Electrical) { 
 
 /// A `seconds`-long transient of `SLOW_DESIGN` at the default resolution, and what it must show.
 struct LongRun {
-    /// The run's stop time, in whole seconds.
+    /// The run's length, in whole seconds.
     seconds: usize,
+    /// How far past `seconds` the stop is asked for: a stop is an `f64` of seconds, which past
+    /// about a quarter of an hour cannot name the tick of an edge exactly at it.
+    past: f64,
 }
 
 impl LongRun {
     /// The instants of the `stream` records of the run.
     fn instants(&self, stream: &str) -> Vec<f64> {
-        let overrides = Overrides { top: Some("Top".into()), max_step: Some(0.25), analysis: Some("transient".into()), stop: Some(self.seconds as f64), ..rust(Overrides::default()) };
+        let overrides = Overrides { top: Some("Top".into()), max_step: Some(0.25), analysis: Some("transient".into()), stop: Some(self.seconds as f64 + self.past), ..rust(Overrides::default()) };
         let (_, records) = run(SLOW_DESIGN, overrides).unwrap_or_else(|f| panic!("{f}"));
         records.iter().filter(|r| r.stream == stream).map(|r| r.time).collect()
     }
@@ -376,28 +379,61 @@ impl LongRun {
         }
     }
 
-    /// Runs and checks the digital clock (every half second, from 0) and the sine's rising
-    /// crossing of one half (at `k + 1/12` s) both land on time.
-    fn assert_events_on_time(&self) {
-        let clock: Vec<f64> = (0..=2 * self.seconds).map(|k| k as f64 / 2.0).collect();
-        self.assert_on_time("clock", &clock, 1e-9);
+    /// Runs and checks the digital clock (every half second, from 0) lands within `clock` seconds
+    /// of its edges and the sine's rising crossing of one half (at `k + 1/12` s) within `crossing`.
+    fn assert_events_on_time(&self, clock: f64, crossing: f64) {
+        let edges: Vec<f64> = (0..=2 * self.seconds).map(|k| k as f64 / 2.0).collect();
+        self.assert_on_time("clock", &edges, clock);
         let crossings: Vec<f64> = (0..self.seconds).map(|k| k as f64 + 1.0 / 12.0).collect();
-        self.assert_on_time("rise", &crossings, 1e-6);
+        self.assert_on_time("rise", &crossings, crossing);
     }
 }
 
 #[test]
 fn a_twenty_second_transient_runs_at_the_default_resolution() {
-    // A pin, not a guard of the step-floor fix: it also passes on the code before it (a crossing
-    // two comparator edges apart did not reproduce the collapse either). Only the CLI pump test,
-    // `a_long_transient_at_the_default_resolution_lands_its_crossings`, fails without the fix.
-    // §15 T1-T4: at 1 fs a tick is finer than an f64 second past 2^52 ticks (4.5 s), so a run past
-    // 8 s must still advance and land its events
-    LongRun { seconds: 20 }.assert_events_on_time();
+    // §15 T1-T4: at 1 fs a tick is finer than an f64 second past 2^52 ticks (4.5 s); the analog
+    // side counts its time from a tick epoch (T25), so a run past 8 s still lands its events
+    LongRun { seconds: 20, past: 0.0 }.assert_events_on_time(1e-9, 1e-6);
 }
 
 #[test]
 fn a_hundred_second_transient_runs_at_the_default_resolution() {
-    // A pin only, like the twenty-second run above.
-    LongRun { seconds: 100 }.assert_events_on_time();
+    LongRun { seconds: 100, past: 0.0 }.assert_events_on_time(1e-9, 1e-6);
+}
+
+#[test]
+fn an_hour_long_transient_runs_at_the_default_resolution() {
+    // T25 (TP-11): the analog time is a tick epoch plus a small offset, so 3.6e18 ticks (an hour at
+    // 1 fs) land every clock edge on its tick, to the 4.5e-13 s an `f64` of 3600 s can say (the
+    // stopgap this replaced moved a step by 0.1 ns and fails it), and every crossing where a
+    // located crossing may lie: its value under the default `etol` (the 1 uV `vntol`) on the
+    // sine's slope at one half, or within the default `ttol` of 1 ps, plus a tick
+    let slope = 2.0 * std::f64::consts::PI * (std::f64::consts::PI / 6.0).cos();
+    let crossing = 1e-6 / slope + 1e-12 + 1e-15;
+    LongRun { seconds: 3600, past: 1e-6 }.assert_events_on_time(1e-12, crossing);
+}
+
+/// The rule the digital engine of the session of `THERMOMETER` was bound with, the host having set
+/// `rule` on the request (`None` leaves the solver's own).
+fn bound_rule(rule: Option<TimePointRule>) -> TimePointRule {
+    let dir = tempfile::tempdir().expect("tmp");
+    let file = dir.path().join("bench.msl");
+    std::fs::write(&file, with_parts(THERMOMETER)).expect("write");
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let overrides = Overrides { top: Some("Top".into()), ..op(&["a"]) };
+    let mut spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    spec.options.time_point_rule = rule;
+    let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    session.circuit().expect("a circuit").bound().expect("a bound circuit").digital.time_point_rule()
+}
+
+#[test]
+fn the_time_point_rule_is_a_host_option_with_no_run_key() {
+    // TP-06 AC 3 and D8: a session lands by the observable rule unless the host sets the reference
+    // mode on its request; a run table cannot name it (no key), and `every_run_key_has_its_flag` in
+    // the CLI pins that no flag does either
+    assert_eq!(bound_rule(None), TimePointRule::Observable);
+    assert_eq!(bound_rule(Some(TimePointRule::Declared)), TimePointRule::Declared);
+    let faults = Manifest::run("time_point_rule = \"declared\"\n").expect_err("no such key");
+    assert!(format!("{faults:?}").contains("unknown key `time_point_rule`"), "{faults:?}");
 }

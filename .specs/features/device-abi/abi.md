@@ -442,6 +442,13 @@ Watches, by who reads them and when:
   functions are applied: a discrete pin read by an analog function changed; or a reaction
   fires that reads a continuous pin; or a reaction fires that has a statement without
   `LATER` whose pin reaches, through reads and writes, an analog function or such a reaction.
+- **R4 as implemented.** The owner decides "time point" by what the instant did, not by what
+  its reactions could do: the look-ahead runs the instant under its sub-checkpoint and lands on
+  it when a pin an analog function reads changed or a firing reaction reads a continuous pin
+  (the dynamic test). It keeps the static reach set as the rule in three cases: a reaction on
+  `settle`, a host waiter, a host probe at that time. A solver option restores the static rule
+  everywhere (the reference mode). The protocol text below is unchanged: a skipped landing is
+  one no model can observe.
 - **R5. Horizon.** `HORIZON` is the last tick before the earliest instant at which the owner
   can execute anything that reaches a pin this reaction listens to or reads, other than as a
   consequence of the commits this call makes (the stop time if nothing is queued; at most the

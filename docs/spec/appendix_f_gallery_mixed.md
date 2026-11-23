@@ -118,7 +118,7 @@ analog for SarAdc {
 | Instant | Trace |
 | --- | --- |
 | `start` rises at `(t_s, 0)` | A time point: the `SampleHold` reaction probes (§12.1.5, §17.2.2). It commits `held <- v(vin)`. |
-| `(t_s, 1)` | `held` applies and `analog` reads it: a jump (§15 step 3.4). `vh` is the potential of a source with no state, so it steps. `cross` is compared across the jump (§13 rule 5). A crossing found there fires at `(t_s, 2)`, and `cmp` applies at `(t_s, 3)`. |
+| `(t_s, 1)` | `held` applies and the first step after `t_s` reads it: a jump (§15.2). `vh` is the potential of a source with no state, so it steps. `cross` is compared across the jump (§13 rule 5). A crossing found there fires at `(t_s, 2)`, and `cmp` applies at `(t_s, 3)`. |
 | First `clk` edge with `start` high | The first reaction fires: `busy`, `bit ← 7`, `code ← 0x80`, `done ← false`. The second does not: it reads the old `busy` (§12.1.1). |
 | Each of the next eight edges | The second reaction reads `cmp` and `code`. It keeps or clears bit `bit`, and sets the next lower bit as the new trial. |
 | One microstep later | `code` applies; `Dac8` reads it: a jump. `cpar · v(core)` is a state and stays (§15.2.1). `v(src)` steps, and the flow through `rout` with it. |
@@ -344,8 +344,8 @@ analog<ROWS, COLS> for Dram<ROWS, COLS> {
 | --- | --- |
 | Branch kind | The branch `(c.bl, gnd)` gets a flow contribution or none. No contribution is zero flow (§11 rule 4). The kind never changes, so this is not a switch branch (§11 rule 2). |
 | Word line high | The cell drives the bit line toward `vdd` or 0 V through `ron`. |
-| Word line falls, `(t, n)` | The reaction runs before the step to `t` is solved and probes the solution of the previous time point (§15 step 3.3): the bit line as the cell and any writer left it. It commits `bit`. |
-| `(t, n + 1)` | `bit` applies. Nothing is pending, so the step that arrives at `t` is solved (§15 step 3.4). It reads both changes: the fall of the word line removes the cell's flow, and `bit`, which `analog` reads statically, moves nothing with the word line low. |
+| Word line falls, `(t, n)` | The step to `t` is solved first; the reaction probes the solution at `t` (§15 step 3.3): the bit line as the cell and any writer left it. It commits `bit`. |
+| `(t, n + 1)` | `bit` applies. Nothing is pending, so the loop exits; the first step after `t` reads both changes (§15.2): the fall of the word line removes the cell's flow, and `bit`, which `analog` reads statically, moves nothing with the word line low. |
 | Time points | Every word-line change that `analog` reads; every fall, since the reaction probes. |
 
 ## F.4 Four resolved nets
@@ -538,7 +538,7 @@ module ShareCharge(in close: Bit) {
 | Operating point | `close` must be low. The switch is open; neither node has a DC path; both are held at their `= value` (§16). |
 | `close` high at 0 | The holds on `a` and `b` and the short between them close a loop of potential contributions. The solve is singular and names them (§16). |
 | First step | The holds are removed; `1p · v(a)` and `3p · v(b)` are the states. Nothing moves until the switch closes. |
-| `close` rises at `(t, 0)` | The commit applies before the step to `t` is solved; that step reads `close`: a jump (§15 step 3.4). |
+| `close` rises at `(t, 0)` | The commit applies after the step to `t` is solved; the first step after `t` reads `close`: a jump (§15.2). |
 
 At that instant the step that arrives at `t` reads `close` (§15.2). It is a TR-BDF2 step
 (Appendix C.2). With `i` the switch flow at the end of its trapezoidal stage and `k > 0` that
@@ -556,7 +556,7 @@ previous derivative enters them:
 | The step | Adding the node rows removes `i` and `k`: `1p · (v − 1) + 3p · v = 0`, so the stage ends at 0.25 V. The second stage, backward Euler over the whole step from the charges of `t − h` (§15.2.6), has the same form and conserves the same sum. So `v(a) = v(b) = 0.25 V`: the right values are those of the first step that reads the jump. |
 | Conservation | The cut that the switch closes holds 1 pC before and `4p · 0.25 = 1 pC` after (§15.2.2). |
 | No solve of its own | The change has no solve at an unchanged `t`; the step to `t` is the solve that reads it (§15.2). |
-| Restart | The step to `t` landed there for the commit of `close`, so it is exempt from the truncation-error test; the step after it drops the previous derivative and runs its trapezoidal stage as backward Euler (§15.2.6). |
+| Restart | The step to `t` is an ordinary step, tested for truncation error; the step after it reads the change, is tested with the first-order estimate, drops the previous derivative and runs its trapezoidal stage as backward Euler (§15.2.6). |
 | Afterwards | `a` and `b` float together at 0.25 V. The transient is determined by the states (§15.2.1). |
 | `Dc` | Singular with the switch open or closed: no node has a DC path. Nothing is held outside a transient's operating point (§16). |
 | `Ac`, `Noise` | Their operating point fails the same way. |

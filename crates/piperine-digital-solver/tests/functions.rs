@@ -321,6 +321,7 @@ fn reactions_and_functions_read_the_continuation_values() {
     // ENV-02 (abi.md §4.2): a reaction and a discrete function read GMIN and SOURCE_SCALE as the
     // owner set them; 0 and 1 until it does
     use piperine_digital_solver::engine::{Digital, Horizon, Mode};
+    use piperine_digital_solver::landing::TimePointRule;
     use piperine_digital_solver::limits::DigitalLimits;
     let read = |set: Option<(f64, f64)>| {
         let handle = piperine_abi::caller::Handle::create(
@@ -329,7 +330,7 @@ fn reactions_and_functions_read_the_continuation_values() {
         )
         .expect("creates");
         let plan = bind_by_name(vec![("env", handle, vec![])], Resolution::default()).expect("binds");
-        let mut d = Digital::new(plan, DigitalLimits::default());
+        let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
         if let Some((g, s)) = set {
             d.set_continuation(g, s);
         }

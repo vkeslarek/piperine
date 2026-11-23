@@ -14,7 +14,7 @@
 use piperine_abi::raw::input;
 
 use super::assembly::{Held, InstanceState};
-use super::flow::{Linear, direct};
+use super::flow::Linear;
 use super::plan::{InstancePlan, TermPlan};
 
 /// The limiting tolerance: absolute part.
@@ -60,10 +60,10 @@ pub(crate) fn take_iterates(inst: &InstancePlan, st: &mut InstanceState, small_s
 
 /// Term `t` at the iterate: its value and direct partials, plus, for each
 /// partial `g` against a limit, `g·(x − x̂)` on the value and `g·p_j` on the
-/// columns.
-pub(crate) fn linear(t: &TermPlan, inst: &InstancePlan, st: &InstanceState) -> Linear {
-    let mut lin = direct(t, st);
-    let Some((fi, _)) = t.value else { return lin };
+/// columns (read through the [`Linear`] when asked for).
+pub(crate) fn linear<'a>(t: &'a TermPlan, inst: &'a InstancePlan, st: &'a InstanceState) -> Linear<'a> {
+    let Some((fi, w)) = t.value else { return Linear::none() };
+    let mut v = st.fns[fi].f64(w);
     for (p, i) in &t.via {
         let x = &inst.inputs[*i];
         if x.kind != input::LIMIT {
@@ -71,14 +71,9 @@ pub(crate) fn linear(t: &TermPlan, inst: &InstancePlan, st: &InstanceState) -> L
         }
         let g = st.fns[fi].jac[*p];
         let Held { value, proposed, .. } = st.held[*i];
-        lin.v += g * (proposed - value);
-        if let Some((pf, _)) = x.proposed {
-            for (pp, c) in &x.p {
-                lin.cols.push((c.clone(), g * st.fns[pf].jac[*pp]));
-            }
-        }
+        v += g * (proposed - value);
     }
-    lin
+    Linear::of(v, t, inst, st)
 }
 
 /// The limits of one instance that veto convergence.

@@ -60,6 +60,8 @@ pub struct CompletedRun {
     pub checks: CheckTally,
     /// Every record its streams delivered, in delivery order (the `checks` included).
     pub records: Vec<Record>,
+    /// The transient steps the solver accepted over the run (0 when it ran no transient).
+    pub accepted_steps: u64,
     /// When the run began to open (build included).
     pub started: Instant,
     /// When the run ended.
@@ -105,10 +107,11 @@ impl ScenarioRun {
         self.stimulus.apply(&mut session).map_err(|refusal| fail("stimulus", &refusal))?;
         let delivered = Rc::new(RefCell::new(RunRecords::default()));
         let table = session.run(delivered.clone()).map_err(|failure| fail("run", &failure))?;
+        let accepted_steps = session.statistics().map_or(0, |statistics| statistics.steps().accepted());
         // the session holds the build's libraries: it goes before the directory does
         drop(session);
         let RunRecords { records, checks } = std::mem::take(&mut *delivered.borrow_mut());
-        Ok(CompletedRun { run: self.run.clone(), table, checks, records, started, ended: Instant::now(), build: build.path().to_path_buf() })
+        Ok(CompletedRun { run: self.run.clone(), table, checks, records, accepted_steps, started, ended: Instant::now(), build: build.path().to_path_buf() })
     }
 }
 

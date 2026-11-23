@@ -11,8 +11,8 @@ use std::rc::Rc;
 
 use piperine_analog_solver::error::Result;
 use piperine_solver::protocol::{
-    Accepted, Advance, AnalogSide, Attempt, Boundary, DiscreteSide, Horizon, InstantMode, Observation, Outcome, Restart,
-    Shadow, Tick,
+    Accepted, Advance, AnalogSide, Attempt, Boundary, DiscreteSide, Horizon, InstantMode, Observation, Origin, Outcome,
+    ProposalBound, Restart, Shadow, Tick,
 };
 
 /// One recorded call.
@@ -32,7 +32,8 @@ pub enum Call {
     Drain,
     Propose(f64, f64),
     Deliver(Vec<Boundary>, Restart),
-    Attempt { to: f64, exempt: bool },
+    Attempt { to: f64, landing: bool },
+    Rebase(Origin),
     Accept,
     Equilibrium,
     AnalogMark(u32),
@@ -162,6 +163,8 @@ pub struct ScriptedAnalog {
     pub log: Log,
     pub unknowns: bool,
     pub proposals: VecDeque<f64>,
+    /// What bounded each proposal, in order; the controller's own when the list is exhausted.
+    pub bounds: VecDeque<ProposalBound>,
     /// The `next_due` each `propose` was given, in order.
     pub next_dues: Vec<Option<f64>>,
     pub attempts: VecDeque<Attempt>,
@@ -169,6 +172,7 @@ pub struct ScriptedAnalog {
     pub equilibria: VecDeque<Accepted>,
     /// Trace records produced by each `attempt`, in order.
     pub traces: VecDeque<Vec<Observation>>,
+    last_bound: ProposalBound,
     buffer: Vec<Observation>,
     marks: Cell<u32>,
 }
@@ -179,6 +183,8 @@ impl ScriptedAnalog {
             log: Rc::clone(log),
             unknowns: true,
             proposals: VecDeque::new(),
+            bounds: VecDeque::new(),
+            last_bound: ProposalBound::Controller,
             next_dues: Vec::new(),
             attempts: VecDeque::new(),
             accepts: VecDeque::new(),
@@ -203,13 +209,20 @@ impl AnalogSide for ScriptedAnalog {
     fn propose(&mut self, now: f64, stop: f64, next_due: Option<f64>) -> f64 {
         self.record(Call::Propose(now, stop));
         self.next_dues.push(next_due);
+        self.last_bound = self.bounds.pop_front().unwrap_or_default();
         self.proposals.pop_front().unwrap_or(stop)
+    }
+    fn proposal_bound(&self) -> ProposalBound {
+        self.last_bound
     }
     fn deliver(&mut self, boundary: &[Boundary], restart: Restart) {
         self.record(Call::Deliver(boundary.to_vec(), restart));
     }
-    fn attempt(&mut self, to: f64, exempt: bool) -> Result<Attempt> {
-        self.record(Call::Attempt { to, exempt });
+    fn rebase(&mut self, origin: Origin) {
+        self.record(Call::Rebase(origin));
+    }
+    fn attempt(&mut self, to: f64, landing: bool) -> Result<Attempt> {
+        self.record(Call::Attempt { to, landing });
         self.buffer.extend(self.traces.pop_front().unwrap_or_default());
         Ok(self.attempts.pop_front().unwrap_or(Attempt::Converged))
     }

@@ -108,8 +108,8 @@ fn a_boundary_change_is_delivered_after_the_landing_and_restarts_the_next() {
     let next = result.get(at + 1).expect("a step after the edge");
     assert_eq!(landing.get_node(&node_id(&o)).unwrap(), 0.0, "the landing is solved on the left value");
     assert!((next.get_node(&node_id(&o)).unwrap() - 1.0).abs() < 1.0e-12, "the next step reads the new code");
-    // The jump lies inside the step after the landing: that step is exempt from
-    // the truncation test, so nothing is rejected and no step falls to the floor.
+    // The jump lies inside the step after the landing: that step is tested by
+    // the first-order jump estimate, which it passes, so nothing is rejected and no step falls to the floor.
     assert_eq!(result.stats.steps_rejected, 0, "{:?}", result.stats);
     assert_eq!(result.stats.dt_min_floor_hits, 0);
     assert_eq!(bytes_of(circuit.bound().unwrap(), "code"), HIGH.to_vec());

@@ -68,7 +68,7 @@ code (user, 2026-11-18 and 2026-11-21).
 
 | Feature | What it delivers | State |
 | --- | --- | --- |
-| `transient-performance` | Faster transients: only observable landings, the tested landing and jump steps, stamps reused, no instant at an idle step, T25's tick epoch. The buck's start went from 804 136 steps / 151.9 s to 210 188 / ~27 s | **implemented (B1–B4), in verification** — moved to the front by the user (2026-11-22) |
+| `transient-performance` | Faster transients: only observable landings, the tested landing and jump steps, stamps reused, no instant at an idle step, T25's tick epoch. The buck's start went from 804 136 steps / 151.9 s to 210 188 / ~27 s | **delivered** — verified (round 4) and merged (user, 2026-11-22) |
 | `digital-performance` | A digital-only run in bounded memory, no quadratic paths, an allocation-free call, work proportional to activity; last, the whole digital circuit of a compiled unit evaluated in topological order over a flat state until it converges (Verilator-style). Measured today: 175x (counter) to 560 000x (10 000 flops) behind Verilator; memory grows with run length | spec on `feature/digital-performance` (diagnosis + bench harness); **postponed until after spec-closure and the code-clarity refactor** (user, 2026-11-22: "precisamos primeiro de um bom refactor e de todas as features funcionando") |
 | `host-iii` | `force`, `release`, waits for an event, continued transients (H1, H6) | spec |
 | `host-analyses` | S-parameters, Fourier, distortion, operating-point variables (H2) | spec |
@@ -77,7 +77,7 @@ code (user, 2026-11-18 and 2026-11-21).
 | `cli-packages` | Packages from the command line (H10) | spec |
 | `conformance` | The galleries and conformance on the compiled backend (U1, U2, U4, U6, U8, U9) | spec |
 | `foreign-models` | Foreign and OSDI models, linking (L12, L33) | spec |
-| `multi-rate` | Digital edges that do not cut analog steps (V12) | spec; later (user) |
+| `multi-rate` | Digital edges that do not cut analog steps (V12) | delivered by `transient-performance` (landings only where something observable happens: `59be2e5c`; no instant at an idle step: `c8569a22`) |
 | `surrogate-models` | Averaged or surrogate models for long runs (V13) | spec; later (user) |
 | `periodic-small-signal` | Small-signal analyses over the periodic steady state (V16) | spec |
 | `ngspice-models` | The ngspice device models in the MSL standard library — same names, params and equations, each with a parity twin — so a SPICE user moves over easily | **idea only**; well after the rest (user, 2026-11-21) |

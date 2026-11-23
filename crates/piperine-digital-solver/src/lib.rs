@@ -11,6 +11,7 @@ pub mod engine;
 pub mod error;
 pub mod instant;
 pub(crate) mod journal;
+pub mod landing;
 pub mod limits;
 pub mod net;
 pub mod observe;

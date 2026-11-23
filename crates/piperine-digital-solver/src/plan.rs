@@ -69,6 +69,8 @@ pub struct Analysis {
     param_nets: Vec<bool>,
     /// `[instance][reaction]`: running it makes the instant a time point (abi.md §5 R4).
     probes: Vec<Vec<bool>>,
+    /// `[instance][reaction]`: the reaction reads a continuous pin itself (R4, second clause).
+    samples: Vec<Vec<bool>>,
     /// `[instance][reaction]`: a `CROSS` watch can reach what the reaction listens to or reads.
     crossing: Vec<Vec<bool>>,
 }
@@ -84,6 +86,12 @@ impl Analysis {
     /// `LATER` whose net reaches, through reads and writes, the analog side or such a reaction.
     pub fn probes(&self, instance: u32, reaction: u32) -> bool {
         self.probes[instance as usize][reaction as usize]
+    }
+
+    /// Whether reaction `reaction` of `instance` reads a continuous pin itself, apart from the
+    /// reach of its statements.
+    pub fn samples(&self, instance: u32, reaction: u32) -> bool {
+        self.samples[instance as usize][reaction as usize]
     }
 
     /// Whether a `PARAM` or `GLOBAL` pin is bound to `net`.
@@ -217,7 +225,23 @@ pub fn analyze(nets: &[NetSpec], inputs: &[ShapeInput<'_>], resolution: Resoluti
             }
         }
     }
-    let probes = reachability(nets, inputs, &functions, &later);
+    let samples: Vec<Vec<bool>> = inputs
+        .iter()
+        .map(|input| {
+            input
+                .shape
+                .reactions
+                .iter()
+                .map(|reaction| {
+                    reaction.reads.iter().any(|c| {
+                        c.kind == cell::PIN
+                            && input.shape.pins.get(c.index as usize).is_some_and(|p| p.kind == kind::CONTINUOUS)
+                    })
+                })
+                .collect()
+        })
+        .collect();
+    let probes = reachability(nets, inputs, &functions, &later, &samples);
     let crossing = crossing_reach(nets, inputs, &functions);
     Ok(Analysis {
         writers,
@@ -227,6 +251,7 @@ pub fn analyze(nets: &[NetSpec], inputs: &[ShapeInput<'_>], resolution: Resoluti
         settle_nets: globals(global::SETTLE),
         param_nets,
         probes,
+        samples,
         crossing,
     })
 }
@@ -241,6 +266,7 @@ fn reachability(
     inputs: &[ShapeInput<'_>],
     functions: &[FnNode],
     later: &[Vec<Vec<bool>>],
+    samples: &[Vec<bool>],
 ) -> Vec<Vec<bool>> {
     let mut reach: Vec<bool> = nets.iter().map(|n| n.analog_reads).collect();
     let mut probes: Vec<Vec<bool>> = inputs.iter().map(|i| vec![false; i.shape.reactions.len()]).collect();
@@ -262,13 +288,10 @@ fn reachability(
         }
         for (i, input) in inputs.iter().enumerate() {
             for (r, reaction) in input.shape.reactions.iter().enumerate() {
-                let samples = reaction.reads.iter().any(|c| {
-                    c.kind == cell::PIN && input.shape.pins.get(c.index as usize).is_some_and(|p| p.kind == kind::CONTINUOUS)
-                });
                 let writes_reaching = reaction.writes.iter().enumerate().any(|(s, st)| {
                     !later[i][r][s] && net_of(input, st.pin).is_some_and(|n| reach[n.0 as usize])
                 });
-                if !(samples || writes_reaching) {
+                if !(samples[i][r] || writes_reaching) {
                     continue;
                 }
                 probes[i][r] = true;

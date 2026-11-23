@@ -17,6 +17,7 @@ use std::rc::Rc;
 use piperine_analog_solver::device::{Ambient, AssemblySnapshot};
 use piperine_analog_solver::error::{Error, Result, SolverDomain};
 use piperine_digital_solver::advance::Advance as DigitalAdvance;
+use piperine_digital_solver::landing::{LandingCause as DigitalLandingCause, TimePointRule};
 use piperine_digital_solver::engine::{
     Checkpoint, Digital, Horizon as DigitalHorizon, Mark as DigitalMark, Mode, Shadow as DigitalShadow,
 };
@@ -28,13 +29,26 @@ use piperine_digital_solver::error::DigitalError;
 use piperine_digital_solver::limits::DigitalLimits;
 
 use crate::protocol::{
-    Accepted, Advance, AnalogSide, Attempt, Boundary, DiscreteSide, Horizon, HostCx, InstantMode, Observation,
-    ObservationKind, Outcome, Protocol, Restart, Shadow, Sink, StepObserver, StepView, Tick, Waiter,
+    Accepted, Advance, AnalogSide, Attempt, Boundary, DiscreteSide, Horizon, HostCx, InstantMode, LandingCause,
+    Observation, ObservationKind, Origin, Outcome, ProposalBound, Protocol, Restart, Shadow, Sink, StepObserver, StepView, Tick, Waiter,
 };
 use crate::analyses::dc::DcSolver;
 use crate::analyses::transient::{DeviceMark, DeviceRun, TransientSolver};
 use crate::core::bind::{Bound, NameMap, Site};
 use crate::core::result::{ReentryState, TransientStep};
+
+impl From<DigitalLandingCause> for LandingCause {
+    /// The seam's copy of the digital engine's cause, variant for variant.
+    fn from(cause: DigitalLandingCause) -> LandingCause {
+        match cause {
+            DigitalLandingCause::AnalogReadChanged => LandingCause::AnalogReadChanged,
+            DigitalLandingCause::ContinuousRead => LandingCause::ContinuousRead,
+            DigitalLandingCause::DeclaredReach => LandingCause::DeclaredReach,
+            DigitalLandingCause::Irreversible => LandingCause::Irreversible,
+            DigitalLandingCause::HostWaiter => LandingCause::HostWaiter,
+        }
+    }
+}
 
 /// An instant that does not go quiet (`E0501`) as the owner reports it, naming
 /// the bound it ran into: the engine's own text names the nets and the tick, not the bound.
@@ -53,7 +67,7 @@ pub(crate) fn digital_error(e: DigitalError) -> Error {
 /// A `Digital` over an empty plan: what `Bound` holds while a run owns the real one.
 pub(crate) fn empty_digital(seconds_per_tick: f64) -> Result<Digital> {
     let plan = DigitalPlan::bind(Vec::new(), Vec::new(), Resolution { seconds_per_tick }).map_err(digital_error)?;
-    Ok(Digital::new(plan, DigitalLimits::default()))
+    Ok(Digital::new(plan, DigitalLimits::default(), TimePointRule::default()))
 }
 
 /// The discrete side's settled state at the top of a transient step: the
@@ -187,7 +201,7 @@ impl DiscreteSide for DigitalSide {
         let microsteps = self.microsteps;
         Ok(match self.digital.advance(DigitalTick(to)).map_err(|e| instant_error(e, microsteps))? {
             DigitalAdvance::Reached => Advance::Reached,
-            DigitalAdvance::Landing { tick, time_point } => Advance::Landing { tick: tick.0, time_point },
+            DigitalAdvance::Landing { tick, cause } => Advance::Landing { tick: tick.0, cause: cause.into() },
             DigitalAdvance::Final(tick) => Advance::Final(tick.0),
         })
     }
@@ -198,6 +212,14 @@ impl DiscreteSide for DigitalSide {
 
     fn reopen(&mut self, at: Tick, next_microstep: bool) {
         self.digital.reopen(DigitalTick(at), next_microstep);
+    }
+
+    fn is_idle_at(&self, at: Tick) -> bool {
+        self.digital.is_idle_at(DigitalTick(at))
+    }
+
+    fn pass_instant(&mut self, at: Tick) {
+        self.digital.pass_instant(DigitalTick(at));
     }
 
     fn run_instant(&mut self, at: Tick, samples: &[f64], limit: Horizon, mode: InstantMode) -> Result<Outcome> {
@@ -351,7 +373,7 @@ impl AnalogSide for EquilibriumSide<'_, '_> {
         }
     }
 
-    fn attempt(&mut self, _to: f64, _exempt: bool) -> Result<Attempt> {
+    fn attempt(&mut self, _to: f64, _landing: bool) -> Result<Attempt> {
         unreachable!("an operating point takes no step")
     }
 
@@ -417,17 +439,21 @@ impl AnalogSide for TransientSide<'_, '_> {
         self.tran.device_propose(&mut self.run, next_due)
     }
 
+    fn proposal_bound(&self) -> ProposalBound {
+        self.run.proposal_bound()
+    }
+
     fn deliver(&mut self, boundary: &[Boundary], restart: Restart) {
         self.tran.device_deliver(&mut self.run, boundary, restart);
     }
 
-    fn attempt(&mut self, to: f64, exempt: bool) -> Result<Attempt> {
+    fn attempt(&mut self, to: f64, landing: bool) -> Result<Attempt> {
         // Nothing has moved since the protocol's mark: the step accepted last
         // takes the settled state as its re-entry state.
         if let Some((digital, nets)) = self.settled.borrow_mut().take() {
             self.tran.device_capture(&mut self.run, digital, nets);
         }
-        self.tran.device_attempt(&mut self.run, to, exempt)
+        self.tran.device_attempt(&mut self.run, to, landing)
     }
 
     fn accept(&mut self) -> Result<Accepted> {
@@ -447,6 +473,10 @@ impl AnalogSide for TransientSide<'_, '_> {
 
     fn restore(&mut self, mark: &DeviceMark) {
         self.tran.device_restore(mark);
+    }
+
+    fn rebase(&mut self, origin: Origin) {
+        self.run.rebase(origin);
     }
 
     fn retake(&mut self, mark: &DeviceMark) {

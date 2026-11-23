@@ -1,6 +1,7 @@
 //! Analysis result containers handed back to hosts (waveforms, operating points).
 use piperine_analog_solver::netlist::{BranchIdentifier, AnalogVariable, NodeIdentifier};
 use crate::core::net::Net;
+use crate::protocol::StepStatistics;
 use ndarray::Array2;
 use num_complex::Complex;
 use std::collections::HashMap;
@@ -21,7 +22,18 @@ pub struct SolverStats {
     pub converged: bool,
     // Transient step loop
     pub steps_accepted: usize,
+    /// Attempts rejected: `rejected_truncation + rejected_newton`.
     pub steps_rejected: usize,
+    /// Attempts rejected by the truncation-error test.
+    pub rejected_truncation: usize,
+    /// Attempts rejected because Newton did not converge.
+    pub rejected_newton: usize,
+    /// Accepted steps that read a jump (the first step after a delivery under a restart).
+    pub jump_steps: usize,
+    /// Attempts of a step that reads a jump that were rejected and retaken smaller.
+    pub jump_retakes: usize,
+    /// Accepted steps whose size is the analog side's `max_step`.
+    pub steps_at_max_step: usize,
     /// Steps retaken at `dt_min` after a larger attempt failed.
     pub dt_min_floor_hits: usize,
     /// Steps accepted at `dt_min` although they fail the truncation test (nothing smaller is
@@ -87,6 +99,7 @@ impl DcAnalysisResult {
 pub struct TransientAnalysisResult {
     values: Vec<TransientStep>,
     pub stats: SolverStats,
+    statistics: StepStatistics,
 }
 
 impl TransientAnalysisResult {
@@ -94,12 +107,24 @@ impl TransientAnalysisResult {
         Self {
             values,
             stats: SolverStats::default(),
+            statistics: StepStatistics::default(),
         }
     }
 
     /// Replace the default (zeroed) stats with populated values.
     pub fn set_stats(&mut self, stats: SolverStats) {
         self.stats = stats;
+    }
+
+    /// How the protocol's accepted steps ended: landings by cause, crossings, `max_step`, caps,
+    /// the stop and the controller's own proposals, and the instants run.
+    pub fn statistics(&self) -> &StepStatistics {
+        &self.statistics
+    }
+
+    /// Replace the default (empty) protocol statistics.
+    pub fn set_statistics(&mut self, statistics: StepStatistics) {
+        self.statistics = statistics;
     }
 
     pub fn push(&mut self, step: TransientStep) {
@@ -217,7 +242,7 @@ pub(crate) struct ReentryState {
 /// solution, to take every later step the continuous run took (HYG-04). The Newton history the
 /// predictor reads, the step size the controller proposed, the previous accepted step, the size of
 /// the last accepted step, whether the last step was accepted, whether a restart is pending (the
-/// step after a discontinuity is first order and exempt), whether the last step read a jump, and the controller's memory.
+/// step after a discontinuity is first order and tested by the jump estimate), whether the last step read a jump, and the controller's memory.
 #[derive(Debug, Clone)]
 pub(crate) struct AnalogResume {
     newton: piperine_analog_solver::math::circular_array::CircularArrayBuffer2<f64>,

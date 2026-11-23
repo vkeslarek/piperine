@@ -1813,6 +1813,32 @@ It supersedes MD-70 whole and MD-64 in its analysis of unknown-ness; it moves MD
 `piperine-cli`, `piperine-parity`, `docs/spec`, the Book, `GAPS.md`.
 **Status:** phases A and B delivered (2026-11-21); phases C and D (arrays of carriers, `f16`/`f128`) follow.
 
+### MD-80: the solver lands by the observable rule; every step is tested; time is a tick epoch
+
+`transient-performance` (2026-11-22; the number follows MD-79, `composite-values`; a collision at merge is
+renumbered by whoever merges second). It extends MD-62's owner protocol (the one device contract and the transient
+protocol over its two sides) and MD-74's rule for `settle`, and supersedes nothing.
+
+1. **Landings.** The discrete side lands the analog step only where something observable happens: an analog-read
+   net changed, a firing reaction reads a continuous pin, an `IRREVERSIBLE` reaction or a host waiter (the
+   `Observable` `TimePointRule`, the solver's default; `Declared` is the reference mode, a host option with no run
+   key). The step that ends on a landing is tested for truncation, and the step that reads a jump is
+   error-controlled by a first-order estimate: the two exemptions of Part V §15.2 that rules 1 and 6 name are gone. The
+   step retaken to the same time after its crossings (§15.2 rule 4) stays exempt, since it cannot be taken smaller.
+2. **Idle steps.** An accepted step where nothing is due, no crossing fired and nothing listens to `settle` runs no
+   instant (`DiscreteSide::is_idle_at`).
+3. **Per-step cost.** Newton reads the clock only when `PIPERINE_TRACE_TIMING` is set; a `Handle` validates a
+   function's cells once and a call allocates nothing; a term's partials are read where they live; stamps go into a
+   buffer the solver keeps.
+4. **Long runs.** Past 2^52 ticks the protocol counts the analog side's times from an epoch it moves to every
+   accepted tick (`AnalogSide::rebase`), so every tick is exact for any run length; the 256-spacing step floor of
+   Appendix C.2.1 is gone. Under 2^52 ticks nothing moves.
+5. **Measured.** The buck's 600 us start: 804 136 steps / 151.9 s to 210 188 / about 27 s; `buck.vout` against a
+   `max_step = 1e-10` reference 0.000136 mV (gate 0.104 mV); no parity value, twin or pinned grid moved.
+6. **Restart after a host write (T26, TP-13; user 2026-11-22).** The step that reads a host write restarts at a
+   tenth of the last step instead of 10⁻³ (`HOST_RESTART_FRACTION`); the power stage takes 27 547 steps instead of
+   30 920 (release). The step controller's growth clamp stays 1.5: 2.0 moves the `tran_corner` twin's bytes (D5).
+
 ## Handoff Snapshot
 
 ### Feature - `solver-abi-integration` (2026-11-15)

@@ -19,6 +19,18 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
         state: &CircularArrayBuffer2<E>,
     ) -> crate::error::Result<Vec<Stamp<A, E>>>;
 
+    /// [`assemble`](Self::assemble) into `out`, which the Newton solver keeps between iterations.
+    /// A system that can fill a buffer without allocating overrides this; the default takes the
+    /// stamps `assemble` returns.
+    fn assemble_into(
+        &mut self,
+        state: &CircularArrayBuffer2<E>,
+        out: &mut Vec<Stamp<A, E>>,
+    ) -> crate::error::Result<()> {
+        *out = self.assemble(state)?;
+        Ok(())
+    }
+
     /// The netlist naming this system's unknowns. The strategy solve path
     /// reads it for the per-row convergence tests; routing it through the
     /// system (instead of a separate parameter) lets the solver reborrow it
@@ -85,6 +97,58 @@ pub trait NonLinearSystem<A: AsIndex, E: Scalar> {
     }
 }
 
+/// The part of an iteration a [`SolveTimer`] reading adds to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TimedPart {
+    /// Assembling and stamping the system.
+    Assembly,
+    /// The sparse linear solve.
+    Solve,
+}
+
+/// Cumulative wall-clock time of the two parts of a Newton iteration. It reads the clock only
+/// when timing was asked for (`TraceFlags::timing`); otherwise both totals stay 0 and no clock
+/// is read (a reading costs about 1.5 µs on a machine whose clock source is the HPET).
+#[derive(Debug, Clone, Copy, Default)]
+struct SolveTimer {
+    enabled: bool,
+    assembly_ns: u64,
+    solve_ns: u64,
+}
+
+impl SolveTimer {
+    /// A timer that reads the clock only when `enabled`.
+    fn new(enabled: bool) -> Self {
+        Self { enabled, ..Self::default() }
+    }
+
+    /// Turn the readings on or off for the solves that follow; the totals are kept.
+    fn enable(&mut self, enabled: bool) {
+        self.enabled = enabled;
+    }
+
+    /// The instant a part starts, or `None` when timing is off.
+    fn start(&self) -> Option<std::time::Instant> {
+        self.enabled.then(std::time::Instant::now)
+    }
+
+    /// Add the time since `started` to `part`; nothing when timing is off.
+    fn add(&mut self, started: Option<std::time::Instant>, part: TimedPart) {
+        let Some(started) = started else { return };
+        let elapsed = started.elapsed().as_nanos() as u64;
+        match part {
+            TimedPart::Assembly => self.assembly_ns += elapsed,
+            TimedPart::Solve => self.solve_ns += elapsed,
+        }
+    }
+
+    /// Zero both totals, keeping the on/off setting.
+    fn reset(&mut self) {
+        self.assembly_ns = 0;
+        self.solve_ns = 0;
+    }
+}
+
 pub struct NewtonRaphsonSolver<A, E, L>
 where
     A: AsIndex,
@@ -99,12 +163,14 @@ where
     residual: Vec<E>,
     /// Per-row absolute-contribution sum for the relative tolerance term.
     scale: Vec<f64>,
+    /// The stamps of the iteration, refilled by `assemble_into` and kept between iterations.
+    stamps: Vec<Stamp<A, E>>,
+    /// The unknowns that are nodes (the ones a damping strategy acts on), listed once.
+    nodes: Vec<usize>,
     last_iterations: usize,
     total_iterations: usize,
-    /// Cumulative wall-clock time spent assembling + stamping (ns).
-    assembly_ns: u64,
-    /// Cumulative wall-clock time spent in the sparse LU solve (ns).
-    solve_ns: u64,
+    /// Cumulative wall-clock time of assembly + stamping and of the sparse LU solve.
+    timer: SolveTimer,
     /// One-shot predictor ratio for the next `solve_with_strategy` call
     /// (CP-16): seed `x̂ = x₀ + (x₀ − x₁)·r` from the two newest history
     /// rows instead of plain `x₀`. Consumed (taken) by the solve; `None`
@@ -142,6 +208,13 @@ where
             )
         })?;
         let linear_system = L::new(size);
+        let nodes = system
+            .netlist()
+            .all_references()
+            .iter()
+            .filter(|reference| reference.is_node())
+            .filter_map(|reference| reference.idx())
+            .collect();
 
         Ok(Self {
             linear_system,
@@ -149,10 +222,11 @@ where
             state,
             residual: vec![E::zero(); size],
             scale: vec![0.0; size],
+            stamps: Vec::new(),
+            nodes,
             last_iterations: 0,
             total_iterations: 0,
-            assembly_ns: 0,
-            solve_ns: 0,
+            timer: SolveTimer::new(false),
             predictor_ratio: None,
             _marker: std::marker::PhantomData,
         })
@@ -324,18 +398,17 @@ where
     /// or step loop whose stats will be reported).
     pub fn reset_iteration_counter(&mut self) {
         self.total_iterations = 0;
-        self.assembly_ns = 0;
-        self.solve_ns = 0;
+        self.timer.reset();
     }
 
     /// Cumulative assembly+stamping wall time (ns) since the last reset.
     pub fn assembly_time_ns(&self) -> u64 {
-        self.assembly_ns
+        self.timer.assembly_ns
     }
 
     /// Cumulative sparse-solve wall time (ns) since the last reset.
     pub fn solve_time_ns(&self) -> u64 {
-        self.solve_ns
+        self.timer.solve_ns
     }
 
     /// Arm the first-order predictor for the next `solve_with_strategy`
@@ -385,34 +458,30 @@ where
             _ => Array1::zeros(self.state.size()),
         };
         self.state.push(&guess.view());
+        self.timer.enable(policy.trace.timing);
 
         system.update_sources(&mut self.state);
 
         let max_iter = strategy.max_iter(policy);
-        let nodes: Vec<usize> = system
-            .netlist()
-            .all_references()
-            .iter()
-            .filter(|reference| reference.is_node())
-            .filter_map(|reference| reference.idx())
-            .collect();
         let mut failing = Vec::new();
 
         for iter in 0..max_iter {
             system.before_iter_callback(&self.state, iter);
             debug!("Newton Iteration {}", iter + 1);
 
-            let t_assembly = std::time::Instant::now();
-            let stamps = system.assemble(&self.state)?;
+            let assembly_started = self.timer.start();
+            let mut stamps = std::mem::take(&mut self.stamps);
+            system.assemble_into(&self.state, &mut stamps)?;
             self.compute_residual(&stamps);
 
             self.linear_system.reset();
-            self.linear_system.apply_stamps(stamps);
-            self.assembly_ns += t_assembly.elapsed().as_nanos() as u64;
+            self.linear_system.apply_stamps_from(&stamps);
+            self.stamps = stamps;
+            self.timer.add(assembly_started, TimedPart::Assembly);
 
-            let t_solve = std::time::Instant::now();
+            let solve_started = self.timer.start();
             let solved = self.linear_system.solve_with_backend(&self.symbolic);
-            self.solve_ns += t_solve.elapsed().as_nanos() as u64;
+            self.timer.add(solve_started, TimedPart::Solve);
             let mut current_guess = solved.map_err(|cause| {
                 self.singular(&format!("the Jacobian is singular ({})", Self::cause_text(&cause)))
             })?;
@@ -430,7 +499,7 @@ where
                     static_solve: system.static_solve(),
                     iteration: iter,
                     limiting: system.any_limiting_report(),
-                    nodes: &nodes,
+                    nodes: &self.nodes,
                 };
                 strategy.damp_update(prev, current_guess.view_mut(), &context);
             }
@@ -555,5 +624,33 @@ mod tests {
         assert_eq!(run.code, RunCode::E0505);
         assert_eq!(run.unknowns, vec![0], "only the diverging unknown failed: {err}");
         assert!(run.detail.contains("6 iterations"), "{err}");
+    }
+
+    /// One converging solve of a unit diagonal system, with timing on or off.
+    fn solver_after_one_solve(timing: bool) -> Solver {
+        let mut system = Diagonal::new(vec![1.0], |_, _| 1.0);
+        let mut solver = Solver::new(&mut system, 1, 3).expect("a pattern");
+        let policy = Policy {
+            trace: crate::config::TraceFlags { timing, ..Default::default() },
+            ..Policy::default()
+        };
+        solver
+            .solve_with_strategy(&mut system, &NoDamping, &Tolerances::default(), &policy)
+            .expect("the system converges");
+        solver
+    }
+
+    #[test]
+    fn without_timing_a_solve_reads_no_clock() {
+        let solver = solver_after_one_solve(false);
+        assert_eq!(solver.assembly_time_ns(), 0);
+        assert_eq!(solver.solve_time_ns(), 0);
+    }
+
+    #[test]
+    fn with_timing_a_solve_reports_both_totals() {
+        let solver = solver_after_one_solve(true);
+        assert!(solver.assembly_time_ns() > 0, "assembly time");
+        assert!(solver.solve_time_ns() > 0, "solve time");
     }
 }

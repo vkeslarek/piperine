@@ -18,7 +18,7 @@ pub(super) struct JumpRetake {
 
 impl JumpRetake {
     /// A transient's start: its first step reads a jump when the operating point it follows holds
-    /// a settle commit (`settle_pending`: that step is exempt, §15 S3), and none otherwise.
+    /// a settle commit (`settle_pending`: that step reads a jump, §15 S3), and none otherwise.
     pub(super) fn new(settle_pending: bool) -> JumpRetake {
         JumpRetake { reads_jump: settle_pending }
     }
@@ -71,7 +71,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             delivered.extend(std::mem::take(&mut whole.boundary));
             self.analog.retake(mark);
             self.analog.deliver(&delivered, Restart::Integrator);
-            let attempt = self.analog.attempt(time, true)?;
+            let attempt = self.analog.attempt(self.offset(tick), true)?;
             let analog = &mut self.analog;
             self.delivery.keep_traces(AnalysisKind::Transient, |out| analog.drain_traces(out));
             if attempt != Attempt::Converged {

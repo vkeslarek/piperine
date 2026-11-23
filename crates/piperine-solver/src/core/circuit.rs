@@ -351,6 +351,7 @@ impl CircuitInstance {
             netlist: &mut netlist,
             resolution: recipe.resolution,
             microsteps: recipe.microsteps,
+            time_point_rule: recipe.time_point_rule,
             temperature: recipe.temperature,
         })?;
         self.netlist = netlist;

@@ -13,6 +13,7 @@ use crate::settle::SettleCommits;
 use crate::store::{Store, StoreMark};
 use crate::tick::Tick;
 use crate::error::DigitalError;
+use crate::landing::TimePointRule;
 use crate::limits::DigitalLimits;
 
 /// The latest ticks a reaction's `HORIZON` may reach at an instant (abi.md R5).
@@ -121,6 +122,8 @@ impl Checkpoint {
 pub struct Digital {
     pub(crate) plan: DigitalPlan,
     pub(crate) limits: DigitalLimits,
+    /// Which scheduled instants a look-ahead lands on.
+    pub(crate) rule: TimePointRule,
     pub(crate) store: Store,
     pub(crate) queue: Queue,
     pub(crate) obs: Obs,
@@ -145,7 +148,8 @@ pub struct Digital {
 }
 
 impl Digital {
-    pub fn new(plan: DigitalPlan, limits: DigitalLimits) -> Digital {
+    /// An engine over `plan`; `rule` decides which scheduled instants a look-ahead lands on.
+    pub fn new(plan: DigitalPlan, limits: DigitalLimits, rule: TimePointRule) -> Digital {
         let mut store = Store::new(&plan.nets);
         // A param holds its initial value from the start, before any run (§5.3.1): a host `set`
         // checks its `where` against the other params' values, which a zeroed store would not give.
@@ -158,6 +162,7 @@ impl Digital {
         Digital {
             plan,
             limits,
+            rule,
             store,
             queue: Queue::new(),
             obs: Obs::new(),
@@ -172,6 +177,11 @@ impl Digital {
             continuation: (0.0, 1.0),
             checkpoints_taken: std::sync::atomic::AtomicU64::new(0),
         }
+    }
+
+    /// The rule that decides which scheduled instants a look-ahead lands on.
+    pub fn time_point_rule(&self) -> TimePointRule {
+        self.rule
     }
 
     /// Sets the values reactions and discrete functions read as `GMIN` and `SOURCE_SCALE`
@@ -253,6 +263,23 @@ impl Digital {
             (None, true) => Some(self.now),
             (None, false) => None,
         }
+    }
+
+    /// Whether the instant `at` would do nothing: no commit is due at or before `at`, no instant
+    /// is suspended for the host, no function waits to run and no pin is bound to `SETTLE`, whose
+    /// phase would run reactions at a time point. A step that ends at such a tick may skip the
+    /// instant and [`pass_instant`](Self::pass_instant) instead.
+    pub fn is_idle_at(&self, at: Tick) -> bool {
+        self.suspended.is_none()
+            && !self.dirty.any()
+            && self.plan.analysis().settle_nets().is_empty()
+            && self.queue.next_due().is_none_or(|(due, _)| due > at)
+    }
+
+    /// Moves the engine's clock to `at` as an instant that ran nothing leaves it: the tick a host
+    /// commit or a shadow made next reads as `now`. For a tick [`is_idle_at`](Self::is_idle_at) holds.
+    pub fn pass_instant(&mut self, at: Tick) {
+        self.now = at;
     }
 
     /// Gives the param pin `net` the value `bytes` as the value it holds from the start of the run,

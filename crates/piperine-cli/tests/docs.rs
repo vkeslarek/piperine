@@ -688,3 +688,58 @@ fn the_roadmap_is_forward_looking() {
     assert!(row("spec-closure").contains("item 13"), "spec-closure is item 13");
     assert!(roadmap.contains("stops after item 13"), "the roadmap says where the automatic run stops");
 }
+
+#[test]
+fn the_scenario_package_states_its_measured_step_count() {
+    // transient-performance TP-10 AC 3 (T23): the comment of `tests/e2e/buck/Piperine.toml` states the
+    // accepted steps of its 5.2 ms of converter time, as measured, and `moved.md` keeps its columns
+    let manifest = read("tests/e2e/buck/Piperine.toml");
+    let comment = manifest.lines().filter(|line| line.starts_with('#')).collect::<Vec<_>>().join(" ");
+    assert!(comment.contains("accepted steps") && comment.contains("5.2 ms"), "the comment states a step count for 5.2 ms: {comment}");
+    assert!(!comment.contains("about 6 M steps"), "the count of before the feature is gone");
+    let moved = read(".specs/features/transient-performance/moved.md");
+    let header = moved.lines().find(|line| line.starts_with("| Task |")).expect("moved.md has its table header");
+    for column in ["Old", "New", "Requirement"] {
+        assert!(header.contains(column), "moved.md lacks the column `{column}`: {header}");
+    }
+    // every moved golden is a row of cells, none of them empty, and none of them a record or a digital column
+    let rows: Vec<Vec<&str>> = moved
+        .lines()
+        .filter(|line| line.starts_with("| T") && !line.starts_with("| Task |"))
+        .map(|line| line.trim_matches('|').split(" | ").map(str::trim).collect())
+        .collect();
+    assert!(!rows.is_empty(), "moved.md lists its moved goldens");
+    for row in &rows {
+        assert_eq!(row.len(), 5, "a moved golden has task, golden, old, new and requirement: {row:?}");
+        assert!(row.iter().all(|cell| !cell.is_empty()), "a cell of a moved golden is empty: {row:?}");
+        assert!(!row[1].contains("record") && !row[1].contains("column"), "a record or a digital column moved: {row:?}");
+    }
+    let monitor = rows.iter().find(|row| row[0] == "T16").expect("the T16 row of the monitor listing");
+    assert!(monitor[1].contains("monitor.msl"), "the T16 row names the monitor listing: {monitor:?}");
+    assert!(monitor[3].contains("`zone` records are equal"), "the T16 row says its records did not move: {monitor:?}");
+    assert!(monitor[4].contains("TP-03"), "the T16 row names its requirement: {monitor:?}");
+}
+
+#[test]
+fn transient_performance_closes_v12() {
+    // transient-performance TP-10 AC 1 and AC 3 (T24): GAPS.md has no V12 row, ROADMAP.md marks `multi-rate`
+    // delivered by `transient-performance`, and `diagnosis.md` holds the "After" table of its section 2
+    let gaps = read("GAPS.md");
+    assert!(!gaps.lines().any(|line| line.starts_with("| V12 |")), "GAPS.md still has a V12 row");
+    let roadmap = read("ROADMAP.md");
+    let row = roadmap.lines().find(|line| line.contains("| `multi-rate`")).expect("the roadmap has a multi-rate row");
+    assert!(row.contains("delivered by `transient-performance`"), "{row}");
+    let diagnosis = read(".specs/features/transient-performance/diagnosis.md");
+    let after = diagnosis.split("## 11. After").nth(1).expect("diagnosis.md has an \"After\" section");
+    for count in ["Accepted steps", "Rejected attempts", "Steps ending on a landing", "Steps ending on the controller's proposal", "Instants run"] {
+        assert!(after.contains(count), "the After table lacks `{count}`");
+    }
+}
+
+#[test]
+fn state_records_the_observable_landings_and_the_tick_epoch() {
+    // transient-performance T24: the decision entry
+    let state = read(".specs/STATE.md");
+    assert!(state.contains("### MD-80:") && state.contains("`transient-performance`") && state.contains("observable rule"), "STATE.md holds the decision entry");
+    assert!(state.contains("`HOST_RESTART_FRACTION`") && state.contains("growth clamp stays 1.5") && state.contains("(T26, TP-13"), "MD-80 records T26");
+}

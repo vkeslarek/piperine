@@ -4,13 +4,14 @@
 //! test, passed through `Settings`; no test sets a variable or writes the user's cache.
 #![cfg(unix)]
 
+use std::cell::RefCell;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::sync::Mutex;
 
 use piperine_api::{Built, Failure, Overrides, ParamValue, Project, Record, RecordSink, RunSpec, Session};
-
 use piperine_solver::prelude::{Context, TransientAnalysisOptions};
 use piperine_transpile::Settings;
 
@@ -261,4 +262,37 @@ fn a_module_typed_param_is_not_set_by_text() {
         Err(other) => panic!("E0802 from elaboration, found {other}"),
         Ok(_) => panic!("a text value was given to a module-typed param"),
     }
+}
+
+/// A sink that keeps nothing: the statistics test reads the table.
+struct Ignore;
+
+impl RecordSink for Ignore {
+    fn record(&mut self, _: &Record) {}
+}
+
+#[test]
+fn a_session_returns_the_statistics_of_its_last_transient() {
+    // TP-01 AC 4: no print grid, so the table has one row per accepted step after the operating
+    // point's; before any run the session has no statistics
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/tran_rc.msl");
+    let project = Project::file(&path).unwrap_or_else(|f| panic!("{f}"));
+    let overrides = Overrides {
+        analysis: Some("transient".into()),
+        backend: Some("interp".into()),
+        stop: Some(10e-6),
+        print: vec!["out".into()],
+        ..Overrides::default()
+    };
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    let mut session = Session::open(&project, &spec, &unused()).unwrap_or_else(|f| panic!("{f}"));
+    assert!(session.statistics().is_none(), "no statistics before a run");
+
+    let table = session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
+
+    let statistics = session.statistics().expect("statistics after a transient");
+    assert!(statistics.steps().accepted() > 10);
+    assert_eq!(statistics.steps().accepted() as usize, table.rows.len() - 1, "one row per accepted step after the first");
+    assert_eq!(statistics.steps().accepted() as usize, statistics.analog().steps_accepted);
 }

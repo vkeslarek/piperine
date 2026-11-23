@@ -71,7 +71,7 @@ param by path. A **host drive** writes one of the drives the host holds (rule 1)
 4. Made before the run, a host drive is an initial value like the model's own, and a `set`
    binds the param without a change (§16 step 2). Made during the run, either happens at a
    scheduled time: a drive is a commit that enters that instant at step 2 of §15; a `set`
-   applies after the step to that time is accepted, at step 5 of §15 (§15.2).
+   is a host commit due at `(t, 0)`, collected at step 2 of §15 (§15.2).
 5. Monte Carlo is a host loop. It assigns a distribution to any param by path, draws per
    instance or globally, and sets the values before elaboration.
 6. A `set` is checked against the param's `where` (§8.1.1). A `set` that fails is
@@ -233,7 +233,7 @@ piece by piece:
 | Symbol | Meaning |
 | --- | --- |
 | `∂x/∂p` | the derivative of `x` at the fixed instant, through every probe, param and real carrier `x` reads |
-| `ẋ` | the time derivative of `x` along the solution the reaction reads (§15 step 3.3: the previous time point's solution before step 3.4, the solution at `t` after it) |
+| `ẋ` | the time derivative of `x` along the solution the reaction reads (§15 step 3.3: the solution at `t`, solved in step 1) |
 | `dt*/dp` | how the instant moves: rule 2 for a located crossing, rule 3 for a scheduled time, 0 for a fixed time |
 | `s_q` | the sensitivity the carrier `q` holds |
 

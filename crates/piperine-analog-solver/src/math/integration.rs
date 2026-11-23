@@ -122,23 +122,49 @@ impl TrBdf2 {
     }
 
     /// The truncation error of a step over its `ddt` states, normalized as ngspice's `CKTterr`:
-    /// per state, Milne's difference `|q_{n+1} − (q_{n+γ} + ((1−γ)/γ)(q_{n+γ} − q_n))|` over the
-    /// larger of `h·(abstol + reltol·max(|i_n|, |i_{n+1}|))` and
-    /// `reltol·max(|q_n|, |q_{n+1}|, chgtol)`; the worst is returned. No state is skipped and a
+    /// per state, Milne's difference `|q_{n+1} − (q_{n+γ} + ((1−γ)/γ)(q_{n+γ} − q_n))|` over
+    /// [`state_bound`](Self::state_bound); the worst is returned. No state is skipped and a
     /// run with no state returns `0.0` (nothing limits the step).
     pub fn state_lte(states: &[DdtState], tol: &Tolerances, h: f64) -> f64 {
         let slope_scale = (1.0 - Self::GAMMA) / Self::GAMMA;
+        Self::worst_ratio(states, tol, h, |state| {
+            let [q_n, q_gamma, q_n1] = state.q;
+            (q_n1 - (q_gamma + slope_scale * (q_gamma - q_n))).abs()
+        })
+    }
+
+    /// The truncation error of the step that reads a jump (§15.2 rule 6), normalized like
+    /// [`state_lte`](Self::state_lte). Both stages of that step are backward Euler from `q_n`, so
+    /// the two secants `s_γ = (q_{n+γ} − q_n)/(γh)` and `s_1 = (q_{n+1} − q_n)/h` differ by
+    /// `q''·(1−γ)h/2`, and backward Euler's local error over `h` is `(h²/2)·q''`, which gives
+    /// `h·|s_1 − s_γ|/(1−γ)` per state. It uses only the step's own two stages, nothing from
+    /// before the jump, so the jump itself is not measured. A run with no state returns `0.0`.
+    pub fn jump_lte(states: &[DdtState], tol: &Tolerances, h: f64) -> f64 {
+        Self::worst_ratio(states, tol, h, |state| {
+            let [q_n, q_gamma, q_n1] = state.q;
+            let secant_gamma = (q_gamma - q_n) / (Self::GAMMA * h);
+            let secant_whole = (q_n1 - q_n) / h;
+            h * (secant_whole - secant_gamma).abs() / (1.0 - Self::GAMMA)
+        })
+    }
+
+    /// The tolerance one state's error is measured against, as ngspice's `CKTterr` takes it: the
+    /// larger of `h·(abstol + reltol·max(|i_n|, |i_{n+1}|))` and
+    /// `reltol·max(|q_n|, |q_{n+1}|, chgtol)`. The state's own `abstol` replaces the run's.
+    fn state_bound(state: &DdtState, tol: &Tolerances, h: f64) -> f64 {
+        let abstol = state.abstol.unwrap_or(tol.abstol);
+        let by_current = h * (abstol + tol.reltol * state.i[0].abs().max(state.i[1].abs()));
+        let by_charge = tol.reltol * state.q[0].abs().max(state.q[2].abs()).max(tol.chgtol);
+        by_current.max(by_charge)
+    }
+
+    /// The largest `error(state) / state_bound(state)` over the states, `0.0` for none.
+    fn worst_ratio(states: &[DdtState], tol: &Tolerances, h: f64, error: impl Fn(&DdtState) -> f64) -> f64 {
         let mut worst = 0.0_f64;
         for state in states {
-            let [q_n, q_gamma, q_n1] = state.q;
-            let predicted = q_gamma + slope_scale * (q_gamma - q_n);
-            let error = (q_n1 - predicted).abs();
-            let abstol = state.abstol.unwrap_or(tol.abstol);
-            let by_current = h * (abstol + tol.reltol * state.i[0].abs().max(state.i[1].abs()));
-            let by_charge = tol.reltol * q_n.abs().max(q_n1.abs()).max(tol.chgtol);
-            let bound = by_current.max(by_charge);
+            let bound = Self::state_bound(state, tol, h);
             if bound > 0.0 {
-                worst = worst.max(error / bound);
+                worst = worst.max(error(state) / bound);
             }
         }
         worst
@@ -290,6 +316,46 @@ mod tests {
         let state = DdtState { q: [q(0.0), q(TrBdf2::GAMMA), q(1.0)], i: [2e-9, 2e-9], abstol: None };
         assert!(TrBdf2::state_lte(&[state], &Tolerances::default(), h) < 1e-9);
         assert_eq!(TrBdf2::state_lte(&[], &Tolerances::default(), h), 0.0, "no state, nothing limits the step");
+    }
+
+    #[test]
+    fn the_jump_estimate_is_zero_for_a_state_linear_in_time() {
+        let h = 1e-6;
+        let q = |fraction: f64| 2e-9 * fraction * h;
+        let state = DdtState { q: [q(0.0), q(TrBdf2::GAMMA), q(1.0)], i: [2e-9, 2e-9], abstol: None };
+        assert!(TrBdf2::jump_lte(&[state], &Tolerances::default(), h) < 1e-9);
+    }
+
+    #[test]
+    fn the_jump_estimate_of_a_quadratic_state_is_backward_eulers_error() {
+        // q = t²: q'' = 2, so backward Euler's error over h is (h²/2)·q'' = h². The bound is
+        // reltol·max(|q_n|, |q_{n+1}|, chgtol) = reltol·h² (abstol 0, no current), so the ratio is
+        // 1/reltol.
+        let h = 1e-3;
+        let tol = Tolerances::default();
+        let q = |fraction: f64| (fraction * h).powi(2);
+        let state = DdtState { q: [q(0.0), q(TrBdf2::GAMMA), q(1.0)], i: [0.0, 0.0], abstol: Some(0.0) };
+        let ratio = TrBdf2::jump_lte(&[state], &tol, h);
+        let expected = 1.0 / tol.reltol;
+        assert!((ratio - expected).abs() < 0.01 * expected, "ratio {ratio}, expected {expected}");
+    }
+
+    #[test]
+    fn the_jump_estimate_of_no_state_is_zero() {
+        assert_eq!(TrBdf2::jump_lte(&[], &Tolerances::default(), 1e-6), 0.0);
+    }
+
+    #[test]
+    fn the_jump_estimate_is_normalized_like_the_state_estimate() {
+        // One state, one error: the two estimates differ only by the error they measure, so the
+        // ratio of the results is the ratio of the errors.
+        let h = 1e-6;
+        let tol = Tolerances::default();
+        let state = DdtState { q: [0.0, 1e-10, 4e-10], i: [0.0, 1e-4], abstol: None };
+        let milne = (4e-10 - (1e-10 + (1.0 - TrBdf2::GAMMA) / TrBdf2::GAMMA * 1e-10_f64)).abs();
+        let secants = h * (4e-10 / h - 1e-10 / (TrBdf2::GAMMA * h)).abs() / (1.0 - TrBdf2::GAMMA);
+        let ratio = TrBdf2::jump_lte(&[state], &tol, h) / TrBdf2::state_lte(&[state], &tol, h);
+        assert!((ratio - secants / milne).abs() < 1e-9 * ratio, "ratio {ratio}");
     }
 
     #[test]

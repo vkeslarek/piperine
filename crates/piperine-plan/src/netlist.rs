@@ -4,7 +4,7 @@
 use piperine_abi::raw::Module;
 use piperine_ir::{BodyId, Constant, Ir, NodeRef};
 use piperine_solver::abi::{Error, SolverDomain};
-use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, ParamValue, Port, Result};
+use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, ParamValue, Port, Result, TimePointRule};
 
 use crate::BodyPlan;
 use crate::pin::PinLayout;
@@ -21,11 +21,12 @@ pub struct Netlist<'a> {
     ir: &'a Ir,
     resolution: Option<f64>,
     microsteps: Option<usize>,
+    time_point_rule: Option<TimePointRule>,
 }
 
 impl<'a> Netlist<'a> {
     pub fn new(ir: &'a Ir) -> Netlist<'a> {
-        Netlist { ir, resolution: None, microsteps: None }
+        Netlist { ir, resolution: None, microsteps: None, time_point_rule: None }
     }
 
     /// This netlist with the session's tick length (the `RESOLUTION` global), in seconds; the
@@ -38,6 +39,12 @@ impl<'a> Netlist<'a> {
     /// engine's own default (1000) when never given.
     pub fn with_microsteps(self, bound: usize) -> Netlist<'a> {
         Netlist { microsteps: Some(bound), ..self }
+    }
+
+    /// This netlist with the rule that decides which scheduled instants the digital engine lands
+    /// the analog step on; the engine's own default (`Observable`) when never given.
+    pub fn with_time_point_rule(self, rule: TimePointRule) -> Netlist<'a> {
+        Netlist { time_point_rule: Some(rule), ..self }
     }
 
     /// The design as a solver circuit: one solver node per design node, in the IR's node order
@@ -73,6 +80,9 @@ impl<'a> Netlist<'a> {
         }
         if let Some(bound) = self.microsteps {
             builder.microsteps(bound);
+        }
+        if let Some(rule) = self.time_point_rule {
+            builder.time_point_rule(rule);
         }
         for instance in ir.instances() {
             let body = instance.body();
@@ -205,5 +215,15 @@ mod tests {
         assert_eq!(given.bound().expect("bound").microsteps, 7);
         let default = Netlist::new(&ir).circuit(&Nothing).expect("binds");
         assert_eq!(default.bound().expect("bound").microsteps, 1000);
+    }
+
+    #[test]
+    fn with_time_point_rule_reaches_the_digital_engine() {
+        // the rule a netlist carries is the rule the engine binds with; the default is Observable
+        let ir = empty_design();
+        let given = Netlist::new(&ir).with_time_point_rule(TimePointRule::Declared).circuit(&Nothing).expect("binds");
+        assert_eq!(given.bound().expect("bound").digital.time_point_rule(), TimePointRule::Declared);
+        let default = Netlist::new(&ir).circuit(&Nothing).expect("binds");
+        assert_eq!(default.bound().expect("bound").digital.time_point_rule(), TimePointRule::Observable);
     }
 }

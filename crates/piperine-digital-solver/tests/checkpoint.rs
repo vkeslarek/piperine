@@ -13,12 +13,13 @@ use piperine_digital_solver::engine::{Digital, Horizon, Mode, Outcome};
 use piperine_digital_solver::net::{NetId, NetSpec};
 use piperine_digital_solver::observe::Observation;
 use piperine_digital_solver::tick::{Resolution, Tick};
+use piperine_digital_solver::landing::TimePointRule;
 use piperine_digital_solver::limits::DigitalLimits;
 
 const NS: i64 = 1_000_000;
 
 fn engine(devices: Vec<Placed<'_>>) -> Digital {
-    Digital::new(bind_by_name(devices, Resolution::default()).expect("binds"), DigitalLimits::default())
+    Digital::new(bind_by_name(devices, Resolution::default()).expect("binds"), DigitalLimits::default(), TimePointRule::default())
 }
 
 fn net(d: &Digital, name: &str) -> NetId {
@@ -263,7 +264,7 @@ fn a_mark_journals_only_the_nets_that_changed() {
     // HYG-14 AC 5: 1 of 1 000 nets changes between the mark and the rewind: one entry.
     let nets: Vec<NetSpec> = (0..1000).map(|i| NetSpec::discrete(&format!("n{i}"), 1, 1)).collect();
     let plan = piperine_digital_solver::plan::DigitalPlan::bind(nets, vec![], Resolution::default()).unwrap();
-    let mut d = Digital::new(plan, DigitalLimits::default());
+    let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
     d.start().unwrap();
     let mark = d.mark();
     d.host_commit(NetId(417), 0, &HIGH, Tick(7)).unwrap();
@@ -282,7 +283,7 @@ fn settler_engine() -> Digital {
         nets.iter_mut().find(|n| n.name == "out").unwrap().analog_reads = true;
     })
     .expect("binds");
-    Digital::new(plan, DigitalLimits::default())
+    Digital::new(plan, DigitalLimits::default(), TimePointRule::default())
 }
 
 /// The settle phase of the instant at tick 0, which makes the held commit.

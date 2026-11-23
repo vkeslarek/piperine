@@ -19,6 +19,7 @@ use piperine_analog_solver::device::{AnalogBinding, AnalogInstance, AnalogPlan, 
 use piperine_analog_solver::error::{Error, SolverDomain};
 use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, BranchIdentifier, Netlist, NodeIdentifier};
 use piperine_analog_solver::tolerances::Tolerances;
+use piperine_digital_solver::landing::TimePointRule;
 use piperine_digital_solver::engine::Digital;
 use piperine_digital_solver::net::{NetId, NetSpec};
 use piperine_digital_solver::plan::{Binding, DigitalPlan, InstancePlan};
@@ -177,6 +178,7 @@ pub(crate) struct Recipe {
     pub session: Vec<(String, ParamValue)>,
     pub resolution: f64,
     pub microsteps: usize,
+    pub time_point_rule: TimePointRule,
     pub temperature: f64,
 }
 
@@ -272,6 +274,7 @@ pub(crate) struct BindInput<'a> {
     pub netlist: &'a mut Netlist,
     pub resolution: f64,
     pub microsteps: usize,
+    pub time_point_rule: TimePointRule,
     pub temperature: f64,
 }
 
@@ -415,7 +418,7 @@ fn create(module: &'static Module, path: &str, values: &[(u32, Vec<u8>)]) -> Res
 
 /// Binds `input` to its two plans.
 pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
-    let BindInput { specs, shared, session, netlist, resolution, microsteps, temperature } = input;
+    let BindInput { specs, shared, session, netlist, resolution, microsteps, time_point_rule, temperature } = input;
     let mut nets = Nets::default();
     let mut shared_by_name: HashMap<String, ParamValue> = HashMap::new();
     for (name, seed) in shared {
@@ -720,6 +723,6 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
             analog.set_discrete(slot, &init);
         }
     }
-    let digital = Digital::new(digital_plan, DigitalLimits { max_delta_cycles: microsteps, ..DigitalLimits::default() });
+    let digital = Digital::new(digital_plan, DigitalLimits { max_delta_cycles: microsteps, ..DigitalLimits::default() }, time_point_rule);
     Ok(Bound { analog, digital, names, holds, vntol, branch_abstol, analyses, host_writes: Vec::new(), temperature: None, microsteps })
 }

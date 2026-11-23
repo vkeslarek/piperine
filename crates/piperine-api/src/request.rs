@@ -5,6 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
+use piperine_digital_solver::landing::TimePointRule;
 use piperine_lang::msl::{Diagnostic, Span};
 use toml::Spanned;
 use toml::de::{DeString, DeTable, DeValue};
@@ -113,6 +114,10 @@ pub struct Options {
     /// The session parameters a design reads with `simparam("name")`, in the order given: a name
     /// and a value each (the key `simparam`, the flag `--simparam`).
     pub session_parameters: Vec<(String, f64)>,
+    /// Which scheduled instants the digital engine lands the analog step on. A host's choice of
+    /// the solver's reference mode (`Declared`): no run key, no flag names it, so a run table never
+    /// gives it and it stays `None` (the solver's `Observable`).
+    pub time_point_rule: Option<TimePointRule>,
 }
 
 /// The settings the command line gives, one per key of a run table; `None` (or empty) leaves
@@ -738,6 +743,7 @@ impl Keys {
                 max_steps: self.max_steps.as_ref().map(|g| g.value),
                 nodeset: self.nodeset.clone(),
                 session_parameters: self.simparam.clone(),
+                time_point_rule: None,
             },
             keys: self,
             source,
@@ -1073,6 +1079,7 @@ points = 5
             max_steps: Some(4_000_000),
             nodeset: vec![("Top.a".into(), 1.5), ("Top.b".into(), 0.0)],
             session_parameters: vec![],
+            time_point_rule: None,
         }
     }
 

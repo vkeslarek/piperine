@@ -13,12 +13,13 @@ use piperine_abi::layout::HIGH;
 use piperine_digital_solver::engine::{Digital, Horizon, Mode};
 use piperine_digital_solver::net::NetId;
 use piperine_digital_solver::tick::{Resolution, Tick};
+use piperine_digital_solver::landing::TimePointRule;
 use piperine_digital_solver::limits::DigitalLimits;
 
 const NS: i64 = 1_000_000;
 
 fn engine(devices: Vec<Placed<'_>>) -> Digital {
-    Digital::new(bind_by_name(devices, Resolution::default()).expect("binds"), DigitalLimits::default())
+    Digital::new(bind_by_name(devices, Resolution::default()).expect("binds"), DigitalLimits::default(), TimePointRule::default())
 }
 
 fn net(d: &Digital, name: &str) -> NetId {
@@ -88,7 +89,7 @@ fn a_host_write_outside_its_net_fails_loud_and_changes_nothing() {
         Resolution::default(),
     )
     .unwrap();
-    let mut d = Digital::new(plan, DigitalLimits::default());
+    let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
     d.start().unwrap();
     let before = d.checkpoint();
     for (net, offset, bytes) in [(0u32, 1u32, &[1u8, 1][..]), (0, 2, &[1][..]), (0, u32::MAX, &[1, 1][..]), (1, 0, &[1][..]), (9, 0, &[][..])] {
