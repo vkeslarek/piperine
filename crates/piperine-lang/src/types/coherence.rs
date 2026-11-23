@@ -62,22 +62,31 @@ impl Checker<'_> {
         let table = std::rc::Rc::clone(&self.impls);
         let Some(position) = table.impls().iter().position(|entry| entry.decl == decl) else { return };
         let current = table.impls()[position].clone();
-        if current.trait_decl.is_none() {
+        // a built-in trait with an `impl` (H.10: the operators, `From`, `PartialEq`, `Default`) is judged like a declared one
+        let written = current.builtin_trait.filter(|name| *name != "Repr");
+        if current.trait_decl.is_none() && written.is_none() {
             return;
         }
         let (file, span) = (self.design.decl_data(decl).file, self.design.decl_data(decl).span);
         for earlier in &table.impls()[..position] {
-            if earlier.trait_decl != current.trait_decl || !table.overlap(earlier, &current, &mut |ty, bound| super::bounds::BoundCheck::new(self).satisfies(ty, bound)) {
+            if earlier.trait_decl != current.trait_decl || earlier.builtin_trait != current.builtin_trait || !table.overlap(earlier, &current, &mut |ty, bound| super::bounds::BoundCheck::new(self).satisfies(ty, bound)) {
                 continue;
             }
-            let (given, before): (Option<Vec<Ty>>, Option<Vec<Ty>>) = (
-                current.trait_arguments.iter().map(|argument| self.lower_type(*argument)).collect(),
-                earlier.trait_arguments.iter().map(|argument| self.lower_type(*argument)).collect(),
-            );
+            // for a built-in trait the one argument that tells two `impl`s apart is the `Rhs` (H.10 rule 2), or the source of a `From`
+            let mut arguments = |entry: &super::ImplEntry| -> Option<Vec<Ty>> {
+                let listed = if written.is_some() { &entry.trait_arguments[..entry.trait_arguments.len().min(1)] } else { &entry.trait_arguments[..] };
+                listed.iter().map(|argument| self.lower_type(*argument)).collect()
+            };
+            let given = arguments(&current);
+            let before = arguments(earlier);
             if given != before {
                 continue;
             }
-            let name = current.trait_decl.and_then(|tr| self.design.decl_data(tr).name.as_ref().map(|n| n.text.clone())).unwrap_or_default();
+            let name = match (current.trait_decl, written) {
+                (Some(tr), _) => self.design.decl_data(tr).name.as_ref().map(|n| n.text.clone()).unwrap_or_default(),
+                (None, Some(name)) => name.to_string(),
+                (None, None) => String::new(),
+            };
             let target = match &current.target {
                 super::ImplTarget::Declared(decl) => self.design.decl_data(*decl).name.as_ref().map_or_else(String::new, |n| n.text.clone()),
                 super::ImplTarget::Primitive(ty) => ty.name(self.design),
@@ -97,6 +106,10 @@ impl Checker<'_> {
         let Some(path) = data.trait_ else { return };
         if self.impls.impls().iter().any(|entry| entry.decl == decl && entry.builtin_trait == Some("Repr")) {
             self.repr_impl_rules(decl, data.self_ty);
+            return;
+        }
+        if self.impls.impls().iter().any(|entry| entry.decl == decl && entry.builtin_trait.is_some()) {
+            self.builtin_impl_rules(decl, data.self_ty);
             return;
         }
         let Some(Resolution::Decl(trait_decl)) = self.design.path_node(path).segments.last().map(|segment| segment.res) else { return };

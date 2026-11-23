@@ -95,7 +95,7 @@ impl Checker<'_> {
     pub(super) fn implements(&self, ty: &Ty, which: DerivedTrait) -> bool {
         match ty {
             Ty::Unit => true,
-            Ty::Bool | Ty::UInt(_) | Ty::Int(_) => which.of_integer(),
+            Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } => which.of_integer(),
             Ty::F64 => which.of_float(),
             Ty::Str => which.of_text(),
             // H.8 rule 4: the default of an `Option` is `None`, whatever its payload.
@@ -104,7 +104,7 @@ impl Checker<'_> {
             Ty::Tuple(items) => items.iter().all(|item| self.implements(item, which)),
             // H.8 rule 6: a generic type implements a trait when it derives it and its arguments do
             Ty::Struct(nominal) | Ty::Enum(nominal) => {
-                self.derives(nominal.decl, which.name())
+                (self.derives(nominal.decl, which.name()) || self.written_impl(ty, which))
                     && nominal.arguments.iter().all(|argument| match argument {
                         GenericValue::Type(ty) => self.implements(ty, which),
                         _ => true,
@@ -114,6 +114,16 @@ impl Checker<'_> {
             Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Carrier { .. } | Ty::Event | Ty::Never | Ty::Range { .. } | Ty::Iterator { .. } => false,
             // what a parameter implements is what its bounds give (§3 rule 9)
             Ty::Param(param) => self.param_implements(*param, which),
+        }
+    }
+
+    /// Whether the project writes the `impl` that gives `ty` the trait `which` itself: `impl Default for T`, or the plain
+    /// `impl PartialEq for T` whose `==` gives a `bool` (H.8). No other trait of H.8 is written by hand.
+    fn written_impl(&self, ty: &Ty, which: DerivedTrait) -> bool {
+        match which {
+            DerivedTrait::Default => self.impls.has_written_default(ty),
+            DerivedTrait::PartialEq => self.impls.has_plain_partial_eq(ty),
+            _ => false,
         }
     }
 
@@ -138,7 +148,11 @@ impl Checker<'_> {
             }
             if let Some(field) = fields.iter().find(|field| !field.ty.has_param() && !self.implements(&field.ty, which)) {
                 let type_name = field.ty.name(self.design);
-                if which == DerivedTrait::Default {
+                if which == DerivedTrait::PartialEq && !self.impls.builtin_functions("PartialEq", "eq", &field.ty).is_empty() {
+                    let field_name = field.name.as_deref().unwrap_or("a positional field");
+                    let message = format!("`#[derive(PartialEq)]` on {name}: the field `{field_name}` of type `{type_name}` compares with an `impl PartialEq` whose result is not a `bool`, so the derived `==` has no `bool` to give (H.10, §22.1.2 rule 5)");
+                    self.coded(file, "E0187", span, message, "a field whose `==` is not a `bool`");
+                } else if which == DerivedTrait::Default {
                     let field_name = field.name.as_deref().unwrap_or("a positional field");
                     let message = format!("`#[derive(Default)]` on {name}: the field `{field_name}` of type `{type_name}` does not implement `Default` (H.8 rule 4)");
                     self.coded(file, "E0187", span, message, "a field without a default");

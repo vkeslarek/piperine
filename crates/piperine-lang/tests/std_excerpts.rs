@@ -104,15 +104,17 @@ fn fence_failures(markdown: &str, files: &[(String, String)]) -> Vec<FenceFailur
         let Some(section) = lines[..block.line - 1].iter().rev().find_map(|l| section_of_heading(l)) else {
             continue;
         };
-        let Some((_, file)) = files.iter().find(|(s, _)| *s == section) else {
+        // a section may be written in several files (`values.msl` and `logic.msl` hold §22.1): the fence is in one of them
+        let candidates: Vec<Vec<String>> = files.iter().filter(|(s, _)| *s == section).map(|(_, file)| normalized_lines(file)).collect();
+        if candidates.is_empty() {
             continue;
-        };
+        }
         let fence = trimmed_fence(&block.text);
-        let file_lines = normalized_lines(file);
-        // The longest prefix of the fence that occurs as consecutive lines of the file.
-        let matched = (0..=fence.len())
-            .rev()
-            .find(|&k| k == 0 || file_lines.windows(k).any(|w| w == &fence[..k]))
+        // The longest prefix of the fence that occurs as consecutive lines of one of the files.
+        let matched = candidates
+            .iter()
+            .map(|file_lines| (0..=fence.len()).rev().find(|&k| k == 0 || file_lines.windows(k).any(|w| w == &fence[..k])).unwrap_or(0))
+            .max()
             .unwrap_or(0);
         if matched < fence.len() {
             failures.push(FenceFailure { file: block.file.clone(), spec_line: block.line, first_unmatched: fence[matched].clone() });
@@ -225,12 +227,7 @@ fn live_sources(part_vii: &str) -> Vec<(String, String)> {
 /// `Resolve` is a capability of a nature (`resolved-nets`, after `generics`). The binary part of Part VII is `std`'s
 /// text since T23. A fence leaves this list in the task that makes its text a text of its file;
 /// `the_ahead_lists_hold_only_what_still_differs` fails on a stale entry.
-const AHEAD_OF_STD: [&str; 13] = [
-    "/// Four-state logic on N levels: 0, 1, X (not determined) and Z (not driven).",
-    "impl Logic {",
-    "impl<const N: usize> BitAnd for Logic<N> {",
-    "pub extern \"intrinsic\" fn matches_bits<const N: usize>(s: Logic<N>, pattern: str) -> bool;",
-    "impl Bit<Logic> {",
+const AHEAD_OF_STD: [&str; 8] = [
     "/// What a module drives into a net that resolves by strength: a level and how hard it is held.",
     "impl Driven {",
     "pub module Tribuf<W: Nature + Resolve<Driven>>(w: W, in d: Bit, in oe: Bit) {",
@@ -244,12 +241,12 @@ const AHEAD_OF_STD: [&str; 13] = [
 /// The units of `std` (file, line, label) that have no fence: the earlier forms the specification rewrote or
 /// removed, which stay while something still reads them: the library
 /// nets and the modules over them (`Wire`, `Tri`, `SumNet`, `Tribuf` and the rest, `Bidir`, `TribufDelayed`:
-/// `resolved-nets`), `Logic` of `nets` (T44), `matches_bits` and `logic` over `Logic<N>` (T45). Nothing in these
+/// `resolved-nets`), the `Drive` struct and its `impl`s. Nothing in these
 /// units reads a known flag. The list is empty when they are gone.
-const BEHIND_SPEC: [(&str, usize, &str); 18] = [
+const BEHIND_SPEC: [(&str, usize, &str); 16] = [
     ("convert.msl", 36, "module Bidir"),
     ("monitor.msl", 87, "module TribufDelayed"),
-    ("nets.msl", 13, "struct Logic"),
+    ("nets.msl", 13, "struct Drive"),
     ("nets.msl", 19, "impl"),
     ("nets.msl", 35, "impl"),
     ("nets.msl", 53, "nature Wire"),
@@ -262,8 +259,6 @@ const BEHIND_SPEC: [(&str, usize, &str); 18] = [
     ("nets.msl", 98, "module Keeper"),
     ("nets.msl", 109, "module Tran"),
     ("nets.msl", 122, "module Tgate"),
-    ("values.msl", 14, "fn matches_bits"),
-    ("values.msl", 16, "fn logic"),
     ("nets.msl", 103, "Digital block"),
 ];
 

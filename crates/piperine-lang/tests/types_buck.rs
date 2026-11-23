@@ -29,7 +29,7 @@ const ROWS: &[Row] = &[
     // `settle` left this table when unknown-semantics-events T5 typed it (`types_events::settle_is_an_event_in_every_event_position`).
     Row { construct: "an element commit", source: "module Top(in clk: Bit, out q: Bit = false) { }\ndigital for Top { on clk.rise() { q[0] <- true; } }", names: "element or field commit" },
     Row { construct: "a field commit", source: "module Top(in clk: Bit, out q: Bit = false) { }\ndigital for Top { on clk.rise() { q.v <- true; } }", names: "element or field commit" },
-    // `delay`, `noise`, `ddx` and `simparam` left this table when analog-operators T22 and T23 typed them (`types_operators`).
+    // `delay`, `noise`, `ddx` and `simparam` left this table when analog-operators T22 and T23 typed them (`types_analog_operators`).
     // `bound_step`, `freq()` and `analysis(Dc | Transient | Ac | Noise)` left this table when
     // FIX-09 to FIX-11 typed them (`types_analog::freq_analysis_kinds_and_bound_step_type`).
     Row { construct: "a generation for", source: "module Top(in clk: Bit) { for k in 0..2 { let n = 1.0; } }", names: "generation" },

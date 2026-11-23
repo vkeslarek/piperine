@@ -147,7 +147,7 @@ A built-in resolves as `Resolution::Builtin(BuiltinId)`; `BuiltinId::info()` is 
 | --- | --- |
 | `Type` | `str` (§1), `uN` (§1), `iN` (§1), `fN` (§1), `bool` (§1), `usize` (§1), `isize` (§1), `UInt` (§1), `Int` (§1), `Float` (§1), `Option` (§1), `Event` (§13), `Analysis` (§11.1) |
 | `Variant` | `Some` (§1), `None` (§1), `Dc` (§11.1.1), `Transient` (§11.1.1), `Ac` (§11.1.1), `Noise` (§11.1.1), `Static` (§11.1.1) |
-| `Trait` | `Nature` (§4), `Repr` (§2), `Fn` (§3), `Clone`, `Copy`, `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Default`, `Debug`, `Hash` (App. H) |
+| `Trait` | `Nature` (§4), `Repr` (§2), `Fn` (§3), `Clone`, `Copy`, `PartialEq`, `Eq`, `PartialOrd`, `Ord`, `Default`, `Debug`, `Hash`, `From`, `BitAnd`, `BitOr`, `BitXor`, `Not`, `Shl`, `Shr` (App. H) |
 | `Fn` | `potential` (§14.1), `flow` (§14.1), `ddx` (§14.2), `ac_stim` (§14.3), `temperature` (§14.4), `simparam` (§14.4), `analysis` (§14.4), `now` (§14.4), `freq` (§14.4), `gmin` (§14.4), `source_scale` (§14.4) |
 | `Module` | `ddt` (§14.5), `delay` (§14.6), `limit` (§14.7), `noise` (§14.8), `cross` (§14.9), `at` (§14.9) |
 | `Event` | `settle` (§14.9) |

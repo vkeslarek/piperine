@@ -119,7 +119,7 @@ fn ddt_ac_stim_and_environment_are_f64() {
     assert_eq!(codes_of(&d), ["E0141"]);
 
     // `delay`, `noise`, `ddx` and `simparam` left the refused-by-name list when analog-operators
-    // T22 and T23 gave them rows (`types_operators`); their counts are judged like any row's.
+    // T22 and T23 gave them rows (`types_analog_operators`); their counts are judged like any row's.
     for call in ["delay(1.0)", "noise()", "ddx(1.0)", "simparam()"] {
         let (_, d) = diagnostics("", &format!("let x = {call};"));
         assert_eq!(codes_of(&d), ["E0141"], "{call}: {d:?}");

@@ -89,7 +89,7 @@ These are excluded by design. Each has no construct in the language (Appendix B.
 | G.69 | Implementation-defined float results: the bits of a NaN, the last place of the elementary functions | Resolved provisionally |
 | G.70 | The rules of the value language that were formerly taken from Rust | Resolved provisionally |
 | G.71 | Value semantics: no reference, no move, no `mut` | Closed |
-| G.72 | Explicit unknowns: no value carries a flag; `Logic`, `Option` and `Default` say what a type may hold; the implementation meets it but for `Logic<N>` | Implementation |
+| G.72 | Explicit unknowns: no value carries a flag; `Logic`, `Option` and `Default` say what a type may hold; the implementation meets it but for the `Resolve` trait and the library nets, which `resolved-nets` brings (`GAPS.md` L21) | Implementation |
 
 ## Open items
 
@@ -416,7 +416,7 @@ This revision removes these special cases of earlier ones:
 
 Four codes are retired: `E0150`, `E0151` (§3.3), `E0906` and `E0908` (A.3). `E0134` is narrowed to a bundle, `E0187` gains the three `Default` conditions, `E0220` names the nature and `Resolve`, and `E0225` and `E0511` are new. Items G.28, G.29, G.45, G.46, G.55 and G.57 closed with the model they concerned.
 
-The reference implementation meets this item in every layer: it carries no known byte in its IR, its plan, its layouts, its generated code or its device contract (the contract is major 1, minor 0, edited in place), runs no merge, writes no `maybe`, and stops a loop that does not settle with `E0511`. What it does not yet hold is `Logic<N>` and the operator traits that write it, which phase B of `explicit-unknowns` brings to `std` (`GAPS.md` L58), and the `Resolve` trait with the library nets, which `resolved-nets` brings (`GAPS.md` L21): the fences of §22.1 and §22.3 that `std_excerpts` lists as ahead of `std` are those.
+The reference implementation meets this item in every layer: it carries no known byte in its IR, its plan, its layouts, its generated code or its device contract (the contract is major 1, minor 0, edited in place), runs no merge, writes no `maybe`, and stops a loop that does not settle with `E0511`. `Logic<N>`, `logic`, `matches_bits` and the operator traits that write them are library source (`std/logic.msl`, phase B). The edges of `Bit<Logic>` (§22.1.5) are `impl Bit<Logic>` in `std/values.msl`. What it does not yet hold is the `Resolve` trait with the library nets, which `resolved-nets` brings (`GAPS.md` L21): the fences of §22.3 that `std_excerpts` lists as ahead of `std` are those.
 For review: that no primitive numeric type implements `Default`, which differs from Rust on purpose (§3.3.4); and that a rise is a change that ends at true, so a carrier that starts high has not risen (§22.1.5).
 
 ## Closed items

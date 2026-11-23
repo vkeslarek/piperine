@@ -138,7 +138,7 @@ impl Catalogue {
     pub(super) fn method(recv: &Ty, name: &str) -> Lookup {
         let rows = match recv {
             Ty::F64 => F64_METHODS,
-            Ty::UInt(_) | Ty::Int(_) => INTEGER_METHODS,
+            Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } => INTEGER_METHODS,
             Ty::Option(inner) => return Self::option(inner, name),
             Ty::Array(element, _) => return Self::array(element, name),
             Ty::Range { element, iterable } => return Self::range(element, *iterable, name),
@@ -152,7 +152,7 @@ impl Catalogue {
             }
             Ty::Unit | Ty::Node(_) | Ty::AnyNode | Ty::Fn(..) | Ty::Module(_) | Ty::Enum(_) | Ty::Tuple(_) | Ty::Struct(_) | Ty::Carrier { .. } | Ty::Event | Ty::Str | Ty::Never | Ty::Param(_) => return Lookup::Uncatalogued,
         };
-        match rows.iter().find(|r| r.name == name && (!r.signed_only || matches!(recv, Ty::Int(_)))) {
+        match rows.iter().find(|r| r.name == name && (!r.signed_only || matches!(recv, Ty::Int(_) | Ty::GenericInteger { signed: true, .. }))) {
             Some(r) => Lookup::Row(r.method, r.params.iter().map(|a| a.ty(recv)).collect(), r.result.ty(recv)),
             None => Lookup::Absent,
         }

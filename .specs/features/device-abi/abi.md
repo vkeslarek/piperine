@@ -242,14 +242,15 @@ Rules that hold for every pin, whatever its role:
 - **P3. A value is its bytes.** A pin holds the bytes of its type and nothing else: no field
   says whether a value is established. Discrete storage starts all zero, which no model reads:
   the elaborator gives every carrier pin init bytes (`HAS_INIT`), the written initial value or
-  the bytes of `Default::default()` of its type (all zero for `Logic::X`, for `None` and for a
-  derived `Default`), which the owner commits at `(0, 0)`. `piperine-abi` ships the common
+  the bytes of `Default::default()` of its type (all zero for `Logic::default()` at every width, which is
+  `Logic::X` at one level, for `None` and for a derived `Default`), which the owner commits at `(0, 0)`. `piperine-abi` ships the common
   layouts as constants (`BIT`, `BYTE`, `F64`), so an external author does not re-derive them.
   Each has one field `v`: `BIT` is `{ v: BOOL @0 }` (size 1, align 1), `BYTE` is `{ v: U8 @0 }`
   (size 1, align 1), `F64` is `{ v: F64 @0 }` (size 8, align 8). What may be absent is a field:
   an `Option<T>` is `{ some: BOOL @0, v: T }` (P5), and a `Logic<N>` is two fields of the leaf of
   `UInt<N>`, `binary` at offset 0 and `value` at the size of `UInt<N>`, the whole of twice that
-  size and of that alignment: two bits per level, no byte for a flag.
+  size and packed with alignment 1 like every composite pin (amended, coordinator ruling
+  2026-11-23: the plan's rule): two bits per level, no byte for a flag.
 - **P4. Layout equality.** Pins on one net have equal layouts (size, alignment, and per field
   leaf, offset, count). Names do not count.
 - **P5. Params.** `Module.prototype` lists the `PARAM` pins with layouts and defaults; that is

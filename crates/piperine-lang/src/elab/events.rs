@@ -439,20 +439,56 @@ impl Elaboration<'_, '_> {
         None
     }
 
-    /// `c.rise()`'s guard (§22.1): `!Previous(c) && c`.
+    /// `c.rise()`'s guard (§22.1): `!Previous(c) && c` on a `Bit` of `bool`; on a `Bit<Logic>` the level `c` is high and
+    /// `Previous(c)` is not (§22.1.5), so an `X` or `Z` before the change counts as not high.
     fn rise_guard(&mut self, c: u32, origin: Origin) -> LoweredExpr {
+        if self.is_four_state(c) {
+            return self.four_state_edge(c, (1, 1), origin);
+        }
         let previous = self.previous(c, origin.clone());
         let was_low = self.not(previous, origin.clone());
         let read = self.carrier_read(c, origin.clone());
         self.emit(Expr::Binary { op: BinaryOp::And, lhs: was_low, rhs: read }, ValueType::Bool, origin)
     }
 
-    /// `c.fall()`'s guard (§22.1): `Previous(c) && !c`.
+    /// `c.fall()`'s guard (§22.1): `Previous(c) && !c` on a `Bit` of `bool`; on a `Bit<Logic>` the level `c` is low and
+    /// `Previous(c)` is not (§22.1.5).
     fn fall_guard(&mut self, c: u32, origin: Origin) -> LoweredExpr {
+        if self.is_four_state(c) {
+            return self.four_state_edge(c, (1, 0), origin);
+        }
         let previous = self.previous(c, origin.clone());
         let read = self.carrier_read(c, origin.clone());
         let low = self.not(read, origin.clone());
         self.emit(Expr::Binary { op: BinaryOp::And, lhs: previous, rhs: low }, ValueType::Bool, origin)
+    }
+
+    /// Whether carrier `c` holds a `Logic`: the only struct the checker lets reach an edge (`edge_read`).
+    fn is_four_state(&self, c: u32) -> bool {
+        matches!(self.structure.carriers[c as usize].ty, ValueType::Struct(_))
+    }
+
+    /// The edge of a `Logic<1>` carrier into the level whose planes are `(binary, value)`: `c` is at that level and
+    /// `Previous(c)` is not (`impl Bit<Logic>`, §22.1.5).
+    fn four_state_edge(&mut self, c: u32, planes: (i128, i128), origin: Origin) -> LoweredExpr {
+        let previous = self.previous(c, origin.clone());
+        let before = self.level_is(previous, planes, origin.clone());
+        let not_before = self.not(before, origin.clone());
+        let read = self.carrier_read(c, origin.clone());
+        let now = self.level_is(read, planes, origin.clone());
+        self.emit(Expr::Binary { op: BinaryOp::And, lhs: not_before, rhs: now }, ValueType::Bool, origin)
+    }
+
+    /// Whether the `Logic<1>` `logic` has `binary` and `value` planes equal to `planes`.
+    fn level_is(&mut self, logic: LoweredExpr, planes: (i128, i128), origin: Origin) -> LoweredExpr {
+        let plane = ValueType::UInt(1);
+        let mut checks = Vec::new();
+        for (index, wanted) in [(0u32, planes.0), (1, planes.1)] {
+            let field = self.emit(Expr::Field { expr: logic, index }, plane.clone(), origin.clone());
+            let wanted = self.emit(Expr::Int(wanted), plane.clone(), origin.clone());
+            checks.push(self.emit(Expr::Binary { op: BinaryOp::Eq, lhs: field, rhs: wanted }, ValueType::Bool, origin.clone()));
+        }
+        self.emit(Expr::Binary { op: BinaryOp::And, lhs: checks[0], rhs: checks[1] }, ValueType::Bool, origin)
     }
 
     fn not(&mut self, operand: LoweredExpr, origin: Origin) -> LoweredExpr {

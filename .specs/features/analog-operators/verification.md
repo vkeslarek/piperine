@@ -1,7 +1,7 @@
 # Analog Operators verification (partial: batches B1 to B3, tasks T1 to T16)
 
 **Verdict**: PASS (fourth re-verification at 77a40ad4, B1 to B3 only: findings 1 to 20 are closed, every check a B1 to B3 test proves holds and its proof passes; the red rows of `proofs.md` are the B4 to B7 targets, out of this partial scope)
-**Proofs**: `proofs.md` at a33e88ef (36 pass, 72 fail). Every failing or "no test ran" row belongs to B4 to B7 (T17 to T44: the targets `source_partial`, `operators`, `types_operators`, `source_delay`, `elab_operators`, `source_noise`, `parity_noise`, `source_session`, `session_parameters`, `source_traces`, `traces`, `operators_shape` do not exist yet, and `tnom_res`, `delay_tline`, `the_interpreter_refuses_each_analog_operator_by_name`, `gaps_and_roadmap_follow_analog_operators` are not written). Every row a B1 to B3 task proves passes, and so does the `**Build**` line.
+**Proofs**: `proofs.md` at a33e88ef (36 pass, 72 fail). Every failing or "no test ran" row belongs to B4 to B7 (T17 to T44: the targets `source_partial`, `operators`, `types_analog_operators`, `source_delay`, `elab_operators`, `source_noise`, `parity_noise`, `source_session`, `session_parameters`, `source_traces`, `traces`, `operators_shape` do not exist yet, and `tnom_res`, `delay_tline`, `the_interpreter_refuses_each_analog_operator_by_name`, `gaps_and_roadmap_follow_analog_operators` are not written). Every row a B1 to B3 task proves passes, and so does the `**Build**` line.
 **Scope**: B1 to B3 only (T1 to T16, checks C24 report, C28 to C33, C35, C44 to C46, C56 to C59, C61 twins/tgolden, C62, C64, C65, C66, C70). Checks proved only by B4 to B7 tests are marked "out of scope" below; they are judged when those batches land.
 **Diff range**: `20c285b8..a33e88ef` (main merged at a33e88ef; the branch's own commits `36ff2064..220adb76`).
 **Verifier**: independent sub-agent (author != verifier), 2026-11-22, branch `feature/analog-operators` at a33e88ef
@@ -77,8 +77,8 @@
 | C4 | `source_partial` `ddx_against_a_flow_probe_gives_its_factor` | out of scope (B6) |
 | C5 | `operators` `limit_is_transparent_to_ddx`; `source_partial` `ddx_differentiates_through_limit` | out of scope (B4, B6) |
 | C6 | `operators` `results_of_other_instances_are_held_constant` | out of scope (B4) |
-| C7 | `types_operators` `ddx_against_a_non_probe_is_e0451` | out of scope (B4) |
-| C8 | `types_operators` `ddx_outside_analog_or_read_by_a_definition_is_e0450` | out of scope (B4) |
+| C7 | `types_analog_operators` `ddx_against_a_non_probe_is_e0451` | out of scope (B4) |
+| C8 | `types_analog_operators` `ddx_outside_analog_or_read_by_a_definition_is_e0450` | out of scope (B4) |
 | C9 | `source_partial` `an_ac_sweep_takes_ddx_at_the_operating_point` | out of scope (B6) |
 | C10 | `parity_tran` `delay_tline` | out of scope (B7, T39) |
 | C11 | `source_delay` `before_td_the_delay_reads_the_operating_point` | out of scope (B6) |
@@ -123,7 +123,7 @@
 | C50 | `source_traces` `traces_of_a_rejected_step_stay` | out of scope (B6) |
 | C51 | `source_traces` `an_ac_or_noise_sweep_writes_no_trace` | out of scope (B6) |
 | C52 | `source_traces` `a_trace_under_an_if_writes_only_when_executed`; transpile `a_trace_writes_its_watch_only_where_it_executes` | out of scope (B5, B6) |
-| C53 | `types_operators` `a_site_reached_from_analog_writing_sim_or_checks_is_e0603` | out of scope (B4) |
+| C53 | `types_analog_operators` `a_site_reached_from_analog_writing_sim_or_checks_is_e0603` | out of scope (B4) |
 | C54 | api `traces` `traces_are_recorded_only_for_a_named_stream` | out of scope (B6) |
 | C55 | `source_traces` `a_trace_changes_no_solution` | out of scope (B6) |
 | C56 | api `natures.rs` `a_potential_abstol_of_one_millivolt_reaches_its_node` | yes (third re-verification) - the node carries 1e-3; default `vntol` refuses 5e-4, `vntol` 1e-2 accepts 5e-4 and refuses 5e-3, `vntol` 1e-9 refuses 5e-8: the minimum on every side |

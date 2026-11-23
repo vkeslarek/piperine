@@ -23,7 +23,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run tops**: `cargo test -p piperine-transpile --test operators`
 **Run tgolden**: `cargo test -p piperine-transpile --test golden`
 **Run frozen**: `cargo test -p piperine-interp --test frozen`
-**Run typeops**: `cargo test -p piperine-lang --test types_operators`
+**Run typeops**: `cargo test -p piperine-lang --test types_analog_operators`
 **Run elabops**: `cargo test -p piperine-lang --test elab_operators`
 **Run subset**: `cargo test -p piperine-lang --test types_subset`
 **Run spartial**: `cargo test -p piperine-parity --test source_partial`
@@ -115,7 +115,7 @@ Rules every task follows:
 | Plan (`piperine-plan`) | integration | each new pin, term, input, watch and function in the shape; a body with no new form keeps its shape | `crates/piperine-plan/tests/operators_shape.rs` | `Run planops` |
 | Printer (`piperine-transpile`) | integration | each new form printed, built and evaluated against its hand-derived value; each fault; the goldens byte-identical | `crates/piperine-transpile/tests/operators.rs`, `golden.rs` | `Run tops`, `Run tgolden` |
 | Interpreter (`piperine-interp`) | integration | one refusal per new form, by name | `crates/piperine-interp/tests/frozen.rs` | `Run frozen` |
-| Type checker (`piperine-lang/src/types`) | integration | 1:1 to the spec's typing ACs; `E0450`, `E0451` named | `crates/piperine-lang/tests/types_operators.rs`, `types_subset.rs` | `Run typeops`, `Run subset` |
+| Type checker (`piperine-lang/src/types`) | integration | 1:1 to the spec's typing ACs; `E0450`, `E0451` named | `crates/piperine-lang/tests/types_analog_operators.rs`, `types_subset.rs` | `Run typeops`, `Run subset` |
 | Elaborator (`piperine-lang/src/elab`) | integration | the IR each form lowers to; every refusal and code (`E0150`, `E0452`, `E0603`, `P0001`) by name | `crates/piperine-lang/tests/elab_operators.rs` | `Run elabops` |
 | Runs from source (`piperine-parity` `Project`) | e2e | every runtime AC on the Rust backend, values from the spec's closed forms | `crates/piperine-parity/tests/source_{partial,delay,noise,session,traces,slew}.rs`, fixtures `tests/operators/*.msl` | `Run spartial` and siblings |
 | ngspice twins | e2e | the new twins against ngspice under the contract; the existing twins unchanged | `crates/piperine-parity/tests/parity_*.rs`, `tests/e2e/twins/` | `Run partran`, `Run parac`, `Run parop`, `Run parnoise`, `Run corpus` |
@@ -674,7 +674,7 @@ T43 → T44
 
 ### T22: The checker's `ddx` row
 
-**What**: `CORE_ROWS` gains `ddx` (`Allowed::Analog`, the placement rule of `ac_stim`), `CoreParam::Probe`: the second argument is a potential or flow probe of a branch of this module, else `E0451` (`p.inflow()` included) (AO-01 AC 7, 8). The elaborator still refuses `ddx` with `P0001` until T32. New target `crates/piperine-lang/tests/types_operators.rs`; the `ddx` row of `types_subset.rs` moves to the elaborator's refusal and the commit says so.
+**What**: `CORE_ROWS` gains `ddx` (`Allowed::Analog`, the placement rule of `ac_stim`), `CoreParam::Probe`: the second argument is a potential or flow probe of a branch of this module, else `E0451` (`p.inflow()` included) (AO-01 AC 7, 8). The elaborator still refuses `ddx` with `P0001` until T32. New target `crates/piperine-lang/tests/types_analog_operators.rs`; the `ddx` row of `types_subset.rs` moves to the elaborator's refusal and the commit says so.
 **Where**: `crates/piperine-lang/src/types/catalogue.rs` (with `types/analog.rs`)
 **Depends on**: T17
 **Reuses**: `Checker::probe`, the `ac_stim` row

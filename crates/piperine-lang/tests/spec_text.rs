@@ -1153,9 +1153,10 @@ fn structure_changing_set_is_refused() {
 #[test]
 fn zero_bytes_are_the_default_value() {
     // EU-17 AC 1 (replaces `zero_bytes_are_the_unknown_value`): §2 rule 11, all-zero bytes are
-    // the bytes of `Logic::X`, of `None` and of every derived `Default`.
+    // the bytes of `Logic::default()` (X on every level, amended 2026-11-23: `Logic::X` is a `Logic<1>`), of `None` and
+    // of every derived `Default`.
     let s = flat(&spec("part_i_values.md"));
-    assert!(s.contains("all-zero bytes are the bytes of `Logic::X`, of `None`"), "{s}");
+    assert!(s.contains("all-zero bytes are the bytes of `Logic::default()` (every level X; `Logic::X` at one level), of `None`"), "{s}");
 }
 
 #[test]
@@ -1321,6 +1322,7 @@ fn s22_maps_sections_to_namespaces() {
     let rows = table_rows(&pre[at..end]);
     let expect = [
         ("§22.1", "std::values", "values.msl"),
+        ("§22.1", "std::logic", "logic.msl"),
         ("§22.2", "std::analog", "analog.msl"),
         ("§22.3", "std::nets", "nets.msl"),
         ("§22.4", "std::convert", "convert.msl"),
@@ -1331,7 +1333,7 @@ fn s22_maps_sections_to_namespaces() {
     ];
     assert_eq!(rows.len(), expect.len(), "{rows:?}");
     for (sec, ns, file) in expect {
-        let row = rows.iter().find(|r| r[0].starts_with(sec)).unwrap_or_else(|| panic!("no row for {sec}: {rows:?}"));
+        let row = rows.iter().find(|r| r[0].starts_with(sec) && r[1].contains(ns)).unwrap_or_else(|| panic!("no row for {sec}: {rows:?}"));
         assert!(row[1].contains(ns) && row[2].contains(file), "{sec}: {row:?}");
     }
     assert!(rows.iter().find(|r| r[0].starts_with("§4")).unwrap()[0].contains("§11"), "{rows:?}");
@@ -2216,7 +2218,7 @@ fn the_removed_words_are_absent_from_the_specification() {
 #[test]
 fn appendix_g_records_the_explicit_model() {
     // EU-17 AC 4: G.72 lists what was removed; since phase A of `explicit-unknowns` it says the
-    // implementation meets it in every layer and names `Logic<N>` as phase B (T40);
+    // implementation meets it in every layer, and phase B (T44 to T48) made `Logic<N>` library source;
     // G.29, G.46 and G.57 are closed by it, and no longer have an open or flagged entry.
     let g = spec("appendix_g_scope.md");
     let g72 = flat(&section(&g, "### G.72"));
@@ -2224,7 +2226,7 @@ fn appendix_g_records_the_explicit_model() {
         assert!(g72.contains(removed), "G.72 does not list: {removed}");
     }
     assert!(!g72.contains("does not yet meet this item"), "G.72 says the implementation still falls short: {g72}");
-    assert!(g72.contains("The reference implementation meets this item in every layer") && g72.contains("`Logic<N>`") && g72.contains("phase B of `explicit-unknowns`"), "{g72}");
+    assert!(g72.contains("The reference implementation meets this item in every layer") && g72.contains("`Logic<N>`") && g72.contains("`std/logic.msl`") && g72.contains("phase B"), "{g72}");
     let closed = flat(&section(&g, "### Other closed items"));
     for item in ["G.28, G.29, G.45, G.46, G.55, G.57"] {
         assert!(closed.contains(item), "the closed table lacks {item}");

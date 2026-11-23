@@ -3,7 +3,7 @@ nature Electrical
   flow Current i "A" abstol 1e-12
 type t0 = enum Mode [tag 2] { Off = 0, SoftStart = 1, Regulate = 2, Hiccup = 3 }  path "supervisor::Mode"  derive Clone, Copy, PartialEq, Repr
 type t1 = enum Fault [tag 2] { Clear = 0, OverCurrent = 1, OverVoltage = 2 }  path "supervisor::Fault"  derive Clone, Copy, PartialEq, Repr
-type t2 = enum Severity [tag 2] { Info = 0, Warning = 1, Error = 2 }  path "io::Severity"  derive Clone, Copy, PartialEq, Repr
+type t2 = enum Severity [tag 2] { Info = 0, Warning = 1, Error = 2 }  path "std::io::Severity"  derive Clone, Copy, PartialEq, Repr
 aggregate agg0: t0 = Mode::Off()
 aggregate agg1: t1 = Fault::Clear()
 body A2D

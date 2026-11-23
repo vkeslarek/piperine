@@ -25,6 +25,10 @@ pub enum Ty {
     UInt(u8),
     /// `Int<N>` (`iN`), `N` in 1..=64.
     Int(u8),
+    /// `UInt<N>` or `Int<N>` whose width names const parameters of the generic item being checked (`UInt<N>` in
+    /// `impl<const N: usize> Logic<N>`): an integer of a width the instantiation gives. Substitution turns it into
+    /// `UInt(n)` or `Int(n)` once the width is a number.
+    GenericInteger { signed: bool, width: ConstTerm },
     /// An enum of unit variants deriving `Repr`, by its declaration.
     Enum(Nominal),
     /// `Option<T>`.
@@ -96,6 +100,9 @@ impl Ty {
         match (self, expected) {
             (Ty::Array(found, found_length), Ty::Array(wanted, wanted_length)) => found.fits(wanted) && found_length.fits(wanted_length),
             (Ty::Option(found), Ty::Option(wanted)) => found.fits(wanted),
+            (Ty::GenericInteger { signed: found, width: found_width }, Ty::GenericInteger { signed: wanted, width: wanted_width }) => found == wanted && Length::Generic(found_width.clone()).fits(&Length::Generic(wanted_width.clone())),
+            (Ty::GenericInteger { signed, .. }, Ty::UInt(_)) | (Ty::UInt(_), Ty::GenericInteger { signed, .. }) if !signed => true,
+            (Ty::GenericInteger { signed, .. }, Ty::Int(_)) | (Ty::Int(_), Ty::GenericInteger { signed, .. }) if *signed => true,
             (Ty::Tuple(found), Ty::Tuple(wanted)) => found.len() == wanted.len() && found.iter().zip(wanted).all(|(found, wanted)| found.fits(wanted)),
             (Ty::Fn(found, found_result), Ty::Fn(wanted, wanted_result)) => found.len() == wanted.len() && found.iter().zip(wanted).all(|(found, wanted)| found.fits(wanted)) && found_result.fits(wanted_result),
             (Ty::Struct(found), Ty::Struct(wanted)) | (Ty::Enum(found), Ty::Enum(wanted)) => {
@@ -155,7 +162,7 @@ impl Ty {
     /// Whether a type parameter is mentioned anywhere in the type, an argument and a length included.
     pub fn has_param(&self) -> bool {
         match self {
-            Ty::Param(_) => true,
+            Ty::Param(_) | Ty::GenericInteger { .. } => true,
             Ty::Fn(params, ret) => params.iter().any(Ty::has_param) || ret.has_param(),
             Ty::Option(inner) | Ty::Range { element: inner, .. } | Ty::Iterator { element: inner, .. } | Ty::Carrier { value: inner, .. } => inner.has_param(),
             Ty::Tuple(items) => items.iter().any(Ty::has_param),
@@ -280,7 +287,7 @@ pub enum ConstTerm {
 impl Ty {
     /// Whether this is `UInt<N>` or `Int<N>`.
     pub fn is_integer(&self) -> bool {
-        matches!(self, Ty::UInt(_) | Ty::Int(_))
+        matches!(self, Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. })
     }
 
     /// Whether this is a type made of parts: a struct, an enum, a tuple, an array or an `Option`.
@@ -290,14 +297,14 @@ impl Ty {
 
     /// Whether the type implements `Repr` (part I §2): the types a carrier may hold.
     pub fn has_repr(&self) -> bool {
-        matches!(self, Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_))
+        matches!(self, Ty::F64 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } | Ty::Enum(_))
     }
 
     /// Whether a value of this type can be bound, stored and passed (§1.2): a type a carrier, a
     /// node, a module or an event is not.
     pub fn is_value(&self) -> bool {
         match self {
-            Ty::F64 | Ty::Bool | Ty::Unit | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Struct(_) | Ty::Str => true,
+            Ty::F64 | Ty::Bool | Ty::Unit | Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } | Ty::Enum(_) | Ty::Struct(_) | Ty::Str => true,
             Ty::Option(inner) | Ty::Array(inner, _) => inner.is_value(),
             Ty::Range { element, .. } | Ty::Iterator { element, .. } => element.is_value(),
             Ty::Tuple(items) => items.iter().all(Ty::is_value),
@@ -363,6 +370,7 @@ impl Ty {
             }
             Ty::UInt(n) => format!("u{n}"),
             Ty::Int(n) => format!("i{n}"),
+            Ty::GenericInteger { signed, width } => format!("{}<{}>", if *signed { "Int" } else { "UInt" }, Length::Generic(width.clone()).name(design)),
             Ty::Enum(_) => self.source_name(design),
             Ty::Option(inner) => format!("Option<{}>", inner.name(design)),
             Ty::Tuple(items) => {

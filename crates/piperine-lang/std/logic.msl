@@ -1,0 +1,218 @@
+//! Four-state logic (§22.1): `Logic<N>`, `LogicState`, the operators of `Logic` and its conversions.
+
+/// Four-state logic on N levels: 0, 1, X (not determined) and Z (not driven).
+#[derive(Repr)]
+pub struct Logic<const N: usize = 1> {
+    pub binary: UInt<N>, // 1 where the level is 0 or 1
+    pub value: UInt<N>, // the level where binary; where not, 0 is X and 1 is Z
+}
+
+#[derive(Repr, PartialEq)]
+pub enum LogicState {
+    X,
+    L,
+    H,
+    Z,
+}
+
+impl<const N: usize> Default for Logic<N> {
+    fn default() -> Logic<N> {
+        Logic { binary: 0, value: 0 }
+    }
+}
+
+impl<const N: usize> Logic<N> {
+    fn ones(self) -> UInt<N> {
+        self.binary & self.value
+    }
+    fn zeros(self) -> UInt<N> {
+        self.binary & !self.value
+    }
+    pub fn is_high(self) -> bool {
+        self.ones() == !0
+    }
+    pub fn is_low(self) -> bool {
+        self.zeros() == !0
+    }
+    pub fn is_x(self) -> bool {
+        self.binary == 0 && self.value == 0
+    }
+    pub fn is_z(self) -> bool {
+        self.binary == 0 && self.value == !0
+    }
+    pub fn to_bits(self) -> Option<UInt<N>> {
+        if self.binary == !0 {
+            Some(self.value)
+        } else {
+            None
+        }
+    }
+    pub fn at(self, k: usize) -> LogicState {
+        let b = (self.binary >> k) & 1;
+        let v = (self.value >> k) & 1;
+        if b == 1 {
+            if v == 1 {
+                LogicState::H
+            } else {
+                LogicState::L
+            }
+        } else if v == 1 {
+            LogicState::Z
+        } else {
+            LogicState::X
+        }
+    }
+}
+
+impl Logic {
+    pub const X: Logic = Logic { binary: 0, value: 0 };
+    pub const Z: Logic = Logic { binary: 0, value: 1 };
+    pub const L: Logic = Logic { binary: 1, value: 0 };
+    pub const H: Logic = Logic { binary: 1, value: 1 };
+    pub fn to_bit(self) -> Option<bool> {
+        self.to_bits().map(|b| b == 1)
+    }
+    pub fn to_volts(self, vdd: f64) -> f64 {
+        match self.to_bit() {
+            Some(true) => vdd,
+            Some(false) => 0.0,
+            None => vdd / 2.0,
+        }
+    }
+}
+
+impl<const N: usize> BitAnd for Logic<N> {
+    fn bitand(self, r: Logic<N>) -> Logic<N> {
+        let one = self.ones() & r.ones();
+        Logic { binary: one | self.zeros() | r.zeros(), value: one }
+    }
+}
+
+impl<const N: usize> BitOr for Logic<N> {
+    fn bitor(self, r: Logic<N>) -> Logic<N> {
+        let one = self.ones() | r.ones();
+        Logic { binary: one | (self.zeros() & r.zeros()), value: one }
+    }
+}
+
+impl<const N: usize> BitXor for Logic<N> {
+    fn bitxor(self, r: Logic<N>) -> Logic<N> {
+        let both = self.binary & r.binary;
+        Logic { binary: both, value: (self.value ^ r.value) & both }
+    }
+}
+
+impl<const N: usize> Not for Logic<N> {
+    fn not(self) -> Logic<N> {
+        Logic { binary: self.binary, value: !self.value & self.binary }
+    }
+}
+
+impl<const N: usize> Shl for Logic<N> {
+    fn shl(self, k: usize) -> Logic<N> {
+        Logic { binary: !(!self.binary << k), value: self.value << k }
+    }
+}
+
+impl<const N: usize> Shr for Logic<N> {
+    fn shr(self, k: usize) -> Logic<N> {
+        Logic { binary: !(!self.binary >> k), value: self.value >> k }
+    }
+}
+
+impl<const N: usize> PartialEq<Logic<N>, Logic> for Logic<N> {
+    fn eq(self, r: Logic<N>) -> Logic {
+        if self.binary != !0 || r.binary != !0 {
+            Logic::X
+        } else {
+            Logic::from(self.value == r.value)
+        }
+    }
+    fn ne(self, r: Logic<N>) -> Logic {
+        !self.eq(r)
+    }
+}
+
+impl<const N: usize> From<UInt<N>> for Logic<N> {
+    fn from(b: UInt<N>) -> Logic<N> {
+        Logic { binary: !0, value: b }
+    }
+}
+
+impl From<bool> for Logic {
+    fn from(b: bool) -> Logic {
+        Logic { binary: 1, value: b as u1 }
+    }
+}
+
+impl<const N: usize> BitAnd<UInt<N>, Logic<N>> for Logic<N> {
+    fn bitand(self, r: UInt<N>) -> Logic<N> {
+        self & Logic::from(r)
+    }
+}
+
+impl<const N: usize> BitAnd<Logic<N>, Logic<N>> for UInt<N> {
+    fn bitand(self, r: Logic<N>) -> Logic<N> {
+        Logic::from(self) & r
+    }
+}
+
+impl BitAnd<bool, Logic> for Logic {
+    fn bitand(self, r: bool) -> Logic {
+        self & Logic::from(r)
+    }
+}
+
+impl BitAnd<Logic, Logic> for bool {
+    fn bitand(self, r: Logic) -> Logic {
+        Logic::from(self) & r
+    }
+}
+
+impl<const N: usize> BitOr<UInt<N>, Logic<N>> for Logic<N> {
+    fn bitor(self, r: UInt<N>) -> Logic<N> {
+        self | Logic::from(r)
+    }
+}
+
+impl<const N: usize> BitOr<Logic<N>, Logic<N>> for UInt<N> {
+    fn bitor(self, r: Logic<N>) -> Logic<N> {
+        Logic::from(self) | r
+    }
+}
+
+impl BitOr<bool, Logic> for Logic {
+    fn bitor(self, r: bool) -> Logic {
+        self | Logic::from(r)
+    }
+}
+
+impl BitOr<Logic, Logic> for bool {
+    fn bitor(self, r: Logic) -> Logic {
+        Logic::from(self) | r
+    }
+}
+
+impl<const N: usize> BitXor<UInt<N>, Logic<N>> for Logic<N> {
+    fn bitxor(self, r: UInt<N>) -> Logic<N> {
+        self ^ Logic::from(r)
+    }
+}
+
+impl<const N: usize> BitXor<Logic<N>, Logic<N>> for UInt<N> {
+    fn bitxor(self, r: Logic<N>) -> Logic<N> {
+        Logic::from(self) ^ r
+    }
+}
+
+impl BitXor<bool, Logic> for Logic {
+    fn bitxor(self, r: bool) -> Logic {
+        self ^ Logic::from(r)
+    }
+}
+
+impl BitXor<Logic, Logic> for bool {
+    fn bitxor(self, r: Logic) -> Logic {
+        Logic::from(self) ^ r
+    }
+}

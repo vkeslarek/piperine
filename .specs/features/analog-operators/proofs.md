@@ -110,7 +110,7 @@
 | C70 | `run abinoise / test test_per_source_noise_reporting_and_conservation ... ok` | pass |
 | Run spartial | `cargo test -p piperine-parity --test source_partial` | **fail** - exit 101 |
 | Run irops | `cargo test -p piperine-ir --test operators` | **fail** - exit 101 |
-| Run typeops | `cargo test -p piperine-lang --test types_operators` | **fail** - exit 101 |
+| Run typeops | `cargo test -p piperine-lang --test types_analog_operators` | **fail** - exit 101 |
 | Run sdelay | `cargo test -p piperine-parity --test source_delay` | **fail** - exit 101 |
 | Run tops | `cargo test -p piperine-transpile --test operators` | **fail** - exit 101 |
 | Run elabops | `cargo test -p piperine-lang --test elab_operators` | **fail** - exit 101 |

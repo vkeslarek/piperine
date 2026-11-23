@@ -1,0 +1,28 @@
+//! `logic` and `matches_bits` (§22.1.4): a pattern of `0`, `1`, `x` and `z`, highest level first, builds a `Logic<N>` and
+//! is matched against one, `x` matching any state there. The expected bytes are written in `source_logic.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn word() -> Logic<4> { logic("10xz") }
+
+module Rows(in clk: Bit, out m0: Bit<Logic<4>>, out m1: Bit<Logic<4>>, out t0: Bit = false, out t1: Bit = false, out t2: Bit = false, out t3: Bit = false, out t4: Bit = false) {}
+digital for Rows {
+    on clk.rise() {
+        m0 <- word();
+        m1 <- logic("10xz") & Logic::from(0b1111u4);
+        t0 <- matches_bits(word(), "10xz");
+        t1 <- matches_bits(word(), "1xxz");
+        t2 <- matches_bits(word(), "0xxz");
+        t3 <- matches_bits(word(), "10x0");
+        t4 <- matches_bits(word(), "xxxx");
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal m0: Bit<Logic<4>>; signal m1: Bit<Logic<4>>;
+    signal t0: Bit; signal t1: Bit; signal t2: Bit; signal t3: Bit; signal t4: Bit;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, m0, m1, t0, t1, t2, t3, t4);
+}

@@ -208,3 +208,29 @@ fn enum_names_live_in_the_ir_not_in_the_net_bytes() {
     };
     assert_eq!(names, ["Idle", "Regulate", "Fault"]);
 }
+
+/// The shape of the carrier `l` of the module `Top` of a design written by the test, elaborated and not run.
+struct Declared;
+
+impl Declared {
+    /// The shape of `Top`'s carrier `l` in `source`.
+    fn shape_of_l(source: &str) -> CellShape {
+        let dir = tempfile::tempdir().expect("tmp");
+        let file = dir.path().join("bench.msl");
+        std::fs::write(&file, source).expect("write");
+        let ir = piperine_parity::project::Project::new(&file).elaborate("Top").unwrap_or_else(|rejection| panic!("{rejection}"));
+        let carrier = ir.top().body().carriers().iter().find(|c| c.name == "l").expect("the carrier l").ty.clone();
+        CellShape::of(&ir, &carrier).expect("a shape")
+    }
+}
+
+#[test]
+fn only_the_librarys_logic_prints_as_a_pattern() {
+    // EU-15 AC 4 (finding 58): the cell of the library's `Logic<4>` is its pattern, `1010` for the planes 15 and 10; a
+    // project's own struct named `Logic<4>` with the same two fields is a struct, whatever its name says
+    let library = Declared::shape_of_l("module Top() { signal l: Bit<Logic<4>> = Logic::from(0b1010u4); }\n");
+    assert_eq!(library.decode(&[15, 10]).expect("decodes"), Cell::Text("1010".into()), "the library's Logic is its pattern");
+    let own = "#[derive(Repr)]\nstruct Logic<const N: usize = 1> { binary: UInt<N>, value: UInt<N> }\nmodule Top() { signal l: Bit<Logic<4>> = Logic { binary: 15, value: 10 }; }\n";
+    let cell = Declared::shape_of_l(own).decode(&[15, 10]).expect("decodes");
+    assert!(matches!(cell, Cell::Composite(_)), "a project's own Logic is a struct: {cell:?}");
+}

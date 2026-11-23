@@ -1046,7 +1046,7 @@ pub struct Derives {
 pub struct TypeData {
     /// The bare name, `Pair`.
     pub name: String,
-    /// The path of the declaration in the source, `bus::Pair`.
+    /// The path of the declaration in the source, `bus::Pair`; `std::logic::Logic` for one the standard library declares.
     pub path: String,
     pub origin: Origin,
     pub kind: TypeKind,

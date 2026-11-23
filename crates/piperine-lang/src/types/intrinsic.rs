@@ -1,4 +1,4 @@
-//! The functions of §22.1, §22.2.15 and §22.6.4 that are generic over `Repr` and have no `Logic` in them (`same`, `cast`), typed by their normative contract at the concrete type until `generics`
+//! The functions of §22.1, §22.2.15 and §22.6.4 that are generic over `Repr` or read the characters of a `str` (`same`, `cast`, `logic`, `matches_bits`), typed by their normative contract at the concrete type until `generics`
 //! lands (spec Q1 (b)). A call whose callee is the stdlib's own item never reaches
 //! `signature_parts`, which refuses a generic function and an `extern` one; a project's own
 //! function of the same name is an ordinary function (§22 rule 3).
@@ -7,7 +7,7 @@ use crate::msl::Span;
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode};
 
 use super::check::Checker;
-use super::{Callee, Nominal, Ty};
+use super::{Callee, ConstTerm, GenericValue, LogicPattern, Nominal, Ty};
 
 /// A function of §22.1 the checker types by its contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,6 +23,11 @@ pub enum Intrinsic {
     ParseHex,
     /// `table_model<const N: usize>(x: f64, table: [(f64, f64); N], control: str) -> f64` (§22.2.15, PI-10).
     TableModel,
+    /// `logic<const N: usize>(pattern: str) -> Logic<N>` (§22.1.4): `N` from the type the context expects, else from the
+    /// length of a literal pattern.
+    Logic,
+    /// `matches_bits<const N: usize>(s: Logic<N>, pattern: str) -> bool` (§22.1.4).
+    MatchesBits,
 }
 
 impl Intrinsic {
@@ -34,6 +39,8 @@ impl Intrinsic {
             ("io", "parse_table") => Some(Intrinsic::ParseTable),
             ("io", "parse_hex") => Some(Intrinsic::ParseHex),
             ("analog", "table_model") => Some(Intrinsic::TableModel),
+            ("values", "logic") => Some(Intrinsic::Logic),
+            ("values", "matches_bits") => Some(Intrinsic::MatchesBits),
             _ => None,
         }
     }
@@ -83,6 +90,8 @@ impl Checker<'_> {
             }
             Intrinsic::ParseTable | Intrinsic::ParseHex => self.parsed_array(expr, intrinsic, args, expected)?,
             Intrinsic::TableModel => self.table_model_call(expr, args)?,
+            Intrinsic::Logic => self.logic_call(expr, args, expected)?,
+            Intrinsic::MatchesBits => self.matches_bits_call(expr, args)?,
         };
         self.callees.insert(expr, Callee::Intrinsic(intrinsic));
         Some(result)
@@ -213,5 +222,107 @@ impl Checker<'_> {
             return None;
         }
         Some(())
+    }
+}
+
+impl Checker<'_> {
+    /// The struct `Logic` of the standard library (`std/logic.msl`), when the design holds it.
+    fn library_logic(&self) -> Option<DeclId> {
+        (0..self.design.decl_count()).map(|index| DeclId(index as u32)).find(|decl| {
+            let data = self.design.decl_data(*decl);
+            let in_logic = data.parent.is_some_and(|parent| self.design.decl_data(parent).name.as_ref().is_some_and(|name| name.text == "logic"));
+            matches!(data.kind, DeclKind::Struct(_)) && data.name.as_ref().is_some_and(|name| name.text == "Logic") && in_logic && self.is_std(*decl)
+        })
+    }
+
+    /// The number of levels of a `Logic<N>` type, `None` for any other type.
+    pub(super) fn logic_width(&self, ty: &Ty) -> Option<u64> {
+        let Ty::Struct(nominal) = ty else { return None };
+        if Some(nominal.decl) != self.library_logic() {
+            return None;
+        }
+        match nominal.arguments.first() {
+            Some(GenericValue::Const(ConstTerm::Value(width))) => u64::try_from(*width).ok(),
+            _ => None,
+        }
+    }
+
+    /// The text of a string literal argument, `None` for any other expression.
+    fn literal_logic_pattern(&self, arg: &Arg) -> Option<String> {
+        match &self.design.expr_node(arg.value).kind {
+            ExprKind::Lit(lit) => lit.str_value(),
+            _ => None,
+        }
+    }
+
+    /// `E0702` when the literal pattern `text` holds another character than `0`, `1`, `x` and `z`, or a length other than
+    /// `width` (§22.1.4 rule 2). The levels it names, `None` after the diagnostic.
+    fn checked_pattern(&mut self, arg: &Arg, text: &str, width: Option<u64>) -> Option<usize> {
+        let file = self.file_of_expr(arg.value);
+        let span = self.design.expr_node(arg.value).span;
+        let pattern = match LogicPattern::parse(text) {
+            Ok(pattern) => pattern,
+            Err(character) => {
+                let message = format!("the pattern `{text}` holds `{character}`, which is none of `0`, `1`, `x` and `z` (§22.1.4 rule 2)");
+                self.coded(file, "E0702", span, message, "not a level of a pattern");
+                return None;
+            }
+        };
+        if let Some(width) = width.filter(|width| *width != pattern.width() as u64) {
+            let message = format!("the pattern `{text}` has {} characters, and a `Logic<{width}>` has {width} levels (§22.1.4 rule 2)", pattern.width());
+            self.coded(file, "E0702", span, message, "one character per level");
+            return None;
+        }
+        Some(pattern.width())
+    }
+
+    /// `logic(pattern)`: a `Logic<N>`, `N` from the expected type or from the length of the literal pattern.
+    fn logic_call(&mut self, expr: ExprId, args: &[Arg], expected: Option<Ty>) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let span = self.design.expr_node(expr).span;
+        self.apply(expr, &[Ty::Str], args)?;
+        let Some(logic) = self.library_logic() else {
+            self.unsupported(file, span, "`logic` without the standard library's `Logic`");
+            return None;
+        };
+        let wanted = expected.as_ref().and_then(|ty| self.logic_width(ty));
+        let literal = self.literal_logic_pattern(&args[0]);
+        let width = match (&literal, wanted) {
+            (Some(text), wanted) => {
+                let length = self.checked_pattern(&args[0], text, wanted)?;
+                wanted.unwrap_or(length as u64)
+            }
+            (None, Some(wanted)) => wanted,
+            (None, None) => {
+                self.unsupported(file, span, "`logic` of a pattern that is no literal where no `Logic<N>` is expected");
+                return None;
+            }
+        };
+        let width = i128::from(width);
+        let nominal = Nominal { decl: logic, arguments: vec![GenericValue::Const(ConstTerm::Value(width))] };
+        // an inferred instance is held to the width rule of a written one: wider than 64 levels is the one `P0001` (`GAPS.md` L13)
+        let substitution = self.nominal_substitution(&nominal);
+        self.fields_fit_integers(logic, &nominal.arguments, &substitution, file, span)?;
+        Some(Ty::Struct(nominal))
+    }
+
+    /// `matches_bits(s, pattern)`: `s` is a `Logic<N>`, a literal pattern has `N` characters; a `bool`.
+    fn matches_bits_call(&mut self, expr: ExprId, args: &[Arg]) -> Option<Ty> {
+        let file = self.file_of_expr(expr);
+        let [subject, pattern] = args else {
+            self.apply(expr, &[Ty::Unit, Ty::Str], args)?;
+            return None;
+        };
+        let found = self.infer(subject.value)?;
+        let Some(width) = self.logic_width(&found) else {
+            let span = self.design.expr_node(subject.value).span;
+            self.mismatch_text(file, span, "a `Logic<N>`", &found.name(self.design));
+            return None;
+        };
+        self.apply(expr, &[found, Ty::Str], args)?;
+        if let Some(text) = self.literal_logic_pattern(pattern) {
+            self.checked_pattern(pattern, &text, Some(width))?;
+        }
+        Some(Ty::Bool)
     }
 }

@@ -206,8 +206,8 @@ fn a_hand_written_repr_on_a_generic_type_is_refused_by_name() {
     assert!(found.iter().any(|d| d.diagnostic.code == "P0001" && d.diagnostic.message.contains("a hand-written `Repr` on a generic type")), "{:?}", found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect::<Vec<_>>());
 }
 
-/// A call of a generic `extern "intrinsic"` function that no route lowers, written in each position a function body or a
-/// behavior has, and what elaborating it reports.
+/// A call of an `extern "intrinsic"` function, written in each position a function body or a behavior has, and what
+/// elaborating it reports.
 struct ExternCalls;
 
 impl ExternCalls {
@@ -221,40 +221,43 @@ impl ExternCalls {
 }
 
 #[test]
-fn a_generic_extern_call_is_never_dropped_in_any_position() {
-    // fix round 2, finding 12: a function whose tail (or `if` arm, block tail, `match` arm) is a call the lowering does not
-    // support is `P0001` naming the call wherever the function is called from: a reaction, `analog` or a `let`
+fn a_pattern_call_lowers_in_any_position() {
+    // replaces `a_generic_extern_call_is_never_dropped_in_any_position` (T45, GAPS L68): `matches_bits` is lowered, never
+    // dropped and never refused, wherever the function holding it is called from (a reaction, `analog` or a `let`) and
+    // wherever it stands in the function (tail, `if` arm, block tail, `match` arm, `let`): the elaborated IR holds its masks
     let tails = [
-        "fn f(x: u8) -> bool { matches_bits(x, \"00000011\") }",
-        "fn f(x: u8) -> bool { if x > 1 { matches_bits(x, \"00000011\") } else { false } }",
-        "fn f(x: u8) -> bool { { matches_bits(x, \"00000011\") } }",
-        "fn f(x: u8) -> bool { match x { 0 => false, _ => matches_bits(x, \"00000011\") } }",
-        "fn f(x: u8) -> bool { let y = matches_bits(x, \"00000011\"); y }",
+        "fn f(x: Logic<8>) -> bool { matches_bits(x, \"0000001x\") }",
+        "fn f(x: Logic<8>) -> bool { if x.is_x() { matches_bits(x, \"0000001x\") } else { false } }",
+        "fn f(x: Logic<8>) -> bool { { matches_bits(x, \"0000001x\") } }",
+        "fn f(x: Logic<8>) -> bool { match x.is_x() { true => false, false => matches_bits(x, \"0000001x\") } }",
+        "fn f(x: Logic<8>) -> bool { let y = matches_bits(x, \"0000001x\"); y }",
     ];
     let positions = [
-        "module Top(in clk: Bit, out d: Bit = false) { }\ndigital for Top { on clk.rise() { d <- f(3u8); } }",
-        "module Top() { signal o: Electrical; }\nanalog for Top { let y = f(3u8); v(o) +> if y { 1.0 } else { 0.0 }; }",
-        "module Top() { signal o: Electrical; let b = f(3u8); }\nanalog for Top { v(o) +> if b { 1.0 } else { 0.0 }; }",
+        "module Top(in clk: Bit, out d: Bit = false) { }\ndigital for Top { on clk.rise() { d <- f(Logic::from(3u8)); } }",
+        "module Top() { signal o: Electrical; }\nanalog for Top { let y = f(Logic::from(3u8)); v(o) +> if y { 1.0 } else { 0.0 }; }",
+        "module Top() { signal o: Electrical; let b = f(Logic::from(3u8)); }\nanalog for Top { v(o) +> if b { 1.0 } else { 0.0 }; }",
     ];
     for tail in tails {
         for position in positions {
-            let found = ExternCalls::found(&format!("{tail}\n{position}\n"));
-            assert!(found.iter().any(|(code, message)| code == "P0001" && message.contains("the generic `extern` function `matches_bits` is not supported yet")), "{tail}\n{position}\n{found:?}");
+            let src = format!("{tail}\n{position}\n");
+            let found = ExternCalls::found(&src);
+            assert!(found.is_empty(), "{tail}\n{position}\n{found:?}");
         }
     }
 }
 
 #[test]
-fn a_logic_call_in_a_function_tail_is_refused_by_name() {
-    // fix round 2, finding 12: `logic::<u8>` as a function tail, called from a reaction, `analog` and a body `let`
-    let tail = "fn g() -> u8 { logic::<u8>(\"00000011\") }";
+fn a_logic_call_in_a_function_tail_lowers() {
+    // replaces `a_logic_call_in_a_function_tail_is_refused_by_name` (T45, GAPS L68): `logic("00000011")` as a function
+    // tail, called from a reaction, `analog` and a body `let`, elaborates
+    let tail = "fn g() -> Logic<8> { logic(\"0000001x\") }";
     for position in [
-        "module Top(in clk: Bit, out d: Bit<u8> = 0) { }\ndigital for Top { on clk.rise() { d <- g(); } }",
-        "module Top() { signal o: Electrical; }\nanalog for Top { v(o) +> if g() > 1 { 1.0 } else { 0.0 }; }",
-        "module Top() { signal o: Electrical; let b = g(); }\nanalog for Top { v(o) +> if b > 1 { 1.0 } else { 0.0 }; }",
+        "module Top(in clk: Bit, out d: Bit<Logic<8>>) { }\ndigital for Top { on clk.rise() { d <- g(); } }",
+        "module Top() { signal o: Electrical; }\nanalog for Top { v(o) +> if g().is_high() { 1.0 } else { 0.0 }; }",
+        "module Top() { signal o: Electrical; let b = g(); }\nanalog for Top { v(o) +> if b.is_high() { 1.0 } else { 0.0 }; }",
     ] {
         let found = ExternCalls::found(&format!("{tail}\n{position}\n"));
-        assert!(found.iter().any(|(code, message)| code == "P0001" && message.contains("the generic `extern` function `logic` is not supported yet")), "{position}\n{found:?}");
+        assert!(found.is_empty(), "{position}\n{found:?}");
     }
 }
 

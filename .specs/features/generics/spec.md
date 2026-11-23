@@ -55,7 +55,7 @@ Total: L, about 114 tasks.
 | `composite-values` phase C | arrays of carriers | generated arrays of signals and instances (GN-17), `[Bit; ROWS]` ports, `zi_nd`, `laplace_nd` |
 | `params-and-io` | params of module type (L28) | templates as params, `cell: C` (GN-21, GN-23); a `u32` param (`AckWithin`) |
 | `analog-structure` | `inst.name` on a child's `pub` item (L36); a node in a result (L35); a contribution under `if` (L40) | `bank.cells[3][5].sn` (GN-23 AC 3); `idt`, `idtmod`, `laplace_*` (GN-28) |
-| `analog-operators` | `delay` (L44), `noise` (L45) | `zi_*`, `noise_table`; the noise rows of `m` (GN-24) |
+| `analog-operators` | `delay` (L44), `noise` (L45) | `zi_*`, `noise_table` |
 | `unknown-semantics` | `Unknown`, `level` (L18), an event read as a `bool` (L51), `settle` (L52), a function returning `Event` (L53) | `merge`, `cast`, `same`, `Stable`, `Hold`, `zi_*`; L53 is "with L8" |
 | `host-ii` | a derived param re-derived on a `set` (S2, X9); the host code `E0803` for a structural set (H9) | GN-20 AC 3, GN-26 |
 | `msl-fixes` (in flight) | `Option` methods (L16 H.3/H.4), `rem_euclid` (L15/L14) | `idt`, `idtmod` |
@@ -89,7 +89,7 @@ Order inside the two features: CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E (`
 | Inference of generic arguments | as Rust: from the arguments and the expected type; a nature parameter from the natures of the connected carriers (`Short(a, b)`); a const from an array argument's length | §0.4; `Short(a, b)` and `since(d)` are written without arguments in the stdlib | n - planner |
 | Trait coherence | Rust's: one `impl` of a trait per type, a blanket `impl<T: Bound> Tr for T` allowed in the crate that declares the trait | `impl<T: Repr> Known for T {}` in `std/values.msl` | n - planner |
 | Structural params | a param read by generation, a const generic argument, an array length or a template is structural (§8.1.2): an override before a run is an elaboration input; a `set` or a sweep of it during a run is refused | §8.1.2, MD-18 | y - spec |
-| `m` on a host `set` | effective multiplicity follows the rule `host-ii` sets for derived params (X9) | `m` is inherited down the path (§8.5.3); a child's effective `m` is a derived value | n - planner |
+| `m` on a host `set` | withdrawn: no implicit params, no `set` (user decision 2026-11-23) | — | y - user |
 
 **Open questions:** none - answered 2026-11-18, every recommendation accepted (see the top of this file).
 
@@ -120,7 +120,7 @@ Order inside the two features: CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E (`
 **Acceptance Criteria** (GN-03, `impl` on a value type):
 
 1. WHEN an `impl` on a struct or an enum declares methods with `self`, associated functions (`Point::new`) and associated constants THEN the system SHALL accept method-call syntax, `Self`, and `Type::name` paths with Rust's meaning.
-2. IF an `impl` is written on a module THEN the system SHALL refuse it with `E0130`.
+2. ~~IF an `impl` is written on a module THEN the system SHALL refuse it with `E0130`.~~ **Amended (user decision 2026-11-23, DD3 (a), following the decision of 2026-11-22):** an `impl` on a module type is accepted; IF a function of it reads a node, a quantity or time THEN the system SHALL refuse it with `E0122`. `E0130` leaves the spec.
 3. IF a method is named `changed`, `prev`, `others` or `inflow` THEN the system SHALL refuse it with `E0131`.
 
 **Acceptance Criteria** (GN-04, user traits):
@@ -274,27 +274,33 @@ Order inside the two features: CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E (`
 2. IF the bound module's ports do not match `P` THEN the system SHALL refuse it with `E0360` naming the first port that differs.
 3. WHEN `inst.name` reads an item of an instance placed through a template-typed param THEN the system SHALL resolve it against the concrete module (§8.4.8), with `E0343` for a missing or private item.
 
-**Acceptance Criteria** (GN-24, `m`):
+**Amended (user decision 2026-11-23).** The approved GN-24 to GN-26 (implicit params `m` and `dtemp` bound at a placement, effective values down the path, automatic scaling of flows, probes and noise, a host `set` of them) are withdrawn. The user, 2026-11-23: "Não temos a semântica de fazer set e de criar nada implícito em lugar algum... O que podemos fazer é um method chamado temperature() que retorna Option e multiplicity(). Eles retornam o que foi setado na simulação e o modelo que escolhe se vai usar como temperatura o tempo todo, se vai usar como temp inicial ou se vai ignorar"; "é meio que um param do run (session)"; one `temperature() -> Option<f64>` replaces the existing `f64` one, and the docs recommend falling back to the ambient temperature, ngspice's default 27 °C; `multiplicity() -> Option<f64>`, real as ngspice `m` and VAMS `$mfactor`. Answered the same day (design-d.md DQ1 to DQ3): one multiplicity per run, and an instance that wants its own declares an ordinary param and combines it in its body ("Um por run e a instância decide no seu próprio parâmetro"); one temperature for every instance; `tnom` untouched.
 
-1. WHEN a placement or a template binds `m` THEN the system SHALL accept it on every instance, and IF `m <= 0.0` THEN the system SHALL refuse it with `E0317`.
-2. The system SHALL give an instance an effective multiplicity `M` equal to the product of `m` along its path (§8.5.3), and the name `m` inside a module SHALL read `M`.
-3. WHEN an instance has effective multiplicity `M` THEN the system SHALL multiply its flow contributions by `M`, divide its flow probes by `M`, leave potential contributions and potential probes unchanged, and leave discrete carriers, events and reactions unchanged (§8.5.4).
-4. WHERE `analog-operators` has landed `noise`, WHEN an instance with multiplicity `M` contributes noise THEN the system SHALL multiply noise power on a flow by `M` and divide noise power on a potential by `M`.
-5. WHEN a resistor placed with `m: 4.0` is in a circuit THEN the system SHALL give the same solution as four of them in parallel.
+**Amended again (user decision 2026-11-23, second amendment).** `simparam(name) -> Option<f64>` (user, 2026-11-23: "É, melhor voltar Option"): `Some(v)` when the run sets the session parameter `name`, `None` otherwise, no default argument, `E0456` retired; delivered by `analog-operators` (its session-parameter task), not by this feature. Refined the same day (user decision 2026-11-23, accepted from the coordinator): `multiplicity()` stays, but as an ordinary stdlib function written in MSL over `simparam`, nothing in the core: `pub fn multiplicity() -> Option<f64> { simparam("multiplicity") }`, with a stdlib constant `DEFAULT_MULTIPLICITY = 1.0` (ngspice's default `m`) beside `AMBIENT_TEMPERATURE`; the docs recommend `multiplicity().unwrap_or(DEFAULT_MULTIPLICITY)`. The run sets the multiplicity as any session parameter (`simparam = { multiplicity = 4.0 }`, `--simparam multiplicity=4.0`), with no dedicated key or flag and no check of its own (`E0802` for a multiplicity is withdrawn), and no IR or ABI environment read carries it.
 
-**Acceptance Criteria** (GN-25, `dtemp`):
+**Acceptance Criteria** (GN-24, `multiplicity()`; user decision 2026-11-23, amended the same day):
 
-1. WHEN a placement or a template binds `dtemp` THEN the system SHALL give the instance an effective offset equal to the sum of `dtemp` along its path, and `temperature()` inside it SHALL return the analysis temperature plus that offset (§8.5.5).
-2. The system SHALL let a module read the name `dtemp` as its effective offset.
-3. IF a module declares a port, param, signal or `let` named `m` or `dtemp` THEN the system SHALL refuse it with `E0375`.
+1. WHEN a module calls `multiplicity()` THEN the system SHALL return `Some(m)`, `m` the value of the run's session parameter `multiplicity`, and `None` when the run set none.
+2. The system SHALL NOT scale any contribution, probe, noise, carrier or event by a multiplicity: the model decides how to use the value.
+3. The system SHALL define `multiplicity()` in the stdlib as `simparam("multiplicity")`, with no core row, no dedicated run key, flag or check, and no environment read of its own (user decision 2026-11-23).
+4. WHEN a resistor declares its own param `m: Option<f64>`, combines it in its body (`let count = m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY);`, a body `let`, since a param default is a const context that cannot read `simparam`) and contributes `count * v(a, b) / r` THEN placed with `m: Some(4.0)` it SHALL give the solution of four such resistors in parallel, and with no `m` it SHALL follow the run's `multiplicity` session parameter, and one resistor when the run sets none.
+5. The run SHALL set one multiplicity for the whole run; the system SHALL offer no per-instance multiplicity setting (user, 2026-11-23: "Um por run e a instância decide no seu próprio parâmetro").
+6. The spec, the Book and the stdlib SHALL recommend `multiplicity().unwrap_or(DEFAULT_MULTIPLICITY)`, `DEFAULT_MULTIPLICITY = 1.0` (ngspice's default `m`).
 
-**Acceptance Criteria** (GN-26, a host and the implicit params):
+**Acceptance Criteria** (GN-25, `temperature()`; user decision 2026-11-23):
 
-1. WHEN a host sets `m` or `dtemp` of an instance THEN the system SHALL treat it as a param change (§8.5.6), the effective values of its descendants following the derived-param rule of `host-ii` (X9).
-2. WHEN a host lists an instance's params THEN the system SHALL include `m` and `dtemp`.
-3. WHEN the Book's `Resistor(a, b) { r: 1k, m: 4.0 }` and its `dtemp` example are placed THEN the system SHALL run them as four resistors in parallel and as a shifted temperature, the Book row `modules~1faf8c12` SHALL move from refused to run in `tests/book/inventory.tsv`, and its row SHALL leave `GAPS.md` section 11 (handed over by `params-and-io`, whose closure may not leave a refused row naming it).
+1. WHEN a module calls `temperature()` THEN the system SHALL return `Some(t)`, `t` the temperature the run set in kelvin, the same for every instance, and `None` when the run set none.
+2. The system SHALL NOT offset or apply a temperature on its own: the model uses the value as its temperature all along, as an initial temperature, or ignores it.
+3. The system SHALL give no instance an implicit param: `m` and `dtemp` are ordinary names, and `E0375` leaves the spec.
+4. The spec, the Book and the stdlib SHALL recommend `temperature().unwrap_or(AMBIENT_TEMPERATURE)`, `AMBIENT_TEMPERATURE = 300.15` K (27 °C, ngspice's default), and every in-tree caller SHALL use it, so the ngspice twins keep their numbers.
 
-**Independent Test**: the `MemoryBank`/`Dram1T1C` pair of §8.4 elaborated (once `params-and-io` and `resolved-nets` give module-typed params and the `Cell` bundle; meanwhile the same shape over `Electrical` ports); `nch` binning; a resistor with `m` against parallel copies; a diode with `dtemp` against the same diode at a higher temperature.
+**Acceptance Criteria** (GN-26, the run sets them; user decision 2026-11-23):
+
+1. WHEN a run request sets its temperature (`temp`) or its session parameter `multiplicity` (`simparam = { multiplicity = v }`, `--simparam multiplicity=v`) THEN the system SHALL give those values to `temperature()` and `multiplicity()` for the whole run.
+2. The system SHALL offer no way to set either at a placement or to change either during a run.
+3. WHEN the Book's multiplicity listing (rewritten to this form: the resistor's own `m: Option<f64>` combined with `multiplicity()` in its body, placed with `m: Some(4.0)`) runs THEN it SHALL give four resistors in parallel, the Book row `modules~1faf8c12` SHALL move from refused to `holds` in `tests/book/inventory.tsv`, and its row SHALL leave `GAPS.md` section 11.
+
+**Independent Test**: the `MemoryBank`/`Dram1T1C` pair of §8.4 elaborated (once `params-and-io` and `resolved-nets` give module-typed params and the `Cell` bundle; meanwhile the same shape over `Electrical` ports); `nch` binning; a resistor with its own `m: Option<f64>` combined with `multiplicity()` in its body, placed with `m: Some(4.0)`, against four in parallel, and with no `m` following the run's `multiplicity` session parameter; models that use the run's temperature all along, as an initial value, or ignore it, with the temperature set and unset.
 
 ---
 
@@ -306,7 +312,7 @@ Order inside the two features: CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E (`
 
 **Acceptance Criteria** (GN-27, every item of L58's generics group):
 
-1. WHEN a model places or calls `Short`, `since`, `idt`, `idtmod`, `zi_nd`, `zi_np`, `zi_zd`, `zi_zp`, `laplace_nd`, `laplace_np`, `laplace_zd`, `laplace_zp`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`, `merge`, `cast`, `same` or `MinPulse` THEN the system SHALL no longer refuse it because it is generic.
+1. WHEN a model places or calls `Short`, `since`, `idt`, `idtmod`, `zi_nd`, `zi_np`, `zi_zd`, `zi_zp`, `laplace_nd`, `laplace_np`, `laplace_zd`, `laplace_zp`, `noise_table`, `Stable`, `Setup`, `Hold`, `inertial`, `cast`, `same` or `MinPulse` (`merge` struck: removed by MD-78, user 2026-11-23, design-e.md DE2) THEN the system SHALL no longer refuse it because it is generic.
 2. IF one of them uses a form that another feature has not landed THEN the system SHALL refuse it naming that form, and `GAPS.md` SHALL list the item under that form's id.
 3. The system SHALL type-check each of them under GN-07 with no instantiation, and with no error.
 
@@ -325,7 +331,7 @@ The forms each item is expected to need beyond this feature, from its source in 
 | `zi_nd`, `zi_np`, `zi_zd`, `zi_zp` | `delay` (L44), `settle` (L52), a contribution under `if` (L40), `composite-values` A to C |
 | `laplace_nd`, `laplace_np`, `laplace_zd`, `laplace_zp` | a contribution under `if` (L40), `composite-values` A to C |
 | `noise_table` | `noise` (L45), `table_model` (L57), `freq` (`msl-fixes`) |
-| `merge`, `cast`, `same` | `Unknown` and `level` (L18) |
+| `cast`, `same` | none: they compile from `std/values.msl` in phase C (T55, user 2026-11-23); `merge` is struck (MD-78) |
 
 **Independent Test**: one `piperine-api` test per runnable item against its §22 entry; one refusal test per blocked item asserting the blocking form's name.
 
@@ -368,7 +374,6 @@ The forms each item is expected to need beyond this feature, from its source in 
 - WHEN a generation `for` has an empty range THEN the system SHALL make an empty array, and an index into it SHALL be `E0342`.
 - WHEN a nature parameter has a default and nothing else fixes it (`idt(x)`) THEN the system SHALL use the default (`State`).
 - IF a generic module instantiates itself with growing arguments without end THEN the system SHALL refuse it with `E0341`, naming the module.
-- WHEN `m` is bound on a module with no flow contribution THEN the system SHALL accept it with no effect on the solution.
 - WHEN a template is passed through two levels of params THEN the system SHALL place the module the innermost binding names.
 
 ---
@@ -380,7 +385,7 @@ The forms each item is expected to need beyond this feature, from its source in 
 | L7 | generic functions, `self` parameters, `impl` on a value type, user traits | GN-01, GN-02, GN-03, GN-04, GN-05 |
 | L4 (part) | generic enums (and generic structs) | GN-06 |
 | L8 | `impl` on a nature; a function that takes a carrier or a node and probes it | GN-10, GN-11, GN-12 |
-| L29 | `m` and `dtemp`: binding and reading | GN-24, GN-25, GN-26 |
+| L29 | `m` and `dtemp`: binding and reading (closed by the run settings `temperature()` and the stdlib `multiplicity()` over `simparam`, user decision 2026-11-23, amended the same day) | GN-24, GN-25, GN-26 as amended |
 | L30 | generic modules, const generics, `Short<N>` and the stdlib modules on them | GN-13, GN-14, GN-15, GN-16 |
 | L31 | generation `for` and `if` in a body and in a `digital` block | GN-17, GN-18, GN-19, GN-20 |
 | L32 | templates, placement through a template or a function, `Fn(P)` bounds | GN-21, GN-22, GN-23 |

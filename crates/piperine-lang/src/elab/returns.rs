@@ -17,6 +17,7 @@ use super::compound::Pair;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::variants::Half;
+use super::instances::ConcreteValue;
 use crate::msl::Span;
 use crate::pom::{BlockNode, DeclId, DeclKind, ExprId, ExprKind, FileId, StmtKind};
 use crate::types::{Callee, Ty};
@@ -369,5 +370,50 @@ impl Elaboration<'_, '_> {
         let Some(Callee::Function(function)) = self.types.callee(expr) else { return None };
         let DeclKind::Fn(f) = &self.design.decl_data(function).kind else { return None };
         f.ret.and_then(|t| self.typed_written(t)).is_some_and(|t| matches!(t, Ty::Option(_))).then_some(function)
+    }
+
+    /// The method `expr` calls when its result is an `Option`.
+    pub(super) fn calls_option_method(&self, expr: ExprId) -> Option<DeclId> {
+        let Some(Callee::Method(function)) = self.types.callee(expr) else { return None };
+        let DeclKind::Fn(f) = &self.design.decl_data(function).kind else { return None };
+        f.ret.and_then(|t| self.typed_written(t)).is_some_and(|t| matches!(t, Ty::Option(_))).then_some(function)
+    }
+
+    /// A call `receiver.f(arguments)` of a method that returns an `Option`: the pair of its two halves, each a call of
+    /// the method's instance for the arguments its `impl` takes from the receiver (`Logic<4>` gives `N = 4`). The
+    /// receiver and the arguments are lowered once for each half. `None` after a diagnostic.
+    pub(super) fn lower_option_instance_method(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId, receiver: ExprId, arguments: &[ExprId]) -> Option<Pair> {
+        let span = self.design.expr_node(expr).span;
+        if self.is_inlined(function) {
+            self.unsupported(scope.file, span, "a method on a nature that returns an `Option`");
+            return None;
+        }
+        let origin = self.expr_origin(expr);
+        let receiver_type = self.typed(receiver)?;
+        let instance = if self.is_generic_impl_item(function) {
+            let Some(values) = self.types.impl_arguments(function, &receiver_type) else {
+                self.unsupported(scope.file, span, "a method of a generic impl whose parameters the receiver leaves open");
+                return None;
+            };
+            values.iter().map(|value| self.concrete_argument(value, scope.file, span)).collect::<Option<Vec<_>>>()?
+        } else if self.is_trait_function(function) {
+            vec![ConcreteValue::Type(receiver_type)]
+        } else {
+            Vec::new()
+        };
+        let lower_all = |this: &mut Self, scope: &mut Scope| -> Option<Vec<LoweredExpr>> {
+            let mut lowered = vec![this.lower_expr(scope, receiver)?];
+            for argument in arguments {
+                lowered.push(this.lower_expr(scope, *argument)?);
+            }
+            Some(lowered)
+        };
+        let first = lower_all(self, scope)?;
+        let (presence, is_ty) = self.request_instance(function, instance.clone(), Half::Presence)?;
+        let (payload, val_ty) = self.request_instance(function, instance, Half::Payload)?;
+        let second = lower_all(self, scope)?;
+        let is = self.emit(Expr::Call { function: presence, args: first }, is_ty, origin.clone());
+        let val = self.emit(Expr::Call { function: payload, args: second }, val_ty, origin);
+        Some(Pair { is, val, literal: None })
     }
 }
