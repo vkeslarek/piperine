@@ -46,7 +46,7 @@ const BOTH: &[&str] = &["interp", "rust"];
 
 /// The twins only the Rust backend runs: their source reads `now()` or `analysis(..)`, which the
 /// interpreter (the M1 analog subset) refuses.
-const COMPILED_ONLY: [&str; 9] = ["pss_rc", "tran_jump", "tran_corner", "tran_floor", "uic_rc", "diode_rs", "delay_tline", "noise_rc", "noise_switch"];
+const COMPILED_ONLY: [&str; 10] = ["pss_rc", "tran_jump", "tran_corner", "tran_floor", "uic_rc", "diode_rs", "delay_tline", "noise_rc", "noise_switch", "noise_diode"];
 
 /// The twins whose standard output was captured before the long run (`a5f23ea4`), each held to
 /// `<name>.stdout` by `every_twin_prints_the_bytes_it_printed_before_the_long_run`.

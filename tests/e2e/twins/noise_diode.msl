@@ -1,0 +1,32 @@
+//! Twin of `tests/e2e/twins/noise_diode.cir`: a forward-biased junction with the shot noise
+//! `2 q |I|` and the flicker noise `kf |I|^af / f` of ngspice's diode (analog-operators AO-05 and
+//! AO-06), written as two sources of the junction current. The interpreter refuses the noise
+//! sources, so the twin runs on the compiled backend only.
+mod devices;
+use devices::*;
+
+/// A junction diode with its shot and flicker noise, `kf` and `af` as in ngspice's model.
+pub module NoisyDiode(a: Electrical, k: Electrical) {
+    is: f64 = 1e-14 where is > 0.0;
+    n: f64 = 1.0 where n > 0.0;
+    kf: f64 = 0.0 where kf >= 0.0;
+    af: f64 = 1.0 where af > 0.0;
+}
+analog for NoisyDiode {
+    let nvt   = n * vt();
+    let vcrit = nvt * (nvt / (2.0_f64.sqrt() * is)).ln();
+    let vd    = limit(v(a, k), |new, old| pnjlim(new, old, nvt, vcrit), vcrit);
+    let id    = is * ((vd / nvt).exp() - 1.0);
+    // the noise densities read the junction current of the solved voltage, not of the limited one
+    // the Newton iteration stamps (the limiting is a convergence aid, `vd` = `v(a, k)` at a solution)
+    let solved = is * ((v(a, k) / nvt).exp() - 1.0);
+    i(a, k) +> id + gmin() * vd
+        + white_noise(2.0 * Q * solved.abs(), "shot")
+        + flicker_noise(kf * solved.abs().powf(af), 1.0, "flicker");
+}
+
+module NoiseDiode() {
+    signal a: Electrical;
+    let i1 = Isource { dc: 1e-3, ac: 1.0 }(gnd, a);
+    let d1 = NoisyDiode { is: 1e-14, n: 1.0, kf: 1e-15, af: 1.2 }(a, gnd);
+}

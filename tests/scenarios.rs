@@ -22,7 +22,7 @@ use piperine_transpile::Settings;
 
 /// The twins only the Rust backend runs: their source reads `now()`, which the interpreter refuses
 /// (the same list `piperine-cli/tests/twins.rs` holds the binary to); `uic_rc` and `diode_rs` read `analysis(..)`.
-const COMPILED_ONLY: [&str; 9] = ["pss_rc", "tran_jump", "tran_corner", "tran_floor", "uic_rc", "diode_rs", "delay_tline", "noise_rc", "noise_switch"];
+const COMPILED_ONLY: [&str; 10] = ["pss_rc", "tran_jump", "tran_corner", "tran_floor", "uic_rc", "diode_rs", "delay_tline", "noise_rc", "noise_switch", "noise_diode"];
 
 /// A sink that keeps nothing: a scenario reads the table.
 struct Ignore;
@@ -574,6 +574,12 @@ fn noise_switch() {
     // of a closed switch is the open switch's (`parity_noise.rs::noise_switch` says why)
     let density = (4.0 * 1.380649e-23 * 300.15 * (1000.0 / 1001.0_f64)).sqrt();
     Scenario::of("noise_switch").hold(&Comparison::FlatNoise { density });
+}
+
+#[test]
+fn noise_diode() {
+    // AO-05 and AO-06: shot and flicker noise of a 1 mA junction, at the node and referred to the source
+    Scenario::of("noise_diode").hold(&Comparison::Noise { export: "noise_diode_psd", total: "noise_diode_total", input: Some(("noise_diode_ipsd", "noise_diode_itotal")), rows: 41 });
 }
 
 #[test]
