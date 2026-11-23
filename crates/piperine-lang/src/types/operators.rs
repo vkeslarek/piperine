@@ -47,6 +47,12 @@ impl OperatorTrait {
         }
     }
 
+    /// The operator whose trait is called `trait_name` and has the one function of that operator: `None` for any other trait
+    /// (`PartialEq` has two functions, `==` and `!=`).
+    pub(super) fn named(trait_name: &str) -> Option<OperatorTrait> {
+        [Self::BitAnd, Self::BitOr, Self::BitXor, Self::Not, Self::Shl, Self::Shr].into_iter().find(|operator| operator.trait_name() == trait_name)
+    }
+
     /// The trait's name, as the table of built-ins spells it.
     pub(super) fn trait_name(self) -> &'static str {
         match self {
@@ -174,13 +180,13 @@ impl Checker<'_> {
         let head = format!("`impl {trait_name} for {}`", own.source_name(self.design));
         let argument = |index: usize, default: Ty| written.get(index).cloned().unwrap_or(default);
         // (function, parameters after `self`, result)
-        let wanted: Vec<(&str, Vec<Ty>, Ty)> = match trait_name {
-            "BitAnd" | "BitOr" | "BitXor" => vec![(Self::operator_function(trait_name), vec![argument(0, own.clone())], argument(1, own.clone()))],
-            "Shl" | "Shr" => vec![(Self::operator_function(trait_name), vec![argument(0, Ty::UInt(64))], argument(1, own.clone()))],
-            "Not" => vec![("not", vec![], argument(0, own.clone()))],
-            "PartialEq" => vec![("eq", vec![argument(0, own.clone())], argument(1, Ty::Bool)), ("ne", vec![argument(0, own.clone())], argument(1, Ty::Bool))],
-            "From" => vec![("from", vec![], own.clone())],
-            "Default" => vec![("default", vec![], own.clone())],
+        let wanted: Vec<(&str, Vec<Ty>, Ty)> = match (OperatorTrait::named(trait_name), trait_name) {
+            (Some(operator @ (OperatorTrait::BitAnd | OperatorTrait::BitOr | OperatorTrait::BitXor)), _) => vec![(operator.function(), vec![argument(0, own.clone())], argument(1, own.clone()))],
+            (Some(operator @ (OperatorTrait::Shl | OperatorTrait::Shr)), _) => vec![(operator.function(), vec![argument(0, Ty::UInt(64))], argument(1, own.clone()))],
+            (Some(operator @ OperatorTrait::Not), _) => vec![(operator.function(), vec![], argument(0, own.clone()))],
+            (_, "PartialEq") => vec![("eq", vec![argument(0, own.clone())], argument(1, Ty::Bool)), ("ne", vec![argument(0, own.clone())], argument(1, Ty::Bool))],
+            (_, "From") => vec![("from", vec![], own.clone())],
+            (_, "Default") => vec![("default", vec![], own.clone())],
             _ => return,
         };
         let items: Vec<(String, DeclId)> = self.design.decl_data(decl).children.iter().filter(|child| matches!(self.design.decl_data(**child).kind, DeclKind::Fn(_) | DeclKind::Const(_))).filter_map(|child| Some((self.design.decl_data(*child).name.as_ref()?.text.clone(), *child))).collect();
@@ -203,17 +209,6 @@ impl Checker<'_> {
             if !found.fits(&wanted_type) {
                 self.coded(item_file, "E0187", item_span, format!("{head}: `{name}` has the type `{}`, the trait gives it `{}` (Appendix H)", found.name(self.design), wanted_type.name(self.design)), "a signature the trait does not give");
             }
-        }
-    }
-
-    /// The function name of a binary operator trait.
-    fn operator_function(trait_name: &str) -> &'static str {
-        match trait_name {
-            "BitAnd" => "bitand",
-            "BitOr" => "bitor",
-            "BitXor" => "bitxor",
-            "Shl" => "shl",
-            _ => "shr",
         }
     }
 }

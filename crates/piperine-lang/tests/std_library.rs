@@ -528,16 +528,6 @@ fn monitors_resolve_into_std_monitor() {
 /// The ten namespaces of the library, the prelude last.
 const NAMESPACES: [&str; 10] = ["constants", "carriers", "values", "logic", "analog", "nets", "convert", "monitor", "io", "prelude"];
 
-/// The namespace that holds the entry `entry` of the Index of Part VII (`§22.1.2`): `logic` for §22.1.1 and §22.1.2,
-/// the namespace of its section for every other.
-fn namespace_of_entry(entry: &str) -> &'static str {
-    if entry.starts_with("§22.1.1") || entry.starts_with("§22.1.2") {
-        return "logic";
-    }
-    let k: usize = entry.strip_prefix("§22.").and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next()).and_then(|n| n.parse().ok()).unwrap_or_else(|| panic!("entry `{entry}` names a §22 section"));
-    ["values", "analog", "nets", "convert", "monitor", "io"][k - 1]
-}
-
 fn part_vii() -> String {
     std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../docs/spec/part_vii_stdlib.md")).expect("part VII exists")
 }
@@ -552,12 +542,24 @@ struct IndexName {
     namespace: &'static str,
 }
 
+impl IndexName {
+    /// The namespace that holds the entry `entry` of the Index of Part VII (`§22.1.2`): `logic` for §22.1.1 and §22.1.2,
+    /// the namespace of its section for every other.
+    fn namespace_of_entry(entry: &str) -> &'static str {
+        if entry.starts_with("§22.1.1") || entry.starts_with("§22.1.2") {
+            return "logic";
+        }
+        let k: usize = entry.strip_prefix("§22.").and_then(|r| r.split(|c: char| !c.is_ascii_digit()).next()).and_then(|n| n.parse().ok()).unwrap_or_else(|| panic!("entry `{entry}` names a §22 section"));
+        ["values", "analog", "nets", "convert", "monitor", "io"][k - 1]
+    }
+}
+
 /// Every backtick name of the first column of the §22 Index, with the namespace of its entry.
 fn index_names() -> Vec<IndexName> {
     let part = part_vii();
     let mut names = Vec::new();
     for row in table_rows(&section(&part, "### Index")) {
-        let namespace = namespace_of_entry(&row[2]);
+        let namespace = IndexName::namespace_of_entry(&row[2]);
         let (mut depth, mut open, mut word) = (0, false, String::new());
         for c in row[0].chars() {
             match c {
