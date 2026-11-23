@@ -22,7 +22,7 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 1 silent, 2 broken, 29 loud (L1 to L68 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the two `params-and-io` (L20, L39) and the nine `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63, L66), the two `resolved-nets` rows (L22, L23) and the two `explicit-unknowns` rows (L64, L65) closed, S8 closed by `explicit-unknowns` phase A, L9 narrowed to its `generics` part and L4 to generic enums, in six tables) plus
+**Counts.** 1 silent, 2 broken, 28 loud (L1 to L68 less the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the three `params-and-io` (L20, L28, L39) and the nine `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63, L66), the two `resolved-nets` rows (L22, L23) and the two `explicit-unknowns` rows (L64, L65) closed, S8 closed by `explicit-unknowns` phase A, L9 narrowed to its `generics` part and L4 to generic enums, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 9 unproven.
 
@@ -124,11 +124,10 @@ before and after the first change, `E0150`, `E0210`, `E0220`, `E0221`, `E0222`, 
 
 | # | Refused | Spec | Diagnostic (probe) | Size |
 | - | ------- | ---- | ------------------ | ---- |
-| L28 | params of an integer, enum, `Option` or module type (`n: u8`, `md: Mode`, `rs: Option<f64>`, `cell: C`); also owes `explicit-unknowns` EU-06 AC 1 (an `Option<T>` param no instance binds is `None`, check C20, test `an_unbound_option_param_is_none`, interim `an_unbound_option_param_waits_for_params_and_io`) | §8.1.15, §3.2.6 | `param of type u8` | M, `params-and-io` B5-B6 |
 | L29 | `m` and `dtemp`: binding them at a placement and reading them | §8.5.1–§8.5.6 | `E0320: no param m in R`; `built-in m` | M |
 | L30 | generic modules and const generics: the prelude's own `Short<N>` and every stdlib module built on them | §8 rule 4 | `generic module` | L |
 | L31 | generation `for` and `if`, in a body and in a `digital` block | §8.2.7, §12 rule 1 | `generation for/if in a module body` | M |
-| L32 | templates (`Name { .. }` as a value), placement through a template or a function, `Fn(P)` bounds | §8.4 | `module template Name { .. } outside a placement` | M, after L28 |
+| L32 | templates (`Name { .. }` as a value), placement through a template or a function, `Fn(P)` bounds | §8.4 | `module template Name { .. } outside a placement` | M |
 | L33 | `extern` modules: `"osdi"`, `"cosim"`, `#[link]` | §8.5.7–§8.5.16 | `extern module` | L |
 
 Works, by probe: `where` at elaboration and on a set (`E0317`, `E0802`), `E0312`, `E0314`,
@@ -358,7 +357,7 @@ E0702 E0703 E0704 E0705 E0706 E0807 E0808 E0809`
 
 | Cluster | Closes | Size |
 | ------- | ------ | ---- |
-| `set` and params | H5, L28, L29, H4 | M |
+| `set` and params | H5, L29, H4 | M |
 | Analog structure (delivered, MD-71) | what is left of L40: the stdlib `idt` and `Water` after `generics`, the §18 `Diode` after `params-and-io` | S |
 | Analog operators | L43, L44, L45, L49, H2 (`Noise`) | M to L |
 | Composite values | L24, L57, and L4 for generic enums (phases A and B closed L1 to L3, L5, L6, L10, L16 and the part of L9 that is not `generics`; MD-79) | L |
@@ -417,18 +416,9 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | analog#11 | L45 | `analog-operators` | `noise(..)` is `P0001`: core primitive `noise` |
 | analog~139c67b5 | L49 | `analog-operators` | a trace from `analog` is refused with analog#7: no record per Newton iteration exists |
 | analog~b103eeb0 | L49 | `analog-operators` | no trace line reaches the command: the `emit!` in `analog` is refused with analog#7 |
-| digital#7 | L28 | `params-and-io` | `param of type u8 is not supported yet` on `n: u8` |
-| digital#11 | L28 | `params-and-io` | `param of type u8 is not supported yet` on `period: u8` |
-| digital#14 | L28 | `params-and-io` | `PwmCheck` is `P0001` twice: `limit: u8` and `cycles: u32` |
 | digital#21 | L30 | `generics` | `Dff<T: Repr>` placed as `Dff::<u8>` is `P0001`: generic module |
-| digital~bc5825b1 | L28 | `params-and-io` | the debouncer is refused at `n: u8`, as the sentence says |
-| digital~bdd2508f | L28 | `params-and-io` | the PWM is refused at `period: u8`, as the sentence says: held with digital#11 |
-| digital~a0ca3f9d | L28 | `params-and-io` | the check does not run as the Book places it: `limit: u8` and `cycles: u32` are refused with digital#14 |
-| digital~d7032a06 | L28 | `params-and-io` | the form is refused as the sentence says (digital#7) |
-| digital~d1d69398 | L28 | `params-and-io` | the debouncer and the PWM are refused (digital#7, digital#11); the counter runs |
 | packages#12 | L57 | `composite-values` | `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` is `P0001`, a reference type; `include_str!` itself is accepted in a `const` |
 | core-std#8 | L30 | `generics` | `Reg` placing `Setup(clk, d) { ts: 100p }` is `P0001`: `Setup<T: Repr>` is a generic module |
-| core-std#10 | L28 | `params-and-io` | `Watchdog` is `P0001` on `limit: u16`; with the param written as a literal the watchdog runs and ends the run at the fourth edge |
 | cheatsheet#2 | L30 | `generics` | `module M<const N: usize>(..)` placed as `M::<2>` is `P0001`: generic module |
 | cheatsheet#3 | L31 | `generics` | the `for k in 0..N { .. }` of the body items is `P0001`: generation in a module body; the instance, the named expression and the definitions around it are accepted |
 | cheatsheet#7 | L49 | `analog-operators` | the `emit!("newton", ..)` in `analog` is `P0001` (L49); the `on settle` reactions run |

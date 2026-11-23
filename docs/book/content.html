@@ -346,7 +346,7 @@ print_step = 1e-6</pre>
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 17) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 18 and 19). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run from source as compiled Rust: a full-size digitally controlled buck converter starts and regulates with its loop closed (chapter 20). So a file with a <code>digital</code> block, like <code>Monitor</code> above, runs today. The <code>piperine</code> command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself. Parts of the language beyond that are still refused by name with P0001: in analog, noise, <code>idt</code> and <code>delay</code>; elsewhere, generic modules, params of an integer type and resolved natures (a nature that implements <code>Resolve</code>). When a chapter's example needs one of them, its "Run it" box says so and shows the refusal. This book describes the language as specified.</p>
+  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 17) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 18 and 19). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run from source as compiled Rust: a full-size digitally controlled buck converter starts and regulates with its loop closed (chapter 20). So a file with a <code>digital</code> block, like <code>Monitor</code> above, runs today. The <code>piperine</code> command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself. Parts of the language beyond that are still refused by name with P0001: in analog, noise, <code>idt</code> and <code>delay</code>; elsewhere, generic modules and resolved natures (a nature that implements <code>Resolve</code>). When a chapter's example needs one of them, its "Run it" box says so and shows the refusal. This book describes the language as specified.</p>
 </div>
 
 <div class="callout mistake">
@@ -3191,21 +3191,15 @@ stream Press.db.flip
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
-  <p>Save the file as <code>debounce.msl</code> and ask for the interesting stream only. One thing in it is not compiled yet, a param of an integer type (<code>n: u8</code>), so today the command refuses the file there and runs nothing:</p>
+  <p>Save the file as <code>debounce.msl</code> and ask for the interesting stream only:</p>
 <pre data-lang="sh">piperine run debounce.msl --analysis transient --stop 7e-3 --stream flip</pre>
-<pre data-lang="text" data-cli-output="piperine run debounce.msl --analysis transient --stop 7e-3 --stream flip" data-cli-stream="stderr" data-cli-lines="1-3">P0001
+<pre data-lang="text" data-cli-output="piperine run debounce.msl --analysis transient --stop 7e-3 --stream flip" data-cli-lines="1-2">run debounce: transient, top Press, backend rust
+@5.500000e-3 Press.db flip t=5.500000e-3 to=true
 
-  × param of type `u8` is not supported yet
-   ╭─[debounce.msl:7:8]
- 6 │ module Debounce(in clk: Bit, in raw: Bit, out clean: Bit = false) {
- 7 │     n: u8 = 4 where n &gt;= 1;
-   ·        ─┬
-   ·         ╰── param of type `u8` is outside the M1 subset
- 8 │     /// Consecutive samples that differ from `clean`.
-   ╰────
-
-error: typeck failed with 1 diagnostic(s)</pre>
-  <p>Once it runs, it prints one record line: the output flipped once, at the fourth clean sample, <code>@5.500000e-3 Press.db flip t=5.500000e-3 to=true</code>. Run it again with <code>--stream state</code> to get the row-per-edge table above as seven record lines.</p>
+time         Press.clk  Press.button  Press.pressed
+0.000000e0   false      false         false
+7.000000e-3  false      true          true</pre>
+  <p>It prints one record line: the output flipped once, at the fourth clean sample, <code>@5.500000e-3 Press.db flip t=5.500000e-3 to=true</code>. Run it again with <code>--stream state</code> to get the row-per-edge table above as seven record lines.</p>
 </div>
 
 <h3>A complete example: a PWM generator</h3>
@@ -3256,21 +3250,18 @@ digital for PwmBench {
 
 <div class="callout run">
   <p class="callout-label">Run it</p>
-  <p>Save the file as <code>pwm.msl</code>; it carries its own clock. Its <code>period</code> is a param of an integer type, which the compiler does not take yet, so today the command refuses the file and runs nothing:</p>
+  <p>Save the file as <code>pwm.msl</code>; it carries its own clock:</p>
 <pre data-lang="sh">piperine run pwm.msl --analysis transient --stop 450e-6 --stream cycle</pre>
-<pre data-lang="text" data-cli-output="piperine run pwm.msl --analysis transient --stop 450e-6 --stream cycle" data-cli-stream="stderr" data-cli-lines="1-3">P0001
+<pre data-lang="text" data-cli-output="piperine run pwm.msl --analysis transient --stop 450e-6 --stream cycle" data-cli-lines="1-5">run pwm: transient, top PwmBench, backend rust
+@9.950000e-5 PwmBench.pulse cycle t=9.950000e-5 duty=25
+@1.995000e-4 PwmBench.pulse cycle t=1.995000e-4 duty=25
+@2.995000e-4 PwmBench.pulse cycle t=2.995000e-4 duty=60
+@3.995000e-4 PwmBench.pulse cycle t=3.995000e-4 duty=60
 
-  × param of type `u8` is not supported yet
-   ╭─[pwm.msl:7:13]
- 6 │ module Pwm(in clk: Bit, in duty: Bit&lt;u8&gt;, out pwm: Bit = false, out wrap: Bit) {
- 7 │     period: u8 = 100 where period &gt;= 2;
-   ·             ─┬
-   ·              ╰── param of type `u8` is outside the M1 subset
- 8 │     signal count: Bit&lt;u8&gt; = 0;
-   ╰────
-
-error: typeck failed with 1 diagnostic(s)</pre>
-  <p>Once it runs, the <code>cycle</code> records come at 99.5, 199.5, 299.5 and 399.5&nbsp;µs, with <code>duty=25</code> twice and then <code>duty=60</code>: the change made at 250&nbsp;µs shows up in the record at 299.5&nbsp;µs, the next wrap. Add <code>--plot pwm.svg</code> to see the pulses widen: a digital signal is drawn as a step trace in a lane of its own.</p>
+time         PwmBench.clk  PwmBench.duty  PwmBench.pwm  PwmBench.wrap
+0.000000e0   false         25             false         true
+4.500000e-4  false         60             true          false</pre>
+  <p>The <code>cycle</code> records come at 99.5, 199.5, 299.5 and 399.5&nbsp;µs, with <code>duty=25</code> twice and then <code>duty=60</code>: the change made at 250&nbsp;µs shows up in the record at 299.5&nbsp;µs, the next wrap. Add <code>--plot pwm.svg</code> to see the pulses widen: a digital signal is drawn as a step trace in a lane of its own.</p>
 </div>
 
 <h3>From print to check</h3>
@@ -3465,7 +3456,7 @@ digital for MacPipe {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Digital MSL runs from source, and the <code>piperine</code> command runs it. A <code>digital</code> block is type checked, elaborated and compiled to Rust (chapter 20); its reactions, commits, events and <code>emit!</code> records run on the solver and are tested against the rules above. One form of this chapter is not compiled yet and is refused with P0001: a param of an integer type, such as <code>n: u8</code>. That stops the debouncer and the PWM for now, as their "Run it" boxes show; the counter runs. A transient of a design with no analog node runs to its stop like any other and gives its table.</p>
+  <p>Digital MSL runs from source, and the <code>piperine</code> command runs it. A <code>digital</code> block is type checked, elaborated and compiled to Rust (chapter 20); its reactions, commits, events and <code>emit!</code> records run on the solver and are tested against the rules above. A param of an integer type, such as <code>n: u8</code>, is a param like any other: the debouncer and the PWM run from source, as their "Run it" boxes show. A transient of a design with no analog node runs to its stop like any other and gives its table.</p>
 </div>
 
 <div class="callout mistake">

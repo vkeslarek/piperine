@@ -977,11 +977,11 @@ T44
 
 **Done when**:
 
-- [ ] `the_debouncer_pwm_and_pwm_check_print_their_records` passes under `**Run bookdigital**`
-- [ ] `the_watchdog_builds_with_its_u16_param` passes under `**Run bookcorestd**`
-- [ ] `every_block_of_the_book_has_one_row` passes under `**Run bookinventory**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `the_debouncer_pwm_and_pwm_check_print_their_records` passes under `**Run bookdigital**`
+- [x] `the_watchdog_builds_with_its_u16_param` passes under `**Run bookcorestd**`
+- [x] `every_block_of_the_book_has_one_row` passes under `**Run bookinventory**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
