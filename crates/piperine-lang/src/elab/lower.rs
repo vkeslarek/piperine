@@ -357,6 +357,10 @@ impl Elaboration<'_, '_> {
                 let arguments: Vec<ExprId> = args.iter().map(|a| a.value).collect();
                 self.lower_method_call(scope, expr, function, *recv, &arguments, origin)
             }
+            ExprKind::MethodCall { recv, args, .. } if let Some(Callee::Bound { item }) = self.types.callee(expr) => {
+                let arguments: Vec<ExprId> = args.iter().map(|a| a.value).collect();
+                self.lower_bound_call(scope, expr, item, *recv, &arguments, origin)
+            }
             ExprKind::MethodCall { recv, args, .. } if self.types.method(expr).is_some_and(Method::is_sequence_row) => {
                 let method = self.types.method(expr)?;
                 let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
@@ -457,6 +461,7 @@ impl Elaboration<'_, '_> {
             // A method of the project is typed (generics T25) and lowered by its own task (T35).
             // `Tr::f(x, ..)` by path: the first argument is the receiver
             (_, Some(Callee::Method(function))) if let Some((receiver, rest)) = args.split_first() => self.lower_method_call(scope, expr, function, *receiver, rest, origin),
+            (_, Some(Callee::Bound { item })) if let Some((receiver, rest)) = args.split_first() => self.lower_bound_call(scope, expr, item, *receiver, rest, origin),
             (_, Some(Callee::Method(_) | Callee::Bound { .. })) => {
                 self.unsupported(scope.file, span, "a method call");
                 None

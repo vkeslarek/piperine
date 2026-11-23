@@ -74,7 +74,6 @@ fn the_methods_of_a_trait_run_where_a_top_reaches_them() {
     // generics#1 (run): the trait `Receiver` and its two `impl`s; generics~872b633d "An item with a body, like reads_high,
     // is a default: a type gets it as written unless it gives its own". The constant of an `impl` is read, a method an
     // `impl` gives runs, and the default `reads_high`, which calls `switches_at` through `Self`, runs for `Family`
-    // (the call through `Self` waits for static dispatch, T36, and is refused by name meanwhile)
     let supply = |ttl: bool, vdd: f64| if ttl { 1.4 } else { 0.5 * vdd };
     let chapter = Chapter::read();
     let constant = chapter.wrapped("levels.msl", "", "generics#1", &Reached::top("emit!(\"r\", n = Family::LEVELS);")).run(Reached::overrides()).unwrap_or_else(|failure| panic!("{failure}"));
@@ -82,13 +81,16 @@ fn the_methods_of_a_trait_run_where_a_top_reaches_them() {
     let own = Reached::run("generics#1", "", "emit!(\"r\", s = Family::Ttl.switches_at(5.0));").unwrap_or_else(|failure| panic!("{failure}"));
     Printed::holds("1.400000e0", Fields::real(own.stream("r")[0], "s"), "Family::Ttl.switches_at(5.0)");
     assert_eq!(supply(true, 5.0), 1.4);
-    Refusal::expect(Reached::run("generics#1", "", "emit!(\"r\", s = Family::Ttl.reads_high(2.0, 5.0));"), "generics#1", "P0001", "a method outside the catalogue is not supported yet");
+    let high = Reached::run("generics#1", "", "emit!(\"r\", s = Family::Ttl.reads_high(2.0, 5.0));").unwrap_or_else(|failure| panic!("{failure}"));
+    ValueFile::flag(high.stream("r")[0], "s", 2.0 > supply(true, 5.0));
+    let low = Reached::run("generics#1", "", "emit!(\"r\", s = Family::Cmos.reads_high(2.0, 5.0));").unwrap_or_else(|failure| panic!("{failure}"));
+    ValueFile::flag(low.stream("r")[0], "s", 2.0 > supply(false, 5.0));
 }
 
 #[test]
 fn the_generic_listings_run_where_a_top_reaches_them() {
     // generics#2 (run in part): `pick` and `larger`, with generics#3, their calls, a fragment of it, run with the values
-    // Rust gives; `overdrive`, which calls a method through its `Receiver` bound, waits for static dispatch (T36);
+    // Rust gives; `overdrive`, which calls a method through its `Receiver` bound, runs by static dispatch (T36);
     // generics#4 (refused, L1): the generic struct `Window` and its method; generics#5: the const parameter of
     // `dot`, `mean_of` and `widened`; generics#9 (refused, L9): `at_middle`, which takes any function (generic);
     // `corrected`, which takes a function by its type, runs. The forms that still wait are asserted refused
@@ -101,8 +103,9 @@ fn the_generic_listings_run_where_a_top_reaches_them() {
     Printed::holds("3.300000e0", Fields::real(picked.stream("r")[0], "s"), "pick(true, 3.3, 0.0)");
     let larger = Reached::run("generics#2", &receiver, "emit!(\"r\", s = larger(3u8, 200));").unwrap_or_else(|failure| panic!("{failure}"));
     ValueFile::int(larger.stream("r")[0], "s", i128::from(3u8.max(200)));
-    Refusal::expect(Reached::run("generics#2", &receiver, "emit!(\"r\", s = overdrive(Family::Cmos, 2.8, 3.3));"), "generics#2", "P0001", "a method outside the catalogue is not supported yet");
-    Refusal::expect(Reached::run("generics#4", "", "emit!(\"r\", s = in_tolerance(3.3));"), "generics#4", "P0001", "a method of a generic impl is not supported yet");
+    let over = Reached::run("generics#2", &receiver, "emit!(\"r\", s = overdrive(Family::Cmos, 2.8, 3.3));").unwrap_or_else(|failure| panic!("{failure}"));
+    Printed::holds("1.150000e0", Fields::real(over.stream("r")[0], "s"), "overdrive(Family::Cmos, 2.8, 3.3)");
+    Refusal::expect(Reached::run("generics#4", "", "emit!(\"r\", s = in_tolerance(3.3));"), "generics#4", "P0001", "generic struct `Window` is not supported yet");
     Refusal::expect(Reached::run("generics#5", "", "emit!(\"r\", s = dot([1.0, 2.0], [3.0, 4.0]));"), "generics#5", "P0001", "this name as a value is not supported yet");
     Refusal::expect(Reached::run("generics#5", "", "emit!(\"r\", s = mean_of([1.0, 2.0]));"), "generics#5", "P0001", "this name as a value is not supported yet");
     Refusal::expect(Reached::run("generics#9", "", "emit!(\"r\", s = mid_ramp(1M));"), "generics#9", "P0001", "a name whose type is not a value type is not supported yet");

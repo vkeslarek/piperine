@@ -125,6 +125,14 @@ impl<'d> ImplTable<'d> {
         }
     }
 
+    /// What every `impl` of the trait of `trait_item` gives for it: the `impl`s' own items. A call through a bound
+    /// can reach any of them, so the check reaches them all (GN-04).
+    pub fn implementations_of(&self, trait_item: DeclId) -> Vec<DeclId> {
+        let Some(trait_decl) = self.design.decl_data(trait_item).parent.filter(|parent| matches!(self.design.decl_data(*parent).kind, DeclKind::Trait(_))) else { return Vec::new() };
+        let Some(name) = self.design.decl_data(trait_item).name.as_ref().map(|name| name.text.clone()) else { return Vec::new() };
+        self.impls.iter().filter(|entry| entry.trait_decl == Some(trait_decl)).filter_map(|entry| self.item(entry.decl, &name)).collect()
+    }
+
     /// Whether `ty` implements the trait `trait_decl`, through an `impl` for it or a blanket one.
     pub fn implements(&self, ty: &Ty, trait_decl: DeclId, oracle: BoundOracle<'_>) -> bool {
         !self.implementing(ty, trait_decl, oracle).is_empty()

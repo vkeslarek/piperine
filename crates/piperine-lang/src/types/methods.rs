@@ -118,6 +118,10 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
         self.reach(function);
+        if matches!(recv_ty, Ty::Param(_)) {
+            let implementations = self.impls.implementations_of(function);
+            implementations.into_iter().for_each(|item| self.reach(item));
+        }
         let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let (params, ret) = self.declared_signature(function)?;
         let takes_self = matches!(self.design.decl_data(function).children.iter().find_map(|child| match &self.design.decl_data(*child).kind {

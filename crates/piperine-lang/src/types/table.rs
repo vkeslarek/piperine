@@ -409,6 +409,19 @@ impl<'d> Types<'d> {
         self.locals.get(&binding)
     }
 
+    /// The arguments of the generic `impl` that holds the method `function`, found from the receiver's type
+    /// `receiver` by taking the `impl`'s self type apart (`impl<T: Shape> Describe for T` meeting `Sq` gives `T = Sq`,
+    /// `impl<T> Window<T>` meeting `Window<f64>` gives `T = f64`), in the order of the `impl`'s parameters. `None` when
+    /// the method is not of a generic `impl` or a parameter stays open.
+    pub fn impl_arguments(&self, function: DeclId, receiver: &Ty) -> Option<Vec<GenericValue>> {
+        let owner = self.design.decl_data(function).parent.filter(|owner| matches!(self.design.decl_data(*owner).kind, crate::pom::DeclKind::Impl(_)) && self.design.decl_data(*owner).generics_span.is_some())?;
+        let first = self.design.decl_data(function).children.iter().copied().find(|child| matches!(self.design.decl_data(*child).kind, crate::pom::DeclKind::FnParam(_)))?;
+        let signature = super::GenericSignature::of(self.design, owner);
+        let mut inference = super::inference::Inference::new(&signature);
+        inference.unify(self.local(first)?, receiver);
+        signature.parameters().iter().map(|parameter| inference.found().get(parameter.decl).cloned()).collect()
+    }
+
     /// The modules, functions and constants checked, in first-reach order.
     pub fn reached(&self) -> &[DeclId] {
         &self.reached

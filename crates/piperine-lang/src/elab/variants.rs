@@ -120,7 +120,7 @@ impl Elaboration<'_, '_> {
         let id = FunctionId(self.variants.results.len() as u32);
         let generic = (!arguments.is_empty()).then(|| {
             let instance = Instance { item: function, arguments: arguments.clone() };
-            GenericInstance { item: self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone()), arguments: instance.argument_names(self) }
+            GenericInstance { item: self.impl_qualified_name(function), arguments: instance.argument_names(self) }
         });
         self.variants.generic.push(generic);
         self.variants.ids.insert(key, id);

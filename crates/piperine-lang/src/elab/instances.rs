@@ -43,8 +43,7 @@ pub(super) struct Instance {
 impl Instance {
     /// The name of the instance in the turbofish spelling, `clamp::<u8>` (D8).
     pub(super) fn name(&self, elaboration: &Elaboration<'_, '_>) -> String {
-        let design = elaboration.design;
-        let item = design.decl_data(self.item).name.as_ref().map_or("fn", |n| n.text.as_str());
+        let item = elaboration.impl_qualified_name(self.item);
         format!("{item}::<{}>", self.argument_names(elaboration).join(", "))
     }
 
@@ -105,6 +104,11 @@ impl Elaboration<'_, '_> {
     }
 
     /// The argument `value` with the enclosing instance's substitution applied and every const folded.
+    pub(super) fn concrete_argument(&mut self, value: &GenericValue, file: FileId, span: Span) -> Option<ConcreteValue> {
+        self.fold_argument(value, file, span)
+    }
+
+    /// The argument `value`, folded under the substitution.
     fn fold_argument(&mut self, value: &GenericValue, file: FileId, span: Span) -> Option<ConcreteValue> {
         match value {
             GenericValue::Type(ty) => {

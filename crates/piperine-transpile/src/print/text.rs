@@ -147,7 +147,7 @@ impl Text {
     /// variable, a rustc warning).
     fn spelled(name: &str) -> String {
         let spelled = Self::spelled_cased(name);
-        if name.contains(['~', '.', '$']) { spelled.to_ascii_lowercase() } else { spelled }
+        if name.contains(['~', '.', '$']) || name.contains("::<") { spelled.to_ascii_lowercase() } else { spelled }
     }
 
     /// [`Self::spelled`] with the capitals kept: the spelling a type name is made from (a body

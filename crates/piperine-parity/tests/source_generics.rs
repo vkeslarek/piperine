@@ -58,20 +58,10 @@ impl Point {
     }
 }
 
-/// `trait Shape { fn area(self) -> f64; }` and `struct Sq`.
-trait Shape {
-    fn area(self) -> f64;
-}
-
+/// `struct Sq` of the models.
 #[derive(Clone, Copy)]
 struct Sq {
     a: f64,
-}
-
-impl Shape for Sq {
-    fn area(self) -> f64 {
-        self.a * self.a
-    }
 }
 
 #[test]
@@ -87,7 +77,65 @@ fn methods_associated_functions_and_constants_run_with_rusts_meaning() {
             CarrierBytes::real(p.scaled(3.0).norm2()),
             CarrierBytes::real(p.dot(Point::new(3.0, 4.0))),
             CarrierBytes::byte(Point::SIDES * 2),
-            CarrierBytes::real(Sq { a: 3.0 }.area()),
+            CarrierBytes::real(Area::area(Sq { a: 3.0 })),
+        ],
+    );
+}
+
+/// `trait Shape` of the model `dispatch.msl`, with its default body and the `impl`s that give or override it.
+trait Area {
+    fn area(self) -> f64;
+
+    fn doubled(self) -> f64
+    where
+        Self: Sized + Copy,
+    {
+        2.0 * self.area()
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Rect {
+    w: f64,
+    h: f64,
+}
+
+impl Area for Sq {
+    fn area(self) -> f64 {
+        self.a * self.a
+    }
+}
+
+impl Area for Rect {
+    fn area(self) -> f64 {
+        self.w * self.h
+    }
+
+    fn doubled(self) -> f64 {
+        100.0 + self.area()
+    }
+}
+
+/// `fn total<S: Shape>(shape: S) -> f64` of the model.
+fn total<S: Area + Copy>(shape: S) -> f64 {
+    shape.area() + shape.doubled()
+}
+
+#[test]
+fn trait_methods_dispatch_statically_to_their_impl_default_or_blanket() {
+    // GN-04 AC 1 to 3 (§3.7): a trait's own method, its default body, an impl that overrides the default, a call through
+    // a `S: Shape` bound for two types, and a blanket `impl<T: Shape> Describe for T` read through a `D: Describe` bound
+    let (square, rectangle) = (Sq { a: 3.0 }, Rect { w: 2.0, h: 5.0 });
+    RUN.assert_commits(
+        "dispatch.msl",
+        &["m0", "m1", "m2", "m3", "m4", "m5"],
+        &[
+            CarrierBytes::real(Area::area(square)),
+            CarrierBytes::real(Area::doubled(square)),
+            CarrierBytes::real(rectangle.doubled()),
+            CarrierBytes::real(total(square)),
+            CarrierBytes::real(total(rectangle)),
+            CarrierBytes::byte(7 + 1),
         ],
     );
 }

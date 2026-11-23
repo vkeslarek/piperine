@@ -16,7 +16,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_function(&mut self, function: DeclId, arguments: &[ConcreteValue], half: Half) -> Option<FunctionSpec> {
         let data = self.design.decl_data(function).clone();
         let DeclKind::Fn(f) = &data.kind else { return None };
-        let written = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let written = self.impl_qualified_name(function);
         // an instance of a generic function is named from the function and its arguments (D8)
         let name = if arguments.is_empty() { written } else { Instance { item: function, arguments: arguments.to_vec() }.name(self) };
         let mut scope = Scope::new(data.file);
@@ -75,6 +75,23 @@ impl Elaboration<'_, '_> {
             }
         }
         Some(FunctionSpec { name: Variants::name(&name, half), origin: self.locator.decl(function), params, ret, locals: scope.locals, body: lowered })
+    }
+
+    /// The name of `function` as written; a function of an `impl` with no parameters is named by the type the `impl` is for, `Sq.area`, so
+    /// two types giving one method name stay two IR functions.
+    pub(super) fn impl_qualified_name(&self, function: DeclId) -> String {
+        let data = self.design.decl_data(function);
+        let own = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let Some(parent) = data.parent else { return own };
+        // an `impl` with parameters is told apart by the arguments of its instances
+        let DeclKind::Impl(owner) = &self.design.decl_data(parent).kind else { return own };
+        if self.design.decl_data(parent).generics_span.is_some() {
+            return own;
+        }
+        match self.typed_written(owner.self_ty) {
+            Some(ty) => format!("{}.{own}", ty.source_name(self.design)),
+            None => own,
+        }
     }
 
     /// The IR type a type written in a signature names: the checker's type of it, as an IR type.

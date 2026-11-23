@@ -1,0 +1,49 @@
+//! Static dispatch of a trait's methods (GN-04): a trait method on a concrete value, a call through a bound of a
+//! type parameter, a trait's default body, a blanket `impl`; the expected values are computed by Rust.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+trait Shape {
+    fn area(self) -> f64;
+    fn doubled(self) -> f64 { 2.0 * self.area() }
+}
+struct Sq { a: f64 }
+struct Rect { w: f64, h: f64 }
+impl Shape for Sq { fn area(self) -> f64 { self.a * self.a } }
+impl Shape for Rect {
+    fn area(self) -> f64 { self.w * self.h }
+    fn doubled(self) -> f64 { 100.0 + self.area() }
+}
+
+trait Describe { fn code(self) -> u8; }
+impl<T: Shape> Describe for T { fn code(self) -> u8 { 7 } }
+
+fn total<S: Shape>(shape: S) -> f64 { shape.area() + shape.doubled() }
+fn coded<D: Describe>(item: D) -> u8 { item.code() + 1 }
+
+fn own() -> f64 { Sq { a: 3.0 }.area() }
+fn default_body() -> f64 { Sq { a: 3.0 }.doubled() }
+fn overridden() -> f64 { Rect { w: 2.0, h: 5.0 }.doubled() }
+fn bound_sq() -> f64 { total(Sq { a: 3.0 }) }
+fn bound_rect() -> f64 { total(Rect { w: 2.0, h: 5.0 }) }
+fn blanket() -> u8 { coded(Sq { a: 1.0 }) }
+
+module Rows(in clk: Bit, out m0: Bit<f64> = 0.0, out m1: Bit<f64> = 0.0, out m2: Bit<f64> = 0.0, out m3: Bit<f64> = 0.0, out m4: Bit<f64> = 0.0, out m5: Bit<u8> = 0) {}
+digital for Rows {
+    on clk.rise() {
+        m0 <- own();
+        m1 <- default_body();
+        m2 <- overridden();
+        m3 <- bound_sq();
+        m4 <- bound_rect();
+        m5 <- blanket();
+    }
+}
+
+module Bench() {
+    signal clk: Bit;
+    signal m0: Bit<f64>; signal m1: Bit<f64>; signal m2: Bit<f64>; signal m3: Bit<f64>; signal m4: Bit<f64>; signal m5: Bit<u8>;
+    let osc = Osc(clk) { f: 200M };
+    let rows = Rows(clk, m0, m1, m2, m3, m4, m5);
+}

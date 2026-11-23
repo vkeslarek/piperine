@@ -104,6 +104,8 @@ pub(super) struct Elaboration<'d, 't> {
     pub(super) templates: super::templates::Templates,
     /// The IR type each reached struct and enum has (`types.rs`).
     pub(super) type_arena: super::types::TypeArena,
+    /// Every trait and `impl` of the design: what a call through a bound resolves against (`methods.rs`).
+    pub(super) impls: crate::types::ImplTable<'d>,
     pub(super) diagnostics: Vec<DesignDiagnostic>,
 }
 
@@ -139,6 +141,7 @@ impl<'d, 't> Elaboration<'d, 't> {
             cycles: CallCycles::default(),
             templates: super::templates::Templates::default(),
             type_arena: super::types::TypeArena::default(),
+            impls: crate::types::ImplTable::new(design),
             diagnostics: Vec::new(),
         }
     }
