@@ -36,7 +36,7 @@ static SESSION_FIELDS: [Field; 2] = [Field { name: SESSION_VALUE, leaf: leaf::F6
 
 /// The layout of the pin of a session parameter: `{ v: F64 @0, known: BOOL @8 }`. The solver writes
 /// the value and sets `known` when the host gave the parameter; an absent `OPTIONAL` pin is all zero,
-/// so `known` is 0 and the read takes its default.
+/// so `known` is 0 and the read is `None`.
 pub static SESSION_PARAMETER: Layout = Layout { size: 16, align: 8, fields: List::from_slice(&SESSION_FIELDS) };
 
 /// What one term of the shape computes.
@@ -580,16 +580,7 @@ impl BodyPlan {
             })
             .collect();
 
-        // One private output pin per delay site, after the rate pins (abi.md A1).
-        let delays: Vec<u32> = body
-            .delays()
-            .iter()
-            .enumerate()
-            .map(|(k, site)| {
-                let at = origin(&site.origin);
-                s.pin(PinSpec { origin: &at, ..PinSpec::continuous(&format!("delay{k}.value"), role::PRIVATE) })
-            })
-            .collect();
+        let delays = Self::delay_pins(&mut s, body);
 
         let temperature = Self::reads_temperature(body).then(|| {
             let at = origin(body.origin());
@@ -701,18 +692,7 @@ impl BodyPlan {
             term(&format!("d{k}.state"), op::DDT, pins.derivative_abstol(k), Term::DerivativeState(k));
         }
 
-        // Delay sites: the output term `u` and the history term `-x` that carries `TIME` and `max`.
-        for (k, site) in body.delays().iter().enumerate() {
-            let (k, at) = (k as u32, origin(&site.origin));
-            let output = pins.delay(k);
-            let max = pins.delay_maximum(k);
-            let mut term = |name: &str, operator: u32, max: u32, what: Term| {
-                s.term(TermSpec { name, origin: &at, op: operator, plus: output, minus: GROUND, abstol: DEFAULT, max });
-                terms.push(what);
-            };
-            term(&format!("delay{k}.value"), op::FLOW, DEFAULT, Term::DelayOutput(k));
-            term(&format!("delay{k}.history"), op::DELAY, max, Term::DelayHistory(k));
-        }
+        Self::delay_terms(&mut s, body, &pins, &mut terms);
 
         // Inputs: limits, then stimuli, each named after its site.
         for site in body.limits() {
@@ -724,12 +704,7 @@ impl BodyPlan {
             s.input(InputSpec { name: &site.name, origin: &at, kind: input::STIM });
         }
 
-        for source in body.noise_sources() {
-            let at = origin(&source.origin);
-            // the input is named by the source's group, so the host reports the sources that share
-            // a name as one group; an unnamed source has no name (the host groups it by instance)
-            s.input(InputSpec { name: source.group.as_deref().unwrap_or(""), origin: &at, kind: input::NOISE });
-        }
+        Self::noise_inputs(&mut s, body);
 
         // Functions: one per site, then the terms.
         let mut functions = Vec::new();
@@ -753,57 +728,8 @@ impl BodyPlan {
             Self::declare(&mut s, &pins, &terms, body, &format!("stim:{k}"), &origin(&site.origin), &plan);
             functions.push(plan);
         }
-        for (k, source) in body.noise_sources().iter().enumerate() {
-            let k = k as u32;
-            // the density is read at a frequency of the sweep: the function always reads `FREQ`, so
-            // a fault names it
-            let mut set = ReadSet::target(body, Query::NoiseDensity(k));
-            set.0.insert(Source::Freq);
-            let plan = Self::function(Mode::Noise(k), &set, vec![(Target::NoiseDensity(k), None)]);
-            Self::declare(&mut s, &pins, &terms, body, &format!("noise:{k}"), &origin(&source.origin), &plan);
-            functions.push(plan);
-        }
-        if !terms.is_empty() || !body.traces().is_empty() {
-            let sets: Vec<ReadSet> = terms.iter().map(|t| Self::term_set(body, *t)).collect();
-            let mut all = ReadSet::default();
-            for set in &sets {
-                all.union(set);
-            }
-            // `terms` also writes the `TIME` of each delay, `min(td, max)`: it reads what `td` and
-            // `max` read, like any other input
-            let times: Vec<ReadSet> = (0..body.delays().len() as u32)
-                .map(|k| {
-                    let mut set = ReadSet::target(body, Query::DelayTime(k));
-                    set.union(&ReadSet::target(body, Query::DelayMaximum(k)));
-                    set
-                })
-                .collect();
-            for set in &times {
-                all.union(set);
-            }
-            // and the record of each trace site, which reads what its fields read
-            let traced: Vec<ReadSet> = (0..body.traces().len() as u32).map(|k| ReadSet::target(body, Query::Trace(k))).collect();
-            for set in &traced {
-                all.union(set);
-            }
-            let mut writes: Vec<(Target, Option<&ReadSet>)> = terms.iter().zip(&sets).map(|(t, set)| (Target::Term(*t), Some(set))).collect();
-            writes.extend((0..times.len() as u32).map(|k| (Target::DelayTime(k), None)));
-            writes.extend((0..traced.len() as u32).map(|k| (Target::Trace(k), None)));
-            let mut plan = Self::function(Mode::Terms, &all, writes);
-            plan.affine = terms
-                .iter()
-                .map(|t| match t {
-                    Term::Flow(b) => body.is_affine(*b),
-                    // which kind a switch branch's equation takes is decided per solve (§11 rule 2)
-                    Term::Eq(b) => body.branches()[*b as usize].kind != BranchKind::Switch && body.is_affine(*b),
-                    Term::Current(_) | Term::DerivativeRate(_) | Term::DelayOutput(_) => true,
-                    Term::Charge(_) | Term::DerivativeState(_) | Term::DelayHistory(_) => false,
-                })
-                .chain(std::iter::repeat_n(false, times.len() + traced.len()))
-                .collect();
-            Self::declare(&mut s, &pins, &terms, body, "terms", &origin(body.origin()), &plan);
-            functions.push(plan);
-        }
+        Self::noise_functions(&mut s, &pins, &terms, body, &mut functions);
+        Self::terms_function(&mut s, &pins, &terms, body, &mut functions);
         for (p, param) in body.params().iter().enumerate() {
             if param.check.is_none() {
                 continue;
@@ -830,17 +756,126 @@ impl BodyPlan {
             Self::declare(&mut s, &pins, &terms, body, &format!("d{k}.abstol"), &origin(&site.origin), &plan);
             functions.push(plan);
         }
+        Self::delay_functions(&mut s, &pins, &terms, body, &mut functions);
+        let reactions = Digital::reactions(&mut s, &pins, body);
+
+        BodyPlan { shape: s.freeze(), functions, reactions }
+    }
+
+    /// The `file:line:col` text of `origin`, as a shape names where a pin, term or function comes from.
+    fn origin_text(origin: &Origin) -> String {
+        format!("{}:{}:{}", origin.file, origin.line, origin.col)
+    }
+
+    /// One private output pin per delay site, after the rate pins (abi.md A1).
+    fn delay_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<u32> {
+        body
+            .delays()
+            .iter()
+            .enumerate()
+            .map(|(k, site)| {
+                let at = Self::origin_text(&site.origin);
+                s.pin(PinSpec { origin: &at, ..PinSpec::continuous(&format!("delay{k}.value"), role::PRIVATE) })
+            })
+            .collect()
+    }
+
+    /// Delay sites: the output term `u` and the history term `-x` that carries `TIME` and `max`, after the derivative terms.
+    fn delay_terms(s: &mut ShapeBuf, body: Body<'_>, pins: &Pins, terms: &mut Vec<Term>) {
+        for (k, site) in body.delays().iter().enumerate() {
+            let (k, at) = (k as u32, Self::origin_text(&site.origin));
+            let output = pins.delay(k);
+            let max = pins.delay_maximum(k);
+            let mut term = |name: &str, operator: u32, max: u32, what: Term| {
+                s.term(TermSpec { name, origin: &at, op: operator, plus: output, minus: GROUND, abstol: DEFAULT, max });
+                terms.push(what);
+            };
+            term(&format!("delay{k}.value"), op::FLOW, DEFAULT, Term::DelayOutput(k));
+            term(&format!("delay{k}.history"), op::DELAY, max, Term::DelayHistory(k));
+        }
+    }
+
+    /// One `NOISE` input per noise source, named by its group.
+    fn noise_inputs(s: &mut ShapeBuf, body: Body<'_>) {
+        for source in body.noise_sources() {
+            let at = Self::origin_text(&source.origin);
+            // the input is named by the source's group, so the host reports the sources that share
+            // a name as one group; an unnamed source has no name (the host groups it by instance)
+            s.input(InputSpec { name: source.group.as_deref().unwrap_or(""), origin: &at, kind: input::NOISE });
+        }
+
+    }
+
+    /// One density function per noise source.
+    fn noise_functions(s: &mut ShapeBuf, pins: &Pins, terms: &[Term], body: Body<'_>, functions: &mut Vec<FunctionPlan>) {
+        for (k, source) in body.noise_sources().iter().enumerate() {
+            let k = k as u32;
+            // the density is read at a frequency of the sweep: the function always reads `FREQ`, so
+            // a fault names it
+            let mut set = ReadSet::target(body, Query::NoiseDensity(k));
+            set.0.insert(Source::Freq);
+            let plan = Self::function(Mode::Noise(k), &set, vec![(Target::NoiseDensity(k), None)]);
+            Self::declare(s, pins, terms, body, &format!("noise:{k}"), &Self::origin_text(&source.origin), &plan);
+            functions.push(plan);
+        }
+    }
+
+    /// One bound function per delay site, for the history the solver keeps.
+    fn delay_functions(s: &mut ShapeBuf, pins: &Pins, terms: &[Term], body: Body<'_>, functions: &mut Vec<FunctionPlan>) {
         for (k, site) in body.delays().iter().enumerate() {
             let k = k as u32;
             // without a `max` the bound is `td` itself (D4)
             let set = ReadSet::target(body, if site.maximum.is_some() { Query::DelayMaximum(k) } else { Query::DelayTime(k) });
             let plan = Self::function(Mode::DelayMaximum(k), &set, vec![(Target::DelayMaximum(k), None)]);
-            Self::declare(&mut s, &pins, &terms, body, &format!("delay{k}.max"), &origin(&site.origin), &plan);
+            Self::declare(s, pins, terms, body, &format!("delay{k}.max"), &Self::origin_text(&site.origin), &plan);
             functions.push(plan);
         }
-        let reactions = Digital::reactions(&mut s, &pins, body);
+    }
 
-        BodyPlan { shape: s.freeze(), functions, reactions }
+    /// The one function that writes every term, the delay times and the trace records, when the body has any.
+    fn terms_function(s: &mut ShapeBuf, pins: &Pins, terms: &[Term], body: Body<'_>, functions: &mut Vec<FunctionPlan>) {
+        if terms.is_empty() && body.traces().is_empty() {
+            return;
+        }
+        let sets: Vec<ReadSet> = terms.iter().map(|t| Self::term_set(body, *t)).collect();
+        let mut all = ReadSet::default();
+        for set in &sets {
+            all.union(set);
+        }
+        // `terms` also writes the `TIME` of each delay, `min(td, max)`: it reads what `td` and
+        // `max` read, like any other input
+        let times: Vec<ReadSet> = (0..body.delays().len() as u32)
+            .map(|k| {
+                let mut set = ReadSet::target(body, Query::DelayTime(k));
+                set.union(&ReadSet::target(body, Query::DelayMaximum(k)));
+                set
+            })
+            .collect();
+        for set in &times {
+            all.union(set);
+        }
+        // and the record of each trace site, which reads what its fields read
+        let traced: Vec<ReadSet> = (0..body.traces().len() as u32).map(|k| ReadSet::target(body, Query::Trace(k))).collect();
+        for set in &traced {
+            all.union(set);
+        }
+        let mut writes: Vec<(Target, Option<&ReadSet>)> = terms.iter().zip(&sets).map(|(t, set)| (Target::Term(*t), Some(set))).collect();
+        writes.extend((0..times.len() as u32).map(|k| (Target::DelayTime(k), None)));
+        writes.extend((0..traced.len() as u32).map(|k| (Target::Trace(k), None)));
+        let mut plan = Self::function(Mode::Terms, &all, writes);
+        plan.affine = terms
+            .iter()
+            .map(|t| match t {
+                Term::Flow(b) => body.is_affine(*b),
+                // which kind a switch branch's equation takes is decided per solve (§11 rule 2)
+                Term::Eq(b) => body.branches()[*b as usize].kind != BranchKind::Switch && body.is_affine(*b),
+                Term::Current(_) | Term::DerivativeRate(_) | Term::DelayOutput(_) => true,
+                Term::Charge(_) | Term::DerivativeState(_) | Term::DelayHistory(_) => false,
+            })
+            .chain(std::iter::repeat_n(false, times.len() + traced.len()))
+            .collect();
+        Self::declare(s, pins, terms, body, "terms", &Self::origin_text(body.origin()), &plan);
+        functions.push(plan);
     }
 
     /// Adds one `GLOBAL NAMED` pin per session parameter of the body, named the parameter, holding

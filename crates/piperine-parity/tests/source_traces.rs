@@ -26,12 +26,14 @@ impl RecordSink for Kept {
 struct Traced;
 
 impl Traced {
+    /// The compile cache the runs share.
     fn settings() -> Settings {
         static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
         let dir = CACHE.get_or_init(|| tempfile::tempdir().expect("a temp dir"));
         Settings { rustc: None, cache: dir.path().to_path_buf() }
     }
 
+    /// The file of the benches.
     fn path() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/operators/traces.msl")
     }
@@ -55,10 +57,12 @@ impl Traced {
         (table, records, rejected)
     }
 
+    /// The operating point of `a` that names the stream `newton`.
     fn op() -> Overrides {
         Overrides { analysis: Some("op".into()), print: vec!["a".into()], streams: vec!["newton".into()], ..Overrides::default() }
     }
 
+    /// The real field `field` of `record`.
     fn real(record: &Record, field: &str) -> f64 {
         match record.fields.iter().find(|(name, _)| name == field) {
             Some((_, Field::Real(v))) => *v,
@@ -66,6 +70,7 @@ impl Traced {
         }
     }
 
+    /// The value of the row `signal` of an operating point's table.
     fn value(table: &Table, signal: &str) -> f64 {
         let row = table.rows.iter().find(|r| r[0] == Cell::Text(signal.into())).unwrap_or_else(|| panic!("no row `{signal}` in {table:?}"));
         match &row[1] {

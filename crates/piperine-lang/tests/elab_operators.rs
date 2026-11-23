@@ -9,16 +9,21 @@ mod support;
 
 use support::Elab;
 
-/// The design `M` placed once, whose `analog` block is `body`.
-fn design(body: &str) -> String {
-    format!("module M(a: Electrical, o: Electrical) {{ k: f64 = 2.0; }}\nanalog for M {{ {body} }}\nmodule Top() {{ signal a: Electrical; signal o: Electrical; let m = M {{ }}(a, o); }}")
+/// The sources of the tests.
+struct Sources;
+
+impl Sources {
+    /// The design `M` placed once, whose `analog` block is `body`.
+    fn design(body: &str) -> String {
+        format!("module M(a: Electrical, o: Electrical) {{ k: f64 = 2.0; }}\nanalog for M {{ {body} }}\nmodule Top() {{ signal a: Electrical; signal o: Electrical; let m = M {{ }}(a, o); }}")
+    }
 }
 
 #[test]
 fn ddx_lowers_to_its_derivative_and_is_recorded() {
     // `ddx(v(a) * v(a), v(a))` is `v(a) + v(a)` (the product rule, a factor 1 folded): the body holds
     // the derivative as an ordinary expression, and records the `ddx` and the probe it names.
-    let ir = Elab::ir(&design("v(o, gnd) +> ddx(v(a, gnd) * v(a, gnd), v(a, gnd));"), "Top");
+    let ir = Elab::ir(&Sources::design("v(o, gnd) +> ddx(v(a, gnd) * v(a, gnd), v(a, gnd));"), "Top");
     let body = ir.bodies().find(|b| b.name() == "M").expect("the body M");
     assert_eq!(body.partial_derivatives().len(), 1);
     assert_eq!(body.partial_derivatives()[0].name, "v(a, gnd)");
@@ -26,7 +31,7 @@ fn ddx_lowers_to_its_derivative_and_is_recorded() {
     assert!(text.contains("ddx0 \"v(a, gnd)\""), "{text}");
     assert!(text.contains("(probe(a, gnd) + probe(a, gnd))"), "{text}");
     // an expression that reads no probe is the literal zero
-    let zero = Elab::ir(&design("v(o, gnd) +> ddx(k * 2.0, v(a, gnd));"), "Top");
+    let zero = Elab::ir(&Sources::design("v(o, gnd) +> ddx(k * 2.0, v(a, gnd));"), "Top");
     assert!(zero.to_string().contains("potential +> direct 0.0"), "{zero}");
 }
 
@@ -34,7 +39,7 @@ fn ddx_lowers_to_its_derivative_and_is_recorded() {
 fn ddx_through_a_fn_call_expands_the_call_and_differentiates_its_body() {
     // §14.2.3: `ddx(square(v(a)), v(a))` is the derivative of the body of `square` with `x` read as
     // `v(a)`: `v(a) + v(a)`, as for `v(a) * v(a)`; the body adds no IR function and no local.
-    let src = format!("fn square(x: f64) -> f64 {{ x * x }}\n{}", design("v(o, gnd) +> ddx(square(v(a, gnd)), v(a, gnd));"));
+    let src = format!("fn square(x: f64) -> f64 {{ x * x }}\n{}", Sources::design("v(o, gnd) +> ddx(square(v(a, gnd)), v(a, gnd));"));
     let ir = Elab::ir(&src, "Top");
     assert!(ir.to_string().contains("(probe(a, gnd) + probe(a, gnd))"), "{ir}");
     assert_eq!(ir.functions().count(), 0, "the call is expanded, so no function is added");
@@ -44,7 +49,7 @@ fn ddx_through_a_fn_call_expands_the_call_and_differentiates_its_body() {
 fn a_fn_with_more_than_lets_and_a_value_is_p0001_inside_a_ddx() {
     // the derivative of a branch of control flow is not an expression: a `fn` that returns early is refused
     // by the statement that is no plain `let`.
-    let early = format!("fn clipped(x: f64) -> f64 {{ if x > 1.0 {{ return 1.0; }} x }}\n{}", design("v(o, gnd) +> ddx(clipped(v(a, gnd)), v(a, gnd));"));
+    let early = format!("fn clipped(x: f64) -> f64 {{ if x > 1.0 {{ return 1.0; }} x }}\n{}", Sources::design("v(o, gnd) +> ddx(clipped(v(a, gnd)), v(a, gnd));"));
     let err = Elab::run(&early, "Top").expect_err("an early return inside ddx");
     assert_eq!(Elab::codes(&err), ["P0001"], "{:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
     assert!(err[0].diagnostic.message.contains("a statement that is no plain `let` in a `fn` called inside a `ddx`"), "{}", err[0].diagnostic.message);
@@ -54,7 +59,7 @@ fn a_fn_with_more_than_lets_and_a_value_is_p0001_inside_a_ddx() {
 fn ddx_against_the_flow_of_a_branch_with_no_potential_contribution_is_the_literal_zero() {
     // `i(a, gnd)` of a branch the module only gives a flow contribution is no unknown: the derivative
     // against it is 0 (§14.2.3), the same literal as for an expression that reads no probe.
-    let ir = Elab::ir(&design("i(a, gnd) +> v(a, gnd) / 1k; v(o, gnd) +> ddx(3.0 * v(a, gnd), i(a, gnd));"), "Top");
+    let ir = Elab::ir(&Sources::design("i(a, gnd) +> v(a, gnd) / 1k; v(o, gnd) +> ddx(3.0 * v(a, gnd), i(a, gnd));"), "Top");
     assert!(ir.to_string().contains("potential +> direct 0.0"), "{ir}");
 }
 
@@ -64,23 +69,23 @@ fn a_delay_without_max_whose_td_varies_is_e0452() {
     // `temperature()`. A `td` that reads a probe or `now()` is `E0452` naming the placement (the
     // module); with a `max` any `td` is allowed.
     for td in ["v(a, gnd) * 1n", "now()", "freq()"] {
-        let err = Elab::run(&design(&format!("v(o, gnd) +> delay(v(a, gnd), {td});")), "Top").expect_err(td);
+        let err = Elab::run(&Sources::design(&format!("v(o, gnd) +> delay(v(a, gnd), {td});")), "Top").expect_err(td);
         assert_eq!(Elab::codes(&err), ["E0452"], "{td}: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
         assert!(err[0].diagnostic.message.contains("module `M`"), "{td}: {}", err[0].diagnostic.message);
     }
     for td in ["1n", "k * 1n", "temperature() * 1p"] {
-        let ir = Elab::ir(&design(&format!("v(o, gnd) +> delay(v(a, gnd), {td});")), "Top");
+        let ir = Elab::ir(&Sources::design(&format!("v(o, gnd) +> delay(v(a, gnd), {td});")), "Top");
         let m = ir.bodies().find(|b| b.name() == "M").expect("the body M");
         assert_eq!(m.delays().len(), 1, "{td}");
         assert!(m.delays()[0].maximum.is_none(), "{td}");
     }
     for max in ["1m", "Some(1m)"] {
-        let ir = Elab::ir(&design(&format!("v(o, gnd) +> delay(v(a, gnd), v(a, gnd) * 1n, {max});")), "Top");
+        let ir = Elab::ir(&Sources::design(&format!("v(o, gnd) +> delay(v(a, gnd), v(a, gnd) * 1n, {max});")), "Top");
         let m = ir.bodies().find(|b| b.name() == "M").expect("the body M");
         assert!(m.delays()[0].maximum.is_some(), "{max}");
     }
     // a `max` that reads a probe is not on the parameter cone: P0001 naming it
-    let err = Elab::run(&design("v(o, gnd) +> delay(v(a, gnd), 1n, v(a, gnd));"), "Top").expect_err("a max on a probe");
+    let err = Elab::run(&Sources::design("v(o, gnd) +> delay(v(a, gnd), 1n, v(a, gnd));"), "Top").expect_err("a max on a probe");
     assert_eq!(Elab::codes(&err), ["P0001"]);
     assert!(err[0].diagnostic.message.contains("a `delay` max that is not a constant or a param"), "{}", err[0].diagnostic.message);
 }
@@ -89,7 +94,7 @@ fn a_delay_without_max_whose_td_varies_is_e0452() {
 fn one_delay_call_is_one_site_however_often_it_is_read() {
     // §8.3.3: a body `let` that binds a call is one instance: one site `delay0`, read once by the
     // `let` and used twice through it.
-    let ir = Elab::ir(&design("let d = delay(v(a, gnd), 1n); v(o, gnd) +> d + d;"), "Top");
+    let ir = Elab::ir(&Sources::design("let d = delay(v(a, gnd), 1n); v(o, gnd) +> d + d;"), "Top");
     let m = ir.bodies().find(|b| b.name() == "M").expect("the body M");
     assert_eq!(m.delays().len(), 1);
     let text = ir.to_string();
@@ -111,16 +116,16 @@ fn noise_table_waits_for_its_dependencies() {
 
 #[test]
 fn simparam_lowers_to_one_session_parameter_per_name() {
-    // AO-07 (§14.4, user decision 2026-11-23): `simparam("gmin")` read twice and `simparam("tnom")` are two
+    // AO-07 (§14.4, user decision 2026-11-23): `simparam("gmin")` read twice and `simparam("vth0")` are two
     // parameters of the body, one per name; each read is an `Option<f64>` unpacked where it stands.
-    let ir = Elab::ir(&design("v(o, gnd) +> simparam(\"gmin\").unwrap_or(1e-12) + simparam(\"gmin\").unwrap_or(2e-12) + simparam(\"vth0\").unwrap_or(0.5);"), "Top");
+    let ir = Elab::ir(&Sources::design("v(o, gnd) +> simparam(\"gmin\").unwrap_or(1e-12) + simparam(\"gmin\").unwrap_or(2e-12) + simparam(\"vth0\").unwrap_or(0.5);"), "Top");
     let m = ir.bodies().find(|b| b.name() == "M").expect("the body M");
     let names: Vec<&str> = m.session_parameters().iter().map(|p| p.name.as_str()).collect();
     assert_eq!(names, ["gmin", "vth0"]);
     let text = ir.to_string();
     assert!(text.contains("simparam(\"gmin\")") && text.contains("simparam(\"vth0\")"), "{text}");
     // `match` over the option takes both arms
-    let matched = Elab::ir(&design("v(o, gnd) +> match simparam(\"gain\") { Some(g) => g, None => 1.0 };"), "Top");
+    let matched = Elab::ir(&Sources::design("v(o, gnd) +> match simparam(\"gain\") { Some(g) => g, None => 1.0 };"), "Top");
     assert_eq!(matched.bodies().find(|b| b.name() == "M").expect("M").session_parameters().len(), 1);
 }
 
@@ -128,7 +133,7 @@ fn simparam_lowers_to_one_session_parameter_per_name() {
 fn an_emit_in_analog_lowers_to_a_trace_site() {
     // AO-09 (§19 rule 4): `emit!("conv", v = v(a))` in `analog` is a trace: one site of the body per
     // statement, its stream `conv` with the field `v`, written where it stands (here under an `if`).
-    let ir = Elab::ir(&design("emit!(\"conv\", v = v(a, gnd), who = \"M\"); if v(a, gnd) > 0.5 { emit!(\"conv\", v = 1.0); } v(o, gnd) +> 0.0;"), "Top");
+    let ir = Elab::ir(&Sources::design("emit!(\"conv\", v = v(a, gnd), who = \"M\"); if v(a, gnd) > 0.5 { emit!(\"conv\", v = 1.0); } v(o, gnd) +> 0.0;"), "Top");
     let m = ir.bodies().find(|b| b.name() == "M").expect("the body M");
     assert_eq!(m.traces().len(), 2, "one site per statement");
     assert!(m.traces().iter().all(|t| t.stream == 0), "both write the stream `conv`");
@@ -141,7 +146,7 @@ fn an_emit_in_analog_lowers_to_a_trace_site() {
 fn a_field_type_conflict_across_trace_sites_is_e0605() {
     // AO-09 AC 5 (§19 rule 12): two sites of one stream give a field one type: `v` is an `f64` at the
     // first and a `bool` at the second.
-    let err = Elab::run(&design("emit!(\"conv\", v = v(a, gnd)); emit!(\"conv\", v = true);"), "Top").expect_err("a field of two types");
+    let err = Elab::run(&Sources::design("emit!(\"conv\", v = v(a, gnd)); emit!(\"conv\", v = true);"), "Top").expect_err("a field of two types");
     assert!(Elab::codes(&err).iter().any(|c| c == "E0605"), "{:?}", err.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
 }
 

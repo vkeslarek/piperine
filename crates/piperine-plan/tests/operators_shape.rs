@@ -54,17 +54,41 @@ impl Find {
     }
 }
 
-/// `i(a, gnd) +> 0.5 * delay(v(a), td, 2e-9)`.
-fn delayed() -> Ir {
-    Operators::ir(|b| {
-        let site = Operators::delay_site(b, Some(2e-9));
-        Written { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![site], ..Written::default() }
-    })
+
+/// The bodies the tests shape.
+struct Bodies;
+
+impl Bodies {
+    /// `i(a, gnd) +> 0.5 * delay(v(a), td, 2e-9)`.
+    fn delayed() -> Ir {
+        Operators::ir(|b| {
+            let site = Operators::delay_site(b, Some(2e-9));
+            Written { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![site], ..Written::default() }
+        })
+    }
+
+    /// `i(a, gnd) +> noise(<density>, "thermal")`, the density being `freq()` when `on_freq`, else `4e-21`.
+    fn noisy(on_freq: bool) -> Ir {
+        Operators::ir(|b| {
+            let source = if on_freq {
+                let density = b.expr(Expr::Env(Env::Freq), ValueType::F64, Operators::at());
+                NoiseSource { name: "n".into(), group: Some("thermal".into()), density, origin: Operators::at() }
+            } else {
+                Operators::noise_site(b, Some("thermal"))
+            };
+            Written { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![source], ..Written::default() }
+        })
+    }
+
+    /// `i(a, gnd) +> simparam("gmin").unwrap_or_default()`.
+    fn parameterised() -> Ir {
+        Operators::ir(|b| Written { analog: vec![Operators::contribute_the_session_parameter(b, 0)], session_parameters: vec![Operators::gmin()], ..Written::default() })
+    }
 }
 
 #[test]
 fn a_delay_site_has_its_pin_terms_and_maximum() {
-    let ir = delayed();
+    let ir = Bodies::delayed();
     let plan = Find::plan(&ir);
     let shape = plan.shape().shape();
     // pins: the param `td`, the node `a`, the output `delay0.value` after the derivative pins,
@@ -129,24 +153,12 @@ fn a_body_without_a_new_form_keeps_its_shape() {
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 }
 
-/// `i(a, gnd) +> noise(<density>, "thermal")`, the density being `freq()` when `on_freq`, else `4e-21`.
-fn noisy(on_freq: bool) -> Ir {
-    Operators::ir(|b| {
-        let source = if on_freq {
-            let density = b.expr(Expr::Env(Env::Freq), ValueType::F64, Operators::at());
-            NoiseSource { name: "n".into(), group: Some("thermal".into()), density, origin: Operators::at() }
-        } else {
-            Operators::noise_site(b, Some("thermal"))
-        };
-        Written { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![source], ..Written::default() }
-    })
-}
 
 #[test]
 fn a_noise_source_is_an_input_with_its_density_function() {
     // abi.md A2: one `NOISE` input `noise:<k>` after the `STIM` inputs; the density is a function
     // that writes its `PSD`; `terms` reads the input's value as a tangent slot.
-    let ir = noisy(false);
+    let ir = Bodies::noisy(false);
     let plan = Find::plan(&ir);
     let shape = plan.shape().shape();
     let inputs: Vec<(&str, u32)> = shape.inputs.iter().map(|i| (i.name.as_str(), i.kind)).collect();
@@ -165,22 +177,18 @@ fn a_noise_source_is_an_input_with_its_density_function() {
     assert_eq!(f.writes.iter().copied().collect::<Vec<_>>(), [Cell { kind: cell::INPUT, index: 0, part: part::PSD }]);
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
     // a density that reads `freq()` reads the ambient `FREQ`, in the density function only
-    let plan = Find::plan(&noisy(true));
+    let plan = Find::plan(&Bodies::noisy(true));
     let noise = plan.functions().iter().find(|f| f.mode == Mode::Noise(0)).expect("the density function");
     assert_eq!(noise.reads, [Source::Freq]);
     assert_eq!(Find::terms_plan(&plan).reads, [Source::NoiseValue(0)]);
     assert_eq!(piperine_abi::validate::validate(plan.shape().shape()), Ok(()));
 }
 
-/// `i(a, gnd) +> simparam("gmin").unwrap_or_default()`.
-fn parameterised() -> Ir {
-    Operators::ir(|b| Written { analog: vec![Operators::contribute_the_session_parameter(b, 0)], session_parameters: vec![Operators::gmin()], ..Written::default() })
-}
 
 #[test]
 fn a_session_parameter_is_a_named_global_optional_pin() {
     // D12: a `GLOBAL NAMED` pin named the parameter, after every other pin, always `OPTIONAL`; the read is a discrete `Source::SessionParameter`.
-    let ir = parameterised();
+    let ir = Bodies::parameterised();
     let plan = Find::plan(&ir);
     let shape = plan.shape().shape();
     assert_eq!(Find::pin_names(shape), ["td", "a", "gmin"]);
@@ -208,7 +216,7 @@ impl Modules for Nothing {
 fn the_netlist_hands_its_session_parameters_to_the_builder() {
     // The netlist keeps the parameters in the order given and the circuit it builds accepts them
     // (their effect on a bound pin is proved with the host, `piperine-api`'s `session_parameters`).
-    let ir = parameterised();
+    let ir = Bodies::parameterised();
     let given = [("gmin".to_string(), 1e-9), ("tnom".to_string(), 27.0)];
     let netlist = Netlist::new(&ir).with_session_parameters(&given);
     assert_eq!(netlist.session_parameters(), given);

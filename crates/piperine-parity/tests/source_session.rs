@@ -22,6 +22,7 @@ impl RecordSink for Ignore {
 struct Bench;
 
 impl Bench {
+    /// The compile cache the runs share.
     fn settings() -> Settings {
         static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
         let dir = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
@@ -46,10 +47,12 @@ impl Bench {
         }
     }
 
+    /// An operating point.
     fn op() -> Overrides {
         Overrides { analysis: Some("op".into()), ..Overrides::default() }
     }
 
+    /// A transient to 1 us in steps of at most 0.1 us.
     fn transient() -> Overrides {
         Overrides { analysis: Some("transient".into()), stop: Some(1e-6), max_step: Some(0.1e-6), ..Overrides::default() }
     }
