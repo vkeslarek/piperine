@@ -157,13 +157,15 @@ fn prev_is_the_initial_value_before_a_change() {
 
 #[test]
 fn an_element_never_committed_reads_its_initial_value() {
-    // §5.1.8 (EU-04 AC 3): an element no model commits reads the initial value written for it. Arrays of carriers
-    // (`[Bit<Option<u8>>; 1 << 20]`, `GAPS.md` L24) are not built yet, so the elements are those of a composite
-    // `Bit<[u8; 4]> = [5, 6, 7, 8]`, read at their first and last positions
+    // §5.1.8 (EU-04 AC 3): an element no model commits reads the initial value written for it, in a real array of carriers
+    // `[Bit<Option<u8>>; 1 << 20]` (composite-values phase C, GAPS L24 closed): elements 0 and 1048575 read `Some(5)` at every
+    // edge, and element 1, committed `Some(7)` at the first edge, reads 5 at that edge (the snapshot) and 7 after. The storage
+    // half of AC 3, that the million elements cost what is written, is `piperine-api`'s `carrier_array_storage` (T85)
     let probes = stream("ElementsBench", "elements");
-    assert!(!probes.is_empty(), "the probe runs at the rising edges");
-    for record in &probes {
-        assert_eq!(integers(record), [5, 8], "each element reads its initial value");
+    assert!(probes.len() > 1, "the probe runs at the rising edges");
+    for (k, record) in probes.iter().enumerate() {
+        let committed = if k == 0 { 5 } else { 7 };
+        assert_eq!(integers(record), [5, 5, committed], "edge {k}: each element no model commits reads its initial value");
     }
 }
 

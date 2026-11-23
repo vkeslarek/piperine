@@ -87,6 +87,14 @@ impl Bindings {
         self.values.get(&param).copied()
     }
 
+    /// The params bound to a non-negative integer, as the integer folder reads them.
+    pub(super) fn counts(&self) -> BTreeMap<DeclId, u128> {
+        self.values.iter().filter_map(|(decl, value)| match value {
+            Constant::Int(count) => u128::try_from(*count).ok().map(|count| (*decl, count)),
+            _ => None,
+        }).collect()
+    }
+
     /// These bindings with those of `other` added: `other` wins where both bind a name.
     pub(super) fn overlaid(&self, other: &Bindings) -> Bindings {
         let mut merged = self.clone();
@@ -177,9 +185,17 @@ pub struct ConstEval<'d, 't> {
     /// What the generic parameters of the function instance being lowered are replaced by (generics
     /// T32): empty outside an instance. Every read of the type table goes through it.
     substitution: crate::types::Substitution,
+    /// The values the module params of the frame being lowered take: an array length that reads a param (`[u8; n]`,
+    /// §8.1.2) folds over them wherever a type of that frame is read.
+    frame_params: Bindings,
 }
 
 impl<'d, 't> ConstEval<'d, 't> {
+    /// Reads the module params of the frame being lowered as `params` from here on; the previous ones come back.
+    pub(super) fn set_frame_params(&mut self, params: Bindings) -> Bindings {
+        std::mem::replace(&mut self.frame_params, params)
+    }
+
     /// What the generic parameters of the instance being lowered are replaced by.
     pub(super) fn substitution(&self) -> &crate::types::Substitution {
         &self.substitution
@@ -209,6 +225,7 @@ impl<'d, 't> ConstEval<'d, 't> {
                 GenericValue::Type(_) => self.parameter_width(parameter).map(|levels| (parameter, u128::from(levels))),
                 _ => None,
             })
+            .chain(self.frame_params.counts())
             .collect();
         self.types.fold_with(expr, values)
     }
@@ -261,7 +278,7 @@ impl<'d, 't> ConstEval<'d, 't> {
     }
 
     pub fn new(design: &'d Design, types: &'t Types<'d>) -> Self {
-        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new(), fn_values: BTreeMap::new(), leaving: None, open_constants: Vec::new(), files: IncludedFiles::new(), composites: Vec::new(), substitution: crate::types::Substitution::new() }
+        ConstEval { design, types, consts: BTreeMap::new(), evaluations: 0, locals: BTreeMap::new(), depth: 0, open_lets: Vec::new(), fn_values: BTreeMap::new(), leaving: None, open_constants: Vec::new(), files: IncludedFiles::new(), composites: Vec::new(), substitution: crate::types::Substitution::new(), frame_params: Bindings::new() }
     }
 
     /// How many `const` items this evaluator has folded, each counted once however many times
@@ -716,6 +733,9 @@ impl<'d, 't> ConstEval<'d, 't> {
     fn call(&mut self, expr: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Constant, ConstFault> {
         if let Some(Callee::Intrinsic(parser @ (Intrinsic::ParseTable | Intrinsic::ParseHex))) = self.types.callee(expr) {
             return self.parse_array(expr, parser, args, bindings);
+        }
+        if let Some(Callee::Intrinsic(Intrinsic::Logic)) = self.types.callee(expr) {
+            return self.logic_literal(expr, args);
         }
         let function = match self.types.callee(expr) {
             Some(Callee::Function(function)) => FnValue::Named(function),

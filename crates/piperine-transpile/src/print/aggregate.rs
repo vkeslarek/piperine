@@ -148,7 +148,7 @@ impl ValuePrinter<'_> {
     }
 
     /// An index as a Rust `i128`: the integer's value, whatever its width and sign.
-    fn index_value(&self, index: ExprId) -> Result<String, Error> {
+    pub(super) fn index_value(&self, index: ExprId) -> Result<String, Error> {
         Ok(format!("{}.get() as i128", self.operand(index)?))
     }
 

@@ -20,6 +20,7 @@
 use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, LevelPart, Local, Method as IrMethod, Origin, Stmt, StmtId, UnaryOp, ValueType};
 
 use super::elaborator::Elaboration;
+use super::elements::Lookup;
 use super::patterns::Subject;
 use super::selectors::ArmCondition;
 use super::lower::Scope;
@@ -316,6 +317,16 @@ impl Elaboration<'_, '_> {
         };
         match &node.kind {
             ExprKind::Paren(inner) => self.lower_option(scope, *inner),
+            // one element of an array of carriers that hold `Option`s: its two halves, each unpacked from the element read
+            ExprKind::Index { .. } if let Lookup::Found(element) = self.element_lookup(scope, expr) => {
+                let half = |this: &mut Self, part: LevelPart, ty: ValueType| {
+                    let packed = this.carrier_element_read(element, origin.clone());
+                    Some(this.emit(Expr::OptionPart { option: packed, part }, ty, origin.clone()))
+                };
+                let is = half(self, LevelPart::Is, ValueType::Bool)?;
+                let val = half(self, LevelPart::Value, payload.clone())?;
+                Some(Pair { is, val, literal: None })
+            }
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
                 Resolution::Builtin(id) if id.info().name == "None" => {
                     let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());

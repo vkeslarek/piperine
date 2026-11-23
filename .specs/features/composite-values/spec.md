@@ -427,12 +427,12 @@ Total: L, about 95 tasks (110 with `f128` (a)).
 | CV-20 | P1: aggregates (B) | - | Pending |
 | CV-21 | P1: aggregates (B) | - | Pending |
 | CV-22 | P1: aggregates (B) | - | Pending |
-| CV-23 | P1: arrays of carriers (C) | - | Pending |
-| CV-24 | P1: arrays of carriers (C) | - | Pending |
-| CV-25 | P1: arrays of carriers (C) | - | Pending |
-| CV-26 | P1: arrays of carriers (C) | - | Pending |
-| CV-27 | P1: arrays of carriers (C) | - | Pending |
-| CV-28 | P1: arrays of carriers (C) | - | Pending |
+| CV-23 | P1: arrays of carriers (C) | C (`tasks-c.md`) | Done (T64-T90) |
+| CV-24 | P1: arrays of carriers (C) | C (`tasks-c.md`) | Done (T64-T90) |
+| CV-25 | P1: arrays of carriers (C) | C (`tasks-c.md`) | Done (T64-T90) |
+| CV-26 | P1: arrays of carriers (C) | C (`tasks-c.md`) | Done (T64-T90) |
+| CV-27 | P1: arrays of carriers (C) | C (`tasks-c.md`) | Done (T64-T90) |
+| CV-28 | P1: arrays of carriers (C) | C (`tasks-c.md`) | Done (T64-T90) |
 | CV-29 | P2: number widths (D) | D (`tasks-d.md`) | Planned |
 | CV-30 | P2: number widths (D) | D (`tasks-d.md`) | Planned |
 | CV-31 | P2: number widths (D) | D (`tasks-d.md`) | Planned |

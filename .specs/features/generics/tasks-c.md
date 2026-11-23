@@ -937,6 +937,18 @@ expressions in written types. A carrier of such a type still needs an initial va
 (5) A carrier with a `Default` and no initial value starts at `encode(default)` (a unit enum with an `impl Default` included).
 (6) Pre-existing, not mine: `cargo build ... --all-targets` prints one warning, `associated function run is never used`, in
 `tests/book` (`book_types`).
+**B10 (T59, 2026-11-23), anchors re-read after merging `origin/main` (composite-values phase C):** (1) there is **no
+`Ty::CarrierArray`**: an array of carriers or of nodes is `Ty::Array(element, Length)` with `Ty::is_carrier_element()`
+(`Ty::innermost`, `Ty::read_value`); T60/T63 type `[Bit; ROWS]` and `[E; N]` as that with `Length::Generic`. There is no
+`Ty::InstanceArray` either (T72 adds it). (2) `Length::Generic` is accepted in the checker; the elaborator still returns
+`LengthFault::NotConstant` for a non-`Expr` generic length (`elab/carrier_arrays.rs:110`) and `Unsupported` in
+`elab/consts/parsed.rs:28`: T65/T68 fold it under the instance substitution. (3) `Carrier.count`, `NodeArray`,
+`CarrierWindow`, `EventSource::ElementChanged`, `HandleBinding::Element`, `Port::Window` exist in `piperine-ir`/`-plan`/
+`-solver` (`handle.rs`, `model.rs`, `build.rs`, `piperine-plan/src/{derive,netlist}.rs`). (4) `KeyParams`/`BodyVariants`
+are `pub(super)` in `elab/structural.rs:48,78`; `elab/templates.rs` unchanged. (5) The merge conflicted in `GAPS.md`,
+`docs.rs` and `print/text.rs::spelled_cased` only: brackets spell `_i`/`_j` (main), `; ( )` keep `_l`/`_t`/`_z`; loud count
+22 (24 on main less L69 and L70). Pre-existing warning of `book_types` is gone. Nothing below is amended by a moved anchor
+except (1).
 **Dispatched:** none yet.
 **Walked:** none yet.
 

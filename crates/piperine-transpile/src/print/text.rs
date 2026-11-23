@@ -138,6 +138,8 @@ impl Text {
     /// (`above$0`, `match$0`). They print as `_v`, `_d` and `_s`: `rev3_v1`, `gate_dx`,
     /// `above_s0_dinit_s0_dup`, snake-case names (contract.md D9). The name of a body variant
     /// (`Sw~short=1,gain=-0.5`) adds `=`, `,` and `-`, printed `_q`, `_c` and `_m`. The name of a
+    /// The name of an element of an array of nodes (`bl[2]`, `g[1][0]`) adds `[` and `]`, printed `_i` and `_j`
+    /// (`bl_i2_j`). The name of a
     /// generic instance (design D8) adds `::<` and `<` printed `_g`, `, ` printed `_c` and `>`
     /// printed `_e`; a tuple or array argument (`(u8, bool)`, `[u8; 2]`) adds `(` `)` `[` `]` and `; ` printed `_t`, `_z`, `_a`, `_y` and
     /// `_l`: `word::<(u8, bool)>` is `word_g_tu8_cbool_z_e` (T54). `swap::<f64>` is `swap_gf64_e`, `Pair<Pair<f64>, u8>` is `Pair_gPair_gf64_e_cu8_e`
@@ -173,7 +175,7 @@ impl Text {
     /// variant's struct, `StartedBench_vv0_q0_d6`, which `LibraryPrinter::camel` turns into
     /// `StartedBenchVv0Q0D6`; a lowercase type name is a rustc warning).
     pub fn spelled_cased(name: &str) -> String {
-        name.replace("::<", "_g").replace('<', "_g").replace(", ", "_c").replace('>', "_e").replace('~', "_v").replace('.', "_d").replace('$', "_s").replace('=', "_q").replace(',', "_c").replace('-', "_m").replace("; ", "_l").replace('(', "_t").replace(')', "_z").replace('[', "_a").replace(']', "_y")
+        name.replace("::<", "_g").replace('<', "_g").replace(", ", "_c").replace('>', "_e").replace('~', "_v").replace('.', "_d").replace('$', "_s").replace('=', "_q").replace(',', "_c").replace('-', "_m").replace("; ", "_l").replace('(', "_t").replace(')', "_z").replace('[', "_i").replace(']', "_j")
     }
 }
 

@@ -1273,7 +1273,7 @@ Proof: run src | test a_written_initial_value_is_the_value_at_the_start ... ok
 **C12** - A carrier of `Bit<Option<u8>>` with no initial value starts at `None` (EU-04, AC 2; T22)
 Proof: run src | test a_carrier_without_a_value_starts_at_its_default ... ok
 
-**C13** - An element of `[Bit<Option<u8>>; 1 << 20]` never committed reads as its initial value, with storage for the written elements only (EU-04, AC 3; T22; DEFERRED, owner `composite-values` (GAPS L24, arrays of carriers): the criterion needs an array of carriers, which is refused; the test of a composite `Bit<[u8; 4]>` is the interim proof and asserts no storage)
+**C13** - An element of `[Bit<Option<u8>>; 1 << 20]` never committed reads as its initial value, with storage for the written elements only (EU-04, AC 3; T22; proved on the real array `[Bit<Option<u8>>; 1 << 20]` by composite-values phase C, T86 (`test(parity): EU-04 AC 3 on an array of carriers`, GAPS L24 closed); its storage half is `piperine-api`'s `carrier_array_storage`)
 Proof: run src | test an_element_never_committed_reads_its_initial_value ... ok
 
 **C14** - `signal en: Bit;` and an `out` port with no value on a type without `Default` are `E0187` naming the carrier and `Default` (EU-04, AC 4; T30; the drive half of the criterion, a drive of a resolved carrier, is owed by `resolved-nets` under GAPS L21: no resolved nature runs yet, so none can be tested here)
@@ -1436,6 +1436,8 @@ Proof: run cache | test an_entry_of_the_earlier_contract_is_rebuilt ... ok
 Proof: run abi | test the_shipped_layouts_hold_the_value_only ... ok
 
 **C67** - `Host` offers `commit` and no `commit_with`; no `commit_flag` exists (EU-16, AC 3; T35)
+
+*Amendment (composite-values phase C, QC1, approved by the user 2026-11-23):* `Host` is 24 bytes: it gains `commit_element` (an array pin's element commit, `piperine-abi` `the_host_has_one_commit` pins it), so EU-16 AC 2's "Host is 16 bytes, one commit" is superseded.
 Proof: run abicontract | test the_host_has_one_commit ... ok
 
 **C68** - An `Option<u8>` pin is a `BOOL` presence field then `U8` (EU-16, AC 4; T36)

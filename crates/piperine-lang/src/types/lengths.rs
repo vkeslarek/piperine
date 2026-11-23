@@ -120,7 +120,7 @@ impl IntegerFolder<'_> {
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
                     DeclKind::Const(data) => self.fold(data.value?, nesting),
-                    DeclKind::GenericParam(_) => self.values.get(&decl).copied(),
+                    DeclKind::GenericParam(_) | DeclKind::Param(_) => self.values.get(&decl).copied(),
                     _ => None,
                 },
                 _ => None,

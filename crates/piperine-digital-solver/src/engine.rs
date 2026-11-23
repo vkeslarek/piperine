@@ -217,6 +217,12 @@ impl Digital {
         self.running = true;
         self.suspended = None;
         for (i, net) in self.plan.nets.iter().enumerate() {
+            // An array net's initial commit changes every element in its microstep without writing one (part IV
+            // §13 rule 6, §5.1.8): the store stamps it, and no element is materialized.
+            if net.count > 0 {
+                self.store.stamp_initial_array(NetId(i as u32));
+                continue;
+            }
             if net.init.is_empty() {
                 continue;
             }
@@ -229,6 +235,7 @@ impl Digital {
             self.store.expect_initial(NetId(i as u32));
             let pending = Pending {
                 net: NetId(i as u32),
+                element: None,
                 offset: 0,
                 bytes: net.init.clone(),
                 writer: Writer::Host,
@@ -296,6 +303,42 @@ impl Digital {
         self.store.expect_initial(net);
     }
 
+    /// A commit by the host to `element` of array net `net`, due at microstep 0 of `at` (as `host_commit`). The element
+    /// is checked against the net's `count`.
+    pub fn host_commit_element(&mut self, net: NetId, element: u64, offset: u32, bytes: &[u8], at: Tick) -> Result<(), DigitalError> {
+        let Some(spec) = self.plan.nets.get(net.0 as usize).filter(|spec| spec.count > 0) else {
+            return Err(DigitalError::HostWrite { net: format!("#{}", net.0), reason: "no such array net" });
+        };
+        if element >= spec.count || offset as u64 + bytes.len() as u64 > spec.size as u64 {
+            return Err(DigitalError::HostWrite {
+                net: spec.name.clone(),
+                reason: "the element or its bytes lie outside the array net",
+            });
+        }
+        self.call += 1;
+        let pending = Pending {
+            net,
+            element: Some(element),
+            offset,
+            bytes: bytes.to_vec(),
+            writer: Writer::Host,
+            statement: 0,
+            made: (self.now, 0),
+            call: self.call,
+            due: match self.suspended {
+                Some((tick, microstep)) if tick == at => (at, microstep),
+                _ => (at, 0),
+            },
+        };
+        self.queue.push(pending, false);
+        Ok(())
+    }
+
+    /// The bytes of `element` of array net `net` now.
+    pub fn read_element(&self, net: NetId, element: u64) -> &[u8] {
+        self.store.element_value(net, element)
+    }
+
     /// A commit by the host, due at microstep 0 of `at` (abi.md §6 C6); while the instant `at` is
     /// suspended for the host's waiters, due at the microstep it continues at (R7).
     ///
@@ -317,6 +360,7 @@ impl Digital {
         self.call += 1;
         let pending = Pending {
             net,
+            element: None,
             offset,
             bytes: bytes.to_vec(),
             writer: Writer::Host,

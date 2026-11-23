@@ -30,7 +30,7 @@ Opus or Fable; a feature merges to `main` and upstream when its verifier passes.
 
 | Feature | What it delivers | Progress | Lane |
 | --- | --- | --- | --- |
-| `composite-values` (+ `value-semantics`, MD-76) | Structs, tuples, payload enums, arrays and ranges, `Option` of aggregates, iterators (Appendix H.5–H.7), `normal`; value semantics: no borrows, moves, `Clone` or `Copy`, every `let` reassignable (`E0903`, `E0161`) | B1–B10 done (T1 to T63, MD-79); then verifier, merge | C |
+| `composite-values` (+ `value-semantics`, MD-76) | Structs, tuples, payload enums, arrays and ranges, `Option` of aggregates, iterators (Appendix H.5–H.7), `normal`; value semantics: no borrows, moves, `Clone` or `Copy`, every `let` reassignable (`E0903`, `E0161`) | B1–B10 done (T1 to T63, MD-79); phase C (arrays of carriers) delivered T64 to T90; then verifier, merge | C |
 | `explicit-unknowns` B1–B3 | The spec and Book amendment of the explicit model (MD-78): no hidden known flag, `Logic`, `Option`, `Default`, traits as capabilities, `Resolve<X, V>` on natures, strengths, the ABI without known bytes | done on the branch; user reads the Book, then Opus verifier and merge to `main` ahead of the code | A |
 
 ### Waiting, in order (all unblock when `composite-values` merges)
@@ -61,7 +61,7 @@ Opus or Fable; a feature merges to `main` and upstream when its verifier passes.
 | welcome#17, analog#9, modules#9, mixed#8, mixed#10, mixed#14, values#21 (`analog` reads a discrete carrier directly) | `E0150` | `explicit-unknowns` phase A (T20, closed by T40) |
 | The `E0187` and `Default` initial-value sentences of the values chapter | not raised | `explicit-unknowns` phase A (T21, T22, T30) |
 | values#14 (`Option` as a carried type) | `E0112` | `explicit-unknowns` phase A |
-| natures#2 (`[Bit; 8]`, `Bit<Option<u8>>`, `Bit<Logic<4>>`, `signal sda: Sda`) | `P0001`, `E0112`, `E0161` | `resolved-nets` (needs `composite-values` for the array, explicit-unknowns phases A and B, and `Resolve<Driven>` for `Sda`) |
+| natures#2 (`[Bit; 8]`, `Bit<Option<u8>>`, `Bit<Logic<4>>`, `signal sda: Sda`) | `E0161` (`Sda`, the model's own nature declared further on in the chapter; every other line of the list elaborates) | `resolved-nets` (needs `Resolve<Driven>` for `Sda`; the composite-values array and explicit-unknowns phases A and B have landed) |
 | values#18 and the other `Logic<4>` listings | `P0001` | `explicit-unknowns` phase B (T48) |
 | digital#16 to digital#20, natures#3 and its alarm, core-std#6 (`Driven`, `Resolve`, `Pullup`, `Tribuf`, `Keeper`) | `E0161` | `resolved-nets` B3 and later (T27 to T32) |
 

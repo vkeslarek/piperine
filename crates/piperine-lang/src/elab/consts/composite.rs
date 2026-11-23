@@ -309,6 +309,19 @@ impl ConstEval<'_, '_> {
         Ok(self.make(CompositeKind::Range { low: lo.is_some(), high: hi.is_some(), inclusive }, parts))
     }
 
+    /// `logic("10xx")` (§22.1.4) written in a constant context: the `Logic<N>` struct whose two planes the literal pattern
+    /// names. A pattern that is no literal is a fault (it needs the text known where it is read).
+    pub(super) fn logic_literal(&mut self, expr: ExprId, args: &[ExprId]) -> Result<Constant, ConstFault> {
+        let text = match args.first().map(|arg| &self.design.expr_node(*arg).kind) {
+            Some(ExprKind::Lit(lit)) => lit.str_value(),
+            _ => None,
+        };
+        let Some(text) = text else { return Err(ConstFault::Unsupported { expr, what: "a `logic` pattern that is no literal".to_string() }) };
+        let pattern = crate::types::LogicPattern::parse(&text).map_err(|_| ConstFault::Unsupported { expr, what: "a `logic` pattern with a character that names no level".to_string() })?;
+        let (binary, value) = pattern.planes();
+        Ok(self.make(CompositeKind::Struct, vec![Constant::Int(binary as i128), Constant::Int(value as i128)]))
+    }
+
     /// `T::default()` (H.8 rule 4): `false`, zero, `None`, and the tuple, array or struct of defaults.
     pub(super) fn default_value(&mut self, expr: ExprId, ty: &Ty) -> Result<Constant, ConstFault> {
         match ty {

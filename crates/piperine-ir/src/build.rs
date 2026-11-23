@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use crate::real::Real;
 use crate::deps::DepsMemo;
 use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
-use crate::model::{AggregateData, NodeAlias, 
+use crate::model::{AggregateData, CarrierWindow, EmptyArray, NodeAlias, NodeArray, 
     BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, Derivative, Drive, Event, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
     Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, ReprForm, Site, Stmt, Stream, Terminal, TypeData, ValueType,
 };
@@ -176,6 +176,9 @@ impl IrBuilder {
             analog: spec.analog,
             children: spec.children,
             carriers: Vec::new(),
+            node_arrays: Vec::new(),
+            empty_arrays: Vec::new(),
+            child_windows: Vec::new(),
             drives: Vec::new(),
             events: Vec::new(),
             reactions: Vec::new(),
@@ -240,6 +243,29 @@ impl IrBuilder {
             lists.resize(child as usize + 1, Vec::new());
         }
         lists[child as usize].push((param, value));
+    }
+
+    /// Names `count` consecutive nodes of `body` as one array of nodes (`signal bl: [Electrical; 4]`): returns its
+    /// index. The nodes themselves are `BodyNode`s named `name[0]` and on, added with the body.
+    pub fn node_array(&mut self, body: BodyId, array: NodeArray) -> u32 {
+        let arrays = &mut self.body_data(body).node_arrays;
+        arrays.push(array);
+        arrays.len() as u32 - 1
+    }
+
+    /// Records the array `array` of `body` declared with no element: no carrier and no node stand for it.
+    pub fn empty_array(&mut self, body: BodyId, array: EmptyArray) {
+        self.body_data(body).empty_arrays.push(array);
+    }
+
+    /// Records the part of an array of carriers each carrier port of child `child` of `body` is given, parallel to
+    /// `bind_child_carriers`: `None` for a port bound whole or to a scalar carrier. Replaces what was set before.
+    pub fn bind_child_windows(&mut self, body: BodyId, child: u32, windows: Vec<Option<CarrierWindow>>) {
+        let lists = &mut self.body_data(body).child_windows;
+        if lists.len() <= child as usize {
+            lists.resize(child as usize + 1, Vec::new());
+        }
+        lists[child as usize] = windows;
     }
 
     /// Records what child `child` of `body` (an index into its children) binds at each carrier

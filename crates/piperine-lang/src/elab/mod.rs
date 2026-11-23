@@ -10,7 +10,7 @@
 //! instance tree. Any diagnostic means no `Ir`.
 
 mod aggregate;
-mod body;
+mod body; mod carrier_arrays;
 mod carriers;
 mod children;
 mod closures;
@@ -26,7 +26,7 @@ mod event_reads;
 mod events;
 mod exits;
 mod files; mod override_text; mod table_model; mod tables;
-mod elaborator; mod analog;
+mod elaborator; mod analog; mod element_commits; mod elements;
 mod functions;
 mod handles; mod hoist;
 mod host_sources; mod levels;

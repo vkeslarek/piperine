@@ -560,7 +560,7 @@ fn only_a_literal_positive_delay_is_later() {
         let mut x = Dx::new(b, "d.msl", 5, 9);
         let value = x.carrier(1, ValueType::Bool);
         let after = x.real(3e-9);
-        b.drive(body, piperine_ir::Drive { carrier: 3, value, after: Some(after), origin: Buck::origin("d.msl", 5, 5) });
+        b.drive(body, piperine_ir::Drive { carrier: 3, value, after: Some(after), origin: Buck::origin("d.msl", 5, 5), element: None, path: vec![] });
         body
     }
     let (ir, body) = Alone::design(delays);

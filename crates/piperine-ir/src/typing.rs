@@ -7,7 +7,7 @@
 //! or `bool`: these rules apply once an operand is an integer, or for the operators M1 does not
 //! have.
 
-use crate::model::{BinaryOp, Method, TypeData, TypeKind, UnaryOp, ValueType};
+use crate::model::{BinaryOp, Carrier, Method, TypeData, TypeKind, UnaryOp, ValueType};
 
 pub(crate) struct Typing;
 
@@ -37,6 +37,15 @@ impl Typing {
     /// The type of a read of a carrier holding `held`: the value (a carrier always holds one, §3.3.4).
     pub(crate) fn read_of(held: &ValueType) -> ValueType {
         held.clone()
+    }
+
+    /// The type of a read of the whole carrier `carrier`: its value, or the array of its elements' values when it is
+    /// an array of carriers (CV-24).
+    pub(crate) fn read_of_carrier(carrier: &Carrier) -> ValueType {
+        match carrier.count {
+            Some(count) => ValueType::Array(Box::new(carrier.ty.clone()), count),
+            None => Typing::read_of(&carrier.ty),
+        }
     }
 
     /// The operators M1 does not have: they are typed by these rules whatever their operands.

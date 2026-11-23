@@ -6,6 +6,7 @@
 use crate::pom::{ExprId, FileId, ReactionData};
 
 use super::check::{Checker, Context};
+use super::element_target::{DriveKind, DriveTarget, Element};
 use super::Ty;
 
 impl Checker<'_> {
@@ -39,7 +40,7 @@ impl Checker<'_> {
                 let message = format!("`{found}` has no `Repr`: a carrier holds only a type that implements it (part I §2)");
                 self.coded(file, "E0112", self.design.expr_node(value).span, message, "no `Repr`");
             }
-            Some((_, held)) => self.check_as(value, held, "E0432"),
+            Some(target) => self.check_as(value, &target.held, "E0432"),
             None => {
                 self.infer(value);
             }
@@ -47,7 +48,18 @@ impl Checker<'_> {
         if let Some(after) = after {
             self.check_as(after, &Ty::F64, "E0433");
         }
-        let Some((carrier, _)) = target else { return };
+        let Some(DriveTarget { carrier, element, .. }) = target else { return };
+        let element_defined = self.book.elements.iter().any(|(c, e, k, _)| *c == carrier && *k == DriveKind::Definition && e.overlaps(element));
+        if element != Element::Whole || self.book.elements.iter().any(|(c, _, k, _)| *c == carrier && *k == DriveKind::Definition) {
+            if element_defined || (self.book.defined.contains_key(&carrier) && element == Element::Whole) {
+                let name = self.design.decl_data(carrier).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                self.coded(file, "E0221", place_span, format!("`{name}` has a definition and a commit of one element in one module: an element is driven by one or the other (§5.2, §8.2.20)"), "definition and commit");
+            }
+            if element != Element::Whole {
+                self.book.elements.push((carrier, element, DriveKind::Commit, place_span));
+                return;
+            }
+        }
         if self.book.defined.contains_key(&carrier) {
             let name = self.design.decl_data(carrier).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             self.coded(file, "E0221", place_span, format!("`{name}` has a definition and a commit in one module: a carrier is driven by one or the other (§5.2, §8.2.20)"), "definition and commit");
