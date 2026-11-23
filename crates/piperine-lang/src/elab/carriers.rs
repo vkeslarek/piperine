@@ -27,6 +27,8 @@ pub(super) struct Structure {
     pub(super) child_windows: Vec<(u32, Vec<Option<piperine_ir::CarrierWindow>>)>,
     /// The arrays of nodes of the body, in declaration order (`carrier_arrays.rs`).
     pub(super) node_arrays: Vec<piperine_ir::NodeArray>,
+    /// The arrays of no element the body declares (`carrier_arrays.rs`).
+    pub(super) empty_arrays: Vec<piperine_ir::EmptyArray>,
     /// The hoisted frames that add a node or an `analog` statement to the body (`BodyData::hoisted`).
     pub(super) hoisted: Vec<Hoisted>,
     pub(super) carriers: Vec<Carrier>,
@@ -106,6 +108,7 @@ impl Elaboration<'_, '_> {
         for decl in ports.chain(signals).collect::<Vec<_>>() {
             if self.is_empty_array(frame, decl) {
                 self.frames[frame].empty_arrays.insert(decl);
+                self.record_empty_array(frame, decl);
             } else if let Some(carrier) = self.lower_carrier(frame, decl) {
                 let index = self.add_carrier(carrier);
                 self.frames[frame].carriers.insert(decl, index);
@@ -263,6 +266,9 @@ impl Elaboration<'_, '_> {
         }
         for array in structure.node_arrays {
             self.ir.node_array(body, array);
+        }
+        for array in structure.empty_arrays {
+            self.ir.empty_array(body, array);
         }
         for drive in structure.drives {
             self.ir.drive(body, drive);

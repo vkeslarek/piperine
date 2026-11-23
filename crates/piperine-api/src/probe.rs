@@ -30,6 +30,9 @@ pub enum Probe {
     /// The one flow contribution `term` of the instance `instance`, which has no potential
     /// branch: its value at each solution.
     Term { instance: String, term: String },
+    /// An array declared with no element (`signal none: [Bit<u8>; 0]`): no net holds it, and it reads `[]` at every
+    /// row (composite-values CV-28).
+    Empty { path: String },
 }
 
 /// Where a probe's value sits in a run, found before the run starts.
@@ -49,6 +52,8 @@ pub enum Column {
     Param { id: u32, ty: ValueType },
     /// A param no net holds, read from the host's table over the run.
     Held { held: Held },
+    /// The array of no element: the same empty array at every step.
+    Empty,
 }
 
 impl Probe {
@@ -111,6 +116,9 @@ impl Probe {
         for path in [entry.to_string(), format!("{top}.{entry}")] {
             let Some((instance, name)) = path.rsplit_once('.') else { continue };
             let Some(found) = ir.instance_at(instance) else { continue };
+            if found.body().empty_arrays().iter().any(|a| a.name == name) {
+                return Ok(vec![Probe::Empty { path }]);
+            }
             if let Some(array) = found.body().node_arrays().iter().find(|a| a.name == name) {
                 return (0..array.count).map(|k| Probe::resolve(ir, top, &format!("{path}[{k}]"))).collect();
             }
@@ -162,6 +170,11 @@ impl Probe {
         None
     }
 
+    /// The cell of an array of no element: `[]` at every row.
+    pub(crate) fn empty_array() -> Cell {
+        Cell::Composite(Box::new(crate::composite::CompositeCell::Array(Vec::new())))
+    }
+
     /// The value a shaped probe shows from the bytes of its net: the whole value, or the one leaf.
     pub(crate) fn shown(shape: &CellShape, leaf: Option<&str>, bytes: &[u8]) -> Result<Cell, Failure> {
         let value = shape.decode(bytes)?;
@@ -191,7 +204,7 @@ impl Probe {
     /// The column's name: the full path, `i(<full instance path>)` for a flow.
     pub fn label(&self) -> String {
         match self {
-            Probe::Node { path, .. } | Probe::Net { path, .. } | Probe::Param { path, .. } => path.clone(),
+            Probe::Node { path, .. } | Probe::Net { path, .. } | Probe::Param { path, .. } | Probe::Empty { path } => path.clone(),
             Probe::Shaped { path, leaf: None, .. } => path.clone(),
             Probe::Shaped { path, leaf: Some(leaf), .. } => if leaf.starts_with('[') { format!("{path}{leaf}") } else { format!("{path}.{leaf}") },
             Probe::Term { instance, .. } => format!("i({instance})"),
@@ -211,6 +224,7 @@ impl Probe {
                 code: "E0801",
                 message: format!("`i({instance})` is a flow term: only an `op` or a `dc` run prints it, at each solution; a step of a transient does not carry it"),
             }),
+            Probe::Empty { .. } => Ok(Column::Empty),
             Probe::Shaped { path, shape, leaf } => {
                 let bound = circuit.bound().ok_or_else(|| none("the circuit binds no design"))?;
                 let at = bound.digital.plan().nets.iter().position(|n| n.name == *path).ok_or_else(|| none("no net of the digital plan has that path"))? as u32;

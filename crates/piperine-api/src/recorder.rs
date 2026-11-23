@@ -76,7 +76,7 @@ impl Recorder {
                 Column::Net { .. } => by_path.entry(label.clone()).or_default().push(at),
                 // a column showing one leaf of a net is still changed by the net's path
                 Column::Shaped { path, .. } => by_path.entry(path.clone()).or_default().push(at),
-                Column::Unknown { .. } | Column::Param { .. } | Column::Held { .. } | Column::Array { .. } => {}
+                Column::Unknown { .. } | Column::Param { .. } | Column::Held { .. } | Column::Array { .. } | Column::Empty => {}
             }
         }
         // every net column is seeded by the first step, and no other column reads `held`
@@ -252,7 +252,7 @@ impl Recorder {
                     (before, _) => before.clone(),
                 },
                 (Column::Held { held }, _) => held.cell_at(at),
-                (Column::Unknown { .. } | Column::Param { .. } | Column::Array { .. }, _) => b.clone(),
+                (Column::Unknown { .. } | Column::Param { .. } | Column::Array { .. } | Column::Empty, _) => b.clone(),
             });
             let row = Recorder::row(at, values.collect());
             if at + slack > time {
@@ -310,6 +310,7 @@ impl StepObserver for Tap {
             Column::Array { id, shape, leaf } => step.net_bytes(*id).map(|bytes| Probe::shown(shape, leaf.as_deref(), &bytes)).transpose(),
             Column::Param { id, ty } => step.net(*id).map(|bytes| Cell::decode_param(ty, bytes)).transpose(),
             Column::Held { held } => Ok(Some(held.cell_at(step.time()))),
+            Column::Empty => Ok(Some(Probe::empty_array())),
         });
     }
 }
@@ -329,7 +330,7 @@ mod tests {
     fn solution(solution: &[f64]) -> impl Fn(&Column) -> Result<Option<Cell>, Failure> + '_ {
         move |column| match column {
             Column::Unknown { index } => Ok(solution.get(*index).map(|v| Cell::Real(*v))),
-            Column::Net { .. } | Column::Shaped { .. } | Column::Param { .. } | Column::Held { .. } | Column::Array { .. } => Ok(None),
+            Column::Net { .. } | Column::Shaped { .. } | Column::Param { .. } | Column::Held { .. } | Column::Array { .. } | Column::Empty => Ok(None),
         }
     }
 
@@ -535,6 +536,7 @@ mod tests {
             Column::Unknown { .. } => Ok(Some(Cell::Real(v))),
             Column::Net { id, .. } | Column::Shaped { id, .. } | Column::Param { id, .. } | Column::Array { id, .. } => Ok(nets.get(*id as usize).cloned()),
             Column::Held { held } => Ok(Some(held.cell_at(0.0))),
+            Column::Empty => Ok(Some(Probe::empty_array())),
         }
     }
 

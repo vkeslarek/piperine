@@ -513,7 +513,7 @@ impl Session {
                 Ok((Some(Transfer { input, output: NodeIdentifier::Anonymous(node.id().index()) }), Vec::new()))
             }
             Analysis::Sens { wrt } => {
-                if let Some(path) = probes.iter().find_map(|probe| match probe { Probe::Net { path, .. } | Probe::Shaped { path, .. } | Probe::Param { path, .. } => Some(path.clone()), Probe::Term { instance, .. } => Some(format!("i({instance})")), _ => None }) {
+                if let Some(path) = probes.iter().find_map(|probe| match probe { Probe::Net { path, .. } | Probe::Shaped { path, .. } | Probe::Param { path, .. } | Probe::Empty { path } => Some(path.clone()), Probe::Term { instance, .. } => Some(format!("i({instance})")), _ => None }) {
                     let message = format!("`{path}` is a discrete net, a param or a flow term: a `sens` run differentiates nodes and flows, not a discrete value");
                     return Err(Failure::Host { code: "P0010", message });
                 }
@@ -901,7 +901,7 @@ impl Session {
         let variable = match probe {
             Probe::Node { id, .. } => AnalogVariable::Node(id.clone()),
             Probe::Flow { branch, .. } => AnalogVariable::Branch(branch.clone()),
-            Probe::Net { path, .. } | Probe::Shaped { path, .. } | Probe::Param { path, .. } => return Err(Failure::Backend(format!("`{path}` is a discrete net or a param: it has no solved analog net"))),
+            Probe::Net { path, .. } | Probe::Shaped { path, .. } | Probe::Param { path, .. } | Probe::Empty { path } => return Err(Failure::Backend(format!("`{path}` is a discrete net or a param: it has no solved analog net"))),
             Probe::Term { instance, .. } => return Err(Failure::Backend(format!("`i({instance})` is a flow term: it has no solved analog net"))),
         };
         let found = nets.iter().find(|net| net.analog_variable().is_some_and(|v| **v == variable));

@@ -98,6 +98,10 @@ fn an_array_of_length_zero_is_an_empty_array() {
     }
     let ir = Elab::ir("module Top() { signal bl: [Electrical; 0]; }", "Top");
     assert_eq!(Read { ir: &ir }.nodes("Top"), (Vec::new(), Vec::new()), "no node and no node array");
+    // the body keeps only the name of an array of no element, for the host that names it (CV-28)
+    let ir = Elab::ir("module Top() { signal bl: [Electrical; 0]; signal none: [Bit<u8>; 0]; }", "Top");
+    let body = ir.bodies().find(|b| b.name() == "Top").expect("Top");
+    assert_eq!(body.empty_arrays().iter().map(|a| a.name.as_str()).collect::<Vec<_>>(), ["bl", "none"], "each empty array by name, nodes first");
     let found = Elab::run("module Top() { signal bl: [Electrical; 0]; }\nanalog for Top { let x = v(bl[0]); }", "Top").expect_err("no node");
     assert!(found.iter().any(|d| d.diagnostic.code == "E0104"), "{:?}", Elab::codes(&found));
 }

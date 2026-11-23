@@ -3,7 +3,7 @@
 use crate::real::Real;
 use crate::ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId, AggregateId};
 use crate::model::{
-    CarrierWindow, NodeArray,
+    CarrierWindow, EmptyArray, NodeArray,
     BodyData, BodyNode, Branch, Carrier, CarrierRole, Child, ChildValue, Constant, Derivative, Drive, EmitField, Event, Expr, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Local, Merge, Reach, ReachedItem,
     NatureData, NetData, NodeData, NodeRef, NodeRole, Origin, Param, Quantity, Reaction, Site, Stmt, Stream, ReprForm, TypeData, TypeKind, ValueType, AggregateData,
 };
@@ -338,6 +338,11 @@ impl<'a> Body<'a> {
     /// The discrete carriers, ports first, then signals.
     pub fn carriers(&self) -> &'a [Carrier] {
         &self.data().carriers
+    }
+
+    /// The arrays declared with no element: no carrier and no node stand for them.
+    pub fn empty_arrays(&self) -> &'a [EmptyArray] {
+        &self.data().empty_arrays
     }
 
     /// The arrays of nodes: each names consecutive entries of the body's nodes.

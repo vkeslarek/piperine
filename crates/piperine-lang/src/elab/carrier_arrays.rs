@@ -57,6 +57,16 @@ impl Elaboration<'_, '_> {
         self.shape_in(&array, frame).is_some_and(|shape| shape.count() == 0)
     }
 
+    /// Keeps the name of the array `decl` of no element in the body's record when it is the body's own (frame 0): a
+    /// host that names it reads the empty array (CV-28).
+    pub(super) fn record_empty_array(&mut self, frame: usize, decl: DeclId) {
+        if frame != 0 {
+            return;
+        }
+        let name = self.design.decl_data(decl).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        self.structure.empty_arrays.push(piperine_ir::EmptyArray { name, origin: self.locator.decl(decl) });
+    }
+
     /// `E0104` for an element of the empty array `decl`: no index is in range of a length of 0 (§1 rule 11).
     pub(super) fn element_of_empty_array(&mut self, file: crate::pom::FileId, span: crate::msl::Span) {
         let message = "the element is out of range for an array of 0 carriers (§1 rule 11)".to_string();
@@ -191,8 +201,10 @@ impl Elaboration<'_, '_> {
             plan.init = inits[flat as usize];
             self.structure.nodes.push((spec, plan));
         }
-        // an array of no node names no node: nothing to record (§1.2.3)
-        if shape.count() > 0 {
+        // an array of no node names no node: only its name is kept (§1.2.3)
+        if shape.count() == 0 {
+            self.record_empty_array(frame, decl);
+        } else {
             self.structure.node_arrays.push(NodeArray { name, first, count: shape.count() as u32, origin: self.locator.decl(decl) });
         }
         Some((shape, piperine_ir::Terminal::Node(first)))

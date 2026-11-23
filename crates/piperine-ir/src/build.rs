@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use crate::real::Real;
 use crate::deps::DepsMemo;
 use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
-use crate::model::{AggregateData, CarrierWindow, NodeAlias, NodeArray, 
+use crate::model::{AggregateData, CarrierWindow, EmptyArray, NodeAlias, NodeArray, 
     BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, Derivative, Drive, Event, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
     Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, ReprForm, Site, Stmt, Stream, Terminal, TypeData, ValueType,
 };
@@ -177,6 +177,7 @@ impl IrBuilder {
             children: spec.children,
             carriers: Vec::new(),
             node_arrays: Vec::new(),
+            empty_arrays: Vec::new(),
             child_windows: Vec::new(),
             drives: Vec::new(),
             events: Vec::new(),
@@ -250,6 +251,11 @@ impl IrBuilder {
         let arrays = &mut self.body_data(body).node_arrays;
         arrays.push(array);
         arrays.len() as u32 - 1
+    }
+
+    /// Records the array `array` of `body` declared with no element: no carrier and no node stand for it.
+    pub fn empty_array(&mut self, body: BodyId, array: EmptyArray) {
+        self.body_data(body).empty_arrays.push(array);
     }
 
     /// Records the part of an array of carriers each carrier port of child `child` of `body` is given, parallel to

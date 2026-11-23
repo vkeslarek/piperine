@@ -88,6 +88,9 @@ pub struct BodyData {
     /// The arrays of nodes: each names `count` consecutive entries of `nodes`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) node_arrays: Vec<NodeArray>,
+    /// The arrays declared with no element, each by its name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) empty_arrays: Vec<EmptyArray>,
     /// The window of an array of carriers each child's port is given, parallel to `child_carriers`: `None` for a port
     /// bound whole or to a scalar carrier.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -220,6 +223,14 @@ pub struct NodeArray {
     /// The body index of element 0.
     pub first: u32,
     pub count: u32,
+    pub origin: Origin,
+}
+
+/// An array declared with no element (`signal none: [Bit<u8>; 0]`, §1.2.3): it holds no carrier and no node, so this
+/// record is all the body keeps of it, for a host that names it (`--print` shows `[]`, CV-28).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EmptyArray {
+    pub name: String,
     pub origin: Origin,
 }
 

@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::OnceLock;
 
-use piperine_api::{Cell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
+use piperine_api::{Cell, CompositeCell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
 use piperine_transpile::Settings;
 
 /// Drops every record: the table is what a test reads.
@@ -27,7 +27,8 @@ module Ladder() { signal bl: [Electrical; 3]; }\n\
 analog for Ladder { v(bl[0], gnd) +> 3.0; for k in 0..2 { i(bl[k], bl[k + 1]) +> v(bl[k], bl[k + 1]) / 1000.0; } i(bl[2], gnd) +> v(bl[2], gnd) / 1000.0; }\n\
 module Bank(in lanes: [Bit; 4], out cells: [Bit<u8>; 2] = [0; 2]) { }\n\
 module Wide() { n: u32 = 4; signal lanes: [Bit; n]; }\n\
-module Bench() { signal clk: Bit; let osc = Osc(clk) { f: 1G }; let memory = Memory(clk); let ladder = Ladder(); let wide = Wide(); }\n";
+module Gap() { signal none: [Bit<u8>; 0]; signal bl: [Electrical; 0]; }\n\
+module Bench() { signal clk: Bit; let osc = Osc(clk) { f: 1G }; let memory = Memory(clk); let ladder = Ladder(); let wide = Wide(); let gap = Gap(); }\n";
 
 /// The last row of the transient of `DESIGN` over the probes `print`.
 struct Run;
@@ -129,4 +130,23 @@ fn the_metadata_lists_the_length_of_an_array_port() {
     let session = Run::session_of("Bank", &[]).unwrap_or_else(|f| panic!("{f}"));
     let ports: Vec<(String, &str, String)> = session.metadata().ports.into_iter().map(|p| (p.name, p.direction, p.ty)).collect();
     assert_eq!(ports, [("lanes".to_string(), "in", "[bool; 4]".to_string()), ("cells".to_string(), "out", "[u8; 2]".to_string())]);
+}
+
+#[test]
+fn a_declared_empty_array_prints_as_the_empty_array() {
+    // CV-28 AC 1 (§1.2.3: a length of 0 is legal): `Top.gap.none` of `[Bit<u8>; 0]` has no element, so it prints `[]` at
+    // every row, and so does an array of no node; a name the design does not declare stays `E0801`
+    let table = Run::table(&["Bench.gap.none", "Bench.gap.bl"]).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(table.columns[1..], ["Bench.gap.none", "Bench.gap.bl"].map(String::from), "one column per entry");
+    assert!(table.rows.len() > 1, "the run has rows");
+    for row in &table.rows {
+        for cell in &row[1..] {
+            let Cell::Composite(array) = cell else { panic!("an empty array is a composite cell: {cell:?}") };
+            assert_eq!(**array, CompositeCell::Array(Vec::new()), "no element");
+        }
+    }
+    match Run::table(&["Bench.gap.other"]) {
+        Err(Failure::Host { code, .. }) => assert_eq!(code, "E0801"),
+        other => panic!("a name nothing declares is refused: {other:?}"),
+    }
 }
