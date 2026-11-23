@@ -1,44 +1,38 @@
 # Params and I/O verification
 
 **Verdict**: FAIL
-**Proofs**: `proofs.md` at c93b8ef5 (the round 6 fix, 114 pass, 0 fail; re-run by the round 7 verifier after its own commit); round 6 at defc9611, round 5 at b3045722, round 4 at dcbbea67, round 3 at e60177d8, round 2 at acefa2f6, round 1 at 0bed6a92
+**Proofs**: `proofs.md` at 59ae2602 (the round 7 fix, 114 pass, 0 fail; re-run by the round 8 verifier after its own commit); round 7 at c93b8ef5, round 6 at defc9611, round 5 at b3045722, round 4 at dcbbea67, round 3 at e60177d8, round 2 at acefa2f6, round 1 at 0bed6a92
 **Verifier**: independent sub-agent (author != verifier)
-**Scope**: round 7 judges the fix of F30 to F32 (b113b52d: typed derive `piperine_derive_2(k, bytes) -> List<u8>`, A13 deleted, refusals removed; `git diff dc527c11..c93b8ef5`, 17 files across api, transpile, solver introspect), and three questions from the coordinator: (1) the leaked derive result, (2) the interpreter's `Evaluated` derive that gives no value, (3) the two panics from `mutated.rs`. Rounds 6 to 1 are kept below. F15 is out of scope (owned by `generics`).
+**Scope**: round 8 judges the fix of F33 to F35 (b7c1fd4b: a lent `BytesMut` out-buffer in `piperine-abi` `raw.rs` and the new `piperine_derive_2(k, params, out) -> u32`; the interpreter walk's refusal citing PI-05 AC 1; `git diff d65ecfea..59ae2602`, 10 files), the soundness of the ABI change and its callers, and whether F34's justification holds against PI-05 AC 1. Rounds 7 to 1 are kept below. F15 is out of scope (owned by `generics`).
 
 **Contract.** `git diff origin/main -- tests/support/ngspice.rs crates/piperine-parity/src` is empty.
 
-**Tests run (gate policy: targeted only, foreground).** Lane D env, the crates the fix touched: `cargo test -p piperine-transpile
---no-fail-fast` (every target green; `derive.rs` 2/2); `cargo test -p piperine-api --no-fail-fast` (22 targets, all green: `session`,
-`derived`, `bindings`, `host_sources` among them); `cargo build -p piperine-cli`; `check_proofs.py params-and-io` after this
-commit (`proofs.md`: `source_params`, `source_tables`, `run_errors`, `source_host`, `clirun`, `docs` and the `piperine-lang` groups).
-`piperine-lang` is not touched by b113b52d. No workspace run.
+**Tests run (gate policy: targeted only, foreground).** Lane D env: `cargo test -p piperine-abi -p piperine-transpile --no-fail-fast`
+(38 results, all green, no warning); `cargo test -p piperine-api --lib` (79 pass, the `Scales` derive under the new signature) and
+`--test session --test derived --test bindings` (26, 17, 8 pass); `cargo build -p piperine-cli`; `check_proofs.py params-and-io`
+after this commit (`proofs.md`, `source_params` and `source_tables` among the groups). No workspace run.
 
-**Own examples (HEAD binary, throwaway files under `/var/tmp/piperine-tmp-d/v3`, not committed).** 1 V behind 1 kOhm into the load.
-- F28's case, now recomputed: `Wrap { big: u64 } -> Load { big: big }`, `--param w.big=9007199254740993` gives 1/7 V (both at 3 mS, by
-  hand); a write to the derived `w.l.big` is still `E0802` "derived ... set that param instead".
-- F30: `--param w.rs=None` on the pinless wrapper whose child holds `None` runs (0.5 V); `w.rs=500` 1/3 V, `Some(250)` 1/5 V,
-  `w.md=Slow` and `w.n=3` 1/4 V.
-- F31: `{ rs: rt * 2.0 }` with `w.rt=500` gives 0.5 V (rs = 1 kOhm); `{ rs: a + b }` with `w.a=500` gives 1/3 V. No refusal left.
-- F32: `Res { r: match md { Mode::Fast => 1k, Mode::Slow => 3k } }` runs: 0.5 V, and 0.75 V after `w.md=Slow`.
-- Regressions: `{ md: if slow .. }` after `w.slow=true` 1/4 V; `{ n: k + 1 }` at `k = 254` 3.906 mV; a pinless param nothing reads is
-  still the loud "no PARAM pin" (unchanged since round 4).
+**Own examples (HEAD binary, `/var/tmp/piperine-tmp-d/v3`).** Unchanged results after the signature change: `w.big=9007199254740993`
+1/7 V, `r: match md` after `w.md=Slow` 0.75 V, `rs: rt * 2.0` after `w.rt=500` 0.5 V, `w.rs=None` on the pinless wrapper 0.5 V, and a DC
+sweep of a param others derive from (`m.rr` 1k to 3k: 0.5, 0.667, 0.75 V). Hold.
 
-**(1) The leaked derive result.** `piperine_derive_2` answers a `List<'static, u8>` over `Box::leak` of a fresh `Vec` on every call
-(`print/derive.rs`), and the host copies it out (`load.rs`): every derive call leaks its answer. The module doc calls a recompute "a
-rare host `set`", but every point of a DC sweep of a param others derive from, every timed `set` and every host loop of `set`s calls it
-once per derived param. Bounded per call, unbounded over a session, and avoidable at no cost: the host owns the buffer (an output
-`List`/slice the host allocates at the child's pin width, which it knows from `PinLayout`). A defect, not a design choice (F33).
+**The ABI change.** `BytesMut<'a>` is `#[repr(C)]`, its fields `pub(crate)`, built in safe code only by `from_slice(&'a mut [u8])`
+(an exclusive borrow for `'a`), neither `Clone` nor `Copy` (no aliasing `&mut`), and `as_mut_slice(&mut self)` hands out a slice no
+longer than the `&mut self` borrow; the zero-length case returns `&mut []`. Sound within the crate's trust model (abi.md §933: safe
+code builds only valid views). Callers: `load.rs`'s `DeriveExport` and `Loaded::derive` (lends a `vec![0; width]`, accepts only
+`written == width`), `Compiled::derive`, the `Derive` trait and its three impls (`Compiled`, `Evaluated`, the unit-test `Scales`), the
+printer (`print/derive.rs`, `use piperine_abi::raw::BytesMut` in `library.rs`; it writes only `bytes.len() <= out.len()` and answers 0
+otherwise) and `tests/derive.rs`: every one follows the new signature (`grep` of `.derive(`, `DeriveExport`, `impl Derive`). A library
+built under the previous `piperine_derive_2` cannot be loaded with the new type: the cache key hashes the generated source and the
+embedded ABI sources (`AbiSource::FILES`), both changed. The leak of F33 is gone. Two record gaps (F37).
 
-**(2) The interpreter's `Evaluated`.** It gives `None` for a binding that reads an integer, an enum or a composite param, or yields
-one. The caller (`Params::changes_from`) turns `None` into `Failure::Backend` "the derive function `k` of `..` gave no value (the
-compiled design does not match its plan)": loud, never silent. It is reached by `Session::describe` with a host value (the API; `piperine
-info` passes none); the interpreter backend itself never calls it (with no compiled design `changes` refuses "the interpreter does not
-recompute them, use --backend rust"). The message blames a compiled design that does not exist on that path (F34, minor).
-
-**(3) The two panics in the log.** `crates/piperine-transpile/tests/compiled.rs`
-`a_panic_in_compiled_code_is_a_fault_and_the_instance_survives` (RS-06 AC 6) wraps `rustc` to inject `panic!("boom at {p}")` into the
-generated `terms` and calls it at 200 and 300: the `thread '<unnamed>' panicked at .../mutated.rs:79:48: boom at 200` / `boom at 300`
-lines are the panic hook's print of those deliberate panics, which the test asserts become faults. Expected; the target passes.
+**F34 against PI-05 AC 1.** PI-05 AC 1 reads "IF a design **run on the interpreter backend** has a param of a type other than `f64`
+or `bool` THEN the system SHALL refuse it naming the param and the transpiled backend". `Session::describe` is not a run on any backend
+(HII-10, "no backend builds it and no analysis runs"), and it walks every binding with `Evaluated` whatever backend the request
+names (`session.rs:947`). So the justification holds for a request on the interpreter backend (the design would be refused there
+anyway, and the test uses `interp`), but not for one on the Rust backend: there the refusal tells the host to "use --backend rust",
+which it already does, and the description cannot show what a run would use for an integer, enum or composite bound from a param
+(HII-10, §8.1.23). Loud, not silent; misleading and narrower than the spec (F36).
 
 ## Checks
 
@@ -193,9 +187,52 @@ lines are the panic hook's print of those deliberate panics, which the test asse
 | F30. (Major) A `set` of a composite param of an instance with no pin is refused when it changes nothing in the children bound from it | `pt.msl` (`Wrap { rs: Option<f64>; let l = Load(p) { rs: rs }; }`, no `analog` for `Wrap`): `--param w.rs=None` is `E0802` "no PARAM pin `rs`" (the child already holds `None`); the same for any leaf write equal to the child's bytes. `Session::write_leaf_change`: `written = pinned \|\| followers.is_empty()`, so an empty follower list sends the write to a missing pin | write to the pin only when one exists; refuse only a pinless param that no placement reads (the earlier rule), and test `None` on a wrapper whose child holds `None` | b113b52d; `apisession` `params_passed_through_a_wrappers_placement_run` (`Top.w.rs` to `None`); own example `w.rs=None` 0.5 V |
 | F31. (Major, records) Two loud refusals of what §8.1.23 allows have no `GAPS.md` row and owner, and A13 misstates one | (1) an integer above 2^53 on a param a placement reads is `E0802` (`Params::refuse_exact`); (2) a `set` of a param read by a composite bound from an expression (`{ rs: rt * 2.0 }`, one param) is `E0802` "which this design computes from more than the param", while A13 says only a composite computed from more than one param stays refused; `git diff eef03cc1..defc9611 -- GAPS.md` is empty | implement (2) for an `Option` that is `Some` of the derive plan's `f64` value, or give both a `GAPS.md` row with a real owner; correct A13 and the refusal's message | b113b52d (refusals removed, A13 deleted); `apisession` `params_passed_through_a_wrappers_placement_run` (above 2^53 follows, `rs2: rt`); own examples `rt * 2.0`, `a + b`, `w.big=..993` 1/7 V |
 | F32. (Major) A placement value that reads an enum param beyond passing it on refuses the whole design on the Rust backend | `ex_WrapR.msl`: `module WrapR(p) { md: Mode = Mode::Fast; let l = Res(p, gnd) { r: match md { Mode::Fast => 1k, Mode::Slow => 3k } }; }` fails the default run: "`a derived param that reads the param `md` of type Mode` has no Rust lowering yet" (`print/derive.rs`); §8.1.19 allows any expression over params; no amendment and no `GAPS.md` row | read an enum param in the derive function from its tag (the pin and the table hold it), with a parity row for `r` by `match md` before and after `--param w.md=Slow`; or a `GAPS.md` row with a real owner | b113b52d; own example `r: match md` 0.5 V and 0.75 V after `w.md=Slow`; `apisession` `params_passed_through_a_wrappers_placement_run` |
-| F33. (Minor) Every call of the derive export leaks its answer | `print/derive.rs`: `List::from_slice(Box::leak(whole.into_boxed_slice()))` on each call, the host copying it out (`load.rs`); called once per derived param on each host `set`, DC sweep point and timed `set`, so a sweep of a param others derive from leaks per point; the module doc's "a recompute is a rare host `set`" does not hold for sweeps | let the host own the buffer: pass an output slice of the child's pin width (`PinLayout`) to `piperine_derive_2` and have it write and answer a status | |
-| F34. (Minor) The interpreter walk's missing derive is reported as a compiled design that does not match its plan | `Evaluated::derive` (`params.rs`) is `None` for a binding over an integer, enum or composite param; `Params::changes_from` maps `None` to `Failure::Backend` "the derive function .. gave no value (the compiled design does not match its plan)", reached by `Session::describe` with a host value | refuse by name on that path ("the description recomputes `f64` and `bool` bindings only" naming the binding), as the interpreter backend already does, with a test of `describe` over an enum-reading binding | |
-| F35. (Minor, cleanliness) A dead parameter and a message patched by text replacement | `Session::set_exact_integer(.., _ir: &Ir, ..)` keeps an unused parameter; `Session::write_leaf_change` rewrites a refusal with `message.replacen("refuses the value NaN", ..)`, a composite change that carries `NaN` as its value so the message the write builds is wrong first | drop `_ir`; give `Changed` the text to show (or build the composite refusal with it) instead of patching the message | |
+| F33. (Minor) Every call of the derive export leaks its answer | `print/derive.rs`: `List::from_slice(Box::leak(whole.into_boxed_slice()))` on each call, the host copying it out (`load.rs`); called once per derived param on each host `set`, DC sweep point and timed `set`, so a sweep of a param others derive from leaks per point; the module doc's "a recompute is a rare host `set`" does not hold for sweeps | let the host own the buffer: pass an output slice of the child's pin width (`PinLayout`) to `piperine_derive_2` and have it write and answer a status | b7c1fd4b; `piperine_derive_2(k, params, out: BytesMut) -> u32` writes a host-lent buffer, nothing is allocated for the host; `transpile` `derive.rs` (`compiled.derive(0, &bytes(2.0), 8)`), own DC sweep |
+| F34. (Minor) The interpreter walk's missing derive is reported as a compiled design that does not match its plan | `Evaluated::derive` (`params.rs`) is `None` for a binding over an integer, enum or composite param; `Params::changes_from` maps `None` to `Failure::Backend` "the derive function .. gave no value (the compiled design does not match its plan)", reached by `Session::describe` with a host value | refuse by name on that path ("the description recomputes `f64` and `bool` bindings only" naming the binding), as the interpreter backend already does, with a test of `describe` over an enum-reading binding | b7c1fd4b; `apisession` `describing_a_set_the_interpreter_cannot_derive_names_the_interpreter_not_the_plan` (`E0802`, `--backend rust`, no "does not match"); for a Rust-backend request see F36 |
+| F35. (Minor, cleanliness) A dead parameter and a message patched by text replacement | `Session::set_exact_integer(.., _ir: &Ir, ..)` keeps an unused parameter; `Session::write_leaf_change` rewrites a refusal with `message.replacen("refuses the value NaN", ..)`, a composite change that carries `NaN` as its value so the message the write builds is wrong first | drop `_ir`; give `Changed` the text to show (or build the composite refusal with it) instead of patching the message | b7c1fd4b; `_ir` dropped from `set_exact_integer`; `Changed::text`/`shown()` carries the host's text, the `replacen` patch is gone |
+| F36. (Minor) `Session::describe` of a Rust-backend request refuses a value bound from an integer, enum or composite param and tells the host to "use --backend rust" | `session.rs:947` builds `Evaluated` for every request; `Evaluated::derive` refuses such a binding ("which the interpreter does not evaluate ...: use --backend rust"); PI-05 AC 1 governs a run on the interpreter backend only, and HII-10 says the description shows "the values a run uses"; the F34 test describes an `interp` request only | evaluate those bindings for the description (the elaborator's const evaluator folds every param type), or refuse naming the real limit of the description (and a `GAPS.md` row with an owner); test a `rust` request | |
+| F37. (Minor, records) The new ABI view and the changed derive contract are not written down | `BytesMut<'a>` joins `piperine-abi` `raw.rs` but `.specs/features/device-abi/abi.md` (§933 lists `Str`, `Bytes`, `List`, `Module` as the views with private fields) does not name it; the export kept the symbol `piperine_derive_2` across a signature change although `print/derive.rs` says "the suffix is the version of this contract" (no build is affected: the cache key changes, and the branch is unmerged) | add `BytesMut` to abi.md beside `Bytes`; record the derive contract's current signature where MD-69 names it, or bump the suffix | |
+
+## Round 7 record (fix of F30 to F32)
+
+**Round 7 verdict**: FAIL
+**Round 7 proofs**: `proofs.md` at c93b8ef5 (the round 6 fix, 114 pass, 0 fail; re-run by the round 7 verifier after its own commit); round 6 at defc9611, round 5 at b3045722, round 4 at dcbbea67, round 3 at e60177d8, round 2 at acefa2f6, round 1 at 0bed6a92
+**Round 7 scope**: round 7 judges the fix of F30 to F32 (b113b52d: typed derive `piperine_derive_2(k, bytes) -> List<u8>`, A13 deleted, refusals removed; `git diff dc527c11..c93b8ef5`, 17 files across api, transpile, solver introspect), and three questions from the coordinator: (1) the leaked derive result, (2) the interpreter's `Evaluated` derive that gives no value, (3) the two panics from `mutated.rs`. Rounds 6 to 1 are kept below. F15 is out of scope (owned by `generics`).
+
+**Contract.** `git diff origin/main -- tests/support/ngspice.rs crates/piperine-parity/src` is empty.
+
+**Tests run (gate policy: targeted only, foreground).** Lane D env, the crates the fix touched: `cargo test -p piperine-transpile
+--no-fail-fast` (every target green; `derive.rs` 2/2); `cargo test -p piperine-api --no-fail-fast` (22 targets, all green: `session`,
+`derived`, `bindings`, `host_sources` among them); `cargo build -p piperine-cli`; `check_proofs.py params-and-io` after this
+commit (`proofs.md`: `source_params`, `source_tables`, `run_errors`, `source_host`, `clirun`, `docs` and the `piperine-lang` groups).
+`piperine-lang` is not touched by b113b52d. No workspace run.
+
+**Own examples (HEAD binary, throwaway files under `/var/tmp/piperine-tmp-d/v3`, not committed).** 1 V behind 1 kOhm into the load.
+- F28's case, now recomputed: `Wrap { big: u64 } -> Load { big: big }`, `--param w.big=9007199254740993` gives 1/7 V (both at 3 mS, by
+  hand); a write to the derived `w.l.big` is still `E0802` "derived ... set that param instead".
+- F30: `--param w.rs=None` on the pinless wrapper whose child holds `None` runs (0.5 V); `w.rs=500` 1/3 V, `Some(250)` 1/5 V,
+  `w.md=Slow` and `w.n=3` 1/4 V.
+- F31: `{ rs: rt * 2.0 }` with `w.rt=500` gives 0.5 V (rs = 1 kOhm); `{ rs: a + b }` with `w.a=500` gives 1/3 V. No refusal left.
+- F32: `Res { r: match md { Mode::Fast => 1k, Mode::Slow => 3k } }` runs: 0.5 V, and 0.75 V after `w.md=Slow`.
+- Regressions: `{ md: if slow .. }` after `w.slow=true` 1/4 V; `{ n: k + 1 }` at `k = 254` 3.906 mV; a pinless param nothing reads is
+  still the loud "no PARAM pin" (unchanged since round 4).
+
+**(1) The leaked derive result.** `piperine_derive_2` answers a `List<'static, u8>` over `Box::leak` of a fresh `Vec` on every call
+(`print/derive.rs`), and the host copies it out (`load.rs`): every derive call leaks its answer. The module doc calls a recompute "a
+rare host `set`", but every point of a DC sweep of a param others derive from, every timed `set` and every host loop of `set`s calls it
+once per derived param. Bounded per call, unbounded over a session, and avoidable at no cost: the host owns the buffer (an output
+`List`/slice the host allocates at the child's pin width, which it knows from `PinLayout`). A defect, not a design choice (F33).
+
+**(2) The interpreter's `Evaluated`.** It gives `None` for a binding that reads an integer, an enum or a composite param, or yields
+one. The caller (`Params::changes_from`) turns `None` into `Failure::Backend` "the derive function `k` of `..` gave no value (the
+compiled design does not match its plan)": loud, never silent. It is reached by `Session::describe` with a host value (the API; `piperine
+info` passes none); the interpreter backend itself never calls it (with no compiled design `changes` refuses "the interpreter does not
+recompute them, use --backend rust"). The message blames a compiled design that does not exist on that path (F34, minor).
+
+**(3) The two panics in the log.** `crates/piperine-transpile/tests/compiled.rs`
+`a_panic_in_compiled_code_is_a_fault_and_the_instance_survives` (RS-06 AC 6) wraps `rustc` to inject `panic!("boom at {p}")` into the
+generated `terms` and calls it at 200 and 300: the `thread '<unnamed>' panicked at .../mutated.rs:79:48: boom at 200` / `boom at 300`
+lines are the panic hook's print of those deliberate panics, which the test asserts become faults. Expected; the target passes.
 
 ## Round 6 record (fix of F27 to F29)
 
@@ -470,3 +507,5 @@ Round 5: F27, F28 and F29 need an implementer; F27 also needs a ruling if the de
 Round 6: F30 to F32 need an implementer; F31 item 1 (integers above 2^53 through a placement) is reasonable to defer, but only as a `GAPS.md` row with a real owner, and A13 is the implementer's amendment, not yet the user's.
 
 Round 7: F30 to F32 are closed by the typed derive; F33 to F35 are minor and need an implementer. Every refusal of §8.1.19/§8.1.23 forms judged in round 6 is gone, so no `GAPS.md` row is owed by this feature for them.
+
+Round 8: F33 to F35 are closed; F36 and F37 are minor and need an implementer.
