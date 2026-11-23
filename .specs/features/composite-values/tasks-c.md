@@ -664,8 +664,8 @@ T86 → T87 → T88 → T89 → T90
 
 **Done when**:
 
-- [ ] `an_array_of_carriers_prints_by_element_and_whole_in_every_format` passes under `**Run clirun**`
-- [ ] Gate check passes: Task (`piperine-cli`)
+- [x] `an_array_of_carriers_prints_by_element_and_whole_in_every_format` passes under `**Run clirun**`
+- [x] Gate check passes: Task (`piperine-cli`)
 
 **Tests**: integration
 **Gate**: task
@@ -859,6 +859,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **T85 notes:** `peak_heap_does_not_depend_on_the_declared_length`: `1 << 32` and `1 << 16` elements with 1000 elements written peak 6 774 328 B and 6 739 034 B (35 KiB apart); the same `1 << 32` array with none written peaks 6 006 762 B, so the meter sees the written elements (about 767 B each).
 **T86 notes:** `explicit/initial.msl` `ElementsBench` is the real `[Bit<Option<u8>>; 1 << 20] = [Some(5); 1 << 20]`; `lower_option` reads one element of an array of `Option` carriers as its two halves (`compound.rs`). explicit-unknowns `tasks.md` C13 lost its DEFERRED note and C67 carries the QC1 amendment.
 **T87 notes (amendment: no `array_probe.rs`):** the whole array is a `Probe::Shaped` over `ValueType::Array(elem, count)` and an element is its leaf `[k]`, so the existing cells, formats and `E0801` apply; `Column::Array` is read at every step through `StepView::net_bytes` (the dense bytes of every element, never-committed ones at their initial value; `DiscreteSide::net_bytes`) because a change observation names no element to the recorder. An array of nodes: `Probe::resolve_all` expands `Top.bl` to `Top.bl[0..K]`. Metadata does not list nets, so no count is listed there (gap).
+**T88 notes:** no CLI code was needed beyond T87: text table (`[7, 4, 7]`), CSV and plot (one column per element and per node) are the phase B composite formats over the new probes; the test covers the text table, CSV and plot (the record-line and JSON-Lines forms of an array are phase B's `emit!` arrays).
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 
