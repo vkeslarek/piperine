@@ -3,6 +3,7 @@
 //! `mpmath` at 1 024 bits and rounded to binary128 by exact rational comparison. Every
 //! comparison is bit for bit; there is no tolerance anywhere.
 
+use piperine_numbers::quad::Float128;
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
@@ -118,4 +119,48 @@ fn the_reference_vectors_are_complete_and_well_formed() {
             (name, None) => assert!(!matches!(name, "powf" | "powi" | "atan2"), "{name} takes two arguments"),
         }
     }
+}
+
+/// Compares a library function with the vectors of its reference file and of `exact.tsv`.
+struct VectorComparison {
+    /// The reader of the committed vectors.
+    vectors: ReferenceVectors,
+}
+
+impl VectorComparison {
+    /// A comparison over the committed vectors.
+    fn committed() -> Self {
+        VectorComparison { vectors: ReferenceVectors::committed() }
+    }
+
+    /// Whether two results are the same value: equal bits, or both NaN.
+    fn same(expected: u128, actual: Float128) -> bool {
+        let nan = (expected >> 112) & 0x7FFF == 0x7FFF && expected & ((1u128 << 112) - 1) != 0;
+        (nan && actual.is_nan()) || expected == actual.to_bits()
+    }
+
+    /// Checks `function` on every row of `<name>.tsv` and every `exact.tsv` row of that name.
+    fn check_unary(&self, name: &str, function: fn(Float128) -> Float128) {
+        let mut rows = 0;
+        for (x, expected) in self.vectors.unary(name) {
+            let actual = function(Float128::from_bits(x));
+            assert!(Self::same(expected, actual), "{name}({x:#034x}): expected {expected:#034x}, got {:#034x}", actual.to_bits());
+            rows += 1;
+        }
+        for row in self.vectors.exact().iter().filter(|row| row.function == name) {
+            let actual = function(Float128::from_bits(row.x));
+            assert!(Self::same(row.expected, actual), "exact {name}({:#034x}): expected {:#034x}, got {:#034x}", row.x, row.expected, actual.to_bits());
+            rows += 1;
+        }
+        assert!(rows >= 1_000, "{name}: only {rows} rows compared");
+    }
+}
+
+#[test]
+fn exp_and_logarithms_match_the_reference_vectors_bit_for_bit() {
+    let comparison = VectorComparison::committed();
+    comparison.check_unary("exp", Float128::exp);
+    comparison.check_unary("ln", Float128::ln);
+    comparison.check_unary("log2", Float128::log2);
+    comparison.check_unary("log10", Float128::log10);
 }

@@ -426,8 +426,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `exp_and_logarithms_match_the_reference_vectors_bit_for_bit` passes under `**Run transcendental**` (every row of `exp.tsv`, `ln.tsv`, `log2.tsv`, `log10.tsv` and their rows of `exact.tsv`)
-- [ ] Gate check passes: Task (`piperine-numbers`), then the Batch gate
+- [x] `exp_and_logarithms_match_the_reference_vectors_bit_for_bit` passes under `**Run transcendental**` (every row of `exp.tsv`, `ln.tsv`, `log2.tsv`, `log10.tsv` and their rows of `exact.tsv`)
+- [x] Gate check passes: Task (`piperine-numbers`), then the Batch gate
 
 **Tests**: integration
 **Gate**: batch
@@ -1063,6 +1063,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** Planning (2026-11-23): Q4 answered by the user directly (integers (a), `f16` (a), `f128` (a) complete, recorded in spec.md). design-d.md QD1 to QD8 are the planner's defaults, pending the user's approval of these tasks. D1 to D3 (T91 to T109) may run beside phase C; T110 waits for phase C's merge.
 **Defaults and findings (D1 to D3, numeric crate):**
+- T104: ElementaryFunctions (src/elementary.rs, a file the design table did not list) holds the interval-level exp, ln, sin/cos and atan (Taylor series with a proven tail bound, stopping 2^-(precision+8) below the leading term so tiny arguments stay relatively accurate); transcendental.rs is the thin Float128 layer (special values, exact cases, Ziv). exp returns +inf from x >= 11357 and +0 from x <= -11434 without evaluating; the logarithms of 2^k and 10^k (k 0..=48) are exact. Result: every row of exp, ln, log2, log10 and exact.tsv matches bit for bit at the first attempt. D2 (T99 to T104) closed; per the gate policy no workspace suite was run.
 - T103: ZivRounding::round takes the exact case as an Option<Float128> and a closure from the precision to an Interval (None meaning outside the domain); it starts at 160 bits and doubles to 2^20 (thirteen evaluations); the cap returns None.
 - T102: ArgumentReduction::quarter_turns raises its working precision (precision + exponent + 160, doubling) until the remainder interval is relatively narrow; ln_two_steps takes an Interval (so exp can reduce y*ln x) and refuses values above 2^60. ReferenceConstants quantizes the precision up to a multiple of 256 so nearby requests share one cached entry. The reduction test checks the interval against a 20 000-bit pi (floor from pi_bits.hex, so the oracle remainder is exact within |n| * 2^-20001), skipping only arguments within 2^-200 of a quarter turn where the quadrant is ambiguous; ln 2 is checked against the 1000-decimal value.
 - T101: the constants' tests compare with the committed 1000-decimal values (truncated, from mpmath, cross-checked inside generate.py against the well-known leading digits of OEIS A000796, A002162, A002392; the digits were not typed from memory beyond those prefixes) as consistency intervals [T, T + 10^-1000] since the series interval at 3 300 bits is narrower than the 1000th decimal; the returned interval is carried at precision + 32 guard bits, so it is far narrower than two units in the last place. A static OnceLock<Mutex<HashMap>> caches per (constant, precision).
