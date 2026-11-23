@@ -1409,7 +1409,7 @@ fn clean(v: f64) -> f64 { corrected(v, remove_offset) }</pre>
 <div class="callout status">
   <p class="callout-label">Status</p>
   <p>Running today: the generic types the language brings, such as <code>Option&lt;f64&gt;</code> and <code>Bit&lt;u8&gt;</code>, and a closure written directly as the argument of <code>map</code> or <code>and_then</code>. Everything <code>clip.msl</code> uses is in that list.</p>
-  <p>Parsed and checked, and not run yet: the methods of a trait, generic functions, generic structs, const parameters and generic modules. A model that uses one of them is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above. Every other listing of this chapter is correct MSL that waits for those forms. An <code>impl</code> is compared with the trait it provides: a missing or an extra item, a signature that differs and a supertrait the type does not implement are <code>E0187</code>, found where the <code>impl</code> is written.</p>
+  <p>Parsed and checked, and not run yet: generic modules. A model that uses one is stopped before the run with the code P0001 and a message that names the form, so nothing is ever computed by a rule other than the ones above. Every listing of this chapter runs where a top reaches it. An <code>impl</code> is compared with the trait it provides: a missing or an extra item, a signature that differs and a supertrait the type does not implement are <code>E0187</code>, found where the <code>impl</code> is written.</p>
 </div>
 
 <div class="callout mistake">

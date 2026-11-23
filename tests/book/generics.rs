@@ -90,7 +90,7 @@ fn the_methods_of_a_trait_run_where_a_top_reaches_them() {
 fn the_generic_listings_run_where_a_top_reaches_them() {
     // generics#2 (run in part): `pick` and `larger`, with generics#3, their calls, a fragment of it, run with the values
     // Rust gives; `overdrive`, which calls a method through its `Receiver` bound, runs by static dispatch (T36);
-    // generics#4: the generic struct `Window` and its method, an instance `Window<f64>` (T38); generics#5: the const parameter of
+    // generics~a6fd5a57 "Every listing of this chapter runs": generics#4: the generic struct `Window` and its method, an instance `Window<f64>` (T38); generics#5: the const parameter of
     // `dot`, `mean_of` and `widened`; generics#9: `at_middle`, which takes any function, runs with `corrected`. The forms that still wait are asserted refused
     let chapter = Chapter::read();
     let receiver = chapter.text("generics#1");
@@ -121,15 +121,15 @@ fn the_generic_listings_run_where_a_top_reaches_them() {
 
 #[test]
 fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
-    // generics~5628120b "A model that uses one of them is stopped before the run with the code P0001 and a
-    // message that names the form, so nothing is ever computed by a rule other than the ones above": the forms
+    // generics~00f0fd4f "A model that uses one is stopped before the run with the code P0001 and a
+    // message that names the form, so nothing is ever computed by a rule other than the ones above": the form
     // of the chapter's status box, each on the smallest model (when one of them runs, this test fails and the
     // box loses it)
     // the const parameter `N` read as a value, the smallest model of the forms the box once listed, now runs
     let width = ValueFile::written("fn width<const N: usize>() -> usize { N }", "emit!(\"r\", y = width::<4>());");
     ValueFile::int(&width, "y", 4);
     // a generic module, the form chapter 7 places
-    let module = Faulty::elaborating("generics~5628120b", "module Hold<T: Repr>(in d: Bit<T>, out q: Bit<T>) {}\nmodule Top() { signal d: Bit<u8>; signal q: Bit<u8>; let h = Hold::<u8>(d, q); }\n", "Top");
+    let module = Faulty::elaborating("generics~00f0fd4f", "module Hold<T: Repr>(in d: Bit<T>, out q: Bit<T>) {}\nmodule Top() { signal d: Bit<u8>; signal q: Bit<u8>; let h = Hold::<u8>(d, q); }\n", "Top");
     assert!(module.given.iter().any(|reported| reported.code == "P0001" && reported.message == "generic module is not supported yet"), "{:?}", module.given.iter().map(|reported| (&reported.code, &reported.message)).collect::<Vec<_>>());
 }
 
@@ -137,9 +137,9 @@ fn a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it() {
 fn an_impl_is_compared_with_its_trait() {
     // generics~76d9eeda (the status box): "An impl is compared with the trait it provides: a missing or an extra item, a signature that
     // differs and a supertrait the type does not implement are E0187, found where the impl is written" (generics T27)
-    let extra = ValueFile::refused("generics~5628120b", "trait Supply { const VDD: f64; }\nstruct Core;\nimpl Supply for Core { const VDD: f64 = 1.0; const EXTRA: f64 = 2.0; }", "emit!(\"r\", v = Core::VDD);");
+    let extra = ValueFile::refused("generics~00f0fd4f", "trait Supply { const VDD: f64; }\nstruct Core;\nimpl Supply for Core { const VDD: f64 = 1.0; const EXTRA: f64 = 2.0; }", "emit!(\"r\", v = Core::VDD);");
     assert!(extra.first("E0187").message.contains("`impl Supply for Core` defines `EXTRA`, which the trait does not have"), "{:?}", extra.first("E0187").message);
-    let missing = ValueFile::refused("generics~5628120b", "trait Supply { const VDD: f64; }\nstruct Core;\nimpl Supply for Core { }", "emit!(\"r\", v = 1.0);");
+    let missing = ValueFile::refused("generics~00f0fd4f", "trait Supply { const VDD: f64; }\nstruct Core;\nimpl Supply for Core { }", "emit!(\"r\", v = 1.0);");
     assert!(missing.first("E0187").message.contains("`impl Supply for Core` leaves out `VDD`"), "{:?}", missing.first("E0187").message);
 }
 
