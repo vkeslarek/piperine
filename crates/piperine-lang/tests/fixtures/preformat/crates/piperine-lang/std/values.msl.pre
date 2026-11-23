@@ -26,6 +26,17 @@ impl Bit {
     }
 }
 
+impl Bit<Logic> {
+    /// A change that ends at 1 from 0, X or Z.
+    pub fn rise(self) -> Event {
+        self.changed() && self.is_high() && !self.prev().is_high()
+    }
+    /// A change that ends at 0 from 1, X or Z.
+    pub fn fall(self) -> Event {
+        self.changed() && self.is_low() && !self.prev().is_low()
+    }
+}
+
 pub module init() -> Event {
     signal up: Bit = true;
     up.changed()

@@ -111,8 +111,14 @@ fn embedded_std_has_no_diagnostics() {
 
 /// Member slots of `std` that the POM leaves `Unresolved` because the receiver is a carrier whose value has the
 /// method (STD-06 AC 4: a known receiver with no linking rule stays `Unresolved`; the type checker finds the method
-/// of the carried value). Part VII writes `base.unwrap_or(start)` over a `Bit<Option<f64>>` (§22.2.9).
-const UNRESOLVED_METHODS_OF_A_CARRIED_VALUE: [&str; 2] = ["analog::idtmod: `base.unwrap_or(start)`", "analog::idtmod: `base.unwrap_or(start)`"];
+/// of the carried value). Part VII writes `base.unwrap_or(start)` over a `Bit<Option<f64>>` (§22.2.9) and `self.is_high()` over
+/// a `Bit<Logic>` (§22.1.5).
+const UNRESOLVED_METHODS_OF_A_CARRIED_VALUE: [&str; 4] = [
+    "analog::idtmod: `base.unwrap_or(start)`",
+    "analog::idtmod: `base.unwrap_or(start)`",
+    "values::impl Bit<Logic>.rise: `self.is_high()`",
+    "values::impl Bit<Logic>.fall: `self.is_low()`",
+];
 
 #[test]
 fn std_has_no_unresolved_member() {
