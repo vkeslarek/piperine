@@ -66,8 +66,8 @@ fn the_book_shows_the_natures_the_standard_library_gives() {
 }
 
 #[test]
-fn signals_of_every_family_are_refused_for_the_arrays_the_option_the_logic_and_the_net() {
-    // natures#2 (refused, S8): "signal en: Bit = false; ... signal last: Bit<Option<u8>>; ... signal lines:
+fn signals_of_every_family_are_refused_for_the_array_of_carriers() {
+    // natures#2 (refused, the array of carriers, L24): "signal en: Bit = false; ... signal last: Bit<Option<u8>>; ... signal lines:
     // [Bit; 8] = [false; 8]; ... signal bus: Bit<Logic<4>> ...; signal sda: Sda; ...": an array of carriers is
     // `P0001` (L24) and `Sda` is the model's own nature, declared further on in the
     // chapter's example, so here it is unknown (E0161); the discrete, node and initial-value lines are
@@ -93,8 +93,7 @@ fn the_open_drain_line_is_refused_until_a_nature_can_implement_resolve() {
     // natures#3 (refused, S8): the alarm.msl of the Book, whose nature `AlarmLine` implements
     // `Resolve<Driven>`; natures~e99c1920 "Today the command refuses the file and runs nothing" (refused);
     // natures~6a449552 "Replace Pullup(alarm_n) with Pulldown(alarm_n) and predict the stream" (refused: it
-    // needs the same nature). The names the file uses, `Driven`, `Resolve`, `Pullup` and the `Logic` behind
-    // them, are not in the library yet (E0161), as the Book's listing prints. The test fails when the file runs
+    // needs the same nature). The names the file uses, `Driven`, `Resolve` and `Pullup`, are not in the library yet (E0161), as the Book's listing prints. The test fails when the file runs
     let chapter = Chapter::read();
     let model = chapter.marked("alarm.msl", "natures#3");
     let overrides = Overrides { analysis: Some("transient".to_string()), stop: Some(4e-6), streams: vec!["line".to_string()], ..Overrides::default() };

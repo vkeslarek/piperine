@@ -244,7 +244,7 @@ fn a_function_has_the_class_its_body_gives() {
 }
 
 #[test]
-fn the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic() {
+fn the_monitor_file_runs_its_window_monitor_its_adder_and_its_logic_peek() {
     // values#10 (run: the window monitor of monitor.msl), values#9 is the enum of values#10; values~d0e86096
     // "This file watches a node and reports, on every clock edge, whether its voltage is under, inside or
     // over a window"; values~8ad56d03 "The source is a ramp of 1 V/µs, so the node walks through all three

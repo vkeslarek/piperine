@@ -241,7 +241,7 @@ const AHEAD_OF_STD: [&str; 8] = [
 /// The units of `std` (file, line, label) that have no fence: the earlier forms the specification rewrote or
 /// removed, which stay while something still reads them: the library
 /// nets and the modules over them (`Wire`, `Tri`, `SumNet`, `Tribuf` and the rest, `Bidir`, `TribufDelayed`:
-/// `resolved-nets`), `Logic` of `nets` (T44), `matches_bits` and `logic` over `Logic<N>` (T45). Nothing in these
+/// `resolved-nets`), the `Drive` struct and its `impl`s. Nothing in these
 /// units reads a known flag. The list is empty when they are gone.
 const BEHIND_SPEC: [(&str, usize, &str); 16] = [
     ("convert.msl", 36, "module Bidir"),

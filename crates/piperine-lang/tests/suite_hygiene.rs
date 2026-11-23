@@ -1318,7 +1318,7 @@ impl RemovedUnknownForms {
         ("e0187_is_not_raised_yet", "e0187_a_signal_with_no_first_value_and_no_default_is_refused", None),
         ("without_an_initial_value_the_output_sits_at_zero_volts", "e0187_a_signal_with_no_first_value_and_no_default_is_refused", None),
         ("e0702_is_raised_for_a_logic_pattern_with_z", "logic_reads_a_four_state_pattern", None),
-        ("the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic", "the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic", None),
+        ("the_monitor_file_runs_its_window_monitor_and_refuses_its_option_and_logic", "the_monitor_file_runs_its_window_monitor_its_adder_and_its_logic_peek", None),
         ("an_absent_drive_is_left_out_and_an_unknown_one_is_passed", "an_absent_drive_is_left_out_and_a_present_one_is_passed_whatever_its_value", None),
         ("an_unsettled_step_is_one_observation_naming_every_relax_net", "an_unsettled_loop_is_e0511_naming_its_drives", None),
         ("an_unsettled_loop_reaches_the_owner_once_per_step", "an_unsettled_loop_is_e0511_naming_its_drives", None),
