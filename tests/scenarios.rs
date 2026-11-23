@@ -583,6 +583,12 @@ fn noise_diode() {
 }
 
 #[test]
+fn tnom_res() {
+    // the resistor's own `tnom` of 323.15 K against ngspice's `.options tnom=50`, both at 27 C
+    Scenario::of("tnom_res").hold(&Comparison::OperatingPoint { nodes: &["mid"] });
+}
+
+#[test]
 fn every_twin_has_a_scenario_test() {
     let source = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/scenarios.rs")).expect("this file is readable");
     let missing: Vec<String> = Corpus::of_repository().twins().iter().map(|twin| twin.name().to_string()).filter(|name| !source.contains(&format!("\nfn {name}() {{"))).collect();

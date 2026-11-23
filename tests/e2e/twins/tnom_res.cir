@@ -1,0 +1,13 @@
+* tnom_res — the temperature coefficient against the model's own nominal temperature.
+* The divider of `temp_res.cir`, run at the default 27 C with `.options tnom=50`: the lower leg is
+* 3k * (1 + 0.002 * (27 - 50)) = 2862 ohm. In Piperine `tnom` is no run setting but a parameter
+* of each model, so the twin sets it on the resistor (`tnom: 323.15`).
+V1 vin 0 DC 10
+R1 vin mid 1k
+R2 mid 0 3k tc1=0.002
+.options tnom=50 temp=27
+.control
+op
+print v(mid)
+.endc
+.end

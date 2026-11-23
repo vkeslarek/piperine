@@ -1115,7 +1115,7 @@ T43 → T44
 
 ### T43: The `tnom_res` twin
 
-**What**: New `tnom_res.cir` (`temp_res`'s divider with `.options tnom=50 temp=27`), `tnom_res.msl` (the resistor `r * (1.0 + tc1 * (temperature() - 273.15 - simparam("tnom", None)))`), `.command` (`--tnom 50 --temp 27`), `.stdout`; `fn tnom_res()` appended to `parity_op.rs` under `DC_VOLTAGE`; listed in `COMPILED_ONLY`.
+**What**: New `tnom_res.cir` (`temp_res`'s divider with `.options tnom=50 temp=27`), `tnom_res.msl` (the resistor `r * (1.0 + tc1 * (temperature() - tnom))` with its own per-instance param `tnom: f64 = 300.15`, set to 323.15 on the instance: T45, no run key), `.command` (`--temp 27`), `.stdout`; `fn tnom_res()` appended to `parity_op.rs` under `DC_VOLTAGE`. The twin reads no `simparam` and no `analysis`, so both backends run it and it is not in `COMPILED_ONLY`.
 **Where**: `tests/e2e/twins/tnom_res.msl` (with its `.cir`, `.command`, `.stdout`, the appended function)
 **Depends on**: T36
 **Reuses**: `temp_res`'s comparison
@@ -1124,8 +1124,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `tnom_res` passes with ngspice present
-- [ ] Gate check passes: `Run parop`, `Run corpus`, `Run twins`
+- [x] `tnom_res` passes with ngspice present
+- [x] Gate check passes: `Run parop`, `Run corpus`, `Run twins`
 
 **Tests**: e2e
 **Gate**: full

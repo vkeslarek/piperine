@@ -215,6 +215,8 @@ fn measure(backend: Backend) -> Option<BTreeMap<&'static str, Measured>> {
     table.insert("tran_rc", tran("tran_rc", "tran_rc_tran", "out", &golden, backend));
     let Reference::Golden(golden) = ngspice.run("temp_res") else { return None };
     table.insert("temp_res", temp_res(&golden, backend));
+    let Reference::Golden(golden) = ngspice.run("tnom_res") else { return None };
+    table.insert("tnom_res", operating_point(&OperatingPoint { fixture: "tnom_res", nodes: &["mid"] }, &golden, backend));
     let Reference::Golden(golden) = ngspice.run("tran_dq") else { return None };
     table.insert("tran_dq", tran("tran_dq", "tran_dq_tran", "a", &golden, backend));
     if backend == Backend::Rust {
