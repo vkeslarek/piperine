@@ -13,4 +13,5 @@ pub mod arithmetic;
 pub mod format;
 pub mod half;
 pub mod limbs;
+pub mod quad;
 pub mod wide;
