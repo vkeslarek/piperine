@@ -142,22 +142,24 @@ fn a_crate_reaches_another_only_through_its_manifest() {
 }
 
 #[test]
-fn the_include_str_table_is_refused_for_its_generic_function() {
-    // packages#12 (refused): `const IV: [(f64, f64); 64] = parse_table(include_str!("diode_iv.tbl"));` and
-    // the measured diode's `table_model(v(a, k), IV, "3E")`: `parse_table` is a generic function,
-    // `P0001` (L57)
+fn the_include_str_table_runs() {
+    // packages#12 (run, L57 closed by params-and-io PI-09 and PI-10): `const IV: [(f64, f64); 64] =
+    // parse_table(include_str!("diode_iv.tbl"));` and `ROM` of `parse_hex(include_str!("boot.hex"))`, with the measured
+    // diode's `table_model(v(a, k), IV, "3E")`, read from the files beside the source at elaboration: the package builds
+    // and its operating point solves, the diode at 50 mV inside the table
     let chapter = Chapter::read();
     let table: String = (0..64).map(|row| format!("{} {:e}\n", f64::from(row) * 0.01, f64::from(row) * 1e-12)).collect();
     let rom: String = (0..1024).map(|word| format!("{word:x}\n")).collect();
-    let root = format!("{}\nmodule Top() {{ signal a: Electrical; signal k: Electrical; let m = MeasuredDiode(a, k); }}\n", chapter.text("packages#12"));
+    let holder = "module Hold(p: Electrical) { volts: f64 = 0.0; }\nanalog for Hold { v(p, gnd) +> volts; }\n";
+    let top = "module Top() { signal a: Electrical; signal k: Electrical; let h1 = Hold { volts: 0.05 }(a); let h2 = Hold(k); let m = MeasuredDiode(a, k); }";
+    let root = format!("{}\n{holder}{top}\n", chapter.text("packages#12"));
     let model = Model::package(&Manifest::of("iv", "", "Top")).with_source("src/lib.msl", &root).with_source("src/diode_iv.tbl", &table).with_source("src/boot.hex", &rom);
-    let given = Refusal::of(model.run(Overrides::default()), "packages#12");
-    assert!(given.contains(&("P0001".to_string(), "generic function is not supported yet".to_string())), "{given:?}");
-    Refusal::expect(model.run(Overrides::default()), "packages#12", "P0001", "generic function is not supported yet");
+    let ran = model.run(Overrides::default()).unwrap_or_else(|failure| panic!("the measured diode runs from its files: {failure:#}"));
+    assert!((ran.signal("Top.a") - 0.05).abs() < 1e-9, "the source holds the anode at 50 mV, inside the table");
 }
 
 #[test]
-fn e0610_include_str_in_a_module_is_refused() {
+fn e0610_is_raised_for_include_str_in_a_module() {
     // packages~64f2121d: "E0610 let t = include_str!(\"iv.tbl\"); in a module": `include_str!` is for `const`
     // items (section 20 rule 1, PI-08 AC 2), so a use in a module body is `E0610`
     let source = "module Top() { signal a: Electrical; let t = include_str!(\"iv.tbl\"); }\n";

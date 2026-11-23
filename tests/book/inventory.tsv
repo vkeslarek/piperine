@@ -167,7 +167,7 @@ block	packages#8	a6e033b06cef59d2	shown	-	-	-
 block	packages#9	73c3eda598d0bacf	run	piperine/book_packages::the_crate_root_of_the_bigger_project_loads_its_files_and_reaches_its_dependency	-	-
 block	packages#10	a97e75886fee3431	shown	-	-	-
 block	packages#11	f01cdf951bdfcbc8	shown	-	-	-
-block	packages#12	52cbabbc897e6885	refused	piperine/book_packages::the_include_str_table_is_refused_for_its_generic_function	L57	-
+block	packages#12	52cbabbc897e6885	run	piperine/book_packages::the_include_str_table_runs	-	-
 block	packages#13	b2997ca3b9ad5e0a	refused	piperine/book_packages::a_local_namespace_and_a_dependency_of_one_name_make_the_use_ambiguous	-	-
 block	packages#14	022839d3af99d3a3	shown	-	-	-
 block	packages#15	5f60f0eac75c1c77	fragment	packages#13	-	-
@@ -265,7 +265,7 @@ block	cheatsheet#6	11929fb57ae578b1	fragment	mixed#7	-	-
 block	cheatsheet#7	610d8e0e5f75dd38	refused	piperine/book_cheatsheet::the_debug_prints_card_is_refused_for_the_analog_trace	L49	-
 block	cheatsheet#8	c2d75bfd6e731da6	refused	piperine/book_cheatsheet::the_template_card_is_refused_for_its_generic_module_and_its_placements	L32	-
 block	cheatsheet#9	ea8278e7ba785b91	refused	piperine/book_cheatsheet::the_extern_card_is_refused	L33	-
-block	cheatsheet#10	922342b0e4390458	refused	piperine/book_cheatsheet::the_files_card_is_refused_for_its_table_and_its_statement	L57	-
+block	cheatsheet#10	922342b0e4390458	run	piperine/book_cheatsheet::the_files_card_runs	-	-
 block	cheatsheet#11	6aa7d49559ddcad2	shown	-	-	-
 block	cheatsheet#12	7b3f0b719a47144e	shown	-	-	-
 block	cheatsheet#13	1fbd01e9a89541fd	shown	-	-	-
@@ -465,7 +465,7 @@ claim	packages~39a5cf1d	39a5cf1dbc00bd57	holds	piperine/book_packages::e0162_one
 claim	packages~39a5ce1d	39a5ce1dbc00bba4	holds	piperine/book_packages::a_local_namespace_and_a_dependency_of_one_name_make_the_use_ambiguous	-	E0163
 claim	packages~39a2cc1d	39a2cc1dbbfe8267	holds	piperine/book_packages::e0171_a_manifest_has_only_package_and_dependencies	-	E0171
 claim	packages~39a2c81d	39a2c81dbbfe7b9b	holds	piperine/book_packages::e0175_the_crate_root_is_always_src_lib_msl	-	E0175
-claim	packages~64f2121d	64f2121dd48643ab	holds	piperine/book_packages::e0610_include_str_in_a_module_is_refused	-	E0610
+claim	packages~64f2121d	64f2121dd48643ab	holds	piperine/book_packages::e0610_is_raised_for_include_str_in_a_module	-	E0610
 claim	packages~628751c4	628751c46bfd735c	prose	-	-	A path names an item through the namespaces that hold it, with :: between the segments. use gives an item a short name in the namespace that writes it, pub makes an item visible outside its namespace, and pub use passes a name on under the namespace that re-exports it. crate is the root of your crate, self is the current namespace and super the one above it.
 claim	core-std~ece4c57c	ece4c57c55119b14	holds	piperine/book_core_std::e0457_a_core_name_cannot_be_redefined	-	A core name needs no import and cannot be redefined: a namespace item with the same name is error E0457.
 claim	core-std~c59252de	c59252de190bd867	holds	piperine/book_core_std::the_probes_have_the_short_names_the_nature_gives	-	Your nature gives them their short names, v and i.

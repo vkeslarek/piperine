@@ -1161,10 +1161,10 @@ T44
 
 **Done when**:
 
-- [ ] `the_include_str_table_runs`, `e0610_is_raised_for_include_str_in_a_module` pass under `**Run bookpackages**`
-- [ ] `the_files_card_runs` passes under `**Run bookcheatsheet**`
-- [ ] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
-- [ ] Gate check passes: Full
+- [x] `the_include_str_table_runs`, `e0610_is_raised_for_include_str_in_a_module` pass under `**Run bookpackages**`
+- [x] `the_files_card_runs` passes under `**Run bookcheatsheet**`
+- [x] Code clarity: every new or changed struct, enum, method, field and variant has a `///` doc comment citing its spec rule; no free function; object-oriented names without abbreviations; no god method; the data path readable in one place
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full
