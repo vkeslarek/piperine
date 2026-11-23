@@ -805,7 +805,7 @@ T27 → T28 → T29 → T30 → T31
 
 ### T30: The Book's `handshake` rows
 
-**What**: values#2 and values~c389077a run; their rows, tests and `inventory.tsv` entries follow.
+**What**: values#8 (the row the task named values#2) and values~c389077a run; their rows, tests and `inventory.tsv` entries follow.
 **Where**: `tests/book/values.rs`
 **Depends on**: T29
 **Reuses**: `Chapter`
@@ -814,9 +814,9 @@ T27 → T28 → T29 → T30 → T31
 
 **Done when**:
 
-- [ ] `a_function_has_the_class_its_body_gives` passes under `**Run bookvalues**`
-- [ ] `**Run bookinventory**` passes
-- [ ] Gate check passes: Build
+- [x] `a_function_has_the_class_its_body_gives` passes under `**Run bookvalues**`
+- [x] `**Run bookinventory**` passes
+- [x] Gate check passes: Build
 
 **Tests**: integration
 **Gate**: build
