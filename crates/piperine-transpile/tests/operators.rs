@@ -138,13 +138,9 @@ fn a_reaction_reads_noise_as_zero() {
     assert_eq!(made, [vec![0u8]], "q <- 0.0 > 0.5 is false");
 }
 
-/// `i(a, gnd) +> simparam("gmin", <default>)` as the body `Op`, the parameter required without one.
-fn parameterised(default: Option<f64>) -> Ir {
-    Operators::ir(|b| {
-        let mut parameter = Operators::gmin();
-        parameter.required = default.is_none();
-        Written { analog: vec![Operators::contribute_the_session_parameter(b, 0, default)], session_parameters: vec![parameter], ..Written::default() }
-    })
+/// `i(a, gnd) +> simparam("gmin").unwrap_or(<default>)` as the body `Op`, the read `Option::unwrap_or_default` with none.
+fn parameterised() -> Ir {
+    Operators::ir(|b| Written { analog: vec![Operators::contribute_the_session_parameter(b, 0)], session_parameters: vec![Operators::gmin()], ..Written::default() })
 }
 
 /// The bytes of a session parameter's pin: the value, then the `known` byte at 8 (all zero when
@@ -159,16 +155,13 @@ fn option_pin(value: Option<f64>) -> Vec<u8> {
 }
 
 #[test]
-fn a_session_parameter_reads_its_pin_or_its_default() {
-    // §14.4: `simparam(name, default)` is the parameter when the host gave it, else `default`
-    // (`0.0` with none: the host refuses before binding, E0456). `terms` reads the pin, an
-    // `Option<f64>`, and writes the flow `simparam(..)`.
-    let with_default = Device::of_body(parameterised(Some(1e-12)), "Op");
-    assert_eq!(with_default.run("terms", &[&option_pin(Some(7.0))]).expect("given"), [7.0]);
-    assert_eq!(with_default.run("terms", &[&option_pin(None)]).expect("not given"), [1e-12], "the default of the read");
-    let required = Device::of_body(parameterised(None), "Op");
-    assert_eq!(required.run("terms", &[&option_pin(Some(-3.5))]).expect("given"), [-3.5]);
-    assert_eq!(required.run("terms", &[&option_pin(None)]).expect("not given"), [0.0], "no default reads 0.0");
+fn a_session_parameter_reads_its_pin_or_none() {
+    // §14.4: `simparam(name)` is `Some` of the parameter when the host gave it, else `None`; its
+    // `Value` part is the parameter or 0. `terms` reads the pin and writes the flow.
+    let device = Device::of_body(parameterised(), "Op");
+    assert_eq!(device.run("terms", &[&option_pin(Some(7.0))]).expect("given"), [7.0]);
+    assert_eq!(device.run("terms", &[&option_pin(Some(-3.5))]).expect("given"), [-3.5]);
+    assert_eq!(device.run("terms", &[&option_pin(None)]).expect("not given"), [0.0], "None is no value: the part is the default");
 }
 
 /// `if v(a, gnd) > 0.5 { emit!("newton", x = v(a, gnd)) }`, the only statement of the `analog` block.

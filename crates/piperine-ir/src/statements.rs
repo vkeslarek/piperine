@@ -70,7 +70,7 @@ impl Statements {
                         }
                         Expr::Limit { x, f, seed, .. } => next.extend([*x, *f].into_iter().chain(*seed).map(Step::Expr)),
                         Expr::Stim { mag, phase, .. } => next.extend([*mag].into_iter().chain(*phase).map(Step::Expr)),
-                        Expr::SessionParameter { default, .. } => next.extend(default.iter().map(|d| Step::Expr(*d))),
+                        Expr::SessionParameter { .. } => {}
                         Expr::Method { receiver, args, .. } => next.extend([*receiver].into_iter().chain(args.iter().copied()).map(Step::Expr)),
                         Expr::Block { stmts, value } => {
                             next.extend(stmts.iter().map(|s| Step::Stmt(*s)));

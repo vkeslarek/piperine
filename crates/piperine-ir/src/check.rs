@@ -580,7 +580,7 @@ impl<'a> Checker<'a> {
                 exprs.push(*mag);
                 exprs.extend(phase);
             }
-            Expr::SessionParameter { default, .. } => exprs.extend(default),
+            Expr::SessionParameter { .. } => {}
         }
         for e in exprs {
             self.expr_id(item, origin, e);
@@ -987,7 +987,7 @@ impl<'a> Checker<'a> {
                 }
                 Expr::Limit { x, f, seed, .. } => stack_e.extend([*x, *f].into_iter().chain(*seed)),
                 Expr::Stim { mag, phase, .. } => stack_e.extend([*mag].into_iter().chain(*phase)),
-                Expr::SessionParameter { default, .. } => stack_e.extend(default),
+                Expr::SessionParameter { .. } => {}
             }
         }
         (out_e, out_s)
@@ -1968,19 +1968,15 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
-            Expr::SessionParameter { parameter, default } => {
+            Expr::SessionParameter { parameter } => {
                 if first {
-                    self.own(w, &origin, ty, &ValueType::F64);
-                    if let Some(d) = default {
-                        self.want(w, *d, &ValueType::F64, "the default of a `simparam`");
-                    }
+                    self.own(w, &origin, ty, &ValueType::Option(Box::new(ValueType::F64)));
                     if !w.owner.in_body {
                         self.wrong(w, origin, "a session parameter read outside a body".to_string());
                     } else if *parameter as usize >= w.owner.session_parameters {
                         self.wrong(w, origin, format!("session parameter read {parameter}, out of range ({} parameters)", w.owner.session_parameters));
                     }
                 }
-                next.extend(default.iter().map(|d| Task::Expr(*d, ctx)));
             }
             Expr::Fired(e) => {
                 if first {

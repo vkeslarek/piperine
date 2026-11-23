@@ -95,15 +95,14 @@ fn delay_noise_and_simparam_type_and_wait_for_lowering() {
         "let x: f64 = noise(1e-18);",
         "let x: f64 = noise(1e-18, \"thermal\");",
         "let x: f64 = noise(1e-18, None);",
-        "let x: f64 = simparam(\"gmin\");",
-        "let x: f64 = simparam(\"gmin\", 1e-12);",
-        "let x: f64 = simparam(\"gmin\", None);",
+        "let x: Option<f64> = simparam(\"gmin\");",
+        "let x: f64 = simparam(\"gmin\").unwrap_or(1e-12);",
     ] {
         let src = source("", body);
         assert_eq!(codes_of(&diagnostics(&src)), Vec::<String>::new(), "{body}");
     }
     // `simparam` is allowed where a definition reads: a module body `let` is no `E0450`.
-    let in_body = format!("{HEAD}module Top(a: E, b: E) {{ let g = simparam(\"gmin\", 1e-12); }}");
+    let in_body = format!("{HEAD}module Top(a: E, b: E) {{ let g = simparam(\"gmin\").unwrap_or(1e-12); }}");
     assert_eq!(codes_of(&diagnostics(&in_body)), Vec::<String>::new());
     // `delay` and `noise` are core modules: a `fn` is `E0350`, as for `ddt`.
     for form in ["delay(x, 1n)", "noise(x)"] {

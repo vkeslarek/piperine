@@ -934,6 +934,15 @@ impl<'a> Walk<'a> {
                 sources.delays.insert(*k);
                 return self.done(id, Value::of(sources, Class::Affine));
             }
+            Expr::SessionParameter { parameter } => {
+                if !in_body {
+                    self.refuse(id, "session parameter read outside a body");
+                }
+                // constant during an analysis: the sum sees a constant
+                let mut sources = Sources::default();
+                sources.session_parameters.insert(*parameter);
+                return self.done(id, Value::of(sources, Class::Constant));
+            }
             Expr::Noise(k) => {
                 if !in_body {
                     self.refuse(id, "noise read outside a body");
@@ -1024,12 +1033,6 @@ impl<'a> Walk<'a> {
                 }
                 next.push(Task::Expr(*mag));
                 next.extend(phase.iter().map(|&p| Task::Expr(p)));
-            }
-            Expr::SessionParameter { default, .. } => {
-                if !in_body {
-                    self.refuse(id, "session parameter read outside a body");
-                }
-                next.extend(default.iter().map(|&d| Task::Expr(d)));
             }
         }
         // Any form with operands is combined once they are walked.
@@ -1123,15 +1126,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::SessionParameter { parameter, default } => {
-                let values = self.pop_n(usize::from(default.is_some()));
-                // A session parameter is constant during an analysis: the sum sees a constant
-                // unless the default is not one.
-                let mut value = Value::nonlinear(&values);
-                value.sources.session_parameters.insert(*parameter);
-                value
-            }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::SessionParameter { .. } | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };

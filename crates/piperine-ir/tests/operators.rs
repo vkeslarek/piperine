@@ -115,12 +115,13 @@ fn a_noise_read_out_of_range_or_in_a_function_is_broken() {
 
 #[test]
 fn a_session_parameter_is_built_checked_printed_and_round_tripped() {
-    // `i(a, gnd) +> simparam("gmin", 1e-12)`: one parameter S0, read once with a default.
-    let ir = Operators::ir(|b| Written { analog: vec![Operators::contribute_the_session_parameter(b, 0, Some(1e-12))], session_parameters: vec![Operators::gmin()], ..Written::default() });
+    // `i(a, gnd) +> simparam("gmin").unwrap_or_default()`: one parameter S0, an `Option<f64>` read
+    // through its `Value` part.
+    let ir = Operators::ir(|b| Written { analog: vec![Operators::contribute_the_session_parameter(b, 0)], session_parameters: vec![Operators::gmin()], ..Written::default() });
     assert_eq!(ir.check(), vec![], "{}", ir);
     let text = ir.to_string();
     assert!(text.contains("session S0 \"gmin\""), "{text}");
-    assert!(text.contains("simparam(\"gmin\", 1e-12)"), "{text}");
+    assert!(text.contains("simparam(\"gmin\")"), "{text}");
     let body = ir.bodies().next().expect("a body");
     assert_eq!(body.session_parameters().len(), 1);
     assert_eq!(RoundTrip::of(&ir), ir);
@@ -128,33 +129,19 @@ fn a_session_parameter_is_built_checked_printed_and_round_tripped() {
     assert_eq!(body.session_parameter_reads(Target::Flow(0)), vec![0]);
     assert_eq!(body.dependencies(Target::Flow(0)).session_parameters, vec![0]);
     assert!(body.is_affine(0));
-    // Without a default it prints with the name alone.
-    let bare = Operators::ir(|b| Written { analog: vec![Operators::contribute_the_session_parameter(b, 0, None)], session_parameters: vec![Operators::gmin()], ..Written::default() });
-    assert_eq!(bare.check(), vec![], "{}", bare);
-    assert!(bare.to_string().contains("simparam(\"gmin\")"), "{bare}");
-    // a parameter some read gives no default is `required`, and prints so
-    let required = Operators::ir(|b| {
-        let mut parameter = Operators::gmin();
-        parameter.required = true;
-        Written { analog: vec![Operators::contribute_the_session_parameter(b, 0, None)], session_parameters: vec![parameter], ..Written::default() }
-    });
-    assert!(required.to_string().contains("session S0 \"gmin\" required"), "{required}");
-    assert_eq!(RoundTrip::of(&required), required);
 }
 
 #[test]
-fn a_session_parameter_read_out_of_range_or_with_a_non_real_default_is_broken() {
-    let none = Operators::ir(|b| Written { analog: vec![Operators::contribute_the_session_parameter(b, 0, None)], ..Written::default() });
+fn a_session_parameter_read_out_of_range_or_typed_as_a_real_is_broken() {
+    let none = Operators::ir(|b| Written { analog: vec![Operators::contribute_the_session_parameter(b, 0)], ..Written::default() });
     assert!(Operators::names(&none.check(), "session parameter read 0, out of range (0 parameters)"), "{:?}", none.check());
-    // A default that is no `f64`.
+    // the read is an `Option<f64>`: an `f64` type on it is a mismatch
     let typed = Operators::ir(|b| {
-        let default = Operators::ex(b).boolean(true);
-        let read = b.expr(Expr::SessionParameter { parameter: 0, default: Some(default) }, ValueType::F64, Operators::at());
+        let read = b.expr(Expr::SessionParameter { parameter: 0 }, ValueType::F64, Operators::at());
         Written { analog: vec![Operators::contribute(b, read)], session_parameters: vec![Operators::gmin()], ..Written::default() }
     });
-    assert!(Operators::names(&typed.check(), "the default of a `simparam`"), "{:?}", typed.check());
+    assert!(!typed.check().is_empty(), "{typed}");
 }
-
 
 #[test]
 fn a_trace_site_is_built_checked_printed_and_round_tripped() {
@@ -507,7 +494,7 @@ fn results_of_other_instances_are_held_constant() {
         ("noise", Expr::Noise(0)),
         ("rate", Expr::Derivative(0)),
         ("env", Expr::Env(Env::Temperature)),
-        ("simparam", Expr::SessionParameter { parameter: 0, default: None }),
+        ("simparam", Expr::SessionParameter { parameter: 0 }),
     ] {
         let mut b = IrBuilder::new();
         let read = b.expr(make, ValueType::F64, Operators::at());

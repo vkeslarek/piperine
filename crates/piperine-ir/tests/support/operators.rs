@@ -142,16 +142,16 @@ impl Operators {
 
 /// Session parameters.
 impl Operators {
-    /// `i(a, gnd) +> simparam("gmin", <default>);`
-    pub fn contribute_the_session_parameter(b: &mut IrBuilder, parameter: u32, default: Option<f64>) -> StmtId {
-        let default = default.map(|d| Self::ex(b).real(d));
-        let read = b.expr(Expr::SessionParameter { parameter, default }, ValueType::F64, Self::at());
-        Self::contribute(b, read)
+    /// `i(a, gnd) +> simparam("gmin").unwrap_or_default();`
+    pub fn contribute_the_session_parameter(b: &mut IrBuilder, parameter: u32) -> StmtId {
+        let packed = b.expr(Expr::SessionParameter { parameter }, ValueType::Option(Box::new(ValueType::F64)), Self::at());
+        let value = b.expr(Expr::OptionPart { option: packed, part: piperine_ir::LevelPart::Value }, ValueType::F64, Self::at());
+        Self::contribute(b, value)
     }
 
     /// The session parameter `gmin`.
     pub fn gmin() -> SessionParameter {
-        SessionParameter { name: "gmin".into(), required: false, origin: Self::at() }
+        SessionParameter { name: "gmin".into(), origin: Self::at() }
     }
 }
 

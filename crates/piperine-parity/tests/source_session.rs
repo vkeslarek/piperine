@@ -57,17 +57,17 @@ impl Bench {
 
 #[test]
 fn simparam_reads_the_run_entry_else_its_default() {
-    // AO-07 AC 1: `simparam("vth0", Some(0.5))` is 0.7 when the run gives `simparam = { vth0 = 0.7 }`
+    // AO-07 AC 1: `simparam("vth0").unwrap_or(0.5)` is 0.7 when the run gives `simparam = { vth0 = 0.7 }`
     // and 0.5 when it gives none; with both, the run's value.
-    let read = "v(o, gnd) +> simparam(\"vth0\", Some(0.5));";
+    let read = "v(o, gnd) +> simparam(\"vth0\").unwrap_or(0.5);";
     assert_eq!(Bench::output(read, Overrides { simparam: vec![("vth0".into(), 0.7)], ..Bench::op() }), 0.7);
     assert_eq!(Bench::output(read, Bench::op()), 0.5);
 }
 
 #[test]
 fn simparam_reads_the_options_by_their_key_names() {
-    // AO-07 AC 2: `simparam("reltol", None)` is the run's `reltol`, or the solver's default 1e-3.
-    let read = "v(o, gnd) +> simparam(\"reltol\", None);";
+    // AO-07 AC 2: `simparam("reltol").unwrap_or(0.0)` is the run's `reltol`, or the solver's default 1e-3.
+    let read = "v(o, gnd) +> simparam(\"reltol\").unwrap_or(0.0);";
     assert_eq!(Bench::output(read, Overrides { reltol: Some(1e-5), ..Bench::op() }), 1e-5);
     assert_eq!(Bench::output(read, Bench::op()), 1e-3);
 }
@@ -76,12 +76,12 @@ fn simparam_reads_the_options_by_their_key_names() {
 fn simparam_runs_in_a_definition_and_a_selector_with_one_value() {
     // AO-07 AC 4 (§14.4.1): a selector (`if` over a `simparam`) picks the arm the run's value says, for
     // the whole analysis: 2 V with `sel` absent, 1 V with `sel = 1`, at every step of a transient.
-    let selector = "if simparam(\"sel\", Some(0.0)) > 0.5 { v(o, gnd) +> 1.0; } else { v(o, gnd) +> 2.0; }";
+    let selector = "if simparam(\"sel\").unwrap_or(0.0) > 0.5 { v(o, gnd) +> 1.0; } else { v(o, gnd) +> 2.0; }";
     assert_eq!(Bench::output(selector, Bench::op()), 2.0);
     assert_eq!(Bench::output(selector, Overrides { simparam: vec![("sel".into(), 1.0)], ..Bench::op() }), 1.0);
     assert_eq!(Bench::output(selector, Overrides { simparam: vec![("sel".into(), 1.0)], ..Bench::transient() }), 1.0);
     // a definition: a body `let` bound to the read is the read at each use
-    let definition = "let g = simparam(\"gain\", Some(2.0)); v(o, gnd) +> g * 3.0;";
+    let definition = "let g = simparam(\"gain\").unwrap_or(2.0); v(o, gnd) +> g * 3.0;";
     assert_eq!(Bench::output(definition, Bench::op()), 6.0);
     assert_eq!(Bench::output(definition, Overrides { simparam: vec![("gain".into(), 4.0)], ..Bench::op() }), 12.0);
 }

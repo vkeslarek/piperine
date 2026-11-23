@@ -55,7 +55,7 @@ impl Elaboration<'_, '_> {
         let any = |es: &[LoweredExpr]| es.iter().any(|e| self.continuous(*e));
         match kind {
             Expr::Probe { .. } | Expr::Flow { .. } | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::Env(Env::Time | Env::Static | Env::Gmin | Env::SourceScale | Env::Freq) => true,
-            Expr::Env(Env::Temperature | Env::Analysis(_)) | Expr::Fired(_) | Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::ParamPrevious(_) | Expr::Int(_) | Expr::Carrier(_) | Expr::Previous(_) => false,
+            Expr::Env(Env::Temperature | Env::Analysis(_)) | Expr::SessionParameter { .. } | Expr::Fired(_) | Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::ParamPrevious(_) | Expr::Int(_) | Expr::Carrier(_) | Expr::Previous(_) => false,
             Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Table { x: expr, .. } | Expr::TableSlope { x: expr, .. } => self.continuous(*expr),
             Expr::Binary { lhs, rhs, .. } => any(&[*lhs, *rhs]),
             Expr::Unwrap { is, value, .. } => any(&[*is, *value]),
@@ -69,7 +69,6 @@ impl Elaboration<'_, '_> {
             Expr::Closure { body, .. } => self.continuous(*body),
             Expr::Limit { x, f, seed, .. } => any(&[*x, *f]) || seed.is_some_and(|s| self.continuous(s)),
             Expr::Stim { mag, phase, .. } => self.continuous(*mag) || phase.is_some_and(|p| self.continuous(p)),
-            Expr::SessionParameter { default, .. } => default.is_some_and(|d| self.continuous(d)),
             Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
                 any(&kind.operands()) || kind.statements().iter().any(|s| self.stmt_continuous.get(s.index()).copied().unwrap_or(false))
             }

@@ -1,7 +1,6 @@
 //! Scope: the session parameters of a run (analog-operators AO-07 and AO-08): a design that reads
 //! `simparam(name, default)` gets the six options and the run's `simparam` entries as `GLOBAL
-//! NAMED` pins; a read with no default of a name the run lacks is `E0456` naming it, before
-//! anything binds. Each fixture is MSL written by the test and run on the Rust backend; expected
+//! NAMED` pins; a name the run lacks reads `None` (user decision 2026-11-23, no `E0456`). Each fixture is MSL written by the test and run on the Rust backend; expected
 //! values come from the option's own definition.
 
 use std::cell::RefCell;
@@ -57,34 +56,19 @@ impl Reading {
 }
 
 #[test]
-fn simparam_without_default_and_without_entry_is_e0456() {
-    // AO-07 AC 3: `simparam("vth0")` with no default, no run entry named `vth0` and no option of that
-    // name fails at the start of the analysis with `E0456` naming `vth0`, before anything binds.
-    let failure = Reading::open("simparam(\"vth0\", None)", Overrides::default()).err().expect("the read has no value");
-    match failure {
-        Failure::Host { code, message } => {
-            assert_eq!(code, "E0456");
-            assert!(message.contains("vth0") && message.contains("Top"), "{message}");
-        }
-        other => panic!("{other}"),
-    }
-    // the same name given by the run, or an option of the session, opens
-    let given = Overrides { simparam: vec![("vth0".into(), 0.7)], ..Overrides::default() };
-    assert!(Reading::open("simparam(\"vth0\", None)", given).is_ok());
-    assert!(Reading::open("simparam(\"reltol\", None)", Overrides::default()).is_ok());
-    // a read with a default needs no entry
-    assert!(Reading::open("simparam(\"vth0\", Some(0.5))", Overrides::default()).is_ok());
+fn a_name_the_run_lacks_reads_none() {
+    // AO-07 (user decision 2026-11-23): `simparam("vth0")` is an `Option<f64>`: `None` when the run gives no
+    // such name, so the session opens (there is no `E0456`) and the design takes its own default.
+    assert_eq!(Reading::output("simparam(\"vth0\").unwrap_or(0.5)", Overrides::default()), 0.5);
+    assert_eq!(Reading::output("simparam(\"vth0\").unwrap_or(0.5)", Overrides { simparam: vec![("vth0".into(), 0.7)], ..Overrides::default() }), 0.7);
 }
 
 #[test]
 fn the_session_hands_its_options_and_entries_to_the_circuit() {
-    // AO-07 AC 1 and 2, AO-08 AC 3 (D13): the options by their key names, the run's entries by theirs,
-    // and a default only where the run gives none.
-    assert_eq!(Reading::output("simparam(\"vth0\", Some(0.5))", Overrides { simparam: vec![("vth0".into(), 0.7)], ..Overrides::default() }), 0.7);
-    assert_eq!(Reading::output("simparam(\"vth0\", Some(0.5))", Overrides::default()), 0.5);
-    assert_eq!(Reading::output("simparam(\"reltol\", None)", Overrides { reltol: Some(1e-4), ..Overrides::default() }), 1e-4);
-    assert_eq!(Reading::output("simparam(\"temp\", None)", Overrides { temp: Some(75.0), ..Overrides::default() }), 75.0);
-    assert_eq!(Reading::output("simparam(\"temp\", None)", Overrides::default()), 27.0);
-    // `tnom` is no session value (user decision 2026-11-23): a read of it with no default is `E0456`
-    assert!(Reading::open("simparam(\"tnom\", None)", Overrides::default()).is_err());
+    // AO-07 AC 1 and 2 (D13): the options by their key names, the run's entries by theirs.
+    assert_eq!(Reading::output("simparam(\"reltol\").unwrap_or(0.0)", Overrides { reltol: Some(1e-4), ..Overrides::default() }), 1e-4);
+    assert_eq!(Reading::output("simparam(\"temp\").unwrap_or(0.0)", Overrides { temp: Some(75.0), ..Overrides::default() }), 75.0);
+    assert_eq!(Reading::output("simparam(\"temp\").unwrap_or(0.0)", Overrides::default()), 27.0);
+    // `tnom` is no session value (user decision 2026-11-23): it reads `None`
+    assert_eq!(Reading::output("simparam(\"tnom\").unwrap_or(-1.0)", Overrides::default()), -1.0);
 }

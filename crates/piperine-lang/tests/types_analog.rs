@@ -215,9 +215,9 @@ fn freq_analysis_kinds_and_bound_step_type() {
 }
 
 #[test]
-fn simparam_types_with_a_name_and_an_optional_default() {
-    // FIX-10 AC 4 moved: `simparam` has a row since analog-operators T23 (AO-07); the elaborator
-    // lowers it in T35. A name that is no text is a mismatch.
+fn simparam_types_with_a_name_as_an_option() {
+    // FIX-10 AC 4 moved: `simparam(name)` is an `Option<f64>` since analog-operators T23 and the user decision
+    // of 2026-11-23 (AO-07): no default argument. A name that is no text is a mismatch.
     let (src, d) = diagnostics("", "let x = simparam(1.0);");
     assert_eq!(codes_of(&d).len(), 1, "{d:?}");
     assert_eq!(snippet(&src, &d[0]), "1.0");

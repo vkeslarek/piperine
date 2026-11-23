@@ -254,6 +254,8 @@ pub(super) enum CoreResult {
     F64,
     Bool,
     Event,
+    /// `simparam`: an `Option<f64>`.
+    OptionF64,
     /// `bound_step`: a statement, no value.
     Unit,
 }
@@ -264,6 +266,7 @@ impl CoreResult {
             CoreResult::F64 => Ty::F64,
             CoreResult::Bool => Ty::Bool,
             CoreResult::Event => Ty::Event,
+            CoreResult::OptionF64 => Ty::Option(Box::new(Ty::F64)),
             CoreResult::Unit => Ty::Unit,
         }
     }
@@ -299,7 +302,7 @@ const CORE_ROWS: &[(&str, CoreSig)] = &[
     ("ddx", CoreSig { required: &[CoreParam::F64, CoreParam::Probe], optional: &[], allowed: Allowed::Analog, result: CoreResult::F64 }),
     ("delay", CoreSig { required: &[CoreParam::F64, CoreParam::F64], optional: &[CoreParam::OptionF64], allowed: Allowed::Instances, result: CoreResult::F64 }),
     ("noise", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::OptionText], allowed: Allowed::Instances, result: CoreResult::F64 }),
-    ("simparam", CoreSig { required: &[CoreParam::Text], optional: &[CoreParam::OptionF64], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
+    ("simparam", CoreSig { required: &[CoreParam::Text], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::OptionF64 }),
     ("ac_stim", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::F64], allowed: Allowed::Analog, result: CoreResult::F64 }),
     ("temperature", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
     ("gmin", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),

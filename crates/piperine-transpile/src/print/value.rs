@@ -561,7 +561,6 @@ impl<'a> ValuePrinter<'a> {
             Expr::Closure { body, .. } => out.push(*body),
             Expr::Limit { x, f, seed, .. } => out.extend([*x, *f].into_iter().chain(*seed)),
             Expr::Stim { mag, phase, .. } => out.extend([*mag].into_iter().chain(*phase)),
-            Expr::SessionParameter { default, .. } => out.extend(default),
             Expr::Real(_)
             | Expr::Bool(_)
             | Expr::Unit
@@ -575,6 +574,7 @@ impl<'a> ValuePrinter<'a> {
             | Expr::Derivative(_)
             | Expr::Delay(_)
             | Expr::Noise(_)
+            | Expr::SessionParameter { .. }
             | Expr::ParamPrevious(_)
             | Expr::Fired(_)
             | Expr::Previous(_)
@@ -775,20 +775,14 @@ impl<'a> ValuePrinter<'a> {
                 Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "the output of a delay site")),
             },
-            // `simparam(name, default)`: the pin's value when the host gave it, else the default
-            // (`0.0` with none: the host refuses before binding, E0456)
-            Expr::SessionParameter { parameter, default } => {
+            // `simparam(name)`: the pin's value, `Some` when the host gave the parameter, else `None`; in a
+            // generic block its payload is an `R`
+            Expr::SessionParameter { parameter } => {
                 let Some(name) = self.analog.as_ref().and_then(|r| r.session_parameters.get(*parameter as usize)) else {
                     return Err(self.unsupported(e, "a session parameter"));
                 };
                 let pin = self.read(name);
-                let text = match (default, self.plain) {
-                    (Some(d), true) => format!("{pin}.unwrap_or({})", self.expr(*d)?),
-                    (Some(d), false) => format!("{pin}.map_or({}, R::constant)", self.expr(*d)?),
-                    (None, true) => format!("{pin}.unwrap_or(0.0)"),
-                    (None, false) => format!("R::constant({pin}.unwrap_or(0.0))"),
-                };
-                atom(text)
+                atom(if self.plain { pin } else { format!("{pin}.map(R::constant)") })
             }
             // §14.8.5: a reaction or a guard reads 0 (its printer names no noise input), as does
             // every accepted solution of `analog`

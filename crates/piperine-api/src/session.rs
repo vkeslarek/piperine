@@ -379,8 +379,7 @@ impl Session {
             Analysis::Noise { output, input, .. } => Some(NoiseProbe::resolve(&ir, ir.top().path(), output, input.as_deref())?),
             _ => None,
         };
-        // `E0456` before anything binds: a read with no default of a name the run lacks
-        let session_parameters = crate::parameters::SessionParameters::of(&ir, &spec.options)?;
+        let session_parameters = crate::parameters::SessionParameters::of(&ir, &spec.options);
         let netlist = Session::netlist_of(&ir, &spec.options, &session_parameters);
         let (mut circuit, compiled) = match backend {
             Backend::Interp => {

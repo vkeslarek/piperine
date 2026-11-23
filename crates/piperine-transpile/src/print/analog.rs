@@ -317,9 +317,8 @@ impl<'a> AnalogPrinter<'a> {
                 Expr::Carrier(c) => {
                     sources.insert(Source::Carrier(*c));
                 }
-                Expr::SessionParameter { parameter, default } => {
+                Expr::SessionParameter { parameter } => {
                     sources.insert(Source::SessionParameter(*parameter));
-                    stack.extend(default);
                 }
                 Expr::Delay(k) => {
                     sources.insert(Source::Delay(*k));

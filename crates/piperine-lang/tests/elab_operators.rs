@@ -92,13 +92,15 @@ fn noise_table_waits_for_its_dependencies() {
 
 #[test]
 fn simparam_lowers_to_one_session_parameter_per_name() {
-    // AO-07 (§14.4): `simparam("gmin", 1e-12)` read twice, and `simparam("tnom", None)`, are two
-    // parameters of the body, one per name; a read with no default makes `tnom` required, and a
-    // name every read gives a default stays optional.
-    let ir = Elab::ir(&design("v(o, gnd) +> simparam(\"gmin\", 1e-12) + simparam(\"gmin\", 2e-12) + simparam(\"tnom\", None);"), "Top");
+    // AO-07 (§14.4, user decision 2026-11-23): `simparam("gmin")` read twice and `simparam("tnom")` are two
+    // parameters of the body, one per name; each read is an `Option<f64>` unpacked where it stands.
+    let ir = Elab::ir(&design("v(o, gnd) +> simparam(\"gmin\").unwrap_or(1e-12) + simparam(\"gmin\").unwrap_or(2e-12) + simparam(\"vth0\").unwrap_or(0.5);"), "Top");
     let m = ir.bodies().find(|b| b.name() == "M").expect("the body M");
-    let names: Vec<(&str, bool)> = m.session_parameters().iter().map(|p| (p.name.as_str(), p.required)).collect();
-    assert_eq!(names, [("gmin", false), ("tnom", true)]);
+    let names: Vec<&str> = m.session_parameters().iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(names, ["gmin", "vth0"]);
     let text = ir.to_string();
-    assert!(text.contains("simparam(\"gmin\", 1e-12)") && text.contains("simparam(\"tnom\")"), "{text}");
+    assert!(text.contains("simparam(\"gmin\")") && text.contains("simparam(\"vth0\")"), "{text}");
+    // `match` over the option takes both arms
+    let matched = Elab::ir(&design("v(o, gnd) +> match simparam(\"gain\") { Some(g) => g, None => 1.0 };"), "Top");
+    assert_eq!(matched.bodies().find(|b| b.name() == "M").expect("M").session_parameters().len(), 1);
 }

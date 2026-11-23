@@ -370,10 +370,6 @@ pub struct NoiseSource {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SessionParameter {
     pub name: String,
-    /// Whether some read of the parameter gives no default: the host must then give the
-    /// parameter (`E0456`), and its pin is not `OPTIONAL`.
-    #[serde(default)]
-    pub required: bool,
     pub origin: Origin,
 }
 
@@ -568,11 +564,10 @@ pub enum Expr {
     /// in every solve and the source's unit-variance input in a noise sweep. Read in the `analog`
     /// block, a body `let` or an event argument; a reaction reads 0.
     Noise(u32),
-    /// `simparam(name, default)` (§14.4): the value of the body's session parameter `parameter`
-    /// (`Body::session_parameters`) when the host gave it, else `default`; an `f64`. `default`
-    /// is an `f64` expression on the parameter cone; without it a missing parameter is refused
-    /// by the host before the run. Constant during an analysis.
-    SessionParameter { parameter: u32, default: Option<ExprId> },
+    /// `simparam(name)` (§14.4): the value of the body's session parameter `parameter`
+    /// (`Body::session_parameters`), an `Option<f64>`: `Some` of what the run gave it, else `None`.
+    /// Constant during an analysis; its parts are read through `OptionPart` like any packed option.
+    SessionParameter { parameter: u32 },
     /// `fired(e)` in a reaction: whether the body's event `e` fired in this microstep (the
     /// `CHANGED` byte of its pin), a known `bool`.
     Fired(u32),
@@ -715,7 +710,7 @@ impl Expr {
             Expr::Method { receiver, args, .. } => [*receiver].into_iter().chain(args.iter().copied()).collect(),
             Expr::Limit { x, f, seed, .. } => [*x, *f].into_iter().chain(*seed).collect(),
             Expr::Stim { mag, phase, .. } => [*mag].into_iter().chain(*phase).collect(),
-            Expr::SessionParameter { default, .. } => default.iter().copied().collect(),
+            Expr::SessionParameter { .. } => Vec::new(),
             Expr::Loop { .. } => Vec::new(),
             Expr::While { cond, .. } => vec![*cond],
             Expr::ForRange { low, high, .. } => vec![*low, *high],

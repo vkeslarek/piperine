@@ -845,14 +845,14 @@ impl BodyPlan {
 
     /// Adds one `GLOBAL NAMED` pin per session parameter of the body, named the parameter, holding
     /// the layout [`SESSION_PARAMETER`] (the value, then a `known` byte the solver sets when the host
-    /// gave the parameter): `OPTIONAL` when every read gives a default, so a host that gives none
-    /// leaves the pin unknown and the read takes its default (D12).
+    /// gave the parameter): always `OPTIONAL`: a host that gives none leaves the pin unknown, and the
+    /// read is `None` (user decision 2026-11-23: `simparam(name)` is an `Option<f64>`).
     fn session_parameter_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<u32> {
         body.session_parameters()
             .iter()
             .map(|parameter| {
                 let at = format!("{}:{}:{}", parameter.origin.file, parameter.origin.line, parameter.origin.col);
-                let flags = if parameter.required { 0 } else { pin_flag::OPTIONAL };
+                let flags = pin_flag::OPTIONAL;
                 let spec = PinSpec::discrete(&parameter.name, role::GLOBAL, &SESSION_PARAMETER);
                 s.pin(PinSpec { origin: &at, global: global::NAMED, flags, ..spec })
             })

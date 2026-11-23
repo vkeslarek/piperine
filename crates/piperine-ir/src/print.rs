@@ -428,8 +428,7 @@ impl<'a> Printer<'a> {
         }
         for (i, parameter) in body.session_parameters.iter().enumerate() {
             let at = self.at(&parameter.origin);
-            let required = if parameter.required { " required" } else { "" };
-            self.line(1, &format!("session S{i} {:?}{required}{at}", parameter.name));
+            self.line(1, &format!("session S{i} {:?}{at}", parameter.name));
         }
         for (i, source) in body.noise_sources.iter().enumerate() {
             let group = source.group.as_ref().map_or("none".to_string(), |g| format!("{g:?}"));
@@ -979,13 +978,9 @@ impl<'a> Printer<'a> {
             Expr::Derivative(k) => next.push(text(format!("rate(D{k})"))),
             Expr::Delay(k) => next.push(text(format!("delay{k}.value"))),
             Expr::Noise(k) => next.push(text(format!("noise{k}.value"))),
-            Expr::SessionParameter { parameter, default } => {
+            Expr::SessionParameter { parameter } => {
                 let name = scope.session_parameters.get(*parameter as usize).map_or(format!("<bad session parameter {parameter}>"), |p| format!("{:?}", p.name));
-                next.push(text(format!("simparam({name}")));
-                if let Some(default) = default {
-                    next.extend([text(", ".into()), Piece::Expr(*default)]);
-                }
-                next.push(text(")".into()));
+                next.push(text(format!("simparam({name})")));
             }
             Expr::ParamPrevious(i) => next.push(text(format!("{}.prev()", scope.params.get(*i as usize).map_or(format!("<bad param {i}>"), |p| Printer::name(&p.name))))),
             Expr::Fired(e) => next.push(text(format!("fired(E{e})"))),
@@ -1089,9 +1084,10 @@ impl<'a> Printer<'a> {
         let ty = |id: &ExprId| ir.exprs.get(id.index()).map(|e| e.ty.clone());
         match kind {
             Expr::Env(Env::Static | Env::Analysis(_)) | Expr::Fired(_) => Some(ValueType::Bool),
-            Expr::Real(_) | Expr::Math { .. } | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } | Expr::Flow { .. } | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::SessionParameter { .. } => {
+            Expr::Real(_) | Expr::Math { .. } | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } | Expr::Flow { .. } | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) => {
                 Some(ValueType::F64)
             }
+            Expr::SessionParameter { .. } => Some(ValueType::Option(Box::new(ValueType::F64))),
             Expr::Bool(_) => Some(ValueType::Bool),
             Expr::Unit => Some(ValueType::Unit),
             Expr::Local(i) => scope.locals.get(*i as usize).map(|l| l.ty.clone()),
@@ -1306,7 +1302,7 @@ impl<'a> Printer<'a> {
             Expr::Derivative(k) => format!("derivative D{k}"),
             Expr::Delay(k) => format!("delay {k}"),
             Expr::Noise(k) => format!("noise {k}"),
-            Expr::SessionParameter { parameter, default } => format!("simparam {parameter} {}", opt(default)),
+            Expr::SessionParameter { parameter } => format!("simparam {parameter}"),
             Expr::ParamPrevious(i) => format!("param_previous {i}"),
             Expr::Fired(i) => format!("fired {i}"),
             Expr::Same { a, b } => format!("same {} {}", e(a), e(b)),

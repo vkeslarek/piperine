@@ -367,6 +367,8 @@ impl Elaboration<'_, '_> {
                 },
                 _ => unsupported(self),
             },
+            // `simparam(name)`: the two halves of the session parameter's packed read (`session.rs`)
+            ExprKind::Call { .. } if matches!(self.types.callee(expr), Some(crate::types::Callee::Core(id)) if id.info().name == "simparam") => self.lower_session_pair(scope, expr, origin),
             ExprKind::Call { args, .. } if matches!(self.typed(expr), Some(Ty::Option(_))) && self.is_some_call(expr) => {
                 let [arg] = args.as_slice() else { return unsupported(self) };
                 let val = self.lower_expr(scope, arg.value)?;
