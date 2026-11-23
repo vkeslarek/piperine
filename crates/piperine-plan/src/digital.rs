@@ -77,7 +77,7 @@ use piperine_abi::raw::{
     DEFAULT, Field, GROUND, Layout, List, Statement, Str, global, leaf, part, pin_flag, role, statement_flag, watch,
 };
 use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf, WatchSpec};
-use piperine_ir::{Body, CarrierRole, Constant, EventSource, Expr, ExprId, Ir, Origin, Stmt, Stream, Target as Query, ValueType};
+use piperine_ir::{Body, CarrierRole, Constant, EventSource, Expr, ExprId, Ir, Origin, Projection, Stmt, Stream, Target as Query, ValueType};
 
 use crate::array::ArrayPin;
 use crate::pin::PinLayout;
@@ -127,6 +127,14 @@ impl StatementPlan {
         StatementPlan { target: Target::Carrier(carrier), min_after: after.and_then(|a| Self::min_after(ir, a)), replace: false, range: None }
     }
 
+    /// The statement of a commit to `carrier` (an element of type `ty`, an array of `count` of them when `Some`) delayed
+    /// by `after`, through the steps `path` into its value: over the whole element, or over the byte range of the field
+    /// or value-array element the path names (abi.md §3).
+    pub fn commit_through(ir: &Ir, carrier: u32, ty: &ValueType, count: Option<u64>, after: Option<ExprId>, path: &[Projection]) -> StatementPlan {
+        let range = if count.is_some() || !path.is_empty() { ArrayPin::range(ir, ty, path) } else { None };
+        StatementPlan { range, ..Self::commit(ir, carrier, after) }
+    }
+
     /// The statement of an emit site of stream `s`: the whole of its `RECORD` pin, due at the
     /// next microstep.
     pub fn record(s: u32) -> StatementPlan {
@@ -140,12 +148,9 @@ impl StatementPlan {
             .into_iter()
             .filter_map(|id| match ir.stmt(id) {
                 Stmt::Commit { carrier, after, target, .. } => {
-                    let plan = StatementPlan::commit(ir, *carrier, *after);
-                    let path = target.as_ref().map_or(&[][..], |t| t.path.as_slice());
                     let held = body.carriers().get(*carrier as usize)?;
-                    // an element commit declares the range inside one element (abi.md §3), a field commit its levels
-                    let range = if held.count.is_some() || !path.is_empty() { ArrayPin::range(ir, held, path) } else { None };
-                    Some(StatementPlan { range, ..plan })
+                    let path = target.as_ref().map_or(&[][..], |t| t.path.as_slice());
+                    Some(StatementPlan::commit_through(ir, *carrier, &held.ty, held.count, *after, path))
                 }
                 Stmt::Emit { stream, .. } => Some(StatementPlan::record(*stream)),
                 Stmt::Let { .. } | Stmt::Expr(_) | Stmt::Assign { .. } | Stmt::Contribute { .. } | Stmt::BoundStep { .. } => None,

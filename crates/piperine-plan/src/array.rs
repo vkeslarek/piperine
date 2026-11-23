@@ -28,8 +28,8 @@ impl ArrayPin {
     /// The byte range `(offset, len)` inside one element of `carrier` that a commit through `path` writes: the whole
     /// element for an empty path, else the levels the field and constant element steps name. `None` for a step that
     /// is no field, no constant index, or leaves a type no pin holds (`Ir::check` refuses those targets).
-    pub fn range(ir: &Ir, carrier: &Carrier, path: &[Projection]) -> Option<(u32, u32)> {
-        let mut ty = carrier.ty.clone();
+    pub fn range(ir: &Ir, element: &ValueType, path: &[Projection]) -> Option<(u32, u32)> {
+        let mut ty = element.clone();
         let mut offset = 0u32;
         for step in path {
             let (next, skipped) = Self::step(ir, &ty, step)?;

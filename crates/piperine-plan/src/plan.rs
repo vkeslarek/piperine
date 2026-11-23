@@ -140,10 +140,10 @@ pub enum Source {
     /// instant is running (§15 step 4). The event function of each `settle` event reads it
     /// (§13 rule 17).
     Settle,
-    /// An array carrier read whole, or at a run-time element: `(carrier, part)`, the `part` of
-    /// `abi::raw::part` the `ArrayView` is asked for. A reaction's read only (abi.md §3: a function
-    /// never takes a `WHOLE` read); the cell names the pin with `element` `WHOLE`.
-    Whole(u32, u32),
+    /// An array carrier read whole, or at a run-time element, whatever the part (`x`, `x[i]`, `x[i].prev()`,
+    /// `x[i].changed()`): the `ArrayView` over the pin, which serves every part of every element. A reaction's read
+    /// only (abi.md §3: a function never takes a `WHOLE` read); the cell names the pin with `element` `WHOLE`.
+    Whole(u32),
     /// One constant element of an array carrier: `(carrier, element, part)`, a cell naming the
     /// element (`Function.elements`, `Reaction.elements`).
     Element(u32, u64, u32),
@@ -262,13 +262,13 @@ impl ReadSet {
     /// differentiable read) and the carriers whose previous value it reads (`c.prev()`, A7).
     pub(crate) fn target(body: Body<'_>, target: Query) -> ReadSet {
         let mut set = ReadSet::of(&body.dependencies(target));
-        let carrier = |c: u32, part: u32, plain: Source| {
-            if body.carriers().get(c as usize).is_some_and(|x| x.count.is_some()) { Source::Whole(c, part) } else { plain }
+        let carrier = |c: u32, plain: Source| {
+            if body.carriers().get(c as usize).is_some_and(|x| x.count.is_some()) { Source::Whole(c) } else { plain }
         };
-        set.0.extend(body.carrier_reads(target).into_iter().map(|c| carrier(c, part::VALUE, Source::Carrier(c))));
+        set.0.extend(body.carrier_reads(target).into_iter().map(|c| carrier(c, Source::Carrier(c))));
         set.0.extend(body.flow_reads(target).into_iter().map(Source::BranchFlow));
-        set.0.extend(body.previous_reads(target).into_iter().map(|c| carrier(c, part::PREVIOUS, Source::CarrierPrevious(c))));
-        set.0.extend(body.whole_changed_reads(target).into_iter().map(|c| Source::Whole(c, part::CHANGED)));
+        set.0.extend(body.previous_reads(target).into_iter().map(|c| carrier(c, Source::CarrierPrevious(c))));
+        set.0.extend(body.whole_changed_reads(target).into_iter().map(Source::Whole));
         set.0.extend(body.element_reads(target).into_iter().map(|(c, k)| Source::Element(c, k, part::VALUE)));
         set.0.extend(body.element_previous_reads(target).into_iter().map(|(c, k)| Source::Element(c, k, part::PREVIOUS)));
         set.0.extend(body.element_changed_reads(target).into_iter().map(|(c, k)| Source::Element(c, k, part::CHANGED)));
@@ -765,7 +765,7 @@ impl BodyPlan {
         let limits = body.limits().len() as u32;
         let at = |kind: u32, index: u32, part: u32| Cell { kind, index, part };
         let value = |kind: u32, index: u32| at(kind, index, part::VALUE);
-        if let Some(Source::Whole(carrier, _)) = plan.reads.iter().find(|r| matches!(r, Source::Whole(..))) {
+        if let Some(Source::Whole(carrier)) = plan.reads.iter().find(|r| matches!(r, Source::Whole(..))) {
             panic!(
                 "body {}: function {name} reads array carrier {carrier} whole or at a run-time element, which only a reaction can (abi.md §3); the elaborator refuses it",
                 body.name()
@@ -840,7 +840,7 @@ impl BodyPlan {
             Source::Analysis(kind) => value(cell::PIN, pins.analysis.iter().find(|(k, _)| *k == kind).map_or(GROUND, |(_, pin)| *pin)),
             Source::Fired(k) => at(cell::PIN, pins.events.get(k as usize).copied().unwrap_or(GROUND), part::CHANGED),
             Source::Settle => at(cell::PIN, pins.settle.unwrap_or(GROUND), part::CHANGED),
-            Source::Whole(c, part) => at(cell::PIN, pins.carrier(c), part),
+            Source::Whole(c) => value(cell::PIN, pins.carrier(c)),
             Source::Element(c, _, part) => at(cell::PIN, pins.carrier(c), part),
         }
     }

@@ -380,6 +380,9 @@ impl Nets {
     fn add(&mut self, name: &str, pin: &Pin) -> usize {
         let spec = if pin.kind == kind::EVENT {
             NetSpec::event(name)
+        } else if pin.count > 0 {
+            // an array pin no one shares: its own array net of the same element count (P4)
+            NetSpec::array(name, pin.layout.size, pin.layout.align, pin.count)
         } else {
             NetSpec::discrete(name, pin.layout.size, pin.layout.align)
         };

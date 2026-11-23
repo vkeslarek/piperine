@@ -8,6 +8,7 @@
 //! byte, nonzero when it fires (abi.md §4.1). An event fires when its source fired and its guard
 //! holds; the guard is evaluated only then.
 
+use piperine_abi::raw::part;
 use piperine_ir::{Body, EventSource, Ir, ValueType};
 use piperine_plan::{BodyPlan, FunctionPlan, Mode, Source};
 
@@ -125,8 +126,17 @@ impl<'a> DigitalPrinter<'a> {
             Source::BranchFlow(_) | Source::LimitValue(_) | Source::StimValue(_) | Source::LimitLast(_) | Source::LimitAge(_) => {
                 return Ok(None);
             }
-            // replaced by `print/carrier_array.rs` (composite-values T73)
-            Source::Whole(..) | Source::Element(..) => return Err(self.unsupported("a read of an array of carriers")),
+            // the one `CarrierArray` over an array pin, a reaction's read (`print/carrier_array.rs`)
+            Source::Whole(c) => match self.body.carriers().get(c as usize) {
+                Some(carrier) => format!("let {name} = rt::CarrierArray::<{}>::new({cx}.array({i}), {:?});", values.pin_type(&carrier.ty)?, format!("{}.{}", self.body.name(), carrier.name)),
+                None => return Ok(None),
+            },
+            // a constant element is read like a scalar pin: its bytes, or its `CHANGED` byte
+            Source::Element(c, _, part::CHANGED) if self.body.carriers().get(c as usize).is_some() => format!("let {name} = {cx}.bool({i});"),
+            Source::Element(c, ..) => match self.body.carriers().get(c as usize) {
+                Some(carrier) => pin(&carrier.ty)?,
+                None => return Ok(None),
+            },
         }))
     }
 
@@ -216,7 +226,11 @@ impl<'a> DigitalPrinter<'a> {
                     EventSource::At(_) => (self.names.read_name(Source::Timer(e)), format!("its timer fired (event {e})")),
                     // §13 rule 17: the `SETTLE` pin's `CHANGED` byte, which the engine fires in the settle phase (§15 step 4)
                     EventSource::Settle => (self.names.read_name(Source::Settle), "the settle phase runs".to_string()),
-                    EventSource::ElementChanged { .. } => return Err(self.unsupported("an element event (printed by `print/carrier_array.rs`)")),
+                    // §13 rule 9: the element's own `CHANGED` byte, gated by the guard
+                    EventSource::ElementChanged { carrier, element } => (
+                        self.names.read_name(Source::Element(carrier, element, part::CHANGED)),
+                        format!("element {element} of carrier {} changed", self.carrier_name(carrier)),
+                    ),
                 };
                 (source, event.guard, event.origin.clone(), what)
             }

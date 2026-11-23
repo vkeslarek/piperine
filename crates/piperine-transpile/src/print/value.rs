@@ -30,6 +30,7 @@ use piperine_ir::{Addend, AnalysisKind,
 use piperine_plan::{RecordLayout, StatementPlan};
 
 use crate::Error;
+use crate::print::carrier_array::{CarrierFacts, ElementRead};
 use crate::print::{ContributionSums, Text, TypeItems};
 
 /// Binding strength of a printed expression: an operand weaker than its place is parenthesized.
@@ -96,6 +97,8 @@ pub struct ValuePrinter<'a> {
     params: Vec<String>,
     /// The type each carrier of the owner's body holds, by index; empty for a function.
     carriers: Vec<ValueType>,
+    /// What the printer knows of each carrier of the owner's body, by index (arrays of carriers); empty for a function.
+    pub(super) facts: Vec<CarrierFacts>,
     /// The record streams of the owner's body, by index; empty for a function.
     streams: Vec<Stream>,
     /// The owner's origin: where an error with no expression of its own points.
@@ -162,6 +165,7 @@ impl<'a> ValuePrinter<'a> {
             loops: Cell::new(0),
             params: Vec::new(),
             carriers: Vec::new(),
+            facts: Vec::new(),
             streams: Vec::new(),
             origin,
             analog: None,
@@ -189,6 +193,7 @@ impl<'a> ValuePrinter<'a> {
             loops: Cell::new(0),
             params: Vec::new(),
             carriers: Vec::new(),
+            facts: Vec::new(),
             streams: Vec::new(),
             origin: data.origin.clone(),
             analog: None,
@@ -219,6 +224,7 @@ impl<'a> ValuePrinter<'a> {
             loops: Cell::new(0),
             params,
             carriers: body.carriers().iter().map(|c| c.ty.clone()).collect(),
+            facts: CarrierFacts::of_body(body),
             streams: body.streams().to_vec(),
             origin,
             analog: None,
@@ -334,7 +340,7 @@ impl<'a> ValuePrinter<'a> {
 
     /// The read `variable` of a carrier or its previous value, as the code's own real when the
     /// carrier holds one: the pin decodes at `f64`.
-    fn carrier_value(&self, e: ExprId, variable: String) -> Piece {
+    pub(super) fn carrier_value(&self, e: ExprId, variable: String) -> Piece {
         if *self.ir.expr_type(e) == ValueType::F64 && !self.plain {
             Piece::new(format!("R::constant({variable})"), Prec::Atom)
         } else {
@@ -698,9 +704,10 @@ impl<'a> ValuePrinter<'a> {
                 let message = message.as_ref().map_or_else(|| "None".to_string(), |m| format!("Some({m:?})"));
                 atom(format!("rt::Unwrap::of({}, {}, {message})", self.expr(*is)?, self.expr(*value)?))
             }
-            Expr::CarrierElement { .. } | Expr::ElementPrevious { .. } | Expr::ElementChanged { .. } => {
-                Err(self.unsupported(e, "an element of an array of carriers (printed by `print/carrier_array.rs`)"))
-            }
+            Expr::CarrierElement { carrier, index } => self.element_piece(e, *carrier, *index, ElementRead::Value),
+            Expr::ElementPrevious { carrier, index } => self.element_piece(e, *carrier, *index, ElementRead::Previous),
+            Expr::ElementChanged { carrier, index } => self.element_piece(e, *carrier, *index, ElementRead::Changed),
+            Expr::Carrier(c) if self.facts.get(*c as usize).is_some_and(|f| f.count.is_some()) => self.whole_piece(e, *c),
             Expr::Carrier(c) => match self.analog.as_ref().and_then(|r| r.carriers.get(*c as usize)) {
                 Some(name) => Ok(self.carrier_value(e, self.read(name))),
                 None => Err(self.unsupported(e, "a carrier read")),
@@ -1057,9 +1064,6 @@ impl<'a> ValuePrinter<'a> {
             Stmt::BoundStep { value, .. } => Err(self.unsupported(*value, "`bound_step` outside the top level of the `analog` block")),
             Stmt::Emit { stream, fields } => self.emit(s, *stream, fields),
             Stmt::Commit { carrier, value, after, target } => {
-                if target.is_some() {
-                    return Err(self.unsupported(*value, "an element or field commit (printed by `print/carrier_array.rs`)"));
-                }
                 if !self.commits {
                     return Err(Error::Unsupported {
                         form: "commit".into(),
@@ -1070,8 +1074,8 @@ impl<'a> ValuePrinter<'a> {
                 if self.carriers.get(*carrier as usize).is_none() {
                     return Err(self.unsupported(*value, "a commit to a carrier out of range"));
                 }
+                let statement = self.commit_statement(*value, *carrier, *after, target.as_ref())?;
                 let value = self.expr(*value)?;
-                let statement = StatementPlan::commit(self.ir, *carrier, *after);
                 let after = match after {
                     Some(a) => self.expr(*a)?,
                     None => "0.0".to_string(),
@@ -1086,10 +1090,10 @@ impl<'a> ValuePrinter<'a> {
                     // mutably: as an argument of `commits_.commit(..)` it would borrow it twice.
                     // The arguments are evaluated first, in the order they print
                     let (value, after) = (Self::indent(&value), Self::indent(&after));
-                    let call = format!("commits_.commit({index}, value_, after_);");
+                    let call = self.commit_call(index, *carrier, target.as_ref(), "value_", "after_")?;
                     return Ok(format!("{{\n    let value_ =\n{value};\n    let after_ =\n{after};\n    {call}\n}}"));
                 }
-                Ok(format!("commits_.commit({index}, {value}, {after});"))
+                self.commit_call(index, *carrier, target.as_ref(), &value, &after)
             }
         }
     }
