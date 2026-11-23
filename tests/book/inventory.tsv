@@ -80,7 +80,7 @@ block	values#9	d9806c64bb24943b	fragment	values#10	-	-
 block	values#10	bf4e0f7117cbdde7	run	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic	-	-
 block	values#11	a07bbc60df4e55a9	shown	-	-	-
 block	values#12	6801c85357a0db7b	shown	-	-	-
-block	values#13	e87cfdd0a992563c	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --analysis transient --stop 3e-6 --stream zone
+block	values#13	17474684df70d8fc	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run monitor.msl --analysis transient --stop 3e-6 --stream zone
 block	values#14	15606b1fa80f3505	run	piperine/book_values::the_monitor_file_runs_its_window_monitor_and_its_adder_and_refuses_logic	-	-
 block	values#15	c68146731ab6a79c	shown	-	-	-
 block	values#16	d022fb86cf9de984	shown	-	-	-
@@ -153,7 +153,7 @@ block	mixed#9	e34a5f2d8cee81d3	shown	-	-	-
 block	mixed#10	dcd6e04b0acbdb87	run	piperine/book_mixed::the_buck_control_loop_regulates_at_3_3_volts_with_a_duty_of_0_28	-	-
 block	mixed#11	d9f0417b5399de0c	shown	-	-	-
 block	mixed#12	063828848af5ddc2	shown	-	-	-
-block	mixed#13	b3a8001aabd763b6	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop
+block	mixed#13	af320b114762e1d5	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run buck.msl --analysis transient --stop 12e-3 --print vout --print-step 1e-3 --stream loop
 block	mixed#14	4479d1916b290544	run	piperine/book_mixed::the_delta_sigma_modulator_averages_its_input_and_starts_held_at_zero	-	-
 block	mixed#15	ea28fe2bc18e8e9d	run	piperine/book_mixed::the_sar_adc_runs_with_its_comparator_and_its_field_access	-	-
 block	packages#1	4d5e7db8c23bc8e3	shown	-	-	-

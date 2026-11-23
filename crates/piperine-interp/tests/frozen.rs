@@ -505,7 +505,7 @@ fn the_level_nodes_are_refused_by_name() {
     type Node = fn(&mut Dx<'_>, piperine_ir::ExprId) -> piperine_ir::ExprId;
     let nodes: [(&str, Node); 2] = [
         ("same", |x, v| x.same(v, v)),
-        ("cast", |x, v| x.level_cast(v, Ty::u(64), None, Ty::u(64))),
+        ("cast", |x, v| x.level_cast(v, Ty::u(64), None, ValueType::Option(Box::new(Ty::u(64))))),
     ];
     for (name, node) in nodes {
         let mut b = IrBuilder::new();

@@ -28,3 +28,8 @@ B3 (T16, the observable rule becomes the default; the cause is TP-02/TP-03, whic
 B4 (T22 no instant at an idle step, T25 the tick epoch, T18 to T21 per-step cost): no mixed-signal golden moves. `book_mixed`, `book_buck`, the parity targets, the twins and `parity_baseline` pass with their sources unedited; `buck_long` keeps its 210 188 steps and every limit (ripple 1.494 mV, largest `vout` 0.807500 V at 284.44 us, settling from 262.87 us) and `buck_accuracy` its 0.000136 mV.
 
 B4 (inventory): `tests/book/inventory.tsv` row `values#13` takes the fingerprint of the monitor listing B3 already updated (T16 above); the row was left behind then.
+
+Merge with `explicit-unknowns` (MD-78): the Book's buck listing (`piperine run buck.msl ... --stream loop`)
+moves in the sixth significant digit of `vout`/`err` from 0.72 ms on (for example `vout` at 0.72 ms
+-3.822375e-1 V became -3.822345e-1 V; `duty` equal to six digits), because the step controlled around the
+jump now reads each step by the tested landing and jump-step rule (TP-05). No record, count or limit of `buck_long` moved.

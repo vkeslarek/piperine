@@ -1002,7 +1002,7 @@ fn lagged_shape() -> ShapeRef {
     let mut s = ShapeBuf::new();
     let go = s.pin(PinSpec::event("go", role::PORT));
     let out = s.pin(PinSpec::discrete("out", role::PORT, &BIT));
-    s.reaction(ReactionSpec { name: "lagged", on: vec![go], writes: vec![statement(out, 2, 0)], ..ReactionSpec::default() });
+    s.reaction(ReactionSpec { name: "lagged", on: vec![go], writes: vec![statement(out, 1, 0)], ..ReactionSpec::default() });
     s.freeze()
 }
 

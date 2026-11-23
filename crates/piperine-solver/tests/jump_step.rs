@@ -140,7 +140,7 @@ fn the_instants_run_ahead_of_a_rejected_step_leave_no_record() {
     let (result, records) = Fixture::run_with_a_landing_in_the_first_step();
     assert!(result.stats.rejected_truncation >= 1);
     assert!(reactions("recorder") >= 2, "the instant ran again after the rejection ({})", reactions("recorder"));
-    let expected: Vec<Vec<u8>> = (1..=8u8).map(|i| vec![i, 1]).collect();
+    let expected: Vec<Vec<u8>> = (1..=8u8).map(|i| vec![i]).collect();
     assert_eq!(records, expected, "each record reaches the sink once");
 }
 
