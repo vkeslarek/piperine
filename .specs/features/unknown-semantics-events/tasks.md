@@ -742,15 +742,16 @@ T27 → T28 → T29 → T30 → T31
 **What**: In `types/event.rs`: a `fn` whose result is `Event` has its result in an event position; its call is an `Event` in an event position, a guard and a reaction body (read as `bool` there, T12/T13); elsewhere `E0441`; the "method `rise` on this receiver" refusal leaves for a handle receiver (generics' handles).
 **Where**: `crates/piperine-lang/src/types/event.rs`
 **Depends on**: None (its phase follows the previous one)
+**Amended (T27)**: the checker already accepts and types every form: the handle receiver of `req.rise()` (generics A-B: `carrier_named`/`declared_port` of a handle parameter) and the `Event` result of a function needed no change, so this task is the tests that pin it (anchor note 2b of Settled B5 is moot for the checker); the refusal lives in the elaborator (T28).
 **Reuses**: `Types::handle`, `infer_event_position`
 **Requirement**: UE-04
 **Executor**: Sonnet
 
 **Done when**:
 
-- [ ] `a_function_returning_event_is_accepted_in_every_event_position` and `a_function_returning_event_outside_an_event_position_is_e0441` pass under `**Run typesevents**`
-- [ ] Code clarity: `///` docs cite §13 rule 7; no free function
-- [ ] Gate check passes: Quick
+- [x] `a_function_returning_event_is_accepted_in_every_event_position` and `a_function_returning_event_outside_an_event_position_is_e0441` pass under `**Run typesevents**`
+- [x] Code clarity: `///` docs cite §13 rule 7; no free function
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
