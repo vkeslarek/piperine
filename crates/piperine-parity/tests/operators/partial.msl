@@ -203,3 +203,43 @@ analog for StimulusStateBench {
     v(a, gnd) +> 0.4;
     v(o, gnd) +> ddt(ac_stim(2.0) + v(a, gnd)) * v(a, gnd);
 }
+
+/// `ddx(5 i(a), i(a))` of a flow branch the module gives no potential contribution: a probe of the same flow
+/// contributes 1 (§14.2.3), so the derivative is 5 though the flow is no unknown.
+module FlowLeafFactor(a: Electrical, o: Electrical) {}
+analog for FlowLeafFactor {
+    i(a, gnd) +> v(a, gnd) / 1k;
+    v(o, gnd) +> ddx(5.0 * i(a, gnd), i(a, gnd));
+}
+
+module FlowLeafFactorBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let f = FlowLeafFactor(a, o);
+}
+analog for FlowLeafFactorBench { v(a, gnd) +> 0.4; }
+
+/// The same flow named the other way round: the reversed branch contributes -1, so `ddx(5 i(a, gnd), i(gnd, a))` is -5.
+module FlowLeafReversed(a: Electrical, o: Electrical) {}
+analog for FlowLeafReversed {
+    i(a, gnd) +> v(a, gnd) / 1k;
+    v(o, gnd) +> ddx(5.0 * i(a, gnd), i(gnd, a));
+}
+
+module FlowLeafReversedBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let f = FlowLeafReversed(a, o);
+}
+analog for FlowLeafReversedBench { v(a, gnd) +> 0.4; }
+
+/// A flow no contribution of the module reaches: `ddx(5 i(a), i(a))` is still 5, the derivative reading no value of it.
+module FlowLeafAlone(a: Electrical, o: Electrical) {}
+analog for FlowLeafAlone { v(o, gnd) +> ddx(5.0 * i(a, gnd), i(a, gnd)); }
+
+module FlowLeafAloneBench() {
+    signal a: Electrical;
+    signal o: Electrical;
+    let f = FlowLeafAlone(a, o);
+    let load = Resistor { r: 1k }(a, gnd);
+}

@@ -120,8 +120,8 @@ impl Checker<'_> {
         match (role, target) {
             (QuantityRole::Potential, _) | (QuantityRole::Flow, true) => Some(Ty::F64),
             // The flow of a branch the module drives with a potential (`v(p, n) +> ddt(l * i(p, n))`,
-            // the inductor) is a value; the flow of a flow branch is outside the subset.
-            (QuantityRole::Flow, false) if self.contributes_potential_to(args) => Some(Ty::F64),
+            // the inductor) is a value; the flow of a flow branch is no value, but a leaf of a `ddx` value (`differentiated`).
+            (QuantityRole::Flow, false) if self.contributes_potential_to(args) || self.differentiated > 0 => Some(Ty::F64),
             (QuantityRole::Flow, false) => {
                 self.unsupported(file, node.span, "flow probe read as a value");
                 None
@@ -268,7 +268,9 @@ impl Checker<'_> {
             self.arity_mismatch(file, span, 2, args);
             return None;
         };
+        self.differentiated += 1;
         self.check_argument(value.value, &Ty::F64);
+        self.differentiated -= 1;
         let probe_call = matches!(&self.design.expr_node(variable.value).kind, ExprKind::Call { class: crate::pom::CallClass::Probe, .. });
         if !probe_call {
             let at = self.design.expr_node(variable.value).span;

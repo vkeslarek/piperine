@@ -29,7 +29,7 @@ impl Elaboration<'_, '_> {
         standalone.at_solution = true;
         standalone.value_input = true;
         let density = self.lower_expr(&mut standalone, *density)?;
-        scope.adopt_stimuli(&mut standalone);
+        scope.adopt_standalone(&mut standalone);
         if !standalone.locals.is_empty() {
             self.unsupported(scope.file, span, "a closure or an `Option` binding inside a `noise` density");
             return None;

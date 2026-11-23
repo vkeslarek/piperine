@@ -78,18 +78,40 @@ impl Elaboration<'_, '_> {
 
     /// `i(a, b)` read as a value: the flow of the branch `(a, b)` the module gives a potential
     /// contribution (amendment A5), negated when the read names the branch the other way round.
-    /// A branch with no potential contribution is `P0001` (a flow branch has no flow read yet).
+    /// A branch with no potential contribution is `P0001` (a flow branch has no flow read yet), except in
+    /// a value that is differentiated, where it is a leaf (`flow_leaf_branch`).
     fn lower_flow_read(&mut self, scope: &mut Scope, expr: ExprId, plus: Terminal, minus: Terminal, origin: Origin) -> Option<LoweredExpr> {
         let span = self.design.expr_node(expr).span;
-        let Some((branch, reversed)) = self.potential_branch(scope, plus, minus) else {
-            self.unsupported(scope.file, span, "a flow probe of a branch without a potential contribution");
-            return None;
+        let (branch, reversed) = match self.potential_branch(scope, plus, minus) {
+            Some(found) => found,
+            None if scope.differentiated => self.flow_leaf_branch(scope, plus, minus),
+            None => {
+                self.unsupported(scope.file, span, "a flow probe of a branch without a potential contribution");
+                return None;
+            }
         };
         let flow = self.emit(Expr::Flow { branch }, ValueType::F64, origin.clone());
         if !reversed {
             return Some(flow);
         }
         Some(self.emit(Expr::Unary { op: piperine_ir::UnaryOp::Neg, expr: flow }, ValueType::F64, origin))
+    }
+
+    /// The branch between `plus` and `minus`, whether it is named the other way round, for the flow a `ddx` reads as a
+    /// leaf of its derivative though the module gives the branch no potential contribution: the branch a flow
+    /// contribution made, or a flow branch the read makes. The derivative of the leaf against itself is 1 (§14.2.3),
+    /// and the leaf is recorded in `flow_leaves`, since the value of such a flow is not read anywhere yet.
+    pub(super) fn flow_leaf_branch(&mut self, scope: &mut Scope, plus: Terminal, minus: Terminal) -> (u32, bool) {
+        let existing = scope.branches.iter().position(|b| (b.plus, b.minus) == (plus, minus) || (b.plus, b.minus) == (minus, plus));
+        let (branch, reversed) = match existing {
+            Some(at) => (at as u32, scope.branches[at].plus != plus),
+            None => {
+                scope.branches.push(Branch { plus, minus, kind: BranchKind::Flow });
+                (scope.branches.len() as u32 - 1, false)
+            }
+        };
+        scope.flow_leaves.push(branch);
+        (branch, reversed)
     }
 
     /// The potential branch between `plus` and `minus`, and whether it is named the other way
@@ -265,7 +287,7 @@ impl Elaboration<'_, '_> {
             lowered.push(value);
         }
         if guarded {
-            scope.adopt_stimuli(&mut standalone);
+            scope.adopt_standalone(&mut standalone);
         }
         if !standalone.locals.is_empty() {
             self.unsupported(scope.file, span, "a guarded `ac_stim` whose input binds a local");

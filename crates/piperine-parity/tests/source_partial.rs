@@ -153,3 +153,13 @@ fn an_ac_stim_read_by_a_ddt_state_compiles_and_reads_zero_at_the_operating_point
     // is 0 at the operating point (the stimulus is 0 there and `v(a)` is held).
     assert!(Partial::output("StimulusStateBench").abs() <= 1e-12);
 }
+
+#[test]
+fn ddx_against_a_flow_with_no_potential_contribution_reads_the_expression() {
+    // AO-01 AC 11 (§14.2.3): a probe of the same flow contributes 1, so `ddx(5 i(a), i(a))` is 5 of a flow
+    // branch that is no unknown, -5 against the reversed branch, and still 5 when no contribution of the
+    // module reaches the branch: the derivative is the expression's, never a literal.
+    assert!(Partial::within(5.0, Partial::output("FlowLeafFactorBench"), 1e-12));
+    assert!(Partial::within(-5.0, Partial::output("FlowLeafReversedBench"), 1e-12));
+    assert!(Partial::within(5.0, Partial::output("FlowLeafAloneBench"), 1e-12));
+}

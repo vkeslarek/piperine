@@ -83,6 +83,18 @@ fn an_ac_stim_read_by_a_noise_density_a_delay_input_or_a_ddx_value_is_a_site_of_
 }
 
 #[test]
+fn ddx_against_a_flow_with_no_potential_contribution_differentiates_the_expression() {
+    // AO-01 AC 11 (§14.2.3): `ddx(5 i(a), i(a))` is the derivative of the expression, 5, not a literal chosen
+    // for the branch; a derivative that still reads the value of that flow (`ddx(i * i, i)` is `2 i`) is `P0001`
+    // naming it, since no solve reads such a flow yet.
+    let five = Elab::ir(&Sources::design("i(a, gnd) +> v(a, gnd) / 1k; v(o, gnd) +> ddx(5.0 * i(a, gnd), i(a, gnd));"), "Top");
+    assert!(five.to_string().contains("potential +> direct 5.0"), "{five}");
+    let err = Elab::run(&Sources::design("i(a, gnd) +> v(a, gnd) / 1k; v(o, gnd) +> ddx(i(a, gnd) * i(a, gnd), i(a, gnd));"), "Top").expect_err("a derivative that reads the flow");
+    assert_eq!(Elab::codes(&err), ["P0001"], "{:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+    assert!(err[0].diagnostic.message.contains("reads the value of the flow of a branch with no potential contribution"), "{}", err[0].diagnostic.message);
+}
+
+#[test]
 fn a_delay_without_max_whose_td_varies_is_e0452() {
     // AO-02 AC 5 (§14.6.2): without `max`, `td` is constant during an analysis: params, constants,
     // `temperature()`. A `td` that reads a probe or `now()` is `E0452` naming the placement (the

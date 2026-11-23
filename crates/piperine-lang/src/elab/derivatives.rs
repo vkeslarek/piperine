@@ -129,7 +129,7 @@ impl Elaboration<'_, '_> {
             [tolerance] => Some(self.lower_expr(&mut standalone, *tolerance)?),
             _ => None,
         };
-        scope.adopt_stimuli(&mut standalone);
+        scope.adopt_standalone(&mut standalone);
         if !standalone.locals.is_empty() {
             self.unsupported(scope.file, span, "a closure or an `Option` binding inside a `ddt` state");
             return None;
@@ -148,11 +148,12 @@ impl Elaboration<'_, '_> {
         standalone.analog = scope.analog;
         standalone.at_solution = scope.at_solution;
         standalone.value_input = scope.value_input;
-        standalone.expands_functions = scope.expands_functions;
+        standalone.differentiated = scope.differentiated;
         standalone.keys = scope.keys.clone();
         standalone.let_sources = scope.let_sources.clone();
-        // the stimulus sites of the enclosing scope stay numbered as they are: one the code adds is the next
+        // the stimulus sites and the branches of the enclosing scope stay numbered as they are: one the code adds is the next
         standalone.stims = scope.stims.clone();
+        standalone.branches = scope.branches.clone();
         standalone
     }
 }

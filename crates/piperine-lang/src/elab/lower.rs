@@ -70,7 +70,10 @@ pub(super) struct Scope {
     pub(super) value_input: bool,
     /// Code that is differentiated symbolically (a `ddx` value): a `fn` called there is expanded where it stands
     /// (`expansion.rs`), not called.
-    pub(super) expands_functions: bool,
+    pub(super) differentiated: bool,
+    /// The branches whose flow a differentiated value reads as a leaf though the module gives them no potential
+    /// contribution (`analog.rs`): the derivative may not read their value.
+    pub(super) flow_leaves: Vec<u32>,
     /// Whether the code being lowered reads `freq()` from the solve (§14.4.4): the analog block
     /// and the functions it calls (a function's `freq_` is the caller's; a reaction reads 0).
     pub(super) analog: bool,
@@ -116,17 +119,20 @@ pub(super) struct Scope {
 }
 
 impl Scope {
-    /// Takes over the `ac_stim` sites, and the statements that write them, a standalone scope made from a copy of this
-    /// one's (`standalone_scope`): so a stimulus read inside a value a primitive evaluates on its own (a `noise`
-    /// density, a `delay` input, a `ddt` state, a `ddx` value) is a site of the body. The `limit` sites it made stay
-    /// its own: a `limit` there is read at a solution (`at_solution`) or differentiated through, never evaluated.
-    pub(super) fn adopt_stimuli(&mut self, standalone: &mut Scope) {
+    /// Takes over what a standalone scope made from a copy of this one's (`standalone_scope`) added: the `ac_stim` sites
+    /// and the statements that write them, the branches a flow read numbered, and the flow leaves. So a stimulus or a
+    /// flow read inside a value a primitive evaluates on its own (a `noise` density, a `delay` input, a `ddt` state, a
+    /// `ddx` value) is a site or a branch of the body. The `limit` sites it made stay its own: a `limit` there is read
+    /// at a solution (`at_solution`) or differentiated through, never evaluated.
+    pub(super) fn adopt_standalone(&mut self, standalone: &mut Scope) {
         self.stims = standalone.stims.clone();
+        self.branches = standalone.branches.clone();
+        self.flow_leaves.append(&mut standalone.flow_leaves);
         self.hoisted_steps.append(&mut standalone.hoisted_steps);
     }
 
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), handles: BTreeMap::new(), no_locals: false, at_solution: false, value_input: false, expands_functions: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), handles: BTreeMap::new(), no_locals: false, at_solution: false, value_input: false, differentiated: false, flow_leaves: Vec::new(), analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
     }
 }
 
@@ -514,7 +520,7 @@ impl Elaboration<'_, '_> {
             // A function that emits is no IR function: its call is inlined where it stands (§19 rule 10).
             (_, Some(Callee::Function(function))) if self.is_inlined(function) => self.inline_emitting_value(scope, function, args, origin),
             // A `fn` called in a value that is differentiated is expanded where it stands (`expansion.rs`).
-            (_, Some(Callee::Function(function))) if scope.expands_functions => self.expand_function_call(scope, expr, function),
+            (_, Some(Callee::Function(function))) if scope.differentiated => self.expand_function_call(scope, expr, function),
             // A recursion reached from an `analog` block is expanded where it is called (§3 rule 12, `unroll.rs`).
             (_, Some(Callee::Function(function))) if scope.in_analog_block && self.reaches_recursion(function) => self.lower_expanded_call(scope, expr, function, origin),
             (_, Some(Callee::Function(function))) => {

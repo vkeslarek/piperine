@@ -21,42 +21,43 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_ddx(&mut self, scope: &mut Scope, call: ExprId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
         let span = self.design.expr_node(call).span;
         let [value, probe] = args else { return None };
-        let unknown = self.ddx_variable(scope, *probe)?;
+        let (unknown, reversed) = self.ddx_variable(scope, *probe)?;
         let mut standalone = Self::standalone_scope(scope);
-        standalone.expands_functions = true;
+        standalone.differentiated = true;
         standalone.value_input = true;
         // a local the derivative would read is refused by the pass, naming it; the locals of the
         // closure a `limit` takes are never read, `limit` being transparent
         let expr = self.lower_expr(&mut standalone, *value)?;
-        scope.adopt_stimuli(&mut standalone);
+        scope.adopt_standalone(&mut standalone);
         if self.reads_a_function(expr) {
             self.unsupported(scope.file, span, "a call inside a `ddx` that is no `fn` it can expand (a method, a generic `fn`)");
             return None;
         }
-        let derivative = match unknown {
-            // the body of the derivative is the one being lowered: it has no id yet and the pass reads none of it
-            Some(variable) => match Differentiation::new(&mut self.ir, BodyId(0), variable).of(expr) {
-                Ok(derivative) => derivative,
-                Err(refused) => {
-                    self.unsupported(scope.file, span, refused.form);
-                    return None;
-                }
-            },
-            // no unknown: `e` is held constant against it (§14.2.3)
-            None => self.emit(Expr::Real(piperine_ir::Real::new(0.0)), ValueType::F64, origin.clone()),
+        // the body of the derivative is the one being lowered: it has no id yet and the pass reads none of it
+        let derivative = match Differentiation::new(&mut self.ir, BodyId(0), unknown).of(expr) {
+            Ok(derivative) => derivative,
+            Err(refused) => {
+                self.unsupported(scope.file, span, refused.form);
+                return None;
+            }
         };
         self.adopt_built_expressions();
+        if self.reads_a_flow_leaf(derivative, &scope.flow_leaves.clone()) {
+            self.unsupported(scope.file, span, "a `ddx` whose derivative reads the value of the flow of a branch with no potential contribution");
+            return None;
+        }
+        let derivative = if reversed { self.emit(Expr::Unary { op: piperine_ir::UnaryOp::Neg, expr: derivative }, ValueType::F64, origin.clone()) } else { derivative };
         let probe_span = self.design.expr_node(*probe).span;
         let name = self.design.file_data(scope.file).text.get(probe_span.range()).unwrap_or("probe").to_string();
         self.structure.partial_derivatives.push(PartialDerivative { name, origin });
         Some(derivative)
     }
 
-    /// The variable of `ddx`: the potential of the probe's nodes, or the flow of the potential branch
-    /// between them (the type checker accepted a probe call only). The flow of a branch the module gives
-    /// no potential contribution is no unknown, so the inner `None`: the derivative against it is 0, any
-    /// other branch being held constant (§14.2.3). The outer `None` is a diagnostic.
-    fn ddx_variable(&mut self, scope: &mut Scope, probe: ExprId) -> Option<Option<Variable>> {
+    /// The variable of `ddx` and whether the probe names its branch the other way round: the potential of the
+    /// probe's nodes, or the flow of the branch between them (the type checker accepted a probe call only). A
+    /// branch the module gives no potential contribution is a leaf like any other (`flow_leaf_branch`), so a probe
+    /// of the same flow contributes 1 and any other quantity is held constant (§14.2.3). `None` is a diagnostic.
+    fn ddx_variable(&mut self, scope: &mut Scope, probe: ExprId) -> Option<(Variable, bool)> {
         let node = self.design.expr_node(probe).clone();
         let ExprKind::Call { callee, args, .. } = &node.kind else { return None };
         let mut terminals = Vec::new();
@@ -72,9 +73,32 @@ impl Elaboration<'_, '_> {
             }
         };
         match self.quantity_role(*callee) {
-            Some(QuantityRole::Flow) => Some(self.potential_branch(scope, plus, minus).map(|(branch, _)| Variable::Flow { branch })),
-            _ => Some(Some(Variable::Potential { plus, minus })),
+            Some(QuantityRole::Flow) => {
+                let (branch, reversed) = match self.potential_branch(scope, plus, minus) {
+                    Some(found) => found,
+                    None => self.flow_leaf_branch(scope, plus, minus),
+                };
+                Some((Variable::Flow { branch }, reversed))
+            }
+            _ => Some((Variable::Potential { plus, minus }, false)),
         }
+    }
+
+    /// Whether the lowered expression `expr` reads the flow of one of `branches`.
+    fn reads_a_flow_leaf(&self, expr: LoweredExpr, branches: &[u32]) -> bool {
+        let mut open = vec![expr];
+        let mut seen = std::collections::HashSet::new();
+        while let Some(e) = open.pop() {
+            if !seen.insert(e) {
+                continue;
+            }
+            let Some(kind) = self.ir.expr_kind(e) else { continue };
+            if matches!(kind, Expr::Flow { branch } if branches.contains(branch)) {
+                return true;
+            }
+            open.extend(kind.operands());
+        }
+        false
     }
 
     /// Whether the lowered expression `expr` calls an IR function.

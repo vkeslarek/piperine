@@ -1405,9 +1405,11 @@ Proof: run spartial | test ddx_of_two_calls_of_one_fn_reads_each_calls_arguments
 Proof: run elabops | test ddx_through_a_fn_call_expands_the_call_and_differentiates_its_body ... ok
 Proof: run elabops | test a_fn_with_more_than_lets_and_a_value_is_p0001_inside_a_ddx ... ok
 
-**C74** - `ddx(e, i(a, gnd))` of a branch with no potential contribution is 0. (AO-01, AC 11; closing round)
+**C74** - `ddx(e, i(a, gnd))` of a branch with no potential contribution differentiates `e`: 5 for `5 i(a, gnd)`, -5 against the reversed branch, 5 when no contribution reaches the branch, 0 for `3 v(a, gnd)`, and `P0001` naming the value read when the derivative still reads it. (AO-01, AC 11; closing round, round 2 finding 36)
 Proof: run spartial | test ddx_against_the_flow_of_a_branch_with_no_potential_contribution_is_zero ... ok
+Proof: run spartial | test ddx_against_a_flow_with_no_potential_contribution_reads_the_expression ... ok
 Proof: run elabops | test ddx_against_the_flow_of_a_branch_with_no_potential_contribution_is_the_literal_zero ... ok
+Proof: run elabops | test ddx_against_a_flow_with_no_potential_contribution_differentiates_the_expression ... ok
 
 **C78** - `ac_stim` read by the value of a `ddx`, a `delay` input or a `noise` density runs, and elaborates for a `ddt` state and an unread derivative too: the `ddx` result is the stimulus plus the derivative (3 at the operating point, 2 in the sweep), a delayed stimulus is the phasor turned by `exp(-j w td)`, a density that reads it is 0 in a noise run, and no form is the internal error `P0004`. (AO-01, AC 12; AO-02, AC 8; AO-03, AC 10; closing round, round 2 finding 33)
 Proof: run elabops | test an_ac_stim_read_by_a_noise_density_a_delay_input_or_a_ddx_value_is_a_site_of_the_body ... ok
