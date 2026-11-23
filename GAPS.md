@@ -22,7 +22,7 @@ yet"; `P0002` of a plain type mismatch.
 **Size hints.** S: days, one crate. M: one feature of 10 to 25 tasks. L: several features, or a
 change of the IR or the ABI.
 
-**Counts.** 1 silent, 2 broken, 20 loud (L1 to L72 less the six `analog-operators` rows (L43, L44, L45, L47, L49, L60), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the four `params-and-io` (L20, L28, L39, L57) and the nine `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63, L66), the two `resolved-nets` rows (L22, L23) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, in six tables) plus
+**Counts.** 1 silent, 2 broken, 19 loud (L1 to L72 less the seven `analog-operators` rows (L43, L44, L45, L47, L49, L60, and L72, which it found and closed), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the two `unknown-semantics-events` (L51, L52), the four `params-and-io` (L20, L28, L39, L57) and the nine `composite-values` rows (L1, L2, L3, L5, L6, L10, L16, L63, L66), the two `resolved-nets` rows (L22, L23) and the three `explicit-unknowns` rows (L64, L65, L68) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, in six tables) plus
 7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 8 unproven.
 
@@ -30,7 +30,7 @@ change of the IR or the ABI.
 | ------- | --- |
 | §2 Broken | B3, B4 |
 | §3 Silent (read this first) | S3, for generic modules (S6 and S8 closed by `explicit-unknowns`) |
-| §4 Loud | L1–L72 (L43, L44, L45, L47, L49 and L60 closed by `analog-operators`; L72 found by it; L64 and L65 closed by `explicit-unknowns`; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L22, L23 closed; L4, L7, L8 and L9 closed by `generics` phases A and B; L64 to L66 found by `composite-values`; L68 split from L58 and closed by `explicit-unknowns` phase B) |
+| §4 Loud | L1–L72 (L43, L44, L45, L47, L49, L60 and L72 closed by `analog-operators` (L72 found by it); L64 and L65 closed by `explicit-unknowns`; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L22, L23 closed; L4, L7, L8 and L9 closed by `generics` phases A and B; L64 to L66 found by `composite-values`; L68 split from L58 and closed by `explicit-unknowns` phase B) |
 | §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X1, X2 (X6 decided by `generics`; X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
 | §6 Solver, numerics, performance | V13, V16 (V12 closed by `transient-performance`) |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
@@ -162,7 +162,6 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 | L71 | a host write of a `Logic` param or of a four-state pattern: a `Logic` param is a struct param (`P0001`), and no host call takes `"10xz"` for a `Logic<4>` cell, though the host prints a cell as that pattern (EU-15 AC 4). T47 planned `parse the same pattern for a host write` and dropped it: no criterion asks for one and the write fails loud (owner `resolved-nets`, whose host drive of a resolved `Logic` carrier is the first caller; it parses the pattern with the rules of §22.1.4 and writes the two planes of `abi.md` P3) | §22.1.1, §22.1.4 | `P0001` (a struct param) | S |
 | L61 | sweeping or setting a key param after `Session::open`: a param that fixes the structure (a selector, an initial value, a reached param) is folded into the body at elaboration, so a `dc` sweep of it, or a `set` of it between open and the run, needs one elaboration per value. Today `E0803` refuses both naming the param; the before-run request param (`--param`) works (owner `sweeps-montecarlo-optimization`; found by `analog-structure` verification F1) | §23.1 rule 7, §8.1.2 | `E0803` | M |
 | L62 | a `switch` branch between two floating nodes with an undriven control panics in faer (`attempt to subtract with overflow`, `faer.rs:47`) instead of a named solver error (owner `spec-closure`; found by the `analog-structure` fix round) | §11 (switch branches), §15 | a switch between two floating nodes whose control no source drives | S |
-| L72 | an `emit!` reached from `analog` through a `fn`: a direct `emit!` in an `analog` block is a trace (`analog-operators` T37), one inside a function the block calls stays refused naming the `fn`, because a trace inside a function needs a watch buffer passed through calls (design D14; no criterion asks for it) | §19 rule 4, §11 rule 20 | `P0001` naming the `fn` | M |
 
 ### 4.7 Backends
 
@@ -170,9 +169,6 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
   digital or amended form by name.
 - **`ir-rust` refuses** `UInt<N>`/`Int<N>` with N outside 1..=64 by name; the ABI's leaves end at
   64 bits.
-- **A drive, an event guard or an `at` argument that calls a function reading `freq()`** is refused loud by the
-  IR's ambient-reads check (it read 0 silently before `msl-fixes` F1). §14.4 gives such a context 0; size S
-  (owner `analog-operators`).
 - **A DC sweep's points deliver no records**, so a `dc` run of a design with a record stream is `P0010`
   before anything compiles; `piperine test` counts it `FAIL <name> (did not run)`.
 
@@ -257,11 +253,12 @@ adjoint and PSS (`core/circuit.rs:111` to `:172`); the host exposes four analyse
 
 ## 8. Unproven
 
-- **U1. Parity covers 16 small circuits** (`tests/e2e/twins/*.msl`: a divider, a current
-  source, three diode circuits, `ac_rc`, `tran_rc`, `tran_dq`, `tran_jump`, `tran_corner`,
-  `tran_floor`, `tf_divider`, `pz_lowpass`, `sens_divider`, `pss_rc`, `temp_res`). 43 of the 59
-  `.cir` fixtures have no MSL twin: BJT, JFET, MOS 1 to 3, noise, distortion, homotopy. Two twins
-  (`diode_iv`, `tran_rc`) sit near the tolerance floor.
+- **U1. Parity covers 23 small circuits** (`tests/e2e/twins/*.msl` less the shared `devices.msl`: a divider, a
+  current source, four diode circuits, `ac_rc`, `tran_rc`, `tran_dq`, `tran_jump`, `tran_corner`, `tran_floor`,
+  `uic_rc`, `tf_divider`, `pz_lowpass`, `sens_divider`, `pss_rc`, `temp_res`, `tnom_res`, `delay_tline`, and the
+  noise twins `noise_rc`, `noise_switch`, `noise_diode`). 43 of the 66 `.cir` fixtures have no MSL twin: BJT, JFET,
+  MOS 1 to 3, the MOS and JFET noise netlists, distortion, homotopy, the URC lines. Two twins (`diode_iv`,
+  `tran_rc`) sit near the tolerance floor.
 - **U2. No oracle for digital or mixed-signal behavior.** The interpreter cannot run them; they
   are tested against the spec's own expected values and `examples/buck/SPEC.md` only.
 - **U3. The buck's scenarios S2 to S10 run on the Rust host** (`buck-scenarios`:
@@ -277,9 +274,9 @@ adjoint and PSS (`core/circuit.rs:111` to `:172`); the host exposes four analyse
   part (§16.1.4) or a DC sweep that crosses a threshold (§16.1.2).
 - **U9. The two backends agree on the M1 subset only** (`backends`, `twins`); everything else has
   one implementation and no second opinion.
-- **U11. `analysis(Noise)` is proven in the solver only.** The noise analysis's operating point
-  carries the `NOISE` flag (`piperine-solver/tests/environment.rs`); no MSL design that reads it
-  is run through a noise analysis from source.
+- **U11. `analysis(Noise)` is proven in the solver and from source.** The noise analysis's operating point carries
+  the `NOISE` flag (`piperine-solver/tests/environment.rs`) and `source_noise` runs a design that reads it through a
+  noise run from source (`analysis_noise_is_true_and_ac_stim_zero_in_a_noise_run`).
 
 ---
 
@@ -301,10 +298,10 @@ does not count.
 | III §8.4–§8.5 templates, `m`/`dtemp`, extern | 0 % | all |
 | IV §10–§11 analog | 70 % | the §18 `Diode` (L40), an ideal-step `slew` (L60) |
 | IV §12–§13 digital, events | 60 % | `Event` functions, loops, element commits |
-| IV §14 core primitives | 50 % | `ddx`, `delay`, `noise`, `simparam`, `others`, `include_str!` |
+| IV §14 core primitives | 80 % | `others`, `include_str!`, `noise_table` (L58) |
 | V §15–§18 execution | 60 % | digital-only runs, error naming, the text of §15 itself (X1) |
-| VI §19–§21 output, input, metadata | 35 % | traces, files, host metadata |
-| VII §22 stdlib | 36 % (about 30 of 75 names; `normal` runs) | everything generic, every resolved net, `idt`, filters, noise, tables |
+| VI §19–§21 output, input, metadata | 45 % | files, host metadata |
+| VII §22 stdlib | 36 % (about 30 of 75 names; `normal` runs) | everything generic, every resolved net, `idt`, filters, tables |
 | VIII §23 host | 15 % | host actions, options, Monte Carlo, optimization, gradients |
 | A lexical, B grammar | 100 % parsed | the placement matrix B.2 is enforced for the subset only |
 | C reference implementation | defaults in place | the C.2 text is stale (X1, X2); 1 of the 5 conformance items runs |
@@ -341,7 +338,7 @@ E0807 E0808 E0809`
 | ------- | ------ | ---- |
 | `set` and params | H5, L29, H4 | M |
 | Analog structure (delivered, MD-71) | what is left of L40: the stdlib `idt` and `Water` after `generics` | S |
-| Analog operators (delivered, MD-82) | L43, L44, L45, L47, L49, L60, H2 (`Noise`), U7 (L72 stays) | M to L |
+| Analog operators (delivered, MD-82) | L43, L44, L45, L47, L49, L60, H2 (`Noise`), U7, L72 | M to L |
 | Composite values | L24 (phases A and B closed L1 to L3, L5, L6, L10, L16 and the part of L9 that is not `generics`; MD-79) | L |
 | Generics and generation (phases A and B delivered: L4, L7, L8, L9, X6) | L30, L31, L32, S3 for generic modules: `Short`, `since`, the filters, the monitors, the Book's ladder | L |
 | Resolved nets and bundles | L21, L25: natures that implement `Resolve`, `Tribuf`, `Tran`, `Bidir` | L |

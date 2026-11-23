@@ -31,6 +31,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run snoise**: `cargo test -p piperine-parity --test source_noise`
 **Run ssession**: `cargo test -p piperine-parity --test source_session`
 **Run straces**: `cargo test -p piperine-parity --test source_traces`
+**Run tevents**: `cargo test -p piperine-lang --test types_events`
 **Run sslew**: `cargo test -p piperine-parity --test source_slew`
 **Run partran**: `cargo test -p piperine-parity --test parity_tran`
 **Run parac**: `cargo test -p piperine-parity --test parity_ac`
@@ -1397,6 +1398,27 @@ Proof: run retake | test a_second_round_retake_runs_settle_once_and_delivers_its
 Proof: run retake | test the_first_step_after_an_operating_point_that_holds_a_settle_commit_is_first_order ... ok
 Proof: run digital | test a_reopened_instant_settles_at_its_last_microstep ... ok
 Proof: run digital | test a_firing_after_a_reopened_instant_is_due_at_the_next_microstep ... ok
+
+**C73** - `ddx` of calls of a `fn` (a `let` and a value, and a `fn` that calls another) equals the closed derivative of the same expression, a second call of one `fn` binds its own arguments, and a `fn` whose body is more than `let`s and a value is `P0001` naming the statement. (AO-01, AC 10; closing round)
+Proof: run spartial | test ddx_differentiates_through_a_fn_and_a_fn_it_calls ... ok
+Proof: run spartial | test ddx_of_two_calls_of_one_fn_reads_each_calls_arguments ... ok
+Proof: run elabops | test ddx_through_a_fn_call_expands_the_call_and_differentiates_its_body ... ok
+Proof: run elabops | test a_fn_with_more_than_lets_and_a_value_is_p0001_inside_a_ddx ... ok
+
+**C74** - `ddx(e, i(a, gnd))` of a branch with no potential contribution is 0. (AO-01, AC 11; closing round)
+Proof: run spartial | test ddx_against_the_flow_of_a_branch_with_no_potential_contribution_is_zero ... ok
+Proof: run elabops | test ddx_against_the_flow_of_a_branch_with_no_potential_contribution_is_the_literal_zero ... ok
+
+**C75** - A `noise` density and a `delay` input that read a `let` bound to a `limit` read the `limit`'s argument. (AO-03, AC 9; closing round)
+Proof: run snoise | test a_let_reading_a_limit_is_a_density_input ... ok
+Proof: run sdelay | test a_let_reading_a_limit_is_a_delay_input ... ok
+
+**C76** - A definition or an `at` argument that reaches `freq()` through a `fn` is `E0336` or `E0442`, an error of the language (§8.2.5, §13 rule 11), so GAPS §4.7's row is no gap. (Edge case; closing round, GAPS §4.7)
+Proof: run elabops | test a_definition_or_an_at_argument_reaching_freq_through_a_fn_is_refused_by_the_checker ... ok
+
+**C77** - A `fn` the analog block calls, which reaches `emit!("newton", ..)`, writes the records of the `emit!` written in the block; a `log` or a `fn` that emits checks from `analog`. (AO-09, AC 8; closing round, GAPS L72)
+Proof: run straces | test a_trace_written_through_a_fn_is_the_trace_of_its_call ... ok
+Proof: run tevents | test an_emit_reached_from_analog_through_a_fn_checks ... ok
 
 **C70** - The band total integrates the density by ngspice's power-law rule, exact on power laws. (AO-05, AC 1, D8; T2, T3)
 Proof: run numerics | test the_power_law_integral_is_exact_on_power_laws ... ok

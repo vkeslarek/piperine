@@ -21,7 +21,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 
 ## Goals
 
-- [x] `ddx`, `delay`, `noise`, `simparam` and `emit!` in `analog` run on the Rust backend as §14 and §16.2 define them (`emit!` through a `fn` stays `P0001`, GAPS L72; `simparam` is an `Option<f64>`, user 2026-11-23).
+- [x] `ddx`, `delay`, `noise`, `simparam` and `emit!` in `analog` run on the Rust backend as §14 and §16.2 define them (`emit!` through a `fn` is the trace of its call, closing round; `simparam` is an `Option<f64>`, user 2026-11-23).
 - [x] `white_noise` and `flicker_noise` run; `noise_table` stays refused by name with the generics group of GAPS L58 until `generics` merges (AO-04 AC 3 is a `WHERE` criterion).
 - [x] `analysis = "noise"` runs from a run table and from the command line, and agrees with ngspice `.noise` on `noise_rc` and a new `noise_diode` twin; `noise_switch` is held to its closed form where ngspice reads a closed switch as open, and agrees with `noise_switch_off.cir` once opened (AO-06 AC 2 amended).
 - [x] (Withdrawn, user 2026-11-23) `tnom` is no session option: it is a per-instance model param, proven against ngspice on a new `tnom_res` twin.
@@ -86,6 +86,8 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 7. IF the second argument is not a potential or flow probe of a branch of the module (`p.inflow()`, any other expression) THEN the system SHALL report `E0451`.
 8. IF `ddx` is written outside `analog`, or in a body `let` or value input that a definition or a reaction reads THEN the system SHALL report `E0450`.
 9. WHEN an AC sweep linearizes a contribution `i(o, gnd) +> ddx(id, v(a, k)) * v(in);` THEN the system SHALL use the value of `ddx` at the operating point: the gain `|v(o)/v(in)|` equals that value times the load of `o`, within `AC_MAGNITUDE`.
+10. WHEN `e` calls a `fn` (`ddx(shockley(v(a, k), is, nvt), v(a, k))`, the `fn` having `let`s and a value) THEN the system SHALL differentiate its body with the parameters read as the arguments, so the result equals the derivative of the same expression written in place; a `fn` whose body is more than `let`s and a value SHALL be `P0001` naming the statement. (Added in the closing round, finding 26: a `fn` call was refused.)
+11. WHEN the second argument is the flow of a branch the module gives no potential contribution THEN the system SHALL give 0: that flow is no unknown and any other branch is held constant (§14.2.3). (Added in the closing round, finding 26.)
 
 **Independent Test**: transpile tests against the closed forms; elaboration tests for `E0450` and `E0451`.
 
@@ -127,6 +129,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 6. IF `psd` is negative or not finite at a frequency of a noise sweep THEN the system SHALL fail the analysis with `E0454` naming the instance and the frequency.
 7. WHEN a reaction or an event argument reads a `noise` result THEN the system SHALL give 0.
 8. WHEN two sources share a `name` THEN the system SHALL keep them independent: the name groups, it does not correlate.
+9. WHEN a `noise` density or a `delay` input reads a `let` bound to a `limit` THEN the system SHALL read it as the `limit`'s argument: both are evaluated at a solution, where the limited iterate is the unlimited one (§14.7.4). (Added in the closing round, finding 26: the form was refused as "a `let` inside a `noise`".)
 
 **Acceptance Criteria** (AO-04, the stdlib noise modules):
 
@@ -205,6 +208,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 5. IF a site reached from `analog`, directly or through a `fn`, writes the stream `sim` or `checks` (`require(..)` in `analog` included) THEN the system SHALL report `E0603` naming the site.
 6. WHEN a run does not name a trace stream in `streams` THEN the system SHALL record none of its records (Q5); WHEN it names one THEN the system SHALL deliver every record of it.
 7. The system SHALL NOT let a trace record change any carrier, solve or event (§19 rule 9).
+8. WHEN an `analog` block calls a `fn` that reaches `emit!` on another stream than `sim` and `checks` THEN the system SHALL write the records the same `emit!` written in the block writes, the call inlined where it stands (§19 rule 10). (Added in the closing round: GAPS L72, which the feature found, is closed rather than left ownerless.)
 
 **Independent Test**: a transpile test over a diode whose Newton path is known, counting records per iteration; elaboration tests for `E0603`.
 
@@ -265,6 +269,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 - WHEN `delay`'s `td` is exactly `max` THEN the system SHALL read `x` as it was `max` ago.
 - WHEN `ddx`'s `e` does not read the probe at all THEN the system SHALL give 0.
 - WHEN `simparam` is called with a name the run gives and `.unwrap_or(default)` is applied to it THEN the system SHALL give the run's value, and the default when the run gives none (`simparam` has no default argument, user 2026-11-23).
+- WHEN a definition or an `at` argument reaches `freq()` through a `fn` THEN the system SHALL report `E0336` or `E0442` (§8.2.5, §13 rule 11), as it does for a direct read: the form is an error of the language, and the IR's ambient-reads check is its backstop.
 - WHEN a trace site's fields differ in type from another site of the same stream THEN the system SHALL report the error of §19 rule 12, as for reaction records.
 
 ---
