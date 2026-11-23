@@ -32,6 +32,7 @@ mod expr;
 mod flow;
 mod generics;
 mod intrinsic;
+mod inference;
 mod iterators;
 mod lengths;
 mod literals;

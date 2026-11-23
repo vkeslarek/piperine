@@ -45,7 +45,7 @@ enum ItemPhase {
 }
 
 /// The parts of a function signature, each typed on its own.
-struct SignatureParts {
+pub(super) struct SignatureParts {
     params: Vec<(DeclId, Option<Ty>)>,
     ret: Option<Ty>,
     ok: bool,
@@ -532,10 +532,21 @@ impl<'d> Checker<'d> {
         }
     }
 
+    /// The declared parameter types and result of a function whatever its generics: a generic
+    /// function's mention its type parameters as `Ty::Param`. `None` after a refusal.
+    pub(super) fn declared_signature(&mut self, decl: DeclId) -> Option<(Vec<Ty>, Ty)> {
+        let parts = self.signature_parts(decl)?;
+        let params: Option<Vec<Ty>> = parts.params.iter().map(|(_, ty)| ty.clone()).collect();
+        match (parts.ok, params, parts.ret) {
+            (true, Some(params), Some(ret)) => Some((params, ret)),
+            _ => None,
+        }
+    }
+
     /// The signature piece by piece: each parameter with its type if it has one, the result if
     /// it has one, and whether the signature as a whole is inside the subset. A refused piece
     /// does not stop the others from being typed, so the body can still be checked.
-    fn signature_parts(&mut self, decl: DeclId) -> Option<SignatureParts> {
+    pub(super) fn signature_parts(&mut self, decl: DeclId) -> Option<SignatureParts> {
         let data: DeclData = self.design.decl_data(decl).clone();
         let DeclKind::Fn(f) = &data.kind else { return None };
         let mut ok = true;

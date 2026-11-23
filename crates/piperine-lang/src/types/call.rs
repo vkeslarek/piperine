@@ -90,7 +90,17 @@ impl Checker<'_> {
         }
         self.reach(function);
         self.emitting_call(expr, function);
+        if self.design.decl_data(function).generics_span.is_some() {
+            return self.generic_call(expr, callee, function, args);
+        }
         let (params, ret) = self.signature(function)?;
+        self.finish_call(expr, callee, function, params, ret, args)
+    }
+
+    /// The typing of a call of `function` once its parameter types and result are known (a generic
+    /// function's are the substituted ones): the callee recorded, the arguments bound to the
+    /// parameters, the result the call's type.
+    pub(super) fn finish_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, params: Vec<Ty>, ret: Ty, args: &[Arg]) -> Option<Ty> {
         self.callees.insert(expr, Callee::Function(function));
         self.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));
         let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());

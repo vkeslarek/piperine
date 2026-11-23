@@ -27,6 +27,14 @@ impl<'d> Declarations<'d> {
 }
 
 impl Declarations<'_> {
+    /// The binding (a `let`) named `name`.
+    fn binding(&self, name: &str) -> DeclId {
+        (0..self.design.decl_count())
+            .map(|i| DeclId(i as u32))
+            .find(|decl| matches!(self.design.decl_data(*decl).kind, DeclKind::Binding(_)) && self.design.decl_data(*decl).name.as_ref().is_some_and(|n| n.text == name))
+            .unwrap_or_else(|| panic!("no binding `{name}`"))
+    }
+
     /// The item (a function, a struct or an enum) named `name`.
     fn item(&self, name: &str) -> DeclId {
         (0..self.design.decl_count())
@@ -217,15 +225,6 @@ fn a_generic_body_is_checked_once_at_its_definition() {
 }
 
 #[test]
-fn a_call_of_a_generic_function_waits_for_inference() {
-    // until a generic call binds its arguments (T20, T21) a call or a function value of a generic function is `P0001`
-    let design = support::build(&format!("{HEAD}fn id<T>(x: T) -> T {{ x }}\nmodule Top() {{ }}\nanalog for Top {{ let y = id(1.0); }}"));
-    let found = Types::check(&design, "Top").err().expect("a call of a generic function is refused");
-    assert!(codes_of(&found).iter().all(|code| code == "P0001"), "{found:?}");
-    assert!(found[0].diagnostic.message.contains("generic function"), "{:?}", found[0]);
-}
-
-#[test]
 fn a_generic_argument_that_does_not_satisfy_its_bound_is_e0187() {
     // §3.8.7: `T: Repr` takes a type with a layout, `T: Ord` a type that derives `Ord`
     let items = "struct Held<T: Repr> { a: T }\nstruct Sorted<T: Ord> { a: T }\n";
@@ -288,4 +287,48 @@ fn a_length_over_const_parameters_fits_until_the_item_is_instantiated() {
     assert_eq!(Types::check_model(&clean), Ok(()), "{:?}", Types::check_model(&clean));
     let found = model_errors("fn mixed<const N: usize, const M: usize>(a: [f64; N]) -> [f64; M] { a }\n");
     assert_eq!(codes_of(&found), ["E0180"], "two different parameters are two lengths: {found:?}");
+}
+
+/// The types of the bindings of an `analog` block of `body` after `items`, as `name = type`, or the codes
+/// and messages of the check.
+fn analog_types(items: &str, body: &str, names: &[&str]) -> Result<Vec<String>, Vec<(String, String)>> {
+    let design = support::build(&format!("{HEAD}{items}\nmodule Top() {{ }}\nanalog for Top {{ {body} }}"));
+    assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}", support::codes(&design));
+    match Types::check(&design, "Top") {
+        Ok(types) => {
+            let declarations = Declarations { design: &design };
+            Ok(names.iter().map(|name| format!("{name} = {}", types.local(declarations.binding(name)).map_or_else(|| "?".to_string(), |ty| ty.name(&design)))).collect())
+        }
+        Err(found) => Err(found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()),
+    }
+}
+
+#[test]
+fn generic_arguments_are_explicit_or_inferred() {
+    // §3.8.5, §3.8.7, §1.4.4: written with `::<..>`, read from an argument (a literal takes the type
+    // another argument gives it), from an array's length, from the expected type, or from a default
+    let items = "fn id<T>(x: T) -> T { x }\n\
+                 fn larger<T: PartialOrd>(a: T, b: T) -> T { if a < b { b } else { a } }\n\
+                 fn first<T, const N: usize>(a: [T; N]) -> T { a[0] }\n\
+                 fn zeros<const N: usize>() -> [f64; N] { [0.0; N] }\n\
+                 fn made<T: Default>() -> T { T::default() }\n\
+                 fn pick<T, U = bool>(a: T, b: Option<U>) -> U { b.unwrap_or(false) }\n";
+    let body = "let a = id(1.5); let b = id::<u8>(3); let c = larger(3u8, 200); let d = first([1.0, 2.0, 3.0]); \
+                let e: [f64; 4] = zeros(); let f = zeros::<2>(); let g: Option<u8> = made(); let h = id(id(true));";
+    let found = analog_types(items, body, &["a", "b", "c", "d", "e", "f", "g", "h"]).unwrap_or_else(|errors| panic!("{errors:?}"));
+    assert_eq!(found, ["a = f64", "b = u8", "c = u8", "d = f64", "e = [f64; 4]", "f = [f64; 2]", "g = Option<u8>", "h = bool"]);
+}
+
+#[test]
+fn an_uninferred_generic_argument_is_e0181_naming_the_parameter() {
+    // §3.8.7, D6: nothing gives `T`, so the call is refused naming it and the way to write it
+    let items = "fn made<T: Default>() -> T { T::default() }\nfn zeros<const N: usize>() -> [f64; N] { [0.0; N] }\n";
+    let errors = analog_types(items, "let a = made();", &["a"]).expect_err("T has no argument");
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].0, "E0181");
+    assert!(errors[0].1.contains("cannot infer the type parameter `T` of `made`") && errors[0].1.contains("made::<..>"), "{}", errors[0].1);
+    let constant = analog_types(items, "let a = zeros();", &["a"]).expect_err("N has no argument");
+    assert!(constant[0].1.contains("cannot infer the const parameter `N` of `zeros`"), "{constant:?}");
+    let many = analog_types(items, "let a = zeros::<1, 2>();", &["a"]).expect_err("too many arguments");
+    assert_eq!(many[0].0, "E0187", "{many:?}");
 }

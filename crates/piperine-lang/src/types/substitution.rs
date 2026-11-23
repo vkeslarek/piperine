@@ -175,7 +175,7 @@ impl Checker<'_> {
 
     /// The argument `node` for `parameter`: a type for a type or nature parameter, a const for a
     /// const parameter, which a lone name may also spell (`Delay<u8, N>`, §3.8.5).
-    fn generic_argument(&mut self, parameter: &GenericParameter, node: &GenericArgNode, file: FileId) -> Option<GenericValue> {
+    pub(super) fn generic_argument(&mut self, parameter: &GenericParameter, node: &GenericArgNode, file: FileId) -> Option<GenericValue> {
         match (&parameter.kind, node) {
             (ParameterKind::Type | ParameterKind::Nature, GenericArgNode::Type(ty)) => self.lower_type(*ty).map(GenericValue::Type),
             (ParameterKind::Const(_), GenericArgNode::Const(expr)) => self.const_term(*expr, file).map(GenericValue::Const),
@@ -197,7 +197,7 @@ impl Checker<'_> {
     /// The argument an omitted `parameter` takes from its default, with the earlier parameters
     /// already replaced (`struct Pair<T, U = T>`); a parameter with no default is not omitted
     /// here, the count was checked.
-    fn default_argument(&mut self, parameter: &GenericParameter, earlier: &Substitution, file: FileId) -> Option<GenericValue> {
+    pub(super) fn default_argument(&mut self, parameter: &GenericParameter, earlier: &Substitution, file: FileId) -> Option<GenericValue> {
         match parameter.default.as_ref()? {
             ParameterDefault::Type(ty) => {
                 let lowered = self.lower_type(*ty)?;

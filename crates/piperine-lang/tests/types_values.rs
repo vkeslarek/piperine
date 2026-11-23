@@ -266,8 +266,8 @@ fn an_unsupported_form_does_not_hide_an_independent_error() {
     assert_eq!(codes_of(&d), ["P0001", "E0180"]);
     assert_eq!(snippet(&src, &d[1]), "true");
 
-    // A generic function is refused and its body is checked as well.
-    let (src, d) = diagnostics("fn g<T>(x: f64) -> f64 { x + true }", "let x = g(1.0);");
+    // A generic function used as a value is refused (its calls are typed, generics T20) and its body is checked as well.
+    let (src, d) = diagnostics("fn g<T>(x: f64) -> f64 { x + true }", "let x = g;");
     assert_eq!(codes_of(&d), ["P0001", "E0180"]);
     assert!(d[0].diagnostic.message.contains("generic function"));
     assert_eq!(snippet(&src, &d[1]), "true");
