@@ -22,7 +22,7 @@ use piperine_transpile::Settings;
 
 /// The twins only the Rust backend runs: their source reads `now()`, which the interpreter refuses
 /// (the same list `piperine-cli/tests/twins.rs` holds the binary to); `uic_rc` and `diode_rs` read `analysis(..)`.
-const COMPILED_ONLY: [&str; 8] = ["pss_rc", "tran_jump", "tran_corner", "tran_floor", "uic_rc", "diode_rs", "delay_tline", "noise_rc"];
+const COMPILED_ONLY: [&str; 9] = ["pss_rc", "tran_jump", "tran_corner", "tran_floor", "uic_rc", "diode_rs", "delay_tline", "noise_rc", "noise_switch"];
 
 /// A sink that keeps nothing: a scenario reads the table.
 struct Ignore;
@@ -235,6 +235,10 @@ enum Comparison {
     /// `(density export, total export)` of the input-referred noise) against ngspice's `export` of
     /// `rows` rows, and the run's band totals against ngspice's `total` exports, under `NOISE`.
     Noise { export: &'static str, total: &'static str, input: Option<(&'static str, &'static str)>, rows: usize },
+    /// A noise run whose output density is the flat `density` at every row, a closed form held where
+    /// ngspice cannot be the oracle (its noise of a closed switch is the open switch's): the table's
+    /// `onoise` column against `density` under `NOISE`.
+    FlatNoise { density: f64 },
     /// A transient no step can settle: the run fails `E0508` at ngspice's 1 us, where ngspice
     /// stops with "Timestep too small".
     StepFloor,
@@ -254,7 +258,15 @@ impl Comparison {
             Comparison::Sensitivity { derivatives } => Self::hold_sensitivity(derivatives, &scenario.run(check.backend), check),
             Comparison::PeriodicOrbit { export, rows, node, tau, periods } => Self::hold_periodic_orbit(export, *rows, node, *tau, *periods, scenario, &scenario.run(check.backend), check),
             Comparison::StepFloor => Self::hold_step_floor(scenario, check),
+            Comparison::FlatNoise { density } => Self::hold_flat_noise(*density, &scenario.run(check.backend), check),
             Comparison::Noise { export, total, input, rows } => Self::hold_noise(export, total, *input, *rows, scenario, check),
+        }
+    }
+
+    /// Each row of the `onoise` column is `density`.
+    fn hold_flat_noise(density: f64, ran: &Ran, check: &Check) {
+        for row in 0..ran.table.rows.len() {
+            check.assert(&ToleranceContract::NOISE, "onoise", Coordinate::Frequency(ran.real(row, 0)), density, ran.real(row, 1));
         }
     }
 
@@ -554,6 +566,14 @@ fn delay_tline() {
 fn noise_rc() {
     // AO-06: the thermal noise of the resistor of an RC pole; 301 points of `dec 100 1k 1Meg`
     Scenario::of("noise_rc").hold(&Comparison::Noise { export: "noise_rc_psd", total: "noise_rc_total", input: None, rows: 301 });
+}
+
+#[test]
+fn noise_switch() {
+    // AO-06: `v^2 = 4 k T (1k || ron)` at 300.15 K and ron = 1 ohm, a closed form: ngspice's noise
+    // of a closed switch is the open switch's (`parity_noise.rs::noise_switch` says why)
+    let density = (4.0 * 1.380649e-23 * 300.15 * (1000.0 / 1001.0_f64)).sqrt();
+    Scenario::of("noise_switch").hold(&Comparison::FlatNoise { density });
 }
 
 #[test]

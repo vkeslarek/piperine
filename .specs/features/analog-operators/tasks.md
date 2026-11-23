@@ -1082,8 +1082,8 @@ T43 → T44
 
 **Done when**:
 
-- [ ] `noise_switch` passes with ngspice present
-- [ ] Gate check passes: `Run parnoise`, `Run corpus`, `Run twins`
+- [x] `noise_switch` passes with ngspice present
+- [x] Gate check passes: `Run parnoise`, `Run corpus`, `Run twins`
 
 **Tests**: e2e
 **Gate**: full

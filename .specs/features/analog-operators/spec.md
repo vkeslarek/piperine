@@ -158,7 +158,7 @@ Five core primitives of Part IV §14 are `P0001`: `ddx` (L43), `delay` (L44), `n
 **Acceptance Criteria** (AO-06, against ngspice `.noise`):
 
 1. WHEN the twin `noise_rc.msl` (the `noise_rc.cir` circuit, its resistor carrying `white_noise(4.0 * K_B * temperature() / r, "thermal")`) runs THEN `onoise` SHALL agree with ngspice's `onoise_spectrum` at every frequency, and `onoise_total` with ngspice's, under the new noise contract.
-2. WHEN the twin `noise_switch.msl` (a resistive switch whose thermal source follows its on resistance) runs THEN `onoise` SHALL agree with `noise_switch.cir` under the same contract.
+2. WHEN the twin `noise_switch.msl` (a resistive switch whose thermal source follows its on resistance) runs closed THEN `onoise` SHALL equal the closed form `sqrt(4 k T (1 kohm || ron))`, and WHEN its control is opened THEN `onoise` SHALL agree with `noise_switch_off.cir` under the same contract. (Amended in T41: ngspice 46 and 47 take the open switch's noise and transfer for a switch the operating point closed, so `noise_switch.cir` cannot be the oracle of the closed state; see `parity_noise.rs::noise_switch`.)
 3. WHEN a new twin `noise_diode` (a diode biased by a current source, with shot noise `2qI` and flicker noise `kf·I^af/f`, against ngspice's `D` with `kf`, `af`) runs THEN `onoise` SHALL agree under the same contract.
 4. WHERE the ngspice comparison is disabled the three twins SHALL still run and print the harness's skip line.
 

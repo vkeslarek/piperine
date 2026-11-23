@@ -12,14 +12,17 @@ use piperine_parity::ngspice::{Lookup, Ngspice, Reference};
 use piperine_solver::prelude::{AcSweepAnalysisOptions, Context, NodeIdentifier, NoiseAnalysisOptions, NoiseAnalysisResult};
 
 /// A noise twin and what ngspice's run of its netlist exported: the output node, the input
-/// instance (for the input-referred columns), and the `wrdata` exports it names.
+/// instance, and the `wrdata` exports it names.
 struct NoiseTwin {
-    /// The twin's name, which names its exports `<name>_psd`, `<name>_total` and, with an input,
-    /// `<name>_ipsd` and `<name>_itotal`.
+    /// The twin's name: the model `tests/e2e/twins/<name>.msl`.
     name: &'static str,
+    /// The netlist ngspice runs and names its exports after: `<export>_psd` and `<export>_total`.
+    export: &'static str,
+    /// Params set on the loaded twin before the sweep, as `(instance, param, value)`.
+    settings: &'static [(&'static str, &'static str, f64)],
     /// The top module's node the density is measured at.
     output: &'static str,
-    /// The top module's instance whose stimulus is the analysis input, when the twin compares `inoise`.
+    /// The top module's instance whose stimulus is the analysis input.
     input: Option<&'static str>,
     /// The rows of the density export (the points of the sweep).
     rows: usize,
@@ -35,7 +38,7 @@ impl NoiseTwin {
 
     /// The run of the twin on `backend`: its sweep solved, held to `reference` when ngspice ran.
     fn compare(&self, reference: &Reference, backend: Backend) {
-        let density = format!("{}_psd", self.name);
+        let density = format!("{}_psd", self.export);
         let rows = match reference {
             Reference::Golden(golden) => {
                 let rows = golden.real(&density);
@@ -57,7 +60,7 @@ impl NoiseTwin {
             ToleranceContract::NOISE.assert(&at, *wanted, actual_squared.sqrt());
         }
         if self.totals {
-            let wanted = golden.real(&format!("{}_total", self.name))[0].1;
+            let wanted = golden.real(&format!("{}_total", self.export))[0].1;
             let at = Point::new(self.name, "onoise_total", band).with_ngspice(golden.version()).with_backend(backend.name());
             ToleranceContract::NOISE.assert(&at, wanted, result.output_total);
         }
@@ -66,6 +69,9 @@ impl NoiseTwin {
     /// The noise analysis of the twin on `backend` over `sweep`.
     fn solve(&self, backend: Backend, sweep: AcSweepAnalysisOptions) -> NoiseAnalysisResult {
         let mut bench = Bench::load_on(self.name, backend);
+        for (instance, param, value) in self.settings {
+            bench.set(instance, param, *value);
+        }
         let options = NoiseAnalysisOptions {
             sweep_options: sweep,
             output_node: bench.node(self.output),
@@ -78,9 +84,30 @@ impl NoiseTwin {
     }
 }
 
+impl NoiseTwin {
+    /// The twin's output density at every point of a sweep of `rows` points from `start` to `stop`
+    /// is the flat `density` (V per root hertz) of a closed form, held under `NOISE` whether or not
+    /// ngspice ran: the form needs no reference.
+    fn compare_flat(&self, density: f64, start: f64, stop: f64, backend: Backend) {
+        let sweep = AcSweepAnalysisOptions { start_frequency: start, stop_frequency: stop, steps: self.rows, logarithmic: true };
+        let result = self.solve(backend, sweep);
+        assert_eq!(result.frequencies.len(), self.rows, "{}: one point per step", self.name);
+        for (frequency, actual_squared) in result.frequencies.iter().zip(&result.out_noise_sq) {
+            let at = Point::new(self.name, "onoise", Coordinate::Frequency(*frequency)).with_backend(backend.name());
+            ToleranceContract::NOISE.assert(&at, density, actual_squared.sqrt());
+        }
+    }
+}
+
+/// Boltzmann's constant as `std` declares it, J/K.
+const BOLTZMANN: f64 = 1.380649e-23;
+
+/// ngspice's default temperature, 27 C, in kelvin: what the twins' `--temp 27` fixes.
+const ROOM: f64 = 300.15;
+
 /// The thermal noise of the resistor of an RC pole at 100 kHz: `onoise` over 301 points of
 /// `dec 100 1k 1Meg` and its total, which agree only on a fine grid (the comment of the `.cir`).
-const NOISE_RC: NoiseTwin = NoiseTwin { name: "noise_rc", output: "out", input: Some("v1"), rows: 301, totals: true };
+const NOISE_RC: NoiseTwin = NoiseTwin { name: "noise_rc", export: "noise_rc", settings: &[], output: "out", input: Some("v1"), rows: 301, totals: true };
 
 #[test]
 fn noise_rc() {
@@ -99,5 +126,37 @@ fn noise_twins_run_and_print_the_skip_line_without_ngspice() {
     assert_eq!(Ngspice::skip_line("noise_rc"), "SKIP noise_rc: ngspice comparison disabled by PIPERINE_NGSPICE=skip");
     for backend in NoiseTwin::backends() {
         NOISE_RC.compare(&reference, backend);
+    }
+}
+
+/// The switch twin `noise_switch` with its control at 5 V, above the threshold: the switch is 1 ohm.
+const NOISE_SWITCH: NoiseTwin = NoiseTwin { name: "noise_switch", export: "noise_switch", settings: &[], output: "a", input: Some("vin"), rows: 11, totals: false };
+
+/// The same twin with its control at 0 V: the switch is open, 10 kohm (`noise_switch_off.cir`).
+const NOISE_SWITCH_OPEN: NoiseTwin = NoiseTwin { name: "noise_switch", export: "noise_switch_off", settings: &[("vc", "dc", 0.0)], output: "a", input: Some("vin"), rows: 11, totals: false };
+
+#[test]
+fn noise_switch() {
+    // AO-06: the closed switch carries the thermal noise of its 1 ohm. ngspice (46 and 47) cannot be
+    // the oracle for it: its noise source reads the switch state vector at 0 and so takes the open
+    // switch's noise and the open switch's transfer for a switch the operating point closed
+    // (`noise_switch.cir` prints 3.881900e-9, the open value of `noise_switch_off.cir`, with
+    // `v(a)` = 0.999 mV, the closed divider, at the same operating point). The closed form is the
+    // reference: both resistors are noise currents `4 k T / r` into the node's impedance
+    // `1 / (1/1k + 1/ron)`, so `v^2 = 4 k T (1k || ron)`: 1.286838e-10 V/sqrt(Hz) at 27 C.
+    let parallel = 1000.0 * 1.0 / (1000.0 + 1.0);
+    let density = (4.0 * BOLTZMANN * ROOM * parallel).sqrt();
+    for backend in NoiseTwin::backends() {
+        NOISE_SWITCH.compare_flat(density, 1e3, 1e4, backend);
+    }
+}
+
+#[test]
+fn noise_switch_open_agrees_with_ngspice() {
+    // the same twin with the control below the threshold is `noise_switch_off.cir`, which ngspice
+    // computes correctly: `roff` = 10k across the 1k source resistance
+    let reference = Ngspice::from_environment().run("noise_switch_off");
+    for backend in NoiseTwin::backends() {
+        NOISE_SWITCH_OPEN.compare(&reference, backend);
     }
 }

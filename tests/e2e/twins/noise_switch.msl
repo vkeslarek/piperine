@@ -1,0 +1,37 @@
+//! Twin of `tests/e2e/twins/noise_switch.cir`: the ON-state thermal noise of a closed
+//! voltage-controlled switch (analog-operators AO-06). The control sits at 5 V above the 1 V
+//! threshold, so the switch is 1 ohm, which dominates the output impedance at `a` (1 kohm in
+//! parallel with 1 ohm); its thermal source follows its own resistance. The interpreter refuses
+//! `white_noise`, so the twin runs on the compiled backend only.
+mod devices;
+use devices::*;
+
+/// A resistor with its thermal noise: `i = v / r` plus a white current source of density `4 k T / r`.
+pub module NoisyResistor(p: Electrical, n: Electrical) {
+    r: f64 where r > 0.0;
+}
+analog for NoisyResistor {
+    i(p, n) +> v(p, n) / r + white_noise(4.0 * K_B * temperature() / r, "thermal");
+}
+
+/// A resistive switch: `ron` ohm while the control `v(cp, cn)` is above `vt`, `roff` below, with the
+/// thermal noise `4 k T / r` of whichever resistance it has.
+pub module Switch(p: Electrical, n: Electrical, cp: Electrical, cn: Electrical) {
+    vt: f64 = 0.0;
+    ron: f64 = 1.0 where ron > 0.0;
+    roff: f64 = 1e12 where roff > 0.0;
+}
+analog for Switch {
+    let r = if v(cp, cn) > vt { ron } else { roff };
+    i(p, n) +> v(p, n) / r + white_noise(4.0 * K_B * temperature() / r, "thermal");
+}
+
+module NoiseSwitch() {
+    signal src: Electrical;
+    signal control: Electrical;
+    signal a: Electrical;
+    let vin = Vsource { dc: 1.0, ac: 1.0 }(src, gnd);
+    let vc = Vsource { dc: 5.0 }(control, gnd);
+    let r1 = NoisyResistor { r: 1000.0 }(src, a);
+    let s1 = Switch { vt: 1.0, ron: 1.0, roff: 10000.0 }(a, gnd, control, gnd);
+}
