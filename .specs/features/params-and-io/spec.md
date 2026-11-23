@@ -112,7 +112,7 @@ count; the user named "the gaps that limit the expressiveness of the language" f
 **PI-02. Enum params.**
 
 **Acceptance Criteria**:
-1. WHEN a module declares `md: Mode = Mode::Fast;` of a unit enum and a reaction or `analog` matches on `md` THEN the system SHALL run the arm of the bound variant.
+1. *(Amended by A10: an enum with fields is a param type too.)* WHEN a module declares `md: Mode = Mode::Fast;` of a unit enum and a reaction or `analog` matches on `md` THEN the system SHALL run the arm of the bound variant.
 2. WHEN a placement binds `{ md: Mode::Slow }` THEN the instance SHALL read `Mode::Slow`.
 3. WHEN a host sets `--param Top.md=Slow` THEN the run SHALL read `Mode::Slow`.
 4. IF a host sets an enum param to a name the enum does not declare THEN the system SHALL refuse with `E0802` naming the param and listing the variants.
@@ -409,7 +409,8 @@ with the construct that raises them (A2, A3).
 | A8 | B5, 2026-11-23: `E0102` and `E0906` are retired, so PI-12 AC 1 and AC 12 are superseded: C59 is `a_borrow_outside_a_call_argument_is_not_e0102` (a `&` outside a call argument never raises `E0102`) and C70 is `speccodes::every_spec_code_is_raised_or_owned` (no code of the tables is left unraised and unowned; `msl_errors::e0102_and_e0331_are_raised_nowhere` holds the retirement of `E0102`) | value-semantics V1 (G.71, no borrow) and explicit-unknowns MD-78 (Appendix G); `this_features_codes_are_all_raised` leaves `E0906` out |
 | A9 | B6, 2026-11-23: PI-10 AC 1 writes `table_model(v(a, k), IV, "1C")`, the table by value | value semantics has no `&`; §22.2.15's signature takes `table: [(f64, f64); N]` |
 | A10 | B5, 2026-11-23: PI-02 reads "unit enum"; an enum with fields is a param type too, and a composite param (an enum with fields, an `Option` of a composite) is set by its leaves | Part III §8.1.15 "a param's type is a value type"; composite-values D13 (set by leaf path); `a_payload_enum_param_runs_its_variant` |
-| A11 | B5, 2026-11-23: a `--param` is read by its param's type whatever it looks like (no numeric shortcut), integers exactly; a plain value bound to an `Option<T>` param is `Some` of it | D24, PI-01 AC 4, PI-02 AC 4, PI-03 AC 2 and AC 4, §3.2.3; verification F9, F10, F11, F17 |
+| A11 | Fix rounds, 2026-11-23: a `--param` is read by its param's type whatever it looks like (no numeric shortcut), integers exactly; a plain value bound to an `Option<T>` param is `Some` of it | D24, PI-01 AC 4, PI-02 AC 4, PI-03 AC 2 and AC 4, §3.2.3; verification F9, F10, F11, F17; a structural param's text reaches the elaborator as that value (F19, F20); a value over the parent's params bound to an `Option` param is `Some` of it, written plain or as `Some(..)` (F21) |
+| A12 | Fix round 3, 2026-11-23: a leaf of a composite param takes the literal syntax of the leaf's own type (a `bool` leaf `true` or `false` only, an integer leaf an integer literal such as `0x3`, a real leaf a number); a text that is no value of the leaf is `E0802` | the rule of A11 applied to leaves; composite-values D13 names the leaf path, not the leaf's text, so its wording is unchanged |
 
 ---
 

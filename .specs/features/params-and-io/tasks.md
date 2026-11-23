@@ -17,7 +17,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run typesmodules**: `cargo test -p piperine-lang --test types_modules`
 **Run typescarriers**: `cargo test -p piperine-lang --test types_carriers`
 **Run typesresults**: `cargo test -p piperine-lang --test types_results`
-**Run typesunknowns**: `cargo test -p piperine-lang --test types_unknowns`
+**Run hygiene**: `cargo test -p piperine-lang --test suite_hygiene`
 **Run typesstructure**: `cargo test -p piperine-lang --test types_structure`
 **Run elabvalues**: `cargo test -p piperine-lang --test elab_values`
 **Run elabanalog**: `cargo test -p piperine-lang --test elab_analog`
@@ -1405,8 +1405,8 @@ Proof: run typescarriers | test a_probe_on_a_childs_private_node_is_e0244 ... ok
 **C69** - A continuous result read where probes are not allowed is `E0354`. (PI-12, AC 11; T13)
 Proof: run typesresults | test a_continuous_result_read_where_probes_are_not_allowed_is_e0354 ... ok
 
-**C70** - `E0906` is retired (MD-78; amendment A8 supersedes PI-12 AC 12): no code of the spec's tables is left unraised and unowned. (PI-12, AC 12; T14)
-Proof: run speccodes | test every_spec_code_is_raised_or_owned ... ok
+**C70** - `E0906` is retired (MD-78; amendment A8 supersedes PI-12 AC 12): no source raises it. (PI-12, AC 12; T14)
+Proof: run hygiene | test retired_unknown_codes_are_raised_nowhere ... ok
 
 **C71** - Every code of the spec's tables is spelled in a source or listed in the allow-list. (PI-13, AC 1; T2)
 Proof: run speccodes | test every_spec_code_is_raised_or_owned ... ok
