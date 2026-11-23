@@ -7,7 +7,7 @@ use std::fmt;
 use std::ops::Deref;
 
 pub use crate::raw::Pod;
-use crate::raw::{Cell, List, Shape, pod_bytes, pod_mut, pod_ref, status};
+use crate::raw::{ArrayView, Cell, List, Shape, pod_bytes, pod_mut, pod_ref, status};
 use crate::shape::ShapeRef;
 pub use crate::validate::Access;
 use crate::validate::{CellBytes, cell_bytes};
@@ -106,13 +106,21 @@ impl<'a> Values<'a> {
 /// entry that lists them: what a frame's buffer for that cell holds. `None`
 /// when a cell breaks a rule `validate` checks.
 pub fn cell_lens(shape: &Shape, cells: &List<Cell>, access: Access) -> Option<Vec<usize>> {
+    cell_lens_of(shape, cells, &List::empty(), access)
+}
+
+/// [`cell_lens`] for cells with `elements`: the entry's `elements` list, empty or one per cell. A `WHOLE`
+/// read of an array pin holds an [`ArrayView`](crate::raw::ArrayView), so its buffer is that struct's size.
+pub fn cell_lens_of(shape: &Shape, cells: &List<Cell>, elements: &List<u64>, access: Access) -> Option<Vec<usize>> {
     cells
         .iter()
-        .map(|c| {
-            cell_bytes(shape, c, access).ok().map(|b| match b {
+        .enumerate()
+        .map(|(i, c)| {
+            cell_bytes(shape, c, elements.get(i).copied().unwrap_or(0), access).ok().map(|b| match b {
                 CellBytes::F64 | CellBytes::I64 => 8,
                 CellBytes::Byte => 1,
                 CellBytes::Layout(l) => l.size as usize,
+                CellBytes::View => size_of::<crate::raw::ArrayView>(),
             })
         })
         .collect()
@@ -137,6 +145,15 @@ impl<'a> Reads<'a> {
         match b.get(..N) {
             Some(head) => head.try_into().expect("N bytes"),
             None => panic!("read {i} holds {} bytes, too few for {what}", b.len()),
+        }
+    }
+
+    /// Read `i`, a `WHOLE` read of an array pin, as the array it views. Panics (a `FAULT`) when the cell holds no
+    /// view.
+    pub fn array(&self, i: usize) -> ArrayView {
+        match ArrayView::from_bytes(self.cell(i)) {
+            Some(view) => view,
+            None => panic!("read {i} holds {} bytes, too few for an array view", self.cell(i).len()),
         }
     }
 
@@ -244,10 +261,15 @@ impl<'a> Deref for Eval<'a> {
 /// status.
 pub type CommitSink<'a> = dyn FnMut(u32, &[u8], f64) -> u32 + 'a;
 
+/// Queues one write of the calling reaction to element `element` of an array pin: `(statement, element, bytes,
+/// after)` to a status.
+pub type ElementSink<'a> = dyn FnMut(u32, u64, &[u8], f64) -> u32 + 'a;
+
 /// The lens of `react`.
 pub struct React<'a> {
     reads: Reads<'a>,
     commit: &'a mut CommitSink<'a>,
+    element: Option<&'a mut ElementSink<'a>>,
 }
 
 impl fmt::Debug for React<'_> {
@@ -259,7 +281,24 @@ impl fmt::Debug for React<'_> {
 impl<'a> React<'a> {
     /// A lens over already-cut read cells and the host's commit.
     pub fn new(input: Vec<&'a [u8]>, commit: &'a mut CommitSink<'a>) -> React<'a> {
-        React { reads: Reads { input }, commit }
+        React { reads: Reads { input }, commit, element: None }
+    }
+
+    /// A lens that also commits to the elements of array pins.
+    pub fn with_elements(input: Vec<&'a [u8]>, commit: &'a mut CommitSink<'a>, element: &'a mut ElementSink<'a>) -> React<'a> {
+        React { reads: Reads { input }, commit, element: Some(element) }
+    }
+
+    /// Commits `bytes` to `element` of the array pin statement `statement` writes, due `after` seconds later
+    /// (abi.md §6, arrays of carriers). A refusal, or a host with no element commits, is a `Fault`.
+    pub fn commit_element(&mut self, statement: u32, element: u64, bytes: &[u8], after: f64) -> Result<(), Fault> {
+        let Some(sink) = self.element.as_mut() else {
+            return Err(Fault::new(status::FAULT, "the host has no element commits".to_string()));
+        };
+        match sink(statement, element, bytes, after) {
+            status::OK => Ok(()),
+            s => Err(Fault::new(s, format!("commit of element {element} by statement {statement} refused with status {s}"))),
+        }
     }
 
     /// Commits `bytes` through statement `statement`, due `after` seconds

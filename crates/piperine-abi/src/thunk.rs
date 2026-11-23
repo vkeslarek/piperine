@@ -7,7 +7,7 @@
 use std::ffi::c_void;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use crate::device::{Device, Eval, Factory, Flow, Fault, React, Values, cell_lens};
+use crate::device::{Device, Eval, Factory, Flow, Fault, React, Values, cell_lens, cell_lens_of};
 use crate::raw::{
     self, Created, Instance, Library, List, MINOR, Module, NOTE_TEXT, Note, Shape, Str, Value, role, status,
 };
@@ -292,7 +292,7 @@ unsafe fn eval_on<T>(
         let Some(f) = shape.functions.get(k as usize) else {
             return Err(Fault::new(0, format!("function {k} does not exist")));
         };
-        let reads = cell_lens(shape, &f.reads, Access::FunctionRead);
+        let reads = cell_lens_of(shape, &f.reads, &f.elements, Access::FunctionRead);
         let writes = cell_lens(shape, &f.writes, Access::FunctionWrite);
         let (Some(reads), Some(writes)) = (reads, writes) else {
             return Err(Fault::new(0, format!("function {k} names a cell its shape does not have")));
@@ -349,13 +349,18 @@ unsafe fn react_on<T>(
         let Some(r) = shape.reactions.get(k as usize) else {
             return Err(Fault::new(0, format!("reaction {k} does not exist")));
         };
-        let Some(reads) = cell_lens(shape, &r.reads, Access::ReactionRead) else {
+        let Some(reads) = cell_lens_of(shape, &r.reads, &r.elements, Access::ReactionRead) else {
             return Err(Fault::new(0, format!("reaction {k} names a cell its shape does not have")));
         };
         // SAFETY: abi.md §3 React: `input` holds one pointer per read cell.
         let input = unsafe { cut(frame.input, &reads) };
         // SAFETY: abi.md §3 React: `host` is the solver's `Host` for this call.
         let commit = unsafe { (*frame.host).commit };
+        // SAFETY: as above; a host whose `size` reaches `commit_element` has it (abi.md §3, `Host.size`).
+        let commit_element = unsafe {
+            let host = &*frame.host;
+            (host.size as usize >= size_of::<raw::Host>()).then_some(host.commit_element)
+        };
         let host_data = frame.host_data;
         let statements = r.writes;
         let mut sink = |statement: u32, bytes: &[u8], after: f64| -> u32 {
@@ -367,7 +372,16 @@ unsafe fn react_on<T>(
             // the `react` that received the `Host`": this is that call.
             unsafe { commit(host_data, statement, 0, bytes.len() as u32, bytes.as_ptr(), after) }
         };
-        let mut cx = React::new(input, &mut sink);
+        let mut element_sink = |statement: u32, element: u64, bytes: &[u8], after: f64| -> u32 {
+            let declared = statements.get(statement as usize);
+            let Some(commit_element) = commit_element else { return status::FAULT };
+            if declared.is_none_or(|s| bytes.len() > s.len as usize) {
+                return status::FAULT;
+            }
+            // SAFETY: as for `commit` above.
+            unsafe { commit_element(host_data, statement, element, 0, bytes.len() as u32, bytes.as_ptr(), after) }
+        };
+        let mut cx = React::with_elements(input, &mut sink, &mut element_sink);
         Ok(match run(&inst.device, k, &mut cx)? {
             Flow::Continue => status::OK,
             Flow::Finish => status::FINISH,

@@ -8,7 +8,7 @@ use std::ffi::c_void;
 use std::fmt;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
-use crate::device::{Access, Flow, cell_lens};
+use crate::device::{Access, Flow, cell_lens, cell_lens_of};
 use crate::raw::{self, Host, Instance, List, Module, NOTE_TEXT, Note, Shape, Value, status};
 
 /// A call that did not return `OK` (or `FINISH` from a reaction).
@@ -50,6 +50,8 @@ impl CallError {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Commit<'a> {
     pub statement: u32,
+    /// The element of an array pin the commit names (`Host.commit_element`); `None` for one carrier.
+    pub element: Option<u64>,
     pub offset: u32,
     pub bytes: &'a [u8],
     pub after: f64,
@@ -95,7 +97,7 @@ struct FunctionFrame {
 impl FunctionFrame {
     /// The frame of function `f` of `shape`.
     fn of(shape: &Shape<'_>, f: &raw::Function<'_>) -> Self {
-        let reads = cell_lens(shape, &f.reads, Access::FunctionRead);
+        let reads = cell_lens_of(shape, &f.reads, &f.elements, Access::FunctionRead);
         let writes = cell_lens(shape, &f.writes, Access::FunctionWrite);
         Self { cells: reads.zip(writes).map(|(reads, writes)| (reads.into(), writes.into())) }
     }
@@ -130,7 +132,15 @@ impl Trampoline<'_> {
     /// # Safety
     ///
     /// `data` is the `Trampoline` of the live `react` call and `bytes` holds `len` bytes.
-    unsafe fn deliver(data: *mut c_void, statement: u32, offset: u32, len: u32, bytes: *const u8, after: f64) -> u32 {
+    unsafe fn deliver(
+        data: *mut c_void,
+        statement: u32,
+        element: Option<u64>,
+        offset: u32,
+        len: u32,
+        bytes: *const u8,
+        after: f64,
+    ) -> u32 {
         // SAFETY: abi.md §3 React: `host_data` is what `Handle::react` passed, a
         // live `Trampoline` for this call.
         let t = unsafe { &mut *data.cast::<Trampoline<'_>>() };
@@ -144,7 +154,7 @@ impl Trampoline<'_> {
             unsafe { core::slice::from_raw_parts(bytes, len as usize) }
         };
         let commit = &mut t.commit;
-        match catch_unwind(AssertUnwindSafe(|| commit(Commit { statement, offset, bytes, after }))) {
+        match catch_unwind(AssertUnwindSafe(|| commit(Commit { statement, element, offset, bytes, after }))) {
             Ok(s) => s,
             Err(payload) => {
                 t.panic = Some(payload);
@@ -157,7 +167,21 @@ impl Trampoline<'_> {
 /// `Host.commit`.
 unsafe extern "C" fn trampoline(data: *mut c_void, statement: u32, offset: u32, len: u32, bytes: *const u8, after: f64) -> u32 {
     // SAFETY: as `deliver` requires; the device passes what `react` handed it (abi.md §2 entry 6).
-    unsafe { Trampoline::deliver(data, statement, offset, len, bytes, after) }
+    unsafe { Trampoline::deliver(data, statement, None, offset, len, bytes, after) }
+}
+
+/// `Host.commit_element`.
+unsafe extern "C" fn element_trampoline(
+    data: *mut c_void,
+    statement: u32,
+    element: u64,
+    offset: u32,
+    len: u32,
+    bytes: *const u8,
+    after: f64,
+) -> u32 {
+    // SAFETY: as for `trampoline`.
+    unsafe { Trampoline::deliver(data, statement, Some(element), offset, len, bytes, after) }
 }
 
 impl Handle {
@@ -311,12 +335,12 @@ impl Handle {
         let Some(r) = shape.reactions.get(k as usize) else {
             return Err(CallError::frame(format!("reaction {k} does not exist")));
         };
-        let Some(reads) = cell_lens(shape, &r.reads, Access::ReactionRead) else {
+        let Some(reads) = cell_lens_of(shape, &r.reads, &r.elements, Access::ReactionRead) else {
             return Err(CallError::frame(format!("reaction {k} names a cell its shape does not have")));
         };
         check_cells("read", input.iter().map(|b| b.len()), &reads)?;
         let input: Vec<*const u8> = input.iter().map(|b| b.as_ptr()).collect();
-        let host = Host { size: size_of::<Host>() as u32, commit: trampoline };
+        let host = Host { size: size_of::<Host>() as u32, commit: trampoline, commit_element: element_trampoline };
         let mut data = Trampoline { commit, panic: None };
         let mut note = empty_note();
         let frame = raw::React {

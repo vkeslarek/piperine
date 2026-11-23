@@ -141,6 +141,7 @@ mod tests {
             reads: vec![Cell { kind: cell::PIN, index: read, part: part::VALUE }],
             writes: vec![],
             partials: vec![],
+            elements: vec![],
         });
         b
     }

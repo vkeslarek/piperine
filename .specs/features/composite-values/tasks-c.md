@@ -176,9 +176,9 @@ T86 → T87 → T88 → T89 → T90
 
 **Done when**:
 
-- [ ] `array_pins_validate_their_count_and_init` passes under `**Run abi**`
-- [ ] Every existing `piperine-abi` target passes (`count` 0 keeps every shape as it was)
-- [ ] Gate check passes: Task (`piperine-abi`)
+- [x] `array_pins_validate_their_count_and_init` passes under `**Run abi**`
+- [x] Every existing `piperine-abi` target passes (`count` 0 keeps every shape as it was)
+- [x] Gate check passes: Task (`piperine-abi`)
 
 **Tests**: integration
 **Gate**: task
@@ -833,6 +833,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** Planning (2026-11-23): the user was away; design-c.md QC1 to QC6 and DC1 to DC6 are the defaults taken. Dependencies on `generics`: T64 (A–B merged on `main`), T74 (`Length`), T75/T79 (handles, `HandleBinding`), and `generics` C builds on this phase (GN-17, GN-19, `[Bit; ROWS]`).
 **T64 re-read (2026-11-23):** `generics` A-B are ancestors of the head (merge `2d6b1128` of `origin/main`, MD-81). The Build line was red at the base by one dead-code warning, `Reached::run` of `tests/book/types.rs` (left by the generics merge); T64 removes it. Anchors found: `Recv::CarrierArray` and `E0211` (`pom/resolve/members.rs`), `array_type` (`types/aggregate.rs:131`), `Length` (`types/ty.rs:187`), `drive_target` (`types/definition.rs:37`, elab twin `elab/drives.rs:39`), `Place`/`Projection` (`piperine-ir/src/model.rs`), `CompositeLayout`/`PinLayout` (`piperine-plan/src/{composite,pin}.rs`), `Unrolling` (`elab/unroll.rs`, the type is the `Scope::unrolled` mechanism), `Statement { pin, offset, len, flags, min_after }` (`piperine-abi/src/raw.rs`), `Store`/`Journal` (`piperine-digital-solver/src/{store,journal}.rs`, the store keeps a per-net `first` flag and a net journal arena), `Port` (`piperine-solver/src/core/bind.rs`), `ElementsBench` (`piperine-parity/tests/explicit/initial.msl:80`). Differences from the design: (1) there is no `HandleBinding` enum: generics B binds a handle as `Scope::handles: DeclId -> ExprId` (`elab/handles.rs`), so T79 extends that map's target, not an enum; (2) `Cell.element` cannot be appended to `Cell`: the transpile goldens print `Cell { kind, index, part }` literals and must stay byte-identical, so element addressing is a parallel `elements` list on `Function` and `Reaction` (appended `List<u64>`, same length as `reads` or empty, `WHOLE = u64::MAX`), recorded as an amendment in abi.md by T65; (3) `PinSpec` is built with `..PinSpec::discrete(..)` in the goldens, so `PinSpec.count` is safe.
+**T65 amendments:** (a) element addressing is `Function.elements`/`Reaction.elements` (appended `List<u64>`) instead of `Cell.element`, so the transpile goldens stay byte-identical (the goldens spell `Cell { kind, index, part }`); (b) `ArrayView.data` is named `context` (`contract.rs::raw_views_have_no_public_pointer_field` forbids a public `data:` field); (c) `contract.rs::the_host_has_one_commit` (EU-16 AC 2, 'Host is 16 bytes, one commit') is superseded by QC1: `Host` is 24 bytes with `commit_element`, the test now pins that; `raw.rs::struct_layouts_match_the_abi` and `tests/validate.rs::every_shape_local_rule_is_enforced` grew the new fields and three rule rows; (d) `Handle::react`'s `Commit` gained `element: Option<u64>`, `React::with_elements`/`commit_element` carry element commits through the lens.
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 
