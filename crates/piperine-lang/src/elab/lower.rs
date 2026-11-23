@@ -56,6 +56,9 @@ pub(super) struct Scope {
     pub(super) frame: usize,
     /// The `&str` params of the functions inlined at a call (`records.rs`), bound to their text.
     pub(super) texts: BTreeMap<DeclId, String>,
+    /// The handle parameters of the functions inlined at a call (`handles.rs`), each bound to the caller's argument: the
+    /// name of a port or a signal of the frame, or `gnd`.
+    pub(super) handles: BTreeMap<DeclId, ExprId>,
     /// Code with no local of its own (a drive): a `match` reads its scrutinee again at each test.
     pub(super) no_locals: bool,
     /// Whether the code being lowered reads `freq()` from the solve (§14.4.4): the analog block
@@ -104,7 +107,7 @@ pub(super) struct Scope {
 
 impl Scope {
     pub(super) fn new(file: FileId) -> Self {
-        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
+        Scope { file, params: BTreeMap::new(), locals: Vec::new(), local_index: BTreeMap::new(), limits: Vec::new(), stims: Vec::new(), branches: Vec::new(), nesting: 0, guards: Vec::new(), hoisted_steps: Vec::new(), block_depth: 0, limit_name: None, options: BTreeMap::new(), frame: 0, texts: BTreeMap::new(), handles: BTreeMap::new(), no_locals: false, analog: false, bounds: 0, let_sources: BTreeMap::new(), addend_lets: std::collections::BTreeSet::new(), keys: Bindings::new(), merged: Vec::new(), conditions: Vec::new(), contributions: Vec::new(), local_inits: BTreeMap::new(), loops: Vec::new(), result: None, unrolled: Bindings::new(), in_analog_block: false, decisions: 0, expanding: Vec::new(), pending: Vec::new(), inline_exits: Vec::new() }
     }
 }
 
@@ -436,6 +439,13 @@ impl Elaboration<'_, '_> {
         {
             // the instance is folded and checked (`instances.rs`) and lowered once for its arguments (`variants.rs`)
             let instance = self.concrete_instance(expr)?;
+            // a function generic over a nature takes handles: inlined for the nature it is instantiated at
+            if self.is_inlined(instance.item) {
+                let outer = self.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
+                let inlined = self.inline_emitting_value(scope, instance.item, args, origin);
+                self.consts.set_substitution(outer);
+                return inlined;
+            }
             let lowered = self.lower_arguments(scope, expr, instance.item)?;
             let (id, ret) = self.request_instance(instance.item, instance.arguments, Half::Whole)?;
             return Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin));
@@ -750,6 +760,8 @@ impl Elaboration<'_, '_> {
             },
             // The loop variable of an unrolled analog loop and the parameter of an expanded recursion
             // are the constant of this iteration or call (`unroll.rs`).
+            // a handle read: the carrier the caller passed (`handles.rs`)
+            DeclKind::FnParam(_) if let Some(bound) = scope.handles.get(&decl).copied() => self.lower_expr(scope, bound),
             DeclKind::FnParam(_) | DeclKind::Binding(_) if let Some(value) = scope.unrolled.get(decl) => Some(self.constant_expr(value, ty, origin)),
             DeclKind::FnParam(_) | DeclKind::Binding(_) => match scope.local_index.get(&decl) {
                 Some(index) => {

@@ -28,7 +28,7 @@ mod exits;
 mod files;
 mod elaborator; mod analog;
 mod functions;
-mod hoist;
+mod handles; mod hoist;
 mod host_sources;
 mod inflow; mod instances;
 mod intrinsics;

@@ -1196,9 +1196,9 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_handle_call_lowers_to_its_written_out_body` passes under `**Run elabhandles**`
-- [ ] `a_handle_is_read_probed_passed_on_and_has_carrier_methods` and `a_discrete_handle_reads_the_value_with_its_flags` pass under `**Run srchandles**`
-- [ ] Gate check passes: Full
+- [x] `a_handle_call_lowers_to_its_written_out_body` passes under `**Run elabhandles**`
+- [x] `a_handle_is_read_probed_passed_on_and_has_carrier_methods` and `a_discrete_handle_reads_the_value_with_its_flags` pass under `**Run srchandles**`
+- [x] Gate check passes: Full
 
 **Tests**: integration
 **Gate**: full

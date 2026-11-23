@@ -14,6 +14,14 @@ use super::Bound;
 use super::Ty;
 
 impl Checker<'_> {
+    /// What a read of a handle of type `ty` is: the value of a discrete carrier, the node itself.
+    fn handle_read_type(ty: &Ty) -> Ty {
+        match ty {
+            Ty::Carrier { value, .. } => (**value).clone(),
+            other => other.clone(),
+        }
+    }
+
     /// Whether a parameter of type `ty` is a handle: the type is a node or a carrier of a nature.
     pub(super) fn is_handle_type(ty: &Ty) -> bool {
         matches!(ty, Ty::Node(_) | Ty::Carrier { .. })
@@ -38,7 +46,7 @@ impl Checker<'_> {
         let read = self.infer(expr)?;
         match self.carrier_named(expr) {
             Some(carrier @ Ty::Carrier { .. }) => {
-                self.exprs[expr.index()] = Some(carrier.clone());
+                self.exprs[expr.index()] = Some(Self::handle_read_type(&carrier));
                 Some(carrier)
             }
             _ => Some(read),
@@ -87,7 +95,8 @@ impl Checker<'_> {
             _ => None,
         };
         match passed {
-            Some(found) if found == *expected => self.exprs[expr.index()] = Some(expected.clone()),
+            // the argument is read as the value the carrier holds; the elaborator binds the carrier itself (`elab/handles.rs`)
+            Some(found) if found == *expected => self.exprs[expr.index()] = Some(Self::handle_read_type(&found)),
             _ => self.check(expr, expected),
         }
     }

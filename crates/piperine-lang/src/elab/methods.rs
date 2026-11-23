@@ -29,6 +29,12 @@ impl Elaboration<'_, '_> {
         } else {
             Vec::new()
         };
+        // a method with a handle for `self` (an `impl` on a nature) is inlined at the call (`handles.rs`)
+        if self.is_inlined(function) {
+            let mut all = vec![receiver];
+            all.extend_from_slice(arguments);
+            return self.inline_emitting_value(scope, function, &all, origin);
+        }
         let mut lowered = vec![self.lower_expr(scope, receiver)?];
         for argument in arguments {
             lowered.push(self.lower_expr(scope, *argument)?);

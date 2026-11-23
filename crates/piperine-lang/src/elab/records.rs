@@ -39,7 +39,7 @@ impl Elaboration<'_, '_> {
     /// takes a `str`, a text that exists at elaboration only (§1.2.9).
     pub(super) fn is_inlined(&self, function: DeclId) -> bool {
         let takes_text = self.design.decl_data(function).children.iter().any(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)) && matches!(self.typed_local(*c), Some(Ty::Str)));
-        self.types.emits(function).is_some() || takes_text
+        self.types.emits(function).is_some() || takes_text || self.takes_handle(function)
     }
 
     /// `emit!(stream, fields)`: one site of the body's stream named `stream`.
@@ -167,6 +167,11 @@ impl Elaboration<'_, '_> {
     /// in the reaction where the call stands (§19 rule 10), and whose value is the function's.
     /// `None` after a diagnostic.
     pub(super) fn inline_emitting_value(&mut self, scope: &mut Scope, function: DeclId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
+        if self.takes_handle(function) && self.reaches_recursion(function) {
+            let span = self.design.decl_data(function).span;
+            self.unfoldable_recursion(scope, function, span, "a recursion through a function that takes a handle is not inlined");
+            return None;
+        }
         let (stmts, value) = self.inline_emitting_parts(scope, function, args)?;
         let ty = value.map_or(ValueType::Unit, |v| self.type_of(v));
         Some(self.emit(Expr::Block { stmts, value }, ty, origin))
@@ -195,6 +200,10 @@ impl Elaboration<'_, '_> {
         let mut ok = true;
         for (param, arg) in params.iter().zip(args) {
             let param_name = self.design.decl_data(*param).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+            if self.types.handle(*param) {
+                scope.handles.insert(*param, self.handle_argument_target(scope, *arg));
+                continue;
+            }
             if matches!(self.typed(*arg), Some(Ty::Str)) {
                 match self.text_of(scope, *arg) {
                     Some(text) => {

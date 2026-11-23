@@ -1,0 +1,32 @@
+//! A discrete handle (GN-11 AC 1 and 3, GN-12 AC 1): read as its value, passed on, given a carrier method, and a probing
+//! function called from a reaction; the expected values are computed by Rust in `source_handles.rs`.
+
+pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }
+digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }
+
+fn held(a: Bit) -> bool { a }
+fn before(a: Bit) -> bool { a.prev() }
+fn either(a: Bit) -> bool { held(a) || before(a) }
+fn diff(a: Electrical, b: Electrical) -> f64 { v(a) - v(b) }
+
+module Source(o: Electrical) { volts: f64 = 1.0; }
+analog for Source { v(o) +> volts; }
+
+module Rows(in clk: Bit, p: Electrical, n: Electrical, out r0: Bit = false, out r1: Bit = true, out r2: Bit = false, out r3: Bit<f64> = 0.0) {}
+digital for Rows {
+    on clk.rise() {
+        r0 <- held(clk);
+        r1 <- before(clk);
+        r2 <- either(clk);
+        r3 <- diff(p, n);
+    }
+}
+
+module Bench() {
+    signal clk: Bit; signal p: Electrical; signal n: Electrical;
+    signal r0: Bit; signal r1: Bit; signal r2: Bit; signal r3: Bit<f64>;
+    let osc = Osc(clk) { f: 200M };
+    let sp = Source(p) { volts: 2.5 };
+    let sn = Source(n) { volts: 0.75 };
+    let rows = Rows(clk, p, n, r0, r1, r2, r3);
+}

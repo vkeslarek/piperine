@@ -328,7 +328,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `E0126`: the recursion of `function` cannot be expanded; `why` says what stops it.
-    fn unfoldable_recursion(&mut self, scope: &Scope, function: DeclId, span: Span, why: &str) {
+    pub(super) fn unfoldable_recursion(&mut self, scope: &Scope, function: DeclId, span: Span, why: &str) {
         let name = self.design.decl_data(function).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         let message = format!("the recursion of `{name}` reached from `analog` cannot be unrolled: {why} (§3 rule 12)");
         self.report(scope.file, Diagnostic::new("E0126", message, span, "recursion does not fold"));
