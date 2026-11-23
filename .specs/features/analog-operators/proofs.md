@@ -1,9 +1,9 @@
 # analog-operators proofs
 
-**HEAD**: e2430f9d
+**HEAD**: 08e39a25
 **Tree**: clean
 **Shell**: /bin/sh
-**Result**: 130 pass, 0 fail
+**Result**: 132 pass, 0 fail
 
 | Check | Proof | Result |
 | --- | --- | --- |
@@ -113,6 +113,8 @@
 | C73 | `run spartial / test ddx_through_a_fn_with_a_constant_loop_unrolls_it ... ok` | pass |
 | C73 | `run spartial / test ddx_through_a_fn_reads_an_option_and_a_str_parameter ... ok` | pass |
 | C73 | `run spartial / test ddx_through_a_method_a_generic_fn_a_recursion_and_a_handle ... ok` | pass |
+| C73 | `run spartial / test ddx_through_a_method_of_a_struct_reads_the_field_of_its_receiver ... ok` | pass |
+| C73 | `run spartial / test an_integer_cast_in_an_analog_term_runs_without_a_digital_form ... ok` | pass |
 | C73 | `run elabops / test ddx_through_a_fn_call_expands_the_call_and_differentiates_its_body ... ok` | pass |
 | C73 | `run elabops / test a_fn_with_statements_is_run_symbolically_inside_a_ddx ... ok` | pass |
 | C73 | `run elabops / test a_fn_form_with_no_finite_symbolic_reading_is_p0001_naming_it_inside_a_ddx ... ok` | pass |
@@ -143,40 +145,40 @@
 `Run spartial` - exit 0
 
 ```
-test ddx_of_an_ac_stim_alone_is_zero_and_the_site_still_runs ... ok
 test an_ac_stim_read_by_a_ddx_is_a_constant_of_the_derivative ... ok
-test ddx_of_two_calls_of_one_fn_reads_each_calls_arguments ... ok
+test ddx_of_an_ac_stim_alone_is_zero_and_the_site_still_runs ... ok
 test ddx_through_a_fn_that_assigns_is_the_derivative_of_the_last_value ... ok
-test ddx_through_a_fn_reads_an_option_and_a_str_parameter ... ok
+test ddx_through_a_method_of_a_struct_reads_the_field_of_its_receiver ... ok
 test ddx_through_a_fn_that_assigns_in_the_branches_of_an_if_follows_the_branch_taken ... ok
 test ddx_against_a_flow_with_no_potential_contribution_reads_the_expression ... ok
-test ddx_through_a_fn_with_a_constant_loop_unrolls_it ... ok
 test ddx_through_a_fn_that_returns_early_follows_the_branch_the_operating_point_takes ... ok
+test ddx_through_a_fn_reads_an_option_and_a_str_parameter ... ok
+test ddx_through_a_fn_with_a_constant_loop_unrolls_it ... ok
 test ddx_through_a_method_a_generic_fn_a_recursion_and_a_handle ... ok
 
-test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.20s
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.42s
 
-    Finished `test` profile [unoptimized] target(s) in 0.13s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/source_partial.rs (/var/tmp/piperine-target-b/debug/deps/source_partial-57b3052cf6691a1a)
 ```
 
 `Run irops` - exit 0
 
 ```
-test a_noise_source_is_built_checked_printed_and_round_tripped ... ok
-test a_session_parameter_read_out_of_range_or_typed_as_a_real_is_broken ... ok
-test limit_is_transparent_to_ddx ... ok
 test a_trace_out_of_range_in_a_function_or_mistyped_is_broken ... ok
-test probes_of_other_branches_are_held_constant ... ok
-test a_partial_derivative_is_recorded_printed_and_round_tripped ... ok
-test the_reversed_probe_and_a_flow_have_their_own_rule ... ok
-test results_of_other_instances_are_held_constant ... ok
+test a_form_with_no_rule_is_not_differentiable_by_name ... ok
 test a_trace_site_is_built_checked_printed_and_round_tripped ... ok
+test a_session_parameter_is_built_checked_printed_and_round_tripped ... ok
+test results_of_other_instances_are_held_constant ... ok
+test limit_is_transparent_to_ddx ... ok
+test probes_of_other_branches_are_held_constant ... ok
+test the_reversed_probe_and_a_flow_have_their_own_rule ... ok
+test a_noise_source_is_built_checked_printed_and_round_tripped ... ok
 test each_form_differentiates_by_the_rule_of_its_row ... ok
 
-test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized] target(s) in 0.08s
+    Finished `test` profile [unoptimized] target(s) in 0.05s
      Running tests/operators.rs (/var/tmp/piperine-target-b/debug/deps/operators-fbe860871a0c0021)
 ```
 
@@ -191,29 +193,30 @@ test a_value_of_another_type_given_to_delay_or_noise_is_a_type_mismatch ... ok
 test delay_noise_and_simparam_type_and_wait_for_lowering ... ok
 test a_site_reached_from_analog_writing_sim_or_checks_is_e0603 ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.14s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.92s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
+   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-lang)
+    Finished `test` profile [unoptimized] target(s) in 0.56s
      Running tests/types_analog_operators.rs (/var/tmp/piperine-target-b/debug/deps/types_analog_operators-ccf229161c3c9c24)
 ```
 
 `Run partran` - exit 0
 
 ```
-test tran_jump ... ok
 test tran_floor ... ok
-test uic_rc ... ok
-test tran_corner ... ok
-test uic_rc_runs_and_prints_the_skip_line_without_ngspice ... ok
+test tran_jump ... ok
 test delay_tline ... ok
-test tran_clipper ... ok
 test tran_rc_with_a_scaled_derivative ... ok
+test uic_rc_runs_and_prints_the_skip_line_without_ngspice ... ok
+test uic_rc ... ok
+test tran_clipper ... ok
 test tran_rc ... ok
 test tran_dq ... ok
 
-test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.21s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.97s
 
-    Finished `test` profile [unoptimized] target(s) in 0.21s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-parity)
+    Finished `test` profile [unoptimized] target(s) in 0.69s
      Running tests/parity_tran.rs (/var/tmp/piperine-target-b/debug/deps/parity_tran-1f68c93d92106e3e)
 ```
 
@@ -224,13 +227,14 @@ running 6 tests
 test a_delayed_stimulus_is_the_phasor_turned_by_the_delay ... ok
 test a_negative_td_or_a_non_positive_max_fails_with_e0453 ... ok
 test before_td_the_delay_reads_the_operating_point ... ok
-test a_let_reading_a_limit_is_a_delay_input ... ok
 test a_varying_delay_reads_back_td_and_max_while_td_exceeds_it ... ok
+test a_let_reading_a_limit_is_a_delay_input ... ok
 test an_operating_point_and_a_zero_delay_give_the_input ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.47s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.11s
 
-    Finished `test` profile [unoptimized] target(s) in 0.14s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-parity)
+    Finished `test` profile [unoptimized] target(s) in 0.84s
      Running tests/source_delay.rs (/var/tmp/piperine-target-b/debug/deps/source_delay-f52eac1d92ae4bee)
 ```
 
@@ -238,34 +242,36 @@ test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 running 6 tests
-test the_delay_terms_clamp_td_to_max ... ok
-test a_reaction_reads_noise_as_zero ... ok
-test a_trace_writes_its_watch_only_where_it_executes ... ok
 test a_session_parameter_reads_its_pin_or_none ... ok
+test the_delay_terms_clamp_td_to_max ... ok
+test a_trace_writes_its_watch_only_where_it_executes ... ok
+test a_reaction_reads_noise_as_zero ... ok
 test the_noise_function_writes_its_density_and_faults_454 ... ok
 test the_delay_function_faults_453 ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.86s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.55s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
+   Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-interp)
+   Compiling piperine-transpile v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-transpile)
+    Finished `test` profile [unoptimized] target(s) in 0.93s
      Running tests/operators.rs (/var/tmp/piperine-target-b/debug/deps/operators-fb1f119147d5319f)
 ```
 
 `Run elabops` - exit 0
 
 ```
-test ddx_through_a_fn_call_expands_the_call_and_differentiates_its_body ... ok
-test one_delay_call_is_one_site_however_often_it_is_read ... ok
-test ddx_lowers_to_its_derivative_and_is_recorded ... ok
-test ddx_against_a_flow_with_no_potential_contribution_differentiates_the_expression ... ok
+test ddx_against_the_flow_of_a_branch_with_no_potential_contribution_is_the_literal_zero ... ok
 test a_fn_with_statements_is_run_symbolically_inside_a_ddx ... ok
 test a_definition_or_an_at_argument_reaching_freq_through_a_fn_is_refused_by_the_checker ... ok
+test ddx_lowers_to_its_derivative_and_is_recorded ... ok
+test one_delay_call_is_one_site_however_often_it_is_read ... ok
+test ddx_against_a_flow_with_no_potential_contribution_differentiates_the_expression ... ok
 test simparam_lowers_to_one_session_parameter_per_name ... ok
 test a_fn_form_with_no_finite_symbolic_reading_is_p0001_naming_it_inside_a_ddx ... ok
 test an_ac_stim_read_by_a_noise_density_a_delay_input_or_a_ddx_value_is_a_site_of_the_body ... ok
 test a_delay_without_max_whose_td_varies_is_e0452 ... ok
 
-test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.71s
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.92s
 
     Finished `test` profile [unoptimized] target(s) in 0.10s
      Running tests/elab_operators.rs (/var/tmp/piperine-target-b/debug/deps/elab_operators-135d1d7e6eca17f8)
@@ -275,33 +281,34 @@ test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 running 3 tests
-test ac_rc_with_a_scaled_derivative ... ok
 test delay_tline_ac ... ok
+test ac_rc_with_a_scaled_derivative ... ok
 test ac_rc ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.11s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.68s
 
-    Finished `test` profile [unoptimized] target(s) in 0.18s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-parity)
+    Finished `test` profile [unoptimized] target(s) in 0.68s
      Running tests/parity_ac.rs (/var/tmp/piperine-target-b/debug/deps/parity_ac-ddd91a46c3793786)
 ```
 
 `Run snoise` - exit 0
 
 ```
-test two_sources_sharing_a_name_stay_independent ... ok
-test a_density_reading_freq_is_evaluated_at_each_sweep_frequency ... ok
-test a_negative_density_fails_with_e0454_naming_the_frequency ... ok
 test a_reaction_or_an_event_reads_noise_as_zero ... ok
-test one_source_read_twice_is_fully_correlated ... ok
+test flicker_noise_falls_as_one_over_f_to_the_exponent ... ok
+test two_sources_sharing_a_name_stay_independent ... ok
+test two_sources_add_their_powers ... ok
 test white_noise_is_a_source_of_its_density ... ok
 test a_density_that_is_not_finite_fails_with_e0454_naming_the_frequency ... ok
 test noise_through_ddt_and_delay_takes_their_response ... ok
 test a_noise_source_is_zero_outside_a_noise_sweep_and_never_reads_its_density ... ok
 test analysis_noise_is_true_and_ac_stim_zero_in_a_noise_run ... ok
 
-test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.18s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.19s
 
-    Finished `test` profile [unoptimized] target(s) in 0.21s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-parity)
+    Finished `test` profile [unoptimized] target(s) in 0.81s
      Running tests/source_noise.rs (/var/tmp/piperine-target-b/debug/deps/source_noise-7f546399e886f4bd)
 ```
 
@@ -313,14 +320,14 @@ test its_device_passes_the_partials_verifier ... ok
 test a_term_output_adds_its_direct_noise_to_the_circuit_path ... ok
 test two_inputs_sharing_a_name_sum_into_one_series ... ok
 test an_input_with_no_stimulus_is_refused_by_name ... ok
-test a_differential_output_reads_the_pair ... ok
-test a_flow_output_reads_amperes_per_root_hertz ... ok
 test the_band_total_integrates_the_density_as_ngspice_does ... ok
+test a_flow_output_reads_amperes_per_root_hertz ... ok
+test a_differential_output_reads_the_pair ... ok
 test the_input_referred_density_divides_by_the_transfer_from_the_input ... ok
 
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
+    Finished `test` profile [unoptimized] target(s) in 0.09s
      Running tests/noise_report.rs (/var/tmp/piperine-target-b/debug/deps/noise_report-ef38662df71a701e)
 ```
 
@@ -329,33 +336,34 @@ test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ```
 running 4 tests
 test unreached_items_are_not_reported ... ok
-test a_construct_outside_the_subset_is_p0001 ... ok
 test p0001_names_the_construct ... ok
+test a_construct_outside_the_subset_is_p0001 ... ok
 test std_types_outside_the_subset_are_p0001 ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.67s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
+   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-lang)
+    Finished `test` profile [unoptimized] target(s) in 0.48s
      Running tests/types_subset.rs (/var/tmp/piperine-target-b/debug/deps/types_subset-57a42cb007e51583)
 ```
 
 `Run apinoise` - exit 0
 
 ```
-running 9 tests
 test report::the_report_takes_roots_groups_by_name_else_instance_and_carries_the_totals ... ok
+test a_key_of_another_analysis_is_p0010_in_a_noise_run ... ok
 test the_output_and_input_flags_win_over_the_keys ... ok
 test a_noise_run_without_output_or_sweep_is_p0010 ... ok
-test a_key_of_another_analysis_is_p0010_in_a_noise_run ... ok
 test resolution::an_output_or_input_that_names_nothing_is_e0801 ... ok
-test run::an_input_adds_inoise_and_its_total ... ok
 test run::a_design_with_no_noise_source_prints_zero_and_succeeds ... ok
+test run::an_input_adds_inoise_and_its_total ... ok
 test run::the_library_returns_rows_totals_and_group_densities ... ok
 test run::a_noise_run_prints_freq_onoise_and_the_total ... ok
 
-test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.33s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.63s
 
-    Finished `test` profile [unoptimized] target(s) in 0.15s
+   Compiling piperine-api v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-api)
+    Finished `test` profile [unoptimized] target(s) in 0.76s
      Running tests/noise.rs (/var/tmp/piperine-target-b/debug/deps/noise-de9847af3e7fa6ea)
 ```
 
@@ -368,9 +376,10 @@ test the_new_keys_have_flags ... ok
 test each_new_analysis_writes_csv ... ok
 test each_new_analysis_prints_header_records_and_table ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.37s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.48s
 
-    Finished `test` profile [unoptimized] target(s) in 0.16s
+   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-cli)
+    Finished `test` profile [unoptimized] target(s) in 0.29s
      Running tests/analyses.rs (/var/tmp/piperine-target-b/debug/deps/analyses-3e9aa3dc5dbc2976)
 ```
 
@@ -378,16 +387,17 @@ test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 running 6 tests
-test noise_diode_at_one_kilohertz_is_the_hand_derived_density ... ok
 test noise_switch_open_agrees_with_ngspice ... ok
 test noise_diode ... ok
-test noise_rc ... ok
 test noise_switch ... ok
+test noise_rc ... ok
+test noise_diode_at_one_kilohertz_is_the_hand_derived_density ... ok
 test noise_twins_run_and_print_the_skip_line_without_ngspice ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.18s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.01s
 
-    Finished `test` profile [unoptimized] target(s) in 0.14s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-parity)
+    Finished `test` profile [unoptimized] target(s) in 0.66s
      Running tests/parity_noise.rs (/var/tmp/piperine-target-b/debug/deps/parity_noise-24a19d854b6103b5)
 ```
 
@@ -399,9 +409,10 @@ test simparam_reads_the_options_by_their_key_names ... ok
 test simparam_reads_the_run_entry_else_its_default ... ok
 test simparam_runs_in_a_definition_and_a_selector_with_one_value ... ok
 
-test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.34s
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.28s
 
-    Finished `test` profile [unoptimized] target(s) in 0.15s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-parity)
+    Finished `test` profile [unoptimized] target(s) in 0.70s
      Running tests/source_session.rs (/var/tmp/piperine-target-b/debug/deps/source_session-06c1bb572709e053)
 ```
 
@@ -412,49 +423,50 @@ running 2 tests
 test a_name_the_run_lacks_reads_none ... ok
 test the_session_hands_its_options_and_entries_to_the_circuit ... ok
 
-test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.98s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.62s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
+   Compiling piperine-api v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-api)
+    Finished `test` profile [unoptimized] target(s) in 0.67s
      Running tests/session_parameters.rs (/var/tmp/piperine-target-b/debug/deps/session_parameters-4e08259f015f363e)
 ```
 
 `Run clioptions` - exit 0
 
 ```
-test plot_writes_an_svg_and_prints_wrote ... ok
-test records_go_to_the_file_as_json_lines_and_not_to_stdout ... ok
-test a_passing_check_is_hidden_a_failing_one_shown_and_all_checks_shows_both ... ok
 test csv_writes_the_table_and_prints_wrote ... ok
-test simparam_flag_is_repeatable_and_a_non_number_is_p0010 ... ok
+test csv_and_records_leave_the_header_and_the_wrote_line ... ok
 test a_relative_output_path_is_under_the_project ... ok
+test a_passing_check_is_hidden_a_failing_one_shown_and_all_checks_shows_both ... ok
 test the_divider_with_r2_at_1k_gives_5 ... ok
+test simparam_flag_is_repeatable_and_a_non_number_is_p0010 ... ok
 test the_stream_flag_keeps_only_that_stream ... ok
 test a_long_transient_at_the_default_resolution_lands_its_crossings ... ok
 test a_param_is_checked_at_equality_and_against_the_others ... ok
 
-test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.25s
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.75s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
+   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-cli)
+    Finished `test` profile [unoptimized] target(s) in 1.13s
      Running tests/options.rs (/var/tmp/piperine-target-b/debug/deps/options-d07736c36fa4a077)
 ```
 
 `Run apioptions` - exit 0
 
 ```
-test a_nodeset_seeds_the_operating_point_and_keeps_its_solution ... ok
+test temp_is_celsius_read_by_temperature ... ok
 test a_smaller_trtol_takes_more_steps ... ok
 test a_run_past_max_steps_fails_and_succeeds_when_raised ... ok
-test temp_is_celsius_read_by_temperature ... ok
-test maxmicro_bounds_an_instant ... ok
 test resolution_rounds_an_at_to_its_tick ... ok
 test maxrounds_bounds_the_operating_point ... ok
 test a_twenty_second_transient_runs_at_the_default_resolution ... ok
+test maxmicro_bounds_an_instant ... ok
 test a_hundred_second_transient_runs_at_the_default_resolution ... ok
 test an_hour_long_transient_runs_at_the_default_resolution ... ok
 
-test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 18.06s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.81s
 
-    Finished `test` profile [unoptimized] target(s) in 0.13s
+   Compiling piperine-api v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-api)
+    Finished `test` profile [unoptimized] target(s) in 1.06s
      Running tests/options.rs (/var/tmp/piperine-target-b/debug/deps/options-5b5980cc81321f7a)
 ```
 
@@ -462,17 +474,18 @@ test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 running 7 tests
-test diode_rs ... ok
 test diode_rs_runs_and_prints_the_skip_line_without_ngspice ... ok
 test divider ... ok
 test tnom_res ... ok
+test diode_rs ... ok
 test isrc_r ... ok
 test diode_series ... ok
 test diode_rs_with_rs_zero_merges_and_matches_rdiode ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.48s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.46s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-parity)
+    Finished `test` profile [unoptimized] target(s) in 0.70s
      Running tests/parity_op.rs (/var/tmp/piperine-target-b/debug/deps/parity_op-eac8afb1dbfbcbd7)
 ```
 
@@ -481,16 +494,17 @@ test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ```
 running 7 tests
 test traces_of_a_rejected_step_stay ... ok
-test traces_are_recorded_only_for_a_named_stream ... ok
 test a_trace_writes_one_record_per_evaluation_with_path_analysis_instant_and_iteration ... ok
+test traces_are_recorded_only_for_a_named_stream ... ok
 test a_trace_under_an_if_writes_only_when_executed ... ok
 test an_ac_or_noise_sweep_writes_no_trace_beyond_its_operating_point ... ok
 test a_trace_changes_no_solution ... ok
 test a_trace_written_through_a_fn_is_the_trace_of_its_call ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.56s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.87s
 
-    Finished `test` profile [unoptimized] target(s) in 0.13s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-parity)
+    Finished `test` profile [unoptimized] target(s) in 1.25s
      Running tests/source_traces.rs (/var/tmp/piperine-target-b/debug/deps/source_traces-c170dbfac9353c02)
 ```
 
@@ -500,9 +514,10 @@ test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 running 1 test
 test traces_are_recorded_only_for_a_named_stream ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.49s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.71s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
+   Compiling piperine-api v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-api)
+    Finished `test` profile [unoptimized] target(s) in 0.74s
      Running tests/traces.rs (/var/tmp/piperine-target-b/debug/deps/traces-e245f3922c69985a)
 ```
 
@@ -510,35 +525,36 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 running 5 tests
-test natures_with_different_flow_names_at_a_port_are_e0251 ... ok
 test a_flow_abstol_of_one_nanoampere_reaches_its_branch ... ok
+test natures_with_different_flow_names_at_a_port_are_e0251 ... ok
 test a_nature_only_tightens_the_session_abstol_of_a_branch ... ok
 test a_potential_abstol_of_one_millivolt_reaches_its_node ... ok
 test compatible_natures_take_the_smaller_abstol_and_the_divider_holds ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
 
-    Finished `test` profile [unoptimized] target(s) in 0.17s
+   Compiling piperine-api v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-api)
+    Finished `test` profile [unoptimized] target(s) in 0.75s
      Running tests/natures.rs (/var/tmp/piperine-target-b/debug/deps/natures-edaace15ba5a99ea)
 ```
 
 `Run frozen` - exit 0
 
 ```
-test a_table_expression_is_refused_by_name ... ok
-test a_body_with_an_amended_form_is_rejected_by_name ... ok
-test a_digital_body_is_rejected_by_name ... ok
 test each_generics_form_is_refused_by_name ... ok
+test a_digital_body_is_rejected_by_name ... ok
 test the_interpreter_refuses_each_analog_structure_form_by_name ... ok
-test the_interpreter_refuses_each_analog_operator_by_name ... ok
-test an_analog_body_without_new_forms_still_runs_on_the_interpreter ... ok
-test the_level_nodes_are_refused_by_name ... ok
 test each_composite_values_form_is_refused_by_name ... ok
+test the_level_nodes_are_refused_by_name ... ok
+test an_analog_body_without_new_forms_still_runs_on_the_interpreter ... ok
+test the_interpreter_refuses_each_analog_operator_by_name ... ok
 test the_interpreter_refuses_each_new_form_by_name ... ok
 
-test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
+   Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-plan)
+   Compiling piperine-interp v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-interp)
+    Finished `test` profile [unoptimized] target(s) in 1.84s
      Running tests/frozen.rs (/var/tmp/piperine-target-b/debug/deps/frozen-1902f3691d3ff8e6)
 ```
 
@@ -546,16 +562,17 @@ test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 running 6 tests
-test tran_rc_prints_the_bytes_it_printed_before_the_long_run ... ok
 test the_three_op_twins_run_on_both_backends ... ok
+test tran_rc_prints_the_bytes_it_printed_before_the_long_run ... ok
 test the_two_backends_print_the_same_bytes ... ok
 test the_sweep_and_transient_twins_run_on_both_backends ... ok
 test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok
 test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
 
-test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 32.79s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 28.74s
 
-    Finished `test` profile [unoptimized] target(s) in 0.13s
+   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-cli)
+    Finished `test` profile [unoptimized] target(s) in 0.60s
      Running tests/twins.rs (/var/tmp/piperine-target-b/debug/deps/twins-9b01bd7200d69219)
 ```
 
@@ -571,9 +588,10 @@ test each_function_is_a_generic_fn_and_each_body_a_device_mod ... ok
 test transpiling_twice_gives_the_same_bytes ... ok
 test a_design_with_nothing_to_run_has_no_module ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.54s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.21s
 
-    Finished `test` profile [unoptimized] target(s) in 0.10s
+   Compiling piperine-transpile v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-transpile)
+    Finished `test` profile [unoptimized] target(s) in 0.61s
      Running tests/golden.rs (/var/tmp/piperine-target-b/debug/deps/golden-ab85f3ee5d658ee1)
 ```
 
@@ -581,17 +599,18 @@ test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 
 ```
 running 7 tests
+test a_delay_site_has_its_pin_terms_and_maximum ... ok
 test a_body_without_a_new_form_keeps_its_shape ... ok
 test the_netlist_hands_its_session_parameters_to_the_builder ... ok
-test a_session_parameter_is_a_named_global_optional_pin ... ok
-test a_trace_site_is_a_trace_watch_written_by_terms ... ok
 test a_noise_source_is_an_input_with_its_density_function ... ok
-test a_delay_site_has_its_pin_terms_and_maximum ... ok
+test a_trace_site_is_a_trace_watch_written_by_terms ... ok
+test a_session_parameter_is_a_named_global_optional_pin ... ok
 test a_delay_without_a_maximum_bounds_the_history_by_td ... ok
 
-test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized] target(s) in 0.17s
+   Compiling piperine-plan v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-plan)
+    Finished `test` profile [unoptimized] target(s) in 0.56s
      Running tests/operators_shape.rs (/var/tmp/piperine-target-b/debug/deps/operators_shape-4ff1bd8ca950844e)
 ```
 
@@ -605,12 +624,13 @@ test contract::tests::phase_is_gated_on_the_magnitude_floor ... ok
 test contract::tests::new_domains_carry_a_rationale ... ok
 test contract::tests::a_rejection_names_point_values_bound_and_rationale ... ok
 test contract::tests::the_five_contracts_carry_bounds_and_rationale ... ok
-test contract::tests::the_noise_contract_carries_its_bound_and_rationale ... ok
 test contract::tests::two_zeros_are_accepted ... ok
+test contract::tests::the_noise_contract_carries_its_bound_and_rationale ... ok
 
 test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 41 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized] target(s) in 0.21s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-parity)
+    Finished `test` profile [unoptimized] target(s) in 1.20s
      Running unittests src/lib.rs (/var/tmp/piperine-target-b/debug/deps/piperine_parity-6187a033365891a7)
 ```
 
@@ -622,74 +642,75 @@ test a_literal_tolerance_in_a_parity_target_is_reported ... ok
 test tests_ngspice_holds_no_twin ... ok
 test the_guards_report_planted_text ... ok
 test no_parity_target_compares_against_a_literal ... ok
-test a_scenario_with_benches_holds_a_manifest ... ok
 test the_layout_guards_report_planted_trees ... ok
+test a_scenario_with_benches_holds_a_manifest ... ok
 test every_twin_has_its_files_in_one_scenario_directory ... ok
 test every_twin_has_a_cir_and_a_test ... ok
 
 test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized] target(s) in 0.13s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-parity)
+    Finished `test` profile [unoptimized] target(s) in 0.38s
      Running tests/parity_corpus.rs (/var/tmp/piperine-target-b/debug/deps/parity_corpus-0b598b4d30604325)
 ```
 
 `Run docs` - exit 0
 
 ```
-test the_instructions_name_the_integrated_gate_and_the_buck_on_demand ... ok
-test the_instruction_files_say_the_host_crates_build ... ok
 test the_per_level_feature_is_recorded_as_dropped ... ok
+test the_instructions_name_the_integrated_gate_and_the_buck_on_demand ... ok
 test the_buck_spec_holds_the_bench_bounds ... ok
+test the_scenario_package_states_its_measured_step_count ... ok
 test state_records_the_observable_landings_and_the_tick_epoch ... ok
 test transient_performance_closes_v12 ... ok
+test the_instruction_files_say_the_host_crates_build ... ok
 test the_roadmap_is_forward_looking ... ok
-test the_scenario_package_states_its_measured_step_count ... ok
 test abi_md_describes_the_unreleased_contract ... ok
 test the_book_no_longer_says_settle_is_not_compiled ... ok
 
-test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
+    Finished `test` profile [unoptimized] target(s) in 0.11s
      Running tests/docs.rs (/var/tmp/piperine-target-b/debug/deps/docs-93bbd657b5852db6)
 ```
 
 `Run clibook` - exit 0
 
 ```
-test the_chapter_shows_fmt_and_says_comments_stay ... ok
-test the_chapter_shows_the_session_options ... ok
 test blinky_runs_to_its_stop_in_the_book ... ok
+test the_chapter_shows_the_session_options ... ok
 test a_plot_draws_a_curve_and_a_legend_per_real_signal_and_a_lane_per_digital_one ... ok
-test the_cycle_counter_prints_three_pulses ... ok
 test the_plot_in_the_chapter_is_the_file_the_binary_writes ... ok
+test the_cycle_counter_prints_three_pulses ... ok
 test the_clipper_runs_as_the_book_prints ... ok
 test the_chapter_runs_each_new_analysis ... ok
 test the_rc_output_blocks_are_what_the_binary_prints ... ok
 test every_cli_listing_of_the_book_is_what_the_binary_prints ... ok
 
-test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 52.10s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 50.53s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
+   Compiling piperine-cli v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-cli)
+    Finished `test` profile [unoptimized] target(s) in 0.45s
      Running tests/book.rs (/var/tmp/piperine-target-b/debug/deps/book-a1f18a8423c7ed6b)
 ```
 
 `Run inventory` - exit 0
 
 ```
-test the_gaps_guard_names_a_missing_and_an_extra_row ... ok
-test the_owner_and_disputed_rules_name_what_they_break ... ok
-test the_guard_names_a_block_without_a_row_and_a_row_naming_no_test ... ok
-test no_row_diverges ... ok
-test refused_rows_and_gaps_section_11_agree ... ok
+test every_block_of_the_book_has_one_row ... ok
 test every_listing_that_does_not_run_names_its_gap ... ok
+test refused_rows_and_gaps_section_11_agree ... ok
+test refused_rows_name_tests_that_expect_their_refusal ... ok
+test no_block_row_is_pending ... ok
 test run_rows_name_tests_that_run_their_model ... ok
 test every_row_names_an_existing_test ... ok
 test the_book_uses_no_removed_name ... ok
 test the_book_reads_every_block ... ok
 
-test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
 
-    Finished `test` profile [unoptimized] target(s) in 0.12s
+   Compiling piperine v0.2.0 (/home/keslarek/Git/piperine-analog-ops)
+    Finished `test` profile [unoptimized] target(s) in 0.58s
      Running tests/book/inventory_guard.rs (/var/tmp/piperine-target-b/debug/deps/book_inventory-1a21c47b4e1a6a60)
 ```
 
@@ -699,9 +720,10 @@ test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 running 1 test
 test slew_limits_an_ideal_step_to_its_rate ... ok
 
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.16s
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.12s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
+   Compiling piperine-parity v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-parity)
+    Finished `test` profile [unoptimized] target(s) in 0.75s
      Running tests/source_slew.rs (/var/tmp/piperine-target-b/debug/deps/source_slew-5ffa113f3c8c4d72)
 ```
 
@@ -710,15 +732,15 @@ test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 ```
 running 8 tests
 test its_devices_pass_the_partials_verifier ... ok
-test a_crossing_made_by_a_jump_retakes_the_step ... ok
-test the_first_step_after_an_operating_point_that_holds_a_settle_commit_is_first_order ... ok
-test endless_retakes_fail_with_e0504 ... ok
 test a_second_round_retake_runs_settle_once_and_delivers_its_settle_commits ... ok
 test a_step_that_reads_no_jump_never_retakes ... ok
+test a_crossing_made_by_a_jump_retakes_the_step ... ok
 test a_crossing_made_by_a_step_that_reads_a_settle_commit_retakes_it ... ok
+test the_first_step_after_an_operating_point_that_holds_a_settle_commit_is_first_order ... ok
+test endless_retakes_fail_with_e0504 ... ok
 test a_retaken_step_is_never_rejected_by_the_jump_estimate_whatever_the_time_constant ... ok
 
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.40s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
 
     Finished `test` profile [unoptimized] target(s) in 0.08s
      Running tests/jump_retake.rs (/var/tmp/piperine-target-b/debug/deps/jump_retake-313fbf3cb14da38c)
@@ -727,60 +749,60 @@ test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
 `Run spectext` - exit 0
 
 ```
-test the_library_declares_no_net_nature ... ok
-test tran_in_fences_is_the_module ... ok
+test the_step_that_reads_a_jump_is_first_order ... ok
 test section_22_no_longer_says_std_is_in_the_earlier_spelling ... ok
-test s3_states_the_intrinsic_contract ... ok
 test there_is_no_slice_and_no_borrow_in_the_grammar ... ok
+test tran_in_fences_is_the_module ... ok
 test zero_bytes_are_the_default_value ... ok
 test no_spec_text_says_stimulus_is_host_only ... ok
 test every_error_code_is_defined_exactly_once ... ok
 test part_v_the_step_to_t_solves_first_on_the_left_value_in_every_place_that_says_so ... ok
 test the_removed_words_are_absent_from_the_specification ... ok
 
-test result: ok. 137 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+test result: ok. 137 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
 
-    Finished `test` profile [unoptimized] target(s) in 0.11s
+   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-lang)
+    Finished `test` profile [unoptimized] target(s) in 1.03s
      Running tests/spec_text.rs (/var/tmp/piperine-target-b/debug/deps/spec_text-909ae6bbf798e8b5)
 ```
 
 `Run digital` - exit 0
 
 ```
-test a_settle_commit_with_an_advancing_delay_is_an_ordinary_commit ... ok
+test a_plain_commit_to_a_layout_without_a_known_byte_writes_its_bytes ... ok
+test an_instant_reports_boundary_fired_and_final ... ok
+test previous_is_the_value_before_the_microstep ... ok
+test settle_records_carry_the_last_microstep_index ... ok
+test start_commits_inits_and_fires_start ... ok
 test start_at_commits_init_at_its_tick ... ok
 test the_last_plain_commit_of_a_microstep_is_the_value ... ok
-test settle_records_carry_the_last_microstep_index ... ok
-test a_reopened_instant_settles_at_its_last_microstep ... ok
-test start_commits_inits_and_fires_start ... ok
 test two_commits_to_one_net_settle_to_one_write ... ok
-test previous_is_the_value_before_the_microstep ... ok
 test the_traced_instant_of_section_15_1 ... ok
 test an_instant_that_never_goes_quiet_is_e0501_naming_the_nets ... ok
 
 test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-    Finished `test` profile [unoptimized] target(s) in 0.05s
+    Finished `test` profile [unoptimized] target(s) in 0.04s
      Running tests/instant.rs (/var/tmp/piperine-target-b/debug/deps/instant-cf6184e72773bc7c)
 ```
 
 `Run tevents` - exit 0
 
 ```
-test settle_is_an_event_in_every_event_position ... ok
-test cross_or_at_outside_an_event_position_is_e0443 ... ok
+test negating_an_event_outside_a_guard_or_body_is_e0440 ... ok
+test an_event_reads_as_a_bool_in_a_reaction_body ... ok
 test emit_is_typed_in_a_reaction ... ok
 test an_event_outside_an_event_position_is_e0441 ... ok
-test settle_outside_an_event_position_is_e0441 ... ok
-test event_expressions_are_typed ... ok
-test an_event_reads_as_a_bool_in_a_reaction_body ... ok
+test cross_or_at_outside_an_event_position_is_e0443 ... ok
 test an_operand_of_another_type_in_a_commit_is_e0432 ... ok
+test event_expressions_are_typed ... ok
 test emit_where_it_is_not_allowed_is_e0601 ... ok
 test cross_takes_ttol_and_etol_by_position_and_by_name ... ok
 
-test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.83s
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.38s
 
-    Finished `test` profile [unoptimized] target(s) in 0.10s
+   Compiling piperine-lang v0.2.0 (/home/keslarek/Git/piperine-analog-ops/crates/piperine-lang)
+    Finished `test` profile [unoptimized] target(s) in 0.65s
      Running tests/types_events.rs (/var/tmp/piperine-target-b/debug/deps/types_events-8fe76880d327cc8d)
 ```
 
@@ -788,13 +810,13 @@ test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 
 ```
 running 5 tests
-test a_stimulus_column_carries_its_partials_and_phase ... ok
 test a_zero_density_takes_the_plain_rectangle ... ok
 test the_power_law_integral_is_exact_on_power_laws ... ok
 test a_term_linearization_carries_its_unknown_and_noise_partials ... ok
+test a_stimulus_column_carries_its_partials_and_phase ... ok
 test the_power_law_integral_tracks_a_two_pole_sum_against_a_fine_trapezoid ... ok
 
-test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
 
     Finished `test` profile [unoptimized] target(s) in 0.08s
      Running tests/noise_numerics.rs (/var/tmp/piperine-target-b/debug/deps/noise_numerics-8567472147f9a2de)
@@ -809,8 +831,8 @@ test test_per_source_noise_reporting_and_conservation ... ok
 test a_resistor_divider_has_its_thermal_noise_on_devices ... ok
 test a_shared_noise_input_cancels_across_the_pair ... ok
 
-test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-    Finished `test` profile [unoptimized] target(s) in 0.09s
+    Finished `test` profile [unoptimized] target(s) in 0.08s
      Running tests/abi_noise.rs (/var/tmp/piperine-target-b/debug/deps/abi_noise-e5410922ed420bd0)
 ```
