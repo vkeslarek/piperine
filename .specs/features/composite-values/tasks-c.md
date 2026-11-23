@@ -9,8 +9,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/composite-values/design-c.md`
-**Status**: Draft
-**Approved**: pending - written when the user approves (the user is away; the open questions QC1 to QC6 of design-c.md take their defaults unless the user objects)
+**Status**: Draft (executing on the launching agent's instruction)
+**Approved**: pending - the launching agent relayed an instruction to implement T64-T90 with QC1-QC6 and DC1 at their defaults (2026-11-23); that relay is not the user's own approval, so no `user:` quote is written here
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
 **Run abi**: `cargo test -p piperine-abi --test array_pins`
 **Run dsarr**: `cargo test -p piperine-digital-solver --test array_nets`
@@ -154,9 +154,9 @@ T86 → T87 → T88 → T89 → T90
 
 **Done when**:
 
-- [ ] `generics` A–B are ancestors of the branch head; the head is recorded on the Handoff
-- [ ] Every anchor of design-c.md is found or its difference is on the Handoff
-- [ ] Gate check passes: Task (Build line only)
+- [x] `generics` A–B are ancestors of the branch head; the head is recorded on the Handoff
+- [x] Every anchor of design-c.md is found or its difference is on the Handoff
+- [x] Gate check passes: Task (Build line only)
 
 **Tests**: none
 **Gate**: task
@@ -832,6 +832,7 @@ Proof: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analo
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** Planning (2026-11-23): the user was away; design-c.md QC1 to QC6 and DC1 to DC6 are the defaults taken. Dependencies on `generics`: T64 (A–B merged on `main`), T74 (`Length`), T75/T79 (handles, `HandleBinding`), and `generics` C builds on this phase (GN-17, GN-19, `[Bit; ROWS]`).
+**T64 re-read (2026-11-23):** `generics` A-B are ancestors of the head (merge `2d6b1128` of `origin/main`, MD-81). The Build line was red at the base by one dead-code warning, `Reached::run` of `tests/book/types.rs` (left by the generics merge); T64 removes it. Anchors found: `Recv::CarrierArray` and `E0211` (`pom/resolve/members.rs`), `array_type` (`types/aggregate.rs:131`), `Length` (`types/ty.rs:187`), `drive_target` (`types/definition.rs:37`, elab twin `elab/drives.rs:39`), `Place`/`Projection` (`piperine-ir/src/model.rs`), `CompositeLayout`/`PinLayout` (`piperine-plan/src/{composite,pin}.rs`), `Unrolling` (`elab/unroll.rs`, the type is the `Scope::unrolled` mechanism), `Statement { pin, offset, len, flags, min_after }` (`piperine-abi/src/raw.rs`), `Store`/`Journal` (`piperine-digital-solver/src/{store,journal}.rs`, the store keeps a per-net `first` flag and a net journal arena), `Port` (`piperine-solver/src/core/bind.rs`), `ElementsBench` (`piperine-parity/tests/explicit/initial.msl:80`). Differences from the design: (1) there is no `HandleBinding` enum: generics B binds a handle as `Scope::handles: DeclId -> ExprId` (`elab/handles.rs`), so T79 extends that map's target, not an enum; (2) `Cell.element` cannot be appended to `Cell`: the transpile goldens print `Cell { kind, index, part }` literals and must stay byte-identical, so element addressing is a parallel `elements` list on `Function` and `Reaction` (appended `List<u64>`, same length as `reads` or empty, `WHOLE = u64::MAX`), recorded as an amendment in abi.md by T65; (3) `PinSpec` is built with `..PinSpec::discrete(..)` in the goldens, so `PinSpec.count` is safe.
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 
