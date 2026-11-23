@@ -89,6 +89,9 @@ impl Session {
         let param = target.param.clone();
         param.refuse_structural(self.ir())?;
         self.ready_for(at, &action)?;
+        if target.leaf.is_none() {
+            self.params.refuse_unfit(&param.instance, &param.param, value)?;
+        }
         if let Some(leaf) = &target.leaf {
             // a leaf of a composite param is written whole, before the run: a timed write of one leaf
             // would need the schedule to hold the bytes of the rest

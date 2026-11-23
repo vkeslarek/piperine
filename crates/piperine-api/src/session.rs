@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use piperine_digital_solver::net::NetId;
 use piperine_interp::Interpreter;
-use piperine_ir::{BranchKind, CarrierRole, ChildValue, Ir};
+use piperine_ir::{BranchKind, CarrierRole, ChildValue, Ir, ValueType};
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::{Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::Types;
@@ -29,7 +29,7 @@ use crate::noise::{NoiseOutput, NoiseProbe, NoiseReport};
 use crate::held::Held;
 use crate::host::{HostAction, TimedChange, TimedSet};
 use crate::metadata::Metadata;
-use crate::param_text::ParamText;
+use crate::param_text::{ParamText, Scalar as ParamScalar};
 use crate::params::{Changed, Derive, Evaluated, LeafChange, Params};
 use crate::plot::Plot;
 use crate::probe::Probe;
@@ -125,6 +125,11 @@ impl ParamPath {
         format!("{}.{}", self.instance, self.param)
     }
 
+    /// Whether this param is structural: its value selects the body at elaboration.
+    pub fn is_structural(&self, ir: &Ir) -> bool {
+        ir.instance_at(&self.instance).and_then(|i| i.body().params().iter().find(|p| p.name == self.param).map(|p| p.structural)).unwrap_or(false)
+    }
+
     /// `E0803` when this param is structural: a structural param selects the body at elaboration,
     /// so a write of it after the session opened (a `set` at any time, a sweep of it) would run
     /// the variant of its old value; it is refused (§23.1 rule 7). Its value before the run is a
@@ -184,6 +189,15 @@ impl ParamTarget {
         }
     }
 
+    /// `entry` as a `--param` text names it: a whole param (of any type, a composite included: its type reads the text) or,
+    /// failing that, a leaf of a composite param. `E0801` when it names neither.
+    pub fn resolve_text(ir: &Ir, top: &str, entry: &str) -> Result<ParamTarget, Failure> {
+        match ParamPath::resolve(ir, top, entry) {
+            Ok(param) => Ok(ParamTarget { param, leaf: None }),
+            Err(named) => ParamTarget::leaf(ir, top, entry).ok_or(named),
+        }
+    }
+
     /// `entry` as `<instance>.<param><leaf>`: the longest instance path, then a composite param of
     /// it, then what remains as the leaf (`num[2]`, `x`, `0`, `[1]`).
     fn leaf(ir: &Ir, top: &str, entry: &str) -> Option<ParamTarget> {
@@ -221,12 +235,16 @@ impl Session {
     }
 
     /// Writes `text` to the param `path` names as its type reads it (PI-01 to PI-03, D24): an integer
-    /// literal, a variant name, `None` or a value of `T`. A refusal changes nothing (`E0802`).
+    /// literal, a variant name, `None` or a value of `T`. A refusal changes nothing (`E0802`). An integer an
+    /// `f64` cannot hold is written as its exact pin bytes (PI-01 AC 4).
     pub(crate) fn set_text_param(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, ir: &Ir, path: &ParamPath, text: &str) -> Result<(), Failure> {
         let read = ParamText::read(ir, path, text)?;
-        match read.option_leaves() {
+        match read.option_leaves(&path.label())? {
             None => match read {
-                ParamText::Number(value) => Session::set_param(table, derive, circuit, path, value),
+                ParamText::Whole(scalar) => match scalar.exact_real() {
+                    Some(value) => Session::set_param(table, derive, circuit, path, value),
+                    None => Session::set_exact_integer(table, circuit, ir, path, scalar),
+                },
                 ParamText::Option { .. } => Ok(()),
             },
             Some(leaves) => {
@@ -241,6 +259,41 @@ impl Session {
                 let whole = first.ok_or_else(|| Failure::Host { code: "E0802", message: format!("`{}` has no leaf to write", path.label()) })?;
                 Session::write_leaf_change(table, circuit, path, &whole, text)
             }
+        }
+    }
+
+    /// Writes an integer no `f64` holds exactly to its pin as the pin's own little-endian bytes, and takes the nearest
+    /// `f64` into `table` (what derives from it is not recomputed from a value a derive function cannot hold).
+    fn set_exact_integer(table: &mut Params, circuit: &mut CircuitInstance, ir: &Ir, path: &ParamPath, scalar: ParamScalar) -> Result<(), Failure> {
+        let ParamScalar::Integer(value) = scalar else { return Ok(()) };
+        let ty = ir.instance_at(&path.instance).and_then(|instance| instance.body().params().iter().find(|param| param.name == path.param).map(|param| param.ty.clone()));
+        let bits = match ty {
+            Some(ValueType::UInt(bits) | ValueType::Int(bits)) => bits,
+            _ => 64,
+        };
+        let width = match bits {
+            0..=8 => 1,
+            9..=16 => 2,
+            17..=32 => 4,
+            _ => 8,
+        };
+        let bytes = value.to_le_bytes()[..width].to_vec();
+        let label = path.label();
+        circuit.set(&path.instance, &path.param, piperine_solver::prelude::ParamValue::Bytes(bytes)).map_err(|error| Failure::Host { code: "E0802", message: format!("`{label}` refuses the value {value}: {error}") })?;
+        let old = table.get(&path.instance, &path.param).unwrap_or(f64::NAN);
+        let change = Changed { instance: path.instance.clone(), param: path.param.clone(), ty: ValueType::Int(bits), old, value: value as f64, derived: false };
+        table.apply(&[change]);
+        table.keep_exact(&path.instance, &path.param, value);
+        Ok(())
+    }
+
+    /// Writes the `--param` entry `text` of `target`: a leaf of a composite takes a number or a flag, a whole param is read
+    /// by its type. A structural param is an elaboration input already used, so the text is only checked against its type.
+    pub(crate) fn set_target_text(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, ir: &Ir, target: &ParamTarget, text: &str) -> Result<(), Failure> {
+        match &target.leaf {
+            Some(leaf) => Session::set_leaf(table, circuit, &target.param, leaf, ParamText::leaf_number(&target.label(), text)?),
+            None if target.param.is_structural(ir) => ParamText::read(ir, &target.param, text).map(|_| ()),
+            None => Session::set_text_param(table, derive, circuit, ir, &target.param, text),
         }
     }
 
@@ -298,7 +351,7 @@ impl Session {
             _ => None,
         };
         // every param path resolves before anything compiles: a typo costs no `rustc`
-        let texts = spec.param_texts.iter().map(|(entry, text)| Ok((ParamPath::resolve(&ir, ir.top().path(), entry)?, text.as_str()))).collect::<Result<Vec<_>, Failure>>()?;
+        let texts = spec.param_texts.iter().map(|(entry, text)| Ok((ParamTarget::resolve_text(&ir, ir.top().path(), entry)?, text.as_str()))).collect::<Result<Vec<_>, Failure>>()?;
         let params = spec.params.iter().map(|(entry, value)| Ok((ParamTarget::resolve(&ir, ir.top().path(), entry)?, entry, *value))).collect::<Result<Vec<_>, Failure>>()?;
         let mut context = Session::context_of(&spec.options);
         let nodeset = Session::nodeset_of(&ir, spec)?;
@@ -340,13 +393,14 @@ impl Session {
         for (path, _, value) in &params {
             match &path.leaf {
                 Some(leaf) => Session::set_leaf(&mut table, &mut circuit, &path.param, leaf, *value)?,
-                None => Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &path.param, *value)?,
+                None => {
+                    table.refuse_unfit(&path.param.instance, &path.param.param, *value)?;
+                    Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &path.param, *value)?
+                }
             }
         }
-        for (path, text) in &texts {
-            // a structural param is an elaboration input: a text read after the body is built would run its old variant
-            path.refuse_structural(&ir)?;
-            Session::set_text_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &ir, path, text)?;
+        for (target, text) in &texts {
+            Session::set_target_text(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &ir, target, text)?;
         }
         Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, noise, noise_report: None, wrt, actions: Vec::new(), timed_sets: Vec::new(), sources: NodeSources::default(), params: table, statistics: None })
     }
@@ -516,7 +570,8 @@ impl Session {
         }
         // the before-run bindings of key params are elaboration inputs (analog-structure, AS-15 AC 1):
         // the elaborator lowers the variant of their values; every other binding is written below
-        let bound = piperine_lang::elab::Overrides::new(&spec.params);
+        let inputs: Vec<(String, f64)> = spec.params.iter().cloned().chain(spec.param_texts.iter().filter_map(|(entry, text)| ParamText::elaboration_value(text).map(|value| (entry.clone(), value)))).collect();
+        let bound = piperine_lang::elab::Overrides::new(&inputs);
         match Elaborator::new(&design).run_with(&top, &bound) {
             Ok(ir) => Ok((Arc::new(ir), top)),
             Err(found) => Err(Session::diagnosed("elaborate", design, found)),
@@ -880,17 +935,28 @@ impl Session {
             }
         }
         for (entry, text) in &spec.param_texts {
-            let path = ParamPath::resolve(&ir, ir.top().path(), entry)?;
-            match ParamText::read(&ir, &path, text)? {
-                ParamText::Number(value) => {
-                    table.set(&path.instance, &path.param, value, Some(&derive), &mut |_| Ok(()))?;
-                }
-                option @ ParamText::Option { .. } => {
-                    for (leaf, value) in option.option_leaves().into_iter().flatten() {
+            let target = ParamTarget::resolve_text(&ir, ir.top().path(), entry)?;
+            let path = &target.param;
+            if let Some(leaf) = &target.leaf {
+                let change = table.leaf_change(&path.instance, &path.param, leaf, ParamText::leaf_number(&target.label(), text)?)?;
+                table.apply_leaf(&change);
+                continue;
+            }
+            let read = ParamText::read(&ir, path, text)?;
+            if path.is_structural(&ir) {
+                continue;
+            }
+            match (read.option_leaves(&path.label())?, read) {
+                (Some(leaves), _) => {
+                    for (leaf, value) in leaves {
                         let change = table.leaf_change(&path.instance, &path.param, leaf, value)?;
                         table.apply_leaf(&change);
                     }
                 }
+                (None, ParamText::Whole(scalar)) => {
+                    table.set(&path.instance, &path.param, scalar.exact_real().unwrap_or(f64::NAN), Some(&derive), &mut |_| Ok(()))?;
+                }
+                (None, ParamText::Option { .. }) => {}
             }
         }
         Ok((top, Metadata::of(&ir, &table)))

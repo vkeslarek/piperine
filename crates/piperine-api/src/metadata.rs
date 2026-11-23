@@ -75,7 +75,7 @@ impl Metadata {
                 let value = match (composite, instance.param(i), current) {
                     (Some(value), _, _) => value,
                     (None, Some(Constant::Bool(_)), Some(now)) => Cell::Bool(now != 0.0),
-                    (None, Some(Constant::Int(_)), Some(now)) => Cell::Int(now as i128),
+                    (None, Some(Constant::Int(_)), Some(now)) => Cell::Int(held.exact_integer(instance.path(), &param.name).unwrap_or(now as i128)),
                     (None, Some(_), Some(now)) => Cell::Real(now),
                     // a param with no default holds no value until a placement gives it one: the absent cell
                     (None, _, _) => Cell::Absent,

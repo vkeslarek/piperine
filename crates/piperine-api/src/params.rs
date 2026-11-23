@@ -142,8 +142,13 @@ impl LeafValue {
 /// The values of every param of every instance, by instance in the IR's order.
 #[derive(Debug, Clone)]
 pub struct Params {
+    /// What derives from what.
     plan: DerivePlan,
+    /// The params of every instance.
     instances: Vec<Slot>,
+    /// The integers a host gave that no `f64` holds exactly (PI-01 AC 4), by `(instance, param)`: the table's own value is the
+    /// nearest `f64`.
+    exact: std::collections::BTreeMap<(String, String), i128>,
 }
 
 #[derive(Debug, Clone)]
@@ -236,7 +241,7 @@ impl Params {
                     .collect(),
             })
             .collect();
-        Params { plan: DerivePlan::of(ir), instances }
+        Params { plan: DerivePlan::of(ir), instances, exact: std::collections::BTreeMap::new() }
     }
 
     /// The value of `param` of `instance`; `None` when the design has no such param.
@@ -323,6 +328,23 @@ impl Params {
     /// The params a `set` of `param` of `instance` to `value` changes, in instance order, with
     /// nothing written and the table untouched: what a timed `set` schedules. The refusals of
     /// `set` apply.
+    /// `E0802` for a number a param of an integer or enum type cannot take (PI-01 AC 4, PI-02 AC 4): an integer param takes a whole number
+    /// in its range, an enum takes a variant name as text, never a number. A real or a flag param takes any number.
+    pub fn refuse_unfit(&self, instance: &str, param: &str, value: f64) -> Result<(), Failure> {
+        let label = format!("{instance}.{param}");
+        let refuse = |message: String| Failure::Host { code: "E0802", message };
+        let Some(ty) = self.slot(instance).and_then(|s| s.params.iter().find(|(n, _, _)| n == param)).map(|(_, t, _)| t.clone()) else { return Ok(()) };
+        if let Some((low, high)) = ty.integer_range()
+            && (value.fract() != 0.0 || !(low as f64..=high as f64).contains(&value))
+        {
+            return Err(refuse(format!("`{label}` refuses the value {value}: the param is {ty}, a whole number from {low} to {high}")));
+        }
+        if matches!(ty, ValueType::Enum(_)) {
+            return Err(refuse(format!("`{label}` is an enum: give a variant name as text, `--param {label}=<Variant>`")));
+        }
+        Ok(())
+    }
+
     pub fn changes(&self, instance: &str, param: &str, value: f64, derive: Option<&dyn Derive>) -> Result<Vec<Changed>, Failure> {
         let refuse = |message: String| Failure::Host { code: "E0802", message };
         let label = format!("{instance}.{param}");
@@ -381,11 +403,22 @@ impl Params {
     /// Takes `changes` into the table.
     pub fn apply(&mut self, changes: &[Changed]) {
         for change in changes {
+            self.exact.remove(&(change.instance.clone(), change.param.clone()));
             let found = self.instances.iter_mut().find(|s| s.path == change.instance).and_then(|s| s.params.iter_mut().find(|(n, _, _)| *n == change.param));
             if let Some((_, _, v)) = found {
                 *v = change.value;
             }
         }
+    }
+
+    /// Remembers the exact integer `value` of the param, which no `f64` holds.
+    pub fn keep_exact(&mut self, instance: &str, param: &str, value: i128) {
+        self.exact.insert((instance.to_string(), param.to_string()), value);
+    }
+
+    /// The exact integer a host gave the param, when no `f64` holds it.
+    pub fn exact_integer(&self, instance: &str, param: &str) -> Option<i128> {
+        self.exact.get(&(instance.to_string(), param.to_string())).copied()
     }
 
     fn slot(&self, instance: &str) -> Option<&Slot> {

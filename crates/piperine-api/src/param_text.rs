@@ -10,19 +10,47 @@ use crate::composite::CellShape;
 use crate::failure::Failure;
 use crate::session::ParamPath;
 
+/// One value a text gives: a real, or an integer held exactly (never through an `f64`, PI-01 AC 4).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Scalar {
+    /// A real, a flag as 0 or 1.
+    Real(f64),
+    /// An integer of the param's type, or the tag of a unit enum's variant.
+    Integer(i128),
+}
+
+impl Scalar {
+    /// The value as an `f64` when it is exact in one: a real, or an integer of at most 2^53.
+    pub fn exact_real(&self) -> Option<f64> {
+        match *self {
+            Scalar::Real(value) => Some(value),
+            Scalar::Integer(value) if value.unsigned_abs() <= 1 << 53 => Some(value as f64),
+            Scalar::Integer(_) => None,
+        }
+    }
+}
+
 /// What a text reads as for the param it is given to.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParamText {
     /// A param of one value: a number, an integer, a flag as 0 or 1, or an enum's tag.
-    Number(f64),
-    /// An `Option` param: the leaves of its pin, `some` then `value`, each with the number it takes.
-    Option { some: bool, value: f64 },
+    Whole(Scalar),
+    /// An `Option` param: `None` (`some` false), or `Some` of the payload.
+    Option {
+        /// Whether the param holds a value.
+        some: bool,
+        /// The payload, zero for `None`.
+        value: Scalar,
+    },
 }
 
 /// The reading of one text, with the names the refusal uses.
 struct Reading<'a> {
+    /// The design, whose arena names the variants of an enum.
     ir: &'a Ir,
+    /// The param as the refusal names it, `<instance>.<param>`.
     label: String,
+    /// The text, trimmed.
     text: &'a str,
 }
 
@@ -38,15 +66,39 @@ impl ParamText {
         match &ty {
             ValueType::Option(payload) => reading.option(payload),
             other if ir.is_composite_value(other) => Err(reading.refused("a composite param, an enum with fields included, is set by its leaves, `<param>.<leaf>`".to_string())),
-            other => reading.scalar(other).map(ParamText::Number),
+            other => reading.scalar(other).map(ParamText::Whole),
         }
     }
 
-    /// The leaves of an `Option` param's pin this text writes, in the order of its layout.
-    pub fn option_leaves(&self) -> Option<[(&'static str, f64); 2]> {
+    /// The number a text is as an elaboration input of a key param (`--param` of a structural param is read before the
+    /// design exists): a real, an integer literal in a radix, or a flag; `None` for any other text.
+    pub fn elaboration_value(text: &str) -> Option<f64> {
+        let text = text.trim();
+        match text {
+            "true" => Some(1.0),
+            "false" => Some(0.0),
+            _ => Reading::literal_integer(text).and_then(|value| Scalar::Integer(value).exact_real()).or_else(|| text.parse::<f64>().ok()),
+        }
+    }
+
+    /// The number a text gives for a leaf of a composite param: a real or a flag (`true`, `false`); `E0802` otherwise.
+    pub fn leaf_number(label: &str, text: &str) -> Result<f64, Failure> {
+        match text.trim() {
+            "true" => Ok(1.0),
+            "false" => Ok(0.0),
+            other => other.parse::<f64>().map_err(|_| Failure::Host { code: "E0802", message: format!("`{label}` refuses the value `{other}`: a leaf takes a number or a flag") }),
+        }
+    }
+
+    /// The leaves of an `Option` param's pin this text writes, in the order of its layout; a payload an `f64` cannot hold
+    /// is `E0802`.
+    pub fn option_leaves(&self, label: &str) -> Result<Option<[(&'static str, f64); 2]>, Failure> {
         match self {
-            ParamText::Option { some, value } => Some([("some", f64::from(u8::from(*some))), ("value", *value)]),
-            ParamText::Number(_) => None,
+            ParamText::Option { some, value } => {
+                let payload = value.exact_real().ok_or_else(|| Failure::Host { code: "E0802", message: format!("`{label}` refuses a payload an `f64` cannot hold exactly: set the leaf `value` as a number in range") })?;
+                Ok(Some([("some", f64::from(u8::from(*some))), ("value", payload)]))
+            }
+            ParamText::Whole(_) => Ok(None),
         }
     }
 }
@@ -58,52 +110,57 @@ impl Reading<'_> {
     }
 
     /// The text as a value of the one-valued type `ty`.
-    fn scalar(&self, ty: &ValueType) -> Result<f64, Failure> {
+    fn scalar(&self, ty: &ValueType) -> Result<Scalar, Failure> {
         match ty {
-            ValueType::F64 => self.text.parse::<f64>().map_err(|_| self.refused("it is not a number".to_string())),
+            ValueType::F64 => self.text.parse::<f64>().map(Scalar::Real).map_err(|_| self.refused("it is not a number".to_string())),
             ValueType::Bool => match self.text {
-                "true" => Ok(1.0),
-                "false" => Ok(0.0),
+                "true" => Ok(Scalar::Real(1.0)),
+                "false" => Ok(Scalar::Real(0.0)),
                 _ => Err(self.refused("a `bool` is `true` or `false`".to_string())),
             },
-            integer if integer.is_integer() => self.integer(integer),
-            ValueType::Enum(_) => self.variant(ty),
+            integer if integer.is_integer() => self.integer(integer).map(Scalar::Integer),
+            ValueType::Enum(_) => self.variant(ty).map(Scalar::Integer),
             other => Err(self.refused(format!("a value of type {other} cannot be given as text"))),
         }
     }
 
     /// An integer literal of `ty`: decimal, `0x` or `0b`, `_` between digits, a `-` for a signed type.
-    fn integer(&self, ty: &ValueType) -> Result<f64, Failure> {
+    fn integer(&self, ty: &ValueType) -> Result<i128, Failure> {
         let (low, high) = ty.integer_range().ok_or_else(|| self.refused(format!("{ty} is no integer type")))?;
-        let (negative, unsigned) = match self.text.strip_prefix('-') {
+        let value = Reading::literal_integer(self.text).ok_or_else(|| self.refused(format!("it is not an integer literal of {ty}, from {low} to {high}")))?;
+        if !(low..=high).contains(&value) {
+            return Err(self.refused(format!("it is outside the range of {ty}, from {low} to {high}")));
+        }
+        Ok(value)
+    }
+
+    /// The integer a literal is, exactly: decimal, `0x` or `0b`, `_` between digits, a `-` in front; `None` for any other text
+    /// (a point, an exponent, a letter).
+    fn literal_integer(text: &str) -> Option<i128> {
+        let (negative, unsigned) = match text.strip_prefix('-') {
             Some(rest) => (true, rest),
-            None => (false, self.text),
+            None => (false, text),
         };
         let (radix, digits) = match (unsigned.strip_prefix("0x"), unsigned.strip_prefix("0b")) {
             (Some(rest), _) => (16, rest),
             (_, Some(rest)) => (2, rest),
             _ => (10, unsigned),
         };
-        let malformed = || self.refused(format!("it is not an integer literal of {ty}, from {low} to {high}"));
         if digits.is_empty() || digits.starts_with('_') || digits.ends_with('_') {
-            return Err(malformed());
+            return None;
         }
-        let magnitude = i128::from_str_radix(&digits.replace('_', ""), radix).map_err(|_| malformed())?;
-        let value = if negative { -magnitude } else { magnitude };
-        if !(low..=high).contains(&value) {
-            return Err(self.refused(format!("it is outside the range of {ty}, from {low} to {high}")));
-        }
-        Ok(value as f64)
+        let magnitude = i128::from_str_radix(&digits.replace('_', ""), radix).ok()?;
+        Some(if negative { -magnitude } else { magnitude })
     }
 
     /// The tag of the variant of the unit enum `ty` the text names, bare or as `Enum::Variant`.
-    fn variant(&self, ty: &ValueType) -> Result<f64, Failure> {
+    fn variant(&self, ty: &ValueType) -> Result<i128, Failure> {
         let Some(CellShape::Enum { name, variants, .. }) = CellShape::of(self.ir, ty) else {
             return Err(self.refused("it is no enum".to_string()));
         };
         let wanted = self.text.strip_prefix(&format!("{name}::")).unwrap_or(self.text);
         match variants.iter().find(|variant| variant.name == wanted) {
-            Some(variant) if variant.fields.is_empty() => Ok(variant.discriminant as f64),
+            Some(variant) if variant.fields.is_empty() => Ok(variant.discriminant),
             _ => {
                 let names: Vec<String> = variants.iter().filter(|variant| variant.fields.is_empty()).map(|variant| format!("`{}`", variant.name)).collect();
                 Err(self.refused(format!("`{name}` has no such variant: the variants are {}", names.join(", "))))
@@ -114,7 +171,7 @@ impl Reading<'_> {
     /// `None`, or a value of the payload type, bare or as `Some(value)`.
     fn option(&self, payload: &ValueType) -> Result<ParamText, Failure> {
         if self.text == "None" {
-            return Ok(ParamText::Option { some: false, value: 0.0 });
+            return Ok(ParamText::Option { some: false, value: Scalar::Real(0.0) });
         }
         let inner = self.text.strip_prefix("Some(").and_then(|rest| rest.strip_suffix(')')).unwrap_or(self.text);
         let reading = Reading { ir: self.ir, label: self.label.clone(), text: inner.trim() };
@@ -130,29 +187,45 @@ mod tests {
     use super::*;
     use piperine_ir::{BodySpec, Constant, InstanceSpec, IrBuilder, Origin, Param, Real};
 
-    /// A design of `Top` with one param of each type under test.
-    fn design(ty: ValueType) -> Ir {
-        let mut builder = IrBuilder::new();
-        let origin = Origin { file: "t.msl".into(), line: 1, col: 1 };
-        let param = Param { name: "p".into(), ty, default: Some(Constant::Real(Real::new(0.0))), check: None, structural: false, origin: origin.clone() };
-        let body = builder.body(BodySpec { name: "Top".into(), origin: origin.clone(), params: vec![param], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
-        let top = builder.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes: vec![], params: vec![Constant::Int(0)], origin });
-        builder.finish(top)
-    }
+    /// The readings of a text for a one-param design: the owner of the helpers the tests share.
+    struct Texts;
 
-    fn read(ty: ValueType, text: &str) -> Result<ParamText, Failure> {
-        ParamText::read(&design(ty), &ParamPath { instance: "Top".into(), param: "p".into() }, text)
+    impl Texts {
+        /// A design of `Top` with one param `p` of type `ty`.
+        fn design(ty: ValueType) -> Ir {
+            let mut builder = IrBuilder::new();
+            let origin = Origin { file: "t.msl".into(), line: 1, col: 1 };
+            let param = Param { name: "p".into(), ty, default: Some(Constant::Real(Real::new(0.0))), check: None, structural: false, origin: origin.clone() };
+            let body = builder.body(BodySpec { name: "Top".into(), origin: origin.clone(), params: vec![param], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
+            let top = builder.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes: vec![], params: vec![Constant::Int(0)], origin });
+            builder.finish(top)
+        }
+
+        /// `text` read as a value of the param `p` of type `ty`.
+        fn read(ty: ValueType, text: &str) -> Result<ParamText, Failure> {
+            ParamText::read(&Texts::design(ty), &ParamPath { instance: "Top".into(), param: "p".into() }, text)
+        }
     }
 
     #[test]
     fn an_integer_literal_is_read_in_its_radix_and_range() {
         // D24: decimal, `0x`, `0b` and `_` read; the range of the type decides.
-        assert!(read(ValueType::UInt(8), "0x_ff").is_err(), "a `_` first among the digits is no literal");
-        for (text, wanted) in [("6", 6.0), ("0x1F", 31.0), ("0b101", 5.0), ("1_000", 1000.0)] {
-            assert_eq!(read(ValueType::UInt(16), text).expect(text), ParamText::Number(wanted), "{text}");
+        assert!(Texts::read(ValueType::UInt(8), "0x_ff").is_err(), "a `_` first among the digits is no literal");
+        for (text, wanted) in [("6", 6), ("0x1F", 31), ("0b101", 5), ("1_000", 1000)] {
+            assert_eq!(Texts::read(ValueType::UInt(16), text).expect(text), ParamText::Whole(Scalar::Integer(wanted)), "{text}");
         }
-        assert_eq!(read(ValueType::Int(8), "-128").expect("the lowest i8"), ParamText::Number(-128.0));
-        assert!(matches!(read(ValueType::UInt(8), "256"), Err(Failure::Host { code: "E0802", .. })));
-        assert!(matches!(read(ValueType::UInt(8), "1.5"), Err(Failure::Host { code: "E0802", .. })));
+        assert_eq!(Texts::read(ValueType::Int(8), "-128").expect("the lowest i8"), ParamText::Whole(Scalar::Integer(-128)));
+        for refused in ["256", "1.5", "1e1", "-1", "six"] {
+            assert!(matches!(Texts::read(ValueType::UInt(8), refused), Err(Failure::Host { code: "E0802", .. })), "{refused}");
+        }
+    }
+
+    #[test]
+    fn an_integer_above_2_pow_53_is_read_exactly() {
+        // PI-01 AC 4, D24: the literal is the value; no `f64` round trip rounds it.
+        let wanted = 9_007_199_254_740_993_i128;
+        assert_eq!(Texts::read(ValueType::UInt(64), "9007199254740993").expect("in range"), ParamText::Whole(Scalar::Integer(wanted)));
+        assert_eq!(Scalar::Integer(wanted).exact_real(), None, "an `f64` cannot hold it");
+        assert_eq!(Texts::read(ValueType::UInt(64), "18446744073709551615").expect("the highest u64"), ParamText::Whole(Scalar::Integer(i128::from(u64::MAX))));
     }
 }

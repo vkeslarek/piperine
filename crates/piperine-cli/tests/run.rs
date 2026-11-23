@@ -642,7 +642,11 @@ fn param_of_an_integer_from_the_command_line_reads_from_the_start() {
     assert!(close(volts(&[]), 1.0 / 5.0, 1e-6), "the default n = 4");
     assert!(close(volts(&["--param", "l.n=6"]), 1.0 / 7.0, 1e-6), "n = 6 from the start");
     assert!(close(volts(&["--param", "l.n=0x6"]), 1.0 / 7.0, 1e-6), "the literal `0x6` is 6");
-    let refused = piperine_in(dir.path(), shared_cache(), &["run", file, "--analysis", "op", "--param", "l.n=300"]);
-    assert_ne!(refused.status.code(), Some(0), "300 does not fit `u8`");
-    assert!(text(&refused.stderr).contains("E0802") && text(&refused.stderr).contains("l.n"), "{}", text(&refused.stderr));
+    // PI-01 AC 4, D24: what is no integer literal of the type and range is `E0802` naming the param and the value, a number included
+    for bad in ["300", "6.5", "1e1", "-1"] {
+        let entry = format!("l.n={bad}");
+        let refused = piperine_in(dir.path(), shared_cache(), &["run", file, "--analysis", "op", "--param", &entry]);
+        assert_ne!(refused.status.code(), Some(0), "`{bad}` is no `u8`");
+        assert!(text(&refused.stderr).contains("E0802") && text(&refused.stderr).contains("l.n") && text(&refused.stderr).contains(bad), "{bad}: {}", text(&refused.stderr));
+    }
 }

@@ -61,15 +61,6 @@ enum ArgKind {
     Setting,
 }
 
-/// What `--param` gives for a param: a real, or text its param's type reads.
-#[derive(Debug, Clone, PartialEq)]
-enum ParamGiven {
-    /// A number or a flag.
-    Real(f64),
-    /// Anything else.
-    Text(String),
-}
-
 /// The parsers of the typed values of a flag.
 struct Values;
 
@@ -84,28 +75,30 @@ impl Values {
         text.parse::<u32>().map_err(|_| format!("`{text}` is not a whole number"))
     }
 
-    /// The path and the real value of a `<path>=<real>` flag's `text`, split at the last `=`.
+    /// The path and the real value of a `<path>=<real>` flag's `text` (`--nodeset`), split at the last `=`; a flag is 1 or 0.
     fn path_real(text: &str) -> Result<(String, f64), String> {
-        match Values::param(text)? {
-            (path, ParamGiven::Real(value)) => Ok((path, value)),
-            (_, ParamGiven::Text(other)) => Err(format!("`{other}` is not a number")),
-        }
+        let (path, value) = Values::path_and_value(text)?;
+        let real = match value.as_str() {
+            "true" => 1.0,
+            "false" => 0.0,
+            other => Values::real(other)?,
+        };
+        Ok((path, real))
     }
 
-    /// The path and the value of `--param`'s `text`, split at the last `=`: a number or a flag is a real, any other
-    /// text is kept for the param's type to read (an integer literal in a radix, a variant name, `None`; D24).
-    fn param(text: &str) -> Result<(String, ParamGiven), String> {
+    /// The path and the text of `--param`'s `text`, split at the last `=`: the text is kept whole, for the param's type to read
+    /// (an integer literal in a radix, a variant name, `None`, a number, a flag; PI-01 to PI-03, D24).
+    fn param(text: &str) -> Result<(String, String), String> {
+        Values::path_and_value(text)
+    }
+
+    /// `<path>=<value>` split at the last `=`; a text with no `=` or no path is refused.
+    fn path_and_value(text: &str) -> Result<(String, String), String> {
         let (path, value) = text.rsplit_once('=').ok_or_else(|| format!("`{text}` is not <path>=<value>"))?;
         if path.is_empty() {
             return Err(format!("`{text}` names no path"));
         }
-        // a `bool` leaf of a composite param is given as `true` or `false`
-        let given = match value {
-            "true" => ParamGiven::Real(1.0),
-            "false" => ParamGiven::Real(0.0),
-            other => other.parse::<f64>().map_or_else(|_| ParamGiven::Text(other.to_string()), ParamGiven::Real),
-        };
-        Ok((path.to_string(), given))
+        Ok((path.to_string(), value.to_string()))
     }
 
     /// The name and the text of `--simparam`'s `text`, split at the first `=`.
@@ -315,8 +308,8 @@ impl Cli {
             points: count("points"),
             print: texts("print"),
             streams: texts("stream"),
-            params: Cli::given_params(m).iter().filter_map(|(path, given)| if let ParamGiven::Real(value) = given { Some((path.clone(), *value)) } else { None }).collect(),
-            param_texts: Cli::given_params(m).iter().filter_map(|(path, given)| if let ParamGiven::Text(text) = given { Some((path.clone(), text.clone())) } else { None }).collect(),
+            params: Vec::new(),
+            param_texts: Cli::given_params(m),
             backend: text("backend"),
             csv: path("csv"),
             records: path("records"),
@@ -352,8 +345,8 @@ impl Cli {
     }
 
     /// The `--param` entries of `m`, in the order given.
-    fn given_params(m: &clap::ArgMatches) -> Vec<(String, ParamGiven)> {
-        m.get_many::<(String, ParamGiven)>("param").map(|v| v.cloned().collect()).unwrap_or_default()
+    fn given_params(m: &clap::ArgMatches) -> Vec<(String, String)> {
+        m.get_many::<(String, String)>("param").map(|v| v.cloned().collect()).unwrap_or_default()
     }
 
     /// The `--simparam` entries of `m` whose value is a number, in order, and the fault of the
@@ -487,8 +480,8 @@ mod tests {
             points: Some(20),
             print: vec!["a".into(), "b".into()],
             streams: vec!["s1".into(), "s2".into()],
-            params: vec![("r1.r".into(), 2000.0), ("c1.c".into(), 1e-9)],
-            param_texts: vec![],
+            params: vec![],
+            param_texts: vec![("r1.r".into(), "2000".into()), ("c1.c".into(), "1e-9".into())],
             backend: Some("interp".into()),
             csv: Some("o.csv".into()),
             records: Some("r.jsonl".into()),
@@ -523,13 +516,14 @@ mod tests {
     }
 
     #[test]
-    fn a_param_that_is_no_number_is_kept_as_text_for_its_type() {
-        // PI-01 to PI-03 (D24): `--param` gives a real for a number or a flag and the text for anything else (an integer
-        // literal in a radix, a variant name, `None`), which the param's type reads when the session opens.
+    fn a_param_is_kept_as_text_for_its_type() {
+        // PI-01 to PI-03 (D24): `--param` keeps every value as the text it was written, a number included: the param's type reads
+        // it when the session opens (an integer literal in a radix, a variant name, `None`, a number, a flag).
         let args = ["piperine", "run", "--param", "a.x=1e-9", "--param", "a.n=0x1F", "--param", "a.md=Slow", "--param", "a.rs=None", "--param", "a.f=true"];
         let Ok(Invocation::Run { overrides, .. }) = Cli::parse(args) else { panic!("the params parse") };
-        assert_eq!(overrides.params, [("a.x".to_string(), 1e-9), ("a.f".to_string(), 1.0)]);
-        assert_eq!(overrides.param_texts, [("a.n".to_string(), "0x1F".to_string()), ("a.md".to_string(), "Slow".to_string()), ("a.rs".to_string(), "None".to_string())]);
+        assert!(overrides.params.is_empty(), "no `--param` is read as a real before its type is known");
+        let texts: Vec<(&str, &str)> = overrides.param_texts.iter().map(|(path, text)| (path.as_str(), text.as_str())).collect();
+        assert_eq!(texts, [("a.x", "1e-9"), ("a.n", "0x1F"), ("a.md", "Slow"), ("a.rs", "None"), ("a.f", "true")]);
     }
 
     #[test]
