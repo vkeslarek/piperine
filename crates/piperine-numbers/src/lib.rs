@@ -15,5 +15,6 @@ pub mod decimal;
 pub mod format;
 pub mod half;
 pub mod limbs;
+pub mod precision;
 pub mod quad;
 pub mod wide;

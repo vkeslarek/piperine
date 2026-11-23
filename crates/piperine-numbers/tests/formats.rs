@@ -4,6 +4,10 @@
 
 #[path = "support/exact.rs"]
 mod exact;
+#[path = "support/exact_nearest.rs"]
+mod exact_nearest;
+#[path = "support/exact_scaled.rs"]
+mod exact_scaled;
 #[path = "support/exact_text.rs"]
 mod exact_text;
 #[path = "support/random.rs"]

@@ -4,6 +4,8 @@
 
 #[path = "support/exact.rs"]
 mod exact;
+#[path = "support/exact_nearest.rs"]
+mod exact_nearest;
 #[path = "support/exact_values.rs"]
 mod exact_values;
 #[path = "support/random.rs"]

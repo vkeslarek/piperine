@@ -342,8 +342,8 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `directed_rounding_brackets_the_exact_result` passes under `**Run precision**` (each operation at 120, 240 and 1 000 bits on 5 000 random operands: the lower result is at most, and the upper at least, the exact `ExactRational` result, and each is the adjacent value of its precision)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `directed_rounding_brackets_the_exact_result` passes under `**Run precision**` (each operation at 120, 240 and 1 000 bits on 5 000 random operands: the lower result is at most, and the upper at least, the exact `ExactRational` result, and each is the adjacent value of its precision)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task
@@ -1063,6 +1063,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** Planning (2026-11-23): Q4 answered by the user directly (integers (a), `f16` (a), `f128` (a) complete, recorded in spec.md). design-d.md QD1 to QD8 are the planner's defaults, pending the user's approval of these tasks. D1 to D3 (T91 to T109) may run beside phase C; T110 waits for phase C's merge.
 **Defaults and findings (D1 to D3, numeric crate):**
+- T100: Interval ops take their working precision from the interval; a sticky bit is valid only on a magnitude longer than the precision (documented on MultiPrecision::rounded; add pads the larger operand to precision+3 bits before using the far-operand shortcut, which found a bug the directed-rounding test caught). The tests' shared fixtures were split into small files (tests/support/exact*.rs, one concern each, included per target with #[path]) so no target carries unused code.
 - T99: the vectors have 1 300 to 2 700 rows per function (the plan said about 2 000; the test requires at least 1 000), computed by tests/vectors/generate.py with mpmath 1.3.0 at 1 024 bits (Ziv loop on the oracle side, margin 2^-984 relative) and exact Fraction rounding; exact.tsv holds 1 180 exact cases. Extra data files: constants.txt (pi, ln 2, ln 10 to 1 000 decimals, asserted against their well-known leading digits inside the generator), pi_bits.hex (floor(pi * 2^20000)), half_pi.tsv (the f128 nearest to k*pi/2, k odd up to 16 370 bits, hex); the sin/cos/tan sets also contain 300 such arguments each. powi rows carry the i32 exponent in decimal. Special-value rules are those of C99 Annex F / Rust: powf(x, +-0) = 1, powf(1, y) = 1, powi(x, 0) = 1 for any x, atan2 with signed zeros and infinities, min(-0,+0) not involved.
 - T98: DecimalText also reads inf, -inf, NaN (any case) so the host's text reads back; shortest() is plain notation for decimal exponents -5..=16 and d.ddde<x> outside it, shortest_scientific() is always Rust's {:e} form (the tests compare it with Rust's own f32/f64 output); a tie between two equally close shortest candidates goes up, as Rust does. The shortest search is exact (one big division, then 36-digit integers, binary search over the digit count). D1 (T91 to T98) closed; per the gate policy no workspace suite was run, only the Build line and cargo test -p piperine-numbers.
 - T97: float to integer maps a float whose magnitude passes the target to the range edge and truncates the rest exactly; the double-rounding case is 1 + 2^-11 + 2^-40 (f64 to f16 once gives 0x3C01, through f32 gives 0x3C00).
