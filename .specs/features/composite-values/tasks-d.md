@@ -191,9 +191,9 @@ T122 → T123 → T124 → T125 → T126
 
 **Done when**:
 
-- [ ] `wide_integers_up_to_128_bits_agree_with_u128_and_i128` passes under `**Run integers**` (`N` = 65, 100, 127, 128, every operator and H.1 method, the operands 0, 1, `MAX`, `MIN`, `-1` and 10 000 random pairs, expected values computed with `u128`/`i128` wrapping arithmetic masked to `N` bits in the test)
-- [ ] `wide_integers_above_128_bits_agree_with_big_integers_modulo_two_to_the_n` passes under `**Run integers**` (`N` = 129, 200, 256, 1000)
-- [ ] Gate check passes: Task (`piperine-numbers`)
+- [x] `wide_integers_up_to_128_bits_agree_with_u128_and_i128` passes under `**Run integers**` (`N` = 65, 100, 127, 128, every operator and H.1 method, the operands 0, 1, `MAX`, `MIN`, `-1` and 10 000 random pairs, expected values computed with `u128`/`i128` wrapping arithmetic masked to `N` bits in the test)
+- [x] `wide_integers_above_128_bits_agree_with_big_integers_modulo_two_to_the_n` passes under `**Run integers**` (`N` = 129, 200, 256, 1000)
+- [x] Gate check passes: Task (`piperine-numbers`)
 
 **Tests**: integration
 **Gate**: task

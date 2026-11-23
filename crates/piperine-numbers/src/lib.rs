@@ -10,3 +10,4 @@
 #![deny(missing_docs)]
 
 pub mod limbs;
+pub mod wide;
