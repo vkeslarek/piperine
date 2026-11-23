@@ -6,6 +6,7 @@
 //! crate of the workspace but `piperine-abi`.
 
 pub mod advance;
+pub mod array;
 pub mod dag;
 pub mod engine;
 pub mod error;

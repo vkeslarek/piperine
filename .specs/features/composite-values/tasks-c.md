@@ -198,9 +198,9 @@ T86 → T87 → T88 → T89 → T90
 
 **Done when**:
 
-- [ ] `a_sparse_array_stores_only_written_elements_and_rewinds` passes under `**Run dsarr**` (1 000 distinct writes to a `1 << 32` array hold 1 000 entries; a rewind restores the map)
-- [ ] `an_unwritten_element_reads_its_initial_value_and_previous` passes under `**Run dsarr**`
-- [ ] Gate check passes: Task (`piperine-digital-solver`)
+- [x] `a_sparse_array_stores_only_written_elements_and_rewinds` passes under `**Run dsarr**` (1 000 distinct writes to a `1 << 32` array hold 1 000 entries; a rewind restores the map)
+- [x] `an_unwritten_element_reads_its_initial_value_and_previous` passes under `**Run dsarr**`
+- [x] Gate check passes: Task (`piperine-digital-solver`)
 
 **Tests**: integration
 **Gate**: task
