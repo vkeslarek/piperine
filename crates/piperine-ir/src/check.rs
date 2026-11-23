@@ -87,6 +87,8 @@ struct Owner {
     events: usize,
     /// The number of the body's derivative sites.
     derivatives: usize,
+    /// The number of the body's delay sites.
+    delays: usize,
     /// The statements of a reaction: `fired` may appear.
     reaction: bool,
     /// The event whose guard is walked: `fired` of another event may appear there (§13 rule 9),
@@ -282,6 +284,11 @@ impl<'a> Checker<'a> {
             }
             for site in &body.derivatives {
                 for id in [site.state].into_iter().chain(site.abstol) {
+                    self.expr_id(&item, &site.origin, id);
+                }
+            }
+            for site in &body.delays {
+                for id in [site.input, site.time].into_iter().chain(site.maximum) {
                     self.expr_id(&item, &site.origin, id);
                 }
             }
@@ -519,7 +526,7 @@ impl<'a> Checker<'a> {
         let mut exprs: Vec<ExprId> = Vec::new();
         match kind {
             Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) => {}
-            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
+            Expr::Probe { .. } | Expr::Env(_) | Expr::Int(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::ParamPrevious(_) => {}
             Expr::Unwrap { is, value, .. } => exprs.extend([*is, *value]),
             Expr::Same { a, b } => exprs.extend([*a, *b]),
             Expr::LevelCast { expr, .. } => exprs.push(*expr),
@@ -950,7 +957,7 @@ impl<'a> Checker<'a> {
             out_e.push(e);
             match &data.kind {
                 Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::Probe { .. } | Expr::Env(_) => {}
-                Expr::Int(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) => {}
+                Expr::Int(_) | Expr::Carrier(_) | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::ParamPrevious(_) => {}
                 Expr::Unwrap { is, value, .. } => stack_e.extend([*is, *value]),
                 Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => stack_e.push(*expr),
                 Expr::Binary { lhs, rhs, .. } => stack_e.extend([*lhs, *rhs]),
@@ -1132,6 +1139,7 @@ impl<'a> Checker<'a> {
             // A commit anywhere but in a reaction: the analog block, a `where`, a drive, an event.
             let mut roots: Vec<ExprId> = body.params.iter().filter_map(|p| p.check).collect();
             roots.extend(body.derivatives.iter().flat_map(|d| [d.state].into_iter().chain(d.abstol)));
+            roots.extend(body.delays.iter().flat_map(|d| [d.input, d.time].into_iter().chain(d.maximum)));
             roots.extend(body.drives.iter().flat_map(|d| [d.value].into_iter().chain(d.after)));
             roots.extend(body.events.iter().flat_map(|e| {
                 let cross = match e.source {
@@ -1225,6 +1233,7 @@ impl<'a> Checker<'a> {
                 streams: body.streams.iter().map(|s| s.fields.iter().map(|f| f.ty.clone()).collect()).collect(),
                 events: body.events.len(),
                 derivatives: body.derivatives.len(),
+                delays: body.delays.len(),
                 reaction: false,
                 event: None,
                 in_body: true,
@@ -1302,6 +1311,13 @@ impl<'a> Checker<'a> {
                     self.walk(&mut w, Task::Expr(abstol, Ctx::top()));
                 }
             }
+            for (k, site) in body.delays.iter().enumerate() {
+                let mut w = Walk::new(owner(false, format!("body {} delay {k}", body.name)), 0);
+                for id in [site.input, site.time].into_iter().chain(site.maximum) {
+                    self.expect(&w, id, &ValueType::F64);
+                    self.walk(&mut w, Task::Expr(id, Ctx::top()));
+                }
+            }
             for (k, reaction) in body.reactions.iter().enumerate() {
                 let item = format!("body {} reaction {k}", body.name);
                 let mut owner = owner(false, item);
@@ -1333,6 +1349,7 @@ impl<'a> Checker<'a> {
                 streams: Vec::new(),
                 events: 0,
                 derivatives: 0,
+                delays: 0,
                 reaction: false,
                 event: None,
                 in_body: false,
@@ -1880,6 +1897,16 @@ impl<'a> Checker<'a> {
                         self.wrong(w, origin, "a derivative read outside a body".to_string());
                     } else if *k as usize >= w.owner.derivatives {
                         self.wrong(w, origin, format!("derivative read of site {k}, out of range ({} sites)", w.owner.derivatives));
+                    }
+                }
+            }
+            Expr::Delay(k) => {
+                if first {
+                    self.own(w, &origin, ty, &ValueType::F64);
+                    if !w.owner.in_body {
+                        self.wrong(w, origin, "a delay read outside a body".to_string());
+                    } else if *k as usize >= w.owner.delays {
+                        self.wrong(w, origin, format!("delay read of site {k}, out of range ({} sites)", w.owner.delays));
                     }
                 }
             }

@@ -410,6 +410,12 @@ impl<'a> Printer<'a> {
             text.push_str(&self.at(&site.origin));
             self.line(1, &text);
         }
+        for (i, site) in body.delays.iter().enumerate() {
+            let maximum = site.maximum.map_or(String::new(), |m| format!(", {}", self.render(scope, Piece::Expr(m))));
+            let mut text = format!("delay{i}({}, {}{maximum}) {:?}", self.render(scope, Piece::Expr(site.input)), self.render(scope, Piece::Expr(site.time)), site.name);
+            text.push_str(&self.at(&site.origin));
+            self.line(1, &text);
+        }
         for hoisted in &body.hoisted {
             let at = self.at(&hoisted.origin);
             self.line(1, &format!("hoisted {}: {}{at}", Printer::name(&hoisted.name), Printer::name(&hoisted.module)));
@@ -934,6 +940,7 @@ impl<'a> Printer<'a> {
             Expr::Flow { branch } => next.push(text(format!("flow(b{branch})"))),
             Expr::Previous(i) => next.push(text(format!("{}.prev()", Printer::carrier(scope, *i)))),
             Expr::Derivative(k) => next.push(text(format!("rate(D{k})"))),
+            Expr::Delay(k) => next.push(text(format!("delay{k}.value"))),
             Expr::ParamPrevious(i) => next.push(text(format!("{}.prev()", scope.params.get(*i as usize).map_or(format!("<bad param {i}>"), |p| Printer::name(&p.name))))),
             Expr::Fired(e) => next.push(text(format!("fired(E{e})"))),
             Expr::Same { a, b } => next.extend([text("same(".into()), Piece::Expr(*a), text(", ".into()), Piece::Expr(*b), text(")".into())]),
@@ -1036,7 +1043,7 @@ impl<'a> Printer<'a> {
         let ty = |id: &ExprId| ir.exprs.get(id.index()).map(|e| e.ty.clone());
         match kind {
             Expr::Env(Env::Static | Env::Analysis(_)) | Expr::Fired(_) => Some(ValueType::Bool),
-            Expr::Real(_) | Expr::Math { .. } | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } | Expr::Flow { .. } | Expr::Derivative(_) => {
+            Expr::Real(_) | Expr::Math { .. } | Expr::Table { .. } | Expr::TableSlope { .. } | Expr::Probe { .. } | Expr::Env(_) | Expr::Limit { .. } | Expr::Stim { .. } | Expr::Flow { .. } | Expr::Derivative(_) | Expr::Delay(_) => {
                 Some(ValueType::F64)
             }
             Expr::Bool(_) => Some(ValueType::Bool),
@@ -1251,6 +1258,7 @@ impl<'a> Printer<'a> {
             Expr::Flow { branch } => format!("flow b{branch}"),
             Expr::Previous(i) => format!("previous {i}"),
             Expr::Derivative(k) => format!("derivative D{k}"),
+            Expr::Delay(k) => format!("delay {k}"),
             Expr::ParamPrevious(i) => format!("param_previous {i}"),
             Expr::Fired(i) => format!("fired {i}"),
             Expr::Same { a, b } => format!("same {} {}", e(a), e(b)),

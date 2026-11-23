@@ -87,3 +87,12 @@ reading a delivered jump accepts, fires, then delivers (no retake).
 - Fact 6: T26 need not refuse a collision.
 - Five `NoiseAnalysisOptions` literals, not one (T6).
 - ngspice sums the per-source integrals for its total (`DIOnoise`, `N_INTEG`): see T3.
+
+## Re-anchor at B4 (T17)
+
+`main` at `2fda3089` already carries `composite-values` and `generics` (phases A and B) and `params-and-io`; the branch
+`feature/analog-operators` was reset onto it, so no rebase conflict arose. The IR anchors design.md cites moved only by
+line number (`Expr` gained the aggregate and loop forms, `BodyData` its generic fields); `Expr::Derivative`,
+`Derivative`, `IrBuilder::derivative`, `Body::derivatives`, `deps::Target::Derivative` and `Walk::finish` are where the
+design reads them. Delay sites follow the derivative site's pattern at each. The workspace carries one warning that
+predates this feature (`crates/piperine/tests/book/types.rs` `Reached::run` unused, test `book_types`); it is not touched.

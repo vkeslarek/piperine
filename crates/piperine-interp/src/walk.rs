@@ -311,6 +311,7 @@ impl<'a> Walk<'a> {
             Expr::Carrier(_) => "Carrier",
             Expr::Flow { .. } => "Flow",
             Expr::Derivative(_) => "Derivative",
+            Expr::Delay(_) => "Delay",
             Expr::ParamPrevious(_) => "ParamPrevious",
             Expr::Previous(_) => "Previous",
             Expr::Fired(_) => "Fired",

@@ -546,9 +546,9 @@ T43 → T44
 
 **Done when**:
 
-- [ ] the branch is rebased on `main` with both lanes' phases A and B merged, and `contract.md` records the moved anchors
-- [ ] `a_delay_site_is_built_checked_printed_and_round_tripped` passes
-- [ ] Gate check passes: `Run irops`, then `cargo test -p piperine-ir`
+- [x] the branch is rebased on `main` with both lanes' phases A and B merged, and `contract.md` records the moved anchors
+- [x] `a_delay_site_is_built_checked_printed_and_round_tripped` passes
+- [x] Gate check passes: `Run irops`, then `cargo test -p piperine-ir`
 
 **Tests**: integration
 **Gate**: full

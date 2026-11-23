@@ -37,6 +37,7 @@ impl Want {
             env: env.to_vec(),
             limits: limits.to_vec(),
             stims: stims.to_vec(),
+            delays: Vec::new(),
         }
     }
 }

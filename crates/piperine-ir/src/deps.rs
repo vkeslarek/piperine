@@ -95,6 +95,12 @@ pub enum Target {
     Derivative(u32),
     /// The `abstol` of a derivative site; empty when the site has none.
     DerivativeAbstol(u32),
+    /// The delayed quantity of a delay site (`Body::delays`).
+    DelayInput(u32),
+    /// The delay time of a delay site.
+    DelayTime(u32),
+    /// The `max` of a delay site; empty when the site has none.
+    DelayMaximum(u32),
 }
 
 /// A dependency set. Fields come in the fixed order nodes, params, environment reads, `limit`
@@ -109,6 +115,8 @@ pub struct Deps {
     pub env: Vec<Env>,
     pub limits: Vec<SiteIndex>,
     pub stims: Vec<SiteIndex>,
+    /// Delay sites whose output (`Expr::Delay`) is read, by index (`Body::delays`).
+    pub delays: Vec<u32>,
 }
 
 impl<'a> Body<'a> {
@@ -164,6 +172,12 @@ impl<'a> Body<'a> {
         self.sources_of(target).derivatives.iter().copied().collect()
     }
 
+    /// The delay sites whose output (`Expr::Delay`) `target` reads, by index (`Body::delays`),
+    /// sorted, through locals and function calls.
+    pub fn delay_reads(&self, target: Target) -> Vec<u32> {
+        self.sources_of(target).delays.iter().copied().collect()
+    }
+
     /// The events whose `fired` byte `target` reads (`Expr::Fired`), by index (`Body::events`),
     /// sorted, through locals and function calls.
     pub fn fired_reads(&self, target: Target) -> Vec<u32> {
@@ -189,6 +203,9 @@ impl<'a> Body<'a> {
             Target::Etol(i) => (&deps.etols, i, "event"),
             Target::Derivative(i) => (&deps.derivative_states, i, "derivative site"),
             Target::DerivativeAbstol(i) => (&deps.derivative_abstols, i, "derivative site"),
+            Target::DelayInput(i) => (&deps.delay_inputs, i, "delay site"),
+            Target::DelayTime(i) => (&deps.delay_times, i, "delay site"),
+            Target::DelayMaximum(i) => (&deps.delay_maxima, i, "delay site"),
         };
         match list.get(i as usize) {
             Some(sources) => sources,
@@ -252,6 +269,9 @@ pub(crate) struct BodyDeps {
     etols: Vec<Sources>,
     derivative_states: Vec<Sources>,
     derivative_abstols: Vec<Sources>,
+    delay_inputs: Vec<Sources>,
+    delay_times: Vec<Sources>,
+    delay_maxima: Vec<Sources>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
@@ -270,6 +290,8 @@ struct Sources {
     fired: BTreeSet<u32>,
     /// The derivative sites whose rate is read (`Expr::Derivative`).
     derivatives: BTreeSet<u32>,
+    /// The delay sites whose output is read (`Expr::Delay`).
+    delays: BTreeSet<u32>,
     /// The params whose previous value is read (`Expr::ParamPrevious`).
     param_previous: BTreeSet<u32>,
 }
@@ -286,6 +308,7 @@ impl Sources {
         self.previous.extend(&other.previous);
         self.fired.extend(&other.fired);
         self.derivatives.extend(&other.derivatives);
+        self.delays.extend(&other.delays);
         self.param_previous.extend(&other.param_previous);
     }
 
@@ -296,6 +319,7 @@ impl Sources {
             env: self.env.iter().copied().collect(),
             limits: self.limits.iter().copied().collect(),
             stims: self.stims.iter().copied().collect(),
+            delays: self.delays.iter().copied().collect(),
         }
     }
 }
@@ -534,6 +558,9 @@ impl<'a> Walk<'a> {
         };
         let derivative_states: Vec<Sources> = data.derivatives.iter().map(|d| one(Some(d.state))).collect();
         let derivative_abstols: Vec<Sources> = data.derivatives.iter().map(|d| one(d.abstol)).collect();
+        let delay_inputs: Vec<Sources> = data.delays.iter().map(|d| one(Some(d.input))).collect();
+        let delay_times: Vec<Sources> = data.delays.iter().map(|d| one(Some(d.time))).collect();
+        let delay_maxima: Vec<Sources> = data.delays.iter().map(|d| one(d.maximum)).collect();
         let mut reactions = Vec::with_capacity(data.reactions.len());
         for reaction in &data.reactions {
             walk.scopes = vec![Scope::new(owner.clone(), true, reaction.locals.len())];
@@ -575,6 +602,9 @@ impl<'a> Walk<'a> {
             etols,
             derivative_states,
             derivative_abstols,
+            delay_inputs,
+            delay_times,
+            delay_maxima,
         }
     }
 
@@ -841,6 +871,16 @@ impl<'a> Walk<'a> {
                 sources.derivatives.insert(*k);
                 return self.done(id, Value::of(sources, Class::Affine));
             }
+            Expr::Delay(k) => {
+                if !in_body {
+                    self.refuse(id, "delay read outside a body");
+                }
+                // The output of a site is one more unknown of the system, as a flow is: it
+                // reaches a sum affinely.
+                let mut sources = Sources::default();
+                sources.delays.insert(*k);
+                return self.done(id, Value::of(sources, Class::Affine));
+            }
             Expr::Probe { plus, minus } => {
                 if !in_body {
                     self.refuse(id, "probe outside a body");
@@ -1014,7 +1054,7 @@ impl<'a> Walk<'a> {
                 value.sources.stims.insert(*site);
                 value
             }
-            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
+            Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Int(_) | Expr::Carrier(_) | Expr::Local(_) | Expr::Param(_) | Expr::Env(_) | Expr::Probe { .. } | Expr::Flow { .. } | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::ParamPrevious(_) | Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) => {
                 self.refuse(id, "a leaf has no operands to finish")
             }
         };

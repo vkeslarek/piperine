@@ -7,7 +7,7 @@ use crate::real::Real;
 use crate::deps::DepsMemo;
 use crate::ids::{AggregateId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
 use crate::model::{AggregateData, NodeAlias, 
-    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, Derivative, Drive, Event, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
+    BodyData, BodyNode, Branch, Carrier, Child, ChildValue, Constant, DelaySite, Derivative, Drive, Event, Expr, ExprData, FunctionData, GenericInstance, Hoisted, InstanceData, Inflow, Ir, Merge, Reach,
     Local, NatureData, NetData, NodeData, NodeRef, Origin, Param, Quantity, Reaction, ReprForm, Site, Stmt, Stream, Terminal, TypeData, ValueType,
 };
 
@@ -181,6 +181,7 @@ impl IrBuilder {
             reactions: Vec::new(),
             streams: Vec::new(),
             derivatives: Vec::new(),
+            delays: Vec::new(),
             hoisted: Vec::new(),
             merges: Vec::new(),
             reaches: Vec::new(),
@@ -269,6 +270,13 @@ impl IrBuilder {
         let derivatives = &mut self.body_data(body).derivatives;
         derivatives.push(derivative);
         derivatives.len() as u32 - 1
+    }
+
+    /// Adds a delay site to `body`: returns its index, the identity `Expr::Delay` reads it by.
+    pub fn delay(&mut self, body: BodyId, delay: DelaySite) -> u32 {
+        let delays = &mut self.body_data(body).delays;
+        delays.push(delay);
+        delays.len() as u32 - 1
     }
 
     /// Records that `body` placed a module in an expression whose node or `analog` statements

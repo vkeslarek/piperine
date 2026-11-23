@@ -559,6 +559,7 @@ impl<'a> ValuePrinter<'a> {
             | Expr::Carrier(_)
             | Expr::Flow { .. }
             | Expr::Derivative(_)
+            | Expr::Delay(_)
             | Expr::ParamPrevious(_)
             | Expr::Fired(_)
             | Expr::Previous(_)
@@ -755,6 +756,9 @@ impl<'a> ValuePrinter<'a> {
                 Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "the rate of a derivative site")),
             },
+            // SPEC_DEVIATION: a delay is refused until T28 prints its site.
+            // Reason: the IR form lands first (T17); a form with no printer fails loud.
+            Expr::Delay(_) => Err(self.unsupported(e, "delay")),
             Expr::ParamPrevious(p) => match self.analog.as_ref().and_then(|r| r.param_previous.get(*p as usize)) {
                 Some(name) => atom(self.read(name)),
                 None => Err(self.unsupported(e, "the previous value of a param")),
