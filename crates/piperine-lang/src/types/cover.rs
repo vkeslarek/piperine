@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use crate::pom::{DeclId, DeclKind, Design};
 
 use super::aggregate::FieldType;
-use super::{Nominal, Ty};
+use super::{Length, Nominal, Ty};
 
 /// What one alternative of a pattern covers of its scrutinee.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -103,7 +103,7 @@ impl<'d> Coverage<'d> {
                 self.missing_product(&types, rest, rows, |parts| Self::spell_fields(&name, &fields, parts))
             }
             Ty::Tuple(items) => self.missing_product(items, rest, rows, |parts| format!("({})", parts.join(", "))),
-            Ty::Array(element, length) if *length <= 256 => {
+            Ty::Array(element, Length::Fixed(length)) if *length <= 256 => {
                 let items = vec![(**element).clone(); *length as usize];
                 self.missing_product(&items, rest, rows, |parts| format!("[{}]", parts.join(", ")))
             }

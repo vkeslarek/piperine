@@ -7,7 +7,7 @@
 mod support;
 
 use piperine_lang::pom::{DeclId, DeclKind, Design};
-use piperine_lang::types::{ConstTerm, GenericValue, Ty};
+use piperine_lang::types::{ConstTerm, GenericValue, Length, Ty};
 
 /// The declarations of a source, looked up by name.
 struct Declarations<'d> {
@@ -32,9 +32,22 @@ fn a_type_parameter_prints_its_name() {
     let declarations = Declarations { design: &design };
     let (t, u) = (Ty::Param(declarations.parameter("T")), Ty::Param(declarations.parameter("U")));
     assert_eq!(t.name(&design), "T");
-    assert_eq!(Ty::Array(Box::new(u.clone()), 2).name(&design), "[U; 2]");
+    assert_eq!(Ty::array(u.clone(), 2).name(&design), "[U; 2]");
     assert!(t < u, "parameters order by declaration");
     assert!(t.is_value(), "a parameter is a value type in a generic body");
     let key = vec![GenericValue::Type(t), GenericValue::Const(ConstTerm::Value(4))];
     assert!(key < vec![GenericValue::Type(u), GenericValue::Const(ConstTerm::Value(4))]);
+}
+
+#[test]
+fn an_array_length_may_name_a_const_parameter() {
+    // D14: a generic length is legal inside a generic item, prints as the parameter, and is no number
+    let design = support::build("fn first<T, const N: usize>(a: [T; N]) -> T { a[0] }\n");
+    let declarations = Declarations { design: &design };
+    let (t, n) = (declarations.parameter("T"), declarations.parameter("N"));
+    let generic = Ty::Array(Box::new(Ty::Param(t)), Length::Generic(ConstTerm::Param(n)));
+    assert_eq!(generic.name(&design), "[T; N]");
+    assert_eq!(Length::Generic(ConstTerm::Param(n)).fixed(), None);
+    assert_eq!(Ty::array(Ty::F64, 3), Ty::Array(Box::new(Ty::F64), Length::Fixed(3)));
+    assert_eq!(Length::Fixed(3).fixed(), Some(3));
 }

@@ -8,7 +8,7 @@ use crate::pom::{DeclId, DeclKind, FieldPatNode, FileId, PatId, PatKind, PathId,
 use super::check::Checker;
 use super::cover::Covers;
 use super::patterns::{Bound, Matched};
-use super::Ty;
+use super::{Length, Ty};
 
 /// How the covers of one pattern's fields make the cover of the whole: a tuple, a struct and an
 /// array are a product of their fields, a variant is a constructor over its own.
@@ -112,7 +112,7 @@ impl Checker<'_> {
     /// `[a, b]`, `[first, .., last]` and `[head, rest @ ..]` (§1.6.7): over an array, with `..`
     /// standing for the elements between.
     pub(super) fn array_pattern(&mut self, file: FileId, span: Span, pats: &[PatId], scrut: &Ty) -> Option<Matched> {
-        let Ty::Array(element, length) = scrut else { return self.not_an_array(file, span, scrut) };
+        let Ty::Array(element, Length::Fixed(length)) = scrut else { return self.not_an_array(file, span, scrut) };
         let element = (**element).clone();
         let arity = usize::try_from(*length).ok()?;
         let rest_at = pats.iter().position(|p| self.is_rest_pattern(*p));
@@ -129,7 +129,7 @@ impl Checker<'_> {
                 columns.extend(pats[..i].iter().map(|p| Some(*p)));
                 columns.extend(std::iter::repeat_n(None, arity - fixed));
                 columns.extend(pats[i + 1..].iter().map(|p| Some(*p)));
-                matched.extend(self.rest_binding(pats[i], &Ty::Array(Box::new(element.clone()), (arity - fixed) as u64)));
+                matched.extend(self.rest_binding(pats[i], &Ty::array(element.clone(), (arity - fixed) as u64)));
             }
         }
         if columns.len() != arity {

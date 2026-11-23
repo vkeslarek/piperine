@@ -25,13 +25,13 @@ fn every_struct_form_is_a_value_type() {
     assert_eq!(CheckedSource::binding_or_parameter_type(&src, "b"), Ty::structure(CheckedSource::type_decl(&src, "Pair")));
     assert_eq!(CheckedSource::binding_or_parameter_type(&src, "c"), Ty::structure(CheckedSource::type_decl(&src, "Marker")));
     assert_eq!(CheckedSource::binding_or_parameter_type(&src, "d"), Ty::Tuple(vec![Ty::F64, Ty::UInt(8)]));
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "e"), Ty::Array(Box::new(Ty::F64), 3), "§1.2.5: the length is part of the type");
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "e"), Ty::array(Ty::F64, 3), "§1.2.5: the length is part of the type");
     assert_eq!(CheckedSource::binding_or_parameter_type(&src, "i"), Ty::Tuple(vec![Ty::UInt(8)]), "a tuple of one field is written `(T,)`");
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "j"), Ty::Array(Box::new(Ty::Array(Box::new(Ty::Bool), 2)), 4));
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "j"), Ty::array(Ty::array(Ty::Bool, 2), 4));
     // §1.3.1: two structs with the same fields are different types, and a length folds from a `const`
     let src = CheckedSource::source("struct A { x: f64 }\nstruct B { x: f64 }\nconst N: usize = 2 + 1;\nfn f(a: A, v: [u8; N]) {}", "let h = f;");
     assert_ne!(CheckedSource::binding_or_parameter_type(&src, "a"), Ty::structure(CheckedSource::type_decl(&src, "B")));
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "v"), Ty::Array(Box::new(Ty::UInt(8)), 3));
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "v"), Ty::array(Ty::UInt(8), 3));
     // §1.4.8: tuples and arrays are equal by their parts, structs by their declaration
     CheckedSource::assert_clean(&CheckedSource::source("fn same(a: (f64, [u8; 2])) -> (f64, [u8; 2]) { a }", "let h = same;"));
     // a generic struct stays outside the subset (`generics`)
@@ -189,10 +189,10 @@ fn arrays_and_indexing_type_check() {
     let body = "let arr = [1.0, 2.0, 3.0]; let r = [0u8; 4]; let i: u16 = 2; let x = arr[i]; let y: f64 = arr[0]; \
                 let m = [[1u8, 2], [3, 4]]; m[1][0] = 9; let p = pick(m);";
     let src = CheckedSource::source(items, body);
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "arr"), Ty::Array(Box::new(Ty::F64), 3));
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "r"), Ty::Array(Box::new(Ty::UInt(8)), 4));
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "arr"), Ty::array(Ty::F64, 3));
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "r"), Ty::array(Ty::UInt(8), 4));
     assert_eq!(CheckedSource::binding_or_parameter_type(&src, "x"), Ty::F64);
-    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "m"), Ty::Array(Box::new(Ty::Array(Box::new(Ty::UInt(8)), 2)), 2));
+    assert_eq!(CheckedSource::binding_or_parameter_type(&src, "m"), Ty::array(Ty::array(Ty::UInt(8), 2), 2));
     assert_eq!(CheckedSource::binding_or_parameter_type(&src, "p"), Ty::UInt(8));
     CheckedSource::assert_refused(&CheckedSource::source("", "let a = [1.0, true];"), "E0180", "expected `f64`, found `bool`");
     CheckedSource::assert_refused(&CheckedSource::source("", "let a = [1.0, 2.0]; let x = a[1.5];"), "E0180", "an integer type");

@@ -12,7 +12,7 @@ use piperine_ir::{AggregateData, Constant, Derives, FieldsForm, TypeData, TypeId
 
 use super::elaborator::Elaboration;
 use crate::pom::{DeclId, DeclKind, FieldsForm as SourceForm, Reflect};
-use crate::types::{FieldType, Nominal, Ty};
+use crate::types::{FieldType, Length, Nominal, Ty};
 
 /// The entry of the IR's type arena each reached struct and enum declaration has.
 #[derive(Debug, Default)]
@@ -60,7 +60,7 @@ impl TypeArena {
             Ty::Struct(Nominal { decl, .. }) => self.id_of(*decl).map(ValueType::Struct),
             Ty::Enum(Nominal { decl, .. }) => self.id_of(*decl).map(ValueType::Enum),
             Ty::Tuple(items) => items.iter().map(|item| self.of(item, scalar).or_else(|| scalar(item))).collect::<Option<Vec<_>>>().map(ValueType::Tuple),
-            Ty::Array(element, length) => self.of(element, scalar).or_else(|| scalar(element)).map(|element| ValueType::Array(Box::new(element), *length)),
+            Ty::Array(element, Length::Fixed(length)) => self.of(element, scalar).or_else(|| scalar(element)).map(|element| ValueType::Array(Box::new(element), *length)),
             _ => None,
         }
     }
@@ -138,7 +138,7 @@ impl Elaboration<'_, '_> {
         match ty {
             Ty::Option(inner) => self.stored_type(inner).map(|inner| ValueType::Option(Box::new(inner))),
             Ty::Tuple(items) => items.iter().map(|item| self.stored_type(item)).collect::<Option<Vec<_>>>().map(ValueType::Tuple),
-            Ty::Array(element, length) => self.stored_type(element).map(|element| ValueType::Array(Box::new(element), *length)),
+            Ty::Array(element, Length::Fixed(length)) => self.stored_type(element).map(|element| ValueType::Array(Box::new(element), *length)),
             other => self.value_type(other),
         }
     }

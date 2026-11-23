@@ -11,7 +11,7 @@ use crate::pom::{AttrArgNode, AttrInputNode, DeclId, DeclKind, Design, ExprId, E
 
 use super::aggregate::FieldType;
 use super::check::Checker;
-use super::{Nominal, Ty};
+use super::{Length, Nominal, Ty};
 
 /// One trait of the table of H.8.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -202,7 +202,7 @@ impl Checker<'_> {
         match ty {
             Ty::Bool | Ty::F64 | Ty::UInt(_) | Ty::Int(_) => ty.levels(self.design),
             Ty::Tuple(items) => self.repr_sum(items),
-            Ty::Array(element, length) => u32::try_from(*length).ok()?.checked_mul(self.repr_levels(element)?),
+            Ty::Array(element, Length::Fixed(length)) => u32::try_from(*length).ok()?.checked_mul(self.repr_levels(element)?),
             Ty::Option(inner) => self.repr_levels(inner)?.checked_add(1),
             Ty::Struct(Nominal { decl, .. }) if self.derives(*decl, "Repr") => {
                 let fields: Vec<Ty> = self.fields_of(*decl)?.into_iter().map(|f| f.ty).collect();

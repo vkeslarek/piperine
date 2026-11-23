@@ -51,4 +51,4 @@ pub use aggregate::FieldType;
 pub use enums::EnumTag;
 pub use intrinsic::Intrinsic;
 pub use table::{Builtin, Callee, Continuity, Method, Types};
-pub use ty::{ConstTerm, GenericValue, Nominal, Ty};
+pub use ty::{ConstTerm, GenericValue, Length, Nominal, Ty};

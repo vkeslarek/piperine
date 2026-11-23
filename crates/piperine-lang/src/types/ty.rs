@@ -46,7 +46,7 @@ pub enum Ty {
     /// A `struct` of named, positional or no fields, by its declaration (§1.3.1): a nominal type.
     Struct(Nominal),
     /// `[T; N]`: `N` values of one type (§1.2.5).
-    Array(Box<Ty>, u64),
+    Array(Box<Ty>, Length),
     /// The value of `a..b`, `a..=b`, `a..`, `..b` or `..=b` over one integer or float type (§1.5.11,
     /// H.6). It cannot be written. `iterable` is true for an integer range with both bounds: only
     /// that range is an iterator (H.6 rule 3).
@@ -88,6 +88,45 @@ impl Ty {
     /// The enum `decl`, not generic.
     pub fn enumeration(decl: DeclId) -> Ty {
         Ty::Enum(Nominal::plain(decl))
+    }
+}
+
+/// The number of elements of an array type (§1.2.5): a number, or a const parameter or expression of
+/// the generic item being checked, which the elaborator folds per instantiation (§3.8.3). A
+/// generic length is legal only inside a generic item (D14).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Length {
+    /// A length known now.
+    Fixed(u64),
+    /// A length that names const parameters.
+    Generic(ConstTerm),
+}
+
+impl Length {
+    /// The length as a number, `None` for a generic one.
+    pub fn fixed(&self) -> Option<u64> {
+        match self {
+            Length::Fixed(n) => Some(*n),
+            Length::Generic(_) => None,
+        }
+    }
+
+    /// The length as a model author writes it, for messages.
+    pub fn name(&self, design: &Design) -> String {
+        match self {
+            Length::Fixed(n) => n.to_string(),
+            Length::Generic(ConstTerm::Value(n)) => n.to_string(),
+            Length::Generic(ConstTerm::Bool(b)) => b.to_string(),
+            Length::Generic(ConstTerm::Param(param)) => design.decl_data(*param).name.as_ref().map_or_else(|| "N".to_string(), |n| n.text.clone()),
+            Length::Generic(ConstTerm::Expr(_)) => "{..}".to_string(),
+        }
+    }
+}
+
+impl Ty {
+    /// The array of `length` elements of `element`.
+    pub fn array(element: Ty, length: u64) -> Ty {
+        Ty::Array(Box::new(element), Length::Fixed(length))
     }
 }
 
@@ -219,7 +258,7 @@ impl Ty {
                 Some(n) => format!("struct `{}`", n.text),
                 None => "struct".to_string(),
             },
-            Ty::Array(element, length) => format!("[{}; {length}]", element.name(design)),
+            Ty::Array(element, length) => format!("[{}; {}]", element.name(design), length.name(design)),
             Ty::Range { element, .. } => format!("Range<{}>", element.name(design)),
             Ty::Iterator { element, .. } => format!("Iterator<{}>", element.name(design)),
             Ty::Module(module) => match &design.decl_data(*module).name {

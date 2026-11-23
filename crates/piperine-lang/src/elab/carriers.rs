@@ -15,7 +15,7 @@ use super::body::NodePlan;
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use crate::pom::{DeclId, DeclKind, Dir, ExprId};
-use crate::types::{Nominal, Ty};
+use crate::types::{Length, Nominal, Ty};
 
 /// What a body holds besides its analog block, in the order the IR numbers it.
 #[derive(Default)]
@@ -176,7 +176,7 @@ impl Elaboration<'_, '_> {
         let (variant, parts) = match (ty, stored) {
             (Ty::Option(_), ValueType::Option(_)) => (None, Vec::new()),
             (Ty::Tuple(items), ValueType::Tuple(held)) => (None, items.iter().zip(held).map(|(item, held)| self.default_constant(item, held)).collect::<Option<Vec<_>>>()?),
-            (Ty::Array(element, length), ValueType::Array(held, _)) => {
+            (Ty::Array(element, Length::Fixed(length)), ValueType::Array(held, _)) => {
                 let one = self.default_constant(element, held)?;
                 (None, vec![one; usize::try_from(*length).ok()?])
             }

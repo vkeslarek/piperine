@@ -7,7 +7,7 @@ use crate::msl::lexer;
 use crate::pom::{BinOp, DeclKind, ExprId, ExprKind, LitKind, Resolution};
 
 use super::check::Checker;
-use super::Ty;
+use super::{Length, Ty};
 
 /// The deepest chain of `const` names the folder follows.
 const NESTING: u8 = 16;
@@ -21,7 +21,7 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
         let found = self.infer(base)?;
-        let Ty::Array(element, length) = &found else {
+        let Ty::Array(element, Length::Fixed(length)) = &found else {
             let base_span = self.design.expr_node(base).span;
             self.mismatch_text(file, base_span, "an array", &found.name(self.design));
             return None;
@@ -37,7 +37,7 @@ impl Checker<'_> {
             self.coded(file, "E0104", span, message, "range out of the array");
             return None;
         }
-        Some(Ty::Array(element.clone(), (high - low) as u64))
+        Some(Ty::array((**element).clone(), (high - low) as u64))
     }
 
     /// The folded bound of a range index, `absent` when it is not written; `E0188` naming a bound

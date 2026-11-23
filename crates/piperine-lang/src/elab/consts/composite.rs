@@ -23,7 +23,7 @@ use super::super::compound::EnumLayout;
 use super::control::{Argument, FnValue};
 use super::{Bindings, ConstEval, ConstFault};
 use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, FieldInit, PatId, PatKind, Resolution};
-use crate::types::{Method, Nominal, Ty};
+use crate::types::{Method, Length, Nominal, Ty};
 
 /// What a composite value is made of.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -294,7 +294,7 @@ impl ConstEval<'_, '_> {
                 let parts = items.iter().map(|item| self.default_value(expr, item)).collect::<Result<Vec<_>, _>>()?;
                 Ok(self.make(CompositeKind::Tuple, parts))
             }
-            Ty::Array(element, count) => {
+            Ty::Array(element, Length::Fixed(count)) => {
                 let part = self.default_value(expr, element)?;
                 Ok(self.make(CompositeKind::Array, vec![part; *count as usize]))
             }

@@ -149,7 +149,7 @@ impl Checker<'_> {
             self.unsupported(file, span, &format!("an array of `{}`", element.name(self.design)));
             return None;
         }
-        Some(Ty::Array(Box::new(element), length))
+        Some(Ty::array(element, length))
     }
 
     /// The file and span of a type node.
@@ -355,13 +355,13 @@ impl Checker<'_> {
                 for item in items.iter().filter(|i| **i != first) {
                     self.check(*item, &ty);
                 }
-                return Some(Ty::Array(Box::new(ty), items.len() as u64));
+                return Some(Ty::array(ty, items.len() as u64));
             }
         };
         for item in items {
             self.check(*item, &element);
         }
-        Some(Ty::Array(Box::new(element), items.len() as u64))
+        Some(Ty::array(element, items.len() as u64))
     }
 
     /// `[x; N]` (§1.2.5): `x` is `Copy`; `N` a const expression the checker folds, else `E0180`
@@ -382,7 +382,7 @@ impl Checker<'_> {
             return None;
         };
         let ty = ty?;
-        Some(Ty::Array(Box::new(ty), length))
+        Some(Ty::array(ty, length))
     }
 
     /// `e[i]` reads an element of an array (§1.5.9); an index is
