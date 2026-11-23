@@ -1,4 +1,137 @@
-# Analog Operators verification (partial: batches B1 to B3, tasks T1 to T16)
+# Analog Operators verification
+
+**Verdict**: FAIL (final verification of the whole feature, B4 to B7 judged here, B1 to B3 carried from the rounds below). Eleven findings, four Major: two checks name tests that T45 deleted (C45, C46, so `check_proofs.py` is red on them), C50's test passes with the rejected-step traces dropped, and spec-defined forms are refused `P0001` with no `GAPS.md` row. The code behaves as the criteria say on every probe below; the failures are in the tests that hold it and the records around it.
+**Proofs**: `proofs.md`, written by `check_proofs.py` at the commit that carries this file (the code is b69d4312's). Targeted runs before writing, ngspice-47 present (`/usr/bin/ngspice`, no SKIP line): `parity_noise` 7 ok, `parity_op` 11 ok, `parity_ac` 6 ok, `parity_tran` 7 ok (`delay_tline`, `delay_tline_ac`, `tnom_res`, `noise_*` among them).
+**Diff range**: `52b2223c..b69d4312` (origin/main is the merge base; the merge 534ff5e4 brought main's `explicit-unknowns` in).
+**Verifier**: independent sub-agent (author != verifier), Opus, 2026-11-23, branch `feature/analog-operators` at b69d4312 (= origin).
+
+## The points the orchestrator asked about
+
+1. **AO-06 AC 2 amendment (noise_switch): the claim is true.** Run here on ngspice-47: `noise_switch.cir` prints `onoise_spectrum` 3.88190044e-9 at every point, byte-equal to `noise_switch_off.cir`, which is `sqrt(4kT(1k||10k))` = 3.881901e-9, the open switch. The same netlist's `op` gives `v(a)` = 9.990010e-4 (closed), and an `ac` alone gives `vm(a)` = 0.9090909, the open divider 10k/11k: ngspice's SW reads the open state in every small-signal analysis, not only `.noise`. The twin's closed value 1.286838e-10 equals `sqrt(4kT(1k||1))` at 300.15 K (computed independently). The amendment is legitimate on ngspice 47 (46 not available here), but it changed an approved criterion without the user's words: **it needs the user's confirmation** (see "For the user").
+2. **`delay_tline` TD = 1.05 us: legitimate twin design, not a hidden mismatch.** With `TD=1u` ngspice-47 prints 7.53980319e-4 at t = 1.0 us where the exact matched-line value is 0 (the delayed sine starts there); 1.1 us and later agree with `0.5 sin(2pi 1e5 (t - 1u))` to 1e-7. 0.75 mV is far outside `TRAN_VOLTAGE` (1e-3 rel, 1e-6 abs) at a zero golden. Moving the kink between two print points tests the same operator. The departure is recorded only in tasks.md's Handoff: AO-02 AC 1 and AC 7, C10 and C16 still read 1 us (Finding 30).
+3. **`NOISE` is a new contract for a new domain, nothing loosened.** `git diff origin/main -- tests/support/ngspice.rs crates/piperine-parity/src`: `tests/support/ngspice.rs` is untouched; `contract.rs` adds `NOISE` (1e-3, 1e-20, with a rationale), `Coordinate::Band` and one test; no existing constant changes, `ALL` still holds the five original contracts with their values (C62).
+4. **`noise_diode` reading the junction current from `v(a, k)`: spec-consistent as a model, but it routes around an unrecorded refusal.** §14.8 evaluates `psd` at the operating point, where `limit(v(a,k), ..)` equals `v(a,k)`, so the densities are the same. Writing the natural `2.0 * Q * id.abs()` (where `id` reads the `limit`) is refused `P0001 a let inside a noise` (probe below), although §14 rule 5 only asks for an `f64` expression; a plain `let` (`solved`) is accepted, so the message names the wrong thing. No `GAPS.md` row (Finding 26).
+5. **GAPS §4.7 `freq()` in a drive still names `analog-operators` as owner** (`GAPS.md:173`), and the feature did not take it (spec Out of Scope: `freq()` is `msl-fixes`'). Finding 27.
+6. **L72 has no owning feature** (`GAPS.md:165`; the cluster row says "L72 stays"). Finding 28.
+7. **The rewritten checks.** C40 to C43 match the `Option<f64>` behaviour and their tests hold it (a `Some(0)` for an absent name would fail C40's `unwrap_or(0.5)`). C47's test asserts `simparam("tnom")` is `None`. C69 is right: `E0180` is Part I's "an expression whose type is not the type its position requires" (`part_i_values.md:411`) and `E0150` is retired (G.72). C27's test asserts "generic module" only, not that the refusal names its dependencies (Finding 24). **C45 and C46 were not rewritten**: they still claim the `tnom` key and flag and name four tests T45 deleted (Finding 21).
+
+Also judged: the merge 534ff5e4 (its conflict resolutions are the `types_operators.rs` -> `types_analog_operators.rs` rename in tasks.md, design.md, proofs.md and verification.md, and GAPS §10's unraised-code list, 18 of 189, which matches the list it prints: right); MD-82 in STATE.md and the ROADMAP row (accurate, including the ngspice SW note); the Book (analog#7, analog#11 and cheatsheet#7 now `run`, the `tnom` row gone from the key table, the new `hiss.msl` noise listing held to the binary by `clibook`; no refused listing added).
+
+## Own examples (run at b69d4312, not committed)
+
+| Example | Result |
+| --- | --- |
+| `--tnom 50` on the command line | clap error `unexpected argument '--tnom'`: AO-08 AC 1 holds, but no test proves it (Finding 21) |
+| `tnom_res.msl` at 27 C | `v(mid)` = 7.410668 = 10 * 2862 / 3862: the per-instance `tnom` works |
+| `delay(v(a), 0.0) + 2.0 * delay(v(a), 1u, 2u)` in an `op`, `v(a)` = 0.6 | 1.8: both give `x` at an operating point (AO-02 AC 3) |
+| `delay(ramp, 2u, 1u)` (td above max) and `delay(ramp, 0.5u + t, 3u)` on a 1 V/us ramp | 1, 2, 3, 4 V at 2 to 5 us (reads `max` ago); the second reads the OP value until `td` is clamped at 3 us, then `x(t - 3u)`: AO-02 AC 4 and the edge case hold |
+| `v(b) +> if analysis(Noise) { 2.0 } else { 1.0 }` feeding `noise(1e-18 * v(b)^2)` | `onoise` = 2.0e-6 = 1k * sqrt(4e-18): the noise run's operating point sees `Noise` (AO-05 AC 7's untested half behaves) |
+| `ddx(diode_current(v(a, gnd)), v(a, gnd))` with a pure `fn diode_current` | `P0001 a call of a fn inside a ddx`: §14.2.3 asks for the symbolic derivative; no GAPS row (Finding 26) |
+| `noise_diode.msl` with its psd reading `id` (the `limit`ed current) | `P0001 a let inside a noise is outside the M1 subset` (Finding 26) |
+| StepBench transient (C50's bench), records' instants against the table's rows | 63 rows, 70 instants: 7 instants of rejected attempts. Dropping them gives 63 = 63, which C50's `>=` accepts (Finding 22) |
+
+## Checks
+
+| Check | Test | Holds |
+| --- | --- | --- |
+| C1 | `source_partial` `ddx_of_the_diode_current_is_its_conductance` | yes - closed form `is/nvt exp(0.6/nvt)` at 1e-9 relative |
+| C2 | `source_partial` `ddx_against_the_reversed_branch_is_minus_one` | yes |
+| C3 | `operators` (ir) `probes_of_other_branches_are_held_constant`; `source_partial` `ddx_of_single_node_probes_against_a_branch_is_zero` | yes - a wrong rule would give 2 |
+| C4 | `source_partial` `ddx_against_a_flow_probe_gives_its_factor` | yes - 3 |
+| C5 | `operators` (ir) `limit_is_transparent_to_ddx`; `source_partial` `ddx_differentiates_through_limit` | yes |
+| C6 | `operators` (ir) `results_of_other_instances_are_held_constant` | yes |
+| C7 | `types_analog_operators` `ddx_against_a_non_probe_is_e0451` | yes |
+| C8 | `types_analog_operators` `ddx_outside_analog_or_read_by_a_definition_is_e0450` | yes |
+| C9 | `source_partial` `an_ac_sweep_takes_ddx_at_the_operating_point` | yes - `g * 1k` under `AC_MAGNITUDE` at three frequencies |
+| C10 | `parity_tran` `delay_tline` | yes for the twin (ngspice ran); the check's text says TD = 1 us, the twin 1.05 us (Finding 30) |
+| C11 | `source_delay` `before_td_the_delay_reads_the_operating_point` | yes - 1 V before 1 ms, the ramp after, every step |
+| C12 | `source_delay` `an_operating_point_and_a_zero_delay_give_the_input` | yes |
+| C13 | `source_delay` `a_varying_delay_reads_back_td_and_max_while_td_exceeds_it`; `operators` (transpile) `the_delay_terms_clamp_td_to_max` | yes - both regimes and the `td = max` edge |
+| C14 | `elab_operators` `a_delay_without_max_whose_td_varies_is_e0452` | yes - three varying `td`s, naming the module |
+| C15 | `source_delay` `a_negative_td_or_a_non_positive_max_fails_with_e0453`; transpile `the_delay_function_faults_453` | yes |
+| C16 | `parity_ac` `delay_tline_ac` | yes for the twin; text says 1 us (Finding 30) |
+| C17 | `source_noise` `a_noise_source_is_zero_outside_a_noise_sweep_and_never_reads_its_density` | partly - the transient is asserted, the criterion's `op` and `ac` runs are not (Finding 24) |
+| C18 | `source_noise` `one_source_read_twice_is_fully_correlated` | yes |
+| C19 | `source_noise` `two_sources_add_their_powers` | yes |
+| C20 | `source_noise` `a_density_reading_freq_is_evaluated_at_each_sweep_frequency` | yes |
+| C21 | `source_noise` `noise_through_ddt_and_delay_takes_their_response` | yes (a density sees only the magnitude of `exp(-jw td)`) |
+| C22 | `source_noise` `a_negative_density_fails_with_e0454_naming_the_frequency`; transpile `the_noise_function_writes_its_density_and_faults_454` | partly - negative only; the "not finite" half of AO-03 AC 6 has no case in the source test (Finding 24) |
+| C23 | `source_noise` `a_reaction_or_an_event_reads_noise_as_zero`; transpile `a_reaction_reads_noise_as_zero` | yes |
+| C24 | `source_noise` `two_sources_sharing_a_name_stay_independent`; `noise_report` `two_inputs_sharing_a_name_sum_into_one_series` | yes |
+| C25 | `source_noise` `white_noise_is_a_source_of_its_density` | yes |
+| C26 | `source_noise` `flicker_noise_falls_as_one_over_f_to_the_exponent` | yes |
+| C27 | `elab_operators` `noise_table_waits_for_its_dependencies`; `types_subset` `p0001_names_the_construct` | partly - asserts "generic module", not that the refusal names its dependencies; its comment says "GAPS.md keeps L45", the check says L58 (Finding 24) |
+| C28 | api `noise` `a_noise_run_prints_freq_onoise_and_the_total`; cli `analyses` `a_noise_run_prints_one_row_per_frequency_then_the_total` | yes (B1 to B3 round) |
+| C29 | api `noise` `an_input_adds_inoise_and_its_total`; `noise_report` `the_input_referred_density_divides_by_the_transfer_from_the_input` | yes (B1 to B3 round) |
+| C30 | api `noise` `the_output_and_input_flags_win_over_the_keys` | yes (B1 to B3 round) |
+| C31 | api `noise` `a_noise_run_without_output_or_sweep_is_p0010` | yes (B1 to B3 round) |
+| C32 | api `noise` `an_output_or_input_that_names_nothing_is_e0801` | yes (B1 to B3 round) |
+| C33 | api `noise` `a_key_of_another_analysis_is_p0010_in_a_noise_run` | yes (B1 to B3 round) |
+| C34 | `source_noise` `analysis_noise_is_true_and_ac_stim_zero_in_a_noise_run` | no - asserts the sweep only; the operating point and `ac_stim` = 0 in the sweep, both in the claim and the test's name, are not asserted (Finding 24; the behaviour is right, own example) |
+| C35 | api `noise` `the_library_returns_rows_totals_and_group_densities`, `report::the_report_takes_roots_groups_by_name_else_instance_and_carries_the_totals` | yes (B1 to B3 round) |
+| C36 | `parity_noise` `noise_rc` | yes - 301 densities and the total under `NOISE`, ngspice ran |
+| C37 | `parity_noise` `noise_switch` | yes for the amended AC 2 (closed form, independently recomputed); the check's text still says "agrees with `noise_switch.cir`", and `noise_switch_open_agrees_with_ngspice`, the AC's other half, is named by no check (Finding 30) |
+| C38 | `parity_noise` `noise_diode` | yes - densities, totals, input-referred, against ngspice's `D`; plus a hand-derived 1 kHz point |
+| C39 | `parity_noise` `noise_twins_run_and_print_the_skip_line_without_ngspice` | partly - runs `noise_rc` alone with the comparison off; AO-06 AC 4 says the three twins (Finding 24) |
+| C40 | `source_session` `simparam_reads_the_run_entry_else_its_default` | yes |
+| C41 | `source_session` `simparam_reads_the_options_by_their_key_names` | yes |
+| C42 | api `session_parameters` `a_name_the_run_lacks_reads_none` | yes |
+| C43 | `source_session` `simparam_runs_in_a_definition_and_a_selector_with_one_value` | yes |
+| C44 | cli `options` `simparam_flag_is_repeatable_and_a_non_number_is_p0010`; api `options` `a_simparam_entry_naming_an_option_is_p0010` | yes (B1 to B3 round) |
+| C45 | api `options` `tnom_key_and_flag_default_to_27`, `the_tnom_key_of_a_run_table_reaches_the_session_context` | no - both tests were deleted by T45 and the claim is the withdrawn one (Finding 21) |
+| C46 | api `options` `tnom_at_or_below_absolute_zero_is_p0010`; cli `options` `a_tnom_that_is_no_number_is_p0010_naming_the_flag` | no - deleted by T45, claim withdrawn (Finding 21) |
+| C47 | api `session_parameters` `the_session_hands_its_options_and_entries_to_the_circuit`; `parity_op` `tnom_res` | yes - `simparam("tnom")` is `None`; the twin agrees with ngspice |
+| C48 | `parity_op` `tnom_res` | yes for the twin; the text cites "AO-08, AC 4" and "`tnom = 50`" (AO-08 now has AC 1 to 3, the param is 323.15 K) (Finding 21) |
+| C49 | `source_traces` `a_trace_writes_one_record_per_evaluation_with_path_analysis_instant_and_iteration` | yes for the operating point; transient and jump solves are left to C50's bench, which asserts only that iteration and analysis are set |
+| C50 | `source_traces` `traces_of_a_rejected_step_stay` | no - `instants.len() >= accepted` holds with the rejected attempts' records dropped (own example: 70 against 63) (Finding 22) |
+| C51 | `source_traces` `an_ac_or_noise_sweep_writes_no_trace` | partly - no noise run is made, and the assertion that an AC run delivers no trace at all includes its operating point, which AO-09 AC 1 says writes (Finding 23) |
+| C52 | `source_traces` `a_trace_under_an_if_writes_only_when_executed`; transpile `a_trace_writes_its_watch_only_where_it_executes` | yes |
+| C53 | `types_analog_operators` `a_site_reached_from_analog_writing_sim_or_checks_is_e0603` | yes |
+| C54 | api `traces` `traces_are_recorded_only_for_a_named_stream` | partly - "none named" and "named" are asserted; "only another stream named", in its own comment, is not (Finding 25) |
+| C55 | `source_traces` `a_trace_changes_no_solution` | yes |
+| C56 | api `natures` `a_potential_abstol_of_one_millivolt_reaches_its_node` | yes (third re-verification) |
+| C57 | api `natures` `a_flow_abstol_of_one_nanoampere_reaches_its_branch` | yes (fourth re-verification) |
+| C58 | api `natures` `compatible_natures_take_the_smaller_abstol_and_the_divider_holds` | yes (B1 to B3 rounds) |
+| C59 | api `natures` `natures_with_different_flow_names_at_a_port_are_e0251` | yes (B1 to B3 rounds) |
+| C60 | `frozen` `the_interpreter_refuses_each_analog_operator_by_name` | yes - five forms by name, and a body with none still runs |
+| C61 | `twins` `every_twin_prints_the_bytes_it_printed_before_the_long_run`; `golden` `the_five_m1_bodies_print_as_the_golden_files`; `operators_shape` `a_body_without_a_new_form_keeps_its_shape` | yes |
+| C62 | `contract::tests::the_five_contracts_carry_bounds_and_rationale`; `parity_corpus` `every_twin_has_a_cir_and_a_test` | yes - the five constants unchanged (point 3) |
+| C63 | cli `docs` `gaps_and_roadmap_follow_analog_operators`; cli `book` `every_cli_listing_of_the_book_is_what_the_binary_prints`; `book_inventory` `every_block_of_the_book_has_one_row` | yes for what it names; GAPS keeps stale rows it does not name (Finding 29) |
+| C64 | `source_slew` `slew_limits_an_ideal_step_to_its_rate`; `jump_retake` `a_crossing_made_by_a_jump_retakes_the_step`; `spec_text` `part_v_retakes_the_step_a_jump_crossing_changes` | yes (B1 to B3 rounds) |
+| C65 | `noise_report` `a_flow_output_reads_amperes_per_root_hertz` | yes (B1 to B3 round) |
+| C66 | api `noise` `a_design_with_no_noise_source_prints_zero_and_succeeds` | yes (B1 to B3 round) |
+| C67 | `source_partial` `ddx_of_an_expression_that_reads_no_probe_is_zero` | yes |
+| C68 | `elab_operators` `a_field_type_conflict_across_trace_sites_is_e0605` | yes |
+| C69 | `types_analog_operators` `a_value_of_another_type_given_to_delay_or_noise_is_a_type_mismatch` | yes - five argument positions, `E0180` alone, at the argument's span |
+| C70 | `noise_numerics` `the_power_law_integral_is_exact_on_power_laws`; `noise_report` `the_band_total_integrates_the_density_as_ngspice_does`; `abi_noise` `test_per_source_noise_reporting_and_conservation` | yes (B1 to B3 round) |
+| C71 | api `natures` `a_nature_only_tightens_the_session_abstol_of_a_branch` | yes (fourth re-verification) |
+| C72 | `jump_retake` the three settle-commit tests; `instant` `a_reopened_instant_settles_at_its_last_microstep`, `a_firing_after_a_reopened_instant_is_due_at_the_next_microstep` | yes (fourth re-verification) |
+
+## Findings
+
+| Finding | Evidence | Fix | Closed |
+| --- | --- | --- | --- |
+| 21. **Major.** C45 and C46 prove nothing that exists: they claim the withdrawn `tnom` key and flag and name four tests T45 deleted, so `check_proofs.py` is red on them and the gate cannot pass; AO-08 AC 1 as amended ("no run key `tnom` and no flag `--tnom`") has no test at all. C48 cites "AO-08, AC 4" and "`tnom = 50`". Failure scenario: a later change that re-adds a `tnom` run key passes every test. | tasks.md:1307-1314 (C45, C46), :1318 (C48); `grep -rn tnom_key_and_flag_default_to_27 crates tests` finds nothing; own example: `--tnom 50` is a clap error today | rewrite C45/C46 to AO-08 AC 1 and 2 as amended, with a cli test that `--tnom` is refused and an api test that a run-table key `tnom` is `P0010`; relabel C48 (AC 3, `tnom` 323.15 K) | |
+| 22. **Major.** C50's test passes if the records of rejected attempts are dropped: `instants.len() >= accepted` is met with equality when only accepted steps write. | `crates/piperine-parity/tests/source_traces.rs:131-132`; own example on StepBench: 63 rows, 70 record instants, the 7 extra are rejected attempts (1.0000038e-6, 1.0000305e-6, ..., 1.125e-6, 2e-6) | assert that some record's instant is not an accepted row's time (or that records outnumber accepted rows strictly, with the bench shown to reject) | |
+| 23. **Minor.** C51 never runs a noise sweep, and it asserts that an AC run delivers no trace at all, including its operating point, which AO-09 AC 1 ("every equilibrium solve") says writes: the test pins a behaviour the spec contradicts (the comment says the AC run's operating point is "outside the record protocol"). | `source_traces.rs:113-122` | add a noise run; deliver the operating point's traces of an AC or noise run and assert only the sweep is silent, or take the AC 1 wording to the user | |
+| 24. **Minor.** Assertions looser than their criterion: C34 asserts the sweep only (not the operating point, not `ac_stim` = 0); C17 asserts the transient only (not `op`, `ac`); C22 has no non-finite case; C39 runs `noise_rc` alone though AO-06 AC 4 names three twins; C27 asserts "generic module", not the dependencies the check says the refusal names, and its comment still says "GAPS.md keeps L45". | `source_noise.rs:148-152`, `:155-165`, `:137-145`; `parity_noise.rs:157-168`; `elab_operators.rs:83-91` | add the missing cases to each test (behaviour verified correct for C34 by own example) | |
+| 25. **Minor.** C54's api test does not assert that naming another stream delivers none, though its comment says it does. | `crates/piperine-api/tests/traces.rs:43-58` | add `records(&["other"]).is_empty()` | |
+| 26. **Major.** Spec-defined forms are refused `P0001` with no `GAPS.md` row and no owner: a `fn` call inside `ddx` (SPEC_DEVIATION, `elab/partial.rs:12-15`, `:33-35`; §14.2.3 is symbolic over pure functions), a `let` reading a stateful result (`limit`) inside a `noise` or `delay` value input (`elab/noise.rs:30-32`, `elab/delays.rs:33-35`; §14 rule 5 asks only for an `f64` expression), and a flow probe in `ddx` of a branch with no potential contribution (`partial.rs:71-74`). The `noise`/`delay` message names "a `let`" while a plain `let` is accepted. `noise_diode.msl` works around the second. Failure scenario: a compact model whose current is a `fn` (the §18 shape) cannot take `ddx` of it, and nothing in GAPS says so. | own examples above (`ddxfn.msl`, `nd_id.msl`) | add a GAPS row per form with an owning queued feature (or implement), and make the messages name the refused form ("a stateful result read by a `noise` input") | |
+| 27. **Minor.** GAPS §4.7 still names `analog-operators` as the owner of a drive, guard or `at` argument calling a function that reads `freq()`; the feature is delivered and never took it. | `GAPS.md:173-175` | re-own it to a queued feature in ROADMAP (or close it) | |
+| 28. **Minor.** L72 (`emit!` reached from `analog` through a `fn`) has no owning feature before spec-closure; the cluster row says "L72 stays". | `GAPS.md:165`, `:344` | name the queued feature that takes it | |
+| 29. **Minor.** GAPS rows left stale by the feature: §9 "IV §14 core primitives" lists `ddx`, `delay`, `noise`, `simparam` as holes, "VI §19" lists traces, "VII §22" lists noise; U1 counts 16 twins and lists noise as untwinned (21 twins now); U11 says `analysis(Noise)` is proven in the solver only, while `source_noise` runs it from source. | `GAPS.md:258-263`, `:280-282`, `:304-307` | update the rows and their percentages | |
+| 30. **Minor.** Spec and check text disagree with the twins: AO-02 AC 1 and AC 7, C10 and C16 say TD = 1 us (twin 1.05 us, departure only in the Handoff); C37 says `noise_switch` "agrees with `noise_switch.cir`", contrary to the amended AC 2 and its test, and `noise_switch_open_agrees_with_ngspice` is named by no check; the spec's Edge Case "`simparam` called with a name the run gives and a default" describes the retired default. | spec.md:102, :108, :161, :267; tasks.md C10, C16, C37 | amend the texts (the 1.05 us and AO-06 AC 2 departures shown to the user), add the open-switch test to C37 | |
+| 31. **Minor.** Code cleanliness (user rules): new free helper functions in tests (`types_analog_operators.rs` `source`, `design_of`, `diagnostics`, `codes_of`, `snippet`; `elab_operators.rs` `design`; `piperine-plan/tests/operators_shape.rs` `delayed`, `noisy`, `parameterised`; `piperine-transpile/tests/operators.rs` `delayed`, `noisy`, `parameterised`, `option_pin`, `traced_above_half`; `piperine-api/tests/traces.rs` `records`); helper methods with no doc comment (`source_traces.rs` `Traced::settings`, `path`, `op`, `real`, `value`; `source_session.rs` `Bench::settings`, `op`, `transient`); stale comments (`elab_operators.rs:95` says `simparam("tnom")`, the code reads `vth0`; `piperine-plan/src/plan.rs` `SESSION_PARAMETER` says "the read takes its default"); `Plan::new` grew from 282 to 359 lines. | the files named | move helpers onto a named type, document them, fix the comments, split `Plan::new`'s new pin blocks into methods | |
+
+## For the user
+
+- **AO-06 AC 2 was amended by the implementer (T41), not by you.** The reason is real (verified on ngspice-47: the SW model reads a closed switch as open in `.noise` and `.ac` alike), so the closed state is now held to the closed form `sqrt(4kT(1k||ron))` and the open state to ngspice. Confirm the amendment or say otherwise.
+- **`delay_tline` uses TD = 1.05 us instead of the spec's 1 us**, to keep ngspice's 0.75 mV print-interpolation artifact at the wave's first arrival off a print point. Same operator, same contract; confirm the departure.
+- **Owners needed**: L72, the §4.7 `freq()` row, and the new rows of Finding 26 need a queued feature each.
+
+## Earlier rounds: B1 to B3 (partial verification, kept verbatim with its headings one level down)
+
+### Analog Operators verification (partial: batches B1 to B3, tasks T1 to T16)
 
 **Verdict**: PASS (fourth re-verification at 77a40ad4, B1 to B3 only: findings 1 to 20 are closed, every check a B1 to B3 test proves holds and its proof passes; the red rows of `proofs.md` are the B4 to B7 targets, out of this partial scope)
 **Proofs**: `proofs.md` at a33e88ef (36 pass, 72 fail). Every failing or "no test ran" row belongs to B4 to B7 (T17 to T44: the targets `source_partial`, `operators`, `types_analog_operators`, `source_delay`, `elab_operators`, `source_noise`, `parity_noise`, `source_session`, `session_parameters`, `source_traces`, `traces`, `operators_shape` do not exist yet, and `tnom_res`, `delay_tline`, `the_interpreter_refuses_each_analog_operator_by_name`, `gaps_and_roadmap_follow_analog_operators` are not written). Every row a B1 to B3 task proves passes, and so does the `**Build**` line.
@@ -28,7 +161,7 @@
 
 **User approvals (2026-11-22):** the Book numbers T9 moved ("Numeros do Book mudaram então acerta o book"), Part V §15.2 rule 6 ("Ok"), and the fix of the settle/retake defect, Finding 3 ("Corrige"); recorded in `t9-decision.md` (0030823a).
 
-## Re-verification of the fix round (a4a00d2c)
+### Re-verification of the fix round (a4a00d2c)
 
 **Run at a4a00d2c** (targeted, user gate policy): `cargo test -p piperine-solver --test abi_devices --test jump_retake` (5 + 6 passed, the two new retake tests among them), `cargo test -p piperine-cli --test book_buck --test buck` (1 + 8 passed); every `Run` line of tasks.md through `check_proofs.py` (`proofs.md`).
 
@@ -44,7 +177,7 @@
 
 **Records.** `GAPS.md` H2, H3 and U7 and `ROADMAP.md` item 4 describe what B1 to B3 deliver; the Book's key table has the `noise`, `tnom` and `simparam` rows (content.html:5879-5909), held by `book` `the_chapter_shows_the_session_options`. The buck listing (content.html:7608, 8.025999e-1), the prose (0.8026), `buck.rs:80`/`:86` and inventory row cli~5fadeccd agree.
 
-## Second re-verification (2f0378b7)
+### Second re-verification (2f0378b7)
 
 **Run at 2f0378b7** (targeted, user gate policy): `PIPERINE_NGSPICE` unset and `/usr/bin/ngspice` present: `cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran --test twins -- --nocapture` (6, 2, 2, 10, 5 passed) prints exactly two `SKIP` lines, both from the tests whose job is the skip line (`diode_rs_runs_and_prints_the_skip_line_without_ngspice`, `uic_rc_runs_and_prints_the_skip_line_without_ngspice`, which set `skip` themselves); every other twin compared against ngspice. `cargo test -p piperine-cli --test twins -- --nocapture`: 6 passed, no `SKIP` (byte goldens, no ngspice); every `Run` line of tasks.md through `check_proofs.py` (`proofs.md`, the new `Run digital` included).
 
@@ -55,19 +188,19 @@
 - **16.** C35 and C45 name the tests that hold them; AO-13 AC 2 and C72 cover the settle-commit retake, with the rule-6 and microstep tests as further proofs. Holds (C72's claim states less than its last three proofs prove; those rules are in Part V and held, so this is noted, not a finding).
 - **17.** `--tnom abc` is `P0010` naming `--tnom abc`, exit 1 (`a_tnom_that_is_no_number_is_p0010_naming_the_flag`), the same path as `--simparam`. Holds in the code, but that test is no check's proof: C46's proof is still the `-273.15`/`-300` test. Finding 19.
 
-## Third re-verification (3ec88925)
+### Third re-verification (3ec88925)
 
 **Run at 3ec88925** (targeted): `cargo test -p piperine-parity --test parity_dc --test parity_op --test parity_ac --test parity_tran -- --nocapture` (2, 2, 6, 10 passed; `PIPERINE_NGSPICE` unset, `/usr/bin/ngspice` present; the only `SKIP` lines are `diode_rs` and `uic_rc` from the two skip-line tests); every `Run` line of tasks.md through `check_proofs.py` (`proofs.md`), `apinatures`, `twins`, `tgolden`, `partran`, `parac`, `parop` among them.
 
 - **18.** The user's decision is recorded in their words (AO-10 AC 6: "Menor dos dois", 2026-11-22; tasks.md Handoff; design.md D18). `vntol_for` is now `min(session vntol, nature)` like `abstol_for`; §17.1 rule 1 and the Book's `vntol`/`abstol` rows say the minimum for both. C56's test holds all three sides on an `HvElectrical` node: the default 1 µV refuses 5e-4 (the 1 mV nature does not loosen it), `vntol` 1e-2 accepts 5e-4 and refuses 5e-3 (loosened down to the nature's 1 mV, no further), `vntol` 1e-9 refuses 5e-8 (the session tightens). C57 keeps its session `abstol` of 1e-6, which under AC 6 is the case where the nature's 1 nA is the smaller; AC 6 says AC 1 and AC 2 read "carries" for the nature's value and "effective" for the smaller. Holds in the code and in rule 1. §17.1 rule 2 was not updated: Finding 20.
 - **19.** C46 now has the proof `run clioptions | test a_tnom_that_is_no_number_is_p0010_naming_the_flag`, which passes in `proofs.md`. Holds.
 
-## Fourth re-verification (77a40ad4)
+### Fourth re-verification (77a40ad4)
 
 - **20.** §17.1 rule 2 now tests both rows "with the `abstol` of rule 1": a node's row against the smaller of the session `vntol` and the smallest potential `abstol` of the natures meeting there, a branch row against the smaller of the session `abstol` and its flow `abstol`. It agrees with rule 1, AO-10 AC 6, `vntol_for`/`abstol_for` and C56/C71; the Resolution under it ("the row uses the smallest of their potential `abstol`s, as rule 1 does") still reads right, since that smallest is what the session value is compared with. `spec_text` `part_v_convergence_tests_both_rows_against_the_smaller_abstol` asserts rule 1's and rule 2's sentences (runs under `Run spectext` in `proofs.md`). Holds.
 - **Noted, not a finding (pre-existing, outside B1 to B3):** Part VII §22.2.1 rule 2 (docs/spec/part_vii_stdlib.md:500) says a `rate(y) +> residual` row of a `State` node is "tested against `abstol` 1 n". A row written into a node is that node's row, which §17.1 rule 2 tests against the potential side (State's 1 µ, or the session `vntol` if smaller), before this feature as now. It predates this feature and no B1 to B3 change touched it; it belongs to a `GAPS.md` row or to the owner of Part VII.
 
-## Checks
+### Checks
 
 | Check | Test | Holds |
 | --- | --- | --- |
@@ -144,7 +277,7 @@
 | C71 | api `natures.rs` `a_nature_only_tightens_the_session_abstol_of_a_branch` | yes - session 1e-6 refuses 5e-10 (the nature's 1e-12), session 1e-15 refuses 5e-13 and accepts 5e-16: both sides of the minimum |
 | C72 | `jump_retake` `a_crossing_made_by_a_step_that_reads_a_settle_commit_retakes_it`, `a_second_round_retake_runs_settle_once_and_delivers_its_settle_commits`, `the_first_step_after_an_operating_point_that_holds_a_settle_commit_is_first_order`; `instant` (digital) `a_reopened_instant_settles_at_its_last_microstep`, `a_firing_after_a_reopened_instant_is_due_at_the_next_microstep` | yes - the settle-commit step retakes (one solution, 2 V, one reaction), settle phases strictly increase and the last round's settle commit reaches the next step (4 V); the extra proofs hold rule 6 and the microstep stamps |
 
-## Findings
+### Findings
 
 | Finding | Evidence | Fix | Closed |
 | --- | --- | --- | --- |
