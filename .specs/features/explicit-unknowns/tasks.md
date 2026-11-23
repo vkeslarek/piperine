@@ -1067,9 +1067,9 @@ T41 → T42 → T43 → T44 → T45 → T46 → T47 → T48
 
 **Done when**:
 
-- [ ] The `**Build**` line and `cargo test` at the root pass
-- [ ] The Handoff names the units
-- [ ] Gate check passes: Build
+- [x] The `**Build**` line and `cargo test` at the root pass
+- [x] The Handoff names the units
+- [x] Gate check passes: Build
 
 **Tests**: none
 **Gate**: build
@@ -1563,6 +1563,8 @@ The feature's live state, written as it happens - a compaction gives no warning.
   - **T39.** The renderers have no unknown arm; an absent `Option` prints `None` (table, record line), `null` (JSON Lines) or an empty `value` leaf (CSV). An `emit!` field of type `Option` is outside the M1 subset ("an expression the type checker gave no value type"): the record forms are held by the render unit tests.
   - **T40.** `GAPS.md`: S8, L64 and L65 removed (1 silent, 2 broken, 28 loud); G.72 says the implementation meets the item in every layer and names `Logic<N>` (phase B, L58) and `Resolve` (`resolved-nets`, L21); `docs.rs::gaps_closes_s6_and_tracks_the_flag` replaces `gaps_closes_s6_and_g6_by_the_redesign`; the `E0511` row left `code_owners.tsv` (a source raises it); MD-78's status line says phase A is delivered. The Book rows of the T40 list were all flipped by their own tasks (T20, T21, T22, T30, T38); T40 re-checked each against `inventory.tsv`.
   - **Gate (B7), 2026-11-22.** `env -u PIPERINE_NGSPICE cargo test --workspace --exclude piperine-lang-server --no-fail-fast`: 314 targets, every one `ok` after one fix commit. The first run was red in five targets, all of one cause (a top `in` port with no initial value now refuses the run, E0187): `book_analog`, `book_digital`, `book_mixed`, `book_modules` and `host_ii`; their wrapped tops give the port a first value and only those five targets were rerun. The integrated suites, `piperine-cli --test twins`, `piperine-parity --test twins`, the buck (`piperine-cli --test buck`, every `buck_*` target of `piperine-parity`) and the parity tests against ngspice ran in the workspace run (ngspice present: the only SKIP lines are the two skip-line tests). The Build line is clean (zero warnings). Twin goldens and `contract.rs` did not move.
+
+**T41 (B8, 2026-11-23): rebase and re-read at `origin/main` `2fda3089`** (generics A and B, MD-81, are on `main`; the branch was reset to `origin/main`, nothing unmerged). Where an operator is typed today: `Types::binary` and the `UnOp::Not` arm of `infer_kind` in `crates/piperine-lang/src/types/expr.rs` (built-in operands only; `==`/`!=` on a struct or enum only through the derived `PartialEq`, `require_trait`); the elaborator lowers them in `elab/lower.rs` and `elab/compound.rs` (`Pair`, compound assignment). The generics units T42 extends: `ImplTable` (`types/traits.rs`: `implementing`, `visible`, `implementation`), the checker's `Callee::Method` / `Callee::Bound` resolution (`types/methods.rs`, `types/call.rs`), and the elaborator's `lower_method_call` / `lower_bound_call` (generics T35 and T36). Findings: `PartialEq`, `Default`, `Repr` are `Resolution::Builtin` traits and `ImplTable::entry` indexes a builtin trait `impl` only for `Repr`; `BitAnd`, `BitOr`, `BitXor`, `Not`, `Shl`, `Shr` and `From` are not in `BUILTINS` (`pom/builtin.rs`), so T42 adds them (the `From` row empties `SPEC_TRAITS_AHEAD_OF_THE_TABLE`).
 
 **Dispatched:** none. **Walked:** none (the verifier of B1 to B3 is the caller's).
 
