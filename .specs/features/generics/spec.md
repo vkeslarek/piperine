@@ -121,7 +121,7 @@ Order inside the two features: CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E (`
 
 1. WHEN an `impl` on a struct or an enum declares methods with `self`, associated functions (`Point::new`) and associated constants THEN the system SHALL accept method-call syntax, `Self`, and `Type::name` paths with Rust's meaning.
 2. IF an `impl` is written on a module THEN the system SHALL refuse it with `E0130`.
-3. IF a method is named `changed`, `prev`, `others`, `inflow` or `level` THEN the system SHALL refuse it with `E0131`.
+3. IF a method is named `changed`, `prev`, `others` or `inflow` THEN the system SHALL refuse it with `E0131`.
 
 **Acceptance Criteria** (GN-04, user traits):
 
@@ -129,12 +129,12 @@ Order inside the two features: CV-A, CV-B, GN-A, GN-B, CV-C, GN-C, GN-D, GN-E (`
 2. WHEN a generic body calls a method of a bound (`x.known()` under `T: Known`) THEN the system SHALL call the instantiation's implementation.
 3. WHEN a crate declares a blanket `impl<T: Bound> Trait for T` THEN the system SHALL apply it to every type that satisfies the bound.
 4. IF two `impl`s of one trait apply to one type, or an `impl` leaves a method without a default unimplemented THEN the system SHALL refuse it naming the trait and the type.
-5. IF `impl Trait for` names a nature or a bundle THEN the system SHALL refuse it with `E0134`.
+5. IF `impl Trait for` names a bundle THEN the system SHALL refuse it with `E0134`; a nature takes trait impls (traits are capabilities, MD-78).
 
 **Acceptance Criteria** (GN-05, hand-written `Repr`):
 
 1. WHEN a project writes `impl Repr for T` with `WIDTH`, `encode` and `decode` (a one-hot or Gray encoding) THEN the system SHALL carry `Bit<T>` with that layout.
-2. WHEN a hand-written `decode` returns `None` THEN the system SHALL read the value as unknown (§2 rule 9).
+2. WHEN a hand-written `decode` returns `None` THEN the system SHALL return the `None` to the caller (§2 rule 9 as MD-78 amends it).
 
 **Acceptance Criteria** (GN-06, generic value types):
 

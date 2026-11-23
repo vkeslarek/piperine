@@ -319,7 +319,7 @@ T49 → T50 → T51 → T52
 
 ### T8: IR `FunctionData::instance`
 
-**What**: `GenericInstance { item, arguments }` and `FunctionData::instance: Option<GenericInstance>` (`#[serde(default)]`), set through `FunctionSpec`; `print.rs` prints it in the function's header comment; `Ir::check` refuses an instance whose function name is not `item::<arguments>` (plus an optional flag suffix). The interpreter refuses a function with an `instance` by name ("a generic instantiation `swap::<f64>`"). Create `crates/piperine-ir/tests/generics.rs` with its `//!` header and `frozen.rs::each_generics_form_is_refused_by_name`.
+**What**: `GenericInstance { item, arguments }` and `FunctionData::instance: Option<GenericInstance>` (`#[serde(default)]`), set through `FunctionSpec`; `print.rs` prints it in the function's header comment; `Ir::check` refuses an instance whose function name is not `item::<arguments>` (plus an optional half suffix, `.is` or `.val`, which `elab/variants.rs` gives each half of an `Option` result; a value has no flag, so there is no flag-pattern suffix). The interpreter refuses a function with an `instance` by name ("a generic instantiation `swap::<f64>`"). Create `crates/piperine-ir/tests/generics.rs` with its `//!` header and `frozen.rs::each_generics_form_is_refused_by_name`.
 **Where**: `crates/piperine-ir/src/model.rs`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `FunctionSpec`, `IrBuilder::function`, `walk.rs` `form_name`
@@ -385,7 +385,7 @@ T49 → T50 → T51 → T52
 
 ### T11: Plan: the layout of a hand-written `Repr`
 
-**What**: `CompositeLayout` lays a type whose `repr` is `HandWritten { width, .. }` out as one leaf of `width` levels (§2: the encoding is the type's), with its known byte; two pins of one such net get equal layouts.
+**What**: `CompositeLayout` lays a type whose `repr` is `HandWritten { width, .. }` out as one leaf of `width` levels (§2: the encoding is the type's), with no known byte (the ABI has none, MD-78); two pins of one such net get equal layouts.
 **Where**: `crates/piperine-plan/src/composite.rs`
 **Depends on**: T10
 **Reuses**: composite-values `CompositeLayout`
@@ -406,7 +406,7 @@ T49 → T50 → T51 → T52
 
 ### T12: Printer: `Carried` through `encode` and `decode`
 
-**What**: `TypeItems` prints the `rt::Carried` impl of a hand-written `Repr` type through its IR `encode` and `decode` functions: to levels by `encode`, from levels by `decode`, a `None` read as all levels unknown (§2 rule 9). A one-hot type built by hand in IR round-trips through `rustc`.
+**What**: `TypeItems` prints the `rt::Carried` impl of a hand-written `Repr` type through its IR `encode` and `decode` functions: to levels by `encode`, from levels by `decode`; a `None` from `decode` is returned to the caller, as `Option<T>` (§2 rule 9 as MD-78 amends it), and no flag moves with the levels. A one-hot type built by hand in IR round-trips through `rustc`.
 **Where**: `crates/piperine-transpile/src/print/types.rs`
 **Depends on**: T11
 **Reuses**: composite-values `TypeItems`, `rt::Carried`, `rt::LevelWords`
@@ -415,7 +415,7 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_hand_written_repr_round_trips_and_none_reads_unknown` passes under `**Run tgen**`
+- [ ] `a_hand_written_repr_round_trips_and_none_is_returned_to_the_caller` passes under `**Run tgen**`
 - [ ] Gate check passes: Full
 
 **Tests**: integration
@@ -490,7 +490,7 @@ T49 → T50 → T51 → T52
 
 ### T16: `GenericSignature`
 
-**What**: New `types/generics.rs`: `GenericSignature::of(design, item)` reads an item's generic parameters (type, nature, const with its integer or `bool` type), their bounds (`Bound::{Trait, Library, Repr, Nature, Callable}`, the `Fn(A) -> R` sugar from `GenericArgsNode::Paren`) and defaults; refuses a defaulted parameter before an undefaulted one (§3.8.4), a const parameter of another type (§3.8.3), a bound name that is no trait (`E0161`, H.8 intro), and a wrong number of generic arguments at a use (`E0187`).
+**What**: New `types/generics.rs`: `GenericSignature::of(design, item)` reads an item's generic parameters (type, nature, const with its integer or `bool` type), their bounds (`Bound::{Trait, Library, Repr, Nature, Callable}`, the `Fn(A) -> R` sugar from `GenericArgsNode::Paren`) and defaults; refuses a defaulted parameter before an undefaulted one (§3.8.4), a const parameter of another type (§3.8.3), a bound name that is no trait (`E0161`, H.8 intro), and a wrong number of generic arguments at a use (`E0187`). A trait takes type parameters with defaults (`PartialEq<Rhs = Self, Out = bool>`, `Resolve<X, V = X>`): the default of an omitted argument is read here, and `Self` may appear in a default. `Default` is the table of explicit-unknowns D4 (`Defaults`), not a flag-era rule: `bool`, the integers and the floats do not satisfy `T: Default` unless that table says so.
 **Where**: `crates/piperine-lang/src/types/generics.rs`
 **Depends on**: T15
 **Reuses**: `GenericParamData`, `GenericArgsNode`, composite-values `Derives` (H.8 names)
@@ -553,16 +553,16 @@ T49 → T50 → T51 → T52
 
 ### T19: What a type parameter's bounds give, and §3 rule 9
 
-**What**: New `types/bounds.rs`: `BoundCheck::satisfies(ty, bound)` (H.8 traits through `Derives`, `Repr` through `Ty::has_repr`, a project trait through the `ImplTable` once T24 lands, `Fn` through a callable's signature); an `impl Checker` block giving a `Ty::Param` the members its bounds offer: H.8 operators (`==` from `PartialEq`, `<` from `PartialOrd`), `Repr`'s `WIDTH`, `level`, `encode`, `decode`, the stdlib flag reads under `Repr`, `.clone()`; a method no bound gives is `E0161` naming the method, the parameter and the bound (D4); an operator is `P0002` naming the trait. `docs/spec/part_i_values.md` §3 rule 9 gains the sentence of design.md "The two checks of a generic item", with its `spec_text` guard (GN-07 AC 4, MD-57).
+**What**: New `types/bounds.rs`: `BoundCheck::satisfies(ty, bound)` (H.8 traits through `Derives`, `Repr` through `Ty::has_repr`, a project trait through the `ImplTable` once T24 lands, `Fn` through a callable's signature); an `impl Checker` block giving a `Ty::Param` the members its bounds offer: H.8 operators (`==` from `PartialEq`, `<` from `PartialOrd`), `Repr`'s `WIDTH`, `encode`, `decode` (no `level`, no flag read: a value has none, MD-78), `.clone()`; `T: Default` holds where the `Defaults` table (explicit-unknowns D4) says; a method no bound gives is `E0161` naming the method, the parameter and the bound (D4); an operator is `P0002` naming the trait. `docs/spec/part_i_values.md` §3 rule 9 gains the sentence of design.md "The two checks of a generic item", with its `spec_text` guard (GN-07 AC 4, MD-57).
 **Where**: `crates/piperine-lang/src/types/bounds.rs`
 **Depends on**: T18
-**Reuses**: composite-values `Derives`, `flag_read`, `Catalogue`
+**Reuses**: composite-values `Derives`, `Defaults` (explicit-unknowns), `Catalogue`
 **Requirement**: GN-07
 **Executor**: Sonnet
 
 **Done when**:
 
-- [ ] `a_member_no_bound_gives_is_refused_at_the_definition` and `bounds_give_operators_width_and_flag_reads` pass under `**Run typesgen**`
+- [ ] `a_member_no_bound_gives_is_refused_at_the_definition` and `bounds_give_operators_width_and_codecs` pass under `**Run typesgen**`
 - [ ] `rule_9_splits_definition_and_instantiation_errors` passes under `**Run spectext**`
 - [ ] Gate check passes: Quick
 
@@ -701,7 +701,7 @@ T49 → T50 → T51 → T52
 
 ### T26: The declaration rules of `impl`
 
-**What**: New `types/coherence.rs` (`Coherence`), run on every `impl` the check sees (the model check: all of them): a method named `changed`, `prev`, `others`, `inflow` or `level` is `E0131` (§3.1.3); an item that is not a function in an `impl` on a nature or bundle is `E0132`; `impl Tr for` a nature or bundle is `E0134` (§3.1.9). `E0130` stays the classifier's and gets its test here.
+**What**: New `types/coherence.rs` (`Coherence`), run on every `impl` the check sees (the model check: all of them): a method named `changed`, `prev`, `others` or `inflow` (the carrier methods that remain; `level` is gone with the flag, MD-78) is `E0131` (§3.1.3); an item that is not a function in an inherent `impl` on a nature or bundle is `E0132`; `impl Tr for` a bundle is `E0134` (§3.1.9), while `impl Tr for` a nature is accepted (traits are capabilities, MD-78: `impl Resolve<Driven> for Wire`), its `self` being a handle (phase B) and its items the trait's. A module type takes trait impls too (user, 2026-11-22), but only at GN-21: `E0130` stays the classifier's for an `impl` on a module until then. `E0130` stays the classifier's and gets its test here.
 **Where**: `crates/piperine-lang/src/types/coherence.rs`
 **Depends on**: T25
 **Reuses**: `pom/resolve/classify.rs` (`E0130`)
@@ -710,7 +710,7 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `an_impl_on_a_module_is_e0130`, `a_method_named_like_a_carrier_method_is_e0131`, `a_non_function_item_in_an_impl_on_a_nature_is_e0132` and `impl_trait_for_a_nature_is_e0134` pass under `**Run typestraits**`
+- [ ] `an_impl_on_a_module_is_e0130`, `a_method_named_like_a_carrier_method_is_e0131`, `a_non_function_item_in_an_impl_on_a_nature_is_e0132`, `impl_trait_for_a_bundle_is_e0134` and `impl_trait_for_a_nature_is_accepted` pass under `**Run typestraits**`
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
@@ -722,7 +722,7 @@ T49 → T50 → T51 → T52
 
 ### T27: The rules of a trait `impl`
 
-**What**: In `types/coherence.rs`: `impl Tr for T` defines every item of `Tr` without a default and no item `Tr` lacks, each with the trait's signature under `Self = T` (§3.7.4); `T` implements every supertrait (§3.7.3); the `impl` is in the crate of `Tr` or of `T` (§3.7.7, value types; D10); no `pub` on its items (§3.7.11). Each is `E0187` naming the trait and the type (D5).
+**What**: In `types/coherence.rs`: `impl Tr for T` defines every item of `Tr` without a default and no item `Tr` lacks, each with the trait's signature under `Self = T` (§3.7.4); `T` implements every supertrait (§3.7.3); the `impl` is in the crate of `Tr` or of `T` (§3.7.7, value types and natures; D10); `Tr` may take type parameters with defaults and the `impl` names its arguments (`impl Resolve<Driven> for Wire`), each item checked under them; no `pub` on its items (§3.7.11). Each is `E0187` naming the trait and the type (D5).
 **Where**: `crates/piperine-lang/src/types/coherence.rs`
 **Depends on**: T26
 **Reuses**: `ImplTable`, `Substitution`
@@ -743,7 +743,7 @@ T49 → T50 → T51 → T52
 
 ### T28: Trait methods on values and through bounds
 
-**What**: In `types/methods.rs`: a trait method on a concrete value records `Callee::Method` of the `impl`'s item or of the trait's default; on a `Ty::Param` through a bound it records `Callee::Bound { item }`; `Tr::f(x)` and `T::f(x)` paths call trait items without the trait in scope (§3.7.8). `BoundCheck` answers project traits through `ImplTable::implements`. The `types_subset.rs` row `trait` moves (design "may move").
+**What**: In `types/methods.rs`: a trait method on a concrete value records `Callee::Method` of the `impl`'s item or of the trait's default; on a `Ty::Param` through a bound it records `Callee::Bound { item }`; `Tr::f(x)` and `T::f(x)` paths call trait items without the trait in scope (§3.7.8). `BoundCheck` answers project traits through `ImplTable::implements`, a trait with arguments by those arguments too (`W: Nature + Resolve<Driven>` is satisfied by `impl Resolve<Driven> for W`, a nature included). The `types_subset.rs` row `trait` moves (design "may move").
 **Where**: `crates/piperine-lang/src/types/methods.rs`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `ImplTable::visible`, `implementation`
@@ -764,7 +764,7 @@ T49 → T50 → T51 → T52
 
 ### T29: Blanket `impl`s and overlap
 
-**What**: In `types/traits.rs`: a blanket `impl<T: B> Tr for T` applies to every type that satisfies `B` (§3.7.5; `impl<T: Repr> Known for T {}` included); two `impl`s of one trait that both apply to some type are `E0187` naming the trait and the type, used or not (§3.7.6).
+**What**: In `types/traits.rs`: a blanket `impl<T: B> Tr for T` applies to every type that satisfies `B` (§3.7.5; `impl<T: Repr> Known for T {}` included); two `impl`s of one trait that both apply to some type are `E0187` naming the trait and the type, used or not (§3.7.6); the overlap rule compares the trait's arguments too, so `impl Resolve<A> for N` and `impl Resolve<B> for N` do not overlap.
 **Where**: `crates/piperine-lang/src/types/traits.rs`
 **Depends on**: T28
 **Reuses**: `BoundCheck`
@@ -912,7 +912,7 @@ T49 → T50 → T51 → T52
 
 ### T36: Static trait dispatch
 
-**What**: In `elab/methods.rs`: a `Callee::Bound { item }` call inside an instance resolves with `ImplTable::implementation(item, concrete self)` to the `impl`'s item or the trait's default body (instantiated with `Self` bound), blanket `impl`s included; a trait method on a concrete value calls its `impl` statically.
+**What**: In `elab/methods.rs`: a `Callee::Bound { item }` call inside an instance resolves with `ImplTable::implementation(item, concrete self)` to the `impl`'s item or the trait's default body (instantiated with `Self` bound), blanket `impl`s included; a trait method on a concrete value calls its `impl` statically; the `impl` is chosen by the trait's arguments as well as the type's.
 **Where**: `crates/piperine-lang/src/elab/methods.rs`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `ImplTable::implementation`, `request`
@@ -975,7 +975,7 @@ T49 → T50 → T51 → T52
 
 ### T39: A hand-written `Repr` carried end to end
 
-**What**: In `elab/types.rs`: a type with a hand-written `Repr` gets `TypeData::repr = HandWritten { width, encode, decode }`, `encode` and `decode` lowered as IR functions; a carrier of it commits by `encode` and reads by `decode`. Source tests: a one-hot and a Gray-coded `Bit<T>` carry their own layouts; a `decode` returning `None` reads as unknown (§2 rule 9).
+**What**: In `elab/types.rs`: a type with a hand-written `Repr` gets `TypeData::repr = HandWritten { width, encode, decode }`, `encode` and `decode` lowered as IR functions; a carrier of it commits by `encode` and reads by `decode`. Source tests: a one-hot and a Gray-coded `Bit<T>` carry their own layouts; a `decode` returning `None` is returned to the caller as `None` (§2 rule 9 as MD-78 amends it): the carrier holds no unknown level.
 **Where**: `crates/piperine-lang/src/elab/types.rs`
 **Depends on**: T38
 **Reuses**: T9, T11, T12
@@ -984,7 +984,7 @@ T49 → T50 → T51 → T52
 
 **Done when**:
 
-- [ ] `a_hand_written_repr_carries_its_own_layout` and `a_decode_returning_none_reads_as_unknown` pass under `**Run srcgen**`
+- [ ] `a_hand_written_repr_carries_its_own_layout` and `a_decode_returning_none_is_returned_to_the_caller` pass under `**Run srcgen**`
 - [ ] Gate check passes: Full
 
 **Tests**: integration
@@ -1018,7 +1018,7 @@ T49 → T50 → T51 → T52
 
 ### T41: Gallery fences and Book listings that now check
 
-**What**: Every Appendix D–F fence and Book listing that phase A lets check (generic functions, `impl`, traits, `Pair<T>`, `apply`) is held to the checker in its existing test (GN-31 AC 2); an expectation of a green `check` over an unreached refused item (S3) becomes that item's diagnostic, listed in `GAPS.md` (design "may move").
+**What**: `std/values.msl` holds `same` and `cast` only (`level` and `merge` are gone with the flag, MD-78; the intrinsics' removal is explicit-unknowns T48's, not this task's). Every Appendix D–F fence and Book listing that phase A lets check (generic functions, `impl`, traits, `Pair<T>`, `apply`) is held to the checker in its existing test (GN-31 AC 2); an expectation of a green `check` over an unreached refused item (S3) becomes that item's diagnostic, listed in `GAPS.md` (design "may move").
 **Where**: `crates/piperine-lang/tests/std_galleries.rs`
 **Depends on**: None (its phase follows the previous one)
 **Reuses**: `std_galleries.rs`, `tests/book/inventory.tsv`
@@ -1123,7 +1123,7 @@ T49 → T50 → T51 → T52
 
 ### T46: `impl` on a nature and the lookup order
 
-**What**: In `types/methods.rs`: a method call on a carrier expression follows §3.1.7: the carrier methods, then the `impl`s of its nature (a project nature or a prelude one: `Thermal`, `Electrical`, `Bit<T>`, `impl Bit` being `impl Bit<bool>` by §3.1.8), then the methods of the value read; `self` is a handle. `docs/spec/part_i_values.md` §3.1 gains the Resolution of D10 (an inherent `impl` on a nature may be written in any crate) with its `spec_text` guard.
+**What**: In `types/methods.rs`: a method call on a carrier expression follows §3.1.7: the carrier methods, then the `impl`s of its nature, inherent and trait (`impl Resolve<Driven> for Wire` is a capability of the nature; a project nature or a prelude one: `Thermal`, `Electrical`, `Bit<T>`, `impl Bit` being `impl Bit<bool>` by §3.1.8), then the methods of the value read; `self` is a handle. `docs/spec/part_i_values.md` §3.1 gains the Resolution of D10 (an inherent `impl` on a nature may be written in any crate) with its `spec_text` guard.
 **Where**: `crates/piperine-lang/src/types/methods.rs`
 **Depends on**: T45
 **Reuses**: `members.rs`'s §3.1.7 order, `ImplTable`
@@ -1166,7 +1166,7 @@ T49 → T50 → T51 → T52
 
 ### T48: A function generic over a nature
 
-**What**: In `types/handles.rs`: `fn f<N: Nature>(a: N)` types `a` as a handle of `Ty::Param(N)`; probes and carrier methods are the ones `Nature` gives; the call's nature is inferred from the carrier passed and recorded in its `Instantiation`.
+**What**: In `types/handles.rs`: `fn f<N: Nature>(a: N)` types `a` as a handle of `Ty::Param(N)`; probes and carrier methods are the ones `Nature` gives and a bound such as `W: Nature + Resolve<Driven>` is satisfied by the nature's trait `impl`s (functions and, in phase C, modules); the call's nature is inferred from the carrier passed and recorded in its `Instantiation`.
 **Where**: `crates/piperine-lang/src/types/handles.rs`
 **Depends on**: T47
 **Reuses**: `Inference`, `BoundCheck`
@@ -1297,7 +1297,7 @@ Proof: run srcgen | test methods_associated_functions_and_constants_run_with_rus
 **C8** - An `impl` on a module is `E0130`. (GN-03, AC 2; T26)
 Proof: run typestraits | test an_impl_on_a_module_is_e0130 ... ok
 
-**C9** - A method named `changed`, `prev`, `others`, `inflow` or `level` is `E0131`. (GN-03, AC 3; T26)
+**C9** - A method named `changed`, `prev`, `others` or `inflow` is `E0131`. (GN-03, AC 3; T26)
 Proof: run typestraits | test a_method_named_like_a_carrier_method_is_e0131 ... ok
 
 **C10** - A trait method calls its `impl` statically, or the default body when the `impl` does not override it. (GN-04, AC 1; T36)
@@ -1314,16 +1314,17 @@ Proof: run srcgen | test a_blanket_impl_applies_at_run_time ... ok
 Proof: run typestraits | test a_trait_impl_missing_an_item_is_e0187_naming_trait_and_type ... ok
 Proof: run typestraits | test overlapping_impls_are_e0187 ... ok
 
-**C14** - `impl Trait for` a nature or a bundle is `E0134`. (GN-04, AC 5; T26)
-Proof: run typestraits | test impl_trait_for_a_nature_is_e0134 ... ok
+**C14** - `impl Trait for` a bundle is `E0134`; for a nature it is accepted. (GN-04, AC 5; T26)
+Proof: run typestraits | test impl_trait_for_a_bundle_is_e0134 ... ok
+Proof: run typestraits | test impl_trait_for_a_nature_is_accepted ... ok
 
 **C15** - A hand-written one-hot or Gray `impl Repr` carries `Bit<T>` with that layout. (GN-05, AC 1; T9, T11, T39)
 Proof: run srcgen | test a_hand_written_repr_carries_its_own_layout ... ok
 Proof: run plancomp | test a_hand_written_repr_is_one_leaf_of_its_width ... ok
 Proof: run irgen | test a_type_instance_and_a_hand_written_repr_are_built_checked_and_printed ... ok
 
-**C16** - A hand-written `decode` returning `None` reads as unknown. (GN-05, AC 2; T39)
-Proof: run srcgen | test a_decode_returning_none_reads_as_unknown ... ok
+**C16** - A hand-written `decode` returning `None` is returned to the caller. (GN-05, AC 2; T39)
+Proof: run srcgen | test a_decode_returning_none_is_returned_to_the_caller ... ok
 
 **C17** - A generic struct or enum instantiates per argument list and takes every composite-values construct on each instance. (GN-06, AC 1; T38)
 Proof: run srcgen | test generic_structs_and_enums_instantiate_per_argument_list ... ok
@@ -1438,6 +1439,7 @@ Proof: run tgen | test instance_names_compile_and_nested_arguments_spell_apart .
 The feature's live state, written as it happens - a compaction gives no warning.
 
 **Settled mid-build:** (B1, 2026-11-20, user AFK, default taken) the whole-model check skips generic items (an item or an enclosing item with a `<..>` list) and trait functions until the generic forms land: a generic body stays refused `P0001` when reached, and GAPS S3 keeps it (T6). Planning (2026-11-20): the user was away and asked for the most reasonable default on every open point ("Tu sempre assume o default mais razoável e depois me conta"); the defaults are design.md D1 to D17.
+**Settled mid-build (T7, B2, 2026-11-22):** the contract was brought in by `git merge origin/main` (commit `chore: merge main`), not a rebase, so B1's commits keep their ids. Merge by hunk: GAPS.md and ROADMAP.md take main's tables and keep the Coverage row that names S3 as the unreached generic item; docs.rs keeps both sides; `types/mod.rs` registers `model`. Moved by main, not by this branch: an unreached `f64 + 1.0` in a `bool` function is `E0180` (it was `P0002`) in `types_model`, the api project/session tests, the cli commands test and the parity project test; the `gaps_narrows_s3_to_generic_items` test ends the S3 entry at the next `---` (S6 left GAPS); two Book tests (`a_function_has_the_class_its_body_gives` with `values#8`, `the_generic_listings_are_refused_where_a_top_reaches_them` with `generics#9`) run the listing without the item the whole-model check now refuses (`handshake`, `mid_ramp`). The model check also skips a method with a `self` parameter (refused `P0001` until T25 lands methods), as it skips generic items; T25 removes that skip. Anchors at the new head: `Ty` has `Struct(DeclId)`, `Enum(DeclId)`, `Array(Box<Ty>, u64)`, `Fn(Vec<Ty>, Box<Ty>)` (there is no `Ty::Closure`: a closure and a function name are `Ty::Fn`), `Range`, `Iterator`; T13 to T15 map `Ty::Closure` to `Ty::Fn` and make `Array`'s length a `Length`. `elab/variants.rs` names one IR function per `fn` and `Half` (`.is`, `.val` for an `Option` result): there is no flag pattern (`name~01`), so T8, T33 and T34 give names `item::<args>` plus that optional half suffix. The ABI has no known byte (T11), the checker has no `level`/`known_or`/`Unknown`, and `Default` is the table of explicit-unknowns D4. Next free `MD-` number: MD-80 (MD-79 is the last). Amended tasks (explicit-unknowns impact section, and the user's decisions of 2026-11-22): T8 (name suffix), T11 (no known byte), T12 (`None` from `decode` is returned to the caller; test `a_hand_written_repr_round_trips_and_none_is_returned_to_the_caller`), T16 (trait type parameters with defaults; the `Default` table), T19 (no `level`, no flag reads; `Default` by D4; test `bounds_give_operators_width_and_codecs`), T26 (`E0131` lists four names; `impl Tr for` a nature is accepted, `E0134` for a bundle; tests `impl_trait_for_a_bundle_is_e0134` and `impl_trait_for_a_nature_is_accepted`; `E0130` for an `impl` on a module stays until GN-21, where a module type takes trait impls, the user's "looks like a Mosfet, behaves like a Mosfet"), T27 (arguments of a trait in an `impl`; orphan rule covers natures), T28 and T29 (bounds and overlap compare the trait's arguments), T36 (dispatch by the trait's arguments), T39 (`None` from `decode` returned; test `a_decode_returning_none_is_returned_to_the_caller`), T41 (`std/values.msl` holds `same` and `cast`; their intrinsics' removal is explicit-unknowns T48's), T46 and T48 (nature trait impls in the lookup; `W: Nature + Resolve<Driven>`); checks C14 and C16 and spec.md GN-03 AC 3, GN-04 AC 5 and GN-05 AC 2 follow. design.md's remaining flag-pattern wording (the Variants row, D15) is read through this line.
 **Dispatched:** none yet.
 **Walked:** none (no screen; every criterion is proven by a test).
 
