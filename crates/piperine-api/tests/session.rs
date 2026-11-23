@@ -424,4 +424,97 @@ fn an_integer_above_2_pow_53_is_set_exactly() {
         let (session, _cache) = Typed::session_with(&[("Top.l.big", text)]).unwrap_or_else(|f| panic!("{text}: {f}"));
         assert_eq!(Typed::shown(&session, "big"), piperine_api::Cell::Int(wanted), "{text}");
     }
+    // the description of the design (`Session::describe`, no backend) shows the same exact value
+    let (_dir, file) = lone(TYPED_PARAMS);
+    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+    let overrides = Overrides { param_texts: vec![("Top.l.big".to_string(), "9007199254740993".to_string())], ..flags("op", "interp", Some("Top")) };
+    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+    let (_, metadata) = Session::describe(&project, &spec).unwrap_or_else(|f| panic!("{f}"));
+    let shown = metadata.params.into_iter().find(|p| p.path == "Top.l.big").expect("the param").value;
+    assert_eq!(shown, piperine_api::Cell::Int(9_007_199_254_740_993));
+}
+
+/// A design whose branches are selected by structural params: a switch that forces its node to 0.25 V unless it is `Open`, and a
+/// source that forces its node to its value when it has one; both nodes hang on a 1 V supply behind 1 kOhm.
+const STRUCTURAL: &str = "#[derive(Repr, PartialEq)]\nenum Mode { Short, Open }\n\
+    module Supply(o: Electrical) { signal s: Electrical; let v1 = Level(s); let r1 = Resistor(s, o) { r: 1k }; }\n\
+    module Level(p: Electrical) { volts: f64 = 1.0; }\nanalog for Level { v(p, gnd) +> volts; }\n\
+    module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\n\
+    module Sw(a: Electrical) { md: Mode = Mode::Short; }\nanalog for Sw { match md { Mode::Short => { v(a, gnd) +> 0.25; } Mode::Open => {} } }\n\
+    module Ow(c: Electrical) { vs: Option<f64>; }\nanalog for Ow { match vs { Some(x) => { v(c, gnd) +> x; } None => {} } }\n\
+    module SwTop() { signal a: Electrical; let sup = Supply(a); let m = Sw(a); }\n\
+    module OwTop() { signal c: Electrical; let sup = Supply(c); let o = Ow(c); }\n";
+
+/// The runs of `STRUCTURAL` with `--param` texts for structural params.
+struct Structural;
+
+impl Structural {
+    /// The voltage of `node` at the operating point of `top` with the `--param` texts `texts`; the failure when it does not open.
+    fn volts(top: &str, node: &str, texts: &[(&str, &str)]) -> Result<f64, Failure> {
+        let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let cache = tempfile::tempdir().expect("a cache");
+        let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
+        let param_texts = texts.iter().map(|(entry, text)| (entry.to_string(), text.to_string())).collect();
+        let overrides = Overrides { param_texts, print: vec![node.to_string()], ..flags("op", "rust", Some(top)) };
+        let mut session = open(STRUCTURAL, &overrides, &settings)?;
+        let table = session.run(Rc::new(RefCell::new(Quiet)))?;
+        match &table.rows[0][1] {
+            piperine_api::Cell::Real(value) => Ok(*value),
+            other => panic!("a real, found {other:?}"),
+        }
+    }
+}
+
+/// A sink that keeps nothing: the table is read.
+struct Quiet;
+
+impl RecordSink for Quiet {
+    fn record(&mut self, _: &Record) {}
+}
+
+#[test]
+fn a_structural_params_text_selects_its_variant() {
+    // PI-02 AC 3, PI-03 AC 2 and AC 4, D24: the text of a `--param` of a structural param reaches elaboration as that value, read by the
+    // param's type: the variant `Open` of an enum, `Some(0.5)`, a plain `0.5` (`Some` of it) and `None` of an `Option<f64>`.
+    let near = |wanted: f64, got: f64| assert!((got - wanted).abs() < 1e-9, "wanted {wanted}, got {got}");
+    near(0.25, Structural::volts("SwTop", "a", &[]).unwrap_or_else(|f| panic!("{f}")));
+    near(1.0, Structural::volts("SwTop", "a", &[("m.md", "Open")]).unwrap_or_else(|f| panic!("{f}")));
+    near(0.25, Structural::volts("SwTop", "a", &[("m.md", "Short")]).unwrap_or_else(|f| panic!("{f}")));
+    near(1.0, Structural::volts("OwTop", "c", &[]).unwrap_or_else(|f| panic!("{f}")));
+    near(0.5, Structural::volts("OwTop", "c", &[("o.vs", "Some(0.5)")]).unwrap_or_else(|f| panic!("{f}")));
+    near(0.5, Structural::volts("OwTop", "c", &[("o.vs", "0.5")]).unwrap_or_else(|f| panic!("{f}")));
+    near(1.0, Structural::volts("OwTop", "c", &[("o.vs", "None")]).unwrap_or_else(|f| panic!("{f}")));
+}
+
+#[test]
+fn a_structural_params_bad_text_is_e0802() {
+    // D24: a text that is no value of the structural param's type is `E0802` at elaboration, never ignored: a variant the enum lacks, a
+    // number for an enum, text for an `Option<f64>`.
+    for (entry, text) in [("m.md", "Medium"), ("m.md", "1"), ("o.vs", "lots")] {
+        let top = if entry.starts_with("m.") { "SwTop" } else { "OwTop" };
+        match Structural::volts(top, "a", &[(entry, text)]) {
+            Err(Failure::Diagnostics { found, .. }) => assert!(found.iter().any(|d| d.diagnostic.code == "E0802" && d.diagnostic.message.contains(text)), "{entry}={text}: {found:?}"),
+            other => panic!("{entry}={text}: E0802 at elaboration, found {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn a_leaf_text_is_read_by_the_leafs_type() {
+    // composite-values D13 with D24: a leaf of a composite param takes the literal syntax of its type: a `bool` leaf `true` or `false`
+    // (`1` is E0802), an integer leaf an integer literal (`0x3`), a real leaf a number.
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let source = "#[derive(Repr, PartialEq)]\nstruct Cfg { en: bool, n: u8, g: f64 }\nmodule Top() { cfg: Cfg = Cfg { en: false, n: 1, g: 1.0 }; signal a: Electrical; }\nanalog for Top { v(a, gnd) +> cfg.g; }\n";
+    let cache = tempfile::tempdir().expect("a cache");
+    let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
+    let with = |entry: &str, text: &str| {
+        let overrides = Overrides { param_texts: vec![(entry.to_string(), text.to_string())], ..flags("op", "rust", Some("Top")) };
+        open(source, &overrides, &settings)
+    };
+    with("Top.cfg.en", "true").unwrap_or_else(|f| panic!("{f}"));
+    with("Top.cfg.n", "0x3").unwrap_or_else(|f| panic!("{f}"));
+    with("Top.cfg.g", "2.5").unwrap_or_else(|f| panic!("{f}"));
+    for (entry, text) in [("Top.cfg.en", "1"), ("Top.cfg.n", "1.5"), ("Top.cfg.n", "true"), ("Top.cfg.g", "yes")] {
+        assert!(matches!(with(entry, text), Err(Failure::Host { code: "E0802", .. })), "{entry}={text}");
+    }
 }

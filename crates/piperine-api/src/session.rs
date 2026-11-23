@@ -291,7 +291,10 @@ impl Session {
     /// by its type. A structural param is an elaboration input already used, so the text is only checked against its type.
     pub(crate) fn set_target_text(table: &mut Params, derive: Option<&dyn Derive>, circuit: &mut CircuitInstance, ir: &Ir, target: &ParamTarget, text: &str) -> Result<(), Failure> {
         match &target.leaf {
-            Some(leaf) => Session::set_leaf(table, circuit, &target.param, leaf, ParamText::leaf_number(&target.label(), text)?),
+            Some(leaf) => {
+                let number = table.leaf_number(&target.param.instance, &target.param.param, leaf, text)?;
+                Session::set_leaf(table, circuit, &target.param, leaf, number)
+            }
             None if target.param.is_structural(ir) => ParamText::read(ir, &target.param, text).map(|_| ()),
             None => Session::set_text_param(table, derive, circuit, ir, &target.param, text),
         }
@@ -570,8 +573,7 @@ impl Session {
         }
         // the before-run bindings of key params are elaboration inputs (analog-structure, AS-15 AC 1):
         // the elaborator lowers the variant of their values; every other binding is written below
-        let inputs: Vec<(String, f64)> = spec.params.iter().cloned().chain(spec.param_texts.iter().filter_map(|(entry, text)| ParamText::elaboration_value(text).map(|value| (entry.clone(), value)))).collect();
-        let bound = piperine_lang::elab::Overrides::new(&inputs);
+        let bound = piperine_lang::elab::Overrides::new(&spec.params).with_texts(&spec.param_texts);
         match Elaborator::new(&design).run_with(&top, &bound) {
             Ok(ir) => Ok((Arc::new(ir), top)),
             Err(found) => Err(Session::diagnosed("elaborate", design, found)),
@@ -938,7 +940,8 @@ impl Session {
             let target = ParamTarget::resolve_text(&ir, ir.top().path(), entry)?;
             let path = &target.param;
             if let Some(leaf) = &target.leaf {
-                let change = table.leaf_change(&path.instance, &path.param, leaf, ParamText::leaf_number(&target.label(), text)?)?;
+                let number = table.leaf_number(&path.instance, &path.param, leaf, text)?;
+                let change = table.leaf_change(&path.instance, &path.param, leaf, number)?;
                 table.apply_leaf(&change);
                 continue;
             }
@@ -955,6 +958,9 @@ impl Session {
                 }
                 (None, ParamText::Whole(scalar)) => {
                     table.set(&path.instance, &path.param, scalar.exact_real().unwrap_or(f64::NAN), Some(&derive), &mut |_| Ok(()))?;
+                    if let (None, ParamScalar::Integer(value)) = (scalar.exact_real(), scalar) {
+                        table.keep_exact(&path.instance, &path.param, value);
+                    }
                 }
                 (None, ParamText::Option { .. }) => {}
             }

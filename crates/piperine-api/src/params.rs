@@ -283,6 +283,35 @@ impl Params {
         Ok(LeafChange { instance: instance.to_string(), param: param.to_string(), leaf: leaf.to_string(), old: composite.bytes.clone(), bytes })
     }
 
+    /// The number `text` is for `leaf` of the composite param `param`, read by the leaf's own type with the language's literal
+    /// syntax: a `bool` leaf takes `true` or `false` only, an integer leaf an integer literal (decimal, `0x`, `0b`, `_`) in range,
+    /// a real leaf a number. `E0801` for a leaf that does not exist, `E0802` for a text that is no value of the leaf.
+    pub fn leaf_number(&self, instance: &str, param: &str, leaf: &str, text: &str) -> Result<f64, Failure> {
+        let label = format!("{instance}.{param}.{leaf}");
+        let composite = self
+            .slot(instance)
+            .and_then(|s| s.composites.iter().find(|c| c.name == param))
+            .ok_or_else(|| Failure::Host { code: "E0801", message: format!("`{instance}.{param}` is no composite param of the design") })?;
+        let found = composite.layout.leaves().iter().find(|l| l.name == leaf).ok_or_else(|| Failure::Host { code: "E0801", message: format!("`{label}` names no leaf of `{instance}.{param}`") })?;
+        let refused = |why: &str| Failure::Host { code: "E0802", message: format!("`{label}` refuses the value `{}`: {why}", text.trim()) };
+        let text = text.trim();
+        match found.leaf {
+            piperine_abi::raw::leaf::BOOL => match text {
+                "true" => Ok(1.0),
+                "false" => Ok(0.0),
+                _ => Err(refused("a `bool` leaf is `true` or `false`")),
+            },
+            piperine_abi::raw::leaf::F64 => text.parse::<f64>().map_err(|_| refused("it is not a number")),
+            _ => {
+                let value = piperine_lang::elab::LiteralText::integer(text).ok_or_else(|| refused("it is not an integer literal"))?;
+                if value.unsigned_abs() > 1 << 53 {
+                    return Err(refused("an `f64` cannot hold it exactly"));
+                }
+                Ok(value as f64)
+            }
+        }
+    }
+
     /// Takes `change` into the table.
     pub fn apply_leaf(&mut self, change: &LeafChange) {
         let found = self.instances.iter_mut().find(|s| s.path == change.instance).and_then(|s| s.composites.iter_mut().find(|c| c.name == change.param));
@@ -325,9 +354,6 @@ impl Params {
         Ok(changes)
     }
 
-    /// The params a `set` of `param` of `instance` to `value` changes, in instance order, with
-    /// nothing written and the table untouched: what a timed `set` schedules. The refusals of
-    /// `set` apply.
     /// `E0802` for a number a param of an integer or enum type cannot take (PI-01 AC 4, PI-02 AC 4): an integer param takes a whole number
     /// in its range, an enum takes a variant name as text, never a number. A real or a flag param takes any number.
     pub fn refuse_unfit(&self, instance: &str, param: &str, value: f64) -> Result<(), Failure> {
@@ -345,6 +371,9 @@ impl Params {
         Ok(())
     }
 
+    /// The params a `set` of `param` of `instance` to `value` changes, in instance order, with
+    /// nothing written and the table untouched: what a timed `set` schedules. The refusals of
+    /// `set` apply.
     pub fn changes(&self, instance: &str, param: &str, value: f64, derive: Option<&dyn Derive>) -> Result<Vec<Changed>, Failure> {
         let refuse = |message: String| Failure::Host { code: "E0802", message };
         let label = format!("{instance}.{param}");

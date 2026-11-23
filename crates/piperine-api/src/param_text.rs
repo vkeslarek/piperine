@@ -5,6 +5,7 @@
 //! Anything else is `E0802` naming the param and the value, and for an enum listing its variants.
 
 use piperine_ir::{Ir, ValueType};
+use piperine_lang::elab::LiteralText;
 
 use crate::composite::CellShape;
 use crate::failure::Failure;
@@ -70,26 +71,6 @@ impl ParamText {
         }
     }
 
-    /// The number a text is as an elaboration input of a key param (`--param` of a structural param is read before the
-    /// design exists): a real, an integer literal in a radix, or a flag; `None` for any other text.
-    pub fn elaboration_value(text: &str) -> Option<f64> {
-        let text = text.trim();
-        match text {
-            "true" => Some(1.0),
-            "false" => Some(0.0),
-            _ => Reading::literal_integer(text).and_then(|value| Scalar::Integer(value).exact_real()).or_else(|| text.parse::<f64>().ok()),
-        }
-    }
-
-    /// The number a text gives for a leaf of a composite param: a real or a flag (`true`, `false`); `E0802` otherwise.
-    pub fn leaf_number(label: &str, text: &str) -> Result<f64, Failure> {
-        match text.trim() {
-            "true" => Ok(1.0),
-            "false" => Ok(0.0),
-            other => other.parse::<f64>().map_err(|_| Failure::Host { code: "E0802", message: format!("`{label}` refuses the value `{other}`: a leaf takes a number or a flag") }),
-        }
-    }
-
     /// The leaves of an `Option` param's pin this text writes, in the order of its layout; a payload an `f64` cannot hold
     /// is `E0802`.
     pub fn option_leaves(&self, label: &str) -> Result<Option<[(&'static str, f64); 2]>, Failure> {
@@ -127,30 +108,11 @@ impl Reading<'_> {
     /// An integer literal of `ty`: decimal, `0x` or `0b`, `_` between digits, a `-` for a signed type.
     fn integer(&self, ty: &ValueType) -> Result<i128, Failure> {
         let (low, high) = ty.integer_range().ok_or_else(|| self.refused(format!("{ty} is no integer type")))?;
-        let value = Reading::literal_integer(self.text).ok_or_else(|| self.refused(format!("it is not an integer literal of {ty}, from {low} to {high}")))?;
+        let value = LiteralText::integer(self.text).ok_or_else(|| self.refused(format!("it is not an integer literal of {ty}, from {low} to {high}")))?;
         if !(low..=high).contains(&value) {
             return Err(self.refused(format!("it is outside the range of {ty}, from {low} to {high}")));
         }
         Ok(value)
-    }
-
-    /// The integer a literal is, exactly: decimal, `0x` or `0b`, `_` between digits, a `-` in front; `None` for any other text
-    /// (a point, an exponent, a letter).
-    fn literal_integer(text: &str) -> Option<i128> {
-        let (negative, unsigned) = match text.strip_prefix('-') {
-            Some(rest) => (true, rest),
-            None => (false, text),
-        };
-        let (radix, digits) = match (unsigned.strip_prefix("0x"), unsigned.strip_prefix("0b")) {
-            (Some(rest), _) => (16, rest),
-            (_, Some(rest)) => (2, rest),
-            _ => (10, unsigned),
-        };
-        if digits.is_empty() || digits.starts_with('_') || digits.ends_with('_') {
-            return None;
-        }
-        let magnitude = i128::from_str_radix(&digits.replace('_', ""), radix).ok()?;
-        Some(if negative { -magnitude } else { magnitude })
     }
 
     /// The tag of the variant of the unit enum `ty` the text names, bare or as `Enum::Variant`.
