@@ -152,8 +152,8 @@ fn the_include_str_table_is_refused_for_its_generic_function() {
     let root = format!("{}\nmodule Top() {{ signal a: Electrical; signal k: Electrical; let m = MeasuredDiode(a, k); }}\n", chapter.text("packages#12"));
     let model = Model::package(&Manifest::of("iv", "", "Top")).with_source("src/lib.msl", &root).with_source("src/diode_iv.tbl", &table).with_source("src/boot.hex", &rom);
     let given = Refusal::of(model.run(Overrides::default()), "packages#12");
-    assert!(given.contains(&("P0001".to_string(), "generic function is not supported yet".to_string())), "{given:?}");
-    Refusal::expect(model.run(Overrides::default()), "packages#12", "P0001", "generic function is not supported yet");
+    assert!(given.contains(&("P0001".to_string(), "a call of a generic `extern` function is not supported yet".to_string())), "{given:?}");
+    Refusal::expect(model.run(Overrides::default()), "packages#12", "P0001", "a call of a generic `extern` function is not supported yet");
 }
 
 #[test]

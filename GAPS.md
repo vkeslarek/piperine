@@ -395,7 +395,7 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | modules~87ce6f6e | L31 | `generics` | the `half` block over the ladder is refused with modules#2 |
 | modules~3f8e84ba | L31 | `generics` | the `half` stream is refused with modules#2 |
 | modules~8b927a42 | L30 | `generics` | the value inputs of `lowpass` are refused with modules#6 |
-| modules~1faf8c12 | L29 | `generics` (phase D, GN-24, GN-25) | `m` and `dtemp` in a param block are `E0320`, no param `m`: the Book's four resistors in parallel do not run until `generics` phase D implements them |
+| modules~1faf8c12 | L29 | `generics` | `m` and `dtemp` in a param block are `E0320`, no param `m`: the Book's four resistors in parallel do not run until `generics` phase D (GN-24, GN-25) implements them |
 | modules~4bd9131d | L31 | `generics` | `E0340` is not raised: a `for` in a body is `P0001`, generation is refused |
 | modules~4bcb9f1d | L30 | `generics` | `E0304` is not raised: `Ladder::<0>` is `P0001`, the generic module is refused |
 | analog#7 | L49 | `analog-operators` | `emit!("newton", ..)` in an `analog` block is `P0001` |
@@ -411,7 +411,7 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | digital~a0ca3f9d | L28 | `params-and-io` | the check does not run as the Book places it: `limit: u8` and `cycles: u32` are refused with digital#14 |
 | digital~d7032a06 | L28 | `params-and-io` | the form is refused as the sentence says (digital#7) |
 | digital~d1d69398 | L28 | `params-and-io` | the debouncer and the PWM are refused (digital#7, digital#11); the counter runs |
-| packages#12 | L57 | `composite-values` | `parse_table(include_str!(..))` is `P0001`, a generic function, and `&IV` is `P0001`, a reference type; `include_str!` itself is accepted in a `const` |
+| packages#12 | L57 | `params-and-io` | `parse_table(include_str!(..))` is `P0001`, a call of a generic `extern` function (typed since the `generics` fix round, not run until `params-and-io` T37), and `&IV` is `P0001`, a reference type; `include_str!` itself is accepted in a `const` |
 | core-std#8 | L30 | `generics` | `Reg` placing `Setup(clk, d) { ts: 100p }` is `P0001`: `Setup<T: Repr>` is a generic module |
 | core-std#10 | L28 | `params-and-io` | `Watchdog` is `P0001` on `limit: u16`; with the param written as a literal the watchdog runs and ends the run at the fourth edge |
 | cheatsheet#2 | L30 | `generics` | `module M<const N: usize>(..)` placed as `M::<2>` is `P0001`: generic module |
@@ -419,7 +419,7 @@ for a `diverges` row until its Phase 9 fix, `user` for a `disputed` one.
 | cheatsheet#7 | L49 | `analog-operators` | the `emit!("newton", ..)` in `analog` is `P0001` (L49); the `on settle` reactions run |
 | cheatsheet#8 | L32 | `generics` | `cell: C;` and the placements through a template or a function need a generic module: `P0001` |
 | cheatsheet#9 | L33 | `foreign-models` | `extern "osdi" module Bsim4` with its `#[link]` is `P0001`: `extern` module |
-| cheatsheet#10 | L57 | `composite-values` | with its `emit!` the card is `E0601` (a statement among items); without it `parse_table(include_str!(..))` is `P0001`, a generic function, and `table_model(.., IV, ..)` an array whose length is a generic parameter |
+| cheatsheet#10 | L57 | `params-and-io` | with its `emit!` the card is `E0601` (a statement among items); without it `parse_table(include_str!(..))` is `P0001`, a call of a generic `extern` function (typed, not run yet), and `table_model(.., IV, ..)` an array whose length is a generic parameter |
 | values#18 | L68 | `explicit-unknowns` | `Logic<4>` is `P0001`: the library struct `Logic` has no generic parameter yet (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
 | values~c30bad4d | L68 | `explicit-unknowns` | held with values#18: `Logic<4>` is `P0001` (made to run by explicit-unknowns, phase B: T48 (`Logic<N>` from `std`)) |
 | core-std~6e04c51d | L68 | `explicit-unknowns` | `E0702` is not raised: `logic("10z1")` is `P0001`, because `logic` is a generic `std` function (made to run by explicit-unknowns, phase B: T45 (`logic` and `matches_bits` as generic `std` items)) |

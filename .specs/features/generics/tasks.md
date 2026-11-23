@@ -1433,6 +1433,9 @@ Proof: run elabgen | test the_elaborator_reads_types_only_through_the_substituti
 **C48** - Instance names compile to Rust and nested argument lists spell apart. (GN-02, AC 1; T10)
 Proof: run tgen | test instance_names_compile_and_nested_arguments_spell_apart ... ok
 
+**C49** - A call of a generic `extern "intrinsic"` function types through the generic path (`E0181` for a parameter nothing gives, `E0187` for a missing bound) and elaboration refuses it by name, never as "generic function". (GN-01, AC 1; fix round, finding 10)
+Proof: run typesgen | test a_call_of_a_generic_extern_intrinsic_types_through_the_generic_path ... ok
+
 ---
 
 ## Handoff

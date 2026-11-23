@@ -103,11 +103,11 @@ fn unknown_is_a_name_that_does_not_resolve() {
 
 #[test]
 fn logic_and_matches_bits_wait_for_logic() {
-    // EU-02 (GAPS L68): until `Logic` (T45) the two functions of §22.1.4 are refused by name with `P0001`
-    for call in ["let e: u4 = logic(\"10xx\");", "let g = matches_bits(5_u4, \"01x1\");"] {
-        let (src, d) = diagnostics("", call);
-        assert!(!d.is_empty() && codes_of(&d).iter().all(|code| code == "P0001"), "{src}: {:?}", codes_of(&d));
-    }
+    // EU-02 (GAPS L68): `logic` and `matches_bits` are generic `extern "intrinsic"` functions; since the generics fix round
+    // a call types through the generic path (`T` from the expected type or the argument) and the refusal by name is the
+    // elaborator's ("a call of a generic `extern` function", `elab/lower.rs`), which the Book rows pin
+    let t = local_types("", "let e: u4 = logic(\"10xx\"); let g = matches_bits(5_u4, \"01x1\");", &["e", "g"]);
+    assert_eq!(t, vec![Ty::UInt(4), Ty::Bool]);
 }
 
 #[test]

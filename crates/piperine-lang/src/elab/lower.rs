@@ -437,6 +437,12 @@ impl Elaboration<'_, '_> {
         if let Some(Callee::Function(function)) = self.types.callee(expr)
             && self.design.decl_data(function).generics_span.is_some()
         {
+            // a generic `extern` function types like any generic function but has no body to instantiate: its call is
+            // refused by name until the feature that runs it (`params-and-io`: `parse_table`, `parse_hex`, `table_model`)
+            if matches!(&self.design.decl_data(function).kind, DeclKind::Fn(f) if f.abi.is_some()) {
+                self.unsupported(scope.file, span, "a call of a generic `extern` function");
+                return None;
+            }
             // the instance is folded and checked (`instances.rs`) and lowered once for its arguments (`variants.rs`)
             let instance = self.concrete_instance(expr)?;
             // a function generic over a nature takes handles: inlined for the nature it is instantiated at

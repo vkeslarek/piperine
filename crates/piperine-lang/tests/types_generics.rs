@@ -479,3 +479,20 @@ fn an_unreached_method_of_a_generic_impl_is_checked_at_its_definition() {
     assert!(!codes.is_empty() && codes.iter().all(|code| code != "P0001"), "{codes:?}");
     assert!(GenericSources::standard_codes("struct Pair<T> { a: T, b: T }\nimpl<T> Pair<T> { fn first(self) -> T { self.a } }\n").is_empty());
 }
+
+#[test]
+fn a_call_of_a_generic_extern_intrinsic_types_through_the_generic_path() {
+    // finding 10 of the phase A and B verification: `logic<T: Repr>(pattern: str) -> T` and `matches_bits<T: Repr>` are
+    // generic `extern "intrinsic"` functions of the standard library; a call finds `T` as any generic call does (from the
+    // argument, from the expected type or written), and a `T` nothing gives is `E0181` naming it, never "generic function
+    // is not supported yet"
+    let typed = |src: &str| GenericSources::standard_found(src);
+    let messages = |src: &str| typed(src).iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect::<Vec<_>>();
+    let clean = "module Top() { signal a: Bit<u4> = logic(\"1x01\"); signal b: Bit<u4> = logic::<u4>(\"1x01\"); }\nfn matches(x: u8) -> bool { matches_bits(x, \"1x\") }\nfn matches_written(x: u8) -> bool { matches_bits::<u8>(x, \"1x\") }\n";
+    assert_eq!(messages(clean), []);
+    let uninferred = messages("fn nothing() -> bool { let x = logic(\"10\"); true }\n");
+    assert!(uninferred.iter().any(|(code, message)| code == "E0181" && message.contains('T') && message.contains("logic")), "{uninferred:?}");
+    assert!(uninferred.iter().all(|(_, message)| !message.contains("generic function")), "{uninferred:?}");
+    let unbounded = messages("struct Plain { a: f64 }\nfn bad(p: Plain) -> bool { matches_bits(p, \"1\") }\n");
+    assert!(unbounded.iter().any(|(code, _)| code == "E0187"), "a `T: Repr` argument without `Repr` is the bound error: {unbounded:?}");
+}

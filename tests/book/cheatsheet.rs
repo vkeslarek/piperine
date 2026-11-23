@@ -179,9 +179,9 @@ fn the_files_card_is_refused_for_its_table_and_its_statement() {
     let reading = "module Top() { signal a: Electrical; }\nanalog for Top { v(a) +> table_model(v(a), IV, \"3E\"); }\n";
     let items_only = package(format!("{items}\n{reading}"));
     let given = Refusal::of(items_only.run(Overrides::default()), "cheatsheet#10");
-    assert!(Surroundings::holds(&given, "P0001", "generic function is not supported yet"), "{given:?}");
-    // the generic length of `parse_table`'s result is a type the checker reads (generics T17); the call stays refused as a generic function
-    Refusal::expect(items_only.run(Overrides::default()), "cheatsheet#10", "P0001", "generic function is not supported yet");
+    assert!(Surroundings::holds(&given, "P0001", "a call of a generic `extern` function is not supported yet"), "{given:?}");
+    // a call of the generic `extern "intrinsic"` `parse_table` types through the generic path (generics fix round, finding 10); it stays refused by name in elaboration as a call of a generic `extern` function until `params-and-io` runs it
+    Refusal::expect(items_only.run(Overrides::default()), "cheatsheet#10", "P0001", "a call of a generic `extern` function is not supported yet");
 }
 
 #[test]

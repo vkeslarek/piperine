@@ -584,7 +584,9 @@ impl<'d> Checker<'d> {
             // is checked once at its definition (Q1 (c))
             self.generic_signature(decl);
         }
-        if f.abi.is_some() {
+        // a generic `extern "intrinsic"` function (the library's `logic`, `matches_bits`, `parse_table`) is typed through
+        // the generic path like any generic function; the other `extern` functions keep their refusal
+        if f.abi.is_some() && data.generics_span.is_none() {
             self.unsupported(data.file, data.span, "`extern` function");
             ok = false;
         }
@@ -661,6 +663,8 @@ impl<'d> Checker<'d> {
             }
             // a function a trait declares has no body; its implementations do
             (None, _) if data.parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Trait(_))) => {}
+            // an `extern` function is implemented outside the language: its signature is all there is to check
+            (None, _) if f.abi.is_some() => {}
             (None, _) => self.unsupported(data.file, data.span, "function without a body"),
         }
         self.context = Context::Module;
